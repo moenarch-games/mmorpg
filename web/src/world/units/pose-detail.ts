@@ -36,7 +36,7 @@ function phase(id: string): number {
 /** Schedules cosmetic poses only. Root positions, facing, material tint and equipment still update every frame. */
 export class BackgroundPoseDetail {
   #level: PoseDetailLevel = "off";
-  readonly #next = new Map<string, { key: string; at: number }>();
+  readonly #next = new Map<string, { key: string; at: number; onScreen: boolean }>();
 
   get level(): PoseDetailLevel { return this.#level; }
 
@@ -49,7 +49,7 @@ export class BackgroundPoseDetail {
 
   /** True if the expensive mixer pose is due. Important actors and actions always return true. */
   shouldPose(unit: Candidate, viewerFeet: readonly [number, number, number] | null,
-    target: EntityRef | null, seconds: number): boolean {
+    target: EntityRef | null, seconds: number, onScreen = true): boolean {
     const profile = POSE_DETAIL_PRESETS[this.#level];
     if (profile.rateHz === 0 || !viewerFeet || !Number.isFinite(seconds) ||
       (unit.entity.kind !== "npc" && unit.entity.kind !== "creature") ||
@@ -61,15 +61,25 @@ export class BackgroundPoseDetail {
     const dx = unit.feet[0] - viewerFeet[0];
     const dy = unit.feet[1] - viewerFeet[1];
     const dz = unit.feet[2] - viewerFeet[2];
-    if (dx * dx + dy * dy + dz * dz < profile.distanceMetres ** 2) {
+    const prior = this.#next.get(unit.id);
+    // Once a character becomes background detail, keep it there until it is safely back
+    // inside the full-detail radius. This prevents rapid resampling at the boundary.
+    const threshold = profile.distanceMetres * (prior ? 0.9 : 1);
+    if (dx * dx + dy * dy + dz * dz < threshold ** 2) {
       this.#next.delete(unit.id);
       return true;
     }
     const key = poseKey(unit.layers);
-    const prior = this.#next.get(unit.id);
-    if (prior && prior.key === key && seconds < prior.at) { return false; }
+    if (!onScreen) {
+      // An off-camera background pose can sleep until it is visible again. We still sample
+      // a newly created model once; action/target changes above always force full-rate work.
+      this.#next.set(unit.id, { key, at: Infinity, onScreen: false });
+      return !prior;
+    }
+    // Re-entering the view always refreshes before the first visible frame is drawn.
+    if (prior?.onScreen && prior.key === key && seconds < prior.at) { return false; }
     const interval = 1 / profile.rateHz;
-    this.#next.set(unit.id, { key, at: seconds + interval * (prior ? 1 : 0.1 + 0.9 * phase(unit.id)) });
+    this.#next.set(unit.id, { key, at: seconds + interval * (prior ? 1 : 0.1 + 0.9 * phase(unit.id)), onScreen: true });
     return true;
   }
 

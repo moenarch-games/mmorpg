@@ -14,7 +14,7 @@ export type FrameStats = {
   visibleStaticNodes: number;
   staticVertices: number;
   units: number;
-  poses?: Readonly<{ sampled: number; reused: number }>;
+  poses?: Readonly<{ sampled: number; reused: number; offscreen: number }>;
   work: RendererWorkObservations | null;
 };
 
@@ -127,7 +127,10 @@ export class DebugOverlay {
       ["static batches", `${stats.visibleStaticNodes} / ${stats.staticNodes} in range`],
       ["static vertices", stats.staticVertices.toLocaleString("en-US")],
     ];
-    if (stats.poses) { rows.push(["poses sampled / reused", `${stats.poses.sampled} / ${stats.poses.reused}`]); }
+    if (stats.poses) {
+      rows.push(["poses sampled / reused", `${stats.poses.sampled} / ${stats.poses.reused}`]);
+      rows.push(["reused off-camera", String(stats.poses.offscreen)]);
+    }
     if (work) {
       rows.push(
         ["live objects", String(work.liveObjectCount)],
@@ -157,6 +160,7 @@ export class DebugOverlay {
       poseDetail: this.#poseSelect?.value ?? "off",
       posesSampled: stats.poses?.sampled ?? null,
       posesReused: stats.poses?.reused ?? null,
+      posesOffscreen: stats.poses?.offscreen ?? null,
       liveObjects: work?.liveObjectCount ?? null,
       liveGeometries: work?.liveGeometryCount ?? null,
       liveMaterials: work?.liveMaterialCount ?? null,

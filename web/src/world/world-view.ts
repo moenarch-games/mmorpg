@@ -1135,11 +1135,24 @@ export class WorldView {
         others.push(this.#minimapUnit(entity, unitsPerMetre));
       }
     }
+    if (!self) {
+      throw new Error("The projection is missing the viewer's own unit.");
+    }
+    if (this.#framePending) {
+      this.#framePending = false;
+      this.#frameFirstView(self.focus, self.facing, scene.surfaceY);
+    }
+    const orbit = this.#orbit.view(self.focus, scene.surfaceY);
+    // Use this frame's camera for animation importance, including debugging fly-to viewpoints.
+    const view = this.#flyTo ?? (this.#arena ? clearSightLine(orbit, this.#occluders) : orbit);
+    this.#camera.position.set(...view.eye);
+    this.#camera.lookAt(...view.target);
+    this.#camera.updateMatrixWorld(true);
     // The posed casters' spell origins: the next frames' beams leave the staff's head from there (#612).
     units.setChannelOrigins(this.#models.update(
       presented.imported,
       { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {} },
-      { seconds: this.#seconds, viewerFeet: self ? [self.x, self.feetY, self.z] : null, target: projection.viewer.target },
+      { seconds: this.#seconds, viewerFeet: [self.x, self.feetY, self.z], target: projection.viewer.target, camera: this.#camera },
     ));
     const intensity = animate ? "strong" : "subtle";
     this.#impacts.preload(intensity);
@@ -1154,9 +1167,6 @@ export class WorldView {
     this.#raidSmoke.update(projection.raid, roof?.top ?? null, roof?.span ?? [0, 0], now);
     const unitNodes = presented.nodes.filter((node) => !node.id.startsWith("fx-"));
     profilePhase("units");
-    if (!self) {
-      throw new Error("The projection is missing the viewer's own unit.");
-    }
     this.#combatHud.update(projection, catalog, now);
     this.#classHud.update(projection, catalog, now);
     this.#progressionHud.update(projection, now);
@@ -1167,16 +1177,6 @@ export class WorldView {
     this.#inn?.update(projection.doors, [self.x, self.feetY, self.z], deltaSeconds, !animate);
     this.#ambient?.update(this.#seconds, animate);
     this.#raidSigns.update(projection.raid, this.#raidPrep, scene.surfaceY, scenery.scenery.unitsPerMetre);
-    if (this.#framePending) {
-      this.#framePending = false;
-      this.#frameFirstView(self.focus, self.facing, scene.surfaceY);
-    }
-    const orbit = this.#orbit.view(self.focus, scene.surfaceY);
-    // The fortress's walls and roofs (#552) pull the eye in; Greyhaven's camera never collides.
-    const view = this.#flyTo ?? (this.#arena ? clearSightLine(orbit, this.#occluders) : orbit);
-    this.#camera.position.set(...view.eye);
-    this.#camera.lookAt(...view.target);
-    this.#camera.updateMatrixWorld(true);
     if (this.#sound) {
       const right = new THREE.Vector3().setFromMatrixColumn(this.#camera.matrixWorld, 0);
       this.#sound.listen(view.eye, [right.x, right.y, right.z]);

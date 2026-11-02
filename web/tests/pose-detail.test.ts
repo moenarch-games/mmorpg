@@ -69,4 +69,28 @@ describe("background pose detail", () => {
     detail.forget(idle.id);
     expect(detail.shouldPose(blend, viewer, null, 0.004)).toBe(true);
   });
+
+  test("off-camera background poses sleep and refresh immediately on re-entry", () => {
+    const detail = new BackgroundPoseDetail();
+    detail.setLevel("balanced");
+    expect(detail.shouldPose(idle, viewer, null, 0, false)).toBe(true);
+    expect(detail.shouldPose(idle, viewer, null, 1, false)).toBe(false);
+    expect(detail.shouldPose({ ...idle, layers: [{ ...idle.layers[0]!, time: 2 }] }, viewer, null, 2, false)).toBe(false);
+    expect(detail.shouldPose(idle, viewer, null, 2.001, true)).toBe(true);
+    expect(detail.shouldPose(idle, viewer, null, 2.002, true)).toBe(false);
+    expect(detail.shouldPose(idle, viewer, null, 2.003, false)).toBe(false);
+    // A significant action still samples while off-camera.
+    expect(detail.shouldPose({ ...idle, layers: [{ ...idle.layers[0]!, clip: "Attack" }] }, viewer, null, 2.004, false)).toBe(true);
+    expect(detail.shouldPose(idle, viewer, null, 2.005, true)).toBe(true);
+  });
+
+  test("distance hysteresis avoids rapidly toggling near the background boundary", () => {
+    const detail = new BackgroundPoseDetail();
+    detail.setLevel("balanced");
+    const at = (distance: number) => ({ ...idle, feet: [0, 0, distance] as const });
+    expect(detail.shouldPose(at(25.1), viewer, null, 0)).toBe(true);
+    expect(detail.shouldPose(at(24.9), viewer, null, 0.001)).toBe(false);
+    expect(detail.shouldPose(at(22.4), viewer, null, 0.002)).toBe(true);
+    expect(detail.shouldPose(at(22.4), viewer, null, 0.003)).toBe(true);
+  });
 });

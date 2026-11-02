@@ -1308,7 +1308,10 @@ export class QuaterniusUnits {
   readonly #settled = new Map<QuaterniusKind, Promise<boolean>>();
   readonly #instances = new Map<string, Instance>();
   readonly #poseDetail = new BackgroundPoseDetail();
-  #poseStats = { sampled: 0, reused: 0 };
+  readonly #poseFrustum = new THREE.Frustum();
+  readonly #poseViewProjection = new THREE.Matrix4();
+  readonly #poseSphere = new THREE.Sphere();
+  #poseStats = { sampled: 0, reused: 0, offscreen: 0 };
   readonly #loaded: LoadedModel[] = [];
   #rootsChanged = false;
   #residents: Promise<boolean> | null = null;
@@ -1324,7 +1327,7 @@ export class QuaterniusUnits {
   get poseDetail(): PoseDetailLevel { return this.#poseDetail.level; }
 
   /** Number of imported mixer poses executed and reused in the latest update. */
-  get poseStats(): Readonly<{ sampled: number; reused: number }> { return this.#poseStats; }
+  get poseStats(): Readonly<{ sampled: number; reused: number; offscreen: number }> { return this.#poseStats; }
 
   configureRenderer(renderer: ThreeSceneRenderer): void {
     renderer.configureTextureLoader(this.#textures);
@@ -1407,9 +1410,12 @@ export class QuaterniusUnits {
    * origin on its up-to-date hand (#612), for {@link SharedUnits.setChannelOrigins}.
    */
   update(units: readonly ImportedRequest[], viewer: { headwear: Headwear; hair: Hair; face: FaceChoice },
-    detail?: { seconds: number; viewerFeet: readonly [number, number, number] | null; target: EntityRef | null }):
+    detail?: { seconds: number; viewerFeet: readonly [number, number, number] | null; target: EntityRef | null; camera?: THREE.Camera }):
     { entity: EntityRef; point: [number, number, number] }[] {
-    this.#poseStats = { sampled: 0, reused: 0 };
+    this.#poseStats = { sampled: 0, reused: 0, offscreen: 0 };
+    const frustum = detail?.camera && this.#poseDetail.level !== "off"
+      ? this.#poseFrustum.setFromProjectionMatrix(this.#poseViewProjection.multiplyMatrices(detail.camera.projectionMatrix, detail.camera.matrixWorldInverse))
+      : null;
     const seen = new Set<string>();
     const origins: { entity: EntityRef; point: [number, number, number] }[] = [];
     for (const unit of units) {
@@ -1431,8 +1437,17 @@ export class QuaterniusUnits {
         instance = undefined;
       }
       instance ??= this.#create(unit, dress, asset);
-      const sample = !detail || this.#poseDetail.shouldPose(unit, detail.viewerFeet, detail.target, detail.seconds);
-      if (sample) { this.#poseStats.sampled += 1; } else { this.#poseStats.reused += 1; }
+      // A generous sphere avoids freezing a pose whose limbs might reach just into view.
+      if (frustum) {
+        this.#poseSphere.center.set(unit.feet[0], unit.feet[1] + unit.heightMetres * 0.5, unit.feet[2]);
+        this.#poseSphere.radius = Math.max(2, unit.heightMetres * 1.5);
+      }
+      const onScreen = !frustum || frustum.intersectsSphere(this.#poseSphere);
+      const sample = !detail || this.#poseDetail.shouldPose(unit, detail.viewerFeet, detail.target, detail.seconds, onScreen);
+      if (sample) { this.#poseStats.sampled += 1; } else {
+        this.#poseStats.reused += 1;
+        if (!onScreen) { this.#poseStats.offscreen += 1; }
+      }
       this.#pose(instance, asset, unit, sample);
       const hand = unit.channel && instance.posable.model.getObjectByName(unit.channel.joint);
       if (unit.channel && hand) {
