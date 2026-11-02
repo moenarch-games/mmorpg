@@ -6,6 +6,7 @@ import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js"
 import { LitMaterial } from "@moritzbrantner/three-lighting";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { mergeUnitMeshes, type MergedUnit } from "./merged-unit";
+import { BackgroundPoseDetail, type PoseDetailLevel } from "./pose-detail";
 import type { EntityRef } from "../../entity-ref";
 import { characterVisualProfile } from "../../character-visuals";
 import type { CharacterClassId } from "../../character-selection";
@@ -1306,6 +1307,11 @@ export class QuaterniusUnits {
   readonly #assets = new Map<QuaterniusKind, Asset | "loading" | "failed">();
   readonly #settled = new Map<QuaterniusKind, Promise<boolean>>();
   readonly #instances = new Map<string, Instance>();
+  readonly #poseDetail = new BackgroundPoseDetail();
+  readonly #poseFrustum = new THREE.Frustum();
+  readonly #poseViewProjection = new THREE.Matrix4();
+  readonly #poseSphere = new THREE.Sphere();
+  #poseStats = { sampled: 0, reused: 0, offscreen: 0 };
   readonly #loaded: LoadedModel[] = [];
   #rootsChanged = false;
   #residents: Promise<boolean> | null = null;
@@ -1314,6 +1320,14 @@ export class QuaterniusUnits {
   constructor(rest: RestClip) {
     this.#rest = rest;
   }
+
+  /** Opt-in cosmetic pose LOD for the F3 performance controls. */
+  setPoseDetail(level: PoseDetailLevel): void { this.#poseDetail.setLevel(level); }
+
+  get poseDetail(): PoseDetailLevel { return this.#poseDetail.level; }
+
+  /** Number of imported mixer poses executed and reused in the latest update. */
+  get poseStats(): Readonly<{ sampled: number; reused: number; offscreen: number }> { return this.#poseStats; }
 
   configureRenderer(renderer: ThreeSceneRenderer): void {
     renderer.configureTextureLoader(this.#textures);
@@ -1381,7 +1395,6 @@ export class QuaterniusUnits {
     return this.#loaded.splice(0);
   }
 
-  /** Poses every requested unit and drops the instances of units not requested. */
   /**
    * The face features the loaded Ranger supports (#411): undefined while it loads, null when it
    * failed or carries no face morphs.
@@ -1393,11 +1406,16 @@ export class QuaterniusUnits {
   }
 
   /**
-   * Poses every imported unit, and returns where each caster's spell starts in the world: its `channel`
-   * point on the posed hand (#612), for {@link SharedUnits.setChannelOrigins}.
+   * Poses imported units (or reuses distant background poses), and returns each caster's spell
+   * origin on its up-to-date hand (#612), for {@link SharedUnits.setChannelOrigins}.
    */
-  update(units: readonly ImportedRequest[], viewer: { headwear: Headwear; hair: Hair; face: FaceChoice }):
+  update(units: readonly ImportedRequest[], viewer: { headwear: Headwear; hair: Hair; face: FaceChoice },
+    detail?: { seconds: number; viewerFeet: readonly [number, number, number] | null; target: EntityRef | null; camera?: THREE.Camera }):
     { entity: EntityRef; point: [number, number, number] }[] {
+    this.#poseStats = { sampled: 0, reused: 0, offscreen: 0 };
+    const frustum = detail?.camera && this.#poseDetail.level !== "off"
+      ? this.#poseFrustum.setFromProjectionMatrix(this.#poseViewProjection.multiplyMatrices(detail.camera.projectionMatrix, detail.camera.matrixWorldInverse))
+      : null;
     const seen = new Set<string>();
     const origins: { entity: EntityRef; point: [number, number, number] }[] = [];
     for (const unit of units) {
@@ -1419,7 +1437,18 @@ export class QuaterniusUnits {
         instance = undefined;
       }
       instance ??= this.#create(unit, dress, asset);
-      this.#pose(instance, asset, unit);
+      // A generous sphere avoids freezing a pose whose limbs might reach just into view.
+      if (frustum) {
+        this.#poseSphere.center.set(unit.feet[0], unit.feet[1] + unit.heightMetres * 0.5, unit.feet[2]);
+        this.#poseSphere.radius = Math.max(2, unit.heightMetres * 1.5);
+      }
+      const onScreen = !frustum || frustum.intersectsSphere(this.#poseSphere);
+      const sample = !detail || this.#poseDetail.shouldPose(unit, detail.viewerFeet, detail.target, detail.seconds, onScreen);
+      if (sample) { this.#poseStats.sampled += 1; } else {
+        this.#poseStats.reused += 1;
+        if (!onScreen) { this.#poseStats.offscreen += 1; }
+      }
+      this.#pose(instance, asset, unit, sample);
       const hand = unit.channel && instance.posable.model.getObjectByName(unit.channel.joint);
       if (unit.channel && hand) {
         hand.updateWorldMatrix(true, false);
@@ -1472,12 +1501,14 @@ export class QuaterniusUnits {
     return instance;
   }
 
-  #pose(instance: Instance, asset: Asset, unit: ImportedRequest): void {
-    const { clip } = unit;
-    instance.clip = clip;
-    instance.time = Math.min(unit.time, Math.max(0, (asset.clips.get(clip) ?? 0) - 1e-4));
-    instance.layers = unit.layers;
-    instance.posable.pose(unit.layers);
+  #pose(instance: Instance, asset: Asset, unit: ImportedRequest, sample: boolean): void {
+    if (sample) {
+      const { clip } = unit;
+      instance.clip = clip;
+      instance.time = Math.min(unit.time, Math.max(0, (asset.clips.get(clip) ?? 0) - 1e-4));
+      instance.layers = unit.layers;
+      instance.posable.pose(unit.layers);
+    }
     const tint = unit.tint;
     if (instance.tint === undefined || String(instance.tint) !== String(tint)) {
       instance.tint = tint;
@@ -1497,6 +1528,7 @@ export class QuaterniusUnits {
   }
 
   #drop(id: string, instance: Instance): void {
+    this.#poseDetail.forget(id);
     instance.posable.dispose();
     for (const { material } of instance.materials) { material.dispose(); }
     for (const mesh of instance.merged.meshes) { mesh.geometry.dispose(); }
