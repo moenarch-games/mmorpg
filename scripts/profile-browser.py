@@ -396,15 +396,15 @@ def view(session, name, seconds):
     return result
 
 
-def pose_ab(session, seconds, screenshots=None):
+def pose_ab(session, seconds, scenarios, screenshots=None):
     """Paired, within-session presentation comparisons; no zone/simulation controls."""
-    scenarios = {}
     for name, viewpoint in (("idle", None), ("dense-hub", "hub"), ("dense-woods", "woods"), ("overview", "vale")):
         session.page.evaluate("name => name ? window.__valeDebug.flyTo(name) : window.__valeDebug.follow()", viewpoint)
         # Bounded even on a slow software renderer; frame-count waits took minutes in CI.
         session.page.wait_for_timeout(750)
         session.warm(0.5)
         observations = []
+        scenarios[name] = observations  # Retain completed passes if a later browser action fails.
         for index, level in enumerate(POSE_AB_ORDER):
             session.page.evaluate("level => window.__valeDebug.setPoseDetail(level)", level)
             actual = session.page.evaluate("window.__valeDebug.poseDetail().level")
@@ -601,13 +601,16 @@ def main():
             report["method"] = {"order": POSE_AB_ORDER, "secondsPerPass": args.seconds,
                                 "viewpoints": ["idle", "hub", "woods", "vale"],
                                 "notes": "All runs reuse one live simulation and production build; warm-up is excluded. Views are fixed, but creatures can wander. CPU model-update timing includes pose mixer, instance setup, root and equipment cosmetics. It is not solely mixer time."}
-            screenshots = args.out.parent if args.out else None
+            # Software captures can take tens of seconds at sub-1-fps; they offer no
+            # useful visual-quality comparison. Keep screenshots for hardware A/B only.
+            screenshots = args.out.parent if args.out and not args.software else None
+            report["visualEvidence"] = "software screenshots skipped" if args.software else "hub preset screenshots"
             if screenshots:
                 screenshots.mkdir(parents=True, exist_ok=True)
             try:
                 # HUD visibility precedes the first drawn frame; wait for actual renderer work.
                 session.page.wait_for_function("() => !!window.__valeDebug?.stats?.()?.frame", timeout=30_000)
-                report["scenarios"] = pose_ab(session, args.seconds, screenshots)
+                pose_ab(session, args.seconds, report["scenarios"], screenshots)
             except Exception as error:
                 report["profileError"] = str(error)
                 report["diagnostics"] = session.diagnostics()
