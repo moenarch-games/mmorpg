@@ -76,6 +76,9 @@ jobs:
       - name: Install web dependencies
         working-directory: web
         run: bun install --frozen-lockfile
+      - name: Test automatic wasm-bindgen CLI selection
+        working-directory: web
+        run: bun test tests/build-wasm.test.ts
       - name: Fetch the asset-tooling Ranger character bundle
         run: scripts/fetch-bundles.sh
       - name: Check out the pinned saved-mask producer
