@@ -1,4 +1,5 @@
 import type { RendererWorkObservations } from "@moritzbrantner/three-d-renderer";
+import { POSE_DETAIL_LEVELS, POSE_DETAIL_PRESETS, type PoseDetailLevel } from "./units/pose-detail";
 
 /**
  * The F3 debug overlay: frame rate, scene node counts and the renderer's
@@ -13,6 +14,7 @@ export type FrameStats = {
   visibleStaticNodes: number;
   staticVertices: number;
   units: number;
+  poses?: Readonly<{ sampled: number; reused: number }>;
   work: RendererWorkObservations | null;
 };
 
@@ -56,11 +58,42 @@ export class FrameRate {
 
 export class DebugOverlay {
   readonly #element: HTMLElement;
+  readonly #list: HTMLDListElement;
+  readonly #poseSelect: HTMLSelectElement | null;
+  readonly #onPoseDetail: ((level: PoseDetailLevel) => void) | null;
   #shownAt = 0;
   #latest: FrameStats | null = null;
 
-  constructor(element: HTMLElement) {
+  constructor(element: HTMLElement, onPoseDetail: ((level: PoseDetailLevel) => void) | null = null) {
     this.#element = element;
+    this.#list = document.createElement("dl");
+    this.#element.append(this.#list);
+    this.#onPoseDetail = onPoseDetail;
+    this.#poseSelect = null;
+    if (onPoseDetail) {
+      const label = document.createElement("label");
+      label.className = "debug-pose-detail";
+      label.textContent = "Distant character poses";
+      const select = document.createElement("select");
+      select.setAttribute("aria-label", "Distant character animation detail");
+      for (const level of POSE_DETAIL_LEVELS) {
+        const option = document.createElement("option");
+        option.value = level;
+        option.textContent = POSE_DETAIL_PRESETS[level].label;
+        select.append(option);
+      }
+      select.addEventListener("change", () => this.setPoseDetail(select.value as PoseDetailLevel));
+      label.append(select);
+      this.#element.append(label);
+      this.#poseSelect = select;
+    }
+  }
+
+  /** Also used by the browser profiling hook; keeps the F3 select in sync. */
+  setPoseDetail(level: PoseDetailLevel): void {
+    if (!(level in POSE_DETAIL_PRESETS)) { throw new Error(`Unknown pose detail level: ${level}`); }
+    if (this.#poseSelect) { this.#poseSelect.value = level; }
+    this.#onPoseDetail?.(level);
   }
 
   get visible(): boolean {
@@ -94,6 +127,7 @@ export class DebugOverlay {
       ["static batches", `${stats.visibleStaticNodes} / ${stats.staticNodes} in range`],
       ["static vertices", stats.staticVertices.toLocaleString("en-US")],
     ];
+    if (stats.poses) { rows.push(["poses sampled / reused", `${stats.poses.sampled} / ${stats.poses.reused}`]); }
     if (work) {
       rows.push(
         ["live objects", String(work.liveObjectCount)],
@@ -103,15 +137,15 @@ export class DebugOverlay {
         ["geometry new / evicted", `${work.geometryCreateCount} / ${work.geometryEvictCount}`],
       );
     }
-    const list = document.createElement("dl");
+    const contents: HTMLElement[] = [];
     for (const [name, value] of rows) {
       const term = document.createElement("dt");
       term.textContent = name;
       const detail = document.createElement("dd");
       detail.textContent = value;
-      list.append(term, detail);
+      contents.push(term, detail);
     }
-    this.#element.replaceChildren(list);
+    this.#list.replaceChildren(...contents);
     this.#element.dataset.stats = JSON.stringify({
       fps: Number(stats.fps.toFixed(2)),
       frameMs: Number(stats.frameMs.toFixed(2)),
@@ -120,6 +154,9 @@ export class DebugOverlay {
       staticNodes: stats.staticNodes,
       visibleStaticNodes: stats.visibleStaticNodes,
       staticVertices: stats.staticVertices,
+      poseDetail: this.#poseSelect?.value ?? "off",
+      posesSampled: stats.poses?.sampled ?? null,
+      posesReused: stats.poses?.reused ?? null,
       liveObjects: work?.liveObjectCount ?? null,
       liveGeometries: work?.liveGeometryCount ?? null,
       liveMaterials: work?.liveMaterialCount ?? null,

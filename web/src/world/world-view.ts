@@ -61,6 +61,7 @@ import { ProgressionHud } from "./units/progression-hud";
 import { PointerClick, SecondaryClick } from "./units/targeting";
 import { WorldPicking } from "./units/world-picking";
 import { QuaterniusUnits, type FaceFeature, type Hair, type Headwear } from "./units/quaternius-units";
+import type { PoseDetailLevel } from "./units/pose-detail";
 import type { ContentCatalog } from "./catalog";
 import type { ZoneWorld } from "./world-source";
 import type { AudioPreferences, WorldSound } from "./world-sound";
@@ -432,7 +433,7 @@ export class WorldView {
     this.#camera = camera;
     this.#elements = elements;
     this.#reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    this.#overlay = new DebugOverlay(elements.overlay);
+    this.#overlay = new DebugOverlay(elements.overlay, (level) => this.#models.setPoseDetail(level));
     this.#sky = new SkyLayer(elements.sky, ENVIRONMENT);
     this.#combatHud = new CombatHud(elements.unitStatus, elements.combatFeedback);
     this.#classHud = new ClassHud(elements.classHud, {
@@ -1135,7 +1136,11 @@ export class WorldView {
       }
     }
     // The posed casters' spell origins: the next frames' beams leave the staff's head from there (#612).
-    units.setChannelOrigins(this.#models.update(presented.imported, { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {} }));
+    units.setChannelOrigins(this.#models.update(
+      presented.imported,
+      { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {} },
+      { seconds: this.#seconds, viewerFeet: self ? [self.x, self.feetY, self.z] : null, target: projection.viewer.target },
+    ));
     const intensity = animate ? "strong" : "subtle";
     this.#impacts.preload(intensity);
     for (const received of receivedProjections) {
@@ -1269,6 +1274,7 @@ export class WorldView {
       visibleStaticNodes: frame.visibleBatches,
       staticVertices: scene.stats.staticVertices,
       units: presented.units.length,
+      poses: this.#models.poseStats,
       work: this.#lastWork,
     }, now);
   }
@@ -1575,6 +1581,9 @@ export class WorldView {
       ],
       /** The imported model's actual clip, clip time, root and bone world positions, or null. */
       unitModelPose: (identity: string) => this.#models.pose(identity),
+      /** Session-only F3 animation LOD control, for comparable same-scene A/B profiling. */
+      setPoseDetail: (level: PoseDetailLevel) => this.#overlay.setPoseDetail(level),
+      poseDetail: () => ({ level: this.#models.poseDetail, ...this.#models.poseStats }),
       /** The viewer's layered clips last frame (#384), including a local wind-up (Atlas 6.6.10), or null. */
       viewerAnimation: () => structuredClone(this.#viewerAnimation),
       /** Copies of actual submitted geometry transforms, never a simulation control. */
