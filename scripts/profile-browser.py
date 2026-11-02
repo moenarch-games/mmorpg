@@ -224,6 +224,21 @@ class Session:
     def close(self):
         self.context.close()
 
+    def diagnostics(self):
+        """Small, serializable readiness snapshot when a slow browser yields no world frames."""
+        return self.page.evaluate("""() => {
+          const stats = window.__valeDebug?.stats?.();
+          const frame = stats?.frame;
+          return {
+            selectionHidden: document.querySelector('#character-select')?.hidden ?? null,
+            hudHidden: document.querySelector('.hud')?.hidden ?? null,
+            worldFrame: frame ? { fps: frame.fps, nodes: frame.nodes, units: frame.units } : null,
+            projectedUnits: window.__valeDebug?.projectedUnits?.()?.length ?? null,
+            poseDetail: window.__valeDebug?.poseDetail?.() ?? null,
+            hasFrameProfile: typeof window.__valeProfile?.take === 'function',
+          };
+        }""")
+
 
 def summarize(sample, seconds):
     frames = sample["frames"]
@@ -398,8 +413,18 @@ def pose_ab(session, seconds, screenshots=None):
             session.page.wait_for_timeout(750)
             result = session.record(seconds)
             frames = result["frames"]
+            if screenshots and name == "dense-hub" and index < len(POSE_LEVELS):
+                session.page.screenshot(path=str(screenshots / f"pose-hub-{level}.png"))
             if not frames or any("pose" not in frame for frame in frames):
-                raise RuntimeError("The production bundle did not capture per-frame imported-model pose work")
+                # In SwiftShader a two-second window can contain no completed world frame.
+                # Keep that as missing data, not a fictitious 0-fps performance result.
+                observations.append({
+                    "level": level, "pass": 1 if index < len(POSE_LEVELS) else 2,
+                    "frames": len(frames), "status": "no-world-frames" if not frames else "missing-pose-facts",
+                    "frameKeys": list(frames[0]) if frames else [],
+                    "diagnostics": session.diagnostics(),
+                })
+                continue
             pacing = [b["raf"] - a["raf"] for a, b in zip(frames, frames[1:])]
             poses = [frame["pose"] for frame in frames]
             summary = summarize(result, seconds)
@@ -415,8 +440,6 @@ def pose_ab(session, seconds, screenshots=None):
                 "totalPoses": {key: sum(pose[key] for pose in poses) for key in ("sampled", "reused", "offscreen")},
                 "drawCallsPerFrame": summary["drawCallsPerFrame"], "gpuMs": summary["gpuMs"],
             })
-            if screenshots and name == "dense-hub" and index < len(POSE_LEVELS):
-                session.page.screenshot(path=str(screenshots / f"pose-hub-{level}.png"))
         # The level and the scene evolve; keep each raw pass rather than hiding variance in one ratio.
         scenarios[name] = observations
     session.page.evaluate("() => { window.__valeDebug.setPoseDetail('off'); window.__valeDebug.follow(); }")
@@ -566,7 +589,8 @@ def main():
             session.frames(60)
         if args.activity or args.pose_ab:
             session.enter_world()
-            session.frames(10)
+            if not args.pose_ab:
+                session.frames(10)
         else:
             report["scenarios"]["selection-keys"] = selection_keys(session)
         report["display"] = {"viewport": list(viewport), "deviceScaleFactor": 1, **session.renderer()}
@@ -580,18 +604,34 @@ def main():
             screenshots = args.out.parent if args.out else None
             if screenshots:
                 screenshots.mkdir(parents=True, exist_ok=True)
-            report["scenarios"] = pose_ab(session, args.seconds, screenshots)
+            try:
+                # HUD visibility precedes the first drawn frame; wait for actual renderer work.
+                session.page.wait_for_function("() => !!window.__valeDebug?.stats?.()?.frame", timeout=30_000)
+                report["scenarios"] = pose_ab(session, args.seconds, screenshots)
+            except Exception as error:
+                report["profileError"] = str(error)
+                report["diagnostics"] = session.diagnostics()
+                if screenshots:
+                    try:
+                        session.page.screenshot(path=str(screenshots / "pose-error.png"), timeout=10_000)
+                    except PlaywrightTimeout:
+                        pass
             report["pageErrors"] = session.errors
-            if session.errors:
-                raise RuntimeError(f"Browser errors during pose A/B: {session.errors}")
-            session.close()
-            browser.close()
-            server.shutdown()
+            report["incompletePasses"] = [f"{name}/{sample['level']}/pass{sample['pass']}: {sample['status']}"
+                                          for name, samples in report["scenarios"].items()
+                                          for sample in samples if "status" in sample]
+            report["status"] = ("incomplete" if report.get("profileError") or report["pageErrors"] or report["incompletePasses"]
+                                else "complete")
             report["loadAverageAtEnd"] = [round(x, 1) for x in os.getloadavg()]
             result = json.dumps(report, indent=2)
             if args.out:
                 args.out.write_text(result)
             print(result)
+            session.close()
+            browser.close()
+            server.shutdown()
+            if report["status"] != "complete":
+                raise SystemExit("Pose detail A/B evidence incomplete; see report diagnostics and missing passes")
             return
         report["scenarios"]["idle"] = summarize(session.record(args.seconds), args.seconds)
         report["scenarios"]["idle"]["cpuProfile"] = cpu_profile(session, lambda: session.page.wait_for_timeout(args.seconds * 1000))
