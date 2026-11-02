@@ -14,6 +14,12 @@ one JSON report:
 `--activity battle-royale` profiles the Battle Royale practice arena (#552) instead: `idle`,
 `move-rotate` and `key-to-motion` in the fortress courtyard, and `overview` over the whole fortress.
 
+`--pose-ab` compares Full, Light, Balanced and Aggressive imported-character pose detail
+on the same running Greyhaven scene. Each viewpoint runs the presets forwards and backwards,
+with a warm-up after every switch, so workload drift does not always favor one preset.
+It records pose work, reuse, CPU frame cost, frame pacing, draw calls and GPU timer results
+when available. Software-renderer results are advisory, never hardware performance proof.
+
 Sources, all opt-in and read-only:
 - the page's `?profile` frame phases (`web/src/world/frame-profile.ts`): main-thread CPU per phase;
 - Event Timing (`event` entries: input delay, handler time, duration to next paint, i.e. INP) and
@@ -41,6 +47,7 @@ import json
 import os
 import re
 import statistics
+import subprocess
 import sys
 import threading
 import time
@@ -51,6 +58,8 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeout, expect, sync_
 ROOT = Path(__file__).resolve().parents[1]
 GPU_ARGS = ["--enable-gpu", "--use-angle=gl", "--ignore-gpu-blocklist"]
 SWEEP = [(1280, 720, 1), (1920, 1080, 1), (1920, 1080, 2), (2560, 1440, 2)]
+POSE_LEVELS = ("off", "light", "balanced", "aggressive")
+POSE_AB_ORDER = (*POSE_LEVELS, *reversed(POSE_LEVELS))
 TRACE_CATEGORIES = [
     "toplevel", "devtools.timeline", "disabled-by-default-devtools.timeline", "blink.user_timing",
     "v8", "v8.execute", "gpu", "viz", "cc", "benchmark", "loading",
@@ -371,6 +380,47 @@ def view(session, name, seconds):
     return result
 
 
+def pose_ab(session, seconds, screenshots=None):
+    """Paired, within-session presentation comparisons; no zone/simulation controls."""
+    scenarios = {}
+    for name, viewpoint in (("idle", None), ("dense-hub", "hub"), ("dense-woods", "woods"), ("overview", "vale")):
+        session.page.evaluate("name => name ? window.__valeDebug.flyTo(name) : window.__valeDebug.follow()", viewpoint)
+        session.frames(30)
+        session.warm(0.5)
+        observations = []
+        for index, level in enumerate(POSE_AB_ORDER):
+            session.page.evaluate("level => window.__valeDebug.setPoseDetail(level)", level)
+            actual = session.page.evaluate("window.__valeDebug.poseDetail().level")
+            if actual != level:
+                raise RuntimeError(f"Pose detail control selected {actual!r}, expected {level!r}")
+            session.frames(30)
+            result = session.record(seconds)
+            frames = result["frames"]
+            if not frames or any("pose" not in frame for frame in frames):
+                raise RuntimeError("The production bundle did not capture per-frame imported-model pose work")
+            pacing = [b["raf"] - a["raf"] for a, b in zip(frames, frames[1:])]
+            poses = [frame["pose"] for frame in frames]
+            summary = summarize(result, seconds)
+            observations.append({
+                "level": level, "pass": 1 if index < len(POSE_LEVELS) else 2,
+                "frames": len(frames), "fps": summary["fps"],
+                "cpuFrameMs": summary["cpuFrameMs"], "rafIntervalMs": summary["rafIntervalMs"],
+                "framesOver33ms": sum(interval > 33.3 for interval in pacing),
+                "modelUpdateMs": dist([pose["updateMs"] for pose in poses]),
+                "sampledPerFrame": dist([pose["sampled"] for pose in poses]),
+                "reusedPerFrame": dist([pose["reused"] for pose in poses]),
+                "offscreenPerFrame": dist([pose["offscreen"] for pose in poses]),
+                "totalPoses": {key: sum(pose[key] for pose in poses) for key in ("sampled", "reused", "offscreen")},
+                "drawCallsPerFrame": summary["drawCallsPerFrame"], "gpuMs": summary["gpuMs"],
+            })
+            if screenshots and name == "dense-hub" and index < len(POSE_LEVELS):
+                session.page.screenshot(path=str(screenshots / f"pose-hub-{level}.png"))
+        # The level and the scene evolve; keep each raw pass rather than hiding variance in one ratio.
+        scenarios[name] = observations
+    session.page.evaluate("() => { window.__valeDebug.setPoseDetail('off'); window.__valeDebug.follow(); }")
+    return scenarios
+
+
 def cpu_profile(session, action):
     """A V8 sampling profile while `action()` runs: self and inclusive time per function."""
     cdp = session.context.new_cdp_session(session.page)
@@ -479,7 +529,10 @@ def main():
     parser.add_argument("--no-sweep", action="store_true", help="skip the viewport/pixel-ratio sweep")
     parser.add_argument("--activity", choices=["battle-royale"],
                         help="profile the Battle Royale practice arena (#552) instead of Greyhaven")
+    parser.add_argument("--pose-ab", action="store_true", help="compare four Greyhaven pose presets on identical viewpoints")
     args = parser.parse_args()
+    if args.pose_ab and args.activity:
+        parser.error("--pose-ab is available only in Greyhaven")
     # The arena's overview: the whole fortress from above its south side.
     overview = ((0, 70, -150), (0, 0, 0)) if args.activity else "vale"
 
@@ -492,21 +545,45 @@ def main():
     # Other work on the machine inflates every CPU phase alike; the load is part of the record.
     report = {"source": "scripts/profile-browser.py", "cpus": os.cpu_count(), "loadAverageAtStart": [round(x, 1) for x in os.getloadavg()],
               "scenarios": {}, "sweep": []}
+    report["sourceRevision"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=not args.headed, channel=args.channel, args=GPU_ARGS)
         report["browser"] = {"version": browser.version, "channel": args.channel or "playwright-chromium",
                              "headless": not args.headed, "args": GPU_ARGS}
         report["activity"] = args.activity or "greyhaven"
+        report["measurement"] = "advisory browser runtime timing; controlled hardware needed for a performance gate"
         session = Session(browser, url, 1440, 900, 1, args.activity)
         report["coldSelectionSeconds"] = session.cold_selection_s
         session.frames(60)
-        if args.activity:
+        if args.activity or args.pose_ab:
             session.enter_world()
             session.frames(10)
         else:
             report["scenarios"]["selection-keys"] = selection_keys(session)
         report["display"] = {"viewport": [1440, 900], "deviceScaleFactor": 1, **session.renderer()}
         session.warm()
+        if args.pose_ab:
+            renderer = report["display"]["renderer"] or ""
+            report["rendererClass"] = "software" if re.search(r"swiftshader|llvmpipe|softpipe|software raster", renderer, re.I) else "unverified"
+            report["method"] = {"order": POSE_AB_ORDER, "secondsPerPass": args.seconds,
+                                "viewpoints": ["idle", "hub", "woods", "vale"],
+                                "notes": "All runs reuse one live simulation and production build; warm-up is excluded. Views are fixed, but creatures can wander. CPU model-update timing includes pose mixer, instance setup, root and equipment cosmetics. It is not solely mixer time."}
+            screenshots = args.out.parent if args.out else None
+            if screenshots:
+                screenshots.mkdir(parents=True, exist_ok=True)
+            report["scenarios"] = pose_ab(session, args.seconds, screenshots)
+            report["pageErrors"] = session.errors
+            if session.errors:
+                raise RuntimeError(f"Browser errors during pose A/B: {session.errors}")
+            session.close()
+            browser.close()
+            server.shutdown()
+            report["loadAverageAtEnd"] = [round(x, 1) for x in os.getloadavg()]
+            result = json.dumps(report, indent=2)
+            if args.out:
+                args.out.write_text(result)
+            print(result)
+            return
         report["scenarios"]["idle"] = summarize(session.record(args.seconds), args.seconds)
         report["scenarios"]["idle"]["cpuProfile"] = cpu_profile(session, lambda: session.page.wait_for_timeout(args.seconds * 1000))
         trace = None

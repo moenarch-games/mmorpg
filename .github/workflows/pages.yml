@@ -104,6 +104,9 @@ jobs:
       - name: Run explicitly requested browser acceptance
         if: env.FULL_VALIDATION == 'true' || inputs.browser_evidence == true
         run: python3 scripts/smoke-browser.py
+      - name: Compare Greyhaven pose-detail presets (advisory runner timing)
+        if: inputs.browser_evidence == true
+        run: python3 scripts/profile-browser.py --pose-ab --seconds 2 --out artifacts/browser/pose-ab.json
       - name: Retain browser screenshots and evidence
         if: always() && (env.FULL_VALIDATION == 'true' || inputs.browser_evidence == true)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

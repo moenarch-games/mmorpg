@@ -738,6 +738,7 @@ class BrowserAcceptance(unittest.TestCase):
         expect(north_up).to_have_attribute("aria-pressed", "true")
         self.page.keyboard.press("F3")
         expect(overlay).to_be_hidden()
+
         self.page.keyboard.press("F3")
         expect(overlay).to_be_visible()
 
@@ -758,6 +759,38 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.screenshot(path=str(ARTIFACTS / "world-mouse-look.png"))
         self.page.keyboard.press("F3")
         expect(overlay).to_be_hidden()
+
+    def test_pose_detail_selector_and_camera_reentry(self):
+        """The F3 quality selector follows debug controls without changing the live world."""
+        self.open("?debug")
+        self.page.emulate_media(reduced_motion="no-preference")
+        self.enter_world()
+        self.page.keyboard.press("F3")
+        overlay = self.page.get_by_role("region", name="Debug statistics")
+        select = self.page.get_by_role("combobox", name="Distant character animation detail")
+        expect(overlay).to_be_visible()
+        expect(select).to_have_value("off")
+        initial = self.page.evaluate("window.__valeDebug.projection().viewerId")
+        for level in ("light", "balanced", "aggressive"):
+            select.select_option(level)
+            self.frames(8)
+            self.assertEqual(self.page.evaluate("window.__valeDebug.poseDetail().level"), level)
+            expect(overlay).to_have_attribute("data-stats", re.compile(f'"poseDetail":"{level}"'))
+
+        for name in ("hub", "woods", "hub"):
+            self.page.evaluate("name => window.__valeDebug.flyTo(name)", name)
+            self.frames(12)
+            counts = self.page.evaluate("window.__valeDebug.poseDetail()")
+            self.assertGreaterEqual(counts["sampled"], 0)
+            self.assertGreaterEqual(counts["reused"], 0)
+            self.assertLessEqual(counts["offscreen"], counts["reused"])
+        self.page.evaluate("window.__valeDebug.follow()")
+        self.frames(6)
+        self.assertEqual(self.page.evaluate("window.__valeDebug.projection().viewerId"), initial)
+        self.page.evaluate("window.__valeDebug.setPoseDetail('off')")
+        self.frames(6)
+        expect(select).to_have_value("off")
+        self.assertEqual(self.page.evaluate("window.__valeDebug.poseDetail().reused"), 0)
 
     # Wolf 107, the nearest Wolfrun Woods spawn to the hub, stands at (-62, -18) m (units.rs).
     NEAREST_ANIMAL_SPAWN = (-62.0, -18.0)
@@ -1871,6 +1904,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.emulate_media(reduced_motion="no-preference")
         self.create_and_select("ActionMage", "Arcanist")
         self.enter_beside_wolf()
+        self.page.evaluate("window.__valeDebug.setPoseDetail('aggressive')")
         self.aim_action_unit("creature", 108)
         rest = self.capture_action_frame()
         self.assertTrue(rest["viewer"] and rest["target"])

@@ -1149,11 +1149,14 @@ export class WorldView {
     this.#camera.lookAt(...view.target);
     this.#camera.updateMatrixWorld(true);
     // The posed casters' spell origins: the next frames' beams leave the staff's head from there (#612).
-    units.setChannelOrigins(this.#models.update(
+    const poseStart = profiling() ? performance.now() : 0;
+    const origins = this.#models.update(
       presented.imported,
       { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {} },
       { seconds: this.#seconds, viewerFeet: [self.x, self.feetY, self.z], target: projection.viewer.target, camera: this.#camera },
-    ));
+    );
+    const poseUpdateMs = profiling() ? performance.now() - poseStart : 0;
+    units.setChannelOrigins(origins);
     const intensity = animate ? "strong" : "subtle";
     this.#impacts.preload(intensity);
     for (const received of receivedProjections) {
@@ -1252,6 +1255,7 @@ export class WorldView {
       profileFacts({
         ticks: receivedProjections.length, viewer: [self.x, self.z], heading: this.#orbit.heading, nodes: nodes.length, instanceBatches: frame.instanceBatches.length,
         created: { objects: work.objectCreateCount, geometries: work.geometryCreateCount, materials: work.materialCreateCount, instanceUploads: work.instanceUploadCount },
+        pose: { updateMs: poseUpdateMs, ...this.#models.poseStats },
       });
     }
     this.#quests.placeMarkers(this.#markerPoints(anchors, projection));

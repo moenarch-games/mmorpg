@@ -22,6 +22,8 @@ export type FrameFacts = {
   instanceBatches: number;
   /** The renderer's resource churn this frame: meshes, geometries and materials created, instance batches uploaded. */
   created: { objects: number; geometries: number; materials: number; instanceUploads: number };
+  /** Imported-model update work (including pose sampling and cosmetic transforms); never GPU time. */
+  pose: { updateMs: number; sampled: number; reused: number; offscreen: number };
 };
 
 export type ProfiledFrame = FrameFacts & {
@@ -48,6 +50,7 @@ class FrameProfile {
     this.#current = {
       raf, start, end: start, ticks: 0, viewer: [0, 0], heading: 0, nodes: 0, instanceBatches: 0,
       created: { objects: 0, geometries: 0, materials: 0, instanceUploads: 0 },
+      pose: { updateMs: 0, sampled: 0, reused: 0, offscreen: 0 },
       phases: { input: 0, simulation: 0, projection: 0, units: 0, scene: 0, render: 0, hud: 0 },
     };
   }
