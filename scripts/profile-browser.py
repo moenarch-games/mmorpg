@@ -386,7 +386,8 @@ def pose_ab(session, seconds, screenshots=None):
     scenarios = {}
     for name, viewpoint in (("idle", None), ("dense-hub", "hub"), ("dense-woods", "woods"), ("overview", "vale")):
         session.page.evaluate("name => name ? window.__valeDebug.flyTo(name) : window.__valeDebug.follow()", viewpoint)
-        session.frames(30)
+        # Bounded even on a slow software renderer; frame-count waits took minutes in CI.
+        session.page.wait_for_timeout(750)
         session.warm(0.5)
         observations = []
         for index, level in enumerate(POSE_AB_ORDER):
@@ -394,7 +395,7 @@ def pose_ab(session, seconds, screenshots=None):
             actual = session.page.evaluate("window.__valeDebug.poseDetail().level")
             if actual != level:
                 raise RuntimeError(f"Pose detail control selected {actual!r}, expected {level!r}")
-            session.frames(30)
+            session.page.wait_for_timeout(750)
             result = session.record(seconds)
             frames = result["frames"]
             if not frames or any("pose" not in frame for frame in frames):
@@ -555,15 +556,20 @@ def main():
                              "headless": not args.headed, "args": browser_args}
         report["activity"] = args.activity or "greyhaven"
         report["measurement"] = "advisory browser runtime timing; controlled hardware needed for a performance gate"
-        session = Session(browser, url, 1440, 900, 1, args.activity)
+        # Software evidence checks the instrumentation and relative workload, not 1440x900 GPU parity.
+        viewport = (960, 540) if args.software else (1440, 900)
+        session = Session(browser, url, *viewport, 1, args.activity)
         report["coldSelectionSeconds"] = session.cold_selection_s
-        session.frames(60)
+        if args.pose_ab:
+            session.page.wait_for_timeout(750)
+        else:
+            session.frames(60)
         if args.activity or args.pose_ab:
             session.enter_world()
             session.frames(10)
         else:
             report["scenarios"]["selection-keys"] = selection_keys(session)
-        report["display"] = {"viewport": [1440, 900], "deviceScaleFactor": 1, **session.renderer()}
+        report["display"] = {"viewport": list(viewport), "deviceScaleFactor": 1, **session.renderer()}
         session.warm()
         if args.pose_ab:
             renderer = report["display"]["renderer"] or ""
