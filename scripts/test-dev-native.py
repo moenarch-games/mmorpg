@@ -19,6 +19,27 @@ ROOT = Path(__file__).resolve().parent.parent
 INPUTS = ["crates/mmorpg-client/src/main.rs", "crates/mmorpg-client/src/hud.wgsl",
           "crates/mmorpg-scenery/assets/outpost-grass/selected.props.rs",
           "content/greyhaven/outpost-layout.json", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", ".cargo/config.toml"]
+RANGER_APPEARANCE = "web/public/characters/humanoid.ranger.male/humanoid.ranger.male.default.humanoid-appearance.json"
+VALID_RANGER_APPEARANCE = json.dumps({
+    "schema": "humanoid-appearance-v1", "character": "humanoid.ranger.male", "outfits": [],
+    "presets": [{"id": f"class.{name}"} for name in
+                ("warden", "ranger", "arcanist", "necromancer", "rogue", "cleric", "druid")],
+})
+NATIVE_CACHE_FILES = [
+    "web/public/buildings/greyhaven.inn/manifest.json",
+    "web/public/buildings/greyhaven.marshal-house/manifest.json",
+    "web/public/buildings/outpost.kit/manifest.json",
+    "web/public/scenery/shrine.kit/manifest.json",
+    "web/public/scenery/greyhaven.ambient-animals/manifest.json",
+    "web/public/scenery/settlement.props/manifest.json",
+    "web/public/scenery/greyhaven.nature/manifest.json",
+    "web/public/scenery/greyhaven.terrain/manifest.json",
+    "web/public/scenery/climbing.kit/manifest.json",
+    "web/public/sounds/combat-sounds/manifest.json",
+    "web/public/characters/humanoid.ranger.female/humanoid-ranger-female.index.json",
+    "web/public/characters/humanoid.ranger.male/native/humanoid.ranger.male.default.native.glb",
+    "web/public/characters/humanoid.ranger.female/native/humanoid.ranger.female.outfit.tanner.skin.light.native.glb",
+]
 FAKE = r'''#!/usr/bin/env python3
 import hashlib,json,os,pathlib,signal,subprocess,sys,time
 root=pathlib.Path(os.environ['FIXTURE_ROOT']); control=pathlib.Path(os.environ['CONTROL'])
@@ -77,10 +98,16 @@ class LauncherAcceptance(unittest.TestCase):
         self.git(self.base, 'init', '-b', 'main', str(self.seed))
         self.git(self.seed, 'config', 'user.email', 'fixture@example.invalid')
         self.git(self.seed, 'config', 'user.name', 'Fixture')
-        shutil.copytree(ROOT/'scripts', self.seed/'scripts')
-        (self.seed/'.gitignore').write_text('target/\n')
+        shutil.copytree(ROOT/'scripts', self.seed/'scripts',
+                        ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+        (self.seed/'.gitignore').write_text('target/\n__pycache__/\n*.pyc\n')
         for name in INPUTS:
             path = self.seed/name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text('initial\n')
+        for name in NATIVE_CACHE_FILES:
+            path = self.seed/name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text('fixture\n')
+        appearance = self.seed/RANGER_APPEARANCE
+        appearance.parent.mkdir(parents=True, exist_ok=True)
+        appearance.write_text(VALID_RANGER_APPEARANCE)
         self.git(self.seed, 'add', '.'); self.git(self.seed, 'commit', '-m', 'fixture')
         self.git(self.seed, 'remote', 'add', 'origin', str(self.origin))
         self.git(self.seed, 'push', '-u', 'origin', 'main')
@@ -197,9 +224,24 @@ class LauncherAcceptance(unittest.TestCase):
         self.assertTrue(any('--smoke' in e['args'] for e in self.events('client')))
         self.wait(lambda: all(not self.alive(e['pid']) for e in self.events() if e['kind'] in ['host','worker']), 'smoke host cleanup')
 
+    def test_invalid_cached_appearance_is_repaired_before_build(self):
+        self.edit(RANGER_APPEARANCE, '{"outfits": []}')
+        (self.control/'valid-appearance.json').write_text(VALID_RANGER_APPEARANCE)
+        fetch = self.repo/'scripts/fetch-bundles.sh'
+        fetch.write_text('#!/bin/sh\ncp "$CONTROL/valid-appearance.json" "$FIXTURE_ROOT/' +
+                         RANGER_APPEARANCE + '"\ntouch "$CONTROL/fetched"\n')
+        prepare = self.repo/'scripts/prepare-ranger-native.sh'
+        prepare.write_text('#!/bin/sh\ntouch "$CONTROL/prepared"\n')
+        self.launch('--no-update', '--smoke')
+        self.assertEqual(self.process.wait(timeout=8), 0, self.output.read_text())
+        self.assertTrue((self.control/'fetched').exists())
+        self.assertTrue((self.control/'prepared').exists())
+        self.assertEqual(len(self.events('build')), 1)
+        self.assertIn('Native assets are missing or out of date', self.output.read_text())
+
     def test_watch_inputs_add_delete_and_ignore_outputs(self):
         self.running('--no-update')
-        for index,name in enumerate(INPUTS+['crates/mmorpg-client/src/new.rs']):
+        for index,name in enumerate(INPUTS+[RANGER_APPEARANCE, 'crates/mmorpg-client/src/new.rs']):
             count=len(self.events('client')); self.edit(name,str(index))
             self.wait(lambda:len(self.events('client'))>count,'input must restart: '+name)
         path=self.repo/'crates/mmorpg-client/src/new.rs'; count=len(self.events('client')); path.unlink()
