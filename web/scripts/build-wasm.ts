@@ -3,8 +3,8 @@
  * into the ignored `web/src/generated/mmorpg-wasm` directory.
  *
  * Prerequisites: the `wasm32-unknown-unknown` target (installed through
- * `rust-toolchain.toml`) and the wasm-bindgen CLI at exactly the version the
- * crate links, e.g. `cargo install wasm-bindgen-cli --version =0.2.129 --locked`.
+ * `rust-toolchain.toml`). The matching wasm-bindgen CLI is selected from PATH
+ * or automatically installed in an isolated Cargo-target cache.
  *
  * Idempotent: cargo rebuilds incrementally, and the generated directory is
  * replaced as a whole only after wasm-bindgen succeeded.
@@ -25,7 +25,7 @@ const repoRoot = resolve(webRoot, "..");
 const generatedRoot = join(webRoot, "src", "generated");
 export const generatedDirectory = join(generatedRoot, "mmorpg-wasm");
 
-/** The wasm-bindgen version the workspace lockfile resolves, which the crate pins exactly. */
+/** The wasm-bindgen version resolved by Cargo.lock, which the generated WASM requires. */
 export function lockedWasmBindgenVersion(lockfile: string): string {
   const match = /\[\[package\]\]\nname = "wasm-bindgen"\nversion = "([^"]+)"/.exec(lockfile);
   if (!match?.[1]) {
@@ -56,21 +56,44 @@ function run(command: string, args: readonly string[], timeout: number): string 
   return result.stdout;
 }
 
-function requireMatchingCli(expected: string): void {
-  const install = `cargo install wasm-bindgen-cli --version =${expected} --locked`;
-  let output: string;
+/** Pick only a CLI compatible with the version compiled into the WASM module. */
+export function chooseMatchingCli(
+  expected: string,
+  onPathVersion: string | null,
+  cachedVersion: string | null,
+  cachedExecutable: string,
+): string | null {
+  if (onPathVersion === expected) return "wasm-bindgen";
+  if (cachedVersion === expected) return cachedExecutable;
+  return null;
+}
+
+function cliVersion(executable: string): string | null {
   try {
-    output = run("wasm-bindgen", ["--version"], TOOL_TIMEOUT_MS);
+    return parseCliVersion(run(executable, ["--version"], TOOL_TIMEOUT_MS));
   } catch {
-    throw new Error(`The wasm-bindgen CLI is missing. Install the pinned version: ${install}`);
+    return null;
   }
-  const installed = parseCliVersion(output);
-  if (installed !== expected) {
-    throw new Error(
-      `wasm-bindgen CLI ${installed ?? "(unknown version)"} does not match the crate's wasm-bindgen ${expected}. ` +
-      `Install the pinned version: ${install}`,
-    );
+}
+
+/** Never overwrite a newer system CLI; install the matching executable locally if needed. */
+function matchingCli(expected: string, targetDirectory: string): string {
+  const installRoot = join(targetDirectory, "tools", "wasm-bindgen-cli", expected);
+  const cachedExecutable = join(installRoot, "bin", process.platform === "win32" ? "wasm-bindgen.exe" : "wasm-bindgen");
+  const existing = chooseMatchingCli(
+    expected, cliVersion("wasm-bindgen"), cliVersion(cachedExecutable), cachedExecutable,
+  );
+  if (existing) return existing;
+
+  console.log(`Installing wasm-bindgen CLI ${expected} into ${installRoot} (required by Cargo.lock).`);
+  run("cargo", [
+    "install", "--locked", "--force", "--version", `=${expected}`,
+    "--root", installRoot, "wasm-bindgen-cli",
+  ], CARGO_BUILD_TIMEOUT_MS);
+  if (cliVersion(cachedExecutable) !== expected) {
+    throw new Error(`The installed wasm-bindgen CLI does not match Cargo.lock's version ${expected}.`);
   }
+  return cachedExecutable;
 }
 
 function cargoTargetDirectory(): string {
@@ -96,9 +119,10 @@ function removeGenerated(path: string): void {
 /** Builds the release WASM module and returns the generated bindings directory. */
 export function buildWasm(): string {
   const expected = lockedWasmBindgenVersion(readFileSync(join(repoRoot, "Cargo.lock"), "utf8"));
-  requireMatchingCli(expected);
+  const targetDirectory = cargoTargetDirectory();
+  const bindgenCli = matchingCli(expected, targetDirectory);
   run("cargo", ["build", "--release", "--locked", "--target", TARGET, "-p", CRATE], CARGO_BUILD_TIMEOUT_MS);
-  const wasm = join(cargoTargetDirectory(), TARGET, "release", `${ARTIFACT}.wasm`);
+  const wasm = join(targetDirectory, TARGET, "release", `${ARTIFACT}.wasm`);
   if (!existsSync(wasm)) {
     throw new Error(`cargo did not produce ${wasm}.`);
   }
@@ -106,7 +130,7 @@ export function buildWasm(): string {
   const staging = join(generatedRoot, `.mmorpg-wasm-${process.pid}`);
   removeGenerated(staging);
   try {
-    run("wasm-bindgen", ["--target", "web", "--out-name", ARTIFACT, "--out-dir", staging, wasm], TOOL_TIMEOUT_MS);
+    run(bindgenCli, ["--target", "web", "--out-name", ARTIFACT, "--out-dir", staging, wasm], TOOL_TIMEOUT_MS);
     removeGenerated(generatedDirectory);
     renameSync(staging, generatedDirectory);
   } finally {
