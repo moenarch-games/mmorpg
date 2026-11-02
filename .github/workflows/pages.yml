@@ -100,7 +100,7 @@ jobs:
       - name: Install browser acceptance tooling
         if: env.FULL_VALIDATION == 'true' || inputs.browser_evidence == true
         run: |
-          python3 -m pip install playwright==1.57.0
+          python3 -m pip install --upgrade playwright
           python3 -m playwright install --with-deps chromium
       - name: Compare Greyhaven pose-detail presets (advisory runner timing)
         if: always() && inputs.browser_evidence == true && steps.web-build.outcome == 'success'
