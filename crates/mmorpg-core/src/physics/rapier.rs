@@ -13,7 +13,10 @@
 use std::collections::BTreeMap;
 use std::fmt;
 #[cfg(feature = "physics-ab")]
-use std::{collections::BTreeSet, sync::atomic::{AtomicU64, Ordering}};
+use std::{
+    collections::BTreeSet,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use rapier3d::control::{CharacterLength, KinematicCharacterController};
 use rapier3d::parry::query::{
@@ -111,9 +114,10 @@ impl Clone for World {
         world.ground = self.ground.clone();
         world.rebuild();
         #[cfg(feature = "physics-ab")]
-        world
-            .controller_collisions
-            .store(self.controller_collisions.load(Ordering::Relaxed), Ordering::Relaxed);
+        world.controller_collisions.store(
+            self.controller_collisions.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
         world
     }
 }
