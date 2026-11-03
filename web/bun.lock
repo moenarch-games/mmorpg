@@ -11,7 +11,7 @@
         "@moritzbrantner/input-bindings-runtime": "github:moritzbrantner/input-bindings#7683fc7b8572b38124d3b99c3c274ae32ab24f19",
         "@moritzbrantner/input-bindings-web": "github:moritzbrantner/input-bindings#bcb5834545bcf92cf74d4fb80496f410dea3bcaf",
         "@moritzbrantner/settings-browser": "github:moritzbrantner/settings#18289aafa116010fd8dfe485aecff2cc749ceb4a",
-        "@moritzbrantner/three-d-renderer": "github:moritzbrantner/3d-lab#6bd382d81687a33633e927f69258726f0b85c296",
+        "@moritzbrantner/three-d-renderer": "github:moritzbrantner/3d-lab#aa7b84daf1682be6de59ef05c775f3d114deb0b1",
         "@moritzbrantner/three-lighting": "github:moritzbrantner/render-engine#521d011b988d19d64642b23950845612e78f13be",
         "react": "19.3.1",
         "react-dom": "19.3.1",
@@ -96,7 +96,7 @@
 
     "@moritzbrantner/settings-browser": ["@moritzbrantner/settings-browser@github:moritzbrantner/settings#18289aa", { "peerDependencies": { "@moritzbrantner/ui": ">=1.1.0", "react": ">=19.0.0" }, "optionalPeers": ["@moritzbrantner/ui", "react"] }, "moritzbrantner-settings-18289aa", "sha512-FBj8uv/oMFVw0Gxud3y1KLdzTqHH7HTAgjuonsFTuQ6y41LRu5G5zAYRLtHxfdSCeT4w28FHuPumKG0VYjujVg=="],
 
-    "@moritzbrantner/three-d-renderer": ["@moritzbrantner/three-d-renderer@github:moritzbrantner/3d-lab#6bd382d", { "dependencies": { "three": "0.186.1" } }, "moritzbrantner-3d-lab-6bd382d", "sha512-4S4AzwF+QAC0sF5JvN4AGUp9xLXjBQpyRIUycI6MpJBh82nb9mXl7st0mNz72hQ/Wp3XoKFWWk/pw4UdSXCl7A=="],
+    "@moritzbrantner/three-d-renderer": ["@moritzbrantner/three-d-renderer@github:moritzbrantner/3d-lab#aa7b84d", { "dependencies": { "three": "0.186.1" } }, "moritzbrantner-3d-lab-aa7b84d", "sha512-2C3bHJemFZfDFRzloLbue/7XYv5RMAD5O9GXXM3XhVcBTsxUPq1c5R6O6OFUYu7GjfdaOChXMaQ/SUe+oqDWew=="],
 
     "@moritzbrantner/three-lighting": ["@moritzbrantner/three-lighting@github:moritzbrantner/render-engine#521d011", { "peerDependencies": { "three": ">=0.186.0 <0.187.0" } }, "moritzbrantner-render-engine-521d011", "sha512-2NLEIePQBD2X9Wuo/T3PMxGdriSPaHlFXsLfOvkEIoHnFzANzFtaKeFDqqKTpHdUmOJaMl9OuPIuJGAsi/RWmA=="],
 
