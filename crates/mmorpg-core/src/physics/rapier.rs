@@ -13,7 +13,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 #[cfg(feature = "physics-ab")]
-use std::{cell::Cell, collections::BTreeSet};
+use std::{collections::BTreeSet, sync::atomic::{AtomicU64, Ordering}};
 
 use rapier3d::control::{CharacterLength, KinematicCharacterController};
 use rapier3d::parry::query::{
@@ -91,7 +91,7 @@ pub(super) struct World {
     bodies: BTreeMap<BodyId, RigidBody>,
     handles: BTreeMap<BodyId, Handles>,
     #[cfg(feature = "physics-ab")]
-    controller_collisions: Cell<u64>,
+    controller_collisions: AtomicU64,
 }
 
 impl fmt::Debug for World {
@@ -113,7 +113,7 @@ impl Clone for World {
         #[cfg(feature = "physics-ab")]
         world
             .controller_collisions
-            .set(self.controller_collisions.get());
+            .store(self.controller_collisions.load(Ordering::Relaxed), Ordering::Relaxed);
         world
     }
 }
@@ -386,7 +386,7 @@ impl World {
             bodies: BTreeMap::new(),
             handles: BTreeMap::new(),
             #[cfg(feature = "physics-ab")]
-            controller_collisions: Cell::new(0),
+            controller_collisions: AtomicU64::new(0),
         }
     }
 
@@ -433,7 +433,7 @@ impl World {
             incident_bodies: degrees.len(),
             max_body_degree: degrees.values().copied().max().unwrap_or(0),
             max_active_degree: active_degrees.values().copied().max().unwrap_or(0),
-            controller_collisions: self.controller_collisions.get(),
+            controller_collisions: self.controller_collisions.load(Ordering::Relaxed),
         }
     }
 
@@ -938,7 +938,7 @@ impl World {
         );
         #[cfg(feature = "physics-ab")]
         self.controller_collisions
-            .set(self.controller_collisions.get().saturating_add(collisions));
+            .fetch_add(collisions, Ordering::Relaxed);
         Ok((units(movement.translation), movement.grounded))
     }
 
