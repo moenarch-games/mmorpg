@@ -382,7 +382,9 @@ struct RoundSample {
     micros: f64,
     physics_micros: f64,
     pairs: u64,
-    sweeps: u64,
+    narrows: u64,
+    sweep_queries: u64,
+    impacts: u64,
     budget_fallbacks: u64,
 }
 
@@ -402,7 +404,9 @@ fn round(amount: usize, staggered: bool, ccd: Option<bool>) -> Result<RoundSampl
                 let report = world.step(DT)?;
                 sample.physics_micros += physics_start.elapsed().as_secs_f64() * 1e6;
                 sample.pairs += report.pair_tests;
-                sample.sweeps += report.swept_contacts;
+                sample.narrows += report.narrow_tests;
+                sample.sweep_queries += report.geometry.sweep_queries;
+                sample.impacts += report.swept_contacts;
                 sample.budget_fallbacks += report.geometry.ccd_budget_fallbacks;
                 black_box(report);
             } else if age == usize::from(BOMB_FUSE_TICKS) {
@@ -468,12 +472,14 @@ fn bench() -> Result<()> {
         let nonccd_physics = median(&mut dynamic_step);
         let ccd_physics = median(&mut ccd_step);
         println!(
-            "bombs={count}\tstaggered={staggered}\tgame_us_per_tick={baseline:.2}\tgame_plus_dynamic_us_per_tick={nonccd:.2}\tgame_plus_ccd_us_per_tick={candidate:.2}\tdynamic_step_us={nonccd_physics:.2}\tccd_step_us={ccd_physics:.2}\tccd_increment_over_dynamic_us_per_tick={:.2}\tshadow_overhead_us_per_tick={:.2}\tratio={:.2}\tccd_pairs={}\tccd_sweeps={}\tccd_budget_fallbacks={}",
+            "bombs={count}\tstaggered={staggered}\tgame_us_per_tick={baseline:.2}\tgame_plus_dynamic_us_per_tick={nonccd:.2}\tgame_plus_ccd_us_per_tick={candidate:.2}\tdynamic_step_us={nonccd_physics:.2}\tccd_step_us={ccd_physics:.2}\tccd_increment_over_dynamic_us_per_tick={:.2}\tshadow_overhead_us_per_tick={:.2}\tratio={:.2}\tccd_pairs={}\tccd_narrow_tests={}\tccd_sweep_queries={}\tccd_impacts={}\tccd_budget_fallbacks={}",
             candidate - nonccd,
             candidate - baseline,
             candidate / baseline,
             work.pairs,
-            work.sweeps,
+            work.narrows,
+            work.sweep_queries,
+            work.impacts,
             work.budget_fallbacks
         );
     }

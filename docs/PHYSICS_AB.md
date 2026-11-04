@@ -36,7 +36,8 @@ not automatically an engine defect.
 
 The example also measures 160 complete game-zone ticks with the same number of
 game projectiles on each arm, **plus** optional shadow dynamic bodies. Separate
-shadow-step times and deterministic pair/sweep/budget counts distinguish CCD
+shadow-step times and distinct candidate-pair, narrow-phase, exact sweep-query,
+admitted-impact and fallback counts distinguish CCD
 work from ordinary dynamic integration. Its 1/8/16/24/32-body matrix includes
 a 32-body staggered case; cloned simultaneous throws are an intentionally
 synthetic worst case, not proof of gameplay-legal rapid casts. Timings are
