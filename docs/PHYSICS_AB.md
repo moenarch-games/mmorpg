@@ -11,6 +11,46 @@ cargo test -p mmorpg-core --features physics-ab --test physics_ab -- --nocapture
 cargo run --release -p mmorpg-core --example physics_ab --features physics-ab      # manual timing
 ```
 
+## Experimental persistent projectile CCD (Physics Engine PR #464)
+
+The opt-in `projectile_ccd_ab` example pins the **unmerged** CCD implementation to
+`d65be8f43539a0249830a32cd43bf1241458760f` in the test-only dependency. It
+does not change production or the gameplay projectile path:
+
+```sh
+cargo run --release --locked -p mmorpg-core --features physics-ab --example projectile_ccd_ab
+cargo test --release --locked -p mmorpg-core --test thrown_weapons --test trick_shots
+```
+
+The probe launches MMORPG's real level-six Rogue bomb with the wall and boars from
+`tests/thrown_weapons.rs`, then runs an isolated persistent CCD sphere in **shadow**
+at the same position and velocity. It checks the real fuse, splash/cover result,
+first 60 Hz multi-impact ricochet and bit-exact replay on each arm. It reports
+position divergence at the fuse, because the game uses a point sweep with one
+bounce per tick and fixed per-bounce velocity scaling, while physical CCD uses a
+finite radius, impulse restitution and Coulomb friction. A position difference is
+not automatically an engine defect.
+
+The example also measures 160 complete game-zone ticks with the same number of
+game projectiles on each arm, **plus** optional shadow dynamic bodies. Separate
+shadow-step times and deterministic pair/sweep/budget counts distinguish CCD
+work from ordinary dynamic integration. Its 1/8/16/24/32-body matrix includes
+a 32-body staggered case; cloned simultaneous throws are an intentionally
+synthetic worst case, not proof of gameplay-legal rapid casts. Timings are
+informational on a shared machine, not CI gates; setup is excluded. The shadow
+world reproduces the arena wall and floor, not the full zone geometry, unit
+contacts or live movement. Thus measured additional CPU is **not** a prediction
+of the finished adapter's total cost.
+
+The missing integration contracts are stable projectile-ID ↔ engine-body mapping,
+resynchronizing world geometry and moving units, exact projectile pose/velocity
+and any rotational/contact state needed on restore, applying gameplay collision
+filters, and chronological impact data (TOI/position/normal) for game-owned
+damage, shields, bounce limits, fuse and lifetime. The current
+`Report::contact_events` contains pair-ordered contact transitions, **not** a
+chronological impact stream. No CCD collision determines an MMORPG gameplay
+outcome in this experiment; Rapier remains authoritative.
+
 ## Consumer contact workload diagnostic (physics-engine #443)
 
 The existing manual A/B example now reports **complete 60 Hz zone ticks**, the portion spent
