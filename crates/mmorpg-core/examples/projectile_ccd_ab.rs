@@ -1,4 +1,4 @@
-//! Non-production projectile CCD probe against physics-engine PR #464.
+//! Non-production projectile CCD probe against the merged physics-engine C20 capability.
 //!
 //! Reuses the actual Rogue bomb launch, sweep, fuse, and damage rules in `mmorpg-core`
 //! while shadow-simulating a persistent, finite-radius body on physics-engine. The
@@ -7,6 +7,7 @@
 //!
 //! ```sh
 //! cargo run --release --locked -p mmorpg-core --features physics-ab --example projectile_ccd_ab
+//! cargo run --release --locked -p mmorpg-core --features physics-ab --example projectile_ccd_ab -- --trace-staggered
 //! cargo test --locked -p mmorpg-core --test thrown_weapons
 //! cargo test --locked -p mmorpg-core --test trick_shots
 //! ```
@@ -176,6 +177,16 @@ fn physical_bombs(
     ccd: bool,
     staggered: bool,
 ) -> Result<(World, Vec<BodyId>)> {
+    physical_bombs_in_lanes(initial, 0..count, count, ccd, staggered)
+}
+
+fn physical_bombs_in_lanes(
+    initial: Projectile,
+    lanes: impl IntoIterator<Item = usize>,
+    total_count: usize,
+    ccd: bool,
+    staggered: bool,
+) -> Result<(World, Vec<BodyId>)> {
     let mut world = World::new(Config {
         gravity: Vector(0.0, -9.81, 0.0),
         length_unit: 100.0,
@@ -195,9 +206,10 @@ fn physical_bombs(
         Vector(0.0, 200.0, 300.0),
         Vector(2_000.0, 200.0, 50.0),
     )?;
-    let mut handles = Vec::with_capacity(count);
-    for i in 0..count {
-        let [x, y, z] = lane_offset(i, count, staggered);
+    let lanes = lanes.into_iter();
+    let mut handles = Vec::with_capacity(lanes.size_hint().0);
+    for i in lanes {
+        let [x, y, z] = lane_offset(i, total_count, staggered);
         let mut body = Body::keyed(
             10_000 + i as u64,
             Shape::Sphere(BOMB_RADIUS_CM),
@@ -388,6 +400,138 @@ struct RoundSample {
     budget_fallbacks: u64,
 }
 
+/// Diagnose the 32 staggered lanes without changing the timed default benchmark.
+/// Every lane is also stepped alone, preserving its body key and arena placement.
+/// The isolated sum can expose cross-lane coupling; pair-ordered contact transitions
+/// are intentionally kept separate from CCD's admitted swept-impact count.
+fn trace_staggered_lanes() -> Result<()> {
+    const LANES: usize = 32;
+    let initial = bomb(&launched_zone()?)?;
+    let (mut shared, shared_ids) = physical_bombs(initial, LANES, true, true)?;
+    let mut isolated = (0..LANES)
+        .map(|index| -> Result<(World, BodyId)> {
+            let (world, ids) =
+                physical_bombs_in_lanes(initial, std::iter::once(index), LANES, true, true)?;
+            Ok((world, ids[0]))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let mut isolated_impacts = [0_u64; LANES];
+    let mut isolated_sweeps = [0_u64; LANES];
+    let mut shared_starts = [0_u64; LANES];
+    let mut isolated_starts = [0_u64; LANES];
+    let mut first_difference = [None; LANES];
+    let mut max_position_diff_cm = [0.0_f32; LANES];
+    let mut max_velocity_diff_cm_per_second = [0.0_f32; LANES];
+    let mut shared_impacts = 0_u64;
+    let mut shared_sweeps = 0_u64;
+    let mut shared_fallbacks = 0_u64;
+    let mut cross_bomb_starts = 0_u64;
+    let mut simulated_ticks = 0_usize;
+
+    for tick in 0..BENCH_TICKS {
+        let age = tick + usize::from(initial.age) + 1;
+        if age >= usize::from(BOMB_FUSE_TICKS) {
+            break;
+        }
+        let report = shared.step(DT)?;
+        simulated_ticks += 1;
+        shared_impacts += report.swept_contacts;
+        shared_sweeps += report.geometry.sweep_queries;
+        shared_fallbacks += report.geometry.ccd_budget_fallbacks;
+        let starts = report
+            .contact_events
+            .iter()
+            .filter(|event| event.started())
+            .count();
+        let mut cross_bomb_tick = 0_u64;
+        for event in &report.contact_events {
+            if event.started() {
+                let (a, b) = event.bodies();
+                if shared_ids.contains(&a) && shared_ids.contains(&b) {
+                    cross_bomb_tick += 1;
+                    cross_bomb_starts += 1;
+                }
+                for (lane, id) in shared_ids.iter().enumerate() {
+                    if *id == a || *id == b {
+                        shared_starts[lane] += 1;
+                    }
+                }
+            }
+        }
+        let mut isolate_tick_impacts = 0_u64;
+        let mut isolate_tick_sweeps = 0_u64;
+        for (lane, ((world, id), shared_id)) in
+            isolated.iter_mut().zip(shared_ids.iter()).enumerate()
+        {
+            let alone = world.step(DT)?;
+            isolated_impacts[lane] += alone.swept_contacts;
+            isolated_sweeps[lane] += alone.geometry.sweep_queries;
+            isolate_tick_impacts += alone.swept_contacts;
+            isolate_tick_sweeps += alone.geometry.sweep_queries;
+            isolated_starts[lane] += u64::try_from(
+                alone
+                    .contact_events
+                    .iter()
+                    .filter(|event| event.started())
+                    .count(),
+            )?;
+            let (shared_position, shared_velocity) = state(&shared, *shared_id)?;
+            let (alone_position, alone_velocity) = state(world, *id)?;
+            for axis in 0..3 {
+                max_position_diff_cm[lane] = max_position_diff_cm[lane]
+                    .max((shared_position[axis] - alone_position[axis]).abs());
+                max_velocity_diff_cm_per_second[lane] = max_velocity_diff_cm_per_second[lane]
+                    .max((shared_velocity[axis] - alone_velocity[axis]).abs());
+            }
+            if first_difference[lane].is_none()
+                && (shared_position.map(f32::to_bits) != alone_position.map(f32::to_bits)
+                    || shared_velocity.map(f32::to_bits) != alone_velocity.map(f32::to_bits))
+            {
+                first_difference[lane] = Some(age);
+            }
+        }
+        if report.swept_contacts > 0 || starts > 0 || isolate_tick_impacts > 0 {
+            println!(
+                "ccd-trace-tick\tage={age}\tshared_impacts={}\tisolate_sum_impacts={isolate_tick_impacts}\tcontact_starts={starts}\tcross_bomb_contact_starts={cross_bomb_tick}\tshared_exact_sweeps={}\tisolate_sum_exact_sweeps={isolate_tick_sweeps}\tbudget_fallbacks={}",
+                report.swept_contacts,
+                report.geometry.sweep_queries,
+                report.geometry.ccd_budget_fallbacks
+            );
+        }
+    }
+
+    let summed_impacts: u64 = isolated_impacts.iter().sum();
+    let summed_sweeps: u64 = isolated_sweeps.iter().sum();
+    let exact_lanes = first_difference
+        .iter()
+        .filter(|first| first.is_none())
+        .count();
+    let worst_position_diff_cm = max_position_diff_cm.iter().copied().fold(0.0_f32, f32::max);
+    let worst_velocity_diff_cm_per_second = max_velocity_diff_cm_per_second
+        .iter()
+        .copied()
+        .fold(0.0_f32, f32::max);
+    println!(
+        "ccd-trace-summary\tlanes={LANES}\tticks={simulated_ticks}\tshared_impacts={shared_impacts}\tisolate_sum_impacts={summed_impacts}\tshared_exact_sweeps={shared_sweeps}\tisolate_sum_sweeps={summed_sweeps}\tcross_bomb_contact_starts={cross_bomb_starts}\tshared_budget_fallbacks={shared_fallbacks}\tbit_exact_lanes={exact_lanes}\tmax_position_abs_diff_cm={worst_position_diff_cm}\tmax_velocity_abs_diff_cm_per_second={worst_velocity_diff_cm_per_second}"
+    );
+    for (lane, ((world, id), shared_id)) in isolated.iter().zip(shared_ids.iter()).enumerate() {
+        let (shared_position, shared_velocity) = state(&shared, *shared_id)?;
+        let (alone_position, alone_velocity) = state(world, *id)?;
+        println!(
+            "ccd-trace-lane\tlane={lane}\toffset_cm={:?}\tisolate_impacts={}\tisolate_exact_sweeps={}\tshared_contact_starts={}\tisolate_contact_starts={}\tfirst_shared_isolate_difference_tick={:?}\tmax_position_abs_diff_cm={}\tmax_velocity_abs_diff_cm_per_second={}\tshared_position_cm={shared_position:?}\tisolate_position_cm={alone_position:?}\tshared_velocity_cm_per_second={shared_velocity:?}\tisolate_velocity_cm_per_second={alone_velocity:?}",
+            lane_offset(lane, LANES, true),
+            isolated_impacts[lane],
+            isolated_sweeps[lane],
+            shared_starts[lane],
+            isolated_starts[lane],
+            first_difference[lane],
+            max_position_diff_cm[lane],
+            max_velocity_diff_cm_per_second[lane]
+        );
+    }
+    Ok(())
+}
+
 fn round(amount: usize, staggered: bool, ccd: Option<bool>) -> Result<RoundSample> {
     let (mut zone, initial) = game_lanes(amount, staggered)?;
     let mut shadow = ccd
@@ -487,6 +631,12 @@ fn bench() -> Result<()> {
 }
 
 fn main() -> Result<()> {
+    let args = std::env::args().skip(1).collect::<Vec<_>>();
+    match args.as_slice() {
+        [arg] if arg == "--trace-staggered" => return trace_staggered_lanes(),
+        [] => {}
+        _ => return Err("usage: projectile_ccd_ab [--trace-staggered]".into()),
+    }
     ricochet_comparison()?;
     bomb_comparison()?;
     deterministic_replay()?;

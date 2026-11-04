@@ -29,6 +29,7 @@ rustc -Vv
 lscpu
 cargo test --release --locked -p mmorpg-core --features physics-ab --test thrown_weapons --test trick_shots
 cargo run --release --locked -p mmorpg-core --features physics-ab --example projectile_ccd_ab
+cargo run --release --locked -p mmorpg-core --features physics-ab --example projectile_ccd_ab -- --trace-staggered
 ```
 
 The probe launches MMORPG's real level-six Rogue bomb with the wall and boars from
@@ -51,6 +52,17 @@ informational on a shared machine, not CI gates; setup is excluded. The shadow
 world reproduces the arena wall and floor, not the full zone geometry, unit
 contacts or live movement. Thus measured additional CPU is **not** a prediction
 of the finished adapter's total cost.
+
+`--trace-staggered` is an untimed diagnostic for the 32-bomb case. It steps the
+full staggered shadow world alongside 32 isolated single-bomb worlds at identical
+lane offsets, printing admitted impacts and exact sweeps by tick, isolated
+impact/sweep totals, contact-start counts, and each lane's first bitwise
+shared-versus-isolated pose/velocity divergence **and maximum absolute drift**.
+This helps distinguish genuine
+cross-bomb interactions from unrelated scheduler work before attributing changes
+in aggregate impact counts to a CCD regression. Contact starts are **pair-ordered
+transitions**, not chronological impacts, and shared admitted-impact counts do
+not identify the exact projectile without a chronological impact-report API.
 
 The missing integration contracts are stable projectile-ID ↔ engine-body mapping,
 resynchronizing world geometry and moving units, exact projectile pose/velocity
