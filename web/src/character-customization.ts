@@ -140,7 +140,10 @@ export function saveCharacter(
   if (!isFaceChoice(appearance.face)) {
     throw new Error("Character face is invalid");
   }
-  if (appearance.cosmetic !== undefined && !isCosmeticProportions(appearance.cosmetic)) {\n    throw new Error("Character cosmetic proportions are invalid");\n  }\n  const saved: SavedCharacter = {
+  if (appearance.cosmetic !== undefined && !isCosmeticProportions(appearance.cosmetic)) {
+    throw new Error("Character cosmetic proportions are invalid");
+  }
+  const saved: SavedCharacter = {
     schemaVersion: SAVE_SCHEMA_VERSION,
     characterId,
     appearance: { ...appearance, face: { ...appearance.face }, ...(appearance.cosmetic ? { cosmetic: { ...appearance.cosmetic } } : {}) },
