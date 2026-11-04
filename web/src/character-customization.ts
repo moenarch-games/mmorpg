@@ -38,7 +38,27 @@ export type HairColor = (typeof HAIR_COLOR_OPTIONS)[number]["id"];
  */
 export type FaceChoice = Readonly<Record<string, string>>;
 
-export type CharacterAppearance = { hat: HatStyle; hair: HairStyle; hairColor: HairColor; face: FaceChoice };
+/** Cosmetic silhouette controls. These never enter the gameplay stat modifier calculation. */
+export type CosmeticProportions = {
+  bust: number;
+  glutes: number;
+  hips: number;
+  jaw: number;
+};
+
+export const DEFAULT_COSMETIC_PROPORTIONS: Readonly<CosmeticProportions> = {
+  bust: 0.5, glutes: 0.5, hips: 0.5, jaw: 0.5,
+};
+
+export function isCosmeticProportions(value: unknown): value is CosmeticProportions {
+  if (!isRecord(value)) return false;
+  const keys = Object.keys(DEFAULT_COSMETIC_PROPORTIONS);
+  return Object.keys(value).length === keys.length
+    && keys.every((key) => typeof value[key] === "number"
+      && Number.isFinite(value[key]) && value[key] >= 0 && value[key] <= 1);
+}
+
+export type CharacterAppearance = { hat: HatStyle; hair: HairStyle; hairColor: HairColor; face: FaceChoice ; cosmetic?: CosmeticProportions };
 
 /** Saves from before hair (#376) read with this hair; saves from before faces (#411) with the default face. */
 const DEFAULT_LOOK = { hair: "parted", hairColor: "brown", face: {} } as const;
@@ -50,7 +70,7 @@ export function defaultAppearanceForClass(_classId: CharacterClassId): Character
   return { hat: "class", ...DEFAULT_LOOK };
 }
 /** Version 2 adds `appearance.face` (#411); version 1 saves still load, with the default face. */
-const SAVE_SCHEMA_VERSION = 2;
+const SAVE_SCHEMA_VERSION = 3;
 const SAVE_KEY_PREFIX = "mmorpg.preview-character.v1";
 
 export type SavedCharacter = {
@@ -120,10 +140,10 @@ export function saveCharacter(
   if (!isFaceChoice(appearance.face)) {
     throw new Error("Character face is invalid");
   }
-  const saved: SavedCharacter = {
+  if (appearance.cosmetic !== undefined && !isCosmeticProportions(appearance.cosmetic)) {\n    throw new Error("Character cosmetic proportions are invalid");\n  }\n  const saved: SavedCharacter = {
     schemaVersion: SAVE_SCHEMA_VERSION,
     characterId,
-    appearance: { ...appearance, face: { ...appearance.face } },
+    appearance: { ...appearance, face: { ...appearance.face }, ...(appearance.cosmetic ? { cosmetic: { ...appearance.cosmetic } } : {}) },
   };
   storage.setItem(storageKeyForCharacter(characterId), JSON.stringify(saved));
   return saved;
@@ -140,7 +160,7 @@ export function loadCharacter(storage: CharacterStorage, characterId: string): S
     throw new Error("Saved character is not valid JSON");
   }
 
-  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== SAVE_SCHEMA_VERSION)) {
+  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== SAVE_SCHEMA_VERSION)) {
     throw new Error("Unsupported saved character schema");
   }
   if (value.characterId !== characterId) {
