@@ -11,18 +11,24 @@ cargo test -p mmorpg-core --features physics-ab --test physics_ab -- --nocapture
 cargo run --release -p mmorpg-core --example physics_ab --features physics-ab      # manual timing
 ```
 
-## Experimental persistent projectile CCD (Physics Engine PRs #464 and #468)
+## Experimental persistent projectile CCD (merged engine scheduler, test-only)
 
-The opt-in `projectile_ccd_ab` example pins the **unmerged** CCD implementation and its
-simultaneous-impact scaling fix to `1db80f40c3244cd1b62d951ed8b54cfdb283a876` in the
-test-only dependency. Physics Engine #468 is stacked on #464. The earlier #464 commit missed
-independent equal-time impacts and repeatedly rescanned unrelated trajectories after a bounce;
-it is not a valid basis for the synchronized 1–32-body performance comparison. The repaired
-experiment still does not change production or the gameplay projectile path:
+The opt-in `projectile_ccd_ab` example pins merged Physics Engine commit
+`0d0a757e5122f2a25eccffcd6c7e55e8ef878507` in the **test-only** dependency. This includes
+chronological multi-impact fixes (#464/#468), spatially indexed moving sweeps and
+heap-ordered events (#472), near-margin remaining-travel repair (#473), and
+conservative non-closing pair pruning (#480). The prior experiment pinned
+`1db80f40c3244cd1b62d951ed8b54cfdb283a876`; its [owner-provided 1–32-bomb
+measurements](https://github.com/moenarch-games/mmorpg/pull/638#issuecomment-6642942809)
+are retained as an **older-engine baseline**. Rerun on the same host before
+claiming a performance improvement. No production or gameplay projectile path changes:
 
 ```sh
+git rev-parse HEAD
+rustc -Vv
+lscpu
+cargo test --release --locked -p mmorpg-core --features physics-ab --test thrown_weapons --test trick_shots
 cargo run --release --locked -p mmorpg-core --features physics-ab --example projectile_ccd_ab
-cargo test --release --locked -p mmorpg-core --test thrown_weapons --test trick_shots
 ```
 
 The probe launches MMORPG's real level-six Rogue bomb with the wall and boars from
