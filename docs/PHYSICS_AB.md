@@ -11,11 +11,14 @@ cargo test -p mmorpg-core --features physics-ab --test physics_ab -- --nocapture
 cargo run --release -p mmorpg-core --example physics_ab --features physics-ab      # manual timing
 ```
 
-## Experimental persistent projectile CCD (Physics Engine PR #464)
+## Experimental persistent projectile CCD (Physics Engine PRs #464 and #468)
 
-The opt-in `projectile_ccd_ab` example pins the **unmerged** CCD implementation to
-`d65be8f43539a0249830a32cd43bf1241458760f` in the test-only dependency. It
-does not change production or the gameplay projectile path:
+The opt-in `projectile_ccd_ab` example pins the **unmerged** CCD implementation and its
+simultaneous-impact scaling fix to `1db80f40c3244cd1b62d951ed8b54cfdb283a876` in the
+test-only dependency. Physics Engine #468 is stacked on #464. The earlier #464 commit missed
+independent equal-time impacts and repeatedly rescanned unrelated trajectories after a bounce;
+it is not a valid basis for the synchronized 1–32-body performance comparison. The repaired
+experiment still does not change production or the gameplay projectile path:
 
 ```sh
 cargo run --release --locked -p mmorpg-core --features physics-ab --example projectile_ccd_ab

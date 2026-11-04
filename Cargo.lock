@@ -3378,7 +3378,7 @@ dependencies = [
 [[package]]
 name = "physics-engine"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/physics-engine?rev=d65be8f43539a0249830a32cd43bf1241458760f#d65be8f43539a0249830a32cd43bf1241458760f"
+source = "git+https://github.com/moritzbrantner/physics-engine?rev=1db80f40c3244cd1b62d951ed8b54cfdb283a876#1db80f40c3244cd1b62d951ed8b54cfdb283a876"
 dependencies = [
  "bvh-kernels",
  "geometry-kernels",
