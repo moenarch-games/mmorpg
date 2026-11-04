@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { PREVIEW_CHARACTER } from "../src/character-selection.ts";
 import {
   DEFAULT_CHARACTER_APPEARANCE,
+  DEFAULT_COSMETIC_PROPORTIONS,
+  isCosmeticProportions,
   HAT_OPTIONS,
   equipmentForAppearance,
   loadCharacter,
@@ -51,11 +53,28 @@ describe("character customization prototype", () => {
     const storage = memoryStorage();
     const saved = saveCharacter(storage, PREVIEW_CHARACTER.id, { hat: "ranger-cap", hair: "buzzed", hairColor: "blond", face: { face: "face.broad", nose: "nose.long" } });
     expect(saved).toEqual({
-      schemaVersion: 2,
+      schemaVersion: 3,
       characterId: PREVIEW_CHARACTER.id,
       appearance: { hat: "ranger-cap", hair: "buzzed", hairColor: "blond", face: { face: "face.broad", nose: "nose.long" } },
     });
     expect(loadCharacter(storage, PREVIEW_CHARACTER.id)).toEqual(saved);
+  });
+
+  test("round-trips cosmetic proportions without changing older appearances", () => {
+    const storage = memoryStorage();
+    const appearance = {
+      ...DEFAULT_CHARACTER_APPEARANCE,
+      cosmetic: { bust: 1, glutes: 0.9, hips: 0.75, jaw: 0.2 },
+    };
+    expect(saveCharacter(storage, PREVIEW_CHARACTER.id, appearance).appearance.cosmetic).toEqual(appearance.cosmetic);
+    expect(loadCharacter(storage, PREVIEW_CHARACTER.id)?.appearance.cosmetic).toEqual(appearance.cosmetic);
+    expect(isCosmeticProportions(DEFAULT_COSMETIC_PROPORTIONS)).toBe(true);
+    for (const invalid of [NaN, Infinity, -0.01, 1.01]) {
+      expect(isCosmeticProportions({ ...appearance.cosmetic, bust: invalid })).toBe(false);
+      expect(() => saveCharacter(storage, PREVIEW_CHARACTER.id, {
+        ...appearance, cosmetic: { ...appearance.cosmetic, bust: invalid },
+      })).toThrow("cosmetic proportions are invalid");
+    }
   });
 
   test("returns null when no saved character exists", () => {
@@ -102,7 +121,7 @@ describe("character customization prototype", () => {
     expect(loadCharacter(storage, PREVIEW_CHARACTER.id)?.appearance.face).toEqual({});
 
     storage.setItem(key, JSON.stringify({
-      schemaVersion: 2,
+      schemaVersion: 3,
       characterId: PREVIEW_CHARACTER.id,
       appearance: { hat: "none", hair: "long", hairColor: "black", face: { eyes: 3 } },
     }));
