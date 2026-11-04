@@ -12,6 +12,11 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+#[cfg(feature = "physics-ab")]
+use std::{
+    collections::BTreeSet,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use rapier3d::control::{CharacterLength, KinematicCharacterController};
 use rapier3d::parry::query::{
@@ -88,6 +93,8 @@ pub(super) struct World {
     controller: KinematicCharacterController,
     bodies: BTreeMap<BodyId, RigidBody>,
     handles: BTreeMap<BodyId, Handles>,
+    #[cfg(feature = "physics-ab")]
+    controller_collisions: AtomicU64,
 }
 
 impl fmt::Debug for World {
@@ -106,6 +113,11 @@ impl Clone for World {
         world.bodies = self.bodies.clone();
         world.ground = self.ground.clone();
         world.rebuild();
+        #[cfg(feature = "physics-ab")]
+        world.controller_collisions.store(
+            self.controller_collisions.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
         world
     }
 }
@@ -377,6 +389,55 @@ impl World {
             },
             bodies: BTreeMap::new(),
             handles: BTreeMap::new(),
+            #[cfg(feature = "physics-ab")]
+            controller_collisions: AtomicU64::new(0),
+        }
+    }
+
+    /// Diagnostic narrow-phase pairs after the latest authoritative tick. The game also
+    /// uses controller sweeps, which need not create a persistent Rapier contact pair.
+    #[cfg(feature = "physics-ab")]
+    pub fn contact_profile(&self) -> super::RapierContactProfile {
+        let mut candidates = BTreeSet::new();
+        let mut active = BTreeSet::new();
+        for contact in self.world.contact_pairs() {
+            let body_id = |handle| {
+                self.world
+                    .colliders
+                    .get(handle)
+                    .and_then(|collider| u64::try_from(collider.user_data).ok())
+                    .map(BodyId)
+            };
+            let (Some(a), Some(b)) = (body_id(contact.collider1), body_id(contact.collider2))
+            else {
+                continue;
+            };
+            if a == b {
+                continue;
+            }
+            let pair = (a.min(b), a.max(b));
+            candidates.insert(pair);
+            if contact.has_any_active_contact() {
+                active.insert(pair);
+            }
+        }
+        let mut degrees = BTreeMap::<BodyId, usize>::new();
+        let mut active_degrees = BTreeMap::<BodyId, usize>::new();
+        for &(a, b) in &candidates {
+            *degrees.entry(a).or_default() += 1;
+            *degrees.entry(b).or_default() += 1;
+        }
+        for &(a, b) in &active {
+            *active_degrees.entry(a).or_default() += 1;
+            *active_degrees.entry(b).or_default() += 1;
+        }
+        super::RapierContactProfile {
+            pair_candidates: candidates.len(),
+            active_pairs: active.len(),
+            incident_bodies: degrees.len(),
+            max_body_degree: degrees.values().copied().max().unwrap_or(0),
+            max_active_degree: active_degrees.values().copied().max().unwrap_or(0),
+            controller_collisions: self.controller_collisions.load(Ordering::Relaxed),
         }
     }
 
@@ -864,14 +925,24 @@ impl World {
                 self.open_floor(body, body.position),
             ),
         );
+        #[cfg(feature = "physics-ab")]
+        let mut collisions = 0_u64;
         let movement = self.controller.move_shape(
             self.world.integration_parameters.dt,
             &queries,
             &capsule(body.half_extents),
             &Pose::from_translation(lifted(body.position)),
             metres(desired),
-            |_| {},
+            |_| {
+                #[cfg(feature = "physics-ab")]
+                {
+                    collisions += 1;
+                }
+            },
         );
+        #[cfg(feature = "physics-ab")]
+        self.controller_collisions
+            .fetch_add(collisions, Ordering::Relaxed);
         Ok((units(movement.translation), movement.grounded))
     }
 
