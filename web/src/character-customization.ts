@@ -58,7 +58,7 @@ export function isCosmeticProportions(value: unknown): value is CosmeticProporti
       && Number.isFinite(value[key]) && value[key] >= 0 && value[key] <= 1);
 }
 
-export type CharacterAppearance = { hat: HatStyle; hair: HairStyle; hairColor: HairColor; face: FaceChoice ; cosmetic?: CosmeticProportions };
+export type CharacterAppearance = { hat: HatStyle; hair: HairStyle; hairColor: HairColor; face: FaceChoice; cosmetic?: CosmeticProportions };
 
 /** Saves from before hair (#376) read with this hair; saves from before faces (#411) with the default face. */
 const DEFAULT_LOOK = { hair: "parted", hairColor: "brown", face: {} } as const;
@@ -69,7 +69,7 @@ export const DEFAULT_CHARACTER_APPEARANCE: CharacterAppearance = { hat: "wayfare
 export function defaultAppearanceForClass(_classId: CharacterClassId): CharacterAppearance {
   return { hat: "class", ...DEFAULT_LOOK };
 }
-/** Version 2 adds `appearance.face` (#411); version 1 saves still load, with the default face. */
+/** Version 3 supports optional cosmetic proportions; versions 1 and 2 still load. */
 const SAVE_SCHEMA_VERSION = 3;
 const SAVE_KEY_PREFIX = "mmorpg.preview-character.v1";
 
