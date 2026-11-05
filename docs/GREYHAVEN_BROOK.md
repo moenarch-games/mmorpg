@@ -119,3 +119,29 @@ all seven ground textures loaded and no page errors. The same Blender file now i
 instances of the actual game nature assets using shared WASM placement matrices. The
 preview terrain materials remain simpler than the in-game PBR terrain. Full suites and native
 GPU acceptance were not run; shared policy source revision is unchanged.
+
+## Woodland composition and daylight pass
+
+Three patchy groves now frame Stillwater's eastern shore, the Hollow's distant backdrop and
+the southwest ridge. They append to core's existing jittered trunk generator with independent
+fixed seeds, preserving earlier collider identities. Terrain height, road clearance, building
+clearance and wet banks reject unsuitable placements; the highest spurs remain bare. This
+adds 167 physical trunks (1,831 total). The existing bounded-content tree-count expectation
+was updated to include the groves. Its procedural-footing assertion now distinguishes
+conservative authored mesh bounds, bridge/culvert parts and explicitly placed cottage
+plinths from boxes that derive their footing from terrain.
+
+Shared nature presentation now mixes more conifers with broadleaf trees and varies canopy
+height without widening the trunk footprint. Existing nature assets and their LOD selection
+remain in use. The live Blender context contains 679 nearby nature instances at the exact
+shared game matrices. Ground colours are muted olive/earth tones. Both clients use a
+half-stop darker noon and reduced sky fill, retaining the existing day/night clock and cave
+adaptation. The browser's fallback sky lighting receives the same adjustment.
+
+This revision passed 16 focused basin/brook gameplay tests, the bounded deterministic
+content test, native compilation, the browser/WASM production build and four existing
+browser presentation tests. Chromium walked the bridge and captured
+`artifacts/greyhaven-brook/woodland-lighting.png` with all ground layers loaded and no page
+errors. The broad view remains hazier than the supplied reference; further atmosphere,
+architecture and ground modelling are ongoing. No full suite or native GPU acceptance ran.
+Policy source revision remains `625cb04ca568aebc8d45c90033e107a05e9bd2a0`.

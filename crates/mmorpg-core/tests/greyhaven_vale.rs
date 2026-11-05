@@ -53,8 +53,8 @@ fn content_is_a_bounded_deterministic_revision() {
         .iter()
         .filter(|collider| ids::TREES.contains(&collider.id))
         .count();
-    // The wetlands (#426) add their lone trees.
-    assert!((800..=1_800).contains(&trees), "{trees} trees");
+    // The wetlands' lone trees and Greyhaven's three rim groves share this content.
+    assert!((800..=2_000).contains(&trees), "{trees} trees");
     for collider in definition.colliders() {
         let (min, max) = footprint(collider);
         let within = |point: [i32; 2]| {
@@ -86,12 +86,25 @@ fn content_is_a_bounded_deterministic_revision() {
             // The Sunken Shrine (#274) stands on its flattened floor 9 m down.
             // The market square's stacked crate and stall awnings and the dock's deck (#577)
             // stand above it.
-            if !ids::INN_PARTS.contains(&collider.id)
+            // Authored mesh bounds are conservative placement metadata. Their real triangles
+            // may form roofs, overhangs and walls; only standing boxes obey this footing rule.
+            let authored_mesh = definition
+                .static_meshes()
+                .iter()
+                .any(|mesh| mesh.id == collider.id);
+            if !authored_mesh
+                && !ids::INN_PARTS.contains(&collider.id)
                 && !ids::MARSHAL_HOUSE_PARTS.contains(&collider.id)
                 && collider.id != ids::CAVE_ROOF
                 && !(550..=596).contains(&collider.id)
                 && !ids::MARKET.contains(&collider.id)
                 && collider.id != greyhaven_vale::dressing::dock().id
+                // Bridge rails and culvert headers stand above a carved stream bed.
+                && !(greyhaven_vale::brook::BRIDGE..=greyhaven_vale::brook::BRIDGE + 7)
+                    .contains(&collider.id)
+                // Layout cottages have explicit authored foundation depths (their prefab
+                // plinth is sunk below the grass), rather than procedural terrain footing.
+                && !(60_000..65_000).contains(&collider.id)
             {
                 let ground = definition.terrain().map_or(0, |terrain| {
                     [min, [max[0], min[1]], max, [min[0], max[1]]]

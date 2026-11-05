@@ -27,7 +27,7 @@ const DAY_CYCLE = new DayCycle({ noonElevation: THREE.MathUtils.degToRad(60), mo
 const MOON_LUX = 2;
 const MOON_COLOR: Vec3 = [0.75, 0.85, 1];
 /** EV100 by sun elevation in degrees (`EXPOSURE`). */
-const EXPOSURE: readonly (readonly [number, number])[] = [[-12, 2], [-4, 6], [2, 11], [15, 13.5], [60, 14.5]];
+const EXPOSURE: readonly (readonly [number, number])[] = [[-12, 2], [-4, 6], [2, 11], [15, 13.8], [60, 15]];
 /** Emissive presentation colours glow at this luminance, cd/m² (`EMISSIVE_NITS`). */
 export const EMISSIVE_NITS = 80;
 /**
@@ -200,7 +200,7 @@ export class GreyhavenLighting {
     lighting.ev100 = exposure + (Math.min(exposure, 7.5) - exposure) * interior;
     const shadows = elevation > SHADOWLESS_BELOW ? SUN_SHADOWS : null;
     if (this.drawsSky) {
-      lighting.sky = { ...DEFAULT_SKY, environmentIntensity: 10 ** (-interior) };
+      lighting.sky = { ...DEFAULT_SKY, environmentIntensity: (0.75 + 0.25 * interior) * 10 ** (-interior) };
       lighting.clearColor = [0, 0, 0];
       lighting.clearAlpha = 1;
       lighting.sun = { direction: negate(sun), color: [1, 1, 1], illuminance: RAW_SUNLIGHT * transmission, shadows };
@@ -223,7 +223,7 @@ export class GreyhavenLighting {
       const twilight = Math.max(0, 1 - Math.abs(elevation) / 8);
       lighting.ambient = {
         color: SKY_COLOR.map((channel, index) => channel + (TWILIGHT_COLOR[index]! - channel) * twilight) as unknown as Vec3,
-        brightness: interpolate(SKY_AMBIENT, elevation) * transmission * 10 ** (-interior),
+        brightness: interpolate(SKY_AMBIENT, elevation) * transmission * (0.75 + 0.25 * interior) * 10 ** (-interior),
       };
     }
     lighting.fog = fog === null ? null : {

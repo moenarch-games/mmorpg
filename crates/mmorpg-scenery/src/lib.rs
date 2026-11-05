@@ -687,8 +687,8 @@ fn area_bounds(id: AreaId) -> XzBounds {
 
 fn tree_variant(hash: u64) -> TreeVariant {
     match hash % 10 {
-        0..=4 => TreeVariant::Oak,
-        5..=7 => TreeVariant::Pine,
+        0..=3 => TreeVariant::Oak,
+        4..=8 => TreeVariant::Pine,
         _ => TreeVariant::Birch,
     }
 }

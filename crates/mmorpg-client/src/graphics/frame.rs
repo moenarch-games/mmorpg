@@ -39,13 +39,14 @@ pub const MOON_LUX: f32 = 2.0;
 /// Cool, slightly blue moonlight.
 pub const MOON_COLOR: Vec3 = Vec3::new(0.75, 0.85, 1.0);
 /// EV100 by sun elevation in degrees, interpolated linearly: render-engine's `sky_day_cycle`
-/// oracle views at noon, 15° and 2°, and a brighter-than-physical night for play.
+/// oracle curve with a half-stop darker noon for Greyhaven's earth/stone palette, and a
+/// brighter-than-physical night for play.
 pub const EXPOSURE: [(f32, f32); 5] = [
     (-12.0, 2.0),
     (-4.0, 6.0),
     (2.0, 11.0),
-    (15.0, 13.5),
-    (60.0, 14.5),
+    (15.0, 13.8),
+    (60.0, 15.0),
 ];
 /// Emissive presentation colours are scaled to this luminance in cd/m²: flames, lamp glass and
 /// lit windows glow in their own colour at night; by day the sun outshines them.
@@ -362,7 +363,7 @@ pub fn scene(lighting: &Lighting, view: CameraView) -> Scene {
         }),
         // The sky's environment light is the ambient light.
         sky: Some(Sky {
-            environment_intensity: Some(10_f32.powf(-interior)),
+            environment_intensity: Some((0.75 + 0.25 * interior) * 10_f32.powf(-interior)),
             ..Sky::default()
         }),
         point_lights: lighting
@@ -899,10 +900,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn exposure_follows_the_oracle_views_and_brightens_night() {
-        assert_eq!(ev100(60.0), 14.5);
-        assert_eq!(ev100(90.0), 14.5);
-        assert_eq!(ev100(15.0), 13.5);
+    fn exposure_keeps_daylight_contrast_and_brightens_night() {
+        assert_eq!(ev100(60.0), 15.0);
+        assert_eq!(ev100(90.0), 15.0);
+        assert_eq!(ev100(15.0), 13.8);
         assert_eq!(ev100(2.0), 11.0);
         assert_eq!(ev100(-40.0), 2.0);
         assert!(ev100(-8.0) > 2.0 && ev100(-8.0) < 6.0);

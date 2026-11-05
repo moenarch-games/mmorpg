@@ -321,7 +321,7 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
         };
         let path = smoothstep(0.35, 0.75, hollow[i] + 0.5 * breakup);
         for (layer, weight, color) in [
-            (Layer::Forest, forest, mix(0x58803c, 0x6e5a3c, 0.22)),
+            (Layer::Forest, forest, mix(0x4d653b, 0x6e5a3c, 0.28)),
             (Layer::Gravel, gravel, 0x8f8a7c),
             (Layer::Mud, mud, 0x5e5038),
             (Layer::Sand, sand, 0xcdbb88),

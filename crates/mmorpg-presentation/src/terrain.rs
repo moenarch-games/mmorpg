@@ -29,16 +29,16 @@ pub fn surface(g: &TerrainGrid, x: f64, z: f64) -> f64 {
 }
 pub fn biome_color(b: Biome) -> u32 {
     match b.name() {
-        "meadow" => 0x6a9a42,
-        "hub" => 0x739a48,
-        "woods" => 0x58803c,
+        "meadow" => 0x667d46,
+        "hub" => 0x71834e,
+        "woods" => 0x4d653b,
         "hollow" => 0x94805f,
         "farmland" => 0x7a5836,
         "road" => 0xa4865c,
         "plaza" => 0xa8987a,
         "shore" => 0xcdbb88,
         "lake bed" => 0x5e5a44,
-        "foothills" => 0x5d8a44,
+        "foothills" => 0x61774b,
         "highland" => 0x6f7d52,
         "rock" => 0x8b877e,
         "snow" => 0xeef1f5,
@@ -111,7 +111,7 @@ pub(crate) fn tone(b: Biome, x: f64, z: f64) -> u32 {
     } else if v < 0.62 {
         base
     } else {
-        mix(base, 0xc2cf6e, 0.2)
+        mix(base, 0xa4a46b, 0.2)
     }
 }
 

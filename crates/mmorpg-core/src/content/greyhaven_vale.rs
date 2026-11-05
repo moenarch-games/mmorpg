@@ -523,6 +523,14 @@ const OUTER_FORESTS: [([i32; 2], [i32; 2], u64, u64); 7] = [
     ([25_600, -20_400], [82, 90], 0x4d41_5253_4854_5245, 3),
 ];
 
+/// Small, patchy groves frame Stillwater's eastern shore, the Hollow's distant backdrop
+/// and the southwest ridge. Appended after existing forests to retain their collider IDs.
+const RIM_GROVES: [([i32; 2], [i32; 2], u64, u64); 3] = [
+    ([8200, -10500], [9, 19], 0x0051_3f01, 72),
+    ([-11000, -15500], [14, 9], 0x0051_3f02, 76),
+    ([-11000, 5000], [14, 13], 0x0051_3f03, 70),
+];
+
 /// SplitMix64 finaliser: a fixed integer hash, identical on every platform.
 const fn splitmix64(value: u64) -> u64 {
     let mut z = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
@@ -578,7 +586,8 @@ fn trees() -> Vec<StaticCollider> {
             next_id += 1;
         }
     }
-    for (origin, cells, seed, percent) in OUTER_FORESTS {
+    for (origin, cells, seed, percent) in OUTER_FORESTS.into_iter().chain(RIM_GROVES) {
+        let rim_grove = RIM_GROVES.iter().any(|grove| grove.2 == seed);
         for row in 0..cells[1] {
             for column in 0..cells[0] {
                 let cell = (u64::from(row.unsigned_abs()) << 32) | u64::from(column.unsigned_abs());
@@ -591,6 +600,14 @@ fn trees() -> Vec<StaticCollider> {
                     origin[0] + column * woods::CELL + woods::EDGE_MARGIN + jitter(8) % (span + 1);
                 let z =
                     origin[1] + row * woods::CELL + woods::EDGE_MARGIN + jitter(16) % (span + 1);
+                // Gaps in the canopy are broad patches, not one evenly occupied lattice.
+                // Leave the highest spurs bare so the ridges remain visible above the trees.
+                if rim_grove
+                    && (value_noise_q10(i64::from(x), i64::from(z), 1800, seed) < 440
+                        || !(600..2300).contains(&TERRAIN.height_at(x, z)))
+                {
+                    continue;
+                }
                 // Hamlets, fields and the tower's yard, with their aprons, stay clear (#424).
                 if farmland::level(x, z)
                     || !highlands::clear_for_tree(x, z)

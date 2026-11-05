@@ -112,13 +112,16 @@ pub(crate) fn placement(s: &Scenery, g: &TerrainGrid, p: &Prop) -> Option<Placem
                 TreeVariant::Pine => (CONIFER, 0.86 * grow),
                 TreeVariant::Oak | TreeVariant::Birch => (BROADLEAF, 0.8 * grow),
             };
+            // Mature trees rise above young growth while their trunk footprint stays put.
+            // The bundle's leafy crown is foliage; the existing core trunk owns collision.
+            let height = size * (1.15 + seed * 0.45);
             let at = compose(&[
                 translate(x, crate::terrain::surface(g, x, z), z),
                 ry(yaw(p)),
-                scale(size, size, size),
+                scale(size, height, size),
             ]);
             let cull = if background { Cull::Always } else { Cull::Far };
-            (entry, at, size, cull)
+            (entry, at, height, cull)
         }
         PropKind::Bush => {
             // A stable pick of the three, scaled uniformly to the procedural bush's volume (its
