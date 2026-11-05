@@ -69,8 +69,9 @@ The `.blend` is disposable authoring state, consistent with the existing
 [layout editor](WORLD_LAYOUT_EDITOR.md); committed JSON is the runtime source.
 Run `cargo test -p mmorpg-core --test authored_collision --locked` after changes.
 A detailed visual cave asset can be authored independently through asset-tooling;
-the current walls/roof keep their existing presentation and the shelf has a shared
-coarse visual fallback in both clients. Visual terrain tiles/LOD never load,
+the [beta environment pass](REDBRAND_ENVIRONMENT.md) maps the existing PBR rock
+material onto the authored wall profiles and shelf in both clients; roof cutaway
+presentation remains independent. Visual terrain tiles/LOD never load,
 unload, replace or choose collision geometry.
 
 ## Extension and streaming
