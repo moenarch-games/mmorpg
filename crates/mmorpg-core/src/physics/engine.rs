@@ -214,6 +214,11 @@ fn engine_body(body: &RigidBody) -> Body {
 
 impl World {
     pub fn add_body(&mut self, body: RigidBody) -> Result<(), PhysicsError> {
+        if body.mesh.is_some() {
+            return Err(error(
+                "authored triangle meshes require Rapier; physics-ab parity is not implemented",
+            ));
+        }
         if self.bodies.contains_key(&body.id) {
             return Err(error(format!("physics body {} already exists", body.id.0)));
         }

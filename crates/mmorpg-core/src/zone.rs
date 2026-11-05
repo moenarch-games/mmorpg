@@ -335,6 +335,16 @@ impl ZoneSimulation {
         let mut world = World::new(Vec3i::new(gravity[0], gravity[1], gravity[2]));
         let spawn = definition.spawn_grid().feet(0).unwrap_or([0; 3]);
         for collider in definition.colliders() {
+            if let Some(mesh) = definition
+                .static_meshes()
+                .iter()
+                .find(|mesh| mesh.id == collider.id)
+            {
+                world
+                    .add_body(RigidBody::static_mesh(mesh).map_err(physics_error)?)
+                    .map_err(physics_error)?;
+                continue;
+            }
             // The flat ground the spawn grid stands on is a floor half-space at y = 0 (#271).
             if is_ground(collider, spawn) {
                 let id = crate::physics::BodyId(u64::from(collider.id));

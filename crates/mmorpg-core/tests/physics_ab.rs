@@ -158,10 +158,10 @@ fn boxes(zone: &ZoneSimulation) -> Vec<([f32; 3], [f32; 3])> {
         .map(|collider| (exact(collider.position), exact(collider.half_extents)))
         .collect();
     let doors = zone.content().doors().iter().map(|door| {
-        *zone
-            .physics()
+        zone.physics()
             .body(BodyId(u64::from(door.body)))
             .expect("door leaf body")
+            .clone()
     });
     for body in doors.chain(zone.prop_bodies()) {
         let (centre, half) = (body.position(), body.half_extents());

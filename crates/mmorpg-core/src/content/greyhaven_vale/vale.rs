@@ -32,7 +32,7 @@ fn colliders() -> Vec<StaticCollider> {
         .collect();
     colliders.extend(inn::colliders(*ids::INN_PARTS.start()));
     colliders.extend(marshal_house::colliders(*ids::MARSHAL_HOUSE_PARTS.start()));
-    colliders.extend(cave::GREYFANG.colliders(*ids::CAVE_WALLS.start()));
+
     colliders.push(cave::threshold(ids::CAVE_THRESHOLD));
     colliders
 }

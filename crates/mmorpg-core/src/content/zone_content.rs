@@ -1667,6 +1667,24 @@ impl ZoneContent {
             hash.i32s(&collider.position);
             hash.i32s(&collider.half_extents);
         }
+        if !definition.static_meshes().is_empty() {
+            hash.bytes(b"static-meshes");
+            hash.len(definition.static_meshes().len());
+            for mesh in definition.static_meshes() {
+                hash.u32(mesh.id);
+                hash.i32s(&mesh.position);
+                hash.len(mesh.vertices.len());
+                for vertex in &mesh.vertices {
+                    hash.i32s(vertex);
+                }
+                hash.len(mesh.triangles.len());
+                for triangle in &mesh.triangles {
+                    for index in triangle {
+                        hash.u32(*index);
+                    }
+                }
+            }
+        }
         if let Some(terrain) = definition.terrain() {
             hash.bytes(b"terrain");
             hash.i32s(&terrain.origin);

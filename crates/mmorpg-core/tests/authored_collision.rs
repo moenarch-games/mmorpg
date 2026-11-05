@@ -1,0 +1,152 @@
+//! Redbrand's public cave on production Rapier: terrain seam, solid shell and stacked floors.
+use mmorpg_core::{ZoneCommand, ZoneContent, ZoneId, ZoneSimulation, greyhaven_vale};
+use std::sync::Arc;
+
+struct Player {
+    zone: ZoneSimulation,
+    sequence: u32,
+}
+impl Player {
+    fn at(feet: [i32; 3]) -> Self {
+        // The real playable definition, without enemies interrupting the traversal demonstration.
+        let content = Arc::new(ZoneContent::from_definition(
+            greyhaven_vale::greyhaven_vale_definition(),
+        ));
+        let mut zone = ZoneSimulation::with_content(ZoneId::new(1), content.clone()).unwrap();
+        zone.add_player(1).unwrap();
+        let mut state = zone.snapshot().unwrap();
+        state.players[0].position =
+            mmorpg_core::physics::from_units([feet[0], feet[1] + 90, feet[2]]);
+        let zone = ZoneSimulation::from_snapshot(state, content).unwrap();
+        let mut player = Self { zone, sequence: 0 };
+        player.ticks(10);
+        player
+    }
+    fn command(&mut self, command: ZoneCommand) {
+        self.sequence += 1;
+        self.zone.apply_command(1, self.sequence, command).unwrap();
+    }
+    fn ticks(&mut self, count: usize) {
+        for _ in 0..count {
+            self.zone.advance_tick().unwrap();
+        }
+    }
+    fn walk(&mut self, facing: u16, ticks: usize) {
+        self.command(ZoneCommand::Move {
+            forward: 1,
+            strafe: 0,
+            facing,
+        });
+        self.ticks(ticks);
+        self.command(ZoneCommand::Move {
+            forward: 0,
+            strafe: 0,
+            facing,
+        });
+    }
+    fn feet(&self) -> [f32; 3] {
+        let [x, y, z] = self.zone.snapshot().unwrap().players[0].position;
+        [x, y - 90., z]
+    }
+}
+
+#[test]
+fn redbrand_entrance_walls_shelf_ceiling_and_recovery() {
+    let mut p = Player::at([5800, 1100, -12700]);
+    p.walk(32768, 100); // Through the existing mouth from the terrace.
+    assert!(p.feet()[2] < -13500., "enter cave: {:?}", p.feet());
+    assert!((p.feet()[1] - 1100.).abs() < 1., "floor: {:?}", p.feet());
+    p.walk(49152, 180); // West wall is solid, not its hollow bounds.
+    assert!(
+        (4829. ..4832.).contains(&p.feet()[0]),
+        "wall: {:?}",
+        p.feet()
+    );
+    p.walk(32768, 60);
+    assert!(p.feet()[2] >= -14371., "north wall: {:?}", p.feet());
+    // Approach the slope from the west, where it starts flush with the floor.
+    p.walk(0, 7);
+    p.walk(16384, 125);
+    assert!(p.feet()[0] > 5800., "reach shelf: {:?}", p.feet());
+    assert!(
+        (p.feet()[1] - 1320.).abs() < 1.,
+        "upper elevation: {:?}",
+        p.feet()
+    );
+    p.command(ZoneCommand::Jump);
+    let mut highest = p.feet()[1];
+    for _ in 0..60 {
+        p.ticks(1);
+        highest = highest.max(p.feet()[1]);
+    }
+    assert!(
+        highest > 1330. && highest <= 1371.,
+        "roof limits jump: {highest}"
+    );
+    assert!((p.feet()[1] - 1320.).abs() < 1.);
+    let state = p.zone.snapshot().unwrap();
+    let mut restored = ZoneSimulation::from_snapshot(state, p.zone.content().clone()).unwrap();
+    for _ in 0..30 {
+        p.zone.advance_tick().unwrap();
+        restored.advance_tick().unwrap();
+    }
+    assert_eq!(p.zone.snapshot().unwrap(), restored.snapshot().unwrap());
+
+    let mut lower = Player::at([6200, 1100, -14000]);
+    lower.walk(32768, 30);
+    assert!(
+        lower.feet()[2] < -14250.,
+        "walk under shelf: {:?}",
+        lower.feet()
+    );
+    assert!((lower.feet()[1] - 1100.).abs() < 1.);
+    lower.command(ZoneCommand::Jump);
+    for _ in 0..45 {
+        lower.ticks(1);
+        assert!(lower.feet()[1] <= 1121., "shelf underside blocks jump");
+    }
+    // Return across the same terrain seam to the surface.
+    let mut exit = Player::at([5800, 1100, -13400]);
+    exit.walk(0, 100);
+    assert!(exit.feet()[2] > -12800. && (exit.feet()[1] - 1100.).abs() < 1.);
+}
+
+#[test]
+fn meshes_support_without_heightfield_and_change_content_identity() {
+    use mmorpg_core::physics::{BodyId, RigidBody, Vec3i, World};
+    let meshes = greyhaven_vale::cave::collision_meshes();
+    let mut world = World::new(Vec3i::new(0, -64, 0));
+    for mesh in &meshes {
+        world
+            .add_body(RigidBody::static_mesh(mesh).unwrap())
+            .unwrap();
+    }
+    let id = BodyId(1_000_000);
+    world
+        .add_body(RigidBody::dynamic(
+            id,
+            Vec3i::new(5800, 1200, -13800),
+            Vec3i::ZERO,
+            Vec3i::new(30, 90, 30),
+        ))
+        .unwrap();
+    for _ in 0..60 {
+        world.step().unwrap();
+    }
+    assert!((world.body(id).unwrap().exact_position()[1] - 1190.).abs() < 1.);
+    assert!(world.grounded(id));
+    let build = |m| {
+        ZoneContent::from_definition(
+            mmorpg_core::ZoneDefinition::default()
+                .with_static_meshes(m)
+                .unwrap(),
+        )
+    };
+    let a = build(meshes.clone());
+    let mut reordered = meshes.clone();
+    reordered.reverse();
+    assert_eq!(a.revision(), build(reordered).revision());
+    let mut changed = meshes;
+    changed[0].vertices[0][0] += 1;
+    assert_ne!(a.revision(), build(changed).revision());
+}

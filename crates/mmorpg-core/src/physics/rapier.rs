@@ -200,6 +200,24 @@ fn insert(world: &mut PhysicsWorld, body: &RigidBody) -> Handles {
             body: Some(handle),
             collider,
         }
+    } else if let Some(mesh) = &body.mesh {
+        let vertices = mesh
+            .vertices
+            .iter()
+            .map(|v| metres(super::from_units(*v)))
+            .collect();
+        let shape = SharedShape::trimesh(vertices, mesh.triangles.clone())
+            .expect("validated static triangle mesh");
+        let collider = world.colliders.insert(
+            ColliderBuilder::new(shape)
+                .translation(metres(super::from_units(mesh.position)))
+                .user_data(user_data)
+                .build(),
+        );
+        Handles {
+            body: None,
+            collider,
+        }
     } else if let Kind::Ramp(rises) = body.kind {
         let collider = world.colliders.insert(
             ColliderBuilder::new(wedge(body.half_extents, rises))
@@ -751,7 +769,7 @@ impl World {
         let mut moved_bodies = 0;
         let moving_count = ids.len();
         for id in ids {
-            let body = *self
+            let body = self
                 .bodies
                 .get(&id)
                 .ok_or_else(|| error("moving body vanished"))?;

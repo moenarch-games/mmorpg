@@ -2,7 +2,7 @@
 //!
 //! `mmorpg-core` decides movement intent, jumps, gravity and every gameplay outcome; this
 //! module asks the physics backend where that intent physically leads. Static content
-//! colliders, world limits, door leaves and NPCs are fixed boxes; the flat ground is a floor
+//! meshes and boxes, world limits, door leaves and NPCs are fixed; the flat ground is a floor
 //! half-space and the authored hills a heightfield. Players and creatures are upright capsules
 //! moved by a kinematic character controller, which resolves contact, sliding and support.
 //!
@@ -139,8 +139,8 @@ enum Kind {
     Rock(crate::RockShape),
 }
 
-/// One body: a fixed box, or a moving unit's capsule with its authoritative `f32` state.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// One body: fixed geometry, or a moving unit's capsule with authoritative `f32` state.
+#[derive(Clone, Debug, PartialEq)]
 pub struct RigidBody {
     id: BodyId,
     kind: Kind,
@@ -153,6 +153,7 @@ pub struct RigidBody {
     /// or ground settling; its vertical velocity is the zone's. Set by the zone every tick,
     /// never canonical.
     weightless: bool,
+    mesh: Option<std::sync::Arc<crate::StaticMesh>>,
 }
 
 fn round(value: [f32; 3]) -> Vec3i {
@@ -201,7 +202,22 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents,
             weightless: false,
+            mesh: None,
         }
+    }
+
+    /// A validated content mesh, retaining its conservative bounds for nearby queries.
+    pub fn static_mesh(mesh: &crate::StaticMesh) -> Result<Self, PhysicsError> {
+        let bounds = mesh.bounds().map_err(|e| error(e.to_string()))?;
+        let mut body = Self::fixed(
+            BodyId(u64::from(mesh.id)),
+            round(from_units(bounds.position)),
+            round(from_units(bounds.half_extents)),
+        );
+        // Bounds used by nearby queries must be centred on the actual bounds. The Rapier mesh
+        // stays relative to the authored origin instead (see insert).
+        body.mesh = Some(std::sync::Arc::new(mesh.clone()));
+        Ok(body)
     }
 
     /// A flat floor: everything below height `y` (units) is solid. Floors meet capsules
@@ -215,6 +231,7 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents: Vec3i::ZERO,
             weightless: false,
+            mesh: None,
         }
     }
 
@@ -234,6 +251,7 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents,
             weightless: false,
+            mesh: None,
         }
     }
 
@@ -252,6 +270,7 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents,
             weightless: false,
+            mesh: None,
         }
     }
 
@@ -265,6 +284,7 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents,
             weightless: false,
+            mesh: None,
         }
     }
 
@@ -294,6 +314,7 @@ impl RigidBody {
             velocity,
             half_extents,
             weightless: false,
+            mesh: None,
         }
     }
 
@@ -1042,7 +1063,7 @@ mod tests {
         for _ in 0..60 {
             world.step().unwrap();
         }
-        let body = *world.body(unit).unwrap();
+        let body = world.body(unit).unwrap().clone();
         assert_eq!(
             body.position(),
             Vec3i::new(0, 90, 0),
@@ -1505,7 +1526,7 @@ mod tests {
         for _ in 0..90 {
             world.step().unwrap();
         }
-        let body = *world.body(rider).unwrap();
+        let body = world.body(rider).unwrap();
         assert!(body.position().x > 150, "walked off: {:?}", body.position());
         assert_eq!(body.position().y, 90, "and fell to the floor");
     }

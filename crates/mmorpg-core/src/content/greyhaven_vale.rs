@@ -170,6 +170,9 @@ pub mod ids {
     /// The Greyfang cave's rock walls and roof slab (#159).
     pub const CAVE_WALLS: RangeInclusive<u32> = 540..=546;
     pub const CAVE_ROOF: u32 = 547;
+    /// Authored outer-cave floor slabs, slope and elevated shelf (#639).
+    pub const CAVE_FLOORS: RangeInclusive<u32> = 640..=643;
+    pub const CAVE_LEDGE: RangeInclusive<u32> = 644..=645;
     /// The sealed threshold to Redbrand Hollow's deeper cave, in the inner chamber (#160).
     pub const CAVE_THRESHOLD: u32 = 548;
     /// The Sunken Shrine (#274): its ruins and altar, its cave's rock walls and roof slabs,
@@ -1057,6 +1060,7 @@ pub fn watch_post() -> Vec<crate::StructurePiece> {
 pub fn base_definition() -> ZoneDefinition {
     ZoneDefinition::with_spawn_grid(GRAVITY, SPAWN_GRID, colliders())
         .and_then(|definition| definition.with_terrain(TERRAIN.clone()))
+        .and_then(|definition| definition.with_static_meshes(cave::collision_meshes()))
         .expect("built-in Greyhaven Vale content is valid")
 }
 
