@@ -1,6 +1,6 @@
 //! The physics-engine backend (physics-engine #330): a thin adapter over
-//! `physics_engine::approximate::World`, compiled only with the test/bench `physics-ab`
-//! feature. Rapier stays the production authority (Atlas 2.1.6).
+//! `physics_engine::approximate::World`, the default for supported zone content.
+//! Rapier is the fallback for unsupported collision geometry and the behavioural oracle.
 //!
 //! Units: the engine world is configured with `Config::length_unit = 100`, so it works in the
 //! game's centimetre units directly; nothing is converted. Its built-in character defaults
@@ -202,7 +202,8 @@ fn engine_body(body: &RigidBody) -> Body {
         }
         // A moving platform (#56) is a static box the adapter moves in place where the zone
         // moves it; the adapter carries its riders. The engine has no convex hulls: a rock
-        // (#49) is its box, as on Rapier in the A/B comparison (`super::rock_hulls`).
+        // (#49) is its box in A/B tests (`super::rock_hulls`). Production zone selection
+        // instead routes authored convex rocks to Rapier so no proxy is silently degraded.
         Kind::Fixed | Kind::Platform | Kind::Rock(_) => Body::keyed(
             key,
             Shape::Box(vector(exact(body.half_extents))),

@@ -1,10 +1,19 @@
 # Physics backend A/B (physics-engine #330)
 
-Rapier is the zone's physics authority (Atlas 2.1.6). This page covers a **test/bench-only**
-seam that runs the same zone simulation on physics-engine's `approximate::World`, so the two
-can be compared on MMORPG's real workloads. Nothing here changes production: the zone host,
-`mmorpg-wasm` and every default build compile only Rapier
-(`mmorpg-game-server/tests/dependency_boundary.rs` checks the manifests and lockfile).
+Physics Engine is the default zone backend in native and WASM builds for supported shapes;
+Rapier remains the whole-zone fallback when authored convex rock hulls are present, and the
+behaviour oracle (Atlas 2.1.i330). The `physics-ab` feature adds **test/bench-only**
+instrumentation for comparing both backends on the same zone simulation. Both backends are
+compiled normally; `mmorpg-core` alone selects them, and no host or client chooses a solver.
+`mmorpg-game-server/tests/dependency_boundary.rs` checks the dependency boundary.
+
+The selection happens before the zone is built, and recovery makes the same selection from
+the same content. In particular, Greyhaven currently remains on Rapier because its authored
+rocks are convex proxies, not axis-aligned boxes. The engine's A/B adapter represents them as
+boxes, so that approximation must **not** become production collision. `World::with_backend`
+allows explicit backend selection for standalone worlds; A/B fixtures select each backend
+through `physics::using_backend` for comparison. Future authored triangle meshes also need
+an explicit capability check before they can run on Physics Engine.
 
 ```sh
 cargo test -p mmorpg-core --features physics-ab --test physics_ab -- --nocapture   # merge-blocking in CI
@@ -34,7 +43,8 @@ instrumentation is involved. Each timed sample includes the driver's commands an
 `ZoneSimulation::advance_tick`, with setup and post-tick contact inspection excluded. Post-tick
 inspection can still affect later CPU cache state, and timing on a shared runner is diagnostic,
 not a regression gate. Per-run operation call counts are checked to be identical across rounds.
-The `physics-ab` Cargo feature is absent from production and WASM builds.
+The `physics-ab` Cargo feature is absent from normal production and WASM builds; the engine
+itself is compiled into both.
 
 The Physics Engine adapter uses `World::move_characters` for characters, not its persistent
 `World::step`, and rebuilds a different short-lived world for debris/props. The pinned engine
@@ -87,9 +97,9 @@ contacts and uses the neighbor-local operations often enough to offset maintenan
 - `physics::World` is an enum over the backends (`crates/mmorpg-core/src/physics.rs`). Rapier's
   world moved unchanged to `physics/rapier.rs`; `physics/engine.rs` is the thin engine adapter.
   No call site changed.
-- The non-default `physics-ab` feature compiles the engine arm. `physics::using_backend(backend, ..)`
-  selects the backend for every `World::new` on the current thread, so whole zones, and their
-  recoveries, are built on it. `World::with_backend` does the same for one world.
+- Both backend arms compile normally. The non-default `physics-ab` feature adds diagnostic
+  probes and enables `physics::using_backend(backend, ..)` to override the content selection
+  for an A/B run and its recoveries. `World::with_backend` selects an explicit standalone world.
 - With the feature, `World::spent_nanos` counts wall-clock time spent in the world's calls
   (debris and props included), and `mmorpg_core::physics_ab` exposes read-only probes that ask the
   gameplay queries themselves (line of sight, NPC sight, projectile contact, door occupancy,

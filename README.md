@@ -11,7 +11,7 @@ Decision history and stable cross-references: [MMORPG Decision Atlas](docs/decis
 | Concern | Authority |
 | --- | --- |
 | Zone-local gameplay rules and interest policy | `mmorpg-core` |
-| Collision and physical movement | Rapier (`rapier3d`, embedded in `mmorpg-core`, #271) |
+| Collision and physical movement | Physics Engine by default; Rapier fallback for unsupported content and oracle (`mmorpg-core`, Atlas 2.1.i330) |
 | Command/snapshot wire encoding | `mmorpg-protocol` |
 | Session ticks, reconnects, replay/recovery, WebTransport | `game-server` |
 | Zone placement, lease fencing, host routing, handoff metadata | `mmorpg-control-plane` |
@@ -50,7 +50,8 @@ client ────────▶│ game-server│   │ game-server│◀─�
                  mmorpg-core      mmorpg-core
                       |                |
                       v                v
-                Rapier (core)    Rapier (core)
+                Physics backend Physics backend
+                (per-zone)      (per-zone)
 ```
 
 A zone is a single-writer authoritative simulation. A host may own many zones and the fleet may contain many hosts. Cross-zone movement transfers authority at a deterministic boundary using a unique transfer ID plus source/destination lease epochs. Two hosts must never concurrently own the same zone epoch.
@@ -62,7 +63,7 @@ This deliberately avoids shared mutable physics across machines. Horizontal scal
 The workspace provides:
 
 - a stable-Rust workspace and reusable validation workflow;
-- a deterministic zone simulation with embedded Rapier physics (capsule units on `KinematicCharacterController`, #271);
+- a deterministic zone simulation with Physics Engine character/collision support by default, and embedded Rapier as an authored-geometry fallback and oracle (Greyhaven currently uses the fallback for convex rocks);
 - validated immutable collision content, gravity, and velocity-preserving physical recovery;
 - stale-command rejection and bounded per-zone player capacity;
 - canonical full-zone snapshots for replay/recovery that reference their immutable content by revision and fingerprint and fail closed on any content mismatch;
@@ -219,7 +220,7 @@ The PostgreSQL/S3 host now [suspends empty zones and cold-restores them on admis
 ## Pinned foundations
 
 - `rapier3d`: `=0.36.1` (crates.io, default features)
-- `physics-engine`: git rev `ae64adbdb2d1af74f89f5befe287a8029eeaa072`, optional in `mmorpg-core` behind the test/bench-only `physics-ab` feature ([physics backend A/B](docs/PHYSICS_AB.md)); never in production or WASM builds
+- `physics-engine`: pinned workspace dependency, the default physics backend in `mmorpg-core` for supported zones; Rapier remains the fallback for unsupported authored shapes and the behavioural oracle ([physics backends](docs/PHYSICS_AB.md)); `physics-ab` adds comparison diagnostics
 - `game-server`: `a3cdf8c8bf915167988de2ef5e1f9b39cf847d13`
 - `render-engine` (native client rendering and lighting, #529): `d5afb5deefa9b22e7f187ae6e6e2e8460aaa4b28`
 - `3d-lab` (`three-d-core`, `three-d-camera`, `three-d-projective`, `three-d-animation` and the browser `@moritzbrantner/three-d-renderer`, kept on one commit): `235774615f1367065093deb6988f5217bdf4d7e1`

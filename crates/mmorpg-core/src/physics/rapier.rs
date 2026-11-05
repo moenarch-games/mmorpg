@@ -1,4 +1,4 @@
-//! The Rapier backend: the production authority (#271, Atlas 2.1.6).
+//! The Rapier backend: fallback for unsupported content and the comparison oracle (#271).
 //!
 //! Players and creatures are kinematic position-based bodies with upright capsule colliders,
 //! moved by Rapier's `KinematicCharacterController`, which resolves contact, sliding and

@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::physics::{RigidBody, Vec3i, World};
+use crate::physics::{RigidBody, Vec3i, World, backend_for_content};
 
 use crate::creature::CreatureState;
 use crate::entity::{WORLD_LIMIT_BODY_BASE, body_id};
@@ -332,7 +332,10 @@ impl ZoneSimulation {
     ) -> Result<Self, ZoneError> {
         let definition = content.definition();
         let gravity = definition.gravity();
-        let mut world = World::new(Vec3i::new(gravity[0], gravity[1], gravity[2]));
+        let mut world = World::with_backend(
+            Vec3i::new(gravity[0], gravity[1], gravity[2]),
+            backend_for_content(&content),
+        );
         let spawn = definition.spawn_grid().feet(0).unwrap_or([0; 3]);
         for collider in definition.colliders() {
             // The flat ground the spawn grid stands on is a floor half-space at y = 0 (#271).

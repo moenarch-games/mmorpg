@@ -1,6 +1,6 @@
 //! Physics backend A/B (physics-engine #330): the real zone simulation on Rapier and on
 //! physics-engine, from the same initial state with the same inputs and tick count. Only
-//! built with `--features physics-ab`; Rapier stays the production authority (Atlas 2.1.6).
+//! built with `--features physics-ab`; Rapier stays the behavioural oracle.
 //!
 //! Every workload runs twice on each backend. Each run must keep shared invariants (finite
 //! state, no penetration of content boxes, door leaves, props, the floor or the terrain beyond
