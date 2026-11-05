@@ -1,0 +1,245 @@
+"""Run in Blender: authored Greyhaven keep, gates and timber defences.
+Uses Blender's glTF exporter; creates no renderer/runtime dependency.
+Coordinates passed to helpers are game metres (Y up, +Z south).
+"""
+import bpy, math, json, pathlib, hashlib
+import numpy as np
+from mathutils import Vector
+ROOT = pathlib.Path(__file__).resolve().parents[3]
+OUT = ROOT / 'web/public/authored/greyhaven-fort'
+OUT.mkdir(parents=True, exist_ok=True)
+COLLISION = ROOT / 'crates/mmorpg-core/content/collision/greyhaven-fort.json'
+COLLECTION = 'Greyhaven authored fortifications'
+old = bpy.data.collections.get(COLLECTION)
+if old:
+    for o in list(old.objects): bpy.data.objects.remove(o, do_unlink=True)
+    bpy.data.collections.remove(old)
+collection = bpy.data.collections.new(COLLECTION)
+bpy.context.scene.collection.children.link(collection)
+objects, collision = [], []
+rng = np.random.default_rng(513)
+N = 512
+v,u = np.mgrid[0:N,0:N] / N
+# Hand-authored tileable coursed stone: staggered blocks, rough mortar, fine grain.
+row = np.floor(v*8)
+xx = (u*4 + (row%2)*.5) % 1
+yy = (v*8) % 1
+edge = np.minimum(np.minimum(xx,1-xx)*2, np.minimum(yy,1-yy))
+noise = rng.random((N,N))
+stone_height = np.clip((edge-.026)*18,0,1) * (.82+.14*noise)
+block = np.sin(np.floor(u*4+(row%2)*.5)*17.3+row*39.7)*.055
+weather = .025*np.sin(u*math.tau*13)*np.sin(v*math.tau*7)
+base = .31 + block + .065*noise + weather
+stone = np.stack([base*1.02,base,base*.91],axis=2)
+stone *= (.45+.55*stone_height[:,:,None])
+wood_height = .5+.16*np.sin(u*math.tau*32+np.sin(v*math.tau*3)*1.7)+.08*noise
+wood_base = .14+.075*wood_height+.03*noise
+wood = np.stack([wood_base*1.45,wood_base*.97,wood_base*.58],axis=2)
+slate_row = np.floor(v*12)
+sx=(u*8+(slate_row%2)*.5)%1;sy=(v*12)%1
+slate_h=np.clip(np.minimum(np.minimum(sx,1-sx),sy)*30,0,1)*(.7+.2*noise)
+slate_b=.11+.045*noise+.025*np.sin(np.floor(u*8+(slate_row%2)*.5)*7+slate_row*13)
+slate=np.stack([slate_b*.72,slate_b*.87,slate_b],axis=2)*(.45+.55*slate_h[:,:,None])
+def texture(name, pixels, color=True):
+    rgba=np.ones((N,N,4),dtype=np.float32);rgba[:,:,:3]=pixels
+    image=bpy.data.images.new('Greyhaven '+name,width=N,height=N)
+    if not color: image.colorspace_settings.name='Non-Color'
+    image.pixels.foreach_set(rgba.ravel());image.filepath_raw=str(OUT/(name+'.png'));image.file_format='PNG';image.save()
+    return image
+
+def material(name, pixels, height, roughness, scale):
+    m=bpy.data.materials.new('Greyhaven '+name);m.use_nodes=True
+    p=next(n for n in m.node_tree.nodes if n.type=='BSDF_PRINCIPLED');p.inputs['Roughness'].default_value=roughness
+    im=m.node_tree.nodes.new('ShaderNodeTexImage');im.image=texture(name+'-color',pixels);m.node_tree.links.new(im.outputs['Color'],p.inputs['Base Color'])
+    dx=np.roll(height,-1,1)-np.roll(height,1,1);dy=np.roll(height,-1,0)-np.roll(height,1,0)
+    normal=np.stack([-dx*2,-dy*2,np.ones_like(dx)],axis=2);normal/=np.linalg.norm(normal,axis=2)[:,:,None];normal=normal*.5+.5
+    nm=m.node_tree.nodes.new('ShaderNodeTexImage');nm.image=texture(name+'-normal',normal,False)
+    normal_node=m.node_tree.nodes.new('ShaderNodeNormalMap');m.node_tree.links.new(nm.outputs['Color'],normal_node.inputs['Color']);m.node_tree.links.new(normal_node.outputs['Normal'],p.inputs['Normal'])
+    m['tile_metres']=scale
+    return m
+stone_mat=material('weathered-masonry',stone,stone_height,.88,3.2)
+wood_mat=material('weathered-oak',wood,wood_height,.82,2)
+slate_mat=material('slate',slate,slate_h,.76,3)
+def flat(name,color,metal=0):
+    m=bpy.data.materials.new('Greyhaven '+name);m.use_nodes=True;p=next(n for n in m.node_tree.nodes if n.type=='BSDF_PRINCIPLED');p.inputs['Base Color'].default_value=(*color,1);p.inputs['Metallic'].default_value=metal;p.inputs['Roughness'].default_value=.65;return m
+trim=flat('limestone dressings',(.43,.40,.33));iron=flat('forged iron',(.055,.064,.069),.65);dark=flat('deep window recess',(.018,.025,.026));blue=flat('indigo linen',(.035,.10,.17));gold=flat('ochre heraldry',(.60,.40,.13))
+
+def mesh(name,vs,fs,mat):
+    data=bpy.data.meshes.new(name);data.from_pydata([(x,-z,y) for x,y,z in vs],[],fs);data.materials.append(mat);data.update()
+    o=bpy.data.objects.new(name,data);collection.objects.link(o);objects.append(o)
+    uv=data.uv_layers.new(name='Metre projection');scale=mat.get('tile_metres',2)
+    for face in data.polygons:
+        axis=max(range(3),key=lambda a:abs(face.normal[a]));axes=[a for a in range(3) if a!=axis]
+        for loop in face.loop_indices:
+            co=data.vertices[data.loops[loop].vertex_index].co;uv.data[loop].uv=(co[axes[0]]/scale,co[axes[1]]/scale)
+    return o
+BOX_FACES=[(0,3,2,1),(4,5,6,7),(0,1,5,4),(1,2,6,5),(2,3,7,6),(3,0,4,7)]
+# Box order in game coordinates, outward faces after the right-handed basis change.
+def box(name,c,h,mat,bevel=0):
+    x,y,z=c;a,b,d=h
+    vs=[(x+sx*a,y+sy*b,z+sz*d) for sx,sy,sz in [(-1,-1,-1),(1,-1,-1),(1,-1,1),(-1,-1,1),(-1,1,-1),(1,1,-1),(1,1,1),(-1,1,1)]]
+    o=mesh(name,vs,BOX_FACES,mat)
+    if bevel:
+        mod=o.modifiers.new('Worn stone arris','BEVEL');mod.width=bevel;mod.segments=2
+    return o
+
+def beam(name,a,b,r,mat):
+    a,b=Vector(a),Vector(b);d=(b-a).normalized();ref=Vector((0,1,0)) if abs(d.y)<.9 else Vector((1,0,0));q=d.cross(ref).normalized()*r;t=d.cross(q).normalized()*r
+    vs=[tuple(p+q*s+t*v) for p in [a,b] for s,v in [(-1,-1),(1,-1),(1,1),(-1,1)]]
+    return mesh(name,vs,BOX_FACES,mat)
+
+def cylinder(name,c,r,h,mat,n=12,tip=None):
+    x,y,z=c;top=r if tip is None else tip
+    vs=[(x+radius*math.sin(i*math.tau/n),y+dy,z+radius*math.cos(i*math.tau/n)) for dy,radius in [(0,r),(h,top)] for i in range(n)]
+    fs=[tuple(range(n-1,-1,-1)),tuple(range(n,2*n))]+[(i,(i+1)%n,(i+1)%n+n,i+n) for i in range(n)]
+    return mesh(name,vs,fs,mat)
+
+def solid_record(id,vs,fs):
+    triangles=[]
+    centre=sum((Vector(v) for v in vs),Vector())/len(vs)
+    for face in fs:
+        f=list(face)
+        a,b,c=(Vector(vs[i]) for i in f[:3])
+        if (b-a).cross(c-a).dot((a+b+c)/3-centre)<0:f.reverse()
+        for i in range(1,len(f)-1):triangles.append([f[0],f[i],f[i+1]])
+    collision.append(dict(id=id,position=[0,0,0],vertices=[[round(v*100) for v in p] for p in vs],triangles=triangles))
+
+def roof(name,x,z,w,d,y,rise,mat,body=None):
+    vs=[(x-w,y,z-d),(x+w,y,z-d),(x+w,y,z+d),(x-w,y,z+d),(x-w,y+rise,z),(x+w,y+rise,z)]
+    fs=[(0,3,2,1),(0,1,5,4),(3,4,5,2),(0,4,3),(1,2,5)]
+    mesh(name,vs,fs,mat)
+    if body is not None:solid_record(body,vs,fs)
+
+# Keep: dressed stone hall, four engaged round turrets, slate roof and an inset portal.
+box('Keep ashlar hall',(-17,5,1),(9,5,6),stone_mat,.07)
+box('Keep battered plinth',(-17,.3,1),(9.05,.3,6.05),trim,.05)
+for y in [3.4,7.0,9.85]: box('Keep string course',(-17,y,1),(9.035,.105,6.035),trim,.025)
+roof('Keep slate hall roof',-17,1,6.1,5.8,10.05,3.1,slate_mat,65000)
+for i,(x,z) in enumerate([(-24.35,-3.35),(-9.65,-3.35),(-24.35,5.35),(-9.65,5.35)]):
+    cylinder('Keep round tower',(x,0,z),1.55,12.0,stone_mat,16)
+    cylinder('Keep tower cornice',(x,11.6,z),1.6,.4,trim,16)
+    cylinder('Keep conical slate cap',(x,12,z),1.6,3.0,slate_mat,16,0)
+    # Simple closed sixteen-sided solid through the tower and its cap.
+    vs=[(x+1.55*math.sin(j*math.tau/16),h,z+1.55*math.cos(j*math.tau/16)) for h in [0,12] for j in range(16)]+[(x,15,z)]
+    fs=[tuple(range(15,-1,-1))]+[(j,(j+1)%16,(j+1)%16+16,j+16) for j in range(16)]+[(j+16,(j+1)%16+16,32) for j in range(16)]
+    solid_record(65001+i,vs,fs)
+    for h in [5,9.4]:
+        box('Tower arrow slit',(x,h,z+1.553),(.11,.6,.012),dark)
+        box('Tower slit sill',(x,h-.65,z+1.57),(.22,.08,.09),trim,.02)
+for x in [-22,-19,-15,-12]:
+    for y in [4.7,8.15]:
+        box('Keep window recess',(x,y,7.012),(.35,.75,.014),dark)
+        for dx in [-.43,.43]:box('Keep window jamb',(x+dx,y,7.045),(.09,.88,.095),trim,.025)
+        for dy in [-.84,.84]:box('Keep window lintel',(x,y+dy,7.05),(.48,.095,.10),trim,.025)
+        box('Keep window mullion',(x,y,7.08),(.045,.72,.045),iron)
+# Portal is closed, as the authoritative keep remains a solid building.
+box('Recessed oak double door',(-17,1.55,7.018),(1.1,1.55,.02),wood_mat)
+for x in [-18.23,-15.77]:box('Portal dressed jamb',(x,1.55,7.12),(.14,1.55,.17),trim,.03)
+for j in range(9):
+    a=j*math.pi/8
+    o=box('Portal voussoir',(-17+1.22*math.cos(a),3.10+1.22*math.sin(a),7.12),(.22,.17,.18),trim,.025);o.rotation_euler[1]=0 # stones are individual worn dressings
+for x in [-17.55,-16.45]:
+    for y in [.7,2.2]:box('Door iron strap',(x,y,7.05),(.5,.07,.04),iron)
+for x in [-21.5,-12.5]:
+    box('Indigo keep banner',(x,5.6,7.15),(.48,1.45,.025),blue)
+    box('Greyhaven banner device',(x,5.8,7.185),(.10,.55,.015),gold)
+for x in [-23,-20,-14,-11]:
+    box('South wall buttress',(x,2.8,7.12),(.26,2.8,.18),stone_mat,.045)
+
+# The eight old straight palisades become one continuous, faceted perimeter with four gates.
+PATHS={110:[(-3,-10),(-27,-10),(-31,-6)],111:[(3,-10),(27,-10),(31,-6)],112:[(-32,40),(-28,50),(-6.5,50)],113:[(3,50),(28,50),(33,42)],114:[(-31,-6),(-34,5),(-33,13),(-32,17)],115:[(-32,23),(-34,30),(-32,40)],116:[(31,-6),(34,4),(34,13),(32,17)],117:[(32,23),(34,32),(33,42)]}
+extra_wall_id=65050
+for id,points in PATHS.items():
+    wall_vs,wall_fs=[],[]
+    for segment,(a,b) in enumerate(zip(points,points[1:])):
+        ax,az=a;bx,bz=b;dx,dz=bx-ax,bz-az;length=math.hypot(dx,dz);nx,nz=-dz/length*.30,dx/length*.30
+        vs=[(x+nx*s,y,z+nz*s) for y in [0,3] for x,z,s in [(ax,az,-1),(bx,bz,-1),(bx,bz,1),(ax,az,1)]]
+        solid_record(id if segment==0 else extra_wall_id,vs,BOX_FACES)
+        if segment: extra_wall_id+=1
+        count=math.ceil(length/.43)
+        for j in range(count):
+            t=(j+.5)/count;x=ax+dx*t;z=az+dz*t;h=2.95+.17*math.sin(j*17.3+id)
+            cylinder('Split oak palisade',(x,-.12,z),.235,h,wood_mat,7)
+            cylinder('Palisade sharpened crown',(x,h-.12,z),.235,.45,wood_mat,7,0)
+        for h in [.8,2.25]:beam('Palisade rail',(ax,h,az),(bx,h,bz),.10,wood_mat)
+        for j in range(1,math.ceil(length/3)):
+            t=j*3/length
+            beam('Palisade inside brace',(ax+dx*t+nx*4,0,az+dz*t+nz*4),(ax+dx*t,2.1,az+dz*t),.10,wood_mat)
+
+
+# Four timber watchtowers, matching simple solid support bodies, with covered lookout decks.
+for i,(x,z) in enumerate([(-27,-7),(27,-7),(-30,40),(31,40)]):
+    box('Watchtower stone footing',(x,.32,z),(1.4,.32,1.4),stone_mat,.05)
+    box('Watchtower timber base',(x,2.65,z),(1.35,2.65,1.35),wood_mat)
+    box('Watchtower lookout deck',(x,5.35,z),(1.55,.15,1.55),wood_mat)
+    for sx in [-1,1]:
+        for sz in [-1,1]:
+            box('Watchtower upright',(x+sx*1.3,3.65,z+sz*1.3),(.15,3.65,.15),wood_mat)
+    for s in [-1,1]:
+        beam('Tower diagonal brace',(x-1.25,.5,z+s*1.37),(x+1.25,4.9,z+s*1.37),.12,wood_mat)
+        for h in [5.8,6.35]:
+            beam('Lookout rail',(x-1.35,h,z+s*1.35),(x+1.35,h,z+s*1.35),.085,wood_mat)
+            beam('Lookout side rail',(x+s*1.35,h,z-1.35),(x+s*1.35,h,z+1.35),.085,wood_mat)
+    roof('Watchtower slate cover',x,z,1.7,1.7,7.1,1.6,slate_mat,65010+i)
+    box('Watchtower banner',(x,4.0,z+1.375),(.42,.7,.025),blue)
+# Gate frames retain the exact four road openings; open leaves fold along the wall.
+for i,(x,z,turn) in enumerate([(0,-10,0),(0,50,0),(-32,20,1),(32,20,1)]):
+    def gatebox(name,c,h,mat):
+        dx,y,dz=c
+        return box(name,(x+(dz if turn else dx),y,z+(-dx if turn else dz)),(h[2],h[1],h[0]) if turn else h,mat,.025)
+    gatebox('Gate lintel',(0,4.15,0),(3.15,.22,.4),wood_mat)
+    roof_start=len(objects)
+    roof('Gate slate canopy',0,0,3.3,.85,4.37,.85,slate_mat)
+    canopy=objects[-1]
+    for v in canopy.data.vertices:
+        gx,gz=v.co.x,-v.co.y
+        v.co.x=x+(gz if turn else gx);v.co.y=-(z+(-gx if turn else gz))
+    canopy.data.update()
+    for side in [-1,1]:
+        gatebox('Iron-bound gate pillar',(side*2.6,2,0),(.4,2,.4),wood_mat)
+        for y in [.5,2.8]:gatebox('Gate pillar iron collar',(side*2.6,y,0),(.425,.10,.425),iron)
+        gatebox('Folded gate leaf',(side*3.6,1.35,.4),(.85,1.35,.12),wood_mat)
+        for y in [.4,2.25]:gatebox('Gate leaf strap',(side*3.6,y,.54),(.8,.07,.04),iron)
+    gatebox('Gate heraldic board',(0,4.15,.46),(.5,.45,.06),blue)
+    gatebox('Gate board device',(0,4.15,.54),(.12,.3,.025),gold)
+    # Header blocks jumping/climbing into the lintel while keeping 3.9 m head clearance.
+    hx,hz=(.4,3.15) if turn else (3.15,.4)
+    vs=[(x+sx*hx,3.93+sy*.44,z+sz*hz) for sx,sy,sz in [(-1,0,-1),(1,0,-1),(1,0,1),(-1,0,1),(-1,1,-1),(1,1,-1),(1,1,1),(-1,1,1)]]
+    solid_record(65020+i,vs,BOX_FACES)
+# Apply bevels and join by material for a compact, standard static glTF.
+bpy.ops.object.select_all(action='DESELECT')
+for o in objects:o.select_set(True)
+bpy.context.view_layer.objects.active=objects[0]
+bpy.ops.object.convert(target='MESH')
+bpy.ops.object.join()
+o=bpy.context.object;o.name='Greyhaven keep and timber defences'
+# Recalculate outside normals explicitly after the Y-up to Z-up transformation.
+import bmesh
+bm=bmesh.new();bm.from_mesh(o.data);bmesh.ops.recalc_face_normals(bm,faces=list(bm.faces));bm.to_mesh(o.data);bm.free()
+options=bpy.ops.export_scene.gltf.get_rna_type().properties['export_format'].enum_items
+formats=[v.identifier for v in options]
+if not formats:
+    try: bpy.ops.export_scene.gltf(export_format='DISCOVER_FORMATS')
+    except TypeError as error:
+        import re
+        formats=re.findall(r"'([^']+)'",str(error))
+fmt=next(v for v in formats if 'SEPARATE' in v)
+bpy.ops.export_scene.gltf(filepath=str(OUT/'settlement.gltf'),export_format=fmt,use_selection=True,use_active_scene=True,export_yup=True,export_animations=False,export_extras=False)
+# One declaration for the existing static bundle loaders; no custom importer.
+gltf=json.loads((OUT/'settlement.gltf').read_text());uris=[v['uri'] for key in ['buffers','images'] for v in gltf.get(key,[]) if 'uri' in v]
+resources=[dict(path=p,byteLength=(OUT/p).stat().st_size,sha256=hashlib.sha256((OUT/p).read_bytes()).hexdigest()) for p in sorted(set(uris))]
+manifest=dict(assets=[dict(key='greyhaven.fort.settlement',variant='default',path='settlement.gltf',resources=resources)],authoring='content/greyhaven/authoring/fortifications.py',license='MIT',coordinateSystem='right-handed-y-up',unit='metre')
+(OUT/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+# Three coarse, fractured crags break up the basin's formerly uniform cliff lip.
+# The shared rock presenter draws their exact collision triangles with its existing PBR rock.
+for k,(x,z) in enumerate([(-47,43),(-46,62),(47,56)]):
+    n=7;vs=[]
+    for y,r in [(0,2.4),(8.8,2.9),(13.2,1.8)]:
+        for j in range(n):
+            a=j*math.tau/n;w=1+.12*math.sin(j*17+k*3)
+            vs.append((x+r*w*math.sin(a),y+.3*math.sin(j*7+k),z+r*w*math.cos(a)))
+    fs=[tuple(range(n-1,-1,-1)),tuple(range(2*n,3*n))]
+    fs += [(r*n+j,r*n+(j+1)%n,(r+1)*n+(j+1)%n,(r+1)*n+j) for r in range(2) for j in range(n)]
+    solid_record(65030+k,vs,fs)
+COLLISION.write_text(json.dumps(collision,separators=(',',':'))+'\n')
+print('Authored',len(o.data.polygons),'faces;',len(collision),'simplified collision meshes;',len(resources),'resources.')

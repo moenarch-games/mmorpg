@@ -459,6 +459,7 @@ pub(crate) fn roads(layers: &mut Layers, s: &Scenery, g: &TerrainGrid) {
     let lift = Layer::Path.lift();
     let up = [0., 1., 0.];
     let color = |x: f64, z: f64| tinted(0xa4865c, x, z, 5.);
+    let brook = mmorpg_core::greyhaven_vale::brook::channel();
     for road in &s.roads {
         let points: Vec<[f64; 2]> = road.points.iter().map(|p| p.map(metres)).collect();
         let width = metres(road.half_width);
@@ -469,35 +470,61 @@ pub(crate) fn roads(layers: &mut Layers, s: &Scenery, g: &TerrainGrid) {
                 continue;
             }
             let (nx, nz) = (-(bz - az) / l, (bx - ax) / l);
-            let pieces = (l / 2.).ceil().max(1.) as usize;
+            let crossing = s.greyhaven()
+                && ax.min(bx) < 7.
+                && ax.max(bx) > -48.
+                && az.min(bz) < 100.
+                && az.max(bz) > 17.;
+            let pieces = (l / if crossing { 1. } else { 2. }).ceil().max(1.) as usize;
+            let strips = if crossing {
+                ((width + EDGE) * 4.).ceil() as usize
+            } else {
+                3
+            };
             let base = out.p.len() as u32;
             for i in 0..=pieces {
                 let t = i as f64 / pieces as f64;
                 let (x, z) = (ax + (bx - ax) * t, az + (bz - az) * t);
-                for (offset, alpha) in [
-                    (-(width + EDGE), 0.),
-                    (-width, 1.),
-                    (width, 1.),
-                    (width + EDGE, 0.),
-                ] {
+                for strip in 0..=strips {
+                    let offset = if crossing {
+                        -(width + EDGE) + (width + EDGE) * 2. * strip as f64 / strips as f64
+                    } else {
+                        [-(width + EDGE), -width, width, width + EDGE][strip]
+                    };
                     let (px, pz) = (x + nx * offset, z + nz * offset);
+                    let in_water = crossing
+                        && brook.contains((px * 100.).round() as i32, (pz * 100.).round() as i32);
                     vertex(
                         out,
                         [px, surface(g, px, pz) + lift, pz],
                         up,
                         color(px, pz),
-                        alpha,
+                        if in_water {
+                            0.
+                        } else {
+                            ((width + EDGE - offset.abs()) / EDGE).clamp(0., 1.)
+                        },
                     );
                 }
             }
+            let row = (strips + 1) as u32;
             for i in 0..pieces as u32 {
-                for strip in 0..3 {
-                    let a = base + i * 4 + strip;
-                    out.indices.extend([a, a + 1, a + 4, a + 1, a + 5, a + 4]);
+                for strip in 0..strips as u32 {
+                    let a = base + i * row + strip;
+                    out.indices
+                        .extend([a, a + 1, a + row, a + 1, a + row + 1, a + row]);
                 }
             }
         }
         for &[x, z] in &points {
+            if s.greyhaven()
+                && mmorpg_core::greyhaven_vale::brook::bed_depth(
+                    (x * 100.) as i32,
+                    (z * 100.) as i32,
+                ) > 0
+            {
+                continue;
+            }
             let base = out.p.len() as u32;
             vertex(out, [x, surface(g, x, z) + lift, z], up, color(x, z), 1.);
             const SIDES: u32 = 16;

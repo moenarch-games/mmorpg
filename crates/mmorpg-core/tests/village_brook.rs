@@ -59,7 +59,7 @@ impl Walker {
 #[test]
 fn brook_bridge_ford_gate_culvert_and_recovery() {
     let content = greyhaven_vale::content();
-    assert_eq!(content.npcs().len(), 13);
+    assert_eq!(content.npcs().len(), 21);
     for id in 60000..=60002 {
         assert!(content.definition().colliders().iter().any(|c| c.id == id));
     }
@@ -98,6 +98,27 @@ fn brook_bridge_ford_gate_culvert_and_recovery() {
         gate.feet()[0] > -3000.,
         "west gate stays accessible: {:?}",
         gate.feet()
+    );
+    // The new lintels and faceted wall geometry leave every existing road gate usable.
+    for (start, target) in [
+        ([0, -1400], [0., -600.]),
+        ([0, 5500], [0., 4700.]),
+        ([3500, 2000], [2900., 2000.]),
+    ] {
+        let mut walker = Walker::at(start[0], start[1]);
+        walker.go(target[0], target[1]);
+    }
+    let mut wall = Walker::at(-2900, 3100);
+    wall.walk(49152);
+    wall.ticks(90);
+    assert!(
+        wall.feet()[0] > -3400.,
+        "the faceted timber wall is solid: {:?}",
+        wall.feet()
+    );
+    assert_eq!(
+        greyhaven_vale::fort::meshes(),
+        greyhaven_vale::fort::meshes()
     );
     // The established west-gate switchback remains a real route to the wooded rim.
     let mut climb = Walker::at(-3500, 2000);

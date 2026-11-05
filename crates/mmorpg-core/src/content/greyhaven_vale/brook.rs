@@ -5,7 +5,7 @@ use crate::{Ramp, RampRise, StaticCollider, WaterChannel, WaterVolume};
 pub const SURFACE: i32 = -5;
 pub const HALF_WIDTH: i32 = 90;
 pub const COURSE: &[[i32; 2]] = &[
-    [-4400, 2400],
+    [-4200, 2400],
     [-4000, 2200],
     [-3400, 2000],
     [-3100, 2000],
@@ -20,7 +20,7 @@ pub const COURSE: &[[i32; 2]] = &[
     [-300, 4500],
     [-500, 5000],
     [-800, 6500],
-    [-800, 9600],
+    [-800, 8800],
 ];
 pub const BRIDGE: u32 = 680;
 pub const RAILS: [u32; 2] = [681, 682];
@@ -62,7 +62,7 @@ pub fn waters() -> [WaterVolume; 2] {
 /// lattice and its interpolation neighbours stay level; there is no client-only river bed.
 #[must_use]
 pub fn bed_depth(x: i32, z: i32) -> i32 {
-    if (-2000..=2000).contains(&x) && (800..=2800).contains(&z) {
+    if (-1600..=1600).contains(&x) && (1200..=2800).contains(&z) {
         return 0;
     }
     let squared = COURSE
@@ -84,8 +84,8 @@ pub fn bed_depth(x: i32, z: i32) -> i32 {
         })
         .min()
         .unwrap_or(i128::MAX);
-    let distance = (squared as u128).isqrt().min(350) as i32;
-    35 * (350 - distance) / 350
+    let distance = (squared as u128).isqrt().min(550) as i32;
+    65 * (550 - distance) / 550
 }
 
 pub fn colliders() -> Vec<StaticCollider> {
@@ -119,17 +119,17 @@ pub fn colliders() -> Vec<StaticCollider> {
         },
         StaticCollider {
             id: DRAIN_STONES[0],
-            position: [-1000, 60, 9580],
+            position: [-1000, 60, 8780],
             half_extents: [50, 90, 80],
         },
         StaticCollider {
             id: DRAIN_STONES[1],
-            position: [-600, 60, 9580],
+            position: [-600, 60, 8780],
             half_extents: [50, 90, 80],
         },
         StaticCollider {
             id: DRAIN_STONES[2],
-            position: [-800, 125, 9580],
+            position: [-800, 125, 8780],
             half_extents: [150, 25, 80],
         },
     ]

@@ -1,0 +1,50 @@
+{
+  "assets": [
+    {
+      "key": "greyhaven.fort.settlement",
+      "variant": "default",
+      "path": "settlement.gltf",
+      "resources": [
+        {
+          "path": "settlement.bin",
+          "byteLength": 2628024,
+          "sha256": "27509c53fc84fe7f26c8214dcaad60e5df5467b6d7accdaedd48deaa4891ba0c"
+        },
+        {
+          "path": "slate-color.png",
+          "byteLength": 359829,
+          "sha256": "1574081b5340ac9811a429cefe13dd15768a0a350a15a7312d18f226fd3f224f"
+        },
+        {
+          "path": "slate-normal.png",
+          "byteLength": 639516,
+          "sha256": "10fbecc449d6489baa88cd1cb1b31d86107dcd4fdfb577f993099635e4bc9e1c"
+        },
+        {
+          "path": "weathered-masonry-color.png",
+          "byteLength": 385896,
+          "sha256": "8fafedaf6dfda5af67ece6c396a683de46ee64de18601f26c838912ec33ed462"
+        },
+        {
+          "path": "weathered-masonry-normal.png",
+          "byteLength": 567608,
+          "sha256": "5527dcaee21deb1a46ca8517e2dfd2bfb927b08b9d4c712ff84dc618d9dd5e78"
+        },
+        {
+          "path": "weathered-oak-color.png",
+          "byteLength": 340367,
+          "sha256": "d637b331d4da18ce3b360f99bb12d427deb2624a45122027cda5c010d6e507ba"
+        },
+        {
+          "path": "weathered-oak-normal.png",
+          "byteLength": 542491,
+          "sha256": "1c47ab0afb9b9b653e8cb62061f5c547185c6ead2978e97438aa65c8a2bd5b14"
+        }
+      ]
+    }
+  ],
+  "authoring": "content/greyhaven/authoring/fortifications.py",
+  "license": "MIT",
+  "coordinateSystem": "right-handed-y-up",
+  "unit": "metre"
+}

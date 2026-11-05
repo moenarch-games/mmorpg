@@ -475,6 +475,7 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
     let id = collider.id;
     let kind = match id {
         ids::KEEP => PropKind::Keep,
+        _ if greyhaven_vale::fort::TOWER_BODIES.contains(&id) => PropKind::Keep,
         ids::INN => PropKind::Inn,
         // The smithy and house 105 are drawn by asset-tooling's Outpost kit (#420) at
         // [`outpost_kit::placements`], their blockouts only while the kit is not drawn.
@@ -1005,7 +1006,10 @@ impl Scenery {
     /// ground ([`Scenery::ground_at`]); units are drawn raised by it.
     #[must_use]
     pub fn height_at(&self, x: i32, z: i32) -> i32 {
-        if self.greyhaven && greyhaven_vale::brook::bed_depth(x, z) > 0 {
+        if self.greyhaven
+            && (greyhaven_vale::brook::bed_depth(x, z) > 0
+                || (-3500..=3500).contains(&x) && (-1200..=5400).contains(&z))
+        {
             return 0;
         }
         if self.authored_outpost_relief
@@ -1180,7 +1184,7 @@ impl Scenery {
         if self.road_distance(point) <= 0 {
             return Biome::Road;
         }
-        if SPAWN_PLAZA.contains(x, z) {
+        if SPAWN_PLAZA.contains(x, z) && (-800..=800).contains(&x) && (1600..=2400).contains(&z) {
             return Biome::Plaza;
         }
         // Bare rock on cliff faces too steep to walk (#423), such as the farm terrace's.

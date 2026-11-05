@@ -34,10 +34,7 @@ fn colliders() -> Vec<StaticCollider> {
     colliders.extend(marshal_house::colliders(*ids::MARSHAL_HOUSE_PARTS.start()));
 
     colliders.push(cave::threshold(ids::CAVE_THRESHOLD));
-    if let Some(wall) = colliders.iter_mut().find(|c| c.id == 112) {
-        wall.position = [-1940, 150, 5000];
-        wall.half_extents = [1290, 150, 30];
-    }
+    super::fort::apply(&mut colliders);
     colliders.extend(super::brook::colliders());
     colliders
 }

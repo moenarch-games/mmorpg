@@ -140,17 +140,21 @@ pub(crate) fn groups(scenery: &Scenery) -> Vec<Group> {
         })
         .enumerate()
         .map(|(i, p)| group(format!("rock-face-{i}"), rock(p)));
-    let surfaces = scenery.collision_surfaces.iter().map(|mesh| {
-        let mut g = Geometry::default();
-        for triangle in &mesh.triangles {
-            let points = triangle.map(|index| {
-                let v = mesh.vertices[index as usize];
-                std::array::from_fn(|axis| metres(v[axis] + mesh.position[axis]))
-            });
-            colored_face(&mut g, &points, 0x817b70);
-        }
-        ground::project_rock(&mut g);
-        group(format!("cave-surface-{}", mesh.id), g)
-    });
+    let surfaces = scenery
+        .collision_surfaces
+        .iter()
+        .filter(|mesh| !mmorpg_core::greyhaven_vale::fort::dresses(mesh.id))
+        .map(|mesh| {
+            let mut g = Geometry::default();
+            for triangle in &mesh.triangles {
+                let points = triangle.map(|index| {
+                    let v = mesh.vertices[index as usize];
+                    std::array::from_fn(|axis| metres(v[axis] + mesh.position[axis]))
+                });
+                colored_face(&mut g, &points, 0x817b70);
+            }
+            ground::project_rock(&mut g);
+            group(format!("cave-surface-{}", mesh.id), g)
+        });
     cliffs.chain(surfaces).collect()
 }

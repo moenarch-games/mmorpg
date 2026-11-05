@@ -476,8 +476,14 @@ impl Resident {
             "Farmer Osric Mill" => Some(Self::Farmer),
             "Brother Aldous" => Some(Self::Healer),
             "Tanner Hilda Brook" => Some(Self::Tanner),
-            "Weaver Lysa Reed" | "Mara Wells" => Some(Self::VillagerWoman),
-            "Carpenter Owen Alder" | "Davin Moss" => Some(Self::Villager),
+            "Weaver Lysa Reed" | "Mara Wells" | "Baker Anwen" | "Herbalist Nessa"
+            | "Fisher Ada" | "Washer Elin" => Some(Self::VillagerWoman),
+            "Carpenter Owen Alder"
+            | "Davin Moss"
+            | "Miller Tomas"
+            | "Peddler Rowan"
+            | "Porter Ben"
+            | "Apprentice Finn" => Some(Self::Villager),
             _ => None,
         }
     }
@@ -3384,6 +3390,14 @@ mod tests {
                 Some("resident.guard"),
                 Some("resident.guard"),
                 Some("resident.guard"),
+                Some("resident.tanner"),
+                Some("resident.farmer"),
+                Some("resident.tanner"),
+                Some("resident.farmer"),
+                Some("resident.tanner"),
+                Some("resident.farmer"),
+                Some("resident.tanner"),
+                Some("resident.farmer"),
                 Some("resident.tanner"),
                 Some("resident.farmer"),
                 Some("resident.tanner"),

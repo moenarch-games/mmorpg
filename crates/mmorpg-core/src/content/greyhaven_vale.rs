@@ -25,6 +25,7 @@ pub mod brook;
 pub mod cave;
 pub mod dressing;
 pub mod farmland;
+pub mod fort;
 pub mod highlands;
 pub mod inn;
 pub mod layout;
@@ -907,6 +908,8 @@ pub fn climbing() -> crate::ClimbSurfaces {
         .filter(|&(index, _)| index != SHEER_CRAGS[0] && index != SHEER_CRAGS[1])
         .map(|(_, (id, _))| (id, Rock));
     let colliders = range(ids::PALISADE, Timber)
+        .chain(range(65050..=65059, Timber))
+        .chain(range(65030..=65032, Rock))
         .chain(range(ids::FENCES, Timber))
         .chain(range(ids::RUIN_FENCES, Timber))
         .chain(range(ids::FARMLAND_FENCES, Timber).take(farmland::fences().len()))
@@ -1068,7 +1071,14 @@ pub fn watch_post() -> Vec<crate::StructurePiece> {
 pub fn base_definition() -> ZoneDefinition {
     ZoneDefinition::with_spawn_grid(GRAVITY, SPAWN_GRID, colliders())
         .and_then(|definition| definition.with_terrain(TERRAIN.clone()))
-        .and_then(|definition| definition.with_static_meshes(cave::collision_meshes()))
+        .and_then(|definition| {
+            definition.with_static_meshes(
+                cave::collision_meshes()
+                    .into_iter()
+                    .chain(fort::meshes())
+                    .collect(),
+            )
+        })
         .expect("built-in Greyhaven Vale content is valid")
 }
 

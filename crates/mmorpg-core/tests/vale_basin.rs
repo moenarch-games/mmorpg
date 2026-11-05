@@ -299,7 +299,7 @@ fn a_player_walks_up_the_wolfrun_climb_into_the_woods() {
     let mut zone = player_at([-3_600, 2_000]);
     settle(&mut zone);
     assert!(
-        (-40.0..10.0).contains(&feet(&zone)[1]),
+        (-75.0..10.0).contains(&feet(&zone)[1]),
         "shallow brook approach"
     );
     let trail = walk(

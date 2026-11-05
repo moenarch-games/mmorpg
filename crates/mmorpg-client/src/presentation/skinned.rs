@@ -1141,9 +1141,21 @@ mod outpost_bundle {
     include!(concat!(env!("OUT_DIR"), "/outpost_bundle.rs"));
 }
 
+mod fort_bundle {
+    include!(concat!(env!("OUT_DIR"), "/fort_bundle.rs"));
+}
+
 /// The Outpost kit's draws (in the module frame) of `entry` (`<key>` or `<key>/<variant>`),
 /// every entry imported once.
 pub(super) fn outpost_draws(entry: &str) -> &'static [SceneDraw] {
+    if entry.starts_with("greyhaven.fort.") {
+        static FORT: OnceLock<BuildingDraws> = OnceLock::new();
+        return FORT
+            .get_or_init(|| building_draws(fort_bundle::ENTRIES, fort_bundle::FILES))
+            .iter()
+            .find(|(key, _)| *key == entry)
+            .map_or(&[], |(_, draws)| draws.as_slice());
+    }
     static DRAWS: OnceLock<Vec<(&'static str, Vec<SceneDraw>)>> = OnceLock::new();
     DRAWS
         .get_or_init(|| {

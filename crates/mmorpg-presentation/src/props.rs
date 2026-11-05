@@ -746,6 +746,8 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
         // Elden's house (#158) is its walk-in bundle too.
         if matches!(p.kind, PropKind::Inn | PropKind::ShrineKit)
             || p.collider == Some(mmorpg_core::greyhaven_vale::ids::MARSHAL_HOUSE)
+            || p.collider
+                .is_some_and(|id| mmorpg_core::greyhaven_vale::ids::PALISADE.contains(&id))
         {
             continue;
         }

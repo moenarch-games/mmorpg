@@ -249,5 +249,22 @@ pub fn height_at(x: i32, z: i32) -> Option<i32> {
     }
     let reach = i32::try_from(x.unsigned_abs().max(z.unsigned_abs())).unwrap_or(i32::MAX);
     let weight = (1_024 - floor_q10(x, z)).min(1_024 - rise_q10(reach, OUTER_SLOPE));
-    (weight > 0).then(|| i32::try_from(i64::from(TERRACE_Y) * weight / 1_024).unwrap_or(0))
+    let terrace = i32::try_from(i64::from(TERRACE_Y) * weight / 1_024).unwrap_or(0);
+    // Rounded grassy banks and broken rim crests, outside foundations and route lanes.
+    let mound = |cx: i32, cz: i32, radius: i32, high: i32| {
+        let d = i64::from(x - cx).pow(2) + i64::from(z - cz).pow(2);
+        let radius = i64::from(radius).pow(2);
+        let falloff = (radius - d).max(0) * 1_024 / radius;
+        (i64::from(high) * falloff * falloff / (1_024 * 1_024)) as i32
+    };
+    let relief = if x.abs() > 3_500 || z > 5_800 {
+        mound(-4_100, 4_600, 1_000, 120)
+            + mound(2_300, 7_000, 1_100, 110)
+            + mound(-2_400, 7_800, 900, 95)
+            + mound(-5_200, 4_000, 1_100, 240)
+            + mound(5_000, 6_500, 1_200, 190)
+    } else {
+        0
+    };
+    (terrace + relief > 0).then_some(terrace + relief)
 }

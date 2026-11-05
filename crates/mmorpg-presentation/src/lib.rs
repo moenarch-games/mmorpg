@@ -220,6 +220,7 @@ impl StaticScene {
         let mut groups = batcher.finish();
         groups.extend(cliffs::groups(scenery));
         groups.extend(brook_groups);
+        groups.extend(outpost_kit::fallbacks(scenery));
         let mut terrain = tiles::Tiles::new(scenery, &grid);
         let hash = identity(
             groups

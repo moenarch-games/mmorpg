@@ -60,6 +60,42 @@
         3000
       ],
       "yaw": 0
+    },
+    {
+      "id": "cottage-flowers-0",
+      "kind": "flowers",
+      "position": [
+        -2700,
+        1750
+      ],
+      "yaw": 0
+    },
+    {
+      "id": "cottage-flowers-1",
+      "kind": "flowers",
+      "position": [
+        -2500,
+        1750
+      ],
+      "yaw": 0
+    },
+    {
+      "id": "cottage-flowers-2",
+      "kind": "flowers",
+      "position": [
+        2500,
+        1750
+      ],
+      "yaw": 0
+    },
+    {
+      "id": "cottage-flowers-3",
+      "kind": "flowers",
+      "position": [
+        2700,
+        1750
+      ],
+      "yaw": 0
     }
   ]
 }

@@ -98,12 +98,21 @@ pub(crate) fn build(
     }
     water.push(draw("greyhaven-brook", channel, 0x397b7a, 0.78));
     let mut fall = Geometry::default();
-    fall.face(&[
-        [-48., 11.1, 23.45],
-        [-48., 11.1, 24.55],
-        [-43.8, level, 24.55],
-        [-43.8, level, 23.45],
-    ]);
+    let cascade = [
+        [-48., 11.1],
+        [-46.4, 10.8],
+        [-45.8, 4.8],
+        [-44., 1.4],
+        [-42.4, level],
+    ];
+    for pair in cascade.windows(2) {
+        fall.face(&[
+            [pair[0][0], pair[0][1], 23.45],
+            [pair[0][0], pair[0][1], 24.55],
+            [pair[1][0], pair[1][1], 24.55],
+            [pair[1][0], pair[1][1], 23.45],
+        ]);
+    }
     water.push(draw("greyhaven-waterfall", fall, 0x9ed1d2, 0.78));
     // White strands move down the actual cliff face, with a small plunge-pool foam ring.
     for i in 0..7 {
@@ -113,14 +122,14 @@ pub(crate) fn build(
             draws: vec![draw(&format!("fall-strand-{i}"), strand, 0xcce8df, 0.8)],
             motion: Motion::Flow {
                 start: [-47.95, 11.12, 23.55 + i as f64 * 0.15],
-                end: [-43.8, 0.02, 23.55 + i as f64 * 0.15],
+                end: [-42.4, 0.02, 23.55 + i as f64 * 0.15],
                 period: 1.5,
                 phase: i as f64 / 7.,
             },
         });
     }
     let mut foam = Geometry::default();
-    foam.add(&disc(18), at(-43.8, level + 0.008, 24., 1.2, 1., 0.85));
+    foam.add(&disc(18), at(-42.4, level + 0.008, 24., 1.2, 1., 0.85));
     water.push(draw("waterfall-foam", foam, 0xd1e8d8, 0.6));
     let mut pool = Geometry::default();
     pool.add(&disc(24), at(-50., 11.1, 24., 2., 1., 1.5));
@@ -199,4 +208,33 @@ pub(crate) fn build(
         min: [-50., 10.],
         max: [8., 99.],
     }]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn brook_water_clears_the_actual_terrain_triangles() {
+        let scenery = mmorpg_scenery::greyhaven_vale_scenery();
+        let grid = scenery.terrain_grid(crate::TERRAIN_STEP_UNITS);
+        let water = metres(content::SURFACE);
+        for pair in content::COURSE.windows(2) {
+            let (a, b) = (pair[0].map(metres), pair[1].map(metres));
+            let length = (b[0] - a[0]).hypot(b[1] - a[1]);
+            let side = [-(b[1] - a[1]) / length, (b[0] - a[0]) / length];
+            for step in 0..=20 {
+                let t = f64::from(step) / 20.;
+                for offset in [-0.85, 0., 0.85] {
+                    let x = a[0] + (b[0] - a[0]) * t + side[0] * offset;
+                    let z = a[1] + (b[1] - a[1]) * t + side[1] * offset;
+                    let bed = surface(&grid, x, z);
+                    assert!(
+                        bed < water - 0.02,
+                        "water intersects terrain at {x:.2},{z:.2}: bed {bed:.3}, water {water}"
+                    );
+                }
+            }
+        }
+    }
 }

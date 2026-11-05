@@ -278,7 +278,7 @@ const GUARD: &str = "Greyhaven Guard";
 type NpcRow = (u32, &'static str, NpcRole, u8, [i32; 2], u16);
 
 #[rustfmt::skip]
-const NPCS: [NpcRow; 13] = [
+const NPCS: [NpcRow; 21] = [
     (1, "Marshal Elden Greywatch", NpcRole::QuestGiver, 10, [-2_200, 900], 0),
     (2, "Tanner Hilda Brook", NpcRole::QuestGiver, 5, [-2_400, 3_150], 32_768),
     // Inside the inn, behind its bar, facing the room (#158).
@@ -296,6 +296,15 @@ const NPCS: [NpcRow; 13] = [
     (11,"Carpenter Owen Alder",NpcRole::Resident,3,[2150,1850],0),
     (12,"Mara Wells",NpcRole::Resident,2,[700,4000],32768),
     (13,"Davin Moss",NpcRole::Resident,2,[-1000,2900],0),
+    // Small conversations and stall customers at the edges of the clear spawn square.
+    (14,"Baker Anwen",NpcRole::Resident,3,[1900,2800],16384),
+    (15,"Miller Tomas",NpcRole::Resident,3,[2050,2850],49152),
+    (16,"Herbalist Nessa",NpcRole::Resident,3,[1750,2450],16384),
+    (17,"Peddler Rowan",NpcRole::Resident,3,[1850,2350],49152),
+    (18,"Fisher Ada",NpcRole::Resident,2,[-1750,2400],49152),
+    (19,"Porter Ben",NpcRole::Resident,2,[-1900,2500],16384),
+    (20,"Washer Elin",NpcRole::Resident,2,[1400,3100],49152),
+    (21,"Apprentice Finn",NpcRole::Resident,2,[1500,3000],16384),
 ];
 
 pub(super) fn creature_templates() -> Vec<CreatureTemplate> {

@@ -1,5 +1,5 @@
 //! The Outpost's kit buildings (#420): where the clients draw asset-tooling's `outpost-kit`
-//! modules (`outpost.kit.<part>`) over two of the Greyhaven Outpost's building colliders.
+//! modules (`outpost.kit.<part>`) over the Greyhaven Outpost's closed-building colliders.
 //!
 //! The kit's descriptor composes a house on the 8 × 6 m house footprints and a smithy on the
 //! 6 × 7 m smithy footprint, in a footprint-base-centre frame whose +Z side has the door; the
@@ -89,15 +89,19 @@ const SMITHY: [Item; 28] = [
 /// The adopted buildings: collider, composition, its footprint half extents (x, z units) and
 /// quarter turns. The house south of the plaza keeps its blockout's door toward the plaza
 /// (north); the smithy's door is in its 6 m gable wall, so it faces the east road (south).
-const BUILDINGS: [(u32, &[Item], [i32; 2], u8); 2] = [
+const BUILDINGS: [(u32, &[Item], [i32; 2], u8); 4] = [
+    (104, &HOUSE, [400, 300], 2),
     (105, &HOUSE, [400, 300], 2),
+    (106, &HOUSE, [400, 300], 2),
     (ids::SMITHY, &SMITHY, [300, 350], 0),
 ];
 
 /// Whether collider `id` is drawn by the kit (and its blockout only as the fallback).
 #[must_use]
 pub fn adopts(id: u32) -> bool {
-    BUILDINGS.iter().any(|(collider, ..)| *collider == id) || (60_000..65_000).contains(&id)
+    mmorpg_core::greyhaven_vale::fort::dresses(id)
+        || BUILDINGS.iter().any(|(collider, ..)| *collider == id)
+        || (60_000..65_000).contains(&id)
 }
 
 /// One kit module placed in the zone.
