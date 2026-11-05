@@ -363,7 +363,7 @@ pub fn scene(lighting: &Lighting, view: CameraView) -> Scene {
         }),
         // The sky's environment light is the ambient light.
         sky: Some(Sky {
-            environment_intensity: Some((0.75 + 0.25 * interior) * 10_f32.powf(-interior)),
+            environment_intensity: Some((0.9 + 0.1 * interior) * 10_f32.powf(-interior)),
             ..Sky::default()
         }),
         point_lights: lighting

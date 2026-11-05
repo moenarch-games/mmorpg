@@ -129,7 +129,7 @@ impl Tiles {
         // The road and patch overlays, cut into tiles by their triangles' centres.
         let mut extras = Layers::new();
         if let Some(plaza) = terrain::bounds(g, "plaza") {
-            ground::patch(&mut extras, g, Layer::Path, 0xa8987a, plaza, 1.2);
+            ground::patch(&mut extras, g, Layer::Path, 0x8e7e61, plaza, 1.2);
         }
         for field in s.farmland() {
             let field = (field.min.map(metres), field.max.map(metres));
@@ -533,7 +533,7 @@ fn worn(s: &Scenery, g: &TerrainGrid) -> Vec<(f64, u32)> {
     let grow = |lo: [f64; 2], hi: [f64; 2], by: f64| (lo.map(|v| v - by), hi.map(|v| v + by));
     if let Some((lo, hi)) = terrain::bounds(g, "plaza") {
         let (glo, ghi) = grow(lo, hi, WORN_FADE_METRES);
-        paint(glo, ghi, 0xa8987a, &|x, z| fade(0., rect(lo, hi)(x, z)));
+        paint(glo, ghi, 0x8e7e61, &|x, z| fade(0., rect(lo, hi)(x, z)));
     }
     for field in s.farmland() {
         let (lo, hi) = (field.min.map(metres), field.max.map(metres));

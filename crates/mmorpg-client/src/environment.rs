@@ -23,14 +23,14 @@ pub struct Fog {
     pub visibility: f32,
 }
 
-/// How far Greyhaven's air hides the scene (#526): about 9 % haze at 100 m, 43 % at 600 m,
+/// How far Greyhaven's air hides the scene (#526): about 5 % haze at 100 m, 26 % at 600 m,
 /// so the distant ranges stay shaded silhouettes. `FOG_VISIBILITY_METRES` in
 /// `web/src/world/lighting.ts`.
-pub const FOG_VISIBILITY_METRES: f32 = 3200.0;
+pub const FOG_VISIBILITY_METRES: f32 = 6000.0;
 /// Per-channel weights of the fog's extinction and inscattering: red fades and blue gathers
 /// first. `FOG_EXTINCTION` and `FOG_INSCATTERING` in `web/src/world/lighting.ts`.
-pub const FOG_EXTINCTION: [f32; 3] = [1.2, 1.0, 0.8];
-pub const FOG_INSCATTERING: [f32; 3] = [0.8, 1.0, 1.2];
+pub const FOG_EXTINCTION: [f32; 3] = [1.1, 1.0, 0.9];
+pub const FOG_INSCATTERING: [f32; 3] = [0.9, 1.0, 1.1];
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PointLight {
@@ -89,7 +89,7 @@ impl Lighting {
             hour,
             interior: 0.,
             fog: Fog {
-                color: rgb(mix(horizon, 0xb9cddb, daylight)),
+                color: rgb(mix(horizon, 0x9faeb3, daylight)),
                 visibility: FOG_VISIBILITY_METRES,
             },
             point_lights: Vec::new(),

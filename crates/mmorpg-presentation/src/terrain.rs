@@ -35,7 +35,7 @@ pub fn biome_color(b: Biome) -> u32 {
         "hollow" => 0x94805f,
         "farmland" => 0x7a5836,
         "road" => 0xa4865c,
-        "plaza" => 0xa8987a,
+        "plaza" => 0x8e7e61,
         "shore" => 0xcdbb88,
         "lake bed" => 0x5e5a44,
         "foothills" => 0x61774b,

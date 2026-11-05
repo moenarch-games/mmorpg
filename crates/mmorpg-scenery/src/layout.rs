@@ -44,6 +44,26 @@ fn house(collider: &mmorpg_core::StaticCollider) -> Prop {
 pub fn compose(source: &str, definition: &ZoneDefinition) -> Result<Scenery, String> {
     let layout = core_layout::parse(source).map_err(|error| error.to_string())?;
     let mut scenery = base_scenery();
+    // Worn tracks join the main roads across the open gathering/spawn lawn. They are paint
+    // on the existing walkable floor, not navigation or an extra movement authority.
+    scenery.roads.extend([
+        crate::Road {
+            name: "Outpost gathering track",
+            points: vec![[0, 1200], [-70, 1700], [50, 2300], [0, 2800]],
+            half_width: 120,
+        },
+        crate::Road {
+            name: "Outpost cross track",
+            points: vec![
+                [-1600, 2000],
+                [-800, 1950],
+                [0, 2000],
+                [800, 2050],
+                [1600, 2000],
+            ],
+            half_width: 120,
+        },
+    ]);
     // Preserve the frozen base and placement order. Overrides replace existing logical
     // objects in place; only author additions append. Never reroll the scatter RNG.
     scenery.props.retain_mut(|prop| {

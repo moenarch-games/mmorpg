@@ -319,13 +319,24 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
         } else {
             0.
         };
-        let path = smoothstep(0.35, 0.75, hollow[i] + 0.5 * breakup);
+        // Broken patches of trodden earth feather the tracks into the surrounding turf.
+        // The narrow ribbon still defines the path; this uses the existing masked material.
+        let local = s.greyhaven() && x.abs() < 125. && (-170. ..115.).contains(&z);
+        let verge = if local {
+            let from_track = s.road_distance([ux, uz]) as f64 / 100.;
+            (1. - smoothstep(0., 3.8, from_track.max(0.)))
+                * smoothstep(0.38, 0.68, noise(x, z, 4.5, 527.))
+                * 0.85
+        } else {
+            0.
+        };
+        let path = smoothstep(0.35, 0.75, hollow[i] + 0.5 * breakup).max(verge);
         for (layer, weight, color) in [
             (Layer::Forest, forest, mix(0x4d653b, 0x6e5a3c, 0.28)),
             (Layer::Gravel, gravel, 0x8f8a7c),
             (Layer::Mud, mud, 0x5e5038),
             (Layer::Sand, sand, 0xcdbb88),
-            (Layer::Path, path, 0x94805f),
+            (Layer::Path, path, 0x827154),
             (Layer::Rock, rock, 0x8b877e),
         ] {
             layers.entry(layer).or_insert_with(|| vec![0.; count])[i] = weight;

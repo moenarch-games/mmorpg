@@ -177,3 +177,30 @@ Chromium loaded the authored farm models and existing animated sails and capture
 in-game daytime view; the live Blender file also contains the new architecture. The wider
 atmosphere and some older farm dressing (including the loading dock) remain for later art
 passes within the same PR.
+
+## Connected village tracks and clearer air
+
+Two presentation-only foot tracks now connect the compact gathering patch to the four
+existing road ends across the protected spawn lawn. Their slightly winding centrelines and
+1.2 m half-widths are ordinary `Scenery::roads` entries appended by layout composition.
+They paint the existing flat, walkable ground; core content, spawn capacity and movement
+rules are unchanged. Near and distant ground use those same road entries. Seeded patches
+of the existing masked path material blend the tracks into turf, and the gathering patch
+uses a less pale earth colour.
+
+Both clients use a 6 km atmospheric visibility distance with a more neutral haze tint and
+milder colour separation. This reduces the uniform blue-grey veil over the nearby village
+while retaining distant aerial perspective. Sky fill is slightly higher than in the previous
+pass so shadowed timber and plaster remain readable. The sun, day/night clock, tone mapper,
+cave adaptation and renderer are unchanged.
+
+Native compilation and the browser/WASM production build passed. This is a presentation
+pass; authoritative geometry and the successful farm/cave traversal checks from the earlier
+passes are not rerun. Full suites and native GPU acceptance were not run. Shared convention
+source revision remains `625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+
+Chromium walked west/east across the gathering lawn, returned to the centre and crossed the
+brook bridge without page errors. The updated in-game overview is
+`artifacts/greyhaven-brook/village-tracks.png`; the live Blender terrain/road context was
+refreshed from the same WASM scenery. The regular cliff/camp silhouettes are still visibly
+short of the owner's reference and remain active modelling work.

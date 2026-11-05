@@ -47,10 +47,10 @@ const SHADOWLESS_BELOW = -3;
  * `FOG_VISIBILITY_METRES` (Bevy's Koschmieder threshold), red light fading and blue gathering first, so distant ranges
  * turn blue but keep their shading.
  */
-const FOG_VISIBILITY_METRES = 3200;
+const FOG_VISIBILITY_METRES = 6000;
 const FOG_DENSITY = -Math.log(0.05) / FOG_VISIBILITY_METRES;
-const FOG_EXTINCTION: Vec3 = [1.2 * FOG_DENSITY, FOG_DENSITY, 0.8 * FOG_DENSITY];
-const FOG_INSCATTERING: Vec3 = [0.8 * FOG_DENSITY, FOG_DENSITY, 1.2 * FOG_DENSITY];
+const FOG_EXTINCTION: Vec3 = [1.1 * FOG_DENSITY, FOG_DENSITY, 0.9 * FOG_DENSITY];
+const FOG_INSCATTERING: Vec3 = [0.9 * FOG_DENSITY, FOG_DENSITY, 1.1 * FOG_DENSITY];
 /** The presentation materials' surface (`standard_material`). */
 const ROUGHNESS = 0.86;
 const METALLIC = 0.02;
@@ -200,7 +200,7 @@ export class GreyhavenLighting {
     lighting.ev100 = exposure + (Math.min(exposure, 7.5) - exposure) * interior;
     const shadows = elevation > SHADOWLESS_BELOW ? SUN_SHADOWS : null;
     if (this.drawsSky) {
-      lighting.sky = { ...DEFAULT_SKY, environmentIntensity: (0.75 + 0.25 * interior) * 10 ** (-interior) };
+      lighting.sky = { ...DEFAULT_SKY, environmentIntensity: (0.9 + 0.1 * interior) * 10 ** (-interior) };
       lighting.clearColor = [0, 0, 0];
       lighting.clearAlpha = 1;
       lighting.sun = { direction: negate(sun), color: [1, 1, 1], illuminance: RAW_SUNLIGHT * transmission, shadows };
@@ -223,7 +223,7 @@ export class GreyhavenLighting {
       const twilight = Math.max(0, 1 - Math.abs(elevation) / 8);
       lighting.ambient = {
         color: SKY_COLOR.map((channel, index) => channel + (TWILIGHT_COLOR[index]! - channel) * twilight) as unknown as Vec3,
-        brightness: interpolate(SKY_AMBIENT, elevation) * transmission * (0.75 + 0.25 * interior) * 10 ** (-interior),
+        brightness: interpolate(SKY_AMBIENT, elevation) * transmission * (0.9 + 0.1 * interior) * 10 ** (-interior),
       };
     }
     lighting.fog = fog === null ? null : {
