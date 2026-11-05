@@ -21,6 +21,7 @@ use super::{SpawnGrid, StaticCollider, XzBounds, ZoneContent, ZoneDefinition};
 use crate::{Area, AreaId, Terrain, ZoneAreas};
 
 pub mod basin;
+pub mod brook;
 pub mod cave;
 pub mod dressing;
 pub mod farmland;
@@ -365,6 +366,7 @@ pub fn hill_height(x: i32, z: i32) -> i32 {
 #[must_use]
 pub fn stillwater_lake() -> crate::WaterVolume {
     crate::WaterVolume {
+        channel: None,
         name: "Stillwater Lake".to_owned(),
         centre: lake::CENTRE,
         radii: lake::RADII,
@@ -432,7 +434,12 @@ pub fn terrain() -> Terrain {
                     // The Sunken Shrine's plaza and cave floor (#274).
                     shrine::FLOOR_Y
                 } else {
-                    open_ground(x, z)
+                    let base = open_ground(x, z);
+                    base - if base < 100 {
+                        brook::bed_depth(x, z)
+                    } else {
+                        0
+                    }
                 }
             })
         })
@@ -1003,6 +1010,7 @@ pub fn ramps() -> Vec<crate::Ramp> {
         half_extents: [100, (top - bottom) / 2, 50],
         rises: crate::RampRise::NegZ,
     });
+    ramps.extend(brook::ramps());
     ramps
 }
 
@@ -1122,6 +1130,7 @@ pub fn content_with_definition(
                 [stillwater_lake(), shrine::cave_water()]
                     .into_iter()
                     .chain(marsh::water_volumes())
+                    .chain(brook::waters())
                     .collect(),
             )?
             .with_climbing(climbing())?

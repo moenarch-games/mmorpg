@@ -123,6 +123,7 @@ impl Water {
     #[must_use]
     pub fn volume(self) -> WaterVolume {
         WaterVolume {
+            channel: None,
             name: self.name.to_owned(),
             centre: self.centre,
             radii: self.radii,

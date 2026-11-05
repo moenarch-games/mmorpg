@@ -1,7 +1,29 @@
 {
   "version": 1,
   "generator": "greyhaven-15",
-  "collision": [],
+  "collision": [
+    {
+      "id": 60000,
+      "position": [
+        -2400,
+        1400
+      ]
+    },
+    {
+      "id": 60001,
+      "position": [
+        2400,
+        1400
+      ]
+    },
+    {
+      "id": 60002,
+      "position": [
+        1300,
+        4500
+      ]
+    }
+  ],
   "decoration": [
     {
       "id": "outpost-lamp-1",

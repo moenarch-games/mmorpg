@@ -1314,6 +1314,14 @@ impl ZoneContent {
             hash.i32s(&water.centre);
             hash.i32s(&water.radii);
             hash.i32(water.surface);
+            if let Some(channel) = &water.channel {
+                hash.bytes(b"channel");
+                hash.i32(channel.half_width);
+                hash.len(channel.points.len());
+                for point in &channel.points {
+                    hash.i32s(point);
+                }
+            }
             hash.len(water.air_pockets.len());
             for pocket in &water.air_pockets {
                 hash.i32s(&pocket.min);
@@ -1745,6 +1753,7 @@ impl ZoneContent {
                 super::units::NpcRole::Vendor => 2,
                 super::units::NpcRole::SpiritHealer => 3,
                 super::units::NpcRole::Guard => 4,
+                super::units::NpcRole::Resident => 5,
             });
             hash.u8(npc.level);
             hash.i32s(&npc.position);

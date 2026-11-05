@@ -33,7 +33,7 @@ pub const DROWN_DAMAGE_PERCENT: u32 = 10;
 /// … every this many ticks (1 s).
 pub const DROWN_INTERVAL_TICKS: u16 = crate::ticks_from_ms(1_000);
 /// At most this many water volumes per zone.
-pub const MAX_WATER_VOLUMES: usize = 8;
+pub const MAX_WATER_VOLUMES: usize = 10;
 /// An idle aquatic creature notices a submerged player this close (8 m) …
 pub const TRAIL_NOTICE_UNITS: i32 = 800;
 /// … follows it for this long (6 s), then loses interest and swims home.
@@ -72,11 +72,41 @@ impl AirPocket {
     }
 }
 
-/// An authored body of water: an axis-aligned ellipse with a flat surface.
+/// A shallow channel swept along an authored centre line; caps are round, in centimetres.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WaterChannel {
+    pub points: Vec<[i32; 2]>,
+    pub half_width: i32,
+}
+impl WaterChannel {
+    #[must_use]
+    pub fn contains(&self, x: i32, z: i32) -> bool {
+        let radius = i128::from(self.half_width).pow(2);
+        self.points.windows(2).any(|p| {
+            let [ax, az] = p[0].map(i128::from);
+            let [bx, bz] = p[1].map(i128::from);
+            let (dx, dz) = (bx - ax, bz - az);
+            let (px, pz) = (i128::from(x) - ax, i128::from(z) - az);
+            let length = dx * dx + dz * dz;
+            let along = px * dx + pz * dz;
+            if along <= 0 {
+                px * px + pz * pz <= radius
+            } else if along >= length {
+                (px - dx).pow(2) + (pz - dz).pow(2) <= radius
+            } else {
+                (px * dz - pz * dx).pow(2) <= radius * length
+            }
+        })
+    }
+}
+
+/// Flat-surface water: an axis-aligned ellipse, or a narrow authored channel.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WaterVolume {
+    /// None keeps the ordinary elliptical lake/pool footprint.
+    pub channel: Option<WaterChannel>,
     pub name: String,
-    /// Ellipse centre and radii in XZ units.
+    /// Ellipse centre and radii in XZ units; ignored when a channel supplies the footprint.
     pub centre: [i32; 2],
     pub radii: [i32; 2],
     /// Surface height in units.
@@ -86,9 +116,12 @@ pub struct WaterVolume {
 }
 
 impl WaterVolume {
-    /// Whether `(x, z)` lies inside the ellipse (its boundary included).
+    /// Whether `(x, z)` lies inside the water footprint (its boundary included).
     #[must_use]
     pub fn contains(&self, x: i32, z: i32) -> bool {
+        if let Some(channel) = &self.channel {
+            return channel.contains(x, z);
+        }
         let dx = i128::from(x) - i128::from(self.centre[0]);
         let dz = i128::from(z) - i128::from(self.centre[1]);
         let (rx, rz) = (i128::from(self.radii[0]), i128::from(self.radii[1]));
@@ -96,6 +129,18 @@ impl WaterVolume {
     }
 
     pub(crate) fn validate(&self) -> Result<(), ZoneError> {
+        if let Some(channel) = &self.channel {
+            if !(2..=32).contains(&channel.points.len())
+                || channel.half_width <= 0
+                || channel.points.windows(2).any(|p| p[0] == p[1])
+                || channel.points.iter().flatten().any(|v| {
+                    i64::from(*v).abs() + i64::from(channel.half_width)
+                        > i64::from(crate::MAX_CONTENT_COORDINATE_UNITS)
+                })
+            {
+                return Err(ZoneError::new("water channel points or width are invalid"));
+            }
+        }
         if self.name.is_empty() || self.radii.iter().any(|&radius| radius <= 0) {
             return Err(ZoneError::new(
                 "water volumes need a name and positive radii",
@@ -439,6 +484,7 @@ mod tests {
 
     fn lake() -> Vec<WaterVolume> {
         vec![WaterVolume {
+            channel: None,
             name: "lake".into(),
             centre: [0, 0],
             radii: [1_000, 500],

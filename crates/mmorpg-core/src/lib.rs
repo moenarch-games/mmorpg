@@ -195,7 +195,7 @@ pub use vendor::{
     MAX_VENDOR_OFFERS, VENDOR_REACH_UNITS, VendorOffer, VendorStock, VendorStockError,
     VendorTradeError, sell_price, settle_purchase, settle_sale, starter_vendor_stock,
 };
-pub use water::{AirPocket, Breath, WaterMode, WaterVolume};
+pub use water::{AirPocket, Breath, WaterChannel, WaterMode, WaterVolume};
 pub use waystone::{
     GREYHAVEN_OUTPOST, GREYHAVEN_ZONE, MAX_WAYSTONES, SEAM_TEST_EAST, SEAM_TEST_WEST,
     WAYSTONE_DISCOVERY_UNITS, WAYSTONES, WaystoneId, WaystoneSet, WaystoneSite, waystone,

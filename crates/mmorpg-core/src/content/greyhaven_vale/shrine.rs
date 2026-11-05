@@ -92,6 +92,7 @@ pub fn flattens(x: i32, z: i32) -> bool {
 #[must_use]
 pub fn cave_water() -> WaterVolume {
     WaterVolume {
+        channel: None,
         name: "Sunken Shrine Cave".to_owned(),
         centre: [8_800, CAVE_Z],
         radii: [3_600, 800],

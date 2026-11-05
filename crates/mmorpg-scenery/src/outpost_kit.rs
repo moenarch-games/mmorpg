@@ -97,7 +97,7 @@ const BUILDINGS: [(u32, &[Item], [i32; 2], u8); 2] = [
 /// Whether collider `id` is drawn by the kit (and its blockout only as the fallback).
 #[must_use]
 pub fn adopts(id: u32) -> bool {
-    BUILDINGS.iter().any(|(collider, ..)| *collider == id)
+    BUILDINGS.iter().any(|(collider, ..)| *collider == id) || (60_000..65_000).contains(&id)
 }
 
 /// One kit module placed in the zone.
@@ -162,7 +162,16 @@ pub fn placements(scenery: &Scenery) -> Vec<Placement> {
     if !scenery.greyhaven() {
         return placed;
     }
-    for (collider, items, half, quarters) in BUILDINGS {
+    let cottages = scenery.props.iter().filter_map(|prop| {
+        let id = prop.collider.filter(|id| (60_000..65_000).contains(id))?;
+        Some((
+            id,
+            HOUSE.as_slice(),
+            [400, 300],
+            if prop.position[2] >= 2800 { 2 } else { 0 },
+        ))
+    });
+    for (collider, items, half, quarters) in BUILDINGS.into_iter().chain(cottages) {
         let prop: &Prop = scenery
             .props
             .iter()

@@ -5,9 +5,8 @@
 //! Hollow with the Greyfang cave and Wolfrun Woods (slice 3) all stand on the rim. Beyond 128 m
 //! from the Outpost the rim descends gently (17°) into the outer valley's hills (#159).
 //!
-//! The basin is the Outpost and its apron (x ±44 m, z −24 m to +96 m) and a northern notch
-//! (west of the lake, as far north as z −64 m) where the Hollow Road and the Lakeshore Path
-//! start. Six ways between the floor and the rim are cut into the terrain itself:
+//! The basin is an irregular, rounded apron with a northern lobe west of the lake.
+//! Fixed-seed weathering varies its rock faces and shoulders (#513). Six ways between the floor and the rim are cut into the terrain itself:
 //!
 //! - **Millbrook Climb**, the Millbrook Road: east from the Outpost's gate, north along a ledge
 //!   in the cliff face, round a hairpin landing and back south up a cutting onto the farm
@@ -32,23 +31,6 @@
 /// The rim's height above the valley floor (11 m).
 pub const TERRACE_Y: i32 = 1_100;
 
-/// The basin's east cliff, under the farm: the valley floor up to the first X, the rim from the
-/// second.
-pub const WEST_CLIFF: [i32; 2] = [4_400, 4_800];
-/// The basin's west cliff, under Wolfrun Woods: the rim up to the first X, the floor from the
-/// second.
-pub const WOODS_CLIFF: [i32; 2] = [-4_800, -4_400];
-/// The basin's northern cliff, under the lake (Z): the rim up to the first, the floor from the
-/// second.
-pub const NORTH_CLIFF: [i32; 2] = [-2_800, -2_400];
-/// The basin's southern cliff (Z): the floor up to the first, the rim from the second.
-pub const SOUTH_CLIFF: [i32; 2] = [9_600, 10_000];
-/// The northern notch, west of the lake: the floor up to the first X, the lake's rim from the
-/// second …
-pub const LAKE_WEST_CLIFF: [i32; 2] = [1_600, 2_000];
-/// … and Redbrand Hollow's cliff at its northern end (Z): the rim up to the first, the floor
-/// from the second.
-pub const HOLLOW_CLIFF: [i32; 2] = [-6_800, -6_400];
 /// The rim descends from the first to the second Chebyshev distance from the Outpost (17°),
 /// into the outer valley's hills, beyond the Sunken Shrine's cave.
 pub const OUTER_SLOPE: [i32; 2] = [12_800, 16_400];
@@ -226,17 +208,36 @@ fn rise_q10(value: i32, edge: [i32; 2]) -> i64 {
 
 /// How much of the valley floor shows at `(x, z)` (Q10): 1024 inside the basin, 0 on the rim.
 fn floor_q10(x: i32, z: i32) -> i64 {
-    let west = rise_q10(x, WOODS_CLIFF);
-    let south = 1_024 - rise_q10(z, SOUTH_CLIFF);
-    let apron = west
-        .min(1_024 - rise_q10(x, WEST_CLIFF))
-        .min(rise_q10(z, NORTH_CLIFF))
-        .min(south);
-    let notch = west
-        .min(1_024 - rise_q10(x, LAKE_WEST_CLIFF))
-        .min(rise_q10(z, HOLLOW_CLIFF))
-        .min(south);
+    // Keep foundations, gates and the village's working lanes on their existing floor.
+    if (-3_400..=3_400).contains(&x) && (-1_200..=5_400).contains(&z) {
+        return 1_024;
+    }
+    // Broad, fixed-seed erosion changes the silhouette without changing it on recovery.
+    // Fade it out at the waterfall so the spring still meets its plunge pool.
+    let weathering = super::value_noise_q10(i64::from(x), i64::from(z), 2_600, 513);
+    let strength = i64::from((z - 2_400).abs().min(1_600));
+    let radius = 4_530 + (weathering - 512) * strength / 1_820;
+    let shoulder = 1_110 + weathering * strength / 16_384;
+    let apron = ellipse_floor(x, z - 2_800, radius, 6_800, shoulder);
+    let notch = ellipse_floor(x + 1_400, z + 4_000, 3_100, 2_700, 1_160);
     apron.max(notch)
+}
+
+/// Elliptical rock face with a weathered shoulder, evaluated entirely in integers.
+fn ellipse_floor(x: i32, z: i32, radius_x: i64, radius_z: i64, shoulder: i64) -> i64 {
+    let nx = i64::from(x) * 1_024 / radius_x;
+    let nz = i64::from(z) * 1_024 / radius_z;
+    let distance = (nx * nx + nz * nz).isqrt();
+    let rise = ((distance - 1_024) * 1_024 / (shoulder - 1_024)).clamp(0, 1_024);
+    // A shallow foot and shoulder frame a steeper middle rock face.
+    let rock = if rise < 256 {
+        rise / 2
+    } else if rise < 768 {
+        128 + (rise - 256) * 3 / 2
+    } else {
+        896 + (rise - 768) / 2
+    };
+    1_024 - rock
 }
 
 /// The rim's ground at `(x, z)`, or `None` on the untouched valley floor. Lanes override the

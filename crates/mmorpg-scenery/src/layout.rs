@@ -100,7 +100,11 @@ pub fn compose(source: &str, definition: &ZoneDefinition) -> Result<Scenery, Str
                 }),
         )
         .collect();
+    let brook = greyhaven_vale::brook::channel();
     scenery.props.retain(|prop| {
+        if prop.collider.is_none() && brook.contains(prop.position[0], prop.position[2]) {
+            return false;
+        }
         prop.collider.is_some()
             || !keep_out
                 .iter()

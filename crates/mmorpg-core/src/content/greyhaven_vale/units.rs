@@ -278,7 +278,7 @@ const GUARD: &str = "Greyhaven Guard";
 type NpcRow = (u32, &'static str, NpcRole, u8, [i32; 2], u16);
 
 #[rustfmt::skip]
-const NPCS: [NpcRow; 9] = [
+const NPCS: [NpcRow; 13] = [
     (1, "Marshal Elden Greywatch", NpcRole::QuestGiver, 10, [-2_200, 900], 0),
     (2, "Tanner Hilda Brook", NpcRole::QuestGiver, 5, [-2_400, 3_150], 32_768),
     // Inside the inn, behind its bar, facing the room (#158).
@@ -292,6 +292,10 @@ const NPCS: [NpcRow; 9] = [
     (8, GUARD, NpcRole::Guard, 10, [-2_900, 1_500], 49_152),
     // The east guard stands a metre south of the market square's front crate (#577).
     (9, GUARD, NpcRole::Guard, 10, [2_900, 2_600], 16_384),
+    (10,"Weaver Lysa Reed",NpcRole::Resident,2,[-2100,1850],0),
+    (11,"Carpenter Owen Alder",NpcRole::Resident,3,[2150,1850],0),
+    (12,"Mara Wells",NpcRole::Resident,2,[700,4000],32768),
+    (13,"Davin Moss",NpcRole::Resident,2,[-1000,2900],0),
 ];
 
 pub(super) fn creature_templates() -> Vec<CreatureTemplate> {

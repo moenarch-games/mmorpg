@@ -1005,6 +1005,9 @@ impl Scenery {
     /// ground ([`Scenery::ground_at`]); units are drawn raised by it.
     #[must_use]
     pub fn height_at(&self, x: i32, z: i32) -> i32 {
+        if self.greyhaven && greyhaven_vale::brook::bed_depth(x, z) > 0 {
+            return 0;
+        }
         if self.authored_outpost_relief
             && let Some(height) = outpost_relief::height_at(x, z)
         {
