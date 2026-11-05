@@ -447,6 +447,8 @@ impl TerrainGrid {
 pub struct Scenery {
     pub content_revision: u64,
     pub props: Vec<Prop>,
+    /// Simplified presentation fallback for authored surfaces without detailed art.
+    pub collision_surfaces: Vec<mmorpg_core::StaticMesh>,
     pub roads: Vec<Road>,
     pub water: Vec<Water>,
     /// XZ rectangles (units) the drawn terrain leaves open: the footprints of platforms that
@@ -858,6 +860,12 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
     let mut scenery = Scenery {
         content_revision: content.revision(),
         props: Vec::new(),
+        collision_surfaces: definition
+            .static_meshes()
+            .iter()
+            .filter(|mesh| ids::CAVE_LEDGE.contains(&mesh.id))
+            .cloned()
+            .collect(),
         roads,
         water,
         terrain_holes: Vec::new(),
@@ -898,6 +906,7 @@ impl Scenery {
         Self {
             content_revision,
             props: Vec::new(),
+            collision_surfaces: Vec::new(),
             roads: Vec::new(),
             water: Vec::new(),
             terrain_holes: Vec::new(),

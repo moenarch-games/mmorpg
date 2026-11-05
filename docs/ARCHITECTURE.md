@@ -436,3 +436,10 @@ and bounded projections. See [LOOT.md](LOOT.md). The browser Loot panel reads th
 ## Durable empty-zone lifecycle
 
 The PostgreSQL/S3 host implements bounded empty residence, verified checkpoint suspension and cold direct-route admission through the shared runtime hooks. Default resume freezes all authoritative time; optional subsystem transitions require explicit input and remain opt-in. See [the implementation and scope](ZONE_LIFECYCLE.md) and [ADR 0004](adr/0004-durable-zone-suspension.md).
+
+### Authored static collision (#639)
+
+[Static collision authoring](STATIC_COLLISION.md) describes immutable indexed triangle
+meshes loaded by `ZoneDefinition`, independent of visual terrain tiles and LOD.
+Redbrand's public outer cave demonstrates a terrace entrance, solid shell, authored
+floor and stacked walkable shelf. Rapier remains the sole production authority.
