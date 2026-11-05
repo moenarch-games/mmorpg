@@ -29,7 +29,7 @@ describe("the shared static scene in the browser", () => {
       geometries.set(geometry.resourceKey, geometry);
     }
     expect(scene.instanceBatches.every(({ batch }) => batch.instances.length > 0)).toBe(true);
-    expect(scene.stats.staticNodes).toBe(scene.batches.length + scene.instanceBatches.length);
+    expect(scene.stats.staticNodes).toBe(scene.batches.length + scene.surfaces.length + scene.instanceBatches.length);
     const modelled = Object.values(scene.stats.props).reduce((sum, count) => sum + (count ?? 0), 0);
     expect(modelled).toBe(world.scenery.props.length);
   });
@@ -48,7 +48,8 @@ describe("the shared static scene in the browser", () => {
     expect(near.find((draw) => draw.layer === "grass" && !draw.overlay && !draw.far)).toBeDefined();
     const far = unpackTile(stream.far(built[0]!));
     expect(far.every((draw) => draw.far)).toBe(true);
-    for (const draw of [...near, ...far]) {
+    expect(scene.surfaces.some((draw) => draw.layer === "rock")).toBe(true);
+    for (const draw of [...near, ...far, ...scene.surfaces]) {
       const count = draw.positions.length / 3;
       expect([draw.normals.length, draw.colors.length, draw.uvs.length, draw.tangents.length, draw.alpha.length]).toEqual([count * 3, count * 3, count * 2, count * 4, count]);
       expect(draw.colors.every((channel) => channel >= 0 && channel <= 1)).toBe(true);

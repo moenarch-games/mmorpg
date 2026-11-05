@@ -155,7 +155,7 @@ export function litObject<T extends THREE.Object3D>(root: T): T {
  * One frame's lighting inputs: the hour, whether the atmosphere draws the sky (the world) or the page shows through
  * (the selection stage), the fog colour (`#rrggbb`, null for none) and the point lights.
  */
-export type LightingFrame = { hour: number; sky: boolean; fog: string | null; pointLights: Float32Array | null };
+export type LightingFrame = { hour: number; sky: boolean; interior: number; fog: string | null; pointLights: Float32Array | null };
 
 const negate = ([x, y, z]: Vec3): Vec3 => [-x, -y, -z];
 
@@ -194,14 +194,17 @@ export class GreyhavenLighting {
     const { hour, fog, pointLights } = frame;
     const sun = DAY_CYCLE.toSun(hour);
     const elevation = THREE.MathUtils.radToDeg(Math.asin(Math.min(1, Math.max(-1, sun[1]))));
-    lighting.ev100 = ev100(elevation);
+    const interior = Math.min(1, Math.max(0, frame.interior));
+    const exposure = ev100(elevation);
+    const transmission = 10 ** (-3 * interior);
+    lighting.ev100 = exposure + (Math.min(exposure, 7.5) - exposure) * interior;
     const shadows = elevation > SHADOWLESS_BELOW ? SUN_SHADOWS : null;
     if (this.drawsSky) {
-      lighting.sky = DEFAULT_SKY;
+      lighting.sky = { ...DEFAULT_SKY, environmentIntensity: 10 ** (-interior) };
       lighting.clearColor = [0, 0, 0];
       lighting.clearAlpha = 1;
-      lighting.sun = { direction: negate(sun), color: [1, 1, 1], illuminance: RAW_SUNLIGHT, shadows };
-      lighting.moon = { direction: negate(DAY_CYCLE.toMoon(hour)), color: MOON_COLOR, illuminance: MOON_LUX };
+      lighting.sun = { direction: negate(sun), color: [1, 1, 1], illuminance: RAW_SUNLIGHT * transmission, shadows };
+      lighting.moon = { direction: negate(DAY_CYCLE.toMoon(hour)), color: MOON_COLOR, illuminance: MOON_LUX * transmission };
       // The sky's environment light is the ambient light.
       lighting.ambient = { color: [1, 1, 1], brightness: 0 };
     } else {
@@ -212,15 +215,15 @@ export class GreyhavenLighting {
       const lux = Math.max(...light);
       // One directional light: the sun while it outshines the moon, then the moon.
       if (lux > MOON_LUX) {
-        lighting.sun = { direction: negate(sun), color: light.map((channel) => channel / lux) as unknown as Vec3, illuminance: lux, shadows };
+        lighting.sun = { direction: negate(sun), color: light.map((channel) => channel / lux) as unknown as Vec3, illuminance: lux * transmission, shadows };
       } else {
         const moon = DAY_CYCLE.toMoon(hour);
-        lighting.sun = moon[1] > 0 ? { direction: negate(moon), color: MOON_COLOR, illuminance: MOON_LUX, shadows: null } : null;
+        lighting.sun = moon[1] > 0 ? { direction: negate(moon), color: MOON_COLOR, illuminance: MOON_LUX * transmission, shadows: null } : null;
       }
       const twilight = Math.max(0, 1 - Math.abs(elevation) / 8);
       lighting.ambient = {
         color: SKY_COLOR.map((channel, index) => channel + (TWILIGHT_COLOR[index]! - channel) * twilight) as unknown as Vec3,
-        brightness: interpolate(SKY_AMBIENT, elevation),
+        brightness: interpolate(SKY_AMBIENT, elevation) * transmission * 10 ** (-interior),
       };
     }
     lighting.fog = fog === null ? null : {

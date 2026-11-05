@@ -675,6 +675,15 @@ pub fn static_scene_shown(viewer: &[f64], outpost_kit: bool, settlement_props: b
     )
 }
 
+/// Presentation-only cave adaptation at the projected viewer position, shared with native.
+#[wasm_bindgen(js_name = staticSceneInterior)]
+pub fn static_scene_interior(viewer: &[f64]) -> f32 {
+    if !scenery::hosted_scenery().greyhaven() {
+        return 0.;
+    }
+    mmorpg_presentation::lights::cave_interior(viewer.try_into().ok())
+}
+
 /// The scenery's campfire and lamp lights at a cosmetic clock, eight floats each (#600).
 #[wasm_bindgen(js_name = staticScenePointLights)]
 pub fn static_scene_point_lights(seconds: f64, animate: bool) -> Vec<f32> {

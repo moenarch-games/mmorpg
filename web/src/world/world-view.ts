@@ -532,7 +532,7 @@ export class WorldView {
     void this.#nature.load();
     this.#climbing = new PlacedKit(world.scenery.climbing);
     void this.#climbing.load();
-    this.#ground = new Ground(world.scenery.staticScene.terrainStream());
+    this.#ground = new Ground(world.scenery.staticScene.terrainStream(), this.#scene.surfaces);
     void this.#ground.load(this.#models.ktx2Loader);
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
     this.#inn = new WalkInBuildings(world.scenery.buildings.presenters());
@@ -1208,6 +1208,7 @@ export class WorldView {
     this.#lighting.apply({
       hour: (12 + seconds / DAY_SECONDS * 24) % 24,
       sky: true,
+      interior: this.#scene?.interior([self.x, self.feetY, self.z]) ?? 0,
       fog: environment.fog ? String(environment.fog.color) : null,
       pointLights: this.#scene?.pointLights(this.#seconds, animate) ?? null,
     });

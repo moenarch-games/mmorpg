@@ -16,6 +16,7 @@ pub mod ambient;
 pub mod audio;
 pub mod batching;
 pub mod buildings;
+mod cliffs;
 pub mod climbing;
 pub mod composition;
 pub mod geometry;
@@ -206,19 +207,9 @@ impl StaticScene {
         let mut batcher = batching::Batcher::default();
         let mut water = terrain::build(&mut batcher, scenery, &grid);
         let mut animated = props::build(&mut batcher, scenery, &grid);
-        // A coarse visual fallback follows authored walkable surfaces; rendering detail never
-        // changes the collision asset. Detailed cave art can replace this independently.
-        for mesh in &scenery.collision_surfaces {
-            let geometry = batcher.global("cave-surfaces", 0x70675a);
-            for triangle in &mesh.triangles {
-                let vertices = triangle.map(|index| {
-                    let local = mesh.vertices[index as usize];
-                    std::array::from_fn(|axis| f64::from(local[axis] + mesh.position[axis]) / 100.)
-                });
-                geometry.face(&vertices);
-            }
-        }
+        lights::cave_torches(&mut batcher, scenery);
         let mut groups = batcher.finish();
+        groups.extend(cliffs::groups(scenery));
         let mut terrain = tiles::Tiles::new(scenery, &grid);
         let hash = identity(
             groups

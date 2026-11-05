@@ -335,13 +335,16 @@ pub fn scene(lighting: &Lighting, view: CameraView) -> Scene {
     let to_sun = DAY_CYCLE.to_sun(lighting.hour);
     let elevation = to_sun.y.clamp(-1., 1.).asin().to_degrees();
     let fog = &lighting.fog;
+    let interior = lighting.interior.clamp(0., 1.);
+    let exposure = ev100(elevation);
+    let transmission = 10_f32.powf(-3. * interior);
     Scene {
         camera: Camera {
             eye: Vec3::from(view.eye),
             target: Vec3::from(view.target),
             fov_y: view.field_of_view_degrees.to_radians(),
             near: NEAR_PLANE_METRES,
-            ev100: ev100(elevation),
+            ev100: exposure + (exposure.min(7.5) - exposure) * interior,
             shadow_filter: ShadowFilter::Gaussian,
             tonemapping: Tonemapping::TonyMcMapface,
         },
@@ -349,16 +352,19 @@ pub fn scene(lighting: &Lighting, view: CameraView) -> Scene {
         sun: Some(Sun {
             direction: -to_sun,
             color: Vec3::ONE,
-            illuminance: RAW_SUNLIGHT,
+            illuminance: RAW_SUNLIGHT * transmission,
             shadows: (elevation > SHADOWLESS_BELOW).then_some(SUN_SHADOWS),
         }),
         moon: Some(Moon {
             direction: -DAY_CYCLE.to_moon(lighting.hour),
             color: MOON_COLOR,
-            illuminance: MOON_LUX,
+            illuminance: MOON_LUX * transmission,
         }),
         // The sky's environment light is the ambient light.
-        sky: Some(Sky::default()),
+        sky: Some(Sky {
+            environment_intensity: Some(10_f32.powf(-interior)),
+            ..Sky::default()
+        }),
         point_lights: lighting
             .point_lights
             .iter()

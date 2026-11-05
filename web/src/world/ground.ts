@@ -158,13 +158,14 @@ export class Ground {
   #changed = true;
   #textured = new Set<string>();
 
-  constructor(stream: TerrainStreamSource) {
+  constructor(stream: TerrainStreamSource, surfaces: readonly TileDraw[] = []) {
     this.#stream = stream;
     this.root.name = "greyhaven.terrain";
     this.root.matrixAutoUpdate = false;
     const count = stream.count();
     this.#levels = new Uint8Array(count);
     this.#far = Array.from({ length: count }, (_, index) => this.#place(unpackTile(stream.far(index)), true));
+    this.#place(surfaces, true);
   }
 
   #batch(draw: TileDraw): Batch {

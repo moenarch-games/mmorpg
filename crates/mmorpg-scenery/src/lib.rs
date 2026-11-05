@@ -863,7 +863,7 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
         collision_surfaces: definition
             .static_meshes()
             .iter()
-            .filter(|mesh| ids::CAVE_LEDGE.contains(&mesh.id))
+            .filter(|mesh| ids::CAVE_LEDGE.contains(&mesh.id) || ids::CAVE_WALLS.contains(&mesh.id))
             .cloned()
             .collect(),
         roads,

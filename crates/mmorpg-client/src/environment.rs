@@ -7,6 +7,8 @@ pub struct Lighting {
     /// Hours since midnight on the zone's clock; render-engine's `DayCycle` places the sun
     /// and moon from it.
     pub hour: f32,
+    /// Projected-viewer cave adaptation (0 outdoors, 1 in the chamber).
+    pub interior: f32,
     pub fog: Fog,
     /// The scenery's lights (campfires, lantern posts) at this frame's flicker.
     pub point_lights: Vec<PointLight>,
@@ -85,6 +87,7 @@ impl Lighting {
         let horizon = blend(0xcfe0ea, 0x38475e, 0xe4a176);
         Self {
             hour,
+            interior: 0.,
             fog: Fog {
                 color: rgb(mix(horizon, 0xb9cddb, daylight)),
                 visibility: FOG_VISIBILITY_METRES,

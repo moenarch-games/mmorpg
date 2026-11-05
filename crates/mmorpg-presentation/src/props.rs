@@ -570,59 +570,16 @@ fn grass(m: &mut Model, p: &Prop) {
 }
 /// A cliff block; `climbable` rock wears handhold routes up its sides (#512).
 fn cliff(m: &mut Model, p: &Prop, climbable: bool) {
-    let [hx, hy, hz] = half(p);
-    let h = hy * 2.;
-    let s = seed(p);
-    let mut layers = Vec::with_capacity(3);
-    for layer in 0..3 {
-        let l = layer as f64;
-        let from = h * l / 3.;
-        let to = h * (l + 1.) / 3.;
-        m.box_at(
-            if layer % 2 == 0 { ROCK } else { ROCK_DARK },
-            [0., (from + to) / 2., 0.],
-            [hx - l * 0.25, (to - from) / 2., hz - l * 0.25],
-        );
-        layers.push(([hx - l * 0.25, hz - l * 0.25], from, to));
-    }
+    // The textured skin is built in cliffs; preserve the authoritative climbing cues.
     if climbable {
-        crate::handholds::block(&layers, s, &mut |c, shape, a| {
+        let [hx, hy, hz] = half(p);
+        let layers = [([hx, hz], 0., hy * 2.)];
+        crate::handholds::block(&layers, seed(p), &mut |c, shape, a| {
             m.handholds.push((c, shape, a))
         });
     }
-    m.box_at(MOSS, [0., h + 0.08, 0.], [hx - 0.7, 0.1, hz - 0.7]);
-    let count = (hx * hz / 6.).round().clamp(4., 26.) as usize;
-    for i in 0..count {
-        let j = i as f64;
-        let u = hash(&[s * 1e6, j, 1.]);
-        let v = hash(&[s * 1e6, j, 2.]);
-        let size = 0.9 + hash(&[s * 1e6, j, 3.]) * 1.6;
-        let top = i % 3 == 0 || h < 3.;
-        let side = (v * 4.).floor() as usize;
-        let along = u * 2. - 1.;
-        let inset = size * 0.75;
-        let (x, z) = if top {
-            (along * (hx - size), (v * 2. - 1.) * (hz - size))
-        } else {
-            match side {
-                0 => (along * hx, hz - inset),
-                1 => (along * hx, -hz + inset),
-                2 => (hx - inset, along * hz),
-                _ => (-hx + inset, along * hz),
-            }
-        };
-        let y = if top {
-            h + size * 0.2
-        } else {
-            2.2 + size + hash(&[s * 1e6, j, 4.]) * (h - 2.2 - size).max(0.)
-        };
-        m.put(
-            if i % 2 == 0 { ROCK_DARK } else { ROCK },
-            blob(0, false, 0.28, (i % 5) as f64),
-            at(x, y, z, size, size * if top { 0.6 } else { 0.9 }, size),
-        );
-    }
 }
+
 fn campfire(m: &mut Model, p: &Prop, index: usize, f: Affine) -> Animated {
     m.cull = Cull::Mid;
     let [hx, _, hz] = half(p);

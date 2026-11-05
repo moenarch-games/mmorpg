@@ -149,6 +149,25 @@ fn tangent(n: V, du: V, dv: V) -> [f64; 4] {
     [t[0], t[1], t[2], sign]
 }
 
+/// Face-aligned rock mapping, including vertical walls and ceilings: texture scale is in
+/// metres rather than stretched over a collider, and each face has the matching tangent basis.
+pub(crate) fn project_rock(g: &mut Geometry) {
+    let tile = Layer::Rock.tile_metres();
+    for i in 0..g.p.len() {
+        let [x, y, z] = g.p[i];
+        let n = g.n[i];
+        let (uv, du, dv) = if n[1].abs() > 0.65 {
+            ([x / tile, z / tile], [1., 0., 0.], [0., 0., 1.])
+        } else if n[0].abs() > n[2].abs() {
+            ([z / tile, y / tile], [0., 0., 1.], [0., 1., 0.])
+        } else {
+            ([x / tile, y / tile], [1., 0., 0.], [0., 1., 0.])
+        };
+        g.uv.push(uv);
+        g.tangents.push(tangent(n, du, dv));
+    }
+}
+
 /// Texture coordinates and tangents projected from above (`u` along x, `v` along z) for
 /// every vertex of `g` that has none yet.
 pub(crate) fn project_top(g: &mut Geometry, layer: Layer) {
