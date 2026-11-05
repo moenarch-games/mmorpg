@@ -1,4 +1,4 @@
-"""Run in Blender: authored Greyhaven keep, gates and timber defences.
+"""Run in Blender: Greyhaven keep, timber defences and the Millbrook farm buildings.
 Uses Blender's glTF exporter; creates no renderer/runtime dependency.
 Coordinates passed to helpers are game metres (Y up, +Z south).
 """
@@ -104,10 +104,10 @@ def solid_record(id,vs,fs):
         for i in range(1,len(f)-1):triangles.append([f[0],f[i],f[i+1]])
     collision.append(dict(id=id,position=[0,0,0],vertices=[[round(v*100) for v in p] for p in vs],triangles=triangles))
 
-def roof(name,x,z,w,d,y,rise,mat,body=None):
+def roof(name,x,z,w,d,y,rise,mat,body=None,open_gables=False):
     vs=[(x-w,y,z-d),(x+w,y,z-d),(x+w,y,z+d),(x-w,y,z+d),(x-w,y+rise,z),(x+w,y+rise,z)]
     fs=[(0,3,2,1),(0,1,5,4),(3,4,5,2),(0,4,3),(1,2,5)]
-    mesh(name,vs,fs,mat)
+    mesh(name,vs,fs[:3] if open_gables else fs,mat)
     if body is not None:solid_record(body,vs,fs)
 
 # Keep: dressed stone hall, four engaged round turrets, slate roof and an inset portal.
@@ -206,6 +206,117 @@ for i,(x,z,turn) in enumerate([(0,-10,0),(0,50,0),(-32,20,1),(32,20,1)]):
     hx,hz=(.4,3.15) if turn else (3.15,.4)
     vs=[(x+sx*hx,3.93+sy*.44,z+sz*hz) for sx,sy,sz in [(-1,0,-1),(1,0,-1),(1,0,1),(-1,0,1),(-1,1,-1),(1,1,-1),(1,1,1),(-1,1,1)]]
     solid_record(65020+i,vs,BOX_FACES)
+# Millbrook's three existing closed buildings: local geometry is placed on their unchanged
+# content footprints. The windmill keeps the game's shared animated sail assembly.
+red_mat=material('barn-oxblood',np.clip(wood*np.array([1.25,.72,.56]),0,1),wood_height,.9,2)
+pv,pu=np.mgrid[0:N,0:N]/N
+plaster_h=.5+.055*noise+.025*np.sin(pu*math.tau*3)*np.sin(pv*math.tau*5)
+plaster_base=.48+.055*noise+.025*np.sin(pu*math.tau*3)*np.sin(pv*math.tau*2)
+plaster_mat=material('lime-plaster',np.stack([plaster_base,plaster_base*.94,plaster_base*.79],axis=2),plaster_h,.96,2.8)
+warm_window=flat('farm warm glass',(.20,.12,.052))
+
+def farm_place(start,solid_start,x,z,quarter):
+    # Positive game yaw turns +Z toward +X, as the shared procedural building placement does.
+    a=quarter*math.pi/2;c,s=math.cos(a),math.sin(a)
+    def world(gx,gy,gz):return (x+c*gx+s*gz,11+gy,z-s*gx+c*gz)
+    for obj in objects[start:]:
+        for v in obj.data.vertices:
+            gx,gy,gz=v.co.x,v.co.z,-v.co.y;px,py,pz=world(gx,gy,gz);v.co=(px,-pz,py)
+        obj.data.update()
+    for record in collision[solid_start:]:
+        record['vertices']=[[round(v*100) for v in world(*(q/100 for q in p))] for p in record['vertices']]
+
+def gable_panel(name,w,d,base,rise,mat):
+    for sign in [-1,1]:mesh(name,[(-w,base,sign*d),(w,base,sign*d),(0,base+rise,sign*d)],[(0,1,2)],mat)
+
+def farm_window(x,y,z,side=False,outward=1):
+    # Recess and shallow mullions sit against the solid wall; no extra movement blockers.
+    def detail(name,c,h,mat):
+        xx,yy,zz=c
+        return box(name,(x+zz*outward if side else x+xx,y+yy,z+xx if side else z+zz*outward),(h[2],h[1],h[0]) if side else h,mat,.015)
+    detail('Farm window recess',(0,0,0),(.48,.64,.025),dark)
+    detail('Farm amber glass',(0,0,.03),(.37,.53,.012),warm_window)
+    for dx in [-.45,.45]:detail('Farm window jamb',(dx,0,.055),(.065,.66,.06),wood_mat)
+    for dy in [-.61,.61]:detail('Farm window head and sill',(0,dy,.065),(.52,.065,.08),wood_mat)
+    detail('Farm window mullion',(0,0,.07),(.035,.55,.045),wood_mat)
+    detail('Farm window transom',(0,0,.07),(.39,.035,.045),wood_mat)
+
+# Barn: oxblood plank walls over a stone sill, heavy bracing, a steep roof and closed loft.
+start,solid_start=len(objects),len(collision)
+box('Millbrook barn masonry sill',(0,.30,0),(6,.30,8),stone_mat,.05)
+box('Millbrook barn plank hall',(0,3.8,0),(6,3.2,8),red_mat,.025)
+# Long ridge runs along local Z; rotate the existing roof primitive through a quarter turn.
+roof_start=len(objects);roof('Millbrook barn slate roof',0,0,8.25,6.25,7,4.2,slate_mat,65060,open_gables=True)
+for obj in objects[roof_start:]:
+    for v in obj.data.vertices:v.co.x,v.co.y=-v.co.y,v.co.x
+    obj.data.update()
+for record in collision[solid_start:]:
+    record['vertices']=[[p[2],p[1],-p[0]] for p in record['vertices']]
+gable_panel('Millbrook barn gable',6,8,7,4.2,red_mat)
+for side in [-1,1]:
+    for z in [-7.8,-3.9,0,3.9,7.8]:
+        box('Barn side post',(side*6.025,3.8,z),(.10,3.2,.14),wood_mat)
+    for y in [.7,4.4,6.9]:box('Barn long rail',(side*6.04,y,0),(.11,.11,7.95),wood_mat)
+    for z in [-5.9,2.0]:
+        beam('Barn side diagonal',(side*6.07,.8,z-1.75),(side*6.07,4.3,z+1.75),.105,wood_mat)
+for side in [-1,1]:
+    beam('Barn gable rake',(-6,7,side*8.04),(0,11.2,side*8.04),.11,wood_mat)
+    beam('Barn gable rake',(0,11.2,side*8.04),(6,7,side*8.04),.11,wood_mat)
+    beam('Barn gable king post',(0,7,side*8.05),(0,11.2,side*8.05),.10,wood_mat)
+    box('Barn closed loft hatch',(0,8.1,side*8.08),(.65,.9,.06),wood_mat)
+box('Barn double oak door',(0,2.2,8.065),(1.65,2.2,.065),wood_mat)
+for x in [-1.7,1.7]:box('Barn door frame',(x,2.25,8.12),(.14,2.25,.13),wood_mat)
+box('Barn door lintel',(0,4.5,8.12),(1.85,.16,.14),wood_mat)
+for side in [-1,1]:
+    beam('Barn door diagonal',(side*.12,.25,8.15),(side*1.55,4.1,8.15),.085,wood_mat)
+    for y in [.7,3.6]:box('Barn forged hinge',(side*.85,y,8.17),(.65,.055,.025),iron)
+farm_place(start,solid_start,80,44,2)
+
+# Farmhouse: pale limewash, exposed framing, slate roof, chimney and closed oak front door.
+start,solid_start=len(objects),len(collision)
+box('Millbrook farmhouse footing',(0,.35,0),(4,.35,3.5),stone_mat,.06)
+box('Millbrook farmhouse limewash',(0,2.85,0),(4,2.15,3.5),plaster_mat,.035)
+roof('Millbrook farmhouse slate roof',0,0,4.25,3.75,5,2.4,slate_mat,65061,open_gables=True)
+# Ridge along X: gable infill on the two X ends.
+for side in [-1,1]:
+    mesh('Farmhouse plaster gable',[(side*4,5,-3.5),(side*4,5,3.5),(side*4,7.4,0)],[(0,1,2)],plaster_mat)
+    for z in [-3.5,3.5]:beam('Farmhouse gable rake',(side*4.04,5,z),(side*4.04,7.4,0),.09,wood_mat)
+    for z in [-3.25,0,3.25]:box('Farmhouse side framing',(side*4.02,2.8,z),(.10,2.15,.11),wood_mat)
+    for x in [-3.85,-1.75,1.75,3.85]:box('Farmhouse front framing',(x,2.85,side*3.52),(.10,2.15,.10),wood_mat)
+    for y in [.8,2.8,4.9]:
+        box('Farmhouse horizontal front beam',(0,y,side*3.54),(4,.095,.11),wood_mat)
+        box('Farmhouse horizontal side beam',(side*4.04,y,0),(.11,.095,3.5),wood_mat)
+    for x in [-2.7,2.7]:farm_window(x,3.8,side*3.57,outward=side)
+for side in [-1,1]:farm_window(side*4.08,3.7,0,True,side)
+box('Farmhouse oak door',(0,1.3,3.565),(.65,1.3,.065),wood_mat)
+for x in [-.73,.73]:box('Farmhouse portal post',(x,1.4,3.62),(.10,1.4,.12),wood_mat)
+box('Farmhouse portal lintel',(0,2.8,3.62),(.83,.11,.14),wood_mat)
+box('Farmhouse latch',(.45,1.3,3.66),(.07,.035,.03),iron)
+box('Farmhouse chimney',(-2.5,6.3,-1.3),(.40,1.3,.40),stone_mat,.04)
+box('Farmhouse chimney crown',(-2.5,7.6,-1.3),(.47,.10,.47),trim,.025)
+vs=[(-2.5+sx*.47,y,-1.3+sz*.47) for y in [5,7.7] for sx,sz in [(-1,-1),(1,-1),(1,1),(-1,1)]]
+solid_record(65063,vs,BOX_FACES)
+farm_place(start,solid_start,62,46.5,2)
+
+# Tapered mill tower: exact closed 20-sided collision instead of the old invisible square
+# corners. Its animated sails retain their existing hub at local (0,8.9,2.85).
+start,solid_start=len(objects),len(collision)
+n=20;vs=[(r*math.sin(j*math.tau/n),y,r*math.cos(j*math.tau/n)) for y,r in [(0,2.5),(8,1.95)] for j in range(n)]
+fs=[tuple(range(n-1,-1,-1)),tuple(range(n,2*n))]+[(j,(j+1)%n,(j+1)%n+n,j+n) for j in range(n)]
+mesh('Millbrook tapering stone windmill',vs,fs,stone_mat);solid_record(202,vs,fs)
+for y,r in [(.15,2.50),(3.0,2.30),(6.5,2.06)]:cylinder('Mill stone belt',(0,y,0),r,.13,trim,20,r-.012)
+cylinder('Mill conical slate cap',(0,8,0),2.24,2.6,slate_mat,20,0)
+vs=[(2.24*math.sin(j*math.tau/n),8,2.24*math.cos(j*math.tau/n)) for j in range(n)]+[(0,10.6,0)]
+solid_record(65062,vs,[tuple(range(n-1,-1,-1))]+[(j,(j+1)%n,n) for j in range(n)])
+box('Mill closed oak door',(0,1.1,2.43),(.47,1.1,.055),wood_mat)
+for x in [-.54,.54]:box('Mill door stone jamb',(x,1.18,2.44),(.09,1.18,.09),trim,.025)
+box('Mill portal lintel',(0,2.36,2.44),(.63,.10,.13),trim,.035)
+farm_window(0,4.9,2.18)
+box('Mill timber axle housing',(0,8.9,2.35),(.22,.22,.50),wood_mat)
+vs=[(sx*.22,8.68+sy*.44,2.35+sz*.50) for sx,sy,sz in [(-1,0,-1),(1,0,-1),(1,0,1),(-1,0,1),(-1,1,-1),(1,1,-1),(1,1,1),(-1,1,1)]]
+solid_record(65064,vs,BOX_FACES)
+farm_place(start,solid_start,88,21,2)
+
 # Apply bevels and join by material for a compact, standard static glTF.
 bpy.ops.object.select_all(action='DESELECT')
 for o in objects:o.select_set(True)
@@ -243,3 +354,24 @@ for k,(x,z) in enumerate([(-47,43),(-46,62),(47,56)]):
     solid_record(65030+k,vs,fs)
 COLLISION.write_text(json.dumps(collision,separators=(',',':'))+'\n')
 print('Authored',len(o.data.polygons),'faces;',len(collision),'simplified collision meshes;',len(resources),'resources.')
+
+# Authoring-only preview of the existing shared animated sail assembly; excluded from glTF.
+# The game keeps Motion::Sail and reduced-motion behaviour in mmorpg-presentation.
+preview_name='Millbrook sails - game animation preview'
+old=bpy.data.collections.get(preview_name)
+if old:
+    for obj in list(old.objects):bpy.data.objects.remove(obj,do_unlink=True)
+    bpy.data.collections.remove(old)
+collection=bpy.data.collections.new(preview_name);bpy.context.scene.collection.children.link(collection)
+canvas=flat('sail linen preview',(.65,.58,.44))
+start,solid_start=len(objects),len(collision)
+box('Mill animated hub preview',(0,8.9,2.85),(.32,.32,.22),wood_mat)
+for arm in range(4):
+    a=arm*math.pi/2;begin=len(objects)
+    box('Mill sail spar preview',(0,12.0,2.90),(.1,3.1,.1),wood_mat)
+    box('Mill sail linen preview',(.62,12.5,2.93),(.5,2.3,.03),canvas)
+    for y in [1.6,2.8,4.,5.2]:box('Mill sail lath preview',(.62,8.9+y,2.97),(.56,.04,.03),wood_mat)
+    for obj in objects[begin:]:
+        for v in obj.data.vertices:
+            x,y=v.co.x,v.co.z-8.9;v.co.x=x*math.cos(a)-y*math.sin(a);v.co.z=8.9+x*math.sin(a)+y*math.cos(a)
+farm_place(start,solid_start,88,21,2)

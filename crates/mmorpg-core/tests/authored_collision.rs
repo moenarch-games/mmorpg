@@ -1,4 +1,4 @@
-//! Redbrand's public cave on production Rapier: terrain seam, solid shell and stacked floors.
+//! Authored surfaces on production Rapier: Redbrand's cave and Millbrook's round windmill.
 use mmorpg_core::{ZoneCommand, ZoneContent, ZoneId, ZoneSimulation, greyhaven_vale};
 use std::sync::Arc;
 
@@ -149,4 +149,34 @@ fn meshes_support_without_heightfield_and_change_content_identity() {
     let mut changed = meshes;
     changed[0].vertices[0][0] += 1;
     assert_ne!(a.revision(), build(changed).revision());
+}
+
+#[test]
+fn millbrook_windmill_has_a_solid_round_footprint() {
+    // This lane cuts through a corner of the former square proxy, outside the round tower.
+    let mut corner = Player::at([9400, 1100, 2350]);
+    corner.walk(49152, 50);
+    assert!(
+        corner.feet()[0] < 9050.,
+        "no invisible square corner: {:?}",
+        corner.feet()
+    );
+    assert!((corner.feet()[1] - 1100.).abs() < 1.);
+
+    let mut wall = Player::at([9400, 1100, 2100]);
+    wall.command(ZoneCommand::Move {
+        forward: 1,
+        strafe: 0,
+        facing: 49152,
+    });
+    let mut closest = f32::INFINITY;
+    for _ in 0..120 {
+        wall.ticks(1);
+        let p = wall.feet();
+        let radius = (p[0] - 8800.).hypot(p[2] - 2100.);
+        assert!(radius >= 265., "cannot enter solid tower: {p:?}");
+        closest = closest.min(radius);
+    }
+    // The controller may slide around a curved wall, but must actually reach it and stay out.
+    assert!(closest < 290., "reached the tower: {closest}");
 }

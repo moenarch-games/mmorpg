@@ -145,3 +145,35 @@ browser presentation tests. Chromium walked the bridge and captured
 errors. The broad view remains hazier than the supplied reference; further atmosphere,
 architecture and ground modelling are ongoing. No full suite or native GPU acceptance ran.
 Policy source revision remains `625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+
+## Millbrook architecture pass
+
+The existing barn, farmhouse and windmill now share the authored Greyhaven bundle instead
+of their procedural blockouts. `fortifications.py` models oxblood plank walls, barn bracing,
+a closed loft hatch, limewashed farmhouse walls, timber windows, a chimney and slate roofs.
+Four additional colour/normal PNGs describe painted boards and lime plaster. All geometry
+is repository-authored and MIT-licensed; the existing glTF/static-bundle import path remains
+unchanged. The windmill retains the shared animated sails and reduced-motion behaviour.
+Blender shows a separate stationary sail preview, deliberately excluded from the export.
+
+The buildings keep Millbrook's established footprint and 11 m terrace. Barn/farmhouse bodies
+retain collider IDs 200/201. The square windmill box is replaced by a closed, tapered
+20-sided static triangle mesh under its original ID 202. Roofs, chimney and axle housing
+have simplified meshes 65060–65064 in `greyhaven-fort.json`, independent of the detailed
+visual mesh. Rapier consumes these through the existing authored-collision loader. The
+resource manifest contains hashes for the normal glTF resources; content revision still
+comes from immutable gameplay content, with no protocol/canonical-layout change.
+
+The focused Rapier test `millbrook_windmill_has_a_solid_round_footprint` walks through a
+former square-box corner and then into the curved wall, checking the character reaches the
+tower, stays out of the solid and can slide around it. That test and all 15 basin routes
+passed. Native `every_placed_kit_entry_loads_from_the_live_bundles` and the final browser/WASM
+production build passed; all eleven authored bundle resources match the manifest hashes.
+Full suites and native GPU acceptance were not run. The buildings remain closed; this pass
+does not add interiors, quests or farming rules. Shared policy revision is unchanged.
+
+Chromium loaded the authored farm models and existing animated sails and captured
+`artifacts/greyhaven-brook/millbrook-models.png` without page errors. This is an actual
+in-game daytime view; the live Blender file also contains the new architecture. The wider
+atmosphere and some older farm dressing (including the loading dock) remain for later art
+passes within the same PR.

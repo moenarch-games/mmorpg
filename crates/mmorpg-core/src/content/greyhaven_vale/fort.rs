@@ -1,4 +1,4 @@
-//! Authored timber perimeter and keep roof geometry, independent of visual detail.
+//! Authored Greyhaven perimeter, keep and Millbrook geometry, independent of visual detail.
 use crate::{StaticCollider, StaticMesh};
 
 pub const TOWERS: [[i32; 2]; 4] = [[-2700, -700], [2700, -700], [-3000, 4000], [3100, 4000]];
@@ -20,13 +20,19 @@ pub fn dresses(id: u32) -> bool {
         || super::ids::GATE_POSTS.contains(&id)
         || (65000..=65023).contains(&id)
         || TOWER_BODIES.contains(&id)
-        || (65050..65060).contains(&id)
+        || (65050..65065).contains(&id)
+        || [
+            super::ids::BARN,
+            super::ids::FARMHOUSE,
+            super::ids::WINDMILL,
+        ]
+        .contains(&id)
 }
 
 pub(super) fn apply(colliders: &mut Vec<StaticCollider>) {
-    // The old straight wall boxes are replaced by the authored triangle meshes, with the
-    // same stable IDs. Their conservative bounds must never become physical wall boxes.
-    colliders.retain(|c| !super::ids::PALISADE.contains(&c.id));
+    // Straight palisade boxes and the square windmill proxy are replaced by authored meshes
+    // with the same stable IDs. Conservative bounds must never become physical wall boxes.
+    colliders.retain(|c| !super::ids::PALISADE.contains(&c.id) && c.id != super::ids::WINDMILL);
     if let Some(keep) = colliders.iter_mut().find(|c| c.id == super::ids::KEEP) {
         keep.position[1] = keep.half_extents[1];
     }

@@ -6,9 +6,29 @@
       "path": "settlement.gltf",
       "resources": [
         {
+          "path": "barn-oxblood-color.png",
+          "byteLength": 341892,
+          "sha256": "710c94081bb3e003ca5549b6fde5bb21f481625ab79101296f89fc7e4629f77f"
+        },
+        {
+          "path": "barn-oxblood-normal.png",
+          "byteLength": 542491,
+          "sha256": "1c47ab0afb9b9b653e8cb62061f5c547185c6ead2978e97438aa65c8a2bd5b14"
+        },
+        {
+          "path": "lime-plaster-color.png",
+          "byteLength": 359203,
+          "sha256": "8bd9c286d21f13ff1f3f28631f37cafcb701a655d189edfb800b3f31d7b9d738"
+        },
+        {
+          "path": "lime-plaster-normal.png",
+          "byteLength": 476860,
+          "sha256": "8e4bb441c6cfa6420ce12fdad8cdebc3dc5b56fcb7c824740e40376968cd9510"
+        },
+        {
           "path": "settlement.bin",
-          "byteLength": 2628024,
-          "sha256": "27509c53fc84fe7f26c8214dcaad60e5df5467b6d7accdaedd48deaa4891ba0c"
+          "byteLength": 3204192,
+          "sha256": "a6906e79e0a3271a19edc51c8ce91be872fd8ccbced0081c2e7c2cd8a044e0e8"
         },
         {
           "path": "slate-color.png",
