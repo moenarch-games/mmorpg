@@ -47,3 +47,31 @@ scene-building tests, native compilation and the browser production build. Nativ
 GPU appearance and the full workspace/browser suites are not implied by these
 checks. This is a first rock/cave environment pass, not a claim that every Greyhaven
 building, biome or asset has received final beta art.
+
+
+## North entrance and rounded rock mass
+
+The owner's next landscape revision moves the entrance to the north, away from the Outpost.
+The Greyfang Approach leaves Stillwater's rim trail, wraps around the eastern flank and
+turns back toward the north mouth. A broad core terrain terrace supports this longer path;
+it never depends on decorative ground. The old south entrance is filled with solid rock. The new north mouth has a rough stone arch and an entrance torch.
+
+`content/greyhaven/authoring/redbrand.py` is the Blender source for the new rounded, uneven
+rock mass. It exports 17 cave meshes and seven surrounding Hollow ridge meshes directly to the existing collision JSON.
+The mound replaces the rectangular walls/roof silhouette, while the two public chambers,
+passage, floor support, ceiling and sealed deeper threshold remain. The raised shelf moves
+to the south wall so the northern entrance reaches the lower floor without a blocker.
+The shelf still provides an overlapping walkable elevation and blocks jumps from below.
+
+Shared presentation draws the wall/floor meshes with the existing rock PBR material. The
+mound roof uses the existing cosmetic roof cutaway path with its authored triangles and
+rock/moss vertex colours; it does not draw its conservative bounding box. Cave eye adaptation
+now follows entry from the north. Neither the visual roof cutaway nor its materials change
+Rapier collision. The Hollow's surrounding cliffs keep their stable IDs and climbability;
+the eastern ridge retains the existing rope face and its anchor.
+
+Focused checks cover the northern terrain seam, both rooms, closed former mouth, shelf,
+ceiling, recovery, longer exterior approach and the established basin routes. The connected
+water ribbon is sampled against actual rendered terrain triangles, including both upper
+channels. Native compilation and the browser/WASM build remain the client integration checks;
+these do not imply native GPU acceptance or a full workspace suite.

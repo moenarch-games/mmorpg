@@ -2,7 +2,7 @@
 
 The village occupies a rounded, asymmetric basin with an adjoining northern lobe. Fixed-seed integer weathering varies the cliff outline and shoulders. The heightfield is still authoritative: scenery samples the same terrain, and the six existing switchback lanes override the weathering. This is separate from visual terrain tile LOD and the authored Redbrand Cave meshes.
 
-`mmorpg-core/src/content/greyhaven_vale/brook.rs` authors the small west-cliff spring, a narrow waterfall-fed brook through the village, a timber footbridge, and a low drainage opening through the southern palisade. Its centimetre centreline supplies the shallow terrain bed and a `WaterChannel` footprint. Existing wading/swimming rules apply; foam motion is cosmetic and exerts no current. The spring is an ordinary elliptical water volume. Neither water shape introduces another movement solver.
+`mmorpg-core/src/content/greyhaven_vale/brook.rs` authors Stillwater's upper inflow and rim outlet, the west-cliff waterfall and a narrow brook through the village, a timber footbridge, and a low drainage opening through the southern palisade. Its centimetre centreline supplies the shallow terrain bed and a `WaterChannel` footprint. Existing wading/swimming rules apply; foam motion is cosmetic and exerts no current. The upstream river enters the existing Stillwater ellipse; its outlet loops around the rim to the waterfall. Both upper channels share the lake's surface height. Neither water shape introduces another movement solver.
 
 The bridge deck, approaches, rails and culvert are ordinary stable-ID colliders/ramps. Channel points and width participate in the immutable content revision. Rebuilding or recovering a zone therefore uses the same terrain, water and colliders; there is no protocol or canonical-state layout change.
 
@@ -62,3 +62,32 @@ Revision checks: the 16 core basin/brook tests (including all four gates and a w
 build passed. The updated browser overview is `artifacts/greyhaven-brook/in-game-polished.png`.
 The keep/gate/watchtower geometry and six authored colour/normal images are committed;
 Blender is needed only to edit/re-export them, never to start the game.
+
+
+## Connected water and north-side cave approach
+
+The upper river enters Stillwater from the northeast; a separate outlet leaves the northwest
+shore, runs behind Redbrand Hollow, follows the western rim and meets the waterfall's lip. Those two authored
+channels use Stillwater's existing 11.15 m surface. Their beds are carved into core terrain;
+nearby tree placement and presentation relief respect the same banks. Existing roads cross
+as shallow fords. This removes the disconnected spring puddle without changing the shrine.
+Flowing foam shows the authored directions; there is still no hydrology simulation.
+
+The basin now has uneven crests and gullies instead of one level cliff lip. Named route
+corridors, the village foundations, the lake and the farm apron retain their working levels.
+All authored collision surfaces are passed through to scenery, including the small rock
+crags and exact timber fallback surfaces, rather than only the original cave ID ranges.
+
+Redbrand's north mouth and longer eastern approach are described in
+[the environment authoring notes](REDBRAND_ENVIRONMENT.md#north-entrance-and-rounded-rock-mass).
+
+
+For this connected-landscape revision, 20 focused core tests passed (cave collision and
+recovery, both chambers, the old-mouth blocker, all basin routes, the longer cave approach,
+water joins, upper ford and village traversal). The presentation clearance test covers the
+lower brook and both upper channels; an additional core assertion keeps the outlet outside
+Hollow wall bounds. Native compilation and the browser/WASM production build passed.
+The live Blender context is saved as `artifacts/greyhaven-brook/connected-landscape.blend`.
+A wide browser capture timed out on the software renderer; a smaller Chromium overview
+then succeeded without page errors at `artifacts/greyhaven-brook/connected-landscape.png`.
+Native GPU acceptance and full suites were not run. The source convention revision remains the one recorded above.
