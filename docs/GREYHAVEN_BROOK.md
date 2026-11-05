@@ -204,3 +204,8 @@ brook bridge without page errors. The updated in-game overview is
 `artifacts/greyhaven-brook/village-tracks.png`; the live Blender terrain/road context was
 refreshed from the same WASM scenery. The regular cliff/camp silhouettes are still visibly
 short of the owner's reference and remain active modelling work.
+
+The Hollow's nearly level enclosing walls have since been reshaped into broken ridges with
+mossy shoulders; the rope landing and camp access remain usable. See the
+[rock authoring notes](REDBRAND_ENVIRONMENT.md#broken-hollow-ridges) for collision, climbing
+cue projection and the focused checks.

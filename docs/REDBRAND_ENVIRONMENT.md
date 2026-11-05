@@ -30,7 +30,7 @@ the portable runtime source; neither client needs Blender. The shared
 Four wall torches stand above head height in the public cave. Their visible
 shafts, cups and flames share native/browser geometry. Each casts warm 9000 lm
 light over 16 m, with reduced-motion-aware flicker. The viewer's projected position
-controls a smooth eight-metre entrance transition: outdoor exposure approaches
+controls a smooth entrance transition: outdoor exposure approaches
 EV100 7.5 in daylight, direct sky illumination is attenuated by up to 1000× and sky
 reflection by a further 10×. Night is never brightened past its outdoor exposure.
 These are cosmetic defaults, not new gameplay visibility, stealth or time rules.
@@ -75,3 +75,37 @@ ceiling, recovery, longer exterior approach and the established basin routes. Th
 water ribbon is sampled against actual rendered terrain triangles, including both upper
 channels. Native compilation and the browser/WASM build remain the client integration checks;
 these do not imply native GPU acceptance or a full workspace suite.
+
+## Broken Hollow ridges
+
+The seven surrounding ridges (400–406) now have unequal peaks, lower saddles, irregular
+shoulders and buried feet instead of nearly level crowns. Their established lower camp-facing
+footprints remain, so the camp floor and existing approach lanes stay open. The simplified
+closed meshes remain in `redbrand.json` under their existing IDs; only those seven meshes
+change in this revision. Rapier still owns collision, independently of textures and visual LOD.
+
+Ridge 402 keeps the west rope's attachment plane and its original 12 m rise. A short plateau
+at z = -100.5 m supports the pull-up, with separate cap polygons so triangulating the uneven
+crown cannot turn that landing into a slope. A focused production-physics test climbs the
+real rope, pulls onto this landing and verifies stable standing there. Other rough/sheer
+climbability classifications remain unchanged.
+
+Shared presentation varies the exposed ridges' stone strata and adds muted moss on gentler
+upper faces using the existing rock PBR material. Cave floors/ceilings retain their stone
+colours. Climbing scuffs on authored cliffs now use the existing rounded-rock facet projection
+instead of rectangular bounds, preventing marks from floating beyond the sculpted rock.
+Ordinary box cliffs and boulders retain their previous presentation paths.
+
+Validation: 19 focused core tests passed (15 basin routes, three authored-collision tests and
+the Hollow rope landing), as did the existing handhold geometry test, native compilation and
+the browser/WASM production build. Full suites and native GPU acceptance were not run.
+The live Blender context includes the new shapes and an approximate moss review material;
+its simpler viewport material is not the game's PBR renderer. Shared policy revision remains
+`625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+
+
+Chromium walked through the Outpost's north gate and up the existing Hollow switchback to
+the camp approach, then captured `artifacts/greyhaven-brook/hollow-ridges.png` without page
+errors. The final capture includes the facet-fitted climbing marks. The camp's broad dirt
+clearing and other older surroundings still need further visual refinement toward the
+owner's reference; this is a completed ridge pass, not final acceptance of the whole area.

@@ -568,15 +568,34 @@ fn grass(m: &mut Model, p: &Prop) {
         compose(&[translate(0., -0.02, 0.), scale(hx, hy, hx)]),
     );
 }
-/// A cliff block; `climbable` rock wears handhold routes up its sides (#512).
-fn cliff(m: &mut Model, p: &Prop, climbable: bool) {
-    // The textured skin is built in cliffs; preserve the authoritative climbing cues.
-    if climbable {
-        let [hx, hy, hz] = half(p);
-        let layers = [([hx, hz], 0., hy * 2.)];
-        crate::handholds::block(&layers, seed(p), &mut |c, shape, a| {
-            m.handholds.push((c, shape, a))
-        });
+/// Climbable cliffs wear handhold routes fitted to their rock surfaces (#512).
+fn cliff(m: &mut Model, p: &Prop, climbable: bool, scenery: &Scenery, frame: Affine) {
+    // The rock skin belongs to cliffs. Climbing cues follow its authored facets, rather
+    // than the conservative bounds, which may extend metres beyond a sculpted crown.
+    if !climbable {
+        return;
+    }
+    let [hx, hy, hz] = half(p);
+    let mut put = |c, shape, a| m.handholds.push((c, shape, a));
+    if let Some(mesh) = scenery
+        .collision_surfaces
+        .iter()
+        .find(|mesh| Some(mesh.id) == p.collider)
+    {
+        let mut geometry = Geometry::default();
+        for triangle in &mesh.triangles {
+            geometry.face(&triangle.map(|index| {
+                std::array::from_fn(|axis| {
+                    metres(mesh.vertices[index as usize][axis] + mesh.position[axis])
+                        - frame.t[axis]
+                })
+            }));
+        }
+        // Authored cliffs are already in world axes; their prop frame only translates them.
+        let centre = [0., metres(p.position[1]) - frame.t[1] + 2., 0.];
+        crate::handholds::cliff(&geometry, centre, [hx, hy, hz], seed(p), &mut put);
+    } else {
+        crate::handholds::block(&[([hx, hz], 0., hy * 2.)], seed(p), &mut put);
     }
 }
 
@@ -990,7 +1009,7 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
                     );
                 }
             }
-            PropKind::Cliff => cliff(&mut m, p, climbable),
+            PropKind::Cliff => cliff(&mut m, p, climbable, s, f),
             PropKind::CaveRoof => {
                 animations.push(cave_roof(p, roofs, s));
                 roofs += 1;

@@ -8,7 +8,7 @@ use mmorpg_scenery::{Prop, PropKind, Scenery};
 use crate::{
     Draw, Group,
     batching::{Cull, material, matrix, mix, rgb, shade},
-    geometry::{Geometry, ID, V, hash},
+    geometry::{Geometry, ID, V, hash, norm},
     ground::{self, Ground, Layer},
     terrain::metres,
 };
@@ -127,6 +127,24 @@ fn group(id: String, geometry: Geometry) -> Group {
     }
 }
 
+/// Muted strata and moss on exposed landscape rock; cave floors and ceilings stay stone.
+fn landscape_color(points: [V; 3], id: u32) -> u32 {
+    let centre: V = std::array::from_fn(|axis| points.iter().map(|p| p[axis]).sum::<f64>() / 3.);
+    let [a, b, c] = points;
+    let u: V = std::array::from_fn(|i| b[i] - a[i]);
+    let v: V = std::array::from_fn(|i| c[i] - a[i]);
+    let up = norm([
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+    ])[1];
+    let band = hash(&[f64::from(id), (centre[1] / 1.8).floor()]);
+    let stone = mix(0x68675f, 0x969082, 0.25 + 0.5 * band);
+    let growth = ((up - 0.45) / 0.55).clamp(0., 1.)
+        * (0.25 + 0.55 * crate::terrain::noise(centre[0], centre[2], 5., 539.));
+    mix(stone, 0x667447, growth)
+}
+
 pub(crate) fn groups(scenery: &Scenery) -> Vec<Group> {
     let cliffs = scenery
         .props
@@ -154,7 +172,14 @@ pub(crate) fn groups(scenery: &Scenery) -> Vec<Group> {
                     let v = mesh.vertices[index as usize];
                     std::array::from_fn(|axis| metres(v[axis] + mesh.position[axis]))
                 });
-                colored_face(&mut g, &points, 0x817b70);
+                let landscape =
+                    (400..=406).contains(&mesh.id) || (65030..=65039).contains(&mesh.id);
+                let color = if landscape {
+                    landscape_color(points, mesh.id)
+                } else {
+                    0x817b70
+                };
+                colored_face(&mut g, &points, color);
             }
             ground::project_rock(&mut g);
             group(format!("cave-surface-{}", mesh.id), g)

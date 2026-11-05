@@ -8,11 +8,13 @@ ROOT=pathlib.Path(__file__).resolve().parents[3]
 OUT=ROOT/'crates/mmorpg-core/content/collision/redbrand.json'
 NAME='Redbrand rounded north entrance'
 old=bpy.data.collections.get(NAME)
+linked_scenes=[s for s in bpy.data.scenes if old and old.name in s.collection.children]
 if old:
     for o in list(old.objects):bpy.data.objects.remove(o,do_unlink=True)
     bpy.data.collections.remove(old)
-collection=bpy.data.collections.new(NAME);bpy.context.scene.collection.children.link(collection)
-material=bpy.data.materials.get('Redbrand weathered limestone - Blender preview')
+collection=bpy.data.collections.new(NAME)
+for scene in set(linked_scenes+[bpy.context.scene]):scene.collection.children.link(collection)
+material=bpy.data.materials.get('Redbrand limestone authoring preview')
 if not material:
     material=bpy.data.materials.new('Redbrand limestone authoring preview');material.use_nodes=True
     p=next(n for n in material.node_tree.nodes if n.type=='BSDF_PRINCIPLED');p.inputs['Base Color'].default_value=(.32,.30,.26,1);p.inputs['Roughness'].default_value=.94
@@ -102,30 +104,51 @@ vs=[(x,y,z) for y in [-.2,0] for x,z in [(49,-134),(56,-134),(56,-132),(49,-132)
 for i in [5,6]:vs[i]=(vs[i][0],2.2,vs[i][2])
 record(644,'South shelf slope',vs,[(0,3,2,1),(4,5,6,7),(0,1,5,4),(1,2,6,5),(2,3,7,6),(3,0,4,7)])
 box(645,'South raised shelf',56,67,-134,-132,2,2.2)
-# Redbrand Hollow's surrounding walls are rock ridges too, not rectangular fort walls.
-# Preserve the camp-facing lower contact footprints and the original stable collider IDs.
+# Redbrand Hollow: unequal crests and saddles over the established lower contact footprints.
+# These remain modest static collision meshes; the game supplies the existing rock PBR.
+moss=bpy.data.materials.get('Hollow moss - Blender preview')
+if not moss:
+    moss=bpy.data.materials.new('Hollow moss - Blender preview');moss.use_nodes=True
+    node=next(n for n in moss.node_tree.nodes if n.type=='BSDF_PRINCIPLED')
+    node.inputs['Base Color'].default_value=(.20,.26,.13,1);node.inputs['Roughness'].default_value=.98
 for id,(x0,x1,z0,z1,h) in {
     400:(-32,-22,-120,-80,12),401:(-22,-16,-84,-80,8),402:(22,32,-120,-74,12),
     403:(16,22,-96,-86,9),404:(-22,22,-120,-110,14),405:(-22,-8,-110,-104,10),406:(8,22,-110,-105,10),
 }.items():
     cx,cz=(x0+x1)/2,(z0+z1)/2;hx,hz=(x1-x0)/2,(z1-z0)/2
-    n=20;outline=[]
-    # A rounded rectangle keeps the feet of each rock wall, with an uneven inset crown.
-    for j in range(n):
-        a=j*math.tau/n;s,c=math.sin(a),math.cos(a)
+    outline=[]
+    for j in range(40):
+        a=j*math.tau/40;s,c=math.sin(a),math.cos(a)
         outline.append((cx+hx*math.copysign(abs(s)**.28,s),cz+hz*math.copysign(abs(c)**.28,c)))
-    vs=[]
-    for shrink,y in [(1,0),(1,2),(.90,h*.68),(.58,h)]:
+    if id==402:
+        # A short, level shelf supports the existing west-face rope at z=-100.5.
+        # Added samples preserve the face here without imposing one flat crown on the ridge.
+        outline[11:11]=[(32,-100.5),(32,-104)]
+        outline[32:32]=[(22,-104),(22,-100.5)]
+    n=len(outline);vs=[]
+    for row,(width,along,fraction) in enumerate([(1,1,0),(1,1,0),(.96,.98,.35),(.76,.95,.72),(.43,.92,1)]):
         for j,(x,z) in enumerate(outline):
-            peak=0 if y<=2 else .65*math.sin(j*math.tau/n*3+id)
-            # Keep the existing western rope face on ridge 402, including its top anchor.
-            sx=1 if id==402 and x<cx else shrink
-            if id==402:peak=min(peak,h-y)
-            vs.append((cx+(x-cx)*sx,y+peak,cz+(z-cz)*shrink))
-    vs.append((cx-.2*hx,h+(0 if id==402 else 1.4),cz+.12*hz));top=len(vs)-1
+            t=(z-cz)/hz if hz>hx else (x-cx)/hx
+            end=.45+.55*(1-abs(t)**6)
+            crest=max(3.2,h*(.86+.40*math.sin(t*5.3+id*.71)+.20*math.cos(t*10.1-id*.37))*end)
+            if id==402:
+                crest=min(12,crest)
+                if abs(z+100.5)<8:crest=12
+            y=(0 if id==402 else -1) if row==0 else (2 if row==1 else 2+(crest-2)*fraction)
+            w=width if row<2 else width*(1+.10*math.sin(j*2.7+id))
+            sx,sz=(w,along) if hz>hx else (along,w)
+            if id==402 and x<cx:sx=1
+            vs.append((cx+(x-cx)*sx,y,cz+(z-cz)*sz))
     fs=[tuple(range(n-1,-1,-1))]
-    fs += [(r*n+j,r*n+(j+1)%n,(r+1)*n+(j+1)%n,(r+1)*n+j) for r in range(3) for j in range(n)]
-    fs += [(3*n+j,3*n+(j+1)%n,top) for j in range(n)]
-    record(id,'Hollow weathered ridge '+str(id),vs,fs)
+    fs += [(r*n+j,r*n+(j+1)%n,(r+1)*n+(j+1)%n,(r+1)*n+j) for r in range(4) for j in range(n)]
+    if id==402:
+        # Split the cap at the rope landing: this short plateau must stay flat when Blender
+        # triangulates the non-planar crown on either side of it.
+        for cap in [list(range(12,33)),[10,11,12,32,33,34],list(range(34,n))+list(range(11))]:
+            fs.append(tuple(4*n+j for j in cap))
+    else:fs.append(tuple(range(4*n,5*n)))
+    record(id,'Hollow broken ridge '+str(id),vs,fs)
+    obj=collection.objects.get('Hollow broken ridge '+str(id));obj.data.materials.append(moss)
+    for face in obj.data.polygons:face.material_index=1 if face.normal.z>.60 else 0
 OUT.write_text(json.dumps(sorted(meshes,key=lambda m:m['id']),separators=(',',':'))+'\n')
 print('Exported',len(meshes),'closed rock/floor meshes, north mouth and south shelf:',OUT)
