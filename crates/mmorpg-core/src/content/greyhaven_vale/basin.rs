@@ -240,6 +240,41 @@ fn ellipse_floor(x: i32, z: i32, radius_x: i64, radius_z: i64, shoulder: i64) ->
     1_024 - rock
 }
 
+/// Broken ridge crests and gullies instead of one uniformly level cliff lip. Existing
+/// authored routes, lake/shrine terrain and the farm apron keep their established levels.
+fn ridge(x: i32, z: i32, terrace: i32) -> i32 {
+    if terrace == 0
+        || x.abs() > 11000
+        || !(-11000..=12000).contains(&z)
+        || (3000..=8200).contains(&x) && (-7600..=-3200).contains(&z)
+        || (4800..=10000).contains(&x) && (1200..=9000).contains(&z)
+    {
+        return 0;
+    }
+    let radius = |dx: i32, dz: i32, rx: i64, rz: i64| {
+        let a = i64::from(dx) * 1024 / rx;
+        let b = i64::from(dz) * 1024 / rz;
+        (a * a + b * b).isqrt()
+    };
+    let r = radius(x, z - 2800, 4530, 6800).min(radius(x + 1400, z + 4000, 3100, 2700));
+    let belt = (250 - (r - 1170).abs()).max(0);
+    if belt == 0 {
+        return 0;
+    }
+    let probe = super::StaticCollider {
+        id: 0,
+        position: [x, 0, z],
+        half_extents: [400, 1, 400],
+    };
+    if !super::clear_of_roads(&probe) {
+        return 0;
+    }
+    let ribs = super::value_noise_q10(i64::from(x), i64::from(z), 900, 0x513c1);
+    let strata = super::value_noise_q10(i64::from(x), i64::from(z), 2100, 0x513c2);
+    ((120 + ribs * 420 / 1024 + strata * 180 / 1024) * belt * i64::from(terrace.min(TERRACE_Y))
+        / (250 * i64::from(TERRACE_Y))) as i32
+}
+
 /// The rim's ground at `(x, z)`, or `None` on the untouched valley floor. Lanes override the
 /// rim and the floor alike.
 #[must_use]
@@ -266,5 +301,6 @@ pub fn height_at(x: i32, z: i32) -> Option<i32> {
     } else {
         0
     };
-    (terrace + relief > 0).then_some(terrace + relief)
+    let height = terrace + relief + ridge(x, z, terrace);
+    (height > 0).then_some(height)
 }

@@ -143,7 +143,10 @@ pub(crate) fn groups(scenery: &Scenery) -> Vec<Group> {
     let surfaces = scenery
         .collision_surfaces
         .iter()
-        .filter(|mesh| !mmorpg_core::greyhaven_vale::fort::dresses(mesh.id))
+        .filter(|mesh| {
+            !mmorpg_core::greyhaven_vale::fort::dresses(mesh.id)
+                && mesh.id != mmorpg_core::greyhaven_vale::ids::CAVE_ROOF
+        })
         .map(|mesh| {
             let mut g = Geometry::default();
             for triangle in &mesh.triangles {

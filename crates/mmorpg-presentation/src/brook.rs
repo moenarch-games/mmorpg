@@ -40,66 +40,101 @@ pub(crate) fn build(
     if !s.greyhaven() {
         return vec![];
     }
-    let mut channel = Geometry::default();
     let mut banks = Geometry::default();
-    let points = content::COURSE;
-    let level = metres(content::SURFACE) + 0.012;
-    for i in 0..points.len() - 1 {
-        let a = points[i].map(metres);
-        let z = points[i + 1].map(metres);
-        let left = offset(points, i, metres(content::HALF_WIDTH));
-        let right = offset(points, i + 1, metres(content::HALF_WIDTH));
-        channel.face(&[
-            [a[0] + left[0], level, a[1] + left[1]],
-            [z[0] + right[0], level, z[1] + right[1]],
-            [z[0] - right[0], level, z[1] - right[1]],
-            [a[0] - left[0], level, a[1] - left[1]],
-        ]);
-        let length = (z[0] - a[0]).hypot(z[1] - a[1]);
-        let steps = (length / 2.).ceil() as usize;
-        for step in 0..steps {
-            let t0 = step as f64 / steps as f64;
-            let t1 = (step + 1) as f64 / steps as f64;
-            let p = |t: f64, side: f64, width: f64| {
-                let x = a[0] + (z[0] - a[0]) * t;
-                let v = a[1] + (z[1] - a[1]) * t;
-                let nx = (left[0] + (right[0] - left[0]) * t) / 0.9;
-                let nz = (left[1] + (right[1] - left[1]) * t) / 0.9;
-                let x = x + nx * side * width;
-                let v = v + nz * side * width;
-                [x, surface(g, x, v) + 0.008, v]
-            };
-            for side in [-1., 1.] {
-                let q = [
-                    p(t0, side, 0.9),
-                    p(t1, side, 0.9),
-                    p(t1, side, 2.6),
-                    p(t0, side, 2.6),
-                ];
-                if side > 0. {
-                    banks.face(&[q[3], q[2], q[1], q[0]]);
-                } else {
-                    banks.face(&q);
+    for (name, points, half_width, water_surface) in [
+        (
+            "greyhaven-brook",
+            content::COURSE,
+            content::HALF_WIDTH,
+            content::SURFACE,
+        ),
+        (
+            "stillwater-inflow",
+            content::INFLOW,
+            content::UPPER_HALF_WIDTH,
+            content::UPPER_SURFACE,
+        ),
+        (
+            "stillwater-outlet",
+            content::OUTLET,
+            content::UPPER_HALF_WIDTH,
+            content::UPPER_SURFACE,
+        ),
+    ] {
+        let mut channel = Geometry::default();
+        let half_width = metres(half_width);
+        let level = metres(water_surface) + 0.012;
+        for i in 0..points.len() - 1 {
+            let a = points[i].map(metres);
+            let z = points[i + 1].map(metres);
+            let left = offset(points, i, half_width);
+            let right = offset(points, i + 1, half_width);
+            channel.face(&[
+                [a[0] + left[0], level, a[1] + left[1]],
+                [z[0] + right[0], level, z[1] + right[1]],
+                [z[0] - right[0], level, z[1] - right[1]],
+                [a[0] - left[0], level, a[1] - left[1]],
+            ]);
+            let length = (z[0] - a[0]).hypot(z[1] - a[1]);
+            let steps = (length / 2.).ceil() as usize;
+            for step in 0..steps {
+                let t0 = step as f64 / steps as f64;
+                let t1 = (step + 1) as f64 / steps as f64;
+                let p = |t: f64, side: f64, width: f64| {
+                    let x = a[0] + (z[0] - a[0]) * t;
+                    let v = a[1] + (z[1] - a[1]) * t;
+                    let nx = (left[0] + (right[0] - left[0]) * t) / half_width;
+                    let nz = (left[1] + (right[1] - left[1]) * t) / half_width;
+                    let x = x + nx * side * width;
+                    let v = v + nz * side * width;
+                    [x, surface(g, x, v) + 0.008, v]
+                };
+                for side in [-1., 1.] {
+                    let q = [
+                        p(t0, side, half_width),
+                        p(t1, side, half_width),
+                        p(t1, side, half_width + 1.7),
+                        p(t0, side, half_width + 1.7),
+                    ];
+                    if side > 0. {
+                        banks.face(&[q[3], q[2], q[1], q[0]]);
+                    } else {
+                        banks.face(&q);
+                    }
                 }
             }
+            // Short, broken ripple bands travel with the course; reduced motion holds them in place.
+            let mut foam = Geometry::default();
+            foam.add(&disc(10), at(0., 0., 0., 0.35, 1., 0.07));
+            animated.push(Animated {
+                draws: vec![draw(&format!("{name}-current-{i}"), foam, 0xa7d0c8, 0.65)],
+                motion: Motion::Flow {
+                    start: [a[0], level + 0.006, a[1]],
+                    end: [z[0], level + 0.006, z[1]],
+                    period: (length / 0.7).max(1.),
+                    phase: i as f64 * 0.17,
+                },
+            });
         }
-        // Short, broken ripple bands travel with the course; reduced motion holds them in place.
-        let mut foam = Geometry::default();
-        foam.add(&disc(10), at(0., 0., 0., 0.35, 1., 0.07));
-        animated.push(Animated {
-            draws: vec![draw(&format!("brook-current-{i}"), foam, 0xa7d0c8, 0.65)],
-            motion: Motion::Flow {
-                start: [a[0], level + 0.006, a[1]],
-                end: [z[0], level + 0.006, z[1]],
-                period: (length / 0.7).max(1.),
-                phase: i as f64 * 0.17,
+        water.push(draw(
+            name,
+            channel,
+            if water_surface == content::UPPER_SURFACE {
+                0x3f86a0
+            } else {
+                0x397b7a
             },
-        });
+            if water_surface == content::UPPER_SURFACE {
+                0.72
+            } else {
+                0.78
+            },
+        ));
     }
-    water.push(draw("greyhaven-brook", channel, 0x397b7a, 0.78));
+    let level = metres(content::SURFACE) + 0.012;
     let mut fall = Geometry::default();
     let cascade = [
-        [-48., 11.1],
+        [-48., metres(content::UPPER_SURFACE) + 0.012],
         [-46.4, 10.8],
         [-45.8, 4.8],
         [-44., 1.4],
@@ -121,7 +156,11 @@ pub(crate) fn build(
         animated.push(Animated {
             draws: vec![draw(&format!("fall-strand-{i}"), strand, 0xcce8df, 0.8)],
             motion: Motion::Flow {
-                start: [-47.95, 11.12, 23.55 + i as f64 * 0.15],
+                start: [
+                    -47.95,
+                    metres(content::UPPER_SURFACE) + 0.02,
+                    23.55 + i as f64 * 0.15,
+                ],
                 end: [-42.4, 0.02, 23.55 + i as f64 * 0.15],
                 period: 1.5,
                 phase: i as f64 / 7.,
@@ -131,9 +170,6 @@ pub(crate) fn build(
     let mut foam = Geometry::default();
     foam.add(&disc(18), at(-42.4, level + 0.008, 24., 1.2, 1., 0.85));
     water.push(draw("waterfall-foam", foam, 0xd1e8d8, 0.6));
-    let mut pool = Geometry::default();
-    pool.add(&disc(24), at(-50., 11.1, 24., 2., 1., 1.5));
-    water.push(draw("cliffside-spring", pool, 0x4c999b, 0.8));
     // Deck and approach wedges follow the real bridge bodies; rails leave the same clear lane.
     for i in 0..40 {
         b.global("brook-deck", if i % 3 == 0 { 0x806040 } else { 0x9a7650 })
@@ -205,8 +241,8 @@ pub(crate) fn build(
         cull: Cull::Always,
         instanced: false,
         fallback: None,
-        min: [-50., 10.],
-        max: [8., 99.],
+        min: [-73., -132.],
+        max: [117., 99.],
     }]
 }
 
@@ -218,21 +254,27 @@ mod tests {
     fn brook_water_clears_the_actual_terrain_triangles() {
         let scenery = mmorpg_scenery::greyhaven_vale_scenery();
         let grid = scenery.terrain_grid(crate::TERRAIN_STEP_UNITS);
-        let water = metres(content::SURFACE);
-        for pair in content::COURSE.windows(2) {
-            let (a, b) = (pair[0].map(metres), pair[1].map(metres));
-            let length = (b[0] - a[0]).hypot(b[1] - a[1]);
-            let side = [-(b[1] - a[1]) / length, (b[0] - a[0]) / length];
-            for step in 0..=20 {
-                let t = f64::from(step) / 20.;
-                for offset in [-0.85, 0., 0.85] {
-                    let x = a[0] + (b[0] - a[0]) * t + side[0] * offset;
-                    let z = a[1] + (b[1] - a[1]) * t + side[1] * offset;
-                    let bed = surface(&grid, x, z);
-                    assert!(
-                        bed < water - 0.02,
-                        "water intersects terrain at {x:.2},{z:.2}: bed {bed:.3}, water {water}"
-                    );
+        for (points, water_surface, width) in [
+            (content::COURSE, content::SURFACE, 0.85),
+            (content::INFLOW, content::UPPER_SURFACE, 1.25),
+            (content::OUTLET, content::UPPER_SURFACE, 1.25),
+        ] {
+            let water = metres(water_surface);
+            for pair in points.windows(2) {
+                let (a, b) = (pair[0].map(metres), pair[1].map(metres));
+                let length = (b[0] - a[0]).hypot(b[1] - a[1]);
+                let side = [-(b[1] - a[1]) / length, (b[0] - a[0]) / length];
+                for step in 0..=20 {
+                    let t = f64::from(step) / 20.;
+                    for offset in [-width, 0., width] {
+                        let x = a[0] + (b[0] - a[0]) * t + side[0] * offset;
+                        let z = a[1] + (b[1] - a[1]) * t + side[1] * offset;
+                        let bed = surface(&grid, x, z);
+                        assert!(
+                            bed < water - 0.02,
+                            "water intersects terrain at {x:.2},{z:.2}: bed {bed:.3}, water {water}"
+                        );
+                    }
                 }
             }
         }

@@ -861,12 +861,7 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
     let mut scenery = Scenery {
         content_revision: content.revision(),
         props: Vec::new(),
-        collision_surfaces: definition
-            .static_meshes()
-            .iter()
-            .filter(|mesh| ids::CAVE_LEDGE.contains(&mesh.id) || ids::CAVE_WALLS.contains(&mesh.id))
-            .cloned()
-            .collect(),
+        collision_surfaces: definition.static_meshes().to_vec(),
         roads,
         water,
         terrain_holes: Vec::new(),
@@ -1007,7 +1002,7 @@ impl Scenery {
     #[must_use]
     pub fn height_at(&self, x: i32, z: i32) -> i32 {
         if self.greyhaven
-            && (greyhaven_vale::brook::bed_depth(x, z) > 0
+            && (greyhaven_vale::brook::wet_ground(x, z)
                 || (-3500..=3500).contains(&x) && (-1200..=5400).contains(&z))
         {
             return 0;

@@ -26,7 +26,7 @@ fn colliders() -> Vec<StaticCollider> {
     let mut colliders: Vec<_> = STRUCTURES
         .iter()
         // Elden's house collides through its walls and furniture (#158).
-        .filter(|&&(id, ..)| id != ids::MARSHAL_HOUSE)
+        .filter(|&&(id, ..)| id != ids::MARSHAL_HOUSE && !(400..=406).contains(&id))
         // Structures out on the hills stand on the terrain (#159).
         .map(|&(id, min, max, height)| on_terrain(id, min, max, height))
         .collect();
@@ -150,6 +150,20 @@ pub const ROADS: &[Road] = &[
         // Along the terrace's rim from the farmyard to the lake's south shore (#423).
         name: "Stillwater Rim Trail",
         points: &[[6_400, 3_300], [6_400, -2_400], [5_600, -3_600]],
+    },
+    Road {
+        name: "Greyfang Approach",
+        // From Stillwater around the east flank, then back to the concealed north mouth.
+        points: &[
+            [5600, -3600],
+            [8000, -3600],
+            [8600, -6500],
+            [9000, -9500],
+            [10000, -13000],
+            [9200, -16000],
+            [6400, -16000],
+            [6400, -15400],
+        ],
     },
     Road {
         name: "Millbrook Road",

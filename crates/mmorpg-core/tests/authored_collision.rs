@@ -52,9 +52,9 @@ impl Player {
 
 #[test]
 fn redbrand_entrance_walls_shelf_ceiling_and_recovery() {
-    let mut p = Player::at([5800, 1100, -12700]);
-    p.walk(32768, 100); // Through the existing mouth from the terrace.
-    assert!(p.feet()[2] < -13500., "enter cave: {:?}", p.feet());
+    let mut p = Player::at([6400, 1100, -15600]);
+    p.walk(0, 190); // Through the concealed north mouth from the terrace.
+    assert!(p.feet()[2] > -14200., "enter cave: {:?}", p.feet());
     assert!((p.feet()[1] - 1100.).abs() < 1., "floor: {:?}", p.feet());
     p.walk(49152, 180); // West wall is solid, not its hollow bounds.
     assert!(
@@ -62,10 +62,10 @@ fn redbrand_entrance_walls_shelf_ceiling_and_recovery() {
         "wall: {:?}",
         p.feet()
     );
-    p.walk(32768, 60);
-    assert!(p.feet()[2] >= -14371., "north wall: {:?}", p.feet());
+    p.walk(0, 60);
+    assert!(p.feet()[2] <= -13229., "sealed south wall: {:?}", p.feet());
     // Approach the slope from the west, where it starts flush with the floor.
-    p.walk(0, 7);
+    p.walk(32768, 7);
     p.walk(16384, 125);
     assert!(p.feet()[0] > 5800., "reach shelf: {:?}", p.feet());
     assert!(
@@ -92,10 +92,10 @@ fn redbrand_entrance_walls_shelf_ceiling_and_recovery() {
     }
     assert_eq!(p.zone.snapshot().unwrap(), restored.snapshot().unwrap());
 
-    let mut lower = Player::at([6200, 1100, -14000]);
-    lower.walk(32768, 30);
+    let mut lower = Player::at([6200, 1100, -13600]);
+    lower.walk(0, 30);
     assert!(
-        lower.feet()[2] < -14250.,
+        lower.feet()[2] > -13400.,
         "walk under shelf: {:?}",
         lower.feet()
     );
@@ -106,9 +106,9 @@ fn redbrand_entrance_walls_shelf_ceiling_and_recovery() {
         assert!(lower.feet()[1] <= 1121., "shelf underside blocks jump");
     }
     // Return across the same terrain seam to the surface.
-    let mut exit = Player::at([5800, 1100, -13400]);
-    exit.walk(0, 100);
-    assert!(exit.feet()[2] > -12800. && (exit.feet()[1] - 1100.).abs() < 1.);
+    let mut exit = Player::at([6400, 1100, -14200]);
+    exit.walk(32768, 170);
+    assert!(exit.feet()[2] < -15400. && (exit.feet()[1] - 1100.).abs() < 1.);
 }
 
 #[test]

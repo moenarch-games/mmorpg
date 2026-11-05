@@ -436,6 +436,8 @@ pub fn terrain() -> Terrain {
                     shrine::FLOOR_Y
                 } else {
                     let base = open_ground(x, z);
+                    let base = cave::approach_ground(x, z, base);
+                    let base = brook::upper_ground(x, z, base);
                     base - if base < 100 {
                         brook::bed_depth(x, z)
                     } else {
@@ -570,7 +572,9 @@ fn trees() -> Vec<StaticCollider> {
             if !clear_of_roads(&collider) {
                 continue;
             }
-            trees.push(collider);
+            if !brook::wet_ground(x, z) {
+                trees.push(collider);
+            }
             next_id += 1;
         }
     }
@@ -604,7 +608,9 @@ fn trees() -> Vec<StaticCollider> {
                 if !clear_of_roads(&collider) || near_structure(&collider) {
                     continue;
                 }
-                trees.push(collider);
+                if !brook::wet_ground(x, z) {
+                    trees.push(collider);
+                }
                 next_id += 1;
             }
         }
@@ -778,11 +784,19 @@ fn undressed_colliders() -> Vec<StaticCollider> {
     colliders.extend(REGIONS.iter().flat_map(|region| (region.colliders)()));
     colliders.extend(trees());
     colliders.extend((*ids::LADDERS.start()..).zip(LADDER_TOWERS).map(ladder));
+    // Rope placement reads the authored rock's bounds, not a removed box proxy.
+    colliders.extend(
+        cave::collision_meshes()
+            .iter()
+            .filter(|m| (400..=406).contains(&m.id))
+            .map(|m| m.bounds().expect("committed Hollow rock bounds are valid")),
+    );
     let ropes: Vec<_> = (*ids::ROPES.start()..)
         .zip(ROPES)
         .map(|(id, rope)| rope.collider(id, &colliders))
         .collect();
     colliders.extend(ropes);
+    colliders.retain(|c| !(400..=406).contains(&c.id));
     colliders
 }
 

@@ -1,4 +1,4 @@
-//! Greyhaven's shallow spring brook (#513): cliff cascade, village channel, crossing and
+//! Stillwater's connected inflow, rim outlet and Greyhaven brook (#513): cascade, crossing and
 //! low drainage culverts. Immutable content shared by physics and both presentations.
 use crate::{Ramp, RampRise, StaticCollider, WaterChannel, WaterVolume};
 
@@ -22,6 +22,39 @@ pub const COURSE: &[[i32; 2]] = &[
     [-800, 6500],
     [-800, 8800],
 ];
+/// Upper water shares Stillwater's level and has an explicit direction through the lake.
+pub const UPPER_SURFACE: i32 = super::lake::SURFACE;
+pub const UPPER_HALF_WIDTH: i32 = 130;
+pub const INFLOW: &[[i32; 2]] = &[
+    [11000, -9500],
+    [10200, -8800],
+    [9600, -8200],
+    [9000, -7000],
+    [8000, -6000],
+    [7200, -5200],
+];
+pub const OUTLET: &[[i32; 2]] = &[
+    [4800, -6600],
+    [4200, -7400],
+    [3600, -7600],
+    [3600, -10000],
+    [3500, -12400],
+    [1800, -12400],
+    [0, -12400],
+    [-1800, -12400],
+    [-3600, -12400],
+    [-4600, -11800],
+    [-5800, -9600],
+    [-6400, -7600],
+    [-6600, -5000],
+    [-6600, -3000],
+    [-6500, -1400],
+    [-6300, 200],
+    [-6000, 1500],
+    [-5600, 2200],
+    [-5000, 2400],
+    [-4800, 2400],
+];
 pub const BRIDGE: u32 = 680;
 pub const RAILS: [u32; 2] = [681, 682];
 pub const CULVERT_POST: u32 = 683;
@@ -37,35 +70,28 @@ pub fn channel() -> WaterChannel {
 }
 
 #[must_use]
-pub fn waters() -> [WaterVolume; 2] {
+pub fn waters() -> [WaterVolume; 3] {
+    let volume = |name: &str, points: &[[i32; 2]], width, surface| WaterVolume {
+        name: name.to_owned(),
+        centre: points[0],
+        radii: [width, width],
+        surface,
+        air_pockets: vec![],
+        channel: Some(WaterChannel {
+            points: points.to_vec(),
+            half_width: width,
+        }),
+    };
     [
-        WaterVolume {
-            name: "Greyhaven Brook".to_owned(),
-            centre: [-2050, 5400],
-            radii: [2500, 4300],
-            surface: SURFACE,
-            air_pockets: vec![],
-            channel: Some(channel()),
-        },
-        WaterVolume {
-            name: "Cliffside Spring".to_owned(),
-            centre: [-5000, 2400],
-            radii: [200, 150],
-            surface: 1110,
-            air_pockets: vec![],
-            channel: None,
-        },
+        volume("Greyhaven Brook", COURSE, HALF_WIDTH, SURFACE),
+        volume("Stillwater Inflow", INFLOW, UPPER_HALF_WIDTH, UPPER_SURFACE),
+        volume("Stillwater Outlet", OUTLET, UPPER_HALF_WIDTH, UPPER_SURFACE),
     ]
 }
 
-/// A soft bank cut sampled onto the existing authoritative terrain grid. The whole spawn
-/// lattice and its interpolation neighbours stay level; there is no client-only river bed.
-#[must_use]
-pub fn bed_depth(x: i32, z: i32) -> i32 {
-    if (-1600..=1600).contains(&x) && (1200..=2800).contains(&z) {
-        return 0;
-    }
-    let squared = COURSE
+/// Centimetres to the closest authored centreline, using the same segment metric as water.
+fn distance(points: &[[i32; 2]], x: i32, z: i32) -> i32 {
+    let squared = points
         .windows(2)
         .map(|p| {
             let [ax, az] = p[0].map(i128::from);
@@ -84,7 +110,46 @@ pub fn bed_depth(x: i32, z: i32) -> i32 {
         })
         .min()
         .unwrap_or(i128::MAX);
-    let distance = (squared as u128).isqrt().min(550) as i32;
+    (squared as u128).isqrt().min(i32::MAX as u128) as i32
+}
+
+/// Clear scenery relief and trunk placement from the authored water banks too.
+#[must_use]
+pub fn wet_ground(x: i32, z: i32) -> bool {
+    bed_depth(x, z) > 0 || upper_distance(x, z) < 650
+}
+
+fn upper_distance(x: i32, z: i32) -> i32 {
+    if !(-7300..=11700).contains(&x) || !(-13200..=3100).contains(&z) {
+        return i32::MAX;
+    }
+    distance(INFLOW, x, z).min(distance(OUTLET, x, z))
+}
+
+/// Carve a connected upper river into the rim, leaving the deep lake basin untouched.
+#[must_use]
+pub fn upper_ground(x: i32, z: i32, base: i32) -> i32 {
+    let d = upper_distance(x, z);
+    if d >= 650 {
+        return base;
+    }
+    let bed = UPPER_SURFACE - 90;
+    let weight = i64::from(650 - d);
+    let cut = bed + i32::try_from(i64::from(base - bed).max(0) * (650 - weight) / 650).unwrap_or(0);
+    base.min(cut)
+}
+
+/// A soft bank cut sampled onto the existing authoritative terrain grid. The whole spawn
+/// lattice and its interpolation neighbours stay level; there is no client-only river bed.
+#[must_use]
+pub fn bed_depth(x: i32, z: i32) -> i32 {
+    if (-1600..=1600).contains(&x) && (1200..=2800).contains(&z) {
+        return 0;
+    }
+    if !(-4800..=900).contains(&x) || !(1400..=9400).contains(&z) {
+        return 0;
+    }
+    let distance = distance(COURSE, x, z).min(550);
     65 * (550 - distance) / 550
 }
 

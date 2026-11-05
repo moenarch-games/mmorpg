@@ -459,7 +459,7 @@ pub(crate) fn roads(layers: &mut Layers, s: &Scenery, g: &TerrainGrid) {
     let lift = Layer::Path.lift();
     let up = [0., 1., 0.];
     let color = |x: f64, z: f64| tinted(0xa4865c, x, z, 5.);
-    let brook = mmorpg_core::greyhaven_vale::brook::channel();
+    let waters = mmorpg_core::greyhaven_vale::brook::waters();
     for road in &s.roads {
         let points: Vec<[f64; 2]> = road.points.iter().map(|p| p.map(metres)).collect();
         let width = metres(road.half_width);
@@ -471,10 +471,10 @@ pub(crate) fn roads(layers: &mut Layers, s: &Scenery, g: &TerrainGrid) {
             }
             let (nx, nz) = (-(bz - az) / l, (bx - ax) / l);
             let crossing = s.greyhaven()
-                && ax.min(bx) < 7.
-                && ax.max(bx) > -48.
+                && ax.min(bx) < 117.
+                && ax.max(bx) > -73.
                 && az.min(bz) < 100.
-                && az.max(bz) > 17.;
+                && az.max(bz) > -132.;
             let pieces = (l / if crossing { 1. } else { 2. }).ceil().max(1.) as usize;
             let strips = if crossing {
                 ((width + EDGE) * 4.).ceil() as usize
@@ -493,7 +493,9 @@ pub(crate) fn roads(layers: &mut Layers, s: &Scenery, g: &TerrainGrid) {
                     };
                     let (px, pz) = (x + nx * offset, z + nz * offset);
                     let in_water = crossing
-                        && brook.contains((px * 100.).round() as i32, (pz * 100.).round() as i32);
+                        && waters.iter().any(|w| {
+                            w.contains((px * 100.).round() as i32, (pz * 100.).round() as i32)
+                        });
                     vertex(
                         out,
                         [px, surface(g, px, pz) + lift, pz],
@@ -518,10 +520,10 @@ pub(crate) fn roads(layers: &mut Layers, s: &Scenery, g: &TerrainGrid) {
         }
         for &[x, z] in &points {
             if s.greyhaven()
-                && mmorpg_core::greyhaven_vale::brook::bed_depth(
+                && mmorpg_core::greyhaven_vale::brook::wet_ground(
                     (x * 100.) as i32,
                     (z * 100.) as i32,
-                ) > 0
+                )
             {
                 continue;
             }

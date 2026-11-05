@@ -63,6 +63,62 @@ fn brook_bridge_ford_gate_culvert_and_recovery() {
     for id in 60000..=60002 {
         assert!(content.definition().colliders().iter().any(|c| c.id == id));
     }
+    let lake = content
+        .waters()
+        .iter()
+        .find(|w| w.name == "Stillwater Lake")
+        .unwrap();
+    let inflow = content
+        .waters()
+        .iter()
+        .find(|w| w.name == "Stillwater Inflow")
+        .unwrap();
+    let outlet = content
+        .waters()
+        .iter()
+        .find(|w| w.name == "Stillwater Outlet")
+        .unwrap();
+    let upstream_end = *inflow.channel.as_ref().unwrap().points.last().unwrap();
+    let downstream_start = outlet.channel.as_ref().unwrap().points[0];
+    assert!(lake.contains(upstream_end[0], upstream_end[1]));
+    assert!(lake.contains(downstream_start[0], downstream_start[1]));
+    assert_eq!(
+        (inflow.surface, outlet.surface),
+        (lake.surface, lake.surface)
+    );
+    assert_eq!(
+        outlet.channel.as_ref().unwrap().points.last(),
+        Some(&[-4800, 2400])
+    );
+    // The rim outlet goes around the Hollow's rock mass rather than through its walls.
+    for pair in greyhaven_vale::brook::OUTLET.windows(2) {
+        for step in 0..=20 {
+            let p = [0, 1].map(|axis| pair[0][axis] + (pair[1][axis] - pair[0][axis]) * step / 20);
+            for wall in content
+                .definition()
+                .colliders()
+                .iter()
+                .filter(|c| (400..=406).contains(&c.id))
+            {
+                assert!(
+                    (p[0] - wall.position[0]).abs() > wall.half_extents[0] + 130
+                        || (p[1] - wall.position[2]).abs() > wall.half_extents[2] + 130,
+                    "outlet intersects Hollow wall {} at {:?}",
+                    wall.id,
+                    p
+                );
+            }
+        }
+    }
+    let mut upper_ford = Walker::at(-6600, -3000);
+    assert_eq!(
+        WaterMode::of_feet(
+            content.waters(),
+            upper_ford.feet().map(|v| v.round() as i32)
+        ),
+        WaterMode::Wading
+    );
+    upper_ford.go(-7100., -3000.);
     let mut bridge = Walker::at(0, 2700);
     bridge.walk(0);
     let mut highest = f32::MIN;
@@ -131,7 +187,7 @@ fn brook_bridge_ford_gate_culvert_and_recovery() {
         climb.go(x, z);
     }
     assert!(
-        (climb.feet()[1] - 1100.).abs() < 6.,
+        (climb.feet()[1] - 1100.).abs() < 30.,
         "wooded rim: {:?}",
         climb.feet()
     );

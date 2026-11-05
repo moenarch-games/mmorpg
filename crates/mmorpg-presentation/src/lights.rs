@@ -114,11 +114,12 @@ mod tests {
 }
 
 /// Torch flames in Redbrand's public cave: above head height, attached to solid walls.
-pub const CAVE_TORCHES: [[f64; 3]; 4] = [
+pub const CAVE_TORCHES: [[f64; 3]; 5] = [
     [48.12, 13.8, -134.5],
     [67.88, 13.8, -134.7],
     [79.88, 13.8, -142.],
     [61.5, 15.1, -143.88],
+    [60., 14.4, -153.6],
 ];
 
 /// Cosmetic eye adaptation and sky occlusion through the cave entrance. It follows the
@@ -141,7 +142,7 @@ pub fn cave_interior(viewer: Option<[f64; 3]>) -> f32 {
     if !inside {
         return 0.;
     }
-    let depth = ((-z - 128.) / 8.).clamp(0., 1.);
+    let depth = ((z + 156.) / 10.).clamp(0., 1.);
     (depth * depth * (3. - 2. * depth)) as f32
 }
 
@@ -154,6 +155,7 @@ pub(crate) fn cave_torches(b: &mut crate::batching::Batcher, scenery: &Scenery) 
         let [nx, nz] = match index {
             0 => [1., 0.],
             1 | 2 => [-1., 0.],
+            4 => [0., -1.],
             _ => [0., 1.],
         };
         b.global("cave-torch-iron", 0x343637).add(

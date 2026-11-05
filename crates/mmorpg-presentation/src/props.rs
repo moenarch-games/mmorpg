@@ -636,7 +636,52 @@ fn campfire(m: &mut Model, p: &Prop, index: usize, f: Affine) -> Animated {
 }
 /// A cave's roof slab (#159): rock with a mossy cap, drawn as its own part so clients can
 /// cut it away while the viewer stands under it.
-fn cave_roof(p: &Prop, index: usize) -> Animated {
+fn cave_roof(p: &Prop, index: usize, scenery: &Scenery) -> Animated {
+    if let Some(mesh) = scenery
+        .collision_surfaces
+        .iter()
+        .find(|mesh| Some(mesh.id) == p.collider)
+    {
+        let [cx, cy, cz] = p.position.map(metres);
+        let mut geometry = Geometry::default();
+        for triangle in &mesh.triangles {
+            let points = triangle.map(|i| {
+                let v = mesh.vertices[i as usize];
+                [
+                    metres(v[0] + mesh.position[0]) - cx,
+                    metres(v[1] + mesh.position[1]) - cy,
+                    metres(v[2] + mesh.position[2]) - cz,
+                ]
+            });
+            let first = geometry.p.len();
+            geometry.face(&points);
+            let y = points.iter().map(|p| p[1]).sum::<f64>() / 3.;
+            let color = if y > 5. {
+                mix(0x68794b, 0x8b8c73, hash(&points[0]))
+            } else {
+                mix(0x66665d, 0x8c8576, hash(&points[0]))
+            };
+            geometry.colors.extend(std::iter::repeat_n(
+                rgb(color).map(f64::from),
+                geometry.p.len() - first,
+            ));
+        }
+        let [hx, _, hz] = p.half_extents.map(metres);
+        return Animated {
+            draws: vec![Draw {
+                id: format!("authored-cave-roof-{index}"),
+                resource_key: format!("scenery:authored-cave-roof-{index}"),
+                geometry: Arc::new(geometry),
+                model: matrix(ID),
+                material: material(0xffffff, false),
+            }],
+            motion: Motion::Roof {
+                at: [cx, cy, cz],
+                min: [cx - hx, cz - hz],
+                max: [cx + hx, cz + hz],
+            },
+        };
+    }
     let [hx, hy, hz] = half(p);
     let t = hy * 2.;
     let s = seed(p);
@@ -947,7 +992,7 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
             }
             PropKind::Cliff => cliff(&mut m, p, climbable),
             PropKind::CaveRoof => {
-                animations.push(cave_roof(p, roofs));
+                animations.push(cave_roof(p, roofs, s));
                 roofs += 1;
             }
             PropKind::Campfire => {

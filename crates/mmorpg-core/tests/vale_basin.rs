@@ -87,8 +87,8 @@ fn the_farm_terrace_rises_above_the_basin_behind_a_cliff() {
     assert_eq!(definition.ground_at(2_000, 8_800), 0);
     assert_eq!(definition.ground_at(6_200, 4_150), basin::TERRACE_Y);
     // The former rectangular corner is now rock above the rounded southern apron.
-    assert_eq!(definition.ground_at(4_000, 9_000), basin::TERRACE_Y);
-    assert_eq!(definition.ground_at(3_600, 8_800), basin::TERRACE_Y);
+    assert!(definition.ground_at(4_000, 9_000) >= basin::TERRACE_Y);
+    assert!(definition.ground_at(3_600, 8_800) >= basin::TERRACE_Y);
 }
 
 #[test]
@@ -263,10 +263,9 @@ fn the_rim_closes_round_the_basin_behind_cliffs() {
         ([2_000, -2_800], [3_600, -2_800]),
     ] {
         assert_eq!(definition.ground_at(floor[0], floor[1]), 0, "{floor:?}");
-        assert_eq!(
-            definition.ground_at(rim[0], rim[1]),
-            basin::TERRACE_Y,
-            "{rim:?}"
+        assert!(
+            definition.ground_at(rim[0], rim[1]) >= basin::TERRACE_Y,
+            "weathered rim {rim:?}"
         );
     }
     // Redbrand Hollow's camp, the Greyfang cave's floor and the den clearing are on the rim.
@@ -381,9 +380,7 @@ fn the_ridge_path_joins_the_woods_to_the_hollow_on_the_rim() {
     // To the camp's western edge, short of its bandits.
     let trail = walk(&mut zone, &[[-6_600, -7_700], [-3_200, -7_700]]);
     assert!(
-        trail
-            .iter()
-            .all(|at| (at[1] - basin::TERRACE_Y as f32).abs() < 30.0),
+        trail.iter().all(|at| (1000.0..1130.0).contains(&at[1])),
         "the path stays on the rim"
     );
 }
@@ -404,7 +401,16 @@ fn a_player_walks_down_the_hollow_climb_to_the_outpost() {
 fn a_player_walks_from_the_hollow_into_the_greyfang_cave() {
     let mut zone = player_at([5_800, -11_000]);
     settle(&mut zone);
-    walk(&mut zone, &[[5_800, -13_700]]);
+    walk(
+        &mut zone,
+        &[
+            [9_600, -11_500],
+            [10_000, -13_000],
+            [9_200, -16_000],
+            [6_400, -16_000],
+            [6_400, -13_800],
+        ],
+    );
     let inside = feet(&zone);
     assert!(
         (inside[1] - basin::TERRACE_Y as f32).abs() < 20.0,

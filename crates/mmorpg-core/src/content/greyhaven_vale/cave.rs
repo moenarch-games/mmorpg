@@ -1,5 +1,5 @@
 //! The Greyfang cave (#159): an enclosed rock chamber set into the Greyfang Ridge hillside,
-//! east of Redbrand Hollow. A 4 m mouth in its south wall opens on the flat foot of the ridge;
+//! east of Redbrand Hollow. A 4 m mouth in its north wall opens on the flat foot of the ridge;
 //! inside, an outer cavern joins a smaller inner chamber through a 4 m passage.
 //!
 //! [`Cave`] describes the terrain footprint. #160 makes it
@@ -17,7 +17,7 @@ use crate::StaticCollider;
 pub struct Cave {
     /// The floor's height.
     pub floor_y: i32,
-    /// Walkable floor rects (chambers, passages, the mouth), flattened and roofed.
+    /// Flattened terrain footprints for chambers, the passage and the entrance apron.
     pub floors: &'static [([i32; 2], [i32; 2])],
     /// The roof slab's footprint: every floor and wall.
     pub roof: ([i32; 2], [i32; 2]),
@@ -61,7 +61,7 @@ pub fn threshold(id: u32) -> StaticCollider {
     }
 }
 
-/// The Greyfang cave: walls 4 m thick and 4.5 m tall under a 1 m roof.
+/// The public rooms beneath an irregular rock mound, entered through its north side.
 #[rustfmt::skip]
 pub const GREYFANG: Cave = Cave {
     floor_y: super::basin::TERRACE_Y,
@@ -72,10 +72,10 @@ pub const GREYFANG: Cave = Cave {
         ([6_800, -14_000], [7_200, -13_600]),
         // The inner chamber.
         ([7_200, -14_400], [8_000, -13_200]),
-        // The mouth, through the south wall.
-        ([5_600, -13_200], [6_000, -12_800]),
+        // The tapered north mouth, reached around the far side of the ridge.
+        ([5_800, -15_600], [7_000, -14_400]),
     ],
-    roof: ([4_400, -14_800], [8_400, -12_800]),
+    roof: ([3_600, -15_600], [9_200, -12_000]),
 };
 
 /// Repository-persisted simplified geometry, exported from Blender in game coordinates.
@@ -83,4 +83,15 @@ pub const GREYFANG: Cave = Cave {
 pub fn collision_meshes() -> Vec<crate::StaticMesh> {
     serde_json::from_str(include_str!("../../../content/collision/redbrand.json"))
         .expect("committed Redbrand collision JSON is valid")
+}
+
+/// The north-side approach sits on a broad terrace blended into the surrounding hills.
+/// Keeping this with core terrain prevents a visual path floating above a descending grid.
+#[must_use]
+pub fn approach_ground(x: i32, z: i32, base: i32) -> i32 {
+    let dx = i64::from(x - 6400) * 1024 / 4200;
+    let dz = i64::from(z + 13800) * 1024 / 3700;
+    let r = (dx * dx + dz * dz).isqrt();
+    let weight = ((1400 - r) * 1024 / 376).clamp(0, 1024);
+    base.max((i64::from(GREYFANG.floor_y) * weight / 1024) as i32)
 }
