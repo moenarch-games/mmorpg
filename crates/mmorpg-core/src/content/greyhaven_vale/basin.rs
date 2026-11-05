@@ -251,14 +251,43 @@ fn ridge(x: i32, z: i32, terrace: i32) -> i32 {
     {
         return 0;
     }
+    // Keep one full terrain cell around the water banks at the old rim height. Otherwise a
+    // tall summit outside the carved footprint can lift a triangle across a narrow channel.
+    if [-400, 0, 400].into_iter().any(|dx| {
+        [-400, 0, 400]
+            .into_iter()
+            .any(|dz| super::brook::wet_ground(x + dx, z + dz))
+    }) {
+        return 0;
+    }
     let radius = |dx: i32, dz: i32, rx: i64, rz: i64| {
         let a = i64::from(dx) * 1024 / rx;
         let b = i64::from(dz) * 1024 / rz;
         (a * a + b * b).isqrt()
     };
     let r = radius(x, z - 2800, 4530, 6800).min(radius(x + 1400, z + 4000, 3100, 2700));
-    let belt = (250 - (r - 1170).abs()).max(0);
-    if belt == 0 {
+    let belt = (310 - (r - 1200).abs()).max(0);
+    // Composed rock spurs give the basin an uneven skyline at the scale of the village.
+    // Each tuple is a summit, its elliptical footprint and height above the old rim, in cm.
+    // Max (rather than addition) keeps adjoining shoulders from forming artificial spikes.
+    let summits = [
+        (-5900, 3800, 1500, 1900, 1250),
+        (-6100, 6500, 1700, 1900, 1700),
+        (-4500, 8900, 1600, 1600, 1150),
+        (3900, 8000, 1300, 1800, 1350),
+        (5200, -1800, 1300, 1500, 1050),
+        (-4200, -4400, 1800, 1300, 1450),
+        (-2000, -7600, 1700, 1100, 950),
+    ];
+    let summit = summits
+        .into_iter()
+        .map(|(cx, cz, rx, rz, high)| {
+            let distance = radius(x - cx, z - cz, rx, rz);
+            (1024 - distance).max(0) * high / 1024
+        })
+        .max()
+        .unwrap_or(0);
+    if belt == 0 && summit == 0 {
         return 0;
     }
     let probe = super::StaticCollider {
@@ -271,8 +300,9 @@ fn ridge(x: i32, z: i32, terrace: i32) -> i32 {
     }
     let ribs = super::value_noise_q10(i64::from(x), i64::from(z), 900, 0x513c1);
     let strata = super::value_noise_q10(i64::from(x), i64::from(z), 2100, 0x513c2);
-    ((120 + ribs * 420 / 1024 + strata * 180 / 1024) * belt * i64::from(terrace.min(TERRACE_Y))
-        / (250 * i64::from(TERRACE_Y))) as i32
+    let shoulder = (100 + ribs * 520 / 1024 + strata * 240 / 1024) * belt / 310;
+    ((shoulder.max(summit) + summit * ribs / 8192) * i64::from(terrace.min(TERRACE_Y))
+        / i64::from(TERRACE_Y)) as i32
 }
 
 /// The rim's ground at `(x, z)`, or `None` on the untouched valley floor. Lanes override the

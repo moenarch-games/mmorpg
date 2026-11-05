@@ -451,14 +451,23 @@ pub(crate) fn grid_overlays(
     }
 }
 
-/// Worn dirt paths along every road: a ribbon full-weight across the road that fades out
-/// over `EDGE` metres either side, and a disc at every bend.
+/// The width of visible wear, shared with the distant terrain's baked road colour.
+pub(crate) fn path_width(s: &Scenery, width: f64, x: f64, z: f64) -> f64 {
+    if s.greyhaven() {
+        width * (0.72 + 0.20 * noise(x, z, 6., 513.))
+    } else {
+        width
+    }
+}
+
+/// Worn dirt paths follow the authoritative road corridor. Seeded wear narrows the drawn
+/// track and breaks up its verge without moving its centre off the traversable ground.
 pub(crate) fn roads(layers: &mut Layers, s: &Scenery, g: &TerrainGrid) {
     const EDGE: f64 = 1.6;
     let out = layers.entry(Ground::near(Layer::Path, true)).or_default();
     let lift = Layer::Path.lift();
     let up = [0., 1., 0.];
-    let color = |x: f64, z: f64| tinted(0xa4865c, x, z, 5.);
+    let color = |x: f64, z: f64| tinted(0x827154, x, z, 5.);
     let waters = mmorpg_core::greyhaven_vale::brook::waters();
     for road in &s.roads {
         let points: Vec<[f64; 2]> = road.points.iter().map(|p| p.map(metres)).collect();
@@ -504,7 +513,8 @@ pub(crate) fn roads(layers: &mut Layers, s: &Scenery, g: &TerrainGrid) {
                         if in_water {
                             0.
                         } else {
-                            ((width + EDGE - offset.abs()) / EDGE).clamp(0., 1.)
+                            ((path_width(s, width, px, pz) + EDGE - offset.abs()) / EDGE)
+                                .clamp(0., 1.)
                         },
                     );
                 }
@@ -532,7 +542,8 @@ pub(crate) fn roads(layers: &mut Layers, s: &Scenery, g: &TerrainGrid) {
             const SIDES: u32 = 16;
             for i in 0..SIDES {
                 let a = f64::from(i) / f64::from(SIDES) * TAU;
-                for (radius, alpha) in [(width, 1.), (width + EDGE, 0.)] {
+                let worn = path_width(s, width, x + a.sin() * width, z + a.cos() * width);
+                for (radius, alpha) in [(worn, 1.), (worn + EDGE, 0.)] {
                     let (px, pz) = (x + a.sin() * radius, z + a.cos() * radius);
                     vertex(
                         out,
@@ -585,7 +596,17 @@ pub(crate) fn patch(
                 [x, surface(g, x, z) + lift, z],
                 [0., 1., 0.],
                 tinted(color, x, z, 3.),
-                1. - d / border,
+                if layer == Layer::Path {
+                    let cx = (lo[0] + hi[0]) * 0.5;
+                    let cz = (lo[1] + hi[1]) * 0.5;
+                    let rx = (hi[0] - lo[0]) * 0.5;
+                    let rz = (hi[1] - lo[1]) * 0.5;
+                    let radius = ((x - cx) / rx).hypot((z - cz) / rz);
+                    let edge = 0.10 * (noise(x, z, 3., 519.) - 0.5);
+                    (1. - smoothstep(0.72, 1., radius + edge)) * 0.95
+                } else {
+                    1. - d / border
+                },
             );
         }
     }

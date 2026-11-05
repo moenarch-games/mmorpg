@@ -547,7 +547,7 @@ fn worn(s: &Scenery, g: &TerrainGrid) -> Vec<(f64, u32)> {
             let reach = width + WORN_FADE_METRES;
             let lo = [a[0].min(b[0]) - reach, a[1].min(b[1]) - reach];
             let hi = [a[0].max(b[0]) + reach, a[1].max(b[1]) + reach];
-            paint(lo, hi, 0xa4865c, &|x, z| {
+            paint(lo, hi, 0x827154, &|x, z| {
                 let (dx, dz) = (b[0] - a[0], b[1] - a[1]);
                 let length = dx * dx + dz * dz;
                 let t = if length == 0. {
@@ -555,7 +555,10 @@ fn worn(s: &Scenery, g: &TerrainGrid) -> Vec<(f64, u32)> {
                 } else {
                     (((x - a[0]) * dx + (z - a[1]) * dz) / length).clamp(0., 1.)
                 };
-                fade(width, (x - a[0] - t * dx).hypot(z - a[1] - t * dz))
+                fade(
+                    ground::path_width(s, width, x, z),
+                    (x - a[0] - t * dx).hypot(z - a[1] - t * dz),
+                )
             });
         }
     }

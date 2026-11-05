@@ -1617,10 +1617,26 @@ impl Placer<'_> {
                 placed += 1;
             }
         }
+        self.ridge_scrub();
         self.outer_decorations();
         self.farmland_decorations();
         self.highland_decorations();
         self.marsh_decorations();
+    }
+
+    /// Patches of low scrub soften the rocky basin shoulders. This independent seed leaves
+    /// existing scatter stable; bushes are foliage and never introduce solid client bodies.
+    fn ridge_scrub(&mut self) {
+        let mut rng = Rng::new(0x513_5c2b);
+        let scenery = self.scenery;
+        self.scatter(&mut rng, 180, 2400, |rng| {
+            let at = [rng.range(-8500, 8500), rng.range(-9000, 11000)];
+            let h = scenery.ground_at(at[0], at[1]);
+            let away_from_village = at[0].abs() > 3700 || at[1] < -2000 || at[1] > 5800;
+            let patch =
+                ((at[0].div_euclid(1800) * 31 + at[1].div_euclid(1800) * 17).rem_euclid(7)) < 4;
+            (away_from_village && (300..2600).contains(&h) && patch).then_some((PropKind::Bush, at))
+        });
     }
 
     /// Reeds round every marsh water, partly standing in it, and tussock grass, scrub and

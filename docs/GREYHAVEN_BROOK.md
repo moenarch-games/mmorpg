@@ -91,3 +91,31 @@ The live Blender context is saved as `artifacts/greyhaven-brook/connected-landsc
 A wide browser capture timed out on the software renderer; a smaller Chromium overview
 then succeeded without page errors at `artifacts/greyhaven-brook/connected-landscape.png`.
 Native GPU acceptance and full suites were not run. The source convention revision remains the one recorded above.
+
+
+## Woodland-valley reference: first landscape pass
+
+The owner's supplied reference guides the ongoing art work (Atlas 5.1.i513-4). Seven composed
+ridge summits add unequal rock spurs and saddles above the original terrace. They are core
+heightfield content, so walking and climbing use the same ground that both clients draw.
+The protected foundations, switchbacks, farm, lake and road corridors retain their levels.
+A full terrain-cell buffer around the water banks prevents taller adjoining triangles from
+clipping the narrow upper channels.
+
+Seeded patches of low scrub dress the shoulders using the existing nature bundle. Bushes
+remain walk-through foliage and their separate seed does not reroll older placements.
+The dirt tracks have a darker earth palette and a varying worn width inside the unchanged
+road corridor; the small gathering patch now has a rounded, broken edge. Near and distant
+road colour use the same worn-width function. These are presentation changes, independent
+of authoritative movement and terrain LOD selection.
+
+This is the first reference-directed pass, not a claim that the complete reference's visual
+quality has been reached. Architecture details, woodland composition and lighting continue.
+
+For this first reference pass, all 15 basin traversal tests and the shared presentation water
+clearance test passed after fixing an observed outlet/terrain intersection. The browser/WASM
+production build passed. Chromium walked the bridge and captured the updated overview with
+all seven ground textures loaded and no page errors. The same Blender file now includes 512
+instances of the actual game nature assets using shared WASM placement matrices. The
+preview terrain materials remain simpler than the in-game PBR terrain. Full suites and native
+GPU acceptance were not run; shared policy source revision is unchanged.
