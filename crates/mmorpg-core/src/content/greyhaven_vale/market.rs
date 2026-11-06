@@ -158,7 +158,7 @@ pub fn placements(house: [i32; 2]) -> Vec<Placement> {
     // A produce stall on the south edge of the gathering space, clear of the spawn slots.
     placements.push(Placement {
         item: Item::Stall,
-        position: [-1200, 0, 2900],
+        position: [-1200, 0, 2950],
         yaw: 32768,
     });
     placements.push(Placement {

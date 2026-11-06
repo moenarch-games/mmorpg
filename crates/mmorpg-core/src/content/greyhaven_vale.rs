@@ -532,10 +532,14 @@ const OUTER_FORESTS: [([i32; 2], [i32; 2], u64, u64); 7] = [
 
 /// Small, patchy groves frame Stillwater's eastern shore, the Hollow's distant backdrop
 /// and the southwest ridge. Appended after existing forests to retain their collider IDs.
-const RIM_GROVES: [([i32; 2], [i32; 2], u64, u64); 3] = [
+const RIM_GROVES: [([i32; 2], [i32; 2], u64, u64); 5] = [
     ([8200, -10500], [9, 19], 0x0051_3f01, 72),
     ([-11000, -15500], [14, 9], 0x0051_3f02, 76),
     ([-11000, 5000], [14, 13], 0x0051_3f03, 70),
+    // Continue the woodland behind the western ridge and below Millbrook. Existing
+    // groves stay first so their tree identities survive this appended authoring.
+    ([-12500, -10500], [13, 14], 0x0051_3f04, 76),
+    ([6500, 5800], [13, 12], 0x0051_3f05, 74),
 ];
 
 /// SplitMix64 finaliser: a fixed integer hash, identical on every platform.

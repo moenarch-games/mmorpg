@@ -348,3 +348,23 @@ the village crossing without page errors and captured the loaded keep in
 architecture and now previews terrain rock with the existing packed game maps at six-metre
 scale. This local preview is not a replacement for the playable render. Full suites/native
 GPU acceptance were not run; the legacy A/B CI failure remains unresolved.
+
+## Fuller woodland edges and spawn clearance
+
+Two appended fixed-seed rim groves continue the woods behind the western ridge and below
+Millbrook. They add 145 collidable trunks using the existing tree authoring, road/structure
+clearance, water exclusion and shared mixed-species nature kit. Earlier grove ordering stays
+unchanged. The live Blender context now contains 1,590 current nature instances using the
+same placement matrices as the game.
+
+The content check also caught the produce stall's awning overlapping the spawn plaza by
+six centimetres. Its origin moves half a metre south, retaining its compact-square placement
+while clearing every spawn slot. The existing full 512-slot spawn test now passes, as does
+the Wolfrun climb traversal. The browser/WASM production build passed.
+
+The nine-test `greyhaven_vale` file initially returned four passes and five failures. A
+comparison with the preceding committed content reproduced all five failures. The plaza
+failure is fixed here; four pre-existing assertions remain unresolved (square palisade gaps,
+overlapping conservative structure bounds, an old road-clearance assertion, and contiguous
+tree numbering). No assertion was removed or weakened. These are in addition to the already
+reported legacy A/B failure; full suites and native GPU acceptance were not run.
