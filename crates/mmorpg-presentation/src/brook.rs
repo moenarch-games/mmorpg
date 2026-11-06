@@ -2,10 +2,10 @@
 //! Authored course, water level and traversable structures come from core; this is only art.
 use crate::{
     Animated, Draw, Group, Motion,
-    batching::{Batcher, Cull, material, matrix, rgb},
+    batching::{Batcher, Cull, material, matrix, mix, rgb},
     geometry::{Geometry, ID, at, box_shape, disc, frustum},
     ground::{self, Ground, Layer},
-    terrain::{metres, surface},
+    terrain::{metres, noise, surface},
 };
 use mmorpg_core::greyhaven_vale::brook as content;
 use mmorpg_scenery::{Scenery, TerrainGrid};
@@ -80,26 +80,33 @@ pub(crate) fn build(
             for step in 0..steps {
                 let t0 = step as f64 / steps as f64;
                 let t1 = (step + 1) as f64 / steps as f64;
-                let p = |t: f64, side: f64, width: f64| {
+                let p = |t: f64, side: f64, edge: f64| {
                     let x = a[0] + (z[0] - a[0]) * t;
                     let v = a[1] + (z[1] - a[1]) * t;
                     let nx = (left[0] + (right[0] - left[0]) * t) / half_width;
                     let nz = (left[1] + (right[1] - left[1]) * t) / half_width;
+                    let width = half_width + edge * (0.65 + 1.25 * noise(x, v, 4., 571.));
                     let x = x + nx * side * width;
                     let v = v + nz * side * width;
-                    [x, surface(g, x, v) + 0.008, v]
+                    [x, surface(g, x, v) + 0.085, v]
                 };
                 for side in [-1., 1.] {
-                    let q = [
-                        p(t0, side, half_width),
-                        p(t1, side, half_width),
-                        p(t1, side, half_width + 1.7),
-                        p(t0, side, half_width + 1.7),
-                    ];
-                    if side > 0. {
-                        banks.face(&[q[3], q[2], q[1], q[0]]);
-                    } else {
-                        banks.face(&q);
+                    for [inner, outer] in [[0., 0.45], [0.45, 1.]] {
+                        let q = [
+                            p(t0, side, inner),
+                            p(t1, side, inner),
+                            p(t1, side, outer),
+                            p(t0, side, outer),
+                        ];
+                        let weight = |edge: f64| (1. - edge) / f64::from(ground::OVERLAY_ALPHA);
+                        let alpha = [weight(inner), weight(inner), weight(outer), weight(outer)];
+                        if side > 0. {
+                            banks.face(&[q[3], q[2], q[1], q[0]]);
+                            banks.alpha.extend(alpha.into_iter().rev());
+                        } else {
+                            banks.face(&q);
+                            banks.alpha.extend(alpha);
+                        }
                     }
                 }
             }
@@ -232,16 +239,21 @@ pub(crate) fn build(
             );
         }
     }
-    banks.colors = vec![rgb(0x75664c).map(f64::from); banks.p.len()];
+    banks.colors = banks
+        .p
+        .iter()
+        .map(|[x, _, z]| rgb(mix(0x635d40, 0x8c805d, noise(*x, *z, 5., 573.))).map(f64::from))
+        .collect();
     ground::project_top(&mut banks, Layer::Mud);
     let mut bank = draw("brook-wet-banks", banks, 0xffffff, 1.);
-    bank.material.ground = Some(Ground::near(Layer::Mud, false));
+    bank.material.ground = Some(Ground::near(Layer::Mud, true));
+    bank.material.opacity = ground::OVERLAY_ALPHA;
     vec![Group {
         draws: vec![bank],
         cull: Cull::Always,
         instanced: false,
         fallback: None,
-        min: [-73., -132.],
+        min: [-73., -136.],
         max: [117., 99.],
     }]
 }

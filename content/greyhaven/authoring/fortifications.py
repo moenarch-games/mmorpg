@@ -412,6 +412,26 @@ for k,(x,z) in enumerate([(-47,43),(-46,62),(47,56)]):
     fs=[tuple(range(n-1,-1,-1)),tuple(range(2*n,3*n))]
     fs += [(r*n+j,r*n+(j+1)%n,(r+1)*n+(j+1)%n,(r+1)*n+j) for r in range(2) for j in range(n)]
     solid_record(65030+k,vs,fs)
+# Low shoreline clusters: game collision and shared rock skins use these same coarse
+# facets. They break the water outline without new render assets or blocking the dock.
+shore_preview=flat('Stillwater shore rock preview',(.29,.31,.23))
+for cluster,(x,z,turn) in enumerate([(39,-60,.4),(38,-65,1.1),(47,-70.5,.2),
+    (53,-71.5,1.4),(69,-69.5,.8),(39,-41,1.2),(55,-39.5,.6),(69,-40.5,1.5)]):
+    for piece,(dx,dz,rx,rz,h) in enumerate([(0,0,2.1,1.35,2.25),(1.8,.7,1.1,.85,1.45),(-1.6,-.65,.8,.65,.95)]):
+        id=65070+cluster*3+piece;n=9;vs=[]
+        cx=x+dx*math.cos(turn)-dz*math.sin(turn)
+        cz=z+dx*math.sin(turn)+dz*math.cos(turn)
+        for row,(height,width) in enumerate([(10.25,.75),(11.35,1),(10.25+h,.53)]):
+            for j in range(n):
+                a=j*math.tau/n;w=1+.16*math.sin(j*7.1+id)
+                px,pz=rx*w*width*math.sin(a),rz*w*width*math.cos(a)
+                vs.append((cx+px*math.cos(turn)-pz*math.sin(turn),
+                    height+(0 if row==0 else .12*math.sin(j*4.3+id)),
+                    cz+px*math.sin(turn)+pz*math.cos(turn)))
+        fs=[tuple(range(n-1,-1,-1)),tuple(range(2*n,3*n))]
+        fs += [(r*n+j,r*n+(j+1)%n,(r+1)*n+(j+1)%n,(r+1)*n+j) for r in range(2) for j in range(n)]
+        solid_record(id,vs,fs)
+        mesh('Stillwater fractured bank '+str(id),vs,fs,shore_preview)
 COLLISION.write_text(json.dumps(collision,separators=(',',':'))+'\n')
 print('Authored',len(o.data.polygons),'faces;',len(collision),'simplified collision meshes;',len(resources),'resources.')
 

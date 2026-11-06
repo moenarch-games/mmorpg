@@ -209,3 +209,36 @@ The Hollow's nearly level enclosing walls have since been reshaped into broken r
 mossy shoulders; the rope landing and camp access remain usable. See the
 [rock authoring notes](REDBRAND_ENVIRONMENT.md#broken-hollow-ridges) for collision, climbing
 cue projection and the focused checks.
+
+## Stillwater bank and outlet pass
+
+The upper outlet now bends around Hollow in a sequence of broad, unequal reaches instead
+of following long parallel straight lines. Its endpoints, lake level and waterfall join
+remain the same. Core uses those points for both the water volume and the sampled bed;
+shared presentation and the live Blender context read the same course.
+
+Eight low rock clusters break up Stillwater's west, north and south banks. The Blender
+source in `content/greyhaven/authoring/fortifications.py` exports their twenty-four closed,
+coarse meshes as stable IDs 65070–65093 in `greyhaven-fort.json`. Rapier loads them through
+the existing immutable static-mesh path; both clients texture those exact facets with the
+existing rock material and moss palette. These are not detailed rendering meshes, new
+water volumes or another asset bundle. The dock and shrine approach stay clear, and the
+rocks avoid the existing lurker spawn points. The lake ellipse and its deep basin remain
+unchanged; the outcrops break its visible shoreline rather than replacing water physics.
+
+The stream banks now have unequal widths and a textured height blend into the surrounding
+ground, using the existing masked mud layer. No new shader, renderer, streaming system or
+movement authority was introduced. Content revision follows the changed immutable geometry;
+protocol and canonical layouts are unchanged.
+
+Focused checks passed: `cargo test -p mmorpg-core --test village_brook --locked`,
+`cargo test -p mmorpg-presentation --lib brook_water_clears_the_actual_terrain_triangles --locked`,
+and the browser/WASM production build. Full suites and native GPU acceptance were not run.
+Convention source revision remains `625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+
+Chromium walked the Lakeshore switchback to the dock approach without page errors. The
+capture `artifacts/greyhaven-brook/stillwater-banks.png` shows the textured bank clusters,
+reeds and open dock; a final small outlet bend adjustment followed the capture. The live
+Blender context includes all twenty-four bank rocks and the current shared terrain/nature
+placements. The existing blocky cover over the Sunken Shrine remains a visible art issue
+for the next terrain pass; the full reference direction remains in progress.
