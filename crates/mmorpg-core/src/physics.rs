@@ -22,6 +22,7 @@ use std::fmt;
 mod engine;
 mod queries;
 mod rapier;
+mod shared;
 
 /// The gap (in units) the character controller keeps between a body and what it touches:
 /// well above `f32` resolution across the zone and below the half unit projections round

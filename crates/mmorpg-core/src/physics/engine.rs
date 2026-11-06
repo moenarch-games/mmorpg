@@ -35,6 +35,7 @@
 //! - Overlap queries see the terrain (Rapier skips box–heightfield pairs). Flat terrain cells
 //!   are removed on both backends and left to the floor half-space.
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -45,7 +46,7 @@ use physics_engine::approximate::{
     TriangleMeshDesc, Vector,
 };
 
-use super::rapier::{DEBRIS_REST_SPEED_UNITS, DEBRIS_REST_SPIN, Dynamic, TICKS_PER_SECOND, nearby};
+use super::shared::{DEBRIS_REST_SPEED_UNITS, DEBRIS_REST_SPIN, Dynamic, TICKS_PER_SECOND, nearby};
 use super::{
     Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, PhysicsError, RayHit, RigidBody,
     StepStats, Vec3i, error, exact, from_subunits,
@@ -101,6 +102,12 @@ struct Ground {
 }
 
 #[derive(Clone)]
+struct ResponseLane {
+    engine: physics_engine::approximate::World,
+    fixed: BTreeMap<BodyId, (RigidBody, EngineId)>,
+}
+
+#[derive(Clone)]
 pub(super) struct World {
     gravity: [f32; 3],
     engine: physics_engine::approximate::World,
@@ -117,6 +124,7 @@ pub(super) struct World {
     moves: Vec<CharacterMove>,
     results: Vec<CharacterMoveResult>,
     velocities: Vec<(BodyId, [f32; 3])>,
+    response: [RefCell<Option<ResponseLane>>; 2],
 }
 
 impl fmt::Debug for World {
@@ -155,41 +163,12 @@ impl World {
             moves: Vec::new(),
             results: Vec::new(),
             velocities: Vec::new(),
+            response: std::array::from_fn(|_| RefCell::new(None)),
         }
     }
 
     fn insert(&mut self, body: &RigidBody) -> Result<EngineId, PhysicsError> {
-        let handle = if let Some(mesh) = &body.mesh {
-            self.engine.add_triangle_mesh(
-                TriangleMeshDesc {
-                    position: vector(super::from_units(mesh.position)),
-                    vertices: mesh
-                        .vertices
-                        .iter()
-                        .map(|&vertex| vector(super::from_units(vertex)))
-                        .collect(),
-                    triangles: mesh.triangles.clone(),
-                    material: Material::default(),
-                },
-                Some(body.id.0),
-            )
-        } else if let Kind::Rock(shape) = body.kind {
-            self.engine.add_convex_hull(
-                ConvexHullDesc {
-                    position: vector(body.position),
-                    vertices: shape
-                        .hull(body.half_extents)
-                        .into_iter()
-                        .map(vector)
-                        .collect(),
-                    material: Material::default(),
-                },
-                Some(body.id.0),
-            )
-        } else {
-            self.engine.add_body(engine_body(body))
-        }
-        .map_err(|failure| engine_error("add authored or primitive body", failure))?;
+        let handle = insert_response_body(&mut self.engine, body)?;
         if body.is_moving() {
             self.engine
                 .add_character(handle, self.settings)
@@ -198,6 +177,44 @@ impl World {
         self.games.insert(handle.to_bits(), body.id);
         Ok(handle)
     }
+}
+
+/// Insert the exact geometry into either the character world or an isolated response lane.
+fn insert_response_body(
+    engine: &mut physics_engine::approximate::World,
+    body: &RigidBody,
+) -> Result<EngineId, PhysicsError> {
+    if let Some(mesh) = &body.mesh {
+        engine.add_triangle_mesh(
+            TriangleMeshDesc {
+                position: vector(super::from_units(mesh.position)),
+                vertices: mesh
+                    .vertices
+                    .iter()
+                    .map(|&vertex| vector(super::from_units(vertex)))
+                    .collect(),
+                triangles: mesh.triangles.clone(),
+                material: Material::default(),
+            },
+            Some(body.id.0),
+        )
+    } else if let Kind::Rock(shape) = body.kind {
+        engine.add_convex_hull(
+            ConvexHullDesc {
+                position: vector(body.position),
+                vertices: shape
+                    .hull(body.half_extents)
+                    .into_iter()
+                    .map(vector)
+                    .collect(),
+                material: Material::default(),
+            },
+            Some(body.id.0),
+        )
+    } else {
+        engine.add_body(engine_body(body))
+    }
+    .map_err(|failure| engine_error("add authored or primitive body", failure))
 }
 
 /// `body`'s engine body, keyed by its game ID: a unit is an external capsule, everything else
@@ -386,6 +403,7 @@ impl World {
     /// row-major as the content stores them, with the flat cells removed like the Rapier
     /// backend removes them.
     pub fn set_terrain(&mut self, id: BodyId, terrain: crate::Terrain) {
+        self.response = std::array::from_fn(|_| RefCell::new(None));
         if let Some(ground) = self.ground.take() {
             self.engine.remove_body(ground.body);
             self.games.remove(&ground.body.to_bits());
@@ -561,7 +579,7 @@ impl World {
             velocities.push((body.id, velocity));
             let carry = carried.get(&body.id).copied().unwrap_or([0.0; 3]);
             // Turned around touching characters as on the Rapier arm (#534, Rapier oracle).
-            let desired = super::rapier::World::slide_around(
+            let desired = super::shared::slide_around(
                 self.bodies.values(),
                 body,
                 [0, 1, 2].map(|axis| velocity[axis] + carry[axis]),
@@ -801,45 +819,163 @@ impl World {
                 .step_dynamic(debris, settle, &Dynamic::default())
                 .expect("physics-engine debris step failed");
         }
-        // General dynamic box–hull/mesh response is not supported by Engine yet.
-        super::rapier::step_debris(
-            self.gravity,
-            &self.bodies,
-            self.ground
-                .as_ref()
-                .map(|ground| (ground.floor, &ground.terrain)),
-            debris,
-            settle,
-        )
+        self.step_authored(debris, settle, &Dynamic::default())
+            .expect("physics-engine authored debris step failed")
     }
 
-    /// Movable props (#58) as rotation-locked engine boxes stopped by units' capsules.
+    /// Movable props are upright boxes stopped by units' capsules.
     pub fn step_props(&self, props: &mut [DebrisBody], exclude: &[BodyId]) -> usize {
-        if props.iter().any(|piece| !piece.resting) && self.has_authored_geometry() {
-            return super::rapier::step_props(
-                self.gravity,
-                &self.bodies,
-                self.ground
-                    .as_ref()
-                    .map(|ground| (ground.floor, &ground.terrain)),
-                props,
-                exclude,
-            );
-        }
         let settle = vec![true; props.len()];
         let options = Dynamic {
             upright: true,
             units_block: true,
             exclude,
         };
-        self.step_dynamic(props, &settle, &options)
-            .expect("physics-engine props step failed")
+        if self.has_authored_geometry() {
+            self.step_authored(props, &settle, &options)
+        } else {
+            self.step_dynamic(props, &settle, &options)
+        }
+        .expect("physics-engine props step failed")
     }
 
     fn has_authored_geometry(&self) -> bool {
         self.bodies
             .values()
             .any(|body| body.mesh.is_some() || matches!(body.kind, Kind::Rock(_)))
+    }
+
+    /// The retained part is static geometry only. Every tick transfers the canonical game
+    /// bodies in and out; neither characters nor hidden dynamic solver state cross this boundary.
+    fn step_authored(
+        &self,
+        pieces: &mut [DebrisBody],
+        settle: &[bool],
+        options: &Dynamic<'_>,
+    ) -> Result<usize, PhysicsError> {
+        let moving = pieces.iter().filter(|piece| !piece.resting).count();
+        if moving == 0 {
+            return Ok(0);
+        }
+        let mut cached = self.response[usize::from(options.upright)].borrow_mut();
+        if cached.is_none() {
+            let per_second = TICKS_PER_SECOND * TICKS_PER_SECOND / UNITS_PER_METRE;
+            let mut engine = physics_engine::approximate::World::new(Config {
+                gravity: vector(self.gravity.map(|g| g * per_second)),
+                substeps: 2,
+                velocity_iterations: if options.upright { 1 } else { 4 },
+                length_unit: UNITS_PER_METRE,
+                ..Config::default()
+            })
+            .map_err(|failure| engine_error("authored response world", failure))?;
+            if let Some(ground) = &self.ground {
+                engine
+                    .add_heightfield(heightfield(&ground.terrain), None)
+                    .map_err(|failure| engine_error("authored response terrain", failure))?;
+            }
+            *cached = Some(ResponseLane {
+                engine,
+                fixed: BTreeMap::new(),
+            });
+        }
+        let lane = cached.as_mut().expect("response lane initialized");
+        let removed: Vec<_> = lane
+            .fixed
+            .iter()
+            .filter_map(|(id, (body, handle))| {
+                (options.exclude.contains(id) || self.bodies.get(id) != Some(body))
+                    .then_some((*id, *handle))
+            })
+            .collect();
+        for (id, handle) in removed {
+            lane.engine.remove_body(handle);
+            lane.fixed.remove(&id);
+        }
+        for body in self
+            .bodies
+            .values()
+            .filter(|body| !body.is_moving() && !options.exclude.contains(&body.id))
+        {
+            if !lane.fixed.contains_key(&body.id) {
+                let handle = insert_response_body(&mut lane.engine, body)?;
+                lane.fixed.insert(body.id, (body.clone(), handle));
+            }
+        }
+        let baseline = lane.engine.body_count();
+        let mut transient = Vec::new();
+        if options.units_block {
+            for body in nearby(&self.bodies, pieces, options).filter(|body| body.is_moving()) {
+                let mut fixed = engine_body(body);
+                fixed.mass = 0.;
+                fixed.external = false;
+                transient.push(
+                    lane.engine
+                        .add_body(fixed)
+                        .map_err(|failure| engine_error("response unit", failure))?,
+                );
+            }
+        }
+        let mut handles = Vec::with_capacity(pieces.len());
+        for piece in pieces.iter() {
+            let half = vector(exact(piece.half_extents));
+            let mass = DEBRIS_DENSITY * 8. * half.0 * half.1 * half.2 / UNITS_PER_METRE.powi(3);
+            let [x, y, z, w] = piece.rotation;
+            let mut body = Body::new(
+                Shape::Box(half),
+                vector(piece.position),
+                if piece.resting { 0. } else { mass },
+            );
+            body.orientation = Quaternion(x, y, z, w);
+            body.friction = PIECE_FRICTION;
+            body.restitution = PIECE_RESTITUTION;
+            body.sleep_allowed = false;
+            if !piece.resting {
+                body.velocity = vector(piece.velocity.map(|v| v * TICKS_PER_SECOND));
+                body.angular_velocity = vector(piece.spin.map(|v| v * TICKS_PER_SECOND));
+                body.linear_damping = 0.2;
+                body.angular_damping = 0.8;
+                body.rotation_locked = options.upright;
+            }
+            let handle = lane
+                .engine
+                .add_body(body)
+                .map_err(|failure| engine_error("response piece", failure))?;
+            transient.push(handle);
+            handles.push(handle);
+        }
+        let outcome = lane.engine.step(1. / f64::from(TICKS_PER_SECOND));
+        // Removal returns ownership of the physical state and clears contacts before recovery.
+        for ((piece, handle), &settles) in pieces.iter_mut().zip(handles).zip(settle) {
+            let body = lane
+                .engine
+                .remove_body(handle)
+                .expect("response piece exists");
+            if !piece.resting {
+                let Quaternion(x, y, z, w) = body.orientation;
+                let norm = (x * x + y * y + z * z + w * w).sqrt();
+                piece.position = array(body.position);
+                piece.rotation = [x / norm, y / norm, z / norm, w / norm];
+                piece.velocity = array(body.velocity).map(|v| v / TICKS_PER_SECOND);
+                piece.spin = array(body.angular_velocity).map(|v| v / TICKS_PER_SECOND);
+                let speed = piece.velocity.iter().map(|v| v * v).sum::<f32>().sqrt();
+                let spin = piece.spin.iter().map(|v| v * v).sum::<f32>().sqrt();
+                if settles && speed < DEBRIS_REST_SPEED_UNITS && spin < DEBRIS_REST_SPIN {
+                    piece.resting = true;
+                    piece.velocity = [0.; 3];
+                    piece.spin = [0.; 3];
+                }
+            }
+        }
+        for handle in transient {
+            lane.engine.remove_body(handle);
+        }
+        assert_eq!(
+            lane.engine.body_count(),
+            baseline,
+            "response lane retained a transient body"
+        );
+        outcome.map_err(|failure| engine_error("authored response step", failure))?;
+        Ok(moving)
     }
 
     /// One tick of primitive-zone debris or movable props in a fresh engine world of nearby game bodies,

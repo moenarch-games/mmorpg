@@ -50,8 +50,9 @@ fn worlds(bodies: impl IntoIterator<Item = RigidBody>) -> (World, World) {
     (engine, rapier)
 }
 
-#[test]
-fn redbrand_json_rays_keep_floor_shelf_wall_and_ceiling_contacts() {
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
+pub fn redbrand_json_rays_keep_floor_shelf_wall_and_ceiling_contacts() {
     let meshes = greyhaven_vale::cave::collision_meshes();
     // The committed floor, roof, shelf and wall IDs; no hardcoded collision coordinates.
     for expected in [640, 547, 645, 543] {
@@ -88,8 +89,9 @@ fn first_greyhaven_rock() -> RigidBody {
     )
 }
 
-#[test]
-fn unit_placement_capsules_query_actual_meshes_and_hulls_on_both_backends() {
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
+pub fn unit_placement_capsules_query_actual_meshes_and_hulls_on_both_backends() {
     let mesh = greyhaven_vale::cave::collision_meshes()
         .into_iter()
         .find(|mesh| mesh.id == 645)
@@ -120,8 +122,9 @@ fn unit_placement_capsules_query_actual_meshes_and_hulls_on_both_backends() {
     }
 }
 
-#[test]
-fn engine_surface_features_are_stable_for_the_actual_authored_inputs() {
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
+pub fn engine_surface_features_are_stable_for_the_actual_authored_inputs() {
     use physics_engine::approximate::{
         Config, ConvexHullDesc, Material, QueryFilter, RayCast, RayFeature, TriangleMeshDesc,
         Vector,
@@ -212,8 +215,9 @@ fn engine_surface_features_are_stable_for_the_actual_authored_inputs() {
     );
 }
 
-#[test]
-fn real_rock_hull_ray_and_capsule_cast_retain_game_identity() {
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
+pub fn real_rock_hull_ray_and_capsule_cast_retain_game_identity() {
     let rock = first_greyhaven_rock();
     let centre = rock.exact_position();
     let half = rock.half_extents();
@@ -260,8 +264,9 @@ fn above_mesh(mesh: &mmorpg_core::StaticMesh) -> [f32; 3] {
     ])
 }
 
-#[test]
-fn unsupported_dynamic_box_contacts_use_rapier_against_real_mesh_and_rock() {
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
+pub fn authored_rigid_boxes_keep_contacts_replay_and_exact_midpoint_recovery() {
     let mesh = greyhaven_vale::cave::collision_meshes()
         .into_iter()
         .find(|mesh| mesh.id == 640)
@@ -276,32 +281,65 @@ fn unsupported_dynamic_box_contacts_use_rapier_against_real_mesh_and_rock() {
             falling_box([rock_top[0], rock_top[1] + 250., rock_top[2]]),
         ),
     ] {
-        let (engine, rapier) = worlds([body]);
-        let (mut engine_debris, mut rapier_debris) = ([piece], [piece]);
-        for _ in 0..25 {
-            let a = engine.step_debris(&mut engine_debris, &[false]);
-            let b = rapier.step_debris(&mut rapier_debris, &[false]);
-            assert_eq!(a, b);
-            assert_eq!(
-                engine_debris, rapier_debris,
-                "debris must use Rapier's full geometry"
-            );
-        }
-        let (mut engine_prop, mut rapier_prop) = ([piece], [piece]);
-        for _ in 0..25 {
-            let a = engine.step_props(&mut engine_prop, &[]);
-            let b = rapier.step_props(&mut rapier_prop, &[]);
-            assert_eq!(a, b);
-            assert_eq!(
-                engine_prop, rapier_prop,
-                "props must use Rapier's full geometry"
-            );
+        for upright in [false, true] {
+            let (engine, rapier) = worlds([body.clone()]);
+            let replay = worlds([body.clone()]).0;
+            let mut restored: Option<(World, Vec<DebrisBody>)> = None;
+            let (mut engine_piece, mut rapier_piece, mut replay_piece) =
+                ([piece], [piece], [piece]);
+            let step = |world: &World, pieces: &mut [DebrisBody]| {
+                if upright {
+                    world.step_props(pieces, &[])
+                } else {
+                    world.step_debris(pieces, &[false])
+                }
+            };
+            for tick in 0..25 {
+                assert_eq!(
+                    step(&engine, &mut engine_piece),
+                    step(&rapier, &mut rapier_piece)
+                );
+                step(&replay, &mut replay_piece);
+                assert_eq!(
+                    engine_piece, replay_piece,
+                    "authored rigid replay, tick {tick}"
+                );
+                if let Some((world, state)) = &mut restored {
+                    step(world, state);
+                    assert_eq!(
+                        engine_piece.as_slice(),
+                        state.as_slice(),
+                        "authored rigid recovery, tick {tick}"
+                    );
+                }
+                if tick == 12 {
+                    // Reconstruct only from game-owned geometry and canonical piece state.
+                    restored = Some((worlds([body.clone()]).0, engine_piece.to_vec()));
+                }
+                let [a, b] = [engine_piece[0].position, rapier_piece[0].position];
+                let distance = (0..3)
+                    .map(|axis| (a[axis] - b[axis]).powi(2))
+                    .sum::<f32>()
+                    .sqrt();
+                assert!(
+                    distance <= 10.,
+                    "authored rigid contact {upright}, tick {tick}: {a:?} vs {b:?}"
+                );
+                assert!(
+                    engine_piece[0]
+                        .position
+                        .iter()
+                        .chain(&engine_piece[0].velocity)
+                        .all(|value| value.is_finite())
+                );
+            }
         }
     }
 }
 
-#[test]
-fn an_authored_wall_scrape_preserves_ascent_but_its_underside_stops_it() {
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
+pub fn an_authored_wall_scrape_preserves_ascent_but_its_underside_stops_it() {
     let mesh = greyhaven_vale::fort::meshes()
         .into_iter()
         .find(|mesh| mesh.id == 65057)
@@ -347,8 +385,9 @@ fn an_authored_wall_scrape_preserves_ascent_but_its_underside_stops_it() {
     }
 }
 
-#[test]
-fn terrain_probes_agree_at_the_charge_paths_half_unit_rounding_tie() {
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
+pub fn terrain_probes_agree_at_the_charge_paths_half_unit_rounding_tie() {
     let content = greyhaven_vale::content();
     let terrain = content.definition().terrain().unwrap();
     let heights = [Backend::Engine, Backend::Rapier].map(|backend| {
@@ -360,8 +399,9 @@ fn terrain_probes_agree_at_the_charge_paths_half_unit_rounding_tie() {
     assert!((heights[0] - heights[1]).abs() < 0.0005, "{heights:?}");
 }
 
-#[test]
-fn the_slanted_redbrand_wall_still_stops_an_upward_move() {
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
+pub fn the_slanted_redbrand_wall_still_stops_an_upward_move() {
     let mesh = greyhaven_vale::cave::collision_meshes()
         .into_iter()
         .find(|mesh| mesh.id == 544)

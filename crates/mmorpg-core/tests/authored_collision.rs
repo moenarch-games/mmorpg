@@ -50,8 +50,9 @@ impl Player {
     }
 }
 
-#[test]
-fn redbrand_entrance_walls_shelf_ceiling_and_recovery() {
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
+pub fn redbrand_entrance_walls_shelf_ceiling_and_recovery() {
     let mut p = Player::at([6400, 1100, -15600]);
     p.walk(0, 190); // Through the concealed north mouth from the terrace.
     assert!(p.feet()[2] > -14200., "enter cave: {:?}", p.feet());
@@ -111,8 +112,9 @@ fn redbrand_entrance_walls_shelf_ceiling_and_recovery() {
     assert!(exit.feet()[2] < -15400. && (exit.feet()[1] - 1100.).abs() < 1.);
 }
 
-#[test]
-fn meshes_support_without_heightfield_and_change_content_identity() {
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
+pub fn meshes_support_without_heightfield_and_change_content_identity() {
     use mmorpg_core::physics::{BodyId, RigidBody, Vec3i, World};
     let meshes = greyhaven_vale::cave::collision_meshes();
     let mut world = World::new(Vec3i::new(0, -64, 0));
@@ -151,8 +153,9 @@ fn meshes_support_without_heightfield_and_change_content_identity() {
     assert_ne!(a.revision(), build(changed).revision());
 }
 
-#[test]
-fn millbrook_windmill_has_a_solid_round_footprint() {
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
+pub fn millbrook_windmill_has_a_solid_round_footprint() {
     // This lane cuts through a corner of the former square proxy, outside the round tower.
     let mut corner = Player::at([9400, 1100, 2350]);
     corner.walk(49152, 50);
@@ -181,8 +184,9 @@ fn millbrook_windmill_has_a_solid_round_footprint() {
     assert!(closest < 290., "reached the tower: {closest}");
 }
 
-#[test]
-fn hollow_tent_flaps_block_and_sloped_roofs_have_no_square_corners() {
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
+pub fn hollow_tent_flaps_block_and_sloped_roofs_have_no_square_corners() {
     let mut flap = Player::at([-1300, 1100, -9450]);
     flap.walk(49152, 90);
     assert!(
