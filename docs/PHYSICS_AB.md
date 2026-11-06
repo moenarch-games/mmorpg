@@ -449,7 +449,7 @@ recasts that tangential contact with its existing normal nudge. The exact single
 regression requires no endpoint penetration and identical reconstructed continuation.
 
 With engine `943d0841a6b4abb5048c042965620b35a7225f0a` (kernels `291ae802`), the wolf A/B
-passes exact recovery/replay, all 9,471 physical-query comparisons, and the unchanged
+passes exact recovery/replay, all 9,563 physical-query comparisons, and the unchanged
 scripted climb allowance (12.98 units of 17.04). This is correctness evidence, not timing.
 The upstream debugging checkpoint algorithm changes to 12; MMORPG's canonical/wire
 layout and protocol ID remain unchanged.

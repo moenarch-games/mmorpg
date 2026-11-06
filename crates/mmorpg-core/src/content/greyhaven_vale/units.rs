@@ -201,7 +201,7 @@ const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 75] = {
         (123, YOUNG_BOAR, [-10_250, 2_700], 49_152),
         (124, YOUNG_BOAR, [-7_100, 4_050], 8_192),
         // Stillwater now occupies the old northern clearing; retain this boar on dry woodland.
-        (125, YOUNG_BOAR, [-10_900, -2_200], 24_576),
+        (125, YOUNG_BOAR, [-10_900, -2_300], 24_576),
         // Millbrook Farm: grain rats around the barn and farmhouse.
         (200, GRAIN_RAT, [7_200, 4_000], 0),
         (201, GRAIN_RAT, [8_800, 4_400], 16_384),

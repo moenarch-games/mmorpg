@@ -236,5 +236,5 @@ AI, projection and byte counts remain unchanged; all four replay/recovery checks
 The same content contains 13,510 scenery props, within the updated existing 14,000-prop ceiling.
 
 Moving the boar displaced by Stillwater onto dry woodland changes the content identity
-to `93921b94ad4900a0`. The four body/AI/candidate ceilings above are unchanged; fights-32
+to `64efad8a826eb508`. The four body/AI/candidate ceilings above are unchanged; fights-32
 encodes 7,855,767 bytes (lower than its existing ceiling). Replay and recovery still agree.

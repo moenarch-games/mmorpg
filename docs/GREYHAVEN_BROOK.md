@@ -869,7 +869,7 @@ contiguous-tree assertions reported above. The existing brook, gate, culvert and
 walks also pass. Scenario and scenery fixtures follow the combined authored content.
 
 The relocated lake also displaced one old boar clearing. Spawn 125 now stands on dry
-woodland at (-109, -22) m, retaining its identity and the six-boar population. Unit-content
+woodland at (-109, -23) m, retaining its identity and the six-boar population. Unit-content
 checks include all twelve new residents and use capsule support on the actual terrain
 triangles, including the brook's below-floor bed. Named-area rectangles remain labels;
 the lake footprint and playable boundary govern the woodland wander-clearance check.
