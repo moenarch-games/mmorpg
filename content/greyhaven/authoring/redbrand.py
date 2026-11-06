@@ -104,6 +104,31 @@ vs=[(x,y,z) for y in [-.2,0] for x,z in [(49,-134),(56,-134),(56,-132),(49,-132)
 for i in [5,6]:vs[i]=(vs[i][0],2.2,vs[i][2])
 record(644,'South shelf slope',vs,[(0,3,2,1),(4,5,6,7),(0,1,5,4),(1,2,6,5),(2,3,7,6),(3,0,4,7)])
 box(645,'South raised shelf',56,67,-134,-132,2,2.2)
+# Small ceiling formations keep full walking headroom above the lower rooms. None hang
+# over the elevated south shelf; their closed coarse meshes remain authoritative.
+for id,x,z,tip,radius in [(660,57,-141.5,3.4,.55),(661,64,-136.8,3.7,.4),
+    (662,73.5,-141.2,3.3,.6),(663,77.8,-134.5,3.6,.48)]:
+    n=9;vs=[]
+    for y,r in [(4.65,radius),(4.1,radius*.7)]:
+        for j in range(n):
+            a=j*math.tau/n;w=1+.10*math.sin(j*7+id)
+            vs.append((x+r*w*math.sin(a),y,z+r*w*math.cos(a)))
+    vs.append((x+.06,tip,z-.04))
+    fs=[tuple(range(n-1,-1,-1))]+[(j,(j+1)%n,(j+1)%n+n,j+n) for j in range(n)]
+    fs += [(n+j,n+(j+1)%n,2*n) for j in range(n)]
+    record(id,'Cave ceiling formation '+str(id),vs,fs)
+
+# Fractured stone jambs support the broad north arch without narrowing its central route.
+for id,x,z in [(664,58.8,-153.0),(665,69.2,-152.8)]:
+    n=9;vs=[]
+    for y,r in [(-.3,.9),(.5,1.0),(2.9,.7),(4.8,.3)]:
+        for j in range(n):
+            a=j*math.tau/n;w=1+.13*math.sin(j*11+id)
+            vs.append((x+r*w*math.sin(a),y+.08*math.cos(j*3),z+r*w*math.cos(a)*1.1))
+    fs=[tuple(range(n-1,-1,-1)),tuple(range(3*n,4*n))]
+    fs += [(r*n+j,r*n+(j+1)%n,(r+1)*n+(j+1)%n,(r+1)*n+j) for r in range(3) for j in range(n)]
+    record(id,'North mouth fractured jamb '+str(id),vs,fs)
+
 # Redbrand Hollow: unequal crests and saddles over the established lower contact footprints.
 # These remain modest static collision meshes; the game supplies the existing rock PBR.
 moss=bpy.data.materials.get('Hollow moss - Blender preview')

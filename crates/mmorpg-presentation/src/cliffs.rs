@@ -145,6 +145,12 @@ fn landscape_color(points: [V; 3], id: u32) -> u32 {
     mix(stone, 0x667447, growth)
 }
 
+/// Interior roof faces remain one-sided static rock while the exterior shell cuts away.
+/// The existing backface culling hides these from an overhead camera automatically.
+pub(crate) fn ceiling_face([a, b, c]: [V; 3]) -> bool {
+    (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]) < -1e-9
+}
+
 pub(crate) fn groups(scenery: &Scenery) -> Vec<Group> {
     let cliffs = scenery
         .props
@@ -161,17 +167,25 @@ pub(crate) fn groups(scenery: &Scenery) -> Vec<Group> {
     let surfaces = scenery
         .collision_surfaces
         .iter()
-        .filter(|mesh| {
-            !mmorpg_core::greyhaven_vale::fort::dresses(mesh.id)
-                && mesh.id != mmorpg_core::greyhaven_vale::ids::CAVE_ROOF
-        })
+        .filter(|mesh| !mmorpg_core::greyhaven_vale::fort::dresses(mesh.id))
         .map(|mesh| {
             let mut g = Geometry::default();
+            let roof = scenery
+                .props
+                .iter()
+                .any(|p| p.kind == PropKind::CaveRoof && p.collider == Some(mesh.id));
             for triangle in &mesh.triangles {
                 let points = triangle.map(|index| {
                     let v = mesh.vertices[index as usize];
                     std::array::from_fn(|axis| metres(v[axis] + mesh.position[axis]))
                 });
+                // Root caps sit within the solid roof; omitting them from the visible skin
+                // also keeps an overhead cutaway free of floating ceiling decorations.
+                let ceiling_detail =
+                    mmorpg_core::greyhaven_vale::ids::CAVE_CEILING_DETAILS.contains(&mesh.id);
+                if (roof || ceiling_detail) && !ceiling_face(points) {
+                    continue;
+                }
                 let landscape =
                     (400..=406).contains(&mesh.id) || (65030..=65039).contains(&mesh.id);
                 let color = if landscape {

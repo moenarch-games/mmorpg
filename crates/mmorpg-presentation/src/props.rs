@@ -672,6 +672,11 @@ fn cave_roof(p: &Prop, index: usize, scenery: &Scenery) -> Animated {
                     metres(v[2] + mesh.position[2]) - cz,
                 ]
             });
+            // The textured underside is a one-sided static surface in cliffs, visible to
+            // interior cameras even while the outer mound is cut away for an overhead view.
+            if crate::cliffs::ceiling_face(points) {
+                continue;
+            }
             let first = geometry.p.len();
             geometry.face(&points);
             let y = points.iter().map(|p| p[1]).sum::<f64>() / 3.;

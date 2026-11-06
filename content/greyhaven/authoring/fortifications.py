@@ -368,6 +368,15 @@ for x,z in [(5.5,-104.5),(6.7,-104.5),(6.1,-103.3),(-6.5,-102.5)]:
             for yy in [.14,.86]:box('Hollow crate iron nail',(xx,yy,side*.495),(.018,.018,.005),iron)
     farm_place(start,solid_start,x,z,0)
 
+# The deeper public-cave threshold stays sealed. Dress its unchanged solid footprint with
+# closed oak boards and heavy braces, rather than suggesting an open continuation.
+box('Greyfang sealed timber threshold',(79.6,12.75,-138),(.3,1.75,2),wood_mat,.025)
+for z in [-139.85,-136.15]:box('Greyfang threshold upright',(79.325,12.75,z),(.025,1.75,.12),wood_mat)
+for y in [11.15,14.35]:box('Greyfang threshold header',(79.325,y,-138),(.025,.13,1.95),wood_mat)
+beam('Greyfang threshold diagonal',(79.31,11.3,-139.7),(79.31,14.2,-136.3),.07,wood_mat)
+for z in [-139.6,-136.4]:
+    for y in [11.4,14.1]:box('Greyfang threshold iron strap',(79.29,y,z),(.015,.06,.24),iron)
+
 # Apply bevels and join by material for a compact, standard static glTF.
 bpy.ops.object.select_all(action='DESELECT')
 for o in objects:o.select_set(True)

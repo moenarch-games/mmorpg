@@ -175,6 +175,9 @@ pub mod ids {
     /// Authored outer-cave floor slabs, slope and elevated shelf (#639).
     pub const CAVE_FLOORS: RangeInclusive<u32> = 640..=643;
     pub const CAVE_LEDGE: RangeInclusive<u32> = 644..=645;
+    /// Hanging rock in the public chambers and stone jambs at the north mouth.
+    pub const CAVE_CEILING_DETAILS: RangeInclusive<u32> = 660..=663;
+    pub const CAVE_ENTRANCE_DETAILS: RangeInclusive<u32> = 664..=665;
     /// The sealed threshold to Redbrand Hollow's deeper cave, in the inner chamber (#160).
     pub const CAVE_THRESHOLD: u32 = 548;
     /// The Sunken Shrine (#274): its ruins and altar, its cave's rock walls and roof slabs,

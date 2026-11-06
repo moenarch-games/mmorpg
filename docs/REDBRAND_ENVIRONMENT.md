@@ -145,3 +145,27 @@ The final in-game capture is `artifacts/greyhaven-brook/hollow-camp.png`. Chromi
 camp approach through the existing Outpost gate and Hollow switchback with no page errors;
 the view includes the final grass/dirt balance, new tent/crate art and existing inhabitants.
 The clearing remains an established hostile camp, not a new settlement or quest area.
+
+### Cave interior and north-mouth detail
+
+The same Blender source now authors four small hanging formations (stable IDs 660–663)
+above the lower chambers and two fractured entrance jambs (664–665). These are coarse,
+closed static collision meshes in `redbrand.json`; the walking route and elevated south
+shelf retain their headroom. The sealed deeper threshold keeps its existing collider and
+now has textured oak boards, framing and iron straps in the ordinary fortifications bundle.
+
+An actual walk to the north entrance exposed a roof-cutaway presentation bug: an interior
+camera could see the sky through the hidden exterior roof. The shared presenter now keeps
+the roof's downward faces as one-sided textured rock, while the exterior shell still cuts
+away. Existing backface culling hides that underside from overhead cameras. Both clients
+reuse this geometry; no camera API, movement authority or collision format changed.
+
+Focused checks: the two shared cave-ceiling/cutaway tests, the Rapier entrance/walls/shelf/
+ceiling/recovery test, native bundle loading and the browser/WASM build passed. Full suites
+and native GPU acceptance were not run. Policy source revision remains unchanged.
+
+Chromium walked the surface route to the north mouth and captured
+`artifacts/greyhaven-brook/cave-interior.png` without page errors. The ceiling and hanging
+formations are visible from below under the existing torch lighting. The local `.blend`
+is saved with a north-entrance view. Larger chamber walls still need an organic-shape art
+pass; this does not yet meet the entire reference's visual target.

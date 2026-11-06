@@ -376,11 +376,18 @@ fn the_cave_roof_is_cut_away_while_the_viewer_stands_under_it() {
     let scenery = greyhaven_vale_scenery();
     let roof = first(&scenery, PropKind::CaveRoof);
     let scene = only(vec![roof]);
-    assert_eq!(scene.animated.len(), 1, "the roof is its own part");
+    let roofs: Vec<_> = scene
+        .animated
+        .iter()
+        .enumerate()
+        .filter(|(_, part)| matches!(part.motion, mmorpg_presentation::Motion::Roof { .. }))
+        .map(|(index, _)| index)
+        .collect();
+    assert_eq!(roofs.len(), 1, "the roof is its own part");
     let [x, _, z] = roof.position.map(|units| f64::from(units) / 100.);
     // The cave's floor lies on the basin's rim (#423).
     let floor = f64::from(mmorpg_core::greyhaven_vale::cave::GREYFANG.floor_y) / 100.;
-    let shown = |viewer| scene.shown(viewer, Kits::default())[0];
+    let shown = |viewer| scene.shown(viewer, Kits::default())[roofs[0]];
     assert!(shown(None));
     assert!(!shown(Some([x, floor, z])), "inside the cave");
     assert!(shown(Some([x, floor + 6., z])), "standing on the roof");
@@ -556,4 +563,29 @@ fn climbable_rock_wears_handholds_and_sheer_rock_stays_smooth() {
         assert!(worn.iter().any(|p| inside(route, 0., p)), "{route:?}");
     }
     assert!(!worn.iter().any(|p| inside(SHEER_LAKE_CLIFF, 50., p)));
+}
+
+#[test]
+fn the_cave_ceiling_stays_textured_below_the_cutaway_roof() {
+    let scene = StaticScene::new(&greyhaven_vale_scenery());
+    let draws = scene.frame(
+        0.,
+        false,
+        [64., 13., -143.],
+        Some([64., 11., -143.]),
+        Kits::default(),
+    );
+    let ceiling = draws
+        .iter()
+        .find(|d| d.id.contains("cave-surface-547"))
+        .expect("interior ceiling stays drawn");
+    assert!(ceiling.material.ground.is_some());
+    assert!(
+        !ceiling.material.double_sided,
+        "overhead cameras see through its back face"
+    );
+    assert!(
+        ceiling.geometry.n.iter().all(|n| n[1] < 0.),
+        "ceiling faces into the cave"
+    );
 }

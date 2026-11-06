@@ -16,6 +16,7 @@ pub fn meshes() -> Vec<StaticMesh> {
 #[must_use]
 pub fn dresses(id: u32) -> bool {
     id == super::ids::KEEP
+        || id == super::ids::CAVE_THRESHOLD
         || super::ids::PALISADE.contains(&id)
         || super::ids::GATE_POSTS.contains(&id)
         || (65000..=65023).contains(&id)
