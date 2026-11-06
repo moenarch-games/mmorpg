@@ -208,3 +208,32 @@ rechecked in-game. The saved Blender world contains that final geometry. Roof su
 resident independently of visual terrain tile LOD; neither the material batch nor cutaway
 visibility changes collision. The straight background escarpment remains a visible landscape
 issue for a subsequent art pass, so the full woodland-valley reference is still in progress.
+
+### Weathered escarpment behind Greyfang Ridge
+
+The northern backdrop now uses fixed integer weathering on the authoritative heightfield:
+unequal buttresses and gullies, a toe varying by up to eight metres, steep middle faces and
+a broken crest. The existing pass lanes, their neighbouring grid cells and the marked hard
+climbing route retain their former profiles. Trees are rejected where the actual sampled
+face is too steep to support their roots. Both clients draw the same terrain through their
+existing presentation; no visual-only collision, new terrain engine or streaming is added.
+
+The pass journey check exposed an old approach crossing the remodelled cave's rock. The
+Highland Pass now joins Greyfang Approach beyond the north mouth at (+64, −160) m and bends
+to (+52, −176) m before its established switchbacks. Roads, map and tree clearance derive
+from those core points. The test starts at that real join and still walks to the stronghold
+and back. The barrier check requires ordinary walking to stop below the first pass ledge;
+the marked climbing-route check also passes.
+
+Focused checks: both `highlands` gameplay tests and
+`the_climbing_route_beside_the_highland_pass_leads_up_the_escarpment` passed, along with the
+browser/WASM production build. The live Blender terrain context extends far enough north
+to inspect the escarpment and contains 1,331 current nature instances over that larger
+preview area. This changes the authoring view, not the playable world's extent.
+Full suites and native GPU acceptance were not run. Legacy A/B failures remain outside
+this slice. Convention source revision remains `625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+
+The final Chromium capture is `artifacts/greyhaven-brook/weathered-escarpment.png`; the player
+walked to the north cave approach without page errors. The northern face has broken ribs
+and a varying toe. The eastern backdrop and some trees on its slopes still need refinement;
+this pass does not establish completion of the overall reference direction.

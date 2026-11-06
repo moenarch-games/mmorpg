@@ -3,13 +3,13 @@
 //! about as large as the Vale itself (416 m × 424 m). Like the farmland it stays in the
 //! Greyhaven zone, so no zone boundary or loading step lies on the way.
 //!
-//! An escarpment (40–52 m) closes the Vale's northern side behind Greyfang Ridge. The Highland
-//! Pass leaves the Vale Ring Road northwards and winds up through it: a cutting into its
+//! A broken escarpment (40–52 m) closes the Vale's northern side behind Greyfang Ridge. The
+//! Highland Pass joins the north-cave approach and winds up through it: a cutting into its
 //! southern face, a ledge climbing east, a hairpin landing, a ledge climbing back west and a
-//! gorge north onto the high ground, 24 m above the Vale's floor. Every face of the escarpment
-//! is steeper than the controllers climb (45°), so the pass is the only way up. Its foot and
-//! the pass start 4 m beyond the Vale's old northern wall, past the edge of the ground the Vale
-//! had, so the Vale's own heightfield tile and everything that moves on it stay as they were.
+//! gorge north onto the high ground, 24 m above the Vale's floor. Its steep middle faces
+//! retain the pass and the marked hard climbing route as the established ways up. The face
+//! has weathered buttresses and recesses; its low toe joins the Vale's settled northern edge.
+//! The pass and climbing route retain their old terrain profiles and neighbouring grid cells.
 //!
 //! On the high ground the land is broken and uneven, studded with rock crags. The Highland
 //! Trail winds north to the landmark, a palisaded bandit stronghold round a keep-style tower,
@@ -172,7 +172,16 @@ pub fn level(x: i32, z: i32) -> bool {
 #[must_use]
 pub fn clear_for_tree(x: i32, z: i32) -> bool {
     const MARGIN: i32 = 200;
-    !level(x, z)
+    // Trunks on a sheer face stood on the highest corner of their footprint, leaving
+    // their visible roots above the hillside. Use the actual terrain before placing them.
+    let on_face = (ESCARPMENT[3]..=ESCARPMENT[0] + 800).contains(&z);
+    let supported = !on_face || {
+        let heights = [[x - 100, z], [x + 100, z], [x, z - 100], [x, z + 100]]
+            .map(|[x, z]| super::TERRAIN.height_at(x, z));
+        heights.into_iter().max().unwrap_or(0) - heights.into_iter().min().unwrap_or(0) <= 120
+    };
+    supported
+        && !level(x, z)
         && CRAGS.iter().all(|&(min, max, _)| {
             x < min[0] - MARGIN || x > max[0] + MARGIN || z < min[1] - MARGIN || z > max[1] + MARGIN
         })
@@ -199,7 +208,7 @@ pub fn height_at(x: i32, z: i32) -> Option<i32> {
     if let Some(lane) = PASS.iter().find(|lane| lane.contains(x, z)) {
         return Some(lane.height(x, z));
     }
-    if z > ESCARPMENT[0] {
+    if z > ESCARPMENT[0] + 800 {
         return None;
     }
     let (x64, z64) = (i64::from(x), i64::from(z));
@@ -210,7 +219,7 @@ pub fn height_at(x: i32, z: i32) -> Option<i32> {
     let north = -z64;
     let [foot, south_top, north_top, north_foot] = ESCARPMENT.map(|value| -i64::from(value));
     let height = if north < south_top {
-        crest * (north - foot) / (south_top - foot)
+        crest * (north - foot).max(0) / (south_top - foot)
     } else if north <= north_top {
         crest
     } else if north < north_foot {
@@ -218,7 +227,56 @@ pub fn height_at(x: i32, z: i32) -> Option<i32> {
     } else {
         plateau
     };
-    Some(i32::try_from(height).unwrap_or(0))
+    // Roads and the hard climbing route retain a full terrain cell of their old shoulder.
+    // Between those shoulders, fixed integer weathering breaks the toe and face into
+    // gullies and buttresses while the routes keep their established clearances.
+    let distance = PASS
+        .iter()
+        .map(|lane| {
+            let dx = (lane.min[0] - x).max(x - lane.max[0]).max(0);
+            let dz = (lane.min[1] - z).max(z - lane.max[1]).max(0);
+            i64::from(dx.max(dz))
+        })
+        .min()
+        .unwrap_or(i64::MAX);
+    let climb_distance = i64::from((12_000 - x).max(x - 12_800).max(0));
+    let weight = smooth_q10(distance.min(climb_distance), 400, 1_600);
+    let weathered = if north < north_foot {
+        let ribs = value_noise_q10(x64 + (north - foot) / 3, 0, 2_400, SEED.rotate_left(7));
+        let fissures = value_noise_q10(x64, north, 800, SEED.rotate_left(41));
+        // The toe moves by up to eight metres either side of its former straight line.
+        // Its southernmost point still meets the Vale where the old hills settle to zero.
+        let shift = (ribs - 512) * 1_600 / 1_024;
+        let local_foot = foot + shift;
+        let front = south_top + shift + (1_400 * ribs + 600 * fissures) / 1_024;
+        let rear = north_top - 700 * ribs / 1_024;
+        let crown = CREST_UNITS
+            + CREST_VARIATION_UNITS
+                * (3 * value_noise_q10(x64, north, 1_600, SEED.rotate_left(29)) + fissures)
+                / (4 * 1_024);
+        if north < local_foot {
+            0
+        } else if north < front {
+            let t = ((north - local_foot) * 1_024 / (front - local_foot)).clamp(0, 1_024);
+            // A low scree toe and shallow upper shoulder break the former single plane;
+            // the steep middle carries most of the forty-metre rise.
+            let profile = if t < 192 {
+                t / 2
+            } else if t < 832 {
+                96 + (t - 192) * 832 / 640
+            } else {
+                928 + (t - 832) / 2
+            };
+            crown * profile / 1_024
+        } else if north <= rear {
+            crown
+        } else {
+            crown + (plateau - crown) * (north - rear) / (north_foot - rear)
+        }
+    } else {
+        plateau
+    };
+    Some(i32::try_from(height + (weathered - height) * weight / 1_024).unwrap_or(0))
 }
 
 /// The high ground's relief above [`PLATEAU_Y`]: broken swells and knolls, level on the
@@ -283,7 +341,9 @@ pub const ROADS: &[Road] = &[
     Road {
         name: "Highland Pass",
         points: &[
-            [5_200, -15_000],
+            // Join the existing north-cave approach instead of crossing the rock mound.
+            [6_400, -16_000],
+            [5_200, -17_600],
             [5_200, -23_200],
             [10_400, -23_200],
             [10_400, -25_600],
