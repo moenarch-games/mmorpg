@@ -167,8 +167,8 @@ pub fn level(x: i32, z: i32) -> bool {
     distance_to_level(x, z) == 0
 }
 
-/// Whether a tree may stand at `(x, z)`: off the level ground (where the towers and the
-/// stronghold stand) and at least 2 m from every crag.
+/// Whether a tree may stand at `(x, z)`: supported on the escarpment, off the level ground
+/// (where the towers and stronghold stand) and at least 2 m from every crag.
 #[must_use]
 pub fn clear_for_tree(x: i32, z: i32) -> bool {
     const MARGIN: i32 = 200;
@@ -176,8 +176,14 @@ pub fn clear_for_tree(x: i32, z: i32) -> bool {
     // their visible roots above the hillside. Use the actual terrain before placing them.
     let on_face = (ESCARPMENT[3]..=ESCARPMENT[0] + 800).contains(&z);
     let supported = !on_face || {
-        let heights = [[x - 100, z], [x + 100, z], [x, z - 100], [x, z + 100]]
-            .map(|[x, z]| super::TERRAIN.height_at(x, z));
+        let heights = [
+            [x, z],
+            [x - 100, z],
+            [x + 100, z],
+            [x, z - 100],
+            [x, z + 100],
+        ]
+        .map(|[x, z]| super::TERRAIN.height_at(x, z));
         heights.into_iter().max().unwrap_or(0) - heights.into_iter().min().unwrap_or(0) <= 120
     };
     supported

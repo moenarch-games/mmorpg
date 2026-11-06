@@ -3,14 +3,13 @@
 //! as the Vale itself (424 m × 416 m). Like the farmland and the highlands it stays in the
 //! Greyhaven zone, so no zone boundary or loading step lies on the way.
 //!
-//! A mountain ridge (24–36 m) closes the Vale's eastern side behind Eastwater Fen. The Marsh
+//! A broken mountain ridge (24–36 m) closes the Vale's eastern side behind Eastwater Fen. The Marsh
 //! Pass leaves the Vale Ring Road eastwards and winds through it: a cutting into its western
 //! face, a gorge climbing north along its crest, a level gorge east across it, a gorge falling
-//! back south and a cutting east down onto the wetlands, 4 m above the Vale's floor. Every face
-//! of the ridge is steeper than the controllers climb (45°), so the pass is the only way across.
-//! Its foot and the pass start 4 m beyond the Vale's old eastern wall, past the edge of the
-//! ground the Vale had, so the Vale's own heightfield tile and everything that moves on it stay
-//! as they were.
+//! back south and a cutting east down onto the wetlands, 4 m above the Vale's floor. Steep
+//! middle faces retain the pass and marked hard climbing route as the established crossings.
+//! Weathered buttresses and a varying toe join the Vale's settled eastern edge; the routes
+//! and neighbouring terrain cells retain their former profiles.
 //!
 //! Beyond the ridge low hummocks of wet ground surround a lake and four marsh pools, all real
 //! water volumes (#274): the pools' rims are ankle-deep, two are deep enough to swim, and the
@@ -234,17 +233,30 @@ pub const BUILDINGS: &[(Building, [i32; 2], [i32; 2], i32)] = &[
     (Building::Ruin, [36_400, 12_400], [37_200, 13_000], 300),
 ];
 
-/// Whether a tree may stand at `(x, z)`: 2 m clear of every water's shore, the causeway and
-/// the cottage.
+/// Whether a tree may stand at `(x, z)`: supported on the ridge and 2 m clear of every
+/// water's shore, the causeway and cottage.
 #[must_use]
 pub fn clear_for_tree(x: i32, z: i32) -> bool {
     const MARGIN: i32 = 200;
     let outside = |min: [i32; 2], max: [i32; 2]| {
         x < min[0] - MARGIN || x > max[0] + MARGIN || z < min[1] - MARGIN || z > max[1] + MARGIN
     };
-    WATERS
-        .iter()
-        .all(|water| water.outside(x, z) > i64::from(MARGIN))
+    let on_face = (RIDGE[0] - 600..=RIDGE[3]).contains(&x);
+    let supported = !on_face || {
+        let heights = [
+            [x, z],
+            [x - 100, z],
+            [x + 100, z],
+            [x, z - 100],
+            [x, z + 100],
+        ]
+        .map(|[x, z]| super::TERRAIN.height_at(x, z));
+        heights.into_iter().max().unwrap_or(0) - heights.into_iter().min().unwrap_or(0) <= 120
+    };
+    supported
+        && WATERS
+            .iter()
+            .all(|water| water.outside(x, z) > i64::from(MARGIN))
         && CAUSEWAY.iter().all(|lane| outside(lane.min, lane.max))
         && BUILDINGS.iter().all(|&(_, min, max, _)| outside(min, max))
 }
@@ -259,7 +271,7 @@ pub fn height_at(x: i32, z: i32) -> Option<i32> {
     {
         return Some(lane.height(x, z));
     }
-    if x < RIDGE[0] {
+    if x < RIDGE[0] - 600 {
         return None;
     }
     let (x64, z64) = (i64::from(x), i64::from(z));
@@ -268,7 +280,7 @@ pub fn height_at(x: i32, z: i32) -> Option<i32> {
     let wetlands = wetlands(x, z);
     let [foot, west_top, east_top, east_foot] = RIDGE.map(i64::from);
     let height = if x64 < west_top {
-        crest * (x64 - foot) / (west_top - foot)
+        crest * (x64 - foot).max(0) / (west_top - foot)
     } else if x64 <= east_top {
         crest
     } else if x64 < east_foot {
@@ -276,7 +288,51 @@ pub fn height_at(x: i32, z: i32) -> Option<i32> {
     } else {
         wetlands
     };
-    Some(i32::try_from(height).unwrap_or(0))
+    // Preserve the pass shoulders and the marked north/south climbing strip. The remaining
+    // ridge gets a site-specific profile, sampled into the same authoritative heightfield.
+    let distance = PASS
+        .iter()
+        .map(|lane| {
+            let dx = (lane.min[0] - x).max(x - lane.max[0]).max(0);
+            let dz = (lane.min[1] - z).max(z - lane.max[1]).max(0);
+            i64::from(dx.max(dz))
+        })
+        .min()
+        .unwrap_or(i64::MAX);
+    let climb_distance = i64::from((6_400 - z).max(z - 7_200).max(0));
+    let weight = smooth_q10(distance.min(climb_distance), 400, 1_600);
+    let weathered = if x64 < east_foot {
+        let ribs = value_noise_q10(0, z64, 2_400, SEED.rotate_left(7));
+        let fissures = value_noise_q10(0, z64, 800, SEED.rotate_left(41));
+        let shift = (ribs - 512) * 1_200 / 1_024;
+        let local_foot = foot + shift;
+        let front = west_top + shift + (650 * ribs + 350 * fissures) / 1_024;
+        let rear = east_top - 300 * ribs / 1_024;
+        let crown = CREST_UNITS
+            + CREST_VARIATION_UNITS
+                * (3 * value_noise_q10(x64, z64, 1_600, SEED.rotate_left(29)) + fissures)
+                / (4 * 1_024);
+        if x64 < local_foot {
+            0
+        } else if x64 < front {
+            let t = ((x64 - local_foot) * 1_024 / (front - local_foot)).clamp(0, 1_024);
+            let profile = if t < 192 {
+                t / 2
+            } else if t < 832 {
+                96 + (t - 192) * 832 / 640
+            } else {
+                928 + (t - 832) / 2
+            };
+            crown * profile / 1_024
+        } else if x64 <= rear {
+            crown
+        } else {
+            crown + (wetlands - crown) * (x64 - rear) / (east_foot - rear)
+        }
+    } else {
+        wetlands
+    };
+    Some(i32::try_from(height + (weathered - height) * weight / 1_024).unwrap_or(0))
 }
 
 /// The wetlands east of the ridge: hummocks over [`FLOOR_Y`] that flatten towards every

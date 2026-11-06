@@ -270,3 +270,31 @@ page errors; `artifacts/greyhaven-brook/stillwater-shelf.png` shows the joined s
 instead of the stepped boxes. The live Blender project contains the shelf and 699 current
 nearby nature instances. The in-game capture precedes the final interior-only ceiling
 deduplication; the exterior geometry is unchanged by it.
+
+## Eastern ridge and supported background woodland
+
+The eastern ridge now has an unequal toe, buttresses, gullies and a broken crown on the
+same authoritative heightfield as the northern escarpment. The Marsh Pass lanes, their
+neighbouring terrain cells and the marked hard climbing strip retain their previous
+profiles. Where the north and east landforms overlap outside the valley corner, core joins
+their heights rather than cutting the eastern crest down to the northern toe. No water,
+region boundary, quest or movement solver changes.
+
+Physical trunks are rejected on unsupported ridge faces, including isolated peaks. The
+floating-tree candidates traced in the cave view were decorative background trees. Their
+placement now checks the drawn ground, including the relief beyond the playable boundary,
+and rejects steep or sharply varying footing. The existing background-forest target is
+filled from more suitable candidates; this does not add client collision or tie authority
+to visual terrain LOD.
+
+Focused checks: the Marsh Pass/island round trip, reed ford and ordinary-walking barrier
+passed; the marked marsh climbing route passed; the browser/WASM production build passed.
+Full suites and native GPU acceptance were not run. The existing legacy A/B failure remains
+unresolved. Convention source revision remains `625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+
+The final export retains 700 decorative background trees after slope rejection and
+replacement sampling. The wider live Blender context contains 1,457 current nature
+instances. Chromium completed the village crossing without page errors and captured the
+whole area in `artifacts/greyhaven-brook/greyhaven-eastern-ridge.png`. The distant cliff
+materials and overall lighting still look flatter than the owner's reference; the broader
+visual direction remains in progress.

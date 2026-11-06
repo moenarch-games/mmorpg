@@ -412,11 +412,15 @@ pub fn lake_depth(x: i32, z: i32) -> i32 {
 /// ways down (#423), less the lake's basin (#274); the farmland's ridge, notch and plateau
 /// (#424) and the highlands' escarpment, pass and high ground (#425) beyond.
 fn open_ground(x: i32, z: i32) -> i32 {
-    if let Some(height) = farmland::height_at(x, z)
-        .or_else(|| highlands::height_at(x, z))
-        .or_else(|| marsh::height_at(x, z))
-    {
+    if let Some(height) = farmland::height_at(x, z) {
         return height;
+    }
+    // The north and east ridges overlap at the outer corner. Join their rock masses;
+    // precedence alone cut the eastern crest down to the northern ridge's low toe.
+    match (highlands::height_at(x, z), marsh::height_at(x, z)) {
+        (Some(north), Some(east)) => return north.max(east),
+        (Some(height), None) | (None, Some(height)) => return height,
+        (None, None) => {}
     }
     let hill = hill_height(x, z);
     basin::height_at(x, z).map_or(hill, |terrace| terrace.max(hill)) - lake_depth(x, z)
@@ -614,7 +618,7 @@ fn trees() -> Vec<StaticCollider> {
                 // Hamlets, fields and the tower's yard, with their aprons, stay clear (#424).
                 if farmland::level(x, z)
                     || !highlands::clear_for_tree(x, z)
-                    || (x >= marsh::BOUNDS.min[0] && !marsh::clear_for_tree(x, z))
+                    || (x >= marsh::RIDGE[0] - 600 && !marsh::clear_for_tree(x, z))
                 {
                     continue;
                 }

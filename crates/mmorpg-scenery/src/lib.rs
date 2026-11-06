@@ -1595,7 +1595,7 @@ impl Placer<'_> {
         // Background forest on the mountain slopes beyond the walls, round the Vale and the
         // farmland (#424).
         let mut placed = 0;
-        for _ in 0..6_000 {
+        for _ in 0..12_000 {
             if placed == 700 {
                 break;
             }
@@ -1610,7 +1610,15 @@ impl Placer<'_> {
             };
             let yaw = u16::try_from(rng.next_u64() % 65_536).unwrap_or(0);
             let scale = u16::try_from(rng.range(800, 1_500)).unwrap_or(1_000);
+            // Background foliage has no body. Keep its roots on supported drawn
+            // ground, including the presentation relief beyond the playable boundary.
+            let heights = [(0, 0), (-200, 0), (200, 0), (0, -200), (0, 200)]
+                .map(|(dx, dz)| self.scenery.surface_at(at[0] + dx, at[1] + dz));
+            let supported = heights.into_iter().max().unwrap_or(0)
+                - heights.into_iter().min().unwrap_or(0)
+                <= 300;
             if beyond_playable(at[0], at[1]) >= 400
+                && supported
                 && self.scenery.height_at(at[0], at[1]) < 2_600
                 && self.place(PropKind::Tree(variant), at, yaw, scale, Ground::Shore)
             {
