@@ -289,7 +289,7 @@ const NPCS: [NpcRow; 21] = [
     // east gates, facing out. The western guard now watches the mill towpath.
     (6, GUARD, NpcRole::Guard, 10, [-500, -800], 32_768),
     (7, GUARD, NpcRole::Guard, 10, [500, 4_800], 0),
-    (8, GUARD, NpcRole::Guard, 10, [-2_700, 2_200], 49_152),
+    (8, GUARD, NpcRole::Guard, 10, [-2_620, 2_250], 49_152),
     // The east guard stands a metre south of the market square's front crate (#577).
     (9, GUARD, NpcRole::Guard, 10, [2_900, 2_600], 16_384),
     (10,"Weaver Lysa Reed",NpcRole::Resident,2,[-2100,1850],0),

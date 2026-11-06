@@ -959,8 +959,8 @@ bank crossing preserves the western route beside the water. The western guard
 moves out of the new building to watch that crossing.
 
 The mill is authored in `content/greyhaven/authoring/fortifications.py` and exports
-through the existing settlement glTF/manifest. Five new stable collision IDs
-65121–65125 represent its building, roof, wheel envelope and bank crossing;
+through the existing settlement glTF/manifest. Seven new stable collision IDs
+65121–65127 represent its building, roof, wheel envelope, bank crossing and sloped approaches;
 65022 remains the passage header. Collision detail stays separate from the visual
 spokes, paddles, framing and dressings. The wheel is static in this first pass;
 rotation and localized water spray remain unfinished.
@@ -985,3 +985,24 @@ is an environment view; the earlier blocked player route is not presented as a
 completed walk through the mill. The focused collision query proves the crossing's
 clearance/support separately. Ground/path relief and the rest of the visual slice
 still need further refinement and final gameplay traversal.
+
+### Brook current and shallow-bed pass
+
+Quiet reaches now carry thin, subdued streaks along the current, with a faster
+centre and slower margin, using the existing shared `Motion::Flow`. Broken foam
+arcs are localized to the waterfall's plunge and the mill wheel's downstream
+water. The opaque-looking filled plunge-foam disc is removed. New partly buried
+bed gravel joins the existing rock-projected shingle batch. No water simulation,
+renderer or collision authority is added.
+
+The focused presentation check confirms both foam sites exist and samples the
+animated geometry through its motion cycle: streaks face upward and stay over wet
+ground. Native material roughness/metalness now matches the browser's translucent
+surface response; native suppression of the water's opaque shadow still requires
+the rendering provider's missing shadow-alpha setting.
+
+The direct game walk reached the brook's western bend after leaving the bridge
+via its ramp (its rails correctly prevent a sideways exit). It exposed a raised
+edge where the mill towpath met the lower bank. The authored mill now has tapered
+stone approaches from the village side and western bank. The western apron stops
+before the downstream brook bend, preserving the water channel.

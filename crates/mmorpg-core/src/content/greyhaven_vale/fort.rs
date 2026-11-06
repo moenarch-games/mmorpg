@@ -7,7 +7,7 @@ pub const REDBRAND_PALISADES: std::ops::RangeInclusive<u32> = 65112..=65117;
 pub const REDBRAND_SHELTERS: std::ops::RangeInclusive<u32> = 65118..=65120;
 
 /// Western watermill, wheel envelope and bank crossing.
-pub const BROOK_MILL: std::ops::RangeInclusive<u32> = 65121..=65125;
+pub const BROOK_MILL: std::ops::RangeInclusive<u32> = 65121..=65127;
 
 pub const TOWERS: [[i32; 2]; 4] = [[-2700, -700], [2700, -700], [-3000, 4000], [3100, 4000]];
 pub const TOWER_BODIES: std::ops::RangeInclusive<u32> = 65040..=65043;

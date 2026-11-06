@@ -352,6 +352,16 @@ mill_solid(65125,'Mill bank towpath',(-32,-.04,21.35),(3.6,.10,.65),stone_mat)
 for px in [-35.2,-34.3,-33.4,-32.5,-31.6,-30.7,-29.8,-28.9]:
     box('Mill worn towpath flag',(px,.073,21.35),(.43,.013,.62),trim,.012)
 
+# Taper the two land approaches into the lower bank. The south apron stops
+# before the downstream bend, keeping the stream's bed and water passage open.
+for id,name,outline,tops in [
+    (65126,'Mill village-side stone apron',[(-28.4,20.7),(-26.9,20.7),(-26.9,22),(-28.4,22)],[.06,-.35,-.35,.06]),
+    (65127,'Mill west-bank stone apron',[(-35.6,22),(-31.5,22),(-31.5,23.2),(-35.6,23.2)],[.06,.06,-.35,-.35]),
+]:
+    vs=[(x,-.5,z) for x,z in outline]+[(x,y,z) for (x,z),y in zip(outline,tops)]
+    mesh(name,vs,BOX_FACES,stone_mat)
+    solid_record(id,vs,BOX_FACES)
+
 # Millbrook's three existing closed buildings: local geometry is placed on their unchanged
 # content footprints. The windmill keeps the game's shared animated sail assembly.
 red_mat=material('barn-oxblood',np.clip(wood*np.array([1.25,.72,.56]),0,1),wood_height,.9,2)

@@ -27,8 +27,8 @@
         },
         {
           "path": "settlement.bin",
-          "byteLength": 8363696,
-          "sha256": "36c37bd8455a883eef7baeecbc80f2d03e38de06ff66a4da8d5f402383102286"
+          "byteLength": 8365376,
+          "sha256": "85992da44d4c6d651dee282388edbc722d9971705398c6a135e9423cdcce8ce8"
         },
         {
           "path": "slate-color.png",
