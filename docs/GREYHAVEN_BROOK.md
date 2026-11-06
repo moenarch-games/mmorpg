@@ -510,3 +510,28 @@ Chromium walked through the fern patch and onward to the rocks, with all seven g
 textures loaded and no page errors. The final placement is captured in
 `artifacts/greyhaven-brook/fern-ground-cover.png`; the same patch is visible in the saved
 live Blender scene.
+
+## Mixed woodland at the northern cliff feet
+
+Four appended fixed-seed groves fill parts of the sparse northern backdrop and the ground
+behind Redbrand with the existing mixed-species nature kit. Unlike the raised rim groves,
+these may root on the low valley floor. Existing support, road, structure and water checks
+remain; overlapping old trees are retained, and new trunks leave at least 1.5 m of separation
+along one ground axis. The earlier tree order is preserved. No new renderer or spatial index
+is introduced.
+
+The pass adds 236 collidable trunks, bringing the zone to 2,202. Export comparison confirmed
+all 1,966 earlier trunk IDs, positions and sizes are unchanged. The existing deterministic
+content test's expected authored-tree range moves from at most 2,000 to 2,500 for this
+requested woodland increase; the runtime content cap is unchanged, and no new performance
+gate is added. Core still owns every new trunk. Content identity changes through the
+existing immutable hash; no protocol/canonical layout changes occur.
+
+Focused checks passed: deterministic bounded content reconstruction, the walk from Hollow
+into the north cave entrance, format and the browser/WASM production build. Chromium
+crossed the village bridge and captured `artifacts/greyhaven-brook/northern-woodland.png`
+with all seven ground textures loaded and no page errors. The live Blender nature context
+now contains 1,827 exact current bundle instances. Full suites/native GPU acceptance were
+not run; previously reported content assertions and legacy A/B failures remain. The wider
+reference direction remains in progress. Convention source revision remains
+`625cb04ca568aebc8d45c90033e107a05e9bd2a0`.

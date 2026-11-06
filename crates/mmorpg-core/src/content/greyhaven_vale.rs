@@ -542,6 +542,15 @@ const RIM_GROVES: [([i32; 2], [i32; 2], u64, u64); 5] = [
     ([6500, 5800], [13, 12], 0x0051_3f05, 74),
 ];
 
+/// Lower, patchy woodland between the northern cliff feet and the existing Vale places.
+/// These groves may root on the low valley floor; appended last to retain older tree IDs.
+const NORTH_GROVES: [([i32; 2], [i32; 2], u64, u64); 4] = [
+    ([-17_000, -20_000], [15, 13], 0x0051_4f01, 78),
+    ([-10_000, -20_000], [15, 9], 0x0051_4f02, 78),
+    ([-1_500, -20_000], [14, 8], 0x0051_4f03, 76),
+    ([10_000, -19_000], [15, 12], 0x0051_4f04, 76),
+];
+
 /// SplitMix64 finaliser: a fixed integer hash, identical on every platform.
 const fn splitmix64(value: u64) -> u64 {
     let mut z = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
@@ -597,8 +606,14 @@ fn trees() -> Vec<StaticCollider> {
             next_id += 1;
         }
     }
-    for (origin, cells, seed, percent) in OUTER_FORESTS.into_iter().chain(RIM_GROVES) {
+    for (origin, cells, seed, percent) in OUTER_FORESTS
+        .into_iter()
+        .chain(RIM_GROVES)
+        .chain(NORTH_GROVES)
+    {
         let rim_grove = RIM_GROVES.iter().any(|grove| grove.2 == seed);
+        let north_grove = NORTH_GROVES.iter().any(|grove| grove.2 == seed);
+        let minimum_height = if rim_grove { 600 } else { 0 };
         for row in 0..cells[1] {
             for column in 0..cells[0] {
                 let cell = (u64::from(row.unsigned_abs()) << 32) | u64::from(column.unsigned_abs());
@@ -613,9 +628,9 @@ fn trees() -> Vec<StaticCollider> {
                     origin[1] + row * woods::CELL + woods::EDGE_MARGIN + jitter(16) % (span + 1);
                 // Gaps in the canopy are broad patches, not one evenly occupied lattice.
                 // Leave the highest spurs bare so the ridges remain visible above the trees.
-                if rim_grove
+                if (rim_grove || north_grove)
                     && (value_noise_q10(i64::from(x), i64::from(z), 1800, seed) < 440
-                        || !(600..2300).contains(&TERRAIN.height_at(x, z)))
+                        || !(minimum_height..2300).contains(&TERRAIN.height_at(x, z)))
                 {
                     continue;
                 }
@@ -633,6 +648,16 @@ fn trees() -> Vec<StaticCollider> {
                     position: [x, base + woods::TRUNK_HEIGHT / 2, z],
                     half_extents: [half, woods::TRUNK_HEIGHT / 2, half],
                 };
+                // These patches overlap the sparse old northern band. Preserve the old
+                // trunks and a walkable gap rather than planting a second trunk beside one.
+                if north_grove
+                    && trees.iter().any(|tree| {
+                        (x - tree.position[0]).abs() < half + tree.half_extents[0] + 150
+                            && (z - tree.position[2]).abs() < half + tree.half_extents[2] + 150
+                    })
+                {
+                    continue;
+                }
                 if !clear_of_roads(&collider) || near_structure(&collider) {
                     continue;
                 }
