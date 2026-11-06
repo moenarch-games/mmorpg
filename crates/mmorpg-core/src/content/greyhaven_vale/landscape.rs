@@ -15,6 +15,7 @@ pub struct Landscape {
     #[serde(rename = "redbrandExterior")]
     _redbrand_exterior: serde::de::IgnoredAny,
     pub redbrand_camp: Camp,
+    pub brook_ground: Vec<GroundMound>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -78,6 +79,14 @@ pub struct Camp {
     #[serde(rename = "fire")]
     _fire: serde::de::IgnoredAny,
 }
+/// Low terrain rises in centimetres, independent of decorative ground cover.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GroundMound {
+    pub center: [i32; 2],
+    pub radius: i32,
+    pub height: i32,
+}
 static LANDSCAPE: LazyLock<Landscape> = LazyLock::new(|| {
     let landscape: Landscape = serde_json::from_str(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -120,6 +129,13 @@ static LANDSCAPE: LazyLock<Landscape> = LazyLock::new(|| {
         }),
         "valid authored forest patches"
     );
+    assert!(
+        landscape
+            .brook_ground
+            .iter()
+            .all(|m| m.radius >= 400 && (0..=100).contains(&m.height)),
+        "low, supported brook ground profiles"
+    );
     let sections = &landscape.northern_ridge.sections;
     assert!(
         sections.len() >= 2 && sections.windows(2).all(|pair| pair[0].x < pair[1].x),
@@ -137,4 +153,44 @@ static LANDSCAPE: LazyLock<Landscape> = LazyLock::new(|| {
 });
 pub fn data() -> &'static Landscape {
     &LANDSCAPE
+}
+
+/// Authored low relief, tapered away from the existing movement corridors.
+pub(super) fn brook_relief(x: i32, z: i32) -> i32 {
+    let rise = data()
+        .brook_ground
+        .iter()
+        .map(|m| {
+            let distance = i64::from(x - m.center[0]).pow(2) + i64::from(z - m.center[1]).pow(2);
+            let radius = i64::from(m.radius).pow(2);
+            let weight = ((radius - distance).max(0) * 1024 / radius).min(1024);
+            (i64::from(m.height) * weight * weight / (1024 * 1024)) as i32
+        })
+        .max()
+        .unwrap_or(0);
+    if rise == 0 {
+        return 0;
+    }
+    let mut clear = 0;
+    for margin in [0, 50, 100, 150, 200, 250] {
+        let probe = crate::StaticCollider {
+            id: 0,
+            position: [x, 0, z],
+            half_extents: [margin, 1, margin],
+        };
+        clear += i32::from(super::clear_of_roads(&probe));
+    }
+    rise * clear / 6
+}
+
+#[cfg(test)]
+mod relief_tests {
+    use super::*;
+    #[test]
+    fn brook_rises_leave_the_bridge_and_main_walkway_flat() {
+        assert!(brook_relief(-1100, 4400) > 20);
+        assert_eq!(brook_relief(0, 3200), 0);
+        assert_eq!(brook_relief(0, 4400), 0);
+        assert_eq!(brook_relief(-3000, 4400), 0);
+    }
 }

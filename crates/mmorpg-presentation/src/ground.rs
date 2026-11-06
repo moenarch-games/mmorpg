@@ -512,7 +512,7 @@ pub(crate) fn grid_overlays(
 /// The width of visible wear, shared with the distant terrain's baked road colour.
 pub(crate) fn path_width(s: &Scenery, width: f64, x: f64, z: f64) -> f64 {
     if s.greyhaven() {
-        width * (0.72 + 0.20 * noise(x, z, 6., 513.))
+        width * (0.58 + 0.30 * noise(x, z, 6., 513.))
     } else {
         width
     }
@@ -571,8 +571,23 @@ pub(crate) fn roads(layers: &mut Layers, s: &Scenery, g: &TerrainGrid) {
                         if in_water {
                             0.
                         } else {
-                            ((path_width(s, width, px, pz) + EDGE - offset.abs()) / EDGE)
-                                .clamp(0., 1.)
+                            {
+                                let shift = if crossing {
+                                    (noise(x, z, 5.5, 51410.) - 0.5) * 0.5
+                                } else {
+                                    0.
+                                };
+                                let edge = ((path_width(s, width, px, pz) + EDGE
+                                    - (offset - shift).abs())
+                                    / EDGE)
+                                    .clamp(0., 1.);
+                                let breakup = if crossing {
+                                    0.68 + 0.32 * noise(px, pz, 0.65, 51411.)
+                                } else {
+                                    1.
+                                };
+                                edge * breakup
+                            }
                         },
                     );
                 }
