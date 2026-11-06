@@ -222,7 +222,7 @@ cylinder('Well hanging rope',(x,.62,z),.025,1.27,rope_mat,7)
 roof('Well slate canopy',x,z,1.25,.95,2.78,.62,slate_mat,65069)
 for side in [-1,1]:beam('Well canopy fascia',(x-1.28,2.77,z+side*.95),(x+1.28,2.77,z+side*.95),.06,wood_mat)
 
-# The eight old straight palisades become one continuous, faceted perimeter with four gates.
+# The eight old straight palisades become one faceted perimeter with three road gates and the brook mill.
 PATHS={110:[(-3,-10),(-27,-10),(-31,-6)],111:[(3,-10),(27,-10),(31,-6)],112:[(-32,40),(-28,50),(-6.5,50)],113:[(3,50),(28,50),(33,42)],114:[(-31,-6),(-34,5),(-33,13),(-32,17)],115:[(-32,23),(-34,30),(-32,40)],116:[(31,-6),(34,4),(34,13),(32,17)],117:[(32,23),(34,32),(33,42)]}
 extra_wall_id=65050
 for id,points in PATHS.items():
@@ -258,11 +258,14 @@ for i,(x,z) in enumerate([(-27,-7),(27,-7),(-30,40),(31,40)]):
             beam('Lookout side rail',(x+s*1.35,h,z-1.35),(x+s*1.35,h,z+1.35),.085,wood_mat)
     roof('Watchtower slate cover',x,z,1.7,1.7,7.1,1.6,slate_mat,65010+i)
     box('Watchtower banner',(x,4.0,z+1.375),(.42,.7,.025),blue)
-# Gate frames retain the exact four road openings; open leaves fold along the wall.
+# Road-gate frames retain their existing openings; the western bay becomes the mill.
 for i,(x,z,turn) in enumerate([(0,-10,0),(0,50,0),(-32,20,1),(32,20,1)]):
     def gatebox(name,c,h,mat):
         dx,y,dz=c
         return box(name,(x+(dz if turn else dx),y,z+(-dx if turn else dz)),(h[2],h[1],h[0]) if turn else h,mat,.025)
+    if i == 2:
+        # This opening belongs to the brook mill below, not a road gate.
+        continue
     gatebox('Gate lintel',(0,4.15,0),(3.15,.22,.4),wood_mat)
     roof_start=len(objects)
     roof('Gate slate canopy',0,0,3.3,.85,4.37,.85,slate_mat)
@@ -282,6 +285,73 @@ for i,(x,z,turn) in enumerate([(0,-10,0),(0,50,0),(-32,20,1),(32,20,1)]):
     hx,hz=(.4,3.15) if turn else (3.15,.4)
     vs=[(x+sx*hx,3.93+sy*.44,z+sz*hz) for sx,sy,sz in [(-1,0,-1),(1,0,-1),(1,0,1),(-1,0,1),(-1,1,-1),(1,1,-1),(1,1,1),(-1,1,1)]]
     solid_record(65020+i,vs,BOX_FACES)
+# Western brook mill: the north-bank building grows out of the palisade. Its
+# covered southern bay is a water passage, with a narrow towpath on the dry bank.
+# Coarse solids are authored here beside the art, never inferred from render detail.
+def mill_solid(id, name, c, h, mat):
+    box(name,c,h,mat,.025)
+    x,y,z=c;hx,hy,hz=h
+    vs=[(x+sx*hx,y+sy*hy,z+sz*hz) for sx,sy,sz in
+        [(-1,-1,-1),(1,-1,-1),(1,-1,1),(-1,-1,1),(-1,1,-1),(1,1,-1),(1,1,1),(-1,1,1)]]
+    solid_record(id,vs,BOX_FACES)
+
+mill_solid(65121,'Brook mill rubble foundation',(-32,.32,14),(3.5,.62,3),stone_mat)
+mill_solid(65122,'Brook mill oak upper storey',(-32,2.65,14),(3.5,1.75,3),wood_mat)
+# The original western posts and lintel identities remain around the opening.
+# Their visible form is masonry supporting the mill's covered wheel bay.
+for z in [17.4,22.6]:
+    box('Mill passage stone pier',(-32,1.9,z),(.4,2.1,.4),stone_mat,.045)
+    box('Mill passage pier cap',(-32,3.85,z),(.48,.12,.48),trim,.02)
+mill_solid(65022,'Mill passage oak crossbeam',(-32,4.15,20),(.4,.22,3.15),wood_mat)
+roof('Brook mill long slate roof',-32,16.6,3.85,6.85,4.4,2.45,slate_mat,65123)
+# Framing, closed loading door, shuttered windows and a hoist make the river-facing
+# wall readable at player height; the mill interior is not an accessible room.
+for x in [-35.42,-32,-28.58]:
+    box('Brook mill facade post',(x,2.65,17.035),(.11,1.75,.12),wood_mat)
+for y in [.95,2.7,4.3]:box('Brook mill facade beam',(-32,y,17.055),(3.5,.10,.12),wood_mat)
+for x in [-34.05,-29.95]:
+    box('Brook mill shutter recess',(x,3.35,17.08),(.58,.58,.025),dark)
+    for side in [-1,1]:
+        box('Brook mill open shutter',(x+side*.72,3.35,17.13),(.14,.58,.07),wood_mat)
+    box('Brook mill shutter sill',(x,2.73,17.14),(.72,.08,.18),trim,.025)
+box('Brook mill loading door',(-28.47,1.6,14),(.04,1.3,.85),wood_mat)
+for z in [13.06,14.94]:box('Brook mill door jamb',(-28.40,1.6,z),(.10,1.4,.10),trim)
+box('Brook mill door lintel',(-28.4,3.03,14),(.12,.10,1.04),trim)
+beam('Mill roof knee brace',(-32,3.1,22.6),(-32,4.1,21.5),.12,wood_mat)
+beam('Mill roof inner brace',(-32,3.1,17.4),(-32,4.1,18.5),.12,wood_mat)
+for x in [-35.55,-28.45]:beam('Mill roof long fascia',(x,4.39,9.7),(x,4.39,23.5),.085,wood_mat)
+# Undershot wheel: its lower paddles meet the existing shallow water. A closed
+# 16-sided envelope is the simplified static contact shape, independent of spokes.
+x,y,z=-33.1,1.03,19.65;radius=1.22;width=1.0;n=16
+vs=[(x+radius*math.cos(j*math.tau/n),y+radius*math.sin(j*math.tau/n),z+dz)
+    for dz in [-width/2,width/2] for j in range(n)]
+fs=[tuple(range(n-1,-1,-1)),tuple(range(n,2*n))]+[(j,(j+1)%n,(j+1)%n+n,j+n) for j in range(n)]
+solid_record(65124,vs,fs)
+for dz in [-.48,.48]:
+    # Open annular rim, leaving visible gaps between the spokes.
+    vs=[(x+r*math.cos(j*math.tau/32),y+r*math.sin(j*math.tau/32),z+dz+d)
+        for d,r in [(-.055,radius),(.055,radius),(.055,radius-.14),(-.055,radius-.14)] for j in range(32)]
+    fs=[(row*32+j,row*32+(j+1)%32,((row+1)%4)*32+(j+1)%32,((row+1)%4)*32+j)
+        for row in range(4) for j in range(32)]
+    mesh('Brook wheel open oak rim',vs,fs,wood_mat)
+    for spoke in range(8):
+        a=spoke*math.tau/8
+        beam('Brook wheel spoke',(x,y,z+dz),(x+1.14*math.cos(a),y+1.14*math.sin(a),z+dz),.065,wood_mat)
+for paddle in range(16):
+    a=paddle*math.tau/16
+    o=box('Brook wheel worn paddle',(x+1.12*math.cos(a),y+1.12*math.sin(a),z),(.055,.19,.57),wood_mat,.012)
+    # Rotate around each paddle's own centre in the vertical wheel plane.
+    centre=Vector((x+1.12*math.cos(a),-z,y+1.12*math.sin(a)))
+    for v in o.data.vertices:
+        q=v.co-centre;v.co=centre+Vector((q.x*math.cos(a)-q.z*math.sin(a),q.y,q.x*math.sin(a)+q.z*math.cos(a)))
+beam('Brook mill wheel axle',(x,y,16.95),(x,y,20.45),.14,wood_mat)
+box('Brook wheel axle bearing',(x,y,17.15),(.29,.30,.18),stone_mat,.035)
+# A rough stone towpath bridges the soft bank cut, clear of the wheel at z <=20.15.
+# Its top meets the surrounding terrain; it does not dam the watercourse.
+mill_solid(65125,'Mill bank towpath',(-32,-.04,21.35),(3.6,.10,.65),stone_mat)
+for px in [-35.2,-34.3,-33.4,-32.5,-31.6,-30.7,-29.8,-28.9]:
+    box('Mill worn towpath flag',(px,.073,21.35),(.43,.013,.62),trim,.012)
+
 # Millbrook's three existing closed buildings: local geometry is placed on their unchanged
 # content footprints. The windmill keeps the game's shared animated sail assembly.
 red_mat=material('barn-oxblood',np.clip(wood*np.array([1.25,.72,.56]),0,1),wood_height,.9,2)

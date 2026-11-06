@@ -947,3 +947,32 @@ environment camera, not evidence of a completed western-bank traversal: the dire
 walk route stopped by an existing obstacle near `[-9.4,28.65]` m. Final traversal
 and clipping acceptance remain pending. The paths and terrain still need the
 larger shape/refinement pass requested in the feedback.
+
+### Western brook mill (owner correction)
+
+The owner identified that the brook entered through an ordinary road gate. That
+western opening now belongs to a small north-bank watermill built into the
+palisade: rubble foundation, timber storey, a long slate roof over the wheel bay,
+open-spoked undershot wheel, loading door and shuttered windows. The north wall
+joins the mill body; the southern pier joins the remaining palisade. A narrow stone
+bank crossing preserves the western route beside the water. The western guard
+moves out of the new building to watch that crossing.
+
+The mill is authored in `content/greyhaven/authoring/fortifications.py` and exports
+through the existing settlement glTF/manifest. Five new stable collision IDs
+65121–65125 represent its building, roof, wheel envelope and bank crossing;
+65022 remains the passage header. Collision detail stays separate from the visual
+spokes, paddles, framing and dressings. The wheel is static in this first pass;
+rotation and localized water spray remain unfinished.
+
+The focused mill check validates final content, clear water below the wheel,
+capsule clearance along the bank crossing and solid support, on both existing
+physics backends. The browser/WASM production build and game view are used for
+visual confirmation, without a broad E2E run. Shared conventions resolved at
+sourceRevision `625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+
+The accompanying ground pass adds three low authored rises in `landscape.json`,
+sampled into core terrain with smooth radial falloff and road clearance. Path
+wear is narrower and has irregular edges and patchy soil transitions in shared
+presentation. The focused relief check confirms bridge/main-path levels remain
+unchanged; this is still an early ground-shape pass, not the completed landscape.
