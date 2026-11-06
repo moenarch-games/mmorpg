@@ -921,3 +921,20 @@ visual work (2026-11-06):
 
 These are recorded owner observations, not completed fixes. Apply them at the
 appropriate point in the visual pass; keep sharing actual gameplay screenshots.
+
+### Rail attachment and western bank follow-through
+
+The bridge's rail posts were 30 cm outside the deck edge, ending above its support
+beams. The authored art now extends the posts down onto five transverse timber
+crossbearers beneath the deck. The procedural fallback has the same attachments;
+walkable deck and rail collision are unchanged. The existing bundle still has
+20 material primitives.
+
+The conspicuous new ribbon-grass patches are removed from the brook slice following
+owner feedback; existing fern patches remain. The live Blender preview reflects
+that removal. Soil/grit breakup uses the existing mud and gravel masks, and low,
+partly buried rock chips gather on supported ground at the western cliff foot.
+These changes and the weathered rock skin remain presentation-only. The browser
+production build passes; no broad E2E or physics-engine work was undertaken for
+this pass. Ground relief, path shaping, realistic flow and native shadow matching
+remain unfinished.

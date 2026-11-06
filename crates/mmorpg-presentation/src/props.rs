@@ -791,6 +791,11 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
         let pick = ((variation * 3.).floor() as usize).min(2);
         let is_fern = (wooded && hash(&[seed[0], seed[1], 187.]) < 0.70)
             || (in_brook_cover(x, z) && hash(&[seed[0], seed[1], 189.]) < 0.08);
+        // Owner feedback: the isolated blade patches distract from the ground.
+        // Keep woodland/bank ferns; defer the local grass mesh until it reads as turf.
+        if in_brook_cover(x, z) && !is_fern {
+            continue;
+        }
         let color = if is_fern {
             [0x405c32, 0x53723c, 0x6b7942][pick]
         } else if wooded {

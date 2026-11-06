@@ -307,6 +307,16 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
             highland[i] * (0.55 + breakup),
         ));
         let gravel = gravel.max(hollow[i] * 0.78 * smoothstep(0.55, 0.80, noise(x, z, 6., 549.)));
+        // Exposed soil and washed grit break up the brook slice's flat turf. These
+        // reuse existing masked layers; roads and physical support remain unchanged.
+        let brook_slice = s.greyhaven() && (-54. ..40.).contains(&x) && (12. ..65.).contains(&z);
+        let wash = if brook_slice {
+            smoothstep(0.48, 0.76, noise(x + z * 0.35, z, 4.5, 51398.))
+                * (0.35 + 0.65 * smoothstep(0.01, 0.12, slope[i]))
+        } else {
+            0.
+        };
+        let gravel = gravel.max(wash * 0.92);
         let forest = smoothstep(0.3, 0.7, woods[i] + 0.45 * breakup);
         let mud = if shore > 0. {
             (1. - smoothstep(2., 6.5, shore + 3.5 * breakup)).max(if marsh {
@@ -317,6 +327,7 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
         } else {
             0.
         };
+        let mud = mud.max(wash * 0.78);
         let sand = if shore > 0. {
             1. - smoothstep(1.2, 3.2, shore + 2. * breakup)
         } else {

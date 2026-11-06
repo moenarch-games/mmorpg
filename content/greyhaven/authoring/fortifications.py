@@ -513,7 +513,7 @@ for i in range(40):
     for x in [-1.27,1.27]:cylinder('Brook deck iron peg',(x,.121,z),.018,.006,iron,6)
 for x in [-1.8,1.8]:
     for z in [30,31,32,33,34]:
-        post=box('Brook fitted oak post',(x,.65,z),(.10,.55,.10),wood_mat,.015)
+        post=box('Brook fitted oak post',(x,.49,z),(.10,.71,.10),wood_mat,.015)
         bridge_grain(post,(0,1,0))
         for y in [.25,1.08]:box('Brook post iron collar',(x,y,z),(.105,.035,.105),iron)
         for y in [.50,1.05]:box('Brook rail iron pin',(x+math.copysign(.085,x),y,z),(.012,.025,.025),iron)
@@ -524,6 +524,9 @@ for x in [-1.8,1.8]:
         a=(x,.30,z+.08);b=(x,1.02,z+.92)
         brace=beam('Brook rail diagonal',a,b,.035,wood_mat)
         bridge_grain(brace,tuple(b[i]-a[i] for i in range(3)))
+for z in [30,31,32,33,34]:
+    bearer=box('Brook outrigger crossbearer',(0,-.12,z),(1.95,.10,.12),wood_mat,.015)
+    bridge_grain(bearer,(1,0,0))
 for x in [-1.2,1.2]:
     stringer=box('Brook timber stringer',(x,-.12,32),(.10,.08,2.05),wood_mat)
     bridge_grain(stringer,(0,0,1))

@@ -291,12 +291,16 @@ pub(crate) fn build(
     for x in [-1.8, 1.8] {
         for z in [30., 31., 32., 33., 34.] {
             b.global("brook-posts", 0x6e4d30)
-                .add(&box_shape(), at(x, 0.65, z, 0.08, 0.55, 0.08));
+                .add(&box_shape(), at(x, 0.49, z, 0.08, 0.71, 0.08));
         }
         for y in [0.5, 1.05] {
             b.global("brook-rails", 0x896644)
                 .add(&box_shape(), at(x, y, 32., 0.07, 0.06, 2.3));
         }
+    }
+    for z in [30., 31., 32., 33., 34.] {
+        b.global("brook-crossbearers", 0x6e4d30)
+            .add(&box_shape(), at(0., -0.12, z, 1.95, 0.10, 0.12));
     }
     b.fallback = previous_fallback;
     for c in content::colliders()
@@ -307,6 +311,32 @@ pub(crate) fn build(
         let h = c.half_extents.map(metres);
         b.global("brook-drain-stone", 0x77796c)
             .add(&box_shape(), at(p[0], p[1], p[2], h[0], h[1], h[2]));
+    }
+    // Low, partly buried talus gathers at the western cliff foot. Decorative chips
+    // remain below an ankle; supported ledges and walking collision stay authoritative.
+    for row in 0..22 {
+        for column in 0..8 {
+            let seed = (row * 8 + column) as f64;
+            let x = -49. + column as f64 * 1.8 + noise(seed, 0., 0.7, 51401.) * 1.1;
+            let z = 16. + row as f64 * 2. + noise(seed, 1., 0.7, 51402.) * 1.2;
+            if noise(x, z, 4., 51403.) < 0.51
+                || s.road_distance([(x * 100.) as i32, (z * 100.) as i32]) < 250
+            {
+                continue;
+            }
+            let y = surface(g, x, z);
+            if [[0.4, 0.], [-0.4, 0.], [0., 0.4], [0., -0.4]]
+                .iter()
+                .any(|[dx, dz]| (surface(g, x + dx, z + dz) - y).abs() > 0.12)
+            {
+                continue;
+            }
+            let r = 0.12 + 0.26 * noise(seed, 2., 0.7, 51404.);
+            let mut chip = blob(0, true, 0.2, seed + 51400.);
+            let color = rgb(mix(0x706c60, 0x99917e, noise(x, z, 1., 51405.))).map(f64::from);
+            chip.colors = vec![color; chip.p.len()];
+            shingle.add(&chip, at(x, y - 0.025, z, r, 0.045 + r * 0.08, r * 0.7));
+        }
     }
     // Sparse bank reeds, safely outside the water lane.
     for (x, z) in [
