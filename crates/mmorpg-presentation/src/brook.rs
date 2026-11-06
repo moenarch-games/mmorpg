@@ -1,7 +1,7 @@
 //! Greyhaven's waterfall, brook banks, timber crossing and moving foam (#513).
 //! Authored course, water level and traversable structures come from core; this is only art.
 use crate::{
-    Animated, Draw, Group, Motion,
+    Animated, Draw, Group, Kit, Motion,
     batching::{Batcher, Cull, material, matrix, mix, rgb},
     geometry::{Geometry, ID, at, box_shape, disc, frustum},
     ground::{self, Ground, Layer},
@@ -177,6 +177,10 @@ pub(crate) fn build(
     let mut foam = Geometry::default();
     foam.add(&disc(18), at(-42.4, level + 0.008, 24., 1.2, 1., 0.85));
     water.push(draw("waterfall-foam", foam, 0xd1e8d8, 0.6));
+    // The settlement glTF supplies the textured crossing; retain this complete bridge
+    // until that art is ready. Water, banks and culverts remain independent.
+    let previous_fallback = b.fallback;
+    b.fallback = Some(Kit::Outpost);
     // Deck and approach wedges follow the real bridge bodies; rails leave the same clear lane.
     for i in 0..40 {
         b.global("brook-deck", if i % 3 == 0 { 0x806040 } else { 0x9a7650 })
@@ -206,6 +210,7 @@ pub(crate) fn build(
                 .add(&box_shape(), at(x, y, 32., 0.07, 0.06, 2.3));
         }
     }
+    b.fallback = previous_fallback;
     for c in content::colliders()
         .iter()
         .filter(|c| c.id >= content::CULVERT_POST)

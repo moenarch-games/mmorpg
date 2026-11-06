@@ -535,3 +535,30 @@ now contains 1,827 exact current bundle instances. Full suites/native GPU accept
 not run; previously reported content assertions and legacy A/B failures remain. The wider
 reference direction remains in progress. Convention source revision remains
 `625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+
+## Weathered timber bridge
+
+The Blender settlement source now dresses the existing brook crossing with individual
+bevelled oak planks, iron pegs, collared posts, fitted handrails, diagonal braces and timber
+stringers. Grain follows the long axis of the timbers. The planked approaches match the two existing
+ramp wedges, with low bedded stone sills at their bank ends. The deck stays at the same
+physical height with the same clear crossing.
+No authoritative collider, terrain sample or content revision changes in this pass.
+
+The model is in the existing settlement glTF and reuses its wood and iron materials; the
+bundle still has thirteen resources. Shared presentation tags the old complete procedural
+bridge as an Outpost fallback. It remains drawn while the art is unavailable, and hides only
+when the existing settlement readiness flag is true. Water, banks and culverts stay outside
+that fallback group. Both clients use the established kit readiness path; no new asset loader,
+cache or renderer feature is introduced. Older bridge preview objects are hidden in the live
+Blender file so the authored model is shown without overlapping geometry.
+
+Focused checks passed: native loading of every placed kit entry, a shared presentation check
+that switches between the procedural crossing and loaded art while retaining culverts,
+format and the browser/WASM production build. Full suites and native GPU acceptance were
+not run. Previously reported content assertions and legacy A/B failures remain unresolved;
+the overall reference art direction remains in progress. Convention source revision remains
+`625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+Chromium walked across and back onto the loaded bridge, with all seven ground textures
+loaded and no page errors. The final planked approaches and rail bracing are captured in
+`artifacts/greyhaven-brook/timber-bridge.png`; the live Blender file contains the same model.

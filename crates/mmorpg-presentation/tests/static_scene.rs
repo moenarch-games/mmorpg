@@ -596,3 +596,38 @@ fn the_cave_ceiling_stays_textured_below_the_cutaway_roof() {
         "ceiling faces into the cave"
     );
 }
+
+#[test]
+fn the_brook_crossing_retains_its_fallback_until_settlement_art_is_ready() {
+    let scene = StaticScene::new(&greyhaven_vale_scenery());
+    let frame = |ready| {
+        scene.frame(
+            0.,
+            false,
+            [0., 3., 32.],
+            None,
+            Kits {
+                outpost: ready,
+                ..Kits::default()
+            },
+        )
+    };
+    let fallback = frame(false);
+    let loaded = frame(true);
+    for name in ["brook-deck", "brook-approach", "brook-posts", "brook-rails"] {
+        assert!(
+            fallback.iter().any(|draw| draw.id.contains(name)),
+            "missing {name} fallback"
+        );
+        assert!(
+            !loaded.iter().any(|draw| draw.id.contains(name)),
+            "duplicate {name} after art loads"
+        );
+    }
+    assert!(
+        loaded
+            .iter()
+            .any(|draw| draw.id.contains("brook-drain-stone")),
+        "culverts remain visible independently"
+    );
+}

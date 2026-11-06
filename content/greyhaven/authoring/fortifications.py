@@ -453,6 +453,53 @@ beam('Greyfang threshold diagonal',(79.31,11.3,-139.7),(79.31,14.2,-136.3),.07,w
 for z in [-139.6,-136.4]:
     for y in [11.4,14.1]:box('Greyfang threshold iron strap',(79.29,y,z),(.015,.06,.24),iron)
 
+# The brook crossing dresses the existing deck, rails and approach ramp bodies. The
+# shared procedural bridge remains the fallback until the settlement art is ready.
+def bridge_grain(obj,axis):
+    along=Vector((axis[0],-axis[2],axis[1])).normalized();data=obj.data
+    uv=data.uv_layers.active;tile=wood_mat['tile_metres']
+    for face in data.polygons:
+        across=along.cross(face.normal)
+        if across.length<.001:continue
+        across.normalize()
+        for loop in face.loop_indices:
+            co=data.vertices[data.loops[loop].vertex_index].co
+            uv.data[loop].uv=(co.dot(across)/tile,co.dot(along)/tile)
+
+for i in range(40):
+    z=30.05+i*.1
+    plank=box('Brook weathered deck plank',(0,.065,z),(1.5,.055,.046),wood_mat,.006)
+    bridge_grain(plank,(1,0,0))
+    for x in [-1.27,1.27]:cylinder('Brook deck iron peg',(x,.121,z),.018,.006,iron,6)
+for x in [-1.8,1.8]:
+    for z in [30,31,32,33,34]:
+        post=box('Brook fitted oak post',(x,.65,z),(.10,.55,.10),wood_mat,.015)
+        bridge_grain(post,(0,1,0))
+        for y in [.25,1.08]:box('Brook post iron collar',(x,y,z),(.105,.035,.105),iron)
+        for y in [.50,1.05]:box('Brook rail iron pin',(x+math.copysign(.085,x),y,z),(.012,.025,.025),iron)
+    for y in [.50,1.05]:
+        rail=box('Brook oak handrail',(x,y,32),(.07,.06,2.3),wood_mat,.012)
+        bridge_grain(rail,(0,0,1))
+    for z in [30,31,32,33]:
+        a=(x,.30,z+.08);b=(x,1.02,z+.92)
+        brace=beam('Brook rail diagonal',a,b,.035,wood_mat)
+        bridge_grain(brace,tuple(b[i]-a[i] for i in range(3)))
+for x in [-1.2,1.2]:
+    stringer=box('Brook timber stringer',(x,-.12,32),(.10,.08,2.05),wood_mat)
+    bridge_grain(stringer,(0,0,1))
+for south in [False,True]:
+    vs=[(-1.5,0,28),(1.5,0,28),(1.5,0,30),(-1.5,0,30),(-1.5,.12,30),(1.5,.12,30)]
+    if south:vs=[(x,y,64-z) for x,y,z in vs]
+    ramp=mesh('Brook approach frame',vs,[(0,3,2,1),(3,4,5,2),(0,4,3),(1,2,5)],wood_mat)
+    bridge_grain(ramp,(0,0,1))
+    for i in range(20):
+        a,b=28+i*.1+.004,28+(i+1)*.1-.004
+        board=[(x,.06*(z-28)-drop,64-z if south else z)
+            for drop in [.025,0] for x,z in [(-1.5,a),(1.5,a),(1.5,b),(-1.5,b)]]
+        plank=mesh('Brook sloped approach plank',board,BOX_FACES,wood_mat)
+        bridge_grain(plank,(1,0,0))
+    box('Brook bedded stone sill',(0,-.12,36 if south else 28),(1.52,.12,.12),stone_mat,.02)
+
 # Passable ground cover: a small reusable fern built from curved fronds and folded
 # leaflets. Opaque two-sided leaf geometry needs no alpha texture or new renderer feature.
 fern_mats=[flat('fern shadow leaf',(.055,.13,.028)),flat('fern green leaf',(.085,.19,.04)),
