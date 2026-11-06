@@ -711,7 +711,8 @@ impl World {
     /// The height (units) of the authored ground straight below or above `(x, z)`, if any.
     #[must_use]
     pub fn terrain_height(&self, x: i32, z: i32) -> Option<f32> {
-        let handles = &self.ground.as_ref()?.colliders;
+        let ground = self.ground.as_ref()?;
+        let handles = &ground.colliders;
         let predicate =
             |collider: ColliderHandle, _: &rapier3d::prelude::Collider| handles.contains(&collider);
         let queries = self.world.broad_phase.as_query_pipeline(
@@ -720,12 +721,11 @@ impl World {
             &self.world.colliders,
             QueryFilter::default().predicate(&predicate),
         );
-        #[allow(clippy::cast_precision_loss)]
-        let top = crate::MAX_TERRAIN_HEIGHT_UNITS as f32 + 100.0;
+        let (top, distance) = super::terrain_probe_span(&ground.terrain, x, z);
         // A ray straight down a heightfield's grid line can slip between its cells' triangles;
         // a hundredth of a unit aside it always meets one.
         let ray = RapierRay::new(metres([x as f32 + 0.01, top, z as f32 + 0.01]), -Vector::Y);
-        let (_, time_of_impact) = queries.cast_ray(&ray, 2.0 * top / UNITS_PER_METRE, true)?;
+        let (_, time_of_impact) = queries.cast_ray(&ray, distance / UNITS_PER_METRE, true)?;
         Some(top - time_of_impact * UNITS_PER_METRE)
     }
 
@@ -778,7 +778,7 @@ impl World {
             // into the ground, which the controller answers with a nudge back up. A body just
             // above the ground settles onto it.
             let mut settle = 0.0;
-            match (!body.weightless).then(|| self.ground_gap(&body, body.position)) {
+            match (!body.weightless).then(|| self.ground_gap(body, body.position)) {
                 // A swimmer (#274) keeps the vertical velocity the zone gave it.
                 None => {}
                 Some(Some(gap)) if velocity[1] <= 0.0 => {
@@ -813,16 +813,16 @@ impl World {
                     .velocity = velocity;
                 continue;
             }
-            let desired = Self::slide_around(self.bodies.values(), &body, desired);
-            let (moved, grounded) = self.move_shape(&body, desired)?;
+            let desired = Self::slide_around(self.bodies.values(), body, desired);
+            let (moved, grounded, vertical_contact) = self.move_shape(body, desired)?;
             let to = [
                 body.position[0] + moved[0],
                 body.position[1] + moved[1],
                 body.position[2] + moved[2],
             ];
-            let supported = grounded && self.ground_below(&body, to);
+            let supported = grounded && self.ground_below(body, to);
             if (supported && velocity[1] <= 0.0)
-                || (velocity[1] > 0.0 && moved[1] < velocity[1] - 1.0e-3)
+                || (velocity[1] > 0.0 && vertical_contact && moved[1] < velocity[1] - 1.0e-3)
             {
                 velocity[1] = 0.0;
             }
@@ -923,12 +923,12 @@ impl World {
     }
 
     /// The translation (units) the controller applies to `body` for `desired`, and whether
-    /// it ends grounded.
+    /// it ends grounded or contacts a ceiling.
     fn move_shape(
         &self,
         body: &RigidBody,
         desired: [f32; 3],
-    ) -> Result<([f32; 3], bool), PhysicsError> {
+    ) -> Result<([f32; 3], bool, bool), PhysicsError> {
         let handle = self
             .handles
             .get(&body.id)
@@ -945,13 +945,30 @@ impl World {
         );
         #[cfg(feature = "physics-ab")]
         let mut collisions = 0_u64;
+        let mut vertical_contact = false;
         let movement = self.controller.move_shape(
             self.world.integration_parameters.dt,
             &queries,
             &capsule(body.half_extents),
             &Pose::from_translation(lifted(body.position)),
             metres(desired),
-            |_| {
+            |collision| {
+                // A cast against a vertical mesh face can return a slightly tilted GJK normal,
+                // shaving ascent without a ceiling. Check its actual triangle; keep the
+                // original response for slopes and real rounded-edge/ceiling contacts.
+                let vertical_face = self
+                    .world
+                    .colliders
+                    .get(collision.handle)
+                    .and_then(|collider| collider.shape().as_trimesh().map(|mesh| (collider, mesh)))
+                    .and_then(|(collider, mesh)| {
+                        mesh.triangle(collision.hit.subshape1)
+                            .normal()
+                            .map(|normal| (collider.rotation() * normal).y == 0.0)
+                    })
+                    .unwrap_or(false);
+                vertical_contact |= !vertical_face
+                    || collision.hit.normal1.y.abs() >= self.controller.max_slope_climb_angle.cos();
                 #[cfg(feature = "physics-ab")]
                 {
                     collisions += 1;
@@ -961,7 +978,11 @@ impl World {
         #[cfg(feature = "physics-ab")]
         self.controller_collisions
             .fetch_add(collisions, Ordering::Relaxed);
-        Ok((units(movement.translation), movement.grounded))
+        Ok((
+            units(movement.translation),
+            movement.grounded,
+            vertical_contact,
+        ))
     }
 
     /// Whether static ground lies within the support reach below `body` placed at `position`;

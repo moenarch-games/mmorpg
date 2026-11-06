@@ -234,3 +234,7 @@ five additional trunks (1,800 visits per 360 ticks). At combined content `3c33cc
 the four workloads record 1,299,600 / 1,296,720 / 1,305,360 / 1,316,524 body visits.
 AI, projection and byte counts remain unchanged; all four replay/recovery checks pass.
 The same content contains 13,510 scenery props, within the updated existing 14,000-prop ceiling.
+
+Moving the boar displaced by Stillwater onto dry woodland changes the content identity
+to `64efad8a826eb508`. The four body/AI/candidate ceilings above are unchanged; fights-32
+encodes 7,855,767 bytes (lower than its existing ceiling). Replay and recovery still agree.

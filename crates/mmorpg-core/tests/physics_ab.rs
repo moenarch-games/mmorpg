@@ -908,13 +908,71 @@ fn check_workload(workload: Workload) -> Result<()> {
         }
     }
     if matches!(workload, Workload::WatchPost) {
-        // The same blasts and arrows break the same pieces on both backends.
-        let pieces = |trace: &Trace| trace.snapshots.last().map(|last| last.pieces.clone());
-        assert_eq!(
-            pieces(&rapier),
-            pieces(&engine),
-            "{name}: piece states differ"
-        );
+        // Chasing AI is intentionally not position-bounded across backends. Its first blast
+        // lands eight units apart in the authored scene, so evaluate each exact falloff from
+        // that backend's actual centre instead of assuming identical damage from different hits.
+        let damaged_ids = |trace: &Trace| {
+            trace
+                .snapshots
+                .last()
+                .unwrap()
+                .pieces
+                .iter()
+                .filter(|piece| piece.changed_tick == 150)
+                .map(|piece| piece.piece)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(damaged_ids(&rapier), damaged_ids(&engine));
+        for trace in [&rapier, &engine] {
+            let impact = &trace.snapshots[149];
+            let target = impact
+                .creatures
+                .iter()
+                .find(|unit| unit.creature_id.get() == 401)
+                .unwrap();
+            let centre = mmorpg_core::physics::to_units(target.position);
+            let content = mmorpg_core::greyhaven_vale::content();
+            for id in damaged_ids(trace) {
+                let piece = content
+                    .pieces()
+                    .iter()
+                    .find(|piece| piece.id == id)
+                    .unwrap();
+                let squared = (0..3)
+                    .map(|axis| {
+                        let near = centre[axis].clamp(
+                            piece.position[axis] - piece.half_extents[axis],
+                            piece.position[axis] + piece.half_extents[axis],
+                        );
+                        i64::from(near - centre[axis]).pow(2)
+                    })
+                    .sum::<i64>();
+                let distance = squared.isqrt();
+                // Level-six Fire Blast: top roll 16 + five levels * 3, radius 500.
+                let damage = u32::try_from(31 * (1000 - distance) / 1000).unwrap();
+                let actual = impact
+                    .pieces
+                    .iter()
+                    .find(|state| state.piece == id)
+                    .unwrap();
+                assert_eq!(
+                    actual.health,
+                    piece.health - damage,
+                    "piece {id:?} at {centre:?}"
+                );
+                assert_eq!(
+                    trace
+                        .snapshots
+                        .last()
+                        .unwrap()
+                        .pieces
+                        .iter()
+                        .find(|state| state.piece == id)
+                        .unwrap(),
+                    actual
+                );
+            }
+        }
     }
     if matches!(workload, Workload::ChargePath) {
         // On each backend some Warden charges (#57).

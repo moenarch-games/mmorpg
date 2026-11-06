@@ -413,7 +413,10 @@ pub static TRAVERSAL_GRAPH: mmorpg_core::action::ActionGraph = mmorpg_core::acti
 pub const TRAVERSAL_TICKS: usize = mmorpg_core::golden::t30(240) as usize;
 
 /// A Warden and a Ranger in the outpost, by ID and feet XZ.
-const TRAVERSAL_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [2_200.0, 850.0]), (2, [2_310.0, 850.0])];
+// The authored eastern cottages now occupy the old crate-side flight path. Keep this
+// momentum/air-control workload on the level spawn plaza; authored contacts have their
+// own real-mesh side, underside and cave traversal/recovery regressions.
+const TRAVERSAL_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [-1_000.0, 2_200.0]), (2, [-890.0, 2_200.0])];
 
 /// The traversal commands at `tick` (30 Hz): run, jump, let go (player 1) or turn back
 /// (player 2) in the air, land, and again.
