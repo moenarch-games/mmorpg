@@ -377,12 +377,12 @@ fn named_areas_are_ordered_disjoint_and_contain_their_landmarks() {
     );
     assert_eq!(area_at(3_500, 0), None);
     assert_eq!(area_at(0, 5_300), None);
-    // Approximate subzone centres from docs/STARTER_ZONE.md, in metres × 100.
+    // Representative authored subzone centres, in centimetres.
     for (point, area) in [
         ([0, 2_000], greyhaven_vale::vale::OUTPOST),
         ([-7_500, 0], greyhaven_vale::vale::WOLFRUN_WOODS),
         ([7_000, 3_500], greyhaven_vale::vale::MILLBROOK_FARM),
-        ([5_500, -5_500], greyhaven_vale::vale::STILLWATER_LAKE),
+        ([-8_700, -5_300], greyhaven_vale::vale::STILLWATER_LAKE),
         ([0, -9_000], greyhaven_vale::vale::REDBRAND_HOLLOW),
     ] {
         assert_eq!(area_at(point[0], point[1]).map(Area::id), Some(area));
