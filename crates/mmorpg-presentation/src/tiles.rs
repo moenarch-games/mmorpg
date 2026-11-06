@@ -495,7 +495,10 @@ impl Tiles {
                         u[2] * v[0] - u[0] * v[2],
                         u[0] * v[1] - u[1] * v[0],
                     ])[1];
-                    if up < 0.65 {
+                    // The near terrain already assigns rock to these steep shoulders.
+                    // Keep PR #642's rock PBR material on the coarse level as well, or
+                    // the same cliff turns back into a smooth green-grey slope at range.
+                    if up < 0.80 {
                         // Split only the material ownership of the original coarse face.
                         // Per-face vertices keep its rock projection from stretching over
                         // a near-vertical wall; they introduce no new terrain samples.

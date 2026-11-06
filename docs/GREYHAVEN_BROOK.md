@@ -774,3 +774,24 @@ The owner requested a first GitHub version and a pause after pushing it. The den
 forest pass, smaller Redbrand hideout, northeastern mining ruins/ravine bridge and
 remaining material/atmosphere work are deferred for review. This checkpoint is not
 completion or visual acceptance of the full revised concept brief.
+
+### Local vegetation and water candidate
+
+The visual candidate adds shared, instanced grass clumps and woodland understory
+through the existing presentation batcher. Ferns have arched stems and paired
+leaflets composed from the existing blade primitive. Placement samples rendered terrain and
+excludes roads, farmland, structures, water and steep slopes. These plants have no
+colliders and do not change the saved nature placements or terrain LOD selection.
+
+Lake-bed dressing follows the elevated terrain rather than world zero. The lake
+surface has depth-dependent vertex colour, and visible lake/channel edges are
+clipped against rendered ground. The authored water volumes, heights and geography
+remain unchanged. The local figure download also includes Tanner Hilda's base
+outfit, which the loader requests before applying her skin variant. Coarse steep
+faces retain the existing rock PBR material from the cliff pass; terrain samples, tile sizes, skirts and streaming are unchanged.
+
+Local comparison artifacts are under `artifacts/greyhaven-visual/`, using matching
+western-lake, woodland and valley cameras. WSL's default llvmpipe software path was
+too slow for the comparison; the existing D3D12 driver exposes the ThinkPad's Intel
+Arc 140V instead. Measurements through that WSL path remain provisional and do not
+establish native Windows or desktop GPU performance.

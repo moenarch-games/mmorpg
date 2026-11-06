@@ -215,6 +215,7 @@ impl StaticScene {
         let mut batcher = batching::Batcher::default();
         let mut water = terrain::build(&mut batcher, scenery, &grid);
         let mut animated = props::build(&mut batcher, scenery, &grid);
+        props::ground_cover(&mut batcher, scenery, &grid);
         let brook_groups = brook::build(&mut batcher, scenery, &grid, &mut water, &mut animated);
         lights::cave_torches(&mut batcher, scenery);
         let mut groups = batcher.finish();

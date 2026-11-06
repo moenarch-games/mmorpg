@@ -121,7 +121,8 @@ export const DEBUG_VIEWPOINTS: Readonly<Record<string, { eye: Vec3; target: Vec3
   woods: { eye: [-41, 18, 16], target: [-69, 14, 0] },
   hollow: { eye: [6, 24, -64], target: [0, 14, -98] },
   farm: { eye: [46, 12, 16], target: [72, 3, 40] },
-  lake: { eye: [30, 20, -30], target: [56, 11, -56] },
+  // Stillwater moved west in #644; keep this pose matched to native ground shots/profiling.
+  lake: { eye: [-56, 33, -39], target: [-87, 11, -53] },
   vale: { eye: [0, 70, 95], target: [0, 0, -10] },
 };
 

@@ -8,8 +8,8 @@ one JSON report:
 - `idle`: the Greyhaven view after entry, nobody touching anything;
 - `move-rotate`: W held while the mouse drags the camera, plus repeated W taps from standstill
   for keyboard → first drawn movement;
-- `dense-woods` / `dense-hub` / `overview`: the woods (vegetation), the outpost hub (NPCs) and the
-  whole-vale overview, through the existing debug viewpoints.
+- `dense-woods` / `dense-hub` / `western-lake` / `overview`: woodland vegetation, the hub,
+  Stillwater's shore and the whole Vale, through the existing debug viewpoints.
 
 `--activity battle-royale` profiles the Battle Royale practice arena (#552) instead: `idle`,
 `move-rotate` and `key-to-motion` in the fortress courtyard, and `overview` over the whole fortress.
@@ -517,7 +517,10 @@ def main():
         if trace:
             report["scenarios"]["move-rotate"]["trace"] = {"path": str(trace), **analyze_trace(trace)}
         report["scenarios"]["key-to-motion"] = key_to_motion(session)
-        views = [("overview", overview)] if args.activity else [("dense-woods", "woods"), ("dense-hub", "hub"), ("overview", overview)]
+        views = [("overview", overview)] if args.activity else [
+            ("dense-woods", "woods"), ("dense-hub", "hub"),
+            ("western-lake", "lake"), ("overview", overview),
+        ]
         for name, viewpoint in views:
             report["scenarios"][name] = view(session, viewpoint, args.seconds)
         report["pageErrors"] = session.errors

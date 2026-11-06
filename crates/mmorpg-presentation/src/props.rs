@@ -567,6 +567,155 @@ fn grass(m: &mut Model, p: &Prop) {
         compose(&[translate(0., -0.02, 0.), scale(hx, hy, hx)]),
     );
 }
+
+/// Fine, walk-through grass and woodland ferns between the sparse saved Outpost tufts.
+/// Both clients draw the existing shared instanced batches; these are never gameplay
+/// props or colliders. A jittered lattice guarantees spacing without a per-frame scatter.
+pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
+    if !s.greyhaven() {
+        return;
+    }
+    use mmorpg_core::greyhaven_vale::{SPAWN_PLAZA, VALE_BOUNDS};
+
+    let mut clump = Geometry::default();
+    let blade = blade();
+    for i in 0..6 {
+        let angle = i as f64 * TAU / 6.;
+        clump.add(
+            &blade,
+            compose(&[
+                translate(angle.sin() * 0.24, -0.03, angle.cos() * 0.24),
+                ry(angle),
+                rx(-0.12 - 0.07 * f64::from(i % 3)),
+                scale(0.17, 0.32 + 0.05 * f64::from(i % 3), 0.17),
+            ]),
+        );
+    }
+    let mut fern = Geometry::default();
+    for i in 0..8 {
+        let angle = i as f64 * TAU / 8.;
+        let reach = 0.55 + 0.05 * f64::from(i % 3);
+        let spine = |t: f64| [0., 0.48 * (t * PI * 0.9).sin(), reach * t];
+        // Small paired leaflets follow an arched stem rather than one broad spike.
+        // Reuse the existing blade primitive and one shared mesh for every plant.
+        for segment in 0..5 {
+            let a = spine(f64::from(segment) / 5.);
+            let z = spine(f64::from(segment + 1) / 5.);
+            let delta: V = std::array::from_fn(|axis| z[axis] - a[axis]);
+            let length = delta.iter().map(|v| v * v).sum::<f64>().sqrt();
+            fern.add(
+                &blade,
+                compose(&[
+                    ry(angle),
+                    translate(a[0], a[1], a[2]),
+                    align_y(delta),
+                    scale(0.025, length, 0.025),
+                ]),
+            );
+        }
+        for pair in 1..6 {
+            let t = f64::from(pair) / 6.;
+            let [x, y, z] = spine(t);
+            for side in [-1., 1.] {
+                fern.add(
+                    &blade,
+                    compose(&[
+                        ry(angle),
+                        translate(x, y, z),
+                        rx(-0.5),
+                        rz(-side * 1.1),
+                        scale(0.16, 0.28 * (1. - t * 0.65), 0.045),
+                    ]),
+                );
+            }
+        }
+    }
+
+    let blockers: Vec<_> = s
+        .props
+        .iter()
+        .filter(|prop| prop.collider.is_some())
+        .map(Prop::footprint)
+        .collect();
+
+    const CELL: i32 = 360;
+    for row in VALE_BOUNDS.min[1].div_euclid(CELL)..VALE_BOUNDS.max[1].div_euclid(CELL) {
+        for column in VALE_BOUNDS.min[0].div_euclid(CELL)..VALE_BOUNDS.max[0].div_euclid(CELL) {
+            let seed = [f64::from(column), f64::from(row)];
+            let x = column * CELL + (hash(&[seed[0], seed[1], 171.]) * 160.).round() as i32 - 80;
+            let z = row * CELL + (hash(&[seed[0], seed[1], 173.]) * 160.).round() as i32 - 80;
+            if !VALE_BOUNDS.contains(x, z)
+                || SPAWN_PLAZA.contains(x, z)
+                || s.road_distance([x, z]) < 240
+                || s.water_distance([x, z]) < 230
+                || mmorpg_core::greyhaven_vale::brook::wet_ground(x, z)
+                || s.farmland().iter().any(|field| field.distance([x, z]) == 0)
+                || s.terrain_holes
+                    .iter()
+                    .any(|hole| hole.distance([x, z]) < 110)
+            {
+                continue;
+            }
+
+            let c = ((x - g.origin[0]).div_euclid(g.step) as usize).min(g.columns - 1);
+            let r = ((z - g.origin[1]).div_euclid(g.step) as usize).min(g.rows - 1);
+            let (density, wooded) = match g.biomes[r * g.columns + c].name() {
+                "woods" => (0.92, true),
+                "meadow" => (0.56, false),
+                "hub" => (0.42, false),
+                "hollow" => (0.34, false),
+                _ => continue,
+            };
+            if hash(&[seed[0], seed[1], 179.]) > density {
+                continue;
+            }
+            // Only visual support is sampled. Avoid clumps across a cliff, path landing,
+            // structure or water bank; their authoritative collision is unchanged.
+            let (mx, mz) = (metres(x), metres(z));
+            let y = surface(g, mx, mz);
+            let rise_x = surface(g, mx + 0.7, mz) - surface(g, mx - 0.7, mz);
+            let rise_z = surface(g, mx, mz + 0.7) - surface(g, mx, mz - 0.7);
+            if rise_x * rise_x + rise_z * rise_z > 0.24
+                || blockers.iter().any(|foot| {
+                    x >= foot.min[0] - 110
+                        && x <= foot.max[0] + 110
+                        && z >= foot.min[1] - 110
+                        && z <= foot.max[1] + 110
+                })
+            {
+                continue;
+            }
+
+            let variation = hash(&[seed[0], seed[1], 181.]);
+            let pick = ((variation * 3.).floor() as usize).min(2);
+            let is_fern = wooded && hash(&[seed[0], seed[1], 187.]) < 0.70;
+            let color = if is_fern {
+                [0x405c32, 0x53723c, 0x6b7942][pick]
+            } else if wooded {
+                [0x526c38, 0x657944, 0x7b8451][pick]
+            } else {
+                [0x607e3e, 0x738d45, 0x898c52][pick]
+            };
+            let size = 0.8 + 0.45 * hash(&[seed[0], seed[1], 183.]);
+            b.instance(
+                if is_fern {
+                    "greyhaven-fern-understory"
+                } else {
+                    "greyhaven-ground-cover"
+                },
+                color,
+                if is_fern { &fern } else { &clump },
+                compose(&[
+                    translate(mx, y, mz),
+                    ry(TAU * hash(&[seed[0], seed[1], 185.])),
+                    scale(size, size, size),
+                ]),
+                [mx, mz],
+                Cull::Near,
+            );
+        }
+    }
+}
 /// Climbable cliffs wear handhold routes fitted to their rock surfaces (#512).
 fn cliff(m: &mut Model, p: &Prop, climbable: bool, scenery: &Scenery, frame: Affine) {
     // The rock skin belongs to cliffs. Climbing cues follow its authored facets, rather

@@ -339,17 +339,124 @@ pub fn bounds(g: &TerrainGrid, name: &str) -> Option<([f64; 2], [f64; 2])> {
     }
     lo[0].is_finite().then_some((lo, hi))
 }
-fn ellipse(m: &mut Geometry, c: [f64; 2], r: [f64; 2], y: f64, n: u32) {
-    let base = m.p.len() as u32;
-    m.p.push([c[0], y, c[1]]);
-    m.n.push([0., 1., 0.]);
-    for i in 0..n {
-        let a = f64::from(i) / f64::from(n) * TAU;
-        m.p.push([c[0] + a.sin() * r[0], y, c[1] + a.cos() * r[1]]);
-        m.n.push([0., 1., 0.]);
-        m.indices
-            .extend([base, base + 1 + i, base + 1 + (i + 1) % n]);
+/// The decorative bed must follow the *rendered* terrain, not world Y=0. Stillwater's
+/// shore is eleven metres above that datum; the old flat discs were buried in the bank.
+fn bed_ellipse(
+    m: &mut Geometry,
+    g: &TerrainGrid,
+    c: [f64; 2],
+    r: [f64; 2],
+    band: [f64; 2],
+    water_level: f64,
+    lift: f64,
+) {
+    let [inner, outer] = band;
+    let segments = 96;
+    let rings = ((outer - inner) * r[0].max(r[1]) / 1.5).ceil().max(1.) as usize;
+    let point = |radius: f64, angle: f64| {
+        // The bed's colour bands can meander, but adjoining bands share the exact
+        // same boundary positions so no cracks or overlapping translucent decals form.
+        let ideal_x = c[0] + angle.sin() * r[0] * radius;
+        let ideal_z = c[1] + angle.cos() * r[1] * radius;
+        let shaped = radius * (1. + 0.055 * (noise(ideal_x, ideal_z, 5.3, 711.) - 0.5));
+        let x = c[0] + angle.sin() * r[0] * shaped;
+        let z = c[1] + angle.cos() * r[1] * shaped;
+        [x, surface(g, x, z) + lift, z]
+    };
+    let mut face = |corners: &[[f64; 3]]| {
+        // Marsh islands and rocks that emerge within a pool are not lake bed.
+        if outer >= 0.9 || corners.iter().all(|p| p[1] - lift < water_level - 0.012) {
+            m.face(corners);
+        }
+    };
+    for ring in 0..rings {
+        let from = inner + (outer - inner) * ring as f64 / rings as f64;
+        let to = inner + (outer - inner) * (ring + 1) as f64 / rings as f64;
+        for i in 0..segments {
+            let a = i as f64 / segments as f64 * TAU;
+            let b = (i + 1) as f64 / segments as f64 * TAU;
+            if ring == 0 && inner == 0. {
+                face(&[point(0., a), point(to, a), point(to, b)]);
+            } else {
+                face(&[point(from, a), point(to, a), point(to, b), point(from, b)]);
+            }
+        }
     }
+}
+
+/// Flat authoritative water level, with cosmetic depth tint and small-scale colour breakup.
+/// More than one radial sample is needed for translucent shallows to meet a raised bank.
+fn water_ellipse(g: &TerrainGrid, c: [f64; 2], r: [f64; 2], level: f64) -> Geometry {
+    let mut out = Geometry::default();
+    let segments = 96;
+    let rings = (r[0].max(r[1]) / 2.).ceil().max(2.) as usize;
+    let point = |radius: f64, angle: f64| {
+        let x = c[0] + angle.sin() * r[0] * radius;
+        let z = c[1] + angle.cos() * r[1] * radius;
+        [x, level + 0.012, z]
+    };
+    let tint = |p: [f64; 3]| {
+        let depth = (level - surface(g, p[0], p[2])).max(0.);
+        let dark = (depth / 5.).sqrt().clamp(0., 1.);
+        let color = mix(0x579b92, 0x285b67, dark * 0.82);
+        rgb(mix(color, 0x8ab5a0, noise(p[0], p[2], 3.5, 719.) * 0.12)).map(f64::from)
+    };
+    let wet = |p: [f64; 3]| surface(g, p[0], p[2]) < level - 0.008;
+    let mut face = |corners: &[[f64; 3]]| {
+        // Clip cosmetic water triangles against the same interpolated ground that both
+        // clients draw. A raised shore or rock can emerge without a blue glass plane
+        // passing through it; this never changes the zone's authored water volume.
+        let mut clipped = Vec::with_capacity(corners.len() + 2);
+        let mut previous = corners[corners.len() - 1];
+        let mut was_wet = wet(previous);
+        for &next in corners {
+            let is_wet = wet(next);
+            if was_wet != is_wet {
+                let (mut inside, mut outside) = if was_wet {
+                    (previous, next)
+                } else {
+                    (next, previous)
+                };
+                for _ in 0..8 {
+                    let middle = std::array::from_fn(|axis| (inside[axis] + outside[axis]) / 2.);
+                    if wet(middle) {
+                        inside = middle;
+                    } else {
+                        outside = middle;
+                    }
+                }
+                clipped.push(inside);
+            }
+            if is_wet {
+                clipped.push(next);
+            }
+            previous = next;
+            was_wet = is_wet;
+        }
+        if clipped.len() >= 3 {
+            out.face(&clipped);
+            out.colors.extend(clipped.into_iter().map(&tint));
+        }
+    };
+    for ring in 0..rings {
+        let inner = ring as f64 / rings as f64;
+        let outer = (ring + 1) as f64 / rings as f64;
+        for i in 0..segments {
+            let a = i as f64 / segments as f64 * TAU;
+            let b = (i + 1) as f64 / segments as f64 * TAU;
+            if ring == 0 {
+                face(&[point(0., a), point(outer, a), point(outer, b)]);
+            } else {
+                face(&[
+                    point(inner, a),
+                    point(outer, a),
+                    point(outer, b),
+                    point(inner, b),
+                ]);
+            }
+        }
+    }
+    out
 }
 /// `g` with every triangle on its own vertices, lit by its face normal softened towards the
 /// smooth one (#526): the distant ranges' crags and gullies catch the light at any sun angle
@@ -415,19 +522,27 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Draw> {
     for (i, w) in s.water.iter().enumerate() {
         let c = w.centre.map(metres);
         let r = w.radii.map(metres);
-        // The shore beyond the water's edge is the sand overlay; these rings are the bed.
-        for (f, col, lift) in [
-            (1.02, mix(0xcdbb88, 0x4f5a44, 0.35), 0.012),
-            (0.9, mix(0xcdbb88, 0x4f5a44, 0.7), 0.02),
-            (0.72, 0x4f5a44, 0.028),
-            (0.45, shade(0x4f5a44, 0.85), 0.036),
+        // The shore beyond the water's edge is the sand overlay; these rings dress
+        // the actual submerged terrain, even on Stillwater's elevated terrace.
+        for (outer, inner, col, lift) in [
+            (1.02, 0.9, mix(0xcdbb88, 0x4f5a44, 0.35), 0.035),
+            (0.9, 0.72, mix(0xcdbb88, 0x4f5a44, 0.7), 0.042),
+            (0.72, 0.45, 0x4f5a44, 0.05),
+            (0.45, 0., shade(0x4f5a44, 0.85), 0.058),
         ] {
-            ellipse(b.global("lake-bed", col), c, r.map(|v| v * f), lift, 48);
+            bed_ellipse(
+                b.global("lake-bed", col),
+                g,
+                c,
+                r,
+                [inner, outer],
+                metres(w.surface),
+                lift,
+            );
         }
-        let mut mesh = Geometry::default();
-        ellipse(&mut mesh, c, r, metres(w.surface), 64);
-        let mut mat = material(0x3f86a0, false);
-        mat.opacity = 0.72;
+        let mesh = water_ellipse(g, c, r, metres(w.surface));
+        let mut mat = material(0xffffff, false);
+        mat.opacity = 0.86;
         water.push(Draw {
             id: format!("water-{i}"),
             resource_key: format!("scenery:water:{i}"),

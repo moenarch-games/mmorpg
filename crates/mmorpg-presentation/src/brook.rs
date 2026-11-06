@@ -89,15 +89,48 @@ pub(crate) fn build(
                     [x, surface(g, x, v) + 0.085, v]
                 };
                 let water_edge = |t, side| {
-                    let [x, _, z] = p(t, side, 0.);
-                    [x, level, z]
+                    let [x, _, edge_z] = p(t, side, 0.);
+                    let centre = [a[0] + (z[0] - a[0]) * t, a[1] + (z[1] - a[1]) * t];
+                    // The physical water lane can meet the four-metre terrain mesh partway
+                    // across a bank. Stop the visible surface at that intersection instead
+                    // of letting its translucent plane cut through higher ground.
+                    let mut inside = 0.;
+                    let mut outside = 1.;
+                    if surface(g, x, edge_z) < level - 0.015 {
+                        inside = 1.;
+                    } else {
+                        for _ in 0..7 {
+                            let middle = (inside + outside) / 2.;
+                            let sx = centre[0] + (x - centre[0]) * middle;
+                            let sz = centre[1] + (edge_z - centre[1]) * middle;
+                            if surface(g, sx, sz) < level - 0.015 {
+                                inside = middle;
+                            } else {
+                                outside = middle;
+                            }
+                        }
+                    }
+                    [
+                        centre[0] + (x - centre[0]) * inside,
+                        level,
+                        centre[1] + (edge_z - centre[1]) * inside,
+                    ]
                 };
-                channel.face(&[
+                let corners = [
                     water_edge(t0, 1.),
                     water_edge(t1, 1.),
                     water_edge(t1, -1.),
                     water_edge(t0, -1.),
-                ]);
+                ];
+                channel.face(&corners);
+                let current = noise(
+                    a[0] + (z[0] - a[0]) * t0,
+                    a[1] + (z[1] - a[1]) * t0,
+                    3.,
+                    718.,
+                );
+                let color = rgb(mix(0x326b72, 0x609e93, current)).map(f64::from);
+                channel.colors.extend([color; 4]);
                 for side in [-1., 1.] {
                     // Small, partly buried shingle clusters break up the bare mud verge.
                     // Keep the bridge landings clear and omit steep ground where a pebble
@@ -158,20 +191,7 @@ pub(crate) fn build(
                 },
             });
         }
-        water.push(draw(
-            name,
-            channel,
-            if water_surface == content::UPPER_SURFACE {
-                0x3f86a0
-            } else {
-                0x397b7a
-            },
-            if water_surface == content::UPPER_SURFACE {
-                0.72
-            } else {
-                0.78
-            },
-        ));
+        water.push(draw(name, channel, 0xffffff, 0.88));
     }
     let level = metres(content::SURFACE) + 0.012;
     let mut fall = Geometry::default();
