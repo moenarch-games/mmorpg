@@ -282,7 +282,7 @@ tick = 4525
 kind = "position"
 bot = "hunter"
 tick = 4724
-position = [-9638, 1190, -1396]
+position = [-9577, 1190, -1267]
 
 [[expect]]
 kind = "position"

@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use mmorpg_core::greyhaven_vale::{self, SPAWN_GRID, area_at, units};
+use mmorpg_core::physics::{BodyId, RigidBody, Vec3i, World};
 use mmorpg_core::{
     AreaId, CreatureBehaviour, CreatureFamily, INTEREST_RADIUS_UNITS, MAX_PLAYERS_PER_ZONE,
     NpcRole, PropKind, ZoneCommand, ZoneId, ZoneSimulation,
@@ -271,17 +272,23 @@ fn spawns_populate_their_subzones() {
         let template = content.creature_template(spawn.template).unwrap();
         let area = area_at(spawn.position[0], spawn.position[1])
             .unwrap_or_else(|| panic!("spawn {} lies outside every area", spawn.id.get()));
-        // The whole wander area stays in the same subzone.
+        // Named rectangles are labels, while the lake and zone boundary own physical
+        // clearance. The relocated shore cuts through the old woodland's label bounds.
         for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
             let x = spawn.position[0] + dx * spawn.wander_radius;
             let z = spawn.position[1] + dz * spawn.wander_radius;
-            assert_eq!(
-                area_at(x, z).map(|area| area.id()),
-                Some(area.id()),
-                "spawn {} wanders out of {}",
-                spawn.id.get(),
-                area.name()
+            assert!(
+                greyhaven_vale::inside_walls(x, z),
+                "spawn {} wanders outside the zone",
+                spawn.id.get()
             );
+            if area.id() == greyhaven_vale::vale::WOLFRUN_WOODS {
+                assert!(
+                    !greyhaven_vale::lake::near_shore(x, z, 0),
+                    "spawn {} wanders into Stillwater",
+                    spawn.id.get()
+                );
+            }
         }
         *counts
             .entry((area.id(), template.name.as_str()))
@@ -394,6 +401,18 @@ fn npcs_stand_at_their_posts() {
             ("Greyhaven Guard", NpcRole::Guard, outpost),
             ("Greyhaven Guard", NpcRole::Guard, outpost),
             ("Greyhaven Guard", NpcRole::Guard, outpost),
+            ("Weaver Lysa Reed", NpcRole::Resident, outpost),
+            ("Carpenter Owen Alder", NpcRole::Resident, outpost),
+            ("Mara Wells", NpcRole::Resident, outpost),
+            ("Davin Moss", NpcRole::Resident, outpost),
+            ("Baker Anwen", NpcRole::Resident, outpost),
+            ("Miller Tomas", NpcRole::Resident, outpost),
+            ("Herbalist Nessa", NpcRole::Resident, outpost),
+            ("Peddler Rowan", NpcRole::Resident, outpost),
+            ("Fisher Ada", NpcRole::Resident, outpost),
+            ("Porter Ben", NpcRole::Resident, outpost),
+            ("Washer Elin", NpcRole::Resident, outpost),
+            ("Apprentice Finn", NpcRole::Resident, outpost),
         ]
     );
     let graveyard = content.graveyard();
@@ -412,6 +431,9 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
     let mut second = ZoneSimulation::with_content(ZoneId::new(1), content.clone()).unwrap();
     let start = first.snapshot().unwrap();
     assert_eq!(start.creatures.len(), content.creature_spawns().len());
+    let mut ground = World::new(Vec3i::ZERO);
+    ground.add_body(RigidBody::floor(BodyId(1), 0)).unwrap();
+    ground.set_terrain(BodyId(2), content.definition().terrain().unwrap().clone());
     for (creature, spawn) in start.creatures.iter().zip(content.creature_spawns()) {
         let template = content.creature_template(spawn.template).unwrap();
         assert_eq!(creature.creature_id, spawn.id);
@@ -425,24 +447,28 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
         }
         assert!((template.min_level..=template.max_level).contains(&creature.level));
         assert_eq!(creature.health, template.max_health(creature.level));
-        // Spawned on the ground, out on the hills too (#159): the physics heightfield triangles stay
-        // within 0.15 m of the analytic hills.
         let [x, y, z] = mmorpg_core::physics::to_units(creature.position);
         assert_eq!([x, z], spawn.position);
-        // In Stillwater Lake (#274) the basin's grid samples shape the ground; its steeper
-        // banks put the heightfield triangles up to 0.5 m from the bilinear samples.
-        let (ground, tolerance) = if greyhaven_vale::stillwater_lake().contains(x, z) {
-            (greyhaven_vale::terrain().height_at(x, z), 50)
-        } else if greyhaven_vale::cave::GREYFANG.flattens(x, z) {
-            // The Greyfang cavern's garrison (#160) stands on its flattened floor.
-            (greyhaven_vale::terrain().height_at(x, z), 15)
-        } else {
-            // Hills and Millbrook Farm's terrace (#423).
-            (greyhaven_vale::terrain().height_at(x, z), 15)
-        };
+        // Check the actual triangulated support under the capsule, including the hillside
+        // beneath its rounded base. Bilinear centre samples no longer bound the authored cliffs.
+        let origin = [x as f32, y as f32 + 1_000., z as f32];
+        let [hx, hy, hz] = template.half_extents;
+        let hit = ground
+            .cast_shape(origin, Vec3i::new(hx, hy, hz), [0., -2_000., 0.], |id| {
+                id == BodyId(2)
+                    || (id == BodyId(1)
+                        && content
+                            .definition()
+                            .terrain()
+                            .unwrap()
+                            .low_within(x, z, hx.max(hz) + 1)
+                            >= 0)
+            })
+            .expect("terrain supports each spawn");
+        let supported_y = origin[1] - 2_000. * hit.fraction;
         assert!(
-            (y - ground - template.half_extents[1]).abs() <= tolerance,
-            "{:?} at {y} on {ground}",
+            (y as f32 - supported_y).abs() <= 15.,
+            "{:?} at {y}, capsule support at {supported_y}",
             spawn.id
         );
     }
