@@ -21,7 +21,7 @@
 	"materials":[
 		{
 			"doubleSided":true,
-			"name":"Greyhaven weathered-masonry.023",
+			"name":"Greyhaven weathered-masonry.024",
 			"normalTexture":{
 				"index":0
 			},
@@ -35,7 +35,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven limestone dressings.023",
+			"name":"Greyhaven limestone dressings.024",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.4300000071525574,
@@ -49,7 +49,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven slate.023",
+			"name":"Greyhaven slate.024",
 			"normalTexture":{
 				"index":2
 			},
@@ -63,7 +63,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven deep window recess.023",
+			"name":"Greyhaven deep window recess.024",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.017999999225139618,
@@ -77,7 +77,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven forged iron.023",
+			"name":"Greyhaven forged iron.024",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.054999999701976776,
@@ -91,7 +91,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven weathered-oak.023",
+			"name":"Greyhaven weathered-oak.024",
 			"normalTexture":{
 				"index":4
 			},
@@ -105,7 +105,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven indigo linen.023",
+			"name":"Greyhaven indigo linen.024",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.03500000014901161,
@@ -119,7 +119,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven ochre heraldry.023",
+			"name":"Greyhaven ochre heraldry.024",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.6000000238418579,
@@ -133,7 +133,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven well hemp.006",
+			"name":"Greyhaven well hemp.007",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.30000001192092896,
@@ -147,7 +147,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven barn-oxblood.018",
+			"name":"Greyhaven barn-oxblood.019",
 			"normalTexture":{
 				"index":6
 			},
@@ -161,7 +161,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven lime-plaster.017",
+			"name":"Greyhaven lime-plaster.018",
 			"normalTexture":{
 				"index":8
 			},
@@ -175,7 +175,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven farm warm glass.017",
+			"name":"Greyhaven farm warm glass.018",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.20000000298023224,
@@ -189,7 +189,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven weathered-canvas.014",
+			"name":"Greyhaven weathered-canvas.015",
 			"normalTexture":{
 				"index":10
 			},
@@ -203,7 +203,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven canvas binding.014",
+			"name":"Greyhaven canvas binding.015",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.2800000011920929,
@@ -217,7 +217,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven fern shadow leaf.003",
+			"name":"Greyhaven fern shadow leaf.004",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.054999999701976776,
@@ -231,7 +231,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven fern green leaf.003",
+			"name":"Greyhaven fern green leaf.004",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.08500000089406967,
@@ -245,7 +245,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven fern young leaf.003",
+			"name":"Greyhaven fern young leaf.004",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.11999999731779099,
@@ -256,11 +256,53 @@
 				"metallicFactor":0,
 				"roughnessFactor":0.8799999952316284
 			}
+		},
+		{
+			"doubleSided":true,
+			"name":"Greyhaven meadow grass green",
+			"pbrMetallicRoughness":{
+				"baseColorFactor":[
+					0.12999999523162842,
+					0.1899999976158142,
+					0.054999999701976776,
+					1
+				],
+				"metallicFactor":0,
+				"roughnessFactor":0.9399999976158142
+			}
+		},
+		{
+			"doubleSided":true,
+			"name":"Greyhaven meadow grass light",
+			"pbrMetallicRoughness":{
+				"baseColorFactor":[
+					0.17000000178813934,
+					0.23999999463558197,
+					0.07500000298023224,
+					1
+				],
+				"metallicFactor":0,
+				"roughnessFactor":0.9399999976158142
+			}
+		},
+		{
+			"doubleSided":true,
+			"name":"Greyhaven meadow grass dry tips",
+			"pbrMetallicRoughness":{
+				"baseColorFactor":[
+					0.1899999976158142,
+					0.20999999344348907,
+					0.07999999821186066,
+					1
+				],
+				"metallicFactor":0,
+				"roughnessFactor":0.9399999976158142
+			}
 		}
 	],
 	"meshes":[
 		{
-			"name":"Keep ashlar hall.023",
+			"name":"Keep ashlar hall.024",
 			"primitives":[
 				{
 					"attributes":{
@@ -414,6 +456,33 @@
 					},
 					"indices":67,
 					"material":16
+				},
+				{
+					"attributes":{
+						"POSITION":68,
+						"NORMAL":69,
+						"TEXCOORD_0":70
+					},
+					"indices":71,
+					"material":17
+				},
+				{
+					"attributes":{
+						"POSITION":72,
+						"NORMAL":73,
+						"TEXCOORD_0":74
+					},
+					"indices":75,
+					"material":18
+				},
+				{
+					"attributes":{
+						"POSITION":76,
+						"NORMAL":77,
+						"TEXCOORD_0":78
+					},
+					"indices":79,
+					"material":19
 				}
 			]
 		}
@@ -1108,6 +1177,108 @@
 			"componentType":5123,
 			"count":10080,
 			"type":"SCALAR"
+		},
+		{
+			"bufferView":68,
+			"componentType":5126,
+			"count":10176,
+			"max":[
+				29.98521614074707,
+				0.3231717348098755,
+				43.1668586730957
+			],
+			"min":[
+				-18.478437423706055,
+				-0.23199999332427979,
+				27.19931411743164
+			],
+			"type":"VEC3"
+		},
+		{
+			"bufferView":69,
+			"componentType":5126,
+			"count":10176,
+			"type":"VEC3"
+		},
+		{
+			"bufferView":70,
+			"componentType":5126,
+			"count":10176,
+			"type":"VEC2"
+		},
+		{
+			"bufferView":71,
+			"componentType":5123,
+			"count":15264,
+			"type":"SCALAR"
+		},
+		{
+			"bufferView":72,
+			"componentType":5126,
+			"count":10176,
+			"max":[
+				29.901880264282227,
+				0.3253805339336395,
+				43.21110153198242
+			],
+			"min":[
+				-18.520103454589844,
+				-0.23199999332427979,
+				27.240802764892578
+			],
+			"type":"VEC3"
+		},
+		{
+			"bufferView":73,
+			"componentType":5126,
+			"count":10176,
+			"type":"VEC3"
+		},
+		{
+			"bufferView":74,
+			"componentType":5126,
+			"count":10176,
+			"type":"VEC2"
+		},
+		{
+			"bufferView":75,
+			"componentType":5123,
+			"count":15264,
+			"type":"SCALAR"
+		},
+		{
+			"bufferView":76,
+			"componentType":5126,
+			"count":10176,
+			"max":[
+				29.99245834350586,
+				0.3242509961128235,
+				43.164283752441406
+			],
+			"min":[
+				-18.51152229309082,
+				-0.23199999332427979,
+				27.308313369750977
+			],
+			"type":"VEC3"
+		},
+		{
+			"bufferView":77,
+			"componentType":5126,
+			"count":10176,
+			"type":"VEC3"
+		},
+		{
+			"bufferView":78,
+			"componentType":5126,
+			"count":10176,
+			"type":"VEC2"
+		},
+		{
+			"bufferView":79,
+			"componentType":5123,
+			"count":15264,
+			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
@@ -1518,6 +1689,78 @@
 			"byteLength":20160,
 			"byteOffset":6429608,
 			"target":34963
+		},
+		{
+			"buffer":0,
+			"byteLength":122112,
+			"byteOffset":6449768,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":122112,
+			"byteOffset":6571880,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":81408,
+			"byteOffset":6693992,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":30528,
+			"byteOffset":6775400,
+			"target":34963
+		},
+		{
+			"buffer":0,
+			"byteLength":122112,
+			"byteOffset":6805928,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":122112,
+			"byteOffset":6928040,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":81408,
+			"byteOffset":7050152,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":30528,
+			"byteOffset":7131560,
+			"target":34963
+		},
+		{
+			"buffer":0,
+			"byteLength":122112,
+			"byteOffset":7162088,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":122112,
+			"byteOffset":7284200,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":81408,
+			"byteOffset":7406312,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":30528,
+			"byteOffset":7487720,
+			"target":34963
 		}
 	],
 	"samplers":[
@@ -1528,7 +1771,7 @@
 	],
 	"buffers":[
 		{
-			"byteLength":6449768,
+			"byteLength":7518248,
 			"uri":"settlement.bin"
 		}
 	]

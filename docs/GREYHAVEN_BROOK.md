@@ -662,3 +662,30 @@ layers loaded and no page errors. The final view is
 the renderer's opaque water-shadow behaviour remains. Full suites and native GPU
 acceptance were not run. Convention source revision remains
 `625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+
+### Cottage and brook ground cover
+
+The settlement Blender source now contains a reusable `grass_clump` model: nine
+curved blades with folded centres, muted green and dry-tip material variants, and
+opaque two-sided leaf surfaces. It adds 106 clumps in nine small authored patches
+beside the cottages and brook. The explicit game-space anchors were sampled from
+the existing WASM `surfaceY` export at content revision `5606192899733454897`, with
+roots 3.5 cm below that surface. Existing road and structure footprints were given
+30/35 cm clearance margins when choosing the anchors. If these local ground heights
+or buildings change, revisit the anchors in `GROUND_COVER` in the Blender source.
+
+These are ordinary passable foliage in the existing settlement glTF, not a new
+scatter/cache/vegetation framework. The frozen Outpost grass package and its
+provenance remain unchanged. The export has 20 material primitives and the same 13
+resources (the existing textures plus the geometry buffer); no new texture package
+or collision geometry is introduced. The authoritative content revision remains
+`5606192899733454897` and protocol/canonical layouts are unchanged. The current live
+Blender world contains the new clumps.
+
+The native live-bundle import check and browser/WASM production build passed.
+Full suites and native GPU acceptance were not run. Convention source revision:
+`625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+The requested fresh in-game close-up is
+`artifacts/greyhaven-brook/latest-brook-ground-cover.png`, captured after the bridge
+crossing with all seven terrain layers and no page errors. The clumps' spacing is
+still fairly regular; loosening those groupings remains part of the art pass.
