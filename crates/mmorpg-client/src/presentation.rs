@@ -708,9 +708,11 @@ impl Presentation {
                 let hour = u64::from(mmorpg_core::HOUR_TICKS);
                 tick -= (tick + u64::from(mmorpg_core::ZONE_START_TIME)) % hour;
             }
+            let interior = frame.lighting.interior;
             let lights = std::mem::take(&mut frame.lighting.point_lights);
             frame.lighting = crate::world::Lighting::at(crate::environment::zone_hour(tick));
             frame.lighting.point_lights = lights;
+            frame.lighting.interior = interior;
         }
         frame.draws.extend(self.unit_draws(now, view));
         self.append_buildings(&mut frame.draws, now);

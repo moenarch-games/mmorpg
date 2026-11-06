@@ -4,9 +4,9 @@
 //! a **near** level, the textured ground of #525 (the opaque grass base and its masked overlays
 //! over the tile's cells, built on demand by [`Tiles::near`]), and a **far** level built once
 //! for every tile: the relief at every second grid sample, its vertex colours the ground
-//! layers, roads, the plaza and the fields baked by their weights ([`Ground::far`]: flat,
-//! untextured, so distant ground neither samples textures nor shows their repeats). The far
-//! levels together are the coarse terrain that is always resident; merged into chunks
+//! layers, roads, the plaza and the fields baked by their weights. Gentle ground stays flat
+//! and untextured; steep faces share the existing rock material and face-aligned UVs so the
+//! enclosing cliffs retain their detail from the village. The far levels together are the coarse terrain that is always resident; merged into chunks
 //! ([`Tiles::far_cover`]) they cost a few dozen draws.
 //!
 //! Every level hangs a skirt below each tile edge, as deep as the coarse edge strays from the
@@ -129,7 +129,7 @@ impl Tiles {
         // The road and patch overlays, cut into tiles by their triangles' centres.
         let mut extras = Layers::new();
         if let Some(plaza) = terrain::bounds(g, "plaza") {
-            ground::patch(&mut extras, g, Layer::Path, 0xa8987a, plaza, 1.2);
+            ground::patch(&mut extras, g, Layer::Path, 0x8e7e61, plaza, 1.2);
         }
         for field in s.farmland() {
             let field = (field.min.map(metres), field.max.map(metres));
@@ -440,7 +440,8 @@ impl Tiles {
     }
 
     /// Tile `index`'s far level: the relief every [`FAR_STRIDE`] samples with the ground layers,
-    /// roads and patches baked into its vertex colours, with skirts, drawn flat.
+    /// roads and patches baked into its vertex colours, with skirts. Steep faces retain
+    /// the rock material on these same coarse triangles; the remaining ground draws flat.
     fn far(&self, index: usize) -> Vec<Draw> {
         let tile = &self.tiles[index];
         let g = &self.grid;
@@ -480,11 +481,37 @@ impl Tiles {
             }
         }
         let across = columns.len() as u32;
+        let mut rock = Geometry::default();
         for r in 0..rows.len() as u32 - 1 {
             for c in 0..across - 1 {
                 let a = r * across + c;
-                out.indices
-                    .extend([a, a + across, a + 1, a + 1, a + across, a + across + 1]);
+                for tri in [[a, a + across, a + 1], [a + 1, a + across, a + across + 1]] {
+                    let points = tri.map(|i| out.p[i as usize]);
+                    let [p, q, r] = points;
+                    let u: V = std::array::from_fn(|i| q[i] - p[i]);
+                    let v: V = std::array::from_fn(|i| r[i] - p[i]);
+                    let up = norm([
+                        u[1] * v[2] - u[2] * v[1],
+                        u[2] * v[0] - u[0] * v[2],
+                        u[0] * v[1] - u[1] * v[0],
+                    ])[1];
+                    // The near terrain already assigns rock to these steep shoulders.
+                    // Keep PR #642's rock PBR material on the coarse level as well, or
+                    // the same cliff turns back into a smooth green-grey slope at range.
+                    if up < 0.80 {
+                        // Split only the material ownership of the original coarse face.
+                        // Per-face vertices keep its rock projection from stretching over
+                        // a near-vertical wall; they introduce no new terrain samples.
+                        ground::coarse_rock_face(
+                            &mut rock,
+                            points,
+                            tri.map(|i| out.n[i as usize]),
+                            tri.map(|i| out.colors[i as usize]),
+                        );
+                    } else {
+                        out.indices.extend(tri);
+                    }
+                }
             }
         }
         skirts(&mut out, g, tile.cells, FAR_STRIDE, tile.skirt, &[], &color);
@@ -493,7 +520,18 @@ impl Tiles {
             overlay: false,
             far: true,
         };
-        vec![self.draw(index, &base.name(), Arc::new(out), base)]
+        let mut draws = vec![self.draw(index, &base.name(), Arc::new(out), base)];
+        if !rock.indices.is_empty() {
+            // Material detail is independent of tile residency. Coarse rock retains colour
+            // and roughness while omitting small-scale normal/occlusion detail.
+            let textured = Ground {
+                layer: Layer::Rock,
+                overlay: false,
+                far: true,
+            };
+            draws.push(self.draw(index, "coarse-rock", Arc::new(rock), textured));
+        }
+        draws
     }
 }
 
@@ -533,7 +571,7 @@ fn worn(s: &Scenery, g: &TerrainGrid) -> Vec<(f64, u32)> {
     let grow = |lo: [f64; 2], hi: [f64; 2], by: f64| (lo.map(|v| v - by), hi.map(|v| v + by));
     if let Some((lo, hi)) = terrain::bounds(g, "plaza") {
         let (glo, ghi) = grow(lo, hi, WORN_FADE_METRES);
-        paint(glo, ghi, 0xa8987a, &|x, z| fade(0., rect(lo, hi)(x, z)));
+        paint(glo, ghi, 0x8e7e61, &|x, z| fade(0., rect(lo, hi)(x, z)));
     }
     for field in s.farmland() {
         let (lo, hi) = (field.min.map(metres), field.max.map(metres));
@@ -547,7 +585,7 @@ fn worn(s: &Scenery, g: &TerrainGrid) -> Vec<(f64, u32)> {
             let reach = width + WORN_FADE_METRES;
             let lo = [a[0].min(b[0]) - reach, a[1].min(b[1]) - reach];
             let hi = [a[0].max(b[0]) + reach, a[1].max(b[1]) + reach];
-            paint(lo, hi, 0xa4865c, &|x, z| {
+            paint(lo, hi, 0x827154, &|x, z| {
                 let (dx, dz) = (b[0] - a[0], b[1] - a[1]);
                 let length = dx * dx + dz * dz;
                 let t = if length == 0. {
@@ -555,7 +593,10 @@ fn worn(s: &Scenery, g: &TerrainGrid) -> Vec<(f64, u32)> {
                 } else {
                     (((x - a[0]) * dx + (z - a[1]) * dz) / length).clamp(0., 1.)
                 };
-                fade(width, (x - a[0] - t * dx).hypot(z - a[1] - t * dz))
+                fade(
+                    ground::path_width(s, width, x, z),
+                    (x - a[0] - t * dx).hypot(z - a[1] - t * dz),
+                )
             });
         }
     }

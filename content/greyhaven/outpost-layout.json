@@ -1,7 +1,29 @@
 {
   "version": 1,
   "generator": "greyhaven-15",
-  "collision": [],
+  "collision": [
+    {
+      "id": 60000,
+      "position": [
+        -2400,
+        1400
+      ]
+    },
+    {
+      "id": 60001,
+      "position": [
+        2400,
+        1400
+      ]
+    },
+    {
+      "id": 60002,
+      "position": [
+        1300,
+        4500
+      ]
+    }
+  ],
   "decoration": [
     {
       "id": "outpost-lamp-1",
@@ -36,6 +58,42 @@
       "position": [
         1800,
         3000
+      ],
+      "yaw": 0
+    },
+    {
+      "id": "cottage-flowers-0",
+      "kind": "flowers",
+      "position": [
+        -2700,
+        1750
+      ],
+      "yaw": 0
+    },
+    {
+      "id": "cottage-flowers-1",
+      "kind": "flowers",
+      "position": [
+        -2500,
+        1750
+      ],
+      "yaw": 0
+    },
+    {
+      "id": "cottage-flowers-2",
+      "kind": "flowers",
+      "position": [
+        2500,
+        1750
+      ],
+      "yaw": 0
+    },
+    {
+      "id": "cottage-flowers-3",
+      "kind": "flowers",
+      "position": [
+        2700,
+        1750
       ],
       "yaw": 0
     }

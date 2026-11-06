@@ -356,7 +356,7 @@ impl Biome {
             Self::Meadow => [92, 132, 62],
             Self::Hub => [104, 128, 68],
             Self::Woods => [62, 80, 44],
-            Self::Hollow => [122, 104, 84],
+            Self::Hollow => [102, 115, 72],
             Self::Farmland => [112, 84, 54],
             Self::Road => ROAD_COLOR,
             Self::Plaza => PLAZA_COLOR,
@@ -447,6 +447,8 @@ impl TerrainGrid {
 pub struct Scenery {
     pub content_revision: u64,
     pub props: Vec<Prop>,
+    /// Simplified presentation fallback for authored surfaces without detailed art.
+    pub collision_surfaces: Vec<mmorpg_core::StaticMesh>,
     pub roads: Vec<Road>,
     pub water: Vec<Water>,
     /// XZ rectangles (units) the drawn terrain leaves open: the footprints of platforms that
@@ -473,6 +475,7 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
     let id = collider.id;
     let kind = match id {
         ids::KEEP => PropKind::Keep,
+        _ if greyhaven_vale::fort::TOWER_BODIES.contains(&id) => PropKind::Keep,
         ids::INN => PropKind::Inn,
         // The smithy and house 105 are drawn by asset-tooling's Outpost kit (#420) at
         // [`outpost_kit::placements`], their blockouts only while the kit is not drawn.
@@ -483,7 +486,9 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
         ids::FARMHOUSE => PropKind::Farmhouse,
         ids::WINDMILL => PropKind::Windmill,
         ids::MINE_ENTRANCE => PropKind::MineEntrance,
-        ids::CAMPFIRE => PropKind::Campfire,
+        ids::CAMPFIRE | greyhaven_vale::fort::REDBRAND_FIRE => PropKind::Campfire,
+        _ if greyhaven_vale::fort::REDBRAND_PALISADES.contains(&id) => PropKind::PalisadeSegment,
+        _ if greyhaven_vale::fort::REDBRAND_SHELTERS.contains(&id) => PropKind::Tent,
         _ if ids::HOUSES.contains(&id) || (60_000..65_000).contains(&id) => PropKind::House,
         _ if ids::PALISADE.contains(&id) => PropKind::PalisadeSegment,
         _ if ids::GATE_POSTS.contains(&id) => PropKind::GatePost,
@@ -684,8 +689,8 @@ fn area_bounds(id: AreaId) -> XzBounds {
 
 fn tree_variant(hash: u64) -> TreeVariant {
     match hash % 10 {
-        0..=4 => TreeVariant::Oak,
-        5..=7 => TreeVariant::Pine,
+        0..=3 => TreeVariant::Oak,
+        4..=8 => TreeVariant::Pine,
         _ => TreeVariant::Birch,
     }
 }
@@ -858,6 +863,7 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
     let mut scenery = Scenery {
         content_revision: content.revision(),
         props: Vec::new(),
+        collision_surfaces: definition.static_meshes().to_vec(),
         roads,
         water,
         terrain_holes: Vec::new(),
@@ -898,6 +904,7 @@ impl Scenery {
         Self {
             content_revision,
             props: Vec::new(),
+            collision_surfaces: Vec::new(),
             roads: Vec::new(),
             water: Vec::new(),
             terrain_holes: Vec::new(),
@@ -996,6 +1003,12 @@ impl Scenery {
     /// ground ([`Scenery::ground_at`]); units are drawn raised by it.
     #[must_use]
     pub fn height_at(&self, x: i32, z: i32) -> i32 {
+        if self.greyhaven
+            && (greyhaven_vale::brook::wet_ground(x, z)
+                || (-3500..=3500).contains(&x) && (-1200..=5400).contains(&z))
+        {
+            return 0;
+        }
         if self.authored_outpost_relief
             && let Some(height) = outpost_relief::height_at(x, z)
         {
@@ -1168,7 +1181,7 @@ impl Scenery {
         if self.road_distance(point) <= 0 {
             return Biome::Road;
         }
-        if SPAWN_PLAZA.contains(x, z) {
+        if SPAWN_PLAZA.contains(x, z) && (-800..=800).contains(&x) && (1600..=2400).contains(&z) {
             return Biome::Plaza;
         }
         // Bare rock on cliff faces too steep to walk (#423), such as the farm terrace's.
@@ -1584,7 +1597,7 @@ impl Placer<'_> {
         // Background forest on the mountain slopes beyond the walls, round the Vale and the
         // farmland (#424).
         let mut placed = 0;
-        for _ in 0..6_000 {
+        for _ in 0..12_000 {
             if placed == 700 {
                 break;
             }
@@ -1599,17 +1612,55 @@ impl Placer<'_> {
             };
             let yaw = u16::try_from(rng.next_u64() % 65_536).unwrap_or(0);
             let scale = u16::try_from(rng.range(800, 1_500)).unwrap_or(1_000);
+            // Background foliage has no body. Keep its roots on supported drawn
+            // ground, including the presentation relief beyond the playable boundary.
+            let heights = [(0, 0), (-200, 0), (200, 0), (0, -200), (0, 200)]
+                .map(|(dx, dz)| self.scenery.surface_at(at[0] + dx, at[1] + dz));
+            let supported = heights.into_iter().max().unwrap_or(0)
+                - heights.into_iter().min().unwrap_or(0)
+                <= 300;
             if beyond_playable(at[0], at[1]) >= 400
+                && supported
                 && self.scenery.height_at(at[0], at[1]) < 2_600
                 && self.place(PropKind::Tree(variant), at, yaw, scale, Ground::Shore)
             {
                 placed += 1;
             }
         }
+        self.ridge_scrub();
+        self.hollow_scrub();
         self.outer_decorations();
         self.farmland_decorations();
         self.highland_decorations();
         self.marsh_decorations();
+    }
+
+    /// Patches of low scrub soften the rocky basin shoulders. This independent seed leaves
+    /// existing scatter stable; bushes are foliage and never introduce solid client bodies.
+    fn ridge_scrub(&mut self) {
+        let mut rng = Rng::new(0x513_5c2b);
+        let scenery = self.scenery;
+        self.scatter(&mut rng, 180, 2400, |rng| {
+            let at = [rng.range(-8500, 8500), rng.range(-9000, 11000)];
+            let h = scenery.ground_at(at[0], at[1]);
+            let away_from_village = at[0].abs() > 3700 || at[1] < -2000 || at[1] > 5800;
+            let patch =
+                ((at[0].div_euclid(1800) * 31 + at[1].div_euclid(1800) * 17).rem_euclid(7)) < 4;
+            (away_from_village && (300..2600).contains(&h) && patch).then_some((PropKind::Bush, at))
+        });
+    }
+
+    /// Low scrub at the camp's edges, clear of its central lane and tent approaches.
+    fn hollow_scrub(&mut self) {
+        let mut rng = Rng::new(0x0051_3ca0);
+        self.scatter(&mut rng, 18, 600, |rng| {
+            let at: [i32; 2] = [rng.range(-2000, 2000), rng.range(-10400, -7900)];
+            (at[0].abs() > 700
+                && [-9750, -9450, -8450]
+                    .into_iter()
+                    .all(|z| (at[1] - z).abs() > 220))
+            .then_some((PropKind::Bush, at))
+        });
     }
 
     /// Reeds round every marsh water, partly standing in it, and tussock grass, scrub and

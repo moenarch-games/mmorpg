@@ -3,9 +3,8 @@
 //! Redbrand raiders stand up at three outskirts staging lines out of the farmyard's sight. The
 //! north line is on the Stillwater Rim Trail, the east line is in the open rim east of the farm,
 //! and the south-east line is beyond the field fence's corner. From there they walk to the barn's
-//! west and east walls. Survivors withdraw along the roads. They take the Rim Trail to the lake's
-//! south shore, go round to the top of the Lakeshore Climb, down its ledge to the valley floor's
-//! northern notch, up the Hollow Climb, and on to Redbrand Hollow's camp.
+//! west and east walls. Survivors withdraw down the Millbrook Climb to the valley floor,
+//! pass through the Outpost's central gates, then follow the Hollow Climb to Redbrand's camp.
 
 use crate::content::CreatureSpawn;
 use crate::{AidKind, AidTask, CreatureId, NpcId, RaidApproach, RaidSite};
@@ -46,13 +45,13 @@ const APPROACHES: [ApproachRow; 3] = [
 #[rustfmt::skip]
 const RETREAT: [[i32; 2]; 14] = [
     [6_400, 3_000],
-    [6_400, -2_400],
-    [5_600, -3_600],
-    [3_400, -3_200],
-    [2_600, -3_200],
-    [2_600, -6_200],
-    [1_400, -6_200],
-    [1_400, -2_800],
+    [5_400, 1_400],
+    [5_400, -1_800],
+    [4_200, -1_800],
+    [4_200, 2_400],
+    [3_400, 2_400],
+    [3_400, 2_000],
+    [0, 2_000],
     [0, -2_800],
     [0, -6_200],
     [-3_600, -6_200],

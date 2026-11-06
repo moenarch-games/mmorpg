@@ -414,7 +414,7 @@ checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 [[package]]
 name = "bvh-kernels"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-kernels?rev=1e2889c7df82a575c2151052a0e0546c74ff62bd#1e2889c7df82a575c2151052a0e0546c74ff62bd"
+source = "git+https://github.com/moritzbrantner/rust-kernels?rev=140de73282c78ae3aeb2339d71aece7919ae2ae9#140de73282c78ae3aeb2339d71aece7919ae2ae9"
 dependencies = [
  "spatial-kernels",
 ]
@@ -1327,7 +1327,7 @@ dependencies = [
 [[package]]
 name = "geometry-kernels"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-kernels?rev=1e2889c7df82a575c2151052a0e0546c74ff62bd#1e2889c7df82a575c2151052a0e0546c74ff62bd"
+source = "git+https://github.com/moritzbrantner/rust-kernels?rev=140de73282c78ae3aeb2339d71aece7919ae2ae9#140de73282c78ae3aeb2339d71aece7919ae2ae9"
 dependencies = [
  "spatial-kernels",
 ]
@@ -3378,7 +3378,7 @@ dependencies = [
 [[package]]
 name = "physics-engine"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/physics-engine?rev=7af1ac43cf63437ba61e543aa4188b36673d5b9f#7af1ac43cf63437ba61e543aa4188b36673d5b9f"
+source = "git+https://github.com/moritzbrantner/physics-engine?rev=364d0b3b9989cf24add56174def67d3963cef3ea#364d0b3b9989cf24add56174def67d3963cef3ea"
 dependencies = [
  "bvh-kernels",
  "geometry-kernels",
@@ -4438,7 +4438,7 @@ dependencies = [
 [[package]]
 name = "spatial-kernels"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-kernels?rev=1e2889c7df82a575c2151052a0e0546c74ff62bd#1e2889c7df82a575c2151052a0e0546c74ff62bd"
+source = "git+https://github.com/moritzbrantner/rust-kernels?rev=140de73282c78ae3aeb2339d71aece7919ae2ae9#140de73282c78ae3aeb2339d71aece7919ae2ae9"
 
 [[package]]
 name = "spin"
@@ -4908,9 +4908,9 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "1.1.8+spec-1.1.0"
+version = "1.2.0+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20489e00e4d8741d6be680764cc12e270655e375a20d1011e844a9c3379e678d"
+checksum = "c5ffcdf8f50436dbbfd675c1fe1b8e0854f42b7defea8584bdebe1aee900e561"
 dependencies = [
  "indexmap",
  "serde_core",
@@ -4953,9 +4953,9 @@ dependencies = [
 
 [[package]]
 name = "toml_writer"
-version = "1.1.3+spec-1.1.0"
+version = "1.2.0+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06bdbd8cfc056b8d2e2e85f29b56a3bdbecb527cef81eb39e3e7b98af4652770"
+checksum = "009dbb7700f11c55ef83aebbe4c0e9cf1f1ac0844bd8d6f00dc38f302026e13a"
 
 [[package]]
 name = "tower"

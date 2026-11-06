@@ -99,8 +99,8 @@ pub use content::{
     LARGE_CREATURE_HALF_WIDTH_UNITS, MAX_CONTENT_COORDINATE_UNITS, MAX_CREATURE_HALF_EXTENT_UNITS,
     MAX_CREATURE_SPAWNS, MAX_CREATURE_TEMPLATES, MAX_NPCS, MAX_STATIC_COLLIDERS,
     MAX_TERRAIN_HEIGHT_UNITS, MAX_UNIT_NAME_BYTES, MAX_WANDER_RADIUS_UNITS, Npc, NpcRole,
-    PlayerCombatPolicy, PropKind, SpawnGrid, StaticCollider, Terrain, UNITS_PER_METRE, XzBounds,
-    ZoneContent, ZoneDefinition,
+    PlayerCombatPolicy, PropKind, SpawnGrid, StaticCollider, StaticMesh, Terrain, UNITS_PER_METRE,
+    XzBounds, ZoneContent, ZoneDefinition,
 };
 pub use corpse_loot::{LOOT_REACH_UNITS, LootClaim, LootView};
 pub use corridor::{CORRIDOR_TURN_BACK_UNITS, Departure, HandoffCorridor, MAX_HANDOFF_CORRIDORS};
@@ -195,7 +195,7 @@ pub use vendor::{
     MAX_VENDOR_OFFERS, VENDOR_REACH_UNITS, VendorOffer, VendorStock, VendorStockError,
     VendorTradeError, sell_price, settle_purchase, settle_sale, starter_vendor_stock,
 };
-pub use water::{AirPocket, Breath, WaterMode, WaterVolume};
+pub use water::{AirPocket, Breath, WaterChannel, WaterMode, WaterVolume};
 pub use waystone::{
     GREYHAVEN_OUTPOST, GREYHAVEN_ZONE, MAX_WAYSTONES, SEAM_TEST_EAST, SEAM_TEST_WEST,
     WAYSTONE_DISCOVERY_UNITS, WAYSTONES, WaystoneId, WaystoneSet, WaystoneSite, waystone,

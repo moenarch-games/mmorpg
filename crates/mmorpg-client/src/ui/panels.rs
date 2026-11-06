@@ -327,6 +327,9 @@ impl GameUi {
                             }
                         }
                     }
+                    NpcRole::Resident => {
+                        ui.label(format!("{} is a resident of Greyhaven.", npc.name));
+                    }
                     NpcRole::Guard | NpcRole::SpiritHealer => {
                         ui.label(format!("{} has nothing to offer.", npc.name));
                     }

@@ -1314,6 +1314,14 @@ impl ZoneContent {
             hash.i32s(&water.centre);
             hash.i32s(&water.radii);
             hash.i32(water.surface);
+            if let Some(channel) = &water.channel {
+                hash.bytes(b"channel");
+                hash.i32(channel.half_width);
+                hash.len(channel.points.len());
+                for point in &channel.points {
+                    hash.i32s(point);
+                }
+            }
             hash.len(water.air_pockets.len());
             for pocket in &water.air_pockets {
                 hash.i32s(&pocket.min);
@@ -1667,6 +1675,24 @@ impl ZoneContent {
             hash.i32s(&collider.position);
             hash.i32s(&collider.half_extents);
         }
+        if !definition.static_meshes().is_empty() {
+            hash.bytes(b"static-meshes");
+            hash.len(definition.static_meshes().len());
+            for mesh in definition.static_meshes() {
+                hash.u32(mesh.id);
+                hash.i32s(&mesh.position);
+                hash.len(mesh.vertices.len());
+                for vertex in &mesh.vertices {
+                    hash.i32s(vertex);
+                }
+                hash.len(mesh.triangles.len());
+                for triangle in &mesh.triangles {
+                    for index in triangle {
+                        hash.u32(*index);
+                    }
+                }
+            }
+        }
         if let Some(terrain) = definition.terrain() {
             hash.bytes(b"terrain");
             hash.i32s(&terrain.origin);
@@ -1727,6 +1753,7 @@ impl ZoneContent {
                 super::units::NpcRole::Vendor => 2,
                 super::units::NpcRole::SpiritHealer => 3,
                 super::units::NpcRole::Guard => 4,
+                super::units::NpcRole::Resident => 5,
             });
             hash.u8(npc.level);
             hash.i32s(&npc.position);

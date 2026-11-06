@@ -180,11 +180,11 @@ const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 75] = {
         // Wolfrun Woods: timber wolves on trunk-grid corners. Wolf 108 guards
         // the den clearing where the Wolfrun Trail ends; the others keep
         // more than 12 m from the trail and from it.
-        (100, TIMBER_WOLF, [-10_250, -3_600], 0),
+        (100, TIMBER_WOLF, [-10_250, -2_700], 0),
         (101, TIMBER_WOLF, [-9_350, -3_150], 8_192),
-        (102, TIMBER_WOLF, [-8_000, -3_600], 16_384),
+        (102, TIMBER_WOLF, [-8_000, -2_700], 16_384),
         (103, TIMBER_WOLF, [-6_650, -3_150], 24_576),
-        (104, TIMBER_WOLF, [-6_200, -3_600], 32_768),
+        (104, TIMBER_WOLF, [-6_200, -2_700], 32_768),
         (105, TIMBER_WOLF, [-10_700, -1_800], 40_960),
         (106, TIMBER_WOLF, [-9_350, -1_350], 49_152),
         (107, TIMBER_WOLF, [-8_000, -1_800], 57_344),
@@ -227,7 +227,7 @@ const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 75] = {
         (303, MIREFIN_LURKER, [7_040, -4_470], 49_152),
         (304, MIREFIN_LURKER, [7_190, -6_400], 57_344),
         (305, MIREFIN_LURKER, [5_850, -7_000], 0),
-        (306, MIREFIN_LURKER, [4_200, -6_650], 8_192),
+        (306, MIREFIN_LURKER, [3_800, -5_800], 8_192),
         (307, MIREFIN_LURKER, [6_500, -6_830], 24_576),
         // Redbrand Hollow: the bandit camp between the cliffs.
         (400, REDBRAND_BANDIT, [-1_000, -8_200], 0),
@@ -278,7 +278,7 @@ const GUARD: &str = "Greyhaven Guard";
 type NpcRow = (u32, &'static str, NpcRole, u8, [i32; 2], u16);
 
 #[rustfmt::skip]
-const NPCS: [NpcRow; 9] = [
+const NPCS: [NpcRow; 21] = [
     (1, "Marshal Elden Greywatch", NpcRole::QuestGiver, 10, [-2_200, 900], 0),
     (2, "Tanner Hilda Brook", NpcRole::QuestGiver, 5, [-2_400, 3_150], 32_768),
     // Inside the inn, behind its bar, facing the room (#158).
@@ -292,6 +292,19 @@ const NPCS: [NpcRow; 9] = [
     (8, GUARD, NpcRole::Guard, 10, [-2_900, 1_500], 49_152),
     // The east guard stands a metre south of the market square's front crate (#577).
     (9, GUARD, NpcRole::Guard, 10, [2_900, 2_600], 16_384),
+    (10,"Weaver Lysa Reed",NpcRole::Resident,2,[-2100,1850],0),
+    (11,"Carpenter Owen Alder",NpcRole::Resident,3,[2150,1850],0),
+    (12,"Mara Wells",NpcRole::Resident,2,[700,4000],32768),
+    (13,"Davin Moss",NpcRole::Resident,2,[-1000,2900],0),
+    // Small conversations and stall customers at the edges of the clear spawn square.
+    (14,"Baker Anwen",NpcRole::Resident,3,[1900,2800],16384),
+    (15,"Miller Tomas",NpcRole::Resident,3,[2050,2850],49152),
+    (16,"Herbalist Nessa",NpcRole::Resident,3,[1750,2450],16384),
+    (17,"Peddler Rowan",NpcRole::Resident,3,[1850,2350],49152),
+    (18,"Fisher Ada",NpcRole::Resident,2,[-1750,2400],49152),
+    (19,"Porter Ben",NpcRole::Resident,2,[-1900,2500],16384),
+    (20,"Washer Elin",NpcRole::Resident,2,[1400,3100],49152),
+    (21,"Apprentice Finn",NpcRole::Resident,2,[1500,3000],16384),
 ];
 
 pub(super) fn creature_templates() -> Vec<CreatureTemplate> {
@@ -338,8 +351,16 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .map(|&(id, template, position, facing)| CreatureSpawn {
             id: CreatureId::new(id),
             template,
-            position,
-            facing,
+            position: if LAKE_LURKERS.contains(&id) {
+                super::lake::place(position)
+            } else {
+                position
+            },
+            facing: if LAKE_LURKERS.contains(&id) {
+                facing.wrapping_add(32768)
+            } else {
+                facing
+            },
             // Stillwater Lake's lurkers keep to its narrow level rim (#423).
             wander_radius: if LAKE_LURKERS.contains(&id) {
                 LAKE_WANDER_RADIUS_UNITS

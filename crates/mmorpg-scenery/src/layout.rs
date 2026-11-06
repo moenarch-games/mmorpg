@@ -44,6 +44,48 @@ fn house(collider: &mmorpg_core::StaticCollider) -> Prop {
 pub fn compose(source: &str, definition: &ZoneDefinition) -> Result<Scenery, String> {
     let layout = core_layout::parse(source).map_err(|error| error.to_string())?;
     let mut scenery = base_scenery();
+    // Worn tracks join the main roads across the open gathering/spawn lawn. They are paint
+    // on the existing walkable floor, not navigation or an extra movement authority.
+    scenery.roads.extend([
+        crate::Road {
+            name: "Outpost gathering track",
+            points: vec![[0, 1200], [-70, 1700], [50, 2300], [0, 2800]],
+            half_width: 120,
+        },
+        crate::Road {
+            name: "Outpost cross track",
+            points: vec![
+                [-1600, 2000],
+                [-800, 1950],
+                [0, 2000],
+                [800, 2050],
+                [1600, 2000],
+            ],
+            half_width: 120,
+        },
+    ]);
+    scenery.roads.extend([
+        crate::Road {
+            name: "Hollow camp track",
+            points: vec![[0, -8600], [-250, -9200], [-150, -9600], [0, -10800]],
+            half_width: 90,
+        },
+        crate::Road {
+            name: "Hollow west tent track",
+            points: vec![[-150, -9600], [-600, -9500], [-1300, -9450]],
+            half_width: 70,
+        },
+        crate::Road {
+            name: "Hollow east tent track",
+            points: vec![[-150, -9600], [600, -9650], [1000, -9750]],
+            half_width: 70,
+        },
+        crate::Road {
+            name: "Hollow lookout tent track",
+            points: vec![[0, -8600], [-600, -8600], [-1100, -8450]],
+            half_width: 70,
+        },
+    ]);
     // Preserve the frozen base and placement order. Overrides replace existing logical
     // objects in place; only author additions append. Never reroll the scatter RNG.
     scenery.props.retain_mut(|prop| {
@@ -101,6 +143,11 @@ pub fn compose(source: &str, definition: &ZoneDefinition) -> Result<Scenery, Str
         )
         .collect();
     scenery.props.retain(|prop| {
+        if prop.collider.is_none()
+            && greyhaven_vale::brook::wet_ground(prop.position[0], prop.position[2])
+        {
+            return false;
+        }
         prop.collider.is_some()
             || !keep_out
                 .iter()
@@ -124,6 +171,17 @@ pub fn compose(source: &str, definition: &ZoneDefinition) -> Result<Scenery, Str
                 }
             }),
     );
+    // Saved cosmetic anchors retain their XZ authoring coordinates, while their feet
+    // follow the current physical terrain after a landscape edit.
+    if let Some(ground) = &scenery.ground {
+        for prop in scenery
+            .props
+            .iter_mut()
+            .filter(|prop| prop.collider.is_none() && prop.kind != PropKind::Ramp)
+        {
+            prop.position[1] = ground.height_at(prop.position[0], prop.position[2]);
+        }
+    }
     // The scenery belongs to the content revision this exact definition hosts.
     scenery.content_revision = greyhaven_vale::content_with_definition(definition.clone())
         .map_err(|error| error.to_string())?

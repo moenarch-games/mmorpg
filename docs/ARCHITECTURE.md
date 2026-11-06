@@ -34,7 +34,7 @@ flowchart TD
     Adapter --> Core[mmorpg-core: zone gameplay and interest]
     Protocol --> Core
     Directory --> Core
-    Core --> Physics[Rapier rapier3d: collision and character motion, embedded]
+    Core --> Physics[Physics Engine: character/static collision; Rapier: dynamic contacts/oracle]
     Client --> NativeRenderer[Native: wgpu/winit, external tobj asset import]
     Client --> BrowserRenderer[Browser: Three.js through pinned renderer adapter]
     Client --> Presentation[mmorpg-presentation: shared static world]
@@ -436,3 +436,13 @@ and bounded projections. See [LOOT.md](LOOT.md). The browser Loot panel reads th
 ## Durable empty-zone lifecycle
 
 The PostgreSQL/S3 host implements bounded empty residence, verified checkpoint suspension and cold direct-route admission through the shared runtime hooks. Default resume freezes all authoritative time; optional subsystem transitions require explicit input and remain opt-in. See [the implementation and scope](ZONE_LIFECYCLE.md) and [ADR 0004](adr/0004-durable-zone-suspension.md).
+
+### Authored static collision (#639)
+
+[Static collision authoring](STATIC_COLLISION.md) describes immutable indexed triangle
+meshes loaded by `ZoneDefinition`, independent of visual terrain tiles and LOD.
+Redbrand's public outer cave demonstrates a terrace entrance, solid shell, authored
+floor and stacked walkable shelf. Physics Engine handles authored static mesh and
+convex rock character/query contacts by default (Atlas 2.1.i330/2.1.i644). Rapier
+retains dynamic debris and movable-prop contacts against those shapes; both
+backends rebuild immutable geometry during recovery. See [physics backends](PHYSICS_AB.md).

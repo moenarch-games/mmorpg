@@ -376,11 +376,25 @@ fn the_cave_roof_is_cut_away_while_the_viewer_stands_under_it() {
     let scenery = greyhaven_vale_scenery();
     let roof = first(&scenery, PropKind::CaveRoof);
     let scene = only(vec![roof]);
-    assert_eq!(scene.animated.len(), 1, "the roof is its own part");
+    let roofs: Vec<_> = scene
+        .animated
+        .iter()
+        .enumerate()
+        .filter(|(_, part)| matches!(part.motion, mmorpg_presentation::Motion::Roof { .. }))
+        .map(|(index, _)| index)
+        .collect();
+    assert_eq!(roofs.len(), 1, "the roof is its own part");
+    let draw = &scene.animated[roofs[0]].draws[0];
+    assert!(
+        draw.material.ground.is_some(),
+        "the exterior uses the rock material"
+    );
+    assert_eq!(draw.geometry.uv.len(), draw.geometry.p.len());
+    assert_eq!(draw.geometry.tangents.len(), draw.geometry.p.len());
     let [x, _, z] = roof.position.map(|units| f64::from(units) / 100.);
     // The cave's floor lies on the basin's rim (#423).
     let floor = f64::from(mmorpg_core::greyhaven_vale::cave::GREYFANG.floor_y) / 100.;
-    let shown = |viewer| scene.shown(viewer, Kits::default())[0];
+    let shown = |viewer| scene.shown(viewer, Kits::default())[roofs[0]];
     assert!(shown(None));
     assert!(!shown(Some([x, floor, z])), "inside the cave");
     assert!(shown(Some([x, floor + 6., z])), "standing on the roof");
@@ -556,4 +570,64 @@ fn climbable_rock_wears_handholds_and_sheer_rock_stays_smooth() {
         assert!(worn.iter().any(|p| inside(route, 0., p)), "{route:?}");
     }
     assert!(!worn.iter().any(|p| inside(SHEER_LAKE_CLIFF, 50., p)));
+}
+
+#[test]
+fn the_cave_ceiling_stays_textured_below_the_cutaway_roof() {
+    let scene = StaticScene::new(&greyhaven_vale_scenery());
+    let draws = scene.frame(
+        0.,
+        false,
+        [64., 13., -143.],
+        Some([64., 11., -143.]),
+        Kits::default(),
+    );
+    let ceiling = draws
+        .iter()
+        .find(|d| d.id.contains("cave-surface-547"))
+        .expect("interior ceiling stays drawn");
+    assert!(ceiling.material.ground.is_some());
+    assert!(
+        !ceiling.material.double_sided,
+        "overhead cameras see through its back face"
+    );
+    assert!(
+        ceiling.geometry.n.iter().all(|n| n[1] < 0.),
+        "ceiling faces into the cave"
+    );
+}
+
+#[test]
+fn the_brook_crossing_retains_its_fallback_until_settlement_art_is_ready() {
+    let scene = StaticScene::new(&greyhaven_vale_scenery());
+    let frame = |ready| {
+        scene.frame(
+            0.,
+            false,
+            [0., 3., 32.],
+            None,
+            Kits {
+                outpost: ready,
+                ..Kits::default()
+            },
+        )
+    };
+    let fallback = frame(false);
+    let loaded = frame(true);
+    for name in ["brook-deck", "brook-approach", "brook-posts", "brook-rails"] {
+        assert!(
+            fallback.iter().any(|draw| draw.id.contains(name)),
+            "missing {name} fallback"
+        );
+        assert!(
+            !loaded.iter().any(|draw| draw.id.contains(name)),
+            "duplicate {name} after art loads"
+        );
+    }
+    assert!(
+        loaded
+            .iter()
+            .any(|draw| draw.id.contains("brook-drain-stone")),
+        "culverts remain visible independently"
+    );
 }

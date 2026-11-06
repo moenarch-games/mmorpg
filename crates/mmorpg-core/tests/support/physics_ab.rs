@@ -697,14 +697,14 @@ fn mill_ramps_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
 pub const MILL_HOIST_TICKS: usize = mmorpg_core::golden::t30(640) as usize;
 
 /// The hoist ride's commands: player 1 stands on the resting hoist from the start and walks
-/// north onto the windmill's gallery once the hoist is up.
+/// east onto the windmill's gallery once the hoist is up.
 fn mill_hoist_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
     let top = mmorpg_core::greyhaven_vale::MILL_HOIST;
     let up = usize::try_from(top.dwell + top.travel_ticks()).expect("ticks fit");
     let walk = |forward| ZoneCommand::Move {
         forward,
         strafe: 0,
-        facing: 0,
+        facing: 16_384,
     };
     let after = |ticks| up + usize::try_from(mmorpg_core::golden::t30(ticks)).expect("ticks fit");
     if tick == after(10) {

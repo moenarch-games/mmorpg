@@ -3,18 +3,18 @@
 use std::sync::Arc;
 
 use mmorpg_core::greyhaven_vale::quests::{MARSHAL, SUNKEN_RELIC, THE_SUNKEN_SHRINE};
-use mmorpg_core::greyhaven_vale::{self, shrine};
+use mmorpg_core::greyhaven_vale::{self, lake, shrine};
 use mmorpg_core::water::{BREATH_MAX_TICKS, TRAIL_TICKS};
 use mmorpg_core::{
     CreatureAi, CreatureId, EntityRef, QuestEntry, QuestLog, ThreatEntry, WaterMode, ZoneCommand,
     ZoneEvent, ZoneId, ZoneSimulation,
 };
 
-/// World-axis heading of forward movement toward +X.
-const EAST: u16 = 16_384;
+/// World-axis heading from the western lake toward the relocated altar.
+const TOWARD_ALTAR: u16 = 49_152;
 const LURKER: CreatureId = CreatureId::new(303);
 /// Inside the cave, along its middle.
-const CAVE_Z: i32 = -5_400;
+const CAVE_Z: i32 = shrine::CAVE_Z;
 /// A swimmer's body centre just over the shrine's floor.
 const LOW: i32 = shrine::FLOOR_Y + 110;
 
@@ -22,7 +22,8 @@ fn zone_with_player_at(centre: [i32; 3], with_quest: bool) -> ZoneSimulation {
     let mut zone = ZoneSimulation::with_content(ZoneId::new(1), greyhaven_vale::content()).unwrap();
     zone.add_player(1).unwrap();
     let mut state = zone.snapshot().unwrap();
-    state.players[0].position = mmorpg_core::physics::from_units(centre);
+    state.players[0].position =
+        mmorpg_core::physics::from_units([lake::place([centre[0], 0])[0], centre[1], centre[2]]);
     if with_quest {
         // Quests 1–5 turned in; The Sunken Shrine accepted.
         state.players[0].quests = QuestLog {
@@ -60,24 +61,45 @@ fn run(zone: &mut ZoneSimulation, ticks: u32) -> Vec<ZoneEvent> {
 fn the_cave_is_flooded_dark_to_its_end_and_breathable_only_in_its_pocket() {
     let content = greyhaven_vale::content();
     let terrain = content.definition().terrain().unwrap();
-    assert_eq!(terrain.height_at(9_600, CAVE_Z), shrine::FLOOR_Y);
-    assert_eq!(terrain.height_at(5_400, CAVE_Z), shrine::FLOOR_Y);
-    let mode = |x| WaterMode::of_player(content.waters(), [x, shrine::FLOOR_Y + 90, CAVE_Z]);
+    assert_eq!(
+        terrain.height_at(lake::place([9_600, 0])[0], CAVE_Z),
+        shrine::FLOOR_Y
+    );
+    assert_eq!(
+        terrain.height_at(lake::place([5_400, 0])[0], CAVE_Z),
+        shrine::FLOOR_Y
+    );
+    let mode = |x: i32| {
+        WaterMode::of_player(
+            content.waters(),
+            [lake::place([x, 0])[0], shrine::FLOOR_Y + 90, CAVE_Z],
+        )
+    };
     assert_eq!(mode(5_400), WaterMode::Submerged, "the plaza");
     assert_eq!(mode(7_000), WaterMode::Submerged, "under the lake");
     assert_eq!(mode(10_000), WaterMode::Submerged, "under the shore");
     assert_eq!(mode(8_800), WaterMode::Swimming, "the air pocket");
     // The air pocket is the shrine kit's 8 × 8 m room (#431): flat and breathable off the axis.
-    for z in [-5_750, -5_050] {
-        assert_eq!(terrain.height_at(8_800, z), shrine::FLOOR_Y);
+    for authored_z in [-5_750, -5_050] {
+        let z = lake::place([0, authored_z])[1];
         assert_eq!(
-            WaterMode::of_player(content.waters(), [8_800, shrine::FLOOR_Y + 90, z]),
+            terrain.height_at(lake::place([8_800, 0])[0], z),
+            shrine::FLOOR_Y
+        );
+        assert_eq!(
+            WaterMode::of_player(
+                content.waters(),
+                [lake::place([8_800, 0])[0], shrine::FLOOR_Y + 90, z]
+            ),
             WaterMode::Swimming
         );
     }
     // The shore over the cave is dry ground, roofed flush with it.
     assert_eq!(
-        WaterMode::of_player(content.waters(), [10_000, shrine::SHORE_Y + 90, CAVE_Z]),
+        WaterMode::of_player(
+            content.waters(),
+            [lake::place([10_000, 0])[0], shrine::SHORE_Y + 90, CAVE_Z]
+        ),
         WaterMode::Dry
     );
     let roof = content
@@ -106,7 +128,7 @@ fn the_air_pocket_refills_breath_halfway_along_the_cave() {
 
 #[test]
 fn swimming_the_cave_to_the_altar_retrieves_the_relic_and_the_marshal_takes_it() {
-    // From the shrine's plaza, straight east through the mouth and along the cave.
+    // From the shrine's plaza, straight west through the mouth and along the cave.
     let mut zone = zone_with_player_at([5_400, LOW, CAVE_Z], true);
     run(&mut zone, mmorpg_core::golden::t30(2) as _);
     assert_eq!(water(&zone), WaterMode::Submerged);
@@ -116,7 +138,7 @@ fn swimming_the_cave_to_the_altar_retrieves_the_relic_and_the_marshal_takes_it()
         ZoneCommand::Move {
             forward: 1,
             strafe: 0,
-            facing: EAST,
+            facing: TOWARD_ALTAR,
         },
     )
     .unwrap();
@@ -127,7 +149,8 @@ fn swimming_the_cave_to_the_altar_retrieves_the_relic_and_the_marshal_takes_it()
         ticks += 1;
         assert!(
             u64::from(ticks) < mmorpg_core::golden::t30(900),
-            "the altar is reached on one breath from the plaza"
+            "the altar is reached on one breath from the plaza: {:?}",
+            zone.snapshot().unwrap().players[0].position
         );
     }
     // More than half a breath one way: the round trip needs the air pocket.
@@ -144,7 +167,10 @@ fn swimming_the_cave_to_the_altar_retrieves_the_relic_and_the_marshal_takes_it()
         "{events:?}"
     );
     let x = zone.snapshot().unwrap().players[0].position[0];
-    assert!(x >= shrine::ALTAR_CHAMBER.0[0] as f32, "at the altar: {x}");
+    assert!(
+        x >= shrine::ALTAR_CHAMBER.0[0] as f32 && x < shrine::ALTAR_CHAMBER.1[0] as f32,
+        "at the altar: {x}"
+    );
     let viewer = zone.snapshot_for_player(1).unwrap().viewer;
     assert!(viewer.breath > 0 && !viewer.dead);
     // One relic only, however long the player stays.
@@ -186,6 +212,32 @@ fn walking_over_the_altar_on_the_shore_retrieves_nothing() {
     let mut zone = zone_with_player_at([11_800, shrine::SHORE_Y + 95, CAVE_Z], true);
     run(&mut zone, mmorpg_core::golden::t30(30) as _);
     assert_eq!(water(&zone), WaterMode::Dry);
+    assert!(
+        (zone.snapshot().unwrap().players[0].position[1] - 90. - shrine::SHORE_Y as f32).abs() < 1.
+    );
+    // The joined static rock cover supports a walk over several cells and the higher
+    // air-room vault, while the shrine remains a separate flooded route below it.
+    zone.apply_command(
+        1,
+        1,
+        ZoneCommand::Move {
+            forward: 1,
+            strafe: 0,
+            facing: 16_384,
+        },
+    )
+    .unwrap();
+    run(&mut zone, 300);
+    let [x, y, _] = zone.snapshot().unwrap().players[0].position;
+    assert!(
+        (-12_200. ..-11_200.).contains(&x),
+        "walk along the shore cover: {x}"
+    );
+    assert!(
+        (y - 90. - shrine::SHORE_Y as f32).abs() < 1.,
+        "roof supports the player: {y}"
+    );
+    assert_eq!(water(&zone), WaterMode::Dry);
     assert_eq!(relics(&zone), 0);
 }
 
@@ -199,9 +251,9 @@ fn lurker_beside_a_diver() -> ZoneSimulation {
         .find(|creature| creature.creature_id == LURKER)
         .unwrap();
     lurker.position = [
-        5_400.0,
+        -8_600.0,
         (shrine::FLOOR_Y + 300) as f32,
-        CAVE_Z as f32 + 400.0,
+        CAVE_Z as f32 - 400.0,
     ];
     ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap()
 }

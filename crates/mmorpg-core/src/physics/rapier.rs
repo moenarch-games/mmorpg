@@ -1,4 +1,4 @@
-//! The Rapier backend: the production authority (#271, Atlas 2.1.6).
+//! The Rapier backend: fallback for unsupported content and the comparison oracle (#271).
 //!
 //! Players and creatures are kinematic position-based bodies with upright capsule colliders,
 //! moved by Rapier's `KinematicCharacterController`, which resolves contact, sliding and
@@ -12,6 +12,11 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+#[cfg(feature = "physics-ab")]
+use std::{
+    collections::BTreeSet,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use rapier3d::control::{CharacterLength, KinematicCharacterController};
 use rapier3d::parry::query::{
@@ -88,6 +93,8 @@ pub(super) struct World {
     controller: KinematicCharacterController,
     bodies: BTreeMap<BodyId, RigidBody>,
     handles: BTreeMap<BodyId, Handles>,
+    #[cfg(feature = "physics-ab")]
+    controller_collisions: AtomicU64,
 }
 
 impl fmt::Debug for World {
@@ -106,6 +113,11 @@ impl Clone for World {
         world.bodies = self.bodies.clone();
         world.ground = self.ground.clone();
         world.rebuild();
+        #[cfg(feature = "physics-ab")]
+        world.controller_collisions.store(
+            self.controller_collisions.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
         world
     }
 }
@@ -188,6 +200,24 @@ fn insert(world: &mut PhysicsWorld, body: &RigidBody) -> Handles {
             body: Some(handle),
             collider,
         }
+    } else if let Some(mesh) = &body.mesh {
+        let vertices = mesh
+            .vertices
+            .iter()
+            .map(|v| metres(super::from_units(*v)))
+            .collect();
+        let shape = SharedShape::trimesh(vertices, mesh.triangles.clone())
+            .expect("validated static triangle mesh");
+        let collider = world.colliders.insert(
+            ColliderBuilder::new(shape)
+                .translation(metres(super::from_units(mesh.position)))
+                .user_data(user_data)
+                .build(),
+        );
+        Handles {
+            body: None,
+            collider,
+        }
     } else if let Kind::Ramp(rises) = body.kind {
         let collider = world.colliders.insert(
             ColliderBuilder::new(wedge(body.half_extents, rises))
@@ -199,7 +229,7 @@ fn insert(world: &mut PhysicsWorld, body: &RigidBody) -> Handles {
             body: None,
             collider,
         }
-    } else if let (Kind::Rock(shape), true) = (body.kind, super::rock_hulls()) {
+    } else if let Kind::Rock(shape) = body.kind {
         let points: Vec<_> = shape
             .hull(body.half_extents)
             .into_iter()
@@ -377,6 +407,55 @@ impl World {
             },
             bodies: BTreeMap::new(),
             handles: BTreeMap::new(),
+            #[cfg(feature = "physics-ab")]
+            controller_collisions: AtomicU64::new(0),
+        }
+    }
+
+    /// Diagnostic narrow-phase pairs after the latest authoritative tick. The game also
+    /// uses controller sweeps, which need not create a persistent Rapier contact pair.
+    #[cfg(feature = "physics-ab")]
+    pub fn contact_profile(&self) -> super::RapierContactProfile {
+        let mut candidates = BTreeSet::new();
+        let mut active = BTreeSet::new();
+        for contact in self.world.contact_pairs() {
+            let body_id = |handle| {
+                self.world
+                    .colliders
+                    .get(handle)
+                    .and_then(|collider| u64::try_from(collider.user_data).ok())
+                    .map(BodyId)
+            };
+            let (Some(a), Some(b)) = (body_id(contact.collider1), body_id(contact.collider2))
+            else {
+                continue;
+            };
+            if a == b {
+                continue;
+            }
+            let pair = (a.min(b), a.max(b));
+            candidates.insert(pair);
+            if contact.has_any_active_contact() {
+                active.insert(pair);
+            }
+        }
+        let mut degrees = BTreeMap::<BodyId, usize>::new();
+        let mut active_degrees = BTreeMap::<BodyId, usize>::new();
+        for &(a, b) in &candidates {
+            *degrees.entry(a).or_default() += 1;
+            *degrees.entry(b).or_default() += 1;
+        }
+        for &(a, b) in &active {
+            *active_degrees.entry(a).or_default() += 1;
+            *active_degrees.entry(b).or_default() += 1;
+        }
+        super::RapierContactProfile {
+            pair_candidates: candidates.len(),
+            active_pairs: active.len(),
+            incident_bodies: degrees.len(),
+            max_body_degree: degrees.values().copied().max().unwrap_or(0),
+            max_active_degree: active_degrees.values().copied().max().unwrap_or(0),
+            controller_collisions: self.controller_collisions.load(Ordering::Relaxed),
         }
     }
 
@@ -690,7 +769,7 @@ impl World {
         let mut moved_bodies = 0;
         let moving_count = ids.len();
         for id in ids {
-            let body = *self
+            let body = self
                 .bodies
                 .get(&id)
                 .ok_or_else(|| error("moving body vanished"))?;
@@ -864,14 +943,24 @@ impl World {
                 self.open_floor(body, body.position),
             ),
         );
+        #[cfg(feature = "physics-ab")]
+        let mut collisions = 0_u64;
         let movement = self.controller.move_shape(
             self.world.integration_parameters.dt,
             &queries,
             &capsule(body.half_extents),
             &Pose::from_translation(lifted(body.position)),
             metres(desired),
-            |_| {},
+            |_| {
+                #[cfg(feature = "physics-ab")]
+                {
+                    collisions += 1;
+                }
+            },
         );
+        #[cfg(feature = "physics-ab")]
+        self.controller_collisions
+            .fetch_add(collisions, Ordering::Relaxed);
         Ok((units(movement.translation), movement.grounded))
     }
 
@@ -965,6 +1054,31 @@ impl World {
             QueryFilter::default(),
         );
         let shape = Cuboid::new(metres(half_extents));
+        let mut hits: Vec<_> = queries
+            .intersect_shape(Pose::from_translation(metres(centre)), &shape)
+            .map(|(_, collider)| BodyId(u64::try_from(collider.user_data).unwrap_or(u64::MAX)))
+            .collect();
+        hits.sort_unstable();
+        hits.dedup();
+        Ok(hits)
+    }
+
+    pub fn overlap_capsule(
+        &self,
+        centre: [f32; 3],
+        half_extents: [f32; 3],
+    ) -> Result<Vec<BodyId>, PhysicsError> {
+        let queries = self.world.broad_phase.as_query_pipeline(
+            &self.queries,
+            &self.world.bodies,
+            &self.world.colliders,
+            QueryFilter::default(),
+        );
+        let radius = half_extents[0].max(half_extents[2]).min(half_extents[1]);
+        let shape = Capsule::new_y(
+            (half_extents[1] - radius).max(0.0) / UNITS_PER_METRE,
+            radius / UNITS_PER_METRE,
+        );
         let mut hits: Vec<_> = queries
             .intersect_shape(Pose::from_translation(metres(centre)), &shape)
             .map(|(_, collider)| BodyId(u64::try_from(collider.user_data).unwrap_or(u64::MAX)))
@@ -1146,7 +1260,7 @@ impl World {
 }
 
 /// [`World::step_debris`] over the game's fixed `bodies` and `ground`.
-fn step_debris(
+pub(super) fn step_debris(
     gravity: [f32; 3],
     bodies: &BTreeMap<BodyId, RigidBody>,
     ground: Option<(BodyId, &crate::Terrain)>,
@@ -1169,7 +1283,7 @@ pub(super) struct Dynamic<'a> {
 
 /// [`World::step_props`] (#58): movable props slide upright under gravity and impulses,
 /// stopped by the fixed world and by units.
-fn step_props(
+pub(super) fn step_props(
     gravity: [f32; 3],
     bodies: &BTreeMap<BodyId, RigidBody>,
     ground: Option<(BodyId, &crate::Terrain)>,

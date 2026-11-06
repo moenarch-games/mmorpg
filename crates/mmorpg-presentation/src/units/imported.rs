@@ -444,6 +444,8 @@ impl Figure {
 /// preset over the male bundle's outfits (#39; [`super::presets::enemy_presets`]).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, strum::VariantArray)]
 pub enum Resident {
+    Villager,
+    VillagerWoman,
     Marshal,
     Guard,
     Innkeeper,
@@ -474,6 +476,14 @@ impl Resident {
             "Farmer Osric Mill" => Some(Self::Farmer),
             "Brother Aldous" => Some(Self::Healer),
             "Tanner Hilda Brook" => Some(Self::Tanner),
+            "Weaver Lysa Reed" | "Mara Wells" | "Baker Anwen" | "Herbalist Nessa"
+            | "Fisher Ada" | "Washer Elin" => Some(Self::VillagerWoman),
+            "Carpenter Owen Alder"
+            | "Davin Moss"
+            | "Miller Tomas"
+            | "Peddler Rowan"
+            | "Porter Ben"
+            | "Apprentice Finn" => Some(Self::Villager),
             _ => None,
         }
     }
@@ -499,9 +509,9 @@ impl Resident {
             Self::Marshal => "resident.marshal",
             Self::Guard => "resident.guard",
             Self::Innkeeper => "resident.innkeeper",
-            Self::Farmer => "resident.farmer",
+            Self::Farmer | Self::Villager => "resident.farmer",
             Self::Healer => "resident.healer",
-            Self::Tanner => "resident.tanner",
+            Self::Tanner | Self::VillagerWoman => "resident.tanner",
             Self::Marauder => "enemy.marauder",
             Self::RedbrandBandit => "enemy.redbrand.bandit",
             Self::RedbrandCrossbowman => "enemy.redbrand.crossbowman",
@@ -518,6 +528,8 @@ impl Resident {
         matches!(
             self,
             Self::Guard
+                | Self::Villager
+                | Self::VillagerWoman
                 | Self::Marauder
                 | Self::RedbrandBandit
                 | Self::RedbrandCrossbowman
@@ -534,7 +546,13 @@ impl Resident {
             Self::Marauder => Some(Loadout::Dagger),
             Self::RedbrandCrossbowman => Some(Loadout::Crossbow),
             Self::RedbrandBrute => Some(Loadout::SwordAndShield),
-            Self::Marshal | Self::Innkeeper | Self::Farmer | Self::Healer | Self::Tanner => None,
+            Self::Marshal
+            | Self::Innkeeper
+            | Self::Farmer
+            | Self::Healer
+            | Self::Tanner
+            | Self::Villager
+            | Self::VillagerWoman => None,
         }
     }
 
@@ -542,7 +560,7 @@ impl Resident {
     #[must_use]
     pub const fn figure(self) -> Figure {
         match self {
-            Self::Tanner => Figure::Female,
+            Self::Tanner | Self::VillagerWoman => Figure::Female,
             _ => Figure::Male,
         }
     }
@@ -3372,6 +3390,18 @@ mod tests {
                 Some("resident.guard"),
                 Some("resident.guard"),
                 Some("resident.guard"),
+                Some("resident.tanner"),
+                Some("resident.farmer"),
+                Some("resident.tanner"),
+                Some("resident.farmer"),
+                Some("resident.tanner"),
+                Some("resident.farmer"),
+                Some("resident.tanner"),
+                Some("resident.farmer"),
+                Some("resident.tanner"),
+                Some("resident.farmer"),
+                Some("resident.tanner"),
+                Some("resident.farmer"),
             ]
         );
         let names: Vec<_> = PlayerClass::VARIANTS

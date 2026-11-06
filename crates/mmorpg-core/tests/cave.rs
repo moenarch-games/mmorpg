@@ -2,16 +2,21 @@
 use std::sync::Arc;
 
 use mmorpg_core::greyhaven_vale::{self, cave::GREYFANG};
-use mmorpg_core::{ZoneCommand, ZoneId, ZoneSimulation};
+use mmorpg_core::{ZoneCommand, ZoneContent, ZoneId, ZoneSimulation};
 
 const NORTH: u16 = 32_768;
 const EAST: u16 = 16_384;
 
 fn player_at(feet: [i32; 2]) -> ZoneSimulation {
-    let mut zone = ZoneSimulation::with_content(ZoneId::new(1), greyhaven_vale::content()).unwrap();
+    // This fixture checks geometry; the Redbrand garrison's combat is covered separately.
+    let content = Arc::new(ZoneContent::from_definition(
+        greyhaven_vale::greyhaven_vale_definition(),
+    ));
+    let mut zone = ZoneSimulation::with_content(ZoneId::new(1), content).unwrap();
     zone.add_player(1).unwrap();
     let mut state = zone.snapshot().unwrap();
-    state.players[0].position = mmorpg_core::physics::from_units([feet[0], 120, feet[1]]);
+    state.players[0].position =
+        mmorpg_core::physics::from_units([feet[0], GREYFANG.floor_y + 90, feet[1]]);
     ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap()
 }
 
@@ -38,11 +43,11 @@ fn walk(zone: &mut ZoneSimulation, sequence: u32, facing: u16, ticks: usize) {
 
 #[test]
 fn a_player_walks_through_the_mouth_into_both_chambers() {
-    let mut zone = player_at([5_800, -12_400]);
-    walk(&mut zone, 1, NORTH, mmorpg_core::golden::t30(70) as _);
+    let mut zone = player_at([6_400, -15_600]);
+    walk(&mut zone, 1, 0, mmorpg_core::golden::t30(85) as _);
     let inside = feet(&zone);
     assert!(
-        inside[2] < -13_600.0 && inside[1].abs() < 6.0,
+        inside[2] > -14_000.0 && (inside[1] - GREYFANG.floor_y as f32).abs() < 6.0,
         "in the outer cavern on its flat floor: {inside:?}"
     );
     assert!(GREYFANG.flattens(inside[0] as i32, inside[2] as i32));
@@ -50,15 +55,46 @@ fn a_player_walks_through_the_mouth_into_both_chambers() {
     walk(&mut zone, 2, EAST, mmorpg_core::golden::t30(160) as _);
     let inner = feet(&zone);
     assert!(
-        inner[0] > 7_300.0 && inner[0] < 8_000.0 && inner[1].abs() < 6.0,
+        inner[0] > 7_300.0
+            && inner[0] < 8_000.0
+            && (inner[1] - GREYFANG.floor_y as f32).abs() < 6.0,
         "in the inner chamber: {inner:?}"
     );
 }
 
 #[test]
-fn the_south_wall_blocks_beside_the_mouth() {
-    let mut zone = player_at([5_000, -12_400]);
+fn the_former_south_mouth_is_solid_rock() {
+    let mut zone = player_at([5_800, -12_000]);
     walk(&mut zone, 1, NORTH, mmorpg_core::golden::t30(80) as _);
     let at = feet(&zone);
-    assert!(at[2] > -12_800.0, "held outside the wall: {at:?}");
+    assert!(at[2] > -13_200.0, "held outside the wall: {at:?}");
+}
+
+#[test]
+fn hideout_gate_connects_the_approach_to_the_cave_but_stockade_blocks_beside_it() {
+    let definition = greyhaven_vale::greyhaven_vale_definition();
+    assert!(
+        definition
+            .colliders()
+            .iter()
+            .filter(|body| greyhaven_vale::ids::TREES.contains(&body.id))
+            .all(|body| !(4900..=8000).contains(&body.position[0])
+                || !(-18000..=-15400).contains(&body.position[2])),
+        "the hideout and its gate have an open woodland clearing"
+    );
+    let mut through_gate = player_at([6400, -17000]);
+    walk(&mut through_gate, 1, 0, mmorpg_core::golden::t30(150) as _);
+    let inside = feet(&through_gate);
+    assert!(
+        inside[2] > -14400.0 && (inside[1] - GREYFANG.floor_y as f32).abs() < 6.0,
+        "the open camp gate leads onto the cave floor: {inside:?}"
+    );
+
+    let mut beside_gate = player_at([5700, -17000]);
+    walk(&mut beside_gate, 1, 0, mmorpg_core::golden::t30(60) as _);
+    let stopped = feet(&beside_gate);
+    assert!(
+        stopped[2] < -16500.0 && stopped[2] > -16900.0,
+        "the stockade holds a player beside the gate: {stopped:?}"
+    );
 }

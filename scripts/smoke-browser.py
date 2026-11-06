@@ -692,7 +692,7 @@ class BrowserAcceptance(unittest.TestCase):
         # Control: without the canvas the measurement sees only the plain page background.
         self.assertEqual(self.canvas_colours(hide_canvas=True), {"distinct": 1, "covered": 0})
         viewpoints = {}
-        for name in ["hub", "woods", "hollow"]:
+        for name in ["hub", "woods", "hollow", "lake"]:
             self.page.evaluate("name => window.__valeDebug.flyTo(name)", name)
             self.frames(8)
             self.page.screenshot(path=str(ARTIFACTS / f"viewpoint-{name}.png"))

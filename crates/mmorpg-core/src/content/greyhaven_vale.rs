@@ -8,8 +8,8 @@
 //! it, beyond a second ridge, the Marsh-Lake Wetlands of [`marsh`] reach x = +632 m (#426).
 //! Invisible boundary walls enclose all four ([`WALLED`]). Map north is −Z, toward the Redbrand
 //! cliffs, matching the
-//! layout table in `docs/STARTER_ZONE.md`. The Outpost's valley floor is physically flat (y = 0),
-//! in the basin of [`basin`], below its rim and the outer hills; relief, props
+//! layout table in `docs/STARTER_ZONE.md`. The Outpost's settled floor stays level (y = 0),
+//! with gentle rises on its northern approach in [`basin`], below the rim and outer hills; relief, props
 //! without colliders, water and mountains are presentation owned by
 //! `mmorpg-scenery`, which derives its structures from the collider IDs in
 //! [`ids`]. [`content`] bundles it as the hosted [`ZoneContent`], whose revision
@@ -21,11 +21,14 @@ use super::{SpawnGrid, StaticCollider, XzBounds, ZoneContent, ZoneDefinition};
 use crate::{Area, AreaId, Terrain, ZoneAreas};
 
 pub mod basin;
+pub mod brook;
 pub mod cave;
 pub mod dressing;
 pub mod farmland;
+pub mod fort;
 pub mod highlands;
 pub mod inn;
+pub mod landscape;
 pub mod layout;
 pub mod market;
 pub mod marsh;
@@ -170,6 +173,12 @@ pub mod ids {
     /// The Greyfang cave's rock walls and roof slab (#159).
     pub const CAVE_WALLS: RangeInclusive<u32> = 540..=546;
     pub const CAVE_ROOF: u32 = 547;
+    /// Authored outer-cave floor slabs, slope and elevated shelf (#639).
+    pub const CAVE_FLOORS: RangeInclusive<u32> = 640..=643;
+    pub const CAVE_LEDGE: RangeInclusive<u32> = 644..=645;
+    /// Hanging rock in the public chambers and stone jambs at the north mouth.
+    pub const CAVE_CEILING_DETAILS: RangeInclusive<u32> = 660..=663;
+    pub const CAVE_ENTRANCE_DETAILS: RangeInclusive<u32> = 664..=665;
     /// The sealed threshold to Redbrand Hollow's deeper cave, in the inner chamber (#160).
     pub const CAVE_THRESHOLD: u32 = 548;
     /// The Sunken Shrine (#274): its ruins and altar, its cave's rock walls and roof slabs,
@@ -270,10 +279,14 @@ static ROADS: LazyLock<Vec<Road>> = LazyLock::new(|| {
         .iter()
         .flat_map(|region| region.roads)
         .copied()
+        .chain(landscape::data().paths.iter().map(|path| Road {
+            name: path.name.as_str(),
+            points: path.points.as_slice(),
+        }))
         .collect()
 });
 
-/// Every region's roads, in region order.
+/// Every region's roads, followed by the committed landscape paths in authoring order.
 #[must_use]
 pub fn roads() -> &'static [Road] {
     &ROADS
@@ -362,6 +375,7 @@ pub fn hill_height(x: i32, z: i32) -> i32 {
 #[must_use]
 pub fn stillwater_lake() -> crate::WaterVolume {
     crate::WaterVolume {
+        channel: None,
         name: "Stillwater Lake".to_owned(),
         centre: lake::CENTRE,
         radii: lake::RADII,
@@ -372,8 +386,45 @@ pub fn stillwater_lake() -> crate::WaterVolume {
 
 /// Stillwater Lake's basin (#274).
 pub mod lake {
-    pub const CENTRE: [i32; 2] = [5_500, -5_500];
+    pub const CENTRE: [i32; 2] = [-8_700, -5_300];
+    /// A half-turn places the existing authored lake/shrine frame on the western shore.
+    /// It is its own inverse. Offsets preserve the authoritative 4 m
+    /// terrain grid, including the shrine tunnel's paired floor vertices.
+    pub const fn place([x, z]: [i32; 2]) -> [i32; 2] {
+        [-3200 - x, -10800 - z]
+    }
+    pub const fn place3([x, y, z]: [i32; 3]) -> [i32; 3] {
+        let [x, z] = place([x, z]);
+        [x, y, z]
+    }
+    pub const fn place_bounds((min, max): ([i32; 2], [i32; 2])) -> ([i32; 2], [i32; 2]) {
+        (place(max), place(min))
+    }
+    pub fn place_mesh(mut mesh: crate::StaticMesh) -> crate::StaticMesh {
+        mesh.position = place3(mesh.position);
+        for vertex in &mut mesh.vertices {
+            vertex[0] = -vertex[0];
+            vertex[2] = -vertex[2];
+        }
+        mesh
+    }
     pub const RADII: [i32; 2] = [2_200, 1_600];
+    pub fn near_shore(x: i32, z: i32, margin: i32) -> bool {
+        let a = i64::from(x - CENTRE[0]) * 1024 / i64::from(RADII[0] + margin);
+        let b = i64::from(z - CENTRE[1]) * 1024 / i64::from(RADII[1] + margin);
+        a * a + b * b <= 1024 * 1024
+    }
+    /// A rounded shore apron joins the relocated lake to the western rim.
+    pub fn shore_ground(x: i32, z: i32, base: i32) -> i32 {
+        let a = i64::from(x - CENTRE[0]) * 1024 / i64::from(RADII[0] + 400);
+        let b = i64::from(z - CENTRE[1]) * 1024 / i64::from(RADII[1] + 400);
+        let fade = ((a * a + b * b).isqrt() - 1024).clamp(0, 256);
+        if fade == 256 || super::basin::lane_height(x, z).is_some() {
+            return base;
+        }
+        SHORE_Y + ((i64::from(base - SHORE_Y) * fade) / 256) as i32
+    }
+
     /// The shore: the terrace the lake lies in (#423).
     pub const SHORE_Y: i32 = super::basin::TERRACE_Y;
     pub const SURFACE: i32 = SHORE_Y + 15;
@@ -403,14 +454,22 @@ pub fn lake_depth(x: i32, z: i32) -> i32 {
 /// ways down (#423), less the lake's basin (#274); the farmland's ridge, notch and plateau
 /// (#424) and the highlands' escarpment, pass and high ground (#425) beyond.
 fn open_ground(x: i32, z: i32) -> i32 {
-    if let Some(height) = farmland::height_at(x, z)
-        .or_else(|| highlands::height_at(x, z))
-        .or_else(|| marsh::height_at(x, z))
-    {
+    if let Some(height) = farmland::height_at(x, z) {
         return height;
     }
+    // The north and east ridges overlap at the outer corner. Join their rock masses;
+    // precedence alone cut the eastern crest down to the northern ridge's low toe.
+    match (highlands::height_at(x, z), marsh::height_at(x, z)) {
+        (Some(north), Some(east)) => return north.max(east),
+        (Some(height), None) | (None, Some(height)) => return height,
+        (None, None) => {}
+    }
     let hill = hill_height(x, z);
-    basin::height_at(x, z).map_or(hill, |terrace| terrace.max(hill)) - lake_depth(x, z)
+    lake::shore_ground(
+        x,
+        z,
+        basin::height_at(x, z).map_or(hill, |terrace| terrace.max(hill)),
+    ) - lake_depth(x, z)
 }
 
 /// The outer valley's terrain grid (#159), sampled from [`hill_height`].
@@ -429,7 +488,14 @@ pub fn terrain() -> Terrain {
                     // The Sunken Shrine's plaza and cave floor (#274).
                     shrine::FLOOR_Y
                 } else {
-                    open_ground(x, z)
+                    let base = open_ground(x, z);
+                    let base = cave::approach_ground(x, z, base);
+                    let base = brook::upper_ground(x, z, base);
+                    base - if base < 100 {
+                        brook::bed_depth(x, z)
+                    } else {
+                        0
+                    }
                 }
             })
         })
@@ -510,6 +576,27 @@ const OUTER_FORESTS: [([i32; 2], [i32; 2], u64, u64); 7] = [
     ([25_600, -20_400], [82, 90], 0x4d41_5253_4854_5245, 3),
 ];
 
+/// Small, patchy groves frame Stillwater's eastern shore, the Hollow's distant backdrop
+/// and the southwest ridge. Appended after existing forests to retain their collider IDs.
+const RIM_GROVES: [([i32; 2], [i32; 2], u64, u64); 5] = [
+    ([8200, -10500], [9, 19], 0x0051_3f01, 72),
+    ([-11000, -15500], [14, 9], 0x0051_3f02, 76),
+    ([-11000, 5000], [14, 13], 0x0051_3f03, 70),
+    // Continue the woodland behind the western ridge and below Millbrook. Existing
+    // groves stay first so their tree identities survive this appended authoring.
+    ([-12500, -10500], [13, 14], 0x0051_3f04, 76),
+    ([6500, 5800], [13, 12], 0x0051_3f05, 74),
+];
+
+/// Lower, patchy woodland between the northern cliff feet and the existing Vale places.
+/// These groves may root on the low valley floor; appended last to retain older tree IDs.
+const NORTH_GROVES: [([i32; 2], [i32; 2], u64, u64); 4] = [
+    ([-17_000, -20_000], [15, 13], 0x0051_4f01, 78),
+    ([-10_000, -20_000], [15, 9], 0x0051_4f02, 78),
+    ([-1_500, -20_000], [14, 8], 0x0051_4f03, 76),
+    ([10_000, -19_000], [15, 12], 0x0051_4f04, 76),
+];
+
 /// SplitMix64 finaliser: a fixed integer hash, identical on every platform.
 const fn splitmix64(value: u64) -> u64 {
     let mut z = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
@@ -559,11 +646,20 @@ fn trees() -> Vec<StaticCollider> {
             if !clear_of_roads(&collider) {
                 continue;
             }
-            trees.push(collider);
+            if !brook::wet_ground(x, z) && !shrine::flattens(x, z) {
+                trees.push(collider);
+            }
             next_id += 1;
         }
     }
-    for (origin, cells, seed, percent) in OUTER_FORESTS {
+    for (origin, cells, seed, percent) in OUTER_FORESTS
+        .into_iter()
+        .chain(RIM_GROVES)
+        .chain(NORTH_GROVES)
+    {
+        let rim_grove = RIM_GROVES.iter().any(|grove| grove.2 == seed);
+        let north_grove = NORTH_GROVES.iter().any(|grove| grove.2 == seed);
+        let minimum_height = if rim_grove { 600 } else { 0 };
         for row in 0..cells[1] {
             for column in 0..cells[0] {
                 let cell = (u64::from(row.unsigned_abs()) << 32) | u64::from(column.unsigned_abs());
@@ -576,10 +672,18 @@ fn trees() -> Vec<StaticCollider> {
                     origin[0] + column * woods::CELL + woods::EDGE_MARGIN + jitter(8) % (span + 1);
                 let z =
                     origin[1] + row * woods::CELL + woods::EDGE_MARGIN + jitter(16) % (span + 1);
+                // Gaps in the canopy are broad patches, not one evenly occupied lattice.
+                // Leave the highest spurs bare so the ridges remain visible above the trees.
+                if (rim_grove || north_grove)
+                    && (value_noise_q10(i64::from(x), i64::from(z), 1800, seed) < 440
+                        || !(minimum_height..2300).contains(&TERRAIN.height_at(x, z)))
+                {
+                    continue;
+                }
                 // Hamlets, fields and the tower's yard, with their aprons, stay clear (#424).
                 if farmland::level(x, z)
                     || !highlands::clear_for_tree(x, z)
-                    || (x >= marsh::BOUNDS.min[0] && !marsh::clear_for_tree(x, z))
+                    || (x >= marsh::RIDGE[0] - 600 && !marsh::clear_for_tree(x, z))
                 {
                     continue;
                 }
@@ -590,14 +694,115 @@ fn trees() -> Vec<StaticCollider> {
                     position: [x, base + woods::TRUNK_HEIGHT / 2, z],
                     half_extents: [half, woods::TRUNK_HEIGHT / 2, half],
                 };
+                // These patches overlap the sparse old northern band. Preserve the old
+                // trunks and a walkable gap rather than planting a second trunk beside one.
+                if north_grove
+                    && trees.iter().any(|tree| {
+                        (x - tree.position[0]).abs() < half + tree.half_extents[0] + 150
+                            && (z - tree.position[2]).abs() < half + tree.half_extents[2] + 150
+                    })
+                {
+                    continue;
+                }
                 if !clear_of_roads(&collider) || near_structure(&collider) {
                     continue;
                 }
+                if !brook::wet_ground(x, z) && !shrine::flattens(x, z) {
+                    trees.push(collider);
+                }
+                next_id += 1;
+            }
+        }
+    }
+    // New canopy patches are authored separately so older forest identities remain stable.
+    let posts: Vec<_> = units::creature_spawns()
+        .into_iter()
+        .map(|unit| unit.position)
+        .chain(units::npcs().into_iter().map(|unit| unit.position))
+        .collect();
+    for forest in &landscape::data().forests {
+        for row in 0..forest.cells[1] {
+            for column in 0..forest.cells[0] {
+                let cell = (u64::from(row.unsigned_abs()) << 32) | u64::from(column.unsigned_abs());
+                let hash = splitmix64(forest.seed ^ cell);
+                if hash % 100 >= forest.percent {
+                    continue;
+                }
+                let jitter = |shift: u32| (hash >> shift) as i32 & 0xff;
+                let x = forest.origin[0]
+                    + column * woods::CELL
+                    + woods::EDGE_MARGIN
+                    + jitter(8) % (span + 1);
+                let z = forest.origin[1]
+                    + row * woods::CELL
+                    + woods::EDGE_MARGIN
+                    + jitter(16) % (span + 1);
+                if value_noise_q10(i64::from(x), i64::from(z), 1800, forest.seed) < 300
+                    || !(forest.elevation[0]..forest.elevation[1])
+                        .contains(&TERRAIN.height_at(x, z))
+                    || farmland::level(x, z)
+                    || !highlands::clear_for_tree(x, z)
+                    || brook::wet_ground(x, z)
+                    || shrine::flattens(x, z)
+                    || posts
+                        .iter()
+                        .any(|post| (x - post[0]).abs() < 350 && (z - post[1]).abs() < 350)
+                {
+                    continue;
+                }
+                let half = 30 + jitter(24) % 16;
+                if trees.iter().any(|tree| {
+                    (x - tree.position[0]).abs() < half + tree.half_extents[0] + 150
+                        && (z - tree.position[2]).abs() < half + tree.half_extents[2] + 150
+                }) {
+                    continue;
+                }
+                let base = footing([x - half, z - half], [x + half, z + half]);
+                let collider = StaticCollider {
+                    id: next_id,
+                    position: [x, base + woods::TRUNK_HEIGHT / 2, z],
+                    half_extents: [half, woods::TRUNK_HEIGHT / 2, half],
+                };
+                if !clear_of_roads(&collider) || near_structure(&collider) {
+                    continue;
+                }
+                assert!(
+                    ids::TREES.contains(&next_id),
+                    "authored forests exceed reserved tree identities"
+                );
                 trees.push(collider);
                 next_id += 1;
             }
         }
     }
+    // The shore rocks and shrine moved with Stillwater. Reject intersecting trunks
+    // after assigning IDs, so clearing their new sites never renumbers other trees.
+    let shore: Vec<_> = (vale::REGION.colliders)()
+        .into_iter()
+        .filter(|body| ids::SHORE_ROCKS.contains(&body.id))
+        .chain(shrine::ruins(*ids::SHRINE_RUINS.start()))
+        .chain(shrine::walls(*ids::SHRINE_CAVE_WALLS.start()))
+        .chain(
+            fort::meshes()
+                .into_iter()
+                .filter(|mesh| {
+                    (fort::REDBRAND_FIRE..=*fort::REDBRAND_SHELTERS.end()).contains(&mesh.id)
+                })
+                .map(|mesh| mesh.bounds().expect("valid Redbrand camp bounds")),
+        )
+        .collect();
+    let [camp_min, camp_max] = landscape::data().redbrand_camp.clearing;
+    trees.retain(|tree| {
+        let in_camp = (camp_min[0]..=camp_max[0]).contains(&tree.position[0])
+            && (camp_min[1]..=camp_max[1]).contains(&tree.position[2]);
+        !in_camp
+            && !shore.iter().any(|body| {
+                (0..3).all(|axis| {
+                    (i64::from(tree.position[axis]) - i64::from(body.position[axis])).abs()
+                        < i64::from(tree.half_extents[axis]) + i64::from(body.half_extents[axis])
+                })
+            })
+    });
     trees
 }
 
@@ -767,11 +972,19 @@ fn undressed_colliders() -> Vec<StaticCollider> {
     colliders.extend(REGIONS.iter().flat_map(|region| (region.colliders)()));
     colliders.extend(trees());
     colliders.extend((*ids::LADDERS.start()..).zip(LADDER_TOWERS).map(ladder));
+    // Rope placement reads the authored rock's bounds, not a removed box proxy.
+    colliders.extend(
+        cave::collision_meshes()
+            .iter()
+            .filter(|m| (400..=406).contains(&m.id))
+            .map(|m| m.bounds().expect("committed Hollow rock bounds are valid")),
+    );
     let ropes: Vec<_> = (*ids::ROPES.start()..)
         .zip(ROPES)
         .map(|(id, rope)| rope.collider(id, &colliders))
         .collect();
     colliders.extend(ropes);
+    colliders.retain(|c| !(400..=406).contains(&c.id));
     colliders
 }
 
@@ -897,6 +1110,8 @@ pub fn climbing() -> crate::ClimbSurfaces {
         .filter(|&(index, _)| index != SHEER_CRAGS[0] && index != SHEER_CRAGS[1])
         .map(|(_, (id, _))| (id, Rock));
     let colliders = range(ids::PALISADE, Timber)
+        .chain(range(65050..=65059, Timber))
+        .chain(range(65030..=65032, Rock))
         .chain(range(ids::FENCES, Timber))
         .chain(range(ids::RUIN_FENCES, Timber))
         .chain(range(ids::FARMLAND_FENCES, Timber).take(farmland::fences().len()))
@@ -954,8 +1169,8 @@ pub const CLIMBING_ROUTES: [XzBounds; 3] = [
 ];
 
 /// The mill hoist (#56): a 2 m square stone pillar against the windmill's south face that
-/// rests with its top flush with the farm terrace, rises 8 m to the windmill's gallery (its flat
-/// top) at 1.5 m/s, rests 5 s and sinks back. Its box fills the shaft below its top, so it
+/// rests with its top flush with the farm terrace, rises 8 m to the windmill's east gallery
+/// at 1.5 m/s, rests 5 s and sinks back. Its box fills the shaft below its top, so it
 /// sweeps no space a unit could stand in except on top.
 pub const MILL_HOIST: crate::Platform = crate::Platform {
     id: crate::PlatformId::new(1),
@@ -992,14 +1207,25 @@ pub fn ramps() -> Vec<crate::Ramp> {
     let deck = dock.collider();
     let top = deck.position[1] + deck.half_extents[1];
     let bottom = dock.feet();
-    let edge = deck.position[2] + deck.half_extents[2];
+    let (dx, dz, rises) = match dock.quarters % 4 {
+        0 => (-400, 140, crate::RampRise::NegZ),
+        1 => (140, 400, crate::RampRise::NegX),
+        2 => (400, -140, crate::RampRise::PosZ),
+        _ => (-140, -400, crate::RampRise::PosX),
+    };
+    let half_extents = if dock.quarters.is_multiple_of(2) {
+        [100, (top - bottom) / 2, 50]
+    } else {
+        [50, (top - bottom) / 2, 100]
+    };
     let mut ramps = MILL_RAMPS.to_vec();
     ramps.push(crate::Ramp {
         body: ids::DOCK_RAMP,
-        position: [3_400, (top + bottom) / 2, edge + 50],
-        half_extents: [100, (top - bottom) / 2, 50],
-        rises: crate::RampRise::NegZ,
+        position: [dock.at[0] + dx, (top + bottom) / 2, dock.at[1] + dz],
+        half_extents,
+        rises,
     });
+    ramps.extend(brook::ramps());
     ramps
 }
 
@@ -1057,6 +1283,15 @@ pub fn watch_post() -> Vec<crate::StructurePiece> {
 pub fn base_definition() -> ZoneDefinition {
     ZoneDefinition::with_spawn_grid(GRAVITY, SPAWN_GRID, colliders())
         .and_then(|definition| definition.with_terrain(TERRAIN.clone()))
+        .and_then(|definition| {
+            definition.with_static_meshes(
+                cave::collision_meshes()
+                    .into_iter()
+                    .chain(fort::meshes())
+                    .chain(shrine::collision_meshes())
+                    .collect(),
+            )
+        })
         .expect("built-in Greyhaven Vale content is valid")
 }
 
@@ -1118,6 +1353,7 @@ pub fn content_with_definition(
                 [stillwater_lake(), shrine::cave_water()]
                     .into_iter()
                     .chain(marsh::water_volumes())
+                    .chain(brook::waters())
                     .collect(),
             )?
             .with_climbing(climbing())?

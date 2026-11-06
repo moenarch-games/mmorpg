@@ -11,17 +11,16 @@ strum.workspace = true
 rapier3d.workspace = true
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
-# Test/bench-only second physics backend (physics-engine #330); never in production or WASM.
-physics-engine = { workspace = true, optional = true }
+# Primary backend for supported content; Rapier remains the compatibility fallback and oracle.
+physics-engine.workspace = true
 
 [features]
-# Lets `physics::World` run on physics-engine instead of Rapier, for the `physics_ab` test
-# and example only. Production builds (zone host, `mmorpg-wasm`) never enable it.
-physics-ab = ["dep:physics-engine"]
+# Extra A/B timing/operation diagnostics and oracle comparisons.
+physics-ab = []
 
 [dev-dependencies]
 # Reads the bot scenario files the physics A/B test replays.
-toml = { version = "=1.1.8", default-features = false, features = ["parse", "serde", "std"] }
+toml = { version = "=1.2.0", default-features = false, features = ["parse", "serde", "std"] }
 libtest-mimic.workspace = true
 
 # One trial per workload, so nextest runs them in parallel (#540).

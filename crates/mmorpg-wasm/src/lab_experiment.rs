@@ -1670,7 +1670,9 @@ mod tests {
         let mut slow = sliding_slash();
         slow.startup.ms = 200;
         config.authored.push(slow);
-        let facing = crate::action_lab::LAB_LOCATION.1;
+        // Move east away from the authored basin cliff: this scenario measures
+        // authored startup, while climb/landing holds have their own diagnostics.
+        let facing = 16_384;
         let scenario = scenario(&[
             (
                 2,

@@ -1,6 +1,6 @@
 //! The physics-engine backend (physics-engine #330): a thin adapter over
-//! `physics_engine::approximate::World`, compiled only with the test/bench `physics-ab`
-//! feature. Rapier stays the production authority (Atlas 2.1.6).
+//! `physics_engine::approximate::World`, the default for supported zone content.
+//! Rapier is the fallback for unsupported collision geometry and the behavioural oracle.
 //!
 //! Units: the engine world is configured with `Config::length_unit = 100`, so it works in the
 //! game's centimetre units directly; nothing is converted. Its built-in character defaults
@@ -18,9 +18,11 @@
 //!   order, each seeing the earlier movers at their new positions, as the Rapier step does
 //!   body by body.
 //! - Rays, overlaps and segment checks are `cast_ray`/`cast_ray_first` and `overlap_shape`.
-//! - Debris (#288) and movable props (#58) are engine dynamic boxes in a world rebuilt each
-//!   tick from the nearby game bodies, as the Rapier backend rebuilds its own
-//!   ([`World::step_debris`], [`World::step_props`]).
+//! - Debris (#288) keeps Rapier's existing dynamic solver even in primitive-only zones: its
+//!   contact/settling behaviour is part of the breakables gameplay contract. Movable props
+//!   (#58) use engine dynamic boxes in primitive-only zones, but fall back to Rapier's exact
+//!   geometry solver when authored meshes or hulls are present. The character and static-query
+//!   backend remains Physics Engine.
 //!
 //! Intentional differences from the Rapier backend (listed in `docs/PHYSICS_AB.md`):
 //!
@@ -40,8 +42,9 @@ use std::fmt;
 
 use physics_engine::BodyId as EngineId;
 use physics_engine::approximate::{
-    Body, CharacterMove, CharacterMoveResult, CharacterSettings, Config, HeightfieldDesc, Material,
-    Quaternion, QueryFilter, QueryPose, RayCast, Shape, ShapeCast, Vector,
+    Body, CharacterMove, CharacterMoveResult, CharacterSettings, Config, ConvexHullDesc,
+    HeightfieldDesc, Material, Quaternion, QueryFilter, QueryPose, RayCast, Shape, ShapeCast,
+    TriangleMeshDesc, Vector,
 };
 
 use super::rapier::{DEBRIS_REST_SPEED_UNITS, DEBRIS_REST_SPIN, Dynamic, TICKS_PER_SECOND, nearby};
@@ -158,11 +161,37 @@ impl World {
     }
 
     fn insert(&mut self, body: &RigidBody) -> Result<EngineId, PhysicsError> {
-        let engine_body = engine_body(body);
-        let handle = self
-            .engine
-            .add_body(engine_body)
-            .map_err(|failure| engine_error("add_body", failure))?;
+        let handle = if let Some(mesh) = &body.mesh {
+            self.engine.add_triangle_mesh(
+                TriangleMeshDesc {
+                    position: vector(super::from_units(mesh.position)),
+                    vertices: mesh
+                        .vertices
+                        .iter()
+                        .map(|&vertex| vector(super::from_units(vertex)))
+                        .collect(),
+                    triangles: mesh.triangles.clone(),
+                    material: Material::default(),
+                },
+                Some(body.id.0),
+            )
+        } else if let Kind::Rock(shape) = body.kind {
+            self.engine.add_convex_hull(
+                ConvexHullDesc {
+                    position: vector(body.position),
+                    vertices: shape
+                        .hull(body.half_extents)
+                        .into_iter()
+                        .map(vector)
+                        .collect(),
+                    material: Material::default(),
+                },
+                Some(body.id.0),
+            )
+        } else {
+            self.engine.add_body(engine_body(body))
+        }
+        .map_err(|failure| engine_error("add authored or primitive body", failure))?;
         if body.is_moving() {
             self.engine
                 .add_character(handle, self.settings)
@@ -201,14 +230,14 @@ fn engine_body(body: &RigidBody) -> Body {
             wedge
         }
         // A moving platform (#56) is a static box the adapter moves in place where the zone
-        // moves it; the adapter carries its riders. The engine has no convex hulls: a rock
-        // (#49) is its box, as on Rapier in the A/B comparison (`super::rock_hulls`).
-        Kind::Fixed | Kind::Platform | Kind::Rock(_) => Body::keyed(
+        // moves it; authored meshes and rocks are admitted through their geometry APIs above.
+        Kind::Fixed | Kind::Platform => Body::keyed(
             key,
             Shape::Box(vector(exact(body.half_extents))),
             vector(body.position),
             0.0,
         ),
+        Kind::Rock(_) => unreachable!("authored rocks use add_convex_hull"),
     }
 }
 
@@ -652,6 +681,23 @@ impl World {
         half_extents: [f32; 3],
     ) -> Result<Vec<BodyId>, PhysicsError> {
         let pose = QueryPose::new(Shape::Box(vector(half_extents)), vector(centre));
+        self.overlap_pose(pose)
+    }
+
+    pub fn overlap_capsule(
+        &self,
+        centre: [f32; 3],
+        half_extents: [f32; 3],
+    ) -> Result<Vec<BodyId>, PhysicsError> {
+        let radius = half_extents[0].max(half_extents[2]).min(half_extents[1]);
+        let half_height = (half_extents[1] - radius).max(0.0);
+        self.overlap_pose(QueryPose::new(
+            Shape::capsule(half_height, radius),
+            vector(centre),
+        ))
+    }
+
+    fn overlap_pose(&self, pose: QueryPose) -> Result<Vec<BodyId>, PhysicsError> {
         let mut hits = Vec::new();
         self.engine
             .overlap_shape(pose, QueryFilter::default(), &mut hits)
@@ -750,14 +796,35 @@ impl World {
         })
     }
 
-    /// Debris (#288) as engine dynamic boxes: see [`Self::step_dynamic`].
+    /// Debris (#288) retains Rapier's dynamic contact and settling semantics on both backends.
     pub fn step_debris(&self, debris: &mut [DebrisBody], settle: &[bool]) -> usize {
-        self.step_dynamic(debris, settle, &Dynamic::default())
-            .expect("physics-engine debris step failed")
+        // #643 CI demonstrated that the primitive-only engine path settled crate fragments
+        // above the accepted ground band. This is gameplay-visible, not merely a timing
+        // difference; keep the already-accepted Rapier path until dynamic parity is established.
+        super::rapier::step_debris(
+            self.gravity,
+            &self.bodies,
+            self.ground
+                .as_ref()
+                .map(|ground| (ground.floor, &ground.terrain)),
+            debris,
+            settle,
+        )
     }
 
     /// Movable props (#58) as rotation-locked engine boxes stopped by units' capsules.
     pub fn step_props(&self, props: &mut [DebrisBody], exclude: &[BodyId]) -> usize {
+        if props.iter().any(|piece| !piece.resting) && self.has_authored_geometry() {
+            return super::rapier::step_props(
+                self.gravity,
+                &self.bodies,
+                self.ground
+                    .as_ref()
+                    .map(|ground| (ground.floor, &ground.terrain)),
+                props,
+                exclude,
+            );
+        }
         let settle = vec![true; props.len()];
         let options = Dynamic {
             upright: true,
@@ -768,11 +835,16 @@ impl World {
             .expect("physics-engine props step failed")
     }
 
-    /// One tick of `pieces` in a fresh engine world of the nearby game bodies, rebuilt from
-    /// game state like the Rapier backend's step: the same materials (see [`PIECE_FRICTION`],
-    /// density 600, linear damping 0.2, angular 0.8), sleep off, and the
-    /// game's settle rule. Two substeps of four passes for debris and of one for upright props,
-    /// as physics-engine's `debris` and `props` oracle scenarios calibrate them.
+    fn has_authored_geometry(&self) -> bool {
+        self.bodies
+            .values()
+            .any(|body| body.mesh.is_some() || matches!(body.kind, Kind::Rock(_)))
+    }
+
+    /// One tick of primitive-zone movable props in a fresh engine world of nearby game bodies,
+    /// rebuilt from game state like the Rapier backend's step: the same materials (see
+    /// [`PIECE_FRICTION`], density 600, linear damping 0.2, angular 0.8), sleep off, and the
+    /// game's settle rule. The upright prop path uses two substeps of one solver pass.
     fn step_dynamic(
         &self,
         pieces: &mut [DebrisBody],

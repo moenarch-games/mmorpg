@@ -95,8 +95,10 @@ fn main() {
     }
     // The class starter outfits (asset-tooling #379): per `class.<id>` preset, its outfit's
     // variant for the preset's skin and its armour, and the drop armour.
+    let appearance_path = bundle.join(&appearance);
+    println!("cargo:rerun-if-changed={}", appearance_path.display());
     let look: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(bundle.join(&appearance)).expect("the Ranger appearance is embedded"),
+        &fs::read_to_string(&appearance_path).expect("the Ranger appearance is embedded"),
     )
     .expect("the Ranger appearance is JSON");
     let outfit = |id: &str| {
@@ -115,7 +117,12 @@ fn main() {
     code.push_str(&format!("pub const DROP_ARMOR: &str = {drop:?};\n"));
     files.push(drop);
     code.push_str("pub const OUTFITS: &[(&str, &str, &str)] = &[\n");
-    for preset in look["presets"].as_array().expect("appearance presets") {
+    for preset in look["presets"].as_array().unwrap_or_else(|| {
+        panic!(
+            "Ranger appearance {} has no presets; refresh the downloaded assets with scripts/fetch-bundles.sh, then scripts/prepare-ranger-native.sh",
+            appearance_path.display()
+        )
+    }) {
         let id = preset["id"].as_str().expect("a preset id");
         if !id.starts_with("class.") {
             continue;
@@ -179,6 +186,12 @@ fn main() {
         &manifest_dir.join("../../web/public/buildings/outpost.kit"),
         None,
         true,
+    );
+    static_bundle(
+        "fort_bundle.rs",
+        &manifest_dir.join("../../web/public/authored/greyhaven-fort"),
+        None,
+        false,
     );
     // Every prop of the settlement props (#421).
     static_bundle(

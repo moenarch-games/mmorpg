@@ -2,7 +2,7 @@
 //!
 //! `mmorpg-core` decides movement intent, jumps, gravity and every gameplay outcome; this
 //! module asks the physics backend where that intent physically leads. Static content
-//! colliders, world limits, door leaves and NPCs are fixed boxes; the flat ground is a floor
+//! meshes and boxes, world limits, door leaves and NPCs are fixed; the flat ground is a floor
 //! half-space and the authored hills a heightfield. Players and creatures are upright capsules
 //! moved by a kinematic character controller, which resolves contact, sliding and support.
 //!
@@ -13,15 +13,12 @@
 //! PR 2), which `f32` holds exactly, so faster ticks keep fractional per-tick speeds and gravity.
 //! The wire and canonical snapshots keep units.
 //!
-//! Rapier (`physics/rapier.rs`) is the only backend in every production and WASM build. With
-//! the non-default `physics-ab` feature (the `physics_ab` test and example only,
-//! physics-engine #330), [`World`] can instead run on physics-engine's `approximate::World`
-//! (`physics/engine.rs`) so the same zone simulation can be compared on both; `Backend` and
-//! `using_backend` select it at runtime. No call site changes with the backend.
+//! Physics Engine (`physics/engine.rs`) is the default in production and WASM builds. Rapier
+//! (`physics/rapier.rs`) remains a selectable fallback for content not yet supported by the
+//! engine, and the behavioural oracle. The `physics-ab` feature adds comparison diagnostics.
 
 use std::fmt;
 
-#[cfg(feature = "physics-ab")]
 mod engine;
 mod queries;
 mod rapier;
@@ -139,8 +136,8 @@ enum Kind {
     Rock(crate::RockShape),
 }
 
-/// One body: a fixed box, or a moving unit's capsule with its authoritative `f32` state.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// One body: fixed geometry, or a moving unit's capsule with authoritative `f32` state.
+#[derive(Clone, Debug, PartialEq)]
 pub struct RigidBody {
     id: BodyId,
     kind: Kind,
@@ -153,6 +150,7 @@ pub struct RigidBody {
     /// or ground settling; its vertical velocity is the zone's. Set by the zone every tick,
     /// never canonical.
     weightless: bool,
+    mesh: Option<std::sync::Arc<crate::StaticMesh>>,
 }
 
 fn round(value: [f32; 3]) -> Vec3i {
@@ -201,7 +199,22 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents,
             weightless: false,
+            mesh: None,
         }
+    }
+
+    /// A validated content mesh, retaining its conservative bounds for nearby queries.
+    pub fn static_mesh(mesh: &crate::StaticMesh) -> Result<Self, PhysicsError> {
+        let bounds = mesh.bounds().map_err(|e| error(e.to_string()))?;
+        let mut body = Self::fixed(
+            BodyId(u64::from(mesh.id)),
+            round(from_units(bounds.position)),
+            round(from_units(bounds.half_extents)),
+        );
+        // Bounds used by nearby queries must be centred on the actual bounds. The Rapier mesh
+        // stays relative to the authored origin instead (see insert).
+        body.mesh = Some(std::sync::Arc::new(mesh.clone()));
+        Ok(body)
     }
 
     /// A flat floor: everything below height `y` (units) is solid. Floors meet capsules
@@ -215,6 +228,7 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents: Vec3i::ZERO,
             weightless: false,
+            mesh: None,
         }
     }
 
@@ -234,6 +248,7 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents,
             weightless: false,
+            mesh: None,
         }
     }
 
@@ -252,6 +267,7 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents,
             weightless: false,
+            mesh: None,
         }
     }
 
@@ -265,6 +281,7 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents,
             weightless: false,
+            mesh: None,
         }
     }
 
@@ -294,6 +311,7 @@ impl RigidBody {
             velocity,
             half_extents,
             weightless: false,
+            mesh: None,
         }
     }
 
@@ -408,17 +426,68 @@ pub struct StepStats {
     pub bodies: usize,
 }
 
-/// Which physics backend a [`World`] runs on (physics-engine #330, test/bench only).
+/// One explicitly timed world operation in the test/bench-only physics A/B seam.
 #[cfg(feature = "physics-ab")]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
-pub enum Backend {
-    /// Rapier, the production authority.
-    Rapier,
-    /// physics-engine's `approximate::World`; debris stays on Rapier.
-    Engine,
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TimedCalls {
+    /// Successful calls (not internal operations performed by `step`).
+    pub calls: u64,
+    /// Inclusive elapsed nanoseconds of those calls; diagnostic, not deterministic work.
+    pub nanos: u64,
 }
 
 #[cfg(feature = "physics-ab")]
+impl TimedCalls {
+    fn record(&mut self, start: std::time::Instant) {
+        self.calls += 1;
+        self.nanos = self
+            .nanos
+            .saturating_add(u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX));
+    }
+}
+
+/// Noncanonical instrumentation of the consumer's operations, not a physics-engine cache.
+#[cfg(feature = "physics-ab")]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct WorldOperationProfile {
+    pub steps: TimedCalls,
+    pub removals: TimedCalls,
+    pub replacements: TimedCalls,
+    pub platform_moves: TimedCalls,
+    /// Successful scheduled platform moves whose target differs from the current position.
+    pub platform_changes: u64,
+    pub platform_places: TimedCalls,
+    pub position_sets: TimedCalls,
+}
+
+/// Rapier narrow-phase topology observed after a tick. The character controller uses
+/// swept queries, so these pairs are not physics-engine's persistent contact cache.
+#[cfg(feature = "physics-ab")]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RapierContactProfile {
+    /// Distinct body pairs retained by Rapier's narrow phase, including non-touching pairs.
+    pub pair_candidates: usize,
+    /// Those pairs with an active contact at the observation point.
+    pub active_pairs: usize,
+    /// Bodies incident to at least one retained pair.
+    pub incident_bodies: usize,
+    /// Greatest number of retained neighboring bodies for one body.
+    pub max_body_degree: usize,
+    /// Greatest number of active contact neighbors for one body.
+    pub max_active_degree: usize,
+    /// Collision callbacks delivered by Rapier's kinematic controller since world creation.
+    pub controller_collisions: u64,
+}
+
+/// Which physics backend a [`World`] runs on.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
+pub enum Backend {
+    /// Rapier, the compatibility fallback and behaviour oracle.
+    Rapier,
+    /// Physics Engine's `approximate::World`.
+    Engine,
+}
+
 impl Backend {
     #[must_use]
     pub const fn name(self) -> &'static str {
@@ -431,73 +500,54 @@ impl Backend {
 
 #[cfg(feature = "physics-ab")]
 thread_local! {
-    static DEFAULT_BACKEND: std::cell::Cell<Backend> = const { std::cell::Cell::new(Backend::Rapier) };
+    static BACKEND_OVERRIDE: std::cell::Cell<Option<Backend>> = const { std::cell::Cell::new(None) };
 }
 
-/// Runs `run` with every [`World::new`] on this thread using `backend`, so whole zones (and
-/// their recoveries) are built on it without any call site naming a backend.
+/// Runs the A/B oracle on a chosen backend for the full construction and recovery scope.
 #[cfg(feature = "physics-ab")]
 pub fn using_backend<R>(backend: Backend, run: impl FnOnce() -> R) -> R {
-    struct Restore(Backend);
+    struct Restore(Option<Backend>);
     impl Drop for Restore {
         fn drop(&mut self) {
-            DEFAULT_BACKEND.with(|cell| cell.set(self.0));
+            BACKEND_OVERRIDE.with(|cell| cell.set(self.0));
         }
     }
-    struct Comparing(bool);
-    impl Drop for Comparing {
-        fn drop(&mut self) {
-            COMPARING.with(|cell| cell.set(self.0));
-        }
-    }
-    let _restore = Restore(DEFAULT_BACKEND.with(|cell| cell.replace(backend)));
-    let _comparing = Comparing(COMPARING.with(|cell| cell.replace(true)));
+    let _restore = Restore(BACKEND_OVERRIDE.with(|cell| cell.replace(Some(backend))));
     run()
 }
 
-#[cfg(feature = "physics-ab")]
-thread_local! {
-    /// Whether worlds are built for the A/B comparison ([`using_backend`]).
-    static COMPARING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-/// Whether Rapier collides a rock (#49) as its convex proxy. physics-engine has no convex
-/// hulls, so in the A/B comparison both backends collide with the rock's box.
-#[must_use]
-pub(crate) fn rock_hulls() -> bool {
+/// Chooses the default backend before zone construction. The engine handles immutable authored
+/// triangles and convex rocks; its dynamic-box steps retain Rapier for those geometries.
+pub(crate) fn backend_for_content(_content: &crate::ZoneContent) -> Backend {
     #[cfg(feature = "physics-ab")]
-    {
-        !COMPARING.with(std::cell::Cell::get)
+    if let Some(backend) = BACKEND_OVERRIDE.with(std::cell::Cell::get) {
+        return backend;
     }
-    #[cfg(not(feature = "physics-ab"))]
-    {
-        true
-    }
+    Backend::Engine
 }
 
-// Rapier stays inline: it is the only variant in production builds. The engine variant exists
-// only with `physics-ab` and is boxed.
-#[cfg_attr(feature = "physics-ab", allow(clippy::large_enum_variant))]
+// Rapier stays inline and Physics Engine is boxed, to keep the enum small.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
 enum Worlds {
     Rapier(rapier::World),
-    #[cfg(feature = "physics-ab")]
     Engine(Box<engine::World>),
 }
 
-/// The zone's physical world, on Rapier unless `physics-ab` selects physics-engine.
+/// The zone's physical world; Engine by default, Rapier for unsupported authored content.
 pub struct World {
     worlds: Worlds,
     /// Nanoseconds spent in this world's calls (`physics-ab` timing).
     #[cfg(feature = "physics-ab")]
     spent: std::sync::atomic::AtomicU64,
+    #[cfg(feature = "physics-ab")]
+    operations: WorldOperationProfile,
 }
 
 impl fmt::Debug for World {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.worlds {
             Worlds::Rapier(world) => world.fmt(formatter),
-            #[cfg(feature = "physics-ab")]
             Worlds::Engine(world) => world.fmt(formatter),
         }
     }
@@ -511,6 +561,8 @@ impl Clone for World {
             spent: std::sync::atomic::AtomicU64::new(
                 self.spent.load(std::sync::atomic::Ordering::Relaxed),
             ),
+            #[cfg(feature = "physics-ab")]
+            operations: self.operations,
         }
     }
 }
@@ -523,7 +575,6 @@ macro_rules! dispatch {
         let started = std::time::Instant::now();
         let result = match $worlds {
             Worlds::Rapier($world) => $call,
-            #[cfg(feature = "physics-ab")]
             Worlds::Engine($world) => $call,
         };
         #[cfg(feature = "physics-ab")]
@@ -540,19 +591,13 @@ impl World {
     #[must_use]
     pub fn new(gravity: Vec3i) -> Self {
         #[cfg(feature = "physics-ab")]
-        {
-            Self::with_backend(gravity, DEFAULT_BACKEND.with(std::cell::Cell::get))
+        if let Some(backend) = BACKEND_OVERRIDE.with(std::cell::Cell::get) {
+            return Self::with_backend(gravity, backend);
         }
-        #[cfg(not(feature = "physics-ab"))]
-        {
-            Self {
-                worlds: Worlds::Rapier(rapier::World::new(gravity)),
-            }
-        }
+        Self::with_backend(gravity, Backend::Engine)
     }
 
-    /// An empty world on `backend`.
-    #[cfg(feature = "physics-ab")]
+    /// An empty world on `backend`, including an explicit Rapier fallback.
     #[must_use]
     pub fn with_backend(gravity: Vec3i, backend: Backend) -> Self {
         let worlds = match backend {
@@ -561,11 +606,13 @@ impl World {
         };
         Self {
             worlds,
+            #[cfg(feature = "physics-ab")]
             spent: std::sync::atomic::AtomicU64::new(0),
+            #[cfg(feature = "physics-ab")]
+            operations: WorldOperationProfile::default(),
         }
     }
 
-    #[cfg(feature = "physics-ab")]
     #[must_use]
     pub const fn backend(&self) -> Backend {
         match self.worlds {
@@ -582,24 +629,56 @@ impl World {
         self.spent.load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// Diagnostic operation counters; callers take a before/after difference per tick.
+    #[cfg(feature = "physics-ab")]
+    #[must_use]
+    pub const fn operation_profile(&self) -> WorldOperationProfile {
+        self.operations
+    }
+
+    /// Rapier contact topology, or `None` for the test-only engine adapter. The latter
+    /// never runs its persistent-cache step; exposing a fabricated zero would conceal
+    /// a future adapter change.
+    #[cfg(feature = "physics-ab")]
+    #[must_use]
+    pub fn rapier_contacts(&self) -> Option<RapierContactProfile> {
+        match &self.worlds {
+            Worlds::Rapier(world) => Some(world.contact_profile()),
+            Worlds::Engine(_) => None,
+        }
+    }
+
     pub fn add_body(&mut self, body: RigidBody) -> Result<(), PhysicsError> {
         dispatch!(self, &mut self.worlds, world => world.add_body(body))
     }
 
     /// Replaces an existing body, for example a door leaf moving to its other box.
     pub fn replace_body(&mut self, body: RigidBody) -> Result<(), PhysicsError> {
-        dispatch!(self, &mut self.worlds, world => world.replace_body(body))
+        #[cfg(feature = "physics-ab")]
+        let start = std::time::Instant::now();
+        let outcome = dispatch!(self, &mut self.worlds, world => world.replace_body(body));
+        #[cfg(feature = "physics-ab")]
+        if outcome.is_ok() {
+            self.operations.replacements.record(start);
+        }
+        outcome
     }
 
     pub fn remove_body(&mut self, id: BodyId) -> Option<RigidBody> {
-        dispatch!(self, &mut self.worlds, world => world.remove_body(id))
+        #[cfg(feature = "physics-ab")]
+        let start = std::time::Instant::now();
+        let outcome = dispatch!(self, &mut self.worlds, world => world.remove_body(id));
+        #[cfg(feature = "physics-ab")]
+        if outcome.is_some() {
+            self.operations.removals.record(start);
+        }
+        outcome
     }
 
     #[must_use]
     pub fn body(&self, id: BodyId) -> Option<&RigidBody> {
         match &self.worlds {
             Worlds::Rapier(world) => world.body(id),
-            #[cfg(feature = "physics-ab")]
             Worlds::Engine(world) => world.body(id),
         }
     }
@@ -607,7 +686,14 @@ impl World {
     /// Places a moving body at `position` without resolving contact: placement by the zone
     /// (respawns, evade resets, recovery), never movement.
     pub fn set_position(&mut self, id: BodyId, position: Vec3i) -> Result<(), PhysicsError> {
-        dispatch!(self, &mut self.worlds, world => world.set_position(id, position))
+        #[cfg(feature = "physics-ab")]
+        let start = std::time::Instant::now();
+        let outcome = dispatch!(self, &mut self.worlds, world => world.set_position(id, position));
+        #[cfg(feature = "physics-ab")]
+        if outcome.is_ok() {
+            self.operations.position_sets.record(start);
+        }
+        outcome
     }
 
     /// Sets a moving body's velocity, in subunits per tick ([`SUBUNITS_PER_UNIT`]).
@@ -626,13 +712,32 @@ impl World {
     /// or after the units (so it never runs into the ones it carries), carrying every unit
     /// that stands on it and is not rising: the displacement is added to that unit's move.
     pub fn move_platform(&mut self, id: BodyId, to: Vec3i) -> Result<(), PhysicsError> {
-        dispatch!(self, &mut self.worlds, world => world.move_platform(id, to))
+        #[cfg(feature = "physics-ab")]
+        let start = std::time::Instant::now();
+        #[cfg(feature = "physics-ab")]
+        let changes_position = self.body(id).is_some_and(|body| body.position != exact(to));
+        let outcome = dispatch!(self, &mut self.worlds, world => world.move_platform(id, to));
+        #[cfg(feature = "physics-ab")]
+        if outcome.is_ok() {
+            self.operations.platform_moves.record(start);
+            if changes_position {
+                self.operations.platform_changes += 1;
+            }
+        }
+        outcome
     }
 
     /// Places platform `id`'s box at centre `to` at once, carrying nothing: building or
     /// restoring a zone.
     pub fn place_platform(&mut self, id: BodyId, to: Vec3i) -> Result<(), PhysicsError> {
-        dispatch!(self, &mut self.worlds, world => world.place_platform(id, to))
+        #[cfg(feature = "physics-ab")]
+        let start = std::time::Instant::now();
+        let outcome = dispatch!(self, &mut self.worlds, world => world.place_platform(id, to));
+        #[cfg(feature = "physics-ab")]
+        if outcome.is_ok() {
+            self.operations.platform_places.record(start);
+        }
+        outcome
     }
 
     /// Lays the authored ground as a heightfield identified as `id` (#159).
@@ -650,7 +755,14 @@ impl World {
     /// controller where its velocity leads. Landing on ground or meeting a ceiling ends its
     /// vertical velocity.
     pub fn step(&mut self) -> Result<StepStats, PhysicsError> {
-        dispatch!(self, &mut self.worlds, world => world.step())
+        #[cfg(feature = "physics-ab")]
+        let start = std::time::Instant::now();
+        let outcome = dispatch!(self, &mut self.worlds, world => world.step());
+        #[cfg(feature = "physics-ab")]
+        if outcome.is_ok() {
+            self.operations.steps.record(start);
+        }
+        outcome
     }
 
     /// Whether a moving body stands on static ground.
@@ -676,6 +788,16 @@ impl World {
         half_extents: [f32; 3],
     ) -> Result<Vec<BodyId>, PhysicsError> {
         dispatch!(self, &self.worlds, world => world.overlap_box(centre, half_extents))
+    }
+
+    /// Every body intersecting an upright unit capsule, in ID order. Navigation and
+    /// summon placement use the actual character shape, including against authored geometry.
+    pub fn overlap_capsule(
+        &self,
+        centre: [f32; 3],
+        half_extents: [f32; 3],
+    ) -> Result<Vec<BodyId>, PhysicsError> {
+        dispatch!(self, &self.worlds, world => world.overlap_capsule(centre, half_extents))
     }
 
     /// Whether a body accepted by `blocks` lies on the segment from `origin` along
@@ -737,16 +859,83 @@ impl World {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "physics-ab")]
+    #[test]
+    fn ab_diagnostics_count_successful_consumer_mutations() {
+        for backend in [Backend::Rapier, Backend::Engine] {
+            let mut world = World::with_backend(Vec3i::new(0, -SUBUNITS_PER_UNIT, 0), backend);
+            world.add_body(RigidBody::floor(BodyId(1), 0)).unwrap();
+            let fixed = BodyId(2);
+            world
+                .add_body(RigidBody::fixed(
+                    fixed,
+                    Vec3i::new(200, 100, 0),
+                    Vec3i::new(20, 100, 20),
+                ))
+                .unwrap();
+            world
+                .replace_body(RigidBody::fixed(
+                    fixed,
+                    Vec3i::new(300, 100, 0),
+                    Vec3i::new(20, 100, 20),
+                ))
+                .unwrap();
+            assert!(world.remove_body(fixed).is_some());
+            assert!(world.remove_body(fixed).is_none());
+            let platform = BodyId(3);
+            world
+                .add_body(RigidBody::platform(
+                    platform,
+                    Vec3i::new(0, -100, 0),
+                    Vec3i::new(100, 20, 100),
+                ))
+                .unwrap();
+            world
+                .move_platform(platform, Vec3i::new(0, -80, 0))
+                .unwrap();
+            world
+                .place_platform(platform, Vec3i::new(0, -80, 0))
+                .unwrap();
+            let unit = BodyId(4);
+            world
+                .add_body(RigidBody::dynamic(
+                    unit,
+                    Vec3i::new(0, 100, 0),
+                    Vec3i::ZERO,
+                    Vec3i::new(30, 90, 30),
+                ))
+                .unwrap();
+            world.set_position(unit, Vec3i::new(50, 100, 0)).unwrap();
+            world.step().unwrap();
+            let profile = world.operation_profile();
+            assert_eq!(profile.steps.calls, 1);
+            assert_eq!(profile.removals.calls, 1);
+            assert_eq!(profile.replacements.calls, 1);
+            assert_eq!(profile.platform_moves.calls, 1);
+            assert_eq!(profile.platform_changes, 1);
+            assert_eq!(profile.platform_places.calls, 1);
+            assert_eq!(profile.position_sets.calls, 1);
+            assert_eq!(
+                world.rapier_contacts().is_some(),
+                backend == Backend::Rapier
+            );
+        }
+    }
+
     /// Whole units per tick (squared) as the subunits velocities and gravity take.
     const S: i32 = SUBUNITS_PER_UNIT;
 
     const BODY: Vec3i = Vec3i::new(30, 90, 30);
 
-    /// Runs `test` on Rapier and, with `physics-ab`, again on physics-engine.
+    /// Runs the default engine, and both explicit backends with A/B diagnostics enabled.
     fn on_each_backend(test: fn()) {
+        #[cfg(not(feature = "physics-ab"))]
         test();
         #[cfg(feature = "physics-ab")]
-        using_backend(Backend::Engine, test);
+        {
+            using_backend(Backend::Rapier, test);
+            using_backend(Backend::Engine, test);
+        }
     }
 
     fn world() -> World {
@@ -855,7 +1044,7 @@ mod tests {
         for _ in 0..60 {
             world.step().unwrap();
         }
-        let body = *world.body(unit).unwrap();
+        let body = world.body(unit).unwrap().clone();
         assert_eq!(
             body.position(),
             Vec3i::new(0, 90, 0),
@@ -1318,7 +1507,7 @@ mod tests {
         for _ in 0..90 {
             world.step().unwrap();
         }
-        let body = *world.body(rider).unwrap();
+        let body = world.body(rider).unwrap();
         assert!(body.position().x > 150, "walked off: {:?}", body.position());
         assert_eq!(body.position().y, 90, "and fell to the floor");
     }

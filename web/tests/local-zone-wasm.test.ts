@@ -57,6 +57,40 @@ function run(source: LocalZoneSource, ticks: number): void {
 }
 
 describe("WASM local zone host", () => {
+  test("the authored Redbrand mouth is traversable and replays deterministically in WASM", () => {
+    const traverse = () => {
+      const zone = wasm.LocalZone.forScenario("redbrand-cavern", 0n);
+      try {
+        const player = zone.scenarioPlayer;
+        if (player === undefined) {
+          throw new Error("Redbrand scenario has no player");
+        }
+        const before = decodeSnapshot(zone.projection(player));
+        const start = before.entities.find((entity) => entity.kind === "player" && entity.entityId === player);
+        if (!start) {
+          throw new Error("Redbrand scenario player is not projected");
+        }
+        const at = () => decodeSnapshot(zone.projection(player)).entities
+          .find((entity) => entity.kind === "player" && entity.entityId === player)?.position;
+        expect(zone.submit(player, 1, encodeCommand({ kind: "move", forward: 1, strafe: 0, facing: start.facing }))).toBe(true);
+        for (let tick = 0; tick < 190; tick += 1) {
+          zone.tick();
+        }
+        return { start: start.position, end: at(), digest: zone.canonicalDigest() };
+      } finally {
+        zone.free();
+      }
+    };
+    const first = traverse();
+    expect(first.end).toBeDefined();
+    // Cross the full twelve-metre north approach and the authored mouth, as in the
+    // native collision test; a walk merely toward the sealed old entrance is insufficient.
+    const travelled = Math.hypot(first.end![0] - first.start[0], first.end![2] - first.start[2]);
+    expect(travelled).toBeGreaterThan(1400);
+    expect(first.end![2]).toBeGreaterThan(-14200);
+    expect(traverse()).toEqual(first);
+  });
+
   test("a real Greyhaven death publishes fenced loot, commits once and recovers dropped economic projections", async () => {
     const { source } = createLocalWorld(wasm, testCharacters());
     await source.join();
@@ -488,7 +522,7 @@ describe("WASM local zone host", () => {
     // keeps far batches out of a frame.
     expect(scene.stats.staticNodes).toBeLessThanOrEqual(3_800);
     // The terrain is drawn in visual tiles (#526), outside the static scene.
-    expect(scene.stats.staticVertices).toBeLessThanOrEqual(400_000);
+    expect(scene.stats.staticVertices).toBeLessThanOrEqual(500_000);
     expect(scenery.scenery.props.length).toBeGreaterThan(scene.stats.staticNodes * 3);
     expect(new Set(scene.batches.map((batch) => batch.node.geometry.resourceKey)).size).toBe(scene.batches.length);
     // Terrain and far-ring meshes span the whole vale, so none is ever culled: keep their palette small.

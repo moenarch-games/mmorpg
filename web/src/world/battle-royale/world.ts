@@ -43,6 +43,7 @@ function arenaScenery(local: LocalWorld, presentation: ArenaPresentation): Scene
       staticSceneModels: () => presentation.staticSceneModels(),
       staticSceneMotion: (seconds, animate) => presentation.staticSceneMotion(seconds, animate),
       // The arena has no campfires or lamps.
+      staticSceneInterior: () => 0,
       staticScenePointLights: () => emptyMotion,
       staticSceneShown: (viewer, _outpost, _settlement, fortress) => presentation.staticSceneShown(viewer, fortress),
       surfaceY: () => 0,

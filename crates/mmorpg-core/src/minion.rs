@@ -305,7 +305,7 @@ impl ZoneSimulation {
             let extent = half.map(|value| value as f32);
             let clear = self
                 .world
-                .overlap_box(probe, extent)
+                .overlap_capsule(probe, extent)
                 .map_err(physics_error)?
                 .into_iter()
                 .all(|body| Some(body) == self.ground_body());

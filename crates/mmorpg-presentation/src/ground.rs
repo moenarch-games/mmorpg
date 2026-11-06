@@ -80,7 +80,7 @@ impl Layer {
             Self::Grass | Self::Forest | Self::Sand => 3.,
             Self::Gravel | Self::Path => 2.5,
             Self::Mud => 2.,
-            Self::Rock => 4.,
+            Self::Rock => 2.7,
         }
     }
 
@@ -91,8 +91,9 @@ impl Layer {
 }
 
 /// A ground draw's layer, whether it is a masked overlay (else the opaque base), and whether
-/// it is a terrain tile's far level ([`crate::tiles`], #526): drawn flat in its vertex colours,
-/// never textured, so a distant tile costs no texture sampling and shows no repeats.
+/// it uses far shading ([`crate::tiles`], #526): gentle ground is flat, while coarse rock
+/// retains colour detail without near normal/occlusion maps. This flag selects shading,
+/// not residency.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Ground {
     pub layer: Layer,
@@ -101,7 +102,8 @@ pub struct Ground {
 }
 
 impl Ground {
-    /// The near level's opaque base or masked overlay of `layer`.
+    /// The textured opaque base or masked overlay of `layer`, also used by fixed rock
+    /// surfaces. Coarse cliff faces use their far material instead.
     #[must_use]
     pub const fn near(layer: Layer, overlay: bool) -> Self {
         Self {
@@ -147,6 +149,25 @@ fn tangent(n: V, du: V, dv: V) -> [f64; 4] {
         1.
     };
     [t[0], t[1], t[2], sign]
+}
+
+/// Face-aligned rock mapping, including vertical walls and ceilings: texture scale is in
+/// metres rather than stretched over a collider, and each face has the matching tangent basis.
+pub(crate) fn project_rock(g: &mut Geometry) {
+    let tile = Layer::Rock.tile_metres();
+    for i in 0..g.p.len() {
+        let [x, y, z] = g.p[i];
+        let n = g.n[i];
+        let (uv, du, dv) = if n[1].abs() > 0.65 {
+            ([x / tile, z / tile], [1., 0., 0.], [0., 0., 1.])
+        } else if n[0].abs() > n[2].abs() {
+            ([z / tile, y / tile], [0., 0., 1.], [0., 1., 0.])
+        } else {
+            ([x / tile, y / tile], [1., 0., 0.], [0., 1., 0.])
+        };
+        g.uv.push(uv);
+        g.tangents.push(tangent(n, du, dv));
+    }
 }
 
 /// Texture coordinates and tangents projected from above (`u` along x, `v` along z) for
@@ -285,6 +306,7 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
             0.8,
             highland[i] * (0.55 + breakup),
         ));
+        let gravel = gravel.max(hollow[i] * 0.78 * smoothstep(0.55, 0.80, noise(x, z, 6., 549.)));
         let forest = smoothstep(0.3, 0.7, woods[i] + 0.45 * breakup);
         let mud = if shore > 0. {
             (1. - smoothstep(2., 6.5, shore + 3.5 * breakup)).max(if marsh {
@@ -300,13 +322,32 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
         } else {
             0.
         };
-        let path = smoothstep(0.35, 0.75, hollow[i] + 0.5 * breakup);
+        // Broken patches of trodden earth feather the tracks into the surrounding turf.
+        // The narrow ribbon still defines the path; this uses the existing masked material.
+        let local = s.greyhaven() && x.abs() < 125. && (-170. ..115.).contains(&z);
+        let verge = if local {
+            let from_track = s.road_distance([ux, uz]) as f64 / 100.;
+            (1. - smoothstep(0., 3.8, from_track.max(0.)))
+                * smoothstep(0.38, 0.68, noise(x, z, 4.5, 527.))
+                * 0.85
+        } else {
+            0.
+        };
+        // The camp is a used clearing in grass, not one solid rectangle of dirt. Main
+        // tracks draw separately; broad seeded wear leaves turf between the tents.
+        let camp_wear = hollow[i] * (0.18 + 0.50 * smoothstep(0.30, 0.70, noise(x, z, 8., 547.)));
+        let hearth = if s.greyhaven() {
+            hollow[i] * (1. - smoothstep(1.6, 3.3, x.hypot(z + 92.)))
+        } else {
+            0.
+        };
+        let path = camp_wear.max(hearth).max(verge);
         for (layer, weight, color) in [
-            (Layer::Forest, forest, mix(0x58803c, 0x6e5a3c, 0.22)),
+            (Layer::Forest, forest, mix(0x4d653b, 0x6e5a3c, 0.28)),
             (Layer::Gravel, gravel, 0x8f8a7c),
             (Layer::Mud, mud, 0x5e5038),
             (Layer::Sand, sand, 0xcdbb88),
-            (Layer::Path, path, 0x94805f),
+            (Layer::Path, path, 0x827154),
             (Layer::Rock, rock, 0x8b877e),
         ] {
             layers.entry(layer).or_insert_with(|| vec![0.; count])[i] = weight;
@@ -340,9 +381,9 @@ impl Projection {
         }
     }
 
-    /// Rock is textured along the axis its smooth normals are most across (triplanar, chosen
-    /// per triangle), so steep faces show the rock upright instead of smeared; slopes up to
-    /// about 53° keep the top projection, so seams stay on real cliffs.
+    /// Rock uses dominant-axis mapping per triangle: slopes up to about 53° keep the top
+    /// projection. Near overlays supply smooth normals; coarse cliffs supply their face
+    /// normal so a broad crease cannot turn a vertical wall into a top projection.
     fn of(layer: Layer, normals: [V; 3]) -> Self {
         if layer != Layer::Rock {
             return Self::Top;
@@ -359,6 +400,31 @@ impl Projection {
             Self::AlongZ
         }
     }
+}
+
+/// One coarse cliff face, projected along its actual face rather than its smoothed
+/// lighting normals. Keep those normals so the coarse triangle grid is not exposed.
+pub(crate) fn coarse_rock_face(g: &mut Geometry, points: [V; 3], normals: [V; 3], colors: [V; 3]) {
+    let first = g.p.len() as u32;
+    let [p, q, r] = points;
+    let u: V = std::array::from_fn(|axis| q[axis] - p[axis]);
+    let v: V = std::array::from_fn(|axis| r[axis] - p[axis]);
+    let face = norm([
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+    ]);
+    let (du, dv) = Projection::of(Layer::Rock, [face; 3]).axes();
+    let tile = Layer::Rock.tile_metres();
+    g.p.extend(points);
+    g.n.extend(normals);
+    g.colors.extend(colors);
+    for (p, n) in points.into_iter().zip(normals) {
+        let dot = |d: V| p[0] * d[0] + p[1] * d[1] + p[2] * d[2];
+        g.uv.push([dot(du) / tile, dot(dv) / tile]);
+        g.tangents.push(tangent(n, du, dv));
+    }
+    g.indices.extend([first, first + 1, first + 2]);
 }
 
 /// The grid overlays over the grid cells `cells` (`[first column, first row, end column, end
@@ -432,14 +498,24 @@ pub(crate) fn grid_overlays(
     }
 }
 
-/// Worn dirt paths along every road: a ribbon full-weight across the road that fades out
-/// over `EDGE` metres either side, and a disc at every bend.
+/// The width of visible wear, shared with the distant terrain's baked road colour.
+pub(crate) fn path_width(s: &Scenery, width: f64, x: f64, z: f64) -> f64 {
+    if s.greyhaven() {
+        width * (0.72 + 0.20 * noise(x, z, 6., 513.))
+    } else {
+        width
+    }
+}
+
+/// Worn dirt paths follow the authoritative road corridor. Seeded wear narrows the drawn
+/// track and breaks up its verge without moving its centre off the traversable ground.
 pub(crate) fn roads(layers: &mut Layers, s: &Scenery, g: &TerrainGrid) {
     const EDGE: f64 = 1.6;
     let out = layers.entry(Ground::near(Layer::Path, true)).or_default();
     let lift = Layer::Path.lift();
     let up = [0., 1., 0.];
-    let color = |x: f64, z: f64| tinted(0xa4865c, x, z, 5.);
+    let color = |x: f64, z: f64| tinted(0x827154, x, z, 5.);
+    let waters = mmorpg_core::greyhaven_vale::brook::waters();
     for road in &s.roads {
         let points: Vec<[f64; 2]> = road.points.iter().map(|p| p.map(metres)).collect();
         let width = metres(road.half_width);
@@ -450,41 +526,71 @@ pub(crate) fn roads(layers: &mut Layers, s: &Scenery, g: &TerrainGrid) {
                 continue;
             }
             let (nx, nz) = (-(bz - az) / l, (bx - ax) / l);
-            let pieces = (l / 2.).ceil().max(1.) as usize;
+            let crossing = s.greyhaven()
+                && ax.min(bx) < 117.
+                && ax.max(bx) > -73.
+                && az.min(bz) < 100.
+                && az.max(bz) > -132.;
+            let pieces = (l / if crossing { 1. } else { 2. }).ceil().max(1.) as usize;
+            let strips = if crossing {
+                ((width + EDGE) * 4.).ceil() as usize
+            } else {
+                3
+            };
             let base = out.p.len() as u32;
             for i in 0..=pieces {
                 let t = i as f64 / pieces as f64;
                 let (x, z) = (ax + (bx - ax) * t, az + (bz - az) * t);
-                for (offset, alpha) in [
-                    (-(width + EDGE), 0.),
-                    (-width, 1.),
-                    (width, 1.),
-                    (width + EDGE, 0.),
-                ] {
+                for strip in 0..=strips {
+                    let offset = if crossing {
+                        -(width + EDGE) + (width + EDGE) * 2. * strip as f64 / strips as f64
+                    } else {
+                        [-(width + EDGE), -width, width, width + EDGE][strip]
+                    };
                     let (px, pz) = (x + nx * offset, z + nz * offset);
+                    let in_water = crossing
+                        && waters.iter().any(|w| {
+                            w.contains((px * 100.).round() as i32, (pz * 100.).round() as i32)
+                        });
                     vertex(
                         out,
                         [px, surface(g, px, pz) + lift, pz],
                         up,
                         color(px, pz),
-                        alpha,
+                        if in_water {
+                            0.
+                        } else {
+                            ((path_width(s, width, px, pz) + EDGE - offset.abs()) / EDGE)
+                                .clamp(0., 1.)
+                        },
                     );
                 }
             }
+            let row = (strips + 1) as u32;
             for i in 0..pieces as u32 {
-                for strip in 0..3 {
-                    let a = base + i * 4 + strip;
-                    out.indices.extend([a, a + 1, a + 4, a + 1, a + 5, a + 4]);
+                for strip in 0..strips as u32 {
+                    let a = base + i * row + strip;
+                    out.indices
+                        .extend([a, a + 1, a + row, a + 1, a + row + 1, a + row]);
                 }
             }
         }
         for &[x, z] in &points {
+            if s.greyhaven()
+                && mmorpg_core::greyhaven_vale::brook::wet_ground(
+                    (x * 100.) as i32,
+                    (z * 100.) as i32,
+                )
+            {
+                continue;
+            }
             let base = out.p.len() as u32;
             vertex(out, [x, surface(g, x, z) + lift, z], up, color(x, z), 1.);
             const SIDES: u32 = 16;
             for i in 0..SIDES {
                 let a = f64::from(i) / f64::from(SIDES) * TAU;
-                for (radius, alpha) in [(width, 1.), (width + EDGE, 0.)] {
+                let worn = path_width(s, width, x + a.sin() * width, z + a.cos() * width);
+                for (radius, alpha) in [(worn, 1.), (worn + EDGE, 0.)] {
                     let (px, pz) = (x + a.sin() * radius, z + a.cos() * radius);
                     vertex(
                         out,
@@ -537,7 +643,17 @@ pub(crate) fn patch(
                 [x, surface(g, x, z) + lift, z],
                 [0., 1., 0.],
                 tinted(color, x, z, 3.),
-                1. - d / border,
+                if layer == Layer::Path {
+                    let cx = (lo[0] + hi[0]) * 0.5;
+                    let cz = (lo[1] + hi[1]) * 0.5;
+                    let rx = (hi[0] - lo[0]) * 0.5;
+                    let rz = (hi[1] - lo[1]) * 0.5;
+                    let radius = ((x - cx) / rx).hypot((z - cz) / rz);
+                    let edge = 0.10 * (noise(x, z, 3., 519.) - 0.5);
+                    (1. - smoothstep(0.72, 1., radius + edge)) * 0.95
+                } else {
+                    1. - d / border
+                },
             );
         }
     }
@@ -549,4 +665,23 @@ pub(crate) fn patch(
         }
     }
     project_top(out, layer);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_coarse_cliff_keeps_vertical_texture_scale_with_upward_smoothed_normals() {
+        let mut g = Geometry::default();
+        let points = [[0., 0., 0.], [0., 30., 0.], [6., 0., 0.]];
+        let normals = [[0., 0.8, -0.6]; 3];
+        coarse_rock_face(&mut g, points, normals, [[1.; 3]; 3]);
+        assert_eq!(
+            g.n, normals,
+            "lighting retains the smoothed terrain normals"
+        );
+        assert_eq!(g.uv[1][1] - g.uv[0][1], -30. / Layer::Rock.tile_metres());
+        assert_eq!(g.uv[2][0] - g.uv[0][0], 6. / Layer::Rock.tile_metres());
+    }
 }

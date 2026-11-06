@@ -262,6 +262,7 @@ pub enum NpcRole {
     Vendor,
     SpiritHealer,
     Guard,
+    Resident,
 }
 
 impl NpcRole {
@@ -272,6 +273,7 @@ impl NpcRole {
             Self::Vendor => "vendor",
             Self::SpiritHealer => "spirit_healer",
             Self::Guard => "guard",
+            Self::Resident => "resident",
         }
     }
 }

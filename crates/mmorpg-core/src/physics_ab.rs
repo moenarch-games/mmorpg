@@ -9,7 +9,7 @@ use crate::physics::{RayHit, RigidBody, World};
 use crate::{DoorId, EntityRef, NpcId, PlayerId, ZoneError, ZoneSimulation};
 
 /// A unit's moving body as the physics world holds it, and whether it stands on ground.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct UnitBody {
     pub unit: EntityRef,
     pub body: RigidBody,
@@ -39,10 +39,10 @@ impl ZoneSimulation {
             .map(|&id| EntityRef::Player(id))
             .chain(self.creatures.keys().map(|&id| EntityRef::Creature(id)))
             .filter_map(|unit| {
-                let body = *self.world.body(body_id(unit))?;
+                let body = self.world.body(body_id(unit))?;
                 body.is_moving().then(|| UnitBody {
                     unit,
-                    body,
+                    body: body.clone(),
                     grounded: self.world.grounded(body.id()),
                 })
             })
@@ -56,7 +56,7 @@ impl ZoneSimulation {
             .keys()
             .filter_map(|&id| self.world.body(body_id(EntityRef::Creature(id))))
             .filter(|body| !body.is_moving())
-            .copied()
+            .cloned()
             .collect()
     }
 
@@ -112,7 +112,7 @@ impl ZoneSimulation {
         from: EntityRef,
         to: EntityRef,
     ) -> Result<Option<[i32; 2]>, ZoneError> {
-        let body = *self
+        let body = self
             .world
             .body(body_id(from))
             .ok_or_else(|| ZoneError::new("routed unit physics body is missing"))?;

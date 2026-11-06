@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 import json
+from ranger_assets import valid_male_appearance
 
 ROOT = Path(__file__).resolve().parents[2]
 LAUNCHER = ROOT / "scripts/dev-native.sh"
@@ -23,6 +24,25 @@ NATIVE_ASSET_INPUTS = (
     "web/assets/medieval-character-kit/archer.obj",
     "web/assets/medieval-character-kit/manifest.json",
     "web/assets/medieval-character-kit/materials.json",
+    "web/public/characters/humanoid.ranger.male/export.ref.json",
+    "web/public/characters/humanoid.ranger.male/humanoid-ranger-male.index.json",
+    "web/public/characters/humanoid.ranger.male/humanoid.ranger.male.default.humanoid-appearance.json",
+)
+RANGER_APPEARANCE = ROOT / NATIVE_ASSET_INPUTS[-1]
+NATIVE_BUNDLES = (
+    "web/public/buildings/greyhaven.inn/manifest.json",
+    "web/public/buildings/greyhaven.marshal-house/manifest.json",
+    "web/public/buildings/outpost.kit/manifest.json",
+    "web/public/scenery/shrine.kit/manifest.json",
+    "web/public/scenery/greyhaven.ambient-animals/manifest.json",
+    "web/public/scenery/settlement.props/manifest.json",
+    "web/public/scenery/greyhaven.nature/manifest.json",
+    "web/public/scenery/greyhaven.terrain/manifest.json",
+    "web/public/scenery/climbing.kit/manifest.json",
+    "web/public/sounds/combat-sounds/manifest.json",
+    "web/public/characters/humanoid.ranger.female/humanoid-ranger-female.index.json",
+    "web/public/characters/humanoid.ranger.male/native/humanoid.ranger.male.default.native.glb",
+    "web/public/characters/humanoid.ranger.female/native/humanoid.ranger.female.outfit.tanner.skin.light.native.glb",
 )
 
 
@@ -113,6 +133,23 @@ def update_source():
         raise LaunchError(f"Cannot safely update: {error}\n"
                           "Integrate the latest source yourself, or use --no-update "
                           "to run the current local checkout.") from error
+
+
+def ensure_native_assets():
+    # Asset acquisition is a launcher preparation step, never part of Cargo's build script.
+    if valid_male_appearance(RANGER_APPEARANCE) and all((ROOT / name).is_file() for name in NATIVE_BUNDLES):
+        return
+    say("Native assets are missing or out of date; fetching bundles and preparing Ranger models…")
+    for command in ("fetch-bundles.sh", "prepare-ranger-native.sh"):
+        result = run([str(ROOT / "scripts" / command)], 1800)
+        if result.returncode:
+            raise LaunchError(f"Native asset preparation failed in scripts/{command}. "
+                              "Run scripts/fetch-bundles.sh and scripts/prepare-ranger-native.sh "
+                              "to inspect the failure.")
+    if not valid_male_appearance(RANGER_APPEARANCE) or not all(
+        (ROOT / name).is_file() for name in NATIVE_BUNDLES
+    ):
+        raise LaunchError("Native asset preparation left required models or class presets missing.")
 
 
 def inputs():
@@ -234,6 +271,7 @@ def main():
             raise LaunchError(f"Required command not found: {command}")
     if not args.no_update:
         update_source()
+    ensure_native_assets()
     HOST_LOG.parent.mkdir(parents=True, exist_ok=True)
     certificate = run(["bash", "-euo", "pipefail", "-c",
                        'source "$1"; ensure_dev_certificate "$2"',

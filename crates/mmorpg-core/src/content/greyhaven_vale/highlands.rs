@@ -3,13 +3,14 @@
 //! about as large as the Vale itself (416 m × 424 m). Like the farmland it stays in the
 //! Greyhaven zone, so no zone boundary or loading step lies on the way.
 //!
-//! An escarpment (40–52 m) closes the Vale's northern side behind Greyfang Ridge. The Highland
-//! Pass leaves the Vale Ring Road northwards and winds up through it: a cutting into its
+//! JSON-authored terraced ridges (33–53 m crowns, with the marked hard climb retained) close
+//! the Vale's northern side behind Greyfang Ridge. The
+//! Highland Pass joins the north-cave approach and winds up through it: a cutting into its
 //! southern face, a ledge climbing east, a hairpin landing, a ledge climbing back west and a
-//! gorge north onto the high ground, 24 m above the Vale's floor. Every face of the escarpment
-//! is steeper than the controllers climb (45°), so the pass is the only way up. Its foot and
-//! the pass start 4 m beyond the Vale's old northern wall, past the edge of the ground the Vale
-//! had, so the Vale's own heightfield tile and everything that moves on it stay as they were.
+//! gorge north onto the high ground, 24 m above the Vale's floor. Its steep middle faces
+//! retain the pass and the marked hard climbing route as the established ways up. The face
+//! has weathered buttresses and recesses; its low toe joins the Vale's settled northern edge.
+//! The pass and climbing route retain their old terrain profiles and neighbouring grid cells.
 //!
 //! On the high ground the land is broken and uneven, studded with rock crags. The Highland
 //! Trail winds north to the landmark, a palisaded bandit stronghold round a keep-style tower,
@@ -167,12 +168,30 @@ pub fn level(x: i32, z: i32) -> bool {
     distance_to_level(x, z) == 0
 }
 
-/// Whether a tree may stand at `(x, z)`: off the level ground (where the towers and the
-/// stronghold stand) and at least 2 m from every crag.
+/// Whether a tree may stand at `(x, z)`: supported on the escarpment, off the level ground
+/// (where the towers and stronghold stand) and at least 2 m from every crag.
 #[must_use]
 pub fn clear_for_tree(x: i32, z: i32) -> bool {
     const MARGIN: i32 = 200;
-    !level(x, z)
+    // Trunks on a sheer face stood on the highest corner of their footprint, leaving
+    // their visible roots above the hillside. Use the actual terrain before placing them.
+    let sections = &super::landscape::data().northern_ridge.sections;
+    let south = sections.iter().map(|s| s.profile[0][0]).max().unwrap() + 400;
+    let north = sections.iter().map(|s| s.profile[7][0]).min().unwrap() - 400;
+    let on_face = (north..=south).contains(&z);
+    let supported = !on_face || {
+        let heights = [
+            [x, z],
+            [x - 100, z],
+            [x + 100, z],
+            [x, z - 100],
+            [x, z + 100],
+        ]
+        .map(|[x, z]| super::TERRAIN.height_at(x, z));
+        heights.into_iter().max().unwrap_or(0) - heights.into_iter().min().unwrap_or(0) <= 120
+    };
+    supported
+        && !level(x, z)
         && CRAGS.iter().all(|&(min, max, _)| {
             x < min[0] - MARGIN || x > max[0] + MARGIN || z < min[1] - MARGIN || z > max[1] + MARGIN
         })
@@ -199,7 +218,15 @@ pub fn height_at(x: i32, z: i32) -> Option<i32> {
     if let Some(lane) = PASS.iter().find(|lane| lane.contains(x, z)) {
         return Some(lane.height(x, z));
     }
-    if z > ESCARPMENT[0] {
+    let ridge = &super::landscape::data().northern_ridge;
+    let south_limit = ridge
+        .sections
+        .iter()
+        .map(|s| s.profile[0][0])
+        .max()
+        .unwrap()
+        + 400;
+    if z > south_limit {
         return None;
     }
     let (x64, z64) = (i64::from(x), i64::from(z));
@@ -210,7 +237,7 @@ pub fn height_at(x: i32, z: i32) -> Option<i32> {
     let north = -z64;
     let [foot, south_top, north_top, north_foot] = ESCARPMENT.map(|value| -i64::from(value));
     let height = if north < south_top {
-        crest * (north - foot) / (south_top - foot)
+        crest * (north - foot).max(0) / (south_top - foot)
     } else if north <= north_top {
         crest
     } else if north < north_foot {
@@ -218,7 +245,83 @@ pub fn height_at(x: i32, z: i32) -> Option<i32> {
     } else {
         plateau
     };
-    Some(i32::try_from(height).unwrap_or(0))
+    // Roads and the hard climbing route retain a full terrain cell of their old shoulder.
+    // Between those shoulders, fixed integer weathering breaks the toe and face into
+    // gullies and buttresses while the routes keep their established clearances.
+    let (distance, ledge) = PASS
+        .iter()
+        .map(|lane| {
+            let dx = (lane.min[0] - x).max(x - lane.max[0]).max(0);
+            let dz = (lane.min[1] - z).max(z - lane.max[1]).max(0);
+            let height = lane.height(
+                x.clamp(lane.min[0], lane.max[0]),
+                z.clamp(lane.min[1], lane.max[1]),
+            );
+            (i64::from(dx.max(dz)), i64::from(height))
+        })
+        .min_by_key(|(distance, _)| *distance)
+        .unwrap();
+    let climb_distance = i64::from((12_000 - x).max(x - 12_800).max(0));
+    let [min, max] = ridge.protected_approach;
+    let approach_distance = i64::from(
+        (min[0] - x)
+            .max(x - max[0])
+            .max(0)
+            .max((min[1] - z).max(z - max[1]).max(0)),
+    );
+    let authored = authored_escarpment(x64, z64, plateau);
+    // Ledge shoulders extend their walkable height, rather than preserving the old
+    // 40 m wall above/below every road. The marked hard climb alone keeps that face.
+    let lane_weight = smooth_q10(distance, 400, 1_600);
+    let ledged = ledge + (authored - ledge) * lane_weight / 1024;
+    let approach_weight = smooth_q10(approach_distance, 400, 1_600);
+    let approached = ledged * approach_weight / 1024;
+    let climb_weight = smooth_q10(climb_distance, 400, 1_600);
+    let height = i32::try_from(height + (approached - height) * climb_weight / 1024).unwrap_or(0);
+    // The extended toe meets the Vale's existing low hills instead of cutting a new step.
+    Some(if north < foot {
+        height.max(super::hill_height(x, z))
+    } else {
+        height
+    })
+}
+
+/// Interpolate the authored west/east sections on the existing integer terrain lattice.
+/// No extra collision mesh or render-only relief is involved.
+fn authored_escarpment(x: i64, z: i64, plateau: i64) -> i64 {
+    let sections = &super::landscape::data().northern_ridge.sections;
+    let pair = sections
+        .windows(2)
+        .find(|pair| x <= i64::from(pair[1].x))
+        .unwrap_or(&sections[sections.len() - 2..]);
+    let width = i64::from(pair[1].x - pair[0].x);
+    let along = (x - i64::from(pair[0].x)).clamp(0, width);
+    let profile: [[i64; 2]; 8] = std::array::from_fn(|point| {
+        std::array::from_fn(|axis| {
+            let a = i64::from(pair[0].profile[point][axis]);
+            a + i64::from(pair[1].profile[point][axis] - pair[0].profile[point][axis]) * along
+                / width
+        })
+    });
+    let ribs = value_noise_q10(x, 0, 2800, SEED.rotate_left(7));
+    let z = z + (ribs - 512) * 800 / 1024;
+    if z >= profile[0][0] {
+        return 0;
+    }
+    if z <= profile[7][0] {
+        return plateau;
+    }
+    let segment = profile.windows(2).find(|p| z >= p[1][0]).unwrap();
+    let height = segment[0][1]
+        + (segment[1][1] - segment[0][1]) * (segment[0][0] - z) / (segment[0][0] - segment[1][0]);
+    let rough =
+        (plateau - i64::from(PLATEAU_Y)) * smooth_q10(-z, -profile[5][0], -profile[7][0]) / 1024;
+    let fissure = value_noise_q10(x, 0, 1100, SEED.rotate_left(41));
+    let gully = (512 - fissure).max(0) * 180 / 512;
+    let envelope = smooth_q10(-z, -profile[0][0], -profile[1][0])
+        * (1024 - smooth_q10(-z, -profile[5][0], -profile[7][0]))
+        / 1024;
+    height + rough - gully * envelope / 1024
 }
 
 /// The high ground's relief above [`PLATEAU_Y`]: broken swells and knolls, level on the
@@ -283,7 +386,9 @@ pub const ROADS: &[Road] = &[
     Road {
         name: "Highland Pass",
         points: &[
-            [5_200, -15_000],
+            // Join the existing north-cave approach instead of crossing the rock mound.
+            [6_400, -16_000],
+            [5_200, -17_600],
             [5_200, -23_200],
             [10_400, -23_200],
             [10_400, -25_600],

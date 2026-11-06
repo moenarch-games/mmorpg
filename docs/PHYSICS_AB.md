@@ -1,24 +1,116 @@
 # Physics backend A/B (physics-engine #330)
 
-Rapier is the zone's physics authority (Atlas 2.1.6). This page covers a **test/bench-only**
-seam that runs the same zone simulation on physics-engine's `approximate::World`, so the two
-can be compared on MMORPG's real workloads. Nothing here changes production: the zone host,
-`mmorpg-wasm` and every default build compile only Rapier
-(`mmorpg-game-server/tests/dependency_boundary.rs` checks the manifests and lockfile).
+Physics Engine is the default zone backend in native and WASM builds, including Greyhaven's
+authored convex rock hulls and Redbrand's static triangle meshes. Rapier remains selectable
+for whole-zone fallback and is the behaviour oracle (Atlas 2.1.i330). The `physics-ab` feature adds **test/bench-only**
+instrumentation for comparing both backends on the same zone simulation. Both backends are
+compiled normally; `mmorpg-core` alone selects them, and no host or client chooses a solver.
+`mmorpg-game-server/tests/dependency_boundary.rs` checks the dependency boundary.
+
+The selection happens before the zone is built, and recovery makes the same selection from
+the same content. Greyhaven now uses Physics Engine's retained hulls and cave meshes for
+character movement, support, ray/projectile and static shape queries, retaining game body IDs
+and engine surface features. Debris always retains Rapier's accepted dynamic-contact and settling
+behaviour (including primitive-only zones, following the #643 breakables CI failure).
+Movable props use Rapier's dynamic solver when the world contains an authored mesh or hull. Physics Engine
+does not support general dynamic box–mesh, box–hull, rotating rigid capsule–mesh or hull–hull
+response; these pairs are never sent to its unsupported rigid-body scheduler or silently
+approximated by boxes. `World::with_backend` still selects the complete Rapier zone for
+diagnostics and content that requires it. A/B fixtures use `physics::using_backend`.
+
+Navigation and summon placement query the actual upright unit capsule against authored shapes.
+General box–mesh/hull overlap queries remain unsupported by Physics Engine; callers must not
+substitute bounding boxes for those shapes.
+
+The focused native/WASM-compatible `authored_backend` and `authored_collision` tests use
+the committed Redbrand JSON and Greyhaven rock proxies, with Rapier as the geometry oracle.
+The full browser cave traversal and GPU acceptance remain separate consumer checks.
 
 ```sh
 cargo test -p mmorpg-core --features physics-ab --test physics_ab -- --nocapture   # merge-blocking in CI
 cargo run --release -p mmorpg-core --example physics_ab --features physics-ab      # manual timing
 ```
 
+## Consumer contact workload diagnostic (physics-engine #443)
+
+The existing manual A/B example now reports **complete 60 Hz zone ticks**, the portion spent
+in the physics wrapper, and successful public body removals/replacements, scheduled platform move
+requests (including the subset that actually changes position), platform placements and explicit
+moving-body placements. It also samples Rapier's narrow-phase
+body-pair graph *after* each tick: retained candidate pairs (including non-touching ones),
+active pairs, maximum incident degree, and collision callbacks delivered to the kinematic
+character controller. These are separate metrics. The latter are swept collisions, not cached
+contact pairs; body pairs deduplicate Rapier's multiple collider/terrain-tile contacts.
+
+```sh
+cargo run --release --locked -p mmorpg-core --example physics_ab --features physics-ab -- --only vale-idle-16 --rounds 3 --warmup 1
+cargo run --release --locked -p mmorpg-core --example physics_ab --features physics-ab -- --only vale-mill-hoist --rounds 3 --warmup 1
+cargo run --release --locked -p mmorpg-core --example physics_ab --features physics-ab -- --only vale-watch-post --rounds 3 --warmup 1
+```
+
+`--only` filters the existing deterministic named workloads (comma-separated substrings select
+several); no new fixture or production
+instrumentation is involved. Each timed sample includes the driver's commands and the complete
+`ZoneSimulation::advance_tick`, with setup and post-tick contact inspection excluded. Post-tick
+inspection can still affect later CPU cache state, and timing on a shared runner is diagnostic,
+not a regression gate. Per-run operation call counts are checked to be identical across rounds.
+The `physics-ab` Cargo feature is absent from normal production and WASM builds; the engine
+itself is compiled into both.
+
+The Physics Engine adapter uses `World::move_characters` for characters, not its persistent
+`World::step`, and rebuilds a different short-lived world for debris/props. The pinned engine
+dependency does not expose per-body persistent cache occupancy. Consequently the table marks
+Rapier contact topology as unavailable for that backend: **Rapier retained pairs are not a
+measurement of Physics Engine cached contact pairs**, and a zero must not be invented for a
+future adapter that changes its stepping pattern. Static door replacements are reported
+separately from explicit removals. Scheduled platform moves that change a collider's position
+typically become backend `set_static_position` calls during its step; those internal costs remain
+included in step time, not in the separate platform-scheduling timer.
+
+### Observed consumer workload (2026-11-02)
+
+On MMORPG `c45a546564835b94e7998bc8e4ed82ada1c4a9d0` plus this diagnostic change,
+locked Physics Engine `7af1ac43` and Rapier 0.36.1, Rust 1.99.1, native Linux x86_64
+(Intel Xeon Platinum 8573C), `--release`, **one warmup and three measured rounds** for
+each backend, alternating first backend per round:
+
+| Named Greyhaven workload | 60 Hz ticks | Max moving / all bodies | Rapier pairs (max) | Controller collisions/tick (mean) | Actual platform changes / scheduled calls | Explicit removals / replacements | Complete tick median, Rapier / Engine (µs) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `vale-idle-16` | 360 | 97 / 2,498 | 0 | 0.50 | 60 / 360 | 0 / 0 | 3,043 / 1,081 |
+| `vale-crowded-fights-64` | 360 | 145 / 2,546 | 0 | 0.80 | 60 / 360 | 2 / 0 | 5,419 / 1,657 |
+| `vale-mill-hoist` | 1,280 | 82 / 2,483 | 0 | 4.88 | 640 / 1,280 | 0 / 0 | 3,144 / 911 |
+| `vale-watch-post` | 840 | 83 / 2,484 | 0 | 3.45 | 320 / 840 | 0 / 0 | 2,903 / 870 |
+| `vale-crate-smash` | 720 | 83 / 2,484 | 0 | 2.47 | 320 / 720 | 2 / 0 | 2,966 / 1,106 |
+
+The **Rapier pair count, active pair count, and per-body degree were all zero on every
+observed tick**, even though kinematic sweeps found collisions and the games scheduled
+static movement. There is no retained *Rapier* contact graph on these real game adapters;
+the Physics Engine A/B adapter cannot supply a separate persistent-cache occupancy metric
+without changing its pinned dependency, and its character workload never invokes the
+cache-populating `World::step`. These measurements therefore do **not** demonstrate a
+game-consumer need for Physics Engine's proposed adjacency index (#443).
+
+The Rapier physics-call share of complete tick time ranged from 90.5% to 94.1% on these
+five release fixtures. Physics Engine's share ranged from 68.0% to 96.4%; the
+`vale-crate-smash` Engine p95 complete tick was 41.95 ms versus Rapier's 7.71 ms, because the
+test backend has separate short-lived dynamic debris stepping. The speed difference is not
+an index A/B comparison. This is a shared-CPU exploratory run, not a controlled performance
+contract or a runtime server trace. No static door replacements occurred in these selected
+fixtures; the existing door path remains instrumented for a future replay that exercises it.
+
+**Decision:** leave Physics Engine's scanning production path and its unmerged experimental
+[contact-adjacency PR #454](https://github.com/moritzbrantner/physics-engine/pull/454)
+unchanged. Only revisit index maintenance when a real adapter starts retaining persistent
+contacts and uses the neighbor-local operations often enough to offset maintenance cost.
+
 ## Seam
 
 - `physics::World` is an enum over the backends (`crates/mmorpg-core/src/physics.rs`). Rapier's
   world moved unchanged to `physics/rapier.rs`; `physics/engine.rs` is the thin engine adapter.
   No call site changed.
-- The non-default `physics-ab` feature compiles the engine arm. `physics::using_backend(backend, ..)`
-  selects the backend for every `World::new` on the current thread, so whole zones, and their
-  recoveries, are built on it. `World::with_backend` does the same for one world.
+- Both backend arms compile normally. The non-default `physics-ab` feature adds diagnostic
+  probes and enables `physics::using_backend(backend, ..)` to override the content selection
+  for an A/B run and its recoveries. `World::with_backend` selects an explicit standalone world.
 - With the feature, `World::spent_nanos` counts wall-clock time spent in the world's calls
   (debris and props included), and `mmorpg_core::physics_ab` exposes read-only probes that ask the
   gameplay queries themselves (line of sight, NPC sight, projectile contact, door occupancy,
@@ -34,20 +126,18 @@ NPCs, standing props), ramps (#59, `Shape::Wedge` turned about Y), moving platfo
 static box moved in place with `set_static_position`, its riders carried by the adapter as on Rapier), the floor half-spaces, the
 terrain heightfield (`add_heightfield`),
 rays (`cast_ray`/`cast_ray_first`), capsule sweeps (`cast_shape`, the charge-path rule),
-overlaps (`overlap_shape`) and segment checks, and dynamic bodies (mmorpg#442): debris (#288)
-and the heavy crates' slides (#58) are engine dynamic boxes (rotation-locked for crates) in a
-world rebuilt each tick from the nearby game bodies, units as fixed capsules, as the Rapier arm
-rebuilds its own; two substeps of four passes for debris and of one for crates, as
-physics-engine's `debris` and `props` oracle scenarios calibrate them. A crate at rest is a fixed
-box on both arms. Both arms give the pieces friction 0.8 and restitution 0.15 and leave fixed
-geometry and the heightfield at the defaults (0.5, 0); both average a pair's coefficients
-(physics-engine #391).
+overlaps (`overlap_shape`) and segment checks, immutable triangle meshes and convex
+rock hulls. Debris (#288) uses Rapier's existing dynamic path on both backends.
+Movable props (#58) use engine dynamic boxes in primitive-only worlds and Rapier
+when authored meshes or hulls are present. A resting crate is fixed on both arms;
+the existing friction, restitution and averaging contracts are retained.
+
 
 ## What the test asserts
 
 `crates/mmorpg-core/tests/physics_ab.rs` replays the bot scenarios `two-bots-move`,
 `vale-hub-walk` and `vale-wolf-hunt` (command by command, as the bot runner submits them; the
-Rapier arm reproduces each scenario's expected positions exactly) and the four Greyhaven combat
+production Engine arm reproduces each scenario's expected positions exactly) and the four Greyhaven combat
 workload fixtures (`tests/support/greyhaven_workload.rs`, shared with `mmorpg-protocol`) and the
 `vale-ogre-brawl` script (#297: three players by the Hill Ogre; one provokes it and runs past
 another standing in its way, a third walks into its side) and `vale-mill-hoist` (#56: a
