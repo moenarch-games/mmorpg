@@ -3,7 +3,7 @@
 use crate::{
     Animated, Draw, Group, Kit, Motion,
     batching::{Batcher, Cull, material, matrix, mix, rgb},
-    geometry::{Geometry, ID, at, box_shape, disc, frustum},
+    geometry::{Geometry, ID, at, blob, box_shape, disc, frustum},
     ground::{self, Ground, Layer},
     terrain::{metres, noise, surface},
 };
@@ -41,6 +41,7 @@ pub(crate) fn build(
         return vec![];
     }
     let mut banks = Geometry::default();
+    let mut shingle = Geometry::default();
     for (name, points, half_width, water_surface) in [
         (
             "greyhaven-brook",
@@ -69,12 +70,6 @@ pub(crate) fn build(
             let z = points[i + 1].map(metres);
             let left = offset(points, i, half_width);
             let right = offset(points, i + 1, half_width);
-            channel.face(&[
-                [a[0] + left[0], level, a[1] + left[1]],
-                [z[0] + right[0], level, z[1] + right[1]],
-                [z[0] - right[0], level, z[1] - right[1]],
-                [a[0] - left[0], level, a[1] - left[1]],
-            ]);
             let length = (z[0] - a[0]).hypot(z[1] - a[1]);
             let steps = (length / 2.).ceil() as usize;
             for step in 0..steps {
@@ -85,12 +80,52 @@ pub(crate) fn build(
                     let v = a[1] + (z[1] - a[1]) * t;
                     let nx = (left[0] + (right[0] - left[0]) * t) / half_width;
                     let nz = (left[1] + (right[1] - left[1]) * t) / half_width;
-                    let width = half_width + edge * (0.65 + 1.25 * noise(x, v, 4., 571.));
+                    // Slightly uneven edges stay inside the authoritative water lane.
+                    // World-space noise keeps adjoining segments joined at their endpoints.
+                    let width = half_width * (0.86 + 0.14 * noise(x, v, 1.7, 570. + side))
+                        + edge * (0.65 + 1.25 * noise(x, v, 4., 571.));
                     let x = x + nx * side * width;
                     let v = v + nz * side * width;
                     [x, surface(g, x, v) + 0.085, v]
                 };
+                let water_edge = |t, side| {
+                    let [x, _, z] = p(t, side, 0.);
+                    [x, level, z]
+                };
+                channel.face(&[
+                    water_edge(t0, 1.),
+                    water_edge(t1, 1.),
+                    water_edge(t1, -1.),
+                    water_edge(t0, -1.),
+                ]);
                 for side in [-1., 1.] {
+                    // Small, partly buried shingle clusters break up the bare mud verge.
+                    // Keep the bridge landings clear and omit steep ground where a pebble
+                    // would float. These low decorative stones do not obstruct traversal.
+                    let mid = p((t0 + t1) * 0.5, side, 0.55);
+                    if name == "greyhaven-brook"
+                        && noise(mid[0], mid[2], 2.5, 812.) > 0.47
+                        && !(mid[0].abs() < 2.5 && (28.0..=36.0).contains(&mid[2]))
+                    {
+                        for pebble in 0..7 {
+                            let seed = i as f64 * 31. + step as f64 * 7. + pebble as f64;
+                            let x = mid[0] + (noise(seed, side, 0.7, 813.) - 0.5) * 1.25;
+                            let z = mid[2] + (noise(seed, side, 0.7, 814.) - 0.5) * 1.25;
+                            let y = surface(g, x, z);
+                            let radius = 0.08 + 0.14 * noise(x, z, 0.3, 815.);
+                            if [[radius, 0.], [-radius, 0.], [0., radius], [0., -radius]]
+                                .iter()
+                                .any(|[dx, dz]| (surface(g, x + dx, z + dz) - y).abs() > 0.055)
+                            {
+                                continue;
+                            }
+                            let mut stone = blob(0, true, 0.16, seed);
+                            let color =
+                                rgb(mix(0x777a70, 0xa7a28c, noise(x, z, 0.4, 816.))).map(f64::from);
+                            stone.colors = vec![color; stone.p.len()];
+                            shingle.add(&stone, at(x, y + 0.035, z, radius, 0.09, radius * 0.75));
+                        }
+                    }
                     for [inner, outer] in [[0., 0.45], [0.45, 1.]] {
                         let q = [
                             p(t0, side, inner),
@@ -253,8 +288,11 @@ pub(crate) fn build(
     let mut bank = draw("brook-wet-banks", banks, 0xffffff, 1.);
     bank.material.ground = Some(Ground::near(Layer::Mud, true));
     bank.material.opacity = ground::OVERLAY_ALPHA;
+    ground::project_rock(&mut shingle);
+    let mut stones = draw("brook-bank-shingle", shingle, 0xffffff, 1.);
+    stones.material.ground = Some(Ground::near(Layer::Rock, false));
     vec![Group {
-        draws: vec![bank],
+        draws: vec![bank, stones],
         cull: Cull::Always,
         instanced: false,
         fallback: None,

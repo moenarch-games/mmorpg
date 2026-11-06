@@ -597,3 +597,35 @@ the village crossing without page errors and reported both near `rock` and coars
 `rock-far` batches with all seven texture layers loaded. The large repeated bumps are
 reduced; some texture repetition remains in the very wide view, so this is not visual
 acceptance of the complete landscape.
+
+### Village brook bends and shingle
+
+The immutable `brook::COURSE` now includes smaller alternating bends between the
+bridge and the south drainage opening, and along the downstream reach. The bridge
+crossing, culvert point, waterfall connection, water level and channel width retain
+those authored positions/values. The same points drive the authoritative bed cut,
+water volume and shared visual ribbon; neither client invents a separate route.
+Two-metre ribbon subdivisions give each edge small world-space variations inside
+the authoritative width. Adjacent segments share their endpoint positions, and the
+wet mud overlay follows those edges.
+
+Shared presentation adds scattered low shingle clusters beside the village brook.
+The existing blob shape and rock material are reused in one combined draw. Pebbles
+are partly buried in the sampled terrain, skip steep supports and the bridge
+landings, and are decorative rather than movement blockers. Their tops are roughly
+12 cm above the ground, with the mud overlay covering their bases. These are small
+bank details; the water surface and its junction with the coarse terrain still need
+further refinement. This pass does not add hydrology, collision streaming or a water
+renderer.
+
+The current content revision is `17140007599132759617` (automatically hashed);
+protocol/canonical layouts are unchanged. The live Blender context contains the
+updated terrain, exact shared brook ribbon and 11,760-triangle shingle mesh.
+Focused checks: both `village_brook` gameplay tests and the shared terrain/water
+clearance test passed, along with the browser/WASM production build. Convention
+source revision remains `625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+The final close view is `artifacts/greyhaven-brook/brook-banks.png`: Chromium crossed
+the bridge with all seven ground layers loaded and no page errors. The bend and
+uneven edge are visible, but a hard dark strip beneath the water still makes the
+water/ground junction look artificial. Resolving that junction remains necessary;
+this small bank-detail pass is not acceptance of the complete stream or landscape.
