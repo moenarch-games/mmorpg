@@ -2,13 +2,17 @@
 use std::sync::Arc;
 
 use mmorpg_core::greyhaven_vale::{self, cave::GREYFANG};
-use mmorpg_core::{ZoneCommand, ZoneId, ZoneSimulation};
+use mmorpg_core::{ZoneCommand, ZoneContent, ZoneId, ZoneSimulation};
 
 const NORTH: u16 = 32_768;
 const EAST: u16 = 16_384;
 
 fn player_at(feet: [i32; 2]) -> ZoneSimulation {
-    let mut zone = ZoneSimulation::with_content(ZoneId::new(1), greyhaven_vale::content()).unwrap();
+    // This fixture checks geometry; the Redbrand garrison's combat is covered separately.
+    let content = Arc::new(ZoneContent::from_definition(
+        greyhaven_vale::greyhaven_vale_definition(),
+    ));
+    let mut zone = ZoneSimulation::with_content(ZoneId::new(1), content).unwrap();
     zone.add_player(1).unwrap();
     let mut state = zone.snapshot().unwrap();
     state.players[0].position =
