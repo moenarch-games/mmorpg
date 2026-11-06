@@ -938,3 +938,12 @@ These changes and the weathered rock skin remain presentation-only. The browser
 production build passes; no broad E2E or physics-engine work was undertaken for
 this pass. Ground relief, path shaping, realistic flow and native shadow matching
 remain unfinished.
+
+![Current western stream corridor](images/greyhaven-western-bank-progress.png)
+
+The current browser capture reports no page errors and shows the reduced blade
+clumps, soil breakup and translucent brook approaching the western gate. It is an
+environment camera, not evidence of a completed western-bank traversal: the direct
+walk route stopped by an existing obstacle near `[-9.4,28.65]` m. Final traversal
+and clipping acceptance remain pending. The paths and terrain still need the
+larger shape/refinement pass requested in the feedback.
