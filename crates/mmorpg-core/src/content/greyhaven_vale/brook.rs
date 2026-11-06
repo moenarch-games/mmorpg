@@ -4,6 +4,8 @@ use crate::{Ramp, RampRise, StaticCollider, WaterChannel, WaterVolume};
 
 pub const SURFACE: i32 = -5;
 pub const HALF_WIDTH: i32 = 90;
+/// Shallow village bed, with clearance for the terrain grid beside the protected spawn plaza.
+pub const BED_DEPTH: i32 = 35;
 pub const COURSE: &[[i32; 2]] = &[
     [-4200, 2400],
     [-4000, 2200],
@@ -163,7 +165,7 @@ pub fn bed_depth(x: i32, z: i32) -> i32 {
         return 0;
     }
     let distance = distance(COURSE, x, z).min(550);
-    65 * (550 - distance) / 550
+    BED_DEPTH * (550 - distance) / 550
 }
 
 pub fn colliders() -> Vec<StaticCollider> {

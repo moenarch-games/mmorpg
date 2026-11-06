@@ -629,3 +629,36 @@ the bridge with all seven ground layers loaded and no page errors. The bend and
 uneven edge are visible, but a hard dark strip beneath the water still makes the
 water/ground junction look artificial. Resolving that junction remains necessary;
 this small bank-detail pass is not acceptance of the complete stream or landscape.
+
+### Shallow village water and modelled reeds
+
+The broad dark strip under the brook was confirmed to be its shadow: temporarily
+excluding blended materials from the provider's shadow pass removed it in the same
+playable view. Toggling a three.js mesh's `castShadow` flag was inconclusive because
+the provider's custom pass collects materials directly. Both diagnostic dependency
+edits were restored; no provider/shader or dependency-pin changes are shipped.
+TODO: blended water still casts an opaque shadow through the existing material path;
+per-object shadow controls need to be respected by the rendering provider.
+
+Greyhaven's narrow village brook now uses an explicit `BED_DEPTH` of 35 cm rather
+than the previous 65 cm cut. This reduces the exaggerated separation between the
+water surface and its shallow banks while retaining an authoritative terrain bed.
+A 25 cm trial failed the existing clearance assertion beside the protected spawn
+plaza and was discarded; 35 cm passes. The upper river cut, lake depth, water levels,
+channel width, bridge and culverts retain their existing definitions.
+
+The six existing reed patches now have nine curved, folded leaves each, with brown
+seed heads on the stems. The opaque leaf faces show from both sides and use the
+existing shared procedural geometry/material batching. Stems sample their individual
+root positions on the real terrain. The live Blender context includes these exact
+game meshes, the revised bed and the repositioned shingle.
+
+Current content revision: `5606192899733454897`; protocol/canonical layouts are
+unchanged. Both `village_brook` gameplay tests passed, including the bridge, ford,
+gates, culvert and recovery. The shared water/terrain-clearance test and production
+browser/WASM build passed. Chromium completed the crossing with all seven terrain
+layers loaded and no page errors. The final view is
+`artifacts/greyhaven-brook/brook-shallows.png`; the broad dark strip is reduced, but
+the renderer's opaque water-shadow behaviour remains. Full suites and native GPU
+acceptance were not run. Convention source revision remains
+`625cb04ca568aebc8d45c90033e107a05e9bd2a0`.

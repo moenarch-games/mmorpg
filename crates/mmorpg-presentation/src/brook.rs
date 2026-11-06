@@ -264,8 +264,9 @@ pub(crate) fn build(
         (-6.5, 61.),
         (-9.5, 86.),
     ] {
+        reed_clump(b, g, x, z);
         for j in 0..3 {
-            let y = surface(g, x, z);
+            let y = surface(g, x + j as f64 * 0.12, z);
             b.global("brook-reeds", 0x84965c).add(
                 &frustum(5, 0.25, true, true, 0.),
                 at(
@@ -275,6 +276,17 @@ pub(crate) fn build(
                     0.018,
                     0.45 + j as f64 * 0.12,
                     0.018,
+                ),
+            );
+            b.global("brook-reed-seed-heads", 0x695235).add(
+                &frustum(6, 0.65, true, true, 0.),
+                at(
+                    x + j as f64 * 0.12,
+                    y + 0.45 + j as f64 * 0.12,
+                    z,
+                    0.025,
+                    0.15,
+                    0.025,
                 ),
             );
         }
@@ -299,6 +311,44 @@ pub(crate) fn build(
         min: [-73., -136.],
         max: [117., 99.],
     }]
+}
+
+/// Folded, arching reed leaves rooted on the same ground as their stems.
+fn reed_clump(b: &mut Batcher, g: &TerrainGrid, x: f64, z: f64) {
+    use std::f64::consts::{PI, TAU};
+    let y = surface(g, x, z) - 0.025;
+    for leaf in 0..9 {
+        let angle = leaf as f64 * TAU / 9. + noise(x, z, 2., 817.) * TAU;
+        let (dx, dz) = (angle.sin(), angle.cos());
+        let height = 0.45 + 0.4 * noise(leaf as f64, x, 0.7, 818.);
+        let point = |step: usize, side: f64| {
+            let t = step as f64 / 5.;
+            let spread = (0.28 + height * 0.3) * t * t;
+            let width = 0.045 * (PI * t).sin().max(0.).sqrt() * side;
+            let fold = 0.018 * (PI * t).sin() * (1. - side.abs());
+            [
+                x + dx * spread - dz * width,
+                y + height * (t * PI * 0.78).sin() + fold,
+                z + dz * spread + dx * width,
+            ]
+        };
+        let shape = b.global(
+            "brook-reed-leaves",
+            if leaf % 3 == 0 { 0x7f9050 } else { 0x596e39 },
+        );
+        for step in 0..5 {
+            for side in [-1., 1.] {
+                let q = [
+                    point(step, side),
+                    point(step + 1, side),
+                    point(step + 1, 0.),
+                    point(step, 0.),
+                ];
+                shape.face(&q);
+                shape.face(&[q[3], q[2], q[1], q[0]]);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
