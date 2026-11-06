@@ -1,4 +1,4 @@
-scenario interest-exit-enter zone=1 bots=2 ticks=350 grace=120
+scenario interest-exit-enter zone=1 bots=2 ticks=363 grace=120
 t=0 alice join -> joined player=1 epoch=1
 t=0 bob join -> joined player=2 epoch=1
 t=0 alice move -> applied seq=1 epoch=1 forward=1 strafe=0 facing=0
@@ -7,32 +7,33 @@ t=1 alice p1 e1 ack1 (-1550,90,1261) sees[bob] | bob p2 e1 ack1 (-1450,90,1261) 
 t=20 alice p1 e1 ack1 (-1550,90,1460) sees[bob] | bob p2 e1 ack1 (-1450,90,1460) sees[alice]
 t=40 alice p1 e1 ack1 (-1550,90,1670) sees[bob] | bob p2 e1 ack1 (-1450,90,1670) sees[alice]
 t=60 alice p1 e1 ack1 (-1550,90,1880) sees[bob] | bob p2 e1 ack1 (-1450,90,1880) sees[alice]
-t=72 alice move -> applied seq=2 epoch=1 forward=1 strafe=0 facing=49152
-t=72 bob move -> applied seq=2 epoch=1 forward=1 strafe=0 facing=16384
-t=73 alice p1 e1 ack2 (-1561,90,2006) sees[bob] | bob p2 e1 ack2 (-1440,90,2006) sees[alice]
-t=80 alice p1 e1 ack2 (-1634,90,2006) sees[bob] | bob p2 e1 ack2 (-1366,90,2006) sees[alice]
-t=100 alice p1 e1 ack2 (-1844,90,2006) sees[bob] | bob p2 e1 ack2 (-1156,90,2006) sees[alice]
-t=120 alice p1 e1 ack2 (-2054,90,2006) sees[bob] | bob p2 e1 ack2 (-946,90,2006) sees[alice]
-t=140 alice p1 e1 ack2 (-2264,90,2006) sees[bob] | bob p2 e1 ack2 (-736,90,2006) sees[alice]
-t=160 alice p1 e1 ack2 (-2474,86,2006) sees[bob] | bob p2 e1 ack2 (-526,90,2006) sees[alice]
-t=180 alice p1 e1 ack2 (-2684,76,2006) sees[bob] | bob p2 e1 ack2 (-316,90,2006) sees[alice]
-t=200 alice p1 e1 ack2 (-2894,68,2006) sees[bob] | bob p2 e1 ack2 (-106,90,2006) sees[alice]
-t=220 alice p1 e1 ack2 (-3104,59,2006) sees[bob] | bob p2 e1 ack2 (104,90,2006) sees[alice]
-t=240 alice p1 e1 ack2 (-3314,57,2006) sees[bob] | bob p2 e1 ack2 (314,90,2006) sees[alice]
-t=260 alice p1 e1 ack2 (-3524,59,2006) sees[bob] | bob p2 e1 ack2 (524,90,2006) sees[alice]
-t=280 alice p1 e1 ack2 (-3734,63,2006) sees[bob] | bob p2 e1 ack2 (734,90,2006) sees[alice]
-t=282 alice p1 e1 ack2 (-3755,63,2006) sees[] | bob p2 e1 ack2 (755,90,2006) sees[]
-t=299 expect alice not_sees bob ok bob not visible
-t=299 expect bob visible_count ok count=1
-t=299 alice p1 e1 ack2 (-3933,67,2006) sees[] | bob p2 e1 ack2 (934,90,2006) sees[]
-t=300 alice p1 e1 ack2 (-3944,67,2006) sees[] | bob p2 e1 ack2 (944,90,2006) sees[]
-t=300 alice move -> applied seq=3 epoch=1 forward=1 strafe=0 facing=16384
-t=300 bob move -> applied seq=3 epoch=1 forward=1 strafe=0 facing=49152
-t=301 alice p1 e1 ack3 (-3933,67,2006) sees[] | bob p2 e1 ack3 (934,90,2006) sees[]
-t=319 expect alice sees bob within t=302..=340 ok bob at [745, 90, 2006]
-t=319 expect bob sees alice within t=302..=340 ok alice at [-3744, 63, 2006]
-t=319 alice p1 e1 ack3 (-3744,63,2006) sees[bob] | bob p2 e1 ack3 (745,90,2006) sees[alice]
-t=320 alice p1 e1 ack3 (-3734,63,2006) sees[bob] | bob p2 e1 ack3 (734,90,2006) sees[alice]
-t=340 alice p1 e1 ack3 (-3524,59,2006) sees[bob] | bob p2 e1 ack3 (524,90,2006) sees[alice]
-t=350 alice p1 e1 ack3 (-3419,58,2006) sees[bob] | bob p2 e1 ack3 (419,90,2006) sees[alice]
-PASS interest-exit-enter ticks=350 steps=8 expectations=4 failures=0
+t=80 alice p1 e1 ack1 (-1550,90,2090) sees[bob] | bob p2 e1 ack1 (-1450,90,2090) sees[alice]
+t=85 alice move -> applied seq=2 epoch=1 forward=1 strafe=0 facing=49152
+t=85 bob move -> applied seq=2 epoch=1 forward=1 strafe=0 facing=16384
+t=86 alice p1 e1 ack2 (-1561,90,2143) sees[bob] | bob p2 e1 ack2 (-1440,90,2143) sees[alice]
+t=100 alice p1 e1 ack2 (-1708,88,2143) sees[bob] | bob p2 e1 ack2 (-1293,90,2143) sees[alice]
+t=120 alice p1 e1 ack2 (-1918,87,2143) sees[bob] | bob p2 e1 ack2 (-1083,90,2143) sees[alice]
+t=140 alice p1 e1 ack2 (-2128,83,2143) sees[bob] | bob p2 e1 ack2 (-873,90,2143) sees[alice]
+t=160 alice p1 e1 ack2 (-2338,83,2143) sees[bob] | bob p2 e1 ack2 (-663,90,2143) sees[alice]
+t=180 alice p1 e1 ack2 (-2548,78,2143) sees[bob] | bob p2 e1 ack2 (-453,90,2143) sees[alice]
+t=200 alice p1 e1 ack2 (-2756,74,2143) sees[bob] | bob p2 e1 ack2 (-243,90,2143) sees[alice]
+t=220 alice p1 e1 ack2 (-2960,96,2143) sees[bob] | bob p2 e1 ack2 (-33,90,2143) sees[alice]
+t=240 alice p1 e1 ack2 (-3170,96,2143) sees[bob] | bob p2 e1 ack2 (178,90,2143) sees[alice]
+t=260 alice p1 e1 ack2 (-3380,96,2143) sees[bob] | bob p2 e1 ack2 (388,90,2143) sees[alice]
+t=280 alice p1 e1 ack2 (-3590,95,2143) sees[bob] | bob p2 e1 ack2 (598,90,2143) sees[alice]
+t=295 alice p1 e1 ack2 (-3747,65,2143) sees[] | bob p2 e1 ack2 (755,90,2143) sees[]
+t=300 alice p1 e1 ack2 (-3800,63,2143) sees[] | bob p2 e1 ack2 (808,90,2143) sees[]
+t=312 expect alice not_sees bob ok bob not visible
+t=312 expect bob visible_count ok count=1
+t=312 alice p1 e1 ack2 (-3926,65,2143) sees[] | bob p2 e1 ack2 (934,90,2143) sees[]
+t=313 alice move -> applied seq=3 epoch=1 forward=1 strafe=0 facing=16384
+t=313 bob move -> applied seq=3 epoch=1 forward=1 strafe=0 facing=49152
+t=314 alice p1 e1 ack3 (-3926,65,2143) sees[] | bob p2 e1 ack3 (934,90,2143) sees[]
+t=320 alice p1 e1 ack3 (-3863,64,2143) sees[] | bob p2 e1 ack3 (871,90,2143) sees[]
+t=332 expect alice sees bob within t=315..=353 ok bob at [745, 90, 2143]
+t=332 expect bob sees alice within t=315..=353 ok alice at [-3737, 62, 2143]
+t=332 alice p1 e1 ack3 (-3737,62,2143) sees[bob] | bob p2 e1 ack3 (745,90,2143) sees[alice]
+t=340 alice p1 e1 ack3 (-3653,64,2142) sees[bob] | bob p2 e1 ack3 (661,90,2143) sees[alice]
+t=360 alice p1 e1 ack3 (-3590,66,2142) sees[bob] | bob p2 e1 ack3 (451,90,2143) sees[alice]
+t=363 alice p1 e1 ack3 (-3590,66,2142) sees[bob] | bob p2 e1 ack3 (419,90,2143) sees[alice]
+PASS interest-exit-enter ticks=363 steps=8 expectations=4 failures=0
