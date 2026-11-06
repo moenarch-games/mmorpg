@@ -568,9 +568,55 @@ fn grass(m: &mut Model, p: &Prop) {
     );
 }
 
+// Brook slice, in core centimetres. These are decorative roots, never collision bodies.
+const BROOK_COVER_MIN: [i32; 2] = [-5400, 1200];
+const BROOK_COVER_MAX: [i32; 2] = [1200, 6500];
+fn in_brook_cover(x: i32, z: i32) -> bool {
+    (BROOK_COVER_MIN[0]..BROOK_COVER_MAX[0]).contains(&x)
+        && (BROOK_COVER_MIN[1]..BROOK_COVER_MAX[1]).contains(&z)
+}
+
+/// Deterministic Poisson-disc roots for this small presentation patch. Each 49 cm
+/// cell can contain at most one root with the 70 cm exclusion radius. The scratch
+/// cells are discarded after scene construction; no runtime query/index is added.
+fn brook_cover_points() -> Vec<[i32; 2]> {
+    const CELL: i32 = 49;
+    const RADIUS: i32 = 70;
+    let columns = (BROOK_COVER_MAX[0] - BROOK_COVER_MIN[0] + CELL - 1) / CELL;
+    let rows = (BROOK_COVER_MAX[1] - BROOK_COVER_MIN[1] + CELL - 1) / CELL;
+    let mut cells = vec![None; (columns * rows) as usize];
+    let mut points: Vec<[i32; 2]> = Vec::new();
+    for candidate in 0..40000 {
+        let point = std::array::from_fn(|axis| {
+            BROOK_COVER_MIN[axis]
+                + (hash(&[candidate as f64, axis as f64, 51391.])
+                    * f64::from(BROOK_COVER_MAX[axis] - BROOK_COVER_MIN[axis]))
+                    as i32
+        });
+        let [column, row] =
+            std::array::from_fn(|axis| (point[axis] - BROOK_COVER_MIN[axis]) / CELL);
+        let mut close = false;
+        for r in (row - 2).max(0)..=(row + 2).min(rows - 1) {
+            for c in (column - 2).max(0)..=(column + 2).min(columns - 1) {
+                if let Some(index) = cells[(r * columns + c) as usize] {
+                    let other: [i32; 2] = points[index];
+                    close |= (point[0] - other[0]).pow(2) + (point[1] - other[1]).pow(2)
+                        < RADIUS * RADIUS;
+                }
+            }
+        }
+        if !close {
+            cells[(row * columns + column) as usize] = Some(points.len());
+            points.push(point);
+        }
+    }
+    points
+}
+
 /// Fine, walk-through grass and woodland ferns between the sparse saved Outpost tufts.
 /// Both clients draw the existing shared instanced batches; these are never gameplay
-/// props or colliders. A jittered lattice guarantees spacing without a per-frame scatter.
+/// props or colliders. The brook uses clustered Poisson-disc roots; older regions keep
+/// their existing sparse cover until their own art pass.
 pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
     if !s.greyhaven() {
         return;
@@ -639,81 +685,100 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
         .collect();
 
     const CELL: i32 = 360;
+    let mut roots = Vec::new();
     for row in VALE_BOUNDS.min[1].div_euclid(CELL)..VALE_BOUNDS.max[1].div_euclid(CELL) {
         for column in VALE_BOUNDS.min[0].div_euclid(CELL)..VALE_BOUNDS.max[0].div_euclid(CELL) {
             let seed = [f64::from(column), f64::from(row)];
             let x = column * CELL + (hash(&[seed[0], seed[1], 171.]) * 160.).round() as i32 - 80;
             let z = row * CELL + (hash(&[seed[0], seed[1], 173.]) * 160.).round() as i32 - 80;
-            if !VALE_BOUNDS.contains(x, z)
-                || SPAWN_PLAZA.contains(x, z)
-                || s.road_distance([x, z]) < 240
-                || s.water_distance([x, z]) < 230
-                || mmorpg_core::greyhaven_vale::brook::wet_ground(x, z)
-                || s.farmland().iter().any(|field| field.distance([x, z]) == 0)
-                || s.terrain_holes
-                    .iter()
-                    .any(|hole| hole.distance([x, z]) < 110)
-            {
-                continue;
+            if !in_brook_cover(x, z) {
+                roots.push(([x, z], seed));
             }
-
-            let c = ((x - g.origin[0]).div_euclid(g.step) as usize).min(g.columns - 1);
-            let r = ((z - g.origin[1]).div_euclid(g.step) as usize).min(g.rows - 1);
-            let (density, wooded) = match g.biomes[r * g.columns + c].name() {
-                "woods" => (0.92, true),
-                "meadow" => (0.56, false),
-                "hub" => (0.42, false),
-                "hollow" => (0.34, false),
-                _ => continue,
-            };
-            if hash(&[seed[0], seed[1], 179.]) > density {
-                continue;
-            }
-            // Only visual support is sampled. Avoid clumps across a cliff, path landing,
-            // structure or water bank; their authoritative collision is unchanged.
-            let (mx, mz) = (metres(x), metres(z));
-            let y = surface(g, mx, mz);
-            let rise_x = surface(g, mx + 0.7, mz) - surface(g, mx - 0.7, mz);
-            let rise_z = surface(g, mx, mz + 0.7) - surface(g, mx, mz - 0.7);
-            if rise_x * rise_x + rise_z * rise_z > 0.24
-                || blockers.iter().any(|foot| {
-                    x >= foot.min[0] - 110
-                        && x <= foot.max[0] + 110
-                        && z >= foot.min[1] - 110
-                        && z <= foot.max[1] + 110
-                })
-            {
-                continue;
-            }
-
-            let variation = hash(&[seed[0], seed[1], 181.]);
-            let pick = ((variation * 3.).floor() as usize).min(2);
-            let is_fern = wooded && hash(&[seed[0], seed[1], 187.]) < 0.70;
-            let color = if is_fern {
-                [0x405c32, 0x53723c, 0x6b7942][pick]
-            } else if wooded {
-                [0x526c38, 0x657944, 0x7b8451][pick]
-            } else {
-                [0x607e3e, 0x738d45, 0x898c52][pick]
-            };
-            let size = 0.8 + 0.45 * hash(&[seed[0], seed[1], 183.]);
-            b.instance(
-                if is_fern {
-                    "greyhaven-fern-understory"
-                } else {
-                    "greyhaven-ground-cover"
-                },
-                color,
-                if is_fern { &fern } else { &clump },
-                compose(&[
-                    translate(mx, y, mz),
-                    ry(TAU * hash(&[seed[0], seed[1], 185.])),
-                    scale(size, size, size),
-                ]),
-                [mx, mz],
-                Cull::Near,
-            );
         }
+    }
+    roots.extend(
+        brook_cover_points()
+            .into_iter()
+            .map(|p| (p, p.map(f64::from))),
+    );
+    for ([x, z], seed) in roots {
+        if !VALE_BOUNDS.contains(x, z)
+            || SPAWN_PLAZA.contains(x, z)
+            || s.road_distance([x, z]) < 240
+            || s.water_distance([x, z]) < 230
+            || mmorpg_core::greyhaven_vale::brook::wet_ground(x, z)
+            || s.farmland().iter().any(|field| field.distance([x, z]) == 0)
+            || s.terrain_holes
+                .iter()
+                .any(|hole| hole.distance([x, z]) < 110)
+        {
+            continue;
+        }
+
+        let c = ((x - g.origin[0]).div_euclid(g.step) as usize).min(g.columns - 1);
+        let r = ((z - g.origin[1]).div_euclid(g.step) as usize).min(g.rows - 1);
+        let (density, wooded) = match g.biomes[r * g.columns + c].name() {
+            "woods" => (0.92, true),
+            "meadow" => (0.56, false),
+            "hub" => (0.42, false),
+            "hollow" => (0.34, false),
+            _ => continue,
+        };
+        let density = if in_brook_cover(x, z) {
+            // Broad glades and smaller clumps, rather than one evenly occupied field.
+            let patch = noise(metres(x), metres(z), 4.2, 51392.);
+            let glade = noise(metres(x), metres(z), 15., 51393.);
+            ((patch - 0.28) * 2.5).clamp(0., 1.) * (0.5 + glade * 0.5)
+        } else {
+            density
+        };
+        if hash(&[seed[0], seed[1], 179.]) > density {
+            continue;
+        }
+        // Only visual support is sampled. Avoid clumps across a cliff, path landing,
+        // structure or water bank; their authoritative collision is unchanged.
+        let (mx, mz) = (metres(x), metres(z));
+        let y = surface(g, mx, mz);
+        let rise_x = surface(g, mx + 0.7, mz) - surface(g, mx - 0.7, mz);
+        let rise_z = surface(g, mx, mz + 0.7) - surface(g, mx, mz - 0.7);
+        if rise_x * rise_x + rise_z * rise_z > 0.24
+            || blockers.iter().any(|foot| {
+                x >= foot.min[0] - 110
+                    && x <= foot.max[0] + 110
+                    && z >= foot.min[1] - 110
+                    && z <= foot.max[1] + 110
+            })
+        {
+            continue;
+        }
+
+        let variation = hash(&[seed[0], seed[1], 181.]);
+        let pick = ((variation * 3.).floor() as usize).min(2);
+        let is_fern = wooded && hash(&[seed[0], seed[1], 187.]) < 0.70;
+        let color = if is_fern {
+            [0x405c32, 0x53723c, 0x6b7942][pick]
+        } else if wooded {
+            [0x526c38, 0x657944, 0x7b8451][pick]
+        } else {
+            [0x607e3e, 0x738d45, 0x898c52][pick]
+        };
+        let size = 0.8 + 0.45 * hash(&[seed[0], seed[1], 183.]);
+        b.instance(
+            if is_fern {
+                "greyhaven-fern-understory"
+            } else {
+                "greyhaven-ground-cover"
+            },
+            color,
+            if is_fern { &fern } else { &clump },
+            compose(&[
+                translate(mx, y, mz),
+                ry(TAU * hash(&[seed[0], seed[1], 185.])),
+                scale(size, size, size),
+            ]),
+            [mx, mz],
+            Cull::Near,
+        );
     }
 }
 /// Climbable cliffs wear handhold routes fitted to their rock surfaces (#512).
@@ -1651,4 +1716,22 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
         ));
     }
     animations
+}
+
+#[cfg(test)]
+mod ground_cover_tests {
+    use super::*;
+
+    #[test]
+    fn brook_roots_are_deterministic_and_leave_seventy_centimetres_between_plants() {
+        let points = brook_cover_points();
+        assert!(!points.is_empty());
+        assert_eq!(points, brook_cover_points());
+        for (i, point) in points.iter().enumerate() {
+            assert!(in_brook_cover(point[0], point[1]));
+            for other in &points[i + 1..] {
+                assert!((point[0] - other[0]).pow(2) + (point[1] - other[1]).pow(2) >= 70 * 70);
+            }
+        }
+    }
 }
