@@ -976,3 +976,12 @@ sampled into core terrain with smooth radial falloff and road clearance. Path
 wear is narrower and has irregular edges and patchy soil transitions in shared
 presentation. The focused relief check confirms bridge/main-path levels remain
 unchanged; this is still an early ground-shape pass, not the completed landscape.
+
+![Western mill in the running game](images/greyhaven-western-watermill-progress.png)
+
+Game capture: noon, eye `[-23,4.8,28]`, target `[-32,2,19.8]`, 800×533.
+All seven terrain textures loaded and the browser reported no page errors. This
+is an environment view; the earlier blocked player route is not presented as a
+completed walk through the mill. The focused collision query proves the crossing's
+clearance/support separately. Ground/path relief and the rest of the visual slice
+still need further refinement and final gameplay traversal.
