@@ -84,7 +84,8 @@ fn the_farm_terrace_rises_above_the_basin_behind_a_cliff() {
     let definition = greyhaven_vale::greyhaven_vale_definition();
     // The Outpost's floor, the farmyard on the terrace.
     assert_eq!(definition.ground_at(0, 2_000), 0);
-    assert_eq!(definition.ground_at(2_000, 8_800), 0);
+    // The authored grassy apron rises 66 cm before the cliff.
+    assert_eq!(definition.ground_at(2_000, 8_800), 66);
     assert_eq!(definition.ground_at(6_200, 4_150), basin::TERRACE_Y);
     // The former rectangular corner is now rock above the rounded southern apron.
     assert!(definition.ground_at(4_000, 9_000) >= basin::TERRACE_Y);
@@ -180,20 +181,27 @@ fn farm_folk_and_creatures_stand_on_the_terrace() {
 fn the_lake_and_the_shrine_lie_in_the_terrace() {
     use greyhaven_vale::{lake, shrine};
     let definition = greyhaven_vale::greyhaven_vale_definition();
-    // The lake's west shore and the shore over the flooded cave stand on the terrace …
-    assert_eq!(definition.ground_at(3_200, -5_600), basin::TERRACE_Y);
-    assert_eq!(definition.ground_at(10_000, -4_400), basin::TERRACE_Y);
+
+    // The relocated lake apron stays level; the farther cave cover follows the weathered rim.
+    let [x, z] = lake::place([3_200, -5_600]);
+    assert_eq!(definition.ground_at(x, z), basin::TERRACE_Y);
+    let [x, z] = lake::place([10_000, -4_400]);
+    // Beyond the level lake apron, the weathered ground over the far cave stays high
+    // enough above its floor and vaulted room rather than matching the old flat terrace.
+    assert_eq!(definition.ground_at(x, z), 978);
+    assert!(definition.ground_at(x, z) > shrine::FLOOR_Y + shrine::ROOM_CLEAR);
     // … the water lies just above it and the shrine's floor 9 m below.
     assert_eq!(lake::SURFACE, basin::TERRACE_Y + 15);
-    assert_eq!(definition.ground_at(5_000, -5_400), shrine::FLOOR_Y);
+    let [x, z] = lake::place([5_000, -5_400]);
+    assert_eq!(definition.ground_at(x, z), shrine::FLOOR_Y);
     assert_eq!(shrine::FLOOR_Y, basin::TERRACE_Y - 900);
     // The rounded south cliff under the lake: floor, then terrace.
-    assert_eq!(definition.ground_at(2_000, -2_400), 0);
-    assert_eq!(definition.ground_at(3_600, -2_800), basin::TERRACE_Y);
+    assert_eq!(definition.ground_at(-3_000, -5_200), 0);
+    assert_eq!(definition.ground_at(-6_400, -5_200), basin::TERRACE_Y);
 }
 
 #[test]
-fn a_player_walks_up_the_lakeshore_climb_to_the_lake() {
+fn a_player_walks_up_the_former_lakeshore_climb_to_the_eastern_rim() {
     let mut zone = player_at([0, -2_800]);
     settle(&mut zone);
     assert!(feet(&zone)[1].abs() < 10.0);
@@ -204,14 +212,13 @@ fn a_player_walks_up_the_lakeshore_climb_to_the_lake() {
             [1_400, -6_200],
             [2_600, -6_200],
             [2_600, -3_200],
-            [3_400, -3_200],
-            [3_400, -4_800],
+            [2_600, -3_600],
         ],
     );
     let shore = feet(&zone);
     assert!(
         (shore[1] - basin::TERRACE_Y as f32).abs() < 30.0,
-        "on the lake shore: {shore:?}"
+        "on the former lakeshore climb's rim: {shore:?}"
     );
     assert!(
         trail
@@ -257,10 +264,10 @@ fn the_rim_closes_round_the_basin_behind_cliffs() {
     // West under the woods, south of the Outpost, north under the Hollow and the lake: the
     // floor, then the weathered rim.
     for (floor, rim) in [
-        ([-3_200, 6_000], [-4_800, 6_000]),
-        ([0, 9_600], [0, 10_800]),
+        ([-3_200, 6_000], [-6_800, 6_000]),
+        ([0, 9_600], [0, 10_400]),
         ([0, -6_400], [0, -6_800]),
-        ([2_000, -2_800], [3_600, -2_800]),
+        ([-3_000, -5_200], [-6_400, -5_200]),
     ] {
         assert_eq!(definition.ground_at(floor[0], floor[1]), 0, "{floor:?}");
         assert!(
@@ -278,7 +285,8 @@ fn the_rim_closes_round_the_basin_behind_cliffs() {
     }
     // Beyond 128 m the rim descends into the outer valley's hills.
     assert!(definition.ground_at(0, 16_800) < basin::TERRACE_Y);
-    // Each cliff holds a player at its foot: west under the woods, south, north under the Hollow.
+    // Hard faces west under the woods, on the eastern southern bank and north under
+    // the Hollow hold a player at their foot. The soft southern shoulder is checked separately.
     let held = |start: [i32; 2], facing: u16, below: fn([f32; 3]) -> bool| {
         let mut zone = player_at(start);
         settle(&mut zone);
@@ -289,7 +297,7 @@ fn the_rim_closes_round_the_basin_behind_cliffs() {
         );
     };
     held([-3_200, 6_000], 49_152, |at| at[0] > -4_700.0);
-    held([800, 8_800], 0, |at| at[2] < 9_900.0);
+    held([2_400, 8_400], 0, |at| at[2] < 9_900.0);
     held([-400, -5_000], 32_768, |at| at[2] > -6_700.0);
 }
 
@@ -367,9 +375,17 @@ fn a_player_walks_up_the_south_climb_onto_the_rim() {
         ],
     );
     let top = feet(&zone);
+    let ground = zone
+        .content()
+        .definition()
+        .ground_at(top[0].round() as i32, top[2].round() as i32);
     assert!(
-        (top[1] - basin::TERRACE_Y as f32).abs() < 20.0,
-        "on the rim: {top:?}"
+        (top[1] - ground as f32).abs() < 20.0,
+        "on the weathered rim: {top:?}"
+    );
+    assert!(
+        top[1] > basin::LANDING_Y as f32,
+        "above the climb's landing"
     );
 }
 
@@ -406,8 +422,8 @@ fn a_player_walks_from_the_hollow_into_the_greyfang_cave() {
         &[
             [9_600, -11_500],
             [10_000, -13_000],
-            [9_200, -16_000],
-            [6_400, -16_000],
+            [9_200, -16_400],
+            [6_400, -16_400],
             [6_400, -13_800],
         ],
     );
@@ -416,4 +432,22 @@ fn a_player_walks_from_the_hollow_into_the_greyfang_cave() {
         (inside[1] - basin::TERRACE_Y as f32).abs() < 20.0,
         "on the cave's floor: {inside:?}"
     );
+}
+
+#[test]
+fn a_player_walks_onto_the_authored_soft_southern_shoulder() {
+    let mut zone = player_at([400, 8_800]);
+    settle(&mut zone);
+    assert!(feet(&zone)[1].abs() < 10.0);
+    walk(&mut zone, &[[400, 10_000]]);
+    let top = feet(&zone);
+    let ground = zone
+        .content()
+        .definition()
+        .ground_at(top[0].round() as i32, top[2].round() as i32);
+    assert!(
+        (top[1] - ground as f32).abs() < 20.0,
+        "on the authored shoulder: {top:?}"
+    );
+    assert!(top[1] > 0.0, "walked onto the rising shoulder");
 }
