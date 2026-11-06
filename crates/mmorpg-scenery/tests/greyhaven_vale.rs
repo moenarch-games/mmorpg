@@ -636,8 +636,9 @@ fn prop_counts_stay_within_their_budgets() {
     // and lookout towers (#425), and the wetlands' drowned watchtower and ruined cottage (#426).
     assert_eq!(count(PropKind::Keep), 10);
     assert_eq!(count(PropKind::House), 19);
-    // The highlands (#425) add about a tenth, the wetlands (#426) about another tenth.
-    assert!(scenery.props.len() <= 13_000, "{}", scenery.props.len());
+    // The highlands and wetlands add about a tenth each; #644 adds the extended woodland
+    // and hideout. The combined content places 13,510 scenery props.
+    assert!(scenery.props.len() <= 14_000, "{}", scenery.props.len());
 }
 
 #[test]
