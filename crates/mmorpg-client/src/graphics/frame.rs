@@ -265,15 +265,19 @@ impl GroundGpu {
 
     /// A ground draw's material: its layer's textures divided by their mean colour, so the
     /// vertex colours keep the palette; an overlay masked by weight × height
-    /// (`mmorpg_presentation::ground`). Without the layer's textures, and on a terrain tile's
-    /// far level (#526), flat vertex colours.
+    /// (`mmorpg_presentation::ground`). Coarse rock keeps colour/roughness detail without
+    /// its near normal/occlusion maps. Other far ground and missing textures use flat vertex colours.
     fn material(&self, m: &DrawMaterial, ground: Ground) -> StandardMaterial {
         let (alpha, alpha_mode) = if ground.overlay {
             (OVERLAY_ALPHA, AlphaMode::Mask(MASK_CUTOFF))
         } else {
             (1., AlphaMode::Opaque)
         };
-        let Some(layer) = self.0.get(&ground.layer).filter(|_| !ground.far) else {
+        let Some(layer) = self
+            .0
+            .get(&ground.layer)
+            .filter(|_| !ground.far || ground.layer == Layer::Rock)
+        else {
             let flat = standard_material(m);
             return StandardMaterial {
                 base_color: flat.base_color.truncate().extend(alpha),
@@ -284,9 +288,13 @@ impl GroundGpu {
         StandardMaterial {
             base_color: (linear3(m.color) / layer.mean).extend(alpha),
             base_color_texture: Some(layer.base_color),
-            normal_map_texture: layer.normal,
+            normal_map_texture: if ground.far { None } else { layer.normal },
             metallic_roughness_texture: layer.occlusion_roughness_metal,
-            occlusion_texture: layer.occlusion_roughness_metal,
+            occlusion_texture: if ground.far {
+                None
+            } else {
+                layer.occlusion_roughness_metal
+            },
             metallic: 0.,
             perceptual_roughness: 1.,
             alpha_mode,

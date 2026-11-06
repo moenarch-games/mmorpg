@@ -519,9 +519,13 @@ impl Tiles {
         };
         let mut draws = vec![self.draw(index, &base.name(), Arc::new(out), base)];
         if !rock.indices.is_empty() {
-            // The material flag selects texturing, independently of this tile's geometry
-            // level. Both clients already batch it with their other textured rock draws.
-            let textured = Ground::near(Layer::Rock, false);
+            // Material detail is independent of tile residency. Coarse rock retains colour
+            // and roughness while omitting small-scale normal/occlusion detail.
+            let textured = Ground {
+                layer: Layer::Rock,
+                overlay: false,
+                far: true,
+            };
             draws.push(self.draw(index, "coarse-rock", Arc::new(rock), textured));
         }
         draws

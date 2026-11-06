@@ -79,7 +79,7 @@ function geometry(draw: TileDraw): THREE.BufferGeometry {
   geometry.setAttribute("position", new THREE.BufferAttribute(draw.positions, 3));
   geometry.setAttribute("normal", new THREE.BufferAttribute(draw.normals, 3));
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 4));
-  if (!draw.far) {
+  if (!draw.far || draw.layer === "rock") {
     geometry.setAttribute("uv", new THREE.BufferAttribute(draw.uvs, 2));
     geometry.setAttribute("tangent", new THREE.BufferAttribute(draw.tangents, 4));
   }
@@ -139,13 +139,14 @@ class Batch {
 
 /**
  * The terrain in visual tiles (#526) with the textured ground layers of #525. Every tile's far level (its relief at
- * eight metres, gentle ground baked into vertex colours and steep rock textured) is built once; near levels (the opaque grass base
- * and its masked overlays: forest floor, scree, mud, sand, paths, rock) stream around the camera as the shared Rust
+ * eight metres, gentle ground baked into vertex colours and steep rock retaining colour detail without near
+ * normal/occlusion maps) is built once; near levels (the opaque grass base and its masked overlays: forest floor,
+ * scree, mud, sand, paths, rock) stream around the camera as the shared Rust
  * `TerrainStream` says, a few per frame, and a tile shows its near level only once that is resident. Skirts under every
  * tile edge hide the cracks between levels, as natively. Each near layer's material is its glTF material from
  * asset-tooling's `greyhaven-terrain` bundle, its base colour divided by the texture's mean colour so the vertex
  * colours keep the palette; an overlay's weight is its vertex colour alpha and its mask cuts by weight × the texture's
- * height alpha. Until the bundle loads (or for a layer it lacks) near layers draw flat in their vertex colours: the
+ * height alpha. Until the bundle loads (or for a layer it lacks) textured layers draw flat in their vertex colours: the
  * explicit fallback. Presentation only.
  */
 export class Ground {
@@ -178,7 +179,9 @@ export class Ground {
   }
 
   #batch(draw: TileDraw): Batch {
-    const key = draw.far ? `far-${draw.overlay ? "overlay" : "base"}` : `${draw.layer}${draw.overlay ? "-overlay" : ""}`;
+    const key = draw.far
+      ? draw.layer === "rock" ? "rock-far" : `far-${draw.overlay ? "overlay" : "base"}`
+      : `${draw.layer}${draw.overlay ? "-overlay" : ""}`;
     let batch = this.#batches.get(key);
     if (!batch) {
       let material = this.#materials.get(key);
@@ -265,15 +268,19 @@ export class Ground {
       const mean = descriptor.layers?.find((entry) => entry.layer === layer)?.meanColor;
       if (!source || !mean) { return; }
       const material = source as THREE.MeshStandardMaterial;
-      for (const overlay of [false, true]) {
-        const key = `${layer}${overlay ? "-overlay" : ""}`;
+      const variants = [
+        { key: layer, overlay: false, far: false },
+        { key: `${layer}-overlay`, overlay: true, far: false },
+      ];
+      if (layer === "rock") { variants.push({ key: "rock-far", overlay: false, far: true }); }
+      for (const { key, overlay, far } of variants) {
         const textured = new LitMaterial({
           baseColor: mean.map((channel) => 1 / Math.max(channel, 1e-3)) as [number, number, number],
           alpha: overlay ? OVERLAY_ALPHA : 1,
           baseColorTexture: material.map,
-          normalMapTexture: material.normalMap,
+          normalMapTexture: far ? null : material.normalMap,
           metallicRoughnessTexture: material.roughnessMap ?? material.metalnessMap,
-          occlusionTexture: material.aoMap,
+          occlusionTexture: far ? null : material.aoMap,
           metallic: 0,
           perceptualRoughness: 1,
           alphaMode: overlay ? "mask" : "opaque",

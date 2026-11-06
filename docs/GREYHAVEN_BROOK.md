@@ -322,7 +322,7 @@ coverage and skirts), the five browser scene-building tests and the browser/WASM
 Full suites and native GPU acceptance were not run. Legacy A/B CI failures remain unresolved.
 Convention source revision remains `625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
 
-Rock mapping now spans six metres per repeat across the existing shared rock surfaces.
+An intermediate pass used a six-metre rock repeat; the authored-scale correction below supersedes it.
 Chromium completed the village/bridge crossing without page errors and saved
 `artifacts/greyhaven-brook/distant-rock-detail.png`. The wide view still exposes repetitive
 cliff shading and overly broad distant paths; the reference art direction remains in progress.
@@ -562,3 +562,38 @@ the overall reference art direction remains in progress. Convention source revis
 Chromium walked across and back onto the loaded bridge, with all seven ground textures
 loaded and no page errors. The final planked approaches and rail bracing are captured in
 `artifacts/greyhaven-brook/timber-bridge.png`; the live Blender file contains the same model.
+
+
+## Cliff projection and distant surface detail
+
+A coarse vertical face could select a top projection from its smoothed terrain normals.
+That collapsed texture variation along its height. Coarse rock now chooses its projection
+from the actual triangle direction while retaining the smoothed normals for lighting.
+A focused regression reproduces the collapsed scale before the fix and confirms vertical
+metre scale afterward. The rock repeat is also restored to the bundle descriptor's authored
+2.7 m; the live Blender terrain/buttress preview uses that scale too.
+
+The visual comparison also showed that full normal-map detail produced a strongly repeated
+bump pattern on the distant enclosing walls. Coarse rock therefore uses its existing far
+material flag to retain colour and roughness textures without the near normal/occlusion maps.
+Near terrain, cave surfaces and other fixed rock retain both maps. Native and browser
+bind the same material distinction through existing renderer APIs; the browser keeps UVs on
+its separate coarse-rock batch. No shader, renderer feature or new texture asset is added.
+
+Triangle positions, terrain tile size, sampling, residency, chunk coverage and skirts remain
+unchanged. This is surface projection and detail selection, separate from authoritative
+collision and collision streaming. Authoritative content revision remains
+`14998568572822554775`; presentation identity follows the changed UV/material fields.
+Protocol/canonical layouts do not change.
+
+Focused checks passed: the projection regression, all four terrain-tile checks, all five
+browser scene-building checks including uploaded coarse-rock UVs, native ground texture
+imports/mip chains, TypeScript checking, format and the browser/WASM production build.
+Full suites/native GPU acceptance were not run; the previously reported content assertions
+and legacy A/B failures remain. Convention source revision remains
+`625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+The final overview is `artifacts/greyhaven-brook/cliff-projection.png`. Chromium completed
+the village crossing without page errors and reported both near `rock` and coarse
+`rock-far` batches with all seven texture layers loaded. The large repeated bumps are
+reduced; some texture repetition remains in the very wide view, so this is not visual
+acceptance of the complete landscape.

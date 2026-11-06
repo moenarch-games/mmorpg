@@ -601,7 +601,7 @@ for cluster,(x,z,turn) in enumerate([(39,-60,.4),(38,-65,1.1),(47,-70.5,.2),
 # site, clear of the village gates, switchbacks and water. The shared rock presenter
 # draws these collision facets directly, independent of the settlement glTF and visual LOD.
 basin_rock=bpy.data.materials.get('Greyhaven game rock - terrain context') or shore_preview
-basin_rock['tile_metres']=6
+basin_rock['tile_metres']=2.7
 for cluster,(x,z,rx,rz,h,turn,lean_x,lean_z) in enumerate([(-37,-40,4.2,5.0,15.5,.2,-5,-3),
     (-39,57,3.0,4.4,10.5,-.3,-5,0),(-25,83,3.6,4.8,11.5,.6,-1,5)]):
     for piece,(dx,dz,size,rise) in enumerate([(0,0,1,1),(3.1,2.1,.48,.43),(-3.0,2.4,.40,.28)]):

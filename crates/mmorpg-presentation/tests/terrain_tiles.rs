@@ -106,10 +106,10 @@ fn coarse_cliff_faces_keep_rock_detail_on_the_existing_surface() {
     let mut faces = 0;
     for draw in scene.terrain.tiles.iter().flat_map(|tile| &tile.far) {
         let ground = draw.material.ground.unwrap();
-        if ground.far {
+        if ground.layer != mmorpg_presentation::ground::Layer::Rock {
             continue;
         }
-        assert_eq!(ground.layer, mmorpg_presentation::ground::Layer::Rock);
+        assert!(ground.far, "coarse rock selects its far material");
         assert!(
             !ground.overlay,
             "rock replaces the coarse face instead of covering it"

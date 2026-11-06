@@ -80,7 +80,7 @@ impl Layer {
             Self::Grass | Self::Forest | Self::Sand => 3.,
             Self::Gravel | Self::Path => 2.5,
             Self::Mud => 2.,
-            Self::Rock => 6.,
+            Self::Rock => 2.7,
         }
     }
 
@@ -91,8 +91,9 @@ impl Layer {
 }
 
 /// A ground draw's layer, whether it is a masked overlay (else the opaque base), and whether
-/// it uses the terrain's flat far material ([`crate::tiles`], #526). Coarse cliff faces
-/// instead retain the textured rock material; this flag selects shading, not residency.
+/// it uses far shading ([`crate::tiles`], #526): gentle ground is flat, while coarse rock
+/// retains colour detail without near normal/occlusion maps. This flag selects shading,
+/// not residency.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Ground {
     pub layer: Layer,
@@ -102,7 +103,7 @@ pub struct Ground {
 
 impl Ground {
     /// The textured opaque base or masked overlay of `layer`, also used by fixed rock
-    /// surfaces and coarse cliff faces.
+    /// surfaces. Coarse cliff faces use their far material instead.
     #[must_use]
     pub const fn near(layer: Layer, overlay: bool) -> Self {
         Self {
@@ -380,9 +381,9 @@ impl Projection {
         }
     }
 
-    /// Rock is textured along the axis its smooth normals are most across (triplanar, chosen
-    /// per triangle), so steep faces show the rock upright instead of smeared; slopes up to
-    /// about 53° keep the top projection, so seams stay on real cliffs.
+    /// Rock uses dominant-axis mapping per triangle: slopes up to about 53° keep the top
+    /// projection. Near overlays supply smooth normals; coarse cliffs supply their face
+    /// normal so a broad crease cannot turn a vertical wall into a top projection.
     fn of(layer: Layer, normals: [V; 3]) -> Self {
         if layer != Layer::Rock {
             return Self::Top;
@@ -401,11 +402,19 @@ impl Projection {
     }
 }
 
-/// One coarse cliff face, with the same projection as the near rock layer. Keep the
-/// terrain's smooth normals so changing material does not expose the coarse triangle grid.
+/// One coarse cliff face, projected along its actual face rather than its smoothed
+/// lighting normals. Keep those normals so the coarse triangle grid is not exposed.
 pub(crate) fn coarse_rock_face(g: &mut Geometry, points: [V; 3], normals: [V; 3], colors: [V; 3]) {
     let first = g.p.len() as u32;
-    let (du, dv) = Projection::of(Layer::Rock, normals).axes();
+    let [p, q, r] = points;
+    let u: V = std::array::from_fn(|axis| q[axis] - p[axis]);
+    let v: V = std::array::from_fn(|axis| r[axis] - p[axis]);
+    let face = norm([
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+    ]);
+    let (du, dv) = Projection::of(Layer::Rock, [face; 3]).axes();
     let tile = Layer::Rock.tile_metres();
     g.p.extend(points);
     g.n.extend(normals);
@@ -656,4 +665,23 @@ pub(crate) fn patch(
         }
     }
     project_top(out, layer);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_coarse_cliff_keeps_vertical_texture_scale_with_upward_smoothed_normals() {
+        let mut g = Geometry::default();
+        let points = [[0., 0., 0.], [0., 30., 0.], [6., 0., 0.]];
+        let normals = [[0., 0.8, -0.6]; 3];
+        coarse_rock_face(&mut g, points, normals, [[1.; 3]; 3]);
+        assert_eq!(
+            g.n, normals,
+            "lighting retains the smoothed terrain normals"
+        );
+        assert_eq!(g.uv[1][1] - g.uv[0][1], -30. / Layer::Rock.tile_metres());
+        assert_eq!(g.uv[2][0] - g.uv[0][0], 6. / Layer::Rock.tile_metres());
+    }
 }

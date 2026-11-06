@@ -49,7 +49,14 @@ describe("the shared static scene in the browser", () => {
     expect(near.find((draw) => draw.layer === "grass" && !draw.overlay && !draw.far)).toBeDefined();
     const far = unpackTile(stream.far(built[0]!));
     expect(far.some((draw) => draw.far && draw.layer === "grass")).toBe(true);
-    expect(far.every((draw) => draw.far || draw.layer === "rock")).toBe(true);
+    expect(far.every((draw) => draw.far)).toBe(true);
+    const ground = new Ground(stream);
+    const coarseRock = ground.root.children.find((child) => child.name === "terrain:rock-far");
+    if (!(coarseRock instanceof BatchedMesh)) { throw new Error("coarse cliffs lost their separate material batch"); }
+    expect(coarseRock.geometry.getAttribute("uv")).toBeDefined();
+    for (const child of ground.root.children) {
+      if (child instanceof BatchedMesh) { child.dispose(); }
+    }
     expect(scene.surfaces.some((draw) => draw.layer === "rock")).toBe(true);
     for (const draw of [...near, ...far, ...scene.surfaces]) {
       const count = draw.positions.length / 3;
