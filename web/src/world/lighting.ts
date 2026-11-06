@@ -108,16 +108,20 @@ function linear(channel: number): number {
 /** The `LitMaterial` for a presentation node or instance batch (the native `standard_material`). */
 export function presentationMaterial({ node }: RendererMaterialRequest): THREE.Material {
   const opacity = node.opacity ?? 1;
-  return new LitMaterial({
+  const material = new LitMaterial({
     baseColor: linearRgb(node.color ?? 0xffffff),
     alpha: opacity,
     alphaMode: opacity < 1 ? "blend" : "opaque",
     emissive: linearRgb(node.emissive ?? 0x000000).map((channel) => channel * EMISSIVE_NITS) as unknown as Vec3,
-    perceptualRoughness: ROUGHNESS,
-    metallic: METALLIC,
+    perceptualRoughness: opacity < 1 && node.unlit !== true ? 0.3 : ROUGHNESS,
+    metallic: opacity < 1 ? 0 : METALLIC,
     doubleSided: node.doubleSided === true,
     unlit: node.unlit === true,
   });
+  // Blended water/foam receives shadows without stamping an opaque silhouette on its bed.
+  // The visible blend shader ignores this cutoff; shadow variants share the uniform.
+  if (opacity < 1) material.uniforms.alphaCutoff = { value: 1 };
+  return material;
 }
 
 const converted = new WeakMap<THREE.Material, LitMaterial>();

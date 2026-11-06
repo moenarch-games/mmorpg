@@ -570,7 +570,7 @@ fn grass(m: &mut Model, p: &Prop) {
 
 // Brook slice, in core centimetres. These are decorative roots, never collision bodies.
 const BROOK_COVER_MIN: [i32; 2] = [-5400, 1200];
-const BROOK_COVER_MAX: [i32; 2] = [1200, 6500];
+const BROOK_COVER_MAX: [i32; 2] = [4000, 6500];
 fn in_brook_cover(x: i32, z: i32) -> bool {
     (BROOK_COVER_MIN[0]..BROOK_COVER_MAX[0]).contains(&x)
         && (BROOK_COVER_MIN[1]..BROOK_COVER_MAX[1]).contains(&z)
@@ -636,6 +636,40 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
                 scale(0.17, 0.32 + 0.05 * f64::from(i % 3), 0.17),
             ]),
         );
+    }
+    // One shared ribbon mesh gives the close brook banks bent, thin leaves instead
+    // of the older conical tufts. The same instance batches draw it in both clients.
+    let mut bank_grass = Geometry::default();
+    for leaf in 0..9 {
+        let angle = leaf as f64 * TAU / 9. + hash(&[leaf as f64, 51394.]);
+        let (dx, dz) = (angle.sin(), angle.cos());
+        let height = 0.42 + hash(&[leaf as f64, 51395.]) * 0.32;
+        let bend = 0.12 + hash(&[leaf as f64, 51396.]) * 0.22;
+        let point = |step: usize, side: f64| {
+            let t = step as f64 / 3.;
+            let reach = 0.10 + bend * t * t;
+            let width = 0.035 * (1. - t).sqrt() * side;
+            [
+                dx * reach - dz * width,
+                height * t - 0.05 * t * t,
+                dz * reach + dx * width,
+            ]
+        };
+        for step in 0..3 {
+            let q = [
+                point(step, -1.),
+                point(step + 1, -1.),
+                point(step + 1, 1.),
+                point(step, 1.),
+            ];
+            if step == 2 {
+                bank_grass.face(&[q[0], q[1], q[3]]);
+                bank_grass.face(&[q[3], q[1], q[0]]);
+            } else {
+                bank_grass.face(&q);
+                bank_grass.face(&[q[3], q[2], q[1], q[0]]);
+            }
+        }
     }
     let mut fern = Geometry::default();
     for i in 0..8 {
@@ -722,6 +756,7 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
             "meadow" => (0.56, false),
             "hub" => (0.42, false),
             "hollow" => (0.34, false),
+            "shore" | "foothills" if in_brook_cover(x, z) => (0.8, false),
             _ => continue,
         };
         let density = if in_brook_cover(x, z) {
@@ -754,7 +789,8 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
 
         let variation = hash(&[seed[0], seed[1], 181.]);
         let pick = ((variation * 3.).floor() as usize).min(2);
-        let is_fern = wooded && hash(&[seed[0], seed[1], 187.]) < 0.70;
+        let is_fern = (wooded && hash(&[seed[0], seed[1], 187.]) < 0.70)
+            || (in_brook_cover(x, z) && hash(&[seed[0], seed[1], 189.]) < 0.08);
         let color = if is_fern {
             [0x405c32, 0x53723c, 0x6b7942][pick]
         } else if wooded {
@@ -770,7 +806,13 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
                 "greyhaven-ground-cover"
             },
             color,
-            if is_fern { &fern } else { &clump },
+            if is_fern {
+                &fern
+            } else if in_brook_cover(x, z) {
+                &bank_grass
+            } else {
+                &clump
+            },
             compose(&[
                 translate(mx, y, mz),
                 ry(TAU * hash(&[seed[0], seed[1], 185.])),

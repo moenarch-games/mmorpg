@@ -145,6 +145,42 @@ pub(crate) fn landscape_color(points: [V; 3], id: u32) -> u32 {
     mix(stone, 0x667447, growth)
 }
 
+/// Small recesses on the brook's western outcrops. Boundary vertices stay on the
+/// authored surface; interior chips sit at most six centimetres inside it. Physics
+/// continues to use the original simplified rock and its exact footprint.
+fn weathered_bank_face(g: &mut Geometry, points: [V; 3], id: u32, depth: u8) {
+    let edge = |a: V, b: V| (0..3).map(|axis| (a[axis] - b[axis]).powi(2)).sum::<f64>();
+    let [a, b, c] = points;
+    let u: V = std::array::from_fn(|axis| b[axis] - a[axis]);
+    let v: V = std::array::from_fn(|axis| c[axis] - a[axis]);
+    let normal = norm([
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+    ]);
+    if normal[1].abs() > 0.65 {
+        colored_face(g, &points, landscape_color(points, id));
+        return;
+    }
+
+    if depth < 5 && edge(a, b).max(edge(b, c)).max(edge(c, a)) > 1.4 * 1.4 {
+        let mid = |a: V, b: V| std::array::from_fn(|axis| (a[axis] + b[axis]) * 0.5);
+        let (ab, bc, ca) = (mid(a, b), mid(b, c), mid(c, a));
+        for face in [[a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]] {
+            weathered_bank_face(g, face, id, depth + 1);
+        }
+        return;
+    }
+    let centre: V = std::array::from_fn(|axis| (a[axis] + b[axis] + c[axis]) / 3.);
+    let chip = 0.01 + 0.05 * hash(&[centre[0] * 17., centre[1] * 13., centre[2] * 19.]);
+    let inset: V = std::array::from_fn(|axis| centre[axis] - normal[axis] * chip);
+    let strata = crate::terrain::noise(centre[0] * 0.2 + centre[2] * 0.13, centre[1], 0.48, 51397.);
+    let stone = landscape_color(points, id);
+    for face in [[a, b, inset], [b, c, inset], [c, a, inset]] {
+        colored_face(g, &face, shade(stone, 0.88 + strata * 0.20));
+    }
+}
+
 /// Interior roof faces remain one-sided static rock while the exterior shell cuts away.
 /// The existing backface culling hides these from an overhead camera automatically.
 pub(crate) fn ceiling_face([a, b, c]: [V; 3]) -> bool {
@@ -200,7 +236,11 @@ pub(crate) fn groups(scenery: &Scenery) -> Vec<Group> {
                 } else {
                     0x817b70
                 };
-                colored_face(&mut g, &points, color);
+                if (65094..=65096).contains(&mesh.id) {
+                    weathered_bank_face(&mut g, points, mesh.id, 0);
+                } else {
+                    colored_face(&mut g, &points, color);
+                }
             }
             ground::project_rock(&mut g);
             group(format!("cave-surface-{}", mesh.id), g)

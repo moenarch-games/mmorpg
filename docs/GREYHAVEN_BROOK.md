@@ -867,3 +867,37 @@ their separate vertical layers. Tree IDs remain ordered and unique after rejecte
 These checks resolve the earlier square-palisade, overlapping-bounds, road-clearance and
 contiguous-tree assertions reported above. The existing brook, gate, culvert and lake approach
 walks also pass. Scenario and scenery fixtures follow the combined authored content.
+
+## Brook visual-quality slice (current owner brief)
+
+The current task focuses on the playable brook, bridge and western slopes: clustered
+Poisson-disc grass/weed cover, irregular soil and small relief, stratified weathered
+rock with talus, and water embedded in its bed with shallow colour, transparency,
+flowing ripples and localized foam. Reuse the seven terrain materials and shared
+native/browser presentation. The wider mining-settlement composition is outside
+this slice. Physics Engine work proceeds separately; defer repeated MMORPG E2E
+runs until that integration is ready.
+
+The first ground pass uses deterministic 70 cm Poisson-disc roots masked by biome,
+slope, water, paths and structures, with broad glades and smaller noise clusters.
+Bent ribbon leaves and existing fern geometry share two meshes in the brook patch
+(623 instances in the current preview). These are decorative and change no core
+terrain, water or collision. The western outcrop skin now has small stratified
+chips recessed up to 6 cm inside its original collision surface; its separate
+western gameplay view is pending.
+
+The brook now has depth-dependent muted colour, more transparency, small normal
+ripples and narrow broken flow strokes. The browser's existing blended-shadow
+cutoff uniform removes the opaque water silhouette without removing visible water;
+the native equivalent is still pending. A failed material-alpha trial was reverted.
+
+These actual game captures use the same third-person camera: eye `[0,3.8,40]`,
+target `[0,0.9,32]`, noon, 800×533; the player reached the bridge through movement
+commands. The browser reported no page errors. The placement-spacing check and
+production browser/WASM build pass. These are progress images, not acceptance
+of the full slice; denser cover, cliff refinement, native water matching, localized
+foam, the wide overview and final traversal/clipping review remain in progress.
+
+| Before | Ground and water progress |
+| --- | --- |
+| ![Before](images/greyhaven-brook-slice-before.png) | ![Progress](images/greyhaven-brook-slice-progress.png) |

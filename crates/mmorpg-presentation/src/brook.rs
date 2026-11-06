@@ -3,7 +3,7 @@
 use crate::{
     Animated, Draw, Group, Kit, Motion,
     batching::{Batcher, Cull, material, matrix, mix, rgb},
-    geometry::{Geometry, ID, at, blob, box_shape, disc, frustum},
+    geometry::{Geometry, ID, at, blob, box_shape, disc, frustum, norm},
     ground::{self, Ground, Layer},
     terrain::{metres, noise, surface},
 };
@@ -129,8 +129,15 @@ pub(crate) fn build(
                     3.,
                     718.,
                 );
-                let color = rgb(mix(0x326b72, 0x609e93, current)).map(f64::from);
-                channel.colors.extend([color; 4]);
+                channel.colors.extend(corners.map(|point| {
+                    let depth = ((level - surface(g, point[0], point[2])) / 0.35).clamp(0., 1.);
+                    rgb(mix(
+                        mix(0x667c61, 0x2f6565, depth),
+                        0x7c9a83,
+                        current * 0.10,
+                    ))
+                    .map(f64::from)
+                }));
                 for side in [-1., 1.] {
                     // Small, partly buried shingle clusters break up the bare mud verge.
                     // Keep the bridge landings clear and omit steep ground where a pebble
@@ -180,7 +187,25 @@ pub(crate) fn build(
             }
             // Short, broken ripple bands travel with the course; reduced motion holds them in place.
             let mut foam = Geometry::default();
-            foam.add(&disc(10), at(0., 0., 0., 0.35, 1., 0.07));
+            let (dx, dz) = ((z[0] - a[0]) / length, (z[1] - a[1]) / length);
+            for ribbon in 0..2 {
+                for segment in 0..6 {
+                    if (segment + ribbon + i) % 4 == 0 {
+                        continue;
+                    }
+                    let point = |j: usize, edge: f64| {
+                        let across = (j as f64 / 6. - 0.5) * 0.75;
+                        let along = across * across * 0.3 + ribbon as f64 * 0.16 + edge * 0.018;
+                        [-dz * across + dx * along, 0., dx * across + dz * along]
+                    };
+                    foam.face(&[
+                        point(segment, -1.),
+                        point(segment + 1, -1.),
+                        point(segment + 1, 1.),
+                        point(segment, 1.),
+                    ]);
+                }
+            }
             animated.push(Animated {
                 draws: vec![draw(&format!("{name}-current-{i}"), foam, 0xa7d0c8, 0.65)],
                 motion: Motion::Flow {
@@ -191,7 +216,15 @@ pub(crate) fn build(
                 },
             });
         }
-        water.push(draw(name, channel, 0xffffff, 0.88));
+        // Apparent ripples affect lighting only; the authoritative water plane is unchanged.
+        for (point, normal) in channel.p.iter().zip(&mut channel.n) {
+            *normal = norm([
+                (noise(point[0], point[2], 0.65, 719.) - 0.5) * 0.15,
+                1.,
+                (noise(point[0], point[2], 0.85, 720.) - 0.5) * 0.11,
+            ]);
+        }
+        water.push(draw(name, channel, 0xffffff, 0.66));
     }
     let level = metres(content::SURFACE) + 0.012;
     let mut fall = Geometry::default();
