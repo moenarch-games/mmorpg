@@ -50,8 +50,9 @@ fn worlds(bodies: impl IntoIterator<Item = RigidBody>) -> (World, World) {
     (engine, rapier)
 }
 
-#[test]
-fn mill_towpath_departure_settles_before_horizontal_motion() {
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
+pub fn mill_towpath_departure_settles_before_horizontal_motion() {
     let mesh = greyhaven_vale::fort::meshes()
         .into_iter()
         .find(|mesh| mesh.id == 65125)
