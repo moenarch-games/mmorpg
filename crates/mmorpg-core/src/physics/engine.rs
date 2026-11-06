@@ -34,7 +34,6 @@
 //! - Overlap queries see the terrain (Rapier skips box–heightfield pairs). Flat terrain cells
 //!   are removed on both backends and left to the floor half-space.
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -123,7 +122,7 @@ pub(super) struct World {
     moves: Vec<CharacterMove>,
     results: Vec<CharacterMoveResult>,
     velocities: Vec<(BodyId, [f32; 3])>,
-    response: [RefCell<Option<ResponseLane>>; 2],
+    response: [Option<ResponseLane>; 2],
 }
 
 impl fmt::Debug for World {
@@ -162,7 +161,7 @@ impl World {
             moves: Vec::new(),
             results: Vec::new(),
             velocities: Vec::new(),
-            response: std::array::from_fn(|_| RefCell::new(None)),
+            response: std::array::from_fn(|_| None),
         }
     }
 
@@ -402,7 +401,7 @@ impl World {
     /// row-major as the content stores them, with the flat cells removed like the Rapier
     /// backend removes them.
     pub fn set_terrain(&mut self, id: BodyId, terrain: crate::Terrain) {
-        self.response = std::array::from_fn(|_| RefCell::new(None));
+        self.response = std::array::from_fn(|_| None);
         if let Some(ground) = self.ground.take() {
             self.engine.remove_body(ground.body);
             self.games.remove(&ground.body.to_bits());
@@ -812,7 +811,7 @@ impl World {
     }
 
     /// Debris (#288) uses Engine where every rigid contact shape is supported.
-    pub fn step_debris(&self, debris: &mut [DebrisBody], settle: &[bool]) -> usize {
+    pub fn step_debris(&mut self, debris: &mut [DebrisBody], settle: &[bool]) -> usize {
         if !self.has_authored_geometry() {
             return self
                 .step_dynamic(debris, settle, &Dynamic::default())
@@ -823,7 +822,7 @@ impl World {
     }
 
     /// Movable props are upright boxes stopped by units' capsules.
-    pub fn step_props(&self, props: &mut [DebrisBody], exclude: &[BodyId]) -> usize {
+    pub fn step_props(&mut self, props: &mut [DebrisBody], exclude: &[BodyId]) -> usize {
         let settle = vec![true; props.len()];
         let options = Dynamic {
             upright: true,
@@ -847,7 +846,7 @@ impl World {
     /// The retained part is static geometry only. Every tick transfers the canonical game
     /// bodies in and out; neither characters nor hidden dynamic solver state cross this boundary.
     fn step_authored(
-        &self,
+        &mut self,
         pieces: &mut [DebrisBody],
         settle: &[bool],
         options: &Dynamic<'_>,
@@ -856,7 +855,7 @@ impl World {
         if moving == 0 {
             return Ok(0);
         }
-        let mut cached = self.response[usize::from(options.upright)].borrow_mut();
+        let cached = &mut self.response[usize::from(options.upright)];
         if cached.is_none() {
             let per_second = TICKS_PER_SECOND * TICKS_PER_SECOND / UNITS_PER_METRE;
             let mut engine = physics_engine::approximate::World::new(Config {

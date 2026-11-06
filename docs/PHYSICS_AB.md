@@ -14,7 +14,8 @@ isolated response worlds retain static geometry and engine scratch, synchronize 
 static bodies, and transfer canonical pieces in and out each tick. Units enter only the prop
 lane as temporary fixed capsules; the character world is separate. All temporary bodies are
 removed after stepping, so no hidden dynamic continuation state survives canonical recovery.
-The game does not consume Engine contact events; this is a physical/game-state continuation
+`World::step_debris` and `World::step_props` take `&mut self`, making retained response
+state ownership explicit while keeping the zone `Send + Sync`. The game does not consume Engine contact events; this is a physical/game-state continuation
 claim, not a checkpoint event-stream claim (physics-engine #505).
 
 Authored response uses two substeps, four velocity iterations for debris and one for upright

@@ -876,14 +876,14 @@ impl World {
     ///
     /// Rapier gap (#288): rebuilding each tick drops the solver's warm-start contact impulses,
     /// so a resting stack jitters; pieces settle into fixed obstacles instead of sleeping.
-    pub fn step_debris(&self, debris: &mut [DebrisBody], settle: &[bool]) -> usize {
-        dispatch!(self, &self.worlds, world => world.step_debris(debris, settle))
+    pub fn step_debris(&mut self, debris: &mut [DebrisBody], settle: &[bool]) -> usize {
+        dispatch!(self, &mut self.worlds, world => world.step_debris(debris, settle))
     }
 
     /// Advances movable props (#58) one tick: like debris, but upright (they slide, never
     /// turn), stopped by units, and leaving out the props' own fixed boxes `exclude`.
-    pub fn step_props(&self, props: &mut [DebrisBody], exclude: &[BodyId]) -> usize {
-        dispatch!(self, &self.worlds, world => world.step_props(props, exclude))
+    pub fn step_props(&mut self, props: &mut [DebrisBody], exclude: &[BodyId]) -> usize {
+        dispatch!(self, &mut self.worlds, world => world.step_props(props, exclude))
     }
 }
 

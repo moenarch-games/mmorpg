@@ -313,12 +313,12 @@ pub fn authored_rigid_boxes_keep_contacts_replay_and_exact_midpoint_recovery() {
         let floor = RigidBody::floor(BodyId(9_000_001), floor_y);
         for upright in [false, true] {
             let make = || worlds([body.clone(), floor.clone()]);
-            let (engine, rapier) = make();
-            let replay = make().0;
+            let (mut engine, mut rapier) = make();
+            let mut replay = make().0;
             let mut restored: Option<(World, Vec<DebrisBody>)> = None;
             let (mut engine_piece, mut rapier_piece, mut replay_piece) =
                 ([piece], [piece], [piece]);
-            let step = |world: &World, pieces: &mut [DebrisBody]| {
+            let step = |world: &mut World, pieces: &mut [DebrisBody]| {
                 if upright {
                     world.step_props(pieces, &[])
                 } else {
@@ -348,9 +348,9 @@ pub fn authored_rigid_boxes_keep_contacts_replay_and_exact_midpoint_recovery() {
             let mut touched = [false; 2];
             let mut drift = 0_f32;
             for tick in 0..360 {
-                step(&engine, &mut engine_piece);
-                step(&rapier, &mut rapier_piece);
-                step(&replay, &mut replay_piece);
+                step(&mut engine, &mut engine_piece);
+                step(&mut rapier, &mut rapier_piece);
+                step(&mut replay, &mut replay_piece);
                 assert_eq!(
                     engine_piece, replay_piece,
                     "authored rigid replay, tick {tick}"
