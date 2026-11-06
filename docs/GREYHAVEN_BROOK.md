@@ -818,3 +818,39 @@ checks, three brook/lake checks and both cave traversal checks. The browser buil
 and error-free overview capture preceded the lower roof edit; final game rendering
 and before/after performance comparison for this pass remain pending. Mining ruins,
 further cliff refinement and full visual acceptance of the concept remain open.
+
+### Redbrand north-entrance camp
+
+`landscape.json` now places three canvas shelters, six angled stockade segments and
+one campfire around the approved north-side entrance. Camp geometry uses game
+metres in Blender; its `clearing` uses the terrain generator's centimetres.
+A six-metre gap continues
+onto the existing cave approach. The Blender fortification source reuses its oak
+and draped-canvas materials, joins the new art into the existing static bundle and
+exports ten simplified closed collision meshes (IDs 65111–65120). Tree roots are
+cleared against the camp bodies without renumbering the surviving older trees.
+The fire uses the shared animated flame and warm point-light presentation.
+
+The focused cave test now walks from outside the camp, through the gate and into
+the chamber, and confirms that the stockade blocks beside the gate. All three cave
+tests and the production browser/WASM build passed. The live Blender scene is
+saved with the new camp and an entrance-facing view. This delivers the hideout's
+requested camp pieces; broader terrain refinement, the northeastern mining area
+and the full concept/performance comparison are still pending.
+
+Compared with the preceding checked-in fort bundle, the camp keeps the same 20
+material primitives and adds 7,524 rendered triangles (103,092 → 110,616); its binary
+buffer grows from 7,583,912 to 8,098,672 bytes. This is an asset-size comparison,
+not a frame-time measurement or a new budget.
+
+![North-side Redbrand camp in the running browser game](images/redbrand-hideout.png)
+
+The game capture showed no page errors. It exposed trees rooted just beyond the
+first camp clearing; extending that authored clearing up the approach removed
+the canopy obstruction. The final image shows the open gate, three shelters,
+shared campfire and north entrance. The roof/rock transition still needs visual
+refinement as part of the remaining natural-geography work.
+
+Deterministic scenery/export fixture checks passed and recorded the new hashes.
+The existing WASM scenery JSON limit moved from 1.5 MB to 1.6 MB for the requested
+forest density and camp content (measured 1,548,250 bytes). No new gate was added.

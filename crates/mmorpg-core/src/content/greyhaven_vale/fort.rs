@@ -1,6 +1,11 @@
 //! Authored Greyhaven architecture and camp geometry, independent of visual detail.
 use crate::{StaticCollider, StaticMesh};
 
+/// Small north-entrance hideout: fire, stockade and canvas shelters.
+pub const REDBRAND_FIRE: u32 = 65111;
+pub const REDBRAND_PALISADES: std::ops::RangeInclusive<u32> = 65112..=65117;
+pub const REDBRAND_SHELTERS: std::ops::RangeInclusive<u32> = 65118..=65120;
+
 pub const TOWERS: [[i32; 2]; 4] = [[-2700, -700], [2700, -700], [-3000, 4000], [3100, 4000]];
 pub const TOWER_BODIES: std::ops::RangeInclusive<u32> = 65040..=65043;
 /// Low authored outcrops that break Stillwater's bank silhouette without closing its routes.
@@ -40,6 +45,8 @@ pub fn dresses(id: u32) -> bool {
         || (65000..=65023).contains(&id)
         || TOWER_BODIES.contains(&id)
         || MILL_GALLERY.contains(&id)
+        || REDBRAND_PALISADES.contains(&id)
+        || REDBRAND_SHELTERS.contains(&id)
         || (65050..=65069).contains(&id)
         || super::ids::TENTS.contains(&id)
         || super::ids::CRATES.contains(&id)

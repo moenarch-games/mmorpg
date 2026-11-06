@@ -782,14 +782,26 @@ fn trees() -> Vec<StaticCollider> {
         .filter(|body| ids::SHORE_ROCKS.contains(&body.id))
         .chain(shrine::ruins(*ids::SHRINE_RUINS.start()))
         .chain(shrine::walls(*ids::SHRINE_CAVE_WALLS.start()))
+        .chain(
+            fort::meshes()
+                .into_iter()
+                .filter(|mesh| {
+                    (fort::REDBRAND_FIRE..=*fort::REDBRAND_SHELTERS.end()).contains(&mesh.id)
+                })
+                .map(|mesh| mesh.bounds().expect("valid Redbrand camp bounds")),
+        )
         .collect();
+    let [camp_min, camp_max] = landscape::data().redbrand_camp.clearing;
     trees.retain(|tree| {
-        !shore.iter().any(|body| {
-            (0..3).all(|axis| {
-                (i64::from(tree.position[axis]) - i64::from(body.position[axis])).abs()
-                    < i64::from(tree.half_extents[axis]) + i64::from(body.half_extents[axis])
+        let in_camp = (camp_min[0]..=camp_max[0]).contains(&tree.position[0])
+            && (camp_min[1]..=camp_max[1]).contains(&tree.position[2]);
+        !in_camp
+            && !shore.iter().any(|body| {
+                (0..3).all(|axis| {
+                    (i64::from(tree.position[axis]) - i64::from(body.position[axis])).abs()
+                        < i64::from(tree.half_extents[axis]) + i64::from(body.half_extents[axis])
+                })
             })
-        })
     });
     trees
 }

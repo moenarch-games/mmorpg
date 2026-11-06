@@ -414,7 +414,9 @@ weave=.5+.018*np.sin(cu*math.tau*128)*np.sin(cv*math.tau*128)+.02*noise
 cloth_base=.43+.07*noise+.035*np.sin(cu*math.tau*3)*np.cos(cv*math.tau*2)
 cloth=material('weathered-canvas',np.stack([cloth_base,cloth_base*.90,cloth_base*.72],axis=2),weave,.97,1.5)
 seam=flat('canvas binding',(.28,.23,.15))
-for id,x,z,base,quarter in [(420,-15.5,-94.5,11,1),(421,12.5,-97.5,11,3),(422,-13.5,-84.5,11.36,1)]:
+camp=json.loads((ROOT/'content/greyhaven/landscape.json').read_text())['redbrandCamp']
+camp_tents=[(tent['id'],*tent['at'],camp['base'],tent['quarter']) for tent in camp['shelters']]
+for id,x,z,base,quarter in [(420,-15.5,-94.5,11,1),(421,12.5,-97.5,11,3),(422,-13.5,-84.5,11.36,1)]+camp_tents:
     start,solid_start=len(objects),len(collision)
     section=[(-1.5,0),(1.5,0),(1.5,.35),(0,2.2),(-1.5,.35)]
     vs=[(xx,yy,zz) for zz in [-1.5,1.5] for xx,yy in section]
@@ -457,6 +459,30 @@ for x,z in [(5.5,-104.5),(6.7,-104.5),(6.1,-103.3),(-6.5,-102.5)]:
         for xx in [-.43,.43]:
             for yy in [.14,.86]:box('Hollow crate iron nail',(xx,yy,side*.495),(.018,.018,.005),iron)
     farm_place(start,solid_start,x,z,0)
+
+# The north-side hideout follows the low cave shoulder, leaving a six-metre gate.
+# Decorative log tips are separate from the closed low-detail collision prisms.
+for segment in camp['palisades']:
+    ax,az=segment['from'];bx,bz=segment['to'];base=camp['base']
+    dx,dz=bx-ax,bz-az;length=math.hypot(dx,dz);nx,nz=-dz/length*.16,dx/length*.16
+    outline=[(ax+nx,az+nz),(bx+nx,bz+nz),(bx-nx,bz-nz),(ax-nx,az-nz)]
+    vs=[(x,y,z) for y in [base-.15,base+2.25] for x,z in outline]
+    solid_record(segment['id'],vs,BOX_FACES)
+    count=math.ceil(length/.28)
+    for i in range(count+1):
+        t=i/count;x,z=ax+dx*t,az+dz*t
+        height=2.20+.09*math.sin(i*2.3+segment['id'])
+        cylinder('Redbrand sharpened stockade',(x,base-.15,z),.155,height,wood_mat,7)
+        cylinder('Redbrand pointed stockade crown',(x,base+height-.15,z),.155,.28,wood_mat,7,tip=0)
+    for y in [base+.6,base+1.6]:beam('Redbrand stockade binding rail',(ax,y,az),(bx,y,bz),.065,wood_mat)
+# Reuse the game's animated fire and light. This preview is intentionally outside the
+# exported static bundle, so it cannot duplicate the shared presentation flame/ring.
+x,z=camp['fire']['at'];base=camp['base'];n=12
+vs=[(x+.65*math.sin(i*math.tau/n),y,z+.65*math.cos(i*math.tau/n)) for y in [base-.05,base+.15] for i in range(n)]
+fs=[tuple(range(n-1,-1,-1)),tuple(range(n,2*n))]+[(i,(i+1)%n,(i+1)%n+n,i+n) for i in range(n)]
+solid_record(camp['fire']['id'],vs,fs)
+preview_fire=mesh('Redbrand campfire authoring preview',vs,fs,stone_mat)
+objects.remove(preview_fire)
 
 # The deeper public-cave threshold stays sealed. Dress its unchanged solid footprint with
 # closed oak boards and heavy braces, rather than suggesting an open continuation.

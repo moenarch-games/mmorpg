@@ -69,3 +69,32 @@ fn the_former_south_mouth_is_solid_rock() {
     let at = feet(&zone);
     assert!(at[2] > -13_200.0, "held outside the wall: {at:?}");
 }
+
+#[test]
+fn hideout_gate_connects_the_approach_to_the_cave_but_stockade_blocks_beside_it() {
+    let definition = greyhaven_vale::greyhaven_vale_definition();
+    assert!(
+        definition
+            .colliders()
+            .iter()
+            .filter(|body| greyhaven_vale::ids::TREES.contains(&body.id))
+            .all(|body| !(4900..=8000).contains(&body.position[0])
+                || !(-18000..=-15400).contains(&body.position[2])),
+        "the hideout and its gate have an open woodland clearing"
+    );
+    let mut through_gate = player_at([6400, -17000]);
+    walk(&mut through_gate, 1, 0, mmorpg_core::golden::t30(150) as _);
+    let inside = feet(&through_gate);
+    assert!(
+        inside[2] > -14400.0 && (inside[1] - GREYFANG.floor_y as f32).abs() < 6.0,
+        "the open camp gate leads onto the cave floor: {inside:?}"
+    );
+
+    let mut beside_gate = player_at([5700, -17000]);
+    walk(&mut beside_gate, 1, 0, mmorpg_core::golden::t30(60) as _);
+    let stopped = feet(&beside_gate);
+    assert!(
+        stopped[2] < -16500.0 && stopped[2] > -16900.0,
+        "the stockade holds a player beside the gate: {stopped:?}"
+    );
+}

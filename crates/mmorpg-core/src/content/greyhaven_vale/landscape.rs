@@ -14,6 +14,7 @@ pub struct Landscape {
     // Blender consumes this authoring profile; runtime collision comes from its exported mesh.
     #[serde(rename = "redbrandExterior")]
     _redbrand_exterior: serde::de::IgnoredAny,
+    pub redbrand_camp: Camp,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -62,6 +63,20 @@ pub struct Forest {
     pub seed: u64,
     pub percent: u64,
     pub elevation: [i32; 2],
+}
+/// Placement is baked by Blender; the clearing also keeps runtime tree roots off the approach.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Camp {
+    pub clearing: [[i32; 2]; 2],
+    #[serde(rename = "base")]
+    _base: serde::de::IgnoredAny,
+    #[serde(rename = "palisades")]
+    _palisades: serde::de::IgnoredAny,
+    #[serde(rename = "shelters")]
+    _shelters: serde::de::IgnoredAny,
+    #[serde(rename = "fire")]
+    _fire: serde::de::IgnoredAny,
 }
 static LANDSCAPE: LazyLock<Landscape> = LazyLock::new(|| {
     let landscape: Landscape = serde_json::from_str(include_str!(concat!(
