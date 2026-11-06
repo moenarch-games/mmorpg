@@ -5,6 +5,9 @@ use mmorpg_scenery::{Prop, PropKind, RockSize, Scenery, TreeVariant, greyhaven_v
 
 fn only(props: Vec<Prop>) -> StaticScene {
     let mut scenery = greyhaven_vale_scenery();
+    scenery
+        .collision_surfaces
+        .retain(|mesh| props.iter().any(|prop| prop.collider == Some(mesh.id)));
     scenery.props = props;
     StaticScene::new(&scenery)
 }
@@ -36,6 +39,12 @@ fn scene_wide(draw: &Draw) -> bool {
     draw.id.starts_with("static-all-")
         || draw.id.starts_with("static-ground-")
         || draw.id.contains(":handholds:")
+        || draw.id.contains("greyhaven-ground-cover")
+        || draw.id.contains("greyhaven-fern-understory")
+        || draw.id.contains("-current-")
+        || draw.id.starts_with("fall-strand-")
+        || draw.id.starts_with("settlement-fallback-")
+        || matches!(draw.id.as_str(), "brook-wet-banks" | "brook-bank-shingle")
 }
 
 /// Prop draws (everything but [`scene_wide`] ones) in world space.
@@ -47,13 +56,12 @@ fn prop_triangles(scene: &StaticScene) -> Vec<[V; 3]> {
         .flat_map(|group| &group.draws)
         .filter(|draw| !scene_wide(draw))
         .map(|draw| (draw, draw.model))
-        .chain(
-            scene
-                .animated
+        .chain(scene.animated.iter().zip(rest).flat_map(|(part, model)| {
+            part.draws
                 .iter()
-                .zip(rest)
-                .flat_map(|(part, model)| part.draws.iter().map(move |draw| (draw, model))),
-        );
+                .filter(|draw| !scene_wide(draw))
+                .map(move |draw| (draw, model))
+        }));
     placed
         .flat_map(|(draw, model)| {
             let g = &draw.geometry;
@@ -137,13 +145,33 @@ fn every_prop_kind_draws_valid_geometry_and_the_same_scenery_builds_the_same_sce
     // The terrain is drawn in visual tiles (#526): textured ground layers (#525) near, every
     // overlay weighted per vertex, and flat baked colours far; water stays translucent; lights
     // glow.
-    assert!(
-        scene
-            .groups
-            .iter()
-            .flat_map(|group| &group.draws)
-            .all(|draw| draw.material.ground.is_none())
-    );
+    for draw in scene.groups.iter().flat_map(|group| &group.draws) {
+        if let Some(ground) = draw.material.ground {
+            use mmorpg_presentation::ground::Layer;
+            let (layer, overlay) = if draw.id == "brook-wet-banks" {
+                (Layer::Mud, true)
+            } else {
+                assert!(
+                    draw.id == "brook-bank-shingle"
+                        || draw.id.starts_with("rock-face-")
+                        || draw.id.starts_with("cave-surface-"),
+                    "{}",
+                    draw.id
+                );
+                (Layer::Rock, false)
+            };
+            assert_eq!(ground.layer, layer, "{}", draw.id);
+            assert_eq!(ground.overlay, overlay, "{}", draw.id);
+            assert!(!ground.far, "{}", draw.id);
+            assert_eq!(draw.geometry.uv.len(), draw.geometry.p.len(), "{}", draw.id);
+            assert_eq!(
+                draw.geometry.tangents.len(),
+                draw.geometry.p.len(),
+                "{}",
+                draw.id
+            );
+        }
+    }
     let tiles = &scene.terrain;
     let near: Vec<_> = (0..tiles.tiles.len())
         .step_by(7)
@@ -438,7 +466,11 @@ fn the_outpost_kit_buildings_keep_their_blockouts_only_as_the_fallback() {
     assert_eq!(fallback(true), 0);
     // Every wall module stands on its building's unchanged collider footprint.
     let parts = mmorpg_presentation::outpost_kit::parts(&scenery);
-    assert_eq!(parts.len(), 29 + 28);
+    assert_eq!(
+        parts.len(),
+        203,
+        "adopted modules and the authored settlement"
+    );
     for collider in [102, 105] {
         let prop = scenery
             .props
@@ -487,7 +519,7 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
     assert_eq!(fallback(true), 0);
     // One adopted prop or more from each family, shared by entry.
     let parts = mmorpg_presentation::settlement_props::parts(&scenery);
-    assert_eq!(parts.len(), 21);
+    assert_eq!(parts.len(), 23, "market square and brook additions");
     for family in [
         ["stall", "cart", "crate"],
         ["signpost", "lantern-post", "bench"],
