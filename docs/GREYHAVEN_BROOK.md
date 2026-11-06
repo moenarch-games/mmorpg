@@ -441,3 +441,24 @@ textures and captured `artifacts/greyhaven-brook/basin-buttress.png` without pag
 The overall reference direction remains in progress, particularly ground variation and
 lighting. Convention source revision remains
 `625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+
+## Walkable folds in the northern apron
+
+Three gentle terrain mounds interrupt the empty floor north of the settlement. The main
+rise is about two metres high on the four-metre lattice, with two lower folds nearby.
+Their authored footprints stay clear of the keep/palisade foundations, spawn plaza,
+Hollow Road, switchbacks and lake. The settled Outpost floor remains level.
+
+These are fixed-integer core terrain samples, used by Rapier and both clients through the
+existing content path. They are not a visual displacement that the character could walk
+through. No collider type, wire layout, visual LOD or streaming mechanism changes.
+The live Blender terrain and nature context are refreshed from the game export.
+
+Focused checks passed: the slab/Hollow approach gameplay test now also walks onto the
+knoll's crown and returns to the level Hollow Road; format and the browser/WASM production
+build pass. Chromium walked through the north gate to the rocks and captured the ground
+folds in `artifacts/greyhaven-brook/northern-ground.png`, with all seven ground textures
+loaded and no page errors. Full suites/native GPU acceptance were not run; the previously
+reported content assertions and legacy A/B failures remain. The broader art direction is
+still in progress. Convention source revision remains
+`625cb04ca568aebc8d45c90033e107a05e9bd2a0`.

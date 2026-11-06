@@ -331,6 +331,11 @@ pub fn height_at(x: i32, z: i32) -> Option<i32> {
     } else {
         0
     };
-    let height = terrace + relief + ridge(x, z, terrace);
+    // Gentle rises break up the empty northern apron. Their footprints stay outside
+    // the keep/palisade, Hollow Road, switchbacks and lake, so those anchors stay level.
+    let approach = mound(-2_200, -4_000, 900, 250)
+        + mound(-1_000, -4_000, 400, 80)
+        + mound(-1_000, -2_200, 500, 65);
+    let height = terrace + relief + approach + ridge(x, z, terrace);
     (height > 0).then_some(height)
 }

@@ -8,8 +8,8 @@
 //! it, beyond a second ridge, the Marsh-Lake Wetlands of [`marsh`] reach x = +632 m (#426).
 //! Invisible boundary walls enclose all four ([`WALLED`]). Map north is −Z, toward the Redbrand
 //! cliffs, matching the
-//! layout table in `docs/STARTER_ZONE.md`. The Outpost's valley floor is physically flat (y = 0),
-//! in the basin of [`basin`], below its rim and the outer hills; relief, props
+//! layout table in `docs/STARTER_ZONE.md`. The Outpost's settled floor stays level (y = 0),
+//! with gentle rises on its northern approach in [`basin`], below the rim and outer hills; relief, props
 //! without colliders, water and mountains are presentation owned by
 //! `mmorpg-scenery`, which derives its structures from the collider IDs in
 //! [`ids`]. [`content`] bundles it as the hosted [`ZoneContent`], whose revision

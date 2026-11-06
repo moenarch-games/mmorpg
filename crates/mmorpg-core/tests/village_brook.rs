@@ -241,4 +241,14 @@ fn basin_buttress_is_solid_beside_the_open_hollow_approach() {
     );
     walker.go(-3000., -4000.);
     walker.go(-2800., -5600.);
+    // The grassy rise is real terrain: walk onto its crown, then back to the level road.
+    walker.go(-2200., -4000.);
+    assert!(
+        (180.0..270.0).contains(&walker.feet()[1]),
+        "walked onto the knoll: {:?}",
+        walker.feet()
+    );
+    walker.go(-1000., -4000.);
+    walker.go(0., -4000.);
+    assert!(walker.feet()[1].abs() < 10., "the Hollow Road stays level");
 }
