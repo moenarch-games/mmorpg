@@ -1006,3 +1006,21 @@ via its ramp (its rails correctly prevent a sideways exit). It exposed a raised
 edge where the mill towpath met the lower bank. The authored mill now has tapered
 stone approaches from the village side and western bank. The western apron stops
 before the downstream brook bend, preserving the water channel.
+
+The corrected in-game route passed: spawn → bridge south landing → bridge →
+north landing → brook centreline at `[-6,32.5]`, `[-17,31]`, `[-28,24.5]` m →
+village-side mill apron → passage at `[-34,21.35]` → western bank at
+`[-34,24.5]`, then the complete reverse route back to the bridge. Each waypoint
+asserted arrival within 25 cm through real movement commands; no jump or teleport
+was used. This confirms the mill approaches beyond the earlier clearance sweep.
+The focused current/foam check, final-content mill check, native client compilation
+and production browser/WASM build pass. No physics backend changes were made.
+
+![Brook after the verified mill-and-back walk](images/greyhaven-brook-current-bed-progress.png)
+
+This capture uses the original comparison camera (`[0,3.8,40]` toward `[0,0.9,32]`,
+noon, 800×533) after the verified return walk; the player stands at `[0,31.91]` m.
+The browser reported no page errors and loaded all seven ground materials. The
+lower current glints and attached bridge rails are visible. It also makes the
+remaining flat ground, coarse path edges and distant cliff repetition clear;
+those still need the stronger landscape/cover pass before this slice is complete.
