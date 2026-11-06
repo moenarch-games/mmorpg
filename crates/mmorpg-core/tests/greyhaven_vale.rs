@@ -288,8 +288,11 @@ fn brook_mill_keeps_its_water_channel_and_bank_crossing_clear() {
     use mmorpg_core::physics::{Backend, BodyId, RigidBody, Vec3i, World};
     let definition = greyhaven_vale_definition();
     greyhaven_vale::content_with_definition(definition.clone()).unwrap();
-    for backend in [Backend::Engine, Backend::Rapier] {
+    for &backend in <Backend as strum::VariantArray>::VARIANTS {
+        #[cfg(feature = "physics-ab")]
         let mut world = World::with_backend(Vec3i::ZERO, backend);
+        #[cfg(not(feature = "physics-ab"))]
+        let mut world = World::new(Vec3i::ZERO);
         for collider in definition
             .colliders()
             .iter()
