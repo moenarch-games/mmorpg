@@ -65,7 +65,7 @@ function flatMaterial(overlay: boolean): LitMaterial {
   });
 }
 
-/** A tile draw's geometry: textured attributes on the near level only, so each batch shares one vertex layout. */
+/** A tile draw's geometry: textured materials (including coarse rock) carry UVs and tangents. */
 function geometry(draw: TileDraw): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();
   const count = draw.positions.length / 3;
@@ -139,7 +139,7 @@ class Batch {
 
 /**
  * The terrain in visual tiles (#526) with the textured ground layers of #525. Every tile's far level (its relief at
- * eight metres, the ground layers baked into vertex colours, flat) is built once; near levels (the opaque grass base
+ * eight metres, gentle ground baked into vertex colours and steep rock textured) is built once; near levels (the opaque grass base
  * and its masked overlays: forest floor, scree, mud, sand, paths, rock) stream around the camera as the shared Rust
  * `TerrainStream` says, a few per frame, and a tile shows its near level only once that is resident. Skirts under every
  * tile edge hide the cracks between levels, as natively. Each near layer's material is its glTF material from

@@ -298,3 +298,31 @@ instances. Chromium completed the village crossing without page errors and captu
 whole area in `artifacts/greyhaven-brook/greyhaven-eastern-ridge.png`. The distant cliff
 materials and overall lighting still look flatter than the owner's reference; the broader
 visual direction remains in progress.
+
+## Rock detail in the distant enclosing cliffs
+
+The coarse terrain level previously drew every face with baked vertex colours. That made
+the enclosing escarpments read as flat walls in the whole-area view despite their changed
+profiles. `mmorpg-presentation::tiles` now routes its steep coarse triangles into the
+existing rock material, with the near layer's face-aligned UVs and tangents while retaining
+the terrain's smooth normals. The same triangle positions
+and eight-metre sampling remain; gentle ground, roads, fields and skirts retain their
+existing flat material. Rock faces replace their original coarse faces rather than adding
+a coincident overlay. Both clients reuse their existing textured-ground material batches.
+
+Tile dimensions, near/far selection, residency, prefetch, eviction, chunk coverage and skirts
+are unchanged. This is presentation material selection, separate from authoritative
+collision and subsequent collision streaming. No shader, renderer, asset bundle or cache
+framework is introduced. The authoritative content revision remains
+`16996712026689241795`; only presentation identity changes. Protocol/canonical layouts do
+not change.
+
+Focused checks passed: the four `terrain_tiles` tests (including surface/texture attributes,
+coverage and skirts), the five browser scene-building tests and the browser/WASM build.
+Full suites and native GPU acceptance were not run. Legacy A/B CI failures remain unresolved.
+Convention source revision remains `625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+
+Rock mapping now spans six metres per repeat across the existing shared rock surfaces.
+Chromium completed the village/bridge crossing without page errors and saved
+`artifacts/greyhaven-brook/distant-rock-detail.png`. The wide view still exposes repetitive
+cliff shading and overly broad distant paths; the reference art direction remains in progress.

@@ -4,9 +4,9 @@
 //! a **near** level, the textured ground of #525 (the opaque grass base and its masked overlays
 //! over the tile's cells, built on demand by [`Tiles::near`]), and a **far** level built once
 //! for every tile: the relief at every second grid sample, its vertex colours the ground
-//! layers, roads, the plaza and the fields baked by their weights ([`Ground::far`]: flat,
-//! untextured, so distant ground neither samples textures nor shows their repeats). The far
-//! levels together are the coarse terrain that is always resident; merged into chunks
+//! layers, roads, the plaza and the fields baked by their weights. Gentle ground stays flat
+//! and untextured; steep faces share the existing rock material and face-aligned UVs so the
+//! enclosing cliffs retain their detail from the village. The far levels together are the coarse terrain that is always resident; merged into chunks
 //! ([`Tiles::far_cover`]) they cost a few dozen draws.
 //!
 //! Every level hangs a skirt below each tile edge, as deep as the coarse edge strays from the
@@ -440,7 +440,8 @@ impl Tiles {
     }
 
     /// Tile `index`'s far level: the relief every [`FAR_STRIDE`] samples with the ground layers,
-    /// roads and patches baked into its vertex colours, with skirts, drawn flat.
+    /// roads and patches baked into its vertex colours, with skirts. Steep faces retain
+    /// the rock material on these same coarse triangles; the remaining ground draws flat.
     fn far(&self, index: usize) -> Vec<Draw> {
         let tile = &self.tiles[index];
         let g = &self.grid;
@@ -480,11 +481,34 @@ impl Tiles {
             }
         }
         let across = columns.len() as u32;
+        let mut rock = Geometry::default();
         for r in 0..rows.len() as u32 - 1 {
             for c in 0..across - 1 {
                 let a = r * across + c;
-                out.indices
-                    .extend([a, a + across, a + 1, a + 1, a + across, a + across + 1]);
+                for tri in [[a, a + across, a + 1], [a + 1, a + across, a + across + 1]] {
+                    let points = tri.map(|i| out.p[i as usize]);
+                    let [p, q, r] = points;
+                    let u: V = std::array::from_fn(|i| q[i] - p[i]);
+                    let v: V = std::array::from_fn(|i| r[i] - p[i]);
+                    let up = norm([
+                        u[1] * v[2] - u[2] * v[1],
+                        u[2] * v[0] - u[0] * v[2],
+                        u[0] * v[1] - u[1] * v[0],
+                    ])[1];
+                    if up < 0.65 {
+                        // Split only the material ownership of the original coarse face.
+                        // Per-face vertices keep its rock projection from stretching over
+                        // a near-vertical wall; they introduce no new terrain samples.
+                        ground::coarse_rock_face(
+                            &mut rock,
+                            points,
+                            tri.map(|i| out.n[i as usize]),
+                            tri.map(|i| out.colors[i as usize]),
+                        );
+                    } else {
+                        out.indices.extend(tri);
+                    }
+                }
             }
         }
         skirts(&mut out, g, tile.cells, FAR_STRIDE, tile.skirt, &[], &color);
@@ -493,7 +517,14 @@ impl Tiles {
             overlay: false,
             far: true,
         };
-        vec![self.draw(index, &base.name(), Arc::new(out), base)]
+        let mut draws = vec![self.draw(index, &base.name(), Arc::new(out), base)];
+        if !rock.indices.is_empty() {
+            // The material flag selects texturing, independently of this tile's geometry
+            // level. Both clients already batch it with their other textured rock draws.
+            let textured = Ground::near(Layer::Rock, false);
+            draws.push(self.draw(index, "coarse-rock", Arc::new(rock), textured));
+        }
+        draws
     }
 }
 

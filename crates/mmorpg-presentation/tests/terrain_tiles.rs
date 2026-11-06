@@ -98,3 +98,42 @@ fn far_chunks_cover_every_tile_not_drawn_near_exactly_once() {
         );
     }
 }
+
+#[test]
+fn coarse_cliff_faces_keep_rock_detail_on_the_existing_surface() {
+    let scenery = greyhaven_vale_scenery();
+    let scene = StaticScene::new(&scenery);
+    let mut faces = 0;
+    for draw in scene.terrain.tiles.iter().flat_map(|tile| &tile.far) {
+        let ground = draw.material.ground.unwrap();
+        if ground.far {
+            continue;
+        }
+        assert_eq!(ground.layer, mmorpg_presentation::ground::Layer::Rock);
+        assert!(
+            !ground.overlay,
+            "rock replaces the coarse face instead of covering it"
+        );
+        let geometry = &draw.geometry;
+        assert_eq!(geometry.uv.len(), geometry.p.len());
+        assert_eq!(geometry.tangents.len(), geometry.p.len());
+        assert!(
+            geometry
+                .n
+                .iter()
+                .all(|n| n[1] > 0. && n.iter().all(|v| v.is_finite()))
+        );
+        for &[x, y, z] in &geometry.p {
+            let surface = scenery.surface_at((x * 100.).round() as i32, (z * 100.).round() as i32);
+            assert!(
+                (y - f64::from(surface) / 100.).abs() < 1e-6,
+                "material routing moved the surface at {x},{z}"
+            );
+        }
+        faces += geometry.indices.len() / 3;
+    }
+    assert!(
+        faces > 0,
+        "the valley's coarse cliffs retain their rock material"
+    );
+}

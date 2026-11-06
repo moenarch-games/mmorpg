@@ -80,7 +80,7 @@ impl Layer {
             Self::Grass | Self::Forest | Self::Sand => 3.,
             Self::Gravel | Self::Path => 2.5,
             Self::Mud => 2.,
-            Self::Rock => 4.,
+            Self::Rock => 6.,
         }
     }
 
@@ -91,8 +91,8 @@ impl Layer {
 }
 
 /// A ground draw's layer, whether it is a masked overlay (else the opaque base), and whether
-/// it is a terrain tile's far level ([`crate::tiles`], #526): drawn flat in its vertex colours,
-/// never textured, so a distant tile costs no texture sampling and shows no repeats.
+/// it uses the terrain's flat far material ([`crate::tiles`], #526). Coarse cliff faces
+/// instead retain the textured rock material; this flag selects shading, not residency.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Ground {
     pub layer: Layer,
@@ -101,7 +101,8 @@ pub struct Ground {
 }
 
 impl Ground {
-    /// The near level's opaque base or masked overlay of `layer`.
+    /// The textured opaque base or masked overlay of `layer`, also used by fixed rock
+    /// surfaces and coarse cliff faces.
     #[must_use]
     pub const fn near(layer: Layer, overlay: bool) -> Self {
         Self {
@@ -398,6 +399,23 @@ impl Projection {
             Self::AlongZ
         }
     }
+}
+
+/// One coarse cliff face, with the same projection as the near rock layer. Keep the
+/// terrain's smooth normals so changing material does not expose the coarse triangle grid.
+pub(crate) fn coarse_rock_face(g: &mut Geometry, points: [V; 3], normals: [V; 3], colors: [V; 3]) {
+    let first = g.p.len() as u32;
+    let (du, dv) = Projection::of(Layer::Rock, normals).axes();
+    let tile = Layer::Rock.tile_metres();
+    g.p.extend(points);
+    g.n.extend(normals);
+    g.colors.extend(colors);
+    for (p, n) in points.into_iter().zip(normals) {
+        let dot = |d: V| p[0] * d[0] + p[1] * d[1] + p[2] * d[2];
+        g.uv.push([dot(du) / tile, dot(dv) / tile]);
+        g.tangents.push(tangent(n, du, dv));
+    }
+    g.indices.extend([first, first + 1, first + 2]);
 }
 
 /// The grid overlays over the grid cells `cells` (`[first column, first row, end column, end

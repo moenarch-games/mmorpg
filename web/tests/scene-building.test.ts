@@ -48,7 +48,8 @@ describe("the shared static scene in the browser", () => {
     const near = built.flatMap((tile) => unpackTile(stream.near(tile)));
     expect(near.find((draw) => draw.layer === "grass" && !draw.overlay && !draw.far)).toBeDefined();
     const far = unpackTile(stream.far(built[0]!));
-    expect(far.every((draw) => draw.far)).toBe(true);
+    expect(far.some((draw) => draw.far && draw.layer === "grass")).toBe(true);
+    expect(far.every((draw) => draw.far || draw.layer === "rock")).toBe(true);
     expect(scene.surfaces.some((draw) => draw.layer === "rock")).toBe(true);
     for (const draw of [...near, ...far, ...scene.surfaces]) {
       const count = draw.positions.length / 3;
