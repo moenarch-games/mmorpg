@@ -23,7 +23,7 @@ pub fn dresses(id: u32) -> bool {
         || super::ids::GATE_POSTS.contains(&id)
         || (65000..=65023).contains(&id)
         || TOWER_BODIES.contains(&id)
-        || (65050..65065).contains(&id)
+        || (65050..=65068).contains(&id)
         || super::ids::TENTS.contains(&id)
         || super::ids::CRATES.contains(&id)
         || [

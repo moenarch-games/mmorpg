@@ -114,7 +114,7 @@ def roof(name,x,z,w,d,y,rise,mat,body=None,open_gables=False):
 box('Keep ashlar hall',(-17,5,1),(9,5,6),stone_mat,.07)
 box('Keep battered plinth',(-17,.3,1),(9.05,.3,6.05),trim,.05)
 for y in [3.4,7.0,9.85]: box('Keep string course',(-17,y,1),(9.035,.105,6.035),trim,.025)
-roof('Keep slate hall roof',-17,1,6.1,5.8,10.05,3.1,slate_mat,65000)
+roof('Keep slate hall roof',-17,1,9.2,6.2,10.05,3.1,slate_mat,65000)
 for i,(x,z) in enumerate([(-24.35,-3.35),(-9.65,-3.35),(-24.35,5.35),(-9.65,5.35)]):
     cylinder('Keep round tower',(x,0,z),1.55,12.0,stone_mat,16)
     cylinder('Keep tower cornice',(x,11.6,z),1.6,.4,trim,16)
@@ -145,6 +145,57 @@ for x in [-21.5,-12.5]:
     box('Greyhaven banner device',(x,5.8,7.185),(.10,.55,.015),gold)
 for x in [-23,-20,-14,-11]:
     box('South wall buttress',(x,2.8,7.12),(.26,2.8,.18),stone_mat,.045)
+
+
+# A broken roof silhouette and deeper facade details give the small frontier keep a lived-in
+# shape. Dormers and stacks have coarse closed collision; trim stays within those surfaces.
+for i,x in enumerate([-20.5,-13.5]):
+    front,back=5.95,3.85
+    section=[(x-.85,10.45),(x+.85,10.45),(x+.85,12.0),(x,12.85),(x-.85,12.0)]
+    vs=[(px,py,z) for z in [back,front] for px,py in section]
+    fs=[(4,3,2,1,0),(5,6,7,8,9)]+[(j,(j+1)%5,(j+1)%5+5,j+5) for j in range(5)]
+    solid_record(65067+i,vs,fs)
+    mesh('Keep stone dormer',vs,fs[:4]+fs[6:],stone_mat)
+    mesh('Keep dormer slate slopes',vs,fs[4:6],slate_mat)
+    box('Dormer dark glass',(x,11.63,front+.013),(.50,.43,.018),dark)
+    for dx in [-.56,.56]:box('Dormer stone jamb',(x+dx,11.63,front+.06),(.07,.51,.09),trim,.02)
+    for y in [11.12,12.14]:box('Dormer stone sill',(x,y,front+.08),(.63,.07,.12),trim,.02)
+    box('Dormer oak mullion',(x,11.64,front+.055),(.035,.43,.04),wood_mat)
+    for side in [-1,1]:beam('Dormer gable verge',(x,12.9,front+.06),(x+side*.94,11.96,front+.06),.075,trim)
+for i,(x,z) in enumerate([(-22.0,-.6),(-12.0,1.8)]):
+    box('Keep masonry chimney',(x,13.1,z),(.48,1.4,.54),stone_mat,.035)
+    box('Keep chimney cap',(x,14.45,z),(.60,.14,.66),trim,.025)
+    box('Keep soot mouth',(x,14.60,z),(.36,.015,.42),dark)
+    vs=[(x+sx*.60,y,z+sz*.66) for y in [11.7,14.60] for sx,sz in [(-1,-1),(1,-1),(1,1),(-1,1)]]
+    solid_record(65065+i,vs,BOX_FACES)
+for z in [-5.2,7.2]:
+    beam('Keep roof eave fascia',(-26.25,10.08,z),(-7.75,10.08,z),.095,wood_mat)
+beam('Keep ridge capping',(-26.25,13.17,1),(-7.75,13.17,1),.12,slate_mat)
+for x in [-22,-19,-15,-12]:
+    for y in [4.7,8.15]:
+        box('Keep window crossbar',(x,y,7.105),(.35,.035,.045),iron)
+        for side in [-1,1]:
+            box('Keep open oak shutter',(x+side*.59,y,7.09),(.14,.72,.055),wood_mat)
+            for dy in [-.48,.48]:box('Keep shutter hinge',(x+side*.59,y+dy,7.155),(.15,.035,.018),iron)
+
+
+# The approach from the north and the side lanes sees finished elevations too.
+for side in [-1,1]:
+    face_x=-17+side*9.015
+    for z in [-2.5,1,4.5]:
+        for y in [4.7,8.15]:
+            box('Keep side window recess',(face_x,y,z),(.015,.75,.35),dark)
+            for dz in [-.43,.43]:box('Keep side window jamb',(face_x+side*.04,y,z+dz),(.095,.88,.09),trim,.025)
+            for dy in [-.84,.84]:box('Keep side head and sill',(face_x+side*.05,y+dy,z),(.10,.095,.48),trim,.025)
+            box('Keep side mullion',(face_x+side*.08,y,z),(.045,.72,.045),iron)
+            box('Keep side transom',(face_x+side*.08,y,z),(.045,.035,.35),iron)
+    for z in [-3.4,5.4]:box('Keep return buttress',(face_x,2.8,z),(.18,2.8,.26),stone_mat,.045)
+for x in [-22,-19,-15,-12]:
+    for y in [4.7,8.15]:
+        box('Keep north window recess',(x,y,-5.015),(.35,.75,.015),dark)
+        for dx in [-.43,.43]:box('Keep north window jamb',(x+dx,y,-5.055),(.09,.88,.095),trim,.025)
+        for dy in [-.84,.84]:box('Keep north head and sill',(x,y+dy,-5.065),(.48,.095,.10),trim,.025)
+        box('Keep north mullion',(x,y,-5.095),(.045,.72,.045),iron)
 
 # The eight old straight palisades become one continuous, faceted perimeter with four gates.
 PATHS={110:[(-3,-10),(-27,-10),(-31,-6)],111:[(3,-10),(27,-10),(31,-6)],112:[(-32,40),(-28,50),(-6.5,50)],113:[(3,50),(28,50),(33,42)],114:[(-31,-6),(-34,5),(-33,13),(-32,17)],115:[(-32,23),(-34,30),(-32,40)],116:[(31,-6),(34,4),(34,13),(32,17)],117:[(32,23),(34,32),(33,42)]}
