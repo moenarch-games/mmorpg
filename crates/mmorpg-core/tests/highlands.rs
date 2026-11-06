@@ -66,6 +66,8 @@ fn a_player_winds_up_the_pass_to_the_stronghold_and_back_into_the_vale() {
         &mut zone,
         &mut sequence,
         &[
+            // Leave the north-entrance camp through its gate before turning toward the pass.
+            [6_400, -17_600],
             [5_200, -17_600],
             [5_200, -21_200],
             [5_200, -23_200],
@@ -115,6 +117,7 @@ fn a_player_winds_up_the_pass_to_the_stronghold_and_back_into_the_vale() {
             [10_400, -23_200],
             [5_200, -23_200],
             [5_200, -17_600],
+            [6_400, -17_600],
             [6_400, -16_000],
         ],
     );

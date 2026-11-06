@@ -215,3 +215,39 @@ fn pieces_regrow_on_their_timer_and_repair_speeds_that_up() {
         "repairing regrows it much sooner: {repaired} vs {alone}"
     );
 }
+
+#[cfg(feature = "physics-ab")]
+#[test]
+fn a_fixed_world_blast_has_identical_piece_health_on_both_backends() {
+    use mmorpg_core::physics::{Backend, using_backend};
+    let results = [Backend::Engine, Backend::Rapier].map(|backend| {
+        using_backend(backend, || {
+            let original = content(9000);
+            let pieces = original
+                .pieces()
+                .iter()
+                .cloned()
+                .map(|mut piece| {
+                    piece.health = 100;
+                    piece
+                })
+                .collect();
+            let sites = original.sites().to_vec();
+            let content = Arc::new(
+                Arc::unwrap_or_clone(original)
+                    .with_structures(sites, pieces)
+                    .unwrap(),
+            );
+            let mut player = Player::new(content, ARCANIST);
+            player.send(arena::stand(yaw(-300.0, -1450.0)));
+            player.send(ZoneCommand::UseAbility {
+                ability: ids::FIRE_BLAST.get(),
+                target: None,
+            });
+            player.ticks(120);
+            player.zone.snapshot().unwrap().pieces
+        })
+    });
+    assert_eq!(results[0], results[1]);
+    assert!(results[0].iter().any(|piece| piece.health < 100));
+}

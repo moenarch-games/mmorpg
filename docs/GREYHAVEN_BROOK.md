@@ -1089,3 +1089,8 @@ The game pins `bd4708dd86d247314ea0d28950cfd2b0c3d0eac6`; native client
 `cargo check -p mmorpg-client --locked` passes. A native in-game screenshot has not
 been captured. The earlier notes about the missing provider setting are superseded
 by this integration; upstream CI/merge status remains visible on that PR.
+The relocated lake also displaced one old boar clearing. Spawn 125 now stands on dry
+woodland at (-109, -23) m, retaining its identity and the six-boar population. Unit-content
+checks include all twelve new residents and use capsule support on the actual terrain
+triangles, including the brook's below-floor bed. Named-area rectangles remain labels;
+the lake footprint and playable boundary govern the woodland wander-clearance check.

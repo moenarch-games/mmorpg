@@ -450,14 +450,14 @@ fn heightfield(terrain: &crate::Terrain) -> HeightfieldDesc {
 
 impl World {
     pub fn terrain_height(&self, x: i32, z: i32) -> Option<f32> {
-        let terrain = self.ground.as_ref()?.body;
-        #[allow(clippy::cast_precision_loss)]
-        let top = crate::MAX_TERRAIN_HEIGHT_UNITS as f32 + 100.0;
+        let ground = self.ground.as_ref()?;
+        let terrain = ground.body;
+        let (top, distance) = super::terrain_probe_span(&ground.terrain, x, z);
         // The same probe as the Rapier backend: a hundredth of a unit off the grid lines.
         #[allow(clippy::cast_precision_loss)]
         let ray = RayCast::new(
             Vector(x as f32 + 0.01, top, z as f32 + 0.01),
-            Vector(0.0, -2.0 * top, 0.0),
+            Vector(0.0, -distance, 0.0),
         );
         let mut hits = Vec::new();
         self.engine
@@ -465,7 +465,7 @@ impl World {
             .expect("physics-engine terrain ray failed");
         hits.iter()
             .find(|hit| hit.body == terrain)
-            .map(|hit| top - hit.fraction * 2.0 * top)
+            .map(|hit| top - hit.fraction * distance)
     }
 
     /// Moves `moves` in one engine batch and takes the results back into game state: exact
