@@ -4,8 +4,10 @@
 integer-centimetre vertices relative to that translation, and indexed triangles.
 Game coordinates are X, Y-up, Z. Winding points out of solid rock. Use simplified,
 closed surfaces for walls/slabs; do not export decorative render geometry or LODs.
-Rapier's fixed triangle meshes resolve contact, capsule movement, rays, projectiles
-and dynamic props through the existing world. No new solver or spatial index is used.
+Physics Engine's fixed triangle meshes resolve capsule movement, support, rays
+and projectile/static shape queries. Rapier remains the oracle and resolves dynamic
+debris and movable props against the same authored geometry. No new local solver
+or spatial index is used.
 
 The first asset is
 [`redbrand.json`](../crates/mmorpg-core/content/collision/redbrand.json), authored
@@ -30,10 +32,11 @@ sections rather than using a chamber-sized bounding box around spawn positions.
 
 The content hash includes all mesh geometry in ID order, so edits invalidate old
 checkpoints automatically. Recovery and world cloning rebuild the same fixed
-Rapier shapes from immutable content. No snapshot/wire layout changes, protocol ID
+backend shapes from immutable content. No snapshot/wire layout changes, protocol ID
 change, runtime filesystem access or Blender dependency are needed. Native and WASM
-load the same geometry. The optional physics-engine A/B backend explicitly refuses
-these meshes; parity work is outside this slice.
+load the same geometry. Both backends consume the authored meshes and hulls
+directly; the A/B harness checks primitive boxes separately from authored-shape
+contact tests.
 
 ## Blender editing
 

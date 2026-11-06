@@ -34,7 +34,7 @@ flowchart TD
     Adapter --> Core[mmorpg-core: zone gameplay and interest]
     Protocol --> Core
     Directory --> Core
-    Core --> Physics[Rapier rapier3d: collision and character motion, embedded]
+    Core --> Physics[Physics Engine: character/static collision; Rapier: dynamic contacts/oracle]
     Client --> NativeRenderer[Native: wgpu/winit, external tobj asset import]
     Client --> BrowserRenderer[Browser: Three.js through pinned renderer adapter]
     Client --> Presentation[mmorpg-presentation: shared static world]
@@ -442,4 +442,7 @@ The PostgreSQL/S3 host implements bounded empty residence, verified checkpoint s
 [Static collision authoring](STATIC_COLLISION.md) describes immutable indexed triangle
 meshes loaded by `ZoneDefinition`, independent of visual terrain tiles and LOD.
 Redbrand's public outer cave demonstrates a terrace entrance, solid shell, authored
-floor and stacked walkable shelf. Rapier remains the sole production authority.
+floor and stacked walkable shelf. Physics Engine handles authored static mesh and
+convex rock character/query contacts by default (Atlas 2.1.i330/2.1.i644). Rapier
+retains dynamic debris and movable-prop contacts against those shapes; both
+backends rebuild immutable geometry during recovery. See [physics backends](PHYSICS_AB.md).

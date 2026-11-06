@@ -1,6 +1,6 @@
 //! Physics backend A/B (physics-engine #330): the real zone simulation on Rapier and on
 //! physics-engine, from the same initial state with the same inputs and tick count. Only
-//! built with `--features physics-ab`; Rapier stays the production authority (Atlas 2.1.6).
+//! built with `--features physics-ab`; Rapier stays the behavioural oracle.
 //!
 //! Every workload runs twice on each backend. Each run must keep shared invariants (finite
 //! state, no penetration of content boxes, door leaves, props, the floor or the terrain beyond
@@ -24,7 +24,7 @@ mod drivers;
 #[path = "support/greyhaven_workload.rs"]
 mod greyhaven_workload;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 
 use drivers::{Run, Workload};
@@ -147,14 +147,24 @@ fn finite(snapshot: &CanonicalZoneSnapshot) -> bool {
         .all(|value| value.is_finite())
 }
 
-/// Every content box, door leaf and standing prop the zone currently blocks with (NPC boxes
-/// are left out: routine NPCs are placed through units without contact resolution).
+/// Primitive content boxes, door leaves and standing props. Authored hulls and triangle
+/// meshes must not be checked as boxes: their empty bounding-box corners are traversable.
+/// NPC boxes are left out because routines place NPCs without contact resolution.
 fn boxes(zone: &ZoneSimulation) -> Vec<([f32; 3], [f32; 3])> {
     let exact = |value: [i32; 3]| mmorpg_core::physics::from_units(value);
+    let meshes: BTreeSet<_> = zone
+        .definition()
+        .static_meshes()
+        .iter()
+        .map(|mesh| mesh.id)
+        .collect();
     let mut boxes: Vec<_> = zone
         .definition()
         .colliders()
         .iter()
+        .filter(|collider| {
+            !meshes.contains(&collider.id) && zone.content().rock(collider.id).is_none()
+        })
         .map(|collider| (exact(collider.position), exact(collider.half_extents)))
         .collect();
     let doors = zone.content().doors().iter().map(|door| {

@@ -57,6 +57,39 @@ function run(source: LocalZoneSource, ticks: number): void {
 }
 
 describe("WASM local zone host", () => {
+  test("the authored Redbrand mouth is traversable and replays deterministically in WASM", () => {
+    const traverse = () => {
+      const zone = wasm.LocalZone.forScenario("redbrand-cavern", 0n);
+      try {
+        const player = zone.scenarioPlayer;
+        if (player === undefined) {
+          throw new Error("Redbrand scenario has no player");
+        }
+        const before = decodeSnapshot(zone.projection(player));
+        const start = before.entities.find((entity) => entity.kind === "player" && entity.entityId === player);
+        if (!start) {
+          throw new Error("Redbrand scenario player is not projected");
+        }
+        const at = () => decodeSnapshot(zone.projection(player)).entities
+          .find((entity) => entity.kind === "player" && entity.entityId === player)?.position;
+        expect(zone.submit(player, 1, encodeCommand({ kind: "move", forward: 1, strafe: 0, facing: start.facing }))).toBe(true);
+        for (let tick = 0; tick < 115; tick += 1) {
+          zone.tick();
+        }
+        return { start: start.position, end: at(), digest: zone.canonicalDigest() };
+      } finally {
+        zone.free();
+      }
+    };
+    const first = traverse();
+    expect(first.end).toBeDefined();
+    // The scenario starts on the approach, just outside the authored entrance. Walking
+    // farther than that approach verifies that the collision shell did not seal its mouth.
+    const travelled = Math.hypot(first.end![0] - first.start[0], first.end![2] - first.start[2]);
+    expect(travelled).toBeGreaterThan(900);
+    expect(traverse()).toEqual(first);
+  });
+
   test("a real Greyhaven death publishes fenced loot, commits once and recovers dropped economic projections", async () => {
     const { source } = createLocalWorld(wasm, testCharacters());
     await source.join();

@@ -1,4 +1,4 @@
-//! The Rapier backend: the production authority (#271, Atlas 2.1.6).
+//! The Rapier backend: fallback for unsupported content and the comparison oracle (#271).
 //!
 //! Players and creatures are kinematic position-based bodies with upright capsule colliders,
 //! moved by Rapier's `KinematicCharacterController`, which resolves contact, sliding and
@@ -229,7 +229,7 @@ fn insert(world: &mut PhysicsWorld, body: &RigidBody) -> Handles {
             body: None,
             collider,
         }
-    } else if let (Kind::Rock(shape), true) = (body.kind, super::rock_hulls()) {
+    } else if let Kind::Rock(shape) = body.kind {
         let points: Vec<_> = shape
             .hull(body.half_extents)
             .into_iter()
@@ -1235,7 +1235,7 @@ impl World {
 }
 
 /// [`World::step_debris`] over the game's fixed `bodies` and `ground`.
-fn step_debris(
+pub(super) fn step_debris(
     gravity: [f32; 3],
     bodies: &BTreeMap<BodyId, RigidBody>,
     ground: Option<(BodyId, &crate::Terrain)>,
@@ -1258,7 +1258,7 @@ pub(super) struct Dynamic<'a> {
 
 /// [`World::step_props`] (#58): movable props slide upright under gravity and impulses,
 /// stopped by the fixed world and by units.
-fn step_props(
+pub(super) fn step_props(
     gravity: [f32; 3],
     bodies: &BTreeMap<BodyId, RigidBody>,
     ground: Option<(BodyId, &crate::Terrain)>,

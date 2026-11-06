@@ -5,6 +5,7 @@ mod support;
 
 use std::sync::Arc;
 
+use mmorpg_core::physics::Backend;
 use mmorpg_core::{
     CanonicalZoneSnapshot, CreatureBehaviour, CreatureFamily, CreatureId, CreatureLife,
     CreatureTemplate, CreatureTemplateId, DEBRIS_TICKS, EntityRef, PropKind, ZoneCommand,
@@ -115,6 +116,7 @@ impl Smasher {
 #[test]
 fn a_smashed_crate_flies_apart_settles_vanishes_and_returns() {
     let mut player = Smasher::at([0.0, -180.0]);
+    assert_eq!(player.zone.physics_backend(), Backend::Engine);
     player.smash(1);
     let broken = player.state();
     assert!(matches!(player.life(1), CreatureLife::Despawned { .. }));
