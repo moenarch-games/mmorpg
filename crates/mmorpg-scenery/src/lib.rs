@@ -356,7 +356,7 @@ impl Biome {
             Self::Meadow => [92, 132, 62],
             Self::Hub => [104, 128, 68],
             Self::Woods => [62, 80, 44],
-            Self::Hollow => [122, 104, 84],
+            Self::Hollow => [102, 115, 72],
             Self::Farmland => [112, 84, 54],
             Self::Road => ROAD_COLOR,
             Self::Plaza => PLAZA_COLOR,
@@ -1618,6 +1618,7 @@ impl Placer<'_> {
             }
         }
         self.ridge_scrub();
+        self.hollow_scrub();
         self.outer_decorations();
         self.farmland_decorations();
         self.highland_decorations();
@@ -1636,6 +1637,19 @@ impl Placer<'_> {
             let patch =
                 ((at[0].div_euclid(1800) * 31 + at[1].div_euclid(1800) * 17).rem_euclid(7)) < 4;
             (away_from_village && (300..2600).contains(&h) && patch).then_some((PropKind::Bush, at))
+        });
+    }
+
+    /// Low scrub at the camp's edges, clear of its central lane and tent approaches.
+    fn hollow_scrub(&mut self) {
+        let mut rng = Rng::new(0x0051_3ca0);
+        self.scatter(&mut rng, 18, 600, |rng| {
+            let at: [i32; 2] = [rng.range(-2000, 2000), rng.range(-10400, -7900)];
+            (at[0].abs() > 700
+                && [-9750, -9450, -8450]
+                    .into_iter()
+                    .all(|z| (at[1] - z).abs() > 220))
+            .then_some((PropKind::Bush, at))
         });
     }
 

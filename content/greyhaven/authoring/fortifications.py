@@ -1,4 +1,4 @@
-"""Run in Blender: Greyhaven keep, timber defences and the Millbrook farm buildings.
+"""Run in Blender: Greyhaven keep, timber defences, Millbrook buildings and Hollow camp.
 Uses Blender's glTF exporter; creates no renderer/runtime dependency.
 Coordinates passed to helpers are game metres (Y up, +Z south).
 """
@@ -215,10 +215,10 @@ plaster_base=.48+.055*noise+.025*np.sin(pu*math.tau*3)*np.sin(pv*math.tau*2)
 plaster_mat=material('lime-plaster',np.stack([plaster_base,plaster_base*.94,plaster_base*.79],axis=2),plaster_h,.96,2.8)
 warm_window=flat('farm warm glass',(.20,.12,.052))
 
-def farm_place(start,solid_start,x,z,quarter):
+def farm_place(start,solid_start,x,z,quarter,base=11):
     # Positive game yaw turns +Z toward +X, as the shared procedural building placement does.
     a=quarter*math.pi/2;c,s=math.cos(a),math.sin(a)
-    def world(gx,gy,gz):return (x+c*gx+s*gz,11+gy,z-s*gx+c*gz)
+    def world(gx,gy,gz):return (x+c*gx+s*gz,base+gy,z-s*gx+c*gz)
     for obj in objects[start:]:
         for v in obj.data.vertices:
             gx,gy,gz=v.co.x,v.co.z,-v.co.y;px,py,pz=world(gx,gy,gz);v.co=(px,-pz,py)
@@ -316,6 +316,57 @@ box('Mill timber axle housing',(0,8.9,2.35),(.22,.22,.50),wood_mat)
 vs=[(sx*.22,8.68+sy*.44,2.35+sz*.50) for sx,sy,sz in [(-1,0,-1),(1,0,-1),(1,0,1),(-1,0,1),(-1,1,-1),(1,1,-1),(1,1,1),(-1,1,1)]]
 solid_record(65064,vs,BOX_FACES)
 farm_place(start,solid_start,88,21,2)
+
+# The Hollow's existing three closed tents and four supply crates. Cloth folds are visual;
+# each tent's simplified filled prism supplies stable-ID collision independently of them.
+cv,cu=np.mgrid[0:N,0:N]/N
+weave=.5+.018*np.sin(cu*math.tau*128)*np.sin(cv*math.tau*128)+.02*noise
+cloth_base=.43+.07*noise+.035*np.sin(cu*math.tau*3)*np.cos(cv*math.tau*2)
+cloth=material('weathered-canvas',np.stack([cloth_base,cloth_base*.90,cloth_base*.72],axis=2),weave,.97,1.5)
+seam=flat('canvas binding',(.28,.23,.15))
+for id,x,z,base,quarter in [(420,-15.5,-94.5,11,1),(421,12.5,-97.5,11,3),(422,-13.5,-84.5,11.36,1)]:
+    start,solid_start=len(objects),len(collision)
+    section=[(-1.5,0),(1.5,0),(1.5,.35),(0,2.2),(-1.5,.35)]
+    vs=[(xx,yy,zz) for zz in [-1.5,1.5] for xx,yy in section]
+    fs=[(4,3,2,1,0),(5,6,7,8,9)]+[(j,(j+1)%5,(j+1)%5+5,j+5) for j in range(5)]
+    solid_record(id,vs,fs)
+    # Low canvas skirts and closed end flaps follow the same contact footprint.
+    mesh('Hollow tent canvas skirt',vs,[fs[2],fs[3],fs[-1]],cloth)
+    mesh('Hollow tent closed flaps',vs,fs[:2],cloth)
+    for side in [-1,1]:
+        vs=[];rows,cols=8,7
+        for r in range(rows+1):
+            zz=-1.5+3*r/rows
+            for c in range(cols+1):
+                t=c/cols;xx=side*1.5*t
+                fold=.025*math.sin(t*math.pi)*math.sin(zz*math.pi*3)**2
+                yy=2.2-1.85*t+fold
+                vs.append((xx,yy,zz))
+        fs=[]
+        for r in range(rows):
+            for c in range(cols):
+                a=r*(cols+1)+c;face=(a,a+1,a+cols+2,a+cols+1);fs.append(face[::-1] if side>0 else face)
+        mesh('Hollow tent draped canvas',vs,fs,cloth)
+    for zz in [-1.48,1.48]:
+        beam('Hollow tent ridge pole',(0,0,zz),(0,2.2,zz),.035,wood_mat)
+        for side in [-1,1]:beam('Hollow tent bound seam',(side*1.5,.35,zz),(0,2.2,zz),.018,seam)
+    beam('Hollow tent closed flap seam',(0,.04,1.515),(0,2.17,1.515),.012,seam)
+    beam('Hollow tent ridge binding',(0,2.2,-1.5),(0,2.2,1.5),.018,seam)
+    farm_place(start,solid_start,x,z,quarter,base)
+
+for x,z in [(5.5,-104.5),(6.7,-104.5),(6.1,-103.3),(-6.5,-102.5)]:
+    start,solid_start=len(objects),len(collision)
+    box('Hollow supply crate boards',(0,.5,0),(.475,.5,.475),wood_mat,.018)
+    for side in [-1,1]:
+        for axis in [-1,1]:
+            box('Hollow crate corner',(side*.455,.5,axis*.455),(.045,.5,.045),wood_mat,.01)
+        for y in [.055,.945]:
+            box('Hollow crate front rim',(0,y,side*.455),(.5,.055,.045),wood_mat)
+            box('Hollow crate side rim',(side*.455,y,0),(.045,.055,.5),wood_mat)
+        beam('Hollow crate diagonal',(-.40,.14,side*.49),(.40,.86,side*.49),.028,wood_mat)
+        for xx in [-.43,.43]:
+            for yy in [.14,.86]:box('Hollow crate iron nail',(xx,yy,side*.495),(.018,.018,.005),iron)
+    farm_place(start,solid_start,x,z,0)
 
 # Apply bevels and join by material for a compact, standard static glTF.
 bpy.ops.object.select_all(action='DESELECT')

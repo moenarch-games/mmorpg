@@ -64,6 +64,28 @@ pub fn compose(source: &str, definition: &ZoneDefinition) -> Result<Scenery, Str
             half_width: 120,
         },
     ]);
+    scenery.roads.extend([
+        crate::Road {
+            name: "Hollow camp track",
+            points: vec![[0, -8600], [-250, -9200], [-150, -9600], [0, -10800]],
+            half_width: 90,
+        },
+        crate::Road {
+            name: "Hollow west tent track",
+            points: vec![[-150, -9600], [-600, -9500], [-1300, -9450]],
+            half_width: 70,
+        },
+        crate::Road {
+            name: "Hollow east tent track",
+            points: vec![[-150, -9600], [600, -9650], [1000, -9750]],
+            half_width: 70,
+        },
+        crate::Road {
+            name: "Hollow lookout tent track",
+            points: vec![[0, -8600], [-600, -8600], [-1100, -8450]],
+            half_width: 70,
+        },
+    ]);
     // Preserve the frozen base and placement order. Overrides replace existing logical
     // objects in place; only author additions append. Never reroll the scatter RNG.
     scenery.props.retain_mut(|prop| {

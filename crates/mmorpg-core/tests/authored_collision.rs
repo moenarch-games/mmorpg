@@ -180,3 +180,24 @@ fn millbrook_windmill_has_a_solid_round_footprint() {
     // The controller may slide around a curved wall, but must actually reach it and stay out.
     assert!(closest < 290., "reached the tower: {closest}");
 }
+
+#[test]
+fn hollow_tent_flaps_block_and_sloped_roofs_have_no_square_corners() {
+    let mut flap = Player::at([-1300, 1100, -9450]);
+    flap.walk(49152, 90);
+    assert!(
+        (-1380. ..-1350.).contains(&flap.feet()[0]),
+        "closed canvas flap: {:?}",
+        flap.feet()
+    );
+
+    // Drop onto the low edge of the roof. A leftover box would leave the player standing
+    // 2.2 m up in empty air; the steep canvas instead sheds the character to the ground.
+    let mut edge = Player::at([-1550, 1400, -9340]);
+    edge.ticks(120);
+    assert!(
+        edge.feet()[1] < 1200.,
+        "no invisible box roof: {:?}",
+        edge.feet()
+    );
+}

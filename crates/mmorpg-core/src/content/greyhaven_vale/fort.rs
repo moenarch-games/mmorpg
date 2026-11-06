@@ -1,4 +1,4 @@
-//! Authored Greyhaven perimeter, keep and Millbrook geometry, independent of visual detail.
+//! Authored Greyhaven architecture and camp geometry, independent of visual detail.
 use crate::{StaticCollider, StaticMesh};
 
 pub const TOWERS: [[i32; 2]; 4] = [[-2700, -700], [2700, -700], [-3000, 4000], [3100, 4000]];
@@ -21,6 +21,8 @@ pub fn dresses(id: u32) -> bool {
         || (65000..=65023).contains(&id)
         || TOWER_BODIES.contains(&id)
         || (65050..65065).contains(&id)
+        || super::ids::TENTS.contains(&id)
+        || super::ids::CRATES.contains(&id)
         || [
             super::ids::BARN,
             super::ids::FARMHOUSE,
@@ -30,9 +32,13 @@ pub fn dresses(id: u32) -> bool {
 }
 
 pub(super) fn apply(colliders: &mut Vec<StaticCollider>) {
-    // Straight palisade boxes and the square windmill proxy are replaced by authored meshes
+    // Palisade, windmill and tent boxes are replaced by authored meshes
     // with the same stable IDs. Conservative bounds must never become physical wall boxes.
-    colliders.retain(|c| !super::ids::PALISADE.contains(&c.id) && c.id != super::ids::WINDMILL);
+    colliders.retain(|c| {
+        !super::ids::PALISADE.contains(&c.id)
+            && c.id != super::ids::WINDMILL
+            && !super::ids::TENTS.contains(&c.id)
+    });
     if let Some(keep) = colliders.iter_mut().find(|c| c.id == super::ids::KEEP) {
         keep.position[1] = keep.half_extents[1];
     }

@@ -304,6 +304,7 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
             0.8,
             highland[i] * (0.55 + breakup),
         ));
+        let gravel = gravel.max(hollow[i] * 0.78 * smoothstep(0.55, 0.80, noise(x, z, 6., 549.)));
         let forest = smoothstep(0.3, 0.7, woods[i] + 0.45 * breakup);
         let mud = if shore > 0. {
             (1. - smoothstep(2., 6.5, shore + 3.5 * breakup)).max(if marsh {
@@ -330,7 +331,15 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
         } else {
             0.
         };
-        let path = smoothstep(0.35, 0.75, hollow[i] + 0.5 * breakup).max(verge);
+        // The camp is a used clearing in grass, not one solid rectangle of dirt. Main
+        // tracks draw separately; broad seeded wear leaves turf between the tents.
+        let camp_wear = hollow[i] * (0.18 + 0.50 * smoothstep(0.30, 0.70, noise(x, z, 8., 547.)));
+        let hearth = if s.greyhaven() {
+            hollow[i] * (1. - smoothstep(1.6, 3.3, x.hypot(z + 92.)))
+        } else {
+            0.
+        };
+        let path = camp_wear.max(hearth).max(verge);
         for (layer, weight, color) in [
             (Layer::Forest, forest, mix(0x4d653b, 0x6e5a3c, 0.28)),
             (Layer::Gravel, gravel, 0x8f8a7c),

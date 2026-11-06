@@ -109,3 +109,39 @@ the camp approach, then captured `artifacts/greyhaven-brook/hollow-ridges.png` w
 errors. The final capture includes the facet-fitted climbing marks. The camp's broad dirt
 clearing and other older surroundings still need further visual refinement toward the
 owner's reference; this is a completed ridge pass, not final acceptance of the whole area.
+
+## Used camp ground and canvas tents
+
+The camp is now grass with worn approach tracks, a bare fire apron and patches of gravel
+and disturbed soil, rather than one continuous rectangular dirt layer. Four small scenic
+tracks join the existing Hollow Road to the fire, tent entrances and boarded mine frontage.
+They only paint the existing ground. Eighteen low shrubs use an independent presentation
+seed and remain walk-through foliage; terrain, creature posts and camp access are unchanged.
+
+`fortifications.py` now authors the existing three tents and four supply crates into the
+shared static Greyhaven glTF bundle. Canvas has a colour/normal texture pair, small folds,
+bound seams and closed flaps; the crates have plank faces, frames, braces and iron nails.
+These remain MIT-authored assets on the existing native/browser import path. No tent
+interiors, inventory or new gameplay interactions are introduced.
+
+Each tent retains its ID (420–422), site, footing and 2.2 m peak. A simplified closed
+pentagonal prism in `greyhaven-fort.json` replaces its old box; the decorative folds are
+independent of this collision. This removes invisible upper box corners while keeping the
+closed canvas solid. The crate colliders retain their existing positions and dimensions.
+The existing resource manifest records thirteen ordinary glTF resources, including the
+new canvas maps. Content revision is derived from the new immutable geometry; protocol and
+canonical-state layouts are unchanged.
+
+The focused Rapier test walks into a closed flap and drops a character onto an eave: the
+flap blocks movement, while the steep roof sheds the character to the ground instead of
+supporting it on an invisible box. That test and native
+`every_placed_kit_entry_loads_from_the_live_bundles` passed, as did the browser/WASM build.
+All thirteen authored resources match the manifest hashes. The live Blender world includes
+the tents, crates, new track centrelines and 697 nearby nature instances. Full suites and
+native GPU acceptance were not run. Policy source revision remains
+`625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+
+The final in-game capture is `artifacts/greyhaven-brook/hollow-camp.png`. Chromium reached the
+camp approach through the existing Outpost gate and Hollow switchback with no page errors;
+the view includes the final grass/dirt balance, new tent/crate art and existing inhabitants.
+The clearing remains an established hostile camp, not a new settlement or quest area.

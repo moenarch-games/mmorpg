@@ -27,8 +27,8 @@
         },
         {
           "path": "settlement.bin",
-          "byteLength": 3204192,
-          "sha256": "a6906e79e0a3271a19edc51c8ce91be872fd8ccbced0081c2e7c2cd8a044e0e8"
+          "byteLength": 3700848,
+          "sha256": "ad643be1dbfce32d250726f291e390afcb01c26cce4fc8b02f8a35bbd91a8d93"
         },
         {
           "path": "slate-color.png",
@@ -39,6 +39,16 @@
           "path": "slate-normal.png",
           "byteLength": 639516,
           "sha256": "10fbecc449d6489baa88cd1cb1b31d86107dcd4fdfb577f993099635e4bc9e1c"
+        },
+        {
+          "path": "weathered-canvas-color.png",
+          "byteLength": 373052,
+          "sha256": "a76c8910c7843e88a47624223888641da9384342b803d6f99cc14c89ca564e73"
+        },
+        {
+          "path": "weathered-canvas-normal.png",
+          "byteLength": 430717,
+          "sha256": "687d358232e8c30f4726a061eb1af9c6e6be87c13b5e75743b1661f6c20c4677"
         },
         {
           "path": "weathered-masonry-color.png",

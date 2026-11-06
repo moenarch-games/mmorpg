@@ -74,7 +74,7 @@ export const ENVIRONMENT: EnvironmentStyle = {
     meadow: "#667d46",
     hub: "#71834e",
     woods: "#4d653b",
-    hollow: "#94805f",
+    hollow: "#667348",
     farmland: "#7a5836",
     road: "#a4865c",
     plaza: "#8e7e61",
