@@ -40,11 +40,15 @@ def outer(x,z):
 
 def section(x,z):
     ox,oz=outer(x,z);dx,dz=ox-64,oz+138
-    # Inner contact planes stay clear at body height. The outer rock foot and shoulder are
-    # rounded and stratified; the high recesses do not shrink the combat floor.
+    # Inner contact planes stay clear at body height. Above them, uneven recesses break
+    # the straight chamber walls without shrinking the combat floor or its approaches.
+    distance=math.hypot(ox-x,oz-z)
+    recess=.18+.58*(.5+.5*math.sin(x*.83+z*.57))
+    rx,rz=(ox-x)/distance*recess,(oz-z)/distance*recess
     return [(x,-11,z),(ox,-11,oz),(ox,-1,oz),
         (64+dx*.92,2.8,-138+dz*.92),(64+dx*.82,4.8,-138+dz*.82),
-        (x+(ox-x)*.05,4.5,z+(oz-z)*.05),(x,2,z),(x,0,z)]
+        (x+(ox-x)*.05,4.5,z+(oz-z)*.05),
+        (x+rx,3.1+.25*math.sin(x*.4-z*.6),z+rz),(x,1.9,z),(x,0,z)]
 
 # Clockwise inner perimeter; split the north wall at a four-metre opening (x 62..66).
 wall_specs=[(540,'North west rock',[(x,-144) for x in range(48,63,2)]),
@@ -55,7 +59,7 @@ wall_specs=[(540,'North west rock',[(x,-144) for x in range(48,63,2)]),
     (541,'South west rock',[(x,-132) for x in range(56,47,-2)]),
     (543,'West rock',[(48,z) for z in range(-132,-145,-2)])]
 for id,name,points in wall_specs:
-    vs=[p for x,z in points for p in section(x,z)];n=8
+    vs=[p for x,z in points for p in section(x,z)];n=9
     fs=[tuple(range(n-1,-1,-1)),tuple(range(len(vs)-n,len(vs)))]
     fs += [(i*n+j,i*n+(j+1)%n,(i+1)*n+(j+1)%n,(i+1)*n+j) for i in range(len(points)-1) for j in range(n)]
     record(id,name,vs,fs)
@@ -65,8 +69,21 @@ def box(id,name,minx,maxx,minz,maxz,low,high):
     vs=[(x,y,z) for y in [low,high] for x,z in [(minx,minz),(maxx,minz),(maxx,maxz),(minx,maxz)]]
     fs=[(0,3,2,1),(4,5,6,7),(0,1,5,4),(1,2,6,5),(2,3,7,6),(3,0,4,7)]
     record(id,name,vs,fs)
-box(545,'North chamber rib',68,72,-144,-140,-11,4.5)
-box(546,'South chamber rib',68,72,-136,-132,-11,4.5)
+def rib(id,name,z0,z1):
+    # Chamfer the old box corners within its footprint; the four-metre passage widens
+    # at its shoulders without changing the floor, shelf or sealed outside perimeter.
+    outline=[(68.65,z0),(71.4,z0),(72,z0+.65),(72,z1-.6),
+        (71.35,z1),(68.55,z1),(68,z1-.7),(68,z0+.5)]
+    vs=[];n=len(outline)
+    for row,y in enumerate([-11,0,1.9,3.15,4.5]):
+        for j,(x,z) in enumerate(outline):
+            taper=0 if row<3 else (.14+.15*math.sin(j*2.4+id))
+            vs.append((x+(70-x)*taper,y,z+((z0+z1)/2-z)*taper))
+    fs=[tuple(range(n-1,-1,-1)),tuple(range(4*n,5*n))]
+    fs += [(r*n+j,r*n+(j+1)%n,(r+1)*n+(j+1)%n,(r+1)*n+j) for r in range(4) for j in range(n)]
+    record(id,name,vs,fs)
+rib(545,'North chamber fractured rib',-144,-140)
+rib(546,'South chamber fractured rib',-136,-132)
 
 # Closed, irregular domed roof: flat underside over usable rooms, rising craggy outer crown.
 perimeter=([(x,-144) for x in range(48,80,2)]+[(80,z) for z in range(-144,-132,2)]
@@ -85,7 +102,8 @@ record(547,'Rounded Redbrand crag roof',vs,fs)
 # A rough, shallow vault gives the far-side mouth a natural arch rather than a flat lintel.
 profile=[(58,3.0),(60.5,3.4),(62.5,4.25),(64,4.5),(65.5,4.15),(67.5,3.35),(70,3.0)]
 vs=[(x,y,z) for z in [-153.5,-150] for x,y in profile]
-vs += [(x,4.9,z) for z in [-153.5,-150] for x,y in profile]
+# Follow the arch with a broken upper edge instead of a rectangular lintel slab.
+vs += [(x,y+1.1+.22*math.sin(x*2.1),z) for z in [-153.5,-150] for x,y in profile]
 n=len(profile);fs=[]
 for i in range(n-1):
     fs += [(i,i+1,n+i+1,n+i),(2*n+i,3*n+i,3*n+i+1,2*n+i+1),

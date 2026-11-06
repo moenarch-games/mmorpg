@@ -169,3 +169,12 @@ Chromium walked the surface route to the north mouth and captured
 formations are visible from below under the existing torch lighting. The local `.blend`
 is saved with a north-entrance view. Larger chamber walls still need an organic-shape art
 pass; this does not yet meet the entire reference's visual target.
+
+The next shape pass chamfers both chamber dividers within their former footprints and
+recesses the upper wall shoulders with fixed, source-authored variation. Lower perimeter
+contact planes, the four-metre passage and shelf footing are preserved. This improves the
+interior silhouette without a decorative shell concealing different collision geometry.
+The entrance arch's upper edge follows a broken stone profile instead of a rectangular
+lintel. The entrance clearance below it is unchanged; the focused Rapier traversal test
+also covers this final exported shape. The browser build passed for the chamber-shape
+pass before this final upper-edge adjustment.
