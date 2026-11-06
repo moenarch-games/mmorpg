@@ -714,6 +714,67 @@ fn trees() -> Vec<StaticCollider> {
             }
         }
     }
+    // New canopy patches are authored separately so older forest identities remain stable.
+    let posts: Vec<_> = units::creature_spawns()
+        .into_iter()
+        .map(|unit| unit.position)
+        .chain(units::npcs().into_iter().map(|unit| unit.position))
+        .collect();
+    for forest in &landscape::data().forests {
+        for row in 0..forest.cells[1] {
+            for column in 0..forest.cells[0] {
+                let cell = (u64::from(row.unsigned_abs()) << 32) | u64::from(column.unsigned_abs());
+                let hash = splitmix64(forest.seed ^ cell);
+                if hash % 100 >= forest.percent {
+                    continue;
+                }
+                let jitter = |shift: u32| (hash >> shift) as i32 & 0xff;
+                let x = forest.origin[0]
+                    + column * woods::CELL
+                    + woods::EDGE_MARGIN
+                    + jitter(8) % (span + 1);
+                let z = forest.origin[1]
+                    + row * woods::CELL
+                    + woods::EDGE_MARGIN
+                    + jitter(16) % (span + 1);
+                if value_noise_q10(i64::from(x), i64::from(z), 1800, forest.seed) < 300
+                    || !(forest.elevation[0]..forest.elevation[1])
+                        .contains(&TERRAIN.height_at(x, z))
+                    || farmland::level(x, z)
+                    || !highlands::clear_for_tree(x, z)
+                    || brook::wet_ground(x, z)
+                    || shrine::flattens(x, z)
+                    || posts
+                        .iter()
+                        .any(|post| (x - post[0]).abs() < 350 && (z - post[1]).abs() < 350)
+                {
+                    continue;
+                }
+                let half = 30 + jitter(24) % 16;
+                if trees.iter().any(|tree| {
+                    (x - tree.position[0]).abs() < half + tree.half_extents[0] + 150
+                        && (z - tree.position[2]).abs() < half + tree.half_extents[2] + 150
+                }) {
+                    continue;
+                }
+                let base = footing([x - half, z - half], [x + half, z + half]);
+                let collider = StaticCollider {
+                    id: next_id,
+                    position: [x, base + woods::TRUNK_HEIGHT / 2, z],
+                    half_extents: [half, woods::TRUNK_HEIGHT / 2, half],
+                };
+                if !clear_of_roads(&collider) || near_structure(&collider) {
+                    continue;
+                }
+                assert!(
+                    ids::TREES.contains(&next_id),
+                    "authored forests exceed reserved tree identities"
+                );
+                trees.push(collider);
+                next_id += 1;
+            }
+        }
+    }
     // The shore rocks and shrine moved with Stillwater. Reject intersecting trunks
     // after assigning IDs, so clearing their new sites never renumbers other trees.
     let shore: Vec<_> = (vale::REGION.colliders)()

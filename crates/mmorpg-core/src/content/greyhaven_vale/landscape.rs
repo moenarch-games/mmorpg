@@ -10,6 +10,10 @@ pub struct Landscape {
     pub paths: Vec<Path>,
     pub basin: Basin,
     pub northern_ridge: NorthernRidge,
+    pub forests: Vec<Forest>,
+    // Blender consumes this authoring profile; runtime collision comes from its exported mesh.
+    #[serde(rename = "redbrandExterior")]
+    _redbrand_exterior: serde::de::IgnoredAny,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -49,6 +53,16 @@ pub struct RidgeSection {
     pub x: i32,
     pub profile: [[i32; 2]; 8],
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Forest {
+    pub name: String,
+    pub origin: [i32; 2],
+    pub cells: [i32; 2],
+    pub seed: u64,
+    pub percent: u64,
+    pub elevation: [i32; 2],
+}
 static LANDSCAPE: LazyLock<Landscape> = LazyLock::new(|| {
     let landscape: Landscape = serde_json::from_str(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -81,6 +95,15 @@ static LANDSCAPE: LazyLock<Landscape> = LazyLock::new(|| {
                 .iter()
                 .all(|lobe| lobe.radii.iter().all(|r| *r > 0) && lobe.shoulder_q10 > 1024),
         "valid basin shoulders"
+    );
+    assert!(
+        landscape.forests.iter().all(|forest| {
+            !forest.name.is_empty()
+                && forest.cells.iter().all(|n| *n > 0)
+                && forest.percent <= 100
+                && forest.elevation[0] < forest.elevation[1]
+        }),
+        "valid authored forest patches"
     );
     let sections = &landscape.northern_ridge.sections;
     assert!(

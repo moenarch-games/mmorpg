@@ -795,3 +795,26 @@ western-lake, woodland and valley cameras. WSL's default llvmpipe software path 
 too slow for the comparison; the existing D3D12 driver exposes the ThinkPad's Intel
 Arc 140V instead. Measurements through that WSL path remain provisional and do not
 establish native Windows or desktop GPU performance.
+
+### Western and northern canopy; lower Redbrand exterior
+
+Five additional forest patches in `content/greyhaven/landscape.json` now populate
+western lake woodland, the western valley and northern terraces. The existing
+integer jittered-grid generator appends their trunks after older trees, preserving
+older identities. Water, roads, structures, unit posts and walkable gaps remain
+clear. Existing nature assets and their species/height variation are reused;
+Greyhaven now contains 2,652 authoritative trees. The live Blender context was
+refreshed from the shared WASM instance matrices.
+
+The same JSON contains Redbrand's Blender roof profile. Its three oversized spires
+were removed and the outer rock shoulders narrowed; floor, shelf, interior contact
+planes and approved north entrance remain. `authoring/redbrand.py` exports the
+simplified closed collision meshes to `redbrand.json`; clients texture those
+surfaces through the existing rock presentation. The smaller exterior is a step
+toward the hideout: its palisade, campfire and shelters are still pending.
+
+Focused checks passed: deterministic bounded content, three highland traversal
+checks, three brook/lake checks and both cave traversal checks. The browser build
+and error-free overview capture preceded the lower roof edit; final game rendering
+and before/after performance comparison for this pass remain pending. Mining ruins,
+further cliff refinement and full visual acceptance of the concept remain open.
