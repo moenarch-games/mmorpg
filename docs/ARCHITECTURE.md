@@ -34,7 +34,7 @@ flowchart TD
     Adapter --> Core[mmorpg-core: zone gameplay and interest]
     Protocol --> Core
     Directory --> Core
-    Core --> Physics[Physics Engine: character/static collision; Rapier: dynamic contacts/oracle]
+    Core --> Physics[Physics Engine: production contacts and movement; optional Rapier A/B oracle]
     Client --> NativeRenderer[Native: wgpu/winit, external tobj asset import]
     Client --> BrowserRenderer[Browser: Three.js through pinned renderer adapter]
     Client --> Presentation[mmorpg-presentation: shared static world]
@@ -442,7 +442,9 @@ The PostgreSQL/S3 host implements bounded empty residence, verified checkpoint s
 [Static collision authoring](STATIC_COLLISION.md) describes immutable indexed triangle
 meshes loaded by `ZoneDefinition`, independent of visual terrain tiles and LOD.
 Redbrand's public outer cave demonstrates a terrace entrance, solid shell, authored
-floor and stacked walkable shelf. Physics Engine handles authored static mesh and
-convex rock character/query contacts by default (Atlas 2.1.i330/2.1.i644). Rapier
-retains dynamic debris and movable-prop contacts against those shapes; both
-backends rebuild immutable geometry during recovery. See [physics backends](PHYSICS_AB.md).
+floor and stacked walkable shelf. Physics Engine owns character/query and rigid
+debris/movable-prop contacts against authored static meshes and convex rocks
+(Atlas 2.1.i647). Isolated rigid response worlds retain static geometry and transfer
+canonical pieces in and out each tick. Recovery reconstructs geometry and physical
+state from the canonical game snapshot. Rapier and backend selectors are compiled
+only by the optional `physics-ab` diagnostic feature. See [physics backends](PHYSICS_AB.md).
