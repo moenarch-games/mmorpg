@@ -389,3 +389,28 @@ captured in `artifacts/greyhaven-brook/well-detail.png`. The procedural fallback
 the new body and canopy dimensions.
 Full suites and native GPU acceptance were not run. Previously reported content assertions
 and legacy A/B failures remain unresolved.
+
+## Broad northern summits and saddles
+
+The enclosing northern escarpment now varies at a broader landscape scale, with a 26–56 m
+summit/saddle profile and a toe meandering up to sixteen metres from its former line.
+Fissures follow the ribs instead of varying across a two-dimensional grid of small crest
+dimples. The extended southern toe meets the existing Vale hills without cutting a step.
+The Highland Pass and marked climbing strip retain their original terrain profiles and
+full-cell shoulders, blended into the new enclosing rock. The plateau, stronghold and
+lookout remain in their existing places; no world area or gameplay system is added.
+
+This remains the same fixed-integer authoritative heightfield, shared by rendering and
+Rapier. Its content revision is derived from the changed samples; recovery and visual LOD
+paths are unchanged. The live Blender terrain and 1,589 nature instances are refreshed from
+the same game export, with the packed game rock maps retained for authoring context.
+
+Focused checks passed: the two Highland gameplay tests (stronghold journey and return,
+and a player stopped by the escarpment), format and the browser/WASM production build.
+Chromium crossed the village bridge without page errors, loaded all seven ground textures
+and captured `artifacts/greyhaven-brook/northern-saddles.png`. The first capture attempt
+left no artifact and was confirmed stopped before the successful retry. Full suites and
+native GPU acceptance were not run; the previously reported failures remain unresolved.
+The wide scene still needs further cliff, ground and lighting refinement to match the
+owner's reference. Convention source revision remains
+`625cb04ca568aebc8d45c90033e107a05e9bd2a0`.

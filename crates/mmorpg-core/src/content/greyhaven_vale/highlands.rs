@@ -3,7 +3,8 @@
 //! about as large as the Vale itself (416 m × 424 m). Like the farmland it stays in the
 //! Greyhaven zone, so no zone boundary or loading step lies on the way.
 //!
-//! A broken escarpment (40–52 m) closes the Vale's northern side behind Greyfang Ridge. The
+//! A broken escarpment (26–56 m, with the established route shoulders at 40–52 m) closes
+//! the Vale's northern side behind Greyfang Ridge. The
 //! Highland Pass joins the north-cave approach and winds up through it: a cutting into its
 //! southern face, a ledge climbing east, a hairpin landing, a ledge climbing back west and a
 //! gorge north onto the high ground, 24 m above the Vale's floor. Its steep middle faces
@@ -174,7 +175,7 @@ pub fn clear_for_tree(x: i32, z: i32) -> bool {
     const MARGIN: i32 = 200;
     // Trunks on a sheer face stood on the highest corner of their footprint, leaving
     // their visible roots above the hillside. Use the actual terrain before placing them.
-    let on_face = (ESCARPMENT[3]..=ESCARPMENT[0] + 800).contains(&z);
+    let on_face = (ESCARPMENT[3]..=ESCARPMENT[0] + 1_600).contains(&z);
     let supported = !on_face || {
         let heights = [
             [x, z],
@@ -214,7 +215,7 @@ pub fn height_at(x: i32, z: i32) -> Option<i32> {
     if let Some(lane) = PASS.iter().find(|lane| lane.contains(x, z)) {
         return Some(lane.height(x, z));
     }
-    if z > ESCARPMENT[0] + 800 {
+    if z > ESCARPMENT[0] + 1_600 {
         return None;
     }
     let (x64, z64) = (i64::from(x), i64::from(z));
@@ -249,23 +250,23 @@ pub fn height_at(x: i32, z: i32) -> Option<i32> {
     let weight = smooth_q10(distance.min(climb_distance), 400, 1_600);
     let weathered = if north < north_foot {
         let ribs = value_noise_q10(x64 + (north - foot) / 3, 0, 2_400, SEED.rotate_left(7));
-        let fissures = value_noise_q10(x64, north, 800, SEED.rotate_left(41));
-        // The toe moves by up to eight metres either side of its former straight line.
-        // Its southernmost point still meets the Vale where the old hills settle to zero.
-        let shift = (ribs - 512) * 1_600 / 1_024;
+        let fissures = value_noise_q10(x64, 0, 1_100, SEED.rotate_left(41));
+        // Broad buttresses move the toe up to sixteen metres either side of its old line.
+        // Fissures run along each rib instead of making a grid of small crest dimples.
+        let shift = (ribs - 512) * 3_200 / 1_024;
         let local_foot = foot + shift;
         let front = south_top + shift + (1_400 * ribs + 600 * fissures) / 1_024;
         let rear = north_top - 700 * ribs / 1_024;
-        let crown = CREST_UNITS
-            + CREST_VARIATION_UNITS
-                * (3 * value_noise_q10(x64, north, 1_600, SEED.rotate_left(29)) + fissures)
-                / (4 * 1_024);
+        // Unequal summits and saddles at the scale of the enclosing landscape. The
+        // original route shoulders above still blend in through `weight`, independently.
+        let summit = value_noise_q10(x64, 0, 6_800, SEED.rotate_left(29));
+        let crown = 2_600 + (2_200 * summit + 800 * fissures) / 1_024;
         if north < local_foot {
             0
         } else if north < front {
             let t = ((north - local_foot) * 1_024 / (front - local_foot)).clamp(0, 1_024);
             // A low scree toe and shallow upper shoulder break the former single plane;
-            // the steep middle carries most of the forty-metre rise.
+            // the steep middle carries most of the rise.
             let profile = if t < 192 {
                 t / 2
             } else if t < 832 {
@@ -282,7 +283,13 @@ pub fn height_at(x: i32, z: i32) -> Option<i32> {
     } else {
         plateau
     };
-    Some(i32::try_from(height + (weathered - height) * weight / 1_024).unwrap_or(0))
+    let height = i32::try_from(height + (weathered - height) * weight / 1_024).unwrap_or(0);
+    // The extended toe meets the Vale's existing low hills instead of cutting a new step.
+    Some(if north < foot {
+        height.max(super::hill_height(x, z))
+    } else {
+        height
+    })
 }
 
 /// The high ground's relief above [`PLATEAU_Y`]: broken swells and knolls, level on the
