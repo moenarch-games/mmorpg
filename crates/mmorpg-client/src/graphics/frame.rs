@@ -307,14 +307,17 @@ fn standard_material(m: &DrawMaterial) -> StandardMaterial {
     StandardMaterial {
         base_color: linear3(m.color).extend(m.opacity),
         emissive: linear3(m.emissive) * EMISSIVE_NITS,
-        // The browser's MeshStandardMaterial: roughness 0.86, metalness 0.02.
-        perceptual_roughness: 0.86,
-        metallic: 0.02,
+        // Match the shared browser presentation's wet/translucent surface response.
+        perceptual_roughness: if m.opacity < 1. { 0.3 } else { 0.86 },
+        metallic: if m.opacity < 1. { 0. } else { 0.02 },
         alpha_mode: if m.opacity < 1. {
             AlphaMode::Blend
         } else {
             AlphaMode::Opaque
         },
+        // Procedural water/foam receives shadows without casting an opaque silhouette,
+        // matching the browser's blended-material shadow cutoff. Opaque modes ignore it.
+        blend_shadow_alpha_cutoff: 1.,
         double_sided: m.double_sided,
         unlit: m.unlit,
         ..StandardMaterial::default()

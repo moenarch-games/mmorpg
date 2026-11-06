@@ -3821,7 +3821,7 @@ checksum = "cab834c73d247e67f4fae452806d17d3c7501756d98c8808d7c9c7aa7d18f973"
 [[package]]
 name = "render-engine"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/render-engine.git?rev=7cfe9e2dafc26c7eef07e4e9d124e2178c374188#7cfe9e2dafc26c7eef07e4e9d124e2178c374188"
+source = "git+https://github.com/moritzbrantner/render-engine.git?rev=bd4708dd86d247314ea0d28950cfd2b0c3d0eac6#bd4708dd86d247314ea0d28950cfd2b0c3d0eac6"
 dependencies = [
  "bevy_mikktspace",
  "bytemuck",

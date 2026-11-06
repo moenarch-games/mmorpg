@@ -1,6 +1,6 @@
 //! Fractured rock skins and cave surfaces over authoritative collision, using the existing
-//! terrain bundle's rock PBR material. Shallow recesses stay inside the solid proxy; walkable
-//! tops, entrances and the shelf keep their authored shape. No renderer or collision rules.
+//! terrain bundle's rock PBR material. Weathering follows the authored surface; walkable
+//! tops, entrances and the shelf keep their shape. No renderer or collision rules.
 use std::sync::Arc;
 
 use mmorpg_scenery::{Prop, PropKind, Scenery};
@@ -145,6 +145,42 @@ pub(crate) fn landscape_color(points: [V; 3], id: u32) -> u32 {
     mix(stone, 0x667447, growth)
 }
 
+/// Continuous bedding colour on authored outcrops. The authored fractures and ledges
+/// supply their silhouette; face-aligned PBR supplies grain. Keep the skin on its
+/// collision surface instead of recessing every render triangle into a visible fan.
+fn weathered_bank_face(g: &mut Geometry, points: [V; 3], id: u32, depth: u8) {
+    let edge = |a: V, b: V| (0..3).map(|axis| (a[axis] - b[axis]).powi(2)).sum::<f64>();
+    let [a, b, c] = points;
+    let u: V = std::array::from_fn(|axis| b[axis] - a[axis]);
+    let v: V = std::array::from_fn(|axis| c[axis] - a[axis]);
+    let normal = norm([
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+    ]);
+    if normal[1].abs() > 0.65 {
+        colored_face(g, &points, landscape_color(points, id));
+        return;
+    }
+
+    if depth < 5 && edge(a, b).max(edge(b, c)).max(edge(c, a)) > 1.4 * 1.4 {
+        let mid = |a: V, b: V| std::array::from_fn(|axis| (a[axis] + b[axis]) * 0.5);
+        let (ab, bc, ca) = (mid(a, b), mid(b, c), mid(c, a));
+        for face in [[a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]] {
+            weathered_bank_face(g, face, id, depth + 1);
+        }
+        return;
+    }
+    g.face(&points);
+    for point in points {
+        let strata = crate::terrain::noise(point[0] * 0.13 + point[2] * 0.2, point[1], 1.1, 51397.);
+        let patina = crate::terrain::noise(point[0], point[2], 5., 51398.);
+        let stone = mix(0x77756c, 0x969080, patina);
+        g.colors
+            .push(rgb(shade(stone, 0.94 + strata * 0.10)).map(f64::from));
+    }
+}
+
 /// Interior roof faces remain one-sided static rock while the exterior shell cuts away.
 /// The existing backface culling hides these from an overhead camera automatically.
 pub(crate) fn ceiling_face([a, b, c]: [V; 3]) -> bool {
@@ -194,13 +230,20 @@ pub(crate) fn groups(scenery: &Scenery) -> Vec<Group> {
                 let landscape = (400..=406).contains(&mesh.id)
                     || (65030..=65039).contains(&mesh.id)
                     || mmorpg_core::greyhaven_vale::fort::SHORE_ROCKS.contains(&mesh.id)
-                    || mmorpg_core::greyhaven_vale::fort::BASIN_ROCKS.contains(&mesh.id);
+                    || mmorpg_core::greyhaven_vale::fort::BASIN_ROCKS.contains(&mesh.id)
+                    || mmorpg_core::greyhaven_vale::fort::WESTERN_ROCKS.contains(&mesh.id);
                 let color = if landscape {
                     landscape_color(points, mesh.id)
                 } else {
                     0x817b70
                 };
-                colored_face(&mut g, &points, color);
+                if mmorpg_core::greyhaven_vale::fort::BASIN_ROCKS.contains(&mesh.id)
+                    || mmorpg_core::greyhaven_vale::fort::WESTERN_ROCKS.contains(&mesh.id)
+                {
+                    weathered_bank_face(&mut g, points, mesh.id, 0);
+                } else {
+                    colored_face(&mut g, &points, color);
+                }
             }
             ground::project_rock(&mut g);
             group(format!("cave-surface-{}", mesh.id), g)

@@ -6,12 +6,18 @@ pub const REDBRAND_FIRE: u32 = 65111;
 pub const REDBRAND_PALISADES: std::ops::RangeInclusive<u32> = 65112..=65117;
 pub const REDBRAND_SHELTERS: std::ops::RangeInclusive<u32> = 65118..=65120;
 
+/// Western watermill, wheel envelope and bank crossing.
+pub const BROOK_MILL: std::ops::RangeInclusive<u32> = 65121..=65127;
+
 pub const TOWERS: [[i32; 2]; 4] = [[-2700, -700], [2700, -700], [-3000, 4000], [3100, 4000]];
 pub const TOWER_BODIES: std::ops::RangeInclusive<u32> = 65040..=65043;
 /// Low authored outcrops that break Stillwater's bank silhouette without closing its routes.
 pub const SHORE_ROCKS: std::ops::RangeInclusive<u32> = 65070..=65093;
 /// The mill's walk-off gallery, outside the hoist shaft and clear of the axle housing.
 pub const MILL_GALLERY: std::ops::RangeInclusive<u32> = 65103..=65110;
+
+/// Three fractured brook-facing spurs and their smaller talus pieces.
+pub const WESTERN_ROCKS: std::ops::RangeInclusive<u32> = 65128..=65136;
 
 /// Authored leaning rock slabs and their smaller talus pieces at the basin cliff feet.
 pub const BASIN_ROCKS: std::ops::RangeInclusive<u32> = 65094..=65102;
@@ -45,6 +51,7 @@ pub fn dresses(id: u32) -> bool {
         || (65000..=65023).contains(&id)
         || TOWER_BODIES.contains(&id)
         || MILL_GALLERY.contains(&id)
+        || BROOK_MILL.contains(&id)
         || REDBRAND_PALISADES.contains(&id)
         || REDBRAND_SHELTERS.contains(&id)
         || (65050..=65069).contains(&id)

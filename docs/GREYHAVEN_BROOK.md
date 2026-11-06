@@ -1,5 +1,44 @@
 # Greyhaven's Waterworn Gorge
 
+## Review version
+
+The playable brook, bridge and western slopes now combine short clustered turf,
+low authored terrain rises, soil/gravel breakup, worn cart tracks, fractured rock
+spurs and talus, shallow translucent water and local flowing foam. The western
+water opening is a mill with a supported bank crossing and sloped approaches.
+Both clients share the presentation; native and browser water suppress their own
+opaque shadow silhouettes. The mill wheel is static in this version.
+
+The third-person views use the same camera and noon lighting: eye `[0,3.8,40]`,
+target `[0,0.9,32]`, 800×533. The overview is 960×640, eye `[12,72,90]`, target
+`[-8,1,22]`, presentation time 200. Final captures use the running game on the
+RTX 3060 Ti; all seven ground materials loaded and the browser reported no errors.
+
+| Before this slice | Review version |
+| --- | --- |
+| ![Before](images/greyhaven-brook-slice-before.png) | ![After](images/greyhaven-brook-slice-after.png) |
+
+![Playable brook and western slopes overview](images/greyhaven-brook-slice-overview.png)
+
+Verification: actual bridge–mill–western-bank travel and return; western-slope walk;
+existing Wolfrun Climb and first-three-quests journey; four affected combat/loot
+scenario replays; focused turf/current checks and scenery/export goldens; native
+compilation and production browser/WASM build. The native shadow provider's focused
+GPU test and CI/oracle pass ([render-engine #63](https://github.com/moritzbrantner/render-engine/pull/63)).
+Existing profiling observations are recorded below. Full native gameplay/GPU
+acceptance and the comprehensive E2E matrix were deferred; PR #644 stays open for
+owner review.
+
+To extend this work, author another small region's terrain rises in `landscape.json`
+and coarse, stable-ID rock solids through the existing Blender/collision export.
+Reuse the terrain materials, face-aligned rock skin, clustered roots and ground/path/
+water masks; place local foam at actual disturbances. Check the region's intended
+walk route alongside its art. The wider woodland-valley composition can then be
+refined in the same way. Earlier sections below record the preceding checkpoints
+and their then-open work.
+
+## Earlier implementation notes
+
 The village occupies a rounded, asymmetric basin with an adjoining northern lobe. Fixed-seed integer weathering varies the cliff outline and shoulders. The heightfield is still authoritative: scenery samples the same terrain, and the six existing switchback lanes override the weathering. This is separate from visual terrain tile LOD and the authored Redbrand Cave meshes.
 
 `mmorpg-core/src/content/greyhaven_vale/brook.rs` authors Stillwater's upper inflow and rim outlet, the west-cliff waterfall and a narrow brook through the village, a timber footbridge, and a low drainage opening through the southern palisade. Its centimetre centreline supplies the shallow terrain bed and a `WaterChannel` footprint. Existing wading/swimming rules apply; foam motion is cosmetic and exerts no current. The upstream river enters the existing Stillwater ellipse; its outlet loops around the rim to the waterfall. Both upper channels share the lake's surface height. Neither water shape introduces another movement solver.
@@ -868,8 +907,249 @@ These checks resolve the earlier square-palisade, overlapping-bounds, road-clear
 contiguous-tree assertions reported above. The existing brook, gate, culvert and lake approach
 walks also pass. Scenario and scenery fixtures follow the combined authored content.
 
+## Brook visual-quality slice (current owner brief)
+
+The current task focuses on the playable brook, bridge and western slopes: clustered
+Poisson-disc grass/weed cover, irregular soil and small relief, stratified weathered
+rock with talus, and water embedded in its bed with shallow colour, transparency,
+flowing ripples and localized foam. Reuse the seven terrain materials and shared
+native/browser presentation. The wider mining-settlement composition is outside
+this slice. Physics Engine work proceeds separately; defer repeated MMORPG E2E
+runs until that integration is ready.
+
+The first ground pass uses deterministic 70 cm Poisson-disc roots masked by biome,
+slope, water, paths and structures, with broad glades and smaller noise clusters.
+Bent ribbon leaves and existing fern geometry share two meshes in the brook patch
+(623 instances in the current preview). These are decorative and change no core
+terrain, water or collision. The western outcrop skin now has small stratified
+chips recessed up to 6 cm inside its original collision surface; its separate
+western gameplay view is pending.
+
+The brook now has depth-dependent muted colour, more transparency, small normal
+ripples and narrow broken flow strokes. The browser's existing blended-shadow
+cutoff uniform removes the opaque water silhouette without removing visible water;
+the native equivalent is still pending. A failed material-alpha trial was reverted.
+
+These actual game captures use the same third-person camera: eye `[0,3.8,40]`,
+target `[0,0.9,32]`, noon, 800×533; the player reached the bridge through movement
+commands. The browser reported no page errors. The placement-spacing check and
+production browser/WASM build pass. These are progress images, not acceptance
+of the full slice; denser cover, cliff refinement, native water matching, localized
+foam, the wide overview and final traversal/clipping review remain in progress.
+
+| Before | Ground and water progress |
+| --- | --- |
+| ![Before](images/greyhaven-brook-slice-before.png) | ![Progress](images/greyhaven-brook-slice-progress.png) |
+
+### Owner screenshot feedback — follow during this slice or later
+
+The owner requested recording these observations without interrupting the ongoing
+visual work (2026-11-06):
+
+- **Bridge:** the guardrails appear to float in the air. Anchor their posts and
+  rail ends convincingly to the bridge deck and banks; check from gameplay height.
+- **Brook:** show realistic flow, beyond the current moving ripple strokes. Water
+  should respond visually to the course, shallows, banks and bridge supports.
+- **Ground:** make the ground much less flat, with convincing local relief and
+  erosion while retaining correct authoritative support and traversable approaches.
+- **Paths:** replace the flat, regular path-strip appearance with more realistic
+  tracks, irregular edges, worn surfaces and natural transitions into the ground.
+- **Vegetation:** remove or replace the weird isolated patches of grass blades.
+  Increasing the number of the same conspicuous clumps is not the desired result;
+  vegetation should read as coherent natural ground cover.
+
+These are recorded owner observations, not completed fixes. Apply them at the
+appropriate point in the visual pass; keep sharing actual gameplay screenshots.
+
+### Rail attachment and western bank follow-through
+
+The bridge's rail posts were 30 cm outside the deck edge, ending above its support
+beams. The authored art now extends the posts down onto five transverse timber
+crossbearers beneath the deck. The procedural fallback has the same attachments;
+walkable deck and rail collision are unchanged. The existing bundle still has
+20 material primitives.
+
+The conspicuous new ribbon-grass patches are removed from the brook slice following
+owner feedback; existing fern patches remain. The live Blender preview reflects
+that removal. Soil/grit breakup uses the existing mud and gravel masks, and low,
+partly buried rock chips gather on supported ground at the western cliff foot.
+These changes and the weathered rock skin remain presentation-only. The browser
+production build passes; no broad E2E or physics-engine work was undertaken for
+this pass. Ground relief, path shaping, realistic flow and native shadow matching
+remain unfinished.
+
+![Current western stream corridor](images/greyhaven-western-bank-progress.png)
+
+The current browser capture reports no page errors and shows the reduced blade
+clumps, soil breakup and translucent brook approaching the western gate. It is an
+environment camera, not evidence of a completed western-bank traversal: the direct
+walk route stopped by an existing obstacle near `[-9.4,28.65]` m. Final traversal
+and clipping acceptance remain pending. The paths and terrain still need the
+larger shape/refinement pass requested in the feedback.
+
+### Western brook mill (owner correction)
+
+The owner identified that the brook entered through an ordinary road gate. That
+western opening now belongs to a small north-bank watermill built into the
+palisade: rubble foundation, timber storey, a long slate roof over the wheel bay,
+open-spoked undershot wheel, loading door and shuttered windows. The north wall
+joins the mill body; the southern pier joins the remaining palisade. A narrow stone
+bank crossing preserves the western route beside the water. The western guard
+moves out of the new building to watch that crossing.
+
+The mill is authored in `content/greyhaven/authoring/fortifications.py` and exports
+through the existing settlement glTF/manifest. Seven new stable collision IDs
+65121–65127 represent its building, roof, wheel envelope, bank crossing and sloped approaches;
+65022 remains the passage header. Collision detail stays separate from the visual
+spokes, paddles, framing and dressings. The wheel is static in this first pass;
+rotation and localized water spray remain unfinished.
+
+The focused mill check validates final content, clear water below the wheel,
+capsule clearance along the bank crossing and solid support, on both existing
+physics backends. The browser/WASM production build and game view are used for
+visual confirmation, without a broad E2E run. Shared conventions resolved at
+sourceRevision `625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+
+The accompanying ground pass adds three low authored rises in `landscape.json`,
+sampled into core terrain with smooth radial falloff and road clearance. Path
+wear is narrower and has irregular edges and patchy soil transitions in shared
+presentation. The focused relief check confirms bridge/main-path levels remain
+unchanged; this is still an early ground-shape pass, not the completed landscape.
+
+![Western mill in the running game](images/greyhaven-western-watermill-progress.png)
+
+Game capture: noon, eye `[-23,4.8,28]`, target `[-32,2,19.8]`, 800×533.
+All seven terrain textures loaded and the browser reported no page errors. This
+is an environment view; the earlier blocked player route is not presented as a
+completed walk through the mill. The focused collision query proves the crossing's
+clearance/support separately. Ground/path relief and the rest of the visual slice
+still need further refinement and final gameplay traversal.
+
+### Brook current and shallow-bed pass
+
+Quiet reaches now carry thin, subdued streaks along the current, with a faster
+centre and slower margin, using the existing shared `Motion::Flow`. Broken foam
+arcs are localized to the waterfall's plunge and the mill wheel's downstream
+water. The opaque-looking filled plunge-foam disc is removed. New partly buried
+bed gravel joins the existing rock-projected shingle batch. No water simulation,
+renderer or collision authority is added.
+
+The focused presentation check confirms both foam sites exist and samples the
+animated geometry through its motion cycle: streaks face upward and stay over wet
+ground. Native material roughness/metalness now matches the browser's translucent
+surface response; native suppression of the water's opaque shadow still requires
+the rendering provider's missing shadow-alpha setting.
+
+The direct game walk reached the brook's western bend after leaving the bridge
+via its ramp (its rails correctly prevent a sideways exit). It exposed a raised
+edge where the mill towpath met the lower bank. The authored mill now has tapered
+stone approaches from the village side and western bank. The western apron stops
+before the downstream brook bend, preserving the water channel.
+
+The corrected in-game route passed: spawn → bridge south landing → bridge →
+north landing → brook centreline at `[-6,32.5]`, `[-17,31]`, `[-28,24.5]` m →
+village-side mill apron → passage at `[-34,21.35]` → western bank at
+`[-34,24.5]`, then the complete reverse route back to the bridge. Each waypoint
+asserted arrival within 25 cm through real movement commands; no jump or teleport
+was used. This confirms the mill approaches beyond the earlier clearance sweep.
+The focused current/foam check, final-content mill check, native client compilation
+and production browser/WASM build pass. No physics backend changes were made.
+
+![Brook after the verified mill-and-back walk](images/greyhaven-brook-current-bed-progress.png)
+
+This capture uses the original comparison camera (`[0,3.8,40]` toward `[0,0.9,32]`,
+noon, 800×533) after the verified return walk; the player stands at `[0,31.91]` m.
+The browser reported no page errors and loaded all seven ground materials. The
+lower current glints and attached bridge rails are visible. It also makes the
+remaining flat ground, coarse path edges and distant cliff repetition clear;
+those still need the stronger landscape/cover pass before this slice is complete.
+
+### Short turf and western rock spurs
+
+The old tall, isolated blade patches are removed from both the settlement glTF
+and the brook's legacy tuft presentation. Their replacement is short turf with
+40 curved blades distributed across each patch, rather than converging at one
+root. Deterministic Poisson-disc roots, noise clusters, small glades and muted
+colour variation remain shared by native/browser. Actual channel footprints,
+path verges, structures and slope/crease masks keep the cover off water and hard
+surfaces. Short turf can grow in the flat settlement grass areas; the former
+blanket spawn-plaza exclusion and five-metre brook cut exclusion no longer leave
+those decorative areas bare. Authoritative spawn support and movement are unchanged.
+
+Each turf instance tilts onto the sampled ground plane; patches crossing a sharp
+crease are omitted. The focused root-support check confirms grounded roots, dry
+water boundaries and actual cover in the settlement. The current game export has
+1,142 turf instances and 129 ferns in this slice, using two shared meshes. The
+saved live Blender scene uses these same exported instances. These counts describe
+this content, not a new budget or gate.
+
+Three new brook-facing rock spurs have projecting bedding ledges and smaller
+talus companions (stable collision IDs 65128–65136). The existing Blender authoring
+script exports their coarse immutable collision meshes; shared presentation adds
+the face-aligned rock PBR and continuous bedding/patina colour. A game view exposed
+an overly regular triangular recess pattern; removing that fan displacement keeps
+the larger authored fractures legible without making the faces look crumpled.
+The architecture bundle loses the old tufts and drops from 20 to 17 material groups.
+
+The existing content/mill clearance check passes with the new rocks. Actual movement
+also reaches the western slope at `[-36,39.83]` m, via the bridge, brook, mill crossing
+and western bank, without jumping or teleporting. The production browser build passes.
+
+A focused invocation of the existing browser profiler sampled bridge and western
+art views at 800×533 on an RTX 3060 Ti. The western view measured 61.5 FPS, median
+CPU 12.9 ms and GPU 11.13 ms; the short bridge window had median CPU 15.2 ms/GPU
+11.14 ms and large frame outliers. These are checkpoint observations, not a
+before/after speed claim; there is no comparable baseline. The samples precede
+removing the redundant rock fan triangles. The report is
+`artifacts/profile/greyhaven-brook-quality.json`; no performance gate was added.
+
+![Western slope after turf and rock refinement](images/greyhaven-western-turf-rock-progress.png)
+
+The corrected game view uses eye `[-29,4.2,47]`, target `[-44,3.7,36]`, noon,
+800×533, with the player having walked to `[-36,39.83]` m. The browser reports no
+page errors and all seven terrain textures are loaded. The rock faces no longer
+carry the triangular fan recesses. Further path/terrain finishing, the native
+water shadow, matching final bridge view, wide overview and PR integration remain.
+
+### Native water-shadow integration
+
+The native client now sets the existing blended shadow alpha cutoff to 1.0 for
+procedural materials, matching the browser's cutoff. Water/foam retains its
+visible blending and received lighting/shadows without casting an opaque
+silhouette. Opaque modes ignore this setting; imported glTF keeps its existing
+material path.
+
+The rendering provider exposes that existing uniform through a single material
+setting in [render-engine #63](https://github.com/moritzbrantner/render-engine/pull/63)
+(fixes [#62](https://github.com/moritzbrantner/render-engine/issues/62)). Its focused
+headless render check proves both shadow removal and visible blue blended water;
+the existing sun-shadow test also passes. No shader or render pass was added.
+The game pins `bd4708dd86d247314ea0d28950cfd2b0c3d0eac6`; native client
+`cargo check -p mmorpg-client --locked` passes. A native in-game screenshot has not
+been captured. The earlier notes about the missing provider setting are superseded
+by this integration; upstream CI/merge status remains visible on that PR.
 The relocated lake also displaced one old boar clearing. Spawn 125 now stands on dry
 woodland at (-109, -23) m, retaining its identity and the six-boar population. Unit-content
 checks include all twelve new residents and use capsule support on the actual terrain
 triangles, including the brook's below-floor bed. Named-area rectangles remain labels;
 the lake footprint and playable boundary govern the woodland wander-clearance check.
+
+The final route check exposed a rock spur interfering with the Wolfrun Climb's
+upper cutting. Its final shape now fits between that climb's lower and upper lanes;
+the existing walk into the woods passes. Four existing timed journeys now cross
+the mill's bank path instead of walking into its wheel: wolf hunt, Warden guard,
+class abilities and corpse-loot reconnect. All four pass with deterministic
+replays and refreshed outputs. The ability-cost (15 rage), two-point rage-decay
+boundary, stale-death, duplicate-loot and reconnect assertions remain intact;
+the recorded death identity/position and resource samples follow the shifted trip.
+Scenery and browser-export fingerprints are refreshed through their existing
+focused golden checks. No gameplay or physics rules were changed for these routes.
+
+The rendering provider fix is now merged with its engine and oracle CI green.
+PR #644's latest integration commits are preserved; auto-merge is disabled so the
+visual slice can be reviewed before merging.
+
+Path wear in the brook slice also separates into subtle paired cart tracks, with
+lighter wear between them and irregular verges. It uses the existing path material
+and weights; crossing tracks combine into the more heavily worn junctions. Ground
+support and the movement corridor remain core-owned.

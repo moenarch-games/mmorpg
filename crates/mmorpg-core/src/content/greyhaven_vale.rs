@@ -490,6 +490,7 @@ pub fn terrain() -> Terrain {
                 } else {
                     let base = open_ground(x, z);
                     let base = cave::approach_ground(x, z, base);
+                    let base = base + landscape::brook_relief(x, z);
                     let base = brook::upper_ground(x, z, base);
                     base - if base < 100 {
                         brook::bed_depth(x, z)
