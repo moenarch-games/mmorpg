@@ -111,7 +111,7 @@ fn the_client_model_holds_only_client_rules_over_core() {
 }
 
 /// Physics Engine is a normal dependency of core, shared by native/WASM production;
-/// Rapier stays available there as a fallback and test oracle. Only core owns the choice.
+/// Rapier is optional and enabled only by the independent A/B diagnostic feature.
 #[test]
 fn production_builds_use_the_core_owned_physics_backend() {
     const CORE: &str = include_str!("../../mmorpg-core/Cargo.toml");
@@ -120,7 +120,8 @@ fn production_builds_use_the_core_owned_physics_backend() {
         .find(|line| line.starts_with("physics-engine"))
         .expect("mmorpg-core declares physics-engine");
     assert_eq!(declaration, "physics-engine.workspace = true");
-    assert!(CORE.contains("physics-ab = []"));
+    assert!(CORE.contains("rapier3d = { workspace = true, optional = true }"));
+    assert!(CORE.contains("physics-ab = [\"dep:rapier3d\", \"dep:web-time\"]"));
     assert!(
         !CORE.contains("default = ["),
         "physics engine must not need an opt-in feature"
