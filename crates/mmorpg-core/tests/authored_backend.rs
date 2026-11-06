@@ -50,6 +50,40 @@ fn worlds(bodies: impl IntoIterator<Item = RigidBody>) -> (World, World) {
     (engine, rapier)
 }
 
+#[test]
+fn mill_towpath_departure_settles_before_horizontal_motion() {
+    let mesh = greyhaven_vale::fort::meshes()
+        .into_iter()
+        .find(|mesh| mesh.id == 65125)
+        .expect("authored mill towpath");
+    let player = BodyId(1_000_001);
+    let (mut engine, mut rapier) = worlds([
+        RigidBody::floor(BodyId(1), 0),
+        RigidBody::static_mesh(&mesh).unwrap(),
+        RigidBody::moving(
+            player,
+            [-3516.45, 96.25, 2142.5],
+            [0.0; 3],
+            Vec3i::new(30, 90, 30),
+        ),
+    ]);
+    for tick in 0..8 {
+        for world in [&mut engine, &mut rapier] {
+            world.set_velocity(player, Vec3i::new(-2688, 0, 0)).unwrap();
+            world.step().unwrap();
+        }
+        let a = engine.body(player).unwrap().exact_position();
+        let b = rapier.body(player).unwrap().exact_position();
+        for axis in 0..3 {
+            assert!(
+                (a[axis] - b[axis]).abs() < 0.3,
+                "tick {tick}: {a:?} vs {b:?}"
+            );
+        }
+    }
+    assert!((engine.body(player).unwrap().exact_position()[1] - 90.0).abs() < 0.01);
+}
+
 #[cfg_attr(not(target_arch = "wasm32"), test)]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
 pub fn redbrand_json_rays_keep_floor_shelf_wall_and_ceiling_contacts() {

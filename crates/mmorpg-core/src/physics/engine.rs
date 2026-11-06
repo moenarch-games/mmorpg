@@ -564,10 +564,14 @@ impl World {
         velocities.clear();
         for body in self.bodies.values().filter(|body| body.is_moving()) {
             let mut velocity = body.velocity;
+            let mut settle = 0.0;
             // A swimmer (#274) keeps the zone's vertical velocity.
             if !body.weightless {
-                if self.grounded(body.id) && velocity[1] <= 0.0 {
+                if let Some(gap) = self.probe_ground_gap(body).filter(|_| velocity[1] <= 0.0) {
                     velocity[1] = 0.0;
+                    if gap > 1.0e-3 {
+                        settle = -gap;
+                    }
                 } else {
                     for (axis, gravity) in velocity.iter_mut().zip(self.gravity) {
                         *axis += gravity;
@@ -576,11 +580,18 @@ impl World {
             }
             velocities.push((body.id, velocity));
             let carry = carried.get(&body.id).copied().unwrap_or([0.0; 3]);
+            if carried.contains_key(&body.id) {
+                settle = 0.0;
+            }
             // Turned around touching characters as on the Rapier arm (#534, Rapier oracle).
             let desired = super::shared::slide_around(
                 self.bodies.values(),
                 body,
-                [0, 1, 2].map(|axis| velocity[axis] + carry[axis]),
+                [
+                    velocity[0] + carry[0],
+                    velocity[1] + settle + carry[1],
+                    velocity[2] + carry[2],
+                ],
             );
             moves.push(CharacterMove {
                 body: self.handles[&body.id],
@@ -683,6 +694,44 @@ impl World {
                     .and_then(|game| self.bodies.get(game))
                     .is_none_or(|body| !body.is_moving())
         })
+    }
+
+    fn probe_ground_gap(&self, body: &RigidBody) -> Option<f32> {
+        let offset = self.settings.offset;
+        let reach = offset + GROUND_PREDICTION_UNITS;
+        let (half_segment, radius) = super::capsule_dimensions(body.half_extents);
+        let cast = ShapeCast::new(
+            QueryPose::new(
+                Shape::capsule(half_segment, radius + offset),
+                lifted(body.position),
+            ),
+            Vector(0.0, -reach, 0.0),
+        );
+        let filter = QueryFilter {
+            exclude: Some(self.handles[&body.id]),
+            ..QueryFilter::default()
+        };
+        let mut hits = Vec::new();
+        self.engine
+            .cast_shape(cast, filter, &mut hits)
+            .expect("physics-engine grounded cast failed");
+        // The nearest walkable static support: a too-steep face met first (a ramp's chute end)
+        // is passed over, as physics-engine's own support test does (physics-engine #395). Over
+        // the lake basin the floor is open, as in the body's moves.
+        let min_up = self.settings.max_slope.cos();
+        let open = self.open_floor(body);
+        hits.iter()
+            .find(|hit| {
+                Some(hit.body) != open
+                    && (hit.starts_overlapping || hit.normal.1 > 0.0)
+                    && hit.normal.1 >= min_up
+                    && self
+                        .games
+                        .get(&hit.body.to_bits())
+                        .and_then(|game| self.bodies.get(game))
+                        .is_none_or(|body| !body.is_moving())
+            })
+            .map(|hit| hit.fraction * reach)
     }
 
     pub fn overlap_query(&self, aabb: Aabb) -> Result<Vec<BodyId>, PhysicsError> {
