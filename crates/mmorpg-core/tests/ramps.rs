@@ -111,7 +111,10 @@ fn nobody_climbs_the_steep_chute() {
 #[test]
 fn the_ramps_stand_flush_against_the_dock_and_clear_of_everything_else() {
     let content = greyhaven_vale::content();
-    assert_eq!(content.ramps(), greyhaven_vale::ramps());
+    // ZoneContent canonicalizes by stable body ID; the brook ramps sort before the dock.
+    let mut expected = greyhaven_vale::ramps();
+    expected.sort_by_key(|ramp| ramp.body);
+    assert_eq!(content.ramps(), expected);
     let dock = content
         .definition()
         .colliders()

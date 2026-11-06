@@ -238,3 +238,8 @@ The same content contains 13,510 scenery props, within the updated existing 14,0
 Moving the boar displaced by Stillwater onto dry woodland changes the content identity
 to `64efad8a826eb508`. The four body/AI/candidate ceilings above are unchanged; fights-32
 encodes 7,855,767 bytes (lower than its existing ceiling). Replay and recovery still agree.
+
+The brook mill adds 16 net fixed bodies (5,760 visits per 360 ticks). At content
+`9a8e9b17c7144f74`, the workloads record 1,305,360 / 1,302,480 / 1,311,120 /
+1,322,284 body visits. AI, candidate and byte ceilings remain unchanged; all four
+replay and recovery checks pass.

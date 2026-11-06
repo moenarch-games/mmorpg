@@ -307,6 +307,16 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
             highland[i] * (0.55 + breakup),
         ));
         let gravel = gravel.max(hollow[i] * 0.78 * smoothstep(0.55, 0.80, noise(x, z, 6., 549.)));
+        // Exposed soil and washed grit break up the brook slice's flat turf. These
+        // reuse existing masked layers; roads and physical support remain unchanged.
+        let brook_slice = s.greyhaven() && (-54. ..40.).contains(&x) && (12. ..65.).contains(&z);
+        let wash = if brook_slice {
+            smoothstep(0.48, 0.76, noise(x + z * 0.35, z, 4.5, 51398.))
+                * (0.35 + 0.65 * smoothstep(0.01, 0.12, slope[i]))
+        } else {
+            0.
+        };
+        let gravel = gravel.max(wash * 0.92);
         let forest = smoothstep(0.3, 0.7, woods[i] + 0.45 * breakup);
         let mud = if shore > 0. {
             (1. - smoothstep(2., 6.5, shore + 3.5 * breakup)).max(if marsh {
@@ -317,6 +327,7 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
         } else {
             0.
         };
+        let mud = mud.max(wash * 0.78);
         let sand = if shore > 0. {
             1. - smoothstep(1.2, 3.2, shore + 2. * breakup)
         } else {
@@ -501,7 +512,7 @@ pub(crate) fn grid_overlays(
 /// The width of visible wear, shared with the distant terrain's baked road colour.
 pub(crate) fn path_width(s: &Scenery, width: f64, x: f64, z: f64) -> f64 {
     if s.greyhaven() {
-        width * (0.72 + 0.20 * noise(x, z, 6., 513.))
+        width * (0.58 + 0.30 * noise(x, z, 6., 513.))
     } else {
         width
     }
@@ -560,8 +571,37 @@ pub(crate) fn roads(layers: &mut Layers, s: &Scenery, g: &TerrainGrid) {
                         if in_water {
                             0.
                         } else {
-                            ((path_width(s, width, px, pz) + EDGE - offset.abs()) / EDGE)
-                                .clamp(0., 1.)
+                            {
+                                let shift = if crossing {
+                                    (noise(x, z, 5.5, 51410.) - 0.5) * 0.5
+                                } else {
+                                    0.
+                                };
+                                let edge = ((path_width(s, width, px, pz) + EDGE
+                                    - (offset - shift).abs())
+                                    / EDGE)
+                                    .clamp(0., 1.);
+                                let breakup = if crossing {
+                                    0.68 + 0.32 * noise(px, pz, 0.65, 51411.)
+                                } else {
+                                    1.
+                                };
+                                let wear = if crossing
+                                    && width > 1.3
+                                    && (-54.0..40.0).contains(&x)
+                                    && (12.0..65.0).contains(&z)
+                                {
+                                    // Paired cart tracks wear through the softer verge/median;
+                                    // road intersections naturally receive both traffic directions.
+                                    let rut = ((0.28 - ((offset - shift).abs() - 0.65).abs())
+                                        / 0.28)
+                                        .clamp(0., 1.);
+                                    0.62 + 0.38 * rut
+                                } else {
+                                    1.
+                                };
+                                edge * breakup * wear
+                            }
                         },
                     );
                 }

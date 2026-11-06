@@ -192,6 +192,7 @@ fn new_ground_cover_is_instanced_and_keeps_routes_and_water_clear() {
             && group.draws.first().is_some_and(|draw| {
                 draw.id.contains("greyhaven-ground-cover")
                     || draw.id.contains("greyhaven-fern-understory")
+                    || draw.id.contains("greyhaven-brook-turf")
             })
     }) {
         for draw in &group.draws {
@@ -200,11 +201,24 @@ fn new_ground_cover_is_instanced_and_keeps_routes_and_water_clear() {
                 (f64::from(draw.model[12]) * 100.).round() as i32,
                 (f64::from(draw.model[14]) * 100.).round() as i32,
             ];
-            assert!(scenery.road_distance(point) >= 230);
-            assert!(scenery.water_distance(point) >= 220);
-            assert!(!mmorpg_core::greyhaven_vale::brook::wet_ground(
-                point[0], point[1]
-            ));
+            let brook_slice = (-5400..4000).contains(&point[0]) && (1200..6500).contains(&point[1]);
+            // The approved short brook turf has a close, non-colliding verge. Other
+            // forest/meadow cover retains its wider legacy road and water clearance.
+            assert!(scenery.road_distance(point) >= if brook_slice { 35 } else { 230 });
+            assert!(scenery.water_distance(point) >= if brook_slice { 100 } else { 220 });
+            if brook_slice {
+                for mut channel in mmorpg_core::greyhaven_vale::brook::waters()
+                    .into_iter()
+                    .filter_map(|water| water.channel)
+                {
+                    channel.half_width += 100;
+                    assert!(!channel.contains(point[0], point[1]));
+                }
+            } else {
+                assert!(!mmorpg_core::greyhaven_vale::brook::wet_ground(
+                    point[0], point[1]
+                ));
+            }
             clumps += 1;
         }
     }

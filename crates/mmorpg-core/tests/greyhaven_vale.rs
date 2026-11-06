@@ -244,6 +244,8 @@ fn roads_are_open_corridors() {
             // The brook's deck and rails deliberately frame a narrower road crossing.
             && collider.id != greyhaven_vale::brook::BRIDGE
             && !greyhaven_vale::brook::RAILS.contains(&collider.id)
+            // The mill's narrower bank passage is checked with real capsules on both backends.
+            && ![124, 125].contains(&collider.id)
             && !definition
                 .static_meshes()
                 .iter()
@@ -281,6 +283,64 @@ fn road_clearance_is_exact_at_the_boundary() {
         half_extents: [2_000, 50, 10],
     };
     assert!(!clear_of_roads(&wall));
+}
+
+#[test]
+fn brook_mill_keeps_its_water_channel_and_bank_crossing_clear() {
+    use mmorpg_core::physics::{Backend, BodyId, RigidBody, Vec3i, World};
+    let definition = greyhaven_vale_definition();
+    greyhaven_vale::content_with_definition(definition.clone()).unwrap();
+    for backend in [Backend::Engine, Backend::Rapier] {
+        let mut world = World::with_backend(Vec3i::ZERO, backend);
+        for collider in definition
+            .colliders()
+            .iter()
+            .filter(|c| [124, 125].contains(&c.id))
+        {
+            world
+                .add_body(RigidBody::fixed(
+                    BodyId(u64::from(collider.id)),
+                    Vec3i::new(
+                        collider.position[0],
+                        collider.position[1],
+                        collider.position[2],
+                    ),
+                    Vec3i::new(
+                        collider.half_extents[0],
+                        collider.half_extents[1],
+                        collider.half_extents[2],
+                    ),
+                ))
+                .unwrap();
+        }
+        for mesh in definition.static_meshes() {
+            world
+                .add_body(RigidBody::static_mesh(mesh).unwrap())
+                .unwrap();
+        }
+        // The water passes below the wheel, rather than through a closed foundation.
+        assert!(
+            world
+                .cast_ray([-3_600., -25., 2_000.], [800., 0., 0.], |_| true)
+                .is_none()
+        );
+        // A supported dry-bank passage replaces the road gate. The wheel is north of it.
+        assert!(
+            world
+                .cast_shape(
+                    [-3_600., 100.25, 2_135.],
+                    Vec3i::new(30, 90, 30),
+                    [800., 0., 0.],
+                    |_| true
+                )
+                .is_none(),
+            "mill towpath on {backend:?}"
+        );
+        let support = world
+            .cast_ray([-3_200., 100., 2_135.], [0., -150., 0.], |_| true)
+            .unwrap();
+        assert_eq!(support.body.0, 65125);
+    }
 }
 
 #[test]
@@ -322,7 +382,6 @@ fn palisade_gates_are_clear_openings_centred_on_their_roads() {
         for (posts, centre, axis) in [
             ([120, 121], [0., -1_000.], 0),
             ([122, 123], [0., 5_000.], 0),
-            ([124, 125], [-3_200., 2_000.], 1),
             ([126, 127], [3_200., 2_000.], 1),
         ] {
             // The inner post faces leave exactly 4.4 m, centred on each road.

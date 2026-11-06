@@ -474,8 +474,10 @@ mod tests {
             .sum();
         assert!(nodes <= 3_800, "{nodes} static nodes");
         // The terrain is drawn in visual tiles (#526), outside the static scene.
-        // The shared arched grass and fern geometry (#644) brings the authored scene
-        // to about 484,000 vertices; retain the existing budget with that content accounted for.
-        assert!(vertices <= 500_000, "{vertices} static vertices");
+        // The #644 brook quality pass grows the saved scene from 485,864 to 526,685:
+        // refined basin rocks +21,114; new western rocks +15,435; bank shingle +1,884;
+        // one shared turf mesh +560; other approved scenery +1,828. Node count remains
+        // 3,722 under the unchanged 3,800 ceiling; this is content cost, not new work class.
+        assert!(vertices <= 530_000, "{vertices} static vertices");
     }
 }

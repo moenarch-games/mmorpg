@@ -180,6 +180,11 @@ fn players_running_on_unenclosed_content_stay_encodable() {
     // Player 2 spawned 2 m ahead and rests against the limit; player 1 caught up, slid
     // around it (#273) and rests against the limit beside it.
     let front = MAX_CONTENT_COORDINATE_UNITS - 30;
-    assert_eq!(positions, [[front, 90, -62], [front, 90, 0]]);
+    assert_eq!(positions[1], [front, 90, 0]);
+    assert_eq!([positions[0][0], positions[0][1]], [front, 90]);
+    // The side chosen at the touching-body tie is backend-specific. Both capsules must
+    // stop beside each other, separated by their diameter and at most the outward nudge.
+    let diameter = 2 * mmorpg_core::PLAYER_HALF_EXTENTS_UNITS[2];
+    assert!((diameter..=diameter + 2).contains(&positions[0][2].abs()));
     assert_wire_parity(&zone);
 }

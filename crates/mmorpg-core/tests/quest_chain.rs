@@ -24,10 +24,10 @@ const HUB: [i32; 2] = [-1_800, 2_000];
 // Return through the open square east of the authored produce stall.
 const TO_MARSHAL: &[[i32; 2]] = &[[-1_500, 2_000], [-1_500, 1_150], [-2_200, 1_150]];
 const TO_TANNER: &[[i32; 2]] = &[[-2_400, 2_850]];
-/// The Wolfrun Trail through the west gate and up the Wolfrun Climb (#423) to the den clearing.
+/// The Wolfrun Trail over the mill bank crossing and up the Wolfrun Climb (#423) to the den clearing.
 const TO_WOODS: &[[i32; 2]] = &[
-    [-3_200, 2_000],
-    [-4_200, 2_000],
+    [-3_200, 2_135],
+    [-4_200, 2_135],
     [-4_200, -1_800],
     [-5_400, -1_800],
     [-5_400, 1_200],
@@ -40,8 +40,12 @@ const FROM_WOODS: &[[i32; 2]] = &[
     [-5_400, 1_200],
     [-5_400, -1_800],
     [-4_200, -1_800],
-    [-4_200, 2_000],
-    [-3_200, 2_000],
+    [-4_200, 2_135],
+    // Enter the supported crossing through its western bank apron.
+    [-3_600, 2_450],
+    [-3_400, 2_450],
+    [-3_400, 2_135],
+    [-3_200, 2_135],
     HUB,
 ];
 /// The Millbrook Road through the east gate and up the Millbrook Climb (#423) to the farmhouse.

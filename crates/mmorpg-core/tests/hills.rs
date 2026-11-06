@@ -61,7 +61,17 @@ fn the_original_valley_is_flat_and_the_ring_has_gentle_hills() {
             if outer_region(x) || outer_region(x + terrain::STEP) {
                 continue;
             }
-            if x.abs().max(z.abs()) <= 12_500 && !basin(x) {
+            // The brook's authored low mounds also reshape village ground. Keep
+            // the flat-valley assertion outside their declared circular footprints;
+            // their samples still contribute to the slope limit below.
+            let brook_mound = greyhaven_vale::landscape::data()
+                .brook_ground
+                .iter()
+                .any(|mound| {
+                    i64::from(x - mound.center[0]).pow(2) + i64::from(z - mound.center[1]).pow(2)
+                        < i64::from(mound.radius).pow(2)
+                });
+            if x.abs().max(z.abs()) <= 12_500 && !basin(x) && !brook_mound {
                 assert_eq!(height, 0, "the unmodified valley stays flat at {x}, {z}");
             }
             tallest = tallest.max(height);
