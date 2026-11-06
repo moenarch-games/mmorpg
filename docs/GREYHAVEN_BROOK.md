@@ -368,3 +368,24 @@ failure is fixed here; four pre-existing assertions remain unresolved (square pa
 overlapping conservative structure bounds, an old road-clearance assertion, and contiguous
 tree numbering). No assertion was removed or weakened. These are in addition to the already
 reported legacy A/B failure; full suites and native GPU acceptance were not run.
+
+The woodland overview is `artifacts/greyhaven-brook/woodland-edges.png`; Chromium completed
+the village/bridge crossing with all seven ground layers loaded and no page errors.
+
+## Stone well and winding frame
+
+The simple well prop is replaced in the existing fortification glTF by a stone-lined shaft,
+oak winding frame, crank, hanging rope and slate canopy at the same dry (11, 30) m location.
+Its old square box is replaced by a closed sixteen-sided static mesh with the same stable
+ID 107; roof 65069 blocks the larger overhead canopy. The shaft remains a closed gameplay
+prop. The source exports 73 simplified meshes and the same thirteen resource files; both
+clients use the existing bundle and procedural fallback paths.
+
+Focused checks: deterministic bounded content reconstruction, native loading of every kit
+entry and the browser/WASM production build passed. Chromium entered over the bridge,
+approached both sides of the well and walked around it: contact stopped 1.28–1.29 m from
+the centre, including the character radius. No page errors occurred; the loaded art is
+captured in `artifacts/greyhaven-brook/well-detail.png`. The procedural fallback also matches
+the new body and canopy dimensions.
+Full suites and native GPU acceptance were not run. Previously reported content assertions
+and legacy A/B failures remain unresolved.

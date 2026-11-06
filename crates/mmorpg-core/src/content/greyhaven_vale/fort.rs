@@ -18,12 +18,13 @@ pub fn meshes() -> Vec<StaticMesh> {
 #[must_use]
 pub fn dresses(id: u32) -> bool {
     id == super::ids::KEEP
+        || id == super::ids::WELL
         || id == super::ids::CAVE_THRESHOLD
         || super::ids::PALISADE.contains(&id)
         || super::ids::GATE_POSTS.contains(&id)
         || (65000..=65023).contains(&id)
         || TOWER_BODIES.contains(&id)
-        || (65050..=65068).contains(&id)
+        || (65050..=65069).contains(&id)
         || super::ids::TENTS.contains(&id)
         || super::ids::CRATES.contains(&id)
         || [
@@ -35,18 +36,16 @@ pub fn dresses(id: u32) -> bool {
 }
 
 pub(super) fn apply(colliders: &mut Vec<StaticCollider>) {
-    // Palisade, windmill and tent boxes are replaced by authored meshes
+    // Palisade, windmill, well and tent boxes are replaced by authored meshes
     // with the same stable IDs. Conservative bounds must never become physical wall boxes.
     colliders.retain(|c| {
         !super::ids::PALISADE.contains(&c.id)
             && c.id != super::ids::WINDMILL
+            && c.id != super::ids::WELL
             && !super::ids::TENTS.contains(&c.id)
     });
     if let Some(keep) = colliders.iter_mut().find(|c| c.id == super::ids::KEEP) {
         keep.position[1] = keep.half_extents[1];
-    }
-    if let Some(well) = colliders.iter_mut().find(|c| c.id == super::ids::WELL) {
-        well.position = [1100, 50, 3000];
     }
     colliders.extend(
         TOWERS

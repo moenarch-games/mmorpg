@@ -10,7 +10,6 @@ use std::{
 const PLASTER: u32 = 0xe3d6b8;
 const TIMBER: u32 = 0x5c3f28;
 const THATCH: u32 = 0xc19a4f;
-const RED: u32 = 0xa3472f;
 const SLATE: u32 = 0x55606f;
 const ROOF_WOOD: u32 = 0x6d4a2d;
 const STONE: u32 = 0xaaa396;
@@ -927,21 +926,25 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
                 let r = hx.min(hz);
                 m.put(
                     STONE,
-                    frustum(10, 1., false, true, 0.5),
-                    at(0., 0., 0., r, 0.95, r),
+                    frustum(16, 1., false, true, 0.5),
+                    at(0., 0., 0., r, 1., r),
                 );
                 m.put(
                     STONE_DARK,
-                    frustum(10, 1., false, true, 0.5),
-                    at(0., 0.95, 0., r + 0.05, 0.12, r + 0.05),
+                    frustum(16, 1., false, true, 0.5),
+                    at(0., 0.90, 0., r, 0.10, r),
                 );
-                m.put(0x23384a, disc(10), at(0., 1.08, 0., r - 0.18, 1., r - 0.18));
+                m.put(
+                    0x23384a,
+                    disc(16),
+                    at(0., 1.005, 0., r * 0.68, 1., r * 0.68),
+                );
                 for sx in [-1., 1.] {
-                    m.box_at(WOOD, [sx * (r - 0.1), 1.6, 0.], [0.09, 1.6, 0.09]);
+                    m.box_at(WOOD, [sx * r * 0.84, 1.8, 0.], [0.105, 1., 0.105]);
                 }
-                m.box_at(DARK, [0., 2.2, 0.], [r + 0.1, 0.06, 0.06]);
+                m.box_at(DARK, [0., 1.88, 0.], [r + 0.1, 0.06, 0.06]);
                 m.box_at(IRON, [0., 1.75, 0.], [0.12, 0.16, 0.12]);
-                roof(&mut m, RED, r + 0.1, r * 0.75, 3.1, 0.9, 0.25);
+                roof(&mut m, 0x37404a, r + 0.25, r * 0.95, 2.78, 0.62, 0.);
             }
             PropKind::Tree(v) => tree(&mut m, p, v),
             PropKind::Rock(_) => {

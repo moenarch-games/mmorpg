@@ -197,6 +197,31 @@ for x in [-22,-19,-15,-12]:
         for dy in [-.84,.84]:box('Keep north head and sill',(x,y+dy,-5.065),(.48,.095,.10),trim,.025)
         box('Keep north mullion',(x,y,-5.095),(.045,.72,.045),iron)
 
+
+# The square's well uses a stone ring and a working-looking timber winding frame.
+# Its simplified body is closed (the well cannot be entered); the visible shaft is inset.
+x,z=11,30;n=16
+vs=[(x+r*math.sin(j*math.tau/n),y,z+r*math.cos(j*math.tau/n))
+    for y,r in [(0,1),(.98,1),(.98,.68),(.35,.68)] for j in range(n)]
+fs=[(row*n+j,row*n+(j+1)%n,(row+1)*n+(j+1)%n,(row+1)*n+j)
+    for row in range(3) for j in range(n)]
+mesh('Well weathered stone lining',vs,fs,stone_mat)
+cylinder('Well dark inset shaft',(x,.34,z),.68,.02,dark,16)
+body=[(x+math.sin(j*math.tau/n),y,z+math.cos(j*math.tau/n)) for y in [0,1] for j in range(n)]
+body_faces=[tuple(range(n-1,-1,-1)),tuple(range(n,2*n))]+[(j,(j+1)%n,(j+1)%n+n,j+n) for j in range(n)]
+solid_record(107,body,body_faces)
+for side in [-1,1]:
+    box('Well oak upright',(x+side*.84,1.8,z),(.105,1.0,.105),wood_mat,.015)
+    for y in [1.02,2.3]:box('Well post iron collar',(x+side*.84,y,z),(.115,.055,.115),iron)
+    beam('Well canopy knee brace',(x+side*.83,2.05,z),(x+side*.35,2.76,z),.06,wood_mat)
+beam('Well winding beam',(x-1.04,1.88,z),(x+1.04,1.88,z),.10,wood_mat)
+beam('Well crank arm',(x+1.08,1.88,z),(x+1.08,1.56,z),.055,iron)
+beam('Well crank handgrip',(x+1.08,1.56,z),(x+1.28,1.56,z),.055,wood_mat)
+rope_mat=flat('well hemp',(.30,.24,.14))
+cylinder('Well hanging rope',(x,.62,z),.025,1.27,rope_mat,7)
+roof('Well slate canopy',x,z,1.25,.95,2.78,.62,slate_mat,65069)
+for side in [-1,1]:beam('Well canopy fascia',(x-1.28,2.77,z+side*.95),(x+1.28,2.77,z+side*.95),.06,wood_mat)
+
 # The eight old straight palisades become one continuous, faceted perimeter with four gates.
 PATHS={110:[(-3,-10),(-27,-10),(-31,-6)],111:[(3,-10),(27,-10),(31,-6)],112:[(-32,40),(-28,50),(-6.5,50)],113:[(3,50),(28,50),(33,42)],114:[(-31,-6),(-34,5),(-33,13),(-32,17)],115:[(-32,23),(-34,30),(-32,40)],116:[(31,-6),(34,4),(34,13),(32,17)],117:[(32,23),(34,32),(33,42)]}
 extra_wall_id=65050
