@@ -216,11 +216,36 @@ fn floor_q10(x: i32, z: i32) -> i64 {
     // Fade it out at the waterfall so the spring still meets its plunge pool.
     let weathering = super::value_noise_q10(i64::from(x), i64::from(z), 2_600, 513);
     let strength = i64::from((z - 2_400).abs().min(1_600));
+    // The waterfall retains its existing attachment while the other shoulders widen.
     let radius = 4_530 + (weathering - 512) * strength / 1_820;
     let shoulder = 1_110 + weathering * strength / 16_384;
-    let apron = ellipse_floor(x, z - 2_800, radius, 6_800, shoulder);
-    let notch = ellipse_floor(x + 1_400, z + 4_000, 3_100, 2_700, 1_160);
-    apron.max(notch)
+    let original = ellipse_floor(x, z - 2_800, radius, 6_800, shoulder).max(ellipse_floor(
+        x + 1_400,
+        z + 4_000,
+        3_100,
+        2_700,
+        1_160,
+    ));
+    let authored = super::landscape::data()
+        .basin
+        .lobes
+        .iter()
+        .map(|lobe| {
+            let radius = i64::from(lobe.radii[0]) + (weathering - 512) * strength / 1_820;
+            let shoulder = i64::from(lobe.shoulder_q10) + weathering * strength / 16_384;
+            ellipse_floor(
+                x - lobe.center[0],
+                z - lobe.center[1],
+                radius,
+                i64::from(lobe.radii[1]),
+                shoulder,
+            )
+        })
+        .max()
+        .unwrap_or(original);
+    let fall_z = super::landscape::data().watercourses.village[0][1];
+    let weight = super::smooth_q10(i64::from((z - fall_z).abs()), 600, 1800);
+    original + (authored - original) * weight / 1024
 }
 
 /// Elliptical rock face with a weathered shoulder, evaluated entirely in integers.

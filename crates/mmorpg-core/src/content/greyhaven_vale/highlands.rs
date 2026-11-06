@@ -3,7 +3,7 @@
 //! about as large as the Vale itself (416 m × 424 m). Like the farmland it stays in the
 //! Greyhaven zone, so no zone boundary or loading step lies on the way.
 //!
-//! A broken escarpment (26–56 m, with the established route shoulders at 40–52 m) closes
+//! JSON-authored terraced ridges (33–53 m crowns, with the marked hard climb retained) close
 //! the Vale's northern side behind Greyfang Ridge. The
 //! Highland Pass joins the north-cave approach and winds up through it: a cutting into its
 //! southern face, a ledge climbing east, a hairpin landing, a ledge climbing back west and a
@@ -175,7 +175,10 @@ pub fn clear_for_tree(x: i32, z: i32) -> bool {
     const MARGIN: i32 = 200;
     // Trunks on a sheer face stood on the highest corner of their footprint, leaving
     // their visible roots above the hillside. Use the actual terrain before placing them.
-    let on_face = (ESCARPMENT[3]..=ESCARPMENT[0] + 1_600).contains(&z);
+    let sections = &super::landscape::data().northern_ridge.sections;
+    let south = sections.iter().map(|s| s.profile[0][0]).max().unwrap() + 400;
+    let north = sections.iter().map(|s| s.profile[7][0]).min().unwrap() - 400;
+    let on_face = (north..=south).contains(&z);
     let supported = !on_face || {
         let heights = [
             [x, z],
@@ -215,7 +218,15 @@ pub fn height_at(x: i32, z: i32) -> Option<i32> {
     if let Some(lane) = PASS.iter().find(|lane| lane.contains(x, z)) {
         return Some(lane.height(x, z));
     }
-    if z > ESCARPMENT[0] + 1_600 {
+    let ridge = &super::landscape::data().northern_ridge;
+    let south_limit = ridge
+        .sections
+        .iter()
+        .map(|s| s.profile[0][0])
+        .max()
+        .unwrap()
+        + 400;
+    if z > south_limit {
         return None;
     }
     let (x64, z64) = (i64::from(x), i64::from(z));
@@ -237,59 +248,80 @@ pub fn height_at(x: i32, z: i32) -> Option<i32> {
     // Roads and the hard climbing route retain a full terrain cell of their old shoulder.
     // Between those shoulders, fixed integer weathering breaks the toe and face into
     // gullies and buttresses while the routes keep their established clearances.
-    let distance = PASS
+    let (distance, ledge) = PASS
         .iter()
         .map(|lane| {
             let dx = (lane.min[0] - x).max(x - lane.max[0]).max(0);
             let dz = (lane.min[1] - z).max(z - lane.max[1]).max(0);
-            i64::from(dx.max(dz))
+            let height = lane.height(
+                x.clamp(lane.min[0], lane.max[0]),
+                z.clamp(lane.min[1], lane.max[1]),
+            );
+            (i64::from(dx.max(dz)), i64::from(height))
         })
-        .min()
-        .unwrap_or(i64::MAX);
+        .min_by_key(|(distance, _)| *distance)
+        .unwrap();
     let climb_distance = i64::from((12_000 - x).max(x - 12_800).max(0));
-    let weight = smooth_q10(distance.min(climb_distance), 400, 1_600);
-    let weathered = if north < north_foot {
-        let ribs = value_noise_q10(x64 + (north - foot) / 3, 0, 2_400, SEED.rotate_left(7));
-        let fissures = value_noise_q10(x64, 0, 1_100, SEED.rotate_left(41));
-        // Broad buttresses move the toe up to sixteen metres either side of its old line.
-        // Fissures run along each rib instead of making a grid of small crest dimples.
-        let shift = (ribs - 512) * 3_200 / 1_024;
-        let local_foot = foot + shift;
-        let front = south_top + shift + (1_400 * ribs + 600 * fissures) / 1_024;
-        let rear = north_top - 700 * ribs / 1_024;
-        // Unequal summits and saddles at the scale of the enclosing landscape. The
-        // original route shoulders above still blend in through `weight`, independently.
-        let summit = value_noise_q10(x64, 0, 6_800, SEED.rotate_left(29));
-        let crown = 2_600 + (2_200 * summit + 800 * fissures) / 1_024;
-        if north < local_foot {
-            0
-        } else if north < front {
-            let t = ((north - local_foot) * 1_024 / (front - local_foot)).clamp(0, 1_024);
-            // A low scree toe and shallow upper shoulder break the former single plane;
-            // the steep middle carries most of the rise.
-            let profile = if t < 192 {
-                t / 2
-            } else if t < 832 {
-                96 + (t - 192) * 832 / 640
-            } else {
-                928 + (t - 832) / 2
-            };
-            crown * profile / 1_024
-        } else if north <= rear {
-            crown
-        } else {
-            crown + (plateau - crown) * (north - rear) / (north_foot - rear)
-        }
-    } else {
-        plateau
-    };
-    let height = i32::try_from(height + (weathered - height) * weight / 1_024).unwrap_or(0);
+    let [min, max] = ridge.protected_approach;
+    let approach_distance = i64::from(
+        (min[0] - x)
+            .max(x - max[0])
+            .max(0)
+            .max((min[1] - z).max(z - max[1]).max(0)),
+    );
+    let authored = authored_escarpment(x64, z64, plateau);
+    // Ledge shoulders extend their walkable height, rather than preserving the old
+    // 40 m wall above/below every road. The marked hard climb alone keeps that face.
+    let lane_weight = smooth_q10(distance, 400, 1_600);
+    let ledged = ledge + (authored - ledge) * lane_weight / 1024;
+    let approach_weight = smooth_q10(approach_distance, 400, 1_600);
+    let approached = ledged * approach_weight / 1024;
+    let climb_weight = smooth_q10(climb_distance, 400, 1_600);
+    let height = i32::try_from(height + (approached - height) * climb_weight / 1024).unwrap_or(0);
     // The extended toe meets the Vale's existing low hills instead of cutting a new step.
     Some(if north < foot {
         height.max(super::hill_height(x, z))
     } else {
         height
     })
+}
+
+/// Interpolate the authored west/east sections on the existing integer terrain lattice.
+/// No extra collision mesh or render-only relief is involved.
+fn authored_escarpment(x: i64, z: i64, plateau: i64) -> i64 {
+    let sections = &super::landscape::data().northern_ridge.sections;
+    let pair = sections
+        .windows(2)
+        .find(|pair| x <= i64::from(pair[1].x))
+        .unwrap_or(&sections[sections.len() - 2..]);
+    let width = i64::from(pair[1].x - pair[0].x);
+    let along = (x - i64::from(pair[0].x)).clamp(0, width);
+    let profile: [[i64; 2]; 8] = std::array::from_fn(|point| {
+        std::array::from_fn(|axis| {
+            let a = i64::from(pair[0].profile[point][axis]);
+            a + i64::from(pair[1].profile[point][axis] - pair[0].profile[point][axis]) * along
+                / width
+        })
+    });
+    let ribs = value_noise_q10(x, 0, 2800, SEED.rotate_left(7));
+    let z = z + (ribs - 512) * 800 / 1024;
+    if z >= profile[0][0] {
+        return 0;
+    }
+    if z <= profile[7][0] {
+        return plateau;
+    }
+    let segment = profile.windows(2).find(|p| z >= p[1][0]).unwrap();
+    let height = segment[0][1]
+        + (segment[1][1] - segment[0][1]) * (segment[0][0] - z) / (segment[0][0] - segment[1][0]);
+    let rough =
+        (plateau - i64::from(PLATEAU_Y)) * smooth_q10(-z, -profile[5][0], -profile[7][0]) / 1024;
+    let fissure = value_noise_q10(x, 0, 1100, SEED.rotate_left(41));
+    let gully = (512 - fissure).max(0) * 180 / 512;
+    let envelope = smooth_q10(-z, -profile[0][0], -profile[1][0])
+        * (1024 - smooth_q10(-z, -profile[5][0], -profile[7][0]))
+        / 1024;
+    height + rough - gully * envelope / 1024
 }
 
 /// The high ground's relief above [`PLATEAU_Y`]: broken swells and knolls, level on the

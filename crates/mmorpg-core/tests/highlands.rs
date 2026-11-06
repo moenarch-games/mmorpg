@@ -152,3 +152,24 @@ fn the_escarpment_holds_a_player_beside_the_pass() {
         "held at {at:?}"
     );
 }
+
+#[test]
+fn a_player_can_walk_along_the_western_rock_terrace() {
+    let mut zone = player_at([-15_200, -22_400]);
+    let mut sequence = 0;
+    walk(
+        &mut zone,
+        &mut sequence,
+        &[
+            [-15_200, -22_800],
+            [-15_200, -23_200],
+            [-14_800, -23_200],
+            [-14_800, -22_400],
+        ],
+    );
+    let at = feet(&zone);
+    assert!(
+        (2_100. ..2_900.).contains(&at[1]),
+        "supported by the upper terrace: {at:?}"
+    );
+}

@@ -741,3 +741,36 @@ The browser/WASM production build passed. Current content revision is
 `5643289760283480598`; protocol/canonical layouts are unchanged. Convention source
 revision remains `625cb04ca568aebc8d45c90033e107a05e9bd2a0`. Full suites, native GPU
 acceptance and the revised landscape performance comparison have not run.
+
+### First-version ridge and basin pass
+
+`landscape.json` now includes `basin.lobes` (centres, ellipse radii and shoulder widths
+in Q10) and `northernRidge.sections`. Each northern section has an X coordinate and
+eight `[Z, height]` points, in centimetres, ordered south to north. Adjacent sections
+interpolate on the existing 4 m authoritative heightfield. The profiles form uneven
+foothills, rock faces, benches, crowns and lower saddles instead of a continuous
+narrow wall. Seeded, directional gullies weather those profiles. The basin's broader
+shoulders retain the village floor and fade back to the original waterfall attachment.
+
+The Highland Pass lanes keep their heights. Their shoulders extend the ledges' own
+heights, rather than preserving the old 40 m wall around every lane. The approach
+stays clear and the marked hard climbing face retains its established profile.
+Tree support checks cover the full expanded ridge face. No extra terrain lattice,
+collision mesh system, renderer, LOD system or performance gate is added.
+
+Focused checks passed: all three Highland tests (the stronghold round trip, barrier
+beside the pass, and a new walk across the western rock terrace), the three village/
+brook/lake-route checks, format and the browser/WASM build. The final shared content
+revision is `2342607497514274074`; protocol/canonical layouts are unchanged. Full
+suites, native GPU acceptance and a frame-time comparison against the performance
+baseline have not run. The same-camera in-game overview is
+`artifacts/greyhaven-brook/first-landscape-version.png`; the live Blender scene is
+saved in `artifacts/greyhaven-brook/connected-landscape.blend` (local authoring state).
+Convention source revision: `625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+
+The review image is checked in as [the first-version overview](images/greyhaven-first-landscape.png).
+
+The owner requested a first GitHub version and a pause after pushing it. The denser
+forest pass, smaller Redbrand hideout, northeastern mining ruins/ravine bridge and
+remaining material/atmosphere work are deferred for review. This checkpoint is not
+completion or visual acceptance of the full revised concept brief.
