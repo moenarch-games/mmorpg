@@ -28,7 +28,8 @@ fn recovered(zone: &ZoneSimulation) -> ZoneSimulation {
 /// Moves player 1 to `feet` through a restored canonical snapshot (setup only).
 fn teleported(zone: &ZoneSimulation, feet: [i32; 2]) -> ZoneSimulation {
     let mut state = zone.snapshot().unwrap();
-    state.players[0].position = mmorpg_core::physics::from_units([feet[0], 90, feet[1]]);
+    let height = zone.stand_y(feet[0], feet[1], mmorpg_core::PLAYER_HALF_EXTENTS_UNITS);
+    state.players[0].position = mmorpg_core::physics::from_units([feet[0], height, feet[1]]);
     state.players[0].velocity = [0.0; 3];
     ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap()
 }
@@ -55,7 +56,7 @@ fn an_active_quest_and_its_pending_intents_continue_through_canonical_bytes() {
     let mut zone = ZoneSimulation::with_content(ZoneId::new(1), greyhaven_vale::content()).unwrap();
     zone.add_player(1).unwrap();
     // Beside the Marshal; the Tanner's quest is still locked and out of reach.
-    let mut zone = teleported(&zone, [-2_200, 1_150]);
+    let mut zone = teleported(&zone, [-1_800, 900]);
     for (sequence, command) in [
         ZoneCommand::AcceptQuest {
             npc: MARSHAL,
