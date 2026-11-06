@@ -138,10 +138,18 @@ fn content_is_a_bounded_deterministic_revision() {
 #[test]
 fn structures_touch_but_never_overlap() {
     let definition = greyhaven_vale_definition();
+    // A mesh's broad-phase bounds may overlap its neighbouring walls or roof.
+    // Only actual boxes obey this pairwise box invariant.
     let structures: Vec<_> = definition
         .colliders()
         .iter()
-        .filter(|collider| !is_terrain(collider))
+        .filter(|collider| {
+            !is_terrain(collider)
+                && !definition
+                    .static_meshes()
+                    .iter()
+                    .any(|mesh| mesh.id == collider.id)
+        })
         .collect();
     for (index, left) in structures.iter().enumerate() {
         for right in &structures[index + 1..] {
@@ -212,9 +220,38 @@ fn roads_are_open_corridors() {
             assert!(PLAYABLE_BOUNDS.contains(point[0] + margin, point[1] + margin));
         }
     }
+    // The ridge route must go around Stillwater, including between its control points.
+    let ridge = roads()
+        .iter()
+        .find(|road| road.name == "Wolfrun Ridge Path")
+        .unwrap();
+    for segment in ridge.points.windows(2) {
+        let [a, b] = [segment[0], segment[1]];
+        let steps = (b[0] - a[0]).abs().max((b[1] - a[1]).abs()) / 100 + 1;
+        for step in 0..=steps {
+            let point: [i32; 2] =
+                std::array::from_fn(|axis| a[axis] + (b[axis] - a[axis]) * step / steps);
+            assert!(
+                !greyhaven_vale::lake::near_shore(point[0], point[1], PLAYER_HALF_EXTENTS_UNITS[0]),
+                "ridge path enters Stillwater at {point:?}"
+            );
+        }
+    }
     for collider in definition.colliders() {
         // The Lakeshore Path ends on the dock (#577), up its plank step.
-        if !is_terrain(collider) && collider.id != greyhaven_vale::dressing::dock().id {
+        if !is_terrain(collider)
+            && collider.id != greyhaven_vale::dressing::dock().id
+            // The brook's deck and rails deliberately frame a narrower road crossing.
+            && collider.id != greyhaven_vale::brook::BRIDGE
+            && !greyhaven_vale::brook::RAILS.contains(&collider.id)
+            && !definition
+                .static_meshes()
+                .iter()
+                .any(|mesh| mesh.id == collider.id)
+            // The Sunken Shrine's boxes occupy a lower layer beneath the shore roads.
+            && !((ids::SHRINE_RUINS.contains(&collider.id) || ids::SHRINE_CAVE_WALLS.contains(&collider.id))
+                && collider.position[1] + collider.half_extents[1] < greyhaven_vale::shrine::SHORE_Y)
+        {
             assert!(
                 clear_of_roads(collider),
                 "collider {} blocks a road",
@@ -249,40 +286,70 @@ fn road_clearance_is_exact_at_the_boundary() {
 #[test]
 fn palisade_gates_are_clear_openings_centred_on_their_roads() {
     let definition = greyhaven_vale_definition();
-    let bounds = |id: u32| {
-        footprint(
-            definition
-                .colliders()
-                .iter()
-                .find(|collider| collider.id == id)
-                .unwrap(),
-        )
-    };
-    // (palisade segments, gate posts, axis across the opening, road centre on
-    // that axis): the Hollow Road and South Road run along x = 0, the Wolfrun
-    // Trail and Millbrook Road along z = 20 m.
-    for (segments, posts, axis, road) in [
-        ([110, 111], [120, 121], 0, 0),
-        ([112, 113], [122, 123], 0, 0),
-        ([114, 115], [124, 125], 1, 2_000),
-        ([116, 117], [126, 127], 1, 2_000),
-    ] {
-        // A 6 m palisade gap, framed by 0.8 m posts standing inside it.
-        let gap = [bounds(segments[0]).1[axis], bounds(segments[1]).0[axis]];
-        assert_eq!(gap[1] - gap[0], 600, "palisade gap {segments:?}");
-        let (first, second) = (bounds(posts[0]), bounds(posts[1]));
-        assert_eq!([first.0[axis], second.1[axis]], gap, "posts {posts:?}");
-        let opening = [first.1[axis], second.0[axis]];
-        assert_eq!(
-            opening[1] - opening[0],
-            440,
-            "gate {posts:?} is 4.4 m clear"
-        );
-        assert_eq!(
-            opening[0] + opening[1],
-            2 * road,
-            "gate {posts:?} is centred"
-        );
+    use mmorpg_core::physics::{Backend, BodyId, RigidBody, Vec3i, World};
+    // The authored perimeter has several mesh pieces per side. Test its real surfaces,
+    // including every piece and lintel, rather than treating one piece's bounds as a wall.
+    for backend in [Backend::Engine, Backend::Rapier] {
+        let mut world = World::with_backend(Vec3i::ZERO, backend);
+        for collider in definition.colliders().iter().filter(|collider| {
+            (ids::GATE_POSTS.contains(&collider.id) || ids::PALISADE.contains(&collider.id))
+                && !definition
+                    .static_meshes()
+                    .iter()
+                    .any(|mesh| mesh.id == collider.id)
+        }) {
+            world
+                .add_body(RigidBody::fixed(
+                    BodyId(u64::from(collider.id)),
+                    Vec3i::new(
+                        collider.position[0],
+                        collider.position[1],
+                        collider.position[2],
+                    ),
+                    Vec3i::new(
+                        collider.half_extents[0],
+                        collider.half_extents[1],
+                        collider.half_extents[2],
+                    ),
+                ))
+                .unwrap();
+        }
+        for mesh in definition.static_meshes() {
+            world
+                .add_body(RigidBody::static_mesh(mesh).unwrap())
+                .unwrap();
+        }
+        for (posts, centre, axis) in [
+            ([120, 121], [0., -1_000.], 0),
+            ([122, 123], [0., 5_000.], 0),
+            ([124, 125], [-3_200., 2_000.], 1),
+            ([126, 127], [3_200., 2_000.], 1),
+        ] {
+            // The inner post faces leave exactly 4.4 m, centred on each road.
+            for (side, post) in [-1., 1.].into_iter().zip(posts) {
+                let mut ray = [0.; 3];
+                ray[axis * 2] = side * 500.;
+                let hit = world
+                    .cast_ray([centre[0], 150., centre[1]], ray, |_| true)
+                    .unwrap();
+                assert_eq!(hit.body, BodyId(post), "gate {posts:?} on {backend:?}");
+                assert!((hit.fraction * 500. - 220.).abs() < 0.1, "{hit:?}");
+            }
+            // A complete player capsule fits through the centre and beside both posts.
+            for across in [-180., 0., 180.] {
+                let mut origin = [centre[0], 90.25, centre[1]];
+                origin[axis * 2] += across;
+                origin[(1 - axis) * 2] -= 400.;
+                let mut through = [0.; 3];
+                through[(1 - axis) * 2] = 800.;
+                assert!(
+                    world
+                        .cast_shape(origin, Vec3i::new(30, 90, 30), through, |_| true)
+                        .is_none(),
+                    "gate {posts:?} at offset {across} on {backend:?}"
+                );
+            }
+        }
     }
 }
 
@@ -295,15 +362,28 @@ fn wolfrun_woods_trunks_always_leave_a_walkable_gap() {
         .filter(|collider| ids::TREES.contains(&collider.id))
         .collect();
     let first_id = *ids::TREES.start();
-    for (index, tree) in trees.iter().enumerate() {
-        assert_eq!(tree.id, first_id + u32::try_from(index).unwrap());
+    // Rejected wet/shore placements retain holes, preserving all remaining body IDs.
+    assert!(trees.windows(2).all(|pair| pair[0].id < pair[1].id));
+    for tree in &trees {
+        assert!(tree.id >= first_id && ids::TREES.contains(&tree.id));
         assert!((30..=45).contains(&tree.half_extents[0]));
         assert_eq!(tree.half_extents[0], tree.half_extents[2]);
-        // Wolfrun Woods first, then the outer valley's woods (#159).
-        let area = area_at(tree.position[0], tree.position[2]).map(Area::id);
+        // The named subzones no longer bound the broader planted woodland. Keep the
+        // actual walking requirements: dry ground, clear spawn space and gaps below.
+        let [x, _, z] = tree.position;
         assert!(
-            area.is_some_and(|area| area == greyhaven_vale::vale::WOLFRUN_WOODS || area.get() >= 6),
-            "tree {} in {area:?}",
+            greyhaven_vale::inside_walls(x, z),
+            "tree {} outside the zone",
+            tree.id
+        );
+        assert!(
+            !SPAWN_PLAZA.contains(x, z),
+            "tree {} on the spawn plaza",
+            tree.id
+        );
+        assert!(
+            !greyhaven_vale::lake::near_shore(x, z, 0),
+            "tree {} in the lake",
             tree.id
         );
     }

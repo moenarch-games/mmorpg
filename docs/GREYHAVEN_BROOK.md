@@ -854,3 +854,16 @@ refinement as part of the remaining natural-geography work.
 Deterministic scenery/export fixture checks passed and recorded the new hashes.
 The existing WASM scenery JSON limit moved from 1.5 MB to 1.6 MB for the requested
 forest density and camp content (measured 1,548,250 bytes). No new gate was added.
+
+## Combined collision integration checks (#644)
+
+The ridge path now follows Stillwater's western shore before branching toward the Hollow,
+keeping the entire trail outside the lake. Gate clearance is checked against actual authored
+surfaces on both physics backends: each opening remains centred and 4.4 m wide, and a player
+capsule fits through it. Composite mesh bounds are no longer treated as solid boxes in the
+legacy content assertions; underground shrine pieces and the supported brook crossing retain
+their separate vertical layers. Tree IDs remain ordered and unique after rejected placements.
+
+These checks resolve the earlier square-palisade, overlapping-bounds, road-clearance and
+contiguous-tree assertions reported above. The existing brook, gate, culvert and lake approach
+walks also pass. Scenario and scenery fixtures follow the combined authored content.

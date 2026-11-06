@@ -228,3 +228,9 @@ relative to the preceding recorded #644 ceiling: 192,240 admitted-body visits ov
 AI evaluations, projection candidates and encoded bytes remain unchanged. All four
 runs retain exact replay/recovery parity. This updates the existing content-cost
 baseline; it makes no frame-time claim and adds no new gate.
+
+The ridge trail now skirts Stillwater instead of crossing the lake. Its clearance admits
+five additional trunks (1,800 visits per 360 ticks). At combined content `3c33cc34fd844d63`,
+the four workloads record 1,299,600 / 1,296,720 / 1,305,360 / 1,316,524 body visits.
+AI, projection and byte counts remain unchanged; all four replay/recovery checks pass.
+The same content contains 13,510 scenery props, within the updated existing 14,000-prop ceiling.

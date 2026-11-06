@@ -94,7 +94,7 @@ bot = "warden"
 action = "move"
 forward = 0
 strafe = 0
-facing = 32768
+facing = 0
 
 [[steps]]
 tick = 1514
