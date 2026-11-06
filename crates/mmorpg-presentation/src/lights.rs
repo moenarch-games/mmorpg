@@ -90,29 +90,6 @@ pub fn point_lights(scene: &StaticScene, scenery: &Scenery) -> Vec<PointLight> {
     fires.chain(lamps).chain(lanterns).chain(torches).collect()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn greyhaven_campfires_lamps_and_its_lantern_post_cast_light() {
-        let scenery = mmorpg_scenery::greyhaven_vale_scenery();
-        let scene = StaticScene::new(&scenery);
-        let lights = point_lights(&scene, &scenery);
-        let fires = lights.iter().filter(|l| l.flicker.is_some()).count();
-        let lamps = scenery
-            .props
-            .iter()
-            .filter(|p| p.kind == mmorpg_scenery::PropKind::Lamp)
-            .count();
-        assert!(fires > 0 && lamps > 0, "{lights:?}");
-        assert_eq!(lights.len(), fires + lamps + 1, "one lantern post");
-        let fire = lights.iter().find(|l| l.flicker.is_some()).unwrap();
-        assert_ne!(fire.lumens_at(1.3, true), fire.lumens);
-        assert_eq!(fire.lumens_at(1.3, false), fire.lumens);
-    }
-}
-
 /// Torch flames in Redbrand's public cave: above head height, attached to solid walls.
 pub const CAVE_TORCHES: [[f64; 3]; 5] = [
     [48.12, 13.8, -134.5],
@@ -182,5 +159,28 @@ pub(crate) fn cave_torches(b: &mut crate::batching::Batcher, scenery: &Scenery) 
         );
         b.global("cave-torch-flame", 0xff8a2a)
             .add(&flame, crate::geometry::ID);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn greyhaven_campfires_lamps_and_its_lantern_post_cast_light() {
+        let scenery = mmorpg_scenery::greyhaven_vale_scenery();
+        let scene = StaticScene::new(&scenery);
+        let lights = point_lights(&scene, &scenery);
+        let fires = lights.iter().filter(|l| l.flicker.is_some()).count();
+        let lamps = scenery
+            .props
+            .iter()
+            .filter(|p| p.kind == mmorpg_scenery::PropKind::Lamp)
+            .count();
+        assert!(fires > 0 && lamps > 0, "{lights:?}");
+        assert_eq!(lights.len(), fires + lamps + 1, "one lantern post");
+        let fire = lights.iter().find(|l| l.flicker.is_some()).unwrap();
+        assert_ne!(fire.lumens_at(1.3, true), fire.lumens);
+        assert_eq!(fire.lumens_at(1.3, false), fire.lumens);
     }
 }
