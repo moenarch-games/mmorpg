@@ -223,3 +223,22 @@ fn brook_bridge_ford_gate_culvert_and_recovery() {
         restored.snapshot().unwrap()
     );
 }
+
+#[test]
+fn basin_buttress_is_solid_beside_the_open_hollow_approach() {
+    let mut walker = Walker::at(0, -1400);
+    for [x, z] in [[-1200., -2000.], [-2600., -3000.], [-3150., -4000.]] {
+        walker.go(x, z);
+    }
+    // The new slab projects from the cliff into the open floor. The old heightfield at
+    // this approach is level; its rounded eastern face must stop a westward walk.
+    walker.walk(49152);
+    walker.ticks(45);
+    let stopped = walker.feet();
+    assert!(
+        stopped[0] > -3430. && stopped[0] < -3200. && stopped[1] < 50.,
+        "the buttress stops the walker at {stopped:?}"
+    );
+    walker.go(-3000., -4000.);
+    walker.go(-2800., -5600.);
+}

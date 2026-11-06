@@ -5,6 +5,8 @@ pub const TOWERS: [[i32; 2]; 4] = [[-2700, -700], [2700, -700], [-3000, 4000], [
 pub const TOWER_BODIES: std::ops::RangeInclusive<u32> = 65040..=65043;
 /// Low authored outcrops that break Stillwater's bank silhouette without closing its routes.
 pub const SHORE_ROCKS: std::ops::RangeInclusive<u32> = 65070..=65093;
+/// Authored leaning rock slabs and their smaller talus pieces at the basin cliff feet.
+pub const BASIN_ROCKS: std::ops::RangeInclusive<u32> = 65094..=65102;
 
 #[must_use]
 pub fn meshes() -> Vec<StaticMesh> {

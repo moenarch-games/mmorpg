@@ -414,3 +414,30 @@ native GPU acceptance were not run; the previously reported failures remain unre
 The wide scene still needs further cliff, ground and lighting refinement to match the
 owner's reference. Convention source revision remains
 `625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+
+## Authored basin buttresses and talus
+
+Three rock clusters interrupt bare cliff feet northwest of the keep, beside the western
+basin edge and before the southern cliff. Each combines a leaning main slab with two lower
+talus pieces, authored in `fortifications.py` as closed, simplified indexed meshes with
+stable IDs 65094–65102. Their roots are buried into the existing ground and the upper slabs
+lean back into the enclosing cliffs. The placement leaves gates, the Hollow approach,
+switchbacks, the South Road and the watercourse clear.
+
+The collision JSON now contains 82 meshes. Rapier loads the new pieces through the existing
+immutable static-mesh path; shared presentation draws these exact facets with the existing
+rock PBR material and the existing strata/moss landscape palette in both clients. They stay
+independent of the settlement glTF and terrain LOD, and remain visible through the shared rock presentation without a new asset dependency.
+The settlement glTF/resources are unchanged. The live Blender scene includes the same nine
+new pieces with the game rock maps for context. No new format, renderer, cache or spatial
+index is introduced; only content identity changes.
+
+Focused checks passed: the existing brook/bridge/ford/gates/culvert/recovery gameplay check,
+a new character walk that hits the northwest slab and then returns to the open Hollow
+approach, the South Climb traversal, format and the browser/WASM production build. Full suites/native GPU acceptance
+were not run; the previously reported content assertions and legacy A/B failures remain.
+Chromium walked out through the north gate to the new rocks, loaded all seven ground
+textures and captured `artifacts/greyhaven-brook/basin-buttress.png` without page errors.
+The overall reference direction remains in progress, particularly ground variation and
+lighting. Convention source revision remains
+`625cb04ca568aebc8d45c90033e107a05e9bd2a0`.

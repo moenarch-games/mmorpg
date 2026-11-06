@@ -508,6 +508,29 @@ for cluster,(x,z,turn) in enumerate([(39,-60,.4),(38,-65,1.1),(47,-70.5,.2),
         fs += [(r*n+j,r*n+(j+1)%n,(r+1)*n+(j+1)%n,(r+1)*n+j) for r in range(2) for j in range(n)]
         solid_record(id,vs,fs)
         mesh('Stillwater fractured bank '+str(id),vs,fs,shore_preview)
+# Authored basin buttresses: a large leaning slab and two lower talus pieces at each
+# site, clear of the village gates, switchbacks and water. The shared rock presenter
+# draws these collision facets directly, independent of the settlement glTF and visual LOD.
+basin_rock=bpy.data.materials.get('Greyhaven game rock - terrain context') or shore_preview
+basin_rock['tile_metres']=6
+for cluster,(x,z,rx,rz,h,turn,lean_x,lean_z) in enumerate([(-37,-40,4.2,5.0,15.5,.2,-5,-3),
+    (-39,57,3.0,4.4,10.5,-.3,-5,0),(-25,83,3.6,4.8,11.5,.6,-1,5)]):
+    for piece,(dx,dz,size,rise) in enumerate([(0,0,1,1),(3.1,2.1,.48,.43),(-3.0,2.4,.40,.28)]):
+        id=65094+cluster*3+piece;n=9;vs=[]
+        cx=x+dx*math.cos(turn)-dz*math.sin(turn)
+        cz=z+dx*math.sin(turn)+dz*math.cos(turn)
+        for row,(height,width,lean) in enumerate([(-.8,.72,0),(.18*h*rise,1,.20),
+            (.63*h*rise,.78,-.35),(h*rise,.42,-.8)]):
+            for j in range(n):
+                a=j*math.tau/n;w=1+.09*math.sin(j*7.1+id)
+                px,pz=rx*size*w*width*math.sin(a),rz*size*w*width*math.cos(a)+lean
+                vs.append((cx+px*math.cos(turn)-pz*math.sin(turn)+lean_x*size*row/3,
+                    height+(0 if row==0 else .20*rise*math.sin(j*2.1+id)),
+                    cz+px*math.sin(turn)+pz*math.cos(turn)+lean_z*size*row/3))
+        fs=[tuple(range(n-1,-1,-1)),tuple(range(3*n,4*n))]
+        fs += [(r*n+j,r*n+(j+1)%n,(r+1)*n+(j+1)%n,(r+1)*n+j) for r in range(3) for j in range(n)]
+        solid_record(id,vs,fs)
+        mesh('Greyhaven basin buttress '+str(id),vs,fs,basin_rock)
 COLLISION.write_text(json.dumps(collision,separators=(',',':'))+'\n')
 print('Authored',len(o.data.polygons),'faces;',len(collision),'simplified collision meshes;',len(resources),'resources.')
 
