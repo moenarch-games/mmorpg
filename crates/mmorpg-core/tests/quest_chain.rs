@@ -41,6 +41,10 @@ const FROM_WOODS: &[[i32; 2]] = &[
     [-5_400, -1_800],
     [-4_200, -1_800],
     [-4_200, 2_135],
+    // Enter the supported crossing through its western bank apron.
+    [-3_600, 2_450],
+    [-3_400, 2_450],
+    [-3_400, 2_135],
     [-3_200, 2_135],
     HUB,
 ];

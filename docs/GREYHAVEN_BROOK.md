@@ -1,5 +1,44 @@
 # Greyhaven's Waterworn Gorge
 
+## Review version
+
+The playable brook, bridge and western slopes now combine short clustered turf,
+low authored terrain rises, soil/gravel breakup, worn cart tracks, fractured rock
+spurs and talus, shallow translucent water and local flowing foam. The western
+water opening is a mill with a supported bank crossing and sloped approaches.
+Both clients share the presentation; native and browser water suppress their own
+opaque shadow silhouettes. The mill wheel is static in this version.
+
+The third-person views use the same camera and noon lighting: eye `[0,3.8,40]`,
+target `[0,0.9,32]`, 800×533. The overview is 960×640, eye `[12,72,90]`, target
+`[-8,1,22]`, presentation time 200. Final captures use the running game on the
+RTX 3060 Ti; all seven ground materials loaded and the browser reported no errors.
+
+| Before this slice | Review version |
+| --- | --- |
+| ![Before](images/greyhaven-brook-slice-before.png) | ![After](images/greyhaven-brook-slice-after.png) |
+
+![Playable brook and western slopes overview](images/greyhaven-brook-slice-overview.png)
+
+Verification: actual bridge–mill–western-bank travel and return; western-slope walk;
+existing Wolfrun Climb and first-three-quests journey; four affected combat/loot
+scenario replays; focused turf/current checks and scenery/export goldens; native
+compilation and production browser/WASM build. The native shadow provider's focused
+GPU test and CI/oracle pass ([render-engine #63](https://github.com/moritzbrantner/render-engine/pull/63)).
+Existing profiling observations are recorded below. Full native gameplay/GPU
+acceptance and the comprehensive E2E matrix were deferred; PR #644 stays open for
+owner review.
+
+To extend this work, author another small region's terrain rises in `landscape.json`
+and coarse, stable-ID rock solids through the existing Blender/collision export.
+Reuse the terrain materials, face-aligned rock skin, clustered roots and ground/path/
+water masks; place local foam at actual disturbances. Check the region's intended
+walk route alongside its art. The wider woodland-valley composition can then be
+refined in the same way. Earlier sections below record the preceding checkpoints
+and their then-open work.
+
+## Earlier implementation notes
+
 The village occupies a rounded, asymmetric basin with an adjoining northern lobe. Fixed-seed integer weathering varies the cliff outline and shoulders. The heightfield is still authoritative: scenery samples the same terrain, and the six existing switchback lanes override the weathering. This is separate from visual terrain tile LOD and the authored Redbrand Cave meshes.
 
 `mmorpg-core/src/content/greyhaven_vale/brook.rs` authors Stillwater's upper inflow and rim outlet, the west-cliff waterfall and a narrow brook through the village, a timber footbridge, and a low drainage opening through the southern palisade. Its centimetre centreline supplies the shallow terrain bed and a `WaterChannel` footprint. Existing wading/swimming rules apply; foam motion is cosmetic and exerts no current. The upstream river enters the existing Stillwater ellipse; its outlet loops around the rim to the waterfall. Both upper channels share the lake's surface height. Neither water shape introduces another movement solver.
@@ -1109,3 +1148,8 @@ focused golden checks. No gameplay or physics rules were changed for these route
 The rendering provider fix is now merged with its engine and oracle CI green.
 PR #644's latest integration commits are preserved; auto-merge is disabled so the
 visual slice can be reviewed before merging.
+
+Path wear in the brook slice also separates into subtle paired cart tracks, with
+lighter wear between them and irregular verges. It uses the existing path material
+and weights; crossing tracks combine into the more heavily worn junctions. Ground
+support and the movement corridor remain core-owned.

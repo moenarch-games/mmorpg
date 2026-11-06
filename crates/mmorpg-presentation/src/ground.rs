@@ -586,7 +586,21 @@ pub(crate) fn roads(layers: &mut Layers, s: &Scenery, g: &TerrainGrid) {
                                 } else {
                                     1.
                                 };
-                                edge * breakup
+                                let wear = if crossing
+                                    && width > 1.3
+                                    && (-54.0..40.0).contains(&x)
+                                    && (12.0..65.0).contains(&z)
+                                {
+                                    // Paired cart tracks wear through the softer verge/median;
+                                    // road intersections naturally receive both traffic directions.
+                                    let rut = ((0.28 - ((offset - shift).abs() - 0.65).abs())
+                                        / 0.28)
+                                        .clamp(0., 1.);
+                                    0.62 + 0.38 * rut
+                                } else {
+                                    1.
+                                };
+                                edge * breakup * wear
                             }
                         },
                     );
