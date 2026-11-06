@@ -522,7 +522,7 @@ describe("WASM local zone host", () => {
     // keeps far batches out of a frame.
     expect(scene.stats.staticNodes).toBeLessThanOrEqual(3_800);
     // The terrain is drawn in visual tiles (#526), outside the static scene.
-    expect(scene.stats.staticVertices).toBeLessThanOrEqual(400_000);
+    expect(scene.stats.staticVertices).toBeLessThanOrEqual(500_000);
     expect(scenery.scenery.props.length).toBeGreaterThan(scene.stats.staticNodes * 3);
     expect(new Set(scene.batches.map((batch) => batch.node.geometry.resourceKey)).size).toBe(scene.batches.length);
     // Terrain and far-ring meshes span the whole vale, so none is ever culled: keep their palette small.

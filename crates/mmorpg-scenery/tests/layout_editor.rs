@@ -11,9 +11,9 @@ fn saved_overrides_reopen_with_matching_authoritative_and_visual_placements() {
     let mut document = source();
     // Move an existing house, suppress another, add a house from the same prefab.
     document["collision"] = json!([
-        {"id": 106, "position": [2350, 3600]},
+        {"id": 106, "position": [2450, 3600]},
         {"id": 104, "position": [-1100, 3800], "removed": true},
-        {"id": 60000, "position": [-2300, 2800]}
+        {"id": 60000, "position": [-2500, 2600]}
     ]);
     document["decoration"][0]["position"] = json!([-1850, 1000]);
     let saved = serde_json::to_string_pretty(&document).unwrap();
@@ -64,8 +64,14 @@ fn saved_overrides_reopen_with_matching_authoritative_and_visual_placements() {
     let base = market(&greyhaven_vale::base_definition());
     let moved = market(&definition);
     assert_eq!(base.len(), moved.len());
-    for (before, after) in base.iter().zip(&moved) {
-        assert_eq!([after[0] - before[0], after[2] - before[2]], [-50, 0]);
+    let following: usize = greyhaven_vale::market::SQUARE
+        .iter()
+        .map(|(item, ..)| item.proxies().len())
+        .sum();
+    for (index, (before, after)) in base.iter().zip(&moved).enumerate() {
+        // The two gathering-space additions have fixed world anchors.
+        let expected = if index < following { [50, 0] } else { [0, 0] };
+        assert_eq!([after[0] - before[0], after[2] - before[2]], expected);
     }
     // A lamp collides where the layout stands it (#577), so moving one changes gameplay
     // content identity; moving flowers would not.
@@ -95,7 +101,7 @@ fn saved_overrides_reopen_with_matching_authoritative_and_visual_placements() {
     assert_eq!([drawn.position[0], drawn.position[2]], [-1900, 1000]);
     let mut flowers = source();
     flowers["decoration"].as_array_mut().unwrap().push(
-        json!({"id": "outpost-flowers-1", "kind": "flowers", "position": [-2600, 1200], "yaw": 0}),
+        json!({"id": "outpost-flowers-1", "kind": "flowers", "position": [-1800, 4000], "yaw": 0}),
     );
     let flowers = flowers.to_string();
     let base_identity = greyhaven_vale::content().revision();
@@ -112,7 +118,7 @@ fn saved_overrides_reopen_with_matching_authoritative_and_visual_placements() {
             .props
             .iter()
             .any(|prop| prop.kind == mmorpg_scenery::PropKind::Flowers
-                && [prop.position[0], prop.position[2]] == [-2600, 1200])
+                && [prop.position[0], prop.position[2]] == [-1800, 4000])
     );
 }
 

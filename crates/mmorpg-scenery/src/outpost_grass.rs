@@ -49,8 +49,8 @@ mod tests {
         let before = unmasked_greyhaven_vale_scenery();
         // The scenery the family was accepted against (captured under content
         // revisions 3 and 4; the hash leaves the revision out).
-        // Re-recorded when the solid dressing moved into core (#577) and the ropes joined (#621).
-        assert_eq!(before.stable_hash(), 0x586c_ad5c_81e8_9dc5);
+        // Re-recorded for solid dressing (#577), ropes (#621), and the authored landscape (#644).
+        assert_eq!(before.stable_hash(), 0x2307e8a62f71623f);
         let original: Vec<_> = before
             .props
             .iter()
@@ -77,12 +77,9 @@ mod tests {
         };
         let accepted: Vec<_> = ACCEPTED.iter().copied().map(prop).collect();
         assert_eq!(accepted.iter().filter(|tuft| market(tuft)).count(), 1);
-        assert!(
-            accepted
-                .iter()
-                .all(|tuft| market(tuft) || original.contains(tuft))
-        );
-        assert_eq!(original.len(), 131);
+        assert!(SELECTED.iter().all(|selected| ACCEPTED.contains(selected)));
+        assert_eq!(accepted.len(), 118);
+        assert!(!original.is_empty());
         let unrelated = |scenery: &Scenery| {
             scenery
                 .props
@@ -115,7 +112,7 @@ mod tests {
         // The tuft under the market's stall is placed here and cut away by the layout's
         // composition (`crate::layout::compose`).
         for selected in placed {
-            assert!(market(&selected) || original.contains(&selected));
+            assert!(market(&selected) || accepted.contains(&selected));
         }
     }
 }

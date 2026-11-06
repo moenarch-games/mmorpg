@@ -474,6 +474,8 @@ mod tests {
             .sum();
         assert!(nodes <= 3_800, "{nodes} static nodes");
         // The terrain is drawn in visual tiles (#526), outside the static scene.
-        assert!(vertices <= 400_000, "{vertices} static vertices");
+        // The shared arched grass and fern geometry (#644) brings the authored scene
+        // to about 484,000 vertices; retain the existing budget with that content accounted for.
+        assert!(vertices <= 500_000, "{vertices} static vertices");
     }
 }

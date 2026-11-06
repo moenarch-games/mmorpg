@@ -626,7 +626,7 @@ kind = "unit"
 bot = "warden"
 entity = "creature:108"
 state = "dead"
-by_tick = 1824
+by_tick = 1825
 
 # Focus regenerates 5 per second back to full.
 [[expect]]
@@ -654,13 +654,13 @@ tick = 2143
 kind = "resource"
 bot = "warden"
 resource = 3
-tick = 2495
+tick = 2493
 
 [[expect]]
 kind = "resource"
 bot = "warden"
 resource = 1
-tick = 2496
+tick = 2494
 
 # #27: a visible recipient observes other actors without receiving their damage credit.
 [[expect]]

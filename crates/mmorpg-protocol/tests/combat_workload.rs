@@ -57,12 +57,16 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // Solid dressing (#577) adds 361 fixed boxes (lamps, signposts, barrels, carts, the dock, the
     // market square's proxies and the loose rocks) and the dock's ramp to every step's world:
     // 362 more body visits a tick, and nothing else moves. The climbing ropes (#621) add three
-    // columns: 3 more body visits a tick.
+    // columns: 3 more body visits a tick. The authored landscape/collision stack (#644)
+    // adds 580 fixed bodies including the mill gallery, then clears seven intersecting
+    // trunks at the moved shore/shrine: a net 206,280 visits per 360 ticks.
+    // Engine capsule navigation and changed visible geography move the spread fights;
+    // the existing example records exact deterministic operation/byte evidence.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [29_160, 899_280, 224_640, 5_126_000],
-        [29_160, 896_400, 78_240, 1_620_192],
-        [29_160, 905_040, 405_184, 7_140_175],
-        [28_804, 916_204, 2_251_970, 24_276_762],
+        [29_160, 1_105_560, 288_000, 6_076_832],
+        [29_160, 1_102_680, 93_060, 1_788_549],
+        [29_160, 1_111_320, 424_719, 7_865_487],
+        [28_804, 1_122_484, 2_323_474, 24_276_762],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();

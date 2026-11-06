@@ -194,7 +194,7 @@ tick = 2
     assert!(text.contains("expect alice target npc:8 ok"), "{text}");
     assert!(text.contains("FAIL got health=50/50"), "{text}");
     assert!(
-        text.contains("FAIL got L10 hp100% (-2900,90,1500) []"),
+        text.contains("FAIL got L10 hp100% (-2900,87,1500) []"),
         "{text}"
     );
     assert!(text.contains("FAIL got events[]"), "{text}");

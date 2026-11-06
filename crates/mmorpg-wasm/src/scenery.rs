@@ -491,7 +491,7 @@ mod tests {
             terrain.biomes[row * columns + column]
         };
         assert_eq!(
-            sample(0, 2_000),
+            sample(-400, 1_600),
             mmorpg_scenery::Biome::Plaza.id(),
             "the hub plaza"
         );
@@ -624,7 +624,7 @@ mod tests {
         assert_eq!(
             value["water"][0],
             serde_json::json!(
-                { "centerXz": [5_500, -5_500], "radiiXz": [2_200, 1_600], "surfaceY": 1_115 }
+                { "centerXz": [-8_700, -5_300], "radiiXz": [2_200, 1_600], "surfaceY": 1_115 }
             )
         );
         assert_eq!(

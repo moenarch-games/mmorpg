@@ -199,3 +199,22 @@ counters are unchanged. The crowded fixture now fills the 1,077-byte budget.
 Validation uses locked dependencies, Rust 1.98.1 and the unchanged pinned physics
 engine. Shared convention sourceRevision is
 `46d8793bb3034326561f876dcc67dbaa5aa1e432`.
+
+### Authored landscape and primary Engine integration (#644)
+
+The combined authored stack adds 580 fixed collision bodies, including eight mill-gallery
+pieces, and clears seven intersecting trunks at the moved shore/shrine: a net 206,280
+additional body visits across each 360-tick workload. The existing `combat_workload`
+example on content `a5dfc46910e7f7fd` records the updated ceilings below.
+Navigation now queries the actual unit capsule against authored geometry; no bounding-box
+substitute is used for meshes or hulls. The example verifies deterministic replay and recovery.
+
+| Workload | AI evaluations | Body visits | Projection candidates | Encoded bytes |
+| --- | ---: | ---: | ---: | ---: |
+| vale-idle-16 | 29,160 | 1,105,560 | 288,000 | 6,076,832 |
+| vale-fights-8 | 29,160 | 1,102,680 | 93,060 | 1,788,549 |
+| vale-fights-32 | 29,160 | 1,111,320 | 424,719 | 7,865,487 |
+| vale-crowded-fights-64 | 28,804 | 1,122,484 | 2,323,474 | 24,276,762 |
+
+These are deterministic operation/byte counts, not timings. Existing combat, per-datagram,
+replay and recovery assertions remain in place.
