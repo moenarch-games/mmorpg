@@ -693,6 +693,12 @@ fn cave_roof(p: &Prop, index: usize, scenery: &Scenery) -> Animated {
                 geometry.p.len() - first,
             ));
         }
+        crate::ground::project_rock(&mut geometry);
+        let mut rock_material = material(0xffffff, false);
+        rock_material.ground = Some(crate::ground::Ground::near(
+            crate::ground::Layer::Rock,
+            false,
+        ));
         let [hx, _, hz] = p.half_extents.map(metres);
         return Animated {
             draws: vec![Draw {
@@ -700,7 +706,7 @@ fn cave_roof(p: &Prop, index: usize, scenery: &Scenery) -> Animated {
                 resource_key: format!("scenery:authored-cave-roof-{index}"),
                 geometry: Arc::new(geometry),
                 model: matrix(ID),
-                material: material(0xffffff, false),
+                material: rock_material,
             }],
             motion: Motion::Roof {
                 at: [cx, cy, cz],

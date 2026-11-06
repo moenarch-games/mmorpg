@@ -384,6 +384,13 @@ fn the_cave_roof_is_cut_away_while_the_viewer_stands_under_it() {
         .map(|(index, _)| index)
         .collect();
     assert_eq!(roofs.len(), 1, "the roof is its own part");
+    let draw = &scene.animated[roofs[0]].draws[0];
+    assert!(
+        draw.material.ground.is_some(),
+        "the exterior uses the rock material"
+    );
+    assert_eq!(draw.geometry.uv.len(), draw.geometry.p.len());
+    assert_eq!(draw.geometry.tangents.len(), draw.geometry.p.len());
     let [x, _, z] = roof.position.map(|units| f64::from(units) / 100.);
     // The cave's floor lies on the basin's rim (#423).
     let floor = f64::from(mmorpg_core::greyhaven_vale::cave::GREYFANG.floor_y) / 100.;

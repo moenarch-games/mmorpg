@@ -178,3 +178,33 @@ The entrance arch's upper edge follows a broken stone profile instead of a recta
 lintel. The entrance clearance below it is unchanged; the focused Rapier traversal test
 also covers this final exported shape. The browser build passed for the chamber-shape
 pass before this final upper-edge adjustment.
+
+### Broken outer ridge and textured cutaway roofs
+
+Redbrand's roof now has a lower sealing shoulder and three unequal, tilted rock spines
+instead of one domed crown. The coarse closed components remain part of static ID 547 in
+`redbrand.json`; their buried roots sit above the unchanged chamber ceiling. The north
+entrance, wall contact planes, shelf and approach remain unchanged. The live Blender source
+and saved world context contain the revised ridge.
+
+The authored roof exterior now carries the existing rock material, metre-scale UVs and
+matching tangents, as its walls already do. Native rendering uses its existing ground-material
+path. The browser routes fixed textured roofs into the existing terrain-material batch at
+their shared rest transforms, then applies the owning scene part's cutaway visibility.
+Moving flames, sails and doors keep their existing presentation path. This also textures
+Stillwater's joined rock shelf. No shader, renderer, asset bundle, cache or authority is added.
+
+Focused checks passed: Redbrand's Rapier entrance/walls/shelf/ceiling/recovery test; both
+shared ceiling/cutaway tests (now also checking exterior texture attributes); the five browser
+scene-building tests, including actual batched roof visibility; and the browser/WASM build.
+Native GPU acceptance and full suites were not run. The previously reported legacy A/B
+mesh-bound failures remain unresolved; no Physics Engine parity work is included.
+Convention source revision remains `625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+
+The final in-game capture is `artifacts/greyhaven-brook/redbrand-crag.png`. Chromium walked
+the existing eastern approach to the north mouth with no page errors. An initially exposed
+root under the western spine was lowered into the sealing shoulder and the join was
+rechecked in-game. The saved Blender world contains that final geometry. Roof surfaces stay
+resident independently of visual terrain tile LOD; neither the material batch nor cutaway
+visibility changes collision. The straight background escarpment remains a visible landscape
+issue for a subsequent art pass, so the full woodland-valley reference is still in progress.

@@ -28,6 +28,9 @@ export type TileDraw = {
   alpha: Float32Array; indices: Uint32Array;
 };
 
+/** A fixed textured roof; the shared scene owns its rest transform and cutaway part. */
+export type CutawaySurface = { part: number; draw: TileDraw; model: Float32Array };
+
 /** Unpacks one tile level's draws; malformed data fails closed. */
 export function unpackTile(data: Float32Array): TileDraw[] {
   const draws: TileDraw[] = [];
@@ -154,11 +157,12 @@ export class Ground {
   readonly #near = new Map<number, Placed[]>();
   /** Per tile, whether it last drew its near level. */
   readonly #levels: Uint8Array;
+  readonly #cutaways: { part: number; placed: Placed; visible: boolean }[];
   #loading: Promise<boolean> | null = null;
   #changed = true;
   #textured = new Set<string>();
 
-  constructor(stream: TerrainStreamSource, surfaces: readonly TileDraw[] = []) {
+  constructor(stream: TerrainStreamSource, surfaces: readonly TileDraw[] = [], cutaways: readonly CutawaySurface[] = []) {
     this.#stream = stream;
     this.root.name = "greyhaven.terrain";
     this.root.matrixAutoUpdate = false;
@@ -166,6 +170,11 @@ export class Ground {
     this.#levels = new Uint8Array(count);
     this.#far = Array.from({ length: count }, (_, index) => this.#place(unpackTile(stream.far(index)), true));
     this.#place(surfaces, true);
+    this.#cutaways = cutaways.map((surface) => {
+      const mesh = geometry(surface.draw);
+      mesh.applyMatrix4(new THREE.Matrix4().fromArray(surface.model));
+      return { part: surface.part, placed: this.#batch(surface.draw).add(mesh, true), visible: true };
+    });
   }
 
   #batch(draw: TileDraw): Batch {
@@ -191,7 +200,15 @@ export class Ground {
   }
 
   /** Streams near levels for the camera `eye` (metres) and shows each tile at its level. */
-  update(eye: readonly [number, number, number]): void {
+  update(eye: readonly [number, number, number], shown: Uint8Array): void {
+    for (const roof of this.#cutaways) {
+      const visible = shown[roof.part] !== 0;
+      if (visible !== roof.visible) {
+        roof.placed.batch.mesh.setVisibleAt(roof.placed.instance, visible);
+        roof.visible = visible;
+        this.#changed = true;
+      }
+    }
     const update = this.#stream.update(eye[0], eye[1], eye[2]);
     let at = 0;
     const built = update[at++]!;

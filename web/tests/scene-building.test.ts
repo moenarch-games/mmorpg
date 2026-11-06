@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { IndexedMeshGeometry } from "@moritzbrantner/three-d-renderer";
-import { unpackTile } from "../src/world/ground";
+import { BatchedMesh } from "three";
+import { Ground, unpackTile } from "../src/world/ground";
 import { createLocalWorld } from "../src/world/local-world";
-import { CULL_DISTANCE_METRES, SceneryFrame, batchVisible, buildSceneryScene, type StaticSceneContent } from "../src/world/scenery-nodes";
+import { CULL_DISTANCE_METRES, SceneryFrame, batchVisible, buildSceneryScene, type StaticSceneContent, type TerrainStreamSource } from "../src/world/scenery-nodes";
 import { expectValidMesh } from "./support/geometry";
 import { testCharacters } from "./support/local-characters";
 import { localZoneModule } from "./support/local-zone-module";
@@ -29,7 +30,7 @@ describe("the shared static scene in the browser", () => {
       geometries.set(geometry.resourceKey, geometry);
     }
     expect(scene.instanceBatches.every(({ batch }) => batch.instances.length > 0)).toBe(true);
-    expect(scene.stats.staticNodes).toBe(scene.batches.length + scene.surfaces.length + scene.instanceBatches.length);
+    expect(scene.stats.staticNodes).toBe(scene.batches.length + scene.surfaces.length + scene.cutaways.length + scene.instanceBatches.length);
     const modelled = Object.values(scene.stats.props).reduce((sum, count) => sum + (count ?? 0), 0);
     expect(modelled).toBe(world.scenery.props.length);
   });
@@ -86,5 +87,25 @@ describe("the shared static scene in the browser", () => {
     const real = JSON.parse(world.staticScene.staticScene());
     expect(() => buildSceneryScene(world.scenery, content({ ...real, format: "other" }))).toThrow("Invalid static scene");
     expect(() => buildSceneryScene(world.scenery, content({ ...real, prefix: "scenery:1:0" }))).toThrow("Invalid static scene");
+  });
+  test("textured cave roofs keep the shared cutaway in the ground material batch", () => {
+    const roof = scene.cutaways.find((surface) => surface.model[14]! < -120);
+    if (!roof) { throw new Error("Redbrand's textured roof is missing"); }
+    expect(roof.draw.layer).toBe("rock");
+    const vertices = roof.draw.positions.length / 3;
+    expect(roof.draw.uvs.length).toBe(vertices * 2);
+    expect(roof.draw.tangents.length).toBe(vertices * 4);
+    const empty: TerrainStreamSource = {
+      count: () => 0, far: () => new Float32Array(), near: () => new Float32Array(),
+      update: () => new Uint32Array([0, 0]),
+    };
+    const ground = new Ground(empty, [], [roof]);
+    const batch = ground.root.children.find((child) => child instanceof BatchedMesh);
+    if (!(batch instanceof BatchedMesh)) { throw new Error("roof did not enter the material batch"); }
+    ground.update([64, 30, -138], scene.shown([64, 11, -138], { outpost: false, settlementProps: false, nature: false, climbing: false, fortress: false }));
+    expect(batch.getVisibleAt(0)).toBe(false);
+    ground.update([64, 30, -138], scene.shown(null, { outpost: false, settlementProps: false, nature: false, climbing: false, fortress: false }));
+    expect(batch.getVisibleAt(0)).toBe(true);
+    batch.dispose();
   });
 });

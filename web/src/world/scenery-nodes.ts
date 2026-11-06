@@ -5,7 +5,7 @@ import type {
   RendererInstanceBatch,
   RendererSceneNode,
 } from "@moritzbrantner/three-d-renderer";
-import type { TileDraw } from "./ground";
+import type { CutawaySurface, TileDraw } from "./ground";
 import type { Color, PropKind, Scenery } from "./scenery";
 
 /**
@@ -75,6 +75,8 @@ export type SceneryScene = {
   batches: readonly StaticBatch[];
   /** Static rock surfaces share the terrain bundle and its material batches. */
   surfaces: readonly TileDraw[];
+  /** Fixed rock roofs share the terrain material and the owning animated part's cutaway. */
+  cutaways: readonly CutawaySurface[];
   instanceBatches: readonly InstanceBatch[];
   water: readonly RendererSceneNode[];
   /** Nodes of each animated part; `motion` places them. */
@@ -176,6 +178,26 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
     }
     return Array.from(models.subarray(draw.model * 16, draw.model * 16 + 16)) as Matrix4Values;
   };
+  const surface = (draw: DrawEntry): TileDraw => {
+    const entry = layout.geometries[draw.geometry] ?? fail("surface names a missing geometry");
+    if (!draw.ground || !entry.colored || !entry.textured) {
+      fail("textured surface needs a material, colors, UVs and tangents");
+    }
+    const count = entry.vertexCount;
+    let at = entry.vertexOffset;
+    const take = (length: number) => {
+      const out = vertices.subarray(at, at + length);
+      at += length;
+      return out;
+    };
+    return {
+      layer: draw.ground.layer, overlay: draw.ground.overlay, far: false,
+      positions: take(count * 3), normals: take(count * 3), colors: take(count * 3),
+      uvs: take(count * 2), tangents: take(count * 4),
+      alpha: entry.weighted ? take(count) : new Float32Array(count).fill(1),
+      indices: indices.slice(entry.indexOffset, entry.indexOffset + entry.indexCount),
+    };
+  };
   const surfaces: TileDraw[] = [];
   const batches: StaticBatch[] = [];
   const instanceBatches: InstanceBatch[] = [];
@@ -189,29 +211,8 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
     if (!group.instanced) {
       const [draw] = group.draws;
       if (draw!.ground) {
-        const entry = layout.geometries[draw!.geometry] ?? fail("surface names a missing geometry");
-        if (!entry.colored || !entry.textured) {
-          fail("textured surface needs colors, UVs and tangents");
-        }
-        const count = entry.vertexCount;
-        let at = entry.vertexOffset;
-        const take = (length: number) => {
-          const out = vertices.subarray(at, at + length);
-          at += length;
-          return out;
-        };
-        // Shared rock geometry is already in world space, as terrain tile geometry is.
-        const positions = take(count * 3);
-        const normals = take(count * 3);
-        const colors = take(count * 3);
-        const uvs = take(count * 2);
-        const tangents = take(count * 4);
-        surfaces.push({
-          layer: draw!.ground.layer, overlay: draw!.ground.overlay, far: false,
-          positions, normals, colors, uvs, tangents,
-          alpha: entry.weighted ? take(count) : new Float32Array(count).fill(1),
-          indices: indices.slice(entry.indexOffset, entry.indexOffset + entry.indexCount),
-        });
+        // Shared static rock geometry is already in world space, as terrain tiles are.
+        surfaces.push(surface(draw!));
         continue;
       }
       batches.push({
@@ -237,10 +238,19 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
   const water = layout.water.map((draw): RendererSceneNode => ({
     id: draw.id, geometry: geometry(draw), color: draw.color, opacity: draw.opacity, modelMatrix: model(draw),
   }));
-  // Campfire flames glow (#529).
-  const animated = layout.animated.map((part) => part.map((draw): AnimatedNode => ({
-    id: draw.id, geometry: geometry(draw), color: draw.color, opacity: draw.opacity, ...(draw.emissive ? { unlit: false as const, emissive: draw.emissive } : {}),
-  })));
+  // Fixed textured roofs use their rest transform and shared cutaway visibility; moving
+  // props (flames, doors, sails) retain the renderer's ordinary lit-material path.
+  const cutaways: CutawaySurface[] = [];
+  const rest = content.staticSceneMotion(0, false);
+  const animated = layout.animated.map((part, index) => part.flatMap((draw): AnimatedNode[] => {
+    if (draw.ground) {
+      if (rest.length < (index + 1) * 16) { fail("cutaway roof needs its rest transform"); }
+      cutaways.push({ part: index, draw: surface(draw), model: rest.slice(index * 16, index * 16 + 16) });
+      return [];
+    }
+    return [{ id: draw.id, geometry: geometry(draw), color: draw.color, opacity: draw.opacity,
+      ...(draw.emissive ? { unlit: false as const, emissive: draw.emissive } : {}) }];
+  }));
   const byKind: Partial<Record<PropKind, number>> = {};
   for (const prop of scenery.props) {
     byKind[prop.kind] = (byKind[prop.kind] ?? 0) + 1;
@@ -248,6 +258,7 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
   return {
     batches,
     surfaces,
+    cutaways,
     instanceBatches,
     water,
     animated,
@@ -256,7 +267,7 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
     pointLights: (seconds, animate) => content.staticScenePointLights(seconds, animate),
     shown: (viewer, kits) => content.staticSceneShown(Float64Array.from(viewer ?? []), kits.outpost, kits.settlementProps, kits.fortress),
     stats: {
-      staticNodes: batches.length + surfaces.length + instanceBatches.length,
+      staticNodes: batches.length + surfaces.length + cutaways.length + instanceBatches.length,
       staticVertices: layout.geometries.reduce((sum, entry) => sum + entry.vertexCount, 0),
       staticTriangles: layout.geometries.reduce((sum, entry) => sum + entry.indexCount / 3, 0),
       props: byKind,
@@ -295,7 +306,7 @@ export class SceneryFrame {
     this.#hidden = scene.batches.map((batch) => ({ ...batch.node, visible: false }));
   }
 
-  nodes(eye: readonly [number, number, number], motion: SceneryMotion): { nodes: RendererSceneNode[]; instanceBatches: RendererInstanceBatch[]; visibleBatches: number } {
+  nodes(eye: readonly [number, number, number], motion: SceneryMotion): { nodes: RendererSceneNode[]; instanceBatches: RendererInstanceBatch[]; visibleBatches: number; shown: Uint8Array } {
     const nodes: RendererSceneNode[] = [];
     let visibleBatches = 0;
     const kits = motion.kits ?? NO_KITS;
@@ -319,6 +330,6 @@ export class SceneryFrame {
       visibleBatches += visible ? 1 : 0;
       return { ...batch.batch, visible };
     });
-    return { nodes, instanceBatches, visibleBatches };
+    return { nodes, instanceBatches, visibleBatches, shown };
   }
 }

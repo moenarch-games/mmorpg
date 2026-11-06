@@ -533,7 +533,7 @@ export class WorldView {
     void this.#nature.load();
     this.#climbing = new PlacedKit(world.scenery.climbing);
     void this.#climbing.load();
-    this.#ground = new Ground(world.scenery.staticScene.terrainStream(), this.#scene.surfaces);
+    this.#ground = new Ground(world.scenery.staticScene.terrainStream(), this.#scene.surfaces, this.#scene.cutaways);
     void this.#ground.load(this.#models.ktx2Loader);
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
     this.#inn = new WalkInBuildings(world.scenery.buildings.presenters());
@@ -1183,7 +1183,7 @@ export class WorldView {
     }
     const outpostReady = (this.#outpost?.drawn ?? false) && (this.#fortifications?.drawn ?? false);
     const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits: { outpost: outpostReady, settlementProps: this.#settlement?.drawn ?? false, nature: this.#nature?.drawn ?? false, climbing: this.#climbing?.drawn ?? false, fortress: this.#fortress?.drawn ?? false } });
-    this.#ground?.update(view.eye);
+    this.#ground?.update(view.eye, frame.shown);
     this.#nature?.update(this.#camera, deltaSeconds, animate);
     this.#climbing?.update(this.#camera, deltaSeconds, animate);
     this.#fortress?.update(this.#camera, deltaSeconds, animate);

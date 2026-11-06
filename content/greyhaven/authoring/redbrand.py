@@ -85,20 +85,39 @@ def rib(id,name,z0,z1):
 rib(545,'North chamber fractured rib',-144,-140)
 rib(546,'South chamber fractured rib',-136,-132)
 
-# Closed, irregular domed roof: flat underside over usable rooms, rising craggy outer crown.
+# Closed roof over the unchanged usable rooms. A low shoulder seals the cave; three
+# unequal fractured rock spines break its former dome silhouette above that shoulder.
 perimeter=([(x,-144) for x in range(48,80,2)]+[(80,z) for z in range(-144,-132,2)]
     +[(x,-132) for x in range(80,48,-2)]+[(48,z) for z in range(-132,-144,-2)])
 ring=[outer(x,z) for x,z in perimeter];n=len(ring);vs=[]
-for fraction,height in [(1,4.5),(1,4.8),(.78,9.8),(.47,14.1),(.18,16.3)]:
+for fraction,height in [(1,4.5),(1,4.8),(.78,7.4),(.47,9.6),(.18,10.6)]:
     for i,(x,z) in enumerate(ring):
         # Unequal ribs and an offset summit keep this a rock mass, not a regular dome.
         jiggle=0 if height<5 else fraction*(2.8*math.sin(i*math.tau/n*3)+.8*math.cos(i*math.tau/n*5))
         vs.append((64-(1-fraction)+(x-64)*.82*fraction,height+jiggle,-138+.5*(1-fraction)+(z+138)*.82*fraction))
-vs.append((62.2,17.3,-137.8));top=len(vs)-1
+vs.append((62.2,11.2,-137.8));top=len(vs)-1
 fs=[tuple(range(n-1,-1,-1))]
 fs += [(r*n+i,r*n+(i+1)%n,(r+1)*n+(i+1)%n,(r+1)*n+i) for r in range(4) for i in range(n)]
 fs += [(4*n+i,4*n+(i+1)%n,top) for i in range(n)]
-record(547,'Rounded Redbrand crag roof',vs,fs)
+# These coarse closed components share the roof's stable ID and cutaway. Their buried
+# roots remain above the chamber ceiling, so no decorative peak enters the playable rooms.
+for k,(cx,cz,rx,rz,base,peak) in enumerate([(52,-137,8.5,4.5,4.6,17.2),
+    (65,-139,7.5,5.2,4.6,20.2),(77,-137,6.8,4.2,4.6,15.5)]):
+    start=len(vs)
+    outline=[(-1,-.6),(-.65,-1),(.55,-.8),(1,-.35),(.82,.65),(.25,1),(-.75,.8),(-1,.1)]
+    sides=len(outline)
+    for row,(rise,width) in enumerate([(0,1),(.40,.98),(.84,.70),(1,.52)]):
+        for j,(ax,az) in enumerate(outline):
+            fracture=1+.10*math.sin(j*5.7+k*2.3)
+            vs.append((cx+rx*width*fracture*ax-rise*(.8+k*.25),
+                base+(peak-base)*rise+(rise*1.3*ax+.25*math.sin(j*4.1+k) if row else 0),
+                cz+rz*width*fracture*az+rise*.45))
+    fs += [tuple(start+j for j in range(sides-1,-1,-1)),
+        tuple(start+3*sides+j for j in range(sides))]
+    fs += [(start+r*sides+j,start+r*sides+(j+1)%sides,
+        start+(r+1)*sides+(j+1)%sides,start+(r+1)*sides+j)
+        for r in range(3) for j in range(sides)]
+record(547,'Redbrand broken ridge roof',vs,fs)
 # A rough, shallow vault gives the far-side mouth a natural arch rather than a flat lintel.
 profile=[(58,3.0),(60.5,3.4),(62.5,4.25),(64,4.5),(65.5,4.15),(67.5,3.35),(70,3.0)]
 vs=[(x,y,z) for z in [-153.5,-150] for x,y in profile]
