@@ -62,11 +62,13 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // trunks at the moved shore/shrine: a net 206,280 visits per 360 ticks.
     // Engine capsule navigation and changed visible geography move the spread fights;
     // the existing example records exact deterministic operation/byte evidence.
+    // The appended western/northern canopy and hideout add 534 net fixed bodies
+    // (192,240 visits per 360 ticks), with unchanged AI, projection and byte counts.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [29_160, 1_105_560, 288_000, 6_076_832],
-        [29_160, 1_102_680, 93_060, 1_788_549],
-        [29_160, 1_111_320, 424_719, 7_865_487],
-        [28_804, 1_122_484, 2_323_474, 24_276_762],
+        [29_160, 1_297_800, 288_000, 6_076_832],
+        [29_160, 1_294_920, 93_060, 1_788_549],
+        [29_160, 1_303_560, 424_719, 7_865_487],
+        [28_804, 1_314_724, 2_323_474, 24_276_762],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();
