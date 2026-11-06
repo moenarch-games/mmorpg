@@ -1201,10 +1201,20 @@ fn main() {
     libtest_mimic::run(&arguments, trials).exit();
 }
 
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen::prelude::wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_namespace = console, js_name = error)]
+    fn report_panic(message: &str);
+}
+
 /// The identical workload checks used by the native test, compiled as real WASM.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen::prelude::wasm_bindgen]
 pub fn workloads() -> std::result::Result<String, String> {
+    std::panic::set_hook(Box::new(|information| {
+        report_panic(&information.to_string())
+    }));
     drivers::workloads()
         .map(|workloads| {
             workloads

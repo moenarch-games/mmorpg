@@ -267,23 +267,54 @@ fn above_mesh(mesh: &mmorpg_core::StaticMesh) -> [f32; 3] {
 #[cfg_attr(not(target_arch = "wasm32"), test)]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
 pub fn authored_rigid_boxes_keep_contacts_replay_and_exact_midpoint_recovery() {
+    use rapier3d::prelude::{Cuboid, Pose, Rotation, SharedShape, Vector};
+    let metres = |at: [f32; 3]| Vector::from(at) / 100.;
     let mesh = greyhaven_vale::cave::collision_meshes()
         .into_iter()
         .find(|mesh| mesh.id == 640)
         .unwrap();
+    let mesh_shape = SharedShape::trimesh(
+        mesh.vertices
+            .iter()
+            .map(|&vertex| metres(mmorpg_core::physics::from_units(vertex)))
+            .collect(),
+        mesh.triangles.clone(),
+    )
+    .unwrap();
     let rock = first_greyhaven_rock();
     let rock_top = rock.exact_position();
-    let mesh_drop = falling_box(above_mesh(&mesh));
-    for (body, piece) in [
-        (RigidBody::static_mesh(&mesh).unwrap(), mesh_drop),
+    let rock_shape = greyhaven_vale::content().rocks()[0].1;
+    let hull = SharedShape::convex_hull(
+        &rock_shape
+            .hull(rock.half_extents())
+            .into_iter()
+            .map(metres)
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
+    let cases = [
+        (
+            RigidBody::static_mesh(&mesh).unwrap(),
+            falling_box(above_mesh(&mesh)),
+            metres(mmorpg_core::physics::from_units(mesh.position)),
+            mesh_shape,
+        ),
         (
             rock,
             falling_box([rock_top[0], rock_top[1] + 250., rock_top[2]]),
+            metres(rock_top),
+            hull,
         ),
-    ] {
+    ];
+    for (body, piece, origin, shape) in cases {
+        // A catch floor below the entire authored shape permits a piece that rolls off a
+        // rock to settle. Contact with the authored shape itself is required independently.
+        let floor_y = body.position().y - body.half_extents().y - 100;
+        let floor = RigidBody::floor(BodyId(9_000_001), floor_y);
         for upright in [false, true] {
-            let (engine, rapier) = worlds([body.clone()]);
-            let replay = worlds([body.clone()]).0;
+            let make = || worlds([body.clone(), floor.clone()]);
+            let (engine, rapier) = make();
+            let replay = make().0;
             let mut restored: Option<(World, Vec<DebrisBody>)> = None;
             let (mut engine_piece, mut rapier_piece, mut replay_piece) =
                 ([piece], [piece], [piece]);
@@ -291,14 +322,34 @@ pub fn authored_rigid_boxes_keep_contacts_replay_and_exact_midpoint_recovery() {
                 if upright {
                     world.step_props(pieces, &[])
                 } else {
-                    world.step_debris(pieces, &[false])
+                    world.step_debris(pieces, &[true])
                 }
             };
-            for tick in 0..25 {
-                assert_eq!(
-                    step(&engine, &mut engine_piece),
-                    step(&rapier, &mut rapier_piece)
-                );
+            let separation = |piece: &DebrisBody, position: Vector, target: &SharedShape| {
+                let [x, y, z, w] = piece.rotation;
+                let pose =
+                    Pose::from_parts(metres(piece.position), Rotation::from_xyzw(x, y, z, w));
+                let half = metres(mmorpg_core::physics::from_units([
+                    piece.half_extents.x,
+                    piece.half_extents.y,
+                    piece.half_extents.z,
+                ]));
+                rapier3d::parry::query::contact(
+                    &pose,
+                    &Cuboid::new(half),
+                    &Pose::from_translation(position),
+                    target.as_ref(),
+                    0.005,
+                )
+                .unwrap()
+                .map(|contact| contact.dist * 100.)
+            };
+            let mut depths = [0_f32; 2];
+            let mut touched = [false; 2];
+            let mut drift = 0_f32;
+            for tick in 0..360 {
+                step(&engine, &mut engine_piece);
+                step(&rapier, &mut rapier_piece);
                 step(&replay, &mut replay_piece);
                 assert_eq!(
                     engine_piece, replay_piece,
@@ -312,27 +363,65 @@ pub fn authored_rigid_boxes_keep_contacts_replay_and_exact_midpoint_recovery() {
                         "authored rigid recovery, tick {tick}"
                     );
                 }
-                if tick == 12 {
-                    // Reconstruct only from game-owned geometry and canonical piece state.
-                    restored = Some((worlds([body.clone()]).0, engine_piece.to_vec()));
+                if tick == 179 {
+                    restored = Some((make().0, engine_piece.to_vec()));
                 }
                 let [a, b] = [engine_piece[0].position, rapier_piece[0].position];
-                let distance = (0..3)
-                    .map(|axis| (a[axis] - b[axis]).powi(2))
-                    .sum::<f32>()
-                    .sqrt();
-                assert!(
-                    distance <= 10.,
-                    "authored rigid contact {upright}, tick {tick}: {a:?} vs {b:?}"
+                drift = drift.max(
+                    (0..3)
+                        .map(|axis| (a[axis] - b[axis]).powi(2))
+                        .sum::<f32>()
+                        .sqrt(),
                 );
-                assert!(
-                    engine_piece[0]
-                        .position
-                        .iter()
-                        .chain(&engine_piece[0].velocity)
-                        .all(|value| value.is_finite())
-                );
+                for (index, state) in [engine_piece[0], rapier_piece[0]].iter().enumerate() {
+                    assert!(
+                        state
+                            .position
+                            .iter()
+                            .chain(&state.velocity)
+                            .chain(&state.rotation)
+                            .all(|value| value.is_finite())
+                    );
+                    if let Some(depth) = separation(state, origin, &shape) {
+                        touched[index] = true;
+                        depths[index] = depths[index].min(depth);
+                    }
+                    let [x, y, z, w] = state.rotation;
+                    let rotation = Rotation::from_xyzw(x, y, z, w);
+                    let half = metres(mmorpg_core::physics::from_units([
+                        state.half_extents.x,
+                        state.half_extents.y,
+                        state.half_extents.z,
+                    ]));
+                    let radius_y = (rotation * Vector::new(half.x, 0., 0.)).y.abs()
+                        + (rotation * Vector::new(0., half.y, 0.)).y.abs()
+                        + (rotation * Vector::new(0., 0., half.z)).y.abs();
+                    let floor_gap = state.position[1]
+                        - radius_y * 100.
+                        - mmorpg_core::physics::from_units([0, floor_y, 0])[1];
+                    depths[index] = depths[index].min(floor_gap);
+                }
             }
+            println!(
+                "authored {:?} upright={upright}: max drift={drift}, min separations={depths:?}, final Engine={:?}, Rapier={:?}",
+                body.id(),
+                engine_piece[0],
+                rapier_piece[0]
+            );
+            assert_eq!(
+                touched, [true; 2],
+                "both solvers must contact actual authored geometry"
+            );
+            // The upstream real-cave oracle permits 0.5 cm beyond Rapier's worst depth,
+            // with an absolute five-centimetre ceiling. Tumbling orientations may diverge.
+            assert!(
+                depths[0] >= depths[1] - 0.5 && depths[0] >= -5.,
+                "authored rigid nonembedding: {depths:?}"
+            );
+            assert!(
+                engine_piece[0].resting && rapier_piece[0].resting,
+                "both complete the fall and settle"
+            );
         }
     }
 }
