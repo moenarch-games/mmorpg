@@ -78,5 +78,5 @@ ASSET_TOOLING_KTX="${KTX}" bun "${PROCESSOR}/scripts/prepare-native-downloads.ts
 FEMALE="${ROOT_DIR}/web/public/characters/humanoid.ranger.female"
 ASSET_TOOLING_KTX="${KTX}" bun "${PROCESSOR}/scripts/prepare-native-downloads.ts" \
   --index "${FEMALE}/humanoid-ranger-female.index.json" \
-  --entries humanoid.ranger.female/outfit.tanner.skin.light,armor.tanner/default,hair.buns/hair-1 \
+  --entries humanoid.ranger.female/outfit.tanner,humanoid.ranger.female/outfit.tanner.skin.light,armor.tanner/default,hair.buns/hair-1,hair.long/hair-1 \
   --out "${FEMALE}/native"
