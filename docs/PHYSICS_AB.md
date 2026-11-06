@@ -439,3 +439,17 @@ zone costs about 3× more (heightfield preparation and per-body inserts). Note t
 arm rebuilds its world every step by design (determinism), which is part of its cost. Since
 mmorpg#547 (after this table) a step copies a cached world of the fixed bodies and the ground and
 inserts only the units and platforms, which roughly halves the Rapier per-tick medians above.
+
+### Tangential terrain seam recovery (#644)
+
+The combined authored scene exposed Redbrand bandit 401 ending slightly embedded at a
+flat-to-rising heightfield seam. A nearly tangential earliest hit hid the next blocking
+triangle; reconstruction alone then depenetrated it at tick 2,563. Physics Engine #501
+recasts that tangential contact with its existing normal nudge. The exact single-move
+regression requires no endpoint penetration and identical reconstructed continuation.
+
+With engine `943d0841a6b4abb5048c042965620b35a7225f0a` (kernels `291ae802`), the wolf A/B
+passes exact recovery/replay, all 9,471 physical-query comparisons, and the unchanged
+scripted climb allowance (12.98 units of 17.04). This is correctness evidence, not timing.
+The upstream debugging checkpoint algorithm changes to 12; MMORPG's canonical/wire
+layout and protocol ID remain unchanged.
