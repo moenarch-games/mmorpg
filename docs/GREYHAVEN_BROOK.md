@@ -1153,3 +1153,20 @@ Path wear in the brook slice also separates into subtle paired cart tracks, with
 lighter wear between them and irregular verges. It uses the existing path material
 and weights; crossing tracks combine into the more heavily worn junctions. Ground
 support and the movement corridor remain core-owned.
+
+### Integration cost and route alignment
+
+The Wolfrun Trail's guide follows the owner's supported mill bank crossing and western
+stone apron, rather than the former wall-blocked gate. The guide also feeds path wear and
+decorative cover clearance. The owner's updated wolf journey preserves its existing parity
+allowance. Engine issue #508 independently retains the original exact towpath-edge regression;
+this route adoption does not establish that the engine defect is fixed.
+
+The saved brook quality pass grows the existing static export from 485,864 to approximately 527,000
+vertices: refined basin rock surfaces add 21,114, nine new western rock surfaces 15,435,
+bank shingle 1,884, one shared turf mesh 560, and other scenery a net 1,828. Exact geometry
+aliases decline from 158 to 124; the increase is authored surface detail rather than new
+repeated-buffer growth. The existing vertex ceiling is 530,000; the 3,800-node ceiling stays
+unchanged (the measured quality pass has 3,722 nodes). This records adopted content cost, not a timing claim.
+The frozen accepted/selected Outpost grass placements remain unchanged; their context hash
+and the rendered scenery fingerprints reflect the saved scene and corrected route guide.

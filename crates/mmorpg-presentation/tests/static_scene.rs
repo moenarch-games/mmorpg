@@ -40,9 +40,11 @@ fn scene_wide(draw: &Draw) -> bool {
         || draw.id.starts_with("static-ground-")
         || draw.id.contains(":handholds:")
         || draw.id.contains("greyhaven-ground-cover")
+        || draw.id.contains("greyhaven-brook-turf")
         || draw.id.contains("greyhaven-fern-understory")
         || draw.id.contains("-current-")
         || draw.id.starts_with("fall-strand-")
+        || (draw.id.starts_with("brook-") && draw.id.contains("-foam-"))
         || draw.id.starts_with("settlement-fallback-")
         || matches!(draw.id.as_str(), "brook-wet-banks" | "brook-bank-shingle")
 }

@@ -76,7 +76,7 @@ const SLOPE_STEP_UNITS: f32 = 0.5;
 /// Scripted walks over slopes, by workload, bounded with [`SLOPE_DIVERGENCE_PER_UNIT`] up to
 /// the tick their fight can begin: `vale-wolf-hunt` up the Wolfrun Climb (#423) and through
 /// Wolfrun Woods until it turns toward the den wolf.
-const CLIMBS: [(&str, usize); 1] = [("vale-wolf-hunt", 1_434)];
+const CLIMBS: [(&str, usize); 1] = [("vale-wolf-hunt", 1_492)];
 /// Shot contact fractions on identical states: both backends solve the same ray against the
 /// same boxes, capsules and triangles in `f32`.
 const SHOT_FRACTION_TOLERANCE: f32 = 1.0e-4;

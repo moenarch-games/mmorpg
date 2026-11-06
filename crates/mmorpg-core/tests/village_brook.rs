@@ -151,11 +151,24 @@ fn brook_bridge_ford_gate_culvert_and_recovery() {
     gate.walk(16384);
     gate.ticks(90);
     assert!(
-        gate.feet()[0] > -3000.,
-        "west gate stays accessible: {:?}",
+        gate.feet()[0] < -3400.,
+        "the mill closes the former gate: {:?}",
         gate.feet()
     );
-    // The new lintels and faceted wall geometry leave every existing road gate usable.
+    for (x, z) in [
+        (-3600., 2450.),
+        (-3400., 2450.),
+        (-3400., 2135.),
+        (-2900., 2135.),
+    ] {
+        gate.go(x, z);
+    }
+    assert!(
+        gate.feet()[0] > -3000.,
+        "the mill bank crossing stays accessible: {:?}",
+        gate.feet()
+    );
+    // The new lintels and faceted walls leave the remaining road gates usable.
     for (start, target) in [
         ([0, -1400], [0., -600.]),
         ([0, 5500], [0., 4700.]),

@@ -199,11 +199,14 @@ pub const ROADS: &[Road] = &[
     },
     Road {
         name: "Wolfrun Trail",
-        // Up the Wolfrun Climb (#423): the cliff ledge, the hairpin landing, the cutting.
+        // Over the brook mill's supported bank crossing, then up the Wolfrun Climb.
         points: &[
             [-1_600, 2_000],
-            [-3_200, 2_000],
-            [-4_200, 2_000],
+            [-3_200, 2_135],
+            [-3_400, 2_135],
+            [-3_400, 2_450],
+            [-3_600, 2_450],
+            [-4_200, 2_135],
             [-4_200, -1_800],
             [-5_400, -1_800],
             [-5_400, 1_200],

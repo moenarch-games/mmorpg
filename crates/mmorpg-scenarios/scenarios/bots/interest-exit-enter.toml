@@ -1,8 +1,8 @@
 # Walk south into the open road before separating east/west, clear of authored
-# market stalls. Interest must drop the other player, then restore them on return.
+# market stalls and across the mill bank at z = 2140. Interest must drop the other player, then restore them on return.
 name = "interest-exit-enter"
 zone = 1
-ticks = 350
+ticks = 363
 digest_interval = 20
 
 [[bots]]
@@ -38,7 +38,7 @@ strafe = 0
 facing = 0
 
 [[steps]]
-tick = 72
+tick = 85
 bot = "alice"
 action = "move"
 forward = 1
@@ -46,7 +46,7 @@ strafe = 0
 facing = 49152
 
 [[steps]]
-tick = 72
+tick = 85
 bot = "bob"
 action = "move"
 forward = 1
@@ -54,7 +54,7 @@ strafe = 0
 facing = 16384
 
 [[steps]]
-tick = 300
+tick = 313
 bot = "alice"
 action = "move"
 forward = 1
@@ -62,7 +62,7 @@ strafe = 0
 facing = 16384
 
 [[steps]]
-tick = 300
+tick = 313
 bot = "bob"
 action = "move"
 forward = 1
@@ -73,24 +73,24 @@ facing = 49152
 kind = "not_sees"
 bot = "alice"
 target = "bob"
-tick = 299
+tick = 312
 
 [[expect]]
 kind = "visible_count"
 bot = "bob"
-tick = 299
+tick = 312
 count = 1
 
 [[expect]]
 kind = "sees"
 bot = "alice"
 target = "bob"
-from_tick = 302
-by_tick = 340
+from_tick = 315
+by_tick = 353
 
 [[expect]]
 kind = "sees"
 bot = "bob"
 target = "alice"
-from_tick = 302
-by_tick = 340
+from_tick = 315
+by_tick = 353
