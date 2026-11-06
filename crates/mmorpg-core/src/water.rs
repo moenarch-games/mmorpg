@@ -129,17 +129,16 @@ impl WaterVolume {
     }
 
     pub(crate) fn validate(&self) -> Result<(), ZoneError> {
-        if let Some(channel) = &self.channel {
-            if !(2..=32).contains(&channel.points.len())
+        if let Some(channel) = &self.channel
+            && (!(2..=32).contains(&channel.points.len())
                 || channel.half_width <= 0
                 || channel.points.windows(2).any(|p| p[0] == p[1])
                 || channel.points.iter().flatten().any(|v| {
                     i64::from(*v).abs() + i64::from(channel.half_width)
                         > i64::from(crate::MAX_CONTENT_COORDINATE_UNITS)
-                })
-            {
-                return Err(ZoneError::new("water channel points or width are invalid"));
-            }
+                }))
+        {
+            return Err(ZoneError::new("water channel points or width are invalid"));
         }
         if self.name.is_empty() || self.radii.iter().any(|&radius| radius <= 0) {
             return Err(ZoneError::new(

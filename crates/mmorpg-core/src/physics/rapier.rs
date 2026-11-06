@@ -778,7 +778,7 @@ impl World {
             // into the ground, which the controller answers with a nudge back up. A body just
             // above the ground settles onto it.
             let mut settle = 0.0;
-            match (!body.weightless).then(|| self.ground_gap(&body, body.position)) {
+            match (!body.weightless).then(|| self.ground_gap(body, body.position)) {
                 // A swimmer (#274) keeps the vertical velocity the zone gave it.
                 None => {}
                 Some(Some(gap)) if velocity[1] <= 0.0 => {
@@ -813,14 +813,14 @@ impl World {
                     .velocity = velocity;
                 continue;
             }
-            let desired = Self::slide_around(self.bodies.values(), &body, desired);
-            let (moved, grounded, vertical_contact) = self.move_shape(&body, desired)?;
+            let desired = Self::slide_around(self.bodies.values(), body, desired);
+            let (moved, grounded, vertical_contact) = self.move_shape(body, desired)?;
             let to = [
                 body.position[0] + moved[0],
                 body.position[1] + moved[1],
                 body.position[2] + moved[2],
             ];
-            let supported = grounded && self.ground_below(&body, to);
+            let supported = grounded && self.ground_below(body, to);
             if (supported && velocity[1] <= 0.0)
                 || (velocity[1] > 0.0 && vertical_contact && moved[1] < velocity[1] - 1.0e-3)
             {
