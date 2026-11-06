@@ -1063,3 +1063,11 @@ CPU 12.9 ms and GPU 11.13 ms; the short bridge window had median CPU 15.2 ms/GPU
 before/after speed claim; there is no comparable baseline. The samples precede
 removing the redundant rock fan triangles. The report is
 `artifacts/profile/greyhaven-brook-quality.json`; no performance gate was added.
+
+![Western slope after turf and rock refinement](images/greyhaven-western-turf-rock-progress.png)
+
+The corrected game view uses eye `[-29,4.2,47]`, target `[-44,3.7,36]`, noon,
+800×533, with the player having walked to `[-36,39.83]` m. The browser reports no
+page errors and all seven terrain textures are loaded. The rock faces no longer
+carry the triangular fan recesses. Further path/terrain finishing, the native
+water shadow, matching final bridge view, wide overview and PR integration remain.
