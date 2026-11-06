@@ -106,7 +106,16 @@ const HALL: [i32; 2] = spot([0, 120]);
 /// Elden's walk home at dusk from his post south of the keep: down past the tannery to his
 /// doorstep, through the door and to his bed (#158, Atlas 5.1.45).
 pub(super) fn path() -> Vec<[i32; 2]> {
-    vec![[-2_200, 3_100], DOORSTEP, DOORWAY, HALL, BEDSIDE]
+    // The new western cottage leaves the alley east of it clear.
+    vec![
+        [-1800, 900],
+        [-1800, 2000],
+        [-2200, 3100],
+        DOORSTEP,
+        DOORWAY,
+        HALL,
+        BEDSIDE,
+    ]
 }
 
 /// Facing the bed (house −X, zone +X).

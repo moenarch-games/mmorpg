@@ -27,7 +27,7 @@ const DAY_CYCLE = new DayCycle({ noonElevation: THREE.MathUtils.degToRad(60), mo
 const MOON_LUX = 2;
 const MOON_COLOR: Vec3 = [0.75, 0.85, 1];
 /** EV100 by sun elevation in degrees (`EXPOSURE`). */
-const EXPOSURE: readonly (readonly [number, number])[] = [[-12, 2], [-4, 6], [2, 11], [15, 13.5], [60, 14.5]];
+const EXPOSURE: readonly (readonly [number, number])[] = [[-12, 2], [-4, 6], [2, 11], [15, 13.8], [60, 15]];
 /** Emissive presentation colours glow at this luminance, cd/m² (`EMISSIVE_NITS`). */
 export const EMISSIVE_NITS = 80;
 /**
@@ -47,10 +47,10 @@ const SHADOWLESS_BELOW = -3;
  * `FOG_VISIBILITY_METRES` (Bevy's Koschmieder threshold), red light fading and blue gathering first, so distant ranges
  * turn blue but keep their shading.
  */
-const FOG_VISIBILITY_METRES = 3200;
+const FOG_VISIBILITY_METRES = 6000;
 const FOG_DENSITY = -Math.log(0.05) / FOG_VISIBILITY_METRES;
-const FOG_EXTINCTION: Vec3 = [1.2 * FOG_DENSITY, FOG_DENSITY, 0.8 * FOG_DENSITY];
-const FOG_INSCATTERING: Vec3 = [0.8 * FOG_DENSITY, FOG_DENSITY, 1.2 * FOG_DENSITY];
+const FOG_EXTINCTION: Vec3 = [1.1 * FOG_DENSITY, FOG_DENSITY, 0.9 * FOG_DENSITY];
+const FOG_INSCATTERING: Vec3 = [0.9 * FOG_DENSITY, FOG_DENSITY, 1.1 * FOG_DENSITY];
 /** The presentation materials' surface (`standard_material`). */
 const ROUGHNESS = 0.86;
 const METALLIC = 0.02;
@@ -108,16 +108,20 @@ function linear(channel: number): number {
 /** The `LitMaterial` for a presentation node or instance batch (the native `standard_material`). */
 export function presentationMaterial({ node }: RendererMaterialRequest): THREE.Material {
   const opacity = node.opacity ?? 1;
-  return new LitMaterial({
+  const material = new LitMaterial({
     baseColor: linearRgb(node.color ?? 0xffffff),
     alpha: opacity,
     alphaMode: opacity < 1 ? "blend" : "opaque",
     emissive: linearRgb(node.emissive ?? 0x000000).map((channel) => channel * EMISSIVE_NITS) as unknown as Vec3,
-    perceptualRoughness: ROUGHNESS,
-    metallic: METALLIC,
+    perceptualRoughness: opacity < 1 && node.unlit !== true ? 0.3 : ROUGHNESS,
+    metallic: opacity < 1 ? 0 : METALLIC,
     doubleSided: node.doubleSided === true,
     unlit: node.unlit === true,
   });
+  // Blended water/foam receives shadows without stamping an opaque silhouette on its bed.
+  // The visible blend shader ignores this cutoff; shadow variants share the uniform.
+  if (opacity < 1) material.uniforms.alphaCutoff = { value: 1 };
+  return material;
 }
 
 const converted = new WeakMap<THREE.Material, LitMaterial>();
@@ -155,7 +159,7 @@ export function litObject<T extends THREE.Object3D>(root: T): T {
  * One frame's lighting inputs: the hour, whether the atmosphere draws the sky (the world) or the page shows through
  * (the selection stage), the fog colour (`#rrggbb`, null for none) and the point lights.
  */
-export type LightingFrame = { hour: number; sky: boolean; fog: string | null; pointLights: Float32Array | null };
+export type LightingFrame = { hour: number; sky: boolean; interior: number; fog: string | null; pointLights: Float32Array | null };
 
 const negate = ([x, y, z]: Vec3): Vec3 => [-x, -y, -z];
 
@@ -194,14 +198,22 @@ export class GreyhavenLighting {
     const { hour, fog, pointLights } = frame;
     const sun = DAY_CYCLE.toSun(hour);
     const elevation = THREE.MathUtils.radToDeg(Math.asin(Math.min(1, Math.max(-1, sun[1]))));
-    lighting.ev100 = ev100(elevation);
+    const interior = Math.min(1, Math.max(0, frame.interior));
+    const exposure = ev100(elevation);
+    const transmission = 10 ** (-3 * interior);
+    // Keep the night/cave fill while allowing daylight relief and cast shadows to read.
+    // The character-selection stage retains its existing studio fill.
+    const daylight = Math.min(1, Math.max(0, elevation / 15));
+    const skyFill = frame.sky ? 0.9 - 0.25 * daylight : 0.9;
+    const environmentIntensity = (skyFill + (1 - skyFill) * interior) * 10 ** (-interior);
+    lighting.ev100 = exposure + (Math.min(exposure, 7.5) - exposure) * interior;
     const shadows = elevation > SHADOWLESS_BELOW ? SUN_SHADOWS : null;
     if (this.drawsSky) {
-      lighting.sky = DEFAULT_SKY;
+      lighting.sky = { ...DEFAULT_SKY, environmentIntensity };
       lighting.clearColor = [0, 0, 0];
       lighting.clearAlpha = 1;
-      lighting.sun = { direction: negate(sun), color: [1, 1, 1], illuminance: RAW_SUNLIGHT, shadows };
-      lighting.moon = { direction: negate(DAY_CYCLE.toMoon(hour)), color: MOON_COLOR, illuminance: MOON_LUX };
+      lighting.sun = { direction: negate(sun), color: [1, 1, 1], illuminance: RAW_SUNLIGHT * transmission, shadows };
+      lighting.moon = { direction: negate(DAY_CYCLE.toMoon(hour)), color: MOON_COLOR, illuminance: MOON_LUX * transmission };
       // The sky's environment light is the ambient light.
       lighting.ambient = { color: [1, 1, 1], brightness: 0 };
     } else {
@@ -212,15 +224,15 @@ export class GreyhavenLighting {
       const lux = Math.max(...light);
       // One directional light: the sun while it outshines the moon, then the moon.
       if (lux > MOON_LUX) {
-        lighting.sun = { direction: negate(sun), color: light.map((channel) => channel / lux) as unknown as Vec3, illuminance: lux, shadows };
+        lighting.sun = { direction: negate(sun), color: light.map((channel) => channel / lux) as unknown as Vec3, illuminance: lux * transmission, shadows };
       } else {
         const moon = DAY_CYCLE.toMoon(hour);
-        lighting.sun = moon[1] > 0 ? { direction: negate(moon), color: MOON_COLOR, illuminance: MOON_LUX, shadows: null } : null;
+        lighting.sun = moon[1] > 0 ? { direction: negate(moon), color: MOON_COLOR, illuminance: MOON_LUX * transmission, shadows: null } : null;
       }
       const twilight = Math.max(0, 1 - Math.abs(elevation) / 8);
       lighting.ambient = {
         color: SKY_COLOR.map((channel, index) => channel + (TWILIGHT_COLOR[index]! - channel) * twilight) as unknown as Vec3,
-        brightness: interpolate(SKY_AMBIENT, elevation),
+        brightness: interpolate(SKY_AMBIENT, elevation) * transmission * environmentIntensity,
       };
     }
     lighting.fog = fog === null ? null : {

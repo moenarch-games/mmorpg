@@ -1,6 +1,6 @@
 //! Physics backend A/B (physics-engine #330): the real zone simulation on Rapier and on
 //! physics-engine, from the same initial state with the same inputs and tick count. Only
-//! built with `--features physics-ab`; Rapier stays the production authority (Atlas 2.1.6).
+//! built with `--features physics-ab`; Rapier stays the behavioural oracle.
 //!
 //! Every workload runs twice on each backend. Each run must keep shared invariants (finite
 //! state, no penetration of content boxes, door leaves, props, the floor or the terrain beyond
@@ -24,7 +24,7 @@ mod drivers;
 #[path = "support/greyhaven_workload.rs"]
 mod greyhaven_workload;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 
 use drivers::{Run, Workload};
@@ -76,7 +76,7 @@ const SLOPE_STEP_UNITS: f32 = 0.5;
 /// Scripted walks over slopes, by workload, bounded with [`SLOPE_DIVERGENCE_PER_UNIT`] up to
 /// the tick their fight can begin: `vale-wolf-hunt` up the Wolfrun Climb (#423) and through
 /// Wolfrun Woods until it turns toward the den wolf.
-const CLIMBS: [(&str, usize); 1] = [("vale-wolf-hunt", 1_434)];
+const CLIMBS: [(&str, usize); 1] = [("vale-wolf-hunt", 1_492)];
 /// Shot contact fractions on identical states: both backends solve the same ray against the
 /// same boxes, capsules and triangles in `f32`.
 const SHOT_FRACTION_TOLERANCE: f32 = 1.0e-4;
@@ -147,21 +147,31 @@ fn finite(snapshot: &CanonicalZoneSnapshot) -> bool {
         .all(|value| value.is_finite())
 }
 
-/// Every content box, door leaf and standing prop the zone currently blocks with (NPC boxes
-/// are left out: routine NPCs are placed through units without contact resolution).
+/// Primitive content boxes, door leaves and standing props. Authored hulls and triangle
+/// meshes must not be checked as boxes: their empty bounding-box corners are traversable.
+/// NPC boxes are left out because routines place NPCs without contact resolution.
 fn boxes(zone: &ZoneSimulation) -> Vec<([f32; 3], [f32; 3])> {
     let exact = |value: [i32; 3]| mmorpg_core::physics::from_units(value);
+    let meshes: BTreeSet<_> = zone
+        .definition()
+        .static_meshes()
+        .iter()
+        .map(|mesh| mesh.id)
+        .collect();
     let mut boxes: Vec<_> = zone
         .definition()
         .colliders()
         .iter()
+        .filter(|collider| {
+            !meshes.contains(&collider.id) && zone.content().rock(collider.id).is_none()
+        })
         .map(|collider| (exact(collider.position), exact(collider.half_extents)))
         .collect();
     let doors = zone.content().doors().iter().map(|door| {
-        *zone
-            .physics()
+        zone.physics()
             .body(BodyId(u64::from(door.body)))
             .expect("door leaf body")
+            .clone()
     });
     for body in doors.chain(zone.prop_bodies()) {
         let (centre, half) = (body.position(), body.half_extents());
@@ -428,8 +438,8 @@ fn check_rolls(trace: &Trace) -> Result<()> {
 /// The hoist ride (#56): the rider ends on the windmill's gallery, 8 m up.
 fn check_mill_hoist(trace: &Trace) -> Result<()> {
     let last = trace.snapshots.last().ok_or("empty hoist trace")?;
-    let [_, y, z] = last.players[0].position;
-    if (y - 890.0 - TERRACE).abs() > 0.1 || z < 1_900.0 {
+    let [x, y, _] = last.players[0].position;
+    if (y - 890.0 - TERRACE).abs() > 0.1 || x < 9_000.0 {
         return Err(format!("the hoist rider ends at {:?}", last.players[0].position).into());
     }
     Ok(())
@@ -898,13 +908,71 @@ fn check_workload(workload: Workload) -> Result<()> {
         }
     }
     if matches!(workload, Workload::WatchPost) {
-        // The same blasts and arrows break the same pieces on both backends.
-        let pieces = |trace: &Trace| trace.snapshots.last().map(|last| last.pieces.clone());
-        assert_eq!(
-            pieces(&rapier),
-            pieces(&engine),
-            "{name}: piece states differ"
-        );
+        // Chasing AI is intentionally not position-bounded across backends. Its first blast
+        // lands eight units apart in the authored scene, so evaluate each exact falloff from
+        // that backend's actual centre instead of assuming identical damage from different hits.
+        let damaged_ids = |trace: &Trace| {
+            trace
+                .snapshots
+                .last()
+                .unwrap()
+                .pieces
+                .iter()
+                .filter(|piece| piece.changed_tick == 150)
+                .map(|piece| piece.piece)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(damaged_ids(&rapier), damaged_ids(&engine));
+        for trace in [&rapier, &engine] {
+            let impact = &trace.snapshots[149];
+            let target = impact
+                .creatures
+                .iter()
+                .find(|unit| unit.creature_id.get() == 401)
+                .unwrap();
+            let centre = mmorpg_core::physics::to_units(target.position);
+            let content = mmorpg_core::greyhaven_vale::content();
+            for id in damaged_ids(trace) {
+                let piece = content
+                    .pieces()
+                    .iter()
+                    .find(|piece| piece.id == id)
+                    .unwrap();
+                let squared = (0..3)
+                    .map(|axis| {
+                        let near = centre[axis].clamp(
+                            piece.position[axis] - piece.half_extents[axis],
+                            piece.position[axis] + piece.half_extents[axis],
+                        );
+                        i64::from(near - centre[axis]).pow(2)
+                    })
+                    .sum::<i64>();
+                let distance = squared.isqrt();
+                // Level-six Fire Blast: top roll 16 + five levels * 3, radius 500.
+                let damage = u32::try_from(31 * (1000 - distance) / 1000).unwrap();
+                let actual = impact
+                    .pieces
+                    .iter()
+                    .find(|state| state.piece == id)
+                    .unwrap();
+                assert_eq!(
+                    actual.health,
+                    piece.health - damage,
+                    "piece {id:?} at {centre:?}"
+                );
+                assert_eq!(
+                    trace
+                        .snapshots
+                        .last()
+                        .unwrap()
+                        .pieces
+                        .iter()
+                        .find(|state| state.piece == id)
+                        .unwrap(),
+                    actual
+                );
+            }
+        }
     }
     if matches!(workload, Workload::ChargePath) {
         // On each backend some Warden charges (#57).
@@ -1050,8 +1118,8 @@ fn check_workload(workload: Workload) -> Result<()> {
         }
     }
     if let Workload::Bots(scenario) = &workload {
-        // The replay drives the zone as the bot runner does: Rapier reproduces the
-        // scenario's expected positions exactly.
+        // The production Engine arm reproduces the bot runner's exact fixture positions.
+        // Rapier remains the independent replay, recovery and physical-query oracle.
         for expectation in &scenario.positions {
             let tick = usize::try_from(expectation.tick)? - 1;
             let at = |trace: &Trace| {
@@ -1064,14 +1132,14 @@ fn check_workload(workload: Workload) -> Result<()> {
                     .ok_or_else(|| Box::<dyn Error>::from("missing player"))
             };
             assert_eq!(
-                at(&rapier)?,
+                at(&engine)?,
                 expectation.position,
-                "{name} Rapier expectation"
+                "{name} Engine expectation"
             );
-            let engine_at = at(&engine)?;
-            if engine_at != expectation.position {
+            let rapier_at = at(&rapier)?;
+            if rapier_at != expectation.position {
                 println!(
-                    "  {name} tick {}: engine at {engine_at:?}, scenario expects {:?}",
+                    "  {name} tick {}: Rapier at {rapier_at:?}, scenario expects {:?}",
                     expectation.tick, expectation.position
                 );
             }

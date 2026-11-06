@@ -44,7 +44,7 @@ pub(crate) fn height_at(x: i32, z: i32) -> Option<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{greyhaven_vale_scenery, unmasked_greyhaven_vale_scenery};
+    use crate::greyhaven_vale_scenery;
 
     const SOURCE: HeightField = include!("../assets/outpost-relief/source.heights.rs");
 
@@ -57,7 +57,6 @@ mod tests {
         );
         assert_eq!(AUTHORED.heights.len(), AUTHORED.columns * AUTHORED.rows);
         assert_eq!(SOURCE.heights.len(), AUTHORED.heights.len());
-        let before = unmasked_greyhaven_vale_scenery();
         let after = greyhaven_vale_scenery();
         let mut changed = 0;
         for row in 0..AUTHORED.rows {
@@ -65,8 +64,21 @@ mod tests {
                 let x = AUTHORED.origin[0] + i32::try_from(column).unwrap() * AUTHORED.step;
                 let z = AUTHORED.origin[1] + i32::try_from(row).unwrap() * AUTHORED.step;
                 let index = row * AUTHORED.columns + column;
-                assert_eq!(before.height_at(x, z), i32::from(SOURCE.heights[index]));
-                assert_eq!(after.height_at(x, z), i32::from(AUTHORED.heights[index]));
+                assert_eq!(
+                    SOURCE.height_at(x, z),
+                    Some(i32::from(SOURCE.heights[index]))
+                );
+                assert_eq!(
+                    AUTHORED.height_at(x, z),
+                    Some(i32::from(AUTHORED.heights[index]))
+                );
+                // The authored landscape keeps the playable Outpost square flat (#644).
+                let expected = if z >= -1_200 {
+                    0
+                } else {
+                    i32::from(AUTHORED.heights[index])
+                };
+                assert_eq!(after.height_at(x, z), expected);
                 if AUTHORED.heights[index] != SOURCE.heights[index] {
                     changed += 1;
                 }
@@ -126,21 +138,41 @@ mod tests {
                 }
             }
         }
-        // The untouched boundary samples reconstruct the old edge to at most
+        // The saved relief boundary samples reconstruct their original capture to at most
         // one centimetre between nodes; adjacent integer coordinates cannot jump.
         for z in -1_300..=5_300 {
             for x in [-3_500, 3_500] {
-                assert!((after.height_at(x, z) - before.height_at(x, z)).abs() <= 1);
+                assert!(
+                    (AUTHORED.height_at(x, z).unwrap() - SOURCE.height_at(x, z).unwrap()).abs()
+                        <= 1
+                );
                 for adjacent in [x - 1, x + 1] {
-                    assert!((after.height_at(x, z) - after.height_at(adjacent, z)).abs() <= 2);
+                    assert!(
+                        (AUTHORED.height_at(x, z).unwrap()
+                            - AUTHORED
+                                .height_at(adjacent.clamp(-3_500, 3_500), z)
+                                .unwrap())
+                        .abs()
+                            <= 2
+                    );
                 }
             }
         }
         for x in -3_500..=3_500 {
             for z in [-1_300, 5_300] {
-                assert!((after.height_at(x, z) - before.height_at(x, z)).abs() <= 1);
+                assert!(
+                    (AUTHORED.height_at(x, z).unwrap() - SOURCE.height_at(x, z).unwrap()).abs()
+                        <= 1
+                );
                 for adjacent in [z - 1, z + 1] {
-                    assert!((after.height_at(x, z) - after.height_at(x, adjacent)).abs() <= 2);
+                    assert!(
+                        (AUTHORED.height_at(x, z).unwrap()
+                            - AUTHORED
+                                .height_at(x, adjacent.clamp(-1_300, 5_300))
+                                .unwrap())
+                        .abs()
+                            <= 2
+                    );
                 }
             }
         }

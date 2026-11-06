@@ -148,7 +148,9 @@ impl NpcContext {
                     quantity: 1,
                 })
             }
-            NpcRole::Guard | NpcRole::SpiritHealer | NpcRole::QuestGiver => None,
+            NpcRole::Guard | NpcRole::SpiritHealer | NpcRole::QuestGiver | NpcRole::Resident => {
+                None
+            }
         }
     }
     /// Page authored dialogue and objective descriptions without hiding the world.
@@ -163,6 +165,7 @@ impl NpcContext {
             return String::new();
         };
         let detail = match npc.role {
+            NpcRole::Resident => "A resident of Greyhaven.".into(),
             NpcRole::Guard | NpcRole::SpiritHealer => "no interaction supported".into(),
             NpcRole::Vendor => {
                 let stock = content.vendor_stock(npc.id);

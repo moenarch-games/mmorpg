@@ -110,22 +110,20 @@ fn the_client_model_holds_only_client_rules_over_core() {
     }
 }
 
-/// physics-engine is a test/bench-only second physics backend (physics-engine #330): the
-/// lockfile lists it under `mmorpg-core` because it is an optional dependency there, so the
-/// boundary is that only `mmorpg-core` declares it, optionally, behind the non-default
-/// `physics-ab` feature, and no other crate (hosts, `mmorpg-wasm`) enables that feature.
+/// Physics Engine is a normal dependency of core, shared by native/WASM production;
+/// Rapier stays available there as a fallback and test oracle. Only core owns the choice.
 #[test]
-fn production_builds_never_enable_the_physics_ab_backend() {
+fn production_builds_use_the_core_owned_physics_backend() {
     const CORE: &str = include_str!("../../mmorpg-core/Cargo.toml");
     let declaration = CORE
         .lines()
         .find(|line| line.starts_with("physics-engine"))
         .expect("mmorpg-core declares physics-engine");
-    assert!(declaration.contains("optional = true"), "{declaration}");
-    assert!(CORE.contains("physics-ab = [\"dep:physics-engine\"]"));
+    assert_eq!(declaration, "physics-engine.workspace = true");
+    assert!(CORE.contains("physics-ab = []"));
     assert!(
         !CORE.contains("default = ["),
-        "mmorpg-core has no default features"
+        "physics engine must not need an opt-in feature"
     );
     for (name, manifest) in [
         ("mmorpg-game-server", include_str!("../Cargo.toml")),
@@ -165,7 +163,7 @@ fn production_builds_never_enable_the_physics_ab_backend() {
     ] {
         assert!(
             !manifest.contains("physics-ab") && !manifest.contains("physics-engine"),
-            "{name} must not enable the physics A/B backend"
+            "{name} must leave backend selection to core"
         );
     }
     let graph = dependency_graph(LOCKFILE);

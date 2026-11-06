@@ -39,13 +39,14 @@ pub const MOON_LUX: f32 = 2.0;
 /// Cool, slightly blue moonlight.
 pub const MOON_COLOR: Vec3 = Vec3::new(0.75, 0.85, 1.0);
 /// EV100 by sun elevation in degrees, interpolated linearly: render-engine's `sky_day_cycle`
-/// oracle views at noon, 15° and 2°, and a brighter-than-physical night for play.
+/// oracle curve with a half-stop darker noon for Greyhaven's earth/stone palette, and a
+/// brighter-than-physical night for play.
 pub const EXPOSURE: [(f32, f32); 5] = [
     (-12.0, 2.0),
     (-4.0, 6.0),
     (2.0, 11.0),
-    (15.0, 13.5),
-    (60.0, 14.5),
+    (15.0, 13.8),
+    (60.0, 15.0),
 ];
 /// Emissive presentation colours are scaled to this luminance in cd/m²: flames, lamp glass and
 /// lit windows glow in their own colour at night; by day the sun outshines them.
@@ -264,15 +265,19 @@ impl GroundGpu {
 
     /// A ground draw's material: its layer's textures divided by their mean colour, so the
     /// vertex colours keep the palette; an overlay masked by weight × height
-    /// (`mmorpg_presentation::ground`). Without the layer's textures, and on a terrain tile's
-    /// far level (#526), flat vertex colours.
+    /// (`mmorpg_presentation::ground`). Coarse rock keeps colour/roughness detail without
+    /// its near normal/occlusion maps. Other far ground and missing textures use flat vertex colours.
     fn material(&self, m: &DrawMaterial, ground: Ground) -> StandardMaterial {
         let (alpha, alpha_mode) = if ground.overlay {
             (OVERLAY_ALPHA, AlphaMode::Mask(MASK_CUTOFF))
         } else {
             (1., AlphaMode::Opaque)
         };
-        let Some(layer) = self.0.get(&ground.layer).filter(|_| !ground.far) else {
+        let Some(layer) = self
+            .0
+            .get(&ground.layer)
+            .filter(|_| !ground.far || ground.layer == Layer::Rock)
+        else {
             let flat = standard_material(m);
             return StandardMaterial {
                 base_color: flat.base_color.truncate().extend(alpha),
@@ -283,9 +288,13 @@ impl GroundGpu {
         StandardMaterial {
             base_color: (linear3(m.color) / layer.mean).extend(alpha),
             base_color_texture: Some(layer.base_color),
-            normal_map_texture: layer.normal,
+            normal_map_texture: if ground.far { None } else { layer.normal },
             metallic_roughness_texture: layer.occlusion_roughness_metal,
-            occlusion_texture: layer.occlusion_roughness_metal,
+            occlusion_texture: if ground.far {
+                None
+            } else {
+                layer.occlusion_roughness_metal
+            },
             metallic: 0.,
             perceptual_roughness: 1.,
             alpha_mode,
@@ -298,14 +307,17 @@ fn standard_material(m: &DrawMaterial) -> StandardMaterial {
     StandardMaterial {
         base_color: linear3(m.color).extend(m.opacity),
         emissive: linear3(m.emissive) * EMISSIVE_NITS,
-        // The browser's MeshStandardMaterial: roughness 0.86, metalness 0.02.
-        perceptual_roughness: 0.86,
-        metallic: 0.02,
+        // Match the shared browser presentation's wet/translucent surface response.
+        perceptual_roughness: if m.opacity < 1. { 0.3 } else { 0.86 },
+        metallic: if m.opacity < 1. { 0. } else { 0.02 },
         alpha_mode: if m.opacity < 1. {
             AlphaMode::Blend
         } else {
             AlphaMode::Opaque
         },
+        // Procedural water/foam receives shadows without casting an opaque silhouette,
+        // matching the browser's blended-material shadow cutoff. Opaque modes ignore it.
+        blend_shadow_alpha_cutoff: 1.,
         double_sided: m.double_sided,
         unlit: m.unlit,
         ..StandardMaterial::default()
@@ -335,13 +347,20 @@ pub fn scene(lighting: &Lighting, view: CameraView) -> Scene {
     let to_sun = DAY_CYCLE.to_sun(lighting.hour);
     let elevation = to_sun.y.clamp(-1., 1.).asin().to_degrees();
     let fog = &lighting.fog;
+    let interior = lighting.interior.clamp(0., 1.);
+    let exposure = ev100(elevation);
+    let transmission = 10_f32.powf(-3. * interior);
+    // Match the browser: retain night/cave fill, with less diffuse fill in daylight so
+    // the enclosing relief and the settlement's cast shadows retain their contrast.
+    let daylight = (elevation / 15.).clamp(0., 1.);
+    let sky_fill = 0.9 - 0.25 * daylight;
     Scene {
         camera: Camera {
             eye: Vec3::from(view.eye),
             target: Vec3::from(view.target),
             fov_y: view.field_of_view_degrees.to_radians(),
             near: NEAR_PLANE_METRES,
-            ev100: ev100(elevation),
+            ev100: exposure + (exposure.min(7.5) - exposure) * interior,
             shadow_filter: ShadowFilter::Gaussian,
             tonemapping: Tonemapping::TonyMcMapface,
         },
@@ -349,16 +368,21 @@ pub fn scene(lighting: &Lighting, view: CameraView) -> Scene {
         sun: Some(Sun {
             direction: -to_sun,
             color: Vec3::ONE,
-            illuminance: RAW_SUNLIGHT,
+            illuminance: RAW_SUNLIGHT * transmission,
             shadows: (elevation > SHADOWLESS_BELOW).then_some(SUN_SHADOWS),
         }),
         moon: Some(Moon {
             direction: -DAY_CYCLE.to_moon(lighting.hour),
             color: MOON_COLOR,
-            illuminance: MOON_LUX,
+            illuminance: MOON_LUX * transmission,
         }),
         // The sky's environment light is the ambient light.
-        sky: Some(Sky::default()),
+        sky: Some(Sky {
+            environment_intensity: Some(
+                (sky_fill + (1. - sky_fill) * interior) * 10_f32.powf(-interior),
+            ),
+            ..Sky::default()
+        }),
         point_lights: lighting
             .point_lights
             .iter()
@@ -893,10 +917,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn exposure_follows_the_oracle_views_and_brightens_night() {
-        assert_eq!(ev100(60.0), 14.5);
-        assert_eq!(ev100(90.0), 14.5);
-        assert_eq!(ev100(15.0), 13.5);
+    fn exposure_keeps_daylight_contrast_and_brightens_night() {
+        assert_eq!(ev100(60.0), 15.0);
+        assert_eq!(ev100(90.0), 15.0);
+        assert_eq!(ev100(15.0), 13.8);
         assert_eq!(ev100(2.0), 11.0);
         assert_eq!(ev100(-40.0), 2.0);
         assert!(ev100(-8.0) > 2.0 && ev100(-8.0) < 6.0);

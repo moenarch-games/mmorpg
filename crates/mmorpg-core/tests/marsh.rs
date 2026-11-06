@@ -165,5 +165,9 @@ fn the_ridge_holds_a_player_beside_the_pass() {
         zone.advance_tick().unwrap();
     }
     let at = feet(&zone);
-    assert!(at[0] < 21_800.0 && at[1] < 600.0, "held at {at:?}");
+    // The toe varies, but ordinary walking must stop before crossing the ridge's gorge.
+    assert!(
+        at[0] < marsh::PASS[1].max[0] as f32 && at[1] < 600.0,
+        "held at {at:?}"
+    );
 }

@@ -9,7 +9,7 @@ use mmorpg_core::water::{
 use mmorpg_core::{WaterMode, ZoneCommand, ZoneId, ZoneSimulation};
 
 /// World-axis heading of forward movement toward +X.
-const EAST: u16 = 16_384;
+const INTO_LAKE: u16 = 49_152;
 
 fn zone_with_player_at(centre: [i32; 3]) -> ZoneSimulation {
     let mut zone = ZoneSimulation::with_content(ZoneId::new(1), greyhaven_vale::content()).unwrap();
@@ -83,9 +83,9 @@ fn the_basin_is_about_nine_metres_deep_with_walkable_banks() {
 
 #[test]
 fn a_player_wades_in_and_swims_at_the_surface_without_touching_the_floor() {
-    // West shore, on the lake's long axis.
+    // East shore, opposite the relocated cave cover, on the lake's long axis.
     let mut zone =
-        zone_with_player_at([lake::CENTRE[0] - 2_600, lake::SHORE_Y + 90, lake::CENTRE[1]]);
+        zone_with_player_at([lake::CENTRE[0] + 2_600, lake::SHORE_Y + 90, lake::CENTRE[1]]);
     run(&mut zone, mmorpg_core::golden::t30(5) as _);
     zone.apply_command(
         1,
@@ -93,7 +93,7 @@ fn a_player_wades_in_and_swims_at_the_surface_without_touching_the_floor() {
         ZoneCommand::Move {
             forward: 1,
             strafe: 0,
-            facing: EAST,
+            facing: INTO_LAKE,
         },
     )
     .unwrap();

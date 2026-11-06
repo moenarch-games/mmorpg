@@ -76,7 +76,90 @@ pub fn point_lights(scene: &StaticScene, scenery: &Scenery) -> Vec<PointLight> {
             position: point(frame, LANTERN_LAMP),
             ..LAMP
         });
-    fires.chain(lamps).chain(lanterns).collect()
+    let torches = CAVE_TORCHES
+        .into_iter()
+        .enumerate()
+        .filter(|_| scenery.greyhaven())
+        .map(|(i, position)| PointLight {
+            position,
+            color: 0xffaf68,
+            lumens: 9000.,
+            range: 16.,
+            flicker: Some(i as f64 * 1.7),
+        });
+    fires.chain(lamps).chain(lanterns).chain(torches).collect()
+}
+
+/// Torch flames in Redbrand's public cave: above head height, attached to solid walls.
+pub const CAVE_TORCHES: [[f64; 3]; 5] = [
+    [48.12, 13.8, -134.5],
+    [67.88, 13.8, -134.7],
+    [79.88, 13.8, -142.],
+    [61.5, 15.1, -143.88],
+    [60., 14.4, -153.6],
+];
+
+/// Cosmetic eye adaptation and sky occlusion through the cave entrance. It follows the
+/// viewer's projected position, never the debug camera, and cannot influence movement.
+#[must_use]
+pub fn cave_interior(viewer: Option<[f64; 3]>) -> f32 {
+    let Some([x, y, z]) = viewer else {
+        return 0.;
+    };
+    let cave = mmorpg_core::greyhaven_vale::cave::GREYFANG;
+    if ![x, y, z].iter().all(|v| v.is_finite()) || !(10.5..15.5).contains(&y) {
+        return 0.;
+    }
+    let inside = cave.floors.iter().any(|(min, max)| {
+        x >= f64::from(min[0]) / 100.
+            && x <= f64::from(max[0]) / 100.
+            && z >= f64::from(min[1]) / 100.
+            && z <= f64::from(max[1]) / 100.
+    });
+    if !inside {
+        return 0.;
+    }
+    let depth = ((z + 156.) / 10.).clamp(0., 1.);
+    (depth * depth * (3. - 2. * depth)) as f32
+}
+
+pub(crate) fn cave_torches(b: &mut crate::batching::Batcher, scenery: &Scenery) {
+    use crate::geometry::{Geometry, at, box_shape, frustum};
+    if !scenery.greyhaven() {
+        return;
+    }
+    for (index, [x, y, z]) in CAVE_TORCHES.into_iter().enumerate() {
+        let [nx, nz] = match index {
+            0 => [1., 0.],
+            1 | 2 => [-1., 0.],
+            4 => [0., -1.],
+            _ => [0., 1.],
+        };
+        b.global("cave-torch-iron", 0x343637).add(
+            &box_shape(),
+            at(
+                x - nx * 0.3,
+                y - 0.35,
+                z - nz * 0.3,
+                if nx == 0. { 0.025 } else { 0.3 },
+                0.025,
+                if nz == 0. { 0.025 } else { 0.3 },
+            ),
+        );
+        b.global("cave-torch-wood", 0x563d2c)
+            .add(&box_shape(), at(x, y - 0.3, z, 0.045, 0.3, 0.045));
+        b.global("cave-torch-iron", 0x343637).add(
+            &frustum(8, 1., true, true, 0.),
+            at(x, y - 0.12, z, 0.12, 0.1, 0.12),
+        );
+        let mut flame = Geometry::default();
+        flame.add(
+            &frustum(7, 0., true, true, 0.),
+            at(x, y - 0.05, z, 0.10, 0.32, 0.10),
+        );
+        b.global("cave-torch-flame", 0xff8a2a)
+            .add(&flame, crate::geometry::ID);
+    }
 }
 
 #[cfg(test)]

@@ -58,7 +58,7 @@ fn walk(zone: &mut ZoneSimulation, sequence: &mut u32, waypoints: &[[i32; 2]]) {
 
 #[test]
 fn a_player_winds_up_the_pass_to_the_stronghold_and_back_into_the_vale() {
-    let mut zone = player_at([5_200, -15_000]);
+    let mut zone = player_at([6_400, -16_000]);
     let mut sequence = 0;
     // Highland Pass: up the cutting, east along the first ledge, round the hairpin, back west
     // along the second ledge and north through the gorge onto the high ground.
@@ -66,6 +66,9 @@ fn a_player_winds_up_the_pass_to_the_stronghold_and_back_into_the_vale() {
         &mut zone,
         &mut sequence,
         &[
+            // Leave the north-entrance camp through its gate before turning toward the pass.
+            [6_400, -17_600],
+            [5_200, -17_600],
             [5_200, -21_200],
             [5_200, -23_200],
             [10_400, -23_200],
@@ -113,7 +116,9 @@ fn a_player_winds_up_the_pass_to_the_stronghold_and_back_into_the_vale() {
             [10_400, -25_600],
             [10_400, -23_200],
             [5_200, -23_200],
-            [5_200, -15_000],
+            [5_200, -17_600],
+            [6_400, -17_600],
+            [6_400, -16_000],
         ],
     );
     let home = feet(&zone);
@@ -143,5 +148,31 @@ fn the_escarpment_holds_a_player_beside_the_pass() {
         zone.advance_tick().unwrap();
     }
     let at = feet(&zone);
-    assert!(at[2] > -21_800.0 && at[1] < 600.0, "held at {at:?}");
+    // The weathered toe varies in depth, but ordinary walking must stop below the first
+    // pass ledge rather than cross the rock face or reach the crest.
+    assert!(
+        at[2] > highlands::PASS[1].max[1] as f32 && at[1] < 600.0,
+        "held at {at:?}"
+    );
+}
+
+#[test]
+fn a_player_can_walk_along_the_western_rock_terrace() {
+    let mut zone = player_at([-15_200, -22_400]);
+    let mut sequence = 0;
+    walk(
+        &mut zone,
+        &mut sequence,
+        &[
+            [-15_200, -22_800],
+            [-15_200, -23_200],
+            [-14_800, -23_200],
+            [-14_800, -22_400],
+        ],
+    );
+    let at = feet(&zone);
+    assert!(
+        (2_100. ..2_900.).contains(&at[1]),
+        "supported by the upper terrace: {at:?}"
+    );
 }

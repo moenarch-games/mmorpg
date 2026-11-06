@@ -1,13 +1,16 @@
 //! Immutable zone content: collision geometry ([`ZoneDefinition`]) and the
 //! complete validated content of a zone ([`ZoneContent`]) with its creature
 //! templates, spawns, NPCs and graveyard. Render meshes/materials are
-//! presentation data; these boxes define physical truth. Generic validation
+//! presentation data; collision shapes define physical truth. Generic validation
 //! lives here; each authored zone is its own submodule.
 
 pub mod greyhaven_vale;
 pub mod seam_test;
+mod static_mesh;
 mod units;
 mod zone_content;
+
+pub use static_mesh::StaticMesh;
 
 pub use units::{
     CreatureBehaviour, CreatureFamily, CreatureSpawn, CreatureTemplate,
@@ -193,9 +196,30 @@ pub struct ZoneDefinition {
     spawn_grid: SpawnGrid,
     colliders: Vec<StaticCollider>,
     terrain: Option<Terrain>,
+    static_meshes: Vec<StaticMesh>,
 }
 
 impl ZoneDefinition {
+    /// Adds validated meshes and their conservative bounds in stable ID order.
+    /// Bounds support content placement checks; Rapier uses the triangles, never these boxes.
+    pub fn with_static_meshes(mut self, mut meshes: Vec<StaticMesh>) -> Result<Self, ZoneError> {
+        meshes.sort_by_key(|mesh| mesh.id);
+        let mut colliders = self.colliders.clone();
+        for mesh in &meshes {
+            colliders.push(mesh.bounds()?);
+        }
+        let validated = Self::with_spawn_grid(self.gravity, self.spawn_grid, colliders)?;
+        self.colliders = validated.colliders;
+        self.static_meshes.extend(meshes);
+        self.static_meshes.sort_by_key(|mesh| mesh.id);
+        Ok(self)
+    }
+
+    #[must_use]
+    pub fn static_meshes(&self) -> &[StaticMesh] {
+        &self.static_meshes
+    }
+
     /// Replaces the flat ground with authored terrain (#159). The spawn grid must stay flat: its
     /// slots stand on y = 0.
     pub fn with_terrain(mut self, terrain: Terrain) -> Result<Self, ZoneError> {
@@ -279,6 +303,7 @@ impl ZoneDefinition {
             spawn_grid,
             colliders,
             terrain: None,
+            static_meshes: Vec::new(),
         })
     }
 

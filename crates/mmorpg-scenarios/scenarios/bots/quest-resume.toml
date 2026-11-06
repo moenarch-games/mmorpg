@@ -24,14 +24,14 @@ action = "accept_quest"
 npc = 1
 quest = 1
 
-# Run west along the plaza's northern edge to 3.5 m from the Marshal.
+# Approach the Marshal diagonally from the square, clear of the authored stall.
 [[steps]]
 tick = 4
 bot = "alice"
 action = "move"
 forward = 1
 strafe = 0
-facing = 49152
+facing = 40960
 
 [[steps]]
 tick = 64
@@ -39,7 +39,7 @@ bot = "alice"
 action = "move"
 forward = 0
 strafe = 0
-facing = 49152
+facing = 40960
 
 # Pelts for the Tanner needs Trouble in the Woods turned in, and the
 # Tanner gives it, not the Marshal.
@@ -114,7 +114,7 @@ marker = "none"
 kind = "position"
 bot = "alice"
 tick = 66
-position = [-2180, 90, 1250]
+position = [-1769, 90, 1031]
 
 [[expect]]
 kind = "event"

@@ -474,6 +474,10 @@ mod tests {
             .sum();
         assert!(nodes <= 3_800, "{nodes} static nodes");
         // The terrain is drawn in visual tiles (#526), outside the static scene.
-        assert!(vertices <= 400_000, "{vertices} static vertices");
+        // The #644 brook quality pass grows the saved scene from 485,864 to 526,685:
+        // refined basin rocks +21,114; new western rocks +15,435; bank shingle +1,884;
+        // one shared turf mesh +560; other approved scenery +1,828. Node count remains
+        // 3,722 under the unchanged 3,800 ceiling; this is content cost, not new work class.
+        assert!(vertices <= 530_000, "{vertices} static vertices");
     }
 }

@@ -142,7 +142,7 @@ pub const fn centre(house: [i32; 2]) -> [i32; 2] {
 pub fn placements(house: [i32; 2]) -> Vec<Placement> {
     let [cx, cz] = centre(house);
     let turned = i32::from(QUARTERS) * 90;
-    SQUARE
+    let mut placements: Vec<_> = SQUARE
         .iter()
         .map(|&(item, [x, y, z], degrees)| {
             let [dx, dz] = turn([x, z], QUARTERS);
@@ -154,7 +154,19 @@ pub fn placements(house: [i32; 2]) -> Vec<Placement> {
                     .expect("a yaw below one turn"),
             }
         })
-        .collect()
+        .collect();
+    // A produce stall on the south edge of the gathering space, clear of the spawn slots.
+    placements.push(Placement {
+        item: Item::Stall,
+        position: [-1200, 0, 2950],
+        yaw: 32768,
+    });
+    placements.push(Placement {
+        item: Item::Barrel,
+        position: [-1450, 0, 2900],
+        yaw: 0,
+    });
+    placements
 }
 
 /// The square's colliders before `house`, one per proxy with IDs from `first_id`: each the

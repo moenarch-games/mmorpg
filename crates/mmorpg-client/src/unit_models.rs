@@ -204,7 +204,9 @@ impl UnitModel {
                 Some(NpcRole::Guard) => HumanoidKind::Guard,
                 Some(NpcRole::Vendor) => HumanoidKind::Vendor,
                 Some(NpcRole::SpiritHealer) => HumanoidKind::SpiritHealer,
-                Some(NpcRole::QuestGiver) | None => HumanoidKind::QuestGiver,
+                Some(NpcRole::QuestGiver) | Some(NpcRole::Resident) | None => {
+                    HumanoidKind::QuestGiver
+                }
             }),
             EntityKind::Creature => match family {
                 None => Self::Placeholder,

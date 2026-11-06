@@ -96,6 +96,7 @@ fn content() -> Arc<ZoneContent> {
         .with_creature_abilities(Default::default())
         .unwrap()
         .with_waters(vec![WaterVolume {
+            channel: None,
             name: "pool".into(),
             centre: [0, 0],
             radii: [400, 400],

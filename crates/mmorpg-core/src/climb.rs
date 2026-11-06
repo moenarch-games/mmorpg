@@ -610,8 +610,14 @@ impl Probe<'_> {
             PLAYER_HALF_EXTENTS_UNITS[2],
         );
         let others = |body: BodyId| body != self.body;
-        // The sweep starts a unit up, off the ground the body rests on.
-        let start = [centre[0], centre[1] + 1.0, centre[2]];
+        // Start a unit clear of both the floor and the supporting face. Raising alone
+        // can leave the capsule touching a steep slope and report that departing contact
+        // as an obstruction before the actual upward mantle path is tested.
+        let start = [
+            centre[0] + face.normal[0],
+            centre[1] + 1.0 + face.normal[1],
+            centre[2] + face.normal[2],
+        ];
         if raised > start[1]
             && self
                 .world

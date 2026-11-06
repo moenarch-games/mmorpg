@@ -15,7 +15,9 @@
 pub mod ambient;
 pub mod audio;
 pub mod batching;
+mod brook;
 pub mod buildings;
+mod cliffs;
 pub mod climbing;
 pub mod composition;
 pub mod geometry;
@@ -111,6 +113,13 @@ impl Group {
 pub enum Motion {
     /// Windmill sails turn about their hub.
     Sail { hub: [f64; 3], yaw: f64 },
+    /// Cosmetic stream or waterfall foam flowing between authored endpoints.
+    Flow {
+        start: [f64; 3],
+        end: [f64; 3],
+        period: f64,
+        phase: f64,
+    },
     /// A campfire flame flickers and turns.
     Flame { base: [f64; 3], seed: f64 },
     /// Reeds sway, sheared about the ground.
@@ -206,7 +215,13 @@ impl StaticScene {
         let mut batcher = batching::Batcher::default();
         let mut water = terrain::build(&mut batcher, scenery, &grid);
         let mut animated = props::build(&mut batcher, scenery, &grid);
+        props::ground_cover(&mut batcher, scenery, &grid);
+        let brook_groups = brook::build(&mut batcher, scenery, &grid, &mut water, &mut animated);
+        lights::cave_torches(&mut batcher, scenery);
         let mut groups = batcher.finish();
+        groups.extend(cliffs::groups(scenery));
+        groups.extend(brook_groups);
+        groups.extend(outpost_kit::fallbacks(scenery));
         let mut terrain = tiles::Tiles::new(scenery, &grid);
         let hash = identity(
             groups
@@ -314,6 +329,20 @@ fn motion(motion: Motion, t: f64, animate: bool) -> Affine {
     match motion {
         Motion::Fallback { frame, .. } => frame,
         Motion::Roof { at, .. } => translate(at[0], at[1], at[2]),
+        Motion::Flow {
+            start,
+            end,
+            period,
+            phase,
+        } => {
+            let f = if animate {
+                (t / period + phase).rem_euclid(1.)
+            } else {
+                phase.rem_euclid(1.)
+            };
+            let p = std::array::from_fn::<_, 3, _>(|i| start[i] + (end[i] - start[i]) * f);
+            translate(p[0], p[1], p[2])
+        }
         Motion::Sail { hub, yaw } => {
             compose(&[translate(hub[0], hub[1], hub[2]), ry(yaw), rz(t * 0.45)])
         }

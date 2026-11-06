@@ -10,7 +10,6 @@ use std::{
 const PLASTER: u32 = 0xe3d6b8;
 const TIMBER: u32 = 0x5c3f28;
 const THATCH: u32 = 0xc19a4f;
-const RED: u32 = 0xa3472f;
 const SLATE: u32 = 0x55606f;
 const ROOF_WOOD: u32 = 0x6d4a2d;
 const STONE: u32 = 0xaaa396;
@@ -568,61 +567,356 @@ fn grass(m: &mut Model, p: &Prop) {
         compose(&[translate(0., -0.02, 0.), scale(hx, hy, hx)]),
     );
 }
-/// A cliff block; `climbable` rock wears handhold routes up its sides (#512).
-fn cliff(m: &mut Model, p: &Prop, climbable: bool) {
-    let [hx, hy, hz] = half(p);
-    let h = hy * 2.;
-    let s = seed(p);
-    let mut layers = Vec::with_capacity(3);
-    for layer in 0..3 {
-        let l = layer as f64;
-        let from = h * l / 3.;
-        let to = h * (l + 1.) / 3.;
-        m.box_at(
-            if layer % 2 == 0 { ROCK } else { ROCK_DARK },
-            [0., (from + to) / 2., 0.],
-            [hx - l * 0.25, (to - from) / 2., hz - l * 0.25],
-        );
-        layers.push(([hx - l * 0.25, hz - l * 0.25], from, to));
-    }
-    if climbable {
-        crate::handholds::block(&layers, s, &mut |c, shape, a| {
-            m.handholds.push((c, shape, a))
+
+// Brook slice, in core centimetres. These are decorative roots, never collision bodies.
+const BROOK_COVER_MIN: [i32; 2] = [-5400, 1200];
+const BROOK_COVER_MAX: [i32; 2] = [4000, 6500];
+fn in_brook_cover(x: i32, z: i32) -> bool {
+    (BROOK_COVER_MIN[0]..BROOK_COVER_MAX[0]).contains(&x)
+        && (BROOK_COVER_MIN[1]..BROOK_COVER_MAX[1]).contains(&z)
+}
+
+/// Deterministic Poisson-disc roots for this small presentation patch. Each 49 cm
+/// cell can contain at most one root with the 70 cm exclusion radius. The scratch
+/// cells are discarded after scene construction; no runtime query/index is added.
+fn brook_cover_points() -> Vec<[i32; 2]> {
+    const CELL: i32 = 49;
+    const RADIUS: i32 = 70;
+    let columns = (BROOK_COVER_MAX[0] - BROOK_COVER_MIN[0] + CELL - 1) / CELL;
+    let rows = (BROOK_COVER_MAX[1] - BROOK_COVER_MIN[1] + CELL - 1) / CELL;
+    let mut cells = vec![None; (columns * rows) as usize];
+    let mut points: Vec<[i32; 2]> = Vec::new();
+    for candidate in 0..40000 {
+        let point = std::array::from_fn(|axis| {
+            BROOK_COVER_MIN[axis]
+                + (hash(&[candidate as f64, axis as f64, 51391.])
+                    * f64::from(BROOK_COVER_MAX[axis] - BROOK_COVER_MIN[axis]))
+                    as i32
         });
-    }
-    m.box_at(MOSS, [0., h + 0.08, 0.], [hx - 0.7, 0.1, hz - 0.7]);
-    let count = (hx * hz / 6.).round().clamp(4., 26.) as usize;
-    for i in 0..count {
-        let j = i as f64;
-        let u = hash(&[s * 1e6, j, 1.]);
-        let v = hash(&[s * 1e6, j, 2.]);
-        let size = 0.9 + hash(&[s * 1e6, j, 3.]) * 1.6;
-        let top = i % 3 == 0 || h < 3.;
-        let side = (v * 4.).floor() as usize;
-        let along = u * 2. - 1.;
-        let inset = size * 0.75;
-        let (x, z) = if top {
-            (along * (hx - size), (v * 2. - 1.) * (hz - size))
-        } else {
-            match side {
-                0 => (along * hx, hz - inset),
-                1 => (along * hx, -hz + inset),
-                2 => (hx - inset, along * hz),
-                _ => (-hx + inset, along * hz),
+        let [column, row] =
+            std::array::from_fn(|axis| (point[axis] - BROOK_COVER_MIN[axis]) / CELL);
+        let mut close = false;
+        for r in (row - 2).max(0)..=(row + 2).min(rows - 1) {
+            for c in (column - 2).max(0)..=(column + 2).min(columns - 1) {
+                if let Some(index) = cells[(r * columns + c) as usize] {
+                    let other: [i32; 2] = points[index];
+                    close |= (point[0] - other[0]).pow(2) + (point[1] - other[1]).pow(2)
+                        < RADIUS * RADIUS;
+                }
             }
+        }
+        if !close {
+            cells[(row * columns + column) as usize] = Some(points.len());
+            points.push(point);
+        }
+    }
+    points
+}
+
+/// Short turf spreads roots across a patch instead of converging into a tall tuft.
+/// One opaque mesh is instanced throughout the brook slice; no alpha cards or renderer.
+fn brook_turf() -> Geometry {
+    let mut turf = Geometry::default();
+    for leaf in 0..40 {
+        let seed = leaf as f64;
+        let root_angle = seed * 2.399963229728653;
+        let radius = ((seed + 0.5) / 40.).sqrt() * 0.62;
+        let root = [root_angle.sin() * radius, root_angle.cos() * radius];
+        let angle = hash(&[seed, 51430.]) * TAU;
+        let (dx, dz) = (angle.sin(), angle.cos());
+        let height = 0.12 + hash(&[seed, 51431.]) * 0.12;
+        let bend = 0.06 + hash(&[seed, 51432.]) * 0.12;
+        let width = 0.012 + hash(&[seed, 51433.]) * 0.008;
+        let point = |step: usize, side: f64| {
+            let t = step as f64 / 2.;
+            let reach = bend * t * t;
+            let w = width * (1. - t).sqrt() * side;
+            [
+                root[0] + dx * reach - dz * w,
+                -0.025 + height * t - 0.025 * t * t,
+                root[1] + dz * reach + dx * w,
+            ]
         };
-        let y = if top {
-            h + size * 0.2
+        let q = [point(0, -1.), point(1, -1.), point(1, 1.), point(0, 1.)];
+        turf.face(&q);
+        turf.face(&[q[3], q[2], q[1], q[0]]);
+        let q = [point(1, -1.), point(2, 0.), point(1, 1.)];
+        turf.face(&q);
+        turf.face(&[q[2], q[1], q[0]]);
+    }
+    turf
+}
+
+/// Fine, walk-through grass and woodland ferns between the sparse saved Outpost tufts.
+/// Both clients draw the existing shared instanced batches; these are never gameplay
+/// props or colliders. The brook uses clustered Poisson-disc roots; older regions keep
+/// their existing sparse cover until their own art pass.
+pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
+    if !s.greyhaven() {
+        return;
+    }
+    use mmorpg_core::greyhaven_vale::{SPAWN_PLAZA, VALE_BOUNDS};
+
+    let mut clump = Geometry::default();
+    let blade = blade();
+    for i in 0..6 {
+        let angle = i as f64 * TAU / 6.;
+        clump.add(
+            &blade,
+            compose(&[
+                translate(angle.sin() * 0.24, -0.03, angle.cos() * 0.24),
+                ry(angle),
+                rx(-0.12 - 0.07 * f64::from(i % 3)),
+                scale(0.17, 0.32 + 0.05 * f64::from(i % 3), 0.17),
+            ]),
+        );
+    }
+    let bank_grass = brook_turf();
+    let mut fern = Geometry::default();
+    for i in 0..8 {
+        let angle = i as f64 * TAU / 8.;
+        let reach = 0.55 + 0.05 * f64::from(i % 3);
+        let spine = |t: f64| [0., 0.48 * (t * PI * 0.9).sin(), reach * t];
+        // Small paired leaflets follow an arched stem rather than one broad spike.
+        // Reuse the existing blade primitive and one shared mesh for every plant.
+        for segment in 0..5 {
+            let a = spine(f64::from(segment) / 5.);
+            let z = spine(f64::from(segment + 1) / 5.);
+            let delta: V = std::array::from_fn(|axis| z[axis] - a[axis]);
+            let length = delta.iter().map(|v| v * v).sum::<f64>().sqrt();
+            fern.add(
+                &blade,
+                compose(&[
+                    ry(angle),
+                    translate(a[0], a[1], a[2]),
+                    align_y(delta),
+                    scale(0.025, length, 0.025),
+                ]),
+            );
+        }
+        for pair in 1..6 {
+            let t = f64::from(pair) / 6.;
+            let [x, y, z] = spine(t);
+            for side in [-1., 1.] {
+                fern.add(
+                    &blade,
+                    compose(&[
+                        ry(angle),
+                        translate(x, y, z),
+                        rx(-0.5),
+                        rz(-side * 1.1),
+                        scale(0.16, 0.28 * (1. - t * 0.65), 0.045),
+                    ]),
+                );
+            }
+        }
+    }
+
+    let mut blockers: Vec<_> = s
+        .props
+        .iter()
+        .filter(|prop| prop.collider.is_some())
+        .map(Prop::footprint)
+        .collect();
+
+    blockers.extend(
+        s.collision_surfaces
+            .iter()
+            .filter(|mesh| {
+                use mmorpg_core::greyhaven_vale::fort;
+                fort::BROOK_MILL.contains(&mesh.id)
+                    || fort::BASIN_ROCKS.contains(&mesh.id)
+                    || fort::WESTERN_ROCKS.contains(&mesh.id)
+            })
+            .map(|mesh| mmorpg_scenery::Rect {
+                min: [0, 2].map(|axis| {
+                    mesh.vertices
+                        .iter()
+                        .map(|p| p[axis] + mesh.position[axis])
+                        .min()
+                        .unwrap_or(0)
+                }),
+                max: [0, 2].map(|axis| {
+                    mesh.vertices
+                        .iter()
+                        .map(|p| p[axis] + mesh.position[axis])
+                        .max()
+                        .unwrap_or(0)
+                }),
+            }),
+    );
+
+    let bank_channels: Vec<_> = mmorpg_core::greyhaven_vale::brook::waters()
+        .into_iter()
+        .filter_map(|water| water.channel)
+        .map(|mut channel| {
+            channel.half_width += 100;
+            channel
+        })
+        .collect();
+
+    const CELL: i32 = 360;
+    let mut roots = Vec::new();
+    for row in VALE_BOUNDS.min[1].div_euclid(CELL)..VALE_BOUNDS.max[1].div_euclid(CELL) {
+        for column in VALE_BOUNDS.min[0].div_euclid(CELL)..VALE_BOUNDS.max[0].div_euclid(CELL) {
+            let seed = [f64::from(column), f64::from(row)];
+            let x = column * CELL + (hash(&[seed[0], seed[1], 171.]) * 160.).round() as i32 - 80;
+            let z = row * CELL + (hash(&[seed[0], seed[1], 173.]) * 160.).round() as i32 - 80;
+            if !in_brook_cover(x, z) {
+                roots.push(([x, z], seed));
+            }
+        }
+    }
+    roots.extend(
+        brook_cover_points()
+            .into_iter()
+            .map(|p| (p, p.map(f64::from))),
+    );
+    for ([x, z], seed) in roots {
+        if !VALE_BOUNDS.contains(x, z)
+            || (SPAWN_PLAZA.contains(x, z) && !in_brook_cover(x, z))
+            || s.road_distance([x, z]) < if in_brook_cover(x, z) { 35 } else { 240 }
+            || s.water_distance([x, z]) < if in_brook_cover(x, z) { 100 } else { 230 }
+            || if in_brook_cover(x, z) {
+                bank_channels.iter().any(|channel| channel.contains(x, z))
+            } else {
+                mmorpg_core::greyhaven_vale::brook::wet_ground(x, z)
+            }
+            || s.farmland().iter().any(|field| field.distance([x, z]) == 0)
+            || s.terrain_holes
+                .iter()
+                .any(|hole| hole.distance([x, z]) < 110)
+        {
+            continue;
+        }
+
+        let c = ((x - g.origin[0]).div_euclid(g.step) as usize).min(g.columns - 1);
+        let r = ((z - g.origin[1]).div_euclid(g.step) as usize).min(g.rows - 1);
+        let (density, wooded) = match g.biomes[r * g.columns + c].name() {
+            "woods" => (0.92, true),
+            "meadow" => (0.56, false),
+            "hub" => (0.42, false),
+            "hollow" => (0.34, false),
+            "shore" | "foothills" | "plaza" if in_brook_cover(x, z) => (0.8, false),
+            _ => continue,
+        };
+        let density = if in_brook_cover(x, z) {
+            // Broad glades and smaller clumps, rather than one evenly occupied field.
+            let patch = noise(metres(x), metres(z), 4.2, 51392.);
+            let glade = noise(metres(x), metres(z), 15., 51393.);
+            ((patch - 0.22) * 3.5).clamp(0., 1.) * (0.75 + glade * 0.25)
         } else {
-            2.2 + size + hash(&[s * 1e6, j, 4.]) * (h - 2.2 - size).max(0.)
+            density
         };
-        m.put(
-            if i % 2 == 0 { ROCK_DARK } else { ROCK },
-            blob(0, false, 0.28, (i % 5) as f64),
-            at(x, y, z, size, size * if top { 0.6 } else { 0.9 }, size),
+        if hash(&[seed[0], seed[1], 179.]) > density {
+            continue;
+        }
+        // Only visual support is sampled. Avoid clumps across a cliff, path landing,
+        // structure or water bank; their authoritative collision is unchanged.
+        let (mx, mz) = (metres(x), metres(z));
+        let y = surface(g, mx, mz);
+        let rise_x = surface(g, mx + 0.7, mz) - surface(g, mx - 0.7, mz);
+        let rise_z = surface(g, mx, mz + 0.7) - surface(g, mx, mz - 0.7);
+        if rise_x * rise_x + rise_z * rise_z > 0.24
+            || blockers.iter().any(|foot| {
+                x >= foot.min[0] - 110
+                    && x <= foot.max[0] + 110
+                    && z >= foot.min[1] - 110
+                    && z <= foot.max[1] + 110
+            })
+        {
+            continue;
+        }
+
+        let variation = hash(&[seed[0], seed[1], 181.]);
+        let pick = ((variation * 3.).floor() as usize).min(2);
+        let is_fern = (wooded && hash(&[seed[0], seed[1], 187.]) < 0.70)
+            || (in_brook_cover(x, z) && hash(&[seed[0], seed[1], 189.]) < 0.08);
+        let turf = in_brook_cover(x, z) && !is_fern;
+        let support = if turf {
+            // Fit distributed roots to the local ground plane; reject a sharp crease
+            // rather than allowing a patch to bridge a ditch or float above a bank.
+            let (sx, sz) = (rise_x / 1.4, rise_z / 1.4);
+            if [[-0.8, -0.8], [-0.8, 0.8], [0.8, -0.8], [0.8, 0.8]]
+                .iter()
+                .any(|[dx, dz]| {
+                    (surface(g, mx + dx, mz + dz) - (y + sx * dx + sz * dz)).abs() > 0.04
+                })
+            {
+                continue;
+            }
+            align_y(norm([-sx, 1., -sz]))
+        } else {
+            ID
+        };
+        let color = if is_fern {
+            [0x405c32, 0x53723c, 0x6b7942][pick]
+        } else if turf {
+            [0x667c47, 0x73834d, 0x81905a][pick]
+        } else if wooded {
+            [0x526c38, 0x657944, 0x7b8451][pick]
+        } else {
+            [0x607e3e, 0x738d45, 0x898c52][pick]
+        };
+        let size = 0.8 + 0.45 * hash(&[seed[0], seed[1], 183.]);
+        b.instance(
+            if is_fern {
+                "greyhaven-fern-understory"
+            } else if turf {
+                "greyhaven-brook-turf"
+            } else {
+                "greyhaven-ground-cover"
+            },
+            color,
+            if is_fern {
+                &fern
+            } else if in_brook_cover(x, z) {
+                &bank_grass
+            } else {
+                &clump
+            },
+            compose(&[
+                translate(mx, y, mz),
+                support,
+                ry(TAU * hash(&[seed[0], seed[1], 185.])),
+                scale(size, size, size),
+            ]),
+            [mx, mz],
+            Cull::Near,
         );
     }
 }
+/// Climbable cliffs wear handhold routes fitted to their rock surfaces (#512).
+fn cliff(m: &mut Model, p: &Prop, climbable: bool, scenery: &Scenery, frame: Affine) {
+    // The rock skin belongs to cliffs. Climbing cues follow its authored facets, rather
+    // than the conservative bounds, which may extend metres beyond a sculpted crown.
+    if !climbable {
+        return;
+    }
+    let [hx, hy, hz] = half(p);
+    let mut put = |c, shape, a| m.handholds.push((c, shape, a));
+    if let Some(mesh) = scenery
+        .collision_surfaces
+        .iter()
+        .find(|mesh| Some(mesh.id) == p.collider)
+    {
+        let mut geometry = Geometry::default();
+        for triangle in &mesh.triangles {
+            geometry.face(&triangle.map(|index| {
+                std::array::from_fn(|axis| {
+                    metres(mesh.vertices[index as usize][axis] + mesh.position[axis])
+                        - frame.t[axis]
+                })
+            }));
+        }
+        // Authored cliffs are already in world axes; their prop frame only translates them.
+        let centre = [0., metres(p.position[1]) - frame.t[1] + 2., 0.];
+        crate::handholds::cliff(&geometry, centre, [hx, hy, hz], seed(p), &mut put);
+    } else {
+        crate::handholds::block(&[([hx, hz], 0., hy * 2.)], seed(p), &mut put);
+    }
+}
+
 fn campfire(m: &mut Model, p: &Prop, index: usize, f: Affine) -> Animated {
     m.cull = Cull::Mid;
     let [hx, _, hz] = half(p);
@@ -679,7 +973,66 @@ fn campfire(m: &mut Model, p: &Prop, index: usize, f: Affine) -> Animated {
 }
 /// A cave's roof slab (#159): rock with a mossy cap, drawn as its own part so clients can
 /// cut it away while the viewer stands under it.
-fn cave_roof(p: &Prop, index: usize) -> Animated {
+fn cave_roof(p: &Prop, index: usize, scenery: &Scenery) -> Animated {
+    if let Some(mesh) = scenery
+        .collision_surfaces
+        .iter()
+        .find(|mesh| Some(mesh.id) == p.collider)
+    {
+        let [cx, cy, cz] = p.position.map(metres);
+        let mut geometry = Geometry::default();
+        for triangle in &mesh.triangles {
+            let points = triangle.map(|i| {
+                let v = mesh.vertices[i as usize];
+                [
+                    metres(v[0] + mesh.position[0]) - cx,
+                    metres(v[1] + mesh.position[1]) - cy,
+                    metres(v[2] + mesh.position[2]) - cz,
+                ]
+            });
+            // The textured underside is a one-sided static surface in cliffs, visible to
+            // interior cameras even while the outer mound is cut away for an overhead view.
+            if crate::cliffs::ceiling_face(points) {
+                continue;
+            }
+            let first = geometry.p.len();
+            geometry.face(&points);
+            let world = points.map(|v| [v[0] + cx, v[1] + cy, v[2] + cz]);
+            // Adjacent shrine cells share one palette, so their joined shore has no
+            // per-cell colour seams. The rock profile and moss still vary in world space.
+            let palette = if mmorpg_core::greyhaven_vale::ids::SHRINE_CAVE_ROOF.contains(&mesh.id) {
+                *mmorpg_core::greyhaven_vale::ids::SHRINE_CAVE_ROOF.start()
+            } else {
+                mesh.id
+            };
+            let color = crate::cliffs::landscape_color(world, palette);
+            geometry.colors.extend(std::iter::repeat_n(
+                rgb(color).map(f64::from),
+                geometry.p.len() - first,
+            ));
+        }
+        crate::ground::project_rock(&mut geometry);
+        let mut rock_material = material(0xffffff, false);
+        rock_material.ground = Some(crate::ground::Ground::near(
+            crate::ground::Layer::Rock,
+            false,
+        ));
+        let [hx, _, hz] = p.half_extents.map(metres);
+        return Animated {
+            draws: vec![Draw {
+                id: format!("authored-cave-roof-{index}"),
+                resource_key: format!("scenery:authored-cave-roof-{index}"),
+                geometry: Arc::new(geometry),
+                model: matrix(ID),
+                material: rock_material,
+            }],
+            motion: Motion::Roof {
+                at: [cx, cy, cz],
+                min: [cx - hx, cz - hz],
+                max: [cx + hx, cz + hz],
+            },
+        };
+    }
     let [hx, hy, hz] = half(p);
     let t = hy * 2.;
     let s = seed(p);
@@ -789,6 +1142,8 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
         // Elden's house (#158) is its walk-in bundle too.
         if matches!(p.kind, PropKind::Inn | PropKind::ShrineKit)
             || p.collider == Some(mmorpg_core::greyhaven_vale::ids::MARSHAL_HOUSE)
+            || p.collider
+                .is_some_and(|id| mmorpg_core::greyhaven_vale::ids::PALISADE.contains(&id))
         {
             continue;
         }
@@ -890,21 +1245,25 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
                 let r = hx.min(hz);
                 m.put(
                     STONE,
-                    frustum(10, 1., false, true, 0.5),
-                    at(0., 0., 0., r, 0.95, r),
+                    frustum(16, 1., false, true, 0.5),
+                    at(0., 0., 0., r, 1., r),
                 );
                 m.put(
                     STONE_DARK,
-                    frustum(10, 1., false, true, 0.5),
-                    at(0., 0.95, 0., r + 0.05, 0.12, r + 0.05),
+                    frustum(16, 1., false, true, 0.5),
+                    at(0., 0.90, 0., r, 0.10, r),
                 );
-                m.put(0x23384a, disc(10), at(0., 1.08, 0., r - 0.18, 1., r - 0.18));
+                m.put(
+                    0x23384a,
+                    disc(16),
+                    at(0., 1.005, 0., r * 0.68, 1., r * 0.68),
+                );
                 for sx in [-1., 1.] {
-                    m.box_at(WOOD, [sx * (r - 0.1), 1.6, 0.], [0.09, 1.6, 0.09]);
+                    m.box_at(WOOD, [sx * r * 0.84, 1.8, 0.], [0.105, 1., 0.105]);
                 }
-                m.box_at(DARK, [0., 2.2, 0.], [r + 0.1, 0.06, 0.06]);
+                m.box_at(DARK, [0., 1.88, 0.], [r + 0.1, 0.06, 0.06]);
                 m.box_at(IRON, [0., 1.75, 0.], [0.12, 0.16, 0.12]);
-                roof(&mut m, RED, r + 0.1, r * 0.75, 3.1, 0.9, 0.25);
+                roof(&mut m, 0x37404a, r + 0.25, r * 0.95, 2.78, 0.62, 0.);
             }
             PropKind::Tree(v) => tree(&mut m, p, v),
             PropKind::Rock(_) => {
@@ -960,7 +1319,11 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
                     );
                 }
             }
-            PropKind::GrassTuft => grass(&mut m, p),
+            PropKind::GrassTuft => {
+                if !in_brook_cover(p.position[0], p.position[2]) {
+                    grass(&mut m, p);
+                }
+            }
             PropKind::Flowers => {
                 m.cull = Cull::Near;
                 let c = [0xf2d64b, 0xb98ae0, 0xf4f1ea, 0xe5675c][usize::from(p.yaw) % 4];
@@ -986,9 +1349,9 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
                     );
                 }
             }
-            PropKind::Cliff => cliff(&mut m, p, climbable),
+            PropKind::Cliff => cliff(&mut m, p, climbable, s, f),
             PropKind::CaveRoof => {
-                animations.push(cave_roof(p, roofs));
+                animations.push(cave_roof(p, roofs, s));
                 roofs += 1;
             }
             PropKind::Campfire => {
@@ -1462,4 +1825,64 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
         ));
     }
     animations
+}
+
+#[cfg(test)]
+mod ground_cover_tests {
+    use super::*;
+
+    #[test]
+    fn short_turf_reaches_the_settlement_and_its_roots_follow_the_ground() {
+        let scenery = mmorpg_scenery::greyhaven_vale_scenery();
+        let grid = scenery.terrain_grid(crate::TERRAIN_STEP_UNITS);
+        let mut batcher = Batcher::default();
+        ground_cover(&mut batcher, &scenery, &grid);
+        let groups = batcher.finish();
+        let turf: Vec<_> = groups
+            .iter()
+            .flat_map(|group| &group.draws)
+            .filter(|draw| draw.id.contains("greyhaven-brook-turf"))
+            .collect();
+        assert!(!turf.is_empty());
+        assert!(
+            turf.iter()
+                .any(|draw| mmorpg_core::greyhaven_vale::SPAWN_PLAZA.contains(
+                    (draw.model[12] * 100.) as i32,
+                    (draw.model[14] * 100.) as i32
+                ))
+        );
+        let water = mmorpg_core::greyhaven_vale::brook::channel();
+        for draw in turf {
+            let m = draw.model.map(f64::from);
+            for p in draw
+                .geometry
+                .p
+                .iter()
+                .filter(|p| (p[1] + 0.025).abs() < 1e-8)
+            {
+                let world: [f64; 3] = std::array::from_fn(|axis| {
+                    m[axis] * p[0] + m[4 + axis] * p[1] + m[8 + axis] * p[2] + m[12 + axis]
+                });
+                let height = world[1] - surface(&grid, world[0], world[2]);
+                assert!(
+                    (-0.08..=0.02).contains(&height),
+                    "floating turf root {world:?}, height {height}"
+                );
+                assert!(!water.contains((world[0] * 100.) as i32, (world[2] * 100.) as i32));
+            }
+        }
+    }
+
+    #[test]
+    fn brook_roots_are_deterministic_and_leave_seventy_centimetres_between_plants() {
+        let points = brook_cover_points();
+        assert!(!points.is_empty());
+        assert_eq!(points, brook_cover_points());
+        for (i, point) in points.iter().enumerate() {
+            assert!(in_brook_cover(point[0], point[1]));
+            for other in &points[i + 1..] {
+                assert!((point[0] - other[0]).pow(2) + (point[1] - other[1]).pow(2) >= 70 * 70);
+            }
+        }
+    }
 }

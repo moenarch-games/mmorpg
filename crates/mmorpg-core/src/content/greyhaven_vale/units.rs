@@ -180,11 +180,11 @@ const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 75] = {
         // Wolfrun Woods: timber wolves on trunk-grid corners. Wolf 108 guards
         // the den clearing where the Wolfrun Trail ends; the others keep
         // more than 12 m from the trail and from it.
-        (100, TIMBER_WOLF, [-10_250, -3_600], 0),
+        (100, TIMBER_WOLF, [-10_250, -2_700], 0),
         (101, TIMBER_WOLF, [-9_350, -3_150], 8_192),
-        (102, TIMBER_WOLF, [-8_000, -3_600], 16_384),
+        (102, TIMBER_WOLF, [-8_000, -2_700], 16_384),
         (103, TIMBER_WOLF, [-6_650, -3_150], 24_576),
-        (104, TIMBER_WOLF, [-6_200, -3_600], 32_768),
+        (104, TIMBER_WOLF, [-6_200, -2_700], 32_768),
         (105, TIMBER_WOLF, [-10_700, -1_800], 40_960),
         (106, TIMBER_WOLF, [-9_350, -1_350], 49_152),
         (107, TIMBER_WOLF, [-8_000, -1_800], 57_344),
@@ -200,7 +200,8 @@ const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 75] = {
         (122, YOUNG_BOAR, [-7_550, -2_250], 32_768),
         (123, YOUNG_BOAR, [-10_250, 2_700], 49_152),
         (124, YOUNG_BOAR, [-7_100, 4_050], 8_192),
-        (125, YOUNG_BOAR, [-9_350, -4_050], 24_576),
+        // Stillwater now occupies the old northern clearing; retain this boar on dry woodland.
+        (125, YOUNG_BOAR, [-10_900, -2_300], 24_576),
         // Millbrook Farm: grain rats around the barn and farmhouse.
         (200, GRAIN_RAT, [7_200, 4_000], 0),
         (201, GRAIN_RAT, [8_800, 4_400], 16_384),
@@ -227,7 +228,7 @@ const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 75] = {
         (303, MIREFIN_LURKER, [7_040, -4_470], 49_152),
         (304, MIREFIN_LURKER, [7_190, -6_400], 57_344),
         (305, MIREFIN_LURKER, [5_850, -7_000], 0),
-        (306, MIREFIN_LURKER, [4_200, -6_650], 8_192),
+        (306, MIREFIN_LURKER, [3_800, -5_800], 8_192),
         (307, MIREFIN_LURKER, [6_500, -6_830], 24_576),
         // Redbrand Hollow: the bandit camp between the cliffs.
         (400, REDBRAND_BANDIT, [-1_000, -8_200], 0),
@@ -278,7 +279,7 @@ const GUARD: &str = "Greyhaven Guard";
 type NpcRow = (u32, &'static str, NpcRole, u8, [i32; 2], u16);
 
 #[rustfmt::skip]
-const NPCS: [NpcRow; 9] = [
+const NPCS: [NpcRow; 21] = [
     (1, "Marshal Elden Greywatch", NpcRole::QuestGiver, 10, [-2_200, 900], 0),
     (2, "Tanner Hilda Brook", NpcRole::QuestGiver, 5, [-2_400, 3_150], 32_768),
     // Inside the inn, behind its bar, facing the room (#158).
@@ -286,12 +287,25 @@ const NPCS: [NpcRow; 9] = [
     (4, "Farmer Osric Mill", NpcRole::QuestGiver, 4, [6_200, 4_150], 32_768),
     (5, "Brother Aldous", NpcRole::SpiritHealer, 10, [-1_650, 4_550], 49_152),
     // Guards stand inside the palisade beside the north, south, west and
-    // east gates, facing out.
+    // east gates, facing out. The western guard now watches the mill towpath.
     (6, GUARD, NpcRole::Guard, 10, [-500, -800], 32_768),
     (7, GUARD, NpcRole::Guard, 10, [500, 4_800], 0),
-    (8, GUARD, NpcRole::Guard, 10, [-2_900, 1_500], 49_152),
+    (8, GUARD, NpcRole::Guard, 10, [-2_620, 2_250], 49_152),
     // The east guard stands a metre south of the market square's front crate (#577).
     (9, GUARD, NpcRole::Guard, 10, [2_900, 2_600], 16_384),
+    (10,"Weaver Lysa Reed",NpcRole::Resident,2,[-2100,1850],0),
+    (11,"Carpenter Owen Alder",NpcRole::Resident,3,[2150,1850],0),
+    (12,"Mara Wells",NpcRole::Resident,2,[700,4000],32768),
+    (13,"Davin Moss",NpcRole::Resident,2,[-1000,2900],0),
+    // Small conversations and stall customers at the edges of the clear spawn square.
+    (14,"Baker Anwen",NpcRole::Resident,3,[1900,2800],16384),
+    (15,"Miller Tomas",NpcRole::Resident,3,[2050,2850],49152),
+    (16,"Herbalist Nessa",NpcRole::Resident,3,[1750,2450],16384),
+    (17,"Peddler Rowan",NpcRole::Resident,3,[1850,2350],49152),
+    (18,"Fisher Ada",NpcRole::Resident,2,[-1750,2400],49152),
+    (19,"Porter Ben",NpcRole::Resident,2,[-1900,2500],16384),
+    (20,"Washer Elin",NpcRole::Resident,2,[1400,3100],49152),
+    (21,"Apprentice Finn",NpcRole::Resident,2,[1500,3000],16384),
 ];
 
 pub(super) fn creature_templates() -> Vec<CreatureTemplate> {
@@ -338,8 +352,16 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .map(|&(id, template, position, facing)| CreatureSpawn {
             id: CreatureId::new(id),
             template,
-            position,
-            facing,
+            position: if LAKE_LURKERS.contains(&id) {
+                super::lake::place(position)
+            } else {
+                position
+            },
+            facing: if LAKE_LURKERS.contains(&id) {
+                facing.wrapping_add(32768)
+            } else {
+                facing
+            },
             // Stillwater Lake's lurkers keep to its narrow level rim (#423).
             wander_radius: if LAKE_LURKERS.contains(&id) {
                 LAKE_WANDER_RADIUS_UNITS

@@ -98,3 +98,136 @@ fn far_chunks_cover_every_tile_not_drawn_near_exactly_once() {
         );
     }
 }
+
+#[test]
+fn coarse_cliff_faces_keep_rock_detail_on_the_existing_surface() {
+    let scenery = greyhaven_vale_scenery();
+    let scene = StaticScene::new(&scenery);
+    let mut faces = 0;
+    for draw in scene.terrain.tiles.iter().flat_map(|tile| &tile.far) {
+        let ground = draw.material.ground.unwrap();
+        if ground.layer != mmorpg_presentation::ground::Layer::Rock {
+            continue;
+        }
+        assert!(ground.far, "coarse rock selects its far material");
+        assert!(
+            !ground.overlay,
+            "rock replaces the coarse face instead of covering it"
+        );
+        let geometry = &draw.geometry;
+        assert_eq!(geometry.uv.len(), geometry.p.len());
+        assert_eq!(geometry.tangents.len(), geometry.p.len());
+        assert!(
+            geometry
+                .n
+                .iter()
+                .all(|n| n[1] > 0. && n.iter().all(|v| v.is_finite()))
+        );
+        for &[x, y, z] in &geometry.p {
+            let surface = scenery.surface_at((x * 100.).round() as i32, (z * 100.).round() as i32);
+            assert!(
+                (y - f64::from(surface) / 100.).abs() < 1e-6,
+                "material routing moved the surface at {x},{z}"
+            );
+        }
+        faces += geometry.indices.len() / 3;
+    }
+    assert!(
+        faces > 0,
+        "the valley's coarse cliffs retain their rock material"
+    );
+}
+
+#[test]
+fn lake_beds_follow_the_actual_terrace_instead_of_world_zero() {
+    let scene = StaticScene::new(&greyhaven_vale_scenery());
+    let mut vertices = 0;
+    let mut raised = false;
+    for draw in scene
+        .groups
+        .iter()
+        .flat_map(|group| &group.draws)
+        .filter(|draw| draw.id.contains("lake-bed"))
+    {
+        for &[x, y, z] in &draw.geometry.p {
+            let above_ground = y - scene.surface_y(x, z);
+            assert!(
+                (0.03..=0.06).contains(&above_ground),
+                "lake bed at {x},{z} is {above_ground} m above the actual terrain"
+            );
+            raised |= y > 5.;
+            vertices += 1;
+        }
+    }
+    assert!(vertices > 100, "the lake retains its bed dressing");
+    assert!(raised, "Stillwater's terrace is not at world zero");
+    let lake = scene
+        .water
+        .iter()
+        .find(|draw| draw.id.ends_with("water-0"))
+        .expect("Stillwater's authored water surface");
+    assert!(lake.geometry.p.len() > 65, "the shallows are subdivided");
+    assert_eq!(
+        lake.geometry.p.len(),
+        lake.geometry.colors.len(),
+        "depth tint reaches both clients as vertex colours"
+    );
+    for &[x, _, z] in &lake.geometry.p {
+        assert!(
+            scene.surface_y(x, z)
+                < mmorpg_core::greyhaven_vale::lake::SURFACE as f64 / 100. - 0.007,
+            "visible water surface intersects the raised shoreline at {x},{z}"
+        );
+    }
+}
+
+#[test]
+fn new_ground_cover_is_instanced_and_keeps_routes_and_water_clear() {
+    let scenery = greyhaven_vale_scenery();
+    let scene = StaticScene::new(&scenery);
+    let mut clumps = 0;
+    let mut ferns = 0;
+    for group in scene.groups.iter().filter(|group| {
+        group.instanced
+            && group.draws.first().is_some_and(|draw| {
+                draw.id.contains("greyhaven-ground-cover")
+                    || draw.id.contains("greyhaven-fern-understory")
+                    || draw.id.contains("greyhaven-brook-turf")
+            })
+    }) {
+        for draw in &group.draws {
+            ferns += usize::from(draw.id.contains("greyhaven-fern-understory"));
+            let point = [
+                (f64::from(draw.model[12]) * 100.).round() as i32,
+                (f64::from(draw.model[14]) * 100.).round() as i32,
+            ];
+            let brook_slice = (-5400..4000).contains(&point[0]) && (1200..6500).contains(&point[1]);
+            // The approved short brook turf has a close, non-colliding verge. Other
+            // forest/meadow cover retains its wider legacy road and water clearance.
+            assert!(scenery.road_distance(point) >= if brook_slice { 35 } else { 230 });
+            assert!(scenery.water_distance(point) >= if brook_slice { 100 } else { 220 });
+            if brook_slice {
+                for mut channel in mmorpg_core::greyhaven_vale::brook::waters()
+                    .into_iter()
+                    .filter_map(|water| water.channel)
+                {
+                    channel.half_width += 100;
+                    assert!(!channel.contains(point[0], point[1]));
+                }
+            } else {
+                assert!(!mmorpg_core::greyhaven_vale::brook::wet_ground(
+                    point[0], point[1]
+                ));
+            }
+            clumps += 1;
+        }
+    }
+    assert!(
+        (500..12_000).contains(&clumps),
+        "expected a bounded ground-cover pass, got {clumps}"
+    );
+    assert!(
+        ferns > 100,
+        "the forest should have walk-through understory: {ferns} ferns among {clumps} clumps"
+    );
+}

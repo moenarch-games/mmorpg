@@ -178,6 +178,7 @@ pub struct WorldScene {
     /// Additional caller-authored presentation geometry, rendered and picked with the world.
     pub additional_draws: Vec<SceneDraw>,
     scene: StaticScene,
+    cave_lighting: bool,
     /// The static groups and terrain tiles resident around the camera (#526).
     statics: Locked<Statics>,
     water_draws: DrawBatch,
@@ -452,6 +453,7 @@ impl WorldScene {
         };
         Self {
             nature: NatureState::new(nature),
+            cave_lighting: scenery.greyhaven(),
             additional_draws: Vec::new(),
             point_lights: mmorpg_presentation::lights::point_lights(&scene, scenery),
             statics,
@@ -515,6 +517,11 @@ impl WorldScene {
         }
         draws.extend(self.additional_draws.iter().cloned());
         let mut lighting = Lighting::at(crate::environment::pages_hour(seconds, animate));
+        lighting.interior = if self.cave_lighting {
+            mmorpg_presentation::lights::cave_interior(viewer)
+        } else {
+            0.
+        };
         lighting.point_lights = self
             .point_lights
             .iter()

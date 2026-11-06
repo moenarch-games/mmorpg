@@ -187,6 +187,12 @@ fn main() {
         None,
         true,
     );
+    static_bundle(
+        "fort_bundle.rs",
+        &manifest_dir.join("../../web/public/authored/greyhaven-fort"),
+        None,
+        false,
+    );
     // Every prop of the settlement props (#421).
     static_bundle(
         "settlement_bundle.rs",

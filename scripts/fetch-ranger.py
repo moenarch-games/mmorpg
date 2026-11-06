@@ -30,8 +30,9 @@ MALE["humanoid.ranger.male"] |= {"outfit.knight", "outfit.knight.skin.light", "o
                                  "outfit.class.arcanist.skin.light", "outfit.class.necromancer.skin.grey",
                                  "outfit.class.rogue", "outfit.class.cleric.skin.light", "outfit.class.druid"}
 # The female figure (asset-tooling #378): her default entry (sockets, clips and appearance) and
-# Tanner Hilda Brook's `resident.tanner` outfit in the light skin with its armour (#493).
-FEMALE = {"humanoid.ranger.female": {"default", "outfit.tanner.skin.light"}, "armor.tanner": {"default"}}
+# Tanner Hilda Brook's `resident.tanner` outfit in the light skin with its armour (#493),
+# plus the base outfit requested by the figure loader before the skin variant is applied.
+FEMALE = {"humanoid.ranger.female": {"default", "outfit.tanner", "outfit.tanner.skin.light"}, "armor.tanner": {"default"}}
 # Plus every hairstyle a release offers, in its tintable variant: the viewer's styles and the
 # varied guards' (#376, asset-tooling #380), and the painted head skins when the release has them
 # (asset-tooling #380).

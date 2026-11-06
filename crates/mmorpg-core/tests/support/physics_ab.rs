@@ -413,7 +413,10 @@ pub static TRAVERSAL_GRAPH: mmorpg_core::action::ActionGraph = mmorpg_core::acti
 pub const TRAVERSAL_TICKS: usize = mmorpg_core::golden::t30(240) as usize;
 
 /// A Warden and a Ranger in the outpost, by ID and feet XZ.
-const TRAVERSAL_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [2_200.0, 850.0]), (2, [2_310.0, 850.0])];
+// The authored eastern cottages now occupy the old crate-side flight path. Keep this
+// momentum/air-control workload on the level spawn plaza; authored contacts have their
+// own real-mesh side, underside and cave traversal/recovery regressions.
+const TRAVERSAL_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [-1_000.0, 2_200.0]), (2, [-890.0, 2_200.0])];
 
 /// The traversal commands at `tick` (30 Hz): run, jump, let go (player 1) or turn back
 /// (player 2) in the air, land, and again.
@@ -697,14 +700,14 @@ fn mill_ramps_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
 pub const MILL_HOIST_TICKS: usize = mmorpg_core::golden::t30(640) as usize;
 
 /// The hoist ride's commands: player 1 stands on the resting hoist from the start and walks
-/// north onto the windmill's gallery once the hoist is up.
+/// east onto the windmill's gallery once the hoist is up.
 fn mill_hoist_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
     let top = mmorpg_core::greyhaven_vale::MILL_HOIST;
     let up = usize::try_from(top.dwell + top.travel_ticks()).expect("ticks fit");
     let walk = |forward| ZoneCommand::Move {
         forward,
         strafe: 0,
-        facing: 0,
+        facing: 16_384,
     };
     let after = |ticks| up + usize::try_from(mmorpg_core::golden::t30(ticks)).expect("ticks fit");
     if tick == after(10) {

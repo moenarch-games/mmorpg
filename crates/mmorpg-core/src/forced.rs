@@ -149,7 +149,7 @@ impl ZoneSimulation {
         unit: EntityRef,
         target: EntityRef,
     ) -> Result<bool, ZoneError> {
-        let body = *self
+        let body = self
             .world
             .body(body_id(unit))
             .ok_or_else(|| ZoneError::new("charging unit physics body is missing"))?;
@@ -227,7 +227,7 @@ impl ZoneSimulation {
             {
                 continue;
             }
-            let Some(body) = self.world.body(body_id(shover)).copied() else {
+            let Some(body) = self.world.body(body_id(shover)).cloned() else {
                 continue;
             };
             let velocity = body.velocity_units();
@@ -248,7 +248,7 @@ impl ZoneSimulation {
                 if unit == shover || !self.movable(unit) {
                     continue;
                 }
-                let Some(other) = self.world.body(body_id(unit)).copied() else {
+                let Some(other) = self.world.body(body_id(unit)).cloned() else {
                     continue;
                 };
                 let other_half = other.half_extents();

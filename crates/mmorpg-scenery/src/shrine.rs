@@ -6,7 +6,7 @@
 //! arch and the broken walls on the plaza, the pillars, the fallen blocks and the altar, and
 //! the cave as a mouth, tunnels, the 8 × 8 m air-pocket room and the closed end along +X.
 //! Weed, silt drifts and shells only render. Presentation only: the colliders decide.
-use mmorpg_core::greyhaven_vale::shrine::{
+use mmorpg_core::greyhaven_vale::shrine::authored::{
     ALTAR, ARCH, CAVE, CAVE_Z, CELL, CLEAR, FALLEN_BLOCKS, FLOOR_Y, PILLARS, PLAZA, ROOM, WALLS,
     facing,
 };
@@ -100,6 +100,10 @@ pub fn placements() -> Vec<Placement> {
             .iter()
             .map(|&(key, origin, y, yaw)| at(key, origin, y, yaw)),
     );
+    for placement in &mut placed {
+        placement.position = mmorpg_core::greyhaven_vale::lake::place3(placement.position);
+        placement.yaw = placement.yaw.wrapping_add(32768);
+    }
     placed
 }
 

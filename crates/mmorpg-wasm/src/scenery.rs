@@ -491,7 +491,7 @@ mod tests {
             terrain.biomes[row * columns + column]
         };
         assert_eq!(
-            sample(0, 2_000),
+            sample(-400, 1_600),
             mmorpg_scenery::Biome::Plaza.id(),
             "the hub plaza"
         );
@@ -564,8 +564,8 @@ mod tests {
     fn export_is_deterministic_lean_json_with_core_areas_and_roads() {
         let json = hosted_scenery_json();
         assert_eq!(json, serde_json::to_string(&hosted_export()).unwrap());
-        // The wetlands (#426) widen the terrain grid by three quarters.
-        assert!(json.len() < 1_500_000, "{} bytes", json.len());
+        // Denser western/northern woods and the authored hideout export 1,548,250 bytes.
+        assert!(json.len() < 1_600_000, "{} bytes", json.len());
         let value: Value = serde_json::from_str(json).unwrap();
         assert_eq!(value["format"], SCENERY_FORMAT);
         assert_eq!(value["source"], SCENERY_SOURCE);
@@ -624,7 +624,7 @@ mod tests {
         assert_eq!(
             value["water"][0],
             serde_json::json!(
-                { "centerXz": [5_500, -5_500], "radiiXz": [2_200, 1_600], "surfaceY": 1_115 }
+                { "centerXz": [-8_700, -5_300], "radiiXz": [2_200, 1_600], "surfaceY": 1_115 }
             )
         );
         assert_eq!(

@@ -71,23 +71,23 @@ const PALETTE = {
 export const ENVIRONMENT: EnvironmentStyle = {
   palette: PALETTE,
   biomeColors: {
-    meadow: "#6a9a42",
-    hub: "#739a48",
-    woods: "#58803c",
-    hollow: "#94805f",
+    meadow: "#667d46",
+    hub: "#71834e",
+    woods: "#4d653b",
+    hollow: "#667348",
     farmland: "#7a5836",
     road: "#a4865c",
-    plaza: "#a8987a",
+    plaza: "#8e7e61",
     shore: "#cdbb88",
     "lake bed": "#5e5a44",
-    foothills: "#5d8a44",
+    foothills: "#61774b",
     highland: "#6f7d52",
     rock: "#8b877e",
     snow: "#eef1f5",
   },
   sky: { zenith: "#3f78c4", upper: "#78a9dd", horizon: "#cfe0ea", ground: "#b8c9c8" },
   haze: {
-    color: "#b9cddb",
+    color: "#9faeb3",
     bands: [
       { from: 0, mix: 0 },
       { from: 230, mix: 0.18 },
@@ -97,7 +97,7 @@ export const ENVIRONMENT: EnvironmentStyle = {
     ],
   },
   water: { color: "#3f86a0", opacity: 0.72, bedColor: "#4f5a44", shoreColor: "#cdbb88" },
-  fog: { color: "#b9cddb", nearMetres: 140, farMetres: 620 },
+  fog: { color: "#9faeb3", nearMetres: 140, farMetres: 620 },
   sun: { direction: [10, 18, 8], color: "#fff4df" },
 };
 

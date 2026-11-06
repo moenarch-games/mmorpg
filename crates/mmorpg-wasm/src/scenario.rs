@@ -347,10 +347,10 @@ impl Scenario {
             Self::RedbrandSmash => ([6_100, -13_300], 32_768),
             // 3 m north of Greyhaven Guard 6 at (-500, -800), who faces north; facing south.
             Self::Grips => ([-500, -1_100], 0),
-            // On the west shore, on the lake's long axis; facing east over the water.
-            Self::SunkenShrine => ([3_000, -5_400], 16_384),
-            // On the rim before Greyfang Ridge (#423), 8 m south of the cave mouth; facing north.
-            Self::RedbrandCavern => ([5_800, -12_000], 32_768),
+            // On the relocated lake's east shore; facing west across the water.
+            Self::SunkenShrine => ([-6_200, -5_300], 49_152),
+            // On the authored north approach; face south through the concealed mouth (#644).
+            Self::RedbrandCavern => ([6_400, -15_600], 0),
             // 1.5 m south of the ledge, facing north.
             Self::MantleLow => ([-14_530, -890], 32_768),
             Self::MantleMid => ([8_250, 2_250], 32_768),

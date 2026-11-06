@@ -5,6 +5,9 @@ use mmorpg_scenery::{Prop, PropKind, RockSize, Scenery, TreeVariant, greyhaven_v
 
 fn only(props: Vec<Prop>) -> StaticScene {
     let mut scenery = greyhaven_vale_scenery();
+    scenery
+        .collision_surfaces
+        .retain(|mesh| props.iter().any(|prop| prop.collider == Some(mesh.id)));
     scenery.props = props;
     StaticScene::new(&scenery)
 }
@@ -36,6 +39,14 @@ fn scene_wide(draw: &Draw) -> bool {
     draw.id.starts_with("static-all-")
         || draw.id.starts_with("static-ground-")
         || draw.id.contains(":handholds:")
+        || draw.id.contains("greyhaven-ground-cover")
+        || draw.id.contains("greyhaven-brook-turf")
+        || draw.id.contains("greyhaven-fern-understory")
+        || draw.id.contains("-current-")
+        || draw.id.starts_with("fall-strand-")
+        || (draw.id.starts_with("brook-") && draw.id.contains("-foam-"))
+        || draw.id.starts_with("settlement-fallback-")
+        || matches!(draw.id.as_str(), "brook-wet-banks" | "brook-bank-shingle")
 }
 
 /// Prop draws (everything but [`scene_wide`] ones) in world space.
@@ -47,13 +58,12 @@ fn prop_triangles(scene: &StaticScene) -> Vec<[V; 3]> {
         .flat_map(|group| &group.draws)
         .filter(|draw| !scene_wide(draw))
         .map(|draw| (draw, draw.model))
-        .chain(
-            scene
-                .animated
+        .chain(scene.animated.iter().zip(rest).flat_map(|(part, model)| {
+            part.draws
                 .iter()
-                .zip(rest)
-                .flat_map(|(part, model)| part.draws.iter().map(move |draw| (draw, model))),
-        );
+                .filter(|draw| !scene_wide(draw))
+                .map(move |draw| (draw, model))
+        }));
     placed
         .flat_map(|(draw, model)| {
             let g = &draw.geometry;
@@ -137,13 +147,33 @@ fn every_prop_kind_draws_valid_geometry_and_the_same_scenery_builds_the_same_sce
     // The terrain is drawn in visual tiles (#526): textured ground layers (#525) near, every
     // overlay weighted per vertex, and flat baked colours far; water stays translucent; lights
     // glow.
-    assert!(
-        scene
-            .groups
-            .iter()
-            .flat_map(|group| &group.draws)
-            .all(|draw| draw.material.ground.is_none())
-    );
+    for draw in scene.groups.iter().flat_map(|group| &group.draws) {
+        if let Some(ground) = draw.material.ground {
+            use mmorpg_presentation::ground::Layer;
+            let (layer, overlay) = if draw.id == "brook-wet-banks" {
+                (Layer::Mud, true)
+            } else {
+                assert!(
+                    draw.id == "brook-bank-shingle"
+                        || draw.id.starts_with("rock-face-")
+                        || draw.id.starts_with("cave-surface-"),
+                    "{}",
+                    draw.id
+                );
+                (Layer::Rock, false)
+            };
+            assert_eq!(ground.layer, layer, "{}", draw.id);
+            assert_eq!(ground.overlay, overlay, "{}", draw.id);
+            assert!(!ground.far, "{}", draw.id);
+            assert_eq!(draw.geometry.uv.len(), draw.geometry.p.len(), "{}", draw.id);
+            assert_eq!(
+                draw.geometry.tangents.len(),
+                draw.geometry.p.len(),
+                "{}",
+                draw.id
+            );
+        }
+    }
     let tiles = &scene.terrain;
     let near: Vec<_> = (0..tiles.tiles.len())
         .step_by(7)
@@ -376,11 +406,25 @@ fn the_cave_roof_is_cut_away_while_the_viewer_stands_under_it() {
     let scenery = greyhaven_vale_scenery();
     let roof = first(&scenery, PropKind::CaveRoof);
     let scene = only(vec![roof]);
-    assert_eq!(scene.animated.len(), 1, "the roof is its own part");
+    let roofs: Vec<_> = scene
+        .animated
+        .iter()
+        .enumerate()
+        .filter(|(_, part)| matches!(part.motion, mmorpg_presentation::Motion::Roof { .. }))
+        .map(|(index, _)| index)
+        .collect();
+    assert_eq!(roofs.len(), 1, "the roof is its own part");
+    let draw = &scene.animated[roofs[0]].draws[0];
+    assert!(
+        draw.material.ground.is_some(),
+        "the exterior uses the rock material"
+    );
+    assert_eq!(draw.geometry.uv.len(), draw.geometry.p.len());
+    assert_eq!(draw.geometry.tangents.len(), draw.geometry.p.len());
     let [x, _, z] = roof.position.map(|units| f64::from(units) / 100.);
     // The cave's floor lies on the basin's rim (#423).
     let floor = f64::from(mmorpg_core::greyhaven_vale::cave::GREYFANG.floor_y) / 100.;
-    let shown = |viewer| scene.shown(viewer, Kits::default())[0];
+    let shown = |viewer| scene.shown(viewer, Kits::default())[roofs[0]];
     assert!(shown(None));
     assert!(!shown(Some([x, floor, z])), "inside the cave");
     assert!(shown(Some([x, floor + 6., z])), "standing on the roof");
@@ -424,7 +468,11 @@ fn the_outpost_kit_buildings_keep_their_blockouts_only_as_the_fallback() {
     assert_eq!(fallback(true), 0);
     // Every wall module stands on its building's unchanged collider footprint.
     let parts = mmorpg_presentation::outpost_kit::parts(&scenery);
-    assert_eq!(parts.len(), 29 + 28);
+    assert_eq!(
+        parts.len(),
+        203,
+        "adopted modules and the authored settlement"
+    );
     for collider in [102, 105] {
         let prop = scenery
             .props
@@ -473,7 +521,7 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
     assert_eq!(fallback(true), 0);
     // One adopted prop or more from each family, shared by entry.
     let parts = mmorpg_presentation::settlement_props::parts(&scenery);
-    assert_eq!(parts.len(), 21);
+    assert_eq!(parts.len(), 23, "market square and brook additions");
     for family in [
         ["stall", "cart", "crate"],
         ["signpost", "lantern-post", "bench"],
@@ -556,4 +604,64 @@ fn climbable_rock_wears_handholds_and_sheer_rock_stays_smooth() {
         assert!(worn.iter().any(|p| inside(route, 0., p)), "{route:?}");
     }
     assert!(!worn.iter().any(|p| inside(SHEER_LAKE_CLIFF, 50., p)));
+}
+
+#[test]
+fn the_cave_ceiling_stays_textured_below_the_cutaway_roof() {
+    let scene = StaticScene::new(&greyhaven_vale_scenery());
+    let draws = scene.frame(
+        0.,
+        false,
+        [64., 13., -143.],
+        Some([64., 11., -143.]),
+        Kits::default(),
+    );
+    let ceiling = draws
+        .iter()
+        .find(|d| d.id.contains("cave-surface-547"))
+        .expect("interior ceiling stays drawn");
+    assert!(ceiling.material.ground.is_some());
+    assert!(
+        !ceiling.material.double_sided,
+        "overhead cameras see through its back face"
+    );
+    assert!(
+        ceiling.geometry.n.iter().all(|n| n[1] < 0.),
+        "ceiling faces into the cave"
+    );
+}
+
+#[test]
+fn the_brook_crossing_retains_its_fallback_until_settlement_art_is_ready() {
+    let scene = StaticScene::new(&greyhaven_vale_scenery());
+    let frame = |ready| {
+        scene.frame(
+            0.,
+            false,
+            [0., 3., 32.],
+            None,
+            Kits {
+                outpost: ready,
+                ..Kits::default()
+            },
+        )
+    };
+    let fallback = frame(false);
+    let loaded = frame(true);
+    for name in ["brook-deck", "brook-approach", "brook-posts", "brook-rails"] {
+        assert!(
+            fallback.iter().any(|draw| draw.id.contains(name)),
+            "missing {name} fallback"
+        );
+        assert!(
+            !loaded.iter().any(|draw| draw.id.contains(name)),
+            "duplicate {name} after art loads"
+        );
+    }
+    assert!(
+        loaded
+            .iter()
+            .any(|draw| draw.id.contains("brook-drain-stone")),
+        "culverts remain visible independently"
+    );
 }

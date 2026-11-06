@@ -216,6 +216,8 @@ pub fn compile(source: &str) -> Result<ZoneDefinition, ZoneError> {
         if let Some(left) = colliders.iter().find(|collider| collider.id == id)
             && colliders.iter().any(|right| {
                 right.id != left.id
+                    // Authored house foundations intentionally sink into the ground slab.
+                    && right.id != ids::GROUND
                     && !(ids::MARKET.contains(&left.id) && ids::MARKET.contains(&right.id))
                     && (0..3).all(|axis| {
                         (i64::from(left.position[axis]) - i64::from(right.position[axis])).abs()
@@ -261,7 +263,14 @@ pub fn compile(source: &str) -> Result<ZoneDefinition, ZoneError> {
         }
     }
     colliders.extend(dressing.iter().map(|(_, piece)| piece.collider()));
-    let definition = ZoneDefinition::with_spawn_grid(GRAVITY, SPAWN_GRID, colliders)?;
+    colliders.retain(|collider| {
+        !base
+            .static_meshes()
+            .iter()
+            .any(|mesh| mesh.id == collider.id)
+    });
+    let definition = ZoneDefinition::with_spawn_grid(GRAVITY, SPAWN_GRID, colliders)?
+        .with_static_meshes(base.static_meshes().to_vec())?;
     match base.terrain() {
         Some(terrain) => definition.with_terrain(terrain.clone()),
         None => Ok(definition),

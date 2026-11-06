@@ -5,9 +5,8 @@
 //! Hollow with the Greyfang cave and Wolfrun Woods (slice 3) all stand on the rim. Beyond 128 m
 //! from the Outpost the rim descends gently (17°) into the outer valley's hills (#159).
 //!
-//! The basin is the Outpost and its apron (x ±44 m, z −24 m to +96 m) and a northern notch
-//! (west of the lake, as far north as z −64 m) where the Hollow Road and the Lakeshore Path
-//! start. Six ways between the floor and the rim are cut into the terrain itself:
+//! The basin is an irregular, rounded apron with a northern lobe west of the lake.
+//! Fixed-seed weathering varies its rock faces and shoulders (#513). Six ways between the floor and the rim are cut into the terrain itself:
 //!
 //! - **Millbrook Climb**, the Millbrook Road: east from the Outpost's gate, north along a ledge
 //!   in the cliff face, round a hairpin landing and back south up a cutting onto the farm
@@ -32,23 +31,6 @@
 /// The rim's height above the valley floor (11 m).
 pub const TERRACE_Y: i32 = 1_100;
 
-/// The basin's east cliff, under the farm: the valley floor up to the first X, the rim from the
-/// second.
-pub const WEST_CLIFF: [i32; 2] = [4_400, 4_800];
-/// The basin's west cliff, under Wolfrun Woods: the rim up to the first X, the floor from the
-/// second.
-pub const WOODS_CLIFF: [i32; 2] = [-4_800, -4_400];
-/// The basin's northern cliff, under the lake (Z): the rim up to the first, the floor from the
-/// second.
-pub const NORTH_CLIFF: [i32; 2] = [-2_800, -2_400];
-/// The basin's southern cliff (Z): the floor up to the first, the rim from the second.
-pub const SOUTH_CLIFF: [i32; 2] = [9_600, 10_000];
-/// The northern notch, west of the lake: the floor up to the first X, the lake's rim from the
-/// second …
-pub const LAKE_WEST_CLIFF: [i32; 2] = [1_600, 2_000];
-/// … and Redbrand Hollow's cliff at its northern end (Z): the rim up to the first, the floor
-/// from the second.
-pub const HOLLOW_CLIFF: [i32; 2] = [-6_800, -6_400];
 /// The rim descends from the first to the second Chebyshev distance from the Outpost (17°),
 /// into the outer valley's hills, beyond the Sunken Shrine's cave.
 pub const OUTER_SLOPE: [i32; 2] = [12_800, 16_400];
@@ -226,27 +208,165 @@ fn rise_q10(value: i32, edge: [i32; 2]) -> i64 {
 
 /// How much of the valley floor shows at `(x, z)` (Q10): 1024 inside the basin, 0 on the rim.
 fn floor_q10(x: i32, z: i32) -> i64 {
-    let west = rise_q10(x, WOODS_CLIFF);
-    let south = 1_024 - rise_q10(z, SOUTH_CLIFF);
-    let apron = west
-        .min(1_024 - rise_q10(x, WEST_CLIFF))
-        .min(rise_q10(z, NORTH_CLIFF))
-        .min(south);
-    let notch = west
-        .min(1_024 - rise_q10(x, LAKE_WEST_CLIFF))
-        .min(rise_q10(z, HOLLOW_CLIFF))
-        .min(south);
-    apron.max(notch)
+    // Keep foundations, gates and the village's working lanes on their existing floor.
+    if (-3_400..=3_400).contains(&x) && (-1_200..=5_400).contains(&z) {
+        return 1_024;
+    }
+    // Broad, fixed-seed erosion changes the silhouette without changing it on recovery.
+    // Fade it out at the waterfall so the spring still meets its plunge pool.
+    let weathering = super::value_noise_q10(i64::from(x), i64::from(z), 2_600, 513);
+    let strength = i64::from((z - 2_400).abs().min(1_600));
+    // The waterfall retains its existing attachment while the other shoulders widen.
+    let radius = 4_530 + (weathering - 512) * strength / 1_820;
+    let shoulder = 1_110 + weathering * strength / 16_384;
+    let original = ellipse_floor(x, z - 2_800, radius, 6_800, shoulder).max(ellipse_floor(
+        x + 1_400,
+        z + 4_000,
+        3_100,
+        2_700,
+        1_160,
+    ));
+    let authored = super::landscape::data()
+        .basin
+        .lobes
+        .iter()
+        .map(|lobe| {
+            let radius = i64::from(lobe.radii[0]) + (weathering - 512) * strength / 1_820;
+            let shoulder = i64::from(lobe.shoulder_q10) + weathering * strength / 16_384;
+            ellipse_floor(
+                x - lobe.center[0],
+                z - lobe.center[1],
+                radius,
+                i64::from(lobe.radii[1]),
+                shoulder,
+            )
+        })
+        .max()
+        .unwrap_or(original);
+    let fall_z = super::landscape::data().watercourses.village[0][1];
+    let weight = super::smooth_q10(i64::from((z - fall_z).abs()), 600, 1800);
+    original + (authored - original) * weight / 1024
+}
+
+/// Elliptical rock face with a weathered shoulder, evaluated entirely in integers.
+fn ellipse_floor(x: i32, z: i32, radius_x: i64, radius_z: i64, shoulder: i64) -> i64 {
+    let nx = i64::from(x) * 1_024 / radius_x;
+    let nz = i64::from(z) * 1_024 / radius_z;
+    let distance = (nx * nx + nz * nz).isqrt();
+    let rise = ((distance - 1_024) * 1_024 / (shoulder - 1_024)).clamp(0, 1_024);
+    // A shallow foot and shoulder frame a steeper middle rock face.
+    let rock = if rise < 256 {
+        rise / 2
+    } else if rise < 768 {
+        128 + (rise - 256) * 3 / 2
+    } else {
+        896 + (rise - 768) / 2
+    };
+    1_024 - rock
+}
+
+/// Broken ridge crests and gullies instead of one uniformly level cliff lip. Existing
+/// authored routes, lake/shrine terrain and the farm apron keep their established levels.
+fn ridge(x: i32, z: i32, terrace: i32) -> i32 {
+    if terrace == 0
+        || x.abs() > 11000
+        || !(-11000..=12000).contains(&z)
+        || (-8200..=-3000).contains(&x) && (-7800..=-3400).contains(&z)
+        || (4800..=10000).contains(&x) && (1200..=9000).contains(&z)
+    {
+        return 0;
+    }
+    // Keep one full terrain cell around the water banks at the old rim height. Otherwise a
+    // tall summit outside the carved footprint can lift a triangle across a narrow channel.
+    if [-400, 0, 400].into_iter().any(|dx| {
+        [-400, 0, 400]
+            .into_iter()
+            .any(|dz| super::brook::wet_ground(x + dx, z + dz))
+    }) {
+        return 0;
+    }
+    let radius = |dx: i32, dz: i32, rx: i64, rz: i64| {
+        let a = i64::from(dx) * 1024 / rx;
+        let b = i64::from(dz) * 1024 / rz;
+        (a * a + b * b).isqrt()
+    };
+    let r = radius(x, z - 2800, 4530, 6800).min(radius(x + 1400, z + 4000, 3100, 2700));
+    let belt = (310 - (r - 1200).abs()).max(0);
+    // Composed rock spurs give the basin an uneven skyline at the scale of the village.
+    // Each tuple is a summit, its elliptical footprint and height above the old rim, in cm.
+    // Max (rather than addition) keeps adjoining shoulders from forming artificial spikes.
+    let summits = [
+        (-5900, 3800, 1500, 1900, 1250),
+        (-6100, 6500, 1700, 1900, 1700),
+        (-4500, 8900, 1600, 1600, 1150),
+        (3900, 8000, 1300, 1800, 1350),
+        (5200, -1800, 1300, 1500, 1050),
+        (-4200, -4400, 1800, 1300, 1450),
+        (-2000, -7600, 1700, 1100, 950),
+    ];
+    let summit = summits
+        .into_iter()
+        .map(|(cx, cz, rx, rz, high)| {
+            let distance = radius(x - cx, z - cz, rx, rz);
+            (1024 - distance).max(0) * high / 1024
+        })
+        .max()
+        .unwrap_or(0);
+    if belt == 0 && summit == 0 {
+        return 0;
+    }
+    let probe = super::StaticCollider {
+        id: 0,
+        position: [x, 0, z],
+        half_extents: [400, 1, 400],
+    };
+    if !super::clear_of_roads(&probe) {
+        return 0;
+    }
+    let ribs = super::value_noise_q10(i64::from(x), i64::from(z), 900, 0x513c1);
+    let strata = super::value_noise_q10(i64::from(x), i64::from(z), 2100, 0x513c2);
+    let shoulder = (100 + ribs * 520 / 1024 + strata * 240 / 1024) * belt / 310;
+    ((shoulder.max(summit) + summit * ribs / 8192) * i64::from(terrace.min(TERRACE_Y))
+        / i64::from(TERRACE_Y)) as i32
+}
+
+pub(super) fn lane_height(x: i32, z: i32) -> Option<i32> {
+    lanes()
+        .find(|lane| lane.contains(x, z))
+        .map(|lane| lane.height(x, z))
 }
 
 /// The rim's ground at `(x, z)`, or `None` on the untouched valley floor. Lanes override the
 /// rim and the floor alike.
 #[must_use]
 pub fn height_at(x: i32, z: i32) -> Option<i32> {
-    if let Some(lane) = lanes().find(|lane| lane.contains(x, z)) {
-        return Some(lane.height(x, z));
+    if let Some(height) = lane_height(x, z) {
+        return Some(height);
     }
     let reach = i32::try_from(x.unsigned_abs().max(z.unsigned_abs())).unwrap_or(i32::MAX);
     let weight = (1_024 - floor_q10(x, z)).min(1_024 - rise_q10(reach, OUTER_SLOPE));
-    (weight > 0).then(|| i32::try_from(i64::from(TERRACE_Y) * weight / 1_024).unwrap_or(0))
+    let terrace = i32::try_from(i64::from(TERRACE_Y) * weight / 1_024).unwrap_or(0);
+    // Rounded grassy banks and broken rim crests, outside foundations and route lanes.
+    let mound = |cx: i32, cz: i32, radius: i32, high: i32| {
+        let d = i64::from(x - cx).pow(2) + i64::from(z - cz).pow(2);
+        let radius = i64::from(radius).pow(2);
+        let falloff = (radius - d).max(0) * 1_024 / radius;
+        (i64::from(high) * falloff * falloff / (1_024 * 1_024)) as i32
+    };
+    let relief = if x.abs() > 3_500 || z > 5_800 {
+        mound(-4_100, 4_600, 1_000, 120)
+            + mound(2_300, 7_000, 1_100, 110)
+            + mound(-2_400, 7_800, 900, 95)
+            + mound(-5_200, 4_000, 1_100, 240)
+            + mound(5_000, 6_500, 1_200, 190)
+    } else {
+        0
+    };
+    // Gentle rises break up the empty northern apron. Their footprints stay outside
+    // the keep/palisade, Hollow Road, switchbacks and lake, so those anchors stay level.
+    let approach = mound(-2_200, -4_000, 900, 250)
+        + mound(-1_000, -4_000, 400, 80)
+        + mound(-1_000, -2_200, 500, 65);
+    let height = terrace + relief + approach + ridge(x, z, terrace);
+    (height > 0).then_some(height)
 }

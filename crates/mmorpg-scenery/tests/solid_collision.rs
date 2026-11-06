@@ -110,7 +110,7 @@ fn every_market_prop_collides_through_its_proxies() {
     let definition = greyhaven_vale_definition();
     let scenery = greyhaven_vale_scenery();
     let placements = settlement_props::placements(&scenery);
-    assert_eq!(placements.len(), market::SQUARE.len());
+    assert_eq!(placements.len(), market::SQUARE.len() + 2);
     let colliders: Vec<_> = definition
         .colliders()
         .iter()

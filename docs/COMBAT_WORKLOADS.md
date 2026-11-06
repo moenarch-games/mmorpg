@@ -199,3 +199,47 @@ counters are unchanged. The crowded fixture now fills the 1,077-byte budget.
 Validation uses locked dependencies, Rust 1.98.1 and the unchanged pinned physics
 engine. Shared convention sourceRevision is
 `46d8793bb3034326561f876dcc67dbaa5aa1e432`.
+
+### Authored landscape and primary Engine integration (#644)
+
+The combined authored stack adds 580 fixed collision bodies, including eight mill-gallery
+pieces, and clears seven intersecting trunks at the moved shore/shrine: a net 206,280
+additional body visits across each 360-tick workload. The existing `combat_workload`
+example on content `a5dfc46910e7f7fd` records the updated ceilings below.
+Navigation now queries the actual unit capsule against authored geometry; no bounding-box
+substitute is used for meshes or hulls. The example verifies deterministic replay and recovery.
+
+| Workload | AI evaluations | Body visits | Projection candidates | Encoded bytes |
+| --- | ---: | ---: | ---: | ---: |
+| vale-idle-16 | 29,160 | 1,105,560 | 288,000 | 6,076,832 |
+| vale-fights-8 | 29,160 | 1,102,680 | 93,060 | 1,788,549 |
+| vale-fights-32 | 29,160 | 1,111,320 | 424,719 | 7,865,487 |
+| vale-crowded-fights-64 | 28,804 | 1,122,484 | 2,323,474 | 24,276,762 |
+
+These are deterministic operation/byte counts, not timings. Existing combat, per-datagram,
+replay and recovery assertions remain in place.
+
+### Authored woodland and hideout content (#644)
+
+The western/northern canopy and north-side Redbrand camp add 534 net fixed bodies
+relative to the preceding recorded #644 ceiling: 192,240 admitted-body visits over
+360 ticks. The existing workload example records 1,297,800 / 1,294,920 / 1,303,560 /
+1,314,724 physics body visits in fixture order at content `8530ed47ef06f0f8`.
+AI evaluations, projection candidates and encoded bytes remain unchanged. All four
+runs retain exact replay/recovery parity. This updates the existing content-cost
+baseline; it makes no frame-time claim and adds no new gate.
+
+The ridge trail now skirts Stillwater instead of crossing the lake. Its clearance admits
+five additional trunks (1,800 visits per 360 ticks). At combined content `3c33cc34fd844d63`,
+the four workloads record 1,299,600 / 1,296,720 / 1,305,360 / 1,316,524 body visits.
+AI, projection and byte counts remain unchanged; all four replay/recovery checks pass.
+The same content contains 13,510 scenery props, within the updated existing 14,000-prop ceiling.
+
+Moving the boar displaced by Stillwater onto dry woodland changes the content identity
+to `64efad8a826eb508`. The four body/AI/candidate ceilings above are unchanged; fights-32
+encodes 7,855,767 bytes (lower than its existing ceiling). Replay and recovery still agree.
+
+The brook mill adds 16 net fixed bodies (5,760 visits per 360 ticks). At content
+`9a8e9b17c7144f74`, the workloads record 1,305,360 / 1,302,480 / 1,311,120 /
+1,322,284 body visits. AI, candidate and byte ceilings remain unchanged; all four
+replay and recovery checks pass.

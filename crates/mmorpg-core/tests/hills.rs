@@ -1,4 +1,4 @@
-//! The outer valley's hills (#159): authored terrain the zone's Rapier physics walks units on.
+//! The outer valley's hills (#159): authored terrain the zone's physics walks units on.
 use std::sync::Arc;
 
 use mmorpg_core::greyhaven_vale::{self, cave::GREYFANG, shrine, terrain};
@@ -42,25 +42,37 @@ fn the_original_valley_is_flat_and_the_ring_has_gentle_hills() {
             ];
             let height =
                 grid.heights[usize::try_from(row * i32::from(grid.columns) + column).unwrap()];
-            // Stillwater Lake's basin and the Sunken Shrine's cave under its shore (#274) are the
-            // only dips in the original valley; Millbrook Farm's terrace and its cliffs (#423)
-            // its only rise.
+            // The basin, shrine and connected watercourse deliberately reshape the original
+            // valley; its remaining ground stays flat.
             let basin = |x: i32| {
                 greyhaven_vale::lake_depth(x, z) > 0
                     || shrine::flattens(x, z)
+                    || greyhaven_vale::brook::wet_ground(x, z)
                     || greyhaven_vale::basin::height_at(x, z).is_some()
             };
             // The farmland's ridge and plateau (#424), the highlands' escarpment and high
             // ground (#425) and the wetlands' ridge and lowland (#426) beyond the Vale are not
             // the ring's hills.
-            if z >= greyhaven_vale::farmland::RIDGE[0] - terrain::STEP
-                || z <= greyhaven_vale::highlands::ESCARPMENT[0] + terrain::STEP
-                || x >= greyhaven_vale::marsh::RIDGE[0] - terrain::STEP
-            {
+            let outer_region = |x| {
+                greyhaven_vale::farmland::height_at(x, z).is_some()
+                    || greyhaven_vale::highlands::height_at(x, z).is_some()
+                    || greyhaven_vale::marsh::height_at(x, z).is_some()
+            };
+            if outer_region(x) || outer_region(x + terrain::STEP) {
                 continue;
             }
-            if x.abs().max(z.abs()) <= 12_500 && !basin(x) {
-                assert_eq!(height, 0, "the original valley stays flat at {x}, {z}");
+            // The brook's authored low mounds also reshape village ground. Keep
+            // the flat-valley assertion outside their declared circular footprints;
+            // their samples still contribute to the slope limit below.
+            let brook_mound = greyhaven_vale::landscape::data()
+                .brook_ground
+                .iter()
+                .any(|mound| {
+                    i64::from(x - mound.center[0]).pow(2) + i64::from(z - mound.center[1]).pow(2)
+                        < i64::from(mound.radius).pow(2)
+                });
+            if x.abs().max(z.abs()) <= 12_500 && !basin(x) && !brook_mound {
+                assert_eq!(height, 0, "the unmodified valley stays flat at {x}, {z}");
             }
             tallest = tallest.max(height);
             // The cave's floor drops away under its walls, where nothing walks.

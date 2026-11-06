@@ -7,7 +7,7 @@ use std::sync::Arc;
 use mmorpg_core::greyhaven_vale::{self, MILL_HOIST, basin::TERRACE_Y};
 use mmorpg_core::{PlatformPhase, ZoneCommand, ZoneId, ZoneSimulation};
 
-const NORTH: u16 = 0;
+const EAST: u16 = 16_384;
 
 /// Greyhaven with player 1 standing on the resting hoist.
 fn zone_on_the_hoist() -> ZoneSimulation {
@@ -47,13 +47,13 @@ fn the_mill_hoist_lifts_a_player_to_the_gallery_and_sinks_without_them() {
         );
     }
     assert_eq!(hoist.phase_at(top).0, PlatformPhase::AtHigh);
-    // Off onto the windmill's flat top, 8 m up.
+    // Off east onto the gallery, clear of the authored axle and conical roof.
     send(
         &mut zone,
         ZoneCommand::Move {
             forward: 1,
             strafe: 0,
-            facing: NORTH,
+            facing: EAST,
         },
     );
     for _ in 0..20 {
@@ -64,19 +64,19 @@ fn the_mill_hoist_lifts_a_player_to_the_gallery_and_sinks_without_them() {
         ZoneCommand::Move {
             forward: 0,
             strafe: 0,
-            facing: NORTH,
+            facing: EAST,
         },
     );
     let gallery = player_at(&zone);
-    assert!(gallery[2] > 1_900.0, "{gallery:?}");
+    assert!(gallery[0] > 9_000.0, "{gallery:?}");
     // The hoist sinks back to the terrace; the player stays on the gallery.
     while hoist.phase_at(zone.current_tick()).0 != PlatformPhase::AtLow {
         zone.advance_tick().unwrap();
     }
-    let [_, y, z] = player_at(&zone);
+    let [x, y, _] = player_at(&zone);
     assert!(
-        (y - (TERRACE_Y + 890) as f32).abs() < 0.1 && z > 1_900.0,
-        "{y} {z}"
+        (y - (TERRACE_Y + 890) as f32).abs() < 0.1 && x > 9_000.0,
+        "{y} {x}"
     );
 }
 

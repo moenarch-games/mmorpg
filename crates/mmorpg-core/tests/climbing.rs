@@ -541,3 +541,48 @@ fn the_climbing_route_beside_the_marsh_pass_crosses_the_wetlands_ridge() {
         "Marsh-Lake Wetlands",
     );
 }
+
+#[test]
+fn the_hollow_rope_still_reaches_the_sculpted_ridge_landing() {
+    // Use the real terrain, rock and climb definitions without camp combat interrupting it.
+    let content = ZoneContent::from_definition(greyhaven_vale::greyhaven_vale_definition())
+        .with_climbing(greyhaven_vale::climbing())
+        .unwrap();
+    let mut zone = ZoneSimulation::with_content(ZoneId::new(1), Arc::new(content)).unwrap();
+    zone.add_player(1).unwrap();
+    let rope = collider(*ids::ROPES.start());
+    let host = collider(greyhaven_vale::ROPES[0].host);
+    let [x, _, z] = rope.position;
+    let east = 16384;
+    let mut player = Player::in_zone(zone, [x - 200, z]);
+    player.walk_into(east);
+    player.jump();
+    player.ticks(1);
+    assert!(
+        matches!(
+            player.traversal(),
+            Traversal::Climbing {
+                grip: Grip::Rope,
+                ..
+            }
+        ),
+        "{:?} at {:?}",
+        player.traversal(),
+        player.feet()
+    );
+    assert!(
+        player.until(1, east, 1800, |p| p.traversal() == Traversal::Free
+            && p.feet()[1] > top(&host) - 10.),
+        "rope exit: {:?} at {:?}",
+        player.traversal(),
+        player.feet()
+    );
+    player.hold(0, east);
+    player.ticks(30);
+    assert!(over(&host, player.feet()));
+    assert!(
+        player.feet()[1] > top(&host) - 10.,
+        "stable ridge landing: {:?}",
+        player.feet()
+    );
+}

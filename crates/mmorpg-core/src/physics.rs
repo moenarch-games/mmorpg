@@ -2,7 +2,7 @@
 //!
 //! `mmorpg-core` decides movement intent, jumps, gravity and every gameplay outcome; this
 //! module asks the physics backend where that intent physically leads. Static content
-//! colliders, world limits, door leaves and NPCs are fixed boxes; the flat ground is a floor
+//! meshes and boxes, world limits, door leaves and NPCs are fixed; the flat ground is a floor
 //! half-space and the authored hills a heightfield. Players and creatures are upright capsules
 //! moved by a kinematic character controller, which resolves contact, sliding and support.
 //!
@@ -13,15 +13,12 @@
 //! PR 2), which `f32` holds exactly, so faster ticks keep fractional per-tick speeds and gravity.
 //! The wire and canonical snapshots keep units.
 //!
-//! Rapier (`physics/rapier.rs`) is the only backend in every production and WASM build. With
-//! the non-default `physics-ab` feature (the `physics_ab` test and example only,
-//! physics-engine #330), [`World`] can instead run on physics-engine's `approximate::World`
-//! (`physics/engine.rs`) so the same zone simulation can be compared on both; `Backend` and
-//! `using_backend` select it at runtime. No call site changes with the backend.
+//! Physics Engine (`physics/engine.rs`) is the default in production and WASM builds. Rapier
+//! (`physics/rapier.rs`) remains a selectable fallback for content not yet supported by the
+//! engine, and the behavioural oracle. The `physics-ab` feature adds comparison diagnostics.
 
 use std::fmt;
 
-#[cfg(feature = "physics-ab")]
 mod engine;
 mod queries;
 mod rapier;
@@ -43,6 +40,33 @@ pub fn capsule_dimensions(half_extents: Vec3i) -> (f32, f32) {
     let half_height = half_extents.y as f32;
     let radius = (half_extents.x.max(half_extents.z) as f32).min(half_height);
     (half_height - radius, radius)
+}
+
+/// A short vertical ray spanning the queried terrain cell. Bounding it by its four samples
+/// avoids subtracting a world-height ray's nearly equal distances at half-unit rounding ties.
+#[allow(clippy::cast_precision_loss)]
+fn terrain_probe_span(terrain: &crate::Terrain, x: i32, z: i32) -> (f32, f32) {
+    let cell = |value: i32, origin: i32, count: u16| {
+        usize::try_from(
+            (i64::from(value) - i64::from(origin))
+                .div_euclid(i64::from(terrain.step))
+                .clamp(0, i64::from(count) - 2),
+        )
+        .expect("validated terrain cell index")
+    };
+    let column = cell(x, terrain.origin[0], terrain.columns);
+    let row = cell(z, terrain.origin[1], terrain.rows);
+    let width = usize::from(terrain.columns);
+    let samples = [
+        row * width + column,
+        row * width + column + 1,
+        (row + 1) * width + column,
+        (row + 1) * width + column + 1,
+    ]
+    .map(|index| terrain.heights[index] as f32);
+    let top = samples.into_iter().fold(f32::NEG_INFINITY, f32::max) + 1.0;
+    let bottom = samples.into_iter().fold(f32::INFINITY, f32::min) - 1.0;
+    (top, top - bottom)
 }
 
 /// An integer vector in units: the rounded view gameplay rules read, and static geometry.
@@ -139,8 +163,8 @@ enum Kind {
     Rock(crate::RockShape),
 }
 
-/// One body: a fixed box, or a moving unit's capsule with its authoritative `f32` state.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// One body: fixed geometry, or a moving unit's capsule with authoritative `f32` state.
+#[derive(Clone, Debug, PartialEq)]
 pub struct RigidBody {
     id: BodyId,
     kind: Kind,
@@ -153,6 +177,7 @@ pub struct RigidBody {
     /// or ground settling; its vertical velocity is the zone's. Set by the zone every tick,
     /// never canonical.
     weightless: bool,
+    mesh: Option<std::sync::Arc<crate::StaticMesh>>,
 }
 
 fn round(value: [f32; 3]) -> Vec3i {
@@ -201,7 +226,22 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents,
             weightless: false,
+            mesh: None,
         }
+    }
+
+    /// A validated content mesh, retaining its conservative bounds for nearby queries.
+    pub fn static_mesh(mesh: &crate::StaticMesh) -> Result<Self, PhysicsError> {
+        let bounds = mesh.bounds().map_err(|e| error(e.to_string()))?;
+        let mut body = Self::fixed(
+            BodyId(u64::from(mesh.id)),
+            round(from_units(bounds.position)),
+            round(from_units(bounds.half_extents)),
+        );
+        // Bounds used by nearby queries must be centred on the actual bounds. The Rapier mesh
+        // stays relative to the authored origin instead (see insert).
+        body.mesh = Some(std::sync::Arc::new(mesh.clone()));
+        Ok(body)
     }
 
     /// A flat floor: everything below height `y` (units) is solid. Floors meet capsules
@@ -215,6 +255,7 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents: Vec3i::ZERO,
             weightless: false,
+            mesh: None,
         }
     }
 
@@ -234,6 +275,7 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents,
             weightless: false,
+            mesh: None,
         }
     }
 
@@ -252,6 +294,7 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents,
             weightless: false,
+            mesh: None,
         }
     }
 
@@ -265,6 +308,7 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents,
             weightless: false,
+            mesh: None,
         }
     }
 
@@ -294,6 +338,7 @@ impl RigidBody {
             velocity,
             half_extents,
             weightless: false,
+            mesh: None,
         }
     }
 
@@ -461,17 +506,15 @@ pub struct RapierContactProfile {
     pub controller_collisions: u64,
 }
 
-/// Which physics backend a [`World`] runs on (physics-engine #330, test/bench only).
-#[cfg(feature = "physics-ab")]
+/// Which physics backend a [`World`] runs on.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
 pub enum Backend {
-    /// Rapier, the production authority.
+    /// Rapier, the compatibility fallback and behaviour oracle.
     Rapier,
-    /// physics-engine's `approximate::World`; debris stays on Rapier.
+    /// Physics Engine's `approximate::World`.
     Engine,
 }
 
-#[cfg(feature = "physics-ab")]
 impl Backend {
     #[must_use]
     pub const fn name(self) -> &'static str {
@@ -484,61 +527,41 @@ impl Backend {
 
 #[cfg(feature = "physics-ab")]
 thread_local! {
-    static DEFAULT_BACKEND: std::cell::Cell<Backend> = const { std::cell::Cell::new(Backend::Rapier) };
+    static BACKEND_OVERRIDE: std::cell::Cell<Option<Backend>> = const { std::cell::Cell::new(None) };
 }
 
-/// Runs `run` with every [`World::new`] on this thread using `backend`, so whole zones (and
-/// their recoveries) are built on it without any call site naming a backend.
+/// Runs the A/B oracle on a chosen backend for the full construction and recovery scope.
 #[cfg(feature = "physics-ab")]
 pub fn using_backend<R>(backend: Backend, run: impl FnOnce() -> R) -> R {
-    struct Restore(Backend);
+    struct Restore(Option<Backend>);
     impl Drop for Restore {
         fn drop(&mut self) {
-            DEFAULT_BACKEND.with(|cell| cell.set(self.0));
+            BACKEND_OVERRIDE.with(|cell| cell.set(self.0));
         }
     }
-    struct Comparing(bool);
-    impl Drop for Comparing {
-        fn drop(&mut self) {
-            COMPARING.with(|cell| cell.set(self.0));
-        }
-    }
-    let _restore = Restore(DEFAULT_BACKEND.with(|cell| cell.replace(backend)));
-    let _comparing = Comparing(COMPARING.with(|cell| cell.replace(true)));
+    let _restore = Restore(BACKEND_OVERRIDE.with(|cell| cell.replace(Some(backend))));
     run()
 }
 
-#[cfg(feature = "physics-ab")]
-thread_local! {
-    /// Whether worlds are built for the A/B comparison ([`using_backend`]).
-    static COMPARING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-/// Whether Rapier collides a rock (#49) as its convex proxy. physics-engine has no convex
-/// hulls, so in the A/B comparison both backends collide with the rock's box.
-#[must_use]
-pub(crate) fn rock_hulls() -> bool {
+/// Chooses the default backend before zone construction. The engine handles immutable authored
+/// triangles and convex rocks; its dynamic-box steps retain Rapier for those geometries.
+pub(crate) fn backend_for_content(_content: &crate::ZoneContent) -> Backend {
     #[cfg(feature = "physics-ab")]
-    {
-        !COMPARING.with(std::cell::Cell::get)
+    if let Some(backend) = BACKEND_OVERRIDE.with(std::cell::Cell::get) {
+        return backend;
     }
-    #[cfg(not(feature = "physics-ab"))]
-    {
-        true
-    }
+    Backend::Engine
 }
 
-// Rapier stays inline: it is the only variant in production builds. The engine variant exists
-// only with `physics-ab` and is boxed.
-#[cfg_attr(feature = "physics-ab", allow(clippy::large_enum_variant))]
+// Rapier stays inline and Physics Engine is boxed, to keep the enum small.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
 enum Worlds {
     Rapier(rapier::World),
-    #[cfg(feature = "physics-ab")]
     Engine(Box<engine::World>),
 }
 
-/// The zone's physical world, on Rapier unless `physics-ab` selects physics-engine.
+/// The zone's physical world; Engine by default, Rapier for unsupported authored content.
 pub struct World {
     worlds: Worlds,
     /// Nanoseconds spent in this world's calls (`physics-ab` timing).
@@ -552,7 +575,6 @@ impl fmt::Debug for World {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.worlds {
             Worlds::Rapier(world) => world.fmt(formatter),
-            #[cfg(feature = "physics-ab")]
             Worlds::Engine(world) => world.fmt(formatter),
         }
     }
@@ -580,7 +602,6 @@ macro_rules! dispatch {
         let started = std::time::Instant::now();
         let result = match $worlds {
             Worlds::Rapier($world) => $call,
-            #[cfg(feature = "physics-ab")]
             Worlds::Engine($world) => $call,
         };
         #[cfg(feature = "physics-ab")]
@@ -597,19 +618,13 @@ impl World {
     #[must_use]
     pub fn new(gravity: Vec3i) -> Self {
         #[cfg(feature = "physics-ab")]
-        {
-            Self::with_backend(gravity, DEFAULT_BACKEND.with(std::cell::Cell::get))
+        if let Some(backend) = BACKEND_OVERRIDE.with(std::cell::Cell::get) {
+            return Self::with_backend(gravity, backend);
         }
-        #[cfg(not(feature = "physics-ab"))]
-        {
-            Self {
-                worlds: Worlds::Rapier(rapier::World::new(gravity)),
-            }
-        }
+        Self::with_backend(gravity, Backend::Engine)
     }
 
-    /// An empty world on `backend`.
-    #[cfg(feature = "physics-ab")]
+    /// An empty world on `backend`, including an explicit Rapier fallback.
     #[must_use]
     pub fn with_backend(gravity: Vec3i, backend: Backend) -> Self {
         let worlds = match backend {
@@ -618,12 +633,13 @@ impl World {
         };
         Self {
             worlds,
+            #[cfg(feature = "physics-ab")]
             spent: std::sync::atomic::AtomicU64::new(0),
+            #[cfg(feature = "physics-ab")]
             operations: WorldOperationProfile::default(),
         }
     }
 
-    #[cfg(feature = "physics-ab")]
     #[must_use]
     pub const fn backend(&self) -> Backend {
         match self.worlds {
@@ -690,7 +706,6 @@ impl World {
     pub fn body(&self, id: BodyId) -> Option<&RigidBody> {
         match &self.worlds {
             Worlds::Rapier(world) => world.body(id),
-            #[cfg(feature = "physics-ab")]
             Worlds::Engine(world) => world.body(id),
         }
     }
@@ -800,6 +815,16 @@ impl World {
         half_extents: [f32; 3],
     ) -> Result<Vec<BodyId>, PhysicsError> {
         dispatch!(self, &self.worlds, world => world.overlap_box(centre, half_extents))
+    }
+
+    /// Every body intersecting an upright unit capsule, in ID order. Navigation and
+    /// summon placement use the actual character shape, including against authored geometry.
+    pub fn overlap_capsule(
+        &self,
+        centre: [f32; 3],
+        half_extents: [f32; 3],
+    ) -> Result<Vec<BodyId>, PhysicsError> {
+        dispatch!(self, &self.worlds, world => world.overlap_capsule(centre, half_extents))
     }
 
     /// Whether a body accepted by `blocks` lies on the segment from `origin` along
@@ -929,11 +954,15 @@ mod tests {
 
     const BODY: Vec3i = Vec3i::new(30, 90, 30);
 
-    /// Runs `test` on Rapier and, with `physics-ab`, again on physics-engine.
+    /// Runs the default engine, and both explicit backends with A/B diagnostics enabled.
     fn on_each_backend(test: fn()) {
+        #[cfg(not(feature = "physics-ab"))]
         test();
         #[cfg(feature = "physics-ab")]
-        using_backend(Backend::Engine, test);
+        {
+            using_backend(Backend::Rapier, test);
+            using_backend(Backend::Engine, test);
+        }
     }
 
     fn world() -> World {
@@ -1042,7 +1071,7 @@ mod tests {
         for _ in 0..60 {
             world.step().unwrap();
         }
-        let body = *world.body(unit).unwrap();
+        let body = world.body(unit).unwrap().clone();
         assert_eq!(
             body.position(),
             Vec3i::new(0, 90, 0),
@@ -1505,7 +1534,7 @@ mod tests {
         for _ in 0..90 {
             world.step().unwrap();
         }
-        let body = *world.body(rider).unwrap();
+        let body = world.body(rider).unwrap();
         assert!(body.position().x > 150, "walked off: {:?}", body.position());
         assert_eq!(body.position().y, 90, "and fell to the floor");
     }

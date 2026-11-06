@@ -115,7 +115,7 @@ impl ZoneSimulation {
         let feet = self.ground_y(x, z);
         let centre = Vec3i::new(x, feet + half.y + lift, z);
         let width = half.x.max(half.z);
-        // Half a unit inside the body's box, so content boxes on the whole-unit grid never
+        // Half a unit inside the unit capsule, so content boxes on the whole-unit grid never
         // merely touch it: whether touching counts differs between the backends.
         #[allow(clippy::cast_precision_loss)]
         let (centre, half) = (
@@ -128,7 +128,7 @@ impl ZoneSimulation {
         );
         let blocked = self
             .world
-            .overlap_box(centre, half)
+            .overlap_capsule(centre, half)
             .map_err(crate::zone::physics_error)?
             .into_iter()
             .any(|body| self.nav_blocker(body));

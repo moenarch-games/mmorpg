@@ -4,7 +4,7 @@
 # wrong lane, lets them through again; lowering the guard is applied.
 name = "warden-guard"
 zone = 1
-ticks = 2124
+ticks = 2150
 digest_interval = 200
 
 [[bots]]
@@ -31,7 +31,7 @@ strafe = 0
 facing = 0
 
 [[steps]]
-tick = 72
+tick = 85
 bot = "warden"
 action = "move"
 forward = 1
@@ -39,7 +39,7 @@ strafe = 0
 facing = 49152
 
 [[steps]]
-tick = 324
+tick = 337
 bot = "warden"
 action = "move"
 forward = 1
@@ -47,7 +47,7 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 686
+tick = 712
 bot = "warden"
 action = "move"
 forward = 1
@@ -56,7 +56,7 @@ facing = 49152
 
 # … south up the cutting into the woods …
 [[steps]]
-tick = 800
+tick = 826
 bot = "warden"
 action = "move"
 forward = 1
@@ -65,7 +65,7 @@ facing = 0
 
 # … and west along the trunk-grid line z = 1800 into Wolfrun Woods.
 [[steps]]
-tick = 1142
+tick = 1168
 bot = "warden"
 action = "move"
 forward = 1
@@ -73,7 +73,7 @@ strafe = 0
 facing = 49152
 
 [[steps]]
-tick = 1434
+tick = 1460
 bot = "warden"
 action = "move"
 forward = 1
@@ -81,7 +81,7 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 1444
+tick = 1470
 bot = "warden"
 action = "select_target"
 entity = "creature:108"
@@ -89,28 +89,28 @@ entity = "creature:108"
 # Stand facing the den, close enough that Wolf 108 engages wherever it wanders, and raise a
 # middle guard before the wolf arrives.
 [[steps]]
-tick = 1514
+tick = 1540
 bot = "warden"
 action = "move"
 forward = 0
 strafe = 0
-facing = 32768
+facing = 0
 
 [[steps]]
-tick = 1514
+tick = 1540
 bot = "warden"
 action = "guard"
 lane = "middle"
 
 # The wrong lane: wolves bite middle.
 [[steps]]
-tick = 1824
+tick = 1850
 bot = "warden"
 action = "guard"
 lane = "high"
 
 [[steps]]
-tick = 2024
+tick = 2050
 bot = "warden"
 action = "guard"
 lane = "none"
@@ -120,7 +120,7 @@ kind = "event"
 bot = "warden"
 event = "blocked"
 entity = "creature:108"
-by_tick = 1824
+by_tick = 1850
 
 [[expect]]
 kind = "event"
@@ -128,4 +128,4 @@ bot = "warden"
 event = "damage_taken"
 entity = "creature:108"
 from_tick = 1828
-by_tick = 2024
+by_tick = 2050

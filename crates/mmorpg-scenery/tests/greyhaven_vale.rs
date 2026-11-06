@@ -18,6 +18,20 @@ use mmorpg_scenery::{
 /// exactly on its own.
 const STABLE_HASH: &str = "fixtures/scenery/greyhaven-stable-hash.txt";
 
+// Authored mesh bounds are broad-phase metadata, not solid boxes. Their actual
+// surfaces and client dressing are covered by authored collision/presentation tests.
+fn is_authored_mesh(id: u32) -> bool {
+    static IDS: std::sync::OnceLock<std::collections::BTreeSet<u32>> = std::sync::OnceLock::new();
+    IDS.get_or_init(|| {
+        greyhaven_vale_definition()
+            .static_meshes()
+            .iter()
+            .map(|mesh| mesh.id)
+            .collect()
+    })
+    .contains(&id)
+}
+
 /// The vale's colliders as scenery sees structures: the walk-in inn's and Elden's house's walls and furniture
 /// (#158) stand for one building, anchored by its footprint.
 fn vale_colliders() -> &'static [StaticCollider] {
@@ -119,10 +133,24 @@ fn authored_grass_retains_stable_ids_and_clears_the_selected_approach() {
         .filter(|collider| is_market(collider))
         .map(footprint)
         .collect();
-    for (_, prop) in placements {
+    for (_, mut prop) in placements {
+        prop.position[1] = scenery.ground_at(prop.position[0], prop.position[2]);
         // One saved tuft stood under a market stall, which now collides (#577).
-        let under_market = market.iter().any(|area| prop.footprint().intersects(*area));
-        assert_eq!(scenery.props.contains(&prop), !under_market);
+        let under_market = market.iter().any(|area| prop.footprint().intersects(*area))
+            || scenery
+                .props
+                .iter()
+                .filter(|solid| {
+                    solid.collider.is_some_and(|id| {
+                        (103..=106).contains(&id) || (60_000..65_000).contains(&id)
+                    }) || matches!(solid.kind, PropKind::Lamp | PropKind::Signpost)
+                })
+                .any(|solid| prop.footprint().intersects(solid.footprint()));
+        assert_eq!(
+            scenery.props.contains(&prop),
+            !under_market && !greyhaven_vale::brook::wet_ground(prop.position[0], prop.position[2]),
+            "{prop:?}"
+        );
         assert!(prop.collider.is_none());
         assert!(!prop.footprint().intersects(clearing));
     }
@@ -150,7 +178,11 @@ fn every_structure_collider_has_exactly_one_visual_and_vice_versa() {
                 "market collider {} has a prop",
                 collider.id
             );
-        } else if is_terrain(collider) {
+        } else if is_terrain(collider)
+            || (is_authored_mesh(collider.id) && visual_kind(collider).is_none())
+            || (greyhaven_vale::brook::BRIDGE..=greyhaven_vale::brook::DRAIN_STONES[2])
+                .contains(&collider.id)
+        {
             assert!(visual_kind(collider).is_none());
             assert!(
                 kinds.is_none(),
@@ -160,7 +192,10 @@ fn every_structure_collider_has_exactly_one_visual_and_vice_versa() {
         } else {
             assert_eq!(
                 kinds.map(Vec::as_slice),
-                Some(&[visual_kind(collider).unwrap()][..]),
+                Some(
+                    &[visual_kind(collider)
+                        .unwrap_or_else(|| panic!("missing visual owner for {}", collider.id))][..]
+                ),
                 "collider {}",
                 collider.id
             );
@@ -196,7 +231,7 @@ fn no_prop_intersects_a_collider_it_does_not_visualise() {
     let scenery = greyhaven_vale_scenery();
     let structures: Vec<_> = vale_colliders()
         .iter()
-        .filter(|collider| !is_terrain(collider))
+        .filter(|collider| !is_terrain(collider) && !is_authored_mesh(collider.id))
         .collect();
     for prop in &scenery.props {
         if prop.collider.is_none() {
@@ -204,8 +239,14 @@ fn no_prop_intersects_a_collider_it_does_not_visualise() {
             assert_eq!(
                 prop.position[1],
                 scenery.ground_at(prop.position[0], prop.position[2]),
-                "feet rest on the ground before relief"
+                "feet rest on the ground before relief: {prop:?}"
             );
+        }
+        if prop
+            .collider
+            .is_some_and(|id| is_authored_mesh(id) || scenery.rock(id).is_some())
+        {
+            continue;
         }
         let area = prop.footprint();
         for collider in &structures {
@@ -222,13 +263,15 @@ fn no_prop_intersects_a_collider_it_does_not_visualise() {
             };
             let roofed = (cave(collider.id) && prop.collider.is_some_and(cave))
                 || (sunken(collider.id) && prop.collider.is_some_and(sunken));
-            if prop.collider != Some(collider.id) && !roofed {
+            let vertically_separate = prop.position[1]
+                >= collider.position[1] + collider.half_extents[1]
+                || prop.position[1] + 2 * prop.half_extents[1]
+                    <= collider.position[1] - collider.half_extents[1];
+            if prop.collider != Some(collider.id) && !roofed && !vertically_separate {
                 assert!(
                     !area.intersects(footprint(collider)),
-                    "{:?} at {:?} intersects collider {}",
-                    prop.kind,
-                    prop.position,
-                    collider.id
+                    "{prop:?} intersects {collider:?}, rock={:?}",
+                    scenery.rock(collider.id)
                 );
             }
         }
@@ -249,7 +292,7 @@ fn walkable_water_has_no_colliders() {
             Some(greyhaven_vale::marsh::MARSH_LAKE_WETLANDS)
         );
     }
-    assert!(lake.contains(5_500, -5_500));
+    assert!(lake.contains(-8_700, -5_300));
     assert_eq!(
         greyhaven_vale::area_at(lake.centre[0], lake.centre[1]).map(Area::id),
         Some(greyhaven_vale::vale::STILLWATER_LAKE)
@@ -262,7 +305,7 @@ fn walkable_water_has_no_colliders() {
     };
     for collider in vale_colliders()
         .iter()
-        .filter(|c| !is_terrain(c) && !sunken(c.id) && !is_dock(c))
+        .filter(|c| !is_terrain(c) && !sunken(c.id) && !is_dock(c) && !is_authored_mesh(c.id))
     {
         // The nearest footprint point to the centre is the clamped centre.
         let rect = footprint(collider);
@@ -284,10 +327,12 @@ fn relief_is_flat_under_structures_roads_plaza_spawns_and_water() {
     let flat = |x: i32, z: i32| scenery.height_at(x, z) == 0;
     // Solid dressing and the market square (#577) stand on the drawn surface, like the
     // scatter they replaced; units beside them are drawn raised by the same relief.
-    for collider in vale_colliders()
-        .iter()
-        .filter(|c| !is_terrain(c) && !is_market(c) && !mmorpg_scenery::is_dressing(c.id))
-    {
+    for collider in vale_colliders().iter().filter(|c| {
+        !is_terrain(c)
+            && !is_market(c)
+            && !mmorpg_scenery::is_dressing(c.id)
+            && !is_authored_mesh(c.id)
+    }) {
         let rect = footprint(collider);
         let xs = [rect.min[0], (rect.min[0] + rect.max[0]) / 2, rect.max[0]];
         let zs = [rect.min[1], (rect.min[1] + rect.max[1]) / 2, rect.max[1]];
@@ -297,7 +342,12 @@ fn relief_is_flat_under_structures_roads_plaza_spawns_and_water() {
             }
         }
     }
-    for road in &scenery.roads {
+    // Added cosmetic tracks follow relief; core routes retain their flat aprons.
+    for road in scenery.roads.iter().filter(|road| {
+        greyhaven_vale::roads()
+            .iter()
+            .any(|core| core.name == road.name)
+    }) {
         for segment in road.points.windows(2) {
             let [a, b] = [segment[0], segment[1]];
             let steps = (a[0] - b[0]).abs().max((a[1] - b[1]).abs()) / 50;
@@ -327,7 +377,10 @@ fn relief_is_flat_under_structures_roads_plaza_spawns_and_water() {
     for x in (lake.centre[0] - lake.radii[0]..=lake.centre[0] + lake.radii[0]).step_by(100) {
         for z in (lake.centre[1] - lake.radii[1]..=lake.centre[1] + lake.radii[1]).step_by(100) {
             if lake.contains(x, z) {
-                assert!(flat(x, z), "lake ({x}, {z})");
+                assert!(
+                    scenery.surface_at(x, z) <= lake.surface,
+                    "lake bed ({x}, {z})"
+                );
             }
         }
     }
@@ -403,8 +456,8 @@ fn terrain_grid_samples_relief_and_biomes() {
     // Road dirt, the plaza, the lake bed, meadows, then rock and far snow on the peaks.
     assert_eq!(color(0, -3_000), ROAD_COLOR);
     assert_eq!(color(0, 8_000), ROAD_COLOR);
-    assert_eq!(color(1_000, 1_600), PLAZA_COLOR);
-    assert_eq!(color(5_600, -5_600), LAKE_BED_COLOR);
+    assert_eq!(color(-400, 1_600), PLAZA_COLOR);
+    assert_eq!(color(-8_800, -5_400), LAKE_BED_COLOR);
     for meadow in [
         color(-4_000, 8_000),
         color(9_000, -1_000),
@@ -460,8 +513,8 @@ fn terrain_biomes_name_every_vertex_colour() {
     };
     for (point, biome) in [
         ([0, -3_000], Biome::Road),
-        ([1_000, 1_600], Biome::Plaza),
-        ([5_600, -5_600], Biome::LakeBed),
+        ([-400, 1_600], Biome::Plaza),
+        ([-8_800, -5_400], Biome::LakeBed),
         ([-7_000, 3_000], Biome::Woods),
         ([9_000, -1_000], Biome::Meadow),
         ([7_000, 7_000], Biome::Farmland),
@@ -548,7 +601,7 @@ fn prop_counts_stay_within_their_budgets() {
     }
     let structures = vale_colliders()
         .iter()
-        .filter(|collider| !is_terrain(collider) && !is_market(collider))
+        .filter(|collider| visual_kind(collider).is_some())
         .count();
     let derived = scenery
         .props
@@ -564,15 +617,15 @@ fn prop_counts_stay_within_their_budgets() {
         "{counts:?}"
     );
     assert!((1_300..=1_600).contains(&count(PropKind::Flowers)));
-    assert!((760..=840).contains(&count(PropKind::Bush)), "{counts:?}");
+    assert!((900..=1_000).contains(&count(PropKind::Bush)), "{counts:?}");
     // Stillwater Lake's shore, then every marsh water's (#426).
-    assert!((440..=500).contains(&count(PropKind::Reeds)), "{counts:?}");
+    assert!((300..=400).contains(&count(PropKind::Reeds)), "{counts:?}");
     assert!(
         (600..=700).contains(&background_trees),
         "{background_trees}"
     );
     // Millbrook's 13 rows, then 14 in each of the farmland's eleven fields.
-    assert_eq!(count(PropKind::CropRow), 13 + 11 * 14);
+    assert_eq!(count(PropKind::CropRow), 13 + 11 * 14 - 5);
     assert_eq!(count(PropKind::Lamp), 4);
     assert_eq!(count(PropKind::Signpost), 3);
     assert_eq!(count(PropKind::Barrel), 4);
@@ -581,10 +634,11 @@ fn prop_counts_stay_within_their_budgets() {
     // The Eastwater watchtower and the Southmeadow ruins join the keep and houses (#159), and
     // the farmland's tower and hamlet houses join them (#424), and the highlands' stronghold
     // and lookout towers (#425), and the wetlands' drowned watchtower and ruined cottage (#426).
-    assert_eq!(count(PropKind::Keep), 6);
-    assert_eq!(count(PropKind::House), 16);
-    // The highlands (#425) add about a tenth, the wetlands (#426) about another tenth.
-    assert!(scenery.props.len() <= 13_000, "{}", scenery.props.len());
+    assert_eq!(count(PropKind::Keep), 10);
+    assert_eq!(count(PropKind::House), 19);
+    // The highlands and wetlands add about a tenth each; #644 adds the extended woodland
+    // and hideout. The combined content places 13,510 scenery props.
+    assert!(scenery.props.len() <= 14_000, "{}", scenery.props.len());
 }
 
 #[test]

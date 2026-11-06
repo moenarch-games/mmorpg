@@ -189,6 +189,33 @@ pub fn boulder(
     let routes = ((radii[0] + radii[2]) * 2. / ROUTE_SPACING)
         .round()
         .clamp(2., 5.);
+    surface_routes(g, a, centre, radii, seed, routes, put);
+}
+
+/// Routes on an authored cliff's actual facets, at the existing four-metre spacing. The
+/// caller supplies a point low inside the rock so rays leave the solid even below a saddle.
+pub fn cliff(
+    g: &Geometry,
+    centre: V,
+    radii: V,
+    seed: f64,
+    put: &mut impl FnMut(u32, Shape, Affine),
+) {
+    let routes = ((radii[0] + radii[2]) * 4. / ROUTE_SPACING)
+        .round()
+        .clamp(2., 32.);
+    surface_routes(g, super::geometry::ID, centre, radii, seed, routes, put);
+}
+
+fn surface_routes(
+    g: &Geometry,
+    a: Affine,
+    centre: V,
+    radii: V,
+    seed: f64,
+    routes: f64,
+    put: &mut impl FnMut(u32, Shape, Affine),
+) {
     let low = ((0.1 - centre[1]) / radii[1]).clamp(-0.9, 0.5).asin();
     let high = 1.15;
     let steps = (((high - low) * radii[1]) / 0.5).round().max(2.) as usize;
