@@ -670,7 +670,7 @@ mod tests {
         );
         let (host, player) = LocalZoneHost::scenario(Scenario::RedbrandCavern, 0).unwrap();
         let start = own_position(&host, player);
-        assert_eq!([start[0], start[2]], [5_800, -12_000]);
+        assert_eq!([start[0], start[2]], [6_400, -15_600]);
         let quests = decode_snapshot(&host.projection(player).unwrap())
             .unwrap()
             .quests

@@ -73,7 +73,7 @@ describe("WASM local zone host", () => {
         const at = () => decodeSnapshot(zone.projection(player)).entities
           .find((entity) => entity.kind === "player" && entity.entityId === player)?.position;
         expect(zone.submit(player, 1, encodeCommand({ kind: "move", forward: 1, strafe: 0, facing: start.facing }))).toBe(true);
-        for (let tick = 0; tick < 115; tick += 1) {
+        for (let tick = 0; tick < 190; tick += 1) {
           zone.tick();
         }
         return { start: start.position, end: at(), digest: zone.canonicalDigest() };
@@ -83,10 +83,11 @@ describe("WASM local zone host", () => {
     };
     const first = traverse();
     expect(first.end).toBeDefined();
-    // The scenario starts on the approach, just outside the authored entrance. Walking
-    // farther than that approach verifies that the collision shell did not seal its mouth.
+    // Cross the full twelve-metre north approach and the authored mouth, as in the
+    // native collision test; a walk merely toward the sealed old entrance is insufficient.
     const travelled = Math.hypot(first.end![0] - first.start[0], first.end![2] - first.start[2]);
-    expect(travelled).toBeGreaterThan(900);
+    expect(travelled).toBeGreaterThan(1400);
+    expect(first.end![2]).toBeGreaterThan(-14200);
     expect(traverse()).toEqual(first);
   });
 
