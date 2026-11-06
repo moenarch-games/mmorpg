@@ -6,8 +6,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-function run(command: string, args: string[]): string {
-  const result = spawnSync(command, args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
+function run(command: string, args: string[], timeout = 2 * 60 * 1000): string {
+  const result = spawnSync(command, args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"], timeout, maxBuffer: 64 * 1024 * 1024 });
   if (result.error) {
     throw result.error;
   }
@@ -16,7 +16,7 @@ function run(command: string, args: string[]): string {
   }
   return result.stdout;
 }
-run("cargo", ["build", "--release", "--locked", "-p", "mmorpg-core", "--example", "physics_ab_wasm", "--features", "physics-ab", "--target", "wasm32-unknown-unknown"]);
+run("cargo", ["build", "--release", "--locked", "-p", "mmorpg-core", "--example", "physics_ab_wasm", "--features", "physics-ab", "--target", "wasm32-unknown-unknown"], 20 * 60 * 1000);
 const metadata: { target_directory: string } = JSON.parse(run("cargo", ["metadata", "--no-deps", "--locked", "--format-version", "1"]));
 const output = join(metadata.target_directory, "physics-ab-wasm");
 mkdirSync(output, { recursive: true });

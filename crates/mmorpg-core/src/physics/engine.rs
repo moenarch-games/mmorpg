@@ -1,6 +1,6 @@
 //! The physics-engine backend (physics-engine #330): a thin adapter over
 //! `physics_engine::approximate::World`, the default for supported zone content.
-//! Rapier is the fallback for unsupported collision geometry and the behavioural oracle.
+//! Rapier remains the independent behavioural oracle.
 //!
 //! Units: the engine world is configured with `Config::length_unit = 100`, so it works in the
 //! game's centimetre units directly; nothing is converted. Its built-in character defaults
@@ -18,14 +18,13 @@
 //!   order, each seeing the earlier movers at their new positions, as the Rapier step does
 //!   body by body.
 //! - Rays, overlaps and segment checks are `cast_ray`/`cast_ray_first` and `overlap_shape`.
-//! - Debris (#288) and movable props (#58) use engine dynamic boxes in primitive-only zones,
-//!   but fall back to Rapier's exact geometry solver when authored meshes or hulls are present.
-//!   The character and static-query backend remains Physics Engine.
+//! - Debris (#288) and movable props (#58) use dynamic boxes. Authored zones retain isolated
+//!   static response worlds; canonical pieces transfer in and out on every tick.
 //!
 //! Intentional differences from the Rapier backend (listed in `docs/PHYSICS_AB.md`):
 //!
-//! - Characters touching another moving character turn their moves with the Rapier backend's
-//!   `slide_around` before the batch (#534), which sees every body at its position from before
+//! - Characters touching another moving character turn their moves with the shared game
+//!   `slide_around` intent before the batch (#534), which sees every body at its position from before
 //!   the step (Rapier's sees earlier movers already moved); characters do not push each other.
 //! - Grounded is the engine's own result: walkable static support within the contact offset
 //!   plus 5 cm after the last move, or snapped to (Rapier: any static ground within offset +
