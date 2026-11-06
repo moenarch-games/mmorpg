@@ -101,9 +101,11 @@ class BrowserAcceptance(unittest.TestCase):
         })();""")
 
     def tearDown(self):
-        self.page.screenshot(path=str(ARTIFACTS / f"{self._testMethodName}.png"))
-        self.evidence.append({"test": self._testMethodName, "pageErrors": self.errors})
-        self.context.close()
+        try:
+            self.page.screenshot(path=str(ARTIFACTS / f"{self._testMethodName}.png"))
+            self.evidence.append({"test": self._testMethodName, "pageErrors": self.errors})
+        finally:
+            self.context.close()
         self.assertEqual(self.errors, [], "Browser application raised an uncaught error")
 
     def open(self, query=""):
