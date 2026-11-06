@@ -14,13 +14,15 @@
 //! The wire and canonical snapshots keep units.
 //!
 //! Physics Engine (`physics/engine.rs`) is the default in production and WASM builds. Rapier
-//! (`physics/rapier.rs`) remains a selectable fallback for content not yet supported by the
-//! engine, and the behavioural oracle. The `physics-ab` feature adds comparison diagnostics.
+//! (`physics/rapier.rs`) is the independent oracle behind the non-default `physics-ab`
+//! diagnostic feature; production compiles only Physics Engine.
 
 use std::fmt;
 
 mod engine;
+#[cfg(feature = "physics-ab")]
 mod queries;
+#[cfg(feature = "physics-ab")]
 mod rapier;
 mod shared;
 
@@ -450,7 +452,7 @@ pub struct StepStats {
     pub moving: usize,
     /// Moving bodies the character controller moved.
     pub moved_bodies: usize,
-    /// Bodies in the rebuilt Rapier world.
+    /// Game bodies included in the backend step.
     pub bodies: usize,
 }
 
@@ -510,7 +512,8 @@ pub struct RapierContactProfile {
 /// Which physics backend a [`World`] runs on.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
 pub enum Backend {
-    /// Rapier, the compatibility fallback and behaviour oracle.
+    /// The independent diagnostic behaviour oracle.
+    #[cfg(feature = "physics-ab")]
     Rapier,
     /// Physics Engine's `approximate::World`.
     Engine,
@@ -520,6 +523,7 @@ impl Backend {
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
+            #[cfg(feature = "physics-ab")]
             Self::Rapier => "rapier",
             Self::Engine => "physics-engine",
         }
@@ -544,25 +548,16 @@ pub fn using_backend<R>(backend: Backend, run: impl FnOnce() -> R) -> R {
     run()
 }
 
-/// Chooses the default backend before zone construction. The engine handles immutable authored
-/// triangles and convex rocks; its dynamic-box steps retain Rapier for those geometries.
-pub(crate) fn backend_for_content(_content: &crate::ZoneContent) -> Backend {
-    #[cfg(feature = "physics-ab")]
-    if let Some(backend) = BACKEND_OVERRIDE.with(std::cell::Cell::get) {
-        return backend;
-    }
-    Backend::Engine
-}
-
 // Rapier stays inline and Physics Engine is boxed, to keep the enum small.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
 enum Worlds {
+    #[cfg(feature = "physics-ab")]
     Rapier(rapier::World),
     Engine(Box<engine::World>),
 }
 
-/// The zone's physical world; Engine by default, Rapier for unsupported authored content.
+/// The zone's physical world; production compiles only Physics Engine.
 pub struct World {
     worlds: Worlds,
     /// Nanoseconds spent in this world's calls (`physics-ab` timing).
@@ -575,6 +570,7 @@ pub struct World {
 impl fmt::Debug for World {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.worlds {
+            #[cfg(feature = "physics-ab")]
             Worlds::Rapier(world) => world.fmt(formatter),
             Worlds::Engine(world) => world.fmt(formatter),
         }
@@ -602,6 +598,7 @@ macro_rules! dispatch {
         #[cfg(feature = "physics-ab")]
         let started = web_time::Instant::now();
         let result = match $worlds {
+            #[cfg(feature = "physics-ab")]
             Worlds::Rapier($world) => $call,
             Worlds::Engine($world) => $call,
         };
@@ -622,16 +619,21 @@ impl World {
         if let Some(backend) = BACKEND_OVERRIDE.with(std::cell::Cell::get) {
             return Self::with_backend(gravity, backend);
         }
-        Self::with_backend(gravity, Backend::Engine)
+        Self::from_worlds(Worlds::Engine(Box::new(engine::World::new(gravity))))
     }
 
-    /// An empty world on `backend`, including an explicit Rapier fallback.
+    /// An empty diagnostic world on the selected independent backend.
+    #[cfg(feature = "physics-ab")]
     #[must_use]
     pub fn with_backend(gravity: Vec3i, backend: Backend) -> Self {
         let worlds = match backend {
             Backend::Rapier => Worlds::Rapier(rapier::World::new(gravity)),
             Backend::Engine => Worlds::Engine(Box::new(engine::World::new(gravity))),
         };
+        Self::from_worlds(worlds)
+    }
+
+    fn from_worlds(worlds: Worlds) -> Self {
         Self {
             worlds,
             #[cfg(feature = "physics-ab")]
@@ -644,6 +646,7 @@ impl World {
     #[must_use]
     pub const fn backend(&self) -> Backend {
         match self.worlds {
+            #[cfg(feature = "physics-ab")]
             Worlds::Rapier(_) => Backend::Rapier,
             Worlds::Engine(_) => Backend::Engine,
         }
@@ -664,13 +667,13 @@ impl World {
         self.operations
     }
 
-    /// Rapier contact topology, or `None` for the test-only engine adapter. The latter
-    /// never runs its persistent-cache step; exposing a fabricated zero would conceal
-    /// a future adapter change.
+    /// Rapier contact topology; unavailable for Engine's character-query world and its
+    /// separate transient rigid response lanes.
     #[cfg(feature = "physics-ab")]
     #[must_use]
     pub fn rapier_contacts(&self) -> Option<RapierContactProfile> {
         match &self.worlds {
+            #[cfg(feature = "physics-ab")]
             Worlds::Rapier(world) => Some(world.contact_profile()),
             Worlds::Engine(_) => None,
         }
@@ -706,6 +709,7 @@ impl World {
     #[must_use]
     pub fn body(&self, id: BodyId) -> Option<&RigidBody> {
         match &self.worlds {
+            #[cfg(feature = "physics-ab")]
             Worlds::Rapier(world) => world.body(id),
             Worlds::Engine(world) => world.body(id),
         }

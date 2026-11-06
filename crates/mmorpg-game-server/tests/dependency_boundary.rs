@@ -56,9 +56,9 @@ fn hosts_never_link_presentation_scenery() {
         graph.get(PRESENTATION),
         Some(&vec!["mmorpg-core", "serde", "serde_json", "strum"])
     );
-    assert!(reachable(&graph, PRESENTATION).contains("rapier3d"));
+    assert!(reachable(&graph, PRESENTATION).contains("physics-engine"));
     let host = reachable(&graph, "mmorpg-game-server");
-    assert!(host.contains("game-server") && host.contains("rapier3d"));
+    assert!(host.contains("game-server") && host.contains("physics-engine"));
     // `mmorpg-wasm` is absent on purpose: it is also the browser's
     // presentation adapter and exports scenery, while its local zone host
     // never reads it (checked in mmorpg-wasm/src/scenery.rs).

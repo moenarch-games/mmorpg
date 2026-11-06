@@ -289,8 +289,11 @@ fn palisade_gates_are_clear_openings_centred_on_their_roads() {
     use mmorpg_core::physics::{Backend, BodyId, RigidBody, Vec3i, World};
     // The authored perimeter has several mesh pieces per side. Test its real surfaces,
     // including every piece and lintel, rather than treating one piece's bounds as a wall.
-    for backend in [Backend::Engine, Backend::Rapier] {
+    for &backend in <Backend as strum::VariantArray>::VARIANTS {
+        #[cfg(feature = "physics-ab")]
         let mut world = World::with_backend(Vec3i::ZERO, backend);
+        #[cfg(not(feature = "physics-ab"))]
+        let mut world = World::new(Vec3i::ZERO);
         for collider in definition.colliders().iter().filter(|collider| {
             (ids::GATE_POSTS.contains(&collider.id) || ids::PALISADE.contains(&collider.id))
                 && !definition

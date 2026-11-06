@@ -1,13 +1,13 @@
 # Physics backend A/B (physics-engine #330)
 
-Physics Engine is the default zone backend in native and WASM builds, including Greyhaven's
-authored convex rock hulls and Redbrand's static triangle meshes. Rapier remains selectable
-for whole-zone fallback and is the behaviour oracle (Atlas 2.1.i330). The `physics-ab` feature adds **test/bench-only**
-instrumentation for comparing both backends on the same zone simulation. Both backends are
-compiled normally; `mmorpg-core` alone selects them, and no host or client chooses a solver.
-`mmorpg-game-server/tests/dependency_boundary.rs` checks the dependency boundary.
+Production native and WASM builds compile only Physics Engine, including Greyhaven's
+convex rock hulls, Redbrand's static triangle meshes, free debris and upright movable props.
+Rapier is an optional independent behaviour/performance oracle behind the non-default
+`physics-ab` feature (Atlas 2.1.i647). That feature alone compiles Rapier and the explicit
+`World::with_backend`/`physics::using_backend` diagnostic selectors; production exposes no
+backend selector or fallback. Hosts and clients continue to use the same core simulation.
 
-The selection happens before zone construction and recovery. Greyhaven uses Physics Engine's
+Zone construction and recovery always use Physics Engine outside diagnostics. Greyhaven uses its
 retained hulls and cave meshes for characters, support, ray/projectile and shape queries.
 Free-rotating debris and upright movable props also contact those exact shapes. Their two
 isolated response worlds retain static geometry and engine scratch, synchronize changed
@@ -37,6 +37,15 @@ cargo test -p mmorpg-core --features physics-ab --test authored_backend --test a
 bun scripts/physics-ab-wasm.ts
 cargo run --release -p mmorpg-core --example physics_ab --features physics-ab --locked
 ```
+
+The adoption pins merged Physics Engine `26a3af8d67b55ad44ce785d74072ba14617cdec7`
+(kernels `e6067536`). The focused 360-tick authored fall cases compare independent Parry
+contact depth, require contact with the actual mesh/hull and settling on both backends, and
+preserve exact Engine replay and canonical midpoint continuation. Free rotations produce
+maximum pose differences of 26.60 units on the cave floor and 137.16 on the rock; upright
+pieces differ by at most 1.80 units. The nonembedding contract is the upstream authored oracle's
+0.5-unit allowance beyond Rapier's worst penetration, capped at five units. Existing 19-workload
+gameplay bounds remain unchanged.
 
 ## Consumer contact workload diagnostic (physics-engine #443)
 

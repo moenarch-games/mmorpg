@@ -11,7 +11,7 @@ Decision history and stable cross-references: [MMORPG Decision Atlas](docs/decis
 | Concern | Authority |
 | --- | --- |
 | Zone-local gameplay rules and interest policy | `mmorpg-core` |
-| Collision and physical movement | Physics Engine by default; Rapier fallback/oracle and dynamic contacts (`mmorpg-core`, Atlas 2.1.i330) |
+| Collision and physical movement | Physics Engine, including authored rigid contacts; optional Rapier A/B oracle (`mmorpg-core`, Atlas 2.1.i647) |
 | Command/snapshot wire encoding | `mmorpg-protocol` |
 | Session ticks, reconnects, replay/recovery, WebTransport | `game-server` |
 | Zone placement, lease fencing, host routing, handoff metadata | `mmorpg-control-plane` |
