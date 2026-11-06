@@ -244,6 +244,8 @@ fn roads_are_open_corridors() {
             // The brook's deck and rails deliberately frame a narrower road crossing.
             && collider.id != greyhaven_vale::brook::BRIDGE
             && !greyhaven_vale::brook::RAILS.contains(&collider.id)
+            // The mill's narrower bank passage is checked with real capsules on both backends.
+            && ![124, 125].contains(&collider.id)
             && !definition
                 .static_meshes()
                 .iter()

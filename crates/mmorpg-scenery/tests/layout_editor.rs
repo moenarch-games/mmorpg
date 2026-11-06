@@ -9,11 +9,11 @@ fn source() -> Value {
 #[test]
 fn saved_overrides_reopen_with_matching_authoritative_and_visual_placements() {
     let mut document = source();
-    // Move an existing house, suppress another, add a house from the same prefab.
+    // Move an existing house, suppress another, and reuse its clear plot for the new prefab.
     document["collision"] = json!([
         {"id": 106, "position": [2450, 3600]},
         {"id": 104, "position": [-1100, 3800], "removed": true},
-        {"id": 60000, "position": [-2500, 2600]}
+        {"id": 60000, "position": [-1100, 3800]}
     ]);
     document["decoration"][0]["position"] = json!([-1850, 1000]);
     let saved = serde_json::to_string_pretty(&document).unwrap();

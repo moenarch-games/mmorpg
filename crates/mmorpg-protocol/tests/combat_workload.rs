@@ -64,12 +64,13 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // the existing example records exact deterministic operation/byte evidence.
     // The appended western/northern canopy and hideout add 534 net fixed bodies
     // (192,240 visits per 360 ticks). The dry ridge trail admits five additional trunks
-    // (1,800 visits), with unchanged AI, projection and byte counts.
+    // (1,800 visits); the brook mill adds 16 more bodies (5,760 visits).
+    // AI, projection and byte ceilings are unchanged.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [29_160, 1_299_600, 288_000, 6_076_832],
-        [29_160, 1_296_720, 93_060, 1_788_549],
-        [29_160, 1_305_360, 424_719, 7_865_487],
-        [28_804, 1_316_524, 2_323_474, 24_276_762],
+        [29_160, 1_305_360, 288_000, 6_076_832],
+        [29_160, 1_302_480, 93_060, 1_788_549],
+        [29_160, 1_311_120, 424_719, 7_865_487],
+        [28_804, 1_322_284, 2_323_474, 24_276_762],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();

@@ -473,3 +473,9 @@ Its first blast centres are [817, 1222, -7538] on Rapier and [819, 1219, -7545] 
 an eight-unit difference changes piece 3's exact distance falloff by one health point.
 Each arm now checks exact expected damage from its own impact centre and the same damaged
 piece IDs. A separate fixed world impact requires identical piece health across backends.
+
+The brook mill replaces the old western gate with a raised towpath and a western
+stone apron. The wolf route now follows that apron instead of stepping straight
+off the deck into the lower bank. The detour adds 58 ticks; the scripted climb
+comparison covers the corresponding 1,492 ticks with its original tolerances.
+The same wolf kill, death and spirit-return expectations remain in place.

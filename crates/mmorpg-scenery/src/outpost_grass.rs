@@ -50,7 +50,7 @@ mod tests {
         // The scenery the family was accepted against (captured under content
         // revisions 3 and 4; the hash leaves the revision out).
         // Re-recorded for solid dressing (#577), ropes (#621), and the authored landscape (#644).
-        assert_eq!(before.stable_hash(), 0x41ee355333f08339);
+        assert_eq!(before.stable_hash(), 0xed41b6036f21d34e);
         let original: Vec<_> = before
             .props
             .iter()
