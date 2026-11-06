@@ -315,6 +315,9 @@ fn standard_material(m: &DrawMaterial) -> StandardMaterial {
         } else {
             AlphaMode::Opaque
         },
+        // Procedural water/foam receives shadows without casting an opaque silhouette,
+        // matching the browser's blended-material shadow cutoff. Opaque modes ignore it.
+        blend_shadow_alpha_cutoff: 1.,
         double_sided: m.double_sided,
         unlit: m.unlit,
         ..StandardMaterial::default()

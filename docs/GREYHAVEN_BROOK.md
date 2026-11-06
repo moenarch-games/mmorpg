@@ -1071,3 +1071,21 @@ The corrected game view uses eye `[-29,4.2,47]`, target `[-44,3.7,36]`, noon,
 page errors and all seven terrain textures are loaded. The rock faces no longer
 carry the triangular fan recesses. Further path/terrain finishing, the native
 water shadow, matching final bridge view, wide overview and PR integration remain.
+
+### Native water-shadow integration
+
+The native client now sets the existing blended shadow alpha cutoff to 1.0 for
+procedural materials, matching the browser's cutoff. Water/foam retains its
+visible blending and received lighting/shadows without casting an opaque
+silhouette. Opaque modes ignore this setting; imported glTF keeps its existing
+material path.
+
+The rendering provider exposes that existing uniform through a single material
+setting in [render-engine #63](https://github.com/moritzbrantner/render-engine/pull/63)
+(fixes [#62](https://github.com/moritzbrantner/render-engine/issues/62)). Its focused
+headless render check proves both shadow removal and visible blue blended water;
+the existing sun-shadow test also passes. No shader or render pass was added.
+The game pins `bd4708dd86d247314ea0d28950cfd2b0c3d0eac6`; native client
+`cargo check -p mmorpg-client --locked` passes. A native in-game screenshot has not
+been captured. The earlier notes about the missing provider setting are superseded
+by this integration; upstream CI/merge status remains visible on that PR.
