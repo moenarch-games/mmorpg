@@ -30,6 +30,10 @@ behaviour invariants and identical-state gameplay-query parity. The WASM runner 
 separate diagnostic `cdylib` example, then executes the actual `wasm32-unknown-unknown` module
 through wasm-bindgen in Bun. It also executes the same authored Redbrand/Greyhaven geometry
 checks as native. The production browser adapter exposes no backend selection API.
+Supported characters settle their current support gap before horizontal movement, matching
+the independent oracle. The support cast inflates the capsule by the contact offset so slopes
+measure the margin along the surface normal. The authored towpath departure regression checks
+both the grazing edge and the following landing in native and real WASM.
 Native/browser GPU acceptance remains separate from these physics checks.
 
 ```sh
@@ -39,7 +43,7 @@ bun scripts/physics-ab-wasm.ts
 cargo run --release -p mmorpg-core --example physics_ab --features physics-ab --locked
 ```
 
-The adoption pins merged Physics Engine `26a3af8d67b55ad44ce785d74072ba14617cdec7`
+The adoption pins Physics Engine `721a9298beca5096552215e14657056176e59a35`
 (kernels `e6067536`). The focused 360-tick authored fall cases compare independent Parry
 contact depth, require contact with the actual mesh/hull and settling on both backends, and
 preserve exact Engine replay and canonical midpoint continuation. Free rotations produce
