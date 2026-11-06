@@ -453,3 +453,23 @@ passes exact recovery/replay, all 9,563 physical-query comparisons, and the unch
 scripted climb allowance (12.98 units of 17.04). This is correctness evidence, not timing.
 The upstream debugging checkpoint algorithm changes to 12; MMORPG's canonical/wire
 layout and protocol ID remain unchanged.
+
+### Authored-scene integration checks (#644)
+
+Terrain probes now span the queried cell's four sample heights rather than 20,200 units.
+This avoids cancellation at the charge/missile fixture's half-unit rounding tie without
+changing query parity bounds. Rapier's adapter checks the actual hit triangle before
+interpreting a tiny vertical-mesh side scrape as a ceiling; real undersides and slanted
+Redbrand faces still stop ascent. The raw controller's returned translation is unchanged.
+
+The eastern cottages now intersect the old flat-ground air-control fixture. That fixture
+runs the same commands and assertions on the clear spawn plaza; actual authored side,
+underside, slanted-wall and cave traversal/recovery checks remain separate. The former
+cottage trajectory differed by 1.94 units horizontally and 0.27 vertically after the adapter
+repair; this is not a claim of universal one-unit trajectory parity on meshes.
+
+The watch-post chase retains its original commands and unbounded AI-position contract.
+Its first blast centres are [817, 1222, -7538] on Rapier and [819, 1219, -7545] on Engine:
+an eight-unit difference changes piece 3's exact distance falloff by one health point.
+Each arm now checks exact expected damage from its own impact centre and the same damaged
+piece IDs. A separate fixed world impact requires identical piece health across backends.

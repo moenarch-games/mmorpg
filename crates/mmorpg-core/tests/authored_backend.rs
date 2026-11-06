@@ -299,3 +299,91 @@ fn unsupported_dynamic_box_contacts_use_rapier_against_real_mesh_and_rock() {
         }
     }
 }
+
+#[test]
+fn an_authored_wall_scrape_preserves_ascent_but_its_underside_stops_it() {
+    let mesh = greyhaven_vale::fort::meshes()
+        .into_iter()
+        .find(|mesh| mesh.id == 65057)
+        .unwrap();
+    for backend in [Backend::Engine, Backend::Rapier] {
+        for (at, desired, ceiling) in [
+            (
+                [3339.7393, 211.5, 967.08386],
+                [4.0585938, 1.0, 2.8398438],
+                false,
+            ),
+            ([3400.0, -90.5, 850.0], [0.0, 1.0, 0.0], true),
+        ] {
+            let mut world = World::with_backend(Vec3i::new(0, -64, 0), backend);
+            world
+                .add_body(RigidBody::static_mesh(&mesh).unwrap())
+                .unwrap();
+            let mut velocity = desired;
+            velocity[1] += 0.25;
+            world
+                .add_body(RigidBody::moving(
+                    BodyId(9000000),
+                    at,
+                    velocity,
+                    Vec3i::new(30, 90, 30),
+                ))
+                .unwrap();
+            world.step().unwrap();
+            let body = world.body(BodyId(9000000)).unwrap();
+            if ceiling {
+                assert_eq!(
+                    body.velocity_units().y,
+                    0,
+                    "{backend:?}: underside stops ascent"
+                );
+            } else {
+                assert!(
+                    body.velocity_units().y > 0,
+                    "{backend:?}: side scrape is no ceiling"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn terrain_probes_agree_at_the_charge_paths_half_unit_rounding_tie() {
+    let content = greyhaven_vale::content();
+    let terrain = content.definition().terrain().unwrap();
+    let heights = [Backend::Engine, Backend::Rapier].map(|backend| {
+        let mut world = World::with_backend(Vec3i::ZERO, backend);
+        world.set_terrain(BodyId(1), terrain.clone());
+        world.terrain_height(-7100, -900).unwrap()
+    });
+    assert_eq!(heights[0].round(), heights[1].round(), "{heights:?}");
+    assert!((heights[0] - heights[1]).abs() < 0.0005, "{heights:?}");
+}
+
+#[test]
+fn the_slanted_redbrand_wall_still_stops_an_upward_move() {
+    let mesh = greyhaven_vale::cave::collision_meshes()
+        .into_iter()
+        .find(|mesh| mesh.id == 544)
+        .unwrap();
+    for backend in [Backend::Engine, Backend::Rapier] {
+        let mut world = World::with_backend(Vec3i::new(0, -64, 0), backend);
+        world
+            .add_body(RigidBody::static_mesh(&mesh).unwrap())
+            .unwrap();
+        world
+            .add_body(RigidBody::moving(
+                BodyId(9000000),
+                [8060.0, 1300.2351, -13805.5],
+                [0.0, 2.75, 0.0],
+                Vec3i::new(30, 90, 30),
+            ))
+            .unwrap();
+        world.step().unwrap();
+        assert_eq!(
+            world.body(BodyId(9000000)).unwrap().velocity_units().y,
+            0,
+            "{backend:?}: real slanted contact still stops ascent"
+        );
+    }
+}
