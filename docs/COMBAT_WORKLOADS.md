@@ -218,3 +218,13 @@ substitute is used for meshes or hulls. The example verifies deterministic repla
 
 These are deterministic operation/byte counts, not timings. Existing combat, per-datagram,
 replay and recovery assertions remain in place.
+
+### Authored woodland and hideout content (#644)
+
+The western/northern canopy and north-side Redbrand camp add 534 net fixed bodies
+relative to the preceding recorded #644 ceiling: 192,240 admitted-body visits over
+360 ticks. The existing workload example records 1,297,800 / 1,294,920 / 1,303,560 /
+1,314,724 physics body visits in fixture order at content `8530ed47ef06f0f8`.
+AI evaluations, projection candidates and encoded bytes remain unchanged. All four
+runs retain exact replay/recovery parity. This updates the existing content-cost
+baseline; it makes no frame-time claim and adds no new gate.

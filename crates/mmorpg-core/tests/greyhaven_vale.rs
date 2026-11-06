@@ -53,8 +53,8 @@ fn content_is_a_bounded_deterministic_revision() {
         .iter()
         .filter(|collider| ids::TREES.contains(&collider.id))
         .count();
-    // The wetlands' lone trees and Greyhaven's rim and northern groves share this content.
-    assert!((800..=2_500).contains(&trees), "{trees} trees");
+    // Authored western and northern canopy patches join the older regional woods.
+    assert!((2_500..=4_000).contains(&trees), "{trees} trees");
     for collider in definition.colliders() {
         let (min, max) = footprint(collider);
         let within = |point: [i32; 2]| {
