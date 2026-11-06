@@ -681,6 +681,23 @@ impl World {
         half_extents: [f32; 3],
     ) -> Result<Vec<BodyId>, PhysicsError> {
         let pose = QueryPose::new(Shape::Box(vector(half_extents)), vector(centre));
+        self.overlap_pose(pose)
+    }
+
+    pub fn overlap_capsule(
+        &self,
+        centre: [f32; 3],
+        half_extents: [f32; 3],
+    ) -> Result<Vec<BodyId>, PhysicsError> {
+        let radius = half_extents[0].max(half_extents[2]).min(half_extents[1]);
+        let half_height = (half_extents[1] - radius).max(0.0);
+        self.overlap_pose(QueryPose::new(
+            Shape::capsule(half_height, radius),
+            vector(centre),
+        ))
+    }
+
+    fn overlap_pose(&self, pose: QueryPose) -> Result<Vec<BodyId>, PhysicsError> {
         let mut hits = Vec::new();
         self.engine
             .overlap_shape(pose, QueryFilter::default(), &mut hits)

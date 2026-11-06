@@ -714,6 +714,22 @@ fn trees() -> Vec<StaticCollider> {
             }
         }
     }
+    // The shore rocks and shrine moved with Stillwater. Reject intersecting trunks
+    // after assigning IDs, so clearing their new sites never renumbers other trees.
+    let shore: Vec<_> = (vale::REGION.colliders)()
+        .into_iter()
+        .filter(|body| ids::SHORE_ROCKS.contains(&body.id))
+        .chain(shrine::ruins(*ids::SHRINE_RUINS.start()))
+        .chain(shrine::walls(*ids::SHRINE_CAVE_WALLS.start()))
+        .collect();
+    trees.retain(|tree| {
+        !shore.iter().any(|body| {
+            (0..3).all(|axis| {
+                (i64::from(tree.position[axis]) - i64::from(body.position[axis])).abs()
+                    < i64::from(tree.half_extents[axis]) + i64::from(body.half_extents[axis])
+            })
+        })
+    });
     trees
 }
 
@@ -1080,8 +1096,8 @@ pub const CLIMBING_ROUTES: [XzBounds; 3] = [
 ];
 
 /// The mill hoist (#56): a 2 m square stone pillar against the windmill's south face that
-/// rests with its top flush with the farm terrace, rises 8 m to the windmill's gallery (its flat
-/// top) at 1.5 m/s, rests 5 s and sinks back. Its box fills the shaft below its top, so it
+/// rests with its top flush with the farm terrace, rises 8 m to the windmill's east gallery
+/// at 1.5 m/s, rests 5 s and sinks back. Its box fills the shaft below its top, so it
 /// sweeps no space a unit could stand in except on top.
 pub const MILL_HOIST: crate::Platform = crate::Platform {
     id: crate::PlatformId::new(1),

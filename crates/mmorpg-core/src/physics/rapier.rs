@@ -1063,6 +1063,31 @@ impl World {
         Ok(hits)
     }
 
+    pub fn overlap_capsule(
+        &self,
+        centre: [f32; 3],
+        half_extents: [f32; 3],
+    ) -> Result<Vec<BodyId>, PhysicsError> {
+        let queries = self.world.broad_phase.as_query_pipeline(
+            &self.queries,
+            &self.world.bodies,
+            &self.world.colliders,
+            QueryFilter::default(),
+        );
+        let radius = half_extents[0].max(half_extents[2]).min(half_extents[1]);
+        let shape = Capsule::new_y(
+            (half_extents[1] - radius).max(0.0) / UNITS_PER_METRE,
+            radius / UNITS_PER_METRE,
+        );
+        let mut hits: Vec<_> = queries
+            .intersect_shape(Pose::from_translation(metres(centre)), &shape)
+            .map(|(_, collider)| BodyId(u64::try_from(collider.user_data).unwrap_or(u64::MAX)))
+            .collect();
+        hits.sort_unstable();
+        hits.dedup();
+        Ok(hits)
+    }
+
     /// Whether a body accepted by `blocks` lies on the segment from `origin` along
     /// `translation` (units), strictly before its end.
     pub fn segment_blocked(

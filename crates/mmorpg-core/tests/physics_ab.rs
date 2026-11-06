@@ -438,8 +438,8 @@ fn check_rolls(trace: &Trace) -> Result<()> {
 /// The hoist ride (#56): the rider ends on the windmill's gallery, 8 m up.
 fn check_mill_hoist(trace: &Trace) -> Result<()> {
     let last = trace.snapshots.last().ok_or("empty hoist trace")?;
-    let [_, y, z] = last.players[0].position;
-    if (y - 890.0 - TERRACE).abs() > 0.1 || z < 1_900.0 {
+    let [x, y, _] = last.players[0].position;
+    if (y - 890.0 - TERRACE).abs() > 0.1 || x < 9_000.0 {
         return Err(format!("the hoist rider ends at {:?}", last.players[0].position).into());
     }
     Ok(())
@@ -1060,8 +1060,8 @@ fn check_workload(workload: Workload) -> Result<()> {
         }
     }
     if let Workload::Bots(scenario) = &workload {
-        // The replay drives the zone as the bot runner does: Rapier reproduces the
-        // scenario's expected positions exactly.
+        // The production Engine arm reproduces the bot runner's exact fixture positions.
+        // Rapier remains the independent replay, recovery and physical-query oracle.
         for expectation in &scenario.positions {
             let tick = usize::try_from(expectation.tick)? - 1;
             let at = |trace: &Trace| {
@@ -1074,14 +1074,14 @@ fn check_workload(workload: Workload) -> Result<()> {
                     .ok_or_else(|| Box::<dyn Error>::from("missing player"))
             };
             assert_eq!(
-                at(&rapier)?,
+                at(&engine)?,
                 expectation.position,
-                "{name} Rapier expectation"
+                "{name} Engine expectation"
             );
-            let engine_at = at(&engine)?;
-            if engine_at != expectation.position {
+            let rapier_at = at(&rapier)?;
+            if rapier_at != expectation.position {
                 println!(
-                    "  {name} tick {}: engine at {engine_at:?}, scenario expects {:?}",
+                    "  {name} tick {}: Rapier at {rapier_at:?}, scenario expects {:?}",
                     expectation.tick, expectation.position
                 );
             }

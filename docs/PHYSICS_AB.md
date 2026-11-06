@@ -18,6 +18,10 @@ response; these pairs are never sent to its unsupported rigid-body scheduler or 
 approximated by boxes. `World::with_backend` still selects the complete Rapier zone for
 diagnostics and content that requires it. A/B fixtures use `physics::using_backend`.
 
+Navigation and summon placement query the actual upright unit capsule against authored shapes.
+General box–mesh/hull overlap queries remain unsupported by Physics Engine; callers must not
+substitute bounding boxes for those shapes.
+
 The focused native/WASM-compatible `authored_backend` and `authored_collision` tests use
 the committed Redbrand JSON and Greyhaven rock proxies, with Rapier as the geometry oracle.
 The full browser cave traversal and GPU acceptance remain separate consumer checks.
@@ -133,7 +137,7 @@ the existing friction, restitution and averaging contracts are retained.
 
 `crates/mmorpg-core/tests/physics_ab.rs` replays the bot scenarios `two-bots-move`,
 `vale-hub-walk` and `vale-wolf-hunt` (command by command, as the bot runner submits them; the
-Rapier arm reproduces each scenario's expected positions exactly) and the four Greyhaven combat
+production Engine arm reproduces each scenario's expected positions exactly) and the four Greyhaven combat
 workload fixtures (`tests/support/greyhaven_workload.rs`, shared with `mmorpg-protocol`) and the
 `vale-ogre-brawl` script (#297: three players by the Hill Ogre; one provokes it and runs past
 another standing in its way, a third walks into its side) and `vale-mill-hoist` (#56: a

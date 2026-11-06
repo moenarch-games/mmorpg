@@ -89,6 +89,38 @@ fn first_greyhaven_rock() -> RigidBody {
 }
 
 #[test]
+fn unit_placement_capsules_query_actual_meshes_and_hulls_on_both_backends() {
+    let mesh = greyhaven_vale::cave::collision_meshes()
+        .into_iter()
+        .find(|mesh| mesh.id == 645)
+        .unwrap();
+    let (origin, ray) = face_ray(&mesh);
+    let face = std::array::from_fn(|axis| origin[axis] + ray[axis] * 0.5);
+    let rock = first_greyhaven_rock();
+    let rock_centre = rock.exact_position();
+    for (body, contact) in [
+        (RigidBody::static_mesh(&mesh).unwrap(), face),
+        (rock, rock_centre),
+    ] {
+        let expected = body.id();
+        let (engine, rapier) = worlds([body]);
+        for world in [&engine, &rapier] {
+            assert_eq!(
+                world.overlap_capsule(contact, [10., 20., 10.]).unwrap(),
+                vec![expected]
+            );
+            let outside = [contact[0] + 100_000., contact[1], contact[2]];
+            assert!(
+                world
+                    .overlap_capsule(outside, [10., 20., 10.])
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+    }
+}
+
+#[test]
 fn engine_surface_features_are_stable_for_the_actual_authored_inputs() {
     use physics_engine::approximate::{
         Config, ConvexHullDesc, Material, QueryFilter, RayCast, RayFeature, TriangleMeshDesc,

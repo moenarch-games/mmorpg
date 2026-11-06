@@ -391,6 +391,20 @@ farm_window(0,4.9,2.18)
 box('Mill timber axle housing',(0,8.9,2.35),(.22,.22,.50),wood_mat)
 vs=[(sx*.22,8.68+sy*.44,2.35+sz*.50) for sx,sy,sz in [(-1,0,-1),(1,0,-1),(1,0,1),(-1,0,1),(-1,1,-1),(1,1,-1),(1,1,1),(-1,1,1)]]
 solid_record(65064,vs,BOX_FACES)
+# The existing hoist must disembark beside the axle, rather than into its solid housing.
+# Keep the complete shaft open (world x <= 89 m), with the gallery at its 8 m stop.
+gallery_parts=[(65103,'Mill east gallery deck',(-2.75,7.9,3.02),(1.75,.10,1.60))]
+for i,(x,z) in enumerate([(-1.15,1.57),(-1.15,4.47),(-4.35,1.57),(-4.35,4.47)]):
+    gallery_parts.append((65104+i,'Mill gallery upright',(x,4.55,z),(.12,4.55,.12)))
+gallery_parts += [(65108,'Mill gallery outer rail',(-4.35,8.85,3.02),(.08,.08,1.50)),
+    (65109,'Mill gallery front rail',(-2.75,8.85,4.47),(1.68,.08,.08)),
+    (65110,'Mill gallery back rail',(-2.75,8.85,1.57),(1.68,.08,.08))]
+for id,name,c,h in gallery_parts:
+    box(name,c,h,wood_mat,.015)
+    x,y,z=c;hx,hy,hz=h
+    vs=[(x+sx*hx,y+sy*hy,z+sz*hz) for sx,sy,sz in
+        [(-1,-1,-1),(1,-1,-1),(1,-1,1),(-1,-1,1),(-1,1,-1),(1,1,-1),(1,1,1),(-1,1,1)]]
+    solid_record(id,vs,BOX_FACES)
 farm_place(start,solid_start,88,21,2)
 
 # The Hollow's existing three closed tents and four supply crates. Cloth folds are visual;

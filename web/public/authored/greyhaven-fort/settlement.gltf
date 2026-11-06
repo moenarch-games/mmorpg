@@ -6,7 +6,7 @@
 	"scene":0,
 	"scenes":[
 		{
-			"name":"Greyhaven - Waterfall and Village 513",
+			"name":"Scene",
 			"nodes":[
 				0
 			]
@@ -21,7 +21,7 @@
 	"materials":[
 		{
 			"doubleSided":true,
-			"name":"Greyhaven weathered-masonry.024",
+			"name":"Greyhaven weathered-masonry",
 			"normalTexture":{
 				"index":0
 			},
@@ -35,7 +35,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven limestone dressings.024",
+			"name":"Greyhaven limestone dressings",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.4300000071525574,
@@ -49,7 +49,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven slate.024",
+			"name":"Greyhaven slate",
 			"normalTexture":{
 				"index":2
 			},
@@ -63,7 +63,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven deep window recess.024",
+			"name":"Greyhaven deep window recess",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.017999999225139618,
@@ -77,7 +77,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven forged iron.024",
+			"name":"Greyhaven forged iron",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.054999999701976776,
@@ -91,7 +91,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven weathered-oak.024",
+			"name":"Greyhaven weathered-oak",
 			"normalTexture":{
 				"index":4
 			},
@@ -105,7 +105,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven indigo linen.024",
+			"name":"Greyhaven indigo linen",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.03500000014901161,
@@ -119,7 +119,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven ochre heraldry.024",
+			"name":"Greyhaven ochre heraldry",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.6000000238418579,
@@ -133,7 +133,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven well hemp.007",
+			"name":"Greyhaven well hemp",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.30000001192092896,
@@ -147,7 +147,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven barn-oxblood.019",
+			"name":"Greyhaven barn-oxblood",
 			"normalTexture":{
 				"index":6
 			},
@@ -161,7 +161,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven lime-plaster.018",
+			"name":"Greyhaven lime-plaster",
 			"normalTexture":{
 				"index":8
 			},
@@ -175,7 +175,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven farm warm glass.018",
+			"name":"Greyhaven farm warm glass",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.20000000298023224,
@@ -189,7 +189,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven weathered-canvas.015",
+			"name":"Greyhaven weathered-canvas",
 			"normalTexture":{
 				"index":10
 			},
@@ -203,7 +203,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven canvas binding.015",
+			"name":"Greyhaven canvas binding",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.2800000011920929,
@@ -217,7 +217,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven fern shadow leaf.004",
+			"name":"Greyhaven fern shadow leaf",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.054999999701976776,
@@ -231,7 +231,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven fern green leaf.004",
+			"name":"Greyhaven fern green leaf",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.08500000089406967,
@@ -245,7 +245,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"Greyhaven fern young leaf.004",
+			"name":"Greyhaven fern young leaf",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.11999999731779099,
@@ -302,7 +302,7 @@
 	],
 	"meshes":[
 		{
-			"name":"Keep ashlar hall.024",
+			"name":"Keep ashlar hall",
 			"primitives":[
 				{
 					"attributes":{
@@ -773,9 +773,9 @@
 		{
 			"bufferView":20,
 			"componentType":5126,
-			"count":80392,
+			"count":82120,
 			"max":[
-				88.5199966430664,
+				92.5,
 				22.290115356445312,
 				52.150001525878906
 			],
@@ -789,19 +789,19 @@
 		{
 			"bufferView":21,
 			"componentType":5126,
-			"count":80392,
+			"count":82120,
 			"type":"VEC3"
 		},
 		{
 			"bufferView":22,
 			"componentType":5126,
-			"count":80392,
+			"count":82120,
 			"type":"VEC2"
 		},
 		{
 			"bufferView":23,
 			"componentType":5125,
-			"count":129528,
+			"count":132120,
 			"type":"SCALAR"
 		},
 		{
@@ -1404,362 +1404,362 @@
 		},
 		{
 			"buffer":0,
-			"byteLength":964704,
+			"byteLength":985440,
 			"byteOffset":1935824,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":964704,
-			"byteOffset":2900528,
+			"byteLength":985440,
+			"byteOffset":2921264,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":643136,
-			"byteOffset":3865232,
+			"byteLength":656960,
+			"byteOffset":3906704,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":518112,
-			"byteOffset":4508368,
+			"byteLength":528480,
+			"byteOffset":4563664,
 			"target":34963
 		},
 		{
 			"buffer":0,
 			"byteLength":12096,
-			"byteOffset":5026480,
+			"byteOffset":5092144,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":12096,
-			"byteOffset":5038576,
+			"byteOffset":5104240,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":8064,
-			"byteOffset":5050672,
+			"byteOffset":5116336,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":3024,
-			"byteOffset":5058736,
+			"byteOffset":5124400,
 			"target":34963
 		},
 		{
 			"buffer":0,
 			"byteLength":10656,
-			"byteOffset":5061760,
+			"byteOffset":5127424,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":10656,
-			"byteOffset":5072416,
+			"byteOffset":5138080,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":7104,
-			"byteOffset":5083072,
+			"byteOffset":5148736,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":2736,
-			"byteOffset":5090176,
+			"byteOffset":5155840,
 			"target":34963
 		},
 		{
 			"buffer":0,
 			"byteLength":504,
-			"byteOffset":5092912,
+			"byteOffset":5158576,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":504,
-			"byteOffset":5093416,
+			"byteOffset":5159080,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":336,
-			"byteOffset":5093920,
+			"byteOffset":5159584,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":144,
-			"byteOffset":5094256,
+			"byteOffset":5159920,
 			"target":34963
 		},
 		{
 			"buffer":0,
 			"byteLength":2664,
-			"byteOffset":5094400,
+			"byteOffset":5160064,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":2664,
-			"byteOffset":5097064,
+			"byteOffset":5162728,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":1776,
-			"byteOffset":5099728,
+			"byteOffset":5165392,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":660,
-			"byteOffset":5101504,
+			"byteOffset":5167168,
 			"target":34963
 		},
 		{
 			"buffer":0,
 			"byteLength":2664,
-			"byteOffset":5102164,
+			"byteOffset":5167828,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":2664,
-			"byteOffset":5104828,
+			"byteOffset":5170492,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":1776,
-			"byteOffset":5107492,
+			"byteOffset":5173156,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":660,
-			"byteOffset":5109268,
+			"byteOffset":5174932,
 			"target":34963
 		},
 		{
 			"buffer":0,
 			"byteLength":17784,
-			"byteOffset":5109928,
+			"byteOffset":5175592,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":17784,
-			"byteOffset":5127712,
+			"byteOffset":5193376,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":11856,
-			"byteOffset":5145496,
+			"byteOffset":5211160,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":4536,
-			"byteOffset":5157352,
+			"byteOffset":5223016,
 			"target":34963
 		},
 		{
 			"buffer":0,
 			"byteLength":16632,
-			"byteOffset":5161888,
+			"byteOffset":5227552,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":16632,
-			"byteOffset":5178520,
+			"byteOffset":5244184,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":11088,
-			"byteOffset":5195152,
+			"byteOffset":5260816,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":4248,
-			"byteOffset":5206240,
+			"byteOffset":5271904,
 			"target":34963
 		},
 		{
 			"buffer":0,
 			"byteLength":5184,
-			"byteOffset":5210488,
+			"byteOffset":5276152,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":5184,
-			"byteOffset":5215672,
+			"byteOffset":5281336,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":3456,
-			"byteOffset":5220856,
+			"byteOffset":5286520,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":1296,
-			"byteOffset":5224312,
+			"byteOffset":5289976,
 			"target":34963
 		},
 		{
 			"buffer":0,
 			"byteLength":188160,
-			"byteOffset":5225608,
+			"byteOffset":5291272,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":188160,
-			"byteOffset":5413768,
+			"byteOffset":5479432,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":125440,
-			"byteOffset":5601928,
+			"byteOffset":5667592,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":36960,
-			"byteOffset":5727368,
+			"byteOffset":5793032,
 			"target":34963
 		},
 		{
 			"buffer":0,
 			"byteLength":120960,
-			"byteOffset":5764328,
+			"byteOffset":5829992,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":120960,
-			"byteOffset":5885288,
+			"byteOffset":5950952,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":80640,
-			"byteOffset":6006248,
+			"byteOffset":6071912,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":20160,
-			"byteOffset":6086888,
+			"byteOffset":6152552,
 			"target":34963
 		},
 		{
 			"buffer":0,
 			"byteLength":120960,
-			"byteOffset":6107048,
+			"byteOffset":6172712,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":120960,
-			"byteOffset":6228008,
+			"byteOffset":6293672,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":80640,
-			"byteOffset":6348968,
+			"byteOffset":6414632,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":20160,
-			"byteOffset":6429608,
+			"byteOffset":6495272,
 			"target":34963
 		},
 		{
 			"buffer":0,
 			"byteLength":122112,
-			"byteOffset":6449768,
+			"byteOffset":6515432,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":122112,
-			"byteOffset":6571880,
+			"byteOffset":6637544,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":81408,
-			"byteOffset":6693992,
+			"byteOffset":6759656,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":30528,
-			"byteOffset":6775400,
+			"byteOffset":6841064,
 			"target":34963
 		},
 		{
 			"buffer":0,
 			"byteLength":122112,
-			"byteOffset":6805928,
+			"byteOffset":6871592,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":122112,
-			"byteOffset":6928040,
+			"byteOffset":6993704,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":81408,
-			"byteOffset":7050152,
+			"byteOffset":7115816,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":30528,
-			"byteOffset":7131560,
+			"byteOffset":7197224,
 			"target":34963
 		},
 		{
 			"buffer":0,
 			"byteLength":122112,
-			"byteOffset":7162088,
+			"byteOffset":7227752,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":122112,
-			"byteOffset":7284200,
+			"byteOffset":7349864,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":81408,
-			"byteOffset":7406312,
+			"byteOffset":7471976,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":30528,
-			"byteOffset":7487720,
+			"byteOffset":7553384,
 			"target":34963
 		}
 	],
@@ -1771,7 +1771,7 @@
 	],
 	"buffers":[
 		{
-			"byteLength":7518248,
+			"byteLength":7583912,
 			"uri":"settlement.bin"
 		}
 	]

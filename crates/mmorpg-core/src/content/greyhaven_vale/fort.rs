@@ -5,6 +5,9 @@ pub const TOWERS: [[i32; 2]; 4] = [[-2700, -700], [2700, -700], [-3000, 4000], [
 pub const TOWER_BODIES: std::ops::RangeInclusive<u32> = 65040..=65043;
 /// Low authored outcrops that break Stillwater's bank silhouette without closing its routes.
 pub const SHORE_ROCKS: std::ops::RangeInclusive<u32> = 65070..=65093;
+/// The mill's walk-off gallery, outside the hoist shaft and clear of the axle housing.
+pub const MILL_GALLERY: std::ops::RangeInclusive<u32> = 65103..=65110;
+
 /// Authored leaning rock slabs and their smaller talus pieces at the basin cliff feet.
 pub const BASIN_ROCKS: std::ops::RangeInclusive<u32> = 65094..=65102;
 
@@ -36,6 +39,7 @@ pub fn dresses(id: u32) -> bool {
         || super::ids::GATE_POSTS.contains(&id)
         || (65000..=65023).contains(&id)
         || TOWER_BODIES.contains(&id)
+        || MILL_GALLERY.contains(&id)
         || (65050..=65069).contains(&id)
         || super::ids::TENTS.contains(&id)
         || super::ids::CRATES.contains(&id)

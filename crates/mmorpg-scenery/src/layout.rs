@@ -171,6 +171,17 @@ pub fn compose(source: &str, definition: &ZoneDefinition) -> Result<Scenery, Str
                 }
             }),
     );
+    // Saved cosmetic anchors retain their XZ authoring coordinates, while their feet
+    // follow the current physical terrain after a landscape edit.
+    if let Some(ground) = &scenery.ground {
+        for prop in scenery
+            .props
+            .iter_mut()
+            .filter(|prop| prop.collider.is_none() && prop.kind != PropKind::Ramp)
+        {
+            prop.position[1] = ground.height_at(prop.position[0], prop.position[2]);
+        }
+    }
     // The scenery belongs to the content revision this exact definition hosts.
     scenery.content_revision = greyhaven_vale::content_with_definition(definition.clone())
         .map_err(|error| error.to_string())?

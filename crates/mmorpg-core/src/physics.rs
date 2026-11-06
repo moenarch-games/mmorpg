@@ -790,6 +790,16 @@ impl World {
         dispatch!(self, &self.worlds, world => world.overlap_box(centre, half_extents))
     }
 
+    /// Every body intersecting an upright unit capsule, in ID order. Navigation and
+    /// summon placement use the actual character shape, including against authored geometry.
+    pub fn overlap_capsule(
+        &self,
+        centre: [f32; 3],
+        half_extents: [f32; 3],
+    ) -> Result<Vec<BodyId>, PhysicsError> {
+        dispatch!(self, &self.worlds, world => world.overlap_capsule(centre, half_extents))
+    }
+
     /// Whether a body accepted by `blocks` lies on the segment from `origin` along
     /// `translation` (units), strictly before its end.
     pub fn segment_blocked(
