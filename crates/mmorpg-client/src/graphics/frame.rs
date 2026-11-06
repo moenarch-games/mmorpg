@@ -339,6 +339,10 @@ pub fn scene(lighting: &Lighting, view: CameraView) -> Scene {
     let interior = lighting.interior.clamp(0., 1.);
     let exposure = ev100(elevation);
     let transmission = 10_f32.powf(-3. * interior);
+    // Match the browser: retain night/cave fill, with less diffuse fill in daylight so
+    // the enclosing relief and the settlement's cast shadows retain their contrast.
+    let daylight = (elevation / 15.).clamp(0., 1.);
+    let sky_fill = 0.9 - 0.25 * daylight;
     Scene {
         camera: Camera {
             eye: Vec3::from(view.eye),
@@ -363,7 +367,9 @@ pub fn scene(lighting: &Lighting, view: CameraView) -> Scene {
         }),
         // The sky's environment light is the ambient light.
         sky: Some(Sky {
-            environment_intensity: Some((0.9 + 0.1 * interior) * 10_f32.powf(-interior)),
+            environment_intensity: Some(
+                (sky_fill + (1. - sky_fill) * interior) * 10_f32.powf(-interior),
+            ),
             ..Sky::default()
         }),
         point_lights: lighting

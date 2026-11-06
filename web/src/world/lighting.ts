@@ -197,10 +197,15 @@ export class GreyhavenLighting {
     const interior = Math.min(1, Math.max(0, frame.interior));
     const exposure = ev100(elevation);
     const transmission = 10 ** (-3 * interior);
+    // Keep the night/cave fill while allowing daylight relief and cast shadows to read.
+    // The character-selection stage retains its existing studio fill.
+    const daylight = Math.min(1, Math.max(0, elevation / 15));
+    const skyFill = frame.sky ? 0.9 - 0.25 * daylight : 0.9;
+    const environmentIntensity = (skyFill + (1 - skyFill) * interior) * 10 ** (-interior);
     lighting.ev100 = exposure + (Math.min(exposure, 7.5) - exposure) * interior;
     const shadows = elevation > SHADOWLESS_BELOW ? SUN_SHADOWS : null;
     if (this.drawsSky) {
-      lighting.sky = { ...DEFAULT_SKY, environmentIntensity: (0.9 + 0.1 * interior) * 10 ** (-interior) };
+      lighting.sky = { ...DEFAULT_SKY, environmentIntensity };
       lighting.clearColor = [0, 0, 0];
       lighting.clearAlpha = 1;
       lighting.sun = { direction: negate(sun), color: [1, 1, 1], illuminance: RAW_SUNLIGHT * transmission, shadows };
@@ -223,7 +228,7 @@ export class GreyhavenLighting {
       const twilight = Math.max(0, 1 - Math.abs(elevation) / 8);
       lighting.ambient = {
         color: SKY_COLOR.map((channel, index) => channel + (TWILIGHT_COLOR[index]! - channel) * twilight) as unknown as Vec3,
-        brightness: interpolate(SKY_AMBIENT, elevation) * transmission * (0.9 + 0.1 * interior) * 10 ** (-interior),
+        brightness: interpolate(SKY_AMBIENT, elevation) * transmission * environmentIntensity,
       };
     }
     lighting.fog = fog === null ? null : {

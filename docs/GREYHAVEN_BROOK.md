@@ -462,3 +462,26 @@ loaded and no page errors. Full suites/native GPU acceptance were not run; the p
 reported content assertions and legacy A/B failures remain. The broader art direction is
 still in progress. Convention source revision remains
 `625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+
+## Daylight sky fill and relief contrast
+
+Native and browser lighting now reduce diffuse sky fill smoothly from 0.9 at the horizon
+to 0.65 at a fifteen-degree sun and above. Direct sun, exposure, fog, shadow reach and the
+zone clock remain unchanged. Night fill stays at 0.9; full cave adaptation retains 0.1.
+The browser's character-selection stage keeps its previous studio fill, and its no-sky
+world fallback uses the same daylight adjustment as the atmosphere path.
+
+This is a client lighting composition change through the existing render-engine APIs;
+there are no new shaders, renderer features or authoritative content changes. The aim is
+to retain shadow and surface contrast across the enclosing rock, foliage and settlement
+rather than washing their dark faces with almost the same sky fill at every hour.
+
+Focused checks passed: the native sun/moon clock check, format and the browser/WASM
+production build. Full suites and native GPU acceptance were not run. Previously reported
+content assertions and legacy A/B failures remain unresolved. The overall reference art
+direction remains in progress. Convention source revision remains
+`625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+The afternoon in-game view is `artifacts/greyhaven-brook/daylight-contrast.png`. Chromium
+completed the village/bridge walk with all seven ground layers loaded and no page errors.
+The reference still calls for further asset and ground-cover refinement; this lighting
+adjustment is incremental, not visual acceptance of the whole scene.
