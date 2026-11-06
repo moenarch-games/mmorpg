@@ -242,3 +242,31 @@ reeds and open dock; a final small outlet bend adjustment followed the capture. 
 Blender context includes all twenty-four bank rocks and the current shared terrain/nature
 placements. The existing blocky cover over the Sunken Shrine remains a visible art issue
 for the next terrain pass; the full reference direction remains in progress.
+
+## Continuous rock cover above the Sunken Shrine
+
+The seventeen separate roof boxes over the flooded cave made a visible staircase through
+Stillwater's eastern shore. `content/greyhaven/authoring/sunken_shore.py` now authors closed,
+coarse rock sections with matching cross-sections at cell boundaries. Their stable IDs
+580–596 remain unchanged. The resulting `sunken-shore.json` is embedded by
+`shrine::collision_meshes()` and added to the same authoritative static-mesh definition as
+Redbrand and the fortifications. The old roof-box generator is removed.
+
+The cover rises out of the lake into the shore as a continuous shelf, widens over the air
+room and meets dry ground beyond it. The existing tunnel ceiling and higher air-room
+vault, shrine kit, flooded route, air pocket and relic quest are retained. Shared roof
+presentation uses the same rock/moss palette in world space across adjacent cells;
+the existing exterior cutaway still works. The shrine kit retains its vaulted interior
+ceiling; a duplicate rock underside is omitted there. Redbrand keeps its one-sided textured
+ceiling.
+
+Focused checks: all six `sunken_shrine` gameplay tests passed, including swimming to the
+relic, breath recovery and checkpoint continuation. The surface-walk test now also walks
+above several cells and the air room, checking support, dry state and no relic retrieval.
+The two shared cave cutaway/ceiling tests passed. Full suites and native GPU acceptance
+were not run. Convention source revision remains unchanged.
+The final browser/WASM build passed. Chromium again reached the dock approach without
+page errors; `artifacts/greyhaven-brook/stillwater-shelf.png` shows the joined shore cover
+instead of the stepped boxes. The live Blender project contains the shelf and 699 current
+nearby nature instances. The in-game capture precedes the final interior-only ceiling
+deduplication; the exterior geometry is unchanged by it.

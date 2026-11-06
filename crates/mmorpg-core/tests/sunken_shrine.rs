@@ -186,6 +186,32 @@ fn walking_over_the_altar_on_the_shore_retrieves_nothing() {
     let mut zone = zone_with_player_at([11_800, shrine::SHORE_Y + 95, CAVE_Z], true);
     run(&mut zone, mmorpg_core::golden::t30(30) as _);
     assert_eq!(water(&zone), WaterMode::Dry);
+    assert!(
+        (zone.snapshot().unwrap().players[0].position[1] - 90. - shrine::SHORE_Y as f32).abs() < 1.
+    );
+    // The joined static rock cover supports a walk over several cells and the higher
+    // air-room vault, while the shrine remains a separate flooded route below it.
+    zone.apply_command(
+        1,
+        1,
+        ZoneCommand::Move {
+            forward: 1,
+            strafe: 0,
+            facing: 49_152,
+        },
+    )
+    .unwrap();
+    run(&mut zone, 300);
+    let [x, y, _] = zone.snapshot().unwrap().players[0].position;
+    assert!(
+        (8_000. ..9_000.).contains(&x),
+        "walk along the shore cover: {x}"
+    );
+    assert!(
+        (y - 90. - shrine::SHORE_Y as f32).abs() < 1.,
+        "roof supports the player: {y}"
+    );
+    assert_eq!(water(&zone), WaterMode::Dry);
     assert_eq!(relics(&zone), 0);
 }
 

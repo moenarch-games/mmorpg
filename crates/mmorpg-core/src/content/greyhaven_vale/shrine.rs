@@ -2,11 +2,11 @@
 //! bottom of Stillwater Lake, and the flooded cave that runs east from its floor to the altar
 //! that holds the Sunken Relic.
 //!
-//! Everything is box colliders on the 4 m terrain grid, like the Greyfang cave: the terrain is
-//! flattened to [`FLOOR_Y`] over the plaza and the cave floor, rock walls stand on it and roof
-//! slabs close the cave, each slab rising to the lake bed or the shore above it so nothing
-//! opens a hole in the ground. The cave is 64 m long, more than one breath swims there and
-//! back, so an authored [`AirPocket`] halfway lets the round trip breathe. Beyond the lake the
+//! The terrain is flattened to [`FLOOR_Y`] over the plaza and cave floor. The shrine kit's
+//! wall proxies retain their 4 m grid, while repository-authored static meshes form a joined
+//! rock cover above them, closing the trench to the lake bed and dry shore. The cave is 64 m
+//! long, more than one breath swims there and back, so an authored [`AirPocket`] halfway lets
+//! the round trip breathe. Beyond the lake the
 //! cave lies under the eastern shore inside its own water volume, whose surface is the shore's
 //! ground: on the shore nothing is wet.
 //!
@@ -27,8 +27,6 @@ pub const FLOOR_Y: i32 = SHORE_Y - 900;
 pub const CLEAR: i32 = 300;
 /// Clear height of the air-pocket room under its vault (5 m).
 pub const ROOM_CLEAR: i32 = 500;
-/// Every roof slab is at least this thick (1 m).
-const ROOF_THICKNESS: i32 = 100;
 /// The 4 m terrain grid the plaza, the cave and the kit share.
 pub const CELL: i32 = 400;
 
@@ -187,35 +185,12 @@ pub fn walls(first_id: u32) -> Vec<StaticCollider> {
         .collect()
 }
 
-/// The cave's roof slabs from `first_id`, one per 4 m cell along it over walls and floor, each
-/// rising from the cave ceiling (the room's vault over the room) to the highest unflattened
-/// ground (`ground`) over its footprint, and at least [`ROOF_THICKNESS`] thick. Around the
-/// room the slabs reach 2 m wider, over the ground that falls to its floor.
+/// Repository-authored closed rock cover, with the former roof IDs and shared cell edges.
+/// The underside keeps the tunnel's clearance and the higher air-room vault.
 #[must_use]
-pub fn roof(first_id: u32, ground: impl Fn(i32, i32) -> i32) -> Vec<StaticCollider> {
-    let [(min, max)] = [CAVE];
-    let ([rx0, _], [rx1, _]) = ROOM;
-    (min[0]..max[0] + CELL)
-        .step_by(CELL as usize)
-        .zip(first_id..)
-        .map(|(x, id)| {
-            let room = (rx0..rx1).contains(&x);
-            let wide = (rx0 - CELL..rx1 + CELL).contains(&x);
-            let reach = if wide { 2 * CELL } else { CELL };
-            let (z0, z1) = (min[1] - reach, max[1] + reach);
-            let ceiling = FLOOR_Y + if room { ROOM_CLEAR } else { CLEAR };
-            let top = (x..=x + CELL)
-                .step_by(CELL as usize)
-                .flat_map(|x| (z0..=z1).step_by(CELL as usize).map(move |z| (x, z)))
-                .map(|(x, z)| ground(x, z))
-                .max()
-                .unwrap_or(0)
-                .max(ceiling + ROOF_THICKNESS);
-            // An even height keeps the box's half extent exact.
-            let height = (top - ceiling + 19) / 20 * 20;
-            block(id, [x, z0], [x + CELL, z1], ceiling, height)
-        })
-        .collect()
+pub fn collision_meshes() -> Vec<crate::StaticMesh> {
+    serde_json::from_str(include_str!("../../../content/collision/sunken-shore.json"))
+        .expect("committed Sunken Shrine rock cover is valid")
 }
 
 /// The Sunken Shrine's altar chamber (#274), the relic's retrieve area.
@@ -227,11 +202,10 @@ pub(super) const REGION: super::Region = super::Region {
     colliders,
 };
 
-/// The shrine's ruins and altar, its cave's rock walls and its roof slabs.
+/// The shrine kit's unchanged ruins, altar and cave-wall proxies.
 fn colliders() -> Vec<StaticCollider> {
     let mut colliders = ruins(*ids::SHRINE_RUINS.start());
     colliders.extend(walls(*ids::SHRINE_CAVE_WALLS.start()));
-    colliders.extend(roof(*ids::SHRINE_CAVE_ROOF.start(), super::open_ground));
     colliders
 }
 

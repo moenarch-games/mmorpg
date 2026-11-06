@@ -14,6 +14,11 @@ floor slabs meeting the 11 m terrace and a 2.2 m elevated shelf with a sloping
 approach. There is 2 m clearance below the shelf and 2.3 m above it. The entrance,
 chambers, garrison and sealed deeper-dungeon threshold retain their existing roles.
 
+The same path also carries Greyhaven's simplified architecture and bank outcrops in
+`greyhaven-fort.json`, and the joined rock cover above the existing flooded Sunken Shrine
+in `sunken-shore.json`. The latter retains roof IDs 580–596 and the tunnel/air-room clearance;
+its Blender source is `content/greyhaven/authoring/sunken_shore.py`.
+
 `cave::collision_meshes()` embeds the JSON at compile time; `base_definition()`
 adds it through `ZoneDefinition::with_static_meshes()`. Outpost layout compilation
 preserves those meshes. Validation rejects duplicate/overlapping IDs, invalid

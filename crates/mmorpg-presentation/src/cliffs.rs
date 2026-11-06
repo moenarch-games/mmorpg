@@ -128,7 +128,7 @@ fn group(id: String, geometry: Geometry) -> Group {
 }
 
 /// Muted strata and moss on exposed landscape rock; cave floors and ceilings stay stone.
-fn landscape_color(points: [V; 3], id: u32) -> u32 {
+pub(crate) fn landscape_color(points: [V; 3], id: u32) -> u32 {
     let centre: V = std::array::from_fn(|axis| points.iter().map(|p| p[axis]).sum::<f64>() / 3.);
     let [a, b, c] = points;
     let u: V = std::array::from_fn(|i| b[i] - a[i]);
@@ -167,7 +167,12 @@ pub(crate) fn groups(scenery: &Scenery) -> Vec<Group> {
     let surfaces = scenery
         .collision_surfaces
         .iter()
-        .filter(|mesh| !mmorpg_core::greyhaven_vale::fort::dresses(mesh.id))
+        .filter(|mesh| {
+            // The shrine kit already supplies its vaulted interior ceiling. Its authored
+            // exterior is animated below; a second static underside would overlap the kit.
+            !mmorpg_core::greyhaven_vale::fort::dresses(mesh.id)
+                && !mmorpg_core::greyhaven_vale::ids::SHRINE_CAVE_ROOF.contains(&mesh.id)
+        })
         .map(|mesh| {
             let mut g = Geometry::default();
             let roof = scenery

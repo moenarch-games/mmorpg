@@ -1110,6 +1110,7 @@ pub fn base_definition() -> ZoneDefinition {
                 cave::collision_meshes()
                     .into_iter()
                     .chain(fort::meshes())
+                    .chain(shrine::collision_meshes())
                     .collect(),
             )
         })
