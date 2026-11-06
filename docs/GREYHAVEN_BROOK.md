@@ -1094,3 +1094,18 @@ woodland at (-109, -23) m, retaining its identity and the six-boar population. U
 checks include all twelve new residents and use capsule support on the actual terrain
 triangles, including the brook's below-floor bed. Named-area rectangles remain labels;
 the lake footprint and playable boundary govern the woodland wander-clearance check.
+
+The final route check exposed a rock spur interfering with the Wolfrun Climb's
+upper cutting. Its final shape now fits between that climb's lower and upper lanes;
+the existing walk into the woods passes. Four existing timed journeys now cross
+the mill's bank path instead of walking into its wheel: wolf hunt, Warden guard,
+class abilities and corpse-loot reconnect. All four pass with deterministic
+replays and refreshed outputs. The ability-cost (15 rage), two-point rage-decay
+boundary, stale-death, duplicate-loot and reconnect assertions remain intact;
+the recorded death identity/position and resource samples follow the shifted trip.
+Scenery and browser-export fingerprints are refreshed through their existing
+focused golden checks. No gameplay or physics rules were changed for these routes.
+
+The rendering provider fix is now merged with its engine and oracle CI green.
+PR #644's latest integration commits are preserved; auto-merge is disabled so the
+visual slice can be reviewed before merging.

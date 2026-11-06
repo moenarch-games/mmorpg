@@ -1,5 +1,5 @@
 # Greyhaven Vale combat through the hosted runtime. A hunter leaves the hub
-# through the west gate, climbs the Wolfrun Climb (#423) and walks Wolfrun Woods
+# over the mill bank crossing, climbs the Wolfrun Climb (#423) and walks Wolfrun Woods
 # along trunk-grid lines, which stay clear of trunks. Timber Wolf 108 in the
 # den clearing notices it; the hunter targets it and keeps swinging at it (#517)
 # until it dies. Wounded, the hunter walks on until Timber Wolf 106 engages,
@@ -10,7 +10,7 @@
 # events; every command step is applied.
 name = "vale-wolf-hunt"
 zone = 1
-ticks = 5124
+ticks = 5150
 digest_interval = 200
 
 [[bots]]
@@ -37,9 +37,9 @@ bot = "hunter"
 action = "swing"
 facing = 0
 
-# West along the trail, through the west gate.
+# West along the trail, over the mill bank crossing at z = 2140 cm.
 [[steps]]
-tick = 72
+tick = 85
 bot = "hunter"
 action = "move"
 forward = 1
@@ -48,16 +48,16 @@ facing = 49152
 
 # At the foot of the woods' cliff, north up the Wolfrun Climb's ledge (#423) …
 [[steps]]
-tick = 324
+tick = 337
 bot = "hunter"
 action = "move"
 forward = 1
 strafe = 0
 facing = 32768
 
-# … west across the hairpin landing …
+# … west across the hairpin landing (after the extra northward approach) …
 [[steps]]
-tick = 686
+tick = 712
 bot = "hunter"
 action = "move"
 forward = 1
@@ -66,7 +66,7 @@ facing = 49152
 
 # … south up the cutting into the woods …
 [[steps]]
-tick = 800
+tick = 826
 bot = "hunter"
 action = "move"
 forward = 1
@@ -75,7 +75,7 @@ facing = 0
 
 # … and west along the trunk-grid line z = 1800 into Wolfrun Woods.
 [[steps]]
-tick = 1130
+tick = 1156
 bot = "hunter"
 action = "move"
 forward = 1
@@ -84,7 +84,7 @@ facing = 49152
 
 # North along the trunk-grid line x = -8450 toward the den clearing.
 [[steps]]
-tick = 1434
+tick = 1460
 bot = "hunter"
 action = "move"
 forward = 1
@@ -93,14 +93,14 @@ facing = 32768
 
 # Select the den wolf while approaching; it is still beyond melee reach.
 [[steps]]
-tick = 1444
+tick = 1470
 bot = "hunter"
 action = "select_target"
 entity = "creature:108"
 
 # Stand close enough to the den that Wolf 108 engages wherever it wanders, and let it come.
 [[steps]]
-tick = 1514
+tick = 1540
 bot = "hunter"
 action = "move"
 forward = 0
@@ -109,7 +109,7 @@ facing = 32768
 
 # Keep pressing attack at the wolf, aimed where the hunter sees it.
 [[steps]]
-tick = 1544
+tick = 1570
 bot = "hunter"
 action = "swing"
 entity = "creature:108"
@@ -118,7 +118,7 @@ every = 30
 
 # Wounded, walk on north-west through the clearing toward Wolf 106's den.
 [[steps]]
-tick = 2984
+tick = 3010
 bot = "hunter"
 action = "move"
 forward = 1
@@ -127,7 +127,7 @@ facing = 37400
 
 # Stand once near Wolf 106, target it and fight back as it engages …
 [[steps]]
-tick = 3224
+tick = 3250
 bot = "hunter"
 action = "move"
 forward = 0
@@ -135,14 +135,14 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 3224
+tick = 3250
 bot = "hunter"
 action = "select_target"
 entity = "creature:106"
 
 # … swing at it, then stop swinging and keep the selection.
 [[steps]]
-tick = 3224
+tick = 3250
 bot = "hunter"
 action = "swing"
 entity = "creature:106"
@@ -152,13 +152,13 @@ every = 30
 # The dead can neither swing nor move: the walk is accepted but holds
 # nothing, so the released spirit stands at the graveyard.
 [[steps]]
-tick = 4524
+tick = 4550
 bot = "hunter"
 action = "swing"
 facing = 0
 
 [[steps]]
-tick = 4524
+tick = 4550
 bot = "hunter"
 action = "move"
 forward = 1
@@ -166,7 +166,7 @@ strafe = 0
 facing = 0
 
 [[steps]]
-tick = 4924
+tick = 4950
 bot = "hunter"
 action = "release_spirit"
 
@@ -181,55 +181,55 @@ kind = "unit"
 bot = "hunter"
 entity = "creature:108"
 state = "alive"
-tick = 1443
+tick = 1469
 
 [[expect]]
 kind = "unit"
 bot = "hunter"
 entity = "creature:108"
 state = "targets_viewer"
-by_tick = 1524
+by_tick = 1550
 
 [[expect]]
 kind = "event"
 bot = "hunter"
 event = "damage_dealt"
 entity = "creature:108"
-by_tick = 1624
+by_tick = 1650
 
 [[expect]]
 kind = "event"
 bot = "hunter"
 event = "damage_taken"
 entity = "creature:108"
-by_tick = 1624
+by_tick = 1650
 
 [[expect]]
 kind = "event"
 bot = "hunter"
 event = "died"
 entity = "creature:108"
-by_tick = 3124
+by_tick = 3150
 
 [[expect]]
 kind = "unit"
 bot = "hunter"
 entity = "creature:108"
 state = "dead"
-tick = 2963
+tick = 2989
 
 [[expect]]
 kind = "target"
 bot = "hunter"
 entity = "creature:108"
-tick = 2963
+tick = 2989
 
 [[expect]]
 kind = "unit"
 bot = "hunter"
 entity = "creature:106"
 state = "targets_viewer"
-by_tick = 3324
+by_tick = 3350
 from_tick = 2986
 
 [[expect]]
@@ -237,63 +237,63 @@ kind = "event"
 bot = "hunter"
 event = "damage_taken"
 entity = "creature:106"
-by_tick = 3524
+by_tick = 3550
 
 [[expect]]
 kind = "event"
 bot = "hunter"
 event = "died"
 entity = "bot:hunter"
-by_tick = 4524
+by_tick = 4550
 
 [[expect]]
 kind = "health"
 bot = "hunter"
 health = 0
-tick = 4523
+tick = 4549
 
 [[expect]]
 kind = "unit"
 bot = "hunter"
 entity = "bot:hunter"
 state = "dead"
-tick = 4523
+tick = 4549
 
 [[expect]]
 kind = "unit"
 bot = "hunter"
 entity = "creature:106"
 state = "evading"
-by_tick = 4524
+by_tick = 4550
 
 [[expect]]
 kind = "event"
 bot = "hunter"
 event = "error:you_are_dead"
-tick = 4525
+tick = 4551
 
 [[expect]]
 kind = "target"
 bot = "hunter"
 entity = "creature:106"
-tick = 4525
+tick = 4551
 
 [[expect]]
 kind = "position"
 bot = "hunter"
-tick = 4724
-position = [-9638, 1190, -1396]
+tick = 4750
+position = [-9640, 1190, -1398]
 
 [[expect]]
 kind = "position"
 bot = "hunter"
-tick = 4926
+tick = 4952
 position = [-2000, 90, 4150]
 
 [[expect]]
 kind = "position"
 bot = "hunter"
-tick = 5124
+tick = 5150
 position = [-2000, 90, 4150]
 
 [[expect]]
@@ -301,18 +301,18 @@ kind = "unit"
 bot = "hunter"
 entity = "bot:hunter"
 state = "alive"
-tick = 4925
+tick = 4951
 
 [[expect]]
 kind = "health"
 bot = "hunter"
 health = 25
-tick = 4925
+tick = 4951
 
 [[expect]]
 kind = "area"
 bot = "hunter"
-tick = 4925
+tick = 4951
 area = "Greyhaven Outpost"
 
 [[expect]]
@@ -320,7 +320,7 @@ kind = "unit"
 bot = "hunter"
 entity = "creature:106"
 state = "absent"
-tick = 4925
+tick = 4951
 
 # XP is durable self-state: death, reconnect and release cannot erase a reward.
 [[expect]]
@@ -335,11 +335,11 @@ kind = "progression"
 bot = "hunter"
 level = 1
 experience = 50
-tick = 3203
+tick = 3229
 
 [[expect]]
 kind = "progression"
 bot = "hunter"
 level = 1
 experience = 50
-tick = 4925
+tick = 4951

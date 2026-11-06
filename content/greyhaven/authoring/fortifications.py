@@ -736,7 +736,8 @@ for first_id,x,z,rx,rz,h,turn,lean_x,lean_z in [
     # the strip walked between the western stockade and the cliff foot.
     (65128,-44,36,2.8,4.6,11.4,-.2,-3.5,0),
     (65131,-45,49,3.2,3.0,13.2,.3,-4,-1),
-    (65134,-45,13,2.8,3.8,10.7,-.3,-3,-1),
+    # Fit between the Wolfrun Climb's lower (-42 m) and upper (-54 m) lanes.
+    (65134,-48,13,2.8,3.8,12.5,-.3,-3,-1),
 ]:
     for piece,(dx,dz,size,rise) in enumerate([(0,0,1,1),(3.1,2.1,.48,.43),(-3.0,2.4,.40,.28)]):
         id=first_id+piece;n=9;vs=[]
