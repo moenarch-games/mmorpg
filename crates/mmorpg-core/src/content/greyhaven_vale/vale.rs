@@ -28,7 +28,14 @@ fn colliders() -> Vec<StaticCollider> {
         // Elden's house collides through its walls and furniture (#158).
         .filter(|&&(id, ..)| id != ids::MARSHAL_HOUSE && !(400..=406).contains(&id))
         // Structures out on the hills stand on the terrain (#159).
-        .map(|&(id, min, max, height)| on_terrain(id, min, max, height))
+        .map(|&(id, min, max, height)| {
+            let (min, max) = if (300..=305).contains(&id) {
+                super::lake::place_bounds((min, max))
+            } else {
+                (min, max)
+            };
+            on_terrain(id, min, max, height)
+        })
         .collect();
     colliders.extend(inn::colliders(*ids::INN_PARTS.start()));
     colliders.extend(marshal_house::colliders(*ids::MARSHAL_HOUSE_PARTS.start()));
@@ -53,7 +60,7 @@ pub const AREAS: &[(AreaId, &str, XzBounds)] = &[
         WOLFRUN_WOODS,
         "Wolfrun Woods",
         XzBounds {
-            min: [-11_900, -5_000],
+            min: [-11_900, -3_200],
             max: [-4_000, 5_000],
         },
     ),
@@ -69,8 +76,8 @@ pub const AREAS: &[(AreaId, &str, XzBounds)] = &[
         STILLWATER_LAKE,
         "Stillwater Lake",
         XzBounds {
-            min: [3_600, -7_800],
-            max: [8_600, -3_200],
+            min: [-11_800, -7_600],
+            max: [-6_400, -3_200],
         },
     ),
     (
@@ -103,7 +110,7 @@ pub const AREAS: &[(AreaId, &str, XzBounds)] = &[
         "Hollowpine Reach",
         XzBounds {
             min: [-20_800, -12_000],
-            max: [-12_000, 12_000],
+            max: [-15_600, 12_000],
         },
     ),
     (
@@ -134,7 +141,7 @@ pub const ROADS: &[Road] = &[
         ],
     },
     Road {
-        name: "Lakeshore Path",
+        name: "Greyfang Trail",
         // Up the Lakeshore Climb (#423): the west cliff's ledge, the landing, the cutting.
         points: &[
             [0, -2_800],
@@ -147,13 +154,13 @@ pub const ROADS: &[Road] = &[
         ],
     },
     Road {
-        // Along the terrace's rim from the farmyard to the lake's south shore (#423).
-        name: "Stillwater Rim Trail",
+        // Across the eastern terrace from the farmyard to the Greyfang approach.
+        name: "Eastern Rim Trail",
         points: &[[6_400, 3_300], [6_400, -2_400], [5_600, -3_600]],
     },
     Road {
         name: "Greyfang Approach",
-        // From Stillwater around the east flank, then back to the concealed north mouth.
+        // From the eastern terrace around the flank to the concealed north mouth.
         points: &[
             [5600, -3600],
             [8000, -3600],
@@ -203,11 +210,6 @@ pub const ROADS: &[Road] = &[
             [-6_600, 300],
             [-7_600, 0],
         ],
-    },
-    Road {
-        // Along the rim from Wolfrun Woods to Redbrand Hollow's camp (#423).
-        name: "Wolfrun Ridge Path",
-        points: &[[-6_600, 300], [-6_600, -7_700], [0, -7_700]],
     },
     Road {
         name: "South Road",

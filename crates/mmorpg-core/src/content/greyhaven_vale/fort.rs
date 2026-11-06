@@ -10,10 +10,20 @@ pub const BASIN_ROCKS: std::ops::RangeInclusive<u32> = 65094..=65102;
 
 #[must_use]
 pub fn meshes() -> Vec<StaticMesh> {
-    serde_json::from_str(include_str!(
+    let meshes: Vec<StaticMesh> = serde_json::from_str(include_str!(
         "../../../content/collision/greyhaven-fort.json"
     ))
-    .expect("committed Greyhaven fortification geometry is valid")
+    .expect("committed Greyhaven fortification geometry is valid");
+    meshes
+        .into_iter()
+        .map(|mesh| {
+            if SHORE_ROCKS.contains(&mesh.id) {
+                super::lake::place_mesh(mesh)
+            } else {
+                mesh
+            }
+        })
+        .collect()
 }
 
 /// The art kit dresses these bodies; rock outcrops retain the shared rock material.

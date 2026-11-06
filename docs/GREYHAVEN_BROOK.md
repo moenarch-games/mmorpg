@@ -689,3 +689,55 @@ The requested fresh in-game close-up is
 `artifacts/greyhaven-brook/latest-brook-ground-cover.png`, captured after the bridge
 crossing with all seven terrain layers and no page errors. The clumps' spacing is
 still fairly regular; loosening those groupings remains part of the art pass.
+
+## Revised landscape target (owner brief, 2026-11-06)
+
+The concept is the geographic and visual target; the latest wide game capture is the
+baseline. Prioritize large shapes before decorative detail:
+
+1. Replace the uniform crater walls and repetitive rocks with irregular cliffs,
+   slopes, scree, gullies and traversable terraces.
+2. Make the western valley, slopes and northern wilderness substantially more wooded,
+   with varied species/heights and natural clusters.
+3. Put Stillwater against the western cliffs in forest, connect it to the existing
+   waterfall/brook, and remove the river that circles the valley.
+4. Replace Redbrand's large rear rock mass with a small cave hideout, palisade,
+   campfire and a few shelters; retain its approved far-side entrance orientation.
+5. Add northeastern abandoned mining ruins, a ruined watchtower, collapsed buildings,
+   mine entrance, carts and a bridge across a ravine, connected by natural paths.
+6. Use muted ground and stone, darker forests, directional light/shadow and atmospheric
+   depth. Preserve existing gameplay, structures, collision and terrain ownership.
+
+Keep new geographic data in committed JSON where practical. Compare matching wide
+Blender/game views and refine the largest differences. Use focused geographic/gameplay
+checks and the existing performance baseline/profiler; do not add a new performance gate.
+This larger target remains in progress; the earlier prop passes are not completion.
+
+### Western Stillwater checkpoint
+
+Stillwater's centre is now game `(-87,-53)` metres. The existing shrine and shoreline
+geometry are placed by one core-owned half-turn with offsets `(-32,-108)` metres.
+Those offsets preserve the 4 m terrain lattice; an initial off-grid placement was
+rejected after it obstructed the shrine swim. Authored collision JSON and stable IDs
+are retained. The same placement moves the shrine kit, water/air pocket, quest area,
+shore rocks and lake creatures. Hollowpine Reach's eastern name boundary is moved
+west of the relocated altar so the named shrine remains disjoint. Three northern
+Wolfrun wolf posts move south within the woods; no creatures or quests are added.
+
+`content/greyhaven/landscape.json` now stores the village/inflow/outlet polylines and
+the Lakeshore/Wolfrun Ridge paths. `landscape.rs` parses this committed data once;
+terrain cuts, authoritative water and shared presentation read those same points.
+The outlet stays west of Greyhaven rather than encircling the valley. Existing terrain
+lanes remain authoritative under the lake's rounded shore apron. The dock is on the
+northern shore; its existing plank ramp now follows the dock position and quarter turn
+rather than retaining a fixed eastern-shore coordinate. The lake placement metadata
+still uses the existing Rust constants; further landscape authoring consolidation is
+pending. No new renderer, spatial index or collision-streaming system is introduced.
+
+All 13 focused core checks passed (`sunken_shrine`, `water`, `village_brook`), including
+swimming to the relic, the air pocket, roof walk, wading/diving/drowning, bridge/ford/
+gate/culvert/recovery and a full walk from Greyhaven through Wolfrun to the dock.
+The browser/WASM production build passed. Current content revision is
+`5643289760283480598`; protocol/canonical layouts are unchanged. Convention source
+revision remains `625cb04ca568aebc8d45c90033e107a05e9bd2a0`. Full suites, native GPU
+acceptance and the revised landscape performance comparison have not run.

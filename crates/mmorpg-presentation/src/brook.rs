@@ -45,19 +45,19 @@ pub(crate) fn build(
     for (name, points, half_width, water_surface) in [
         (
             "greyhaven-brook",
-            content::COURSE,
+            content::village(),
             content::HALF_WIDTH,
             content::SURFACE,
         ),
         (
             "stillwater-inflow",
-            content::INFLOW,
+            content::inflow(),
             content::UPPER_HALF_WIDTH,
             content::UPPER_SURFACE,
         ),
         (
             "stillwater-outlet",
-            content::OUTLET,
+            content::outlet(),
             content::UPPER_HALF_WIDTH,
             content::UPPER_SURFACE,
         ),
@@ -360,9 +360,9 @@ mod tests {
         let scenery = mmorpg_scenery::greyhaven_vale_scenery();
         let grid = scenery.terrain_grid(crate::TERRAIN_STEP_UNITS);
         for (points, water_surface, width) in [
-            (content::COURSE, content::SURFACE, 0.85),
-            (content::INFLOW, content::UPPER_SURFACE, 1.25),
-            (content::OUTLET, content::UPPER_SURFACE, 1.25),
+            (content::village(), content::SURFACE, 0.85),
+            (content::inflow(), content::UPPER_SURFACE, 1.25),
+            (content::outlet(), content::UPPER_SURFACE, 1.25),
         ] {
             let water = metres(water_surface);
             for pair in points.windows(2) {

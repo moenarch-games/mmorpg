@@ -91,7 +91,7 @@ fn brook_bridge_ford_gate_culvert_and_recovery() {
         Some(&[-4800, 2400])
     );
     // The rim outlet goes around the Hollow's rock mass rather than through its walls.
-    for pair in greyhaven_vale::brook::OUTLET.windows(2) {
+    for pair in greyhaven_vale::brook::outlet().windows(2) {
         for step in 0..=20 {
             let p = [0, 1].map(|axis| pair[0][axis] + (pair[1][axis] - pair[0][axis]) * step / 20);
             for wall in content
@@ -110,7 +110,7 @@ fn brook_bridge_ford_gate_culvert_and_recovery() {
             }
         }
     }
-    let mut upper_ford = Walker::at(-6600, -3000);
+    let mut upper_ford = Walker::at(-7100, -3000);
     assert_eq!(
         WaterMode::of_feet(
             content.waters(),
@@ -118,7 +118,7 @@ fn brook_bridge_ford_gate_culvert_and_recovery() {
         ),
         WaterMode::Wading
     );
-    upper_ford.go(-7100., -3000.);
+    upper_ford.go(-7700., -3000.);
     let mut bridge = Walker::at(0, 2700);
     bridge.walk(0);
     let mut highest = f32::MIN;
@@ -230,17 +230,17 @@ fn basin_buttress_is_solid_beside_the_open_hollow_approach() {
     for [x, z] in [[-1200., -2000.], [-2600., -3000.], [-3150., -4000.]] {
         walker.go(x, z);
     }
-    // The new slab projects from the cliff into the open floor. The old heightfield at
-    // this approach is level; its rounded eastern face must stop a westward walk.
+    // The slab projects into the approach beside the relocated lake's shore apron.
+    // Its eastern face must stop a westward walk while the feet stay on the terrain.
     walker.walk(49152);
     walker.ticks(45);
     let stopped = walker.feet();
     assert!(
-        stopped[0] > -3430. && stopped[0] < -3200. && stopped[1] < 50.,
-        "the buttress stops the walker at {stopped:?}"
+        stopped[0] > -3430. && stopped[0] < -3200. && stopped[1] < 100.,
+        "the buttress stops the walker on the raised shore approach at {stopped:?}"
     );
     walker.go(-3000., -4000.);
-    walker.go(-2800., -5600.);
+    walker.go(-2500., -4800.);
     // The grassy rise is real terrain: walk onto its crown, then back to the level road.
     walker.go(-2200., -4000.);
     assert!(
@@ -251,4 +251,31 @@ fn basin_buttress_is_solid_beside_the_open_hollow_approach() {
     walker.go(-1000., -4000.);
     walker.go(0., -4000.);
     assert!(walker.feet()[1].abs() < 10., "the Hollow Road stays level");
+}
+
+#[test]
+fn the_northwestern_lake_is_reached_from_greyhaven_on_foot() {
+    let mut walker = Walker::at(0, 2000);
+    let roads = greyhaven_vale::roads();
+    for name in ["Wolfrun Trail", "Lakeshore Path"] {
+        let road = roads.iter().find(|road| road.name == name).unwrap();
+        for &[x, z] in road.points {
+            walker.go(x as f32, z as f32);
+        }
+    }
+    let dock = greyhaven_vale::dressing::dock();
+    walker.go(dock.at[0] as f32, dock.at[1] as f32);
+    let feet = walker.feet();
+    assert!(
+        feet[0] < 0. && feet[2] < 0.,
+        "lake is northwest of the village"
+    );
+    assert!(
+        feet[1] >= greyhaven_vale::lake::SHORE_Y as f32,
+        "walked onto dock: {feet:?}"
+    );
+    assert!(
+        greyhaven_vale::brook::outlet().iter().all(|p| p[0] < 0),
+        "outlet stays on the western side"
+    );
 }

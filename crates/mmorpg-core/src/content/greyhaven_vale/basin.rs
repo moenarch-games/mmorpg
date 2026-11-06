@@ -246,7 +246,7 @@ fn ridge(x: i32, z: i32, terrace: i32) -> i32 {
     if terrace == 0
         || x.abs() > 11000
         || !(-11000..=12000).contains(&z)
-        || (3000..=8200).contains(&x) && (-7600..=-3200).contains(&z)
+        || (-8200..=-3000).contains(&x) && (-7800..=-3400).contains(&z)
         || (4800..=10000).contains(&x) && (1200..=9000).contains(&z)
     {
         return 0;
@@ -305,12 +305,18 @@ fn ridge(x: i32, z: i32, terrace: i32) -> i32 {
         / i64::from(TERRACE_Y)) as i32
 }
 
+pub(super) fn lane_height(x: i32, z: i32) -> Option<i32> {
+    lanes()
+        .find(|lane| lane.contains(x, z))
+        .map(|lane| lane.height(x, z))
+}
+
 /// The rim's ground at `(x, z)`, or `None` on the untouched valley floor. Lanes override the
 /// rim and the floor alike.
 #[must_use]
 pub fn height_at(x: i32, z: i32) -> Option<i32> {
-    if let Some(lane) = lanes().find(|lane| lane.contains(x, z)) {
-        return Some(lane.height(x, z));
+    if let Some(height) = lane_height(x, z) {
+        return Some(height);
     }
     let reach = i32::try_from(x.unsigned_abs().max(z.unsigned_abs())).unwrap_or(i32::MAX);
     let weight = (1_024 - floor_q10(x, z)).min(1_024 - rise_q10(reach, OUTER_SLOPE));

@@ -180,11 +180,11 @@ const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 75] = {
         // Wolfrun Woods: timber wolves on trunk-grid corners. Wolf 108 guards
         // the den clearing where the Wolfrun Trail ends; the others keep
         // more than 12 m from the trail and from it.
-        (100, TIMBER_WOLF, [-10_250, -3_600], 0),
+        (100, TIMBER_WOLF, [-10_250, -2_700], 0),
         (101, TIMBER_WOLF, [-9_350, -3_150], 8_192),
-        (102, TIMBER_WOLF, [-8_000, -3_600], 16_384),
+        (102, TIMBER_WOLF, [-8_000, -2_700], 16_384),
         (103, TIMBER_WOLF, [-6_650, -3_150], 24_576),
-        (104, TIMBER_WOLF, [-6_200, -3_600], 32_768),
+        (104, TIMBER_WOLF, [-6_200, -2_700], 32_768),
         (105, TIMBER_WOLF, [-10_700, -1_800], 40_960),
         (106, TIMBER_WOLF, [-9_350, -1_350], 49_152),
         (107, TIMBER_WOLF, [-8_000, -1_800], 57_344),
@@ -227,7 +227,7 @@ const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 75] = {
         (303, MIREFIN_LURKER, [7_040, -4_470], 49_152),
         (304, MIREFIN_LURKER, [7_190, -6_400], 57_344),
         (305, MIREFIN_LURKER, [5_850, -7_000], 0),
-        (306, MIREFIN_LURKER, [4_200, -6_650], 8_192),
+        (306, MIREFIN_LURKER, [3_800, -5_800], 8_192),
         (307, MIREFIN_LURKER, [6_500, -6_830], 24_576),
         // Redbrand Hollow: the bandit camp between the cliffs.
         (400, REDBRAND_BANDIT, [-1_000, -8_200], 0),
@@ -351,8 +351,16 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .map(|&(id, template, position, facing)| CreatureSpawn {
             id: CreatureId::new(id),
             template,
-            position,
-            facing,
+            position: if LAKE_LURKERS.contains(&id) {
+                super::lake::place(position)
+            } else {
+                position
+            },
+            facing: if LAKE_LURKERS.contains(&id) {
+                facing.wrapping_add(32768)
+            } else {
+                facing
+            },
             // Stillwater Lake's lurkers keep to its narrow level rim (#423).
             wander_radius: if LAKE_LURKERS.contains(&id) {
                 LAKE_WANDER_RADIUS_UNITS

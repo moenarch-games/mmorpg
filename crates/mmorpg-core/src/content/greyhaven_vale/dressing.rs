@@ -125,8 +125,8 @@ const FIXED: [(Kind, [i32; 2], u8); 10] = [
     (Kind::Cart, [1_200, 800], 0),
     (Kind::Cart, [6_900, 3_000], 2),
     (Kind::Barrel, [7_300, 3_300], 0),
-    // The dock runs east from the Lakeshore Path into the shallow water.
-    (Kind::Dock, [3_800, -4_900], 0),
+    // Northern-shore dock, reached by its rotated plank ramp from the Lakeshore Path.
+    (Kind::Dock, [-8_700, -7_200], 3),
 ];
 
 /// SplitMix64 sequence: a fixed integer stream, identical on every platform.

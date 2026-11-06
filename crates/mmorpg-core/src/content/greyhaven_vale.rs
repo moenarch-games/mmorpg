@@ -28,6 +28,7 @@ pub mod farmland;
 pub mod fort;
 pub mod highlands;
 pub mod inn;
+pub mod landscape;
 pub mod layout;
 pub mod market;
 pub mod marsh;
@@ -278,10 +279,14 @@ static ROADS: LazyLock<Vec<Road>> = LazyLock::new(|| {
         .iter()
         .flat_map(|region| region.roads)
         .copied()
+        .chain(landscape::data().paths.iter().map(|path| Road {
+            name: path.name.as_str(),
+            points: path.points.as_slice(),
+        }))
         .collect()
 });
 
-/// Every region's roads, in region order.
+/// Every region's roads, followed by the committed landscape paths in authoring order.
 #[must_use]
 pub fn roads() -> &'static [Road] {
     &ROADS
@@ -381,8 +386,45 @@ pub fn stillwater_lake() -> crate::WaterVolume {
 
 /// Stillwater Lake's basin (#274).
 pub mod lake {
-    pub const CENTRE: [i32; 2] = [5_500, -5_500];
+    pub const CENTRE: [i32; 2] = [-8_700, -5_300];
+    /// A half-turn places the existing authored lake/shrine frame on the western shore.
+    /// It is its own inverse. Offsets preserve the authoritative 4 m
+    /// terrain grid, including the shrine tunnel's paired floor vertices.
+    pub const fn place([x, z]: [i32; 2]) -> [i32; 2] {
+        [-3200 - x, -10800 - z]
+    }
+    pub const fn place3([x, y, z]: [i32; 3]) -> [i32; 3] {
+        let [x, z] = place([x, z]);
+        [x, y, z]
+    }
+    pub const fn place_bounds((min, max): ([i32; 2], [i32; 2])) -> ([i32; 2], [i32; 2]) {
+        (place(max), place(min))
+    }
+    pub fn place_mesh(mut mesh: crate::StaticMesh) -> crate::StaticMesh {
+        mesh.position = place3(mesh.position);
+        for vertex in &mut mesh.vertices {
+            vertex[0] = -vertex[0];
+            vertex[2] = -vertex[2];
+        }
+        mesh
+    }
     pub const RADII: [i32; 2] = [2_200, 1_600];
+    pub fn near_shore(x: i32, z: i32, margin: i32) -> bool {
+        let a = i64::from(x - CENTRE[0]) * 1024 / i64::from(RADII[0] + margin);
+        let b = i64::from(z - CENTRE[1]) * 1024 / i64::from(RADII[1] + margin);
+        a * a + b * b <= 1024 * 1024
+    }
+    /// A rounded shore apron joins the relocated lake to the western rim.
+    pub fn shore_ground(x: i32, z: i32, base: i32) -> i32 {
+        let a = i64::from(x - CENTRE[0]) * 1024 / i64::from(RADII[0] + 400);
+        let b = i64::from(z - CENTRE[1]) * 1024 / i64::from(RADII[1] + 400);
+        let fade = ((a * a + b * b).isqrt() - 1024).clamp(0, 256);
+        if fade == 256 || super::basin::lane_height(x, z).is_some() {
+            return base;
+        }
+        SHORE_Y + ((i64::from(base - SHORE_Y) * fade) / 256) as i32
+    }
+
     /// The shore: the terrace the lake lies in (#423).
     pub const SHORE_Y: i32 = super::basin::TERRACE_Y;
     pub const SURFACE: i32 = SHORE_Y + 15;
@@ -423,7 +465,11 @@ fn open_ground(x: i32, z: i32) -> i32 {
         (None, None) => {}
     }
     let hill = hill_height(x, z);
-    basin::height_at(x, z).map_or(hill, |terrace| terrace.max(hill)) - lake_depth(x, z)
+    lake::shore_ground(
+        x,
+        z,
+        basin::height_at(x, z).map_or(hill, |terrace| terrace.max(hill)),
+    ) - lake_depth(x, z)
 }
 
 /// The outer valley's terrain grid (#159), sampled from [`hill_height`].
@@ -600,7 +646,7 @@ fn trees() -> Vec<StaticCollider> {
             if !clear_of_roads(&collider) {
                 continue;
             }
-            if !brook::wet_ground(x, z) {
+            if !brook::wet_ground(x, z) && !shrine::flattens(x, z) {
                 trees.push(collider);
             }
             next_id += 1;
@@ -661,7 +707,7 @@ fn trees() -> Vec<StaticCollider> {
                 if !clear_of_roads(&collider) || near_structure(&collider) {
                     continue;
                 }
-                if !brook::wet_ground(x, z) {
+                if !brook::wet_ground(x, z) && !shrine::flattens(x, z) {
                     trees.push(collider);
                 }
                 next_id += 1;
@@ -1072,13 +1118,23 @@ pub fn ramps() -> Vec<crate::Ramp> {
     let deck = dock.collider();
     let top = deck.position[1] + deck.half_extents[1];
     let bottom = dock.feet();
-    let edge = deck.position[2] + deck.half_extents[2];
+    let (dx, dz, rises) = match dock.quarters % 4 {
+        0 => (-400, 140, crate::RampRise::NegZ),
+        1 => (140, 400, crate::RampRise::NegX),
+        2 => (400, -140, crate::RampRise::PosZ),
+        _ => (-140, -400, crate::RampRise::PosX),
+    };
+    let half_extents = if dock.quarters.is_multiple_of(2) {
+        [100, (top - bottom) / 2, 50]
+    } else {
+        [50, (top - bottom) / 2, 100]
+    };
     let mut ramps = MILL_RAMPS.to_vec();
     ramps.push(crate::Ramp {
         body: ids::DOCK_RAMP,
-        position: [3_400, (top + bottom) / 2, edge + 50],
-        half_extents: [100, (top - bottom) / 2, 50],
-        rises: crate::RampRise::NegZ,
+        position: [dock.at[0] + dx, (top + bottom) / 2, dock.at[1] + dz],
+        half_extents,
+        rises,
     });
     ramps.extend(brook::ramps());
     ramps
