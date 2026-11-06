@@ -21,6 +21,11 @@ response; these pairs are never sent to its unsupported rigid-body scheduler or 
 approximated by boxes. `World::with_backend` still selects the complete Rapier zone for
 diagnostics and content that requires it. A/B fixtures use `physics::using_backend`.
 
+The debris integration pins Engine `8f1d3e32`, including upstream #501/#502 for terrain
+seams and reconstruction. Static push-out derives from the physical pose, rather than a
+previous move's unchecked clearance hint; consumer recovery still reconstructs only from
+canonical game state.
+
 Navigation and summon placement query the actual upright unit capsule against authored shapes.
 General box–mesh/hull overlap queries remain unsupported by Physics Engine; callers must not
 substitute bounding boxes for those shapes.
