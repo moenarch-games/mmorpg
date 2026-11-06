@@ -901,3 +901,23 @@ foam, the wide overview and final traversal/clipping review remain in progress.
 | Before | Ground and water progress |
 | --- | --- |
 | ![Before](images/greyhaven-brook-slice-before.png) | ![Progress](images/greyhaven-brook-slice-progress.png) |
+
+### Owner screenshot feedback — follow during this slice or later
+
+The owner requested recording these observations without interrupting the ongoing
+visual work (2026-11-06):
+
+- **Bridge:** the guardrails appear to float in the air. Anchor their posts and
+  rail ends convincingly to the bridge deck and banks; check from gameplay height.
+- **Brook:** show realistic flow, beyond the current moving ripple strokes. Water
+  should respond visually to the course, shallows, banks and bridge supports.
+- **Ground:** make the ground much less flat, with convincing local relief and
+  erosion while retaining correct authoritative support and traversable approaches.
+- **Paths:** replace the flat, regular path-strip appearance with more realistic
+  tracks, irregular edges, worn surfaces and natural transitions into the ground.
+- **Vegetation:** remove or replace the weird isolated patches of grass blades.
+  Increasing the number of the same conspicuous clumps is not the desired result;
+  vegetation should read as coherent natural ground cover.
+
+These are recorded owner observations, not completed fixes. Apply them at the
+appropriate point in the visual pass; keep sharing actual gameplay screenshots.
