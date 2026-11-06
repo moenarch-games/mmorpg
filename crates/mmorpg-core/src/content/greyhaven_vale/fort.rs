@@ -16,6 +16,9 @@ pub const SHORE_ROCKS: std::ops::RangeInclusive<u32> = 65070..=65093;
 /// The mill's walk-off gallery, outside the hoist shaft and clear of the axle housing.
 pub const MILL_GALLERY: std::ops::RangeInclusive<u32> = 65103..=65110;
 
+/// Three fractured brook-facing spurs and their smaller talus pieces.
+pub const WESTERN_ROCKS: std::ops::RangeInclusive<u32> = 65128..=65136;
+
 /// Authored leaning rock slabs and their smaller talus pieces at the basin cliff feet.
 pub const BASIN_ROCKS: std::ops::RangeInclusive<u32> = 65094..=65102;
 

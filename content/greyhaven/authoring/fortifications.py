@@ -665,150 +665,8 @@ for patch,(x,z) in enumerate([(-32,-37),(-17,-31),(-7,-32),(-28,-50)]):
     for plant,(dx,dz,size) in enumerate([(0,0,1.25),(-.7,.45,.9),(.65,.55,1.05),(-.35,-.65,.95),(.65,-.55,.8)]):
         fern(x+dx,0,z+dz,size,patch*.8+plant*1.7,patch*5+plant)
 
-# Small opaque grass clumps in the cottage gardens and brook verges. The folded
-# blades have a curved silhouette without alpha cards or a new vegetation renderer.
-grass_mats=[flat('meadow grass green',(.13,.19,.055)),
-    flat('meadow grass light',(.17,.24,.075)),flat('meadow grass dry tips',(.19,.21,.08))]
-for mat in grass_mats:
-    mat.use_backface_culling=False
-    next(n for n in mat.node_tree.nodes if n.type=='BSDF_PRINCIPLED').inputs['Roughness'].default_value=.94
-
-def grass_clump(x,y,z,size,turn,variant):
-    parts=[([],[]) for _ in grass_mats]
-    for leaf in range(9):
-        angle=turn+leaf*math.tau/9+.11*math.sin(leaf*5+variant)
-        along=Vector((math.sin(angle),0,math.cos(angle)))
-        across=Vector((-math.cos(angle),0,math.sin(angle)))
-        reach=size*(.25+.07*math.sin(leaf*5+variant))
-        height=size*(.28+.07*math.sin(leaf*3+variant))
-        def point(t,side):
-            width=.015*size*max(0,math.sin(math.pi*t))**.6*side
-            fold=.008*size*math.sin(math.pi*t)*(1-abs(side))
-            return tuple(Vector((x,y+height*math.sin(math.pi*t*.78)+fold,z))
-                +along*(reach*t*t)+across*width)
-        vs,fs=parts[(leaf+variant)%len(parts)];first=len(vs)
-        for row in range(5):
-            for side in [-1,0,1]:vs.append(point(row/4,side))
-        for row in range(4):
-            for side in range(2):
-                a=first+row*3+side;b=a+3;fs.append((a,b,b+1,a+1))
-    for mat,(vs,fs) in zip(grass_mats,parts):
-        mesh('Greyhaven meadow folded grass blades',vs,fs,mat)
-
-# Frozen game-space anchors, authored against content revision 5606192899733454897.
-# The existing WASM surfaceY export supplied ground heights; roots sit 3.5 cm below
-# that surface. Road and structure footprints retain a 30/35 cm clearance margin.
-# Revisit these anchors if the corresponding terrain or building layout changes.
-GROUND_COVER = [
-    (5.33, -0.232, 38.65, 0.75, 0),
-    (5.83, -0.2, 38.57, 0.76, 1.7),
-    (6.3, -0.171, 38.49, 0.77, 3.4),
-    (6.74, -0.141, 38.57, 0.8, 5.1),
-    (5.35, -0.226, 39.08, 0.84, 6.8),
-    (5.74, -0.202, 39, 0.88, 8.5),
-    (6.15, -0.176, 38.92, 0.92, 10.2),
-    (6.6, -0.146, 39, 0.96, 11.9),
-    (5.28, -0.227, 39.51, 1, 13.6),
-    (5.79, -0.194, 39.43, 1.02, 15.3),
-    (6.29, -0.163, 39.35, 1.04, 17),
-    (6.75, -0.132, 39.43, 1.05, 18.7),
-    (-5.11, -0.166, 35.41, 0.96, 0.9),
-    (-4.65, -0.162, 35.44, 0.92, 2.6),
-    (-4.22, -0.166, 35.33, 0.88, 4.3),
-    (-3.83, -0.166, 35.3, 0.84, 6),
-    (-5.23, -0.141, 35.84, 0.8, 7.7),
-    (-4.8, -0.137, 35.87, 0.77, 9.4),
-    (-4.34, -0.141, 35.76, 0.76, 11.1),
-    (-3.85, -0.14, 35.73, 0.75, 12.8),
-    (-5.14, -0.123, 36.27, 0.76, 14.5),
-    (-4.65, -0.12, 36.3, 0.77, 16.2),
-    (-4.2, -0.121, 36.19, 0.8, 17.9),
-    (-3.78, -0.126, 36.16, 0.83, 19.6),
-    (-5.6, -0.09, 42.04, 1, 1.8),
-    (-5.19, -0.12, 42.14, 1.03, 3.5),
-    (-4.8, -0.14, 42.1, 1.04, 5.2),
-    (-4.39, -0.158, 42, 1.05, 6.9),
-    (-5.75, -0.106, 42.47, 1.04, 8.6),
-    (-5.28, -0.139, 42.57, 1.03, 10.3),
-    (-4.77, -0.167, 42.54, 1, 12),
-    (-4.27, -0.189, 42.43, 0.96, 13.7),
-    (-5.6, -0.139, 42.89, 0.92, 15.4),
-    (-5.16, -0.171, 43, 0.88, 17.1),
-    (-4.75, -0.193, 42.97, 0.84, 18.8),
-    (-4.36, -0.209, 42.86, 0.81, 20.5),
-    (6.34, -0.157, 30.49, 0.76, 2.7),
-    (6.73, -0.134, 30.58, 0.77, 4.4),
-    (7.15, -0.108, 30.65, 0.8, 6.1),
-    (7.6, -0.079, 30.56, 0.84, 7.8),
-    (6.29, -0.164, 30.92, 0.88, 9.5),
-    (6.8, -0.133, 31.01, 0.92, 11.2),
-    (7.29, -0.102, 31.08, 0.96, 12.9),
-    (7.75, -0.073, 30.99, 1, 14.6),
-    (6.38, -0.161, 31.35, 1.02, 16.3),
-    (6.77, -0.138, 31.44, 1.04, 18),
-    (7.17, -0.113, 31.51, 1.05, 19.7),
-    (7.6, -0.086, 31.42, 1.05, 21.4),
-    (-18.24, -0.083, 35.52, 0.92, 3.6),
-    (-17.8, -0.088, 35.51, 0.88, 5.3),
-    (-17.34, -0.085, 35.62, 0.84, 7),
-    (-16.84, -0.09, 35.63, 0.8, 8.7),
-    (-18.13, -0.057, 35.95, 0.77, 10.4),
-    (-17.65, -0.062, 35.94, 0.76, 12.1),
-    (-17.2, -0.063, 36.05, 0.75, 13.8),
-    (-16.79, -0.067, 36.06, 0.76, 15.5),
-    (-18.2, -0.053, 36.38, 0.77, 17.2),
-    (-17.79, -0.057, 36.37, 0.8, 18.9),
-    (-17.35, -0.061, 36.48, 0.83, 20.6),
-    (-16.88, -0.066, 36.49, 0.87, 22.3),
-    (-18.25, -0.035, 41.09, 1.03, 4.5),
-    (-17.77, -0.035, 40.99, 1.04, 6.2),
-    (-17.26, -0.035, 41.05, 1.05, 7.9),
-    (-16.76, -0.035, 41.15, 1.04, 9.6),
-    (-18.1, -0.035, 41.52, 1.03, 11.3),
-    (-17.67, -0.035, 41.42, 1, 13),
-    (-17.27, -0.035, 41.48, 0.96, 14.7),
-    (-16.87, -0.035, 41.58, 0.92, 16.4),
-    (-18.25, -0.035, 41.96, 0.88, 18.1),
-    (-17.8, -0.035, 41.85, 0.84, 19.8),
-    (-17.31, -0.035, 41.9, 0.81, 21.5),
-    (-16.8, -0.035, 42.01, 0.78, 23.2),
-    (17.3, -0.035, 38.15, 0.77, 5.4),
-    (17.81, -0.035, 38.05, 0.8, 7.1),
-    (18.3, -0.035, 37.99, 0.84, 8.8),
-    (18.75, -0.035, 38.09, 0.88, 10.5),
-    (17.37, -0.035, 38.58, 0.92, 12.2),
-    (17.76, -0.035, 38.48, 0.96, 13.9),
-    (18.16, -0.035, 38.42, 1, 15.6),
-    (18.6, -0.035, 38.52, 1.02, 17.3),
-    (17.27, -0.035, 39.01, 1.04, 19),
-    (17.77, -0.035, 38.91, 1.05, 20.7),
-    (18.27, -0.035, 38.85, 1.05, 22.4),
-    (18.75, -0.035, 38.95, 1.03, 24.1),
-    (28.38, -0.035, 33.63, 0.88, 6.3),
-    (28.85, -0.035, 33.62, 0.84, 8),
-    (29.29, -0.035, 33.51, 0.8, 9.7),
-    (29.7, -0.035, 33.52, 0.77, 11.4),
-    (28.7, -0.035, 34.05, 0.75, 14.8),
-    (29.15, -0.035, 33.94, 0.76, 16.5),
-    (29.63, -0.035, 33.95, 0.77, 18.2),
-    (28.84, -0.035, 34.48, 0.83, 21.6),
-    (29.3, -0.035, 34.37, 0.87, 23.3),
-    (29.73, -0.035, 34.37, 0.92, 25),
-    (21.4, -0.035, 27.56, 1.04, 7.2),
-    (21.83, -0.035, 27.65, 1.05, 8.9),
-    (22.22, -0.035, 27.58, 1.04, 10.6),
-    (22.62, -0.035, 27.49, 1.03, 12.3),
-    (21.25, -0.035, 27.99, 1, 14),
-    (21.71, -0.035, 28.08, 0.96, 15.7),
-    (22.2, -0.035, 28.01, 0.92, 17.4),
-    (22.71, -0.035, 27.92, 0.88, 19.1),
-    (21.4, -0.035, 28.42, 0.84, 20.8),
-    (21.85, -0.035, 28.51, 0.81, 22.5),
-    (22.27, -0.035, 28.45, 0.78, 24.2),
-    (22.66, -0.035, 28.35, 0.76, 25.9),
-]
-for plant,(x,y,z,size,turn) in enumerate(GROUND_COVER):
-    grass_clump(x,y,z,size,turn,plant)
+# Short brook turf is shared instanced presentation geometry. The former isolated
+# garden/bank blade clumps are removed from this static architecture bundle.
 
 # Apply bevels and join by material for a compact, standard static glTF.
 bpy.ops.object.select_all(action='DESELECT')
@@ -870,22 +728,34 @@ for cluster,(x,z,turn) in enumerate([(39,-60,.4),(38,-65,1.1),(47,-70.5,.2),
 # draws these collision facets directly, independent of the settlement glTF and visual LOD.
 basin_rock=bpy.data.materials.get('Greyhaven game rock - terrain context') or shore_preview
 basin_rock['tile_metres']=2.7
-for cluster,(x,z,rx,rz,h,turn,lean_x,lean_z) in enumerate([(-37,-40,4.2,5.0,15.5,.2,-5,-3),
-    (-39,57,3.0,4.4,10.5,-.3,-5,0),(-25,83,3.6,4.8,11.5,.6,-1,5)]):
+for first_id,x,z,rx,rz,h,turn,lean_x,lean_z in [
+    (65094,-37,-40,4.2,5.0,15.5,.2,-5,-3),
+    (65097,-39,57,3.0,4.4,10.5,-.3,-5,0),
+    (65100,-25,83,3.6,4.8,11.5,.6,-1,5),
+    # Brook-facing fractured spurs and their talus, outside the mill/water and
+    # the strip walked between the western stockade and the cliff foot.
+    (65128,-44,36,2.8,4.6,11.4,-.2,-3.5,0),
+    (65131,-45,49,3.2,3.0,13.2,.3,-4,-1),
+    (65134,-45,13,2.8,3.8,10.7,-.3,-3,-1),
+]:
     for piece,(dx,dz,size,rise) in enumerate([(0,0,1,1),(3.1,2.1,.48,.43),(-3.0,2.4,.40,.28)]):
-        id=65094+cluster*3+piece;n=9;vs=[]
+        id=first_id+piece;n=9;vs=[]
         cx=x+dx*math.cos(turn)-dz*math.sin(turn)
         cz=z+dx*math.sin(turn)+dz*math.cos(turn)
-        for row,(height,width,lean) in enumerate([(-.8,.72,0),(.18*h*rise,1,.20),
-            (.63*h*rise,.78,-.35),(h*rise,.42,-.8)]):
+        profile=[(-.8,.72,0),(.18*h*rise,1,.20),(.63*h*rise,.78,-.35),(h*rise,.42,-.8)]
+        if first_id>=65128:
+            # A projecting bedding ledge splits the face into two leaning masses.
+            profile=[(-.8,.72,0),(.18*h*rise,1,.20),(.42*h*rise,.78,-.35),
+                (.44*h*rise,.95,-.1),(.69*h*rise,.65,-.5),(h*rise,.42,-.8)]
+        for row,(height,width,lean) in enumerate(profile):
             for j in range(n):
                 a=j*math.tau/n;w=1+.09*math.sin(j*7.1+id)
                 px,pz=rx*size*w*width*math.sin(a),rz*size*w*width*math.cos(a)+lean
-                vs.append((cx+px*math.cos(turn)-pz*math.sin(turn)+lean_x*size*row/3,
+                vs.append((cx+px*math.cos(turn)-pz*math.sin(turn)+lean_x*size*row/(len(profile)-1),
                     height+(0 if row==0 else .20*rise*math.sin(j*2.1+id)),
-                    cz+px*math.sin(turn)+pz*math.cos(turn)+lean_z*size*row/3))
-        fs=[tuple(range(n-1,-1,-1)),tuple(range(3*n,4*n))]
-        fs += [(r*n+j,r*n+(j+1)%n,(r+1)*n+(j+1)%n,(r+1)*n+j) for r in range(3) for j in range(n)]
+                    cz+px*math.sin(turn)+pz*math.cos(turn)+lean_z*size*row/(len(profile)-1)))
+        fs=[tuple(range(n-1,-1,-1)),tuple(range((len(profile)-1)*n,len(profile)*n))]
+        fs += [(r*n+j,r*n+(j+1)%n,(r+1)*n+(j+1)%n,(r+1)*n+j) for r in range(len(profile)-1) for j in range(n)]
         solid_record(id,vs,fs)
         mesh('Greyhaven basin buttress '+str(id),vs,fs,basin_rock)
 COLLISION.write_text(json.dumps(collision,separators=(',',':'))+'\n')

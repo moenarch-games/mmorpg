@@ -1024,3 +1024,42 @@ The browser reported no page errors and loaded all seven ground materials. The
 lower current glints and attached bridge rails are visible. It also makes the
 remaining flat ground, coarse path edges and distant cliff repetition clear;
 those still need the stronger landscape/cover pass before this slice is complete.
+
+### Short turf and western rock spurs
+
+The old tall, isolated blade patches are removed from both the settlement glTF
+and the brook's legacy tuft presentation. Their replacement is short turf with
+40 curved blades distributed across each patch, rather than converging at one
+root. Deterministic Poisson-disc roots, noise clusters, small glades and muted
+colour variation remain shared by native/browser. Actual channel footprints,
+path verges, structures and slope/crease masks keep the cover off water and hard
+surfaces. Short turf can grow in the flat settlement grass areas; the former
+blanket spawn-plaza exclusion and five-metre brook cut exclusion no longer leave
+those decorative areas bare. Authoritative spawn support and movement are unchanged.
+
+Each turf instance tilts onto the sampled ground plane; patches crossing a sharp
+crease are omitted. The focused root-support check confirms grounded roots, dry
+water boundaries and actual cover in the settlement. The current game export has
+1,142 turf instances and 129 ferns in this slice, using two shared meshes. The
+saved live Blender scene uses these same exported instances. These counts describe
+this content, not a new budget or gate.
+
+Three new brook-facing rock spurs have projecting bedding ledges and smaller
+talus companions (stable collision IDs 65128–65136). The existing Blender authoring
+script exports their coarse immutable collision meshes; shared presentation adds
+the face-aligned rock PBR and continuous bedding/patina colour. A game view exposed
+an overly regular triangular recess pattern; removing that fan displacement keeps
+the larger authored fractures legible without making the faces look crumpled.
+The architecture bundle loses the old tufts and drops from 20 to 17 material groups.
+
+The existing content/mill clearance check passes with the new rocks. Actual movement
+also reaches the western slope at `[-36,39.83]` m, via the bridge, brook, mill crossing
+and western bank, without jumping or teleporting. The production browser build passes.
+
+A focused invocation of the existing browser profiler sampled bridge and western
+art views at 800×533 on an RTX 3060 Ti. The western view measured 61.5 FPS, median
+CPU 12.9 ms and GPU 11.13 ms; the short bridge window had median CPU 15.2 ms/GPU
+11.14 ms and large frame outliers. These are checkpoint observations, not a
+before/after speed claim; there is no comparable baseline. The samples precede
+removing the redundant rock fan triangles. The report is
+`artifacts/profile/greyhaven-brook-quality.json`; no performance gate was added.

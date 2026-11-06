@@ -613,6 +613,40 @@ fn brook_cover_points() -> Vec<[i32; 2]> {
     points
 }
 
+/// Short turf spreads roots across a patch instead of converging into a tall tuft.
+/// One opaque mesh is instanced throughout the brook slice; no alpha cards or renderer.
+fn brook_turf() -> Geometry {
+    let mut turf = Geometry::default();
+    for leaf in 0..40 {
+        let seed = leaf as f64;
+        let root_angle = seed * 2.399963229728653;
+        let radius = ((seed + 0.5) / 40.).sqrt() * 0.62;
+        let root = [root_angle.sin() * radius, root_angle.cos() * radius];
+        let angle = hash(&[seed, 51430.]) * TAU;
+        let (dx, dz) = (angle.sin(), angle.cos());
+        let height = 0.12 + hash(&[seed, 51431.]) * 0.12;
+        let bend = 0.06 + hash(&[seed, 51432.]) * 0.12;
+        let width = 0.012 + hash(&[seed, 51433.]) * 0.008;
+        let point = |step: usize, side: f64| {
+            let t = step as f64 / 2.;
+            let reach = bend * t * t;
+            let w = width * (1. - t).sqrt() * side;
+            [
+                root[0] + dx * reach - dz * w,
+                -0.025 + height * t - 0.025 * t * t,
+                root[1] + dz * reach + dx * w,
+            ]
+        };
+        let q = [point(0, -1.), point(1, -1.), point(1, 1.), point(0, 1.)];
+        turf.face(&q);
+        turf.face(&[q[3], q[2], q[1], q[0]]);
+        let q = [point(1, -1.), point(2, 0.), point(1, 1.)];
+        turf.face(&q);
+        turf.face(&[q[2], q[1], q[0]]);
+    }
+    turf
+}
+
 /// Fine, walk-through grass and woodland ferns between the sparse saved Outpost tufts.
 /// Both clients draw the existing shared instanced batches; these are never gameplay
 /// props or colliders. The brook uses clustered Poisson-disc roots; older regions keep
@@ -637,40 +671,7 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
             ]),
         );
     }
-    // One shared ribbon mesh gives the close brook banks bent, thin leaves instead
-    // of the older conical tufts. The same instance batches draw it in both clients.
-    let mut bank_grass = Geometry::default();
-    for leaf in 0..9 {
-        let angle = leaf as f64 * TAU / 9. + hash(&[leaf as f64, 51394.]);
-        let (dx, dz) = (angle.sin(), angle.cos());
-        let height = 0.42 + hash(&[leaf as f64, 51395.]) * 0.32;
-        let bend = 0.12 + hash(&[leaf as f64, 51396.]) * 0.22;
-        let point = |step: usize, side: f64| {
-            let t = step as f64 / 3.;
-            let reach = 0.10 + bend * t * t;
-            let width = 0.035 * (1. - t).sqrt() * side;
-            [
-                dx * reach - dz * width,
-                height * t - 0.05 * t * t,
-                dz * reach + dx * width,
-            ]
-        };
-        for step in 0..3 {
-            let q = [
-                point(step, -1.),
-                point(step + 1, -1.),
-                point(step + 1, 1.),
-                point(step, 1.),
-            ];
-            if step == 2 {
-                bank_grass.face(&[q[0], q[1], q[3]]);
-                bank_grass.face(&[q[3], q[1], q[0]]);
-            } else {
-                bank_grass.face(&q);
-                bank_grass.face(&[q[3], q[2], q[1], q[0]]);
-            }
-        }
-    }
+    let bank_grass = brook_turf();
     let mut fern = Geometry::default();
     for i in 0..8 {
         let angle = i as f64 * TAU / 8.;
@@ -711,11 +712,47 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
         }
     }
 
-    let blockers: Vec<_> = s
+    let mut blockers: Vec<_> = s
         .props
         .iter()
         .filter(|prop| prop.collider.is_some())
         .map(Prop::footprint)
+        .collect();
+
+    blockers.extend(
+        s.collision_surfaces
+            .iter()
+            .filter(|mesh| {
+                use mmorpg_core::greyhaven_vale::fort;
+                fort::BROOK_MILL.contains(&mesh.id)
+                    || fort::BASIN_ROCKS.contains(&mesh.id)
+                    || fort::WESTERN_ROCKS.contains(&mesh.id)
+            })
+            .map(|mesh| mmorpg_scenery::Rect {
+                min: [0, 2].map(|axis| {
+                    mesh.vertices
+                        .iter()
+                        .map(|p| p[axis] + mesh.position[axis])
+                        .min()
+                        .unwrap_or(0)
+                }),
+                max: [0, 2].map(|axis| {
+                    mesh.vertices
+                        .iter()
+                        .map(|p| p[axis] + mesh.position[axis])
+                        .max()
+                        .unwrap_or(0)
+                }),
+            }),
+    );
+
+    let bank_channels: Vec<_> = mmorpg_core::greyhaven_vale::brook::waters()
+        .into_iter()
+        .filter_map(|water| water.channel)
+        .map(|mut channel| {
+            channel.half_width += 100;
+            channel
+        })
         .collect();
 
     const CELL: i32 = 360;
@@ -737,10 +774,14 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
     );
     for ([x, z], seed) in roots {
         if !VALE_BOUNDS.contains(x, z)
-            || SPAWN_PLAZA.contains(x, z)
-            || s.road_distance([x, z]) < 240
-            || s.water_distance([x, z]) < 230
-            || mmorpg_core::greyhaven_vale::brook::wet_ground(x, z)
+            || (SPAWN_PLAZA.contains(x, z) && !in_brook_cover(x, z))
+            || s.road_distance([x, z]) < if in_brook_cover(x, z) { 35 } else { 240 }
+            || s.water_distance([x, z]) < if in_brook_cover(x, z) { 100 } else { 230 }
+            || if in_brook_cover(x, z) {
+                bank_channels.iter().any(|channel| channel.contains(x, z))
+            } else {
+                mmorpg_core::greyhaven_vale::brook::wet_ground(x, z)
+            }
             || s.farmland().iter().any(|field| field.distance([x, z]) == 0)
             || s.terrain_holes
                 .iter()
@@ -756,14 +797,14 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
             "meadow" => (0.56, false),
             "hub" => (0.42, false),
             "hollow" => (0.34, false),
-            "shore" | "foothills" if in_brook_cover(x, z) => (0.8, false),
+            "shore" | "foothills" | "plaza" if in_brook_cover(x, z) => (0.8, false),
             _ => continue,
         };
         let density = if in_brook_cover(x, z) {
             // Broad glades and smaller clumps, rather than one evenly occupied field.
             let patch = noise(metres(x), metres(z), 4.2, 51392.);
             let glade = noise(metres(x), metres(z), 15., 51393.);
-            ((patch - 0.28) * 2.5).clamp(0., 1.) * (0.5 + glade * 0.5)
+            ((patch - 0.22) * 3.5).clamp(0., 1.) * (0.75 + glade * 0.25)
         } else {
             density
         };
@@ -791,13 +832,27 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
         let pick = ((variation * 3.).floor() as usize).min(2);
         let is_fern = (wooded && hash(&[seed[0], seed[1], 187.]) < 0.70)
             || (in_brook_cover(x, z) && hash(&[seed[0], seed[1], 189.]) < 0.08);
-        // Owner feedback: the isolated blade patches distract from the ground.
-        // Keep woodland/bank ferns; defer the local grass mesh until it reads as turf.
-        if in_brook_cover(x, z) && !is_fern {
-            continue;
-        }
+        let turf = in_brook_cover(x, z) && !is_fern;
+        let support = if turf {
+            // Fit distributed roots to the local ground plane; reject a sharp crease
+            // rather than allowing a patch to bridge a ditch or float above a bank.
+            let (sx, sz) = (rise_x / 1.4, rise_z / 1.4);
+            if [[-0.8, -0.8], [-0.8, 0.8], [0.8, -0.8], [0.8, 0.8]]
+                .iter()
+                .any(|[dx, dz]| {
+                    (surface(g, mx + dx, mz + dz) - (y + sx * dx + sz * dz)).abs() > 0.04
+                })
+            {
+                continue;
+            }
+            align_y(norm([-sx, 1., -sz]))
+        } else {
+            ID
+        };
         let color = if is_fern {
             [0x405c32, 0x53723c, 0x6b7942][pick]
+        } else if turf {
+            [0x667c47, 0x73834d, 0x81905a][pick]
         } else if wooded {
             [0x526c38, 0x657944, 0x7b8451][pick]
         } else {
@@ -807,6 +862,8 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
         b.instance(
             if is_fern {
                 "greyhaven-fern-understory"
+            } else if turf {
+                "greyhaven-brook-turf"
             } else {
                 "greyhaven-ground-cover"
             },
@@ -820,6 +877,7 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
             },
             compose(&[
                 translate(mx, y, mz),
+                support,
                 ry(TAU * hash(&[seed[0], seed[1], 185.])),
                 scale(size, size, size),
             ]),
@@ -1261,7 +1319,11 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
                     );
                 }
             }
-            PropKind::GrassTuft => grass(&mut m, p),
+            PropKind::GrassTuft => {
+                if !in_brook_cover(p.position[0], p.position[2]) {
+                    grass(&mut m, p);
+                }
+            }
             PropKind::Flowers => {
                 m.cull = Cull::Near;
                 let c = [0xf2d64b, 0xb98ae0, 0xf4f1ea, 0xe5675c][usize::from(p.yaw) % 4];
@@ -1768,6 +1830,48 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
 #[cfg(test)]
 mod ground_cover_tests {
     use super::*;
+
+    #[test]
+    fn short_turf_reaches_the_settlement_and_its_roots_follow_the_ground() {
+        let scenery = mmorpg_scenery::greyhaven_vale_scenery();
+        let grid = scenery.terrain_grid(crate::TERRAIN_STEP_UNITS);
+        let mut batcher = Batcher::default();
+        ground_cover(&mut batcher, &scenery, &grid);
+        let groups = batcher.finish();
+        let turf: Vec<_> = groups
+            .iter()
+            .flat_map(|group| &group.draws)
+            .filter(|draw| draw.id.contains("greyhaven-brook-turf"))
+            .collect();
+        assert!(!turf.is_empty());
+        assert!(
+            turf.iter()
+                .any(|draw| mmorpg_core::greyhaven_vale::SPAWN_PLAZA.contains(
+                    (draw.model[12] * 100.) as i32,
+                    (draw.model[14] * 100.) as i32
+                ))
+        );
+        let water = mmorpg_core::greyhaven_vale::brook::channel();
+        for draw in turf {
+            let m = draw.model.map(f64::from);
+            for p in draw
+                .geometry
+                .p
+                .iter()
+                .filter(|p| (p[1] + 0.025).abs() < 1e-8)
+            {
+                let world: [f64; 3] = std::array::from_fn(|axis| {
+                    m[axis] * p[0] + m[4 + axis] * p[1] + m[8 + axis] * p[2] + m[12 + axis]
+                });
+                let height = world[1] - surface(&grid, world[0], world[2]);
+                assert!(
+                    (-0.08..=0.02).contains(&height),
+                    "floating turf root {world:?}, height {height}"
+                );
+                assert!(!water.contains((world[0] * 100.) as i32, (world[2] * 100.) as i32));
+            }
+        }
+    }
 
     #[test]
     fn brook_roots_are_deterministic_and_leave_seventy_centimetres_between_plants() {
