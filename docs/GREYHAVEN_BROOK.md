@@ -485,3 +485,28 @@ The afternoon in-game view is `artifacts/greyhaven-brook/daylight-contrast.png`.
 completed the village/bridge walk with all seven ground layers loaded and no page errors.
 The reference still calls for further asset and ground-cover refinement; this lighting
 adjustment is incremental, not visual acceptance of the whole scene.
+
+## Authored fern ground cover
+
+The existing Blender source now includes a reusable fern model with seven curved fronds,
+folded paired leaflets and three muted, rough leaf materials. Twenty plants form four
+explicit patches on level ground near the northern rocks and grassy rises. Roots begin
+below the grass surface, and the patches leave the roads and building approaches clear.
+This is passable foliage; no solid collider is added.
+
+The plants are ordinary opaque, two-sided geometry in the existing settlement glTF. Both
+clients use the same current import/material path, without leaf-card alpha textures, new
+shaders, a vegetation engine or another cache. The bundle still has thirteen resource files;
+its mesh buffer and manifest change, while collision JSON and authoritative content revision
+`17879384104603456020` remain unchanged. The plants are static in this slice; wind animation
+and plant-specific LOD/streaming are not introduced.
+
+Focused checks passed: native loading of every placed kit entry, the browser/WASM production
+build and export inspection of the three leaf materials' two-sided/rough settings. Full
+suites and native GPU acceptance were not run. Previously reported content assertions and
+legacy A/B failures remain unresolved; the reference art direction remains in progress.
+Convention source revision remains `625cb04ca568aebc8d45c90033e107a05e9bd2a0`.
+Chromium walked through the fern patch and onward to the rocks, with all seven ground
+textures loaded and no page errors. The final placement is captured in
+`artifacts/greyhaven-brook/fern-ground-cover.png`; the same patch is visible in the saved
+live Blender scene.

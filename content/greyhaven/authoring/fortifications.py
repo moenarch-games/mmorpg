@@ -453,6 +453,48 @@ beam('Greyfang threshold diagonal',(79.31,11.3,-139.7),(79.31,14.2,-136.3),.07,w
 for z in [-139.6,-136.4]:
     for y in [11.4,14.1]:box('Greyfang threshold iron strap',(79.29,y,z),(.015,.06,.24),iron)
 
+# Passable ground cover: a small reusable fern built from curved fronds and folded
+# leaflets. Opaque two-sided leaf geometry needs no alpha texture or new renderer feature.
+fern_mats=[flat('fern shadow leaf',(.055,.13,.028)),flat('fern green leaf',(.085,.19,.04)),
+    flat('fern young leaf',(.12,.23,.05))]
+for mat in fern_mats:
+    next(n for n in mat.node_tree.nodes if n.type=='BSDF_PRINCIPLED').inputs['Roughness'].default_value=.88
+
+def fern(x,y,z,scale,turn,variant):
+    leaves=[([],[]) for _ in fern_mats];stem_v,stem_f=[],[]
+    for frond in range(7):
+        a=turn+frond*math.tau/7+.08*math.sin(frond*7+variant)
+        direction=Vector((math.cos(a),0,math.sin(a)))
+        across=Vector((-math.sin(a),0,math.cos(a)))
+        length=scale*(.80+.20*math.sin(frond*2.3+variant))
+        height=scale*(.66+.13*math.sin(frond*3.1+variant))
+        def point(t):
+            return Vector((x,y+height*math.sin(math.pi*t*.9)-.12*(1-t),z))+direction*(length*t)
+        first=len(stem_v)
+        for j in range(11):
+            p=point(j/10)
+            stem_v.extend([tuple(p-across*.009*scale),tuple(p+across*.009*scale)])
+        stem_f.extend([(first+2*j,first+2*j+1,first+2*j+3,first+2*j+2) for j in range(10)])
+        for pair in range(9):
+            t=.13+pair*.09;p=point(t)
+            blade=.31*scale*(1-t)**.65;width=.045*scale*(1-t)**.4
+            for side in [-1,1]:
+                end=p+across*(side*blade)+direction*(.09*scale)
+                middle=(p+end)/2
+                vs,fs=leaves[(frond+pair+variant)%len(fern_mats)];first=len(vs)
+                vs.extend([tuple(p),tuple(middle-direction*width+Vector((0,-.012*scale,0))),
+                    tuple(middle+Vector((0,.035*scale,0))),
+                    tuple(middle+direction*width+Vector((0,-.012*scale,0))),tuple(end)])
+                fs.extend([tuple(first+i for i in face) for face in [(0,1,2),(1,4,2),(4,3,2),(3,0,2)]])
+    mesh('Greyhaven fern winding stems',stem_v,stem_f,fern_mats[0])
+    for mat,(vs,fs) in zip(fern_mats,leaves):mesh('Greyhaven fern folded leaflets',vs,fs,mat)
+
+# Explicit authored patches on the level ground outside the knolls, clear of paths and
+# buildings. Roots begin below the grass surface; foliage deliberately has no solid body.
+for patch,(x,z) in enumerate([(-32,-37),(-17,-31),(-7,-32),(-28,-50)]):
+    for plant,(dx,dz,size) in enumerate([(0,0,1.25),(-.7,.45,.9),(.65,.55,1.05),(-.35,-.65,.95),(.65,-.55,.8)]):
+        fern(x+dx,0,z+dz,size,patch*.8+plant*1.7,patch*5+plant)
+
 # Apply bevels and join by material for a compact, standard static glTF.
 bpy.ops.object.select_all(action='DESELECT')
 for o in objects:o.select_set(True)
