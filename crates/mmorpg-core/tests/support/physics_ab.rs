@@ -13,7 +13,7 @@ use std::error::Error;
 
 use mmorpg_core::{CreatureId, EntityRef, NpcId, PlayerId, ZoneCommand, ZoneId, ZoneSimulation};
 
-use crate::greyhaven_workload::{self, Fixture};
+use super::greyhaven_workload::{self, Fixture};
 
 /// A unit a bot step names.
 #[derive(Clone, Debug)]

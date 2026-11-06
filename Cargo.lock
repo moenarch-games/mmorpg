@@ -2435,6 +2435,8 @@ dependencies = [
  "serde_json",
  "strum",
  "toml",
+ "wasm-bindgen",
+ "web-time",
 ]
 
 [[package]]

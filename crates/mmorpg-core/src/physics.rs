@@ -465,7 +465,7 @@ pub struct TimedCalls {
 
 #[cfg(feature = "physics-ab")]
 impl TimedCalls {
-    fn record(&mut self, start: std::time::Instant) {
+    fn record(&mut self, start: web_time::Instant) {
         self.calls += 1;
         self.nanos = self
             .nanos
@@ -599,7 +599,7 @@ impl Clone for World {
 macro_rules! dispatch {
     ($self:ident, $worlds:expr, $world:ident => $call:expr) => {{
         #[cfg(feature = "physics-ab")]
-        let started = std::time::Instant::now();
+        let started = web_time::Instant::now();
         let result = match $worlds {
             Worlds::Rapier($world) => $call,
             Worlds::Engine($world) => $call,
@@ -682,7 +682,7 @@ impl World {
     /// Replaces an existing body, for example a door leaf moving to its other box.
     pub fn replace_body(&mut self, body: RigidBody) -> Result<(), PhysicsError> {
         #[cfg(feature = "physics-ab")]
-        let start = std::time::Instant::now();
+        let start = web_time::Instant::now();
         let outcome = dispatch!(self, &mut self.worlds, world => world.replace_body(body));
         #[cfg(feature = "physics-ab")]
         if outcome.is_ok() {
@@ -693,7 +693,7 @@ impl World {
 
     pub fn remove_body(&mut self, id: BodyId) -> Option<RigidBody> {
         #[cfg(feature = "physics-ab")]
-        let start = std::time::Instant::now();
+        let start = web_time::Instant::now();
         let outcome = dispatch!(self, &mut self.worlds, world => world.remove_body(id));
         #[cfg(feature = "physics-ab")]
         if outcome.is_some() {
@@ -714,7 +714,7 @@ impl World {
     /// (respawns, evade resets, recovery), never movement.
     pub fn set_position(&mut self, id: BodyId, position: Vec3i) -> Result<(), PhysicsError> {
         #[cfg(feature = "physics-ab")]
-        let start = std::time::Instant::now();
+        let start = web_time::Instant::now();
         let outcome = dispatch!(self, &mut self.worlds, world => world.set_position(id, position));
         #[cfg(feature = "physics-ab")]
         if outcome.is_ok() {
@@ -740,7 +740,7 @@ impl World {
     /// that stands on it and is not rising: the displacement is added to that unit's move.
     pub fn move_platform(&mut self, id: BodyId, to: Vec3i) -> Result<(), PhysicsError> {
         #[cfg(feature = "physics-ab")]
-        let start = std::time::Instant::now();
+        let start = web_time::Instant::now();
         #[cfg(feature = "physics-ab")]
         let changes_position = self.body(id).is_some_and(|body| body.position != exact(to));
         let outcome = dispatch!(self, &mut self.worlds, world => world.move_platform(id, to));
@@ -758,7 +758,7 @@ impl World {
     /// restoring a zone.
     pub fn place_platform(&mut self, id: BodyId, to: Vec3i) -> Result<(), PhysicsError> {
         #[cfg(feature = "physics-ab")]
-        let start = std::time::Instant::now();
+        let start = web_time::Instant::now();
         let outcome = dispatch!(self, &mut self.worlds, world => world.place_platform(id, to));
         #[cfg(feature = "physics-ab")]
         if outcome.is_ok() {
@@ -783,7 +783,7 @@ impl World {
     /// vertical velocity.
     pub fn step(&mut self) -> Result<StepStats, PhysicsError> {
         #[cfg(feature = "physics-ab")]
-        let start = std::time::Instant::now();
+        let start = web_time::Instant::now();
         let outcome = dispatch!(self, &mut self.worlds, world => world.step());
         #[cfg(feature = "physics-ab")]
         if outcome.is_ok() {
