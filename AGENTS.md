@@ -132,3 +132,7 @@ General engineering rules (git and merging, commits, testing, ADRs, docs, depend
 - Deliver the requested behavior and report the one focused check used to confirm it, plus any known remaining problem.
 - Do not make unrelated findings or comprehensive verification a delivery prerequisite. Apply the happy-path policy above instead of older blanket full-suite requirements.
 - Keep documentation and any directly affected protocol/scenario examples consistent with the change. Authoritative gameplay, fencing, determinism and core WASM portability remain requirements, without automatically running every available suite for every task.
+
+## Pull-request integration
+
+Follow the current shared `coding-agent-conventions` rule `GIT-006` for approved PR integration, including explicit merge-queue submission when ready. Preserve this repository's review, validation, dependency, and owner-approval requirements.
