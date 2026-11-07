@@ -52,6 +52,68 @@ pieces differ by at most 1.80 units. The nonembedding contract is the upstream a
 0.5-unit allowance beyond Rapier's worst penetration, capped at five units. Existing 19-workload
 gameplay bounds remain unchanged.
 
+## Experimental persistent projectile CCD (shadow world, diagnostic only)
+
+The opt-in `projectile_ccd_ab` example uses the production Physics Engine pin above, which
+contains the CCD scheduler work first measured at `0d0a757e5122f2a25eccffcd6c7e55e8ef878507`:
+chronological multi-impact fixes (#464/#468), spatially indexed moving sweeps and
+heap-ordered events (#472), near-margin remaining-travel repair (#473), and
+conservative non-closing pair pruning (#480). The prior experiment pinned
+`1db80f40c3244cd1b62d951ed8b54cfdb283a876`; its [owner-provided 1–32-bomb
+measurements](https://github.com/moenarch-games/mmorpg/pull/638#issuecomment-6642942809)
+are retained as an **older-engine baseline**. Rerun on the same host before
+claiming a performance improvement. No production or gameplay projectile path changes:
+
+```sh
+git rev-parse HEAD
+rustc -Vv
+lscpu
+cargo test --release --locked -p mmorpg-core --features physics-ab --test thrown_weapons --test trick_shots
+cargo run --release --locked -p mmorpg-core --features physics-ab --example projectile_ccd_ab
+cargo run --release --locked -p mmorpg-core --features physics-ab --example projectile_ccd_ab -- --trace-staggered
+```
+
+The probe launches MMORPG's real level-six Rogue bomb with the wall and boars from
+`tests/thrown_weapons.rs`, then runs an isolated persistent CCD sphere in **shadow**
+at the same position and velocity. It checks the real fuse, splash/cover result,
+first 60 Hz multi-impact ricochet and bit-exact replay on each arm. It reports
+position divergence at the fuse, because the game uses a point sweep with one
+bounce per tick and fixed per-bounce velocity scaling, while physical CCD uses a
+finite radius, impulse restitution and Coulomb friction. A position difference is
+not automatically an engine defect.
+
+The example also measures 160 complete game-zone ticks with the same number of
+game projectiles on each arm, **plus** optional shadow dynamic bodies. Separate
+shadow-step times and distinct candidate-pair, narrow-phase, exact sweep-query,
+admitted-impact and fallback counts distinguish CCD
+work from ordinary dynamic integration. Its 1/8/16/24/32-body matrix includes
+a 32-body staggered case; cloned simultaneous throws are an intentionally
+synthetic worst case, not proof of gameplay-legal rapid casts. Timings are
+informational on a shared machine, not CI gates; setup is excluded. The shadow
+world reproduces the arena wall and floor, not the full zone geometry, unit
+contacts or live movement. Thus measured additional CPU is **not** a prediction
+of the finished adapter's total cost.
+
+`--trace-staggered` is an untimed diagnostic for the 32-bomb case. It steps the
+full staggered shadow world alongside 32 isolated single-bomb worlds at identical
+lane offsets, printing admitted impacts and exact sweeps by tick, isolated
+impact/sweep totals, contact-start counts, and each lane's first bitwise
+shared-versus-isolated pose/velocity divergence **and maximum absolute drift**.
+This helps distinguish genuine
+cross-bomb interactions from unrelated scheduler work before attributing changes
+in aggregate impact counts to a CCD regression. Contact starts are **pair-ordered
+transitions**, not chronological impacts, and shared admitted-impact counts do
+not identify the exact projectile without a chronological impact-report API.
+
+The missing integration contracts are stable projectile-ID ↔ engine-body mapping,
+resynchronizing world geometry and moving units, exact projectile pose/velocity
+and any rotational/contact state needed on restore, applying gameplay collision
+filters, and chronological impact data (TOI/position/normal) for game-owned
+damage, shields, bounce limits, fuse and lifetime. The current
+`Report::contact_events` contains pair-ordered contact transitions, **not** a
+chronological impact stream. No CCD collision determines an MMORPG gameplay
+outcome in this experiment; the game's swept-point projectile rules remain authoritative.
+
 ## Consumer contact workload diagnostic (physics-engine #443)
 
 The existing manual A/B example now reports **complete 60 Hz zone ticks**, the portion spent
