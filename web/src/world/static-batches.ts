@@ -180,7 +180,7 @@ export class StaticBatches {
  * replaces with its shared shadow material, as it does each opaque `LitMaterial` (drawing both faces when it is
  * double-sided).
  */
-const SHADOW_ONLY = (() => {
+export const SHADOW_ONLY = (() => {
   const material = (doubleSided: boolean) => {
     const shadow = new LitMaterial({ doubleSided });
     shadow.name = doubleSided ? "shadow-only:double" : "shadow-only";
@@ -194,7 +194,7 @@ const SHADOW_ONLY = (() => {
  * Whether the shadow views draw `material`'s casters with their shared material, single- or double-sided: an opaque
  * `LitMaterial`. A masked or blended one cuts its shadow out by its own texture, so it casts by itself.
  */
-function castsWithSharedShadow(material: THREE.Material): "single" | "double" | null {
+export function castsWithSharedShadow(material: THREE.Material): "single" | "double" | null {
   const lit = material as { isLitMaterial?: boolean; alphaMode?: string; doubleSided?: boolean };
   if (lit.isLitMaterial !== true || lit.alphaMode !== "opaque") { return null; }
   return lit.doubleSided === true ? "double" : "single";
