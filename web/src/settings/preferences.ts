@@ -10,7 +10,7 @@ import type {
 /**
  * MMORPG's browser settings catalog over the shared `settings` foundation. The session owns
  * validation, overrides, reset and the portable `User` snapshot; the client only applies the
- * effective values (camera, look, motion, audio). Every entry is a real client capability; nothing here
+ * effective values (camera, look, motion, audio, render resolution). Every entry is a real client capability; nothing here
  * reaches zone authority. Key bindings are not settings values: `input-bindings` owns them.
  */
 export const SETTING = {
@@ -22,10 +22,18 @@ export const SETTING = {
   effectsVolume: "audio.effects_volume",
   uiVolume: "audio.ui_volume",
   muted: "audio.muted",
+  renderResolution: "graphics.render_resolution",
 } as const;
 
 export const MOTION_CHOICES = ["system", "reduce", "full"] as const;
 export type MotionPreference = (typeof MOTION_CHOICES)[number];
+
+/**
+ * The most canvas pixels drawn per CSS pixel for each render-resolution choice. GPU time scales with the pixel count:
+ * Greyhaven at 2560×1440 on a 2× display measured 27 ms a frame at 2× and 17 ms at 1.5× (RTX 3060 Ti).
+ */
+export const RENDER_RESOLUTION_PIXEL_RATIO = { performance: 1, balanced: 1.5, sharp: 2 } as const;
+export type RenderResolution = keyof typeof RENDER_RESOLUTION_PIXEL_RATIO;
 
 if (catalog.schema_version !== 1) throw new Error("Unsupported MMORPG settings catalog");
 const browserEntries = catalog.entries.filter((entry) => entry.target === "shared" || entry.target === "browser");
@@ -52,6 +60,8 @@ export type ClientPreferences = {
   lookSensitivity: number;
   invertVerticalLook: boolean;
   reduceMotion: MotionPreference;
+  /** Most canvas pixels per CSS pixel (`RENDER_RESOLUTION_PIXEL_RATIO`). */
+  maxPixelRatio: number;
   /** Volume percentages and mute for the game-audio mixer (#447). */
   audio: { masterVolume: number; effectsVolume: number; uiVolume: number; muted: boolean };
 };
@@ -68,15 +78,21 @@ function isMotionPreference(value: unknown): value is MotionPreference {
   return (MOTION_CHOICES as readonly unknown[]).includes(value);
 }
 
+function isRenderResolution(value: unknown): value is RenderResolution {
+  return typeof value === "string" && Object.hasOwn(RENDER_RESOLUTION_PIXEL_RATIO, value);
+}
+
 export function clientPreferences(values: Readonly<Record<string, SettingValue>>): ClientPreferences {
   const motion = values[SETTING.reduceMotion];
   const inverted = values[SETTING.invertVerticalLook];
   const muted = values[SETTING.muted];
+  const resolution = values[SETTING.renderResolution];
   return {
     fieldOfViewDegrees: numberValue(values[SETTING.fieldOfView], 50),
     lookSensitivity: numberValue(values[SETTING.lookSensitivity], 1),
     invertVerticalLook: inverted?.type === "bool" && inverted.value === true,
     reduceMotion: motion?.type === "choice" && isMotionPreference(motion.value) ? motion.value : "system",
+    maxPixelRatio: RENDER_RESOLUTION_PIXEL_RATIO[resolution?.type === "choice" && isRenderResolution(resolution.value) ? resolution.value : "balanced"],
     audio: {
       masterVolume: numberValue(values[SETTING.masterVolume], 80),
       effectsVolume: numberValue(values[SETTING.effectsVolume], 100),
