@@ -1,6 +1,6 @@
 # Over-the-shoulder movement, focus and aiming
 
-**Status:** approved product intent, **not yet the implemented default controls**. Implementation: [focus camera and strafing #650](https://github.com/moenarch-games/mmorpg/issues/650), [temporary manual aim #649](https://github.com/moenarch-games/mmorpg/issues/649), existing [attack-input gestures #636](https://github.com/moenarch-games/mmorpg/issues/636). Canonical decisions: [Decision Atlas](decisions/atlas.md), entries `5.2.i650`, `5.2.i649` and `5.2.i649-2` (open question).
+**Status:** approved product intent, **not yet the implemented default controls**. Implementation: [focus camera and strafing #650](https://github.com/moenarch-games/mmorpg/issues/650), [temporary manual aim #649](https://github.com/moenarch-games/mmorpg/issues/649), existing [attack-input gestures #636](https://github.com/moenarch-games/mmorpg/issues/636). Canonical decisions: [Decision Atlas](decisions/atlas.md), entries `5.2.i650`, `5.2.i649`, the preserved question `5.2.i649-2`, and its answer `5.2.i649-3`.
 
 This describes the desired *feel* of Greyhaven combat, not a claim about the current native or Pages implementation. The current drag-orbit controls, left-click immediate swing and right-click entity selection are documented in [NATIVE_CLIENT.md](NATIVE_CLIENT.md) and [README.md](../README.md).
 
@@ -49,7 +49,14 @@ The table classifies intended input semantics; it does not silently change all c
 4. Deliberately confirm the throw; send an ordinary authoritatively validated ability intent. It may land away from the focused wolf and may miss or be obstructed.
 5. Restore the previous focus, facing assistance, free cursor and target-framing camera smoothly. If there was no valid focus, return to mouse-look exploration instead.
 
-A cancel, blur, blocking panel, device/remap/context change or refused throw must retire the aim cleanly **without a phantom attack or stuck pointer capture**. A manually aimed ability does not globally impose hold-to-release on ordinary immediate attacks. The exact user-facing throw confirmation (hold key then release versus press to arm and click to confirm) remains an explicit product question; see Atlas `5.2.i649-2` and [#649](https://github.com/moenarch-games/mmorpg/issues/649).
+### Throw confirmation (owner-approved)
+
+Both interaction styles are available as configurable options for manually aimed grenades, using the existing input/settings system:
+
+- **Default — hold to aim, release to throw:** holding the grenade ability enters shoulder-camera mouse aim; deliberate key release commits the throw. A quick tap can throw immediately along the current aim.
+- **Alternative — press to aim, click to throw:** pressing the ability enters an armed aim state; an intentional left-click confirms the grenade.
+
+A cancel, blur, blocking panel, device/remap/context change or refused throw must retire either style cleanly **without a phantom attack or stuck pointer capture**. Forced key release is never a deliberate throw. Neither style changes the existing immediate sword swing or automatically makes every skill held. This answers Atlas Question `5.2.i649-2` through Decision `5.2.i649-3` ([#649](https://github.com/moenarch-games/mmorpg/issues/649)).
 
 ## Ownership and implementation order
 
