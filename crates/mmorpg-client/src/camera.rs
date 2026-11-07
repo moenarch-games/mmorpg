@@ -1,6 +1,7 @@
-//! Third-person orbit camera around the local character. Presentation only:
+//! Third-person shoulder camera around the local character. Presentation only:
 //! its heading becomes movement intent, but never an authoritative position.
 use crate::presentation::yaw_from_radians;
+use mmorpg_core::EntityRef;
 
 /// The camera pivots around the character's upper body, not its feet.
 const PIVOT_HEIGHT_METRES: f32 = 0.6;
@@ -12,6 +13,65 @@ const MAX_PITCH_RADIANS: f32 = 1.45;
 const ORBIT_RADIANS_PER_PIXEL: f32 = 0.006;
 /// Each wheel line changes the distance by this factor.
 const ZOOM_STEP: f32 = 0.88;
+const SHOULDER_OFFSET_METRES: f32 = 0.65;
+const FOCUS_TURN_RATE: f32 = 10.0;
+const FOCUS_FRAMING_RATE: f32 = 7.0;
+const FOCUS_FRAMING_METRES: f32 = 3.0;
+
+/// A selected NPC is still a selection, but not an enemy camera focus.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CameraMode {
+    #[default]
+    FreeLook,
+    Focus(EntityRef),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PointerOwner {
+    Camera,
+    Interface,
+    Gesture,
+}
+
+/// Small client-only transition model: the input runtime still owns bindings and held keys.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CameraControl {
+    mode: CameraMode,
+    cursor_released: bool,
+}
+
+impl CameraControl {
+    pub fn mode(&self) -> CameraMode {
+        self.mode
+    }
+
+    pub fn set_focus(&mut self, target: Option<EntityRef>) {
+        let next = target.map_or(CameraMode::FreeLook, CameraMode::Focus);
+        if self.mode != next {
+            self.mode = next;
+            // Native can recapture on returning to free look, without a second click.
+            self.cursor_released = false;
+        }
+    }
+
+    pub fn release_cursor(&mut self) {
+        self.cursor_released = true;
+    }
+
+    pub fn request_look(&mut self) {
+        self.cursor_released = false;
+    }
+
+    pub fn pointer_owner(&self, gesture: bool, interface: bool) -> PointerOwner {
+        if gesture {
+            PointerOwner::Gesture
+        } else if interface || self.cursor_released || self.mode != CameraMode::FreeLook {
+            PointerOwner::Interface
+        } else {
+            PointerOwner::Camera
+        }
+    }
+}
 
 /// Eye and look-at point for one rendered frame, in metres.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -32,6 +92,7 @@ pub struct OrbitCamera {
     yaw: f32,
     pitch: f32,
     distance: f32,
+    framing: [f32; 3],
 }
 
 impl Default for OrbitCamera {
@@ -44,6 +105,7 @@ impl Default for OrbitCamera {
             yaw: 0.0,
             pitch: 0.42,
             distance: 12.0,
+            framing: [0.0; 3],
         }
     }
 }
@@ -90,6 +152,25 @@ impl OrbitCamera {
         }
     }
 
+    /// Follow the projected opponent in the shortest direction; blend out framing on clear.
+    pub fn track(&mut self, self_position: [f32; 3], opponent: Option<[f32; 3]>, dt: f32) {
+        let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+        if let Some(opponent) = opponent {
+            let desired = (opponent[0] - self_position[0]).atan2(opponent[2] - self_position[2]);
+            let difference = (desired - self.yaw).sin().atan2((desired - self.yaw).cos());
+            self.look_along(self.yaw + difference * (1.0 - (-FOCUS_TURN_RATE * dt).exp()));
+        }
+        let delta = opponent.map_or([0.0; 3], |point| {
+            std::array::from_fn(|axis| point[axis] - self_position[axis])
+        });
+        let scale = (FOCUS_FRAMING_METRES / delta[0].hypot(delta[2]).max(1e-6)).min(1.0);
+        let desired = [delta[0] * scale * 0.35, delta[1] * 0.2, delta[2] * scale * 0.35];
+        let blend = 1.0 - (-FOCUS_FRAMING_RATE * dt).exp();
+        for (current, target) in self.framing.iter_mut().zip(desired) {
+            *current += (target - *current) * blend;
+        }
+    }
+
     /// Raise the eye above the actual rendered terrain, preserving the target.
     #[must_use]
     pub fn view_above_ground(
@@ -124,14 +205,18 @@ impl OrbitCamera {
 
     #[must_use]
     pub fn view(&self, focus: [f32; 3]) -> CameraView {
-        let target = [focus[0], focus[1] + PIVOT_HEIGHT_METRES, focus[2]];
+        let target = [
+            focus[0] + self.framing[0],
+            focus[1] + PIVOT_HEIGHT_METRES + self.framing[1],
+            focus[2] + self.framing[2],
+        ];
         let horizontal = self.distance * self.pitch.cos();
         CameraView {
             field_of_view_degrees: self.field_of_view_degrees,
             eye: [
-                target[0] - self.yaw.sin() * horizontal,
-                target[1] + self.distance * self.pitch.sin(),
-                target[2] - self.yaw.cos() * horizontal,
+                focus[0] - self.yaw.sin() * horizontal + self.yaw.cos() * SHOULDER_OFFSET_METRES,
+                focus[1] + PIVOT_HEIGHT_METRES + self.distance * self.pitch.sin(),
+                focus[2] - self.yaw.cos() * horizontal - self.yaw.sin() * SHOULDER_OFFSET_METRES,
             ],
             target,
         }
@@ -156,10 +241,10 @@ mod tests {
             "the eye is behind the character"
         );
         assert!(view.eye[1] > view.target[1], "and above it");
-        assert!((view.eye[0] - view.target[0]).abs() < 1e-4);
+        assert!(view.eye[0] > view.target[0], "the eye sits over the right shoulder");
         let offset: [f32; 3] = std::array::from_fn(|axis| view.eye[axis] - view.target[axis]);
         let length = offset.iter().map(|value| value * value).sum::<f32>().sqrt();
-        assert!((length - camera.distance()).abs() < 1e-4);
+        assert!(length > camera.distance());
         assert_eq!(camera.facing(), 0);
     }
 
@@ -224,5 +309,49 @@ mod tests {
         assert_eq!(camera.distance(), MAX_DISTANCE_METRES);
         camera.zoom(f32::NAN);
         assert_eq!(camera.distance(), MAX_DISTANCE_METRES);
+    }
+
+    #[test]
+    fn enemy_focus_switches_and_releases_without_a_camera_snap() {
+        let mut camera = OrbitCamera::default();
+        let before = camera.view([0.0, 1.0, 0.0]);
+        camera.track([0.0, 1.0, 0.0], Some([8.0, 1.0, 0.0]), 1.0 / 60.0);
+        assert!(camera.yaw() > 0.0 && camera.yaw() < std::f32::consts::FRAC_PI_2);
+        assert!(camera.view([0.0, 1.0, 0.0]).target[0] > before.target[0]);
+        for _ in 0..90 {
+            camera.track([0.0, 1.0, 0.0], Some([8.0, 1.0, 0.0]), 1.0 / 60.0);
+        }
+        assert!((camera.yaw() - std::f32::consts::FRAC_PI_2).abs() < 0.001);
+        camera.track([0.0, 1.0, 0.0], Some([-8.0, 1.0, 0.0]), 1.0 / 60.0);
+        assert!(camera.yaw() < std::f32::consts::FRAC_PI_2 + 0.5);
+        let released_heading = camera.yaw();
+        camera.track([0.0, 1.0, 0.0], None, 1.0 / 60.0);
+        assert_eq!(camera.yaw(), released_heading);
+        for _ in 0..90 {
+            camera.track([0.0, 1.0, 0.0], None, 1.0 / 60.0);
+        }
+        assert!(camera.view([0.0, 1.0, 0.0]).target[0].abs() < 0.001);
+    }
+
+    #[test]
+    fn pointer_ownership_tracks_free_look_focus_gesture_and_ui_retirement() {
+        let first = EntityRef::Creature(mmorpg_core::CreatureId::new(108));
+        let second = EntityRef::Creature(mmorpg_core::CreatureId::new(300));
+        let mut state = CameraControl::default();
+        assert_eq!(state.pointer_owner(false, false), PointerOwner::Camera);
+        state.set_focus(Some(first));
+        assert_eq!(state.mode(), CameraMode::Focus(first));
+        assert_eq!(state.pointer_owner(false, false), PointerOwner::Interface);
+        assert_eq!(state.pointer_owner(true, false), PointerOwner::Gesture);
+        state.set_focus(Some(second));
+        assert_eq!(state.mode(), CameraMode::Focus(second));
+        state.set_focus(None);
+        assert_eq!(state.mode(), CameraMode::FreeLook);
+        assert_eq!(state.pointer_owner(false, false), PointerOwner::Camera);
+        state.release_cursor();
+        assert_eq!(state.pointer_owner(false, false), PointerOwner::Interface);
+        state.request_look();
+        assert_eq!(state.pointer_owner(false, true), PointerOwner::Interface);
+        assert_eq!(state.pointer_owner(false, false), PointerOwner::Camera);
     }
 }

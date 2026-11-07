@@ -27,6 +27,15 @@ export function nextTabTarget(snapshot: ZoneSnapshot): EntityRef | null {
   return candidates[(current + 1) % candidates.length]?.target ?? null;
 }
 
+/** Only a living, projected opponent can own combat camera focus. NPC dialogue is not focus. */
+export function combatFocus(snapshot: ZoneSnapshot): EntityRef | null {
+  const selected = snapshot.viewer.target;
+  if (!selected || snapshot.viewer.dead) { return null; }
+  const entity = snapshot.entities.find((candidate) => candidate.kind === selected.kind && candidate.entityId === selected.id);
+  return entity && (entity.kind === "creature" || entity.kind === "player") && entity.flags.attackable && !entity.flags.dead
+    ? selected : null;
+}
+
 /** Small hand movements should not cancel an intentional click. */
 export const CLICK_SLOP_PIXELS = 6;
 export const TOUCH_CLICK_SLOP_PIXELS = 12;

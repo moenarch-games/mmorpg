@@ -22,8 +22,11 @@ import {
   PIXELS_PER_WHEEL_LINE,
   clearSightLine,
   movementInput,
+  pointerOwner,
+  type CameraMode,
   type DragMode,
   type HeldIntent,
+  type PointerOwner,
   type Vec3,
 } from "./orbit-camera";
 import { SceneryFrame, buildSceneryScene, type SceneryScene } from "./scenery-nodes";
@@ -58,7 +61,7 @@ import { QuestPanel, type MarkerPoint, type QuestElements } from "./units/quest-
 import { ChatFrame, type ChatElements } from "./units/chat-frame";
 import { nearestAnimal, projectedUnit, type ProjectedUnit } from "./units/projected-units";
 import { ProgressionHud } from "./units/progression-hud";
-import { PointerClick, SecondaryClick } from "./units/targeting";
+import { PointerClick, SecondaryClick, combatFocus } from "./units/targeting";
 import { WorldPicking } from "./units/world-picking";
 import { QuaterniusUnits, type FaceFeature, type Hair, type Headwear } from "./units/quaternius-units";
 import type { ContentCatalog } from "./catalog";
@@ -370,6 +373,7 @@ export class WorldView {
   readonly #chat: ChatFrame;
   readonly #intents: { intent: Intent; onSent: ((sequence: number | null) => void) | undefined }[] = [];
   readonly #secondaryClick = new SecondaryClick();
+  #lockedSecondaryTravel = 0;
   readonly #primaryClick = new PointerClick(0);
   #lastLinkConnected = true;
   #presentationTime: number | null = null;
@@ -397,6 +401,9 @@ export class WorldView {
   #minimap: Minimap | null = null;
   #buildMs = 0;
   #orbit = new OrbitCamera();
+  #cameraMode: CameraMode = { kind: "free-look" };
+  #pointerOwner: PointerOwner = "interface";
+  #lastPointerRelease = -Infinity;
   #drag: Drag | null = null;
   /** Fingers on the canvas, and the spread of a two-finger pinch zoom in progress (#434). */
   readonly #touches = new Map<number, { x: number; y: number }>();
@@ -579,6 +586,8 @@ export class WorldView {
     // The most recent press owns the pointer gesture (Atlas 5.2.37): the sword lowers a held guard.
     this.endGuard();
     this.#strikeAim.begin();
+    this.#releasePointerLock();
+    this.#updatePointerOwner();
     this.#classHud.showStrikeAim(this.#strikeAim.aim());
     // The sword winds up while the player aims (Atlas 6.6.10), toward the aimed slash (#582);
     // only the zone's strike swings it.
@@ -598,6 +607,7 @@ export class WorldView {
   releaseDirectedStrike(): void {
     const aim = this.#strikeAim.release();
     this.#classHud.showStrikeAim(null);
+    this.#updatePointerOwner();
     const catalog = this.#catalog;
     if (!aim || !catalog) {
       this.#units?.units.abandonPreparation();
@@ -613,6 +623,7 @@ export class WorldView {
   cancelDirectedStrike(): void {
     this.#strikeAim.cancel();
     this.#classHud.showStrikeAim(null);
+    this.#updatePointerOwner();
     this.#units?.units.abandonPreparation();
   }
 
@@ -663,6 +674,8 @@ export class WorldView {
     }
     this.cancelDirectedStrike();
     this.#guardHold.begin();
+    this.#releasePointerLock();
+    this.#updatePointerOwner();
     this.#sendGuardLane();
   }
 
@@ -671,6 +684,7 @@ export class WorldView {
     if (this.#guardHold.end()) {
       this.queueIntent(() => guardCommand(null));
     }
+    this.#updatePointerOwner();
   }
 
   #sendGuardLane(): void {
@@ -685,6 +699,8 @@ export class WorldView {
     this.cancelDirectedStrike();
     this.#guardHold.end();
     this.#orbit = new OrbitCamera();
+    this.#cameraMode = { kind: "free-look" };
+    this.#updatePointerOwner();
     // Keep the zone's facing: the first intent must not turn a character that entered facing elsewhere.
     const own = projection?.entities.find((entity) => entity.kind === "player" && entity.entityId === projection.viewerId);
     this.#movementFacing = own?.facing ?? this.#orbit.facing();
@@ -761,6 +777,8 @@ export class WorldView {
   }
 
   leave(): void {
+    this.cancelPointer();
+    this.#cameraMode = { kind: "free-look" };
     this.cancelDirectedStrike();
     this.#impacts.clear();
     this.#guardHold.end();
@@ -980,6 +998,7 @@ export class WorldView {
 
   /** Focuses the chat field; typing there releases held movement. */
   openChat(): void {
+    this.#releasePointerLock();
     this.#chat.open();
   }
 
@@ -1000,7 +1019,8 @@ export class WorldView {
   }
 
   #input({ held, jumps, rolls }: WorldInput): MovementInput {
-    const input = movementInput(held, this.#orbit.facing(), this.#movementFacing, jumps, this.#drag?.mode ?? "none");
+    const input = movementInput(held, this.#orbit.facing(), this.#movementFacing, jumps, this.#drag?.mode ?? "none",
+      this.#cameraMode.kind === "focused" || this.#pointerOwner === "camera");
     this.#movementFacing = input.facing;
     return rolls === undefined ? input : { ...input, rolls };
   }
@@ -1059,6 +1079,7 @@ export class WorldView {
       throw new Error("The world source has no projection for the joined player.");
     }
     this.#lastProjection = projection;
+    this.#syncCameraMode(projection);
     // Death already lowered the guard in the zone; a later life needs a new press.
     if (projection.viewer.dead) {
       this.#guardHold.end();
@@ -1078,6 +1099,7 @@ export class WorldView {
         }
       }
     }
+    if (this.panelOpen) { this.#releasePointerLock(); }
     const animate = this.#animate;
     this.#seconds += deltaSeconds;
     if (this.#units?.viewerId !== projection.viewerId) {
@@ -1157,6 +1179,9 @@ export class WorldView {
     if (!self) {
       throw new Error("The projection is missing the viewer's own unit.");
     }
+    const opponent = this.#cameraMode.kind === "focused"
+      ? anchors.get(entityKey(this.#cameraMode.target)) : undefined;
+    this.#orbit.track(self.focus, opponent ? [opponent.x, opponent.feetY + 1, opponent.z] : null, deltaSeconds);
     this.#combatHud.update(projection, catalog, now);
     this.#classHud.update(projection, catalog, now);
     this.#progressionHud.update(projection, now);
@@ -1360,8 +1385,13 @@ export class WorldView {
 
   pointerDown(event: PointerEvent): void {
     // A click or drag supersedes an aimed strike that has not been released.
+    const wasAiming = this.#strikeAim.active;
     this.cancelDirectedStrike();
+    if (wasAiming) { return; } // Cancellation is never also a sword attack.
     if (event.pointerType === "touch") {
+      // A finger supersedes mouse capture; existing touch drag/pinch stays authoritative.
+      this.#releasePointerLock();
+      this.#updatePointerOwner();
       this.#touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
       // A second finger turns the look drag into a pinch zoom; neither finger selects.
       if (this.#touches.size === 2 && this.#drag) {
@@ -1375,10 +1405,24 @@ export class WorldView {
         return;
       }
     }
-    // The left mouse button swings at once where the character faces (#517); held, it still
-    // orbits the view. Selection moved to a right click that never became a turn drag.
+    if (event.pointerType === "mouse" && this.#cameraMode.kind === "free-look"
+      && this.#pointerOwner === "interface" && event.button === 0 && !this.#strikeAim.active && !this.#guardHold.active) {
+      // Browsers require a deliberate user gesture to recapture after UI/focus/Escape.
+      void this.#elements.canvas.requestPointerLock().catch(() => {});
+      return;
+    }
+    // A captured left click swings immediately where the character faces (#517).
     if (event.button === 0 && event.pointerType !== "touch") {
       this.swing();
+    }
+    if (this.#pointerOwner === "camera" && event.pointerType !== "touch") {
+      this.#secondaryClick.down(event);
+      this.#lockedSecondaryTravel = 0;
+      return;
+    }
+    if (this.#cameraMode.kind === "focused" && event.pointerType === "mouse") {
+      this.#secondaryClick.down(event);
+      return;
     }
     if (this.#drag || (event.button !== 0 && event.button !== 2)) {
       return;
@@ -1401,6 +1445,57 @@ export class WorldView {
     this.cancelDirectedStrike();
     this.endGuard();
     this.#endDrag();
+    this.#releasePointerLock();
+    this.#updatePointerOwner();
+  }
+
+  /** Pointer Lock is browser-owned: the presentation only requests it during user input. */
+  pointerLockChanged(): void {
+    if (this.#pointerOwner === "camera" && document.pointerLockElement !== this.#elements.canvas) {
+      this.#lastPointerRelease = performance.now();
+    }
+    this.#updatePointerOwner();
+  }
+
+  /** Escape clears combat focus before the ordinary leave-world action. */
+  clearCombatFocus(): boolean {
+    if (this.#cameraMode.kind !== "focused") { return false; }
+    this.queueIntent(() => ({ kind: "select-target", target: null }));
+    return true;
+  }
+
+  releaseFreeLook(): boolean {
+    if (this.#pointerOwner === "camera") {
+      this.#releasePointerLock();
+      return true;
+    }
+    // Some browsers consume the Escape used to unlock before dispatching its key event.
+    return this.#cameraMode.kind === "free-look" && performance.now() - this.#lastPointerRelease < 300;
+  }
+
+  #releasePointerLock(): void {
+    if (document.pointerLockElement === this.#elements.canvas) {
+      document.exitPointerLock();
+    }
+  }
+
+  #updatePointerOwner(): void {
+    this.#pointerOwner = pointerOwner(this.#cameraMode, document.pointerLockElement === this.#elements.canvas,
+      this.#strikeAim.active || this.#guardHold.active);
+    this.#elements.canvas.dataset.pointerOwner = this.#pointerOwner;
+  }
+
+  #syncCameraMode(projection: ZoneSnapshot): void {
+    const target = combatFocus(projection);
+    if (this.#cameraMode.kind === "focused" && !target && sameEntity(projection.viewer.target, this.#cameraMode.target)) {
+      // A dead/despawned target must not become a phantom focus on a later projection.
+      this.queueIntent(() => ({ kind: "select-target", target: null }));
+    }
+    if (!target && this.#cameraMode.kind === "free-look") { return; }
+    if (target && this.#cameraMode.kind === "focused" && sameEntity(target, this.#cameraMode.target)) { return; }
+    this.#cameraMode = target ? { kind: "focused", target } : { kind: "free-look" };
+    if (target) { this.#releasePointerLock(); }
+    this.#updatePointerOwner();
   }
 
   pointerMove(event: PointerEvent): void {
@@ -1413,6 +1508,12 @@ export class WorldView {
     this.#guardHold.track(event.clientY, this.#drag !== null);
     if (this.#guardHold.active) {
       this.#sendGuardLane();
+    }
+    if (this.#pointerOwner === "camera" && event.pointerType !== "touch") {
+      this.#lockedSecondaryTravel += Math.hypot(event.movementX, event.movementY);
+      if (this.#lockedSecondaryTravel > 6) { this.#secondaryClick.reset(); }
+      this.#orbit.orbit(event.movementX * this.#lookSensitivity, event.movementY * this.#lookSensitivity);
+      return;
     }
     this.#secondaryClick.move(event);
     this.#primaryClick.move(event);
@@ -1438,6 +1539,15 @@ export class WorldView {
   }
 
   pointerEnd(event: PointerEvent): void {
+    if (this.#pointerOwner === "camera" && event.pointerType !== "touch") {
+      if (this.#secondaryClick.end(event)) { this.#selectAt(event, true); }
+      this.#lockedSecondaryTravel = 0;
+      return;
+    }
+    if (this.#cameraMode.kind === "focused" && event.pointerType === "mouse") {
+      if (this.#secondaryClick.end(event)) { this.#selectAt(event, false); }
+      return;
+    }
     if (this.#touches.delete(event.pointerId) && this.#pinch !== null) {
       // Lifting either pinch finger ends the gesture; the other finger must lift before a new drag.
       this.#pinch = null;
@@ -1460,34 +1570,38 @@ export class WorldView {
     // button swings instead).
     const tapped = this.#primaryClick.end(event) && event.pointerType === "touch";
     if (this.#secondaryClick.end(event) || tapped) {
-      const rect = this.#elements.canvas.getBoundingClientRect();
-      const point = new THREE.Vector2(
-        ((event.clientX - rect.left) / rect.width) * 2 - 1,
-        1 - ((event.clientY - rect.top) / rect.height) * 2,
-      );
-      // Every other living player is selectable: a foe to attack or a friend to heal and shield (#303).
-      const viewerId = this.#lastProjection?.viewerId;
-      const selectablePlayers = new Set(this.#lastProjection?.entities
-        .filter((entity) => entity.kind === "player" && entity.entityId !== viewerId && !entity.flags.dead)
-        .map((entity) => entity.entityId) ?? []);
-      const picked = this.#picking.pick(point, this.#camera, this.#lastSceneryNodes, this.#lastUnitNodes, this.#lastInstanceBatches, this.#models.pickables(), this.#inn?.pickables(), selectablePlayers, { width: rect.width, height: rect.height, pointerType: event.pointerType });
-      this.#pendingNpc = null;
-      // A click on the door leaf asks the zone to swing it; the zone checks reach (#158).
-      if (picked?.kind === "door") {
-        this.queueIntent((projection) => doorToggle(projection, picked.id));
-      }
-      const target = picked?.kind === "door" ? null : picked;
-      if (target) {
-        this.queueIntent((projection) => projection.entities.some((entity) => entity.kind === target.kind && entity.entityId === target.id)
-          ? { kind: "select-target", target } : null, (sequence) => {
-          if (target.kind === "npc" && sequence !== null) {
-            this.#pendingNpc = { target, sequence };
-          }
-        });
-      }
+      this.#selectAt(event, false);
     }
     if (this.#drag?.pointerId === event.pointerId) {
       this.#endDrag();
+    }
+  }
+
+  #selectAt(event: PointerEvent, centred: boolean): void {
+    const rect = this.#elements.canvas.getBoundingClientRect();
+    const point = new THREE.Vector2(
+      centred ? 0 : ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      centred ? 0 : 1 - ((event.clientY - rect.top) / rect.height) * 2,
+    );
+    // Every other living player is selectable: a foe to attack or a friend to heal and shield (#303).
+    const viewerId = this.#lastProjection?.viewerId;
+    const selectablePlayers = new Set(this.#lastProjection?.entities
+      .filter((entity) => entity.kind === "player" && entity.entityId !== viewerId && !entity.flags.dead)
+      .map((entity) => entity.entityId) ?? []);
+    const picked = this.#picking.pick(point, this.#camera, this.#lastSceneryNodes, this.#lastUnitNodes, this.#lastInstanceBatches, this.#models.pickables(), this.#inn?.pickables(), selectablePlayers, { width: rect.width, height: rect.height, pointerType: event.pointerType });
+    this.#pendingNpc = null;
+    // A click on the door leaf asks the zone to swing it; the zone checks reach (#158).
+    if (picked?.kind === "door") {
+      this.queueIntent((projection) => doorToggle(projection, picked.id));
+    }
+    const target = picked?.kind === "door" ? null : picked;
+    if (target) {
+      this.queueIntent((projection) => projection.entities.some((entity) => entity.kind === target.kind && entity.entityId === target.id)
+        ? { kind: "select-target", target } : null, (sequence) => {
+        if (target.kind === "npc" && sequence !== null) {
+          this.#pendingNpc = { target, sequence };
+        }
+      });
     }
   }
 
@@ -1502,6 +1616,7 @@ export class WorldView {
     this.#pinch = null;
     this.#primaryClick.reset();
     this.#secondaryClick.reset();
+    this.#lockedSecondaryTravel = 0;
     const drag = this.#drag;
     if (drag && this.#elements.canvas.hasPointerCapture(drag.pointerId)) {
       this.#elements.canvas.releasePointerCapture(drag.pointerId);
@@ -1571,6 +1686,7 @@ export class WorldView {
       follow: () => {
         this.#flyTo = null;
       },
+      controls: () => ({ mode: this.#cameraMode, pointer: this.#pointerOwner, heading: this.#orbit.heading }),
       reliefAt: (x: number, z: number) => {
         if (!this.#reliefAt) {
           throw new Error("Scenery is not loaded");

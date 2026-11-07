@@ -1,8 +1,8 @@
 # Over-the-shoulder movement, focus and aiming
 
-**Status:** approved product intent, **not yet the implemented default controls**. Implementation: [focus camera and strafing #650](https://github.com/moenarch-games/mmorpg/issues/650), [temporary manual aim #649](https://github.com/moenarch-games/mmorpg/issues/649), existing [attack-input gestures #636](https://github.com/moenarch-games/mmorpg/issues/636). Canonical decisions: [Decision Atlas](decisions/atlas.md), entries `5.2.i650`, `5.2.i649`, the preserved question `5.2.i649-2`, and its answer `5.2.i649-3`.
+**Status:** the #650 camera/strafe foundation is implemented in this candidate branch, pending real-client acceptance. Temporary manual aiming [#649](https://github.com/moenarch-games/mmorpg/issues/649), radial menus [#653](https://github.com/moenarch-games/mmorpg/issues/653) and further attack-input ownership [#636](https://github.com/moenarch-games/mmorpg/issues/636) remain separate. Canonical decisions: [Decision Atlas](decisions/atlas.md), entries `5.2.i650`, `5.2.i649`, `5.2.i649-2`, and `5.2.i649-3`.
 
-This describes the desired *feel* of Greyhaven combat, not a claim about the current native or Pages implementation. The current drag-orbit controls, left-click immediate swing and right-click entity selection are documented in [NATIVE_CLIENT.md](NATIVE_CLIENT.md) and [README.md](../README.md).
+The first slice uses the existing camera and input bindings: mouse-look in free exploration (click the world to capture in browsers), an uncaptured cursor for enemy focus, Tab/right-click target switching, and Escape to clear focus. Native recaptures on clearing; browsers require a world click once Pointer Lock has been released. Touch drag and directional strike/guard input remain available. The sections below also describe *planned* temporary manual aiming and radial menus, not implemented behavior.
 
 ## Camera and locomotion
 

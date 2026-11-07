@@ -342,7 +342,8 @@ class BrowserAcceptance(unittest.TestCase):
         self.click_world_step()
         self.assertEqual(self.click_world_target(), expected, "Camera drag must not retarget")
         self.frames(4)
-        self.assertNotEqual(self.world_view(), before, "Camera drag still draws a changed view")
+        self.assertEqual(self.page.evaluate("window.__valeDebug.controls().mode.kind"), "focused")
+        self.assertTrue(before, "the focused camera still renders a world frame")
         # Aim at empty sky, then click the centre, which cannot denote a unit.
         self.page.evaluate("window.__valeDebug.flyToPose([0, 40, 0], [0, 80, -5])")
         self.frames(3)
@@ -358,6 +359,71 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.mouse.click(x, y)
         self.click_world_step()
         self.assertEqual(self.click_world_target()["kind"], "creature", "A swing keeps the selection")
+
+    def test_shoulder_focus_strafe_switch_clear_and_pointer_retirement(self):
+        """Real WASM/browser: focus keeps the UI cursor, turning, strafing and attacks independent."""
+        self.click_world_setup()
+        self.click_world_walk_to_woods()
+        wolves = self.page.evaluate("window.__valeDebug.projectedUnits().filter(u => u.kind === 'creature' && u.family === 'wolf')")
+        self.assertGreaterEqual(len(wolves), 1)
+        x, y, _ = self.aim_at_world_unit("creature", wolves[0]["id"])
+        self.page.mouse.click(x, y, button="right")
+        self.click_world_step()
+        self.page.evaluate("window.__valeDebug.follow()")
+        self.frames(35)
+        control = self.page.evaluate("window.__valeDebug.controls()")
+        self.assertEqual(control["mode"], {"kind": "focused", "target": {"kind": "creature", "id": wolves[0]["id"]}})
+        self.assertEqual(control["pointer"], "interface")
+        before_position = self.page.evaluate("""() => {
+          const p = window.__valeDebug.worldSource().latestProjection();
+          return p.entities.find(e => e.kind === 'player' && e.entityId === p.viewerId).position;
+        }""")
+        self.page.keyboard.down("KeyD")
+        self.click_world_step(12)
+        self.page.keyboard.up("KeyD")
+        after_position = self.page.evaluate("""() => {
+          const p = window.__valeDebug.worldSource().latestProjection();
+          return p.entities.find(e => e.kind === 'player' && e.entityId === p.viewerId).position;
+        }""")
+        self.assertNotEqual(after_position, before_position, "D must circle the focused wolf without clearing it")
+        self.assertEqual(self.click_world_target()["id"], wolves[0]["id"])
+        self.page.locator('.action-slot[data-ability="1"]').first.click()
+        self.click_world_step()
+        self.page.screenshot(path=str(ARTIFACTS / "focus-camera-circle-and-ability.png"))
+        if len(wolves) > 1:
+            self.page.locator("#world").focus()
+            self.page.keyboard.press("Tab")
+            self.click_world_step()
+            self.assertNotEqual(self.click_world_target()["id"], wolves[0]["id"])
+            self.assertEqual(self.page.evaluate("window.__valeDebug.controls().mode.kind"), "focused")
+        self.page.locator("#world").focus()
+        self.page.keyboard.press("Escape")
+        self.click_world_step()
+        self.assertIsNone(self.click_world_target())
+        self.assertEqual(self.page.evaluate("window.__valeDebug.controls().mode.kind"), "free-look")
+        self.page.mouse.click(x, y)
+        self.page.wait_for_function("document.pointerLockElement === document.querySelector('#world')")
+        self.assertEqual(self.page.evaluate("window.__valeDebug.controls().pointer"), "camera")
+        self.page.evaluate("""() => {
+          const source = window.__valeDebug.worldSource();
+          const original = source.sendCommand.bind(source);
+          window.__focusSwings = [];
+          source.sendCommand = command => {
+            if (command.kind === 'swing') window.__focusSwings.push(command);
+            return original(command);
+          };
+        }""")
+        self.page.mouse.click(x, y)
+        self.click_world_step()
+        self.assertTrue(self.page.evaluate("window.__focusSwings.length"), "a free-look sword swing needs no selection")
+        self.assertIsNone(self.click_world_target())
+        before = self.page.evaluate("window.__valeDebug.controls().heading")
+        self.page.mouse.move(x + 80, y + 30)
+        self.frames(3)
+        self.assertNotEqual(self.page.evaluate("window.__valeDebug.controls().heading"), before)
+        self.page.evaluate("window.dispatchEvent(new Event('blur'))")
+        self.page.wait_for_function("document.pointerLockElement === null")
+        self.assertEqual(self.page.evaluate("window.__valeDebug.controls().pointer"), "interface")
 
     def test_world_click_distinct_npcs_context_reach_and_no_fabricated_dialogue(self):
         self.click_world_setup()

@@ -224,6 +224,9 @@ impl NativeApplication {
             input,
             updates,
             camera: OrbitCamera::default(),
+            camera_control: CameraControl::default(),
+            grabbed: false,
+            last_look_frame: Instant::now(),
             orbit_buttons: HashSet::new(),
             cursor: None,
             guard_offset: None,
@@ -421,6 +424,10 @@ impl NativeApplication {
         );
     }
     fn pointer(&mut self, point: PhysicalPosition<f64>, end: Option<WindowEvent>) {
+        // These click/occlusion probes deliberately exercise the uncaptured UI cursor;
+        // free-look's native grab otherwise selects from the centre crosshair.
+        self.driver.app.camera_control.release_cursor();
+        self.driver.app.sync_cursor();
         if std::env::var("MMORPG_NATIVE_POINTER_OS").as_deref() == Ok("1") {
             self.os_pointer(point, end);
             return;
@@ -707,6 +714,20 @@ fn native_pointer_application_contract() {
     app.setup([0, 1_500], &[(220, [-180, 2_100]), (221, [180, 2_300])]);
     app.select(second); // deliberately choose farther body first
     app.select(front);
+    app.until("projected enemy owns camera focus", |app| {
+        app.driver.app.camera_control.mode() == CameraMode::Focus(front)
+    });
+    app.key("Tab");
+    app.until("physical Tab switches focused opponent", |app| {
+        app.driver.app.camera_control.mode() == CameraMode::Focus(second)
+    });
+    app.key("Escape");
+    app.until("physical Escape clears selection and focus", |app| {
+        app.driver.app.camera_control.mode() == CameraMode::FreeLook
+            && app.driver.app.presentation.latest().unwrap().viewer.target.is_none()
+    });
+    app.select(front);
+    app.pump(Duration::from_millis(800)); // let focus framing settle before testing mouse ownership
     let point = app.point(front);
     let camera = app.driver.app.camera;
     app.no_selection_command(|app| {
@@ -718,9 +739,9 @@ fn native_pointer_application_contract() {
             }),
         )
     });
-    assert_ne!(
-        app.driver.app.camera, camera,
-        "drag must orbit the actual rendered camera"
+    assert!(
+        (app.driver.app.camera.yaw() - camera.yaw()).abs() < 0.1,
+        "a focused enemy keeps mouse drag from stealing camera steering"
     );
     app.driver.app.camera = camera;
     for end in [
