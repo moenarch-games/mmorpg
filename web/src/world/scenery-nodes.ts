@@ -15,7 +15,7 @@ import type { Color, PropKind, Scenery } from "./scenery";
  * WASM export (`mmorpg.static-scene` v1) into renderer nodes once per content
  * revision and per frame only hides far groups and places animated parts.
  */
-export type CullClass = "always" | "far" | "mid" | "near";
+export type CullClass = "always" | "far" | "mid" | "near" | "detail";
 
 /** Beyond this camera distance (metres, to the group's bounding circle) a class is hidden. */
 export const CULL_DISTANCE_METRES: Readonly<Record<CullClass, number>> = {
@@ -23,6 +23,7 @@ export const CULL_DISTANCE_METRES: Readonly<Record<CullClass, number>> = {
   far: 420,
   mid: 150,
   near: 75,
+  detail: 30,
 };
 
 /** What the WASM module exposes about the shared static world. */
@@ -107,7 +108,7 @@ export type SceneryStats = {
 };
 
 const FORMAT = "mmorpg.static-scene";
-const CULLS: readonly CullClass[] = ["always", "far", "mid", "near"];
+const CULLS: readonly CullClass[] = ["always", "far", "mid", "near", "detail"];
 
 type GeometryEntry = {
   resourceKey: string; vertexOffset: number; vertexCount: number; colored: boolean; textured: boolean; weighted: boolean; indexOffset: number; indexCount: number;
