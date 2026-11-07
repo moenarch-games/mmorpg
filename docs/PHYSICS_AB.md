@@ -1,43 +1,56 @@
 # Physics backend A/B (physics-engine #330)
 
-Physics Engine is the default zone backend in native and WASM builds, including Greyhaven's
-authored convex rock hulls and Redbrand's static triangle meshes. Rapier remains selectable
-for whole-zone fallback and is the behaviour oracle (Atlas 2.1.i330). The `physics-ab` feature adds **test/bench-only**
-instrumentation for comparing both backends on the same zone simulation. Both backends are
-compiled normally; `mmorpg-core` alone selects them, and no host or client chooses a solver.
-`mmorpg-game-server/tests/dependency_boundary.rs` checks the dependency boundary.
+Production native and WASM builds compile only Physics Engine, including Greyhaven's
+convex rock hulls, Redbrand's static triangle meshes, free debris and upright movable props.
+Rapier is an optional independent behaviour/performance oracle behind the non-default
+`physics-ab` feature (Atlas 2.1.i647). That feature alone compiles Rapier and the explicit
+`World::with_backend`/`physics::using_backend` diagnostic selectors; production exposes no
+backend selector or fallback. Hosts and clients continue to use the same core simulation.
 
-The selection happens before the zone is built, and recovery makes the same selection from
-the same content. Greyhaven now uses Physics Engine's retained hulls and cave meshes for
-character movement, support, ray/projectile and static shape queries, retaining game body IDs
-and engine surface features. Primitive-only zones use Physics Engine for debris with two
-substeps and its default eight velocity-solver passes. The earlier four-pass adapter froze a
-crate panel on an edge above the accepted ground band (#643); eight passes satisfy the
-unchanged breakables/recovery fixture and settling thresholds. Debris in authored mesh/hull
-zones retains Rapier's dynamic-contact response until Engine supports those pairs.
-Movable props use Rapier's dynamic solver when the world contains an authored mesh or hull. Physics Engine
-does not support general dynamic box–mesh, box–hull, rotating rigid capsule–mesh or hull–hull
-response; these pairs are never sent to its unsupported rigid-body scheduler or silently
-approximated by boxes. `World::with_backend` still selects the complete Rapier zone for
-diagnostics and content that requires it. A/B fixtures use `physics::using_backend`.
+Zone construction and recovery always use Physics Engine outside diagnostics. Greyhaven uses its
+retained hulls and cave meshes for characters, support, ray/projectile and shape queries.
+Free-rotating debris and upright movable props also contact those exact shapes. Their two
+isolated response worlds retain static geometry and engine scratch, synchronize changed
+static bodies, and transfer canonical pieces in and out each tick. Units enter only the prop
+lane as temporary fixed capsules; the character world is separate. All temporary bodies are
+removed after stepping, so no hidden dynamic continuation state survives canonical recovery.
+`World::step_debris` and `World::step_props` take `&mut self`, making retained response
+state ownership explicit while keeping the zone `Send + Sync`. The game does not consume Engine contact events; this is a physical/game-state continuation
+claim, not a checkpoint event-stream claim (physics-engine #505).
 
-The debris integration retains Engine `943d0841`, including upstream #501/#502 for terrain
-seams and reconstruction. Static push-out derives from the physical pose, rather than a
-previous move's unchecked clearance hint; consumer recovery still reconstructs only from
-canonical game state.
+Authored response uses two substeps, four velocity iterations for debris and one for upright
+props, with sleeping disabled. Primitive-only debris preserves its existing eight-pass setup
+(the four-pass primitive fixture froze a panel on an edge, #643). These paths do not enable
+CCD. Unsupported future content still needs a demonstrated consumer requirement before its
+capabilities can be adopted; authored geometry is never reduced to bounds.
 
-Navigation and summon placement query the actual upright unit capsule against authored shapes.
-General box–mesh/hull overlap queries remain unsupported by Physics Engine; callers must not
-substitute bounding boxes for those shapes.
-
-The focused native/WASM-compatible `authored_backend` and `authored_collision` tests use
-the committed Redbrand JSON and Greyhaven rock proxies, with Rapier as the geometry oracle.
-The full browser cave traversal and GPU acceptance remain separate consumer checks.
+The native and WASM A/B runners execute the same Rust assertions and embedded fixtures:
+all 19 workloads, both backends, same-backend exact replay, exact canonical midpoint recovery,
+behaviour invariants and identical-state gameplay-query parity. The WASM runner builds a
+separate diagnostic `cdylib` example, then executes the actual `wasm32-unknown-unknown` module
+through wasm-bindgen in Bun. It also executes the same authored Redbrand/Greyhaven geometry
+checks as native. The production browser adapter exposes no backend selection API.
+Supported characters settle their current support gap before horizontal movement, matching
+the independent oracle. The support cast inflates the capsule by the contact offset so slopes
+measure the margin along the surface normal. The authored towpath departure regression checks
+both the grazing edge and the following landing in native and real WASM.
+Native/browser GPU acceptance remains separate from these physics checks.
 
 ```sh
-cargo test -p mmorpg-core --features physics-ab --test physics_ab -- --nocapture   # merge-blocking in CI
-cargo run --release -p mmorpg-core --example physics_ab --features physics-ab      # manual timing
+cargo test -p mmorpg-core --features physics-ab --test physics_ab --locked
+cargo test -p mmorpg-core --features physics-ab --test authored_backend --test authored_collision --locked
+bun scripts/physics-ab-wasm.ts
+cargo run --release -p mmorpg-core --example physics_ab --features physics-ab --locked
 ```
+
+The adoption pins Physics Engine `721a9298beca5096552215e14657056176e59a35`
+(kernels `e6067536`). The focused 360-tick authored fall cases compare independent Parry
+contact depth, require contact with the actual mesh/hull and settling on both backends, and
+preserve exact Engine replay and canonical midpoint continuation. Free rotations produce
+maximum pose differences of 26.60 units on the cave floor and 137.16 on the rock; upright
+pieces differ by at most 1.80 units. The nonembedding contract is the upstream authored oracle's
+0.5-unit allowance beyond Rapier's worst penetration, capped at five units. Existing 19-workload
+gameplay bounds remain unchanged.
 
 ## Consumer contact workload diagnostic (physics-engine #443)
 
@@ -66,7 +79,7 @@ The `physics-ab` Cargo feature is absent from normal production and WASM builds;
 itself is compiled into both.
 
 The Physics Engine adapter uses `World::move_characters` for characters, not its persistent
-`World::step`, and rebuilds a different short-lived world for debris/props. The pinned engine
+`World::step`, and uses isolated response worlds for debris/props. The pinned engine
 dependency does not expose per-body persistent cache occupancy. Consequently the table marks
 Rapier contact topology as unavailable for that backend: **Rapier retained pairs are not a
 measurement of Physics Engine cached contact pairs**, and a zero must not be invented for a

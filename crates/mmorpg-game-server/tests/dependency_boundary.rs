@@ -56,9 +56,9 @@ fn hosts_never_link_presentation_scenery() {
         graph.get(PRESENTATION),
         Some(&vec!["mmorpg-core", "serde", "serde_json", "strum"])
     );
-    assert!(reachable(&graph, PRESENTATION).contains("rapier3d"));
+    assert!(reachable(&graph, PRESENTATION).contains("physics-engine"));
     let host = reachable(&graph, "mmorpg-game-server");
-    assert!(host.contains("game-server") && host.contains("rapier3d"));
+    assert!(host.contains("game-server") && host.contains("physics-engine"));
     // `mmorpg-wasm` is absent on purpose: it is also the browser's
     // presentation adapter and exports scenery, while its local zone host
     // never reads it (checked in mmorpg-wasm/src/scenery.rs).
@@ -111,7 +111,7 @@ fn the_client_model_holds_only_client_rules_over_core() {
 }
 
 /// Physics Engine is a normal dependency of core, shared by native/WASM production;
-/// Rapier stays available there as a fallback and test oracle. Only core owns the choice.
+/// Rapier is optional and enabled only by the independent A/B diagnostic feature.
 #[test]
 fn production_builds_use_the_core_owned_physics_backend() {
     const CORE: &str = include_str!("../../mmorpg-core/Cargo.toml");
@@ -120,7 +120,8 @@ fn production_builds_use_the_core_owned_physics_backend() {
         .find(|line| line.starts_with("physics-engine"))
         .expect("mmorpg-core declares physics-engine");
     assert_eq!(declaration, "physics-engine.workspace = true");
-    assert!(CORE.contains("physics-ab = []"));
+    assert!(CORE.contains("rapier3d = { workspace = true, optional = true }"));
+    assert!(CORE.contains("physics-ab = [\"dep:rapier3d\", \"dep:web-time\"]"));
     assert!(
         !CORE.contains("default = ["),
         "physics engine must not need an opt-in feature"

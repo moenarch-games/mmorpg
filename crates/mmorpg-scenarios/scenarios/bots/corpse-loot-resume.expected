@@ -12,8 +12,8 @@ t=338 hunter p1 e1 ack4 (-4188,70,2132) sees[]
 t=400 hunter p1 e1 ack4 (-4186,180,1504) sees[]
 t=600 hunter p1 e1 ack4 (-4186,541,-532) sees[]
 t=712 hunter move -> applied seq=5 epoch=1 forward=1 strafe=0 facing=49152
-t=713 hunter p1 e1 ack5 (-4197,730,-1675) sees[]
-t=800 hunter p1 e1 ack5 (-5110,730,-1675) sees[]
+t=713 hunter p1 e1 ack5 (-4197,730,-1674) sees[]
+t=800 hunter p1 e1 ack5 (-5110,730,-1674) sees[]
 t=826 hunter move -> applied seq=6 epoch=1 forward=1 strafe=0 facing=0
 t=827 hunter p1 e1 ack6 (-5383,730,-1664) sees[]
 t=1000 hunter p1 e1 ack6 (-5383,1010,107) sees[]

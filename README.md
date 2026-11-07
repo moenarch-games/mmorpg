@@ -11,7 +11,7 @@ Decision history and stable cross-references: [MMORPG Decision Atlas](docs/decis
 | Concern | Authority |
 | --- | --- |
 | Zone-local gameplay rules and interest policy | `mmorpg-core` |
-| Collision and physical movement | Physics Engine by default; Rapier fallback/oracle and dynamic contacts (`mmorpg-core`, Atlas 2.1.i330) |
+| Collision and physical movement | Physics Engine, including authored rigid contacts; optional Rapier A/B oracle (`mmorpg-core`, Atlas 2.1.i647) |
 | Command/snapshot wire encoding | `mmorpg-protocol` |
 | Session ticks, reconnects, replay/recovery, WebTransport | `game-server` |
 | Zone placement, lease fencing, host routing, handoff metadata | `mmorpg-control-plane` |
@@ -62,7 +62,7 @@ This deliberately avoids shared mutable physics across machines. Horizontal scal
 The workspace provides:
 
 - a stable-Rust workspace and reusable validation workflow;
-- a deterministic zone simulation with Physics Engine character/static collision by default, including authored triangle meshes and convex rock hulls; Rapier remains selectable and retains dynamic debris/prop contacts in authored mesh/hull zones;
+- a deterministic zone simulation with Physics Engine character/static collision by default, including authored triangle meshes and convex rock hulls; dynamic debris and movable props contact those authored shapes through isolated Engine response worlds; Rapier remains the independent A/B oracle;
 - validated immutable collision content, gravity, and velocity-preserving physical recovery;
 - stale-command rejection and bounded per-zone player capacity;
 - canonical full-zone snapshots for replay/recovery that reference their immutable content by revision and fingerprint and fail closed on any content mismatch;

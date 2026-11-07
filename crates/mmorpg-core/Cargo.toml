@@ -8,20 +8,23 @@ publish.workspace = true
 
 [dependencies]
 strum.workspace = true
-rapier3d.workspace = true
+rapier3d = { workspace = true, optional = true }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
-# Primary backend for supported content; Rapier remains the compatibility fallback and oracle.
+# Production physics; Rapier is enabled only by the independent A/B diagnostics.
 physics-engine.workspace = true
+# Diagnostic timing also runs in the real WASM acceptance harness.
+web-time = { version = "=1.1.0", optional = true }
 
 [features]
-# Extra A/B timing/operation diagnostics and oracle comparisons.
-physics-ab = []
+# Enables the independent Rapier oracle and A/B timing/operation diagnostics.
+physics-ab = ["dep:rapier3d", "dep:web-time"]
 
 [dev-dependencies]
 # Reads the bot scenario files the physics A/B test replays.
 toml = { version = "=1.2.0", default-features = false, features = ["parse", "serde", "std"] }
 libtest-mimic.workspace = true
+wasm-bindgen = "=0.2.129"
 
 # One trial per workload, so nextest runs them in parallel (#540).
 [[test]]
@@ -35,3 +38,13 @@ required-features = ["physics-ab"]
 
 [lints]
 workspace = true
+
+# Shares every native assertion and fixture; no production browser API.
+[[example]]
+name = "physics_ab_wasm"
+crate-type = ["cdylib"]
+required-features = ["physics-ab"]
+
+[[test]]
+name = "authored_backend"
+required-features = ["physics-ab"]

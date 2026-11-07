@@ -811,7 +811,7 @@ fn query_parity(workload: &Workload, rapier: &Trace) -> Result<usize> {
 
 /// Every check of one workload on both backends: one trial per workload (#540).
 fn check_workload(workload: Workload) -> Result<()> {
-    let started = std::time::Instant::now();
+    let started = web_time::Instant::now();
     let name = workload.name().to_owned();
     let (rapier, rapier_check) = run(&workload, Backend::Rapier)?;
     let (engine, engine_check) = run(&workload, Backend::Engine)?;
@@ -1185,6 +1185,7 @@ fn check_workload(workload: Workload) -> Result<()> {
     Ok(())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     let arguments = libtest_mimic::Arguments::from_args();
     let trials = drivers::workloads()
@@ -1198,4 +1199,40 @@ fn main() {
         })
         .collect();
     libtest_mimic::run(&arguments, trials).exit();
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen::prelude::wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_namespace = console, js_name = error)]
+    fn report_panic(message: &str);
+}
+
+/// The identical workload checks used by the native test, compiled as real WASM.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn workloads() -> std::result::Result<String, String> {
+    std::panic::set_hook(Box::new(|information| {
+        report_panic(&information.to_string())
+    }));
+    drivers::workloads()
+        .map(|workloads| {
+            workloads
+                .iter()
+                .map(|workload| workload.name())
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn check_workload_wasm(name: &str) -> std::result::Result<(), String> {
+    let workload = drivers::workloads()
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .find(|workload| workload.name() == name)
+        .ok_or_else(|| format!("unknown workload {name}"))?;
+    check_workload(workload).map_err(|error| error.to_string())
 }

@@ -1,4 +1,4 @@
-//! Production backend routing, with Rapier still selectable for unsupported geometry.
+//! Production always uses Engine; the independent Rapier oracle is feature gated.
 
 use std::sync::Arc;
 
@@ -6,8 +6,9 @@ use mmorpg_core::physics::{Backend, Vec3i, World};
 use mmorpg_core::{ZoneContent, ZoneDefinition, ZoneId, ZoneSimulation, greyhaven_vale};
 
 #[test]
-fn engine_is_default_and_rapier_remains_selectable() {
+fn engine_is_default_and_diagnostic_rapier_is_feature_gated() {
     assert_eq!(World::new(Vec3i::ZERO).backend(), Backend::Engine);
+    #[cfg(feature = "physics-ab")]
     assert_eq!(
         World::with_backend(Vec3i::ZERO, Backend::Rapier).backend(),
         Backend::Rapier

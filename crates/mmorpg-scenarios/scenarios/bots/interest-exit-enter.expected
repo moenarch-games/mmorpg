@@ -20,8 +20,8 @@ t=200 alice p1 e1 ack2 (-2756,74,2143) sees[bob] | bob p2 e1 ack2 (-243,90,2143)
 t=220 alice p1 e1 ack2 (-2960,96,2143) sees[bob] | bob p2 e1 ack2 (-33,90,2143) sees[alice]
 t=240 alice p1 e1 ack2 (-3170,96,2143) sees[bob] | bob p2 e1 ack2 (178,90,2143) sees[alice]
 t=260 alice p1 e1 ack2 (-3380,96,2143) sees[bob] | bob p2 e1 ack2 (388,90,2143) sees[alice]
-t=280 alice p1 e1 ack2 (-3590,95,2143) sees[bob] | bob p2 e1 ack2 (598,90,2143) sees[alice]
-t=295 alice p1 e1 ack2 (-3747,65,2143) sees[] | bob p2 e1 ack2 (755,90,2143) sees[]
+t=280 alice p1 e1 ack2 (-3590,94,2143) sees[bob] | bob p2 e1 ack2 (598,90,2143) sees[alice]
+t=295 alice p1 e1 ack2 (-3747,62,2143) sees[] | bob p2 e1 ack2 (755,90,2143) sees[]
 t=300 alice p1 e1 ack2 (-3800,63,2143) sees[] | bob p2 e1 ack2 (808,90,2143) sees[]
 t=312 expect alice not_sees bob ok bob not visible
 t=312 expect bob visible_count ok count=1

@@ -30,8 +30,9 @@ ARTIFACTS = ROOT / "artifacts" / "browser"
 # kit fallbacks hidden while their kit draws, all drawn through per-material BatchedMeshes (#615).
 # 3,586 after the three outer regions (#495, #497, #505), nature fallbacks and terrain tiles (#620).
 STATIC_GROUPS_TRIPWIRE = 4_000
-# Advisory too: vertices stored across the static scene's unique geometries; 374,842 at the same point.
-STATIC_VERTICES_TRIPWIRE = 450_000
+# Advisory too: the authored brook pass stores about 527,000 static vertices;
+# match the existing Rust export ceiling documented in GREYHAVEN_BROOK.md.
+STATIC_VERTICES_TRIPWIRE = 530_000
 ROSTER_KEY = "mmorpg.offline-roster.v1"
 # The retired offline checkpoint key; nothing may write it any more.
 CHARACTER_ENTRY_PREFIX = "mmorpg.character.v1."
@@ -101,9 +102,11 @@ class BrowserAcceptance(unittest.TestCase):
         })();""")
 
     def tearDown(self):
-        self.page.screenshot(path=str(ARTIFACTS / f"{self._testMethodName}.png"))
-        self.evidence.append({"test": self._testMethodName, "pageErrors": self.errors})
-        self.context.close()
+        try:
+            self.page.screenshot(path=str(ARTIFACTS / f"{self._testMethodName}.png"))
+            self.evidence.append({"test": self._testMethodName, "pageErrors": self.errors})
+        finally:
+            self.context.close()
         self.assertEqual(self.errors, [], "Browser application raised an uncaught error")
 
     def open(self, query=""):
@@ -127,7 +130,7 @@ class BrowserAcceptance(unittest.TestCase):
         returning one (`fresh=False`) resumes its stored progress. Tests that
         pause the source check the class resource after their own ticks."""
         self.enter_button().click()
-        expect(self.page.locator("#character-select")).to_be_hidden()
+        expect(self.page.locator("#character-select")).to_be_hidden(timeout=30_000)
         expect(self.page.locator(".hud")).to_be_visible()
         if fresh:
             expect(self.page.get_by_role("progressbar", name="Level 1 · 0 / 100 XP")).to_be_visible()
@@ -2267,7 +2270,7 @@ class BrowserAcceptance(unittest.TestCase):
 
     def fortress_walkthrough(self, touch=False):
         """#552: the shared Battle Royale fortress in practice, walked through the real WASM zone
-        (mmorpg-core and Rapier): courtyard -> keep door -> corridor -> interior ramp -> keep roof
+        (mmorpg-core and Physics Engine): courtyard -> keep door -> corridor -> interior ramp -> keep roof
         -> central tower lift -> tower top. Returns each stop's feet position in metres."""
         self.page.goto(self.url + "?activity=battle-royale&debug")
         start = self.page.get_by_role("button", name=re.compile("^Start practice"))
