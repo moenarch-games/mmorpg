@@ -77,9 +77,8 @@ retains screenshots and a JSON error report under `artifacts/browser`.
 Build `web/` first, then install the optional runner:
 
 ```sh
-python3 -m pip install playwright==1.57.0
-python3 -m playwright install --with-deps chromium
-python3 scripts/smoke-browser.py
+mise run setup:browser
+python scripts/smoke-browser.py
 ```
 
 The Pages workflow reuses its one production build for browser acceptance on main,

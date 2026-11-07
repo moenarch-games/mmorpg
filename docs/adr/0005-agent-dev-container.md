@@ -8,6 +8,8 @@ Status: accepted; resolves #269 (split from #148). CI stays on conventional GitH
 
 The image is `ubuntu:24.04` pinned by digest plus the tools CI installs: Rust from `rust-toolchain.toml` (stable, clippy, rustfmt, `wasm32-unknown-unknown`), `libudev-dev`, cargo-nextest (latest, as CI), the `wasm-bindgen` CLI at the crate's exact pin and Bun at `web/package.json`'s `packageManager`. The Dockerfile reads those versions from their files at build time, so it adds no second version authority. Asset bundles are per-checkout inputs: `postCreateCommand` runs `scripts/fetch-bundles.sh`. Playwright/Chromium, GPU and native-window workflows are not in the image; they stay opt-in on the host or in the Pages job.
 
+**Revised 2026-11-07 (owner):** the root `mise.toml` is the one tool list for contributors, agents and this image, and every tool tracks its latest stable release (the exact Bun and `wasm-bindgen` pins it read are gone since #656; the browser build selects the `wasm-bindgen` CLI from `Cargo.lock`). The image installs mise and then `mise.toml`'s tools, plus Rust's toolchain file and Chromium's system libraries; `postCreateCommand` runs `mise run setup`, which creates the project's Python virtualenv, installs Playwright and Chromium and fetches the asset bundles. GPU and native-window workflows stay on the host.
+
 ## Measurements (2026-10-24, revision 4e08253)
 
 Local, cold (no Docker layer, Cargo registry or target cache), 1 run each:

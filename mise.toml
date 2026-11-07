@@ -1,0 +1,38 @@
+# Every tool the builds, tests and helper scripts use, for contributors, coding agents and the dev container:
+#   mise install && mise run setup
+# Tools track the latest stable release. Rust is not a mise tool: mise's would set RUSTUP_TOOLCHAIN and so
+# bypass rust-toolchain.toml, the one place that names Rust's channel, components and wasm32 target;
+# `mise run setup:rust` installs exactly that through rustup. The browser build picks the wasm-bindgen CLI
+# matching Cargo.lock itself, so it is not listed. Docker (scripts/smoke-handoff.py) and Blender
+# (scripts/dev-blender.sh) stay system installs.
+[tools]
+bun = "latest"
+python = "latest"
+uv = "latest"
+"github:nextest-rs/nextest" = { version = "latest", version_prefix = "cargo-nextest-" }   # prebuilt, needs no cargo
+gh = "latest"
+jq = "latest"
+ripgrep = "latest"
+
+[env]
+# The Python scripts (smoke, profile, handoff) run in the repository's own ignored virtualenv.
+_.python.venv = { path = ".venv", create = true }
+
+[tasks."setup:rust"]
+description = "rustup (when missing) and the toolchain rust-toolchain.toml names, with its components and targets"
+run = """
+command -v rustup >/dev/null || curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+rustup toolchain install
+"""
+
+[tasks."setup:browser"]
+description = "Playwright and Chromium for scripts/smoke-browser*.py and scripts/profile-browser.py"
+run = ["uv pip install --upgrade playwright", "playwright install chromium"]
+
+[tasks."setup:bundles"]
+description = "Download the asset-tooling bundles the page and the native client load"
+run = "scripts/fetch-bundles.sh"
+
+[tasks.setup]
+description = "Everything beyond `mise install`: Rust, browser tooling and asset bundles"
+depends = ["setup:rust", "setup:browser", "setup:bundles"]

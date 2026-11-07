@@ -1,4 +1,3 @@
 *
+!mise.toml
 !rust-toolchain.toml
-!crates/mmorpg-wasm/Cargo.toml
-!web/package.json

@@ -6,8 +6,8 @@ tests drive real movement, jumps, corpse claims and zone entry/exit through the 
 The isolated full-bag DOM stage receives a projection fixture; core tests own its
 transaction-rule acceptance.
 
-Prerequisites: build web/ (bun run build), pip install playwright==1.57.0, then
-python -m playwright install --with-deps chromium.
+Prerequisites: build web/ (bun run build) and `mise run setup:browser` (Playwright in the
+repository's .venv plus Chromium; on a fresh host also `playwright install-deps chromium`).
 Run from the repository root: python scripts/smoke-browser.py
 """
 from __future__ import annotations

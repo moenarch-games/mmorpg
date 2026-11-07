@@ -12,3 +12,6 @@ __pycache__/
 
 /web/public/basis/
 /web/public/luts/
+
+# mise's Python virtualenv (mise.toml)
+/.venv/
