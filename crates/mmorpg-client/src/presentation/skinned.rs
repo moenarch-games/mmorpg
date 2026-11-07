@@ -1248,6 +1248,22 @@ fn resolve(base: &str, uri: &str) -> String {
 
 /// One GLB of an asset-tooling `gltf-resources-v1` entry: every external buffer and image
 /// becomes a view of a single binary chunk, so the ordinary GLB import reads it.
+/// A KTX2 image's base level as an RGBA8 PNG.
+fn ktx2_png(bytes: &[u8]) -> Vec<u8> {
+    let (width, height, levels) =
+        crate::ground::transcode_ktx2(bytes, Some(1)).expect("a bundle KTX2 image transcodes");
+    use image::ImageEncoder as _;
+    let mut png = Vec::new();
+    image::codecs::png::PngEncoder::new_with_quality(
+        &mut png,
+        image::codecs::png::CompressionType::Fast,
+        image::codecs::png::FilterType::NoFilter,
+    )
+    .write_image(&levels[0], width, height, image::ExtendedColorType::Rgba8)
+    .expect("an RGBA8 image encodes as PNG");
+    png
+}
+
 fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
     let file = |path: &str| {
         files
@@ -1295,14 +1311,23 @@ fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
             .expect("bundle images are external")
             .to_owned();
         let bytes = file(&resolve(entry, &uri));
+        // The `gltf` crate decodes PNG and JPEG only: a KTX2 (Basis Universal) image, such as the
+        // Outpost kit's (asset-tooling#511), is transcoded here and re-encoded as a PNG.
+        let png = crate::ground::is_ktx2(bytes).then(|| ktx2_png(bytes));
+        let bytes = png.as_deref().unwrap_or(bytes);
         let offset = append(bytes);
         views.push(
             serde_json::json!({"buffer": 0, "byteOffset": offset, "byteLength": bytes.len()}),
         );
         if let Some(image) = image.as_object_mut() {
             image.remove("uri");
+            if png.is_some() {
+                image.insert("mimeType".into(), "image/png".into());
+            }
         }
     }
+    // KHR_texture_basisu's source becomes the texture's core source, now a PNG.
+    crate::ground::basisu_as_core(&mut json);
     let first = json["bufferViews"].as_array().map_or(0, Vec::len);
     for (index, image) in json
         .get_mut("images")

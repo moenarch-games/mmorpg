@@ -47,15 +47,48 @@ fn linear(channel: u8) -> f32 {
 
 const KTX2_IDENTIFIER: [u8; 12] = *b"\xABKTX 20\xBB\r\n\x1A\n";
 
-/// A KTX2 (Basis Universal) texture transcoded to RGBA8 with the file's own mip chain, or a
-/// PNG or JPEG mipmapped here.
-fn decode(bytes: &[u8], srgb: bool) -> Option<TextureData> {
-    if !bytes.starts_with(&KTX2_IDENTIFIER) {
-        return Some(texture(bytes, srgb));
+/// Whether `bytes` are a KTX2 file.
+pub(crate) fn is_ktx2(bytes: &[u8]) -> bool {
+    bytes.starts_with(&KTX2_IDENTIFIER)
+}
+
+/// Makes each `KHR_texture_basisu` texture of a glTF's JSON name its KTX2 image as the core
+/// `source` and drops the extension, so the `gltf` crate, which does not know it, reads the
+/// document; the reader then decodes that image itself ([`is_ktx2`], [`transcode_ktx2`]).
+pub(crate) fn basisu_as_core(json: &mut serde_json::Value) {
+    for texture in json
+        .get_mut("textures")
+        .and_then(serde_json::Value::as_array_mut)
+        .into_iter()
+        .flatten()
+    {
+        let basisu = texture
+            .get_mut("extensions")
+            .and_then(serde_json::Value::as_object_mut)
+            .and_then(|extensions| extensions.remove("KHR_texture_basisu"));
+        if let Some(source) = basisu.map(|basisu| basisu["source"].clone()) {
+            texture["source"] = source;
+        }
     }
+    for list in ["extensionsUsed", "extensionsRequired"] {
+        if let Some(names) = json.get_mut(list).and_then(serde_json::Value::as_array_mut) {
+            names.retain(|name| name != "KHR_texture_basisu");
+        }
+    }
+}
+
+/// A KTX2 (Basis Universal) texture's base size and its first `levels` mip levels (all when
+/// `None`), each transcoded to RGBA8.
+pub(crate) fn transcode_ktx2(
+    bytes: &[u8],
+    levels: Option<u32>,
+) -> Option<(u32, u32, Vec<Vec<u8>>)> {
     let transcoder = basisu::Transcoder::new(bytes).ok()?;
     let (width, height) = transcoder.base_dimensions();
-    let levels = (0..transcoder.level_count())
+    let count = levels.map_or(transcoder.level_count(), |levels| {
+        levels.min(transcoder.level_count())
+    });
+    let levels = (0..count)
         .map(|level| {
             transcoder
                 .transcode(
@@ -66,6 +99,16 @@ fn decode(bytes: &[u8], srgb: bool) -> Option<TextureData> {
                 .ok()
         })
         .collect::<Option<Vec<_>>>()?;
+    Some((width, height, levels))
+}
+
+/// A KTX2 (Basis Universal) texture transcoded to RGBA8 with the file's own mip chain, or a
+/// PNG or JPEG mipmapped here.
+fn decode(bytes: &[u8], srgb: bool) -> Option<TextureData> {
+    if !is_ktx2(bytes) {
+        return Some(texture(bytes, srgb));
+    }
+    let (width, height, levels) = transcode_ktx2(bytes, None)?;
     Some(TextureData {
         width,
         height,

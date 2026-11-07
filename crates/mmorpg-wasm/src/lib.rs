@@ -1036,6 +1036,17 @@ pub fn outpost_kit_models() -> Vec<f32> {
         .collect()
 }
 
+/// Each placed Outpost kit module's building wear in [0, 1], in [`outpost_kit_models`] order: the
+/// browser blends it from the kit's wear masks.
+#[wasm_bindgen(js_name = outpostKitWear)]
+#[must_use]
+pub fn outpost_kit_wear() -> Vec<f32> {
+    mmorpg_presentation::outpost_kit::parts(scenery::hosted_scenery())
+        .iter()
+        .map(|part| part.wear)
+        .collect()
+}
+
 /// The market square's asset-tooling settlement-prop entries (#421), placed by the
 /// presentation the native client shares.
 #[wasm_bindgen(js_name = settlementPropEntries)]

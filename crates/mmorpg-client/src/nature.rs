@@ -199,10 +199,27 @@ pub(crate) fn resolve(base: &str, uri: &str) -> String {
     parts.join("/")
 }
 
-/// A decoded PNG or JPEG with a box-filtered mip chain; colour textures are sRGB.
+/// A decoded PNG or JPEG with a box-filtered mip chain, or a KTX2 (Basis Universal) texture
+/// transcoded to RGBA8 with its own mip chain; colour textures are sRGB.
 pub(crate) fn texture(bytes: &[u8], srgb: bool) -> TextureData {
+    let format = if srgb {
+        render_engine::wgpu::TextureFormat::Rgba8UnormSrgb
+    } else {
+        render_engine::wgpu::TextureFormat::Rgba8Unorm
+    };
+    if crate::ground::is_ktx2(bytes) {
+        let (width, height, levels) =
+            crate::ground::transcode_ktx2(bytes, None).expect("a bundle KTX2 texture transcodes");
+        return TextureData {
+            width,
+            height,
+            format,
+            levels,
+            sampler: Sampler::default(),
+        };
+    }
     let image = image::load_from_memory(bytes)
-        .expect("bundle textures are PNG or JPEG")
+        .expect("bundle textures are PNG, JPEG or KTX2")
         .to_rgba8();
     let (width, height) = image.dimensions();
     let mut levels = vec![image.into_raw()];
@@ -230,11 +247,7 @@ pub(crate) fn texture(bytes: &[u8], srgb: bool) -> TextureData {
     TextureData {
         width,
         height,
-        format: if srgb {
-            render_engine::wgpu::TextureFormat::Rgba8UnormSrgb
-        } else {
-            render_engine::wgpu::TextureFormat::Rgba8Unorm
-        },
+        format,
         levels,
         sampler: Sampler::default(),
     }
@@ -262,7 +275,12 @@ fn with_alpha(mesh: &MeshData, alpha: impl Fn(usize) -> f32) -> MeshData {
 
 /// Every primitive of the bundle glTF at `path`, in its scene frame.
 fn import(path: &str, files: Files, textures: &mut TextureSet) -> Vec<Part> {
-    let gltf = gltf::Gltf::from_slice(file(files, path)).expect("a bundle entry is valid glTF");
+    // KTX2 textures (KHR_texture_basisu) become core sources that `texture` transcodes.
+    let mut json: serde_json::Value =
+        serde_json::from_slice(file(files, path)).expect("a bundle entry is JSON");
+    crate::ground::basisu_as_core(&mut json);
+    let gltf = gltf::Gltf::from_slice(&serde_json::to_vec(&json).expect("JSON serializes"))
+        .expect("a bundle entry is valid glTF");
     let buffers: Vec<&[u8]> = gltf
         .buffers()
         .map(|buffer| match buffer.source() {

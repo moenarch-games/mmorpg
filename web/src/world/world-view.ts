@@ -35,6 +35,7 @@ import { type RaidPrepSpots, reachablePrepStep } from "./raid-prep";
 import { RaidSigns } from "./raid-signs";
 import { WalkInBuildings } from "./walk-in-buildings";
 import { KitModules, OUTPOST_BUNDLE, SETTLEMENT_BUNDLE, SHRINE_BUNDLE, type KitPlacement } from "./kit-modules";
+import { useBundleKtx2Loader } from "./static-bundle";
 import { BatchedScenery } from "./static-batches";
 import { CompositionKit } from "./composition-kit";
 import { Ground } from "./ground";
@@ -431,6 +432,8 @@ export class WorldView {
     this.#renderer = renderer;
     this.#lighting = lighting;
     this.#models.configureRenderer(renderer);
+    // Every asset-tooling bundle may ship KTX2 textures (asset-tooling#511); they share this transcoder.
+    useBundleKtx2Loader(this.#models.ktx2Loader);
     this.#camera = camera;
     this.#elements = elements;
     this.#reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -540,7 +543,7 @@ export class WorldView {
     this.#inn = new WalkInBuildings(world.scenery.buildings.presenters());
     this.#shrine = new KitModules(SHRINE_BUNDLE, "shrine kit", world.scenery.shrine.entries, world.scenery.shrine.placements);
     const fortEntry = (key: string) => key.startsWith("greyhaven.fort.");
-    this.#outpost = new KitModules(OUTPOST_BUNDLE, "Outpost kit", world.scenery.outpost.entries.filter((key) => !fortEntry(key)), world.scenery.outpost.placements.filter(({ key }) => !fortEntry(key)));
+    this.#outpost = new KitModules(OUTPOST_BUNDLE, "Outpost kit", world.scenery.outpost.entries.filter((key) => !fortEntry(key)), world.scenery.outpost.placements.filter(({ key }) => !fortEntry(key)), { wear: true });
     this.#fortifications = new KitModules(`${import.meta.env.BASE_URL}authored/greyhaven-fort/`, "Greyhaven fortifications", world.scenery.outpost.entries.filter(fortEntry), world.scenery.outpost.placements.filter(({ key }) => fortEntry(key)));
     void this.#fortifications.load();
     this.#settlement = new KitModules(SETTLEMENT_BUNDLE, "settlement props", world.scenery.settlement.entries, world.scenery.settlement.placements);

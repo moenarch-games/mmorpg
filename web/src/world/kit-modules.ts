@@ -1,6 +1,8 @@
 import * as THREE from "three";
+import type { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
+import { applyOutpostWear, OUTPOST_WEAR_MASKS, wearMasks } from "./outpost-wear";
 import { BatchedRoots } from "./static-batches";
-import { loadStaticBundle } from "./static-bundle";
+import { loadBundleGltfs, loadStaticBundle } from "./static-bundle";
 
 /** The rolling `shrine-kit` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
 export const SHRINE_BUNDLE = `${import.meta.env.BASE_URL}scenery/shrine.kit/`;
@@ -9,7 +11,17 @@ export const OUTPOST_BUNDLE = `${import.meta.env.BASE_URL}buildings/outpost.kit/
 /** The rolling `settlement-props` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
 export const SETTLEMENT_BUNDLE = `${import.meta.env.BASE_URL}scenery/settlement.props/`;
 
-export type KitPlacement = { key: string; matrix: Float32Array };
+/** A placed module; `wear` in [0, 1] ages it when its kit ships wear masks (the Outpost kit). */
+export type KitPlacement = { key: string; matrix: Float32Array; wear?: number };
+
+/**
+ * How a kit loads: `ktx2` transcodes its KTX2 textures (the Outpost kit's, asset-tooling docs/outpost-kit.md), and
+ * `wear` blends each placement's wear from the bundle's wear masks when it has them.
+ */
+export type KitOptions = { ktx2?: KTX2Loader; wear?: boolean };
+
+/** The texture uniforms of a kit `LitMaterial`, and the wear mask ([`applyOutpostWear`]). */
+const MATERIAL_TEXTURES = ["baseColorTexture", "emissiveTexture", "metallicRoughnessTexture", "normalMapTexture", "occlusionTexture", "wearMask"];
 
 /**
  * An asset-tooling kit's static modules drawn where the shared Rust presentation places them, as
@@ -25,14 +37,18 @@ export class KitModules {
   readonly #placements: readonly KitPlacement[];
   /** The placed modules, batched per material (#615); null until loaded. */
   #batched: BatchedRoots | null = null;
+  readonly #options: KitOptions;
   #loading: Promise<boolean> | null = null;
   #changed = false;
+  /** How many materials age by wear (0 without wear masks). */
+  #worn = 0;
 
-  constructor(bundle: string, name: string, entries: readonly string[], placements: readonly KitPlacement[]) {
+  constructor(bundle: string, name: string, entries: readonly string[], placements: readonly KitPlacement[], options: KitOptions = {}) {
     this.#bundle = bundle;
     this.#name = name;
     this.#entries = entries;
     this.#placements = placements;
+    this.#options = options;
   }
 
   /** Loads the bundle once; settles drawable (true) or failed (false), never fatal to the world. */
@@ -46,7 +62,14 @@ export class KitModules {
 
   async #load(): Promise<void> {
     if (this.#placements.length === 0) { return; }
-    const modules = new Map((await loadStaticBundle(this.#bundle, this.#entries)).map((root) => [root.name, root]));
+    const { ktx2, wear } = this.#options;
+    const modules = new Map((await loadStaticBundle(this.#bundle, this.#entries, ktx2)).map((root) => [root.name, root]));
+    // Wear masks: every wear level then draws with the pristine materials, so in their batches. A bundle without them
+    // (before asset-tooling#511) draws every building pristine.
+    const masks = wear
+      ? await loadBundleGltfs(this.#bundle, [OUTPOST_WEAR_MASKS], 1, ktx2).then(([gltf]) => wearMasks(gltf!), () => null)
+      : null;
+    if (masks) { this.#worn = applyOutpostWear([...modules.values()], masks); }
     const roots = this.#placements.map(({ key, matrix }, index) => {
       const module = modules.get(key);
       if (!module) { throw new Error(`The ${this.#name} has no ${key}.`); }
@@ -59,7 +82,7 @@ export class KitModules {
       return root;
     });
     // Static modules: a few draw calls per material instead of one per module and primitive.
-    this.#batched = new BatchedRoots(this.#name, roots);
+    this.#batched = new BatchedRoots(this.#name, roots, this.#worn > 0 ? this.#placements.map((placement) => placement.wear ?? 0) : null);
     this.#changed = true;
   }
 
@@ -75,8 +98,34 @@ export class KitModules {
     return { roots: this.#batched ? [this.#batched.root] : [], changed };
   }
 
-  /** Acceptance state: whether the modules are loaded, and which entries are placed. */
-  observe(): { loaded: boolean; placed: string[] } {
-    return { loaded: this.drawn, placed: this.#placements.map((placement) => placement.key) };
+  /**
+   * Acceptance state: whether the modules are loaded, which entries are placed, how many materials age by wear and the
+   * GPU bytes of the textures they draw with (a compressed texture's mip levels as uploaded, an image as RGBA8 with
+   * its mip chain).
+   */
+  observe(): { loaded: boolean; placed: string[]; worn: number; textureBytes: number } {
+    return { loaded: this.drawn, placed: this.#placements.map((placement) => placement.key), worn: this.#worn, textureBytes: this.#textureBytes() };
+  }
+
+  #textureBytes(): number {
+    const textures = new Set<THREE.Texture>();
+    this.#batched?.root.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) { return; }
+      for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+        // A LitMaterial's own textures, not its frame uniforms (shadow maps, the environment, LUTs).
+        const values = material instanceof THREE.ShaderMaterial ? MATERIAL_TEXTURES.map((name) => material.uniforms[name]?.value) : Object.values(material);
+        for (const value of values) { if (value instanceof THREE.Texture) { textures.add(value); } }
+      }
+    });
+    let bytes = 0;
+    for (const texture of textures) {
+      if (texture instanceof THREE.CompressedTexture) {
+        bytes += texture.mipmaps.reduce((sum, level) => sum + ((level as { data?: ArrayBufferView }).data?.byteLength ?? 0), 0);
+      } else {
+        const image = texture.image as { width?: number; height?: number } | undefined;
+        bytes += Math.round((image?.width ?? 0) * (image?.height ?? 0) * 4 * 4 / 3);
+      }
+    }
+    return bytes;
   }
 }
