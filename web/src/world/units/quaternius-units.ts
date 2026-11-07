@@ -576,6 +576,8 @@ const HANGING_SOCKETS: ReadonlySet<string> = new Set(["back.quiver", "back.bow.s
  * A unit's skins are culled per view by their rest bounding sphere grown by this.
  */
 const SKIN_REACH_METRES = 1;
+/** Character meshes that cast no shadow (three-lighting's `notShadowCaster`): the eyes and eyebrows. */
+const FACE_DETAIL = /^Eye(s|brows)$/;
 /** Each model's hanging items: the holder, its joint and its authored socket matrix. */
 const hanging = new WeakMap<THREE.Object3D, { holder: THREE.Group; joint: THREE.Object3D; base: THREE.Matrix4 }[]>();
 const modelInverse = new THREE.Matrix4();
@@ -1442,6 +1444,8 @@ export class QuaterniusUnits {
     model.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) { return; }
       object.castShadow = true;
+      // Eyes and eyebrows sit inside the head's silhouette: casting them cost every NPC two draws per sun cascade.
+      if (FACE_DETAIL.test(object.name)) { object.userData.notShadowCaster = true; }
       // Culled per view (#615): a skin by its rest bounds grown by what a clip can reach beyond them; a rigid
       // mesh rides its joint, so its own bounds follow it.
       if (object instanceof THREE.SkinnedMesh) {
