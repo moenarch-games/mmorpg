@@ -1439,7 +1439,7 @@ export class QuaterniusUnits {
     const posable = asset.instantiate(dress);
     const { model } = posable;
     // One draw per material class rather than per mesh (#615); throwables and the bolt show and hide, so stay apart.
-    const merged = mergeUnitMeshes(model, toggledHolders(model));
+    const merged = mergeUnitMeshes(model, toggledHolders(model), (mesh) => !FACE_DETAIL.test(mesh.name));
     const materials: Instance["materials"] = [];
     model.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) { return; }
@@ -1452,6 +1452,8 @@ export class QuaterniusUnits {
         object.computeBoundingSphere();
         object.boundingSphere!.radius += SKIN_REACH_METRES;
       }
+      // The shadow proxy keeps its invisible shadow-only material (`mergeUnitMeshes`).
+      if (object.userData.shadowOnly === true) { return; }
       // Each unit its own LitMaterials (#600), so its tint is its own.
       const own = (material: THREE.Material): THREE.Material => {
         const copy = LitMaterial.fromGltf(material);
@@ -1503,7 +1505,7 @@ export class QuaterniusUnits {
   #drop(id: string, instance: Instance): void {
     instance.posable.dispose();
     for (const { material } of instance.materials) { material.dispose(); }
-    for (const mesh of instance.merged.meshes) { mesh.geometry.dispose(); }
+    for (const mesh of [...instance.merged.meshes, ...instance.merged.shadows]) { mesh.geometry.dispose(); }
     instance.merged.skeleton.dispose();
     this.#instances.delete(id);
     this.#rootsChanged = true;
