@@ -3,8 +3,8 @@ import type { RendererMaterialRequest, RendererSceneNode } from "@moritzbrantner
 import { presentationMaterial } from "./lighting";
 import type { SceneryScene, StaticBatch } from "./scenery-nodes";
 
-/** One batched mesh: the `BatchedMesh` that draws it and its instance there. */
-export type BatchedDraw = { mesh: THREE.BatchedMesh | null; instance: number };
+/** One batched mesh: the `BatchedMesh` that draws it and its instance there, or the plain mesh drawing it alone. */
+export type BatchedDraw = { mesh: THREE.BatchedMesh | THREE.Mesh | null; instance: number };
 
 type Pending = { geometry: THREE.BufferGeometry; matrix: THREE.Matrix4; color: THREE.Color | null; draw: BatchedDraw };
 
@@ -38,6 +38,8 @@ export class StaticBatches {
 
   constructor(name: string) {
     this.root.name = name;
+    // Never moved: three would otherwise recompute every batch's world matrix in every pass.
+    this.root.matrixAutoUpdate = false;
   }
 
   /**
@@ -61,6 +63,18 @@ export class StaticBatches {
   build(): void {
     const white = new THREE.Color(1, 1, 1);
     for (const { material, colored, pending } of this.#groups.values()) {
+      if (pending.length === 1 && !colored) {
+        // A batch of one would cull and re-upload its draw list in every pass for nothing: three culls a mesh itself.
+        const { geometry, matrix, draw } = pending[0]!;
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.name = `${this.root.name}:${material.name || material.uuid}`;
+        mesh.matrixAutoUpdate = false;
+        mesh.matrix.copy(matrix);
+        mesh.matrixWorldNeedsUpdate = true;
+        draw.mesh = mesh;
+        this.root.add(mesh);
+        continue;
+      }
       const geometries = [...new Set(pending.map((entry) => entry.geometry))];
       const vertices = geometries.reduce((sum, geometry) => sum + geometry.attributes.position!.count, 0);
       const indices = geometries.reduce((sum, geometry) => sum + (geometry.index?.count ?? 0), 0);
@@ -83,12 +97,23 @@ export class StaticBatches {
 
   /** Moves `draw` to `matrix` (world). */
   setMatrix(draw: BatchedDraw, matrix: THREE.Matrix4): void {
-    draw.mesh?.setMatrixAt(draw.instance, matrix);
+    const mesh = draw.mesh;
+    if (mesh instanceof THREE.BatchedMesh) {
+      mesh.setMatrixAt(draw.instance, matrix);
+    } else if (mesh) {
+      mesh.matrix.copy(matrix);
+      mesh.matrixWorldNeedsUpdate = true;
+    }
   }
 
   /** Shows or hides `draw`. */
   setVisible(draw: BatchedDraw, visible: boolean): void {
-    if (draw.mesh && draw.mesh.getVisibleAt(draw.instance) !== visible) { draw.mesh.setVisibleAt(draw.instance, visible); }
+    const mesh = draw.mesh;
+    if (mesh instanceof THREE.BatchedMesh) {
+      if (mesh.getVisibleAt(draw.instance) !== visible) { mesh.setVisibleAt(draw.instance, visible); }
+    } else if (mesh) {
+      mesh.visible = visible;
+    }
   }
 }
 
@@ -248,7 +273,7 @@ export class BatchedScenery {
 
   /** Releases the batches' GPU buffers. */
   dispose(): void {
-    for (const mesh of this.#batches.root.children as THREE.BatchedMesh[]) { mesh.dispose(); }
+    for (const mesh of this.#batches.root.children) { if (mesh instanceof THREE.BatchedMesh) { mesh.dispose(); } }
   }
 }
 

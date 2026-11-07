@@ -74,6 +74,8 @@ export class InstancedLevels {
    */
   constructor(name: string, entries: readonly string[], levels: readonly (readonly THREE.Object3D[])[], placements: readonly { key: string; matrix: ArrayLike<number> }[]) {
     this.root.name = name;
+    // Never moved (the instances carry the placements): no world matrices to recompute per pass.
+    this.root.matrixAutoUpdate = false;
     this.#entryOf = placements.map((placement) => entries.indexOf(placement.key));
     if (this.#entryOf.some((entry) => entry < 0)) { throw new Error(`a ${name} placement names no entry`); }
     this.#matrices = placements.map((placement) => Float32Array.from(placement.matrix));
@@ -107,6 +109,7 @@ export class InstancedLevels {
           mesh.name = `${entries[entry]}#${parts.length}${suffix}`;
           // Placements are culled by the shared selection (by the descriptor bounds), not by one stale sphere.
           mesh.frustumCulled = false;
+          mesh.matrixAutoUpdate = false;
           mesh.count = 0;
           mesh.visible = false;
           mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);

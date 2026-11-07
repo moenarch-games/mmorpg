@@ -264,6 +264,31 @@ export class GreyhavenLighting {
     }
     this.#skySupported ??= renderer.extensions.has("OES_texture_float_linear") && renderer.extensions.has("EXT_color_buffer_float");
     this.#configure(lighting, this.#frame);
-    lighting.render(renderer, scene, camera);
+    onceAcrossPasses(scene, () => lighting.render(renderer, scene, camera));
+  }
+}
+
+const skeletonUpdate = THREE.Skeleton.prototype.update;
+
+/**
+ * Runs `passes` (one `renderer.render` per sun cascade, local shadow view and the main pass) with the scene's world
+ * matrices and skeletons brought up to date once: three redoes both in every `render` call, though nothing moves
+ * between the passes of one frame, recomputing every world matrix and re-uploading every bone texture each time.
+ */
+function onceAcrossPasses(scene: THREE.Scene, passes: () => void): void {
+  const autoUpdate = scene.matrixWorldAutoUpdate;
+  if (autoUpdate) { scene.updateMatrixWorld(); }
+  scene.matrixWorldAutoUpdate = false;
+  const updated = new Set<THREE.Skeleton>();
+  THREE.Skeleton.prototype.update = function update(this: THREE.Skeleton): void {
+    if (updated.has(this)) { return; }
+    updated.add(this);
+    skeletonUpdate.call(this);
+  };
+  try {
+    passes();
+  } finally {
+    THREE.Skeleton.prototype.update = skeletonUpdate;
+    scene.matrixWorldAutoUpdate = autoUpdate;
   }
 }
