@@ -12,6 +12,7 @@ import {
   type Vec3,
 } from "@moritzbrantner/three-lighting";
 import type { RendererMaterialRequest } from "@moritzbrantner/three-d-renderer";
+import { profileRenderPasses } from "./frame-profile";
 
 /**
  * Greyhaven's lighting on the web (#600): render-engine's `@moritzbrantner/three-lighting`, driven with the values
@@ -264,7 +265,7 @@ export class GreyhavenLighting {
     }
     this.#skySupported ??= renderer.extensions.has("OES_texture_float_linear") && renderer.extensions.has("EXT_color_buffer_float");
     this.#configure(lighting, this.#frame);
-    onceAcrossPasses(scene, () => lighting.render(renderer, scene, camera));
+    onceAcrossPasses(scene, () => profileRenderPasses(renderer, scene, camera, lighting.sky !== null, () => lighting.render(renderer, scene, camera)));
   }
 }
 
