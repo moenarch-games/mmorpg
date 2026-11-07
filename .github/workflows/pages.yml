@@ -43,9 +43,6 @@ jobs:
     timeout-minutes: 30
     env:
       FULL_VALIDATION: ${{ inputs.full_validation == true }}
-      # Must equal the exact wasm-bindgen pin in crates/mmorpg-wasm/Cargo.toml;
-      # web/scripts/build-wasm.ts fails the build on any mismatch.
-      WASM_BINDGEN_VERSION: "0.2.129"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install Rust toolchain and wasm32 target from rust-toolchain.toml
@@ -56,17 +53,32 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           prefix-key: pages
-      # The prebuilt release binary of the pinned CLI, in seconds instead of a cargo install.
-      - name: Install pinned wasm-bindgen CLI
+      # The prebuilt CLI must match the Rust crate resolved in Cargo.lock.
+      - name: Resolve wasm-bindgen version from Cargo.lock
+        id: wasm_bindgen_version
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import tomllib
+          with open("Cargo.lock", "rb") as lock_file:
+              packages = tomllib.load(lock_file)["package"]
+          versions = [package["version"] for package in packages if package["name"] == "wasm-bindgen"]
+          if len(versions) != 1:
+              raise SystemExit(f"Expected exactly one wasm-bindgen version, got {len(versions)}")
+          print(f"version={versions[0]}")
+          PY
+      - name: Install matching wasm-bindgen CLI
         uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
-          tool: wasm-bindgen@${{ env.WASM_BINDGEN_VERSION }}
+          tool: wasm-bindgen@${{ steps.wasm_bindgen_version.outputs.version }}
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
       - name: Install web dependencies
         working-directory: web
         run: bun install --frozen-lockfile
+      - name: Test automatic wasm-bindgen CLI selection
+        working-directory: web
+        run: bun test tests/build-wasm.test.ts
       - name: Fetch the asset-tooling Ranger character bundle
         run: scripts/fetch-bundles.sh
       - name: Check out the pinned saved-mask producer

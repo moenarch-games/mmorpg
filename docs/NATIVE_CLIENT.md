@@ -14,7 +14,7 @@ The Outpost terrain and presentation heights consume the [saved relief field](RE
 
 ## Prerequisites
 
-Use the pinned Rust 1.98.0 toolchain. The native client needs a supported Vulkan, Metal, Direct3D or OpenGL backend and a desktop window system. Linux builds use the standard winit X11/Wayland dependencies; no GTK/WebKit installation is required. Sound (kira on cpal) needs the ALSA development headers (`libasound2-dev`) to build; without an output device the client stays silent. Offscreen GPU verification also works with a software Vulkan implementation.
+Use the current stable Rust toolchain from rust-toolchain.toml (minimum supported Rust 1.98). The native client needs a supported Vulkan, Metal, Direct3D or OpenGL backend and a desktop window system. Linux builds use the standard winit X11/Wayland dependencies; no GTK/WebKit installation is required. Sound (kira on cpal) needs the ALSA development headers (`libasound2-dev`) to build; without an output device the client stays silent. Offscreen GPU verification also works with a software Vulkan implementation.
 
 The smoke helper additionally needs Python 3 and OpenSSL. Rust integration tests use local ephemeral TLS credentials and sockets, and do not require a GPU or display.
 
