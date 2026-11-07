@@ -58,6 +58,21 @@ Both interaction styles are available as configurable options for manually aimed
 
 A cancel, blur, blocking panel, device/remap/context change or refused throw must retire either style cleanly **without a phantom attack or stuck pointer capture**. Forced key release is never a deliberate throw. Neither style changes the existing immediate sword swing or automatically makes every skill held. This answers Atlas Question `5.2.i649-2` through Decision `5.2.i649-3` ([#649](https://github.com/moenarch-games/mmorpg/issues/649)).
 
+## Pie and marking menus
+
+**Planned:** [#653](https://github.com/moenarch-games/mmorpg/issues/653); Atlas `5.2.i653`. A radial/pie menu is an optional fast command surface, especially useful as more combat and utility actions arrive. A practiced **marking-menu flick** lets a player choose an action by direction, keeping the number of dedicated hotkeys small.
+
+Support **both** menu sources:
+
+- **Fixed wheel:** user-configured slots referencing existing semantic actions (abilities, emotes, utility), with stable directions so muscle memory develops.
+- **Context-sensitive wheel:** slots derived from supported actions for the current target/situation (NPC Talk/Trade, relevant object interaction, appropriate combat commands). Invalid or absent actions must not become fake client-side interactions.
+
+A typical held gesture is **hold the menu action → show a compact wheel at screen center → move the mouse toward a sector → deliberately release to activate that action**. A short flick can select without waiting for animation. A central dead zone, Escape, losing focus or retiring the held input cancels without dispatch. A tap-to-open and click-to-confirm alternative, plus keyboard/gamepad access, can coexist with the same semantic action choices.
+
+While the wheel owns mouse motion, the **same over-the-shoulder camera holds its current view**. Preserve any focused enemy and restore the previous captured/free cursor, camera mode and facing assistance when the wheel closes. An explicit menu gesture must not also turn the camera, swing a sword, guard or throw a grenade; reuse the existing `input-bindings` context/held lifecycle rather than creating conflicting hotkeys. The MMO simulation keeps running; the wheel is only a client-side command-selection aid.
+
+**Combos:** selecting a combat action with a quick directional flick may serve as one input in an existing timed, authored combination. Repeated menu uses should be responsive enough to sequence actions, but server authority still decides attack timing, actual struck targets, hit confirmation and legal follow-up windows. Nested or multi-stroke gesture chains may be explored later; the first implementation should reuse the current action graph and avoid inventing a new combo engine.
+
 ## Ownership and implementation order
 
 1. **#650** — focus/no-focus over-shoulder camera, automatic facing, pointer capture and consistent strafing; browser and native parity.
