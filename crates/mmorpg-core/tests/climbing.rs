@@ -586,3 +586,31 @@ fn the_hollow_rope_still_reaches_the_sculpted_ridge_landing() {
         player.feet()
     );
 }
+
+#[test]
+fn a_player_climbs_the_basin_cliff_over_its_rounded_rim_without_falling() {
+    // The basin's west cliff under the Hollow rounds over at about 45° before the rim: the
+    // climber holds on over it and pulls up, rather than letting go or hanging in the mantle.
+    let west = 49_152;
+    let mut player = Player::at([-3_000, -5_200]);
+    player.hold(1, west);
+    player.ticks(300);
+    player.jump();
+    player.ticks(1);
+    player.hold(1, west);
+    let mut climbed = false;
+    for _ in 0..1_200 {
+        player.ticks(1);
+        match player.traversal() {
+            Traversal::Climbing { .. } => climbed = true,
+            Traversal::Mantling { ticks, .. } => assert!(ticks < 60, "{:?}", player.feet()),
+            Traversal::Free if climbed && player.feet()[1] > 950.0 => break,
+            _ if !climbed => {}
+            other => panic!("{other:?} at {:?}", player.feet()),
+        }
+    }
+    assert!(climbed && player.feet()[1] > 950.0, "{:?}", player.feet());
+    player.hold(0, west);
+    player.ticks(60);
+    assert!(player.feet()[1] > 950.0, "on the rim: {:?}", player.feet());
+}
