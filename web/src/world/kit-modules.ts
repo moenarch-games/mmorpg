@@ -20,6 +20,9 @@ export type KitPlacement = { key: string; matrix: Float32Array; wear?: number };
  */
 export type KitOptions = { ktx2?: KTX2Loader; wear?: boolean };
 
+/** The texture uniforms of a kit `LitMaterial`, and the wear mask ([`applyOutpostWear`]). */
+const MATERIAL_TEXTURES = ["baseColorTexture", "emissiveTexture", "metallicRoughnessTexture", "normalMapTexture", "occlusionTexture", "wearMask"];
+
 /**
  * An asset-tooling kit's static modules drawn where the shared Rust presentation places them, as
  * the native client does: the Sunken Shrine (#431), the Outpost kit buildings (#420) and the
@@ -62,7 +65,7 @@ export class KitModules {
     const { ktx2, wear } = this.#options;
     const modules = new Map((await loadStaticBundle(this.#bundle, this.#entries, ktx2)).map((root) => [root.name, root]));
     // Wear masks: every wear level then draws with the pristine materials, so in their batches. A bundle without them
-    // (before asset-tooling#510) draws every building pristine.
+    // (before asset-tooling#511) draws every building pristine.
     const masks = wear
       ? await loadBundleGltfs(this.#bundle, [OUTPOST_WEAR_MASKS], 1, ktx2).then(([gltf]) => wearMasks(gltf!), () => null)
       : null;
@@ -109,7 +112,8 @@ export class KitModules {
     this.#batched?.root.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) { return; }
       for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
-        const values = material instanceof THREE.ShaderMaterial ? Object.values(material.uniforms).map((uniform) => uniform.value) : Object.values(material);
+        // A LitMaterial's own textures, not its frame uniforms (shadow maps, the environment, LUTs).
+        const values = material instanceof THREE.ShaderMaterial ? MATERIAL_TEXTURES.map((name) => material.uniforms[name]?.value) : Object.values(material);
         for (const value of values) { if (value instanceof THREE.Texture) { textures.add(value); } }
       }
     });

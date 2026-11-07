@@ -1312,7 +1312,7 @@ fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
             .to_owned();
         let bytes = file(&resolve(entry, &uri));
         // The `gltf` crate decodes PNG and JPEG only: a KTX2 (Basis Universal) image, such as the
-        // Outpost kit's (asset-tooling#510), is transcoded here and re-encoded as a PNG.
+        // Outpost kit's (asset-tooling#511), is transcoded here and re-encoded as a PNG.
         let png = crate::ground::is_ktx2(bytes).then(|| ktx2_png(bytes));
         let bytes = png.as_deref().unwrap_or(bytes);
         let offset = append(bytes);
