@@ -4,6 +4,16 @@ import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js"
 import type { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import { litObject } from "./lighting";
 
+let sharedKtx2: KTX2Loader | undefined;
+
+/**
+ * Sets the KTX2 transcoder every bundle load uses unless it is given its own: the world view's, which the renderer
+ * configured. Any asset-tooling bundle may ship KTX2 (`KHR_texture_basisu`) textures (asset-tooling#511).
+ */
+export function useBundleKtx2Loader(loader: KTX2Loader): void {
+  sharedKtx2 = loader;
+}
+
 /**
  * The glTF of each of `keys` in the gltf-resources bundle at `base`, loaded with plain three.js: a
  * key names its `default` variant, `<key>/<variant>` another one. At most `concurrency` glTFs load at once (all by
@@ -18,7 +28,8 @@ export async function loadBundleGltfs(base: string, keys: readonly string[], con
   }
   const assets = ((await response.json()) as { assets?: { key: string; variant: string; path: string }[] }).assets ?? [];
   const loader = new GLTFLoader();
-  if (ktx2) { loader.setKTX2Loader(ktx2); }
+  const textures = ktx2 ?? sharedKtx2;
+  if (textures) { loader.setKTX2Loader(textures); }
   const paths = keys.map((key) => {
     const [name, variant = "default"] = key.split("/");
     const entry = assets.find((asset) => asset.key === name && asset.variant === variant);

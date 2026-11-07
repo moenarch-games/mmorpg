@@ -1327,25 +1327,7 @@ fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
         }
     }
     // KHR_texture_basisu's source becomes the texture's core source, now a PNG.
-    for texture in json
-        .get_mut("textures")
-        .and_then(serde_json::Value::as_array_mut)
-        .into_iter()
-        .flatten()
-    {
-        let basisu = texture
-            .get_mut("extensions")
-            .and_then(serde_json::Value::as_object_mut)
-            .and_then(|extensions| extensions.remove("KHR_texture_basisu"));
-        if let Some(source) = basisu.map(|basisu| basisu["source"].clone()) {
-            texture["source"] = source;
-        }
-    }
-    for list in ["extensionsUsed", "extensionsRequired"] {
-        if let Some(names) = json.get_mut(list).and_then(serde_json::Value::as_array_mut) {
-            names.retain(|name| name != "KHR_texture_basisu");
-        }
-    }
+    crate::ground::basisu_as_core(&mut json);
     let first = json["bufferViews"].as_array().map_or(0, Vec::len);
     for (index, image) in json
         .get_mut("images")

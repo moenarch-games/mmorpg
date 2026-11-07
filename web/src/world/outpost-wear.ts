@@ -18,13 +18,16 @@ const KINDS: Readonly<Record<string, { kind: number; mask: string }>> = {
 };
 
 /**
- * Ages a sampled material by the draw's wear in [0, 1] (`vWear`) from its texture's mask: R the wear a pixel reveals
- * what is beneath from, G how much full wear darkens it, B plaster's daub tone or the wear moss settles from. The
+ * Ages a sampled material by the draw's wear in [0, 1] (`vWear`) from its texture's mask: R the wear plaster falls to
+ * daub from, or a roof unit's id, G how much full wear darkens it, B plaster's daub tone or the wear moss settles from. The
  * constants are the recipe's (`adapters/blender/outpost.py`, `weathered`), in linear light.
  */
 const WEAR_FRAGMENT = /* glsl */ `
 uniform sampler2D wearMask;
 in float vWear;
+flat in uint vPlacement;
+// The share of roof units missing at full wear (the recipe's MISSING_SHARE).
+#define MISSING_SHARE 0.07
 
 MaterialSample sampleMaterial() {
     MaterialSample m = sampleCleanMaterial();
@@ -53,7 +56,17 @@ MaterialSample sampleMaterial() {
     base = mix(base, vec3(0.047, 0.073, 0.015), 0.85 * moss);
     m.perceptualRoughness = clamp(m.perceptualRoughness + 0.1 * moss, 0.0, 1.0);
 #if OUTPOST_WEAR_KIND == 3
-    // Roofs: missing units leave a dark recess.
+    // Roofs: R is the unit's id. Each occurrence of a unit (its id, its 1 m tile, its module) goes missing at its own
+    // random wear, so the holes scatter instead of repeating with the tile; more wear only adds holes. The id is read
+    // unfiltered: filtering would blend neighbouring ids at the joints.
+    ivec2 size = textureSize(wearMask, 0);
+    ivec2 texel = clamp(ivec2(fract(vUv) * vec2(size)), ivec2(0), size - 1);
+    uint unit = uint(texelFetch(wearMask, texel, 0).r * 64.0);
+    uvec2 tile = uvec2(ivec2(floor(vUv)) + 32768);
+    uint h = unit * 0x8da6b343u ^ tile.x * 0xd8163841u ^ tile.y * 0xcb1ab31fu ^ vPlacement * 0x165667b1u;
+    h ^= h >> 16; h *= 0x7feb352du; h ^= h >> 15; h *= 0x846ca68bu; h ^= h >> 16;
+    reveal = float(h >> 8) / 16777216.0 < MISSING_SHARE * wear ? 1.0 : 0.0;
+    // Missing units leave a dark recess.
     base = mix(base, vec3(0.0027, 0.0024, 0.0022), reveal);
     m.diffuseOcclusion *= 1.0 - 0.7 * reveal;
     m.perceptualRoughness = mix(m.perceptualRoughness, 0.95, reveal);
@@ -105,7 +118,7 @@ export function applyOutpostWear(roots: readonly THREE.Object3D[], masks: Readon
         material.uniforms.wearMask = { value: mask };
         material.defines = { ...material.defines, OUTPOST_WEAR_KIND: kind.kind };
         material.onBeforeCompile = (shader) => {
-          shader.vertexShader = replaceOnce(shader.vertexShader, "out vec4 vColor;", "out vec4 vColor;\nout float vWear;");
+          shader.vertexShader = replaceOnce(shader.vertexShader, "out vec4 vColor;", "out vec4 vColor;\nout float vWear;\nflat out uint vPlacement;");
           shader.vertexShader = replaceOnce(shader.vertexShader, "    vColor = color;", [
             "    vColor = color;",
             "#ifdef USE_BATCHING_COLOR",
@@ -113,6 +126,9 @@ export function applyOutpostWear(roots: readonly THREE.Object3D[], masks: Readon
             "#else",
             "    vWear = 0.0;",
             "#endif",
+            "    // The module's placement, to the centimetre: its roof units go missing independently of other modules'.",
+            "    ivec3 placed = ivec3(floor(litObjectMatrix()[3].xyz * 100.0 + 0.5));",
+            "    vPlacement = uint(placed.x) * 73856093u ^ uint(placed.y) * 19349663u ^ uint(placed.z) * 83492791u;",
           ].join("\n"));
           shader.fragmentShader = replaceOnce(shader.fragmentShader, "MaterialSample sampleMaterial() {", "MaterialSample sampleCleanMaterial() {");
           shader.fragmentShader = replaceOnce(shader.fragmentShader, "vec3 litRadiance(", `${WEAR_FRAGMENT}vec3 litRadiance(`);
