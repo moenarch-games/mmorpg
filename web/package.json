@@ -17,7 +17,7 @@
     "@moritzbrantner/input-bindings-web": "github:moritzbrantner/input-bindings#bcb5834545bcf92cf74d4fb80496f410dea3bcaf",
     "@moritzbrantner/settings-browser": "github:moritzbrantner/settings#18289aafa116010fd8dfe485aecff2cc749ceb4a",
     "@moritzbrantner/three-d-renderer": "github:moritzbrantner/3d-lab#aa7b84daf1682be6de59ef05c775f3d114deb0b1",
-    "@moritzbrantner/three-lighting": "github:moritzbrantner/render-engine#521d011b988d19d64642b23950845612e78f13be",
+    "@moritzbrantner/three-lighting": "github:moritzbrantner/render-engine#c1391b92813150a4044ba926fc0715430129d244",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "three": "0.186.1"

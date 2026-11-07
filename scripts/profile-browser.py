@@ -18,7 +18,8 @@ Sources, all opt-in and read-only:
 - the page's `?profile` frame phases (`web/src/world/frame-profile.ts`): main-thread CPU per phase;
 - Event Timing (`event` entries: input delay, handler time, duration to next paint, i.e. INP) and
   Long Animation Frames, from a `PerformanceObserver` this script installs;
-- WebGL draw calls and triangles from wrapped draw entry points;
+- WebGL draw calls and triangles from wrapped draw entry points, and three's own counts per render
+  pass (sun cascades, local shadows, main, post) with the main pass's top contributors;
 - GPU execution time of each frame's WebGL commands via `EXT_disjoint_timer_query_webgl2`, only when
   the browser exposes it (reported as unsupported otherwise);
 - a Chromium trace of `move-rotate` (`--trace`): busy time of the renderer main, GPU and
@@ -215,6 +216,32 @@ class Session:
         self.context.close()
 
 
+def draws_by_pass(frames):
+    """Mean draw calls and triangles per frame of each render pass (`frame-profile.ts`), in draw order."""
+    totals = {}
+    for f in frames:
+        for p in f.get("passes", []):
+            entry = totals.setdefault(p["pass"], [0, 0])
+            entry[0] += p["calls"]
+            entry[1] += p["triangles"]
+    n = max(len(frames), 1)
+    return {name: {"calls": round(calls / n, 1), "triangles": round(triangles / n)} for name, (calls, triangles) in totals.items()}
+
+
+def top_contributors(frames, field, top=15):
+    """A pass group's largest contributors by mean draw calls per frame: mesh name (digits folded) [| material]."""
+    totals = {}
+    for f in frames:
+        for c in f.get(field, []):
+            entry = totals.setdefault(c["key"], [0, 0])
+            entry[0] += c["calls"]
+            entry[1] += c["triangles"]
+    n = max(len(frames), 1)
+    ranked = sorted(totals.items(), key=lambda item: -item[1][0])
+    return {"distinct": len(ranked),
+            "top": [{"key": key, "calls": round(calls / n, 1), "triangles": round(triangles / n)} for key, (calls, triangles) in ranked[:top]]}
+
+
 def summarize(sample, seconds):
     frames = sample["frames"]
     raf = [b["raf"] - a["raf"] for a, b in zip(frames, frames[1:])]
@@ -239,6 +266,10 @@ def summarize(sample, seconds):
         "instanceBatches": pct([f["instanceBatches"] for f in frames], 50),
         "drawCallsPerFrame": round(sample["draws"] / max(len(frames), 1), 1),
         "trianglesPerFrame": round(sample["triangles"] / max(len(frames), 1)),
+        # three's own counts per render pass and, for the main and shadow passes, per contributor (mean per frame).
+        "drawsByPass": draws_by_pass(frames),
+        "mainPassTopContributors": top_contributors(frames, "mainDraws"),
+        "shadowPassTopContributors": top_contributors(frames, "shadowDraws"),
         "gpuMs": dist(gpu) if sample["gpuSupported"] else "unsupported",
         "longAnimationFrames": {
             "count": len(sample["loaf"]),
