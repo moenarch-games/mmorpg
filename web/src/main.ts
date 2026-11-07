@@ -72,7 +72,7 @@ import type { Profile } from "@moritzbrantner/input-bindings";
 import { cancelCast, minionCommand, useAbilitySlot, type MinionAction } from "./world/units/abilities";
 import { padGuardLane } from "./world/units/shield-guard";
 import type { ViewerLook } from "./world/unit-presenter";
-import { Preferences, type ClientPreferences } from "./settings/preferences";
+import { Preferences, RENDER_RESOLUTION_PIXEL_RATIO, type ClientPreferences } from "./settings/preferences";
 import { SettingsPanel } from "./settings/settings-panel";
 import { defaultBindingProfile, loadBindingProfile, saveBindingProfile } from "./settings/binding-profiles";
 import { TouchControls, trackInputMode } from "./input/touch-controls";
@@ -491,6 +491,10 @@ function applyPreferences(preferences: ClientPreferences): void {
   worldView.setLookInversion(preferences.invertVerticalLook);
   worldView.setMotionPreference(preferences.reduceMotion);
   worldView.setAudioPreferences(preferences.audio);
+  if (maxPixelRatio !== preferences.maxPixelRatio) {
+    maxPixelRatio = preferences.maxPixelRatio;
+    resize();
+  }
   if (preferences.reduceMotion === "system") {
     delete document.documentElement.dataset.motion;
   } else {
@@ -1281,12 +1285,15 @@ function layoutPreview() {
   previewCamera.updateMatrixWorld(true);
 }
 
+/** The render-resolution setting's cap on canvas pixels per CSS pixel; its default until preferences load. */
+let maxPixelRatio: number = RENDER_RESOLUTION_PIXEL_RATIO.balanced;
+
 function resize() {
   const width = Math.max(canvas.clientWidth, 1);
   const height = Math.max(canvas.clientHeight, 1);
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
-  renderer.setSize(width, height, window.devicePixelRatio);
+  renderer.setSize(width, height, Math.min(window.devicePixelRatio, maxPixelRatio));
   layoutPreview();
 }
 
