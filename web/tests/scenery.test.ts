@@ -86,6 +86,7 @@ describe("scenery provider and local world", () => {
     outpostKitEntries: () => [],
     outpostKitKeys: () => [],
     outpostKitModels: () => new Float32Array(),
+    outpostKitWear: () => new Float32Array(),
     settlementPropEntries: () => [],
     settlementPropKeys: () => [],
     settlementPropModels: () => new Float32Array(),

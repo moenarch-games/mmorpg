@@ -21,6 +21,9 @@ pub struct Part {
     pub entry: &'static str,
     /// Column-major entry-to-world matrix, metres.
     pub model: [f32; 16],
+    /// The building's wear in [0, 1] ([`outpost_kit::Placement::wear`]), which the browser blends
+    /// from the kit's wear masks; the native client draws the pristine modules.
+    pub wear: f32,
 }
 
 fn metres(units: i32) -> f64 {
@@ -51,6 +54,7 @@ pub fn parts(scenery: &Scenery) -> Vec<Part> {
                     translate(metres(x), metres(y), metres(z)),
                     ry(yaw),
                 ])),
+                wear: f32::from(placement.wear) / 255.,
             }
         })
         .collect();
@@ -58,6 +62,7 @@ pub fn parts(scenery: &Scenery) -> Vec<Part> {
         parts.push(Part {
             entry: "greyhaven.fort.settlement",
             model: matrix(crate::geometry::ID),
+            wear: 0.,
         });
     }
     parts

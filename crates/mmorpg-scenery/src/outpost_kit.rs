@@ -116,6 +116,17 @@ pub struct Placement {
     pub position: [i32; 3],
     /// Rotation about +Y, 65 536 steps per turn, 0 keeping the module's +Z front on +Z.
     pub yaw: u16,
+    /// The building's wear in 255ths, from pristine (0) to the kit's full wear (255): every
+    /// module of one building shares it. A client blends it in its shader from the kit's wear
+    /// masks, so every wear level draws with the pristine module's materials.
+    pub wear: u8,
+}
+
+/// Collider `id`'s building wear in 255ths ([`Placement::wear`]): a fixed hash, so each
+/// building keeps its own and neighbours differ.
+#[must_use]
+pub const fn wear(id: u32) -> u8 {
+    (id.wrapping_mul(0x9E37_79B1) >> 24) as u8
 }
 
 fn entry(part: &str, variant: &str) -> &'static str {
@@ -193,6 +204,7 @@ pub fn placements(scenery: &Scenery) -> Vec<Placement> {
                 entry: entry(part, variant),
                 position: [cx + dx, cy + y, cz + dz],
                 yaw: u16::from((yaw + quarters) % 4) * mmorpg_core::trig::YAW_QUARTER_TURN,
+                wear: wear(collider),
             });
         }
     }

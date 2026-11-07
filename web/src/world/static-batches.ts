@@ -6,7 +6,7 @@ import type { SceneryScene, StaticBatch } from "./scenery-nodes";
 /** One batched mesh: the `BatchedMesh` that draws it and its instance there, or the plain mesh drawing it alone. */
 export type BatchedDraw = { mesh: THREE.BatchedMesh | THREE.Mesh | null; instance: number };
 
-type Pending = { geometry: THREE.BufferGeometry; matrix: THREE.Matrix4; color: THREE.Color | null; draw: BatchedDraw };
+type Pending = { geometry: THREE.BufferGeometry; matrix: THREE.Matrix4; color: THREE.Color | THREE.Vector4 | null; draw: BatchedDraw };
 
 /**
  * Whether a mesh drawn with `material` can join a `BatchedMesh` of lit scenery: one opaque or masked `LitMaterial`
@@ -54,10 +54,12 @@ export class StaticBatches {
   }
 
   /**
-   * Adds `geometry` drawn with `material` (see [`batchable`]) at `matrix`, times `color` (linear) when given. Draws of
-   * another `part` go to other batches: moving one re-uploads only its own batch's matrices.
+   * Adds `geometry` drawn with `material` (see [`batchable`]) at `matrix`, times `color` (linear) when given. A `Vector4`
+   * colour also sets the instance colour's alpha, which three ignores and the Outpost kit's wear shader reads as the draw's
+   * wear ([`applyOutpostWear`]). Draws of another `part` go to other batches: moving one re-uploads only its own batch's
+   * matrices.
    */
-  add(geometry: THREE.BufferGeometry, material: THREE.Material, matrix: THREE.Matrix4, color: THREE.Color | null = null, part = ""): BatchedDraw {
+  add(geometry: THREE.BufferGeometry, material: THREE.Material, matrix: THREE.Matrix4, color: THREE.Color | THREE.Vector4 | null = null, part = ""): BatchedDraw {
     const key = `${part}|${material.uuid}|${layout(geometry)}`;
     let group = this.#groups.get(key);
     if (!group) {
@@ -141,16 +143,18 @@ export class BatchedRoots {
   readonly #sources: readonly THREE.Object3D[];
   readonly #meshes: Mirrored[][];
 
-  constructor(name: string, sources: readonly THREE.Object3D[]) {
+  /** `wear`, when given, is each source root's wear in [0, 1], its instances' colour alpha ([`StaticBatches.add`]). */
+  constructor(name: string, sources: readonly THREE.Object3D[], wear: readonly number[] | null = null) {
     this.#batches = new StaticBatches(name);
     this.#sources = sources;
-    this.#meshes = sources.map((source) => {
+    this.#meshes = sources.map((source, index) => {
       source.updateMatrixWorld(true);
       const meshes: Mirrored[] = [];
+      const color = wear ? new THREE.Vector4(1, 1, 1, wear[index] ?? 0) : null;
       source.traverse((object) => {
         if (!(object instanceof THREE.Mesh)) { return; }
         if (batchable(object.material) && !(object as THREE.SkinnedMesh).isSkinnedMesh && !(object as THREE.InstancedMesh).isInstancedMesh) {
-          meshes.push({ mesh: object, draw: this.#batches.add(object.geometry, object.material, object.matrixWorld), proxy: null });
+          meshes.push({ mesh: object, draw: this.#batches.add(object.geometry, object.material, object.matrixWorld, color), proxy: null });
           return;
         }
         const proxy = new THREE.Mesh(object.geometry, object.material);

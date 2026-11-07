@@ -540,7 +540,7 @@ export class WorldView {
     this.#inn = new WalkInBuildings(world.scenery.buildings.presenters());
     this.#shrine = new KitModules(SHRINE_BUNDLE, "shrine kit", world.scenery.shrine.entries, world.scenery.shrine.placements);
     const fortEntry = (key: string) => key.startsWith("greyhaven.fort.");
-    this.#outpost = new KitModules(OUTPOST_BUNDLE, "Outpost kit", world.scenery.outpost.entries.filter((key) => !fortEntry(key)), world.scenery.outpost.placements.filter(({ key }) => !fortEntry(key)));
+    this.#outpost = new KitModules(OUTPOST_BUNDLE, "Outpost kit", world.scenery.outpost.entries.filter((key) => !fortEntry(key)), world.scenery.outpost.placements.filter(({ key }) => !fortEntry(key)), { ktx2: this.#models.ktx2Loader, wear: true });
     this.#fortifications = new KitModules(`${import.meta.env.BASE_URL}authored/greyhaven-fort/`, "Greyhaven fortifications", world.scenery.outpost.entries.filter(fortEntry), world.scenery.outpost.placements.filter(({ key }) => fortEntry(key)));
     void this.#fortifications.load();
     this.#settlement = new KitModules(SETTLEMENT_BUNDLE, "settlement props", world.scenery.settlement.entries, world.scenery.settlement.placements);

@@ -64,8 +64,8 @@ export async function readBundleAttachment(base: string, key: string, variant: s
  * The scenes of `keys` in the bundle at `base` for the walk-in buildings and the kit modules, lit like the rest of the
  * world, their materials shared across entries so the batches (#615) draw one call per material, not per entry.
  */
-export async function loadStaticBundle(base: string, keys: readonly string[]): Promise<Object3D[]> {
-  const gltfs = await loadBundleGltfs(base, keys);
+export async function loadStaticBundle(base: string, keys: readonly string[], ktx2?: KTX2Loader): Promise<Object3D[]> {
+  const gltfs = await loadBundleGltfs(base, keys, Infinity, ktx2);
   shareMaterials(gltfs);
   return gltfs.map((gltf, index) => {
     // Lit like the rest of the world (#600).
@@ -85,12 +85,14 @@ export function shareMaterials(gltfs: readonly GLTF[]): void {
   const textures = new Map<string, THREE.Texture>();
   const materials = new Map<string, THREE.Material>();
   for (const gltf of gltfs) {
-    const json = gltf.parser.json as { textures?: { source?: number; sampler?: number }[]; images?: { uri?: string }[] };
+    type TextureDefinition = { source?: number; sampler?: number; extensions?: { KHR_texture_basisu?: { source?: number } } };
+    const json = gltf.parser.json as { textures?: TextureDefinition[]; images?: { uri?: string }[] };
     const texture = (value: THREE.Texture): THREE.Texture => {
-      // Bundle images are content-addressed: equal URIs are equal images.
+      // Bundle images are content-addressed: equal URIs are equal images. A KTX2 image is the extension's source.
       const index = gltf.parser.associations.get(value)?.textures;
       const definition = index === undefined ? undefined : json.textures?.[index];
-      const uri = definition?.source === undefined ? undefined : json.images?.[definition.source]?.uri;
+      const source = definition?.extensions?.KHR_texture_basisu?.source ?? definition?.source;
+      const uri = source === undefined ? undefined : json.images?.[source]?.uri;
       if (uri === undefined) { return value; }
       const key = `${uri}:${definition?.sampler ?? -1}:${value.channel}:${value.colorSpace}`;
       const kept = textures.get(key);
