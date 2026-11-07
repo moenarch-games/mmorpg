@@ -173,7 +173,7 @@ jobs:
     permissions:
       contents: read
       packages: read
-    uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@2ec8d067031d4e9d093701f23a00b0ddcaef42d8
+    uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@bd04858f403dbb0a6314abb1fe03e93f38b445ca
     with:
       bun_version: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'latest' || '' }}
       node_version: ""
@@ -183,6 +183,8 @@ jobs:
       apt_packages: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'libudev-dev libasound2-dev' || '' }}
       pre_validate_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.settings_only == 'true' && 'scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh' || 'scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh && curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"') || '' }}
       cache_cargo: ${{ needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true' }}
+      # Preserve compiled local crate artifacts across ordinary PR runs; test results remain uncached.
+      cache_cargo_workspace_crates: ${{ needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true' }}
       format_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'cargo fmt --all -- --check' || '' }}
       lint_command: ${{ needs.scope.outputs.full_validation == 'true' && 'cargo clippy --workspace --all-targets --all-features --locked -- -D warnings && (cd web && bunx --no-install tsc --noEmit -p tsconfig.assets.json)' || '' }}
       # Ordinary Rust PRs run the workspace tests too. GPU tests are #[ignore]d, and the native/Pages
@@ -201,7 +203,7 @@ jobs:
     permissions:
       contents: read
       packages: read
-    uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@2ec8d067031d4e9d093701f23a00b0ddcaef42d8
+    uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@bd04858f403dbb0a6314abb1fe03e93f38b445ca
     with:
       bun_version: latest
       node_version: ""
