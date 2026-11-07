@@ -26,11 +26,22 @@ function layout(geometry: THREE.BufferGeometry): string {
 }
 
 /**
+ * Makes `mesh` draw every visible instance in every view, unsorted. Culling or sorting per view rebuilds the batch's
+ * draw list and re-uploads its indirect texture in each sun cascade and the main pass, and each upload into a texture
+ * the GPU still reads stalls it: in Greyhaven that cost about 2.5 ms of GPU time a frame, more than the instances it
+ * culls. The list (and the upload) then changes only when an instance is shown or hidden.
+ */
+export function drawWhole(mesh: THREE.BatchedMesh): void {
+  mesh.perObjectFrustumCulled = false;
+  mesh.sortObjects = false;
+}
+
+/**
  * Static lit scenery drawn as one three `BatchedMesh` per material and vertex layout (#615): Greyhaven's frame is bound
  * by draw calls, each paid in the main pass and again in every sun cascade, and a batch is one multi-draw call per
- * pass however many meshes it holds. three culls each instance by its bounding sphere in every view, shadow views
- * included, as it culls plain meshes. [`add`] collects meshes, [`build`] creates the batches once; afterwards each
- * draw can be moved ([`setMatrix`]) or shown and hidden ([`setVisible`]).
+ * pass however many meshes it holds. Each batch draws all its shown instances in every view ([`drawWhole`]); the
+ * static scene hides far groups. [`add`] collects meshes, [`build`] creates the batches once; afterwards each draw can
+ * be moved ([`setMatrix`]) or shown and hidden ([`setVisible`]).
  */
 export class StaticBatches {
   readonly root = new THREE.Group();
@@ -80,8 +91,9 @@ export class StaticBatches {
       const indices = geometries.reduce((sum, geometry) => sum + (geometry.index?.count ?? 0), 0);
       const mesh = new THREE.BatchedMesh(pending.length, vertices, indices, material);
       mesh.name = `${this.root.name}:${material.name || material.uuid}`;
-      // The instances cull themselves per view; the batch's own sphere would go stale as draws move.
+      // The batch's own sphere would go stale as draws move.
       mesh.frustumCulled = false;
+      drawWhole(mesh);
       mesh.matrixAutoUpdate = false;
       const ids = new Map(geometries.map((geometry) => [geometry, mesh.addGeometry(geometry)]));
       for (const { geometry, matrix, color, draw } of pending) {

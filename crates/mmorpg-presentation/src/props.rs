@@ -882,7 +882,7 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
                 scale(size, size, size),
             ]),
             [mx, mz],
-            Cull::Near,
+            Cull::Detail,
         );
     }
 }
