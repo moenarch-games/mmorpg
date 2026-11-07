@@ -2,5 +2,5 @@
   "name": "mmorpg agent",
   "build": { "dockerfile": "Dockerfile", "context": ".." },
   "remoteUser": "agent",
-  "postCreateCommand": "scripts/fetch-bundles.sh"
+  "postCreateCommand": "mise trust --yes && mise install --yes && mise run setup"
 }

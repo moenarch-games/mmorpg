@@ -227,6 +227,17 @@ The PostgreSQL/S3 host now [suspends empty zones and cold-restores them on admis
 - `3d-lab` (`three-d-core`, `three-d-camera`, `three-d-projective`, `three-d-animation` and the browser `@moritzbrantner/three-d-renderer`, kept on one commit): `235774615f1367065093deb6988f5217bdf4d7e1`
 - reusable validation workflow: `45042e56be120b438096e774027637cac0280075`
 
+## Tools
+
+[`mise.toml`](mise.toml) lists every tool the builds, tests and helper scripts use, at their latest stable releases: Bun, Python with uv, cargo-nextest, gh, jq and ripgrep. Rust stays with rustup, which reads its channel, components and wasm32 target from `rust-toolchain.toml`. From the repository root:
+
+```sh
+mise install       # the tools
+mise run setup     # rustup's toolchain, the project's .venv with Playwright and Chromium, and the asset bundles
+```
+
+The Python scripts then run in that `.venv` (mise activates it in the checkout). Docker (for `scripts/smoke-handoff.py`) and Blender (for `scripts/dev-blender.sh`) stay system installs. The [dev container](docs/adr/0005-agent-dev-container.md) installs the same tools through mise.
+
 ## Validation
 
 ```sh
@@ -242,7 +253,7 @@ cargo build --workspace --all-features --locked
 cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked
 ```
 
-For the browser client, from `web/` using the latest Bun (needs the pinned `wasm-bindgen` CLI above):
+For the browser client, from `web/` using the latest Bun (the build selects the `wasm-bindgen` CLI matching `Cargo.lock` itself):
 
 ```sh
 bun install --frozen-lockfile
