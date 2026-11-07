@@ -64,6 +64,10 @@ const BODY_HEIGHT: f32 = 90.0;
 const HAND_RISE_UNITS: f32 = 80.0;
 /// A surface whose normal's upward part is below this is steeper than walkable (45°).
 const WALKABLE_NORMAL_Y: f32 = std::f32::consts::FRAC_1_SQRT_2;
+/// A climber keeps hold of a face steeper than this (40°), and a ledge's top must be gentler:
+/// terrain that rounds over at about 45° is neither reliably walkable nor a face to grab, and
+/// letting go there drops the climber back down the cliff.
+const HOLD_NORMAL_Y: f32 = 0.766;
 /// The contact offset the backends keep (see `physics.rs`).
 const CONTACT_OFFSET: f32 = 0.25;
 
@@ -506,8 +510,8 @@ impl Probe<'_> {
     }
 
     /// The steep static face met by a ray from `origin` along `direction` (XZ unit vector) for
-    /// `length` units.
-    fn face(&self, origin: [f32; 3], direction: [f32; 3], length: f32) -> Option<Face> {
+    /// `length` units: one whose normal's upward part is below `steep`.
+    fn face(&self, origin: [f32; 3], direction: [f32; 3], length: f32, steep: f32) -> Option<Face> {
         let translation = direction.map(|axis| axis * length);
         let hit = self.world.cast_ray(origin, translation, statics)?;
         let normal = hit.normal;
@@ -515,7 +519,7 @@ impl Probe<'_> {
         // A ray starting inside geometry, a walkable surface, an overhang's underside or a
         // face turned away is no face to hold or mantle.
         if hit.fraction <= 0.0
-            || normal[1].abs() >= WALKABLE_NORMAL_Y
+            || normal[1].abs() >= steep
             || horizontal <= 0.0
             || normal[0] * direction[0] + normal[2] * direction[2] >= 0.0
         {
@@ -530,18 +534,25 @@ impl Probe<'_> {
     }
 
     /// The face in front of a body centred on `centre`, facing `ahead`, at `height` above
-    /// its feet.
-    fn face_ahead(&self, centre: [f32; 3], ahead: [f32; 2], height: f32) -> Option<Face> {
+    /// its feet, steeper than `steep` (see [`Self::face`]).
+    fn face_ahead(
+        &self,
+        centre: [f32; 3],
+        ahead: [f32; 2],
+        height: f32,
+        steep: f32,
+    ) -> Option<Face> {
         let feet = centre[1] - half_height();
         self.face(
             [centre[0], feet + height, centre[2]],
             [ahead[0], 0.0, ahead[1]],
             radius() + CONTACT_OFFSET + reach(),
+            steep,
         )
     }
 
     /// More face above `face`: a ray back into it from [`HAND_RISE_UNITS`] up along it.
-    fn face_above(&self, face: &Face) -> Option<Face> {
+    fn face_above(&self, face: &Face, steep: f32) -> Option<Face> {
         let up = up_along(face.normal);
         let back = radius() + 10.0;
         let origin = [0, 1, 2].map(|axis| {
@@ -552,14 +563,15 @@ impl Probe<'_> {
             origin,
             [-face.outward[0], 0.0, -face.outward[1]],
             back + reach(),
+            steep,
         )
     }
 
     /// A climbable face in front of the body with more of it above: one to grab.
     fn grabbable(&self, centre: [f32; 3], ahead: [f32; 2]) -> Option<Face> {
-        let face = self.face_ahead(centre, ahead, BODY_HEIGHT)?;
+        let face = self.face_ahead(centre, ahead, BODY_HEIGHT, WALKABLE_NORMAL_Y)?;
         self.grip(face.body, face.point)?;
-        let above = self.face_above(&face)?;
+        let above = self.face_above(&face, WALKABLE_NORMAL_Y)?;
         self.grip(above.body, above.point)?;
         Some(face)
     }
@@ -570,7 +582,7 @@ impl Probe<'_> {
         let feet = centre[1] - half_height();
         let face = PROBE_HEIGHTS
             .iter()
-            .filter_map(|&height| self.face_ahead(centre, ahead, height))
+            .filter_map(|&height| self.face_ahead(centre, ahead, height, WALKABLE_NORMAL_Y))
             .min_by(|a, b| {
                 let distance =
                     |face: &Face| (face.point[0] - centre[0]).hypot(face.point[2] - centre[2]);
@@ -593,12 +605,12 @@ impl Probe<'_> {
         {
             return None;
         }
-        // A walkable top within reach.
+        // A top within reach, gentle enough to stand on.
         let drop = top - (feet + low);
         let hit = self
             .world
             .cast_ray([column[0], top, column[1]], [0.0, -drop, 0.0], statics)?;
-        if hit.fraction <= 0.0 || hit.normal[1] < WALKABLE_NORMAL_Y {
+        if hit.fraction <= 0.0 || hit.normal[1] < HOLD_NORMAL_Y {
             return None;
         }
         let ledge = top - drop * hit.fraction;
@@ -728,17 +740,27 @@ fn climb(probe: &Probe<'_>, centre: [f32; 3], wall: u16, intent: Intent) -> Step
         });
     }
     let ahead = heading(wall);
-    let Some((face, grip)) = probe
-        .face_ahead(centre, ahead, BODY_HEIGHT)
-        .and_then(|face| Some((face, probe.grip(face.body, face.point)?)))
-    else {
-        // The face ended or turned sheer: top out onto it if possible, otherwise drop.
-        if intent.forward > 0
-            && !intent.stunned
-            && let Some((goal, wall)) = probe.ledge(centre, ahead)
-        {
-            return start_mantle(centre, goal, wall);
-        }
+    let gripped = |face: Face| Some((face, probe.grip(face.body, face.point)?));
+    let body = probe.face_ahead(centre, ahead, BODY_HEIGHT, HOLD_NORMAL_Y);
+    let held = body.and_then(gripped);
+    // The face ended or turned sheer: top out onto it if possible.
+    if held.is_none()
+        && intent.forward > 0
+        && !intent.stunned
+        && let Some((goal, wall)) = probe.ledge(centre, ahead)
+    {
+        return start_mantle(centre, goal, wall);
+    }
+    // A cliff that rounds over into a slope still too steep to walk up (terrain) has no ledge
+    // to pull up onto, and the body sees no face while the feet still hang on the steep lip:
+    // climb on what is steep at the feet until they clear it, rather than letting go there.
+    let held = held.or_else(|| {
+        body.is_none()
+            .then(|| probe.face_ahead(centre, ahead, PROBE_HEIGHTS[0], HOLD_NORMAL_Y))
+            .flatten()
+            .and_then(gripped)
+    });
+    let Some((face, grip)) = held else {
         return Step::free(Traversal::Released {
             ticks: RELEASE_TICKS,
         });
@@ -755,7 +777,7 @@ fn climb(probe: &Probe<'_>, centre: [f32; 3], wall: u16, intent: Intent) -> Step
     }
     let mut forward = intent.forward;
     if forward > 0 {
-        match probe.face_above(&face) {
+        match probe.face_above(&face, HOLD_NORMAL_Y) {
             // Sheer above: no higher.
             Some(above) if probe.grip(above.body, above.point).is_none() => forward = 0,
             Some(_) => {}
@@ -817,8 +839,12 @@ fn mantle(
     let across = across || centre[1] >= raised - 0.5;
     let over = across && (x - centre[0]).hypot(z - centre[2]) < 1.0;
     // Over the goal, the feet set down onto the ledge; once they stand on it, the mantle ends.
+    // The probe measured the ledge at one point, but uneven ground (terrain) can hold the body
+    // a little higher or short of the goal: standing on it with the body inside the face ends
+    // the mantle too, instead of hanging there until it is abandoned and the player drops.
     let standing = y + half_height();
-    if over && centre[1] <= standing + 0.5 {
+    let inside = across && (x - centre[0]).hypot(z - centre[2]) < radius();
+    if (over && centre[1] <= standing + 0.5) || (inside && intent.grounded) {
         return Step::free(Traversal::Free);
     }
     let traversal = Traversal::Mantling {
