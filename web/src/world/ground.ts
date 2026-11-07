@@ -3,6 +3,7 @@ import { LitMaterial } from "@moritzbrantner/three-lighting";
 import type { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import type { TerrainStreamSource } from "./scenery-nodes";
 import { loadBundleGltfs, readBundleAttachment } from "./static-bundle";
+import { drawWhole } from "./static-batches";
 
 /** The `greyhaven-terrain` bundle `scripts/fetch-bundles.sh` places in `web/public` (#525). */
 export const TERRAIN_BUNDLE = `${import.meta.env.BASE_URL}scenery/greyhaven.terrain/`;
@@ -91,7 +92,7 @@ type Placed = { batch: Batch; geometry: number; instance: number };
 
 /**
  * One `BatchedMesh` per material (#526, as #615 batches the static scenery): every tile drawn with that material is one
- * instance, culled per view by its bounding sphere, so the whole terrain costs one multi-draw call per material and pass.
+ * instance, drawn whole in every view ([`drawWhole`]), so the whole terrain costs one multi-draw call per material and pass.
  * Room grows as near levels stream in; evicted ones free theirs for reuse.
  */
 class Batch {
@@ -105,8 +106,9 @@ class Batch {
     this.mesh = new THREE.BatchedMesh(instances, vertices, indices, material);
     this.mesh.name = name;
     this.mesh.matrixAutoUpdate = false;
-    // The instances cull themselves per view.
+    // Tiles stream in and out, so the batch's own sphere would go stale.
     this.mesh.frustumCulled = false;
+    drawWhole(this.mesh);
   }
 
   add(geometry: THREE.BufferGeometry, visible: boolean): Placed {
