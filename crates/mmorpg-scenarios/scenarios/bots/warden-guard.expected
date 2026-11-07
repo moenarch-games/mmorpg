@@ -11,8 +11,8 @@ t=338 warden p1 e1 ack4 (-4188,70,2132) sees[] rage0/100
 t=400 warden p1 e1 ack4 (-4186,180,1504) sees[] rage0/100
 t=600 warden p1 e1 ack4 (-4186,541,-532) sees[] rage0/100
 t=712 warden move -> applied seq=5 epoch=1 forward=1 strafe=0 facing=49152
-t=713 warden p1 e1 ack5 (-4197,730,-1675) sees[] rage0/100
-t=800 warden p1 e1 ack5 (-5110,730,-1675) sees[] rage0/100
+t=713 warden p1 e1 ack5 (-4197,730,-1674) sees[] rage0/100
+t=800 warden p1 e1 ack5 (-5110,730,-1674) sees[] rage0/100
 t=826 warden move -> applied seq=6 epoch=1 forward=1 strafe=0 facing=0
 t=827 warden p1 e1 ack6 (-5383,730,-1664) sees[] rage0/100
 t=1000 warden p1 e1 ack6 (-5383,1010,107) sees[] rage0/100
