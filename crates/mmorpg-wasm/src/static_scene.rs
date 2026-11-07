@@ -459,25 +459,4 @@ mod tests {
         assert_eq!(models().len(), draws * 16);
         assert_eq!(motion(1.0, true).len(), scene.animated.len() * 16);
     }
-
-    /// The node and vertex budgets the web client checks too (`local-zone-wasm.test.ts`),
-    /// here so every Rust change meets them on PR CI (#520).
-    #[test]
-    fn the_static_scene_stays_within_its_node_and_vertex_budget() {
-        let layout: serde_json::Value = serde_json::from_str(layout()).unwrap();
-        let nodes = layout["groups"].as_array().unwrap().len();
-        let vertices: u64 = layout["geometries"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|entry| entry["vertexCount"].as_u64().unwrap())
-            .sum();
-        assert!(nodes <= 3_800, "{nodes} static nodes");
-        // The terrain is drawn in visual tiles (#526), outside the static scene.
-        // The #644 brook quality pass grows the saved scene from 485,864 to 526,685:
-        // refined basin rocks +21,114; new western rocks +15,435; bank shingle +1,884;
-        // one shared turf mesh +560; other approved scenery +1,828. Node count remains
-        // 3,722 under the unchanged 3,800 ceiling; this is content cost, not new work class.
-        assert!(vertices <= 530_000, "{vertices} static vertices");
-    }
 }

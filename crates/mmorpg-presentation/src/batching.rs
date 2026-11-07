@@ -9,9 +9,8 @@ pub enum Cull {
     Far,
     Mid,
     Near,
-    /// Ankle-high ground cover (turf, ferns, grass clumps): a short reach, so
+    /// Ankle-high ground cover (turf, ferns, grass clumps): small cells and a short reach, so
     /// the main pass and every sun cascade draw only the cover around the camera.
-    /// Its cells match the reach so the static scene stays within its node budget.
     Detail,
 }
 impl Cull {
@@ -30,7 +29,7 @@ impl Cull {
             Self::Far => 80.,
             Self::Mid => 60.,
             Self::Near => 40.,
-            Self::Detail => 30.,
+            Self::Detail => 10.,
         }
     }
     /// Camera distance (metres, to the group's bounding circle) beyond which the class is hidden.

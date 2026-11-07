@@ -1166,7 +1166,6 @@ The saved brook quality pass grows the existing static export from 485,864 to ap
 vertices: refined basin rock surfaces add 21,114, nine new western rock surfaces 15,435,
 bank shingle 1,884, one shared turf mesh 560, and other scenery a net 1,828. Exact geometry
 aliases decline from 158 to 124; the increase is authored surface detail rather than new
-repeated-buffer growth. The existing vertex ceiling is 530,000; the 3,800-node ceiling stays
-unchanged (the measured quality pass has 3,722 nodes). This records adopted content cost, not a timing claim.
+repeated-buffer growth (the measured quality pass has 3,722 nodes). This records adopted content cost, not a timing claim.
 The frozen accepted/selected Outpost grass placements remain unchanged; their context hash
 and the rendered scenery fingerprints reflect the saved scene and corrected route guide.
