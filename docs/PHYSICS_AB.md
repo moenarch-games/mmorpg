@@ -10,13 +10,21 @@ compiled normally; `mmorpg-core` alone selects them, and no host or client choos
 The selection happens before the zone is built, and recovery makes the same selection from
 the same content. Greyhaven now uses Physics Engine's retained hulls and cave meshes for
 character movement, support, ray/projectile and static shape queries, retaining game body IDs
-and engine surface features. Debris always retains Rapier's accepted dynamic-contact and settling
-behaviour (including primitive-only zones, following the #643 breakables CI failure).
+and engine surface features. Primitive-only zones use Physics Engine for debris with two
+substeps and its default eight velocity-solver passes. The earlier four-pass adapter froze a
+crate panel on an edge above the accepted ground band (#643); eight passes satisfy the
+unchanged breakables/recovery fixture and settling thresholds. Debris in authored mesh/hull
+zones retains Rapier's dynamic-contact response until Engine supports those pairs.
 Movable props use Rapier's dynamic solver when the world contains an authored mesh or hull. Physics Engine
 does not support general dynamic box–mesh, box–hull, rotating rigid capsule–mesh or hull–hull
 response; these pairs are never sent to its unsupported rigid-body scheduler or silently
 approximated by boxes. `World::with_backend` still selects the complete Rapier zone for
 diagnostics and content that requires it. A/B fixtures use `physics::using_backend`.
+
+The debris integration retains Engine `943d0841`, including upstream #501/#502 for terrain
+seams and reconstruction. Static push-out derives from the physical pose, rather than a
+previous move's unchecked clearance hint; consumer recovery still reconstructs only from
+canonical game state.
 
 Navigation and summon placement query the actual upright unit capsule against authored shapes.
 General box–mesh/hull overlap queries remain unsupported by Physics Engine; callers must not
@@ -127,7 +135,8 @@ static box moved in place with `set_static_position`, its riders carried by the 
 terrain heightfield (`add_heightfield`),
 rays (`cast_ray`/`cast_ray_first`), capsule sweeps (`cast_shape`, the charge-path rule),
 overlaps (`overlap_shape`) and segment checks, immutable triangle meshes and convex
-rock hulls. Debris (#288) uses Rapier's existing dynamic path on both backends.
+rock hulls. Debris (#288) uses Engine in primitive-only worlds (two substeps, eight
+velocity-solver passes) and Rapier's existing dynamic path in authored mesh/hull worlds.
 Movable props (#58) use engine dynamic boxes in primitive-only worlds and Rapier
 when authored meshes or hulls are present. A resting crate is fixed on both arms;
 the existing friction, restitution and averaging contracts are retained.

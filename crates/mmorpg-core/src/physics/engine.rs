@@ -18,11 +18,9 @@
 //!   order, each seeing the earlier movers at their new positions, as the Rapier step does
 //!   body by body.
 //! - Rays, overlaps and segment checks are `cast_ray`/`cast_ray_first` and `overlap_shape`.
-//! - Debris (#288) keeps Rapier's existing dynamic solver even in primitive-only zones: its
-//!   contact/settling behaviour is part of the breakables gameplay contract. Movable props
-//!   (#58) use engine dynamic boxes in primitive-only zones, but fall back to Rapier's exact
-//!   geometry solver when authored meshes or hulls are present. The character and static-query
-//!   backend remains Physics Engine.
+//! - Debris (#288) and movable props (#58) use engine dynamic boxes in primitive-only zones,
+//!   but fall back to Rapier's exact geometry solver when authored meshes or hulls are present.
+//!   The character and static-query backend remains Physics Engine.
 //!
 //! Intentional differences from the Rapier backend (listed in `docs/PHYSICS_AB.md`):
 //!
@@ -796,11 +794,14 @@ impl World {
         })
     }
 
-    /// Debris (#288) retains Rapier's dynamic contact and settling semantics on both backends.
+    /// Debris (#288) uses Engine where every rigid contact shape is supported.
     pub fn step_debris(&self, debris: &mut [DebrisBody], settle: &[bool]) -> usize {
-        // #643 CI demonstrated that the primitive-only engine path settled crate fragments
-        // above the accepted ground band. This is gameplay-visible, not merely a timing
-        // difference; keep the already-accepted Rapier path until dynamic parity is established.
+        if !self.has_authored_geometry() {
+            return self
+                .step_dynamic(debris, settle, &Dynamic::default())
+                .expect("physics-engine debris step failed");
+        }
+        // General dynamic box–hull/mesh response is not supported by Engine yet.
         super::rapier::step_debris(
             self.gravity,
             &self.bodies,
@@ -841,10 +842,12 @@ impl World {
             .any(|body| body.mesh.is_some() || matches!(body.kind, Kind::Rock(_)))
     }
 
-    /// One tick of primitive-zone movable props in a fresh engine world of nearby game bodies,
+    /// One tick of primitive-zone debris or movable props in a fresh engine world of nearby game bodies,
     /// rebuilt from game state like the Rapier backend's step: the same materials (see
     /// [`PIECE_FRICTION`], density 600, linear damping 0.2, angular 0.8), sleep off, and the
-    /// game's settle rule. The upright prop path uses two substeps of one solver pass.
+    /// game's settle rule. Upright props use two substeps of one solver pass; tumbling debris
+    /// keeps the engine's default eight passes. Four passes let a panel momentarily fall below
+    /// the settle thresholds while balanced on an edge (#643's primitive breakables fixture).
     fn step_dynamic(
         &self,
         pieces: &mut [DebrisBody],
@@ -859,7 +862,11 @@ impl World {
         let mut engine = physics_engine::approximate::World::new(Config {
             gravity: vector(self.gravity.map(|g| g * per_second)),
             substeps: 2,
-            velocity_iterations: if options.upright { 1 } else { 4 },
+            velocity_iterations: if options.upright {
+                1
+            } else {
+                Config::default().velocity_iterations
+            },
             length_unit: UNITS_PER_METRE,
             ..Config::default()
         })
