@@ -322,7 +322,9 @@ export class SharedUnits {
         ? { unlit: false as const, emissive: draw.emissive }
         : draw.unlit ? { unlit: true as const } : {};
       return {
-        id: draw.id, geometry, color: draw.color, modelMatrix, ...shading,
+        // Named without the unit and part numbers (`unit-creature-12-piece-3` → `unit-creature-piece`), so the draw
+        // profile groups each kind of part.
+        id: draw.id, name: draw.id.replace(/[-:]\d+(?=[-:]|$)/g, ""), geometry, color: draw.color, modelMatrix, ...shading,
         ...(draw.opacity < 1 ? { opacity: draw.opacity } : {}),
         ...(draw.doubleSided ? { doubleSided: true } : {}),
       };

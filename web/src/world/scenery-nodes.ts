@@ -131,6 +131,18 @@ function triples(values: Float32Array, start: number, count: number): [number, n
   return out;
 }
 
+/**
+ * An instance batch's mesh name, `scenery.<kind>.<cull>[.fallback-<kit>]`, without its chunk or geometry index so the
+ * draw profile groups one kind of instance: batch IDs are `instances:<chunk>:<cull>[:fallback-<kit>]:<kind>…` (the
+ * presentation `Batcher`), where the kind is `handholds`, a ground-cover kind or the static scene's prefixed `scenery`
+ * (repeated prop pieces).
+ */
+function instanceBatchName(id: string, group: GroupEntry): string {
+  const segments = id.split(":");
+  const kind = segments[group.fallback ? 4 : 3] ?? "unknown";
+  return `scenery.${kind === "scenery" ? "prop-pieces" : kind}.${group.cull}${group.fallback ? `.fallback-${group.fallback}` : ""}`;
+}
+
 function bounds(group: GroupEntry): Bounds {
   const [minX, minZ] = group.min;
   const [maxX, maxZ] = group.max;
@@ -230,10 +242,11 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
     }
     const first = group.draws[0]!;
     const instances: RendererInstance[] = group.draws.map((draw) => ({ modelMatrix: model(draw), color: draw.color }));
+    // Instance draw IDs are `<batch id>:<ordinal>`; the batch shares one geometry.
+    const id = first.id.slice(0, first.id.lastIndexOf(":"));
     instanceBatches.push({
       ...bounds(group),
-      // Instance draw IDs are `<batch id>:<ordinal>`; the batch shares one geometry.
-      batch: { id: first.id.slice(0, first.id.lastIndexOf(":")), geometry: geometry(first), color: "#ffffff", revision: layout.prefix, instances },
+      batch: { id, name: instanceBatchName(id, group), geometry: geometry(first), color: "#ffffff", revision: layout.prefix, instances },
     });
   }
   const water = layout.water.map((draw): RendererSceneNode => ({
