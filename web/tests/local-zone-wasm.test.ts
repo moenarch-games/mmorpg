@@ -558,6 +558,7 @@ describe("WASM local zone combat intents", () => {
     expect(self(source).appearance).toBe(5);
     expect(abilitySlots(projection, catalog).map((ability) => ability.name)).toEqual([
       "Firebolt", "Frost Nova", "Arcane Barrier", "Blizzard", "Fire Blast", "Frost Breath", "Lightning Beam", "Chain Lightning",
+      "Ice Wall", "Earth Pillar",
     ]);
     expect(combatStatus(projection, catalog)).toBe("Health 50/50 · Mana 110/110 · Level 1");
     // Firebolt without a target is cast along the facing (#289); Frost Nova is learned at level 2.

@@ -4,7 +4,7 @@ import { wasm } from "../../wasm";
 import type { AbilityRecord, ContentCatalog } from "../catalog";
 
 /**
- * Ability input: slots 1–8 hold the viewer's class kit, the shared client model's
+ * Ability input: slots 1–10 hold the viewer's class kit, the shared client model's
  * (`mmorpg-client-model`, #543). The zone validates class, level, cooldowns, resource, target and
  * range; this module only names the ability.
  */
@@ -16,7 +16,7 @@ export function abilitySlots(snapshot: ZoneSnapshot, catalog: ContentCatalog): r
   return [...wasm.classKit(classId)].flatMap((id) => catalog.abilities.get(id) ?? []);
 }
 
-/** The command for ability slot `slot` (1–8) at the current selection, or null without one. */
+/** The command for ability slot `slot` (1–10) at the current selection, or null without one. */
 export function useAbilitySlot(slot: number, snapshot: ZoneSnapshot, catalog: ContentCatalog): WorldCommand | null {
   const ability = abilitySlots(snapshot, catalog)[slot - 1];
   return ability ? { kind: "use-ability", ability: ability.id, target: null } : null;

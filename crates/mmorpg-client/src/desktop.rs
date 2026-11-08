@@ -148,7 +148,7 @@ struct App {
     frames: Option<u32>,
     rendered: u32,
     next_frame: Instant,
-    /// Ability IDs on action-bar slots 1–8: the class kit in catalog order.
+    /// Ability IDs on action-bar slots 1–10: the class kit in catalog order.
     abilities: Vec<u8>,
     /// Ability slots and cast cancelling through the shared input runtime.
     controls: NativeControls,
