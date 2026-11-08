@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Downloads the asset-tooling bundles the clients draw: the Ranger
-# humanoid (Atlas 6.3.7) into web/public/characters/humanoid.ranger.male and the
+# humanoid (Atlas 6.3.7) into web/public/characters/humanoid.ranger.male, the Redbrand faction
+# kit (#675) into web/public/characters/redbrand.kit and the
 # Greyhaven inn (#158) into web/public/buildings/greyhaven.inn and the Sunken Shrine kit
 # (#431) into web/public/scenery/shrine.kit and the ambient animals (#419) into
 # web/public/scenery/greyhaven.ambient-animals and the Outpost building kit (#420) into
@@ -93,6 +94,9 @@ fetch_rolling() {
 }
 
 python3 "${ROOT_DIR}/scripts/fetch-ranger.py"
+# The Redbrand faction kit (#675, asset-tooling#522): the bandits' figures on the male rig and
+# their belt and bracers, with KTX2 textures; they play the male figure's clips by joint name.
+fetch_rolling redbrand-kit redbrand.kit characters/redbrand.kit
 fetch greyhaven-inn-v1 greyhaven.inn buildings/greyhaven.inn
 fetch_rolling shrine-kit shrine.kit scenery/shrine.kit
 # Greyhaven's cosmetic cat, dog and rodent (#419).
