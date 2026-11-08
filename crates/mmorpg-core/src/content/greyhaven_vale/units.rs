@@ -308,7 +308,7 @@ const NPCS: [NpcRow; 21] = [
     (21,"Apprentice Finn",NpcRole::Resident,2,[1500,3000],16384),
 ];
 
-pub(super) fn creature_templates() -> Vec<CreatureTemplate> {
+pub(crate) fn creature_templates() -> Vec<CreatureTemplate> {
     TEMPLATES
         .iter()
         .map(

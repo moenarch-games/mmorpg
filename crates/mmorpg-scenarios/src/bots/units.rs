@@ -307,6 +307,9 @@ pub const fn error_code_name(code: ErrorCode) -> &'static str {
         ErrorCode::PrivateHome => "private_home",
         ErrorCode::NoAnswer => "no_answer",
         ErrorCode::NotAtNight => "not_at_night",
+        ErrorCode::DepthsLocked => "depths_locked",
+        ErrorCode::DepthsClosed => "depths_closed",
+        ErrorCode::DepthsWipe => "depths_wipe",
     }
 }
 
@@ -352,6 +355,9 @@ fn parse_error_code(name: &str) -> Option<ErrorCode> {
         "private_home" => ErrorCode::PrivateHome,
         "no_answer" => ErrorCode::NoAnswer,
         "not_at_night" => ErrorCode::NotAtNight,
+        "depths_locked" => ErrorCode::DepthsLocked,
+        "depths_closed" => ErrorCode::DepthsClosed,
+        "depths_wipe" => ErrorCode::DepthsWipe,
         _ => return None,
     })
 }
@@ -520,6 +526,9 @@ mod tests {
             ErrorCode::PrivateHome,
             ErrorCode::NoAnswer,
             ErrorCode::NotAtNight,
+            ErrorCode::DepthsLocked,
+            ErrorCode::DepthsClosed,
+            ErrorCode::DepthsWipe,
         ] {
             let spec = EventSpec::Error(code);
             assert_eq!(EventSpec::try_from(spec.to_string()), Ok(spec));

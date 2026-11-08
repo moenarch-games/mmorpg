@@ -145,6 +145,7 @@ impl ZoneSimulation {
                 });
                 None
             }
+            PlayerIntent::Notice(code) => Some((code, None)),
             PlayerIntent::ReleaseSpirit if alive => Some((ErrorCode::NotDead, None)),
             PlayerIntent::ReleaseSpirit => {
                 self.release_spirit(player_id)?;
@@ -427,7 +428,9 @@ impl ZoneSimulation {
     /// clear of every other living player, so spirits released together never stand inside
     /// each other (#534).
     fn release_spot(&self, player_id: PlayerId) -> Result<[i32; 2], ZoneError> {
-        let graveyard = self.content.graveyard();
+        let graveyard = self
+            .depths_release_point()
+            .unwrap_or(self.content.graveyard());
         let spacing = 2 * PLAYER_HALF_EXTENTS_UNITS[0] + 2;
         let mut others = Vec::new();
         for (&other, player) in &self.players {
@@ -462,7 +465,7 @@ impl ZoneSimulation {
     }
 
     /// A dead player returns to the graveyard with half health, out of combat.
-    fn release_spirit(&mut self, player_id: PlayerId) -> Result<(), ZoneError> {
+    pub(crate) fn release_spirit(&mut self, player_id: PlayerId) -> Result<(), ZoneError> {
         let [x, z] = self.release_spot(player_id)?;
         let body = body_id(EntityRef::Player(player_id));
         let position = Vec3i::new(x, self.stand_y(x, z, PLAYER_HALF_EXTENTS_UNITS), z);
@@ -1413,6 +1416,7 @@ impl ZoneSimulation {
             // (#530) only when an incident commits them.
             if let Life::Despawned { died_at } = creature.life
                 && !content.is_raider(creature_id)
+                && !content.is_depths_creature(creature_id)
                 && now >= died_at.saturating_add(u64::from(template.respawn_ticks))
                 && (template.prop().is_none() || !self.prop_spot_taken(creature_id)?)
             {

@@ -117,6 +117,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 "MMORPG_HANDOFF_TIMEOUT_MS",
                 DEFAULT_HANDOFF_TIMEOUT_MS,
             )?),
+            depths_grace: Duration::from_millis(read_number(
+                "MMORPG_DEPTHS_GRACE_MS",
+                mmorpg_control_plane::instance::DEFAULT_RUN_GRACE_MS,
+            )?),
         };
         mmorpg_game_server::handoff_host::serve_handoff_character_host(
             config,

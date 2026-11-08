@@ -137,13 +137,16 @@ pub fn east() -> Arc<ZoneContent> {
     Arc::clone(&EAST)
 }
 
-/// The content a host runs as `zone`: a Seam Test zone by its ID, Greyhaven
-/// Vale otherwise.
+/// The content a host runs as `zone`: a Seam Test zone or a Redbrand Depths instance slot by
+/// its ID, Greyhaven Vale otherwise.
 #[must_use]
 pub fn content_for_zone(zone: ZoneId) -> Arc<ZoneContent> {
     match zone {
         WEST_ZONE => west(),
         EAST_ZONE => east(),
+        depths if crate::redbrand_depths::is_depths_zone(depths) => {
+            crate::redbrand_depths::content()
+        }
         _ => crate::greyhaven_vale::content(),
     }
 }

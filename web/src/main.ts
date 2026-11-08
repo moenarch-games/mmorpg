@@ -1084,6 +1084,21 @@ function createOnlineWorld(local: LocalWorld, server: ZoneServer): ZoneWorld {
 let presentedZone = 1;
 
 /**
+ * A local or scenario character that crossed into the Redbrand Depths or back (#404): the local
+ * host changes zone in place, so present the zone its projections now carry. Online sessions
+ * follow a redirect instead and arenas have no local zone change.
+ */
+function followLocalZone(): void {
+  if (!activeWorld || activeWorld === onlineWorld || arenaWorld?.world === activeWorld) {
+    return;
+  }
+  const zone = activeWorld.source.latestProjection()?.zoneId;
+  if (zone !== undefined && zone !== presentedZone) {
+    presentWorldZone(activeWorld, zone);
+  }
+}
+
+/**
  * Draws zone `zoneId`'s scenery in `target` and returns its content revision. The page's
  * worlds share the WASM presentation, so this reloads the view whenever the zone changes.
  */
@@ -1358,6 +1373,7 @@ function frame(now: number) {
     const paused = settingsOpen && activeWorld !== onlineWorld && activeWorld !== arenaWorld?.world;
     profileBegin(now);
     try {
+      followLocalZone();
       worldView.frame(activeWorld, worldInput(), viewerLook(), paused ? 0 : deltaSeconds, now);
       touchControls.update();
       showLinkState(activeWorld.source.linkState());

@@ -16,6 +16,7 @@ Decision history and stable cross-references: [MMORPG Decision Atlas](docs/decis
 | Session ticks, reconnects, replay/recovery, WebTransport | `game-server` |
 | Zone placement, lease fencing, host routing, handoff metadata | `mmorpg-control-plane` |
 | Cross-zone party membership (the party directory; zones consume versioned views) | `mmorpg-control-plane::party`, reconciled by `mmorpg-game-server::party` |
+| Party-private Redbrand Depths runs (run directory; zones hold only their bound run) | `mmorpg-control-plane::instance`, resolved by `mmorpg-game-server::instance` |
 | Durable character records and exclusive character leases | `mmorpg-characters` (file entries for development/LAN, browser `localStorage` entries; optional PostgreSQL adapter) |
 | Adapter from a zone simulation into `game-server` | `mmorpg-game-server` |
 | Presentation scenery: props, roads, water, relief, terrain grid (clients only) | `mmorpg-scenery` |

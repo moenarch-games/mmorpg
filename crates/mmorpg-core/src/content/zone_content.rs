@@ -81,6 +81,10 @@ pub struct ZoneContent {
     raid: Option<crate::RaidSite>,
     /// Network stones standing in this zone, in ID order (#145).
     waystones: Vec<crate::WaystoneId>,
+    /// This public zone's threshold into the depths (#404), if any.
+    depths_threshold: Option<crate::DepthsThreshold>,
+    /// This depths zone's encounter table (#404), if it is one.
+    depths_site: Option<crate::DepthsSite>,
 }
 
 /// A body as `(centre, half extents)` in units.
@@ -205,6 +209,8 @@ impl ZoneContent {
             handoff_corridors: Vec::new(),
             raid: None,
             waystones: Vec::new(),
+            depths_threshold: None,
+            depths_site: None,
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -252,6 +258,8 @@ impl ZoneContent {
             handoff_corridors: Vec::new(),
             raid: None,
             waystones: Vec::new(),
+            depths_threshold: None,
+            depths_site: None,
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -1110,6 +1118,42 @@ impl ZoneContent {
         Ok(self)
     }
 
+    /// Binds this public zone's threshold into the depths (#404). Its bounds are part of the
+    /// content's identity; content without one keeps its revision.
+    #[must_use]
+    pub fn with_depths_threshold(mut self, threshold: crate::DepthsThreshold) -> Self {
+        self.depths_threshold = Some(threshold);
+        self.fingerprint = self.compute_fingerprint();
+        self
+    }
+
+    #[must_use]
+    pub const fn depths_threshold(&self) -> Option<&crate::DepthsThreshold> {
+        self.depths_threshold.as_ref()
+    }
+
+    /// Binds this depths zone's encounter table (#404): its creatures are reserved until a run
+    /// stands them up and never respawn on their own.
+    pub fn with_depths_site(mut self, site: crate::DepthsSite) -> Result<Self, ZoneError> {
+        site.validate(&self)?;
+        self.depths_site = Some(site);
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    #[must_use]
+    pub const fn depths_site(&self) -> Option<&crate::DepthsSite> {
+        self.depths_site.as_ref()
+    }
+
+    /// Whether `creature` stands only as part of a private run (#404).
+    #[must_use]
+    pub fn is_depths_creature(&self, creature: CreatureId) -> bool {
+        self.depths_site
+            .as_ref()
+            .is_some_and(|site| site.is_site_creature(creature))
+    }
+
     /// The night raid target, if any.
     #[must_use]
     pub const fn raid(&self) -> Option<&crate::RaidSite> {
@@ -1152,6 +1196,43 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_character_fingerprint();
+        if self.depths_threshold.is_none() && self.depths_site.is_none() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/depths-v1");
+        hash.u64(fingerprint);
+        if let Some(threshold) = &self.depths_threshold {
+            hash.u8(1);
+            for bounds in [threshold.strip, threshold.gather] {
+                hash.i32s(&bounds.min);
+                hash.i32s(&bounds.max);
+            }
+            hash.u8(threshold.qualifying_quest.get());
+            hash.i32s(&threshold.entrance);
+            hash.bytes(&threshold.facing.to_be_bytes());
+        }
+        if let Some(site) = &self.depths_site {
+            hash.u8(2);
+            hash.len(site.chambers.len());
+            for chamber in &site.chambers {
+                hash.text(&chamber.name);
+                hash.len(chamber.spawns.len());
+                for spawn in &chamber.spawns {
+                    hash.u32(spawn.creature.get());
+                    hash.u8(spawn.party[0]);
+                    hash.u8(spawn.party[1]);
+                    hash.u8(spawn.after_fallen.map_or(0, |count| count + 1));
+                }
+            }
+            hash.i32s(&site.entrance);
+            hash.i32s(&site.checkpoint);
+        }
+        hash.finish()
+    }
+
+    fn compute_character_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_rock_fingerprint();
         if self.character_persistence == CharacterPersistence::Durable {
             return fingerprint;

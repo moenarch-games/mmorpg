@@ -333,6 +333,9 @@ impl<B: EntryBackend> DevCharacterService<B> {
         {
             return Ok(vec![1, 1]);
         }
+        if mmorpg_core::redbrand_depths::is_depths_zone(zone) {
+            return Err("the depths admit characters only through their threshold".into());
+        }
         let holder = storage.holder(zone);
         let acquired = match (storage.store.acquire(&character, holder), &self.handoffs) {
             (Err(StoreError::HandoffPending(_)), Some(handoffs)) => {

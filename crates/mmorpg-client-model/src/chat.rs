@@ -135,6 +135,11 @@ pub fn refusal_text(code: ErrorCode) -> String {
         ErrorCode::PrivateHome => "This is a private home.".into(),
         ErrorCode::NoAnswer => "You knock, but no one answers at this hour.".into(),
         ErrorCode::NotAtNight => "No new quests at this hour. Come back in the morning.".into(),
+        ErrorCode::DepthsLocked => {
+            "The way down is barred. Someone in your party must first have ended Garrick Redbrand.".into()
+        }
+        ErrorCode::DepthsClosed => "No way down for you here: your party's run has begun without you, or the depths are full.".into(),
+        ErrorCode::DepthsWipe => "Your party has fallen. You rise again at the checkpoint.".into(),
         _ => humanize(&format!("{code:?}")),
     }
 }

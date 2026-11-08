@@ -182,8 +182,11 @@ impl ZoneSimulation {
         let spawn_slot = self
             .available_spawn_slot()
             .ok_or_else(|| ZoneError::new("zone spawn capacity reached"))?;
+        let returning = self.depths_entrance_for(record);
         let position = if record.location.zone_id == self.zone_id {
             vector(record.location.position)
+        } else if let Some(entrance) = returning {
+            vector(entrance.0)
         } else {
             self.spawn_position(spawn_slot)?
         };
@@ -202,7 +205,7 @@ impl ZoneSimulation {
         state.facing = if record.location.zone_id == self.zone_id {
             record.location.facing
         } else {
-            0
+            returning.map_or(0, |entrance| entrance.1)
         };
         state.class = Some(record.class);
         state.level = record.level;

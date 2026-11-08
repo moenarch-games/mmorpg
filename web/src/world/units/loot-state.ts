@@ -184,4 +184,7 @@ const REFUSALS: Record<ErrorCode, string | null> = {
   "private-home": null,
   "no-answer": null,
   "not-at-night": null,
+  "depths-locked": null,
+  "depths-closed": null,
+  "depths-wipe": null,
 };

@@ -103,6 +103,8 @@ pub enum PlayerIntent {
     RaidAid(u8),
     /// Night raid preparation (#532).
     RaidPrepare(crate::RaidPrep),
+    /// A host notice for the player (#404): the error line it sees, in order with commands.
+    Notice(crate::ErrorCode),
 }
 
 /// A pending intent and the ticks of lateness its command's observation
@@ -348,6 +350,8 @@ pub struct CanonicalZoneSnapshot {
     pub raid: crate::RaidState,
     /// Private-home residents a knock woke, in NPC-ID order (#158).
     pub wakes: Vec<crate::NpcWake>,
+    /// The private run bound to a depths zone (#404).
+    pub depths: Option<crate::DepthsRun>,
 }
 
 impl ZoneSimulation {
@@ -492,6 +496,7 @@ impl ZoneSimulation {
             next_minion: self.next_minion,
             raid: self.raid.clone(),
             wakes: self.canonical_wakes(),
+            depths: self.depths.clone(),
         })
     }
 
@@ -594,6 +599,14 @@ impl ZoneSimulation {
         // The snapshot tick's routine placements and platforms (#56); doors are already as that
         // tick left them.
         zone.restore_wakes(&snapshot.wakes, snapshot.tick)?;
+        if let Some(run) = &snapshot.depths {
+            let site = zone
+                .content
+                .depths_site()
+                .ok_or_else(|| ZoneError::new("snapshot depths run needs a depths site"))?;
+            run.validate(site)?;
+        }
+        zone.depths = snapshot.depths;
         zone.place_npcs(false)?;
         zone.schedule_platforms(zone.tick, true)?;
         if let Some(rewards) = &snapshot.rewards {
