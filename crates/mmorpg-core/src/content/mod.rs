@@ -21,7 +21,7 @@ pub use units::{
 };
 pub use zone_content::{CharacterPersistence, PlayerCombatPolicy, ZoneContent};
 
-use crate::entity::PLAYER_BODY_BASE;
+use crate::entity::SUMMONED_BODY_BASE;
 use crate::{MAX_PLAYERS_PER_ZONE, PLAYER_HALF_EXTENTS_UNITS, ZoneError};
 
 pub const MAX_STATIC_COLLIDERS: usize = 4_096;
@@ -274,9 +274,9 @@ impl ZoneDefinition {
         }
         colliders.sort_by_key(|collider| collider.id);
         for collider in &colliders {
-            if u64::from(collider.id) >= PLAYER_BODY_BASE {
+            if u64::from(collider.id) >= SUMMONED_BODY_BASE {
                 return Err(ZoneError::new(
-                    "static collider id overlaps player body namespace",
+                    "static collider id overlaps the summoned terrain or player body namespace",
                 ));
             }
             if collider.half_extents.iter().any(|extent| *extent <= 0) {

@@ -244,6 +244,18 @@ fn engine_body(body: &RigidBody) -> Body {
         }
         // A moving platform (#56) is a static box the adapter moves in place where the zone
         // moves it; authored meshes and rocks are admitted through their geometry APIs above.
+        // A summoned wall (#293) is the engine's own oriented box, not an axis-aligned bound.
+        Kind::TurnedBox { half, yaw } => {
+            let mut turned = Body::keyed(
+                key,
+                Shape::Box(vector(exact(half))),
+                vector(body.position),
+                0.0,
+            );
+            let [x, y, z, w] = super::yaw_quaternion(yaw);
+            turned.orientation = Quaternion(x, y, z, w);
+            turned
+        }
         Kind::Fixed | Kind::Platform => Body::keyed(
             key,
             Shape::Box(vector(exact(body.half_extents))),
