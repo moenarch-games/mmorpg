@@ -8,8 +8,8 @@
 //! own clips, sockets and appearance; options a figure's bundle lacks (the female's beards, head
 //! skins and headwear) are simply absent. Presentation only.
 use super::{
-    Equipment, Model, Plates, SecondaryPose, appearance, ranger_bundle, ranger_female_bundle,
-    ranger_file, secondary_of, socket, strings,
+    Equipment, Model, Plates, SecondaryPose, appearance, bundle_glb, ranger_bundle,
+    ranger_female_bundle, ranger_file, secondary_of, socket, strings,
 };
 use crate::world::SceneDraw;
 use mmorpg_presentation::units::{
@@ -80,18 +80,68 @@ fn file(figure: Figure, path: &str) -> &'static [u8] {
     }
 }
 
+/// The Redbrand faction kit's entries and resources (#675, asset-tooling #522), embedded by
+/// `build.rs` when `scripts/fetch-bundles.sh` fetched it; empty otherwise.
+mod redbrand_bundle {
+    include!(concat!(env!("OUT_DIR"), "/redbrand_bundle.rs"));
+}
+
+/// The Redbrand kit's `redbrand-descriptor`; empty when the kit was not fetched.
+mod redbrand_descriptor {
+    include!(concat!(env!("OUT_DIR"), "/redbrand_descriptor.rs"));
+}
+
+/// The Redbrand kit's descriptor, None when the kit was not fetched before the build.
+fn kit() -> Option<&'static Value> {
+    static KIT: OnceLock<Option<Value>> = OnceLock::new();
+    KIT.get_or_init(|| {
+        let text = redbrand_descriptor::DESCRIPTOR;
+        (!text.is_empty())
+            .then(|| serde_json::from_str(text).expect("the Redbrand kit descriptor is JSON"))
+    })
+    .as_ref()
+}
+
+/// The embedded Redbrand kit glTF of entry `key` in `variant`, if the kit has it.
+fn kit_path(key: &str, variant: &str) -> Option<&'static str> {
+    let id = if variant == "default" {
+        key.to_owned()
+    } else {
+        format!("{key}/{variant}")
+    };
+    redbrand_bundle::ENTRIES
+        .iter()
+        .find(|(entry, _)| *entry == id)
+        .map(|(_, path)| *path)
+}
+
+/// Whether `key` is a whole figure of `figure`'s rig: the figure itself, or a faction kit's
+/// outfit entry, which plays the figure's clips by joint name.
+fn is_figure(figure: Figure, key: &str) -> bool {
+    key == figure.character()
+        || kit().is_some_and(|kit| {
+            list(&kit["outfits"])
+                .iter()
+                .flat_map(|outfit| list(&outfit["skins"]))
+                .any(|skin| skin["entry"] == key)
+        })
+}
+
 /// `figure`'s appearance with the game's presets (`presets::figure_appearance`): the male's
-/// with the enemy presets beside the bundle's own, the female's as published.
+/// with the Redbrand kit's outfit and the enemy presets beside the bundle's own, the female's as
+/// published.
 fn look(figure: Figure) -> &'static Value {
     static MALE: OnceLock<Value> = OnceLock::new();
     static FEMALE: OnceLock<Value> = OnceLock::new();
     match figure {
-        Figure::Male => MALE.get_or_init(|| presets::figure_appearance(figure, appearance())),
+        Figure::Male => {
+            MALE.get_or_init(|| presets::figure_appearance(figure, appearance(), kit()))
+        }
         Figure::Female => FEMALE.get_or_init(|| {
             let bundle: Value =
                 serde_json::from_slice(file(figure, ranger_female_bundle::APPEARANCE))
                     .expect("the appearance descriptor is JSON");
-            presets::figure_appearance(figure, &bundle)
+            presets::figure_appearance(figure, &bundle, None)
         }),
     }
 }
@@ -279,7 +329,7 @@ fn prepared(key: &str, variant: &str) -> String {
 
 fn embedded(figure: Figure, key: &str, variant: &str) -> bool {
     let path = prepared(key, variant);
-    bundle(figure).iter().any(|(name, _)| *name == path)
+    kit_path(key, variant).is_some() || bundle(figure).iter().any(|(name, _)| *name == path)
 }
 
 /// A prepared entry of `figure`'s bundle imported once per process: the figure in an outfit
@@ -292,8 +342,11 @@ fn entry(figure: Figure, key: &str, variant: &str) -> &'static Model {
         .lock()
         .expect("the model cache is not poisoned");
     models.entry((figure, path.clone())).or_insert_with(|| {
-        let bytes = file(figure, &path);
-        let model = if key == figure.character() {
+        // A Redbrand kit entry (#675) is a gltf-resources-v1 entry with KTX2 textures, packed
+        // into one GLB with its textures transcoded; the figure's own entries are prepared GLBs.
+        let packed = kit_path(key, variant).map(|kit| bundle_glb(kit, redbrand_bundle::FILES));
+        let bytes = packed.as_deref().unwrap_or_else(|| file(figure, &path));
+        let model = if is_figure(figure, key) {
             Model::parse_with_clips(bytes, Kind::Ranger.clips().idle, Some(clips(figure)))
                 .map(|model| model.with_secondary(secondary(figure)))
         } else {
@@ -305,11 +358,18 @@ fn entry(figure: Figure, key: &str, variant: &str) -> &'static Model {
     })
 }
 
-/// The outfit variant `preset` wears for its skin, in `look`'s outfits.
-fn variant<'a>(look: &'a Value, preset: &Value) -> Option<(&'a Value, &'a str)> {
-    let outfit = find(&look["outfits"], "id", &preset["outfit"])?;
-    let variant = find(&outfit["skins"], "id", &preset["skin"])?["variant"].as_str()?;
-    Some((outfit, variant))
+/// The outfit `preset` wears and its skin's figure entry and variant, in `figure`'s look.
+fn variant(figure: Figure, preset: &Value) -> Option<(&'static Value, &'static str, &'static str)> {
+    let outfit = find(&look(figure)["outfits"], "id", &preset["outfit"])?;
+    let (key, variant) = skin_entry(figure, find(&outfit["skins"], "id", &preset["skin"])?)?;
+    Some((outfit, key, variant))
+}
+
+/// An outfit skin's figure entry and variant: a faction kit's outfit names its kit `entry`
+/// (#675), the figure's own outfits are variants of the figure.
+fn skin_entry(figure: Figure, skin: &'static Value) -> Option<(&'static str, &'static str)> {
+    let key = skin["entry"].as_str().unwrap_or(figure.character());
+    Some((key, skin["variant"].as_str()?))
 }
 
 /// Every prepared file `resident`'s looks draw: for a varied preset, both skins and every
@@ -318,18 +378,18 @@ fn files(resident: Resident) -> Option<Vec<(String, String)>> {
     let figure = resident.figure();
     let look = look(figure);
     let preset = find(&look["presets"], "id", &resident.preset().into())?;
-    let (outfit, own) = variant(look, preset)?;
+    let (outfit, key, own) = variant(figure, preset)?;
     let mut files = Vec::new();
-    let variants: Vec<&str> = if resident.varied() {
+    let variants: Vec<(&str, &str)> = if resident.varied() {
         list(&outfit["skins"])
             .iter()
-            .filter_map(|skin| skin["variant"].as_str())
+            .filter_map(|skin| skin_entry(figure, skin))
             .collect()
     } else {
-        vec![own]
+        vec![(key, own)]
     };
-    for variant in variants {
-        files.push((figure.character().to_owned(), variant.to_owned()));
+    for (key, variant) in variants {
+        files.push((key.to_owned(), variant.to_owned()));
     }
     if let Some(armor) = outfit["armor"]["entry"].as_str() {
         files.push((armor.to_owned(), "default".to_owned()));
@@ -420,9 +480,9 @@ pub(in crate::presentation) fn resident_look(
 /// Dresses `figure` in `preset`, as the browser's `residentLooks` and resident `instantiate`.
 fn dress(figure: Figure, preset: &Value) -> ResidentLook {
     let look = look(figure);
-    let (outfit, variant) =
-        variant(look, preset).expect("the preset names its skin's outfit variant");
-    let mut model = entry(figure, figure.character(), variant).clone();
+    let (outfit, key, variant) =
+        variant(figure, preset).expect("the preset names its skin's outfit variant");
+    let mut model = entry(figure, key, variant).clone();
     // The painted head skin first: the skin tone below multiplies it as it does the plain one.
     if let Some((material, image)) = head_skin(figure, preset) {
         model.reskin(material, image);
@@ -559,6 +619,19 @@ mod tests {
             brute,
             resident_look(Resident::RedbrandBrute, Some(3))
         ));
+        // With the Redbrand kit fetched (#675), the bandits wear its belt and bracers.
+        if kit().is_some() {
+            let bandit = resident_look(Resident::RedbrandBandit, Some(4));
+            let sockets: Vec<&str> = bandit
+                .plates
+                .items
+                .iter()
+                .map(|item| item.0.as_str())
+                .collect();
+            for socket in ["pelvis.armor", "lowerarm_l.armor", "lowerarm_r.armor"] {
+                assert!(sockets.contains(&socket), "the bandit's {socket} plate");
+            }
+        }
         let garrick = resident_look(Resident::Garrick, Some(9));
         assert!(std::ptr::eq(
             garrick,
@@ -574,7 +647,7 @@ mod tests {
         )
         .cloned()
         .expect("Garrick's preset");
-        let (_, variant) = variant(look(Figure::Male), &preset).expect("his outfit variant");
+        let (_, _, variant) = variant(Figure::Male, &preset).expect("his outfit variant");
         let authored = entry(Figure::Male, "humanoid.ranger.male", variant);
         assert!(
             garrick
@@ -602,7 +675,7 @@ mod tests {
         )
         .cloned()
         .expect("the tanner preset");
-        let (_, variant) = variant(look(Figure::Female), &preset).expect("her outfit variant");
+        let (_, _, variant) = variant(Figure::Female, &preset).expect("her outfit variant");
         assert_eq!(variant, "outfit.tanner.skin.light");
         let authored = entry(Figure::Female, "humanoid.ranger.female", variant);
         assert!(
