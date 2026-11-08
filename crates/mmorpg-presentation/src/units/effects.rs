@@ -197,6 +197,11 @@ fn presentation(id: u8) -> (Option<Stance>, Option<Visual>, u32) {
         45 => (Some(Stance::Staff), None, 0xe6dfc8),
         // Call Companion (#296): a leaf-green calling cast.
         46 => (Some(Stance::Staff), None, 0x7fc46a),
+        // The movement kit (#294): the Warden's landing ring, the Ranger's hook line and the
+        // Arcanist's blink flash at the place it arrives.
+        51 => (Some(Stance::Sword), Some(Visual::Ring), 0xc98a4a),
+        52 => (Some(Stance::Bow), Some(Visual::Projectile), 0xd8c27a),
+        53 => (Some(Stance::Staff), Some(Visual::Ring), 0xb69cff),
         _ => (None, None, 0xffffff),
     }
 }

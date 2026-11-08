@@ -498,6 +498,52 @@ pub(crate) fn extent(g: &TerrainGrid) -> [f64; 4] {
     .map(metres)
 }
 
+/// An authored surface hazard (#294) lying on the rendered ground: a fan of rings, ice pale
+/// and tar near-black, each with a small colour breakup.
+fn hazard_ellipse(
+    g: &TerrainGrid,
+    c: [f64; 2],
+    r: [f64; 2],
+    kind: mmorpg_core::SurfaceKind,
+) -> Geometry {
+    let mut out = Geometry::default();
+    let segments = 72;
+    let rings = (r[0].max(r[1]) / 1.5).ceil().max(2.) as usize;
+    let point = |radius: f64, angle: f64| {
+        let x = c[0] + angle.sin() * r[0] * radius;
+        let z = c[1] + angle.cos() * r[1] * radius;
+        [x, surface(g, x, z) + 0.03, z]
+    };
+    let (near, far) = match kind {
+        mmorpg_core::SurfaceKind::Ice => (0xcfe9f5, 0x8fc4dc),
+        mmorpg_core::SurfaceKind::Tar => (0x241b12, 0x0f0b08),
+    };
+    let tint = |p: [f64; 3]| rgb(mix(near, far, noise(p[0], p[2], 3.0, 311.))).map(f64::from);
+    let mut face = |corners: &[[f64; 3]]| {
+        out.face(corners);
+        out.colors.extend(corners.iter().copied().map(&tint));
+    };
+    for ring in 0..rings {
+        let inner = ring as f64 / rings as f64;
+        let outer = (ring + 1) as f64 / rings as f64;
+        for i in 0..segments {
+            let a = i as f64 / segments as f64 * TAU;
+            let b = (i + 1) as f64 / segments as f64 * TAU;
+            if ring == 0 {
+                face(&[point(0., a), point(outer, a), point(outer, b)]);
+            } else {
+                face(&[
+                    point(inner, a),
+                    point(outer, a),
+                    point(outer, b),
+                    point(inner, b),
+                ]);
+            }
+        }
+    }
+    out
+}
+
 /// The terrain's static draws: the far ring, handholds, lake beds and water. The terrain grid
 /// itself is drawn in visual tiles ([`crate::tiles::Tiles`], #526).
 pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Draw> {
@@ -546,6 +592,27 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Draw> {
         water.push(Draw {
             id: format!("water-{i}"),
             resource_key: format!("scenery:water:{i}"),
+            geometry: Arc::new(mesh),
+            model: matrix(ID),
+            material: mat,
+        });
+    }
+    // Authored surface hazards (#294): ice and tar, drawn on the ground like water.
+    for patch in &s.surfaces {
+        let mesh = hazard_ellipse(
+            g,
+            patch.centre.map(metres),
+            patch.radii.map(metres),
+            patch.kind,
+        );
+        let mut mat = material(0xffffff, false);
+        mat.opacity = match patch.kind {
+            mmorpg_core::SurfaceKind::Ice => 0.82,
+            mmorpg_core::SurfaceKind::Tar => 0.94,
+        };
+        water.push(Draw {
+            id: format!("surface-{}", patch.id),
+            resource_key: format!("scenery:surface:{}", patch.id),
             geometry: Arc::new(mesh),
             model: matrix(ID),
             material: mat,
