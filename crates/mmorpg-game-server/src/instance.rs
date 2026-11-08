@@ -336,7 +336,7 @@ impl InstanceService {
         self.transact(zone, &mut |directory, _| {
             run = directory.run_of(character).cloned();
         })?;
-        Ok(run
+        run
             .filter(|run| run.slot == zone.zone)
             .map(|run| {
                 let outcome = run
@@ -353,7 +353,7 @@ impl InstanceService {
                     outcome,
                 })
             })
-            .transpose()?)
+            .transpose()
     }
 
     /// Before an arrival activates: checks the character is on the run this slot holds and binds

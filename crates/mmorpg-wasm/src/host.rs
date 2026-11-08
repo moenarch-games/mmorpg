@@ -523,7 +523,10 @@ impl LocalZoneHost {
         }
         // A run stays the character's until Thorn falls; then re-entering starts a fresh one at
         // once, with a new identity for its rewards (Atlas 5.1.31).
-        if depths.depths_run().is_some_and(mmorpg_core::DepthsRun::completed) {
+        if depths
+            .depths_run()
+            .is_some_and(mmorpg_core::DepthsRun::completed)
+        {
             self.next_run += 1;
         }
         depths.begin_depths_run(DepthsRunStart {

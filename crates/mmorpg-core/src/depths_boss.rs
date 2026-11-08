@@ -446,7 +446,11 @@ impl ZoneSimulation {
     }
 
     /// The boss fell: the run is complete and the shared pool opens.
-    pub(crate) fn boss_defeated(&mut self, creature: CreatureId, now: u64) -> Result<(), ZoneError> {
+    pub(crate) fn boss_defeated(
+        &mut self,
+        creature: CreatureId,
+        now: u64,
+    ) -> Result<(), ZoneError> {
         if !self.is_depths_boss(creature) {
             return Ok(());
         }
@@ -972,13 +976,11 @@ pub fn resolve_roll(
 pub fn pick_winner<'a>(
     scored: &'a [(&'a CharacterId, u8, u32)],
 ) -> Option<&'a (&'a CharacterId, u8, u32)> {
-    scored
-        .iter()
-        .max_by(|left, right| {
-            (left.1, left.2)
-                .cmp(&(right.1, right.2))
-                .then_with(|| right.0.cmp(left.0))
-        })
+    scored.iter().max_by(|left, right| {
+        (left.1, left.2)
+            .cmp(&(right.1, right.2))
+            .then_with(|| right.0.cmp(left.0))
+    })
 }
 
 /// A character's stable `(roll 1..=100, tie value)` for one drop: independent of tick order, so

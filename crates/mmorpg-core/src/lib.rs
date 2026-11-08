@@ -115,14 +115,14 @@ pub use creature::{
     EVADE_TIMEOUT_TICKS, LEASH_RADIUS_UNITS, MAX_THREAT_ENTRIES, WANDER_WAIT_TICKS,
     WANDER_WALK_TIMEOUT_TICKS,
 };
+pub use depths::{
+    DepthsChamber, DepthsRun, DepthsRunStart, DepthsSite, DepthsSpawn, DepthsThreshold,
+    MAX_CHAMBERS, ThresholdRequest, WIPE_DELAY_TICKS, depths_arrival,
+};
 pub use depths_boss::{
     BossAttempt, BossDrop, BossOutcome, BossProgress, BossReport, DepthsBoss, DepthsDropView,
     DepthsLootView, DropState, DropView, MAX_BOSS_DROPS, RollChoice, RollWin, equippable,
     pick_winner, resolve_roll, roll_for,
-};
-pub use depths::{
-    DepthsChamber, DepthsRun, DepthsRunStart, DepthsSite, DepthsSpawn, DepthsThreshold,
-    MAX_CHAMBERS, ThresholdRequest, WIPE_DELAY_TICKS, depths_arrival,
 };
 pub use door::{
     CanonicalDoor, DOOR_COOLDOWN_TICKS, DOOR_REACH_UNITS, Door, DoorBox, DoorId, DoorView,

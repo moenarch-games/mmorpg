@@ -87,7 +87,10 @@ fn tick(zone: &mut ZoneSimulation, n: u64) {
     }
 }
 
-fn edit(zone: ZoneSimulation, change: impl FnOnce(&mut mmorpg_core::CanonicalZoneSnapshot)) -> ZoneSimulation {
+fn edit(
+    zone: ZoneSimulation,
+    change: impl FnOnce(&mut mmorpg_core::CanonicalZoneSnapshot),
+) -> ZoneSimulation {
     let mut state = zone.snapshot().unwrap();
     let content = Arc::clone(zone.content());
     change(&mut state);
@@ -192,8 +195,14 @@ fn roll(zone: &mut ZoneSimulation, player: u32, seq: u32, drop: u8, choice: Roll
 fn thorn_is_an_elite_level_six_appearing_after_the_chambers_and_a_retry_changes_nothing() {
     let content = redbrand_depths::content();
     let template = content.creature_template(THORN_TEMPLATE).unwrap();
-    assert_eq!((template.min_level, template.health, template.elite), (6, 900, true));
-    assert_eq!(content.creature_spawn(THORN).unwrap().template, THORN_TEMPLATE);
+    assert_eq!(
+        (template.min_level, template.health, template.elite),
+        (6, 900, true)
+    );
+    assert_eq!(
+        content.creature_spawn(THORN).unwrap().template,
+        THORN_TEMPLATE
+    );
     // Not while a chamber stands.
     let mut early = fight(&["aria"], 0b011);
     tick(&mut early, 5);
@@ -209,7 +218,13 @@ fn a_complete_solo_run_calls_two_adds_and_drops_one_item_for_the_solo_hero() {
     let mut zone = fight(&["aria"], ALL_CLEARED);
     engage(&mut zone);
     assert_eq!(
-        zone.depths_run().unwrap().boss.attempt.as_ref().unwrap().eligible,
+        zone.depths_run()
+            .unwrap()
+            .boss
+            .attempt
+            .as_ref()
+            .unwrap()
+            .eligible,
         vec![id("aria")],
         "the eligible snapshot is who stood in his chamber when he engaged"
     );
@@ -224,7 +239,10 @@ fn a_complete_solo_run_calls_two_adds_and_drops_one_item_for_the_solo_hero() {
     let mut zone = kill(zone, 1);
     let run = zone.depths_run().unwrap().clone();
     assert!(run.completed());
-    assert!(!alive(&zone, 31) && !alive(&zone, 32), "his adds leave with him");
+    assert!(
+        !alive(&zone, 31) && !alive(&zone, 32),
+        "his adds leave with him"
+    );
     let outcome = run.boss.outcome.unwrap();
     assert_eq!(outcome.drops.len(), 1, "one item for a solo kill");
     // The roll prompt reaches the eligible hero; choosing Need settles and delivers it.
@@ -238,17 +256,39 @@ fn a_complete_solo_run_calls_two_adds_and_drops_one_item_for_the_solo_hero() {
         DropState::Awarded { winner, need: true, .. } if *winner == id("aria")
     ));
     // Not delivered until the directory has it.
-    assert!(!bag_has(&zone, 1, item), "held until the outcome is committed");
+    assert!(
+        !bag_has(&zone, 1, item),
+        "held until the outcome is committed"
+    );
     commit(&mut zone);
     assert!(bag_has(&zone, 1, item), "committed, it reaches the bag");
     let record = zone.capture_character(1, id("aria")).unwrap();
-    assert!(record.depths.thorn_defeated, "the deferred story evidence (5.1.37)");
+    assert!(
+        record.depths.thorn_defeated,
+        "the deferred story evidence (5.1.37)"
+    );
     assert_eq!(record.depths.receipt_run, 7);
     assert!(record.depths.credited);
     // Duplicates and late answers change nothing.
-    let delivered = zone.depths_run().unwrap().boss.outcome.clone().unwrap().drops;
+    let delivered = zone
+        .depths_run()
+        .unwrap()
+        .boss
+        .outcome
+        .clone()
+        .unwrap()
+        .drops;
     roll(&mut zone, 1, 2_001, 0, RollChoice::Greed);
-    assert_eq!(zone.depths_run().unwrap().boss.outcome.as_ref().unwrap().drops, delivered);
+    assert_eq!(
+        zone.depths_run()
+            .unwrap()
+            .boss
+            .outcome
+            .as_ref()
+            .unwrap()
+            .drops,
+        delivered
+    );
 }
 
 #[test]
@@ -269,9 +309,26 @@ fn a_full_party_run_scales_adds_and_mechanics_with_the_frozen_profile_not_multip
     // Into his last phase: the second attack alternates in for a party of three or more.
     let mut zone = set_boss_health(zone, 200);
     tick(&mut zone, 1);
-    assert_eq!(zone.depths_run().unwrap().boss.attempt.as_ref().unwrap().phase, 2);
+    assert_eq!(
+        zone.depths_run()
+            .unwrap()
+            .boss
+            .attempt
+            .as_ref()
+            .unwrap()
+            .phase,
+        2
+    );
     let zone = kill(zone, 5);
-    let drops = zone.depths_run().unwrap().boss.outcome.as_ref().unwrap().drops.clone();
+    let drops = zone
+        .depths_run()
+        .unwrap()
+        .boss
+        .outcome
+        .as_ref()
+        .unwrap()
+        .drops
+        .clone();
     assert_eq!(drops.len(), 2, "a party of five shares two items");
     assert_ne!(drops[0].item, drops[1].item, "distinct items of the pool");
 }
@@ -299,7 +356,10 @@ fn a_wipe_resets_the_attempt_within_the_run_and_a_later_kill_counts_once() {
     assert_eq!(thorn.health, 900, "full health, no accumulating penalty");
     assert!(!alive(&zone, 31), "his adds are gone");
     let run = zone.depths_run().unwrap();
-    assert!(run.boss.attempt.is_none(), "no attempt until he is engaged again");
+    assert!(
+        run.boss.attempt.is_none(),
+        "no attempt until he is engaged again"
+    );
     assert_eq!(run.cleared, ALL_CLEARED, "cleared chambers stay cleared");
     assert_eq!(run.run_id, 7, "the same run, the same frozen profile");
     // The second attempt wins; only one outcome is ever recorded.
@@ -311,7 +371,14 @@ fn a_wipe_resets_the_attempt_within_the_run_and_a_later_kill_counts_once() {
     engage(&mut zone);
     let zone = kill(zone, 1);
     assert_eq!(
-        zone.depths_run().unwrap().boss.outcome.as_ref().unwrap().drops.len(),
+        zone.depths_run()
+            .unwrap()
+            .boss
+            .outcome
+            .as_ref()
+            .unwrap()
+            .drops
+            .len(),
         1
     );
 }
@@ -337,7 +404,14 @@ fn need_outranks_greed_passes_and_silence_fall_to_a_manual_claim_and_full_bags_w
     roll(&mut zone, 1, 3_000, 0, RollChoice::Pass);
     roll(&mut zone, 2, 3_000, 0, RollChoice::Pass);
     assert_eq!(
-        zone.depths_run().unwrap().boss.outcome.as_ref().unwrap().drops[0].state,
+        zone.depths_run()
+            .unwrap()
+            .boss
+            .outcome
+            .as_ref()
+            .unwrap()
+            .drops[0]
+            .state,
         DropState::Held
     );
     zone.apply_command(1, 3_001, ZoneCommand::ClaimDepthsDrop { run: 7, drop: 0 })
@@ -346,7 +420,15 @@ fn need_outranks_greed_passes_and_silence_fall_to_a_manual_claim_and_full_bags_w
         .unwrap();
     tick(&mut zone, 1);
     commit(&mut zone);
-    let item_held = zone.depths_run().unwrap().boss.outcome.as_ref().unwrap().drops[0].item;
+    let item_held = zone
+        .depths_run()
+        .unwrap()
+        .boss
+        .outcome
+        .as_ref()
+        .unwrap()
+        .drops[0]
+        .item;
     assert!(
         bag_has(&zone, 1, item_held) ^ bag_has(&zone, 2, item_held),
         "exactly one character holds the claimed item"
@@ -357,14 +439,29 @@ fn need_outranks_greed_passes_and_silence_fall_to_a_manual_claim_and_full_bags_w
     let deadline = u64::from(redbrand_depths::ROLL_TICKS) + 2;
     tick(&mut zone, deadline);
     assert_eq!(
-        zone.depths_run().unwrap().boss.outcome.as_ref().unwrap().drops[0].state,
+        zone.depths_run()
+            .unwrap()
+            .boss
+            .outcome
+            .as_ref()
+            .unwrap()
+            .drops[0]
+            .state,
         DropState::Held,
         "an unanswered window expires into a held item, not a free award"
     );
 
     // A winner with a full bag keeps the item reserved until it fits.
     let mut zone = complete(&["aria"], ALL_CLEARED);
-    let item = zone.depths_run().unwrap().boss.outcome.as_ref().unwrap().drops[0].item;
+    let item = zone
+        .depths_run()
+        .unwrap()
+        .boss
+        .outcome
+        .as_ref()
+        .unwrap()
+        .drops[0]
+        .item;
     let filler = mmorpg_core::ItemStack::new(mmorpg_core::ItemId::new(1), 1).unwrap();
     zone = edit(zone, |state| {
         state.players[0].inventory =
@@ -374,8 +471,19 @@ fn need_outranks_greed_passes_and_silence_fall_to_a_manual_claim_and_full_bags_w
     commit(&mut zone);
     assert!(!bag_has(&zone, 1, item), "no room yet");
     assert!(matches!(
-        &zone.depths_run().unwrap().boss.outcome.as_ref().unwrap().drops[0].state,
-        DropState::Awarded { delivered: false, .. }
+        &zone
+            .depths_run()
+            .unwrap()
+            .boss
+            .outcome
+            .as_ref()
+            .unwrap()
+            .drops[0]
+            .state,
+        DropState::Awarded {
+            delivered: false,
+            ..
+        }
     ));
     let mut zone = edit(zone, |state| {
         let mut slots = [Some(filler); mmorpg_core::INVENTORY_SLOTS];
@@ -409,16 +517,30 @@ fn a_recovered_run_never_rerolls_or_regrants_and_a_fresh_run_is_a_new_identity()
         })
         .unwrap();
     assert_eq!(
-        restarted.depths_run().unwrap().boss.outcome.as_ref().unwrap().confirmed,
+        restarted
+            .depths_run()
+            .unwrap()
+            .boss
+            .outcome
+            .as_ref()
+            .unwrap()
+            .confirmed,
         report.outcome.version
     );
     tick(&mut restarted, 3);
-    assert!(!alive(&restarted, THORN.get()), "a defeated Thorn never stands again");
+    assert!(
+        !alive(&restarted, THORN.get()),
+        "a defeated Thorn never stands again"
+    );
     // The character returns holding its item and receipt: nothing is granted twice.
     restarted.admit_character(1, &record).unwrap();
     tick(&mut restarted, 2);
     assert_eq!(
-        restarted.capture_character(1, id("aria")).unwrap().inventory.count(item),
+        restarted
+            .capture_character(1, id("aria"))
+            .unwrap()
+            .inventory
+            .count(item),
         1,
         "the receipt stops a second grant after recovery"
     );
@@ -439,12 +561,22 @@ fn a_recovered_run_never_rerolls_or_regrants_and_a_fresh_run_is_a_new_identity()
         .unwrap();
     restarted.admit_character(1, &lost).unwrap();
     tick(&mut restarted, 2);
-    assert_eq!(restarted.capture_character(1, id("aria")).unwrap().inventory.count(item), 1);
+    assert_eq!(
+        restarted
+            .capture_character(1, id("aria"))
+            .unwrap()
+            .inventory
+            .count(item),
+        1
+    );
 
     // An open window at the crash cannot resume; the item stays claimable, never rerolled.
     let zone = complete(&["aria"], ALL_CLEARED);
     let open = zone.boss_report().unwrap();
-    assert!(matches!(open.outcome.drops[0].state, DropState::Rolling { .. }));
+    assert!(matches!(
+        open.outcome.drops[0].state,
+        DropState::Rolling { .. }
+    ));
     let mut restarted = ZoneSimulation::with_content(SLOT, redbrand_depths::content()).unwrap();
     restarted
         .begin_depths_run(DepthsRunStart {
@@ -456,7 +588,15 @@ fn a_recovered_run_never_rerolls_or_regrants_and_a_fresh_run_is_a_new_identity()
         })
         .unwrap();
     assert_eq!(
-        restarted.depths_run().unwrap().boss.outcome.as_ref().unwrap().drops[0].state,
+        restarted
+            .depths_run()
+            .unwrap()
+            .boss
+            .outcome
+            .as_ref()
+            .unwrap()
+            .drops[0]
+            .state,
         DropState::Held
     );
     let _ = CreatureId::new(30);
@@ -482,7 +622,13 @@ fn eligibility_is_the_chamber_at_the_pull_and_a_disconnected_winner_may_answer_o
     });
     engage(&mut zone);
     assert_eq!(
-        zone.depths_run().unwrap().boss.attempt.as_ref().unwrap().eligible,
+        zone.depths_run()
+            .unwrap()
+            .boss
+            .attempt
+            .as_ref()
+            .unwrap()
+            .eligible,
         vec![id("aria")]
     );
     let zone = kill(zone, 1);
@@ -503,7 +649,14 @@ fn eligibility_is_the_chamber_at_the_pull_and_a_disconnected_winner_may_answer_o
     .unwrap();
     zone.advance_tick().unwrap();
     assert!(matches!(
-        zone.depths_run().unwrap().boss.outcome.as_ref().unwrap().drops[0].state,
+        zone.depths_run()
+            .unwrap()
+            .boss
+            .outcome
+            .as_ref()
+            .unwrap()
+            .drops[0]
+            .state,
         DropState::Rolling { .. }
     ));
 
@@ -516,16 +669,33 @@ fn eligibility_is_the_chamber_at_the_pull_and_a_disconnected_winner_may_answer_o
     zone.admit_character(2, &bren).unwrap();
     tick(&mut zone, 2);
     roll(&mut zone, 2, 6_001, 0, RollChoice::Pass);
-    let settled = zone.depths_run().unwrap().boss.outcome.as_ref().unwrap().drops[0]
+    let settled = zone
+        .depths_run()
+        .unwrap()
+        .boss
+        .outcome
+        .as_ref()
+        .unwrap()
+        .drops[0]
         .state
         .clone();
     assert!(matches!(
         &settled,
         DropState::Awarded { winner, need: false, .. } if *winner == id("aria")
     ));
-    let replayed = ZoneSimulation::from_snapshot(zone.snapshot().unwrap(), Arc::clone(zone.content()));
+    let replayed =
+        ZoneSimulation::from_snapshot(zone.snapshot().unwrap(), Arc::clone(zone.content()));
     assert_eq!(
-        replayed.unwrap().depths_run().unwrap().boss.outcome.as_ref().unwrap().drops[0].state,
+        replayed
+            .unwrap()
+            .depths_run()
+            .unwrap()
+            .boss
+            .outcome
+            .as_ref()
+            .unwrap()
+            .drops[0]
+            .state,
         settled
     );
 }
@@ -546,7 +716,14 @@ fn a_completed_run_never_stands_thorn_again_and_a_stale_outcome_is_fenced() {
     .unwrap();
     zone.advance_tick().unwrap();
     assert!(matches!(
-        zone.depths_run().unwrap().boss.outcome.as_ref().unwrap().drops[0].state,
+        zone.depths_run()
+            .unwrap()
+            .boss
+            .outcome
+            .as_ref()
+            .unwrap()
+            .drops[0]
+            .state,
         DropState::Rolling { .. }
     ));
     // A stale confirmation of a later version than exists cannot deliver.
@@ -555,5 +732,8 @@ fn a_completed_run_never_stands_thorn_again_and_a_stale_outcome_is_fenced() {
     assert_eq!(outcome.confirmed, outcome.version);
     zone.confirm_boss_outcome(99, 1);
     tick(&mut zone, 5);
-    assert!(!alive(&zone, THORN.get()), "completed: Thorn never rises again");
+    assert!(
+        !alive(&zone, THORN.get()),
+        "completed: Thorn never rises again"
+    );
 }

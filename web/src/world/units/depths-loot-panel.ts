@@ -13,12 +13,11 @@ export type DepthsLootElements = {
  */
 export class DepthsLootPanel {
   readonly #elements: DepthsLootElements;
-  readonly #send: (command: WorldCommand) => void;
+
   #rendered = "";
 
   constructor(elements: DepthsLootElements, send: (command: WorldCommand) => void) {
     this.#elements = elements;
-    this.#send = send;
     elements.list.addEventListener("click", (event) => {
       const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-action]");
       if (!button) { return; }

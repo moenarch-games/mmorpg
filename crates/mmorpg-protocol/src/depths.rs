@@ -3,8 +3,8 @@
 
 use mmorpg_core::{
     BossAttempt, BossDrop, BossOutcome, BossProgress, CharacterId, DepthsDropView, DepthsLootView,
-    DepthsRun, DepthsRunStart, DropState, DropView, ItemId, MAX_BOSS_DROPS,
-    MAX_CHARACTER_ID_BYTES, MAX_PARTY_MEMBERS, RollChoice,
+    DepthsRun, DepthsRunStart, DropState, DropView, ItemId, MAX_BOSS_DROPS, MAX_CHARACTER_ID_BYTES,
+    MAX_PARTY_MEMBERS, RollChoice,
 };
 
 use crate::ProtocolError;
@@ -30,8 +30,7 @@ fn decode_character(payload: &[u8], offset: &mut usize) -> Result<CharacterId, P
     let text = std::str::from_utf8(&payload[*offset..end])
         .map_err(|_| ProtocolError::new("depths character is not text"))?;
     *offset = end;
-    CharacterId::new(text.to_owned())
-        .map_err(|_| ProtocolError::new("depths character is invalid"))
+    CharacterId::new(text.to_owned()).map_err(|_| ProtocolError::new("depths character is invalid"))
 }
 
 /// A character list of at most the party size (a count of zero allowed).
@@ -382,9 +381,7 @@ pub(crate) fn encode_loot_sheet(view: &DepthsLootView) -> Result<Vec<u8>, Protoc
                     false,
                     false,
                 ),
-                DropView::Held { claimable } => {
-                    (1, 0, 3, false, claimable, false, 0, false, false)
-                }
+                DropView::Held { claimable } => (1, 0, 3, false, claimable, false, 0, false, false),
                 DropView::Awarded {
                     won,
                     roll,

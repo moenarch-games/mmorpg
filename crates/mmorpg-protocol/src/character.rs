@@ -12,8 +12,7 @@
 
 use mmorpg_core::{
     AbilityId, CHARACTER_RECORD_SCHEMA_VERSION, CharacterId, CharacterLocation, CharacterRecord,
-    DepthsRecord,
-    ClassChoice, Cooldown, MAX_CHARACTER_ID_BYTES, MAX_COOLDOWNS, QuestLog, ZoneId,
+    ClassChoice, Cooldown, DepthsRecord, MAX_CHARACTER_ID_BYTES, MAX_COOLDOWNS, QuestLog, ZoneId,
 };
 
 use crate::ProtocolError;

@@ -214,7 +214,10 @@ impl DepthsRun {
             && (site.boss.is_none()
                 || outcome.drops.len() > crate::MAX_BOSS_DROPS
                 || outcome.confirmed > outcome.version
-                || outcome.eligible.iter().any(|character| !self.admits(character)))
+                || outcome
+                    .eligible
+                    .iter()
+                    .any(|character| !self.admits(character)))
         {
             return Err(ZoneError::new("invalid depths boss outcome"));
         }

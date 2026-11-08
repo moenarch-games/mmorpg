@@ -243,7 +243,11 @@ impl InstanceDirectory {
         let Some(run) = self.runs.get_mut(&run_id) else {
             return;
         };
-        if run.outcome.as_ref().is_none_or(|held| version >= held.version) {
+        if run
+            .outcome
+            .as_ref()
+            .is_none_or(|held| version >= held.version)
+        {
             run.outcome = Some(RecordedOutcome { version, bytes });
             run.outstanding = outstanding;
         }
@@ -339,8 +343,8 @@ impl InstanceDirectory {
                 0 => None,
                 1 => {
                     let version = reader.u32()?;
-                    let length =
-                        usize::try_from(reader.u32()?).map_err(|_| InstanceStoreError::corrupt())?;
+                    let length = usize::try_from(reader.u32()?)
+                        .map_err(|_| InstanceStoreError::corrupt())?;
                     Some(RecordedOutcome {
                         version,
                         bytes: reader.take(length)?.to_vec(),
@@ -679,19 +683,23 @@ mod tests {
             vec![CharacterId::new("aria").unwrap()],
         );
         // Aria still owes a roll, so she resumes the completed run instead of leaving it.
-        let again = directory.enter(&[aria.clone()], 2).unwrap();
+        let again = directory.enter(std::slice::from_ref(&aria), 2).unwrap();
         assert_eq!(again.run.id, entry.run.id);
         assert!(!again.created);
         // Nothing outstanding any more: she walks straight into a fresh run with a new identity.
         directory.report_outcome(entry.run.slot, entry.run.id, 2, vec![9], Vec::new());
-        let fresh = directory.enter(&[aria.clone()], 3).unwrap();
+        let fresh = directory.enter(std::slice::from_ref(&aria), 3).unwrap();
         assert!(fresh.created);
         assert_ne!(fresh.run.id, entry.run.id);
         // Bren still holds the old run until he also leaves; then it retires immediately.
         assert_eq!(directory.run_of(&bren.character).unwrap().id, entry.run.id);
-        let beside = directory.enter(&[bren.clone()], 4).unwrap();
+        let beside = directory.enter(std::slice::from_ref(&bren), 4).unwrap();
         assert!(beside.created);
-        assert_eq!(directory.run_count(), 2, "the completed run retired with its last member");
+        assert_eq!(
+            directory.run_count(),
+            2,
+            "the completed run retired with its last member"
+        );
     }
 
     #[test]

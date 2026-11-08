@@ -375,14 +375,24 @@ mod tests {
                     stats(2, 0, 4, 0)
                 ),
                 item(14, "Hollow-Delver's Cowl", json!("head"), stats(2, 0, 0, 4)),
-                item(15, "Thornreaver Blade", json!("mainHand"), stats(3, 6, 0, 0)),
+                item(
+                    15,
+                    "Thornreaver Blade",
+                    json!("mainHand"),
+                    stats(3, 6, 0, 0)
+                ),
                 item(
                     16,
                     "Captain's Scarred Brigandine",
                     json!("chest"),
                     stats(5, 2, 2, 0)
                 ),
-                item(17, "Redbrand Command Signet", json!("offHand"), stats(3, 0, 2, 3)),
+                item(
+                    17,
+                    "Redbrand Command Signet",
+                    json!("offHand"),
+                    stats(3, 0, 2, 3)
+                ),
             ])
         );
         let quests = value["quests"].as_array().unwrap();

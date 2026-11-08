@@ -111,9 +111,11 @@ impl GameUi {
                                 ui.label(format!("{seconds} s"));
                                 ui.horizontal(|ui| {
                                     use mmorpg_core::RollChoice::{Greed, Need, Pass};
-                                    for (choice, label, enabled) in
-                                        [(Need, "Need", may_need), (Greed, "Greed", true), (Pass, "Pass", true)]
-                                    {
+                                    for (choice, label, enabled) in [
+                                        (Need, "Need", may_need),
+                                        (Greed, "Greed", true),
+                                        (Pass, "Pass", true),
+                                    ] {
                                         if ui
                                             .add_enabled(enabled, egui::Button::new(label))
                                             .clicked()

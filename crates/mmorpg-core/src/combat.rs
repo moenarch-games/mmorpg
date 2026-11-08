@@ -288,9 +288,7 @@ impl ZoneSimulation {
             PlayerIntent::RollDepthsDrop { run, drop, choice } => {
                 self.answer_roll(player_id, run, drop, choice)?
             }
-            PlayerIntent::ClaimDepthsDrop { run, drop } => {
-                self.claim_drop(player_id, run, drop)?
-            }
+            PlayerIntent::ClaimDepthsDrop { run, drop } => self.claim_drop(player_id, run, drop)?,
             PlayerIntent::SelectTarget(None) => {
                 self.update_player(player_id, |player| player.target = None);
                 None
@@ -1114,13 +1112,17 @@ impl ZoneSimulation {
         let template = spawn.template;
         // The depths boss pays through its committed outcome; his adds pay nothing (#404).
         let pays_rewards = !self.pays_no_kill_rewards(creature_id);
-        let mut loot = self.content.loot_table(template).filter(|_| pays_rewards).map(|table| {
-            table.roll(crate::LootRolls {
-                money: (self.loot_rng.next_u64() >> 32) as u32,
-                outcome: (self.loot_rng.next_u64() >> 32) as u32,
-                quantity: (self.loot_rng.next_u64() >> 32) as u32,
-            })
-        });
+        let mut loot = self
+            .content
+            .loot_table(template)
+            .filter(|_| pays_rewards)
+            .map(|table| {
+                table.roll(crate::LootRolls {
+                    money: (self.loot_rng.next_u64() >> 32) as u32,
+                    outcome: (self.loot_rng.next_u64() >> 32) as u32,
+                    quantity: (self.loot_rng.next_u64() >> 32) as u32,
+                })
+            });
         // A quest item drops for the tapper only while a quest needs it; it
         // draws nothing from the loot stream.
         let tapper = self

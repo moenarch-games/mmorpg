@@ -533,7 +533,11 @@ pub struct DepthsDropView {
 
 /// A boss drop's state: `answer` is the viewer's `need`/`greed`/`pass` or null.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
-#[serde(tag = "kind", rename_all = "kebab-case", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 #[tsify(missing_as_null)]
 pub enum DepthsDropState {
     Rolling {
