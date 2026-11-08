@@ -274,6 +274,13 @@ pub fn catalog(content: &ZoneContent) -> CatalogExport {
         creature_templates: content
             .creature_templates()
             .iter()
+            // The browser joins depths zones with this one catalog; their boss is named too.
+            .chain(
+                mmorpg_core::redbrand_depths::content()
+                    .creature_templates()
+                    .iter()
+                    .filter(|template| content.creature_template(template.id).is_none()),
+            )
             .map(|template| CreatureTemplateExport {
                 id: template.id.get(),
                 name: template.name.clone(),
@@ -506,7 +513,7 @@ mod tests {
         );
         assert_eq!(
             value["creatureTemplates"].as_array().unwrap().len(),
-            content.creature_templates().len()
+            content.creature_templates().len() + 1
         );
         assert_eq!(
             value["npcs"].as_array().unwrap().len(),

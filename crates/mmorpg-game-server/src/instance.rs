@@ -336,8 +336,7 @@ impl InstanceService {
         self.transact(zone, &mut |directory, _| {
             run = directory.run_of(character).cloned();
         })?;
-        run
-            .filter(|run| run.slot == zone.zone)
+        run.filter(|run| run.slot == zone.zone)
             .map(|run| {
                 let outcome = run
                     .outcome

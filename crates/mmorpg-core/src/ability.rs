@@ -1338,7 +1338,7 @@ pub const ABILITY_CATALOG: [Ability; 48] = [
         ticks_from_ms(10_000),
         AbilityRange::SelfCentred,
         AbilityEffect::Stomp {
-            damage: [22, 30],
+            damage: [16, 22],
             per_level: 0,
             radius: 450,
             knockback: 200,
@@ -1356,7 +1356,7 @@ pub const ABILITY_CATALOG: [Ability; 48] = [
         ticks_from_ms(12_000),
         AbilityRange::SelfCentred,
         AbilityEffect::Stomp {
-            damage: [18, 26],
+            damage: [12, 18],
             per_level: 0,
             radius: 700,
             knockback: 100,

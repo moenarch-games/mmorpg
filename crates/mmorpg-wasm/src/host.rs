@@ -106,6 +106,11 @@ pub struct LocalZoneHost {
     next_transfer: u64,
     /// The current local run id (#404): the next run after this one is complete uses a new one.
     next_run: u64,
+    /// Whether a run this host starts has its chambers cleared already (the boss review).
+    depths_cleared: u8,
+    /// The boss review weakens Thorn once he stands, so his adds and loot prompt can be reviewed
+    /// in a short fight (#404).
+    weaken_thorn: bool,
 }
 
 impl LocalZoneHost {
@@ -122,6 +127,8 @@ impl LocalZoneHost {
             threshold_held: BTreeSet::new(),
             next_transfer: 1,
             next_run: 1,
+            depths_cleared: 0,
+            weaken_thorn: false,
         })
     }
 
@@ -177,7 +184,10 @@ impl LocalZoneHost {
     pub fn scenario(scenario: Scenario, seed: u64) -> Result<(Self, PlayerId), LocalZoneError> {
         let content = scenario.content(seed);
         let record = scenario.record(&content)?;
-        Self::with_ephemeral(content, &record)
+        let (mut host, player) = Self::with_ephemeral(content, &record)?;
+        host.weaken_thorn = matches!(scenario, Scenario::RedbrandThorn);
+        host.depths_cleared = if host.weaken_thorn { 0b111 } else { 0 };
+        Ok((host, player))
     }
 
     /// A fresh world for the Action Lab (#381) with the configured ephemeral
@@ -217,6 +227,8 @@ impl LocalZoneHost {
             threshold_held: BTreeSet::new(),
             next_transfer: 1,
             next_run: 1,
+            depths_cleared: 0,
+            weaken_thorn: false,
         })
     }
 
@@ -272,6 +284,8 @@ impl LocalZoneHost {
             threshold_held: BTreeSet::new(),
             next_transfer: 1,
             next_run: 1,
+            depths_cleared: 0,
+            weaken_thorn: false,
         })
     }
 
@@ -448,7 +462,31 @@ impl LocalZoneHost {
             self.zone
                 .confirm_boss_outcome(report.run_id, report.outcome.version);
         }
+        self.weaken_thorn_for_review()
+            .map_err(LocalZoneError::Zone)?;
         Ok(self.zone.current_tick())
+    }
+
+    /// The boss review (`redbrand-thorn`, #404) brings a standing Thorn down to 60 health once,
+    /// as a host-side edit of the canonical state, so the review fight stays short.
+    fn weaken_thorn_for_review(&mut self) -> Result<(), ZoneError> {
+        if !self.weaken_thorn || !is_depths_zone(self.zone.zone_id()) {
+            return Ok(());
+        }
+        let mut state = self.zone.snapshot()?;
+        let Some(thorn) = state.creatures.iter_mut().find(|creature| {
+            creature.creature_id == redbrand_depths::THORN
+                && creature.life == mmorpg_core::CreatureLife::Alive
+        }) else {
+            return Ok(());
+        };
+        thorn.health = 60;
+        let content = Arc::clone(self.zone.content());
+        let mut fresh = ZoneSimulation::from_snapshot(state, content)?;
+        fresh.adopt_transfers(&mut self.zone);
+        self.zone = fresh;
+        self.weaken_thorn = false;
+        Ok(())
     }
 
     fn fresh_transfer(&mut self) -> Result<TransferId, ZoneError> {
@@ -532,7 +570,7 @@ impl LocalZoneHost {
         depths.begin_depths_run(DepthsRunStart {
             run_id: self.next_run,
             roster: vec![character.clone()],
-            cleared: 0,
+            cleared: self.depths_cleared,
             checkpoint: false,
             outcome: None,
         })?;

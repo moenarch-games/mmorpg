@@ -302,7 +302,7 @@ fn thorn_template() -> crate::CreatureTemplate {
     thorn.elite = true;
     thorn.health = 900;
     thorn.health_per_level = 0;
-    thorn.damage = [12, 20];
+    thorn.damage = [6, 10];
     thorn.damage_per_level = 0;
     thorn.half_extents = [42, 104, 42];
     thorn
