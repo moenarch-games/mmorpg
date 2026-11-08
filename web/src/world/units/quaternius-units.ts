@@ -741,6 +741,36 @@ type FigureBundle = {
   bounds: Pick<Asset, "floor" | "height" | "centre">;
 };
 
+/** The Redbrand faction kit's directory beside the figures (`presets::REDBRAND_KIT`, #675). */
+const REDBRAND_KIT = "redbrand.kit";
+
+/**
+ * The Redbrand faction kit (asset-tooling #522), fetched by `scripts/fetch-bundles.sh` into
+ * `characters/redbrand.kit/`: its `redbrand-descriptor` and each entry's glTF URL by
+ * `<key>/<variant>`. Its figures are on the male rig and play his clips by joint name. Null when
+ * the kit was not fetched: the bandits then keep the soldier's outfit.
+ */
+async function loadRedbrandKit(): Promise<{ descriptor: unknown; scenes: Map<string, string> } | null> {
+  const base = new URL(`${import.meta.env.BASE_URL}characters/${REDBRAND_KIT}/`, window.location.href);
+  try {
+    const response = await fetch(new URL("manifest.json", base));
+    if (!response.ok) { throw new Error(`manifest.json ${response.status}`); }
+    type KitAsset = { key: string; variant: string; path: string; attachments?: { name?: string; path?: string }[] };
+    const assets = ((await response.json()) as { assets?: KitAsset[] }).assets ?? [];
+    const attachment = assets.flatMap((asset) => asset.attachments ?? []).find((item) => item.name === "redbrand-descriptor");
+    if (!attachment?.path) { throw new Error("no redbrand-descriptor"); }
+    const descriptor = await fetch(new URL(attachment.path, base));
+    if (!descriptor.ok) { throw new Error(`${attachment.path} ${descriptor.status}`); }
+    return {
+      descriptor: await descriptor.json(),
+      scenes: new Map(assets.map((asset) => [`${asset.key}/${asset.variant}`, new URL(asset.path, base).href])),
+    };
+  } catch (error) {
+    console.info("The Redbrand kit is not available (run scripts/fetch-bundles.sh); the bandits keep the soldier's outfit.", error);
+    return null;
+  }
+}
+
 /**
  * Loads the figure `character` from `characters/<character>/`: its default entry and clips, the
  * `keys` items (socketed by their grip) and every hairstyle in the tintable variant, `hair`
@@ -767,7 +797,9 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
     json(entryFile(entry, ".humanoid-clips.json")),
   ]);
   const motions = clipMotionsOf(descriptor);
-  const appearance = figureAppearance(character, await json(entryFile(entry, ".humanoid-appearance.json")));
+  // The Redbrand faction kit's figures and armour (#675) ride with the male's entries.
+  const kit = character === MALE ? await loadRedbrandKit() : null;
+  const appearance = figureAppearance(character, await json(entryFile(entry, ".humanoid-appearance.json")), kit?.descriptor ?? null);
   const look = headLook(appearance);
   const face = faceLookOf(appearance, entry.variant, gltf.scene);
   if (!face) { console.info(`The ${character} bundle has no face morphs for its drawn entry; faces keep the base shape.`); }
@@ -791,7 +823,8 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
     const id = `${key}/${variant}`;
     let loaded = scenes.get(id);
     if (!loaded) {
-      loaded = loader.loadAsync(url(entryFile(bundleEntry(manifest, key, variant), ".gltf"))).then((result) => {
+      const path = kit?.scenes.get(id) ?? url(entryFile(bundleEntry(manifest, key, variant), ".gltf"));
+      loaded = loader.loadAsync(path).then((result) => {
         result.scene.updateMatrixWorld(true);
         return result.scene;
       });
@@ -1207,7 +1240,7 @@ function setMorphs(model: THREE.Object3D, morphs: Readonly<Record<string, number
 }
 
 type OutfitValue = {
-  id?: unknown; skins?: { id?: unknown; variant?: unknown }[];
+  id?: unknown; skins?: { id?: unknown; entry?: unknown; variant?: unknown }[];
   armor?: { entry?: unknown; pieces?: { node?: unknown; socket?: unknown }[] };
   faction?: { materials?: unknown };
   classTrim?: { materials?: unknown };
@@ -1244,11 +1277,13 @@ export async function residentLooks(appearance: unknown, look: Pick<HeadLook, "t
   for (const preset of value.presets ?? []) {
     if (typeof preset.id !== "string" || !select(preset.id)) { continue; }
     const outfit = value.outfits?.find((candidate) => candidate.id === preset.outfit);
-    const variant = outfit?.skins?.find((skin) => skin.id === preset.skin)?.variant;
+    const skin = outfit?.skins?.find((candidate) => candidate.id === preset.skin);
+    const variant = skin?.variant;
     if (!outfit || typeof variant !== "string") {
       throw new Error(`The resident preset ${preset.id} names no outfit variant for its skin.`);
     }
-    const character = await scene(String(value.character), variant);
+    // A faction kit's outfit (#675) names the kit entry its figures are drawn from.
+    const character = await scene(typeof skin?.entry === "string" ? skin.entry : String(value.character), variant);
     const hidden = strings(preset.hiddenArmor);
     const pieces: ResidentLook["pieces"] = [];
     const armor = outfit.armor;
@@ -1439,7 +1474,7 @@ export class QuaterniusUnits {
     const posable = asset.instantiate(dress);
     const { model } = posable;
     // One draw per material class rather than per mesh (#615); throwables and the bolt show and hide, so stay apart.
-    const merged = mergeUnitMeshes(model, toggledHolders(model));
+    const merged = mergeUnitMeshes(model, toggledHolders(model), (mesh) => !FACE_DETAIL.test(mesh.name));
     const materials: Instance["materials"] = [];
     model.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) { return; }
@@ -1452,6 +1487,8 @@ export class QuaterniusUnits {
         object.computeBoundingSphere();
         object.boundingSphere!.radius += SKIN_REACH_METRES;
       }
+      // The shadow proxy keeps its invisible shadow-only material (`mergeUnitMeshes`).
+      if (object.userData.shadowOnly === true) { return; }
       // Each unit its own LitMaterials (#600), so its tint is its own.
       const own = (material: THREE.Material): THREE.Material => {
         const copy = LitMaterial.fromGltf(material);
@@ -1503,7 +1540,7 @@ export class QuaterniusUnits {
   #drop(id: string, instance: Instance): void {
     instance.posable.dispose();
     for (const { material } of instance.materials) { material.dispose(); }
-    for (const mesh of instance.merged.meshes) { mesh.geometry.dispose(); }
+    for (const mesh of [...instance.merged.meshes, ...instance.merged.shadows]) { mesh.geometry.dispose(); }
     instance.merged.skeleton.dispose();
     this.#instances.delete(id);
     this.#rootsChanged = true;

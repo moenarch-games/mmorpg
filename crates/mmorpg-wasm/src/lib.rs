@@ -132,13 +132,22 @@ pub fn sound_manifest(bundle: &str) -> Result<String, JsError> {
 
 /// The `humanoid-appearance` JSON the Ranger figure `character` draws from (#39, #493): the
 /// bundle's own, with the game's humanoid enemy presets beside the male figure's, the presets
-/// the native client draws too.
+/// the native client draws too. `kit` is the Redbrand kit's descriptor JSON when it was fetched
+/// (#675): its outfit joins the male's and dresses the bandits.
 #[wasm_bindgen(js_name = figureAppearance)]
-pub fn figure_appearance(character: &str, appearance: &str) -> Result<String, JsError> {
+pub fn figure_appearance(
+    character: &str,
+    appearance: &str,
+    kit: Option<String>,
+) -> Result<String, JsError> {
     let figure = mmorpg_presentation::units::imported::Figure::of_character(character)
         .ok_or_else(|| JsError::new(&format!("no Ranger figure {character}")))?;
     let appearance: serde_json::Value = serde_json::from_str(appearance)?;
-    Ok(mmorpg_presentation::units::presets::figure_appearance(figure, &appearance).to_string())
+    let kit: Option<serde_json::Value> = kit.as_deref().map(serde_json::from_str).transpose()?;
+    Ok(
+        mmorpg_presentation::units::presets::figure_appearance(figure, &appearance, kit.as_ref())
+            .to_string(),
+    )
 }
 
 /// A unit's own seeded variation of the preset `id` (asset-tooling #380) over `appearance`
@@ -1033,6 +1042,17 @@ pub fn outpost_kit_models() -> Vec<f32> {
     mmorpg_presentation::outpost_kit::parts(scenery::hosted_scenery())
         .iter()
         .flat_map(|part| part.model)
+        .collect()
+}
+
+/// Each placed Outpost kit module's building wear in [0, 1], in [`outpost_kit_models`] order: the
+/// browser blends it from the kit's wear masks.
+#[wasm_bindgen(js_name = outpostKitWear)]
+#[must_use]
+pub fn outpost_kit_wear() -> Vec<f32> {
+    mmorpg_presentation::outpost_kit::parts(scenery::hosted_scenery())
+        .iter()
+        .map(|part| part.wear)
         .collect()
 }
 

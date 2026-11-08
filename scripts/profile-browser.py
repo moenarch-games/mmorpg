@@ -162,6 +162,10 @@ class Session:
         self.page = self.context.new_page()
         self.errors = []
         self.page.on("pageerror", lambda error: self.errors.append(str(error)))
+        # Bytes served per Outpost kit bundle file (the local server sends Content-Length).
+        self.outpost_files = {}
+        self.page.on("response", lambda response: "/buildings/outpost.kit/" in response.url and self.outpost_files.__setitem__(
+            response.url, int(response.headers.get("content-length", "0"))))
         started = time.monotonic()
         self.page.goto(url + "?debug&profile" + (f"&activity={activity}" if activity else ""))
         expect(self.enter_button()).to_be_enabled(timeout=60_000)
@@ -242,6 +246,13 @@ def top_contributors(frames, field, top=15):
             "top": [{"key": key, "calls": round(calls / n, 1), "triangles": round(triangles / n)} for key, (calls, triangles) in ranked[:top]]}
 
 
+def kit_draws(frames, prefix="Outpost kit"):
+    """Mean draw calls per frame of the meshes named `prefix…` (a kit's batches), in the main and shadow passes."""
+    n = max(len(frames), 1)
+    return {group: round(sum(c["calls"] for f in frames for c in f.get(field, []) if c["key"].startswith(prefix)) / n, 1)
+            for group, field in (("main", "mainDraws"), ("shadow", "shadowDraws"))}
+
+
 def summarize(sample, seconds):
     frames = sample["frames"]
     raf = [b["raf"] - a["raf"] for a, b in zip(frames, frames[1:])]
@@ -268,6 +279,7 @@ def summarize(sample, seconds):
         "trianglesPerFrame": round(sample["triangles"] / max(len(frames), 1)),
         # three's own counts per render pass and, for the main and shadow passes, per contributor (mean per frame).
         "drawsByPass": draws_by_pass(frames),
+        "outpostKitDraws": kit_draws(frames),
         "mainPassTopContributors": top_contributors(frames, "mainDraws"),
         "shadowPassTopContributors": top_contributors(frames, "shadowDraws"),
         "gpuMs": dist(gpu) if sample["gpuSupported"] else "unsupported",
@@ -538,6 +550,10 @@ def main():
             report["scenarios"]["selection-keys"] = selection_keys(session)
         report["display"] = {"viewport": [1440, 900], "deviceScaleFactor": 1, **session.renderer()}
         session.warm()
+        if not args.activity:
+            kit = session.page.evaluate("window.__valeDebug.outpost()") or {}
+            report["outpostKit"] = {"loaded": kit.get("loaded"), "wornMaterials": kit.get("worn"), "textureBytes": kit.get("textureBytes"),
+                                    "downloadBytes": sum(session.outpost_files.values()), "downloadFiles": len(session.outpost_files)}
         report["scenarios"]["idle"] = summarize(session.record(args.seconds), args.seconds)
         report["scenarios"]["idle"]["cpuProfile"] = cpu_profile(session, lambda: session.page.wait_for_timeout(args.seconds * 1000))
         trace = None

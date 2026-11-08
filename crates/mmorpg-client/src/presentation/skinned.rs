@@ -1248,6 +1248,75 @@ fn resolve(base: &str, uri: &str) -> String {
 
 /// One GLB of an asset-tooling `gltf-resources-v1` entry: every external buffer and image
 /// becomes a view of a single binary chunk, so the ordinary GLB import reads it.
+/// A KTX2 image's base level as an RGBA8 PNG.
+fn ktx2_png(bytes: &[u8]) -> Vec<u8> {
+    let (width, height, levels) =
+        crate::ground::transcode_ktx2(bytes, Some(1)).expect("a bundle KTX2 image transcodes");
+    use image::ImageEncoder as _;
+    let mut png = Vec::new();
+    image::codecs::png::PngEncoder::new_with_quality(
+        &mut png,
+        image::codecs::png::CompressionType::Fast,
+        image::codecs::png::FilterType::NoFilter,
+    )
+    .write_image(&levels[0], width, height, image::ExtendedColorType::Rgba8)
+    .expect("an RGBA8 image encodes as PNG");
+    png
+}
+
+/// Gives every accessor without a buffer view or sparse storage (all zeros, such as the Redbrand
+/// kit's unused morph targets, #675) a view of one shared block of zeros: glTF allows them, the
+/// `gltf` crate does not.
+fn zero_accessors(json: &mut serde_json::Value, append: &mut impl FnMut(&[u8]) -> usize) {
+    let size = |accessor: &serde_json::Value| {
+        let component = match accessor["componentType"].as_u64() {
+            Some(5120 | 5121) => 1,
+            Some(5122 | 5123) => 2,
+            _ => 4,
+        };
+        let components = match accessor["type"].as_str() {
+            Some("VEC2") => 2,
+            Some("VEC3") => 3,
+            Some("VEC4" | "MAT2") => 4,
+            Some("MAT3") => 9,
+            Some("MAT4") => 16,
+            _ => 1,
+        };
+        accessor["count"].as_u64().unwrap_or(0) as usize * component * components
+    };
+    let empty = |accessor: &serde_json::Value| {
+        accessor.get("bufferView").is_none() && accessor.get("sparse").is_none()
+    };
+    let longest = json["accessors"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|accessor| empty(accessor))
+        .map(size)
+        .max();
+    let Some(longest) = longest.filter(|&longest| longest > 0) else {
+        return;
+    };
+    let offset = append(&vec![0; longest]);
+    let views = json["bufferViews"].as_array().map_or(0, Vec::len);
+    if let Some(list) = json
+        .get_mut("bufferViews")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        list.push(serde_json::json!({"buffer": 0, "byteOffset": offset, "byteLength": longest}));
+    }
+    for accessor in json
+        .get_mut("accessors")
+        .and_then(serde_json::Value::as_array_mut)
+        .into_iter()
+        .flatten()
+    {
+        if empty(accessor) {
+            accessor["bufferView"] = views.into();
+        }
+    }
+}
+
 fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
     let file = |path: &str| {
         files
@@ -1295,14 +1364,24 @@ fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
             .expect("bundle images are external")
             .to_owned();
         let bytes = file(&resolve(entry, &uri));
+        // The `gltf` crate decodes PNG and JPEG only: a KTX2 (Basis Universal) image, such as the
+        // Outpost kit's (asset-tooling#511), is transcoded here and re-encoded as a PNG.
+        let png = crate::ground::is_ktx2(bytes).then(|| ktx2_png(bytes));
+        let bytes = png.as_deref().unwrap_or(bytes);
         let offset = append(bytes);
         views.push(
             serde_json::json!({"buffer": 0, "byteOffset": offset, "byteLength": bytes.len()}),
         );
         if let Some(image) = image.as_object_mut() {
             image.remove("uri");
+            if png.is_some() {
+                image.insert("mimeType".into(), "image/png".into());
+            }
         }
     }
+    zero_accessors(&mut json, &mut append);
+    // KHR_texture_basisu's source becomes the texture's core source, now a PNG.
+    crate::ground::basisu_as_core(&mut json);
     let first = json["bufferViews"].as_array().map_or(0, Vec::len);
     for (index, image) in json
         .get_mut("images")

@@ -153,6 +153,30 @@ fn main() {
     let (code, mut files, _) = figure(&female, FEMALE);
     files.extend(prepared(&female));
     write("ranger_female_bundle.rs", &female, code, files);
+    // The Redbrand faction kit (#675): every entry and its descriptor. Optional: without it the
+    // bandits keep the soldier's outfit, so a missing kit embeds nothing.
+    let redbrand = characters.join("redbrand.kit");
+    if redbrand.join("manifest.json").is_file() {
+        static_bundle("redbrand_bundle.rs", &redbrand, None, true);
+        descriptor(&redbrand, "redbrand-descriptor", "redbrand_descriptor.rs");
+    } else {
+        println!("cargo:rerun-if-changed={}", characters.display());
+        println!(
+            "cargo:warning=the Redbrand kit is not fetched; the bandits keep the soldier's outfit (run scripts/fetch-bundles.sh)"
+        );
+        write(
+            "redbrand_bundle.rs",
+            &redbrand,
+            "pub const ENTRIES: &[(&str, &str)] = &[];\n".into(),
+            Vec::new(),
+        );
+        let out = PathBuf::from(env::var("OUT_DIR").expect("cargo sets it"));
+        fs::write(
+            out.join("redbrand_descriptor.rs"),
+            "pub const DESCRIPTOR: &str = \"\";\n",
+        )
+        .expect("OUT_DIR is writable");
+    }
     static_bundle(
         "inn_bundle.rs",
         &manifest_dir.join("../../web/public/buildings/greyhaven.inn"),

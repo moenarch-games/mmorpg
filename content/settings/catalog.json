@@ -235,6 +235,39 @@
           ]
         }
       }
+    },
+    {
+      "target": "browser",
+      "definition": {
+        "id": "graphics.render_resolution",
+        "kind": {
+          "type": "choice",
+          "options": [
+            "performance",
+            "balanced",
+            "sharp"
+          ]
+        },
+        "default": {
+          "type": "choice",
+          "value": "balanced"
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "graphics.render_resolution",
+        "metadata": {
+          "label_key": "settings.graphics.render_resolution.label",
+          "category_key": "settings.category.graphics",
+          "order": 10,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.resolution"
+          ],
+          "description_key": "settings.graphics.render_resolution.description"
+        }
+      }
     }
   ],
   "categories": [
@@ -253,6 +286,10 @@
     {
       "key": "settings.category.audio",
       "order": 40
+    },
+    {
+      "key": "settings.category.graphics",
+      "order": 50
     }
   ],
   "text": {
@@ -281,6 +318,13 @@
     "settings.search.fov": "field of view fov camera",
     "settings.search.mouse": "mouse pointer look sensitivity",
     "settings.search.animation": "motion animation accessibility",
-    "settings.search.invert": "invert reverse vertical look"
+    "settings.search.invert": "invert reverse vertical look",
+    "settings.category.graphics": "Graphics",
+    "settings.graphics.render_resolution.label": "Render resolution",
+    "settings.graphics.render_resolution.description": "Pixels drawn per screen point on high-density displays. Sharp costs the GPU far more on large screens.",
+    "settings.choice.performance": "Performance (1\u00d7)",
+    "settings.choice.balanced": "Balanced (up to 1.5\u00d7)",
+    "settings.choice.sharp": "Sharp (up to 2\u00d7)",
+    "settings.search.resolution": "graphics resolution pixel ratio quality performance gpu"
   }
 }

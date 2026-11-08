@@ -52,8 +52,11 @@ describe("mergeUnitMeshes", () => {
     return { model, elbow, holder, shiny, sources: [left, right, plate] };
   };
 
-  /** The world positions of every drawn vertex, sorted, after posing the elbow and moving the holder. */
-  const drawn = (model: THREE.Object3D, elbow: THREE.Object3D, holder: THREE.Object3D) => {
+  /**
+   * The world positions of every drawn vertex, sorted, after posing the elbow and moving the holder; with `shadows`,
+   * of the shadow proxies' vertices instead.
+   */
+  const drawn = (model: THREE.Object3D, elbow: THREE.Object3D, holder: THREE.Object3D, shadows = false) => {
     elbow.rotation.set(0, 0, 0.7);
     holder.position.set(0.1, 0.4, 0.3);
     model.updateMatrixWorld(true);
@@ -61,6 +64,7 @@ describe("mergeUnitMeshes", () => {
     const point = new THREE.Vector3();
     model.traverse((object) => {
       if (!(object instanceof THREE.Mesh) || (object.material as THREE.Material).transparent) { return; }
+      if ((object.userData.shadowOnly === true) !== shadows) { return; }
       if (object instanceof THREE.SkinnedMesh) { object.skeleton.update(); }
       const count = object.geometry.getAttribute("position").count;
       for (let i = 0; i < count; i++) {
@@ -76,17 +80,24 @@ describe("mergeUnitMeshes", () => {
     const before = unit();
     const expected = drawn(before.model, before.elbow, before.holder);
     const after = unit();
-    const { meshes: merged, skeleton } = mergeUnitMeshes(after.model, new Set());
+    const { meshes: merged, shadows, skeleton } = mergeUnitMeshes(after.model, new Set());
     expect(merged).toHaveLength(1);
     const meshes: THREE.Mesh[] = [];
-    after.model.traverse((object) => { if (object instanceof THREE.Mesh) { meshes.push(object); } });
+    after.model.traverse((object) => { if (object instanceof THREE.Mesh && object.userData.shadowOnly !== true) { meshes.push(object); } });
     // The merged mesh, the two-sided skin and the glass, which blends: the latter two stay apart.
     expect(meshes).toHaveLength(3);
+    // The opaque class and the two-sided skin cast through one shadow proxy per sidedness, from the same palette; the
+    // glass casts by itself.
+    expect(shadows.map((proxy) => proxy.name)).toEqual(["shadow:single", "shadow:double"]);
+    expect(shadows.every((proxy) => proxy.skeleton === skeleton && !proxy.material.visible)).toBe(true);
+    expect(meshes.filter((mesh) => mesh.userData.notShadowCaster === true).map((mesh) => mesh.name).sort()).toEqual([merged[0]!.name, after.shiny.name].sort());
     // Both skinned draws pose from one joint palette.
     expect(merged[0]!.skeleton).toBe(skeleton);
     expect(after.shiny.skeleton).toBe(skeleton);
     expect(after.model.getObjectByName("plate")?.parent).toBe(after.holder);
     expect(drawn(after.model, after.elbow, after.holder)).toEqual(expected);
+    // The proxies pose exactly where the opaque meshes they cast for are drawn.
+    expect(drawn(after.model, after.elbow, after.holder, true)).toEqual(expected);
     const color = merged[0]!.geometry.getAttribute("color");
     const colors = new Set(Array.from({ length: color.count }, (_, i) => `${color.getX(i)},${color.getY(i)},${color.getZ(i)}`));
     expect(colors).toEqual(new Set(["1,0,0", "0,1,0", "0,0,1"]));

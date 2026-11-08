@@ -1,12 +1,16 @@
 import * as THREE from "three";
+import { LitMaterial } from "@moritzbrantner/three-lighting";
 import type { RendererMaterialRequest, RendererSceneNode } from "@moritzbrantner/three-d-renderer";
 import { presentationMaterial } from "./lighting";
 import type { SceneryScene, StaticBatch } from "./scenery-nodes";
 
-/** One batched mesh: the `BatchedMesh` that draws it and its instance there, or the plain mesh drawing it alone. */
-export type BatchedDraw = { mesh: THREE.BatchedMesh | THREE.Mesh | null; instance: number };
+/**
+ * One batched mesh: the `BatchedMesh` that draws it and its instance there, or the plain mesh drawing it alone; and
+ * its instance in its part's shadow batch ([`StaticBatches`]), -1 when it casts by itself.
+ */
+export type BatchedDraw = { mesh: THREE.BatchedMesh | THREE.Mesh | null; instance: number; shadow: number; caster: THREE.BatchedMesh | null };
 
-type Pending = { geometry: THREE.BufferGeometry; matrix: THREE.Matrix4; color: THREE.Color | null; draw: BatchedDraw };
+type Pending = { geometry: THREE.BufferGeometry; matrix: THREE.Matrix4; color: THREE.Color | THREE.Vector4 | null; draw: BatchedDraw };
 
 /**
  * Whether a mesh drawn with `material` can join a `BatchedMesh` of lit scenery: one opaque or masked `LitMaterial`
@@ -45,7 +49,7 @@ export function drawWhole(mesh: THREE.BatchedMesh): void {
  */
 export class StaticBatches {
   readonly root = new THREE.Group();
-  readonly #groups = new Map<string, { material: THREE.Material; colored: boolean; pending: Pending[] }>();
+  readonly #groups = new Map<string, { material: THREE.Material; colored: boolean; part: string; pending: Pending[] }>();
 
   constructor(name: string) {
     this.root.name = name;
@@ -54,26 +58,40 @@ export class StaticBatches {
   }
 
   /**
-   * Adds `geometry` drawn with `material` (see [`batchable`]) at `matrix`, times `color` (linear) when given. Draws of
-   * another `part` go to other batches: moving one re-uploads only its own batch's matrices.
+   * Adds `geometry` drawn with `material` (see [`batchable`]) at `matrix`, times `color` (linear) when given. A `Vector4`
+   * colour also sets the instance colour's alpha, which three ignores and the Outpost kit's wear shader reads as the draw's
+   * wear ([`applyOutpostWear`]). Draws of another `part` go to other batches: moving one re-uploads only its own batch's
+   * matrices.
    */
-  add(geometry: THREE.BufferGeometry, material: THREE.Material, matrix: THREE.Matrix4, color: THREE.Color | null = null, part = ""): BatchedDraw {
+  add(geometry: THREE.BufferGeometry, material: THREE.Material, matrix: THREE.Matrix4, color: THREE.Color | THREE.Vector4 | null = null, part = ""): BatchedDraw {
     const key = `${part}|${material.uuid}|${layout(geometry)}`;
     let group = this.#groups.get(key);
     if (!group) {
-      group = { material, colored: false, pending: [] };
+      group = { material, colored: false, part, pending: [] };
       this.#groups.set(key, group);
     }
     group.colored ||= color !== null;
-    const draw: BatchedDraw = { mesh: null, instance: -1 };
+    const draw: BatchedDraw = { mesh: null, instance: -1, shadow: -1, caster: null };
     group.pending.push({ geometry, matrix: matrix.clone(), color, draw });
     return draw;
   }
 
-  /** Creates the batches of everything added so far. */
+  /**
+   * Creates the batches of everything added so far. Every opaque single-sided draw also joins its part's shadow batch
+   * and its own batch casts no shadow: the shadow views draw all such casters with one shared material, so a part
+   * casts in one multi-draw per view instead of one per material.
+   */
   build(): void {
     const white = new THREE.Color(1, 1, 1);
-    for (const { material, colored, pending } of this.#groups.values()) {
+    const casters = new Map<string, { part: string; doubleSided: boolean; pending: Pending[] }>();
+    for (const { material, colored, part, pending } of this.#groups.values()) {
+      const casts = castsWithSharedShadow(material);
+      if (casts) {
+        const doubleSided = casts === "double";
+        const caster = casters.get(`${part}|${doubleSided}`) ?? { part, doubleSided, pending: [] };
+        caster.pending.push(...pending);
+        casters.set(`${part}|${doubleSided}`, caster);
+      }
       if (pending.length === 1 && !colored) {
         // A batch of one would cull and re-upload its draw list in every pass for nothing: three culls a mesh itself.
         const { geometry, matrix, draw } = pending[0]!;
@@ -82,6 +100,7 @@ export class StaticBatches {
         mesh.matrixAutoUpdate = false;
         mesh.matrix.copy(matrix);
         mesh.matrixWorldNeedsUpdate = true;
+        if (casts) { mesh.userData.notShadowCaster = true; }
         draw.mesh = mesh;
         this.root.add(mesh);
         continue;
@@ -95,6 +114,7 @@ export class StaticBatches {
       mesh.frustumCulled = false;
       drawWhole(mesh);
       mesh.matrixAutoUpdate = false;
+      if (casts) { mesh.userData.notShadowCaster = true; }
       const ids = new Map(geometries.map((geometry) => [geometry, mesh.addGeometry(geometry)]));
       for (const { geometry, matrix, color, draw } of pending) {
         draw.mesh = mesh;
@@ -104,7 +124,30 @@ export class StaticBatches {
       }
       this.root.add(mesh);
     }
+    for (const { part, doubleSided, pending } of casters.values()) { this.#buildCaster(part, doubleSided, pending); }
     this.#groups.clear();
+  }
+
+  /** `pending`'s shadow batch: their positions only, drawn by nothing but the shadow views. */
+  #buildCaster(part: string, doubleSided: boolean, pending: readonly Pending[]): void {
+    const shapes = new Map<THREE.BufferGeometry, THREE.BufferGeometry>();
+    for (const { geometry } of pending) {
+      if (!shapes.has(geometry)) { shapes.set(geometry, shadowShape(geometry)); }
+    }
+    const vertices = [...shapes.values()].reduce((sum, shape) => sum + shape.attributes.position!.count, 0);
+    const indices = [...shapes.values()].reduce((sum, shape) => sum + shape.index!.count, 0);
+    const caster = new THREE.BatchedMesh(pending.length, vertices, indices, doubleSided ? SHADOW_ONLY.double : SHADOW_ONLY.single);
+    caster.name = `${this.root.name}:shadow${part ? `:${part}` : ""}${doubleSided ? ":double" : ""}`;
+    caster.frustumCulled = false;
+    drawWhole(caster);
+    caster.matrixAutoUpdate = false;
+    const ids = new Map([...shapes].map(([geometry, shape]) => [geometry, caster.addGeometry(shape)]));
+    for (const { geometry, matrix, draw } of pending) {
+      draw.caster = caster;
+      draw.shadow = caster.addInstance(ids.get(geometry)!);
+      caster.setMatrixAt(draw.shadow, matrix);
+    }
+    this.root.add(caster);
   }
 
   /** Moves `draw` to `matrix` (world). */
@@ -116,6 +159,7 @@ export class StaticBatches {
       mesh.matrix.copy(matrix);
       mesh.matrixWorldNeedsUpdate = true;
     }
+    draw.caster?.setMatrixAt(draw.shadow, matrix);
   }
 
   /** Shows or hides `draw`. */
@@ -126,7 +170,51 @@ export class StaticBatches {
     } else if (mesh) {
       mesh.visible = visible;
     }
+    const caster = draw.caster;
+    if (caster && caster.getVisibleAt(draw.shadow) !== visible) { caster.setVisibleAt(draw.shadow, visible); }
   }
+}
+
+/**
+ * The materials of the shadow batches: `LitMaterial`s the main pass skips (`visible` false) and every shadow view
+ * replaces with its shared shadow material, as it does each opaque `LitMaterial` (drawing both faces when it is
+ * double-sided).
+ */
+export const SHADOW_ONLY = (() => {
+  const material = (doubleSided: boolean) => {
+    const shadow = new LitMaterial({ doubleSided });
+    shadow.name = doubleSided ? "shadow-only:double" : "shadow-only";
+    shadow.visible = false;
+    return shadow;
+  };
+  return { single: material(false), double: material(true) };
+})();
+
+/**
+ * Whether the shadow views draw `material`'s casters with their shared material, single- or double-sided: an opaque
+ * `LitMaterial`. A masked or blended one cuts its shadow out by its own texture, so it casts by itself.
+ */
+export function castsWithSharedShadow(material: THREE.Material): "single" | "double" | null {
+  const lit = material as { isLitMaterial?: boolean; alphaMode?: string; doubleSided?: boolean };
+  if (lit.isLitMaterial !== true || lit.alphaMode !== "opaque") { return null; }
+  return lit.doubleSided === true ? "double" : "single";
+}
+
+/** `geometry`'s positions and indices alone, indexed, as every geometry of one shadow batch must be. */
+function shadowShape(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
+  const source = geometry.attributes.position!;
+  const positions = new Float32Array(source.count * 3);
+  for (let index = 0; index < source.count; index += 1) {
+    positions[index * 3] = source.getX(index);
+    positions[index * 3 + 1] = source.getY(index);
+    positions[index * 3 + 2] = source.getZ(index);
+  }
+  const shape = new THREE.BufferGeometry();
+  shape.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const index = geometry.index;
+  const indices = index ? Array.from({ length: index.count }, (_, at) => index.getX(at)) : Array.from({ length: source.count }, (_, at) => at);
+  shape.setIndex(new THREE.Uint32BufferAttribute(indices, 1));
+  return shape;
 }
 
 type Mirrored = { mesh: THREE.Mesh; draw: BatchedDraw | null; proxy: THREE.Mesh | null };
@@ -141,16 +229,18 @@ export class BatchedRoots {
   readonly #sources: readonly THREE.Object3D[];
   readonly #meshes: Mirrored[][];
 
-  constructor(name: string, sources: readonly THREE.Object3D[]) {
+  /** `wear`, when given, is each source root's wear in [0, 1], its instances' colour alpha ([`StaticBatches.add`]). */
+  constructor(name: string, sources: readonly THREE.Object3D[], wear: readonly number[] | null = null) {
     this.#batches = new StaticBatches(name);
     this.#sources = sources;
-    this.#meshes = sources.map((source) => {
+    this.#meshes = sources.map((source, index) => {
       source.updateMatrixWorld(true);
       const meshes: Mirrored[] = [];
+      const color = wear ? new THREE.Vector4(1, 1, 1, wear[index] ?? 0) : null;
       source.traverse((object) => {
         if (!(object instanceof THREE.Mesh)) { return; }
         if (batchable(object.material) && !(object as THREE.SkinnedMesh).isSkinnedMesh && !(object as THREE.InstancedMesh).isInstancedMesh) {
-          meshes.push({ mesh: object, draw: this.#batches.add(object.geometry, object.material, object.matrixWorld), proxy: null });
+          meshes.push({ mesh: object, draw: this.#batches.add(object.geometry, object.material, object.matrixWorld, color), proxy: null });
           return;
         }
         const proxy = new THREE.Mesh(object.geometry, object.material);

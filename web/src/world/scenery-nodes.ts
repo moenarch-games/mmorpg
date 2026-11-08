@@ -109,6 +109,11 @@ export type SceneryStats = {
 
 const FORMAT = "mmorpg.static-scene";
 const CULLS: readonly CullClass[] = ["always", "far", "mid", "near", "detail"];
+/**
+ * Instanced detail (ground cover, handholds, repeated prop pieces) casts only into the two near sun cascades: in the
+ * far one it covers less than a texel and cost about a fifth of its draws (three-lighting `shadowCascades`).
+ */
+const NEAR_SHADOW = { shadowCascades: 2 };
 
 type GeometryEntry = {
   resourceKey: string; vertexOffset: number; vertexCount: number; colored: boolean; textured: boolean; weighted: boolean; indexOffset: number; indexCount: number;
@@ -129,6 +134,18 @@ function triples(values: Float32Array, start: number, count: number): [number, n
     out[index] = [values[at]!, values[at + 1]!, values[at + 2]!];
   }
   return out;
+}
+
+/**
+ * An instance batch's mesh name, `scenery.<kind>.<cull>[.fallback-<kit>]`, without its chunk or geometry index so the
+ * draw profile groups one kind of instance: batch IDs are `instances:<chunk>:<cull>[:fallback-<kit>]:<kind>…` (the
+ * presentation `Batcher`), where the kind is `handholds`, a ground-cover kind or the static scene's prefixed `scenery`
+ * (repeated prop pieces).
+ */
+function instanceBatchName(id: string, group: GroupEntry): string {
+  const segments = id.split(":");
+  const kind = segments[group.fallback ? 4 : 3] ?? "unknown";
+  return `scenery.${kind === "scenery" ? "prop-pieces" : kind}.${group.cull}${group.fallback ? `.fallback-${group.fallback}` : ""}`;
 }
 
 function bounds(group: GroupEntry): Bounds {
@@ -230,10 +247,13 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
     }
     const first = group.draws[0]!;
     const instances: RendererInstance[] = group.draws.map((draw) => ({ modelMatrix: model(draw), color: draw.color }));
+    // Instance draw IDs are `<batch id>:<ordinal>`; the batch shares one geometry.
+    const id = first.id.slice(0, first.id.lastIndexOf(":"));
     instanceBatches.push({
       ...bounds(group),
-      // Instance draw IDs are `<batch id>:<ordinal>`; the batch shares one geometry.
-      batch: { id: first.id.slice(0, first.id.lastIndexOf(":")), geometry: geometry(first), color: "#ffffff", revision: layout.prefix, instances },
+      batch: {
+        id, name: instanceBatchName(id, group), userData: NEAR_SHADOW, geometry: geometry(first), color: "#ffffff", revision: layout.prefix, instances,
+      },
     });
   }
   const water = layout.water.map((draw): RendererSceneNode => ({

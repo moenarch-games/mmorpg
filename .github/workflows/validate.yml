@@ -28,10 +28,11 @@ jobs:
       clippy: ${{ steps.pages-scope.outputs.clippy }}
       docs_only: ${{ steps.detect.outputs.docs_only }}
       rust_changed: ${{ steps.detect.outputs.rust_changed }}
+      settings_only: ${{ steps.detect.outputs.settings_only }}
       full_validation: ${{ steps.detect.outputs.full_validation }}
       browser_evidence: ${{ steps.detect.outputs.browser_evidence }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -60,6 +61,7 @@ jobs:
           printf 'full_validation=%s\n' "$FULL_VALIDATION" >> "$GITHUB_OUTPUT"
           docs_only=false
           rust_changed=true
+          settings_only=false
           if [[ -n "$PR_BASE" && -n "$PR_HEAD" ]] &&
             git cat-file -e "$PR_BASE^{commit}" &&
             git cat-file -e "$PR_HEAD^{commit}" &&
@@ -69,6 +71,7 @@ jobs:
             if (( ${#files[@]} > 0 )); then
               docs_only=true
               rust_changed=false
+              settings_only=true
               for file in "${files[@]}"; do
                 case "$file" in
                   docs/*.md|README.md|AGENTS.md|CLAUDE.md|ROADMAP.md|DESIGN.md|SCENARIO_EXPERIMENTS.md) ;;
@@ -76,6 +79,14 @@ jobs:
                 esac
                 case "$file" in
                   Cargo.toml|Cargo.lock|rust-toolchain*|.cargo/*|crates/*|content/*|web/assets/*) rust_changed=true ;;
+                esac
+                # Settings catalog changes affect the native client, but do not require the
+                # unrelated long-running zone journeys on an ordinary PR. Merge queue runs
+                # retain the complete Rust suite before integration.
+                case "$file" in
+                  web/assets/*) settings_only=false ;;
+                  content/settings/catalog.json|web/*) ;;
+                  *) settings_only=false ;;
                 esac
               done
             fi
@@ -93,6 +104,10 @@ jobs:
           fi
           printf 'docs_only=%s\n' "$docs_only" >> "$GITHUB_OUTPUT"
           printf 'rust_changed=%s\n' "$rust_changed" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_EVENT_NAME" != "pull_request" || "$rust_changed" != "true" || "$FULL_VALIDATION" == "true" ]]; then
+            settings_only=false
+          fi
+          printf 'settings_only=%s\n' "$settings_only" >> "$GITHUB_OUTPUT"
 
       - id: pages-scope
         name: Preserve browser validation scope
@@ -166,7 +181,7 @@ jobs:
       cache_bun: false
       # Once per job: libudev headers, the asset bundles and cargo-nextest (tests run per process, in parallel).
       apt_packages: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'libudev-dev libasound2-dev' || '' }}
-      pre_validate_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh && curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"' || '' }}
+      pre_validate_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.settings_only == 'true' && 'scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh' || 'scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh && curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"') || '' }}
       cache_cargo: ${{ needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true' }}
       format_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'cargo fmt --all -- --check' || '' }}
       lint_command: ${{ needs.scope.outputs.full_validation == 'true' && 'cargo clippy --workspace --all-targets --all-features --locked -- -D warnings && (cd web && bunx --no-install tsc --noEmit -p tsconfig.assets.json)' || '' }}
@@ -176,8 +191,8 @@ jobs:
       # `physics-ab` feature; full validation's --all-features run includes it, ordinary runs
       # enable it in the same invocation. Its workloads and the bot scenarios are one trial each
       # and the long journeys start first (.config/nextest.toml, #540).
-      test_command: ${{ needs.scope.outputs.full_validation == 'true' && 'python3 scripts/test-dev-native.py && cargo nextest run --workspace --all-features --locked' || (needs.scope.outputs.rust_changed == 'true' && 'cargo nextest run --workspace --features mmorpg-core/physics-ab --locked -E "not (test(~every_world_prop_region_and_day_phase_matches_pages_submitted_content) | test(~pages_reference_inventory_covers_current_world_scope))"' || '') }}
-      build_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.full_validation == 'true' && 'cargo build --workspace --all-features --locked && cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked' || 'cargo check --workspace --locked') || '' }}
+      test_command: ${{ needs.scope.outputs.full_validation == 'true' && 'python3 scripts/test-dev-native.py && cargo nextest run --workspace --all-features --locked' || (needs.scope.outputs.settings_only == 'true' && 'cargo test -p mmorpg-client --lib settings::tests --locked' || (needs.scope.outputs.rust_changed == 'true' && 'cargo nextest run --workspace --features mmorpg-core/physics-ab --locked -E "not (test(~every_world_prop_region_and_day_phase_matches_pages_submitted_content) | test(~pages_reference_inventory_covers_current_world_scope))"' || '')) }}
+      build_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.full_validation == 'true' && 'cargo build --workspace --all-features --locked && cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked' || (needs.scope.outputs.settings_only == 'true' && 'cargo check -p mmorpg-client --locked' || 'cargo check --workspace --locked')) || '' }}
 
   clippy:
     # Runs beside `rust` in the merge queue only and shares its Cargo cache (same reusable job).

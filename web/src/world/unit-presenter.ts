@@ -162,6 +162,15 @@ type ImportedEntry = { id: string; kind: ImportedModelKind; entityKind: EntityKi
 type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[]; platforms: PlatformBase[] };
 
 const KIND_CODE: Readonly<Record<EntityKind, number>> = { player: 0, creature: 1, npc: 2, minion: 3 };
+
+/** Health bars cast no shadow; breakable pieces, their hoops and structure pieces only into the two near sun cascades. */
+const NO_SHADOW = { notShadowCaster: true };
+const NEAR_SHADOW = { shadowCascades: 2 };
+function shadowUserData(name: string): Record<string, unknown> | undefined {
+  if (name.endsWith("-health")) { return NO_SHADOW; }
+  if (name.endsWith("-piece") || name.endsWith("-hoop") || name === "structure") { return NEAR_SHADOW; }
+  return undefined;
+}
 const CLASS_CODE = { warden: 0, ranger: 1, arcanist: 2, necromancer: 3, rogue: 4, cleric: 5, druid: 6 } as const;
 
 function triples(values: Float32Array, start: number, count: number): [number, number, number][] {
@@ -321,8 +330,12 @@ export class SharedUnits {
       const shading = draw.emissive
         ? { unlit: false as const, emissive: draw.emissive }
         : draw.unlit ? { unlit: true as const } : {};
+      // Named without the unit and part numbers (`unit-creature-12-piece-3` → `unit-creature-piece`), so the draw
+      // profile groups each kind of part.
+      const name = draw.id.replace(/[-:]\d+(?=[-:]|$)/g, "");
+      const userData = shadowUserData(name);
       return {
-        id: draw.id, geometry, color: draw.color, modelMatrix, ...shading,
+        id: draw.id, name, ...(userData ? { userData } : {}), geometry, color: draw.color, modelMatrix, ...shading,
         ...(draw.opacity < 1 ? { opacity: draw.opacity } : {}),
         ...(draw.doubleSided ? { doubleSided: true } : {}),
       };

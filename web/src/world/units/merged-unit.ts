@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { SHADOW_ONLY } from "../static-batches";
 
 /**
  * Merges a unit model's meshes into one `SkinnedMesh` per material class (#615): a Quaternius or Ranger unit is 10–23
@@ -25,7 +26,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
  * empty node with its name and transform, so joints, sockets and holders under it and name lookups stay put.
  * Presentation only.
  */
-export function mergeUnitMeshes(model: THREE.Object3D, keep: ReadonlySet<THREE.Object3D>): MergedUnit {
+export function mergeUnitMeshes(model: THREE.Object3D, keep: ReadonlySet<THREE.Object3D>, casts: (mesh: THREE.Mesh) => boolean = () => true): MergedUnit {
   model.updateMatrixWorld(true);
   const groups = new Map<string, { material: THREE.Material; sources: THREE.Mesh[] }>();
   const skinned: THREE.SkinnedMesh[] = [];
@@ -60,8 +61,22 @@ export function mergeUnitMeshes(model: THREE.Object3D, keep: ReadonlySet<THREE.O
   const lead = skinned.reduce<THREE.SkinnedMesh | null>((best, mesh) => (best && best.skeleton.bones.length >= mesh.skeleton.bones.length ? best : mesh), null);
   lead?.skeleton.bones.forEach((bone, i) => slot(bone, lead.skeleton.boneInverses[i]!));
   const merged: { mesh: THREE.SkinnedMesh; sources: THREE.Mesh[] }[] = [];
+  // Every opaque mesh also casts through the unit's shadow proxy, in one draw per sidedness and shadow view.
+  const shadows = { single: [] as THREE.BufferGeometry[], double: [] as THREE.BufferGeometry[] };
   for (const { material, sources } of groups.values()) {
-    if (sources.length < 2) { continue; }
+    const shadow = sharedShadow(material);
+    if (sources.length < 2) {
+      const [source] = sources;
+      if (!shadow || !source || !casts(source)) { continue; }
+      // A mesh left as it is casts through the proxy too: a skin by its own joints, a rigid mesh as a joint itself.
+      const geometry = source instanceof THREE.SkinnedMesh
+        ? bindGeometry(source, source.bindMatrix, source.skeleton.bones.map((bone, i) => slot(bone, source.skeleton.boneInverses[i]!)), null, false, false, null)
+        : bindGeometry(source, source.matrixWorld, null, slot(source, source.matrixWorld.clone().invert()), false, false, null);
+      shadows[shadow].push(shadowShape(geometry));
+      geometry.dispose();
+      source.userData.notShadowCaster = true;
+      continue;
+    }
     const standard = material instanceof THREE.MeshStandardMaterial ? material : null;
     // Plates each with their own baked occlusion (and no other map) share one tiled occlusion texture.
     const occlusion = standard?.aoMap && tileable(standard)
@@ -85,6 +100,7 @@ export function mergeUnitMeshes(model: THREE.Object3D, keep: ReadonlySet<THREE.O
       return bindGeometry(source, source.matrixWorld, null, at, textured, tangents, uvOf);
     });
     const geometry = mergeGeometries(geometries);
+    if (shadow) { shadows[shadow].push(...geometries.map(shadowShape)); }
     for (const part of geometries) { part.dispose(); }
     if (!geometry) { throw new Error("A unit's meshes failed to merge."); }
     const own = material.clone();
@@ -100,12 +116,28 @@ export function mergeUnitMeshes(model: THREE.Object3D, keep: ReadonlySet<THREE.O
     own.opacity = 1;
     const mesh = new THREE.SkinnedMesh(geometry, own);
     mesh.name = `merged:${sources.map((source) => source.name).join("+")}`.slice(0, 120);
+    if (shadow) { mesh.userData.notShadowCaster = true; }
     merged.push({ mesh, sources });
   }
   const skeleton = new THREE.Skeleton(bones as THREE.Bone[], inverses);
   for (const { mesh } of merged) {
     mesh.bind(skeleton, new THREE.Matrix4());
     model.add(mesh);
+  }
+  const proxies: THREE.SkinnedMesh[] = [];
+  for (const side of ["single", "double"] as const) {
+    const shapes = shadows[side];
+    if (shapes.length === 0) { continue; }
+    const geometry = mergeGeometries(shapes);
+    for (const shape of shapes) { shape.dispose(); }
+    if (!geometry) { throw new Error("A unit's shadow casters failed to merge."); }
+    // Drawn only by the shadow views: the main pass skips its invisible material (see `SHADOW_ONLY`).
+    const proxy = new THREE.SkinnedMesh(geometry, SHADOW_ONLY[side]);
+    proxy.name = `shadow:${side}`;
+    proxy.userData.shadowOnly = true;
+    proxy.bind(skeleton, new THREE.Matrix4());
+    model.add(proxy);
+    proxies.push(proxy);
   }
   const gone = new Set(merged.flatMap(({ sources }) => sources));
   for (const mesh of skinned) {
@@ -115,11 +147,29 @@ export function mergeUnitMeshes(model: THREE.Object3D, keep: ReadonlySet<THREE.O
       mesh.skeleton = skeleton;
     }
   }
-  return { meshes: merged.map(({ mesh }) => mesh), skeleton };
+  return { meshes: merged.map(({ mesh }) => mesh), shadows: proxies, skeleton };
 }
 
-/** A unit's merged meshes and its shared joint palette, which it frees when dropped. */
-export type MergedUnit = { meshes: THREE.SkinnedMesh[]; skeleton: THREE.Skeleton };
+/**
+ * Whether the shadow views draw `material` (a glTF material, before it becomes a `LitMaterial`) with their shared
+ * shadow material, single- or double-sided, as `castsWithSharedShadow` decides for its `LitMaterial`: opaque, not
+ * cut out by alpha.
+ */
+function sharedShadow(material: THREE.Material): "single" | "double" | null {
+  if (material.transparent || material.alphaTest > 0) { return null; }
+  return material.side === THREE.DoubleSide ? "double" : "single";
+}
+
+/** A merge-layout geometry's positions, joints, weights and indices alone: all a shadow proxy needs. */
+function shadowShape(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
+  const shape = new THREE.BufferGeometry();
+  for (const name of ["position", "skinIndex", "skinWeight"]) { shape.setAttribute(name, geometry.getAttribute(name)); }
+  shape.setIndex(geometry.index);
+  return shape;
+}
+
+/** A unit's merged meshes, its shadow proxies (one per sidedness) and its shared joint palette, which it frees when dropped. */
+export type MergedUnit = { meshes: THREE.SkinnedMesh[]; shadows: THREE.SkinnedMesh[]; skeleton: THREE.Skeleton };
 
 /** The material class a mesh merges in, or null when it stays its own draw. */
 function mergeKey(mesh: THREE.Mesh): string | null {

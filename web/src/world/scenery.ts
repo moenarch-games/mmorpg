@@ -97,6 +97,8 @@ export type SceneryContent = StaticSceneContent & {
   outpostKitEntries(): string[];
   outpostKitKeys(): string[];
   outpostKitModels(): Float32Array;
+  /** Per placed Outpost kit module its building's wear in [0, 1], blended from the kit's wear masks. */
+  outpostKitWear(): Float32Array;
   /** The market square's settlement props (#421): their entries, and per placed prop its entry and 16 model floats. */
   settlementPropEntries(): string[];
   settlementPropKeys(): string[];
@@ -479,9 +481,10 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
     })(),
     outpost: (() => {
       const models = content.outpostKitModels();
+      const wear = content.outpostKitWear();
       return {
         entries: content.outpostKitEntries(),
-        placements: content.outpostKitKeys().map((key, index) => ({ key, matrix: models.slice(index * 16, index * 16 + 16) })),
+        placements: content.outpostKitKeys().map((key, index) => ({ key, matrix: models.slice(index * 16, index * 16 + 16), wear: wear[index] ?? 0 })),
       };
     })(),
     settlement: (() => {
