@@ -119,7 +119,7 @@ fetch_rolling greyhaven-terrain greyhaven.terrain scenery/greyhaven.terrain
 fetch_rolling climbing-kit climbing.kit scenery/climbing.kit
 # Greyhaven's trees and rocks with their LOD chains and rock collision proxies (#49), pinned
 # (asset-tooling's consumers.json re-pins this line after a re-upload).
-NATURE_TAR_SHA256=c0d578faec0b1286ab243241fb69f764141f4c9e72c88ccd86326fa0b415f44e
+NATURE_TAR_SHA256=29030140a220925e71005f84a26fe12be83846eada242bdf73e2afbf273f7573
 fetch_pinned greyhaven-nature greyhaven.nature scenery/greyhaven.nature "${NATURE_TAR_SHA256}"
 # The Battle Royale fortress's authored art (#591, asset-tooling#458/#461, pass 2), fitted to its
 # collision, pinned like the nature bundle.
