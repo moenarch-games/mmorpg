@@ -3,5 +3,20 @@
   "extends": [
     "github>moritzbrantner/coding-agent-conventions"
   ],
-  "platformAutomerge": true
+  "platformAutomerge": true,
+  "packageRules": [
+    {
+      "description": "physics-engine moves in its own PR, so a failure in another digest update cannot hold it back, or the reverse.",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchDepNames": [
+        "physics-engine"
+      ],
+      "matchUpdateTypes": [
+        "digest"
+      ],
+      "groupName": "physics-engine"
+    }
+  ]
 }
