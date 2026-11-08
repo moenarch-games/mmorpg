@@ -141,6 +141,7 @@ pub fn refusal_text(code: ErrorCode) -> String {
         ErrorCode::DepthsClosed => "No way down for you here: your party's run has begun without you, or the depths are full.".into(),
         ErrorCode::DepthsWipe => "Your party has fallen. You rise again at the checkpoint.".into(),
         ErrorCode::DepthsBossOpen => "The way to Captain Ulric Thorn lies open.".into(),
+        ErrorCode::NoRoom => "There is no room for it to rise there.".into(),
         _ => humanize(&format!("{code:?}")),
     }
 }
