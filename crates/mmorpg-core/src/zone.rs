@@ -272,6 +272,9 @@ pub struct ZoneSimulation {
     pub(crate) next_debris: u32,
     /// Destructible pieces' health and last change (#305).
     pub(crate) pieces: BTreeMap<crate::PieceId, crate::structure::PieceState>,
+    /// Standing summoned terrain by ID (#293), and the next ID.
+    pub(crate) summoned_terrain: BTreeMap<u32, crate::SummonedTerrain>,
+    pub(crate) next_summoned_terrain: u32,
     /// Navigation cell results (#307), derived from static geometry and dropped when it
     /// changes; not canonical state.
     pub(crate) nav_cache: crate::nav::NavCache,
@@ -448,6 +451,8 @@ impl ZoneSimulation {
             forced: BTreeMap::new(),
             debris: BTreeMap::new(),
             next_debris: 1,
+            summoned_terrain: BTreeMap::new(),
+            next_summoned_terrain: 1,
             pieces,
             nav_cache: BTreeMap::new(),
             prop_motion: BTreeMap::new(),
@@ -866,6 +871,7 @@ impl ZoneSimulation {
         self.resolve_combat(now)?;
         self.update_timers(now)?;
         self.regrow_pieces(now)?;
+        self.advance_summoned(now);
         self.advance_raid(now)?;
         self.advance_depths(now)?;
         self.advance_combos();
