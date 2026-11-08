@@ -115,6 +115,10 @@ pub enum ErrorCode {
     DepthsWipe,
     /// Every chamber is cleared: Captain Ulric Thorn awaits in his (#404).
     DepthsBossOpen,
+    /// Blink found no clear spot to land on (#294), or a leap could not start.
+    NoLanding,
+    /// The unit is being moved or is immune to forced movement (#294).
+    MovementImmune,
 }
 
 /// One feedback event addressed to a player.

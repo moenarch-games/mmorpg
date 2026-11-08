@@ -854,7 +854,7 @@ impl ZoneSimulation {
         self.apply_forced_moves()?;
         self.schedule_platforms(now, false)?;
         self.tick_work.physics = Some(self.world.step().map_err(physics_error)?);
-        self.settle_forced_moves();
+        self.settle_forced_moves(now)?;
         self.advance_debris();
         self.advance_movable_props()?;
         self.update_landings()?;
@@ -930,6 +930,15 @@ impl ZoneSimulation {
                 })
                 .flatten();
             let grounded = is_grounded(&self.world, body)?;
+            // An authored surface hazard under a standing player's feet (#294).
+            let surface = (alive && grounded)
+                .then(|| {
+                    crate::surface::under_feet(
+                        self.content.surfaces(),
+                        [centre.x, centre.y - PLAYER_HALF_EXTENTS_UNITS[1], centre.z],
+                    )
+                })
+                .flatten();
             // A dodge roll (#516) starts on the ground, out of deep water, off any face and
             // unstunned; a stun or deep water ends it early, and death outright.
             let roll = if alive {
@@ -979,7 +988,10 @@ impl ZoneSimulation {
             if let Some(yaw) = rolling
                 && step.velocity.is_none()
             {
-                let [x, z] = crate::Roll::velocity(yaw, crate::aura::speed_percent(&state.auras));
+                let percent = crate::aura::speed_percent(&state.auras)
+                    * crate::surface::speed_percent(surface)
+                    / 100;
+                let [x, z] = crate::Roll::velocity(yaw, percent);
                 self.world
                     .set_velocity(body_id, Vec3i::new(x, body.velocity().y, z))
                     .map_err(physics_error)?;
@@ -1013,7 +1025,9 @@ impl ZoneSimulation {
                 crate::guard::guard_ready(self.action_graph, state).is_some() && grounded;
             let mut velocity = if alive {
                 let free = movement_velocity(state)?;
-                let mut percent = crate::aura::speed_percent(&state.auras);
+                let mut percent = crate::aura::speed_percent(&state.auras)
+                    * crate::surface::speed_percent(surface)
+                    / 100;
                 if guarding {
                     percent = percent * crate::GUARD_SPEED_PERCENT / 100;
                 }
@@ -1027,6 +1041,11 @@ impl ZoneSimulation {
                 if let Some(movement) = crate::action::movement_of(self.action_graph, state) {
                     let last = body.velocity();
                     steered = movement.velocity(steered, [last.x, last.z]);
+                }
+                // Ice (#294): a slick surface limits how fast the velocity can change.
+                if let Some(grip) = crate::surface::grip(surface) {
+                    let last = body.velocity();
+                    steered = crate::surface::slip([last.x, last.z], steered, grip);
                 }
                 let [x, z] = steered;
                 Vec3i::new(x, 0, z)

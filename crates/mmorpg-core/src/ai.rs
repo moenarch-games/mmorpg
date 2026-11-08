@@ -438,7 +438,12 @@ impl ZoneSimulation {
                 }
             }
         };
-        // Stuns freeze a creature in place; roots stop it and snares slow it.
+        // Stuns freeze a creature in place; roots stop it and snares slow it; so does tar (#294).
+        let surface = crate::surface::under_feet(
+            self.content.surfaces(),
+            [position.x, position.y - half.y, position.z],
+        );
+        let speed = speed * crate::surface::speed_percent(surface) / 100;
         let velocity = crate::aura::scale_velocity(velocity, speed);
         if let Some(facing) = facing
             && !stunned

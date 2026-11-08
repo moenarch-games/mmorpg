@@ -384,6 +384,28 @@ pub fn stillwater_lake() -> crate::WaterVolume {
     }
 }
 
+/// Greyhaven's fixed surface hazards (#294): a frozen pond north of the Outpost on flat ground,
+/// and tar on the Redbrand camp's floor.
+#[must_use]
+pub fn surface_hazards() -> Vec<crate::SurfacePatch> {
+    vec![
+        crate::SurfacePatch {
+            id: 1,
+            kind: crate::SurfaceKind::Ice,
+            centre: [-2_400, -2_600],
+            radii: [620, 440],
+            height: [-60, 120],
+        },
+        crate::SurfacePatch {
+            id: 2,
+            kind: crate::SurfaceKind::Tar,
+            centre: [6_400, -15_700],
+            radii: [420, 300],
+            height: [1_000, 1_250],
+        },
+    ]
+}
+
 /// Stillwater Lake's basin (#274).
 pub mod lake {
     pub const CENTRE: [i32; 2] = [-8_700, -5_300];
@@ -1357,6 +1379,7 @@ pub fn content_with_definition(
                     .chain(brook::waters())
                     .collect(),
             )?
+            .with_surfaces(surface_hazards())?
             .with_climbing(climbing())?
             .with_raid(raid::millbrook_barn())?
             .with_waystones(vec![crate::GREYHAVEN_OUTPOST])?

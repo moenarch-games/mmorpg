@@ -222,7 +222,7 @@ struct Placement {
 
 impl ZoneSimulation {
     /// Whether `body` is static collision below any summoned band: what an obstacle may stand on.
-    const fn terrain_ground(body: BodyId) -> bool {
+    pub(crate) const fn terrain_ground(body: BodyId) -> bool {
         body.0 < SUMMONED_BODY_BASE
     }
 

@@ -29,6 +29,19 @@ pub const CHARGE_MAX_TICKS: u16 = crate::ticks_from_ms(1_000);
 /// count. Even, so the raised capsule stays whole units; obstacles exactly as high as the
 /// clearance would graze the sweep, where the backends' contact tolerances differ.
 pub const CHARGE_CLEARANCE_UNITS: i32 = 32;
+/// Heroic Leap (#294) rises at 6 m/s: under standard gravity a level leap lasts 80 ticks
+/// (1.33 s) and peaks 2 m up.
+pub const LEAP_UP_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(600);
+/// The ticks a level leap spends in the air, which its horizontal speed is derived from.
+pub const LEAP_FLIGHT_TICKS: i32 = 80;
+/// A leap never lasts longer than this (2.5 s), even off a cliff …
+pub const LEAP_MAX_TICKS: u16 = crate::ticks_from_ms(2_500);
+/// … and cannot land sooner than this after takeoff, the time the jump needs to leave the ground.
+pub const LEAP_MIN_AIR_TICKS: u16 = 8;
+/// A pulled unit flies at 18 m/s.
+pub const PULL_SPEED_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(1_800);
+/// The grappling hook leaves its target at melee reach.
+pub const PULL_STOP_UNITS: i32 = crate::unit::PLAYER_REACH_UNITS;
 /// How far (units) a large creature (#297) shoves a smaller unit in its way.
 pub const SHOVE_UNITS: i32 = 120;
 /// A unit counts as in a large creature's way when its body is within the creature's step
@@ -43,6 +56,8 @@ pub struct ForcedMove {
     pub remaining: u16,
     /// A charge steers toward this unit and knocks it back this many units on arrival.
     pub charge: Option<(EntityRef, i32)>,
+    /// A Heroic Leap (#294) in flight: its ability, whose landing impact the unit delivers.
+    pub leap: Option<crate::AbilityId>,
 }
 
 /// A unit's forced-movement state: the move in progress and the immunity left after it.
@@ -115,6 +130,7 @@ impl ZoneSimulation {
                     velocity,
                     remaining: KNOCKBACK_TICKS,
                     charge: None,
+                    leap: None,
                 }),
                 immune: 0,
             },
@@ -178,6 +194,85 @@ impl ZoneSimulation {
         Ok(hit.is_none())
     }
 
+    /// Whether `unit` can start or take a forced move now (#294).
+    pub(crate) fn can_be_force_moved(&self, unit: EntityRef) -> bool {
+        self.movable(unit)
+    }
+
+    /// Pulls `unit` toward `to` (XZ units) until it stands [`PULL_STOP_UNITS`] away (#294);
+    /// returns whether it moves. Walls stop it like any forced move, and the usual immunity
+    /// follows.
+    pub(crate) fn pull(&mut self, unit: EntityRef, to: [i32; 2]) -> Result<bool, ZoneError> {
+        if !self.movable(unit) {
+            return Ok(false);
+        }
+        let at = self.unit_position(unit)?;
+        let delta = [i64::from(to[0] - at[0]), i64::from(to[1] - at[2])];
+        let distance = (delta[0] * delta[0] + delta[1] * delta[1]).isqrt();
+        let travel = distance - i64::from(PULL_STOP_UNITS);
+        if travel <= 0 {
+            return Ok(false);
+        }
+        let Some(velocity) = scaled(delta, PULL_SPEED_SUBUNITS_PER_TICK) else {
+            return Ok(false);
+        };
+        let subunits = travel * i64::from(crate::physics::SUBUNITS_PER_UNIT);
+        let speed = i64::from(PULL_SPEED_SUBUNITS_PER_TICK);
+        let ticks = u16::try_from((subunits + speed - 1) / speed).unwrap_or(u16::MAX);
+        self.forced.insert(
+            unit,
+            ForcedState {
+                moving: Some(ForcedMove {
+                    velocity,
+                    remaining: ticks,
+                    charge: None,
+                    leap: None,
+                }),
+                immune: 0,
+            },
+        );
+        Ok(true)
+    }
+
+    /// `unit` leaps `distance` units along `facing` (#294) with the landing of `ability`.
+    pub(crate) fn leap(
+        &mut self,
+        unit: EntityRef,
+        facing: u16,
+        distance: i32,
+        ability: crate::AbilityId,
+    ) -> Result<bool, ZoneError> {
+        if !self.movable(unit) {
+            return Ok(false);
+        }
+        let (sin, cos) = crate::trig::direction(facing);
+        let subunits = distance.saturating_mul(crate::physics::SUBUNITS_PER_UNIT);
+        let velocity = scaled(
+            [i64::from(sin), i64::from(cos)],
+            (subunits + LEAP_FLIGHT_TICKS - 1) / LEAP_FLIGHT_TICKS,
+        )
+        .unwrap_or([0, 0]);
+        self.world
+            .set_velocity(
+                body_id(unit),
+                Vec3i::new(velocity[0], LEAP_UP_SUBUNITS_PER_TICK, velocity[1]),
+            )
+            .map_err(crate::zone::physics_error)?;
+        self.forced.insert(
+            unit,
+            ForcedState {
+                moving: Some(ForcedMove {
+                    velocity,
+                    remaining: LEAP_MAX_TICKS,
+                    charge: None,
+                    leap: Some(ability),
+                }),
+                immune: 0,
+            },
+        );
+        Ok(true)
+    }
+
     /// `unit` charges at `target`, knocking it back `knockback` units when it arrives.
     pub(crate) fn charge(&mut self, unit: EntityRef, target: EntityRef, knockback: i32) -> bool {
         if !self.movable(unit) {
@@ -190,6 +285,7 @@ impl ZoneSimulation {
                     velocity: [0, 0],
                     remaining: CHARGE_MAX_TICKS,
                     charge: Some((target, knockback)),
+                    leap: None,
                 }),
                 immune: 0,
             },
@@ -201,6 +297,17 @@ impl ZoneSimulation {
         if let Some(state) = self.forced.get_mut(&unit) {
             state.moving = None;
             state.immune = FORCED_IMMUNITY_TICKS;
+        }
+    }
+
+    /// A blink (#294) ends any forced move carrying `unit`, with the usual immunity after it.
+    pub(crate) fn end_forced_move_of(&mut self, unit: EntityRef) {
+        if self
+            .forced
+            .get(&unit)
+            .is_some_and(|state| state.moving.is_some())
+        {
+            self.end_forced_move(unit);
         }
     }
 
@@ -314,7 +421,10 @@ impl ZoneSimulation {
                 continue;
             };
             if moving.remaining == 0 {
-                self.end_forced_move(unit);
+                // A leap lands after the physics step ([`Self::settle_forced_moves`]).
+                if moving.leap.is_none() {
+                    self.end_forced_move(unit);
+                }
                 continue;
             }
             if let Some((target, knockback)) = moving.charge {
@@ -390,11 +500,108 @@ impl ZoneSimulation {
             .map_err(crate::zone::physics_error)
     }
 
-    /// After the physics step: a forced move the world stopped (a wall) ends early.
-    pub(crate) fn settle_forced_moves(&mut self) {
+    /// A leap (#294) has landed: the leaper delivers its impact where it stands. The
+    /// knockback falls off to half at the edge of the landing radius ([`Self::detonate`]).
+    fn land_leap(
+        &mut self,
+        unit: EntityRef,
+        ability: crate::AbilityId,
+        now: u64,
+    ) -> Result<(), ZoneError> {
+        let EntityRef::Player(player_id) = unit else {
+            return Ok(());
+        };
+        let Some(ability) = crate::ability::ability_by_id(ability) else {
+            return Ok(());
+        };
+        let crate::AbilityEffect::Leap {
+            damage,
+            per_level,
+            radius,
+            knockback,
+            ..
+        } = ability.effect
+        else {
+            return Ok(());
+        };
+        let Some(player) = self.players.get(&player_id) else {
+            return Ok(());
+        };
+        let bonus = u32::from(crate::ability::scaled(0, per_level, player.level))
+            + u32::from(player.damage_bonus());
+        let (x, z) = crate::trig::direction(player.facing);
+        let at = self.player_position(player_id)?;
+        self.detonate(
+            crate::casting::Detonation {
+                attacker: player_id,
+                source: None,
+                centre: [at.x, at.y, at.z],
+                radius,
+                damage,
+                bonus,
+                knockback,
+                fallback: [i64::from(x), i64::from(z)],
+            },
+            now,
+        )?;
+        self.notify_units(
+            [Some(unit), None],
+            crate::ZoneEvent::AbilityUsed {
+                source: unit,
+                target: None,
+                ability: ability.id,
+            },
+        );
+        Ok(())
+    }
+
+    /// After the physics step: a forced move the world stopped (a wall) ends early; a leap
+    /// stopped short keeps falling, and a leap back on the ground lands with its impact.
+    pub(crate) fn settle_forced_moves(&mut self, now: u64) -> Result<(), ZoneError> {
+        let leaps: Vec<_> = self
+            .forced
+            .iter()
+            .filter(|(_, state)| state.moving.is_some_and(|moving| moving.leap.is_some()))
+            .map(|(&unit, _)| unit)
+            .collect();
+        let mut landings = Vec::new();
+        for unit in leaps {
+            let Some(moving) = self.forced.get(&unit).and_then(|state| state.moving) else {
+                continue;
+            };
+            let air_time = LEAP_MAX_TICKS - moving.remaining;
+            if moving.remaining == 0
+                || (air_time >= LEAP_MIN_AIR_TICKS && self.world.grounded(body_id(unit)))
+            {
+                if let Some(ability) = moving.leap {
+                    self.end_forced_move(unit);
+                    landings.push((unit, ability));
+                }
+                continue;
+            }
+            let realized = self
+                .world
+                .body(body_id(unit))
+                .map_or([0.0; 3], |body| body.exact_velocity());
+            let wanted = moving
+                .velocity
+                .map(|axis| axis as f32 / crate::physics::SUBUNITS_PER_UNIT as f32);
+            let along = realized[0] * wanted[0] + realized[2] * wanted[1];
+            let full = wanted[0] * wanted[0] + wanted[1] * wanted[1];
+            if full > 0.0
+                && along < full / 4.0
+                && let Some(flight) = self
+                    .forced
+                    .get_mut(&unit)
+                    .and_then(|state| state.moving.as_mut())
+            {
+                flight.velocity = [0, 0];
+            }
+        }
         let stopped: Vec<_> = self
             .forced
             .iter()
+            .filter(|(_, state)| state.moving.is_none_or(|moving| moving.leap.is_none()))
             .filter_map(|(&unit, state)| {
                 let moving = state.moving?;
                 let realized = self.world.body(body_id(unit))?.exact_velocity();
@@ -408,6 +615,12 @@ impl ZoneSimulation {
         for unit in stopped {
             self.end_forced_move(unit);
         }
+        // Moves the landings start must not meet the stopped-motion check this tick (no step
+        // has driven them yet).
+        for (unit, ability) in landings {
+            self.land_leap(unit, ability, now)?;
+        }
+        Ok(())
     }
 
     /// Retirement removes the unit's own move and cancels charges aimed at it.
@@ -446,7 +659,17 @@ impl ZoneSimulation {
     ) -> Result<(), ZoneError> {
         let mut forced = BTreeMap::new();
         for (unit, state) in states {
+            let bad_leap = state
+                .moving
+                .and_then(|moving| moving.leap)
+                .is_some_and(|ability| {
+                    !matches!(
+                        crate::ability::ability_by_id(ability).map(|known| known.effect),
+                        Some(crate::AbilityEffect::Leap { .. })
+                    )
+                });
             if state.is_settled()
+                || bad_leap
                 || state.immune > FORCED_IMMUNITY_TICKS
                 || !self.unit_alive_now(unit)
                 || forced.insert(unit, state).is_some()
