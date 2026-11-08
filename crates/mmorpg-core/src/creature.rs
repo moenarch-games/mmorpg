@@ -68,6 +68,9 @@ pub(crate) struct CreatureState {
     /// The first player who damaged it since it last reset.
     pub(crate) tapped_by: Option<crate::PlayerId>,
     pub(crate) loot: Option<crate::LootRewards>,
+    /// The tapper's party members who shared this corpse's loot eligibility at its death, in
+    /// ascending ID order; empty while alive (#404, Atlas 5.3.6).
+    pub(crate) loot_party: Vec<crate::PlayerId>,
     /// Ticks until its content-bound ability may be used again.
     pub(crate) ability_timer: u16,
     pub(crate) cast: Option<crate::CastState>,
@@ -275,6 +278,7 @@ impl ZoneSimulation {
                 combat_timer: 0,
                 tapped_by: None,
                 loot: None,
+                loot_party: Vec::new(),
                 ability_timer: 0,
                 cast: None,
                 auras: Vec::new(),
@@ -307,6 +311,7 @@ impl ZoneSimulation {
                 combat_timer: 0,
                 tapped_by: None,
                 loot: None,
+                loot_party: Vec::new(),
                 ability_timer: 0,
                 cast: None,
                 auras: Vec::new(),

@@ -825,6 +825,9 @@ fn decode_projection(
         && (!abilities.cooldowns.is_empty() || !abilities.auras.is_empty()))
         || (dead && !abilities.auras.is_empty())
         || abilities.target != target;
+    let party = sheet_bytes(Sheet::Party)
+        .map(|received| crate::party::decode_party_state(&received.bytes))
+        .transpose()?;
     let abilities = if !inconsistent {
         abilities
     } else if current[Sheet::Abilities.index()] {
@@ -898,6 +901,7 @@ fn decode_projection(
         pieces,
         raid,
         quests,
+        party,
     };
     Ok((snapshot, sheets))
 }
@@ -1015,7 +1019,7 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::inventory::{EQUIPMENT_RECORD_BYTES, INVENTORY_RECORD_BYTES};
     use crate::{
@@ -1050,13 +1054,14 @@ mod tests {
     /// casts Muck Bolt, next to an NPC and a corpse tapped by another player,
     /// wearing a wand, hood and tunic (3 stamina, 6 intellect), with one event
     /// of every kind.
-    fn fixture_snapshot() -> ZoneSnapshot {
+    pub(crate) fn fixture_snapshot() -> ZoneSnapshot {
         let mut slots = [None; mmorpg_core::INVENTORY_SLOTS];
         slots[0] = Some(mmorpg_core::ItemStack::new(mmorpg_core::ItemId::new(1), 3).unwrap());
         slots[1] = Some(mmorpg_core::ItemStack::new(mmorpg_core::ItemId::new(2), 1).unwrap());
         slots[15] = Some(mmorpg_core::ItemStack::new(mmorpg_core::ItemId::new(1), 20).unwrap());
         ZoneSnapshot {
             debris: Vec::new(),
+            party: None,
             raid: Some(mmorpg_core::RaidView {
                 phase: 2,
                 integrity: 63,
@@ -1882,7 +1887,12 @@ mod tests {
         assert_eq!(full.payload[SHEET_MASK], 0b1111);
         assert_eq!(decoder.decode(&full.payload).unwrap(), snapshot);
         let held = decoder.revisions();
-        assert!(Sheet::ALL.into_iter().all(|sheet| held.get(sheet) != 0));
+        assert!(
+            Sheet::ALL
+                .into_iter()
+                .filter(|sheet| *sheet != Sheet::Party)
+                .all(|sheet| held.get(sheet) != 0)
+        );
 
         // Ten ticks on, nothing changed: no sheet travels, and the timers ran down.
         let mut later = snapshot.clone();
@@ -1969,6 +1979,7 @@ mod tests {
             quests: 2,
             loot: 3,
             abilities: 0xdead_beef,
+            party: 5,
         };
         let command = mmorpg_core::ZoneCommand::Jump;
         for inner in [
@@ -2121,6 +2132,7 @@ mod tests {
             critical: true,
         };
         let snapshot = ZoneSnapshot {
+            party: None,
             raid: Some(mmorpg_core::RaidView {
                 phase: 2,
                 integrity: 63,

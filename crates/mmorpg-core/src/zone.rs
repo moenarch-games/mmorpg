@@ -283,6 +283,8 @@ pub struct ZoneSimulation {
     /// Frozen, staged and activated character transfers (#145); host-phase
     /// state the handoff record reconciles, not canonical.
     pub(crate) transfers: crate::transfer::Transfers,
+    /// The party directory's view of each player that has one (#404).
+    pub(crate) parties: crate::party::Parties,
     /// The night raid's incidents, objective integrity and last resolution (#530).
     pub(crate) raid: crate::RaidState,
     /// Private-home residents a knock woke, by NPC (#158).
@@ -449,6 +451,7 @@ impl ZoneSimulation {
             wakes: BTreeMap::new(),
             rewards: None,
             transfers: crate::transfer::Transfers::default(),
+            parties: crate::party::Parties::new(),
         })
     }
 
@@ -529,6 +532,7 @@ impl ZoneSimulation {
         if self.players.remove(&player_id).is_none() {
             return false;
         }
+        self.parties.remove(&player_id);
         self.transfers.waystone_departures.remove(&player_id);
         if let Some(rewards) = &mut self.rewards {
             rewards.remove_player(player_id);
@@ -553,9 +557,19 @@ impl ZoneSimulation {
             {
                 creature.cast = None;
             }
+            creature.loot_party.retain(|mate| *mate != player_id);
             if creature.tapped_by == Some(player_id) {
-                creature.tapped_by = None;
-                creature.loot = None;
+                // A party that shares the corpse keeps it (Atlas 5.3.6); the departed
+                // tapper's quest item is nobody else's to claim.
+                if creature.loot_party.is_empty() {
+                    creature.tapped_by = None;
+                    creature.loot = None;
+                } else {
+                    creature.tapped_by = Some(creature.loot_party.remove(0));
+                    if let Some(rewards) = &mut creature.loot {
+                        rewards.quest_item = None;
+                    }
+                }
             }
         }
         for player in self.players.values_mut() {

@@ -294,6 +294,7 @@ mod tests {
             debris: Vec::new(),
             pieces: Vec::new(),
             raid: None,
+            party: None,
             content_revision: 6,
             acknowledged_sequence: 1,
             viewer_id: 1,

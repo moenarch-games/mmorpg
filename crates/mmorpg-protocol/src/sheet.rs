@@ -32,20 +32,27 @@ pub(crate) enum Sheet {
     Loot,
     /// The viewer's cooldowns and auras and its target's auras.
     Abilities,
+    /// The viewer's party roster or pending invite (#404).
+    Party,
 }
 
 impl Sheet {
-    pub(crate) const ALL: [Self; SHEET_COUNT] =
-        [Self::Inventory, Self::Quests, Self::Loot, Self::Abilities];
+    pub(crate) const ALL: [Self; SHEET_COUNT] = [
+        Self::Inventory,
+        Self::Quests,
+        Self::Loot,
+        Self::Abilities,
+        Self::Party,
+    ];
 
     pub(crate) const fn index(self) -> usize {
         self as usize
     }
 }
 
-pub(crate) const SHEET_COUNT: usize = 4;
+pub(crate) const SHEET_COUNT: usize = 5;
 
-/// The four `u32` revisions a client echoes.
+/// The `u32` revisions a client echoes, one per sheet.
 pub const SHEET_REVISIONS_BYTES: usize = SHEET_COUNT * 4;
 
 /// Inventory revision (`u64`), bag, equipment and four `u16` stat totals.
@@ -66,7 +73,8 @@ const MAX_ABILITY_SHEET_BYTES: usize = ENTITY_REF_BYTES
 pub(crate) const MAX_SHEETS_BYTES: usize = MAX_INVENTORY_SHEET_BYTES
     + crate::quest::MAX_QUEST_SHEET_BYTES
     + MAX_LOOT_SHEET_BYTES
-    + MAX_ABILITY_SHEET_BYTES;
+    + MAX_ABILITY_SHEET_BYTES
+    + crate::party::MAX_PARTY_SHEET_BYTES;
 
 /// The sheet revisions a client holds, `0` for a sheet it has none of. A host sends a sheet
 /// only while the client's revision differs from the current one.
@@ -76,6 +84,7 @@ pub struct SheetRevisions {
     pub quests: u32,
     pub loot: u32,
     pub abilities: u32,
+    pub party: u32,
 }
 
 impl SheetRevisions {
@@ -85,6 +94,7 @@ impl SheetRevisions {
             Sheet::Quests => self.quests,
             Sheet::Loot => self.loot,
             Sheet::Abilities => self.abilities,
+            Sheet::Party => self.party,
         }
     }
 
@@ -94,6 +104,7 @@ impl SheetRevisions {
             Sheet::Quests => self.quests = revision,
             Sheet::Loot => self.loot = revision,
             Sheet::Abilities => self.abilities = revision,
+            Sheet::Party => self.party = revision,
         }
     }
 
@@ -165,7 +176,11 @@ pub(crate) fn encode_sheets(
     }
     encode_auras(&mut abilities, now, &snapshot.auras)?;
     encode_auras(&mut abilities, now, &snapshot.target_detail.auras)?;
-    Ok([inventory, quests, Some(loot), Some(abilities)])
+    let party = match &snapshot.party {
+        Some(state) => Some(crate::party::encode_party_state(state)?),
+        None => None,
+    };
+    Ok([inventory, quests, Some(loot), Some(abilities), party])
 }
 
 fn encode_inventory_sheet(revision: u64, inventory: &Inventory, equipment: &Equipment) -> Vec<u8> {
@@ -226,6 +241,9 @@ pub(crate) fn read_sheet<'a>(
         }
         Sheet::Abilities => {
             read_ability_sheet(payload, offset, tick, tick)?;
+        }
+        Sheet::Party => {
+            crate::party::decode_state(payload, offset)?;
         }
     }
     Ok(&payload[start..*offset])

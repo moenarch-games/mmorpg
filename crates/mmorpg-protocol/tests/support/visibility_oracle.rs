@@ -138,6 +138,7 @@ pub fn exhaustive_projection(
             .collect(),
         pieces: Vec::new(),
         raid: None,
+        party: None,
     }
 }
 

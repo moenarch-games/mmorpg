@@ -41,6 +41,7 @@ fn viewer_of(class: PlayerClass) -> ZoneSnapshot {
         debris: Vec::new(),
         pieces: Vec::new(),
         raid: None,
+        party: None,
         content_revision: greyhaven_vale::content().revision(),
         acknowledged_sequence: 1,
         viewer_id: 1,

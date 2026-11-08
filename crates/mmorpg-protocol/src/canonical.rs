@@ -97,6 +97,7 @@ pub fn encode_canonical_snapshot(
     encode_pieces(&mut payload, &snapshot.pieces)?;
     encode_minions(&mut payload, snapshot.next_minion, &snapshot.minions)?;
     crate::raid::encode_state(&mut payload, &snapshot.raid)?;
+    encode_parties(&mut payload, &snapshot.parties)?;
     encode_wakes(&mut payload, &snapshot.wakes)?;
     crate::rewards::encode_history(&mut payload, snapshot.rewards.as_ref())?;
     Ok(payload)
@@ -555,6 +556,14 @@ fn encode_creature(
     if let Some(rewards) = creature.loot {
         crate::loot::encode_rewards(payload, rewards);
     }
+    payload.push(encode_u8_count(
+        creature.loot_party.len(),
+        mmorpg_core::MAX_PARTY_MEMBERS,
+        "corpse loot party is too large",
+    )?);
+    for player in &creature.loot_party {
+        payload.extend_from_slice(&player.to_be_bytes());
+    }
     let abilities = &creature.abilities;
     payload.extend_from_slice(&abilities.ability_timer.to_be_bytes());
     encode_cast(payload, abilities.cast);
@@ -609,6 +618,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let pieces = decode_pieces(payload, &mut offset)?;
     let (next_minion, minions) = decode_minions(payload, &mut offset)?;
     let raid = crate::raid::decode_state(payload, &mut offset)?;
+    let parties = decode_parties(payload, &mut offset)?;
     let wakes = decode_wakes(payload, &mut offset)?;
     let rewards = crate::rewards::decode_history(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
@@ -631,8 +641,38 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         minions,
         next_minion,
         raid,
+        parties,
         wakes,
     })
+}
+
+/// Players' party views (#404): a count (`u16`), then per player in ID order its ID and view.
+fn encode_parties(
+    payload: &mut Vec<u8>,
+    parties: &[(mmorpg_core::PlayerId, mmorpg_core::PartyState)],
+) -> Result<(), ProtocolError> {
+    payload.extend_from_slice(
+        &encode_u16_count(parties.len(), MAX_PLAYERS_PER_ZONE, "too many party views")?
+            .to_be_bytes(),
+    );
+    for (player, state) in parties {
+        payload.extend_from_slice(&player.to_be_bytes());
+        crate::party::encode_state(payload, state)?;
+    }
+    Ok(())
+}
+
+fn decode_parties(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<(mmorpg_core::PlayerId, mmorpg_core::PartyState)>, ProtocolError> {
+    let count = decode_u16_count(payload, offset, MAX_PLAYERS_PER_ZONE, "too many party views")?;
+    let mut parties = Vec::with_capacity(count);
+    for _ in 0..count {
+        let player = u32::from_be_bytes(take(payload, offset)?);
+        parties.push((player, crate::party::decode_state(payload, offset)?));
+    }
+    Ok(parties)
 }
 
 /// Woken private-home residents (#158): a count (`u8`), then per wake in NPC-ID order its NPC
@@ -1196,6 +1236,16 @@ fn decode_creature(
     } else {
         None
     };
+    let loot_party_count = decode_u8_count(
+        payload,
+        offset,
+        mmorpg_core::MAX_PARTY_MEMBERS,
+        "corpse loot party is too large",
+    )?;
+    let mut loot_party = Vec::with_capacity(loot_party_count);
+    for _ in 0..loot_party_count {
+        loot_party.push(u32::from_be_bytes(take(payload, offset)?));
+    }
     let abilities = CanonicalCreatureAbilities {
         ability_timer: u16::from_be_bytes(take(payload, offset)?),
         cast: decode_cast(payload, offset)?,
@@ -1238,6 +1288,7 @@ fn decode_creature(
         combat_timer,
         tapped_by,
         loot,
+        loot_party,
         abilities,
         encounter,
         raid,
@@ -1585,6 +1636,11 @@ mod tests {
     fn snapshot() -> CanonicalZoneSnapshot {
         let wolf = EntityRef::Creature(CreatureId::new(4));
         CanonicalZoneSnapshot {
+            parties: vec![(7, mmorpg_core::PartyState {
+                revision: 2,
+                roster: None,
+                invite: None,
+            })],
             rewards: None,
             debris: vec![mmorpg_core::Debris {
                 id: 7,
@@ -1814,6 +1870,7 @@ mod tests {
                     swing_timer: 5,
                     combat_timer: 150,
                     tapped_by: Some(7),
+                    loot_party: Vec::new(),
                     abilities: CanonicalCreatureAbilities::default(),
                     encounter: Some(mmorpg_core::BossEncounter {
                         participants: vec![7],
@@ -1839,6 +1896,7 @@ mod tests {
                     swing_timer: 0,
                     combat_timer: 0,
                     tapped_by: Some(8),
+                    loot_party: Vec::new(),
                     abilities: CanonicalCreatureAbilities::default(),
                     encounter: None,
                     raid: Some(mmorpg_core::RaidMember {
@@ -1867,6 +1925,7 @@ mod tests {
                     swing_timer: 0,
                     combat_timer: 0,
                     tapped_by: None,
+                    loot_party: Vec::new(),
                     abilities: CanonicalCreatureAbilities::default(),
                     encounter: None,
                     raid: None,
@@ -1886,6 +1945,7 @@ mod tests {
                     swing_timer: 0,
                     combat_timer: 0,
                     tapped_by: None,
+                    loot_party: Vec::new(),
                     abilities: CanonicalCreatureAbilities::default(),
                     encounter: None,
                     raid: None,

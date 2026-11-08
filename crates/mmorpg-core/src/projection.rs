@@ -190,6 +190,8 @@ pub struct ZoneSnapshot {
     pub pieces: Vec<crate::PieceView>,
     /// The night raid's signals while the viewer is near its target (#530).
     pub raid: Option<crate::RaidView>,
+    /// The viewer's party standing, once the directory has sent one (#404).
+    pub party: Option<crate::PartyState>,
 }
 
 impl ZoneSimulation {
@@ -329,6 +331,7 @@ impl ZoneSimulation {
                 debris: self.debris_views([center.x, center.y, center.z]),
                 pieces: self.piece_views(),
                 raid: self.raid_view(player_id, [center.x, center.z]),
+                party: self.parties.get(&player_id).cloned(),
             },
             stats,
         })
@@ -450,9 +453,12 @@ impl ZoneSimulation {
                             && (creature.ai == CreatureAi::Engaged || creature.combat_timer > 0),
                         hostile: template.behaviour == CreatureBehaviour::Aggressive,
                         attackable: alive,
-                        tapped_by_other: creature.tapped_by.is_some_and(|tapper| tapper != viewer),
+                        tapped_by_other: creature
+                            .tapped_by
+                            .is_some_and(|tapper| tapper != viewer && !self.share_party(tapper, viewer)),
                         lootable: !alive
-                            && creature.tapped_by == Some(viewer)
+                            && (creature.tapped_by == Some(viewer)
+                                || creature.loot_party.contains(&viewer))
                             && creature.loot.is_some_and(crate::corpse_loot::has_rewards),
                         evading: matches!(creature.ai, CreatureAi::Evading { .. }),
                         targets_viewer,

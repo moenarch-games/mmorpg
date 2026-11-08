@@ -1113,6 +1113,17 @@ impl ZoneSimulation {
             .creatures
             .get(&creature_id)
             .and_then(|creature| creature.tapped_by);
+        // The tapper's party shares kill XP, kill-objective credit and loot eligibility
+        // (Atlas 5.3.6, 5.4.5); each member stands alone on life and range.
+        let spot = [position.x, position.y, position.z];
+        let mut party_shares = Vec::new();
+        if let Some(player_id) = tapper {
+            for mate in self.party_mates(player_id) {
+                if self.kill_credit_eligible(mate, spot)? {
+                    party_shares.push(mate);
+                }
+            }
+        }
         let quest_item = tapper
             .and_then(|player_id| self.players.get(&player_id))
             .and_then(|player| {
@@ -1146,6 +1157,7 @@ impl ZoneSimulation {
         creature.raid = None;
         creature.reset_abilities();
         creature.loot = creature.tapped_by.and(loot);
+        creature.loot_party.clone_from(&party_shares);
         let contributors = creature
             .encounter
             .take()
@@ -1162,27 +1174,24 @@ impl ZoneSimulation {
         // A minion's kill is its summoner's (#295).
         recipients.extend(self.controller(killer));
         recipients.extend(tapper);
+        recipients.extend(party_shares.iter().copied());
         for player_id in recipients {
             self.notify(player_id, died);
         }
         if let Some(player_id) = tapper
-            && self.kill_credit_eligible(player_id, [position.x, position.y, position.z])?
+            && self.kill_credit_eligible(player_id, spot)?
         {
-            let key = crate::RewardKey::KillExperience {
-                creature: creature_id,
-                life: generation,
-            };
-            if crate::rewards::allowed(&self.rewards, player_id, key) {
-                self.reward_kill_experience(player_id, level)?;
-                crate::rewards::record(&mut self.rewards, player_id, key)?;
-            }
-            self.credit_kill(player_id, template, creature_id, generation)?;
+            self.kill_credit(player_id, level, template, creature_id, generation)?;
+        }
+        for &mate in &party_shares {
+            self.kill_credit(mate, level, template, creature_id, generation)?;
         }
         // Every meaningful boss contributor earns the kill objective, across parties
         // (#276, 5.1.74); `credit_kill` records each life once per quest log.
         for player_id in contributors {
             if Some(player_id) != tapper
-                && self.kill_credit_eligible(player_id, [position.x, position.y, position.z])?
+                && !party_shares.contains(&player_id)
+                && self.kill_credit_eligible(player_id, spot)?
             {
                 self.credit_kill(player_id, template, creature_id, generation)?;
             }
@@ -1191,6 +1200,26 @@ impl ZoneSimulation {
             self.boss_falls(&rules, [position.x, position.z])?;
         }
         Ok(())
+    }
+
+    /// One player's kill XP and kill-objective credit, each at most once per creature life.
+    fn kill_credit(
+        &mut self,
+        player_id: PlayerId,
+        level: u8,
+        template: crate::CreatureTemplateId,
+        creature_id: CreatureId,
+        generation: u64,
+    ) -> Result<(), ZoneError> {
+        let key = crate::RewardKey::KillExperience {
+            creature: creature_id,
+            life: generation,
+        };
+        if crate::rewards::allowed(&self.rewards, player_id, key) {
+            self.reward_kill_experience(player_id, level)?;
+            crate::rewards::record(&mut self.rewards, player_id, key)?;
+        }
+        self.credit_kill(player_id, template, creature_id, generation)
     }
 
     /// The camp reacts to its boss's actual death (#276, 5.1.79): idle creatures of its family

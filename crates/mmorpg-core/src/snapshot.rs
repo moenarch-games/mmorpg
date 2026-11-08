@@ -304,6 +304,8 @@ pub struct CanonicalCreatureSnapshot {
     pub combat_timer: u16,
     pub tapped_by: Option<PlayerId>,
     pub loot: Option<crate::LootRewards>,
+    /// The tapper's party members who share the corpse (#404), ascending.
+    pub loot_party: Vec<PlayerId>,
     pub abilities: CanonicalCreatureAbilities,
     /// A fighting boss's attempt (#276): locked participants and contributors.
     pub encounter: Option<crate::BossEncounter>,
@@ -327,6 +329,8 @@ pub struct CanonicalZoneSnapshot {
     pub creatures: Vec<CanonicalCreatureSnapshot>,
     /// One state per content door, in door-ID order (#158).
     pub doors: Vec<crate::CanonicalDoor>,
+    /// Each player's party view (#404), ordered by player ID.
+    pub parties: Vec<(PlayerId, crate::PartyState)>,
     /// Flying and stuck projectiles in ID order, and the next projectile ID (#286).
     pub projectiles: Vec<crate::Projectile>,
     pub next_projectile: u32,
@@ -451,6 +455,7 @@ impl ZoneSimulation {
                     swing_timer: creature.swing_timer,
                     combat_timer: creature.combat_timer,
                     tapped_by: creature.tapped_by,
+                    loot_party: creature.loot_party.clone(),
                     loot: creature.loot,
                     abilities: CanonicalCreatureAbilities {
                         ability_timer: creature.ability_timer,
@@ -472,6 +477,11 @@ impl ZoneSimulation {
             players,
             creatures,
             doors: self.canonical_doors(),
+            parties: self
+                .parties
+                .iter()
+                .map(|(player, state)| (*player, state.clone()))
+                .collect(),
             projectiles: self.projectiles.values().copied().collect(),
             next_projectile: self.next_projectile,
             forced: self.forced_states(),
@@ -526,6 +536,12 @@ impl ZoneSimulation {
         }
         for record in snapshot.creatures {
             zone.restore_creature(record)?;
+        }
+        for (player, state) in snapshot.parties {
+            state.validate()?;
+            if !zone.players.contains_key(&player) || zone.parties.insert(player, state).is_some() {
+                return Err(ZoneError::new("snapshot party view names an absent player"));
+            }
         }
         zone.restore_minions(snapshot.minions, snapshot.next_minion)?;
         let doors = zone.content.doors().to_vec();
@@ -923,6 +939,17 @@ impl ZoneSimulation {
                 ));
             }
         }
+        if !record.loot_party.is_empty()
+            && (record.life == CreatureLife::Alive
+                || record.tapped_by.is_none()
+                || record.loot_party.len() >= crate::MAX_PARTY_MEMBERS
+                || record.loot_party.windows(2).any(|pair| pair[0] >= pair[1])
+                || record.loot_party.iter().any(|mate| {
+                    !self.players.contains_key(mate) || Some(*mate) == record.tapped_by
+                }))
+        {
+            return Err(ZoneError::new("corpse loot party is inconsistent"));
+        }
         if !matches!(record.ai, CreatureAi::Engaged) && !record.threat.is_empty() {
             return Err(ZoneError::new("only engaged creatures have threat"));
         }
@@ -961,6 +988,7 @@ impl ZoneSimulation {
                 combat_timer: record.combat_timer,
                 tapped_by: record.tapped_by,
                 loot: record.loot,
+                loot_party: record.loot_party,
                 ability_timer: record.abilities.ability_timer,
                 cast: record.abilities.cast,
                 auras: record.abilities.auras,
