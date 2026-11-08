@@ -724,7 +724,15 @@ fn native_pointer_application_contract() {
     app.key("Escape");
     app.until("physical Escape clears selection and focus", |app| {
         app.driver.app.camera_control.mode() == CameraMode::FreeLook
-            && app.driver.app.presentation.latest().unwrap().viewer.target.is_none()
+            && app
+                .driver
+                .app
+                .presentation
+                .latest()
+                .unwrap()
+                .viewer
+                .target
+                .is_none()
     });
     app.select(front);
     app.pump(Duration::from_millis(800)); // let focus framing settle before testing mouse ownership

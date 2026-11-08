@@ -265,7 +265,10 @@ impl App {
             if snapshot.viewer.dead {
                 return None;
             }
-            let entity = snapshot.entities.iter().find(|entity| Some(entity.entity()) == selected)?;
+            let entity = snapshot
+                .entities
+                .iter()
+                .find(|entity| Some(entity.entity()) == selected)?;
             (entity.flags.attackable
                 && !entity.flags.dead
                 && matches!(entity.kind, EntityKind::Creature | EntityKind::Player))
@@ -306,7 +309,9 @@ impl App {
             return;
         }
         let cursor = if self.grabbed {
-            let Some(size) = self.window.as_ref().map(|window| window.inner_size()) else { return };
+            let Some(size) = self.window.as_ref().map(|window| window.inner_size()) else {
+                return;
+            };
             PhysicalPosition::new(f64::from(size.width) / 2.0, f64::from(size.height) / 2.0)
         } else {
             let Some(cursor) = self.cursor else { return };
@@ -365,7 +370,10 @@ impl App {
                     self.retire_pointer();
                     return true;
                 }
-                if self.presentation.latest().is_some_and(|snapshot| snapshot.viewer.cast.is_none())
+                if self
+                    .presentation
+                    .latest()
+                    .is_some_and(|snapshot| snapshot.viewer.cast.is_none())
                     && !self.ui.windows_open(self.presentation.latest())
                 {
                     if matches!(self.camera_control.mode(), CameraMode::Focus(_)) {
@@ -510,8 +518,10 @@ impl App {
             strafe,
             steering,
         } = held_movement(self.controls.movement(), self.pad.movement());
-        let facing = (steering || self.grabbed || matches!(self.camera_control.mode(), CameraMode::Focus(_)))
-            .then(|| self.camera.facing());
+        let facing = (steering
+            || self.grabbed
+            || matches!(self.camera_control.mode(), CameraMode::Focus(_)))
+        .then(|| self.camera.facing());
         // Held Jump ascends and held Descend descends while swimming (#274); the zone ignores
         // the rise out of the water.
         let rise = (self.controls.rise() + self.pad.rise()).clamp(-1, 1);
@@ -1169,9 +1179,9 @@ impl ApplicationHandler for App {
                 }
                 if state == ElementState::Pressed {
                     if !selecting && self.world_controls.selecting() {
-                        self.pointer_origin = self.cursor.or_else(|| {
-                            self.grabbed.then(|| PhysicalPosition::new(0.0, 0.0))
-                        });
+                        self.pointer_origin = self
+                            .cursor
+                            .or_else(|| self.grabbed.then(|| PhysicalPosition::new(0.0, 0.0)));
                     }
                     if matches!(button, MouseButton::Left | MouseButton::Right) {
                         self.orbit_buttons.insert(button);
@@ -1383,12 +1393,15 @@ impl ApplicationHandler for App {
                 });
                 self.presentation.set_preview(preview);
                 // First-view collision framing runs once; focus then gently adjusts that view.
-                let _ = self.presentation.camera_view(&mut self.camera, &self.world, now);
+                let _ = self
+                    .presentation
+                    .camera_view(&mut self.camera, &self.world, now);
                 self.track_focus(now);
-                let view = self.camera.view_above_ground(
-                    self.presentation.camera_target(now),
-                    |x, z| self.world.surface_y(x, z),
-                );
+                let view = self
+                    .camera
+                    .view_above_ground(self.presentation.camera_target(now), |x, z| {
+                        self.world.surface_y(x, z)
+                    });
                 if let Some(audio) = &mut self.audio {
                     audio.listen(view);
                     audio.pump();

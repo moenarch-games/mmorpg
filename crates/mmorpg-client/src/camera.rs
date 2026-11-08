@@ -164,7 +164,11 @@ impl OrbitCamera {
             std::array::from_fn(|axis| point[axis] - self_position[axis])
         });
         let scale = (FOCUS_FRAMING_METRES / delta[0].hypot(delta[2]).max(1e-6)).min(1.0);
-        let desired = [delta[0] * scale * 0.35, delta[1] * 0.2, delta[2] * scale * 0.35];
+        let desired = [
+            delta[0] * scale * 0.35,
+            delta[1] * 0.2,
+            delta[2] * scale * 0.35,
+        ];
         let blend = 1.0 - (-FOCUS_FRAMING_RATE * dt).exp();
         for (current, target) in self.framing.iter_mut().zip(desired) {
             *current += (target - *current) * blend;
@@ -241,7 +245,10 @@ mod tests {
             "the eye is behind the character"
         );
         assert!(view.eye[1] > view.target[1], "and above it");
-        assert!(view.eye[0] > view.target[0], "the eye sits over the right shoulder");
+        assert!(
+            view.eye[0] > view.target[0],
+            "the eye sits over the right shoulder"
+        );
         let offset: [f32; 3] = std::array::from_fn(|axis| view.eye[axis] - view.target[axis]);
         let length = offset.iter().map(|value| value * value).sum::<f32>().sqrt();
         assert!(length > camera.distance());
