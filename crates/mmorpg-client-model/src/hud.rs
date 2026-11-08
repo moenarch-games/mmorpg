@@ -9,8 +9,29 @@ use mmorpg_core::{
     GLOBAL_COOLDOWN_TICKS, PlayerClass, ResourceView, ViewerState, ZoneSnapshot, ability_by_id,
 };
 
-/// At most this many abilities sit on the action bar.
-pub const ACTION_BAR_SLOTS: usize = 10;
+/// At most this many abilities sit on the action bar: two rows, the second reached with Shift
+/// (Atlas `5.2.i294`).
+pub const ACTION_BAR_SLOTS: usize = 2 * ACTION_BAR_ROW_SLOTS;
+/// One row of the action bar: keys 1–9 and 0.
+pub const ACTION_BAR_ROW_SLOTS: usize = 10;
+
+/// The key that uses slot `index` (0-based): `1`–`9`, `0`, then `Shift+1`–`Shift+0` on the
+/// second row.
+#[must_use]
+pub fn slot_key_label(index: usize) -> String {
+    let digit = |offset: usize| {
+        if offset == ACTION_BAR_ROW_SLOTS - 1 {
+            '0'
+        } else {
+            char::from_digit(u32::try_from(offset + 1).unwrap_or(0), 10).unwrap_or('?')
+        }
+    };
+    if index < ACTION_BAR_ROW_SLOTS {
+        digit(index).to_string()
+    } else {
+        format!("Shift+{}", digit(index - ACTION_BAR_ROW_SLOTS))
+    }
+}
 
 /// Which wait a slot shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,7 +79,8 @@ pub struct SlotState {
     pub cooldown: Option<SlotCooldown>,
 }
 
-/// The class abilities in catalog id order: action-bar slots 1–10.
+/// The class abilities in catalog id order: action-bar slots 1–20, the first ten on the first
+/// row and the rest on the Shift row.
 #[must_use]
 pub fn class_kit(class: PlayerClass) -> Vec<u8> {
     ABILITY_CATALOG
@@ -252,12 +274,16 @@ mod tests {
 
     #[test]
     fn class_kits_hold_the_catalog_order() {
-        assert_eq!(class_kit(PlayerClass::Warden), [1, 2, 3, 4, 17]);
-        assert_eq!(class_kit(PlayerClass::Ranger), [5, 6, 7, 8, 19, 20]);
+        assert_eq!(class_kit(PlayerClass::Warden), [1, 2, 3, 4, 17, 51]);
+        assert_eq!(class_kit(PlayerClass::Ranger), [5, 6, 7, 8, 19, 20, 52]);
         assert_eq!(
             class_kit(PlayerClass::Arcanist),
-            [9, 10, 11, 12, 16, 21, 22, 23, 49, 50]
+            [9, 10, 11, 12, 16, 21, 22, 23, 49, 50, 53]
         );
+        assert_eq!(slot_key_label(0), "1");
+        assert_eq!(slot_key_label(9), "0");
+        assert_eq!(slot_key_label(10), "Shift+1");
+        assert_eq!(slot_key_label(19), "Shift+0");
         assert_eq!(class_kit(PlayerClass::Necromancer), [26, 27, 28, 29, 45]);
         assert_eq!(class_kit(PlayerClass::Rogue), [30, 31, 32, 33, 42, 43, 44]);
         assert_eq!(class_kit(PlayerClass::Cleric), [34, 35, 36, 37]);

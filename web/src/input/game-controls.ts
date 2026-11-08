@@ -34,6 +34,16 @@ export const GAME_ACTIONS = [
   "ability.slot8",
   "ability.slot9",
   "ability.slot10",
+  "ability.slot11",
+  "ability.slot12",
+  "ability.slot13",
+  "ability.slot14",
+  "ability.slot15",
+  "ability.slot16",
+  "ability.slot17",
+  "ability.slot18",
+  "ability.slot19",
+  "ability.slot20",
   "combat.directedStrike",
   "combat.guard",
   "combat.cancelCast",
@@ -91,6 +101,8 @@ export function contextStack(screen: ControlScreen): ContextLayer[] {
 export const GAME_ACTION_REGISTRY_VERSION = 1;
 
 const key = (code: string): InputStroke => ({ key: { kind: "physical", value: code } });
+/** Shift + `code`: the second action-bar row (#294). */
+const shifted = (code: string): InputStroke => ({ key: { kind: "physical", value: code }, modifiers: { shift: true } });
 const stick = (axis: number, direction: "positive" | "negative"): InputStroke => ({
   device: "gamepadAxis",
   axis,
@@ -152,7 +164,7 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
     ]),
     action("move.jump", "Jump", "gameplay", [key("Space"), button(0)]),
     // Tap to dodge-roll along the held movement, or straight back standing still (#516).
-    action("move.roll", "Dodge roll", "gameplay", [key("ShiftLeft"), key("ShiftRight"), button(1)]),
+    action("move.roll", "Dodge roll", "gameplay", [key("KeyF"), button(1)]),
     // Held while swimming (#274): Space or A ascends (held Jump), X or R3 descends.
     action("move.descend", "Swim down (hold)", "gameplay", [key("KeyX"), button(11)]),
     action("target.next", "Target next", "gameplay", [key("Tab"), button(5)]),
@@ -170,6 +182,17 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
     action("ability.slot8", "Ability 8", "gameplay", [key("Digit8")]),
     action("ability.slot9", "Ability 9", "gameplay", [key("Digit9")]),
     action("ability.slot10", "Ability 10", "gameplay", [key("Digit0")]),
+    // The second row, Shift+1 to Shift+0 (#294, Atlas 5.2.i294).
+    action("ability.slot11", "Ability 11 (Shift row)", "gameplay", [shifted("Digit1")]),
+    action("ability.slot12", "Ability 12 (Shift row)", "gameplay", [shifted("Digit2")]),
+    action("ability.slot13", "Ability 13 (Shift row)", "gameplay", [shifted("Digit3")]),
+    action("ability.slot14", "Ability 14 (Shift row)", "gameplay", [shifted("Digit4")]),
+    action("ability.slot15", "Ability 15 (Shift row)", "gameplay", [shifted("Digit5")]),
+    action("ability.slot16", "Ability 16 (Shift row)", "gameplay", [shifted("Digit6")]),
+    action("ability.slot17", "Ability 17 (Shift row)", "gameplay", [shifted("Digit7")]),
+    action("ability.slot18", "Ability 18 (Shift row)", "gameplay", [shifted("Digit8")]),
+    action("ability.slot19", "Ability 19 (Shift row)", "gameplay", [shifted("Digit9")]),
+    action("ability.slot20", "Ability 20 (Shift row)", "gameplay", [shifted("Digit0")]),
     // Hold, aim with the pointer, release (#154): the Warden's directed Heroic Strike.
     action("combat.directedStrike", "Directed Heroic Strike (hold, aim, release)", "gameplay", [key("KeyG")]),
     // Hold to raise the Warden's shield; pointer up/down (or the right stick, holding LT) picks the lane (#156).
@@ -235,6 +258,16 @@ export const RELEASED_ACTIONS = [
   "ability.slot8",
   "ability.slot9",
   "ability.slot10",
+  "ability.slot11",
+  "ability.slot12",
+  "ability.slot13",
+  "ability.slot14",
+  "ability.slot15",
+  "ability.slot16",
+  "ability.slot17",
+  "ability.slot18",
+  "ability.slot19",
+  "ability.slot20",
 ] as const;
 export type ReleasedAction = (typeof RELEASED_ACTIONS)[number];
 

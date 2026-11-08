@@ -101,6 +101,10 @@ export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = ne
   // Summoned terrain (#293): obstacles the zone raises 4 m along the caster's facing.
   [49, { range: "self", description: "Raises a sheet of ice 4 m ahead that blocks movement, sight and shots until it is broken or melts.", glyph: FLAKE, accent: "#b5e6ff", visual: null, pose: "cast" }],
   [50, { range: "self", description: "Raises a pillar of rock 4 m ahead that blocks movement, sight and shots until it is broken or crumbles.", glyph: SHIELD, accent: "#a07c55", visual: null, pose: "cast" }],
+  // The movement kit (#294): the second action-bar row (Shift) as a kit grows.
+  [51, { range: "self", description: "Leap 8 m along your facing and land with an impact that hurts and hurls back every enemy within 4 m, weaker toward the edge.", glyph: FOOT, accent: "#c98a4a", visual: "ring", pose: "swing" }],
+  [52, { range: { units: 2_000 }, description: "Hook your selected target and pull it to melee reach; walls stop it and a just-moved target is immune.", glyph: ARROW, accent: "#d8c27a", visual: "projectile", pose: "draw" }],
+  [53, { range: "self", description: "Teleport up to 10 m along your facing, as far as the way is free; walls and summoned terrain end it short of them.", glyph: ORB, accent: "#b69cff", visual: "ring", pose: "cast" }],
 ]);
 
 export function presentationOf(ability: number): AbilityPresentation | undefined {
