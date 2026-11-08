@@ -109,6 +109,11 @@ export type SceneryStats = {
 
 const FORMAT = "mmorpg.static-scene";
 const CULLS: readonly CullClass[] = ["always", "far", "mid", "near", "detail"];
+/**
+ * Instanced detail (ground cover, handholds, repeated prop pieces) casts only into the two near sun cascades: in the
+ * far one it covers less than a texel and cost about a fifth of its draws (three-lighting `shadowCascades`).
+ */
+const NEAR_SHADOW = { shadowCascades: 2 };
 
 type GeometryEntry = {
   resourceKey: string; vertexOffset: number; vertexCount: number; colored: boolean; textured: boolean; weighted: boolean; indexOffset: number; indexCount: number;
@@ -246,7 +251,9 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
     const id = first.id.slice(0, first.id.lastIndexOf(":"));
     instanceBatches.push({
       ...bounds(group),
-      batch: { id, name: instanceBatchName(id, group), geometry: geometry(first), color: "#ffffff", revision: layout.prefix, instances },
+      batch: {
+        id, name: instanceBatchName(id, group), userData: NEAR_SHADOW, geometry: geometry(first), color: "#ffffff", revision: layout.prefix, instances,
+      },
     });
   }
   const water = layout.water.map((draw): RendererSceneNode => ({
