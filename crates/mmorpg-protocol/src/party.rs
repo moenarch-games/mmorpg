@@ -59,8 +59,8 @@ fn decode_name(payload: &[u8], offset: &mut usize) -> Result<String, ProtocolErr
 
 pub(crate) fn encode_state(payload: &mut Vec<u8>, state: &PartyState) -> Result<(), ProtocolError> {
     payload.extend_from_slice(&state.revision.to_be_bytes());
-    let flags = u8::from(state.roster.is_some()) * ROSTER_FLAG
-        | u8::from(state.invite.is_some()) * INVITE_FLAG;
+    let flags = (u8::from(state.roster.is_some()) * ROSTER_FLAG)
+        | (u8::from(state.invite.is_some()) * INVITE_FLAG);
     payload.push(flags);
     if let Some(roster) = &state.roster {
         payload.extend_from_slice(&roster.party.to_be_bytes());
@@ -74,8 +74,8 @@ pub(crate) fn encode_state(payload: &mut Vec<u8>, state: &PartyState) -> Result<
             encode_name(payload, &member.name)?;
             payload.extend_from_slice(&member.player.unwrap_or(0).to_be_bytes());
             payload.push(
-                u8::from(member.online) * ONLINE_FLAG
-                    | u8::from(member.player.is_some()) * IN_ZONE_FLAG,
+                (u8::from(member.online) * ONLINE_FLAG)
+                    | (u8::from(member.player.is_some()) * IN_ZONE_FLAG),
             );
         }
     }

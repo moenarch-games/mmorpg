@@ -291,11 +291,10 @@ impl PartyDirectory {
             .parties
             .get(&id)
             .is_some_and(|party| party.members.len() < 2)
+            && let Some(party) = self.parties.remove(&id)
         {
-            if let Some(party) = self.parties.remove(&id) {
-                for member in party.members {
-                    self.membership.remove(&member);
-                }
+            for member in party.members {
+                self.membership.remove(&member);
             }
         }
         Ok(())
