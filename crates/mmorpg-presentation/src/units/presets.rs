@@ -7,8 +7,16 @@
 use super::imported::Figure;
 use serde_json::{Map, Value, json};
 
-/// The Redbrand band's red on the soldier and knight outfits' `faction` materials (linear).
+/// The Redbrand band's red on the outfits' `faction` materials (linear).
 const REDBRAND_RED: [f64; 4] = [0.3, 0.025, 0.02, 1.];
+
+/// The Redbrand faction kit (asset-tooling #517, #522): its rolling release's directory beside
+/// the figures (`characters/redbrand.kit`) and the name of its descriptor attachment.
+pub const REDBRAND_KIT: &str = "redbrand.kit";
+pub const REDBRAND_KIT_DESCRIPTOR: &str = "redbrand-descriptor";
+
+/// The kit's outfit the bandits and crossbowmen wear when the kit is present (#675).
+pub const REDBRAND_OUTFIT: &str = "outfit.redbrand";
 
 /// The ids of [`enemy_presets`], in order (`imported::Resident::preset`).
 pub const ENEMY_PRESET_IDS: [&str; 5] = [
@@ -20,11 +28,30 @@ pub const ENEMY_PRESET_IDS: [&str; 5] = [
 ];
 
 /// The humanoid enemies' presets (#39), authored over the bundle's own outfits, armour,
-/// headwear, hair, beards and face options. The marauders, bandits, crossbowmen and brutes each
-/// wear their own seeded variation ([`vary_preset`]); Garrick wears his as authored. Weapons come
-/// from the shared presenter's loadout.
+/// headwear, hair, beards and face options. With the Redbrand kit (`redbrand`, #675) the bandits
+/// and crossbowmen wear its [`REDBRAND_OUTFIT`] (coat, red mantle, belt and bracers, tinted by
+/// the preset's faction colour); without it they keep the soldier's gambeson. The brutes and
+/// Garrick keep the knight's plate. The marauders, bandits, crossbowmen and brutes each wear their
+/// own seeded variation ([`vary_preset`]); Garrick wears his as authored. Weapons come from the
+/// shared presenter's loadout.
 #[must_use]
-pub fn enemy_presets() -> Vec<Value> {
+pub fn enemy_presets(redbrand: bool) -> Vec<Value> {
+    let mut presets = soldier_enemy_presets();
+    if redbrand {
+        for preset in &mut presets {
+            if preset["outfit"] == "outfit.soldier"
+                && let Some(preset) = preset.as_object_mut()
+            {
+                preset.insert("outfit".into(), REDBRAND_OUTFIT.into());
+                preset.remove("hiddenArmor");
+            }
+        }
+    }
+    presets
+}
+
+/// [`enemy_presets`] without the Redbrand kit.
+fn soldier_enemy_presets() -> Vec<Value> {
     vec![
         // Ragged farmhands turned raiders: a smock, long unkempt hair and a full beard.
         json!({ "id": "enemy.marauder", "outfit": "outfit.farmer", "skin": "skin.dark",
@@ -55,20 +82,69 @@ pub fn enemy_presets() -> Vec<Value> {
 
 /// The `humanoid-appearance` a figure's characters are drawn from: its bundle's own, with the
 /// game's enemy presets beside the male figure's (they wear his outfits, beards and headwear).
+/// `kit` is the Redbrand kit's `redbrand-kit-descriptor-v1` when the kit was fetched: its
+/// outfits and morph variants join the male's ([`with_kit`]) and the bandits wear its outfit.
 /// The female figure's bundle (asset-tooling #378) is drawn as published: her residents' presets
 /// (`resident.tanner`, #493) and no male-only options.
 #[must_use]
-pub fn figure_appearance(figure: Figure, appearance: &Value) -> Value {
-    let mut value = appearance.clone();
+pub fn figure_appearance(figure: Figure, appearance: &Value, kit: Option<&Value>) -> Value {
     if figure == Figure::Female {
-        return value;
+        return appearance.clone();
     }
+    let kit = kit.filter(|kit| {
+        list(&kit["outfits"])
+            .iter()
+            .any(|outfit| outfit["id"] == REDBRAND_OUTFIT)
+    });
+    let mut value = kit.map_or_else(|| appearance.clone(), |kit| with_kit(appearance, kit));
     if let Some(object) = value.as_object_mut() {
         let presets = object
             .entry("presets")
             .or_insert_with(|| Value::Array(Vec::new()));
         if let Some(list) = presets.as_array_mut() {
-            list.extend(enemy_presets());
+            list.extend(enemy_presets(kit.is_some()));
+        }
+    }
+    value
+}
+
+/// `appearance` with a faction kit's descriptor merged in (asset-tooling #522): its `outfits`
+/// replace the bundle's own of the same id (their skins name the kit `entry` each variant is
+/// drawn from), its `morphs.face.variants` join `face.variants`, and its `morphs.variety`
+/// variants join `ages.variants` and `builds.variants` and its entries `builds.entries`.
+#[must_use]
+pub fn with_kit(appearance: &Value, kit: &Value) -> Value {
+    let mut value = appearance.clone();
+    let Some(object) = value.as_object_mut() else {
+        return value;
+    };
+    let outfits = list(&kit["outfits"]);
+    if let Some(own) = object
+        .entry("outfits")
+        .or_insert_with(|| Value::Array(Vec::new()))
+        .as_array_mut()
+    {
+        own.retain(|outfit| !outfits.iter().any(|kit| kit["id"] == outfit["id"]));
+        own.extend(outfits.iter().cloned());
+    }
+    let morphs = &kit["morphs"];
+    for (section, field, items) in [
+        ("face", "variants", &morphs["face"]["variants"]),
+        ("ages", "variants", &morphs["variety"]["variants"]),
+        ("builds", "variants", &morphs["variety"]["variants"]),
+        ("builds", "entries", &morphs["variety"]["entries"]),
+    ] {
+        let Some(own) = object
+            .get_mut(section)
+            .and_then(|section| section.get_mut(field))
+            .and_then(Value::as_array_mut)
+        else {
+            continue;
+        };
+        for item in list(items) {
+            if !own.contains(item) {
+                own.push(item.clone());
+            }
         }
     }
     value
@@ -270,6 +346,7 @@ mod tests {
                 "tints": [{ "id": "tint.black" }, { "id": "tint.grey" }],
                 "facialHair": { "options": [{ "id": "beard.full" }, { "id": "beard.moustache" }] },
             }),
+            None,
         );
         let own = vary_preset(&appearance, "enemy.redbrand.bandit", 7).expect("the bandit preset");
         assert_eq!(own["outfit"], "outfit.soldier");
@@ -285,14 +362,67 @@ mod tests {
     #[test]
     fn the_female_figure_keeps_her_own_presets_only() {
         let bundle = json!({ "presets": [{ "id": "resident.tanner", "outfit": "outfit.tanner" }] });
-        let female = figure_appearance(Figure::Female, &bundle);
+        let female = figure_appearance(Figure::Female, &bundle, None);
         assert_eq!(female, bundle);
-        let male = figure_appearance(Figure::Male, &bundle);
+        let male = figure_appearance(Figure::Male, &bundle, None);
         assert_eq!(male["presets"].as_array().map(Vec::len), Some(6));
         assert_eq!(
             super::super::imported::Resident::of_name("Tanner Hilda Brook")
                 .map(super::super::imported::Resident::figure),
             Some(Figure::Female)
+        );
+    }
+
+    #[test]
+    fn the_redbrand_kit_dresses_the_bandits() {
+        let bundle = json!({
+            "presets": [],
+            "outfits": [{ "id": "outfit.soldier" }, { "id": "outfit.redbrand", "variant": "outfit.redbrand" }],
+            "face": { "variants": ["default", "outfit.soldier"] },
+            "ages": { "variants": ["default"] },
+            "builds": { "variants": ["default"], "entries": ["armor.soldier"] },
+        });
+        let kit = json!({
+            "outfits": [{ "id": "outfit.redbrand", "skins": [
+                { "id": "skin.dark", "entry": "redbrand.kit.outfit", "variant": "default" }] }],
+            "morphs": {
+                "face": { "variants": ["default", "skin.light"] },
+                "variety": { "variants": ["default", "skin.light"], "entries": ["redbrand.kit.armor"] },
+            },
+        });
+        let male = figure_appearance(Figure::Male, &bundle, Some(&kit));
+        let outfits = list(&male["outfits"]);
+        assert_eq!(outfits.len(), 2);
+        assert_eq!(outfits[1], kit["outfits"][0]);
+        assert_eq!(
+            male["face"]["variants"],
+            json!(["default", "outfit.soldier", "skin.light"])
+        );
+        assert_eq!(
+            male["builds"]["entries"],
+            json!(["armor.soldier", "redbrand.kit.armor"])
+        );
+        let outfit = |id: &str| {
+            list(&male["presets"])
+                .iter()
+                .find(|preset| preset["id"] == id)
+                .map(|preset| preset["outfit"].clone())
+        };
+        assert_eq!(
+            outfit("enemy.redbrand.bandit"),
+            Some(json!(REDBRAND_OUTFIT))
+        );
+        assert_eq!(
+            outfit("enemy.redbrand.crossbowman"),
+            Some(json!(REDBRAND_OUTFIT))
+        );
+        assert_eq!(outfit("enemy.redbrand.brute"), Some(json!("outfit.knight")));
+        // Without the kit the bandits keep the soldier's gambeson.
+        let plain = figure_appearance(Figure::Male, &bundle, None);
+        assert!(
+            list(&plain["presets"])
+                .iter()
+                .all(|preset| preset["outfit"] != REDBRAND_OUTFIT)
         );
     }
 }
