@@ -11,7 +11,7 @@
 //!
 //! The shared [`Lods`] ([`crate::lod`]) picks each placement's level of detail from the
 //! bundle's `lodSelection` metadata and cross-fades every switch. Presentation only.
-use mmorpg_core::{Grip, ROCK_PROXIES, RockShape, UNITS_PER_METRE};
+use mmorpg_core::{Grip, RockShape, UNITS_PER_METRE};
 use mmorpg_scenery::{Prop, PropKind, Scenery, TerrainGrid, TreeVariant};
 
 use crate::{
@@ -30,6 +30,19 @@ pub const BUSHES: [&str; 3] = [
 ];
 /// Each bush's authored footprint (width, height, depth; metres), as the descriptor gives it.
 pub const BUSH_SIZES: [[f64; 3]; 3] = [[1.4, 1.0, 1.3], [1.7, 0.85, 1.4], [1.1, 1.3, 1.0]];
+/// The `limestone-rocks` block drawn for each rock proxy (asset-tooling#536), with its body's
+/// half width, height and half depth in metres. Its origin is on the ground, under the body.
+pub const LIMESTONE_ROCKS: [(&str, [f64; 3]); 3] = [
+    ("limestone-rocks.kit.block-1", [1.9, 2.2, 1.5]),
+    ("limestone-rocks.kit.block-2", [1.4, 1.4, 1.1]),
+    ("limestone-rocks.kit.block-3", [0.95, 0.9, 0.8]),
+];
+/// The entries the limestone kit draws.
+pub const LIMESTONE_ENTRIES: [&str; 3] = [
+    LIMESTONE_ROCKS[0].0,
+    LIMESTONE_ROCKS[1].0,
+    LIMESTONE_ROCKS[2].0,
+];
 /// The bundle's entries, sorted.
 pub const ENTRIES: [&str; 8] = [
     BUSHES[0],
@@ -140,13 +153,10 @@ pub(crate) fn placement(s: &Scenery, g: &TerrainGrid, p: &Prop) -> Option<Placem
         }
         PropKind::Rock(_) => {
             let shape = rock_shape(s, p);
-            let proxy = &ROCK_PROXIES[usize::from(shape.proxy)];
             let [hx, hy, hz] = p.half_extents.map(metres);
-            let centre: [f64; 3] =
-                std::array::from_fn(|axis| metres(proxy.min[axis] + proxy.max[axis]) / 2.);
-            let span: [f64; 3] =
-                std::array::from_fn(|axis| metres(proxy.max[axis] - proxy.min[axis]) / 2.);
-            let fit = [hx / span[0], hy / span[1], hz / span[2]];
+            let (entry, [body_x, body_height, body_z]) = LIMESTONE_ROCKS[usize::from(shape.proxy)];
+            // Fitted to the collider's box, which the drawn rock fills; physics keeps its proxy.
+            let fit = [hx / body_x, 2. * hy / body_height, hz / body_z];
             // A collider rock stands on its body's bottom, where its proxy collides.
             let base = if p.collider.is_some() {
                 metres(p.position[1])
@@ -154,17 +164,16 @@ pub(crate) fn placement(s: &Scenery, g: &TerrainGrid, p: &Prop) -> Option<Placem
                 crate::terrain::surface(g, x, z)
             };
             let at = compose(&[
-                translate(x, base + hy, z),
+                translate(x, base, z),
                 ry(yaw(p)),
                 scale(fit[0], fit[1], fit[2]),
-                translate(-centre[0], -centre[1], -centre[2]),
             ]);
             let cull = if p.collider.is_some() {
                 Cull::Always
             } else {
                 Cull::Mid
             };
-            (shape.entry(), at, fit[0].max(fit[1]).max(fit[2]), cull)
+            (entry, at, fit[0].max(fit[1]).max(fit[2]), cull)
         }
         _ => return None,
     };
@@ -214,7 +223,7 @@ mod tests {
         let mut hulls = 0;
         for (prop, placement) in drawn.iter().zip(&placements) {
             if let Some(shape) = prop.collider.and_then(|id| scenery.rock(id)) {
-                assert_eq!(placement.entry, shape.entry());
+                assert_eq!(placement.entry, LIMESTONE_ROCKS[usize::from(shape.proxy)].0);
                 hulls += 1;
             }
         }

@@ -1096,8 +1096,8 @@ pub fn settlement_prop_models() -> Vec<f32> {
 }
 
 /// A bundle drawn at fixed placements through the shared level selection: `"nature"`, the
-/// `greyhaven-nature` trees, rocks and bushes (#49), or `"climbing"`, the climbing kit's
-/// ladders, ropes and ivy (#621).
+/// `greyhaven-nature` trees and bushes (#49), `"climbing"`, the climbing kit's ladders, ropes
+/// and ivy (#621), or `"limestone"`, the rocks' limestone blocks (asset-tooling#536).
 fn placed_kit(
     kit: &str,
 ) -> Result<
@@ -1110,11 +1110,17 @@ fn placed_kit(
     use mmorpg_presentation::{climbing, lod::Placement, nature};
     static NATURE: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     static CLIMBING: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
+    static LIMESTONE: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
+    // The two bundles share one placement list, split by the bundle each entry lives in.
+    let split = |limestone: bool| {
+        nature::placements(scenery::hosted_scenery())
+            .into_iter()
+            .filter(|placement| nature::LIMESTONE_ENTRIES.contains(&placement.entry) == limestone)
+            .collect::<Vec<_>>()
+    };
     match kit {
-        "nature" => Ok((
-            &nature::ENTRIES,
-            NATURE.get(|_| nature::placements(scenery::hosted_scenery())),
-        )),
+        "nature" => Ok((&nature::ENTRIES, NATURE.get(|_| split(false)))),
+        "limestone" => Ok((&nature::LIMESTONE_ENTRIES, LIMESTONE.get(|_| split(true)))),
         "climbing" => Ok((
             &climbing::ENTRIES,
             CLIMBING.get(|_| climbing::placements(scenery::hosted_scenery())),

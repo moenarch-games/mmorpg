@@ -3,7 +3,7 @@ import { InstancedLevels } from "./instanced-levels";
 import { loadBundleGltfs } from "./static-bundle";
 
 /** A bundle the shared Rust presentation places at fixed placements. */
-export type PlacedKitName = "nature" | "climbing";
+export type PlacedKitName = "nature" | "climbing" | "limestone";
 
 /** Where `scripts/fetch-bundles.sh` puts each bundle in `web/public`, and its descriptor attachment. */
 const KITS: Record<PlacedKitName, { bundle: string; descriptor: string; label: string }> = {
@@ -11,6 +11,8 @@ const KITS: Record<PlacedKitName, { bundle: string; descriptor: string; label: s
   nature: { bundle: `${import.meta.env.BASE_URL}scenery/greyhaven.nature/`, descriptor: "nature-descriptor", label: "greyhaven.nature" },
   /** The rolling `climbing-kit` bundle: Greyhaven's ladders, ropes and ivy (#621). */
   climbing: { bundle: `${import.meta.env.BASE_URL}scenery/climbing.kit/`, descriptor: "climbing-descriptor", label: "climbing.kit" },
+  /** The rolling `limestone-rocks` bundle: the blocks Greyhaven's rocks are drawn as (asset-tooling#536). */
+  limestone: { bundle: `${import.meta.env.BASE_URL}scenery/limestone-rocks.kit/`, descriptor: "limestone-rocks-descriptor", label: "limestone-rocks.kit" },
 };
 
 /** The shared level-of-detail selection (`mmorpg_presentation::lod::Lods`, through `mmorpg-wasm`'s `KitLods`). */

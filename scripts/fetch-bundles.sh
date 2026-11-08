@@ -101,6 +101,10 @@ fetch_rolling combat-sounds combat-sounds sounds/combat-sounds
 fetch_rolling greyhaven-terrain greyhaven.terrain scenery/greyhaven.terrain
 # Greyhaven's ladders, climbable ropes and climbing ivy with their LOD chains (#621).
 fetch_rolling climbing-kit climbing.kit scenery/climbing.kit
+# The limestone blocks Greyhaven's rocks are drawn as (asset-tooling#536).
+fetch_rolling limestone-rocks limestone-rocks.kit scenery/limestone-rocks.kit
+# The stones along Greyhaven's watercourses (asset-tooling#538).
+fetch_rolling river-stones river-stones.kit scenery/river-stones.kit
 # Greyhaven's trees and rocks with their LOD chains and rock collision proxies (#49).
 fetch_rolling greyhaven-nature greyhaven.nature scenery/greyhaven.nature
 # The Battle Royale fortress's authored art (#591, asset-tooling#458/#461, pass 2), fitted to its
