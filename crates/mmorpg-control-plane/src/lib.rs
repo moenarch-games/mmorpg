@@ -6,6 +6,7 @@ use std::fmt;
 
 use mmorpg_core::ZoneId;
 
+pub mod instance;
 mod partition;
 pub mod party;
 mod permit;
