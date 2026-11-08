@@ -10,7 +10,9 @@ use mmorpg_client::{
     hud,
     network::ClientSession,
     presentation::Presentation,
-    session::{CharacterSelection, NetworkUpdate, PlayerInput, run_session_with_characters},
+    session::{
+        CharacterSelection, NetworkUpdate, PlayerInput, party_link, run_session_with_characters,
+    },
     world::WorldScene,
 };
 use mmorpg_core::{PlayerClass, Sex, ZoneId, content_for_zone};
@@ -138,6 +140,7 @@ fn main() -> Result<(), ClientError> {
         options.sex.code(),
     );
     let selected = (options.class.is_some() || options.smoke).then(|| CharacterSelection {
+        name: None,
         local_id: format!("cli-{}-{}", class_choice.0, class_choice.1),
         class: mmorpg_core::ClassChoice {
             class: options.class.unwrap_or(PlayerClass::Warden),
@@ -211,11 +214,13 @@ fn main() -> Result<(), ClientError> {
     let (character_sender, character_receiver) = watch::channel(selected);
     let (update_sender, update_receiver) = watch::channel(NetworkUpdate::Waiting);
     let (shutdown_sender, shutdown_receiver) = oneshot::channel();
+    let (party_client, party) = party_link();
     let mut task = runtime.spawn(async move {
         if let Err(error) = run_session_with_characters(
             session,
             input_receiver,
             character_receiver,
+            party,
             &update_sender,
             shutdown_receiver,
         )
@@ -234,6 +239,7 @@ fn main() -> Result<(), ClientError> {
         input_sender,
         character_sender,
         update_receiver,
+        party_client,
         options.frames,
         options.class.map(|class| (class, options.sex)),
     );

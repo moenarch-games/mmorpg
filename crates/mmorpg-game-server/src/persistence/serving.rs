@@ -442,6 +442,7 @@ pub async fn serve_postgres_character_host(
     let mut workers = Vec::<PersistenceWorker>::new();
     let mut stores = BTreeMap::new();
     let mut matches = MatchHost::new(grants.len())?;
+    let mut party_zones = BTreeMap::new();
     let mut permits = Vec::new();
     let prepared = async {
         for grant in grants {
@@ -475,6 +476,16 @@ pub async fn serve_postgres_character_host(
                 ZoneGameServerAdapter::with_content(zone, mmorpg_core::content_for_zone(zone))?
                     .with_authority(Arc::clone(&grant.permit))?;
             adapter.require_durable_character_claims();
+            let channel = crate::party::PartyChannel::default();
+            adapter.attach_parties(channel.clone());
+            party_zones.insert(
+                id.clone(),
+                crate::party::PartyZone {
+                    zone,
+                    lease: None,
+                    channel,
+                },
+            );
             matches.insert(id, MatchRuntime::restore_from_recovery(adapter, image)?)?;
             permits.push(grant.permit);
         }
@@ -524,6 +535,12 @@ pub async fn serve_postgres_character_host(
             .map(|id| (id, Mutex::new(())))
             .collect(),
     );
+    let parties = crate::party::PartyService::new(
+        host.clone(),
+        Box::new(mmorpg_control_plane::party::LocalParties::new()),
+        party_zones,
+    );
+    tokio::spawn(Arc::clone(&parties).run());
     let controls = Characters {
         host: host.clone(),
         stores: Arc::clone(&stores),
@@ -533,7 +550,14 @@ pub async fn serve_postgres_character_host(
     };
     let (stop, requests) = mpsc::channel(1);
     let serving = game_server::serve_live_match_host_with_status_and_control_and_shutdown(
-        host, controls, transport, status, requests,
+        host,
+        crate::party::PartyControl {
+            inner: controls,
+            parties,
+        },
+        transport,
+        status,
+        requests,
     );
     tokio::pin!(serving);
     let mut health = tokio::time::interval(Duration::from_millis(100));

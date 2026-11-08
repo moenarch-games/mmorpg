@@ -13,6 +13,7 @@ pub use dev_host::{DevelopmentCharacterHostConfig, serve_development_character_h
 mod fenced_runtime;
 pub mod handoff;
 pub mod handoff_host;
+pub mod party;
 pub mod transfer_link;
 pub use fenced_runtime::{FencedRuntimeError, FencedZoneRuntime};
 
@@ -85,6 +86,7 @@ pub struct ZoneGameServerAdapter {
     /// sheet only while it differs. Transport state, rebuilt from replayed commands.
     sheet_acks: std::collections::BTreeMap<game_server::PlayerId, SheetRevisions>,
     handoffs: Option<departures::HandoffChannel>,
+    parties: Option<party::PartyChannel>,
 }
 
 impl ZoneGameServerAdapter {
@@ -134,6 +136,7 @@ impl ZoneGameServerAdapter {
             held_back: Default::default(),
             sheet_acks: Default::default(),
             handoffs: None,
+            parties: None,
         }
     }
 
@@ -154,6 +157,7 @@ impl ZoneGameServerAdapter {
             held_back: Default::default(),
             sheet_acks: Default::default(),
             handoffs: None,
+            parties: None,
         })
     }
 
@@ -303,7 +307,9 @@ impl GameSimulation for ZoneGameServerAdapter {
         payload: &[u8],
     ) -> Result<(), SimulationError> {
         self.ensure_authority()?;
-        if self.apply_transfer_input(player_id, payload)? {
+        if self.apply_transfer_input(player_id, payload)?
+            || self.apply_party_input(player_id, payload)?
+        {
             return Ok(());
         }
         self.admit_stored_character(player_id, payload)
@@ -313,6 +319,7 @@ impl GameSimulation for ZoneGameServerAdapter {
         self.ensure_authority()?;
         self.zone.advance_tick().map_err(map_zone_error)?;
         self.exchange_departures();
+        self.publish_parties();
         Ok(())
     }
 

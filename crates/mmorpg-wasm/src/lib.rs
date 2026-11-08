@@ -32,6 +32,7 @@ pub mod host;
 pub mod lab_diagnostics;
 pub mod lab_experiment;
 pub mod lab_promotion;
+pub mod party;
 pub mod scenario;
 pub mod scenery;
 pub mod static_scene;

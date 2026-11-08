@@ -5,7 +5,8 @@ import { decodeWelcome, type SnapshotFrame, type Welcome } from "../session/fram
 import { parseSessionRoute, reconnectUrl, type SessionRoute } from "../session/route";
 import { SequencedOutbox, type Delivery } from "../session/sequenced-outbox";
 import { SnapshotReassembler } from "../session/snapshot-reassembler";
-import { loadWasm } from "../wasm";
+import { loadWasm, wasm } from "../wasm";
+import type { PartyRequestInput } from "../generated/mmorpg-wasm/mmorpg_wasm.js";
 import { classChoiceCodes, DEFAULT_JOIN_CHARACTER, type JoinCharacter, type LinkState, type WorldSource } from "./world-source";
 
 /** A join (welcome and first projection) must finish within this bound, like the native client's connect. */
@@ -259,6 +260,24 @@ export class OnlineZoneSource implements WorldSource {
     return this.#received.splice(0);
   }
 
+  /** Sends a party request over reliable control; resolves to its refusal message, if any. */
+  async sendParty(request: PartyRequestInput): Promise<string | null> {
+    const control = this.#link?.connection.control?.bind(this.#link.connection);
+    if (!control) { return "Parties are not available on this host."; }
+    const reply = await control(wasm.encodePartyRequest(request));
+    if (!reply.accepted) { return "Parties are not available on this host."; }
+    return wasm.partyReplyError(reply.payload) ?? null;
+  }
+
+  /** Tells this connection's party service the character's name (#404). */
+  async #announceName(link: Link): Promise<void> {
+    const name = wasm.announcedPartyName(this.#character.name ?? "");
+    if (!name || !link.connection.control) { return; }
+    try {
+      await link.connection.control(wasm.encodePartyRequest({ kind: "hello", name }));
+    } catch { /* Parties are simply unavailable without a service. */ }
+  }
+
   latestProjection(): ZoneSnapshot | null {
     return this.#latest;
   }
@@ -329,6 +348,7 @@ export class OnlineZoneSource implements WorldSource {
       this.#linkFailed(link, new Error(`The zone host's welcome is incompatible with this client (${welcome.tickHz} Hz ticks).`));
       return;
     }
+    void this.#announceName(link);
     const phase = this.#phase;
     if (phase.kind === "joining") {
       link.welcome = welcome;

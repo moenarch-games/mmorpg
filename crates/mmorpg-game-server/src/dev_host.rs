@@ -1,5 +1,6 @@
 //! Development character admission composed with the shared graceful-recovery host.
 use crate::handoff_host::HandoffHost;
+use crate::party::{PartyChannel, PartyControl, PartyService, PartyZone};
 use crate::{
     DevCharacterService, DevCharacterStorage, HandoffChannel, ZoneGameServerAdapter, zone_match_id,
 };
@@ -9,6 +10,7 @@ use game_server::{
     serve_prepared_live_match_host_with_status_and_control_and_shutdown,
 };
 use mmorpg_characters::EntryBackend;
+use mmorpg_control_plane::party::PartyAuthority;
 use mmorpg_core::ZoneId;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -30,9 +32,12 @@ pub struct DevelopmentCharacterHostConfig {
 }
 
 /// Live handoff between hosts (#145): each zone's channel to the service,
-/// the service's builder and its transfer link listener.
+/// the service's builder and its transfer link listener, plus the party store its peer
+/// hosts share and the zone leases that fence it.
 pub(crate) struct HandoffWiring<B: EntryBackend> {
     pub channels: BTreeMap<MatchId, HandoffChannel>,
+    pub parties: Box<dyn mmorpg_control_plane::party::PartyAuthority + Send>,
+    pub leases: BTreeMap<MatchId, mmorpg_control_plane::ZoneLease>,
     pub listener: tokio::net::TcpListener,
     #[allow(clippy::type_complexity)]
     pub build: Box<
@@ -48,6 +53,7 @@ async fn prepare(
     ids: Vec<MatchId>,
     ownership: Option<Arc<File>>,
     channels: BTreeMap<MatchId, HandoffChannel>,
+    party_channels: BTreeMap<MatchId, PartyChannel>,
     directory: PathBuf,
     grace: u64,
 ) -> HostResult<PreparedLiveMatchHost<ZoneGameServerAdapter>> {
@@ -68,6 +74,9 @@ async fn prepare(
             }
             if let Some(channel) = channels.get(id) {
                 adapter.attach_handoffs(channel.clone());
+            }
+            if let Some(channel) = party_channels.get(id) {
+                adapter.attach_parties(channel.clone());
             }
             Ok(adapter)
         },
@@ -142,7 +151,7 @@ pub(crate) async fn serve_characters<B: EntryBackend + Send + 'static>(
     ids: Vec<MatchId>,
     recovery: PathBuf,
     grace: u64,
-    handoffs: Option<HandoffWiring<B>>,
+    mut handoffs: Option<HandoffWiring<B>>,
     transport: MatchHostWebTransportConfig,
     status: MatchHostStatusConfig,
     shutdown: mpsc::Receiver<()>,
@@ -152,15 +161,48 @@ pub(crate) async fn serve_characters<B: EntryBackend + Send + 'static>(
         .as_ref()
         .map(|wiring| wiring.channels.clone())
         .unwrap_or_default();
+    let party_channels: BTreeMap<MatchId, PartyChannel> = ids
+        .iter()
+        .map(|id| (id.clone(), PartyChannel::default()))
+        .collect();
     let prepared = prepare(
         ids.clone(),
         ownership.clone(),
         channels,
+        party_channels.clone(),
         recovery.clone(),
         grace,
     )
     .await?;
     let host = prepared.host();
+    let (party_authority, party_leases): (Box<dyn PartyAuthority + Send>, BTreeMap<_, _>) =
+        match &mut handoffs {
+            Some(wiring) => (
+                std::mem::replace(
+                    &mut wiring.parties,
+                    Box::new(mmorpg_control_plane::party::LocalParties::new()),
+                ),
+                wiring.leases.clone(),
+            ),
+            None => (
+                Box::new(mmorpg_control_plane::party::LocalParties::new()),
+                BTreeMap::new(),
+            ),
+        };
+    let mut party_zones = BTreeMap::new();
+    for (id, channel) in party_channels {
+        let zone = crate::dev_characters::zone_of(&id)?;
+        party_zones.insert(
+            id.clone(),
+            PartyZone {
+                zone,
+                lease: party_leases.get(&id).cloned(),
+                channel,
+            },
+        );
+    }
+    let parties = PartyService::new(host.clone(), party_authority, party_zones);
+    tokio::spawn(Arc::clone(&parties).run());
     let restored = snapshots(&host).await?;
     storage = tokio::task::spawn_blocking(move || {
         for (id, payload) in restored {
@@ -181,7 +223,10 @@ pub(crate) async fn serve_characters<B: EntryBackend + Send + 'static>(
         DevCharacterService::with_shared_storage(host.clone(), storage, handoff_host.clone());
     let serving = serve_prepared_live_match_host_with_status_and_control_and_shutdown(
         prepared,
-        service.clone(),
+        PartyControl {
+            inner: service.clone(),
+            parties,
+        },
         transport,
         status,
         shutdown,
@@ -213,7 +258,15 @@ pub(crate) async fn serve_characters<B: EntryBackend + Send + 'static>(
     // Serving has stopped all writers and saved the exact final recovery image.
     // Prepare without serving: replay is shared game-server behavior, and the
     // bundle remains unconsumed for the next actual startup.
-    let stopped = prepare(ids, ownership, BTreeMap::new(), recovery, grace).await?;
+    let stopped = prepare(
+        ids,
+        ownership,
+        BTreeMap::new(),
+        BTreeMap::new(),
+        recovery,
+        grace,
+    )
+    .await?;
     let final_snapshots = snapshots(&stopped.host()).await?;
     tokio::task::spawn_blocking(move || service.finish_snapshots(final_snapshots)).await??;
     Ok(())

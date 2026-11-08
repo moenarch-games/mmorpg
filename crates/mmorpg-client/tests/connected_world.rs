@@ -778,6 +778,7 @@ async fn fragmented_projection_reaches_the_native_client() {
     let revision = greyhaven_vale::content().revision();
     let player_id = 42;
     let snapshot = ZoneSnapshot {
+        party: None,
         doors: Vec::new(),
         projectiles: Vec::new(),
         debris: Vec::new(),
@@ -1217,6 +1218,7 @@ async fn durable_character_selection_worker_claims_before_gameplay_and_logs_out(
         ..PlayerInput::default()
     });
     let (_selection, characters) = watch::channel(Some(CharacterSelection {
+        name: None,
         local_id: "local-1".into(),
         class: ClassChoice::from_appearance(3).unwrap(),
         global_id: Some(CharacterId::new("worker-ranger")?),
@@ -1224,7 +1226,15 @@ async fn durable_character_selection_worker_claims_before_gameplay_and_logs_out(
     let (updates, mut received) = watch::channel(NetworkUpdate::Waiting);
     let (stop, stopped) = tokio::sync::oneshot::channel();
     let task = tokio::spawn(async move {
-        run_session_with_characters(session, input, characters, &updates, stopped).await
+        run_session_with_characters(
+            session,
+            input,
+            characters,
+            mmorpg_client::session::party_link().1,
+            &updates,
+            stopped,
+        )
+        .await
     });
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {

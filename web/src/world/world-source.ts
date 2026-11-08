@@ -1,4 +1,5 @@
 import type { WorldCommand } from "../command-wire";
+import type { PartyRequestInput } from "../generated/mmorpg-wasm/mmorpg_wasm.js";
 import type { EntityState, ZoneSnapshot } from "../replication";
 import type { ContentCatalog } from "./catalog";
 import type { SceneryProvider } from "./scenery";
@@ -16,7 +17,7 @@ export type LinkState = "connected" | "reconnecting" | "travelling";
  * leases and resumes it. Online clients resolve a persistent alias for the
  * roster slot and claim the host's durable record when character storage is enabled.
  */
-export type JoinCharacter = { id: string; classId: "warden" | "ranger" | "arcanist" | "necromancer" | "rogue" | "cleric" | "druid"; sex: "female" | "male" };
+export type JoinCharacter = { name?: string; id: string; classId: "warden" | "ranger" | "arcanist" | "necromancer" | "rogue" | "cleric" | "druid"; sex: "female" | "male" };
 
 /** The default entry character: a male Warden, like the native client. */
 export const DEFAULT_JOIN_CHARACTER: JoinCharacter = { id: "default-warden", classId: "warden", sex: "male" };
@@ -71,6 +72,11 @@ export type WorldSource = {
   sample(): readonly EntityState[];
   /** `reconnecting` while the source restores its connection; always `connected` for a local zone. */
   linkState(): LinkState;
+  /**
+   * Asks the party service (#404) and resolves to why it refused, or `null` when accepted. Absent
+   * on a local zone, which has no one to party with.
+   */
+  sendParty?(request: PartyRequestInput): Promise<string | null>;
 };
 
 /** A world the page can enter: a source and the scenery and catalog of the content revision it serves. */

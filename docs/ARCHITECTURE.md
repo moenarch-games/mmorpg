@@ -361,6 +361,10 @@ Character transfers (#145, [ADR 0007](adr/0007-seam-corridors-and-character-tran
 
 Every step is idempotent per transfer ID. Recovery reconciles a host's frozen or staged copy from the handoff record, and a character whose hosts both stopped is resolved from the store's pending copy by whoever next acquires it: an accepted transfer completes to its destination, an unaccepted one is taken back only by a newer epoch of the source zone. Hosts carry transfers over a trusted-LAN TCP link (`transfer_link`). The registry is still the in-memory reference model; its PostgreSQL persistence and terminal-record retention remain open.
 
+## Party membership
+
+Parties (#404) are cross-zone, so membership has one owner outside any zone: the fenced party directory (`mmorpg_control_plane::party`, shared PostgreSQL store for trusted-LAN handoff hosts, in-process elsewhere). Zones hold only each player's versioned view as canonical state, set by a trusted host input, and share kill XP, kill credit and corpse eligibility from those views; the directory never touches gameplay. See [ADR 0008](adr/0008-party-directory.md).
+
 ## Logical-zone partitioning
 
 `mmorpg-control-plane::LogicalZone` is the in-memory reference contract for distributing one busy logical zone over several hosts (#146, Atlas 1.1.2 and 1.3). It decides only which partition owns which entity; the zone reports entity columns and interaction edges and keeps every gameplay outcome.

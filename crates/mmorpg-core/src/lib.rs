@@ -41,6 +41,7 @@ mod loot;
 mod minion;
 mod movable;
 mod nav;
+mod party;
 pub mod physics;
 #[cfg(feature = "physics-ab")]
 pub mod physics_ab;
@@ -148,6 +149,10 @@ pub use minion::{
     Minion, MinionOrder, ORDER_RANGE_UNITS, is_companion, minion_ability, minion_half_extents,
 };
 pub use nav::NAV_CELL_UNITS;
+pub use party::{
+    MAX_PARTY_MEMBERS, MAX_PARTY_NAME_BYTES, PartyInvite, PartyMember, PartyRefusal, PartyRoster,
+    PartyState, valid_name as valid_party_name,
+};
 pub use platform::{MAX_PLATFORMS, Platform, PlatformId, PlatformPhase};
 pub use progression::{MAX_PLAYER_LEVEL, experience_to_next_level, kill_experience};
 pub use projectile::{

@@ -56,14 +56,16 @@ import { LootPanel, type LootElements } from "./units/loot-panel";
 import { WaystonePanel, type WaystoneElements } from "./units/waystone-panel";
 import { VendorPanel, type VendorElements } from "./units/vendor-panel";
 import { QuestPanel, type MarkerPoint, type QuestElements } from "./units/quest-panel";
+import type { PartyRequestInput } from "../generated/mmorpg-wasm/mmorpg_wasm.js";
 import { ChatFrame, type ChatElements } from "./units/chat-frame";
+import { PartyFrame, type PartyElements } from "./units/party-frame";
 import { nearestAnimal, projectedUnit, type ProjectedUnit } from "./units/projected-units";
 import { ProgressionHud } from "./units/progression-hud";
 import { PointerClick, SecondaryClick } from "./units/targeting";
 import { WorldPicking } from "./units/world-picking";
 import { QuaterniusUnits, type FaceFeature, type Hair, type Headwear } from "./units/quaternius-units";
 import type { ContentCatalog } from "./catalog";
-import type { ZoneWorld } from "./world-source";
+import type { WorldSource, ZoneWorld } from "./world-source";
 import type { AudioPreferences, WorldSound } from "./world-sound";
 import { touchContext, type TouchContext } from "../input/touch-layout";
 import { profileFacts, profilePhase, profiling } from "./frame-profile";
@@ -93,6 +95,7 @@ export type WorldViewElements = {
   waystone: WaystoneElements;
   vendor: VendorElements;
   quests: QuestElements;
+  party: PartyElements;
   chat: ChatElements;
   /** Action bar, unit frames, cast bars and combat text. */
   classHud: HTMLElement;
@@ -369,6 +372,8 @@ export class WorldView {
   readonly #vendor: VendorPanel;
   readonly #quests: QuestPanel;
   readonly #chat: ChatFrame;
+  readonly #party: PartyFrame;
+  #partySource: WorldSource | null = null;
   readonly #intents: { intent: Intent; onSent: ((sequence: number | null) => void) | undefined }[] = [];
   readonly #secondaryClick = new SecondaryClick();
   readonly #primaryClick = new PointerClick(0);
@@ -468,7 +473,15 @@ export class WorldView {
       this.#character.close(false);
     });
     // Leaving the chat field hands the keyboard back to the world.
-    this.#chat = new ChatFrame(elements.chat, (command) => this.queueIntent(() => command), () => elements.canvas.focus());
+    this.#party = new PartyFrame(elements.party, (request) => this.#sendParty(request));
+    this.#chat = new ChatFrame(elements.chat, (command) => this.queueIntent(() => command), () => elements.canvas.focus(), (parsed) => {
+      const request = this.#party.request(parsed);
+      if (typeof request === "string") {
+        this.#chat.note(request);
+      } else {
+        this.#sendParty(request);
+      }
+    });
     elements.bags.toggle.addEventListener("click", () => {
       this.#loot.close(false);
       this.#vendor.close(false);
@@ -705,6 +718,7 @@ export class WorldView {
     this.#vendor.reset(projection);
     this.#quests.reset(projection);
     this.#chat.reset();
+    this.#party.reset();
     this.#shownArea = null;
     this.#flyTo = null;
     this.#framePending = true;
@@ -786,6 +800,7 @@ export class WorldView {
     this.#vendor.reset();
     this.#quests.reset();
     this.#chat.reset();
+    this.#party.reset();
     this.#endDrag();
     this.#sky.show(false);
     this.#overlay.hide();
@@ -817,6 +832,20 @@ export class WorldView {
   /** The face features the loaded Ranger offers (#411): undefined while loading, null if it has none. */
   faceFeatures(): readonly FaceFeature[] | null | undefined {
     return this.#models.faceFeatures();
+  }
+
+  /** Sends a party request; a refusal or a world without a party service becomes a chat note. */
+  #sendParty(request: PartyRequestInput): void {
+    const send = this.#partySource?.sendParty?.bind(this.#partySource);
+    if (!send) {
+      this.#chat.note("Parties need other players online.");
+      return;
+    }
+    send(request).then((refusal: string | null) => {
+      if (refusal) { this.#chat.note(refusal); }
+    }, (error: unknown) => {
+      this.#chat.note(`Party request failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
   }
 
   /** Queues an intent for the next frame; the zone decides what happens. */
@@ -1024,6 +1053,7 @@ export class WorldView {
       throw new Error("The world view has no scenery loaded.");
     }
     const { source, scenery, catalog } = world;
+    this.#partySource = source;
     const latest = source.latestProjection();
     for (const { intent, onSent } of this.#intents.splice(0)) {
       const command = latest ? intent(latest) : null;
@@ -1056,6 +1086,7 @@ export class WorldView {
       this.#vendor.update(received);
       this.#quests.update(received);
       this.#chat.update(received);
+      this.#party.update(received);
     }
     const projection = source.latestProjection();
     if (!projection) {

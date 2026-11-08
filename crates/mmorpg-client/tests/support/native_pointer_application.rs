@@ -206,6 +206,7 @@ impl NativeApplication {
         let (characters, _selected_character) = watch::channel(None);
         let app = App {
             characters,
+            party: mmorpg_client::session::party_link().0,
             runtime,
             window: None,
             renderer: None,

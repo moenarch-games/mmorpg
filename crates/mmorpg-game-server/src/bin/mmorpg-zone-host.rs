@@ -1,13 +1,10 @@
 use game_server::{
-    BrowserRoutePrefix, DEFAULT_HOST_STATUS_PORT, MatchHostRecoveryConfig, MatchHostStatusConfig,
-    MatchHostWebTransportConfig, RejectMatchControlService, prepare_match_host_for_recovery,
-    serve_match_host_with_status_and_control_and_shutdown,
-    serve_prepared_match_host_with_status_and_control_and_shutdown,
+    BrowserRoutePrefix, DEFAULT_HOST_STATUS_PORT, MatchHostStatusConfig,
+    MatchHostWebTransportConfig,
 };
 use mmorpg_core::{ZoneId, long_ticks_from_ms};
 use mmorpg_game_server::{
-    DevelopmentCharacterHostConfig, build_zone_host, build_zone_matches,
-    serve_development_character_host,
+    DevelopmentCharacterHostConfig, party::serve_open_zone_host, serve_development_character_host,
 };
 use std::env;
 use std::error::Error;
@@ -153,34 +150,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .await
         .map_err(|error| ConfigError(error.to_string()))?;
-    } else if let Some(directory) = recovery_directory {
-        let matches = build_zone_matches(zone_ids)?;
-        let max_matches = matches.len();
-        let prepared = prepare_match_host_for_recovery(
-            matches,
-            max_matches,
-            reconnect_grace_ticks,
-            MatchHostRecoveryConfig { directory },
-        )
-        .await?;
-        serve_prepared_match_host_with_status_and_control_and_shutdown(
-            prepared,
-            RejectMatchControlService,
-            transport_config,
-            status_config,
-            shutdown_receiver,
-        )
-        .await?;
     } else {
-        let host = build_zone_host(zone_ids, reconnect_grace_ticks)?;
-        serve_match_host_with_status_and_control_and_shutdown(
-            host,
-            RejectMatchControlService,
+        serve_open_zone_host(
+            zone_ids,
+            reconnect_grace_ticks,
+            recovery_directory,
             transport_config,
             status_config,
             shutdown_receiver,
         )
-        .await?;
+        .await
+        .map_err(|error| ConfigError(error.to_string()))?;
     }
     Ok(())
 }

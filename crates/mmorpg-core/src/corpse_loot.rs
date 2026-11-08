@@ -58,7 +58,8 @@ impl ZoneSimulation {
         {
             return Ok(Eligibility::Refused(ErrorCode::InvalidLoot));
         }
-        if creature.tapped_by != Some(player_id) {
+        let tapper = creature.tapped_by == Some(player_id);
+        if !tapper && !creature.loot_party.contains(&player_id) {
             return Ok(Eligibility::Refused(ErrorCode::NotLootOwner));
         }
         let from = self.player_position(player_id)?;
@@ -87,17 +88,20 @@ impl ZoneSimulation {
             ) {
                 rewards.item = None;
             }
-            if rewards.quest_item.is_some_and(|stack| {
-                !crate::rewards::allowed(
-                    &self.rewards,
-                    player_id,
-                    crate::RewardKey::LootQuestItem {
-                        creature: id,
-                        life,
-                        item: stack.item(),
-                    },
-                )
-            }) {
+            // A quest drop is the tapper's alone: collect objectives stay individual (5.4.5).
+            if !tapper
+                || rewards.quest_item.is_some_and(|stack| {
+                    !crate::rewards::allowed(
+                        &self.rewards,
+                        player_id,
+                        crate::RewardKey::LootQuestItem {
+                            creature: id,
+                            life,
+                            item: stack.item(),
+                        },
+                    )
+                })
+            {
                 rewards.quest_item = None;
             }
             rewards
