@@ -1,5 +1,6 @@
 //! Development character admission composed with the shared graceful-recovery host.
 use crate::handoff_host::HandoffHost;
+use crate::instance::InstanceChannel;
 use crate::party::{PartyChannel, PartyControl, PartyService, PartyZone};
 use crate::{
     DevCharacterService, DevCharacterStorage, HandoffChannel, ZoneGameServerAdapter, zone_match_id,
@@ -36,6 +37,8 @@ pub struct DevelopmentCharacterHostConfig {
 /// hosts share and the zone leases that fence it.
 pub(crate) struct HandoffWiring<B: EntryBackend> {
     pub channels: BTreeMap<MatchId, HandoffChannel>,
+    /// Zones the instance service resolves (#404): public thresholds and depths slots.
+    pub instance_channels: BTreeMap<MatchId, InstanceChannel>,
     pub parties: Box<dyn mmorpg_control_plane::party::PartyAuthority + Send>,
     pub leases: BTreeMap<MatchId, mmorpg_control_plane::ZoneLease>,
     pub listener: tokio::net::TcpListener,
@@ -54,6 +57,7 @@ async fn prepare(
     ownership: Option<Arc<File>>,
     channels: BTreeMap<MatchId, HandoffChannel>,
     party_channels: BTreeMap<MatchId, PartyChannel>,
+    instance_channels: BTreeMap<MatchId, InstanceChannel>,
     directory: PathBuf,
     grace: u64,
 ) -> HostResult<PreparedLiveMatchHost<ZoneGameServerAdapter>> {
@@ -77,6 +81,9 @@ async fn prepare(
             }
             if let Some(channel) = party_channels.get(id) {
                 adapter.attach_parties(channel.clone());
+            }
+            if let Some(channel) = instance_channels.get(id) {
+                adapter.attach_instances(channel.clone());
             }
             Ok(adapter)
         },
@@ -161,6 +168,10 @@ pub(crate) async fn serve_characters<B: EntryBackend + Send + 'static>(
         .as_ref()
         .map(|wiring| wiring.channels.clone())
         .unwrap_or_default();
+    let instance_channels = handoffs
+        .as_ref()
+        .map(|wiring| wiring.instance_channels.clone())
+        .unwrap_or_default();
     let party_channels: BTreeMap<MatchId, PartyChannel> = ids
         .iter()
         .map(|id| (id.clone(), PartyChannel::default()))
@@ -170,6 +181,7 @@ pub(crate) async fn serve_characters<B: EntryBackend + Send + 'static>(
         ownership.clone(),
         channels,
         party_channels.clone(),
+        instance_channels,
         recovery.clone(),
         grace,
     )
@@ -261,6 +273,7 @@ pub(crate) async fn serve_characters<B: EntryBackend + Send + 'static>(
     let stopped = prepare(
         ids,
         ownership,
+        BTreeMap::new(),
         BTreeMap::new(),
         BTreeMap::new(),
         recovery,

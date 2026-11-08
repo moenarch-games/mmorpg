@@ -2,7 +2,7 @@
 
 mod character_admission;
 mod departures;
-pub use departures::{HandoffChannel, Redirect};
+pub use departures::{HandoffChannel, Redirect, arrival_input};
 mod dev_characters;
 mod dev_host;
 pub mod lifecycle;
@@ -13,6 +13,7 @@ pub use dev_host::{DevelopmentCharacterHostConfig, serve_development_character_h
 mod fenced_runtime;
 pub mod handoff;
 pub mod handoff_host;
+pub mod instance;
 pub mod party;
 pub mod transfer_link;
 pub use fenced_runtime::{FencedRuntimeError, FencedZoneRuntime};
@@ -87,6 +88,9 @@ pub struct ZoneGameServerAdapter {
     sheet_acks: std::collections::BTreeMap<game_server::PlayerId, SheetRevisions>,
     handoffs: Option<departures::HandoffChannel>,
     parties: Option<party::PartyChannel>,
+    instances: Option<instance::InstanceChannel>,
+    /// Players refused at a threshold: no new request until they leave its strip (#404).
+    threshold_held: std::collections::BTreeSet<game_server::PlayerId>,
 }
 
 impl ZoneGameServerAdapter {
@@ -117,6 +121,7 @@ impl ZoneGameServerAdapter {
     fn remove_bound_player(&mut self, player_id: game_server::PlayerId) -> bool {
         self.characters.remove(&player_id);
         self.held_back.remove(&player_id);
+        self.threshold_held.remove(&player_id);
         self.sheet_acks.remove(&player_id);
         self.departing.remove(&player_id).is_some()
             || self.parked_characters.remove(&player_id).is_some()
@@ -137,6 +142,8 @@ impl ZoneGameServerAdapter {
             sheet_acks: Default::default(),
             handoffs: None,
             parties: None,
+            instances: None,
+            threshold_held: Default::default(),
         }
     }
 
@@ -158,6 +165,8 @@ impl ZoneGameServerAdapter {
             sheet_acks: Default::default(),
             handoffs: None,
             parties: None,
+            instances: None,
+            threshold_held: Default::default(),
         })
     }
 
@@ -309,6 +318,7 @@ impl GameSimulation for ZoneGameServerAdapter {
         self.ensure_authority()?;
         if self.apply_transfer_input(player_id, payload)?
             || self.apply_party_input(player_id, payload)?
+            || self.apply_instance_input(player_id, payload)?
         {
             return Ok(());
         }
@@ -320,6 +330,7 @@ impl GameSimulation for ZoneGameServerAdapter {
         self.zone.advance_tick().map_err(map_zone_error)?;
         self.exchange_departures();
         self.publish_parties();
+        self.publish_instances();
         Ok(())
     }
 

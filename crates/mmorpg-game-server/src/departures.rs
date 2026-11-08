@@ -180,6 +180,9 @@ impl ZoneGameServerAdapter {
                 "character or session is already bound",
             ));
         }
+        if !self.zone.depths_admits(&character) {
+            return Err(SimulationError::new("not on this run's roster"));
+        }
         let transfer_id = transfer.transfer_id;
         self.zone.stage_transfer(transfer).map_err(map_zone_error)?;
         // The session joined as a placeholder player; the arrival replaces it.

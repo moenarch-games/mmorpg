@@ -44,6 +44,7 @@ use crate::handoff::{
     activate_inbound, begin_outbound, reconcile_outbound, resolve_pending_handoff, retire_outbound,
     source_retired,
 };
+use crate::instance::InstanceService;
 use crate::transfer_link::{TransferLink, TransferLinkHandler, serve_transfer_link};
 use crate::{HandoffChannel, Redirect, ZoneGameServerAdapter};
 
@@ -85,6 +86,8 @@ pub struct HandoffHost<B: EntryBackend> {
     inbound: Mutex<BTreeMap<TransferId, Inbound>>,
     link_timeout: Duration,
     next_transfer: AtomicU64,
+    /// Resolves threshold entries and binds private runs (#404).
+    instances: Option<Arc<InstanceService>>,
 }
 
 fn lock<T: ?Sized>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>, String> {
@@ -99,6 +102,7 @@ impl<B: EntryBackend> HandoffHost<B> {
         zones: Vec<LocalZone>,
         routes: BTreeMap<ZoneId, ZoneRoute>,
         link_timeout: Duration,
+        instances: Option<Arc<InstanceService>>,
     ) -> Self {
         Self {
             host,
@@ -115,6 +119,7 @@ impl<B: EntryBackend> HandoffHost<B> {
             link_timeout,
             // Transfer IDs only need to be unique; start at a random point.
             next_transfer: AtomicU64::new(RandomState::new().hash_one(std::process::id())),
+            instances,
         }
     }
 
@@ -131,6 +136,9 @@ impl<B: EntryBackend> HandoffHost<B> {
     pub(crate) fn track_session(&self, id: &MatchId, context: ControlContext) {
         if let Ok(mut sessions) = self.sessions.lock() {
             sessions.insert((id.clone(), context.player_id), context.connection_epoch);
+        }
+        if let Some(instances) = &self.instances {
+            instances.track(id, context);
         }
     }
 
@@ -172,6 +180,9 @@ impl<B: EntryBackend> HandoffHost<B> {
         };
         if inbound.transfer.record.class != class {
             return Err("stored character does not match the selected class/sex".into());
+        }
+        if let Some(instances) = &self.instances {
+            instances.bind_for_arrival(id, context, character)?;
         }
         let mut live = self.live(zone, Some((context.player_id, context.connection_epoch)));
         let mut authority = lock(&self.authority)?;
@@ -273,12 +284,20 @@ impl<B: EntryBackend> HandoffHost<B> {
                 }
                 Err(error) => return Err(error.to_string()),
             };
-        let offered = self.runtime.block_on(async {
-            TransferLink::connect(route.link.as_str(), self.link_timeout)
-                .await?
-                .offer(&transfer)
-                .await
-        });
+        // A destination on this host is accepted in place: its link handler would wait on the
+        // storage and authority guards held here.
+        let offered = if self.zones.contains_key(&destination_zone) {
+            self.accept_local(&mut storage, &mut **authority, &transfer)
+        } else {
+            self.runtime
+                .block_on(async {
+                    TransferLink::connect(route.link.as_str(), self.link_timeout)
+                        .await?
+                        .offer(&transfer)
+                        .await
+                })
+                .map_err(message)
+        };
         let outcome = match offered {
             Ok(()) => retire_outbound(&mut live, &mut **authority, &zone.lease, transfer_id)
                 .map(|()| OutboundOutcome::Retired),
@@ -308,6 +327,9 @@ impl<B: EntryBackend> HandoffHost<B> {
         }
         // Tell the destination the cutover is authorized; it checks the
         // record itself when the client claims, so a lost message is harmless.
+        if self.zones.contains_key(&destination_zone) {
+            return Ok(());
+        }
         let _ = self.runtime.block_on(async {
             TransferLink::connect(route.link.as_str(), self.link_timeout)
                 .await?
@@ -317,11 +339,42 @@ impl<B: EntryBackend> HandoffHost<B> {
         Ok(())
     }
 
+    /// Accepts an offered transfer into one of this host's zones, with the character's lease
+    /// and the handoff record under the caller's guards.
+    fn accept_local(
+        &self,
+        storage: &mut DevCharacterStorage<B>,
+        authority: &mut (dyn HandoffAuthority + Send),
+        transfer: &CharacterTransfer,
+    ) -> Result<(), String> {
+        let zone = self
+            .zones
+            .get(&transfer.record.location.zone_id)
+            .ok_or("this host does not run the destination zone")?;
+        let transfer_id = transfer.transfer_id;
+        let mut live = self.live(zone, None);
+        let acquired = accept_inbound(
+            &mut live,
+            &mut storage.store,
+            authority,
+            &zone.lease,
+            transfer.clone(),
+        )
+        .map_err(message)?;
+        if let Some(inbound) = lock(&self.inbound)?.get_mut(&transfer_id) {
+            inbound.lease = Some(acquired.lease);
+        }
+        Ok(())
+    }
+
     /// Serves the transfer link and starts departures until the link fails.
     pub async fn run(self: Arc<Self>, listener: TcpListener) -> Result<(), String>
     where
         B: Send + 'static,
     {
+        if let Some(instances) = &self.instances {
+            tokio::spawn(Arc::clone(instances).run());
+        }
         let handler: Arc<dyn TransferLinkHandler> = self.clone();
         let link = serve_transfer_link(listener, handler);
         let departures = async {
@@ -342,26 +395,9 @@ impl<B: EntryBackend> HandoffHost<B> {
 
 impl<B: EntryBackend + Send + 'static> TransferLinkHandler for HandoffHost<B> {
     fn offer(&self, transfer: CharacterTransfer) -> Result<(), String> {
-        let zone = self
-            .zones
-            .get(&transfer.record.location.zone_id)
-            .ok_or("this host does not run the destination zone")?;
-        let transfer_id = transfer.transfer_id;
         let mut storage = lock(&self.storage)?;
         let mut authority = lock(&self.authority)?;
-        let mut live = self.live(zone, None);
-        let acquired = accept_inbound(
-            &mut live,
-            &mut storage.store,
-            &mut **authority,
-            &zone.lease,
-            transfer,
-        )
-        .map_err(message)?;
-        if let Some(inbound) = lock(&self.inbound)?.get_mut(&transfer_id) {
-            inbound.lease = Some(acquired.lease);
-        }
-        Ok(())
+        self.accept_local(&mut storage, &mut **authority, &transfer)
     }
 
     fn activate(&self, transfer_id: TransferId) -> Result<(), String> {
@@ -514,7 +550,8 @@ mod postgres_host {
     use mmorpg_characters::postgres::PostgresEntries;
     use mmorpg_control_plane::HostId;
     use mmorpg_control_plane::postgres::{
-        PostgresHandoffs, PostgresParties, PostgresZoneDirectory, UnconfirmedZoneGrant,
+        PostgresHandoffs, PostgresInstances, PostgresParties, PostgresZoneDirectory,
+        UnconfirmedZoneGrant,
     };
     use mmorpg_core::ZoneId;
     use tokio::sync::mpsc;
@@ -522,6 +559,7 @@ mod postgres_host {
     use super::{HandoffHost, LocalZone, ZoneRoute};
     use crate::dev_characters::{DevCharacterStorage, message};
     use crate::dev_host::{HandoffWiring, serve_characters};
+    use crate::instance::{InstanceChannel, InstanceService, InstanceZone};
     use crate::{HandoffChannel, zone_match_id};
 
     type HostResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
@@ -541,6 +579,8 @@ mod postgres_host {
         pub grant_ttl: Duration,
         /// Bounds every database statement and link request.
         pub timeout: Duration,
+        /// How long an emptied Redbrand Depths run stays resumable (#404).
+        pub depths_grace: Duration,
     }
 
     /// Takes over `zone`'s grant: a first grant, one after a retired owner,
@@ -587,9 +627,10 @@ mod postgres_host {
             reconnect_grace_ticks,
             grant_ttl,
             timeout,
+            depths_grace,
         } = config;
         let zones = zone_ids.clone();
-        let (directory, grants, entries, handoffs, parties) =
+        let (directory, grants, entries, handoffs, parties, instances) =
             tokio::task::spawn_blocking(move || -> Result<_, String> {
                 let mut client =
                     ::postgres::Client::connect(&url, ::postgres::NoTls).map_err(message)?;
@@ -604,7 +645,8 @@ mod postgres_host {
                 let entries = PostgresEntries::connect(&url, timeout).map_err(message)?;
                 let handoffs = PostgresHandoffs::connect(&url, timeout).map_err(message)?;
                 let parties = PostgresParties::connect(&url, timeout).map_err(message)?;
-                Ok((directory, grants, entries, handoffs, parties))
+                let instances = PostgresInstances::connect(&url, timeout).map_err(message)?;
+                Ok((directory, grants, entries, handoffs, parties, instances))
             })
             .await??;
         let leases: Vec<_> = grants.iter().map(|grant| grant.lease().clone()).collect();
@@ -627,6 +669,24 @@ mod postgres_host {
             .iter()
             .map(|zone| (zone.match_id.clone(), zone.channel.clone()))
             .collect();
+        // Every zone reports to the instance service: public thresholds and depths slots.
+        let instance_zones: BTreeMap<_, _> = local
+            .iter()
+            .map(|zone| {
+                (
+                    zone.match_id.clone(),
+                    InstanceZone {
+                        zone: zone.lease.zone_id,
+                        lease: Some(zone.lease.clone()),
+                        channel: InstanceChannel::default(),
+                    },
+                )
+            })
+            .collect();
+        let instance_channels = instance_zones
+            .iter()
+            .map(|(id, zone)| (id.clone(), zone.channel.clone()))
+            .collect();
         let listener = tokio::net::TcpListener::bind(link_address.as_str()).await?;
         let ids = local.iter().map(|zone| zone.match_id.clone()).collect();
         let party_leases = local
@@ -635,10 +695,17 @@ mod postgres_host {
             .collect();
         let wiring = HandoffWiring {
             channels,
+            instance_channels,
             parties: Box::new(parties),
             leases: party_leases,
             listener,
             build: Box::new(move |host, storage| {
+                let instances = InstanceService::new(
+                    host.clone(),
+                    Box::new(instances),
+                    instance_zones,
+                    depths_grace,
+                );
                 Arc::new(HandoffHost::new(
                     host,
                     storage,
@@ -646,6 +713,7 @@ mod postgres_host {
                     local,
                     routes,
                     timeout,
+                    Some(instances),
                 ))
             }),
         };
