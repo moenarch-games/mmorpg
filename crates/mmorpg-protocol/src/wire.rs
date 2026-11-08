@@ -139,6 +139,8 @@ pub const fn error_code(code: ErrorCode) -> u16 {
         ErrorCode::DepthsWipe => 43,
         ErrorCode::DepthsBossOpen => 44,
         ErrorCode::NoRoom => 45,
+        ErrorCode::NoLanding => 46,
+        ErrorCode::MovementImmune => 47,
     }
 }
 
@@ -189,6 +191,8 @@ pub fn decode_error_code(code: u16) -> Result<ErrorCode, ProtocolError> {
         43 => ErrorCode::DepthsWipe,
         44 => ErrorCode::DepthsBossOpen,
         45 => ErrorCode::NoRoom,
+        46 => ErrorCode::NoLanding,
+        47 => ErrorCode::MovementImmune,
         _ => return Err(ProtocolError::new("unknown error code")),
     })
 }
@@ -1094,12 +1098,14 @@ mod tests {
             ErrorCode::DepthsWipe,
             ErrorCode::DepthsBossOpen,
             ErrorCode::NoRoom,
+            ErrorCode::NoLanding,
+            ErrorCode::MovementImmune,
         ];
         for (wire, code) in (1..).zip(codes) {
             assert_eq!(error_code(code), wire, "{code:?}");
             assert_eq!(decode_error_code(wire).unwrap(), code);
         }
-        for unknown in [0, 46, u16::MAX] {
+        for unknown in [0, 48, u16::MAX] {
             assert_eq!(
                 decode_error_code(unknown).unwrap_err().to_string(),
                 "unknown error code"

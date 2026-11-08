@@ -179,6 +179,8 @@ mirror!(
         DepthsWipe,
         DepthsBossOpen,
         NoRoom,
+        NoLanding,
+        MovementImmune,
     }
 );
 mirror!(
