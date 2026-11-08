@@ -218,9 +218,11 @@ class BrowserAcceptance(unittest.TestCase):
           const debug = window.__valeDebug;
           const unit = debug.projectedUnits().find(unit => unit.kind === kind && unit.id === id);
           if (!unit) throw Error(`Missing projected ${kind} ${id}`);
-          // NPC torsos occupy roughly 0.94–1.50 m above their feet. Aim at
-          // solid chest geometry, above the central gap between their legs.
-          const y = debug.reliefAt(unit.x * 100, unit.z * 100) / 100 + (kind === 'npc' ? 1.2 : 0.5);
+          // Bodies stand on authored terrain, which the scenery relief no longer describes.
+          // NPC torsos occupy roughly 0.94–1.50 m above their feet: aim at solid chest
+          // geometry, above the central gap between their legs.
+          const entity = debug.worldSource().latestProjection().entities.find(e => e.kind === kind && e.entityId === id);
+          const y = entity.position[1] / 100 + (kind === 'npc' ? 0.3 : 0);
           debug.flyToPose([unit.x, y + 1, unit.z + 5], [unit.x, y, unit.z]);
           return {x: unit.x, y, z: unit.z};
         }""", [kind, identity])
@@ -374,19 +376,18 @@ class BrowserAcceptance(unittest.TestCase):
         control = self.page.evaluate("window.__valeDebug.controls()")
         self.assertEqual(control["mode"], {"kind": "focused", "target": {"kind": "creature", "id": wolves[0]["id"]}})
         self.assertEqual(control["pointer"], "interface")
-        before_position = self.page.evaluate("""() => {
+        own_position = """() => {
           const p = window.__valeDebug.worldSource().latestProjection();
           return p.entities.find(e => e.kind === 'player' && e.entityId === p.viewerId).position;
-        }""")
-        self.page.keyboard.down("KeyD")
-        self.click_world_step(12)
-        self.page.keyboard.up("KeyD")
-        after_position = self.page.evaluate("""() => {
-          const p = window.__valeDebug.worldSource().latestProjection();
-          return p.entities.find(e => e.kind === 'player' && e.entityId === p.viewerId).position;
-        }""")
-        self.assertNotEqual(after_position, before_position, "D must circle the focused wolf without clearing it")
-        self.assertEqual(self.click_world_target()["id"], wolves[0]["id"])
+        }"""
+        # A first: the walking route ends with terrain against the character's right side.
+        for key in ("KeyA", "KeyD"):
+            before_position = self.page.evaluate(own_position)
+            self.page.keyboard.down(key)
+            self.click_world_step(12)
+            self.page.keyboard.up(key)
+            self.assertNotEqual(self.page.evaluate(own_position), before_position, f"{key} must circle the focused wolf without clearing it")
+            self.assertEqual(self.click_world_target()["id"], wolves[0]["id"])
         self.page.locator('.action-slot[data-ability="1"]').first.click()
         self.click_world_step()
         self.page.screenshot(path=str(ARTIFACTS / "focus-camera-circle-and-ability.png"))
@@ -403,7 +404,8 @@ class BrowserAcceptance(unittest.TestCase):
         self.assertEqual(self.page.evaluate("window.__valeDebug.controls().mode.kind"), "free-look")
         self.page.mouse.click(x, y)
         self.page.wait_for_function("document.pointerLockElement === document.querySelector('#world')")
-        self.assertEqual(self.page.evaluate("window.__valeDebug.controls().pointer"), "camera")
+        # `pointerlockchange` follows the DOM state as a separate task.
+        self.page.wait_for_function("window.__valeDebug.controls().pointer === 'camera'")
         self.page.evaluate("""() => {
           const source = window.__valeDebug.worldSource();
           const original = source.sendCommand.bind(source);
