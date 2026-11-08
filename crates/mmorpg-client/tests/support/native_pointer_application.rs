@@ -705,17 +705,24 @@ impl NativeApplication {
     }
     fn role(&mut self, npc: u32, distance: i32) {
         let position = self.content.npc(NpcId::new(npc)).unwrap().position;
-        // The keep/inn and south palisade overlap these NPCs' south approaches.
+        // Collision blocks some sides of these NPCs (keep, inn, palisade, the marshal's north).
         // Keep the exact 2.5 m / 8 m distances on a proven clear side instead.
-        let north_approach = matches!(npc, 1 | 3 | 6);
-        let offset = if north_approach { distance } else { -distance };
-        self.setup([position[0], position[1] + offset], &[]);
-        if north_approach {
+        let approach = match npc {
+            1 => [-1, 0],
+            3 | 6 => [0, 1],
+            _ => [0, -1],
+        };
+        self.setup(
+            [
+                position[0] + approach[0] * distance,
+                position[1] + approach[1] * distance,
+            ],
+            &[],
+        );
+        if approach != [0, -1] {
             let rendered = self.driver.app.rendered;
-            self.driver
-                .app
-                .camera
-                .orbit(f64::from(std::f32::consts::PI / 0.006), 0.0);
+            let yaw = (-approach[0] as f32).atan2(-approach[1] as f32);
+            self.driver.app.camera.orbit(f64::from(-yaw / 0.006), 0.0);
             self.until("approach camera renders toward the actual NPC", |app| {
                 app.driver.app.rendered > rendered
             });
@@ -726,7 +733,7 @@ impl NativeApplication {
             0,
             "selection must never autoaccept or autobuy"
         );
-        self.key("Return");
+        self.key("e");
     }
 }
 
@@ -1128,7 +1135,7 @@ fn native_pointer_application_contract() {
         "cancel must retire an armed pointer"
     );
 
-    app.key("Return");
+    app.key("e");
     let before_purchase = app.snapshot().players[0].inventory_revision;
     app.key("1");
     app.until(
@@ -1159,7 +1166,7 @@ fn native_pointer_application_contract() {
     let role_count = app.role_action_count();
     let selections = app.selection_count();
     app.pointer(point, None);
-    app.key("Return");
+    app.key("e");
     app.key("1");
     app.zone.0.lock().unwrap().frozen = None;
     app.until(
