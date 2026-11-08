@@ -41,10 +41,12 @@ export function soundManifest(bundle: string): string {
  * The `humanoid-appearance` the Ranger figure `character` draws from (#39, #493): the bundle's
  * own, with the game's humanoid enemy presets beside the male figure's, shared with the native
  * client; call after the module loaded. `kit` is the Redbrand kit's descriptor when it was
- * fetched (#675): its outfit joins the male's and dresses the bandits.
+ * fetched (#675): its outfit joins the male's and dresses the bandits. `hairKit` is the hair kit's
+ * descriptor when it was fetched (#677): its pieces are the male's hair and beards.
  */
-export function figureAppearance(character: string, appearance: unknown, kit: unknown = null): unknown {
-  return JSON.parse(generated.figureAppearance(character, JSON.stringify(appearance), kit === null ? undefined : JSON.stringify(kit)));
+export function figureAppearance(character: string, appearance: unknown, kit: unknown = null, hairKit: unknown = null): unknown {
+  const optional = (value: unknown) => (value === null ? undefined : JSON.stringify(value));
+  return JSON.parse(generated.figureAppearance(character, JSON.stringify(appearance), optional(kit), optional(hairKit)));
 }
 
 /**

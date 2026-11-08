@@ -1811,12 +1811,31 @@ pub fn hides_hair(hat: Option<Hat>) -> bool {
 }
 
 impl Equipment {
+    /// `model` alone, on the `head.hair` socket: a hair kit piece (#677).
+    fn on_head_hair(model: Model) -> Self {
+        let descriptor: serde_json::Value =
+            serde_json::from_slice(ranger_file(ranger_bundle::SOCKETS))
+                .expect("the sockets descriptor is JSON");
+        let (joint, matrix) = socket(&descriptor, "head.hair");
+        Self {
+            items: vec![(model, joint, matrix)],
+            hanging: vec![false],
+            bow: None,
+            sheaths: vec![None],
+            throwables: None,
+            crossbow: None,
+        }
+    }
+
     /// The starter hair (#376: Parted, Brown) on `head.hair`; native has no hair picker.
     pub fn hair() -> &'static Self {
         static HAIR: OnceLock<Equipment> = OnceLock::new();
         HAIR.get_or_init(|| {
-            let mut hair = Self::of(&[(ranger_bundle::HAIR, "head.hair")]);
-            let look = appearance();
+            let mut hair = residents::kit_hair(ranger_bundle::HAIR_KEY).map_or_else(
+                || Self::of(&[(ranger_bundle::HAIR, "head.hair")]),
+                Self::on_head_hair,
+            );
+            let look = residents::look(Figure::Male);
             let materials = look["hair"]
                 .as_array()
                 .and_then(|styles| {

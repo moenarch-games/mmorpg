@@ -133,21 +133,28 @@ pub fn sound_manifest(bundle: &str) -> Result<String, JsError> {
 /// The `humanoid-appearance` JSON the Ranger figure `character` draws from (#39, #493): the
 /// bundle's own, with the game's humanoid enemy presets beside the male figure's, the presets
 /// the native client draws too. `kit` is the Redbrand kit's descriptor JSON when it was fetched
-/// (#675): its outfit joins the male's and dresses the bandits.
+/// (#675): its outfit joins the male's and dresses the bandits. `hair_kit` is the hair kit's
+/// descriptor JSON when it was fetched (#677): its pieces are the male's hair and beards.
 #[wasm_bindgen(js_name = figureAppearance)]
 pub fn figure_appearance(
     character: &str,
     appearance: &str,
     kit: Option<String>,
+    hair_kit: Option<String>,
 ) -> Result<String, JsError> {
     let figure = mmorpg_presentation::units::imported::Figure::of_character(character)
         .ok_or_else(|| JsError::new(&format!("no Ranger figure {character}")))?;
     let appearance: serde_json::Value = serde_json::from_str(appearance)?;
     let kit: Option<serde_json::Value> = kit.as_deref().map(serde_json::from_str).transpose()?;
-    Ok(
-        mmorpg_presentation::units::presets::figure_appearance(figure, &appearance, kit.as_ref())
-            .to_string(),
+    let hair_kit: Option<serde_json::Value> =
+        hair_kit.as_deref().map(serde_json::from_str).transpose()?;
+    Ok(mmorpg_presentation::units::presets::figure_appearance(
+        figure,
+        &appearance,
+        kit.as_ref(),
+        hair_kit.as_ref(),
     )
+    .to_string())
 }
 
 /// A unit's own seeded variation of the preset `id` (asset-tooling #380) over `appearance`
