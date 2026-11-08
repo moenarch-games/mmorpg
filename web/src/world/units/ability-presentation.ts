@@ -95,6 +95,8 @@ export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = ne
   // The Necromancer's summoned minions (#295): Y attacks the target, U defends here, I follows, O retreats.
   [45, { range: "self", description: "Raises a skeleton that follows you and fights for a minute; up to four stand at once. Y sends them at your target, U holds this spot, I follows, O retreats.", glyph: SKULL, accent: "#e6dfc8", visual: null, pose: "cast" }],
   // The Druid's pet companion (#296): the same Y/U/I/O orders as minions.
+  [47, { range: "self", description: "Captain Thorn winds up for 2 s, then sweeps his blade around him: step out of the 4.5 m ring or be hurt and thrown back.", glyph: CLEAVE, accent: "#d8452c", visual: "ring", pose: "swing" }],
+  [48, { range: "self", description: "Thorn's last-phase command against a larger party: after 2.5 s a wider blow answers everything within 7 m.", glyph: CLEAVE, accent: "#a8282c", visual: "ring", pose: "swing" }],
   [46, { range: "self", description: "Calls your wolf companion to your side. It follows you, fights what fights you and stays until it is slain; calling it again brings it back with the health it has. Y sends it at your target, U holds this spot, I follows, O retreats.", glyph: PAW, accent: "#7fc46a", visual: null, pose: "cast" }],
 ]);
 

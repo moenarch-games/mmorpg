@@ -38,6 +38,9 @@ pub enum Scenario {
     /// A level 6 Warden standing in the Redbrand Hollow threshold with the Garrick chain turned
     /// in: the first tick enters a private run of the depths (#404).
     RedbrandDepths,
+    /// The same run with its chambers already cleared and a level 10 Warden, to review Captain
+    /// Ulric Thorn and his loot prompt (#404) without replaying the dungeon.
+    RedbrandThorn,
     /// A level 6 Necromancer at the eastern edge of Wolfrun Woods, facing the wolf pack, to try
     /// Shadow Bolt, Corruption, Drain Life, Bone Shield (#301) and Raise Skeleton (#295).
     NecromancerDrain,
@@ -146,6 +149,7 @@ impl Scenario {
             Self::SunkenShrine => "sunken-shrine",
             Self::RedbrandCavern => "redbrand-cavern",
             Self::RedbrandDepths => "redbrand-depths",
+            Self::RedbrandThorn => "redbrand-thorn",
             Self::NecromancerDrain => "necromancer-drain",
             Self::RogueMelee => "rogue-melee",
             Self::ClericHoly => "cleric-holy",
@@ -182,12 +186,14 @@ impl Scenario {
 
     const fn class(self) -> ClassChoice {
         match self {
-            Self::OgreCombat | Self::SunkenShrine | Self::RedbrandCavern | Self::RedbrandDepths => {
-                ClassChoice {
-                    class: PlayerClass::Warden,
-                    sex: Sex::Female,
-                }
-            }
+            Self::OgreCombat
+            | Self::SunkenShrine
+            | Self::RedbrandCavern
+            | Self::RedbrandDepths
+            | Self::RedbrandThorn => ClassChoice {
+                class: PlayerClass::Warden,
+                sex: Sex::Female,
+            },
             // The sword clips were reviewed on the male figure (asset-tooling #447).
             Self::WardenSlashes
             | Self::WardenGuards
@@ -267,6 +273,8 @@ impl Scenario {
     const fn level(self) -> u8 {
         match self {
             Self::OgreCombat | Self::SunkenShrine => 5,
+            // The boss review: enough health to survive reading the fight (#404).
+            Self::RedbrandThorn => 10,
             // Bone Shield, Adrenaline Rush and Divine Shield and Barkskin unlock at level 6.
             Self::RangerRange
             | Self::RedbrandCavern
@@ -360,7 +368,7 @@ impl Scenario {
             Self::RedbrandCavern => ([6_400, -15_600], 0),
             // In the threshold strip's corner, facing the barred doorway to the east; the door's
             // Brute is three metres off and has not struck yet.
-            Self::RedbrandDepths => ([7_890, -13_620], 16_384),
+            Self::RedbrandDepths | Self::RedbrandThorn => ([7_890, -13_620], 16_384),
             // 1.5 m south of the ledge, facing north.
             Self::MantleLow => ([-14_530, -890], 32_768),
             Self::MantleMid => ([8_250, 2_250], 32_768),
@@ -407,7 +415,7 @@ impl Scenario {
                     .fold(0, |mask, bit| mask | bit),
             };
         }
-        if self == Self::RedbrandDepths {
+        if matches!(self, Self::RedbrandDepths | Self::RedbrandThorn) {
             use mmorpg_core::greyhaven_vale::quests::GARRICK_REDBRAND_QUEST;
             record.quests = mmorpg_core::QuestLog {
                 entries: Vec::new(),

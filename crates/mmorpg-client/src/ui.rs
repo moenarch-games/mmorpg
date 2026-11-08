@@ -389,6 +389,7 @@ impl GameUi {
         self.minimap_and_tracker(ctx, frame, snapshot);
         self.chat_frame(ctx, snapshot, &mut intents);
         self.party(ctx, snapshot, &mut intents);
+        self.depths_loot(ctx, snapshot, &mut intents);
         if let Some((text, at)) = &self.refusal
             && now.saturating_duration_since(*at) < REFUSAL_SECONDS
         {

@@ -532,6 +532,9 @@ pub mod ids {
     pub const RAISE_SKELETON: AbilityId = AbilityId::new(45);
     /// The Druid's pet companion (#296).
     pub const CALL_COMPANION: AbilityId = AbilityId::new(46);
+    /// Captain Ulric Thorn's telegraphed area attacks (#404 part 3).
+    pub const REAVERS_SWEEP: AbilityId = AbilityId::new(47);
+    pub const LAST_COMMAND: AbilityId = AbilityId::new(48);
 }
 
 /// How a projectile treats what it meets (#291).
@@ -554,7 +557,7 @@ pub enum Shot {
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 46] = [
+pub const ABILITY_CATALOG: [Ability; 48] = [
     ability(
         1,
         "Heroic Strike",
@@ -1323,6 +1326,42 @@ pub const ABILITY_CATALOG: [Ability; 46] = [
             swing_ticks: ticks_from_ms(1_800),
         },
     ),
+    // Captain Ulric Thorn's telegraphed sweep (#404 part 3): a 2 s wind-up, then a heavy blow
+    // around him; stepping out of its 4.5 m ring avoids it.
+    ability(
+        47,
+        "Reaver's Sweep",
+        AbilityUser::Creature,
+        1,
+        0,
+        CastTime::Cast(ticks_from_ms(2_000)),
+        ticks_from_ms(10_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Stomp {
+            damage: [16, 22],
+            per_level: 0,
+            radius: 450,
+            knockback: 200,
+        },
+    ),
+    // His last-phase order to a larger party's face (#404 part 3): a slower, wider ring that
+    // catches anyone inside 7 m.
+    ability(
+        48,
+        "Last Command",
+        AbilityUser::Creature,
+        1,
+        0,
+        CastTime::Cast(ticks_from_ms(2_500)),
+        ticks_from_ms(12_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Stomp {
+            damage: [12, 18],
+            per_level: 0,
+            radius: 700,
+            knockback: 100,
+        },
+    ),
 ];
 
 /// The catalog row of `id`, if any.
@@ -1621,7 +1660,7 @@ mod tests {
             }
         }
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
-        assert_eq!(ability_by_id(AbilityId::new(47)), None);
+        assert_eq!(ability_by_id(AbilityId::new(49)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
         for &class in PlayerClass::VARIANTS {
             let cooldowns = ABILITY_CATALOG

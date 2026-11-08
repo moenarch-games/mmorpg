@@ -465,6 +465,24 @@ impl ZoneContent {
             .map(|index| self.creature_abilities[index].1)
     }
 
+    /// Every ability this creature may be casting: its template's one, and a depths boss's own
+    /// area attacks (#404 part 3).
+    #[must_use]
+    pub fn creature_casts(
+        &self,
+        creature: CreatureId,
+        template: CreatureTemplateId,
+    ) -> Vec<AbilityId> {
+        let mut casts: Vec<AbilityId> = self.creature_ability(template).into_iter().collect();
+        if let Some(boss) = self.depths_site().and_then(|site| site.boss.as_ref())
+            && boss.creature == creature
+        {
+            casts.push(boss.area_attack);
+            casts.push(boss.final_attack);
+        }
+        casts
+    }
+
     /// Marks creature templates as shared outdoor bosses (#276) with their encounter rules.
     pub fn with_bosses(mut self, mut bosses: Vec<crate::BossRules>) -> Result<Self, ZoneError> {
         bosses.sort_by_key(|rules| rules.template);

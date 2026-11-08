@@ -638,6 +638,7 @@ impl ZoneSimulation {
         let scaled = encounter.scale_health(rules, base);
         creature.health = creature.health.saturating_add(scaled.saturating_sub(base));
         creature.encounter = Some(encounter);
+        self.begin_boss_attempt(id);
         Ok(())
     }
 }

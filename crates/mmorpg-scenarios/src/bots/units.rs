@@ -310,6 +310,7 @@ pub const fn error_code_name(code: ErrorCode) -> &'static str {
         ErrorCode::DepthsLocked => "depths_locked",
         ErrorCode::DepthsClosed => "depths_closed",
         ErrorCode::DepthsWipe => "depths_wipe",
+        ErrorCode::DepthsBossOpen => "depths_boss_open",
     }
 }
 
@@ -358,6 +359,7 @@ fn parse_error_code(name: &str) -> Option<ErrorCode> {
         "depths_locked" => ErrorCode::DepthsLocked,
         "depths_closed" => ErrorCode::DepthsClosed,
         "depths_wipe" => ErrorCode::DepthsWipe,
+        "depths_boss_open" => ErrorCode::DepthsBossOpen,
         _ => return None,
     })
 }
@@ -529,6 +531,7 @@ mod tests {
             ErrorCode::DepthsLocked,
             ErrorCode::DepthsClosed,
             ErrorCode::DepthsWipe,
+            ErrorCode::DepthsBossOpen,
         ] {
             let spec = EventSpec::Error(code);
             assert_eq!(EventSpec::try_from(spec.to_string()), Ok(spec));

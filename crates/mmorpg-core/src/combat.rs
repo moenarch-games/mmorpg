@@ -192,12 +192,14 @@ impl ZoneSimulation {
             | PlayerIntent::UseDoor { .. }
             | PlayerIntent::RaidAid(_)
             | PlayerIntent::RaidPrepare(_)
+            | PlayerIntent::ClaimDepthsDrop { .. }
                 if !alive =>
             {
                 Some((ErrorCode::YouAreDead, None))
             }
             // Nothing economically meaningful begins at a cross-zone seam (#145).
             PlayerIntent::Loot(_)
+            | PlayerIntent::ClaimDepthsDrop { .. }
             | PlayerIntent::BuyItem { .. }
             | PlayerIntent::SellItem { .. }
             | PlayerIntent::AcceptQuest { .. }
@@ -282,6 +284,11 @@ impl ZoneSimulation {
             PlayerIntent::UseWaystone(waystone) => self.use_waystone(player_id, waystone)?,
             PlayerIntent::RaidAid(task) => self.aid_raid(player_id, task)?,
             PlayerIntent::RaidPrepare(prep) => self.prepare_raid(player_id, prep)?,
+            // Eligible characters may answer even dead (Atlas 5.1.35).
+            PlayerIntent::RollDepthsDrop { run, drop, choice } => {
+                self.answer_roll(player_id, run, drop, choice)?
+            }
+            PlayerIntent::ClaimDepthsDrop { run, drop } => self.claim_drop(player_id, run, drop)?,
             PlayerIntent::SelectTarget(None) => {
                 self.update_player(player_id, |player| player.target = None);
                 None
@@ -1103,13 +1110,19 @@ impl ZoneSimulation {
         let position = body.position();
         let (spawn, _) = Self::creature_content(&self.content, creature_id)?;
         let template = spawn.template;
-        let mut loot = self.content.loot_table(template).map(|table| {
-            table.roll(crate::LootRolls {
-                money: (self.loot_rng.next_u64() >> 32) as u32,
-                outcome: (self.loot_rng.next_u64() >> 32) as u32,
-                quantity: (self.loot_rng.next_u64() >> 32) as u32,
-            })
-        });
+        // The depths boss pays through its committed outcome; his adds pay nothing (#404).
+        let pays_rewards = !self.pays_no_kill_rewards(creature_id);
+        let mut loot = self
+            .content
+            .loot_table(template)
+            .filter(|_| pays_rewards)
+            .map(|table| {
+                table.roll(crate::LootRolls {
+                    money: (self.loot_rng.next_u64() >> 32) as u32,
+                    outcome: (self.loot_rng.next_u64() >> 32) as u32,
+                    quantity: (self.loot_rng.next_u64() >> 32) as u32,
+                })
+            });
         // A quest item drops for the tapper only while a quest needs it; it
         // draws nothing from the loot stream.
         let tapper = self
@@ -1181,28 +1194,30 @@ impl ZoneSimulation {
         for player_id in recipients {
             self.notify(player_id, died);
         }
-        if let Some(player_id) = tapper
-            && self.kill_credit_eligible(player_id, spot)?
-        {
-            self.kill_credit(player_id, level, template, creature_id, generation)?;
-        }
-        for &mate in &party_shares {
-            self.kill_credit(mate, level, template, creature_id, generation)?;
-        }
-        // Every meaningful boss contributor earns the kill objective, across parties
-        // (#276, 5.1.74); `credit_kill` records each life once per quest log.
-        for player_id in contributors {
-            if Some(player_id) != tapper
-                && !party_shares.contains(&player_id)
+        if pays_rewards {
+            if let Some(player_id) = tapper
                 && self.kill_credit_eligible(player_id, spot)?
             {
-                self.credit_kill(player_id, template, creature_id, generation)?;
+                self.kill_credit(player_id, level, template, creature_id, generation)?;
+            }
+            for &mate in &party_shares {
+                self.kill_credit(mate, level, template, creature_id, generation)?;
+            }
+            // Every meaningful boss contributor earns the kill objective, across parties
+            // (#276, 5.1.74); `credit_kill` records each life once per quest log.
+            for player_id in contributors {
+                if Some(player_id) != tapper
+                    && !party_shares.contains(&player_id)
+                    && self.kill_credit_eligible(player_id, spot)?
+                {
+                    self.credit_kill(player_id, template, creature_id, generation)?;
+                }
             }
         }
         if let Some(rules) = self.content.boss(template).copied() {
             self.boss_falls(&rules, [position.x, position.z])?;
         }
-        Ok(())
+        self.boss_defeated(creature_id, now)
     }
 
     /// One player's kill XP and kill-objective credit, each at most once per creature life.

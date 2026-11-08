@@ -53,6 +53,8 @@ fn zone_at(positions: &[[i32; 3]]) -> ZoneSimulation {
             chat: Vec::new(),
             quests: mmorpg_core::QuestLog::default(),
             waystones: mmorpg_core::WaystoneSet::EMPTY,
+            character: None,
+            depths: mmorpg_core::DepthsRecord::default(),
         })
         .collect();
     ZoneSimulation::from_snapshot(canonical, Arc::clone(empty.content())).unwrap()

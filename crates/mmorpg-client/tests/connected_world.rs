@@ -779,6 +779,7 @@ async fn fragmented_projection_reaches_the_native_client() {
     let player_id = 42;
     let snapshot = ZoneSnapshot {
         party: None,
+        depths_loot: None,
         doors: Vec::new(),
         projectiles: Vec::new(),
         debris: Vec::new(),

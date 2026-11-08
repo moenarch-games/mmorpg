@@ -825,6 +825,9 @@ fn decode_projection(
         && (!abilities.cooldowns.is_empty() || !abilities.auras.is_empty()))
         || (dead && !abilities.auras.is_empty())
         || abilities.target != target;
+    let depths_loot = sheet_bytes(Sheet::DepthsLoot)
+        .map(|received| crate::depths::decode_loot_sheet(&received.bytes))
+        .transpose()?;
     let party = sheet_bytes(Sheet::Party)
         .map(|received| crate::party::decode_party_state(&received.bytes))
         .transpose()?;
@@ -902,6 +905,7 @@ fn decode_projection(
         raid,
         quests,
         party,
+        depths_loot,
     };
     Ok((snapshot, sheets))
 }
@@ -1062,6 +1066,7 @@ pub(crate) mod tests {
         ZoneSnapshot {
             debris: Vec::new(),
             party: None,
+            depths_loot: None,
             raid: Some(mmorpg_core::RaidView {
                 phase: 2,
                 integrity: 63,
@@ -1617,7 +1622,7 @@ pub(crate) mod tests {
             (presence + 19, 9),
             (presence + 21, 0),
             (presence + 22, 2),
-            (presence + 24, 15),
+            (presence + 24, 99),
             (presence + 26, 0),
             // A quest drop of two units.
             (presence + 26, 2),
@@ -1849,7 +1854,7 @@ pub(crate) mod tests {
         assert!(decode_snapshot(&zero_revision).is_err());
         for (slot, item, quantity) in [
             (0, 0_u16, 3_u16),
-            (0, 15, 1),
+            (0, 99, 1),
             (0, 1, 0),
             (0, 1, 21),
             (1, 2, 2),
@@ -1890,7 +1895,7 @@ pub(crate) mod tests {
         assert!(
             Sheet::ALL
                 .into_iter()
-                .filter(|sheet| *sheet != Sheet::Party)
+                .filter(|sheet| *sheet != Sheet::Party && *sheet != Sheet::DepthsLoot)
                 .all(|sheet| held.get(sheet) != 0)
         );
 
@@ -1980,6 +1985,7 @@ pub(crate) mod tests {
             loot: 3,
             abilities: 0xdead_beef,
             party: 5,
+            depths_loot: 6,
         };
         let command = mmorpg_core::ZoneCommand::Jump;
         for inner in [
@@ -2017,7 +2023,7 @@ pub(crate) mod tests {
         assert_eq!(encoded[EQUIPMENT..EQUIPMENT + 2], [0, 4], "the wand");
         // Slot 0 holds the wand; slot 1 (off hand) is empty.
         for (offset, item, message) in [
-            (EQUIPMENT, 15_u16, "unknown item"),
+            (EQUIPMENT, 99_u16, "unknown item"),
             (EQUIPMENT, 1, "item cannot be equipped there"),
             (EQUIPMENT + 2, 6, "item cannot be equipped there"),
         ] {
@@ -2133,6 +2139,7 @@ pub(crate) mod tests {
         };
         let snapshot = ZoneSnapshot {
             party: None,
+            depths_loot: None,
             raid: Some(mmorpg_core::RaidView {
                 phase: 2,
                 integrity: 63,

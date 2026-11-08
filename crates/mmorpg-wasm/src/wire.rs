@@ -177,6 +177,7 @@ mirror!(
         DepthsLocked,
         DepthsClosed,
         DepthsWipe,
+        DepthsBossOpen,
     }
 );
 mirror!(
@@ -517,6 +518,99 @@ pub struct StatTotals {
     pub strength: u16,
     pub agility: u16,
     pub intellect: u16,
+}
+
+/// One boss drop as the viewer sees it (#404); `state.kind` picks the fields.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+#[serde(rename_all = "camelCase")]
+#[tsify(missing_as_null)]
+pub struct DepthsDropView {
+    pub drop: u8,
+    pub item_id: u16,
+    pub item_name: String,
+    pub state: DepthsDropState,
+}
+
+/// A boss drop's state: `answer` is the viewer's `need`/`greed`/`pass` or null.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
+#[tsify(missing_as_null)]
+pub enum DepthsDropState {
+    Rolling {
+        #[tsify(type = "bigint")]
+        deadline: u64,
+        answer: Option<String>,
+        may_need: bool,
+    },
+    Held {
+        claimable: bool,
+    },
+    Awarded {
+        won: bool,
+        roll: u8,
+        need: bool,
+        pending: bool,
+    },
+}
+
+/// The viewer's copy of the boss loot pool (#404).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+#[serde(rename_all = "camelCase")]
+#[tsify(missing_as_null)]
+pub struct DepthsLootView {
+    #[tsify(type = "bigint")]
+    pub run_id: u64,
+    pub drops: Vec<DepthsDropView>,
+}
+
+impl From<&core::DepthsLootView> for DepthsLootView {
+    fn from(view: &core::DepthsLootView) -> Self {
+        let choice = |choice: core::RollChoice| match choice {
+            core::RollChoice::Need => "need",
+            core::RollChoice::Greed => "greed",
+            core::RollChoice::Pass => "pass",
+        };
+        Self {
+            run_id: view.run_id,
+            drops: view
+                .drops
+                .iter()
+                .map(|drop| DepthsDropView {
+                    drop: drop.drop,
+                    item_id: drop.item.get(),
+                    item_name: core::item_template(drop.item)
+                        .map_or_else(|| "Unknown item".to_owned(), |item| item.name.to_owned()),
+                    state: match drop.state {
+                        core::DropView::Rolling {
+                            deadline,
+                            answer,
+                            may_need,
+                        } => DepthsDropState::Rolling {
+                            deadline,
+                            answer: answer.map(|answer| choice(answer).to_owned()),
+                            may_need,
+                        },
+                        core::DropView::Held { claimable } => DepthsDropState::Held { claimable },
+                        core::DropView::Awarded {
+                            won,
+                            roll,
+                            need,
+                            pending,
+                        } => DepthsDropState::Awarded {
+                            won,
+                            roll,
+                            need,
+                            pending,
+                        },
+                    },
+                })
+                .collect(),
+        }
+    }
 }
 
 /// The selected corpse's complete remaining rewards.
@@ -1233,6 +1327,8 @@ pub struct ZoneSnapshot {
     pub raid: Option<RaidSignal>,
     /// The viewer's party frame and any pending invite (#404); null before it has one.
     pub party: Option<crate::party::PartyView>,
+    /// The viewer's copy of the boss loot pool (#404); null unless it is eligible.
+    pub depths_loot: Option<DepthsLootView>,
     pub events: Vec<ZoneEvent>,
     /// Chat lines the viewer heard this tick, in delivery order; cosmetic and lossy like events.
     pub chat: Vec<ChatLine>,
@@ -1374,6 +1470,7 @@ impl From<&core::ZoneSnapshot> for ZoneSnapshot {
                 .party
                 .as_ref()
                 .map(|state| crate::party::party_view(state, snapshot.viewer_id)),
+            depths_loot: snapshot.depths_loot.as_ref().map(DepthsLootView::from),
             raid: snapshot.raid.map(|raid| RaidSignal {
                 phase: raid.phase,
                 integrity: raid.integrity,
@@ -1602,6 +1699,7 @@ impl TryFrom<&ZoneSnapshot> for core::ZoneSnapshot {
             }),
             // The party sheet only informs the page's own frame; nothing presents it back.
             party: None,
+            depths_loot: None,
         })
     }
 }
@@ -1740,6 +1838,19 @@ pub enum WorldCommand {
     RaidAid {
         task: u8,
     },
+    /// Answers a boss drop's roll window (#404): `choice` is need, greed or pass.
+    RollDepthsDrop {
+        #[tsify(type = "bigint")]
+        run: u64,
+        drop: u8,
+        choice: String,
+    },
+    /// Takes a held boss drop (#404).
+    ClaimDepthsDrop {
+        #[tsify(type = "bigint")]
+        run: u64,
+        drop: u8,
+    },
     /// One preparation step before a forewarned night raid (#532): 0 reads the tracks, 1 reports
     /// them to the lookout, `2 + k` braces the barn at brace spot `k`.
     RaidPrepare {
@@ -1866,6 +1977,17 @@ impl TryFrom<&WorldCommand> for core::ZoneCommand {
                     .ok_or_else(|| format!("unknown waystone {waystone}"))?,
             },
             C::RaidAid { task } => Self::RaidAid { task },
+            C::RollDepthsDrop { run, drop, choice } => Self::RollDepthsDrop {
+                run,
+                drop,
+                choice: match choice.as_str() {
+                    "need" => core::RollChoice::Need,
+                    "greed" => core::RollChoice::Greed,
+                    "pass" => core::RollChoice::Pass,
+                    other => return Err(format!("unknown roll choice {other}")),
+                },
+            },
+            C::ClaimDepthsDrop { run, drop } => Self::ClaimDepthsDrop { run, drop },
             C::RaidPrepare { step } => Self::RaidPrepare {
                 prep: match step {
                     0 => core::RaidPrep::Investigate,

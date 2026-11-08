@@ -1,6 +1,6 @@
 //! Scenery of the Redbrand Depths (#404): stand-in rock boxes for every wall, one prop per
-//! collider, and a barricade over the sealed boss chamber. Presentation only; it comes
-//! straight from the depths' colliders so what is drawn is what collides.
+//! collider. Presentation only; it comes straight from the depths' colliders so what is drawn
+//! is what collides.
 
 use mmorpg_core::redbrand_depths;
 
@@ -21,11 +21,7 @@ pub fn redbrand_depths_scenery() -> Scenery {
         .map(|collider| {
             let half = collider.half_extents;
             Prop {
-                kind: if collider.id == redbrand_depths::BOSS_SEAL_ID {
-                    PropKind::PalisadeSegment
-                } else {
-                    PropKind::Cliff
-                },
+                kind: PropKind::Cliff,
                 position: [
                     collider.position[0],
                     collider.position[1] - half[1],

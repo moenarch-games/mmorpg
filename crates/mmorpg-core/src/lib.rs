@@ -26,6 +26,7 @@ mod corpse_loot;
 mod corridor;
 mod creature;
 mod depths;
+mod depths_boss;
 mod door;
 mod entity;
 mod ephemeral;
@@ -84,7 +85,7 @@ pub use breakable::{
     EXPLOSION_RADIUS_UNITS, MAX_DEBRIS, MAX_VISIBLE_DEBRIS, debris_pieces,
 };
 pub use character::{
-    CHARACTER_RECORD_SCHEMA_VERSION, CharacterId, CharacterLocation, CharacterRecord,
+    CHARACTER_RECORD_SCHEMA_VERSION, CharacterId, CharacterLocation, CharacterRecord, DepthsRecord,
     MAX_CHARACTER_ID_BYTES,
 };
 pub use chat::{
@@ -117,6 +118,11 @@ pub use creature::{
 pub use depths::{
     DepthsChamber, DepthsRun, DepthsRunStart, DepthsSite, DepthsSpawn, DepthsThreshold,
     MAX_CHAMBERS, ThresholdRequest, WIPE_DELAY_TICKS, depths_arrival,
+};
+pub use depths_boss::{
+    BossAttempt, BossDrop, BossOutcome, BossProgress, BossReport, DepthsBoss, DepthsDropView,
+    DepthsLootView, DropState, DropView, MAX_BOSS_DROPS, RollChoice, RollWin, equippable,
+    pick_winner, resolve_roll, roll_for,
 };
 pub use door::{
     CanonicalDoor, DOOR_COOLDOWN_TICKS, DOOR_REACH_UNITS, Door, DoorBox, DoorId, DoorView,
@@ -449,6 +455,16 @@ pub enum ZoneCommand {
     /// One preparation step before a forewarned night raid (#532, Atlas 5.1.59–5.1.62); the zone
     /// checks the evening, reach and order in the tick.
     RaidPrepare { prep: RaidPrep },
+    /// Answers the roll window of drop `drop` of `run` (#404, Atlas 5.1.34): stale, repeated
+    /// and ineligible answers are refused in the tick, and a settled roll never changes.
+    RollDepthsDrop {
+        run: u64,
+        drop: u8,
+        choice: RollChoice,
+    },
+    /// Takes the held drop `drop` of `run`, which everyone passed on (Atlas 5.1.83): one
+    /// claimant, checked in the tick.
+    ClaimDepthsDrop { run: u64, drop: u8 },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

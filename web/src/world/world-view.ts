@@ -61,6 +61,7 @@ import { VendorPanel, type VendorElements } from "./units/vendor-panel";
 import { QuestPanel, type MarkerPoint, type QuestElements } from "./units/quest-panel";
 import type { PartyRequestInput } from "../generated/mmorpg-wasm/mmorpg_wasm.js";
 import { ChatFrame, type ChatElements } from "./units/chat-frame";
+import { DepthsLootPanel, type DepthsLootElements } from "./units/depths-loot-panel";
 import { PartyFrame, type PartyElements } from "./units/party-frame";
 import { nearestAnimal, projectedUnit, type ProjectedUnit } from "./units/projected-units";
 import { ProgressionHud } from "./units/progression-hud";
@@ -98,6 +99,7 @@ export type WorldViewElements = {
   waystone: WaystoneElements;
   vendor: VendorElements;
   quests: QuestElements;
+  depthsLoot: DepthsLootElements;
   party: PartyElements;
   chat: ChatElements;
   /** Action bar, unit frames, cast bars and combat text. */
@@ -375,6 +377,7 @@ export class WorldView {
   readonly #vendor: VendorPanel;
   readonly #quests: QuestPanel;
   readonly #chat: ChatFrame;
+  readonly #depthsLoot: DepthsLootPanel;
   readonly #party: PartyFrame;
   #partySource: WorldSource | null = null;
   readonly #intents: { intent: Intent; onSent: ((sequence: number | null) => void) | undefined }[] = [];
@@ -480,6 +483,7 @@ export class WorldView {
       this.#character.close(false);
     });
     // Leaving the chat field hands the keyboard back to the world.
+    this.#depthsLoot = new DepthsLootPanel(elements.depthsLoot, (command) => this.queueIntent(() => command));
     this.#party = new PartyFrame(elements.party, (request) => this.#sendParty(request));
     this.#chat = new ChatFrame(elements.chat, (command) => this.queueIntent(() => command), () => elements.canvas.focus(), (parsed) => {
       const request = this.#party.request(parsed);
@@ -735,6 +739,7 @@ export class WorldView {
     this.#quests.reset(projection);
     this.#chat.reset();
     this.#party.reset();
+    this.#depthsLoot.reset();
     this.#shownArea = null;
     this.#flyTo = null;
     this.#framePending = true;
@@ -819,6 +824,7 @@ export class WorldView {
     this.#quests.reset();
     this.#chat.reset();
     this.#party.reset();
+    this.#depthsLoot.reset();
     this.#endDrag();
     this.#sky.show(false);
     this.#overlay.hide();
@@ -1107,6 +1113,7 @@ export class WorldView {
       this.#quests.update(received);
       this.#chat.update(received);
       this.#party.update(received);
+      this.#depthsLoot.update(received);
     }
     const projection = source.latestProjection();
     if (!projection) {

@@ -37,7 +37,7 @@ pub struct ItemTemplate {
 /// Starter catalog, in stable ID order. Equippable items stack to one;
 /// consumable effects, prices and loot tables are separate rules. Quest
 /// items are plain bag items that quest content names as collect objectives.
-pub const ITEM_CATALOG: [ItemTemplate; 14] = [
+pub const ITEM_CATALOG: [ItemTemplate; 17] = [
     ItemTemplate {
         id: ItemId::new(1),
         name: "Torn Fur",
@@ -190,6 +190,45 @@ pub const ITEM_CATALOG: [ItemTemplate; 14] = [
             strength: 0,
             agility: 0,
             intellect: 4,
+        },
+    },
+    // Level 7 boss rewards of the Redbrand Depths (#404 part 3): Captain Ulric Thorn's shared
+    // Need/Greed pool.
+    ItemTemplate {
+        id: ItemId::new(15),
+        name: "Thornreaver Blade",
+        max_stack: 1,
+        slot: Some(EquipmentSlot::MainHand),
+        stats: ItemStats {
+            stamina: 3,
+            strength: 6,
+            agility: 0,
+            intellect: 0,
+        },
+    },
+    ItemTemplate {
+        id: ItemId::new(16),
+        name: "Captain's Scarred Brigandine",
+        max_stack: 1,
+        slot: Some(EquipmentSlot::Chest),
+        stats: ItemStats {
+            stamina: 5,
+            strength: 2,
+            agility: 2,
+            intellect: 0,
+        },
+    },
+    // No trinket slot exists; this off-hand token stands in for one.
+    ItemTemplate {
+        id: ItemId::new(17),
+        name: "Redbrand Command Signet",
+        max_stack: 1,
+        slot: Some(EquipmentSlot::OffHand),
+        stats: ItemStats {
+            stamina: 3,
+            strength: 0,
+            agility: 2,
+            intellect: 3,
         },
     },
 ];

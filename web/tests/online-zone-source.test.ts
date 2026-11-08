@@ -100,7 +100,7 @@ describe("OnlineZoneSource", () => {
     let lose = true;
     host.toHost = (datagram) => {
       // The frame header, then the jump inside its sheet acknowledgement (#544).
-      const jump = datagram.byteLength === 8 + 2 + 20 + 1 && datagram[30] === 2;
+      const jump = datagram.byteLength === 8 + 2 + 24 + 1 && datagram[34] === 2;
       if (jump && lose) {
         lose = false;
         return [];

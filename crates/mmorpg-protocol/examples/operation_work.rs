@@ -54,6 +54,8 @@ fn player(
         chat: Vec::new(),
         quests: mmorpg_core::QuestLog::default(),
         waystones: mmorpg_core::WaystoneSet::EMPTY,
+        character: None,
+        depths: mmorpg_core::DepthsRecord::default(),
     })
 }
 

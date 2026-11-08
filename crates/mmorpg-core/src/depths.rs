@@ -20,7 +20,8 @@
 //! - **Wipe.** When every player in the zone is dead for [`WIPE_DELAY_TICKS`], the uncleared
 //!   chambers' survivors stand down and go home at full health, and the players stand up at the
 //!   checkpoint (or the entrance). Fallen creatures stay fallen.
-//! - **The sealed boss chamber** stands empty and walled off for #404 part 3.
+//! - **The boss chamber** holds Captain Ulric Thorn once every chamber is cleared; his fight and
+//!   shared loot are [`crate::depths_boss`].
 
 use std::sync::Arc;
 
@@ -77,6 +78,8 @@ pub struct DepthsSite {
     pub entrance: [i32; 2],
     /// Where they stand once the first chamber is cleared.
     pub checkpoint: [i32; 2],
+    /// The run's boss, in his chamber once every other chamber is cleared (#404 part 3).
+    pub boss: Option<crate::DepthsBoss>,
 }
 
 impl DepthsSpawn {
@@ -93,6 +96,9 @@ impl DepthsSite {
             .iter()
             .flat_map(|chamber| &chamber.spawns)
             .any(|spawn| spawn.creature == creature)
+            || self.boss.as_ref().is_some_and(|boss| {
+                boss.creature == creature || boss.adds.iter().any(|add| add.creature == creature)
+            })
     }
 
     pub(crate) fn validate(&self, content: &crate::ZoneContent) -> Result<(), ZoneError> {
@@ -125,12 +131,24 @@ impl DepthsSite {
                 return Err(ZoneError::new("every party size needs enemies"));
             }
         }
+        if let Some(boss) = &self.boss {
+            boss.validate(content)?;
+        }
         Ok(())
     }
 }
 
 /// The most chambers a site may author (the `cleared` mask is one byte).
 pub const MAX_CHAMBERS: u8 = 8;
+
+/// The `cleared` mask with every one of `chambers` chambers cleared.
+pub(crate) fn chamber_mask(chambers: usize) -> u8 {
+    if chambers >= 8 {
+        u8::MAX
+    } else {
+        (1_u8 << chambers) - 1
+    }
+}
 
 /// The state a host binds a depths zone to: the frozen parts of a [`DepthsRun`], and the
 /// progress the run directory already recorded for it.
@@ -141,6 +159,8 @@ pub struct DepthsRunStart {
     pub roster: Vec<CharacterId>,
     pub cleared: u8,
     pub checkpoint: bool,
+    /// The boss outcome the run directory recorded: restored, never fought or rolled again.
+    pub outcome: Option<crate::BossOutcome>,
 }
 
 /// A private run bound to a depths zone. Canonical: replay and recovery see it.
@@ -154,6 +174,8 @@ pub struct DepthsRun {
     pub checkpoint: bool,
     /// Tick at which an all-dead zone's wipe resolves.
     pub wipe_at: Option<u64>,
+    /// Thorn's fight and the run's boss outcome (#404 part 3).
+    pub boss: crate::BossProgress,
 }
 
 impl DepthsRun {
@@ -161,6 +183,12 @@ impl DepthsRun {
     #[must_use]
     pub fn profile(&self) -> u8 {
         u8::try_from(self.roster.len()).unwrap_or(u8::MAX)
+    }
+
+    /// Whether Captain Thorn has fallen: the run's fighting is over (#404 part 3).
+    #[must_use]
+    pub const fn completed(&self) -> bool {
+        self.boss.outcome.is_some()
     }
 
     /// Whether `character` is part of the frozen roster.
@@ -181,6 +209,17 @@ impl DepthsRun {
                 .any(|(index, character)| self.roster[..index].contains(character))
         {
             return Err(ZoneError::new("invalid depths run"));
+        }
+        if let Some(outcome) = &self.boss.outcome
+            && (site.boss.is_none()
+                || outcome.drops.len() > crate::MAX_BOSS_DROPS
+                || outcome.confirmed > outcome.version
+                || outcome
+                    .eligible
+                    .iter()
+                    .any(|character| !self.admits(character)))
+        {
+            return Err(ZoneError::new("invalid depths boss outcome"));
         }
         Ok(())
     }
@@ -316,16 +355,42 @@ impl ZoneSimulation {
         {
             return Ok(false);
         }
+        // A recorded outcome stays decided. Its open windows cannot resume against a new tick
+        // base, so they become manual claims: an item is never rerolled.
+        let outcome = start.outcome.map(|mut outcome| {
+            for drop in &mut outcome.drops {
+                match &mut drop.state {
+                    crate::DropState::Rolling { .. } => drop.state = crate::DropState::Held,
+                    // Delivery is re-decided from each character's durable receipt on arrival.
+                    crate::DropState::Awarded { delivered, .. } => *delivered = false,
+                    crate::DropState::Held => {}
+                }
+            }
+            outcome.confirmed = outcome.version;
+            outcome.credited.clear();
+            outcome
+        });
         let run = DepthsRun {
             run_id: start.run_id,
             roster: start.roster,
             cleared: start.cleared,
             checkpoint: start.checkpoint,
             wipe_at: None,
+            boss: crate::BossProgress {
+                attempt: None,
+                outcome,
+                announced: false,
+            },
         };
         run.validate(site)?;
         for spawn in site.chambers.iter().flat_map(|chamber| &chamber.spawns) {
             self.stand_down(spawn.creature, 0)?;
+        }
+        if let Some(boss) = &site.boss {
+            self.stand_down(boss.creature, 0)?;
+            for add in &boss.adds {
+                self.stand_down(add.creature, 0)?;
+            }
         }
         self.projectiles.clear();
         self.debris.clear();
@@ -345,7 +410,7 @@ impl ZoneSimulation {
     }
 
     /// Takes a creature out of the run: no body, no life, never respawning.
-    fn stand_down(&mut self, id: CreatureId, died_at: u64) -> Result<(), ZoneError> {
+    pub(crate) fn stand_down(&mut self, id: CreatureId, died_at: u64) -> Result<(), ZoneError> {
         let entity = EntityRef::Creature(id);
         self.world.remove_body(body_id(entity));
         if self.interest.remove(entity) {
@@ -445,7 +510,7 @@ impl ZoneSimulation {
         if due {
             self.resolve_wipe(site, cleared)?;
         }
-        Ok(())
+        self.advance_boss(site, now)
     }
 
     /// Survivors of uncleared chambers go home at full health; every player stands up again.
@@ -456,48 +521,19 @@ impl ZoneSimulation {
                 continue;
             }
             for spawn in &chamber.spawns {
-                let alive = self
-                    .creatures
-                    .get(&spawn.creature)
-                    .is_some_and(crate::creature::CreatureState::is_alive);
-                if !alive {
-                    continue;
-                }
-                let (spawn_data, template) = Self::creature_content(&content, spawn.creature)?;
-                let id = spawn.creature;
-                let entity = EntityRef::Creature(id);
-                let position = Vec3i::new(
-                    spawn_data.position[0],
-                    self.stand_y(
-                        spawn_data.position[0],
-                        spawn_data.position[1],
-                        template.half_extents,
-                    ),
-                    spawn_data.position[1],
-                );
-                let body = body_id(entity);
-                self.world
-                    .set_position(body, position)
-                    .map_err(crate::zone::physics_error)?;
-                self.world
-                    .set_velocity(body, Vec3i::ZERO)
-                    .map_err(crate::zone::physics_error)?;
-                self.place_in_interest(entity, position.x, position.z);
-                if let Some(creature) = self.creatures.get_mut(&id) {
-                    creature.health = template.max_health(creature.level);
-                    creature.threat.clear();
-                    creature.swing_timer = 0;
-                    creature.combat_timer = 0;
-                    creature.tapped_by = None;
-                    creature.cast = None;
-                    creature.auras.clear();
-                    creature.reset_abilities();
-                    creature.ai = CreatureAi::Idle {
-                        timer: crate::WANDER_WAIT_TICKS[0],
-                        destination: None,
-                    };
-                }
+                self.send_creature_home(&content, spawn.creature)?;
             }
+        }
+        // A failed final attempt resets (5.1.28): the boss home at full health, his adds gone;
+        // the run's identity, frozen profile and progress are unchanged.
+        if let Some(boss) = &site.boss
+            && self
+                .depths
+                .as_ref()
+                .is_some_and(|run| run.boss.outcome.is_none())
+        {
+            self.send_creature_home(&content, boss.creature)?;
+            self.end_boss_attempt(boss)?;
         }
         let fallen: Vec<_> = self
             .players
@@ -514,6 +550,56 @@ impl ZoneSimulation {
                     target: None,
                 },
             );
+        }
+        Ok(())
+    }
+
+    /// A living run creature teleports home at full health, its fight forgotten.
+    fn send_creature_home(
+        &mut self,
+        content: &Arc<crate::ZoneContent>,
+        id: CreatureId,
+    ) -> Result<(), ZoneError> {
+        let alive = self
+            .creatures
+            .get(&id)
+            .is_some_and(crate::creature::CreatureState::is_alive);
+        if !alive {
+            return Ok(());
+        }
+        let (spawn_data, template) = Self::creature_content(content, id)?;
+        let entity = EntityRef::Creature(id);
+        let position = Vec3i::new(
+            spawn_data.position[0],
+            self.stand_y(
+                spawn_data.position[0],
+                spawn_data.position[1],
+                template.half_extents,
+            ),
+            spawn_data.position[1],
+        );
+        let body = body_id(entity);
+        self.world
+            .set_position(body, position)
+            .map_err(crate::zone::physics_error)?;
+        self.world
+            .set_velocity(body, Vec3i::ZERO)
+            .map_err(crate::zone::physics_error)?;
+        self.place_in_interest(entity, position.x, position.z);
+        if let Some(creature) = self.creatures.get_mut(&id) {
+            creature.health = template.max_health(creature.level);
+            creature.threat.clear();
+            creature.swing_timer = 0;
+            creature.combat_timer = 0;
+            creature.tapped_by = None;
+            creature.cast = None;
+            creature.auras.clear();
+            creature.reset_abilities();
+            creature.encounter = None;
+            creature.ai = CreatureAi::Idle {
+                timer: crate::WANDER_WAIT_TICKS[0],
+                destination: None,
+            };
         }
         Ok(())
     }

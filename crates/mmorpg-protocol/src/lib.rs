@@ -32,7 +32,9 @@ pub use command::{
     CommandEnvelope, decode_command, decode_command_envelope, decode_observed_command,
     encode_command, encode_observed_command,
 };
-pub use depths::{decode_depths_run_start, encode_depths_run_start};
+pub use depths::{
+    decode_boss_outcome, decode_depths_run_start, encode_boss_outcome, encode_depths_run_start,
+};
 pub use projection::{
     DEBRIS_RECORD_BYTES, ENTITY_RECORD_BYTES, EVENT_RECORD_BYTES, MAX_WIRE_ENTITIES,
     PLAYER_SNAPSHOT_FIXED_BYTES, PackedSnapshot, SnapshotDecoder, decode_snapshot, encode_snapshot,
@@ -61,7 +63,7 @@ use std::fmt;
 /// differently and git refuses to merge them silently; decoders accept only this exact value
 /// (docs/adr/0006-merge-safe-format-identities.md). Snapshots lead with its three bytes and
 /// commands with its low byte.
-pub const PROTOCOL_ID: u32 = 0x0015_ae70;
+pub const PROTOCOL_ID: u32 = 0x002f_ae1e;
 
 /// Smallest WebTransport datagram payload measured over the pinned stack:
 /// QUIC's 1,200-byte initial MTU before path MTU discovery, observed as 1,161

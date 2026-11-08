@@ -34,6 +34,8 @@ pub(crate) enum Sheet {
     Abilities,
     /// The viewer's party roster or pending invite (#404).
     Party,
+    /// The viewer's copy of the boss loot pool, or none (#404).
+    DepthsLoot,
 }
 
 impl Sheet {
@@ -43,6 +45,7 @@ impl Sheet {
         Self::Loot,
         Self::Abilities,
         Self::Party,
+        Self::DepthsLoot,
     ];
 
     pub(crate) const fn index(self) -> usize {
@@ -50,7 +53,7 @@ impl Sheet {
     }
 }
 
-pub(crate) const SHEET_COUNT: usize = 5;
+pub(crate) const SHEET_COUNT: usize = 6;
 
 /// The `u32` revisions a client echoes, one per sheet.
 pub const SHEET_REVISIONS_BYTES: usize = SHEET_COUNT * 4;
@@ -74,7 +77,8 @@ pub(crate) const MAX_SHEETS_BYTES: usize = MAX_INVENTORY_SHEET_BYTES
     + crate::quest::MAX_QUEST_SHEET_BYTES
     + MAX_LOOT_SHEET_BYTES
     + MAX_ABILITY_SHEET_BYTES
-    + crate::party::MAX_PARTY_SHEET_BYTES;
+    + crate::party::MAX_PARTY_SHEET_BYTES
+    + crate::depths::MAX_DEPTHS_LOOT_SHEET_BYTES;
 
 /// The sheet revisions a client holds, `0` for a sheet it has none of. A host sends a sheet
 /// only while the client's revision differs from the current one.
@@ -85,6 +89,7 @@ pub struct SheetRevisions {
     pub loot: u32,
     pub abilities: u32,
     pub party: u32,
+    pub depths_loot: u32,
 }
 
 impl SheetRevisions {
@@ -95,6 +100,7 @@ impl SheetRevisions {
             Sheet::Loot => self.loot,
             Sheet::Abilities => self.abilities,
             Sheet::Party => self.party,
+            Sheet::DepthsLoot => self.depths_loot,
         }
     }
 
@@ -105,6 +111,7 @@ impl SheetRevisions {
             Sheet::Loot => self.loot = revision,
             Sheet::Abilities => self.abilities = revision,
             Sheet::Party => self.party = revision,
+            Sheet::DepthsLoot => self.depths_loot = revision,
         }
     }
 
@@ -180,7 +187,19 @@ pub(crate) fn encode_sheets(
         Some(state) => Some(crate::party::encode_party_state(state)?),
         None => None,
     };
-    Ok([inventory, quests, Some(loot), Some(abilities), party])
+    let depths_loot = snapshot
+        .depths_loot
+        .as_ref()
+        .map(crate::depths::encode_loot_sheet)
+        .transpose()?;
+    Ok([
+        inventory,
+        quests,
+        Some(loot),
+        Some(abilities),
+        party,
+        depths_loot,
+    ])
 }
 
 fn encode_inventory_sheet(revision: u64, inventory: &Inventory, equipment: &Equipment) -> Vec<u8> {
@@ -244,6 +263,9 @@ pub(crate) fn read_sheet<'a>(
         }
         Sheet::Party => {
             crate::party::decode_state(payload, offset)?;
+        }
+        Sheet::DepthsLoot => {
+            crate::depths::read_loot_sheet(payload, offset)?;
         }
     }
     Ok(&payload[start..*offset])

@@ -110,6 +110,8 @@ pub enum ErrorCode {
     DepthsClosed,
     /// Every player in a depths zone fell; the party stands again at its checkpoint (#404).
     DepthsWipe,
+    /// Every chamber is cleared: Captain Ulric Thorn awaits in his (#404).
+    DepthsBossOpen,
 }
 
 /// One feedback event addressed to a player.

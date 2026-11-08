@@ -27,10 +27,12 @@ pub const BUNDLE: &str = "combat-sounds";
 pub const WINDUP: &str = "danger.windup";
 
 /// Creature specials whose wind-up is consequential enough to sound (Atlas 6.6.37).
-const DANGEROUS: [u8; 3] = [
+const DANGEROUS: [u8; 5] = [
     18, // Stomp
     24, // Redbrand Whirl (Garrick)
     25, // Overhead Smash (Redbrand Brute)
+    47, // Reaver's Sweep (Thorn, #404)
+    48, // Last Command (Thorn, #404)
 ];
 /// A wind-up with no resolution this long after its expected end is treated as invalidated.
 const OVERDUE_TICKS: u64 = TICK_HZ as u64;
@@ -295,6 +297,7 @@ mod tests {
             pieces: Vec::new(),
             raid: None,
             party: None,
+            depths_loot: None,
             content_revision: 6,
             acknowledged_sequence: 1,
             viewer_id: 1,

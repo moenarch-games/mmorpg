@@ -274,6 +274,13 @@ pub fn catalog(content: &ZoneContent) -> CatalogExport {
         creature_templates: content
             .creature_templates()
             .iter()
+            // The browser joins depths zones with this one catalog; their boss is named too.
+            .chain(
+                mmorpg_core::redbrand_depths::content()
+                    .creature_templates()
+                    .iter()
+                    .filter(|template| content.creature_template(template.id).is_none()),
+            )
             .map(|template| CreatureTemplateExport {
                 id: template.id.get(),
                 name: template.name.clone(),
@@ -375,6 +382,24 @@ mod tests {
                     stats(2, 0, 4, 0)
                 ),
                 item(14, "Hollow-Delver's Cowl", json!("head"), stats(2, 0, 0, 4)),
+                item(
+                    15,
+                    "Thornreaver Blade",
+                    json!("mainHand"),
+                    stats(3, 6, 0, 0)
+                ),
+                item(
+                    16,
+                    "Captain's Scarred Brigandine",
+                    json!("chest"),
+                    stats(5, 2, 2, 0)
+                ),
+                item(
+                    17,
+                    "Redbrand Command Signet",
+                    json!("offHand"),
+                    stats(3, 0, 2, 3)
+                ),
             ])
         );
         let quests = value["quests"].as_array().unwrap();
@@ -488,7 +513,7 @@ mod tests {
         );
         assert_eq!(
             value["creatureTemplates"].as_array().unwrap().len(),
-            content.creature_templates().len()
+            content.creature_templates().len() + 1
         );
         assert_eq!(
             value["npcs"].as_array().unwrap().len(),
