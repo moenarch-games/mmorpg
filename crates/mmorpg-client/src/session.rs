@@ -11,7 +11,48 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::sync::{oneshot, watch};
+use mmorpg_protocol::party::PartyRequest;
+use tokio::sync::{mpsc, oneshot, watch};
+
+/// The window's half of the party link: requests out, refusal notes back (#404).
+pub struct PartyClient {
+    requests: mpsc::UnboundedSender<PartyRequest>,
+    notes: std::sync::mpsc::Receiver<String>,
+}
+
+impl PartyClient {
+    pub fn send(&self, request: PartyRequest) {
+        let _ = self.requests.send(request);
+    }
+
+    /// Notes to show in the chat log since the last call.
+    pub fn notes(&self) -> impl Iterator<Item = String> + '_ {
+        self.notes.try_iter()
+    }
+}
+
+/// The session's half of the party link.
+pub struct PartyLink {
+    requests: mpsc::UnboundedReceiver<PartyRequest>,
+    notes: std::sync::mpsc::Sender<String>,
+}
+
+/// A connected party link.
+#[must_use]
+pub fn party_link() -> (PartyClient, PartyLink) {
+    let (request_sender, requests) = mpsc::unbounded_channel();
+    let (note_sender, notes) = std::sync::mpsc::channel();
+    (
+        PartyClient {
+            requests: request_sender,
+            notes,
+        },
+        PartyLink {
+            requests,
+            notes: note_sender,
+        },
+    )
+}
 
 const RESEND_INTERVAL: Duration = Duration::from_millis(RESEND_INTERVAL_MS as u64);
 
@@ -283,6 +324,8 @@ impl Outbox {
 /// A roster choice, separate from high-frequency held input.
 #[derive(Clone, Debug)]
 pub struct CharacterSelection {
+    /// The character's roster name, announced for party frames and `/invite`.
+    pub name: Option<String>,
     pub local_id: String,
     pub class: mmorpg_core::ClassChoice,
     pub global_id: Option<mmorpg_core::CharacterId>,
@@ -292,6 +335,7 @@ pub async fn run_session_with_characters(
     mut session: ClientSession,
     input: watch::Receiver<PlayerInput>,
     mut characters: watch::Receiver<Option<CharacterSelection>>,
+    party: PartyLink,
     updates: &watch::Sender<NetworkUpdate>,
     mut shutdown: oneshot::Receiver<()>,
 ) -> Result<(), ClientError> {
@@ -300,7 +344,7 @@ pub async fn run_session_with_characters(
         enabled = session.character_service_enabled() => enabled?,
     };
     if !enabled {
-        return run_session(session, input, updates, shutdown).await;
+        return run_connected_session(session, input, characters, party, updates, shutdown).await;
     }
     let selected = loop {
         if let Some(selected) = characters.borrow_and_update().clone() {
@@ -326,15 +370,36 @@ pub async fn run_session_with_characters(
         _ = &mut shutdown => { session.release_character().await?; return Ok(()); },
         claimed = session.claim_character(&id, selected.class) => { claimed?; }
     }
-    run_session(session, input, updates, shutdown).await
+    run_connected_session(session, input, characters, party, updates, shutdown).await
 }
 
+/// Runs a session with no character selection or party link (tests and tools).
 pub async fn run_session(
+    session: ClientSession,
+    input: watch::Receiver<PlayerInput>,
+    updates: &watch::Sender<NetworkUpdate>,
+    shutdown: oneshot::Receiver<()>,
+) -> Result<(), ClientError> {
+    let (_characters, characters) = watch::channel(None);
+    let (_party, party) = party_link();
+    run_connected_session(session, input, characters, party, updates, shutdown).await
+}
+
+async fn run_connected_session(
     mut session: ClientSession,
     mut input: watch::Receiver<PlayerInput>,
+    mut characters: watch::Receiver<Option<CharacterSelection>>,
+    mut party: PartyLink,
     updates: &watch::Sender<NetworkUpdate>,
     mut shutdown: oneshot::Receiver<()>,
 ) -> Result<(), ClientError> {
+    // Announced to the current connection's party service; a follow or reconnect announces anew.
+    let mut character_name = characters
+        .borrow_and_update()
+        .as_ref()
+        .and_then(|selection| selection.name.clone());
+    let mut announced = false;
+    let mut characters_open = true;
     let mut heartbeat = tokio::time::interval(RESEND_INTERVAL);
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut outbox = Outbox::new(*input.borrow_and_update(), Instant::now());
@@ -342,9 +407,36 @@ pub async fn run_session(
     let mut last_snapshot = Instant::now();
     let mut last_tick = None;
     loop {
+        if !announced
+            && let Some(name) = character_name
+                .as_deref()
+                .and_then(mmorpg_client_model::party::announced_name)
+        {
+            announced = session.party_hello(&name).await.is_ok();
+        }
         let failure = tokio::select! {
             biased;
             _ = &mut shutdown => { session.release_character().await?; return Ok(()); },
+            changed = characters.changed(), if characters_open => {
+                if changed.is_ok() {
+                    character_name = characters
+                        .borrow_and_update()
+                        .as_ref()
+                        .and_then(|selection| selection.name.clone());
+                    announced = false;
+                } else {
+                    characters_open = false;
+                }
+                None
+            },
+            Some(request) = party.requests.recv() => {
+                match session.party_request(&request).await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(refusal)) => { let _ = party.notes.send(refusal.message().to_owned()); }
+                    Err(error) => { let _ = party.notes.send(format!("Party request failed: {error}")); }
+                }
+                None
+            },
             _ = heartbeat.tick() => {
                 if last_snapshot.elapsed() > Duration::from_secs(5) {
                     Some(SessionError::SnapshotTimeout)
@@ -385,6 +477,7 @@ pub async fn run_session(
                 followed = session.follow(notice) => followed?,
             }
             // Another zone counts its own ticks; only current input carries over.
+            announced = false;
             last_tick = None;
             last_snapshot = Instant::now();
             outbox.resume(*input.borrow_and_update());
@@ -404,6 +497,7 @@ pub async fn run_session(
                 _ = &mut shutdown => { session.release_character().await?; return Ok(()); },
                 snapshot = session.reconnect() => snapshot?,
             };
+            announced = false;
             outbox.observe(&snapshot);
             last_tick = Some(snapshot.tick);
             last_snapshot = Instant::now();
@@ -482,6 +576,7 @@ mod tests {
 
     fn snapshot() -> ZoneSnapshot {
         ZoneSnapshot {
+            party: None,
             doors: Vec::new(),
             projectiles: Vec::new(),
             debris: Vec::new(),

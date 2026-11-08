@@ -13,6 +13,7 @@
 pub mod chat;
 pub mod hud;
 pub mod outbox;
+pub mod party;
 pub mod quest;
 
 #[cfg(test)]
@@ -45,6 +46,7 @@ pub(crate) mod test_support {
             debris: Vec::new(),
             pieces: Vec::new(),
             raid: None,
+            party: None,
         }
     }
 }

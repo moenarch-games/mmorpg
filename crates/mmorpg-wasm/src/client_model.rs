@@ -26,7 +26,7 @@ fn core_snapshot(snapshot: &ZoneSnapshot) -> Result<core::ZoneSnapshot, JsError>
 
 /// A list or optional result as a plain value, absent options as `null` like
 /// every generated type here.
-fn to_js<T: Serialize>(value: &T) -> Result<JsValue, JsError> {
+pub(crate) fn to_js<T: Serialize>(value: &T) -> Result<JsValue, JsError> {
     Ok(value.serialize(&serde_wasm_bindgen::Serializer::new().serialize_missing_as_null(true))?)
 }
 

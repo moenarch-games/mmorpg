@@ -255,6 +255,33 @@ impl ClientSession {
         Ok(result.accepted && result.payload == [1, 1])
     }
 
+    /// Announces the character's display name to this zone's party service (#404). A host
+    /// without one (a rejected request) is fine: parties are simply unavailable there.
+    pub async fn party_hello(&self, name: &str) -> Result<(), ClientError> {
+        self.party_request(&mmorpg_protocol::party::PartyRequest::Hello {
+            name: name.to_owned(),
+        })
+        .await
+        .map(|_| ())
+    }
+
+    /// One party request over reliable control; refusals come back as the second layer.
+    pub async fn party_request(
+        &self,
+        request: &mmorpg_protocol::party::PartyRequest,
+    ) -> Result<Result<(), mmorpg_core::PartyRefusal>, ClientError> {
+        let payload = request
+            .encode()
+            .map_err(|error| error.to_string())
+            .map_err(ClientError::from)?;
+        let response = self.character_control(&payload).await?;
+        if !response.accepted {
+            return Err("the host offers no party service".into());
+        }
+        mmorpg_protocol::party::decode_party_reply(&response.payload)
+            .map_err(|error| ClientError::from(error.to_string()))
+    }
+
     /// The zone this session plays.
     #[must_use]
     pub const fn zone_id(&self) -> ZoneId {

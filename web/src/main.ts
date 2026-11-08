@@ -429,6 +429,16 @@ const worldView = new WorldView(renderer, camera, lighting, {
     notice: requireElement<HTMLElement>("#quest-notice"),
     markers: requireElement<HTMLElement>("#quest-markers"),
   },
+  party: {
+    frame: requireElement<HTMLElement>("#party-frame"),
+    list: requireElement<HTMLElement>("#party-list"),
+    leave: requireElement<HTMLButtonElement>("#party-leave"),
+    prompt: requireElement<HTMLElement>("#party-invite"),
+    promptText: requireElement<HTMLElement>("#party-invite-text"),
+    accept: requireElement<HTMLButtonElement>("#party-accept"),
+    decline: requireElement<HTMLButtonElement>("#party-decline"),
+    targetInvite: requireElement<HTMLButtonElement>("#party-invite-target"),
+  },
   chat: {
     frame: requireElement<HTMLElement>("#chat"),
     log: requireElement<HTMLElement>("#chat-log"),
@@ -1491,7 +1501,7 @@ async function enterWorld(): Promise<void> {
   try {
     const character = selectedCharacter();
     const entryCharacter = arenaEntry.selected ? arenaEntry.character(character) : character;
-    await target.source.join({ id: entryCharacter.id, classId: entryCharacter.classId, sex: entryCharacter.sex });
+    await target.source.join({ ...(entryCharacter.name ? { name: entryCharacter.name } : {}), id: entryCharacter.id, classId: entryCharacter.classId, sex: entryCharacter.sex });
     markStartup("joined");
   } catch (error) {
     console.error(error);

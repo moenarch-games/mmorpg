@@ -242,6 +242,10 @@
         <p id="quest-log-feedback" class="quest-feedback" aria-live="polite"></p>
       </aside>
       <div id="quest-markers" class="quest-markers" data-world-ui aria-label="Quest markers" hidden></div>
+      <aside id="party-invite" class="party-invite" data-world-ui role="dialog" aria-label="Party invite" hidden>
+        <p id="party-invite-text"></p>
+        <div class="party-invite-actions"><button id="party-accept" type="button">Accept</button><button id="party-decline" type="button">Decline</button></div>
+      </aside>
       <section id="chat" class="chat-frame" data-world-ui aria-label="Chat" hidden>
         <ol id="chat-log" class="chat-log" role="log" aria-live="polite" aria-label="Chat messages"></ol>
         <form id="chat-form" class="chat-form"><label class="visually-hidden" for="chat-input">Chat message</label><input id="chat-input" type="text" autocomplete="off" spellcheck="false" placeholder="Enter to chat · /y to yell" /></form>
@@ -266,12 +270,18 @@
             <div class="frame-bar resource" role="progressbar" aria-label="Resource" aria-valuemin="0"><span class="fill" data-part="player-resource"></span><span class="frame-text" data-part="player-resource-text"></span></div>
             <div class="aura-row debuffs" data-part="player-debuffs" aria-label="Your harmful effects"></div>
           </div>
+          <aside id="party-frame" class="unit-frame party-frame" aria-label="Party" hidden>
+            <p class="frame-name">Party</p>
+            <ul id="party-list" class="party-list"></ul>
+            <button id="party-leave" type="button">Leave party</button>
+          </aside>
           <div class="unit-frame target-frame" data-part="target" aria-label="Target" hidden>
             <div class="aura-row buffs" data-part="target-buffs" aria-label="Target beneficial effects"></div>
             <p class="frame-name" data-part="target-name"></p>
             <div class="frame-bar health" role="progressbar" aria-label="Target health" aria-valuemin="0" aria-valuemax="100"><span class="fill" data-part="target-health"></span><span class="frame-text" data-part="target-health-text"></span></div>
             <div class="cast-bar target-cast" data-part="target-cast" hidden><span class="fill" data-part="target-cast-fill"></span><span class="cast-name" data-part="target-cast-name"></span></div>
             <div class="aura-row debuffs" data-part="target-debuffs" aria-label="Target harmful effects"></div>
+            <button id="party-invite-target" class="party-invite-target" type="button" hidden>Invite to party</button>
           </div>
         </div>
         <div class="combat-text" data-part="combat-text" aria-hidden="true"></div>

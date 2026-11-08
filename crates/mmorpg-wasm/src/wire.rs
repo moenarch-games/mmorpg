@@ -1228,6 +1228,8 @@ pub struct ZoneSnapshot {
     pub pieces: Vec<PieceState>,
     /// The night raid's signals while the viewer is near its target (#530); null otherwise.
     pub raid: Option<RaidSignal>,
+    /// The viewer's party frame and any pending invite (#404); null before it has one.
+    pub party: Option<crate::party::PartyView>,
     pub events: Vec<ZoneEvent>,
     /// Chat lines the viewer heard this tick, in delivery order; cosmetic and lossy like events.
     pub chat: Vec<ChatLine>,
@@ -1365,6 +1367,10 @@ impl From<&core::ZoneSnapshot> for ZoneSnapshot {
                     stage: piece.stage.into(),
                 })
                 .collect(),
+            party: snapshot
+                .party
+                .as_ref()
+                .map(|state| crate::party::party_view(state, snapshot.viewer_id)),
             raid: snapshot.raid.map(|raid| RaidSignal {
                 phase: raid.phase,
                 integrity: raid.integrity,
@@ -1591,6 +1597,8 @@ impl TryFrom<&ZoneSnapshot> for core::ZoneSnapshot {
                 readiness: raid.readiness,
                 scouted: raid.scouted,
             }),
+            // The party sheet only informs the page's own frame; nothing presents it back.
+            party: None,
         })
     }
 }

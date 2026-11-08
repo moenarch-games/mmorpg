@@ -36,6 +36,8 @@ use std::time::{Duration, Instant};
 pub enum UiIntent {
     /// One deliberate shared command (quest, vendor, bag, equipment, loot, chat).
     Command(ZoneCommand),
+    /// A party action for the party service (#404).
+    Party(mmorpg_protocol::party::PartyRequest),
     /// Use action-bar slot 1–8.
     AbilitySlot(u8),
     ReleaseSpirit,
@@ -385,7 +387,8 @@ impl GameUi {
         self.unit_frames(ctx, frame, snapshot, &mut intents);
         self.action_bar(ctx, frame, snapshot, &mut intents);
         self.minimap_and_tracker(ctx, frame, snapshot);
-        self.chat_frame(ctx, &mut intents);
+        self.chat_frame(ctx, snapshot, &mut intents);
+        self.party(ctx, snapshot, &mut intents);
         if let Some((text, at)) = &self.refusal
             && now.saturating_duration_since(*at) < REFUSAL_SECONDS
         {
@@ -761,6 +764,15 @@ impl GameUi {
                         {
                             self.dismissed_loot = None;
                         }
+                        if let EntityRef::Player(player) = target
+                            && player != snapshot.viewer_id
+                            && party_can_invite(snapshot)
+                            && ui.button("Invite").clicked()
+                        {
+                            intents.push(UiIntent::Party(
+                                mmorpg_protocol::party::PartyRequest::InvitePlayer { player },
+                            ));
+                        }
                         if ui.button("Clear").clicked() {
                             intents.push(UiIntent::Select(None));
                         }
@@ -987,6 +999,14 @@ fn panel_frame() -> egui::Frame {
         .fill(Color32::from_black_alpha(170))
         .corner_radius(4.0)
         .inner_margin(8.0)
+}
+
+/// Whether the viewer may invite someone: alone, or leading its party.
+fn party_can_invite(snapshot: &ZoneSnapshot) -> bool {
+    match snapshot.party.as_ref().and_then(|state| state.roster.as_ref()) {
+        None => true,
+        Some(roster) => roster.members.first().and_then(|member| member.player) == Some(snapshot.viewer_id),
+    }
 }
 
 fn bar(ui: &mut egui::Ui, fill: f32, text: String, color: Color32) {

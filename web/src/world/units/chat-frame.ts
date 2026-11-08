@@ -1,4 +1,5 @@
 import type { WorldCommand } from "../../command-wire";
+import type { PartyChatInput } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
 import type { ZoneSnapshot } from "../../replication";
 import { wasm } from "../../wasm";
 
@@ -21,16 +22,25 @@ export class ChatFrame {
   readonly #elements: ChatElements;
   readonly #send: (command: WorldCommand) => void;
   readonly #onLeave: () => void;
+  readonly #party: (parsed: PartyChatInput) => void;
   #rendered = -1;
 
-  constructor(elements: ChatElements, send: (command: WorldCommand) => void, onLeave: () => void) {
+  constructor(elements: ChatElements, send: (command: WorldCommand) => void, onLeave: () => void, party: (parsed: PartyChatInput) => void) {
     this.#elements = elements;
     this.#send = send;
     this.#onLeave = onLeave;
+    this.#party = party;
     elements.form.addEventListener("submit", (event) => {
       event.preventDefault();
       const raw = elements.input.value;
       if (raw.trim().length > 0) {
+        const party = wasm.parsePartyChat(raw);
+        if (party !== null) {
+          this.#party(party);
+          elements.input.value = "";
+          this.close();
+          return;
+        }
         const parsed = wasm.parseChatInput(raw);
         if ("command" in parsed) {
           this.#send(parsed.command);
@@ -55,6 +65,12 @@ export class ChatFrame {
   get #log(): InstanceType<typeof wasm.ChatLog> {
     this.#chatLog ??= new wasm.ChatLog();
     return this.#chatLog;
+  }
+
+  /** Adds a local line to the log, such as a party refusal. */
+  note(text: string): void {
+    this.#log.note(text);
+    this.#render();
   }
 
   /** Moves keyboard focus to the chat field. */

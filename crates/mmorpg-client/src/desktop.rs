@@ -1,4 +1,4 @@
-use mmorpg_client::session::{CharacterSelection, NetworkUpdate, PlayerInput};
+use mmorpg_client::session::{CharacterSelection, NetworkUpdate, PartyClient, PlayerInput};
 use mmorpg_client::{
     ClientError,
     camera::{CameraView, OrbitCamera},
@@ -43,6 +43,7 @@ pub fn run(
     input: watch::Sender<PlayerInput>,
     characters: watch::Sender<Option<CharacterSelection>>,
     updates: watch::Receiver<NetworkUpdate>,
+    party: PartyClient,
     frames: Option<u32>,
     character: Option<(PlayerClass, Sex)>,
 ) -> Result<(), ClientError> {
@@ -73,6 +74,7 @@ pub fn run(
         input,
         characters,
         updates,
+        party,
         camera: OrbitCamera::default(),
         orbit_buttons: HashSet::new(),
         cursor: None,
@@ -126,6 +128,7 @@ struct App {
     input: watch::Sender<PlayerInput>,
     characters: watch::Sender<Option<CharacterSelection>>,
     updates: watch::Receiver<NetworkUpdate>,
+    party: PartyClient,
     camera: OrbitCamera,
     /// Held mouse buttons that orbit the camera while the cursor moves.
     orbit_buttons: HashSet<MouseButton>,
@@ -690,6 +693,7 @@ impl App {
                     input.interactions = input.interactions.wrapping_add(1);
                 });
             }
+            UiIntent::Party(request) => self.party.send(request),
             UiIntent::AbilitySlot(slot) => self.control(ControlAction::AbilitySlot(slot)),
             UiIntent::ReleaseSpirit => self.combat_key(KeyCode::KeyR),
             UiIntent::Select(target) => {
@@ -719,6 +723,7 @@ impl App {
                     input.class_choice = Some((class.code(), sex.code()));
                 });
                 self.characters.send_replace(Some(CharacterSelection {
+                    name: self.ui.character_name.clone(),
                     local_id: id,
                     class: mmorpg_core::ClassChoice { class, sex },
                     global_id: None,
@@ -801,6 +806,9 @@ impl App {
         egui.state.handle_platform_output(window, platform);
         for intent in intents {
             self.ui_intent(intent);
+        }
+        for note in self.party.notes() {
+            self.ui.logs.note(mmorpg_client_model::chat::LineKind::System, note);
         }
         self.sync_bindings();
         if settings_was_open != self.ui.settings.open {

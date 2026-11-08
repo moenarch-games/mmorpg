@@ -1,8 +1,10 @@
 //! Windows of the game interface: chat, quest tracker/log, NPC dialogue,
-//! vendor, bags, character and loot. Each control only names a shared command.
+//! vendor, bags, character, loot and the party frame. Each control only names a shared command.
 use super::{GameUi, LogTab, UiFrame, UiIntent, chat, line_color, panel_frame};
 use crate::interaction::{NpcContext, quest_brief};
 use egui::{Align2, Color32, RichText, Vec2};
+use mmorpg_client_model::party::{self as party_model, PartyChat};
+use mmorpg_protocol::party::PartyRequest;
 use mmorpg_client_model::quest::{self, QuestStanding};
 use mmorpg_core::{
     EquipmentSlot, ItemId, NpcRole, Quest, ZoneCommand, ZoneContent, ZoneSnapshot, item_template,
@@ -50,6 +52,21 @@ fn progress_color(done: bool) -> Color32 {
     }
 }
 
+/// The party request a typed command names; kicks resolve against the shown roster.
+fn party_request(snapshot: &ZoneSnapshot, command: PartyChat) -> Result<PartyRequest, String> {
+    match command {
+        PartyChat::Invite(name) => Ok(PartyRequest::InviteName { name }),
+        PartyChat::Leave => Ok(PartyRequest::Leave),
+        PartyChat::Kick(name) => snapshot
+            .party
+            .as_ref()
+            .and_then(|state| state.roster.as_ref())
+            .and_then(|roster| party_model::kick_target(roster, &name))
+            .map(|(member, version)| PartyRequest::Kick { member, version })
+            .ok_or_else(|| format!("{name} is not in your party.")),
+    }
+}
+
 fn quest_progress(ui: &mut egui::Ui, quest: &Quest, progress: &[u8], content: &ZoneContent) {
     for objective in quest::quest_view(quest, progress, content).objectives {
         ui.small(
@@ -59,7 +76,87 @@ fn quest_progress(ui: &mut egui::Ui, quest: &Quest, progress: &[u8], content: &Z
 }
 
 impl GameUi {
-    pub(super) fn chat_frame(&mut self, ctx: &egui::Context, intents: &mut Vec<UiIntent>) {
+    /// A pending invite prompt and the party frame (#404).
+    pub(super) fn party(
+        &mut self,
+        ctx: &egui::Context,
+        snapshot: &ZoneSnapshot,
+        intents: &mut Vec<UiIntent>,
+    ) {
+        let Some(state) = &snapshot.party else {
+            return;
+        };
+        if let Some(invite) = &state.invite {
+            egui::Window::new("Party invite")
+                .anchor(Align2::CENTER_TOP, Vec2::new(0.0, 180.0))
+                .resizable(false)
+                .collapsible(false)
+                .show(ctx, |ui| {
+                    ui.label(format!("{} invites you to a party.", invite.from));
+                    ui.horizontal(|ui| {
+                        if ui.button("Accept").clicked() {
+                            intents.push(UiIntent::Party(PartyRequest::Accept {
+                                invite: invite.invite,
+                            }));
+                        }
+                        if ui.button("Decline").clicked() {
+                            intents.push(UiIntent::Party(PartyRequest::Decline {
+                                invite: invite.invite,
+                            }));
+                        }
+                    });
+                });
+        }
+        let Some(frame) = party_model::party_frame(state, snapshot.viewer_id) else {
+            return;
+        };
+        egui::Area::new(egui::Id::unique("party-frame"))
+            .anchor(Align2::LEFT_TOP, Vec2::new(12.0, 200.0))
+            .show(ctx, |ui| {
+                panel_frame().show(ui, |ui| {
+                    ui.set_width(200.0);
+                    ui.label(RichText::new("Party").strong());
+                    for row in &frame.rows {
+                        ui.horizontal(|ui| {
+                            let mut text = row.name.clone();
+                            if row.leader {
+                                text.insert_str(0, "★ ");
+                            }
+                            if row.you {
+                                text.push_str(" (you)");
+                            }
+                            if row.elsewhere {
+                                text.push_str(" · elsewhere");
+                            } else if !row.online {
+                                text.push_str(" · offline");
+                            }
+                            let color = if row.online {
+                                Color32::from_gray(225)
+                            } else {
+                                Color32::from_gray(130)
+                            };
+                            ui.label(RichText::new(text).color(color));
+                            if frame.leads && !row.you && ui.small_button("Kick").clicked() {
+                                intents.push(UiIntent::Party(PartyRequest::Kick {
+                                    member: row.index,
+                                    version: frame.version,
+                                }));
+                            }
+                        });
+                    }
+                    if ui.button("Leave party").clicked() {
+                        intents.push(UiIntent::Party(PartyRequest::Leave));
+                    }
+                });
+            });
+    }
+
+    pub(super) fn chat_frame(
+        &mut self,
+        ctx: &egui::Context,
+        snapshot: &ZoneSnapshot,
+        intents: &mut Vec<UiIntent>,
+    ) {
         egui::Area::new(egui::Id::unique("chat"))
             .anchor(Align2::LEFT_BOTTOM, Vec2::new(12.0, -12.0))
             .show(ctx, |ui| {
@@ -88,7 +185,7 @@ impl GameUi {
                         });
                     let edit = ui.add(
                         egui::TextEdit::singleline(&mut self.chat_text)
-                            .hint_text("Enter to chat · /s /y /wave /bow /cheer /laugh /point")
+                            .hint_text("Enter to chat · /s /y /invite /leave /wave /bow /cheer")
                             .desired_width(f32::INFINITY),
                     );
                     if self.chat_focus_requested {
@@ -97,7 +194,14 @@ impl GameUi {
                     }
                     if edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                         let raw = std::mem::take(&mut self.chat_text);
-                        if !raw.trim().is_empty() {
+                        if let Some(party) = party_model::parse_party_chat(&raw) {
+                            match party.map(|command| party_request(snapshot, command)) {
+                                Ok(Ok(request)) => intents.push(UiIntent::Party(request)),
+                                Ok(Err(problem)) | Err(problem) => {
+                                    self.logs.note(chat::LineKind::System, problem);
+                                }
+                            }
+                        } else if !raw.trim().is_empty() {
                             match chat::parse_chat_input(&raw) {
                                 Ok(command) => intents.push(UiIntent::Command(command)),
                                 Err(problem) => {
