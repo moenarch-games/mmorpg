@@ -73,6 +73,24 @@ While the wheel owns mouse motion, the **same over-the-shoulder camera holds its
 
 **Combos:** selecting a combat action with a quick directional flick may serve as one input in an existing timed, authored combination. Repeated menu uses should be responsive enough to sequence actions, but server authority still decides attack timing, actual struck targets, hit confirmation and legal follow-up windows. Nested or multi-stroke gesture chains may be explored later; the first implementation should reuse the current action graph and avoid inventing a new combo engine.
 
+## Owner decisions of 2026-11-08
+
+These refine the sections above; where they differ, these win. Canonical entries: Atlas `5.2.i636` to `5.2.i636-6`, `5.2.i653-2`, `5.2.i679`, `5.2.i679-2` and `5.9.i680`.
+
+**Left click selects and never attacks.** It confirms a free-targeted attack during an armed aim. **Q** is the instant basic swing. Directional gestures keep their own held inputs. **Right click cancels** a held strike, guard, aim or wheel without firing, and cancels a cast. **Escape is the game menu**: it closes an open panel first, and losing browser pointer lock opens the menu. This replaces the Escape cancels described above.
+
+One owner holds the mouse at a time:
+
+| Owner | Mouse motion | Left click | Right click |
+| --- | --- | --- | --- |
+| Free look | Camera and heading | Select under crosshair | Cancels a cast |
+| Focus | Cursor; camera tracks target | Select or click UI | Cancels a cast |
+| Strike or guard hold | Direction and lane | Nothing | Cancel, no attack |
+| Manual aim | Aim | Confirm (click-to-throw style) | Cancel, no attack |
+| Wheel | Pick a sector | Confirm (tap-to-open style) | Cancel, no action |
+
+A wheel cannot open during a hold or aim. Stun, death and focus loss end the current owner without firing. Camera lock and free camera during a hold are both selectable, to compare in play. Wheels are an option alongside the locked camera. Mobile is frozen: no new touch work. Timed hitboxes and clashes are tracked in [#679](https://github.com/moenarch-games/mmorpg/issues/679), arena first, and netcode options in [#680](https://github.com/moenarch-games/mmorpg/issues/680).
+
 ## Ownership and implementation order
 
 1. **#650** — focus/no-focus over-shoulder camera, automatic facing, pointer capture and consistent strafing; browser and native parity.

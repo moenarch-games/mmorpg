@@ -154,29 +154,22 @@ fn main() {
     files.extend(prepared(&female));
     write("ranger_female_bundle.rs", &female, code, files);
     // The Redbrand faction kit (#675): every entry and its descriptor. Optional: without it the
-    // bandits keep the soldier's outfit, so a missing kit embeds nothing.
-    let redbrand = characters.join("redbrand.kit");
-    if redbrand.join("manifest.json").is_file() {
-        static_bundle("redbrand_bundle.rs", &redbrand, None, true);
-        descriptor(&redbrand, "redbrand-descriptor", "redbrand_descriptor.rs");
-    } else {
-        println!("cargo:rerun-if-changed={}", characters.display());
-        println!(
-            "cargo:warning=the Redbrand kit is not fetched; the bandits keep the soldier's outfit (run scripts/fetch-bundles.sh)"
-        );
-        write(
-            "redbrand_bundle.rs",
-            &redbrand,
-            "pub const ENTRIES: &[(&str, &str)] = &[];\n".into(),
-            Vec::new(),
-        );
-        let out = PathBuf::from(env::var("OUT_DIR").expect("cargo sets it"));
-        fs::write(
-            out.join("redbrand_descriptor.rs"),
-            "pub const DESCRIPTOR: &str = \"\";\n",
-        )
-        .expect("OUT_DIR is writable");
-    }
+    // bandits keep the soldier's outfit.
+    optional_kit(
+        &characters,
+        "redbrand.kit",
+        "redbrand-descriptor",
+        "redbrand",
+        "the bandits keep the soldier's outfit",
+    );
+    // The hair and beard kit (#677). Optional: without it the figures keep the Ranger's hair.
+    optional_kit(
+        &characters,
+        "hair.kit",
+        "hair-descriptor",
+        "hair",
+        "the figures keep the Ranger bundle's hair and beards",
+    );
     static_bundle(
         "inn_bundle.rs",
         &manifest_dir.join("../../web/public/buildings/greyhaven.inn"),
@@ -236,6 +229,36 @@ fn main() {
     // Greyhaven's ground layer materials (#525).
     let terrain = manifest_dir.join("../../web/public/scenery/greyhaven.terrain");
     static_bundle("terrain_bundle.rs", &terrain, None, false);
+}
+
+/// The optional kit `directory` beside the figures, as `<module>_bundle.rs` and
+/// `<module>_descriptor.rs`: every entry and its descriptor attachment `name`, or none of them
+/// when the kit was not fetched, and `absent` says what the client keeps.
+fn optional_kit(characters: &Path, directory: &str, name: &str, module: &str, absent: &str) {
+    let kit = characters.join(directory);
+    let bundle = format!("{module}_bundle.rs");
+    let description = format!("{module}_descriptor.rs");
+    if kit.join("manifest.json").is_file() {
+        static_bundle(&bundle, &kit, None, true);
+        descriptor(&kit, name, &description);
+        return;
+    }
+    println!("cargo:rerun-if-changed={}", characters.display());
+    println!(
+        "cargo:warning=the {directory} kit is not fetched; {absent} (run scripts/fetch-bundles.sh)"
+    );
+    write(
+        &bundle,
+        &kit,
+        "pub const ENTRIES: &[(&str, &str)] = &[];\n".into(),
+        Vec::new(),
+    );
+    let out = PathBuf::from(env::var("OUT_DIR").expect("cargo sets it"));
+    fs::write(
+        out.join(description),
+        "pub const DESCRIPTOR: &str = \"\";\n",
+    )
+    .expect("OUT_DIR is writable");
 }
 
 /// A bundle's descriptor attachment `name` as `DESCRIPTOR` in `out`: the nature bundle's
