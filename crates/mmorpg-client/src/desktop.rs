@@ -916,7 +916,7 @@ impl App {
             if self.grabbed {
                 let painter = ctx.layer_painter(egui::LayerId::new(
                     egui::Order::Foreground,
-                    egui::Id::new("camera-reticle"),
+                    egui::Id::unique("camera-reticle"),
                 ));
                 let center = ctx.content_rect().center();
                 painter.circle_stroke(
