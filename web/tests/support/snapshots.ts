@@ -33,7 +33,7 @@ export function testSnapshot(
 ): ZoneSnapshot {
   return {
     loot: null, inventoryRevision: 0n, inventory: null, equipment: null, stats: null, viewer: HEALTHY_VIEWER, targetOfTarget: null, events: [], chat: [],
-    cooldowns: [], auras: [], targetDetail: { cast: null, auras: [] }, doors: [], pieces: [], raid: null, projectiles: [], debris: [],
+    cooldowns: [], auras: [], targetDetail: { cast: null, auras: [] }, doors: [], pieces: [], summoned: [], raid: null, projectiles: [], debris: [],
     // The quest sheet travels exactly with the bag sheet.
     quests: fields.inventory ? NO_QUESTS : null, ...fields,
   };

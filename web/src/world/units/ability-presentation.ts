@@ -98,6 +98,9 @@ export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = ne
   [47, { range: "self", description: "Captain Thorn winds up for 2 s, then sweeps his blade around him: step out of the 4.5 m ring or be hurt and thrown back.", glyph: CLEAVE, accent: "#d8452c", visual: "ring", pose: "swing" }],
   [48, { range: "self", description: "Thorn's last-phase command against a larger party: after 2.5 s a wider blow answers everything within 7 m.", glyph: CLEAVE, accent: "#a8282c", visual: "ring", pose: "swing" }],
   [46, { range: "self", description: "Calls your wolf companion to your side. It follows you, fights what fights you and stays until it is slain; calling it again brings it back with the health it has. Y sends it at your target, U holds this spot, I follows, O retreats.", glyph: PAW, accent: "#7fc46a", visual: null, pose: "cast" }],
+  // Summoned terrain (#293): obstacles the zone raises 4 m along the caster's facing.
+  [49, { range: "self", description: "Raises a sheet of ice 4 m ahead that blocks movement, sight and shots until it is broken or melts.", glyph: FLAKE, accent: "#b5e6ff", visual: null, pose: "cast" }],
+  [50, { range: "self", description: "Raises a pillar of rock 4 m ahead that blocks movement, sight and shots until it is broken or crumbles.", glyph: SHIELD, accent: "#a07c55", visual: null, pose: "cast" }],
 ]);
 
 export function presentationOf(ability: number): AbilityPresentation | undefined {

@@ -661,7 +661,7 @@ export class WorldView {
     this.queueIntent(() => ({ kind: "swing", facing: this.#movementFacing }));
   }
 
-  /** Uses action-bar slot `slot` (1–8); the viewer winds up at once while the zone decides. */
+  /** Uses action-bar slot `slot` (1–10); the viewer winds up at once while the zone decides. */
   useSlot(slot: number): void {
     this.#queuePrepared((projection) => (this.#catalog ? useAbilitySlot(slot, projection, this.#catalog) : null));
   }

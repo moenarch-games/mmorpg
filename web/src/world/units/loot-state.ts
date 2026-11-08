@@ -188,4 +188,5 @@ const REFUSALS: Record<ErrorCode, string | null> = {
   "depths-closed": null,
   "depths-wipe": null,
   "depths-boss-open": null,
+  "no-room": null,
 };

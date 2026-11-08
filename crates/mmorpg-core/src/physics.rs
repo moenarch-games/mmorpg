@@ -164,6 +164,12 @@ enum Kind {
     Ramp(crate::RampRise),
     /// A fixed rock (#49): its authored convex proxy fitted into its box.
     Rock(crate::RockShape),
+    /// A fixed box (#293) of these half extents turned by `yaw` about +Y; the body's own
+    /// `half_extents` hold its world-aligned bound for broad-phase selection.
+    TurnedBox {
+        half: Vec3i,
+        yaw: u16,
+    },
 }
 
 /// One body: fixed geometry, or a moving unit's capsule with authoritative `f32` state.
@@ -216,6 +222,18 @@ const fn from_subunits(value: Vec3i) -> [f32; 3] {
 fn to_subunits(value: [f32; 3]) -> Vec3i {
     #[allow(clippy::cast_precision_loss)]
     round(value.map(|axis| axis * SUBUNITS_PER_UNIT as f32))
+}
+
+/// The quaternion (x, y, z, w) of a turn by `yaw` about +Y, from the integer trig table.
+pub(crate) fn yaw_quaternion(yaw: u16) -> [f32; 4] {
+    #[allow(clippy::cast_precision_loss)]
+    let (sin, cos) = {
+        let (sin, cos) = crate::trig::direction(yaw / 2);
+        let one = crate::trig::TRIG_ONE as f32;
+        (sin as f32 / one, cos as f32 / one)
+    };
+    let norm = (sin * sin + cos * cos).sqrt();
+    [0.0, sin / norm, 0.0, cos / norm]
 }
 
 impl RigidBody {
@@ -296,6 +314,33 @@ impl RigidBody {
             position: exact(position),
             velocity: [0.0; 3],
             half_extents,
+            weightless: false,
+            mesh: None,
+        }
+    }
+
+    /// A fixed box (#293) centred on `position` with its own `half_extents`, turned by `yaw`
+    /// about +Y (0 faces +Z, a quarter turn toward +X, as facings are): the exact oriented
+    /// collider of a summoned wall. Its `half_extents` field keeps the world-aligned bound.
+    #[must_use]
+    pub fn turned_box(id: BodyId, position: Vec3i, half_extents: Vec3i, yaw: u16) -> Self {
+        let (sin, cos) = crate::trig::direction(yaw);
+        let bound = |along_cos: i32, along_sin: i32| {
+            let q16 = i64::from(along_cos) * i64::from(cos).abs()
+                + i64::from(along_sin) * i64::from(sin).abs();
+            let one = i64::from(crate::trig::TRIG_ONE);
+            i32::try_from((q16 + one - 1) / one).unwrap_or(i32::MAX)
+        };
+        let (hx, hy, hz) = (half_extents.x, half_extents.y, half_extents.z);
+        Self {
+            id,
+            kind: Kind::TurnedBox {
+                half: half_extents,
+                yaw,
+            },
+            position: exact(position),
+            velocity: [0.0; 3],
+            half_extents: Vec3i::new(bound(hx, hz), hy, bound(hz, hx)),
             weightless: false,
             mesh: None,
         }
@@ -890,6 +935,30 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_turned_box_collides_as_the_oriented_box_not_its_bound() {
+        let mut world = World::new(Vec3i::new(0, -SUBUNITS_PER_UNIT, 0));
+        let id = BodyId(40);
+        // 45°: a 4 m wall through the origin, its bound roughly a square ±1.55 m.
+        world
+            .add_body(RigidBody::turned_box(
+                id,
+                Vec3i::ZERO,
+                Vec3i::new(200, 100, 20),
+                8_192,
+            ))
+            .unwrap();
+        let ray = |x: f32, z: f32| {
+            world
+                .cast_ray([x, -200.0, z], [0.0, 400.0, 0.0], |_| true)
+                .map(|hit| hit.body)
+        };
+        assert_eq!(ray(0.0, 0.0), Some(id), "through the middle of the wall");
+        assert_eq!(ray(141.0, -141.0), Some(id), "along the wall, near one end");
+        assert_eq!(ray(140.0, 140.0), None, "the bound's corner is empty");
+        assert_eq!(ray(-140.0, -140.0), None, "the bound's other corner too");
+    }
 
     #[cfg(feature = "physics-ab")]
     #[test]

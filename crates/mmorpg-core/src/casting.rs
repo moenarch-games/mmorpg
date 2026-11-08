@@ -202,6 +202,12 @@ impl ZoneSimulation {
         } else {
             None
         };
+        // Summoned terrain (#293) is refused before anything is paid when it cannot rise.
+        if let AbilityEffect::SummonTerrain { kind } = ability.effect
+            && let Some(code) = self.check_summon_terrain(player_id, kind)?
+        {
+            return Ok(Some((code, None)));
+        }
         let source = EntityRef::Player(player_id);
         let recovery = follow_up
             .as_ref()
@@ -683,6 +689,9 @@ impl ZoneSimulation {
             AbilityEffect::Summon { .. } | AbilityEffect::Companion { .. } => {
                 self.raise_minion(player_id, ability.id)?;
             }
+            AbilityEffect::SummonTerrain { kind } => {
+                self.raise_summoned_terrain(player_id, kind, now)?;
+            }
             // Blizzard, Lightning Beam and Drain Life pulse while they channel; bandages and
             // stomps are creature-only; a flask's splash lands where it shatters.
             AbilityEffect::Blizzard { .. }
@@ -904,7 +913,9 @@ impl ZoneSimulation {
             self.knock_away(victim, [centre[0], centre[2]], fallback, push)?;
         }
         // Destructible pieces (#305) take the blast's top roll, after the units it reached.
-        self.blast_pieces(centre, radius, u32::from(damage[1]) + bonus, now)
+        self.blast_pieces(centre, radius, u32::from(damage[1]) + bonus, now)?;
+        // Summoned terrain (#293) takes the same blast.
+        self.blast_summoned(centre, radius, u32::from(damage[1]) + bonus)
     }
 
     /// A large creature's stomp (#297): falloff damage and knockback, as a blast centred on the

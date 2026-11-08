@@ -51,22 +51,6 @@ fetch() {
   place "${tag}" "${dest}" "${work}"
 }
 
-# A rolling release pinned by the SHA-256 of its tar: a re-upload is adopted by updating the pin.
-fetch_pinned() {
-  local tag="$1" name="$2" dest="${ROOT_DIR}/web/public/$3" sha="$4"
-  if [[ -f "${dest}/RELEASE" && "$(cat "${dest}/RELEASE")" == "${tag}@${sha}" ]]; then
-    return 0
-  fi
-  local work
-  work="$(mktemp -d)"
-  curl -fsSL --retry 3 --max-time 300 -o "${work}/bundle.tar" "${RELEASES}/${tag}/${name}.tar"
-  printf '%s  %s\n' "${sha}" "${work}/bundle.tar" | sha256sum --check --status
-  mkdir "${work}/bundle"
-  tar -xf "${work}/bundle.tar" -C "${work}/bundle"
-  printf '%s\n' "${tag}@${sha}" > "${work}/bundle/RELEASE"
-  place "${tag}" "${dest}" "${work}"
-}
-
 # A rolling release is read at whatever it currently holds, unpinned (#507): the local copy is
 # keyed on the live release's export.ref.json, so a new upload refreshes it and an unchanged
 # release is not downloaded again. Offline, an existing copy of the release is kept.
@@ -119,11 +103,8 @@ fetch_rolling greyhaven-terrain greyhaven.terrain scenery/greyhaven.terrain
 fetch_rolling climbing-kit climbing.kit scenery/climbing.kit
 # The limestone blocks Greyhaven's rocks are drawn as (asset-tooling#536).
 fetch_rolling limestone-rocks limestone-rocks.kit scenery/limestone-rocks.kit
-# Greyhaven's trees and rocks with their LOD chains and rock collision proxies (#49), pinned
-# (asset-tooling's consumers.json re-pins this line after a re-upload).
-NATURE_TAR_SHA256=29030140a220925e71005f84a26fe12be83846eada242bdf73e2afbf273f7573
-fetch_pinned greyhaven-nature greyhaven.nature scenery/greyhaven.nature "${NATURE_TAR_SHA256}"
+# Greyhaven's trees and rocks with their LOD chains and rock collision proxies (#49).
+fetch_rolling greyhaven-nature greyhaven.nature scenery/greyhaven.nature
 # The Battle Royale fortress's authored art (#591, asset-tooling#458/#461, pass 2), fitted to its
-# collision, pinned like the nature bundle.
-FORTRESS_TAR_SHA256=d0b3c9060d5624588c892b1444ea4c33ed3fc81e07088da53147b39e98d6f364
-fetch_pinned fortress-kit fortress.kit scenery/fortress.kit "${FORTRESS_TAR_SHA256}"
+# collision.
+fetch_rolling fortress-kit fortress.kit scenery/fortress.kit

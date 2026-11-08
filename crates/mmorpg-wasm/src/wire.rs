@@ -178,6 +178,7 @@ mirror!(
         DepthsClosed,
         DepthsWipe,
         DepthsBossOpen,
+        NoRoom,
     }
 );
 mirror!(
@@ -683,6 +684,22 @@ pub struct DoorState {
 pub struct PieceState {
     pub piece: u16,
     pub stage: PieceStage,
+}
+
+mirror!(
+    /// What was summoned (#293).
+    #[serde(rename_all = "snake_case")]
+    SummonedKind = core::SummonedTerrainKind { IceWall, EarthPillar }
+);
+
+/// Summoned terrain near the viewer (#293).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+pub struct SummonedState {
+    pub id: u32,
+    pub kind: SummonedKind,
+    pub centre: [i32; 3],
+    pub facing: u16,
+    pub health_percent: u8,
 }
 
 /// The night raid as seen near its target (#530): the assault phase (1–3, or 0 once it resolved
@@ -1323,6 +1340,8 @@ pub struct ZoneSnapshot {
     pub doors: Vec<DoorState>,
     /// Destructible pieces that are not intact, in ID order (#305).
     pub pieces: Vec<PieceState>,
+    /// Summoned terrain near the viewer, nearest first (#293).
+    pub summoned: Vec<SummonedState>,
     /// The night raid's signals while the viewer is near its target (#530); null otherwise.
     pub raid: Option<RaidSignal>,
     /// The viewer's party frame and any pending invite (#404); null before it has one.
@@ -1464,6 +1483,17 @@ impl From<&core::ZoneSnapshot> for ZoneSnapshot {
                 .map(|piece| PieceState {
                     piece: piece.piece.get(),
                     stage: piece.stage.into(),
+                })
+                .collect(),
+            summoned: snapshot
+                .summoned
+                .iter()
+                .map(|view| SummonedState {
+                    id: view.id,
+                    kind: view.kind.into(),
+                    centre: view.centre,
+                    facing: view.facing,
+                    health_percent: view.health_percent,
                 })
                 .collect(),
             party: snapshot
@@ -1687,6 +1717,17 @@ impl TryFrom<&ZoneSnapshot> for core::ZoneSnapshot {
                 .map(|piece| core::PieceView {
                     piece: core::PieceId::new(piece.piece),
                     stage: piece.stage.into(),
+                })
+                .collect(),
+            summoned: snapshot
+                .summoned
+                .iter()
+                .map(|view| core::SummonedView {
+                    id: view.id,
+                    kind: view.kind.into(),
+                    centre: view.centre,
+                    facing: view.facing,
+                    health_percent: view.health_percent,
                 })
                 .collect(),
             raid: snapshot.raid.map(|raid| core::RaidView {

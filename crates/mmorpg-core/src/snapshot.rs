@@ -357,6 +357,9 @@ pub struct CanonicalZoneSnapshot {
     pub next_debris: u32,
     /// Every destructible piece's health and last change, in content order (#305).
     pub pieces: Vec<crate::CanonicalPiece>,
+    /// Standing summoned terrain in ID order, and the next ID (#293).
+    pub summoned_terrain: Vec<crate::SummonedTerrain>,
+    pub next_summoned_terrain: u32,
     /// Summoned minions in ID order, and the next minion ID (#295).
     pub minions: Vec<crate::CanonicalMinion>,
     pub next_minion: u32,
@@ -508,6 +511,8 @@ impl ZoneSimulation {
             debris: self.debris.values().copied().collect(),
             next_debris: self.next_debris,
             pieces: self.canonical_pieces(),
+            summoned_terrain: self.summoned_terrain.values().copied().collect(),
+            next_summoned_terrain: self.next_summoned_terrain,
             minions: self.canonical_minions()?,
             next_minion: self.next_minion,
             raid: self.raid.clone(),
@@ -578,6 +583,11 @@ impl ZoneSimulation {
             ));
         }
         zone.restore_pieces(&snapshot.pieces, snapshot.tick)?;
+        zone.restore_summoned(
+            snapshot.summoned_terrain.clone(),
+            snapshot.next_summoned_terrain,
+            snapshot.tick,
+        )?;
         for (view, door) in snapshot.doors.iter().zip(&doors) {
             if view.changed_tick > snapshot.tick {
                 return Err(ZoneError::new(

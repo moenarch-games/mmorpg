@@ -45,6 +45,7 @@ pub(crate) mod test_support {
             projectiles: Vec::new(),
             debris: Vec::new(),
             pieces: Vec::new(),
+            summoned: Vec::new(),
             raid: None,
             party: None,
             depths_loot: None,
