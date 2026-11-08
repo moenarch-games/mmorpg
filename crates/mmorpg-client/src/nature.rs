@@ -36,6 +36,14 @@ mod climbing_descriptor {
     include!(concat!(env!("OUT_DIR"), "/climbing_descriptor.rs"));
 }
 
+mod limestone_bundle {
+    include!(concat!(env!("OUT_DIR"), "/limestone_bundle.rs"));
+}
+
+mod limestone_descriptor {
+    include!(concat!(env!("OUT_DIR"), "/limestone_descriptor.rs"));
+}
+
 type Files = &'static [(&'static str, &'static [u8])];
 
 /// One embedded bundle: the entries the presentation places, its glTF entries and files.
@@ -45,7 +53,7 @@ struct Source {
     files: Files,
 }
 
-const SOURCES: [Source; 2] = [
+const SOURCES: [Source; 3] = [
     Source {
         keys: &mmorpg_presentation::nature::ENTRIES,
         entries: bundle::ENTRIES,
@@ -56,13 +64,18 @@ const SOURCES: [Source; 2] = [
         entries: climbing_bundle::ENTRIES,
         files: climbing_bundle::FILES,
     },
+    Source {
+        keys: &mmorpg_presentation::nature::LIMESTONE_ENTRIES,
+        entries: limestone_bundle::ENTRIES,
+        files: limestone_bundle::FILES,
+    },
 ];
 
 /// Fade materials per primitive: a fade quantizes to one of these dissolve thresholds.
 pub const FADE_STEPS: usize = 8;
 
-/// The library's entries: the nature bundle's (`mmorpg_presentation::nature::ENTRIES`), then
-/// the climbing kit's (`mmorpg_presentation::climbing::ENTRIES`).
+/// The library's entries: the nature bundle's (`mmorpg_presentation::nature::ENTRIES`), the
+/// climbing kit's (`mmorpg_presentation::climbing::ENTRIES`), then the limestone blocks'.
 #[must_use]
 pub fn entries() -> Vec<&'static str> {
     SOURCES
@@ -79,6 +92,10 @@ pub fn lods() -> Vec<EntryLods> {
     lods.extend(
         mmorpg_presentation::climbing::descriptor_lods(climbing_descriptor::DESCRIPTOR)
             .expect("the embedded climbing descriptor is valid"),
+    );
+    lods.extend(
+        mmorpg_presentation::nature::descriptor_lods(limestone_descriptor::DESCRIPTOR)
+            .expect("the embedded limestone descriptor is valid"),
     );
     lods
 }

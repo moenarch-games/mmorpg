@@ -178,6 +178,8 @@ export type SceneryProvider = {
   readonly nature: PlacedKitSource;
   /** Greyhaven's ladders, ropes and ivy from the `climbing-kit` bundle (#621). */
   readonly climbing: PlacedKitSource;
+  /** The limestone blocks Greyhaven's rocks are drawn as, from the `limestone-rocks` bundle. */
+  readonly limestone: PlacedKitSource;
   /** Greyhaven's cosmetic ambient animals (#419). */
   readonly ambient: AmbientAnimalsSource;
   importedRestClip(kind: string): string;
@@ -497,6 +499,7 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
     fortress: null,
     nature: placedKit(content, "nature"),
     climbing: placedKit(content, "climbing"),
+    limestone: placedKit(content, "limestone"),
     ambient: (() => {
       const anchors = content.ambientAnimalAnchors();
       return {

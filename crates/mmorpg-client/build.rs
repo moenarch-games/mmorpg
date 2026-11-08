@@ -226,6 +226,14 @@ fn main() {
     let climbing = manifest_dir.join("../../web/public/scenery/climbing.kit");
     static_bundle("climbing_bundle.rs", &climbing, None, true);
     descriptor(&climbing, "climbing-descriptor", "climbing_descriptor.rs");
+    // Greyhaven's limestone rocks (asset-tooling#536) with every level of detail, and their descriptor.
+    let limestone = manifest_dir.join("../../web/public/scenery/limestone-rocks.kit");
+    static_bundle("limestone_bundle.rs", &limestone, None, true);
+    descriptor(
+        &limestone,
+        "limestone-rocks-descriptor",
+        "limestone_descriptor.rs",
+    );
     // Greyhaven's ground layer materials (#525).
     let terrain = manifest_dir.join("../../web/public/scenery/greyhaven.terrain");
     static_bundle("terrain_bundle.rs", &terrain, None, false);

@@ -117,6 +117,8 @@ fetch_rolling combat-sounds combat-sounds sounds/combat-sounds
 fetch_rolling greyhaven-terrain greyhaven.terrain scenery/greyhaven.terrain
 # Greyhaven's ladders, climbable ropes and climbing ivy with their LOD chains (#621).
 fetch_rolling climbing-kit climbing.kit scenery/climbing.kit
+# The limestone blocks Greyhaven's rocks are drawn as (asset-tooling#536).
+fetch_rolling limestone-rocks limestone-rocks.kit scenery/limestone-rocks.kit
 # Greyhaven's trees and rocks with their LOD chains and rock collision proxies (#49), pinned
 # (asset-tooling's consumers.json re-pins this line after a re-upload).
 NATURE_TAR_SHA256=29030140a220925e71005f84a26fe12be83846eada242bdf73e2afbf273f7573
