@@ -12,6 +12,7 @@ import {
   IDLE_INTENT,
   OrbitCamera,
   movementInput,
+  pointerOwner,
   type HeldIntent,
 } from "../src/world/orbit-camera";
 import { FakeWorldSource } from "./support/fake-world-source";
@@ -209,7 +210,8 @@ describe("camera-relative input", () => {
     expect(view.target).toEqual([1, 1.5, -2]);
     expect(view.eye[2]).toBeLessThan(view.target[2]);
     expect(view.eye[1]).toBeGreaterThan(view.target[1]);
-    expect(Math.hypot(...view.eye.map((value, axis) => value - view.target[axis]!))).toBeCloseTo(camera.distance, 6);
+    expect(view.eye[0]).toBeGreaterThan(view.target[0]);
+    expect(Math.hypot(...view.eye.map((value, axis) => value - view.target[axis]!))).toBeGreaterThan(camera.distance);
     expect(camera.facing()).toBe(0);
   });
 
@@ -278,5 +280,37 @@ describe("camera-relative input", () => {
     camera.lookAlong(Math.PI);
     expect(camera.facing()).toBe(32_768);
     expect(camera.heading).toBeCloseTo(Math.PI, 12);
+  });
+
+  test("focus tracks, switches and releases smoothly while idle strafing keeps target facing", () => {
+    const camera = new OrbitCamera();
+    const initial = camera.view([0, 1, 0]);
+    camera.track([0, 1, 0], [8, 1, 0], 1 / 60);
+    expect(camera.heading).toBeGreaterThan(0);
+    expect(camera.heading).toBeLessThan(Math.PI / 2);
+    expect(camera.view([0, 1, 0]).target[0]).toBeGreaterThan(initial.target[0]);
+    for (let i = 0; i < 90; i += 1) { camera.track([0, 1, 0], [8, 1, 0], 1 / 60); }
+    expect(camera.heading).toBeCloseTo(Math.PI / 2, 3);
+    const facing = camera.facing();
+    expect(movementInput({ forward: 0, strafe: 1, steering: true }, facing, 0, 0, "none", true).facing).toBe(facing);
+    expect(movementInput(IDLE_INTENT, facing, 0, 0, "none", true).facing).toBe(facing);
+    camera.track([0, 1, 0], [-8, 1, 0], 1 / 60);
+    expect(Math.abs(camera.heading - 3 * Math.PI / 2)).toBeGreaterThan(0.2);
+    const beforeRelease = camera.heading;
+    camera.track([0, 1, 0], null, 1 / 60);
+    expect(camera.heading).toBe(beforeRelease);
+    for (let i = 0; i < 90; i += 1) { camera.track([0, 1, 0], null, 1 / 60); }
+    expect(camera.view([0, 1, 0]).target[0]).toBeCloseTo(0, 3);
+  });
+
+  test("pointer owner hands mouse-look to focus, direction gestures and UI cancellation", () => {
+    const free = { kind: "free-look" } as const;
+    const focused = { kind: "focused", target: { kind: "creature", id: 108 } } as const;
+    expect(pointerOwner(free, false, false)).toBe("interface");
+    expect(pointerOwner(free, true, false)).toBe("camera");
+    expect(pointerOwner(free, true, true)).toBe("gesture");
+    expect(pointerOwner(focused, true, false)).toBe("interface");
+    expect(pointerOwner(focused, false, true)).toBe("gesture");
+    expect(pointerOwner(free, false, false)).toBe("interface"); // blur or Escape releases lock
   });
 });

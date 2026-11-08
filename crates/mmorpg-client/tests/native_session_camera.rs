@@ -32,10 +32,12 @@ fn obstructed(
 fn browser_view(focus: [f32; 3], heading: f32, world: &WorldScene) -> CameraView {
     let target = [focus[0], focus[1] + 0.6, focus[2]];
     let horizontal = 12.0 * 0.42_f32.cos();
+    // The right-shoulder offset from web/src/world/orbit-camera.ts (#650).
+    let shoulder = 0.65;
     let mut eye = [
-        target[0] - heading.sin() * horizontal,
+        target[0] - heading.sin() * horizontal + heading.cos() * shoulder,
         target[1] + 12.0 * 0.42_f32.sin(),
-        target[2] - heading.cos() * horizontal,
+        target[2] - heading.cos() * horizontal - heading.sin() * shoulder,
     ];
     eye[1] = eye[1].max(world.surface_y(eye[0], eye[2]) + 0.35);
     CameraView {

@@ -3,7 +3,7 @@ import { TICK_HZ, type EntityState, type ZoneEvent, type ZoneSnapshot } from "..
 import { decodeCatalog } from "../src/world/catalog";
 import { abilitySlots, cancelCast, useAbilitySlot } from "../src/world/units/abilities";
 import { CombatHud, FEEDBACK_MS, combatStatus, eventText, unitName } from "../src/world/units/combat-hud";
-import { CLICK_SLOP_PIXELS, TOUCH_CLICK_SLOP_PIXELS, PointerClick, SecondaryClick, nextTabTarget } from "../src/world/units/targeting";
+import { CLICK_SLOP_PIXELS, TOUCH_CLICK_SLOP_PIXELS, PointerClick, SecondaryClick, combatFocus, nextTabTarget } from "../src/world/units/targeting";
 import { catalogJson } from "./support/catalog";
 import { HEALTHY_VIEWER, NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots";
 
@@ -109,6 +109,16 @@ describe("ability input and HUD text", () => {
 });
 
 describe("targeting input", () => {
+  test("camera focus requires a living projected opponent and never picks a replacement", () => {
+    const first = creature(108, 100, 0);
+    const second = creature(300, 200, 0);
+    expect(combatFocus(view([first, second], { target: WOLF }))).toEqual(WOLF);
+    expect(combatFocus(view([first, second], { target: { kind: "creature", id: 300 } }))).toEqual({ kind: "creature", id: 300 });
+    expect(combatFocus(view([creature(108, 100, 0, { dead: true }), second], { target: WOLF }))).toBeNull();
+    expect(combatFocus(view([second], { target: WOLF }))).toBeNull();
+    expect(combatFocus(view([first], { target: WOLF, dead: true }))).toBeNull();
+    expect(combatFocus(view([first], { target: { kind: "npc", id: 1 } }))).toBeNull();
+  });
   test("Tab selects the nearest attackable creature, then cycles outward", () => {
     const entities = [
       creature(300, 900, 0),

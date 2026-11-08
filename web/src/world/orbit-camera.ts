@@ -1,15 +1,21 @@
 import type { Axis } from "../command-wire";
+import type { EntityRef } from "../entity-ref";
 import type { MovementInput } from "./movement-outbox";
 import { yawFromRadians } from "../replication";
 
+export type CameraMode = { kind: "free-look" } | { kind: "focused"; target: EntityRef };
+export type PointerOwner = "camera" | "interface" | "gesture";
+
+/** Pointer ownership is explicit; focus and held gestures supersede free mouse-look. */
+export function pointerOwner(mode: CameraMode, captured: boolean, gesture: boolean): PointerOwner {
+  if (gesture) { return "gesture"; }
+  return mode.kind === "free-look" && captured ? "camera" : "interface";
+}
+
 /**
- * Third-person orbit camera around the local character, mirroring the native
- * client's `OrbitCamera`, with classic-MMO handling: the wheel zooms smoothly,
- * the eye never sinks below the ground under it (in the Battle Royale arena it
- * also stays clear of structures, see `clearSightLine`), a
- * left drag orbits freely and a right drag turns the character with the
- * view. Presentation only: its heading becomes movement intent, never an
- * authoritative position.
+ * Third-person shoulder camera around the local character, mirroring the native
+ * client's `OrbitCamera`. The eye never sinks below the ground under it and
+ * focused tracking only changes presentation and the facing movement intent.
  */
 const PIVOT_HEIGHT_METRES = 0.6;
 /** The eye stays at least this far above the ground under it. */
@@ -23,6 +29,10 @@ const MAX_PITCH_RADIANS = 1.45;
 export const ORBIT_RADIANS_PER_PIXEL = 0.006;
 /** Each wheel line changes the distance by this factor. */
 const ZOOM_STEP = 0.88;
+const SHOULDER_OFFSET_METRES = 0.65;
+const FOCUS_TURN_RATE = 10;
+const FOCUS_FRAMING_RATE = 7;
+const FOCUS_FRAMING_METRES = 3;
 /** Browser pixel scrolling: this many pixels count as one wheel line. */
 export const PIXELS_PER_WHEEL_LINE = 40;
 
@@ -75,6 +85,7 @@ export class OrbitCamera {
   #pitch = 0.42;
   #distance = 12;
   #targetDistance = 12;
+  #framing: Vec3 = [0, 0, 0];
 
   /** The distance the view uses now; it approaches `targetDistance` in `update`. */
   get distance(): number {
@@ -124,6 +135,22 @@ export class OrbitCamera {
     }
   }
 
+  /** Follow a projected opponent without snapping when focus is acquired, switched or cleared. */
+  track(self: Vec3, opponent: Vec3 | null, deltaSeconds: number): void {
+    const dt = Math.max(0, Number.isFinite(deltaSeconds) ? deltaSeconds : 0);
+    if (opponent) {
+      const desired = Math.atan2(opponent[0] - self[0], opponent[2] - self[2]);
+      const shortest = Math.atan2(Math.sin(desired - this.#yaw), Math.cos(desired - this.#yaw));
+      this.#yaw = (this.#yaw + shortest * (1 - Math.exp(-FOCUS_TURN_RATE * dt)) + 2 * Math.PI) % (2 * Math.PI);
+    }
+    const dx = opponent ? opponent[0] - self[0] : 0;
+    const dz = opponent ? opponent[2] - self[2] : 0;
+    const scale = Math.min(1, FOCUS_FRAMING_METRES / Math.max(1e-6, Math.hypot(dx, dz)));
+    const desired: Vec3 = opponent ? [dx * scale * 0.35, (opponent[1] - self[1]) * 0.2, dz * scale * 0.35] : [0, 0, 0];
+    const blend = 1 - Math.exp(-FOCUS_FRAMING_RATE * dt);
+    this.#framing = this.#framing.map((value, axis) => value + (desired[axis]! - value) * blend) as Vec3;
+  }
+
   /** Turns the view to a heading in radians (0 toward +Z, increasing toward +X). */
   lookAlong(heading: number): void {
     if (Number.isFinite(heading)) {
@@ -148,12 +175,12 @@ export class OrbitCamera {
    * its own position; nothing else collides.
    */
   view(focus: Vec3, groundAt?: (x: number, z: number) => number): CameraView {
-    const target: Vec3 = [focus[0], focus[1] + PIVOT_HEIGHT_METRES, focus[2]];
+    const target: Vec3 = [focus[0] + this.#framing[0], focus[1] + PIVOT_HEIGHT_METRES + this.#framing[1], focus[2] + this.#framing[2]];
     const horizontal = this.#distance * Math.cos(this.#pitch);
     const eye: Vec3 = [
-      target[0] - Math.sin(this.#yaw) * horizontal,
-      target[1] + this.#distance * Math.sin(this.#pitch),
-      target[2] - Math.cos(this.#yaw) * horizontal,
+      focus[0] - Math.sin(this.#yaw) * horizontal + Math.cos(this.#yaw) * SHOULDER_OFFSET_METRES,
+      focus[1] + PIVOT_HEIGHT_METRES + this.#distance * Math.sin(this.#pitch),
+      focus[2] - Math.cos(this.#yaw) * horizontal - Math.sin(this.#yaw) * SHOULDER_OFFSET_METRES,
     ];
     if (groundAt) {
       const floor = groundAt(eye[0], eye[2]) + GROUND_CLEARANCE_METRES;
@@ -174,16 +201,14 @@ export type HeldIntent = { forward: Axis; strafe: Axis; steering: boolean; rise?
 export const IDLE_INTENT: HeldIntent = { forward: 0, strafe: 0, steering: false };
 
 /**
- * What a mouse drag does: `orbit` (left button) looks around freely and the
- * character keeps its own heading, even while running; `turn` (right
- * button) turns the character with the view, even while standing.
+ * Touch and uncaptured legacy drag fallback; captured mouse-look and enemy focus
+ * use `followLook` and retain character-local A/D strafing.
  */
 export type DragMode = "none" | "orbit" | "turn";
 
 /**
- * Movement intent from the held movement actions under the orbit camera. Without a drag,
- * the character faces the camera's heading while any movement is held
- * and keeps `lastFacing` otherwise, so orbiting while idle never turns it.
+ * Movement intent. While the camera owns look or tracks a focused opponent,
+ * the character follows its heading even when idle; A/D remain local strafes.
  */
 export function movementInput(
   held: HeldIntent,
@@ -191,7 +216,8 @@ export function movementInput(
   lastFacing: number,
   jumps: number,
   drag: DragMode = "none",
+  followLook = false,
 ): MovementInput {
-  const facing = drag === "turn" ? cameraFacing : drag === "orbit" ? lastFacing : held.steering ? cameraFacing : lastFacing;
+  const facing = followLook || drag === "turn" ? cameraFacing : drag === "orbit" ? lastFacing : held.steering ? cameraFacing : lastFacing;
   return { forward: held.forward, strafe: held.strafe, facing, jumps, ...(held.rise === undefined ? {} : { rise: held.rise }) };
 }

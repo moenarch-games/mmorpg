@@ -1,7 +1,7 @@
 use mmorpg_client::session::{CharacterSelection, NetworkUpdate, PartyClient, PlayerInput};
 use mmorpg_client::{
     ClientError,
-    camera::{CameraView, OrbitCamera},
+    camera::{CameraControl, CameraMode, CameraView, OrbitCamera, PointerOwner},
     controls::{ControlAction, MinionCommand, NativeControls},
     gamepad::{
         PadAction, PadControls, PadMovement, PadState, camera_orbit, guard_lane, interface_key,
@@ -28,8 +28,8 @@ use tokio::sync::watch;
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalPosition,
-    event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent},
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    event::{DeviceEvent, ElementState, MouseButton, MouseScrollDelta, WindowEvent},
+    event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
 };
@@ -76,6 +76,9 @@ pub fn run(
         updates,
         party,
         camera: OrbitCamera::default(),
+        camera_control: CameraControl::default(),
+        grabbed: false,
+        last_look_frame: Instant::now(),
         orbit_buttons: HashSet::new(),
         cursor: None,
         guard_offset: None,
@@ -130,6 +133,10 @@ struct App {
     updates: watch::Receiver<NetworkUpdate>,
     party: PartyClient,
     camera: OrbitCamera,
+    camera_control: CameraControl,
+    /// Actual OS grab, not an assumption about the window manager.
+    grabbed: bool,
+    last_look_frame: Instant,
     /// Held mouse buttons that orbit the camera while the cursor moves.
     orbit_buttons: HashSet<MouseButton>,
     cursor: Option<PhysicalPosition<f64>>,
@@ -211,6 +218,84 @@ const GUARD_LANE_THRESHOLD_PX: f64 = 24.;
 const PIXELS_PER_WHEEL_LINE: f64 = 40.0;
 
 impl App {
+    fn pointer_owner(&self) -> PointerOwner {
+        let interface = !self.focused
+            || !self.connected()
+            || self.choosing
+            || self.chat_focused
+            || self.ui.settings.open
+            || self.npc_context.npc.is_some()
+            || self.ui.windows_open(self.presentation.latest());
+        self.camera_control
+            .pointer_owner(self.guard_offset.is_some(), interface)
+    }
+
+    fn sync_cursor(&mut self) {
+        let wants_grab = self.pointer_owner() == PointerOwner::Camera;
+        if wants_grab == self.grabbed {
+            return;
+        }
+        let Some(window) = &self.window else { return };
+        if wants_grab {
+            // Locked pointer supplies raw DeviceEvent mouse motion even at the window edge.
+            if window
+                .set_cursor_grab(winit::window::CursorGrabMode::Locked)
+                .or_else(|_| window.set_cursor_grab(winit::window::CursorGrabMode::Confined))
+                .is_ok()
+            {
+                self.grabbed = true;
+                window.set_cursor_visible(false);
+            }
+        } else {
+            let _ = window.set_cursor_grab(winit::window::CursorGrabMode::None);
+            window.set_cursor_visible(true);
+            self.grabbed = false;
+            self.cursor = None;
+            self.retire_pointer();
+        }
+    }
+
+    /// A projected target drives the view, never selection authority or hit checks.
+    fn track_focus(&mut self, now: Instant) {
+        let dt = now
+            .saturating_duration_since(self.last_look_frame)
+            .as_secs_f32()
+            .min(1.0 / 15.0);
+        self.last_look_frame = now;
+        let latest = self.presentation.latest();
+        let selected = latest.and_then(|snapshot| snapshot.viewer.target);
+        let opponent = latest.and_then(|snapshot| {
+            if snapshot.viewer.dead {
+                return None;
+            }
+            let entity = snapshot
+                .entities
+                .iter()
+                .find(|entity| Some(entity.entity()) == selected)?;
+            (entity.flags.attackable
+                && !entity.flags.dead
+                && matches!(entity.kind, EntityKind::Creature | EntityKind::Player))
+            .then_some(entity)
+        });
+        let target = opponent.map(|entity| entity.entity());
+        if let CameraMode::Focus(previous) = self.camera_control.mode()
+            && target.is_none()
+            && selected == Some(previous)
+        {
+            // The zone's target can outlive the projected/dead body; clear it once.
+            self.input.send_modify(|input| {
+                input.target = None;
+                input.selections = input.selections.wrapping_add(1);
+            });
+        }
+        self.camera_control.set_focus(target);
+        let opponent = opponent.map(|entity| entity.position.map(|cm| cm as f32 / 100.0));
+        self.camera
+            .track(self.presentation.camera_target(now), opponent, dt);
+        self.sync_cursor();
+        self.update_movement();
+    }
+
     fn retire_pointer(&mut self) {
         self.pointer_origin = None;
         self.orbit_buttons.clear();
@@ -226,7 +311,15 @@ impl App {
         if !self.connected() {
             return;
         }
-        let Some(cursor) = self.cursor else { return };
+        let cursor = if self.grabbed {
+            let Some(size) = self.window.as_ref().map(|window| window.inner_size()) else {
+                return;
+            };
+            PhysicalPosition::new(f64::from(size.width) / 2.0, f64::from(size.height) / 2.0)
+        } else {
+            let Some(cursor) = self.cursor else { return };
+            cursor
+        };
         let scale = self.window.as_ref().map_or(1., |w| w.scale_factor());
         let margin = mmorpg_client::picking::NEAR_MISS_PIXELS * scale;
         let result = self
@@ -279,6 +372,25 @@ impl App {
                     self.world_controls.set_interaction(false);
                     self.retire_pointer();
                     return true;
+                }
+                if self
+                    .presentation
+                    .latest()
+                    .is_some_and(|snapshot| snapshot.viewer.cast.is_none())
+                    && !self.ui.windows_open(self.presentation.latest())
+                {
+                    if matches!(self.camera_control.mode(), CameraMode::Focus(_)) {
+                        self.input.send_modify(|input| {
+                            input.target = None;
+                            input.selections = input.selections.wrapping_add(1);
+                        });
+                        return true;
+                    }
+                    if self.pointer_owner() == PointerOwner::Camera {
+                        self.camera_control.release_cursor();
+                        self.sync_cursor();
+                        return true;
+                    }
                 }
                 return false;
             }
@@ -402,14 +514,17 @@ impl App {
             .is_some_and(|latest| latest.viewer.dead)
     }
 
-    /// While any movement key is held, the character faces the camera's yaw.
+    /// Free-look or focus always steers facing; A/D remain character-local strafing.
     fn update_movement(&self) {
         let HeldMovement {
             forward,
             strafe,
             steering,
         } = held_movement(self.controls.movement(), self.pad.movement());
-        let facing = steering.then(|| self.camera.facing());
+        let facing = (steering
+            || self.grabbed
+            || matches!(self.camera_control.mode(), CameraMode::Focus(_)))
+        .then(|| self.camera.facing());
         // Held Jump ascends and held Descend descends while swimming (#274); the zone ignores
         // the rise out of the water.
         let rise = (self.controls.rise() + self.pad.rise()).clamp(-1, 1);
@@ -506,6 +621,7 @@ impl App {
                 // The raised shield supersedes an unanswered wind-up.
                 self.presentation.abandon_attack_preparation();
                 self.guard_offset = Some(0.);
+                self.sync_cursor();
             }
             ControlAction::Minions(command) => {
                 if let Some(order) = self.minion_order(command) {
@@ -604,6 +720,7 @@ impl App {
         if !self.ui.settings.open
             && self.focused
             && !self.ui.chat_focused()
+            && self.camera_control.mode() == CameraMode::FreeLook
             && (dx != 0.0 || dy != 0.0)
         {
             self.camera.orbit(dx, dy);
@@ -801,6 +918,19 @@ impl App {
         let settings_was_open = self.ui.settings.open;
         let output = egui.context.run_pass(raw, |ctx| {
             intents = self.ui.show(ctx, &frame, &mut self.npc_context, now);
+            if self.grabbed {
+                let painter = ctx.layer_painter(egui::LayerId::new(
+                    egui::Order::Foreground,
+                    egui::Id::unique("camera-reticle"),
+                ));
+                let center = ctx.content_rect().center();
+                painter.circle_stroke(
+                    center,
+                    6.0,
+                    egui::Stroke::new(1.2, egui::Color32::from_rgb(245, 237, 211)),
+                );
+                painter.circle_filled(center, 1.0, egui::Color32::WHITE);
+            }
         });
         let platform = egui.paint.prepare(&egui.context, output);
         egui.state.handle_platform_output(window, platform);
@@ -842,6 +972,7 @@ impl App {
             self.retire_held_input();
         }
         self.chat_focused = focused;
+        self.sync_cursor();
     }
 
     /// The HUD and the `casting` control layer follow the latest projection.
@@ -902,6 +1033,7 @@ impl ApplicationHandler for App {
         if self.window.is_some() {
             return;
         }
+        event_loop.listen_device_events(DeviceEvents::WhenFocused);
         let window = match event_loop.create_window(
             Window::default_attributes()
                 .with_title("MMORPG — connecting to world")
@@ -921,6 +1053,7 @@ impl ApplicationHandler for App {
                 self.renderer = Some(renderer);
                 self.egui = Some(EguiWindow::new(&window));
                 self.window = Some(window);
+                self.sync_cursor();
             }
             Err(error) => self.fail(event_loop, error),
         }
@@ -997,14 +1130,16 @@ impl ApplicationHandler for App {
                 if let Some(audio) = &mut self.audio {
                     audio.set_focused(true);
                 }
+                self.sync_cursor();
             }
             WindowEvent::Focused(_) => {
                 self.focused = false;
+                self.camera_control.release_cursor();
+                self.sync_cursor();
                 if let Some(audio) = &mut self.audio {
                     audio.set_focused(false);
                 }
-                self.pad.retire("focusLost");
-                self.controls.focus_lost();
+                self.retire_held_input();
                 self.send_slot_releases();
                 self.retire_pointer();
                 self.update_movement();
@@ -1017,6 +1152,23 @@ impl ApplicationHandler for App {
             } if ui_consumed => {}
             WindowEvent::MouseWheel { .. } if ui_consumed => {}
             WindowEvent::MouseInput { state, button, .. } => {
+                if state == ElementState::Pressed
+                    && button == MouseButton::Left
+                    && !self.grabbed
+                    && self.camera_control.mode() == CameraMode::FreeLook
+                    && self.focused
+                    && self.connected()
+                    && !self.ui.settings.open
+                    && !self.chat_focused
+                    && self.npc_context.npc.is_none()
+                    && !self.ui.windows_open(self.presentation.latest())
+                {
+                    self.camera_control.request_look();
+                    self.sync_cursor();
+                    if self.grabbed {
+                        return; // Recapture is not an unintended first swing.
+                    }
+                }
                 let index = match button {
                     MouseButton::Left => 0,
                     MouseButton::Middle => 1,
@@ -1037,7 +1189,9 @@ impl ApplicationHandler for App {
                 }
                 if state == ElementState::Pressed {
                     if !selecting && self.world_controls.selecting() {
-                        self.pointer_origin = self.cursor;
+                        self.pointer_origin = self
+                            .cursor
+                            .or_else(|| self.grabbed.then(|| PhysicalPosition::new(0.0, 0.0)));
                     }
                     if matches!(button, MouseButton::Left | MouseButton::Right) {
                         self.orbit_buttons.insert(button);
@@ -1058,6 +1212,8 @@ impl ApplicationHandler for App {
                 }
                 if let Some(previous) = self.cursor.replace(position)
                     && !self.orbit_buttons.is_empty()
+                    && !self.grabbed
+                    && self.camera_control.mode() == CameraMode::FreeLook
                 {
                     if self.pointer_origin.is_some_and(|start| {
                         (position.x - start.x).hypot(position.y - start.y) > 5.0
@@ -1074,8 +1230,10 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::CursorLeft { .. } => {
-                self.cursor = None;
-                self.retire_pointer();
+                if !self.grabbed {
+                    self.cursor = None;
+                    self.retire_pointer();
+                }
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let lines = match delta {
@@ -1144,6 +1302,8 @@ impl ApplicationHandler for App {
                     } else {
                         self.controls.key_up(code);
                     }
+                    self.update_guard();
+                    self.sync_cursor();
                     self.update_movement();
                 }
             }
@@ -1242,9 +1402,16 @@ impl ApplicationHandler for App {
                     (preview.choice, yaw.rem_euclid(std::f32::consts::TAU))
                 });
                 self.presentation.set_preview(preview);
-                let view = self
+                // First-view collision framing runs once; focus then gently adjusts that view.
+                let _ = self
                     .presentation
                     .camera_view(&mut self.camera, &self.world, now);
+                self.track_focus(now);
+                let view = self
+                    .camera
+                    .view_above_ground(self.presentation.camera_target(now), |x, z| {
+                        self.world.surface_y(x, z)
+                    });
                 if let Some(audio) = &mut self.audio {
                     audio.listen(view);
                     audio.pump();
@@ -1274,6 +1441,22 @@ impl ApplicationHandler for App {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: winit::event::DeviceId,
+        event: DeviceEvent,
+    ) {
+        if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event
+            && self.grabbed
+            && self.pointer_owner() == PointerOwner::Camera
+            && !self.world_controls.selecting()
+        {
+            self.camera.orbit(dx, dy);
+            self.update_movement();
         }
     }
 

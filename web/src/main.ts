@@ -1747,7 +1747,7 @@ creationForm.addEventListener("submit", (event) => {
   event.preventDefault();
   finishCharacterCreation();
 });
-// Left drag orbits freely, right drag turns the character with the view; the wheel zooms.
+// Free look uses Pointer Lock after clicking the world; focus releases it for the UI.
 canvas.addEventListener("pointerdown", (event) => {
   if (entryState.phase !== "world") {
     return;
@@ -1759,6 +1759,7 @@ canvas.addEventListener("pointermove", (event) => worldView.pointerMove(event));
 for (const name of ["pointerup", "pointercancel", "lostpointercapture"] as const) {
   canvas.addEventListener(name, (event) => worldView.pointerEnd(event));
 }
+document.addEventListener("pointerlockchange", () => worldView.pointerLockChanged());
 canvas.addEventListener("contextmenu", (event) => {
   if (entryState.phase === "world") {
     event.preventDefault();
@@ -1853,6 +1854,7 @@ function runAction(action: GameAction): void {
       }
       return;
     case "ui.leaveWorld":
+      if (worldView.clearCombatFocus() || worldView.releaseFreeLook()) { return; }
       returnToCharacters();
       return;
     case "ui.toggleDebug":

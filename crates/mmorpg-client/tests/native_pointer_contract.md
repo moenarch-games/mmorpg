@@ -36,7 +36,7 @@ frames after authoritative selection. It does not call an isolated adapter draw
 as its feature proof. Existing native smoke separately reads back GPU pixels. The test also logs and
 rejects CPU adapters for a same-options compatible-surface request on the actual
 window; this metadata probe is separate from the App surface frames.
-Native controls in this executable contract are Enter for selected-NPC context,
+Native controls in this executable contract are E for selected-NPC context,
 1 for its displayed first quest/buy action, 2 for a merchant's displayed first
 bag-slot sale, Right for the next displayed reward choice, and Escape to cancel
 the context/armed pointer. Equivalent discoverable bindings/feedback locations

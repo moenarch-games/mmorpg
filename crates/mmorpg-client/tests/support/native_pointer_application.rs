@@ -48,8 +48,11 @@ impl GameSimulation for SharedZone {
         payload: &[u8],
     ) -> Result<(), SimulationError> {
         let mut zone = self.0.lock().unwrap();
-        zone.commands
-            .push(mmorpg_protocol::decode_command(payload).unwrap());
+        zone.commands.push(
+            mmorpg_protocol::decode_command_envelope(payload)
+                .unwrap()
+                .command,
+        );
         zone.adapter.apply_command(id, sequence, payload)
     }
     fn advance_tick(&mut self) -> Result<(), SimulationError> {
@@ -135,7 +138,10 @@ impl NativeApplication {
             .iter()
             .cloned()
             .map(|mut template| {
-                template.behaviour = CreatureBehaviour::Neutral;
+                // Breakable props keep their behaviour: content validation ties it to family.
+                if template.prop().is_none() {
+                    template.behaviour = CreatureBehaviour::Neutral;
+                }
                 template
             })
             .collect();
@@ -202,7 +208,9 @@ impl NativeApplication {
                 sender.send_replace(NetworkUpdate::Failed(error.to_string()));
             }
         });
-        let scenery = mmorpg_scenery::greyhaven_vale_scenery();
+        // The frozen fixture has its own content revision; the scenery is otherwise the real one.
+        let mut scenery = mmorpg_scenery::greyhaven_vale_scenery();
+        scenery.content_revision = content.revision();
         let (characters, _selected_character) = watch::channel(None);
         let app = App {
             characters,
@@ -225,6 +233,9 @@ impl NativeApplication {
             input,
             updates,
             camera: OrbitCamera::default(),
+            camera_control: CameraControl::default(),
+            grabbed: false,
+            last_look_frame: Instant::now(),
             orbit_buttons: HashSet::new(),
             cursor: None,
             guard_offset: None,
@@ -369,6 +380,19 @@ impl NativeApplication {
             self.driver.app.rendered, self.driver.app.title
         );
     }
+    /// A new renderer is a new GPU device: egui's buffers and textures must not outlive it.
+    fn replace_renderer(&mut self) {
+        let app = &mut self.driver.app;
+        let window = Arc::clone(app.window.as_ref().unwrap());
+        // Retire the configured surface before creating another for this window.
+        drop(app.renderer.take());
+        app.egui = Some(EguiWindow::new(&window));
+        app.renderer = Some(
+            app.runtime
+                .block_on(WindowRenderer::new(window, &app.world))
+                .unwrap(),
+        );
+    }
     fn dispatch(&mut self, events: impl IntoIterator<Item = WindowEvent>) {
         self.driver.pending.extend(events);
         self.pump(Duration::from_millis(80));
@@ -422,6 +446,10 @@ impl NativeApplication {
         );
     }
     fn pointer(&mut self, point: PhysicalPosition<f64>, end: Option<WindowEvent>) {
+        // These click/occlusion probes deliberately exercise the uncaptured UI cursor;
+        // free-look's native grab otherwise selects from the centre crosshair.
+        self.driver.app.camera_control.release_cursor();
+        self.driver.app.sync_cursor();
         if std::env::var("MMORPG_NATIVE_POINTER_OS").as_deref() == Ok("1") {
             self.os_pointer(point, end);
             return;
@@ -453,6 +481,9 @@ impl NativeApplication {
     }
     fn key(&mut self, keysym: &str) {
         let before = self.driver.os_keys;
+        // Bare X servers have no window manager to hand this window the keyboard.
+        let window = u64::from(self.driver.app.window.as_ref().unwrap().id());
+        self.os_input(&["focus".into(), window.to_string()]);
         self.os_input(&["key".into(), keysym.into()]);
         self.pump(Duration::from_millis(200));
         self.until(
@@ -477,9 +508,17 @@ impl NativeApplication {
     }
     fn setup(&mut self, feet: [i32; 2], creatures: &[(u32, [i32; 2])]) {
         let mut snapshot = self.snapshot();
+        // Fixtures stand on the authored ground, which is not flat since the terrain remodel.
+        let stand_y = |app: &Self, xz: [i32; 2], half_extents| {
+            let zone = app.zone.0.lock().unwrap();
+            zone.adapter.zone().stand_y(xz[0], xz[1], half_extents)
+        };
         let player = &mut snapshot.players[0];
-        player.position =
-            mmorpg_core::physics::from_units([feet[0], PLAYER_HALF_EXTENTS_UNITS[1], feet[1]]);
+        player.position = mmorpg_core::physics::from_units([
+            feet[0],
+            stand_y(self, feet, PLAYER_HALF_EXTENTS_UNITS),
+            feet[1],
+        ]);
         player.velocity = [0.0; 3];
         player.forward = 0;
         player.strafe = 0;
@@ -494,8 +533,16 @@ impl NativeApplication {
                 .iter_mut()
                 .find(|creature| creature.creature_id.get() == id)
                 .unwrap();
-            creature.position[0] = position[0] as f32;
-            creature.position[2] = position[1] as f32;
+            let template = self
+                .content
+                .creature_spawn(CreatureId::new(id))
+                .and_then(|spawn| self.content.creature_template(spawn.template))
+                .unwrap();
+            creature.position = [
+                position[0] as f32,
+                stand_y(self, position, template.half_extents) as f32,
+                position[1] as f32,
+            ];
             creature.velocity = [0.0; 3];
             creature.ai = CreatureAi::Idle {
                 timer: 60_000,
@@ -659,17 +706,24 @@ impl NativeApplication {
     }
     fn role(&mut self, npc: u32, distance: i32) {
         let position = self.content.npc(NpcId::new(npc)).unwrap().position;
-        // The keep/inn and south palisade overlap these NPCs' south approaches.
+        // Collision blocks some sides of these NPCs (keep, inn, palisade, the marshal's north).
         // Keep the exact 2.5 m / 8 m distances on a proven clear side instead.
-        let north_approach = matches!(npc, 1 | 3 | 6);
-        let offset = if north_approach { distance } else { -distance };
-        self.setup([position[0], position[1] + offset], &[]);
-        if north_approach {
+        let approach = match npc {
+            1 => [-1, 0],
+            3 | 6 => [0, 1],
+            _ => [0, -1],
+        };
+        self.setup(
+            [
+                position[0] + approach[0] * distance,
+                position[1] + approach[1] * distance,
+            ],
+            &[],
+        );
+        if approach != [0, -1] {
             let rendered = self.driver.app.rendered;
-            self.driver
-                .app
-                .camera
-                .orbit(f64::from(std::f32::consts::PI / 0.006), 0.0);
+            let yaw = (-approach[0] as f32).atan2(-approach[1] as f32);
+            self.driver.app.camera.orbit(f64::from(-yaw / 0.006), 0.0);
             self.until("approach camera renders toward the actual NPC", |app| {
                 app.driver.app.rendered > rendered
             });
@@ -680,7 +734,7 @@ impl NativeApplication {
             0,
             "selection must never autoaccept or autobuy"
         );
-        self.key("Return");
+        self.key("e");
     }
 }
 
@@ -707,7 +761,30 @@ fn native_pointer_application_contract() {
     let second = EntityRef::Creature(CreatureId::new(221));
     app.setup([0, 1_500], &[(220, [-180, 2_100]), (221, [180, 2_300])]);
     app.select(second); // deliberately choose farther body first
+    app.pump(Duration::from_millis(800)); // focus framing eases; project the next click once it settles
     app.select(front);
+    app.until("projected enemy owns camera focus", |app| {
+        app.driver.app.camera_control.mode() == CameraMode::Focus(front)
+    });
+    app.key("Tab");
+    app.until("physical Tab switches focused opponent", |app| {
+        app.driver.app.camera_control.mode() == CameraMode::Focus(second)
+    });
+    app.key("Escape");
+    app.until("physical Escape clears selection and focus", |app| {
+        app.driver.app.camera_control.mode() == CameraMode::FreeLook
+            && app
+                .driver
+                .app
+                .presentation
+                .latest()
+                .unwrap()
+                .viewer
+                .target
+                .is_none()
+    });
+    app.select(front);
+    app.pump(Duration::from_millis(800)); // let focus framing settle before testing mouse ownership
     let point = app.point(front);
     let camera = app.driver.app.camera;
     app.no_selection_command(|app| {
@@ -719,9 +796,9 @@ fn native_pointer_application_contract() {
             }),
         )
     });
-    assert_ne!(
-        app.driver.app.camera, camera,
-        "drag must orbit the actual rendered camera"
+    assert!(
+        (app.driver.app.camera.yaw() - camera.yaw()).abs() < 0.1,
+        "a focused enemy keeps mouse drag from stealing camera steering"
     );
     app.driver.app.camera = camera;
     for end in [
@@ -825,29 +902,11 @@ fn native_pointer_application_contract() {
             },
             skin: None,
         });
-        let window = Arc::clone(app.driver.app.window.as_ref().unwrap());
-        // Retire the configured surface before creating another for this window.
-        drop(app.driver.app.renderer.take());
-        app.driver.app.renderer = Some(
-            app.driver
-                .app
-                .runtime
-                .block_on(WindowRenderer::new(window, &app.driver.app.world))
-                .unwrap(),
-        );
+        app.replace_renderer();
         app.pump(Duration::from_millis(100));
         app.no_selection_command(|app| app.pointer(point, None));
         app.driver.app.world = original;
-        let window = Arc::clone(app.driver.app.window.as_ref().unwrap());
-        // Retire the configured surface before creating another for this window.
-        drop(app.driver.app.renderer.take());
-        app.driver.app.renderer = Some(
-            app.driver
-                .app
-                .runtime
-                .block_on(WindowRenderer::new(window, &app.driver.app.world))
-                .unwrap(),
-        );
+        app.replace_renderer();
     }
 
     // Actual Greyhaven content identities and role availability, never nearest.
@@ -1077,7 +1136,7 @@ fn native_pointer_application_contract() {
         "cancel must retire an armed pointer"
     );
 
-    app.key("Return");
+    app.key("e");
     let before_purchase = app.snapshot().players[0].inventory_revision;
     app.key("1");
     app.until(
@@ -1108,7 +1167,7 @@ fn native_pointer_application_contract() {
     let role_count = app.role_action_count();
     let selections = app.selection_count();
     app.pointer(point, None);
-    app.key("Return");
+    app.key("e");
     app.key("1");
     app.zone.0.lock().unwrap().frozen = None;
     app.until(

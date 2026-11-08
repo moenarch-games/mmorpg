@@ -33,6 +33,22 @@ button { font: inherit; }
   outline: none;
 }
 
+.aim-reticle {
+  display: none;
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  z-index: 2;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgb(255 246 219 / 90%);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 80%), 0 0 5px rgb(0 0 0 / 75%);
+  pointer-events: none;
+}
+#world[data-pointer-owner="camera"] + .aim-reticle { display: block; }
+
 .character-select {
   position: fixed;
   inset: 0;
