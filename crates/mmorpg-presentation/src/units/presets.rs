@@ -15,6 +15,11 @@ const REDBRAND_RED: [f64; 4] = [0.3, 0.025, 0.02, 1.];
 pub const REDBRAND_KIT: &str = "redbrand.kit";
 pub const REDBRAND_KIT_DESCRIPTOR: &str = "redbrand-descriptor";
 
+/// The hair and beard kit (#677, asset-tooling #517, #525): its rolling release's directory
+/// beside the figures (`characters/hair.kit`) and the name of its descriptor attachment.
+pub const HAIR_KIT: &str = "hair.kit";
+pub const HAIR_KIT_DESCRIPTOR: &str = "hair-descriptor";
+
 /// The kit's outfit the bandits and crossbowmen wear when the kit is present (#675).
 pub const REDBRAND_OUTFIT: &str = "outfit.redbrand";
 
@@ -85,9 +90,16 @@ fn soldier_enemy_presets() -> Vec<Value> {
 /// `kit` is the Redbrand kit's `redbrand-kit-descriptor-v1` when the kit was fetched: its
 /// outfits and morph variants join the male's ([`with_kit`]) and the bandits wear its outfit.
 /// The female figure's bundle (asset-tooling #378) is drawn as published: her residents' presets
-/// (`resident.tanner`, #493) and no male-only options.
+/// (`resident.tanner`, #493) and no male-only options. `hair_kit` is the hair kit's
+/// `hair-kit-descriptor-v1` when the kit was fetched: its pieces are the male's hair and beards
+/// ([`with_hair_kit`]).
 #[must_use]
-pub fn figure_appearance(figure: Figure, appearance: &Value, kit: Option<&Value>) -> Value {
+pub fn figure_appearance(
+    figure: Figure,
+    appearance: &Value,
+    kit: Option<&Value>,
+    hair_kit: Option<&Value>,
+) -> Value {
     if figure == Figure::Female {
         return appearance.clone();
     }
@@ -97,6 +109,9 @@ pub fn figure_appearance(figure: Figure, appearance: &Value, kit: Option<&Value>
             .any(|outfit| outfit["id"] == REDBRAND_OUTFIT)
     });
     let mut value = kit.map_or_else(|| appearance.clone(), |kit| with_kit(appearance, kit));
+    if let Some(hair_kit) = hair_kit {
+        value = with_hair_kit(&value, hair_kit);
+    }
     if let Some(object) = value.as_object_mut() {
         let presets = object
             .entry("presets")
@@ -150,6 +165,25 @@ pub fn with_kit(appearance: &Value, kit: &Value) -> Value {
     value
 }
 
+/// `appearance` wearing the hair kit's pieces (#677, asset-tooling #525): the kit's `hair` and
+/// `facialHair` replace the bundle's. Each piece is its own kit entry, so `facialHair` has no
+/// shared `entry` and each beard option names its own. The keys are the bundle's option ids, so
+/// presets keep working.
+#[must_use]
+pub fn with_hair_kit(appearance: &Value, kit: &Value) -> Value {
+    let mut value = appearance.clone();
+    let Some(object) = value.as_object_mut() else {
+        return value;
+    };
+    if !list(&kit["hair"]).is_empty() {
+        object.insert("hair".into(), kit["hair"].clone());
+    }
+    if !list(&kit["facialHair"]["options"]).is_empty() {
+        object.insert("facialHair".into(), kit["facialHair"].clone());
+    }
+    value
+}
+
 /// The tintable texture variant every hairstyle is drawn in.
 pub const HAIR_VARIANT: &str = "hair-1";
 
@@ -159,9 +193,13 @@ pub fn tintable_hair(appearance: &Value) -> Vec<String> {
     list(&appearance["hair"])
         .iter()
         .filter(|style| {
+            // The bundle's records list `textures`, the hair kit's `variants`.
             list(&style["textures"])
                 .iter()
                 .any(|texture| texture["variant"] == HAIR_VARIANT)
+                || list(&style["variants"])
+                    .iter()
+                    .any(|variant| variant == HAIR_VARIANT)
         })
         .filter_map(|style| style["entry"].as_str().map(str::to_owned))
         .collect()
@@ -347,6 +385,7 @@ mod tests {
                 "facialHair": { "options": [{ "id": "beard.full" }, { "id": "beard.moustache" }] },
             }),
             None,
+            None,
         );
         let own = vary_preset(&appearance, "enemy.redbrand.bandit", 7).expect("the bandit preset");
         assert_eq!(own["outfit"], "outfit.soldier");
@@ -360,11 +399,35 @@ mod tests {
     }
 
     #[test]
+    fn the_hair_kit_replaces_the_male_hair_and_beards() {
+        let bundle = json!({
+            "hair": [{ "entry": "hair.long", "textures": [{ "variant": "hair-2" }] }],
+            "facialHair": { "entry": "facial-hair.beards", "options": [{ "id": "beard.full", "node": "beard.full" }] },
+        });
+        let kit = json!({
+            "hair": [{ "entry": "hair.long", "variants": ["hair-1", "hair-2"] }],
+            "facialHair": { "followsHairTint": true, "options": [{ "id": "beard.full", "entry": "beard.full" }] },
+        });
+        let male = figure_appearance(Figure::Male, &bundle, None, Some(&kit));
+        assert_eq!(male["hair"], kit["hair"]);
+        assert_eq!(male["facialHair"]["options"][0]["entry"], "beard.full");
+        assert!(male["facialHair"]["entry"].is_null());
+        assert_eq!(tintable_hair(&male), vec!["hair.long".to_owned()]);
+        // Without the kit, and on the female figure, the bundle's stay.
+        let kept = figure_appearance(Figure::Male, &bundle, None, None);
+        assert_eq!(kept["facialHair"]["entry"], "facial-hair.beards");
+        assert_eq!(
+            figure_appearance(Figure::Female, &bundle, None, Some(&kit)),
+            bundle
+        );
+    }
+
+    #[test]
     fn the_female_figure_keeps_her_own_presets_only() {
         let bundle = json!({ "presets": [{ "id": "resident.tanner", "outfit": "outfit.tanner" }] });
-        let female = figure_appearance(Figure::Female, &bundle, None);
+        let female = figure_appearance(Figure::Female, &bundle, None, None);
         assert_eq!(female, bundle);
-        let male = figure_appearance(Figure::Male, &bundle, None);
+        let male = figure_appearance(Figure::Male, &bundle, None, None);
         assert_eq!(male["presets"].as_array().map(Vec::len), Some(6));
         assert_eq!(
             super::super::imported::Resident::of_name("Tanner Hilda Brook")
@@ -390,7 +453,7 @@ mod tests {
                 "variety": { "variants": ["default", "skin.light"], "entries": ["redbrand.kit.armor"] },
             },
         });
-        let male = figure_appearance(Figure::Male, &bundle, Some(&kit));
+        let male = figure_appearance(Figure::Male, &bundle, Some(&kit), None);
         let outfits = list(&male["outfits"]);
         assert_eq!(outfits.len(), 2);
         assert_eq!(outfits[1], kit["outfits"][0]);
@@ -418,7 +481,7 @@ mod tests {
         );
         assert_eq!(outfit("enemy.redbrand.brute"), Some(json!("outfit.knight")));
         // Without the kit the bandits keep the soldier's gambeson.
-        let plain = figure_appearance(Figure::Male, &bundle, None);
+        let plain = figure_appearance(Figure::Male, &bundle, None, None);
         assert!(
             list(&plain["presets"])
                 .iter()

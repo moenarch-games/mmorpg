@@ -102,17 +102,58 @@ fn kit() -> Option<&'static Value> {
     .as_ref()
 }
 
-/// The embedded Redbrand kit glTF of entry `key` in `variant`, if the kit has it.
-fn kit_path(key: &str, variant: &str) -> Option<&'static str> {
+/// The hair and beard kit's entries and resources (#677, asset-tooling #525), embedded by
+/// `build.rs` when `scripts/fetch-bundles.sh` fetched it; empty otherwise.
+mod hair_bundle {
+    include!(concat!(env!("OUT_DIR"), "/hair_bundle.rs"));
+}
+
+/// The hair kit's `hair-descriptor`; empty when the kit was not fetched.
+mod hair_descriptor {
+    include!(concat!(env!("OUT_DIR"), "/hair_descriptor.rs"));
+}
+
+/// The hair kit's descriptor, None when the kit was not fetched before the build.
+fn hair_kit() -> Option<&'static Value> {
+    static KIT: OnceLock<Option<Value>> = OnceLock::new();
+    KIT.get_or_init(|| {
+        let text = hair_descriptor::DESCRIPTOR;
+        (!text.is_empty())
+            .then(|| serde_json::from_str(text).expect("the hair kit descriptor is JSON"))
+    })
+    .as_ref()
+}
+
+/// The embedded files of a kit.
+type KitFiles = &'static [(&'static str, &'static [u8])];
+
+/// The embedded kit glTF of entry `key` in `variant` for `figure`, with its kit's files, if a
+/// kit has it: the Redbrand kit, or the hair kit, whose pieces are fitted to the male head.
+fn kit_file(figure: Figure, key: &str, variant: &str) -> Option<(&'static str, KitFiles)> {
     let id = if variant == "default" {
         key.to_owned()
     } else {
         format!("{key}/{variant}")
     };
-    redbrand_bundle::ENTRIES
-        .iter()
-        .find(|(entry, _)| *entry == id)
-        .map(|(_, path)| *path)
+    let path = |entries: &'static [(&'static str, &'static str)]| {
+        entries
+            .iter()
+            .find(|(entry, _)| *entry == id)
+            .map(|(_, path)| *path)
+    };
+    path(redbrand_bundle::ENTRIES)
+        .map(|path| (path, redbrand_bundle::FILES))
+        .or_else(|| {
+            path(hair_bundle::ENTRIES)
+                .filter(|_| figure == Figure::Male)
+                .map(|path| (path, hair_bundle::FILES))
+        })
+}
+
+/// The hair kit's piece `key` in the tintable variant; None without the kit.
+pub(super) fn kit_hair(key: &str) -> Option<Model> {
+    kit_file(Figure::Male, key, presets::HAIR_VARIANT)?;
+    Some(entry(Figure::Male, key, presets::HAIR_VARIANT).clone())
 }
 
 /// Whether `key` is a whole figure of `figure`'s rig: the figure itself, or a faction kit's
@@ -128,20 +169,20 @@ fn is_figure(figure: Figure, key: &str) -> bool {
 }
 
 /// `figure`'s appearance with the game's presets (`presets::figure_appearance`): the male's
-/// with the Redbrand kit's outfit and the enemy presets beside the bundle's own, the female's as
-/// published.
-fn look(figure: Figure) -> &'static Value {
+/// with the Redbrand kit's outfit, the hair kit's pieces and the enemy presets beside the bundle's
+/// own, the female's as published.
+pub(super) fn look(figure: Figure) -> &'static Value {
     static MALE: OnceLock<Value> = OnceLock::new();
     static FEMALE: OnceLock<Value> = OnceLock::new();
     match figure {
         Figure::Male => {
-            MALE.get_or_init(|| presets::figure_appearance(figure, appearance(), kit()))
+            MALE.get_or_init(|| presets::figure_appearance(figure, appearance(), kit(), hair_kit()))
         }
         Figure::Female => FEMALE.get_or_init(|| {
             let bundle: Value =
                 serde_json::from_slice(file(figure, ranger_female_bundle::APPEARANCE))
                     .expect("the appearance descriptor is JSON");
-            presets::figure_appearance(figure, &bundle, None)
+            presets::figure_appearance(figure, &bundle, None, None)
         }),
     }
 }
@@ -329,7 +370,7 @@ fn prepared(key: &str, variant: &str) -> String {
 
 fn embedded(figure: Figure, key: &str, variant: &str) -> bool {
     let path = prepared(key, variant);
-    kit_path(key, variant).is_some() || bundle(figure).iter().any(|(name, _)| *name == path)
+    kit_file(figure, key, variant).is_some() || bundle(figure).iter().any(|(name, _)| *name == path)
 }
 
 /// A prepared entry of `figure`'s bundle imported once per process: the figure in an outfit
@@ -342,9 +383,9 @@ fn entry(figure: Figure, key: &str, variant: &str) -> &'static Model {
         .lock()
         .expect("the model cache is not poisoned");
     models.entry((figure, path.clone())).or_insert_with(|| {
-        // A Redbrand kit entry (#675) is a gltf-resources-v1 entry with KTX2 textures, packed
-        // into one GLB with its textures transcoded; the figure's own entries are prepared GLBs.
-        let packed = kit_path(key, variant).map(|kit| bundle_glb(kit, redbrand_bundle::FILES));
+        // A kit entry (#675, #677) is a gltf-resources-v1 entry with KTX2 textures, packed into
+        // one GLB with its textures transcoded; the figure's own entries are prepared GLBs.
+        let packed = kit_file(figure, key, variant).map(|(kit, files)| bundle_glb(kit, files));
         let bytes = packed.as_deref().unwrap_or_else(|| file(figure, &path));
         let model = if is_figure(figure, key) {
             Model::parse_with_clips(bytes, Kind::Ranger.clips().idle, Some(clips(figure)))
@@ -396,6 +437,12 @@ fn files(resident: Resident) -> Option<Vec<(String, String)>> {
     }
     if let Some(beards) = look["facialHair"]["entry"].as_str() {
         files.push((beards.to_owned(), "default".to_owned()));
+    }
+    // The hair kit's beards are one entry each (#677).
+    for option in list(&look["facialHair"]["options"]) {
+        if let Some(beard) = option["entry"].as_str() {
+            files.push((beard.to_owned(), "default".to_owned()));
+        }
     }
     if let Some(headwear) = preset["headwear"].as_str() {
         files.push((headwear.to_owned(), "default".to_owned()));
@@ -534,12 +581,16 @@ fn dress(figure: Figure, preset: &Value) -> ResidentLook {
     for id in strings(&preset["facialHair"]) {
         let option = find(&facial["options"], "id", &id.as_str().into())
             .unwrap_or_else(|| panic!("the appearance declares the beard {id}"));
-        let beards = entry(
-            figure,
-            facial["entry"].as_str().expect("a beards entry"),
-            "default",
-        );
-        let mut beard = beards.piece(option["node"].as_str().expect("a beard node"));
+        // A hair kit beard is its own entry; the bundle's share one entry's nodes.
+        let mut beard = match option["entry"].as_str() {
+            Some(piece) => entry(figure, piece, "default").clone(),
+            None => entry(
+                figure,
+                facial["entry"].as_str().expect("a beards entry"),
+                "default",
+            )
+            .piece(option["node"].as_str().expect("a beard node")),
+        };
         if let Some(tint) = beard_tint {
             beard.recolor(None, &strings(&option["tintMaterials"]), tint);
         }

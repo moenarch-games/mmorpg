@@ -743,22 +743,25 @@ type FigureBundle = {
 
 /** The Redbrand faction kit's directory beside the figures (`presets::REDBRAND_KIT`, #675). */
 const REDBRAND_KIT = "redbrand.kit";
+/** The hair and beard kit's directory beside the figures (`presets::HAIR_KIT`, #677). */
+const HAIR_KIT = "hair.kit";
 
 /**
- * The Redbrand faction kit (asset-tooling #522), fetched by `scripts/fetch-bundles.sh` into
- * `characters/redbrand.kit/`: its `redbrand-descriptor` and each entry's glTF URL by
- * `<key>/<variant>`. Its figures are on the male rig and play his clips by joint name. Null when
- * the kit was not fetched: the bandits then keep the soldier's outfit.
+ * A kit `scripts/fetch-bundles.sh` fetches into `characters/<directory>/`: its descriptor
+ * attachment and each entry's glTF URL by `<key>/<variant>`. Null when the kit was not fetched,
+ * and the figure keeps what its own bundle offers (`absent` says what). The Redbrand kit's
+ * figures (asset-tooling #522) play the male's clips by joint name; the hair kit's pieces
+ * (asset-tooling #525) go under his sockets.
  */
-async function loadRedbrandKit(): Promise<{ descriptor: unknown; scenes: Map<string, string> } | null> {
-  const base = new URL(`${import.meta.env.BASE_URL}characters/${REDBRAND_KIT}/`, window.location.href);
+async function loadKit(directory: string, attachmentName: string, absent: string): Promise<{ descriptor: unknown; scenes: Map<string, string> } | null> {
+  const base = new URL(`${import.meta.env.BASE_URL}characters/${directory}/`, window.location.href);
   try {
     const response = await fetch(new URL("manifest.json", base));
     if (!response.ok) { throw new Error(`manifest.json ${response.status}`); }
     type KitAsset = { key: string; variant: string; path: string; attachments?: { name?: string; path?: string }[] };
     const assets = ((await response.json()) as { assets?: KitAsset[] }).assets ?? [];
-    const attachment = assets.flatMap((asset) => asset.attachments ?? []).find((item) => item.name === "redbrand-descriptor");
-    if (!attachment?.path) { throw new Error("no redbrand-descriptor"); }
+    const attachment = assets.flatMap((asset) => asset.attachments ?? []).find((item) => item.name === attachmentName);
+    if (!attachment?.path) { throw new Error(`no ${attachmentName}`); }
     const descriptor = await fetch(new URL(attachment.path, base));
     if (!descriptor.ok) { throw new Error(`${attachment.path} ${descriptor.status}`); }
     return {
@@ -766,7 +769,7 @@ async function loadRedbrandKit(): Promise<{ descriptor: unknown; scenes: Map<str
       scenes: new Map(assets.map((asset) => [`${asset.key}/${asset.variant}`, new URL(asset.path, base).href])),
     };
   } catch (error) {
-    console.info("The Redbrand kit is not available (run scripts/fetch-bundles.sh); the bandits keep the soldier's outfit.", error);
+    console.info(`The ${directory} kit is not available (run scripts/fetch-bundles.sh); ${absent}`, error);
     return null;
   }
 }
@@ -798,13 +801,17 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
   ]);
   const motions = clipMotionsOf(descriptor);
   // The Redbrand faction kit's figures and armour (#675) ride with the male's entries.
-  const kit = character === MALE ? await loadRedbrandKit() : null;
-  const appearance = figureAppearance(character, await json(entryFile(entry, ".humanoid-appearance.json")), kit?.descriptor ?? null);
+  const kit = character === MALE ? await loadKit(REDBRAND_KIT, "redbrand-descriptor", "the bandits keep the soldier's outfit.") : null;
+  // The hair kit's pieces are fitted to the male head (#677).
+  const hairKit = character === MALE ? await loadKit(HAIR_KIT, "hair-descriptor", "the figure keeps the Ranger bundle's hair and beards.") : null;
+  const kitScene = (id: string) => kit?.scenes.get(id) ?? hairKit?.scenes.get(id);
+  const appearance = figureAppearance(character, await json(entryFile(entry, ".humanoid-appearance.json")), kit?.descriptor ?? null, hairKit?.descriptor ?? null);
   const look = headLook(appearance);
   const face = faceLookOf(appearance, entry.variant, gltf.scene);
   if (!face) { console.info(`The ${character} bundle has no face morphs for its drawn entry; faces keep the base shape.`); }
   const load = async (key: string, variant?: string) => {
-    const scene = (await loader.loadAsync(url(entryFile(bundleEntry(manifest, key, variant), ".gltf")))).scene;
+    const path = (variant !== undefined ? kitScene(`${key}/${variant}`) : undefined) ?? url(entryFile(bundleEntry(manifest, key, variant), ".gltf"));
+    const scene = (await loader.loadAsync(path)).scene;
     if (character === MALE && key === "hair.long") {
       // The male long locks are authored lower than the buzzed scalp in the same asset.
       // Lift only the locks so the scalp stays seated on the head.hair socket.
@@ -823,7 +830,7 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
     const id = `${key}/${variant}`;
     let loaded = scenes.get(id);
     if (!loaded) {
-      const path = kit?.scenes.get(id) ?? url(entryFile(bundleEntry(manifest, key, variant), ".gltf"));
+      const path = kitScene(id) ?? url(entryFile(bundleEntry(manifest, key, variant), ".gltf"));
       loaded = loader.loadAsync(path).then((result) => {
         result.scene.updateMatrixWorld(true);
         return result.scene;
@@ -974,7 +981,7 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     for (const piece of preset.pieces) {
       if (piece.beard) {
         if (viewer) { continue; }
-        const clone = piece.node.clone();
+        const clone = clonePiece(piece);
         if (piece.tint) { tintMaterials(clone, piece.materials, piece.tint); }
         attachItem(model, clone, new THREE.Matrix4(), sockets.get(piece.socket)!);
         continue;
@@ -1034,7 +1041,7 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
       for (const piece of preset.pieces) {
         const place = figure.sockets.get(piece.socket);
         if (!place) { throw new Error(`The ${figure.character} bundle has no socket ${piece.socket}.`); }
-        const clone = piece.node.clone();
+        const clone = clonePiece(piece);
         if (piece.tint) { tintMaterials(clone, piece.materials, piece.tint); }
         // Plates and beards are authored in rest model space: their origin is the socket's.
         attachItem(model, clone, new THREE.Matrix4(), place);
@@ -1139,7 +1146,7 @@ type ResidentLook = {
   face: FaceLook | null;
   choice: FaceChoice;
   /** Armour plates and beards on their sockets, beards tinted like the hair. */
-  pieces: { node: THREE.Object3D; socket: string; beard: boolean; materials: readonly string[]; tint: readonly [number, number, number] | null }[];
+  pieces: ResidentPiece[];
   headwear: string | null;
   hair: string | null;
   tint: readonly [number, number, number] | undefined;
@@ -1222,10 +1229,10 @@ function applyHeadSkin(model: THREE.Object3D, { material, skin }: HeadSkin): voi
   });
 }
 
-/** The hair entries the bundle offers in the tintable `HAIR_VARIANT`. */
+/** The hair entries the appearance offers in the tintable `HAIR_VARIANT`: the bundle's records list `textures`, the hair kit's `variants`. */
 function tintableHair(appearance: unknown): string[] {
-  const hair = (appearance as { hair?: { entry?: unknown; textures?: { variant?: unknown }[] }[] }).hair ?? [];
-  return hair.flatMap((style) => (typeof style.entry === "string" && style.textures?.some((texture) => texture.variant === HAIR_VARIANT) ? [style.entry] : []));
+  const hair = (appearance as { hair?: { entry?: unknown; textures?: { variant?: unknown }[]; variants?: unknown[] }[] }).hair ?? [];
+  return hair.flatMap((style) => (typeof style.entry === "string" && (style.textures?.some((texture) => texture.variant === HAIR_VARIANT) || style.variants?.includes(HAIR_VARIANT)) ? [style.entry] : []));
 }
 
 /** Sets the `morphs` weights on every mesh of `model` (and its attached items) carrying the target. */
@@ -1239,6 +1246,13 @@ function setMorphs(model: THREE.Object3D, morphs: Readonly<Record<string, number
   });
 }
 
+/** One plate or beard a resident wears. `whole` is a kit piece's whole skinned scene, cloned with its joints. */
+type ResidentPiece = {
+  node: THREE.Object3D; socket: string; beard: boolean; materials: readonly string[];
+  tint: readonly [number, number, number] | null; whole?: boolean;
+};
+const clonePiece = (piece: ResidentPiece): THREE.Object3D => (piece.whole ? cloneSkinned(piece.node) : piece.node.clone());
+
 type OutfitValue = {
   id?: unknown; skins?: { id?: unknown; entry?: unknown; variant?: unknown }[];
   armor?: { entry?: unknown; pieces?: { node?: unknown; socket?: unknown }[] };
@@ -1248,7 +1262,7 @@ type OutfitValue = {
   hood?: unknown;
 };
 type FacialHairValue = {
-  entry?: unknown; options?: { id?: unknown; node?: unknown; socket?: unknown; tintMaterials?: unknown }[];
+  entry?: unknown; options?: { id?: unknown; entry?: unknown; node?: unknown; socket?: unknown; tintMaterials?: unknown }[];
   tints?: { id?: unknown; baseColorFactor?: unknown }[];
 };
 
@@ -1298,10 +1312,13 @@ export async function residentLooks(appearance: unknown, look: Pick<HeadLook, "t
     const beardTint = rgb(facialHair?.tints?.find((tint) => tint.id === tintId)?.baseColorFactor);
     for (const id of strings(preset.facialHair)) {
       const option = facialHair?.options?.find((candidate) => candidate.id === id);
-      if (!option || typeof facialHair?.entry !== "string" || typeof option.node !== "string" || typeof option.socket !== "string") {
+      // A hair kit beard is its own entry, one skinned scene; the bundle's share one entry's nodes.
+      const whole = typeof option?.entry === "string" ? await scene(option.entry, "default") : null;
+      const found = whole ?? (typeof facialHair?.entry === "string" && typeof option?.node === "string" ? await node(facialHair.entry, option.node) : null);
+      if (!found || typeof option?.socket !== "string") {
         throw new Error(`The resident preset ${preset.id} names an unknown beard ${id}.`);
       }
-      pieces.push({ node: await node(facialHair.entry, option.node), socket: option.socket, beard: true, materials: strings(option.tintMaterials), tint: beardTint });
+      pieces.push({ node: found, socket: option.socket, beard: true, materials: strings(option.tintMaterials), tint: beardTint, whole: whole !== null });
     }
     const factionColor = rgb(preset.faction);
     const factionMaterials = strings(outfit.faction?.materials);
