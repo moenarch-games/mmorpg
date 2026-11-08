@@ -1,11 +1,13 @@
 #![cfg(feature = "postgres")]
 use mmorpg_control_plane::{
     ControlPlaneError, EntityId, HandoffAuthority, HandoffPhase, HandoffTicket, HostId, TransferId,
+    party::{InviteTarget, PartyAuthority, PartyRosterEntry, PartyStoreError},
     postgres::{
-        DirectoryStoreError, PostgresHandoffs, PostgresZoneDirectory, ensure_writer_in, migrate,
+        DirectoryStoreError, PostgresHandoffs, PostgresParties, PostgresZoneDirectory,
+        ensure_writer_in, migrate,
     },
 };
-use mmorpg_core::ZoneId;
+use mmorpg_core::{CharacterId, ZoneId};
 use std::{
     sync::{Arc, Barrier},
     time::{Duration, Instant},
@@ -162,6 +164,84 @@ fn postgres_handoffs_are_fenced_idempotent_and_decided_at_acceptance() {
             .unwrap(),
         HandoffPhase::Prepared
     );
+}
+
+/// Two hosts share one party directory (#404): a party formed on one survives its member's
+/// handoff to the other, and a host whose zone lease is gone changes nothing.
+#[test]
+fn postgres_parties_span_hosts_survive_a_handoff_and_fence_a_retired_zone() {
+    let Ok(url) = std::env::var("MMORPG_CHARACTERS_POSTGRES_URL") else {
+        return;
+    };
+    let mut client = postgres::Client::connect(&url, postgres::NoTls).unwrap();
+    migrate(&mut client).unwrap();
+    client
+        .execute("SELECT pg_advisory_lock($1)", &[&0x4d4d_5a44_5445_5354_i64])
+        .unwrap();
+    let first: i64 = client
+        .query_one(
+            "SELECT coalesce(max(zone_id),1000)+1 FROM mmorpg_coordination.zones",
+            &[],
+        )
+        .unwrap()
+        .get(0);
+    let zone = |offset: i64| ZoneId::new(u32::try_from(first + offset).unwrap());
+    let ttl = Duration::from_secs(30);
+    let timeout = Duration::from_secs(5);
+    let mut zones = PostgresZoneDirectory::connect(&url, timeout).unwrap();
+    let west = zones
+        .acquire(zone(0), HostId::new("west").unwrap(), 0, ttl)
+        .unwrap();
+    let east = zones
+        .acquire(zone(1), HostId::new("east").unwrap(), 0, ttl)
+        .unwrap();
+    let (west_lease, east_lease) = (west.lease().clone(), east.lease().clone());
+    let mut west_host = PostgresParties::connect(&url, timeout).unwrap();
+    let mut east_host = PostgresParties::connect(&url, timeout).unwrap();
+
+    let aria = CharacterId::new(format!("aria-{first}")).unwrap();
+    let bren = CharacterId::new(format!("bren-{first}")).unwrap();
+    let entry = |character: &CharacterId, player| PartyRosterEntry {
+        character: character.clone(),
+        player,
+        name: character.as_str().to_owned(),
+    };
+    west_host
+        .transact(Some(&west_lease), &mut |directory, now| {
+            directory.sync_zone(zone(0), &[entry(&aria, 1), entry(&bren, 2)], now);
+            let invite = directory
+                .invite(&aria, &InviteTarget::Character(bren.clone()), now)
+                .unwrap();
+            directory.accept(&bren, invite, now).unwrap();
+        })
+        .unwrap();
+
+    // Bren crosses to the other host, which reports it from there.
+    west_host
+        .transact(Some(&west_lease), &mut |directory, now| {
+            directory.sync_zone(zone(0), &[entry(&aria, 1)], now);
+        })
+        .unwrap();
+    let mut bren_view = None;
+    east_host
+        .transact(Some(&east_lease), &mut |directory, now| {
+            directory.sync_zone(zone(1), &[entry(&bren, 9)], now);
+            bren_view = Some(directory.view(&bren, 0));
+        })
+        .unwrap();
+    let roster = bren_view.unwrap().roster.expect("still in the party");
+    assert_eq!(roster.members.len(), 2);
+    assert_eq!(roster.members[0].player, None, "the leader is elsewhere");
+    assert_eq!(roster.members[1].player, Some(9));
+    assert!(roster.members[0].online);
+
+    // A retired zone's host is fenced before its body runs.
+    zones.retire(&west_lease).unwrap();
+    let result = west_host.transact(Some(&west_lease), &mut |_directory, _now| {
+        panic!("a fenced transaction must not run")
+    });
+    assert_eq!(result, Err(PartyStoreError::Fenced));
+    zones.retire(&east_lease).unwrap();
 }
 
 #[test]
