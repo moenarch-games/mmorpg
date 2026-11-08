@@ -4,8 +4,8 @@
 //!
 //! [`Cave`] describes the terrain footprint. #160 makes it
 //! Redbrand Hollow's shared outer cavern: Redbrands hold both chambers, and a sealed
-//! [`THRESHOLD`] in the inner chamber marks the way to the deeper, party-private cave that
-//! later work opens. Collision is persisted separately in `content/collision/redbrand.json`:
+//! [`THRESHOLD`] in the inner chamber is the barred way to the party-private Redbrand Depths
+//! (#404): a player touching its [`depths_threshold`] strip is transferred or refused. Collision is persisted separately in `content/collision/redbrand.json`:
 //! simplified wall/roof/floor triangle meshes and a sloping approach to an elevated shelf.
 //! This footprint metadata only flattens the surrounding terrain and controls scenery relief.
 //! The cave floor meets the basin's rim at the mouth. Clients cut the roof away indoors.
@@ -35,8 +35,8 @@ impl Cave {
 
 /// The sealed threshold to Redbrand Hollow's deeper cave (#160): a 4 m wide, 3.5 m tall
 /// barricade against the inner chamber's east wall, as a `(min, max)` XZ footprint standing on
-/// the cave's floor. It stays shut until the party-private depths open behind it; a stand-in box until the
-/// asset-tooling kit gives it its own look.
+/// the cave's floor. It stays barred; the depths are reached by standing in its strip
+/// ([`depths_threshold`]). A stand-in box until the asset-tooling kit gives it its own look.
 pub const THRESHOLD: ([i32; 2], [i32; 2]) = ([7_930, -14_000], [7_990, -13_600]);
 /// The threshold's height.
 pub const THRESHOLD_HEIGHT: i32 = 350;
@@ -77,6 +77,42 @@ pub const GREYFANG: Cave = Cave {
     ],
     roof: ([3_600, -15_600], [9_200, -12_000]),
 };
+
+/// A depths exit lands in the public cave's north mouth, this far from where it crossed the
+/// depths' exit strip (#404): the strip at x ∈ [-10000, -9800), z ∈ [-150, 150) maps onto the
+/// mouth's clear floor, and the character keeps its offset across the strip like at a seam.
+pub const EXIT_OFFSET: [i32; 2] = [16_300, -15_000];
+
+/// The body centre where a character returning from the depths stands in Greyhaven: on the
+/// public cave's mouth floor, away from its garrison. Also where a character is placed if its
+/// stored location is a retired run (#404, Atlas 5.1.30).
+#[must_use]
+pub const fn depths_exit_entrance() -> [i32; 3] {
+    [
+        6_400,
+        GREYFANG.floor_y + crate::PLAYER_HALF_EXTENTS_UNITS[1],
+        -15_000,
+    ]
+}
+
+/// The strip in front of the barricade where a living character asks to enter the depths, and
+/// the inner chamber a party gathers in (#404).
+#[must_use]
+pub const fn depths_threshold() -> crate::DepthsThreshold {
+    crate::DepthsThreshold {
+        strip: crate::XzBounds {
+            min: [7_700, THRESHOLD.0[1]],
+            max: [THRESHOLD.0[0], THRESHOLD.1[1]],
+        },
+        gather: crate::XzBounds {
+            min: [7_200, -14_400],
+            max: [8_000, -13_200],
+        },
+        qualifying_quest: super::quests::GARRICK_REDBRAND_QUEST,
+        entrance: depths_exit_entrance(),
+        facing: 49_152,
+    }
+}
 
 /// Repository-persisted simplified geometry, exported from Blender in game coordinates.
 #[must_use]

@@ -174,6 +174,9 @@ mirror!(
         PrivateHome,
         NoAnswer,
         NotAtNight,
+        DepthsLocked,
+        DepthsClosed,
+        DepthsWipe,
     }
 );
 mirror!(

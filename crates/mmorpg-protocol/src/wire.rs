@@ -92,7 +92,7 @@ pub(crate) fn decode_entity_ref(
     Ok(Some(EntityRef::new(decode_entity_kind(code)?, id)))
 }
 
-const fn error_code(code: ErrorCode) -> u16 {
+pub const fn error_code(code: ErrorCode) -> u16 {
     match code {
         ErrorCode::NoTarget => 1,
         ErrorCode::OutOfRange => 2,
@@ -134,10 +134,13 @@ const fn error_code(code: ErrorCode) -> u16 {
         ErrorCode::PrivateHome => 38,
         ErrorCode::NoAnswer => 39,
         ErrorCode::NotAtNight => 40,
+        ErrorCode::DepthsLocked => 41,
+        ErrorCode::DepthsClosed => 42,
+        ErrorCode::DepthsWipe => 43,
     }
 }
 
-fn decode_error_code(code: u16) -> Result<ErrorCode, ProtocolError> {
+pub fn decode_error_code(code: u16) -> Result<ErrorCode, ProtocolError> {
     Ok(match code {
         1 => ErrorCode::NoTarget,
         2 => ErrorCode::OutOfRange,
@@ -179,6 +182,9 @@ fn decode_error_code(code: u16) -> Result<ErrorCode, ProtocolError> {
         38 => ErrorCode::PrivateHome,
         39 => ErrorCode::NoAnswer,
         40 => ErrorCode::NotAtNight,
+        41 => ErrorCode::DepthsLocked,
+        42 => ErrorCode::DepthsClosed,
+        43 => ErrorCode::DepthsWipe,
         _ => return Err(ProtocolError::new("unknown error code")),
     })
 }
@@ -1016,12 +1022,15 @@ mod tests {
             ErrorCode::PrivateHome,
             ErrorCode::NoAnswer,
             ErrorCode::NotAtNight,
+            ErrorCode::DepthsLocked,
+            ErrorCode::DepthsClosed,
+            ErrorCode::DepthsWipe,
         ];
         for (wire, code) in (1..).zip(codes) {
             assert_eq!(error_code(code), wire, "{code:?}");
             assert_eq!(decode_error_code(wire).unwrap(), code);
         }
-        for unknown in [0, 41, u16::MAX] {
+        for unknown in [0, 44, u16::MAX] {
             assert_eq!(
                 decode_error_code(unknown).unwrap_err().to_string(),
                 "unknown error code"

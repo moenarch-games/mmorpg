@@ -25,6 +25,7 @@ mod content;
 mod corpse_loot;
 mod corridor;
 mod creature;
+mod depths;
 mod door;
 mod entity;
 mod ephemeral;
@@ -94,6 +95,7 @@ pub use class::{ClassChoice, PlayerClass, ResourceKind, Sex};
 pub use climb::{ClimbSurfaces, Grip, Ledge, Traversal, TraversalView};
 pub use combo::{COMBO_IMPACT_TICKS, COMBO_WINDOW_TICKS, ComboOpening, ComboPhase};
 pub use content::greyhaven_vale::{self, greyhaven_vale_definition};
+pub use content::redbrand_depths;
 pub use content::seam_test::{self, content_for_zone};
 pub use content::{
     CharacterPersistence, CreatureBehaviour, CreatureFamily, CreatureSpawn, CreatureTemplate,
@@ -111,6 +113,10 @@ pub use creature::{
     CREATURE_RUN_SPEED_SUBUNITS_PER_TICK, CREATURE_WALK_SPEED_SUBUNITS_PER_TICK,
     EVADE_TIMEOUT_TICKS, LEASH_RADIUS_UNITS, MAX_THREAT_ENTRIES, WANDER_WAIT_TICKS,
     WANDER_WALK_TIMEOUT_TICKS,
+};
+pub use depths::{
+    DepthsChamber, DepthsRun, DepthsRunStart, DepthsSite, DepthsSpawn, DepthsThreshold,
+    MAX_CHAMBERS, ThresholdRequest, WIPE_DELAY_TICKS, depths_arrival,
 };
 pub use door::{
     CanonicalDoor, DOOR_COOLDOWN_TICKS, DOOR_REACH_UNITS, Door, DoorBox, DoorId, DoorView,

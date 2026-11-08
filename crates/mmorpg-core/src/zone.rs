@@ -289,6 +289,8 @@ pub struct ZoneSimulation {
     pub(crate) raid: crate::RaidState,
     /// Private-home residents a knock woke, by NPC (#158).
     pub(crate) wakes: BTreeMap<crate::NpcId, crate::NpcWake>,
+    /// The private run bound to this depths zone (#404); `None` in every other zone.
+    pub(crate) depths: Option<crate::DepthsRun>,
 }
 
 impl ZoneSimulation {
@@ -317,7 +319,7 @@ impl ZoneSimulation {
             .collect();
         for id in spawns {
             // Night raiders (#530) stand only once an incident commits them.
-            if zone.content.is_raider(id) {
+            if zone.content.is_raider(id) || zone.content.is_depths_creature(id) {
                 zone.reserve_raider(id)?;
             } else {
                 zone.spawn_creature(id)?;
@@ -449,6 +451,7 @@ impl ZoneSimulation {
             next_minion: 1,
             raid: crate::RaidState::default(),
             wakes: BTreeMap::new(),
+            depths: None,
             rewards: None,
             transfers: crate::transfer::Transfers::default(),
             parties: crate::party::Parties::new(),
@@ -805,7 +808,8 @@ impl ZoneSimulation {
     ///    after movement, damage, threat, deaths, tapping (minions after creatures);
     /// 7. minions whose time ran out crumble, then health and class-resource regeneration,
     ///    corpse despawns and respawns in ID order, structure regrowth, then the night raid
-    ///    (#530: barn hits, phases, outcome, marches and the nightly trigger);
+    ///    (#530: barn hits, phases, outcome, marches and the nightly trigger), and a depths
+    ///    run's reinforcements, cleared chambers and wipe (#404);
     /// 8. talk and explore quest objectives of living players in player-ID
     ///    order;
     /// 9. the tick counter.
@@ -851,6 +855,7 @@ impl ZoneSimulation {
         self.update_timers(now)?;
         self.regrow_pieces(now)?;
         self.advance_raid(now)?;
+        self.advance_depths(now)?;
         self.advance_combos();
         self.advance_authored();
         self.advance_quest_objectives()?;

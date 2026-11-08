@@ -113,6 +113,8 @@ pub(crate) struct Transfers {
     /// Whether the host moves travellers to other zones
     /// ([`ZoneSimulation::enable_waystone_departures`]).
     pub(crate) waystone_departures_enabled: bool,
+    /// Whether the host resolves threshold requests ([`ZoneSimulation::enable_depths_entry`]).
+    pub(crate) depths_entry_enabled: bool,
 }
 
 impl Transfers {

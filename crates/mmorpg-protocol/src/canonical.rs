@@ -46,6 +46,7 @@ const COMMAND_MINIONS_INTENT: u8 = 22;
 const USE_WAYSTONE_INTENT: u8 = 23;
 const RAID_AID_INTENT: u8 = 24;
 const RAID_PREPARE_INTENT: u8 = 25;
+const NOTICE_INTENT: u8 = 26;
 const ALIVE: u8 = 1;
 const CORPSE: u8 = 2;
 const DESPAWNED: u8 = 3;
@@ -97,6 +98,7 @@ pub fn encode_canonical_snapshot(
     encode_pieces(&mut payload, &snapshot.pieces)?;
     encode_minions(&mut payload, snapshot.next_minion, &snapshot.minions)?;
     crate::raid::encode_state(&mut payload, &snapshot.raid)?;
+    crate::depths::encode_run(&mut payload, snapshot.depths.as_ref())?;
     encode_parties(&mut payload, &snapshot.parties)?;
     encode_wakes(&mut payload, &snapshot.wakes)?;
     crate::rewards::encode_history(&mut payload, snapshot.rewards.as_ref())?;
@@ -257,6 +259,11 @@ fn encode_player(
             }
             PlayerIntent::RaidPrepare(prep) => {
                 payload.extend_from_slice(&[RAID_PREPARE_INTENT, crate::raid::prep_code(prep)]);
+                continue;
+            }
+            PlayerIntent::Notice(code) => {
+                payload.push(NOTICE_INTENT);
+                payload.extend_from_slice(&crate::wire::error_code(code).to_be_bytes());
                 continue;
             }
         };
@@ -618,6 +625,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let pieces = decode_pieces(payload, &mut offset)?;
     let (next_minion, minions) = decode_minions(payload, &mut offset)?;
     let raid = crate::raid::decode_state(payload, &mut offset)?;
+    let depths = crate::depths::decode_run(payload, &mut offset)?;
     let parties = decode_parties(payload, &mut offset)?;
     let wakes = decode_wakes(payload, &mut offset)?;
     let rewards = crate::rewards::decode_history(payload, &mut offset)?;
@@ -643,6 +651,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         raid,
         parties,
         wakes,
+        depths,
     })
 }
 
@@ -972,6 +981,11 @@ fn decode_player(
         }
         if code == RAID_AID_INTENT {
             intents.push(PlayerIntent::RaidAid(read_u8(payload, offset)?));
+            continue;
+        }
+        if code == NOTICE_INTENT {
+            let wire = u16::from_be_bytes(take(payload, offset)?);
+            intents.push(PlayerIntent::Notice(crate::wire::decode_error_code(wire)?));
             continue;
         }
         if code == RAID_PREPARE_INTENT {
@@ -2007,6 +2021,7 @@ mod tests {
                 knocked: 2,
                 idle_since: 3,
             }],
+            depths: None,
         }
     }
 
@@ -2334,7 +2349,7 @@ mod tests {
             (swing_queued, 2, "boolean field must be 0 or 1"),
             (intents, 17, "player has too many pending intents"),
             // Each intent is its lateness, then its code and fields.
-            (intents + 2, 26, "malformed pending intent"),
+            (intents + 2, 27, "malformed pending intent"),
         ];
         // The third intent (CancelCast) carries no target.
         cases.push((intents + 1 + 2 * 7 + 2, 2, "malformed pending intent"));

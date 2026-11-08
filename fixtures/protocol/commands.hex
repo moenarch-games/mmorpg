@@ -1,71 +1,71 @@
 # Command golden fixture, verified by mmorpg-protocol.
-280101000000 move 1 0 0
-280101014000 move 1 1 16384
-2801ffff8000 move -1 -1 32768
-28010001abcd move 0 1 43981
-28010000ffff move 0 0 65535
-2802 jump
-281d roll
-281901 rise 1
-281900 rise 0
-2819ff rise -1
-2803020000006c select_target 2 108
-280301ee6b2800 select_target 1 4000000000
-28030300000005 select_target 3 5
-28030000000000 select_target 0 0
-2804ffff swing 65535
-2806 release_spirit
-2807000f0002 move_item 0 15 2
-28070f00ffff move_item 15 0 65535
-2807ff000000 move_item 255 0 0
-2808000000010000000000000063 loot 1 99
-2808ffffffffffffffffffffffff loot 4294967295 18446744073709551615
-2809010000000000 use_ability 1 0 0
-280909020000006c use_ability 9 2 108
-2809ff01ee6b2800 use_ability 255 1 4000000000
-280a cancel_cast
-28150100000101 directed_strike 1 0 1 1
-281501abcd0002 directed_strike 1 43981 0 2
-2815ffffff0200 directed_strike 255 65535 2 0
-281601 guard 1
-281602 guard 2
-281603 guard 3
-281600 guard 0
-280b0001 choose_class 0 1
-280b0200 choose_class 2 0
-280bff07 choose_class 255 7
-280c00 equip_item 0
-280c0f equip_item 15
-280cff equip_item 255
-280d00 unequip_item 0
-280d05 unequip_item 5
-280dff unequip_item 255
-280e00000003000001 buy_item 3 0 1
-280effffffffffffff buy_item 4294967295 255 65535
-280f00000003000003 sell_item 3 0 3
-280f00000000ff0000 sell_item 0 255 0
-281000104861696c2c2047726579686176656e21 chat say 4861696c2c2047726579686176656e21
-281001084772c3bcc39f6521 chat yell 4772c3bcc39f6521
-281101 emote 1
-281105 emote 5
-28120000000101 accept_quest 1 1
-2812ffffffffff accept_quest 4294967295 255
-2813000000020201 complete_quest 2 2 1
-28130000000000ff complete_quest 0 0 255
-281403 abandon_quest 3
-282004 raid_aid 4
-282103 raid_prepare Brace(1)
-281e02 use_waystone 2
-28170101 use_door 1 1
-2817ff00 use_door 255 0
-28180004 repair 4
-28180000 repair 0
-281a010000000000000000 command_minions follow
-281a02020000006c000000 command_minions attack 2 108
-281a03fffffb2e0000ddd5 command_minions defend -1234 56789
-281a040000000000000000 command_minions retreat
-281c0400 release_ability 4 0
-281cff01 release_ability 255 1
-281b00000000000004d20903020000006c observed 1234 use_ability 3 2 108
-281bffffffffffffffff150140000002 observed 18446744073709551615 directed_strike 1 16384 0 2
-281b000000000000000002 observed 0 jump
+700101000000 move 1 0 0
+700101014000 move 1 1 16384
+7001ffff8000 move -1 -1 32768
+70010001abcd move 0 1 43981
+70010000ffff move 0 0 65535
+7002 jump
+701d roll
+701901 rise 1
+701900 rise 0
+7019ff rise -1
+7003020000006c select_target 2 108
+700301ee6b2800 select_target 1 4000000000
+70030300000005 select_target 3 5
+70030000000000 select_target 0 0
+7004ffff swing 65535
+7006 release_spirit
+7007000f0002 move_item 0 15 2
+70070f00ffff move_item 15 0 65535
+7007ff000000 move_item 255 0 0
+7008000000010000000000000063 loot 1 99
+7008ffffffffffffffffffffffff loot 4294967295 18446744073709551615
+7009010000000000 use_ability 1 0 0
+700909020000006c use_ability 9 2 108
+7009ff01ee6b2800 use_ability 255 1 4000000000
+700a cancel_cast
+70150100000101 directed_strike 1 0 1 1
+701501abcd0002 directed_strike 1 43981 0 2
+7015ffffff0200 directed_strike 255 65535 2 0
+701601 guard 1
+701602 guard 2
+701603 guard 3
+701600 guard 0
+700b0001 choose_class 0 1
+700b0200 choose_class 2 0
+700bff07 choose_class 255 7
+700c00 equip_item 0
+700c0f equip_item 15
+700cff equip_item 255
+700d00 unequip_item 0
+700d05 unequip_item 5
+700dff unequip_item 255
+700e00000003000001 buy_item 3 0 1
+700effffffffffffff buy_item 4294967295 255 65535
+700f00000003000003 sell_item 3 0 3
+700f00000000ff0000 sell_item 0 255 0
+701000104861696c2c2047726579686176656e21 chat say 4861696c2c2047726579686176656e21
+701001084772c3bcc39f6521 chat yell 4772c3bcc39f6521
+701101 emote 1
+701105 emote 5
+70120000000101 accept_quest 1 1
+7012ffffffffff accept_quest 4294967295 255
+7013000000020201 complete_quest 2 2 1
+70130000000000ff complete_quest 0 0 255
+701403 abandon_quest 3
+702004 raid_aid 4
+702103 raid_prepare Brace(1)
+701e02 use_waystone 2
+70170101 use_door 1 1
+7017ff00 use_door 255 0
+70180004 repair 4
+70180000 repair 0
+701a010000000000000000 command_minions follow
+701a02020000006c000000 command_minions attack 2 108
+701a03fffffb2e0000ddd5 command_minions defend -1234 56789
+701a040000000000000000 command_minions retreat
+701c0400 release_ability 4 0
+701cff01 release_ability 255 1
+701b00000000000004d20903020000006c observed 1234 use_ability 3 2 108
+701bffffffffffffffff150140000002 observed 18446744073709551615 directed_strike 1 16384 0 2
+701b000000000000000002 observed 0 jump

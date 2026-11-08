@@ -1359,7 +1359,8 @@ pub fn content_with_definition(
             )?
             .with_climbing(climbing())?
             .with_raid(raid::millbrook_barn())?
-            .with_waystones(vec![crate::GREYHAVEN_OUTPOST])?,
+            .with_waystones(vec![crate::GREYHAVEN_OUTPOST])?
+            .with_depths_threshold(cave::depths_threshold()),
     ))
 }
 

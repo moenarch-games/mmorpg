@@ -103,6 +103,13 @@ pub enum ErrorCode {
     NoAnswer,
     /// A private-home resident offers no new quests at night (#158).
     NotAtNight,
+    /// A new depths run needs a character on its roster who completed the Garrick quest (#404).
+    DepthsLocked,
+    /// No run has room for this character: its run has begun without it, or every instance
+    /// slot is busy (#404).
+    DepthsClosed,
+    /// Every player in a depths zone fell; the party stands again at its checkpoint (#404).
+    DepthsWipe,
 }
 
 /// One feedback event addressed to a player.
