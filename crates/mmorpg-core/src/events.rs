@@ -98,6 +98,9 @@ pub enum ErrorCode {
     InvalidWaystone,
     /// The door is a private home's and the character has no quest with its resident (#158).
     PrivateHome,
+    /// Summoned terrain has no room to rise here (#293): a unit or moving platform stands
+    /// where it would rise, or no ground lies within reach.
+    NoRoom,
     /// A night knock that wakes no one: the resident is not in bed or the knocker has nothing
     /// urgent for it (#158).
     NoAnswer,

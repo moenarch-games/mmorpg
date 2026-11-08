@@ -33,7 +33,7 @@ pub enum ControlAction {
     /// swing by default, the keyboard has no default.
     Swing,
     ReleaseSpirit,
-    /// Action-bar slot 1–8.
+    /// Action-bar slot 1–10.
     AbilitySlot(u8),
     /// Cancel the viewer's cast or channel.
     CancelCast,
@@ -69,7 +69,7 @@ pub enum Panel {
 }
 
 /// The action-bar slots with a key, numbered from 1.
-pub const ABILITY_SLOTS: u8 = 8;
+pub const ABILITY_SLOTS: u8 = 10;
 
 impl ControlAction {
     /// Every control action in catalog order: declaration order, with its slots, panels and
@@ -116,6 +116,8 @@ impl ControlAction {
             Self::AbilitySlot(6) => "ability.slot6",
             Self::AbilitySlot(7) => "ability.slot7",
             Self::AbilitySlot(8) => "ability.slot8",
+            Self::AbilitySlot(9) => "ability.slot9",
+            Self::AbilitySlot(10) => "ability.slot10",
             Self::AbilitySlot(_) => "",
             Self::CancelCast => "combat.cancelCast",
             Self::TogglePanel(Panel::Bags) => "ui.toggleBags",
@@ -154,7 +156,9 @@ impl ControlAction {
             Self::AbilitySlot(5) => ("Ability 5", GAMEPLAY, &["Digit5"]),
             Self::AbilitySlot(6) => ("Ability 6", GAMEPLAY, &["Digit6"]),
             Self::AbilitySlot(7) => ("Ability 7", GAMEPLAY, &["Digit7"]),
-            Self::AbilitySlot(_) => ("Ability 8", GAMEPLAY, &["Digit8"]),
+            Self::AbilitySlot(8) => ("Ability 8", GAMEPLAY, &["Digit8"]),
+            Self::AbilitySlot(9) => ("Ability 9", GAMEPLAY, &["Digit9"]),
+            Self::AbilitySlot(_) => ("Ability 10", GAMEPLAY, &["Digit0"]),
             Self::CancelCast => ("Cancel cast", CASTING, &["Escape"]),
             Self::TogglePanel(Panel::Bags) => ("Toggle bags", GAMEPLAY, &["KeyB"]),
             Self::TogglePanel(Panel::Character) => ("Toggle character pane", GAMEPLAY, &["KeyC"]),
@@ -174,7 +178,7 @@ impl ControlAction {
 /// every other retirement (focus loss, a context or profile change) is `retired` and never acts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SlotRelease {
-    /// Action-bar slot 1–8.
+    /// Action-bar slot 1–10.
     pub slot: u8,
     pub retired: bool,
 }
@@ -191,7 +195,7 @@ pub(crate) fn slot_releases(decisions: &[RuntimeDecision]) -> impl Iterator<Item
                 .strip_prefix("ability.slot")?
                 .parse::<u8>()
                 .ok()
-                .filter(|slot| (1..=8).contains(slot))?;
+                .filter(|slot| (1..=ABILITY_SLOTS).contains(slot))?;
             Some(SlotRelease {
                 slot,
                 retired: dispatch.reason != RuntimeDispatchReason::KeyUp,

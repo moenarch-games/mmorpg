@@ -625,6 +625,9 @@ impl ZoneSimulation {
                 if let Some(piece) = self.piece_of_body(hit.body) {
                     self.damage_piece(piece, crate::PROJECTILE_PIECE_DAMAGE, now)?;
                 }
+                if let Some(obstacle) = self.summoned_of_body(hit.body) {
+                    self.damage_summoned(obstacle, crate::PROJECTILE_SUMMONED_DAMAGE);
+                }
                 continue;
             }
             // A piercing shot passes each enemy it lands on until its last hit.
@@ -672,6 +675,9 @@ impl ZoneSimulation {
             } else if let Some(piece) = self.piece_of_body(hit.body) {
                 // A shot into a destructible piece chips it (#305).
                 self.damage_piece(piece, crate::PROJECTILE_PIECE_DAMAGE, now)?;
+            } else if let Some(obstacle) = self.summoned_of_body(hit.body) {
+                // A shot into summoned terrain (#293) chips it.
+                self.damage_summoned(obstacle, crate::PROJECTILE_SUMMONED_DAMAGE);
             }
         }
         Ok(())

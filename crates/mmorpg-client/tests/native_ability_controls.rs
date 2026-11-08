@@ -251,8 +251,6 @@ fn focus_loss_releases_held_slots_and_uses_nothing() {
 fn unbound_keys_use_nothing() {
     let mut controls = NativeControls::new();
     for key in [
-        KeyCode::Digit0,
-        KeyCode::Digit9,
         KeyCode::Numpad1,
         KeyCode::KeyJ,
         KeyCode::Backquote,

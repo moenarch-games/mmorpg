@@ -1831,8 +1831,10 @@ function runAction(action: GameAction): void {
     case "ability.slot5":
     case "ability.slot6":
     case "ability.slot7":
-    case "ability.slot8": {
-      worldView.useSlot(Number(action.slice(-1)));
+    case "ability.slot8":
+    case "ability.slot9":
+    case "ability.slot10": {
+      worldView.useSlot(Number(action.slice("ability.slot".length)));
       return;
     }
     case "combat.cancelCast":
@@ -1902,7 +1904,7 @@ function runRelease(action: ReleasedAction, phase: Exclude<HoldPhase, "press">):
   if (entryState.phase !== "world") {
     return;
   }
-  const slot = Number(action.slice(-1));
+  const slot = Number(action.slice("ability.slot".length));
   const catalog = world?.catalog;
   worldView.queueIntent((projection) => {
     const use = catalog ? useAbilitySlot(slot, projection, catalog) : null;

@@ -10,7 +10,7 @@ use mmorpg_core::{
 };
 
 /// At most this many abilities sit on the action bar.
-pub const ACTION_BAR_SLOTS: usize = 8;
+pub const ACTION_BAR_SLOTS: usize = 10;
 
 /// Which wait a slot shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,7 +58,7 @@ pub struct SlotState {
     pub cooldown: Option<SlotCooldown>,
 }
 
-/// The class abilities in catalog id order: action-bar slots 1–8.
+/// The class abilities in catalog id order: action-bar slots 1–10.
 #[must_use]
 pub fn class_kit(class: PlayerClass) -> Vec<u8> {
     ABILITY_CATALOG
@@ -256,7 +256,7 @@ mod tests {
         assert_eq!(class_kit(PlayerClass::Ranger), [5, 6, 7, 8, 19, 20]);
         assert_eq!(
             class_kit(PlayerClass::Arcanist),
-            [9, 10, 11, 12, 16, 21, 22, 23]
+            [9, 10, 11, 12, 16, 21, 22, 23, 49, 50]
         );
         assert_eq!(class_kit(PlayerClass::Necromancer), [26, 27, 28, 29, 45]);
         assert_eq!(class_kit(PlayerClass::Rogue), [30, 31, 32, 33, 42, 43, 44]);

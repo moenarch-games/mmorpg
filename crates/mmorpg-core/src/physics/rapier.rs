@@ -235,6 +235,20 @@ fn insert(world: &mut PhysicsWorld, body: &RigidBody) -> Handles {
             body: None,
             collider,
         }
+    } else if let Kind::TurnedBox { half, yaw } = body.kind {
+        #[allow(clippy::cast_precision_loss)]
+        let angle = f32::from(yaw) / 65_536.0 * std::f32::consts::TAU;
+        let collider = world.colliders.insert(
+            ColliderBuilder::new(SharedShape::new(cuboid(half)))
+                .translation(metres(body.position))
+                .rotation(Vector::Y * angle)
+                .user_data(user_data)
+                .build(),
+        );
+        Handles {
+            body: None,
+            collider,
+        }
     } else if matches!(body.kind, Kind::Floor) {
         let collider = world.colliders.insert(
             ColliderBuilder::new(SharedShape::halfspace(Vector::Y))

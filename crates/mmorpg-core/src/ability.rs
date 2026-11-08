@@ -15,7 +15,7 @@ pub const GLOBAL_COOLDOWN_TICKS: u16 =
 /// At most this many auras rest on one unit.
 pub const MAX_AURAS: usize = 8;
 /// At most this many cooldowns run on one player: one per action-bar slot (its class abilities).
-pub const MAX_COOLDOWNS: usize = 8;
+pub const MAX_COOLDOWNS: usize = 10;
 /// Zone-RNG jitter added whenever a creature's ability timer starts.
 pub const CREATURE_ABILITY_JITTER_TICKS: u16 = ticks_from_ms(1_000);
 
@@ -311,6 +311,9 @@ pub enum AbilityEffect {
         swing_ticks: u16,
         duration: u16,
     },
+    /// Raises summoned terrain (#293) a fixed distance in front of the caster: a temporary,
+    /// destroyable obstacle that blocks movement and line of sight.
+    SummonTerrain { kind: crate::SummonedTerrainKind },
     /// Calls the caster's one persistent companion (#296) beside it with `health` +
     /// `health_per_level` health that bites for `damage` (inclusive) + `damage_per_level` every
     /// `swing_ticks`. It is not timed and outlives its owner's death; it goes when killed or
@@ -378,6 +381,7 @@ impl Ability {
             | AbilityEffect::Chain { .. }
             | AbilityEffect::Drain { .. }
             | AbilityEffect::Summon { .. }
+            | AbilityEffect::SummonTerrain { .. }
             | AbilityEffect::Companion { .. } => return None,
         };
         Some(AuraSpec {
@@ -483,6 +487,8 @@ const RANGED: AbilityRange = AbilityRange::Units(3_000);
 pub mod ids {
     use super::AbilityId;
 
+    pub const ICE_WALL: AbilityId = AbilityId::new(49);
+    pub const EARTH_PILLAR: AbilityId = AbilityId::new(50);
     pub const HEROIC_STRIKE: AbilityId = AbilityId::new(1);
     pub const SHIELD_BASH: AbilityId = AbilityId::new(2);
     pub const RALLYING_CRY: AbilityId = AbilityId::new(3);
@@ -557,7 +563,7 @@ pub enum Shot {
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 48] = [
+pub const ABILITY_CATALOG: [Ability; 50] = [
     ability(
         1,
         "Heroic Strike",
@@ -1362,6 +1368,34 @@ pub const ABILITY_CATALOG: [Ability; 48] = [
             knockback: 100,
         },
     ),
+    // Summoned terrain (#293): temporary, destroyable obstacles raised 4 m ahead of the caster.
+    // The Arcanist owns these two; the Druid's roots and stone walls reuse the core in #304.
+    ability(
+        49,
+        "Ice Wall",
+        ARCANIST,
+        3,
+        30,
+        CastTime::Instant,
+        ticks_from_ms(18_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::SummonTerrain {
+            kind: crate::SummonedTerrainKind::IceWall,
+        },
+    ),
+    ability(
+        50,
+        "Earth Pillar",
+        ARCANIST,
+        5,
+        25,
+        CastTime::Instant,
+        ticks_from_ms(12_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::SummonTerrain {
+            kind: crate::SummonedTerrainKind::EarthPillar,
+        },
+    ),
 ];
 
 /// The catalog row of `id`, if any.
@@ -1625,6 +1659,7 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
                 damage_per_level.into(),
                 swing_ticks.into(),
             ],
+            AbilityEffect::SummonTerrain { kind } => vec![25, i32::from(kind.code())],
         };
         bytes.extend_from_slice(&u32::try_from(fields.len()).unwrap_or(0).to_be_bytes());
         for field in fields {
@@ -1660,7 +1695,7 @@ mod tests {
             }
         }
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
-        assert_eq!(ability_by_id(AbilityId::new(49)), None);
+        assert_eq!(ability_by_id(AbilityId::new(51)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
         for &class in PlayerClass::VARIANTS {
             let cooldowns = ABILITY_CATALOG

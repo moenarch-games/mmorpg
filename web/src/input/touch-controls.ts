@@ -22,7 +22,7 @@ export type TouchControlsOptions = {
   context: () => TouchContext;
   /** A key that changes whenever the hotbar does. */
   facesKey: () => string;
-  /** Slots 1–8 with fresh icon copies, `null` for an empty slot. */
+  /** Slots with fresh icon copies, `null` for an empty slot. */
   faces: () => readonly (SlotFace | null)[];
 };
 
@@ -240,7 +240,7 @@ export class TouchControls {
     this.#ring.dataset.page = String(page);
     this.#modifier.setAttribute("aria-pressed", String(page === 1));
     TOUCH_CHORD_PAGES[page]?.forEach((action, index) => {
-      const slot = Number(action.slice(-1));
+      const slot = Number(action.slice("ability.slot".length));
       const face = faces[slot - 1] ?? null;
       const entry = this.#faces[index];
       const hint = this.#hints[index];

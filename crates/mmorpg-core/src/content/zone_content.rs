@@ -652,7 +652,7 @@ impl ZoneContent {
             return Err(ZoneError::new("duplicate door id or body"));
         }
         for door in &doors {
-            if u64::from(door.body) >= crate::entity::PLAYER_BODY_BASE
+            if u64::from(door.body) >= crate::entity::SUMMONED_BODY_BASE
                 || self
                     .definition
                     .colliders()
@@ -697,7 +697,7 @@ impl ZoneContent {
         }
         for platform in &platforms {
             platform.validate()?;
-            if u64::from(platform.body) >= crate::entity::PLAYER_BODY_BASE
+            if u64::from(platform.body) >= crate::entity::SUMMONED_BODY_BASE
                 || self
                     .definition
                     .colliders()
@@ -727,7 +727,7 @@ impl ZoneContent {
         }
         for ramp in &ramps {
             ramp.validate()?;
-            if u64::from(ramp.body) >= crate::entity::PLAYER_BODY_BASE
+            if u64::from(ramp.body) >= crate::entity::SUMMONED_BODY_BASE
                 || self
                     .definition
                     .colliders()
@@ -795,7 +795,7 @@ impl ZoneContent {
         bodies.sort_unstable();
         if bodies.windows(2).any(|pair| pair[0] == pair[1])
             || bodies.iter().any(|&body| {
-                u64::from(body) >= crate::entity::PLAYER_BODY_BASE
+                u64::from(body) >= crate::entity::SUMMONED_BODY_BASE
                     || self.definition.colliders().iter().any(|c| c.id == body)
                     || self.doors.iter().any(|door| door.body == body)
                     || self.platforms.iter().any(|platform| platform.body == body)

@@ -270,6 +270,7 @@ pub struct UnitPresenter {
     /// The viewer's equipment as last projected: its armour replaces outfit pieces.
     equipment: Option<mmorpg_core::Equipment>,
     structures: crate::structures::Structures,
+    summoned: crate::summoned::Summoned,
     /// How the imported models' body regions blend; the Action Lab tunes it (#384).
     blend: imported::Blend,
     /// The local player's unanswered attack preparation.
@@ -296,6 +297,7 @@ impl UnitPresenter {
         let rungs = crate::climbing::rungs(&scenery);
         Self {
             structures,
+            summoned: crate::summoned::Summoned::default(),
             player_id,
             content,
             scenery,
@@ -444,6 +446,7 @@ impl UnitPresenter {
         self.resources = Resources::default();
         self.structures =
             crate::structures::Structures::on_scenery(self.content.pieces(), &self.scenery);
+        self.summoned = crate::summoned::Summoned::default();
     }
 
     /// Observes a newly received projection; spell visuals start from its events.
@@ -1372,6 +1375,13 @@ impl UnitPresenter {
             self.structures
                 .frame(&snapshot.pieces, seconds, viewer, reduced),
         );
+        let summoned: Vec<_> = snapshot
+            .summoned
+            .iter()
+            .map(|view| (*view, self.rendered(view.centre)))
+            .collect();
+        out.draws
+            .extend(self.summoned.frame(&summoned, seconds, reduced));
         for view in &snapshot.debris {
             let centre = self.rendered(view.position);
             out.draws

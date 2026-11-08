@@ -188,6 +188,8 @@ pub struct ZoneSnapshot {
     pub debris: Vec<crate::DebrisView>,
     /// Destructible pieces that are not intact, in ID order (#305).
     pub pieces: Vec<crate::PieceView>,
+    /// Summoned terrain near the viewer, nearest first (#293).
+    pub summoned: Vec<crate::SummonedView>,
     /// The night raid's signals while the viewer is near its target (#530).
     pub raid: Option<crate::RaidView>,
     /// The viewer's copy of the boss loot pool, when it is eligible for this kill (#404).
@@ -332,6 +334,7 @@ impl ZoneSimulation {
                 projectiles: self.projectile_views([center.x, center.y, center.z]),
                 debris: self.debris_views([center.x, center.y, center.z]),
                 pieces: self.piece_views(),
+                summoned: self.summoned_views([center.x, center.y, center.z]),
                 raid: self.raid_view(player_id, [center.x, center.z]),
                 party: self.parties.get(&player_id).cloned(),
                 depths_loot: self.depths_loot_view(player_id),

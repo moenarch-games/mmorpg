@@ -553,6 +553,8 @@ impl ZoneSimulation {
                     target: None,
                 },
             );
+            // A swing that covered no unit may still strike summoned terrain (#293).
+            self.swing_at_summoned(player_id, facing)?;
             return Ok(());
         }
         for target in victims {
