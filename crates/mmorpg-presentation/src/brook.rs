@@ -30,6 +30,124 @@ fn offset(points: &[[i32; 2]], i: usize, width: f64) -> [f64; 2] {
     [-dz / l * width, dx / l * width]
 }
 
+const WATER_OPACITY: f32 = 0.58;
+/// The water's colour at its margins, where the bed shows, and over the deepest bed.
+const WATER_SHALLOW: u32 = 0x86a58c;
+const WATER_DEEP: u32 = 0x215f69;
+const WATER_GLINT: u32 = 0x9cc2b0;
+/// How much of the bed's depth the margins of the water show, so the middle always reads deeper.
+const WATER_MARGIN_DEPTH: f64 = 0.3;
+
+/// The authored course with its corners cut (Chaikin, twice) and stations at most a metre apart,
+/// so the drawn water follows a curve. The polyline itself stays the physics lane and the bed.
+fn water_course(points: &[[i32; 2]]) -> Vec<[f64; 2]> {
+    let mut line: Vec<[f64; 2]> = points.iter().map(|point| point.map(metres)).collect();
+    for _ in 0..2 {
+        let mut cut = vec![line[0]];
+        for pair in line.windows(2) {
+            let (a, b) = (pair[0], pair[1]);
+            cut.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25]);
+            cut.push([a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
+        }
+        cut.push(line[line.len() - 1]);
+        line = cut;
+    }
+    let mut stations = vec![line[0]];
+    for pair in line.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        let steps = (b[0] - a[0]).hypot(b[1] - a[1]).ceil().max(1.) as usize;
+        for step in 1..=steps {
+            let t = step as f64 / steps as f64;
+            stations.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+        }
+    }
+    stations
+}
+
+/// The water surface along `points`: three vertices across, so it is shallow and pale at the
+/// margins and deep in the middle. Presentation only; the authoritative water plane is unchanged.
+fn water_ribbon(points: &[[i32; 2]], half_width: f64, level: f64, g: &TerrainGrid) -> Geometry {
+    let line = water_course(points);
+    let row = |i: usize| {
+        let (before, after) = (line[i.saturating_sub(1)], line[(i + 1).min(line.len() - 1)]);
+        let (dx, dz) = (after[0] - before[0], after[1] - before[1]);
+        let length = dx.hypot(dz).max(1e-6);
+        let (nx, nz) = (-dz / length, dx / length);
+        let centre = line[i];
+        let edge = |side: f64| {
+            // Slightly uneven edges stay inside the authoritative water lane; world-space noise
+            // keeps neighbouring rows joined.
+            let width = half_width * (0.86 + 0.14 * noise(centre[0], centre[1], 1.7, 570. + side));
+            let (x, z) = (centre[0] + nx * side * width, centre[1] + nz * side * width);
+            // The physical water lane can meet the four-metre terrain mesh partway across a bank.
+            // Stop the visible surface at that intersection instead of letting its translucent
+            // plane cut through higher ground.
+            let mut inside: f64 = 0.;
+            let mut outside: f64 = 1.;
+            if surface(g, x, z) < level - 0.015 {
+                inside = 1.;
+            } else {
+                for _ in 0..7 {
+                    let middle = (inside + outside) / 2.;
+                    let sx = centre[0] + (x - centre[0]) * middle;
+                    let sz = centre[1] + (z - centre[1]) * middle;
+                    if surface(g, sx, sz) < level - 0.015 {
+                        inside = middle;
+                    } else {
+                        outside = middle;
+                    }
+                }
+            }
+            [
+                centre[0] + (x - centre[0]) * inside,
+                level,
+                centre[1] + (z - centre[1]) * inside,
+            ]
+        };
+        [edge(1.), [centre[0], level, centre[1]], edge(-1.)]
+    };
+    let colour = |point: [f64; 3], margin: bool| {
+        let depth = ((level - surface(g, point[0], point[2])) / 0.35).clamp(0., 1.);
+        let depth = if margin {
+            depth * WATER_MARGIN_DEPTH
+        } else {
+            depth
+        };
+        let current = noise(point[0], point[2], 3., 718.);
+        rgb(mix(
+            mix(WATER_SHALLOW, WATER_DEEP, depth),
+            WATER_GLINT,
+            current * 0.14,
+        ))
+        .map(f64::from)
+    };
+    let mut channel = Geometry::default();
+    for i in 0..line.len() - 1 {
+        let (near, far) = (row(i), row(i + 1));
+        for (a, b, a_margin, b_margin) in [(0, 1, true, false), (1, 2, false, true)] {
+            let corners = [near[a], far[a], far[b], near[b]];
+            channel.face(&corners);
+            channel.colors.extend([
+                colour(corners[0], a_margin),
+                colour(corners[1], a_margin),
+                colour(corners[2], b_margin),
+                colour(corners[3], b_margin),
+            ]);
+        }
+    }
+    // Apparent ripples affect lighting only.
+    for (point, normal) in channel.p.iter().zip(&mut channel.n) {
+        *normal = norm([
+            (noise(point[0], point[2], 0.65, 719.) - 0.5) * 0.2
+                + (noise(point[0], point[2], 1.9, 721.) - 0.5) * 0.12,
+            1.,
+            (noise(point[0], point[2], 0.85, 720.) - 0.5) * 0.16
+                + (noise(point[0], point[2], 2.3, 722.) - 0.5) * 0.1,
+        ]);
+    }
+    channel
+}
+
 pub(crate) fn build(
     b: &mut Batcher,
     s: &Scenery,
@@ -62,7 +180,6 @@ pub(crate) fn build(
             content::UPPER_SURFACE,
         ),
     ] {
-        let mut channel = Geometry::default();
         let half_width = metres(half_width);
         let level = metres(water_surface) + 0.012;
         for i in 0..points.len() - 1 {
@@ -88,56 +205,6 @@ pub(crate) fn build(
                     let v = v + nz * side * width;
                     [x, surface(g, x, v) + 0.085, v]
                 };
-                let water_edge = |t, side| {
-                    let [x, _, edge_z] = p(t, side, 0.);
-                    let centre = [a[0] + (z[0] - a[0]) * t, a[1] + (z[1] - a[1]) * t];
-                    // The physical water lane can meet the four-metre terrain mesh partway
-                    // across a bank. Stop the visible surface at that intersection instead
-                    // of letting its translucent plane cut through higher ground.
-                    let mut inside = 0.;
-                    let mut outside = 1.;
-                    if surface(g, x, edge_z) < level - 0.015 {
-                        inside = 1.;
-                    } else {
-                        for _ in 0..7 {
-                            let middle = (inside + outside) / 2.;
-                            let sx = centre[0] + (x - centre[0]) * middle;
-                            let sz = centre[1] + (edge_z - centre[1]) * middle;
-                            if surface(g, sx, sz) < level - 0.015 {
-                                inside = middle;
-                            } else {
-                                outside = middle;
-                            }
-                        }
-                    }
-                    [
-                        centre[0] + (x - centre[0]) * inside,
-                        level,
-                        centre[1] + (edge_z - centre[1]) * inside,
-                    ]
-                };
-                let corners = [
-                    water_edge(t0, 1.),
-                    water_edge(t1, 1.),
-                    water_edge(t1, -1.),
-                    water_edge(t0, -1.),
-                ];
-                channel.face(&corners);
-                let current = noise(
-                    a[0] + (z[0] - a[0]) * t0,
-                    a[1] + (z[1] - a[1]) * t0,
-                    3.,
-                    718.,
-                );
-                channel.colors.extend(corners.map(|point| {
-                    let depth = ((level - surface(g, point[0], point[2])) / 0.35).clamp(0., 1.);
-                    rgb(mix(
-                        mix(0x667c61, 0x2f6565, depth),
-                        0x7c9a83,
-                        current * 0.10,
-                    ))
-                    .map(f64::from)
-                }));
                 if name == "greyhaven-brook" && step % 2 == 0 {
                     let t = (t0 + t1) * 0.5;
                     let x = a[0] + (z[0] - a[0]) * t;
@@ -258,15 +325,12 @@ pub(crate) fn build(
                 }
             }
         }
-        // Apparent ripples affect lighting only; the authoritative water plane is unchanged.
-        for (point, normal) in channel.p.iter().zip(&mut channel.n) {
-            *normal = norm([
-                (noise(point[0], point[2], 0.65, 719.) - 0.5) * 0.15,
-                1.,
-                (noise(point[0], point[2], 0.85, 720.) - 0.5) * 0.11,
-            ]);
-        }
-        water.push(draw(name, channel, 0xffffff, 0.66));
+        water.push(draw(
+            name,
+            water_ribbon(points, half_width, level, g),
+            0xffffff,
+            WATER_OPACITY,
+        ));
     }
     let level = metres(content::SURFACE) + 0.012;
     let mut fall = Geometry::default();
@@ -596,6 +660,25 @@ mod tests {
                         );
                     }
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn the_drawn_water_rounds_the_authored_corners() {
+        for points in [content::village(), content::inflow(), content::outlet()] {
+            let line = water_course(points);
+            assert_eq!(line[0], points[0].map(metres));
+            assert_eq!(line[line.len() - 1], points[points.len() - 1].map(metres));
+            for run in line.windows(3) {
+                let (ax, az) = (run[1][0] - run[0][0], run[1][1] - run[0][1]);
+                let (bx, bz) = (run[2][0] - run[1][0], run[2][1] - run[1][1]);
+                let turn = (ax * bz - az * bx).atan2(ax * bx + az * bz).abs();
+                assert!(
+                    turn < 40_f64.to_radians(),
+                    "a {turn} rad corner at {:?}",
+                    run[1]
+                );
             }
         }
     }
