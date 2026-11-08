@@ -138,6 +138,7 @@ pub const fn error_code(code: ErrorCode) -> u16 {
         ErrorCode::DepthsClosed => 42,
         ErrorCode::DepthsWipe => 43,
         ErrorCode::DepthsBossOpen => 44,
+        ErrorCode::NoRoom => 45,
     }
 }
 
@@ -187,6 +188,7 @@ pub fn decode_error_code(code: u16) -> Result<ErrorCode, ProtocolError> {
         42 => ErrorCode::DepthsClosed,
         43 => ErrorCode::DepthsWipe,
         44 => ErrorCode::DepthsBossOpen,
+        45 => ErrorCode::NoRoom,
         _ => return Err(ProtocolError::new("unknown error code")),
     })
 }
@@ -927,6 +929,69 @@ pub(crate) fn decode_piece_views(
     Ok(pieces)
 }
 
+/// Summoned terrain near the viewer (#293): count (`u8`), then per obstacle its ID (`u32`),
+/// kind (`u8`), centre (`3 × i32`), facing (`u16`) and health percent (`u8`), nearest first.
+pub(crate) fn encode_summoned_views(
+    payload: &mut Vec<u8>,
+    views: &[mmorpg_core::SummonedView],
+) -> Result<(), ProtocolError> {
+    payload.push(
+        u8::try_from(views.len())
+            .ok()
+            .filter(|&count| usize::from(count) <= mmorpg_core::MAX_VISIBLE_SUMMONED)
+            .ok_or_else(|| ProtocolError::new("too much summoned terrain"))?,
+    );
+    for view in views {
+        payload.extend_from_slice(&view.id.to_be_bytes());
+        payload.push(view.kind.code());
+        for axis in view.centre {
+            payload.extend_from_slice(&axis.to_be_bytes());
+        }
+        payload.extend_from_slice(&view.facing.to_be_bytes());
+        payload.push(view.health_percent);
+    }
+    Ok(())
+}
+
+pub(crate) fn decode_summoned_views(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::SummonedView>, ProtocolError> {
+    let count = usize::from(read_u8(payload, offset)?);
+    if count > mmorpg_core::MAX_VISIBLE_SUMMONED {
+        return Err(ProtocolError::new("too much summoned terrain"));
+    }
+    let mut views = Vec::with_capacity(count);
+    let word = |offset: &mut usize| -> Result<[u8; 4], ProtocolError> {
+        Ok([
+            read_u8(payload, offset)?,
+            read_u8(payload, offset)?,
+            read_u8(payload, offset)?,
+            read_u8(payload, offset)?,
+        ])
+    };
+    for _ in 0..count {
+        let id = u32::from_be_bytes(word(offset)?);
+        let kind = mmorpg_core::SummonedTerrainKind::from_code(read_u8(payload, offset)?)
+            .ok_or_else(|| ProtocolError::new("unknown summoned terrain kind"))?;
+        let centre = [
+            i32::from_be_bytes(word(offset)?),
+            i32::from_be_bytes(word(offset)?),
+            i32::from_be_bytes(word(offset)?),
+        ];
+        let facing = u16::from_be_bytes([read_u8(payload, offset)?, read_u8(payload, offset)?]);
+        let health_percent = read_u8(payload, offset)?;
+        views.push(mmorpg_core::SummonedView {
+            id,
+            kind,
+            centre,
+            facing,
+            health_percent,
+        });
+    }
+    Ok(views)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1028,12 +1093,13 @@ mod tests {
             ErrorCode::DepthsClosed,
             ErrorCode::DepthsWipe,
             ErrorCode::DepthsBossOpen,
+            ErrorCode::NoRoom,
         ];
         for (wire, code) in (1..).zip(codes) {
             assert_eq!(error_code(code), wire, "{code:?}");
             assert_eq!(decode_error_code(wire).unwrap(), code);
         }
-        for unknown in [0, 45, u16::MAX] {
+        for unknown in [0, 46, u16::MAX] {
             assert_eq!(
                 decode_error_code(unknown).unwrap_err().to_string(),
                 "unknown error code"

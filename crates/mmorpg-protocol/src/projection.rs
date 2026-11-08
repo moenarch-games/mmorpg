@@ -51,9 +51,12 @@ pub const PLAYER_SNAPSHOT_FIXED_BYTES: usize = HEADER_BYTES
     + 1
     + 2
     + 1
+    + 1
     + 1;
 /// Destructible piece ID (`u16`) and stage (#305).
 pub const PIECE_RECORD_BYTES: usize = 3;
+/// A summoned obstacle (#293): `u32` ID, kind, `3 × i32` centre, `u16` facing, health percent.
+pub const SUMMONED_RECORD_BYTES: usize = 4 + 1 + 12 + 2 + 1;
 /// A night raid's signal (#530) after its code byte: the integrity.
 pub const RAID_VIEW_BYTES: usize = 1;
 /// `u16` ID, prop kind, piece index, `3 × i32` position, `4 × i16` rotation quaternion and age
@@ -85,6 +88,7 @@ const MAX_PER_TICK_BYTES: usize = PLAYER_SNAPSHOT_FIXED_BYTES
     + MAX_CHAT_SECTION_BYTES
     + mmorpg_core::MAX_DOORS * DOOR_RECORD_BYTES
     + mmorpg_core::MAX_PIECES * PIECE_RECORD_BYTES
+    + mmorpg_core::MAX_VISIBLE_SUMMONED * SUMMONED_RECORD_BYTES
     + RAID_VIEW_BYTES
     + 2 * ENTITY_RECORD_BYTES;
 
@@ -199,6 +203,7 @@ pub fn pack_snapshot_acknowledged(
     let mut world_payload = Vec::new();
     crate::wire::encode_doors(&mut world_payload, &snapshot.doors)?;
     crate::wire::encode_piece_views(&mut world_payload, &snapshot.pieces)?;
+    crate::wire::encode_summoned_views(&mut world_payload, &snapshot.summoned)?;
     crate::raid::encode_view(&mut world_payload, snapshot.raid)?;
     let mut chat_payload = Vec::new();
     chat_payload.push(encode_u8_count(
@@ -715,6 +720,7 @@ fn decode_projection(
     }
     let doors = crate::wire::decode_doors(payload, &mut offset)?;
     let pieces = crate::wire::decode_piece_views(payload, &mut offset)?;
+    let summoned = crate::wire::decode_summoned_views(payload, &mut offset)?;
     let raid = crate::raid::decode_view(payload, &mut offset)?;
     let event_count = decode_u8_count(
         payload,
@@ -902,6 +908,7 @@ fn decode_projection(
         projectiles,
         debris,
         pieces,
+        summoned,
         raid,
         quests,
         party,
@@ -1083,6 +1090,22 @@ pub(crate) mod tests {
                 mmorpg_core::PieceView {
                     piece: mmorpg_core::PieceId::new(0x0105),
                     stage: mmorpg_core::PieceStage::Destroyed,
+                },
+            ],
+            summoned: vec![
+                mmorpg_core::SummonedView {
+                    id: 3,
+                    kind: mmorpg_core::SummonedTerrainKind::IceWall,
+                    centre: [-2_000, 140, 310],
+                    facing: 0x4000,
+                    health_percent: 80,
+                },
+                mmorpg_core::SummonedView {
+                    id: 7,
+                    kind: mmorpg_core::SummonedTerrainKind::EarthPillar,
+                    centre: [12, 180, -40],
+                    facing: 9,
+                    health_percent: 100,
                 },
             ],
             doors: vec![
@@ -1466,11 +1489,12 @@ pub(crate) mod tests {
     const SHEETS_END: usize = TARGET_AURAS + 1 + 6;
     /// The fixture's door section: count and two door records.
     const DOORS: usize = 1 + 2 * DOOR_RECORD_BYTES;
+    const SUMMONED: usize = 1 + 2 * SUMMONED_RECORD_BYTES;
     /// The fixture's piece section (#305): count and two piece records.
     const PIECES: usize = 1 + 2 * PIECE_RECORD_BYTES;
     /// The fixture's raid section (#530): code and integrity.
     const RAID: usize = 1 + RAID_VIEW_BYTES;
-    const EVENTS: usize = SHEETS_END + DOORS + PIECES + RAID;
+    const EVENTS: usize = SHEETS_END + DOORS + PIECES + SUMMONED + RAID;
     /// The fixture's chat records: 6 + 16 and 6 + 8 bytes, then a 6-byte emote.
     const CHAT_BYTES: usize = 22 + 14 + 6;
     const CHAT: usize = EVENTS + 1 + EVENT_COUNT * EVENT_RECORD_BYTES;
@@ -1500,6 +1524,7 @@ pub(crate) mod tests {
                 + EVENT_COUNT * EVENT_RECORD_BYTES
                 + CHAT_BYTES
                 + 2 * DOOR_RECORD_BYTES
+                + 2 * SUMMONED_RECORD_BYTES
                 + 2 * PIECE_RECORD_BYTES
                 + RAID_VIEW_BYTES
                 + 4 * ENTITY_RECORD_BYTES
@@ -2087,7 +2112,7 @@ pub(crate) mod tests {
                 EVENT_RECORD_BYTES,
                 ENTITY_RECORD_BYTES
             ),
-            (106, 14, 27)
+            (107, 14, 27)
         );
         assert_eq!(MAX_WIRE_ENTITIES, 35);
         let viewer_id = u32::MAX;
@@ -2203,6 +2228,7 @@ pub(crate) mod tests {
             entities,
             quests: None,
             pieces: Vec::new(),
+            summoned: Vec::new(),
         };
         let packed = pack_snapshot(&snapshot).unwrap();
         // (1,077 − 106 − 9 − 1 − 16 × 14 − 9 × 2) / 27 = 26 records fit beside the empty loot and

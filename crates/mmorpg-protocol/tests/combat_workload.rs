@@ -65,12 +65,13 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // The appended western/northern canopy and hideout add 534 net fixed bodies
     // (192,240 visits per 360 ticks). The dry ridge trail admits five additional trunks
     // (1,800 visits); the brook mill adds 16 more bodies (5,760 visits).
-    // AI, projection and byte ceilings are unchanged.
+    // AI and projection ceilings are unchanged; the byte ceilings grew one byte per projection for
+    // the summoned-terrain count (#293).
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [29_160, 1_305_360, 288_000, 6_076_832],
-        [29_160, 1_302_480, 93_060, 1_788_549],
-        [29_160, 1_311_120, 424_719, 7_865_487],
-        [28_804, 1_322_284, 2_323_474, 24_276_762],
+        [29_160, 1_305_360, 288_000, 6_082_592],
+        [29_160, 1_302_480, 93_060, 1_791_429],
+        [29_160, 1_311_120, 424_719, 7_867_287],
+        [28_804, 1_322_284, 2_323_474, 24_299_802],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();

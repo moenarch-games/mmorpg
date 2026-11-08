@@ -98,6 +98,11 @@ pub fn encode_canonical_snapshot(
     encode_forced(&mut payload, &snapshot.forced)?;
     encode_debris(&mut payload, snapshot.next_debris, &snapshot.debris)?;
     encode_pieces(&mut payload, &snapshot.pieces)?;
+    encode_summoned_terrain(
+        &mut payload,
+        snapshot.next_summoned_terrain,
+        &snapshot.summoned_terrain,
+    )?;
     encode_minions(&mut payload, snapshot.next_minion, &snapshot.minions)?;
     crate::raid::encode_state(&mut payload, &snapshot.raid)?;
     crate::depths::encode_run(&mut payload, snapshot.depths.as_ref())?;
@@ -640,6 +645,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let forced = decode_forced(payload, &mut offset)?;
     let (next_debris, debris) = decode_debris(payload, &mut offset)?;
     let pieces = decode_pieces(payload, &mut offset)?;
+    let (next_summoned_terrain, summoned_terrain) = decode_summoned_terrain(payload, &mut offset)?;
     let (next_minion, minions) = decode_minions(payload, &mut offset)?;
     let raid = crate::raid::decode_state(payload, &mut offset)?;
     let depths = crate::depths::decode_run(payload, &mut offset)?;
@@ -663,6 +669,8 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         debris,
         next_debris,
         pieces,
+        summoned_terrain,
+        next_summoned_terrain,
         minions,
         next_minion,
         raid,
@@ -819,6 +827,73 @@ fn decode_minions(
         })
         .collect::<Result<Vec<_>, ProtocolError>>()?;
     Ok((next_minion, minions))
+}
+
+/// Summoned terrain (#293): the next ID (`u32`), count (`u16`), then per obstacle its ID
+/// (`u32`), kind (`u8`), caster (`u32`), centre (`3 × i32`), facing (`u16`), health (`u32`)
+/// and expiry tick (`u64`), in ID order.
+fn encode_summoned_terrain(
+    payload: &mut Vec<u8>,
+    next: u32,
+    obstacles: &[mmorpg_core::SummonedTerrain],
+) -> Result<(), ProtocolError> {
+    payload.extend_from_slice(&next.to_be_bytes());
+    payload.extend_from_slice(
+        &encode_u16_count(
+            obstacles.len(),
+            mmorpg_core::MAX_SUMMONED_TERRAIN,
+            "too much summoned terrain",
+        )?
+        .to_be_bytes(),
+    );
+    for obstacle in obstacles {
+        payload.extend_from_slice(&obstacle.id.to_be_bytes());
+        payload.push(obstacle.kind.code());
+        payload.extend_from_slice(&obstacle.caster.to_be_bytes());
+        for axis in obstacle.centre {
+            payload.extend_from_slice(&axis.to_be_bytes());
+        }
+        payload.extend_from_slice(&obstacle.facing.to_be_bytes());
+        payload.extend_from_slice(&obstacle.health.to_be_bytes());
+        payload.extend_from_slice(&obstacle.expires_at.to_be_bytes());
+    }
+    Ok(())
+}
+
+fn decode_summoned_terrain(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<(u32, Vec<mmorpg_core::SummonedTerrain>), ProtocolError> {
+    let next = u32::from_be_bytes(take(payload, offset)?);
+    let count = decode_u16_count(
+        payload,
+        offset,
+        mmorpg_core::MAX_SUMMONED_TERRAIN,
+        "too much summoned terrain",
+    )?;
+    let obstacles = (0..count)
+        .map(|_| {
+            let id = u32::from_be_bytes(take(payload, offset)?);
+            let kind = mmorpg_core::SummonedTerrainKind::from_code(read_u8(payload, offset)?)
+                .ok_or_else(|| ProtocolError::new("unknown summoned terrain kind"))?;
+            let caster = u32::from_be_bytes(take(payload, offset)?);
+            let centre = [
+                i32::from_be_bytes(take(payload, offset)?),
+                i32::from_be_bytes(take(payload, offset)?),
+                i32::from_be_bytes(take(payload, offset)?),
+            ];
+            Ok(mmorpg_core::SummonedTerrain {
+                id,
+                kind,
+                caster,
+                centre,
+                facing: u16::from_be_bytes(take(payload, offset)?),
+                health: u32::from_be_bytes(take(payload, offset)?),
+                expires_at: u64::from_be_bytes(take(payload, offset)?),
+            })
+        })
+        .collect::<Result<_, ProtocolError>>()?;
+    Ok((next, obstacles))
 }
 
 /// Destructible pieces (#305): count (`u8`), then per piece its ID (`u16`), health (`u32`),
@@ -1713,6 +1788,16 @@ mod tests {
                 age: 9,
             }],
             next_debris: 8,
+            summoned_terrain: vec![mmorpg_core::SummonedTerrain {
+                id: 4,
+                kind: mmorpg_core::SummonedTerrainKind::EarthPillar,
+                caster: 9,
+                centre: [120, 40, -300],
+                facing: 0x2000,
+                health: 35,
+                expires_at: 900,
+            }],
+            next_summoned_terrain: 5,
             forced: vec![
                 (
                     EntityRef::Player(1),
