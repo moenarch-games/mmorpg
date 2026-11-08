@@ -6,8 +6,8 @@ use std::fmt;
 
 use mmorpg_core::ZoneId;
 
-pub mod party;
 mod partition;
+pub mod party;
 mod permit;
 #[cfg(feature = "postgres")]
 pub mod postgres;

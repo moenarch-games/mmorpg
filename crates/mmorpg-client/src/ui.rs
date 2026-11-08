@@ -1003,9 +1003,15 @@ fn panel_frame() -> egui::Frame {
 
 /// Whether the viewer may invite someone: alone, or leading its party.
 fn party_can_invite(snapshot: &ZoneSnapshot) -> bool {
-    match snapshot.party.as_ref().and_then(|state| state.roster.as_ref()) {
+    match snapshot
+        .party
+        .as_ref()
+        .and_then(|state| state.roster.as_ref())
+    {
         None => true,
-        Some(roster) => roster.members.first().and_then(|member| member.player) == Some(snapshot.viewer_id),
+        Some(roster) => {
+            roster.members.first().and_then(|member| member.player) == Some(snapshot.viewer_id)
+        }
     }
 }
 

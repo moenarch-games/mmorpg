@@ -75,12 +75,12 @@ function unwrapAcknowledged(payload: Uint8Array): Uint8Array {
   if (payload[1] !== ACKNOWLEDGED_TAG) {
     return payload;
   }
-  if (payload.length < 2 + 16 + 1) {
+  if (payload.length < 2 + 20 + 1) {
     throw new Error("malformed acknowledged command");
   }
-  const inner = new Uint8Array(payload.length - 16 - 1);
+  const inner = new Uint8Array(payload.length - 20 - 1);
   inner[0] = payload[0]!;
-  inner.set(payload.subarray(2 + 16), 1);
+  inner.set(payload.subarray(2 + 20), 1);
   return inner;
 }
 

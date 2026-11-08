@@ -89,17 +89,19 @@ impl ZoneSimulation {
                 rewards.item = None;
             }
             // A quest drop is the tapper's alone: collect objectives stay individual (5.4.5).
-            if !tapper || rewards.quest_item.is_some_and(|stack| {
-                !crate::rewards::allowed(
-                    &self.rewards,
-                    player_id,
-                    crate::RewardKey::LootQuestItem {
-                        creature: id,
-                        life,
-                        item: stack.item(),
-                    },
-                )
-            }) {
+            if !tapper
+                || rewards.quest_item.is_some_and(|stack| {
+                    !crate::rewards::allowed(
+                        &self.rewards,
+                        player_id,
+                        crate::RewardKey::LootQuestItem {
+                            creature: id,
+                            life,
+                            item: stack.item(),
+                        },
+                    )
+                })
+            {
                 rewards.quest_item = None;
             }
             rewards

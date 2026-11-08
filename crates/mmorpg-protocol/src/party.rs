@@ -38,7 +38,12 @@ fn encode_name(payload: &mut Vec<u8>, name: &str) -> Result<(), ProtocolError> {
 }
 
 fn decode_name(payload: &[u8], offset: &mut usize) -> Result<String, ProtocolError> {
-    let length = decode_u8_count(payload, offset, MAX_PARTY_NAME_BYTES, "party name is too long")?;
+    let length = decode_u8_count(
+        payload,
+        offset,
+        MAX_PARTY_NAME_BYTES,
+        "party name is too long",
+    )?;
     let end = offset
         .checked_add(length)
         .filter(|end| *end <= payload.len())
@@ -52,10 +57,7 @@ fn decode_name(payload: &[u8], offset: &mut usize) -> Result<String, ProtocolErr
     Ok(name.to_owned())
 }
 
-pub(crate) fn encode_state(
-    payload: &mut Vec<u8>,
-    state: &PartyState,
-) -> Result<(), ProtocolError> {
+pub(crate) fn encode_state(payload: &mut Vec<u8>, state: &PartyState) -> Result<(), ProtocolError> {
     payload.extend_from_slice(&state.revision.to_be_bytes());
     let flags = u8::from(state.roster.is_some()) * ROSTER_FLAG
         | u8::from(state.invite.is_some()) * INVITE_FLAG;
@@ -160,14 +162,27 @@ pub fn decode_party_state(payload: &[u8]) -> Result<PartyState, ProtocolError> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PartyRequest {
     /// Announces the character's display name; sent once per connection.
-    Hello { name: String },
-    InvitePlayer { player: PlayerId },
-    InviteName { name: String },
-    Accept { invite: u64 },
-    Decline { invite: u64 },
+    Hello {
+        name: String,
+    },
+    InvitePlayer {
+        player: PlayerId,
+    },
+    InviteName {
+        name: String,
+    },
+    Accept {
+        invite: u64,
+    },
+    Decline {
+        invite: u64,
+    },
     Leave,
     /// Removes the member at roster index `member`, decided on roster `version`.
-    Kick { member: u8, version: u32 },
+    Kick {
+        member: u8,
+        version: u32,
+    },
 }
 
 impl PartyRequest {
@@ -243,10 +258,7 @@ impl PartyRequest {
 /// The service's reply: `[2, 0]` accepted, `[2, refusal code]` refused.
 #[must_use]
 pub fn encode_party_reply(result: Result<(), PartyRefusal>) -> Vec<u8> {
-    vec![
-        PARTY_CONTROL,
-        result.err().map_or(0, PartyRefusal::code),
-    ]
+    vec![PARTY_CONTROL, result.err().map_or(0, PartyRefusal::code)]
 }
 
 /// `Ok(Ok(()))` when accepted, `Ok(Err(refusal))` when refused.
@@ -289,8 +301,7 @@ mod tests {
 
     #[test]
     fn the_party_sheet_travels_in_a_projection_and_is_kept_until_it_changes() {
-        let mut snapshot: mmorpg_core::ZoneSnapshot =
-            crate::projection::tests::fixture_snapshot();
+        let mut snapshot: mmorpg_core::ZoneSnapshot = crate::projection::tests::fixture_snapshot();
         snapshot.party = Some(state());
         let mut decoder = crate::SnapshotDecoder::new();
         let packed = crate::pack_snapshot(&snapshot).unwrap();
@@ -321,20 +332,30 @@ mod tests {
     #[test]
     fn requests_round_trip_and_unknown_codes_fail_closed() {
         for request in [
-            PartyRequest::Hello { name: "Aria".into() },
+            PartyRequest::Hello {
+                name: "Aria".into(),
+            },
             PartyRequest::InvitePlayer { player: 7 },
-            PartyRequest::InviteName { name: "Bren Stone".into() },
+            PartyRequest::InviteName {
+                name: "Bren Stone".into(),
+            },
             PartyRequest::Accept { invite: 5 },
             PartyRequest::Decline { invite: 5 },
             PartyRequest::Leave,
-            PartyRequest::Kick { member: 2, version: 3 },
+            PartyRequest::Kick {
+                member: 2,
+                version: 3,
+            },
         ] {
             let bytes = request.encode().unwrap();
             assert_eq!(PartyRequest::decode(&bytes).unwrap(), request);
         }
         assert!(PartyRequest::decode(&[PARTY_CONTROL, 99]).is_err());
         assert!(PartyRequest::decode(&[1, 0]).is_err());
-        assert_eq!(decode_party_reply(&encode_party_reply(Ok(()))).unwrap(), Ok(()));
+        assert_eq!(
+            decode_party_reply(&encode_party_reply(Ok(()))).unwrap(),
+            Ok(())
+        );
         let refused = encode_party_reply(Err(PartyRefusal::StaleParty));
         assert_eq!(
             decode_party_reply(&refused).unwrap(),

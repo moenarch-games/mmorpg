@@ -113,7 +113,8 @@ impl PartyDirectory {
                     .presence
                     .iter()
                     .filter(|(_, presence)| {
-                        presence.offline_since_ms.is_none() && presence.name.to_lowercase() == wanted
+                        presence.offline_since_ms.is_none()
+                            && presence.name.to_lowercase() == wanted
                     })
                     .map(|(character, _)| character);
                 match (found.next(), found.next()) {
@@ -181,8 +182,7 @@ impl PartyDirectory {
 
     fn drop_invites_of(&mut self, party: Option<u64>, character: &CharacterId) {
         self.invites.retain(|_, invite| {
-            invite.invitee != *character
-                && (invite.inviter != *character || party.is_none())
+            invite.invitee != *character && (invite.inviter != *character || party.is_none())
         });
     }
 
@@ -287,7 +287,11 @@ impl PartyDirectory {
         party.version = party.version.wrapping_add(1);
         self.membership.remove(character);
         self.drop_invites_of(Some(id), character);
-        if self.parties.get(&id).is_some_and(|party| party.members.len() < 2) {
+        if self
+            .parties
+            .get(&id)
+            .is_some_and(|party| party.members.len() < 2)
+        {
             if let Some(party) = self.parties.remove(&id) {
                 for member in party.members {
                     self.membership.remove(&member);
@@ -321,18 +325,22 @@ impl PartyDirectory {
     /// Lapses expired invites and members offline past [`PARTY_OFFLINE_EXPIRY_MS`], and forgets
     /// offline characters no party needs.
     pub fn sweep(&mut self, now_ms: u64) {
-        self.invites.retain(|_, invite| invite.expires_at_ms > now_ms);
+        self.invites
+            .retain(|_, invite| invite.expires_at_ms > now_ms);
         let expired: Vec<_> = self
             .parties
             .values()
-            .flat_map(|party| party.members.iter().map(|member| (party.id, member.clone())))
+            .flat_map(|party| {
+                party
+                    .members
+                    .iter()
+                    .map(|member| (party.id, member.clone()))
+            })
             .filter(|(_, member)| {
                 self.presence
                     .get(member)
                     .and_then(|presence| presence.offline_since_ms)
-                    .is_some_and(|since| {
-                        now_ms.saturating_sub(since) >= PARTY_OFFLINE_EXPIRY_MS
-                    })
+                    .is_some_and(|since| now_ms.saturating_sub(since) >= PARTY_OFFLINE_EXPIRY_MS)
             })
             .collect();
         for (id, member) in expired {
@@ -356,7 +364,8 @@ impl PartyDirectory {
             None if state.roster.is_none() && state.invite.is_none() && held == 0 => {}
             _ => {
                 self.next_revision = self.next_revision.max(held) + 1;
-                self.views.insert(character.clone(), (self.next_revision, state.clone()));
+                self.views
+                    .insert(character.clone(), (self.next_revision, state.clone()));
                 state.revision = self.next_revision;
             }
         }
@@ -368,28 +377,35 @@ impl PartyDirectory {
             .presence
             .get(character)
             .and_then(|presence| presence.offline_since_ms.is_none().then_some(presence.zone));
-        let roster = self.party_of(character).and_then(|id| self.parties.get(&id)).map(|party| {
-            let members = party
-                .members
-                .iter()
-                .map(|member| {
-                    let presence = self.presence.get(member);
-                    let online = presence.is_some_and(|presence| presence.offline_since_ms.is_none());
-                    PartyMember {
-                        name: presence.map_or_else(|| "Unknown".to_owned(), |presence| presence.name.clone()),
-                        player: presence
-                            .filter(|presence| online && Some(presence.zone) == viewer_zone)
-                            .map(|presence| presence.player),
-                        online,
-                    }
-                })
-                .collect();
-            PartyRoster {
-                party: party.id,
-                version: party.version,
-                members,
-            }
-        });
+        let roster = self
+            .party_of(character)
+            .and_then(|id| self.parties.get(&id))
+            .map(|party| {
+                let members = party
+                    .members
+                    .iter()
+                    .map(|member| {
+                        let presence = self.presence.get(member);
+                        let online =
+                            presence.is_some_and(|presence| presence.offline_since_ms.is_none());
+                        PartyMember {
+                            name: presence.map_or_else(
+                                || "Unknown".to_owned(),
+                                |presence| presence.name.clone(),
+                            ),
+                            player: presence
+                                .filter(|presence| online && Some(presence.zone) == viewer_zone)
+                                .map(|presence| presence.player),
+                            online,
+                        }
+                    })
+                    .collect();
+                PartyRoster {
+                    party: party.id,
+                    version: party.version,
+                    members,
+                }
+            });
         let invite = roster
             .is_none()
             .then(|| self.pending_invite_for(character))
@@ -463,7 +479,14 @@ impl PartyDirectory {
                 directory.membership.insert(member.clone(), id);
                 members.push(member);
             }
-            directory.parties.insert(id, Party { id, version, members });
+            directory.parties.insert(
+                id,
+                Party {
+                    id,
+                    version,
+                    members,
+                },
+            );
         }
         for _ in 0..reader.u32()? {
             let id = reader.u64()?;
@@ -573,8 +596,14 @@ struct Reader<'a> {
 
 impl Reader<'_> {
     fn take(&mut self, count: usize) -> Result<&[u8], PartyStoreError> {
-        let end = self.offset.checked_add(count).ok_or_else(PartyStoreError::corrupt)?;
-        let slice = self.bytes.get(self.offset..end).ok_or_else(PartyStoreError::corrupt)?;
+        let end = self
+            .offset
+            .checked_add(count)
+            .ok_or_else(PartyStoreError::corrupt)?;
+        let slice = self
+            .bytes
+            .get(self.offset..end)
+            .ok_or_else(PartyStoreError::corrupt)?;
         self.offset = end;
         Ok(slice)
     }
@@ -584,11 +613,19 @@ impl Reader<'_> {
     }
 
     fn u32(&mut self) -> Result<u32, PartyStoreError> {
-        Ok(u32::from_be_bytes(self.take(4)?.try_into().map_err(|_| PartyStoreError::corrupt())?))
+        Ok(u32::from_be_bytes(
+            self.take(4)?
+                .try_into()
+                .map_err(|_| PartyStoreError::corrupt())?,
+        ))
     }
 
     fn u64(&mut self) -> Result<u64, PartyStoreError> {
-        Ok(u64::from_be_bytes(self.take(8)?.try_into().map_err(|_| PartyStoreError::corrupt())?))
+        Ok(u64::from_be_bytes(
+            self.take(8)?
+                .try_into()
+                .map_err(|_| PartyStoreError::corrupt())?,
+        ))
     }
 
     fn text(&mut self) -> Result<String, PartyStoreError> {
@@ -730,7 +767,11 @@ mod tests {
         let mut directory = PartyDirectory::new();
         present(&mut directory, 1, &[("aria", 1), ("bren", 2)], 0);
         let invite = directory
-            .invite(&character("aria"), &InviteTarget::Character(character("bren")), 0)
+            .invite(
+                &character("aria"),
+                &InviteTarget::Character(character("bren")),
+                0,
+            )
             .unwrap();
         (directory, invite)
     }
@@ -752,7 +793,11 @@ mod tests {
         directory.accept(&character("bren"), invite, 1).unwrap();
         let roster = roster_of(&mut directory, "bren").unwrap();
         assert_eq!(
-            roster.members.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(),
+            roster
+                .members
+                .iter()
+                .map(|m| m.name.as_str())
+                .collect::<Vec<_>>(),
             ["aria", "bren"]
         );
         assert_eq!(roster.version, 1);
@@ -765,9 +810,18 @@ mod tests {
     fn leader_leaving_promotes_the_longest_standing_member() {
         let (mut directory, invite) = pair();
         directory.accept(&character("bren"), invite, 1).unwrap();
-        present(&mut directory, 1, &[("aria", 1), ("bren", 2), ("cara", 3)], 2);
+        present(
+            &mut directory,
+            1,
+            &[("aria", 1), ("bren", 2), ("cara", 3)],
+            2,
+        );
         let second = directory
-            .invite(&character("aria"), &InviteTarget::Character(character("cara")), 2)
+            .invite(
+                &character("aria"),
+                &InviteTarget::Character(character("cara")),
+                2,
+            )
             .unwrap();
         directory.accept(&character("cara"), second, 3).unwrap();
         directory.leave(&character("aria")).unwrap();
@@ -785,7 +839,10 @@ mod tests {
         present(&mut directory, 2, &[("bren", 9)], 3);
         let roster = roster_of(&mut directory, "aria").unwrap();
         assert_eq!(roster.members[1].name, "bren");
-        assert_eq!(roster.members[1].player, None, "elsewhere has no local player");
+        assert_eq!(
+            roster.members[1].player, None,
+            "elsewhere has no local player"
+        );
         assert!(roster.members[1].online);
         // A later fenced operation still names the same party.
         directory.leave(&character("bren")).unwrap();
@@ -826,7 +883,9 @@ mod tests {
         let mut hosts = crate::HostRegistry::new(1_000).unwrap();
         let host = crate::HostId::new("host").unwrap();
         hosts.register(host.clone(), 0).unwrap();
-        let lease = zones.assign(ZoneId::new(1), host.clone(), &hosts, 0).unwrap();
+        let lease = zones
+            .assign(ZoneId::new(1), host.clone(), &hosts, 0)
+            .unwrap();
         let mut directory = PartyDirectory::new();
         {
             let mut parties = ReferenceParties {
@@ -840,7 +899,9 @@ mod tests {
                 })
                 .unwrap();
         }
-        zones.reassign(ZoneId::new(1), lease.epoch, host, &hosts, 2).unwrap();
+        zones
+            .reassign(ZoneId::new(1), lease.epoch, host, &hosts, 2)
+            .unwrap();
         let mut parties = ReferenceParties {
             zones: &zones,
             parties: &mut directory,
@@ -858,7 +919,11 @@ mod tests {
     fn five_is_full_and_invites_lapse() {
         let mut directory = PartyDirectory::new();
         let names = ["aria", "bren", "cara", "dara", "edda", "finn"];
-        let entries: Vec<_> = names.iter().enumerate().map(|(i, n)| (*n, i as u32 + 1)).collect();
+        let entries: Vec<_> = names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (*n, i as u32 + 1))
+            .collect();
         present(&mut directory, 1, &entries, 0);
         let leader = character("aria");
         for name in &names[1..5] {
@@ -875,7 +940,11 @@ mod tests {
         let mut directory = PartyDirectory::new();
         present(&mut directory, 1, &[("aria", 1), ("bren", 2)], 0);
         let invite = directory
-            .invite(&character("aria"), &InviteTarget::Character(character("bren")), 0)
+            .invite(
+                &character("aria"),
+                &InviteTarget::Character(character("bren")),
+                0,
+            )
             .unwrap();
         directory.sweep(PARTY_INVITE_TTL_MS);
         assert_eq!(

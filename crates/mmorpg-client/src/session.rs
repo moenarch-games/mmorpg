@@ -7,11 +7,11 @@ use mmorpg_client_model::outbox::{
     MovementCommands, MovementInput, MovementOutbox, RESEND_INTERVAL_MS,
 };
 use mmorpg_core::{EntityRef, ZoneCommand, ZoneSnapshot};
+use mmorpg_protocol::party::PartyRequest;
 use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use mmorpg_protocol::party::PartyRequest;
 use tokio::sync::{mpsc, oneshot, watch};
 
 /// The window's half of the party link: requests out, refusal notes back (#404).

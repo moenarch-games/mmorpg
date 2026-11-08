@@ -716,7 +716,7 @@ observation (`u64`) after the dropped-intent flag. Layouts change, so the protoc
 
 ## Sheets sent until acknowledged (#544)
 
-The parts of a player projection that rarely change travel as four sheets: the bag sheet (inventory revision, bag, equipment and stat totals), the quest sheet, the loot sheet and the ability sheet (the viewer's cooldowns and auras and its target's auras). Core projects all four every tick. A sheet's revision is the FNV-1a hash of its encoded bytes (0 is reserved for "none held"), so equal contents share a revision on any host and a change back to earlier contents needs no counter. The ability sheet's timers travel as the low 16 bits of the tick they end, so the sheet stays unchanged while they run down; the receiver keeps them running from the tick the sheet arrived and drops the ones that ended.
+The parts of a player projection that rarely change travel as five sheets: the bag sheet (inventory revision, bag, equipment and stat totals), the quest sheet, the loot sheet, the ability sheet and the party sheet ([Parties](#parties-404)) (the viewer's cooldowns and auras and its target's auras). Core projects all four every tick. A sheet's revision is the FNV-1a hash of its encoded bytes (0 is reserved for "none held"), so equal contents share a revision on any host and a change back to earlier contents needs no counter. The ability sheet's timers travel as the low 16 bits of the tick they end, so the sheet stays unchanged while they run down; the receiver keeps them running from the tick the sheet arrived and drops the ones that ended.
 
 Every online command is `Acknowledged` (tag 31): it carries the revisions of the sheets the client holds, and the zone host records them when the command applies (only an applied command counts, so replay rebuilds the same acknowledgements). A projection carries a sheet only while its revision differs from the acknowledged one; nothing is sent while the sheets are unchanged, and a lost sheet is sent again until a command acknowledges it. The movement heartbeat (every 50 ms) acknowledges new sheets of an idle client. A sheet that does not fit beside a tick's events, chat, world sections, viewer and target waits for a later tick; entities take what is left. A client that never acknowledges (a local WASM host's browser page, the headless tests) receives every sheet in every projection.
 
@@ -773,3 +773,22 @@ Marshal Elden Greywatch's house (door 2) is a private home (Atlas 5.1.48). Error
 Once a source zone retired a departed character (seam crossing or waystone travel to another logical zone, [ADR 0007](adr/0007-seam-corridors-and-character-transfer.md)), the departed session receives a redirect notice in place of its player projection: the common prefix with scope 3 (the source zone and tick), then the destination zone (`u32`), the transfer ID (`u64`, nonzero), the cutover command sequence (`u32`: the destination applies only later sequences) and the destination's session route (length `u8`, 1–255, then UTF-8). The client reconnects to the route and claims its character there. Before the cutover the session keeps its last projection from the freeze. `mmorpg_protocol::is_redirect_notice` tells the two apart. A new scope changes the projection layout, so the protocol ID changed.
 
 The trusted-LAN handoff host (`MMORPG_HANDOFF_DATABASE_URL`) adds private host inputs, never client commands: `[1, 5, transfer…]` makes the claiming session the arriving character, `[1, 6, transfer ID u64]` freezes the session's departing player, `[1, 7, transfer ID u64]` puts a frozen player back and `[1, 8]` declines a departure.
+
+## Parties (#404)
+
+The party directory ([ADR 0008](adr/0008-party-directory.md)) owns membership; a zone holds only each player's view, set by the trusted host input `[1, 9, view]` (never a client command), in order with commands so replay reproduces it. A view at or below the revision held changes nothing.
+
+**Party sheet** (the fifth sheet, [sheet ordering](#sheets-sent-until-acknowledged-544), revision echoed like the others): `revision u64 · flags u8 (1 roster, 2 invite) · [party u64 · version u32 · member count u8 · members] · [invite ID u64 · from name]`, a member being `name length u8 · name · player u32 · flags u8 (1 online, 2 in this zone: player is valid)`. Names are 1–48 UTF-8 bytes without control characters. Members are in join order, so the first leads. Canonical snapshots carry each player's view (`u16` count, then player ID and view) after the raid state, and each creature carries its corpse's sharing party (`u8` count, then `u32` player IDs ascending), both validated on recovery.
+
+**Reliable control:** party requests use the same control channel as character claims, payload first byte `2` (character control uses `1`). A connection first announces its roster name:
+
+| Request | Layout |
+| --- | --- |
+| Hello | `[2, 1, name length, name]` |
+| InvitePlayer | `[2, 2, player: u32]` (a selected player) |
+| InviteName | `[2, 3, name length, name]` (`/invite`; `Player <n>` or `#<n>` also name a player in this zone) |
+| Accept / Decline | `[2, 4 or 5, invite: u64]` |
+| Leave | `[2, 6]` |
+| Kick | `[2, 7, roster index: u8, roster version: u32]` |
+
+The reply is `[2, 0]` when accepted or `[2, code]` naming the refusal (1 not found, 2 ambiguous name, 3 already in a party, 4 self invite, 5 invitee busy, 6 not leader, 7 party full, 8 invite gone, 9 not in a party, 10 party changed, 11 unavailable); the directory is unchanged by a refusal. The browser reaches these through `mmorpg-wasm` (`encodePartyRequest`, `partyReplyError`, `parsePartyChat`). A host's party service also answers on hosts without durable characters; `mmorpg-wasm`'s local host has none, so the browser shows a local note there.

@@ -439,7 +439,7 @@ fn read_auras(
 
 /// `command` (plain or observed bytes from [`crate::encode_command`] or
 /// [`crate::encode_observed_command`]) with the sheet revisions the client holds: the protocol
-/// byte, the acknowledgement tag, four `u32` revisions, then the command's tag and fields.
+/// byte, the acknowledgement tag, one `u32` revision per sheet, then the command's tag and fields.
 #[must_use]
 pub fn encode_acknowledged_command(revisions: SheetRevisions, command: &[u8]) -> Vec<u8> {
     let mut payload = Vec::with_capacity(2 + SHEET_REVISIONS_BYTES + command.len());

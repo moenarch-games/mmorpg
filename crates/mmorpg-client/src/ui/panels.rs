@@ -4,12 +4,12 @@ use super::{GameUi, LogTab, UiFrame, UiIntent, chat, line_color, panel_frame};
 use crate::interaction::{NpcContext, quest_brief};
 use egui::{Align2, Color32, RichText, Vec2};
 use mmorpg_client_model::party::{self as party_model, PartyChat};
-use mmorpg_protocol::party::PartyRequest;
 use mmorpg_client_model::quest::{self, QuestStanding};
 use mmorpg_core::{
     EquipmentSlot, ItemId, NpcRole, Quest, ZoneCommand, ZoneContent, ZoneSnapshot, item_template,
     sell_price,
 };
+use mmorpg_protocol::party::PartyRequest;
 use strum::VariantArray;
 
 fn item_name(id: ItemId) -> &'static str {

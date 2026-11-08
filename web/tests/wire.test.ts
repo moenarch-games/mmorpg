@@ -14,7 +14,7 @@ describe("the mmorpg-wasm wire boundary (#541)", () => {
     const sent = { ...snapshot(18_446_744_073_709_551_615n, [player(1, 0), player(2, 40)]), chat: [{ speaker: 2, channel: "emote" as const, emote: "wave" as const }] };
     const bytes = encodeSnapshot(sent);
     const decoded = decodeSnapshot(bytes);
-    expect(decoded).toEqual({ ...sent, stats: null });
+    expect(decoded).toEqual({ ...sent, stats: null, party: null });
     expect(projectionBytes(decoded)).toEqual(bytes);
     // The Rust decoder still rejects what it always did, such as a projection that does not lead with its viewer.
     expect(() => decodeSnapshot(encodeSnapshot({ ...sent, entities: [player(2, 40), player(1, 0)] }))).toThrow("viewer");
@@ -24,16 +24,16 @@ describe("the mmorpg-wasm wire boundary (#541)", () => {
   test("an online session keeps the sheets it received and echoes their revisions (#544)", () => {
     const sheets = new ProjectionDecoder();
     const jump = encodeCommand({ kind: "jump" });
-    // Nothing held yet: the acknowledgement wraps the command with four zero revisions.
+    // Nothing held yet: the acknowledgement wraps the command with zero revisions, one per sheet.
     const none = sheets.acknowledge(jump);
-    expect(none.length).toBe(jump.length + 1 + 16);
+    expect(none.length).toBe(jump.length + 1 + 20);
     expect(none[1]).toBe(31);
-    expect([...none.subarray(2, 18)]).toEqual(new Array(16).fill(0));
-    expect([...none.subarray(18)]).toEqual([...jump.subarray(1)]);
+    expect([...none.subarray(2, 22)]).toEqual(new Array(20).fill(0));
+    expect([...none.subarray(22)]).toEqual([...jump.subarray(1)]);
     const sent = snapshot(5);
     const bytes = encodeSnapshot(sent);
     const decoded = sheets.decode(bytes);
-    expect(decoded).toEqual({ ...sent, stats: null });
+    expect(decoded).toEqual({ ...sent, stats: null, party: null });
     expect(projectionBytes(decoded)).toEqual(bytes);
     // Now it holds the loot and ability sheets.
     expect([...sheets.acknowledge(jump).subarray(10, 18)].some((byte) => byte !== 0)).toBe(true);

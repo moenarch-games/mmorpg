@@ -808,7 +808,9 @@ impl App {
             self.ui_intent(intent);
         }
         for note in self.party.notes() {
-            self.ui.logs.note(mmorpg_client_model::chat::LineKind::System, note);
+            self.ui
+                .logs
+                .note(mmorpg_client_model::chat::LineKind::System, note);
         }
         self.sync_bindings();
         if settings_was_open != self.ui.settings.open {

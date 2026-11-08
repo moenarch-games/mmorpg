@@ -86,9 +86,15 @@ pub fn party_view(state: &core::PartyState, viewer: core::PlayerId) -> PartyView
 )]
 #[tsify(missing_as_null, large_number_types_as_bigints)]
 pub enum PartyRequestInput {
-    Hello { name: String },
-    InvitePlayer { player: u32 },
-    InviteName { name: String },
+    Hello {
+        name: String,
+    },
+    InvitePlayer {
+        player: u32,
+    },
+    InviteName {
+        name: String,
+    },
     Accept {
         #[tsify(type = "bigint")]
         invite: u64,
@@ -98,7 +104,10 @@ pub enum PartyRequestInput {
         invite: u64,
     },
     Leave,
-    Kick { member: u8, version: u32 },
+    Kick {
+        member: u8,
+        version: u32,
+    },
 }
 
 fn request(input: PartyRequestInput) -> PartyRequest {
@@ -116,7 +125,9 @@ fn request(input: PartyRequestInput) -> PartyRequest {
 /// Encodes a party request for reliable control.
 #[wasm_bindgen(js_name = encodePartyRequest)]
 pub fn encode_party_request(input: Ts<PartyRequestInput>) -> Result<Vec<u8>, JsError> {
-    let input = input.to_rust().map_err(|error| JsError::new(&error.to_string()))?;
+    let input = input
+        .to_rust()
+        .map_err(|error| JsError::new(&error.to_string()))?;
     request(input)
         .encode()
         .map_err(|error| JsError::new(&error.to_string()))

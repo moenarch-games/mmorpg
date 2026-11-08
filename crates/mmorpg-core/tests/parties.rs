@@ -156,20 +156,35 @@ fn experience(zone: &ZoneSimulation, player: u32) -> u32 {
 #[test]
 fn a_shared_kill_credits_party_members_once_and_leaves_strangers_out() {
     let mut zone = zone();
-    assert!(zone.apply_party_state(LEADER, party(5, LEADER, MATE)).unwrap());
-    assert!(zone.apply_party_state(MATE, party(5, LEADER, MATE)).unwrap());
+    assert!(
+        zone.apply_party_state(LEADER, party(5, LEADER, MATE))
+            .unwrap()
+    );
+    assert!(
+        zone.apply_party_state(MATE, party(5, LEADER, MATE))
+            .unwrap()
+    );
     kill(&mut zone);
 
     for member in [LEADER, MATE] {
-        assert_eq!(progress(&zone, member), 1, "player {member} earns the objective");
-        assert!(experience(&zone, member) > 0, "player {member} earns the XP");
+        assert_eq!(
+            progress(&zone, member),
+            1,
+            "player {member} earns the objective"
+        );
+        assert!(
+            experience(&zone, member) > 0,
+            "player {member} earns the XP"
+        );
     }
     assert_eq!(progress(&zone, STRANGER), 0);
     assert_eq!(experience(&zone, STRANGER), 0);
     // The party is told; the kill is not credited twice by the views that named it.
     let events = zone.snapshot_for_player(MATE).unwrap().events;
     assert!(
-        events.iter().any(|event| matches!(event, ZoneEvent::Died { .. })),
+        events
+            .iter()
+            .any(|event| matches!(event, ZoneEvent::Died { .. })),
         "{events:?}"
     );
     assert_eq!(progress(&zone, MATE), 1);
@@ -178,8 +193,14 @@ fn a_shared_kill_credits_party_members_once_and_leaves_strangers_out() {
 #[test]
 fn a_member_out_of_range_or_with_a_view_not_yet_updated_shares_nothing() {
     let mut zone = zone();
-    assert!(zone.apply_party_state(LEADER, party(5, LEADER, MATE)).unwrap());
-    assert!(zone.apply_party_state(MATE, party(5, LEADER, MATE)).unwrap());
+    assert!(
+        zone.apply_party_state(LEADER, party(5, LEADER, MATE))
+            .unwrap()
+    );
+    assert!(
+        zone.apply_party_state(MATE, party(5, LEADER, MATE))
+            .unwrap()
+    );
     restore(&mut zone, |state| {
         let mate = state
             .players
@@ -194,7 +215,10 @@ fn a_member_out_of_range_or_with_a_view_not_yet_updated_shares_nothing() {
 
     // A leader whose view is not yet updated does not share with someone who has left.
     let mut zone = self::zone();
-    assert!(zone.apply_party_state(LEADER, party(5, LEADER, MATE)).unwrap());
+    assert!(
+        zone.apply_party_state(LEADER, party(5, LEADER, MATE))
+            .unwrap()
+    );
     kill(&mut zone);
     assert_eq!(progress(&zone, MATE), 0);
 }
@@ -202,13 +226,23 @@ fn a_member_out_of_range_or_with_a_view_not_yet_updated_shares_nothing() {
 #[test]
 fn party_members_can_claim_the_corpse_and_strangers_cannot() {
     let mut zone = zone();
-    assert!(zone.apply_party_state(LEADER, party(5, LEADER, MATE)).unwrap());
-    assert!(zone.apply_party_state(MATE, party(5, LEADER, MATE)).unwrap());
+    assert!(
+        zone.apply_party_state(LEADER, party(5, LEADER, MATE))
+            .unwrap()
+    );
+    assert!(
+        zone.apply_party_state(MATE, party(5, LEADER, MATE))
+            .unwrap()
+    );
     let claim = kill(&mut zone);
 
-    assert!(zone.snapshot_for_player(MATE).unwrap().entities.iter().any(
-        |entity| entity.id == CREATURE.get() && entity.flags.lootable
-    ));
+    assert!(
+        zone.snapshot_for_player(MATE)
+            .unwrap()
+            .entities
+            .iter()
+            .any(|entity| entity.id == CREATURE.get() && entity.flags.lootable)
+    );
     // The canonical corpse keeps its eligibility through recovery.
     restore(&mut zone, |state| {
         assert_eq!(state.creatures[0].loot_party, vec![MATE]);
@@ -248,15 +282,27 @@ fn party_members_can_claim_the_corpse_and_strangers_cannot() {
 #[test]
 fn stale_party_views_fail_closed_and_the_canonical_view_round_trips() {
     let mut zone = zone();
-    assert!(zone.apply_party_state(LEADER, party(5, LEADER, MATE)).unwrap());
+    assert!(
+        zone.apply_party_state(LEADER, party(5, LEADER, MATE))
+            .unwrap()
+    );
     // Equal or older revisions change nothing.
-    assert!(!zone.apply_party_state(LEADER, party(5, LEADER, MATE)).unwrap());
-    assert!(!zone.apply_party_state(LEADER, party(4, LEADER, MATE)).unwrap());
+    assert!(
+        !zone
+            .apply_party_state(LEADER, party(5, LEADER, MATE))
+            .unwrap()
+    );
+    assert!(
+        !zone
+            .apply_party_state(LEADER, party(4, LEADER, MATE))
+            .unwrap()
+    );
     assert!(zone.apply_party_state(99, party(9, LEADER, MATE)).is_err());
     assert_eq!(zone.party_revision(LEADER), 5);
 
     let state = zone.snapshot().unwrap();
-    let restored = ZoneSimulation::from_snapshot(state.clone(), Arc::clone(zone.content())).unwrap();
+    let restored =
+        ZoneSimulation::from_snapshot(state.clone(), Arc::clone(zone.content())).unwrap();
     assert_eq!(restored.party_state(LEADER), zone.party_state(LEADER));
     let mut broken = state;
     broken.parties.push((77, party(1, LEADER, MATE)));
@@ -271,12 +317,21 @@ fn stale_party_views_fail_closed_and_the_canonical_view_round_trips() {
 #[test]
 fn removing_a_player_drops_its_party_view_and_passes_a_corpse_to_the_party() {
     let mut zone = zone();
-    assert!(zone.apply_party_state(LEADER, party(5, LEADER, MATE)).unwrap());
-    assert!(zone.apply_party_state(MATE, party(5, LEADER, MATE)).unwrap());
+    assert!(
+        zone.apply_party_state(LEADER, party(5, LEADER, MATE))
+            .unwrap()
+    );
+    assert!(
+        zone.apply_party_state(MATE, party(5, LEADER, MATE))
+            .unwrap()
+    );
     kill(&mut zone);
     assert!(zone.remove_player(LEADER));
     assert_eq!(zone.party_revision(LEADER), 0);
     let state = zone.snapshot().unwrap();
     assert_eq!(state.creatures[0].tapped_by, Some(MATE));
-    assert!(state.creatures[0].loot.is_some(), "the loot stays with the party");
+    assert!(
+        state.creatures[0].loot.is_some(),
+        "the loot stays with the party"
+    );
 }

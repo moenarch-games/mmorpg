@@ -453,9 +453,9 @@ impl ZoneSimulation {
                             && (creature.ai == CreatureAi::Engaged || creature.combat_timer > 0),
                         hostile: template.behaviour == CreatureBehaviour::Aggressive,
                         attackable: alive,
-                        tapped_by_other: creature
-                            .tapped_by
-                            .is_some_and(|tapper| tapper != viewer && !self.share_party(tapper, viewer)),
+                        tapped_by_other: creature.tapped_by.is_some_and(|tapper| {
+                            tapper != viewer && !self.share_party(tapper, viewer)
+                        }),
                         lootable: !alive
                             && (creature.tapped_by == Some(viewer)
                                 || creature.loot_party.contains(&viewer))

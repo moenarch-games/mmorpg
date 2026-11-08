@@ -666,7 +666,12 @@ fn decode_parties(
     payload: &[u8],
     offset: &mut usize,
 ) -> Result<Vec<(mmorpg_core::PlayerId, mmorpg_core::PartyState)>, ProtocolError> {
-    let count = decode_u16_count(payload, offset, MAX_PLAYERS_PER_ZONE, "too many party views")?;
+    let count = decode_u16_count(
+        payload,
+        offset,
+        MAX_PLAYERS_PER_ZONE,
+        "too many party views",
+    )?;
     let mut parties = Vec::with_capacity(count);
     for _ in 0..count {
         let player = u32::from_be_bytes(take(payload, offset)?);
@@ -1636,11 +1641,14 @@ mod tests {
     fn snapshot() -> CanonicalZoneSnapshot {
         let wolf = EntityRef::Creature(CreatureId::new(4));
         CanonicalZoneSnapshot {
-            parties: vec![(7, mmorpg_core::PartyState {
-                revision: 2,
-                roster: None,
-                invite: None,
-            })],
+            parties: vec![(
+                7,
+                mmorpg_core::PartyState {
+                    revision: 2,
+                    roster: None,
+                    invite: None,
+                },
+            )],
             rewards: None,
             debris: vec![mmorpg_core::Debris {
                 id: 7,

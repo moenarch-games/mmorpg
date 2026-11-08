@@ -41,10 +41,10 @@ mod loot;
 mod minion;
 mod movable;
 mod nav;
+mod party;
 pub mod physics;
 #[cfg(feature = "physics-ab")]
 pub mod physics_ab;
-mod party;
 mod platform;
 mod progression;
 mod projectile;
@@ -149,6 +149,10 @@ pub use minion::{
     Minion, MinionOrder, ORDER_RANGE_UNITS, is_companion, minion_ability, minion_half_extents,
 };
 pub use nav::NAV_CELL_UNITS;
+pub use party::{
+    MAX_PARTY_MEMBERS, MAX_PARTY_NAME_BYTES, PartyInvite, PartyMember, PartyRefusal, PartyRoster,
+    PartyState, valid_name as valid_party_name,
+};
 pub use platform::{MAX_PLATFORMS, Platform, PlatformId, PlatformPhase};
 pub use progression::{MAX_PLAYER_LEVEL, experience_to_next_level, kill_experience};
 pub use projectile::{
@@ -190,10 +194,6 @@ pub use strike::{STRIKE_ARC_HALF_WIDTH, StrikeAim, StrikeHeight, StrikeSide, has
 pub use structure::{
     CanonicalPiece, MAX_PIECES, MAX_SITES, PROJECTILE_PIECE_DAMAGE, PieceBox, PieceId, PieceStage,
     PieceView, REPAIR_REACH_UNITS, REPAIR_SPEEDUP_TICKS, StructurePiece, StructureSite,
-};
-pub use party::{
-    MAX_PARTY_MEMBERS, MAX_PARTY_NAME_BYTES, PartyInvite, PartyMember, PartyRefusal, PartyRoster,
-    PartyState, valid_name as valid_party_name,
 };
 pub use transfer::{CharacterTransfer, MAX_REMEMBERED_TRANSFERS, TransferId, TransferMotion};
 pub use vendor::{

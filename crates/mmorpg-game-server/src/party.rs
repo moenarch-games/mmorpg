@@ -40,11 +40,17 @@ struct Bound(BTreeMap<PlayerId, (CharacterId, u64)>);
 
 impl PartyChannel {
     fn snapshot(&self) -> BTreeMap<PlayerId, (CharacterId, u64)> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner).0.clone()
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .0
+            .clone()
     }
 
     fn character(&self, player: PlayerId) -> Option<CharacterId> {
-        self.snapshot().remove(&player).map(|(character, _)| character)
+        self.snapshot()
+            .remove(&player)
+            .map(|(character, _)| character)
     }
 
     fn publish(&self, bound: Bound) {
@@ -77,7 +83,10 @@ impl ZoneGameServerAdapter {
                 .iter()
                 .filter(|(player, _)| !self.parked_characters.contains_key(player))
                 .map(|(player, character)| {
-                    (*player, (character.clone(), self.zone.party_revision(*player)))
+                    (
+                        *player,
+                        (character.clone(), self.zone.party_revision(*player)),
+                    )
                 })
                 .collect()
         } else {
@@ -195,11 +204,14 @@ impl PartyService {
         context: ControlContext,
         payload: &[u8],
     ) -> Result<Vec<u8>, ControlServiceError> {
-        let request =
-            PartyRequest::decode(payload).map_err(|error| ControlServiceError::new(error.to_string()))?;
+        let request = PartyRequest::decode(payload)
+            .map_err(|error| ControlServiceError::new(error.to_string()))?;
         if let PartyRequest::Hello { name } = request {
             self.with_session(|sessions| {
-                sessions.entry((id.clone(), context.player_id)).or_default().name = Some(name);
+                sessions
+                    .entry((id.clone(), context.player_id))
+                    .or_default()
+                    .name = Some(name);
             });
             return Ok(encode_party_reply(Ok(())));
         }
@@ -224,7 +236,9 @@ impl PartyService {
         };
         let target = match &request {
             PartyRequest::InvitePlayer { player } => Some(InviteTarget::Character(
-                zone.channel.character(*player).ok_or(PartyRefusal::NotFound)?,
+                zone.channel
+                    .character(*player)
+                    .ok_or(PartyRefusal::NotFound)?,
             )),
             PartyRequest::InviteName { name } => Some(invite_target(name.clone())),
             _ => None,
@@ -288,18 +302,23 @@ impl PartyService {
                 continue;
             }
             let Some(epoch) = self.with_session(|sessions| {
-                sessions.get(&(id.clone(), player)).map(|session| session.epoch)
+                sessions
+                    .get(&(id.clone(), player))
+                    .map(|session| session.epoch)
             }) else {
                 continue; // The session has not spoken over control yet.
             };
             let Some(input) = party_input(&view) else {
                 continue;
             };
-            if let Err(error) =
-                self.runtime
-                    .block_on(self.host.submit_host_input(id, player, epoch, &input))
+            if let Err(error) = self
+                .runtime
+                .block_on(self.host.submit_host_input(id, player, epoch, &input))
             {
-                eprintln!("party view for {player} in {} not applied: {error}", id.as_str());
+                eprintln!(
+                    "party view for {player} in {} not applied: {error}",
+                    id.as_str()
+                );
                 self.with_session(|sessions| sessions.remove(&(id.clone(), player)));
             }
         }
