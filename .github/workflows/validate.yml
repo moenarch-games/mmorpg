@@ -173,7 +173,7 @@ jobs:
     permissions:
       contents: read
       packages: read
-    uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@bd04858f403dbb0a6314abb1fe03e93f38b445ca
+    uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@c4bfb9bbc564bb0af77cbdba3cd5a07a3c9b04a6
     with:
       bun_version: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'latest' || '' }}
       node_version: ""
@@ -203,7 +203,7 @@ jobs:
     permissions:
       contents: read
       packages: read
-    uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@bd04858f403dbb0a6314abb1fe03e93f38b445ca
+    uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@c4bfb9bbc564bb0af77cbdba3cd5a07a3c9b04a6
     with:
       bun_version: latest
       node_version: ""
