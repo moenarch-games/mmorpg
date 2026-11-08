@@ -9,6 +9,7 @@
 //!
 //! [`PostgresHandoffs`] keeps the fenced cross-zone handoff records (#145) in
 //! the same schema, checked against these zone grants in one transaction.
+use crate::party::{PartyAuthority, PartyDirectory, PartyStoreError};
 use crate::{
     ControlPlaneError, EntityId, HandoffAuthority, HandoffPhase, HandoffRecord, HandoffTicket,
     HostId, TransferId, ZoneLease, speaks_for,
@@ -25,6 +26,7 @@ use std::{
 const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0001_directory.sql"),
     include_str!("../migrations/0002_handoffs.sql"),
+    include_str!("../migrations/0003_parties.sql"),
 ];
 #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub const SCHEMA_VERSION: i32 = MIGRATIONS.len() as i32;
@@ -709,4 +711,64 @@ impl HandoffAuthority for PostgresHandoffs {
             }
         })
     }
+}
+
+/// The durable [`PartyAuthority`] (#404, ADR 0008): one row shared by the peer hosts, read,
+/// changed and rewritten under its row lock, so every host's operations are linearized.
+pub struct PostgresParties {
+    client: Client,
+}
+
+impl PostgresParties {
+    /// Connects to `url`; `timeout` bounds connecting and every statement.
+    pub fn connect(url: &str, timeout: Duration) -> Result<Self, DirectoryStoreError> {
+        Ok(Self {
+            client: PostgresZoneDirectory::connect(url, timeout)?.client,
+        })
+    }
+}
+
+impl PartyAuthority for PostgresParties {
+    fn transact(
+        &mut self,
+        issuer: Option<&ZoneLease>,
+        body: &mut dyn FnMut(&mut PartyDirectory, u64),
+    ) -> Result<(), PartyStoreError> {
+        let mut transaction = self.client.transaction().map_err(party_backend)?;
+        if let Some(lease) = issuer {
+            ensure_current_in(&mut transaction, lease).map_err(|error| match error {
+                ControlPlaneError::Backend(cause) => PartyStoreError::Backend(cause),
+                _ => PartyStoreError::Fenced,
+            })?;
+        }
+        let row = transaction
+            .query_one(
+                "SELECT state, floor(extract(epoch FROM now())*1000)::bigint \
+                 FROM mmorpg_coordination.party_directory FOR UPDATE",
+                &[],
+            )
+            .map_err(party_backend)?;
+        let stored: Vec<u8> = row.get(0);
+        let now: i64 = row.get(1);
+        let mut directory = if stored.is_empty() {
+            PartyDirectory::new()
+        } else {
+            PartyDirectory::decode(&stored)?
+        };
+        body(&mut directory, u64::try_from(now).map_err(party_backend)?);
+        let encoded = directory.encode();
+        if encoded != stored {
+            transaction
+                .execute(
+                    "UPDATE mmorpg_coordination.party_directory SET state=$1",
+                    &[&encoded],
+                )
+                .map_err(party_backend)?;
+        }
+        transaction.commit().map_err(party_backend)
+    }
+}
+
+fn party_backend(cause: impl fmt::Display) -> PartyStoreError {
+    PartyStoreError::Backend(cause.to_string())
 }

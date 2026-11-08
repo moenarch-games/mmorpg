@@ -514,7 +514,7 @@ mod postgres_host {
     use mmorpg_characters::postgres::PostgresEntries;
     use mmorpg_control_plane::HostId;
     use mmorpg_control_plane::postgres::{
-        PostgresHandoffs, PostgresZoneDirectory, UnconfirmedZoneGrant,
+        PostgresHandoffs, PostgresParties, PostgresZoneDirectory, UnconfirmedZoneGrant,
     };
     use mmorpg_core::ZoneId;
     use tokio::sync::mpsc;
@@ -589,7 +589,7 @@ mod postgres_host {
             timeout,
         } = config;
         let zones = zone_ids.clone();
-        let (directory, grants, entries, handoffs) =
+        let (directory, grants, entries, handoffs, parties) =
             tokio::task::spawn_blocking(move || -> Result<_, String> {
                 let mut client =
                     ::postgres::Client::connect(&url, ::postgres::NoTls).map_err(message)?;
@@ -603,7 +603,8 @@ mod postgres_host {
                     .collect::<Result<Vec<_>, _>>()?;
                 let entries = PostgresEntries::connect(&url, timeout).map_err(message)?;
                 let handoffs = PostgresHandoffs::connect(&url, timeout).map_err(message)?;
-                Ok((directory, grants, entries, handoffs))
+                let parties = PostgresParties::connect(&url, timeout).map_err(message)?;
+                Ok((directory, grants, entries, handoffs, parties))
             })
             .await??;
         let leases: Vec<_> = grants.iter().map(|grant| grant.lease().clone()).collect();
@@ -628,8 +629,14 @@ mod postgres_host {
             .collect();
         let listener = tokio::net::TcpListener::bind(link_address.as_str()).await?;
         let ids = local.iter().map(|zone| zone.match_id.clone()).collect();
+        let party_leases = local
+            .iter()
+            .map(|zone| (zone.match_id.clone(), zone.lease.clone()))
+            .collect();
         let wiring = HandoffWiring {
             channels,
+            parties: Box::new(parties),
+            leases: party_leases,
             listener,
             build: Box::new(move |host, storage| {
                 Arc::new(HandoffHost::new(
