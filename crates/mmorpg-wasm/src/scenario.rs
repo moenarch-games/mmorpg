@@ -35,6 +35,9 @@ pub enum Scenario {
     /// facing in: Redbrand Bandits, Crossbowmen and two shield-bearing Brutes hold the outer
     /// cavern and the inner chamber with its sealed threshold (#160).
     RedbrandCavern,
+    /// A level 6 Warden standing in the Redbrand Hollow threshold with the Garrick chain turned
+    /// in: the first tick enters a private run of the depths (#404).
+    RedbrandDepths,
     /// A level 6 Necromancer at the eastern edge of Wolfrun Woods, facing the wolf pack, to try
     /// Shadow Bolt, Corruption, Drain Life, Bone Shield (#301) and Raise Skeleton (#295).
     NecromancerDrain,
@@ -142,6 +145,7 @@ impl Scenario {
             Self::ArcanistPack => "arcanist-pack",
             Self::SunkenShrine => "sunken-shrine",
             Self::RedbrandCavern => "redbrand-cavern",
+            Self::RedbrandDepths => "redbrand-depths",
             Self::NecromancerDrain => "necromancer-drain",
             Self::RogueMelee => "rogue-melee",
             Self::ClericHoly => "cleric-holy",
@@ -178,10 +182,12 @@ impl Scenario {
 
     const fn class(self) -> ClassChoice {
         match self {
-            Self::OgreCombat | Self::SunkenShrine | Self::RedbrandCavern => ClassChoice {
-                class: PlayerClass::Warden,
-                sex: Sex::Female,
-            },
+            Self::OgreCombat | Self::SunkenShrine | Self::RedbrandCavern | Self::RedbrandDepths => {
+                ClassChoice {
+                    class: PlayerClass::Warden,
+                    sex: Sex::Female,
+                }
+            }
             // The sword clips were reviewed on the male figure (asset-tooling #447).
             Self::WardenSlashes
             | Self::WardenGuards
@@ -264,6 +270,7 @@ impl Scenario {
             // Bone Shield, Adrenaline Rush and Divine Shield and Barkskin unlock at level 6.
             Self::RangerRange
             | Self::RedbrandCavern
+            | Self::RedbrandDepths
             | Self::NecromancerDrain
             | Self::RogueMelee
             | Self::ClericHoly
@@ -351,6 +358,9 @@ impl Scenario {
             Self::SunkenShrine => ([-6_200, -5_300], 49_152),
             // On the authored north approach; face south through the concealed mouth (#644).
             Self::RedbrandCavern => ([6_400, -15_600], 0),
+            // In the threshold strip's corner, facing the barred doorway to the east; the door's
+            // Brute is three metres off and has not struck yet.
+            Self::RedbrandDepths => ([7_890, -13_620], 16_384),
             // 1.5 m south of the ledge, facing north.
             Self::MantleLow => ([-14_530, -890], 32_768),
             Self::MantleMid => ([8_250, 2_250], 32_768),
@@ -393,6 +403,15 @@ impl Scenario {
                     progress: [0; mmorpg_core::MAX_QUEST_OBJECTIVES],
                 }],
                 completed: (1..=SCOUT_THE_LAKE.get())
+                    .filter_map(|id| mmorpg_core::QuestId::new(id).bit())
+                    .fold(0, |mask, bit| mask | bit),
+            };
+        }
+        if self == Self::RedbrandDepths {
+            use mmorpg_core::greyhaven_vale::quests::GARRICK_REDBRAND_QUEST;
+            record.quests = mmorpg_core::QuestLog {
+                entries: Vec::new(),
+                completed: (1..=GARRICK_REDBRAND_QUEST.get())
                     .filter_map(|id| mmorpg_core::QuestId::new(id).bit())
                     .fold(0, |mask, bit| mask | bit),
             };

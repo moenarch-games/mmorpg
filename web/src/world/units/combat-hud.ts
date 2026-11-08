@@ -52,6 +52,9 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "private-home": "This is a private home.",
   "no-answer": "You knock, but no one answers at this hour.",
   "not-at-night": "No new quests at this hour. Come back in the morning.",
+  "depths-locked": "The way down is barred. Someone in your party must first have ended Garrick Redbrand.",
+  "depths-closed": "No way down for you here: your party's run has begun without you, or the depths are full.",
+  "depths-wipe": "Your party has fallen. You rise again at the checkpoint.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;

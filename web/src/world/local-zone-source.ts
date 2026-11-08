@@ -254,6 +254,10 @@ export class LocalZoneSource implements WorldSource {
     if (snapshot.viewerId !== player) {
       throw new Error("The local zone addressed a projection to another player.");
     }
+    if (this.#latest && this.#latest.zoneId !== snapshot.zoneId) {
+      // The character changed zone (#404): the new zone's ticks are its own.
+      this.#history.reset();
+    }
     this.#latest = snapshot;
     this.#history.push(snapshot);
     return snapshot;

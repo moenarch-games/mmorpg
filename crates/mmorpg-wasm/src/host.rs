@@ -7,16 +7,17 @@
 //! projections. Gameplay rules stay in `mmorpg-core`; encoding stays in
 //! `mmorpg-protocol`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::Arc;
 
 use crate::action_lab::LabSetup;
 use crate::scenario::Scenario;
 use mmorpg_characters::{CharacterLease, CharacterStore, EntryBackend, LeaseHolder, StoreError};
+use mmorpg_core::redbrand_depths::{self, is_depths_zone};
 use mmorpg_core::{
-    CharacterId, ClassChoice, EphemeralCharacterBuild, PlayerId, ZoneContent, ZoneDefinition,
-    ZoneError, ZoneId, ZoneSimulation, greyhaven_vale,
+    CharacterId, ClassChoice, DepthsRunStart, EphemeralCharacterBuild, ErrorCode, PlayerId,
+    TransferId, ZoneContent, ZoneDefinition, ZoneError, ZoneId, ZoneSimulation, greyhaven_vale,
 };
 use mmorpg_protocol::{
     ProtocolError, decode_canonical_snapshot, decode_observed_command, encode_canonical_snapshot,
@@ -96,17 +97,28 @@ pub struct LocalZoneHost {
     last_sequences: BTreeMap<PlayerId, u32>,
     /// The character lease each stored character's player holds.
     characters: BTreeMap<PlayerId, CharacterLease>,
+    /// The zone not being played: Greyhaven while a character is in the Redbrand Depths,
+    /// the depths (keeping its run) while none is (#404).
+    away: Option<ZoneSimulation>,
+    /// Refused at the threshold; not offered again until they leave its strip.
+    threshold_held: BTreeSet<PlayerId>,
+    /// The local run id and transfer ids; both only need to be unique within this host.
+    next_transfer: u64,
 }
 
 impl LocalZoneHost {
     pub fn new() -> Result<Self, LocalZoneError> {
-        let zone = ZoneSimulation::with_content(LOCAL_ZONE_ID, hosted_content())
+        let mut zone = ZoneSimulation::with_content(LOCAL_ZONE_ID, hosted_content())
             .map_err(LocalZoneError::Zone)?;
+        zone.enable_depths_entry();
         Ok(Self {
             zone,
             next_player_id: 1,
             last_sequences: BTreeMap::new(),
             characters: BTreeMap::new(),
+            away: None,
+            threshold_held: BTreeSet::new(),
+            next_transfer: 1,
         })
     }
 
@@ -190,11 +202,17 @@ impl LocalZoneHost {
     }
 
     fn empty(zone_id: ZoneId, content: Arc<ZoneContent>) -> Result<Self, LocalZoneError> {
+        let mut zone =
+            ZoneSimulation::with_content(zone_id, content).map_err(LocalZoneError::Zone)?;
+        zone.enable_depths_entry();
         Ok(Self {
-            zone: ZoneSimulation::with_content(zone_id, content).map_err(LocalZoneError::Zone)?,
+            zone,
             next_player_id: 1,
             last_sequences: BTreeMap::new(),
             characters: BTreeMap::new(),
+            away: None,
+            threshold_held: BTreeSet::new(),
+            next_transfer: 1,
         })
     }
 
@@ -238,13 +256,17 @@ impl LocalZoneHost {
                 "a world checkpoint is the local zone without players",
             )));
         }
-        let zone = ZoneSimulation::from_snapshot(snapshot, hosted_content())
+        let mut zone = ZoneSimulation::from_snapshot(snapshot, hosted_content())
             .map_err(LocalZoneError::Zone)?;
+        zone.enable_depths_entry();
         Ok(Self {
             zone,
             next_player_id: 1,
             last_sequences: BTreeMap::new(),
             characters: BTreeMap::new(),
+            away: None,
+            threshold_held: BTreeSet::new(),
+            next_transfer: 1,
         })
     }
 
@@ -253,9 +275,15 @@ impl LocalZoneHost {
     /// this checkpoint. Players leave the copy exactly as a departing player
     /// leaves the zone, so creatures drop them from threat and loot rights.
     pub fn world_checkpoint(&self) -> Result<Vec<u8>, LocalZoneError> {
-        let snapshot = self.zone.snapshot().map_err(LocalZoneError::Zone)?;
+        // The checkpoint is the home zone even while the character plays in the depths (#404).
+        let home = self
+            .away
+            .as_ref()
+            .filter(|_| is_depths_zone(self.zone.zone_id()))
+            .unwrap_or(&self.zone);
+        let snapshot = home.snapshot().map_err(LocalZoneError::Zone)?;
         let players: Vec<PlayerId> = snapshot.players.iter().map(|p| p.player_id).collect();
-        let mut world = ZoneSimulation::from_snapshot(snapshot, Arc::clone(self.zone.content()))
+        let mut world = ZoneSimulation::from_snapshot(snapshot, Arc::clone(home.content()))
             .map_err(LocalZoneError::Zone)?;
         for player_id in players {
             world.remove_player(player_id);
@@ -269,7 +297,15 @@ impl LocalZoneHost {
     pub fn leave(&mut self, player_id: PlayerId) -> bool {
         self.last_sequences.remove(&player_id);
         self.characters.remove(&player_id);
-        self.zone.remove_player(player_id)
+        self.threshold_held.remove(&player_id);
+        let removed = self.zone.remove_player(player_id);
+        // A new entry starts at home even when the character left from the depths (#404).
+        if is_depths_zone(self.zone.zone_id())
+            && let Some(home) = self.away.take()
+        {
+            self.away = Some(std::mem::replace(&mut self.zone, home));
+        }
+        removed
     }
 
     /// Spawns the stored character `character_id` as a new player, playing
@@ -396,10 +432,103 @@ impl LocalZoneHost {
         Ok(SubmitOutcome::Applied)
     }
 
-    /// Advances one fixed [`TICK_HZ`](mmorpg_core::TICK_HZ) tick and returns the new tick.
+    /// Advances one fixed [`TICK_HZ`](mmorpg_core::TICK_HZ) tick and returns the new tick. A
+    /// character reaching the threshold or the depths' exit changes zones here (#404): the
+    /// same freeze, stage and activate as a network host, with no second authority to fence.
     pub fn tick(&mut self) -> Result<u64, LocalZoneError> {
         self.zone.advance_tick().map_err(LocalZoneError::Zone)?;
+        self.settle_depths().map_err(LocalZoneError::Zone)?;
         Ok(self.zone.current_tick())
+    }
+
+    fn fresh_transfer(&mut self) -> Result<TransferId, ZoneError> {
+        self.next_transfer += 1;
+        TransferId::new(self.next_transfer)
+    }
+
+    fn character_of(&self, player: PlayerId) -> Result<CharacterId, ZoneError> {
+        match self.characters.get(&player) {
+            Some(lease) => Ok(lease.character_id.clone()),
+            // A review scenario's character holds no lease; it only needs an identity here.
+            None => CharacterId::new("local-character"),
+        }
+    }
+
+    /// Moves a character at the threshold into the Redbrand Depths, or one at the exit home.
+    fn settle_depths(&mut self) -> Result<(), ZoneError> {
+        let standing: Vec<_> = self.zone.threshold_requests();
+        let held = std::mem::take(&mut self.threshold_held);
+        self.threshold_held = standing
+            .iter()
+            .map(|request| request.player)
+            .filter(|player| held.contains(player))
+            .collect();
+        for request in standing {
+            if self.threshold_held.contains(&request.player) {
+                continue;
+            }
+            if !request.candidates.iter().any(|(_, qualified)| *qualified) {
+                self.threshold_held.insert(request.player);
+                self.zone
+                    .queue_notice(request.player, ErrorCode::DepthsLocked)?;
+                continue;
+            }
+            self.enter_depths(request.player)?;
+            return Ok(()); // The zone changed; the rest wait for the next tick.
+        }
+        if is_depths_zone(self.zone.zone_id())
+            && let Some(leaving) = self.zone.departures().into_iter().next()
+        {
+            let character = self.character_of(leaving.player)?;
+            let transfer = self.fresh_transfer()?;
+            let frozen = self.zone.freeze_for_transfer(
+                leaving.player,
+                character,
+                transfer,
+                leaving.destination,
+            )?;
+            let mut home = self
+                .away
+                .take()
+                .ok_or_else(|| ZoneError::new("the home zone is gone"))?;
+            home.stage_transfer(frozen)?;
+            home.activate_transfer(transfer, leaving.player)?;
+            self.zone.retire_transfer(transfer);
+            self.away = Some(std::mem::replace(&mut self.zone, home));
+        }
+        Ok(())
+    }
+
+    fn enter_depths(&mut self, player: PlayerId) -> Result<(), ZoneError> {
+        let character = self.character_of(player)?;
+        let slot = ZoneId::new(redbrand_depths::ZONE_IDS.start);
+        let mut depths = match self.away.take() {
+            Some(zone) if zone.zone_id() == slot => zone,
+            _ => ZoneSimulation::with_content(slot, redbrand_depths::content())?,
+        };
+        // The local run belongs to this one character for as long as this host lives; it is
+        // not a multiplayer run and nothing else can join it.
+        if !depths.depths_admits(&character) {
+            depths = ZoneSimulation::with_content(slot, redbrand_depths::content())?;
+        }
+        depths.begin_depths_run(DepthsRunStart {
+            run_id: 1,
+            roster: vec![character.clone()],
+            cleared: 0,
+            checkpoint: false,
+        })?;
+        let transfer = self.fresh_transfer()?;
+        let frozen = self.zone.freeze_for_transfer(
+            player,
+            character,
+            transfer,
+            mmorpg_core::depths_arrival(slot),
+        )?;
+        depths.stage_transfer(frozen)?;
+        depths.activate_transfer(transfer, player)?;
+        self.zone.retire_transfer(transfer);
+        self.away = Some(std::mem::replace(&mut self.zone, depths));
+        Ok(())
     }
 
     /// The encoded player-scoped projection addressed to `player_id`, the same
@@ -676,6 +805,96 @@ mod tests {
             .quests
             .unwrap();
         assert_eq!(quests.entries[0].quest.get(), 11);
+    }
+
+    /// Moves the player's body to `at` (body centre) in the live zone.
+    fn teleport(host: &mut LocalZoneHost, player: PlayerId, at: [f32; 3]) {
+        let mut state = host.zone.snapshot().unwrap();
+        let record = state
+            .players
+            .iter_mut()
+            .find(|record| record.player_id == player)
+            .unwrap();
+        record.position = at;
+        record.velocity = [0.0; 3];
+        let content = Arc::clone(host.zone.content());
+        host.zone = ZoneSimulation::from_snapshot(state, content).unwrap();
+        host.zone.enable_depths_entry();
+    }
+
+    #[test]
+    fn a_qualified_character_enters_the_depths_and_walks_back_out() {
+        let (mut host, player) = LocalZoneHost::scenario(Scenario::RedbrandDepths, 0).unwrap();
+        assert_eq!(host.zone_id(), LOCAL_ZONE_ID);
+        host.tick().unwrap();
+        assert!(
+            is_depths_zone(host.zone_id()),
+            "the first tick in the strip enters a private run"
+        );
+        let run = host.zone().depths_run().unwrap();
+        assert_eq!(run.profile(), 1);
+        assert!(
+            decode_snapshot(&host.projection(player).unwrap())
+                .unwrap()
+                .zone_id
+                == host.zone_id()
+        );
+
+        // The exit corridor's strip returns the character to the public cave's mouth.
+        let exit = redbrand_depths::content().handoff_corridors()[0];
+        teleport(
+            &mut host,
+            player,
+            [
+                (exit.crossing.min[0] + exit.crossing.max[0]) as f32 / 2.0,
+                90.0,
+                0.0,
+            ],
+        );
+        host.tick().unwrap();
+        assert_eq!(host.zone_id(), LOCAL_ZONE_ID);
+        let snapshot = host.zone().snapshot().unwrap();
+        assert!(snapshot.players[0].position[0] > 6_000.0);
+    }
+
+    #[test]
+    fn an_unqualified_character_is_refused_at_the_threshold() {
+        let mut host = LocalZoneHost::new().unwrap();
+        let player = host.join_as(0, 1).unwrap();
+        for _ in 0..3 {
+            host.tick().unwrap();
+        }
+        teleport(
+            &mut host,
+            player,
+            [
+                7_890.0,
+                (mmorpg_core::greyhaven_vale::cave::GREYFANG.floor_y + 90) as f32,
+                -13_620.0,
+            ],
+        );
+        host.tick().unwrap();
+        assert_eq!(
+            host.zone_id(),
+            LOCAL_ZONE_ID,
+            "no run for a character without Garrick"
+        );
+        // The notice lands in the next tick's events and the character is not asked again.
+        host.tick().unwrap();
+        assert!(
+            host.zone()
+                .snapshot_for_player(player)
+                .unwrap()
+                .events
+                .iter()
+                .any(|event| matches!(
+                    event,
+                    mmorpg_core::ZoneEvent::Error {
+                        code: ErrorCode::DepthsLocked,
+                        ..
+                    }
+                ))
+        );
     }
 
     #[test]

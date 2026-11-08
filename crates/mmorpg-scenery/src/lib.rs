@@ -35,6 +35,7 @@ pub mod layout;
 mod outpost_grass;
 pub mod outpost_kit;
 mod outpost_relief;
+mod redbrand_depths;
 mod seam_test;
 pub mod settlement_props;
 pub mod shrine;
@@ -49,6 +50,7 @@ use geometry::{Ellipse, Rng, polyline_distance, splitmix64, value_noise};
 use mmorpg_core::greyhaven_vale::{self, PLAYABLE_BOUNDS, SPAWN_PLAZA, dressing, ids};
 use mmorpg_core::{Area, AreaId, StaticCollider, XzBounds, trig};
 pub use outpost_grass::outpost_grass_placements;
+pub use redbrand_depths::redbrand_depths_scenery;
 pub use seam_test::seam_test_scenery;
 
 /// The rectangle the terrain grid covers: the playable rectangle and 72 m beyond its walls
@@ -736,13 +738,14 @@ pub fn base_scenery() -> Scenery {
 }
 
 /// The scenery of the content a host runs as `zone` (`mmorpg_core::content_for_zone`): a
-/// Seam Test zone's by its ID (#145), Greyhaven Vale's otherwise.
+/// Seam Test zone's (#145) or the Redbrand Depths' (#404) by its ID, Greyhaven Vale's otherwise.
 #[must_use]
 pub fn scenery_for_zone(zone: mmorpg_core::ZoneId) -> Scenery {
     match zone {
         mmorpg_core::seam_test::WEST_ZONE | mmorpg_core::seam_test::EAST_ZONE => {
             seam_test_scenery(zone)
         }
+        zone if mmorpg_core::redbrand_depths::is_depths_zone(zone) => redbrand_depths_scenery(),
         _ => greyhaven_vale_scenery(),
     }
 }

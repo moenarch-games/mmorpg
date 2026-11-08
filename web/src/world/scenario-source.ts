@@ -311,6 +311,10 @@ export class ScenarioSource implements WorldSource {
     if (snapshot.viewerId !== player) {
       throw new Error("The scenario zone addressed a projection to another player.");
     }
+    if (this.#latest && this.#latest.zoneId !== snapshot.zoneId) {
+      // The character changed zone (#404): the new zone's ticks are its own.
+      this.#history.reset();
+    }
     this.#latest = snapshot;
     this.#history.push(snapshot);
     const inspection = this.#requireZone().actionInspection?.(player) ?? null;

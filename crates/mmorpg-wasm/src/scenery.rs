@@ -58,13 +58,13 @@ pub fn present_zone(zone: ZoneId) {
     PRESENTED_ZONE.store(zone.get(), Ordering::Relaxed);
 }
 
-/// One value per presentable content (Greyhaven Vale and the two Seam Test zones), each
+/// One value per presentable content (Greyhaven Vale, the two Seam Test zones and the depths), each
 /// built once, for the presented zone.
-pub(crate) struct PerZone<T>([OnceLock<T>; 3]);
+pub(crate) struct PerZone<T>([OnceLock<T>; 4]);
 
 impl<T> PerZone<T> {
     pub(crate) const fn new() -> Self {
-        Self([const { OnceLock::new() }; 3])
+        Self([const { OnceLock::new() }; 4])
     }
 
     pub(crate) fn get(&self, init: impl FnOnce(ZoneId) -> T) -> &T {
@@ -72,6 +72,7 @@ impl<T> PerZone<T> {
         let slot = match zone {
             seam_test::WEST_ZONE => 1,
             seam_test::EAST_ZONE => 2,
+            depths if mmorpg_core::redbrand_depths::is_depths_zone(depths) => 3,
             _ => 0,
         };
         self.0[slot].get_or_init(|| init(zone))
