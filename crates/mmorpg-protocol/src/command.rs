@@ -49,6 +49,8 @@ pub(crate) const ACKNOWLEDGED_TAG: u8 = 31;
 const RAID_AID_TAG: u8 = 32;
 /// Night raid preparation (#532): version, tag, step (u8: 0 investigate, 1 report, 2 + k brace k).
 const RAID_PREPARE_TAG: u8 = 33;
+const ROLL_DEPTHS_DROP_TAG: u8 = 34;
+const CLAIM_DEPTHS_DROP_TAG: u8 = 35;
 /// Version, tag, ability (u8), retired (0 key up, 1 retired).
 const RELEASE_ABILITY_COMMAND_BYTES: usize = 4;
 /// Version, tag, observed tick (u64), before the inner command's tag.
@@ -187,6 +189,19 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
             vec![PROTOCOL_BYTE, USE_WAYSTONE_TAG, waystone.get()]
         }
         ZoneCommand::RaidAid { task } => vec![PROTOCOL_BYTE, RAID_AID_TAG, task],
+        ZoneCommand::RollDepthsDrop { run, drop, choice } => {
+            let mut payload = vec![PROTOCOL_BYTE, ROLL_DEPTHS_DROP_TAG];
+            payload.extend_from_slice(&run.to_be_bytes());
+            payload.push(drop);
+            payload.push(crate::depths::encode_choice(choice));
+            payload
+        }
+        ZoneCommand::ClaimDepthsDrop { run, drop } => {
+            let mut payload = vec![PROTOCOL_BYTE, CLAIM_DEPTHS_DROP_TAG];
+            payload.extend_from_slice(&run.to_be_bytes());
+            payload.push(drop);
+            payload
+        }
         ZoneCommand::RaidPrepare { prep } => {
             vec![
                 PROTOCOL_BYTE,
@@ -622,6 +637,29 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
                 prep: crate::raid::decode_prep(*prep)?,
             })
         }
+        ROLL_DEPTHS_DROP_TAG => {
+            let [_, _, a, b, c, d, e, f, g, h, drop, choice] = payload else {
+                return Err(ProtocolError::new(
+                    "roll depths drop payload must be exactly 12 bytes",
+                ));
+            };
+            Ok(ZoneCommand::RollDepthsDrop {
+                run: u64::from_be_bytes([*a, *b, *c, *d, *e, *f, *g, *h]),
+                drop: *drop,
+                choice: crate::depths::decode_choice(*choice)?,
+            })
+        }
+        CLAIM_DEPTHS_DROP_TAG => {
+            let [_, _, a, b, c, d, e, f, g, h, drop] = payload else {
+                return Err(ProtocolError::new(
+                    "claim depths drop payload must be exactly 11 bytes",
+                ));
+            };
+            Ok(ZoneCommand::ClaimDepthsDrop {
+                run: u64::from_be_bytes([*a, *b, *c, *d, *e, *f, *g, *h]),
+                drop: *drop,
+            })
+        }
         CANCEL_CAST_TAG => bare(ZoneCommand::CancelCast),
         JUMP_TAG => bare(ZoneCommand::Jump),
         ROLL_TAG => bare(ZoneCommand::Roll),
@@ -954,6 +992,12 @@ mod tests {
             },
             ZoneCommand::AbandonQuest { quest: 3 },
             ZoneCommand::RaidAid { task: 4 },
+            ZoneCommand::RollDepthsDrop {
+                run: 5,
+                drop: 1,
+                choice: mmorpg_core::RollChoice::Greed,
+            },
+            ZoneCommand::ClaimDepthsDrop { run: 5, drop: 0 },
             ZoneCommand::RaidPrepare {
                 prep: mmorpg_core::RaidPrep::Brace(1),
             },
@@ -1112,6 +1156,12 @@ mod tests {
                     format!("use_waystone {}", waystone.get())
                 }
                 ZoneCommand::RaidAid { task } => format!("raid_aid {task}"),
+                ZoneCommand::RollDepthsDrop { run, drop, choice } => {
+                    format!("roll_depths_drop {run} {drop} {choice:?}")
+                }
+                ZoneCommand::ClaimDepthsDrop { run, drop } => {
+                    format!("claim_depths_drop {run} {drop}")
+                }
                 ZoneCommand::RaidPrepare { prep } => format!("raid_prepare {prep:?}"),
                 ZoneCommand::Swing { facing } => format!("swing {facing}"),
                 ZoneCommand::ReleaseSpirit => "release_spirit".to_owned(),

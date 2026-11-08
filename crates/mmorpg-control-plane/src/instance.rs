@@ -41,8 +41,20 @@ pub struct InstanceRun {
     /// Bit `i` set: chamber `i` is cleared.
     pub cleared: u8,
     pub checkpoint: bool,
+    /// The boss outcome the host recorded, once Captain Thorn fell (#404 part 3); `None` while
+    /// the run is unfinished. Opaque bytes the zone host encoded.
+    pub outcome: Option<RecordedOutcome>,
+    /// Characters who still need this run: an unanswered roll or an undelivered award.
+    pub outstanding: Vec<CharacterId>,
     /// When the run became empty; `None` while a character is in it.
     pub emptied_at_ms: Option<u64>,
+}
+
+/// A recorded boss outcome: its version (only newer versions replace it) and encoded bytes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecordedOutcome {
+    pub version: u32,
+    pub bytes: Vec<u8>,
 }
 
 /// The directory's answer to a character touching the threshold.
@@ -91,6 +103,11 @@ impl InstanceDirectory {
         now_ms: u64,
     ) -> Result<Entry, ErrorCode> {
         let initiator = candidates.first().ok_or(ErrorCode::DepthsClosed)?;
+        // A completed run keeps a character only while it still needs that run: otherwise the
+        // character has left it and starts fresh at once, no grace period (5.1.31).
+        for candidate in candidates {
+            self.release_if_finished(&candidate.character);
+        }
         if let Some(id) = self.by_character.get(&initiator.character).copied() {
             let run = self.runs.get_mut(&id).ok_or(ErrorCode::DepthsClosed)?;
             // Re-entry refreshes retention, so a transfer in flight always lands before expiry.
@@ -131,6 +148,8 @@ impl InstanceDirectory {
                 .collect(),
             cleared: 0,
             checkpoint: false,
+            outcome: None,
+            outstanding: Vec::new(),
             emptied_at_ms: Some(now_ms),
         };
         for character in &run.roster {
@@ -139,6 +158,25 @@ impl InstanceDirectory {
         self.slots.insert(slot, Some(id));
         self.runs.insert(id, run.clone());
         Ok(Entry { run, created: true })
+    }
+
+    /// Drops `character` from a completed run it no longer needs, and the run with its last
+    /// member (its slot freed at once): the character has already left the depths.
+    fn release_if_finished(&mut self, character: &CharacterId) {
+        let Some(id) = self.by_character.get(character).copied() else {
+            return;
+        };
+        let Some(run) = self.runs.get(&id) else {
+            return;
+        };
+        if run.outcome.is_none() || run.outstanding.contains(character) {
+            return;
+        }
+        self.by_character.remove(character);
+        let remaining = self.by_character.values().any(|held| *held == id);
+        if !remaining && let Some(run) = self.runs.remove(&id) {
+            self.slots.insert(run.slot, None);
+        }
     }
 
     /// The run a character is on, if any.
@@ -189,6 +227,28 @@ impl InstanceDirectory {
         }
     }
 
+    /// Records the boss outcome a run reported: only a newer version replaces it, and the
+    /// characters who still need the run are always the newest report's.
+    pub fn report_outcome(
+        &mut self,
+        slot: ZoneId,
+        run_id: u64,
+        version: u32,
+        bytes: Vec<u8>,
+        outstanding: Vec<CharacterId>,
+    ) {
+        if self.slots.get(&slot).copied().flatten() != Some(run_id) {
+            return;
+        }
+        let Some(run) = self.runs.get_mut(&run_id) else {
+            return;
+        };
+        if run.outcome.as_ref().is_none_or(|held| version >= held.version) {
+            run.outcome = Some(RecordedOutcome { version, bytes });
+            run.outstanding = outstanding;
+        }
+    }
+
     /// Retires every run empty for at least `grace_ms`; returns how many. A character whose
     /// stored location was a retired run re-enters through its next admission
     /// (`ZoneSimulation::admit_character` puts it at the public entrance).
@@ -234,6 +294,19 @@ impl InstanceDirectory {
             out.push(run.cleared);
             out.push(u8::from(run.checkpoint));
             out.extend_from_slice(&run.emptied_at_ms.unwrap_or(u64::MAX).to_be_bytes());
+            match &run.outcome {
+                Some(outcome) => {
+                    out.push(1);
+                    out.extend_from_slice(&outcome.version.to_be_bytes());
+                    out.extend_from_slice(&(outcome.bytes.len() as u32).to_be_bytes());
+                    out.extend_from_slice(&outcome.bytes);
+                }
+                None => out.push(0),
+            }
+            out.push(run.outstanding.len() as u8);
+            for character in &run.outstanding {
+                encode_text(&mut out, character.as_str());
+            }
         }
         out
     }
@@ -262,6 +335,23 @@ impl InstanceDirectory {
             let cleared = reader.u8()?;
             let checkpoint = reader.u8()? != 0;
             let emptied = reader.u64()?;
+            let outcome = match reader.u8()? {
+                0 => None,
+                1 => {
+                    let version = reader.u32()?;
+                    let length =
+                        usize::try_from(reader.u32()?).map_err(|_| InstanceStoreError::corrupt())?;
+                    Some(RecordedOutcome {
+                        version,
+                        bytes: reader.take(length)?.to_vec(),
+                    })
+                }
+                _ => return Err(InstanceStoreError::corrupt()),
+            };
+            let mut outstanding = Vec::new();
+            for _ in 0..reader.u8()? {
+                outstanding.push(reader.character()?);
+            }
             directory.runs.insert(
                 id,
                 InstanceRun {
@@ -270,6 +360,8 @@ impl InstanceDirectory {
                     roster,
                     cleared,
                     checkpoint,
+                    outcome,
+                    outstanding,
                     emptied_at_ms: (emptied != u64::MAX).then_some(emptied),
                 },
             );
@@ -561,5 +653,54 @@ mod tests {
         let bytes = directory.encode();
         assert_eq!(InstanceDirectory::decode(&bytes).unwrap(), directory);
         assert!(InstanceDirectory::decode(&bytes[..bytes.len() - 1]).is_err());
+
+        directory.report_outcome(
+            entry.run.slot,
+            entry.run.id,
+            2,
+            vec![1, 2, 3],
+            vec![CharacterId::new("aria").unwrap()],
+        );
+        let bytes = directory.encode();
+        assert_eq!(InstanceDirectory::decode(&bytes).unwrap(), directory);
+    }
+
+    #[test]
+    fn a_completed_run_frees_its_characters_at_the_threshold_for_a_fresh_run() {
+        let mut directory = directory();
+        let aria = candidate("aria", true);
+        let bren = candidate("bren", true);
+        let entry = directory.enter(&[aria.clone(), bren.clone()], 1).unwrap();
+        directory.report_outcome(
+            entry.run.slot,
+            entry.run.id,
+            1,
+            vec![9],
+            vec![CharacterId::new("aria").unwrap()],
+        );
+        // Aria still owes a roll, so she resumes the completed run instead of leaving it.
+        let again = directory.enter(&[aria.clone()], 2).unwrap();
+        assert_eq!(again.run.id, entry.run.id);
+        assert!(!again.created);
+        // Nothing outstanding any more: she walks straight into a fresh run with a new identity.
+        directory.report_outcome(entry.run.slot, entry.run.id, 2, vec![9], Vec::new());
+        let fresh = directory.enter(&[aria.clone()], 3).unwrap();
+        assert!(fresh.created);
+        assert_ne!(fresh.run.id, entry.run.id);
+        // Bren still holds the old run until he also leaves; then it retires immediately.
+        assert_eq!(directory.run_of(&bren.character).unwrap().id, entry.run.id);
+        let beside = directory.enter(&[bren.clone()], 4).unwrap();
+        assert!(beside.created);
+        assert_eq!(directory.run_count(), 2, "the completed run retired with its last member");
+    }
+
+    #[test]
+    fn a_stale_outcome_version_cannot_overwrite_a_newer_one() {
+        let mut directory = directory();
+        let entry = directory.enter(&[candidate("aria", true)], 0).unwrap();
+        directory.report_outcome(entry.run.slot, entry.run.id, 5, vec![5], Vec::new());
+        directory.report_outcome(entry.run.slot, entry.run.id, 4, vec![4], Vec::new());
+        let run = directory.run_in_slot(entry.run.slot).unwrap();
+        assert_eq!(run.outcome.as_ref().unwrap().bytes, vec![5]);
     }
 }

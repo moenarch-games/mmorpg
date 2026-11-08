@@ -24,12 +24,13 @@ pub const HAIR_KIT_DESCRIPTOR: &str = "hair-descriptor";
 pub const REDBRAND_OUTFIT: &str = "outfit.redbrand";
 
 /// The ids of [`enemy_presets`], in order (`imported::Resident::preset`).
-pub const ENEMY_PRESET_IDS: [&str; 5] = [
+pub const ENEMY_PRESET_IDS: [&str; 6] = [
     "enemy.marauder",
     "enemy.redbrand.bandit",
     "enemy.redbrand.crossbowman",
     "enemy.redbrand.brute",
     "enemy.redbrand.garrick",
+    "enemy.redbrand.thorn",
 ];
 
 /// The humanoid enemies' presets (#39), authored over the bundle's own outfits, armour,
@@ -82,6 +83,12 @@ fn soldier_enemy_presets() -> Vec<Value> {
             "hair": "hair.long", "tint": "tint.black", "facialHair": ["beard.full", "beard.moustache"],
             "hiddenArmor": ["knight.bascinet"], "faction": [0.42, 0.015, 0.015, 1],
             "face": { "eyes": "eyes.narrow", "face": "face.broad", "mouth": "mouth.thin", "nose": "nose.broad" } }),
+        // Captain Ulric Thorn (#404): Garrick's plate gone near-black and scarred, cropped grey
+        // hair and a short beard; intimidation in the colour, a stand-in recolour of the band.
+        json!({ "id": "enemy.redbrand.thorn", "outfit": "outfit.knight", "skin": "skin.light",
+            "hair": "hair.buzzed", "tint": "tint.grey", "facialHair": ["beard.short"],
+            "hiddenArmor": ["knight.bascinet"], "faction": [0.09, 0.02, 0.03, 1],
+            "face": { "eyes": "eyes.base", "face": "face.narrow", "mouth": "mouth.thin", "nose": "nose.long" } }),
     ]
 }
 
@@ -428,7 +435,7 @@ mod tests {
         let female = figure_appearance(Figure::Female, &bundle, None, None);
         assert_eq!(female, bundle);
         let male = figure_appearance(Figure::Male, &bundle, None, None);
-        assert_eq!(male["presets"].as_array().map(Vec::len), Some(6));
+        assert_eq!(male["presets"].as_array().map(Vec::len), Some(7));
         assert_eq!(
             super::super::imported::Resident::of_name("Tanner Hilda Brook")
                 .map(super::super::imported::Resident::figure),

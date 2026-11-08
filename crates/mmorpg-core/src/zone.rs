@@ -154,6 +154,10 @@ pub(crate) struct PlayerState {
     pub(crate) quests: crate::QuestLog,
     /// Waystones the character unlocked by exploration (#145).
     pub(crate) waystones: crate::WaystoneSet,
+    /// The durable character bound to this session (`None` for session-only players), and its
+    /// depths receipts (#404).
+    pub(crate) character: Option<crate::CharacterId>,
+    pub(crate) depths: crate::DepthsRecord,
 }
 
 impl PlayerState {
@@ -204,6 +208,8 @@ impl PlayerState {
             chat: Vec::new(),
             quests: crate::QuestLog::default(),
             waystones: crate::WaystoneSet::EMPTY,
+            character: None,
+            depths: crate::DepthsRecord::default(),
         }
     }
 
@@ -766,6 +772,12 @@ impl ZoneSimulation {
             ZoneCommand::UseWaystone { waystone } => Some(PlayerIntent::UseWaystone(waystone)),
             ZoneCommand::RaidAid { task } => Some(PlayerIntent::RaidAid(task)),
             ZoneCommand::RaidPrepare { prep } => Some(PlayerIntent::RaidPrepare(prep)),
+            ZoneCommand::RollDepthsDrop { run, drop, choice } => {
+                Some(PlayerIntent::RollDepthsDrop { run, drop, choice })
+            }
+            ZoneCommand::ClaimDepthsDrop { run, drop } => {
+                Some(PlayerIntent::ClaimDepthsDrop { run, drop })
+            }
         };
         if let Some(intent) = intent {
             if player.intents.len() < MAX_PENDING_INTENTS {

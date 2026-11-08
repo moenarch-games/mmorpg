@@ -1608,8 +1608,9 @@ impl ZoneSimulation {
     ) -> Result<bool, ZoneError> {
         let content = Arc::clone(&self.content);
         let (spawn, template) = Self::creature_content(&content, creature_id)?;
-        let Some(ability) = content
-            .creature_ability(spawn.template)
+        let Some(ability) = self
+            .depths_boss_ability(creature_id)
+            .or_else(|| content.creature_ability(spawn.template))
             .and_then(ability_by_id)
         else {
             return Ok(false);
@@ -1656,6 +1657,7 @@ impl ZoneSimulation {
                 point: None,
             });
         }
+        self.boss_cast_started(creature_id);
         let source = EntityRef::Creature(creature_id);
         self.notify_units(
             [Some(source), target],

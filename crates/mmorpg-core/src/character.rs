@@ -29,7 +29,7 @@ use crate::{
 /// Identity of the [`CharacterRecord`] schema: a random token (ADR 0006), replaced with a
 /// fresh one on every change to the record's fields or their meaning; persisted records of
 /// another schema are rejected rather than reinterpreted.
-pub const CHARACTER_RECORD_SCHEMA_VERSION: u16 = 0x20a2;
+pub const CHARACTER_RECORD_SCHEMA_VERSION: u16 = 0x6671;
 
 /// Longest [`CharacterId`] in bytes.
 pub const MAX_CHARACTER_ID_BYTES: usize = 64;
@@ -91,6 +91,8 @@ pub struct CharacterRecord {
     pub quests: QuestLog,
     /// Waystones unlocked by exploration (#145).
     pub waystones: crate::WaystoneSet,
+    /// The Redbrand Depths' durable facts about this character (#404 part 3).
+    pub depths: DepthsRecord,
     /// Zero means dead (a corpse or a released spirit).
     pub health: u32,
     pub resource: u16,
@@ -100,6 +102,50 @@ pub struct CharacterRecord {
     /// Running cooldowns in ability order.
     pub cooldowns: Vec<Cooldown>,
     pub location: CharacterLocation,
+}
+
+/// The durable receipts a character holds for its Redbrand Depths runs (#404 part 3), written in
+/// the same step as the reward they guard so that recovery cannot grant one twice.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DepthsRecord {
+    /// Evidence that this character beat Captain Thorn: the deferred story credit (5.1.37).
+    pub thorn_defeated: bool,
+    /// The run the receipts below belong to; 0 before a first boss reward. Only a character's
+    /// newest run matters: a character is on one live run at a time.
+    pub receipt_run: u64,
+    /// Whether this run's boss experience and victory evidence were given.
+    pub credited: bool,
+    /// The drops of this run already received, one bit per drop index.
+    pub drops: u8,
+}
+
+impl DepthsRecord {
+    pub(crate) fn has_drop(&self, run: u64, bit: u8) -> bool {
+        self.receipt_run == run && self.drops & bit != 0
+    }
+
+    pub(crate) fn record_drop(&mut self, run: u64, bit: u8) {
+        self.move_to(run);
+        self.drops |= bit;
+    }
+
+    pub(crate) fn credited(&self, run: u64) -> bool {
+        self.receipt_run == run && self.credited
+    }
+
+    pub(crate) fn record_credit(&mut self, run: u64) {
+        self.move_to(run);
+        self.credited = true;
+        self.thorn_defeated = true;
+    }
+
+    fn move_to(&mut self, run: u64) {
+        if self.receipt_run != run {
+            self.receipt_run = run;
+            self.credited = false;
+            self.drops = 0;
+        }
+    }
 }
 
 impl ZoneSimulation {
@@ -128,6 +174,7 @@ impl ZoneSimulation {
             equipment: player.equipment,
             quests: player.quests.clone(),
             waystones: player.waystones,
+            depths: player.depths,
             health: player.health,
             resource: player.resource.value,
             resource_ticks: player.resource.ticks,
@@ -215,6 +262,8 @@ impl ZoneSimulation {
         state.equipment = record.equipment;
         state.quests = record.quests.clone();
         state.waystones = record.waystones;
+        state.depths = record.depths;
+        state.character = Some(record.character_id.clone());
         state.health = record.health;
         state.resource.value = record.resource;
         state.resource.ticks = record.resource_ticks;

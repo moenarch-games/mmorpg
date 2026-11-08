@@ -461,6 +461,8 @@ pub enum Resident {
     RedbrandCrossbowman,
     /// The Greyfang cavern's shield-bearers (#160): plate, helm, sword and shield.
     RedbrandBrute,
+    /// Captain Ulric Thorn (#404), a recoloured Garrick: the depths' veteran in dark plate.
+    Thorn,
     /// Garrick Redbrand (#276), the band's bareheaded leader in plate.
     Garrick,
 }
@@ -497,6 +499,7 @@ impl Resident {
             "Redbrand Crossbowman" => Some(Self::RedbrandCrossbowman),
             "Redbrand Brute" => Some(Self::RedbrandBrute),
             "Garrick Redbrand" => Some(Self::Garrick),
+            "Captain Ulric Thorn" => Some(Self::Thorn),
             _ => None,
         }
     }
@@ -517,6 +520,7 @@ impl Resident {
             Self::RedbrandCrossbowman => "enemy.redbrand.crossbowman",
             Self::RedbrandBrute => "enemy.redbrand.brute",
             Self::Garrick => "enemy.redbrand.garrick",
+            Self::Thorn => "enemy.redbrand.thorn",
         }
     }
 
@@ -542,7 +546,9 @@ impl Resident {
     #[must_use]
     pub const fn loadout(self) -> Option<Loadout> {
         match self {
-            Self::Guard | Self::RedbrandBandit | Self::Garrick => Some(Loadout::Sword),
+            Self::Guard | Self::RedbrandBandit | Self::Garrick | Self::Thorn => {
+                Some(Loadout::Sword)
+            }
             Self::Marauder => Some(Loadout::Dagger),
             Self::RedbrandCrossbowman => Some(Loadout::Crossbow),
             Self::RedbrandBrute => Some(Loadout::SwordAndShield),
@@ -1530,7 +1536,9 @@ impl Kind {
                 (ids::HEROIC_STRIKE, Some(aim)) => return sword.slash(aim),
                 (ids::HEROIC_STRIKE, None) => return sword.heroic,
                 (ids::CLEAVE, _) => return sword.cleave,
-                (ids::REDBRAND_WHIRL, _) => return sword.whirl,
+                (ids::REDBRAND_WHIRL | ids::REAVERS_SWEEP | ids::LAST_COMMAND, _) => {
+                    return sword.whirl;
+                }
                 (ids::OVERHEAD_SMASH, _) => return sword.smash,
                 _ => {}
             }

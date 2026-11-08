@@ -911,6 +911,10 @@ kbd {
   box-shadow: 0 12px 48px rgb(0 0 0 / 35%);
 }
 .loot-panel { background: #0c1215; }
+.depths-loot-panel { top: 7rem; left: 50%; transform: translateX(-50%); width: min(24rem, calc(100vw - 2rem)); }
+.depths-loot-list { list-style: none; margin: .4rem 0 0; padding: 0; display: grid; gap: .5rem; }
+.depths-loot-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; font-size: .8rem; }
+.depths-loot-row > span:first-child { flex: 1 1 100%; font-weight: 600; color: var(--gold-bright); }
 .bags-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .bags-heading h2 { margin: 0; color: var(--gold-bright); font-size: 1.1rem; }
 .bags-panel p, .loot-panel p, .character-panel p, .vendor-panel p, .quest-panel p { font-size: .8rem; line-height: 1.4; }

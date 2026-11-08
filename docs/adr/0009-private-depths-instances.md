@@ -30,11 +30,11 @@ The Pages demo's `LocalZoneHost` runs the depths solo in a second `ZoneSimulatio
 ## Behaviour decided here
 
 - A roster is the party members standing in the gathering area (the inner chamber, whose threshold strip is against one wall) when one touches the strip. Members who are elsewhere are not on the roster; they cannot join later.
-- One active run per character. A new run needs the old one to expire; there is no explicit reset command yet, so a party that wants a fresh run waits out the grace period (Atlas 5.1.27).
+- One active run per character. A new run needs the old one to expire or to be completed by defeating Captain Thorn ([ADR 0010](0010-boss-outcome-and-shared-loot.md)), which frees its characters at once (Atlas 5.1.27, 5.1.31).
 - Depths zones spawn creatures only for a bound run; an unbound slot is an empty room.
 - Wipe recovery keeps fallen creatures fallen; reinforcements already arrived stay.
 - On hosts without the instance service (open dev host, file character host, journaled PostgreSQL host) the threshold stays a closed barricade, no request is ever raised.
 
 ## Not covered
 
-No cross-host slot placement beyond static zone routes (TECH-007's routing API); a very short window between a kill and the host's progress report can lose a chamber's clear on restart (the creature's reward is the zone's; no second grant is possible within one sim, and a fresh rebind with an older mask cannot reissue durable rewards because creature kills carry no durable receipts yet); the sealed boss chamber waits for #404 part 3.
+No cross-host slot placement beyond static zone routes (TECH-007's routing API); a very short window between a kill and the host's progress report can lose a chamber's clear on restart (the creature's reward is the zone's; no second grant is possible within one sim, and a fresh rebind with an older mask cannot reissue durable rewards because creature kills carry no durable receipts yet; Captain Thorn's boss rewards are committed separately through the directory, [ADR 0010](0010-boss-outcome-and-shared-loot.md)).

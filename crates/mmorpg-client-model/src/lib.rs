@@ -47,6 +47,7 @@ pub(crate) mod test_support {
             pieces: Vec::new(),
             raid: None,
             party: None,
+            depths_loot: None,
         }
     }
 }

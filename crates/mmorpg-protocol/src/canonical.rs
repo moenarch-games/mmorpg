@@ -47,6 +47,8 @@ const USE_WAYSTONE_INTENT: u8 = 23;
 const RAID_AID_INTENT: u8 = 24;
 const RAID_PREPARE_INTENT: u8 = 25;
 const NOTICE_INTENT: u8 = 26;
+const ROLL_DEPTHS_DROP_INTENT: u8 = 27;
+const CLAIM_DEPTHS_DROP_INTENT: u8 = 28;
 const ALIVE: u8 = 1;
 const CORPSE: u8 = 2;
 const DESPAWNED: u8 = 3;
@@ -266,6 +268,19 @@ fn encode_player(
                 payload.extend_from_slice(&crate::wire::error_code(code).to_be_bytes());
                 continue;
             }
+            PlayerIntent::RollDepthsDrop { run, drop, choice } => {
+                payload.push(ROLL_DEPTHS_DROP_INTENT);
+                payload.extend_from_slice(&run.to_be_bytes());
+                payload.push(drop);
+                payload.push(crate::depths::encode_choice(choice));
+                continue;
+            }
+            PlayerIntent::ClaimDepthsDrop { run, drop } => {
+                payload.push(CLAIM_DEPTHS_DROP_INTENT);
+                payload.extend_from_slice(&run.to_be_bytes());
+                payload.push(drop);
+                continue;
+            }
         };
         payload.push(code);
         encode_entity_ref(payload, target);
@@ -328,6 +343,8 @@ fn encode_player(
     }
     crate::quest::encode_log(payload, &player.quests)?;
     payload.extend_from_slice(&player.waystones.bits().to_be_bytes());
+    crate::character::encode_optional_character(payload, player.character.as_ref())?;
+    crate::character::encode_depths_record(payload, player.depths);
     Ok(())
 }
 
@@ -988,6 +1005,19 @@ fn decode_player(
             intents.push(PlayerIntent::Notice(crate::wire::decode_error_code(wire)?));
             continue;
         }
+        if code == ROLL_DEPTHS_DROP_INTENT {
+            let run = u64::from_be_bytes(take(payload, offset)?);
+            let drop = read_u8(payload, offset)?;
+            let choice = crate::depths::decode_choice(read_u8(payload, offset)?)?;
+            intents.push(PlayerIntent::RollDepthsDrop { run, drop, choice });
+            continue;
+        }
+        if code == CLAIM_DEPTHS_DROP_INTENT {
+            let run = u64::from_be_bytes(take(payload, offset)?);
+            let drop = read_u8(payload, offset)?;
+            intents.push(PlayerIntent::ClaimDepthsDrop { run, drop });
+            continue;
+        }
         if code == RAID_PREPARE_INTENT {
             intents.push(PlayerIntent::RaidPrepare(crate::raid::decode_prep(
                 read_u8(payload, offset)?,
@@ -1137,9 +1167,13 @@ fn decode_player(
     }
     let quests = crate::quest::decode_log(payload, offset)?;
     let waystones = crate::wire::decode_waystones(u32::from_be_bytes(take(payload, offset)?))?;
+    let character = crate::character::decode_optional_character(payload, offset)?;
+    let depths = crate::character::decode_depths_record(payload, offset)?;
     Ok(CanonicalPlayerSnapshot {
         quests,
         waystones,
+        character,
+        depths,
         chat_ready_at,
         chat,
         player_id,
@@ -1849,6 +1883,8 @@ mod tests {
                     },
                     quests: mmorpg_core::QuestLog::default(),
                     waystones: mmorpg_core::WaystoneSet::EMPTY,
+                    character: None,
+                    depths: mmorpg_core::DepthsRecord::default(),
                 },
                 CanonicalPlayerSnapshot {
                     chat_ready_at: 0,
@@ -1871,6 +1907,8 @@ mod tests {
                     combat: CanonicalPlayerCombat::default(),
                     quests: mmorpg_core::QuestLog::default(),
                     waystones: mmorpg_core::WaystoneSet::EMPTY,
+                    character: None,
+                    depths: mmorpg_core::DepthsRecord::default(),
                 },
             ],
             creatures: vec![
@@ -2349,7 +2387,7 @@ mod tests {
             (swing_queued, 2, "boolean field must be 0 or 1"),
             (intents, 17, "player has too many pending intents"),
             // Each intent is its lateness, then its code and fields.
-            (intents + 2, 27, "malformed pending intent"),
+            (intents + 2, 99, "malformed pending intent"),
         ];
         // The third intent (CancelCast) carries no target.
         cases.push((intents + 1 + 2 * 7 + 2, 2, "malformed pending intent"));
@@ -2406,7 +2444,7 @@ mod tests {
         let equipment = 16 + 24 + 2 + 44 + 72;
         assert_eq!(encoded[equipment..equipment + 2], [0, 3]);
         for (slot, item, message) in [
-            (0, 15, "unknown item"),
+            (0, 99, "unknown item"),
             (1, 2, "item cannot be equipped there"),
             (2, 1, "item cannot be equipped there"),
         ] {

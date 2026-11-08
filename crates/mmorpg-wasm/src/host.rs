@@ -104,6 +104,8 @@ pub struct LocalZoneHost {
     threshold_held: BTreeSet<PlayerId>,
     /// The local run id and transfer ids; both only need to be unique within this host.
     next_transfer: u64,
+    /// The current local run id (#404): the next run after this one is complete uses a new one.
+    next_run: u64,
 }
 
 impl LocalZoneHost {
@@ -119,6 +121,7 @@ impl LocalZoneHost {
             away: None,
             threshold_held: BTreeSet::new(),
             next_transfer: 1,
+            next_run: 1,
         })
     }
 
@@ -213,6 +216,7 @@ impl LocalZoneHost {
             away: None,
             threshold_held: BTreeSet::new(),
             next_transfer: 1,
+            next_run: 1,
         })
     }
 
@@ -267,6 +271,7 @@ impl LocalZoneHost {
             away: None,
             threshold_held: BTreeSet::new(),
             next_transfer: 1,
+            next_run: 1,
         })
     }
 
@@ -438,6 +443,11 @@ impl LocalZoneHost {
     pub fn tick(&mut self) -> Result<u64, LocalZoneError> {
         self.zone.advance_tick().map_err(LocalZoneError::Zone)?;
         self.settle_depths().map_err(LocalZoneError::Zone)?;
+        // This host's directory is this host: every boss outcome is recorded at once.
+        if let Some(report) = self.zone.boss_report() {
+            self.zone
+                .confirm_boss_outcome(report.run_id, report.outcome.version);
+        }
         Ok(self.zone.current_tick())
     }
 
@@ -511,11 +521,17 @@ impl LocalZoneHost {
         if !depths.depths_admits(&character) {
             depths = ZoneSimulation::with_content(slot, redbrand_depths::content())?;
         }
+        // A run stays the character's until Thorn falls; then re-entering starts a fresh one at
+        // once, with a new identity for its rewards (Atlas 5.1.31).
+        if depths.depths_run().is_some_and(mmorpg_core::DepthsRun::completed) {
+            self.next_run += 1;
+        }
         depths.begin_depths_run(DepthsRunStart {
-            run_id: 1,
+            run_id: self.next_run,
             roster: vec![character.clone()],
             cleared: 0,
             checkpoint: false,
+            outcome: None,
         })?;
         let transfer = self.fresh_transfer()?;
         let frozen = self.zone.freeze_for_transfer(

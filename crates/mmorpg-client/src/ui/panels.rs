@@ -76,6 +76,99 @@ fn quest_progress(ui: &mut egui::Ui, quest: &Quest, progress: &[u8], content: &Z
 }
 
 impl GameUi {
+    /// Captain Thorn's shared loot (#404): Need/Greed/Pass for each open roll and a claim for
+    /// items everyone passed on. Every button only names a command the zone validates.
+    pub(super) fn depths_loot(
+        &mut self,
+        ctx: &egui::Context,
+        snapshot: &ZoneSnapshot,
+        intents: &mut Vec<UiIntent>,
+    ) {
+        let Some(view) = &snapshot.depths_loot else {
+            return;
+        };
+        egui::Window::new("Captain Thorn's hoard")
+            .anchor(Align2::CENTER_TOP, Vec2::new(0.0, 260.0))
+            .resizable(false)
+            .collapsible(false)
+            .show(ctx, |ui| {
+                for drop in &view.drops {
+                    let name = mmorpg_core::item_template(drop.item)
+                        .map_or("Unknown item", |item| item.name);
+                    ui.label(RichText::new(name).strong());
+                    match drop.state {
+                        mmorpg_core::DropView::Rolling {
+                            deadline,
+                            answer,
+                            may_need,
+                        } => match answer {
+                            Some(choice) => {
+                                ui.label(format!("You chose {choice:?}. Waiting for the others…"));
+                            }
+                            None => {
+                                let seconds = deadline.saturating_sub(snapshot.tick)
+                                    / u64::from(mmorpg_core::TICK_HZ);
+                                ui.label(format!("{seconds} s"));
+                                ui.horizontal(|ui| {
+                                    use mmorpg_core::RollChoice::{Greed, Need, Pass};
+                                    for (choice, label, enabled) in
+                                        [(Need, "Need", may_need), (Greed, "Greed", true), (Pass, "Pass", true)]
+                                    {
+                                        if ui
+                                            .add_enabled(enabled, egui::Button::new(label))
+                                            .clicked()
+                                        {
+                                            intents.push(UiIntent::Command(
+                                                ZoneCommand::RollDepthsDrop {
+                                                    run: view.run_id,
+                                                    drop: drop.drop,
+                                                    choice,
+                                                },
+                                            ));
+                                        }
+                                    }
+                                });
+                            }
+                        },
+                        mmorpg_core::DropView::Held { claimable } => {
+                            if claimable {
+                                ui.label("Everyone passed.");
+                                if ui.button("Claim").clicked() {
+                                    intents.push(UiIntent::Command(ZoneCommand::ClaimDepthsDrop {
+                                        run: view.run_id,
+                                        drop: drop.drop,
+                                    }));
+                                }
+                            } else {
+                                ui.label("Everyone passed; it stays until the run ends.");
+                            }
+                        }
+                        mmorpg_core::DropView::Awarded {
+                            won,
+                            roll,
+                            need,
+                            pending,
+                        } => {
+                            let how = if roll == 0 {
+                                "claimed".to_owned()
+                            } else {
+                                format!("{} {roll}", if need { "Need" } else { "Greed" })
+                            };
+                            if won {
+                                ui.label(if pending {
+                                    format!("Yours ({how}) — bag full or arriving…")
+                                } else {
+                                    format!("Yours ({how})")
+                                });
+                            } else {
+                                ui.label("Taken by a party member.");
+                            }
+                        }
+                    }
+                }
+            });
+    }
+
     /// A pending invite prompt and the party frame (#404).
     pub(super) fn party(
         &mut self,

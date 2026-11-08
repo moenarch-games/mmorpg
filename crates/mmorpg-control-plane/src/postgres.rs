@@ -29,6 +29,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0002_handoffs.sql"),
     include_str!("../migrations/0003_parties.sql"),
     include_str!("../migrations/0004_instances.sql"),
+    include_str!("../migrations/0005_instance_boss_outcome.sql"),
 ];
 #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub const SCHEMA_VERSION: i32 = MIGRATIONS.len() as i32;

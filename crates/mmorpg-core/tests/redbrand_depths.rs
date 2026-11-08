@@ -10,7 +10,7 @@ use mmorpg_core::greyhaven_vale::{
     quests,
     units::templates,
 };
-use mmorpg_core::redbrand_depths::{self, ARRIVAL, BOSS_SEAL_ID, is_depths_zone};
+use mmorpg_core::redbrand_depths::{self, ARRIVAL, is_depths_zone};
 use mmorpg_core::{
     CharacterId, CreatureId, CreatureLife, DepthsRunStart, ZoneCommand, ZoneId, ZoneSimulation,
     content_for_zone, depths_arrival,
@@ -29,6 +29,7 @@ fn run(run_id: u64, roster: &[&str]) -> DepthsRunStart {
             .collect(),
         cleared: 0,
         checkpoint: false,
+        outcome: None,
     }
 }
 
@@ -78,25 +79,12 @@ fn slots_all_host_the_same_valid_depths_and_only_redbrands_stand() {
             templates::REDBRAND_BANDIT
                 | templates::REDBRAND_BRUTE
                 | templates::REDBRAND_CROSSBOWMAN
+                | redbrand_depths::THORN_TEMPLATE
         ));
     }
     // Before any run binds, nothing stands: creatures are reserved.
     let zone = ZoneSimulation::with_content(SLOT, redbrand_depths::content()).unwrap();
     assert!(standing(&zone).is_empty());
-    // The boss chamber stays sealed: no creature behind it, a collider in the way.
-    let seal = content
-        .definition()
-        .colliders()
-        .iter()
-        .find(|collider| collider.id == BOSS_SEAL_ID)
-        .expect("the boss chamber is sealed");
-    assert!(seal.position[0] > 10_000);
-    assert!(
-        content
-            .creature_spawns()
-            .iter()
-            .all(|spawn| spawn.position[0] < seal.position[0] - seal.half_extents[0])
-    );
 }
 
 #[test]
@@ -227,6 +215,7 @@ fn a_cleared_chambers_creatures_never_stand_again_and_a_rebound_run_keeps_its_pr
             roster: run_state.roster,
             cleared: run_state.cleared,
             checkpoint: run_state.checkpoint,
+            outcome: None,
         })
         .unwrap();
     assert!(!standing(&rebound).iter().any(|id| id.get() <= 6));

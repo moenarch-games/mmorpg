@@ -24,6 +24,7 @@ fn facing_snapshot(tick: u64, position: [i32; 3], facing: u16) -> ZoneSnapshot {
         pieces: Vec::new(),
         raid: None,
         party: None,
+        depths_loot: None,
         loot: None,
         zone_id: ZoneId::new(1),
         tick,

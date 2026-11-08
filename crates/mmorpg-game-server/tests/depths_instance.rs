@@ -234,6 +234,7 @@ fn a_party_of_five_gets_a_larger_different_run_than_a_solo_player() {
         roster: entered.run.roster.clone(),
         cleared: 0,
         checkpoint: false,
+        outcome: None,
     };
 
     let mut slot = slot_adapter(entered.run.slot);
@@ -249,6 +250,7 @@ fn a_party_of_five_gets_a_larger_different_run_than_a_solo_player() {
         roster: vec![character("aria")],
         cleared: 0,
         checkpoint: false,
+        outcome: None,
     };
     let solo_transfer = transfer_of(&mut solo_public, 1, "aria", ZoneId::new(20_001));
     arrive(&mut solo_slot, 1, &solo_transfer, &solo_start).unwrap();
@@ -272,6 +274,7 @@ fn the_roster_and_difficulty_stay_frozen_and_no_one_joins_late() {
         roster: entered.run.roster.clone(),
         cleared: 0,
         checkpoint: false,
+        outcome: None,
     };
     let mut slot = slot_adapter(entered.run.slot);
     let transfer = transfer_of(&mut public, 1, "aria", entered.run.slot);
@@ -316,6 +319,7 @@ fn a_disconnected_member_resumes_the_same_run_and_an_expired_run_retires() {
         roster: entered.run.roster.clone(),
         cleared: 0,
         checkpoint: false,
+        outcome: None,
     };
     let mut slot = slot_adapter(entered.run.slot);
     let transfer = transfer_of(&mut public, 1, "aria", entered.run.slot);
@@ -367,6 +371,7 @@ fn progress_reaches_the_directory_and_can_rebind_the_run_after_a_restart() {
         roster: run.roster,
         cleared: run.cleared,
         checkpoint: run.checkpoint,
+        outcome: None,
     };
     let mut slot = slot_adapter(entered.run.slot);
     let transfer = transfer_of(&mut public, 1, "aria", entered.run.slot);

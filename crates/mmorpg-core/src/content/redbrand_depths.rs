@@ -1,6 +1,6 @@
 //! The Redbrand Depths (#404 part 2): a shared authored dungeon whose every run is one private
 //! zone. An entrance hall, three escalating chambers, a checkpoint alcove between the first two
-//! and an empty boss chamber walled off for #404 part 3.
+//! and the chamber of Captain Ulric Thorn, the run's boss, who appears once the others are clear.
 //!
 //! Stand-in rock boxes, like the public cavern; authored assets come later. Zone IDs
 //! [`ZONE_IDS`] are instance slots: a host runs a pool of them and a run binds one (the run
@@ -77,8 +77,14 @@ const BOSS_CHAMBER: Room = Room {
     max: [14_800, 2_400],
 };
 
-/// The barricade sealing the boss chamber's passage (#404 part 3 opens it).
-pub const BOSS_SEAL_ID: u32 = 900;
+/// Captain Ulric Thorn's creature ID in every run.
+pub const THORN: crate::CreatureId = crate::CreatureId::new(30);
+/// The template of Captain Ulric Thorn (#404 part 3), level 6 elite.
+pub const THORN_TEMPLATE: crate::CreatureTemplateId = crate::CreatureTemplateId::new(16);
+/// The Need/Greed window of his drops: 30 s, tick-based (Atlas 5.1.34).
+pub const ROLL_TICKS: u32 = crate::long_ticks_from_ms(30_000);
+/// Larger parties (three or more) face his second area attack in his last phase.
+pub const FINAL_ATTACK_PARTY: u8 = 3;
 
 /// A wall from `min` to `max` on the floor, `(min, max)` over XZ.
 fn wall(id: &mut u32, min: [i32; 2], max: [i32; 2]) -> StaticCollider {
@@ -157,12 +163,6 @@ fn colliders() -> Vec<StaticCollider> {
     room_walls(&mut id, &mut out, CHAMBER_3, Some(0), Some(0));
     passage(&mut id, &mut out, 10_400, 10_800, 0);
     room_walls(&mut id, &mut out, BOSS_CHAMBER, Some(0), None);
-    // The empty boss chamber's passage stays sealed until #404 part 3 opens it.
-    out.push(StaticCollider {
-        id: BOSS_SEAL_ID,
-        position: [10_600, FLOOR_TOP + WALL_HEIGHT / 2, 0],
-        half_extents: [200, WALL_HEIGHT / 2, PASSAGE_HALF_WIDTH + 1],
-    });
     out
 }
 
@@ -245,19 +245,81 @@ fn chamber_table() -> Vec<(&'static str, Vec<SpawnRow>)> {
     ]
 }
 
+/// Thorn's adds: `(creature, template, feet XZ, party sizes)`. The composition by party size is
+/// two adds for one or two players, three for three or four, four for five (5.1.26).
+fn thorn_adds() -> Vec<(u32, crate::CreatureTemplateId, [i32; 2], [u8; 2])> {
+    use units::templates::{REDBRAND_BANDIT, REDBRAND_BRUTE, REDBRAND_CROSSBOWMAN};
+    vec![
+        (31, REDBRAND_BANDIT, [12_400, -700], [1, 5]),
+        (32, REDBRAND_BANDIT, [12_400, 700], [1, 5]),
+        (33, REDBRAND_CROSSBOWMAN, [11_400, -1_600], [3, 5]),
+        (34, REDBRAND_BRUTE, [11_400, 1_600], [5, 5]),
+    ]
+}
+
 fn spawns() -> Vec<CreatureSpawn> {
+    let spawn = |id, template, position, facing, wander_radius| CreatureSpawn {
+        id: crate::CreatureId::new(id),
+        template,
+        position,
+        facing,
+        wander_radius,
+        levels: (template != units::templates::REDBRAND_BRUTE && template != THORN_TEMPLATE)
+            .then_some(SPAWN_LEVELS),
+    };
     chamber_table()
         .into_iter()
         .flat_map(|(_, rows)| rows)
-        .map(|(id, template, position, facing, _, _)| CreatureSpawn {
-            id: crate::CreatureId::new(id),
-            template,
-            position,
-            facing,
-            wander_radius: WANDER_RADIUS,
-            levels: (template != units::templates::REDBRAND_BRUTE).then_some(SPAWN_LEVELS),
+        .map(|(id, template, position, facing, _, _)| {
+            spawn(id, template, position, facing, WANDER_RADIUS)
         })
+        .chain(std::iter::once(spawn(
+            THORN.get(),
+            THORN_TEMPLATE,
+            [13_400, 0],
+            WEST,
+            0,
+        )))
+        .chain(
+            thorn_adds()
+                .into_iter()
+                .map(|(id, template, position, _)| spawn(id, template, position, WEST, 0)),
+        )
         .collect()
+}
+
+/// Captain Ulric Thorn: a veteran in the band's crimson, a little larger than his men.
+fn thorn_template() -> crate::CreatureTemplate {
+    use units::templates::GARRICK_REDBRAND;
+    let mut thorn = units::creature_templates()
+        .into_iter()
+        .find(|template| template.id == GARRICK_REDBRAND)
+        .expect("Garrick's template stands behind Thorn's");
+    thorn.id = THORN_TEMPLATE;
+    thorn.name = "Captain Ulric Thorn".to_owned();
+    thorn.min_level = 6;
+    thorn.max_level = 6;
+    thorn.elite = true;
+    thorn.health = 900;
+    thorn.health_per_level = 0;
+    thorn.damage = [12, 20];
+    thorn.damage_per_level = 0;
+    thorn.half_extents = [42, 104, 42];
+    thorn
+}
+
+/// Thorn is scaled by adds and mechanics, not multipliers (5.1.26); these rules only make him
+/// an ordinary boss to the shared encounter code (locking, contribution, evade resets).
+fn thorn_rules() -> crate::BossRules {
+    crate::BossRules {
+        template: THORN_TEMPLATE,
+        health_percent_per_extra: 0,
+        damage_percent_per_extra: 0,
+        engage_radius: 1,
+        reaction_radius: 1,
+        reaction_ticks: 1,
+        rally_point: [13_400, 0],
+    }
 }
 
 /// The authored encounter table of the depths.
@@ -280,6 +342,31 @@ pub fn site() -> DepthsSite {
             .collect(),
         entrance: ENTRANCE,
         checkpoint: CHECKPOINT,
+        boss: Some(crate::DepthsBoss {
+            creature: THORN,
+            area: XzBounds {
+                min: BOSS_CHAMBER.min,
+                max: BOSS_CHAMBER.max,
+            },
+            adds: thorn_adds()
+                .into_iter()
+                .map(|(id, _, _, party)| DepthsSpawn {
+                    creature: crate::CreatureId::new(id),
+                    party,
+                    after_fallen: None,
+                })
+                .collect(),
+            pool: vec![
+                crate::ItemId::new(15),
+                crate::ItemId::new(16),
+                crate::ItemId::new(17),
+            ],
+            drops_by_party: [1, 1, 2, 2, 2],
+            roll_ticks: ROLL_TICKS,
+            area_attack: crate::ability::ids::REAVERS_SWEEP,
+            final_attack: crate::ability::ids::LAST_COMMAND,
+            final_attack_party: FINAL_ATTACK_PARTY,
+        }),
     }
 }
 
@@ -326,10 +413,11 @@ fn build() -> Result<Arc<ZoneContent>, crate::ZoneError> {
         },
         colliders(),
     )?;
-    let templates: Vec<_> = units::creature_templates()
+    let mut templates: Vec<_> = units::creature_templates()
         .into_iter()
         .filter(|template| is_depths_template(template.id))
         .collect();
+    templates.push(thorn_template());
     let content = ZoneContent::new(
         definition,
         ZoneAreas::new(vec![Area::new(
@@ -343,9 +431,11 @@ fn build() -> Result<Arc<ZoneContent>, crate::ZoneError> {
         Vec::new(),
         GRAVEYARD,
     )?;
+    // Thorn's corpse has no ordinary loot: his shared Need/Greed pool is the reward (#404).
     let tables = content
         .creature_templates()
         .iter()
+        .filter(|template| template.id != THORN_TEMPLATE)
         .map(|template| {
             (
                 template.id,
@@ -364,6 +454,7 @@ fn build() -> Result<Arc<ZoneContent>, crate::ZoneError> {
             .with_loot_tables(tables)?
             .with_creature_abilities(abilities)?
             .with_shielded(units::shielded())?
+            .with_bosses(vec![thorn_rules()])?
             .with_carried_quests(quests::quests())
             .with_handoff_corridors(vec![exit_corridor()])?
             .with_depths_site(site())?,

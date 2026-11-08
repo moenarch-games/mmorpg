@@ -577,6 +577,7 @@ mod tests {
     fn snapshot() -> ZoneSnapshot {
         ZoneSnapshot {
             party: None,
+            depths_loot: None,
             doors: Vec::new(),
             projectiles: Vec::new(),
             debris: Vec::new(),

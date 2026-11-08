@@ -55,6 +55,7 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "depths-locked": "The way down is barred. Someone in your party must first have ended Garrick Redbrand.",
   "depths-closed": "No way down for you here: your party's run has begun without you, or the depths are full.",
   "depths-wipe": "Your party has fallen. You rise again at the checkpoint.",
+  "depths-boss-open": "The way to Captain Ulric Thorn lies open.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;

@@ -17,10 +17,12 @@ use mmorpg_control_plane::ZoneLease;
 use mmorpg_control_plane::instance::{EntryCandidate, InstanceAuthority};
 use mmorpg_core::redbrand_depths::is_depths_zone;
 use mmorpg_core::{
-    CharacterId, CharacterLocation, DepthsRunStart, ErrorCode, PlayerId, ThresholdRequest, ZoneId,
+    BossReport, CharacterId, CharacterLocation, DepthsRunStart, ErrorCode, PlayerId,
+    ThresholdRequest, ZoneId,
 };
 use mmorpg_protocol::{
-    decode_depths_run_start, encode_depths_run_start, error_code_from_wire, error_code_to_wire,
+    decode_boss_outcome, decode_depths_run_start, encode_boss_outcome, encode_depths_run_start,
+    error_code_from_wire, error_code_to_wire,
 };
 
 use crate::ZoneGameServerAdapter;
@@ -31,6 +33,7 @@ const POLL: Duration = Duration::from_millis(100);
 const BIND_RUN: u8 = 10;
 const ENTER_DEPTHS: u8 = 11;
 const REFUSE: u8 = 12;
+const CONFIRM_BOSS: u8 = 13;
 
 /// A threshold request with its characters: the player, then its gathered party.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -49,6 +52,7 @@ struct Exchange {
     requests: BTreeMap<PlayerId, ThresholdEntry>,
     occupied: bool,
     progress: Option<RunProgress>,
+    boss: Option<mmorpg_core::BossReport>,
 }
 
 /// The exchange between one live zone and its host's instance service.
@@ -75,6 +79,12 @@ impl InstanceChannel {
     pub fn presence(&self) -> (bool, Option<RunProgress>) {
         self.with(|exchange| (exchange.occupied, exchange.progress))
     }
+
+    /// The boss outcome the zone reports, if its boss fell.
+    #[must_use]
+    pub fn boss_report(&self) -> Option<BossReport> {
+        self.with(|exchange| exchange.boss.clone())
+    }
 }
 
 /// The host input binding a run to a depths zone (`[1, 10] · run start`).
@@ -94,6 +104,16 @@ pub fn enter_depths_input(destination: CharacterLocation) -> Vec<u8> {
         payload.extend_from_slice(&axis.to_be_bytes());
     }
     payload.extend_from_slice(&destination.facing.to_be_bytes());
+    payload
+}
+
+/// The host input confirming the run directory recorded a run's boss outcome up to `version`
+/// (`[1, 13] · run u64 · version u32`).
+#[must_use]
+pub fn confirm_boss_input(run_id: u64, version: u32) -> Vec<u8> {
+    let mut payload = vec![1, CONFIRM_BOSS];
+    payload.extend_from_slice(&run_id.to_be_bytes());
+    payload.extend_from_slice(&version.to_be_bytes());
     payload
 }
 
@@ -144,6 +164,14 @@ impl ZoneGameServerAdapter {
                     .begin_depths_run(start)
                     .map_err(crate::map_zone_error)?;
             }
+            [1, CONFIRM_BOSS, body @ ..] => {
+                let bad = || SimulationError::new("invalid boss confirmation input");
+                let (run_id, version) = body.split_at_checked(8).ok_or_else(bad)?;
+                self.zone.confirm_boss_outcome(
+                    u64::from_be_bytes(run_id.try_into().map_err(|_| bad())?),
+                    u32::from_be_bytes(version.try_into().map_err(|_| bad())?),
+                );
+            }
             [1, ENTER_DEPTHS, body @ ..] => {
                 let destination = parse_destination(body)?;
                 self.zone
@@ -185,12 +213,14 @@ impl ZoneGameServerAdapter {
             .zone
             .depths_run()
             .map(|run| (run.run_id, run.cleared, run.checkpoint));
+        let boss = self.zone.boss_report();
         channel.with(|exchange| {
             for entry in entries {
                 exchange.requests.insert(entry.player, entry);
             }
             exchange.occupied = occupied;
             exchange.progress = progress;
+            exchange.boss = boss;
         });
     }
 
@@ -226,6 +256,8 @@ pub struct InstanceService {
     slots: Vec<ZoneId>,
     sessions: Mutex<BTreeMap<(MatchId, PlayerId), u32>>,
     grace_ms: u64,
+    /// The newest boss outcome each zone confirmed, to send each confirmation once.
+    confirmed: Mutex<BTreeMap<MatchId, (u64, u32)>>,
 }
 
 impl InstanceService {
@@ -250,6 +282,7 @@ impl InstanceService {
             slots,
             sessions: Mutex::default(),
             grace_ms: u64::try_from(grace.as_millis()).unwrap_or(u64::MAX),
+            confirmed: Mutex::default(),
         })
     }
 
@@ -305,12 +338,22 @@ impl InstanceService {
         })?;
         Ok(run
             .filter(|run| run.slot == zone.zone)
-            .map(|run| DepthsRunStart {
-                run_id: run.id,
-                roster: run.roster,
-                cleared: run.cleared,
-                checkpoint: run.checkpoint,
-            }))
+            .map(|run| {
+                let outcome = run
+                    .outcome
+                    .as_ref()
+                    .map(|recorded| decode_boss_outcome(&recorded.bytes))
+                    .transpose()
+                    .map_err(|error| error.to_string())?;
+                Ok::<_, String>(DepthsRunStart {
+                    run_id: run.id,
+                    roster: run.roster,
+                    cleared: run.cleared,
+                    checkpoint: run.checkpoint,
+                    outcome,
+                })
+            })
+            .transpose()?)
     }
 
     /// Before an arrival activates: checks the character is on the run this slot holds and binds
@@ -344,7 +387,7 @@ impl InstanceService {
         }
         for (id, zone) in &self.zones {
             let result = if is_depths_zone(zone.zone) {
-                self.reconcile_slot(zone)
+                self.reconcile_slot(id, zone)
             } else {
                 self.resolve_requests(id, zone)
             };
@@ -363,15 +406,55 @@ impl InstanceService {
         }
     }
 
-    fn reconcile_slot(&self, zone: &InstanceZone) -> Result<(), String> {
+    fn reconcile_slot(&self, id: &MatchId, zone: &InstanceZone) -> Result<(), String> {
         let (occupied, progress) = zone.channel.presence();
+        let report = zone.channel.boss_report();
+        let encoded = report
+            .as_ref()
+            .map(|report| encode_boss_outcome(&report.outcome))
+            .transpose()
+            .map_err(|error| error.to_string())?;
         let slot = zone.zone;
         self.transact(zone, &mut |directory, now| {
             directory.sync_slot(slot, occupied, now);
             if let Some((run, cleared, checkpoint)) = progress {
                 directory.report(slot, run, cleared, checkpoint);
             }
-        })
+            if let (Some(report), Some(bytes)) = (&report, &encoded) {
+                directory.report_outcome(
+                    slot,
+                    report.run_id,
+                    report.outcome.version,
+                    bytes.clone(),
+                    report.outstanding.clone(),
+                );
+            }
+        })?;
+        // Only after the directory committed: the zone delivers rewards up to this version.
+        let Some(report) = report else {
+            return Ok(());
+        };
+        let current = (report.run_id, report.outcome.version);
+        let mut confirmed = self
+            .confirmed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if confirmed.get(id) == Some(&current) {
+            return Ok(());
+        }
+        let Some((player, epoch)) = self
+            .sessions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .find(|((session, _), _)| session == id)
+            .map(|((_, player), epoch)| (*player, *epoch))
+        else {
+            return Ok(());
+        };
+        self.submit(id, player, epoch, &confirm_boss_input(current.0, current.1))?;
+        confirmed.insert(id.clone(), current);
+        Ok(())
     }
 
     fn resolve_requests(&self, id: &MatchId, zone: &InstanceZone) -> Result<(), String> {

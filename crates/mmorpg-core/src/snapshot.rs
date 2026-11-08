@@ -103,6 +103,17 @@ pub enum PlayerIntent {
     RaidAid(u8),
     /// Night raid preparation (#532).
     RaidPrepare(crate::RaidPrep),
+    /// A Need/Greed/Pass answer to a boss drop (#404).
+    RollDepthsDrop {
+        run: u64,
+        drop: u8,
+        choice: crate::RollChoice,
+    },
+    /// A manual claim of a held boss drop (#404).
+    ClaimDepthsDrop {
+        run: u64,
+        drop: u8,
+    },
     /// A host notice for the player (#404): the error line it sees, in order with commands.
     Notice(crate::ErrorCode),
 }
@@ -284,6 +295,9 @@ pub struct CanonicalPlayerSnapshot {
     pub quests: crate::QuestLog,
     /// Waystones unlocked by exploration (#145).
     pub waystones: crate::WaystoneSet,
+    /// The durable character this session plays and its depths receipts (#404).
+    pub character: Option<crate::CharacterId>,
+    pub depths: crate::DepthsRecord,
 }
 
 /// A creature; `position` is its body or corpse, zero once despawned, and
@@ -415,6 +429,8 @@ impl ZoneSimulation {
                     chat: state.chat.clone(),
                     quests: state.quests.clone(),
                     waystones: state.waystones,
+                    character: state.character.clone(),
+                    depths: state.depths,
                 })
             })
             .collect::<Result<Vec<_>, ZoneError>>()?;
@@ -806,6 +822,8 @@ impl ZoneSimulation {
                 chat: player.chat,
                 quests: player.quests,
                 waystones: player.waystones,
+                character: player.character,
+                depths: player.depths,
             },
         );
         Ok(())
@@ -983,7 +1001,7 @@ impl ZoneSimulation {
         }
         validate_creature_abilities(
             &record.abilities,
-            content.creature_ability(spawn.template),
+            &content.creature_casts(record.creature_id, spawn.template),
             record.life == CreatureLife::Alive,
             record.ai == CreatureAi::Engaged,
         )?;
@@ -1295,22 +1313,27 @@ fn scaled_max_health(
 
 fn validate_creature_abilities(
     abilities: &CanonicalCreatureAbilities,
-    bound: Option<AbilityId>,
+    allowed: &[AbilityId],
     alive: bool,
     engaged: bool,
 ) -> Result<(), ZoneError> {
     if !alive && *abilities != CanonicalCreatureAbilities::default() {
         return Err(ZoneError::new("dead creature state is inconsistent"));
     }
-    let timer_limit = bound.and_then(ability_by_id).map_or(0, |ability| {
-        (ability.cooldown + CREATURE_ABILITY_JITTER_TICKS)
-            .max(crate::casting::SHIELD_BASH_LOCKOUT_TICKS)
-    });
+    let timer_limit = allowed
+        .iter()
+        .filter_map(|id| ability_by_id(*id))
+        .map(|ability| {
+            (ability.cooldown + CREATURE_ABILITY_JITTER_TICKS)
+                .max(crate::casting::SHIELD_BASH_LOCKOUT_TICKS)
+        })
+        .max()
+        .unwrap_or(0);
     if abilities.ability_timer > timer_limit {
         return Err(ZoneError::new("creature ability timer is out of range"));
     }
     if let Some(cast) = abilities.cast {
-        if Some(cast.ability) != bound || !engaged {
+        if !allowed.contains(&cast.ability) || !engaged {
             return Err(ZoneError::new("cast state is out of range"));
         }
         validate_cast(cast)?;

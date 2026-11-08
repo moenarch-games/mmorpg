@@ -429,6 +429,10 @@ const worldView = new WorldView(renderer, camera, lighting, {
     notice: requireElement<HTMLElement>("#quest-notice"),
     markers: requireElement<HTMLElement>("#quest-markers"),
   },
+  depthsLoot: {
+    panel: requireElement<HTMLElement>("#depths-loot-panel"),
+    list: requireElement<HTMLElement>("#depths-loot-list"),
+  },
   party: {
     frame: requireElement<HTMLElement>("#party-frame"),
     list: requireElement<HTMLElement>("#party-list"),

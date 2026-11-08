@@ -139,6 +139,7 @@ pub fn exhaustive_projection(
         pieces: Vec::new(),
         raid: None,
         party: None,
+        depths_loot: None,
     }
 }
 

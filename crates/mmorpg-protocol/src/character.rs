@@ -2,6 +2,7 @@
 //!
 //! `version u8 · schema u16 · id length u8 · id · appearance u8 · level u8 ·
 //! experience u32 · copper u32 · inventory · equipment · quest entries · unlocked waystones u32 ·
+//! depths record (`thorn_defeated` u8, receipt run u64, credited u8, drops u8) ·
 //! health u32 · resource u16 · resource ticks u16 · mana delay u16 · global
 //! cooldown u16 · cooldown count u8 · (ability u8 · remaining u16)* · zone
 //! u32 · position 3 × i32 · facing u16`, big-endian. The decoder is strict:
@@ -11,6 +12,7 @@
 
 use mmorpg_core::{
     AbilityId, CHARACTER_RECORD_SCHEMA_VERSION, CharacterId, CharacterLocation, CharacterRecord,
+    DepthsRecord,
     ClassChoice, Cooldown, MAX_CHARACTER_ID_BYTES, MAX_COOLDOWNS, QuestLog, ZoneId,
 };
 
@@ -48,6 +50,7 @@ pub fn encode_character_record(record: &CharacterRecord) -> Result<Vec<u8>, Prot
         &record.quests.entries,
     )?;
     payload.extend_from_slice(&record.waystones.bits().to_be_bytes());
+    encode_depths_record(&mut payload, record.depths);
     payload.extend_from_slice(&record.health.to_be_bytes());
     for value in [
         record.resource,
@@ -111,6 +114,7 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
     let equipment = decode_equipment(payload, offset)?;
     let (completed, entries) = decode_entries(payload, offset)?;
     let waystones = crate::wire::decode_waystones(u32::from_be_bytes(take(payload, offset)?))?;
+    let depths = decode_depths_record(payload, offset)?;
     let health = u32::from_be_bytes(take(payload, offset)?);
     let resource = u16::from_be_bytes(take(payload, offset)?);
     let resource_ticks = u16::from_be_bytes(take(payload, offset)?);
@@ -148,6 +152,7 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
         equipment,
         quests: QuestLog { entries, completed },
         waystones,
+        depths,
         health,
         resource,
         resource_ticks,
@@ -160,4 +165,67 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
             facing,
         },
     })
+}
+
+/// `thorn_defeated` u8 · receipt run u64 · credited u8 · drops u8.
+pub(crate) fn encode_depths_record(payload: &mut Vec<u8>, record: DepthsRecord) {
+    payload.push(u8::from(record.thorn_defeated));
+    payload.extend_from_slice(&record.receipt_run.to_be_bytes());
+    payload.push(u8::from(record.credited));
+    payload.push(record.drops);
+}
+
+pub(crate) fn decode_depths_record(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<DepthsRecord, ProtocolError> {
+    Ok(DepthsRecord {
+        thorn_defeated: read_u8(payload, offset)? != 0,
+        receipt_run: u64::from_be_bytes(take(payload, offset)?),
+        credited: read_u8(payload, offset)? != 0,
+        drops: read_u8(payload, offset)?,
+    })
+}
+
+/// A present flag, then `u8` length and bytes: a canonical player's durable character.
+pub(crate) fn encode_optional_character(
+    payload: &mut Vec<u8>,
+    character: Option<&CharacterId>,
+) -> Result<(), ProtocolError> {
+    payload.push(u8::from(character.is_some()));
+    if let Some(character) = character {
+        let bytes = character.as_str().as_bytes();
+        payload.push(encode_u8_count(
+            bytes.len(),
+            MAX_CHARACTER_ID_BYTES,
+            "character ID is too long",
+        )?);
+        payload.extend_from_slice(bytes);
+    }
+    Ok(())
+}
+
+pub(crate) fn decode_optional_character(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Option<CharacterId>, ProtocolError> {
+    if read_u8(payload, offset)? == 0 {
+        return Ok(None);
+    }
+    let length = decode_u8_count(
+        payload,
+        offset,
+        MAX_CHARACTER_ID_BYTES,
+        "character ID is too long",
+    )?;
+    let end = *offset + length;
+    let id = payload
+        .get(*offset..end)
+        .ok_or_else(|| ProtocolError::new("payload is truncated"))?;
+    *offset = end;
+    std::str::from_utf8(id)
+        .ok()
+        .and_then(|id| CharacterId::new(id).ok())
+        .map(Some)
+        .ok_or_else(|| ProtocolError::new("character ID is invalid"))
 }

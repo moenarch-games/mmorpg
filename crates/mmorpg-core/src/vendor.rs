@@ -95,6 +95,7 @@ pub const fn sell_price(item: ItemId) -> u32 {
         8 | 9 => 3,
         10 | 11 => 1,
         12..=14 => 9,
+        15..=17 => 18,
         _ => 0,
     }
 }
@@ -284,7 +285,7 @@ mod tests {
             assert!(sell_price(item.id) > 0, "{} has no sale value", item.name);
         }
         assert_eq!(sell_price(ItemId::new(0)), 0);
-        assert_eq!(sell_price(ItemId::new(15)), 0);
+        assert_eq!(sell_price(ItemId::new(99)), 0);
         for offer in starter_vendor_stock().offers() {
             assert!(offer.price > sell_price(offer.item));
         }

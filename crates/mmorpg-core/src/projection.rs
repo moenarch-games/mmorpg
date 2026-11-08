@@ -190,6 +190,8 @@ pub struct ZoneSnapshot {
     pub pieces: Vec<crate::PieceView>,
     /// The night raid's signals while the viewer is near its target (#530).
     pub raid: Option<crate::RaidView>,
+    /// The viewer's copy of the boss loot pool, when it is eligible for this kill (#404).
+    pub depths_loot: Option<crate::DepthsLootView>,
     /// The viewer's party standing, once the directory has sent one (#404).
     pub party: Option<crate::PartyState>,
 }
@@ -332,6 +334,7 @@ impl ZoneSimulation {
                 pieces: self.piece_views(),
                 raid: self.raid_view(player_id, [center.x, center.z]),
                 party: self.parties.get(&player_id).cloned(),
+                depths_loot: self.depths_loot_view(player_id),
             },
             stats,
         })

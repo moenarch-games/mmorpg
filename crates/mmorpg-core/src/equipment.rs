@@ -302,7 +302,7 @@ mod tests {
                 assert_eq!(item.stats, ItemStats::NONE, "{}", item.name);
             }
         }
-        assert_eq!(MAX_EQUIPPED_STAMINA, 10);
+        assert_eq!(MAX_EQUIPPED_STAMINA, 15);
     }
 
     #[test]
