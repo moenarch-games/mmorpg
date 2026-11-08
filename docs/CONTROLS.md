@@ -91,6 +91,10 @@ One owner holds the mouse at a time:
 
 A wheel cannot open during a hold or aim. Stun, death and focus loss end the current owner without firing. Camera lock and free camera during a hold are both selectable, to compare in play. Wheels are an option alongside the locked camera. Mobile is frozen: no new touch work. Timed hitboxes and clashes are tracked in [#679](https://github.com/moenarch-games/mmorpg/issues/679), arena first, and netcode options in [#680](https://github.com/moenarch-games/mmorpg/issues/680).
 
+## Action-bar rows (#294)
+
+Keys 1–9 and 0 use the first ten action-bar slots; **Shift+1 to Shift+0** use slots 11–20, a second row of the bar in both clients for every class whose kit outgrows ten (Atlas `5.2.i294`). Shift is now only this modifier: the dodge roll moved to **F** (`5.2.i294-2`). Gamepad and touch reach of the second row stays out of scope until the wheels (#653).
+
 ## Ownership and implementation order
 
 1. **#650** — focus/no-focus over-shoulder camera, automatic facing, pointer capture and consistent strafing; browser and native parity.

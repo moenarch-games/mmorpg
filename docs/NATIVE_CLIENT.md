@@ -79,11 +79,12 @@ Controls:
 | W / S (or ↑ / ↓) | Run forward / backpedal |
 | A / D (or ← / →) | Strafe left / right |
 | Space | Jump (only from the ground) |
-| Shift | Dodge roll along the held movement, or straight back standing still (#516) |
+| F | Dodge roll along the held movement, or straight back standing still (#516; moved off Shift by #294) |
 | X | Swim down while held (#274); held Space swims up |
 | Tab | Select the nearest living attackable creature; press again to cycle outward |
 | R | Release your spirit while dead |
 | 1–9, 0 | Use action-bar slot 1–10 (the class kit in catalog order; the Arcanist's Ice Wall and Earth Pillar take 9 and 0); offensive abilities fire where the character faces, heals and buffs land on the selected friend or yourself |
+| Shift+1–9, Shift+0 | The second action-bar row: slots 11–20, for class kits that outgrow the first ten (#294) |
 | Left click | Swing immediately where the character faces (#517), with or without selection; when free look has been released, the first world click recaptures instead |
 | Right click | Select at the centre reticle in captured free look, or under the visible cursor while focused/uncaptured |
 | N | Cycle visible NPCs |
