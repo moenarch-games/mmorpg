@@ -1730,6 +1730,7 @@ impl ZoneContent {
                         hash.u16(item.get());
                         hash.u16(area.get());
                     }
+                    crate::QuestObjective::DefeatThorn => {}
                 }
             }
             hash.u32(quest.rewards.experience);

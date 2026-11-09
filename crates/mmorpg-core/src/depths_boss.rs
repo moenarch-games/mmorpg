@@ -848,7 +848,11 @@ impl ZoneSimulation {
         };
         let already = player.depths.credited(run_id);
         if !already {
+            let first_victory = !player.depths.thorn_defeated;
             player.depths.record_credit(run_id);
+            if first_victory {
+                self.report_thorn_defeated(player_id);
+            }
             let (_, template) = Self::creature_content(
                 &self.content,
                 self.depths_boss()

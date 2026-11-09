@@ -37,7 +37,7 @@ pub struct ItemTemplate {
 /// Starter catalog, in stable ID order. Equippable items stack to one;
 /// consumable effects, prices and loot tables are separate rules. Quest
 /// items are plain bag items that quest content names as collect objectives.
-pub const ITEM_CATALOG: [ItemTemplate; 17] = [
+pub const ITEM_CATALOG: [ItemTemplate; 18] = [
     ItemTemplate {
         id: ItemId::new(1),
         name: "Torn Fur",
@@ -228,6 +228,19 @@ pub const ITEM_CATALOG: [ItemTemplate; 17] = [
             stamina: 3,
             strength: 0,
             agility: 2,
+            intellect: 3,
+        },
+    },
+    // The one-time reward of *The Captain Below* (#160), never in Thorn's repeatable pool.
+    ItemTemplate {
+        id: ItemId::new(18),
+        name: "Marshal's Commendation Greaves",
+        max_stack: 1,
+        slot: Some(EquipmentSlot::Feet),
+        stats: ItemStats {
+            stamina: 1,
+            strength: 3,
+            agility: 3,
             intellect: 3,
         },
     },

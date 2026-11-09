@@ -1,4 +1,4 @@
-//! The Greyhaven chain (quest catalog 3): eleven quests from the outpost's
+//! The Greyhaven chain (quest catalog 3): twelve quests from the outpost's
 //! three quest givers, from the Wolfrun Woods to Garrick Redbrand and back.
 //!
 //! Marshal Elden Greywatch (NPC 1) sends new characters against the wolves
@@ -37,6 +37,11 @@ pub const THE_SUNKEN_SHRINE: QuestId = QuestId::new(10);
 /// way deeper.
 pub const DEEPER_INTO_THE_HOLLOW: QuestId = QuestId::new(11);
 
+/// After Garrick (#160): the follow-on story that sends a character after Captain Ulric Thorn in
+/// the party-private Redbrand Depths (5.1.25). Its objective is the character's durable Thorn
+/// victory, so a victory won before Garrick's quest still counts (5.1.37).
+pub const THE_CAPTAIN_BELOW: QuestId = QuestId::new(12);
+
 /// The relic on the Sunken Shrine's altar (#274).
 pub const SUNKEN_RELIC: ItemId = ItemId::new(11);
 
@@ -60,7 +65,7 @@ const fn kill(template: crate::CreatureTemplateId, count: u8) -> QuestObjective 
 }
 
 #[rustfmt::skip]
-const QUESTS: [QuestRow; 11] = [
+const QUESTS: [QuestRow; 12] = [
     (
         TROUBLE_IN_THE_WOODS, "Trouble in the Woods",
         "Timber wolves prowl the Wolfrun Trail west of the gate. Thin the pack: slay six of them.",
@@ -124,6 +129,12 @@ const QUESTS: [QuestRow; 11] = [
         "Garrick is gone, but his men still hold the Greyfang cave east of the hollow, and shield-bearing brutes guard a sealed way deeper. Break two Redbrand Brutes and see what they guard.",
         MARSHAL, MARSHAL, Some(RETURN_TO_GREYHAVEN),
         &[kill(REDBRAND_BRUTE, 2)], 700, 70, &[12, 13, 14],
+    ),
+    (
+        THE_CAPTAIN_BELOW, "The Captain Below",
+        "Garrick's ledger names the man he answered to: Captain Ulric Thorn, who rules the Redbrands from the depths under the Greyfang cave. Take friends you trust and end him, or tell me it is already done.",
+        MARSHAL, MARSHAL, Some(GARRICK_REDBRAND_QUEST),
+        &[QuestObjective::DefeatThorn], 900, 120, &[18],
     ),
 ];
 

@@ -314,6 +314,9 @@ pub fn quest_brief(quest: &mmorpg_core::Quest, content: &ZoneContent) -> String 
                     .find(|a| a.id() == area)
                     .map_or("the objective area", |a| a.name())
             ),
+            QuestObjective::DefeatThorn => {
+                format!("Defeat {}. ", mmorpg_core::redbrand_depths::THORN_NAME)
+            }
         });
     }
     text
