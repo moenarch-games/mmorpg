@@ -112,8 +112,6 @@ pub struct Presentation {
     shrine: crate::world::DrawBatch,
     /// The Outpost kit buildings' modules (#420), placed once.
     outpost: crate::world::DrawBatch,
-    /// The market square's settlement props (#421), placed once.
-    settlement: crate::world::DrawBatch,
 }
 
 impl Presentation {
@@ -147,19 +145,6 @@ impl Presentation {
             .iter()
             .flat_map(|part| {
                 skinned::outpost_draws(part.entry)
-                    .iter()
-                    .map(|draw| crate::world::SceneDraw {
-                        model: three_d_animation::Mat4 {
-                            elements: part.model,
-                        },
-                        ..draw.clone()
-                    })
-            })
-            .collect();
-        let settlement = mmorpg_presentation::settlement_props::parts(&scenery)
-            .iter()
-            .flat_map(|part| {
-                skinned::settlement_draws(part.entry)
                     .iter()
                     .map(|draw| crate::world::SceneDraw {
                         model: three_d_animation::Mat4 {
@@ -205,7 +190,6 @@ impl Presentation {
             last_buildings: now,
             shrine,
             outpost,
-            settlement,
         })
     }
 
@@ -717,7 +701,7 @@ impl Presentation {
         }
         frame.draws.extend(self.unit_draws(now, view));
         self.append_buildings(&mut frame.draws, now);
-        for batch in [&self.shrine, &self.outpost, &self.settlement] {
+        for batch in [&self.shrine, &self.outpost] {
             frame.batches.push(Arc::clone(batch));
         }
         self.append_ambient(&mut frame.draws, now);

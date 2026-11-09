@@ -1,6 +1,7 @@
-//! Greyhaven's trees, rocks and bushes from the embedded `greyhaven-nature` bundle (#49) and its
-//! ladders, ropes and ivy from the embedded `climbing-kit` (#621), imported once into
-//! render-engine's mesh, texture and material data. Both bundles' entries share one library and
+//! Greyhaven's trees, rocks and bushes from the embedded `greyhaven-nature` bundle (#49), its
+//! ladders, ropes and ivy from the embedded `climbing-kit` (#621) and the market square's wooden
+//! props from the embedded `settlement-props` (#421, their PBR materials #53), imported once into
+//! render-engine's mesh, texture and material data. The bundles' entries share one library and
 //! one level selection ([`entries`], [`lods`]).
 //!
 //! Every level of every entry keeps its textures (mipmapped here, since the engine never
@@ -52,6 +53,14 @@ mod river_descriptor {
     include!(concat!(env!("OUT_DIR"), "/river_descriptor.rs"));
 }
 
+mod settlement_bundle {
+    include!(concat!(env!("OUT_DIR"), "/settlement_bundle.rs"));
+}
+
+mod settlement_descriptor {
+    include!(concat!(env!("OUT_DIR"), "/settlement_descriptor.rs"));
+}
+
 type Files = &'static [(&'static str, &'static [u8])];
 
 /// One embedded bundle: the entries the presentation places, its glTF entries and files.
@@ -61,7 +70,7 @@ struct Source {
     files: Files,
 }
 
-const SOURCES: [Source; 4] = [
+const SOURCES: [Source; 5] = [
     Source {
         keys: &mmorpg_presentation::nature::ENTRIES,
         entries: bundle::ENTRIES,
@@ -82,13 +91,19 @@ const SOURCES: [Source; 4] = [
         entries: river_bundle::ENTRIES,
         files: river_bundle::FILES,
     },
+    Source {
+        keys: &mmorpg_presentation::settlement_props::ENTRIES,
+        entries: settlement_bundle::ENTRIES,
+        files: settlement_bundle::FILES,
+    },
 ];
 
 /// Fade materials per primitive: a fade quantizes to one of these dissolve thresholds.
 pub const FADE_STEPS: usize = 8;
 
 /// The library's entries: the nature bundle's (`mmorpg_presentation::nature::ENTRIES`), the
-/// climbing kit's (`mmorpg_presentation::climbing::ENTRIES`), then the limestone blocks'.
+/// climbing kit's (`mmorpg_presentation::climbing::ENTRIES`), the limestone blocks', the river
+/// stones' and the settlement props'.
 #[must_use]
 pub fn entries() -> Vec<&'static str> {
     SOURCES
@@ -113,6 +128,10 @@ pub fn lods() -> Vec<EntryLods> {
     lods.extend(
         mmorpg_presentation::nature::descriptor_lods(river_descriptor::DESCRIPTOR)
             .expect("the embedded river stones descriptor is valid"),
+    );
+    lods.extend(
+        mmorpg_presentation::settlement_props::descriptor_lods(settlement_descriptor::DESCRIPTOR)
+            .expect("the embedded settlement descriptor is valid"),
     );
     lods
 }
