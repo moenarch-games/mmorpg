@@ -149,7 +149,12 @@ pub fn parse_chat_input(raw: &str) -> Result<Ts<ChatInput>, JsError> {
                 emote: EmoteName::from(emote),
             },
         },
-        Ok(other) => unreachable!("chat input parses to chat or an emote, not {other:?}"),
+        Ok(core::ZoneCommand::Sit { seat }) => ChatInput::Command {
+            command: WorldCommand::Sit {
+                seat: seat.map(core::SeatId::get),
+            },
+        },
+        Ok(other) => unreachable!("chat input parses to chat, an emote or a sit, not {other:?}"),
         Err(error) => ChatInput::Error { error },
     };
     Ok(parsed.into_ts()?)

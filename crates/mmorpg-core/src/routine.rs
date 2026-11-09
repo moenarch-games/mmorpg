@@ -49,6 +49,10 @@ pub struct NpcRoutine {
     pub home_facing: u16,
     /// A door on the path the NPC opens when it comes within reach of it closed.
     pub door: Option<DoorId>,
+    /// The seat at the path's end, where the NPC sits while it is home (#619).
+    pub home_seat: Option<crate::SeatId>,
+    /// The seat at its content position, where it sits while it is at work (#619).
+    pub work_seat: Option<crate::SeatId>,
 }
 
 /// Where a routine NPC is at one tick.

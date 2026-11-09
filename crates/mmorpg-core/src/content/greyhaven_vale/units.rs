@@ -9,7 +9,7 @@
 use crate::content::{
     CreatureBehaviour, CreatureFamily, CreatureSpawn, CreatureTemplate, Npc, NpcRole,
 };
-use crate::{CreatureId, CreatureTemplateId, NpcId};
+use crate::{CreatureId, CreatureTemplateId, NpcId, SeatId};
 
 /// Creature templates by ID.
 pub mod templates {
@@ -314,7 +314,8 @@ const NPCS: [NpcRow; 21] = [
     (18,"Fisher Ada",NpcRole::Resident,2,[-1750,2400],49152),
     (19,"Porter Ben",NpcRole::Resident,2,[-1900,2500],16384),
     (20,"Washer Elin",NpcRole::Resident,2,[1400,3100],49152),
-    (21,"Apprentice Finn",NpcRole::Resident,2,[1500,3000],16384),
+    // On the market bench by day (#619): the stand spot of seat 1.
+    (21,"Apprentice Finn",NpcRole::Resident,2,[2410,2520],0),
 ];
 
 pub(crate) fn creature_templates() -> Vec<CreatureTemplate> {
@@ -478,7 +479,8 @@ pub(crate) fn vendors() -> Vec<(NpcId, crate::VendorStock)> {
 /// Tanner Hilda Brook (NPC 2) works by her tannery and spends the night in the inn's common
 /// room, crossing the square and opening the inn door on the way (#158, Atlas 5.1.45). Her
 /// quests stay available wherever she is. Marshal Elden Greywatch (NPC 1) walks home to house
-/// 103 at dusk and sleeps by his bed until dawn (#158, Atlas 5.1.48).
+/// 103 at dusk and sleeps by his bed until dawn (#158, Atlas 5.1.48). Hilda takes a chair at the
+/// inn's table for the night; Apprentice Finn (NPC 21) sits on the market bench by day (#619).
 pub(crate) fn routines() -> Vec<crate::NpcRoutine> {
     vec![
         crate::NpcRoutine {
@@ -486,6 +488,8 @@ pub(crate) fn routines() -> Vec<crate::NpcRoutine> {
             path: super::marshal_house::path(),
             home_facing: super::marshal_house::BEDSIDE_FACING,
             door: Some(super::marshal_house::DOOR),
+            home_seat: None,
+            work_seat: None,
         },
         crate::NpcRoutine {
             npc: NpcId::new(2),
@@ -495,11 +499,48 @@ pub(crate) fn routines() -> Vec<crate::NpcRoutine> {
                 [1_500, 620],
                 [1_500, 350],
                 [1_600, 100],
+                [1_302, 10],
             ],
-            home_facing: 16_384,
+            home_facing: 32_768,
             door: Some(super::inn::DOOR),
+            home_seat: Some(SeatId::new(3)),
+            work_seat: None,
+        },
+        crate::NpcRoutine {
+            npc: NpcId::new(21),
+            path: vec![[2_300, 2_700]],
+            home_facing: 16_384,
+            door: None,
+            home_seat: None,
+            work_seat: Some(SeatId::new(1)),
         },
     ]
+}
+
+/// The authored seats (#619): the market bench's two places, then two chairs at the inn's third
+/// table. Stable IDs; add new ones at the end.
+pub(crate) fn seats() -> Vec<crate::Seat> {
+    use super::{inn, market};
+    let [x, z] = market::BENCH;
+    let bench = [(1, -1), (2, 1)].map(|(id, side)| crate::Seat {
+        id: SeatId::new(id),
+        stand: [
+            x + side * market::BENCH_SEAT_OFFSET,
+            z + market::BENCH_STAND_Z,
+        ],
+        root: [
+            x + side * market::BENCH_SEAT_OFFSET,
+            z + market::BENCH_ROOT_Z,
+        ],
+        facing: 0,
+    });
+    let chairs = inn::SEATS.map(|(id, chair)| crate::Seat {
+        id: SeatId::new(id),
+        stand: [inn::ORIGIN[0] + chair, inn::ORIGIN[2] + inn::SEAT_STAND_Z],
+        root: [inn::ORIGIN[0] + chair, inn::ORIGIN[2] + inn::SEAT_ROOT_Z],
+        facing: 32_768,
+    });
+    bench.into_iter().chain(chairs).collect()
 }
 
 /// Bram (NPC 3) closes his shop at night (#158, Atlas 5.1.47).

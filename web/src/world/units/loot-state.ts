@@ -183,6 +183,8 @@ const REFUSALS: Record<ErrorCode, string | null> = {
   "invalid-waystone": null,
   "private-home": null,
   "no-answer": null,
+  "seat-taken": null,
+  "cannot-sit-here": null,
   "not-at-night": null,
   "depths-locked": null,
   "depths-closed": null,

@@ -119,6 +119,10 @@ impl ZoneSimulation {
         if distance <= 0 || !self.movable(unit) {
             return false;
         }
+        // A shove ends a sit (#619).
+        if let EntityRef::Player(id) = unit {
+            self.update_player(id, |player| player.sitting = crate::Sitting::No);
+        }
         // The distance in subunits over the knockback's ticks, rounded up.
         let ticks = i32::from(KNOCKBACK_TICKS);
         let subunits = distance.saturating_mul(crate::physics::SUBUNITS_PER_UNIT);

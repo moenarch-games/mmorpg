@@ -15,6 +15,7 @@ export type UnitPresenterHandle = {
   residentsReady(): void;
   setBlend(lowerSeconds: number, upperSeconds: number, lowerWeight: number, upperWeight: number): void;
   setBodyOverlay(shown: boolean): void;
+  setInteraction(lootWindow: boolean, npc: number | undefined): void;
   setKitPlatforms(platforms: Uint8Array): void;
   setChannelOrigins(origins: Float64Array): void;
   push(projection: Uint8Array, seconds: number): void;
@@ -223,6 +224,11 @@ export class SharedUnits {
   /** Shows or hides the development body overlay (#39): each unit's authoritative body over its model. */
   setBodyOverlay(shown: boolean): void {
     this.#handle.setBodyOverlay(shown);
+  }
+
+  /** What the page's windows are open toward this frame (#619): the viewer's loot kneel and the NPC it talks to. */
+  setInteraction(lootWindow: boolean, npc: number | null): void {
+    this.#handle.setInteraction(lootWindow, npc ?? undefined);
   }
 
   /** The platforms a kit draws (the fortress lifts, #591): no procedural pillar; each frame's `platforms` places them. */

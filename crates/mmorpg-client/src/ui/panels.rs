@@ -280,7 +280,7 @@ impl GameUi {
                         });
                     let edit = ui.add(
                         egui::TextEdit::singleline(&mut self.chat_text)
-                            .hint_text("Enter to chat · /s /y /invite /leave /wave /bow /cheer")
+                            .hint_text("Enter to chat · /s /y /invite /leave /wave /bow /sit")
                             .desired_width(f32::INFINITY),
                     );
                     if self.chat_focus_requested {

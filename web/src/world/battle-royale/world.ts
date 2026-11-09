@@ -60,7 +60,7 @@ function arenaScenery(local: LocalWorld, presentation: ArenaPresentation): Scene
     },
     dressedProps: () => Uint32Array.from(presentation.dressedProps()),
     unitPresenter: (player) => UnitPresenter.forArena(player),
-    buildings: { presenters: () => [], reachableDoor: () => 0 },
+    buildings: { presenters: () => [], reachableDoor: () => 0, reachableSeat: () => 0 },
     shrine: { entries: [], placements: [] },
     outpost: { entries: [], placements: [] },
     settlement: { entries: [], placements: [] },

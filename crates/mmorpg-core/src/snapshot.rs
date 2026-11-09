@@ -58,6 +58,8 @@ pub enum PlayerIntent {
         door: crate::DoorId,
         open: bool,
     },
+    /// Sits on a seat or, with `None`, the ground (#619).
+    Sit(Option<crate::SeatId>),
     /// Starts or stops repairing a destructible piece (#305).
     Repair(Option<crate::PieceId>),
     CancelCast,
@@ -197,6 +199,8 @@ pub struct CanonicalPlayerCombat {
     pub landing: crate::LandingState,
     /// A climb or mantle in progress (#490).
     pub traversal: crate::Traversal,
+    /// What the player sits on (#619).
+    pub sitting: crate::Sitting,
     /// A pending press, a dodge roll in progress or its cooldown (#516).
     pub roll: crate::Roll,
     /// A pending sword → Shield Bash follow-up (#157).
@@ -256,6 +260,7 @@ impl Default for CanonicalPlayerCombat {
             abilities: CanonicalPlayerAbilities::default(),
             landing: crate::LandingState::default(),
             traversal: crate::Traversal::Free,
+            sitting: crate::Sitting::No,
             roll: crate::Roll::Ready,
             combo: None,
             strike_recovery: 0,
@@ -427,6 +432,7 @@ impl ZoneSimulation {
                         },
                         landing: state.landing,
                         traversal: state.traversal,
+                        sitting: state.sitting,
                         roll: state.roll,
                         combo: state.combo,
                         strike_recovery: state.strike_recovery,
@@ -633,6 +639,15 @@ impl ZoneSimulation {
         // The snapshot tick's routine placements and platforms (#56); doors are already as that
         // tick left them.
         zone.restore_wakes(&snapshot.wakes, snapshot.tick)?;
+        // One unit per seat, and nobody on a seat its routine NPC holds at this tick (#619).
+        let mut held = BTreeSet::new();
+        for (&id, player) in &zone.players {
+            if let crate::Sitting::On(seat) = player.sitting
+                && (!held.insert(seat) || zone.seat_held(seat, Some(id)))
+            {
+                return Err(ZoneError::new("a seat is held twice"));
+            }
+        }
         if let Some(run) = &snapshot.depths {
             let site = zone
                 .content
@@ -767,6 +782,11 @@ impl ZoneSimulation {
         if !combat.traversal.is_valid() {
             return Err(ZoneError::new("player climb or mantle is out of range"));
         }
+        if (!alive && combat.sitting.is_sitting())
+            || matches!(combat.sitting, crate::Sitting::On(seat) if self.content.seat(seat).is_none())
+        {
+            return Err(ZoneError::new("player sit is invalid"));
+        }
         if !combat.roll.is_valid() || (!alive && combat.roll != crate::Roll::Ready) {
             return Err(ZoneError::new("player dodge roll is out of range"));
         }
@@ -800,6 +820,7 @@ impl ZoneSimulation {
                 } else {
                     crate::Traversal::Free
                 },
+                sitting: combat.sitting,
                 roll: combat.roll,
                 swimming: false,
                 impulse: None,

@@ -20,6 +20,9 @@ use crate::{
 
 /// A woken resident goes back to bed after this long without a quest request (60 s).
 pub const WAKE_IDLE_TICKS: u64 = crate::long_ticks_from_ms(60_000) as u64;
+/// A woken resident gets up for this long before it walks to the door (1.5 s, #619): the length
+/// of `Sleep_Bed_Wake`.
+pub const WAKE_RISE_TICKS: u64 = crate::ticks_from_ms(1_500) as u64;
 /// A private home's door closes itself this long after it last moved (8 s).
 pub const PRIVATE_DOOR_CLOSE_TICKS: u64 = crate::ticks_from_ms(8_000) as u64;
 /// Waypoints a wake path may have.
@@ -57,7 +60,7 @@ impl NpcWake {
     /// The tick the resident starts back to bed: idle long enough, and not before it reached
     /// the doorway.
     fn return_tick(&self, walk: u64) -> u64 {
-        (self.idle_since + WAKE_IDLE_TICKS).max(self.knocked + walk)
+        (self.idle_since + WAKE_IDLE_TICKS).max(self.knocked + WAKE_RISE_TICKS + walk)
     }
 }
 
@@ -138,6 +141,20 @@ impl ZoneSimulation {
         None
     }
 
+    /// Whether `npc`, knocked awake, is still getting up (#619).
+    pub(crate) fn waking(&self, npc: NpcId) -> bool {
+        self.wakes
+            .get(&npc)
+            .is_some_and(|wake| self.tick < wake.knocked + WAKE_RISE_TICKS)
+    }
+
+    /// Whether `npc` lives in a private home and is in bed, unwoken (#619).
+    pub(crate) fn in_bed(&self, npc: NpcId) -> bool {
+        self.content.private_home(npc).is_some()
+            && !self.wakes.contains_key(&npc)
+            && self.asleep(npc)
+    }
+
     /// Whether `npc` is at its routine's home, not walking.
     fn asleep(&self, npc: NpcId) -> bool {
         let (Some(definition), Some(routine)) = (self.content.npc(npc), self.content.routine(npc))
@@ -159,7 +176,15 @@ impl ZoneSimulation {
         let walk = walk_ticks(&legs);
         let speed = crate::NPC_WALK_UNITS_PER_TICK;
         let total: i64 = legs.iter().map(|leg| leg.2).sum();
-        let out = i64::try_from(self.tick.saturating_sub(wake.knocked)).unwrap_or(i64::MAX);
+        // Getting up (#619): at the bedside, still, until the rise is over.
+        if self.tick < wake.knocked + WAKE_RISE_TICKS {
+            return Some(NpcPlacement {
+                position: home,
+                facing: self.content.routine(wake.npc)?.home_facing,
+                velocity: [0, 0],
+            });
+        }
+        let out = i64::try_from(self.tick - wake.knocked - WAKE_RISE_TICKS).unwrap_or(i64::MAX);
         if out.saturating_mul(speed) < total {
             return Some(crate::routine::along(&legs, out * speed, true));
         }
@@ -214,7 +239,7 @@ impl ZoneSimulation {
                 if self.wake_placement(&wake, bed).is_none() {
                     self.wakes.remove(&home.npc);
                 }
-            } else if self.tick >= wake.knocked + walk && !state.open {
+            } else if self.tick >= wake.knocked + WAKE_RISE_TICKS + walk && !state.open {
                 self.try_open_for_npc(&door)?;
             }
         }

@@ -100,6 +100,9 @@ pub const DOORSTEP: [i32; 2] = spot([0, 360]);
 pub const DOORWAY: [i32; 2] = spot([0, 218]);
 /// Beside the bed, where Elden sleeps (the descriptor's bedside spot).
 pub const BEDSIDE: [i32; 2] = spot([-210, -160]);
+/// The middle of the mattress (the descriptor's bed collider): the bed clips (#619) lay Elden on
+/// it. Presentation only; the zone keeps him beside the bed.
+pub const BED_CENTRE: [i32; 2] = spot([-309, -159]);
 /// One step in from the doorway, clear of the open leaf.
 const HALL: [i32; 2] = spot([0, 120]);
 

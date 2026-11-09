@@ -21,6 +21,9 @@ use crate::{
 
 /// A full swing between closed and open.
 pub const SWING_SECONDS: f64 = 0.4;
+/// A flipped door waits this long before its leaf swings: `Door_Push` and `Door_Pull`'s
+/// `doorPushSeconds[0]`, when the palm meets the door (#619).
+pub const CONTACT_SECONDS: f64 = 0.228;
 const OPEN_ANGLE: f64 = std::f64::consts::FRAC_PI_2;
 
 /// One walk-in building's bundle and placement.
@@ -108,6 +111,9 @@ pub struct WalkIn {
     origin: [f64; 3],
     angle: f64,
     settled: bool,
+    /// The door state last seen and how long until its leaf starts to swing (#619).
+    open: bool,
+    hold: f64,
 }
 
 fn metres(units: i32) -> f64 {
@@ -124,6 +130,8 @@ impl WalkIn {
             origin: [metres(x), metres(y + scenery.height_at(x, z)), metres(z)],
             angle: 0.,
             settled: false,
+            open: false,
+            hold: 0.,
         }
     }
 
@@ -166,11 +174,18 @@ impl WalkIn {
         reduced_motion: bool,
     ) -> [Part; 5] {
         let goal = if open { OPEN_ANGLE } else { 0. };
+        if open != self.open {
+            self.open = open;
+            self.hold = CONTACT_SECONDS;
+        }
         if !self.settled || reduced_motion {
             self.angle = goal;
             self.settled = true;
+            self.hold = 0.;
         } else {
-            let step = OPEN_ANGLE * (dt.max(0.) / SWING_SECONDS);
+            let waited = dt.max(0.).min(self.hold);
+            self.hold -= waited;
+            let step = OPEN_ANGLE * ((dt.max(0.) - waited) / SWING_SECONDS);
             self.angle += (goal - self.angle).clamp(-step, step);
         }
         let interior = viewer.is_some_and(|feet| self.inside(feet));
@@ -218,6 +233,9 @@ mod tests {
     fn the_door_eases_open_over_its_swing_and_hides_the_roof_inside() {
         let mut inn = building(INN);
         inn.frame(false, None, 0., false);
+        // The leaf waits for the palm to meet it (#619).
+        inn.frame(true, None, CONTACT_SECONDS, false);
+        assert_eq!(inn.angle, 0.);
         inn.frame(true, None, SWING_SECONDS / 2., false);
         assert!((inn.angle - OPEN_ANGLE / 2.).abs() < 1e-9);
         inn.frame(true, None, SWING_SECONDS, false);

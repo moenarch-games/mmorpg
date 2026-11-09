@@ -79,7 +79,11 @@ pub const EVENT_RECORD_BYTES: usize = 2 + 2 * ENTITY_REF_BYTES + 2;
 /// facing, level, health percent and flags. Only creatures are tapped, evade or are lootable,
 /// so on a player record those three flag bits carry its [`mmorpg_core::TraversalView`] code
 /// instead (#490, #516, #500): tapped is bit 0, evading bit 1 and lootable bit 2.
+/// On an NPC record the tapped and evading bits carry its posture code instead, and on a
+/// player record the health byte's high bit says it sits (#619).
 pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 2 + 12 + 3 + 2 + 1 + 1 + 1;
+/// The health byte's high bit on a player record: the player sits (#619).
+const SITTING_BIT: u8 = 0x80;
 /// Records that fit the budget without events or sheets: (1,077 − 108) / 27 = 35.
 pub const MAX_WIRE_ENTITIES: usize =
     (MAX_PLAYER_PROJECTION_BYTES - PLAYER_SNAPSHOT_FIXED_BYTES) / ENTITY_RECORD_BYTES;
@@ -519,9 +523,36 @@ fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), P
     if entity.health_percent > 100 {
         return Err(ProtocolError::new("health percent exceeds 100"));
     }
-    payload.push(entity.health_percent);
     let flags = entity.flags;
-    let (tapped, evading, lootable) = if entity.kind == EntityKind::Player {
+    let posture = flags.posture;
+    let sitting_player =
+        entity.kind == EntityKind::Player && posture == mmorpg_core::PostureView::Sitting;
+    match entity.kind {
+        EntityKind::Player
+            if !matches!(
+                posture,
+                mmorpg_core::PostureView::Free | mmorpg_core::PostureView::Sitting
+            ) =>
+        {
+            return Err(ProtocolError::new("a player is never in bed"));
+        }
+        EntityKind::Player | EntityKind::Npc => {}
+        _ if posture != mmorpg_core::PostureView::Free => {
+            return Err(ProtocolError::new("only players and npcs sit"));
+        }
+        _ => {}
+    }
+    // The percent needs seven bits; the eighth says a player sits (#619).
+    payload.push(entity.health_percent | if sitting_player { SITTING_BIT } else { 0 });
+    let (tapped, evading, lootable) = if entity.kind == EntityKind::Npc {
+        if flags.tapped_by_other || flags.evading || flags.lootable {
+            return Err(ProtocolError::new(
+                "an npc is never tapped, evading or lootable",
+            ));
+        }
+        let code = posture.code();
+        (code & 1 != 0, code & 2 != 0, false)
+    } else if entity.kind == EntityKind::Player {
         if flags.tapped_by_other || flags.evading || flags.lootable {
             return Err(ProtocolError::new(
                 "a player is never tapped, evading or lootable",
@@ -970,7 +1001,14 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
     ];
     let facing = u16::from_be_bytes(take(payload, offset)?);
     let level = read_u8(payload, offset)?;
-    let health_percent = read_u8(payload, offset)?;
+    let health_byte = read_u8(payload, offset)?;
+    let sitting_player = health_byte & SITTING_BIT != 0;
+    let health_percent = health_byte & !SITTING_BIT;
+    if sitting_player && kind != EntityKind::Player {
+        return Err(ProtocolError::new(
+            "only a player record carries the sit bit",
+        ));
+    }
     if health_percent > 100 {
         return Err(ProtocolError::new("health percent exceeds 100"));
     }
@@ -984,6 +1022,24 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
         targets_viewer,
         lootable,
     ] = read_flags(read_u8(payload, offset)?)?;
+    // An NPC is never tapped or evading: those bits carry its posture code (#619).
+    let npc_posture = (kind == EntityKind::Npc).then(|| {
+        mmorpg_core::PostureView::from_code(u8::from(tapped_by_other) | u8::from(evading) << 1)
+    });
+    let posture = match npc_posture {
+        Some(Some(posture)) => posture,
+        Some(None) => return Err(ProtocolError::new("npc posture code is out of range")),
+        None if sitting_player => mmorpg_core::PostureView::Sitting,
+        None => mmorpg_core::PostureView::Free,
+    };
+    if dead && posture != mmorpg_core::PostureView::Free {
+        return Err(ProtocolError::new("a dead unit does not sit"));
+    }
+    let (tapped_by_other, evading) = if kind == EntityKind::Npc {
+        (false, false)
+    } else {
+        (tapped_by_other, evading)
+    };
     // On a player record the tapped, evading and lootable bits carry its traversal code
     // (#490, #516, #500).
     let (tapped_by_other, evading, lootable, traversal) = if kind == EntityKind::Player {
@@ -1032,6 +1088,7 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
             targets_viewer,
             lootable,
             traversal,
+            posture,
         },
     })
 }
@@ -1378,6 +1435,7 @@ pub(crate) mod tests {
                         evading: false,
                         targets_viewer: true,
                         traversal: mmorpg_core::TraversalView::Free,
+                        posture: mmorpg_core::PostureView::Free,
                     },
                 },
                 EntitySnapshot {
@@ -2157,9 +2215,10 @@ pub(crate) mod tests {
                         in_combat: true,
                         hostile: true,
                         attackable: true,
-                        tapped_by_other: kind != EntityKind::Player,
-                        evading: kind != EntityKind::Player,
+                        tapped_by_other: kind == EntityKind::Creature,
+                        evading: kind == EntityKind::Creature,
                         targets_viewer: true,
+                        posture: mmorpg_core::PostureView::Free,
                         traversal: if kind == EntityKind::Player {
                             mmorpg_core::TraversalView::Rolling
                         } else {
@@ -2464,5 +2523,53 @@ pub(crate) mod tests {
             encode_snapshot(&chatty).unwrap_err().to_string(),
             "player projection has too many events"
         );
+    }
+}
+
+#[cfg(test)]
+mod posture_tests {
+    use mmorpg_core::{EntityFlags, EntityKind, EntitySnapshot, PostureView};
+
+    use super::{decode_entity, encode_entity};
+
+    fn record(kind: EntityKind, posture: PostureView) -> EntitySnapshot {
+        EntitySnapshot {
+            kind,
+            id: 7,
+            appearance: 0,
+            position: [1, 2, 3],
+            velocity: [0; 3],
+            facing: 9,
+            level: 1,
+            health_percent: 100,
+            flags: EntityFlags {
+                posture,
+                ..EntityFlags::default()
+            },
+        }
+    }
+
+    fn round_trip(entity: &EntitySnapshot) -> Result<EntitySnapshot, crate::ProtocolError> {
+        let mut bytes = Vec::new();
+        encode_entity(&mut bytes, entity)?;
+        decode_entity(&bytes, &mut 0)
+    }
+
+    #[test]
+    fn a_sitting_player_and_every_npc_posture_cross_the_wire() {
+        let sitter = record(EntityKind::Player, PostureView::Sitting);
+        assert_eq!(round_trip(&sitter).unwrap(), sitter);
+        for posture in [
+            PostureView::Free,
+            PostureView::Sitting,
+            PostureView::Asleep,
+            PostureView::Waking,
+        ] {
+            let npc = record(EntityKind::Npc, posture);
+            assert_eq!(round_trip(&npc).unwrap(), npc);
+        }
+        // A player is never in bed, and a creature never sits.
+        assert!(round_trip(&record(EntityKind::Player, PostureView::Asleep)).is_err());
+        assert!(round_trip(&record(EntityKind::Creature, PostureView::Sitting)).is_err());
     }
 }
