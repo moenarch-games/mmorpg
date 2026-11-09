@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """Acquire selected entries of both live rolling Ranger figure releases; keep each local copy while its release is unchanged."""
+import hashlib
+import http.client
 import json
+import os
 from pathlib import Path
 import shutil
+import ssl
+import sys
 import tempfile
+import time
+import urllib.error
 import urllib.request
 from lib.ranger_assets import CLASS_NAMES, valid_male_appearance
 
@@ -38,6 +45,8 @@ FEMALE = {"humanoid.ranger.female": {"default", "outfit.tanner", "outfit.tanner.
 # (asset-tooling #380).
 HAIR_VARIANT = "hair-1"
 HEAD_SKINS = ("skin.head", "default")
+# The wait before each retry of a transient release failure (REL-003).
+RETRY_DELAYS = (1, 2, 4, 8, 16)
 
 
 class Figure:
@@ -64,11 +73,30 @@ def selected(figure, index):
                            or (entry.get("key"), entry.get("variant")) == HEAD_SKINS}
 
 
+def read_url(url, timeout):
+    """The body at `url`, retrying 5xx responses, timeouts and connection errors; never a 4xx."""
+    for delay in (*RETRY_DELAYS, None):
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as response:
+                return response.read()
+        except urllib.error.HTTPError as error:
+            error.close()
+            if error.code < 500 or delay is None:
+                raise
+            failure = error
+        except (OSError, http.client.HTTPException) as error:  # Includes URLError, timeouts and truncated bodies.
+            if delay is None or isinstance(getattr(error, "reason", None), ssl.SSLCertVerificationError):
+                raise
+            failure = error
+        print(f"Retrying {url} in {delay} s after: {failure}", file=sys.stderr)
+        time.sleep(delay)
+    raise AssertionError("unreachable: the final attempt returns or raises")
+
+
 def live_ref(figure):
     """The live release's export.ref.json, or None when the release cannot be reached."""
     try:
-        with urllib.request.urlopen(figure.url + "export.ref.json", timeout=60) as response:
-            return response.read()
+        return read_url(figure.url + "export.ref.json", 60)
     except OSError:
         return None
 
@@ -102,8 +130,10 @@ def complete(figure, ref):
 
 def acquire(figure):
     # A copy of an older upload, or missing a selected entry, is fetched again. Offline, a complete
-    # copy of any upload is kept.
+    # copy of any upload is kept, except in CI, where it may be a restored cache of an older upload.
     ref = live_ref(figure)
+    if ref is None and os.environ.get("GITHUB_ACTIONS") == "true":
+        raise OSError(f"could not reach the {figure.release} release")
     if complete(figure, ref):
         return
     release, dest = figure.release, figure.dest
@@ -116,8 +146,7 @@ def acquire(figure):
         def download(name):
             if Path(name).name != name or not name or name in {".", ".."}:
                 raise ValueError(f"unsafe release filename: {name}")
-            with urllib.request.urlopen(figure.url + name, timeout=300) as response:
-                (directory / name).write_bytes(response.read())
+            (directory / name).write_bytes(read_url(figure.url + name, 300))
 
         index_name = release + ".index.json"
         download(index_name)
@@ -144,6 +173,17 @@ def acquire(figure):
     print(f"Fetched selected {release} entries into {dest}")
 
 
+def print_identity(figure):
+    """Print the figure's cache identity line (`scripts/ci-asset-cache.sh`), failing when the release cannot be reached."""
+    ref = live_ref(figure)
+    if ref is None:
+        raise OSError(f"could not reach the {figure.release} release")
+    print(figure.release, hashlib.sha256(ref).hexdigest(), figure.dest.relative_to(ROOT))
+
+
 if __name__ == "__main__":
     for figure in FIGURES:
-        acquire(figure)
+        if sys.argv[1:] == ["--identity"]:
+            print_identity(figure)
+        else:
+            acquire(figure)
