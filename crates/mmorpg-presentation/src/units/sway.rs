@@ -341,17 +341,17 @@ impl Sway {
                 };
                 let stiffness = CHAIN_STIFFNESS[depth];
                 let damping = CHAIN_DAMPING[depth];
-                for axis in 0..2 {
-                    let angle = &mut self.chain_angle[depth][axis];
-                    let rate = &mut self.chain_rate[depth][axis];
-                    let accel = stiffness * stiffness * (above[axis] - *angle)
-                        - 2. * damping * stiffness * *rate;
+                for ((angle, rate), above) in self.chain_angle[depth]
+                    .iter_mut()
+                    .zip(&mut self.chain_rate[depth])
+                    .zip(above)
+                {
+                    let accel =
+                        stiffness * stiffness * (above - *angle) - 2. * damping * stiffness * *rate;
                     *rate += accel * step;
                     *angle = (*angle + *rate * step).clamp(-1., 1.);
                     // Settled: rest exactly, so a still chain costs the clients nothing.
-                    if angle.abs() < SETTLED
-                        && rate.abs() < SETTLED * 10.
-                        && above[axis].abs() < SETTLED
+                    if angle.abs() < SETTLED && rate.abs() < SETTLED * 10. && above.abs() < SETTLED
                     {
                         *angle = 0.;
                         *rate = 0.;
