@@ -1030,6 +1030,15 @@ impl BuildingPresenter {
             .find(|door| door.within_reach([x, 0, z]))
             .map_or(0, |door| door.id.get())
     }
+
+    /// The seat feet at `(x, z)` units reach, 0 for none (#619); the zone decides.
+    #[wasm_bindgen(js_name = reachableSeat)]
+    #[must_use]
+    pub fn reachable_seat(x: i32, z: i32) -> u8 {
+        host::hosted_content()
+            .seat_in_reach([x, z])
+            .map_or(0, |seat| seat.id.get())
+    }
 }
 
 /// The Sunken Shrine's asset-tooling kit modules (#431), placed by the presentation the native

@@ -51,6 +51,8 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "invalid-waystone": "The waystone cannot take you there.",
   "private-home": "This is a private home.",
   "no-answer": "You knock, but no one answers at this hour.",
+  "seat-taken": "Someone is already sitting there.",
+  "cannot-sit-here": "You can't sit down here.",
   "not-at-night": "No new quests at this hour. Come back in the morning.",
   "depths-locked": "The way down is barred. Someone in your party must first have ended Garrick Redbrand.",
   "depths-closed": "No way down for you here: your party's run has begun without you, or the depths are full.",

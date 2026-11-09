@@ -810,6 +810,21 @@ impl Presentation {
         Some(self.toggle_door(door.id))
     }
 
+    /// The `Sit` on the nearest authored seat the viewer can reach, if any (#619).
+    #[must_use]
+    pub fn reachable_seat(&self) -> Option<mmorpg_core::ZoneCommand> {
+        let snapshot = self.latest()?;
+        let feet = snapshot
+            .entities
+            .iter()
+            .find(|e| e.entity() == EntityRef::Player(self.player_id))?
+            .position;
+        let seat = self.content.seat_in_reach([feet[0], feet[2]])?;
+        Some(mmorpg_core::ZoneCommand::Sit {
+            seat: Some(seat.id),
+        })
+    }
+
     /// The `Repair` of the first damaged destructible piece (#305) the viewer can reach, if any.
     #[must_use]
     pub fn reachable_repair(&self) -> Option<mmorpg_core::ZoneCommand> {

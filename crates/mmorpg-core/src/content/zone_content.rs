@@ -65,6 +65,8 @@ pub struct ZoneContent {
     /// Other zones' quests a character's log may carry here (#145).
     carried_quests: Vec<crate::Quest>,
     doors: Vec<crate::Door>,
+    /// Authored seats (#619), ordered by ID.
+    seats: Vec<crate::Seat>,
     platforms: Vec<crate::Platform>,
     ramps: Vec<crate::Ramp>,
     /// Rock colliders' convex proxies (#49), ordered by collider.
@@ -200,6 +202,7 @@ impl ZoneContent {
             quests: Vec::new(),
             carried_quests: Vec::new(),
             doors: Vec::new(),
+            seats: Vec::new(),
             platforms: Vec::new(),
             ramps: Vec::new(),
             rocks: Vec::new(),
@@ -251,6 +254,7 @@ impl ZoneContent {
             quests: Vec::new(),
             carried_quests: Vec::new(),
             doors: Vec::new(),
+            seats: Vec::new(),
             platforms: Vec::new(),
             ramps: Vec::new(),
             rocks: Vec::new(),
@@ -937,6 +941,61 @@ impl ZoneContent {
             .map(|index| &self.doors[index])
     }
 
+    /// Binds the authored seats (#619): distinct nonzero IDs, at most [`crate::MAX_SEATS`], no
+    /// two standing on one spot. Bind before the routines that name them.
+    pub fn with_seats(mut self, mut seats: Vec<crate::Seat>) -> Result<Self, ZoneError> {
+        seats.sort_by_key(|seat| seat.id);
+        if seats.len() > crate::MAX_SEATS
+            || seats.iter().any(|seat| seat.id.get() == 0)
+            || seats.windows(2).any(|pair| pair[0].id == pair[1].id)
+            || seats.iter().enumerate().any(|(index, seat)| {
+                seats[index + 1..]
+                    .iter()
+                    .any(|other| other.stand == seat.stand)
+            })
+        {
+            return Err(ZoneError::new("invalid seats"));
+        }
+        self.seats = seats;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Ordered by ID.
+    #[must_use]
+    pub fn seats(&self) -> &[crate::Seat] {
+        &self.seats
+    }
+
+    #[must_use]
+    pub fn seat(&self, id: crate::SeatId) -> Option<&crate::Seat> {
+        self.seats.iter().find(|seat| seat.id == id)
+    }
+
+    /// The nearest seat within [`crate::SEAT_REACH_UNITS`] of `[x, z]`, the lower ID on a tie: a
+    /// client's interact key offers it; the zone decides.
+    #[must_use]
+    pub fn seat_in_reach(&self, [x, z]: [i32; 2]) -> Option<&crate::Seat> {
+        self.seats
+            .iter()
+            .filter_map(|seat| {
+                let [dx, dz] = [
+                    i64::from(seat.stand[0]) - i64::from(x),
+                    i64::from(seat.stand[1]) - i64::from(z),
+                ];
+                let distance = dx * dx + dz * dz;
+                (distance <= i64::from(crate::SEAT_REACH_UNITS).pow(2)).then_some((distance, seat))
+            })
+            .min_by_key(|&(distance, seat)| (distance, seat.id))
+            .map(|(_, seat)| seat)
+    }
+
+    /// The seat whose body spot is exactly `[x, z]`: how a client reads a projected sitter.
+    #[must_use]
+    pub fn seat_at(&self, at: [i32; 2]) -> Option<&crate::Seat> {
+        self.seats.iter().find(|seat| seat.stand == at)
+    }
+
     /// Binds NPC day/night routines and the vendors that close at night (#158): each routine
     /// names a distinct content NPC, has 1..=[`crate::MAX_ROUTINE_WAYPOINTS`] in-range
     /// waypoints and at most a content door; each closing NPC is a content vendor.
@@ -964,6 +1023,26 @@ impl ZoneContent {
                 || routine.door.is_some_and(|door| self.door(door).is_none())
             {
                 return Err(ZoneError::new("invalid npc routine"));
+            }
+            // A seat is sat on where the routine actually stops, at the seat's own facing.
+            let npc = self.npc(routine.npc);
+            let home = routine.path.last().copied();
+            let bad_seat = |seat: Option<crate::SeatId>, at: Option<[i32; 2]>, facing: u16| {
+                seat.is_some_and(|id| {
+                    self.seat(id)
+                        .is_none_or(|seat| Some(seat.stand) != at || seat.facing != facing)
+                })
+            };
+            if bad_seat(routine.home_seat, home, routine.home_facing)
+                || bad_seat(
+                    routine.work_seat,
+                    npc.map(|npc| npc.position),
+                    npc.map_or(0, |npc| npc.facing),
+                )
+            {
+                return Err(ZoneError::new(
+                    "an npc routine's seat does not match where it stops",
+                ));
             }
         }
         if closed_at_night
@@ -1662,6 +1741,17 @@ impl ZoneContent {
             }
             hash.u16(routine.home_facing);
             hash.u8(routine.door.map_or(0, crate::DoorId::get));
+            hash.u8(routine.home_seat.map_or(0, crate::SeatId::get));
+            hash.u8(routine.work_seat.map_or(0, crate::SeatId::get));
+        }
+        hash.len(self.seats.len());
+        for seat in &self.seats {
+            hash.u8(seat.id.get());
+            hash.i32(seat.stand[0]);
+            hash.i32(seat.stand[1]);
+            hash.i32(seat.root[0]);
+            hash.i32(seat.root[1]);
+            hash.u16(seat.facing);
         }
         hash.len(self.closed_at_night.len());
         for npc in &self.closed_at_night {

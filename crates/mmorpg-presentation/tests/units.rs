@@ -4,8 +4,9 @@ use std::sync::Arc;
 
 use mmorpg_core::{
     AbilityId, ChatLine, ChatMessage, CreatureFamily, DoorView, Emote, EntityFlags, EntityKind,
-    EntityRef, EntitySnapshot, ErrorCode, LootClaim, LootRewards, LootView, NpcId, StrikeAim,
-    StrikeHeight, StrikeSide, ZoneEvent, ZoneId, ZoneSimulation, ZoneSnapshot, greyhaven_vale,
+    EntityRef, EntitySnapshot, ErrorCode, LootClaim, LootRewards, LootView, NpcId, PostureView,
+    StrikeAim, StrikeHeight, StrikeSide, ZoneEvent, ZoneId, ZoneSimulation, ZoneSnapshot,
+    greyhaven_vale,
 };
 use mmorpg_presentation::{
     Draw,
@@ -917,7 +918,17 @@ fn a_resident_at_its_bed_at_night_lies_on_the_mattress_and_only_then() {
     };
     // By day the same spot is just standing there.
     assert_eq!(shown(frame(&mut scene, 1.)).0, "Idle_Loop");
-    scene.snapshot.tick = u64::from(mmorpg_core::DAY_TICKS - mmorpg_core::ZONE_START_TIME);
+    let set_posture = |scene: &mut Scene, posture| {
+        scene
+            .snapshot
+            .entities
+            .iter_mut()
+            .find(|record| record.entity() == EntityRef::Npc(elden))
+            .unwrap()
+            .flags
+            .posture = posture;
+    };
+    set_posture(&mut scene, PostureView::Asleep);
     assert_eq!(shown(frame(&mut scene, 1.1)).0, "Sleep_Bed_Enter");
     let mut last = shown(frame(&mut scene, 1.2));
     for step in 0..30 {
@@ -931,4 +942,94 @@ fn a_resident_at_its_bed_at_night_lies_on_the_mattress_and_only_then() {
         "root at {} for bedside {bedside}",
         last.1
     );
+}
+
+#[test]
+fn a_sitting_player_sits_on_the_seat_or_the_ground_the_zone_projects() {
+    let content = greyhaven_vale::content();
+    let seat = content.seats()[0];
+    let mut scene = social_scene();
+    scene.presenter.model_ready(
+        Kind::Ranger,
+        [
+            ("Sit_Chair_Enter", 0.8),
+            ("Sit_Chair_Loop", 3.),
+            ("Sit_Chair_Exit", 0.8),
+            ("Sit_Ground_Loop", 3.),
+        ]
+        .map(|(clip, seconds)| (clip.to_owned(), seconds)),
+    );
+    scene.snapshot.entities[0].flags.posture = PostureView::Sitting;
+    assert_eq!(viewer_lower(&frame(&mut scene, 1.)).0, "Sit_Ground_Loop");
+    // Moved to a seat's body spot: the chair chain.
+    scene.snapshot.entities[0].flags.posture = PostureView::Free;
+    frame(&mut scene, 1.05);
+    scene.snapshot.entities[0].position = [seat.stand[0], 90, seat.stand[1]];
+    scene.snapshot.entities[0].flags.posture = PostureView::Sitting;
+    assert_eq!(viewer_lower(&frame(&mut scene, 1.1)).0, "Sit_Chair_Enter");
+    assert_eq!(viewer_lower(&frame(&mut scene, 2.)).0, "Sit_Chair_Loop");
+    // Standing up by asking again plays the exit.
+    scene.snapshot.entities[0].flags.posture = PostureView::Free;
+    assert_eq!(viewer_lower(&frame(&mut scene, 2.1)).0, "Sit_Chair_Exit");
+}
+
+#[test]
+fn a_resident_getting_up_plays_the_wake_and_a_directing_line_points() {
+    let elden = NpcId::new(1);
+    let mut scene = social_scene();
+    scene.presenter.residents_ready();
+    scene.presenter.model_ready(
+        Kind::Ranger,
+        [
+            ("Sleep_Bed_Loop", 4.),
+            ("Sleep_Bed_Wake", 1.5),
+            ("Talk_Gesture_B", 1.5),
+        ]
+        .map(|(clip, seconds)| (clip.to_owned(), seconds)),
+    );
+    let posture = |scene: &mut Scene, posture| {
+        scene
+            .snapshot
+            .entities
+            .iter_mut()
+            .find(|record| record.entity() == EntityRef::Npc(elden))
+            .unwrap()
+            .flags
+            .posture = posture;
+    };
+    let lower = |frame: UnitFrame| {
+        frame
+            .imported
+            .into_iter()
+            .find(|unit| unit.entity == EntityRef::Npc(elden))
+            .unwrap()
+            .animation
+    };
+    posture(&mut scene, PostureView::Asleep);
+    frame(&mut scene, 1.);
+    posture(&mut scene, PostureView::Waking);
+    assert_eq!(lower(frame(&mut scene, 1.1)).lower.0, "Sleep_Bed_Wake");
+    // It holds its last frame through the end of the rise instead of looping.
+    assert_eq!(lower(frame(&mut scene, 3.)).lower.0, "Sleep_Bed_Wake");
+    posture(&mut scene, PostureView::Free);
+    frame(&mut scene, 3.05);
+    // Accepting a quest whose line names a place: the NPC points.
+    let sheet = |entries| mmorpg_core::QuestSheet {
+        completed: 0,
+        entries,
+        markers: Vec::new(),
+    };
+    scene.snapshot.quests = Some(sheet(Vec::new()));
+    scene.presenter.push(&scene.snapshot, 3.1);
+    scene.presenter.set_interaction(Interaction {
+        loot_window: false,
+        npc: Some(elden),
+    });
+    scene.snapshot.tick += 1;
+    scene.snapshot.quests = Some(sheet(vec![mmorpg_core::QuestEntry {
+        quest: greyhaven_vale::quests::SCOUT_THE_LAKE,
+        progress: [0; mmorpg_core::MAX_QUEST_OBJECTIVES],
+    }]));
+    scene.presenter.push(&scene.snapshot, 3.2);
+    assert_eq!(lower(frame(&mut scene, 3.3)).upper.0, "Talk_Gesture_B");
 }

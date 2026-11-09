@@ -54,13 +54,17 @@ pub fn parse_chat_input(raw: &str) -> Result<ZoneCommand, String> {
         {
             return Ok(ZoneCommand::Emote(emote));
         }
+        // Sits on the ground where the player stands (#619).
+        if rest.is_empty() && verb == "sit" {
+            return Ok(ZoneCommand::Sit { seat: None });
+        }
         let channel = match verb.as_str() {
             "s" | "say" => ChatChannel::Say,
             "y" | "yell" => ChatChannel::Yell,
             _ => {
                 let emotes: Vec<_> = Emote::VARIANTS.iter().map(|e| emote_name(*e)).collect();
                 return Err(format!(
-                    "Use /s to say, /y to yell, or /{}.",
+                    "Use /s to say, /y to yell, /sit to sit, or /{}.",
                     emotes.join(", /")
                 ));
             }
@@ -134,6 +138,8 @@ pub fn refusal_text(code: ErrorCode) -> String {
         ErrorCode::VendorClosed => "The shop is closed for the night.".into(),
         ErrorCode::PrivateHome => "This is a private home.".into(),
         ErrorCode::NoAnswer => "You knock, but no one answers at this hour.".into(),
+        ErrorCode::SeatTaken => "Someone is already sitting there.".into(),
+        ErrorCode::CannotSitHere => "You can't sit down here.".into(),
         ErrorCode::NotAtNight => "No new quests at this hour. Come back in the morning.".into(),
         ErrorCode::DepthsLocked => {
             "The way down is barred. Someone in your party must first have ended Garrick Redbrand.".into()
@@ -428,7 +434,10 @@ mod tests {
         );
         assert_eq!(
             parse_chat_input("/dance"),
-            Err("Use /s to say, /y to yell, or /wave, /bow, /cheer, /laugh, /point.".into())
+            Err(
+                "Use /s to say, /y to yell, /sit to sit, or /wave, /bow, /cheer, /laugh, /point."
+                    .into()
+            )
         );
         assert_eq!(
             parse_chat_input("/s"),

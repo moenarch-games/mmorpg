@@ -40,6 +40,8 @@ pub struct EntityFlags {
     pub lootable: bool,
     /// A player climbing or mantling (#490), whose facing then faces the wall, or rolling (#516).
     pub traversal: crate::TraversalView,
+    /// A sitting player or NPC, or a resident in bed or getting up (#619).
+    pub posture: crate::PostureView,
 }
 
 /// One unit in a player-visible projection.
@@ -414,6 +416,11 @@ impl ZoneSimulation {
                     health_percent: health_percent(player.health, player.max_health()),
                     flags: EntityFlags {
                         traversal: crate::TraversalView::of(player.traversal, player.roll),
+                        posture: if player.sitting.is_sitting() {
+                            crate::PostureView::Sitting
+                        } else {
+                            crate::PostureView::Free
+                        },
                         hostile: self.players_are_hostile(viewer, player_id),
                         attackable: self.players_are_hostile(viewer, player_id)
                             && player.is_alive(),
@@ -474,6 +481,7 @@ impl ZoneSimulation {
                         evading: matches!(creature.ai, CreatureAi::Evading { .. }),
                         targets_viewer,
                         traversal: crate::TraversalView::Free,
+                        posture: crate::PostureView::Free,
                     },
                 }
             }
@@ -511,7 +519,10 @@ impl ZoneSimulation {
                     } else {
                         100
                     },
-                    flags: EntityFlags::default(),
+                    flags: EntityFlags {
+                        posture: self.npc_posture(npc_id),
+                        ..EntityFlags::default()
+                    },
                 }
             }
             // A summoned minion (#295): its summoning ability is its appearance. Minions fight

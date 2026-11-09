@@ -104,6 +104,10 @@ pub enum ErrorCode {
     /// A night knock that wakes no one: the resident is not in bed or the knocker has nothing
     /// urgent for it (#158).
     NoAnswer,
+    /// Someone else holds that seat (#619).
+    SeatTaken,
+    /// Sitting needs solid footing: not in the air, climbing or rolling (#619).
+    CannotSitHere,
     /// A private-home resident offers no new quests at night (#158).
     NotAtNight,
     /// A new depths run needs a character on its roster who completed the Garrick quest (#404).

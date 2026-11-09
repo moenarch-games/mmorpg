@@ -13,7 +13,8 @@ const HILDA: NpcId = NpcId::new(2);
 const BRAM: NpcId = NpcId::new(3);
 const DOOR: mmorpg_core::DoorId = greyhaven_vale::inn::DOOR;
 const WORK: [i32; 2] = [-2_400, 3_150];
-const HOME: [i32; 2] = [1_600, 100];
+// Her chair at the inn's table (seat 3, #619).
+const HOME: [i32; 2] = [1_302, 10];
 
 /// The tick whose time of day is `time`, on the zone's first day.
 fn at(time: u32) -> u64 {

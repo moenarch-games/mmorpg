@@ -308,7 +308,11 @@ pub struct UnitPresenter {
     /// window open is the zone completing the trade or the quest (#619).
     copper: Option<u32>,
     quest_log: Option<(u32, usize)>,
-    /// Private-home residents last seen asleep in bed: leaving it at night is a knock (#619).
+    /// The viewer's quests last projected, to see which one a window just added (#619).
+    quest_entries: BTreeSet<u8>,
+    /// The objective each NPC last pointed the viewer toward (#619).
+    directing: BTreeMap<EntityRef, [i32; 2]>,
+    /// Private-home residents last seen asleep in bed: getting up is a knock (#619).
     sleepers: BTreeSet<mmorpg_core::NpcId>,
     /// How far each resident has eased onto its bed, 0 to 1 (#619).
     rests: BTreeMap<EntityRef, f64>,
@@ -352,6 +356,8 @@ impl UnitPresenter {
             doors: BTreeMap::new(),
             copper: None,
             quest_log: None,
+            quest_entries: BTreeSet::new(),
+            directing: BTreeMap::new(),
             sleepers: BTreeSet::new(),
             rests: BTreeMap::new(),
         }
@@ -479,6 +485,8 @@ impl UnitPresenter {
         self.doors.clear();
         self.copper = None;
         self.quest_log = None;
+        self.quest_entries.clear();
+        self.directing.clear();
         self.sleepers.clear();
         self.rests.clear();
         self.equipment = None;
@@ -805,6 +813,20 @@ impl UnitPresenter {
         if log.is_some() {
             self.quest_log = log;
         }
+        // The quest just added to the log, for a line that points at its objective.
+        let entries: BTreeSet<_> = snapshot
+            .quests
+            .iter()
+            .flat_map(|sheet| &sheet.entries)
+            .map(|entry| entry.quest.get())
+            .collect();
+        let accepted = snapshot
+            .quests
+            .as_ref()
+            .and_then(|_| entries.difference(&self.quest_entries).next().copied());
+        if snapshot.quests.is_some() {
+            self.quest_entries = entries;
+        }
         let Some(id) = self.interaction.npc else {
             return;
         };
@@ -815,8 +837,20 @@ impl UnitPresenter {
             self.gesture(snapshot, viewer, trade, seconds);
         }
         if quest_turned {
-            let explain = |social: imported::SocialClips| (social.talk_explain, false);
-            self.gesture(snapshot, npc, explain, seconds);
+            // A line that names where to go points there (#619); any other explains.
+            let objective = accepted.and_then(directing_line);
+            if let Some(objective) = objective {
+                self.directing.insert(npc, objective);
+            }
+            let line = move |social: imported::SocialClips| {
+                let clip = if objective.is_some() {
+                    social.talk_direct
+                } else {
+                    social.talk_explain
+                };
+                (clip, false)
+            };
+            self.gesture(snapshot, npc, line, seconds);
         }
     }
 
@@ -892,8 +926,8 @@ impl UnitPresenter {
         );
     }
 
-    /// A private-home resident left its bed at night: a knock woke it (#158). The viewer plays
-    /// the knock if it stands at that door. The zone projects no knock of its own.
+    /// A private-home resident projected asleep has begun getting up: a knock woke it (#158).
+    /// The viewer plays the knock if it stands at that door; the zone projects no knock itself.
     fn knocks(&mut self, snapshot: &ZoneSnapshot, seconds: f64) {
         let viewer = EntityRef::Player(snapshot.viewer_id);
         let feet = snapshot
@@ -903,18 +937,18 @@ impl UnitPresenter {
             .map(|record| record.position);
         let homes = self.content.private_homes().to_vec();
         for home in homes {
-            let at_bed = snapshot.entities.iter().any(|record| {
-                record.entity() == EntityRef::Npc(home.npc)
-                    && self.asleep(home.npc, record.position, snapshot.tick)
-            });
-            let was = if at_bed {
+            let posture = snapshot
+                .entities
+                .iter()
+                .find(|record| record.entity() == EntityRef::Npc(home.npc))
+                .map(|record| record.flags.posture);
+            let was = if posture == Some(mmorpg_core::PostureView::Asleep) {
                 !self.sleepers.insert(home.npc)
             } else {
                 self.sleepers.remove(&home.npc)
             };
             if was
-                && !at_bed
-                && mmorpg_core::is_night(mmorpg_core::time_of_day(snapshot.tick))
+                && posture == Some(mmorpg_core::PostureView::Waking)
                 && feet.is_some_and(|feet| {
                     self.content
                         .door(home.door)
@@ -925,17 +959,6 @@ impl UnitPresenter {
                 self.gesture(snapshot, viewer, knock, seconds);
             }
         }
-    }
-
-    /// Whether a routine NPC at `position` is at the end of its routine at night: the zone's
-    /// own reading of asleep (Atlas 5.1.48).
-    fn asleep(&self, npc: mmorpg_core::NpcId, position: [i32; 3], tick: u64) -> bool {
-        mmorpg_core::is_night(mmorpg_core::time_of_day(tick))
-            && self
-                .content
-                .routine(npc)
-                .and_then(|routine| routine.path.last().copied())
-                .is_some_and(|home| home == [position[0], position[2]])
     }
 
     /// The imported model presenting `entity` in `snapshot`, the class whose strikes and casts
@@ -1246,7 +1269,6 @@ impl UnitPresenter {
         snapshot: &ZoneSnapshot,
         unit: &SampledUnit,
         entity: EntityRef,
-        speed: f64,
         yaw: f64,
     ) -> (Option<imported::Posture>, Option<f64>, Option<[f64; 2]>) {
         let here = unit.record.position;
@@ -1258,6 +1280,37 @@ impl UnitPresenter {
             let turn = dx.atan2(dz) - yaw;
             (turn + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU) - std::f64::consts::PI
         };
+        // The zone's own posture (#619): a sitter's seat follows from where it stands, and a
+        // chair's drawn feet stand off the body's spot; a ground sit stays put.
+        match unit.record.flags.posture {
+            mmorpg_core::PostureView::Sitting => {
+                return match self.content.seat_at([here[0], here[2]]) {
+                    Some(seat) => (
+                        Some(imported::Posture::SitChair),
+                        None,
+                        Some([
+                            f64::from(seat.root[0] - seat.stand[0]) / 100.,
+                            f64::from(seat.root[1] - seat.stand[1]) / 100.,
+                        ]),
+                    ),
+                    None => (Some(imported::Posture::SitGround), None, None),
+                };
+            }
+            mmorpg_core::PostureView::Asleep | mmorpg_core::PostureView::Waking => {
+                if let EntityRef::Npc(npc) = entity
+                    && let Some(bed) = bed_of(npc)
+                {
+                    let posture = if unit.record.flags.posture == mmorpg_core::PostureView::Waking {
+                        imported::Posture::Waking
+                    } else {
+                        imported::Posture::Sleep
+                    };
+                    return (Some(posture), Some(std::f64::consts::PI), Some(bed));
+                }
+                return (None, None, None);
+            }
+            mmorpg_core::PostureView::Free => {}
+        }
         if entity == EntityRef::Player(self.player_id) {
             let corpse = snapshot
                 .loot
@@ -1291,18 +1344,12 @@ impl UnitPresenter {
             });
             return (None, target.map(|target| turn_to(target.position)), None);
         }
-        if let EntityRef::Npc(npc) = entity
-            && speed <= 0.25
-            && self.asleep(npc, here, snapshot.tick)
-            && let Some(bed) = bed_of(npc)
-        {
-            return (
-                Some(imported::Posture::Sleep),
-                Some(std::f64::consts::PI),
-                Some(bed),
-            );
-        }
-        (None, None, None)
+        // An NPC pointing out an objective turns so its left arm reaches toward it (#619).
+        let face = self
+            .directing
+            .get(&entity)
+            .map(|&[x, z]| turn_to([x, 0, z]) - std::f64::consts::FRAC_PI_2);
+        (None, face, None)
     }
 
     /// Every unit draw for one frame, except the imported models' skinned bodies.
@@ -1500,7 +1547,7 @@ impl UnitPresenter {
                         1. - (-input.dt / 0.12).exp()
                     };
                 let rung_lift = *rung_lift;
-                let (posture, face, bed) = self.social_cues(snapshot, unit, entity, speed, yaw);
+                let (posture, face, bed) = self.social_cues(snapshot, unit, entity, yaw);
                 let durations = &self.durations;
                 let animation = self.playbacks.entry(entity).or_default().advance(
                     kind.clips(),
@@ -1550,7 +1597,7 @@ impl UnitPresenter {
                 let in_bed = kind
                     .clips()
                     .social
-                    .is_some_and(|s| s.in_bed(animation.lower.0));
+                    .is_some_and(|s| s.on_furniture(animation.lower.0));
                 *rest += (f64::from(u8::from(in_bed)) - *rest)
                     * if reduced {
                         1.
@@ -2196,6 +2243,20 @@ fn velocity_metres_per_second(units_per_tick: i8) -> f64 {
 
 fn metres(value: [i32; 3]) -> [f32; 3] {
     value.map(|component| component as f32 / UNITS_PER_METRE as f32)
+}
+
+/// Where `quest`'s accept line points (#619), for `Talk_Gesture_B`: the two lines that name a
+/// place to go.
+fn directing_line(quest: u8) -> Option<[i32; 2]> {
+    use mmorpg_core::greyhaven_vale::{lake, quests};
+    // "Something stirs at Stillwater Lake, south-east of the outpost."
+    // "The Redbrand bandits camp in the hollow under the northern cliffs."
+    const HOLLOW: [i32; 2] = [0, -10_000];
+    match quest {
+        q if q == quests::SCOUT_THE_LAKE.get() => Some(lake::CENTRE),
+        q if q == quests::INTO_REDBRAND_HOLLOW.get() => Some(HOLLOW),
+        _ => None,
+    }
 }
 
 /// Where the drawn root stands for a resident's `Sleep_Bed_*` clips, as an offset in metres from

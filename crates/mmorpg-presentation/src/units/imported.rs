@@ -1013,20 +1013,17 @@ pub struct SocialClips {
     pub loot_exit: &'static str,
     pub talk_idle: &'static str,
     pub talk_explain: &'static str,
-    /// Listed; nothing plays it until an NPC line points at an objective (#619).
+    /// A line that points at an objective: the NPC's left faces it (#619).
     pub talk_direct: &'static str,
     pub talk_shrug: &'static str,
     pub trade: &'static str,
-    /// The chair and ground sitting are listed for [`Posture`], which nothing asks for until the
-    /// zone projects a sitting NPC (#619, Atlas 6.6.22).
     pub sit_chair_enter: &'static str,
     pub sit_chair_loop: &'static str,
     pub sit_chair_exit: &'static str,
     pub sit_ground: &'static str,
     pub sleep_enter: &'static str,
     pub sleep_loop: &'static str,
-    /// Listed; the zone walks a woken resident away the same tick it is knocked awake, so it
-    /// never lies still to play this. A wake with a pause would play it (#619).
+    /// A knocked-awake resident getting up, over the zone's 1.5 s rise (#619).
     pub sleep_wake: &'static str,
 }
 
@@ -1059,13 +1056,21 @@ impl SocialClips {
             ),
             Posture::SitGround => (None, self.sit_ground, None),
             Posture::Sleep => (Some(self.sleep_enter), self.sleep_loop, None),
+            // The rise plays once and holds its last frame until the zone moves the resident.
+            Posture::Waking => (Some(self.sleep_wake), self.sleep_wake, None),
         }
     }
 
-    /// Whether `clip` is a bed clip, which the drawn root moves onto the mattress for.
+    /// Whether `clip` is a bed or chair clip, for which the drawn root moves off the body's spot
+    /// onto the furniture.
     #[must_use]
-    pub fn in_bed(self, clip: &str) -> bool {
-        clip == self.sleep_enter || clip == self.sleep_loop || clip == self.sleep_wake
+    pub fn on_furniture(self, clip: &str) -> bool {
+        clip == self.sleep_enter
+            || clip == self.sleep_loop
+            || clip == self.sleep_wake
+            || clip == self.sit_chair_enter
+            || clip == self.sit_chair_loop
+            || clip == self.sit_chair_exit
     }
 }
 
@@ -1079,6 +1084,7 @@ pub enum Posture {
     SitChair,
     SitGround,
     Sleep,
+    Waking,
 }
 
 impl Posture {
@@ -1087,7 +1093,7 @@ impl Posture {
         match self {
             Self::Loot => 0.075,
             Self::SitChair => 0.12,
-            Self::SitGround | Self::Sleep => 0.,
+            Self::SitGround | Self::Sleep | Self::Waking => 0.,
         }
     }
 }
@@ -3164,9 +3170,9 @@ impl Playback {
             .map(|clip| Want::looped(clip, 1.));
         let turned = self.posture.is_some()
             || self.gesture.is_some_and(|gesture| {
-                clips
-                    .social
-                    .is_some_and(|social| gesture.clip == social.point)
+                clips.social.is_some_and(|social| {
+                    gesture.clip == social.point || gesture.clip == social.talk_direct
+                })
             });
         let mut splits = [false; 2];
         for (strike, split) in [&mut self.strike, &mut self.cast]
@@ -3581,10 +3587,20 @@ impl Playback {
                 });
             }
             (Some(step), Some(posture)) if step.posture != posture => {
+                // From one pose straight into the next: its enter, when it has one.
+                let enter = social
+                    .chain(posture)
+                    .0
+                    .filter(|_| !reduced)
+                    .filter(available);
                 self.postures = self.postures.wrapping_add(1);
                 self.posture = Some(PostureStep {
                     posture,
-                    phase: PosturePhase::Loop,
+                    phase: if enter.is_some() {
+                        PosturePhase::Enter
+                    } else {
+                        PosturePhase::Loop
+                    },
                     since: now,
                 });
             }
@@ -3605,10 +3621,12 @@ impl Playback {
         // The enter runs into the loop, on the presentation clock so reduced motion is frozen.
         if let Some(step) = &mut self.posture
             && step.phase == PosturePhase::Enter
-            && social
-                .chain(step.posture)
-                .0
-                .is_none_or(|enter| now - step.since >= f64::from(duration(enter)))
+            && {
+                let (enter, looped, _) = social.chain(step.posture);
+                // A one-way pose (the rise) holds its end instead of looping back.
+                enter != Some(looped)
+                    && enter.is_none_or(|enter| now - step.since >= f64::from(duration(enter)))
+            }
         {
             step.phase = PosturePhase::Loop;
             step.since = now;

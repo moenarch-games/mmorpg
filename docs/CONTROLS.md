@@ -95,6 +95,10 @@ A wheel cannot open during a hold or aim. Stun, death and focus loss end the cur
 
 Keys 1–9 and 0 use the first ten action-bar slots; **Shift+1 to Shift+0** use slots 11–20, a second row of the bar in both clients for every class whose kit outgrows ten (Atlas `5.2.i294`). Shift is now only this modifier: the dodge roll moved to **F** (`5.2.i294-2`). Gamepad and touch reach of the second row stays out of scope until the wheels (#653).
 
+## Sitting (#619)
+
+`/sit` sits on the ground where you stand. E, with no NPC selected and no door in reach, takes the chair or bench place within 2.5 m (Atlas `5.4.i619`). `/sit` or E again stands you up; so do moving, jumping, damage, casting and attacking. A seat someone else holds refuses with "Someone is already sitting there."
+
 ## Hold-to-draw power shots (#607)
 
 Aimed Shot and Piercing Shot draw while held, on whichever action-bar slot they sit, Shift row included (Atlas `5.2.i607`). A key, a gamepad button or a touch face held on them starts `Bow_Power_Draw` locally and keeps it drawn; **releasing it sends the shot**, the zone decides then, and `Bow_Release_Upper` plays. A tap fires at once from the partial draw. An action-bar click has no release to wait for and fires at once. Nothing here changes the abilities' cost, cooldown or damage, and no cast time is added: a release out of range or on cooldown is an ordinary refused cast.

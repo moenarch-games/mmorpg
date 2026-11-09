@@ -379,6 +379,7 @@ export class WorldView {
   /** The raided barn's roof centre and smoke span in metres, by objective (#530). */
   #raidRoof: { key: string; top: [number, number, number]; span: [number, number] } | null = null;
   #reachableDoor: (x: number, z: number) => number = () => 0;
+  #reachableSeat: (x: number, z: number) => number = () => 0;
   #reachablePieces: (x: number, z: number) => readonly number[] = () => [];
   /** The night raid target's disturbance circle in units (#530), from the scenery. */
   #raidArea: { x: number; z: number; radius: number } | null = null;
@@ -645,6 +646,7 @@ export class WorldView {
     this.#ambient = new AmbientAnimals(world.scenery.ambient);
     this.#regions = new RegionArt(world, this.#models, this.#inn, this.#shrine, this.#outpost, this.#settlement, this.#ambient, () => this.#onArtProgress?.());
     this.#reachableDoor = world.scenery.buildings.reachableDoor;
+    this.#reachableSeat = world.scenery.buildings.reachableSeat;
     this.#reachablePieces = world.scenery.reachablePieces;
     this.#raidArea = world.scenery.raidArea;
     this.#raidAid = world.scenery.raidAid;
@@ -1043,6 +1045,12 @@ export class WorldView {
     const door = at && !talking ? this.#reachableDoor(at[0], at[2]) : 0;
     if (door !== 0) {
       this.queueIntent((latest) => doorToggle(latest, door));
+      return;
+    }
+    // Or take (or leave) the seat in reach (#619).
+    const seat = at && !talking ? this.#reachableSeat(at[0], at[2]) : 0;
+    if (seat !== 0) {
+      this.queueIntent(() => ({ kind: "sit", seat }));
       return;
     }
     const damaged = new Set(projection?.pieces.map((view) => view.piece) ?? []);
