@@ -25,7 +25,8 @@ const SVG = "http://www.w3.org/2000/svg";
 const LONG_PRESS_MS = 450;
 const TOOLTIP_MARGIN_PX = 8;
 const MAX_FLOATING_TEXTS = 12;
-const KEYBIND_LABELS = ["1", "2", "3", "4", "5", "6", "7", "8"] as const;
+/** Slots 1–10, then the Shift row 11–20 (#294). */
+const KEYBIND_LABELS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "⇧1", "⇧2", "⇧3", "⇧4", "⇧5", "⇧6", "⇧7", "⇧8", "⇧9", "⇧0"] as const;
 
 function part<T extends HTMLElement>(root: HTMLElement, name: string): T {
   const element = root.querySelector<T>(`[data-part="${name}"]`);

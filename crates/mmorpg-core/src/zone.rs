@@ -275,6 +275,8 @@ pub struct ZoneSimulation {
     /// Standing summoned terrain by ID (#293), and the next ID.
     pub(crate) summoned_terrain: BTreeMap<u32, crate::SummonedTerrain>,
     pub(crate) next_summoned_terrain: u32,
+    /// World traps' firing and hit memory by ID (#300).
+    pub(crate) traps: BTreeMap<crate::TrapId, crate::TrapRuntime>,
     /// Navigation cell results (#307), derived from static geometry and dropped when it
     /// changes; not canonical state.
     pub(crate) nav_cache: crate::nav::NavCache,
@@ -439,6 +441,7 @@ impl ZoneSimulation {
             world,
             rng: ZoneRng::seeded(content.rng_seed(), zone_id),
             loot_rng: ZoneRng::seeded(content.rng_seed() ^ 0x6c6f_6f74_2f76_3031, zone_id),
+            traps: Self::fresh_traps(&content),
             content,
             players: BTreeMap::new(),
             creatures: BTreeMap::new(),
@@ -822,7 +825,8 @@ impl ZoneSimulation {
     /// 6. combat: global cooldowns, cooldowns and casts or channels (players,
     ///    then creatures), aura pulses and expiry in `(EntityRef, aura slot)`
     ///    order, then swings in `EntityRef` order: swing timers, range checks
-    ///    after movement, damage, threat, deaths, tapping (minions after creatures);
+    ///    after movement, damage, threat, deaths, tapping (minions after creatures), then
+    ///    world traps (#300) in ID order, which may kill;
     /// 7. minions whose time ran out crumble, then health and class-resource regeneration,
     ///    corpse despawns and respawns in ID order, structure regrowth, then the night raid
     ///    (#530: barn hits, phases, outcome, marches and the nightly trigger), and a depths
@@ -853,10 +857,13 @@ impl ZoneSimulation {
         self.shove_with_large_creatures()?;
         self.apply_forced_moves()?;
         self.schedule_platforms(now, false)?;
+        // Read before the step resolves units against the boulders they walk into (#299).
+        let boulder_pushes = self.boulder_walk_pushes()?;
         self.tick_work.physics = Some(self.world.step().map_err(physics_error)?);
-        self.settle_forced_moves();
+        self.settle_forced_moves(now)?;
         self.advance_debris();
         self.advance_movable_props()?;
+        self.advance_boulders(&boulder_pushes, now)?;
         self.update_landings()?;
         self.update_breath()?;
         // A jump intent is consumed by the tick that evaluated it, grounded or not.
@@ -869,6 +876,7 @@ impl ZoneSimulation {
         self.advance_projectiles(now)?;
         self.advance_auras(now)?;
         self.resolve_combat(now)?;
+        self.advance_traps(now)?;
         self.update_timers(now)?;
         self.regrow_pieces(now)?;
         self.advance_summoned(now);
@@ -930,6 +938,15 @@ impl ZoneSimulation {
                 })
                 .flatten();
             let grounded = is_grounded(&self.world, body)?;
+            // An authored surface hazard under a standing player's feet (#294).
+            let surface = (alive && grounded)
+                .then(|| {
+                    crate::surface::under_feet(
+                        self.content.surfaces(),
+                        [centre.x, centre.y - PLAYER_HALF_EXTENTS_UNITS[1], centre.z],
+                    )
+                })
+                .flatten();
             // A dodge roll (#516) starts on the ground, out of deep water, off any face and
             // unstunned; a stun or deep water ends it early, and death outright.
             let roll = if alive {
@@ -979,7 +996,10 @@ impl ZoneSimulation {
             if let Some(yaw) = rolling
                 && step.velocity.is_none()
             {
-                let [x, z] = crate::Roll::velocity(yaw, crate::aura::speed_percent(&state.auras));
+                let percent = crate::aura::speed_percent(&state.auras)
+                    * crate::surface::speed_percent(surface)
+                    / 100;
+                let [x, z] = crate::Roll::velocity(yaw, percent);
                 self.world
                     .set_velocity(body_id, Vec3i::new(x, body.velocity().y, z))
                     .map_err(physics_error)?;
@@ -1013,7 +1033,9 @@ impl ZoneSimulation {
                 crate::guard::guard_ready(self.action_graph, state).is_some() && grounded;
             let mut velocity = if alive {
                 let free = movement_velocity(state)?;
-                let mut percent = crate::aura::speed_percent(&state.auras);
+                let mut percent = crate::aura::speed_percent(&state.auras)
+                    * crate::surface::speed_percent(surface)
+                    / 100;
                 if guarding {
                     percent = percent * crate::GUARD_SPEED_PERCENT / 100;
                 }
@@ -1027,6 +1049,11 @@ impl ZoneSimulation {
                 if let Some(movement) = crate::action::movement_of(self.action_graph, state) {
                     let last = body.velocity();
                     steered = movement.velocity(steered, [last.x, last.z]);
+                }
+                // Ice (#294): a slick surface limits how fast the velocity can change.
+                if let Some(grip) = crate::surface::grip(surface) {
+                    let last = body.velocity();
+                    steered = crate::surface::slip([last.x, last.z], steered, grip);
                 }
                 let [x, z] = steered;
                 Vec3i::new(x, 0, z)

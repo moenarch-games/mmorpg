@@ -449,6 +449,8 @@ impl TerrainGrid {
 pub struct Scenery {
     pub content_revision: u64,
     pub props: Vec<Prop>,
+    /// Authored surface hazards (#294) to dress: ice and tar on the ground.
+    pub surfaces: Vec<mmorpg_core::SurfacePatch>,
     /// Simplified presentation fallback for authored surfaces without detailed art.
     pub collision_surfaces: Vec<mmorpg_core::StaticMesh>,
     pub roads: Vec<Road>,
@@ -866,6 +868,7 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
     let mut scenery = Scenery {
         content_revision: content.revision(),
         props: Vec::new(),
+        surfaces: content.surfaces().to_vec(),
         collision_surfaces: definition.static_meshes().to_vec(),
         roads,
         water,
@@ -907,6 +910,7 @@ impl Scenery {
         Self {
             content_revision,
             props: Vec::new(),
+            surfaces: Vec::new(),
             collision_surfaces: Vec::new(),
             roads: Vec::new(),
             water: Vec::new(),
@@ -1124,6 +1128,13 @@ impl Scenery {
                 hash.write(&value.to_be_bytes());
             }
             hash.write(&water.surface.to_be_bytes());
+        }
+        for patch in &self.surfaces {
+            hash.write(&patch.id.to_be_bytes());
+            hash.write(&[patch.kind.code()]);
+            for value in patch.centre.iter().chain(&patch.radii) {
+                hash.write(&value.to_be_bytes());
+            }
         }
         for grid in [self.terrain_grid(1_000), self.far_terrain_grid(6_000)] {
             for (height, color) in grid.heights.iter().zip(&grid.colors) {

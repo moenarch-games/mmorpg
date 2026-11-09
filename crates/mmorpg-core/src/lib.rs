@@ -13,6 +13,7 @@ mod ai;
 mod areas;
 mod aura;
 mod boss;
+mod boulder;
 mod breakable;
 mod casting;
 mod character;
@@ -41,6 +42,7 @@ mod interest;
 mod inventory;
 mod loot;
 mod minion;
+mod mobility;
 mod movable;
 mod nav;
 mod party;
@@ -66,7 +68,9 @@ mod stance;
 mod strike;
 mod structure;
 mod summoned;
+pub mod surface;
 mod transfer;
+pub mod trap;
 pub mod trig;
 pub mod unit;
 mod vendor;
@@ -81,6 +85,7 @@ pub use ability::{
 pub use areas::{Area, AreaId, MAX_AREA_NAME_BYTES, MAX_ZONE_AREAS, ZoneAreas};
 pub use aura::{Aura, CastState, Cooldown};
 pub use boss::{BossEncounter, BossRules, MAX_ENCOUNTER_PLAYERS, MAX_SCALING_PARTICIPANTS};
+pub use boulder::{CanonicalBoulder, IMPACT_SPEED, RETURN_TICKS, WALK_PUSH_SPEED};
 pub use breakable::{
     DEBRIS_TICKS, Debris, DebrisPiece, DebrisView, EXPLOSION_DAMAGE, EXPLOSION_KNOCKBACK_UNITS,
     EXPLOSION_RADIUS_UNITS, MAX_DEBRIS, MAX_VISIBLE_DEBRIS, debris_pieces,
@@ -212,7 +217,13 @@ pub use summoned::{
     MAX_SUMMONED_TERRAIN, MAX_VISIBLE_SUMMONED, PROJECTILE_SUMMONED_DAMAGE, SUMMON_DISTANCE_UNITS,
     SWING_SUMMONED_DAMAGE, SummonedTerrain, SummonedTerrainKind, SummonedView,
 };
+pub use surface::{SurfaceEffect, SurfaceKind, SurfacePatch};
 pub use transfer::{CharacterTransfer, MAX_REMEMBERED_TRANSFERS, TransferId, TransferMotion};
+pub use trap::{
+    Blade, BladePose, CanonicalTrap, CanonicalTrapHit, MAX_ROCKS, MAX_TRAP_HITS, MAX_TRAPS,
+    MAX_VISIBLE_TRAPS, RockDrop, RockPose, Rockfall, Trap, TrapEffect, TrapId, TrapKind,
+    TrapRuntime, TrapTrigger, TrapView, TriggerVolume,
+};
 pub use vendor::{
     MAX_VENDOR_OFFERS, VENDOR_REACH_UNITS, VendorOffer, VendorStock, VendorStockError,
     VendorTradeError, sell_price, settle_purchase, settle_sale, starter_vendor_stock,

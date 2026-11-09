@@ -529,11 +529,11 @@ describe("WASM local zone combat intents", () => {
     expect(catalog.contentRevision).toBe(HOSTED_REVISION);
     expect([...catalog.items.values()].map((item) => item.name)).toEqual([
       "Torn Fur", "Worn Dagger", "Militia Shortsword", "Apprentice Wand", "Pine Buckler", "Cloth Hood", "Padded Tunic",
-      "Padded Trousers", "Worn Boots", "Wolf Pelt", "Sunken Relic", "Brute-Breaker Mace", "Greyfang Scout Jerkin", "Hollow-Delver's Cowl", "Thornreaver Blade", "Captain's Scarred Brigandine", "Redbrand Command Signet",
+      "Padded Trousers", "Worn Boots", "Wolf Pelt", "Sunken Relic", "Brute-Breaker Mace", "Greyfang Scout Jerkin", "Hollow-Delver's Cowl", "Thornreaver Blade", "Captain's Scarred Brigandine", "Redbrand Command Signet", "Marshal's Commendation Greaves",
     ]);
     expect([...catalog.creatureTemplates.values()].map((template) => template.name)).toEqual([
       "Timber Wolf", "Young Boar", "Grain Rat", "Field Marauder", "Mirefin Lurker", "Redbrand Bandit", "Garrick Redbrand",
-      "Redbrand Crossbowman", "Crate", "Barrel", "Blasting Powder Barrel", "Fence", "Hill Ogre", "Heavy Crate", "Redbrand Brute",
+      "Redbrand Crossbowman", "Crate", "Barrel", "Blasting Powder Barrel", "Fence", "Hill Ogre", "Heavy Crate", "Redbrand Brute", "Loose Boulder",
       "Captain Ulric Thorn",
     ]);
     expect(catalog.creatureTemplates.get(11)?.prop).toBe("explosive_barrel");
@@ -558,7 +558,7 @@ describe("WASM local zone combat intents", () => {
     expect(self(source).appearance).toBe(5);
     expect(abilitySlots(projection, catalog).map((ability) => ability.name)).toEqual([
       "Firebolt", "Frost Nova", "Arcane Barrier", "Blizzard", "Fire Blast", "Frost Breath", "Lightning Beam", "Chain Lightning",
-      "Ice Wall", "Earth Pillar",
+      "Ice Wall", "Earth Pillar", "Blink",
     ]);
     expect(combatStatus(projection, catalog)).toBe("Health 50/50 · Mana 110/110 · Level 1");
     // Firebolt without a target is cast along the facing (#289); Frost Nova is learned at level 2.

@@ -33,11 +33,19 @@ pub fn rects(hud: &CombatHud) -> Vec<HudRect> {
             resource_color(resource.kind),
         );
     }
-    let count = hud.slots.len() as f32;
+    // Slots beyond the first row sit in a second row above the bars (Shift+1 to Shift+0, #294).
+    let per_row = mmorpg_client_model::hud::ACTION_BAR_ROW_SLOTS;
+    let count = hud.slots.len().min(per_row) as f32;
     let row = count * SLOT_SIZE + (count - 1.0).max(0.0) * SLOT_GAP;
     for (index, slot) in hud.slots.iter().enumerate() {
-        let left = 0.5 - row / 2.0 + index as f32 * (SLOT_SIZE + SLOT_GAP);
-        let (min, max) = ([left, SLOT_TOP], [left + SLOT_SIZE, SLOT_TOP + SLOT_SIZE]);
+        let column = (index % per_row) as f32;
+        let top = if index < per_row {
+            SLOT_TOP
+        } else {
+            SECOND_ROW_TOP
+        };
+        let left = 0.5 - row / 2.0 + column * (SLOT_SIZE + SLOT_GAP);
+        let (min, max) = ([left, top], [left + SLOT_SIZE, top + SLOT_SIZE]);
         let frame = if slot.casting { CASTING_FRAME } else { FRAME };
         rects.push(HudRect::new(min, max, frame));
         let inner = (
@@ -75,8 +83,8 @@ impl HudRect {
     }
 }
 
-/// At most this many rectangles: two bars of two plus four slots of three.
-pub const MAX_HUD_RECTS: usize = 16;
+/// At most this many rectangles: two bars of two plus twenty slots of three.
+pub const MAX_HUD_RECTS: usize = 64;
 
 const BAR_HALF_WIDTH: f32 = 0.12;
 const BAR_HEIGHT: f32 = 0.022;
@@ -86,6 +94,7 @@ const SLOT_GAP: f32 = 0.01;
 const SLOT_TOP: f32 = 0.9;
 const RESOURCE_TOP: f32 = SLOT_TOP - 0.01 - BAR_HEIGHT;
 const CAST_TOP: f32 = RESOURCE_TOP - 0.05 - BAR_HEIGHT;
+const SECOND_ROW_TOP: f32 = CAST_TOP - 0.01 - SLOT_SIZE;
 
 const FRAME: [f32; 3] = [0.02, 0.02, 0.03];
 const CASTING_FRAME: [f32; 3] = [0.95, 0.8, 0.2];
@@ -142,7 +151,7 @@ mod tests {
             dead: false,
         };
         let rects = rects(&hud);
-        assert_eq!(rects.len(), MAX_HUD_RECTS);
+        assert_eq!(rects.len(), 4 + 4 * 3);
         for rect in rects {
             for axis in 0..2 {
                 assert!(0.0 <= rect.min[axis] && rect.min[axis] <= rect.max[axis]);

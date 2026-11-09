@@ -764,7 +764,11 @@ impl ZoneSimulation {
         let Some(creature) = self.creatures.get(&creature_id) else {
             return Ok(());
         };
-        if !creature.is_alive() || self.combat_blocked(source, target) {
+        // A boulder cannot be broken (#299).
+        if !creature.is_alive()
+            || self.is_boulder(creature_id)
+            || self.combat_blocked(source, target)
+        {
             return Ok(());
         }
         if self.creature_evades(player_id, creature_id) {
@@ -810,7 +814,7 @@ impl ZoneSimulation {
         );
         self.observe_damage(source, target, dealt, critical);
         if dead {
-            return self.creature_dies(creature_id, source, now);
+            return self.creature_dies(creature_id, Some(source), now);
         }
         self.break_roots(target);
         // Being attacked engages an idle creature (and its family); an
@@ -1094,16 +1098,17 @@ impl ZoneSimulation {
     }
 
     /// The creature leaves a corpse without a physics body; its tap stays.
-    fn creature_dies(
+    /// `killer` is `None` for a world trap (#300), the credit still follows the tap.
+    pub(crate) fn creature_dies(
         &mut self,
         creature_id: CreatureId,
-        killer: EntityRef,
+        killer: Option<EntityRef>,
         now: u64,
     ) -> Result<(), ZoneError> {
         let entity = EntityRef::Creature(creature_id);
         let (_, template) = Self::creature_content(&self.content, creature_id)?;
         if let Some(kind) = template.prop() {
-            return self.prop_breaks(creature_id, kind, killer, now);
+            return self.prop_breaks(creature_id, kind, killer.unwrap_or(entity), now);
         }
         let body = self
             .world
@@ -1184,13 +1189,10 @@ impl ZoneSimulation {
         let tapper = creature.tapped_by;
         let level = creature.level;
         let generation = creature.generation;
-        let died = ZoneEvent::Died {
-            entity,
-            killer: Some(killer),
-        };
+        let died = ZoneEvent::Died { entity, killer };
         let mut recipients = BTreeSet::new();
         // A minion's kill is its summoner's (#295).
-        recipients.extend(self.controller(killer));
+        recipients.extend(killer.and_then(|killer| self.controller(killer)));
         recipients.extend(tapper);
         recipients.extend(party_shares.iter().copied());
         for player_id in recipients {

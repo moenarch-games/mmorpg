@@ -97,6 +97,8 @@ pub fn encode_canonical_snapshot(
     )?;
     encode_forced(&mut payload, &snapshot.forced)?;
     encode_debris(&mut payload, snapshot.next_debris, &snapshot.debris)?;
+    encode_boulders(&mut payload, &snapshot.boulders)?;
+    encode_traps(&mut payload, &snapshot.traps)?;
     encode_pieces(&mut payload, &snapshot.pieces)?;
     encode_summoned_terrain(
         &mut payload,
@@ -644,6 +646,8 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let (next_projectile, projectiles) = decode_projectiles(payload, &mut offset)?;
     let forced = decode_forced(payload, &mut offset)?;
     let (next_debris, debris) = decode_debris(payload, &mut offset)?;
+    let boulders = decode_boulders(payload, &mut offset)?;
+    let traps = decode_traps(payload, &mut offset)?;
     let pieces = decode_pieces(payload, &mut offset)?;
     let (next_summoned_terrain, summoned_terrain) = decode_summoned_terrain(payload, &mut offset)?;
     let (next_minion, minions) = decode_minions(payload, &mut offset)?;
@@ -668,6 +672,8 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         forced,
         debris,
         next_debris,
+        boulders,
+        traps,
         pieces,
         summoned_terrain,
         next_summoned_terrain,
@@ -1562,6 +1568,111 @@ fn decode_projectiles(
     Ok((next, projectiles))
 }
 
+/// Boulders (#299): a `u16` count, then per boulder in creature-ID order its creature ID
+/// (`u32`), spin (`f32`s), a pusher flag and player (`u32`) and idle ticks (`u16`). Position
+/// and velocity are the creature record's.
+fn encode_boulders(
+    payload: &mut Vec<u8>,
+    boulders: &[mmorpg_core::CanonicalBoulder],
+) -> Result<(), ProtocolError> {
+    payload.extend_from_slice(
+        &encode_u16_count(boulders.len(), MAX_BOULDERS, "too many boulders")?.to_be_bytes(),
+    );
+    for boulder in boulders {
+        payload.extend_from_slice(&boulder.creature_id.get().to_be_bytes());
+        for component in boulder.spin {
+            payload.extend_from_slice(&component.to_be_bytes());
+        }
+        payload.push(u8::from(boulder.pusher.is_some()));
+        payload.extend_from_slice(&boulder.pusher.unwrap_or(0).to_be_bytes());
+        payload.extend_from_slice(&boulder.idle.to_be_bytes());
+    }
+    Ok(())
+}
+
+fn decode_boulders(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::CanonicalBoulder>, ProtocolError> {
+    let count = decode_u16_count(payload, offset, MAX_BOULDERS, "too many boulders")?;
+    let mut boulders = Vec::with_capacity(count);
+    for _ in 0..count {
+        let creature_id = mmorpg_core::CreatureId::new(u32::from_be_bytes(take(payload, offset)?));
+        let spin = read_f32_vector(payload, offset)?;
+        let has_pusher = read_bool(payload, offset)?;
+        let pusher = u32::from_be_bytes(take(payload, offset)?);
+        let idle = u16::from_be_bytes(take(payload, offset)?);
+        boulders.push(mmorpg_core::CanonicalBoulder {
+            creature_id,
+            spin,
+            pusher: has_pusher.then_some(pusher),
+            idle,
+        });
+    }
+    Ok(boulders)
+}
+
+/// World traps (#300), in trap-ID order: a `u8` count, then per trap its ID (`u8`), a fired flag
+/// and the fired tick (`u64`), and a `u8` hit count with, per hit in unit order, the unit
+/// reference and the tick from which it may be hit again (`u64`).
+fn encode_traps(
+    payload: &mut Vec<u8>,
+    traps: &[mmorpg_core::CanonicalTrap],
+) -> Result<(), ProtocolError> {
+    payload.push(encode_u8_count(
+        traps.len(),
+        mmorpg_core::MAX_TRAPS,
+        "too many traps",
+    )?);
+    for trap in traps {
+        payload.push(trap.id.get());
+        payload.push(u8::from(trap.fired_at.is_some()));
+        payload.extend_from_slice(&trap.fired_at.unwrap_or(0).to_be_bytes());
+        payload.push(encode_u8_count(
+            trap.hits.len(),
+            mmorpg_core::MAX_TRAP_HITS,
+            "too many trap hits",
+        )?);
+        for hit in &trap.hits {
+            encode_entity_ref(payload, Some(hit.unit));
+            payload.extend_from_slice(&hit.until.to_be_bytes());
+        }
+    }
+    Ok(())
+}
+
+fn decode_traps(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::CanonicalTrap>, ProtocolError> {
+    let count = decode_u8_count(payload, offset, mmorpg_core::MAX_TRAPS, "too many traps")?;
+    let mut traps = Vec::with_capacity(count);
+    for _ in 0..count {
+        let id = mmorpg_core::TrapId::new(read_u8(payload, offset)?);
+        let fired = read_bool(payload, offset)?;
+        let tick = u64::from_be_bytes(take(payload, offset)?);
+        let hit_count = decode_u8_count(
+            payload,
+            offset,
+            mmorpg_core::MAX_TRAP_HITS,
+            "too many trap hits",
+        )?;
+        let mut hits = Vec::with_capacity(hit_count);
+        for _ in 0..hit_count {
+            let unit = decode_entity_ref(payload, offset)?
+                .ok_or_else(|| ProtocolError::new("trap hit needs a unit"))?;
+            let until = u64::from_be_bytes(take(payload, offset)?);
+            hits.push(mmorpg_core::CanonicalTrapHit { unit, until });
+        }
+        traps.push(mmorpg_core::CanonicalTrap {
+            id,
+            fired_at: fired.then_some(tick),
+            hits,
+        });
+    }
+    Ok(traps)
+}
+
 /// Debris (#288): the next ID (`u32`), a `u16` count, then per piece its ID (`u32`), prop kind
 /// and piece index (`u8` each), position, rotation quaternion, velocity and spin (`f32`s), age
 /// (`u16`) and resting flag. Half extents follow from kind and piece.
@@ -1631,6 +1742,7 @@ fn decode_debris(
                 velocity,
                 spin,
                 half_extents: mmorpg_core::physics::Vec3i::new(hx, hy, hz),
+                shape: mmorpg_core::physics::PieceShape::Cuboid,
                 resting,
             },
             age,
@@ -1641,6 +1753,7 @@ fn decode_debris(
 
 /// At most one forced-movement state per unit.
 const MAX_FORCED: usize = MAX_PLAYERS_PER_ZONE + MAX_CREATURE_SPAWNS;
+const MAX_BOULDERS: usize = MAX_CREATURE_SPAWNS;
 
 /// Forced movement (#287): a `u16` count, then per unit its reference, the move in progress
 /// (flag; XZ velocity `i32`s, remaining `u16`, charge flag with target and knockback `i32`) and
@@ -1665,6 +1778,7 @@ fn encode_forced(
                 encode_entity_ref(payload, Some(target));
                 payload.extend_from_slice(&knockback.to_be_bytes());
             }
+            payload.push(moving.leap.map_or(0, |ability| ability.get()));
         }
         payload.extend_from_slice(&state.immune.to_be_bytes());
     }
@@ -1701,10 +1815,15 @@ fn decode_forced(
             } else {
                 None
             };
+            let leap = match crate::wire::read_u8(payload, offset)? {
+                0 => None,
+                id => Some(mmorpg_core::AbilityId::new(id)),
+            };
             Some(mmorpg_core::ForcedMove {
                 velocity,
                 remaining,
                 charge,
+                leap,
             })
         } else {
             None
@@ -1783,11 +1902,26 @@ mod tests {
                     velocity: [1.5, -2.0, 0.25],
                     spin: [0.1, 0.0, -0.05],
                     half_extents: mmorpg_core::physics::Vec3i::new(92, 5, 3),
+                    shape: mmorpg_core::physics::PieceShape::Cuboid,
                     resting: false,
                 },
                 age: 9,
             }],
             next_debris: 8,
+            boulders: vec![mmorpg_core::CanonicalBoulder {
+                creature_id: CreatureId::new(925),
+                spin: [0.1, 0.0, -0.2],
+                pusher: Some(7),
+                idle: 42,
+            }],
+            traps: vec![mmorpg_core::CanonicalTrap {
+                id: mmorpg_core::TrapId::new(3),
+                fired_at: Some(1_200),
+                hits: vec![mmorpg_core::CanonicalTrapHit {
+                    unit: EntityRef::Player(1),
+                    until: 1_250,
+                }],
+            }],
             summoned_terrain: vec![mmorpg_core::SummonedTerrain {
                 id: 4,
                 kind: mmorpg_core::SummonedTerrainKind::EarthPillar,
@@ -1806,6 +1940,19 @@ mod tests {
                             velocity: [0, 45],
                             remaining: 12,
                             charge: Some((wolf, 300)),
+                            leap: None,
+                        }),
+                        immune: 0,
+                    },
+                ),
+                (
+                    EntityRef::Player(2),
+                    mmorpg_core::ForcedState {
+                        moving: Some(mmorpg_core::ForcedMove {
+                            velocity: [100, 0],
+                            remaining: 40,
+                            charge: None,
+                            leap: Some(mmorpg_core::AbilityId::new(51)),
                         }),
                         immune: 0,
                     },

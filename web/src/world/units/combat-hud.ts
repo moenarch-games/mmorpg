@@ -57,6 +57,8 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "depths-wipe": "Your party has fallen. You rise again at the checkpoint.",
   "depths-boss-open": "The way to Captain Ulric Thorn lies open.",
   "no-room": "There is no room for it to rise there.",
+  "no-landing": "There is no clear place to land there.",
+  "movement-immune": "It cannot be moved right now.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;
@@ -156,6 +158,8 @@ export function eventText(event: ZoneEvent, snapshot: ZoneSnapshot, catalog: Con
       return event.source.kind === "player" && event.source.id === snapshot.viewerId
         ? `You miss ${name(event.target)}.`
         : `${capitalise(name(event.source))} misses you.`;
+    case "trap-hit":
+      return isViewer(event.target) ? `A trap hits you for ${event.amount}.` : `A trap hits ${name(event.target)} for ${event.amount}.`;
     case "evade":
       return `${capitalise(name(event.target))} evades.`;
     case "died":

@@ -97,6 +97,9 @@ struct ImportedEntry {
     /// The loose gear's swing (Atlas 6.6.39) as a model-frame quaternion `[x, y, z, w]`, or
     /// null at rest.
     swing: Option<[f32; 4]>,
+    /// The sway chains' drive (Atlas 6.6.39): `[pitch, roll]` by depth from the chain's root,
+    /// flattened, or null when every chain hangs as authored.
+    chains: Option<[f32; 6]>,
     /// A bow carrier's shot (#556): the bow cycle clip and time whose draw the nock follows,
     /// with the bow in the left hand; null keeps the bow stowed.
     bow: Option<BowEntry>,
@@ -495,6 +498,7 @@ impl Units {
                     }),
                     headwear: unit.headwear.is_some(),
                     swing: (!unit.swing.is_rest()).then(|| unit.swing.quaternion()),
+                    chains: unit.swing.chain_drive(),
                     bow: unit.bow.map(|shot| BowEntry {
                         clip: shot.clip,
                         time: shot.time,

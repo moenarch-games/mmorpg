@@ -170,6 +170,9 @@ enum Kind {
         half: Vec3i,
         yaw: u16,
     },
+    /// A fixed sphere (#299): a boulder as units meet it. Its `half_extents` hold the radius on
+    /// every axis.
+    Sphere,
 }
 
 /// One body: fixed geometry, or a moving unit's capsule with authoritative `f32` state.
@@ -346,6 +349,20 @@ impl RigidBody {
         }
     }
 
+    /// A fixed sphere (#299) of `radius` centred on `position`: a boulder where it stands.
+    #[must_use]
+    pub const fn sphere(id: BodyId, position: Vec3i, radius: i32) -> Self {
+        Self {
+            id,
+            kind: Kind::Sphere,
+            position: exact(position),
+            velocity: [0.0; 3],
+            half_extents: Vec3i::new(radius, radius, radius),
+            weightless: false,
+            mesh: None,
+        }
+    }
+
     /// A moving platform's box (#56) centred on `position`, at rest.
     #[must_use]
     pub const fn platform(id: BodyId, position: Vec3i, half_extents: Vec3i) -> Self {
@@ -440,11 +457,26 @@ impl RigidBody {
         matches!(self.kind, Kind::Moving)
     }
 
+    /// Whether it is a fixed sphere (#299), whose `half_extents` only bound it.
+    #[must_use]
+    pub const fn is_sphere(&self) -> bool {
+        matches!(self.kind, Kind::Sphere)
+    }
+
     /// Whether it is a moving platform's box (#56).
     #[must_use]
     pub const fn is_platform(&self) -> bool {
         matches!(self.kind, Kind::Platform)
     }
+}
+
+/// The shape of a dynamic piece: a box filling its `half_extents`, or a sphere (#299) whose
+/// `half_extents` hold the radius on every axis. Never approximated by its bound.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum PieceShape {
+    #[default]
+    Cuboid,
+    Sphere,
 }
 
 /// A short-lived dynamic rigid body (#288): one piece of a broken prop. Rapier integrates it
@@ -462,6 +494,7 @@ pub struct DebrisBody {
     /// Radians per tick.
     pub spin: [f32; 3],
     pub half_extents: Vec3i,
+    pub shape: PieceShape,
     /// Settled: no longer simulated, and a fixed obstacle for pieces still moving.
     pub resting: bool,
 }
@@ -487,6 +520,9 @@ impl DebrisBody {
             ]
             .iter()
             .all(|&extent| extent > 0)
+            && (self.shape == PieceShape::Cuboid
+                || (self.half_extents.x == self.half_extents.y
+                    && self.half_extents.y == self.half_extents.z))
     }
 }
 
@@ -929,6 +965,18 @@ impl World {
     /// turn), stopped by units, and leaving out the props' own fixed boxes `exclude`.
     pub fn step_props(&mut self, props: &mut [DebrisBody], exclude: &[BodyId]) -> usize {
         dispatch!(self, &mut self.worlds, world => world.step_props(props, exclude))
+    }
+
+    /// Advances rolling boulders (#299) one tick: free spheres under gravity against the fixed
+    /// world, leaving out their own fixed spheres `exclude`. `units_block` makes units' capsules
+    /// stop them (a slow boulder); a fast one rolls through and the zone resolves the impact.
+    pub fn step_boulders(
+        &mut self,
+        boulders: &mut [DebrisBody],
+        exclude: &[BodyId],
+        units_block: bool,
+    ) -> usize {
+        dispatch!(self, &mut self.worlds, world => world.step_boulders(boulders, exclude, units_block))
     }
 }
 

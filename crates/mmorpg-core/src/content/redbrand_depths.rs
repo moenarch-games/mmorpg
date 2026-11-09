@@ -79,6 +79,8 @@ const BOSS_CHAMBER: Room = Room {
 
 /// Captain Ulric Thorn's creature ID in every run.
 pub const THORN: crate::CreatureId = crate::CreatureId::new(30);
+/// His name, also shown by the Greyhaven story quest that sends characters after him.
+pub const THORN_NAME: &str = "Captain Ulric Thorn";
 /// The template of Captain Ulric Thorn (#404 part 3), level 6 elite.
 pub const THORN_TEMPLATE: crate::CreatureTemplateId = crate::CreatureTemplateId::new(16);
 /// The Need/Greed window of his drops: 30 s, tick-based (Atlas 5.1.34).
@@ -296,7 +298,7 @@ fn thorn_template() -> crate::CreatureTemplate {
         .find(|template| template.id == GARRICK_REDBRAND)
         .expect("Garrick's template stands behind Thorn's");
     thorn.id = THORN_TEMPLATE;
-    thorn.name = "Captain Ulric Thorn".to_owned();
+    thorn.name = THORN_NAME.to_owned();
     thorn.min_level = 6;
     thorn.max_level = 6;
     thorn.elite = true;

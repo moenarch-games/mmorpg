@@ -86,6 +86,8 @@ pub const fn debris_pieces(kind: PropKind) -> &'static [DebrisPiece] {
         PropKind::Crate | PropKind::HeavyCrate => &CRATE_PIECES,
         PropKind::Barrel | PropKind::ExplosiveBarrel => &BARREL_PIECES,
         PropKind::Fence => &FENCE_PIECES,
+        // A boulder never breaks (#299).
+        PropKind::Boulder => &[],
     }
 }
 
@@ -268,6 +270,7 @@ impl ZoneSimulation {
                     piece.half_extents[1],
                     piece.half_extents[2],
                 ),
+                shape: crate::physics::PieceShape::Cuboid,
                 resting: false,
             };
             let id = self.next_debris;
@@ -414,7 +417,8 @@ mod tests {
         let [x, z] = turned(16_384, [0.0, 100.0]);
         assert!((x - 100.0).abs() < 1.0e-3 && z.abs() < 1.0e-3, "{x} {z}");
         for &kind in PropKind::VARIANTS {
-            assert!(!debris_pieces(kind).is_empty());
+            // A boulder never breaks (#299).
+            assert_eq!(debris_pieces(kind).is_empty(), kind == PropKind::Boulder);
         }
     }
 }

@@ -18,8 +18,9 @@
 //!   order, each seeing the earlier movers at their new positions, as the Rapier step does
 //!   body by body.
 //! - Rays, overlaps and segment checks are `cast_ray`/`cast_ray_first` and `overlap_shape`.
-//! - Debris (#288) and movable props (#58) use dynamic boxes. Authored zones retain isolated
-//!   static response worlds; canonical pieces transfer in and out on every tick.
+//! - Debris (#288) and movable props (#58) use dynamic boxes, boulders (#299) real spheres.
+//!   Authored zones retain isolated static response worlds; canonical pieces transfer in and
+//!   out on every tick.
 //!
 //! Intentional differences from the Rapier backend (listed in `docs/PHYSICS_AB.md`):
 //!
@@ -44,10 +45,14 @@ use physics_engine::approximate::{
     TriangleMeshDesc, Vector,
 };
 
-use super::shared::{DEBRIS_REST_SPEED_UNITS, DEBRIS_REST_SPIN, Dynamic, TICKS_PER_SECOND, nearby};
+use super::shared::{
+    BOULDER_ANGULAR_DAMPING, BOULDER_DENSITY, BOULDER_LANE, BOULDER_LINEAR_DAMPING,
+    DEBRIS_REST_SPEED_UNITS, DEBRIS_REST_SPIN, Dynamic, PROP_LANE, RESPONSE_LANES,
+    TICKS_PER_SECOND, nearby,
+};
 use super::{
-    Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, PhysicsError, RayHit, RigidBody,
-    StepStats, Vec3i, error, exact, from_subunits,
+    Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, PhysicsError, PieceShape, RayHit,
+    RigidBody, StepStats, Vec3i, error, exact, from_subunits,
 };
 
 /// The game's centimetres per metre: the engine's length unit.
@@ -86,6 +91,29 @@ fn capsule(half_extents: Vec3i) -> Shape {
     Shape::capsule(half_height, radius)
 }
 
+/// A piece's engine shape and mass (kg): a real sphere for a boulder (#299), else its box.
+fn piece_shape(piece: &DebrisBody) -> (Shape, f32) {
+    let [hx, hy, hz] = exact(piece.half_extents);
+    match piece.shape {
+        PieceShape::Cuboid => (
+            Shape::Box(Vector(hx, hy, hz)),
+            DEBRIS_DENSITY * 8. * hx * hy * hz / UNITS_PER_METRE.powi(3),
+        ),
+        PieceShape::Sphere => (
+            Shape::Sphere(hx),
+            BOULDER_DENSITY * 4. / 3. * std::f32::consts::PI * hx.powi(3) / UNITS_PER_METRE.powi(3),
+        ),
+    }
+}
+
+/// `(linear, angular)` damping of a piece (#288; a rolling boulder loses speed faster, #299).
+const fn piece_damping(piece: &DebrisBody) -> (f32, f32) {
+    match piece.shape {
+        PieceShape::Cuboid => (0.2, 0.8),
+        PieceShape::Sphere => (BOULDER_LINEAR_DAMPING, BOULDER_ANGULAR_DAMPING),
+    }
+}
+
 fn engine_error(what: &str, failure: impl fmt::Debug) -> PhysicsError {
     error(format!("physics-engine {what} failed: {failure:?}"))
 }
@@ -122,7 +150,7 @@ pub(super) struct World {
     moves: Vec<CharacterMove>,
     results: Vec<CharacterMoveResult>,
     velocities: Vec<(BodyId, [f32; 3])>,
-    response: [Option<ResponseLane>; 2],
+    response: [Option<ResponseLane>; RESPONSE_LANES],
 }
 
 impl fmt::Debug for World {
@@ -241,6 +269,11 @@ fn engine_body(body: &RigidBody) -> Body {
             let (sin, cos) = (turn / 2.0).sin_cos();
             wedge.orientation = Quaternion(0.0, sin, 0.0, cos);
             wedge
+        }
+        // A boulder as units meet it (#299) is the engine's real sphere, never a box.
+        Kind::Sphere => {
+            let radius = exact(body.half_extents)[0];
+            Body::keyed(key, Shape::Sphere(radius), vector(body.position), 0.0)
         }
         // A moving platform (#56) is a static box the adapter moves in place where the zone
         // moves it; authored meshes and rocks are admitted through their geometry APIs above.
@@ -889,6 +922,7 @@ impl World {
             upright: true,
             units_block: true,
             exclude,
+            lane: PROP_LANE,
         };
         if self.has_authored_geometry() {
             self.step_authored(props, &settle, &options)
@@ -896,6 +930,28 @@ impl World {
             self.step_dynamic(props, &settle, &options)
         }
         .expect("physics-engine props step failed")
+    }
+
+    /// Rolling boulders (#299): free spheres; only slow ones stop at units.
+    pub fn step_boulders(
+        &mut self,
+        boulders: &mut [DebrisBody],
+        exclude: &[BodyId],
+        units_block: bool,
+    ) -> usize {
+        let settle = vec![true; boulders.len()];
+        let options = Dynamic {
+            upright: false,
+            units_block,
+            exclude,
+            lane: BOULDER_LANE,
+        };
+        if self.has_authored_geometry() {
+            self.step_authored(boulders, &settle, &options)
+        } else {
+            self.step_dynamic(boulders, &settle, &options)
+        }
+        .expect("physics-engine boulder step failed")
     }
 
     fn has_authored_geometry(&self) -> bool {
@@ -916,7 +972,7 @@ impl World {
         if moving == 0 {
             return Ok(0);
         }
-        let cached = &mut self.response[usize::from(options.upright)];
+        let cached = &mut self.response[options.lane];
         if cached.is_none() {
             let per_second = TICKS_PER_SECOND * TICKS_PER_SECOND / UNITS_PER_METRE;
             let mut engine = physics_engine::approximate::World::new(Config {
@@ -976,11 +1032,10 @@ impl World {
         }
         let mut handles = Vec::with_capacity(pieces.len());
         for piece in pieces.iter() {
-            let half = vector(exact(piece.half_extents));
-            let mass = DEBRIS_DENSITY * 8. * half.0 * half.1 * half.2 / UNITS_PER_METRE.powi(3);
+            let (shape, mass) = piece_shape(piece);
             let [x, y, z, w] = piece.rotation;
             let mut body = Body::new(
-                Shape::Box(half),
+                shape,
                 vector(piece.position),
                 if piece.resting { 0. } else { mass },
             );
@@ -991,8 +1046,7 @@ impl World {
             if !piece.resting {
                 body.velocity = vector(piece.velocity.map(|v| v * TICKS_PER_SECOND));
                 body.angular_velocity = vector(piece.spin.map(|v| v * TICKS_PER_SECOND));
-                body.linear_damping = 0.2;
-                body.angular_damping = 0.8;
+                (body.linear_damping, body.angular_damping) = piece_damping(piece);
                 body.rotation_locked = options.upright;
             }
             let handle = lane
@@ -1087,11 +1141,10 @@ impl World {
         }
         let mut handles = Vec::with_capacity(pieces.len());
         for piece in pieces.iter() {
-            let half = vector(exact(piece.half_extents));
-            let mass = DEBRIS_DENSITY * 8.0 * half.0 * half.1 * half.2 / UNITS_PER_METRE.powi(3);
+            let (shape, mass) = piece_shape(piece);
             let [x, y, z, w] = piece.rotation;
             let mut body = Body::new(
-                Shape::Box(half),
+                shape,
                 vector(piece.position),
                 if piece.resting { 0.0 } else { mass },
             );
@@ -1101,8 +1154,7 @@ impl World {
             if !piece.resting {
                 body.velocity = vector(piece.velocity.map(|v| v * TICKS_PER_SECOND));
                 body.angular_velocity = vector(piece.spin.map(|v| v * TICKS_PER_SECOND));
-                body.linear_damping = 0.2;
-                body.angular_damping = 0.8;
+                (body.linear_damping, body.angular_damping) = piece_damping(piece);
                 body.rotation_locked = options.upright;
                 body.sleep_allowed = false;
             }

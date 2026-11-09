@@ -131,6 +131,18 @@ pub fn sound_manifest(bundle: &str) -> Result<String, JsError> {
     mmorpg_presentation::audio::sound_manifest(bundle).map_err(|error| JsError::new(&error))
 }
 
+/// The sway chains (Atlas 6.6.39) an appearance JSON declares on its hair, beards and outfits:
+/// a JSON array of `{ joints, limit }` with `limit` in radians, shared with the native client.
+#[wasm_bindgen(js_name = declaredChains)]
+pub fn declared_chains(appearance: &str) -> Result<String, JsError> {
+    let appearance: serde_json::Value = serde_json::from_str(appearance)?;
+    let chains: Vec<_> = mmorpg_presentation::units::sway::chains_of(&[&appearance])
+        .into_iter()
+        .map(|chain| serde_json::json!({ "joints": chain.joints, "limit": chain.limit }))
+        .collect();
+    Ok(serde_json::Value::Array(chains).to_string())
+}
+
 /// The `humanoid-appearance` JSON the Ranger figure `character` draws from (#39, #493): the
 /// bundle's own, with the game's humanoid enemy presets beside the male figure's, the presets
 /// the native client draws too. `kit` is the Redbrand kit's descriptor JSON when it was fetched

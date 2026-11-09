@@ -251,6 +251,19 @@ fn templates_follow_the_design_contract() {
                 2800,
                 60000
             ),
+            // The boulder trap (#299): unbreakable.
+            (
+                "Loose Boulder",
+                Prop,
+                CreatureBehaviour::Prop(PropKind::Boulder),
+                [1, 1],
+                false,
+                1,
+                0,
+                [1, 1],
+                2000,
+                300000
+            ),
         ]
     );
     let wolf = content
@@ -335,6 +348,7 @@ fn spawns_populate_their_subzones() {
             ),
             5,
         ),
+        ((greyhaven_vale::vale::REDBRAND_HOLLOW, "Loose Boulder"), 1),
     ]);
     assert_eq!(counts, expected);
 }

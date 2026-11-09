@@ -65,13 +65,22 @@ pub enum PropKind {
     Fence,
     /// A movable crate (#58): knockbacks and blasts slide it; it breaks like a crate.
     HeavyCrate,
+    /// A movable sphere (#299): units roll it by walking into it, knockbacks and blasts send it
+    /// fast, and it hurts what it rolls into at speed. It cannot be broken.
+    Boulder,
 }
 
 impl PropKind {
     /// Whether gameplay impulses move it (#58).
     #[must_use]
     pub const fn movable(self) -> bool {
-        matches!(self, Self::HeavyCrate)
+        matches!(self, Self::HeavyCrate | Self::Boulder)
+    }
+
+    /// Whether it rolls as a free sphere instead of sliding upright (#299).
+    #[must_use]
+    pub const fn rolls(self) -> bool {
+        matches!(self, Self::Boulder)
     }
 
     /// The kind whose pieces it breaks into.
@@ -91,6 +100,7 @@ impl PropKind {
             Self::ExplosiveBarrel => "explosive_barrel",
             Self::Fence => "fence",
             Self::HeavyCrate => "heavy_crate",
+            Self::Boulder => "boulder",
         }
     }
 
@@ -103,6 +113,7 @@ impl PropKind {
             Self::ExplosiveBarrel => 2,
             Self::Fence => 3,
             Self::HeavyCrate => 4,
+            Self::Boulder => 5,
         }
     }
 
@@ -114,6 +125,7 @@ impl PropKind {
             2 => Some(Self::ExplosiveBarrel),
             3 => Some(Self::Fence),
             4 => Some(Self::HeavyCrate),
+            5 => Some(Self::Boulder),
             _ => None,
         }
     }

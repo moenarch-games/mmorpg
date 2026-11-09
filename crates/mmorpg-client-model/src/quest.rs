@@ -97,6 +97,9 @@ pub fn objective_label(objective: QuestObjective, content: &ZoneContent) -> Stri
                 .find(|candidate| candidate.id() == area)
                 .map_or("the area", |area| area.name())
         ),
+        QuestObjective::DefeatThorn => {
+            format!("Defeat {}", mmorpg_core::redbrand_depths::THORN_NAME)
+        }
     }
 }
 
@@ -128,10 +131,16 @@ pub fn objective_view(
         | QuestObjective::Retrieve { .. } => {
             format!("{label}: {}/{required}", current.min(required))
         }
-        QuestObjective::Talk { .. } | QuestObjective::Explore { .. } if done => {
+        QuestObjective::Talk { .. }
+        | QuestObjective::Explore { .. }
+        | QuestObjective::DefeatThorn
+            if done =>
+        {
             format!("{label} (done)")
         }
-        QuestObjective::Talk { .. } | QuestObjective::Explore { .. } => label.clone(),
+        QuestObjective::Talk { .. }
+        | QuestObjective::Explore { .. }
+        | QuestObjective::DefeatThorn => label.clone(),
     };
     ObjectiveView {
         label,
@@ -397,7 +406,9 @@ mod tests {
                     | QuestObjective::Retrieve { .. } => {
                         assert_eq!(view.text, format!("{}: {required}/{required}", view.label));
                     }
-                    QuestObjective::Talk { .. } | QuestObjective::Explore { .. } => {
+                    QuestObjective::Talk { .. }
+                    | QuestObjective::Explore { .. }
+                    | QuestObjective::DefeatThorn => {
                         assert_eq!(view.text, format!("{} (done)", view.label));
                     }
                 }

@@ -13,6 +13,41 @@ fn received(snapshot: &ZoneSnapshot) -> ZoneSnapshot {
     mmorpg_protocol::decode_snapshot(&payload).expect("fixture decodes")
 }
 
+/// The second row (#294): Shift+Digit binds slots 11–20, and Digit alone stays on the first row.
+#[test]
+fn shift_number_keys_use_the_second_action_bar_row() {
+    let shift = input_bindings_core::Modifiers {
+        shift: true,
+        ..Default::default()
+    };
+    let mut controls = NativeControls::new();
+    assert_eq!(
+        controls.key_down_with_modifiers(KeyCode::Digit1, false, shift.clone()),
+        [ControlAction::AbilitySlot(11)]
+    );
+    controls.key_up(KeyCode::Digit1);
+    assert_eq!(
+        controls.key_down_with_modifiers(KeyCode::Digit0, false, shift),
+        [ControlAction::AbilitySlot(20)]
+    );
+    controls.key_up(KeyCode::Digit0);
+    assert_eq!(
+        controls.key_down(KeyCode::Digit1, false),
+        [ControlAction::AbilitySlot(1)],
+        "without Shift the digit stays on the first row"
+    );
+    controls.key_up(KeyCode::Digit1);
+    assert_eq!(
+        controls.key_down(KeyCode::ShiftLeft, false),
+        [],
+        "Shift itself no longer rolls"
+    );
+    assert_eq!(
+        controls.key_down(KeyCode::KeyF, false),
+        [ControlAction::Roll]
+    );
+}
+
 #[test]
 fn native_warden_slot_one_spends_rage_and_projects_global_cooldown() {
     let content = greyhaven_vale::content();
@@ -60,7 +95,7 @@ fn native_warden_slot_one_spends_rage_and_projects_global_cooldown() {
             .iter()
             .map(|slot| slot.ability)
             .collect::<Vec<_>>(),
-        [1, 2, 3, 4, 17]
+        [1, 2, 3, 4, 17, 51]
     );
     assert!(
         hud.slots[0]

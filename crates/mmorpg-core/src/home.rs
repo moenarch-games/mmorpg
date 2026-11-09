@@ -80,7 +80,8 @@ impl ZoneSimulation {
         };
         player.quests.entries.iter().any(|entry| {
             self.content.quest(entry.quest).is_some_and(|quest| {
-                quest.ender == npc && crate::quest::objectives_done(quest, entry, &player.inventory)
+                quest.ender == npc
+                    && crate::quest::objectives_done(quest, entry, &player.inventory, player.depths)
             })
         })
     }

@@ -130,7 +130,13 @@ impl ZoneSimulation {
             if ability.projectile.is_some() && followed.is_none() {
                 None
             } else {
-                let entity = match followed {
+                // Grappling Hook (#294) reaches for the selected unit; every other hostile
+                // ability lands where the player aims.
+                let selected = match ability.effect {
+                    AbilityEffect::Hook { .. } => target.or(player.target),
+                    _ => None,
+                };
+                let entity = match followed.or(selected) {
                     Some(entity) => entity,
                     None => match self.aimed_unit(player_id, ability, player.facing)? {
                         Some(entity) => entity,
@@ -169,6 +175,13 @@ impl ZoneSimulation {
                 {
                     return Ok(Some((ErrorCode::LineOfSight, target)));
                 }
+                // A hook honours the forced-move immunity: a unit already being moved or just
+                // moved cannot be pulled, and nothing is paid (#294).
+                if matches!(ability.effect, AbilityEffect::Hook { .. })
+                    && !self.can_be_force_moved(entity)
+                {
+                    return Ok(Some((ErrorCode::MovementImmune, target)));
+                }
                 Some(entity)
             }
         } else if ability.is_friendly() {
@@ -202,6 +215,23 @@ impl ZoneSimulation {
         } else {
             None
         };
+        // Blink and Heroic Leap (#294) are refused before anything is paid when they cannot go.
+        match ability.effect {
+            AbilityEffect::Blink { distance } => {
+                if self.blink_destination(player_id, distance)?.is_none() {
+                    return Ok(Some((ErrorCode::NoLanding, None)));
+                }
+            }
+            AbilityEffect::Leap { .. } => {
+                if !self.can_be_force_moved(EntityRef::Player(player_id)) {
+                    return Ok(Some((ErrorCode::MovementImmune, None)));
+                }
+                if !self.leap_can_start(player_id)? {
+                    return Ok(Some((ErrorCode::NoLanding, None)));
+                }
+            }
+            _ => {}
+        }
         // Summoned terrain (#293) is refused before anything is paid when it cannot rise.
         if let AbilityEffect::SummonTerrain { kind } = ability.effect
             && let Some(code) = self.check_summon_terrain(player_id, kind)?
@@ -494,7 +524,8 @@ impl ZoneSimulation {
             return Ok(());
         };
         let (level, max_health) = (player.level, player.max_health());
-        let (x, z) = crate::trig::direction(player.facing);
+        let facing = player.facing;
+        let (x, z) = crate::trig::direction(facing);
         // A unit standing exactly on a knockback's centre is pushed along the caster's facing.
         let fallback = [i64::from(x), i64::from(z)];
         let (melee, bonus) = (player.melee_damage(), u32::from(player.damage_bonus()));
@@ -531,7 +562,13 @@ impl ZoneSimulation {
                         self.hostile_aura(player_id, victim, stun)?;
                     }
                     let from = self.player_position(player_id)?;
-                    self.knock_away(victim, [from.x, from.z], fallback, knockback)?;
+                    self.knock_away(
+                        victim,
+                        [from.x, from.z],
+                        fallback,
+                        knockback,
+                        Some(player_id),
+                    )?;
                 }
             }
             AbilityEffect::HealOverTime { percent, .. } => {
@@ -691,6 +728,24 @@ impl ZoneSimulation {
             }
             AbilityEffect::SummonTerrain { kind } => {
                 self.raise_summoned_terrain(player_id, kind, now)?;
+            }
+            AbilityEffect::Leap { distance, .. } => {
+                self.leap(source, facing, distance, ability.id)?;
+            }
+            AbilityEffect::Hook { damage, per_level } => {
+                if let Some(victim) = target {
+                    let amount = self
+                        .rng
+                        .inclusive(u32::from(damage[0]), u32::from(damage[1]))
+                        + u32::from(scaled(0, per_level, level))
+                        + bonus;
+                    self.player_damages_unit(player_id, victim, amount, false, now)?;
+                    let from = self.player_position(player_id)?;
+                    self.pull(victim, [from.x, from.z])?;
+                }
+            }
+            AbilityEffect::Blink { distance } => {
+                self.blink(player_id, distance)?;
             }
             // Blizzard, Lightning Beam and Drain Life pulse while they channel; bandages and
             // stomps are creature-only; a flask's splash lands where it shatters.
@@ -910,7 +965,13 @@ impl ZoneSimulation {
                 _ => continue,
             }
             let push = i32::try_from(i64::from(knockback) * share / 1_000).unwrap_or(0);
-            self.knock_away(victim, [centre[0], centre[2]], fallback, push)?;
+            self.knock_away(
+                victim,
+                [centre[0], centre[2]],
+                fallback,
+                push,
+                Some(attacker),
+            )?;
         }
         // Destructible pieces (#305) take the blast's top roll, after the units it reached.
         self.blast_pieces(centre, radius, u32::from(damage[1]) + bonus, now)?;
@@ -957,6 +1018,7 @@ impl ZoneSimulation {
                 [centre[0], centre[2]],
                 [i64::from(x), i64::from(z)],
                 push,
+                None,
             )?;
         }
         Ok(())
@@ -1537,7 +1599,7 @@ impl ZoneSimulation {
                         .inclusive(u32::from(damage[0]), u32::from(damage[1]))
                         + u32::from(scaled(0, per_level, level));
                     self.creature_damages_player(creature_id, player_id, amount, false)?;
-                    self.knock_away(victim, [centre[0], centre[2]], fallback, knockback)?;
+                    self.knock_away(victim, [centre[0], centre[2]], fallback, knockback, None)?;
                 }
             }
             _ => {}

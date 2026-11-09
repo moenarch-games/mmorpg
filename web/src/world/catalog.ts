@@ -9,7 +9,7 @@
 export type CreatureFamily = "wolf" | "boar" | "vermin" | "marauder" | "mirefin" | "redbrand" | "prop" | "ogre";
 export type CreatureBehaviour = "aggressive" | "neutral" | "prop";
 /** A breakable prop (#288). */
-export type PropKind = "crate" | "barrel" | "explosive_barrel" | "fence" | "heavy_crate";
+export type PropKind = "crate" | "barrel" | "explosive_barrel" | "fence" | "heavy_crate" | "boulder";
 export type NpcRole = "quest_giver" | "vendor" | "spirit_healer" | "guard" | "resident";
 
 export type CreatureTemplate = {
@@ -70,10 +70,11 @@ export type AbilityRecord = {
 
 /**
  * `target` is a creature template (kill), an item (collect, dropped by template `source`), an NPC (talk),
- * an area (explore) or an item (retrieve, granted by swimming into area `source`, #274).
+ * an area (explore), an item (retrieve, granted by swimming into area `source`, #274) or nothing
+ * (victory: Captain Thorn beaten in the Redbrand Depths, target 0).
  */
 export type QuestObjectiveRecord =
-  | { kind: "kill" | "talk" | "explore"; target: number; count: number }
+  | { kind: "kill" | "talk" | "explore" | "victory"; target: number; count: number }
   | { kind: "collect" | "retrieve"; target: number; source: number; count: number };
 
 export type QuestRecord = {
@@ -108,13 +109,13 @@ export type ContentCatalog = {
 };
 
 const FORMAT = "mmorpg.catalog";
-const OBJECTIVE_KINDS = ["kill", "collect", "talk", "explore", "retrieve"] as const;
+const OBJECTIVE_KINDS = ["kill", "collect", "talk", "explore", "retrieve", "victory"] as const;
 const CLASS_NAMES: readonly ClassName[] = ["warden", "ranger", "arcanist", "necromancer", "rogue", "cleric", "druid"];
 const RESOURCES = ["rage", "focus", "mana", "faith"] as const;
 const USERS: readonly (ClassName | "creature")[] = [...CLASS_NAMES, "creature"];
 const FAMILIES: readonly CreatureFamily[] = ["wolf", "boar", "vermin", "marauder", "mirefin", "redbrand", "prop", "ogre"];
 const BEHAVIOURS: readonly CreatureBehaviour[] = ["aggressive", "neutral", "prop"];
-const PROPS: readonly PropKind[] = ["crate", "barrel", "explosive_barrel", "fence", "heavy_crate"];
+const PROPS: readonly PropKind[] = ["crate", "barrel", "explosive_barrel", "fence", "heavy_crate", "boulder"];
 const ROLES: readonly NpcRole[] = ["quest_giver", "vendor", "spirit_healer", "guard", "resident"];
 
 type Json = Record<string, unknown>;

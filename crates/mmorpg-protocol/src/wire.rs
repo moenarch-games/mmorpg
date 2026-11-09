@@ -45,6 +45,7 @@ const BLOCKED: u8 = 19;
 const GUARD_BROKEN: u8 = 20;
 const LOST_INTEREST: u8 = 21;
 const RAID_NOTICE: u8 = 22;
+const TRAP_HIT: u8 = 23;
 const CRITICAL_FLAG: u8 = 1;
 
 pub(crate) const fn entity_kind_code(kind: EntityKind) -> u8 {
@@ -139,6 +140,8 @@ pub const fn error_code(code: ErrorCode) -> u16 {
         ErrorCode::DepthsWipe => 43,
         ErrorCode::DepthsBossOpen => 44,
         ErrorCode::NoRoom => 45,
+        ErrorCode::NoLanding => 46,
+        ErrorCode::MovementImmune => 47,
     }
 }
 
@@ -189,6 +192,8 @@ pub fn decode_error_code(code: u16) -> Result<ErrorCode, ProtocolError> {
         43 => ErrorCode::DepthsWipe,
         44 => ErrorCode::DepthsBossOpen,
         45 => ErrorCode::NoRoom,
+        46 => ErrorCode::NoLanding,
+        47 => ErrorCode::MovementImmune,
         _ => return Err(ProtocolError::new("unknown error code")),
     })
 }
@@ -386,6 +391,11 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
         ),
         ZoneEvent::QuestCompleted { quest } => (QUEST_COMPLETED, quest.get(), None, None, 0),
         ZoneEvent::LostInterest { source } => (LOST_INTEREST, 0, Some(source), None, 0),
+        ZoneEvent::TrapHit {
+            trap,
+            target,
+            amount,
+        } => (TRAP_HIT, trap.get(), None, Some(target), amount),
         ZoneEvent::Raid { notice } => {
             (RAID_NOTICE, crate::raid::notice_code(notice), None, None, 0)
         }
@@ -413,6 +423,17 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
     };
     let pair = || source.zip(target).ok_or_else(invalid);
     Ok(match kind {
+        TRAP_HIT => {
+            let target = target.ok_or_else(invalid)?;
+            if source.is_some() {
+                return Err(invalid());
+            }
+            ZoneEvent::TrapHit {
+                trap: mmorpg_core::TrapId::new(flags),
+                target,
+                amount,
+            }
+        }
         DAMAGE_DEALT | DAMAGE_TAKEN | DAMAGE_OBSERVED => {
             let critical = damage(true)?;
             let (source, target) = pair()?;
@@ -929,6 +950,42 @@ pub(crate) fn decode_piece_views(
     Ok(pieces)
 }
 
+/// Fired pressure traps near the viewer (#300): count (`u8`), then per trap its ID (`u8`) and
+/// age in ticks (`u16`), nearest first.
+pub(crate) fn encode_trap_views(
+    payload: &mut Vec<u8>,
+    views: &[mmorpg_core::TrapView],
+) -> Result<(), ProtocolError> {
+    payload.push(
+        u8::try_from(views.len())
+            .ok()
+            .filter(|&count| usize::from(count) <= mmorpg_core::MAX_VISIBLE_TRAPS)
+            .ok_or_else(|| ProtocolError::new("too many trap views"))?,
+    );
+    for view in views {
+        payload.push(view.id.get());
+        payload.extend_from_slice(&view.age.to_be_bytes());
+    }
+    Ok(())
+}
+
+pub(crate) fn decode_trap_views(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::TrapView>, ProtocolError> {
+    let count = usize::from(read_u8(payload, offset)?);
+    if count > mmorpg_core::MAX_VISIBLE_TRAPS {
+        return Err(ProtocolError::new("too many trap views"));
+    }
+    let mut views = Vec::with_capacity(count);
+    for _ in 0..count {
+        let id = mmorpg_core::TrapId::new(read_u8(payload, offset)?);
+        let age = u16::from_be_bytes([read_u8(payload, offset)?, read_u8(payload, offset)?]);
+        views.push(mmorpg_core::TrapView { id, age });
+    }
+    Ok(views)
+}
+
 /// Summoned terrain near the viewer (#293): count (`u8`), then per obstacle its ID (`u32`),
 /// kind (`u8`), centre (`3 × i32`), facing (`u16`) and health percent (`u8`), nearest first.
 pub(crate) fn encode_summoned_views(
@@ -1094,12 +1151,14 @@ mod tests {
             ErrorCode::DepthsWipe,
             ErrorCode::DepthsBossOpen,
             ErrorCode::NoRoom,
+            ErrorCode::NoLanding,
+            ErrorCode::MovementImmune,
         ];
         for (wire, code) in (1..).zip(codes) {
             assert_eq!(error_code(code), wire, "{code:?}");
             assert_eq!(decode_error_code(wire).unwrap(), code);
         }
-        for unknown in [0, 46, u16::MAX] {
+        for unknown in [0, 48, u16::MAX] {
             assert_eq!(
                 decode_error_code(unknown).unwrap_err().to_string(),
                 "unknown error code"

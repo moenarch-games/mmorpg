@@ -179,6 +179,8 @@ mirror!(
         DepthsWipe,
         DepthsBossOpen,
         NoRoom,
+        NoLanding,
+        MovementImmune,
     }
 );
 mirror!(
@@ -208,7 +210,7 @@ mirror!(
 mirror!(
     /// The breakable prop a debris piece came from (#288).
     #[serde(rename_all = "snake_case")]
-    DebrisKind = core::PropKind { Crate, Barrel, ExplosiveBarrel, Fence, HeavyCrate }
+    DebrisKind = core::PropKind { Crate, Barrel, ExplosiveBarrel, Fence, HeavyCrate, Boulder }
 );
 mirror!(
     /// The core emote vocabulary (#69).
@@ -702,6 +704,13 @@ pub struct SummonedState {
     pub health_percent: u8,
 }
 
+/// A fired pressure trap near the viewer (#300).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+pub struct TrapState {
+    pub id: u8,
+    pub age: u16,
+}
+
 /// The night raid as seen near its target (#530): the assault phase (1–3, or 0 once it resolved
 /// while the barn still recovers) and the barn's integrity in percent.
 /// `aid` holds the aid tasks a lost raid left open, one bit per task in `raidAid()` order (#531).
@@ -808,6 +817,12 @@ pub enum ZoneEvent {
     Evade {
         source: EntityRef,
         target: EntityRef,
+    },
+    /// A world trap struck a unit (#300).
+    TrapHit {
+        trap: u8,
+        target: EntityRef,
+        amount: u16,
     },
     Died {
         entity: EntityRef,
@@ -934,6 +949,15 @@ impl From<core::ZoneEvent> for ZoneEvent {
             E::Evade { source, target } => Self::Evade {
                 source: source.into(),
                 target: target.into(),
+            },
+            E::TrapHit {
+                trap,
+                target,
+                amount,
+            } => Self::TrapHit {
+                trap: trap.get(),
+                target: target.into(),
+                amount,
             },
             E::Died {
                 entity: died,
@@ -1117,6 +1141,15 @@ impl From<ZoneEvent> for core::ZoneEvent {
             E::Evade { source, target } => Self::Evade {
                 source: source.into(),
                 target: target.into(),
+            },
+            E::TrapHit {
+                trap,
+                target,
+                amount,
+            } => Self::TrapHit {
+                trap: core::TrapId::new(trap),
+                target: target.into(),
+                amount,
             },
             E::Died {
                 entity: died,
@@ -1342,6 +1375,8 @@ pub struct ZoneSnapshot {
     pub pieces: Vec<PieceState>,
     /// Summoned terrain near the viewer, nearest first (#293).
     pub summoned: Vec<SummonedState>,
+    /// Fired pressure traps near the viewer, nearest first (#300).
+    pub traps: Vec<TrapState>,
     /// The night raid's signals while the viewer is near its target (#530); null otherwise.
     pub raid: Option<RaidSignal>,
     /// The viewer's party frame and any pending invite (#404); null before it has one.
@@ -1494,6 +1529,14 @@ impl From<&core::ZoneSnapshot> for ZoneSnapshot {
                     centre: view.centre,
                     facing: view.facing,
                     health_percent: view.health_percent,
+                })
+                .collect(),
+            traps: snapshot
+                .traps
+                .iter()
+                .map(|view| TrapState {
+                    id: view.id.get(),
+                    age: view.age,
                 })
                 .collect(),
             party: snapshot
@@ -1728,6 +1771,14 @@ impl TryFrom<&ZoneSnapshot> for core::ZoneSnapshot {
                     centre: view.centre,
                     facing: view.facing,
                     health_percent: view.health_percent,
+                })
+                .collect(),
+            traps: snapshot
+                .traps
+                .iter()
+                .map(|view| core::TrapView {
+                    id: core::TrapId::new(view.id),
+                    age: view.age,
                 })
                 .collect(),
             raid: snapshot.raid.map(|raid| core::RaidView {
