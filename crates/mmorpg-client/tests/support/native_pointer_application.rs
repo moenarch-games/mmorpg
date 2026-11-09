@@ -246,6 +246,7 @@ impl NativeApplication {
             next_frame: Instant::now(),
             abilities: class_kit(PlayerClass::Warden),
             controls: NativeControls::new(),
+            power_draw: PowerDraw::default(),
             hud: None,
             world_controls: WorldControls::new(),
             npc_context: NpcContext::default(),
