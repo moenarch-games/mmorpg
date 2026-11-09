@@ -404,6 +404,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
                 }),
         )
         .chain(super::raid::raider_spawns())
+        // Bandit Highlands garrison (#502).
+        .chain(super::highland_bandits::spawns())
         .collect()
 }
 

@@ -79,6 +79,16 @@ pub fn initial_zone(fixture: Fixture) -> Result<ZoneSimulation, Box<dyn Error>> 
     let empty = ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content))?;
     let mut state = empty.snapshot()?;
     let mut placed = Vec::new();
+    // Level 1 bots spread over the Vale's spawns: the highlands' level 5 garrison (#502) would
+    // kill them within the horizon, and a spirit's release is not a physics comparison.
+    let vale_spawns: Vec<_> = content
+        .creature_spawns()
+        .iter()
+        .filter(|spawn| {
+            greyhaven_vale::area_at(spawn.position[0], spawn.position[1])
+                .is_none_or(|area| area.id() != greyhaven_vale::highlands::BANDIT_HIGHLANDS)
+        })
+        .collect();
     for index in 0..fixture.players {
         let position = if !fixture.fighting {
             let feet = greyhaven_vale::SPAWN_GRID
@@ -86,7 +96,7 @@ pub fn initial_zone(fixture: Fixture) -> Result<ZoneSimulation, Box<dyn Error>> 
                 .ok_or("spawn overflow")?;
             [feet[0], PLAYER_HALF_EXTENTS_UNITS[1], feet[2]]
         } else {
-            // Spread across the full authored spawn table, or concentrate around
+            // Spread across the Vale's authored spawn table, or concentrate around
             // the six farm rats. Checkpoint placement is fixture setup only;
             // all subsequent motion and combat go through commands and physics.
             let spawn = if fixture.crowded {
@@ -98,8 +108,7 @@ pub fn initial_zone(fixture: Fixture) -> Result<ZoneSimulation, Box<dyn Error>> 
                     })
                     .ok_or("missing rat")?
             } else {
-                &content.creature_spawns()
-                    [index * content.creature_spawns().len() / fixture.players]
+                vale_spawns[index * vale_spawns.len() / fixture.players]
             };
             let row = i32::try_from(index / 6)?;
             // Off the spawn's row by a few units: content is authored on round coordinates,

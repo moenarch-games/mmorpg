@@ -26,6 +26,7 @@ pub mod cave;
 pub mod dressing;
 pub mod farmland;
 pub mod fort;
+pub mod highland_bandits;
 pub mod highlands;
 pub mod inn;
 pub mod landscape;
