@@ -610,9 +610,12 @@ impl UnitPresenter {
             }
             // The zone answers the local wind-up (Atlas 6.6.10): a refusal, or a cast it began
             // instead, lets it go; its accepted strike commits it below.
+            // A held bow draw (#607) has sent nothing yet, so no refusal can answer it.
             if self.preparation.is_some()
                 && match *event {
-                    ZoneEvent::Error { .. } => true,
+                    ZoneEvent::Error { .. } => self
+                        .preparation
+                        .is_some_and(|preparation| preparation.answer_by.is_some()),
                     ZoneEvent::CastStarted { source, .. } => source == viewer,
                     _ => false,
                 }

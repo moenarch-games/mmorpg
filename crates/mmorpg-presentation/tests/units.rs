@@ -452,10 +452,18 @@ fn a_ranger_power_draws_aimed_shot_and_looses_rapidly_under_rapid_fire() {
         viewer_upper(&frame(scene, now + 0.05)).0
     };
     frame(&mut scene, 0.);
-    // Aimed Shot winds up with the power draw, held drawn at its end until the zone answers …
+    // Aimed Shot winds up with the power draw, held drawn while the key is down: a refusal of
+    // something else in the meantime does not let an unsent draw go …
     scene.presenter.prepare(ids::AIMED_SHOT, 0.);
-    scene.presenter.prepared_sent(0.);
     assert_eq!(viewer_upper(&frame(&mut scene, 0.3)).0, "Bow_Power_Draw");
+    scene.snapshot.tick += 1;
+    scene.snapshot.events = vec![ZoneEvent::Error {
+        code: mmorpg_core::ErrorCode::OutOfRange,
+        target: None,
+    }];
+    scene.presenter.push(&scene.snapshot, 0.32);
+    assert_eq!(viewer_upper(&frame(&mut scene, 0.34)).0, "Bow_Power_Draw");
+    scene.presenter.prepared_sent(0.35);
     let used = ZoneEvent::AbilityUsed {
         source: me,
         target: Some(scene.wolf),

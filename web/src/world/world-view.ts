@@ -50,7 +50,8 @@ import { SharedUnits, type AnimationBlend, type ImportedModelKind, type Loadout,
 
 import { BagsPanel, type BagsElements } from "./units/bags-panel";
 import { CharacterPane, type CharacterElements } from "./units/character-pane";
-import { useAbilitySlot } from "./units/abilities";
+import { abilitySlots, useAbilitySlot } from "./units/abilities";
+import { PowerDrawInput } from "./units/power-draw";
 import { DirectedStrikeAim, HEROIC_STRIKE_ABILITY, canStrikeDirected, directedStrikeCommand } from "./units/directed-strike";
 import { ShieldGuardHold, canGuard, guardCommand } from "./units/shield-guard";
 import { ClassHud } from "./units/class-hud";
@@ -445,6 +446,15 @@ export class WorldView {
   #cameraMode: CameraMode = { kind: "free-look" };
   #pointerOwner: PointerOwner = "interface";
   #lastPointerRelease = -Infinity;
+  /** A held Aimed or Piercing Shot draw (#607): shown locally, sent on the key's release. */
+  readonly #powerDraw = new PowerDrawInput({
+    prepare: (ability) => this.#units?.units.prepare(ability, this.#seconds),
+    abandon: () => this.#units?.units.abandonPreparation(),
+    send: (ability) => this.queueIntent(
+      () => ({ kind: "use-ability", ability, target: null }),
+      () => this.#units?.units.preparedSent(this.#seconds),
+    ),
+  });
   #drag: Drag | null = null;
   /** Fingers on the canvas, and the spread of a two-finger pinch zoom in progress (#434). */
   readonly #touches = new Map<number, { x: number; y: number }>();
@@ -496,6 +506,7 @@ export class WorldView {
     this.#sky = new SkyLayer(elements.sky, ENVIRONMENT);
     this.#combatHud = new CombatHud(elements.unitStatus, elements.combatFeedback);
     this.#classHud = new ClassHud(elements.classHud, {
+      // A click on the bar has no release to wait for: it fires at once, power shots too (#607).
       onUse: (slot) => this.useSlot(slot),
     });
     this.#progressionHud = new ProgressionHud(elements.experienceBar, elements.experienceStatus, elements.progressionFeedback);
@@ -692,6 +703,7 @@ export class WorldView {
     }
     // The most recent press owns the pointer gesture (Atlas 5.2.37): the sword lowers a held guard.
     this.endGuard();
+    this.#powerDraw.cancel();
     this.#strikeAim.begin();
     this.#releasePointerLock();
     this.#updatePointerOwner();
@@ -742,12 +754,40 @@ export class WorldView {
     if (!this.#lastProjection || this.#lastProjection.viewer.dead) {
       return;
     }
+    this.#powerDraw.cancel();
     this.queueIntent(() => ({ kind: "swing", facing: this.#movementFacing }));
   }
 
-  /** Uses action-bar slot `slot` (1–10); the viewer winds up at once while the zone decides. */
+  /** Uses action-bar slot `slot` (1–20); the viewer winds up at once while the zone decides. */
   useSlot(slot: number): void {
+    this.#powerDraw.cancel();
     this.#queuePrepared((projection) => (this.#catalog ? useAbilitySlot(slot, projection, this.#catalog) : null));
+  }
+
+  /**
+   * A held input (a key, pad button or touch face) pressed `slot`: a power shot draws and waits for
+   * the release (#607, whichever slot holds it); anything else is used at once. An empty slot does
+   * nothing.
+   */
+  pressSlot(slot: number): void {
+    const projection = this.#lastProjection;
+    const ability = projection && this.#catalog ? abilitySlots(projection, this.#catalog)[slot - 1] : undefined;
+    if (!projection || !ability) {
+      return;
+    }
+    if (!this.#powerDraw.press(slot, ability.id, projection, this.panelOpen)) {
+      this.useSlot(slot);
+    }
+  }
+
+  /** `slot`'s held input went up; a deliberate release sends the drawn shot once. */
+  releaseSlot(slot: number, retired: boolean): void {
+    this.#powerDraw.release(slot, retired);
+  }
+
+  /** Escape drops a held draw before any other meaning; `true` if it did. */
+  cancelPowerDraw(): boolean {
+    return this.#powerDraw.cancel();
   }
 
   /**
@@ -780,6 +820,7 @@ export class WorldView {
       return;
     }
     this.cancelDirectedStrike();
+    this.#powerDraw.cancel();
     this.#guardHold.begin();
     this.#releasePointerLock();
     this.#updatePointerOwner();
@@ -1208,6 +1249,7 @@ export class WorldView {
       throw new Error("The world source has no projection for the joined player.");
     }
     this.#lastProjection = projection;
+    this.#powerDraw.observe(projection, this.panelOpen);
     this.#syncCameraMode(projection);
     // Death already lowered the guard in the zone; a later life needs a new press.
     if (projection.viewer.dead) {
@@ -1538,7 +1580,8 @@ export class WorldView {
     // A click or drag supersedes an aimed strike that has not been released.
     const wasAiming = this.#strikeAim.active;
     this.cancelDirectedStrike();
-    if (wasAiming) { return; } // Cancellation is never also a sword attack.
+    const wasDrawing = this.#powerDraw.cancel();
+    if (wasAiming || wasDrawing) { return; } // Cancellation is never also a sword attack.
     if (event.pointerType === "touch") {
       // A finger supersedes mouse capture; existing touch drag/pinch stays authoritative.
       this.#releasePointerLock();
@@ -1594,6 +1637,7 @@ export class WorldView {
   /** Losing focus retires the gesture without selecting. */
   cancelPointer(): void {
     this.cancelDirectedStrike();
+    this.#powerDraw.cancel();
     this.endGuard();
     this.#endDrag();
     this.#releasePointerLock();
@@ -1604,6 +1648,8 @@ export class WorldView {
   pointerLockChanged(): void {
     if (this.#pointerOwner === "camera" && document.pointerLockElement !== this.#elements.canvas) {
       this.#lastPointerRelease = performance.now();
+      // Some browsers consume the unlocking Escape; the draw still drops (#607).
+      this.#powerDraw.cancel();
     }
     this.#updatePointerOwner();
   }

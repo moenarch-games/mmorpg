@@ -500,6 +500,14 @@ impl Presentation {
         self.units_presenter.prepared_sent(seconds);
     }
 
+    /// The player began holding a power shot (#607): the bow draws and stays drawn; nothing is
+    /// sent until the key's release, when [`Self::prepare_attack`] carries the same draw on.
+    pub fn hold_attack_preparation(&mut self, ability: u8, now: Instant) {
+        let seconds = now.saturating_duration_since(self.origin).as_secs_f64();
+        self.units_presenter
+            .prepare(mmorpg_core::AbilityId::new(ability), seconds);
+    }
+
     /// Lost focus, a menu, a retired input context or a superseding gesture: no swing.
     pub fn abandon_attack_preparation(&mut self) {
         self.units_presenter.abandon_preparation();

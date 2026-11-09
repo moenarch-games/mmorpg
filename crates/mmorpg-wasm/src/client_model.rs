@@ -1,6 +1,7 @@
 //! The browser's thin wrappers over `mmorpg-client-model` (#543): the action
-//! bar and cast bar, chat parsing and the chat log, the movement outbox and
-//! quest views, so both clients run the same client rules. Inputs arrive in
+//! bar and cast bar, chat parsing and the chat log, the movement outbox, the
+//! hold-to-draw rule and quest views, so both clients run the same client
+//! rules. Inputs arrive in
 //! the browser's wire shape ([`crate::wire`]); results cross as plain objects
 //! whose TypeScript types are generated here. Quest views read the hosted
 //! content, the content every browser world presents quests from.
@@ -8,6 +9,7 @@ use mmorpg_client_model::{
     chat::{self, LineKind, Logs},
     hud::{self, CooldownKind},
     outbox::{self, MovementCommands},
+    power_draw::{self, DrawRelease},
     quest,
 };
 use mmorpg_core as core;
@@ -224,6 +226,66 @@ impl ChatLog {
             })
             .collect();
         to_js(&entries)
+    }
+}
+
+/// The shared hold-to-draw rule (#607): pressing and releasing a held slot, and the shot it
+/// fires. Nothing here decides an outcome; the zone answers the shot.
+#[wasm_bindgen]
+#[derive(Default)]
+pub struct PowerDraw {
+    draw: power_draw::PowerDraw,
+}
+
+#[wasm_bindgen]
+impl PowerDraw {
+    #[wasm_bindgen(constructor)]
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// A held input pressed `slot`: `true` starts a draw and sends nothing.
+    pub fn press(
+        &mut self,
+        slot: u8,
+        ability: u8,
+        snapshot: Ts<ZoneSnapshot>,
+        interface_open: bool,
+    ) -> Result<bool, JsError> {
+        let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+        Ok(self
+            .draw
+            .press(slot, ability, Some(&snapshot), interface_open))
+    }
+
+    /// `slot` went up, or its hold was retired; the ability to send, if it fires.
+    pub fn release(&mut self, slot: u8, retired: bool) -> Option<u8> {
+        match self.draw.release(slot, retired) {
+            Some(DrawRelease::Fire(ability)) => Some(ability),
+            Some(DrawRelease::Drop) | None => None,
+        }
+    }
+
+    /// Drops the draw without firing; `true` if there was one.
+    pub fn cancel(&mut self) -> bool {
+        self.draw.cancel()
+    }
+
+    /// Follows a projection; `true` if the draw just became impossible and was dropped.
+    pub fn observe(
+        &mut self,
+        snapshot: Ts<ZoneSnapshot>,
+        interface_open: bool,
+    ) -> Result<bool, JsError> {
+        let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+        Ok(self.draw.observe(&snapshot, interface_open))
+    }
+
+    /// The ability being drawn.
+    #[must_use]
+    pub fn drawing(&self) -> Option<u8> {
+        self.draw.drawing()
     }
 }
 
