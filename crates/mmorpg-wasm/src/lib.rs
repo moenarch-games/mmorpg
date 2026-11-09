@@ -1243,10 +1243,9 @@ impl KitLods {
     #[wasm_bindgen(constructor)]
     pub fn new(kit: &str, descriptor: &str) -> Result<Self, JsError> {
         let placements = placed_kit(kit)?.1;
-        let descriptor: serde_json::Value = serde_json::from_str(descriptor)
-            .map_err(|error| JsError::new(&format!("{kit} descriptor: {error}")))?;
-        let entries = mmorpg_presentation::lod::descriptor_lods(&descriptor)
-            .map_err(|error| JsError::new(&error))?;
+        // The shared parse: every kit's levels, with the nature trees' own switch points.
+        let entries = mmorpg_presentation::nature::descriptor_lods(descriptor)
+            .map_err(|error| JsError::new(&format!("{kit}: {error}")))?;
         Ok(Self(mmorpg_presentation::lod::Lods::new(
             entries,
             placements
