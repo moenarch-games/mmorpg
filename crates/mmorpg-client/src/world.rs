@@ -431,6 +431,7 @@ impl WorldScene {
         // The trees, rocks and bushes (#49), then the climbing kit's parts (#621): one library.
         let mut placements = mmorpg_presentation::nature::placements(scenery);
         placements.extend(mmorpg_presentation::climbing::placements(scenery));
+        placements.extend(mmorpg_presentation::river::placements(scenery));
         let library = crate::nature::entries();
         let nature = Nature {
             lods: mmorpg_presentation::lod::Lods::new(

@@ -1097,7 +1097,8 @@ pub fn settlement_prop_models() -> Vec<f32> {
 
 /// A bundle drawn at fixed placements through the shared level selection: `"nature"`, the
 /// `greyhaven-nature` trees and bushes (#49), `"climbing"`, the climbing kit's ladders, ropes
-/// and ivy (#621), or `"limestone"`, the rocks' limestone blocks (asset-tooling#536).
+/// and ivy (#621), `"limestone"`, the rocks' blocks and the brook's sink (asset-tooling#536), or
+/// `"river"`, the stones along the watercourses (asset-tooling#538).
 fn placed_kit(
     kit: &str,
 ) -> Result<
@@ -1107,20 +1108,31 @@ fn placed_kit(
     ),
     JsError,
 > {
-    use mmorpg_presentation::{climbing, lod::Placement, nature};
+    use mmorpg_presentation::{climbing, lod::Placement, nature, river};
     static NATURE: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     static CLIMBING: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     static LIMESTONE: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
-    // The two bundles share one placement list, split by the bundle each entry lives in.
-    let split = |limestone: bool| {
-        nature::placements(scenery::hosted_scenery())
+    static RIVER: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
+    // The placement lists mix bundles, so each kit takes the placements of its own entries.
+    let all = || {
+        let scenery = scenery::hosted_scenery();
+        let mut placements = nature::placements(scenery);
+        placements.extend(river::placements(scenery));
+        placements
+    };
+    let of = |entries: &[&str]| {
+        all()
             .into_iter()
-            .filter(|placement| nature::LIMESTONE_ENTRIES.contains(&placement.entry) == limestone)
+            .filter(|placement| entries.contains(&placement.entry))
             .collect::<Vec<_>>()
     };
     match kit {
-        "nature" => Ok((&nature::ENTRIES, NATURE.get(|_| split(false)))),
-        "limestone" => Ok((&nature::LIMESTONE_ENTRIES, LIMESTONE.get(|_| split(true)))),
+        "nature" => Ok((&nature::ENTRIES, NATURE.get(|_| of(&nature::ENTRIES)))),
+        "limestone" => Ok((
+            &nature::LIMESTONE_ENTRIES,
+            LIMESTONE.get(|_| of(&nature::LIMESTONE_ENTRIES)),
+        )),
+        "river" => Ok((&river::ENTRIES, RIVER.get(|_| of(&river::ENTRIES)))),
         "climbing" => Ok((
             &climbing::ENTRIES,
             CLIMBING.get(|_| climbing::placements(scenery::hosted_scenery())),
