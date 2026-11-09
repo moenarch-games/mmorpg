@@ -943,6 +943,15 @@ impl ZoneSimulation {
             },
         );
         if let EntityRef::Player(attacker) = source {
+            self.notify(
+                attacker,
+                ZoneEvent::DamageDealt {
+                    source,
+                    target,
+                    amount: u16::try_from(dealt).unwrap_or(u16::MAX),
+                    critical,
+                },
+            );
             self.gain_faith(attacker, dealt);
         }
         self.observe_damage(source, target, dealt, critical);

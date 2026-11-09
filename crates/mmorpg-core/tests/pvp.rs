@@ -265,6 +265,39 @@ fn an_aimed_melee_ability_finds_nobody_above_its_height_band() {
 }
 
 #[test]
+fn the_attacker_is_told_the_damage_of_every_hit_through_the_killing_blow() {
+    use mmorpg_core::{EntityRef, ZoneEvent};
+    let mut zone = two_classes_on(flat_arena(), [0, 0]);
+    let start = zone.snapshot_for_player(2).unwrap().viewer.health;
+    let (mut confirmed, mut sequence) = (0, 2);
+    for _ in 0..mmorpg_core::golden::t30(9_000) {
+        if let Some(swing) = support::arena::swing_at(&zone, 1, EntityRef::Player(2)) {
+            zone.apply_command(1, sequence, swing).unwrap();
+            sequence += 1;
+        }
+        zone.advance_tick().unwrap();
+        for event in zone.snapshot_for_player(1).unwrap().events {
+            if let ZoneEvent::DamageDealt {
+                source,
+                target,
+                amount,
+                ..
+            } = event
+            {
+                assert_eq!(source, EntityRef::Player(1));
+                assert_eq!(target, EntityRef::Player(2));
+                confirmed += u32::from(amount);
+            }
+        }
+        if zone.snapshot_for_player(2).unwrap().viewer.health == 0 {
+            break;
+        }
+    }
+    assert_eq!(zone.snapshot_for_player(2).unwrap().viewer.health, 0);
+    assert_eq!(confirmed, start);
+}
+
+#[test]
 fn arena_swings_use_the_existing_swing_clock() {
     use mmorpg_core::{EntityRef, ZoneCommand};
     for policy in [PlayerCombatPolicy::Safe, PlayerCombatPolicy::FreeForAll] {
