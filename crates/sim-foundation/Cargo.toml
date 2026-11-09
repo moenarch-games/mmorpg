@@ -1,0 +1,22 @@
+[package]
+name = "sim-foundation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+rapier3d = { workspace = true, optional = true }
+serde = { version = "=1.0.229", features = ["derive"] }
+# Production physics; Rapier is enabled only by the independent A/B diagnostics.
+physics-engine.workspace = true
+strum.workspace = true
+web-time = { version = "=1.1.0", optional = true }
+
+[features]
+# Enables the independent Rapier oracle and A/B timing/operation diagnostics.
+physics-ab = ["dep:rapier3d", "dep:web-time"]
+
+[lints]
+workspace = true

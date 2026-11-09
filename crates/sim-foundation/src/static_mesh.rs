@@ -1,6 +1,6 @@
 //! Simplified authored collision, in integer centimetres, independent of render meshes.
-use super::{StaticCollider, within_content_range};
 use crate::ZoneError;
+use crate::collision::{StaticCollider, within_content_range};
 
 /// One fixed triangle mesh. Vertices are local to `position`; winding points out of solids.
 /// Stable IDs share the static collider namespace. JSON is an authoring input, never a wire format.
@@ -14,7 +14,7 @@ pub struct StaticMesh {
 }
 
 impl StaticMesh {
-    pub(crate) fn bounds(&self) -> Result<StaticCollider, ZoneError> {
+    pub fn bounds(&self) -> Result<StaticCollider, ZoneError> {
         if self.vertices.len() < 3 || self.triangles.is_empty() {
             return Err(ZoneError::new("static mesh needs vertices and triangles"));
         }

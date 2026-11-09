@@ -128,7 +128,7 @@ contacts and uses the neighbor-local operations often enough to offset maintenan
 
 ## Seam
 
-- `physics::World` is an enum over the backends (`crates/mmorpg-core/src/physics.rs`). Rapier's
+- `physics::World` is an enum over the backends (`crates/sim-foundation/src/physics.rs`). Rapier's
   world moved unchanged to `physics/rapier.rs`; `physics/engine.rs` is the thin engine adapter.
   No call site changed.
 - Both backend arms compile normally. The non-default `physics-ab` feature adds diagnostic

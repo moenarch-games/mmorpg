@@ -113,17 +113,17 @@ fn the_client_model_holds_only_client_rules_over_core() {
 /// Physics Engine is a normal dependency of core, shared by native/WASM production;
 /// Rapier is optional and enabled only by the independent A/B diagnostic feature.
 #[test]
-fn production_builds_use_the_core_owned_physics_backend() {
-    const CORE: &str = include_str!("../../mmorpg-core/Cargo.toml");
-    let declaration = CORE
+fn production_builds_use_the_foundation_owned_physics_backend() {
+    const FOUNDATION: &str = include_str!("../../sim-foundation/Cargo.toml");
+    let declaration = FOUNDATION
         .lines()
         .find(|line| line.starts_with("physics-engine"))
-        .expect("mmorpg-core declares physics-engine");
+        .expect("sim-foundation declares physics-engine");
     assert_eq!(declaration, "physics-engine.workspace = true");
-    assert!(CORE.contains("rapier3d = { workspace = true, optional = true }"));
-    assert!(CORE.contains("physics-ab = [\"dep:rapier3d\", \"dep:web-time\"]"));
+    assert!(FOUNDATION.contains("rapier3d = { workspace = true, optional = true }"));
+    assert!(FOUNDATION.contains("physics-ab = [\"dep:rapier3d\", \"dep:web-time\"]"));
     assert!(
-        !CORE.contains("default = ["),
+        !FOUNDATION.contains("default = ["),
         "physics engine must not need an opt-in feature"
     );
     for (name, manifest) in [
@@ -164,7 +164,7 @@ fn production_builds_use_the_core_owned_physics_backend() {
     ] {
         assert!(
             !manifest.contains("physics-ab") && !manifest.contains("physics-engine"),
-            "{name} must leave backend selection to core"
+            "{name} must leave backend selection to the foundation"
         );
     }
     let graph = dependency_graph(LOCKFILE);
@@ -173,7 +173,8 @@ fn production_builds_use_the_core_owned_physics_backend() {
         .filter(|(_, dependencies)| dependencies.contains(&"physics-engine"))
         .map(|(name, _)| *name)
         .collect();
-    assert_eq!(users, ["mmorpg-core"]);
+    // Core links it only for the authored-backend A/B test.
+    assert_eq!(users, ["mmorpg-core", "sim-foundation"]);
 }
 
 #[test]

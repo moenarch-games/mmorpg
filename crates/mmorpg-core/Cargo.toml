@@ -7,20 +7,21 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+sim-foundation.workspace = true
 strum.workspace = true
 rapier3d = { workspace = true, optional = true }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
-# Production physics; Rapier is enabled only by the independent A/B diagnostics.
-physics-engine.workspace = true
 # Diagnostic timing also runs in the real WASM acceptance harness.
 web-time = { version = "=1.1.0", optional = true }
 
 [features]
 # Enables the independent Rapier oracle and A/B timing/operation diagnostics.
-physics-ab = ["dep:rapier3d", "dep:web-time"]
+physics-ab = ["sim-foundation/physics-ab", "dep:rapier3d", "dep:web-time"]
 
 [dev-dependencies]
+# The authored-backend A/B test drives the production engine directly.
+physics-engine.workspace = true
 # Reads the bot scenario files the physics A/B test replays.
 toml = { version = "=1.2.0", default-features = false, features = ["parse", "serde", "std"] }
 libtest-mimic.workspace = true

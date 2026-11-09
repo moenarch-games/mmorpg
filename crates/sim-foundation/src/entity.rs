@@ -126,15 +126,15 @@ impl EntityRef {
 }
 
 /// Static collider IDs lie below this; zone content validates it.
-pub(crate) const PLAYER_BODY_BASE: u64 = 1_000_000;
+pub const PLAYER_BODY_BASE: u64 = 1_000_000;
 /// Summoned terrain (#293) takes this band of the static namespace, just below
 /// [`PLAYER_BODY_BASE`], so every static-geometry filter sees it as fixed world; zone content
 /// stays below it.
-pub(crate) const SUMMONED_BODY_BASE: u64 = PLAYER_BODY_BASE - SUMMONED_BODY_SLOTS;
+pub const SUMMONED_BODY_BASE: u64 = PLAYER_BODY_BASE - SUMMONED_BODY_SLOTS;
 /// Body IDs in that band; a body's slot is the summoned ID modulo this.
-pub(crate) const SUMMONED_BODY_SLOTS: u64 = 16_384;
+pub const SUMMONED_BODY_SLOTS: u64 = 16_384;
 /// Six fixed world-limit bodies start above every player body ID.
-pub(crate) const WORLD_LIMIT_BODY_BASE: u64 = PLAYER_BODY_BASE + (1 << 32);
+pub const WORLD_LIMIT_BODY_BASE: u64 = PLAYER_BODY_BASE + (1 << 32);
 /// Creature bodies start above the world-limit range.
 const CREATURE_BODY_BASE: u64 = WORLD_LIMIT_BODY_BASE + (1 << 32);
 /// NPC bodies start above every creature body ID.
@@ -150,12 +150,12 @@ const _: () = assert!(MINION_BODY_BASE - NPC_BODY_BASE > u32::MAX as u64);
 const _: () = assert!(MINION_BODY_BASE.checked_add(u32::MAX as u64).is_some());
 
 /// Whether `body` belongs to a player, creature, NPC or minion (not content or a world limit).
-pub(crate) const fn is_unit_body(body: BodyId) -> bool {
+pub const fn is_unit_body(body: BodyId) -> bool {
     (body.0 >= PLAYER_BODY_BASE && body.0 < WORLD_LIMIT_BODY_BASE) || body.0 >= CREATURE_BODY_BASE
 }
 
 /// The unit owning `body`, if it is a unit body.
-pub(crate) const fn entity_of(body: BodyId) -> Option<EntityRef> {
+pub const fn entity_of(body: BodyId) -> Option<EntityRef> {
     let id = body.0;
     #[allow(clippy::cast_possible_truncation)]
     if id >= MINION_BODY_BASE {
@@ -176,7 +176,7 @@ pub(crate) const fn entity_of(body: BodyId) -> Option<EntityRef> {
 }
 
 /// The physics body of a unit. Namespaces never overlap across kinds.
-pub(crate) const fn body_id(entity: EntityRef) -> BodyId {
+pub const fn body_id(entity: EntityRef) -> BodyId {
     match entity {
         EntityRef::Player(id) => BodyId(PLAYER_BODY_BASE + id as u64),
         EntityRef::Creature(id) => BodyId(CREATURE_BODY_BASE + id.get() as u64),

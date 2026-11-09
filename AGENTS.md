@@ -25,7 +25,8 @@ Lookup is read-only and does not replace the full completion gate or required na
 
 | Crate | Role |
 | --- | --- |
-| `mmorpg-core` | Deterministic zone-local gameplay and interest/visibility policy |
+| `sim-foundation` | Lowest simulation layer shared by every game: fixed-point maths, seeded randomness, tick timing, unit identity, collision geometry and the physics world; no combat, zones or content |
+| `mmorpg-core` | Deterministic zone-local gameplay and interest/visibility policy, composed over `sim-foundation` |
 | `mmorpg-protocol` | Command/snapshot wire encoding |
 | `mmorpg-game-server` | Adapter from a zone simulation into `game-server` |
 | `mmorpg-control-plane` | Placement, leases, fencing, handoff metadata and logical-zone partition maps (in-memory reference model) |
@@ -71,7 +72,7 @@ cargo run -p mmorpg-world-studio -- import <region>.ora # painted height and bio
 ## Authority
 
 - `mmorpg-core` owns deterministic zone-local gameplay and interest/visibility policy.
-- Physics Engine (`physics-engine`, through `mmorpg-core/src/physics.rs`, Atlas 2.1.i330) is the default collision/character backend in production and WASM, including immutable authored triangle meshes and fixed convex rock hulls. Physics Engine also owns free-rotating debris and upright movable-prop contacts against those authored shapes, through isolated retained static response worlds with canonical pieces transferred in and out each tick. Rapier (`rapier3d`) and backend selectors compile only under the non-default `physics-ab` diagnostic feature; production has no fallback. Never silently approximate authored collision with bounding boxes. `mmorpg-core` retains movement intent, gravity/jumps and all gameplay outcomes; authoritative f32 positions and velocities are rounded only for gameplay/network views. Preserve deterministic replay and use the non-default `physics-ab` feature only for A/B diagnostics, not for enabling the engine.
+- Physics Engine (`physics-engine`, through `sim-foundation/src/physics.rs`, Atlas 2.1.i330) is the default collision/character backend in production and WASM, including immutable authored triangle meshes and fixed convex rock hulls. Physics Engine also owns free-rotating debris and upright movable-prop contacts against those authored shapes, through isolated retained static response worlds with canonical pieces transferred in and out each tick. Rapier (`rapier3d`) and backend selectors compile only under the non-default `physics-ab` diagnostic feature; production has no fallback. Never silently approximate authored collision with bounding boxes. `mmorpg-core` retains movement intent, gravity/jumps and all gameplay outcomes; authoritative f32 positions and velocities are rounded only for gameplay/network views. Preserve deterministic replay and use the non-default `physics-ab` feature only for A/B diagnostics, not for enabling the engine.
 - `game-server` owns reusable transport/session/tick/reconnect/replay/recovery behavior. Keep MMO adapters thin.
 - `mmorpg-control-plane` owns placement, leases, fencing and handoff metadata. It must not mutate zone gameplay state.
 - `mmorpg-scenery` owns presentation scenery and relief derived from core colliders. Network hosts never depend on it (`mmorpg-game-server/tests/dependency_boundary.rs`), `mmorpg-wasm`'s local zone host never reads it, and it never feeds back into gameplay.
