@@ -135,6 +135,30 @@ export const DEBUG_VIEWPOINTS: Readonly<Record<string, { eye: Vec3; target: Vec3
   vale: { eye: [0, 70, 95], target: [0, 0, -10] },
 };
 
+/** A debug map view of one XZ rectangle in metres (`mmorpg-world-studio capture`). */
+type PlanView = { minX: number; minZ: number; maxX: number; maxZ: number; groundOnly?: boolean };
+/** Above every terrain height and structure, and well inside the plan's depth range. */
+const PLAN_EYE_HEIGHT_METRES = 200;
+const PLAN_DEPTH_METRES = 400;
+/** Reported to the level-of-detail selection in a map view, so it always picks the finest level. */
+const PLAN_DETAIL_FOV_DEGREES = 0.5;
+
+/** Straight down over the middle of `plan`: three's `lookAt` puts +X right and +Z down the image. */
+function planPose(plan: PlanView): { eye: Vec3; target: Vec3 } {
+  const x = (plan.minX + plan.maxX) / 2;
+  const z = (plan.minZ + plan.maxZ) / 2;
+  return { eye: [x, PLAN_EYE_HEIGHT_METRES, z], target: [x, 0, z] };
+}
+
+/** Replaces the camera's projection with an orthographic one exactly covering `plan`. */
+function applyPlanProjection(camera: THREE.PerspectiveCamera, plan: PlanView): void {
+  const halfWidth = (plan.maxX - plan.minX) / 2;
+  const halfHeight = (plan.maxZ - plan.minZ) / 2;
+  camera.fov = PLAN_DETAIL_FOV_DEGREES;
+  camera.projectionMatrix.makeOrthographic(-halfWidth, halfWidth, halfHeight, -halfHeight, 1, PLAN_DEPTH_METRES);
+  camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+}
+
 export function webGpuProjection(source: THREE.PerspectiveCamera): Matrix4Values {
   const gl = source.projectionMatrix.elements;
   const gpu = [...gl];
@@ -433,6 +457,13 @@ export class WorldView {
   /** The development body overlay (#39). */
   #bodyOverlay = false;
   #flyTo: { eye: Vec3; target: Vec3 } | null = null;
+  /** The debug map view, or null for the ordinary perspective camera. */
+  #plan: PlanView | null = null;
+  /** The world roots the map view hid, shown again as soon as it stops hiding them. */
+  readonly #planHidden = new Set<THREE.Object3D>();
+  /** The perspective camera's field of view, restored on leaving the map view. */
+  readonly #perspectiveFov: number;
+  #areas: ZoneWorld["scenery"]["scenery"]["areas"] = [];
   #lastWork: RendererWorkObservations | null = null;
   /** While `prepare` runs its frame: the renderer's pending preparations. */
   #preparing: Promise<unknown>[] | null = null;
@@ -451,6 +482,7 @@ export class WorldView {
     // Every asset-tooling bundle may ship KTX2 textures (asset-tooling#511); they share this transcoder.
     useBundleKtx2Loader(this.#models.ktx2Loader);
     this.#camera = camera;
+    this.#perspectiveFov = camera.fov;
     this.#elements = elements;
     this.#reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     this.#overlay = new DebugOverlay(elements.overlay);
@@ -552,6 +584,7 @@ export class WorldView {
     this.#vendor.load(world.catalog);
     this.#quests.load(world.catalog, world.scenery.raidPrep?.lookout ?? null);
     const scenery = world.scenery.scenery;
+    this.#areas = scenery.areas;
     this.#presentationFingerprint = scenery.presentationFingerprint;
     this.#reliefAt = world.scenery.reliefAt;
     this.#scene = buildSceneryScene(scenery, world.scenery.staticScene);
@@ -1218,7 +1251,7 @@ export class WorldView {
     this.#impacts.update(now);
     const roof = this.#roofOf(projection.raid ? this.#raidArea : null, scenery.scenery);
     this.#raidSmoke.update(projection.raid, roof?.top ?? null, roof?.span ?? [0, 0], now);
-    const unitNodes = presented.nodes.filter((node) => !node.id.startsWith("fx-"));
+    const unitNodes = this.#plan ? [] : presented.nodes.filter((node) => !node.id.startsWith("fx-"));
     profilePhase("units");
     if (!self) {
       throw new Error("The projection is missing the viewer's own unit.");
@@ -1242,10 +1275,11 @@ export class WorldView {
     }
     const orbit = this.#orbit.view(self.focus, scene.surfaceY);
     // The fortress's walls and roofs (#552) pull the eye in; Greyhaven's camera never collides.
-    const view = this.#flyTo ?? (this.#arena ? clearSightLine(orbit, this.#occluders) : orbit);
+    const view = this.#plan ? planPose(this.#plan) : this.#flyTo ?? (this.#arena ? clearSightLine(orbit, this.#occluders) : orbit);
     this.#camera.position.set(...view.eye);
     this.#camera.lookAt(...view.target);
     this.#camera.updateMatrixWorld(true);
+    if (this.#plan) { applyPlanProjection(this.#camera, this.#plan); }
     if (this.#sound) {
       const right = new THREE.Vector3().setFromMatrixColumn(this.#camera.matrixWorld, 0);
       this.#sound.listen(view.eye, [right.x, right.y, right.z]);
@@ -1253,7 +1287,8 @@ export class WorldView {
     }
     const outpostReady = (this.#outpost?.drawn ?? false) && (this.#fortifications?.drawn ?? false);
     const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits: { outpost: outpostReady, settlementProps: this.#settlement?.drawn ?? false, nature: this.#nature?.drawn ?? false, climbing: this.#climbing?.drawn ?? false, fortress: this.#fortress?.drawn ?? false } });
-    this.#ground?.update(view.eye, frame.shown);
+    // A map view's eye is high only to clear the terrain: its ground streams as if standing on it.
+    this.#ground?.update(this.#plan ? [view.eye[0], 0, view.eye[2]] : view.eye, frame.shown);
     this.#nature?.update(this.#camera, deltaSeconds, animate);
     this.#climbing?.update(this.#camera, deltaSeconds, animate);
     this.#limestone?.update(this.#camera, deltaSeconds, animate);
@@ -1264,7 +1299,7 @@ export class WorldView {
     this.#sceneryBatches?.show(frame.nodes);
     const rendered = this.#sceneryBatches?.undrawn(frame.nodes) ?? frame.nodes;
     const batchedNodes = frame.nodes.length - rendered.length;
-    nodes.push(...rendered, ...unitNodes);
+    nodes.push(...(this.#plan?.groundOnly ? [] : rendered), ...unitNodes);
     this.#lastEffectNodes = presented.nodes.filter((node) => node.id.startsWith("fx-"));
     nodes.push(...this.#lastEffectNodes);
     this.#lastUnitNodes = unitNodes;
@@ -1285,7 +1320,7 @@ export class WorldView {
       hour: (12 + seconds / DAY_SECONDS * 24) % 24,
       sky: true,
       interior: this.#scene?.interior([self.x, self.feetY, self.z]) ?? 0,
-      fog: environment.fog ? String(environment.fog.color) : null,
+      fog: environment.fog && !this.#plan ? String(environment.fog.color) : null,
       pointLights: this.#scene?.pointLights(this.#seconds, animate) ?? null,
     });
     this.#lastInstanceBatches = frame.instanceBatches;
@@ -1312,7 +1347,19 @@ export class WorldView {
     // No scene background: `Lighting` clears its own frame, and three would clear to the background again in each of its
     // passes, wiping the sky (#600). The environment's fog still fogs the unlit sprites.
     const { background: _background, ...withoutBackground } = environment;
-    const rendererFrame = { camera, nodes, instanceBatches: frame.instanceBatches, environment: withoutBackground };
+    if (this.#plan) {
+      // A map shows the world without its inhabitants; a ground map only the terrain.
+      for (const root of roots) {
+        const inhabitant = models.roots.includes(root) || ambient.roots.includes(root);
+        if (inhabitant || (this.#plan.groundOnly && !ground.roots.includes(root))) {
+          root.visible = false;
+          this.#planHidden.add(root);
+        } else if (this.#planHidden.delete(root)) {
+          root.visible = true;
+        }
+      }
+    }
+    const rendererFrame = { camera, nodes, instanceBatches: this.#plan?.groundOnly ? [] : frame.instanceBatches, environment: withoutBackground };
     if (this.#preparing) {
       // `prepare` (#547): the first world frame's programs and textures, without drawing it.
       this.#preparing.push(this.#renderer.prepare(rendererFrame, { roots }));
@@ -1733,6 +1780,20 @@ export class WorldView {
         this.#flyTo = null;
       },
       controls: () => ({ mode: this.#cameraMode, pointer: this.#pointerOwner, heading: this.#orbit.heading }),
+      /** Named areas with their bounds in simulation units, for tools that walk the regions. */
+      areas: () => structuredClone(this.#areas),
+      /** Starts every area's art, which otherwise streams in around the character. */
+      fetchAllArt: () => this.#regions?.fetch(null),
+      /** An orthographic map of the world alone (no units or fog) over an XZ rectangle in metres; `null` leaves it. */
+      planView: (plan: PlanView | null) => {
+        this.#plan = plan;
+        if (!plan) {
+          this.#camera.fov = this.#perspectiveFov;
+          this.#camera.updateProjectionMatrix();
+          for (const root of this.#planHidden) { root.visible = true; }
+          this.#planHidden.clear();
+        }
+      },
       reliefAt: (x: number, z: number) => {
         if (!this.#reliefAt) {
           throw new Error("Scenery is not loaded");
