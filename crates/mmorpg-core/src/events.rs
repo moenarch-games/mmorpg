@@ -124,6 +124,12 @@ pub enum ErrorCode {
 /// One feedback event addressed to a player.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ZoneEvent {
+    /// A world trap (#300) struck `target`; the witness may be the target itself.
+    TrapHit {
+        trap: crate::TrapId,
+        target: EntityRef,
+        amount: u16,
+    },
     /// An ordinary attack actually rolled at `target`, independently of its hit outcome; a
     /// player's swing that covered nobody (#517) whiffs with `None`.
     AttackPerformed {
@@ -289,7 +295,7 @@ impl ZoneEvent {
     const fn priority(self) -> u8 {
         match self {
             Self::Died { .. } => 5,
-            Self::DamageTaken { .. } | Self::GuardBroken { .. } => 4,
+            Self::DamageTaken { .. } | Self::GuardBroken { .. } | Self::TrapHit { .. } => 4,
             Self::Error { .. } | Self::QuestCompleted { .. } | Self::Raid { .. } => 3,
             Self::DamageDealt { .. } | Self::QuestProgress { .. } => 2,
             Self::CastStarted { .. }

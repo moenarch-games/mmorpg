@@ -77,6 +77,8 @@ pub struct ZoneContent {
     waters: Vec<crate::WaterVolume>,
     /// Authored surface hazards (#294), in ID order.
     surfaces: Vec<crate::SurfacePatch>,
+    /// Authored world traps (#300), in ID order.
+    traps: Vec<crate::Trap>,
     climbing: crate::ClimbSurfaces,
     handoff_corridors: Vec<crate::HandoffCorridor>,
     /// The night raid target (#530), if the zone has one.
@@ -208,6 +210,7 @@ impl ZoneContent {
             private_homes: Vec::new(),
             waters: Vec::new(),
             surfaces: Vec::new(),
+            traps: Vec::new(),
             climbing: crate::ClimbSurfaces::default(),
             handoff_corridors: Vec::new(),
             raid: None,
@@ -258,6 +261,7 @@ impl ZoneContent {
             private_homes: Vec::new(),
             waters: Vec::new(),
             surfaces: Vec::new(),
+            traps: Vec::new(),
             climbing: crate::ClimbSurfaces::default(),
             handoff_corridors: Vec::new(),
             raid: None,
@@ -853,6 +857,20 @@ impl ZoneContent {
         &self.surfaces
     }
 
+    /// Binds the zone's authored world traps (#300), in ID order.
+    pub fn with_traps(mut self, traps: Vec<crate::Trap>) -> Result<Self, ZoneError> {
+        crate::trap::validate(&traps)?;
+        self.traps = traps;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// The zone's authored world traps (#300).
+    #[must_use]
+    pub fn traps(&self) -> &[crate::Trap] {
+        &self.traps
+    }
+
     /// Marks which collision is climbable (#490): every listed collider must exist and must not
     /// be the ground, whose climbable stretches are terrain stretches.
     pub fn with_climbing(mut self, climbing: crate::ClimbSurfaces) -> Result<Self, ZoneError> {
@@ -1437,8 +1455,60 @@ impl ZoneContent {
         hash.finish()
     }
 
-    fn compute_water_fingerprint(&self) -> u64 {
+    /// World traps (#300) enter the identity only when a zone has any.
+    fn compute_trap_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_surface_fingerprint();
+        if self.traps.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/trap-v1");
+        hash.u64(fingerprint);
+        hash.len(self.traps.len());
+        for trap in &self.traps {
+            hash.bytes(&[trap.id.get(), trap.kind() as u8]);
+            hash.i32s(&[i32::from(trap.damage), i32::from(trap.rehit_ticks)]);
+            match trap.trigger {
+                crate::TrapTrigger::Live => hash.bytes(&[0]),
+                crate::TrapTrigger::Pressure { plate, rearm_ticks } => {
+                    hash.bytes(&[1]);
+                    hash.i32s(&plate.centre);
+                    hash.i32s(&plate.half);
+                    hash.i32s(&[plate.floor, plate.height]);
+                    hash.u32(rearm_ticks);
+                }
+            }
+            match &trap.effect {
+                crate::TrapEffect::Rockfall(fall) => {
+                    hash.len(fall.rocks.len());
+                    for rock in &fall.rocks {
+                        hash.i32s(&rock.at);
+                        hash.u32(u32::from(rock.delay));
+                    }
+                    hash.i32s(&[fall.start_y, fall.floor, fall.radius]);
+                    hash.u32(u32::from(fall.rubble_ticks));
+                }
+                crate::TrapEffect::Blade(blade) => {
+                    hash.i32s(&blade.pivot);
+                    hash.i32s(&blade.half_extents);
+                    hash.i32s(&[blade.arm]);
+                    hash.u32(u32::from(blade.swing_yaw));
+                    hash.u32(u32::from(blade.amplitude));
+                    hash.u32(blade.period);
+                    hash.u32(blade.phase);
+                }
+                crate::TrapEffect::Spikes(volume) => {
+                    hash.i32s(&volume.centre);
+                    hash.i32s(&volume.half);
+                    hash.i32s(&[volume.floor, volume.height]);
+                }
+            }
+        }
+        hash.finish()
+    }
+
+    fn compute_water_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_trap_fingerprint();
         if self.waters.is_empty() {
             return fingerprint;
         }

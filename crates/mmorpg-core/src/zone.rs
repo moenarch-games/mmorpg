@@ -275,6 +275,8 @@ pub struct ZoneSimulation {
     /// Standing summoned terrain by ID (#293), and the next ID.
     pub(crate) summoned_terrain: BTreeMap<u32, crate::SummonedTerrain>,
     pub(crate) next_summoned_terrain: u32,
+    /// World traps' firing and hit memory by ID (#300).
+    pub(crate) traps: BTreeMap<crate::TrapId, crate::TrapRuntime>,
     /// Navigation cell results (#307), derived from static geometry and dropped when it
     /// changes; not canonical state.
     pub(crate) nav_cache: crate::nav::NavCache,
@@ -439,6 +441,7 @@ impl ZoneSimulation {
             world,
             rng: ZoneRng::seeded(content.rng_seed(), zone_id),
             loot_rng: ZoneRng::seeded(content.rng_seed() ^ 0x6c6f_6f74_2f76_3031, zone_id),
+            traps: Self::fresh_traps(&content),
             content,
             players: BTreeMap::new(),
             creatures: BTreeMap::new(),
@@ -822,7 +825,8 @@ impl ZoneSimulation {
     /// 6. combat: global cooldowns, cooldowns and casts or channels (players,
     ///    then creatures), aura pulses and expiry in `(EntityRef, aura slot)`
     ///    order, then swings in `EntityRef` order: swing timers, range checks
-    ///    after movement, damage, threat, deaths, tapping (minions after creatures);
+    ///    after movement, damage, threat, deaths, tapping (minions after creatures), then
+    ///    world traps (#300) in ID order, which may kill;
     /// 7. minions whose time ran out crumble, then health and class-resource regeneration,
     ///    corpse despawns and respawns in ID order, structure regrowth, then the night raid
     ///    (#530: barn hits, phases, outcome, marches and the nightly trigger), and a depths
@@ -872,6 +876,7 @@ impl ZoneSimulation {
         self.advance_projectiles(now)?;
         self.advance_auras(now)?;
         self.resolve_combat(now)?;
+        self.advance_traps(now)?;
         self.update_timers(now)?;
         self.regrow_pieces(now)?;
         self.advance_summoned(now);
