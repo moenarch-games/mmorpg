@@ -17,6 +17,7 @@ pub mod player;
 pub mod presets;
 pub mod sway;
 pub mod swim;
+pub mod traps;
 pub mod traversal;
 
 use std::{
@@ -1371,6 +1372,7 @@ impl UnitPresenter {
                     f64::from(unit.centre[2]),
                 ]
             });
+        self.traps(&mut out.draws, snapshot, viewer);
         out.draws.extend(
             self.structures
                 .frame(&snapshot.pieces, seconds, viewer, reduced),

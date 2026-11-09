@@ -40,6 +40,8 @@ function textFor(event: ZoneEvent, snapshot: ZoneSnapshot, periodic: boolean): C
       return { kind: "taken", text: `-${event.amount}${event.critical ? "!" : ""}` };
     case "miss":
       return isViewer(event.source, snapshot) ? { kind: "miss", text: "Miss" } : null;
+    case "trap-hit":
+      return { kind: "taken", text: `-${event.amount}` };
     case "evade":
       return { kind: "miss", text: "Evade" };
     case "healed":

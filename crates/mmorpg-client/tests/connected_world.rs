@@ -785,6 +785,7 @@ async fn fragmented_projection_reaches_the_native_client() {
         debris: Vec::new(),
         pieces: Vec::new(),
         summoned: Vec::new(),
+        traps: Vec::new(),
         raid: None,
         loot: None,
         zone_id,

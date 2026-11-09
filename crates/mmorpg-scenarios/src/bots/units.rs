@@ -193,7 +193,9 @@ pub fn concerned_unit(event: &ZoneEvent, viewer: EntityRef) -> Option<EntityRef>
         }
     };
     match *event {
-        ZoneEvent::DamageDealt { target, .. } | ZoneEvent::Evade { target, .. } => Some(target),
+        ZoneEvent::DamageDealt { target, .. }
+        | ZoneEvent::Evade { target, .. }
+        | ZoneEvent::TrapHit { target, .. } => Some(target),
         ZoneEvent::DamageTaken { source, .. } => Some(source),
         ZoneEvent::DamageObserved { source, target, .. }
         | ZoneEvent::Miss { source, target }
@@ -409,6 +411,11 @@ pub fn event_token(event: &ZoneEvent, name: impl Fn(EntityRef) -> String) -> Str
         ZoneEvent::Miss { source, target } => format!("miss:{}>{}", name(source), name(target)),
         ZoneEvent::Died { entity, .. } => format!("died:{}", name(entity)),
         ZoneEvent::Evade { target, .. } => format!("evade:{}", name(target)),
+        ZoneEvent::TrapHit {
+            trap,
+            target,
+            amount,
+        } => format!("trap:{}:{}:{amount}", trap.get(), name(target)),
         ZoneEvent::LostInterest { source } => format!("lost-interest:{}", name(source)),
         ZoneEvent::Raid { notice } => format!("raid:{notice:?}"),
         ZoneEvent::Error { code, .. } => format!("error:{}", error_code_name(code)),

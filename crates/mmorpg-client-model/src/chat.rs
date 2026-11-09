@@ -287,6 +287,10 @@ impl Logs {
                         format!("{} dies.", who(entity))
                     },
                 ),
+                ZoneEvent::TrapHit { target, amount, .. } => (
+                    LineKind::Combat,
+                    format!("A trap hits {} for {amount}.", who(target)),
+                ),
                 ZoneEvent::Evade { target, .. } => {
                     (LineKind::Combat, format!("{} evades.", who(target)))
                 }

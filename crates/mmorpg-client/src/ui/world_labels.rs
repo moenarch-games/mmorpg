@@ -106,6 +106,9 @@ pub fn combat_texts(snapshot: &ZoneSnapshot) -> Vec<CombatText> {
                 text(CombatTextKind::Miss, "Miss".into(), target)
             }
             ZoneEvent::Evade { target, .. } => text(CombatTextKind::Miss, "Evade".into(), target),
+            ZoneEvent::TrapHit { target, amount, .. } => {
+                text(CombatTextKind::Taken, format!("-{amount}"), target)
+            }
             ZoneEvent::Healed {
                 source,
                 target,
