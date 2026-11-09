@@ -183,7 +183,7 @@ jobs:
     permissions:
       contents: read
       packages: read
-    uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@2ec8d067031d4e9d093701f23a00b0ddcaef42d8
+    uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@858803b5ce092c1bc9981f215ceab43066bc1ca8
     with:
       # Bun comes from scripts/ci-install-bun.sh, which retries; the reusable job's setup step cannot.
       # The reusable job holds this run's github.token in NODE_AUTH_TOKEN; these commands export it
@@ -196,6 +196,10 @@ jobs:
       apt_packages: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'libudev-dev libasound2-dev' || '' }}
       pre_validate_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.settings_only == 'true' && 'export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh' || 'export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh && scripts/ci-install-nextest.sh') || '' }}
       cache_cargo: ${{ needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true' }}
+      # A push to main resolves the key for seed-asset-cache even when this job has nothing to do.
+      cache_paths: ${{ needs.scope.outputs.asset_cache_paths }}
+      cache_key: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && needs.scope.outputs.asset_cache_key || '' }}
+      cache_restore_keys: mmorpg-assets-
       format_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'cargo fmt --all -- --check' || '' }}
       lint_command: ${{ needs.scope.outputs.full_validation == 'true' && 'cargo clippy --workspace --all-targets --all-features --locked -- -D warnings && (cd web && bunx --no-install tsc --noEmit -p tsconfig.assets.json)' || '' }}
       # Ordinary Rust PRs run the workspace tests too. GPU tests are #[ignore]d, and the native/Pages
@@ -214,7 +218,7 @@ jobs:
     permissions:
       contents: read
       packages: read
-    uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@2ec8d067031d4e9d093701f23a00b0ddcaef42d8
+    uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@858803b5ce092c1bc9981f215ceab43066bc1ca8
     with:
       bun_version: ""
       node_version: ""
@@ -223,6 +227,9 @@ jobs:
       apt_packages: libudev-dev libasound2-dev
       pre_validate_command: export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh
       cache_cargo: true
+      cache_paths: ${{ needs.scope.outputs.asset_cache_paths }}
+      cache_key: ${{ needs.scope.outputs.asset_cache_key }}
+      cache_restore_keys: mmorpg-assets-
       lint_command: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       artifact_name_suffix: -clippy
       # The default group is shared with `rust` in this run and would cancel it.
@@ -279,7 +286,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: moritzbrantner/reusable-workflows/.github/actions/merge-ready@b0f25f241d76af2584dfc9e375084ff5c5cb97da
+      - uses: moritzbrantner/reusable-workflows/.github/actions/merge-ready@858803b5ce092c1bc9981f215ceab43066bc1ca8
         with:
           needs: ${{ toJSON(needs) }}
           required: '["scope", "rust", "clippy", "pages-validation"]'
