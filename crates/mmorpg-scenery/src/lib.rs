@@ -35,6 +35,7 @@ pub mod layout;
 mod outpost_grass;
 pub mod outpost_kit;
 mod outpost_relief;
+pub mod paint;
 mod redbrand_depths;
 mod seam_test;
 pub mod settlement_props;
@@ -1029,6 +1030,12 @@ impl Scenery {
             .map_or(0, |ground| ground.height_at(x, z))
     }
 
+    /// The biome drawn at an XZ position.
+    #[must_use]
+    pub fn biome_of(&self, x: i32, z: i32) -> Biome {
+        self.biome_at(x, z, self.height_at(x, z))
+    }
+
     /// The drawn terrain surface: the physical ground plus the presentation relief.
     #[must_use]
     pub fn surface_at(&self, x: i32, z: i32) -> i32 {
@@ -1252,6 +1259,9 @@ impl Scenery {
         }
         if SPAWN_PLAZA.contains(x, z) && (-800..=800).contains(&x) && (1600..=2400).contains(&z) {
             return Biome::Plaza;
+        }
+        if let Some(painted) = paint::biome_at(x, z) {
+            return painted;
         }
         // Bare rock on cliff faces too steep to walk (#423), such as the farm terrace's.
         if self.cliff_at(x, z) {
