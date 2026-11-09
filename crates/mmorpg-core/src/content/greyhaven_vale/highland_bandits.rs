@@ -74,6 +74,13 @@ const SPAWNS: [Row; 25] = {
     ]
 };
 
+/// Each garrison spawn point and its wander radius, without allocating.
+pub(super) fn wander_discs() -> impl Iterator<Item = ([i32; 2], i32)> {
+    SPAWNS
+        .iter()
+        .map(|&(_, _, position, _, _, wander_radius)| (position, wander_radius))
+}
+
 /// The garrison's content spawns.
 pub(super) fn spawns() -> Vec<CreatureSpawn> {
     SPAWNS

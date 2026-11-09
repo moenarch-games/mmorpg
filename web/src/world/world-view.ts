@@ -14,7 +14,8 @@ import type { EntityRef } from "../entity-ref";
 import { projectionBytes, type EntityState, type StrikeHeight, type ZoneSnapshot } from "../replication";
 import { DebugOverlay, FrameRate } from "./debug-overlay";
 import { ENVIRONMENT, DAY_SECONDS, ZONE_DAY_TICKS, ZONE_START_TIME, environmentAt, zoneSkySeconds } from "./environment";
-import { Minimap, buildMinimapLayers, dispositionOf, type MinimapElements, type MinimapUnit } from "./minimap";
+import { Minimap, dispositionOf, type MinimapElements, type MinimapUnit } from "./minimap";
+import { MinimapPresenter } from "./minimap-presenter";
 import { MovementOutbox, type MovementInput } from "./movement-outbox";
 import {
   IDLE_INTENT,
@@ -436,8 +437,7 @@ export class WorldView {
   #sceneryBatchesChanged = false;
   #presentationFingerprint: string | null = null;
   #reliefAt: ((x: number, z: number) => number) | null = null;
-  #minimap: Minimap | null = null;
-  #minimapPending = false;
+  readonly #minimap: MinimapPresenter;
   /** The world `load` last readied, so re-selecting it (`refreshArenaWorld`) rebuilds nothing. */
   #loadedScenery: ZoneWorld["scenery"] | null = null;
   #loadedArena = false;
@@ -501,6 +501,7 @@ export class WorldView {
     this.#camera = camera;
     this.#perspectiveFov = camera.fov;
     this.#elements = elements;
+    this.#minimap = new MinimapPresenter(new Minimap(elements.minimap), ENVIRONMENT);
     this.#reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     this.#overlay = new DebugOverlay(elements.overlay);
     this.#sky = new SkyLayer(elements.sky, ENVIRONMENT);
@@ -619,8 +620,7 @@ export class WorldView {
     this.#ground = null;
     this.#sceneryBatches?.dispose();
     this.#sceneryBatches = null;
-    this.#minimap = null;
-    this.#minimapPending = false;
+    this.#minimap.reset();
     this.#nature = new PlacedKit(world.scenery.nature);
     void this.#nature.load();
     this.#climbing = new PlacedKit(world.scenery.climbing);
@@ -675,19 +675,6 @@ export class WorldView {
     this.#sceneryBatchesChanged = true;
     this.#ground = new Ground(world.scenery.staticScene.terrainStream(), scene.surfaces, scene.cutaways);
     void this.#ground.load(this.#models.ktx2Loader);
-  }
-
-  /** Builds the minimap image once the world is drawing; only the HUD waits for it. */
-  #scheduleMinimap(scenery: ZoneWorld["scenery"]["scenery"]): void {
-    if (this.#minimap || this.#minimapPending) { return; }
-    this.#minimapPending = true;
-    const build = () => {
-      if (this.#loadedScenery?.scenery === scenery && !this.#minimap) {
-        this.#minimap = new Minimap(this.#elements.minimap, buildMinimapLayers(scenery, ENVIRONMENT));
-      }
-      this.#minimapPending = false;
-    };
-    if (typeof requestIdleCallback === "function") { requestIdleCallback(build, { timeout: 4_000 }); } else { setTimeout(build, 500); }
   }
 
   /** The directed-strike action's working binding labels, for the Heroic Strike slot hint. */
@@ -1477,7 +1464,7 @@ export class WorldView {
         created: { objects: work.objectCreateCount, geometries: work.geometryCreateCount, materials: work.materialCreateCount, instanceUploads: work.instanceUploadCount },
       });
     }
-    this.#scheduleMinimap(scenery.scenery);
+    this.#minimap.update(scenery.scenery, { x: self.x, z: self.z });
     this.#quests.placeMarkers(this.#markerPoints(anchors, projection));
     // The atmosphere draws the sky (#600); the CSS sky remains only where the browser cannot draw it.
     const cssSky = !this.#lighting.drawsSky;
@@ -1488,7 +1475,7 @@ export class WorldView {
     const disturbance = area && (projection.raid?.phase ?? 0) > 0
       ? { x: area.x / unitsPerMetre, z: area.z / unitsPerMetre, radius: area.radius / unitsPerMetre }
       : null;
-    this.#minimap?.draw({ x: self.x, z: self.z }, this.#orbit.heading, self.facing, others, disturbance);
+    this.#minimap.draw({ x: self.x, z: self.z }, this.#orbit.heading, self.facing, others, disturbance);
     this.#frameRate.sample(now);
     this.#overlay.update({
       fps: this.#frameRate.fps,
