@@ -1,7 +1,9 @@
 # Physics backend A/B (physics-engine #330)
 
 Production native and WASM builds compile only Physics Engine, including Greyhaven's
-convex rock hulls, Redbrand's static triangle meshes, free debris and upright movable props.
+convex rock hulls, Redbrand's static triangle meshes, free debris, upright movable props and
+rolling boulders (#299, real spheres against heightfields and hulls, physics-engine #519;
+the pin moved to `e9b2a6efc7d3a2c63f7323e13ecb3b1e666d1716` for them, 16 commits on `721a9298`).
 Rapier is an optional independent behaviour/performance oracle behind the non-default
 `physics-ab` feature (Atlas 2.1.i647). That feature alone compiles Rapier and the explicit
 `World::with_backend`/`physics::using_backend` diagnostic selectors; production exposes no
@@ -9,8 +11,8 @@ backend selector or fallback. Hosts and clients continue to use the same core si
 
 Zone construction and recovery always use Physics Engine outside diagnostics. Greyhaven uses its
 retained hulls and cave meshes for characters, support, ray/projectile and shape queries.
-Free-rotating debris and upright movable props also contact those exact shapes. Their two
-isolated response worlds retain static geometry and engine scratch, synchronize changed
+Free-rotating debris, upright movable props and rolling boulders also contact those exact
+shapes. Their three isolated response worlds retain static geometry and engine scratch, synchronize changed
 static bodies, and transfer canonical pieces in and out each tick. Units enter only the prop
 lane as temporary fixed capsules; the character world is separate. All temporary bodies are
 removed after stepping, so no hidden dynamic continuation state survives canonical recovery.

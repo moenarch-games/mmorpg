@@ -24,6 +24,8 @@ pub(crate) struct PropMotion {
     pub position: [f32; 3],
     /// Units per tick; zero at rest.
     pub velocity: [f32; 3],
+    /// A rolling boulder's extra state (#299); `None` for a sliding crate.
+    pub boulder: Option<crate::boulder::BoulderState>,
 }
 
 impl ZoneSimulation {
@@ -37,18 +39,31 @@ impl ZoneSimulation {
 
     /// A movable prop at `position` starts at rest (spawned or respawned).
     pub(crate) fn place_movable_prop(&mut self, id: CreatureId, position: [f32; 3]) {
+        let boulder = Self::creature_content(&self.content, id)
+            .ok()
+            .and_then(|(_, template)| template.prop())
+            .is_some_and(crate::PropKind::rolls)
+            .then(crate::boulder::BoulderState::default);
         self.prop_motion.insert(
             id,
             PropMotion {
                 position,
                 velocity: [0.0; 3],
+                boulder,
             },
         );
     }
 
     /// Gives a movable prop a horizontal push of `distance` units along `direction` (XZ), as a
-    /// knockback of that distance would.
-    pub(crate) fn push_prop(&mut self, id: CreatureId, direction: [i64; 2], distance: i32) -> bool {
+    /// knockback of that distance would. `by` is the player who caused it, credited with a
+    /// boulder's impacts (#299).
+    pub(crate) fn push_prop(
+        &mut self,
+        id: CreatureId,
+        direction: [i64; 2],
+        distance: i32,
+        by: Option<crate::PlayerId>,
+    ) -> bool {
         let Some(motion) = self.prop_motion.get_mut(&id) else {
             return false;
         };
@@ -72,6 +87,14 @@ impl ZoneSimulation {
         let speed = (2.0 * SLIDE_FRICTION * gravity * distance as f32).sqrt();
         motion.velocity[0] += x / length * speed;
         motion.velocity[2] += z / length * speed;
+        if let Some(boulder) = &mut motion.boulder {
+            // A boulder keeps the same launch rule, capped; it remembers who sent it (#299).
+            crate::boulder::cap_speed(&mut motion.velocity);
+            boulder.idle = 0;
+            if by.is_some() {
+                boulder.pusher = by;
+            }
+        }
         true
     }
 
@@ -81,7 +104,7 @@ impl ZoneSimulation {
         let moving: Vec<_> = self
             .prop_motion
             .iter()
-            .filter(|(_, motion)| motion.velocity != [0.0; 3])
+            .filter(|(_, motion)| motion.boulder.is_none() && motion.velocity != [0.0; 3])
             .map(|(&id, motion)| (id, *motion))
             .collect();
         if moving.is_empty() {
@@ -100,6 +123,7 @@ impl ZoneSimulation {
                 velocity: motion.velocity,
                 spin: [0.0; 3],
                 half_extents: half,
+                shape: crate::physics::PieceShape::Cuboid,
                 resting: false,
             });
         }
@@ -119,6 +143,7 @@ impl ZoneSimulation {
                 PropMotion {
                     position: body.position,
                     velocity,
+                    boulder: None,
                 },
             );
             let [x, y, z] = crate::physics::to_units(body.position);

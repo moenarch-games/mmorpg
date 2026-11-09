@@ -355,6 +355,8 @@ pub struct CanonicalZoneSnapshot {
     /// Pieces of broken props in ID order, and the next piece ID (#288).
     pub debris: Vec<crate::Debris>,
     pub next_debris: u32,
+    /// Boulders' spin, pusher and return timer in creature-ID order (#299).
+    pub boulders: Vec<crate::CanonicalBoulder>,
     /// Every destructible piece's health and last change, in content order (#305).
     pub pieces: Vec<crate::CanonicalPiece>,
     /// Standing summoned terrain in ID order, and the next ID (#293).
@@ -510,6 +512,7 @@ impl ZoneSimulation {
             forced: self.forced_states(),
             debris: self.debris.values().copied().collect(),
             next_debris: self.next_debris,
+            boulders: self.canonical_boulders(),
             pieces: self.canonical_pieces(),
             summoned_terrain: self.summoned_terrain.values().copied().collect(),
             next_summoned_terrain: self.next_summoned_terrain,
@@ -622,6 +625,7 @@ impl ZoneSimulation {
         zone.next_projectile = snapshot.next_projectile;
         zone.restore_forced(snapshot.forced)?;
         zone.restore_debris(snapshot.debris, snapshot.next_debris)?;
+        zone.restore_boulders(&snapshot.boulders)?;
         // The snapshot tick's routine placements and platforms (#56); doors are already as that
         // tick left them.
         zone.restore_wakes(&snapshot.wakes, snapshot.tick)?;

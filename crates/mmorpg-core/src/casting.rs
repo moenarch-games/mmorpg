@@ -562,7 +562,13 @@ impl ZoneSimulation {
                         self.hostile_aura(player_id, victim, stun)?;
                     }
                     let from = self.player_position(player_id)?;
-                    self.knock_away(victim, [from.x, from.z], fallback, knockback)?;
+                    self.knock_away(
+                        victim,
+                        [from.x, from.z],
+                        fallback,
+                        knockback,
+                        Some(player_id),
+                    )?;
                 }
             }
             AbilityEffect::HealOverTime { percent, .. } => {
@@ -959,7 +965,13 @@ impl ZoneSimulation {
                 _ => continue,
             }
             let push = i32::try_from(i64::from(knockback) * share / 1_000).unwrap_or(0);
-            self.knock_away(victim, [centre[0], centre[2]], fallback, push)?;
+            self.knock_away(
+                victim,
+                [centre[0], centre[2]],
+                fallback,
+                push,
+                Some(attacker),
+            )?;
         }
         // Destructible pieces (#305) take the blast's top roll, after the units it reached.
         self.blast_pieces(centre, radius, u32::from(damage[1]) + bonus, now)?;
@@ -1006,6 +1018,7 @@ impl ZoneSimulation {
                 [centre[0], centre[2]],
                 [i64::from(x), i64::from(z)],
                 push,
+                None,
             )?;
         }
         Ok(())
@@ -1586,7 +1599,7 @@ impl ZoneSimulation {
                         .inclusive(u32::from(damage[0]), u32::from(damage[1]))
                         + u32::from(scaled(0, per_level, level));
                     self.creature_damages_player(creature_id, player_id, amount, false)?;
-                    self.knock_away(victim, [centre[0], centre[2]], fallback, knockback)?;
+                    self.knock_away(victim, [centre[0], centre[2]], fallback, knockback, None)?;
                 }
             }
             _ => {}

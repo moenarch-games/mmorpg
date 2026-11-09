@@ -133,6 +133,20 @@ fn capsule_box_gap(
     distance + inside - radius
 }
 
+/// An upright capsule's distance outside a sphere (negative inside): the axis segment's nearest
+/// point to the sphere's centre, less both radii.
+fn capsule_sphere_gap(
+    centre: [f32; 3],
+    (segment, radius): (f32, f32),
+    sphere_centre: [f32; 3],
+    sphere_radius: f32,
+) -> f32 {
+    let dx = centre[0] - sphere_centre[0];
+    let dz = centre[2] - sphere_centre[2];
+    let dy = (centre[1] - sphere_centre[1]).abs() - segment;
+    (dx * dx + dy.max(0.0).powi(2) + dz * dz).sqrt() - radius - sphere_radius
+}
+
 fn finite(snapshot: &CanonicalZoneSnapshot) -> bool {
     snapshot
         .players
@@ -173,7 +187,11 @@ fn boxes(zone: &ZoneSimulation) -> Vec<([f32; 3], [f32; 3])> {
             .expect("door leaf body")
             .clone()
     });
-    for body in doors.chain(zone.prop_bodies()) {
+    let props = zone
+        .prop_bodies()
+        .into_iter()
+        .filter(|body| !body.is_sphere());
+    for body in doors.chain(props) {
         let (centre, half) = (body.position(), body.half_extents());
         boxes.push((
             exact([centre.x, centre.y, centre.z]),
@@ -181,6 +199,23 @@ fn boxes(zone: &ZoneSimulation) -> Vec<([f32; 3], [f32; 3])> {
         ));
     }
     boxes
+}
+
+/// Standing boulders (#299) as `(centre, radius)`, where their fixed spheres are now. Their
+/// half extents are only a bound; checking one as a box would flag units clear of the sphere.
+fn spheres(zone: &ZoneSimulation) -> Vec<([f32; 3], f32)> {
+    zone.prop_bodies()
+        .iter()
+        .filter(|body| body.is_sphere())
+        .map(|body| {
+            let centre = body.position();
+            let [radius, ..] = mmorpg_core::physics::from_units([body.half_extents().x, 0, 0]);
+            (
+                mmorpg_core::physics::from_units([centre.x, centre.y, centre.z]),
+                radius,
+            )
+        })
+        .collect()
 }
 
 /// Whether the floor half-space is open under `unit`: over terrain that dips below it (Stillwater
@@ -215,6 +250,7 @@ fn check_invariants(
     let every = tick == 1 || usize::try_from(tick).unwrap_or(0) % PENETRATION_EVERY == 0;
     if every {
         let boxes = boxes(zone);
+        let spheres = spheres(zone);
         for unit in units {
             let [x, y, z] = unit.body.exact_position();
             let shape = capsule(unit);
@@ -232,6 +268,18 @@ fn check_invariants(
                     && deepest.is_none_or(|(depth, _)| -gap > depth)
                 {
                     deepest = Some((-gap, (box_centre, box_half)));
+                }
+                closest = closest.min(gap);
+            }
+            for &(sphere_centre, radius) in &spheres {
+                let gap = capsule_sphere_gap(centre, shape, sphere_centre, radius);
+                if gap < -PENETRATION_TOLERANCE_UNITS {
+                    return Err(format!(
+                        "{:?} at {:?} penetrates sphere {sphere_centre:?} r{radius} by {} at tick {tick}",
+                        unit.unit,
+                        [x, y, z],
+                        -gap
+                    ));
                 }
                 closest = closest.min(gap);
             }

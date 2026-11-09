@@ -64,7 +64,7 @@ This deliberately avoids shared mutable physics across machines. Horizontal scal
 The workspace provides:
 
 - a stable-Rust workspace and reusable validation workflow;
-- a deterministic zone simulation with Physics Engine character/static collision by default, including authored triangle meshes and convex rock hulls; dynamic debris and movable props contact those authored shapes through isolated Engine response worlds; Rapier remains the independent A/B oracle;
+- a deterministic zone simulation with Physics Engine character/static collision by default, including authored triangle meshes and convex rock hulls; dynamic debris, movable props and a rolling boulder trap contact those authored shapes through isolated Engine response worlds; Rapier remains the independent A/B oracle;
 - validated immutable collision content, gravity, and velocity-preserving physical recovery;
 - stale-command rejection and bounded per-zone player capacity;
 - canonical full-zone snapshots for replay/recovery that reference their immutable content by revision and fingerprint and fail closed on any content mismatch;

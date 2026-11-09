@@ -210,7 +210,7 @@ mirror!(
 mirror!(
     /// The breakable prop a debris piece came from (#288).
     #[serde(rename_all = "snake_case")]
-    DebrisKind = core::PropKind { Crate, Barrel, ExplosiveBarrel, Fence, HeavyCrate }
+    DebrisKind = core::PropKind { Crate, Barrel, ExplosiveBarrel, Fence, HeavyCrate, Boulder }
 );
 mirror!(
     /// The core emote vocabulary (#69).

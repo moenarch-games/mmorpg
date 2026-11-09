@@ -327,6 +327,10 @@ The content revision is the content hash ([Canonical scope](#canonical-scope)); 
 
 The sections below record how the layouts grew; their version numbers are historical.
 
+## Boulders in canonical state (#299)
+
+The boulder trap appends, after the debris in canonical snapshots, a count (`u16`) and per boulder in creature-ID order its creature ID (`u32`), spin (`3 × f32`, radians per tick), a pusher flag and player (`u8`, `u32`) and idle ticks (`u16`). Its position and velocity are the creature record's, so a restored zone continues a roll exactly. Player projections need no new layout: a boulder is an ordinary creature record, prop kind 5, and clients derive its drawn roll from where it is. The protocol ID is new.
+
 ## Full `i32` positions (#424)
 
 Farmland and Hamlets extends Greyhaven's zone to z = +640 m, beyond the old `i16` range, so every projected position travels as a full `i32` in units (owner decision 2026-10-25): entity records grow from 21 to 27 bytes, projectile records from 14 to 20 and debris records from 19 to 25. `MAX_WIRE_ENTITIES` drops from 45 to 35, `MAX_CONTENT_COORDINATE_UNITS` rises from 32,000 to 100,000 and `MAX_DOORS` drops from 16 to 10, so the viewer and its target still fit beside every other full section. Commands and canonical snapshots are unchanged; the protocol ID is new.

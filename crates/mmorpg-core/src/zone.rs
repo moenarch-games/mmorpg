@@ -853,10 +853,13 @@ impl ZoneSimulation {
         self.shove_with_large_creatures()?;
         self.apply_forced_moves()?;
         self.schedule_platforms(now, false)?;
+        // Read before the step resolves units against the boulders they walk into (#299).
+        let boulder_pushes = self.boulder_walk_pushes()?;
         self.tick_work.physics = Some(self.world.step().map_err(physics_error)?);
         self.settle_forced_moves(now)?;
         self.advance_debris();
         self.advance_movable_props()?;
+        self.advance_boulders(&boulder_pushes, now)?;
         self.update_landings()?;
         self.update_breath()?;
         // A jump intent is consumed by the tick that evaluated it, grounded or not.
