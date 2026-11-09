@@ -70,12 +70,13 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // sphere in every step's world: 360 more body visits per 360 ticks.
     // World traps (#300) add one count byte to every projection. The Bandit Highlands garrison
     // (#502) adds 25 creatures for AI and physics every tick (9,000 of each per 360 ticks); the
-    // spread fights' bots stay on the Vale's part of the spawn table.
+    // spread fights' bots stay on the Vale's part of the spawn table. The Marsh-Lake Wetlands'
+    // creatures (#506) add 31 more (11,160 of each per 360 ticks), and the bots keep off them too.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [38_160, 1_314_720, 288_000, 6_088_352],
-        [38_160, 1_311_840, 93_060, 1_794_309],
-        [38_160, 1_320_480, 424_719, 7_878_807],
-        [37_804, 1_331_644, 2_323_474, 24_322_842],
+        [49_320, 1_325_880, 288_000, 6_088_352],
+        [49_320, 1_323_000, 93_060, 1_794_309],
+        [49_320, 1_331_640, 424_719, 7_878_807],
+        [48_964, 1_342_804, 2_323_474, 24_322_842],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();
@@ -112,7 +113,7 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
             assert!(report.death_records > 0);
         } else {
             assert_eq!(report.event_records, 0);
-            assert_eq!(report.ai_evaluations, 106 * TICKS);
+            assert_eq!(report.ai_evaluations, 137 * TICKS);
         }
         if fixture.crowded {
             // Whole 14-byte events and 27-byte records beside the fixed part
