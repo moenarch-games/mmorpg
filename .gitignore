@@ -15,3 +15,7 @@ __pycache__/
 
 # mise's Python virtualenv (mise.toml)
 /.venv/
+
+# World Studio frontend
+/crates/mmorpg-world-studio/frontend/node_modules/
+/crates/mmorpg-world-studio/frontend/dist/
