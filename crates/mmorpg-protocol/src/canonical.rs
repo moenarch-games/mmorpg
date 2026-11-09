@@ -98,6 +98,7 @@ pub fn encode_canonical_snapshot(
     encode_forced(&mut payload, &snapshot.forced)?;
     encode_debris(&mut payload, snapshot.next_debris, &snapshot.debris)?;
     encode_boulders(&mut payload, &snapshot.boulders)?;
+    encode_traps(&mut payload, &snapshot.traps)?;
     encode_pieces(&mut payload, &snapshot.pieces)?;
     encode_summoned_terrain(
         &mut payload,
@@ -646,6 +647,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let forced = decode_forced(payload, &mut offset)?;
     let (next_debris, debris) = decode_debris(payload, &mut offset)?;
     let boulders = decode_boulders(payload, &mut offset)?;
+    let traps = decode_traps(payload, &mut offset)?;
     let pieces = decode_pieces(payload, &mut offset)?;
     let (next_summoned_terrain, summoned_terrain) = decode_summoned_terrain(payload, &mut offset)?;
     let (next_minion, minions) = decode_minions(payload, &mut offset)?;
@@ -671,6 +673,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         debris,
         next_debris,
         boulders,
+        traps,
         pieces,
         summoned_terrain,
         next_summoned_terrain,
@@ -1609,6 +1612,67 @@ fn decode_boulders(
     Ok(boulders)
 }
 
+/// World traps (#300), in trap-ID order: a `u8` count, then per trap its ID (`u8`), a fired flag
+/// and the fired tick (`u64`), and a `u8` hit count with, per hit in unit order, the unit
+/// reference and the tick from which it may be hit again (`u64`).
+fn encode_traps(
+    payload: &mut Vec<u8>,
+    traps: &[mmorpg_core::CanonicalTrap],
+) -> Result<(), ProtocolError> {
+    payload.push(encode_u8_count(
+        traps.len(),
+        mmorpg_core::MAX_TRAPS,
+        "too many traps",
+    )?);
+    for trap in traps {
+        payload.push(trap.id.get());
+        payload.push(u8::from(trap.fired_at.is_some()));
+        payload.extend_from_slice(&trap.fired_at.unwrap_or(0).to_be_bytes());
+        payload.push(encode_u8_count(
+            trap.hits.len(),
+            mmorpg_core::MAX_TRAP_HITS,
+            "too many trap hits",
+        )?);
+        for hit in &trap.hits {
+            encode_entity_ref(payload, Some(hit.unit));
+            payload.extend_from_slice(&hit.until.to_be_bytes());
+        }
+    }
+    Ok(())
+}
+
+fn decode_traps(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::CanonicalTrap>, ProtocolError> {
+    let count = decode_u8_count(payload, offset, mmorpg_core::MAX_TRAPS, "too many traps")?;
+    let mut traps = Vec::with_capacity(count);
+    for _ in 0..count {
+        let id = mmorpg_core::TrapId::new(read_u8(payload, offset)?);
+        let fired = read_bool(payload, offset)?;
+        let tick = u64::from_be_bytes(take(payload, offset)?);
+        let hit_count = decode_u8_count(
+            payload,
+            offset,
+            mmorpg_core::MAX_TRAP_HITS,
+            "too many trap hits",
+        )?;
+        let mut hits = Vec::with_capacity(hit_count);
+        for _ in 0..hit_count {
+            let unit = decode_entity_ref(payload, offset)?
+                .ok_or_else(|| ProtocolError::new("trap hit needs a unit"))?;
+            let until = u64::from_be_bytes(take(payload, offset)?);
+            hits.push(mmorpg_core::CanonicalTrapHit { unit, until });
+        }
+        traps.push(mmorpg_core::CanonicalTrap {
+            id,
+            fired_at: fired.then_some(tick),
+            hits,
+        });
+    }
+    Ok(traps)
+}
+
 /// Debris (#288): the next ID (`u32`), a `u16` count, then per piece its ID (`u32`), prop kind
 /// and piece index (`u8` each), position, rotation quaternion, velocity and spin (`f32`s), age
 /// (`u16`) and resting flag. Half extents follow from kind and piece.
@@ -1849,6 +1913,14 @@ mod tests {
                 spin: [0.1, 0.0, -0.2],
                 pusher: Some(7),
                 idle: 42,
+            }],
+            traps: vec![mmorpg_core::CanonicalTrap {
+                id: mmorpg_core::TrapId::new(3),
+                fired_at: Some(1_200),
+                hits: vec![mmorpg_core::CanonicalTrapHit {
+                    unit: EntityRef::Player(1),
+                    until: 1_250,
+                }],
             }],
             summoned_terrain: vec![mmorpg_core::SummonedTerrain {
                 id: 4,
