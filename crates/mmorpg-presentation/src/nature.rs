@@ -203,9 +203,10 @@ pub use crate::lod::EntryLods;
 /// The bundle's descriptor keeps both levels out to 90 m and 300 m, far enough that the woods
 /// spend almost 80 % of their triangles on trees, on a frame budget they miss. These switch
 /// points replace the descriptor's for the trees alone: at the game's 50° field of view an
-/// average tree keeps `default` to about 40 m and `lod1` to about 135 m. Bushes and rocks keep
-/// the descriptor's distances (asset-tooling#534).
-pub const TREE_MIN_SCREEN_SIZES: [f64; 2] = [0.35, 0.1];
+/// average tree keeps `default` to about 40 m and `lod1` to about 270 m. `lod2` has no foliage
+/// cards, so the second switch stays far enough out that trees on the valley's slopes keep
+/// theirs. Bushes and rocks keep the descriptor's distances (asset-tooling#534).
+pub const TREE_MIN_SCREEN_SIZES: [f64; 2] = [0.35, 0.05];
 
 /// Every entry's levels from the bundle's `nature-descriptor` attachment JSON ([`crate::lod`]),
 /// with the trees' switch points replaced by [`TREE_MIN_SCREEN_SIZES`].
