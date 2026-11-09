@@ -228,9 +228,9 @@ pub struct SecondaryPose {
     pub joints: Vec<(String, Vec<[f32; 4]>)>,
 }
 
-/// Each clip's `secondaryPose` from a `humanoid-clips-v1` descriptor, by clip name. No cloth
-/// spring exists yet (#498 sways only hanging gear), so both clients play these as ordinary
-/// rotation channels of the clip, on whichever outfit has the chains.
+/// Each clip's `secondaryPose` from a `humanoid-clips-v1` descriptor, by clip name. Both clients
+/// play these as ordinary rotation channels of the clip, on whichever outfit has the chains, and
+/// the cloth spring (`units::sway`, #498) swings around the pose they make.
 #[must_use]
 pub fn secondary_poses(descriptor: &Value) -> BTreeMap<String, SecondaryPose> {
     descriptor["clips"]

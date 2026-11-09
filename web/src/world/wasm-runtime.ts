@@ -50,6 +50,14 @@ export function figureAppearance(character: string, appearance: unknown, kit: un
 }
 
 /**
+ * The accessory-bone chains a figure's `humanoid-appearance` declares (Atlas 6.6.39, `sway::chains_of`):
+ * shared with the native client; call after the module loaded.
+ */
+export function declaredChains(appearance: unknown): { joints: string[]; limit: number }[] {
+  return JSON.parse(generated.declaredChains(JSON.stringify(appearance))) as { joints: string[]; limit: number }[];
+}
+
+/**
  * A unit's own seeded variation of the preset `id` (asset-tooling #380) over `appearance`: the
  * same man the native client draws; call after the module loaded.
  */
