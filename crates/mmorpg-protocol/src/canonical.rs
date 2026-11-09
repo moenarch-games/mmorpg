@@ -49,6 +49,7 @@ const RAID_PREPARE_INTENT: u8 = 25;
 const NOTICE_INTENT: u8 = 26;
 const ROLL_DEPTHS_DROP_INTENT: u8 = 27;
 const CLAIM_DEPTHS_DROP_INTENT: u8 = 28;
+const SIT_INTENT: u8 = 29;
 const ALIVE: u8 = 1;
 const CORPSE: u8 = 2;
 const DESPAWNED: u8 = 3;
@@ -199,6 +200,10 @@ fn encode_player(
                 payload.extend_from_slice(&[USE_DOOR_INTENT, door.get(), u8::from(open)]);
                 continue;
             }
+            PlayerIntent::Sit(seat) => {
+                payload.extend_from_slice(&[SIT_INTENT, seat.map_or(0, mmorpg_core::SeatId::get)]);
+                continue;
+            }
             PlayerIntent::Repair(piece) => {
                 payload.push(REPAIR_INTENT);
                 payload.extend_from_slice(&crate::wire::encode_piece(piece).to_be_bytes());
@@ -334,6 +339,12 @@ fn encode_player(
     payload.extend_from_slice(&landing.recovery.to_be_bytes());
     payload.push(u8::from(landing.attacked_airborne));
     encode_traversal(payload, combat.traversal);
+    // What the player sits on (#619): 0 nothing, 1 the ground, 2 + a seat ID's byte.
+    match combat.sitting {
+        mmorpg_core::Sitting::No => payload.extend_from_slice(&[0, 0]),
+        mmorpg_core::Sitting::Ground => payload.extend_from_slice(&[1, 0]),
+        mmorpg_core::Sitting::On(seat) => payload.extend_from_slice(&[2, seat.get()]),
+    }
     encode_roll(payload, combat.roll);
     payload.extend_from_slice(&combat.strike_recovery.to_be_bytes());
     payload.extend_from_slice(&crate::wire::encode_piece(combat.repairing).to_be_bytes());
@@ -1035,6 +1046,13 @@ fn decode_player(
             });
             continue;
         }
+        if code == SIT_INTENT {
+            let seat = read_u8(payload, offset)?;
+            intents.push(PlayerIntent::Sit(
+                (seat != 0).then(|| mmorpg_core::SeatId::new(seat)),
+            ));
+            continue;
+        }
         if code == REPAIR_INTENT {
             let piece = u16::from_be_bytes(take(payload, offset)?);
             intents.push(PlayerIntent::Repair(crate::wire::decode_piece(piece)));
@@ -1220,6 +1238,12 @@ fn decode_player(
         attacked_airborne: read_bool(payload, offset)?,
     };
     let traversal = decode_traversal(payload, offset)?;
+    let sitting = match (read_u8(payload, offset)?, read_u8(payload, offset)?) {
+        (0, 0) => mmorpg_core::Sitting::No,
+        (1, 0) => mmorpg_core::Sitting::Ground,
+        (2, seat) if seat != 0 => mmorpg_core::Sitting::On(mmorpg_core::SeatId::new(seat)),
+        _ => return Err(ProtocolError::new("player sit code is out of range")),
+    };
     let roll = decode_roll(payload, offset)?;
     let strike_recovery = u16::from_be_bytes(take(payload, offset)?);
     let repairing = crate::wire::decode_piece(u16::from_be_bytes(take(payload, offset)?));
@@ -1288,6 +1312,7 @@ fn decode_player(
             abilities,
             landing,
             traversal,
+            sitting,
             roll,
             combo,
             strike_recovery,
@@ -2098,6 +2123,7 @@ mod tests {
                             recovery: 7,
                             attacked_airborne: false,
                         },
+                        sitting: mmorpg_core::Sitting::On(mmorpg_core::SeatId::new(3)),
                         traversal: mmorpg_core::Traversal::Mantling {
                             goal: [10, 20, -30],
                             wall: 16_384,

@@ -7,7 +7,8 @@ use std::sync::Arc;
 
 use mmorpg_core::{
     DAY_TICKS, DUSK, ErrorCode, HOUR_TICKS, NpcId, PRIVATE_DOOR_CLOSE_TICKS, QuestEntry, QuestId,
-    WAKE_IDLE_TICKS, ZONE_START_TIME, ZoneCommand, ZoneEvent, ZoneId, ZoneSimulation,
+    WAKE_IDLE_TICKS, WAKE_RISE_TICKS, ZONE_START_TIME, ZoneCommand, ZoneEvent, ZoneId,
+    ZoneSimulation,
     greyhaven_vale::{self, marshal_house},
 };
 
@@ -119,6 +120,25 @@ fn a_night_knock_wakes_elden_for_a_doorstep_turn_in_and_he_returns_to_bed() {
     let mut urgent = zone_at(night, trouble(6));
     assert_eq!(elden(&urgent), marshal_house::BEDSIDE);
     assert_eq!(command(&mut urgent, 1, OPEN), []);
+    // He gets up first (#619): still at the bedside, projected as waking, for the whole rise.
+    let posture = |zone: &ZoneSimulation| {
+        zone.snapshot_for_player(1)
+            .unwrap()
+            .entities
+            .iter()
+            .find(|record| record.entity() == mmorpg_core::EntityRef::Npc(ELDEN))
+            .unwrap()
+            .flags
+            .posture
+    };
+    assert_eq!(posture(&urgent), mmorpg_core::PostureView::Waking);
+    for _ in 0..WAKE_RISE_TICKS - 2 {
+        urgent.advance_tick().unwrap();
+        let placement = urgent.npc_placement(ELDEN).unwrap();
+        assert_eq!(placement.position, marshal_house::BEDSIDE);
+        assert_eq!(placement.velocity, [0, 0]);
+    }
+    assert_eq!(posture(&urgent), mmorpg_core::PostureView::Waking);
     let mut recovered = None;
     for step in 0..200 {
         urgent.advance_tick().unwrap();

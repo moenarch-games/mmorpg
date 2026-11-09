@@ -420,6 +420,10 @@ impl App {
                     // Without a selected NPC, interact swings the door in reach (#158).
                     self.send_interaction(command);
                     return true;
+                } else if let Some(command) = self.presentation.reachable_seat() {
+                    // Or takes (or leaves) the seat in reach (#619).
+                    self.send_interaction(command);
+                    return true;
                 } else if let Some(command) = self.presentation.reachable_repair() {
                     // Or repairs a damaged structure piece in reach (#305).
                     self.send_interaction(command);
@@ -1491,6 +1495,9 @@ impl ApplicationHandler for App {
                     audio.listen(view);
                     audio.pump();
                 }
+                let loot_window = self.ui.loot_window_open(self.presentation.latest());
+                self.presentation
+                    .set_interaction(loot_window, self.npc_context.npc);
                 let frame = self.presentation.frame(&self.world, now, view);
                 self.interface(now, view);
                 // The egui action bar replaces the flat combat HUD rectangles.

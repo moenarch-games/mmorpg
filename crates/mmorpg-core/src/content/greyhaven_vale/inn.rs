@@ -12,6 +12,12 @@ pub const ORIGIN: [i32; 3] = [1_500, 0, 0];
 pub const FOOTPRINT_HALF_EXTENTS: [i32; 3] = [700, 300, 500];
 /// The inn's front door.
 pub const DOOR: DoorId = DoorId::new(1);
+/// Two chairs on the north side of the third table, facing it (−Z) (#619): `(id, chair x in the
+/// inn's frame)`. A sitter's body stands clear behind the chair; its feet draw under the table.
+pub const SEATS: [(u8, i32); 2] = [(3, -198), (4, -122)];
+/// The chairs' body spot and drawn feet along Z, in the inn's frame.
+pub const SEAT_STAND_Z: i32 = 10;
+pub const SEAT_ROOT_Z: i32 = -84;
 
 /// `(min, max)` corners in the inn frame, in units: walls, then furniture.
 #[rustfmt::skip]

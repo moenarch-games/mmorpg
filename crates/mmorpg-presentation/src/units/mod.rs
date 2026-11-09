@@ -163,6 +163,17 @@ pub struct FrameInput<'a> {
     pub bar_yaw: f32,
 }
 
+/// What the viewer's own windows say (#619): the clients report them each frame, and the shared
+/// presenter turns them into clips. The zone knows none of this; only the windows' contents come
+/// from it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Interaction {
+    /// The loot window is open: the viewer kneels at the projected corpse while it is in reach.
+    pub loot_window: bool,
+    /// The NPC a dialogue, quest or vendor window is open toward.
+    pub npc: Option<mmorpg_core::NpcId>,
+}
+
 /// An imported model to skin and draw this frame.
 #[derive(Clone, Debug)]
 pub struct ImportedUnit {
@@ -289,6 +300,22 @@ pub struct UnitPresenter {
     /// Where each caster's spell starts in the world, as its client posed it last frame
     /// ([`UnitPresenter::set_channel_origins`]).
     channel_origins: BTreeMap<EntityRef, V>,
+    /// What the viewer's windows are open toward (#619).
+    interaction: Interaction,
+    /// The doors last projected, so a flip plays a unit's door clip (#619).
+    doors: BTreeMap<mmorpg_core::DoorId, bool>,
+    /// The viewer's copper and quest log as last projected: a change with a vendor or quest
+    /// window open is the zone completing the trade or the quest (#619).
+    copper: Option<u32>,
+    quest_log: Option<(u32, usize)>,
+    /// The viewer's quests last projected, to see which one a window just added (#619).
+    quest_entries: BTreeSet<u8>,
+    /// The objective each NPC last pointed the viewer toward (#619).
+    directing: BTreeMap<EntityRef, [i32; 2]>,
+    /// Private-home residents last seen asleep in bed: getting up is a knock (#619).
+    sleepers: BTreeSet<mmorpg_core::NpcId>,
+    /// How far each resident has eased onto its bed, 0 to 1 (#619).
+    rests: BTreeMap<EntityRef, f64>,
 }
 
 impl UnitPresenter {
@@ -325,7 +352,20 @@ impl UnitPresenter {
             whiffs: 0,
             kit_platforms: BTreeSet::new(),
             channel_origins: BTreeMap::new(),
+            interaction: Interaction::default(),
+            doors: BTreeMap::new(),
+            copper: None,
+            quest_log: None,
+            quest_entries: BTreeSet::new(),
+            directing: BTreeMap::new(),
+            sleepers: BTreeSet::new(),
+            rests: BTreeMap::new(),
         }
+    }
+
+    /// What the viewer's own windows are open toward this frame (#619).
+    pub const fn set_interaction(&mut self, interaction: Interaction) {
+        self.interaction = interaction;
     }
 
     /// Where each caster's spell starts this frame (#612): the world position, metres, of its
@@ -442,6 +482,13 @@ impl UnitPresenter {
         self.hastes.clear();
         self.bursts.clear();
         self.effects.clear();
+        self.doors.clear();
+        self.copper = None;
+        self.quest_log = None;
+        self.quest_entries.clear();
+        self.directing.clear();
+        self.sleepers.clear();
+        self.rests.clear();
         self.equipment = None;
         self.preparation = None;
         self.resources = Resources::default();
@@ -477,6 +524,7 @@ impl UnitPresenter {
         // Accepted strikes start their clips (Atlas 6.6.45): the event, never a clip, is the
         // attack. Every received projection is read, so a frame spanning several ticks keeps them.
         let viewer = EntityRef::Player(snapshot.viewer_id);
+        self.social(snapshot, seconds);
         // The units that resolved a knockback this projection (#538): their hits throw the
         // target back, a large creature's stomp or smash shoves it round.
         let knockers: BTreeMap<EntityRef, Reaction> = snapshot
@@ -710,6 +758,205 @@ impl UnitPresenter {
             }
             if let Some((recovery, length)) = recovery {
                 playback.recover(recovery, length);
+            }
+        }
+    }
+
+    /// Plays what this projection says of emotes, doors, knocks, trades and quest turns (#619).
+    /// Every cue is something the zone did or a window the viewer has open; the clips never
+    /// feed back into it.
+    fn social(&mut self, snapshot: &ZoneSnapshot, seconds: f64) {
+        for line in &snapshot.chat {
+            if let mmorpg_core::ChatMessage::Emote(emote) = line.message {
+                let speaker = EntityRef::Player(line.speaker);
+                self.gesture(snapshot, speaker, |social| social.emote(emote), seconds);
+            }
+        }
+        for view in &snapshot.doors {
+            let was = self.doors.insert(view.door, view.open);
+            if was.is_some_and(|was| was != view.open) {
+                self.door_moved(snapshot, *view, seconds);
+            }
+        }
+        let viewer = EntityRef::Player(snapshot.viewer_id);
+        let npc = self.interaction.npc.map(EntityRef::Npc);
+        for event in &snapshot.events {
+            let mmorpg_core::ZoneEvent::Error { code, .. } = *event else {
+                continue;
+            };
+            match code {
+                // A knock nobody answers (#158) is still a knock.
+                mmorpg_core::ErrorCode::NoAnswer => {
+                    let knock = |social: imported::SocialClips| (social.door_knock, false);
+                    self.gesture(snapshot, viewer, knock, seconds);
+                }
+                // "Can't help": a vendor closed off-hours, a resident with no new quests at night.
+                mmorpg_core::ErrorCode::VendorClosed | mmorpg_core::ErrorCode::NotAtNight => {
+                    if let Some(npc) = npc {
+                        let shrug = |social: imported::SocialClips| (social.talk_shrug, false);
+                        self.gesture(snapshot, npc, shrug, seconds);
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.knocks(snapshot, seconds);
+        // The zone completed a trade or a quest while the window was open toward this NPC.
+        let copper = snapshot.viewer.copper;
+        let traded = self.copper.is_some_and(|copper_was| copper_was != copper);
+        self.copper = Some(copper);
+        let log = snapshot
+            .quests
+            .as_ref()
+            .map(|sheet| (sheet.completed, sheet.entries.len()));
+        let quest_turned = log.is_some() && self.quest_log.is_some() && log != self.quest_log;
+        if log.is_some() {
+            self.quest_log = log;
+        }
+        // The quest just added to the log, for a line that points at its objective.
+        let entries: BTreeSet<_> = snapshot
+            .quests
+            .iter()
+            .flat_map(|sheet| &sheet.entries)
+            .map(|entry| entry.quest.get())
+            .collect();
+        let accepted = snapshot
+            .quests
+            .as_ref()
+            .and_then(|_| entries.difference(&self.quest_entries).next().copied());
+        if snapshot.quests.is_some() {
+            self.quest_entries = entries;
+        }
+        let Some(id) = self.interaction.npc else {
+            return;
+        };
+        let npc = EntityRef::Npc(id);
+        if traded && self.content.vendor_stock(id).is_some() {
+            let trade = |social: imported::SocialClips| (social.trade, false);
+            self.gesture(snapshot, npc, trade, seconds);
+            self.gesture(snapshot, viewer, trade, seconds);
+        }
+        if quest_turned {
+            // A line that names where to go points there (#619); any other explains.
+            let objective = accepted.and_then(directing_line);
+            if let Some(objective) = objective {
+                self.directing.insert(npc, objective);
+            }
+            let line = move |social: imported::SocialClips| {
+                let clip = if objective.is_some() {
+                    social.talk_direct
+                } else {
+                    social.talk_explain
+                };
+                (clip, false)
+            };
+            self.gesture(snapshot, npc, line, seconds);
+        }
+    }
+
+    /// Plays the clip `pick` chooses on `entity`, when its model has it; a model without it
+    /// shows what it was already doing.
+    fn gesture(
+        &mut self,
+        snapshot: &ZoneSnapshot,
+        entity: EntityRef,
+        pick: impl Fn(imported::SocialClips) -> (&'static str, bool),
+        seconds: f64,
+    ) {
+        let Some((kind, _, _)) = self.class_of(snapshot, entity) else {
+            return;
+        };
+        let Some((clip, whole)) = kind.clips().social.map(pick) else {
+            return;
+        };
+        if let Some((clip, length)) = self.clip(kind, clip) {
+            self.playbacks
+                .entry(entity)
+                .or_default()
+                .gesture(clip, length, whole, seconds);
+        }
+    }
+
+    /// `door` just changed state: the player or NPC nearest it within reach plays the push or
+    /// the pull. The zone projects no opener, so this is the client's best reading of it and
+    /// only ever a pose; nobody in reach (a door closing itself) plays nothing.
+    fn door_moved(&mut self, snapshot: &ZoneSnapshot, view: mmorpg_core::DoorView, seconds: f64) {
+        let Some(door) = self.content.door(view.door).copied() else {
+            return;
+        };
+        let leaf = door.leaf(false).position;
+        let distance = |position: [i32; 3]| {
+            let [dx, dz] = [
+                i64::from(position[0] - leaf[0]),
+                i64::from(position[2] - leaf[2]),
+            ];
+            dx * dx + dz * dz
+        };
+        let Some(opener) = snapshot
+            .entities
+            .iter()
+            .filter(|record| {
+                matches!(record.entity(), EntityRef::Player(_) | EntityRef::Npc(_))
+                    && door.within_reach(record.position)
+            })
+            .min_by_key(|record| (distance(record.position), record.entity()))
+        else {
+            return;
+        };
+        // Opening away from the opener pushes; opening toward it, and closing, pulls.
+        let swing = door.leaf(true).position;
+        let along = i64::from(swing[0] - leaf[0]) * i64::from(leaf[0] - opener.position[0])
+            + i64::from(swing[2] - leaf[2]) * i64::from(leaf[2] - opener.position[2]);
+        let push = view.open && along > 0;
+        let entity = opener.entity();
+        self.gesture(
+            snapshot,
+            entity,
+            |social| {
+                (
+                    if push {
+                        social.door_push
+                    } else {
+                        social.door_pull
+                    },
+                    false,
+                )
+            },
+            seconds,
+        );
+    }
+
+    /// A private-home resident projected asleep has begun getting up: a knock woke it (#158).
+    /// The viewer plays the knock if it stands at that door; the zone projects no knock itself.
+    fn knocks(&mut self, snapshot: &ZoneSnapshot, seconds: f64) {
+        let viewer = EntityRef::Player(snapshot.viewer_id);
+        let feet = snapshot
+            .entities
+            .iter()
+            .find(|record| record.entity() == viewer)
+            .map(|record| record.position);
+        let homes = self.content.private_homes().to_vec();
+        for home in homes {
+            let posture = snapshot
+                .entities
+                .iter()
+                .find(|record| record.entity() == EntityRef::Npc(home.npc))
+                .map(|record| record.flags.posture);
+            let was = if posture == Some(mmorpg_core::PostureView::Asleep) {
+                !self.sleepers.insert(home.npc)
+            } else {
+                self.sleepers.remove(&home.npc)
+            };
+            if was
+                && posture == Some(mmorpg_core::PostureView::Waking)
+                && feet.is_some_and(|feet| {
+                    self.content
+                        .door(home.door)
+                        .is_some_and(|door| door.within_reach(feet))
+                })
+            {
+                let knock = |social: imported::SocialClips| (social.door_knock, false);
+                self.gesture(snapshot, viewer, knock, seconds);
             }
         }
     }
@@ -1014,6 +1261,97 @@ impl UnitPresenter {
             .unwrap_or(0.)
     }
 
+    /// The viewer's pose and turn from what its windows and the projection say (#619), and the
+    /// drawn-root offset for a resident asleep at its bed. A kneel needs a projected corpse
+    /// within the zone's reach; a pointing viewer turns toward its target.
+    fn social_cues(
+        &self,
+        snapshot: &ZoneSnapshot,
+        unit: &SampledUnit,
+        entity: EntityRef,
+        yaw: f64,
+    ) -> (Option<imported::Posture>, Option<f64>, Option<[f64; 2]>) {
+        let here = unit.record.position;
+        let turn_to = |target: [i32; 3]| {
+            let [dx, dz] = [
+                f64::from(target[0] - here[0]),
+                f64::from(target[2] - here[2]),
+            ];
+            let turn = dx.atan2(dz) - yaw;
+            (turn + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU) - std::f64::consts::PI
+        };
+        // The zone's own posture (#619): a sitter's seat follows from where it stands, and a
+        // chair's drawn feet stand off the body's spot; a ground sit stays put.
+        match unit.record.flags.posture {
+            mmorpg_core::PostureView::Sitting => {
+                return match self.content.seat_at([here[0], here[2]]) {
+                    Some(seat) => (
+                        Some(imported::Posture::SitChair),
+                        None,
+                        Some([
+                            f64::from(seat.root[0] - seat.stand[0]) / 100.,
+                            f64::from(seat.root[1] - seat.stand[1]) / 100.,
+                        ]),
+                    ),
+                    None => (Some(imported::Posture::SitGround), None, None),
+                };
+            }
+            mmorpg_core::PostureView::Asleep | mmorpg_core::PostureView::Waking => {
+                if let EntityRef::Npc(npc) = entity
+                    && let Some(bed) = bed_of(npc)
+                {
+                    let posture = if unit.record.flags.posture == mmorpg_core::PostureView::Waking {
+                        imported::Posture::Waking
+                    } else {
+                        imported::Posture::Sleep
+                    };
+                    return (Some(posture), Some(std::f64::consts::PI), Some(bed));
+                }
+                return (None, None, None);
+            }
+            mmorpg_core::PostureView::Free => {}
+        }
+        if entity == EntityRef::Player(self.player_id) {
+            let corpse = snapshot
+                .loot
+                .filter(|_| self.interaction.loot_window)
+                .and_then(|loot| {
+                    let corpse = EntityRef::Creature(loot.claim.creature);
+                    snapshot
+                        .entities
+                        .iter()
+                        .find(|record| record.entity() == corpse)
+                })
+                .filter(|record| {
+                    let [dx, dz] = [
+                        i64::from(record.position[0] - here[0]),
+                        i64::from(record.position[2] - here[2]),
+                    ];
+                    dx * dx + dz * dz <= i64::from(mmorpg_core::LOOT_REACH_UNITS).pow(2)
+                });
+            if let Some(corpse) = corpse {
+                return (
+                    Some(imported::Posture::Loot),
+                    Some(turn_to(corpse.position)),
+                    None,
+                );
+            }
+            let target = snapshot.viewer.target.and_then(|target| {
+                snapshot
+                    .entities
+                    .iter()
+                    .find(|record| record.entity() == target)
+            });
+            return (None, target.map(|target| turn_to(target.position)), None);
+        }
+        // An NPC pointing out an objective turns so its left arm reaches toward it (#619).
+        let face = self
+            .directing
+            .get(&entity)
+            .map(|&[x, z]| turn_to([x, 0, z]) - std::f64::consts::FRAC_PI_2);
+        (None, face, None)
+    }
+
     /// Every unit draw for one frame, except the imported models' skinned bodies.
     pub fn frame(&mut self, input: &FrameInput<'_>) -> UnitFrame {
         let snapshot = input.snapshot;
@@ -1209,6 +1547,7 @@ impl UnitPresenter {
                         1. - (-input.dt / 0.12).exp()
                     };
                 let rung_lift = *rung_lift;
+                let (posture, face, bed) = self.social_cues(snapshot, unit, entity, yaw);
                 let durations = &self.durations;
                 let animation = self.playbacks.entry(entity).or_default().advance(
                     kind.clips(),
@@ -1232,6 +1571,9 @@ impl UnitPresenter {
                         stunned,
                         rolling,
                         engaged: unit.record.flags.in_combat,
+                        posture,
+                        talking: Some(entity) == self.interaction.npc.map(EntityRef::Npc),
+                        face,
                         loadout,
                         now: seconds,
                         dt: input.dt,
@@ -1249,9 +1591,26 @@ impl UnitPresenter {
                     input.dt,
                     reduced,
                 );
+                // A bed clip eases the drawn body onto the mattress (#619); the zone's position
+                // stays beside the bed.
+                let rest = self.rests.entry(entity).or_default();
+                let in_bed = kind
+                    .clips()
+                    .social
+                    .is_some_and(|s| s.on_furniture(animation.lower.0));
+                *rest += (f64::from(u8::from(in_bed)) - *rest)
+                    * if reduced {
+                        1.
+                    } else {
+                        1. - (-input.dt / 0.12).exp()
+                    };
+                let drawn_bed = bed.map_or([0.; 3], |bed| [bed[0] * *rest, 0., bed[1] * *rest]);
                 let root = Frame {
                     p: std::array::from_fn(|axis| {
-                        feet[axis] + lift[axis] + if axis == 1 { rung_lift } else { 0. }
+                        feet[axis]
+                            + lift[axis]
+                            + drawn_bed[axis]
+                            + if axis == 1 { rung_lift } else { 0. }
                     }),
                     ..root
                 };
@@ -1884,6 +2243,35 @@ fn velocity_metres_per_second(units_per_tick: i8) -> f64 {
 
 fn metres(value: [i32; 3]) -> [f32; 3] {
     value.map(|component| component as f32 / UNITS_PER_METRE as f32)
+}
+
+/// Where `quest`'s accept line points (#619), for `Talk_Gesture_B`: the two lines that name a
+/// place to go.
+fn directing_line(quest: u8) -> Option<[i32; 2]> {
+    use mmorpg_core::greyhaven_vale::{lake, quests};
+    // "Something stirs at Stillwater Lake, south-east of the outpost."
+    // "The Redbrand bandits camp in the hollow under the northern cliffs."
+    const HOLLOW: [i32; 2] = [0, -10_000];
+    match quest {
+        q if q == quests::SCOUT_THE_LAKE.get() => Some(lake::CENTRE),
+        q if q == quests::INTO_REDBRAND_HOLLOW.get() => Some(HOLLOW),
+        _ => None,
+    }
+}
+
+/// Where the drawn root stands for a resident's `Sleep_Bed_*` clips, as an offset in metres from
+/// its routine home (#619): the bed lies behind the figure, so the root stands the clip's
+/// `lyingPelvis` depth (0.52 m) off the mattress centre toward the room, turned away from the
+/// bed. Only Elden has a bed (Atlas 5.1.48). A resident without one stays upright.
+fn bed_of(npc: mmorpg_core::NpcId) -> Option<[f64; 2]> {
+    use mmorpg_core::greyhaven_vale::marshal_house as house;
+    const LYING_PELVIS_DEPTH: f64 = 0.52;
+    (npc == house::RESIDENT).then(|| {
+        [
+            f64::from(house::BED_CENTRE[0] - house::BEDSIDE[0]) / 100. - LYING_PELVIS_DEPTH,
+            f64::from(house::BED_CENTRE[1] - house::BEDSIDE[1]) / 100.,
+        ]
+    })
 }
 
 #[cfg(test)]

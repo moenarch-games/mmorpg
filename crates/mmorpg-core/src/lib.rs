@@ -62,6 +62,7 @@ pub mod rng;
 mod rock;
 pub mod roll;
 mod routine;
+mod seat;
 mod shapes;
 mod snapshot;
 mod stance;
@@ -151,6 +152,7 @@ pub use guard::{
 };
 pub use home::{
     MAX_WAKE_WAYPOINTS, NpcWake, PRIVATE_DOOR_CLOSE_TICKS, PrivateHome, WAKE_IDLE_TICKS,
+    WAKE_RISE_TICKS,
 };
 pub use interest::{InterestMaintenanceStats, InterestQueryStats, PlayerProjection};
 pub use inventory::{
@@ -202,6 +204,7 @@ pub use routine::{
     DAWN, DAY_TICKS, DUSK, HOUR_TICKS, MAX_ROUTINE_WAYPOINTS, NPC_WALK_UNITS_PER_TICK,
     NpcPlacement, NpcRoutine, ZONE_START_TIME, is_night, time_of_day,
 };
+pub use seat::{MAX_SEATS, PostureView, SEAT_REACH_UNITS, Seat, SeatId, Sitting};
 pub use snapshot::{
     CanonicalCreatureAbilities, CanonicalCreatureSnapshot, CanonicalPlayerAbilities,
     CanonicalPlayerCombat, CanonicalPlayerSnapshot, CanonicalZoneSnapshot, CreatureAi,
@@ -417,6 +420,10 @@ pub enum ZoneCommand {
     /// already has changes nothing; reach and blocking bodies are checked in
     /// the tick.
     UseDoor { door: DoorId, open: bool },
+    /// Sits on `seat`, or on the ground where the player stands with `None` (#619, Atlas
+    /// 5.4.i619). The zone checks reach, whether it is held and the footing in the tick;
+    /// moving, jumping, damage, casting or attacking ends it.
+    Sit { seat: Option<SeatId> },
     /// Starts repairing a destructible piece (#305), or stops with `None`: held like a guard,
     /// free, and it speeds up the piece's timed regrowth while the player stands within
     /// reach. Any movement stops it.

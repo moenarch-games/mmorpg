@@ -87,6 +87,8 @@ pub(crate) struct PlayerState {
     pub(crate) swimming: bool,
     /// A climb or mantle in progress (#490); canonical.
     pub(crate) traversal: crate::Traversal,
+    /// The ground or seat the player sits on (#619); canonical.
+    pub(crate) sitting: crate::Sitting,
     /// A pending press, a dodge roll in progress or its cooldown (#516); canonical.
     pub(crate) roll: crate::Roll,
     /// The `[forward, up]` launch (cm/s) of an edge's follow-up resolved this
@@ -173,6 +175,7 @@ impl PlayerState {
             landing: crate::LandingState::default(),
             swimming: false,
             traversal: crate::Traversal::Free,
+            sitting: crate::Sitting::No,
             roll: crate::Roll::Ready,
             impulse: None,
             authored: None,
@@ -706,6 +709,7 @@ impl ZoneSimulation {
             // Queued so a guard pressed after a strike stays raised (5.2.37).
             ZoneCommand::Guard { lane } => Some(PlayerIntent::Guard(lane)),
             ZoneCommand::UseDoor { door, open } => Some(PlayerIntent::UseDoor { door, open }),
+            ZoneCommand::Sit { seat } => Some(PlayerIntent::Sit(seat)),
             ZoneCommand::Repair { piece } => Some(PlayerIntent::Repair(piece)),
             ZoneCommand::SelectTarget(target) => Some(PlayerIntent::SelectTarget(target)),
             ZoneCommand::Swing { facing } => Some(PlayerIntent::Swing { facing }),
@@ -877,6 +881,7 @@ impl ZoneSimulation {
         self.advance_auras(now)?;
         self.resolve_combat(now)?;
         self.advance_traps(now)?;
+        self.advance_sitting();
         self.update_timers(now)?;
         self.regrow_pieces(now)?;
         self.advance_summoned(now);
@@ -905,6 +910,8 @@ impl ZoneSimulation {
         for player in self.players.values_mut() {
             if player.forward != Axis::Zero || player.strafe != Axis::Zero || player.jump_pending {
                 player.repairing = None;
+                // So does a sit (#619).
+                player.sitting = crate::Sitting::No;
             }
         }
         let probe_ground = self.ground_body();

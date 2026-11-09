@@ -142,6 +142,7 @@ impl ZoneSimulation {
                 self.update_player(player_id, |player| {
                     player.facing = facing;
                     player.swing_queued = true;
+                    player.sitting = crate::Sitting::No;
                 });
                 None
             }
@@ -190,6 +191,7 @@ impl ZoneSimulation {
             | PlayerIntent::AcceptQuest { .. }
             | PlayerIntent::CompleteQuest { .. }
             | PlayerIntent::UseDoor { .. }
+            | PlayerIntent::Sit(_)
             | PlayerIntent::RaidAid(_)
             | PlayerIntent::RaidPrepare(_)
             | PlayerIntent::ClaimDepthsDrop { .. }
@@ -249,6 +251,7 @@ impl ZoneSimulation {
                 })?,
             PlayerIntent::Loot(claim) => self.claim_loot(player_id, claim)?,
             PlayerIntent::UseDoor { door, open } => self.use_door(player_id, door, open)?,
+            PlayerIntent::Sit(seat) => self.sit(player_id, seat)?,
             PlayerIntent::Chat(message) => {
                 self.speak(player_id, message, now)?;
                 None
@@ -281,7 +284,13 @@ impl ZoneSimulation {
             PlayerIntent::AbandonQuest { quest } => {
                 self.quest_request(player_id, crate::quest::QuestRequest::Abandon { quest })?
             }
-            PlayerIntent::UseWaystone(waystone) => self.use_waystone(player_id, waystone)?,
+            PlayerIntent::UseWaystone(waystone) => {
+                let refusal = self.use_waystone(player_id, waystone)?;
+                if refusal.is_none() {
+                    self.update_player(player_id, |player| player.sitting = crate::Sitting::No);
+                }
+                refusal
+            }
             PlayerIntent::RaidAid(task) => self.aid_raid(player_id, task)?,
             PlayerIntent::RaidPrepare(prep) => self.prepare_raid(player_id, prep)?,
             // Eligible characters may answer even dead (Atlas 5.1.35).
@@ -862,6 +871,7 @@ impl ZoneSimulation {
             return Ok(0);
         }
         player.health -= dealt;
+        player.sitting = crate::Sitting::No;
         player.combat_timer = COMBAT_LINGER_TICKS;
         player.calm_ticks = 0;
         if player.health == 0 {
@@ -913,6 +923,7 @@ impl ZoneSimulation {
         }
         let dealt = left.min(player.health);
         player.health -= dealt;
+        player.sitting = crate::Sitting::No;
         let dead = player.health == 0;
         push_event(
             &mut player.events,

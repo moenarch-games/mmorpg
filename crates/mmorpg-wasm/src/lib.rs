@@ -849,6 +849,12 @@ impl UnitPresenter {
         self.0.set_body_overlay(shown);
     }
 
+    /// What the page's windows are open toward this frame (#619). Presentation only.
+    #[wasm_bindgen(js_name = setInteraction)]
+    pub fn set_interaction(&mut self, loot_window: bool, npc: Option<u32>) {
+        self.0.set_interaction(loot_window, npc);
+    }
+
     pub fn push(&mut self, projection: &[u8], seconds: f64) -> Result<(), JsError> {
         self.0
             .push(projection, seconds)
@@ -1023,6 +1029,15 @@ impl BuildingPresenter {
             .iter()
             .find(|door| door.within_reach([x, 0, z]))
             .map_or(0, |door| door.id.get())
+    }
+
+    /// The seat feet at `(x, z)` units reach, 0 for none (#619); the zone decides.
+    #[wasm_bindgen(js_name = reachableSeat)]
+    #[must_use]
+    pub fn reachable_seat(x: i32, z: i32) -> u8 {
+        host::hosted_content()
+            .seat_in_reach([x, z])
+            .map_or(0, |seat| seat.id.get())
     }
 }
 

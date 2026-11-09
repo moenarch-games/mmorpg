@@ -131,6 +131,14 @@ const fn turn([x, z]: [i32; 2], quarters: u8) -> [i32; 2] {
     }
 }
 
+/// The square's bench, as [`placements`] puts it before its house (x, z units; its front faces
+/// +Z), and how far along it the two seats are (#619).
+pub const BENCH: [i32; 2] = [2_450, 2_460];
+pub const BENCH_SEAT_OFFSET: i32 = 40;
+/// A sitter's body spot and drawn feet in front of the bench's centre line.
+pub const BENCH_STAND_Z: i32 = 60;
+pub const BENCH_ROOT_Z: i32 = 26;
+
 /// The square's centre (x, z units) before a house centred at `house`.
 #[must_use]
 pub const fn centre(house: [i32; 2]) -> [i32; 2] {

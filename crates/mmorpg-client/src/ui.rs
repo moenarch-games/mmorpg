@@ -309,6 +309,14 @@ impl GameUi {
         open
     }
 
+    /// Whether the loot window is showing the projected corpse (#619).
+    #[must_use]
+    pub fn loot_window_open(&self, snapshot: Option<&ZoneSnapshot>) -> bool {
+        snapshot
+            .and_then(|snapshot| snapshot.loot)
+            .is_some_and(|loot| self.dismissed_loot != Some(loot.claim))
+    }
+
     /// Whether a closable window (bags, character, quest log or an
     /// undismissed loot window) is open, so a gamepad navigates the interface.
     #[must_use]

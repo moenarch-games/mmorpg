@@ -60,6 +60,16 @@ mirror!(
     }
 );
 mirror!(
+    /// A sitting unit, or a resident in bed or getting up (#619).
+    #[serde(rename_all = "kebab-case")]
+    PostureView = core::PostureView {
+        Free,
+        Sitting,
+        Asleep,
+        Waking
+    }
+);
+mirror!(
     /// A player climbing a face, a ladder or a rope, mantling a low, mid or high ledge (#490,
     /// #500) or rolling (#516).
     #[serde(rename_all = "kebab-case")]
@@ -181,6 +191,8 @@ mirror!(
         NoRoom,
         NoLanding,
         MovementImmune,
+        SeatTaken,
+        CannotSitHere,
     }
 );
 mirror!(
@@ -274,6 +286,7 @@ pub struct EntityFlags {
     pub targets_viewer: bool,
     pub lootable: bool,
     pub traversal: Traversal,
+    pub posture: PostureView,
 }
 
 /// One visible unit.
@@ -319,6 +332,7 @@ impl From<&core::EntitySnapshot> for EntityState {
                 targets_viewer: flags.targets_viewer,
                 lootable: flags.lootable,
                 traversal: flags.traversal.into(),
+                posture: flags.posture.into(),
             },
         }
     }
@@ -346,6 +360,7 @@ impl From<&EntityState> for core::EntitySnapshot {
                 targets_viewer: flags.targets_viewer,
                 lootable: flags.lootable,
                 traversal: flags.traversal.into(),
+                posture: flags.posture.into(),
             },
         }
     }
@@ -1922,6 +1937,10 @@ pub enum WorldCommand {
         door: u8,
         open: bool,
     },
+    /// Sits on seat `seat`, or on the ground with none (#619); the zone checks the rest.
+    Sit {
+        seat: Option<u8>,
+    },
     /// Travels from the waystone in reach to unlocked waystone `waystone` (#145).
     UseWaystone {
         waystone: u8,
@@ -2063,6 +2082,9 @@ impl TryFrom<&WorldCommand> for core::ZoneCommand {
             C::UseDoor { door, open } => Self::UseDoor {
                 door: core::DoorId::new(door),
                 open,
+            },
+            C::Sit { seat } => Self::Sit {
+                seat: seat.map(core::SeatId::new),
             },
             C::UseWaystone { waystone } => Self::UseWaystone {
                 waystone: core::WaystoneId::new(waystone)

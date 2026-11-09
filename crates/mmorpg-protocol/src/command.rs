@@ -51,6 +51,8 @@ const RAID_AID_TAG: u8 = 32;
 const RAID_PREPARE_TAG: u8 = 33;
 const ROLL_DEPTHS_DROP_TAG: u8 = 34;
 const CLAIM_DEPTHS_DROP_TAG: u8 = 35;
+/// Sit (#619): version, tag, seat (u8, 0 the ground).
+const SIT_TAG: u8 = 36;
 /// Version, tag, ability (u8), retired (0 key up, 1 retired).
 const RELEASE_ABILITY_COMMAND_BYTES: usize = 4;
 /// Version, tag, observed tick (u64), before the inner command's tag.
@@ -127,6 +129,13 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
         }
         ZoneCommand::UseDoor { door, open } => {
             vec![PROTOCOL_BYTE, USE_DOOR_TAG, door.get(), u8::from(open)]
+        }
+        ZoneCommand::Sit { seat } => {
+            vec![
+                PROTOCOL_BYTE,
+                SIT_TAG,
+                seat.map_or(0, mmorpg_core::SeatId::get),
+            ]
         }
         ZoneCommand::Repair { piece } => {
             let [high, low] = crate::wire::encode_piece(piece).to_be_bytes();
@@ -484,6 +493,16 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
             Ok(ZoneCommand::UseDoor {
                 door: mmorpg_core::DoorId::new(*door),
                 open,
+            })
+        }
+        SIT_TAG => {
+            let [_, _, seat] = payload else {
+                return Err(ProtocolError::new(
+                    "sit command payload must be exactly 3 bytes",
+                ));
+            };
+            Ok(ZoneCommand::Sit {
+                seat: (*seat != 0).then(|| mmorpg_core::SeatId::new(*seat)),
             })
         }
         COMMAND_MINIONS_TAG => {
@@ -1012,6 +1031,10 @@ mod tests {
                 door: mmorpg_core::DoorId::new(u8::MAX),
                 open: false,
             },
+            ZoneCommand::Sit { seat: None },
+            ZoneCommand::Sit {
+                seat: Some(mmorpg_core::SeatId::new(3)),
+            },
             ZoneCommand::Repair {
                 piece: Some(mmorpg_core::PieceId::new(3)),
             },
@@ -1103,6 +1126,9 @@ mod tests {
                 }
                 ZoneCommand::UseDoor { door, open } => {
                     format!("use_door {} {}", door.get(), u8::from(open))
+                }
+                ZoneCommand::Sit { seat } => {
+                    format!("sit {}", seat.map_or(0, mmorpg_core::SeatId::get))
                 }
                 ZoneCommand::Repair { piece } => {
                     format!("repair {}", crate::wire::encode_piece(piece))

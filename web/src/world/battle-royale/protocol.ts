@@ -173,6 +173,7 @@ export function canSendCharacterCommand(command: WorldCommand, phase: MatchPhase
     case "complete-quest":
     case "abandon-quest":
     case "use-door":
+    case "sit":
     case "use-waystone":
     case "repair":
     case "raid-aid":
