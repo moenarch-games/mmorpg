@@ -590,7 +590,7 @@ impl App {
     }
 
     /// A key or pad button (anything with a release) pressed `slot`: a power shot draws and
-    /// waits for the release (#607); everything else is used at once.
+    /// waits for the release (#607); everything else goes straight to the slot's control.
     fn press_slot(&mut self, slot: u8) {
         let Some(ability) = self.slot_ability(slot) else {
             return;
@@ -601,26 +601,8 @@ impl App {
             self.presentation
                 .hold_attack_preparation(ability, Instant::now());
         } else {
-            self.use_slot(slot);
+            self.control(ControlAction::AbilitySlot(slot));
         }
-    }
-
-    /// A slot use with no release to wait for (an action-bar click, or a press that cannot
-    /// draw): one intent the zone answers, with a local wind-up until it does (Atlas 6.6.10).
-    fn use_slot(&mut self, slot: u8) {
-        self.power_draw.cancel();
-        let Some(ability) = self.slot_ability(slot) else {
-            return;
-        };
-        self.send_ability_use(ability);
-        self.presentation.prepare_attack(ability, Instant::now());
-    }
-
-    fn send_ability_use(&self, ability: u8) {
-        self.input.send_modify(|input| {
-            input.ability = ability;
-            input.ability_uses = input.ability_uses.wrapping_add(1);
-        });
     }
 
     /// Tab and R are intents derived from the latest projection; the zone
@@ -657,7 +639,20 @@ impl App {
             ControlAction::TargetNext => self.combat_key(KeyCode::Tab),
             ControlAction::Swing => self.swing(),
             ControlAction::ReleaseSpirit => self.combat_key(KeyCode::KeyR),
-            ControlAction::AbilitySlot(slot) => self.press_slot(slot),
+            // The one place a slot use is sent: a press that cannot draw, an action-bar click or
+            // a held power shot's deliberate release (#607).
+            ControlAction::AbilitySlot(slot) => {
+                if let Some(ability) = self.slot_ability(slot) {
+                    self.power_draw.cancel();
+                    self.input.send_modify(|input| {
+                        input.ability = ability;
+                        input.ability_uses = input.ability_uses.wrapping_add(1);
+                    });
+                    // A reversible local wind-up until the zone answers (Atlas 6.6.10); a held
+                    // draw's clip carries on unbroken.
+                    self.presentation.prepare_attack(ability, Instant::now());
+                }
+            }
             ControlAction::CancelCast => {
                 self.input.send_modify(|input| {
                     input.cancels = input.cancels.wrapping_add(1);
@@ -788,7 +783,7 @@ impl App {
             PadAction::TargetNext => self.combat_key(KeyCode::Tab),
             PadAction::Swing => self.swing(),
             PadAction::ReleaseSpirit => self.combat_key(KeyCode::KeyR),
-            PadAction::AbilitySlot(slot) => self.control(ControlAction::AbilitySlot(slot)),
+            PadAction::AbilitySlot(slot) => self.press_slot(slot),
             PadAction::CancelCast => self.control(ControlAction::CancelCast),
             PadAction::TogglePanel(panel) => self.control(ControlAction::TogglePanel(panel)),
             PadAction::NextNpc => {
@@ -832,9 +827,8 @@ impl App {
         for release in releases.into_iter().chain(pad_releases) {
             // A held power shot fires on its deliberate release, ahead of the release itself.
             match self.power_draw.release(release.slot, release.retired) {
-                Some(DrawRelease::Fire(ability)) => {
-                    self.send_ability_use(ability);
-                    self.presentation.attack_preparation_sent(Instant::now());
+                Some(DrawRelease::Fire(_)) => {
+                    self.control(ControlAction::AbilitySlot(release.slot));
                 }
                 Some(DrawRelease::Drop) => self.presentation.abandon_attack_preparation(),
                 None => {}
@@ -882,7 +876,7 @@ impl App {
             }
             UiIntent::Party(request) => self.party.send(request),
             // A click has no release to wait for: it fires at once, power shots too (#607).
-            UiIntent::AbilitySlot(slot) => self.use_slot(slot),
+            UiIntent::AbilitySlot(slot) => self.control(ControlAction::AbilitySlot(slot)),
             UiIntent::ReleaseSpirit => self.combat_key(KeyCode::KeyR),
             UiIntent::Select(target) => {
                 self.input.send_modify(|input| {
@@ -1373,7 +1367,10 @@ impl ApplicationHandler for App {
                             return;
                         }
                         for action in actions {
-                            self.control(action);
+                            match action {
+                                ControlAction::AbilitySlot(slot) => self.press_slot(slot),
+                                action => self.control(action),
+                            }
                         }
                     } else {
                         self.controls.key_up(code);
