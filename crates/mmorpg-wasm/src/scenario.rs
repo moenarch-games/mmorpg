@@ -37,6 +37,9 @@ pub enum Scenario {
     /// A level 6 Warden on the rise above the Redbrand camp, a step south of the boulder trap
     /// (#299), facing it: walk north to roll it downhill onto the camp, or Shield Bash it.
     BoulderTrap,
+    /// A level 6 Warden in the Redbrand camp, 4 m east of the spike pit (#300), facing it:
+    /// walk west into the spikes, or step north or south to go round them.
+    RedbrandTraps,
     RedbrandCavern,
     /// A level 6 Warden standing in the Redbrand Hollow threshold with the Garrick chain turned
     /// in: the first tick enters a private run of the depths (#404).
@@ -151,6 +154,7 @@ impl Scenario {
             Self::ArcanistPack => "arcanist-pack",
             Self::SunkenShrine => "sunken-shrine",
             Self::BoulderTrap => "boulder-trap",
+            Self::RedbrandTraps => "redbrand-traps",
             Self::RedbrandCavern => "redbrand-cavern",
             Self::RedbrandDepths => "redbrand-depths",
             Self::RedbrandThorn => "redbrand-thorn",
@@ -193,6 +197,7 @@ impl Scenario {
             Self::OgreCombat
             | Self::SunkenShrine
             | Self::BoulderTrap
+            | Self::RedbrandTraps
             | Self::RedbrandCavern
             | Self::RedbrandDepths
             | Self::RedbrandThorn => ClassChoice {
@@ -283,6 +288,7 @@ impl Scenario {
             // Bone Shield, Adrenaline Rush and Divine Shield and Barkskin unlock at level 6.
             Self::RangerRange
             | Self::BoulderTrap
+            | Self::RedbrandTraps
             | Self::RedbrandCavern
             | Self::RedbrandDepths
             | Self::NecromancerDrain
@@ -373,6 +379,8 @@ impl Scenario {
             // On the authored north approach; face south through the concealed mouth (#644).
             // Just south of the boulder trap on the rise, facing north down it (#299).
             Self::BoulderTrap => ([950, -7_300], 32_768),
+            // Just east of the camp's spike pit, facing west into it (#300).
+            Self::RedbrandTraps => ([-1_400, -8_600], 49_152),
             Self::RedbrandCavern => ([6_400, -15_600], 0),
             // In the threshold strip's corner, facing the barred doorway to the east; the door's
             // Brute is three metres off and has not struck yet.

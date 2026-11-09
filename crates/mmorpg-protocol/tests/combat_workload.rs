@@ -68,11 +68,12 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // AI and projection ceilings are unchanged; the byte ceilings grew one byte per projection for
     // the summoned-terrain count (#293). The boulder trap (#299) stands one more prop on a fixed
     // sphere in every step's world: 360 more body visits per 360 ticks.
+    // World traps (#300) add one count byte to every projection.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [29_160, 1_305_720, 288_000, 6_082_592],
-        [29_160, 1_302_840, 93_060, 1_791_429],
-        [29_160, 1_311_480, 424_719, 7_867_287],
-        [28_804, 1_322_644, 2_323_474, 24_299_802],
+        [29_160, 1_305_720, 288_000, 6_088_352],
+        [29_160, 1_302_840, 93_060, 1_794_309],
+        [29_160, 1_311_480, 424_719, 7_878_807],
+        [28_804, 1_322_644, 2_323_474, 24_322_842],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();

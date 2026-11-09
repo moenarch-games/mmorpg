@@ -70,6 +70,7 @@ mod structure;
 mod summoned;
 pub mod surface;
 mod transfer;
+pub mod trap;
 pub mod trig;
 pub mod unit;
 mod vendor;
@@ -218,6 +219,11 @@ pub use summoned::{
 };
 pub use surface::{SurfaceEffect, SurfaceKind, SurfacePatch};
 pub use transfer::{CharacterTransfer, MAX_REMEMBERED_TRANSFERS, TransferId, TransferMotion};
+pub use trap::{
+    Blade, BladePose, CanonicalTrap, CanonicalTrapHit, MAX_ROCKS, MAX_TRAP_HITS, MAX_TRAPS,
+    MAX_VISIBLE_TRAPS, RockDrop, RockPose, Rockfall, Trap, TrapEffect, TrapId, TrapKind,
+    TrapRuntime, TrapTrigger, TrapView, TriggerVolume,
+};
 pub use vendor::{
     MAX_VENDOR_OFFERS, VENDOR_REACH_UNITS, VendorOffer, VendorStock, VendorStockError,
     VendorTradeError, sell_price, settle_purchase, settle_sale, starter_vendor_stock,

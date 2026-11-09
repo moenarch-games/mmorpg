@@ -36,6 +36,7 @@ pub mod marshal_house;
 pub mod quests;
 pub mod raid;
 pub mod shrine;
+pub mod traps;
 pub mod units;
 pub mod vale;
 
@@ -1380,6 +1381,7 @@ pub fn content_with_definition(
                     .collect(),
             )?
             .with_surfaces(surface_hazards())?
+            .with_traps(traps::traps())?
             .with_climbing(climbing())?
             .with_raid(raid::millbrook_barn())?
             .with_waystones(vec![crate::GREYHAVEN_OUTPOST])?

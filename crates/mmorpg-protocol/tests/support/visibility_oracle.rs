@@ -138,6 +138,7 @@ pub fn exhaustive_projection(
             .collect(),
         pieces: Vec::new(),
         summoned: Vec::new(),
+        traps: Vec::new(),
         raid: None,
         party: None,
         depths_loot: None,

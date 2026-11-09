@@ -158,6 +158,8 @@ export function eventText(event: ZoneEvent, snapshot: ZoneSnapshot, catalog: Con
       return event.source.kind === "player" && event.source.id === snapshot.viewerId
         ? `You miss ${name(event.target)}.`
         : `${capitalise(name(event.source))} misses you.`;
+    case "trap-hit":
+      return isViewer(event.target) ? `A trap hits you for ${event.amount}.` : `A trap hits ${name(event.target)} for ${event.amount}.`;
     case "evade":
       return `${capitalise(name(event.target))} evades.`;
     case "died":
