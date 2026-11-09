@@ -40,7 +40,14 @@ const WATER_MARGIN_DEPTH: f64 = 0.3;
 
 /// The authored course with its corners cut (Chaikin, twice) and stations at most a metre apart,
 /// so the drawn water follows a curve. The polyline itself stays the physics lane and the bed.
-fn water_course(points: &[[i32; 2]]) -> Vec<[f64; 2]> {
+/// The village brook as drawn: it goes underground at the sink ([`crate::river`]), one authored
+/// point before the physics lane ends at the old drain, which lies behind the sink's rock.
+pub(crate) fn village_drawn() -> &'static [[i32; 2]] {
+    let points = content::village();
+    &points[..points.len() - 1]
+}
+
+pub(crate) fn water_course(points: &[[i32; 2]]) -> Vec<[f64; 2]> {
     let mut line: Vec<[f64; 2]> = points.iter().map(|point| point.map(metres)).collect();
     for _ in 0..2 {
         let mut cut = vec![line[0]];
@@ -163,7 +170,7 @@ pub(crate) fn build(
     for (name, points, half_width, water_surface) in [
         (
             "greyhaven-brook",
-            content::village(),
+            village_drawn(),
             content::HALF_WIDTH,
             content::SURFACE,
         ),
@@ -205,57 +212,7 @@ pub(crate) fn build(
                     let v = v + nz * side * width;
                     [x, surface(g, x, v) + 0.085, v]
                 };
-                if name == "greyhaven-brook" && step % 2 == 0 {
-                    let t = (t0 + t1) * 0.5;
-                    let x = a[0] + (z[0] - a[0]) * t;
-                    let z = a[1] + (z[1] - a[1]) * t;
-                    let y = surface(g, x, z);
-                    if level - y > 0.12 && noise(x, z, 3., 51420.) > 0.4 {
-                        for pebble in 0..5 {
-                            let seed = (i * 31 + step * 7 + pebble) as f64;
-                            let x = x + (noise(seed, 0., 0.7, 51421.) - 0.5) * 0.65;
-                            let z = z + (noise(seed, 0., 0.7, 51422.) - 0.5) * 0.65;
-                            let y = surface(g, x, z);
-                            let r = 0.07 + noise(seed, 0., 0.7, 51423.) * 0.10;
-                            let mut stone = blob(0, true, 0.15, seed);
-                            stone.colors =
-                                vec![
-                                    rgb(mix(0x686c59, 0x99917b, noise(x, z, 0.3, 51424.)))
-                                        .map(f64::from);
-                                    stone.p.len()
-                                ];
-                            shingle.add(&stone, at(x, y + 0.005, z, r, 0.035, r * 0.8));
-                        }
-                    }
-                }
                 for side in [-1., 1.] {
-                    // Small, partly buried shingle clusters break up the bare mud verge.
-                    // Keep the bridge landings clear and omit steep ground where a pebble
-                    // would float. These low decorative stones do not obstruct traversal.
-                    let mid = p((t0 + t1) * 0.5, side, 0.55);
-                    if name == "greyhaven-brook"
-                        && noise(mid[0], mid[2], 2.5, 812.) > 0.47
-                        && !(mid[0].abs() < 2.5 && (28.0..=36.0).contains(&mid[2]))
-                    {
-                        for pebble in 0..7 {
-                            let seed = i as f64 * 31. + step as f64 * 7. + pebble as f64;
-                            let x = mid[0] + (noise(seed, side, 0.7, 813.) - 0.5) * 1.25;
-                            let z = mid[2] + (noise(seed, side, 0.7, 814.) - 0.5) * 1.25;
-                            let y = surface(g, x, z);
-                            let radius = 0.08 + 0.14 * noise(x, z, 0.3, 815.);
-                            if [[radius, 0.], [-radius, 0.], [0., radius], [0., -radius]]
-                                .iter()
-                                .any(|[dx, dz]| (surface(g, x + dx, z + dz) - y).abs() > 0.055)
-                            {
-                                continue;
-                            }
-                            let mut stone = blob(0, true, 0.16, seed);
-                            let color =
-                                rgb(mix(0x777a70, 0xa7a28c, noise(x, z, 0.4, 816.))).map(f64::from);
-                            stone.colors = vec![color; stone.p.len()];
-                            shingle.add(&stone, at(x, y + 0.035, z, radius, 0.09, radius * 0.75));
-                        }
-                    }
                     for [inner, outer] in [[0., 0.45], [0.45, 1.]] {
                         let q = [
                             p(t0, side, inner),
@@ -466,13 +423,28 @@ pub(crate) fn build(
     b.fallback = previous_fallback;
     for c in content::colliders()
         .iter()
-        .filter(|c| c.id >= content::CULVERT_POST)
+        .filter(|c| (content::CULVERT_POST..=content::CULVERT_TOP).contains(&c.id))
     {
         let p = c.position.map(metres);
         let h = c.half_extents.map(metres);
         b.global("brook-drain-stone", 0x77796c)
             .add(&box_shape(), at(p[0], p[1], p[2], h[0], h[1], h[2]));
     }
+    // The dark behind the sink's opening, where the brook goes underground under the limestone
+    // rocks of `crate::river`. The old drain's colliders stay, unseen behind that rock.
+    let course = village_drawn();
+    let end = course[course.len() - 1].map(metres);
+    b.global("brook-sink-void", 0x05060a).add(
+        &box_shape(),
+        at(
+            end[0],
+            surface(g, end[0], end[1]) + 0.45,
+            end[1] + 0.9,
+            1.6,
+            0.55,
+            0.3,
+        ),
+    );
     // Low, partly buried talus gathers at the western cliff foot. Decorative chips
     // remain below an ankle; supported ledges and walking collision stay authoritative.
     for row in 0..22 {

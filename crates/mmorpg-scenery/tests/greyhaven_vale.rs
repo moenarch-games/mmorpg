@@ -180,7 +180,7 @@ fn every_structure_collider_has_exactly_one_visual_and_vice_versa() {
             );
         } else if is_terrain(collider)
             || (is_authored_mesh(collider.id) && visual_kind(collider).is_none())
-            || (greyhaven_vale::brook::BRIDGE..=greyhaven_vale::brook::DRAIN_STONES[2])
+            || (greyhaven_vale::brook::BRIDGE..=greyhaven_vale::brook::SINK_ROCK)
                 .contains(&collider.id)
         {
             assert!(visual_kind(collider).is_none());

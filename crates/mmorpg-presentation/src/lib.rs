@@ -28,6 +28,7 @@ pub mod lod;
 pub mod nature;
 pub mod outpost_kit;
 mod props;
+pub mod river;
 pub mod settlement_props;
 pub mod shrine;
 pub mod structures;

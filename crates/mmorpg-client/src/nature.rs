@@ -44,6 +44,14 @@ mod limestone_descriptor {
     include!(concat!(env!("OUT_DIR"), "/limestone_descriptor.rs"));
 }
 
+mod river_bundle {
+    include!(concat!(env!("OUT_DIR"), "/river_bundle.rs"));
+}
+
+mod river_descriptor {
+    include!(concat!(env!("OUT_DIR"), "/river_descriptor.rs"));
+}
+
 type Files = &'static [(&'static str, &'static [u8])];
 
 /// One embedded bundle: the entries the presentation places, its glTF entries and files.
@@ -53,7 +61,7 @@ struct Source {
     files: Files,
 }
 
-const SOURCES: [Source; 3] = [
+const SOURCES: [Source; 4] = [
     Source {
         keys: &mmorpg_presentation::nature::ENTRIES,
         entries: bundle::ENTRIES,
@@ -68,6 +76,11 @@ const SOURCES: [Source; 3] = [
         keys: &mmorpg_presentation::nature::LIMESTONE_ENTRIES,
         entries: limestone_bundle::ENTRIES,
         files: limestone_bundle::FILES,
+    },
+    Source {
+        keys: &mmorpg_presentation::river::ENTRIES,
+        entries: river_bundle::ENTRIES,
+        files: river_bundle::FILES,
     },
 ];
 
@@ -96,6 +109,10 @@ pub fn lods() -> Vec<EntryLods> {
     lods.extend(
         mmorpg_presentation::nature::descriptor_lods(limestone_descriptor::DESCRIPTOR)
             .expect("the embedded limestone descriptor is valid"),
+    );
+    lods.extend(
+        mmorpg_presentation::nature::descriptor_lods(river_descriptor::DESCRIPTOR)
+            .expect("the embedded river stones descriptor is valid"),
     );
     lods
 }
