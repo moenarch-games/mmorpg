@@ -29,7 +29,6 @@ mod creature;
 mod depths;
 mod depths_boss;
 mod door;
-mod entity;
 mod ephemeral;
 mod equipment;
 mod events;
@@ -46,7 +45,6 @@ mod mobility;
 mod movable;
 mod nav;
 mod party;
-pub mod physics;
 #[cfg(feature = "physics-ab")]
 pub mod physics_ab;
 mod platform;
@@ -56,10 +54,7 @@ mod projection;
 mod pvp;
 mod quest;
 pub mod raid;
-mod ramp;
 mod rewards;
-pub mod rng;
-mod rock;
 pub mod roll;
 mod routine;
 mod seat;
@@ -72,7 +67,6 @@ mod summoned;
 pub mod surface;
 mod transfer;
 pub mod trap;
-pub mod trig;
 pub mod unit;
 mod vendor;
 pub mod water;
@@ -205,6 +199,11 @@ pub use routine::{
     NpcPlacement, NpcRoutine, ZONE_START_TIME, is_night, time_of_day,
 };
 pub use seat::{MAX_SEATS, PostureView, SEAT_REACH_UNITS, Seat, SeatId, Sitting};
+pub use sim_foundation::{
+    PlayerId, TICK_HZ, ZoneError, ZoneId, long_ticks_from_ms, physics, rng, subunits_per_tick,
+    subunits_per_tick_squared, ticks_from_ms, trig, units_per_tick,
+};
+use sim_foundation::{entity, ramp, rock};
 pub use snapshot::{
     CanonicalCreatureAbilities, CanonicalCreatureSnapshot, CanonicalPlayerAbilities,
     CanonicalPlayerCombat, CanonicalPlayerSnapshot, CanonicalZoneSnapshot, CreatureAi,
@@ -239,79 +238,9 @@ pub use waystone::{
 };
 pub use zone::{MAX_PENDING_INTENTS, ZoneSimulation, ZoneTickWork};
 
-use std::error::Error;
-use std::fmt;
-
-pub type PlayerId = u32;
-
-/// The authoritative simulation rate. Durations are authored in milliseconds and
-/// speeds in units per second; the helpers below are the only place they become
-/// ticks, and the handshake and both clients read this constant.
-pub const TICK_HZ: u16 = 60;
-
-/// Whole ticks in `ms` milliseconds at [`TICK_HZ`], rounded to the nearest tick
-/// (halves up): 1 tick lasts 16⅔ ms at 60 Hz, so a duration that is not a
-/// multiple of 50 ms is authored as its nearest whole millisecond. A nonzero
-/// duration shorter than half a tick, or one longer than `u16::MAX` ticks, fails
-/// to compile in const contexts.
-#[must_use]
-pub const fn ticks_from_ms(ms: u32) -> u16 {
-    let ticks = long_ticks_from_ms(ms);
-    assert!(ticks <= u16::MAX as u32, "duration is too long");
-    ticks as u16
-}
-
-/// [`ticks_from_ms`] for the long `u32` timers (zone day, respawns, corpses).
-#[must_use]
-pub const fn long_ticks_from_ms(ms: u32) -> u32 {
-    let ticks = (ms as u64 * TICK_HZ as u64 + 500) / 1_000;
-    assert!(ms == 0 || ticks > 0, "duration is shorter than half a tick");
-    assert!(ticks <= u32::MAX as u64, "duration is too long");
-    ticks as u32
-}
-
-/// Units per tick of a speed authored in units per second. A speed that is not
-/// a whole number of units per tick fails to compile in const contexts.
-#[must_use]
-pub const fn units_per_tick(units_per_second: i32) -> i32 {
-    assert!(
-        units_per_second % TICK_HZ as i32 == 0,
-        "speed is not a whole number of units per tick"
-    );
-    units_per_second / TICK_HZ as i32
-}
-
-/// Subunits ([`physics::SUBUNITS_PER_UNIT`]) per tick² of an acceleration authored in units
-/// per second². One that is not a whole number of subunits per tick² fails to compile in const
-/// contexts.
-#[must_use]
-pub const fn subunits_per_tick_squared(units_per_second_squared: i32) -> i32 {
-    let subunits = units_per_second_squared * physics::SUBUNITS_PER_UNIT;
-    let ticks_squared = TICK_HZ as i32 * TICK_HZ as i32;
-    assert!(
-        subunits % ticks_squared == 0,
-        "acceleration is not a whole number of subunits per tick squared"
-    );
-    subunits / ticks_squared
-}
-
 /// Gravity of the authored zones and the test arenas: 9 m/s² down, in subunits per tick².
 pub const STANDARD_GRAVITY: [i32; 3] = [0, subunits_per_tick_squared(-900), 0];
 
-/// Subunits ([`physics::SUBUNITS_PER_UNIT`]) per tick of a speed authored in units per second:
-/// the velocities the zone hands physics. One that is not a whole number of subunits per tick
-/// fails to compile in const contexts.
-#[must_use]
-pub const fn subunits_per_tick(units_per_second: i32) -> i32 {
-    let subunits = units_per_second * physics::SUBUNITS_PER_UNIT;
-    assert!(
-        subunits % TICK_HZ as i32 == 0,
-        "speed is not a whole number of subunits per tick"
-    );
-    subunits / TICK_HZ as i32
-}
-
-/// [`units_per_tick`] for the `f32` projectile motion, which needs no whole units.
 #[must_use]
 pub const fn f32_units_per_tick(units_per_second: f32) -> f32 {
     units_per_second / TICK_HZ as f32
@@ -343,21 +272,6 @@ pub const BACKPEDAL_SPEED_SUBUNITS_PER_TICK: i32 =
 /// Upward velocity a grounded jump sets before physics applies gravity (4.8 m/s).
 pub const JUMP_VELOCITY_UNITS_PER_SECOND: i32 = 480;
 pub const JUMP_VELOCITY_SUBUNITS_PER_TICK: i32 = subunits_per_tick(JUMP_VELOCITY_UNITS_PER_SECOND);
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ZoneId(u32);
-
-impl ZoneId {
-    #[must_use]
-    pub const fn new(value: u32) -> Self {
-        Self(value)
-    }
-
-    #[must_use]
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-}
-
 /// Player intent. The session runtime supplies identity and sequence separately.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ZoneCommand {
@@ -489,30 +403,3 @@ pub enum ZoneCommand {
     /// claimant, checked in the tick.
     ClaimDepthsDrop { run: u64, drop: u8 },
 }
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ZoneError {
-    message: String,
-}
-
-impl ZoneError {
-    #[must_use]
-    pub fn new(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-        }
-    }
-
-    #[must_use]
-    pub fn message(&self) -> &str {
-        &self.message
-    }
-}
-
-impl fmt::Display for ZoneError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.message)
-    }
-}
-
-impl Error for ZoneError {}

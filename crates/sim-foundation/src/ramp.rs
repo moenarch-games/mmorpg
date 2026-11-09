@@ -87,12 +87,12 @@ impl Ramp {
         Some(f64::from(hy) * (along + 1.0))
     }
 
-    pub(crate) fn validate(&self) -> Result<(), ZoneError> {
+    pub fn validate(&self) -> Result<(), ZoneError> {
         let in_range = (0..3).all(|axis| {
             (i64::from(self.position[axis]) - i64::from(self.half_extents[axis])).abs()
-                <= i64::from(crate::MAX_CONTENT_COORDINATE_UNITS)
+                <= i64::from(crate::collision::MAX_CONTENT_COORDINATE_UNITS)
                 && (i64::from(self.position[axis]) + i64::from(self.half_extents[axis])).abs()
-                    <= i64::from(crate::MAX_CONTENT_COORDINATE_UNITS)
+                    <= i64::from(crate::collision::MAX_CONTENT_COORDINATE_UNITS)
         });
         if self.half_extents.iter().any(|half| *half <= 0) || !in_range {
             return Err(ZoneError::new("ramp box is empty or out of range"));

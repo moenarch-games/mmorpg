@@ -228,7 +228,7 @@ fn to_subunits(value: [f32; 3]) -> Vec3i {
 }
 
 /// The quaternion (x, y, z, w) of a turn by `yaw` about +Y, from the integer trig table.
-pub(crate) fn yaw_quaternion(yaw: u16) -> [f32; 4] {
+pub fn yaw_quaternion(yaw: u16) -> [f32; 4] {
     #[allow(clippy::cast_precision_loss)]
     let (sin, cos) = {
         let (sin, cos) = crate::trig::direction(yaw / 2);
@@ -453,7 +453,7 @@ impl RigidBody {
         self.half_extents
     }
 
-    pub(crate) const fn is_moving(&self) -> bool {
+    pub const fn is_moving(&self) -> bool {
         matches!(self.kind, Kind::Moving)
     }
 
