@@ -31,4 +31,4 @@ The directory learns the outcome and which characters still need the run (`outst
 
 ## Not covered
 
-No follow-on story quest yet; the durable `thorn_defeated` evidence (5.1.37) waits for one. Characters are not recoverable into a run whose directory record is gone. The in-memory `LocalInstances` directory loses a run across a process restart, like every other single-process host state (ADR 0009).
+The follow-on story quest (#160, *The Captain Below*) reads the durable `thorn_defeated` evidence (5.1.37) as its objective. Characters are not recoverable into a run whose directory record is gone. The in-memory `LocalInstances` directory loses a run across a process restart, like every other single-process host state (ADR 0009).
