@@ -414,7 +414,7 @@ checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 [[package]]
 name = "bvh-kernels"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-kernels?rev=91055975ba1a1c9f793f611a0541da83ccbfff32#91055975ba1a1c9f793f611a0541da83ccbfff32"
+source = "git+https://github.com/moritzbrantner/rust-kernels?rev=c219e947ad361e79c3c38e843854c73f8fbe9071#c219e947ad361e79c3c38e843854c73f8fbe9071"
 dependencies = [
  "spatial-kernels",
 ]
@@ -1327,7 +1327,7 @@ dependencies = [
 [[package]]
 name = "geometry-kernels"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-kernels?rev=91055975ba1a1c9f793f611a0541da83ccbfff32#91055975ba1a1c9f793f611a0541da83ccbfff32"
+source = "git+https://github.com/moritzbrantner/rust-kernels?rev=c219e947ad361e79c3c38e843854c73f8fbe9071#c219e947ad361e79c3c38e843854c73f8fbe9071"
 dependencies = [
  "spatial-kernels",
 ]
@@ -3380,7 +3380,7 @@ dependencies = [
 [[package]]
 name = "physics-engine"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/physics-engine?rev=e9b2a6efc7d3a2c63f7323e13ecb3b1e666d1716#e9b2a6efc7d3a2c63f7323e13ecb3b1e666d1716"
+source = "git+https://github.com/moritzbrantner/physics-engine?rev=ceef58fab0bc1dc7e084e733cf3223fc6ad27fc5#ceef58fab0bc1dc7e084e733cf3223fc6ad27fc5"
 dependencies = [
  "bvh-kernels",
  "geometry-kernels",
@@ -4440,7 +4440,7 @@ dependencies = [
 [[package]]
 name = "spatial-kernels"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-kernels?rev=91055975ba1a1c9f793f611a0541da83ccbfff32#91055975ba1a1c9f793f611a0541da83ccbfff32"
+source = "git+https://github.com/moritzbrantner/rust-kernels?rev=c219e947ad361e79c3c38e843854c73f8fbe9071#c219e947ad361e79c3c38e843854c73f8fbe9071"
 
 [[package]]
 name = "spin"
