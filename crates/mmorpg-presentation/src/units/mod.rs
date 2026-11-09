@@ -1295,10 +1295,7 @@ impl UnitPresenter {
                     .sways
                     .entry(entity)
                     .or_insert_with(|| (dress, sway::Sway::default()));
-                if *worn != dress {
-                    *worn = dress;
-                    spring.reset();
-                }
+                sway::wear(worn, spring, dress);
                 let distance = eye.map_or(0., |eye| {
                     f64::from(eye[0] - unit.centre[0]).hypot(f64::from(eye[2] - unit.centre[2]))
                 });
@@ -1308,6 +1305,7 @@ impl UnitPresenter {
                     distance,
                     dt: input.dt,
                     reduced,
+                    actions: self.playbacks[&entity].actions_begun(),
                 });
                 out.imported.push(imported);
             } else {

@@ -589,6 +589,7 @@ impl Presentation {
                     imported.height,
                     &imported.animation.layers,
                     imported.tint,
+                    imported.swing,
                 ),
                 None => dressed(imported),
             };
@@ -1310,15 +1311,19 @@ fn dressed(
         &imported.animation.layers,
         imported.tint,
         &hidden,
+        imported.swing,
     );
     body.extend(plates);
     if ranger && shows_hair {
-        body.extend(skinned::Equipment::hair().draws(
+        body.extend(skinned::Equipment::hair().draws_swung(
             &format!("{}-hair", imported.id),
             asset,
             placement,
             &imported.animation.layers,
             imported.tint,
+            imported.swing,
+            None,
+            Default::default(),
         ));
     }
     if let Some(items) = hat.flatten().and_then(skinned::Equipment::headwear) {
@@ -1352,6 +1357,7 @@ pub(crate) fn observed_imported_draws(count: usize, time: f32) -> Vec<crate::wor
                 )],
                 None,
                 &[],
+                mmorpg_presentation::units::sway::Swing::default(),
             )
         })
         .collect()

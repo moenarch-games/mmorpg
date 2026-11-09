@@ -196,6 +196,8 @@ pub(super) struct Model {
     /// The joint palette's slots, shared by every primitive: driving node and its inverse
     /// bind matrix. An unskinned primitive's node is a slot with the identity.
     slots: Vec<(usize, M4)>,
+    /// The sway chains (Atlas 6.6.39) this model's joints form, resolved on first use.
+    chains: OnceLock<Arc<[ModelChain]>>,
     /// Each primitive's bind-pose upload, built on first draw (#595).
     binds: OnceLock<Arc<[Option<Bind>]>>,
     /// Each primitive baked in the rest pose, for static draws, built on first draw.
@@ -212,6 +214,79 @@ pub(super) struct Model {
     pub centre: [f32; 2],
     /// The `Head` joint, and the rest head centre's offset from it with the head's radius.
     head: Option<(usize, [f32; 3], f32)>,
+}
+
+/// A declared sway chain (`sway::Chain`) this model has: the nodes of its joints from the root
+/// and how far its tip may swing, in radians.
+#[derive(Clone, Debug)]
+struct ModelChain {
+    nodes: Vec<usize>,
+    limit: f32,
+}
+
+/// `chain`'s longest prefix of joints this model has, as nodes; `None` when its root is missing.
+fn bound_chain(names: &[Option<String>], chain: &sway::Chain) -> Option<ModelChain> {
+    let nodes: Vec<usize> = chain
+        .joints
+        .iter()
+        .map_while(|joint| names.iter().position(|n| n.as_deref() == Some(joint)))
+        .collect();
+    (!nodes.is_empty()).then_some(ModelChain {
+        nodes,
+        limit: chain.limit,
+    })
+}
+
+/// The quaternion product `a × b` (`b` applied first) in `[x, y, z, w]` order.
+fn qmul(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    [
+        a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+        a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+        a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+        a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
+    ]
+}
+
+const fn qconj(q: [f32; 4]) -> [f32; 4] {
+    [-q[0], -q[1], -q[2], q[3]]
+}
+
+/// The rotation of a rigid transform (columns normalised) as a quaternion.
+fn rotation_of(m: &M4) -> [f32; 4] {
+    let len = |c: usize| {
+        (m[c] * m[c] + m[c + 1] * m[c + 1] + m[c + 2] * m[c + 2])
+            .sqrt()
+            .max(1e-6)
+    };
+    let (sx, sy, sz) = (len(0), len(4), len(8));
+    let (m00, m10, m20) = (m[0] / sx, m[1] / sx, m[2] / sx);
+    let (m01, m11, m21) = (m[4] / sy, m[5] / sy, m[6] / sy);
+    let (m02, m12, m22) = (m[8] / sz, m[9] / sz, m[10] / sz);
+    let trace = m00 + m11 + m22;
+    if trace > 0. {
+        let s = (trace + 1.).sqrt() * 2.;
+        [(m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s, 0.25 * s]
+    } else if m00 > m11 && m00 > m22 {
+        let s = (1. + m00 - m11 - m22).sqrt() * 2.;
+        [0.25 * s, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s]
+    } else if m11 > m22 {
+        let s = (1. + m11 - m00 - m22).sqrt() * 2.;
+        [(m01 + m10) / s, 0.25 * s, (m12 + m21) / s, (m02 - m20) / s]
+    } else {
+        let s = (1. + m22 - m00 - m11).sqrt() * 2.;
+        [(m02 + m20) / s, (m12 + m21) / s, 0.25 * s, (m10 - m01) / s]
+    }
+}
+
+/// The chains both figures' appearances declare (Atlas 6.6.39), once.
+fn chain_table() -> &'static [sway::Chain] {
+    static TABLE: OnceLock<Vec<sway::Chain>> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        sway::chains_of(&[
+            residents::look(Figure::Male),
+            residents::look(Figure::Female),
+        ])
+    })
 }
 
 /// A primitive's bind pose as the renderer keeps it: its resource key, the mesh and its
@@ -458,6 +533,7 @@ impl Model {
             order,
             primitives,
             slots: model_slots,
+            chains: OnceLock::new(),
             binds: OnceLock::new(),
             rests: OnceLock::new(),
             clips: Arc::new(clips),
@@ -491,8 +567,8 @@ impl Model {
     }
 
     /// The model with each clip's cloth chain pose (`secondaryPose`, #500) played as rotation
-    /// channels of the chain joints it has, like the browser's mixer tracks. No cloth spring
-    /// exists yet (#498 sways only hanging gear), so the authored pose plays as it is.
+    /// channels of the chain joints it has, like the browser's mixer tracks; the spring
+    /// (`globals_swung`, #498) swings the chain around whatever the sampled pose then is.
     fn with_secondary(mut self, poses: &BTreeMap<String, SecondaryPose>) -> Self {
         let added: Vec<_> = poses
             .iter()
@@ -597,6 +673,58 @@ impl Model {
     /// animate it, and a total weight below 1 leaves the remainder at rest. An empty pose rests.
     fn globals(&self, pose: &[Layer]) -> Vec<M4> {
         self.globals_of(&self.locals(pose))
+    }
+
+    /// The chains the model's joints form (Atlas 6.6.39), as declared: resolved once per model,
+    /// empty for a model with none.
+    fn chains(&self) -> &[ModelChain] {
+        self.chains.get_or_init(|| {
+            chain_table()
+                .iter()
+                .filter_map(|chain| bound_chain(&self.names, chain))
+                .collect()
+        })
+    }
+
+    /// Joint transforms for a layered pose with each chain joint also turned by `swing` about
+    /// its sampled rotation (Atlas 6.6.39, #498). `frame` is this model's rotation in the
+    /// character's model frame, which `swing` is expressed in: the identity for the character,
+    /// an item's socket for a hairstyle or beard. A chain's parent and nothing above it moves,
+    /// so the body and the items on it are unaffected.
+    fn globals_swung(&self, pose: &[Layer], swing: sway::Swing, frame: [f32; 4]) -> Vec<M4> {
+        self.swung(pose, swing, frame).1
+    }
+
+    /// The local transforms and joint transforms of [`Self::globals_swung`].
+    fn swung(&self, pose: &[Layer], swing: sway::Swing, frame: [f32; 4]) -> (Vec<Rest>, Vec<M4>) {
+        let mut local = self.locals(pose);
+        if !self.chains().is_empty() && swing.chain != [[0.; 2]; sway::CHAIN_DEPTH] {
+            let chains = self.chains();
+            let mut swung: Vec<Option<(usize, usize)>> = vec![None; self.rest.len()];
+            for (index, chain) in chains.iter().enumerate() {
+                for (depth, &node) in chain.nodes.iter().enumerate().take(sway::CHAIN_DEPTH) {
+                    swung[node] = Some((index, depth));
+                }
+            }
+            let mut globals = vec![IDENTITY; self.rest.len()];
+            for &n in &self.order {
+                if let Some((chain, depth)) = swung[n] {
+                    let chain = &chains[chain];
+                    let turn = sway::chain_turn(swing.chain[depth], chain.limit, chain.nodes.len());
+                    let parent =
+                        self.parents[n].map_or(frame, |p| qmul(frame, rotation_of(&globals[p])));
+                    let delta = qmul(qmul(qconj(parent), turn), parent);
+                    let turned = qmul(delta, local[n].r);
+                    let len = turned.iter().map(|v| v * v).sum::<f32>().sqrt().max(1e-6);
+                    local[n].r = turned.map(|v| v / len);
+                }
+                let l = trs(local[n].t, local[n].r, local[n].s);
+                globals[n] = self.parents[n].map_or(l, |p| mul(&globals[p], &l));
+            }
+            return (local, globals);
+        }
+        let globals = self.globals_of(&local);
+        (local, globals)
     }
 
     /// Joint transforms for each node's local transform.
@@ -889,6 +1017,7 @@ impl Model {
                 .cloned()
                 .collect(),
             slots: self.slots.clone(),
+            chains: OnceLock::new(),
             binds: OnceLock::new(),
             rests: OnceLock::new(),
             clips: Arc::default(),
@@ -915,7 +1044,8 @@ impl Model {
     }
 
     /// Draws for one posed instance standing at `root`, scaled to `height` metres, without
-    /// the primitives of the `hidden` glTF nodes.
+    /// the primitives of the `hidden` glTF nodes, its chains swung by `swing` (Atlas 6.6.39).
+    #[allow(clippy::too_many_arguments)]
     pub fn draws(
         &self,
         id: &str,
@@ -924,9 +1054,28 @@ impl Model {
         pose: &[Layer],
         tint: Option<[f32; 3]>,
         hidden: &[String],
+        swing: sway::Swing,
     ) -> Vec<SceneDraw> {
-        let palette = self.palette(&self.globals(pose));
+        let palette = self.palette(&self.globals_swung(pose, swing, [0., 0., 0., 1.]));
         self.skinned_draws(id, self.placement(root, height), palette, tint, hidden)
+    }
+
+    /// Draws for a worn item at rest under `placement`, its own chains swung by `swing`: the
+    /// item's rest geometry when it has no chains or `swing` is at rest. `frame` is its rotation
+    /// in the character's model frame.
+    fn draws_swung_placed(
+        &self,
+        id: &str,
+        placement: three_d_animation::Mat4,
+        tint: Option<[f32; 3]>,
+        swing: sway::Swing,
+        frame: [f32; 4],
+    ) -> Vec<SceneDraw> {
+        if swing.chain == [[0.; 2]; sway::CHAIN_DEPTH] || self.chains().is_empty() {
+            return self.rest_draws(id, placement, tint);
+        }
+        let palette = self.palette(&self.globals_swung(&[], swing, frame));
+        self.skinned_draws(id, placement, palette, tint, &[])
     }
 
     /// Draws for one instance under an explicit model-to-world `placement`: posed on the GPU,
@@ -2160,7 +2309,14 @@ impl Equipment {
             }
             let mut held = three_d_animation::Mat4::IDENTITY;
             held.elements = mul(&placement.elements, &socket);
-            draws.extend(model.draws_placed(&format!("{id}-item-{index}"), held, &[], tint));
+            // A chain's hair or beard swings on its own skin; anything else rests as baked.
+            draws.extend(model.draws_swung_placed(
+                &format!("{id}-item-{index}"),
+                held,
+                tint,
+                swing,
+                rotation_of(&socket),
+            ));
         }
         draws
     }
@@ -2301,6 +2457,76 @@ mod rolling_ranger_tests {
         assert!(close(gripping[index_r], grip[index_r]));
         assert!(!close(gripping[index_r], strafe[index_r]));
         assert!(close(gripping[index_l], strafe[index_l]));
+    }
+
+    /// The rotation angle, in radians, of `to` relative to `from`.
+    fn angle(from: [f32; 4], to: [f32; 4]) -> f32 {
+        let relative = qmul(qconj(from), to);
+        2. * relative[3].abs().min(1.).acos()
+    }
+
+    #[test]
+    fn the_spring_rests_on_the_clip_keyed_pose_weighted_by_blend_and_else_on_bind() {
+        let outfit = class_outfit(Outfit::new(mmorpg_core::PlayerClass::Cleric, None));
+        let model = &outfit.model;
+        let skirt = model
+            .node("skirt_f_01")
+            .expect("the robe has a skirt chain");
+        let chain = model
+            .chains()
+            .iter()
+            .find(|chain| chain.nodes[0] == skirt)
+            .expect("the skirt chain is declared");
+        let bind = model.rest[skirt].r;
+        let keyed = model.locals(&[Layer::single("Mantle_Mid", 0.)])[skirt].r;
+        assert!(
+            angle(bind, keyed) > 0.05,
+            "the mantle keys the panel away from bind"
+        );
+        let drive = sway::Swing {
+            chain: [[0.5, 0.]; sway::CHAIN_DEPTH],
+            ..sway::Swing::default()
+        };
+        let identity = [0., 0., 0., 1.];
+        // Each frame with `pose`: the sampled rest target and the swung joint rotation.
+        let swung = |pose: &[Layer]| {
+            let (at_rest, _) = model.swung(pose, sway::Swing::default(), identity);
+            let (with_swing, _) = model.swung(pose, drive, identity);
+            (at_rest[skirt].r, with_swing[skirt].r)
+        };
+        // Half blended into the keyed clip: the rest target sits half way, and the swing
+        // reaches the same angle around it as it does around full weight or bind.
+        let blended = Layer {
+            weight: 0.5,
+            ..Layer::single("Mantle_Mid", 0.)
+        };
+        let (target, turned) = swung(&[blended]);
+        let halfway = {
+            let hemisphere = bind
+                .iter()
+                .zip(&keyed)
+                .map(|(a, b)| a * b)
+                .sum::<f32>()
+                .signum();
+            let mid: [f32; 4] =
+                std::array::from_fn(|i| bind[i] * 0.5 + keyed[i] * hemisphere * 0.5);
+            let len = mid.iter().map(|v| v * v).sum::<f32>().sqrt();
+            mid.map(|v| v / len)
+        };
+        assert!(angle(target, halfway) < 1e-3, "{target:?} vs {halfway:?}");
+        let swing = 0.5 * chain.limit / chain.nodes.len() as f32;
+        assert!(
+            (angle(target, turned) - swing).abs() < 1e-3,
+            "around the blend"
+        );
+        // Fully keyed: the target is the keyed pose.
+        let (keyed_target, keyed_turned) = swung(&[Layer::single("Mantle_Mid", 0.)]);
+        assert!(angle(keyed_target, keyed) < 1e-3);
+        assert!((angle(keyed_target, keyed_turned) - swing).abs() < 1e-3);
+        // A clip that does not key the chain leaves the bind pose as the target.
+        let (idle_target, idle_turned) = swung(&[Layer::single("Idle_Loop", 0.)]);
+        assert!(angle(idle_target, bind) < 1e-5);
+        assert!((angle(bind, idle_turned) - swing).abs() < 1e-3);
     }
 
     #[test]
@@ -2605,6 +2831,7 @@ mod rolling_ranger_tests {
                 &[Layer::single(idle, time)],
                 None,
                 &[],
+                sway::Swing::default(),
             )
         };
         let (first, other, later) = (draws(0, 0.25), draws(1, 0.25), draws(0, 0.75));
