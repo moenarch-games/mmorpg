@@ -631,6 +631,9 @@ pub struct Clips {
     /// The casters' cast styles, staff and mace swings, war cry and interrupt, for a model that
     /// has them (#609, asset-tooling #420).
     pub caster: Option<CasterClips>,
+    /// The emote, door, loot, talk, trade, sitting and bed clips, for a model that has them
+    /// (#619, asset-tooling #421).
+    pub social: Option<SocialClips>,
 }
 
 /// The authored ranged clips beside the full-body bow cycle (#607, asset-tooling #419), every
@@ -991,6 +994,101 @@ impl CastClips {
             self.recovery,
         ]
         .contains(&Some(clip))
+    }
+}
+
+/// The social and interaction clips (#619, asset-tooling #421): all 30 fps and by name.
+#[derive(Clone, Copy, Debug)]
+pub struct SocialClips {
+    pub wave: &'static str,
+    pub point: &'static str,
+    pub bow: &'static str,
+    pub cheer: &'static str,
+    pub laugh: &'static str,
+    pub door_push: &'static str,
+    pub door_pull: &'static str,
+    pub door_knock: &'static str,
+    pub loot_enter: &'static str,
+    pub loot_loop: &'static str,
+    pub loot_exit: &'static str,
+    pub talk_idle: &'static str,
+    pub talk_explain: &'static str,
+    /// Listed; nothing plays it until an NPC line points at an objective (#619).
+    pub talk_direct: &'static str,
+    pub talk_shrug: &'static str,
+    pub trade: &'static str,
+    /// The chair and ground sitting are listed for [`Posture`], which nothing asks for until the
+    /// zone projects a sitting NPC (#619, Atlas 6.6.22).
+    pub sit_chair_enter: &'static str,
+    pub sit_chair_loop: &'static str,
+    pub sit_chair_exit: &'static str,
+    pub sit_ground: &'static str,
+    pub sleep_enter: &'static str,
+    pub sleep_loop: &'static str,
+    /// Listed; the zone walks a woken resident away the same tick it is knocked awake, so it
+    /// never lies still to play this. A wake with a pause would play it (#619).
+    pub sleep_wake: &'static str,
+}
+
+impl SocialClips {
+    /// The emote's clip and whether it takes the whole body (the bow; the others are
+    /// upper-body and play over any gait).
+    #[must_use]
+    pub const fn emote(self, emote: mmorpg_core::Emote) -> (&'static str, bool) {
+        match emote {
+            mmorpg_core::Emote::Wave => (self.wave, false),
+            mmorpg_core::Emote::Point => (self.point, false),
+            mmorpg_core::Emote::Bow => (self.bow, true),
+            mmorpg_core::Emote::Cheer => (self.cheer, false),
+            mmorpg_core::Emote::Laugh => (self.laugh, false),
+        }
+    }
+
+    /// A posture's chain: `enter` if it has one, the loop, and `exit` if it has one.
+    #[must_use]
+    pub const fn chain(
+        self,
+        posture: Posture,
+    ) -> (Option<&'static str>, &'static str, Option<&'static str>) {
+        match posture {
+            Posture::Loot => (Some(self.loot_enter), self.loot_loop, Some(self.loot_exit)),
+            Posture::SitChair => (
+                Some(self.sit_chair_enter),
+                self.sit_chair_loop,
+                Some(self.sit_chair_exit),
+            ),
+            Posture::SitGround => (None, self.sit_ground, None),
+            Posture::Sleep => (Some(self.sleep_enter), self.sleep_loop, None),
+        }
+    }
+
+    /// Whether `clip` is a bed clip, which the drawn root moves onto the mattress for.
+    #[must_use]
+    pub fn in_bed(self, clip: &str) -> bool {
+        clip == self.sleep_enter || clip == self.sleep_loop || clip == self.sleep_wake
+    }
+}
+
+/// A whole-body pose a unit holds while it is still (#619): kneeling at a corpse, a seat or a
+/// bed. It enters, loops and leaves by its clips ([`SocialClips::chain`]). Movement, damage, a
+/// strike or death breaks it at once, and it stays broken until the cue goes away, so a looping
+/// sit or sleep never pins a unit that walks.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Posture {
+    Loot,
+    SitChair,
+    SitGround,
+    Sleep,
+}
+
+impl Posture {
+    /// How long into the exit moving input may cut it (the clip's `standSeconds`).
+    const fn stand_seconds(self) -> f32 {
+        match self {
+            Self::Loot => 0.075,
+            Self::SitChair => 0.12,
+            Self::SitGround | Self::Sleep => 0.,
+        }
     }
 }
 
@@ -1441,6 +1539,31 @@ impl Kind {
                     wall: "Cast_Raise_Wall",
                     interrupted: "Cast_Interrupted",
                 }),
+                social: Some(SocialClips {
+                    wave: "Emote_Wave",
+                    point: "Emote_Point",
+                    bow: "Emote_Bow",
+                    cheer: "Emote_Cheer",
+                    laugh: "Emote_Laugh",
+                    door_push: "Door_Push",
+                    door_pull: "Door_Pull",
+                    door_knock: "Door_Knock",
+                    loot_enter: "Loot_Kneel_Enter",
+                    loot_loop: "Loot_Kneel_Loop",
+                    loot_exit: "Loot_Kneel_Exit",
+                    talk_idle: "Talk_Idle_Loop",
+                    talk_explain: "Talk_Gesture_A",
+                    talk_direct: "Talk_Gesture_B",
+                    talk_shrug: "Talk_Gesture_C",
+                    trade: "Trade_Handover",
+                    sit_chair_enter: "Sit_Chair_Enter",
+                    sit_chair_loop: "Sit_Chair_Loop",
+                    sit_chair_exit: "Sit_Chair_Exit",
+                    sit_ground: "Sit_Ground_Loop",
+                    sleep_enter: "Sleep_Bed_Enter",
+                    sleep_loop: "Sleep_Bed_Loop",
+                    sleep_wake: "Sleep_Bed_Wake",
+                }),
             },
             Self::Wolf => Clips {
                 idle: "Idle",
@@ -1462,6 +1585,7 @@ impl Kind {
                 bow: None,
                 crossbow: None,
                 caster: None,
+                social: None,
             },
             Self::Rat => Clips {
                 idle: "Rat_Idle",
@@ -1483,6 +1607,7 @@ impl Kind {
                 bow: None,
                 crossbow: None,
                 caster: None,
+                social: None,
             },
             // The farm pig has no attack clip; its jump reads as a charge.
             Self::Pig => Clips {
@@ -1505,6 +1630,7 @@ impl Kind {
                 bow: None,
                 crossbow: None,
                 caster: None,
+                social: None,
             },
         }
     }
@@ -2005,6 +2131,14 @@ pub struct Cues<'a> {
     pub rolling: bool,
     /// The zone projects the unit in combat: a crossbowman standing in combat aims (#607).
     pub engaged: bool,
+    /// The pose the unit should hold while still (#619): the viewer's loot kneel, or a resident
+    /// asleep at its bed.
+    pub posture: Option<Posture>,
+    /// The upper body talks: a window of the viewer's is open toward this NPC (#619).
+    pub talking: bool,
+    /// The drawn body's turn from its facing, in radians, while it points at its target, kneels
+    /// at a corpse or lies down (#619); `None` keeps the facing.
+    pub face: Option<f64>,
     /// What the unit carries: each held item's grip pose closes the fingers round it
     /// (asset-tooling #285), and a dagger holder stands in the dagger stance and sheathes its
     /// daggers to throw or bandage (#603).
@@ -2285,6 +2419,32 @@ impl Preparation {
     }
 }
 
+/// One emote or interaction clip being shown (#619): upper-body over any gait, or whole-body
+/// while the unit stands still.
+#[derive(Clone, Copy, Debug)]
+struct Gesture {
+    clip: &'static str,
+    serial: u32,
+    started: f64,
+    until: f64,
+    whole: bool,
+}
+
+/// The part of a pose's chain being shown (#619), and since when.
+#[derive(Clone, Copy, Debug)]
+struct PostureStep {
+    posture: Posture,
+    phase: PosturePhase,
+    since: f64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PosturePhase {
+    Enter,
+    Loop,
+    Exit,
+}
+
 /// Per-unit layered clip choice and clocks (Atlas 6.6.45). Presentation-owned and cosmetic:
 /// the clips follow accepted strikes, the projected guard and the projected motion, and never
 /// decide a hit, readiness, a window or the root.
@@ -2324,6 +2484,13 @@ pub struct Playback {
     dead: bool,
     /// How many auto-attacks the unit has swung: a twin-dagger holder alternates its hands (#603).
     swings: u32,
+    /// The emote or interaction one-shot shown, on the upper body or the whole body (#619).
+    gesture: Option<Gesture>,
+    /// The enter, loop or exit of the pose held (#619) and how many have begun.
+    posture: Option<PostureStep>,
+    postures: u32,
+    /// The pose was broken and stays off until its cue goes away (#619).
+    posture_broken: bool,
     attitude: Attitude,
     /// Pelvis and legs: locomotion, flight and death.
     base: Track,
@@ -2363,6 +2530,20 @@ impl Playback {
         if let Some(strike) = &mut self.strike {
             strike.item = Some(item);
         }
+    }
+
+    /// Starts an emote or interaction `clip`, `duration` seconds long, at `now` (#619). A
+    /// `whole`-body one plays only while the unit stands; anything the zone accepts for the
+    /// unit, a strike, a cast or a blow, ends it at once.
+    pub fn gesture(&mut self, clip: &'static str, duration: f32, whole: bool, now: f64) {
+        self.serial = self.serial.wrapping_add(1);
+        self.gesture = Some(Gesture {
+            clip,
+            serial: self.serial,
+            started: now,
+            until: now + f64::from(duration),
+            whole,
+        });
     }
 
     /// How many strikes, casts and hit reactions the unit has begun: a cue for cosmetic motion
@@ -2934,6 +3115,59 @@ impl Playback {
         let standing =
             matches!(self.flight, Flight::Ground) && speed <= 0.25 && !swims && !traversing;
         let layered = clips.upper_body.is_some();
+        // Emotes and interactions (#619): the zone's own actions and blows end them at once, a
+        // whole-body one also the moment the unit moves.
+        let moving = speed > 0.25;
+        let acting = self.strike.is_some() || self.cast.is_some();
+        if self.gesture.is_some_and(|gesture| {
+            now >= gesture.until
+                || dead
+                || acting
+                || guarding
+                || stun.is_some()
+                || (gesture.whole && (moving || !standing))
+        }) {
+            self.gesture = None;
+        }
+        let gesture_want = self.gesture.filter(|_| !reduced && layered).map(|gesture| {
+            #[allow(clippy::cast_possible_truncation)]
+            let at = (now - gesture.started).max(0.) as f32;
+            (
+                gesture.whole,
+                Want {
+                    at: Some(at),
+                    ..Want::hold(gesture.clip, gesture.serial)
+                },
+            )
+        });
+        let blocked = !standing
+            || moving
+            || dead
+            || acting
+            || guarding
+            || cues.rolling
+            || stun.is_some()
+            || charge_run.is_some();
+        let posture_want = self.step_posture(
+            clips.social,
+            cues.posture,
+            blocked,
+            moving,
+            &duration,
+            (now, reduced),
+        );
+        let occupied = posture_want.is_some() || gesture_want.is_some_and(|(whole, _)| whole);
+        let talk_want = clips
+            .social
+            .map(|social| social.talk_idle)
+            .filter(|&clip| cues.talking && !dead && layered && available(clip))
+            .map(|clip| Want::looped(clip, 1.));
+        let turned = self.posture.is_some()
+            || self.gesture.is_some_and(|gesture| {
+                clips
+                    .social
+                    .is_some_and(|social| gesture.clip == social.point)
+            });
         let mut splits = [false; 2];
         for (strike, split) in [&mut self.strike, &mut self.cast]
             .into_iter()
@@ -2971,7 +3205,14 @@ impl Playback {
                 at: Some(preparation.at(now)),
                 ..Want::hold(preparation.clip, preparation.serial)
             });
-        let ground = if let Some((clip, rate)) = self.mantle {
+        let ground = if let Some(pose) = posture_want.or_else(|| {
+            gesture_want
+                .filter(|&(whole, _)| whole)
+                .map(|(_, want)| want)
+        }) {
+            self.turning = None;
+            pose
+        } else if let Some((clip, rate)) = self.mantle {
             Want {
                 rate,
                 ..Want::hold(clip, self.pulls)
@@ -3095,6 +3336,12 @@ impl Playback {
             && available(guard)
         {
             Some(Want::looped(guard, 1.))
+        } else if let Some((false, want)) = gesture_want {
+            Some(want)
+        } else if occupied {
+            None
+        } else if let Some(want) = talk_want {
+            Some(want)
         } else if let Some(crossbow) = clips.crossbow.filter(|_| {
             cues.loadout == Some(Loadout::Crossbow)
                 && stun.is_none()
@@ -3164,6 +3411,10 @@ impl Playback {
                 cues.direction,
                 vertical_speed,
             );
+            let attitude = Attitude {
+                heading: cues.face.filter(|_| turned).unwrap_or(attitude.heading),
+                ..attitude
+            };
             self.attitude = self.attitude.settle(attitude, cues.dt, reduced || first);
         }
         if split {
@@ -3267,6 +3518,116 @@ impl Playback {
             carry,
             channel,
         }
+    }
+
+    /// Steps the pose a unit holds (#619) and says which clip to show now: `wanted` asks for a
+    /// pose, `blocked` says the unit cannot hold one (it moved, was struck or left the ground).
+    fn step_posture(
+        &mut self,
+        social: Option<SocialClips>,
+        wanted: Option<Posture>,
+        blocked: bool,
+        moving: bool,
+        duration: &impl Fn(&str) -> f32,
+        (now, reduced): (f64, bool),
+    ) -> Option<Want> {
+        let social = social?;
+        let available = |clip: &&'static str| duration(clip) > 0.;
+        if wanted.is_none() {
+            self.posture_broken = false;
+        } else if blocked && self.posture.is_some() {
+            // Walking up to the corpse is not breaking a kneel; breaking one that shows is.
+            self.posture_broken = true;
+        }
+        let wanted = wanted.filter(|&posture| {
+            !self.posture_broken && !blocked && available(&social.chain(posture).1)
+        });
+        // Over and out: a finished exit, or moving input once the unit has stood up.
+        if let Some(step) = self.posture
+            && step.phase == PosturePhase::Exit
+        {
+            let (_, _, exit) = social.chain(step.posture);
+            #[allow(clippy::cast_possible_truncation)]
+            let elapsed = (now - step.since) as f32;
+            if exit.is_none_or(|exit| elapsed >= duration(exit))
+                || moving && elapsed >= step.posture.stand_seconds()
+            {
+                self.posture = None;
+            }
+        }
+        match (self.posture, wanted) {
+            (
+                None
+                | Some(PostureStep {
+                    phase: PosturePhase::Exit,
+                    ..
+                }),
+                Some(posture),
+            ) => {
+                let enter = social
+                    .chain(posture)
+                    .0
+                    .filter(|_| !reduced)
+                    .filter(available);
+                self.postures = self.postures.wrapping_add(1);
+                self.posture = Some(PostureStep {
+                    posture,
+                    phase: if enter.is_some() {
+                        PosturePhase::Enter
+                    } else {
+                        PosturePhase::Loop
+                    },
+                    since: now,
+                });
+            }
+            (Some(step), Some(posture)) if step.posture != posture => {
+                self.postures = self.postures.wrapping_add(1);
+                self.posture = Some(PostureStep {
+                    posture,
+                    phase: PosturePhase::Loop,
+                    since: now,
+                });
+            }
+            (Some(step), None) if step.phase != PosturePhase::Exit => {
+                // Leaving by its own exit when it stands still and unbroken.
+                let exit = social
+                    .chain(step.posture)
+                    .2
+                    .filter(|_| !reduced && !moving && !self.posture_broken && !blocked);
+                self.posture = exit.filter(available).map(|_| PostureStep {
+                    phase: PosturePhase::Exit,
+                    since: now,
+                    ..step
+                });
+            }
+            _ => {}
+        }
+        // The enter runs into the loop, on the presentation clock so reduced motion is frozen.
+        if let Some(step) = &mut self.posture
+            && step.phase == PosturePhase::Enter
+            && social
+                .chain(step.posture)
+                .0
+                .is_none_or(|enter| now - step.since >= f64::from(duration(enter)))
+        {
+            step.phase = PosturePhase::Loop;
+            step.since = now;
+        }
+        let step = self.posture?;
+        let (enter, looped, exit) = social.chain(step.posture);
+        #[allow(clippy::cast_possible_truncation)]
+        let at = (now - step.since).max(0.) as f32;
+        Some(match step.phase {
+            PosturePhase::Enter => Want {
+                at: Some(at),
+                ..Want::hold(enter?, self.postures)
+            },
+            PosturePhase::Loop => Want::looped(looped, 1.),
+            PosturePhase::Exit => Want {
+                at: Some(at),
+                ..Want::hold(exit?, self.postures)
+            },
+        })
     }
 
     /// Where a dagger holder's daggers ride and what it throws (#603), from the upper body's

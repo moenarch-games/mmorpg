@@ -116,6 +116,8 @@ export class QuestPanel {
 
   get state(): QuestState { return this.#state; }
   get dialogOpen(): boolean { return !this.#elements.dialog.hidden; }
+  /** The NPC the open dialog faces (#619), or null. */
+  get dialogNpc(): number | null { return this.dialogOpen ? (this.#npc?.npc ?? null) : null; }
   get logOpen(): boolean { return !this.#elements.log.hidden; }
 
   /** `raidLookout` is the guard who takes reports of a night raid's tracks (#532), if any. */

@@ -849,6 +849,12 @@ impl UnitPresenter {
         self.0.set_body_overlay(shown);
     }
 
+    /// What the page's windows are open toward this frame (#619). Presentation only.
+    #[wasm_bindgen(js_name = setInteraction)]
+    pub fn set_interaction(&mut self, loot_window: bool, npc: Option<u32>) {
+        self.0.set_interaction(loot_window, npc);
+    }
+
     pub fn push(&mut self, projection: &[u8], seconds: f64) -> Result<(), JsError> {
         self.0
             .push(projection, seconds)

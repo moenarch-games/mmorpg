@@ -1308,6 +1308,7 @@ export class WorldView {
     profilePhase("projection");
     const { unitsPerMetre } = scenery.scenery;
     const sampled = source.sample();
+    units.setInteraction(this.#loot.open, this.#quests.dialogNpc ?? this.#vendor.npc);
     const presented = units.frame(sampled, { seconds: this.#seconds, dt: deltaSeconds, reducedMotion: !animate, barYaw: this.#barYaw, look });
     this.#fortress?.place(presented.platforms);
     const viewerModel = presented.imported.find((unit) => unit.entity.kind === "player" && unit.entity.id === projection.viewerId);

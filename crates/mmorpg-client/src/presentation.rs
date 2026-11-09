@@ -490,6 +490,12 @@ impl Presentation {
         self.reduced_motion = reduced;
     }
 
+    /// What the player's windows are open toward this frame (#619).
+    pub fn set_interaction(&mut self, loot_window: bool, npc: Option<mmorpg_core::NpcId>) {
+        self.units_presenter
+            .set_interaction(mmorpg_presentation::units::Interaction { loot_window, npc });
+    }
+
     /// The player sent an attack with `ability` at `now`: the character winds up at once and
     /// holds short of the swing until the zone accepts or refuses it (Atlas 6.6.10).
     /// Presentation only; the zone decides the outcome.

@@ -308,6 +308,16 @@ impl Units {
         self.presenter.set_body_overlay(shown);
     }
 
+    /// What the page's windows are open toward this frame (#619): the loot window, and the NPC
+    /// a dialogue, quest or vendor window faces.
+    pub fn set_interaction(&mut self, loot_window: bool, npc: Option<u32>) {
+        self.presenter
+            .set_interaction(mmorpg_presentation::units::Interaction {
+                loot_window,
+                npc: npc.map(mmorpg_core::NpcId::new),
+            });
+    }
+
     /// The platforms the page's kit draws instead of their procedural pillar (#591).
     pub fn set_kit_platforms(&mut self, platforms: &[u8]) {
         self.presenter.set_kit_platforms(

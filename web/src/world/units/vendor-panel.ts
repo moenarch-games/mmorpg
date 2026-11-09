@@ -119,6 +119,11 @@ export class VendorPanel {
     return !this.#elements.panel.hidden;
   }
 
+  /** The vendor NPC the open window faces (#619), or null. */
+  get npc(): number | null {
+    return this.open ? (this.#vendor?.npc ?? null) : null;
+  }
+
   toggle(): void {
     if (!this.#elements.panel.hidden) {
       this.close();

@@ -3,15 +3,15 @@
 use std::sync::Arc;
 
 use mmorpg_core::{
-    AbilityId, CreatureFamily, EntityFlags, EntityKind, EntityRef, EntitySnapshot, ErrorCode,
-    StrikeAim, StrikeHeight, StrikeSide, ZoneEvent, ZoneId, ZoneSimulation, ZoneSnapshot,
-    greyhaven_vale,
+    AbilityId, ChatLine, ChatMessage, CreatureFamily, DoorView, Emote, EntityFlags, EntityKind,
+    EntityRef, EntitySnapshot, ErrorCode, LootClaim, LootRewards, LootView, NpcId, StrikeAim,
+    StrikeHeight, StrikeSide, ZoneEvent, ZoneId, ZoneSimulation, ZoneSnapshot, greyhaven_vale,
 };
 use mmorpg_presentation::{
     Draw,
     units::{
-        FrameInput, PREPARATION_ANSWER_SECONDS, SampledUnit, UnitFrame, UnitPresenter, Viewer,
-        imported::Kind,
+        FrameInput, Interaction, PREPARATION_ANSWER_SECONDS, SampledUnit, UnitFrame, UnitPresenter,
+        Viewer, imported::Kind,
     },
 };
 
@@ -740,4 +740,195 @@ fn a_bundle_without_the_caster_clips_keeps_the_simple_spell() {
         target: Some(scene.wolf),
     };
     assert_eq!(play(&mut scene, vec![swing], 3.), "Spell_Simple_Shoot");
+}
+
+/// A scene whose viewer is an imported Ranger with every social clip loaded (#619).
+fn social_scene() -> Scene {
+    let mut scene = scene();
+    scene.presenter.model_ready(
+        Kind::Ranger,
+        [
+            ("Idle_Loop", 1.),
+            ("Walk_Loop", 1.),
+            ("Hit_Chest", 0.5),
+            ("Emote_Wave", 1.6),
+            ("Emote_Bow", 1.8),
+            ("Door_Push", 0.6),
+            ("Door_Pull", 0.6),
+            ("Door_Knock", 1.2),
+            ("Loot_Kneel_Enter", 0.5),
+            ("Loot_Kneel_Loop", 2.),
+            ("Loot_Kneel_Exit", 0.5),
+        ]
+        .map(|(clip, seconds)| (clip.to_owned(), seconds)),
+    );
+    scene.presenter.push(&scene.snapshot, 0.);
+    frame(&mut scene, 0.);
+    scene
+}
+
+fn viewer_lower(frame: &UnitFrame) -> (&'static str, f32) {
+    frame
+        .imported
+        .iter()
+        .find(|unit| unit.entity == EntityRef::Player(1))
+        .unwrap()
+        .animation
+        .lower
+}
+
+fn emote(scene: &mut Scene, emote: Emote, seconds: f64) {
+    scene.snapshot.tick += 1;
+    scene.snapshot.chat = vec![ChatLine {
+        speaker: 1,
+        message: ChatMessage::Emote(emote),
+    }];
+    scene.presenter.push(&scene.snapshot, seconds);
+    scene.snapshot.chat.clear();
+}
+
+#[test]
+fn an_emote_in_the_projection_plays_on_its_speaker_until_a_blow_ends_it() {
+    let mut scene = social_scene();
+    emote(&mut scene, Emote::Wave, 1.);
+    assert_eq!(viewer_upper(&frame(&mut scene, 1.1)).0, "Emote_Wave");
+    // The legs are not asked to do anything for an upper-body emote.
+    assert_eq!(viewer_lower(&frame(&mut scene, 1.2)).0, "Idle_Loop");
+    scene.snapshot.tick += 1;
+    scene.snapshot.events = vec![ZoneEvent::DamageTaken {
+        source: scene.wolf,
+        target: EntityRef::Player(1),
+        amount: 1,
+        critical: false,
+    }];
+    scene.presenter.push(&scene.snapshot, 1.3);
+    scene.snapshot.events.clear();
+    assert_ne!(viewer_upper(&frame(&mut scene, 1.4)).0, "Emote_Wave");
+}
+
+#[test]
+fn the_whole_body_bow_plays_standing_and_stops_for_a_step() {
+    let mut scene = social_scene();
+    emote(&mut scene, Emote::Bow, 1.);
+    assert_eq!(viewer_lower(&frame(&mut scene, 1.1)).0, "Emote_Bow");
+    // Walking away cuts it: the projected velocity moves the unit.
+    scene.snapshot.entities[0].velocity = [4, 0, 0];
+    assert_ne!(viewer_lower(&frame(&mut scene, 1.2)).0, "Emote_Bow");
+}
+
+#[test]
+fn a_door_flip_plays_push_away_from_the_nearest_unit_and_pull_closing_it() {
+    let content = greyhaven_vale::content();
+    let door = content.doors()[0];
+    let [closed, open] = [door.leaf(false).position, door.leaf(true).position];
+    let mut scene = social_scene();
+    // Stand on the side the leaf swings away from.
+    let away = |axis: usize| (closed[axis] - open[axis]).signum() * 100;
+    scene.snapshot.entities[0].position = [closed[0] + away(0), closed[1], closed[2] + away(2)];
+    let view = |open| {
+        vec![DoorView {
+            door: door.id,
+            open,
+        }]
+    };
+    scene.snapshot.doors = view(false);
+    scene.presenter.push(&scene.snapshot, 1.);
+    frame(&mut scene, 1.);
+    scene.snapshot.tick += 1;
+    scene.snapshot.doors = view(true);
+    scene.presenter.push(&scene.snapshot, 2.);
+    assert_eq!(viewer_upper(&frame(&mut scene, 2.1)).0, "Door_Push");
+    scene.snapshot.tick += 1;
+    scene.snapshot.doors = view(false);
+    scene.presenter.push(&scene.snapshot, 4.);
+    assert_eq!(viewer_upper(&frame(&mut scene, 4.1)).0, "Door_Pull");
+}
+
+#[test]
+fn the_loot_window_kneels_at_a_reachable_corpse_and_walking_stands_the_viewer_up() {
+    let mut scene = social_scene();
+    scene.snapshot.loot = Some(LootView {
+        claim: LootClaim {
+            creature: match scene.wolf {
+                EntityRef::Creature(creature) => creature,
+                _ => unreachable!(),
+            },
+            died_at: 1,
+        },
+        rewards: LootRewards {
+            money: 3,
+            item: None,
+            quest_item: None,
+        },
+    });
+    // Without the window nothing kneels.
+    assert_eq!(viewer_lower(&frame(&mut scene, 1.)).0, "Idle_Loop");
+    scene.presenter.set_interaction(Interaction {
+        loot_window: true,
+        npc: None,
+    });
+    assert_eq!(viewer_lower(&frame(&mut scene, 1.1)).0, "Loot_Kneel_Enter");
+    assert_eq!(viewer_lower(&frame(&mut scene, 1.7)).0, "Loot_Kneel_Loop");
+    // Closing the window stands up by the exit clip.
+    scene.presenter.set_interaction(Interaction::default());
+    assert_eq!(viewer_lower(&frame(&mut scene, 1.8)).0, "Loot_Kneel_Exit");
+    // Reopened and walked away from, the loop never pins the walking unit.
+    scene.presenter.set_interaction(Interaction {
+        loot_window: true,
+        npc: None,
+    });
+    frame(&mut scene, 2.4);
+    frame(&mut scene, 3.);
+    scene.snapshot.entities[0].velocity = [4, 0, 0];
+    assert_eq!(viewer_lower(&frame(&mut scene, 3.1)).0, "Walk_Loop");
+    // Standing again with the window open does not kneel: the kneel stays broken.
+    scene.snapshot.entities[0].velocity = [0, 0, 0];
+    assert_eq!(viewer_lower(&frame(&mut scene, 3.5)).0, "Idle_Loop");
+}
+
+#[test]
+fn a_resident_at_its_bed_at_night_lies_on_the_mattress_and_only_then() {
+    let content = greyhaven_vale::content();
+    let elden = NpcId::new(1);
+    let home = *content.routine(elden).unwrap().path.last().unwrap();
+    let mut scene = social_scene();
+    scene.presenter.residents_ready();
+    scene.presenter.model_ready(
+        Kind::Ranger,
+        [("Sleep_Bed_Enter", 1.5), ("Sleep_Bed_Loop", 4.)]
+            .map(|(clip, seconds)| (clip.to_owned(), seconds)),
+    );
+    // The zone's own Elden, moved to the end of his routine.
+    let record = scene
+        .snapshot
+        .entities
+        .iter_mut()
+        .find(|record| record.entity() == EntityRef::Npc(elden))
+        .unwrap();
+    record.position = [home[0], record.position[1], home[1]];
+    record.facing = 16_384;
+    let shown = |frame: UnitFrame| {
+        let unit = frame
+            .imported
+            .into_iter()
+            .find(|unit| unit.entity == EntityRef::Npc(elden))
+            .unwrap();
+        (unit.animation.lower.0, unit.root.p[0])
+    };
+    // By day the same spot is just standing there.
+    assert_eq!(shown(frame(&mut scene, 1.)).0, "Idle_Loop");
+    scene.snapshot.tick = u64::from(mmorpg_core::DAY_TICKS - mmorpg_core::ZONE_START_TIME);
+    assert_eq!(shown(frame(&mut scene, 1.1)).0, "Sleep_Bed_Enter");
+    let mut last = shown(frame(&mut scene, 1.2));
+    for step in 0..30 {
+        last = shown(frame(&mut scene, 1.3 + f64::from(step) * 0.1));
+    }
+    assert_eq!(last.0, "Sleep_Bed_Loop");
+    // The drawn root moves off the bedside onto the mattress side; the zone's position stays.
+    let bedside = f64::from(home[0]) / 100.;
+    assert!(
+        (last.1 - (bedside + 0.47)).abs() < 0.03,
+        "root at {} for bedside {bedside}",
+        last.1
+    );
 }

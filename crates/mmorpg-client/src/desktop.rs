@@ -1491,6 +1491,9 @@ impl ApplicationHandler for App {
                     audio.listen(view);
                     audio.pump();
                 }
+                let loot_window = self.ui.loot_window_open(self.presentation.latest());
+                self.presentation
+                    .set_interaction(loot_window, self.npc_context.npc);
                 let frame = self.presentation.frame(&self.world, now, view);
                 self.interface(now, view);
                 // The egui action bar replaces the flat combat HUD rectangles.
