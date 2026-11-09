@@ -198,7 +198,17 @@ pub fn placements(s: &Scenery) -> Vec<Placement> {
 
 pub use crate::lod::EntryLods;
 
-/// Every entry's levels from the bundle's `nature-descriptor` attachment JSON ([`crate::lod`]).
+/// Where a tree leaves its `default` and `lod1` levels, as a projected screen size (#615).
+///
+/// The bundle's descriptor keeps both levels out to 90 m and 300 m, far enough that the woods
+/// spend almost 80 % of their triangles on trees, on a frame budget they miss. These switch
+/// points replace the descriptor's for the trees alone: at the game's 50° field of view an
+/// average tree keeps `default` to about 40 m and `lod1` to about 135 m. Bushes and rocks keep
+/// the descriptor's distances (asset-tooling#534).
+pub const TREE_MIN_SCREEN_SIZES: [f64; 2] = [0.35, 0.1];
+
+/// Every entry's levels from the bundle's `nature-descriptor` attachment JSON ([`crate::lod`]),
+/// with the trees' switch points replaced by [`TREE_MIN_SCREEN_SIZES`].
 ///
 /// # Errors
 ///
@@ -206,7 +216,15 @@ pub use crate::lod::EntryLods;
 pub fn descriptor_lods(json: &str) -> Result<Vec<EntryLods>, String> {
     let value =
         serde_json::from_str(json).map_err(|error| format!("nature descriptor: {error}"))?;
-    crate::lod::descriptor_lods(&value)
+    let mut entries = crate::lod::descriptor_lods(&value)?;
+    for entry in &mut entries {
+        if entry.entry == BROADLEAF || entry.entry == CONIFER {
+            for ((_, min), size) in entry.levels.iter_mut().zip(TREE_MIN_SCREEN_SIZES) {
+                *min = size;
+            }
+        }
+    }
+    Ok(entries)
 }
 
 #[cfg(test)]
@@ -259,5 +277,25 @@ mod tests {
             [("default".into(), 0.3), ("lod1".into(), 0.)]
         );
         assert_eq!(lods[0].radius, 2.);
+    }
+
+    #[test]
+    fn only_the_trees_take_the_nearer_switch_points() {
+        let json = format!(
+            r#"{{"lodSelection":{{"metric":"projected-bounding-sphere-height-fraction"}},"assets":[
+              {{"key":"{BROADLEAF}","lods":{{"boundingSphere":{{"center":[0,1,0],"radius":2}},"levels":[
+                {{"variant":"default","minScreenSize":0.11}},{{"variant":"lod1","minScreenSize":0.03}},
+                {{"variant":"lod2","minScreenSize":0}}]}}}},
+              {{"key":"{}","lods":{{"boundingSphere":{{"center":[0,1,0],"radius":1}},"levels":[
+                {{"variant":"default","minScreenSize":0.08}},{{"variant":"lod1","minScreenSize":0}}]}}}}]}}"#,
+            BUSHES[0]
+        );
+        let lods = descriptor_lods(&json).unwrap();
+        let sizes = |index: usize| -> Vec<f64> { lods[index].levels.iter().map(|l| l.1).collect() };
+        assert_eq!(
+            sizes(0),
+            [TREE_MIN_SCREEN_SIZES[0], TREE_MIN_SCREEN_SIZES[1], 0.]
+        );
+        assert_eq!(sizes(1), [0.08, 0.]);
     }
 }
