@@ -13,6 +13,7 @@ mod ai;
 mod areas;
 mod aura;
 mod boss;
+mod boulder;
 mod breakable;
 mod casting;
 mod character;
@@ -83,6 +84,7 @@ pub use ability::{
 pub use areas::{Area, AreaId, MAX_AREA_NAME_BYTES, MAX_ZONE_AREAS, ZoneAreas};
 pub use aura::{Aura, CastState, Cooldown};
 pub use boss::{BossEncounter, BossRules, MAX_ENCOUNTER_PLAYERS, MAX_SCALING_PARTICIPANTS};
+pub use boulder::{CanonicalBoulder, IMPACT_SPEED, RETURN_TICKS, WALK_PUSH_SPEED};
 pub use breakable::{
     DEBRIS_TICKS, Debris, DebrisPiece, DebrisView, EXPLOSION_DAMAGE, EXPLOSION_KNOCKBACK_UNITS,
     EXPLOSION_RADIUS_UNITS, MAX_DEBRIS, MAX_VISIBLE_DEBRIS, debris_pieces,

@@ -176,7 +176,11 @@ pub(crate) fn creature_body(
     velocity: [f32; 3],
 ) -> RigidBody {
     let body = body_id(EntityRef::Creature(id));
-    if template.prop().is_some() {
+    if template.prop().is_some_and(crate::PropKind::rolls) {
+        // A boulder (#299) is a real sphere where it stands.
+        let [x, y, z] = crate::physics::to_units(position);
+        RigidBody::sphere(body, Vec3i::new(x, y, z), template.half_extents[0])
+    } else if template.prop().is_some() {
         let [x, y, z] = crate::physics::to_units(position);
         RigidBody::fixed(
             body,

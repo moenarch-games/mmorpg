@@ -764,7 +764,11 @@ impl ZoneSimulation {
         let Some(creature) = self.creatures.get(&creature_id) else {
             return Ok(());
         };
-        if !creature.is_alive() || self.combat_blocked(source, target) {
+        // A boulder cannot be broken (#299).
+        if !creature.is_alive()
+            || self.is_boulder(creature_id)
+            || self.combat_blocked(source, target)
+        {
             return Ok(());
         }
         if self.creature_evades(player_id, creature_id) {

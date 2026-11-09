@@ -33,6 +33,8 @@ pub mod templates {
     pub const HILL_OGRE: CreatureTemplateId = CreatureTemplateId::new(13);
     /// A movable crate (#58) that knockbacks and blasts slide.
     pub const HEAVY_CRATE: CreatureTemplateId = CreatureTemplateId::new(14);
+    /// The rolling boulder trap above Redbrand Hollow (#299).
+    pub const BOULDER: CreatureTemplateId = CreatureTemplateId::new(17);
     /// The Greyfang cavern's heavy shield-bearers (#160): slow overhead smashes, and arrows
     /// and bolts at their front stop on their shields.
     pub const REDBRAND_BRUTE: CreatureTemplateId = CreatureTemplateId::new(15);
@@ -59,6 +61,8 @@ const BOAR: [i32; 3] = [45, 45, 45];
 const RAT: [i32; 3] = [25, 20, 25];
 const HUMANOID: [i32; 3] = [30, 90, 30];
 const LURKER: [i32; 3] = [35, 80, 35];
+/// A 1.4 m rolling boulder (#299).
+const BOULDER_BOX: [i32; 3] = [70, 70, 70];
 const GARRICK: [i32; 3] = [40, 100, 40];
 /// A broad-shouldered Redbrand, still smaller than a large creature (#160).
 const BRUTE: [i32; 3] = [38, 96, 38];
@@ -88,7 +92,7 @@ type TemplateRow = (
 );
 
 #[rustfmt::skip]
-const TEMPLATES: [TemplateRow; 15] = {
+const TEMPLATES: [TemplateRow; 16] = {
     use CreatureBehaviour::{Aggressive, Neutral, Prop};
     use CreatureFamily::{Boar, Marauder, Mirefin, Ogre, Redbrand, Vermin, Wolf};
     use crate::PropKind;
@@ -111,6 +115,8 @@ const TEMPLATES: [TemplateRow; 15] = {
         (HILL_OGRE, "Hill Ogre", Ogre, Aggressive, [5, 5], false, 300, 0, [9, 15], 1, crate::ticks_from_ms(2_800), RESPAWN_TICKS, OGRE),
         // A movable prop (#58): knockbacks slide it; it breaks like a crate.
         (HEAVY_CRATE, "Heavy Crate", CreatureFamily::Prop, Prop(PropKind::HeavyCrate), [1, 1], false, 30, 0, [1, 1], 0, crate::ticks_from_ms(2_000), PROP_RESPAWN_TICKS, CRATE_BOX),
+        // The boulder trap (#299): unbreakable, its health only names it a prop.
+        (BOULDER, "Loose Boulder", CreatureFamily::Prop, Prop(PropKind::Boulder), [1, 1], false, 1, 0, [1, 1], 0, crate::ticks_from_ms(2_000), PROP_RESPAWN_TICKS, BOULDER_BOX),
         // The Greyfang cavern's shield-bearer (#160): twice a level 5 bandit's health, heavier
         // and slower blows, and an Overhead Smash.
         (REDBRAND_BRUTE, "Redbrand Brute", Redbrand, Aggressive, [5, 5], false, 215, 0, [7, 12], 0, crate::ticks_from_ms(2_800), RESPAWN_TICKS, BRUTE),
@@ -141,7 +147,7 @@ pub const CAVERN_WANDER_RADIUS_UNITS: i32 = 200;
 /// Greyhaven's smithy and houses, crates, barrels and fences at Millbrook Farm, and powder
 /// barrels in the Redbrand camp, set close enough to chain-react.
 #[rustfmt::skip]
-const PROPS: [(u32, CreatureTemplateId, [i32; 2], u16); 19] = {
+const PROPS: [(u32, CreatureTemplateId, [i32; 2], u16); 20] = {
     use templates::*;
     [
         // Greyhaven Outpost.
@@ -167,6 +173,9 @@ const PROPS: [(u32, CreatureTemplateId, [i32; 2], u16); 19] = {
         (922, EXPLOSIVE_BARREL, [335, -8_935], 0),
         (923, EXPLOSIVE_BARREL, [-800, -9_500], 0),
         (924, EXPLOSIVE_BARREL, [-870, -9_500], 0),
+        // The boulder trap above the camp's south edge (#299): it rests on the rise north of the
+        // watch post, and rolling down it sends the boulder across the bandits' camp.
+        (925, BOULDER, [950, -7_420], 0),
     ]
 };
 

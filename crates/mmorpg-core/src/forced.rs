@@ -84,7 +84,7 @@ fn scaled(direction: [i64; 2], length: i32) -> Option<[i32; 2]> {
 }
 
 impl ZoneSimulation {
-    fn unit_alive_now(&self, unit: EntityRef) -> bool {
+    pub(crate) fn unit_alive_now(&self, unit: EntityRef) -> bool {
         match unit {
             EntityRef::Player(id) => self.players.get(&id).is_some_and(|p| p.is_alive()),
             EntityRef::Creature(id) => self.creatures.get(&id).is_some_and(|c| c.is_alive()),
@@ -94,25 +94,27 @@ impl ZoneSimulation {
 
     /// Whether `unit` can be force-moved now: alive, not a fixed prop (#288), not moving and not
     /// immune.
-    fn movable(&self, unit: EntityRef) -> bool {
+    pub(crate) fn movable(&self, unit: EntityRef) -> bool {
         self.unit_alive_now(unit)
             && !self.is_prop(unit)
             && self.forced.get(&unit).is_none_or(ForcedState::is_settled)
     }
 
     /// Knocks `unit` `distance` units along `direction` (XZ), unless it is immune; returns
-    /// whether it moves.
+    /// whether it moves. `by` is the player who caused it, credited if `unit` is a boulder
+    /// (#299).
     pub(crate) fn knock_back(
         &mut self,
         unit: EntityRef,
         direction: [i64; 2],
         distance: i32,
+        by: Option<crate::PlayerId>,
     ) -> bool {
         // A movable prop (#58) slides instead.
         if let EntityRef::Creature(id) = unit
             && self.is_movable_prop(unit)
         {
-            return self.push_prop(id, direction, distance);
+            return self.push_prop(id, direction, distance, by);
         }
         if distance <= 0 || !self.movable(unit) {
             return false;
@@ -146,6 +148,7 @@ impl ZoneSimulation {
         from: [i32; 2],
         fallback: [i64; 2],
         distance: i32,
+        by: Option<crate::PlayerId>,
     ) -> Result<bool, ZoneError> {
         // A prop broken by the same blast (#288) has no position left.
         if !self.movable(unit) && !self.is_movable_prop(unit) {
@@ -154,7 +157,7 @@ impl ZoneSimulation {
         let at = self.unit_position(unit)?;
         let away = [i64::from(at[0] - from[0]), i64::from(at[2] - from[1])];
         let direction = if away == [0, 0] { fallback } else { away };
-        Ok(self.knock_back(unit, direction, distance))
+        Ok(self.knock_back(unit, direction, distance, by))
     }
 
     /// Whether `unit`'s body fits along the straight path of a charge at `target` (#57): its
@@ -393,7 +396,7 @@ impl ZoneSimulation {
                 } else {
                     aside
                 };
-                self.knock_back(unit, direction, SHOVE_UNITS);
+                self.knock_back(unit, direction, SHOVE_UNITS, None);
             }
         }
         Ok(())
@@ -438,7 +441,11 @@ impl ZoneSimulation {
                 let reach = i64::from(crate::unit::PLAYER_REACH_UNITS);
                 if delta[0] * delta[0] + delta[1] * delta[1] <= reach * reach {
                     self.end_forced_move(unit);
-                    if self.knock_back(target, delta, knockback)
+                    let by = match unit {
+                        EntityRef::Player(player) => Some(player),
+                        _ => None,
+                    };
+                    if self.knock_back(target, delta, knockback, by)
                         && !units[index + 1..].contains(&target)
                         && let Some(moving) = self
                             .forced
