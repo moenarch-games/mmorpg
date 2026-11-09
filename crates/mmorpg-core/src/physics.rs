@@ -457,6 +457,12 @@ impl RigidBody {
         matches!(self.kind, Kind::Moving)
     }
 
+    /// Whether it is a fixed sphere (#299), whose `half_extents` only bound it.
+    #[must_use]
+    pub const fn is_sphere(&self) -> bool {
+        matches!(self.kind, Kind::Sphere)
+    }
+
     /// Whether it is a moving platform's box (#56).
     #[must_use]
     pub const fn is_platform(&self) -> bool {
