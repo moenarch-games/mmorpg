@@ -88,6 +88,11 @@ export class KitModules {
     return this.#batched !== null;
   }
 
+  /** The drawn modules for picking: they occlude what stands behind them, as their hidden fallback did. */
+  pickables(): { door: null; object: THREE.Object3D }[] {
+    return this.#batched ? [{ door: null, object: this.#batched.root }] : [];
+  }
+
   /** The drawn roots, and whether the set changed since the last call. */
   roots(): { roots: THREE.Object3D[]; changed: boolean } {
     const changed = this.#changed;

@@ -956,9 +956,11 @@ export class WorldView {
     if (!this.#regions || !this.#models.ready("Ranger")) { return false; }
     const clip = this.#restClip("Ranger");
     const length = this.#models.clipLength("Ranger", clip) ?? 1;
+    // Reduced motion holds the idle pose, as it does for the procedural figure.
+    const time = this.#animate ? seconds % length : 0;
     this.#models.update([{
       id: "selection-preview", kind: "Ranger", entity: { kind: "player", id: 0 }, feet, yaw, pitch: 0, heightMetres: height,
-      clip, time: seconds % length, lower: [clip, seconds % length], layers: [{ clip, time: seconds % length, weight: 1, mask: "all" }], tint: null,
+      clip, time, lower: [clip, time], layers: [{ clip, time, weight: 1, mask: "all" }], tint: null,
       loadout: look.classId ? CLASS_LOADOUTS[look.classId] : null, resident: null, figure: null, variety: null,
       outfit: look.classId ? { preset: `class.${look.classId}`, replaced: [] } : null, headwear: true, swing: null, chains: null, bow: null,
       sheathed: [false, false], throwable: null, belted: null, crossbow: null, channel: null,
@@ -1772,7 +1774,7 @@ export class WorldView {
     const selectablePlayers = new Set(this.#lastProjection?.entities
       .filter((entity) => entity.kind === "player" && entity.entityId !== viewerId && !entity.flags.dead)
       .map((entity) => entity.entityId) ?? []);
-    const picked = this.#picking.pick(point, this.#camera, this.#lastSceneryNodes, this.#lastUnitNodes, this.#lastInstanceBatches, this.#models.pickables(), this.#inn?.pickables(), selectablePlayers, { width: rect.width, height: rect.height, pointerType: event.pointerType });
+    const picked = this.#picking.pick(point, this.#camera, this.#lastSceneryNodes, this.#lastUnitNodes, this.#lastInstanceBatches, this.#models.pickables(), [...(this.#inn?.pickables() ?? []), ...[this.#shrine, this.#outpost, this.#fortifications, this.#settlement].flatMap((kit) => kit?.pickables() ?? [])], selectablePlayers, { width: rect.width, height: rect.height, pointerType: event.pointerType });
     this.#pendingNpc = null;
     // A click on the door leaf asks the zone to swing it; the zone checks reach (#158).
     if (picked?.kind === "door") {
