@@ -6,8 +6,20 @@ use std::sync::Arc;
 use mmorpg_core::greyhaven_vale::{self, marsh};
 use mmorpg_core::{WaterMode, ZoneCommand, ZoneId, ZoneSimulation};
 
+/// The full-length walk runs on bare terrain: a level 1 walker would not survive the region's
+/// creatures (#506), which have their own test. The short water walk keeps real content.
+fn bare_player_at(feet: [i32; 2]) -> ZoneSimulation {
+    let definition = greyhaven_vale::greyhaven_vale_definition();
+    let zone = ZoneSimulation::with_definition(ZoneId::new(1), definition).unwrap();
+    placed_at(zone, feet)
+}
+
 fn player_at(feet: [i32; 2]) -> ZoneSimulation {
-    let mut zone = ZoneSimulation::with_content(ZoneId::new(1), greyhaven_vale::content()).unwrap();
+    let zone = ZoneSimulation::with_content(ZoneId::new(1), greyhaven_vale::content()).unwrap();
+    placed_at(zone, feet)
+}
+
+fn placed_at(mut zone: ZoneSimulation, feet: [i32; 2]) -> ZoneSimulation {
     zone.add_player(1).unwrap();
     let mut state = zone.snapshot().unwrap();
     let ground = zone.content().definition().ground_at(feet[0], feet[1]);
@@ -62,7 +74,7 @@ fn area(at: [f32; 3]) -> Option<&'static str> {
 
 #[test]
 fn a_player_crosses_the_pass_to_the_island_and_back_into_the_vale() {
-    let mut zone = player_at([15_000, 4_000]);
+    let mut zone = bare_player_at([15_000, 4_000]);
     let mut sequence = 0;
     // Marsh Pass: into the cutting, north up the gorge, east across the crest, back south and
     // down the eastern cutting onto the wetlands.
@@ -103,10 +115,10 @@ fn a_player_crosses_the_pass_to_the_island_and_back_into_the_vale() {
         (island[1] - marsh::ISLAND_Y as f32).abs() < 60.0,
         "on the island: {island:?}"
     );
-    let waters = zone.content().waters();
+    let content = greyhaven_vale::content();
     let units = |value: f32| value.round() as i32;
     assert_eq!(
-        WaterMode::of_feet(waters, island.map(units)),
+        WaterMode::of_feet(content.waters(), island.map(units)),
         WaterMode::Dry
     );
     // And back over the causeway and the pass into the Vale without a break.

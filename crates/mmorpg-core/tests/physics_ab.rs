@@ -80,6 +80,10 @@ const CLIMBS: [(&str, usize); 1] = [("vale-wolf-hunt", 1_492)];
 /// Shot contact fractions on identical states: both backends solve the same ray against the
 /// same boxes, capsules and triangles in `f32`.
 const SHOT_FRACTION_TOLERANCE: f32 = 1.0e-4;
+/// Terrain heights on identical states, in units: both backends cast the same ray at the same
+/// heightfield, so only `f32` noise separates them. Compared unrounded, because a height on a
+/// half unit rounds either way on that noise.
+const GROUND_HEIGHT_TOLERANCE: f32 = 1.0e-3;
 /// A unit at rest this many ticks must be grounded.
 const REST_TICKS: usize = 3;
 /// Penetration is checked on every this-many-th tick (and the last), over every content box.
@@ -695,7 +699,7 @@ struct Decisions {
     sight: BTreeMap<String, bool>,
     npc_sight: BTreeMap<String, bool>,
     doors: BTreeMap<String, bool>,
-    ground: BTreeMap<String, i32>,
+    ground: BTreeMap<String, f32>,
     shots: BTreeMap<String, Option<(Option<EntityRef>, BodyId, f32)>>,
     /// Whether the player's body fits along a charge at the creature (#57, shape cast).
     charges: BTreeMap<String, bool>,
@@ -714,7 +718,7 @@ fn decisions(zone: &mut ZoneSimulation) -> Result<Decisions> {
             .insert(format!("{:?}", unit.unit), unit.grounded);
         decisions
             .ground
-            .insert(format!("{:?}", unit.unit), zone.ground_probe(x, z));
+            .insert(format!("{:?}", unit.unit), zone.ground_height_probe(x, z));
     }
     let near = |a: &UnitBody, b: &UnitBody| {
         let (p, q) = (a.body.exact_position(), b.body.exact_position());
@@ -793,7 +797,12 @@ fn decision_differences(rapier: &Decisions, engine: &Decisions) -> Vec<String> {
     exact("sight", &rapier.sight, &engine.sight, &mut out);
     exact("npc sight", &rapier.npc_sight, &engine.npc_sight, &mut out);
     exact("door blocked", &rapier.doors, &engine.doors, &mut out);
-    exact("ground", &rapier.ground, &engine.ground, &mut out);
+    for (key, left) in &rapier.ground {
+        let right = engine.ground.get(key).copied();
+        if right.is_none_or(|right| (left - right).abs() > GROUND_HEIGHT_TOLERANCE) {
+            out.push(format!("ground {key}: rapier {left:?}, engine {right:?}"));
+        }
+    }
     exact("charge path", &rapier.charges, &engine.charges, &mut out);
     exact("route", &rapier.routes, &engine.routes, &mut out);
     for (key, left) in &rapier.shots {
