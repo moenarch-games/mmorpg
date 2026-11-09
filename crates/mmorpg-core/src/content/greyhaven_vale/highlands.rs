@@ -451,8 +451,21 @@ fn unfaded_sculpt(x: i64, z: i64) -> i64 {
     strata(highest(&relief.spines, 3), x, z) - strata(highest(&relief.gullies, 37), x, z)
 }
 
-/// The landforms levelled at the ledges and faded away from the Highland Trail and the
-/// Lookout Path, so the routes keep their own grades.
+/// Q10 weight of the landforms round the garrison: none inside a wander disc and a margin
+/// (the ground each creature paces stays exactly as it was), full beyond a short fade.
+fn garrison_clearance(x: i64, z: i64) -> i64 {
+    super::highland_bandits::wander_discs()
+        .map(|(center, radius)| {
+            let [cx, cz] = center.map(i64::from);
+            let distance = ((x - cx) * (x - cx) + (z - cz) * (z - cz)).isqrt();
+            smooth_q10(distance, i64::from(radius) + 300, i64::from(radius) + 1_400)
+        })
+        .min()
+        .unwrap_or(1_024)
+}
+
+/// The landforms levelled at the ledges and faded away from the Highland Trail, the
+/// Lookout Path and the garrison's ground, so routes and spawn points keep their grades.
 fn sculpted_relief(x: i64, z: i64) -> i64 {
     const LEDGE_BLEND: i64 = 600;
     let mut sculpt = unfaded_sculpt(x, z);
@@ -466,7 +479,7 @@ fn sculpted_relief(x: i64, z: i64) -> i64 {
                 + (sculpt - level) * smooth_q10(distance, radius, radius + LEDGE_BLEND) / 1_024;
         }
     }
-    sculpt * smooth_q10(route_distance(x, z), 500, 2_600) / 1_024
+    sculpt * smooth_q10(route_distance(x, z), 500, 2_600) / 1_024 * garrison_clearance(x, z) / 1_024
 }
 
 /// Distance from `(x, z)` to the Highland Trail or the Lookout Path.
