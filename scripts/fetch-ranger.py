@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
 """Acquire selected entries of both live rolling Ranger figure releases; keep each local copy while its release is unchanged."""
+import hashlib
+import http.client
 import json
+import os
 from pathlib import Path
 import shutil
+import ssl
+import sys
 import tempfile
+import time
+import urllib.error
 import urllib.request
 from lib.ranger_assets import CLASS_NAMES, valid_male_appearance
 
 ROOT = Path(__file__).resolve().parents[1]
 URL = "https://github.com/moritzbrantner/asset-tooling/releases/download/{release}/"
+API = "https://api.github.com/repos/moritzbrantner/asset-tooling/releases/"
 # The male figure's selected entries by key and variants: the default character and equipment, the class weapons
 # (asset-tooling #375) and props (#379), the Greyhaven residents' outfit variants, armour, straw hat and beards (#418), the class
 # starter outfits' armour (#379), the Redbrand Crossbowmen's crossbow with an arrow standing in for its bolt (#607), and
@@ -38,6 +46,8 @@ FEMALE = {"humanoid.ranger.female": {"default", "outfit.tanner", "outfit.tanner.
 # (asset-tooling #380).
 HAIR_VARIANT = "hair-1"
 HEAD_SKINS = ("skin.head", "default")
+# The wait before each retry of a transient release failure (REL-003).
+RETRY_DELAYS = (1, 2, 4, 8, 16)
 
 
 class Figure:
@@ -52,6 +62,7 @@ class Figure:
         self.dest = ROOT / "web/public/characters" / character
         self.url = URL.format(release=self.release)
         self.pairs = {(key, variant) for key, variants in selected.items() for variant in variants}
+        self.asset_ids = None
 
 
 FIGURES = (Figure("humanoid.ranger.male", MALE), Figure("humanoid.ranger.female", FEMALE))
@@ -64,11 +75,56 @@ def selected(figure, index):
                            or (entry.get("key"), entry.get("variant")) == HEAD_SKINS}
 
 
+def github_token():
+    """The token selecting authenticated release downloads, or None for the public URLs."""
+    return os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or None
+
+
+def read_url(url, timeout, accept=None, token=None):
+    """The body at `url`, retrying 5xx responses, timeouts and connection errors; never a 4xx."""
+    request = urllib.request.Request(url)
+    if accept:
+        request.add_header("Accept", accept)
+    if token:
+        # Unredirected: release assets redirect to a storage host, which must not see the token.
+        request.add_unredirected_header("Authorization", f"Bearer {token}")
+    for delay in (*RETRY_DELAYS, None):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return response.read()
+        except urllib.error.HTTPError as error:
+            error.close()
+            if error.code < 500 or delay is None:
+                raise
+            failure = error
+        except (OSError, http.client.HTTPException) as error:  # Includes URLError, timeouts and truncated bodies.
+            if delay is None or isinstance(getattr(error, "reason", None), ssl.SSLCertVerificationError):
+                raise
+            failure = error
+        print(f"Retrying {url} in {delay} s after: {failure}", file=sys.stderr)
+        time.sleep(delay)
+    raise AssertionError("unreachable: the final attempt returns or raises")
+
+
+def read_asset(figure, name, timeout):
+    """Release asset `name`: through the REST API with a token, and through the public URL
+    without one or when the API fails, for example on a rate limit."""
+    token = github_token()
+    if token:
+        try:
+            if figure.asset_ids is None:
+                release = json.loads(read_url(f"{API}tags/{figure.release}", 60, "application/vnd.github+json", token))
+                figure.asset_ids = {asset["name"]: asset["id"] for asset in release["assets"]}
+            return read_url(f"{API}assets/{figure.asset_ids[name]}", timeout, "application/octet-stream", token)
+        except (OSError, http.client.HTTPException, KeyError, ValueError) as error:
+            print(f"Authenticated download of {figure.release}/{name} failed ({error!r}); trying the public URL.", file=sys.stderr)
+    return read_url(figure.url + name, timeout)
+
+
 def live_ref(figure):
     """The live release's export.ref.json, or None when the release cannot be reached."""
     try:
-        with urllib.request.urlopen(figure.url + "export.ref.json", timeout=60) as response:
-            return response.read()
+        return read_asset(figure, "export.ref.json", 60)
     except OSError:
         return None
 
@@ -102,8 +158,10 @@ def complete(figure, ref):
 
 def acquire(figure):
     # A copy of an older upload, or missing a selected entry, is fetched again. Offline, a complete
-    # copy of any upload is kept.
+    # copy of any upload is kept, except in CI, where it may be a restored cache of an older upload.
     ref = live_ref(figure)
+    if ref is None and os.environ.get("GITHUB_ACTIONS") == "true":
+        raise OSError(f"could not reach the {figure.release} release")
     if complete(figure, ref):
         return
     release, dest = figure.release, figure.dest
@@ -116,8 +174,7 @@ def acquire(figure):
         def download(name):
             if Path(name).name != name or not name or name in {".", ".."}:
                 raise ValueError(f"unsafe release filename: {name}")
-            with urllib.request.urlopen(figure.url + name, timeout=300) as response:
-                (directory / name).write_bytes(response.read())
+            (directory / name).write_bytes(read_asset(figure, name, 300))
 
         index_name = release + ".index.json"
         download(index_name)
@@ -144,6 +201,18 @@ def acquire(figure):
     print(f"Fetched selected {release} entries into {dest}")
 
 
+def print_identity(figure):
+    """Print the figure's cache identity line (`scripts/ci-asset-cache.sh`), failing when the release cannot be reached."""
+    ref = live_ref(figure)
+    if ref is None:
+        raise OSError(f"could not reach the {figure.release} release")
+    print(figure.release, hashlib.sha256(ref).hexdigest(), figure.dest.relative_to(ROOT))
+
+
 if __name__ == "__main__":
+    print(f"Ranger downloads: {'authenticated GitHub API' if github_token() else 'anonymous public URLs'}", file=sys.stderr)
     for figure in FIGURES:
-        acquire(figure)
+        if sys.argv[1:] == ["--identity"]:
+            print_identity(figure)
+        else:
+            acquire(figure)
