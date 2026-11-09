@@ -70,10 +70,11 @@ export type AbilityRecord = {
 
 /**
  * `target` is a creature template (kill), an item (collect, dropped by template `source`), an NPC (talk),
- * an area (explore) or an item (retrieve, granted by swimming into area `source`, #274).
+ * an area (explore), an item (retrieve, granted by swimming into area `source`, #274) or nothing
+ * (victory: Captain Thorn beaten in the Redbrand Depths, target 0).
  */
 export type QuestObjectiveRecord =
-  | { kind: "kill" | "talk" | "explore"; target: number; count: number }
+  | { kind: "kill" | "talk" | "explore" | "victory"; target: number; count: number }
   | { kind: "collect" | "retrieve"; target: number; source: number; count: number };
 
 export type QuestRecord = {
@@ -108,7 +109,7 @@ export type ContentCatalog = {
 };
 
 const FORMAT = "mmorpg.catalog";
-const OBJECTIVE_KINDS = ["kill", "collect", "talk", "explore", "retrieve"] as const;
+const OBJECTIVE_KINDS = ["kill", "collect", "talk", "explore", "retrieve", "victory"] as const;
 const CLASS_NAMES: readonly ClassName[] = ["warden", "ranger", "arcanist", "necromancer", "rogue", "cleric", "druid"];
 const RESOURCES = ["rage", "focus", "mana", "faith"] as const;
 const USERS: readonly (ClassName | "creature")[] = [...CLASS_NAMES, "creature"];

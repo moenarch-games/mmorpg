@@ -324,6 +324,7 @@ impl ZoneSimulation {
                     &self.content,
                     &viewer.quests,
                     &viewer.inventory,
+                    viewer.depths,
                     crate::is_night(crate::time_of_day(self.tick)),
                 )),
                 loot: match viewer.target {

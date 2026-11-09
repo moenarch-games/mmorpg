@@ -8,15 +8,17 @@
 //! item, so selling or moving it changes progress and the turn-in consumes
 //! it. Quest items drop only while a quest still needs them. Retrieve objectives
 //! (#274) grant their item when the player swims into their area without one;
-//! like collect, their progress is the bag's count.
+//! like collect, their progress is the bag's count. A Thorn objective's progress is the
+//! character's durable victory evidence (5.1.37), so a victory won before the quest was taken
+//! counts without another fight.
 
 use std::{error::Error, fmt};
 
 use crate::events::push_event;
 use crate::{
-    AreaId, CreatureTemplateId, EntityRef, ErrorCode, INVENTORY_SLOTS, Inventory, InventoryError,
-    ItemId, NpcId, NpcRole, PlayerId, ZoneContent, ZoneError, ZoneEvent, ZoneSimulation,
-    item_template,
+    AreaId, CreatureTemplateId, DepthsRecord, EntityRef, ErrorCode, INVENTORY_SLOTS, Inventory,
+    InventoryError, ItemId, NpcId, NpcRole, PlayerId, ZoneContent, ZoneError, ZoneEvent,
+    ZoneSimulation, item_template,
 };
 
 /// Quest IDs are `1..=MAX_QUESTS`, so completed quests fit a `u32` mask.
@@ -84,6 +86,10 @@ pub enum QuestObjective {
     /// Swim into `area`, which grants one `item` while the bag holds none (#274); progress
     /// is the bag's count, and the turn-in consumes it.
     Retrieve { item: ItemId, area: AreaId },
+    /// Have beaten Captain Ulric Thorn in a Redbrand Depths run. Progress is the character's
+    /// durable [`DepthsRecord::thorn_defeated`], never stored in the log, so a victory from
+    /// before the quest was accepted satisfies it (5.1.37).
+    DefeatThorn,
 }
 
 impl QuestObjective {
@@ -92,11 +98,14 @@ impl QuestObjective {
     pub const fn required(self) -> u8 {
         match self {
             Self::Kill { count, .. } | Self::Collect { count, .. } => count,
-            Self::Talk { .. } | Self::Explore { .. } | Self::Retrieve { .. } => 1,
+            Self::Talk { .. }
+            | Self::Explore { .. }
+            | Self::Retrieve { .. }
+            | Self::DefeatThorn => 1,
         }
     }
 
-    /// Wire and fingerprint code: 1 kill, 2 collect, 3 talk, 4 explore, 5 retrieve.
+    /// Wire and fingerprint code: 1 kill, 2 collect, 3 talk, 4 explore, 5 retrieve, 6 Thorn.
     #[must_use]
     pub const fn code(self) -> u8 {
         match self {
@@ -105,6 +114,7 @@ impl QuestObjective {
             Self::Talk { .. } => 3,
             Self::Explore { .. } => 4,
             Self::Retrieve { .. } => 5,
+            Self::DefeatThorn => 6,
         }
     }
 
@@ -115,6 +125,13 @@ impl QuestObjective {
             Self::Collect { item, .. } | Self::Retrieve { item, .. } => Some(item),
             _ => None,
         }
+    }
+
+    /// Whether the log's stored count is this objective's progress; otherwise it is read from
+    /// the bag or the character's durable evidence and the log stores zero.
+    #[must_use]
+    pub const fn stores_progress(self) -> bool {
+        self.carried_item().is_none() && !matches!(self, Self::DefeatThorn)
     }
 }
 
@@ -256,6 +273,7 @@ pub(crate) fn validate_quests(
                             .iter()
                             .any(|candidate| candidate.id() == area)
                 }
+                QuestObjective::DefeatThorn => true,
             };
             if !valid {
                 return Err(QuestContentError::InvalidObjective);
@@ -282,8 +300,9 @@ pub(crate) fn validate_quests(
     Ok(quests)
 }
 
-/// One active quest and its stored progress per objective. Collect
-/// objectives store zero: their progress is the bag's count.
+/// One active quest and its stored progress per objective. Collect, retrieve
+/// and Thorn objectives store zero: their progress is the bag's count or the
+/// character's durable victory evidence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct QuestEntry {
     pub quest: QuestId,
@@ -361,22 +380,33 @@ pub struct QuestSheet {
 }
 
 /// Current progress of every objective of `quest` for `entry`.
-fn progress(quest: &Quest, entry: &QuestEntry, bag: &Inventory) -> [u8; MAX_QUEST_OBJECTIVES] {
+fn progress(
+    quest: &Quest,
+    entry: &QuestEntry,
+    bag: &Inventory,
+    depths: DepthsRecord,
+) -> [u8; MAX_QUEST_OBJECTIVES] {
     let mut current = [0; MAX_QUEST_OBJECTIVES];
     for (index, objective) in quest.objectives.iter().enumerate() {
-        current[index] = match objective.carried_item() {
-            Some(item) => {
+        current[index] = match (*objective, objective.carried_item()) {
+            (QuestObjective::DefeatThorn, _) => u8::from(depths.thorn_defeated),
+            (_, Some(item)) => {
                 let count = objective.required();
                 u8::try_from(bag.count(item).min(u32::from(count))).unwrap_or(count)
             }
-            None => entry.progress[index].min(objective.required()),
+            (_, None) => entry.progress[index].min(objective.required()),
         };
     }
     current
 }
 
-pub(crate) fn objectives_done(quest: &Quest, entry: &QuestEntry, bag: &Inventory) -> bool {
-    let current = progress(quest, entry, bag);
+pub(crate) fn objectives_done(
+    quest: &Quest,
+    entry: &QuestEntry,
+    bag: &Inventory,
+    depths: DepthsRecord,
+) -> bool {
+    let current = progress(quest, entry, bag, depths);
     quest
         .objectives
         .iter()
@@ -389,6 +419,7 @@ pub(crate) fn quest_sheet(
     content: &ZoneContent,
     log: &QuestLog,
     bag: &Inventory,
+    depths: DepthsRecord,
     night: bool,
 ) -> QuestSheet {
     let entries = log
@@ -396,15 +427,16 @@ pub(crate) fn quest_sheet(
         .iter()
         .map(|entry| QuestEntry {
             quest: entry.quest,
+            // Carried quests included, so a log read in the depths shows the same progress.
             progress: content
-                .quest(entry.quest)
-                .map_or(entry.progress, |quest| progress(quest, entry, bag)),
+                .log_quest(entry.quest)
+                .map_or(entry.progress, |quest| progress(quest, entry, bag, depths)),
         })
         .collect();
     QuestSheet {
         completed: log.completed,
         entries,
-        markers: markers(content, log, bag, night),
+        markers: markers(content, log, bag, depths, night),
     }
 }
 
@@ -416,6 +448,7 @@ pub(crate) fn markers(
     content: &ZoneContent,
     log: &QuestLog,
     bag: &Inventory,
+    depths: DepthsRecord,
     night: bool,
 ) -> Vec<NpcMarker> {
     let mut npcs: Vec<NpcId> = content
@@ -431,7 +464,7 @@ pub(crate) fn markers(
             for quest in content.quests() {
                 let marker = match log.entry(quest.id) {
                     Some(entry) if quest.ender == npc => {
-                        if objectives_done(quest, entry, bag) {
+                        if objectives_done(quest, entry, bag, depths) {
                             Some(QuestMarker::Complete)
                         } else {
                             Some(QuestMarker::InProgress)
@@ -506,7 +539,7 @@ pub(crate) fn validate_log(content: &ZoneContent, log: &QuestLog) -> Result<(), 
         }
         for (index, &stored) in entry.progress.iter().enumerate() {
             let limit = match quest.objectives.get(index) {
-                Some(objective) if objective.carried_item().is_none() => objective.required(),
+                Some(objective) if objective.stores_progress() => objective.required(),
                 _ => 0,
             };
             if stored > limit {
@@ -698,7 +731,7 @@ impl ZoneSimulation {
             .players
             .get_mut(&player_id)
             .ok_or_else(|| ZoneError::new("quest player is absent"))?;
-        if !objectives_done(definition, &entry, &player.inventory) {
+        if !objectives_done(definition, &entry, &player.inventory, player.depths) {
             return Ok(Some((ErrorCode::QuestIncomplete, target)));
         }
         let grant = crate::RewardKey::QuestCompletion {
@@ -846,6 +879,31 @@ impl ZoneSimulation {
         }
     }
 
+    /// Progress events for Thorn objectives after the character's first victory evidence.
+    pub(crate) fn report_thorn_defeated(&mut self, player_id: PlayerId) {
+        let content = std::sync::Arc::clone(&self.content);
+        let Some(player) = self.players.get_mut(&player_id) else {
+            return;
+        };
+        for entry in &player.quests.entries {
+            let Some(quest) = content.log_quest(entry.quest) else {
+                continue;
+            };
+            for (index, objective) in quest.objectives.iter().enumerate() {
+                if *objective == QuestObjective::DefeatThorn {
+                    push_event(
+                        &mut player.events,
+                        ZoneEvent::QuestProgress {
+                            quest: quest.id,
+                            objective: u8::try_from(index).unwrap_or(u8::MAX),
+                            count: 1,
+                        },
+                    );
+                }
+            }
+        }
+    }
+
     /// Tick step 8: talk and explore objectives of living players, in
     /// player-ID order, against the positions after this tick's movement.
     pub(crate) fn advance_quest_objectives(&mut self) -> Result<(), ZoneError> {
@@ -900,7 +958,8 @@ impl ZoneSimulation {
                         }
                         QuestObjective::Kill { .. }
                         | QuestObjective::Collect { .. }
-                        | QuestObjective::Retrieve { .. } => false,
+                        | QuestObjective::Retrieve { .. }
+                        | QuestObjective::DefeatThorn => false,
                     };
                     if done {
                         reached.push((slot, quest.id, index));

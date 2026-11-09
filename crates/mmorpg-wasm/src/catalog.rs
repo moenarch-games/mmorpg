@@ -60,8 +60,9 @@ pub struct QuestExport {
 
 /// `kind` is `kill` (`target` is a creature template), `collect` (`target`
 /// is an item that creatures of template `source` drop), `talk` (`target`
-/// is an NPC), `explore` (`target` is an area) or `retrieve` (`target` is an
-/// item granted by swimming into area `source`, #274).
+/// is an NPC), `explore` (`target` is an area), `retrieve` (`target` is an
+/// item granted by swimming into area `source`, #274) or `victory` (Captain
+/// Thorn beaten in the Redbrand Depths, `target` is 0, 5.1.37).
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct ObjectiveExport {
     pub kind: &'static str,
@@ -82,6 +83,7 @@ fn objective(objective: mmorpg_core::QuestObjective) -> ObjectiveExport {
         QuestObjective::Retrieve { item, area } => {
             ("retrieve", u32::from(item.get()), Some(area.get()))
         }
+        QuestObjective::DefeatThorn => ("victory", 0, None),
     };
     ObjectiveExport {
         kind,
@@ -400,6 +402,12 @@ mod tests {
                     json!("offHand"),
                     stats(3, 0, 2, 3)
                 ),
+                item(
+                    18,
+                    "Marshal's Commendation Greaves",
+                    json!("feet"),
+                    stats(1, 3, 3, 3)
+                ),
             ])
         );
         let quests = value["quests"].as_array().unwrap();
@@ -434,6 +442,11 @@ mod tests {
             json!([{"kind": "kill", "target": 15, "source": null, "count": 2}])
         );
         assert_eq!(quests[10]["choices"], json!([12, 13, 14]));
+        assert_eq!(
+            quests[11]["objectives"],
+            json!([{"kind": "victory", "target": 0, "source": null, "count": 1}])
+        );
+        assert_eq!(quests[11]["choices"], json!([18]));
         let offer = |item, price| json!({"item": item, "price": price});
         assert_eq!(
             value["vendors"],
