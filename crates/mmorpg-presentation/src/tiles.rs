@@ -710,12 +710,29 @@ fn skirts(
     }
 }
 
+/// One streamed thing for a camera eye (#526): how far it is and how far its levels reach.
+#[derive(Clone, Copy, Debug)]
+pub struct Site {
+    /// XZ distance (metres) from the eye to it.
+    pub distance: f64,
+    /// It wants its near level within this distance (plus hysteresis once wanted).
+    pub near: f64,
+    /// Its near level is built ahead of need within this distance.
+    pub prefetch: f64,
+    /// Its near level is dropped beyond this distance.
+    pub evict: f64,
+    /// Wanted at any distance and never dropped.
+    pub always: bool,
+    /// Built on the first update when wanted, so the first frame has it; the rest stream in.
+    pub essential: bool,
+}
+
 /// Keeps the near levels around the camera resident (#526): `R` is what a client keeps per
 /// resident near level (its lowered draws, or nothing when the renderer keeps them).
 #[derive(Clone, Debug)]
 pub struct Streamer<R> {
     resident: BTreeMap<usize, R>,
-    /// Per tile, whether it wants its near level (with hysteresis).
+    /// Per site, whether it wants its near level (with hysteresis).
     wanted: Vec<bool>,
 }
 
@@ -738,45 +755,65 @@ impl<R> Streamer<R> {
         tiles: &Tiles,
         eye: [f64; 3],
         budget: usize,
+        build: impl FnMut(usize) -> R,
+    ) -> Vec<(usize, R)> {
+        let sites = tiles.tiles.iter().enumerate().map(|(index, tile)| Site {
+            distance: tiles.distance(index, eye),
+            near: NEAR_METRES,
+            prefetch: PREFETCH_METRES,
+            evict: EVICT_METRES,
+            always: tile.always_near,
+            essential: true,
+        });
+        self.stream(sites, budget, build)
+    }
+
+    /// Advances residency over `sites` (one per streamed thing, in a stable order): drops near
+    /// levels past their [`Site::evict`] and builds missing ones within their
+    /// [`Site::prefetch`], wanted ones first, nearest first, at most `budget`. The first update
+    /// also builds every wanted [`Site::essential`] one, so the first frame has them.
+    pub fn stream(
+        &mut self,
+        sites: impl IntoIterator<Item = Site>,
+        budget: usize,
         mut build: impl FnMut(usize) -> R,
     ) -> Vec<(usize, R)> {
-        if self.wanted.len() != tiles.tiles.len() {
-            self.wanted = vec![false; tiles.tiles.len()];
-        }
         let first = self.resident.is_empty();
         let mut evicted = Vec::new();
         let mut missing = Vec::new();
-        for (index, tile) in tiles.tiles.iter().enumerate() {
-            let distance = tiles.distance(index, eye);
-            let reach = NEAR_METRES
+        for (index, site) in sites.into_iter().enumerate() {
+            if index == self.wanted.len() {
+                self.wanted.push(false);
+            }
+            let reach = site.near
                 + if self.wanted[index] {
                     NEAR_HYSTERESIS_METRES
                 } else {
                     0.
                 };
-            self.wanted[index] = tile.always_near || distance <= reach;
-            if !tile.always_near && distance > EVICT_METRES {
+            self.wanted[index] = site.always || site.distance <= reach;
+            if !site.always && site.distance > site.evict {
                 if let Some(value) = self.resident.remove(&index) {
                     evicted.push((index, value));
                 }
             } else if !self.resident.contains_key(&index)
-                && (tile.always_near || distance <= PREFETCH_METRES)
+                && (site.always || site.distance <= site.prefetch)
             {
                 let urgent = self.wanted[index];
-                missing.push((!urgent, distance, index));
+                missing.push((!urgent, site.distance, site.essential, index));
             }
         }
         missing.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
         let limit = if first {
             missing
                 .iter()
-                .filter(|(later, ..)| !later)
+                .filter(|&&(later, _, essential, _)| !later && essential)
                 .count()
                 .max(budget)
         } else {
             budget
         };
-        for &(_, _, index) in missing.iter().take(limit) {
+        for &(_, _, _, index) in missing.iter().take(limit) {
             self.resident.insert(index, build(index));
         }
         evicted

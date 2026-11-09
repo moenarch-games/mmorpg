@@ -41,7 +41,7 @@ pub mod settlement_props;
 pub mod shrine;
 
 use std::collections::BTreeMap;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use strum::{IntoEnumIterator, VariantArray};
 
@@ -444,6 +444,32 @@ impl TerrainGrid {
     }
 }
 
+/// Terrain grids already derived from a [`Scenery`] (#526): deriving one walks every road and
+/// patch, and a client asks for the same grid many times while building its static scene. A
+/// copy starts empty, because its fields may be edited before it is asked for a grid.
+#[derive(Default)]
+struct DerivedGrids(Mutex<BTreeMap<(bool, i32), Arc<TerrainGrid>>>);
+
+impl Clone for DerivedGrids {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl PartialEq for DerivedGrids {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for DerivedGrids {}
+
+impl std::fmt::Debug for DerivedGrids {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("DerivedGrids")
+    }
+}
+
 /// Deterministic presentation scenery for one content revision.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Scenery {
@@ -470,6 +496,7 @@ pub struct Scenery {
     /// Whether this is Greyhaven Vale's scenery (#145): only it has the authored kits'
     /// buildings (the Outpost kit, the Sunken Shrine, the walk-in buildings).
     greyhaven: bool,
+    derived: DerivedGrids,
 }
 
 /// The visual of a Greyhaven Vale collider, or `None` for the ground and
@@ -880,6 +907,7 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
         rocks: content.rocks().to_vec(),
         authored_outpost_relief: false,
         greyhaven: true,
+        derived: DerivedGrids::default(),
     };
     // The market square's proxies (#577) keep the scatter off it like the structures.
     let market = definition
@@ -922,6 +950,7 @@ impl Scenery {
             rocks: Vec::new(),
             authored_outpost_relief: false,
             greyhaven: false,
+            derived: DerivedGrids::default(),
         }
     }
 
@@ -1051,16 +1080,42 @@ impl Scenery {
     /// Heights and biome colours over [`TERRAIN_BOUNDS`] every `step_units` (at least one
     /// unit).
     #[must_use]
-    pub fn terrain_grid(&self, step_units: i32) -> TerrainGrid {
-        self.grid_over(TERRAIN_BOUNDS, step_units)
+    pub fn terrain_grid(&self, step_units: i32) -> Arc<TerrainGrid> {
+        self.derived_grid(false, TERRAIN_BOUNDS, step_units)
     }
 
     /// The same relief and biomes over [`FAR_TERRAIN_BOUNDS`], for a coarse far ring around
     /// the terrain grid. Inside [`TERRAIN_BOUNDS`] its samples equal
     /// [`Scenery::terrain_grid`]'s at the same positions.
     #[must_use]
-    pub fn far_terrain_grid(&self, step_units: i32) -> TerrainGrid {
-        self.grid_over(FAR_TERRAIN_BOUNDS, step_units)
+    pub fn far_terrain_grid(&self, step_units: i32) -> Arc<TerrainGrid> {
+        self.derived_grid(true, FAR_TERRAIN_BOUNDS, step_units)
+    }
+
+    /// The grid over `bounds`, derived once per [`Scenery`] value and step.
+    fn derived_grid(&self, far: bool, bounds: XzBounds, step_units: i32) -> Arc<TerrainGrid> {
+        let mut grids = self
+            .derived
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Arc::clone(
+            grids
+                .entry((far, step_units))
+                .or_insert_with(|| Arc::new(self.grid_over(bounds, step_units))),
+        )
+    }
+
+    /// Supplies the grid `(far, step_units)` a client has derived before (#526): later requests
+    /// for it reuse this value instead of deriving it again. The client is responsible for
+    /// handing back exactly what [`Self::terrain_grid`] or [`Self::far_terrain_grid`] produced
+    /// for this content.
+    pub fn seed_grid(&self, far: bool, step_units: i32, grid: TerrainGrid) {
+        self.derived
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert((far, step_units), Arc::new(grid));
     }
 
     fn grid_over(&self, bounds: XzBounds, step_units: i32) -> TerrainGrid {

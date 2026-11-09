@@ -378,6 +378,69 @@ impl TerrainStream {
     }
 }
 
+/// The static groups (#526, indexed as the layout's `groups`) for one page renderer: the
+/// renderer builds the groups this stream says are resident and drops the rest.
+#[wasm_bindgen]
+pub struct GroupStream {
+    arena: bool,
+    streamer: Streamer<()>,
+}
+
+#[wasm_bindgen]
+impl GroupStream {
+    /// A stream over the hosted zone's groups, or the Battle Royale arena's (#552).
+    #[must_use]
+    pub(crate) fn new(arena: bool) -> Self {
+        Self {
+            arena,
+            streamer: Streamer::default(),
+        }
+    }
+
+    /// Advances residency for the camera eye (metres) and the kits the client draws (a
+    /// drawn kit's fallback groups are not resident): the groups the renderer builds now and
+    /// those it drops, `[built count, built…, evicted count, evicted…]`. `dressed` are the
+    /// graybox props a drawn composition kit dresses, sorted.
+    #[must_use]
+    pub fn update(
+        &mut self,
+        x: f64,
+        y: f64,
+        z: f64,
+        outpost: bool,
+        settlement_props: bool,
+        nature: bool,
+        climbing: bool,
+        dressed: &[usize],
+    ) -> Vec<u32> {
+        let scene = if self.arena {
+            crate::arena_presentation::scene()
+        } else {
+            hosted_static_scene()
+        };
+        let eye = [x as f32, y as f32, z as f32];
+        let kits = mmorpg_presentation::Kits {
+            outpost,
+            settlement_props,
+            dressed,
+            nature,
+            climbing,
+        };
+        let mut built = Vec::new();
+        let evicted = self.streamer.stream(
+            scene.groups.iter().map(|group| group.site(eye, kits)),
+            mmorpg_presentation::GROUP_BUILDS_PER_FRAME,
+            |index| built.push(index),
+        );
+        let mut out = Vec::with_capacity(2 + built.len() + evicted.len());
+        out.push(built.len() as u32);
+        out.extend(built.iter().map(|&index| index as u32));
+        out.push(evicted.len() as u32);
+        out.extend(evicted.iter().map(|&(index, ())| index as u32));
+        out
+    }
+}
+
 /// Ground draws as one float array: the draw count, then per draw its layer
 /// (`mmorpg_presentation::ground::Layer` order), overlay and far flags (0 or 1), vertex and index
 /// counts, then positions and normals (three floats per vertex), sRGB colours (three), texture
