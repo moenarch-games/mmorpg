@@ -37,11 +37,15 @@ pub const LIMESTONE_ROCKS: [(&str, [f64; 3]); 3] = [
     ("limestone-rocks.kit.block-2", [1.4, 1.4, 1.1]),
     ("limestone-rocks.kit.block-3", [0.95, 0.9, 0.8]),
 ];
-/// The entries the limestone kit draws.
-pub const LIMESTONE_ENTRIES: [&str; 3] = [
+/// The entries the limestone kit draws: the rocks' blocks and the brook sink's larger pieces
+/// ([`crate::river`]).
+pub const LIMESTONE_ENTRIES: [&str; 6] = [
     LIMESTONE_ROCKS[0].0,
     LIMESTONE_ROCKS[1].0,
     LIMESTONE_ROCKS[2].0,
+    "limestone-rocks.kit.outcrop-1",
+    "limestone-rocks.kit.outcrop-2",
+    "limestone-rocks.kit.ledge",
 ];
 /// The bundle's entries, sorted.
 pub const ENTRIES: [&str; 8] = [

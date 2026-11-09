@@ -27,6 +27,8 @@ pub const RAILS: [u32; 2] = [681, 682];
 pub const CULVERT_POST: u32 = 683;
 pub const CULVERT_TOP: u32 = 684;
 pub const DRAIN_STONES: [u32; 3] = [685, 686, 687];
+/// The rock the brook sinks under: the end of the watercourse for the player.
+pub const SINK_ROCK: u32 = 690;
 
 #[must_use]
 pub fn channel() -> WaterChannel {
@@ -93,7 +95,15 @@ fn distance(points: &[[i32; 2]], x: i32, z: i32) -> i32 {
 /// Clear scenery relief and trunk placement from the authored water banks too.
 #[must_use]
 pub fn wet_ground(x: i32, z: i32) -> bool {
-    bed_depth(x, z) > 0 || upper_distance(x, z) < 650 || super::lake::near_shore(x, z, 250)
+    bed_depth(x, z) > 0
+        || upper_distance(x, z) < 650
+        || super::lake::near_shore(x, z, 250)
+        || under_sink(x, z)
+}
+
+/// The ground under the rock the brook sinks beneath, which stays level and free of scatter.
+fn under_sink(x: i32, z: i32) -> bool {
+    (-1540..=-220).contains(&x) && (8060..=8750).contains(&z)
 }
 
 fn upper_distance(x: i32, z: i32) -> i32 {
@@ -173,6 +183,11 @@ pub fn colliders() -> Vec<StaticCollider> {
             id: DRAIN_STONES[2],
             position: [-800, 125, 8780],
             half_extents: [150, 25, 80],
+        },
+        StaticCollider {
+            id: SINK_ROCK,
+            position: [-880, 225, 8405],
+            half_extents: [600, 225, 285],
         },
     ]
 }

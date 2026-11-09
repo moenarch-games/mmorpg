@@ -234,6 +234,10 @@ fn main() {
         "limestone-rocks-descriptor",
         "limestone_descriptor.rs",
     );
+    // The stones along Greyhaven's brook (asset-tooling#538), and their descriptor.
+    let river = manifest_dir.join("../../web/public/scenery/river-stones.kit");
+    static_bundle("river_bundle.rs", &river, None, true);
+    descriptor(&river, "river-stones-descriptor", "river_descriptor.rs");
     // Greyhaven's ground layer materials (#525).
     let terrain = manifest_dir.join("../../web/public/scenery/greyhaven.terrain");
     static_bundle("terrain_bundle.rs", &terrain, None, false);
