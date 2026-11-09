@@ -322,7 +322,7 @@ impl ZoneSimulation {
         // (along the facing, XZ length, squared distance, unit) of the best so far.
         let mut best: Option<(i64, i64, i64, EntityRef)> = None;
         // Ranged abilities need a sight line to every unit, melee ones to players (as before).
-        for entity in self.facing_coverage(player_id, facing, reach, half_width, !melee)? {
+        for entity in self.facing_coverage(player_id, facing, reach, half_width, melee)? {
             let at = self.unit_position(entity)?;
             let (dx, dz) = (i64::from(at[0] - origin[0]), i64::from(at[2] - origin[2]));
             let along = dx * i64::from(dir_x) + dz * i64::from(dir_z);

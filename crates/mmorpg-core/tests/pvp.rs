@@ -169,6 +169,101 @@ fn an_arena_weapon_hit_respects_the_existing_raised_shield() {
     )));
 }
 
+fn flat_arena() -> Arc<ZoneContent> {
+    Arc::new(
+        ZoneContent::new(
+            support::arena::ground(),
+            mmorpg_core::ZoneAreas::default(),
+            vec![],
+            vec![],
+            vec![],
+            [0, 0],
+        )
+        .unwrap()
+        .with_creature_abilities(vec![])
+        .unwrap()
+        .with_player_combat(PlayerCombatPolicy::FreeForAll),
+    )
+}
+
+/// Two opposing Wardens a metre apart, each lifted `lifts` units into the open air.
+fn lifted_opponents(lifts: [i32; 2]) -> ZoneSimulation {
+    let content = flat_arena();
+    let mut state = two_classes_on(Arc::clone(&content), [0, 0])
+        .snapshot()
+        .unwrap();
+    for (player, lift) in state.players.iter_mut().zip(lifts) {
+        let [x, y, z] = mmorpg_core::physics::to_units(player.position);
+        player.position = mmorpg_core::physics::from_units([x, y + lift, z]);
+    }
+    ZoneSimulation::from_snapshot(state, content).unwrap()
+}
+
+#[test]
+fn a_swing_only_covers_bodies_inside_its_height_band() {
+    use mmorpg_core::{EntityRef, ZoneCommand, ZoneEvent};
+    for (lifts, covered) in [
+        ([0, 0], true),
+        ([500, 500], true),
+        // The victim's feet against the top of the band, 200 above the swinger's.
+        ([0, 190], true),
+        ([0, 230], false),
+        ([0, 800], false),
+        // The victim's head against the bottom of the band, 100 below the swinger's feet.
+        ([270, 0], true),
+        ([300, 0], false),
+    ] {
+        let mut zone = lifted_opponents(lifts);
+        zone.apply_command(1, 2, ZoneCommand::Swing { facing: 16_384 })
+            .unwrap();
+        zone.advance_tick().unwrap();
+        let reached = zone
+            .snapshot_for_player(1)
+            .unwrap()
+            .events
+            .iter()
+            .any(|event| {
+                matches!(
+                    event,
+                    ZoneEvent::AttackPerformed {
+                        target: Some(EntityRef::Player(2)),
+                        ..
+                    }
+                )
+            });
+        assert_eq!(reached, covered, "lifts {lifts:?}");
+    }
+}
+
+#[test]
+fn an_aimed_melee_ability_finds_nobody_above_its_height_band() {
+    use mmorpg_core::{ErrorCode, ZoneCommand, ZoneEvent};
+    let mut zone = lifted_opponents([0, 800]);
+    zone.apply_command(
+        1,
+        2,
+        ZoneCommand::UseAbility {
+            ability: 1,
+            target: None,
+        },
+    )
+    .unwrap();
+    zone.advance_tick().unwrap();
+    assert!(
+        zone.snapshot_for_player(1)
+            .unwrap()
+            .events
+            .iter()
+            .any(|event| matches!(
+                event,
+                ZoneEvent::Error {
+                    code: ErrorCode::NoTarget,
+                    ..
+                }
+            ))
+    );
+}
+
 #[test]
 fn arena_swings_use_the_existing_swing_clock() {
     use mmorpg_core::{EntityRef, ZoneCommand};
