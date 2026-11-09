@@ -31,6 +31,8 @@ jobs:
       settings_only: ${{ steps.detect.outputs.settings_only }}
       full_validation: ${{ steps.detect.outputs.full_validation }}
       browser_evidence: ${{ steps.detect.outputs.browser_evidence }}
+      asset_cache_key: ${{ steps.assets.outputs.key }}
+      asset_cache_paths: ${{ steps.assets.outputs.paths }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -109,6 +111,12 @@ jobs:
           fi
           printf 'settings_only=%s\n' "$settings_only" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve the asset cache identity
+        id: assets
+        if: github.event_name == 'push' || steps.detect.outputs.rust_changed == 'true' || steps.detect.outputs.full_validation == 'true'
+        shell: bash
+        run: scripts/ci-asset-cache.sh
+
       - id: pages-scope
         name: Preserve browser validation scope
         shell: python
@@ -175,13 +183,14 @@ jobs:
       packages: read
     uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@2ec8d067031d4e9d093701f23a00b0ddcaef42d8
     with:
-      bun_version: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'latest' || '' }}
+      # Bun comes from scripts/ci-install-bun.sh, which retries; the reusable job's setup step cannot.
+      bun_version: ""
       node_version: ""
-      install_command: ${{ needs.scope.outputs.full_validation == 'true' && 'cd web && bun install --frozen-lockfile' || '' }}
+      install_command: ${{ needs.scope.outputs.full_validation == 'true' && 'scripts/ci-install-bun.sh && export PATH="$HOME/.bun/bin:$PATH" && cd web && bun install --frozen-lockfile' || (needs.scope.outputs.rust_changed == 'true' && 'scripts/ci-install-bun.sh' || '') }}
       cache_bun: false
       # Once per job: libudev headers, the asset bundles and cargo-nextest (tests run per process, in parallel).
       apt_packages: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'libudev-dev libasound2-dev' || '' }}
-      pre_validate_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.settings_only == 'true' && 'scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh' || 'scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh && curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"') || '' }}
+      pre_validate_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.settings_only == 'true' && 'scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh' || 'scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh && scripts/ci-install-nextest.sh') || '' }}
       cache_cargo: ${{ needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true' }}
       format_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'cargo fmt --all -- --check' || '' }}
       lint_command: ${{ needs.scope.outputs.full_validation == 'true' && 'cargo clippy --workspace --all-targets --all-features --locked -- -D warnings && (cd web && bunx --no-install tsc --noEmit -p tsconfig.assets.json)' || '' }}
@@ -203,9 +212,9 @@ jobs:
       packages: read
     uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@2ec8d067031d4e9d093701f23a00b0ddcaef42d8
     with:
-      bun_version: latest
+      bun_version: ""
       node_version: ""
-      install_command: ""
+      install_command: scripts/ci-install-bun.sh
       cache_bun: false
       apt_packages: libudev-dev libasound2-dev
       pre_validate_command: scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh
@@ -214,6 +223,30 @@ jobs:
       artifact_name_suffix: -clippy
       # The default group is shared with `rust` in this run and would cancel it.
       concurrency_group: ${{ github.workflow }}-${{ github.ref }}-clippy
+
+  seed-asset-cache:
+    # Pull-request and merge-queue caches are scoped to their own ref; only main's cache reaches
+    # every run. Not part of merge-ready: a run that misses the cache still fetches the bundles.
+    needs: scope
+    if: github.event_name == 'push' && needs.scope.outputs.asset_cache_key != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Restore the asset bundles
+        id: restore
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ needs.scope.outputs.asset_cache_paths }}
+          key: ${{ needs.scope.outputs.asset_cache_key }}
+          restore-keys: mmorpg-assets-
+      - name: Fetch the releases that moved
+        if: steps.restore.outputs.cache-hit != 'true'
+        run: scripts/fetch-bundles.sh
 
   pages-validation:
     needs: scope
