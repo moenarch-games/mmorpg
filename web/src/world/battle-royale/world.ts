@@ -48,6 +48,7 @@ function arenaScenery(local: LocalWorld, presentation: ArenaPresentation): Scene
       staticSceneShown: (viewer, _outpost, _settlement, fortress) => presentation.staticSceneShown(viewer, fortress),
       surfaceY: () => 0,
       terrainStream: () => presentation.terrainStream(),
+      groupStream: () => presentation.groupStream(),
     },
     fortress: {
       bundle: FORTRESS_BUNDLE,
@@ -57,6 +58,7 @@ function arenaScenery(local: LocalWorld, presentation: ArenaPresentation): Scene
       place: (platform, x, y, z) => presentation.kitPlace(platform, x, y, z),
       update: (x, y, z, fovY, clipFromWorld, seconds, bias, fade) => presentation.kitUpdate(x, y, z, fovY, clipFromWorld, seconds, bias, fade),
     },
+    dressedProps: () => Uint32Array.from(presentation.dressedProps()),
     unitPresenter: (player) => UnitPresenter.forArena(player),
     buildings: { presenters: () => [], reachableDoor: () => 0 },
     shrine: { entries: [], placements: [] },

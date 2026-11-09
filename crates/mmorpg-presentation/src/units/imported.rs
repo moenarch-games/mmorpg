@@ -1617,7 +1617,8 @@ impl Kind {
     }
 
     /// The draw the local player's wind-up of `ability` shows instead of the aim (#607): Aimed
-    /// Shot's and Piercing Shot's power draw, held at its end until the zone answers.
+    /// Shot's and Piercing Shot's power draw, held at its end until the key's release sends the
+    /// shot and the zone answers.
     #[must_use]
     pub fn power_draw(self, ability: AbilityId) -> Option<&'static str> {
         use mmorpg_core::ability::ids;

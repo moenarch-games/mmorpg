@@ -1,4 +1,5 @@
 import * as generated from "../generated/mmorpg-wasm/mmorpg_wasm.js";
+import { fetchRelease, readDerived, writeDerived } from "../asset-cache/derived";
 import { loadWasm } from "../wasm";
 import { LocalCharacters } from "./local-characters";
 import { createLocalWorld, type LocalWorld } from "./local-world";
@@ -9,6 +10,9 @@ import type { ActionGraph, LabOptions, LabSetup } from "./action-lab";
 import type { ConfigCheck, LabComparison, LabConfig, LabNetwork, LabRun, LabScenario } from "./lab-experiment";
 import type { ZoneWorld } from "./world-source";
 
+/** The derived-cache name of the presented scenery's terrain grids. */
+const TERRAIN_GRIDS = "terrain-grids";
+
 /**
  * Fetches and instantiates the generated `mmorpg-wasm` module, then builds the
  * local world over this browser's character storage.
@@ -17,8 +21,15 @@ export async function loadLocalWorld(characters: LocalCharacters): Promise<Local
   markStartup("wasm-fetch");
   await loadWasm();
   markStartup("wasm-ready");
+  // The terrain grids are the slowest pure derivation of the presented scenery; a later visit reuses them per release
+  // (#526). Without a manifest or storage, or on a stale or damaged entry, the module derives them.
+  const release = await fetchRelease(import.meta.env.BASE_URL);
+  const storage = typeof caches === "undefined" ? undefined : caches;
+  const cached = release ? await readDerived(storage, location.origin, release, TERRAIN_GRIDS) : null;
+  const seeded = cached !== null && generated.seedTerrainGrids(cached);
   const world = createLocalWorld(generated, characters);
   markStartup("world-created");
+  if (release && !seeded) { void writeDerived(storage, location.origin, release, TERRAIN_GRIDS, generated.terrainGridCache()); }
   return world;
 }
 

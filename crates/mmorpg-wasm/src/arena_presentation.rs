@@ -421,6 +421,20 @@ impl ArenaPresentation {
     pub fn terrain_stream(&self) -> crate::static_scene::TerrainStream {
         crate::static_scene::TerrainStream::new(true)
     }
+    /// A fresh stream of the arena's static groups (#526) for one renderer.
+    #[wasm_bindgen(js_name = groupStream)]
+    #[must_use]
+    pub fn group_stream(&self) -> crate::static_scene::GroupStream {
+        crate::static_scene::GroupStream::new(true)
+    }
+    /// The graybox props the drawn fortress kit dresses, sorted (for [`GroupStream`]'s kits).
+    ///
+    /// [`GroupStream`]: crate::static_scene::GroupStream
+    #[wasm_bindgen(js_name = dressedProps)]
+    #[must_use]
+    pub fn dressed_props(&self) -> Vec<usize> {
+        self.dressed.clone()
+    }
 }
 
 #[cfg(test)]

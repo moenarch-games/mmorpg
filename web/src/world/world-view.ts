@@ -50,7 +50,8 @@ import { SharedUnits, type AnimationBlend, type ImportedModelKind, type Loadout,
 
 import { BagsPanel, type BagsElements } from "./units/bags-panel";
 import { CharacterPane, type CharacterElements } from "./units/character-pane";
-import { useAbilitySlot } from "./units/abilities";
+import { abilitySlots, useAbilitySlot } from "./units/abilities";
+import { PowerDrawInput } from "./units/power-draw";
 import { DirectedStrikeAim, HEROIC_STRIKE_ABILITY, canStrikeDirected, directedStrikeCommand } from "./units/directed-strike";
 import { ShieldGuardHold, canGuard, guardCommand } from "./units/shield-guard";
 import { ClassHud } from "./units/class-hud";
@@ -204,6 +205,8 @@ function obstructed(boxes: readonly Box[], target: Vec3, eye: Vec3): boolean {
 
 /** `padGuard` is the lane a pad holding the guard trigger aims, or `null` (#156); `rolls` counts dodge-roll presses (#516) like `jumps`. */
 export type WorldInput = { held: HeldIntent; jumps: number; rolls?: number; padGuard?: StrikeHeight | null };
+
+const NO_DRESSED = new Uint32Array();
 
 /** Areas within this distance of the player (60 m) have their art fetched ahead of arrival. */
 const STREAM_RADIUS_UNITS = 6_000;
@@ -434,11 +437,24 @@ export class WorldView {
   #presentationFingerprint: string | null = null;
   #reliefAt: ((x: number, z: number) => number) | null = null;
   #minimap: Minimap | null = null;
+  #minimapPending = false;
+  /** The world `load` last readied, so re-selecting it (`refreshArenaWorld`) rebuilds nothing. */
+  #loadedScenery: ZoneWorld["scenery"] | null = null;
+  #loadedArena = false;
   #buildMs = 0;
   #orbit = new OrbitCamera();
   #cameraMode: CameraMode = { kind: "free-look" };
   #pointerOwner: PointerOwner = "interface";
   #lastPointerRelease = -Infinity;
+  /** A held Aimed or Piercing Shot draw (#607): shown locally, sent on the key's release. */
+  readonly #powerDraw = new PowerDrawInput({
+    prepare: (ability) => this.#units?.units.prepare(ability, this.#seconds),
+    abandon: () => this.#units?.units.abandonPreparation(),
+    send: (ability) => this.queueIntent(
+      () => ({ kind: "use-ability", ability, target: null }),
+      () => this.#units?.units.preparedSent(this.#seconds),
+    ),
+  });
   #drag: Drag | null = null;
   /** Fingers on the canvas, and the spread of a two-finger pinch zoom in progress (#434). */
   readonly #touches = new Map<number, { x: number; y: number }>();
@@ -490,6 +506,7 @@ export class WorldView {
     this.#sky = new SkyLayer(elements.sky, ENVIRONMENT);
     this.#combatHud = new CombatHud(elements.unitStatus, elements.combatFeedback);
     this.#classHud = new ClassHud(elements.classHud, {
+      // A click on the bar has no release to wait for: it fires at once, power shots too (#607).
       onUse: (slot) => this.useSlot(slot),
     });
     this.#progressionHud = new ProgressionHud(elements.experienceBar, elements.experienceStatus, elements.progressionFeedback);
@@ -572,8 +589,17 @@ export class WorldView {
     }
   }
 
-  /** Builds the static scene and the minimap image once per loaded world. */
+  /**
+   * Readies the loaded world's panels and region art. Its static scene (#526) is built by [`buildStatic`], from idle
+   * time or the first frame, so entering a world never waits for the whole scene.
+   */
   load(world: ZoneWorld): void {
+    const arena = world.arena ?? false;
+    if (this.#loadedScenery === world.scenery && this.#loadedArena === arena) {
+      return; // Re-selecting the same world (`refreshArenaWorld`) must not rebuild it.
+    }
+    this.#loadedScenery = world.scenery;
+    this.#loadedArena = arena;
     this.#picking.reset();
     const started = performance.now();
     this.#catalog = world.catalog;
@@ -588,10 +614,13 @@ export class WorldView {
     this.#areas = scenery.areas;
     this.#presentationFingerprint = scenery.presentationFingerprint;
     this.#reliefAt = world.scenery.reliefAt;
-    this.#scene = buildSceneryScene(scenery, world.scenery.staticScene);
+    this.#scene = null;
+    this.#sceneryFrame = null;
+    this.#ground = null;
     this.#sceneryBatches?.dispose();
-    this.#sceneryBatches = new BatchedScenery(this.#scene);
-    this.#sceneryBatchesChanged = true;
+    this.#sceneryBatches = null;
+    this.#minimap = null;
+    this.#minimapPending = false;
     this.#nature = new PlacedKit(world.scenery.nature);
     void this.#nature.load();
     this.#climbing = new PlacedKit(world.scenery.climbing);
@@ -600,8 +629,6 @@ export class WorldView {
     void this.#limestone.load();
     this.#river = new PlacedKit(world.scenery.river);
     void this.#river.load();
-    this.#ground = new Ground(world.scenery.staticScene.terrainStream(), this.#scene.surfaces, this.#scene.cutaways);
-    void this.#ground.load(this.#models.ktx2Loader);
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
     this.#inn = new WalkInBuildings(world.scenery.buildings.presenters());
     this.#shrine = new KitModules(SHRINE_BUNDLE, "shrine kit", world.scenery.shrine.entries, world.scenery.shrine.placements);
@@ -625,10 +652,42 @@ export class WorldView {
     this.#raidRoof = null;
     this.#waystone.load(world.scenery.waystoneAt, world.scenery.waystones);
     this.#units = null;
-    this.#sceneryFrame = new SceneryFrame(this.#scene);
-    this.#minimap = new Minimap(this.#elements.minimap, buildMinimapLayers(scenery, ENVIRONMENT));
     this.#occluders = occluders(world);
     this.#buildMs = performance.now() - started;
+    // The static scene waits for idle time so the picker paints first; entering sooner builds it in the first frame.
+    const prewarmed = world.scenery;
+    const prewarm = () => {
+      if (this.#loadedScenery === prewarmed && !this.#scene) { this.#buildStatic(world); }
+    };
+    if (typeof requestIdleCallback === "function") { requestIdleCallback(prewarm, { timeout: 2_000 }); } else { setTimeout(prewarm, 0); }
+  }
+
+  /**
+   * Decodes the static scene and places its always-resident parts (#526): far terrain, animated parts and the batches
+   * the groups stream into. Nothing far is decoded or uploaded here; [`BatchedScenery`] streams groups from the first frame.
+   */
+  #buildStatic(world: ZoneWorld): void {
+    const scene = buildSceneryScene(world.scenery.scenery, world.scenery.staticScene);
+    this.#scene = scene;
+    this.#sceneryFrame = new SceneryFrame(scene);
+    this.#sceneryBatches?.dispose();
+    this.#sceneryBatches = new BatchedScenery(scene, world.scenery.staticScene.groupStream());
+    this.#sceneryBatchesChanged = true;
+    this.#ground = new Ground(world.scenery.staticScene.terrainStream(), scene.surfaces, scene.cutaways);
+    void this.#ground.load(this.#models.ktx2Loader);
+  }
+
+  /** Builds the minimap image once the world is drawing; only the HUD waits for it. */
+  #scheduleMinimap(scenery: ZoneWorld["scenery"]["scenery"]): void {
+    if (this.#minimap || this.#minimapPending) { return; }
+    this.#minimapPending = true;
+    const build = () => {
+      if (this.#loadedScenery?.scenery === scenery && !this.#minimap) {
+        this.#minimap = new Minimap(this.#elements.minimap, buildMinimapLayers(scenery, ENVIRONMENT));
+      }
+      this.#minimapPending = false;
+    };
+    if (typeof requestIdleCallback === "function") { requestIdleCallback(build, { timeout: 4_000 }); } else { setTimeout(build, 500); }
   }
 
   /** The directed-strike action's working binding labels, for the Heroic Strike slot hint. */
@@ -644,6 +703,7 @@ export class WorldView {
     }
     // The most recent press owns the pointer gesture (Atlas 5.2.37): the sword lowers a held guard.
     this.endGuard();
+    this.#powerDraw.cancel();
     this.#strikeAim.begin();
     this.#releasePointerLock();
     this.#updatePointerOwner();
@@ -694,12 +754,40 @@ export class WorldView {
     if (!this.#lastProjection || this.#lastProjection.viewer.dead) {
       return;
     }
+    this.#powerDraw.cancel();
     this.queueIntent(() => ({ kind: "swing", facing: this.#movementFacing }));
   }
 
-  /** Uses action-bar slot `slot` (1–10); the viewer winds up at once while the zone decides. */
+  /** Uses action-bar slot `slot` (1–20); the viewer winds up at once while the zone decides. */
   useSlot(slot: number): void {
+    this.#powerDraw.cancel();
     this.#queuePrepared((projection) => (this.#catalog ? useAbilitySlot(slot, projection, this.#catalog) : null));
+  }
+
+  /**
+   * A held input (a key, pad button or touch face) pressed `slot`: a power shot draws and waits for
+   * the release (#607, whichever slot holds it); anything else is used at once. An empty slot does
+   * nothing.
+   */
+  pressSlot(slot: number): void {
+    const projection = this.#lastProjection;
+    const ability = projection && this.#catalog ? abilitySlots(projection, this.#catalog)[slot - 1] : undefined;
+    if (!projection || !ability) {
+      return;
+    }
+    if (!this.#powerDraw.press(slot, ability.id, projection, this.panelOpen)) {
+      this.useSlot(slot);
+    }
+  }
+
+  /** `slot`'s held input went up; a deliberate release sends the drawn shot once. */
+  releaseSlot(slot: number, retired: boolean): void {
+    this.#powerDraw.release(slot, retired);
+  }
+
+  /** Escape drops a held draw before any other meaning; `true` if it did. */
+  cancelPowerDraw(): boolean {
+    return this.#powerDraw.cancel();
   }
 
   /**
@@ -732,6 +820,7 @@ export class WorldView {
       return;
     }
     this.cancelDirectedStrike();
+    this.#powerDraw.cancel();
     this.#guardHold.begin();
     this.#releasePointerLock();
     this.#updatePointerOwner();
@@ -1112,6 +1201,7 @@ export class WorldView {
 
   /** One frame: intent out, ticks, projection in, scene drawn. Throws when the projection lacks the viewer. */
   frame(world: ZoneWorld, input: WorldInput, look: ViewerLook, deltaSeconds: number, now: number): void {
+    if (!this.#scene) { this.#buildStatic(world); }
     const scene = this.#scene;
     const sceneryFrame = this.#sceneryFrame;
     if (!scene || !sceneryFrame) {
@@ -1159,6 +1249,7 @@ export class WorldView {
       throw new Error("The world source has no projection for the joined player.");
     }
     this.#lastProjection = projection;
+    this.#powerDraw.observe(projection, this.panelOpen);
     this.#syncCameraMode(projection);
     // Death already lowered the guard in the zone; a later life needs a new press.
     if (projection.viewer.dead) {
@@ -1289,7 +1380,10 @@ export class WorldView {
       this.#sound.pump();
     }
     const outpostReady = (this.#outpost?.drawn ?? false) && (this.#fortifications?.drawn ?? false);
-    const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits: { outpost: outpostReady, settlementProps: this.#settlement?.drawn ?? false, nature: this.#nature?.drawn ?? false, climbing: this.#climbing?.drawn ?? false, fortress: this.#fortress?.drawn ?? false } });
+    const kits = { outpost: outpostReady, settlementProps: this.#settlement?.drawn ?? false, nature: this.#nature?.drawn ?? false, climbing: this.#climbing?.drawn ?? false, fortress: this.#fortress?.drawn ?? false };
+    const batches = this.#sceneryBatches;
+    if (batches) { batches.stream(view.eye, { ...kits, dressed: this.#fortress?.drawn ? world.scenery.dressedProps?.() ?? NO_DRESSED : NO_DRESSED }); }
+    const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits, resident: batches ? (group) => batches.resident(group) : () => true });
     // A map view's eye is high only to clear the terrain: its ground streams as if standing on it.
     this.#ground?.update(this.#plan ? [view.eye[0], 0, view.eye[2]] : view.eye, frame.shown);
     this.#nature?.update(this.#camera, deltaSeconds, animate);
@@ -1382,6 +1476,7 @@ export class WorldView {
         created: { objects: work.objectCreateCount, geometries: work.geometryCreateCount, materials: work.materialCreateCount, instanceUploads: work.instanceUploadCount },
       });
     }
+    this.#scheduleMinimap(scenery.scenery);
     this.#quests.placeMarkers(this.#markerPoints(anchors, projection));
     // The atmosphere draws the sky (#600); the CSS sky remains only where the browser cannot draw it.
     const cssSky = !this.#lighting.drawsSky;
@@ -1485,7 +1580,8 @@ export class WorldView {
     // A click or drag supersedes an aimed strike that has not been released.
     const wasAiming = this.#strikeAim.active;
     this.cancelDirectedStrike();
-    if (wasAiming) { return; } // Cancellation is never also a sword attack.
+    const wasDrawing = this.#powerDraw.cancel();
+    if (wasAiming || wasDrawing) { return; } // Cancellation is never also a sword attack.
     if (event.pointerType === "touch") {
       // A finger supersedes mouse capture; existing touch drag/pinch stays authoritative.
       this.#releasePointerLock();
@@ -1541,6 +1637,7 @@ export class WorldView {
   /** Losing focus retires the gesture without selecting. */
   cancelPointer(): void {
     this.cancelDirectedStrike();
+    this.#powerDraw.cancel();
     this.endGuard();
     this.#endDrag();
     this.#releasePointerLock();
@@ -1551,6 +1648,8 @@ export class WorldView {
   pointerLockChanged(): void {
     if (this.#pointerOwner === "camera" && document.pointerLockElement !== this.#elements.canvas) {
       this.#lastPointerRelease = performance.now();
+      // Some browsers consume the unlocking Escape; the draw still drops (#607).
+      this.#powerDraw.cancel();
     }
     this.#updatePointerOwner();
   }
@@ -1839,6 +1938,8 @@ export class WorldView {
       /** The stones along Greyhaven's watercourses (asset-tooling#538), likewise. */
       river: () => this.#river?.observe() ?? null,
       ground: () => this.#ground?.observe() ?? null,
+      /** The static groups (#526): how many exist, are resident, and of the merged ones are in their batches. */
+      staticStream: () => this.#sceneryBatches?.observe() ?? null,
       /** The ambient animals (#419): whether they loaded, and each one's entry, clip and feet. */
       ambient: () => this.#ambient?.observe() ?? null,
       /** The units of the last projection (kind, id, creature family, position in metres). */

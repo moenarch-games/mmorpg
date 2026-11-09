@@ -1,6 +1,8 @@
 //! The terrain's visual tiles and their streaming (#526).
-use mmorpg_presentation::StaticScene;
-use mmorpg_presentation::tiles::{BUILDS_PER_FRAME, CHUNK_SIDES, Level, NEAR_METRES, Streamer};
+use mmorpg_presentation::tiles::{
+    BUILDS_PER_FRAME, CHUNK_SIDES, Level, NEAR_METRES, Site, Streamer,
+};
+use mmorpg_presentation::{Kits, StaticScene};
 use mmorpg_scenery::greyhaven_vale_scenery;
 
 #[test]
@@ -229,5 +231,84 @@ fn new_ground_cover_is_instanced_and_keeps_routes_and_water_clear() {
     assert!(
         ferns > 100,
         "the forest should have walk-through understory: {ferns} ferns among {clumps} clumps"
+    );
+}
+
+fn site(distance: f64) -> Site {
+    Site {
+        distance,
+        near: 100.,
+        prefetch: 140.,
+        evict: 200.,
+        always: false,
+        essential: distance <= 50.,
+    }
+}
+
+#[test]
+fn a_stream_builds_essentials_first_then_nearest_first_within_budget_and_evicts_past_reach() {
+    let mut streamer: Streamer<()> = Streamer::default();
+    let at = |distances: &[f64]| distances.iter().map(|&d| site(d)).collect::<Vec<_>>();
+    // The first update builds every wanted essential site, however few the budget allows.
+    let mut built = Vec::new();
+    let distances = [120., 10., 40., 80., 300.];
+    assert!(
+        streamer
+            .stream(at(&distances), 1, |i| built.push(i))
+            .is_empty()
+    );
+    assert_eq!(built, [1, 2], "the essentials within reach, nearest first");
+    // Later updates add the rest nearest first, wanted before merely prefetched, a few at a time.
+    built.clear();
+    streamer.stream(at(&distances), 1, |i| built.push(i));
+    assert_eq!(built, [3], "the next wanted site");
+    built.clear();
+    streamer.stream(at(&distances), 8, |i| built.push(i));
+    assert_eq!(
+        built,
+        [0],
+        "prefetched last; the site beyond prefetch stays out"
+    );
+    built.clear();
+    streamer.stream(at(&distances), 8, |i| built.push(i));
+    assert!(built.is_empty(), "nothing new to build");
+    // Walking away drops only what passed its evict distance.
+    let evicted = streamer.stream(at(&[120., 10., 250., 80., 300.]), 8, |_| ());
+    assert_eq!(evicted, [(2, ())]);
+    assert_eq!(streamer.resident_count(), 3);
+    // Essential membership only matters on the first update: a re-entry streams within budget.
+    built.clear();
+    streamer.stream(at(&[120., 10., 40., 80., 300.]), 1, |i| built.push(i));
+    assert_eq!(built, [2]);
+}
+
+#[test]
+fn groups_stream_to_their_class_reach_and_a_drawn_kits_fallback_is_dropped() {
+    let scene = StaticScene::new(&greyhaven_vale_scenery());
+    let eye = [0_f32, 10., 0.];
+    let near = scene
+        .groups
+        .iter()
+        .find(|group| {
+            group.cull == mmorpg_presentation::batching::Cull::Near && group.fallback.is_none()
+        })
+        .expect("a near group");
+    let site = near.site(eye, Kits::default());
+    assert_eq!(site.near, near.cull.reach());
+    assert!(site.prefetch > site.near && site.evict > site.prefetch);
+    let fallback = scene
+        .groups
+        .iter()
+        .find(|group| group.fallback == Some(mmorpg_presentation::Kit::Nature))
+        .expect("a nature fallback group");
+    let drawn = Kits {
+        nature: true,
+        ..Kits::default()
+    };
+    assert!(fallback.site(eye, Kits::default()).evict.is_finite());
+    let kit_site = fallback.site(eye, drawn);
+    assert!(
+        kit_site.distance > kit_site.evict,
+        "a drawn kit's fallback goes away"
     );
 }

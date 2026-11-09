@@ -192,6 +192,116 @@ pub fn hosted_scenery() -> &'static Scenery {
     SCENERY.get(scenery_for_zone)
 }
 
+const GRID_CACHE_MAGIC: &[u8; 4] = b"TGC1";
+
+/// The presented scenery's terrain grids, serialized for the browser's per-release derived-data
+/// cache (#526): the magic, the content revision, then per grid (near, then far) its step,
+/// origin, columns and rows (little-endian) and per vertex its height, biome and colour.
+#[must_use]
+pub fn terrain_grid_cache() -> Vec<u8> {
+    let scenery = hosted_scenery();
+    let mut out = Vec::new();
+    out.extend_from_slice(GRID_CACHE_MAGIC);
+    out.extend_from_slice(&scenery.content_revision.to_le_bytes());
+    for grid in [
+        scenery.terrain_grid(TERRAIN_STEP_UNITS),
+        scenery.far_terrain_grid(FAR_TERRAIN_STEP_UNITS),
+    ] {
+        for value in [grid.step, grid.origin[0], grid.origin[1]] {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+        out.extend_from_slice(&(grid.columns as u32).to_le_bytes());
+        out.extend_from_slice(&(grid.rows as u32).to_le_bytes());
+        for height in &grid.heights {
+            out.extend_from_slice(&height.to_le_bytes());
+        }
+        for biome in &grid.biomes {
+            let index = mmorpg_scenery::Biome::VARIANTS
+                .iter()
+                .position(|known| known == biome)
+                .expect("every biome is listed");
+            out.push(index as u8);
+        }
+        for color in &grid.colors {
+            out.extend_from_slice(color);
+        }
+    }
+    out
+}
+
+/// Reuses grids serialized by [`terrain_grid_cache`] for the presented scenery: false and
+/// nothing seeded when the bytes are damaged or from another content revision.
+#[must_use]
+pub fn seed_terrain_grids(bytes: &[u8]) -> bool {
+    let scenery = hosted_scenery();
+    let Some(mut cursor) = bytes.strip_prefix(GRID_CACHE_MAGIC) else {
+        return false;
+    };
+    let Some(revision) = take::<8>(&mut cursor).map(u64::from_le_bytes) else {
+        return false;
+    };
+    if revision != scenery.content_revision {
+        return false;
+    }
+    let (Some(near), Some(far)) = (parse_grid(&mut cursor), parse_grid(&mut cursor)) else {
+        return false;
+    };
+    if !cursor.is_empty() || near.step != TERRAIN_STEP_UNITS || far.step != FAR_TERRAIN_STEP_UNITS {
+        return false;
+    }
+    scenery.seed_grid(false, TERRAIN_STEP_UNITS, near);
+    scenery.seed_grid(true, FAR_TERRAIN_STEP_UNITS, far);
+    true
+}
+
+fn take<const N: usize>(cursor: &mut &[u8]) -> Option<[u8; N]> {
+    let (head, rest) = cursor.split_first_chunk::<N>()?;
+    *cursor = rest;
+    Some(*head)
+}
+
+fn parse_grid(cursor: &mut &[u8]) -> Option<TerrainGrid> {
+    let step = i32::from_le_bytes(take(cursor)?);
+    let origin = [
+        i32::from_le_bytes(take(cursor)?),
+        i32::from_le_bytes(take(cursor)?),
+    ];
+    let columns = u32::from_le_bytes(take(cursor)?) as usize;
+    let rows = u32::from_le_bytes(take(cursor)?) as usize;
+    let cells = columns.checked_mul(rows)?;
+    if cursor.len() < cells.checked_mul(8)? {
+        return None;
+    }
+    let (height_bytes, rest) = cursor.split_at(cells * 4);
+    let heights = height_bytes
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|chunk| i32::from_le_bytes(*chunk))
+        .collect();
+    let (biome_bytes, rest) = rest.split_at(cells);
+    let biomes = biome_bytes
+        .iter()
+        .map(|&index| {
+            mmorpg_scenery::Biome::VARIANTS
+                .get(usize::from(index))
+                .copied()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let (color_bytes, rest) = rest.split_at(cells * 3);
+    let colors = color_bytes.as_chunks::<3>().0.to_vec();
+    *cursor = rest;
+    Some(TerrainGrid {
+        origin,
+        step,
+        columns,
+        rows,
+        heights,
+        biomes,
+        colors,
+    })
+}
+
 /// Presentation relief at `(x, z)` in units; clients raise units by it.
 #[must_use]
 pub fn relief_at(x: i32, z: i32) -> i32 {
@@ -362,6 +472,28 @@ mod tests {
     use serde_json::Value;
 
     use crate::host::hosted_definition;
+
+    #[test]
+    fn the_terrain_grid_cache_round_trips_and_rejects_damage() {
+        let scenery = hosted_scenery();
+        let bytes = terrain_grid_cache();
+        assert!(seed_terrain_grids(&bytes));
+        assert_eq!(
+            terrain_grid_cache(),
+            bytes,
+            "seeded grids equal the derived ones"
+        );
+        // A damaged or foreign entry seeds nothing, and derivation still answers.
+        assert!(!seed_terrain_grids(&bytes[..bytes.len() - 1]));
+        let mut other_revision = bytes.clone();
+        other_revision[4] ^= 1;
+        assert!(!seed_terrain_grids(&other_revision));
+        let mut bad_biome = bytes.clone();
+        let grid = scenery.terrain_grid(TERRAIN_STEP_UNITS);
+        bad_biome[4 + 8 + 20 + grid.heights.len() * 4] = u8::MAX;
+        assert!(!seed_terrain_grids(&bad_biome));
+        assert_eq!(terrain_grid_cache(), bytes);
+    }
 
     #[test]
     fn scenery_comes_from_the_hosted_content_revision() {

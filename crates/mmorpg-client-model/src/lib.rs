@@ -1,7 +1,7 @@
 //! The client rules both clients share (#543): what the action bar, cast bar,
 //! chat and quest windows show for a received projection, how a typed chat
 //! line becomes a command, and which movement commands the current input
-//! needs.
+//! needs, and when a held power shot fires.
 //!
 //! Everything here is a plain function or struct over `mmorpg-core` types and
 //! local input, with no I/O and no rendering. The native client calls it
@@ -14,6 +14,7 @@ pub mod chat;
 pub mod hud;
 pub mod outbox;
 pub mod party;
+pub mod power_draw;
 pub mod quest;
 
 #[cfg(test)]
