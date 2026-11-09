@@ -34,6 +34,9 @@ pub enum Scenario {
     /// A level 6 Warden before the Greyfang cave mouth with *Deeper into the Hollow* accepted,
     /// facing in: Redbrand Bandits, Crossbowmen and two shield-bearing Brutes hold the outer
     /// cavern and the inner chamber with its sealed threshold (#160).
+    /// A level 6 Warden on the rise above the Redbrand camp, a step south of the boulder trap
+    /// (#299), facing it: walk north to roll it downhill onto the camp, or Shield Bash it.
+    BoulderTrap,
     RedbrandCavern,
     /// A level 6 Warden standing in the Redbrand Hollow threshold with the Garrick chain turned
     /// in: the first tick enters a private run of the depths (#404).
@@ -147,6 +150,7 @@ impl Scenario {
             Self::RangerRange => "ranger-range",
             Self::ArcanistPack => "arcanist-pack",
             Self::SunkenShrine => "sunken-shrine",
+            Self::BoulderTrap => "boulder-trap",
             Self::RedbrandCavern => "redbrand-cavern",
             Self::RedbrandDepths => "redbrand-depths",
             Self::RedbrandThorn => "redbrand-thorn",
@@ -188,6 +192,7 @@ impl Scenario {
         match self {
             Self::OgreCombat
             | Self::SunkenShrine
+            | Self::BoulderTrap
             | Self::RedbrandCavern
             | Self::RedbrandDepths
             | Self::RedbrandThorn => ClassChoice {
@@ -277,6 +282,7 @@ impl Scenario {
             Self::RedbrandThorn => 10,
             // Bone Shield, Adrenaline Rush and Divine Shield and Barkskin unlock at level 6.
             Self::RangerRange
+            | Self::BoulderTrap
             | Self::RedbrandCavern
             | Self::RedbrandDepths
             | Self::NecromancerDrain
@@ -365,6 +371,8 @@ impl Scenario {
             // On the relocated lake's east shore; facing west across the water.
             Self::SunkenShrine => ([-6_200, -5_300], 49_152),
             // On the authored north approach; face south through the concealed mouth (#644).
+            // Just south of the boulder trap on the rise, facing north down it (#299).
+            Self::BoulderTrap => ([950, -7_300], 32_768),
             Self::RedbrandCavern => ([6_400, -15_600], 0),
             // In the threshold strip's corner, facing the barred doorway to the east; the door's
             // Brute is three metres off and has not struck yet.

@@ -5,13 +5,15 @@
 //! asset-tooling's `greyhaven-starter` debris pieces.
 use mmorpg_core::{DebrisView, PropKind, debris_pieces};
 
-use super::kit::{Frame, Primitive, Resources, child, qa};
+use super::kit::{Frame, Primitive, Resources, child, qa, qm};
 use crate::Draw;
 
 const WOOD: u32 = 0x8a6a45;
 const DARK_WOOD: u32 = 0x5e4630;
 const IRON: u32 = 0x4b4d52;
 const POWDER: u32 = 0x9c3324;
+const ROCK: u32 = 0x8c8678;
+const DARK_ROCK: u32 = 0x5a5650;
 
 fn metres(units: [i32; 3]) -> [f64; 3] {
     units.map(|axis| f64::from(axis) / 100.)
@@ -56,7 +58,40 @@ fn piece_color(kind: PropKind, index: usize) -> u32 {
                 WOOD
             }
         }
+        PropKind::Boulder => ROCK,
     }
+}
+
+/// A rolling boulder (#299): a stand-in rock sphere of `radius` metres around its centre, with
+/// a few darker lumps that make its roll read. The zone's rotation stays canonical physics
+/// state; the drawn roll follows the boulder's place on the ground, so both clients agree
+/// without a dedicated wire field.
+fn boulder(resources: &mut Resources, id: &str, centre: Frame, radius: f64) -> Vec<Draw> {
+    let roll = qm(qa(2, -centre.p[0] / radius), qa(0, centre.p[2] / radius));
+    let body = Frame {
+        p: centre.p,
+        q: qm(centre.q, roll),
+    };
+    let mut draws =
+        vec![resources.primitive(format!("{id}-rock"), Primitive::Ball(radius), ROCK, body)];
+    for (index, point) in [
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, -0.7, 0.7],
+        [-0.7, 0.0, -0.7],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let offset = point.map(|axis: f64| axis * radius * 0.92);
+        draws.push(resources.primitive(
+            format!("{id}-lump-{index}"),
+            Primitive::Ball(radius * 0.28),
+            DARK_ROCK,
+            child(body, offset, qa(1, 0.)),
+        ));
+    }
+    draws
 }
 
 /// A standing prop: its pieces assembled about its body centre, `half_height` above the feet
@@ -69,6 +104,9 @@ pub fn standing(
     half_height: f64,
 ) -> Vec<Draw> {
     let centre = child(root, [0., half_height, 0.], qa(1, 0.));
+    if kind == PropKind::Boulder {
+        return boulder(resources, id, centre, half_height);
+    }
     let mut draws: Vec<Draw> = debris_pieces(kind)
         .iter()
         .enumerate()
