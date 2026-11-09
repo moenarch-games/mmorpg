@@ -507,6 +507,14 @@ Ice Wall (ability 49) and Earth Pillar (50) are Arcanist instants that raise a t
 
 The player projection's world section gains, after the structure pieces, a count (`u8`, at most 4) and per obstacle, nearest first: ID (`u32`), kind (`u8`: 0 Ice Wall, 1 Earth Pillar), centre (`3 × i32` units), facing (`u16`) and health percent (`u8`): 20 bytes. Canonical snapshots add, after the structure pieces, the next ID (`u32`), a count (`u16`, at most `MAX_SUMMONED_TERRAIN`) and per obstacle in ID order: ID (`u32`), kind, caster (`u32`), centre, facing, health (`u32`) and expiry tick (`u64`). A restored zone re-adds each body exactly as it stood.
 
+## Movement spells and surface hazards (#294)
+
+The catalog adds Warden **Heroic Leap** (51: instant, 20 s, 8 m along the facing, landing impact 6–10 + 2/level damage and 4 m knockback within 4 m, both falling to half at the edge), Ranger **Grappling Hook** (52: instant, 25 focus, 14 s, 20 m, 4–7 + 1/level damage, pulls the selected or aimed unit to melee reach at 18 m/s) and Arcanist **Blink** (53: instant, 40 mana, 15 s, 10 m along the facing). `MAX_COOLDOWNS` becomes 20 and the action bar's slots grow to 20. Canonical forced-movement records gain, after the charge, a leap byte: 0 or the leaping ability's ID (the landing is delivered when the unit next stands on the ground; a walled leap keeps falling). Two error codes join the wire: 46 `NoLanding` (no clear landing for a Blink, or a Heroic Leap from the air or deep water) and 47 `MovementImmune` (a Hook's target or a Heroic Leap's caster is already moved or immune).
+
+Blink sweeps the caster's body from knee height along its facing: walls, closed doors, props, summoned terrain and terrain ridges above a stride end it short of them, it never crosses them, and it steps back until the ground within 1.2 m up or 3 m down has room for the body. Otherwise it is refused, free, with `NoLanding`.
+
+Surface hazards are authored content with stable IDs (`ZoneContent::surfaces`, in the content identity): ellipses over a height band, each one `SurfaceKind`. Greyhaven has a frozen pond and Redbrand camp tar. `SurfaceKind::effect` is the contract: ice limits how fast velocity changes (players only); tar leaves 45% speed. No state is added: a slide continues from the body's canonical velocity, and ability-placed patches can reuse the same patch and effect records through a timed canonical list later.
+
 ## Cones, beams and chains: ability catalog 7
 
 Ability catalog revision 7 (#292) adds Frost Breath (21), Lightning Beam (22, a channel) and Chain Lightning (23) for Arcanists. No wire or schema change: clients draw the cone from the caster's facing, the beam along it to its farthest damaged victim, and the chain through the caster's damage events in order.

@@ -130,6 +130,10 @@
 
 .action-bar {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  /* Ten slots a row; a second row holds the Shift slots (#294). */
+  max-width: calc(10 * 3.1rem + 9 * .35rem + .7rem + 2px);
   gap: .35rem;
   padding: .35rem;
   border: 1px solid rgb(255 255 255 / 10%);

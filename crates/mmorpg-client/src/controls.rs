@@ -33,7 +33,7 @@ pub enum ControlAction {
     /// swing by default, the keyboard has no default.
     Swing,
     ReleaseSpirit,
-    /// Action-bar slot 1–10.
+    /// Action-bar slot 1–20 (11–20 are the Shift row, #294).
     AbilitySlot(u8),
     /// Cancel the viewer's cast or channel.
     CancelCast,
@@ -68,8 +68,8 @@ pub enum Panel {
     QuestLog,
 }
 
-/// The action-bar slots with a key, numbered from 1.
-pub const ABILITY_SLOTS: u8 = 10;
+/// The action-bar slots with a key, numbered from 1; 11–20 are Shift+1 to Shift+0 (#294).
+pub const ABILITY_SLOTS: u8 = 20;
 
 impl ControlAction {
     /// Every control action in catalog order: declaration order, with its slots, panels and
@@ -93,7 +93,7 @@ impl ControlAction {
         })
     }
 
-    /// The shared semantic id. A slot outside 1–8 is no control action and has
+    /// The shared semantic id. A slot outside 1–20 is no control action and has
     /// the empty id, which no binding uses.
     #[must_use]
     pub fn id(self) -> &'static str {
@@ -118,6 +118,16 @@ impl ControlAction {
             Self::AbilitySlot(8) => "ability.slot8",
             Self::AbilitySlot(9) => "ability.slot9",
             Self::AbilitySlot(10) => "ability.slot10",
+            Self::AbilitySlot(11) => "ability.slot11",
+            Self::AbilitySlot(12) => "ability.slot12",
+            Self::AbilitySlot(13) => "ability.slot13",
+            Self::AbilitySlot(14) => "ability.slot14",
+            Self::AbilitySlot(15) => "ability.slot15",
+            Self::AbilitySlot(16) => "ability.slot16",
+            Self::AbilitySlot(17) => "ability.slot17",
+            Self::AbilitySlot(18) => "ability.slot18",
+            Self::AbilitySlot(19) => "ability.slot19",
+            Self::AbilitySlot(20) => "ability.slot20",
             Self::AbilitySlot(_) => "",
             Self::CancelCast => "combat.cancelCast",
             Self::TogglePanel(Panel::Bags) => "ui.toggleBags",
@@ -144,7 +154,8 @@ impl ControlAction {
             Self::MoveLeft => ("Strafe left", GAMEPLAY, &["KeyA", "ArrowLeft"]),
             Self::MoveRight => ("Strafe right", GAMEPLAY, &["KeyD", "ArrowRight"]),
             Self::Jump => ("Jump (hold to swim up)", GAMEPLAY, &["Space"]),
-            Self::Roll => ("Dodge roll", GAMEPLAY, &["ShiftLeft", "ShiftRight"]),
+            // Moved off Shift (#294): Shift now reaches the second action-bar row.
+            Self::Roll => ("Dodge roll", GAMEPLAY, &["KeyF"]),
             Self::Descend => ("Swim down (hold)", GAMEPLAY, &["KeyX"]),
             Self::TargetNext => ("Next target", GAMEPLAY, &["Tab"]),
             Self::Swing => ("Swing weapon", GAMEPLAY, &[]),
@@ -158,7 +169,17 @@ impl ControlAction {
             Self::AbilitySlot(7) => ("Ability 7", GAMEPLAY, &["Digit7"]),
             Self::AbilitySlot(8) => ("Ability 8", GAMEPLAY, &["Digit8"]),
             Self::AbilitySlot(9) => ("Ability 9", GAMEPLAY, &["Digit9"]),
-            Self::AbilitySlot(_) => ("Ability 10", GAMEPLAY, &["Digit0"]),
+            Self::AbilitySlot(10) => ("Ability 10", GAMEPLAY, &["Digit0"]),
+            Self::AbilitySlot(11) => ("Ability 11 (Shift row)", GAMEPLAY, &["Shift+Digit1"]),
+            Self::AbilitySlot(12) => ("Ability 12 (Shift row)", GAMEPLAY, &["Shift+Digit2"]),
+            Self::AbilitySlot(13) => ("Ability 13 (Shift row)", GAMEPLAY, &["Shift+Digit3"]),
+            Self::AbilitySlot(14) => ("Ability 14 (Shift row)", GAMEPLAY, &["Shift+Digit4"]),
+            Self::AbilitySlot(15) => ("Ability 15 (Shift row)", GAMEPLAY, &["Shift+Digit5"]),
+            Self::AbilitySlot(16) => ("Ability 16 (Shift row)", GAMEPLAY, &["Shift+Digit6"]),
+            Self::AbilitySlot(17) => ("Ability 17 (Shift row)", GAMEPLAY, &["Shift+Digit7"]),
+            Self::AbilitySlot(18) => ("Ability 18 (Shift row)", GAMEPLAY, &["Shift+Digit8"]),
+            Self::AbilitySlot(19) => ("Ability 19 (Shift row)", GAMEPLAY, &["Shift+Digit9"]),
+            Self::AbilitySlot(_) => ("Ability 20 (Shift row)", GAMEPLAY, &["Shift+Digit0"]),
             Self::CancelCast => ("Cancel cast", CASTING, &["Escape"]),
             Self::TogglePanel(Panel::Bags) => ("Toggle bags", GAMEPLAY, &["KeyB"]),
             Self::TogglePanel(Panel::Character) => ("Toggle character pane", GAMEPLAY, &["KeyC"]),
@@ -178,7 +199,7 @@ impl ControlAction {
 /// every other retirement (focus loss, a context or profile change) is `retired` and never acts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SlotRelease {
-    /// Action-bar slot 1–10.
+    /// Action-bar slot 1–20.
     pub slot: u8,
     pub retired: bool,
 }
@@ -250,12 +271,20 @@ pub fn native_action_registry() -> ActionRegistry {
     }
 }
 
+/// A default key; `Shift+` selects the second action-bar row (#294).
 fn physical(code: &str) -> InputStroke {
+    let (code, shift) = match code.strip_prefix("Shift+") {
+        Some(code) => (code, true),
+        None => (code, false),
+    };
     InputStroke::Keyboard(KeyStroke {
         key: KeyMatch::Physical {
             value: code.to_owned(),
         },
-        modifiers: Modifiers::default(),
+        modifiers: Modifiers {
+            shift,
+            ..Modifiers::default()
+        },
     })
 }
 

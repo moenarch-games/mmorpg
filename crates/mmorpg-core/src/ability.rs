@@ -14,8 +14,8 @@ pub const GLOBAL_COOLDOWN_TICKS: u16 =
     crate::action::recovery_ticks(crate::action::ActionId::GlobalCooldown);
 /// At most this many auras rest on one unit.
 pub const MAX_AURAS: usize = 8;
-/// At most this many cooldowns run on one player: one per action-bar slot (its class abilities).
-pub const MAX_COOLDOWNS: usize = 10;
+/// At most this many cooldowns run on one player: one per slot of both action-bar rows.
+pub const MAX_COOLDOWNS: usize = 20;
 /// Zone-RNG jitter added whenever a creature's ability timer starts.
 pub const CREATURE_ABILITY_JITTER_TICKS: u16 = ticks_from_ms(1_000);
 
@@ -314,6 +314,24 @@ pub enum AbilityEffect {
     /// Raises summoned terrain (#293) a fixed distance in front of the caster: a temporary,
     /// destroyable obstacle that blocks movement and line of sight.
     SummonTerrain { kind: crate::SummonedTerrainKind },
+    /// Heroic Leap (#294): the caster jumps `distance` units along its facing; walls stop the
+    /// flight, gravity brings it down, and on landing every hostile unit within `radius` that
+    /// the landing point can see takes `damage` + `per_level` and a `knockback`, both falling
+    /// off linearly to half at the edge.
+    Leap {
+        distance: i32,
+        damage: [u16; 2],
+        per_level: u16,
+        radius: i32,
+        knockback: i32,
+    },
+    /// Grappling Hook (#294): the selected unit takes `damage` + `per_level` and is pulled
+    /// toward the caster, stopping at melee reach; walls stop it and the forced-move immunity
+    /// applies.
+    Hook { damage: [u16; 2], per_level: u16 },
+    /// Blink (#294): the caster teleports `distance` units along its facing, or as far as the
+    /// way is free; see `mobility.rs`.
+    Blink { distance: i32 },
     /// Calls the caster's one persistent companion (#296) beside it with `health` +
     /// `health_per_level` health that bites for `damage` (inclusive) + `damage_per_level` every
     /// `swing_ticks`. It is not timed and outlives its owner's death; it goes when killed or
@@ -382,7 +400,10 @@ impl Ability {
             | AbilityEffect::Drain { .. }
             | AbilityEffect::Summon { .. }
             | AbilityEffect::SummonTerrain { .. }
-            | AbilityEffect::Companion { .. } => return None,
+            | AbilityEffect::Companion { .. }
+            | AbilityEffect::Leap { .. }
+            | AbilityEffect::Hook { .. }
+            | AbilityEffect::Blink { .. } => return None,
         };
         Some(AuraSpec {
             kind,
@@ -541,6 +562,10 @@ pub mod ids {
     /// Captain Ulric Thorn's telegraphed area attacks (#404 part 3).
     pub const REAVERS_SWEEP: AbilityId = AbilityId::new(47);
     pub const LAST_COMMAND: AbilityId = AbilityId::new(48);
+    /// The movement kit (#294).
+    pub const HEROIC_LEAP: AbilityId = AbilityId::new(51);
+    pub const GRAPPLING_HOOK: AbilityId = AbilityId::new(52);
+    pub const BLINK: AbilityId = AbilityId::new(53);
 }
 
 /// How a projectile treats what it meets (#291).
@@ -563,7 +588,7 @@ pub enum Shot {
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 50] = [
+pub const ABILITY_CATALOG: [Ability; 53] = [
     ability(
         1,
         "Heroic Strike",
@@ -1396,6 +1421,49 @@ pub const ABILITY_CATALOG: [Ability; 50] = [
             kind: crate::SummonedTerrainKind::EarthPillar,
         },
     ),
+    // The movement kit (#294): the Warden's leap, the Ranger's hook and the Arcanist's blink.
+    ability(
+        51,
+        "Heroic Leap",
+        WARDEN,
+        4,
+        0,
+        CastTime::Instant,
+        ticks_from_ms(20_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Leap {
+            distance: 800,
+            damage: [6, 10],
+            per_level: 2,
+            radius: 400,
+            knockback: 400,
+        },
+    ),
+    ability(
+        52,
+        "Grappling Hook",
+        RANGER,
+        4,
+        25,
+        CastTime::Instant,
+        ticks_from_ms(14_000),
+        AbilityRange::Units(2_000),
+        AbilityEffect::Hook {
+            damage: [4, 7],
+            per_level: 1,
+        },
+    ),
+    ability(
+        53,
+        "Blink",
+        ARCANIST,
+        4,
+        40,
+        CastTime::Instant,
+        ticks_from_ms(15_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Blink { distance: 1_000 },
+    ),
 ];
 
 /// The catalog row of `id`, if any.
@@ -1660,6 +1728,25 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
                 swing_ticks.into(),
             ],
             AbilityEffect::SummonTerrain { kind } => vec![25, i32::from(kind.code())],
+            AbilityEffect::Leap {
+                distance,
+                damage,
+                per_level,
+                radius,
+                knockback,
+            } => vec![
+                26,
+                distance,
+                damage[0].into(),
+                damage[1].into(),
+                per_level.into(),
+                radius,
+                knockback,
+            ],
+            AbilityEffect::Hook { damage, per_level } => {
+                vec![27, damage[0].into(), damage[1].into(), per_level.into()]
+            }
+            AbilityEffect::Blink { distance } => vec![28, distance],
         };
         bytes.extend_from_slice(&u32::try_from(fields.len()).unwrap_or(0).to_be_bytes());
         for field in fields {
@@ -1695,7 +1782,7 @@ mod tests {
             }
         }
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
-        assert_eq!(ability_by_id(AbilityId::new(51)), None);
+        assert_eq!(ability_by_id(AbilityId::new(54)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
         for &class in PlayerClass::VARIANTS {
             let cooldowns = ABILITY_CATALOG

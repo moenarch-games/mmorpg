@@ -57,6 +57,8 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "depths-wipe": "Your party has fallen. You rise again at the checkpoint.",
   "depths-boss-open": "The way to Captain Ulric Thorn lies open.",
   "no-room": "There is no room for it to rise there.",
+  "no-landing": "There is no clear place to land there.",
+  "movement-immune": "It cannot be moved right now.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;

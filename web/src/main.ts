@@ -1833,7 +1833,17 @@ function runAction(action: GameAction): void {
     case "ability.slot7":
     case "ability.slot8":
     case "ability.slot9":
-    case "ability.slot10": {
+    case "ability.slot10":
+    case "ability.slot11":
+    case "ability.slot12":
+    case "ability.slot13":
+    case "ability.slot14":
+    case "ability.slot15":
+    case "ability.slot16":
+    case "ability.slot17":
+    case "ability.slot18":
+    case "ability.slot19":
+    case "ability.slot20": {
       worldView.useSlot(Number(action.slice("ability.slot".length)));
       return;
     }

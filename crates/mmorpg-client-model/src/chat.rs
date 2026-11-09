@@ -142,6 +142,8 @@ pub fn refusal_text(code: ErrorCode) -> String {
         ErrorCode::DepthsWipe => "Your party has fallen. You rise again at the checkpoint.".into(),
         ErrorCode::DepthsBossOpen => "The way to Captain Ulric Thorn lies open.".into(),
         ErrorCode::NoRoom => "There is no room for it to rise there.".into(),
+        ErrorCode::NoLanding => "There is no clear place to land there.".into(),
+        ErrorCode::MovementImmune => "It cannot be moved right now.".into(),
         _ => humanize(&format!("{code:?}")),
     }
 }

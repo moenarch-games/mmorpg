@@ -38,7 +38,7 @@ pub enum UiIntent {
     Command(ZoneCommand),
     /// A party action for the party service (#404).
     Party(mmorpg_protocol::party::PartyRequest),
-    /// Use action-bar slot 1–8.
+    /// Use action-bar slot 1–20.
     AbilitySlot(u8),
     ReleaseSpirit,
     /// Request a selection; `None` clears it.
@@ -798,70 +798,90 @@ impl GameUi {
                     }
                     ui.horizontal(|ui| {
                         let slots = frame.hud.map(|hud| hud.slots.as_slice()).unwrap_or(&[]);
-                        for (index, slot) in slots.iter().enumerate() {
-                            let definition =
-                                ability_by_id(mmorpg_core::AbilityId::new(slot.ability));
-                            let name = definition.map_or("?", |ability| ability.name);
-                            let locked = !slot.learned;
-                            let label = if locked {
-                                format!("{}\n{name}\nLv {}", index + 1, slot.unlock_level)
-                            } else {
-                                format!("{}\n{name}", index + 1)
-                            };
-                            let text = RichText::new(label).size(12.0);
-                            let image = self.ability_art.image(ctx, slot.ability, locked);
-                            let button = match image {
-                                Some(image) => egui::Button::image_and_text(image, text)
-                                    .image_tint_follows_text_color(false),
-                                None => egui::Button::new(text),
+                        let per_row = mmorpg_client_model::hud::ACTION_BAR_ROW_SLOTS;
+                        ui.vertical(|ui| {
+                            for (row, row_slots) in slots.chunks(per_row).enumerate() {
+                                ui.horizontal(|ui| {
+                                    for (offset, slot) in row_slots.iter().enumerate() {
+                                        let index = row * per_row + offset;
+                                        let key = mmorpg_client_model::hud::slot_key_label(index);
+                                        let definition = ability_by_id(
+                                            mmorpg_core::AbilityId::new(slot.ability),
+                                        );
+                                        let name = definition.map_or("?", |ability| ability.name);
+                                        let locked = !slot.learned;
+                                        let label = if locked {
+                                            format!("{key}\n{name}\nLv {}", slot.unlock_level)
+                                        } else {
+                                            format!("{key}\n{name}")
+                                        };
+                                        let text = RichText::new(label).size(12.0);
+                                        let image =
+                                            self.ability_art.image(ctx, slot.ability, locked);
+                                        let button = match image {
+                                            Some(image) => {
+                                                egui::Button::image_and_text(image, text)
+                                                    .image_tint_follows_text_color(false)
+                                            }
+                                            None => egui::Button::new(text),
+                                        }
+                                        .min_size(Vec2::new(86.0, 46.0))
+                                        .selected(slot.casting);
+                                        let button = if !locked && slot.resource_short {
+                                            button.fill(Color32::from_rgb(30, 50, 95))
+                                        } else {
+                                            button
+                                        };
+                                        let response =
+                                            ui.add_enabled(!snapshot.viewer.dead, button);
+                                        if let Some(cooldown) = slot.cooldown {
+                                            let share = cooldown.share();
+                                            let rect = response.rect;
+                                            let covered = egui::Rect::from_min_max(
+                                                egui::pos2(
+                                                    rect.min.x,
+                                                    rect.max.y - rect.height() * share,
+                                                ),
+                                                rect.max,
+                                            );
+                                            ui.painter().rect_filled(
+                                                covered,
+                                                2.0,
+                                                Color32::from_black_alpha(match cooldown.kind {
+                                                    CooldownKind::Ability => 170,
+                                                    CooldownKind::Global => 110,
+                                                }),
+                                            );
+                                            if cooldown.kind == CooldownKind::Ability {
+                                                ui.painter().text(
+                                                    rect.center(),
+                                                    Align2::CENTER_CENTER,
+                                                    format!(
+                                                        "{:.0}",
+                                                        (f32::from(cooldown.remaining)
+                                                            / f32::from(mmorpg_core::TICK_HZ))
+                                                        .ceil()
+                                                    ),
+                                                    egui::FontId::proportional(18.0),
+                                                    Color32::WHITE,
+                                                );
+                                            }
+                                        }
+                                        if response.clicked() {
+                                            intents.push(UiIntent::AbilitySlot(index as u8 + 1));
+                                        }
+                                        response.on_hover_text(if locked {
+                                            format!(
+                                                "{name} · unlocks at level {}",
+                                                slot.unlock_level
+                                            )
+                                        } else {
+                                            name.to_owned()
+                                        });
+                                    }
+                                });
                             }
-                            .min_size(Vec2::new(86.0, 46.0))
-                            .selected(slot.casting);
-                            let button = if !locked && slot.resource_short {
-                                button.fill(Color32::from_rgb(30, 50, 95))
-                            } else {
-                                button
-                            };
-                            let response = ui.add_enabled(!snapshot.viewer.dead, button);
-                            if let Some(cooldown) = slot.cooldown {
-                                let share = cooldown.share();
-                                let rect = response.rect;
-                                let covered = egui::Rect::from_min_max(
-                                    egui::pos2(rect.min.x, rect.max.y - rect.height() * share),
-                                    rect.max,
-                                );
-                                ui.painter().rect_filled(
-                                    covered,
-                                    2.0,
-                                    Color32::from_black_alpha(match cooldown.kind {
-                                        CooldownKind::Ability => 170,
-                                        CooldownKind::Global => 110,
-                                    }),
-                                );
-                                if cooldown.kind == CooldownKind::Ability {
-                                    ui.painter().text(
-                                        rect.center(),
-                                        Align2::CENTER_CENTER,
-                                        format!(
-                                            "{:.0}",
-                                            (f32::from(cooldown.remaining)
-                                                / f32::from(mmorpg_core::TICK_HZ))
-                                            .ceil()
-                                        ),
-                                        egui::FontId::proportional(18.0),
-                                        Color32::WHITE,
-                                    );
-                                }
-                            }
-                            if response.clicked() {
-                                intents.push(UiIntent::AbilitySlot(index as u8 + 1));
-                            }
-                            response.on_hover_text(if locked {
-                                format!("{name} · unlocks at level {}", slot.unlock_level)
-                            } else {
-                                name.to_owned()
-                            });
-                        }
+                        });
                         if let Some(problem) = self.ability_art.problem() {
                             ui.colored_label(
                                 Color32::LIGHT_RED,

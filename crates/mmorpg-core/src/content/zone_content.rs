@@ -75,6 +75,8 @@ pub struct ZoneContent {
     closed_at_night: Vec<NpcId>,
     private_homes: Vec<crate::PrivateHome>,
     waters: Vec<crate::WaterVolume>,
+    /// Authored surface hazards (#294), in ID order.
+    surfaces: Vec<crate::SurfacePatch>,
     climbing: crate::ClimbSurfaces,
     handoff_corridors: Vec<crate::HandoffCorridor>,
     /// The night raid target (#530), if the zone has one.
@@ -205,6 +207,7 @@ impl ZoneContent {
             closed_at_night: Vec::new(),
             private_homes: Vec::new(),
             waters: Vec::new(),
+            surfaces: Vec::new(),
             climbing: crate::ClimbSurfaces::default(),
             handoff_corridors: Vec::new(),
             raid: None,
@@ -254,6 +257,7 @@ impl ZoneContent {
             closed_at_night: Vec::new(),
             private_homes: Vec::new(),
             waters: Vec::new(),
+            surfaces: Vec::new(),
             climbing: crate::ClimbSurfaces::default(),
             handoff_corridors: Vec::new(),
             raid: None,
@@ -835,6 +839,20 @@ impl ZoneContent {
         &self.waters
     }
 
+    /// Binds the zone's authored surface hazards (#294), in ID order.
+    pub fn with_surfaces(mut self, surfaces: Vec<crate::SurfacePatch>) -> Result<Self, ZoneError> {
+        crate::surface::validate(&surfaces)?;
+        self.surfaces = surfaces;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// The zone's authored surface hazards (#294).
+    #[must_use]
+    pub fn surfaces(&self) -> &[crate::SurfacePatch] {
+        &self.surfaces
+    }
+
     /// Marks which collision is climbable (#490): every listed collider must exist and must not
     /// be the ground, whose climbable stretches are terrain stretches.
     pub fn with_climbing(mut self, climbing: crate::ClimbSurfaces) -> Result<Self, ZoneError> {
@@ -1399,8 +1417,28 @@ impl ZoneContent {
         hash.finish()
     }
 
-    fn compute_water_fingerprint(&self) -> u64 {
+    /// Surface hazards (#294) enter the identity only when a zone has any.
+    fn compute_surface_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_climbing_fingerprint();
+        if self.surfaces.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/surface-v1");
+        hash.u64(fingerprint);
+        hash.len(self.surfaces.len());
+        for patch in &self.surfaces {
+            hash.u32(patch.id);
+            hash.bytes(&[patch.kind.code()]);
+            hash.i32s(&patch.centre);
+            hash.i32s(&patch.radii);
+            hash.i32s(&patch.height);
+        }
+        hash.finish()
+    }
+
+    fn compute_water_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_surface_fingerprint();
         if self.waters.is_empty() {
             return fingerprint;
         }

@@ -1665,6 +1665,7 @@ fn encode_forced(
                 encode_entity_ref(payload, Some(target));
                 payload.extend_from_slice(&knockback.to_be_bytes());
             }
+            payload.push(moving.leap.map_or(0, |ability| ability.get()));
         }
         payload.extend_from_slice(&state.immune.to_be_bytes());
     }
@@ -1701,10 +1702,15 @@ fn decode_forced(
             } else {
                 None
             };
+            let leap = match crate::wire::read_u8(payload, offset)? {
+                0 => None,
+                id => Some(mmorpg_core::AbilityId::new(id)),
+            };
             Some(mmorpg_core::ForcedMove {
                 velocity,
                 remaining,
                 charge,
+                leap,
             })
         } else {
             None
@@ -1806,6 +1812,19 @@ mod tests {
                             velocity: [0, 45],
                             remaining: 12,
                             charge: Some((wolf, 300)),
+                            leap: None,
+                        }),
+                        immune: 0,
+                    },
+                ),
+                (
+                    EntityRef::Player(2),
+                    mmorpg_core::ForcedState {
+                        moving: Some(mmorpg_core::ForcedMove {
+                            velocity: [100, 0],
+                            remaining: 40,
+                            charge: None,
+                            leap: Some(mmorpg_core::AbilityId::new(51)),
                         }),
                         immune: 0,
                     },

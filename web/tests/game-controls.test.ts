@@ -132,6 +132,16 @@ describe("MMORPG semantic controls", () => {
     expect(gamepad.controls.heldIntent().steering).toBe(false);
   });
 
+  test("Shift+digit reaches the second action-bar row (#294)", () => {
+    const app = harness();
+    app.window.emit("keydown", { ...key("Digit1"), shiftKey: true });
+    app.window.emit("keyup", { ...key("Digit1"), shiftKey: true });
+    app.window.emit("keydown", { ...key("Digit0"), shiftKey: true });
+    app.window.emit("keyup", { ...key("Digit0"), shiftKey: true });
+    app.window.emit("keydown", key("Digit1"));
+    expect(app.actions).toEqual(["ability.slot11", "ability.slot20", "ability.slot1"]);
+  });
+
   test("one-shot actions dispatch once per press, never on key repeat", () => {
     const app = harness();
     app.window.emit("keydown", key("Space"));
@@ -144,8 +154,8 @@ describe("MMORPG semantic controls", () => {
     app.window.emit("keydown", key("KeyV"));
     app.window.emit("keydown", key("Enter"));
     app.window.emit("keydown", key("F3"));
-    // F is unbound since auto-attack went away (#517).
-    expect(app.actions).toEqual(["move.jump", "target.next", "ui.toggleBags", "ui.toggleCharacter", "ui.toggleVendor", "ui.openChat", "ui.toggleDebug"]);
+    // F dodge-rolls since Shift reached the second action-bar row (#294).
+    expect(app.actions).toEqual(["move.jump", "target.next", "move.roll", "ui.toggleBags", "ui.toggleCharacter", "ui.toggleVendor", "ui.openChat", "ui.toggleDebug"]);
   });
 
   test("an open panel is a non-blocking overlay: it claims Escape while movement falls through", () => {
