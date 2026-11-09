@@ -16,6 +16,7 @@ from lib.ranger_assets import CLASS_NAMES, valid_male_appearance
 
 ROOT = Path(__file__).resolve().parents[1]
 URL = "https://github.com/moritzbrantner/asset-tooling/releases/download/{release}/"
+API = "https://api.github.com/repos/moritzbrantner/asset-tooling/releases/"
 # The male figure's selected entries by key and variants: the default character and equipment, the class weapons
 # (asset-tooling #375) and props (#379), the Greyhaven residents' outfit variants, armour, straw hat and beards (#418), the class
 # starter outfits' armour (#379), the Redbrand Crossbowmen's crossbow with an arrow standing in for its bolt (#607), and
@@ -61,6 +62,7 @@ class Figure:
         self.dest = ROOT / "web/public/characters" / character
         self.url = URL.format(release=self.release)
         self.pairs = {(key, variant) for key, variants in selected.items() for variant in variants}
+        self.asset_ids = None
 
 
 FIGURES = (Figure("humanoid.ranger.male", MALE), Figure("humanoid.ranger.female", FEMALE))
@@ -73,11 +75,22 @@ def selected(figure, index):
                            or (entry.get("key"), entry.get("variant")) == HEAD_SKINS}
 
 
-def read_url(url, timeout):
+def github_token():
+    """The token selecting authenticated release downloads, or None for the public URLs."""
+    return os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or None
+
+
+def read_url(url, timeout, accept=None, token=None):
     """The body at `url`, retrying 5xx responses, timeouts and connection errors; never a 4xx."""
+    request = urllib.request.Request(url)
+    if accept:
+        request.add_header("Accept", accept)
+    if token:
+        # Unredirected: release assets redirect to a storage host, which must not see the token.
+        request.add_unredirected_header("Authorization", f"Bearer {token}")
     for delay in (*RETRY_DELAYS, None):
         try:
-            with urllib.request.urlopen(url, timeout=timeout) as response:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
                 return response.read()
         except urllib.error.HTTPError as error:
             error.close()
@@ -93,10 +106,25 @@ def read_url(url, timeout):
     raise AssertionError("unreachable: the final attempt returns or raises")
 
 
+def read_asset(figure, name, timeout):
+    """Release asset `name`: through the REST API with a token, and through the public URL
+    without one or when the API fails, for example on a rate limit."""
+    token = github_token()
+    if token:
+        try:
+            if figure.asset_ids is None:
+                release = json.loads(read_url(f"{API}tags/{figure.release}", 60, "application/vnd.github+json", token))
+                figure.asset_ids = {asset["name"]: asset["id"] for asset in release["assets"]}
+            return read_url(f"{API}assets/{figure.asset_ids[name]}", timeout, "application/octet-stream", token)
+        except (OSError, http.client.HTTPException, KeyError, ValueError) as error:
+            print(f"Authenticated download of {figure.release}/{name} failed ({error!r}); trying the public URL.", file=sys.stderr)
+    return read_url(figure.url + name, timeout)
+
+
 def live_ref(figure):
     """The live release's export.ref.json, or None when the release cannot be reached."""
     try:
-        return read_url(figure.url + "export.ref.json", 60)
+        return read_asset(figure, "export.ref.json", 60)
     except OSError:
         return None
 
@@ -146,7 +174,7 @@ def acquire(figure):
         def download(name):
             if Path(name).name != name or not name or name in {".", ".."}:
                 raise ValueError(f"unsafe release filename: {name}")
-            (directory / name).write_bytes(read_url(figure.url + name, 300))
+            (directory / name).write_bytes(read_asset(figure, name, 300))
 
         index_name = release + ".index.json"
         download(index_name)
@@ -182,6 +210,7 @@ def print_identity(figure):
 
 
 if __name__ == "__main__":
+    print(f"Ranger downloads: {'authenticated GitHub API' if github_token() else 'anonymous public URLs'}", file=sys.stderr)
     for figure in FIGURES:
         if sys.argv[1:] == ["--identity"]:
             print_identity(figure)

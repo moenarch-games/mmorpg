@@ -31,11 +31,30 @@ case "${IDENTITY}" in
 esac
 # curl's --retry covers 408, 429, 5xx and timeouts; no other 4xx is retried.
 CURL_RETRY=(--retry 5 --retry-delay 5 --retry-connrefused)
+# shellcheck source=scripts/lib/github-release.sh
+source "${ROOT_DIR}/scripts/lib/github-release.sh"
+github_release_report_mode
+
+# Downloads release `tag`'s asset `file` to `out`: through the REST API with a token, and through
+# the public URL without one or when the API fails, for example on a rate limit.
+download_asset() {
+  local tag="$1" file="$2" out="$3" max_time="$4" work="$5"
+  if [[ -n "${GITHUB_RELEASE_TOKEN}" ]]; then
+    if [[ -s "${work}/release.json" ]] ||
+      github_release_json "moritzbrantner/asset-tooling/releases/tags/${tag}" "${work}/release.json"; then
+      if github_release_asset moritzbrantner/asset-tooling "${work}/release.json" "${file}" "${out}" "${max_time}"; then
+        return 0
+      fi
+    fi
+    echo "Authenticated download of ${tag}/${file} failed; trying the public URL." >&2
+  fi
+  curl -fsSL "${CURL_RETRY[@]}" --max-time "${max_time}" -o "${out}" "${RELEASES}/${tag}/${file}"
+}
 
 # Unpacks release `tag`'s `name`.tar into `work`/bundle.
 unpack() {
   local tag="$1" name="$2" work="$3"
-  curl -fsSL "${CURL_RETRY[@]}" --max-time 300 -o "${work}/bundle.tar" "${RELEASES}/${tag}/${name}.tar"
+  download_asset "${tag}" "${name}.tar" "${work}/bundle.tar" 300 "${work}"
   mkdir "${work}/bundle"
   tar -xf "${work}/bundle.tar" -C "${work}/bundle"
   printf '%s\n' "${tag}" > "${work}/bundle/RELEASE"
@@ -75,7 +94,7 @@ fetch_rolling() {
   local tag="$1" name="$2" dest="${ROOT_DIR}/web/public/$3"
   local work
   work="$(mktemp -d)"
-  if ! curl -fsSL "${CURL_RETRY[@]}" --max-time 60 -o "${work}/export.ref.json" "${RELEASES}/${tag}/export.ref.json"; then
+  if ! download_asset "${tag}" export.ref.json "${work}/export.ref.json" 60 "${work}"; then
     if [[ -z "${IDENTITY}" && "${GITHUB_ACTIONS:-}" != true && -f "${dest}/RELEASE" && "$(cat "${dest}/RELEASE")" == "${tag}" ]]; then
       echo "Could not reach the ${tag} release; keeping ${dest}" >&2
       rm -rf -- "${work}"

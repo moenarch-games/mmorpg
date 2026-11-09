@@ -115,6 +115,8 @@ jobs:
         id: assets
         if: github.event_name == 'push' || steps.detect.outputs.rust_changed == 'true' || steps.detect.outputs.full_validation == 'true'
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: scripts/ci-asset-cache.sh
 
       - id: pages-scope
@@ -184,13 +186,15 @@ jobs:
     uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@2ec8d067031d4e9d093701f23a00b0ddcaef42d8
     with:
       # Bun comes from scripts/ci-install-bun.sh, which retries; the reusable job's setup step cannot.
+      # The reusable job holds this run's github.token in NODE_AUTH_TOKEN; these commands export it
+      # as GH_TOKEN so release downloads are authenticated. Only the variable name is interpolated.
       bun_version: ""
       node_version: ""
-      install_command: ${{ needs.scope.outputs.full_validation == 'true' && 'scripts/ci-install-bun.sh && export PATH="$HOME/.bun/bin:$PATH" && cd web && bun install --frozen-lockfile' || (needs.scope.outputs.rust_changed == 'true' && 'scripts/ci-install-bun.sh' || '') }}
+      install_command: ${{ needs.scope.outputs.full_validation == 'true' && 'export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/ci-install-bun.sh && export PATH="$HOME/.bun/bin:$PATH" && cd web && bun install --frozen-lockfile' || (needs.scope.outputs.rust_changed == 'true' && 'export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/ci-install-bun.sh' || '') }}
       cache_bun: false
       # Once per job: libudev headers, the asset bundles and cargo-nextest (tests run per process, in parallel).
       apt_packages: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'libudev-dev libasound2-dev' || '' }}
-      pre_validate_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.settings_only == 'true' && 'scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh' || 'scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh && scripts/ci-install-nextest.sh') || '' }}
+      pre_validate_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.settings_only == 'true' && 'export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh' || 'export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh && scripts/ci-install-nextest.sh') || '' }}
       cache_cargo: ${{ needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true' }}
       format_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'cargo fmt --all -- --check' || '' }}
       lint_command: ${{ needs.scope.outputs.full_validation == 'true' && 'cargo clippy --workspace --all-targets --all-features --locked -- -D warnings && (cd web && bunx --no-install tsc --noEmit -p tsconfig.assets.json)' || '' }}
@@ -214,10 +218,10 @@ jobs:
     with:
       bun_version: ""
       node_version: ""
-      install_command: scripts/ci-install-bun.sh
+      install_command: export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/ci-install-bun.sh
       cache_bun: false
       apt_packages: libudev-dev libasound2-dev
-      pre_validate_command: scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh
+      pre_validate_command: export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh
       cache_cargo: true
       lint_command: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       artifact_name_suffix: -clippy
@@ -246,6 +250,8 @@ jobs:
           restore-keys: mmorpg-assets-
       - name: Fetch the releases that moved
         if: steps.restore.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: scripts/fetch-bundles.sh
 
   pages-validation:
