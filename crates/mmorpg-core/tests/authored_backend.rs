@@ -283,6 +283,7 @@ fn falling_box(at: [f32; 3]) -> DebrisBody {
         velocity: [0., -25., 0.],
         spin: [0.; 3],
         half_extents: Vec3i::new(25, 25, 25),
+        shape: mmorpg_core::physics::PieceShape::Cuboid,
         resting: false,
     }
 }

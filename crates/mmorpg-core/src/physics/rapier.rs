@@ -28,10 +28,13 @@ use rapier3d::prelude::{
 };
 
 use super::queries::UprightShapes;
-use super::shared::{DEBRIS_REST_SPEED_UNITS, DEBRIS_REST_SPIN, Dynamic, TICKS_PER_SECOND, nearby};
+use super::shared::{
+    BOULDER_ANGULAR_DAMPING, BOULDER_DENSITY, BOULDER_LANE, BOULDER_LINEAR_DAMPING,
+    DEBRIS_REST_SPEED_UNITS, DEBRIS_REST_SPIN, Dynamic, PROP_LANE, TICKS_PER_SECOND, nearby,
+};
 use super::{
-    Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, PhysicsError, RayHit, RigidBody,
-    StepStats, Vec3i, error, exact, from_subunits,
+    Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, PhysicsError, PieceShape, RayHit,
+    RigidBody, StepStats, Vec3i, error, exact, from_subunits,
 };
 
 /// Centimetre units per metre.
@@ -244,6 +247,19 @@ fn insert(world: &mut PhysicsWorld, body: &RigidBody) -> Handles {
                 .rotation(Vector::Y * angle)
                 .user_data(user_data)
                 .build(),
+        );
+        Handles {
+            body: None,
+            collider,
+        }
+    } else if matches!(body.kind, Kind::Sphere) {
+        let collider = world.colliders.insert(
+            ColliderBuilder::new(SharedShape::ball(
+                exact(body.half_extents)[0] / UNITS_PER_METRE,
+            ))
+            .translation(metres(body.position))
+            .user_data(user_data)
+            .build(),
         );
         Handles {
             body: None,
@@ -1206,6 +1222,26 @@ impl World {
         step_props(self.gravity, &self.bodies, ground, props, exclude)
     }
 
+    pub fn step_boulders(
+        &self,
+        boulders: &mut [DebrisBody],
+        exclude: &[BodyId],
+        units_block: bool,
+    ) -> usize {
+        let ground = self
+            .ground
+            .as_ref()
+            .map(|ground| (ground.id, &ground.terrain));
+        step_boulders(
+            self.gravity,
+            &self.bodies,
+            ground,
+            boulders,
+            exclude,
+            units_block,
+        )
+    }
+
     /// Brings Rapier's broad phase (the query structure) up to date.
     fn refresh(&mut self) {
         self.world.detect_collisions(&(), &());
@@ -1243,6 +1279,32 @@ pub(super) fn step_props(
             upright: true,
             units_block: true,
             exclude,
+            lane: PROP_LANE,
+        },
+    )
+}
+
+/// [`World::step_boulders`] (#299): free spheres, stopped by units only when slow.
+pub(super) fn step_boulders(
+    gravity: [f32; 3],
+    bodies: &BTreeMap<BodyId, RigidBody>,
+    ground: Option<(BodyId, &crate::Terrain)>,
+    boulders: &mut [DebrisBody],
+    exclude: &[BodyId],
+    units_block: bool,
+) -> usize {
+    let settle = vec![true; boulders.len()];
+    step_dynamic(
+        gravity,
+        bodies,
+        ground,
+        boulders,
+        &settle,
+        &Dynamic {
+            upright: false,
+            units_block,
+            exclude,
+            lane: BOULDER_LANE,
         },
     )
 }
@@ -1283,11 +1345,22 @@ fn step_dynamic(
     };
     let mut handles = Vec::with_capacity(debris.len());
     for piece in debris.iter() {
-        let shape = SharedShape::new(cuboid(piece.half_extents));
+        let (shape, density, damping) = match piece.shape {
+            PieceShape::Cuboid => (
+                SharedShape::new(cuboid(piece.half_extents)),
+                600.0,
+                (0.2, 0.8),
+            ),
+            PieceShape::Sphere => (
+                SharedShape::ball(exact(piece.half_extents)[0] / UNITS_PER_METRE),
+                BOULDER_DENSITY,
+                (BOULDER_LINEAR_DAMPING, BOULDER_ANGULAR_DAMPING),
+            ),
+        };
         let collider = ColliderBuilder::new(shape)
             .friction(0.8)
             .restitution(0.15)
-            .density(600.0);
+            .density(density);
         if piece.resting {
             world
                 .colliders
@@ -1299,8 +1372,8 @@ fn step_dynamic(
             .pose(pose(piece))
             .linvel(metres(piece.velocity) * TICKS_PER_SECOND)
             .angvel(Vector::from(piece.spin) * TICKS_PER_SECOND)
-            .linear_damping(0.2)
-            .angular_damping(0.8);
+            .linear_damping(damping.0)
+            .angular_damping(damping.1);
         if options.upright {
             builder = builder.lock_rotations();
         }

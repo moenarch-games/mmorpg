@@ -8,6 +8,11 @@ const NEAR_HEAD_ON_COS: f32 = 0.5;
 /// The outward motion (units per tick: 30 units/s) [`slide_around`] adds against a
 /// touching body.
 const SEPARATION_UNITS: f32 = 30.0 / crate::TICK_HZ as f32;
+/// A boulder's damping (#299): rolling loses speed to it harder than a sliding box does.
+pub(super) const BOULDER_LINEAR_DAMPING: f32 = 0.4;
+pub(super) const BOULDER_ANGULAR_DAMPING: f32 = 1.2;
+/// Hard rock (kg/m³); mass only matters between dynamic pieces.
+pub(super) const BOULDER_DENSITY: f32 = 2_400.0;
 /// A piece slower than this (units per tick: 18 units/s) and turning slower than
 /// [`DEBRIS_REST_SPIN`] (radians per tick: 0.9 rad/s) settles.
 pub(super) const DEBRIS_REST_SPEED_UNITS: f32 = 18.0 / crate::TICK_HZ as f32;
@@ -95,7 +100,15 @@ pub(super) struct Dynamic<'a> {
     pub units_block: bool,
     /// Bodies left out of the step: the movable props' own fixed boxes.
     pub exclude: &'a [BodyId],
+    /// Which isolated response lane retains this step's static geometry (below).
+    pub lane: usize,
 }
+
+/// One retained static-response world per dynamic-piece kind (lane 0 is debris), so each lane's
+/// retained fixed geometry stays stable while its own pieces step.
+pub(super) const PROP_LANE: usize = 1;
+pub(super) const BOULDER_LANE: usize = 2;
+pub(super) const RESPONSE_LANES: usize = 3;
 
 /// The game bodies a dynamic step takes part with: the floors and everything within
 /// [`DEBRIS_REACH_UNITS`] of a piece, units only when they block, minus `options.exclude`.
