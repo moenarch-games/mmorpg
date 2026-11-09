@@ -1697,7 +1697,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.keyboard.press("Enter")
         field.fill("/dance")
         self.page.keyboard.press("Enter")
-        expect(log).to_contain_text("Use /s to say, /y to yell, or /wave, /bow, /cheer, /laugh, /point.")
+        expect(log).to_contain_text("Use /s to say, /y to yell, /sit to sit, or /wave, /bow, /cheer, /laugh, /point.")
         # An emote shares the once-per-second limit; after a zone second, /wave comes back from
         # the zone. Counted in ticks: frames take no fixed time on a real GPU.
         tick = self.page.evaluate("Number(window.__valeDebug.worldSource().latestProjection().tick)")
