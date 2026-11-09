@@ -12,7 +12,8 @@ mod zone_content;
 
 pub(crate) use sim_foundation::collision::within_content_range;
 pub use sim_foundation::collision::{
-    MAX_CONTENT_COORDINATE_UNITS, MAX_TERRAIN_HEIGHT_UNITS, StaticCollider, Terrain,
+    MAX_CONTENT_COORDINATE_UNITS, MAX_STATIC_COLLIDERS, MAX_TERRAIN_HEIGHT_UNITS, StaticCollider,
+    Terrain, XzBounds,
 };
 pub use sim_foundation::static_mesh::StaticMesh;
 
@@ -27,31 +28,8 @@ pub use zone_content::{CharacterPersistence, PlayerCombatPolicy, ZoneContent};
 use crate::entity::SUMMONED_BODY_BASE;
 use crate::{MAX_PLAYERS_PER_ZONE, PLAYER_HALF_EXTENTS_UNITS, ZoneError};
 
-pub const MAX_STATIC_COLLIDERS: usize = 4_096;
 /// One render metre corresponds to 100 integer simulation units; Y points up.
 pub const UNITS_PER_METRE: i32 = 100;
-
-/// Half-open XZ rectangle `[min, max)` in units.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct XzBounds {
-    pub min: [i32; 2],
-    pub max: [i32; 2],
-}
-
-impl XzBounds {
-    #[must_use]
-    pub const fn contains(self, x: i32, z: i32) -> bool {
-        self.min[0] <= x && x < self.max[0] && self.min[1] <= z && z < self.max[1]
-    }
-
-    #[must_use]
-    pub const fn overlaps(self, other: Self) -> bool {
-        self.min[0] < other.max[0]
-            && other.min[0] < self.max[0]
-            && self.min[1] < other.max[1]
-            && other.min[1] < self.max[1]
-    }
-}
 
 /// Row-major spawn slots on flat ground. Slot `s` places a character's feet at
 /// `(origin[0] + (s % columns) × spacing, 0, origin[1] + (s / columns) × spacing)`.

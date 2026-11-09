@@ -2676,6 +2676,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sim-foundation",
+ "sim-movement",
  "strum",
  "toml",
  "wasm-bindgen",
@@ -4677,6 +4678,14 @@ dependencies = [
  "serde",
  "strum",
  "web-time",
+]
+
+[[package]]
+name = "sim-movement"
+version = "0.1.0"
+dependencies = [
+ "sim-foundation",
+ "strum",
 ]
 
 [[package]]

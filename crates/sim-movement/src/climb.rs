@@ -275,7 +275,7 @@ impl Traversal {
                 ticks <= MANTLE_MAX_TICKS
                     && goal
                         .iter()
-                        .all(|&axis| crate::content::within_content_range(axis))
+                        .all(|&axis| crate::collision::within_content_range(axis))
             }
         }
     }
@@ -379,27 +379,27 @@ impl TraversalView {
 
 /// What the player asks for this tick.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Intent {
-    pub(crate) forward: i32,
-    pub(crate) strafe: i32,
-    pub(crate) jump: bool,
-    pub(crate) facing: u16,
-    pub(crate) grounded: bool,
+pub struct Intent {
+    pub forward: i32,
+    pub strafe: i32,
+    pub jump: bool,
+    pub facing: u16,
+    pub grounded: bool,
     /// Stunned: a climber hangs still, nobody grabs.
-    pub(crate) stunned: bool,
+    pub stunned: bool,
 }
 
 /// The decision for one tick: the new state and, while it holds, the body's velocity
 /// (subunits per tick); `None` moves the player as usual.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct Step {
-    pub(crate) traversal: Traversal,
-    pub(crate) velocity: Option<Vec3i>,
+pub struct Step {
+    pub traversal: Traversal,
+    pub velocity: Option<Vec3i>,
 }
 
 impl Step {
     /// No climb or mantle: dead, swimming.
-    pub(crate) const FREE: Self = Self::free(Traversal::Free);
+    pub const FREE: Self = Self::free(Traversal::Free);
 
     const fn free(traversal: Traversal) -> Self {
         Self {
@@ -411,12 +411,12 @@ impl Step {
 
 /// The world the probes look at: the physics, the climbable surfaces and the ground's body
 /// (the terrain shares its ID).
-pub(crate) struct Probe<'a> {
-    pub(crate) world: &'a World,
-    pub(crate) surfaces: &'a ClimbSurfaces,
-    pub(crate) ground: Option<BodyId>,
+pub struct Probe<'a> {
+    pub world: &'a World,
+    pub surfaces: &'a ClimbSurfaces,
+    pub ground: Option<BodyId>,
     /// The player's own body, which never obstructs it.
-    pub(crate) body: BodyId,
+    pub body: BodyId,
 }
 
 /// A steep face a probe ray met.
@@ -671,12 +671,7 @@ fn up_along(normal: [f32; 3]) -> [f32; 3] {
 
 /// The tick's climb or mantle decision for a living player whose body is centred on `centre`
 /// (game units) after the last physics step.
-pub(crate) fn decide(
-    probe: &Probe<'_>,
-    centre: [f32; 3],
-    current: Traversal,
-    intent: Intent,
-) -> Step {
+pub fn decide(probe: &Probe<'_>, centre: [f32; 3], current: Traversal, intent: Intent) -> Step {
     match current {
         Traversal::Mantling {
             goal,

@@ -58,7 +58,7 @@
       },
       {
         "id": "native-core",
-        "paths": ["crates/mmorpg-core/**", "crates/sim-foundation/**"],
+        "paths": ["crates/mmorpg-core/**", "crates/sim-foundation/**", "crates/sim-movement/**"],
         "instructions": ["docs/ARCHITECTURE.md", "docs/INTEREST_WORKLOADS.md", "docs/SCENARIOS.md"],
         "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
         "capabilities": ["test:unit"],

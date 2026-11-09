@@ -19,7 +19,6 @@ mod casting;
 mod character;
 mod chat;
 mod class;
-pub mod climb;
 mod combat;
 mod combo;
 mod content;
@@ -55,7 +54,6 @@ mod pvp;
 mod quest;
 pub mod raid;
 mod rewards;
-pub mod roll;
 mod routine;
 mod seat;
 mod shapes;
@@ -64,7 +62,6 @@ mod stance;
 mod strike;
 mod structure;
 mod summoned;
-pub mod surface;
 mod transfer;
 pub mod trap;
 pub mod unit;
@@ -204,6 +201,11 @@ pub use sim_foundation::{
     subunits_per_tick_squared, ticks_from_ms, trig, units_per_tick,
 };
 use sim_foundation::{entity, ramp, rock};
+pub use sim_movement::{
+    BACKPEDAL_SPEED_SUBUNITS_PER_TICK, BACKPEDAL_SPEED_UNITS_PER_SECOND,
+    JUMP_VELOCITY_SUBUNITS_PER_TICK, JUMP_VELOCITY_UNITS_PER_SECOND, PLAYER_HALF_EXTENTS_UNITS,
+    RUN_SPEED_SUBUNITS_PER_TICK, RUN_SPEED_UNITS_PER_SECOND, climb, roll, surface,
+};
 pub use snapshot::{
     CanonicalCreatureAbilities, CanonicalCreatureSnapshot, CanonicalPlayerAbilities,
     CanonicalPlayerCombat, CanonicalPlayerSnapshot, CanonicalZoneSnapshot, CreatureAi,
@@ -260,18 +262,6 @@ pub const INTEREST_RADIUS_UNITS: i32 = 4_500;
 /// its per-datagram byte budget in this priority order.
 pub const MAX_VISIBLE_ENTITIES: usize = 64;
 
-/// Character collision box: 0.6 m × 1.8 m × 0.6 m, shared with clients.
-pub const PLAYER_HALF_EXTENTS_UNITS: [i32; 3] = [30, 90, 30];
-/// Horizontal speed for forward, strafe and forward-diagonal intent (6.3 m/s).
-pub const RUN_SPEED_UNITS_PER_SECOND: i32 = 630;
-pub const RUN_SPEED_SUBUNITS_PER_TICK: i32 = subunits_per_tick(RUN_SPEED_UNITS_PER_SECOND);
-/// Horizontal speed whenever intent has a backward component (3.9 m/s).
-pub const BACKPEDAL_SPEED_UNITS_PER_SECOND: i32 = 390;
-pub const BACKPEDAL_SPEED_SUBUNITS_PER_TICK: i32 =
-    subunits_per_tick(BACKPEDAL_SPEED_UNITS_PER_SECOND);
-/// Upward velocity a grounded jump sets before physics applies gravity (4.8 m/s).
-pub const JUMP_VELOCITY_UNITS_PER_SECOND: i32 = 480;
-pub const JUMP_VELOCITY_SUBUNITS_PER_TICK: i32 = subunits_per_tick(JUMP_VELOCITY_UNITS_PER_SECOND);
 /// Player intent. The session runtime supplies identity and sequence separately.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ZoneCommand {

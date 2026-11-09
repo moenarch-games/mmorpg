@@ -59,7 +59,7 @@ impl Roll {
     /// One tick on: a roll runs out into its cooldown and the cooldown into ready. A pending
     /// press is left for [`Self::start`].
     #[must_use]
-    pub(crate) const fn advanced(self) -> Self {
+    pub const fn advanced(self) -> Self {
         match self {
             Self::Rolling { yaw, ticks } if ticks + 1 < ROLL_TICKS => Self::Rolling {
                 yaw,
@@ -76,7 +76,7 @@ impl Roll {
 
     /// Ends a roll in progress early: its cooldown starts.
     #[must_use]
-    pub(crate) const fn ended(self) -> Self {
+    pub const fn ended(self) -> Self {
         match self {
             Self::Rolling { .. } => Self::Recovering { ticks: 0 },
             Self::Ready | Self::Pending | Self::Recovering { .. } => self,
@@ -86,7 +86,7 @@ impl Roll {
     /// Resolves a pending press: a roll along `yaw` when the player `can` roll, otherwise the
     /// press is dropped.
     #[must_use]
-    pub(crate) const fn start(self, can: bool, yaw: u16) -> Self {
+    pub const fn start(self, can: bool, yaw: u16) -> Self {
         match self {
             Self::Pending if can => Self::Rolling { yaw, ticks: 0 },
             Self::Pending => Self::Ready,
@@ -96,10 +96,10 @@ impl Roll {
 
     /// The horizontal controller velocity of a roll along `yaw`, in subunits per tick, scaled by
     /// the player's movement speed `percent` (roots stop it, snares slow it).
-    pub(crate) fn velocity(yaw: u16, percent: i32) -> [i32; 2] {
+    pub fn velocity(yaw: u16, percent: i32) -> [i32; 2] {
         let (x, z) = trig::direction(yaw);
         let along = |unit| trig::checked_scale(ROLL_SPEED_SUBUNITS_PER_TICK, unit).unwrap_or(0);
-        crate::aura::scale_velocity([along(x), along(z)], percent)
+        crate::scale_velocity([along(x), along(z)], percent)
     }
 }
 

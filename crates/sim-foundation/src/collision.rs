@@ -106,3 +106,27 @@ pub struct StaticCollider {
     pub position: [i32; 3],
     pub half_extents: [i32; 3],
 }
+
+pub const MAX_STATIC_COLLIDERS: usize = 4_096;
+
+/// Half-open XZ rectangle `[min, max)` in units.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XzBounds {
+    pub min: [i32; 2],
+    pub max: [i32; 2],
+}
+
+impl XzBounds {
+    #[must_use]
+    pub const fn contains(self, x: i32, z: i32) -> bool {
+        self.min[0] <= x && x < self.max[0] && self.min[1] <= z && z < self.max[1]
+    }
+
+    #[must_use]
+    pub const fn overlaps(self, other: Self) -> bool {
+        self.min[0] < other.max[0]
+            && other.min[0] < self.max[0]
+            && self.min[1] < other.max[1]
+            && other.min[1] < self.max[1]
+    }
+}

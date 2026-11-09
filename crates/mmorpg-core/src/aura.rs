@@ -99,12 +99,7 @@ pub(crate) fn speed_percent(auras: &[Aura]) -> i32 {
     (100 - snare).max(0)
 }
 
-/// Scales a horizontal velocity by `percent`, rounding toward zero.
-pub(crate) fn scale_velocity(velocity: [i32; 2], percent: i32) -> [i32; 2] {
-    velocity.map(|component| {
-        i32::try_from(i64::from(component) * i64::from(percent) / 100).unwrap_or(0)
-    })
-}
+pub(crate) use sim_movement::scale_velocity;
 
 /// A swing interval shortened by the strongest haste: `ticks × 100 / (100 + haste)`.
 pub(crate) fn hasted_swing(ticks: u16, auras: &[Aura]) -> u16 {
