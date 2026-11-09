@@ -6,8 +6,11 @@ use std::sync::Arc;
 use mmorpg_core::greyhaven_vale::{self, highlands};
 use mmorpg_core::{ZoneCommand, ZoneId, ZoneSimulation};
 
+/// The walking route tested on bare terrain: the region's Redbrand garrison (#502) has its own
+/// test, and a level 1 walker would not survive it.
 fn player_at(feet: [i32; 2]) -> ZoneSimulation {
-    let mut zone = ZoneSimulation::with_content(ZoneId::new(1), greyhaven_vale::content()).unwrap();
+    let definition = greyhaven_vale::greyhaven_vale_definition();
+    let mut zone = ZoneSimulation::with_definition(ZoneId::new(1), definition).unwrap();
     zone.add_player(1).unwrap();
     let mut state = zone.snapshot().unwrap();
     let ground = zone.content().definition().ground_at(feet[0], feet[1]);

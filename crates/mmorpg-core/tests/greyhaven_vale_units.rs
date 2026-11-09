@@ -349,6 +349,28 @@ fn spawns_populate_their_subzones() {
             5,
         ),
         ((greyhaven_vale::vale::REDBRAND_HOLLOW, "Loose Boulder"), 1),
+        // The Bandit Highlands garrison (#502).
+        (
+            (
+                greyhaven_vale::highlands::BANDIT_HIGHLANDS,
+                "Redbrand Bandit",
+            ),
+            14,
+        ),
+        (
+            (
+                greyhaven_vale::highlands::BANDIT_HIGHLANDS,
+                "Redbrand Crossbowman",
+            ),
+            8,
+        ),
+        (
+            (
+                greyhaven_vale::highlands::BANDIT_HIGHLANDS,
+                "Redbrand Brute",
+            ),
+            3,
+        ),
     ]);
     assert_eq!(counts, expected);
 }

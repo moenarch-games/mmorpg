@@ -42,7 +42,9 @@ impl Walker {
             let p = self.feet();
             let dx = x - p[0];
             let dz = z - p[2];
-            if dx.hypot(dz) < 30. {
+            // Road waypoints are approached, not stood on: a creature engaged on the waypoint
+            // (the Wolfrun Trail's wolf 107, say) must not stall the walk.
+            if dx.hypot(dz) < 60. {
                 return;
             }
             let heading = (dx.atan2(dz) / std::f32::consts::TAU * 65536.).round() as i32;

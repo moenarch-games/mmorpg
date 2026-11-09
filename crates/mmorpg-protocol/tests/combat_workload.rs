@@ -68,13 +68,15 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // AI and projection ceilings are unchanged; the byte ceilings grew one byte per projection for
     // the summoned-terrain count (#293). The boulder trap (#299) stands one more prop on a fixed
     // sphere in every step's world: 360 more body visits per 360 ticks.
-    // World traps (#300) add one count byte to every projection. The rock the brook sinks under
-    // adds one fixed body: 360 more body visits per 360 ticks.
+    // World traps (#300) add one count byte to every projection. The Bandit Highlands garrison
+    // (#502) adds 25 creatures for AI and physics every tick (9,000 of each per 360 ticks); the
+    // spread fights' bots stay on the Vale's part of the spawn table. The rock the brook sinks
+    // under adds one fixed body: 360 more body visits per 360 ticks.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [29_160, 1_306_080, 288_000, 6_088_352],
-        [29_160, 1_303_200, 93_060, 1_794_309],
-        [29_160, 1_311_840, 424_719, 7_878_807],
-        [28_804, 1_323_004, 2_323_474, 24_322_842],
+        [38_160, 1_315_080, 288_000, 6_088_352],
+        [38_160, 1_312_200, 93_060, 1_794_309],
+        [38_160, 1_320_840, 424_719, 7_878_807],
+        [37_804, 1_332_004, 2_323_474, 24_322_842],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();
@@ -111,7 +113,7 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
             assert!(report.death_records > 0);
         } else {
             assert_eq!(report.event_records, 0);
-            assert_eq!(report.ai_evaluations, 81 * TICKS);
+            assert_eq!(report.ai_evaluations, 106 * TICKS);
         }
         if fixture.crowded {
             // Whole 14-byte events and 27-byte records beside the fixed part
