@@ -3,6 +3,7 @@ import { wireCatalog, type EntityFlags, type EntityState, type QuestSheet, type 
 export const NO_FLAGS: EntityFlags = {
   dead: false, inCombat: false, hostile: false, attackable: false, tappedByOther: false, evading: false, targetsViewer: false, lootable: false,
   traversal: "free",
+  posture: "free",
 };
 
 /** A healthy level-1 player record. */
