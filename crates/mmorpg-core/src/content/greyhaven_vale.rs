@@ -34,6 +34,7 @@ pub mod layout;
 pub mod market;
 pub mod marsh;
 pub mod marshal_house;
+pub mod paint;
 pub mod quests;
 pub mod raid;
 pub mod shrine;
@@ -520,7 +521,7 @@ pub fn terrain() -> Terrain {
                         brook::bed_depth(x, z)
                     } else {
                         0
-                    }
+                    } + paint::height_delta(column, row)
                 }
             })
         })
