@@ -3,7 +3,7 @@ import { LitMaterial } from "@moritzbrantner/three-lighting";
 import type { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import type { TerrainStreamSource } from "./scenery-nodes";
 import { loadBundleGltfs, readBundleAttachment } from "./static-bundle";
-import { drawWhole } from "./static-batches";
+import { GrowingBatch, type GrowingPlaced } from "./static-batches";
 
 /** The `greyhaven-terrain` bundle `scripts/fetch-bundles.sh` places in `web/public` (#525). */
 export const TERRAIN_BUNDLE = `${import.meta.env.BASE_URL}scenery/greyhaven.terrain/`;
@@ -88,56 +88,7 @@ function geometry(draw: TileDraw): THREE.BufferGeometry {
   return geometry;
 }
 
-type Placed = { batch: Batch; geometry: number; instance: number };
-
-/**
- * One `BatchedMesh` per material (#526, as #615 batches the static scenery): every tile drawn with that material is one
- * instance, drawn whole in every view ([`drawWhole`]), so the whole terrain costs one multi-draw call per material and pass.
- * Room grows as near levels stream in; evicted ones free theirs for reuse.
- */
-class Batch {
-  readonly mesh: THREE.BatchedMesh;
-  #vertices: number;
-  #indices: number;
-
-  constructor(name: string, material: THREE.Material, vertices: number, indices: number, instances: number) {
-    this.#vertices = vertices;
-    this.#indices = indices;
-    this.mesh = new THREE.BatchedMesh(instances, vertices, indices, material);
-    this.mesh.name = name;
-    this.mesh.matrixAutoUpdate = false;
-    // Tiles stream in and out, so the batch's own sphere would go stale.
-    this.mesh.frustumCulled = false;
-    drawWhole(this.mesh);
-  }
-
-  add(geometry: THREE.BufferGeometry, visible: boolean): Placed {
-    const vertices = geometry.attributes.position!.count;
-    const indices = geometry.index!.count;
-    const mesh = this.mesh;
-    if (mesh.unusedVertexCount < vertices || mesh.unusedIndexCount < indices) {
-      mesh.optimize();
-    }
-    if (mesh.unusedVertexCount < vertices || mesh.unusedIndexCount < indices) {
-      this.#vertices = Math.max(this.#vertices * 2, this.#vertices + vertices);
-      this.#indices = Math.max(this.#indices * 2, this.#indices + indices);
-      mesh.setGeometrySize(this.#vertices, this.#indices);
-    }
-    if (mesh.instanceCount >= mesh.maxInstanceCount) {
-      mesh.setInstanceCount(mesh.maxInstanceCount * 2);
-    }
-    const id = mesh.addGeometry(geometry);
-    const instance = mesh.addInstance(id);
-    mesh.setVisibleAt(instance, visible);
-    geometry.dispose();
-    return { batch: this, geometry: id, instance };
-  }
-
-  remove(placed: Placed): void {
-    this.mesh.deleteInstance(placed.instance);
-    this.mesh.deleteGeometry(placed.geometry);
-  }
-}
+type Placed = GrowingPlaced;
 
 /**
  * The terrain in visual tiles (#526) with the textured ground layers of #525. Every tile's far level (its relief at
@@ -154,7 +105,7 @@ class Batch {
 export class Ground {
   readonly root = new THREE.Group();
   readonly #stream: TerrainStreamSource;
-  readonly #batches = new Map<string, Batch>();
+  readonly #batches = new Map<string, GrowingBatch>();
   readonly #materials = new Map<string, THREE.Material>();
   readonly #far: Placed[][];
   readonly #near = new Map<number, Placed[]>();
@@ -180,7 +131,7 @@ export class Ground {
     });
   }
 
-  #batch(draw: TileDraw): Batch {
+  #batch(draw: TileDraw): GrowingBatch {
     const key = draw.far
       ? draw.layer === "rock" ? "rock-far" : `far-${draw.overlay ? "overlay" : "base"}`
       : `${draw.layer}${draw.overlay ? "-overlay" : ""}`;
@@ -192,7 +143,7 @@ export class Ground {
         this.#materials.set(key, material);
       }
       // Far levels are placed once (about 100 tiles of 430 vertices); near levels stream (about 15 resident).
-      batch = draw.far ? new Batch(`terrain:${key}`, material, 65_536, 327_680, 512) : new Batch(`terrain:${key}`, material, 65_536, 196_608, 64);
+      batch = draw.far ? new GrowingBatch(`terrain:${key}`, material, 65_536, 327_680, 512) : new GrowingBatch(`terrain:${key}`, material, 65_536, 196_608, 64);
       this.#batches.set(key, batch);
       this.root.add(batch.mesh);
       this.#changed = true;

@@ -1,4 +1,4 @@
-import { CACHE_NAME, RESET_PARAM } from "./policy";
+import { CACHE_NAME, DERIVED_CACHE_NAME, RESET_PARAM } from "./policy";
 
 /**
  * Install the Pages asset cache (#410) for later visits. `?reset-cache` instead
@@ -11,7 +11,10 @@ export async function installAssetCache(base: string): Promise<void> {
   try {
     if (url.searchParams.has(RESET_PARAM)) {
       for (const registration of await navigator.serviceWorker.getRegistrations()) { await registration.unregister(); }
-      if (typeof caches !== "undefined") { await caches.delete(CACHE_NAME); }
+      if (typeof caches !== "undefined") {
+        await caches.delete(CACHE_NAME);
+        await caches.delete(DERIVED_CACHE_NAME);
+      }
       url.searchParams.delete(RESET_PARAM);
       location.replace(url.href);
       return;

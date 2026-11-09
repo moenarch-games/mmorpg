@@ -117,3 +117,19 @@ describe("the shared static scene in the browser", () => {
     batch.dispose();
   });
 });
+
+// #526: nothing decodes a group's geometry until it is resident; a frame without residency info lists every batch.
+test("static geometry decodes on first read and resident-filtered frames omit the rest", () => {
+  const lazy = buildSceneryScene(world.scenery, world.staticScene);
+  const frame = new SceneryFrame(lazy);
+  const all = frame.nodes([0, 5, 0], { seconds: 0, animate: false });
+  expect(all.instanceBatches.length).toBe(lazy.instanceBatches.length);
+  const none = frame.nodes([0, 5, 0], { seconds: 0, animate: false, resident: () => false });
+  expect(none.instanceBatches).toEqual([]);
+  const [resident] = lazy.instanceBatches;
+  const one = frame.nodes([0, 5, 0], { seconds: 0, animate: false, resident: (group) => group === resident!.group });
+  expect(one.instanceBatches.length).toBe(1);
+  expect(one.instanceBatches[0]!.geometry.kind).toBe("mesh");
+  expect(lazy.batches[0]!.node.geometry.kind).toBe("mesh");
+  expect(lazy.batches[0]!.buffers().positions.length).toBe(lazy.batches[0]!.node.geometry.positions.length * 3);
+});
