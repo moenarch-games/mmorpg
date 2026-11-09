@@ -17,6 +17,11 @@
 //! with a branch east to a lookout tower on a knoll. The stronghold's yard and the lookout's
 //! knoll are level; the rough land fades in from the gorge's top and settles before the
 //! region's walls. Every height is sampled on the terrain grid's 4 m lattice.
+//!
+//! Sculpted landforms (#528, `highlandRelief` in the landscape data) stand on that rough
+//! ground: long spines with terraced, dipping strata, a saddle where the Trail crosses them on
+//! its last rise, dry gullies and a few levelled overlooks. Their flanks stay walkable, the
+//! roads keep their own grades through them, and clients draw and collide with the same grid.
 
 use super::basin::{Along, Lane};
 use super::{Road, ids, on_terrain, smooth_q10, value_noise_q10};
@@ -324,11 +329,10 @@ fn authored_escarpment(x: i64, z: i64, plateau: i64) -> i64 {
     height + rough - gully * envelope / 1024
 }
 
-/// The high ground's relief above [`PLATEAU_Y`]: broken swells and knolls, level on the
-/// stronghold's yard and the lookout's knoll; it fades in from the gorge's top and settles
-/// again before the walls, so the mountains clients draw beyond them start from the high
-/// ground.
-fn rough_ground(x: i64, z: i64) -> i64 {
+/// Q10 weight of the high ground's relief: level on the stronghold's yard and the lookout's
+/// knoll; it fades in from the gorge's top and settles again before the walls, so the
+/// mountains clients draw beyond them start from the high ground.
+fn relief_weight(x: i64, z: i64) -> i64 {
     let level_weight = smooth_q10(
         distance_to_level(i32::try_from(x).unwrap_or(0), i32::try_from(z).unwrap_or(0)),
         0,
@@ -341,9 +345,160 @@ fn rough_ground(x: i64, z: i64) -> i64 {
     );
     let wall = (i64::from(BOUNDS.max[0]) - x.abs()).min(z - i64::from(BOUNDS.min[1]));
     let settle = smooth_q10(wall, 400, 2_400);
+    level_weight * entry / 1_024 * settle / 1_024
+}
+
+/// The high ground's relief above [`PLATEAU_Y`]: broken swells and knolls under the sculpted
+/// landforms (#528).
+fn rough_ground(x: i64, z: i64) -> i64 {
     let rough = ROUGH_UNITS * value_noise_q10(x, z, 5_000, SEED) / 1_024
         + KNOLL_UNITS * value_noise_q10(x, z, 1_600, SEED.rotate_left(13)) / 1_024;
-    rough * level_weight / 1_024 * entry / 1_024 * settle / 1_024
+    (rough + sculpted_relief(x, z)) * relief_weight(x, z) / 1_024
+}
+
+/// How far the authored widths and crowns vary along their length, in Q10 (about 12%).
+const FEATURE_VARIATION_Q10: i64 = 120;
+
+/// The closest approach of `(x, z)` to a feature's points: the squared distance and the
+/// interpolated half width and crown or depth there.
+fn closest_on_feature(points: &[[i32; 4]], x: i64, z: i64) -> (i64, i64, i64) {
+    points
+        .windows(2)
+        .map(|pair| {
+            let [ax, az, aw, ah] = pair[0].map(i64::from);
+            let [bx, bz, bw, bh] = pair[1].map(i64::from);
+            let along = along_segment([ax, az], [bx, bz], x, z);
+            let (dx, dz) = (bx - ax, bz - az);
+            let length = dx * dx + dz * dz;
+            let (px, pz) = (ax + dx * along / length, az + dz * along / length);
+            (
+                (x - px) * (x - px) + (z - pz) * (z - pz),
+                aw + (bw - aw) * along / length,
+                ah + (bh - ah) * along / length,
+            )
+        })
+        .min_by_key(|sample| sample.0)
+        .unwrap_or((i64::MAX, 0, 0))
+}
+
+/// How far along the segment from `a` to `b` the closest point to `(x, z)` lies, out of the
+/// segment's squared length.
+fn along_segment(a: [i64; 2], b: [i64; 2], x: i64, z: i64) -> i64 {
+    let (dx, dz) = (b[0] - a[0], b[1] - a[1]);
+    ((x - a[0]) * dx + (z - a[1]) * dz).clamp(0, dx * dx + dz * dz)
+}
+
+/// A spine's or gully's height at `(x, z)`: straight flanks from its toe to its crown, its
+/// width and crown wandering around the authored values so no two stretches repeat.
+fn feature_height(points: &[[i32; 4]], x: i64, z: i64, seed: u64) -> i64 {
+    let (squared, width, peak) = closest_on_feature(points, x, z);
+    let distance = squared.isqrt();
+    let vary = |value: i64, cell: i64, seed: u64| {
+        value * (1_024 + (value_noise_q10(x, z, cell, seed) - 512) * FEATURE_VARIATION_Q10 / 512)
+            / 1_024
+    };
+    let width = vary(width, 1_900, seed);
+    if width <= 0 || distance >= width {
+        return 0;
+    }
+    vary(peak, 3_100, seed.rotate_left(11)) * (width - distance) / width
+}
+
+/// Terraces a feature's height: within each stratum a gentle tread gives way to a steeper
+/// riser. The bands dip across the region, so the benches do not simply follow the contours.
+fn strata(height: i64, x: i64, z: i64) -> i64 {
+    /// The share of a band's rise taken by its tread, and the share of its height that tread
+    /// keeps, in Q10.
+    const TREAD: i64 = 576;
+    const TREAD_RISE: i64 = 256;
+    let bands = &super::landscape::data().highland_relief.strata_bands;
+    let total: i64 = bands.iter().copied().map(i64::from).sum();
+    let mut within = (height + (x * 3 + z * 2).div_euclid(64)).rem_euclid(total);
+    let mut band = total;
+    for &candidate in bands {
+        let candidate = i64::from(candidate);
+        if within < candidate {
+            band = candidate;
+            break;
+        }
+        within -= candidate;
+    }
+    let u = within * 1_024 / band;
+    let v = if u < TREAD {
+        u * TREAD_RISE / TREAD
+    } else {
+        TREAD_RISE + (u - TREAD) * (1_024 - TREAD_RISE) / (1_024 - TREAD)
+    };
+    // Only where the land has risen, so the terraces do not dig below the toes.
+    height + (v - u) * band / 1_024 * smooth_q10(height, 150, 500) / 1_024
+}
+
+/// The sculpted landforms' height above the rough ground at `(x, z)`: the highest spine,
+/// terraced, less the deepest gully, terraced the same way.
+fn unfaded_sculpt(x: i64, z: i64) -> i64 {
+    let relief = &super::landscape::data().highland_relief;
+    let highest = |features: &[super::landscape::ReliefFeature], offset: u32| {
+        features
+            .iter()
+            .enumerate()
+            .map(|(index, feature)| {
+                let turn = offset + u32::try_from(index).unwrap_or(0);
+                feature_height(&feature.points, x, z, SEED.rotate_left(turn))
+            })
+            .max()
+            .unwrap_or(0)
+    };
+    strata(highest(&relief.spines, 3), x, z) - strata(highest(&relief.gullies, 37), x, z)
+}
+
+/// Q10 weight of the landforms round the garrison: none inside a wander disc and a margin
+/// (the ground each creature paces stays exactly as it was), full beyond a short fade.
+fn garrison_clearance(x: i64, z: i64) -> i64 {
+    super::highland_bandits::wander_discs()
+        .map(|(center, radius)| {
+            let [cx, cz] = center.map(i64::from);
+            let distance = ((x - cx) * (x - cx) + (z - cz) * (z - cz)).isqrt();
+            smooth_q10(distance, i64::from(radius) + 300, i64::from(radius) + 1_400)
+        })
+        .min()
+        .unwrap_or(1_024)
+}
+
+/// The landforms levelled at the ledges and faded away from the Highland Trail, the
+/// Lookout Path and the garrison's ground, so routes and spawn points keep their grades.
+fn sculpted_relief(x: i64, z: i64) -> i64 {
+    const LEDGE_BLEND: i64 = 600;
+    let mut sculpt = unfaded_sculpt(x, z);
+    for ledge in &super::landscape::data().highland_relief.ledges {
+        let [lx, lz] = ledge.center.map(i64::from);
+        let distance = ((x - lx) * (x - lx) + (z - lz) * (z - lz)).isqrt();
+        let radius = i64::from(ledge.radius);
+        if distance < radius + LEDGE_BLEND {
+            let level = unfaded_sculpt(lx, lz);
+            sculpt = level
+                + (sculpt - level) * smooth_q10(distance, radius, radius + LEDGE_BLEND) / 1_024;
+        }
+    }
+    sculpt * smooth_q10(route_distance(x, z), 500, 2_600) / 1_024 * garrison_clearance(x, z) / 1_024
+}
+
+/// Distance from `(x, z)` to the Highland Trail or the Lookout Path.
+fn route_distance(x: i64, z: i64) -> i64 {
+    ROADS
+        .iter()
+        .filter(|road| road.name != "Highland Pass")
+        .flat_map(|road| road.points.windows(2))
+        .map(|pair| {
+            let (a, b) = (pair[0].map(i64::from), pair[1].map(i64::from));
+            let (dx, dz) = (b[0] - a[0], b[1] - a[1]);
+            let length = dx * dx + dz * dz;
+            let along = along_segment(a, b, x, z);
+            let (px, pz) = (a[0] + dx * along / length, a[1] + dz * along / length);
+            (x - px) * (x - px) + (z - pz) * (z - pz)
+        })
+        .min()
+        .unwrap_or(0)
+        .isqrt()
 }
 
 /// The second major region beyond the Vale (#425): its escarpment and high ground.

@@ -3,7 +3,7 @@
 //! stronghold and back into the Vale, all on the zone's own physics.
 use std::sync::Arc;
 
-use mmorpg_core::greyhaven_vale::{self, highlands};
+use mmorpg_core::greyhaven_vale::{self, highlands, landscape, terrain};
 use mmorpg_core::{ZoneCommand, ZoneId, ZoneSimulation};
 
 /// The walking route tested on bare terrain: the region's Redbrand garrison (#502) has its own
@@ -178,4 +178,220 @@ fn a_player_can_walk_along_the_western_rock_terrace() {
         (2_100. ..2_900.).contains(&at[1]),
         "supported by the upper terrace: {at:?}"
     );
+}
+
+/// The Vale Ring Road, the pass's switchbacks, the Lookout Path, the Highland Trail over its
+/// saddle to the stronghold's gate, a cross-country return to the lookout by way of the
+/// saddle's overlook, and back down into the Vale (#528).
+#[test]
+fn a_player_walks_the_ring_road_to_the_lookout_and_stronghold_and_back_over_the_saddle() {
+    let mut zone = player_at([6_400, -15_000]);
+    let mut sequence = 0;
+    let climb = [
+        [6_400, -16_000],
+        [6_400, -17_600],
+        [5_200, -17_600],
+        [5_200, -23_200],
+        [10_400, -23_200],
+        [10_400, -25_600],
+        [3_600, -25_600],
+        [3_600, -28_000],
+        [3_600, -33_000],
+    ];
+    walk(&mut zone, &mut sequence, &climb);
+    assert_grounded_near(&feet(&zone), [3_600, -33_000]);
+    // Out to the lookout's knoll and back to the fork.
+    walk(
+        &mut zone,
+        &mut sequence,
+        &[[9_000, -35_000], [12_400, -37_600]],
+    );
+    assert_grounded_near(&feet(&zone), [12_400, -37_600]);
+    walk(
+        &mut zone,
+        &mut sequence,
+        &[[9_000, -35_000], [3_600, -33_000]],
+    );
+    // Over the Highland Trail's saddle to the stronghold's gate.
+    walk(
+        &mut zone,
+        &mut sequence,
+        &[
+            [-8_000, -38_000],
+            [-8_000, -44_000],
+            [-4_000, -45_500],
+            [0, -47_000],
+            [0, -49_000],
+        ],
+    );
+    let gate = feet(&zone);
+    assert_grounded_near(&gate, [0, -49_000]);
+    // A cross-country return: over the saddle's knoll to its ledge and on to the lookout.
+    let overlook = ledge("Saddle Ledge");
+    walk(
+        &mut zone,
+        &mut sequence,
+        &[
+            [-1_000, -45_000],
+            overlook,
+            [6_000, -42_500],
+            [11_000, -36_400],
+        ],
+    );
+    let knoll = feet(&zone);
+    assert!(knoll[1] > highlands::PLATEAU_Y as f32 - 100.0, "{knoll:?}");
+    // Home down the switchbacks.
+    let mut down = climb;
+    down.reverse();
+    walk(&mut zone, &mut sequence, &[[9_000, -35_000]]);
+    walk(&mut zone, &mut sequence, &down);
+    walk(&mut zone, &mut sequence, &[[6_400, -15_000]]);
+    assert_grounded_near(&feet(&zone), [6_400, -15_000]);
+}
+
+fn assert_grounded_near(at: &[f32; 3], goal: [i32; 2]) {
+    let ground = greyhaven_vale::greyhaven_vale_definition().ground_at(at[0] as i32, at[2] as i32);
+    assert!(
+        (at[1] - ground as f32).abs() < 60.0,
+        "floating or sunken at {at:?} near {goal:?} (ground {ground})"
+    );
+}
+
+fn ledge(name: &str) -> [i32; 2] {
+    landscape::data()
+        .highland_relief
+        .ledges
+        .iter()
+        .find(|ledge| ledge.name == name)
+        .unwrap_or_else(|| panic!("ledge {name}"))
+        .center
+}
+
+/// Whether the grid step from `a` to `b` is walkable: no steeper than the controller's 45°.
+fn walkable_step(a: i32, b: i32) -> bool {
+    (a - b).abs() <= terrain::STEP
+}
+
+#[test]
+fn the_sculpted_landforms_vary_and_stay_walkable_and_connected() {
+    let grid = greyhaven_vale::terrain();
+    let (columns, rows) = (i32::from(grid.columns), i32::from(grid.rows));
+    let index = |column: i32, row: i32| usize::try_from(row * columns + column).unwrap();
+    let position = |column: i32, row: i32| {
+        [
+            terrain::ORIGIN[0] + column * terrain::STEP,
+            terrain::ORIGIN[1] + row * terrain::STEP,
+        ]
+    };
+    let cell = |[x, z]: [i32; 2]| {
+        [
+            (x - terrain::ORIGIN[0]) / terrain::STEP,
+            (z - terrain::ORIGIN[1]) / terrain::STEP,
+        ]
+    };
+
+    // The high ground proper: inside the walls, north of the escarpment's rear.
+    let on_high_ground = |[x, z]: [i32; 2]| {
+        x > highlands::BOUNDS.min[0]
+            && x < highlands::BOUNDS.max[0]
+            && z > highlands::BOUNDS.min[1]
+            && z <= highlands::ESCARPMENT[3] - 1_600
+    };
+
+    let mut reachable = vec![false; grid.heights.len()];
+    let [start_column, start_row] = cell([0, -47_000]);
+    let mut frontier = vec![(start_column, start_row)];
+    reachable[index(start_column, start_row)] = true;
+    while let Some((column, row)) = frontier.pop() {
+        for (dc, dr) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            let (c, r) = (column + dc, row + dr);
+            if !(0..columns).contains(&c) || !(0..rows).contains(&r) {
+                continue;
+            }
+            let next = index(c, r);
+            if reachable[next]
+                || !on_high_ground(position(c, r))
+                || !walkable_step(grid.heights[index(column, row)], grid.heights[next])
+            {
+                continue;
+            }
+            reachable[next] = true;
+            frontier.push((c, r));
+        }
+    }
+
+    let mut total = 0;
+    let mut stranded = 0;
+    let (mut lowest, mut highest) = (i32::MAX, i32::MIN);
+    for row in 0..rows {
+        for column in 0..columns {
+            let at = position(column, row);
+            if !on_high_ground(at) || highlands::level(at[0], at[1]) {
+                continue;
+            }
+            total += 1;
+            stranded += i32::from(!reachable[index(column, row)]);
+            lowest = lowest.min(grid.heights[index(column, row)]);
+            highest = highest.max(grid.heights[index(column, row)]);
+        }
+    }
+    assert!(
+        stranded * 100 <= total * 3,
+        "{stranded} of {total} high-ground samples are cut off"
+    );
+    assert!(
+        highest - highlands::PLATEAU_Y >= 1_600 && highlands::PLATEAU_Y - lowest >= 400,
+        "relief spans {lowest}..{highest}"
+    );
+
+    // Every route point, spawn and ledge of the high ground is on the connected walkable ground.
+    let content = greyhaven_vale::content();
+    let garrison = content
+        .creature_spawns()
+        .iter()
+        .filter(|spawn| (1_000..1_100).contains(&spawn.id.get()))
+        .map(|spawn| spawn.position);
+    let roads = highlands::ROADS
+        .iter()
+        .filter(|road| road.name != "Highland Pass")
+        .flat_map(|road| road.points.iter().copied());
+    let ledges = landscape::data()
+        .highland_relief
+        .ledges
+        .iter()
+        .map(|ledge| ledge.center);
+    for at in roads
+        .chain(garrison)
+        .chain(ledges)
+        .filter(|&at| on_high_ground(at))
+    {
+        let [column, row] = cell(at);
+        assert!(reachable[index(column, row)], "{at:?} is cut off");
+    }
+
+    // The saddle really is one: the Trail crosses it below the shoulders on either side.
+    let definition = greyhaven_vale::greyhaven_vale_definition();
+    let saddle = definition.ground_at(-4_000, -45_500);
+    let north = definition.ground_at(-6_400, -47_800);
+    let south = definition.ground_at(-2_000, -42_200);
+    assert!(
+        north - saddle >= 500 && south - saddle >= 500,
+        "saddle {saddle} between {north} and {south}"
+    );
+    // The ledges are level enough to stand on and overlook something.
+    for name in ["Gorge Watch", "Saddle Ledge", "Saw Ledge", "Keep Overlook"] {
+        let [x, z] = ledge(name);
+        let centre = definition.ground_at(x, z);
+        for [dx, dz] in [[-400, 0], [400, 0], [0, -400], [0, 400]] {
+            let around = definition.ground_at(x + dx, z + dz);
+            assert!(
+                (around - centre).abs() <= 120,
+                "{name} is uneven: {centre} next to {around}"
+            );
+        }
+        assert!(
+            centre > highlands::PLATEAU_Y + 500,
+            "{name} stands at {centre}"
+        );
+    }
 }
