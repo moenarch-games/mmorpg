@@ -95,6 +95,12 @@ A wheel cannot open during a hold or aim. Stun, death and focus loss end the cur
 
 Keys 1–9 and 0 use the first ten action-bar slots; **Shift+1 to Shift+0** use slots 11–20, a second row of the bar in both clients for every class whose kit outgrows ten (Atlas `5.2.i294`). Shift is now only this modifier: the dodge roll moved to **F** (`5.2.i294-2`). Gamepad and touch reach of the second row stays out of scope until the wheels (#653).
 
+## Hold-to-draw power shots (#607)
+
+Aimed Shot and Piercing Shot draw while held, on whichever action-bar slot they sit, Shift row included (Atlas `5.2.i607`). A key, a gamepad button or a touch face held on them starts `Bow_Power_Draw` locally and keeps it drawn; **releasing it sends the shot**, the zone decides then, and `Bow_Release_Upper` plays. A tap fires at once from the partial draw. An action-bar click has no release to wait for and fires at once. Nothing here changes the abilities' cost, cooldown or damage, and no cast time is added: a release out of range or on cooldown is an ordinary refused cast.
+
+The draw does not own the pointer, so free look keeps steering and a focused camera keeps tracking while it is held. Escape, a mouse click, losing focus or pointer lock, opening a panel or Settings, dying, a stun, starting a cast, the bar no longer holding the ability, or pressing another ability all drop the draw without firing; a superseded key's later release does nothing. A press while a panel is open or the ability cannot draw (a dead, stunned or casting viewer, an unlearned ability) is an ordinary use, and the zone answers it as before. Both clients run the same rule (`mmorpg-client-model`).
+
 ## Ownership and implementation order
 
 1. **#650** — focus/no-focus over-shoulder camera, automatic facing, pointer capture and consistent strafing; browser and native parity.

@@ -1844,7 +1844,7 @@ function runAction(action: GameAction): void {
     case "ability.slot18":
     case "ability.slot19":
     case "ability.slot20": {
-      worldView.useSlot(Number(action.slice("ability.slot".length)));
+      worldView.pressSlot(Number(action.slice("ability.slot".length)));
       return;
     }
     case "combat.cancelCast":
@@ -1886,7 +1886,8 @@ function runAction(action: GameAction): void {
       }
       return;
     case "ui.leaveWorld":
-      if (worldView.clearCombatFocus() || worldView.releaseFreeLook()) { return; }
+      // Escape first lets go of a held bow draw (#607), without a shot.
+      if (worldView.cancelPowerDraw() || worldView.clearCombatFocus() || worldView.releaseFreeLook()) { return; }
       returnToCharacters();
       return;
     case "ui.toggleDebug":
@@ -1915,6 +1916,8 @@ function runRelease(action: ReleasedAction, phase: Exclude<HoldPhase, "press">):
     return;
   }
   const slot = Number(action.slice("ability.slot".length));
+  // A held power shot fires on its deliberate release, ahead of the release report (#607).
+  worldView.releaseSlot(slot, phase === "cancel");
   const catalog = world?.catalog;
   worldView.queueIntent((projection) => {
     const use = catalog ? useAbilitySlot(slot, projection, catalog) : null;

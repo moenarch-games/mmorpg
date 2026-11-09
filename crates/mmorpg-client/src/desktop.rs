@@ -17,6 +17,7 @@ use mmorpg_client::{
     world_controls::{WorldAction, WorldControls},
 };
 use mmorpg_client_model::hud::{CombatHud, class_kit};
+use mmorpg_client_model::power_draw::{DrawRelease, PowerDraw};
 use mmorpg_core::{EntityKind, EntityRef, PlayerClass, Sex, ZoneContent};
 use mmorpg_scenery::Scenery;
 use std::{
@@ -91,6 +92,7 @@ pub fn run(
             .map(|(class, _)| class_kit(class))
             .unwrap_or_default(),
         controls: NativeControls::new(),
+        power_draw: PowerDraw::default(),
         hud: None,
         world_controls: WorldControls::new(),
         npc_context: NpcContext::default(),
@@ -152,6 +154,8 @@ struct App {
     abilities: Vec<u8>,
     /// Ability slots and cast cancelling through the shared input runtime.
     controls: NativeControls,
+    /// The held Aimed or Piercing Shot draw, the shared rule the browser also runs (#607).
+    power_draw: PowerDraw,
     /// The combat HUD of the latest projection.
     hud: Option<CombatHud>,
     world_controls: WorldControls,
@@ -367,6 +371,10 @@ impl App {
     fn world_action(&mut self, action: WorldAction) -> bool {
         match action {
             WorldAction::Cancel => {
+                // Escape only lets go of a held draw, before its other meanings.
+                if self.drop_power_draw() {
+                    return true;
+                }
                 if self.npc_context.npc.is_some() || !self.orbit_buttons.is_empty() {
                     self.npc_context.close();
                     self.world_controls.set_interaction(false);
@@ -556,11 +564,63 @@ impl App {
 
     /// One weapon swing where the character faces (#517); the zone resolves what it hits, and
     /// a press while dead sends nothing.
-    fn swing(&self) {
+    fn swing(&mut self) {
         if self.connected() && !self.dead() {
+            self.drop_power_draw();
             self.input
                 .send_modify(|input| input.swings = input.swings.wrapping_add(1));
         }
+    }
+
+    /// Lets go of a held draw without a shot; `true` if there was one (#607).
+    fn drop_power_draw(&mut self) -> bool {
+        let dropped = self.power_draw.cancel();
+        if dropped {
+            self.presentation.abandon_attack_preparation();
+        }
+        dropped
+    }
+
+    /// The ability on `slot`, 1–20.
+    fn slot_ability(&self, slot: u8) -> Option<u8> {
+        usize::from(slot)
+            .checked_sub(1)
+            .and_then(|index| self.abilities.get(index))
+            .copied()
+    }
+
+    /// A key or pad button (anything with a release) pressed `slot`: a power shot draws and
+    /// waits for the release (#607); everything else is used at once.
+    fn press_slot(&mut self, slot: u8) {
+        let Some(ability) = self.slot_ability(slot) else {
+            return;
+        };
+        let latest = self.presentation.latest();
+        let interface_open = self.ui.windows_open(latest);
+        if self.power_draw.press(slot, ability, latest, interface_open) {
+            self.presentation
+                .hold_attack_preparation(ability, Instant::now());
+        } else {
+            self.use_slot(slot);
+        }
+    }
+
+    /// A slot use with no release to wait for (an action-bar click, or a press that cannot
+    /// draw): one intent the zone answers, with a local wind-up until it does (Atlas 6.6.10).
+    fn use_slot(&mut self, slot: u8) {
+        self.power_draw.cancel();
+        let Some(ability) = self.slot_ability(slot) else {
+            return;
+        };
+        self.send_ability_use(ability);
+        self.presentation.prepare_attack(ability, Instant::now());
+    }
+
+    fn send_ability_use(&self, ability: u8) {
+        self.input.send_modify(|input| {
+            input.ability = ability;
+            input.ability_uses = input.ability_uses.wrapping_add(1);
+        });
     }
 
     /// Tab and R are intents derived from the latest projection; the zone
@@ -597,19 +657,7 @@ impl App {
             ControlAction::TargetNext => self.combat_key(KeyCode::Tab),
             ControlAction::Swing => self.swing(),
             ControlAction::ReleaseSpirit => self.combat_key(KeyCode::KeyR),
-            ControlAction::AbilitySlot(slot) => {
-                let ability = usize::from(slot)
-                    .checked_sub(1)
-                    .and_then(|index| self.abilities.get(index));
-                if let Some(&ability) = ability {
-                    self.input.send_modify(|input| {
-                        input.ability = ability;
-                        input.ability_uses = input.ability_uses.wrapping_add(1);
-                    });
-                    // A reversible local wind-up until the zone answers (Atlas 6.6.10).
-                    self.presentation.prepare_attack(ability, Instant::now());
-                }
-            }
+            ControlAction::AbilitySlot(slot) => self.press_slot(slot),
             ControlAction::CancelCast => {
                 self.input.send_modify(|input| {
                     input.cancels = input.cancels.wrapping_add(1);
@@ -618,7 +666,8 @@ impl App {
             ControlAction::TogglePanel(panel) => self.ui.toggle(panel),
             ControlAction::OpenChat => self.ui.open_chat(),
             ControlAction::Guard => {
-                // The raised shield supersedes an unanswered wind-up.
+                // The raised shield supersedes an unanswered wind-up or a held draw.
+                self.power_draw.cancel();
                 self.presentation.abandon_attack_preparation();
                 self.guard_offset = Some(0.);
                 self.sync_cursor();
@@ -760,6 +809,19 @@ impl App {
         }
     }
 
+    /// A held draw whose ability became unusable, or that an opened window interrupts, drops.
+    fn follow_power_draw(&mut self) {
+        if self.power_draw.drawing().is_none() {
+            return;
+        }
+        if let Some(latest) = self.presentation.latest() {
+            let interface_open = self.ui.windows_open(Some(latest));
+            if self.power_draw.observe(latest, interface_open) {
+                self.presentation.abandon_attack_preparation();
+            }
+        }
+    }
+
     /// Sends each held slot's key or button release (#485), as the browser does on key-up:
     /// the zone reads it only for an experimental graph's hold-to-charge and chord triggers.
     /// A retirement (focus loss, a context or profile change) is sent as retired, so a held
@@ -768,10 +830,17 @@ impl App {
         let releases = self.controls.drain_releases();
         let pad_releases = self.pad.drain_releases();
         for release in releases.into_iter().chain(pad_releases) {
-            let ability = usize::from(release.slot)
-                .checked_sub(1)
-                .and_then(|index| self.abilities.get(index));
-            if let Some(&ability) = ability {
+            // A held power shot fires on its deliberate release, ahead of the release itself.
+            match self.power_draw.release(release.slot, release.retired) {
+                Some(DrawRelease::Fire(ability)) => {
+                    self.send_ability_use(ability);
+                    self.presentation.attack_preparation_sent(Instant::now());
+                }
+                Some(DrawRelease::Drop) => self.presentation.abandon_attack_preparation(),
+                None => {}
+            }
+            let ability = self.slot_ability(release.slot);
+            if let Some(ability) = ability {
                 self.input.send_modify(|input| {
                     input.ability_release = (ability, release.retired);
                     input.ability_releases = input.ability_releases.wrapping_add(1);
@@ -796,6 +865,7 @@ impl App {
         self.guard_offset = None;
         self.pad_guard = None;
         self.pad.retire("inputContextChanged");
+        self.power_draw.cancel();
         self.presentation.abandon_attack_preparation();
         self.update_guard();
         self.update_movement();
@@ -811,7 +881,8 @@ impl App {
                 });
             }
             UiIntent::Party(request) => self.party.send(request),
-            UiIntent::AbilitySlot(slot) => self.control(ControlAction::AbilitySlot(slot)),
+            // A click has no release to wait for: it fires at once, power shots too (#607).
+            UiIntent::AbilitySlot(slot) => self.use_slot(slot),
             UiIntent::ReleaseSpirit => self.combat_key(KeyCode::KeyR),
             UiIntent::Select(target) => {
                 self.input.send_modify(|input| {
@@ -1152,6 +1223,11 @@ impl ApplicationHandler for App {
             } if ui_consumed => {}
             WindowEvent::MouseWheel { .. } if ui_consumed => {}
             WindowEvent::MouseInput { state, button, .. } => {
+                // A click drops a held draw (#607), as it does a directed strike in the browser,
+                // and is never also a swing or selection.
+                if state == ElementState::Pressed && self.drop_power_draw() {
+                    return;
+                }
                 if state == ElementState::Pressed
                     && button == MouseButton::Left
                     && !self.grabbed
@@ -1356,6 +1432,7 @@ impl ApplicationHandler for App {
                             self.connection_epoch = None;
                         }
                         if self.connection_epoch != Some(connection_epoch) {
+                            self.power_draw.cancel();
                             self.presentation.reset(now);
                             self.ui.reset();
                             self.npc_context = NpcContext::default();
@@ -1393,6 +1470,7 @@ impl ApplicationHandler for App {
                 }
                 self.poll_pads(now);
                 self.send_slot_releases();
+                self.follow_power_draw();
                 // While choosing, the viewer turns on the turntable facing the camera.
                 let preview = self.choosing.then(|| {
                     let preview = self.ui.preview();
