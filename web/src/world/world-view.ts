@@ -205,6 +205,8 @@ function obstructed(boxes: readonly Box[], target: Vec3, eye: Vec3): boolean {
 /** `padGuard` is the lane a pad holding the guard trigger aims, or `null` (#156); `rolls` counts dodge-roll presses (#516) like `jumps`. */
 export type WorldInput = { held: HeldIntent; jumps: number; rolls?: number; padGuard?: StrikeHeight | null };
 
+const NO_DRESSED = new Uint32Array();
+
 /** Areas within this distance of the player (60 m) have their art fetched ahead of arrival. */
 const STREAM_RADIUS_UNITS = 6_000;
 
@@ -434,6 +436,10 @@ export class WorldView {
   #presentationFingerprint: string | null = null;
   #reliefAt: ((x: number, z: number) => number) | null = null;
   #minimap: Minimap | null = null;
+  #minimapPending = false;
+  /** The world `load` last readied, so re-selecting it (`refreshArenaWorld`) rebuilds nothing. */
+  #loadedScenery: ZoneWorld["scenery"] | null = null;
+  #loadedArena = false;
   #buildMs = 0;
   #orbit = new OrbitCamera();
   #cameraMode: CameraMode = { kind: "free-look" };
@@ -572,8 +578,17 @@ export class WorldView {
     }
   }
 
-  /** Builds the static scene and the minimap image once per loaded world. */
+  /**
+   * Readies the loaded world's panels and region art. Its static scene (#526) is built by [`buildStatic`], from idle
+   * time or the first frame, so entering a world never waits for the whole scene.
+   */
   load(world: ZoneWorld): void {
+    const arena = world.arena ?? false;
+    if (this.#loadedScenery === world.scenery && this.#loadedArena === arena) {
+      return; // Re-selecting the same world (`refreshArenaWorld`) must not rebuild it.
+    }
+    this.#loadedScenery = world.scenery;
+    this.#loadedArena = arena;
     this.#picking.reset();
     const started = performance.now();
     this.#catalog = world.catalog;
@@ -588,10 +603,13 @@ export class WorldView {
     this.#areas = scenery.areas;
     this.#presentationFingerprint = scenery.presentationFingerprint;
     this.#reliefAt = world.scenery.reliefAt;
-    this.#scene = buildSceneryScene(scenery, world.scenery.staticScene);
+    this.#scene = null;
+    this.#sceneryFrame = null;
+    this.#ground = null;
     this.#sceneryBatches?.dispose();
-    this.#sceneryBatches = new BatchedScenery(this.#scene);
-    this.#sceneryBatchesChanged = true;
+    this.#sceneryBatches = null;
+    this.#minimap = null;
+    this.#minimapPending = false;
     this.#nature = new PlacedKit(world.scenery.nature);
     void this.#nature.load();
     this.#climbing = new PlacedKit(world.scenery.climbing);
@@ -600,8 +618,6 @@ export class WorldView {
     void this.#limestone.load();
     this.#river = new PlacedKit(world.scenery.river);
     void this.#river.load();
-    this.#ground = new Ground(world.scenery.staticScene.terrainStream(), this.#scene.surfaces, this.#scene.cutaways);
-    void this.#ground.load(this.#models.ktx2Loader);
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
     this.#inn = new WalkInBuildings(world.scenery.buildings.presenters());
     this.#shrine = new KitModules(SHRINE_BUNDLE, "shrine kit", world.scenery.shrine.entries, world.scenery.shrine.placements);
@@ -625,10 +641,42 @@ export class WorldView {
     this.#raidRoof = null;
     this.#waystone.load(world.scenery.waystoneAt, world.scenery.waystones);
     this.#units = null;
-    this.#sceneryFrame = new SceneryFrame(this.#scene);
-    this.#minimap = new Minimap(this.#elements.minimap, buildMinimapLayers(scenery, ENVIRONMENT));
     this.#occluders = occluders(world);
     this.#buildMs = performance.now() - started;
+    // The static scene waits for idle time so the picker paints first; entering sooner builds it in the first frame.
+    const prewarmed = world.scenery;
+    const prewarm = () => {
+      if (this.#loadedScenery === prewarmed && !this.#scene) { this.#buildStatic(world); }
+    };
+    if (typeof requestIdleCallback === "function") { requestIdleCallback(prewarm, { timeout: 2_000 }); } else { setTimeout(prewarm, 0); }
+  }
+
+  /**
+   * Decodes the static scene and places its always-resident parts (#526): far terrain, animated parts and the batches
+   * the groups stream into. Nothing far is decoded or uploaded here; [`BatchedScenery`] streams groups from the first frame.
+   */
+  #buildStatic(world: ZoneWorld): void {
+    const scene = buildSceneryScene(world.scenery.scenery, world.scenery.staticScene);
+    this.#scene = scene;
+    this.#sceneryFrame = new SceneryFrame(scene);
+    this.#sceneryBatches?.dispose();
+    this.#sceneryBatches = new BatchedScenery(scene, world.scenery.staticScene.groupStream());
+    this.#sceneryBatchesChanged = true;
+    this.#ground = new Ground(world.scenery.staticScene.terrainStream(), scene.surfaces, scene.cutaways);
+    void this.#ground.load(this.#models.ktx2Loader);
+  }
+
+  /** Builds the minimap image once the world is drawing; only the HUD waits for it. */
+  #scheduleMinimap(scenery: ZoneWorld["scenery"]["scenery"]): void {
+    if (this.#minimap || this.#minimapPending) { return; }
+    this.#minimapPending = true;
+    const build = () => {
+      if (this.#loadedScenery?.scenery === scenery && !this.#minimap) {
+        this.#minimap = new Minimap(this.#elements.minimap, buildMinimapLayers(scenery, ENVIRONMENT));
+      }
+      this.#minimapPending = false;
+    };
+    if (typeof requestIdleCallback === "function") { requestIdleCallback(build, { timeout: 4_000 }); } else { setTimeout(build, 500); }
   }
 
   /** The directed-strike action's working binding labels, for the Heroic Strike slot hint. */
@@ -1112,6 +1160,7 @@ export class WorldView {
 
   /** One frame: intent out, ticks, projection in, scene drawn. Throws when the projection lacks the viewer. */
   frame(world: ZoneWorld, input: WorldInput, look: ViewerLook, deltaSeconds: number, now: number): void {
+    if (!this.#scene) { this.#buildStatic(world); }
     const scene = this.#scene;
     const sceneryFrame = this.#sceneryFrame;
     if (!scene || !sceneryFrame) {
@@ -1289,7 +1338,10 @@ export class WorldView {
       this.#sound.pump();
     }
     const outpostReady = (this.#outpost?.drawn ?? false) && (this.#fortifications?.drawn ?? false);
-    const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits: { outpost: outpostReady, settlementProps: this.#settlement?.drawn ?? false, nature: this.#nature?.drawn ?? false, climbing: this.#climbing?.drawn ?? false, fortress: this.#fortress?.drawn ?? false } });
+    const kits = { outpost: outpostReady, settlementProps: this.#settlement?.drawn ?? false, nature: this.#nature?.drawn ?? false, climbing: this.#climbing?.drawn ?? false, fortress: this.#fortress?.drawn ?? false };
+    const batches = this.#sceneryBatches;
+    if (batches) { batches.stream(view.eye, { ...kits, dressed: this.#fortress?.drawn ? world.scenery.dressedProps?.() ?? NO_DRESSED : NO_DRESSED }); }
+    const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits, resident: batches ? (group) => batches.resident(group) : () => true });
     // A map view's eye is high only to clear the terrain: its ground streams as if standing on it.
     this.#ground?.update(this.#plan ? [view.eye[0], 0, view.eye[2]] : view.eye, frame.shown);
     this.#nature?.update(this.#camera, deltaSeconds, animate);
@@ -1382,6 +1434,7 @@ export class WorldView {
         created: { objects: work.objectCreateCount, geometries: work.geometryCreateCount, materials: work.materialCreateCount, instanceUploads: work.instanceUploadCount },
       });
     }
+    this.#scheduleMinimap(scenery.scenery);
     this.#quests.placeMarkers(this.#markerPoints(anchors, projection));
     // The atmosphere draws the sky (#600); the CSS sky remains only where the browser cannot draw it.
     const cssSky = !this.#lighting.drawsSky;
@@ -1839,6 +1892,8 @@ export class WorldView {
       /** The stones along Greyhaven's watercourses (asset-tooling#538), likewise. */
       river: () => this.#river?.observe() ?? null,
       ground: () => this.#ground?.observe() ?? null,
+      /** The static groups (#526): how many exist, are resident, and of the merged ones are in their batches. */
+      staticStream: () => this.#sceneryBatches?.observe() ?? null,
       /** The ambient animals (#419): whether they loaded, and each one's entry, clip and feet. */
       ambient: () => this.#ambient?.observe() ?? null,
       /** The units of the last projection (kind, id, creature family, position in metres). */

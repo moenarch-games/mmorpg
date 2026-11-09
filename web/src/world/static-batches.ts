@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { LitMaterial } from "@moritzbrantner/three-lighting";
 import type { RendererMaterialRequest, RendererSceneNode } from "@moritzbrantner/three-d-renderer";
 import { presentationMaterial } from "./lighting";
-import type { SceneryScene, StaticBatch } from "./scenery-nodes";
+import type { GroupBuffers, GroupStreamSource, SceneryScene, StaticBatch } from "./scenery-nodes";
 
 /**
  * One batched mesh: the `BatchedMesh` that draws it and its instance there, or the plain mesh drawing it alone; and
@@ -38,6 +38,60 @@ function layout(geometry: THREE.BufferGeometry): string {
 export function drawWhole(mesh: THREE.BatchedMesh): void {
   mesh.perObjectFrustumCulled = false;
   mesh.sortObjects = false;
+}
+
+/** One instance in a [`GrowingBatch`]. */
+export type GrowingPlaced = { batch: GrowingBatch; geometry: number; instance: number };
+
+/**
+ * One `BatchedMesh` for one material (#526, as #615 batches the static scenery): every streamed tile or group drawn with
+ * that material is one instance, drawn whole in every view ([`drawWhole`]), so a streamed layer costs one multi-draw call
+ * per material and pass. Room grows as levels stream in; evicted ones free theirs for reuse.
+ */
+export class GrowingBatch {
+  readonly mesh: THREE.BatchedMesh;
+  #vertices: number;
+  #indices: number;
+
+  constructor(name: string, material: THREE.Material, vertices: number, indices: number, instances: number) {
+    this.#vertices = vertices;
+    this.#indices = indices;
+    this.mesh = new THREE.BatchedMesh(instances, vertices, indices, material);
+    this.mesh.name = name;
+    this.mesh.matrixAutoUpdate = false;
+    // Instances stream in and out, so the batch's own sphere would go stale.
+    this.mesh.frustumCulled = false;
+    drawWhole(this.mesh);
+  }
+
+  add(geometry: THREE.BufferGeometry, visible: boolean, matrix: THREE.Matrix4 | null = null, color: THREE.Color | null = null): GrowingPlaced {
+    const vertices = geometry.attributes.position!.count;
+    const indices = geometry.index!.count;
+    const mesh = this.mesh;
+    if (mesh.unusedVertexCount < vertices || mesh.unusedIndexCount < indices) {
+      mesh.optimize();
+    }
+    if (mesh.unusedVertexCount < vertices || mesh.unusedIndexCount < indices) {
+      this.#vertices = Math.max(this.#vertices * 2, this.#vertices + vertices);
+      this.#indices = Math.max(this.#indices * 2, this.#indices + indices);
+      mesh.setGeometrySize(this.#vertices, this.#indices);
+    }
+    if (mesh.instanceCount >= mesh.maxInstanceCount) {
+      mesh.setInstanceCount(mesh.maxInstanceCount * 2);
+    }
+    const id = mesh.addGeometry(geometry);
+    const instance = mesh.addInstance(id);
+    if (matrix) { mesh.setMatrixAt(instance, matrix); }
+    if (color) { mesh.setColorAt(instance, color); }
+    mesh.setVisibleAt(instance, visible);
+    geometry.dispose();
+    return { batch: this, geometry: id, instance };
+  }
+
+  remove(placed: GrowingPlaced): void {
+    this.mesh.deleteInstance(placed.instance);
+    this.mesh.deleteGeometry(placed.geometry);
+  }
 }
 
 /**
@@ -303,79 +357,198 @@ function sceneGeometry(geometry: StaticBatch["node"]["geometry"]): THREE.BufferG
   return built;
 }
 
+/** The kits a client draws (`SceneryMotion.kits`) with the stream's dressed props, for a group stream update. */
+export type StreamKits = { outpost: boolean; settlementProps: boolean; nature: boolean; climbing: boolean; dressed: Uint32Array };
+
+type ResidentGroup = { placed: GrowingPlaced; shadow: GrowingPlaced | null; visible: boolean };
+
+/** A merged group's vertices (`GroupBuffers`) as three draws them: sRGB vertex colours made linear. */
+function groupGeometry({ positions, normals, colors, indices }: GroupBuffers): THREE.BufferGeometry {
+  const built = new THREE.BufferGeometry();
+  built.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  built.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
+  if (colors) {
+    const linear = new Float32Array(colors.length);
+    const color = new THREE.Color();
+    for (let index = 0; index < colors.length; index += 3) {
+      color.setRGB(colors[index]!, colors[index + 1]!, colors[index + 2]!, THREE.SRGBColorSpace).toArray(linear, index);
+    }
+    built.setAttribute("color", new THREE.BufferAttribute(linear, 3));
+  }
+  built.setIndex(new THREE.BufferAttribute(indices, 1));
+  return built;
+}
+
 /**
- * The shared static world (`buildSceneryScene`) as [`StaticBatches`] (#615): every draw group (terrain, roads, merged
- * props) and every animated part's node is one instance, its colour an instance colour over a white
- * `presentationMaterial`, so the few materials left are the emissive and double-sided variants. Only water, which
- * blends, stays a renderer node. [`show`] follows a `SceneryFrame`'s nodes: its distance and kit culling, and where
- * the animated parts move.
+ * The shared static world (`buildSceneryScene`) drawn through batches (#615, #526). Merged static groups stream through
+ * [`GrowingBatch`]es as the shared Rust `GroupStream` says, a few per frame: a group's draw is one instance, its colour an
+ * instance colour over a white `presentationMaterial`, its opaque casters in the shared shadow batches, so the few
+ * materials left are the emissive and double-sided variants. Animated parts are built once in [`StaticBatches`] and only
+ * their matrices move. Only water, which blends, stays a renderer node. [`show`] follows a `SceneryFrame`'s nodes: its
+ * distance and kit culling, and where the animated parts move.
  */
 export class BatchedScenery {
-  readonly #batches = new StaticBatches("static-scene");
-  /** The draws of the static groups, then of the animated nodes, in `SceneryFrame` order. */
-  readonly #statics: BatchedDraw[];
-  readonly #animated: BatchedDraw[];
+  readonly root = new THREE.Group();
+  readonly #scene: Pick<SceneryScene, "batches" | "instanceBatches">;
+  readonly #stream: GroupStreamSource;
+  readonly #materials = new Map<string, THREE.Material>();
+  readonly #batches = new Map<string, GrowingBatch>();
+  /** Per static batch, its draw while resident. */
+  readonly #resident: (ResidentGroup | null)[];
+  /** Per layout group, its index in the scene's static batches (absent for instanced and textured groups). */
+  readonly #batchOfGroup = new Map<number, number>();
+  /** The layout groups (instance batches included) currently resident. */
+  readonly #residentGroups = new Set<number>();
+  readonly #animated = new StaticBatches("static-scene:animated");
+  readonly #animatedDraws: BatchedDraw[];
   readonly #water: number;
   /** Per animated node the model matrix it was last drawn at. */
   readonly #placed: Float32Array;
   readonly #matrix = new THREE.Matrix4();
 
-  constructor(scene: Pick<SceneryScene, "batches" | "water" | "animated">) {
-    const materials = new Map<string, THREE.Material>();
-    const add = (node: Pick<RendererSceneNode, "geometry" | "color" | "emissive" | "doubleSided" | "unlit">, model: ArrayLike<number> | undefined, part: string): BatchedDraw => {
-      const geometry = sceneGeometry(node.geometry as StaticBatch["node"]["geometry"]);
-      const vertexColors = geometry.hasAttribute("color");
-      const white = { ...node, color: "#ffffff" } as unknown as RendererSceneNode;
-      const key = JSON.stringify([white.emissive ?? null, white.doubleSided ?? false, white.unlit ?? false, vertexColors]);
-      let material = materials.get(key);
-      if (!material) {
-        material = presentationMaterial({ node: white, vertexColors } as RendererMaterialRequest);
-        materials.set(key, material);
-      }
-      this.#matrix.identity();
-      if (model) { this.#matrix.fromArray(model); }
-      return this.#batches.add(geometry, material, this.#matrix, new THREE.Color(node.color ?? 0xffffff), part);
-    };
-    this.#statics = scene.batches.map(({ node }) => add(node, node.modelMatrix, "static"));
+  constructor(scene: Pick<SceneryScene, "batches" | "instanceBatches" | "water" | "animated">, stream: GroupStreamSource) {
+    this.#scene = scene;
+    this.#stream = stream;
+    this.root.name = "static-scene";
+    this.root.matrixAutoUpdate = false;
+    this.#resident = scene.batches.map(() => null);
+    scene.batches.forEach((batch, index) => {
+      this.#batchOfGroup.set(batch.group, index);
+      // A batch per material now, so `prepare` compiles every streamed group's program before the first frame.
+      const material = this.#material(batch.node, batch.buffers().colors !== null);
+      this.#drawBatch(material);
+      this.#shadowBatch(material);
+    });
     this.#water = scene.water.length;
     // Their own batches: the parts move every frame, and only their matrices re-upload.
-    this.#animated = scene.animated.flat().map((node) => add(node, undefined, "animated"));
-    this.#placed = new Float32Array(this.#animated.length * 16).fill(Number.NaN);
-    this.#batches.build();
+    this.#animatedDraws = scene.animated.flat().map((node) => {
+      const geometry = sceneGeometry(node.geometry as StaticBatch["node"]["geometry"]);
+      return this.#animated.add(geometry, this.#material(node, geometry.hasAttribute("color")), new THREE.Matrix4(), new THREE.Color(node.color ?? 0xffffff), "animated");
+    });
+    this.#placed = new Float32Array(this.#animatedDraws.length * 16).fill(Number.NaN);
+    this.#animated.build();
+    this.root.add(this.#animated.root);
   }
 
-  /** The drawn root. */
-  get root(): THREE.Group {
-    return this.#batches.root;
+  /** The white material of `node`'s emissive, double-sided and vertex-colour variant; one per variant. */
+  #material(node: Pick<RendererSceneNode, "emissive" | "doubleSided" | "unlit" | "color">, vertexColors: boolean): THREE.Material {
+    const white = { ...node, color: "#ffffff" } as unknown as RendererSceneNode;
+    const key = JSON.stringify([white.emissive ?? null, white.doubleSided ?? false, white.unlit ?? false, vertexColors]);
+    let material = this.#materials.get(key);
+    if (!material) {
+      material = presentationMaterial({ node: white, vertexColors } as RendererMaterialRequest);
+      this.#materials.set(key, material);
+    }
+    return material;
+  }
+
+  #batchFor(key: string, name: string, material: THREE.Material, casts: boolean): GrowingBatch {
+    let batch = this.#batches.get(key);
+    if (!batch) {
+      batch = new GrowingBatch(name, material, 65_536, 196_608, 64);
+      if (casts) { batch.mesh.userData.notShadowCaster = true; }
+      this.#batches.set(key, batch);
+      this.root.add(batch.mesh);
+    }
+    return batch;
+  }
+
+  #drawBatch(material: THREE.Material): GrowingBatch {
+    return this.#batchFor(`static|${material.uuid}`, `static-scene:${material.name || material.uuid}`, material, castsWithSharedShadow(material) !== null);
+  }
+
+  #shadowBatch(material: THREE.Material): GrowingBatch | null {
+    const casts = castsWithSharedShadow(material);
+    return casts && this.#batchFor(`shadow|${casts}`, `static-scene:shadow:${casts}`, casts === "double" ? SHADOW_ONLY.double : SHADOW_ONLY.single, false);
+  }
+
+  /** Advances residency for the camera `eye` and builds or drops the groups the stream names (a few per frame). */
+  stream(eye: readonly [number, number, number], kits: StreamKits): void {
+    const update = this.#stream.update(eye[0], eye[1], eye[2], kits.outpost, kits.settlementProps, kits.nature, kits.climbing, kits.dressed);
+    let at = 0;
+    const built = update[at++]!;
+    for (let index = 0; index < built; index += 1) {
+      const group = update[at++]!;
+      this.#residentGroups.add(group);
+      const batch = this.#batchOfGroup.get(group);
+      if (batch !== undefined) { this.#build(batch); }
+    }
+    const evicted = update[at++]!;
+    for (let index = 0; index < evicted; index += 1) {
+      const group = update[at++]!;
+      this.#residentGroups.delete(group);
+      const batch = this.#batchOfGroup.get(group);
+      if (batch !== undefined) { this.#evict(batch); }
+    }
+  }
+
+  /** Whether layout `group` is resident. */
+  resident(group: number): boolean {
+    return this.#residentGroups.has(group);
+  }
+
+  #build(index: number): void {
+    const batch = this.#scene.batches[index]!;
+    const geometry = groupGeometry(batch.buffers());
+    const material = this.#material(batch.node, geometry.hasAttribute("color"));
+    const color = new THREE.Color(batch.node.color ?? 0xffffff);
+    const matrix = batch.node.modelMatrix ? this.#matrix.fromArray(batch.node.modelMatrix) : this.#matrix.identity();
+    const shadow = this.#shadowBatch(material)?.add(shadowShape(geometry), false, matrix) ?? null;
+    this.#resident[index] = { placed: this.#drawBatch(material).add(geometry, false, matrix, color), shadow, visible: false };
+  }
+
+  #evict(index: number): void {
+    const resident = this.#resident[index];
+    if (!resident) { return; }
+    resident.placed.batch.remove(resident.placed);
+    if (resident.shadow) { resident.shadow.batch.remove(resident.shadow); }
+    this.#resident[index] = null;
   }
 
   /** How many of a `SceneryFrame`'s leading nodes the batches draw (the static groups); water and animated parts follow. */
   get statics(): number {
-    return this.#statics.length;
+    return this.#resident.length;
   }
 
   /** The nodes of a frame the batches do not draw: the water. */
   undrawn(nodes: readonly RendererSceneNode[]): RendererSceneNode[] {
-    return nodes.slice(this.#statics.length, this.#statics.length + this.#water);
+    return nodes.slice(this.#resident.length, this.#resident.length + this.#water);
   }
 
-  /** Shows, hides and places the draws as a `SceneryFrame`'s `nodes` do (static groups, water, animated parts). */
+  /** Shows, hides and places the resident draws as a `SceneryFrame`'s `nodes` do (static groups, water, animated parts). */
   show(nodes: readonly RendererSceneNode[]): void {
-    this.#statics.forEach((draw, index) => this.#batches.setVisible(draw, nodes[index]?.visible !== false));
-    const first = this.#statics.length + this.#water;
-    this.#animated.forEach((draw, index) => {
+    this.#resident.forEach((resident, index) => {
+      if (!resident) { return; }
+      const visible = nodes[index]?.visible !== false;
+      if (visible === resident.visible) { return; }
+      resident.visible = visible;
+      resident.placed.batch.mesh.setVisibleAt(resident.placed.instance, visible);
+      if (resident.shadow) { resident.shadow.batch.mesh.setVisibleAt(resident.shadow.instance, visible); }
+    });
+    const first = this.#resident.length + this.#water;
+    this.#animatedDraws.forEach((draw, index) => {
       const node = nodes[first + index];
-      this.#batches.setVisible(draw, node !== undefined && node.visible !== false);
+      this.#animated.setVisible(draw, node !== undefined && node.visible !== false);
       const model = node?.modelMatrix;
       if (!model || sameMatrix(this.#placed, index * 16, model)) { return; }
       this.#placed.set(model, index * 16);
-      this.#batches.setMatrix(draw, this.#matrix.fromArray(model));
+      this.#animated.setMatrix(draw, this.#matrix.fromArray(model));
     });
+  }
+
+  /** Acceptance state: how many groups and merged draws are resident. */
+  observe(): { groups: number; resident: number; residentBatches: number } {
+    return {
+      groups: this.#batchOfGroup.size + this.#scene.instanceBatches.length,
+      resident: this.#residentGroups.size,
+      residentBatches: this.#resident.filter((resident) => resident !== null).length,
+    };
   }
 
   /** Releases the batches' GPU buffers. */
   dispose(): void {
-    for (const mesh of this.#batches.root.children) { if (mesh instanceof THREE.BatchedMesh) { mesh.dispose(); } }
+    for (const batch of this.#batches.values()) { batch.mesh.dispose(); }
+    for (const mesh of this.#animated.root.children) { if (mesh instanceof THREE.BatchedMesh) { mesh.dispose(); } }
   }
 }
 

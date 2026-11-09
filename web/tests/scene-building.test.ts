@@ -117,3 +117,30 @@ describe("the shared static scene in the browser", () => {
     batch.dispose();
   });
 });
+
+// #526: nothing decodes a group's geometry until it is resident; a frame without residency info lists every batch.
+test("static geometry decodes on first read and resident-filtered frames omit the rest", () => {
+  const lazy = buildSceneryScene(world.scenery, world.staticScene);
+  const frame = new SceneryFrame(lazy);
+  const all = frame.nodes([0, 5, 0], { seconds: 0, animate: false });
+  expect(all.instanceBatches.length).toBe(lazy.instanceBatches.length);
+  const none = frame.nodes([0, 5, 0], { seconds: 0, animate: false, resident: () => false });
+  expect(none.instanceBatches).toEqual([]);
+  const [resident] = lazy.instanceBatches;
+  const one = frame.nodes([0, 5, 0], { seconds: 0, animate: false, resident: (group) => group === resident!.group });
+  expect(one.instanceBatches.length).toBe(1);
+  expect(one.instanceBatches[0]!.geometry.kind).toBe("mesh");
+  expect(lazy.batches[0]!.node.geometry.kind).toBe("mesh");
+  expect(lazy.batches[0]!.buffers().positions.length).toBe(lazy.batches[0]!.node.geometry.positions.length * 3);
+});
+
+// The Battle Royale arena streams its own static groups through the same Streamer (#526).
+test("the arena's static groups stream from the arena scene", () => {
+  const presentation = new wasm.ArenaPresentation();
+  const layout = JSON.parse(presentation.staticScene()) as { groups: { min: [number, number] }[] };
+  const stream = presentation.groupStream();
+  const update = stream.update(0, 2, 0, false, false, false, false, Uint32Array.from(presentation.dressedProps()));
+  const built = Array.from(update.subarray(1, 1 + update[0]!));
+  expect(built.length).toBeGreaterThan(0);
+  expect(built.every((group) => group < layout.groups.length)).toBe(true);
+});

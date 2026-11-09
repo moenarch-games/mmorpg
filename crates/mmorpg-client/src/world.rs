@@ -287,13 +287,9 @@ impl StreamedLowering {
     }
 }
 
-/// Static groups stay lowered this far beyond their cull distance, so walking along a border
-/// does not lower them again and again.
-const GROUP_RETAIN_METRES: f64 = 64.;
-
 /// The static scenery and terrain tiles resident around the camera (#526): a group is lowered
 /// when it is first shown and dropped (so the renderer frees its meshes) once the camera is
-/// [`GROUP_RETAIN_METRES`] beyond its cull distance; terrain tiles keep their far levels and
+/// [`mmorpg_presentation::GROUP_RETAIN_METRES`] beyond its cull distance; terrain tiles keep their far levels and
 /// stream their near levels (`mmorpg_presentation::tiles::Streamer`).
 #[derive(Clone, Debug)]
 struct Statics {
@@ -355,7 +351,8 @@ impl Statics {
                     resident.get_or_insert_with(|| lowering.batch(&group.draws)),
                 ));
             } else if resident.is_some()
-                && group.distance(eye) > group.cull.reach() + GROUP_RETAIN_METRES
+                && group.distance(eye)
+                    > group.cull.reach() + mmorpg_presentation::GROUP_RETAIN_METRES
             {
                 *resident = None;
                 evicted = true;

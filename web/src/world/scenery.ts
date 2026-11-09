@@ -162,6 +162,8 @@ export type SceneryProvider = {
   readonly scenery: Scenery;
   /** The shared static world both clients draw (#184), straight from the WASM owner. */
   readonly staticScene: StaticSceneContent;
+  /** The graybox props a drawn composition kit dresses, sorted (arena only, #526). */
+  readonly dressedProps?: () => Uint32Array;
   /** A fresh shared unit presenter for `player`. */
   unitPresenter(player: number): UnitPresenterHandle;
   /** The walk-in buildings' presenters, and the door feet at `(x, z)` units reach (0 none). */

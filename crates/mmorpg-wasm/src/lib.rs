@@ -727,6 +727,29 @@ pub fn terrain_stream() -> static_scene::TerrainStream {
     static_scene::TerrainStream::new(false)
 }
 
+/// The presented scenery's derived terrain grids as bytes, for the browser's derived-data cache
+/// (#526).
+#[wasm_bindgen(js_name = terrainGridCache)]
+#[must_use]
+pub fn terrain_grid_cache() -> Vec<u8> {
+    scenery::terrain_grid_cache()
+}
+
+/// Reuses terrain grids from an earlier [`terrain_grid_cache`]: false (nothing seeded) when the
+/// bytes are damaged or from another content revision, so the grids are derived as usual.
+#[wasm_bindgen(js_name = seedTerrainGrids)]
+#[must_use]
+pub fn seed_terrain_grids(bytes: &[u8]) -> bool {
+    scenery::seed_terrain_grids(bytes)
+}
+
+/// A fresh stream of the hosted zone's static groups (#526) for one renderer.
+#[wasm_bindgen(js_name = groupStream)]
+#[must_use]
+pub fn group_stream() -> static_scene::GroupStream {
+    static_scene::GroupStream::new(false)
+}
+
 #[wasm_bindgen(js_name = surfaceY)]
 pub fn surface_y(x: f64, z: f64) -> f64 {
     static_scene::surface_y(x, z)

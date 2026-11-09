@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { LitMaterial } from "@moritzbrantner/three-lighting";
-import { BatchedRoots } from "../src/world/static-batches";
+import type { RendererSceneNode } from "@moritzbrantner/three-d-renderer";
+import type { GroupBuffers, GroupStreamSource, StaticBatch } from "../src/world/scenery-nodes";
+import { BatchedRoots, BatchedScenery } from "../src/world/static-batches";
 
 // Walk-in buildings and kit modules draw through BatchedMeshes (#615): the batches follow their source roots.
 describe("BatchedRoots", () => {
@@ -51,5 +53,56 @@ describe("BatchedRoots", () => {
     batched.sync(0);
     expect(batch.getVisibleAt(0)).toBe(false);
     expect(copy.visible).toBe(true);
+  });
+});
+
+// #526: static groups stream through growing batches; only residents exist, in one batch per material.
+describe("BatchedScenery", () => {
+  const buffers = (shift: number): GroupBuffers => ({
+    positions: Float32Array.of(shift, 0, 0, shift + 1, 0, 0, shift, 1, 0),
+    normals: Float32Array.of(0, 0, 1, 0, 0, 1, 0, 0, 1),
+    colors: Float32Array.of(1, 1, 1, 1, 1, 1, 1, 1, 1),
+    indices: Uint32Array.of(0, 1, 2),
+  });
+  const group = (index: number) => ({
+    cull: "near" as const, center: [index * 10, 0] as const, radius: 1, group: index,
+    node: { id: `g${index}`, color: "#ff0000", modelMatrix: new THREE.Matrix4().makeTranslation(index, 0, 0).toArray() } as unknown as StaticBatch["node"],
+    buffers: () => buffers(index),
+  }) satisfies StaticBatch;
+  const updates: number[][] = [];
+  const stream: GroupStreamSource = { update: () => Uint32Array.from(updates.shift() ?? [0, 0]) };
+  const kits = { outpost: false, settlementProps: false, nature: false, climbing: false, dressed: new Uint32Array() };
+  const scenery = () => new BatchedScenery({ batches: [group(0), group(1), group(2)], instanceBatches: [], water: [], animated: [] }, stream);
+
+  test("a group draws only once resident and an evicted one frees its instance", () => {
+    const batched = scenery();
+    const draws = batched.root.children.filter((child) => child instanceof THREE.BatchedMesh && !child.name.includes(":shadow")) as THREE.BatchedMesh[];
+    expect(batched.observe()).toEqual({ groups: 3, resident: 0, residentBatches: 0 });
+    expect(draws[0]!.instanceCount).toBe(0);
+    updates.push([2, 0, 2, 0]);
+    batched.stream([0, 0, 0], kits);
+    expect(batched.resident(0)).toBe(true);
+    expect(batched.resident(1)).toBe(false);
+    expect(batched.observe().residentBatches).toBe(2);
+    expect(draws[0]!.instanceCount).toBe(2);
+    // Built hidden; the frame's nodes show it (a resident group that is culled stays hidden).
+    expect(draws[0]!.getVisibleAt(0)).toBe(false);
+    batched.show([{ visible: true }, {}, {}] as unknown as RendererSceneNode[]);
+    expect(draws[0]!.getVisibleAt(0)).toBe(true);
+    updates.push([0, 1, 0]);
+    batched.stream([100, 0, 0], kits);
+    expect(batched.resident(0)).toBe(false);
+    expect(batched.observe().residentBatches).toBe(1);
+    expect(draws[0]!.instanceCount).toBe(1);
+    batched.dispose();
+  });
+
+  test("growing past a batch's first size keeps the resident draws", () => {
+    const batched = scenery();
+    const draws = batched.root.children.filter((child) => child instanceof THREE.BatchedMesh && !child.name.includes(":shadow")) as THREE.BatchedMesh[];
+    updates.push([3, 0, 1, 2, 0]);
+    batched.stream([0, 0, 0], kits);
+    expect(draws[0]!.instanceCount).toBe(3);
+    batched.dispose();
   });
 });

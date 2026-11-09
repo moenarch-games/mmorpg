@@ -8,6 +8,8 @@
  * they are testable outside a worker.
  */
 export const CACHE_NAME = "mmorpg-assets";
+/** Bytes the page derives per release (#526, `derived.ts`); never served by the worker. */
+export const DERIVED_CACHE_NAME = "mmorpg-derived";
 export const MANIFEST_FILE = "asset-cache.json";
 export const RESET_PARAM = "reset-cache";
 const REVISION_PARAM = "__rev";

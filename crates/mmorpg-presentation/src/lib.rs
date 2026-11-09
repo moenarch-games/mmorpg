@@ -70,6 +70,16 @@ pub struct Draw {
     pub material: Material,
 }
 
+/// A static group's draws are built ahead of its cull distance by this much (#526).
+pub const GROUP_PREFETCH_METRES: f64 = 40.;
+/// A static group's draws are dropped once the camera is this far beyond its cull distance
+/// (#526), so walking along a border does not build them again and again.
+pub const GROUP_RETAIN_METRES: f64 = 64.;
+/// Groups this close to the eye are built before the first frame; the rest stream in (#526).
+pub const GROUP_ENTRY_METRES: f64 = 72.;
+/// How many static groups a streaming client builds per frame (#526).
+pub const GROUP_BUILDS_PER_FRAME: usize = 8;
+
 /// Draws hidden together beyond their cull class's camera distance.
 #[derive(Clone, Debug)]
 pub struct Group {
@@ -96,6 +106,26 @@ impl Group {
     #[must_use]
     pub fn visible(&self, eye: [f32; 3]) -> bool {
         self.distance(eye) <= self.cull.reach()
+    }
+
+    /// The group as a streamed site (#526) for the camera eye and the drawn `kits`: its class's
+    /// reach bounds what must be resident to draw it, and the fallback of a drawn kit is dropped.
+    #[must_use]
+    pub fn site(&self, eye: [f32; 3], kits: Kits) -> tiles::Site {
+        let reach = if self.fallback.is_some_and(|kit| kits.draws(kit)) {
+            f64::NEG_INFINITY
+        } else {
+            self.cull.reach()
+        };
+        let distance = self.distance(eye);
+        tiles::Site {
+            distance,
+            near: reach,
+            prefetch: reach + GROUP_PREFETCH_METRES,
+            evict: reach + GROUP_RETAIN_METRES,
+            always: false,
+            essential: distance <= GROUP_ENTRY_METRES,
+        }
     }
 
     /// XZ distance (metres) from the camera eye to the group's bounding circle.

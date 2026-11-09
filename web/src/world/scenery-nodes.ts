@@ -40,6 +40,17 @@ export type StaticSceneContent = {
   surfaceY(x: number, z: number): number;
   /** A fresh stream of the terrain tiles (#526). */
   terrainStream(): TerrainStreamSource;
+  /** A fresh stream of the static groups (#526), indexed as the layout's `groups`. */
+  groupStream(): GroupStreamSource;
+};
+
+/**
+ * Which static groups a renderer keeps resident (#526, `mmorpg_presentation::tiles::Streamer` over
+ * the layout's `groups`): the groups to build now and those to drop.
+ */
+export type GroupStreamSource = {
+  /** `[built count, built…, evicted count, evicted…]` for the camera eye and drawn kits; `dressed`: the graybox props a drawn composition kit covers, sorted. */
+  update(x: number, y: number, z: number, outpost: boolean, settlementProps: boolean, nature: boolean, climbing: boolean, dressed: Uint32Array): Uint32Array;
 };
 
 /**
@@ -66,8 +77,14 @@ type FallbackKit = keyof DrawnKits;
 
 /** `fallback`: the kit whose procedural stand-in the group is, hidden while the client draws that kit. */
 type Bounds = { cull: CullClass; center: readonly [number, number]; radius: number; fallback?: FallbackKit };
-export type StaticBatch = Bounds & { node: RendererSceneNode & { geometry: IndexedMeshGeometry } };
-export type InstanceBatch = Bounds & { batch: RendererInstanceBatch };
+/** One merged static group's geometry as typed views of the shared WASM buffers, for the batches. */
+export type GroupBuffers = { positions: Float32Array; normals: Float32Array; colors: Float32Array | null; indices: Uint32Array };
+/**
+ * A merged static group (#526): `group` is its index in the layout, as `GroupStreamSource` names it. `node.geometry` is
+ * decoded the first time something reads it; [`buffers`] reads the same data without allocating.
+ */
+export type StaticBatch = Bounds & { group: number; node: RendererSceneNode & { geometry: IndexedMeshGeometry }; buffers(): GroupBuffers };
+export type InstanceBatch = Bounds & { group: number; batch: RendererInstanceBatch };
 
 // Animated props use the default lit material; retain that branch of the renderer contract.
 type AnimatedNode = Omit<Extract<RendererSceneNode, { unlit?: false }>, "transform" | "modelMatrix">;
@@ -175,21 +192,45 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
   const indices = content.staticSceneIndices();
   const models = content.staticSceneModels();
   const floats = (entry: GeometryEntry) => entry.vertexCount * ((entry.colored ? 9 : 6) + (entry.textured ? 6 : 0) + (entry.weighted ? 1 : 0));
-  const geometries = layout.geometries.map((entry): IndexedMeshGeometry => {
-    const { vertexOffset: start, vertexCount: count, indexOffset, indexCount } = entry;
-    if (start + floats(entry) > vertices.length || indexOffset + indexCount > indices.length) {
+  for (const entry of layout.geometries) {
+    if (entry.vertexOffset + floats(entry) > vertices.length || entry.indexOffset + entry.indexCount > indices.length) {
       fail(`geometry ${entry.resourceKey} exceeds the shared buffers`);
     }
-    const geometry: IndexedMeshGeometry = {
-      kind: "mesh",
-      resourceKey: entry.resourceKey,
-      positions: triples(vertices, start, count),
-      normals: triples(vertices, start + count * 3, count),
-      indices: Array.from(indices.subarray(indexOffset, indexOffset + indexCount)),
+  }
+  // Decoded on first read (#526): most of the world's geometries are never drawn from most places.
+  const decoded = new Map<number, IndexedMeshGeometry>();
+  const geometryEntry = (draw: DrawEntry) => layout.geometries[draw.geometry] ?? fail(`draw ${draw.id} names a missing geometry`);
+  const geometry = (draw: DrawEntry): IndexedMeshGeometry => {
+    let geometry = decoded.get(draw.geometry);
+    if (!geometry) {
+      const entry = geometryEntry(draw);
+      const { vertexOffset: start, vertexCount: count, indexOffset, indexCount } = entry;
+      const mesh: IndexedMeshGeometry = {
+        kind: "mesh",
+        resourceKey: entry.resourceKey,
+        positions: triples(vertices, start, count),
+        normals: triples(vertices, start + count * 3, count),
+        indices: Array.from(indices.subarray(indexOffset, indexOffset + indexCount)),
+      };
+      geometry = entry.colored ? { ...mesh, colors: triples(vertices, start + count * 6, count) } : mesh;
+      decoded.set(draw.geometry, geometry);
+    }
+    return geometry;
+  };
+  const buffers = (draw: DrawEntry): GroupBuffers => {
+    const entry = geometryEntry(draw);
+    const { vertexOffset: start, vertexCount: count, indexOffset, indexCount } = entry;
+    return {
+      positions: vertices.subarray(start, start + count * 3), normals: vertices.subarray(start + count * 3, start + count * 6),
+      colors: entry.colored ? vertices.subarray(start + count * 6, start + count * 9) : null,
+      indices: indices.subarray(indexOffset, indexOffset + indexCount),
     };
-    return entry.colored ? { ...geometry, colors: triples(vertices, start + count * 6, count) } : geometry;
-  });
-  const geometry = (draw: DrawEntry) => geometries[draw.geometry] ?? fail(`draw ${draw.id} names a missing geometry`);
+  };
+  /** `node` with a `geometry` decoded when first read. */
+  const lazyGeometry = <T extends object>(node: T, draw: DrawEntry): T & { geometry: IndexedMeshGeometry } => {
+    geometryEntry(draw);
+    return Object.defineProperty(node, "geometry", { enumerable: true, get: () => geometry(draw) }) as T & { geometry: IndexedMeshGeometry };
+  };
   const model = (draw: DrawEntry): Matrix4Values => {
     if ((draw.model + 1) * 16 > models.length) {
       fail(`draw ${draw.id} names a missing model matrix`);
@@ -219,7 +260,7 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
   const surfaces: TileDraw[] = [];
   const batches: StaticBatch[] = [];
   const instanceBatches: InstanceBatch[] = [];
-  for (const group of layout.groups) {
+  for (const [groupIndex, group] of layout.groups.entries()) {
     if (!CULLS.includes(group.cull) || group.draws.length === 0) {
       fail("group has an unknown cull class or no draws");
     }
@@ -235,30 +276,34 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
       }
       batches.push({
         ...bounds(group),
-        node: {
+        group: groupIndex,
+        buffers: () => buffers(draw!),
+        node: lazyGeometry({
           id: draw!.id,
-          geometry: geometry(draw!),
           color: draw!.color,
           modelMatrix: model(draw!),
-          ...(draw!.emissive ? { unlit: false, emissive: draw!.emissive } : {}),
-        },
+          ...(draw!.emissive ? { unlit: false as const, emissive: draw!.emissive } : {}),
+        }, draw!) as StaticBatch["node"],
       });
       continue;
     }
     const first = group.draws[0]!;
-    const instances: RendererInstance[] = group.draws.map((draw) => ({ modelMatrix: model(draw), color: draw.color }));
     // Instance draw IDs are `<batch id>:<ordinal>`; the batch shares one geometry.
     const id = first.id.slice(0, first.id.lastIndexOf(":"));
-    instanceBatches.push({
-      ...bounds(group),
-      batch: {
-        id, name: instanceBatchName(id, group), userData: NEAR_SHADOW, geometry: geometry(first), color: "#ffffff", revision: layout.prefix, instances,
-      },
+    const batch = lazyGeometry({
+      id, name: instanceBatchName(id, group), userData: NEAR_SHADOW, color: "#ffffff", revision: layout.prefix,
+    }, first) as unknown as RendererInstanceBatch;
+    // The instance transforms stay undecoded with the geometry until the batch is first drawn.
+    let instances: RendererInstance[] | null = null;
+    Object.defineProperty(batch, "instances", {
+      enumerable: true,
+      get: () => (instances ??= group.draws.map((draw) => ({ modelMatrix: model(draw), color: draw.color }))),
     });
+    instanceBatches.push({ ...bounds(group), group: groupIndex, batch });
   }
-  const water = layout.water.map((draw): RendererSceneNode => ({
-    id: draw.id, geometry: geometry(draw), color: draw.color, opacity: draw.opacity, modelMatrix: model(draw),
-  }));
+  const water = layout.water.map((draw): RendererSceneNode => lazyGeometry({
+    id: draw.id, color: draw.color, opacity: draw.opacity, modelMatrix: model(draw),
+  }, draw) as unknown as RendererSceneNode);
   // Fixed textured roofs use their rest transform and shared cutaway visibility; moving
   // props (flames, doors, sails) retain the renderer's ordinary lit-material path.
   const cutaways: CutawaySurface[] = [];
@@ -313,7 +358,11 @@ export function batchVisible(batch: Bounds, eyeX: number, eyeZ: number): boolean
  * away while `viewer` (feet, metres) stands under them (#159); a kit's procedural fallback stays drawn until
  * `kits` says the kit is.
  */
-export type SceneryMotion = { seconds: number; animate: boolean; viewer?: readonly [number, number, number] | null; kits?: DrawnKits };
+export type SceneryMotion = {
+  seconds: number; animate: boolean; viewer?: readonly [number, number, number] | null; kits?: DrawnKits;
+  /** Which layout groups are resident (#526): the rest are not built yet and their instance batches are left out. */
+  resident?: (group: number) => boolean;
+};
 
 /** Per-frame renderer nodes: static batches (far detail hidden), water and animated parts. */
 export class SceneryFrame {
@@ -324,7 +373,8 @@ export class SceneryFrame {
   constructor(scene: SceneryScene) {
     this.#scene = scene;
     this.#visible = scene.batches.map((batch) => batch.node);
-    this.#hidden = scene.batches.map((batch) => ({ ...batch.node, visible: false }));
+    // A hidden node inherits from its visible one, so hiding a group does not decode its geometry (#526).
+    this.#hidden = scene.batches.map((batch) => Object.create(batch.node, { visible: { value: false, enumerable: true } }) as RendererSceneNode);
   }
 
   nodes(eye: readonly [number, number, number], motion: SceneryMotion): { nodes: RendererSceneNode[]; instanceBatches: RendererInstanceBatch[]; visibleBatches: number; shown: Uint8Array } {
@@ -346,11 +396,13 @@ export class SceneryFrame {
         nodes.push(visible ? { ...node, modelMatrix } : { ...node, modelMatrix, visible: false });
       }
     });
-    const instanceBatches = this.#scene.instanceBatches.map((batch) => {
+    const resident = motion.resident ?? (() => true);
+    const instanceBatches: RendererInstanceBatch[] = [];
+    for (const batch of this.#scene.instanceBatches) {
       const visible = batchShown(batch, eye[0], eye[2], kits);
       visibleBatches += visible ? 1 : 0;
-      return { ...batch.batch, visible };
-    });
+      if (resident(batch.group)) { instanceBatches.push({ ...batch.batch, visible }); }
+    }
     return { nodes, instanceBatches, visibleBatches, shown };
   }
 }
