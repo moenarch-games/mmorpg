@@ -210,12 +210,13 @@ fn main() {
         None,
         false,
     );
-    // Every prop of the settlement props (#421).
-    static_bundle(
-        "settlement_bundle.rs",
-        &manifest_dir.join("../../web/public/scenery/settlement.props"),
-        None,
-        false,
+    // Every prop of the settlement props (#421) and their descriptor, for the placed-kit library.
+    let settlement = manifest_dir.join("../../web/public/scenery/settlement.props");
+    static_bundle("settlement_bundle.rs", &settlement, None, false);
+    descriptor(
+        &settlement,
+        "settlement-descriptor",
+        "settlement_descriptor.rs",
     );
     sound_bundle(&manifest_dir.join("../../web/public/sounds/combat-sounds"));
     // Greyhaven's trees, rocks and bushes with every level of detail (#49), and their descriptor.

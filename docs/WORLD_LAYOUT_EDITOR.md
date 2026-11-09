@@ -102,3 +102,56 @@ bash scripts/dev-blender.sh export
 This supersedes the browser-editor implementation described in the original
 TECH-010 decision, while retaining TECH-008/TECH-009's Blender authoring
 and non-destructive override policy.
+
+## Painting terrain and biomes in Krita
+
+Blender places objects; Krita paints the ground. The `mmorpg-world-studio`
+program writes one layered OpenRaster document per named area and brings the
+painted layers back into `content/greyhaven/paint/`. Capturing needs a built
+`web/dist` and Chromium (`mise run setup:browser`, or `WORLD_STUDIO_CHROME`):
+
+```sh
+alias studio='cargo run -q -p mmorpg-world-studio --'
+studio capture --list                 # the areas and their sizes
+studio capture --only outpost         # one area, to artifacts/regions
+studio capture --tiles                # all of them, plus a map tile pyramid
+# Paint in Krita and save the .ora, then:
+studio import artifacts/regions/farmland-and-hamlets.ora --check
+studio import artifacts/regions/farmland-and-hamlets.ora
+```
+
+Do not resize or crop a document: its hidden `_bounds` layer records where it
+lies in the world. Images are orthographic and north-up at noon, without units,
+fog or interface, through the `?debug` hook `planView`, which never touches the
+simulation. `+X` runs right and `+Z` down: `world_x = min_x + pixel_x /
+pixels_per_metre`, and likewise for Z and rows. `manifest.json` records every
+region's `bounds_metres` and the biome palette.
+
+| Layer | Use |
+| --- | --- |
+| `beauty`, `ground` | The rendered world, and the bare terrain alone |
+| `hillshade`, `height`, `slope` | Reference from the physical ground |
+| `biome`, `roads`, `water` | Reference from the shared scenery |
+| `locks` | Red where a painted height is ignored |
+| `paint height` | Grey 128 is no change, one grey step is 10 cm (−12.8 to +12.7 m); transparency fades towards no change |
+| `paint biome` | Palette colours from `manifest.json`; transparent keeps the generated biome |
+
+Each terrain sample covers a 4 m square, and the averaged paint of that square
+decides it, so detail finer than 4 m is lost. An import replaces what the
+document covers rather than adding to it: erasing paint restores the generated
+ground, and re-exporting already carries the committed paint.
+
+`paint height` offsets the real terrain, so physics, trees and both clients
+follow, and the content hash changes on its own. It cannot move ground under or
+beside structures, near water, on the flat Outpost or in the cave and shrine:
+the importer skips such samples and `cargo test -p mmorpg-scenery` rejects them.
+`paint biome` is presentation only; roads, water and the plaza always win over it.
+Each region's folder also holds these layers as PNGs, with a 16-bit `height.png`
+at one pixel per sample (value = height in cm + 32768).
+
+[World Studio](WORLD_STUDIO.md) wraps this workflow in a local web app.
+
+`--tiles` renders the whole zone as an XYZ raster pyramid under `tiles/`, with
+`tiles/style.json` for the `mapStyle` of `@moritzbrantner/maps`. The pyramid's
+whole Web Mercator world is a 2048 m square centred on the origin; the conversion
+is in `manifest.json`. Set the served path with `--tiles-url`.

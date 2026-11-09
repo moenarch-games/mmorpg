@@ -26,7 +26,7 @@ rustup toolchain install
 """
 
 [tasks."setup:browser"]
-description = "Playwright and Chromium for scripts/smoke-browser*.py and scripts/profile-browser.py"
+description = "Playwright and Chromium for scripts/smoke-browser*.py, scripts/profile-browser.py and World Studio"
 run = ["uv pip install --upgrade playwright", "playwright install chromium"]
 
 [tasks."setup:bundles"]

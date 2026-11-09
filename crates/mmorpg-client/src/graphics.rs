@@ -745,6 +745,9 @@ mod tests {
                 ("lake", view([-56.0, 33.0, -39.0], [-87.0, 11.0, -53.0])),
                 ("hub", view([5.0, 8.5, 31.0], [-14.0, 3.0, 4.0])),
                 ("road", view([2.0, 2.2, 30.0], [-6.0, 0.5, 12.0])),
+                // The wood and rock materials (#53): the market props and a limestone outcrop.
+                ("market", view([15.6, 2.6, 27.1], [23.5, 0.6, 30.4])),
+                ("rock", view([-2.2, 2.6, 78.2], [-6.5, 0.5, 82.0])),
                 // The terrain tiles' levels and the distant ranges (#526).
                 (
                     "overview",
