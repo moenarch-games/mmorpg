@@ -6,6 +6,10 @@ TOOLS="${XDG_CACHE_HOME:-${HOME}/.cache}/mmorpg/ranger-tools"
 PROCESSOR_REV=c13e053800d0a296d9594f84d84e60a9c0f944ee
 PROCESSOR="${ASSET_TOOLING_ROOT:-${TOOLS}/asset-tooling-${PROCESSOR_REV}}"
 KTX="${ASSET_TOOLING_KTX:-ktx}"
+KTX_ASSET='KTX-Software-4.4.2-Linux-x86_64.tar.bz2'
+CURL_RETRY=(--retry 5 --retry-delay 5 --retry-connrefused --max-time 300)
+# shellcheck source=scripts/lib/github-release.sh
+source "${ROOT_DIR}/scripts/lib/github-release.sh"
 command -v bun >/dev/null || { echo 'Native asset preparation requires Bun.' >&2; exit 1; }
 mkdir -p "${TOOLS}"
 if [[ -n "${ASSET_TOOLING_ROOT:-}" && ! -f "${PROCESSOR}/scripts/prepare-native-downloads.ts" ]]; then
@@ -15,7 +19,10 @@ fi
 if [[ ! -f "${PROCESSOR}/scripts/prepare-native-downloads.ts" ]]; then
   work="$(mktemp -d "${TOOLS}/processor.XXXXXX")"
   trap 'rm -rf -- "${work}"' EXIT
-  curl -fsSL --retry 3 -o "${work}/source.tar.gz" "https://codeload.github.com/moritzbrantner/asset-tooling/tar.gz/${PROCESSOR_REV}"
+  if [[ -z "${GITHUB_RELEASE_TOKEN}" ]] ||
+    ! github_release_curl --max-time 300 -o "${work}/source.tar.gz" "${GITHUB_RELEASE_API}/moritzbrantner/asset-tooling/tarball/${PROCESSOR_REV}"; then
+    curl -fsSL "${CURL_RETRY[@]}" -o "${work}/source.tar.gz" "https://codeload.github.com/moritzbrantner/asset-tooling/tar.gz/${PROCESSOR_REV}"
+  fi
   mkdir "${work}/source"
   tar -xzf "${work}/source.tar.gz" --strip-components=1 -C "${work}/source"
   mv "${work}/source" "${PROCESSOR}"
@@ -31,7 +38,11 @@ if ! command -v "${KTX}" >/dev/null; then
   if [[ ! -x "${KTX}" ]]; then
     work="$(mktemp -d "${TOOLS}/ktx.XXXXXX")"
     trap 'rm -rf -- "${work}"' EXIT
-    curl -fsSL --retry 3 -o "${work}/ktx.tar.bz2" 'https://github.com/KhronosGroup/KTX-Software/releases/download/v4.4.2/KTX-Software-4.4.2-Linux-x86_64.tar.bz2'
+    if [[ -z "${GITHUB_RELEASE_TOKEN}" ]] ||
+      ! github_release_json KhronosGroup/KTX-Software/releases/tags/v4.4.2 "${work}/release.json" ||
+      ! github_release_asset KhronosGroup/KTX-Software "${work}/release.json" "${KTX_ASSET}" "${work}/ktx.tar.bz2" 300; then
+      curl -fsSL "${CURL_RETRY[@]}" -o "${work}/ktx.tar.bz2" "https://github.com/KhronosGroup/KTX-Software/releases/download/v4.4.2/${KTX_ASSET}"
+    fi
     mkdir -p "${TOOLS}/ktx-4.4.2"
     tar -xjf "${work}/ktx.tar.bz2" --strip-components=1 -C "${TOOLS}/ktx-4.4.2"
     rm -rf -- "${work}"
