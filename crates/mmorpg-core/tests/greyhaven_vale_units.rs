@@ -349,6 +349,19 @@ fn spawns_populate_their_subzones() {
             5,
         ),
         ((greyhaven_vale::vale::REDBRAND_HOLLOW, "Loose Boulder"), 1),
+        // The Marsh-Lake Wetlands' creatures (#506).
+        (
+            (greyhaven_vale::marsh::MARSH_LAKE_WETLANDS, "Mirefin Lurker"),
+            15,
+        ),
+        (
+            (greyhaven_vale::marsh::MARSH_LAKE_WETLANDS, "Young Boar"),
+            8,
+        ),
+        (
+            (greyhaven_vale::marsh::MARSH_LAKE_WETLANDS, "Timber Wolf"),
+            8,
+        ),
         // The Bandit Highlands garrison (#502).
         (
             (

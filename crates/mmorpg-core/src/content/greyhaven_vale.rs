@@ -33,6 +33,7 @@ pub mod landscape;
 pub mod layout;
 pub mod market;
 pub mod marsh;
+pub mod marsh_creatures;
 pub mod marshal_house;
 pub mod quests;
 pub mod raid;
