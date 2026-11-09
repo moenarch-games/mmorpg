@@ -100,6 +100,11 @@ export type ImportedRequest = {
    */
   swing: readonly [number, number, number, number] | null;
   /**
+   * The spring's drive of the bundle's accessory-bone chains (Atlas 6.6.39, `Swing::chain`): `[pitch, roll]`
+   * by depth from each chain's root as a share of its bound, or null where they hang as authored.
+   */
+  chains: readonly number[] | null;
+  /**
    * A bow carrier's shot (#556): the bow cycle clip and time whose `bow.drawMeters` the nock
    * follows, with the bow in the left hand (`hand_l.bow`); null keeps it on `back.bow.stowed`.
    */
@@ -158,7 +163,7 @@ type GeometryEntry = { key: string; vertexOffset: number; vertexCount: number; c
 type UnitEntry = { kind: EntityKind; entityId: number; node: string; feet: [number, number, number]; centreY: number; yaw: number; label: [number, number, number]; body: [number, number] };
 type ImportedEntry = { id: string; kind: ImportedModelKind; entityKind: EntityKind; entityId: number; feet: [number, number, number]; yaw: number; pitch: number;
   height: number; clip: string; time: number; lower: [string, number]; layers: ClipLayer[]; tint: readonly [number, number, number] | null; loadout: Loadout | null; resident: string | null; figure: string | null; variety: number | null; outfit: ClassOutfit | null; headwear: boolean;
-  swing: readonly [number, number, number, number] | null; bow: BowShot | null; sheathed: [boolean, boolean]; throwable: Throwable | null; belted: Throwable | null; crossbow: CrossbowCarry | null; channel: SpellChannel | null };
+  swing: readonly [number, number, number, number] | null; chains: readonly number[] | null; bow: BowShot | null; sheathed: [boolean, boolean]; throwable: Throwable | null; belted: Throwable | null; crossbow: CrossbowCarry | null; channel: SpellChannel | null };
 type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[]; platforms: PlatformBase[] };
 
 const KIND_CODE: Readonly<Record<EntityKind, number>> = { player: 0, creature: 1, npc: 2, minion: 3 };
@@ -296,7 +301,7 @@ export class SharedUnits {
       imported: layout.imported.map((unit) => ({
         id: unit.id, kind: unit.kind, entity: { kind: unit.entityKind, id: unit.entityId }, feet: unit.feet, yaw: unit.yaw, pitch: unit.pitch,
         heightMetres: unit.height, clip: unit.clip, time: unit.time, lower: unit.lower, layers: unit.layers, tint: unit.tint, loadout: unit.loadout, resident: unit.resident, figure: unit.figure, variety: unit.variety, outfit: unit.outfit, headwear: unit.headwear,
-        swing: unit.swing, bow: unit.bow, sheathed: unit.sheathed, throwable: unit.throwable, belted: unit.belted, crossbow: unit.crossbow, channel: unit.channel,
+        swing: unit.swing, chains: unit.chains, bow: unit.bow, sheathed: unit.sheathed, throwable: unit.throwable, belted: unit.belted, crossbow: unit.crossbow, channel: unit.channel,
       })),
       platforms: layout.platforms,
     };

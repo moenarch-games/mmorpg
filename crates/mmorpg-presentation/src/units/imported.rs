@@ -2364,6 +2364,13 @@ impl Playback {
         }
     }
 
+    /// How many strikes, casts and hit reactions the unit has begun: a cue for cosmetic motion
+    /// that follows them (Atlas 6.6.39).
+    #[must_use]
+    pub const fn actions_begun(&self) -> u32 {
+        self.serial
+    }
+
     /// Starts presenting an accepted strike's `clip`, `duration` seconds long, at `now`, on the
     /// body `region` drives. A strike resolves any cast shown before it; one that resolves a
     /// cast's held wind-up of the same clip (#582) swings on from the hold.

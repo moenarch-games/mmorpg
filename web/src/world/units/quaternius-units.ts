@@ -9,7 +9,8 @@ import { mergeUnitMeshes, type MergedUnit } from "./merged-unit";
 import type { EntityRef } from "../../entity-ref";
 import { characterVisualProfile } from "../../character-visuals";
 import type { CharacterClassId } from "../../character-selection";
-import { figureAppearance, varyPreset } from "../wasm-runtime";
+import { declaredChains, figureAppearance, varyPreset } from "../wasm-runtime";
+import { ChainSway, declareChains } from "./chain-sway";
 import type { BowShot, ClassOutfit, ClipLayer, CrossbowCarry, ImportedModelKind, ImportedRequest, LayerMask, Loadout as CarriedLoadout, Throwable } from "../unit-presenter";
 
 type QuaterniusKind = ImportedModelKind;
@@ -143,6 +144,8 @@ type Instance = {
   /** The colour factor applied to `materials`; undefined until the first pose. */
   tint: readonly [number, number, number] | null | undefined;
   head: THREE.Object3D | null;
+  /** The model's bundle-declared sway chains (Atlas 6.6.39), or null with none. */
+  chains: ChainSway | null;
   entity: EntityRef;
   /** The unit's own merged meshes and joint palette (#615), freed when it is dropped. */
   merged: MergedUnit;
@@ -207,8 +210,7 @@ const secondaryJoints = new Set<string>();
 /**
  * Adds each clip's `secondaryPose` (#500, asset-tooling #416) to it as quaternion tracks of the cloth
  * chain joints (`skirt_*_01`, `cape_01`), so the mixer plays and blends them like the clip's own
- * channels on every outfit that has the chains. No cloth spring exists yet (#498 sways only the
- * hanging gear), so the authored pose plays as it is.
+ * channels on every outfit that has the chains; {@link ChainSway} swings the chain about that pose (#498).
  */
 function withSecondaryPoses(sources: ReadonlyMap<string, THREE.AnimationClip>, descriptor: unknown): void {
   type Entry = { name?: unknown; secondaryPose?: { sampleRate?: unknown; joints?: unknown } };
@@ -806,6 +808,7 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
   const hairKit = character === MALE ? await loadKit(HAIR_KIT, "hair-descriptor", "the figure keeps the Ranger bundle's hair and beards.") : null;
   const kitScene = (id: string) => kit?.scenes.get(id) ?? hairKit?.scenes.get(id);
   const appearance = figureAppearance(character, await json(entryFile(entry, ".humanoid-appearance.json")), kit?.descriptor ?? null, hairKit?.descriptor ?? null);
+  declareChains(declaredChains(appearance));
   const look = headLook(appearance);
   const face = faceLookOf(appearance, entry.variant, gltf.scene);
   if (!face) { console.info(`The ${character} bundle has no face morphs for its drawn entry; faces keep the base shape.`); }
@@ -1523,7 +1526,7 @@ export class QuaterniusUnits {
     root.add(model);
     const instance: Instance = {
       kind: unit.kind, dress: dressKey(dress), root, posable,
-      clip: "", time: 0, layers: [], materials, tint: undefined, head: model.getObjectByName("Head") ?? null, entity: unit.entity, merged,
+      clip: "", time: 0, layers: [], materials, tint: undefined, head: model.getObjectByName("Head") ?? null, chains: ChainSway.of(model), entity: unit.entity, merged,
     };
     this.#instances.set(unit.id, instance);
     this.#rootsChanged = true;
@@ -1535,6 +1538,7 @@ export class QuaterniusUnits {
     instance.clip = clip;
     instance.time = Math.min(unit.time, Math.max(0, (asset.clips.get(clip) ?? 0) - 1e-4));
     instance.layers = unit.layers;
+    instance.chains?.beforePose();
     instance.posable.pose(unit.layers);
     const tint = unit.tint;
     if (instance.tint === undefined || String(instance.tint) !== String(tint)) {
@@ -1552,6 +1556,7 @@ export class QuaterniusUnits {
     poseDaggers(instance.posable.model, unit.sheathed, unit.throwable, unit.belted);
     poseCrossbow(instance.posable.model, unit.crossbow);
     swingHanging(instance.posable.model, unit.swing);
+    instance.chains?.apply(instance.posable.model, unit.chains);
   }
 
   #drop(id: string, instance: Instance): void {

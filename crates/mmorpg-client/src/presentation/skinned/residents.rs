@@ -13,9 +13,9 @@ use super::{
 };
 use crate::world::SceneDraw;
 use mmorpg_presentation::units::{
-    imported::{Figure, Kind, Layer, Resident},
+    imported::{Carry, Figure, Kind, Layer, Resident},
     kit::Frame,
-    presets,
+    presets, sway,
 };
 use serde_json::Value;
 use std::{
@@ -44,18 +44,27 @@ impl ResidentLook {
         height: f64,
         pose: &[Layer],
         tint: Option<[f32; 3]>,
+        swing: sway::Swing,
     ) -> (&Model, three_d_animation::Mat4, Vec<SceneDraw>) {
         let height = height * f64::from(self.height);
         let placement = self.model.placement(root, height);
-        let mut draws = self.model.draws(id, root, height, pose, tint, self.hood);
+        let mut draws = self
+            .model
+            .draws(id, root, height, pose, tint, self.hood, swing);
         draws.extend(
             self.plates
                 .draws(id, &self.model, placement, pose, tint, |_| true),
         );
-        draws.extend(
-            self.items
-                .draws(&format!("{id}-worn"), &self.model, placement, pose, tint),
-        );
+        draws.extend(self.items.draws_swung(
+            &format!("{id}-worn"),
+            &self.model,
+            placement,
+            pose,
+            tint,
+            swing,
+            None,
+            Carry::default(),
+        ));
         (&self.model, placement, draws)
     }
 }
