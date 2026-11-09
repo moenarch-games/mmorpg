@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import { applyOutpostWear, OUTPOST_WEAR_MASKS, wearMasks } from "./outpost-wear";
 import { BatchedRoots } from "./static-batches";
-import { loadBundleGltfs, loadStaticBundle } from "./static-bundle";
+import { drawnResources, loadBundleGltfs, loadStaticBundle } from "./static-bundle";
 
 /** The rolling `shrine-kit` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
 export const SHRINE_BUNDLE = `${import.meta.env.BASE_URL}scenery/shrine.kit/`;
@@ -19,9 +19,6 @@ export type KitPlacement = { key: string; matrix: Float32Array; wear?: number };
  * `wear` blends each placement's wear from the bundle's wear masks when it has them.
  */
 export type KitOptions = { ktx2?: KTX2Loader; wear?: boolean };
-
-/** The texture uniforms of a kit `LitMaterial`, and the wear mask ([`applyOutpostWear`]). */
-const MATERIAL_TEXTURES = ["baseColorTexture", "emissiveTexture", "metallicRoughnessTexture", "normalMapTexture", "occlusionTexture", "wearMask"];
 
 /**
  * An asset-tooling kit's static modules drawn where the shared Rust presentation places them, as
@@ -108,15 +105,7 @@ export class KitModules {
   }
 
   #textureBytes(): number {
-    const textures = new Set<THREE.Texture>();
-    this.#batched?.root.traverse((object) => {
-      if (!(object instanceof THREE.Mesh)) { return; }
-      for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
-        // A LitMaterial's own textures, not its frame uniforms (shadow maps, the environment, LUTs).
-        const values = material instanceof THREE.ShaderMaterial ? MATERIAL_TEXTURES.map((name) => material.uniforms[name]?.value) : Object.values(material);
-        for (const value of values) { if (value instanceof THREE.Texture) { textures.add(value); } }
-      }
-    });
+    const { textures } = drawnResources(this.#batched?.root);
     let bytes = 0;
     for (const texture of textures) {
       if (texture instanceof THREE.CompressedTexture) {

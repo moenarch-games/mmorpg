@@ -432,6 +432,8 @@ impl WorldScene {
         let mut placements = mmorpg_presentation::nature::placements(scenery);
         placements.extend(mmorpg_presentation::climbing::placements(scenery));
         placements.extend(mmorpg_presentation::river::placements(scenery));
+        // The market square's wooden props through their packaged PBR materials (#53).
+        placements.extend(mmorpg_presentation::settlement_props::placements(scenery));
         let library = crate::nature::entries();
         let nature = Nature {
             lods: mmorpg_presentation::lod::Lods::new(

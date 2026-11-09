@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { InstancedLevels } from "./instanced-levels";
-import { loadBundleGltfs } from "./static-bundle";
+import { drawnResources, generateMissingTangents, loadBundleGltfs, shareMaterials } from "./static-bundle";
 
 /** A bundle the shared Rust presentation places at fixed placements. */
 export type PlacedKitName = "nature" | "climbing" | "limestone" | "river";
@@ -83,6 +83,12 @@ export class PlacedKit {
     const entries = this.#source.entries;
     const variants = entries.map((entry) => lods.variants(entry));
     const gltfs = await loadBundleGltfs(kit.bundle, variants.flat());
+    // One texture per image and one material per name, across every entry and level (#53).
+    shareMaterials(gltfs);
+    // Without tangents the normal maps are not applied, but the bundle's art still draws.
+    await generateMissingTangents(gltfs).catch((error: unknown) => {
+      console.warn(`${kit.label}: drawing without generated tangents: ${error instanceof Error ? error.message : String(error)}`);
+    });
     let next = 0;
     const levels = variants.map((entryLevels) => entryLevels.map(() => gltfs[next++]!.scene));
     this.#levels = new InstancedLevels(kit.label, entries, levels, placements);
@@ -114,11 +120,15 @@ export class PlacedKit {
     return { roots: this.drawn && this.#levels ? [this.#levels.root] : [], changed };
   }
 
-  /** Acceptance state: whether the bundle is drawn, how many placements and how many instances each entry level draws. */
-  observe(): { loaded: boolean; placements: number; drawn: Record<string, number[]> } {
+  /**
+   * Acceptance state: whether the bundle is drawn, how many placements and how many instances each entry level draws,
+   * and the distinct materials and textures it uses (each material counts its cross-fade copy too).
+   */
+  observe(): { loaded: boolean; placements: number; drawn: Record<string, number[]>; materials: number; textures: number } {
     const drawn: Record<string, number[]> = {};
     const counts = this.#levels?.counts ?? [];
     this.#source.entries.forEach((entry, index) => { drawn[entry] = [...(counts[index] ?? [])]; });
-    return { loaded: this.drawn, placements: this.#source.placements.length, drawn };
+    const { materials, textures } = drawnResources(this.#levels?.root);
+    return { loaded: this.drawn, placements: this.#source.placements.length, drawn, materials: materials.size, textures: textures.size };
   }
 }

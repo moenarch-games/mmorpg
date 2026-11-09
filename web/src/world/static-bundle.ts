@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { Object3D } from "three";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { computeMikkTSpaceTangents, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import { litObject } from "./lighting";
 
@@ -137,4 +138,57 @@ export function shareMaterials(gltfs: readonly GLTF[]): void {
       object.material = Array.isArray(object.material) ? object.material.map(share) : share(object.material);
     });
   }
+}
+
+/**
+ * Generates the tangents a glTF leaves to its consumer: a normal-mapped primitive without `TANGENT` gets them computed
+ * in MikkTSpace, as glTF prescribes and as the native client does (`crate::nature`), since `LitMaterial` applies a
+ * normal map only through the mesh's tangents. Every other primitive keeps what the producer shipped.
+ */
+export async function generateMissingTangents(gltfs: readonly GLTF[]): Promise<void> {
+  const meshes: THREE.Mesh[] = [];
+  for (const gltf of gltfs) {
+    gltf.scene.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) { return; }
+      const materials = (Array.isArray(object.material) ? object.material : [object.material]) as THREE.MeshStandardMaterial[];
+      const geometry = object.geometry as THREE.BufferGeometry;
+      if (materials.some((material) => material.normalMap) && !geometry.hasAttribute("tangent")
+        && geometry.hasAttribute("uv") && geometry.hasAttribute("normal")) {
+        meshes.push(object);
+      }
+    });
+  }
+  if (meshes.length === 0) { return; }
+  const MikkTSpace = await import("three/examples/jsm/libs/mikktspace.module.js");
+  await MikkTSpace.ready;
+  const generated = new Map<THREE.BufferGeometry, THREE.BufferGeometry>();
+  for (const mesh of meshes) {
+    const source = mesh.geometry as THREE.BufferGeometry;
+    let geometry = generated.get(source);
+    if (!geometry) {
+      // MikkTSpace works on a non-indexed copy; merging equal vertices indexes the result again.
+      geometry = mergeVertices(computeMikkTSpaceTangents(source.clone(), MikkTSpace));
+      generated.set(source, geometry);
+    }
+    mesh.geometry = geometry;
+  }
+}
+
+/** The texture uniforms of a kit `LitMaterial`, and the wear mask (`applyOutpostWear`). */
+const MATERIAL_TEXTURES = ["baseColorTexture", "emissiveTexture", "metallicRoughnessTexture", "normalMapTexture", "occlusionTexture", "wearMask"];
+
+/** The distinct materials and textures the meshes under `root` draw with, for acceptance observations. */
+export function drawnResources(root: Object3D | undefined): { materials: Set<THREE.Material>; textures: Set<THREE.Texture> } {
+  const materials = new Set<THREE.Material>();
+  const textures = new Set<THREE.Texture>();
+  root?.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) { return; }
+    for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+      materials.add(material);
+      // A LitMaterial's own textures, not its frame uniforms (shadow maps, the environment, LUTs).
+      const values = material instanceof THREE.ShaderMaterial ? MATERIAL_TEXTURES.map((name) => material.uniforms[name]?.value) : Object.values(material);
+      for (const value of values) { if (value instanceof THREE.Texture) { textures.add(value); } }
+    }
+  });
+  return { materials, textures };
 }
