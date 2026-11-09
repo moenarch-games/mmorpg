@@ -3,7 +3,7 @@
 //! A living, grounded player who is not swimming, climbing, mantling or stunned rolls in the
 //! direction they move, or straight back when they stand still. The roll moves the body through
 //! the character controller like any other move ([`ROLL_SPEED_UNITS_PER_SECOND`] for
-//! [`ROLL_TICKS`], about 3.5 m), keeps gravity and ignores movement and jump intent until it
+//! [`ROLL_TICKS`], 4.5 m), keeps gravity and ignores movement and jump intent until it
 //! ends. It is movement only: no invulnerability and no cost, so attacks still hit mid-roll. A
 //! roll cancels the player's cast, and a cast started mid-roll is cancelled too. After it, the
 //! player cannot roll again for [`ROLL_COOLDOWN_TICKS`]. Death, a stun, deep water or a forced
@@ -16,8 +16,8 @@ use crate::trig;
 
 /// A roll lasts this long (0.6 s) …
 pub const ROLL_TICKS: u16 = crate::ticks_from_ms(600);
-/// … at this speed (5.85 m/s), so it covers about 3.5 m on flat ground.
-pub const ROLL_SPEED_UNITS_PER_SECOND: i32 = 585;
+/// … at this speed (7.5 m/s, faster than a run), so it covers 4.5 m on flat ground.
+pub const ROLL_SPEED_UNITS_PER_SECOND: i32 = 750;
 pub const ROLL_SPEED_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(ROLL_SPEED_UNITS_PER_SECOND);
 /// After a roll ends, the next can start this much later (1 s).
 pub const ROLL_COOLDOWN_TICKS: u16 = crate::ticks_from_ms(1_000);
@@ -146,9 +146,10 @@ mod tests {
     }
 
     #[test]
-    fn the_tuning_covers_about_three_and_a_half_metres() {
+    fn the_tuning_outruns_a_run_and_covers_four_and_a_half_metres() {
+        const { assert!(ROLL_SPEED_UNITS_PER_SECOND > crate::RUN_SPEED_UNITS_PER_SECOND) };
         let distance =
             ROLL_SPEED_UNITS_PER_SECOND * i32::from(ROLL_TICKS) / i32::from(crate::TICK_HZ);
-        assert_eq!(distance, 351);
+        assert_eq!(distance, 450);
     }
 }

@@ -70,7 +70,7 @@ impl Player {
 }
 
 #[test]
-fn standing_still_rolls_straight_back_about_three_and_a_half_metres() {
+fn standing_still_rolls_straight_back_four_and_a_half_metres() {
     let mut player = Player::new();
     let start = player.feet();
     player.send(ZoneCommand::Roll);
@@ -84,7 +84,7 @@ fn standing_still_rolls_straight_back_about_three_and_a_half_metres() {
     let end = player.feet();
     // Facing east, so back is west.
     let moved = start[0] - end[0];
-    assert!((340..=360).contains(&moved), "{start:?} → {end:?}");
+    assert!((440..=460).contains(&moved), "{start:?} → {end:?}");
     assert!((end[2] - start[2]).abs() <= 1, "{start:?} → {end:?}");
     player.ticks(10);
     assert_eq!(player.feet(), end, "the roll ends where it ends");
@@ -112,7 +112,7 @@ fn a_roll_follows_the_held_movement_and_ignores_later_intent() {
     let end = player.feet();
     assert!((start[0] - end[0]).abs() <= 1, "{start:?} → {end:?}");
     assert!(
-        (340..=360).contains(&(end[2] - start[2])),
+        (440..=460).contains(&(end[2] - start[2])),
         "{start:?} → {end:?}"
     );
     assert_eq!(end[1], start[1], "a jump mid-roll does nothing");

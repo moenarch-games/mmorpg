@@ -19,6 +19,10 @@ pub const PLAYER_REACH_UNITS: i32 = 250;
 /// Half the horizontal arc one player swing covers (#517): 50° either side of the facing, a
 /// 100° arc (yaw units: a quarter turn is 16 384).
 pub const SWING_ARC_HALF_WIDTH: u16 = 9_102;
+/// The inclusive height band above the swinger's feet, in units, that a melee swing covers: a
+/// unit is covered when its body's vertical extent overlaps it. The top is the directed strikes'
+/// highest band; the bottom dips below the feet so short creatures stay in reach downhill.
+pub const SWING_BAND_UNITS: [i32; 2] = [-100, 200];
 /// Half the cone in which a facing-aimed ranged ability picks its unit (#517): 15° either side.
 pub const AIM_CONE_HALF_WIDTH: u16 = 2_731;
 /// Creature melee reach before adding the target's half-width.

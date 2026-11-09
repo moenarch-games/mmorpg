@@ -18,8 +18,8 @@ use crate::guard::GuardOutcome;
 use crate::snapshot::{CreatureAi, PlayerIntent};
 use crate::unit::{
     COMBAT_LINGER_TICKS, CORPSE_TICKS, PLAYER_REACH_UNITS, PLAYER_SWING_TICKS, REGEN_DELAY_TICKS,
-    REGEN_INTERVAL_TICKS, REGEN_PERCENT, RELEASE_HEALTH_PERCENT, SWING_ARC_HALF_WIDTH, Swing,
-    percent_of, roll_swing,
+    REGEN_INTERVAL_TICKS, REGEN_PERCENT, RELEASE_HEALTH_PERCENT, SWING_ARC_HALF_WIDTH,
+    SWING_BAND_UNITS, Swing, percent_of, roll_swing,
 };
 use crate::zone::{Axis, physics_error};
 use crate::{
@@ -574,9 +574,9 @@ impl ZoneSimulation {
 
     /// Every attackable living unit a swing toward `facing` covers (#517), in
     /// `EntityRef` order: within [`PLAYER_REACH_UNITS`] (XZ centre distance),
-    /// inside [`SWING_ARC_HALF_WIDTH`] either side of the facing; another player
-    /// only in line of sight, as melee always required. A unit centred on the
-    /// swinger is always covered.
+    /// inside [`SWING_ARC_HALF_WIDTH`] either side of the facing and overlapping
+    /// [`SWING_BAND_UNITS`] in height; another player only in line of sight, as
+    /// melee always required. A unit centred on the swinger is always covered.
     pub(crate) fn swing_coverage(
         &self,
         player_id: PlayerId,
@@ -587,22 +587,25 @@ impl ZoneSimulation {
             facing,
             PLAYER_REACH_UNITS,
             SWING_ARC_HALF_WIDTH,
-            false,
+            true,
         )
     }
 
     /// Every unit the player may attack within `reach` (XZ centre distance)
-    /// and `half_width` either side of `facing`, in `EntityRef` order: in line
-    /// of sight when `sighted`, and always for another player.
+    /// and `half_width` either side of `facing`, in `EntityRef` order. A
+    /// `melee` attack covers only bodies overlapping [`SWING_BAND_UNITS`] and
+    /// needs line of sight to another player; any other needs it to every unit.
     pub(crate) fn facing_coverage(
         &self,
         player_id: PlayerId,
         facing: u16,
         reach: i32,
         half_width: u16,
-        sighted: bool,
+        melee: bool,
     ) -> Result<Vec<EntityRef>, ZoneError> {
         let origin = self.player_position(player_id)?;
+        let feet = origin.y - crate::PLAYER_HALF_EXTENTS_UNITS[1];
+        let [band_low, band_high] = SWING_BAND_UNITS;
         let (dir_x, dir_z) = crate::trig::direction(facing);
         let min_cos = i64::from(crate::trig::cos(half_width));
         let reach_squared = i64::from(reach).pow(2);
@@ -611,12 +614,17 @@ impl ZoneSimulation {
             if !self.attackable_by_player(player_id, entity) {
                 continue;
             }
-            let centre = self
+            let body = self
                 .world
                 .body(body_id(entity))
-                .ok_or_else(|| ZoneError::new("unit physics body is missing"))?
-                .position();
+                .ok_or_else(|| ZoneError::new("unit physics body is missing"))?;
+            let (centre, half) = (body.position(), body.half_extents());
             if distance_squared([origin.x, origin.z], [centre.x, centre.z]) > reach_squared {
+                continue;
+            }
+            if melee
+                && (centre.y + half.y - feet < band_low || centre.y - half.y - feet > band_high)
+            {
                 continue;
             }
             // |v| cos(angle to the facing) >= |v| cos(half width), both Q16.
@@ -627,7 +635,7 @@ impl ZoneSimulation {
             if along < length * min_cos {
                 continue;
             }
-            if (sighted || matches!(entity, EntityRef::Player(_)))
+            if (!melee || matches!(entity, EntityRef::Player(_)))
                 && !self.line_of_sight(EntityRef::Player(player_id), entity)?
             {
                 continue;
@@ -935,6 +943,15 @@ impl ZoneSimulation {
             },
         );
         if let EntityRef::Player(attacker) = source {
+            self.notify(
+                attacker,
+                ZoneEvent::DamageDealt {
+                    source,
+                    target,
+                    amount: u16::try_from(dealt).unwrap_or(u16::MAX),
+                    critical,
+                },
+            );
             self.gain_faith(attacker, dealt);
         }
         self.observe_damage(source, target, dealt, critical);
