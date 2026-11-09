@@ -133,3 +133,14 @@ test("static geometry decodes on first read and resident-filtered frames omit th
   expect(lazy.batches[0]!.node.geometry.kind).toBe("mesh");
   expect(lazy.batches[0]!.buffers().positions.length).toBe(lazy.batches[0]!.node.geometry.positions.length * 3);
 });
+
+// The Battle Royale arena streams its own static groups through the same Streamer (#526).
+test("the arena's static groups stream from the arena scene", () => {
+  const presentation = new wasm.ArenaPresentation();
+  const layout = JSON.parse(presentation.staticScene()) as { groups: { min: [number, number] }[] };
+  const stream = presentation.groupStream();
+  const update = stream.update(0, 2, 0, false, false, false, false, Uint32Array.from(presentation.dressedProps()));
+  const built = Array.from(update.subarray(1, 1 + update[0]!));
+  expect(built.length).toBeGreaterThan(0);
+  expect(built.every((group) => group < layout.groups.length)).toBe(true);
+});
