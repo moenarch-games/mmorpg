@@ -1093,7 +1093,7 @@ let presentedZone = 1;
  * follow a redirect instead and arenas have no local zone change.
  */
 function followLocalZone(): void {
-  if (!activeWorld || activeWorld === onlineWorld || arenaWorld?.world === activeWorld) {
+  if (!activeWorld || activeWorld === onlineWorld || arenaWorld?.world === activeWorld || practiceWorld?.world === activeWorld) {
     return;
   }
   const zone = activeWorld.source.latestProjection()?.zoneId;

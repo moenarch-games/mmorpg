@@ -17,7 +17,8 @@ export type PowerDrawEffects = {
  * alone decides whether the shot happens.
  */
 export class PowerDrawInput {
-  // Created on first use: the page builds its world view before `mmorpg-wasm` has loaded.
+  // Created on the first press: the page builds its world view, and can blur or close a draw
+  // that never started, before `mmorpg-wasm` has loaded.
   #draw: InstanceType<typeof wasm.PowerDraw> | null = null;
   readonly #effects: PowerDrawEffects;
 
@@ -41,18 +42,19 @@ export class PowerDrawInput {
 
   /** `slot`'s key went up (`retired` when a retirement, not a deliberate release, let it go). */
   release(slot: number, retired: boolean): void {
-    const wasDrawing = this.#model.drawing() !== undefined;
-    const fire = this.#model.release(slot, retired);
+    if (!this.#draw) { return; }
+    const wasDrawing = this.#draw.drawing() !== undefined;
+    const fire = this.#draw.release(slot, retired);
     if (fire !== undefined) {
       this.#effects.send(fire);
-    } else if (wasDrawing && this.#model.drawing() === undefined) {
+    } else if (wasDrawing && this.#draw.drawing() === undefined) {
       this.#effects.abandon();
     }
   }
 
   /** Drops the draw without a shot; `true` if there was one. */
   cancel(): boolean {
-    const dropped = this.#model.cancel();
+    const dropped = this.#draw?.cancel() ?? false;
     if (dropped) {
       this.#effects.abandon();
     }
@@ -61,12 +63,12 @@ export class PowerDrawInput {
 
   /** Follows a projection: a draw that became unusable, or that an opened panel interrupts, drops. */
   observe(projection: ZoneSnapshot, interfaceOpen: boolean): void {
-    if (this.#model.drawing() !== undefined && this.#model.observe(projection, interfaceOpen)) {
+    if (this.#draw && this.#draw.drawing() !== undefined && this.#draw.observe(projection, interfaceOpen)) {
       this.#effects.abandon();
     }
   }
 
   get drawing(): boolean {
-    return this.#model.drawing() !== undefined;
+    return this.#draw?.drawing() !== undefined;
   }
 }

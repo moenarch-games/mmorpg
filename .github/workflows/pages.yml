@@ -40,7 +40,8 @@ jobs:
   build:
     if: (github.event.action != 'labeled' && github.event.action != 'unlabeled') || github.event.label.name == 'browser-evidence' || github.event.label.name == 'full-validation'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Browser acceptance on the software renderer outlasts the normal cap; only a run that asks for it gets more.
+    timeout-minutes: ${{ (inputs.full_validation == true || inputs.browser_evidence == true) && 90 || 30 }}
     env:
       FULL_VALIDATION: ${{ inputs.full_validation == true }}
     steps:
