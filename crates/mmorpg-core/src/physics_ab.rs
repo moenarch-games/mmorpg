@@ -130,4 +130,10 @@ impl ZoneSimulation {
     pub fn ground_probe(&self, x: i32, z: i32) -> i32 {
         self.ground_y(x, z)
     }
+
+    /// The unrounded terrain height behind [`Self::ground_probe`] (0 on flat content).
+    #[must_use]
+    pub fn ground_height_probe(&self, x: i32, z: i32) -> f32 {
+        self.world.terrain_height(x, z).unwrap_or(0.0)
+    }
 }

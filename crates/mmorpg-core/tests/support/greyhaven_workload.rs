@@ -80,13 +80,16 @@ pub fn initial_zone(fixture: Fixture) -> Result<ZoneSimulation, Box<dyn Error>> 
     let mut state = empty.snapshot()?;
     let mut placed = Vec::new();
     // Level 1 bots spread over the Vale's spawns: the highlands' level 5 garrison (#502) would
-    // kill them within the horizon, and a spirit's release is not a physics comparison.
+    // kill them within the horizon, and a spirit's release is not a physics comparison. The
+    // wetlands' lurkers (#506) float in deep water, and a bot there would drown or swim.
     let vale_spawns: Vec<_> = content
         .creature_spawns()
         .iter()
         .filter(|spawn| {
-            greyhaven_vale::area_at(spawn.position[0], spawn.position[1])
-                .is_none_or(|area| area.id() != greyhaven_vale::highlands::BANDIT_HIGHLANDS)
+            greyhaven_vale::area_at(spawn.position[0], spawn.position[1]).is_none_or(|area| {
+                area.id() != greyhaven_vale::highlands::BANDIT_HIGHLANDS
+                    && area.id() != greyhaven_vale::marsh::MARSH_LAKE_WETLANDS
+            })
         })
         .collect();
     for index in 0..fixture.players {
