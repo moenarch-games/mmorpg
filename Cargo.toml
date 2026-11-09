@@ -11,6 +11,7 @@ members = [
   "crates/mmorpg-presentation",
   "crates/mmorpg-client-model",
   "crates/mmorpg-wasm",
+  "crates/mmorpg-world-studio",
 ]
 resolver = "3"
 

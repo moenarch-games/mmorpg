@@ -36,6 +36,7 @@ Lookup is read-only and does not replace the full completion gate or required na
 | `mmorpg-client` | Native wgpu/winit client |
 | `mmorpg-scenarios` | Headless deterministic bot and control-plane scenario runners (tooling; owns no rules) |
 | `mmorpg-wasm` | wasm-bindgen adapter: the shared zone simulation as a local single-player host for `web/` (owns no rules) |
+| `mmorpg-world-studio` | Local web app over the capture, paint-import and agent reconciliation workflow (tooling; reads no game crate, loopback only; `docs/WORLD_STUDIO.md`) |
 | `web/` | GitHub Pages single-player tech demo over the WASM local host; no MMO authority |
 
 ## Commands
@@ -59,6 +60,9 @@ python3 scripts/smoke-handoff.py     # two handoff hosts on PostgreSQL 17 (Docke
 python3 scripts/smoke-browser.py     # real Chromium against the built web/dist (needs Playwright)
 python3 scripts/smoke-browser-online.py  # two Chromium pages join one real zone host over WebTransport
 python3 scripts/profile-browser.py --out artifacts/profile/report.json --trace artifacts/profile  # opt-in Greyhaven frame phases, input latency, GPU time (#546)
+cargo run -p mmorpg-world-studio     # web app for the whole map, Krita and agent workflow (docs/WORLD_STUDIO.md)
+cargo run -p mmorpg-world-studio -- capture --tiles     # the same capture from the command line: layered Krita documents, masks and map tiles
+cargo run -p mmorpg-world-studio -- import <region>.ora # painted height and biome layers into content/greyhaven/paint/
 ./scripts/dev-browser-online.sh      # zone host + browser client in online mode
 ```
 
