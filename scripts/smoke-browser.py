@@ -8,7 +8,9 @@ transaction-rule acceptance.
 
 Prerequisites: build web/ (bun run build) and `mise run setup:browser` (Playwright in the
 repository's .venv plus Chromium; on a fresh host also `playwright install-deps chromium`).
-Run from the repository root: python scripts/smoke-browser.py
+Run from the repository root: python scripts/smoke-browser.py [BrowserAcceptance.test_name ...]
+The default renders in SwiftShader, as CI does. MMORPG_SMOKE_BROWSER_CHANNEL=chrome (run it under
+xvfb-run) launches that installed browser on the host GPU instead.
 """
 from __future__ import annotations
 
@@ -17,6 +19,7 @@ import functools
 import http.server
 import json
 import math
+import os
 import re
 from pathlib import Path
 import threading
@@ -37,6 +40,7 @@ ROSTER_KEY = "mmorpg.offline-roster.v1"
 # The retired offline checkpoint key; nothing may write it any more.
 CHARACTER_ENTRY_PREFIX = "mmorpg.character.v1."
 LEGACY_CHECKPOINT_PREFIX = "mmorpg.offline-demo.v1."
+CHANNEL = os.environ.get("MMORPG_SMOKE_BROWSER_CHANNEL")
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -61,7 +65,10 @@ class BrowserAcceptance(unittest.TestCase):
         cls.server_thread.start()
         cls.url = f"http://127.0.0.1:{cls.server.server_port}/mmorpg/"
         cls.playwright = sync_playwright().start()
-        cls.browser = cls.playwright.chromium.launch(args=["--use-angle=swiftshader", "--enable-unsafe-swiftshader"])
+        if CHANNEL:
+            cls.browser = cls.playwright.chromium.launch(channel=CHANNEL, args=["--enable-gpu", "--use-angle=gl", "--ignore-gpu-blocklist"])
+        else:
+            cls.browser = cls.playwright.chromium.launch(args=["--use-angle=swiftshader", "--enable-unsafe-swiftshader"])
         cls.evidence = []
 
     @classmethod
