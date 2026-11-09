@@ -70,7 +70,7 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // sphere in every step's world: 360 more body visits per 360 ticks.
     // World traps (#300) add one count byte to every projection. The Bandit Highlands garrison
     // (#502) adds 25 creatures for AI and physics every tick (9,000 of each per 360 ticks); the
-    // spread fights' bots follow the longer spawn table to other creatures.
+    // spread fights' bots stay on the Vale's part of the spawn table.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
         [38_160, 1_314_720, 288_000, 6_088_352],
         [38_160, 1_311_840, 93_060, 1_794_309],
