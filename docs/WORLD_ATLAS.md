@@ -15,6 +15,7 @@ uv run content/world/authoring/atlas.py build                               # ou
 uv run content/world/authoring/atlas.py seed-regions                        # append seeds for uncovered land (each then needs a border)
 uv run content/world/authoring/atlas.py format                              # canonical JSON layout
 uv run content/world/authoring/atlas.py sync                                # after hand edits of borders or seeds
+uv run content/world/authoring/atlas.py gis-export                          # GeoJSON and TopoJSON for GIS tools
 blender --python content/world/authoring/atlas_blender.py -- region r100 r113   # Blender file for two neighbouring regions
 blender --python content/world/authoring/atlas_blender.py -- import         # editable Blender scene
 blender --background artifacts/world-atlas/continent.blend --python content/world/authoring/atlas_blender.py -- export
@@ -294,6 +295,65 @@ border length and crossing kind: open, ridge, pass or river) is generated as
 | Isenholt | Sarrath | North coast (Salt Road) |
 | Sarrath | Merrow League | Grass plains west of the Teeth, past the Saltmere (Salt Road via Ashwell) |
 | Each kingdom | Crownhollow | Its own gate gorge |
+
+## GIS exchange
+
+The atlas is not GeoJSON internally, for three reasons:
+
+- **Coordinates.** It works in Greyhaven's metres, not longitude and latitude.
+- **Shared borders.** Each border is stored once and shared by two regions, which GeoJSON
+  cannot express.
+- **Computed regions.** Regions are cut out by borders and the coast rather than stored as
+  polygons.
+
+For GIS tools it exports and imports instead:
+
+```sh
+uv run content/world/authoring/atlas.py gis-export                                  # artifacts/world-atlas/gis/{epsg3857,wgs84}/
+uv run content/world/authoring/atlas.py gis-import artifacts/world-atlas/gis/wgs84  # bring edits back
+uv run content/world/authoring/test_atlas_gis.py                                    # its test, on a copy of the sources
+```
+
+**Frames.** The world is placed at 0° N 0° E, where Web Mercator's scale is 1 to within two
+parts per million.
+
+- `epsg3857/` holds plain atlas metres (x east, y = −z north), with the legacy `crs` member
+  that QGIS and GDAL read.
+- `wgs84/` holds the same in longitude and latitude, as RFC 7946 requires, for web maps and
+  strict readers.
+
+**Regions** come as `regions.topojson`, where each border is one arc shared by both
+neighbours:
+
+- Between two regions, an arc is the authored border itself.
+- Along the sea, an arc is the coastline traced from the terrain and smoothed.
+- `regions.geojson` holds the same polygons with their shared edges written twice, for tools
+  without TopoJSON support.
+- Exteriors run counter-clockwise (RFC 7946).
+- Properties: kingdom, contested flag, area, mean elevation and main biomes.
+
+The reference decoder `topojson-client` reads the file as 151 valid polygons. They are
+identical to `regions.geojson`, cover the 347 km² of land without overlaps, and match the
+region raster's areas to a median of 0.6 % (at most 6 %).
+
+**Layers.** Each layer is its own GeoJSON file, with the source ids as feature ids:
+
+- **Editable:** borders, junctions, seeds, settlements, rivers (control lines), ridges,
+  uplands and water points.
+- **Derived, read-only:** river courses as carved, roads as routed, the coastline and the
+  Crown's gates.
+
+**Import** matches features by id and changes only their geometry:
+
+- A line in `borders.geojson` without an id is a new border. Its ends connect to junctions or
+  split the borders they meet, as in Blender.
+- A point in `seeds.geojson` without an id is a new region.
+- Like the Blender export, an import is all or nothing. It runs `sync`, refuses an
+  inconsistent result, and refuses a folder exported before `content/world/` last changed.
+- Deleting features is not supported. Missing features are reported and left unchanged;
+  merge regions in Blender or the JSON.
+
+![The GIS export drawn straight from its files](images/world/gis-export.png)
 
 ## Authoring layers
 

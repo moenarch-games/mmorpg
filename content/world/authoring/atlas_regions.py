@@ -258,3 +258,38 @@ def sync(g, land, doc, seeds):
     used = {b.get(e) for b in doc["borders"] for e in ("from", "to")}
     doc["junctions"] = [j for j in doc["junctions"] if j["id"] in used]
     return problems
+def simplify(pts, tol):
+    """Douglas–Peucker; the ends stay."""
+    if len(pts) < 3:
+        return pts
+    keep = [False] * len(pts)
+    keep[0] = keep[-1] = True
+    stack = [(0, len(pts) - 1)]
+    while stack:
+        i, j = stack.pop()
+        (ax, az), (bx, bz) = pts[i], pts[j]
+        vx, vz = bx - ax, bz - az
+        n = math.hypot(vx, vz)
+        best, k = -1.0, -1
+        for m in range(i + 1, j):
+            px, pz = pts[m][0] - ax, pts[m][1] - az
+            d = abs(px * vz - pz * vx) / n if n else math.hypot(px, pz)
+            if d > best:
+                best, k = d, m
+        if best > tol:
+            keep[k] = True
+            stack += [(i, k), (k, j)]
+    return [p for p, f in zip(pts, keep) if f]
+
+
+def chaikin(pts, rounds, closed=False):
+    """Corner cutting; an open line keeps its ends, so borders still meet at their junctions."""
+    for _ in range(rounds):
+        ring = pts + [pts[0]] if closed else pts
+        cuts = []
+        for (ax, az), (bx, bz) in zip(ring, ring[1:]):
+            cuts += [(0.75 * ax + 0.25 * bx, 0.75 * az + 0.25 * bz), (0.25 * ax + 0.75 * bx, 0.25 * az + 0.75 * bz)]
+        pts = cuts if closed else [pts[0]] + cuts + [pts[-1]]
+    return pts
+
+

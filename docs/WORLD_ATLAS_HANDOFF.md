@@ -128,6 +128,19 @@ regenerate region seeds wholesale once someone has edited them: `seed-regions` o
    - The live trial in Blender 5.2.2, on a scratch copy, found a real bug: the Draw tool makes
      Bézier curves with few control points, which the export had flattened. It now follows the
      curve, and redrawn ends near a junction are pulled onto it without a hook. The headless
-     test has 16 cases, including a real merge and split that then pass the generator's checks.
+     test has 15 cases, including a real merge and split that then pass the generator's checks.
    - Not done: deleting a junction marker does nothing (junctions follow the borders); a split
      drawn across more than one region is not supported (it reports the problem instead).
+10. Owner round 5: GIS compatibility. The atlas stays its own JSON. Two new commands,
+    `gis-export` and `gis-import` (`atlas_gis.py`), exchange it with GIS tools.
+    - Two frames: EPSG:3857 metres, with the world placed at 0° N 0° E, and WGS84 per RFC 7946.
+    - Region topology as TopoJSON with shared arcs, and the same regions as plain GeoJSON
+      polygons.
+    - GeoJSON layers: borders, junctions, seeds, settlements, rivers, river courses, ridges,
+      uplands, water points, gates, roads and coastline.
+    - The import is all or nothing and matches features by id. A border or seed without an id
+      is new (a split). Deletions are not supported, and a folder older than the sources is
+      refused.
+    - Validated independently: `topojson-client` decodes 151 valid, non-overlapping
+      polygons covering the land. The test `test_atlas_gis.py` checks the topology, the
+      untouched round trip, the stale refusal, a junction move and a split made in WGS84.

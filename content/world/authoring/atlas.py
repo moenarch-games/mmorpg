@@ -12,6 +12,8 @@ geographic consistency.
     uv run content/world/authoring/atlas.py format
     uv run content/world/authoring/atlas.py borders [--replace]
     uv run content/world/authoring/atlas.py sync
+    uv run content/world/authoring/atlas.py gis-export [--out artifacts/world-atlas/gis]
+    uv run content/world/authoring/atlas.py gis-import artifacts/world-atlas/gis/wgs84
 
 Outputs go to artifacts/world-atlas/ (ignored). Only seed-regions (which only appends region
 seeds), borders (which traces the region borders once) and format (which only changes layout)
@@ -34,9 +36,10 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import atlas_gis  # noqa: E402
 import atlas_regions  # noqa: E402
 from atlas_json import write_json  # noqa: E402
-from atlas_regions import NB8, components, snap  # noqa: E402
+from atlas_regions import NB8, chaikin, components, simplify, snap  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[3]
 WORLD = Path(os.environ.get("ATLAS_WORLD", REPO / "content" / "world"))  # tests point this at a copy
@@ -814,41 +817,6 @@ def region_adjacency(label, n, elev, big_river, land):
 
 
 # ---------------------------------------------------------------- region borders
-
-
-def simplify(pts, tol):
-    """Douglas–Peucker; the ends stay."""
-    if len(pts) < 3:
-        return pts
-    keep = [False] * len(pts)
-    keep[0] = keep[-1] = True
-    stack = [(0, len(pts) - 1)]
-    while stack:
-        i, j = stack.pop()
-        (ax, az), (bx, bz) = pts[i], pts[j]
-        vx, vz = bx - ax, bz - az
-        n = math.hypot(vx, vz)
-        best, k = -1.0, -1
-        for m in range(i + 1, j):
-            px, pz = pts[m][0] - ax, pts[m][1] - az
-            d = abs(px * vz - pz * vx) / n if n else math.hypot(px, pz)
-            if d > best:
-                best, k = d, m
-        if best > tol:
-            keep[k] = True
-            stack += [(i, k), (k, j)]
-    return [p for p, f in zip(pts, keep) if f]
-
-
-def chaikin(pts, rounds, closed=False):
-    """Corner cutting; an open line keeps its ends, so borders still meet at their junctions."""
-    for _ in range(rounds):
-        ring = pts + [pts[0]] if closed else pts
-        cuts = []
-        for (ax, az), (bx, bz) in zip(ring, ring[1:]):
-            cuts += [(0.75 * ax + 0.25 * bx, 0.75 * az + 0.25 * bz), (0.25 * ax + 0.75 * bx, 0.25 * az + 0.75 * bz)]
-        pts = cuts if closed else [pts[0]] + cuts + [pts[-1]]
-    return pts
 
 
 def trace_borders(g: Grid, label: np.ndarray, ids: list, land: np.ndarray, exact: set) -> dict:
@@ -2032,6 +2000,51 @@ def cmd_sync(args) -> int:
     return 1 if problems else 0
 
 
+def cmd_gis_export(args) -> int:
+    """GeoJSON layers and a TopoJSON of the regions, in EPSG:3857 metres and in WGS84 (atlas_gis.py)."""
+    layers = load_layers()
+    if "borders" not in layers:
+        sys.exit("no borders.json yet; run atlas.py borders first")
+    b = build(layers)
+    out = Path(args.out)
+    arcs = atlas_gis.export(b, out, source_digest())
+    coast = sum(1 for a in arcs if -1 in a["pair"])
+    print(f"wrote {out}/epsg3857 and {out}/wgs84: {len(arcs)} shared arcs ({coast} along the coast), "
+          f"{sum(1 for s in b['region_stats'] if s)} regions, and the point and line layers")
+    return 0
+
+
+def cmd_gis_import(args) -> int:
+    """Bring edits made in a GIS tool back: geometry of features matched by id, new borders and new
+    seeds. All or nothing: refuses when the sources changed since the export or the result is
+    inconsistent."""
+    d = Path(args.folder)
+    manifest = json.loads((d / "manifest.json").read_text())
+    if manifest["source"] != source_digest():
+        sys.exit("content/world/ changed since this folder was exported; export again and redo the edits there")
+    layers = load_layers()
+    names = {"borders": "borders.json", "regions": "regions.json", "polities": "polities.json",
+             "water": "water.json", "terrain": "terrain.json"}
+    summary, notes = atlas_gis.import_edits(d, layers)
+    for n in notes:
+        print("note: " + n)
+    problems = []
+    if "borders" in layers:
+        g = Grid(layers["atlas"])
+        land = build_elevation(g, layers, layers["atlas"]["seed"])["land"]
+        problems = atlas_regions.sync(g, land, layers["borders"], [(r["id"], r["seed"]) for r in layers["regions"]["regions"]])
+    if problems:
+        for p in problems:
+            print("problem: " + p)
+        sys.exit("nothing was written")
+    changed = [f for k, f in names.items() if k in layers and write_json(WORLD / f, layers[k])]
+    print(f"moved {summary['moved']} features"
+          + (f"; new borders {', '.join(summary['newBorders'])}" if summary["newBorders"] else "")
+          + (f"; new regions {', '.join(summary['newRegions'])}" if summary["newRegions"] else "")
+          + f"; changed: {', '.join(changed) if changed else 'nothing'}")
+    return 0
+
+
 def cmd_format(args) -> int:
     """Rewrite every source layer in the canonical layout; values never change."""
     changed = [p.relative_to(WORLD).as_posix() for p in sorted(WORLD.rglob("*.json"))
@@ -2051,6 +2064,10 @@ def main() -> int:
     sub.add_parser("seed-regions")
     sub.add_parser("format")
     sub.add_parser("sync", help="bring borders.json in step with hand edits of borders or seeds")
+    s = sub.add_parser("gis-export", help="GeoJSON layers and regions.topojson for GIS tools")
+    s.add_argument("--out", default=str(OUT / "gis"))
+    s = sub.add_parser("gis-import", help="bring edits made in a GIS tool back")
+    s.add_argument("folder", help="an exported frame folder, e.g. artifacts/world-atlas/gis/wgs84")
     s = sub.add_parser("borders", help="trace borders.json from the region seeds (once)")
     s.add_argument("--replace", action="store_true", help="retrace an existing borders.json")
     args = p.parse_args()
@@ -2058,6 +2075,10 @@ def main() -> int:
         return cmd_seed_regions(args)
     if args.cmd == "borders":
         return cmd_borders(args)
+    if args.cmd == "gis-export":
+        return cmd_gis_export(args)
+    if args.cmd == "gis-import":
+        return cmd_gis_import(args)
     if args.cmd == "sync":
         return cmd_sync(args)
     if args.cmd == "format":
