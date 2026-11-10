@@ -2,7 +2,10 @@
 //! materials live in its `World` behind stable handles, the lighting is its physical `Scene`
 //! (sun, moon, sky, cascaded shadows, sky ambient light, fog, point lights), and the combat HUD
 //! is drawn over its tone-mapped output.
-use super::ClientError;
+use super::{
+    ClientError,
+    smoke::{CampfireSmoke, STEP_SECONDS},
+};
 use crate::{
     camera::CameraView,
     environment::Lighting,
@@ -521,6 +524,8 @@ impl NatureGpu {
 pub(super) struct FrameRenderer {
     renderer: Renderer,
     world: World,
+    /// Scene-owned GPU smoke emitters; independent of camera visibility and zone gameplay.
+    smoke: Option<CampfireSmoke>,
     nature: Option<NatureGpu>,
     /// The ground layer textures (#525), uploaded with the first ground material.
     ground: Option<GroundGpu>,
@@ -545,6 +550,10 @@ pub(super) struct FrameRenderer {
     /// GPU pass timing, once enabled (#692).
     #[cfg(test)]
     gpu_timer: Option<super::profile::GpuTimer>,
+    #[cfg(test)]
+    particle_timer: Option<super::profile::GpuTimer>,
+    #[cfg(test)]
+    particle_step_timed: bool,
 }
 
 impl FrameRenderer {
@@ -600,6 +609,7 @@ impl FrameRenderer {
         Self {
             renderer,
             world,
+            smoke: None,
             nature: None,
             ground: None,
             viewport,
@@ -622,6 +632,10 @@ impl FrameRenderer {
             profile: Default::default(),
             #[cfg(test)]
             gpu_timer: None,
+            #[cfg(test)]
+            particle_timer: None,
+            #[cfg(test)]
+            particle_step_timed: false,
         }
     }
 
@@ -635,6 +649,7 @@ impl FrameRenderer {
     #[cfg(test)]
     pub(super) fn enable_gpu_timing(&mut self, device: &wgpu::Device) {
         self.gpu_timer = Some(super::profile::GpuTimer::new(device, 64));
+        self.particle_timer = Some(super::profile::GpuTimer::particle(device));
     }
 
     /// The last submitted frame's GPU time per pass, in milliseconds.
@@ -644,15 +659,53 @@ impl FrameRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Result<Option<Vec<(&'static str, f64)>>, ClientError> {
-        self.gpu_timer
+        let mut passes = self
+            .gpu_timer
             .as_ref()
             .map(|timer| timer.read(device, queue))
-            .transpose()
+            .transpose()?;
+        if self.particle_step_timed
+            && let (Some(passes), Some(timer)) = (&mut passes, &self.particle_timer)
+        {
+            passes.splice(0..0, timer.read(device, queue)?);
+        }
+        Ok(passes)
     }
 
     #[cfg(test)]
     pub(super) fn observation(&self) -> ([u64; 4], usize) {
         (self.observation, self.meshes.len())
+    }
+
+    #[cfg(test)]
+    pub(super) fn smoke_emitter_count(&self) -> usize {
+        self.world.read_alive_particles().len()
+    }
+
+    /// Screenshot-only fast-forward: warm the *real GPU simulation* without redrawing all
+    /// Greyhaven scenery hundreds of times on a software Vulkan adapter.
+    #[cfg(test)]
+    pub(super) fn prewarm_smoke(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: &WorldFrame,
+        steps: u32,
+    ) {
+        let _ = CampfireSmoke::sync(
+            &mut self.smoke,
+            &mut self.world,
+            &frame.campfire_smoke,
+            frame.particle_seconds,
+            frame.particles_animated,
+        );
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("campfire screenshot warmup"),
+        });
+        for _ in 0..steps {
+            self.world.step_particles(&mut encoder, STEP_SECONDS, None);
+        }
+        queue.submit([encoder.finish()]);
     }
 
     pub fn resize(&mut self, [width, height]: [u32; 2]) {
@@ -902,6 +955,40 @@ impl FrameRenderer {
             }
         }
         self.evict();
+        let particle_steps = CampfireSmoke::sync(
+            &mut self.smoke,
+            &mut self.world,
+            &frame.campfire_smoke,
+            frame.particle_seconds,
+            frame.particles_animated,
+        );
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("presented world"),
+        });
+        #[cfg(test)]
+        let particle_started = std::time::Instant::now();
+        #[cfg(test)]
+        {
+            self.particle_step_timed = particle_steps > 0 && self.particle_timer.is_some();
+        }
+        for _step in 0..particle_steps {
+            // The GPU runs this before the draw pass, at a bounded presentation-only dt.
+            // Prepare follows the step, as in render-engine's kit_showcase.
+            #[cfg(test)]
+            let timestamps = if _step == 0 {
+                self.particle_timer.as_ref().map(|timer| timer.stamp())
+            } else {
+                None
+            };
+            #[cfg(not(test))]
+            let timestamps = None;
+            self.world
+                .step_particles(&mut encoder, STEP_SECONDS, timestamps);
+        }
+        #[cfg(test)]
+        {
+            self.profile.particle_step = particle_started.elapsed();
+        }
         let scene = scene(&frame.lighting, view);
         #[cfg(test)]
         let started = std::time::Instant::now();
@@ -922,9 +1009,6 @@ impl FrameRenderer {
         if !hud_instances.is_empty() {
             queue.write_buffer(&self.hud_buffer, 0, bytemuck::cast_slice(&hud_instances));
         }
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("presented world"),
-        });
         #[cfg(not(test))]
         let timestamps = None;
         #[cfg(test)]
@@ -947,6 +1031,11 @@ impl FrameRenderer {
             self.profile.work = self.viewport.work();
             self.profile.world = self.world.work();
             if let Some(timer) = &self.gpu_timer {
+                timer.resolve(&mut encoder);
+            }
+            if self.particle_step_timed
+                && let Some(timer) = &self.particle_timer
+            {
                 timer.resolve(&mut encoder);
             }
         }

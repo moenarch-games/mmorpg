@@ -109,6 +109,13 @@ pub struct WorldFrame {
     /// Draws sampled this frame: units, effects, animated props and door swings.
     pub draws: Vec<SceneDraw>,
     pub lighting: Lighting,
+    /// Fixed Greyhaven campfire anchors (the same authored flames that provide point lights).
+    /// Shared with every frame so the GPU emitter lifetimes survive camera movement.
+    pub campfire_smoke: Arc<[[f32; 3]]>,
+    /// Presentation-only time; never advances the authoritative zone simulation.
+    pub particle_seconds: f64,
+    /// Reduced-motion mode hides the moving smoke.
+    pub particles_animated: bool,
     /// The `greyhaven-nature` trees, rocks and bushes and the climbing kit's parts drawn this
     /// frame (#49, #621).
     pub nature: Vec<NatureDraw>,
@@ -185,6 +192,7 @@ pub struct WorldScene {
     animated: Vec<Vec<SceneDraw>>,
     /// The scenery's campfires and lantern posts (#529).
     point_lights: Vec<mmorpg_presentation::lights::PointLight>,
+    campfire_smoke: Arc<[[f32; 3]]>,
     nature: NatureState,
 }
 
@@ -451,11 +459,22 @@ impl WorldScene {
             models: placements.iter().map(|placement| placement.model).collect(),
             seconds: None,
         };
+        let point_lights = mmorpg_presentation::lights::point_lights(&scene, scenery);
+        let campfire_smoke = point_lights
+            .iter()
+            .filter(|light| {
+                light.flicker.is_some()
+                    && light.lumens == mmorpg_presentation::lights::CAMPFIRE.lumens
+            })
+            .map(|light| light.position.map(|axis| axis as f32))
+            .collect::<Vec<_>>()
+            .into();
         Self {
             nature: NatureState::new(nature),
             cave_lighting: scenery.greyhaven(),
             additional_draws: Vec::new(),
-            point_lights: mmorpg_presentation::lights::point_lights(&scene, scenery),
+            point_lights,
+            campfire_smoke,
             statics,
             water_draws,
             animated,
@@ -536,6 +555,9 @@ impl WorldScene {
             batches,
             draws,
             lighting,
+            campfire_smoke: Arc::clone(&self.campfire_smoke),
+            particle_seconds: seconds,
+            particles_animated: animate,
             nature: self.nature_draws(seconds, animate, eye, fov_y_degrees),
         }
     }
@@ -926,5 +948,30 @@ fn blockout(prop: &Prop, base: f32, boxes: &mut Vec<SceneBox>) {
         | PropKind::GrayboxTower
         | PropKind::GrayboxWalkway
         | PropKind::GrayboxRamp => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn smoke_anchors_follow_authored_campfires_and_are_stable_across_frames() {
+        let scenery = mmorpg_scenery::greyhaven_vale_scenery();
+        let world = WorldScene::new(&scenery);
+        let a = world.frame(0.0, true, [0.0, 4.0, 10.0], None);
+        let b = world.frame(0.1, true, [20.0, 4.0, 10.0], None);
+        let fires: Vec<_> = a
+            .lighting
+            .point_lights
+            .iter()
+            .filter(|light| light.range == 16.0 && light.lumens < 2_000.0)
+            .map(|light| light.position)
+            .collect();
+        assert!(!fires.is_empty());
+        assert_eq!(&*a.campfire_smoke, fires.as_slice());
+        assert!(Arc::ptr_eq(&a.campfire_smoke, &b.campfire_smoke));
+        assert_eq!(a.particle_seconds, 0.0);
+        assert_eq!(b.particle_seconds, 0.1);
     }
 }

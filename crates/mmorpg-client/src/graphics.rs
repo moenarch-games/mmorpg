@@ -2,6 +2,7 @@
 mod frame;
 #[cfg(test)]
 mod profile;
+mod smoke;
 use crate::{
     ClientError,
     camera::CameraView,
@@ -308,6 +309,27 @@ pub(crate) async fn readback(
     [width, height]: [u32; 2],
     overlay: Option<&mut dyn Overlay>,
 ) -> Result<Vec<u8>, ClientError> {
+    readback_sequence(
+        std::iter::once((frame.clone(), view)),
+        hud,
+        [width, height],
+        overlay,
+        0,
+        Duration::from_secs(10),
+    )
+    .await
+}
+
+/// Keep one GPU world alive across frames for accumulated, presentation-only effects. A
+/// screenshot may fast-forward GPU particles without hundreds of full Greyhaven draw passes.
+async fn readback_sequence(
+    frames: impl IntoIterator<Item = (WorldFrame, CameraView)>,
+    hud: &[HudRect],
+    [width, height]: [u32; 2],
+    mut overlay: Option<&mut dyn Overlay>,
+    #[allow(unused_variables)] prewarm_steps: u32,
+    timeout: Duration,
+) -> Result<Vec<u8>, ClientError> {
     let instance = wgpu::Instance::default();
     let adapter = instance.request_adapter(&Default::default()).await?;
     let mut renderer =
@@ -326,13 +348,27 @@ pub(crate) async fn readback(
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
-    renderer.render(
-        &texture.create_view(&Default::default()),
-        frame,
-        hud,
-        view,
-        overlay,
-    )?;
+    let view = texture.create_view(&Default::default());
+    let mut frames = frames.into_iter().peekable();
+    if frames.peek().is_none() {
+        return Err("native readback requires at least one frame".into());
+    }
+    while let Some((frame, camera)) = frames.next() {
+        #[cfg(test)]
+        if prewarm_steps > 0 {
+            renderer
+                .frame
+                .prewarm_smoke(&renderer.device, &renderer.queue, &frame, prewarm_steps);
+        }
+        let last = frames.peek().is_none();
+        renderer.render(
+            &view,
+            &frame,
+            hud,
+            camera,
+            if last { overlay.take() } else { None },
+        )?;
+    }
     let buffer = renderer.device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("native readback"),
         size: u64::from(width * height * 4),
@@ -363,9 +399,9 @@ pub(crate) async fn readback(
     });
     renderer.device.poll(wgpu::PollType::Wait {
         submission_index: None,
-        timeout: Some(Duration::from_secs(10)),
+        timeout: Some(timeout),
     })?;
-    receiver.recv_timeout(Duration::from_secs(10))??;
+    receiver.recv_timeout(timeout)??;
     let mapped = buffer.slice(..).get_mapped_range()?;
     let pixels = mapped.to_vec();
     drop(mapped);
@@ -587,13 +623,24 @@ mod tests {
             if timed {
                 renderer.frame.enable_gpu_timing(&renderer.device);
             }
-            println!("adapter={} gpu_timestamps={timed}", adapter.get_info().name);
+            let smoke_enabled = std::env::var_os("MMORPG_PROFILE_NO_SMOKE").is_none();
+            println!(
+                "adapter={} gpu_timestamps={timed} smoke_enabled={smoke_enabled}",
+                adapter.get_info().name
+            );
             // Statistics leave out the first frames of each view (uploads, pipeline
             // creation); the first frame and the raw lists keep them.
             const WARM: usize = 40;
+            let samples = std::env::var("MMORPG_PROFILE_FRAMES")
+                .ok()
+                .and_then(|value| value.parse::<usize>().ok())
+                .filter(|count| *count >= 8)
+                .unwrap_or(240);
+            let warmup = WARM.min(samples / 4);
+            let only_view = std::env::var("MMORPG_PROFILE_VIEW").ok();
             let ms = |span: Duration| span.as_secs_f64() * 1e3;
             let stats = |name: &str, samples: &[f64]| {
-                let mut warm = samples.get(WARM..).unwrap_or_default().to_vec();
+                let mut warm = samples.get(warmup..).unwrap_or_default().to_vec();
                 if warm.is_empty() {
                     return format!("{name} n/a");
                 }
@@ -616,22 +663,32 @@ mod tests {
                     .join(",")
             };
             for (name, view) in views {
+                if only_view.as_deref().is_some_and(|only| only != name) {
+                    continue;
+                }
                 let [mut frames, mut renders, mut prepares, mut encodes, mut gpus] =
                     std::array::from_fn(|_| Vec::new());
+                let mut particle_steps = Vec::new();
                 // GPU time per pass label (several sky or shadow passes summed), in pass order.
                 let mut passes: Vec<(&str, Vec<f64>)> = Vec::new();
                 let world_before = renderer.frame.profile().world;
-                for index in 0..240 {
-                    let now = start + Duration::from_millis(16 * index);
+                for index in 0..samples {
+                    let now = start
+                        + Duration::from_millis(
+                            16 * u64::try_from(index).expect("benchmark frame index fits u64"),
+                        );
                     let begin = Instant::now();
-                    let frame = presentation.frame(&world, now, view);
+                    let mut frame = presentation.frame(&world, now, view);
+                    frame.particles_animated &= smoke_enabled;
                     let rendering = Instant::now();
                     renderer.render(&target, &frame, &[], view, None).unwrap();
                     renderer
                         .device
                         .poll(wgpu::PollType::Wait {
                             submission_index: None,
-                            timeout: Some(Duration::from_secs(10)),
+                            // The manual profile also runs on software Vulkan, where the
+                            // first full-scene shader compilation exceeds ten seconds.
+                            timeout: Some(Duration::from_secs(120)),
                         })
                         .unwrap();
                     frames.push(ms(begin.elapsed()));
@@ -639,6 +696,7 @@ mod tests {
                     let profile = renderer.frame.profile();
                     prepares.push(ms(profile.prepare));
                     encodes.push(ms(profile.encode));
+                    particle_steps.push(ms(profile.particle_step));
                     let Some(spans) = renderer
                         .frame
                         .gpu_passes(&renderer.device, &renderer.queue)
@@ -662,17 +720,18 @@ mod tests {
                     }
                 }
                 println!(
-                    "view={name} {} | {} | {} | {} | {}",
+                    "view={name} {} | {} | {} | {} | {} | {}",
                     stats("frame_ms", &frames),
                     stats("render_ms", &renders),
                     stats("prepare_ms", &prepares),
                     stats("encode_ms", &encodes),
+                    stats("particle_step_cpu_ms", &particle_steps),
                     stats("gpu_ms", &gpus),
                 );
                 let passes: Vec<_> = passes
                     .iter_mut()
                     .map(|(label, samples)| {
-                        let skip = WARM.min(samples.len() - 1);
+                        let skip = warmup.min(samples.len() - 1);
                         let warm = &mut samples[skip..];
                         warm.sort_by(f64::total_cmp);
                         format!("{}={:.3}", label.replace(' ', "_"), warm[warm.len() / 2])
@@ -689,6 +748,169 @@ mod tests {
                 println!("view={name} raw render_ms=[{}]", list(&renders));
                 println!("view={name} raw gpu_ms=[{}]", list(&gpus));
             }
+        });
+    }
+
+    /// A new scene drops the old GPU emitters, while merely moving the camera keeps them.
+    /// Reduced motion frees them too. No server tick or projection drives these particles.
+    #[test]
+    #[ignore = "requires a GPU; native campfire particle lifetime"]
+    fn greyhaven_smoke_lifetime() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let scenery = greyhaven_vale_scenery();
+            let world = WorldScene::new(&scenery);
+            let view = CameraView {
+                field_of_view_degrees: 50.0,
+                eye: [5.0, 8.5, 31.0],
+                target: [-14.0, 3.0, 4.0],
+            };
+            let adapter = wgpu::Instance::default()
+                .request_adapter(&Default::default())
+                .await
+                .unwrap();
+            let mut renderer =
+                SceneRenderer::new(&adapter, wgpu::TextureFormat::Rgba8UnormSrgb, 640, 360)
+                    .await
+                    .unwrap();
+            let target = renderer.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("smoke lifetime"),
+                size: wgpu::Extent3d {
+                    width: 640,
+                    height: 360,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            let target = target.create_view(&Default::default());
+            let first = world.frame(0.0, true, view.eye, None);
+            let fires = first.campfire_smoke.len();
+            assert!(fires > 0);
+            renderer.render(&target, &first, &[], view, None).unwrap();
+            assert_eq!(renderer.frame.smoke_emitter_count(), fires);
+
+            let moved = CameraView {
+                eye: [view.eye[0] + 3.0, view.eye[1], view.eye[2]],
+                ..view
+            };
+            renderer
+                .render(
+                    &target,
+                    &world.frame(0.016, true, moved.eye, None),
+                    &[],
+                    moved,
+                    None,
+                )
+                .unwrap();
+            assert_eq!(renderer.frame.smoke_emitter_count(), fires);
+
+            // A newly loaded world with the same campfire positions is nevertheless a new
+            // source owner, so it must replace the previous set, never accumulate emitters.
+            let next = WorldScene::new(&scenery);
+            renderer
+                .render(
+                    &target,
+                    &next.frame(0.0, true, moved.eye, None),
+                    &[],
+                    moved,
+                    None,
+                )
+                .unwrap();
+            assert_eq!(renderer.frame.smoke_emitter_count(), fires);
+            renderer
+                .render(
+                    &target,
+                    &next.frame(0.016, false, moved.eye, None),
+                    &[],
+                    moved,
+                    None,
+                )
+                .unwrap();
+            assert_eq!(renderer.frame.smoke_emitter_count(), 0);
+        });
+    }
+
+    /// Comparable day and night campfire smoke after five seconds of genuine GPU particle
+    /// steps, batched without redrawing the entire scene for each step.
+    #[test]
+    #[ignore = "requires GPU; manual native smoke screenshots"]
+    fn greyhaven_smoke_shots() {
+        let Some(directory) = std::env::var_os("MMORPG_PARTICLE_SHOTS") else {
+            return;
+        };
+        let directory = std::path::PathBuf::from(directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let world = WorldScene::new(&greyhaven_vale_scenery());
+            let light = world
+                .frame(0.0, false, [0.0, 0.0, 0.0], None)
+                .campfire_smoke[0];
+            let view = CameraView {
+                field_of_view_degrees: 50.0,
+                eye: [light[0] + 5.0, light[1] + 2.5, light[2] + 6.0],
+                target: [light[0], light[1] + 0.3, light[2]],
+            };
+            let moved = CameraView {
+                eye: [view.eye[0] + 1.0, view.eye[1], view.eye[2]],
+                ..view
+            };
+            let size = [1280, 720];
+            let mut daytime = None;
+            for (name, hour) in [("day", 15.0), ("night", 22.0)] {
+                let mut frame = world.frame(5.0, true, moved.eye, None);
+                frame.lighting.hour = hour;
+                let pixels = readback_sequence(
+                    std::iter::once((frame, moved)),
+                    &[],
+                    size,
+                    None,
+                    300,
+                    Duration::from_secs(120),
+                )
+                .await
+                .unwrap();
+                image::save_buffer(
+                    directory.join(format!("re-smoke-{name}.png")),
+                    &pixels,
+                    size[0],
+                    size[1],
+                    image::ExtendedColorType::Rgba8,
+                )
+                .unwrap();
+                if name == "day" {
+                    daytime = Some(pixels);
+                }
+            }
+            let mut baseline = world.frame(5.0, true, moved.eye, None);
+            baseline.lighting.hour = 15.0;
+            baseline.particles_animated = false;
+            let without = readback_sequence(
+                std::iter::once((baseline, moved)),
+                &[],
+                size,
+                None,
+                0,
+                Duration::from_secs(120),
+            )
+            .await
+            .unwrap();
+            let changed = daytime
+                .unwrap()
+                .chunks_exact(4)
+                .zip(without.chunks_exact(4))
+                .filter(|(a, b)| a != b)
+                .count();
+            println!(
+                "campfire smoke changes {changed} of {} pixels",
+                size[0] * size[1]
+            );
+            assert!(changed > 0, "the GPU smoke must be visible at the campfire");
         });
     }
 
