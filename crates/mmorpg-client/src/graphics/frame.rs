@@ -539,6 +539,12 @@ pub(super) struct FrameRenderer {
     /// Mesh uploads (new or rewritten), reuses, uploaded vertex bytes and palette uploads.
     #[cfg(test)]
     observation: [u64; 4],
+    /// The last frame's CPU spans and work counts (#692).
+    #[cfg(test)]
+    profile: super::profile::FrameProfile,
+    /// GPU pass timing, once enabled (#692).
+    #[cfg(test)]
+    gpu_timer: Option<super::profile::GpuTimer>,
 }
 
 impl FrameRenderer {
@@ -612,7 +618,36 @@ impl FrameRenderer {
             }),
             #[cfg(test)]
             observation: [0; 4],
+            #[cfg(test)]
+            profile: Default::default(),
+            #[cfg(test)]
+            gpu_timer: None,
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn profile(&self) -> super::profile::FrameProfile {
+        self.profile
+    }
+
+    /// Writes timestamps around each pass from the next frame on; the device needs
+    /// `TIMESTAMP_QUERY`.
+    #[cfg(test)]
+    pub(super) fn enable_gpu_timing(&mut self, device: &wgpu::Device) {
+        self.gpu_timer = Some(super::profile::GpuTimer::new(device, 64));
+    }
+
+    /// The last submitted frame's GPU time per pass, in milliseconds.
+    #[cfg(test)]
+    pub(super) fn gpu_passes(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Result<Option<Vec<(&'static str, f64)>>, ClientError> {
+        self.gpu_timer
+            .as_ref()
+            .map(|timer| timer.read(device, queue))
+            .transpose()
     }
 
     #[cfg(test)]
@@ -868,8 +903,14 @@ impl FrameRenderer {
         }
         self.evict();
         let scene = scene(&frame.lighting, view);
+        #[cfg(test)]
+        let started = std::time::Instant::now();
         self.renderer
             .prepare(&mut self.viewport, &self.world, &scene, &self.instances);
+        #[cfg(test)]
+        {
+            self.profile.prepare = started.elapsed();
+        }
         let hud_instances: Vec<_> = hud
             .iter()
             .map(|r| HudInstance {
@@ -884,8 +925,31 @@ impl FrameRenderer {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("presented world"),
         });
-        self.renderer
-            .encode(&mut encoder, &self.viewport, &self.world, target, None);
+        #[cfg(not(test))]
+        let timestamps = None;
+        #[cfg(test)]
+        let timestamps = self
+            .gpu_timer
+            .as_mut()
+            .map(|timer| timer.frame(device, &self.viewport));
+        #[cfg(test)]
+        let started = std::time::Instant::now();
+        self.renderer.encode(
+            &mut encoder,
+            &self.viewport,
+            &self.world,
+            target,
+            timestamps,
+        );
+        #[cfg(test)]
+        {
+            self.profile.encode = started.elapsed();
+            self.profile.work = self.viewport.work();
+            self.profile.world = self.world.work();
+            if let Some(timer) = &self.gpu_timer {
+                timer.resolve(&mut encoder);
+            }
+        }
         if !hud_instances.is_empty() {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("combat HUD"),
