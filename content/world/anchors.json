@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "note": "Hand-authored places the atlas must fit around. Inside an anchor the zone's own content is the authority; the atlas only records a coarse stand-in elevation so its surroundings join it, and never generates terrain, water, biomes or regions there.",
+  "anchors": [
+    {
+      "id": "greyhaven",
+      "name": "Greyhaven Vale",
+      "zone": 1,
+      "authority": [
+        "crates/mmorpg-core/src/content/greyhaven_vale.rs",
+        "content/greyhaven/landscape.json",
+        "content/greyhaven/paint/",
+        "content/greyhaven/outpost-layout.json"
+      ],
+      "referenceElevation": 400,
+      "blend": 900,
+      "parts": [
+        { "name": "Greyhaven Vale", "rect": [-208, -208, 208, 208], "local": 0 },
+        { "name": "Bandit Highlands", "rect": [-208, -632, 208, -208], "local": 36 },
+        { "name": "Farmland and Hamlets", "rect": [-208, 208, 208, 640], "local": 8 },
+        { "name": "Marsh-Lake Wetlands", "rect": [208, -208, 632, 208], "local": 4 }
+      ],
+      "entrances": [
+        { "id": "highland-pass", "name": "Highland Pass", "at": [52, -176], "established": true, "joins": "Bandit Highlands" },
+        { "id": "marsh-pass", "name": "Marsh Pass", "at": [208, 40], "established": true, "joins": "Marsh-Lake Wetlands" },
+        { "id": "south-road-notch", "name": "South Road notch", "at": [0, 208], "established": true, "joins": "Farmland and Hamlets" },
+        { "id": "north-exit", "name": "Highland Trail north end", "at": [0, -632], "established": false, "toward": "gate:greyfang-gate" },
+        { "id": "south-exit", "name": "Farmland Road south end", "at": [0, 640], "established": false, "toward": "millford" },
+        { "id": "east-exit", "name": "Marsh Trail east end", "at": [632, 0], "established": false, "toward": "brannock-ford" }
+      ]
+    }
+  ]
+}

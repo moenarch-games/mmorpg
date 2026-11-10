@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "note": "Authored major rivers run source to mouth and are carved with a strictly falling bed. Minor streams and lakes are derived from the terrain. 'mouth' is sea, sink:<id> or river:<id>.",
+  "carve": { "minGrade": 0.002, "sideSlope": 0.3, "bedDepth": 6, "valleyHalfWidth": 700, "meander": { "amplitude": 260, "wavelength": 1400 } },
+  "rivers": [
+    { "id": "greywater", "name": "Greywater", "source": "spring:greywell", "mouth": "sea",
+      "points": [[200, 1500], [450, 3000], [250, 4800], [800, 6600], [1200, 8200], [1300, 9500]] },
+    { "id": "fenwater", "name": "Fenwater", "source": "anchor:greyhaven", "mouth": "sea",
+      "points": [[700, 0], [1500, 300], [2800, 1200], [4200, 2600], [5600, 4400], [7000, 6000], [8500, 7200]] },
+    { "id": "brannock", "name": "Brannock", "source": "gate:merrow-notch", "mouth": "river:fenwater",
+      "points": [[2100, -2800], [3200, -1300], [4100, 800], [4350, 2350]] },
+    { "id": "vess", "name": "Vess", "source": "gate:vessgate", "mouth": "sea",
+      "points": [[-3400, -4400], [-4800, -3500], [-6500, -2200], [-8100, -1200], [-9300, -800]] },
+    { "id": "isen", "name": "Isen", "source": "lake:crownmere", "mouth": "sea",
+      "points": [[-500, -6100], [-680, -7300], [-900, -8400], [-1150, -9800]] },
+    { "id": "sarr", "name": "Sarr", "source": "gate:sarr-gap", "mouth": "sink:saltmere",
+      "points": [[2600, -4800], [3900, -4300], [5300, -3400], [6700, -2500]] }
+  ],
+  "lakes": [
+    { "id": "crownmere", "name": "Crownmere", "at": [-500, -5300], "note": "Caldera lake; must exist and drain through the Sundering." }
+  ],
+  "sinks": [
+    { "id": "saltmere", "name": "Saltmere", "at": [6900, -2400], "kind": "endorheic salt pan" },
+    { "id": "greyhaven-ponor", "name": "Greyhaven Sink", "at": [0, 150], "kind": "karst ponor", "resurgence": "greywell",
+      "note": "The Waterworn Gorge brook leaves the Outpost south through the palisade; the atlas sends it underground here. Zone content is unchanged." }
+  ],
+  "springs": [
+    { "id": "greywell", "name": "Greywell", "at": [200, 1500], "kind": "karst resurgence" }
+  ]
+}

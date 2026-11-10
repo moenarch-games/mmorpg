@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "note": "Coarse climate for biome placement. Elevations are compressed for play, so the lapse rate is exaggerated to put snow on the Crown.",
+  "wind": { "primary": "west", "secondary": "south", "secondaryWeight": 0.45 },
+  "temperature": { "north": 5.0, "south": 17.5, "lapsePerKm": 10.0 },
+  "precipitation": { "recharge": 0.2, "base": 0.0033, "orographic": 0.05, "lee": 3, "smoothCells": 4 },
+  "biomes": [
+    { "id": 0, "key": "ocean", "name": "Sea", "color": "#2f5d7c" },
+    { "id": 1, "key": "lake", "name": "Lake", "color": "#4f86a8" },
+    { "id": 2, "key": "beach", "name": "Shore", "color": "#d8cc9a" },
+    { "id": 3, "key": "snow", "name": "Snow and ice", "color": "#f2f4f6", "when": { "tMax": 0.0 } },
+    { "id": 4, "key": "alpine", "name": "Alpine tundra", "color": "#b9b7a6", "when": { "tMax": 3.0 } },
+    { "id": 5, "key": "rock", "name": "Bare rock", "color": "#8d8478", "when": { "slopeMin": 30 } },
+    { "id": 6, "key": "saltflat", "name": "Salt flat", "color": "#e9e2d0", "when": { "sink": "saltmere", "pMax": 0.35 } },
+    { "id": 7, "key": "wetland", "name": "Wetland", "color": "#5f8a6e", "when": { "wetMin": 1.0, "slopeMax": 2.5, "pMin": 0.35 } },
+    { "id": 8, "key": "boreal", "name": "Boreal forest", "color": "#3f6150", "when": { "tMax": 7.5, "pMin": 0.3 } },
+    { "id": 9, "key": "rainforest", "name": "Temperate rainforest", "color": "#2e6b45", "when": { "pMin": 0.82 } },
+    { "id": 10, "key": "forest", "name": "Broadleaf and mixed forest", "color": "#4e8048", "when": { "pMin": 0.56 } },
+    { "id": 11, "key": "woodland", "name": "Meadow and woodland", "color": "#8aa65a", "when": { "pMin": 0.4 } },
+    { "id": 12, "key": "grassland", "name": "Grassland and downs", "color": "#b5bd72", "when": { "pMin": 0.27 } },
+    { "id": 13, "key": "steppe", "name": "Steppe", "color": "#cdb879", "when": { "pMin": 0.14 } },
+    { "id": 14, "key": "scrub", "name": "Dry scrub", "color": "#c49a6c", "when": {} },
+    { "id": 15, "key": "anchor", "name": "Zone-authored (Greyhaven)", "color": "#d24f3c" }
+  ]
+}

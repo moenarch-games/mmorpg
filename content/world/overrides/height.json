@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "cell": 40,
+  "note": "Hand-authored elevation deltas in metres as [column, row, delta] on the atlas grid; applied after rivers, before anchors. Never written by the generator.",
+  "cells": []
+}
