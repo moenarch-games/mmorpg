@@ -13,6 +13,7 @@ pub mod overlay;
 mod panels;
 pub mod settings;
 pub mod world_labels;
+pub mod world_map;
 
 use crate::{
     interaction::NpcContext,
@@ -148,6 +149,8 @@ pub struct GameUi {
     pub bags_open: bool,
     pub character_open: bool,
     pub quest_log_open: bool,
+    /// The open world map (M) and its camera.
+    world_map: Option<world_map::WorldMapWindow>,
     chat_text: String,
     chat_focus_requested: bool,
     chat_focused: bool,
@@ -183,6 +186,7 @@ impl GameUi {
             bags_open: false,
             character_open: false,
             quest_log_open: false,
+            world_map: None,
             chat_text: String::new(),
             chat_focus_requested: false,
             chat_focused: false,
@@ -294,6 +298,13 @@ impl GameUi {
             Panel::Bags => &mut self.bags_open,
             Panel::Character => &mut self.character_open,
             Panel::QuestLog => &mut self.quest_log_open,
+            Panel::WorldMap => {
+                self.world_map = match self.world_map.take() {
+                    Some(_) => None,
+                    None => Some(world_map::WorldMapWindow::new()),
+                };
+                return;
+            }
         };
         *open = !*open;
     }
@@ -301,7 +312,11 @@ impl GameUi {
     /// Escape closes open windows first, as the browser's `ui.closePanel`;
     /// returns whether any was open.
     pub fn close_panels(&mut self) -> bool {
-        let open = self.bags_open || self.character_open || self.quest_log_open;
+        let open = self.bags_open
+            || self.character_open
+            || self.quest_log_open
+            || self.world_map.is_some();
+        self.world_map = None;
         self.bags_open = false;
         self.character_open = false;
         self.quest_log_open = false;
@@ -324,6 +339,7 @@ impl GameUi {
         self.bags_open
             || self.character_open
             || self.quest_log_open
+            || self.world_map.is_some()
             || snapshot
                 .and_then(|snapshot| snapshot.loot)
                 .is_some_and(|loot| self.dismissed_loot != Some(loot.claim))
@@ -395,6 +411,11 @@ impl GameUi {
         self.unit_frames(ctx, frame, snapshot, &mut intents);
         self.action_bar(ctx, frame, snapshot, &mut intents);
         self.minimap_and_tracker(ctx, frame, snapshot);
+        if let Some(map) = &mut self.world_map
+            && !map.show(ctx, Some(snapshot))
+        {
+            self.world_map = None;
+        }
         self.chat_frame(ctx, snapshot, &mut intents);
         self.party(ctx, snapshot, &mut intents);
         self.depths_loot(ctx, snapshot, &mut intents);

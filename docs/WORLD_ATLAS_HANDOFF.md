@@ -144,3 +144,17 @@ regenerate region seeds wholesale once someone has edited them: `seed-regions` o
     - Validated independently: `topojson-client` decodes 151 valid, non-overlapping
       polygons covering the land. The test `test_atlas_gis.py` checks the topology, the
       untouched round trip, the stale refusal, a junction move and a split made in WGS84.
+11. Owner round 6: a world map in the game, opened with M in both clients and drawn with the
+    Maps library. Branch `agent/world-map`, stacked on the atlas PR.
+    - `atlas.py map-export` commits `content/world/export/world-map.json`. The new check
+      `export.map` keeps it in step with the sources (61 checks).
+    - Shared rules in `mmorpg-client-model::world_map`: the map, zone point to map point,
+      facing to bearing, and region lookup. The browser reaches them through `mmorpg-wasm`.
+    - Browser: `web/src/world/world-map.ts`, Maps' `MapView` on its first-party flat runtime
+      with no tiles. Vite must not pre-bundle `@moritzbrantner/maps/wasm`.
+    - Native: `crates/mmorpg-client/src/ui/world_map.rs`, an egui window drawn with
+      `maps-core` (`MapCamera`, `LineMesh`) and earcut. Its evidence frame comes from the
+      native interface GPU test.
+    - Borders near the zone footprint are now smoothed unless they touch it.
+    - Not done: map labels for kingdoms and regions (only settlements, gates and
+      landmarks are labelled); other players on the map; a gamepad binding for M.
