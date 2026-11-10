@@ -9,9 +9,11 @@ geographic consistency.
     uv run content/world/authoring/atlas.py build [--previews docs/images/world]
     uv run content/world/authoring/atlas.py check
     uv run content/world/authoring/atlas.py seed-regions
+    uv run content/world/authoring/atlas.py format
 
-Outputs go to artifacts/world-atlas/ (ignored). Only seed-regions writes a source file, and
-it only appends region seeds. No game crate reads any of this yet (docs/WORLD_ATLAS.md).
+Outputs go to artifacts/world-atlas/ (ignored). Only seed-regions (which only appends region
+seeds) and format (which only changes layout) write source files. No game crate reads any of
+this yet (docs/WORLD_ATLAS.md).
 """
 
 from __future__ import annotations
@@ -26,6 +28,9 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from atlas_json import write_json  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[3]
 WORLD = REPO / "content" / "world"
@@ -1531,6 +1536,10 @@ def cmd_build(args, check=False) -> int:
                    "detail": "content/greyhaven/ unchanged by the build"})
     out = Path(args.out)
     rendered = render(b, out, Path(args.previews) if args.previews else None)
+    # reference terrain for the Blender adapter (atlas_blender.py); never read back
+    np.save(out / "elevation.npy", b["elev"].astype(np.float32))
+    (out / "elevation.json").write_text(json.dumps({"minX": b["grid"].min_x, "minZ": b["grid"].min_z,
+                                                    "cell": b["grid"].cell, "rows": b["grid"].nz, "columns": b["grid"].nx}) + "\n")
     report = write_report(b, out, checks, fp)
     for c in checks:
         print(("ok   " if c["ok"] else "FAIL ") + f"{c['check']}: {c['detail']}")
@@ -1564,15 +1573,16 @@ def cmd_seed_regions(args) -> int:
             n += 1
         regions["regions"].append({"id": f"r{n:03d}", "seed": [x, z]})
         taken.add(f"r{n:03d}")
-    path = WORLD / "regions.json"
-    tmp = path.with_suffix(".json.tmp")
-    head = {k: v for k, v in regions.items() if k != "regions"}
-    body = ",\n".join("    " + json.dumps(r, ensure_ascii=False) for r in regions["regions"])
-    text = json.dumps(head, indent=2, ensure_ascii=False)[:-2] + ',\n  "regions": [\n' + body + "\n  ]\n}\n"
-    json.loads(text)
-    tmp.write_text(text)
-    tmp.replace(path)
+    write_json(WORLD / "regions.json", regions)
     print(f"appended {len(new)} region seeds; {len(regions['regions'])} in total")
+    return 0
+
+
+def cmd_format(args) -> int:
+    """Rewrite every source layer in the canonical layout; values never change."""
+    changed = [p.relative_to(WORLD).as_posix() for p in sorted(WORLD.rglob("*.json"))
+               if write_json(p, json.loads(p.read_text()))]
+    print("reformatted: " + (", ".join(changed) if changed else "nothing"))
     return 0
 
 
@@ -1585,9 +1595,12 @@ def main() -> int:
         s.add_argument("--previews", default=None, help="also write compact previews here, e.g. docs/images/world")
         s.add_argument("--checks", action="store_true", help="run the consistency checks during build")
     sub.add_parser("seed-regions")
+    sub.add_parser("format")
     args = p.parse_args()
     if args.cmd == "seed-regions":
         return cmd_seed_regions(args)
+    if args.cmd == "format":
+        return cmd_format(args)
     return cmd_build(args, check=args.cmd == "check")
 
 

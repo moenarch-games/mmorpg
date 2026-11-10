@@ -8,7 +8,12 @@
     "origin": "Greyhaven Outpost centre, the Greyhaven zone's (0, 0)",
     "simUnitsPerMetre": 100
   },
-  "domain": { "minX": -12000, "minZ": -12000, "maxX": 12000, "maxZ": 12000 },
+  "domain": {
+    "minX": -12000,
+    "minZ": -12000,
+    "maxX": 12000,
+    "maxZ": 12000
+  },
   "cell": 40,
   "seed": 7331,
   "layers": [

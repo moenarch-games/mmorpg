@@ -1,10 +1,7 @@
 {
   "version": 1,
   "note": "Natural region seeds. Each region grows from its seed over the terrain, so borders follow ridges and rivers; the grid and streaming chunks never shape them. 'seed-regions' only appends seeds for land no region covers well; it never moves, renames or deletes one. Edit freely; ids are stable.",
-  "targetAreaKm2": [
-    2,
-    4
-  ],
+  "targetAreaKm2": [2, 4],
   "spacing": 1530,
   "blendCells": 5,
   "regions": [
