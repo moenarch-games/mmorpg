@@ -3,7 +3,7 @@
 Branch `agent/continent-atlas`. Not merged; it waits for owner review. The design is in
 [WORLD_ATLAS.md](WORLD_ATLAS.md).
 
-## State (2026-11-10)
+## State (2026-11-10, after the second owner round)
 
 Done:
 
@@ -13,11 +13,11 @@ Done:
   has no continent, world map, Crown or kingdom lore.
 - **Source layers** in `content/world/`: terrain, water, anchors, climate, regions,
   polities and two override layers.
-- **Generator** `content/world/authoring/atlas.py`: deterministic elevation, river carving with
+- **Generator** `content/world/authoring/atlas.py`: deterministic elevation with ranges and hill country, river carving with
   meanders, priority-flood hydrology with sinks and a karst link, westerly and southern
-  rain with rain shadow, biomes, 149 terrain-grown regions with overlapping borders, kingdom
+  rain with rain shadow, biomes, 151 terrain-grown regions with overlapping borders, kingdom
   claims, routed roads, previews, the report and the adjacency table, and the checks
-  (45 passing).
+  (55 passing).
 - **Blender round trip** `content/world/authoring/atlas_blender.py`, with the headless test `test_atlas_blender.py`. Verified on
   Blender 5.2.2: an untouched round trip changes nothing, and moving one seed changes one line.
 - **Previews** in `docs/images/world/` and the design document.
@@ -78,3 +78,20 @@ regenerate region seeds wholesale once someone has edited them: `seed-regions` o
    - The CI path filter still treats `content/world/**` as a Rust change.
    - No cross-platform reproducibility evidence beyond Linux x86-64.
    - The two derived lakes it pointed out remain unnamed.
+7. Owner round 2: the continent is as big as a small Europe and should read like one, with
+   more ranges, hills and rivers, a cut-back south-west with islands, and no desert.
+   - Ranges: the Teeth raised, and the Isen Fells reshaped; new ranges are the Rimeback,
+     Corrie Heights and the Merrow Spine; the Sedge Downs replace the Vess Downs.
+   - Hill country: a new `uplands` layer of six rolling hill countries, also movable in Blender.
+   - Rivers: fifteen instead of six. Tributaries are carved first and run on to the main
+     river's meandering course; a last pass keeps every course from rising.
+   - Lakes: hollows under 18 m silt up (`water.json` `silting`), so the noise leaves no ponds.
+   - Coast: the south-west is cut back into an archipelago of seven isles. Islands may be
+     stretched and rotated and get irregular coves, and each has a pinned claim.
+   - No desert: the salt pan and dry scrub are gone. The Saltmere is now a reed lake on a
+     steppe-grass plain, a weak easterly wets the far east, and the Sarr reaches the sea
+     through the Teeth. New biomes are heath and moorland, and maquis on the warm south coast;
+     cold dry ground is taiga.
+   - Regions: the five seeds that fell into the sea were deleted, and island seeds were added.
+     Stray fragments of a region now join their neighbours.
+   - The river drainage check counts only samples on land.

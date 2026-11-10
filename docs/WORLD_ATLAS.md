@@ -44,9 +44,11 @@ the Crown) is the atlas's assumption, flagged as Question 1.
 ## Scale
 
 The domain is 24 × 24 km on a 40 m grid with Greyhaven's own frame, so atlas metres are zone
-metres. The continent covers about 349 km² of land, roughly 20 km across in both directions:
-a coast-to-coast walk is about 55 minutes at running speed, comparable to a large MMO
-continent. Elevations are compressed for play (the Crown's crest is about 1,150 m), so the
+metres. The continent covers about 334 km² of land, roughly 20 km across in both directions,
+plus 13 km² in seven offshore isles: a coast-to-coast walk is about 55 minutes at running
+speed, comparable to a large MMO continent. At that size it is treated like a small Europe:
+several mountain systems, hill countries and river basins with distinct European landscapes
+rather than one massif in a plain, and no landscapes from outside Europe such as deserts. Elevations are compressed for play (the Crown's crest is about 1,150 m), so the
 climate model uses an exaggerated 10 °C/km lapse rate to put snow on it.
 
 ## Arrangements considered
@@ -95,26 +97,67 @@ derived flow and confirm each outlet. Roads leave the footprint only at its decl
 
 ![Greyhaven in its surroundings](images/world/greyhaven-context.png)
 
-**Water.** Six authored rivers have strictly falling beds and meander deterministically: the
-Greywater, Fenwater, Brannock (a Fenwater tributary from Merrow Notch), Vess, Isen and Sarr.
+**Ranges and hill country.** Around the Crown, the main European mountain types:
+
+| Range | Where | Model | Character |
+| --- | --- | --- | --- |
+| Isen Fells, Hagmoor | North-west | Scandinavian fells | Bare heath and tundra tops above taiga |
+| The Rimeback | North-east | Scandinavian fells | A long range between the Rime and the Sarr |
+| Corrie Heights, Thornwood | West | Scottish Highlands | A wet coastal range with moorland hills behind it |
+| Westspur | South-west of the Crown | A Pyrenean spur | Divides Vesmere from Carrowmark |
+| The Teeth | East coast | Dinaric and Carpathian | The highest coastal range. The Sarr breaks through it in the Iron Throat gorge (the Iron Gates) |
+| Merrow Spine | South-east | Apennine | Steep and rocky, toward the Merrow coast |
+| Fenward Ridge, Carrow Wolds, Sedge Downs | South and west | English downs and wolds | Low chalk ridges |
+
+Six hill countries are rolling uplands of rounded summits rather than ranges, after the
+German *Mittelgebirge*: Thornwood, Hagmoor, the Mill Hills, the Sarr Knolls, the Ashen Hills
+and Wendlow. The south-west coast is cut back into an Atlantic archipelago of seven isles:
+Gull Isle, Holm, Mull, Sedge Isle, Tarrow, Skerry and Wren. The four western isles belong to
+Vesmere and the three southern ones to Carrowmark.
+
+**Water.** Fifteen authored rivers have strictly falling beds and meander deterministically:
+
+| Basin | Rivers |
+| --- | --- |
+| South | The Greywater with the Millrace, the Fenwater with the Brannock and the Ashburn, and the Wend |
+| West | The Lorn, the Vess and the Tarn |
+| North | The Hagwater, the Isen and the Rime |
+| East | The Sarr with the Gullrun, and the Lune |
+
 Each bed starts at the ground at its head and deepens downstream, so headwaters do not cut
-canyons and the gates keep their authored floors. Everything else is derived: flow routing
-on a depression-filled surface, natural lakes where depressions fill, and two declared sinks.
-One is the Greyhaven ponor. The other is the Saltmere, a salt pan with no outlet to the sea:
-the Crown's rain shadow keeps the east dry, and the coastal range of the Teeth blocks the
-basin's way to the sea. Two derived lakes deserve review before they are named: a deep tarn
-just inside the Greyfang Gate on the road to Shardfall, and a 2.5 km² lake in western
-Carrowmark.
+canyons and the gates keep their authored floors. Tributaries are carved before their main
+river, so the main river cuts below them. Each tributary runs on to the main river's actual
+meandering course, so no dam is left at the confluence. Everything else is derived: flow
+routing on a depression-filled surface, natural lakes, and one declared sink, the Greyhaven
+ponor.
+
+Hollows shallower than 18 m silt up into flats that drain, so the noise leaves no scatter of
+ponds. Deeper basins and declared lakes keep their water. The declared lakes are Crownmere and
+Saltmere, a shallow reed lake on the Sarrath plain (after the Neusiedler See) in place of the
+earlier salt pan. Two derived lakes still deserve review before they are named: a deep tarn
+just inside the Greyfang Gate on the road to Shardfall, and a lake in western Carrowmark.
 
 ![Hydrology](images/world/hydrology.png)
 
-**Climate and vegetation.** Westerlies with a weaker southern sea wind. Rain falls on the
-windward west (temperate rainforest) and on the Crown's west flank. The east lies in the Crown's
-rain shadow (steppe, dry scrub and the salt pan). The shadow scales with how far the air has
-sunk below the highest ground upwind, so low ridges cast only short, faint shadows. Like the
-lapse rate, the north–south temperature spread (5 to 17.5 °C over 24 km) is stylised. The cold north is conifer forest, the Crown alpine
-and snow, and the centre and south temperate woodland and meadow. Greyhaven sits among montane
-conifer and mixed woods, consistent with Wolfrun Woods, Hollowpine Reach and the highland pines.
+**Climate and vegetation.** The climate draws on Europe only. Westerlies bring most of the
+rain, with a weaker southern sea wind and a weak easterly from the eastern sea, so the far
+east is not a desert. Rain falls on the windward west and the Crown's west flank. The shadow
+scales with how far the air has sunk below the highest ground upwind, so low ridges cast only
+short, faint shadows. Like the lapse rate, the north–south temperature spread (6 to 17.5 °C
+over 24 km) is stylised.
+
+| Area | Vegetation | Model |
+| --- | --- | --- |
+| Wet, cool north-west tops | Heath and moorland | Atlantic |
+| Cold north | Taiga | Scandinavian |
+| The Crown | Alpine tundra and snow | Alpine |
+| Wettest west coast | Temperate rainforest | Celtic rainforest |
+| Centre and south | Broadleaf forest, meadow and downs | Temperate Europe |
+| Warm south coast and the isles | Maquis and evergreen oak | Mediterranean |
+| Sarrath, in the Crown's lee | Steppe grassland | Pannonian puszta |
+
+Greyhaven sits among montane conifer and mixed woods, consistent with Wolfrun Woods,
+Hollowpine Reach and the highland pines.
 
 ![Biomes](images/world/biomes.png)
 
@@ -124,26 +167,26 @@ cost are marked contested.
 
 | Kingdom | Character | Capital | Gate | Regions, area |
 | --- | --- | --- | --- | --- |
-| Carrowmark | Grain and river plain of the south; Greyhaven is its northern march fort | Carrow | Greyfang Gate | 41, 95 km² |
-| Vesmere | Wet west coast: timber, ships, fisheries | Vesport | Vessgate | 31, 71 km² |
-| Isenholt | Cold northern fells and firths: iron, furs | Isenhold | The Sundering | 12, 28 km² |
-| Sarrath | Rain-shadow steppe: horses, salt, oasis towns | Sarrath | Sarr Gap | 30, 69 km² |
-| Merrow League | Delta merchant towns holding the Fenwater and the sea lanes | Merrowgate | Merrow Notch | 20, 52 km² |
+| Carrowmark | Grain and river plain of the south and the southern isles; Greyhaven is its northern march fort | Carrow | Greyfang Gate | 43, 95 km² |
+| Vesmere | Wet west coast and the outer isles: timber, ships, heath, fisheries | Vesport | Vessgate | 32, 71 km² |
+| Isenholt | Cold northern fells and firths: iron, furs | Isenhold | The Sundering | 15, 37 km² |
+| Sarrath | Grass plains in the Crown's lee: horses, the Saltmere, vineyards on the Teeth | Sarrath | Sarr Gap | 25, 57 km² |
+| Merrow League | Delta merchant towns holding the Fenwater and the sea lanes | Merrowgate | Merrow Notch | 21, 52 km² |
 
 The Crown itself is 15 unclaimed regions, 35 km².
 
-**Settlement and trade geography.** Capitals stand at river mouths or oases; towns at fords
+**Settlement and trade geography.** Capitals stand at river mouths and on rivers; towns at fords
 and route junctions (Millford, Brannock Ford, Thornwick, Hagstead, Ashwell); forts at
 approaches (Notchwatch). Eleven roads are routed over the terrain between them, crossing large
 rivers only where they must. Every gate is reached by a road from its kingdom that continues to
 Shardfall in Crownhollow, and the Salt Road links Isenholt, Sarrath and the Merrow League across
-the dry east.
+the eastern plains.
 
 ## Natural regions
 
-Regions are the unit of play and claims. There are 149, with a median of 2.3 km² and a range of
-0.9–4.6 km²; 91 lie strictly within the 2–4 km² target, and most of the rest are smaller
-coastal or Crown regions.
+Regions are the unit of play and claims. There are 151, with a median of 2.3 km² and a range of
+0.7–4.9 km²; 89 lie strictly within the 2–4 km² target, and most of the rest are smaller
+coastal, island or Crown regions.
 Each grows from an editable seed by terrain-weighted travel cost, so borders fall on ridges,
 large rivers and steep ground instead of straight lines. Neighbouring regions **overlap**: within
 200 m of a border each point carries a secondary region and blend weight, so presentation can
@@ -167,11 +210,11 @@ border length and crossing kind: open, ridge, pass or river) is generated as
 | Greyhaven | Crownhollow | Highland Pass, then the Greyfang Gate gorge |
 | Greyhaven | Carrowmark heartland | Farmland Road, then the Greywater valley (King's Road) |
 | Greyhaven | Merrow League | Marsh Trail, then down the Fenwater (Fen Road) |
-| Carrowmark | Vesmere | Gap between Westspur and the Vess Downs (West Road) |
+| Carrowmark | Vesmere | Gap between Westspur and the Sedge Downs (West Road) |
 | Carrowmark | Merrow League | Fenward Ridge and the South Coast Road |
 | Vesmere | Isenholt | Coastal lowland west of the Isen Fells (North Road) |
 | Isenholt | Sarrath | North coast (Salt Road) |
-| Sarrath | Merrow League | Dry plains west of the Teeth (Salt Road via Ashwell) |
+| Sarrath | Merrow League | Grass plains west of the Teeth, past the Saltmere (Salt Road via Ashwell) |
 | Each kingdom | Crownhollow | Its own gate gorge |
 
 ## Authoring layers
@@ -181,8 +224,8 @@ and the generator never writes any of them.
 
 | Order | Layer | Holds | Edited by |
 | --- | --- | --- | --- |
-| 1 | `terrain.json` | Coast control polygon, seas, islands, the Crown, ridges, basins, noise | Hand or Blender |
-| 2 | `water.json` | Major rivers, lakes to expect, sinks, springs, carving | Hand or Blender |
+| 1 | `terrain.json` | Coast control polygon, seas, islands, the Crown, ridges (ranges), uplands (hill country), noise | Hand or Blender |
+| 2 | `water.json` | Major rivers, lakes to expect, sinks, springs, carving, silting | Hand or Blender |
 | 3 | `overrides/height.json` | Sparse elevation deltas per atlas cell | Hand |
 | 4 | `anchors.json` | Hand-authored places the atlas fits around (Greyhaven), with stand-in elevations and entrances | Hand |
 | 5 | `climate.json` | Wind, temperature, rain model, biome rules | Hand |
@@ -222,7 +265,7 @@ anchor, and from then on the zone's content is the authority there.
 
 ## Consistency checks
 
-`atlas.py check` runs 45 checks and fails on any violation. These are tests of the result:
+`atlas.py check` runs 55 checks and fails on any violation. These are tests of the result:
 each one can fail when an edit breaks the geography.
 
 - **Coast and scale:** one continent plus the declared islands, with 250–420 km² of land.
@@ -233,7 +276,7 @@ each one can fail when an edit breaks the geography.
 - **Anchor:** the Greyhaven footprint keeps its stand-in elevations, ground within 300 m of it
   stays under 35°, and the Vale, the farmland and the wetlands each drain to their declared
   outlet.
-- **Water:** the karst resurgence lies below its ponor, and Crownmere forms.
+- **Water:** the karst resurgence lies below its ponor, and Crownmere and the Saltmere form.
 - **Regions:** every land cell is covered, each region is contiguous, and there are 120–180
   regions with at least 85 % within 0.6–1.4 times the 2–4 km² target.
 - **Composition:** the blend computed per chunk with its halo matches the whole-world blend.
@@ -248,7 +291,7 @@ to the sea or a sink, and every flow step descends: both are properties of the p
 algorithm, and the checks guard against regressions in that code.
 
 **Reproducibility.** Dependencies are locked in `atlas.py.lock`. The fingerprint
-`6c271ad3e46806ec` was reproduced on Linux x86-64 with both numpy 2.3.5 and 2.5.4; other
+`bb5251c72613c883` is reproduced build to build on Linux x86-64 (the previous layout's fingerprint also matched across numpy 2.3.5 and 2.5.4; this one was not re-tested across versions); other
 platforms have not been tried. Vectorised transcendental functions may differ in the last bit
 between CPUs, which can flip threshold decisions. Any game consumer must therefore read a
 committed, quantised export, never rerun this Python (plan step 2). Previews also depend on the

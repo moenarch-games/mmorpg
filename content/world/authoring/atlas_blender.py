@@ -4,7 +4,7 @@
     blender --background artifacts/world-atlas/continent.blend --python content/world/authoring/atlas_blender.py -- export
 
 `import` builds an editable scene from content/world/: the coast, ridges and rivers as poly
-curves, the Crown centre, its gates, settlements, sinks, springs and region seeds as empties,
+curves, the Crown centre, its gates, hill countries, settlements, sinks, springs and region seeds as empties,
 and the last generated terrain (artifacts/world-atlas/elevation.npy) as a locked reference
 mesh. Blender X is atlas x (east), Blender Y is atlas -z (north), Blender Z is up.
 
@@ -125,6 +125,9 @@ def cmd_import(blend: Path):
             o.empty_display_size = s["radius"] / 1000.0
     for r in terrain["ridges"]:
         poly(f"ridge {r['id']}", r["points"], land, props={"atlas": "ridge", "id": r["id"]})
+    for u in terrain.get("uplands", []):
+        o = empty(f"uplands {u['id']}", u["center"], land, "SPHERE", props={"atlas": "uplands", "id": u["id"]})
+        o.empty_display_size = max(u["radius"]) / 1000.0
     crown = terrain["crown"]
     empty("crown centre", crown["center"], land, "CIRCLE", size=crown["radius"] / 1000.0, props={"atlas": "crown"})
     for gate in crown["gates"]:
@@ -197,6 +200,10 @@ def cmd_export():
             o = objs.get("ridge", {}).get(r["id"])
             if o:
                 r["points"] = spline_points(o)
+        for u in d.get("uplands", []):
+            o = objs.get("uplands", {}).get(u["id"])
+            if o:
+                u["center"] = position(o)
         crown = d["crown"]
         o = next(iter(objs.get("crown", {}).values()), None)
         if o:

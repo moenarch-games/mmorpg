@@ -179,7 +179,13 @@ def land_field(g: Grid, terrain: dict, seed: int) -> np.ndarray:
     for sea in coast["seas"]:
         f = np.minimum(f, np.hypot(X - sea["center"][0], Z - sea["center"][1]) - sea["radius"] + wobble)
     for isle in coast["islands"]:
-        f = np.maximum(f, isle["radius"] - np.hypot(X - isle["center"][0], Z - isle["center"][1]) + wobble)
+        # an island is an ellipse (radius scaled by `stretch` along `angle`) with headlands and coves
+        r = isle["radius"]
+        a = math.radians(isle.get("angle", 0))
+        dx, dz = X - isle["center"][0], Z - isle["center"][1]
+        u, v = (dx * math.cos(a) + dz * math.sin(a)) / isle.get("stretch", 1.0), -dx * math.sin(a) + dz * math.cos(a)
+        coves = 0.3 * r * fbm(X, Z, 1.2 * r, 3, seed + 13 + sum(map(ord, isle["id"])))
+        f = np.maximum(f, r - np.hypot(u, v) + coves + wobble)
     return f
 
 
@@ -223,7 +229,13 @@ def build_elevation(g: Grid, layers: dict, seed: int) -> dict:
         profile = np.clip(1 - d / ridge["halfWidth"], 0, 1) ** 1.6
         crestn = 0.7 + 0.6 * (fbm(g.X, g.Z, 1100, 4, seed + 31, ridged=True) + 1) / 2
         elev = elev + ridge["height"] * profile * crestn
-    for basin in terrain["basins"]:
+    # hill country: rolling uplands of rounded summits and valleys, faded out at their edges
+    for hills in terrain.get("uplands", []):
+        d = np.hypot((wx - hills["center"][0]) / hills["radius"][0], (wz - hills["center"][1]) / hills["radius"][1])
+        mask = np.exp(-2.5 * d * d)
+        relief = np.clip((fbm(g.X, g.Z, hills["wavelength"], 4, seed + 51 + sum(map(ord, hills["id"]))) + 1) / 2, 0, 1)
+        elev = elev + hills["height"] * mask * (0.15 + 1.6 * relief**1.8)
+    for basin in terrain.get("basins", []):
         d = np.hypot(g.X - basin["center"][0], g.Z - basin["center"][1])
         t = smoothstep(0, basin["radius"], d)
         elev = basin["floor"] + (elev - basin["floor"]) * (0.15 + 0.85 * t) ** 1.4
@@ -284,7 +296,14 @@ def carve_rivers(g: Grid, elev: np.ndarray, land: np.ndarray, water: dict, seed:
     side slope, so the cut meets the terrain smoothly however high the ground around it is."""
     carve = water["carve"]
     profiles = {}
-    for river in water["rivers"]:
+    # tributaries first: a main river then finds their valleys in its window and cuts below them
+    depth = {r["id"]: 0 for r in water["rivers"]}
+    for _ in water["rivers"]:
+        for r in water["rivers"]:
+            if r["mouth"].startswith("river:"):
+                depth[r["id"]] = depth[r["mouth"][6:]] + 1
+    courses = {}
+    for river in sorted(water["rivers"], key=lambda r: depth[r["id"]]):
         pts = river["points"]
         samples, arcs, s0 = [], [], 0.0
         for (ax, az), (bx, bz) in zip(pts, pts[1:]):
@@ -296,6 +315,18 @@ def carve_rivers(g: Grid, elev: np.ndarray, land: np.ndarray, water: dict, seed:
         samples.append(tuple(pts[-1]))
         arcs.append(s0)
         samples = meander(samples, arcs, carve, seed + sum(map(ord, river["id"])))
+        if river["mouth"].startswith("river:"):
+            # the main river meanders: run on to its nearest actual sample so no dam is left between
+            ax, az = samples[-1]
+            bx, bz = min(courses[river["mouth"][6:]][0], key=lambda p: math.hypot(p[0] - ax, p[1] - az))
+            seg = math.hypot(bx - ax, bz - az)
+            n = int(seg / (g.cell * 0.5))
+            samples += [(ax + (bx - ax) * k / n, az + (bz - az) * k / n) for k in range(1, n + 1)]
+            arcs += [s0 + seg * k / n for k in range(1, n + 1)]
+            s0 += seg
+        courses[river["id"]] = (samples, arcs, s0)
+    for river in sorted(water["rivers"], key=lambda r: -depth[r["id"]]):
+        samples, arcs, s0 = courses[river["id"]]
         # downstream of its head the bed lies below the lowest ground across the valley, so no side
         # slope can steal the flow; at the head it starts at the ground, so a source cuts nothing
         half = int(carve["valleyHalfWidth"] * 0.6 // g.cell)
@@ -314,8 +345,8 @@ def carve_rivers(g: Grid, elev: np.ndarray, land: np.ndarray, water: dict, seed:
             prev = here
         # project onto the meandering course, coarsened to ~120 m segments, inside its bounding box
         step = max(1, int(120 // (g.cell * 0.5)))
-        coarse = samples[::step] + [samples[-1]]
-        coarse_arc = arcs[::step] + [arcs[-1]]
+        coarse = samples[::step] + ([samples[-1]] if (len(samples) - 1) % step else [])
+        coarse_arc = arcs[::step] + ([arcs[-1]] if (len(arcs) - 1) % step else [])
         xs, zs = [p[0] for p in samples], [p[1] for p in samples]
         pad = carve["valleyHalfWidth"] + g.cell
         r0, c0 = g.index(min(xs) - pad, min(zs) - pad)
@@ -333,6 +364,15 @@ def carve_rivers(g: Grid, elev: np.ndarray, land: np.ndarray, water: dict, seed:
             if land[r0, c0]:
                 elev[r0, c0] = min(elev[r0, c0], level)
         profiles[river["id"]] = {"samples": samples, "bed": bed, "length": s0}
+    # a later valley may have cut lower ground beside an earlier course: let no course cell stand
+    # above the one upstream of it
+    for prof in reversed(list(profiles.values())):
+        prev = INF
+        for x, z in prof["samples"]:
+            r0, c0 = g.index(x, z)
+            if land[r0, c0]:
+                elev[r0, c0] = min(elev[r0, c0], prev)
+                prev = elev[r0, c0]
     return profiles
 
 
@@ -384,6 +424,29 @@ def apply_anchors(elev: np.ndarray, fields) -> None:
 # ---------------------------------------------------------------- hydrology
 
 NB8 = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+
+
+def silt_hollows(g: Grid, elev, land, water, keep):
+    """Hollows shallower than water.json's silting depth fill with sediment and become flats that
+    drain, so noise leaves no scatter of ponds; deeper basins and declared lakes keep their water."""
+    min_depth = water.get("silting", {}).get("minLakeDepth")
+    if not min_depth:
+        return
+    seeds = ~land
+    for sink in water["sinks"]:
+        seeds[g.index(*sink["at"])] = True
+    filled = priority_flood(elev, seeds, np.zeros_like(land))
+    hollow = land & (filled - elev > 0.5) & ~keep
+    lab, sizes = components(hollow)
+    deepest = np.zeros(len(sizes) + 1)
+    np.maximum.at(deepest, lab[hollow], (filled - elev)[hollow])
+    lasting = deepest >= min_depth
+    for lake in water["lakes"]:
+        r, c = g.index(*lake["at"])
+        lasting[np.unique(lab[max(r - 10, 0) : r + 11, max(c - 10, 0) : c + 11])] = True
+    lasting[-1] = True  # label -1: not a hollow
+    fill = hollow & ~lasting[lab]
+    elev[fill] = filled[fill]
 
 
 def padded(a: np.ndarray, fill) -> np.ndarray:
@@ -565,6 +628,8 @@ def precipitation(g: Grid, elev, land, climate) -> np.ndarray:
     field = (np.maximum(elev, 0), land)
     wind = climate["wind"]
     p = from_direction(wind["primary"], field) + wind["secondaryWeight"] * from_direction(wind["secondary"], field)
+    for other in wind.get("others", []):
+        p = p + other["weight"] * from_direction(other["from"], field)
     return np.clip(blur(p, pc["smoothCells"]), 0, 1.3)
 
 
@@ -589,6 +654,8 @@ def classify_biomes(g, elev, land, hyd, temp, precip, slope, climate, anchor_mas
         ok = land & (biome < 0)
         if "tMax" in cond:
             ok &= temp <= cond["tMax"]
+        if "tMin" in cond:
+            ok &= temp >= cond["tMin"]
         if "slopeMin" in cond:
             ok &= slope >= cond["slopeMin"]
         if "slopeMax" in cond:
@@ -698,6 +765,13 @@ def grow_regions(g, elev, land, hyd, anchors_f, regions, big_river):
     dist, lab, _, _ = grid_search(elev, passable, extra, sources, k_abs=14.0, cell=g.cell)
     label = unpad(lab, g.nz, g.nx, np.int64)
     label[~land] = -1
+    # a region is one piece: stray fragments cut off by a river or a gorge join their neighbours
+    for k in np.unique(label[label >= 0]).tolist():
+        rows, cols = np.nonzero(label == k)
+        box = (slice(rows.min(), rows.max() + 1), slice(cols.min(), cols.max() + 1))
+        pieces, sizes = components(label[box] == k)
+        if len(sizes) > 1:
+            label[box][(pieces >= 0) & (pieces != int(np.argmax(sizes)))] = -1
     # islets without a seed join the nearest region
     for _ in range(400):
         missing = land & (label < 0)
@@ -792,6 +866,8 @@ def build(layers: dict) -> dict:
     for _, mask, _, _ in anchors_f:
         anchor_mask |= mask
     profiles = carve_rivers(g, elev, land & ~anchor_mask, layers["water"], seed)
+    # shallow hollows silt up before the hand edits, so an override can still dig a pond
+    silt_hollows(g, elev, land, layers["water"], anchor_mask)
     apply_cells(elev, layers["overrides/height"], add=True)
     for _, mask, target, _ in anchors_f:
         elev[mask] = target[mask]
@@ -980,11 +1056,13 @@ def run_checks(b) -> list[dict]:
             reached = any(min(abs(r2 - rr) + abs(c2 - cc) for rr, cc in (g.index(x, z) for x, z in other[::2])) <= 3
                           for r2, c2 in pts[-400:])
         # the derived drainage runs along the authored course: a channel cell (≥0.15 km² effective
-        # catchment) lies within two cells of each sample past the first tenth of its length
+        # catchment) lies within two cells of each land sample past the first tenth of its length
         acc = hyd["acc"]
         on = []
         for x, z in prof["samples"][len(prof["samples"]) // 10 :]:
             r0, c0 = g.index(x, z)
+            if not land[r0, c0]:
+                continue  # the course may be drawn out past the shore
             on.append(acc[max(r0 - 2, 0) : r0 + 3, max(c0 - 2, 0) : c0 + 3].max() >= 0.15)
         frac = sum(on) / max(len(on), 1)
         mr, mc = [g.index(x, z) for x, z in prof["samples"] if land[g.index(x, z)]][-3]
@@ -1502,10 +1580,15 @@ def world_map(b):
     for ridge in layers["terrain"]["ridges"]:
         x, z = ridge["points"][len(ridge["points"]) // 2]
         c.label(x, z, ridge["name"], size=12, fill=(90, 70, 50))
+    for hills in layers["terrain"].get("uplands", []):
+        c.label(hills["center"][0], hills["center"][1], hills["name"], size=12, fill=(90, 70, 50))
+    for isle in layers["terrain"]["coast"]["islands"]:
+        if "name" in isle:
+            c.label(isle["center"][0], isle["center"][1] - isle["radius"] - 250, isle["name"], size=11, fill=(60, 60, 70))
     c.title("The continent (provisional atlas)",
             "kingdom borders dark red; contested border regions hatched; roads brown; ▲ Crown gates; ■ capitals")
     c.legend([(hex_rgb(k["color"]), k["name"]) for k in pol["kingdoms"]] + [((150, 140, 150), "Shattered Crown (unclaimed)")],
-             x=30, y=c.img.height - 210)
+             y=c.img.height - 160)
     c.scalebar()
     return c
 

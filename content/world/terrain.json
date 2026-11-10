@@ -1,18 +1,25 @@
 {
   "version": 1,
-  "note": "Macro landforms in metres. Edit control points, heights and widths; the generator adds seeded detail.",
+  "note": "Macro landforms in metres. Edit control points, heights and widths; the generator adds seeded detail. Ranges are ridges; hill country is uplands.",
   "coast": {
-    "points": [[-8600, -8400], [-6900, -9500], [-4600, -9300], [-2600, -9900], [-1100, -10300], [600, -9700], [2600, -10100], [4800, -9400], [6900, -9700], [8600, -8600], [9500, -6600], [9300, -4400], [10100, -2600], [9700, -300], [10200, 2100], [9400, 4100], [9900, 5900], [8600, 7900], [6700, 8600], [5200, 9600], [3200, 9200], [1300, 10000], [-600, 9300], [-2600, 9900], [-4600, 9100], [-6200, 9800], [-7900, 8300], [-9600, 7200], [-9000, 5200], [-10000, 3400], [-9300, 1500], [-10200, -700], [-9400, -2600], [-10100, -4800], [-9300, -6900]],
+    "points": [[-8600, -8400], [-6900, -9500], [-4600, -9300], [-2600, -9900], [-1100, -10300], [600, -9700], [2600, -10100], [4800, -9400], [6900, -9700], [8600, -8600], [9500, -6600], [9300, -4400], [10100, -2600], [9700, -300], [10200, 2100], [9400, 4100], [9900, 5900], [8600, 7900], [6700, 8600], [5200, 9600], [3200, 9200], [1300, 10000], [-600, 9300], [-2200, 9500], [-3400, 8700], [-4500, 8100], [-5300, 7100], [-6400, 6400], [-7300, 5300], [-8300, 4500], [-9100, 3200], [-9600, 1800], [-10200, -700], [-9400, -2600], [-10100, -4800], [-9300, -6900]],
     "warp": {"amplitude": 850, "wavelength": 3800},
     "seas": [
       {"id": "vesport-bay", "center": [-9500, -800], "radius": 1000},
       {"id": "carrow-estuary", "center": [1300, 9450], "radius": 650},
       {"id": "merrow-sound", "center": [8700, 7300], "radius": 1000},
       {"id": "isen-firth", "center": [-1150, -9900], "radius": 600},
-      {"id": "the-gullet", "center": [7600, -9000], "radius": 900},
-      {"id": "sedge-bay", "center": [-7500, 7700], "radius": 1100}
+      {"id": "the-gullet", "center": [7600, -9000], "radius": 900}
     ],
-    "islands": [{"id": "gull-isle", "center": [-11000, 5600], "radius": 520}]
+    "islands": [
+      {"id": "gull-isle", "name": "Gull Isle", "center": [-11000, 5200], "radius": 560},
+      {"id": "sedge-isle", "name": "Sedge Isle", "center": [-8300, 9300], "radius": 1050, "stretch": 1.6, "angle": -35},
+      {"id": "holm", "name": "Holm", "center": [-10700, 7900], "radius": 560, "stretch": 1.4, "angle": 70},
+      {"id": "mull", "name": "Mull", "center": [-10500, 10700], "radius": 520},
+      {"id": "tarrow", "name": "Tarrow", "center": [-5200, 10500], "radius": 700, "stretch": 1.5, "angle": 20},
+      {"id": "skerry", "name": "Skerry", "center": [-6500, 11300], "radius": 420},
+      {"id": "wren", "name": "Wren", "center": [-2400, 11300], "radius": 480}
+    ]
   },
   "lowland": {
     "rise": 150,
@@ -40,35 +47,43 @@
       "id": "the-teeth",
       "name": "The Teeth",
       "points": [[8300, -7900], [8800, -6200], [8500, -4600], [8900, -3000], [8300, -1500], [8700, 300], [8400, 1500]],
-      "height": 520,
+      "height": 640,
       "halfWidth": 1100
     },
-    {"id": "isen-fells", "name": "Isen Fells", "points": [[-7300, -7600], [-5800, -6800], [-4400, -7300], [-3200, -6900]], "height": 380, "halfWidth": 1300},
     {
-      "id": "vess-downs",
-      "name": "Vess Downs",
-      "points": [[-7900, 2400], [-6600, 3300], [-5300, 4600], [-4400, 5600], [-3600, 6900]],
-      "height": 210,
+      "id": "isen-fells",
+      "name": "Isen Fells",
+      "points": [[-8800, -8000], [-7300, -7600], [-5800, -6800], [-4400, -7300], [-3200, -6900]],
+      "height": 430,
       "halfWidth": 1200
     },
-    {"id": "westspur", "name": "Westspur", "points": [[-2900, -2400], [-3700, -1600], [-4500, -600], [-5300, 200], [-6100, 1300]], "height": 400, "halfWidth": 900},
+    {"id": "rimeback", "name": "The Rimeback", "points": [[3100, -6700], [4500, -6500], [6000, -6000], [7100, -5300]], "height": 480, "halfWidth": 900},
+    {"id": "corrie-heights", "name": "Corrie Heights", "points": [[-9800, -2900], [-8600, -3400], [-7400, -4000]], "height": 430, "halfWidth": 800},
+    {"id": "sedge-downs", "name": "Sedge Downs", "points": [[-7800, 1500], [-6700, 2800], [-5600, 4100], [-4600, 5400]], "height": 230, "halfWidth": 1100},
+    {"id": "westspur", "name": "Westspur", "points": [[-2900, -2400], [-3700, -1600], [-4500, -600], [-5300, 200], [-6100, 1300]], "height": 430, "halfWidth": 900},
     {
       "id": "fenward-ridge",
       "name": "Fenward Ridge",
       "points": [[1200, 1100], [1800, 2000], [2400, 3100], [3100, 4300], [3900, 5700]],
-      "height": 190,
+      "height": 230,
       "halfWidth": 850
     },
-    {"id": "carrow-wolds", "name": "Carrow Wolds", "points": [[-2600, 5600], [-1500, 7000], [-600, 8100]], "height": 140, "halfWidth": 1000}
+    {"id": "carrow-wolds", "name": "Carrow Wolds", "points": [[-2600, 5600], [-1500, 7000], [-600, 8100]], "height": 240, "halfWidth": 1000},
+    {"id": "merrow-spine", "name": "Merrow Spine", "points": [[4900, 6300], [5600, 7500], [6400, 8600]], "height": 360, "halfWidth": 800}
   ],
-  "basins": [
-    {"id": "saltmere-basin", "name": "Saltmere Basin", "center": [6900, -2400], "radius": 2700, "floor": 30}
+  "uplands": [
+    {"id": "thornwood", "name": "Thornwood", "center": [-6200, -5600], "radius": [1700, 1300], "height": 280, "wavelength": 900},
+    {"id": "mill-hills", "name": "Mill Hills", "center": [-2300, 2600], "radius": [1400, 1100], "height": 240, "wavelength": 800},
+    {"id": "ashen-hills", "name": "Ashen Hills", "center": [6100, 1700], "radius": [1500, 1100], "height": 260, "wavelength": 850},
+    {"id": "hagmoor", "name": "Hagmoor", "center": [-3300, -8300], "radius": [1500, 1000], "height": 220, "wavelength": 900},
+    {"id": "sarr-knolls", "name": "Sarr Knolls", "center": [4300, -1600], "radius": [1400, 1200], "height": 220, "wavelength": 800},
+    {"id": "wendlow", "name": "Wendlow", "center": [2400, 7300], "radius": [1100, 1000], "height": 200, "wavelength": 750}
   ],
   "noise": {
     "octaves": 6,
-    "wavelength": 2600,
-    "amplitude": 80,
-    "mountainAmplitude": 210,
+    "wavelength": 2200,
+    "amplitude": 105,
+    "mountainAmplitude": 230,
     "warp": 380
   }
 }
