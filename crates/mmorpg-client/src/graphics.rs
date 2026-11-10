@@ -1,5 +1,7 @@
 //! Native wgpu adapter. The same submitted mesh frames drive presentation and picking.
 mod frame;
+#[cfg(test)]
+mod profile;
 use crate::{
     ClientError,
     camera::CameraView,
@@ -43,7 +45,8 @@ impl SceneRenderer {
         height: u32,
     ) -> Result<Self, ClientError> {
         // render-engine's sky needs filterable float LUTs; unclipped shadow depth and the
-        // sky's dual-source blend are used where the adapter has them.
+        // sky's dual-source blend are used where the adapter has them, and timestamp queries
+        // for the manual frame-time measurement (#692).
         if !adapter
             .features()
             .contains(wgpu::Features::FLOAT32_FILTERABLE)
@@ -56,7 +59,8 @@ impl SceneRenderer {
                 required_features: adapter.features()
                     & (wgpu::Features::DEPTH_CLIP_CONTROL
                         | wgpu::Features::DUAL_SOURCE_BLENDING
-                        | wgpu::Features::FLOAT32_FILTERABLE),
+                        | wgpu::Features::FLOAT32_FILTERABLE
+                        | wgpu::Features::TIMESTAMP_QUERY),
                 ..Default::default()
             })
             .await?;
@@ -493,8 +497,13 @@ mod tests {
     }
 
     /// Advisory frame time (PRINCIPLE-015): the Outpost hub with its units and the woods
-    /// (#49), 1280×720, each frame posed, submitted and waited for. Prints the median and
-    /// p95 wall time per view.
+    /// (#49), 1280×720, each frame posed, submitted and waited for. Per view it prints the
+    /// median, p95, p99 and maximum of the frame's wall time, `render` (prepare, encode,
+    /// submission and the wait for the GPU), render-engine's CPU `prepare` and `encode` and the
+    /// GPU time (the sum of the passes' timestamp spans, where the adapter has
+    /// `TIMESTAMP_QUERY`) over the frames after the first 40, then the first frame alone, the
+    /// median GPU time per pass, the work counts of the last frame and the world uploads over
+    /// the view, and the raw per-frame lists including the first frames (#692).
     #[test]
     #[ignore = "requires a GPU; manual frame-time measurement"]
     fn outpost_frame_time() {
@@ -571,9 +580,47 @@ mod tests {
                 view_formats: &[],
             });
             let target = target.create_view(&Default::default());
+            let timed = renderer
+                .device
+                .features()
+                .contains(wgpu::Features::TIMESTAMP_QUERY);
+            if timed {
+                renderer.frame.enable_gpu_timing(&renderer.device);
+            }
+            println!("adapter={} gpu_timestamps={timed}", adapter.get_info().name);
+            // Statistics leave out the first frames of each view (uploads, pipeline
+            // creation); the first frame and the raw lists keep them.
+            const WARM: usize = 40;
+            let ms = |span: Duration| span.as_secs_f64() * 1e3;
+            let stats = |name: &str, samples: &[f64]| {
+                let mut warm = samples.get(WARM..).unwrap_or_default().to_vec();
+                if warm.is_empty() {
+                    return format!("{name} n/a");
+                }
+                warm.sort_by(f64::total_cmp);
+                let at = |percent: usize| warm[(warm.len() * percent / 100).min(warm.len() - 1)];
+                format!(
+                    "{name} median={:.2} p95={:.2} p99={:.2} max={:.2} first={:.2}",
+                    at(50),
+                    at(95),
+                    at(99),
+                    warm[warm.len() - 1],
+                    samples[0]
+                )
+            };
+            let list = |samples: &[f64]| {
+                samples
+                    .iter()
+                    .map(|value| format!("{value:.2}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            };
             for (name, view) in views {
-                let mut times = Vec::new();
-                let mut render_times = Vec::new();
+                let [mut frames, mut renders, mut prepares, mut encodes, mut gpus] =
+                    std::array::from_fn(|_| Vec::new());
+                // GPU time per pass label (several sky or shadow passes summed), in pass order.
+                let mut passes: Vec<(&str, Vec<f64>)> = Vec::new();
+                let world_before = renderer.frame.profile().world;
                 for index in 0..240 {
                     let now = start + Duration::from_millis(16 * index);
                     let begin = Instant::now();
@@ -587,25 +634,60 @@ mod tests {
                             timeout: Some(Duration::from_secs(10)),
                         })
                         .unwrap();
-                    if index >= 40 {
-                        times.push(begin.elapsed().as_secs_f64() * 1e3);
-                        render_times.push(rendering.elapsed().as_secs_f64() * 1e3);
+                    frames.push(ms(begin.elapsed()));
+                    renders.push(ms(rendering.elapsed()));
+                    let profile = renderer.frame.profile();
+                    prepares.push(ms(profile.prepare));
+                    encodes.push(ms(profile.encode));
+                    let Some(spans) = renderer
+                        .frame
+                        .gpu_passes(&renderer.device, &renderer.queue)
+                        .unwrap()
+                    else {
+                        continue;
+                    };
+                    gpus.push(spans.iter().map(|(_, span)| span).sum());
+                    let mut summed: Vec<(&str, f64)> = Vec::new();
+                    for (label, span) in spans {
+                        match summed.iter_mut().find(|(seen, _)| *seen == label) {
+                            Some((_, total)) => *total += span,
+                            None => summed.push((label, span)),
+                        }
+                    }
+                    for (label, span) in summed {
+                        match passes.iter_mut().find(|(seen, _)| *seen == label) {
+                            Some((_, samples)) => samples.push(span),
+                            None => passes.push((label, vec![span])),
+                        }
                     }
                 }
-                times.sort_by(f64::total_cmp);
-                render_times.sort_by(f64::total_cmp);
                 println!(
-                    concat!(
-                        "view={} adapter={} frame_ms median={:.2} p95={:.2} ",
-                        "render_ms median={:.2} p95={:.2}"
-                    ),
-                    name,
-                    adapter.get_info().name,
-                    times[times.len() / 2],
-                    times[times.len() * 95 / 100],
-                    render_times[render_times.len() / 2],
-                    render_times[render_times.len() * 95 / 100]
+                    "view={name} {} | {} | {} | {} | {}",
+                    stats("frame_ms", &frames),
+                    stats("render_ms", &renders),
+                    stats("prepare_ms", &prepares),
+                    stats("encode_ms", &encodes),
+                    stats("gpu_ms", &gpus),
                 );
+                let passes: Vec<_> = passes
+                    .iter_mut()
+                    .map(|(label, samples)| {
+                        let skip = WARM.min(samples.len() - 1);
+                        let warm = &mut samples[skip..];
+                        warm.sort_by(f64::total_cmp);
+                        format!("{}={:.3}", label.replace(' ', "_"), warm[warm.len() / 2])
+                    })
+                    .collect();
+                println!("view={name} gpu_pass_median_ms {}", passes.join(" "));
+                let profile = renderer.frame.profile();
+                println!(
+                    "view={name} prepare_work {:?} world_work_over_view {:?}",
+                    profile.work,
+                    profile.world - world_before
+                );
+                println!("view={name} raw frame_ms=[{}]", list(&frames));
+                println!("view={name} raw render_ms=[{}]", list(&renders));
+                println!("view={name} raw gpu_ms=[{}]", list(&gpus));
             }
         });
     }
