@@ -1304,10 +1304,14 @@ def render(b, out: Path, previews: Path | None):
         canvas.save(out / f"{name}.png")
         if previews is not None:
             previews.mkdir(parents=True, exist_ok=True)
-            img = canvas.img
-            if name not in ("world-map", "greyhaven-context"):
+            img = canvas.img.convert("RGB")
+            if name == "world-map":
+                # the map's legend and kingdom colours must survive, so it keeps full colour as a JPEG
+                img.save(previews / f"{name}.jpg", quality=86, optimize=True)
+                continue
+            if name != "greyhaven-context":
                 img = img.resize((img.width * 3 // 4, img.height * 3 // 4), Image.Resampling.LANCZOS)
-            img.convert("RGB").quantize(colors=192, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).save(
+            img.quantize(colors=192, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).save(
                 previews / f"{name}.png", optimize=True)
     return sorted(files)
 
@@ -1368,7 +1372,10 @@ def world_map(b):
             continue
         else:
             c.d.ellipse([px - 5, py - 5, px + 5, py + 5], fill=(40, 30, 30), outline=(250, 246, 236), width=2)
-            c.label(x, z - 280, s["name"], size=13)
+            if s["kind"] == "fort":
+                c.label(x + 160, z + 120, s["name"], size=12, anchor="lm")
+            else:
+                c.label(x, z - 280, s["name"], size=13)
     c.anchor_outline(colour=(200, 40, 30, 255))
     c.label(900, 380, "Greyhaven", size=15, fill=(170, 30, 20), bold=True, anchor="lm")
     # kingdom names at the area-weighted centre of their regions
@@ -1377,6 +1384,12 @@ def world_map(b):
         w = np.array([b["region_stats"][i]["areaKm2"] for i in owned])
         xy = np.array([b["region_stats"][i]["centroid"] for i in owned], float)
         x, z = (xy * w[:, None]).sum(0) / w.sum()
+        # step off any settlement or landform label the name would cover
+        others = [s["at"] for s in pol["settlements"]] + [r["points"][len(r["points"]) // 2] for r in layers["terrain"]["ridges"]]
+        for _ in range(6):
+            if all(abs(x - ox) > 2000 or abs(z - oz) > 450 for ox, oz in others):
+                break
+            z += 500
         c.label(x, z, k["name"].upper(), size=24, fill=tuple(int(v * 0.55) for v in hex_rgb(k["color"])), bold=True)
     c.label(crown["center"][0], crown["center"][1] + 1500, "THE SHATTERED CROWN", size=20, fill=(60, 50, 60), bold=True)
     for river in layers["water"]["rivers"]:
