@@ -27,7 +27,7 @@
     {"id": 5, "key": "rock", "name": "Bare rock", "color": "#8d8478", "when": {"slopeMin": 30}},
     {"id": 6, "key": "saltflat", "name": "Salt flat", "color": "#e9e2d0", "when": {"sink": "saltmere", "pMax": 0.35}},
     {"id": 7, "key": "wetland", "name": "Wetland", "color": "#5f8a6e", "when": {"wetMin": 1.0, "slopeMax": 2.5, "pMin": 0.35}},
-    {"id": 8, "key": "boreal", "name": "Boreal forest", "color": "#3f6150", "when": {"tMax": 7.5, "pMin": 0.3}},
+    {"id": 8, "key": "boreal", "name": "Conifer forest (boreal and montane)", "color": "#3f6150", "when": {"tMax": 7.5, "pMin": 0.3}},
     {"id": 9, "key": "rainforest", "name": "Temperate rainforest", "color": "#2e6b45", "when": {"pMin": 0.82}},
     {"id": 10, "key": "forest", "name": "Broadleaf and mixed forest", "color": "#4e8048", "when": {"pMin": 0.56}},
     {"id": 11, "key": "woodland", "name": "Meadow and woodland", "color": "#8aa65a", "when": {"pMin": 0.4}},

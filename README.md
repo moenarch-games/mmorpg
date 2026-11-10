@@ -122,6 +122,8 @@ The standalone HTML editor has been removed. For optional development-only Outpo
 
 See [Blender layout authoring](docs/WORLD_LAYOUT_EDITOR.md) for supported objects, coordinate mapping, exact version and limitations. The editable source is the existing repository JSON, not the generated .blend file.
 
+The provisional [continent atlas](docs/WORLD_ATLAS.md) places Greyhaven on a 20 × 20 km continent with the Shattered Crown and five kingdoms: editable JSON layers in `content/world/`, a deterministic generator with geographic consistency checks (`uv run content/world/authoring/atlas.py check`) and the same Blender round trip. It is design data and tooling only; no game crate reads it.
+
 ## Browser tech demo
 
 `web/` is the GitHub Pages client. It runs the shared Rust zone simulation in the page as a **local single-player zone host** ([ADR 0002](docs/adr/0002-browser-embeds-zone-simulation.md)): the `mmorpg-wasm` crate compiles `mmorpg-core` and `mmorpg-protocol` to WebAssembly and builds the same `ZoneSimulation` and content revision as `mmorpg-zone-host` (zone 1, Greyhaven Vale). There is one implementation of the movement and combat rules; the browser owns none.

@@ -49,7 +49,8 @@
     "rule": "regions whose mean elevation exceeds 760 m or lie inside the crest ring"
   },
   "claims": {
-    "greyhaven": "carrowmark"
+    "greyhaven": "carrowmark",
+    "gull-isle": "vesmere"
   },
   "settlements": [
     {"id": "greyhaven-outpost", "name": "Greyhaven Outpost", "kind": "outpost", "kingdom": "carrowmark", "at": [0, 20], "anchor": "greyhaven", "established": true},
