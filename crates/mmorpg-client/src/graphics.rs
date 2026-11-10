@@ -900,10 +900,12 @@ mod tests {
             )
             .await
             .unwrap();
+            let daytime = daytime.unwrap();
             let changed = daytime
-                .unwrap()
-                .chunks_exact(4)
-                .zip(without.chunks_exact(4))
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .zip(without.as_chunks::<4>().0.iter())
                 .filter(|(a, b)| a != b)
                 .count();
             println!(
