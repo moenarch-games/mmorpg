@@ -57,6 +57,7 @@ export const GAME_ACTIONS = [
   "ui.toggleVendor",
   "ui.talk",
   "ui.toggleQuestLog",
+  "ui.toggleWorldMap",
   "ui.openChat",
   "ui.closePanel",
   "ui.leaveWorld",
@@ -211,6 +212,7 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
     // Q is deliberately left unbound as a spare.
     action("ui.talk", "Interact: talk, or open or close a door", "gameplay", [key("KeyE"), button(9)]),
     action("ui.toggleQuestLog", "Toggle quest log", "gameplay", [key("KeyL")]),
+    action("ui.toggleWorldMap", "Toggle world map", "gameplay", [key("KeyM")]),
     action("ui.openChat", "Chat", "gameplay", [key("Enter"), key("NumpadEnter")]),
     action("ui.closePanel", "Close panel", "panels", [key("Escape"), button(1)]),
     // B rolls in gameplay (#516), so leaving the world is keyboard-only, as on the native client.

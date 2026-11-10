@@ -21,6 +21,9 @@ if (Boolean(certificate) !== Boolean(privateKey)) {
 
 export default defineConfig({
   base: "/mmorpg/",
+  // The Maps library's WASM loader finds the .wasm beside its own module (new URL(..., import.meta.url)),
+  // which dependency pre-bundling would move away from it; the rest of the library is pre-bundled.
+  optimizeDeps: { exclude: ["@moritzbrantner/maps/wasm"] },
   server: {
     // Quaternius unit models are served from the repository's shared `assets/quaternius`.
     fs: { allow: [searchForWorkspaceRoot(process.cwd()), "../assets/quaternius"] },

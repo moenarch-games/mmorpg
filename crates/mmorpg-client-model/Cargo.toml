@@ -1,6 +1,6 @@
 [package]
 name = "mmorpg-client-model"
-description = "Client rules both clients share: action-bar and cast-bar state, chat parsing and logs, the movement outbox and quest views"
+description = "Client rules both clients share: action-bar and cast-bar state, chat parsing and logs, the movement outbox, quest views and the world map"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,6 +13,7 @@ publish.workspace = true
 [dependencies]
 strum.workspace = true
 mmorpg-core.workspace = true
+serde_json = "=1.0.154"
 
 [dev-dependencies]
 # The HUD acceptance test reads fixtures through the real wire codec.

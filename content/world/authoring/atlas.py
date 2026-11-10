@@ -12,6 +12,7 @@ geographic consistency.
     uv run content/world/authoring/atlas.py format
     uv run content/world/authoring/atlas.py borders [--replace]
     uv run content/world/authoring/atlas.py sync
+    uv run content/world/authoring/atlas.py map-export
     uv run content/world/authoring/atlas.py gis-export [--out artifacts/world-atlas/gis]
     uv run content/world/authoring/atlas.py gis-import artifacts/world-atlas/gis/wgs84
 
@@ -63,9 +64,17 @@ def load_layers() -> dict:
     return layers
 
 
+EXPORT = WORLD / "export"  # generated for the game (map-export); not a source
+MAP_BUNDLE = EXPORT / "world-map.json"
+
+
+def source_files():
+    return [p for p in sorted(WORLD.rglob("*.json")) if EXPORT not in p.parents]
+
+
 def source_digest() -> str:
     h = hashlib.sha256()
-    for path in sorted(WORLD.rglob("*.json")):
+    for path in source_files():
         h.update(path.relative_to(WORLD).as_posix().encode())
         h.update(path.read_bytes())
     return h.hexdigest()[:16]
@@ -819,11 +828,11 @@ def region_adjacency(label, n, elev, big_river, land):
 # ---------------------------------------------------------------- region borders
 
 
-def trace_borders(g: Grid, label: np.ndarray, ids: list, land: np.ndarray, exact: set) -> dict:
+def trace_borders(g: Grid, label: np.ndarray, ids: list, land: np.ndarray, footprint: np.ndarray) -> dict:
     """Vector borders from a region raster: the cell edges between two regions, chained between the
     points where three regions meet, then simplified and smoothed. A border that reaches the coast
     runs on a little way into the sea, so the regions on either side stay apart. Borders of the
-    regions in `exact` (anchored ones) keep the footprint's cell edges instead of being smoothed."""
+    borders that touch an anchor `footprint` keep its cell edges instead of being smoothed."""
     nbr = {}
 
     def add(v, w, p, q):
@@ -874,7 +883,8 @@ def trace_borders(g: Grid, label: np.ndarray, ids: list, land: np.ndarray, exact
     for n, (pair, path) in enumerate(sorted(chains, key=lambda t: (t[0], t[1][0]))):
         closed = path[0] == path[-1] and not is_node(path[0])
         pts = [xz(v) for v in path]
-        if not ({ids[pair[0]], ids[pair[1]]} & exact):
+        touches = any(footprint[max(r - 1, 0) : r + 1, max(c - 1, 0) : c + 1].any() for r, c in path)
+        if not touches:
             pts = simplify(pts, 0.7 * g.cell)
             pts = chaikin(pts[:-1] if closed else pts, 3, closed)
             pts = simplify(pts + ([pts[0]] if closed else []), 4.0)
@@ -1908,6 +1918,11 @@ def cmd_build(args, check=False) -> int:
         again = fingerprint(build(load_layers()))
         checks.append({"check": "reproducible", "ok": again == fp, "detail": f"two builds give {fp} and {again}"})
     checks.append({"check": "sources.untouched", "ok": source_digest() == before, "detail": "content/world/ unchanged by the build"})
+    if (check or args.checks) and "borders" in layers:
+        current = MAP_BUNDLE.exists() and MAP_BUNDLE.read_text() == atlas_gis.write_bundle(atlas_gis.map_bundle(b, before))
+        checks.append({"check": "export.map", "ok": current,
+                       "detail": "the game's world map matches the sources" if current
+                       else "content/world/export/world-map.json is out of date: run atlas.py map-export"})
     checks.append({"check": "greyhaven.untouched", "ok": digest_tree(REPO / "content" / "greyhaven") == greyhaven_before,
                    "detail": "content/greyhaven/ unchanged by the build"})
     out = Path(args.out)
@@ -1966,12 +1981,12 @@ def cmd_borders(args) -> int:
     layers = load_layers()
     layers.pop("borders", None)
     b = build(layers)
-    exact = {r["id"] for r in layers["regions"]["regions"] if r.get("anchor")}
+
     keep = b["anchor_mask"].copy()
     for reg in layers["regions"]["regions"]:
         keep[b["grid"].index(*reg["seed"])] = True
     label = rounded_regions(b["label"], b["land"], keep)
-    traced = merge_close_junctions(trace_borders(b["grid"], label, b["ids"], b["land"], exact), 150.0)
+    traced = merge_close_junctions(trace_borders(b["grid"], label, b["ids"], b["land"], b["anchor_mask"]), 150.0)
     data = {"version": 1,
             "note": "Region borders. Each border is shared by exactly two regions and drawn once; regions are the pieces "
                     "the borders cut the land into, one seed per piece. A border ends at a junction where three regions "
@@ -1998,6 +2013,21 @@ def cmd_sync(args) -> int:
     for p in problems:
         print("problem: " + p)
     return 1 if problems else 0
+
+
+def cmd_map_export(args) -> int:
+    """The world map both game clients draw (content/world/export/world-map.json, committed)."""
+    layers = load_layers()
+    if "borders" not in layers:
+        sys.exit("no borders.json yet; run atlas.py borders first")
+    b = build(layers)
+    MAP_BUNDLE.parent.mkdir(parents=True, exist_ok=True)
+    text = atlas_gis.write_bundle(atlas_gis.map_bundle(b, source_digest()))
+    changed = not MAP_BUNDLE.exists() or MAP_BUNDLE.read_text() != text
+    if changed:
+        MAP_BUNDLE.write_text(text)
+    print(f"{'wrote' if changed else 'unchanged'}: {MAP_BUNDLE} ({len(text) / 1024:.0f} KiB)")
+    return 0
 
 
 def cmd_gis_export(args) -> int:
@@ -2047,7 +2077,7 @@ def cmd_gis_import(args) -> int:
 
 def cmd_format(args) -> int:
     """Rewrite every source layer in the canonical layout; values never change."""
-    changed = [p.relative_to(WORLD).as_posix() for p in sorted(WORLD.rglob("*.json"))
+    changed = [p.relative_to(WORLD).as_posix() for p in source_files()
                if write_json(p, json.loads(p.read_text()))]
     print("reformatted: " + (", ".join(changed) if changed else "nothing"))
     return 0
@@ -2064,6 +2094,7 @@ def main() -> int:
     sub.add_parser("seed-regions")
     sub.add_parser("format")
     sub.add_parser("sync", help="bring borders.json in step with hand edits of borders or seeds")
+    sub.add_parser("map-export", help="the world map the game clients draw (content/world/export/world-map.json)")
     s = sub.add_parser("gis-export", help="GeoJSON layers and regions.topojson for GIS tools")
     s.add_argument("--out", default=str(OUT / "gis"))
     s = sub.add_parser("gis-import", help="bring edits made in a GIS tool back")
@@ -2075,6 +2106,8 @@ def main() -> int:
         return cmd_seed_regions(args)
     if args.cmd == "borders":
         return cmd_borders(args)
+    if args.cmd == "map-export":
+        return cmd_map_export(args)
     if args.cmd == "gis-export":
         return cmd_gis_export(args)
     if args.cmd == "gis-import":

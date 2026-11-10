@@ -15,14 +15,17 @@
     "@moritzbrantner/input-bindings-react": "github:moritzbrantner/input-bindings#549b4edfbd6bade6173dc507c15ee59fe9fc2d9e",
     "@moritzbrantner/input-bindings-runtime": "github:moritzbrantner/input-bindings#7683fc7b8572b38124d3b99c3c274ae32ab24f19",
     "@moritzbrantner/input-bindings-web": "github:moritzbrantner/input-bindings#bcb5834545bcf92cf74d4fb80496f410dea3bcaf",
+    "@moritzbrantner/maps": "github:moritzbrantner/maps#2aa1a6fb05e486ce438afb7a2707f468f4317276",
     "@moritzbrantner/settings-browser": "github:moritzbrantner/settings#18289aafa116010fd8dfe485aecff2cc749ceb4a",
     "@moritzbrantner/three-d-renderer": "github:moritzbrantner/3d-lab#f82eae8407cc0ac1b22ef4310bf48ceb19c537f3",
     "@moritzbrantner/three-lighting": "github:moritzbrantner/render-engine#81752f2ddfab82b7ea03dea933b9c4e22b9c91df",
+    "@moritzbrantner/ui": "github:moritzbrantner/ui#2f0cc4e470307b017fb06aae4a03b9abce47cc8c",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "three": "0.186.1"
   },
   "devDependencies": {
+    "@types/geojson": "7946.0.16",
     "@types/node": "26.6.5",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
@@ -31,5 +34,9 @@
     "typescript": "5.9.3",
     "undici-types": "8.12.3",
     "vite": "7.3.7"
-  }
+  },
+  "trustedDependencies": [
+    "@moritzbrantner/maps",
+    "@moritzbrantner/ui"
+  ]
 }

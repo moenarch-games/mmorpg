@@ -16,6 +16,7 @@ pub mod outbox;
 pub mod party;
 pub mod power_draw;
 pub mod quest;
+pub mod world_map;
 
 #[cfg(test)]
 pub(crate) mod test_support {

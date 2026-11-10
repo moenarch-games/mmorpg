@@ -2655,6 +2655,7 @@ version = "0.1.0"
 dependencies = [
  "mmorpg-core",
  "mmorpg-protocol",
+ "serde_json",
  "strum",
 ]
 
