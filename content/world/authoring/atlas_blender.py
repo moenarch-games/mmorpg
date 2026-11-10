@@ -35,11 +35,12 @@ from pathlib import Path
 import bpy
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import atlas_regions  # noqa: E402
 from atlas_json import write_json  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[3]
 WORLD = Path(os.environ.get("ATLAS_WORLD", REPO / "content" / "world"))  # tests point this at a copy
-OUT = REPO / "artifacts" / "world-atlas"
+OUT = Path(os.environ.get("ATLAS_OUT", REPO / "artifacts" / "world-atlas"))  # a build made with atlas.py --out
 COLLECTION = "Atlas"
 
 
@@ -47,12 +48,16 @@ def load(name):
     return json.loads((WORLD / name).read_text())
 
 
+ORIGIN = [0, 0]  # atlas x, z at the scene origin; a region file centres on its regions
+
+
 def to_blender(x, z, y=0.0):
-    return (x / 1000.0, -z / 1000.0, y / 1000.0)  # kilometres keep the scene inside Blender's comfortable range
+    # kilometres keep the scene inside Blender's comfortable range
+    return ((x - ORIGIN[0]) / 1000.0, -(z - ORIGIN[1]) / 1000.0, y / 1000.0)
 
 
 def from_blender(v):
-    return [int(round(v[0] * 1000.0)), int(round(-v[1] * 1000.0))]
+    return [int(round(v[0] * 1000.0)) + ORIGIN[0], int(round(-v[1] * 1000.0)) + ORIGIN[1]]
 
 
 def collection(name, parent):
@@ -118,6 +123,8 @@ def terrain_mesh(coll):
 
 def cmd_import(blend: Path):
     bpy.ops.wm.read_factory_settings(use_empty=True)
+    ORIGIN[:] = [0, 0]
+    bpy.context.scene["atlas_origin"] = list(ORIGIN)
     root = bpy.data.collections.new(COLLECTION)
     bpy.context.scene.collection.children.link(root)
     terrain, water, pol, regions, anchors = (load(n) for n in
@@ -160,6 +167,8 @@ def cmd_import(blend: Path):
         empty(f"region {r['id']}", r["seed"], seeds, "SINGLE_ARROW", 0.25, props={"atlas": "region", "id": r["id"]})
     if (WORLD / "borders.json").exists():
         add_borders(load("borders.json")["borders"], load("borders.json")["junctions"], collection("Borders", root))
+        bpy.context.scene["atlas_borders"] = json.dumps([b["id"] for b in load("borders.json")["borders"]])
+    bpy.context.scene["atlas_regions"] = json.dumps([r["id"] for r in regions["regions"]])
     blend.parent.mkdir(parents=True, exist_ok=True)
     bpy.ops.wm.save_as_mainfile(filepath=str(blend))
     print(f"wrote {blend}")
@@ -194,9 +203,19 @@ def raster():
     return meta, elev, corners, np.load(OUT / "regions.npy")
 
 
-def region_mesh(name, k, grid, coll, colour):
-    """One region's land as a mesh of its 40 m cells: neighbouring regions share corner heights, so
-    the pieces fit together without seams."""
+def border_segments(borders):
+    import numpy as np
+
+    a = [p for bd in borders for p in bd["points"][:-1]]
+    b = [p for bd in borders for p in bd["points"][1:]]
+    return np.array(a, float).reshape(-1, 2), np.array(b, float).reshape(-1, 2)
+
+
+def region_mesh(name, k, grid, coll, colour, segments=None):
+    """One region's land as a mesh of its 40 m cells. The corners it shares with another region are
+    moved onto the nearest border line, so its edge follows the smooth border rather than the grid.
+    Every region computes those corners the same way from all borders, so neighbouring pieces keep
+    meeting without gaps."""
     import numpy as np
 
     meta, _, corners, lab = grid
@@ -212,6 +231,30 @@ def region_mesh(name, k, grid, coll, colour):
     for r, c in zip(*np.nonzero(lab == k)):
         r, c = int(r), int(c)
         faces.append((corner(r, c), corner(r + 1, c), corner(r + 1, c + 1), corner(r, c + 1)))
+    if segments is not None and len(segments[0]):
+        p = np.pad(lab, 1, constant_values=-1)
+        shared = []
+        for (i, j), v in index.items():
+            around = {int(p[i, j]), int(p[i, j + 1]), int(p[i + 1, j]), int(p[i + 1, j + 1])}
+            if any(o >= 0 and o != k for o in around):
+                shared.append((v, meta["minX"] + j * cell, meta["minZ"] + i * cell))
+        if shared:
+            a, b = segments
+            pts = np.array([(x, z) for _, x, z in shared])
+            lo, hi = pts.min(0) - 2 * cell, pts.max(0) + 2 * cell
+            near = ((np.minimum(a, b) <= hi) & (np.maximum(a, b) >= lo)).all(1)
+            a, b = a[near], b[near]
+            if not len(a):
+                a, b = segments[0][:1], segments[1][:1]  # nothing nearby: one far segment moves nothing
+            ab = b - a
+            t = np.clip(((pts[:, None, :] - a[None]) * ab[None]).sum(2) / np.maximum((ab * ab).sum(1), 1e-9)[None], 0, 1)
+            foot = a[None] + t[..., None] * ab[None]
+            dist = np.hypot(*(foot - pts[:, None, :]).transpose(2, 0, 1))
+            best = dist.argmin(1)
+            for n, (v, _, _) in enumerate(shared):
+                if dist[n, best[n]] <= 1.5 * cell:
+                    x, z = foot[n, best[n]]
+                    verts[v] = to_blender(x, z, verts[v][2] * 1000.0)
     mesh = bpy.data.meshes.new(name)
     mesh.from_pydata(verts, [], faces)
     mat = bpy.data.materials.new(name)
@@ -235,6 +278,9 @@ def cmd_import_regions(ids, blend: Path):
     if missing:
         sys.exit(f"unknown region {', '.join(missing)}")
     chosen = set(ids)
+    seeds_at = [known[rid]["seed"] for rid in ids]
+    ORIGIN[:] = [int(round(sum(p[0] for p in seeds_at) / len(ids), -2)), int(round(sum(p[1] for p in seeds_at) / len(ids), -2))]
+    bpy.context.scene["atlas_origin"] = list(ORIGIN)
     mine = [bd for bd in borders["borders"] if chosen & set(bd["regions"])]
     around = sorted({rid for bd in mine for rid in bd["regions"]} - chosen)
     grid = raster()
@@ -251,15 +297,18 @@ def cmd_import_regions(ids, blend: Path):
             return float(elev[r, c])
 
         palette = [(0.85, 0.62, 0.3), (0.35, 0.65, 0.45), (0.45, 0.55, 0.85), (0.8, 0.45, 0.35)]
+        segments = border_segments(borders["borders"])
         terrain = collection("Terrain", root)
         for n, rid in enumerate(ids):
             if rid in index:
-                region_mesh(f"terrain {rid}", index[rid], grid, terrain, palette[n % len(palette)])
+                region_mesh(f"terrain {rid}", index[rid], grid, terrain, palette[n % len(palette)], segments)
         context = collection("Neighbours (context, not exported)", root)
         for rid in around:
             if rid in index:
-                region_mesh(f"terrain {rid} (neighbour)", index[rid], grid, context, (0.45, 0.45, 0.45))
+                region_mesh(f"terrain {rid} (neighbour)", index[rid], grid, context, (0.45, 0.45, 0.45), segments)
     add_borders(mine, borders["junctions"], collection("Borders", root), ground)
+    bpy.context.scene["atlas_borders"] = json.dumps([bd["id"] for bd in mine])
+    bpy.context.scene["atlas_regions"] = json.dumps(list(ids))
     seeds = collection("Region seeds", root)
     for rid in ids:
         seed = known[rid]["seed"]
@@ -278,18 +327,59 @@ def spline_points(obj):
     if len(pts) < 2:
         sys.exit(f"{obj.name}: expected one spline with at least two points (after redrawing a line, delete the old "
                  f"spline); refusing to export")
-    return [from_blender(obj.matrix_world @ p.co.xyz) for p in pts]
+    if splines[0].type != "BEZIER":
+        return [from_blender(obj.matrix_world @ p.co.xyz) for p in pts]
+    # the Draw tool makes Bézier curves with few control points: follow the curve itself, every ~20 m
+    from mathutils.geometry import interpolate_bezier
+
+    out = [from_blender(obj.matrix_world @ pts[0].co)]
+    for p, q in zip(pts, pts[1:]):
+        steps = max(2, int((obj.matrix_world @ q.co - obj.matrix_world @ p.co).length * 1000 / 20) + 1)
+        for v in interpolate_bezier(p.co, p.handle_right, q.handle_left, q.co, steps)[1:]:
+            xz = from_blender(obj.matrix_world @ v)
+            if xz != out[-1]:
+                out.append(xz)
+    return out
 
 
 def position(obj):
     return from_blender(obj.matrix_world.translation)
 
 
+SNAP = 80  # metres: a new border's end this close to a junction or border connects to it
+
+
+def to_junctions(points, bd, at):
+    """A redrawn border whose ends were drawn near, not on, its junctions: drop the drawn points
+    that lie closer to a junction than the line's next stretch, so the line runs straight in
+    instead of hooking back."""
+    if bd.get("from") in at:
+        j = at[bd["from"]]
+        while len(points) > 2 and math.dist(points[1], j) < SNAP / 2:
+            points.pop(0)
+        points[0] = list(j)
+    if bd.get("to") in at:
+        j = at[bd["to"]]
+        while len(points) > 2 and math.dist(points[-2], j) < SNAP / 2:
+            points.pop()
+        points[-1] = list(j)
+    return points
+
+
 def cmd_export():
+    """Compute every change first, bring the border network in step, and write only when the
+    result is consistent: an export either lands whole or changes nothing."""
     bpy.context.view_layer.update()  # world matrices of objects moved by a script are stale until then
-    objs, extra_regions = {}, []
+    scene = bpy.context.scene
+    ORIGIN[:] = list(scene.get("atlas_origin", [0, 0]))  # the frame this file was made in
+    if scene.get("atlas_stale"):
+        sys.exit(f"this file is out of date: {scene['atlas_stale']}")
+    objs, extra_regions, drawn = {}, [], []
     for o in bpy.data.objects:
         if "atlas" not in o:
+            # a curve drawn into the Borders collection is a new border
+            if o.type == "CURVE" and any(c.name.startswith("Borders") for c in o.users_collection):
+                drawn.append(o)
             continue
         kind, oid = o["atlas"], o.get("id", o.name)
         if o.name != o.get("imported", o.name):
@@ -299,62 +389,12 @@ def cmd_export():
                 continue
             sys.exit(f"{o.name} duplicates {o['imported']}; only region seeds can be duplicated")
         objs.setdefault(kind, {})[oid] = o
-    changed = []
-
-    def update(name, mutate):
-        path = WORLD / name
-        data = json.loads(path.read_text())
-        before = json.dumps(data, sort_keys=True)
-        mutate(data)
-        if json.dumps(data, sort_keys=True) != before:
-            write_json(path, data)
-            changed.append(name)
-
-    def terrain(d):
-        if "coast" in objs.get("coast", {}):
-            d["coast"]["points"] = spline_points(objs["coast"]["coast"])
-        for kind in ("seas", "islands"):
-            for s in d["coast"][kind]:
-                o = objs.get(kind, {}).get(s["id"])
-                if o:
-                    s["center"] = position(o)
-        for r in d["ridges"]:
-            o = objs.get("ridge", {}).get(r["id"])
-            if o:
-                r["points"] = spline_points(o)
-        for u in d.get("uplands", []):
-            o = objs.get("uplands", {}).get(u["id"])
-            if o:
-                u["center"] = position(o)
-        crown = d["crown"]
-        o = next(iter(objs.get("crown", {}).values()), None)
-        if o:
-            crown["center"] = position(o)
-        for gate in crown["gates"]:
-            o = objs.get("gate", {}).get(gate["id"])
-            # a gate keeps its bearing unless the gate itself was moved, so moving the Crown carries its gates along
-            if o and position(o) != list(o["at"]):
-                x, z = position(o)
-                bearing = math.degrees(math.atan2(x - crown["center"][0], -(z - crown["center"][1]))) % 360
-                gate["bearing"] = int(round(bearing))
-
-    def water(d):
-        for r in d["rivers"]:
-            o = objs.get("river", {}).get(r["id"])
-            if o:
-                r["points"] = spline_points(o)
-        for kind in ("lakes", "sinks", "springs"):
-            for s in d[kind]:
-                o = objs.get(kind, {}).get(s["id"])
-                if o:
-                    s["at"] = position(o)
-
-    def polities(d):
-        for s in d["settlements"]:
-            o = objs.get("settlement", {}).get(s["id"])
-            if o:
-                s["at"] = position(o)
-
+    # what this file held when it was made: whatever is gone now was deleted here
+    gone_borders = [b for b in json.loads(scene.get("atlas_borders", "[]")) if b not in objs.get("border", {})]
+    gone_regions = [r for r in json.loads(scene.get("atlas_regions", "[]")) if r not in objs.get("region", {})]
+    names = ["terrain.json", "water.json", "polities.json", "regions.json"] + (["borders.json"] if (WORLD / "borders.json").exists() else [])
+    docs = {n: json.loads((WORLD / n).read_text()) for n in names}
+    before = {n: json.dumps(d, sort_keys=True) for n, d in docs.items()}
     rebase = []  # after a successful export, this file is in step with the sources again
 
     def moved(now, was, current, what):
@@ -366,50 +406,130 @@ def cmd_export():
             sys.exit(f"{what} was changed elsewhere after this file was made; regenerate the file and redo the edit")
         return True
 
-    def regions(d):
-        for r in d["regions"]:
-            o = objs.get("region", {}).get(r["id"])
-            if o and moved(position(o), list(o["at"]), r["seed"], f"region {r['id']}'s seed"):
-                r["seed"] = position(o)
+    d = docs["terrain.json"]
+    if "coast" in objs.get("coast", {}):
+        d["coast"]["points"] = spline_points(objs["coast"]["coast"])
+    for kind in ("seas", "islands"):
+        for s in d["coast"][kind]:
+            o = objs.get(kind, {}).get(s["id"])
             if o:
-                rebase.append((o, "at", r["seed"]))
-        # new regions continue the id sequence the generator uses, never reusing a deleted id
-        used = [int(r["id"][1:]) for r in d["regions"] if r["id"][:1] == "r" and r["id"][1:].isdigit()]
-        n = max(used + [d.get("lastGeneratedId", 0)]) + 1
-        for o in sorted(extra_regions, key=lambda o: o.name):
-            d["regions"].append({"id": f"r{n:03d}", "seed": position(o)})
-            d["lastGeneratedId"] = n
-            n += 1
+                s["center"] = position(o)
+    for r in d["ridges"]:
+        o = objs.get("ridge", {}).get(r["id"])
+        if o:
+            r["points"] = spline_points(o)
+    for u in d.get("uplands", []):
+        o = objs.get("uplands", {}).get(u["id"])
+        if o:
+            u["center"] = position(o)
+    crown = d["crown"]
+    o = next(iter(objs.get("crown", {}).values()), None)
+    if o:
+        crown["center"] = position(o)
+    for gate in crown["gates"]:
+        o = objs.get("gate", {}).get(gate["id"])
+        # a gate keeps its bearing unless the gate itself was moved, so moving the Crown carries its gates along
+        if o and position(o) != list(o["at"]):
+            x, z = position(o)
+            gate["bearing"] = int(round(math.degrees(math.atan2(x - crown["center"][0], -(z - crown["center"][1]))) % 360))
 
-    def borders(d):
+    d = docs["water.json"]
+    for r in d["rivers"]:
+        o = objs.get("river", {}).get(r["id"])
+        if o:
+            r["points"] = spline_points(o)
+    for kind in ("lakes", "sinks", "springs"):
+        for s in d[kind]:
+            o = objs.get(kind, {}).get(s["id"])
+            if o:
+                s["at"] = position(o)
+
+    d = docs["regions.json"]
+    for rid in gone_regions:  # deleting a seed deletes its region (merge it by deleting the border too)
+        reg = next(r for r in d["regions"] if r["id"] == rid)
+        if reg.get("anchor") or reg.get("locked"):
+            sys.exit(f"region {rid} holds zone-authored content and cannot be deleted")
+    d["regions"] = [r for r in d["regions"] if r["id"] not in gone_regions]
+    for r in d["regions"]:
+        o = objs.get("region", {}).get(r["id"])
+        if o and moved(position(o), list(o["at"]), r["seed"], f"region {r['id']}'s seed"):
+            r["seed"] = position(o)
+    # new regions continue the id sequence the generator uses, never reusing a deleted id
+    used = [int(r["id"][1:]) for r in d["regions"] if r["id"][:1] == "r" and r["id"][1:].isdigit()]
+    n = max(used + [d.get("lastGeneratedId", 0)]) + 1
+    added = []
+    for o in sorted(extra_regions, key=lambda o: o.name):
+        d["regions"].append({"id": f"r{n:03d}", "seed": position(o)})
+        added.append(f"r{n:03d}")
+        d["lastGeneratedId"] = n
+        n += 1
+
+    d = docs["polities.json"]
+    for s in d["settlements"]:
+        o = objs.get("settlement", {}).get(s["id"])
+        if o:
+            s["at"] = position(o)
+    d["claims"] = {k: v for k, v in d["claims"].items() if k not in gone_regions}
+
+    problems = []
+    if "borders.json" in docs:
+        d = docs["borders.json"]
+        d["borders"] = [b for b in d["borders"] if b["id"] not in gone_borders]
         for j in d["junctions"]:
             o = objs.get("junction", {}).get(j["id"])
             if o and moved(position(o), list(o["at"]), j["at"], f"junction {j['id']}"):
                 j["at"] = position(o)
-            if o:
-                rebase.append((o, "at", j["at"]))
         at = {j["id"]: j["at"] for j in d["junctions"]}
         for bd in d["borders"]:
             o = objs.get("border", {}).get(bd["id"])
             if o and moved(spline_points(o), json.loads(o["source"]), bd["points"], f"border {bd['id']}"):
-                bd["points"] = spline_points(o)
+                bd["points"] = to_junctions(spline_points(o), bd, at)
             # a border ends exactly at its junctions: moving a junction moves every border ending there,
             # including borders of regions not in this file
-            if bd.get("from"):
+            if bd.get("from") in at:
                 bd["points"][0] = list(at[bd["from"]])
-            if bd.get("to"):
+            if bd.get("to") in at:
                 bd["points"][-1] = list(at[bd["to"]])
-            if o:
+        new = [atlas_regions.attach(d, spline_points(o), SNAP)["id"] for o in sorted(drawn, key=lambda o: o.name)]
+        grid = raster()
+        if grid:
+            meta = grid[0]
+            frame = atlas_regions.Frame(meta["minX"], meta["minZ"], meta["cell"], meta["columns"], meta["rows"])
+            seeds = [(r["id"], r["seed"]) for r in docs["regions.json"]["regions"]]
+            problems = atlas_regions.sync(frame, grid[3] >= 0, d, seeds)  # the build labels every land cell
+        else:
+            print("no build artifacts: border pairs not checked; run atlas.py sync after the next build")
+        topology = bool(gone_borders or gone_regions or added or new)
+        for o in objs.get("border", {}).values():
+            bd = next((b for b in d["borders"] if b["id"] == o["id"]), None)
+            if bd:
                 rebase.append((o, "source", json.dumps(bd["points"])))
+        for j in d["junctions"]:
+            o = objs.get("junction", {}).get(j["id"])
+            if o:
+                rebase.append((o, "at", j["at"]))
+    else:
+        topology = bool(gone_regions or added)
+    if problems:
+        for p in problems:
+            print("problem: " + p)
+        sys.exit("nothing was written: fix the problems above in this file and export again")
+    for r in docs["regions.json"]["regions"]:
+        o = objs.get("region", {}).get(r["id"])
+        if o:
+            rebase.append((o, "at", r["seed"]))
 
-    update("terrain.json", terrain)
-    update("water.json", water)
-    update("polities.json", polities)
-    update("regions.json", regions)
-    if (WORLD / "borders.json").exists():
-        update("borders.json", borders)
+    changed = [n for n in names if json.dumps(docs[n], sort_keys=True) != before[n] and write_json(WORLD / n, docs[n])]
     for o, key, value in rebase:
         o[key] = value
+    if topology:
+        # regions were split or merged: the terrain pieces and border objects here no longer match
+        scene["atlas_stale"] = "regions were split or merged by an export; rebuild (atlas.py build) and make the file again"
+        print("regions changed: " + ", ".join(filter(None, [
+            f"added {', '.join(added)}" if added else "", f"deleted {', '.join(gone_regions)}" if gone_regions else "",
+            f"new borders {', '.join(new)}" if "borders.json" in docs and new else "",
+            f"deleted borders {', '.join(gone_borders)}" if gone_borders else ""])))
+        print("this file is now out of date: run atlas.py build, then make the region file again")
     if bpy.data.filepath:
         bpy.ops.wm.save_mainfile()  # keep the new baseline with the file, for the next edit and export
     print("changed: " + (", ".join(changed) if changed else "nothing"))

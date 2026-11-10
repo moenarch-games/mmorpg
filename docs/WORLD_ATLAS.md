@@ -14,6 +14,7 @@ uv run content/world/authoring/atlas.py check --previews docs/images/world   # b
 uv run content/world/authoring/atlas.py build                               # outputs only, in artifacts/world-atlas/
 uv run content/world/authoring/atlas.py seed-regions                        # append seeds for uncovered land (each then needs a border)
 uv run content/world/authoring/atlas.py format                              # canonical JSON layout
+uv run content/world/authoring/atlas.py sync                                # after hand edits of borders or seeds
 blender --python content/world/authoring/atlas_blender.py -- region r100 r113   # Blender file for two neighbouring regions
 blender --python content/world/authoring/atlas_blender.py -- import         # editable Blender scene
 blender --background artifacts/world-atlas/continent.blend --python content/world/authoring/atlas_blender.py -- export
@@ -216,19 +217,55 @@ blender --background artifacts/world-atlas/regions/r100+r113.blend --python cont
 To change a border:
 
 1. Open the two regions it separates.
-2. Reshape or redraw its curve, keeping one spline per border.
+2. Reshape its curve, or redraw it with the Draw tool. Keep one spline per border: delete the
+   old points before drawing. Bézier curves are followed along their shape, not just their
+   control points.
 3. Export. To move a meeting point, move its junction instead; every border ending there
-   follows, including borders of regions not in the file.
+   follows, including borders of regions not in the file. A redrawn end within 80 m of its
+   junction is pulled onto it.
+
+**Splitting a region.**
+
+1. Make the Borders collection active, add a curve, and draw the new border across the region.
+   Its ends connect to whatever lies within 80 m: a junction, or another border, which is then
+   split at a new junction. An end with nothing nearby must lie past the coast.
+2. Duplicate the region's seed (Shift+D) into the new half.
+3. Export. The new region gets the next id, and the borders on the new half now name it.
+
+**Merging two regions.** Delete the border between them and one of their seeds, then export.
+The remaining region takes over the deleted one's borders, and borders left meeting end to end
+are joined.
+
+**Every export is all or nothing.** It runs the same consistency step as `atlas.py sync`.
+If two seeds would share one piece, a piece would have no seed, or a border would have the same
+region on both sides, it lists the problems and writes nothing. After a split or a merge the
+file marks itself out of date, because its terrain pieces no longer match; rebuild and make the
+file again.
 
 Like every `.blend` in this repository, these files are generated, disposable and never
 committed: the JSON is the source. Export writes only what the file changed. It refuses when
 the same border was changed from another file since this one was made, so an old file never
-undoes a newer edit.
+undoes a newer edit. A region file is centred on its regions, so Blender's grid and navigation
+work normally; the export puts everything back in atlas coordinates.
 
-The terrain pieces show the borders at the atlas's 40 m resolution. A zone opened later refines
-the same line at its own resolution.
+The terrain pieces are built from the atlas's 40 m cells, but each corner a piece shares with a
+neighbour is moved onto the nearest border line. The pieces' edges therefore follow the smooth
+borders, and neighbouring pieces still meet without gaps. A zone opened later refines the same
+line at its own resolution.
+
+If you edit `borders.json` or the seeds by hand, `atlas.py sync` performs the same consistency
+step, and `atlas.py check` fails until the file is in step.
 
 ![Two neighbouring regions in one Blender file](images/world/region-pair.png)
+
+The workflow was tried in a live Blender 5.2.2 session on a scratch copy:
+
+- the border between r100 and r113 was redrawn with the Draw tool;
+- r113 was split by drawing a new border and duplicating its seed;
+- the export landed, and the atlas checks passed on the result;
+- the regenerated file shows the three pieces.
+
+![After a live split: r100, r113 and the new r146](images/world/region-split.png)
 
 Neighbouring regions **overlap**: within 200 m of a border each point carries a secondary
 region and blend weight, so presentation can compose continuous transitions. The 1,024 m
@@ -307,7 +344,7 @@ anchor, and from then on the zone's content is the authority there.
 
 ## Consistency checks
 
-`atlas.py check` runs 59 checks and fails on any violation. These are tests of the result:
+`atlas.py check` runs 60 checks and fails on any violation. These are tests of the result:
 each one can fail when an edit breaks the geography.
 
 - **Coast and scale:** one continent plus the declared islands, with 250–420 km² of land.
@@ -320,7 +357,8 @@ each one can fail when an edit breaks the geography.
   outlet.
 - **Water:** the karst resurgence lies below its ponor, and Crownmere and the Saltmere form.
 - **Regions:** the borders cut the land into exactly one piece per seed, each border ends at its
-  junctions and has its two named regions on either side, the Greyhaven footprint lies inside
+  junctions and has its two named regions on either side, `borders.json` is in step with the
+  seeds (as after `atlas.py sync`), the Greyhaven footprint lies inside
   its region, every land cell is covered, each region is contiguous, and there are 120–180
   regions with at least 85 % within 0.6–1.4 times the 2–4 km² target.
 - **Composition:** the blend computed per chunk with its halo matches the whole-world blend.
@@ -358,7 +396,14 @@ It confirms that:
 - an untouched region file leaves every source byte-identical;
 - reshaping a border in a two-region file changes that one border, once;
 - moving a junction moves the ends of every border meeting there, also outside the file;
-- an outdated file refuses to overwrite a border edited elsewhere since it was made.
+- an outdated file refuses to overwrite a border edited elsewhere since it was made;
+- a redrawn Bézier border follows the curve, with its ends on the junctions;
+- merging two regions deletes their border, renames the deleted region's other borders, and the
+  atlas checks pass on the result;
+- after a split or a merge the file refuses further exports until it is made again;
+- a copied seed with no border around it is refused, and nothing is written;
+- drawing a border across a region splits it, splits the two borders it meets, and the atlas
+  checks pass on the result.
 
 ## Questions for the owner
 

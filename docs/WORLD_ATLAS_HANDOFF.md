@@ -17,7 +17,7 @@ Done:
   meanders, priority-flood hydrology with sinks and a karst link, westerly and southern
   rain with rain shadow, biomes, 151 terrain-grown regions with overlapping borders, kingdom
   claims, routed roads, previews, the report and the adjacency table, and the checks
-  (59 passing).
+  (60 passing).
 - **Blender round trip** `content/world/authoring/atlas_blender.py` (whole continent, or one file per region), with the headless test `test_atlas_blender.py`. Verified on
   Blender 5.2.2: an untouched round trip changes nothing, and moving one seed changes one line.
 - **Previews** in `docs/images/world/` and the design document.
@@ -113,3 +113,21 @@ regenerate region seeds wholesale once someone has edited them: `seed-regions` o
    - Not done: splitting or merging regions in Blender. A copied seed still adds a region,
      but the check then fails until a border separates it. Region terrain pieces follow the
      border at the atlas's 40 m resolution only.
+9. Owner round 4: push on the limits, and try the workflow in a real Blender.
+   - Splitting and merging regions in Blender. To split, draw a new border in the Borders
+     collection and Shift+D the seed; its ends connect to junctions or split the borders they
+     meet. To merge, delete a border and a seed. The region logic now lives in
+     `atlas_regions.py`, shared by the generator and Blender.
+   - Every export is all or nothing. It runs the same consistency step as the new
+     `atlas.py sync` (region pairs, joining borders, dropping unused junctions) and writes
+     nothing when there are problems. After a split or a merge the file marks itself out of
+     date. A new check, `borders.synced`, makes 60.
+   - Terrain pieces: the corners a piece shares with a neighbour are moved onto the nearest
+     border line, so the pieces follow the smooth borders without gaps.
+   - Region files are centred on their regions (scene origin); the export maps back.
+   - The live trial in Blender 5.2.2, on a scratch copy, found a real bug: the Draw tool makes
+     Bézier curves with few control points, which the export had flattened. It now follows the
+     curve, and redrawn ends near a junction are pulled onto it without a hook. The headless
+     test has 16 cases, including a real merge and split that then pass the generator's checks.
+   - Not done: deleting a junction marker does nothing (junctions follow the borders); a split
+     drawn across more than one region is not supported (it reports the problem instead).

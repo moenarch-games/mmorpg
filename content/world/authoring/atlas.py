@@ -11,6 +11,7 @@ geographic consistency.
     uv run content/world/authoring/atlas.py seed-regions
     uv run content/world/authoring/atlas.py format
     uv run content/world/authoring/atlas.py borders [--replace]
+    uv run content/world/authoring/atlas.py sync
 
 Outputs go to artifacts/world-atlas/ (ignored). Only seed-regions (which only appends region
 seeds), borders (which traces the region borders once) and format (which only changes layout)
@@ -25,6 +26,7 @@ import hashlib
 import heapq
 import json
 import math
+import os
 import sys
 from pathlib import Path
 
@@ -32,10 +34,12 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import atlas_regions  # noqa: E402
 from atlas_json import write_json  # noqa: E402
+from atlas_regions import NB8, components, snap  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[3]
-WORLD = REPO / "content" / "world"
+WORLD = Path(os.environ.get("ATLAS_WORLD", REPO / "content" / "world"))  # tests point this at a copy
 OUT = REPO / "artifacts" / "world-atlas"
 INF = float("inf")
 
@@ -427,7 +431,7 @@ def apply_anchors(elev: np.ndarray, fields) -> None:
 
 # ---------------------------------------------------------------- hydrology
 
-NB8 = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+
 
 
 def silt_hollows(g: Grid, elev, land, water, keep):
@@ -549,30 +553,6 @@ def hydrology(g: Grid, elev, land, water, anchor_mask, precip):
     return {"filled": filled, "rec": rec, "acc": acc, "order": order, "lake": lake,
             "sinks": sinks, "springs": springs, "transfers": transfers, "seeds": seeds,
             "outlet": outlets(rec, order)}
-
-
-def components(mask: np.ndarray):
-    nz, nx = mask.shape
-    lab = np.full(mask.shape, -1, np.int64)
-    m = mask.tolist()
-    labl = lab.tolist()
-    sizes = []
-    for r0 in range(nz):
-        for c0 in range(nx):
-            if m[r0][c0] and labl[r0][c0] < 0:
-                k = len(sizes)
-                stack, n = [(r0, c0)], 0
-                labl[r0][c0] = k
-                while stack:
-                    r, c = stack.pop()
-                    n += 1
-                    for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                        rr, cc = r + dr, c + dc
-                        if 0 <= rr < nz and 0 <= cc < nx and m[rr][cc] and labl[rr][cc] < 0:
-                            labl[rr][cc] = k
-                            stack.append((rr, cc))
-                sizes.append(n)
-    return np.array(labl), sizes
 
 
 def remove_small(mask, min_cells):
@@ -1024,48 +1004,9 @@ def merge_close_junctions(traced: dict, min_length: float) -> dict:
 def region_raster(g: Grid, land: np.ndarray, regions: dict, borders: dict, anchors_f):
     """Regions are the pieces the borders cut the land into: each piece holds exactly one seed.
     Border cells join a neighbouring piece, and an anchor's footprint belongs to its region."""
-    wall = np.zeros(land.shape, bool)
-    for b in borders["borders"]:
-        for (ax, az), (bx, bz) in zip(b["points"], b["points"][1:]):
-            t = np.linspace(0.0, 1.0, max(2, int(math.hypot(bx - ax, bz - az) / (g.cell / 3)) + 1))
-            cols = np.floor((ax + (bx - ax) * t - g.min_x) / g.cell).astype(np.int64)
-            rows = np.floor((az + (bz - az) * t - g.min_z) / g.cell).astype(np.int64)
-            ok = (rows >= 0) & (rows < g.nz) & (cols >= 0) & (cols < g.nx)
-            wall[rows[ok], cols[ok]] = True  # an 8-connected wall stops a 4-connected fill
-    open_ = land & ~wall
-    piece, sizes = components(open_)
+    wall = atlas_regions.walls(g, borders["borders"])
     ids = [r["id"] for r in regions["regions"]]
-    owners = {}
-    for k, reg in enumerate(regions["regions"]):
-        r, c = snap(g, open_, *reg["seed"])
-        owners.setdefault(int(piece[r, c]), []).append(k)
-    lut = np.full(len(sizes) + 1, -1, np.int64)
-    for f, ks in owners.items():
-        if f >= 0:
-            lut[f] = ks[0]
-    label = lut[piece]
-    problems = []
-    for f, ks in sorted(owners.items()):
-        if f < 0:
-            problems.append(f"seed of {', '.join(ids[k] for k in ks)} is not on land")
-        elif len(ks) > 1:
-            problems.append(f"{' and '.join(ids[k] for k in ks)} share one piece of land: draw a border between them")
-    slivers = 0
-    for f, n in enumerate(sizes):
-        if lut[f] < 0:
-            if n > 12:
-                rr, cc = np.argwhere(piece == f)[0]
-                problems.append(f"{n * g.cell**2 / 1e6:.2f} km² at {g.centre(rr, cc)} has no seed")
-            else:
-                slivers += 1
-    for _ in range(50):  # border cells and slivers join a neighbouring piece
-        missing = land & (label < 0)
-        if not missing.any():
-            break
-        p = padded(label, -1)
-        for dr, dc in NB8:
-            nb = p[1 + dr : 1 + dr + g.nz, 1 + dc : 1 + dc + g.nx]
-            label = np.where(missing & (label < 0) & (nb >= 0), nb, label)
+    label, open_, problems, slivers = atlas_regions.pieces(g, land, wall, [(r["id"], r["seed"]) for r in regions["regions"]])
     stray = 0
     for k, reg in enumerate(regions["regions"]):
         for a, mask, _, _ in anchors_f:
@@ -1076,17 +1017,6 @@ def region_raster(g: Grid, land: np.ndarray, regions: dict, borders: dict, ancho
 
 
 # ---------------------------------------------------------------- build
-
-
-def snap(g: Grid, ok: np.ndarray, x: float, z: float) -> tuple[int, int]:
-    """Nearest cell where `ok` holds, so a harbour town or a gate in a gorge still has a start cell."""
-    r, c = g.index(x, z)
-    for k in range(0, 40):
-        win = ok[max(r - k, 0) : r + k + 1, max(c - k, 0) : c + k + 1]
-        if win.any():
-            rr, cc = np.argwhere(win)[0]
-            return max(r - k, 0) + int(rr), max(c - k, 0) + int(cc)
-    return r, c
 
 
 def resolve_point(ref: str, layers, g: Grid):
@@ -1425,6 +1355,11 @@ def run_checks(b) -> list[dict]:
               + (f"; loose: {', '.join(loose[:6])}" if loose else ""))
         check("borders.sides", not wrong, "each border has its two named regions on either side"
               + (f"; not so for {', '.join(wrong[:6])}" if wrong else ""))
+        synced = json.loads(json.dumps(layers["borders"]))
+        atlas_regions.sync(g, land, synced, [(r["id"], r["seed"]) for r in layers["regions"]["regions"]])
+        check("borders.synced", synced == layers["borders"],
+              "borders.json is in step with the seeds" if synced == layers["borders"]
+              else "borders.json is out of step with the seeds: run atlas.py sync")
         check("regions.anchor", rep["anchorStray"] == 0,
               f"anchored footprints lie inside their region's borders ({rep['anchorStray']} cells outside)")
 
@@ -2079,6 +2014,24 @@ def cmd_borders(args) -> int:
     return 0
 
 
+def cmd_sync(args) -> int:
+    """After editing borders.json or the seeds by hand: name each border's two regions, join borders
+    left end to end between the same two regions, and drop unused junctions. The Blender export
+    does the same itself."""
+    layers = load_layers()
+    if "borders" not in layers:
+        sys.exit("no borders.json yet; run atlas.py borders first")
+    g = Grid(layers["atlas"])
+    land = build_elevation(g, layers, layers["atlas"]["seed"])["land"]
+    doc = layers["borders"]
+    problems = atlas_regions.sync(g, land, doc, [(r["id"], r["seed"]) for r in layers["regions"]["regions"]])
+    changed = write_json(WORLD / "borders.json", doc)
+    print(("updated" if changed else "unchanged") + f": {len(doc['borders'])} borders, {len(doc['junctions'])} junctions")
+    for p in problems:
+        print("problem: " + p)
+    return 1 if problems else 0
+
+
 def cmd_format(args) -> int:
     """Rewrite every source layer in the canonical layout; values never change."""
     changed = [p.relative_to(WORLD).as_posix() for p in sorted(WORLD.rglob("*.json"))
@@ -2097,6 +2050,7 @@ def main() -> int:
         s.add_argument("--checks", action="store_true", help="run the consistency checks during build")
     sub.add_parser("seed-regions")
     sub.add_parser("format")
+    sub.add_parser("sync", help="bring borders.json in step with hand edits of borders or seeds")
     s = sub.add_parser("borders", help="trace borders.json from the region seeds (once)")
     s.add_argument("--replace", action="store_true", help="retrace an existing borders.json")
     args = p.parse_args()
@@ -2104,6 +2058,8 @@ def main() -> int:
         return cmd_seed_regions(args)
     if args.cmd == "borders":
         return cmd_borders(args)
+    if args.cmd == "sync":
+        return cmd_sync(args)
     if args.cmd == "format":
         return cmd_format(args)
     return cmd_build(args, check=args.cmd == "check")

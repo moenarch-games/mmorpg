@@ -5,6 +5,8 @@
 
 import importlib.util
 import json
+import math
+import subprocess
 import os
 import shutil
 import sys
@@ -49,10 +51,7 @@ try:
     before_terrain = data("terrain.json")
     before_water = data("water.json")
     objs = bpy.data.objects
-    objs["region r010"].location.x += 0.25
-    copy = objs["region r020"].copy()
-    copy.location.y -= 0.3
-    objs["region r020"].users_collection[0].objects.link(copy)
+    objs["region r010"].location.x += 0.05
     objs["river vess"].location.x += 0.1
     objs["crown centre"].location.x += 0.1
     adapter.cmd_export()
@@ -60,10 +59,7 @@ try:
     regions = data("regions.json")
     seeds = {r["id"]: r["seed"] for r in regions["regions"]}
     old = {r["id"]: r["seed"] for r in before_regions["regions"]}
-    expect(seeds["r010"] == [old["r010"][0] + 250, old["r010"][1]], "a moved seed moves by exactly its offset")
-    new = [rid for rid in seeds if rid not in old]
-    expect(len(new) == 1 and seeds[new[0]] == [old["r020"][0], old["r020"][1] + 300] and seeds["r020"] == old["r020"],
-           f"a copied seed becomes a new region ({new}) and leaves the original in place")
+    expect(seeds["r010"] == [old["r010"][0] + 50, old["r010"][1]], "a moved seed moves by exactly its offset")
     vess = next(r for r in data("water.json")["rivers"] if r["id"] == "vess")["points"]
     vess0 = next(r for r in before_water["rivers"] if r["id"] == "vess")["points"]
     expect(vess == [[x + 100, z] for x, z in vess0], "moving a whole river object moves every point")
@@ -122,5 +118,102 @@ try:
     except SystemExit:
         refused = True
     expect(refused, "an outdated file refuses to overwrite a border edited elsewhere since it was made")
+
+    def fresh():
+        shutil.rmtree(world)
+        shutil.copytree(SOURCES, world, ignore=shutil.ignore_patterns("authoring"))
+
+    def geography_ok():
+        """The generator's own checks on the edited copy."""
+        run = subprocess.run(["uv", "run", str(HERE / "atlas.py"), "build", "--checks", "--out", str(work / "out")],
+                             env={**os.environ, "ATLAS_WORLD": str(world)}, capture_output=True, text=True)
+        failed = [line for line in run.stdout.splitlines() if line.startswith("FAIL")]
+        return run.returncode == 0, failed or run.stderr[-400:]
+
+    def mid(points):
+        return points[len(points) // 2]
+
+    # redraw: Blender's Draw tool makes a Bézier curve with few control points and long handles
+    fresh()
+    adapter.cmd_import_regions(["r100", "r113"], work / "redraw.blend")
+    old = next(bd for bd in data("borders.json")["borders"] if bd["id"] == "b292")
+    curve = find("border", "b292")
+    curve.data.splines.remove(curve.data.splines[0])
+    spline = curve.data.splines.new("BEZIER")
+    spline.bezier_points.add(2)
+    (ax, az), (bx, bz) = old["points"][0], old["points"][-1]
+    for p, (x, z) in zip(spline.bezier_points, [(ax + 25, az - 15), ((ax + bx) / 2, (az + bz) / 2), (bx - 20, bz + 25)]):
+        p.co = adapter.to_blender(x, z, 300)
+        p.handle_left_type = p.handle_right_type = "FREE"
+        p.handle_left = adapter.to_blender(x - (bx - ax) / 4, z - (bz - az) / 4 + 260, 300)
+        p.handle_right = adapter.to_blender(x + (bx - ax) / 4, z + (bz - az) / 4 + 260, 300)
+    adapter.cmd_export()
+    new = next(bd for bd in data("borders.json")["borders"] if bd["id"] == "b292")["points"]
+
+    bow = max(abs((mx - ax) * (bz - az) - (mz - az) * (bx - ax)) for mx, mz in new) / math.dist((ax, az), (bx, bz))
+    expect(len(new) > 10 and bow > 60 and new[0] == old["points"][0] and new[-1] == old["points"][-1],
+           f"a redrawn Bézier border follows the curve ({len(new)} points, bowing {bow:.0f} m), its ends on the junctions")
+
+    # merge: delete the border between two regions and one of their seeds
+    fresh()
+    pair = ["r100", "r113"]
+    adapter.cmd_import_regions(pair, work / "merge.blend")
+    between = [bd for bd in data("borders.json")["borders"] if sorted(bd["regions"]) == pair]
+    for bd in between:
+        bpy.data.objects.remove(find("border", bd["id"]))
+    bpy.data.objects.remove(find("region", "r113"))
+    adapter.cmd_export()
+    merged = data("borders.json")
+    ok, failed = geography_ok()
+    expect("r113" not in {r["id"] for r in data("regions.json")["regions"]}
+           and not any("r113" in bd["regions"] for bd in merged["borders"])
+           and not any(bd["id"] in {b["id"] for b in merged["borders"]} for bd in between) and ok,
+           f"merging r100 and r113 deletes their border, renames r113's other borders, and the atlas checks pass {failed or ''}")
+    try:
+        adapter.cmd_export()
+        refused = False
+    except SystemExit:
+        refused = True
+    expect(refused, "after a merge the file is out of date and refuses further exports until it is made again")
+
+    # split: draw a new border across a region and copy its seed into the new piece
+    fresh()
+    adapter.cmd_import_regions(["r113"], work / "split.blend")
+    sb = {bd["id"]: bd for bd in data("borders.json")["borders"]}
+    data_before = data("regions.json")
+    a, b = mid(sb["b294"]["points"]), mid(sb["b325"]["points"])  # east and west sides of r113
+    seed = find("region", "r113")
+    copy = seed.copy()
+    seed.users_collection[0].objects.link(copy)
+    sx, sz = adapter.from_blender(seed.location)
+    nx, nz = -(b[1] - a[1]), b[0] - a[0]  # the new seed goes to the side of the line away from the old one
+    side = 1 if (sx - a[0]) * nx + (sz - a[1]) * nz < 0 else -1
+    n = math.hypot(nx, nz)
+    mx, mz = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+    copy.location = adapter.to_blender(mx + side * nx / n * 450, mz + side * nz / n * 450, 400)
+    before = snapshot()
+    try:
+        adapter.cmd_export()
+        refused = False
+    except SystemExit:
+        refused = True
+    expect(refused and snapshot() == before, "a copied seed with no border around it is refused, and nothing is written")
+    line = bpy.data.curves.new("new border", "CURVE")
+    spline = line.splines.new("POLY")
+    spline.points.add(4)
+    for n, p in enumerate(spline.points):  # roughly drawn: the ends land near, not on, the borders
+        t = n / 4
+        p.co = (*adapter.to_blender(a[0] + (b[0] - a[0]) * t + 30, a[1] + (b[1] - a[1]) * t - 20, 400), 1.0)
+    drawn = bpy.data.objects.new("new border", line)
+    next(c for c in bpy.data.collections if c.name.startswith("Borders")).objects.link(drawn)
+    adapter.cmd_export()
+    split = data("borders.json")
+    new_region = [r["id"] for r in data("regions.json")["regions"] if r["id"] not in {x["id"] for x in data_before["regions"]}]
+    newest = [bd for bd in split["borders"] if bd["id"] not in sb]
+    ok, failed = geography_ok()
+    expect(len(new_region) == 1 and any(sorted(bd["regions"]) == sorted(["r113", new_region[0]]) for bd in newest)
+           and len(newest) == 3 and ok,
+           f"drawing a border across r113 splits it into r113 and {new_region}, splitting the two borders it meets, "
+           f"and the atlas checks pass {failed or ''}")
 finally:
     shutil.rmtree(work)
