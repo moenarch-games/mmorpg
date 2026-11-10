@@ -12,8 +12,9 @@ inside its footprint. Progress, open gaps and how to resume are in
 ```sh
 uv run content/world/authoring/atlas.py check --previews docs/images/world   # build, render, verify (about 1 min)
 uv run content/world/authoring/atlas.py build                               # outputs only, in artifacts/world-atlas/
-uv run content/world/authoring/atlas.py seed-regions                        # append seeds for uncovered land
+uv run content/world/authoring/atlas.py seed-regions                        # append seeds for uncovered land (each then needs a border)
 uv run content/world/authoring/atlas.py format                              # canonical JSON layout
+blender --python content/world/authoring/atlas_blender.py -- region r100 r113   # Blender file for two neighbouring regions
 blender --python content/world/authoring/atlas_blender.py -- import         # editable Blender scene
 blender --background artifacts/world-atlas/continent.blend --python content/world/authoring/atlas_blender.py -- export
 ```
@@ -187,12 +188,52 @@ the eastern plains.
 Regions are the unit of play and claims. There are 151, with a median of 2.3 km² and a range of
 0.7–4.9 km²; 89 lie strictly within the 2–4 km² target, and most of the rest are smaller
 coastal, island or Crown regions.
-Each grows from an editable seed by terrain-weighted travel cost, so borders fall on ridges,
-large rivers and steep ground instead of straight lines. Neighbouring regions **overlap**: within
-200 m of a border each point carries a secondary region and blend weight, so presentation can
-compose continuous transitions. The 1,024 m streaming chunks are internal only. Region
-growth is a global authoring step, but composing the blend needs only a chunk's own labels
-plus a 200 m halo. A check recomputes the blend for all 576 chunks this way and confirms each
+**Regions are puzzle pieces cut by authored borders.** `borders.json` holds every border once,
+as a smooth line shared by exactly two regions. Each border ends at a junction where three or
+more regions meet, or runs on past the coast. A region is the piece of land its borders cut
+out, and its seed in `regions.json` gives the piece its id. So neighbouring regions fit
+together by construction, and changing a border changes both regions at once.
+
+The borders were traced once (`atlas.py borders`) from regions grown from their seeds by
+terrain-weighted travel cost, so they fall on ridges, large rivers and steep ground. The
+trace was then rounded with a majority filter, smoothed, and junctions closer than 150 m were
+merged. From now on the borders are the source. Growing from seeds is only the bootstrap,
+and retracing needs `--replace`.
+
+**One Blender file per region.** Each region gets its own working file:
+
+- its terrain piece (40 m cells that share corner heights with the next piece);
+- its borders and junctions, draped over the ground;
+- its seed;
+- the surrounding regions, greyed, for context.
+
+```sh
+blender --python content/world/authoring/atlas_blender.py -- region r100 r113   # two neighbours in one file
+blender --background --python content/world/authoring/atlas_blender.py -- all-regions   # a file per region, ~15 s
+blender --background artifacts/world-atlas/regions/r100+r113.blend --python content/world/authoring/atlas_blender.py -- export
+```
+
+To change a border:
+
+1. Open the two regions it separates.
+2. Reshape or redraw its curve, keeping one spline per border.
+3. Export. To move a meeting point, move its junction instead; every border ending there
+   follows, including borders of regions not in the file.
+
+Like every `.blend` in this repository, these files are generated, disposable and never
+committed: the JSON is the source. Export writes only what the file changed. It refuses when
+the same border was changed from another file since this one was made, so an old file never
+undoes a newer edit.
+
+The terrain pieces show the borders at the atlas's 40 m resolution. A zone opened later refines
+the same line at its own resolution.
+
+![Two neighbouring regions in one Blender file](images/world/region-pair.png)
+
+Neighbouring regions **overlap**: within 200 m of a border each point carries a secondary
+region and blend weight, so presentation can compose continuous transitions. The 1,024 m
+streaming chunks are internal only. Composing the blend needs only a chunk's own labels plus a
+200 m halo. A check recomputes the blend for all 576 chunks this way and confirms each
 matches the whole-world result exactly.
 Greyhaven's region contains the whole zone footprint (4.8 km²), leaving room for the threefold
 expansion already decided (Atlas 5.1.22).
@@ -231,7 +272,8 @@ and the generator never writes any of them.
 | 5 | `climate.json` | Wind, temperature, rain model, biome rules | Hand |
 | 6 | `overrides/biome.json` | Sparse biome overrides per atlas cell | Hand |
 | 7 | `regions.json` | Region seeds; ids are stable | Hand, Blender, or `seed-regions`, which only appends |
-| 8 | `polities.json` | Kingdoms, pinned claims, settlements, routes | Hand or Blender |
+| 8 | `borders.json` | Region borders shared by two regions each, and their junctions | Hand or Blender (per-region files) |
+| 9 | `polities.json` | Kingdoms, pinned claims, settlements, routes | Hand or Blender |
 
 The preservation rules:
 
@@ -242,7 +284,7 @@ The preservation rules:
   them. Cells outside the grid or listed twice stop the build.
 - **Region ids never change.** `seed-regions` and the Blender export only append new ids,
   continuing after the highest ever used (`lastGeneratedId`), so a deleted id is never reused.
-  The Blender export writes back only moved geometry and leaves an untouched file
+  The Blender export writes back only moved geometry, refuses to overwrite a newer edit, and leaves an untouched file
   byte-identical.
 - **The build checks its own side effects.** It verifies that `content/world/` and
   `content/greyhaven/` are unchanged by it.
@@ -265,7 +307,7 @@ anchor, and from then on the zone's content is the authority there.
 
 ## Consistency checks
 
-`atlas.py check` runs 55 checks and fails on any violation. These are tests of the result:
+`atlas.py check` runs 59 checks and fails on any violation. These are tests of the result:
 each one can fail when an edit breaks the geography.
 
 - **Coast and scale:** one continent plus the declared islands, with 250–420 km² of land.
@@ -277,7 +319,9 @@ each one can fail when an edit breaks the geography.
   stays under 35°, and the Vale, the farmland and the wetlands each drain to their declared
   outlet.
 - **Water:** the karst resurgence lies below its ponor, and Crownmere and the Saltmere form.
-- **Regions:** every land cell is covered, each region is contiguous, and there are 120–180
+- **Regions:** the borders cut the land into exactly one piece per seed, each border ends at its
+  junctions and has its two named regions on either side, the Greyhaven footprint lies inside
+  its region, every land cell is covered, each region is contiguous, and there are 120–180
   regions with at least 85 % within 0.6–1.4 times the 2–4 km² target.
 - **Composition:** the blend computed per chunk with its halo matches the whole-world blend.
 - **Kingdoms:** each has a connected mainland territory of at least eight regions that borders
@@ -291,7 +335,7 @@ to the sea or a sink, and every flow step descends: both are properties of the p
 algorithm, and the checks guard against regressions in that code.
 
 **Reproducibility.** Dependencies are locked in `atlas.py.lock`. The fingerprint
-`bb5251c72613c883` is reproduced build to build on Linux x86-64 (the previous layout's fingerprint also matched across numpy 2.3.5 and 2.5.4; this one was not re-tested across versions); other
+`b31fd4135c8cb59e` is reproduced build to build on Linux x86-64 (the previous layout's fingerprint also matched across numpy 2.3.5 and 2.5.4; this one was not re-tested across versions); other
 platforms have not been tried. Vectorised transcendental functions may differ in the last bit
 between CPUs, which can flip threshold decisions. Any game consumer must therefore read a
 committed, quantised export, never rerun this Python (plan step 2). Previews also depend on the
@@ -310,7 +354,11 @@ It confirms that:
 - a copied seed becomes a new region and leaves the original in place;
 - moving a whole river object moves every point;
 - moving the Crown keeps its gates' bearings;
-- a copied settlement is refused.
+- a copied settlement is refused;
+- an untouched region file leaves every source byte-identical;
+- reshaping a border in a two-region file changes that one border, once;
+- moving a junction moves the ends of every border meeting there, also outside the file;
+- an outdated file refuses to overwrite a border edited elsewhere since it was made.
 
 ## Questions for the owner
 

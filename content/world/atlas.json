@@ -24,6 +24,7 @@
     "climate.json",
     "overrides/biome.json",
     "regions.json",
+    "borders.json",
     "polities.json"
   ]
 }

@@ -81,5 +81,46 @@ try:
     except SystemExit:
         refused = True
     expect(refused, "a copied settlement is refused instead of silently overwriting the original")
+
+    # region files: two neighbours in one file, sharing the border between them
+    borders = data("borders.json")
+    shared = next(bd for bd in borders["borders"] if bd.get("from") and bd.get("to") and len(bd["points"]) > 4)
+    adapter.cmd_import_regions(shared["regions"], work / "pair.blend")
+    before = snapshot()
+    adapter.cmd_export()
+    expect(snapshot() == before, "an untouched region file leaves every source byte-identical")
+
+    def find(kind, oid):
+        return next(o for o in bpy.data.objects if o.get("atlas") == kind and o.get("id") == oid)
+
+    curve = find("border", shared["id"])
+    curve.data.splines[0].points[2].co.x += 0.05
+    adapter.cmd_export()
+    after = data("borders.json")
+    moved = {bd["id"]: bd for bd in after["borders"]}
+    expect(moved[shared["id"]]["points"][2] == [shared["points"][2][0] + 50, shared["points"][2][1]]
+           and all(moved[bd["id"]] == bd for bd in borders["borders"] if bd["id"] != shared["id"])
+           and [n for n in snapshot() if snapshot()[n] != before[n]] == ["borders.json"],
+           "reshaping a border changes that border only, once, for both regions")
+
+    j = shared["from"]
+    find("junction", j).location.y -= 0.03
+    adapter.cmd_export()
+    at = next(x["at"] for x in data("borders.json")["junctions"] if x["id"] == j)
+    ends = [bd["points"][0] if bd.get("from") == j else bd["points"][-1]
+            for bd in data("borders.json")["borders"] if j in (bd.get("from"), bd.get("to"))]
+    expect(len(ends) >= 3 and all(e == at for e in ends),
+           f"moving junction {j} moves the ends of all {len(ends)} borders meeting there, also outside the file")
+
+    newer = data("borders.json")  # someone edits the same border from another file
+    next(bd for bd in newer["borders"] if bd["id"] == shared["id"])["points"][3][0] += 10
+    adapter.write_json(world / "borders.json", newer)
+    curve.data.splines[0].points[3].co.x += 0.05
+    try:
+        adapter.cmd_export()
+        refused = False
+    except SystemExit:
+        refused = True
+    expect(refused, "an outdated file refuses to overwrite a border edited elsewhere since it was made")
 finally:
     shutil.rmtree(work)

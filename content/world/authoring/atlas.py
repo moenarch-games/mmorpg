@@ -10,9 +10,11 @@ geographic consistency.
     uv run content/world/authoring/atlas.py check
     uv run content/world/authoring/atlas.py seed-regions
     uv run content/world/authoring/atlas.py format
+    uv run content/world/authoring/atlas.py borders [--replace]
 
 Outputs go to artifacts/world-atlas/ (ignored). Only seed-regions (which only appends region
-seeds) and format (which only changes layout) write source files. No game crate reads any of
+seeds), borders (which traces the region borders once) and format (which only changes layout)
+write source files. No game crate reads any of
 this yet (docs/WORLD_ATLAS.md).
 """
 
@@ -45,6 +47,8 @@ def load_layers() -> dict:
     manifest = json.loads((WORLD / "atlas.json").read_text())
     layers = {"atlas": manifest}
     for name in manifest["layers"]:
+        if name == "borders.json" and not (WORLD / name).exists():
+            continue  # not traced yet: regions grow from their seeds (`atlas.py borders` traces them)
         layers[name.removesuffix(".json")] = json.loads((WORLD / name).read_text())
     for key in ("overrides/height", "overrides/biome"):
         if layers[key]["cell"] != manifest["cell"]:
@@ -829,6 +833,248 @@ def region_adjacency(label, n, elev, big_river, land):
     return shared
 
 
+# ---------------------------------------------------------------- region borders
+
+
+def simplify(pts, tol):
+    """Douglas–Peucker; the ends stay."""
+    if len(pts) < 3:
+        return pts
+    keep = [False] * len(pts)
+    keep[0] = keep[-1] = True
+    stack = [(0, len(pts) - 1)]
+    while stack:
+        i, j = stack.pop()
+        (ax, az), (bx, bz) = pts[i], pts[j]
+        vx, vz = bx - ax, bz - az
+        n = math.hypot(vx, vz)
+        best, k = -1.0, -1
+        for m in range(i + 1, j):
+            px, pz = pts[m][0] - ax, pts[m][1] - az
+            d = abs(px * vz - pz * vx) / n if n else math.hypot(px, pz)
+            if d > best:
+                best, k = d, m
+        if best > tol:
+            keep[k] = True
+            stack += [(i, k), (k, j)]
+    return [p for p, f in zip(pts, keep) if f]
+
+
+def chaikin(pts, rounds, closed=False):
+    """Corner cutting; an open line keeps its ends, so borders still meet at their junctions."""
+    for _ in range(rounds):
+        ring = pts + [pts[0]] if closed else pts
+        cuts = []
+        for (ax, az), (bx, bz) in zip(ring, ring[1:]):
+            cuts += [(0.75 * ax + 0.25 * bx, 0.75 * az + 0.25 * bz), (0.25 * ax + 0.75 * bx, 0.25 * az + 0.75 * bz)]
+        pts = cuts if closed else [pts[0]] + cuts + [pts[-1]]
+    return pts
+
+
+def trace_borders(g: Grid, label: np.ndarray, ids: list, land: np.ndarray, exact: set) -> dict:
+    """Vector borders from a region raster: the cell edges between two regions, chained between the
+    points where three regions meet, then simplified and smoothed. A border that reaches the coast
+    runs on a little way into the sea, so the regions on either side stay apart. Borders of the
+    regions in `exact` (anchored ones) keep the footprint's cell edges instead of being smoothed."""
+    nbr = {}
+
+    def add(v, w, p, q):
+        pair = (min(p, q), max(p, q))
+        nbr.setdefault(v, []).append((w, pair))
+        nbr.setdefault(w, []).append((v, pair))
+
+    a, b = label[:, :-1], label[:, 1:]
+    for r, c in zip(*np.nonzero((a >= 0) & (b >= 0) & (a != b))):
+        add((r, c + 1), (r + 1, c + 1), int(a[r, c]), int(b[r, c]))
+    a, b = label[:-1, :], label[1:, :]
+    for r, c in zip(*np.nonzero((a >= 0) & (b >= 0) & (a != b))):
+        add((r + 1, c), (r + 1, c + 1), int(a[r, c]), int(b[r, c]))
+
+    def is_node(v):
+        e = nbr[v]
+        return len(e) != 2 or e[0][1] != e[1][1]
+
+    seen, chains = set(), []
+
+    def walk(v, w, pair):
+        path = [v]
+        while True:
+            seen.add((min(v, w), max(v, w)))
+            path.append(w)
+            if is_node(w) or w == path[0]:
+                return path
+            v, w = w, next(x for x, p in nbr[w] if (min(w, x), max(w, x)) not in seen)
+
+    for v in sorted(nbr):
+        if is_node(v):
+            for w, pair in sorted(nbr[v]):
+                if (min(v, w), max(v, w)) not in seen:
+                    chains.append((pair, walk(v, w, pair)))
+    for v in sorted(nbr):  # enclaves: closed rings with no junction
+        for w, pair in sorted(nbr[v]):
+            if (min(v, w), max(v, w)) not in seen:
+                chains.append((pair, walk(v, w, pair)))
+
+    def xz(v):
+        return (g.min_x + v[1] * g.cell, g.min_z + v[0] * g.cell)
+
+    junction_ids = {}
+    for v in sorted(nbr):
+        if is_node(v) and len(nbr[v]) >= 2:
+            junction_ids[v] = f"j{len(junction_ids) + 1:03d}"
+    out = []
+    for n, (pair, path) in enumerate(sorted(chains, key=lambda t: (t[0], t[1][0]))):
+        closed = path[0] == path[-1] and not is_node(path[0])
+        pts = [xz(v) for v in path]
+        if not ({ids[pair[0]], ids[pair[1]]} & exact):
+            pts = simplify(pts, 0.7 * g.cell)
+            pts = chaikin(pts[:-1] if closed else pts, 3, closed)
+            pts = simplify(pts + ([pts[0]] if closed else []), 4.0)
+        else:
+            pts = simplify(pts, 1.0)
+        ends = []
+        for end, inner in ((0, 1), (-1, -2)):
+            v = path[end]
+            if not closed and len(nbr[v]) == 1:
+                # the coast: run on along the last direction until clear of land
+                (ex, ez), (ix, iz) = pts[end], pts[inner]
+                d = math.hypot(ex - ix, ez - iz) or 1.0
+                ux, uz = (ex - ix) / d, (ez - iz) / d
+                k, wet = 0, 0
+                while wet < 3 and k < 20:
+                    k += 1
+                    wet = wet + 1 if not land[g.index(ex + ux * g.cell * k, ez + uz * g.cell * k)] else 0
+                tip = (ex + ux * g.cell * k, ez + uz * g.cell * k)
+                pts = pts + [tip] if end == -1 else [tip] + pts
+            ends.append(junction_ids.get(v) if not closed else None)
+        entry = {"id": f"b{n + 1:03d}", "regions": [ids[pair[0]], ids[pair[1]]]}
+        if ends[0]:
+            entry["from"] = ends[0]
+        if ends[1]:
+            entry["to"] = ends[1]
+        entry["points"] = [[int(round(x)), int(round(z))] for x, z in pts]
+        out.append(entry)
+    junctions = [{"id": j, "at": [int(round(xz(v)[0])), int(round(xz(v)[1]))]} for v, j in junction_ids.items()]
+    return {"junctions": junctions, "borders": out}
+
+
+def rounded_regions(label: np.ndarray, land: np.ndarray, keep: np.ndarray, rounds: int = 4) -> np.ndarray:
+    """A majority filter: each land cell takes the region most of its 3 × 3 neighbourhood belongs to,
+    which removes the grid's stair steps, one-cell spurs and pockets before borders are traced.
+    Cells in `keep` (anchors, seeds) never change; a region cut in two keeps its larger piece."""
+    nz, nx = label.shape
+    for _ in range(rounds):
+        p = padded(label, -1)
+        stack = np.stack([p[1 + dr : 1 + dr + nz, 1 + dc : 1 + dc + nx] for dr, dc in NB8 + [(0, 0)]])
+        votes = (stack[:, None] == stack[None, :]).sum(1) + (stack == label) * 0.5  # ties keep the cell's region
+        votes = np.where(stack >= 0, votes, -1)
+        best = np.take_along_axis(stack, votes.argmax(0)[None], 0)[0]
+        label = np.where(land & ~keep & (best >= 0), best, label)
+    for k in np.unique(label[label >= 0]).tolist():
+        rows, cols = np.nonzero(label == k)
+        box = (slice(rows.min(), rows.max() + 1), slice(cols.min(), cols.max() + 1))
+        pieces, sizes = components(label[box] == k)
+        if len(sizes) > 1:
+            label[box][(pieces >= 0) & (pieces != int(np.argmax(sizes)))] = -1
+    for _ in range(50):
+        missing = land & (label < 0)
+        if not missing.any():
+            break
+        p = padded(label, -1)
+        for dr, dc in NB8:
+            label = np.where(missing & (label < 0) & (p[1 + dr : 1 + dr + nz, 1 + dc : 1 + dc + nx] >= 0),
+                             p[1 + dr : 1 + dr + nz, 1 + dc : 1 + dc + nx], label)
+    return label
+
+
+def merge_close_junctions(traced: dict, min_length: float) -> dict:
+    """A border shorter than `min_length` between two junctions is a grid artefact: its junctions
+    merge into one at its middle, where four regions then meet."""
+    junctions = {j["id"]: list(j["at"]) for j in traced["junctions"]}
+    borders = traced["borders"]
+    while True:
+        short = next((bd for bd in borders if bd.get("from") and bd.get("to") and bd["from"] != bd["to"]
+                      and sum(math.dist(a, b) for a, b in zip(bd["points"], bd["points"][1:])) < min_length), None)
+        if short is None:
+            break
+        keep, gone = short["from"], short["to"]
+        mid = [int(round((junctions[keep][0] + junctions[gone][0]) / 2)), int(round((junctions[keep][1] + junctions[gone][1]) / 2))]
+        junctions[keep] = mid
+        del junctions[gone]
+        borders = [bd for bd in borders if bd is not short]
+        for bd in borders:
+            for end, i in (("from", 0), ("to", -1)):
+                if bd.get(end) == gone:
+                    bd[end] = keep
+                if bd.get(end) == keep:
+                    bd["points"][i] = mid
+    # a border that now starts and ends at one junction around nothing is a pocket: drop it
+    borders = [bd for bd in borders if not (bd.get("from") and bd.get("from") == bd.get("to")
+                                            and sum(math.dist(a, b) for a, b in zip(bd["points"], bd["points"][1:])) < 2 * min_length)]
+    used = {bd.get(e) for bd in borders for e in ("from", "to")}
+    names = {old: f"j{n + 1:03d}" for n, old in enumerate(j for j in junctions if j in used)}
+    for n, bd in enumerate(borders):
+        bd["id"] = f"b{n + 1:03d}"
+        for e in ("from", "to"):
+            if bd.get(e):
+                bd[e] = names[bd[e]]
+    return {"junctions": [{"id": names[j], "at": at} for j, at in junctions.items() if j in used], "borders": borders}
+
+
+def region_raster(g: Grid, land: np.ndarray, regions: dict, borders: dict, anchors_f):
+    """Regions are the pieces the borders cut the land into: each piece holds exactly one seed.
+    Border cells join a neighbouring piece, and an anchor's footprint belongs to its region."""
+    wall = np.zeros(land.shape, bool)
+    for b in borders["borders"]:
+        for (ax, az), (bx, bz) in zip(b["points"], b["points"][1:]):
+            t = np.linspace(0.0, 1.0, max(2, int(math.hypot(bx - ax, bz - az) / (g.cell / 3)) + 1))
+            cols = np.floor((ax + (bx - ax) * t - g.min_x) / g.cell).astype(np.int64)
+            rows = np.floor((az + (bz - az) * t - g.min_z) / g.cell).astype(np.int64)
+            ok = (rows >= 0) & (rows < g.nz) & (cols >= 0) & (cols < g.nx)
+            wall[rows[ok], cols[ok]] = True  # an 8-connected wall stops a 4-connected fill
+    open_ = land & ~wall
+    piece, sizes = components(open_)
+    ids = [r["id"] for r in regions["regions"]]
+    owners = {}
+    for k, reg in enumerate(regions["regions"]):
+        r, c = snap(g, open_, *reg["seed"])
+        owners.setdefault(int(piece[r, c]), []).append(k)
+    lut = np.full(len(sizes) + 1, -1, np.int64)
+    for f, ks in owners.items():
+        if f >= 0:
+            lut[f] = ks[0]
+    label = lut[piece]
+    problems = []
+    for f, ks in sorted(owners.items()):
+        if f < 0:
+            problems.append(f"seed of {', '.join(ids[k] for k in ks)} is not on land")
+        elif len(ks) > 1:
+            problems.append(f"{' and '.join(ids[k] for k in ks)} share one piece of land: draw a border between them")
+    slivers = 0
+    for f, n in enumerate(sizes):
+        if lut[f] < 0:
+            if n > 12:
+                rr, cc = np.argwhere(piece == f)[0]
+                problems.append(f"{n * g.cell**2 / 1e6:.2f} km² at {g.centre(rr, cc)} has no seed")
+            else:
+                slivers += 1
+    for _ in range(50):  # border cells and slivers join a neighbouring piece
+        missing = land & (label < 0)
+        if not missing.any():
+            break
+        p = padded(label, -1)
+        for dr, dc in NB8:
+            nb = p[1 + dr : 1 + dr + g.nz, 1 + dc : 1 + dc + g.nx]
+            label = np.where(missing & (label < 0) & (nb >= 0), nb, label)
+    stray = 0
+    for k, reg in enumerate(regions["regions"]):
+        for a, mask, _, _ in anchors_f:
+            if reg.get("anchor") == a["id"]:
+                stray += int((mask & open_ & (label != k)).sum())
+                label[mask] = k
+    return label, ids, {"problems": problems, "slivers": slivers, "anchorStray": stray, "wall": wall}
+
+
 # ---------------------------------------------------------------- build
 
 
@@ -892,13 +1138,16 @@ def build(layers: dict) -> dict:
     river = (hyd["acc"] > 2.5) & land
     big_river = (hyd["acc"] > 12.0) & land & ~anchor_mask
     regions = layers["regions"]
-    label, ids = grow_regions(g, elev, land, hyd, anchors_f, regions, big_river)
+    if "borders" in layers:
+        label, ids, raster = region_raster(g, land, regions, layers["borders"], anchors_f)
+    else:  # before borders exist, regions grow from their seeds (the bootstrap for `atlas.py borders`)
+        (label, ids), raster = grow_regions(g, elev, land, hyd, anchors_f, regions, big_river), None
     second, weight = border_blend(label, regions["blendCells"])
     adj = region_adjacency(label, len(ids), elev, big_river, land)
     out = {"grid": g, "elev": elev, "land": land, "landField": e["landField"], "profiles": profiles,
            "anchors": anchors_f, "anchor_mask": anchor_mask, "precip": precip, "temp": temp, "hyd": hyd,
            "slope": slope, "biome": biome, "river": river, "big_river": big_river, "label": label,
-           "ids": ids, "second": second, "weight": weight, "adj": adj, "layers": layers}
+           "ids": ids, "second": second, "weight": weight, "adj": adj, "layers": layers, "raster": raster}
     out["kingdom"], out["contested"], out["region_stats"] = claim_regions(out)
     out["roads"] = route_roads(out)
     return out
@@ -1146,6 +1395,38 @@ def run_checks(b) -> list[dict]:
             if len([x for x in s if x >= 3]) > 1:
                 split += 1
     check("regions.contiguous", split == 0, f"{split} regions are split into separate pieces")
+    if b["raster"] is not None:
+        rep = b["raster"]
+        check("regions.borders", not rep["problems"],
+              f"{len(layers['borders']['borders'])} borders cut the land into one piece per seed"
+              + (f"; {rep['slivers']} slivers joined a neighbour" if rep["slivers"] else "")
+              + ("; " + "; ".join(rep["problems"][:4]) if rep["problems"] else ""))
+        junctions = {j["id"]: j["at"] for j in layers["borders"]["junctions"]}
+        ids = {rid: k for k, rid in enumerate(b["ids"])}
+        loose, wrong = [], []
+        for bd in layers["borders"]["borders"]:
+            pts = bd["points"]
+            if any(bd.get(end) and pts[i] != junctions.get(bd[end]) for end, i in (("from", 0), ("to", -1))):
+                loose.append(bd["id"])
+            # the land on either side belongs to the two regions the border names
+            sides = set()
+            for (ax, az), (bx, bz) in zip(pts, pts[1:]):
+                n = math.hypot(bx - ax, bz - az) or 1.0
+                mx, mz = (ax + bx) / 2, (az + bz) / 2
+                if min(math.hypot(mx - pts[0][0], mz - pts[0][1]), math.hypot(mx - pts[-1][0], mz - pts[-1][1])) < 6 * g.cell:
+                    continue  # near a junction the third region is close by
+                for s in (-2.5, 2.5):
+                    r, c = g.index((ax + bx) / 2 - (bz - az) / n * s * g.cell, (az + bz) / 2 + (bx - ax) / n * s * g.cell)
+                    if land[r, c] and not rep["wall"][r, c]:
+                        sides.add(int(label[r, c]))
+            if not sides <= {ids.get(bd["regions"][0]), ids.get(bd["regions"][1])}:
+                wrong.append(bd["id"])
+        check("borders.junctions", not loose, "every border ends exactly at its junctions"
+              + (f"; loose: {', '.join(loose[:6])}" if loose else ""))
+        check("borders.sides", not wrong, "each border has its two named regions on either side"
+              + (f"; not so for {', '.join(wrong[:6])}" if wrong else ""))
+        check("regions.anchor", rep["anchorStray"] == 0,
+              f"anchored footprints lie inside their region's borders ({rep['anchorStray']} cells outside)")
 
     # chunks stay internal: a streaming chunk computes its overlapping-region blend from its own
     # labels plus a halo as wide as the blend, and gets exactly the whole-world result
@@ -1315,6 +1596,22 @@ class Canvas:
             x, y = self.rc(r, c)
             self.d.ellipse([x - width, y - width, x + width, y + width], fill=rgba)
 
+    def region_borders(self, label, rgba, width=1):
+        """The authored vector borders when there are any, else the raster's cell edges."""
+        borders = self.b["layers"].get("borders")
+        if borders is None:
+            return self.borders(label, rgba, width)
+        land = self.b["land"]
+        for bd in borders["borders"]:
+            run = []  # the part past the coast is not drawn
+            for a, z in zip(bd["points"], bd["points"][1:] + [None]):
+                wet = z is None or not land[self.g.index((a[0] + z[0]) / 2, (a[1] + z[1]) / 2)]
+                run.append(self.px(*a))
+                if wet:
+                    if len(run) > 1:
+                        self.d.line(run, fill=rgba, width=max(1, round(2 * width)), joint="curve")
+                    run = []
+
     def anchor_outline(self, colour=(210, 60, 45, 255)):
         for a, *_ in self.b["anchors"]:
             for p in a["parts"]:
@@ -1445,13 +1742,13 @@ def render(b, out: Path, previews: Path | None):
     regions_rgb = kmix * (0.75 + 0.35 * mix[..., None])
     c = Canvas(b, relief_base(b, regions_rgb))
     c.rivers(threshold=6)
-    c.borders(b["label"], (40, 30, 30, 120), width=0.6)
+    c.region_borders(b["label"], (40, 30, 30, 120), width=0.6)
     for k, s in enumerate(b["region_stats"]):
         if s:
             name = layers["regions"]["regions"][k].get("name")
             c.label(*s["centroid"], name or b["ids"][k], size=11 if name else 9, fill=(30, 26, 22), bold=bool(name))
     c.anchor_outline()
-    c.title("Natural regions", f"{sum(1 for s in b['region_stats'] if s)} regions grown from seeds over the terrain; borders blend over "
+    c.title("Natural regions", f"{sum(1 for s in b['region_stats'] if s)} regions cut by authored borders; borders blend over "
             f"{layers['regions']['blendCells'] * g.cell} m; tinted by claim")
     c.scalebar()
     files["regions"] = c
@@ -1467,7 +1764,7 @@ def render(b, out: Path, previews: Path | None):
     while yk < c.img.height:
         c.d.line([(0, yk), (c.img.width, yk)], fill=(20, 20, 20, 70), width=1)
         yk += chunk_px
-    c.borders(b["label"], (120, 20, 20, 160), width=0.6)
+    c.region_borders(b["label"], (120, 20, 20, 160), width=0.6)
     c.title("Region composition vs streaming chunks",
             "regions overlap and blend across natural borders (red); the 1024 m chunk grid (grey) is internal and evaluates identically")
     files["composition"] = c
@@ -1510,7 +1807,7 @@ def world_map(b):
     owner_idx = {o: i for i, o in enumerate(sorted({o for o in b["kingdom"] if o}))}
     kid = np.array([owner_idx.get(o, -1) for o in b["kingdom"]] + [-1])
     kingdom_label = kid[np.where(b["label"] >= 0, b["label"], len(b["kingdom"]))]
-    c.borders(b["label"], (90, 70, 60, 55), width=0.5)
+    c.region_borders(b["label"], (90, 70, 60, 55), width=0.5)
     c.borders(kingdom_label, (70, 30, 30, 230), width=1.6)
     # contested regions hatched
     hatch = np.zeros(b["label"].shape, bool)
@@ -1714,8 +2011,10 @@ def cmd_build(args, check=False) -> int:
     rendered = render(b, out, Path(args.previews) if args.previews else None)
     # reference terrain for the Blender adapter (atlas_blender.py); never read back
     np.save(out / "elevation.npy", b["elev"].astype(np.float32))
+    np.save(out / "regions.npy", b["label"].astype(np.int16))
     (out / "elevation.json").write_text(json.dumps({"minX": b["grid"].min_x, "minZ": b["grid"].min_z,
-                                                    "cell": b["grid"].cell, "rows": b["grid"].nz, "columns": b["grid"].nx}) + "\n")
+                                                    "cell": b["grid"].cell, "rows": b["grid"].nz, "columns": b["grid"].nx,
+                                                    "regions": b["ids"]}) + "\n")
     report = write_report(b, out, checks, fp)
     for c in checks:
         print(("ok   " if c["ok"] else "FAIL ") + f"{c['check']}: {c['detail']}")
@@ -1755,6 +2054,31 @@ def cmd_seed_regions(args) -> int:
     return 0
 
 
+def cmd_borders(args) -> int:
+    """Trace borders.json once from regions grown from their seeds; from then on the borders are
+    the source and are edited by hand or in Blender."""
+    path = WORLD / "borders.json"
+    if path.exists() and not args.replace:
+        sys.exit("borders.json exists and is the source of the region shapes; pass --replace to retrace it from the seeds")
+    layers = load_layers()
+    layers.pop("borders", None)
+    b = build(layers)
+    exact = {r["id"] for r in layers["regions"]["regions"] if r.get("anchor")}
+    keep = b["anchor_mask"].copy()
+    for reg in layers["regions"]["regions"]:
+        keep[b["grid"].index(*reg["seed"])] = True
+    label = rounded_regions(b["label"], b["land"], keep)
+    traced = merge_close_junctions(trace_borders(b["grid"], label, b["ids"], b["land"], exact), 150.0)
+    data = {"version": 1,
+            "note": "Region borders. Each border is shared by exactly two regions and drawn once; regions are the pieces "
+                    "the borders cut the land into, one seed per piece. A border ends at a junction where three regions "
+                    "meet, or runs on past the coast. Move a junction to move every border ending there.",
+            "lastBorderId": len(traced["borders"]), "lastJunctionId": len(traced["junctions"]), **traced}
+    write_json(path, data)
+    print(f"traced {len(traced['borders'])} borders and {len(traced['junctions'])} junctions into {path}")
+    return 0
+
+
 def cmd_format(args) -> int:
     """Rewrite every source layer in the canonical layout; values never change."""
     changed = [p.relative_to(WORLD).as_posix() for p in sorted(WORLD.rglob("*.json"))
@@ -1773,9 +2097,13 @@ def main() -> int:
         s.add_argument("--checks", action="store_true", help="run the consistency checks during build")
     sub.add_parser("seed-regions")
     sub.add_parser("format")
+    s = sub.add_parser("borders", help="trace borders.json from the region seeds (once)")
+    s.add_argument("--replace", action="store_true", help="retrace an existing borders.json")
     args = p.parse_args()
     if args.cmd == "seed-regions":
         return cmd_seed_regions(args)
+    if args.cmd == "borders":
+        return cmd_borders(args)
     if args.cmd == "format":
         return cmd_format(args)
     return cmd_build(args, check=args.cmd == "check")

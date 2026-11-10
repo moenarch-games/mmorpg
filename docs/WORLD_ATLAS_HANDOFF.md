@@ -17,8 +17,8 @@ Done:
   meanders, priority-flood hydrology with sinks and a karst link, westerly and southern
   rain with rain shadow, biomes, 151 terrain-grown regions with overlapping borders, kingdom
   claims, routed roads, previews, the report and the adjacency table, and the checks
-  (55 passing).
-- **Blender round trip** `content/world/authoring/atlas_blender.py`, with the headless test `test_atlas_blender.py`. Verified on
+  (59 passing).
+- **Blender round trip** `content/world/authoring/atlas_blender.py` (whole continent, or one file per region), with the headless test `test_atlas_blender.py`. Verified on
   Blender 5.2.2: an untouched round trip changes nothing, and moving one seed changes one line.
 - **Previews** in `docs/images/world/` and the design document.
 
@@ -95,3 +95,21 @@ regenerate region seeds wholesale once someone has edited them: `seed-regions` o
    - Regions: the five seeds that fell into the sea were deleted, and island seeds were added.
      Stray fragments of a region now join their neighbours.
    - The river drainage check counts only samples on land.
+8. Owner round 3: regions as puzzle pieces, each with its own Blender file, and a border is
+   changed by opening the two regions that share it.
+   - `borders.json` (layer 8) is now the source of region shapes. It holds 383 borders, each
+     shared by exactly two regions, and 240 junctions. Regions are the pieces the borders cut
+     the land into, with one seed per piece.
+   - The borders were traced once from the grown regions (`atlas.py borders`), rounded with a
+     majority filter, and smoothed; junctions closer than 150 m were merged. Retracing needs
+     `--replace`.
+   - Four new checks: one piece per seed, borders end at their junctions, each border has its
+     two named regions on either side, and the anchor lies inside its region (59 in all).
+   - Blender: `region <ids…>` builds a file for one region or several neighbours, and
+     `all-regions` builds a file for every region (about 15 s, 46 MB under artifacts/, never
+     committed). Export writes only what the file changed, keeps borders ending at their
+     junctions, and refuses to overwrite a border changed elsewhere since the file was made.
+     The headless test grew to 11 cases.
+   - Not done: splitting or merging regions in Blender. A copied seed still adds a region,
+     but the check then fails until a border separates it. Region terrain pieces follow the
+     border at the atlas's 40 m resolution only.
