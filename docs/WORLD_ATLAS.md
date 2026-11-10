@@ -53,7 +53,7 @@ climate model uses an exaggerated 10 °C/km lapse rate to put snow on it.
 
 | Arrangement | Coherence | Play | Fit with Greyhaven | Verdict |
 | --- | --- | --- | --- | --- |
-| **A. Ring massif at the centre**: the Crown is an eroded domed caldera, its crest broken by five gorges ("gates"); kingdoms radiate around it, rivers drain radially | Domes with radial drainage and breached calderas are well attested; one wind gives a wet west and a rain-shadowed east | Every kingdom borders the contested heartland through its own gate; difficulty rises toward the centre; trade circles the ring | Greyhaven sits on the southern apron below the Greyfang Gate: highlands rise north into the Crown, farmland falls south | **Selected** |
+| **A. Ring massif at the centre**: the Crown is an eroded structural dome, a resistant rock ring around a worn-out core, its crest broken by five gaps ("gates"); kingdoms radiate around it, rivers drain radially | Eroded domes with hogback rings, radial drainage and limestone aprons are well attested (the Black Hills are the model); one wind gives a wet west and a rain-shadowed east | Every kingdom borders the contested heartland through its own gate; difficulty rises toward the centre; trade circles the ring | Greyhaven sits on the southern apron below the Greyfang Gate: highlands rise north into the Crown, farmland falls south | **Selected** |
 | B. Spine cordillera dividing west from east | Strong orographic contrast | Two coasts, few chokepoint passes; a long linear world | Fits only if Greyhaven is a pass basin in the spine | Kept as alternative |
 | C. Kingdoms around an inland sea, the Crown a broken northern arc | Plausible | Sea travel dominates; land routes are thin | Greyhaven would be a northern backwater | Kept as alternative |
 | D. Crown peninsula: mountains in one corner, lowland kingdoms elsewhere | Plausible | The Crown is a cul-de-sac; kingdoms compete mainly with each other | Greyhaven at the edge of play | Rejected |
@@ -65,35 +65,54 @@ rebuilt from the same layers by moving the `crown` and `ridges` controls.
 
 ## The selected geography
 
-**The Shattered Crown.** A domed uplift about 14 km across with a 2.7 km-radius crest ring
-(about 1,150 m) around a crater basin, Crownhollow, holding Crownmere. Five gorges break
-the ring, one facing each kingdom: the Greyfang Gate (south, toward Greyhaven), the Sundering
-(north, where Crownmere drains out as the Isen), Vessgate (west), Sarr Gap (east) and Merrow
-Notch (south-east). The interior is unclaimed, high-level ground with the ruins of Shardfall.
+**The Shattered Crown.** An eroded structural dome about 14 km across. A ring of resistant,
+upturned rock forms the crest (radius 2.7 km, about 1,150 m) around Crownhollow, a basin
+worn into the softer core that holds Crownmere. Outside the ring, the dome's flanks are a
+limestone apron, which is why karst appears at Greyhaven. Five gaps break the ring, one facing
+each kingdom:
 
-**Greyhaven.** The Vale is read as a **karst polje**: a closed, flat-floored basin in a
-limestone apron with steep walls, drained underground. The atlas sends the Outpost's brook into
+- The Greyfang Gate faces south, toward Greyhaven.
+- The Sundering faces north. It is the only water gap: Crownmere drains out through it as the Isen.
+- Vessgate faces west, Sarr Gap east and Merrow Notch south-east.
+
+The four gates other than the Sundering are wind gaps 150–250 m above the crater floor:
+former spillways that now carry roads rather than rivers. The interior is unclaimed,
+high-level ground with the ruins of Shardfall.
+
+**Greyhaven.** The Vale is read as a **small karst polje** (uvala-sized): a closed,
+flat-floored basin in the limestone apron with steep walls, drained underground. The atlas sends the Outpost's brook into
 a ponor (Greyhaven Sink) just south of the palisade, and it resurfaces 1.5 km south at the
 Greywell, the source of the Greywater. This explains the basin's lack of a surface outlet without
-touching zone content. The three established passes join the atlas as follows:
+touching zone content. Atlas 5.1.i513 says the zone itself has no hydrology; the ponor exists
+only in the atlas (Question 5). The anchor models the zone's ridges between the Vale and its
+outer regions, and each part declares where it drains: the Vale to the ponor, the Farmland and
+Hamlets to the Greywater, and the Marsh-Lake Wetlands to the Fenwater. The checks follow the
+derived flow and confirm each outlet. Roads leave the footprint only at its declared exits:
 
-- The Highland Pass leads north up the apron to the Greyfang Gate.
-- The Farmland Road continues south to Millford and the King's Road.
-- The Marsh Trail leads east to the Fenwater, which drains the Marsh-Lake Wetlands toward the Merrow delta.
+- The Highland Trail's north end leads up the apron to the Greyfang Gate.
+- The Farmland Road's south end continues to Millford and the King's Road.
+- The Marsh Trail's east end follows the Fenwater toward the Merrow delta.
 
 ![Greyhaven in its surroundings](images/world/greyhaven-context.png)
 
 **Water.** Six authored rivers have strictly falling beds and meander deterministically: the
 Greywater, Fenwater, Brannock (a Fenwater tributary from Merrow Notch), Vess, Isen and Sarr.
-Everything else is derived: flow routing on a depression-filled surface, natural lakes where
-depressions fill, and two declared sinks. One is the Saltmere, an endorheic salt pan in
-Sarrath's rain shadow behind the coastal range of the Teeth; the other is the Greyhaven ponor.
+Each bed starts at the ground at its head and deepens downstream, so headwaters do not cut
+canyons and the gates keep their authored floors. Everything else is derived: flow routing
+on a depression-filled surface, natural lakes where depressions fill, and two declared sinks.
+One is the Greyhaven ponor. The other is the Saltmere, a salt pan with no outlet to the sea:
+the Crown's rain shadow keeps the east dry, and the coastal range of the Teeth blocks the
+basin's way to the sea. Two derived lakes deserve review before they are named: a deep tarn
+just inside the Greyfang Gate on the road to Shardfall, and a 2.5 km² lake in western
+Carrowmark.
 
 ![Hydrology](images/world/hydrology.png)
 
 **Climate and vegetation.** Westerlies with a weaker southern sea wind. Rain falls on the
-windward west (temperate rainforest) and on the Crown's west flank; the east lies in a rain
-shadow (steppe, dry scrub and the salt pan). The cold north is conifer forest, the Crown alpine
+windward west (temperate rainforest) and on the Crown's west flank. The east lies in the Crown's
+rain shadow (steppe, dry scrub and the salt pan). The shadow scales with how far the air has
+sunk below the highest ground upwind, so low ridges cast only short, faint shadows. Like the
+lapse rate, the north–south temperature spread (5 to 17.5 °C over 24 km) is stylised. The cold north is conifer forest, the Crown alpine
 and snow, and the centre and south temperate woodland and meadow. Greyhaven sits among montane
 conifer and mixed woods, consistent with Wolfrun Woods, Hollowpine Reach and the highland pines.
 
@@ -105,11 +124,13 @@ cost are marked contested.
 
 | Kingdom | Character | Capital | Gate | Regions, area |
 | --- | --- | --- | --- | --- |
-| Carrowmark | Grain and river plain of the south; Greyhaven is its northern march fort | Carrow | Greyfang Gate | 44, 100 km² |
-| Vesmere | Wet west coast: timber, ships, fisheries | Vesport | Vessgate | 30, 69 km² |
+| Carrowmark | Grain and river plain of the south; Greyhaven is its northern march fort | Carrow | Greyfang Gate | 41, 95 km² |
+| Vesmere | Wet west coast: timber, ships, fisheries | Vesport | Vessgate | 31, 71 km² |
 | Isenholt | Cold northern fells and firths: iron, furs | Isenhold | The Sundering | 12, 28 km² |
 | Sarrath | Rain-shadow steppe: horses, salt, oasis towns | Sarrath | Sarr Gap | 30, 69 km² |
-| Merrow League | Delta merchant towns holding the Fenwater and the sea lanes | Merrowgate | Merrow Notch | 19, 50 km² |
+| Merrow League | Delta merchant towns holding the Fenwater and the sea lanes | Merrowgate | Merrow Notch | 20, 52 km² |
+
+The Crown itself is 15 unclaimed regions, 35 km².
 
 **Settlement and trade geography.** Capitals stand at river mouths or oases; towns at fords
 and route junctions (Millford, Brannock Ford, Thornwick, Hagstead, Ashwell); forts at
@@ -120,12 +141,16 @@ the dry east.
 
 ## Natural regions
 
-Regions are the unit of play and claims, sized at about 2–4 km² (149 regions, median 2.3 km²).
+Regions are the unit of play and claims. There are 149, with a median of 2.3 km² and a range of
+0.9–4.6 km²; 91 lie strictly within the 2–4 km² target, and most of the rest are smaller
+coastal or Crown regions.
 Each grows from an editable seed by terrain-weighted travel cost, so borders fall on ridges,
 large rivers and steep ground instead of straight lines. Neighbouring regions **overlap**: within
 200 m of a border each point carries a secondary region and blend weight, so presentation can
-compose continuous transitions. The 1,024 m streaming chunks are internal only: a check
-evaluates the composition chunk by chunk and confirms it is identical to the whole-world result.
+compose continuous transitions. The 1,024 m streaming chunks are internal only. Region
+growth is a global authoring step, but composing the blend needs only a chunk's own labels
+plus a 200 m halo. A check recomputes the blend for all 576 chunks this way and confirms each
+matches the whole-world result exactly.
 Greyhaven's region contains the whole zone footprint (4.8 km²), leaving room for the threefold
 expansion already decided (Atlas 5.1.22).
 
@@ -167,12 +192,15 @@ and the generator never writes any of them.
 
 The preservation rules:
 
-- **Anchors win over everything.** The checks confirm the zone footprint keeps its stand-in
-  elevations, gets no generated lake or river, and joins its surroundings smoothly.
-- **Overrides are separate files** in the existing paint convention (`[column, row, value]`), so
-  regenerating never loses them.
-- **Region ids never change.** The Blender export writes back only moved geometry and leaves an
-  untouched file byte-identical.
+- **Anchors win over everything.** The footprint is restored after the height overrides and
+  re-marked after the biome overrides. Rivers never cut into it, and roads end at its exits.
+- **Overrides are separate files** with the same `[column, row, value]` shape as Greyhaven's
+  paint layers, though on the atlas's own 40 m grid and in metres, so regenerating never loses
+  them. Cells outside the grid or listed twice stop the build.
+- **Region ids never change.** `seed-regions` and the Blender export only append new ids,
+  continuing after the highest ever used (`lastGeneratedId`), so a deleted id is never reused.
+  The Blender export writes back only moved geometry and leaves an untouched file
+  byte-identical.
 - **The build checks its own side effects.** It verifies that `content/world/` and
   `content/greyhaven/` are unchanged by it.
 
@@ -194,21 +222,52 @@ anchor, and from then on the zone's content is the authority there.
 
 ## Consistency checks
 
-`atlas.py check` fails on any violation:
+`atlas.py check` runs 45 checks and fails on any violation. These are tests of the result:
+each one can fail when an edit breaks the geography.
 
-- **Coast and scale:** one continent plus the declared islands, within the target land area.
-- **Rivers:** every bed falls strictly, reaches its declared mouth (sea, sink or parent river),
-  and has derived drainage along at least 85 % of its course.
-- **Water:** every land cell drains to the sea or a declared sink; every flow step descends; the
-  karst resurgence lies below its ponor; Crownmere forms.
-- **Anchors:** stand-in elevations are kept, the footprint stays dry, and the surroundings stay
-  continuous.
-- **Regions:** they cover all land, are contiguous, and come to about 150 in the 2–4 km² band;
-  per-chunk composition equals the whole.
-- **Kingdoms:** each contains its capital, has at least eight regions and borders the Crown;
-  every road leg routes over land.
-- **Reproducibility and preservation:** two builds give the same fingerprint, and neither source
-  tree changes during a build.
+- **Coast and scale:** one continent plus the declared islands, with 250–420 km² of land.
+- **Rivers:** the finished ground falls along each course, the flow traced from the source
+  reaches the declared mouth (sea, sink or parent river), and derived drainage follows at
+  least 85 % of the course.
+- **Crown gates:** each keeps its authored floor within 90 m; a river gap may cut lower.
+- **Anchor:** the Greyhaven footprint keeps its stand-in elevations, ground within 300 m of it
+  stays under 35°, and the Vale, the farmland and the wetlands each drain to their declared
+  outlet.
+- **Water:** the karst resurgence lies below its ponor, and Crownmere forms.
+- **Regions:** every land cell is covered, each region is contiguous, and there are 120–180
+  regions with at least 85 % within 0.6–1.4 times the 2–4 km² target.
+- **Composition:** the blend computed per chunk with its halo matches the whole-world blend.
+- **Kingdoms:** each has a connected mainland territory of at least eight regions that borders
+  the Crown.
+- **Roads:** every leg routes over land, and roads leave Greyhaven only at declared exits.
+- **Reproducibility and preservation:** two builds give the same fingerprint, and neither
+  `content/world/` nor `content/greyhaven/` changes during a build.
+
+Two further checks are guaranteed by construction rather than tested. Every land cell drains
+to the sea or a sink, and every flow step descends: both are properties of the priority-flood
+algorithm, and the checks guard against regressions in that code.
+
+**Reproducibility.** Dependencies are locked in `atlas.py.lock`. The fingerprint
+`6c271ad3e46806ec` was reproduced on Linux x86-64 with both numpy 2.3.5 and 2.5.4; other
+platforms have not been tried. Vectorised transcendental functions may differ in the last bit
+between CPUs, which can flip threshold decisions. Any game consumer must therefore read a
+committed, quantised export, never rerun this Python (plan step 2). Previews also depend on the
+installed DejaVu fonts.
+
+The Blender round trip has its own headless test, run against a copy of the sources:
+
+```sh
+blender --background --python-exit-code 1 --python content/world/authoring/test_atlas_blender.py
+```
+
+It confirms that:
+
+- an untouched round trip leaves every source byte-identical;
+- a moved seed moves by exactly its offset;
+- a copied seed becomes a new region and leaves the original in place;
+- moving a whole river object moves every point;
+- moving the Crown keeps its gates' bearings;
+- a copied settlement is refused.
 
 ## Questions for the owner
 
@@ -221,14 +280,23 @@ anchor, and from then on the zone's content is the authority there.
    neutral march between Carrowmark and the Merrow League?
 4. **Scale.** Is Greyhaven's whole current zone (about 1.1 km² walkable, inside a 4.8 km² region)
    the intended density for a region, or should regions be denser?
+5. **Greyhaven's water.** Is the karst reading acceptable (the brook sinks south of the Outpost
+   and resurfaces as the Greywater's source), given that Atlas 5.1.i513 keeps the zone free of
+   hydrology?
 
 ## Implementation plan (prioritized)
 
 1. **Owner review of this atlas.** Answer the questions above, then record the accepted parts as
    Decision Atlas entries under an issue.
-2. **Greyhaven horizon.** Feed the atlas's far terrain around the zone into `mmorpg-scenery`'s
-   presentation-only distant mountains, replacing the generic ring with the actual Crown, apron
-   and valleys. No collision or content-revision change.
+2. **Export contract, then the Greyhaven horizon.**
+   - First settle one committed, quantised export: a heightfield and region labels with their
+     fingerprint. `mmorpg-scenery` and World Studio read it and never run the Python. This keeps
+     one owner per capability, as AGENTS.md requires.
+   - Then draw the atlas's far terrain as `mmorpg-scenery`'s presentation-only distant mountains,
+     replacing the generic ring with the actual Crown, apron and valleys. No collision or
+     content-revision change.
+   - Exclude `content/world/**` from the Rust CI path filter, which currently treats every
+     `content/` change as a Rust change.
 3. **Zone template from an atlas window.** A World Studio export that turns an atlas region (or
    group of regions) into the starting `landscape.json`, paint and height grid of a new zone,
    then registers it as an anchor. This is the first real use of the atlas in authority content,

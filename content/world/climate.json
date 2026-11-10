@@ -15,7 +15,8 @@
     "recharge": 0.2,
     "base": 0.0033,
     "orographic": 0.05,
-    "lee": 3,
+    "leeHeight": 700,
+    "barrierDecayPerKm": 40,
     "smoothCells": 4
   },
   "biomes": [

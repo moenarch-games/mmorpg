@@ -17,8 +17,8 @@ Done:
   meanders, priority-flood hydrology with sinks and a karst link, westerly and southern
   rain with rain shadow, biomes, 149 terrain-grown regions with overlapping borders, kingdom
   claims, routed roads, previews, the report and the adjacency table, and the checks
-  (38 passing).
-- **Blender round trip** `content/world/authoring/atlas_blender.py`. Verified headless on
+  (45 passing).
+- **Blender round trip** `content/world/authoring/atlas_blender.py`, with the headless test `test_atlas_blender.py`. Verified on
   Blender 5.2.2: an untouched round trip changes nothing, and moving one seed changes one line.
 - **Previews** in `docs/images/world/` and the design document.
 
@@ -58,3 +58,23 @@ regenerate region seeds wholesale once someone has edited them: `seed-regions` o
    Greyhaven's woods and farm fall in temperate woodland and the east is a rain shadow.
 4. Sized regions to the owner's target of about 150 at 2–4 km².
 5. Added the Blender round trip and a canonical JSON layout.
+6. An independent review found that the wetlands drained into the Vale, roads ignored the
+   established passes, river heads erased the gate floors, several checks could not fail,
+   Blender duplicates and object moves lost edits, rain shadows striped every ridge, and the
+   geology contradicted itself. All of these are fixed:
+   - The anchor now models the ridges between the Vale and its outer regions, and each part
+     declares its outlet.
+   - Roads start at the declared exits.
+   - River beds start at the ground at their heads.
+   - The checks test the result instead of construction (45 checks).
+   - The Blender export uses world space, treats copied seeds as new regions, refuses other
+     copies, and has a headless test.
+   - The rain shadow follows the upwind barrier.
+   - The Crown is described as a structural dome with a limestone apron.
+   - Dependencies are locked, overrides are validated, ids are never reused, and wind
+     directions are read from `climate.json`.
+
+   Not done from the review:
+   - The CI path filter still treats `content/world/**` as a Rust change.
+   - No cross-platform reproducibility evidence beyond Linux x86-64.
+   - The two derived lakes it pointed out remain unnamed.

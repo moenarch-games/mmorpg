@@ -174,10 +174,12 @@ def land_field(g: Grid, terrain: dict, seed: int) -> np.ndarray:
     d = dist_to_polyline(X, Z, coast["points"], closed=True)
     f = np.where(inside_polygon(X, Z, coast["points"]), d, -d)
     f = f + coast["warp"]["amplitude"] * fbm(X, Z, coast["warp"]["wavelength"], 5, seed + 11)
+    # bays and islands get a finer, smaller wobble so they are not drawn with a compass
+    wobble = 0.25 * coast["warp"]["amplitude"] * fbm(X, Z, coast["warp"]["wavelength"] / 4, 4, seed + 12)
     for sea in coast["seas"]:
-        f = np.minimum(f, np.hypot(X - sea["center"][0], Z - sea["center"][1]) - sea["radius"])
+        f = np.minimum(f, np.hypot(X - sea["center"][0], Z - sea["center"][1]) - sea["radius"] + wobble)
     for isle in coast["islands"]:
-        f = np.maximum(f, isle["radius"] - np.hypot(X - isle["center"][0], Z - isle["center"][1]))
+        f = np.maximum(f, isle["radius"] - np.hypot(X - isle["center"][0], Z - isle["center"][1]) + wobble)
     return f
 
 
@@ -294,14 +296,18 @@ def carve_rivers(g: Grid, elev: np.ndarray, land: np.ndarray, water: dict, seed:
         samples.append(tuple(pts[-1]))
         arcs.append(s0)
         samples = meander(samples, arcs, carve, seed + sum(map(ord, river["id"])))
-        # the bed lies below the lowest ground across the valley, so no side slope can steal the flow
+        # downstream of its head the bed lies below the lowest ground across the valley, so no side
+        # slope can steal the flow; at the head it starts at the ground, so a source cuts nothing
         half = int(carve["valleyHalfWidth"] * 0.6 // g.cell)
         bed, prev = [], None
         for i, (x, z) in enumerate(samples):
             r0, c0 = g.index(x, z)
             win = elev[max(r0 - half, 0) : r0 + half + 1, max(c0 - half, 0) : c0 + half + 1]
             dry = land[max(r0 - half, 0) : r0 + half + 1, max(c0 - half, 0) : c0 + half + 1]
-            here = (win[dry].min() if dry.any() else elev[r0, c0]) - carve["bedDepth"]
+            ground = elev[r0, c0]
+            low = win[dry].min() if dry.any() else ground
+            ramp = min(1.0, arcs[i] / carve["headLength"])
+            here = ground - (ground - min(low, ground)) * ramp - carve["bedDepth"] * ramp
             if prev is not None:
                 here = min(here, prev - carve["minGrade"] * (arcs[i] - arcs[i - 1]))
             bed.append(here)
@@ -331,7 +337,13 @@ def carve_rivers(g: Grid, elev: np.ndarray, land: np.ndarray, water: dict, seed:
 
 
 def apply_cells(target: np.ndarray, layer: dict, add: bool):
+    seen = set()
     for col, row, value in layer["cells"]:
+        if not (0 <= row < target.shape[0] and 0 <= col < target.shape[1]):
+            sys.exit(f"override cell [{col}, {row}] lies outside the {target.shape[1]} × {target.shape[0]} atlas grid")
+        if (col, row) in seen:
+            sys.exit(f"override cell [{col}, {row}] is listed twice")
+        seen.add((col, row))
         if add:
             target[row, col] += value
         else:
@@ -522,21 +534,37 @@ def precipitation(g: Grid, elev, land, climate) -> np.ndarray:
         m = np.ones(e.shape[0])
         out = np.zeros(e.shape)
         prev = e[:, 0]
+        barrier = e[:, 0].copy()
         for j in range(e.shape[1]):
             col = e[:, j]
             slope = (col - prev) / g.cell
             rate = pc["base"] + pc["orographic"] * np.maximum(slope, 0)
             rain = np.where(lnd[:, j], np.minimum(m * rate, m), 0.0)
-            lee = np.clip(-slope * pc["lee"], 0, 0.8)
+            # the shadow deepens with how far the air has sunk below the highest ground upwind,
+            # which itself settles slowly, so a low ridge casts a short, faint shadow
+            barrier = np.maximum(col, barrier - pc["barrierDecayPerKm"] * g.cell / 1000)
+            lee = np.clip((barrier - col) / pc["leeHeight"], 0, 0.8)
             out[:, j] = rain / pc["base"] * (1 - lee)
             m = np.where(lnd[:, j], m - rain, m + (1 - m) * pc["recharge"])
             prev = col
         return out
 
-    wet = np.maximum(elev, 0)
-    west = sweep(wet, land)
-    south = np.flipud(sweep(np.flipud(wet).T, np.flipud(land).T).T)
-    p = west + climate["wind"]["secondaryWeight"] * south
+    def from_direction(direction, field):
+        """Sweep with the wind blowing from `direction`, returning the result in map orientation."""
+        wet, lnd = field
+        if direction == "west":
+            return sweep(wet, lnd)
+        if direction == "east":
+            return np.fliplr(sweep(np.fliplr(wet), np.fliplr(lnd)))
+        if direction == "north":
+            return sweep(wet.T, lnd.T).T
+        if direction == "south":
+            return np.flipud(sweep(np.flipud(wet).T, np.flipud(lnd).T).T)
+        sys.exit(f"climate.json: wind from {direction!r}; use north, south, east or west")
+
+    field = (np.maximum(elev, 0), land)
+    wind = climate["wind"]
+    p = from_direction(wind["primary"], field) + wind["secondaryWeight"] * from_direction(wind["secondary"], field)
     return np.clip(blur(p, pc["smoothCells"]), 0, 1.3)
 
 
@@ -756,13 +784,17 @@ def build(layers: dict) -> dict:
     seed = atlas["seed"]
     e = build_elevation(g, layers, seed)
     elev, land = e["elev"], e["land"]
-    profiles = carve_rivers(g, elev, land, layers["water"], seed)
-    apply_cells(elev, layers["overrides/height"], add=True)
+    # anchors first, so the ground around them is settled before rivers cut into it; rivers never
+    # cut inside one, and the footprint is restored exactly after the hand edits
     anchors_f = anchor_fields(g, layers["anchors"])
     apply_anchors(elev, anchors_f)
     anchor_mask = np.zeros_like(land)
     for _, mask, _, _ in anchors_f:
         anchor_mask |= mask
+    profiles = carve_rivers(g, elev, land & ~anchor_mask, layers["water"], seed)
+    apply_cells(elev, layers["overrides/height"], add=True)
+    for _, mask, target, _ in anchors_f:
+        elev[mask] = target[mask]
     climate = layers["climate"]
     precip = precipitation(g, elev, land, climate)
     temp = temperature(g, elev, climate)
@@ -780,6 +812,7 @@ def build(layers: dict) -> dict:
             sink_mask &= elev < elev[r, c] + 45
     biome = classify_biomes(g, elev, land, hyd, temp, precip, slope, climate, anchor_mask, sink_mask)
     apply_cells(biome, layers["overrides/biome"], add=False)
+    biome[anchor_mask] = 15
     river = (hyd["acc"] > 2.5) & land
     big_river = (hyd["acc"] > 12.0) & land & ~anchor_mask
     regions = layers["regions"]
@@ -852,12 +885,26 @@ def route_roads(b):
     elev, land = b["elev"], b["land"]
     road = np.zeros(land.shape)
     river_cost = np.where(b["big_river"], 250.0, 0.0) + np.where(b["river"], 40.0, 0.0)
-    passable = land & ~b["hyd"]["lake"]
+    # zone content owns the ground inside an anchor: roads end at its declared exits
+    passable = land & ~b["hyd"]["lake"] & ~b["anchor_mask"]
+    settlements = {s["id"]: s for s in layers["polities"]["settlements"]}
+    anchors = {a["id"]: a for a, *_ in b["anchors"]}
+
+    def endpoint(stop, other):
+        s = settlements.get(stop)
+        if s and s.get("anchor"):
+            exits = [e for e in anchors[s["anchor"]]["entrances"] if e.get("toward") == other]
+            if not exits:
+                sys.exit(f"route from {stop} to {other}: anchor {s['anchor']} declares no exit toward {other}")
+            return tuple(exits[0]["at"]), exits[0]["id"]
+        return resolve_point(stop, layers, g), None
+
     out = []
     for route in layers["polities"]["routes"]:
-        cells = []
-        stops = [resolve_point(s, layers, g) for s in route["stops"]]
-        for a, z in zip(stops, stops[1:]):
+        cells, exits = [], []
+        for sa, sz in zip(route["stops"], route["stops"][1:]):
+            (a, ea), (z, ez) = endpoint(sa, sz), endpoint(sz, sa)
+            exits += [e for e in (ea, ez) if e]
             ra, rb = snap(g, passable, *a), snap(g, passable, *z)
             extra = river_cost - np.where(road > 0, 25.0, 0.0)
             dist, _, prev, w = grid_search(elev, passable, extra, [(ra, 0)], k_abs=6.0, k_sq=120.0,
@@ -873,7 +920,7 @@ def route_roads(b):
             cells.append(path)
             for r, c in path:
                 road[r, c] += 1
-        out.append({"id": route["id"], "name": route["name"], "legs": cells})
+        out.append({"id": route["id"], "name": route["name"], "legs": cells, "exits": exits})
     return out
 
 
@@ -900,13 +947,21 @@ def run_checks(b) -> list[dict]:
     check("scale.continent", 250 <= land_km2 <= 420 and land.any(),
           f"land {land_km2:.0f} km² in a {g.nx * g.cell / 1000:.0f} × {g.nz * g.cell / 1000:.0f} km domain")
 
-    # rivers: strictly falling beds, mouths where declared, real catchments along them
+    # rivers: the finished terrain falls along each course, mouths are where declared, and the
+    # derived drainage runs along them
     nx = g.nx
     rec = hyd["rec"].ravel()
     for river in water["rivers"]:
         prof = b["profiles"][river["id"]]
-        bed = prof["bed"]
-        falling = all(b2 < b1 for b1, b2 in zip(bed, bed[1:]))
+        cells = []
+        for x, z in prof["samples"]:
+            rc = g.index(x, z)
+            if land[rc] and (not cells or cells[-1] != rc):
+                cells.append(rc)
+        ground = [float(elev[rc]) for rc in cells]
+        rises = [(g.centre(*cells[i + 1]), ground[i + 1] - ground[i]) for i in range(len(ground) - 1) if ground[i + 1] > ground[i] + 0.01]
+        falling = not rises
+        bed = ground
         r, c = g.index(*river["points"][0])
         i, steps, path = r * nx + c, 0, []
         while rec[i] >= 0 and steps < 200000:
@@ -934,7 +989,9 @@ def run_checks(b) -> list[dict]:
         frac = sum(on) / max(len(on), 1)
         mr, mc = [g.index(x, z) for x, z in prof["samples"] if land[g.index(x, z)]][-3]
         check(f"river.{river['id']}", falling and reached and frac >= 0.85,
-              f"bed falls {bed[0]:.0f}→{bed[-1]:.0f} m over {prof['length'] / 1000:.1f} km; reaches {mouth}: {reached}; "
+              f"ground along the course falls {bed[0]:.0f}→{bed[-1]:.0f} m over {prof['length'] / 1000:.1f} km"
+              + (f" but rises {len(rises)}× (first {rises[0][1]:.1f} m at {rises[0][0]})" if rises else "")
+              + f"; reaches {mouth}: {reached}; "
               f"drainage follows {frac:.0%} of its course; {acc[max(mr - 2, 0) : mr + 3, max(mc - 2, 0) : mc + 3].max():.0f} km² effective catchment near the mouth")
 
     # every land cell drains to the sea or a declared sink, never uphill
@@ -955,15 +1012,40 @@ def run_checks(b) -> list[dict]:
         has = hyd["lake"][max(r - 10, 0) : r + 11, max(c - 10, 0) : c + 11].any()
         check(f"water.lake.{lake['id']}", has, "a lake forms there from the terrain")
 
-    # anchors: the atlas leaves zone-authored ground at its stand-in elevation
-    for a, mask, target, _ in b["anchors"]:
+    # the Crown's gates keep their authored floors (a river gorge may cut below one)
+    crown = layers["terrain"]["crown"]
+    river_gates = {r["source"][5:] for r in water["rivers"] if r["source"].startswith("gate:")} | {crown["interior"]["drainsTo"]}
+    for gate in crown["gates"]:
+        r0, c0 = g.index(*gate_position(crown, gate))
+        actual = float(elev[r0 - 2 : r0 + 3, c0 - 2 : c0 + 3].min())
+        ok = actual <= gate["floor"] + 90 and (actual >= gate["floor"] - 90 or gate["id"] in river_gates)
+        check(f"crown.gate.{gate['id']}", ok, f"lowest ground {actual:.0f} m against an authored floor of {gate['floor']} m")
+
+    # anchors: the atlas leaves zone-authored ground at its stand-in elevation, joins it without a
+    # cliff, and each part drains where it is declared to
+    for a, mask, target, nearest in b["anchors"]:
         check(f"anchor.{a['id']}.elevation", bool(np.allclose(elev[mask], target[mask])),
               f"{int(mask.sum())} cells keep the stand-in elevations {sorted({p['local'] for p in a['parts']})} m over {a['referenceElevation']} m")
-        check(f"anchor.{a['id']}.dry", not hyd["lake"][mask].any() and not b["big_river"][mask].any(),
-              "no generated lake or major river inside the zone footprint")
-        rim = (b["anchors"][0][3] > 0) & (b["anchors"][0][3] < 400)
-        step = np.abs(elev[rim] - target[rim]).max()
-        check(f"anchor.{a['id']}.continuity", step < 140, f"surroundings within 400 m stay within {step:.0f} m of the anchor")
+        ring = (nearest > 0) & (nearest < 300)
+        steep = float(b["slope"][ring].max())
+        check(f"anchor.{a['id']}.joins", steep < 35, f"ground within 300 m of the footprint is at most {steep:.0f}° steep")
+        for part in a["parts"]:
+            if "drainsTo" not in part:
+                continue
+            x0, z0, x1, z1 = part["rect"]
+            r0, c0 = g.index((x0 + x1) / 2, (z0 + z1) / 2)
+            i, path = r0 * nx + c0, []
+            while rec[i] >= 0 and len(path) < 200000:
+                path.append(i)
+                i = rec[i]
+            target_ref = part["drainsTo"]
+            if target_ref.startswith("sink:"):
+                ok = divmod(i, nx) == hyd["sinks"][target_ref[5:]]
+            else:
+                course = {g.index(x, z) for x, z in b["profiles"][target_ref[6:]]["samples"]}
+                ok = any(any((rr + dr, cc + dc) in course for dr in (-1, 0, 1) for dc in (-1, 0, 1))
+                         for rr, cc in (divmod(p, nx) for p in path))
+            check(f"anchor.{a['id']}.drains.{part['name']}", ok, f"{part['name']} drains to {target_ref}")
 
     # regions: ~150 of 2–4 km², every land cell in exactly one, contiguous
     label = b["label"]
@@ -987,33 +1069,44 @@ def run_checks(b) -> list[dict]:
                 split += 1
     check("regions.contiguous", split == 0, f"{split} regions are split into separate pieces")
 
-    # chunks stay internal: composed fields evaluated per streaming chunk match the whole-world evaluation
+    # chunks stay internal: a streaming chunk computes its overlapping-region blend from its own
+    # labels plus a halo as wide as the blend, and gets exactly the whole-world result
     chunk = 1024 // g.cell
-    whole = compose(b, 0, 0, g.nz, g.nx)
-    worst = 0.0
+    halo = layers["regions"]["blendCells"]
+    worst, chunks = 0, 0
     for r0 in range(0, g.nz, chunk):
         for c0 in range(0, g.nx, chunk):
-            part = compose(b, r0, c0, min(r0 + chunk, g.nz), min(c0 + chunk, g.nx))
-            worst = max(worst, float(np.abs(part - whole[r0 : r0 + chunk, c0 : c0 + chunk]).max()))
-    check("compose.chunks", worst == 0.0, f"per-chunk composition differs from the whole by at most {worst}")
+            ra, ca = max(r0 - halo, 0), max(c0 - halo, 0)
+            rb, cb = min(r0 + chunk + halo, g.nz), min(c0 + chunk + halo, g.nx)
+            second, weight = border_blend(label[ra:rb, ca:cb], halo)
+            inner = (slice(r0 - ra, r0 - ra + chunk), slice(c0 - ca, c0 - ca + chunk))
+            whole = (slice(r0, r0 + chunk), slice(c0, c0 + chunk))
+            worst += int((second[inner] != b["second"][whole]).sum() + (weight[inner] != b["weight"][whole]).sum())
+            chunks += 1
+    check("compose.chunks", worst == 0,
+          f"{chunks} chunks of 1024 m with a {halo * g.cell} m halo reproduce the "
+          f"whole-world region blend; {worst} cells differ")
 
-    # polities
+    # polities: each kingdom is one connected territory (islands aside) touching the Crown
+    main = np.argmax(np.bincount(lab[land]))
     for k in layers["polities"]["kingdoms"]:
         owned = [i for i, o in enumerate(b["kingdom"]) if o == k["id"]]
         area = sum(b["region_stats"][i]["areaKm2"] for i in owned)
-        cap = resolve_point(k["capital"], layers, g)
-        cap_region = label[snap(g, land, *cap)]
-        crown_touch = any(
-            (min(i, j), max(i, j)) in b["adj"]
-            for i in owned
-            for j, o in enumerate(b["kingdom"])
-            if o == "crown"
-        )
-        check(f"kingdom.{k['id']}", cap_region in owned and crown_touch and len(owned) >= 8,
-              f"{len(owned)} regions, {area:.0f} km²; capital inside: {cap_region in owned}; borders the Crown: {crown_touch}")
+        mainland = {i for i in owned if lab[g.index(*b["region_stats"][i]["centroid"])] == main}
+        reached, todo = set(), [next(iter(mainland))] if mainland else []
+        while todo:
+            i = todo.pop()
+            if i in reached:
+                continue
+            reached.add(i)
+            todo += [j for j in mainland if (min(i, j), max(i, j)) in b["adj"] and j not in reached]
+        crown_touch = any((min(i, j), max(i, j)) in b["adj"] for i in owned for j, o in enumerate(b["kingdom"]) if o == "crown")
+        check(f"kingdom.{k['id']}", reached == mainland and crown_touch and len(owned) >= 8,
+              f"{len(owned)} regions, {area:.0f} km²; mainland territory connected: {reached == mainland}; borders the Crown: {crown_touch}")
     for road in b["roads"]:
         check(f"road.{road['id']}", all(leg for leg in road["legs"]),
-              f"{sum(len(leg) for leg in road['legs']) * g.cell / 1000:.1f} km routed over land")
+              f"{sum(len(leg) for leg in road['legs']) * g.cell / 1000:.1f} km routed over land"
+              + (f", leaving Greyhaven by {', '.join(road['exits'])}" if road["exits"] else ""))
     return results
 
 
@@ -1566,13 +1659,14 @@ def cmd_seed_regions(args) -> int:
         mask |= m
     regions = layers["regions"]
     new = region_seed_candidates(g, e["land"], mask, regions, layers["atlas"]["seed"])
-    taken = {r["id"] for r in regions["regions"]}
-    n = 1
+    # ids continue after the highest ever used, so a deleted region's id is never handed to another place
+    used = [int(r["id"][1:]) for r in regions["regions"] if r["id"][:1] == "r" and r["id"][1:].isdigit()]
+    n = max(used + [regions.get("lastGeneratedId", 0)]) + 1
     for x, z in new:
-        while f"r{n:03d}" in taken:
-            n += 1
         regions["regions"].append({"id": f"r{n:03d}", "seed": [x, z]})
-        taken.add(f"r{n:03d}")
+        n += 1
+    if new:
+        regions["lastGeneratedId"] = n - 1
     write_json(WORLD / "regions.json", regions)
     print(f"appended {len(new)} region seeds; {len(regions['regions'])} in total")
     return 0

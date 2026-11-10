@@ -16,6 +16,7 @@ round trip leaves the sources byte-identical. Run atlas.py check afterwards.
 
 import json
 import math
+import os
 import sys
 from pathlib import Path
 
@@ -25,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from atlas_json import write_json  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[3]
-WORLD = REPO / "content" / "world"
+WORLD = Path(os.environ.get("ATLAS_WORLD", REPO / "content" / "world"))  # tests point this at a copy
 OUT = REPO / "artifacts" / "world-atlas"
 COLLECTION = "Atlas"
 
@@ -60,6 +61,7 @@ def poly(name, points, coll, closed=False, props=None):
     for k, v in (props or {}).items():
         obj[k] = v
     coll.objects.link(obj)
+    obj["imported"] = obj.name  # a Shift+D copy gets a new name but keeps this
     return obj
 
 
@@ -71,6 +73,8 @@ def empty(name, at, coll, kind="PLAIN_AXES", size=0.15, props=None):
     for k, v in (props or {}).items():
         obj[k] = v
     coll.objects.link(obj)
+    obj["imported"] = obj.name  # a Shift+D copy gets a new name but keeps this
+    obj["at"] = [int(round(at[0])), int(round(at[1]))]
     return obj
 
 
@@ -145,14 +149,31 @@ def cmd_import(blend: Path):
 
 
 def spline_points(obj):
-    return [from_blender(p.co) for p in obj.data.splines[0].points]
+    """World-space points of a curve's single poly spline, so moving the whole object counts."""
+    splines = obj.data.splines
+    if len(splines) != 1 or splines[0].type != "POLY" or len(splines[0].points) < 2:
+        sys.exit(f"{obj.name}: expected one poly spline with at least two points; refusing to export")
+    return [from_blender(obj.matrix_world @ p.co.xyz) for p in splines[0].points]
+
+
+def position(obj):
+    return from_blender(obj.matrix_world.translation)
 
 
 def cmd_export():
-    objs = {}
+    bpy.context.view_layer.update()  # world matrices of objects moved by a script are stale until then
+    objs, extra_regions = {}, []
     for o in bpy.data.objects:
-        if "atlas" in o:
-            objs.setdefault(o["atlas"], {})[o.get("id", o.name)] = o
+        if "atlas" not in o:
+            continue
+        kind, oid = o["atlas"], o.get("id", o.name)
+        if o.name != o.get("imported", o.name):
+            # Shift+D copies custom properties: a copied region seed is a new region, anything else is refused
+            if kind == "region":
+                extra_regions.append(o)
+                continue
+            sys.exit(f"{o.name} duplicates {o['imported']}; only region seeds can be duplicated")
+        objs.setdefault(kind, {})[oid] = o
     changed = []
 
     def update(name, mutate):
@@ -171,7 +192,7 @@ def cmd_export():
             for s in d["coast"][kind]:
                 o = objs.get(kind, {}).get(s["id"])
                 if o:
-                    s["center"] = from_blender(o.location)
+                    s["center"] = position(o)
         for r in d["ridges"]:
             o = objs.get("ridge", {}).get(r["id"])
             if o:
@@ -179,11 +200,12 @@ def cmd_export():
         crown = d["crown"]
         o = next(iter(objs.get("crown", {}).values()), None)
         if o:
-            crown["center"] = from_blender(o.location)
+            crown["center"] = position(o)
         for gate in crown["gates"]:
             o = objs.get("gate", {}).get(gate["id"])
-            if o:
-                x, z = from_blender(o.location)
+            # a gate keeps its bearing unless the gate itself was moved, so moving the Crown carries its gates along
+            if o and position(o) != list(o["at"]):
+                x, z = position(o)
                 bearing = math.degrees(math.atan2(x - crown["center"][0], -(z - crown["center"][1]))) % 360
                 gate["bearing"] = int(round(bearing))
 
@@ -196,23 +218,26 @@ def cmd_export():
             for s in d[kind]:
                 o = objs.get(kind, {}).get(s["id"])
                 if o:
-                    s["at"] = from_blender(o.location)
+                    s["at"] = position(o)
 
     def polities(d):
         for s in d["settlements"]:
             o = objs.get("settlement", {}).get(s["id"])
             if o:
-                s["at"] = from_blender(o.location)
+                s["at"] = position(o)
 
     def regions(d):
-        known = {r["id"] for r in d["regions"]}
         for r in d["regions"]:
             o = objs.get("region", {}).get(r["id"])
             if o:
-                r["seed"] = from_blender(o.location)
-        for rid, o in sorted(objs.get("region", {}).items()):
-            if rid not in known:  # a seed duplicated in Blender becomes a new region
-                d["regions"].append({"id": rid, "seed": from_blender(o.location)})
+                r["seed"] = position(o)
+        # new regions continue the id sequence the generator uses, never reusing a deleted id
+        used = [int(r["id"][1:]) for r in d["regions"] if r["id"][:1] == "r" and r["id"][1:].isdigit()]
+        n = max(used + [d.get("lastGeneratedId", 0)]) + 1
+        for o in sorted(extra_regions, key=lambda o: o.name):
+            d["regions"].append({"id": f"r{n:03d}", "seed": position(o)})
+            d["lastGeneratedId"] = n
+            n += 1
 
     update("terrain.json", terrain)
     update("water.json", water)
@@ -234,4 +259,5 @@ def main():
         sys.exit(__doc__)
 
 
-main()
+if __name__ == "__main__":
+    main()

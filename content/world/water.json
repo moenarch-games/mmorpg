@@ -6,6 +6,7 @@
     "sideSlope": 0.3,
     "bedDepth": 6,
     "valleyHalfWidth": 700,
+    "headLength": 1500,
     "meander": {"amplitude": 260, "wavelength": 1400}
   },
   "rivers": [
