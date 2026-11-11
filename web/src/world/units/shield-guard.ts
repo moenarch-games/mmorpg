@@ -3,17 +3,11 @@ import type { GuardState, StrikeHeight, ZoneSnapshot } from "../../replication";
 
 /**
  * The Warden's held shield guard input (#156, Atlas 5.2.29/5.2.31/5.2.37): holding the separately
- * bound guard action raises the shield, vertical pointer motion since the press picks the lane (up
- * is high), and a deliberate release or any retirement lowers it. The client only names the held
- * lane; the zone alone decides whether the guard protects (grounded, not broken) and what it blocks.
+ * bound guard action raises the shield, vertical mouse motion since the press picks the lane (up
+ * is high; the shared mouse-owner rules read it, #636), and a deliberate release or any retirement
+ * lowers it. The client only names the held lane; the zone alone decides whether the guard protects
+ * (grounded, not broken) and what it blocks.
  */
-/** Pointer travel (CSS pixels) from the lane's middle before the guard moves high or low. */
-export const GUARD_LANE_THRESHOLD_PX = 24;
-
-export function laneFromOffset(dy: number, threshold = GUARD_LANE_THRESHOLD_PX): StrikeHeight {
-  // Screen y grows downward: moving the pointer up guards high.
-  return dy <= -threshold ? "high" : dy >= threshold ? "low" : "middle";
-}
 
 /** Right-stick deflection past which a pad-held guard aims high or low. */
 export const GUARD_STICK_DEFLECTION = 0.5;
@@ -65,33 +59,27 @@ export function guardDisplay(guard: GuardState): GuardDisplay {
 }
 
 /**
- * One held guard: the vertical pointer offset accumulated since the press, ignoring motion while a
- * camera drag owns the pointer, and the lane last sent to the zone.
+ * One held guard: the lane the mouse aims (from the shared mouse-owner rules), a pad's override, and
+ * the lane last sent to the zone.
  */
 export class ShieldGuardHold {
-  #offset: number | null = null;
-  #lastY: number | null = null;
+  #pointerLane: StrikeHeight | null = null;
   #sent: StrikeHeight | null = null;
   #padLane: StrikeHeight | null = null;
 
   get active(): boolean {
-    return this.#offset !== null;
-  }
-
-  /** Remembers the pointer; while held and not dragging, its vertical motion moves the lane. */
-  track(y: number, dragging: boolean): void {
-    if (!Number.isFinite(y)) {
-      return;
-    }
-    if (this.#offset !== null && this.#lastY !== null && !dragging) {
-      const limit = 2 * GUARD_LANE_THRESHOLD_PX;
-      this.#offset = Math.max(-limit, Math.min(limit, this.#offset + y - this.#lastY));
-    }
-    this.#lastY = y;
+    return this.#pointerLane !== null;
   }
 
   begin(): void {
-    this.#offset = 0;
+    this.#pointerLane = "middle";
+  }
+
+  /** While held, the mouse's lane. */
+  aimWithPointer(lane: StrikeHeight): void {
+    if (this.#pointerLane !== null) {
+      this.#pointerLane = lane;
+    }
   }
 
   /** A pad holding the guard aims it with its right stick, overriding the pointer; `null` returns it. */
@@ -100,7 +88,7 @@ export class ShieldGuardHold {
   }
 
   lane(): StrikeHeight | null {
-    return this.#offset === null ? null : (this.#padLane ?? laneFromOffset(this.#offset));
+    return this.#pointerLane === null ? null : (this.#padLane ?? this.#pointerLane);
   }
 
   /** The lane to send now, if it differs from the last one sent; `undefined` means nothing to send. */
@@ -116,7 +104,7 @@ export class ShieldGuardHold {
   /** Ends the hold; true when the zone holds a raised lane that must now be lowered. */
   end(): boolean {
     const raised = this.#sent !== null;
-    this.#offset = null;
+    this.#pointerLane = null;
     this.#sent = null;
     return raised;
   }

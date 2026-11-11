@@ -61,6 +61,7 @@ export const GAME_ACTIONS = [
   "ui.openChat",
   "ui.closePanel",
   "ui.leaveWorld",
+  "ui.gameMenu",
   "ui.toggleDebug",
   "ui.enterWorld",
   "ui.cancelCreation",
@@ -169,9 +170,8 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
     // Held while swimming (#274): Space or A ascends (held Jump), X or R3 descends.
     action("move.descend", "Swim down (hold)", "gameplay", [key("KeyX"), button(11)]),
     action("target.next", "Target next", "gameplay", [key("Tab"), button(5)]),
-    // One swing where the character faces (#517): gamepad X here, the left mouse button in the
-    // world view. F is unbound since auto-attack went away.
-    action("combat.swing", "Swing weapon", "gameplay", [button(2)]),
+    // One swing where the character faces (#517): Q or gamepad X (#636: the left mouse button selects).
+    action("combat.swing", "Swing weapon", "gameplay", [key("KeyQ"), button(2)]),
     action("ability.slot1", "Ability 1", "gameplay", [key("Digit1"), button(12)]),
     action("ability.slot2", "Ability 2", "gameplay", [key("Digit2"), button(15)]),
     action("ability.slot3", "Ability 3", "gameplay", [key("Digit3"), button(13)]),
@@ -198,7 +198,8 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
     action("combat.directedStrike", "Directed Heroic Strike (hold, aim, release)", "gameplay", [key("KeyG")]),
     // Hold to raise the Warden's shield; pointer up/down (or the right stick, holding LT) picks the lane (#156).
     action("combat.guard", "Shield guard (hold, aim up/down)", "gameplay", [key("KeyZ"), button(6)]),
-    action("combat.cancelCast", "Cancel cast", "casting", [key("Escape"), button(1)]),
+    // Right click cancels a cast in the world view (#636); Escape opens the game menu instead.
+    action("combat.cancelCast", "Cancel cast", "casting", [button(1)]),
     // A Necromancer's group orders for all its minions (#295, Atlas 5.2.84); the zone checks them.
     action("minions.attack", "Minions: attack target", "gameplay", [key("KeyY")]),
     action("minions.defend", "Minions: defend here", "gameplay", [key("KeyU")]),
@@ -209,14 +210,15 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
     action("ui.toggleCharacter", "Toggle character pane", "gameplay", [key("KeyC")]),
     action("ui.toggleVendor", "Toggle vendor", "gameplay", [key("KeyV")]),
     // Interact (#158; E since #515): talk to the selected NPC, or open or close a door in reach.
-    // Q is deliberately left unbound as a spare.
     action("ui.talk", "Interact: talk, or open or close a door", "gameplay", [key("KeyE"), button(9)]),
     action("ui.toggleQuestLog", "Toggle quest log", "gameplay", [key("KeyL")]),
     action("ui.toggleWorldMap", "Toggle world map", "gameplay", [key("KeyM")]),
     action("ui.openChat", "Chat", "gameplay", [key("Enter"), key("NumpadEnter")]),
     action("ui.closePanel", "Close panel", "panels", [key("Escape"), button(1)]),
-    // B rolls in gameplay (#516), so leaving the world is keyboard-only, as on the native client.
-    action("ui.leaveWorld", "Return to characters", "gameplay", [key("Escape")]),
+    // Escape opens the game menu (#636): an open panel claims it first, and the menu holds the
+    // return to characters. The touch menu still returns directly.
+    action("ui.gameMenu", "Game menu", "gameplay", [key("Escape")]),
+    action("ui.leaveWorld", "Return to characters", "gameplay", []),
     action("ui.toggleDebug", "Toggle debug overlay", "world", [key("F3")]),
     action("ui.enterWorld", "Enter world", "selection", [key("Enter"), button(9)]),
     action("ui.cancelCreation", "Cancel character creation", "creation", [key("Escape"), button(1)]),

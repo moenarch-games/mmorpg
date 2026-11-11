@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { Profile } from "@moritzbrantner/input-bindings";
 import { actionBindingLabels } from "../src/input/binding-labels";
 import { GameControls, type HoldPhase } from "../src/input/game-controls";
-import { AIM_THRESHOLD_PX, DirectedStrikeAim, aimFromDelta } from "../src/world/units/directed-strike";
+import { MouseOwnerInput } from "../src/world/units/mouse-owner";
 import { eventText } from "../src/world/units/combat-hud";
 import { playerEntity, testSnapshot } from "./support/snapshots";
 
@@ -47,24 +47,30 @@ function holdHarness() {
 }
 
 describe("directed Heroic Strike input", () => {
-  test("pointer travel since the press picks side and height; up is high", () => {
-    const t = AIM_THRESHOLD_PX;
-    expect(aimFromDelta(0, 0)).toEqual({ side: "centre", height: "middle" });
-    expect(aimFromDelta(-t, -t)).toEqual({ side: "left", height: "high" });
-    expect(aimFromDelta(t, t)).toEqual({ side: "right", height: "low" });
-    expect(aimFromDelta(t - 1, -(t - 1))).toEqual({ side: "centre", height: "middle" });
-
-    const aim = new DirectedStrikeAim();
-    aim.track(100, 100);
-    expect(aim.aim()).toBeNull();
-    aim.begin();
-    aim.track(60, 160);
-    expect(aim.aim()).toEqual({ side: "left", height: "low" });
-    expect(aim.release()).toEqual({ side: "left", height: "low" });
-    expect(aim.active).toBe(false);
-    aim.begin();
-    aim.cancel();
-    expect(aim.release()).toBeNull();
+  test("the shared mouse owner aims from motion since the press and fires only on its own release (#636)", () => {
+    const mouse = new MouseOwnerInput();
+    expect(mouse.owner()).toBe("free-look");
+    expect(mouse.motion(10, 0)).toBe(true);
+    expect(mouse.beginHold("strike")).toEqual({ started: true, preempted: "none" });
+    expect(mouse.motion(-40, 30)).toBe(false); // the locked camera holds still
+    expect(mouse.aim()).toEqual({ strike: { side: "left", height: "low" }, guard: null });
+    expect(mouse.leftClick()).toEqual({ outcome: "nothing", ended: "none" });
+    // The guard's press takes the mouse; the preempted strike never fires (5.2.37).
+    expect(mouse.beginHold("guard")).toEqual({ started: true, preempted: "strike" });
+    expect(mouse.releaseHold("strike")).toBe(false);
+    expect(mouse.rightClick()).toEqual({ outcome: "cancel", ended: "guard" });
+    expect(mouse.releaseHold("guard")).toBe(false);
+    expect(mouse.rightClick()).toEqual({ outcome: "cancel-cast", ended: "none" });
+    mouse.setHoldCamera("free");
+    mouse.beginHold("strike");
+    expect(mouse.motion(30, -30)).toBe(true);
+    expect(mouse.releaseHold("strike")).toBe(true);
+    mouse.setFocus(true);
+    expect(mouse.owner()).toBe("focus");
+    expect(mouse.leftClick()).toEqual({ outcome: "select", ended: "none" });
+    mouse.beginHold("strike");
+    expect(mouse.interrupt()).toBe("strike");
+    expect(mouse.releaseHold("strike")).toBe(false);
   });
 
   test("a deliberate key release strikes; retirement cancels; the ordinary slot stays a press", () => {

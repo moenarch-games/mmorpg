@@ -4,7 +4,7 @@ import { encodeCommand } from "../src/command-wire";
 import { actionBindingLabels } from "../src/input/binding-labels";
 import { decodeSnapshot, type ZoneEvent } from "../src/replication";
 import { combatTexts } from "../src/world/units/combat-text";
-import { GUARD_LANE_THRESHOLD_PX, ShieldGuardHold, canGuard, guardDisplay, laneFromOffset, padGuardLane } from "../src/world/units/shield-guard";
+import { ShieldGuardHold, canGuard, guardDisplay, padGuardLane } from "../src/world/units/shield-guard";
 import { encodeSnapshot, PROTOCOL_BYTE } from "./support/wire";
 import { playerEntity, testSnapshot } from "./support/snapshots";
 
@@ -24,21 +24,16 @@ function snapshot(events: ZoneEvent[], guard = { raised: null, protecting: false
 }
 
 describe("shield guard input", () => {
-  test("pointer travel picks the lane, camera drags never move it, and only a raised lane is lowered", () => {
-    const t = GUARD_LANE_THRESHOLD_PX;
-    expect([laneFromOffset(0), laneFromOffset(-t), laneFromOffset(t), laneFromOffset(t - 1)]).toEqual(["middle", "high", "low", "middle"]);
+  test("the mouse's lane moves the held guard, and only a raised lane is lowered", () => {
     const hold = new ShieldGuardHold();
-    hold.track(100, false);
+    hold.aimWithPointer("high");
     expect(hold.pending()).toBeUndefined();
     hold.begin();
     expect(hold.pending()).toBe("middle");
     expect(hold.pending()).toBeUndefined();
-    hold.track(100 - t, false);
+    hold.aimWithPointer("high");
     expect(hold.pending()).toBe("high");
-    // A camera drag owns the pointer.
-    hold.track(400, true);
-    expect(hold.lane()).toBe("high");
-    hold.track(400 + 2 * t, false);
+    hold.aimWithPointer("low");
     expect(hold.pending()).toBe("low");
     expect(hold.end()).toBe(true);
     expect(hold.active).toBe(false);
