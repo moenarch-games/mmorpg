@@ -496,6 +496,26 @@ mod tests {
         });
     }
 
+    /// The views `outpost_frame_time` times, the debug viewpoints of the same names in
+    /// `web/src/world/world-view.ts`.
+    const FRAME_TIME_VIEWS: [(&str, CameraView); 4] = [
+        ("hub", debug_view([5.0, 8.5, 31.0], [-14.0, 3.0, 4.0])),
+        ("woods", debug_view([-41.0, 18.0, 16.0], [-69.0, 14.0, 0.0])),
+        ("vale", debug_view([0.0, 70.0, 95.0], [0.0, 0.0, -10.0])),
+        (
+            "lake",
+            debug_view([-56.0, 33.0, -39.0], [-87.0, 11.0, -53.0]),
+        ),
+    ];
+
+    const fn debug_view(eye: [f32; 3], target: [f32; 3]) -> CameraView {
+        CameraView {
+            field_of_view_degrees: 50.0,
+            eye,
+            target,
+        }
+    }
+
     /// Advisory frame time (PRINCIPLE-015): the Outpost hub with its units and the woods
     /// (#49), 1280×720, each frame posed, submitted and waited for. Per view it prints the
     /// median, p95, p99 and maximum of the frame's wall time, `render` (prepare, encode,
@@ -524,40 +544,7 @@ mod tests {
             let mut presentation =
                 Presentation::new(1, scenery.clone(), Arc::clone(&content), start).unwrap();
             presentation.push(projection, start).unwrap();
-            let views = [
-                (
-                    "hub",
-                    CameraView {
-                        field_of_view_degrees: 50.0,
-                        eye: [5.0, 8.5, 31.0],
-                        target: [-14.0, 3.0, 4.0],
-                    },
-                ),
-                (
-                    "woods",
-                    CameraView {
-                        field_of_view_degrees: 50.0,
-                        eye: [-41.0, 18.0, 16.0],
-                        target: [-69.0, 14.0, 0.0],
-                    },
-                ),
-                (
-                    "vale",
-                    CameraView {
-                        field_of_view_degrees: 50.0,
-                        eye: [0.0, 70.0, 95.0],
-                        target: [0.0, 0.0, -10.0],
-                    },
-                ),
-                (
-                    "lake",
-                    CameraView {
-                        field_of_view_degrees: 50.0,
-                        eye: [-56.0, 33.0, -39.0],
-                        target: [-87.0, 11.0, -53.0],
-                    },
-                ),
-            ];
+            let views = FRAME_TIME_VIEWS;
             let size = [1280, 720];
             let instance = wgpu::Instance::default();
             let adapter = instance.request_adapter(&Default::default()).await.unwrap();
@@ -693,7 +680,9 @@ mod tests {
     }
 
     /// Reviewable lighting evidence (#529): the Outpost at noon, dusk and night, and a
-    /// campfire and the lantern post by night, as PNGs in `MMORPG_LIGHTING_SHOTS`.
+    /// campfire and the lantern post by night, the woods' levels of detail and the
+    /// `outpost_frame_time` views at the zone's hour (`re9-frame-*`), as PNGs in
+    /// `MMORPG_LIGHTING_SHOTS` with each shot's pose and hour in `views.json`.
     #[test]
     #[ignore = "requires a GPU; manual lighting evidence"]
     fn greyhaven_lighting_shots() {
@@ -749,19 +738,25 @@ mod tests {
                     target,
                 }
             };
-            for (index, (name, hour, view)) in [
-                ("noon", 12.0, hub),
-                ("dusk", 17.8, hub),
-                ("night", 23.5, hub),
-                ("torch-campfire", 22.0, campfire),
-                ("torch-lantern", 22.0, lantern),
-                ("woods-near", 15.0, woods(0.62, 0.0)),
-                ("woods-mid", 15.0, woods(0.0, 0.0)),
-                ("woods-far", 15.0, woods(-2.5, 22.0)),
-            ]
-            .into_iter()
-            .enumerate()
-            {
+            // `None` keeps the zone's own hour, as `outpost_frame_time` renders it.
+            let shots = [
+                ("noon", Some(12.0), hub),
+                ("dusk", Some(17.8), hub),
+                ("night", Some(23.5), hub),
+                ("torch-campfire", Some(22.0), campfire),
+                ("torch-lantern", Some(22.0), lantern),
+                ("woods-near", Some(15.0), woods(0.62, 0.0)),
+                ("woods-mid", Some(15.0), woods(0.0, 0.0)),
+                ("woods-far", Some(15.0), woods(-2.5, 22.0)),
+            ];
+            let shots = shots
+                .map(|(name, hour, view)| (name.to_owned(), hour, view))
+                .into_iter()
+                .chain(FRAME_TIME_VIEWS.map(|(name, view)| (format!("frame-{name}"), None, view)));
+            // Each shot's pose and hour, so the browser can be captured the same way
+            // (scripts/capture-browser-reference.py).
+            let mut manifest = Vec::new();
+            for (index, (name, hour, view)) in shots.enumerate() {
                 // Settle the trees' cross-fades at this view before the shot.
                 let now = now + Duration::from_secs(2 * index as u64);
                 for step in 0..4 {
@@ -772,7 +767,9 @@ mod tests {
                     );
                 }
                 let mut frame = presentation.frame(&world, now, view);
-                frame.lighting.hour = hour;
+                if let Some(hour) = hour {
+                    frame.lighting.hour = hour;
+                }
                 let pixels = readback(&frame, &[], view, size, None).await.unwrap();
                 image::save_buffer(
                     directory.join(format!("re9-{name}.png")),
@@ -783,7 +780,20 @@ mod tests {
                 )
                 .unwrap();
                 println!("saved re9-{name}.png");
+                manifest.push(serde_json::json!({
+                    "name": name,
+                    "hour": frame.lighting.hour,
+                    "fieldOfViewDegrees": view.field_of_view_degrees,
+                    "eye": view.eye,
+                    "target": view.target,
+                }));
             }
+            let manifest = serde_json::json!({ "size": size, "shots": manifest });
+            std::fs::write(
+                directory.join("views.json"),
+                serde_json::to_string_pretty(&manifest).unwrap() + "\n",
+            )
+            .unwrap();
         });
     }
 
