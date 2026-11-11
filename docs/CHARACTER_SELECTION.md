@@ -6,6 +6,23 @@ Product decision: [Decision Atlas 6.4.4](decisions/atlas.md). This document spec
 
 The schematic is the **structural reference**. The approved cinematic Greyhaven mockup defines the dark-fantasy atmosphere, restrained gold accents, readable contrast, and upgraded humanoid presentation. Illustrative concept artwork is **not** a shippable asset or proof that distinct class/sex models already exist.
 
+## One front end in both clients
+
+The browser and the native client draw the same selection screens from one description in
+`mmorpg_client_model::front_end` (the browser reads it through `mmorpg-wasm`):
+
+- **Mode tabs** above the heading choose what to play. **Greyhaven Vale** opens the
+  **Characters** screen below: it shapes a lasting character (roster, appearance).
+  **Battle Royale** opens the **Loadout** screen: it picks only what one match needs and changes
+  no roster character (see [BATTLE_ROYALE.md](BATTLE_ROYALE.md)). A platform that cannot play a
+  mode yet shows its tab disabled with the reason (the native client has no arena).
+- The heading, tagline, class names, roles and descriptions, and the game menu's entries
+  (Resume, Settings, then **Characters** or **Change loadout** in the browser, **Quit game**
+  natively, which claims its character for the whole session) come from the same module.
+- Colours, corner radii, spacing, text sizes and motion timings come from
+  `content/ui/theme.json`: the browser build turns it into `--ui-*` CSS custom properties,
+  the native client into egui visuals (`ui/theme.rs`). Change the look of both there.
+
 ## Desktop layout
 
 - **Left / main:** Large real 3D character preview with existing drag, keyboard, left/right and reset rotation controls. The character and camera receive the space; explanatory chrome stays minimal.

@@ -2,9 +2,12 @@
 
 ## Practice arena (Pages, no server)
 
-`?activity=battle-royale` (or **Battle Royale PvP** from Activity) opens with **Arena:
-Practice arena (this browser)** selected unless the URL names an `arenaServer`. Choose a
-class, appearance and equipment, then **Start practice**: the page's `mmorpg-wasm` host
+`?activity=battle-royale` (or the **Battle Royale** tab on the selection screen) opens the
+**Loadout** screen ([CHARACTER_SELECTION.md](CHARACTER_SELECTION.md#one-front-end-in-both-clients)):
+a class tile grid on the left, the build on the stage, equipment per slot and a **Look** on the
+right (a roster character's look and a body; nothing on the roster changes), and the arena
+route with **Practice** or **Hosted match** in the bottom bar. Practice is chosen unless the URL
+names an `arenaServer`. Pick a class and equipment, then **Start practice**: the page's `mmorpg-wasm` host
 (`LocalZone.forPracticeArena`) admits that `EphemeralCharacterBuild` at the maximum level just
 inside the fortress's south gate, facing the keep across the courtyard and five stationary
 **Training Targets** (three about 8–9 m ahead, two at 21 m). Targets are breakable props: they take real `mmorpg-core` damage, never move, fight or
@@ -64,7 +67,7 @@ battle-royale` profiles the arena.
 
 ## Hosted match
 
-Choose **Arena: Hosted match**. Select a class, appearance and equipped
+Choose **Hosted match** in the bottom bar. Select a class, a look and equipped
 items, then join the same **Match server** as a friend. Characters enter at the
 shared supported maximum level, with actual class resources and abilities. Equipment
 choices are filtered by the shared item catalog's slots; the host validates them.
