@@ -27,6 +27,7 @@ Lookup is read-only and does not replace the full completion gate or required na
 | --- | --- |
 | `sim-foundation` | Lowest simulation layer shared by every game: fixed-point maths, seeded randomness, tick timing, unit identity, collision geometry and the physics world; no combat, zones or content |
 | `sim-movement` | How a character body moves, over `sim-foundation`: run and jump speeds, dodge roll, climbing and surface hazards; no combat, zones or content |
+| `sim-combat` | Combat rules shared by every game, over `sim-foundation`: unit baseline, hit table, swing reach and height band, player classes and resources; no zones, quests or content |
 | `mmorpg-core` | Deterministic zone-local gameplay and interest/visibility policy, composed over the `sim-*` crates |
 | `mmorpg-protocol` | Command/snapshot wire encoding |
 | `mmorpg-game-server` | Adapter from a zone simulation into `game-server` |

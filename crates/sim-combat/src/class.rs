@@ -213,18 +213,18 @@ impl ResourceKind {
 /// The resource state machine of one player: value plus the two timers
 /// that drive regeneration and decay.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct ResourceClock {
-    pub(crate) value: u16,
+pub struct ResourceClock {
+    pub value: u16,
     /// Ticks counted toward the next resource step, below the interval.
-    pub(crate) ticks: u16,
+    pub ticks: u16,
     /// Arcanist five-second rule: ticks left without mana regeneration.
-    pub(crate) delay: u16,
+    pub delay: u16,
 }
 
 impl ResourceClock {
     /// One tick of resource upkeep. Counters only run while the step can
     /// change the value, so a resting player's state stays unchanged.
-    pub(crate) fn advance(&mut self, kind: ResourceKind, level: u8, in_combat: bool) {
+    pub fn advance(&mut self, kind: ResourceKind, level: u8, in_combat: bool) {
         let max = kind.max(level);
         let step: Option<u16> = match kind {
             ResourceKind::Rage | ResourceKind::Faith => (!in_combat && self.value > 0).then_some(0),
@@ -260,7 +260,7 @@ impl ResourceClock {
     }
 
     /// Spends `cost`; mana spending restarts the five-second rule.
-    pub(crate) fn spend(&mut self, kind: ResourceKind, cost: u16) {
+    pub fn spend(&mut self, kind: ResourceKind, cost: u16) {
         self.value = self.value.saturating_sub(cost);
         if kind == ResourceKind::Mana && cost > 0 {
             self.delay = MANA_REGEN_DELAY_TICKS;
@@ -268,12 +268,12 @@ impl ResourceClock {
         }
     }
 
-    pub(crate) fn gain(&mut self, kind: ResourceKind, level: u8, amount: u16) {
+    pub fn gain(&mut self, kind: ResourceKind, level: u8, amount: u16) {
         self.value = self.value.saturating_add(amount).min(kind.max(level));
     }
 
     /// Whether a recovered clock is reachable for `kind` at `level`.
-    pub(crate) fn is_valid(self, kind: ResourceKind, level: u8) -> bool {
+    pub fn is_valid(self, kind: ResourceKind, level: u8) -> bool {
         self.value <= kind.max(level)
             && self.ticks < RESOURCE_INTERVAL_TICKS
             && self.delay <= MANA_REGEN_DELAY_TICKS

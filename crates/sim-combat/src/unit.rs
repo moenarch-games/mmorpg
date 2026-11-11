@@ -77,14 +77,14 @@ pub const fn percent_of(max_health: u32, percent: u32) -> u32 {
 
 /// The outcome of one swing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Swing {
+pub enum Swing {
     Miss,
     Hit { amount: u16, critical: bool },
 }
 
 /// Rolls the hit table, then damage uniformly in `damage` (inclusive). A miss
 /// draws once, a hit twice; critical hits deal ×1.5, rounded down.
-pub(crate) fn roll_swing(rng: &mut ZoneRng, damage: [u16; 2]) -> Swing {
+pub fn roll_swing(rng: &mut ZoneRng, damage: [u16; 2]) -> Swing {
     let roll = rng.below(100);
     if roll < MISS_PERCENT {
         return Swing::Miss;

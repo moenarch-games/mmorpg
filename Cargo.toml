@@ -2,6 +2,7 @@
 members = [
   "crates/sim-foundation",
   "crates/sim-movement",
+  "crates/sim-combat",
   "crates/mmorpg-core",
   "crates/mmorpg-protocol",
   "crates/mmorpg-game-server",
@@ -30,6 +31,7 @@ rapier3d = "=0.36.1"
 physics-engine = { git = "https://github.com/moritzbrantner/physics-engine", rev = "ceef58fab0bc1dc7e084e733cf3223fc6ad27fc5" }
 sim-foundation = { path = "crates/sim-foundation" }
 sim-movement = { path = "crates/sim-movement" }
+sim-combat = { path = "crates/sim-combat" }
 mmorpg-core = { path = "crates/mmorpg-core" }
 mmorpg-control-plane = { path = "crates/mmorpg-control-plane" }
 mmorpg-characters = { path = "crates/mmorpg-characters" }
@@ -52,6 +54,7 @@ strum = { version = "=0.28.0", features = ["derive"] }
 [patch."https://github.com/moritzbrantner/mmorpg.git"]
 sim-foundation = { path = "crates/sim-foundation" }
 sim-movement = { path = "crates/sim-movement" }
+sim-combat = { path = "crates/sim-combat" }
 mmorpg-core = { path = "crates/mmorpg-core" }
 
 [workspace.lints.rust]
