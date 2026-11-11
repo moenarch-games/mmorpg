@@ -22,6 +22,12 @@ The browser and the native client draw the same selection screens from one descr
 - Colours, corner radii, spacing, text sizes and motion timings come from
   `content/ui/theme.json`: the browser build turns it into `--ui-*` CSS custom properties,
   the native client into egui visuals (`ui/theme.rs`). Change the look of both there.
+- **The stage shows only the real character.** The browser veils its stage with a turning
+  gold sigil ("Preparing your character…") until the real model can stand there in its class
+  outfit (at most 1.5 s more for the outfit), then lifts the veil; there is no stand-in figure.
+  If the model fails to load, the veil lifts on the empty stage and says so. The native client
+  draws its own stage and loads nothing of the zone until Enter World
+  ([NATIVE_CLIENT.md](NATIVE_CLIENT.md)).
 
 ## Desktop layout
 

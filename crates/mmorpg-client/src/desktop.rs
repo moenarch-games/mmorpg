@@ -1569,6 +1569,16 @@ impl ApplicationHandler for App {
                         }
                         self.title.clear();
                     }
+                    NetworkUpdate::Snapshot { .. }
+                        if self.stage.is_some()
+                            && self
+                                .preparing
+                                .as_ref()
+                                .is_some_and(|(_, build)| !build.is_finished()) =>
+                    {
+                        // The zone's world is still building: the stage stays and the window
+                        // keeps drawing; the latest projection is taken once the world is ready.
+                    }
                     NetworkUpdate::Snapshot {
                         connection_epoch,
                         snapshot,
