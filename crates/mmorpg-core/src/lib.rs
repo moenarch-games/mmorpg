@@ -136,11 +136,6 @@ pub use equipment::{
     EQUIPMENT_SLOTS, Equipment, EquipmentSlot, HEALTH_PER_STAMINA, ItemStats, MAX_EQUIPPED_STAMINA,
     PRIMARY_STAT_PER_DAMAGE, StatTotals,
 };
-pub use physique::{
-    InvalidPhysique, MAX_PHYSIQUE_MODIFIER_BP, PHYSIQUE_ATTRIBUTES, PHYSIQUE_COEFFICIENTS,
-    PHYSIQUE_NEUTRAL, PHYSIQUE_PARAMS, PHYSIQUE_SCALE, PHYSIQUE_STAT_PARAMS, Physique,
-    PhysiqueAttribute, PhysiqueParam, PhysiquePreset,
-};
 pub use events::{ErrorCode, MAX_EVENTS_PER_PLAYER, ZoneEvent};
 pub use forced::{
     CHARGE_MAX_TICKS, CHARGE_SPEED_SUBUNITS_PER_TICK, FORCED_IMMUNITY_TICKS, ForcedMove,
@@ -172,6 +167,11 @@ pub use nav::NAV_CELL_UNITS;
 pub use party::{
     MAX_PARTY_MEMBERS, MAX_PARTY_NAME_BYTES, PartyInvite, PartyMember, PartyRefusal, PartyRoster,
     PartyState, valid_name as valid_party_name,
+};
+pub use physique::{
+    InvalidPhysique, MAX_PHYSIQUE_MODIFIER_BP, PHYSIQUE_ATTRIBUTES, PHYSIQUE_COEFFICIENTS,
+    PHYSIQUE_NEUTRAL, PHYSIQUE_PARAMS, PHYSIQUE_SCALE, PHYSIQUE_STAT_PARAMS, Physique,
+    PhysiqueAttribute, PhysiqueParam, PhysiquePreset,
 };
 pub use platform::{MAX_PLATFORMS, Platform, PlatformId, PlatformPhase};
 pub use progression::{MAX_PLAYER_LEVEL, experience_to_next_level, kill_experience};

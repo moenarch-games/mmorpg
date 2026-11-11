@@ -30,10 +30,8 @@ fn custom() -> Physique {
 
 #[test]
 fn physique_survives_create_save_reload_reconnect_and_edit() {
-    let directory = std::env::temp_dir().join(format!(
-        "mmorpg-characters-physique-{}",
-        std::process::id()
-    ));
+    let directory =
+        std::env::temp_dir().join(format!("mmorpg-characters-physique-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&directory);
     let character = CharacterId::new("physique-1").unwrap();
 

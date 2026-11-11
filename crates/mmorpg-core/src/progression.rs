@@ -115,8 +115,7 @@ impl crate::ZoneSimulation {
             player.experience = 0;
         }
         // The maximum as it was, physique included (#633): the gain follows the final maximum.
-        let old_max =
-            crate::physique::max_health(old_level, &player.equipment, &player.physique);
+        let old_max = crate::physique::max_health(old_level, &player.equipment, &player.physique);
         player.health += player.max_health() - old_max;
         if let Some(choice) = player.class {
             let kind = choice.class.resource();

@@ -37,7 +37,10 @@ fn stats(zone: &ZoneSimulation) -> (u32, [u16; 2]) {
 
 fn with_stat_sliders(value: u16) -> Physique {
     let mut physique = Physique::NEUTRAL;
-    for param in PhysiqueParam::ALL.into_iter().filter(|param| param.affects_stats()) {
+    for param in PhysiqueParam::ALL
+        .into_iter()
+        .filter(|param| param.affects_stats())
+    {
         physique = physique.with(param, value).unwrap();
     }
     physique
@@ -58,7 +61,8 @@ fn neutral_physique_keeps_the_original_numbers_and_extremes_stay_within_two_perc
     // Health followed the raised maximum.
     assert_eq!(zone.snapshot().unwrap().players[0].combat.health, 189);
 
-    zone.customize_physique(PLAYER, with_stat_sliders(0)).unwrap();
+    zone.customize_physique(PLAYER, with_stat_sliders(0))
+        .unwrap();
     let (low_health, _) = stats(&zone);
     assert_eq!(low_health, 181, "-2 %, rounded");
 

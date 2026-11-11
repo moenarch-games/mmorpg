@@ -424,7 +424,10 @@ mod tests {
         }
         for param in PhysiqueParam::ALL {
             if !param.affects_stats() {
-                assert_eq!(PHYSIQUE_COEFFICIENTS[param.index()], [0; PHYSIQUE_ATTRIBUTES]);
+                assert_eq!(
+                    PHYSIQUE_COEFFICIENTS[param.index()],
+                    [0; PHYSIQUE_ATTRIBUTES]
+                );
             }
         }
     }
@@ -434,7 +437,9 @@ mod tests {
         assert_eq!(PhysiquePreset::Average.physique(), Physique::NEUTRAL);
         assert_eq!(
             PhysiquePreset::Muscular.physique().fixed(),
-            [6_000, 8_500, 4_000, 7_500, 5_500, 5_000, 5_000, 5_000, 5_000, 5_000, 5_000]
+            [
+                6_000, 8_500, 4_000, 7_500, 5_500, 5_000, 5_000, 5_000, 5_000, 5_000, 5_000
+            ]
         );
         // Choosing presets in turn keeps nothing: back at Average the numbers are the original.
         let mut current = Physique::NEUTRAL;
