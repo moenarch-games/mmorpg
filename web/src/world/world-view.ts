@@ -975,7 +975,7 @@ export class WorldView {
       loadout: look.classId ? CLASS_LOADOUTS[look.classId] : null, resident: null, figure: null, variety: null,
       outfit: look.classId ? { preset: `class.${look.classId}`, replaced: [] } : null, headwear: true, swing: null, chains: null, bow: null,
       sheathed: [false, false], throwable: null, belted: null, crossbow: null, channel: null,
-    }], { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {} });
+    }], { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {}, physique: look.physique ?? null });
     const { roots, changed } = this.#models.roots();
     if (changed) { this.#renderer.renderImportedRoots({ camera, roots }); }
     return true;
@@ -1361,7 +1361,7 @@ export class WorldView {
       }
     }
     // The posed casters' spell origins: the next frames' beams leave the staff's head from there (#612).
-    units.setChannelOrigins(this.#models.update(presented.imported, { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {} }));
+    units.setChannelOrigins(this.#models.update(presented.imported, { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {}, physique: look.physique ?? null }));
     const intensity = animate ? "strong" : "subtle";
     this.#impacts.preload(intensity);
     for (const received of receivedProjections) {

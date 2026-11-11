@@ -52,7 +52,53 @@ type Dress = {
   variety: number | null;
   /** A player's class starter outfit (#379), once its preset has loaded. */
   outfit: ClassOutfit | null;
+  /** The viewer's physique (#633), by slider key in [0, 1]; null keeps the bundle's average body. */
+  physique: PhysiqueLook | null;
 };
+/** Physique sliders (#633) by canonical key, normalized to [0, 1] with 0.5 neutral. */
+export type PhysiqueLook = Readonly<Record<string, number>>;
+type Heights = { min: number; max: number };
+
+/**
+ * What a physique draws on the male Ranger (#635), presentation only. Body fat drives the bundle's
+ * `build.lean` (below neutral) or `build.heavy` (above) keys, which asset-tooling authors on the
+ * body and on every outfit, plate and hairstyle, so clothing follows the body. Jaw width adds
+ * `face.broad` or `face.narrow` on top of the chosen face option. Height picks the bundle's
+ * declared root scale (`humanoid-appearance.heights`). The capsule, reach and stats never read it.
+ */
+export function physiqueShape(physique: PhysiqueLook, heights: Heights):
+  { build: Record<string, number>; jaw: Record<string, number>; scale: number } {
+  const signed = (key: string) => Math.max(-1, Math.min(1, ((physique[key] ?? 0.5) - 0.5) * 2));
+  const fat = signed("bodyFat");
+  const jaw = signed("jawWidth");
+  return {
+    build: { "build.lean": Math.max(0, -fat), "build.heavy": Math.max(0, fat) },
+    jaw: { "face.broad": Math.max(0, jaw), "face.narrow": Math.max(0, -jaw) },
+    scale: heights.min + (heights.max - heights.min) * (signed("height") + 1) / 2,
+  };
+}
+
+/**
+ * Shapes a dressed player `model` (after its face and worn items) by `physique` and returns its
+ * height scale. Set once when the look is built or edited, and baked into the merged meshes.
+ */
+function applyPhysique(model: THREE.Object3D, physique: PhysiqueLook, heights: Heights): number {
+  const { build, jaw, scale } = physiqueShape(physique, heights);
+  model.traverse((child) => {
+    if (!(child instanceof THREE.Mesh) || !child.morphTargetInfluences || !child.morphTargetDictionary) { return; }
+    const influences = child.morphTargetInfluences;
+    for (const [target, weight] of Object.entries(build)) {
+      const index = child.morphTargetDictionary[target];
+      if (index !== undefined) { influences[index] = weight; }
+    }
+    // The jaw composes with the chosen face option, which set these keys already.
+    for (const [target, weight] of Object.entries(jaw)) {
+      const index = child.morphTargetDictionary[target];
+      if (index !== undefined) { influences[index] = Math.min(1, influences[index]! + weight); }
+    }
+  });
+  return scale;
+}
 /** The viewer's face (#411): a `humanoid-appearance.face` feature id to one of its option ids. */
 export type FaceChoice = Readonly<Record<string, string>>;
 /** One face feature the bundle offers (#411), with its options' morph-target weights. */
@@ -941,6 +987,10 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
   const keys = [...new Set([...[...Object.values(LOADOUT_ITEMS), ...Object.values(HEADWEAR_ITEMS)].flat().map((item) => item.key), "equipment.hat.straw", ...Object.values(THROWABLE_ITEMS)])];
   const male = await loadFigure(loader, MALE, keys, Object.values(HAIR_ENTRIES), rest);
   const { gltf, sources, sockets, motions, appearance, look, face, scene, wear } = male;
+  // The bundle's declared height range (#380), which the physique's height picks from (#635).
+  const declared = (appearance as { heights?: { min?: unknown; max?: unknown } }).heights;
+  const heights: Heights = typeof declared?.min === "number" && typeof declared.max === "number"
+    ? { min: declared.min, max: declared.max } : { min: 1, max: 1 };
   /** The other figures, loaded with the residents (#493). */
   const figures = new Map<string, FigureBundle>([[MALE, male]]);
   let residents: Map<string, ResidentLook> | null = null;
@@ -1028,7 +1078,14 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
   };
   const instantiate = (dress: Dress): Posable => {
     const { loadout, headwear, hair, face: chosen, resident } = dress;
-    if (dress.outfit !== null) { return mixerPosable(dressOutfit(dress.outfit, dress), sources); }
+    // A player's physique (#635) shapes the dressed model, so outfit, plates and hair follow it.
+    const shaped = (model: THREE.Object3D): Posable => {
+      const scale = dress.physique ? applyPhysique(model, dress.physique, heights) : 1;
+      const posable = mixerPosable(model, sources);
+      if (scale !== 1) { posable.scale = scale; }
+      return posable;
+    };
+    if (dress.outfit !== null) { return shaped(dressOutfit(dress.outfit, dress)); }
     if (resident !== null) {
       const figure = figures.get(dress.figure ?? MALE);
       const preset = dress.variety !== null ? varied.get(`${resident}#${dress.variety}`) : residents?.get(resident);
@@ -1074,7 +1131,7 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     const hairHidden = hooded || worn.some(({ key }) => look.hides.get(key)?.includes("hair"));
     const hairKey = hair && hair.style !== "bald" && !hairHidden ? HAIR_ENTRIES[hair.style] : null;
     wear(model, worn, hairKey, hair ? look.tints.get(`tint.${hair.color}`) : undefined);
-    return mixerPosable(model, sources);
+    return shaped(model);
   };
   let pending: Promise<void> | null = null;
   /** Every figure's residents (and the male's enemies), all or none (#418, #39, #493). */
@@ -1453,7 +1510,7 @@ export class QuaterniusUnits {
    * Poses every imported unit, and returns where each caster's spell starts in the world: its `channel`
    * point on the posed hand (#612), for {@link SharedUnits.setChannelOrigins}.
    */
-  update(units: readonly ImportedRequest[], viewer: { headwear: Headwear; hair: Hair; face: FaceChoice }):
+  update(units: readonly ImportedRequest[], viewer: { headwear: Headwear; hair: Hair; face: FaceChoice; physique?: PhysiqueLook | null }):
     { entity: EntityRef; point: [number, number, number] }[] {
     const seen = new Set<string>();
     const origins: { entity: EntityRef; point: [number, number, number] }[] = [];
@@ -1467,7 +1524,7 @@ export class QuaterniusUnits {
       // Until its preset loads, a player keeps the bundle's default look.
       const outfit = unit.kind === "Ranger" && unit.outfit && asset.outfitReady?.(unit.outfit.preset) ? unit.outfit : null;      const dress: Dress = {
         loadout: unit.loadout, headwear: dressed ? viewer.headwear : null, hair: dressed ? viewer.hair : null,
-        face: dressed ? viewer.face : null, resident, figure: resident !== null ? unit.figure : null, outfit,
+        face: dressed ? viewer.face : null, physique: dressed ? viewer.physique ?? null : null, resident, figure: resident !== null ? unit.figure : null, outfit,
         // Until a guard's own look has built, he wears the plain preset.
         variety: resident !== null && unit.variety !== null && asset.variedReady?.(resident, unit.variety, unit.figure ?? MALE) ? unit.variety : null,
       };

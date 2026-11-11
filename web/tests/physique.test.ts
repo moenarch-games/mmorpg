@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { formatModifier, loadPendingPhysique, matchingPreset, neutralPhysique, savePendingPhysique } from "../src/physique";
+import { DRAWN_PHYSIQUE, formatModifier, loadPendingPhysique, matchingPreset, neutralPhysique, physiqueLook, savePendingPhysique } from "../src/physique";
+import { physiqueShape } from "../src/world/units/quaternius-units";
 import { committedPhysique, customizePhysique, physiqueModel, physiqueModifiers } from "../src/world/wasm-runtime";
 import { createLocalWorld } from "../src/world/local-world";
 import { MemoryStorage, testCharacters } from "./support/local-characters";
@@ -15,6 +16,19 @@ describe("physique picker", () => {
     expect(model.presets.map((preset) => preset.name)).toEqual(["Average", "Lean", "Athletic", "Muscular", "Stocky", "Heavyset"]);
     expect(model.maxModifierBp).toBe(200);
     expect(matchingPreset(model, neutralPhysique(model))).toBe("Average");
+  });
+
+  test("presets shape the body through the bundle's build, jaw and height keys (#635)", () => {
+    const heights = { min: 0.91, max: 1.09 };
+    const shape = (name: string) => physiqueShape(physiqueLook(model, model.presets.find((preset) => preset.name === name)!.values), heights);
+    expect(shape("Average")).toEqual({ build: { "build.lean": 0, "build.heavy": 0 }, jaw: { "face.broad": 0, "face.narrow": 0 }, scale: 1 });
+    expect(shape("Heavyset").build["build.heavy"]).toBeCloseTo(0.7);
+    expect(shape("Lean").build["build.lean"]).toBeCloseTo(0.6);
+    expect(shape("Stocky").scale).toBeCloseTo(0.973);
+    const jaw = model.params.map((param) => (param.key === "jawWidth" ? 0 : model.neutral));
+    expect(physiqueShape(physiqueLook(model, jaw), heights).jaw).toEqual({ "face.broad": 0, "face.narrow": 1 });
+    // Only sliders with real shapes are enabled; the rest stay off.
+    expect(DRAWN_PHYSIQUE).toEqual(["bodyFat", "height", "jawWidth"]);
   });
 
   test("the preview is core's clamped modifier; cosmetic sliders change nothing", () => {
