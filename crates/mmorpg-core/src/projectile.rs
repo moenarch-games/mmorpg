@@ -45,7 +45,7 @@ pub const RICOCHET_BOUNCES: u8 = 2;
 /// A free arrow or bolt pitches to meet the nearest hostile unit within this distance …
 pub const AIM_ASSIST_RANGE_UNITS: i32 = 3_000;
 /// … whose centre lies within this angle of the facing (about 8°, as its cosine).
-const AIM_ASSIST_COS: f32 = 0.990;
+pub const AIM_ASSIST_COS: f32 = 0.990;
 /// A shielded creature (#160) blocks arrows and bolts arriving within this angle of its
 /// facing; magic missiles pass its shield.
 pub const CREATURE_SHIELD_HALF_ANGLE_DEGREES: f32 = 60.0;

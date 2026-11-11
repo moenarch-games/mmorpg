@@ -38,7 +38,7 @@ pub struct PowerDraw {
 /// A press on slot `slot` of `ability` can start a draw: the ability is learned and still on
 /// that slot, and the viewer is alive, unstunned and not casting. A cooldown does not stop a
 /// draw: the shot is refused when released, as any other cast.
-fn can_draw(snapshot: &ZoneSnapshot, slot: u8, ability: u8) -> bool {
+pub(crate) fn can_draw(snapshot: &ZoneSnapshot, slot: u8, ability: u8) -> bool {
     let viewer = &snapshot.viewer;
     let on_slot = viewer.class.is_some_and(|choice| {
         usize::from(slot)
