@@ -17,8 +17,9 @@ use mmorpg_client::{
     world_controls::{WorldAction, WorldControls},
 };
 use mmorpg_client_model::hud::{CombatHud, class_kit};
+use mmorpg_client_model::manual_aim;
 use mmorpg_client_model::mouse_owner::{
-    Begin, Gesture, Hold, HoldCamera, HoldRelease, LeftClick, MouseOwners, RightClick,
+    AimStyle, Begin, Gesture, Hold, HoldCamera, HoldRelease, LeftClick, MouseOwners, RightClick,
 };
 use mmorpg_client_model::power_draw::{DrawRelease, PowerDraw};
 use mmorpg_core::{EntityKind, EntityRef, PlayerClass, Sex, ZoneContent};
@@ -257,8 +258,11 @@ impl App {
         }
         // A gesture keeps the capture free look had: its motion stays relative and the cursor
         // never jumps (#636).
-        let wants_grab =
-            self.camera_control.pointer_owner(false, interface) == PointerOwner::Camera;
+        // A manual aim (#649) captures the pointer even from focus: its motion steers the
+        // shoulder camera, and the focus's free cursor returns when it ends.
+        let wants_grab = self.camera_control.pointer_owner(false, interface)
+            == PointerOwner::Camera
+            || (!interface && self.mouse.gesture() == Some(Gesture::Aim));
         if wants_grab == self.grabbed {
             return;
         }
@@ -317,7 +321,12 @@ impl App {
         }
         self.camera_control.set_focus(target);
         self.mouse.set_focus(target.is_some());
-        let opponent = opponent.map(|entity| entity.position.map(|cm| cm as f32 / 100.0));
+        // A manual aim (#649) hands the camera to the mouse; it keeps the focus and turns back to
+        // it smoothly when the aim ends.
+        let aiming = self.mouse.gesture() == Some(Gesture::Aim);
+        let opponent = opponent
+            .filter(|_| !aiming)
+            .map(|entity| entity.position.map(|cm| cm as f32 / 100.0));
         self.camera
             .track(self.presentation.camera_target(now), opponent, dt);
         self.sync_cursor();
@@ -606,8 +615,28 @@ impl App {
         match ended {
             Some(Gesture::Hold(Hold::Strike)) => self.presentation.abandon_attack_preparation(),
             Some(Gesture::Hold(Hold::Guard)) => self.update_guard(),
-            Some(Gesture::Aim | Gesture::Wheel) | None => {}
+            // A manual aim (#649) lowers its wind-up; the camera goes back to the focus.
+            Some(Gesture::Aim) => {
+                self.presentation.abandon_attack_preparation();
+                self.sync_cursor();
+            }
+            Some(Gesture::Wheel) | None => {}
         }
+    }
+
+    /// Throws the aimed `ability` along the aim (#649): the character faces the camera and its
+    /// slot is used as usual; the zone decides the flight, landing and hits.
+    fn throw_aimed(&mut self, ability: u8) {
+        self.update_movement();
+        let slot = self
+            .abilities
+            .iter()
+            .position(|&held| held == ability)
+            .and_then(|index| u8::try_from(index + 1).ok());
+        if let Some(slot) = slot {
+            self.control(ControlAction::AbilitySlot(slot));
+        }
+        self.sync_cursor();
     }
 
     /// Ends whatever gesture owns the mouse without firing: focus loss, a menu or window,
@@ -700,6 +729,17 @@ impl App {
         };
         let latest = self.presentation.latest();
         let interface_open = self.ui.windows_open(latest);
+        // The bomb takes a temporary shoulder-camera aim (#649); a press while another gesture
+        // owns the mouse does nothing.
+        if latest.is_some_and(|latest| manual_aim::can_aim(latest, slot, ability, interface_open)) {
+            if self.mouse.begin_aim(slot, ability) {
+                self.drop_power_draw();
+                self.presentation
+                    .hold_attack_preparation(ability, Instant::now());
+                self.sync_cursor();
+            }
+            return;
+        }
         if self.power_draw.press(slot, ability, latest, interface_open) {
             self.presentation
                 .hold_attack_preparation(ability, Instant::now());
@@ -926,6 +966,15 @@ impl App {
         let releases = self.controls.drain_releases();
         let pad_releases = self.pad.drain_releases();
         for release in releases.into_iter().chain(pad_releases) {
+            // A held aim throws on its deliberate release (#649); a retirement ends it unthrown.
+            let aimed = self.mouse.gesture() == Some(Gesture::Aim);
+            match self.mouse.release_aim(release.slot, release.retired) {
+                Some(ability) => self.throw_aimed(ability),
+                None if aimed && self.mouse.gesture().is_none() => {
+                    self.gesture_ended(Some(Gesture::Aim));
+                }
+                None => {}
+            }
             // A held power shot fires on its deliberate release, ahead of the release itself.
             match self.power_draw.release(release.slot, release.retired) {
                 Some(DrawRelease::Fire(_)) => {
@@ -1080,6 +1129,12 @@ impl App {
             project: &project,
             eye: view.eye,
         };
+        // A manual aim's expected landing (#649): a non-authoritative aid on the ground ahead.
+        let landing = (self.mouse.gesture() == Some(Gesture::Aim))
+            .then(|| presentation.latest())
+            .flatten()
+            .and_then(|latest| manual_aim::landing(latest, self.camera.facing()))
+            .and_then(|point| project(presentation.rendered(point)));
         let mut raw = egui.state.take_egui_input(window);
         raw.events.append(&mut self.pad_ui);
         let mut intents = Vec::new();
@@ -1098,6 +1153,11 @@ impl App {
                     egui::Stroke::new(1.2, egui::Color32::from_rgb(245, 237, 211)),
                 );
                 painter.circle_filled(center, 1.0, egui::Color32::WHITE);
+                if let Some(at) = landing {
+                    let stroke = egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 178, 74));
+                    painter.circle_stroke(at, 14.0, stroke);
+                    painter.circle_filled(at, 2.5, stroke.color);
+                }
             }
         });
         let platform = egui.paint.prepare(&egui.context, output);
@@ -1136,6 +1196,12 @@ impl App {
             match preferences.value(mmorpg_client::settings::HOLD_CAMERA) {
                 Ok(settings_core::SettingValue::Choice(value)) => HoldCamera::from_setting(value),
                 _ => HoldCamera::default(),
+            },
+        );
+        self.mouse.set_aim_style(
+            match preferences.value(mmorpg_client::settings::AIM_STYLE) {
+                Ok(settings_core::SettingValue::Choice(value)) => AimStyle::from_setting(value),
+                _ => AimStyle::default(),
             },
         );
         if let Some(audio) = &mut self.audio {
@@ -1379,9 +1445,17 @@ impl ApplicationHandler for App {
                 if pressed {
                     if !selecting && self.world_controls.selecting() {
                         // A click drops a held draw (#607) and is nothing else; a held strike
-                        // or guard ignores the left button (#636).
-                        let selects =
-                            !self.drop_power_draw() && self.mouse.left_click() == LeftClick::Select;
+                        // or guard ignores the left button (#636); an armed aim throws (#649).
+                        let click = if self.drop_power_draw() {
+                            LeftClick::Nothing
+                        } else {
+                            self.mouse.left_click()
+                        };
+                        if let LeftClick::Throw(ability) = click {
+                            self.throw_aimed(ability);
+                            return;
+                        }
+                        let selects = click == LeftClick::Select;
                         self.pointer_origin = selects
                             .then(|| {
                                 self.cursor.or_else(|| {
