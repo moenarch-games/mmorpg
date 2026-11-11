@@ -157,6 +157,8 @@ export type ViewerLook = {
   hair?: "buzzed" | "parted" | "long" | "bald"; hairColor?: "black" | "brown" | "blond";
   /** The viewer's face (#411): bundle face feature id to option id. */
   face?: Readonly<Record<string, string>>;
+  /** The viewer's physique (#635): slider key to its value in [0, 1]; absent draws the average body. */
+  physique?: Readonly<Record<string, number>>;
 };
 
 type DrawEntry = { id: string; key: string; model: number; color: Color; emissive: Color | null; opacity: number; unlit: boolean; doubleSided: boolean };

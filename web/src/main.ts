@@ -50,7 +50,7 @@ import { characterVisualProfile, type CharacterVisualProfile } from "./character
 import type { LocalWorld } from "./world/local-world";
 import { LocalCharacters, VisitStorage } from "./world/local-characters";
 import { actionLabDefinitions, committedArea, committedLevel, committedPhysique, createScenarioWorld, customizePhysique, labExperiments, loadLocalWorld, physiqueModel, physiqueModifiers, presentZone, soundManifest } from "./world/wasm-runtime";
-import { loadPendingPhysique, neutralPhysique, PhysiqueEditor, savePendingPhysique, type PhysiqueModel } from "./physique";
+import { loadPendingPhysique, neutralPhysique, PhysiqueEditor, physiqueLook, savePendingPhysique, type PhysiqueModel } from "./physique";
 import { WorldSound } from "./world/world-sound";
 import { ActionLabPanel, labQuery } from "./world/action-lab";
 import { ExperimentPanel } from "./world/lab-experiment-panel";
@@ -1420,7 +1420,7 @@ function renderSelection() {
     projectionMatrix: webGpuProjection(previewCamera),
   };
   // The real Ranger once it loaded; the procedural figure while it loads or if it failed.
-  const real = worldView.selectionPreview(viewerLook(), [-1.2, 0.1, 0], PREVIEW_FACING + turntable.yaw, PREVIEW_HEIGHT,
+  const real = worldView.selectionPreview(viewerLook(true), [-1.2, 0.1, 0], PREVIEW_FACING + turntable.yaw, PREVIEW_HEIGHT,
     (performance.now() - previewStart) / 1000, camera);
   const features = worldView.faceFeatures();
   if (faceFeatures === undefined && features !== undefined) { showFaceFeatures(features); }
@@ -1429,12 +1429,19 @@ function renderSelection() {
   renderer.render({ camera, nodes: real ? selectionStageNodes : [...selectionStageNodes, ...selectionCharacterNodes()] });
 }
 
-/** The viewer's own look for the shared unit presenter: class, sex and headwear. */
-function viewerLook(): ViewerLook {
+/**
+ * The viewer's own look for the shared unit presenter: class, sex, headwear, hair, face and
+ * physique. The picker preview draws the physique being edited, the world the saved one, and only
+ * in local play: online and Battle Royale play do not carry physique yet (#634, #635).
+ */
+function viewerLook(preview = false): ViewerLook {
   const character = previewCharacter();
+  const local = physique !== null && !chosenServer() && !arenaEntry.selected;
+  const values = local ? (preview ? physique!.editor.values : physique!.editor.savedValues) : null;
   return {
     classId: character.classId, sex: character.sex, headwear: characterAppearance.hat === "none" ? null : characterAppearance.hat,
     hair: characterAppearance.hair, hairColor: characterAppearance.hairColor, face: characterAppearance.face,
+    ...(values ? { physique: physiqueLook(physique!.model, values) } : {}),
   };
 }
 

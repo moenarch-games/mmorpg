@@ -37,7 +37,20 @@ const COSMETIC_GROUPS: readonly { title: string; keys: readonly string[] }[] = [
   { title: "Face structure", keys: ["jawWidth", "jawProjection"] },
 ];
 
+/**
+ * The sliders the player body draws (#635), from the audit of the bundles players wear: the male
+ * Ranger has `build.lean`/`build.heavy` keys on the body and every outfit, plate and hairstyle
+ * (body fat), a declared height scale (height) and `face.broad`/`face.narrow` keys (jaw width).
+ * No bundle has frame, muscularity, shoulder, bust, waist, hip, glute or jaw-projection morphs.
+ */
+export const DRAWN_PHYSIQUE: readonly string[] = ["bodyFat", "height", "jawWidth"];
+
 export const label = (key: string): string => LABELS[key] ?? key;
+
+/** `values` as the renderer's physique look: slider key to its value in [0, 1]. */
+export function physiqueLook(model: PhysiqueModel, values: readonly number[]): Record<string, number> {
+  return Object.fromEntries(model.params.map((param, index) => [param.key, (values[index] ?? model.neutral) / model.scale]));
+}
 
 /** A modifier in basis points as a signed percentage, e.g. `+1.25%`, `−0.50%`, `0%`. */
 export function formatModifier(bp: number): string {
@@ -102,8 +115,8 @@ const percent = (model: PhysiqueModel, value: number) => Math.round((value / mod
 
 /**
  * The Physique group inside the Appearance panel. Edits are a preview until Confirm saves them;
- * Cancel returns to the saved values. Cosmetic sliders stay disabled until the loaded body can
- * draw their morphs (#635): they never pretend to change the preview.
+ * Cancel returns to the saved values. A cosmetic slider is enabled only when the player body
+ * draws it (#635, `DRAWN_PHYSIQUE`): the others never pretend to change the preview.
  */
 export class PhysiqueEditor {
   readonly #root: HTMLElement;
@@ -135,8 +148,9 @@ export class PhysiqueEditor {
       return node;
     };
 
+    const drawn = (key: string) => DRAWN_PHYSIQUE.includes(key);
     const disclosure = element("p", "physique-disclosure",
-      "The preview body does not change shape yet: physique morphs arrive with #635. Your values are still saved and the stat preview below is exact.");
+      "The body shows body fat, height and jaw width. Frame, muscularity and shoulder width change stats only: the body has no shapes for them yet. Your values are saved either way, and the stat preview below is exact.");
 
     const presets = element("div", "physique-presets");
     presets.setAttribute("role", "group");
@@ -188,17 +202,19 @@ export class PhysiqueEditor {
     this.#statNote = element("p", "physique-stat-note");
     stats.append(list, this.#statNote);
 
+    // A cosmetic slider is enabled only when the body draws it; the others never fake a shape.
     const cosmetic = COSMETIC_GROUPS.map((group) => {
-      const fieldset = element("fieldset", "physique-group physique-group--unavailable");
+      const available = group.keys.some(drawn);
+      const fieldset = element("fieldset", available ? "physique-group" : "physique-group physique-group--unavailable");
       fieldset.append(element("legend", undefined, group.title));
       for (const key of group.keys) {
         const index = model.params.findIndex((param) => param.key === key);
-        if (index >= 0) fieldset.append(slider(index, true));
+        if (index >= 0) fieldset.append(slider(index, !drawn(key)));
       }
       return fieldset;
     });
     const cosmeticNote = element("p", "physique-unavailable",
-      "Unavailable: the loaded body has no morphs for these yet (#635), so they stay disabled rather than fake a shape. Saved values are kept, and they never change stats.");
+      "Bust, waist, hip, glute and jaw projection are disabled: the body has no shapes for them yet, so they stay off rather than fake one. Saved values are kept, and these never change stats.");
 
     this.#cancel = element("button", "physique-cancel", "Cancel");
     this.#cancel.type = "button";
@@ -221,6 +237,11 @@ export class PhysiqueEditor {
   /** The values on screen, saved or not. */
   get values(): number[] {
     return [...this.#values];
+  }
+
+  /** The saved values, which the world draws. */
+  get savedValues(): number[] {
+    return [...this.#saved];
   }
 
   /** Whether the values on screen differ from the saved ones. */
