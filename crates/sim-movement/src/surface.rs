@@ -152,7 +152,7 @@ pub fn slip(last: [i32; 2], wanted: [i32; 2], grip: i32) -> [i32; 2] {
 }
 
 /// A zone's patches: at most [`MAX_SURFACE_PATCHES`], ordered by ID, each sound.
-pub(crate) fn validate(patches: &[SurfacePatch]) -> Result<(), ZoneError> {
+pub fn validate(patches: &[SurfacePatch]) -> Result<(), ZoneError> {
     if patches.len() > MAX_SURFACE_PATCHES {
         return Err(ZoneError::new("zone surface patch capacity reached"));
     }
