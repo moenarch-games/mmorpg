@@ -3,7 +3,8 @@
 //!
 //! The native client resolves keys to the same MMORPG-owned semantic actions
 //! as the browser (`web/src/input/game-controls.ts`): `ability.slot1`–`4` on
-//! Digit1–Digit4 in the `gameplay` context and `combat.cancelCast` on Escape in
+//! Digit1–Digit4 in the `gameplay` context and `combat.cancelCast` (no key since #636: right
+//! click cancels a cast) in
 //! the `casting` context, which is pushed only while the received projection
 //! shows the viewer casting (`viewer.cast.is_some()`) and does not block the
 //! layers below it. Binding resolution, repeat suppression and held-state
@@ -42,8 +43,8 @@
 //! A key down/up pair is one physical press; `repeat` is winit's
 //! `KeyEvent::repeat` (OS auto-repeat). Releases and resets never use an
 //! ability, so `key_up` and `focus_lost` emit nothing by construction.
-//! Escape outside a cast resolves to nothing here, so the desktop shell keeps
-//! closing the window on it.
+//! Escape resolves to nothing here: it is the world's `world.cancel`, which closes a panel or
+//! opens the game menu (#636).
 
 use input_bindings_core::{
     ActionRegistry, InputStroke, KeyMatch, Modifiers, RepeatPolicy, WhenExpr, validate_registry,
@@ -148,7 +149,10 @@ fn native_defaults_match_the_browser_catalog() {
     let ids: Vec<&str> = SLOT_KEYS
         .iter()
         .map(|&(_, slot)| ControlAction::AbilitySlot(slot).id())
-        .chain([ControlAction::CancelCast.id()])
+        .chain([
+            ControlAction::Swing.id(),
+            ControlAction::DirectedStrike.id(),
+        ])
         .collect();
     for id in ids {
         let (browser_context, browser_keys) = browser_default(id);
@@ -162,8 +166,8 @@ fn native_defaults_match_the_browser_catalog() {
         ("gameplay".to_owned(), vec!["Digit1".to_owned()])
     );
     assert_eq!(
-        browser_default("combat.cancelCast"),
-        ("casting".to_owned(), vec!["Escape".to_owned()])
+        browser_default("combat.swing"),
+        ("gameplay".to_owned(), vec!["KeyQ".to_owned()])
     );
 }
 
@@ -260,39 +264,22 @@ fn unbound_keys_use_nothing() {
         assert_eq!(controls.key_down(key, true), NONE, "{key:?} repeat");
         controls.key_up(key);
     }
-    // Escape outside a cast is not a control action; the shell closes on it.
+    // Escape is no control action; the world's game menu takes it (#636).
     assert_eq!(press(&mut controls, KeyCode::Escape), NONE);
     assert!(!controls.is_held(ControlAction::CancelCast));
 }
 
 #[test]
-fn escape_cancels_a_cast_once_per_press() {
+fn escape_never_cancels_a_cast() {
+    // #636: right click cancels a cast; Escape is the game menu, a world action.
     let mut controls = NativeControls::new();
     controls.set_casting(true);
-    assert_eq!(
-        controls.key_down(KeyCode::Escape, false),
-        [ControlAction::CancelCast]
-    );
-    assert_eq!(controls.key_down(KeyCode::Escape, true), NONE, "no repeat");
-    controls.key_up(KeyCode::Escape);
-    assert_eq!(
-        press(&mut controls, KeyCode::Escape),
-        [ControlAction::CancelCast]
-    );
-    // Setting the same state again changes nothing.
-    controls.set_casting(true);
-    assert_eq!(
-        press(&mut controls, KeyCode::Escape),
-        [ControlAction::CancelCast]
-    );
+    assert_eq!(press(&mut controls, KeyCode::Escape), NONE);
     // The casting layer does not block gameplay: slots still work mid-cast.
     assert_eq!(
         press(&mut controls, KeyCode::Digit2),
         [ControlAction::AbilitySlot(2)]
     );
-    // Once the projection shows no cast, Escape cancels nothing.
-    controls.set_casting(false);
-    assert_eq!(press(&mut controls, KeyCode::Escape), NONE);
 }
 
 #[test]
@@ -306,15 +293,28 @@ fn a_cast_starting_under_a_held_key_does_not_repeat_it() {
     controls.set_casting(true);
     assert_eq!(controls.key_down(KeyCode::Digit1, true), NONE);
     controls.key_up(KeyCode::Digit1);
-    // A held Escape that cancelled the cast does not cancel again after it ends.
+}
+
+#[test]
+fn q_swings_and_g_holds_the_directed_strike() {
+    let mut controls = NativeControls::new();
+    assert_eq!(press(&mut controls, KeyCode::KeyQ), [ControlAction::Swing]);
     assert_eq!(
-        controls.key_down(KeyCode::Escape, false),
-        [ControlAction::CancelCast]
+        controls.key_down(KeyCode::KeyG, false),
+        [ControlAction::DirectedStrike]
     );
-    controls.set_casting(false);
-    assert_eq!(controls.key_down(KeyCode::Escape, true), NONE);
-    controls.key_up(KeyCode::Escape);
-    assert!(!controls.is_held(ControlAction::CancelCast));
+    controls.key_up(KeyCode::KeyG);
+    assert_eq!(
+        controls.drain_hold_releases(),
+        [(mmorpg_client_model::mouse_owner::Hold::Strike, false)]
+    );
+    controls.key_down(KeyCode::KeyG, false);
+    controls.focus_lost();
+    assert_eq!(
+        controls.drain_hold_releases(),
+        [(mmorpg_client_model::mouse_owner::Hold::Strike, true)],
+        "a retirement never strikes"
+    );
 }
 
 #[test]

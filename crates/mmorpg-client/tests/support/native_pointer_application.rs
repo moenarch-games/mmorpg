@@ -238,7 +238,8 @@ impl NativeApplication {
             last_look_frame: Instant::now(),
             orbit_buttons: HashSet::new(),
             cursor: None,
-            guard_offset: None,
+            mouse: MouseOwners::default(),
+            quit: false,
             pad_guard: None,
             error: None,
             frames: None,
@@ -464,7 +465,7 @@ impl NativeApplication {
             WindowEvent::MouseInput {
                 device_id,
                 state: ElementState::Pressed,
-                button: MouseButton::Right,
+                button: MouseButton::Left,
             },
         ]);
         if let Some(event) = end {
@@ -473,7 +474,7 @@ impl NativeApplication {
         self.dispatch([WindowEvent::MouseInput {
             device_id,
             state: ElementState::Released,
-            button: MouseButton::Right,
+            button: MouseButton::Left,
         }]);
         self.until(
             "pointer WindowEvents dispatched through actual App handler",
@@ -771,8 +772,9 @@ fn native_pointer_application_contract() {
     app.until("physical Tab switches focused opponent", |app| {
         app.driver.app.camera_control.mode() == CameraMode::Focus(second)
     });
-    app.key("Escape");
-    app.until("physical Escape clears selection and focus", |app| {
+    // Escape is the game menu since #636; a focused click on empty world clears the focus.
+    app.pointer(PhysicalPosition::new(5.0, 5.0), None);
+    app.until("a click on empty world clears selection and focus", |app| {
         app.driver.app.camera_control.mode() == CameraMode::FreeLook
             && app
                 .driver

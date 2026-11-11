@@ -29,8 +29,8 @@ pub enum ControlAction {
     /// Held while swimming: descend (#274).
     Descend,
     TargetNext,
-    /// Swing the weapon where the character faces (#517); the left mouse button and gamepad X
-    /// swing by default, the keyboard has no default.
+    /// Swing the weapon where the character faces (#517): Q and gamepad X; the left mouse
+    /// button selects since #636.
     Swing,
     ReleaseSpirit,
     /// Action-bar slot 1–20 (11–20 are the Shift row, #294).
@@ -41,7 +41,9 @@ pub enum ControlAction {
     TogglePanel(Panel),
     /// Move keyboard focus to the chat field.
     OpenChat,
-    /// Hold the Warden's shield guard; pointer motion picks the lane (#156).
+    /// Hold the Warden's directed Heroic Strike; mouse motion aims it, the release strikes (#154).
+    DirectedStrike,
+    /// Hold the Warden's shield guard; mouse motion picks the lane (#156).
     Guard,
     /// A Necromancer's group order for all its minions (#295, Atlas 5.2.84).
     Minions(MinionCommand),
@@ -136,6 +138,7 @@ impl ControlAction {
             Self::TogglePanel(Panel::QuestLog) => "ui.toggleQuestLog",
             Self::TogglePanel(Panel::WorldMap) => "ui.toggleWorldMap",
             Self::OpenChat => "ui.openChat",
+            Self::DirectedStrike => "combat.directedStrike",
             Self::Guard => "combat.guard",
             Self::Minions(MinionCommand::Attack) => "minions.attack",
             Self::Minions(MinionCommand::Defend) => "minions.defend",
@@ -160,7 +163,7 @@ impl ControlAction {
             Self::Roll => ("Dodge roll", GAMEPLAY, &["KeyF"]),
             Self::Descend => ("Swim down (hold)", GAMEPLAY, &["KeyX"]),
             Self::TargetNext => ("Next target", GAMEPLAY, &["Tab"]),
-            Self::Swing => ("Swing weapon", GAMEPLAY, &[]),
+            Self::Swing => ("Swing weapon", GAMEPLAY, &["KeyQ"]),
             Self::ReleaseSpirit => ("Release spirit", GAMEPLAY, &["KeyR"]),
             Self::AbilitySlot(1) => ("Ability 1", GAMEPLAY, &["Digit1"]),
             Self::AbilitySlot(2) => ("Ability 2", GAMEPLAY, &["Digit2"]),
@@ -182,12 +185,18 @@ impl ControlAction {
             Self::AbilitySlot(18) => ("Ability 18 (Shift row)", GAMEPLAY, &["Shift+Digit8"]),
             Self::AbilitySlot(19) => ("Ability 19 (Shift row)", GAMEPLAY, &["Shift+Digit9"]),
             Self::AbilitySlot(_) => ("Ability 20 (Shift row)", GAMEPLAY, &["Shift+Digit0"]),
-            Self::CancelCast => ("Cancel cast", CASTING, &["Escape"]),
+            // Right click cancels a cast (#636); Escape opens the game menu instead.
+            Self::CancelCast => ("Cancel cast", CASTING, &[]),
             Self::TogglePanel(Panel::Bags) => ("Toggle bags", GAMEPLAY, &["KeyB"]),
             Self::TogglePanel(Panel::Character) => ("Toggle character pane", GAMEPLAY, &["KeyC"]),
             Self::TogglePanel(Panel::QuestLog) => ("Toggle quest log", GAMEPLAY, &["KeyL"]),
             Self::TogglePanel(Panel::WorldMap) => ("Toggle world map", GAMEPLAY, &["KeyM"]),
             Self::OpenChat => ("Chat", GAMEPLAY, &["Enter", "NumpadEnter"]),
+            Self::DirectedStrike => (
+                "Directed Heroic Strike (hold, aim, release)",
+                GAMEPLAY,
+                &["KeyG"],
+            ),
             Self::Guard => ("Shield guard (hold, aim up/down)", GAMEPLAY, &["KeyZ"]),
             Self::Minions(MinionCommand::Attack) => ("Minions: attack target", GAMEPLAY, &["KeyY"]),
             Self::Minions(MinionCommand::Defend) => ("Minions: defend here", GAMEPLAY, &["KeyU"]),
@@ -338,6 +347,8 @@ pub struct NativeControls {
     sources: KeyboardSources,
     /// Slot releases not yet drained.
     releases: Vec<SlotRelease>,
+    /// Held strike and guard releases not yet drained: the hold and whether a retirement let it go.
+    hold_releases: Vec<(mmorpg_client_model::mouse_owner::Hold, bool)>,
 }
 
 impl Default for NativeControls {
@@ -370,6 +381,7 @@ impl NativeControls {
             casting: false,
             sources: KeyboardSources::default(),
             releases: Vec::new(),
+            hold_releases: Vec::new(),
         }
     }
 
@@ -475,8 +487,29 @@ impl NativeControls {
         std::mem::take(&mut self.releases)
     }
 
+    /// The strike and guard key releases since the last drain, in order: the hold and whether a
+    /// retirement (focus loss, a context or profile change) rather than a key-up let it go.
+    pub fn drain_hold_releases(&mut self) -> Vec<(mmorpg_client_model::mouse_owner::Hold, bool)> {
+        std::mem::take(&mut self.hold_releases)
+    }
+
     fn apply(&mut self, decisions: &[RuntimeDecision]) {
         self.releases.extend(slot_releases(decisions));
+        use mmorpg_client_model::mouse_owner::Hold;
+        self.hold_releases.extend(
+            decisions
+                .iter()
+                .flat_map(|decision| &decision.dispatches)
+                .filter(|dispatch| dispatch.phase == RuntimeActionPhase::Release)
+                .filter_map(|dispatch| {
+                    let hold = match dispatch.action.as_str() {
+                        "combat.directedStrike" => Hold::Strike,
+                        "combat.guard" => Hold::Guard,
+                        _ => return None,
+                    };
+                    Some((hold, dispatch.reason != RuntimeDispatchReason::KeyUp))
+                }),
+        );
         self.state.apply_decisions(decisions);
     }
 }

@@ -2,8 +2,8 @@
 use crate::{
     roster::config_dir,
     settings::{
-        FIELD_OF_VIEW, INVERT_VERTICAL_LOOK, LOOK_SENSITIVITY, Preferences, REDUCE_MOTION,
-        UserImport,
+        FIELD_OF_VIEW, HOLD_CAMERA, INVERT_VERTICAL_LOOK, LOOK_SENSITIVITY, Preferences,
+        REDUCE_MOTION, UserImport,
     },
 };
 use settings_core::{SettingKind, SettingValue};
@@ -503,6 +503,7 @@ fn preference_label(id: &str) -> &str {
         LOOK_SENSITIVITY => "Look sensitivity",
         INVERT_VERTICAL_LOOK => "Invert vertical look",
         REDUCE_MOTION => "Motion",
+        HOLD_CAMERA => "Camera during a strike or guard",
         "audio.master_volume" => "Master volume",
         "audio.effects_volume" => "Effects volume",
         "audio.ui_volume" => "Interface volume",
