@@ -474,6 +474,8 @@ export class WorldView {
   readonly #mouse = new MouseOwnerInput();
   /** Pointer Lock this view released itself, so its `pointerlockchange` opens no menu. */
   #releasingLock = false;
+  /** A left press in released free look: its click selects under the cursor, or recaptures. */
+  #recaptureClick = false;
   /** Called when the browser takes Pointer Lock away (its Escape): the game menu opens (#636). */
   onPointerLockLost: (() => void) | null = null;
   #movementFacing = 0;
@@ -1682,6 +1684,8 @@ export class WorldView {
         this.#gestureEnded(click.ended);
       } else {
         this.queueIntent(cancelCast);
+        // Without capture, a right drag still turns the character.
+        if (this.#cameraMode.kind === "free-look" && this.#pointerOwner === "interface") { this.#beginDrag(event, "turn"); }
       }
       return;
     }
@@ -1690,9 +1694,12 @@ export class WorldView {
     }
     // A click drops a held draw (#607) and is nothing else.
     if (this.#powerDraw.cancel()) { return; }
-    if (this.#cameraMode.kind === "free-look" && this.#pointerOwner === "interface" && event.pointerType === "mouse") {
-      // Browsers require a deliberate user gesture to recapture after UI/focus/Escape.
-      this.recapture();
+    if (this.#cameraMode.kind === "free-look" && this.#pointerOwner === "interface" && event.pointerType === "mouse"
+      && !this.#mouse.gesture) {
+      // A click on a unit or door under the free cursor selects it on release; any other click
+      // recaptures mouse-look then, within the press's user activation (#636).
+      this.#beginDrag(event, "orbit");
+      this.#recaptureClick = true;
       return;
     }
     const click = this.#mouse.leftClick();
@@ -1860,16 +1867,20 @@ export class WorldView {
       this.#endDrag();
       return;
     }
-    // A tap, or a click that never became a drag, selects.
-    if (this.#primaryClick.end(event) && !this.#mouse.gesture) {
-      this.#selectAt(event, false);
+    // A tap, or a click that never became a drag, selects; a released free look's click on
+    // nothing recaptures mouse-look.
+    const recapture = this.#recaptureClick;
+    this.#recaptureClick = false;
+    if (this.#primaryClick.end(event) && !this.#mouse.gesture && !this.#selectAt(event, false) && recapture) {
+      this.recapture();
     }
     if (this.#drag?.pointerId === event.pointerId) {
       this.#endDrag();
     }
   }
 
-  #selectAt(event: PointerEvent, centred: boolean): void {
+  /** Selects (or swings the door) under the pointer or crosshair; `true` if anything was picked. */
+  #selectAt(event: PointerEvent, centred: boolean): boolean {
     const rect = this.#elements.canvas.getBoundingClientRect();
     const point = new THREE.Vector2(
       centred ? 0 : ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -1899,6 +1910,7 @@ export class WorldView {
         }
       });
     }
+    return Boolean(picked);
   }
 
   /** The distance between the first two fingers on the canvas, in CSS pixels. */
@@ -1911,6 +1923,7 @@ export class WorldView {
     this.#touches.clear();
     this.#pinch = null;
     this.#primaryClick.reset();
+    this.#recaptureClick = false;
     this.#lockedTravel = 0;
     const drag = this.#drag;
     if (drag && this.#elements.canvas.hasPointerCapture(drag.pointerId)) {

@@ -87,6 +87,7 @@ pub fn run(
         cursor: None,
         mouse: MouseOwners::default(),
         quit: false,
+        recapture_click: false,
         pad_guard: None,
         error: None,
         frames,
@@ -149,6 +150,8 @@ struct App {
     /// One mouse owner at a time, the shared rule the browser also runs (#636): free look,
     /// focus, or a held strike or guard aimed with mouse motion (#154, #156).
     mouse: MouseOwners,
+    /// A left press in released free look: its click selects under the cursor, or recaptures.
+    recapture_click: bool,
     /// The game menu's Quit was chosen; the event loop exits on its next wait.
     quit: bool,
     /// The lane the pad's held left trigger aims with the right stick (#156).
@@ -332,17 +335,20 @@ impl App {
             && !self.presentation.is_stalled(Instant::now())
     }
 
-    fn select_pointer(&mut self, event_loop: &ActiveEventLoop) {
+    /// Selects (or swings the door) under the cursor or crosshair; `true` if anything was picked.
+    fn select_pointer(&mut self, event_loop: &ActiveEventLoop) -> bool {
         if !self.connected() {
-            return;
+            return false;
         }
         let cursor = if self.grabbed {
             let Some(size) = self.window.as_ref().map(|window| window.inner_size()) else {
-                return;
+                return false;
             };
             PhysicalPosition::new(f64::from(size.width) / 2.0, f64::from(size.height) / 2.0)
         } else {
-            let Some(cursor) = self.cursor else { return };
+            let Some(cursor) = self.cursor else {
+                return false;
+            };
             cursor
         };
         let scale = self.window.as_ref().map_or(1., |w| w.scale_factor());
@@ -355,7 +361,7 @@ impl App {
             Some(Ok(picked)) => picked,
             Some(Err(error)) => {
                 self.fail(event_loop, error);
-                return;
+                return false;
             }
             None => None,
         };
@@ -363,7 +369,7 @@ impl App {
         if let Some(mmorpg_client::picking::Picked::Door(door)) = picked {
             let command = self.presentation.toggle_door(door);
             self.send_interaction(command);
-            return;
+            return true;
         }
         let target = match picked {
             Some(mmorpg_client::picking::Picked::Unit(target)) => Some(target),
@@ -394,6 +400,7 @@ impl App {
                 });
             }
         }
+        picked.is_some()
     }
 
     fn world_action(&mut self, action: WorldAction) -> bool {
@@ -1338,11 +1345,18 @@ impl ApplicationHandler for App {
                     && self.npc_context.npc.is_none()
                     && !self.ui.windows_open(self.presentation.latest())
                 {
-                    self.camera_control.request_look();
-                    self.sync_cursor();
-                    if self.grabbed {
-                        return; // Recapture is not an unintended first selection.
+                    // A click on a unit or door under the free cursor selects it on release, as
+                    // in the browser; any other click recaptures mouse-look then (#636).
+                    self.recapture_click = self.cursor.is_some();
+                    if !self.recapture_click {
+                        self.camera_control.request_look();
+                        self.sync_cursor();
+                        if self.grabbed {
+                            return; // Recapture is not an unintended first selection.
+                        }
                     }
+                } else if pressed {
+                    self.recapture_click = false;
                 }
                 let index = match button {
                     MouseButton::Left => 0,
@@ -1384,7 +1398,14 @@ impl ApplicationHandler for App {
                         && self.pointer_origin.take().is_some()
                         && self.mouse.gesture().is_none()
                     {
-                        self.select_pointer(event_loop);
+                        let picked = self.select_pointer(event_loop);
+                        if !picked && std::mem::take(&mut self.recapture_click) {
+                            self.camera_control.request_look();
+                            self.sync_cursor();
+                        }
+                    }
+                    if button == MouseButton::Left {
+                        self.recapture_click = false;
                     }
                     self.orbit_buttons.remove(&button);
                 }

@@ -240,6 +240,7 @@ impl NativeApplication {
             cursor: None,
             mouse: MouseOwners::default(),
             quit: false,
+            recapture_click: false,
             pad_guard: None,
             error: None,
             frames: None,
