@@ -968,11 +968,19 @@ mod tests {
                 },
             ]);
             ui.observe(&struck, &content, &names, now);
-            ui.bags_open = true;
-            ui.character_open = true;
+            let world_map_evidence =
+                std::env::var("MMORPG_NATIVE_WORLD_MAP_EVIDENCE").as_deref() == Ok("1");
+            if world_map_evidence {
+                ui.toggle(crate::controls::Panel::WorldMap);
+            } else {
+                ui.bags_open = true;
+                ui.character_open = true;
+            }
             let mut npc = NpcContext::default();
             npc.observe(&projection);
-            npc.open(NpcId::new(3));
+            if !world_map_evidence {
+                npc.open(NpcId::new(3));
+            }
             let hud = CombatHud::from_projection(&projection);
             let ui_frame = UiFrame {
                 snapshot: Some(&projection),
@@ -1003,6 +1011,12 @@ mod tests {
                         egui::vec2(size[0] as f32 / scale, size[1] as f32 / scale),
                     )),
                     time: Some(f64::from(pass) * 0.1),
+                    // over the map's Carrowmark farmland, so its hover label shows
+                    events: if world_map_evidence {
+                        vec![egui::Event::PointerMoved(egui::pos2(380.0, 470.0))]
+                    } else {
+                        Vec::new()
+                    },
                     ..Default::default()
                 };
                 let output = context.run_pass(input, |ctx| {
@@ -1020,6 +1034,8 @@ mod tests {
                     "warden-2x.ppm"
                 } else if warden_art {
                     "warden.ppm"
+                } else if world_map_evidence {
+                    "world-map.ppm"
                 } else if settings_evidence {
                     "settings.ppm"
                 } else {

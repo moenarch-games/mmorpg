@@ -2,8 +2,9 @@
 
 A provisional, editable geographic foundation for the whole world: one continent of about
 20 × 20 km around Greyhaven, the Shattered Crown and five competing kingdoms. It is
-**development tooling and design data only**: no game crate, host, client or content revision
-reads `content/world/` yet, and Greyhaven's zone content stays the authority for everything
+**development tooling and design data**. The game reads only the committed world map
+(`content/world/export/world-map.json`) for the M map, through `mmorpg-client-model`; no host or
+content revision reads `content/world/`, and Greyhaven's zone content stays the authority for everything
 inside its footprint. Progress, open gaps and how to resume are in
 [WORLD_ATLAS_HANDOFF.md](WORLD_ATLAS_HANDOFF.md).
 
@@ -16,6 +17,7 @@ uv run content/world/authoring/atlas.py seed-regions                        # ap
 uv run content/world/authoring/atlas.py format                              # canonical JSON layout
 uv run content/world/authoring/atlas.py sync                                # after hand edits of borders or seeds
 uv run content/world/authoring/atlas.py gis-export                          # GeoJSON and TopoJSON for GIS tools
+uv run content/world/authoring/atlas.py map-export                          # the world map the game draws (M)
 blender --python content/world/authoring/atlas_blender.py -- region r100 r113   # Blender file for two neighbouring regions
 blender --python content/world/authoring/atlas_blender.py -- import         # editable Blender scene
 blender --background artifacts/world-atlas/continent.blend --python content/world/authoring/atlas_blender.py -- export
@@ -355,6 +357,43 @@ region raster's areas to a median of 0.6 % (at most 6 %).
 
 ![The GIS export drawn straight from its files](images/world/gis-export.png)
 
+## The world map in the game (M)
+
+Both clients open the continent with **M** and close it with M or Esc:
+- The map is centred on you, with your position and facing.
+- Greyhaven's playable area is outlined.
+- Hovering a region shows its name, kingdom and biome, and says when it holds a playable zone.
+
+**One committed map, one set of rules.**
+- `atlas.py map-export` writes `content/world/export/world-map.json`, a single WGS84 bundle:
+  regions, lakes, rivers, roads, settlements, gates, landmarks and zone outlines.
+- `atlas.py check` fails when the bundle no longer matches the sources.
+- `mmorpg-client-model::world_map` embeds it and holds the rules both clients share:
+  - where a zone position lies on the map (the zone frame at 0° N 0° E);
+  - how a facing becomes a compass bearing;
+  - which region lies under a point, or has a given id.
+- The browser reaches these rules through `mmorpg-wasm`; the native client calls them
+  directly. The game reads no other part of the atlas, so the generator never runs inside
+  the game.
+
+**Drawn by the Maps library** (`moritzbrantner/maps`, both clients pinned to the same commit):
+- **Browser:** the map uses `MapView` on Maps' own flat runtime (`flatRuntime="maps"`), with
+  `GeoJsonLayer`s and no tiles or MapLibre.
+- **Native client:** an egui window draws the same layers with `maps-core`, using:
+  - its Web Mercator `MapCamera` for projecting, panning, zooming about the pointer and
+    hover;
+  - its MapLibre line tessellation (`LineMesh`) for rivers, roads and borders;
+  - earcut, which Maps also uses, for the region fills.
+
+A GPU evidence frame of the native map comes from the native interface test:
+
+```sh
+MMORPG_NATIVE_WORLD_MAP_EVIDENCE=1 MMORPG_SMOKE_FRAME_DIR=artifacts/frames cargo test -p mmorpg-client --lib the_egui_interface_paints_over_the_native_world -- --ignored
+```
+
+![The world map in the browser](images/world/world-map-browser.png)
+![The world map in the native client](images/world/world-map-native.png)
+
 ## Authoring layers
 
 All sources are JSON in `content/world/`, applied in a fixed order. Each is hand-editable,
@@ -404,7 +443,7 @@ anchor, and from then on the zone's content is the authority there.
 
 ## Consistency checks
 
-`atlas.py check` runs 60 checks and fails on any violation. These are tests of the result:
+`atlas.py check` runs 61 checks and fails on any violation. These are tests of the result:
 each one can fail when an edit breaks the geography.
 
 - **Coast and scale:** one continent plus the declared islands, with 250–420 km² of land.
@@ -433,7 +472,7 @@ to the sea or a sink, and every flow step descends: both are properties of the p
 algorithm, and the checks guard against regressions in that code.
 
 **Reproducibility.** Dependencies are locked in `atlas.py.lock`. The fingerprint
-`b31fd4135c8cb59e` is reproduced build to build on Linux x86-64 (the previous layout's fingerprint also matched across numpy 2.3.5 and 2.5.4; this one was not re-tested across versions); other
+`26a16c8c56daeb97` is reproduced build to build on Linux x86-64 (the previous layout's fingerprint also matched across numpy 2.3.5 and 2.5.4; this one was not re-tested across versions); other
 platforms have not been tried. Vectorised transcendental functions may differ in the last bit
 between CPUs, which can flip threshold decisions. Any game consumer must therefore read a
 committed, quantised export, never rerun this Python (plan step 2). Previews also depend on the

@@ -216,6 +216,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "175571dd1d178ced59193a6fc02dde1b972eb0bc56c892cde9beeceac5bf0f6b"
 
 [[package]]
+name = "as-slice"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45403b49e3954a4b8428a0ac21a4b7afadccf92bfd96273f1a58cd4812496ae0"
+dependencies = [
+ "generic-array 0.12.4",
+ "generic-array 0.13.3",
+ "generic-array 0.14.7",
+ "stable_deref_trait",
+]
+
+[[package]]
 name = "ash"
 version = "0.38.0+1.3.281"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -296,6 +308,15 @@ name = "atomic-arena"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73e8ed45f88ed32e6827a96b62d8fd4086d72defc754c5c6bd08470c1aaf648e"
+
+[[package]]
+name = "atomic-polyfill"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8cf2bce30dfe09ef0bfaef228b9d414faaf7e563035494d7fe092dba54b300f4"
+dependencies = [
+ "critical-section",
+]
 
 [[package]]
 name = "atomic-waker"
@@ -462,7 +483,7 @@ version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
 dependencies = [
- "generic-array",
+ "generic-array 0.14.7",
 ]
 
 [[package]]
@@ -932,7 +953,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e75b2483e97a5a7da73ac68a05b629f9c53cff58d8ed1c77866079e18b00dba5"
 dependencies = [
  "digest 0.10.7",
- "spin",
+ "spin 0.10.1",
 ]
 
 [[package]]
@@ -943,6 +964,12 @@ checksum = "5f97d3416d5337d15c4b0d78c8c91df922ca143f57ec20e2d1c188333047ef04"
 dependencies = [
  "cfg-if",
 ]
+
+[[package]]
+name = "critical-section"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "790eea4361631c5e7d22598ecd5723ff611904e3344ce8720784c93e3d83d40b"
 
 [[package]]
 name = "crossbeam-utils"
@@ -962,7 +989,7 @@ version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a"
 dependencies = [
- "generic-array",
+ "generic-array 0.14.7",
  "typenum",
 ]
 
@@ -1112,6 +1139,15 @@ name = "dunce"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
+
+[[package]]
+name = "earcut"
+version = "0.4.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f03dd5350900133e14471c90d513eb5ba264004cd833adecab7dfa5fb5a2974"
+dependencies = [
+ "num-traits",
+]
 
 [[package]]
 name = "ecolor"
@@ -1523,12 +1559,61 @@ dependencies = [
 
 [[package]]
 name = "generic-array"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffdf9f34f1447443d37393cc6c2b8313aebddcd96906caf34e54c68d8e57d7bd"
+dependencies = [
+ "typenum",
+]
+
+[[package]]
+name = "generic-array"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f797e67af32588215eaaab8327027ee8e71b9dd0b2b26996aedf20c030fce309"
+dependencies = [
+ "typenum",
+]
+
+[[package]]
+name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
 dependencies = [
  "typenum",
  "version_check",
+]
+
+[[package]]
+name = "geo-types"
+version = "0.7.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "777d18aa0f12f8b285331cd867133ee14422b3f023f6d388034c47d43e28786a"
+dependencies = [
+ "approx",
+ "num-traits",
+ "rstar 0.10.0",
+ "rstar 0.11.0",
+ "rstar 0.12.2",
+ "rstar 0.13.1",
+ "rstar 0.8.4",
+ "rstar 0.9.3",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "geojson"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e26f3c45b36fccc9cf2805e61d4da6bc4bbd5a3a9589b01afa3a40eff703bd79"
+dependencies = [
+ "geo-types",
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -1828,6 +1913,24 @@ dependencies = [
 
 [[package]]
 name = "hash32"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4041af86e63ac4298ce40e5cca669066e75b6f1aa3390fe2561ffa5e1d9f4cc"
+dependencies = [
+ "byteorder",
+]
+
+[[package]]
+name = "hash32"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0c35f58762feb77d74ebe43bdbc3210f09be9fe6742234d573bacc26ed92b67"
+dependencies = [
+ "byteorder",
+]
+
+[[package]]
+name = "hash32"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47d60b12902ba28e2730cd37e95b8c9223af2808df9e902d4df49588d1470606"
@@ -1866,11 +1969,36 @@ dependencies = [
 
 [[package]]
 name = "heapless"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "634bd4d29cbf24424d0a4bfcbf80c6960129dc24424752a7d1d1390607023422"
+dependencies = [
+ "as-slice",
+ "generic-array 0.14.7",
+ "hash32 0.1.1",
+ "stable_deref_trait",
+]
+
+[[package]]
+name = "heapless"
+version = "0.7.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cdc6457c0eb62c71aac4bc17216026d8410337c4126773b9c5daba343f17964f"
+dependencies = [
+ "atomic-polyfill",
+ "hash32 0.2.1",
+ "rustc_version",
+ "spin 0.9.9",
+ "stable_deref_trait",
+]
+
+[[package]]
+name = "heapless"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0bfb9eb618601c89945a70e254898da93b13be0388091d42117462b265bb3fad"
 dependencies = [
- "hash32",
+ "hash32 0.3.1",
  "stable_deref_trait",
 ]
 
@@ -2497,6 +2625,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dae608c151f68243f2b000364e1f7b186d9c29845f7d2d85bd31b9ad77ad552b"
 
 [[package]]
+name = "maps-core"
+version = "0.1.0"
+source = "git+https://github.com/moritzbrantner/maps.git?rev=2aa1a6fb05e486ce438afb7a2707f468f4317276#2aa1a6fb05e486ce438afb7a2707f468f4317276"
+dependencies = [
+ "earcut",
+ "geojson",
+ "moenarch-geo-core",
+ "serde",
+ "serde_json",
+ "supercluster",
+ "three-d-animation 0.1.0 (git+https://github.com/moritzbrantner/3d-lab.git?rev=db9a53a4aaaad28d5bd0d3fad131fc151953e989)",
+ "three-d-camera 0.1.0 (git+https://github.com/moritzbrantner/3d-lab.git?rev=db9a53a4aaaad28d5bd0d3fad131fc151953e989)",
+ "three-d-core 0.1.0 (git+https://github.com/moritzbrantner/3d-lab.git?rev=db9a53a4aaaad28d5bd0d3fad131fc151953e989)",
+ "three-d-projective 0.1.0 (git+https://github.com/moritzbrantner/3d-lab.git?rev=db9a53a4aaaad28d5bd0d3fad131fc151953e989)",
+]
+
+[[package]]
 name = "matchit"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2611,6 +2756,7 @@ version = "0.1.0"
 dependencies = [
  "basisu",
  "bytemuck",
+ "earcut",
  "egui",
  "egui-wgpu",
  "egui-winit",
@@ -2621,6 +2767,7 @@ dependencies = [
  "gltf",
  "image",
  "input-bindings-core",
+ "maps-core",
  "mmorpg-client-model",
  "mmorpg-core",
  "mmorpg-game-server",
@@ -2637,10 +2784,10 @@ dependencies = [
  "sha2",
  "strum",
  "tempfile",
- "three-d-animation",
- "three-d-camera",
- "three-d-core",
- "three-d-projective",
+ "three-d-animation 0.1.0 (git+https://github.com/moritzbrantner/3d-lab.git?rev=77122d13dbd06789dcce05473b0528e61ad69a44)",
+ "three-d-camera 0.1.0 (git+https://github.com/moritzbrantner/3d-lab.git?rev=77122d13dbd06789dcce05473b0528e61ad69a44)",
+ "three-d-core 0.1.0 (git+https://github.com/moritzbrantner/3d-lab.git?rev=77122d13dbd06789dcce05473b0528e61ad69a44)",
+ "three-d-projective 0.1.0 (git+https://github.com/moritzbrantner/3d-lab.git?rev=77122d13dbd06789dcce05473b0528e61ad69a44)",
  "tobj",
  "tokio",
  "url",
@@ -2655,6 +2802,7 @@ version = "0.1.0"
 dependencies = [
  "mmorpg-core",
  "mmorpg-protocol",
+ "serde_json",
  "strum",
 ]
 
@@ -2782,6 +2930,27 @@ dependencies = [
  "tokio",
  "tower-http",
  "zip",
+]
+
+[[package]]
+name = "moenarch-geo-core"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49d05e391a98b0aec3ecccbe9ed97d6db3ef8be56005233d377711a04f034d69"
+dependencies = [
+ "moritzbrantner-runtime-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "moritzbrantner-runtime-core"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb3b21868a5995feb78cd32d2192c026348c45b1b97d85e2c9a6979b4fbde718"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -3563,7 +3732,7 @@ dependencies = [
  "num-derive 0.5.1",
  "num-traits",
  "ordered-float",
- "rstar",
+ "rstar 0.13.1",
  "simba",
  "slab",
  "smallvec",
@@ -3577,6 +3746,12 @@ name = "pastey"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
+
+[[package]]
+name = "pdqselect"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ec91767ecc0a0bbe558ce8c9da33c068066c57ecc8bb8477ef8c1ad3ef77c27"
 
 [[package]]
 name = "pem"
@@ -4236,12 +4411,74 @@ dependencies = [
 
 [[package]]
 name = "rstar"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a45c0e8804d37e4d97e55c6f258bc9ad9c5ee7b07437009dd152d764949a27c"
+dependencies = [
+ "heapless 0.6.1",
+ "num-traits",
+ "pdqselect",
+ "serde",
+ "smallvec",
+]
+
+[[package]]
+name = "rstar"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b40f1bfe5acdab44bc63e6699c28b74f75ec43afb59f3eda01e145aff86a25fa"
+dependencies = [
+ "heapless 0.7.17",
+ "num-traits",
+ "serde",
+ "smallvec",
+]
+
+[[package]]
+name = "rstar"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f39465655a1e3d8ae79c6d9e007f4953bfc5d55297602df9dc38f9ae9f1359a"
+dependencies = [
+ "heapless 0.7.17",
+ "num-traits",
+ "serde",
+ "smallvec",
+]
+
+[[package]]
+name = "rstar"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73111312eb7a2287d229f06c00ff35b51ddee180f017ab6dec1f69d62ac098d6"
+dependencies = [
+ "heapless 0.7.17",
+ "num-traits",
+ "serde",
+ "smallvec",
+]
+
+[[package]]
+name = "rstar"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "421400d13ccfd26dfa5858199c30a5d76f9c54e0dba7575273025b43c5175dbb"
+dependencies = [
+ "heapless 0.8.0",
+ "num-traits",
+ "serde",
+ "smallvec",
+]
+
+[[package]]
+name = "rstar"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90e7279515baf3838062fa9c495a408bc2f3abbf9cd2ac8c2d4108b90fa29b89"
 dependencies = [
- "heapless",
+ "heapless 0.8.0",
  "num-traits",
+ "serde",
  "smallvec",
 ]
 
@@ -4813,6 +5050,15 @@ source = "git+https://github.com/moritzbrantner/rust-kernels?rev=c219e947ad361e7
 
 [[package]]
 name = "spin"
+version = "0.9.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3763264f6b73151db08c50ff20d7d8a0b8796e021cdea7ceedad07b80155fa0e"
+dependencies = [
+ "lock_api",
+]
+
+[[package]]
+name = "spin"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "023a211cb3138dbc438680b32560ad89f699977624c9f8dbb95a47d5b4c07dd3"
@@ -4887,6 +5133,18 @@ name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
+
+[[package]]
+name = "supercluster"
+version = "3.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e50a9957334452435631002367eabde8cb703766e7496c1645f56c86eb13f27"
+dependencies = [
+ "geojson",
+ "serde_json",
+ "thiserror 2.0.21",
+ "twox-hash",
+]
 
 [[package]]
 name = "symphonia"
@@ -5083,7 +5341,15 @@ name = "three-d-animation"
 version = "0.1.0"
 source = "git+https://github.com/moritzbrantner/3d-lab.git?rev=77122d13dbd06789dcce05473b0528e61ad69a44#77122d13dbd06789dcce05473b0528e61ad69a44"
 dependencies = [
- "three-d-core",
+ "three-d-core 0.1.0 (git+https://github.com/moritzbrantner/3d-lab.git?rev=77122d13dbd06789dcce05473b0528e61ad69a44)",
+]
+
+[[package]]
+name = "three-d-animation"
+version = "0.1.0"
+source = "git+https://github.com/moritzbrantner/3d-lab.git?rev=db9a53a4aaaad28d5bd0d3fad131fc151953e989#db9a53a4aaaad28d5bd0d3fad131fc151953e989"
+dependencies = [
+ "three-d-core 0.1.0 (git+https://github.com/moritzbrantner/3d-lab.git?rev=db9a53a4aaaad28d5bd0d3fad131fc151953e989)",
 ]
 
 [[package]]
@@ -5091,8 +5357,17 @@ name = "three-d-camera"
 version = "0.1.0"
 source = "git+https://github.com/moritzbrantner/3d-lab.git?rev=77122d13dbd06789dcce05473b0528e61ad69a44#77122d13dbd06789dcce05473b0528e61ad69a44"
 dependencies = [
- "three-d-animation",
- "three-d-core",
+ "three-d-animation 0.1.0 (git+https://github.com/moritzbrantner/3d-lab.git?rev=77122d13dbd06789dcce05473b0528e61ad69a44)",
+ "three-d-core 0.1.0 (git+https://github.com/moritzbrantner/3d-lab.git?rev=77122d13dbd06789dcce05473b0528e61ad69a44)",
+]
+
+[[package]]
+name = "three-d-camera"
+version = "0.1.0"
+source = "git+https://github.com/moritzbrantner/3d-lab.git?rev=db9a53a4aaaad28d5bd0d3fad131fc151953e989#db9a53a4aaaad28d5bd0d3fad131fc151953e989"
+dependencies = [
+ "three-d-animation 0.1.0 (git+https://github.com/moritzbrantner/3d-lab.git?rev=db9a53a4aaaad28d5bd0d3fad131fc151953e989)",
+ "three-d-core 0.1.0 (git+https://github.com/moritzbrantner/3d-lab.git?rev=db9a53a4aaaad28d5bd0d3fad131fc151953e989)",
 ]
 
 [[package]]
@@ -5101,12 +5376,26 @@ version = "0.1.0"
 source = "git+https://github.com/moritzbrantner/3d-lab.git?rev=77122d13dbd06789dcce05473b0528e61ad69a44#77122d13dbd06789dcce05473b0528e61ad69a44"
 
 [[package]]
+name = "three-d-core"
+version = "0.1.0"
+source = "git+https://github.com/moritzbrantner/3d-lab.git?rev=db9a53a4aaaad28d5bd0d3fad131fc151953e989#db9a53a4aaaad28d5bd0d3fad131fc151953e989"
+
+[[package]]
 name = "three-d-projective"
 version = "0.1.0"
 source = "git+https://github.com/moritzbrantner/3d-lab.git?rev=77122d13dbd06789dcce05473b0528e61ad69a44#77122d13dbd06789dcce05473b0528e61ad69a44"
 dependencies = [
- "three-d-animation",
- "three-d-core",
+ "three-d-animation 0.1.0 (git+https://github.com/moritzbrantner/3d-lab.git?rev=77122d13dbd06789dcce05473b0528e61ad69a44)",
+ "three-d-core 0.1.0 (git+https://github.com/moritzbrantner/3d-lab.git?rev=77122d13dbd06789dcce05473b0528e61ad69a44)",
+]
+
+[[package]]
+name = "three-d-projective"
+version = "0.1.0"
+source = "git+https://github.com/moritzbrantner/3d-lab.git?rev=db9a53a4aaaad28d5bd0d3fad131fc151953e989#db9a53a4aaaad28d5bd0d3fad131fc151953e989"
+dependencies = [
+ "three-d-animation 0.1.0 (git+https://github.com/moritzbrantner/3d-lab.git?rev=db9a53a4aaaad28d5bd0d3fad131fc151953e989)",
+ "three-d-core 0.1.0 (git+https://github.com/moritzbrantner/3d-lab.git?rev=db9a53a4aaaad28d5bd0d3fad131fc151953e989)",
 ]
 
 [[package]]
@@ -5493,6 +5782,9 @@ name = "twox-hash"
 version = "2.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "86a801b3cea342a06d468c8710662aa29e5e05e4f5c0d62f00bbb7f2ad7941c2"
+dependencies = [
+ "rand 0.10.3",
+]
 
 [[package]]
 name = "type-map"

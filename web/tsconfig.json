@@ -18,7 +18,7 @@
       "DOM",
       "DOM.Iterable"
     ],
-    "types": [],
+    "types": ["geojson"],
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "noImplicitOverride": true,

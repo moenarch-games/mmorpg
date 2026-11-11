@@ -16,6 +16,7 @@ import { DebugOverlay, FrameRate } from "./debug-overlay";
 import { ENVIRONMENT, DAY_SECONDS, ZONE_DAY_TICKS, ZONE_START_TIME, environmentAt, zoneSkySeconds } from "./environment";
 import { Minimap, dispositionOf, type MinimapElements, type MinimapUnit } from "./minimap";
 import { MinimapPresenter } from "./minimap-presenter";
+import type { MapSelf, WorldMap } from "./world-map";
 import { MovementOutbox, type MovementInput } from "./movement-outbox";
 import {
   IDLE_INTENT,
@@ -86,6 +87,8 @@ export type WorldViewElements = {
   canvas: HTMLCanvasElement;
   sky: HTMLElement;
   minimap: MinimapElements;
+  /** The world map's host (M). */
+  worldMap: HTMLElement;
   overlay: HTMLElement;
   areaName: HTMLElement;
   /** The viewer's health and target line. */
@@ -439,6 +442,10 @@ export class WorldView {
   #presentationFingerprint: string | null = null;
   #reliefAt: ((x: number, z: number) => number) | null = null;
   readonly #minimap: MinimapPresenter;
+  readonly #worldMapHost: HTMLElement;
+  /** The world map, loaded with the Maps library on the first M so the game starts without it. */
+  #worldMap: WorldMap | null = null;
+  #worldMapLoading = false;
   /** The world `load` last readied, so re-selecting it (`refreshArenaWorld`) rebuilds nothing. */
   #loadedScenery: ZoneWorld["scenery"] | null = null;
   #loadedArena = false;
@@ -503,6 +510,7 @@ export class WorldView {
     this.#perspectiveFov = camera.fov;
     this.#elements = elements;
     this.#minimap = new MinimapPresenter(new Minimap(elements.minimap), ENVIRONMENT);
+    this.#worldMapHost = elements.worldMap;
     this.#reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     this.#overlay = new DebugOverlay(elements.overlay);
     this.#sky = new SkyLayer(elements.sky, ENVIRONMENT);
@@ -861,6 +869,7 @@ export class WorldView {
     this.#flyTo = null;
     this.#framePending = true;
     this.#lastSelf = null;
+    this.#worldMap?.close();
     this.#lastProjection = null;
     this.#lastSceneryNodes = [];
     this.#lastInstanceBatches = [];
@@ -1171,10 +1180,31 @@ export class WorldView {
 
   closeCharacter(): boolean { return this.#character.close(); }
 
-  /** Whether bags, the character pane, loot or the vendor are open: a non-blocking overlay over gameplay controls. */
+  /** Opens or closes the world map (M). */
+  toggleWorldMap(): void {
+    if (this.#worldMap) {
+      this.#worldMap.toggle();
+      return;
+    }
+    if (this.#worldMapLoading) return;
+    this.#worldMapLoading = true;
+    const self = (): MapSelf | null => this.#lastSelf && { x: this.#lastSelf.x, z: this.#lastSelf.z, yaw: this.#lastSelf.facing };
+    void import("./world-map").then(({ WorldMap }) => {
+      this.#worldMap = new WorldMap(this.#worldMapHost, self);
+      this.#worldMap.open();
+    }).finally(() => { this.#worldMapLoading = false; });
+  }
+
+  closeWorldMap(): boolean {
+    const open = this.#worldMap?.isOpen ?? false;
+    this.#worldMap?.close();
+    return open;
+  }
+
+  /** Whether bags, the character pane, loot, the vendor or the world map are open: a non-blocking overlay over gameplay controls. */
   get panelOpen(): boolean {
     return this.#bags.open || this.#character.open || this.#loot.open || this.#vendor.open
-      || this.#quests.dialogOpen || this.#quests.logOpen;
+      || this.#quests.dialogOpen || this.#quests.logOpen || (this.#worldMap?.isOpen ?? false);
   }
 
   toggleOverlay(): void {

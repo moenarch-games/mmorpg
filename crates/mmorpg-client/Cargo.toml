@@ -46,6 +46,10 @@ three-d-animation = { git = "https://github.com/moritzbrantner/3d-lab.git", rev 
 three-d-projective = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "77122d13dbd06789dcce05473b0528e61ad69a44" }
 gilrs = "=0.11.2"
 input-bindings-core = { git = "https://github.com/moritzbrantner/input-bindings.git", rev = "9884cf8c857779d399bc901323d95d42a54022cd" }
+# The world map (M) is drawn with the Maps library's Rust core: its Web Mercator camera and
+# MapLibre line tessellation, and earcut for fills as Maps does (same pin as the browser's maps).
+maps-core = { git = "https://github.com/moritzbrantner/maps.git", rev = "2aa1a6fb05e486ce438afb7a2707f468f4317276" }
+earcut = "=0.4.11"
 
 [build-dependencies]
 sha2 = "=0.11.1"

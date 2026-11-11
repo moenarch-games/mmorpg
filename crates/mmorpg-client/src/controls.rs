@@ -66,6 +66,7 @@ pub enum Panel {
     Bags,
     Character,
     QuestLog,
+    WorldMap,
 }
 
 /// The action-bar slots with a key, numbered from 1; 11–20 are Shift+1 to Shift+0 (#294).
@@ -133,6 +134,7 @@ impl ControlAction {
             Self::TogglePanel(Panel::Bags) => "ui.toggleBags",
             Self::TogglePanel(Panel::Character) => "ui.toggleCharacter",
             Self::TogglePanel(Panel::QuestLog) => "ui.toggleQuestLog",
+            Self::TogglePanel(Panel::WorldMap) => "ui.toggleWorldMap",
             Self::OpenChat => "ui.openChat",
             Self::Guard => "combat.guard",
             Self::Minions(MinionCommand::Attack) => "minions.attack",
@@ -184,6 +186,7 @@ impl ControlAction {
             Self::TogglePanel(Panel::Bags) => ("Toggle bags", GAMEPLAY, &["KeyB"]),
             Self::TogglePanel(Panel::Character) => ("Toggle character pane", GAMEPLAY, &["KeyC"]),
             Self::TogglePanel(Panel::QuestLog) => ("Toggle quest log", GAMEPLAY, &["KeyL"]),
+            Self::TogglePanel(Panel::WorldMap) => ("Toggle world map", GAMEPLAY, &["KeyM"]),
             Self::OpenChat => ("Chat", GAMEPLAY, &["Enter", "NumpadEnter"]),
             Self::Guard => ("Shield guard (hold, aim up/down)", GAMEPLAY, &["KeyZ"]),
             Self::Minions(MinionCommand::Attack) => ("Minions: attack target", GAMEPLAY, &["KeyY"]),

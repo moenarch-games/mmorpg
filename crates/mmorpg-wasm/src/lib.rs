@@ -38,6 +38,7 @@ pub mod scenery;
 pub mod static_scene;
 pub mod units;
 pub mod wire;
+pub mod world_map;
 
 use mmorpg_characters::{CharacterStore, EntryBackend, EntryChange, LeaseHolder, StoreError};
 use mmorpg_core::{CharacterId, ClassChoice, PlayerClass, Sex};

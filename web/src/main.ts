@@ -351,6 +351,7 @@ const previewCamera = new THREE.PerspectiveCamera(48, 1, 0.1, 80);
 const worldView = new WorldView(renderer, camera, lighting, {
   canvas,
   sky: requireElement<HTMLElement>("#sky"),
+  worldMap: requireElement<HTMLElement>("#world-map"),
   minimap: {
     root: requireElement<HTMLElement>("#minimap"),
     canvas: requireElement<HTMLCanvasElement>("#minimap-canvas"),
@@ -1796,7 +1797,7 @@ canvas.addEventListener("wheel", (event) => {
 // One input path: keyboard and gamepad resolve to semantic actions through input-bindings.
 // Movement is sampled from held actions each frame; one-shot actions are intents the zone decides.
 function runAction(action: GameAction): void {
-  if (arenaEntry.selected && (action === "ui.toggleBags" || action === "ui.toggleVendor" ||
+  if (arenaEntry.selected && (action === "ui.toggleBags" || action === "ui.toggleVendor" || action === "ui.toggleWorldMap" ||
     action === "ui.toggleQuestLog" || action === "ui.talk" || action === "player.releaseSpirit")) {
     return;
   }
@@ -1873,6 +1874,9 @@ function runAction(action: GameAction): void {
     case "ui.talk":
       worldView.interact();
       return;
+    case "ui.toggleWorldMap":
+      worldView.toggleWorldMap();
+      return;
     case "ui.toggleQuestLog":
       worldView.toggleQuestLog();
       return;
@@ -1880,7 +1884,7 @@ function runAction(action: GameAction): void {
       worldView.openChat();
       return;
     case "ui.closePanel":
-      if (!worldView.closeLoot() && !worldView.closeVendor() && !worldView.closeQuestDialog()
+      if (!worldView.closeWorldMap() && !worldView.closeLoot() && !worldView.closeVendor() && !worldView.closeQuestDialog()
         && !worldView.closeQuestLog() && !worldView.closeCharacter()) {
         worldView.closeBags();
       }
