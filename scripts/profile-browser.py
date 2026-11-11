@@ -18,7 +18,8 @@ Sources, all opt-in and read-only:
 - the page's `?profile` frame phases (`web/src/world/frame-profile.ts`): main-thread CPU per phase;
 - Event Timing (`event` entries: input delay, handler time, duration to next paint, i.e. INP) and
   Long Animation Frames, from a `PerformanceObserver` this script installs;
-- WebGL draw calls and triangles from wrapped draw entry points, and three's own counts per render
+- WebGL draw calls and triangles from wrapped draw entry points (including the `WEBGL_multi_draw`
+  entry points `BatchedMesh` uses, each counting its `drawcount` draws), and three's own counts per render
   pass (sun cascades, local shadows, main, post) with the main pass's top contributors;
 - GPU execution time of each frame's WebGL commands via `EXT_disjoint_timer_query_webgl2`, only when
   the browser exposes it (reported as unsupported otherwise);
@@ -87,6 +88,37 @@ INIT_SCRIPT = r"""(() => {
     wrap("drawElements", (a) => count(a[0], a[1]));
     wrap("drawArraysInstanced", (a) => count(a[0], a[2], a[3]));
     wrap("drawElementsInstanced", (a) => count(a[0], a[1], a[4]));
+    // BatchedMesh draws through WEBGL_multi_draw: one call, `drawcount` draws, each with its
+    // own count (and instance count). Arguments: [mode, counts, countsOffset, instances,
+    // instancesOffset, drawcount] positions per entry point.
+    const multi = (a, c, co, i, io, n) => {
+      const drawcount = a[n];
+      probe.draws += drawcount;
+      if (a[0] !== 4) return;
+      for (let k = 0; k < drawcount; k++) probe.triangles += (a[c][a[co] + k] / 3) * (i === null ? 1 : a[i][a[io] + k]);
+    };
+    const multiDraw = {
+      multiDrawArraysWEBGL: (a) => multi(a, 3, 4, null, null, 5),
+      multiDrawElementsWEBGL: (a) => multi(a, 1, 2, null, null, 6),
+      multiDrawArraysInstancedWEBGL: (a) => multi(a, 3, 4, 5, 6, 7),
+      multiDrawElementsInstancedWEBGL: (a) => multi(a, 1, 2, 6, 7, 8),
+      multiDrawArraysInstancedBaseInstanceWEBGL: (a) => multi(a, 3, 4, 5, 6, 9),
+      multiDrawElementsInstancedBaseVertexBaseInstanceWEBGL: (a) => multi(a, 1, 2, 6, 7, 12),
+    };
+    const wrapped = new WeakSet();
+    const getExtension = Type.prototype.getExtension;
+    Type.prototype.getExtension = function (...args) {
+      const extension = getExtension.apply(this, args);
+      const proto = extension && Object.getPrototypeOf(extension);
+      if (proto && !wrapped.has(proto)) {
+        wrapped.add(proto);
+        for (const [name, fn] of Object.entries(multiDraw)) {
+          const original = proto[name];
+          if (original) proto[name] = function (...a) { fn(a); return original.apply(this, a); };
+        }
+      }
+      return extension;
+    };
   }
   // GPU time per animation frame, only where the timer-query extension exists.
   let gl = null, ext = null, active = false;
