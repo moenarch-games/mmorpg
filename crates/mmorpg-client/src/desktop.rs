@@ -12,6 +12,7 @@ use mmorpg_client::{
     interaction::NpcContext,
     presentation::Presentation,
     roster::{Roster, config_dir},
+    stage,
     ui::{GameUi, UiFrame, UiIntent, overlay::EguiWindow},
     world::WorldScene,
     world_controls::{WorldAction, WorldControls},
@@ -21,7 +22,7 @@ use mmorpg_client_model::mouse_owner::{
     Begin, Gesture, Hold, HoldCamera, HoldRelease, LeftClick, MouseOwners, RightClick,
 };
 use mmorpg_client_model::power_draw::{DrawRelease, PowerDraw};
-use mmorpg_core::{EntityKind, EntityRef, PlayerClass, Sex, ZoneContent};
+use mmorpg_core::{EntityKind, EntityRef, PlayerClass, Sex, ZoneContent, ZoneId};
 use mmorpg_scenery::Scenery;
 use std::{
     collections::HashSet,
@@ -38,12 +39,17 @@ use winit::{
     window::{Window, WindowId},
 };
 
+/// A zone's scenery and static world built off the window thread for Enter World.
+type Preparing = (ZoneId, std::thread::JoinHandle<(Scenery, WorldScene)>);
+
+/// Opens the window. `loaded` is the connected player's ID with its zone's scenery and world;
+/// without it the window opens on the selection stage and builds zone `zone_id` at Enter World.
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     runtime: Arc<tokio::runtime::Runtime>,
-    player_id: u32,
-    scenery: Scenery,
+    zone_id: ZoneId,
+    loaded: Option<(u32, Scenery, WorldScene)>,
     content: Arc<ZoneContent>,
-    world: WorldScene,
     input: watch::Sender<PlayerInput>,
     characters: watch::Sender<Option<CharacterSelection>>,
     updates: watch::Receiver<NetworkUpdate>,
@@ -52,6 +58,17 @@ pub fn run(
     character: Option<(PlayerClass, Sex)>,
 ) -> Result<(), ClientError> {
     let event_loop = EventLoop::new()?;
+    let now = Instant::now();
+    let (player_id, scenery, world, stage) = match loaded {
+        Some((player_id, scenery, world)) => (player_id, scenery, world, None),
+        None => {
+            // The selection stage stands in for the zone until Enter World.
+            let scenery = stage::scenery(&content);
+            let world = stage::world(&scenery);
+            let shown = stage::presentation(scenery.clone(), Arc::clone(&content), zone_id, now)?;
+            (0, scenery, world, Some(shown))
+        }
+    };
     let mut ui = GameUi::new(&scenery);
     if character.is_none() {
         // The local roster offers its characters; `--class` skips it.
@@ -61,7 +78,7 @@ pub fn run(
                 .and_then(|dir| Roster::load(&dir)),
         );
     }
-    let mut presentation = Presentation::new(player_id, scenery, content, Instant::now())?;
+    let mut presentation = Presentation::new(player_id, scenery, content, now)?;
     if let Some((class, _)) = character {
         presentation.set_default_appearance(class);
     }
@@ -71,6 +88,9 @@ pub fn run(
         renderer: None,
         world,
         presentation,
+        stage,
+        preparing: None,
+        zone_id,
         title: String::new(),
         connection_epoch: None,
         zone: None,
@@ -129,6 +149,13 @@ struct App {
     /// Static geometry uploaded when the window's renderer is created.
     world: WorldScene,
     presentation: Presentation,
+    /// The selection stage's own presentation, shown instead of the zone's until the first
+    /// projection after Enter World; `world` is the stage's meanwhile.
+    stage: Option<Presentation>,
+    /// The zone's scenery and world, building since Enter World.
+    preparing: Option<Preparing>,
+    /// The zone the window connects to.
+    zone_id: ZoneId,
     /// The window title last set, so it changes only when its text does.
     title: String,
     connection_epoch: Option<u32>,
@@ -995,6 +1022,18 @@ impl App {
                 self.world_controls.set_interaction(false);
             }
             UiIntent::ChooseCharacter(id, class, sex, headwear) => {
+                if self.stage.is_some() && self.preparing.is_none() {
+                    // The zone's world builds while the session connects and claims.
+                    let zone = self.zone_id;
+                    self.preparing = Some((
+                        zone,
+                        std::thread::spawn(move || {
+                            let scenery = mmorpg_scenery::scenery_for_zone(zone);
+                            let world = WorldScene::new(&scenery);
+                            (scenery, world)
+                        }),
+                    ));
+                }
                 self.retire_held_input();
                 self.ui.settings.bindings.select_character(Some(&id));
                 self.sync_bindings();
@@ -1053,6 +1092,8 @@ impl App {
             return;
         };
         let connection = match &*self.updates.borrow() {
+            _ if self.stage.is_some() && self.choosing => None,
+            _ if self.stage.is_some() => Some("Entering the world…"),
             NetworkUpdate::Waiting => Some("Connecting to the world…"),
             NetworkUpdate::Reconnecting => Some("Reconnecting to the world…"),
             NetworkUpdate::Travelling(_) => Some("Travelling…"),
@@ -1533,13 +1574,27 @@ impl ApplicationHandler for App {
                         snapshot,
                         refusal,
                     } => {
-                        let entering = self.zone.is_some_and(|zone| zone != snapshot.zone_id);
+                        // The first projection after Enter World leaves the stage; a later one
+                        // from another zone (#145) travels.
+                        let entering = self.stage.is_some()
+                            || self.zone.is_some_and(|zone| zone != snapshot.zone_id);
                         self.zone = Some(snapshot.zone_id);
                         if entering {
-                            // Another zone (#145): its scenery, content and player ID.
-                            let scenery = mmorpg_scenery::scenery_for_zone(snapshot.zone_id);
-                            let content = mmorpg_core::content_for_zone(snapshot.zone_id);
-                            self.world = WorldScene::new(&scenery);
+                            // The zone's scenery, content and player ID.
+                            let zone = snapshot.zone_id;
+                            let prepared = self
+                                .preparing
+                                .take()
+                                .filter(|(prepared, _)| *prepared == zone)
+                                .and_then(|(_, build)| build.join().ok());
+                            let (scenery, world) = prepared.unwrap_or_else(|| {
+                                let scenery = mmorpg_scenery::scenery_for_zone(zone);
+                                let world = WorldScene::new(&scenery);
+                                (scenery, world)
+                            });
+                            let content = mmorpg_core::content_for_zone(zone);
+                            self.stage = None;
+                            self.world = world;
                             self.ui.set_scenery(&scenery);
                             if let Err(error) = self.presentation.enter_zone(
                                 snapshot.viewer_id,
@@ -1593,25 +1648,32 @@ impl ApplicationHandler for App {
                 self.send_slot_releases();
                 self.follow_hold_releases();
                 self.follow_power_draw();
-                // While choosing, the viewer turns on the turntable facing the camera.
-                let preview = self.choosing.then(|| {
+                // On the stage, the viewer turns on the turntable facing the camera, also while
+                // Enter World waits for the zone.
+                let staged = self.choosing || self.stage.is_some();
+                // Until the zone's first projection the stage shows instead of the zone.
+                let shown = self.stage.as_mut().unwrap_or(&mut self.presentation);
+                let preview = staged.then(|| {
                     let preview = self.ui.preview();
-                    let _ = self.presentation.set_headwear(Some(preview.headwear.id()));
-                    let yaw =
-                        self.camera.yaw() + std::f32::consts::PI + preview.degrees.to_radians();
+                    let _ = shown.set_headwear(Some(preview.headwear.id()));
+                    let yaw = stage::FACING_CAMERA + preview.degrees.to_radians();
                     (preview.choice, yaw.rem_euclid(std::f32::consts::TAU))
                 });
-                self.presentation.set_preview(preview);
-                // First-view collision framing runs once; focus then gently adjusts that view.
-                let _ = self
-                    .presentation
-                    .camera_view(&mut self.camera, &self.world, now);
-                self.track_focus(now);
-                let view = self
-                    .camera
-                    .view_above_ground(self.presentation.camera_target(now), |x, z| {
-                        self.world.surface_y(x, z)
-                    });
+                shown.set_preview(preview);
+                let view = if self.stage.is_some() {
+                    // The stage has its own close camera; the orbit camera waits for the zone.
+                    stage::camera(self.camera.view([0.0; 3]).field_of_view_degrees)
+                } else {
+                    // First-view collision framing runs once; focus then gently adjusts it.
+                    let _ = self
+                        .presentation
+                        .camera_view(&mut self.camera, &self.world, now);
+                    self.track_focus(now);
+                    self.camera
+                        .view_above_ground(self.presentation.camera_target(now), |x, z| {
+                            self.world.surface_y(x, z)
+                        })
+                };
                 if let Some(audio) = &mut self.audio {
                     audio.listen(view);
                     audio.pump();
@@ -1619,7 +1681,8 @@ impl ApplicationHandler for App {
                 let loot_window = self.ui.loot_window_open(self.presentation.latest());
                 self.presentation
                     .set_interaction(loot_window, self.npc_context.npc);
-                let frame = self.presentation.frame(&self.world, now, view);
+                let shown = self.stage.as_mut().unwrap_or(&mut self.presentation);
+                let frame = shown.frame(&self.world, now, view);
                 self.interface(now, view);
                 // The egui action bar replaces the flat combat HUD rectangles.
                 let overlay = self
@@ -1631,7 +1694,10 @@ impl ApplicationHandler for App {
                         &frame,
                         &[],
                         view,
-                        self.presentation.picked_draws(),
+                        self.stage
+                            .as_ref()
+                            .unwrap_or(&self.presentation)
+                            .picked_draws(),
                         overlay,
                     )
                 {

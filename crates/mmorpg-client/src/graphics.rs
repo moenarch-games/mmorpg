@@ -939,17 +939,51 @@ mod tests {
                     break projection;
                 }
             };
-            let scenery = greyhaven_vale_scenery();
-            let world = WorldScene::new(&scenery);
+            // The Characters screen on the selection stage, with two roster characters.
+            let selection_evidence =
+                std::env::var("MMORPG_NATIVE_SELECTION_EVIDENCE").as_deref() == Ok("1");
             let now = Instant::now();
-            let mut presentation =
-                Presentation::new(1, scenery.clone(), Arc::clone(&content), now).unwrap();
-            presentation.push(projection.clone(), now).unwrap();
-            let view = presentation.camera_view(&mut OrbitCamera::default(), &world, now);
-            let mut frame = world.frame(0.0, false, view.eye, None);
-            frame
-                .draws
-                .extend(presentation.unit_draws(now, view).iter().cloned());
+            let (scenery, world, mut presentation) = if selection_evidence {
+                let scenery = crate::stage::scenery(&content);
+                let world = crate::stage::world(&scenery);
+                let presentation = crate::stage::presentation(
+                    scenery.clone(),
+                    Arc::clone(&content),
+                    ZoneId::new(1),
+                    now,
+                )
+                .unwrap();
+                (scenery, world, presentation)
+            } else {
+                let scenery = greyhaven_vale_scenery();
+                let world = WorldScene::new(&scenery);
+                let mut presentation =
+                    Presentation::new(1, scenery.clone(), Arc::clone(&content), now).unwrap();
+                presentation.push(projection.clone(), now).unwrap();
+                (scenery, world, presentation)
+            };
+            let mut camera = OrbitCamera::default();
+            let view = if selection_evidence {
+                crate::stage::camera(camera.view([0.0; 3]).field_of_view_degrees)
+            } else {
+                presentation.camera_view(&mut camera, &world, now)
+            };
+            let frame = if selection_evidence {
+                // The previewed Warden turned to face the camera, as the window does.
+                let choice = mmorpg_core::ClassChoice {
+                    class: mmorpg_core::PlayerClass::Warden,
+                    sex: mmorpg_core::Sex::Male,
+                };
+                presentation.set_default_appearance(choice.class);
+                presentation.set_preview(Some((choice, crate::stage::FACING_CAMERA)));
+                presentation.frame(&world, now, view)
+            } else {
+                let mut frame = world.frame(0.0, false, view.eye, None);
+                frame
+                    .draws
+                    .extend(presentation.unit_draws(now, view).iter().cloned());
+                frame
+            };
 
             let mut ui = GameUi::new(&scenery);
             let settings_evidence =
@@ -960,9 +994,6 @@ mod tests {
                     .bindings
                     .select_character(Some("settings-evidence"));
             }
-            // The Characters screen over the world, with two roster characters.
-            let selection_evidence =
-                std::env::var("MMORPG_NATIVE_SELECTION_EVIDENCE").as_deref() == Ok("1");
             if selection_evidence {
                 use crate::roster::{Headwear, Roster};
                 let mut roster = Roster::default();
@@ -1031,7 +1062,7 @@ mod tests {
                 eye: view.eye,
             };
             assert!(
-                presentation.labels().len() > 1,
+                selection_evidence || presentation.labels().len() > 1,
                 "the presented units carry nameplate anchors"
             );
             let context = egui::Context::default();

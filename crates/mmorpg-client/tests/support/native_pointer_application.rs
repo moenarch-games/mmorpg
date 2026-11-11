@@ -226,6 +226,9 @@ impl NativeApplication {
                 presentation.set_default_appearance(PlayerClass::Warden);
                 presentation
             },
+            stage: None,
+            preparing: None,
+            zone_id: mmorpg_core::ZoneId::new(1),
             title: String::new(),
             connection_epoch: None,
             zone: None,
