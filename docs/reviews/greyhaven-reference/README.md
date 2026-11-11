@@ -35,7 +35,7 @@ OpenGL ES 3.2, RTX 3060 Ti, pixel ratio 1.
 | `frame-lake` | 8.0 | 0.0697 | 0.6465 | |
 
 The campfire and the cave torches flicker, and the two clients capture them at different
-moments, so the torch shots vary between browser captures: over four captures, `torch-campfire`
+moments, so the torch shots vary between browser captures: over five captures, `torch-campfire`
 0.021 to 0.036 and `torch-lantern` 0.037 to 0.076 (before #757: 0.068 to 0.078 and 0.071 to
 0.109). With the flicker held steady on both sides (reduced motion) they measure 0.0134 and
 0.0137, and their mean luminance matches within 0.2 %: the point lights themselves agree.
