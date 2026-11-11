@@ -125,6 +125,82 @@ pub fn committed_area(entries: &CharacterEntries, character: &str) -> Result<Opt
     }))
 }
 
+/// Physique V1 (#633, #634) for the picker, as JSON: the fixed-point scale and neutral value, the
+/// ±modifier bound in basis points, the eleven sliders in canonical order (`key`, `affectsStats`),
+/// the attributes the modifier scales and the six presets' exact fixed-point vectors. All of it
+/// is `mmorpg-core`'s; the page holds only labels.
+#[wasm_bindgen(js_name = physiqueModel)]
+#[must_use]
+pub fn physique_model() -> String {
+    use mmorpg_core::{PhysiqueParam, PhysiquePreset};
+    serde_json::json!({
+        "scale": mmorpg_core::PHYSIQUE_SCALE,
+        "neutral": mmorpg_core::PHYSIQUE_NEUTRAL,
+        "maxModifierBp": mmorpg_core::MAX_PHYSIQUE_MODIFIER_BP,
+        "params": PhysiqueParam::ALL.iter().map(|param| serde_json::json!({
+            "key": param.key(),
+            "affectsStats": param.affects_stats(),
+        })).collect::<Vec<_>>(),
+        "attributes": ["maxHealth", "meleeDamage"],
+        "presets": PhysiquePreset::ALL.iter().map(|preset| serde_json::json!({
+            "name": preset.name(),
+            "values": preset.physique().fixed(),
+        })).collect::<Vec<_>>(),
+    })
+    .to_string()
+}
+
+fn physique(values: &[u16]) -> Result<mmorpg_core::Physique, JsError> {
+    let values: [u16; mmorpg_core::PHYSIQUE_PARAMS] = values
+        .try_into()
+        .map_err(|_| JsError::new("a physique has exactly eleven values"))?;
+    mmorpg_core::Physique::from_fixed(values).map_err(|error| JsError::new(&error.to_string()))
+}
+
+/// The combined, clamped modifiers of fixed-point physique `values`, in basis points, in
+/// `physiqueModel().attributes` order: `mmorpg-core`'s own calculation (#634's live preview).
+#[wasm_bindgen(js_name = physiqueModifiers)]
+pub fn physique_modifiers(values: &[u16]) -> Result<Vec<i32>, JsError> {
+    let physique = physique(values)?;
+    Ok(mmorpg_core::PhysiqueAttribute::ALL
+        .iter()
+        .map(|&attribute| physique.modifier_bp(attribute))
+        .collect())
+}
+
+/// The committed physique of a stored character, or `undefined` if it was never stored.
+#[wasm_bindgen(js_name = committedPhysique)]
+pub fn committed_physique(
+    entries: &CharacterEntries,
+    character: &str,
+) -> Result<Option<Vec<u16>>, JsError> {
+    let id = character_id(character)?;
+    store(entries)
+        .committed(&id)
+        .map(|committed| committed.map(|committed| committed.record.physique.fixed().to_vec()))
+        .map_err(|error| JsError::new(&error.to_string()))
+}
+
+/// Saves the picker's physique `values` to a stored character outside any zone, under its lease
+/// at `zoneEpoch` (above any earlier page's); the page must hold the character for this tab.
+/// Returns `false`, changing nothing, for a character never stored: its first entry creates it
+/// with the values (`LocalZone.enter`'s `physique`).
+#[wasm_bindgen(js_name = customizePhysique)]
+pub fn customize_physique(
+    entries: &CharacterEntries,
+    character: &str,
+    values: &[u16],
+    #[wasm_bindgen(js_name = zoneEpoch)] zone_epoch: u64,
+) -> Result<bool, JsError> {
+    let id = character_id(character)?;
+    let physique = physique(values)?;
+    let holder = LeaseHolder {
+        zone_id: LOCAL_ZONE_ID,
+        zone_epoch,
+    };
+    host::customize_stored_physique(&mut store(entries), &id, physique, holder).map_err(js_error)
+}
+
 /// The `combat-sounds` bundle's SoundManifest JSON with mmorpg's cues and distance curve
 /// added, the same manifest the native client plays (#447).
 #[wasm_bindgen(js_name = soundManifest)]
@@ -356,7 +432,8 @@ impl LocalZone {
     /// The page plays zone 1 at `zone_epoch`, which must exceed the epoch of
     /// any earlier page. A never-stored character is created with its class
     /// (0 Warden, 1 Ranger, 2 Arcanist) and sex (0 female, 1 male); a stored
-    /// one keeps its own. Commands start at sequence 1. IDs are never reused.
+    /// one keeps its own. A never-stored character is created with the optional fixed-point
+    /// `physique` (#634), else neutral. Commands start at sequence 1. IDs are never reused.
     pub fn enter(
         &mut self,
         entries: &CharacterEntries,
@@ -364,8 +441,13 @@ impl LocalZone {
         class: u8,
         sex: u8,
         #[wasm_bindgen(js_name = zoneEpoch)] zone_epoch: u64,
+        physique: Option<Vec<u16>>,
     ) -> Result<u32, JsError> {
         let id = character_id(character)?;
+        let physique = match physique {
+            Some(values) => self::physique(&values)?,
+            None => mmorpg_core::Physique::NEUTRAL,
+        };
         let class = PlayerClass::from_code(class)
             .zip(Sex::from_code(sex))
             .map(|(class, sex)| ClassChoice { class, sex })
@@ -375,7 +457,7 @@ impl LocalZone {
             zone_epoch,
         };
         self.host
-            .enter(&mut store(entries), id, class, holder)
+            .enter_with_physique(&mut store(entries), id, class, physique, holder)
             .map_err(js_error)
     }
 

@@ -16,8 +16,9 @@ use crate::scenario::Scenario;
 use mmorpg_characters::{CharacterLease, CharacterStore, EntryBackend, LeaseHolder, StoreError};
 use mmorpg_core::redbrand_depths::{self, is_depths_zone};
 use mmorpg_core::{
-    CharacterId, ClassChoice, DepthsRunStart, EphemeralCharacterBuild, ErrorCode, PlayerId,
-    TransferId, ZoneContent, ZoneDefinition, ZoneError, ZoneId, ZoneSimulation, greyhaven_vale,
+    CharacterId, ClassChoice, DepthsRunStart, EphemeralCharacterBuild, ErrorCode, Physique,
+    PlayerId, TransferId, ZoneContent, ZoneDefinition, ZoneError, ZoneId, ZoneSimulation,
+    greyhaven_vale,
 };
 use mmorpg_protocol::{
     ProtocolError, decode_canonical_snapshot, decode_observed_command, encode_canonical_snapshot,
@@ -339,6 +340,19 @@ impl LocalZoneHost {
         class: ClassChoice,
         holder: LeaseHolder,
     ) -> Result<PlayerId, LocalZoneError> {
+        self.enter_with_physique(store, character_id, class, Physique::NEUTRAL, holder)
+    }
+
+    /// [`Self::enter`], creating a never-stored character with `physique` (#634: the sliders the
+    /// picker confirmed before the character's first entry). A stored character keeps its own.
+    pub fn enter_with_physique<B: EntryBackend>(
+        &mut self,
+        store: &mut CharacterStore<B>,
+        character_id: CharacterId,
+        class: ClassChoice,
+        physique: Physique,
+        holder: LeaseHolder,
+    ) -> Result<PlayerId, LocalZoneError> {
         let player_id = self.next_player_id;
         let next = player_id
             .checked_add(1)
@@ -348,7 +362,10 @@ impl LocalZoneHost {
             .map_err(LocalZoneError::Store)?;
         let admitted = match &acquired.record {
             Some(record) => self.zone.admit_character(player_id, record),
-            None => self.zone.create_character(player_id, class),
+            None => self
+                .zone
+                .create_character(player_id, class)
+                .and_then(|()| self.zone.customize_physique(player_id, physique)),
         }
         .map_err(LocalZoneError::Zone)
         .and_then(|()| {
@@ -603,6 +620,36 @@ impl LocalZoneHost {
             .map(|packed| packed.payload)
             .map_err(LocalZoneError::Command)
     }
+}
+
+/// The picker's physique change (#634) for a stored character outside any zone: acquires the
+/// character's lease as `holder`, applies `CharacterRecord::customize_physique` and commits and
+/// releases the record. Returns `false`, changing nothing, for a character never stored.
+pub fn customize_stored_physique<B: EntryBackend>(
+    store: &mut CharacterStore<B>,
+    character_id: &CharacterId,
+    physique: Physique,
+    holder: LeaseHolder,
+) -> Result<bool, LocalZoneError> {
+    if store
+        .committed(character_id)
+        .map_err(LocalZoneError::Store)?
+        .is_none()
+    {
+        return Ok(false);
+    }
+    let acquired = store
+        .acquire(character_id, holder)
+        .map_err(LocalZoneError::Store)?;
+    let Some(mut record) = acquired.record else {
+        let _ = store.release(&acquired.lease, None);
+        return Ok(false);
+    };
+    record.customize_physique(physique);
+    store
+        .release(&acquired.lease, Some(&record))
+        .map_err(LocalZoneError::Store)?;
+    Ok(true)
 }
 
 #[cfg(test)]
