@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "note": "Provisional kingdoms, major settlements and routes. Kingdoms claim whole regions; claims are derived from travel cost to each capital unless pinned in 'claims'. Roads are routed over the terrain between consecutive stops.",
+  "kingdoms": [
+    {
+      "id": "carrowmark",
+      "name": "Carrowmark",
+      "color": "#c8963c",
+      "capital": "carrow",
+      "gate": "greyfang-gate",
+      "character": "Grain and river kingdom of the southern plain; Greyhaven Outpost is its northern march fort below the Crown."
+    },
+    {
+      "id": "vesmere",
+      "name": "Vesmere",
+      "color": "#3f9a72",
+      "capital": "vesport",
+      "gate": "vessgate",
+      "character": "Rain-coast kingdom of the west and the outer isles: timber, ships, heath and fisheries on the windward shore."
+    },
+    {
+      "id": "isenholt",
+      "name": "Isenholt",
+      "color": "#6f86c8",
+      "capital": "isenhold",
+      "gate": "sundering",
+      "character": "Cold northern fells and firths: iron, furs and the Isen gorge out of the Crown."
+    },
+    {
+      "id": "sarrath",
+      "name": "Sarrath",
+      "color": "#c4664a",
+      "capital": "sarrath",
+      "gate": "sarr-gap",
+      "character": "Grass plains in the lee of the Crown: horse herds, the reed lake of Saltmere, vineyards on the Teeth and the Sarr breaking through them at the Iron Throat."
+    },
+    {
+      "id": "merrow",
+      "name": "Merrow League",
+      "color": "#9a72c0",
+      "capital": "merrowgate",
+      "gate": "merrow-notch",
+      "character": "Merchant towns of the southeastern delta, holding the Fenwater and the sea lanes."
+    }
+  ],
+  "unclaimed": {
+    "id": "crown",
+    "name": "The Shattered Crown",
+    "rule": "regions whose mean elevation exceeds 760 m or lie inside the crest ring"
+  },
+  "claims": {
+    "greyhaven": "carrowmark",
+    "gull-isle": "vesmere",
+    "holm": "vesmere",
+    "mull": "vesmere",
+    "sedge-isle": "vesmere",
+    "sedgeholm": "vesmere",
+    "tarrow": "carrowmark",
+    "skerry": "carrowmark",
+    "wren": "carrowmark"
+  },
+  "settlements": [
+    {"id": "greyhaven-outpost", "name": "Greyhaven Outpost", "kind": "outpost", "kingdom": "carrowmark", "at": [0, 20], "anchor": "greyhaven", "established": true},
+    {"id": "carrow", "name": "Carrow", "kind": "capital", "at": [1250, 8600]},
+    {"id": "millford", "name": "Millford", "kind": "town", "kingdom": "carrowmark", "at": [450, 4900]},
+    {"id": "vesport", "name": "Vesport", "kind": "capital", "at": [-8250, -950]},
+    {"id": "thornwick", "name": "Thornwick", "kind": "town", "kingdom": "vesmere", "at": [-5600, -2900]},
+    {"id": "isenhold", "name": "Isenhold", "kind": "capital", "at": [-1000, -9150]},
+    {"id": "hagstead", "name": "Hagstead", "kind": "town", "kingdom": "isenholt", "at": [-4300, -8500]},
+    {"id": "sarrath", "name": "Sarrath", "kind": "capital", "at": [5200, -3550]},
+    {"id": "ashwell", "name": "Ashwell", "kind": "town", "kingdom": "sarrath", "at": [6400, 300]},
+    {"id": "merrowgate", "name": "Merrowgate", "kind": "capital", "at": [7700, 6600]},
+    {"id": "brannock-ford", "name": "Brannock Ford", "kind": "town", "kingdom": "merrow", "at": [4200, 2400]},
+    {"id": "notchwatch", "name": "Notchwatch", "kind": "fort", "kingdom": "merrow", "at": [2700, -1900]},
+    {"id": "shardfall", "name": "Shardfall", "kind": "ruin", "at": [-700, -3800]}
+  ],
+  "routes": [
+    {"id": "kings-road", "name": "King's Road", "stops": ["greyhaven-outpost", "millford", "carrow"]},
+    {"id": "crown-road", "name": "Greyfang Road", "stops": ["greyhaven-outpost", "gate:greyfang-gate", "shardfall"]},
+    {"id": "fen-road", "name": "Fen Road", "stops": ["greyhaven-outpost", "brannock-ford", "merrowgate"]},
+    {"id": "coast-road", "name": "South Coast Road", "stops": ["carrow", "merrowgate"]},
+    {"id": "west-road", "name": "West Road", "stops": ["millford", "vesport"]},
+    {"id": "vess-road", "name": "Vess Road", "stops": ["vesport", "thornwick", "gate:vessgate", "shardfall"]},
+    {"id": "north-road", "name": "North Road", "stops": ["vesport", "hagstead", "isenhold"]},
+    {"id": "isen-road", "name": "Isen Road", "stops": ["isenhold", "gate:sundering", "shardfall"]},
+    {"id": "salt-road", "name": "Salt Road", "stops": ["isenhold", "sarrath", "ashwell", "merrowgate"]},
+    {"id": "sarr-road", "name": "Sarr Road", "stops": ["sarrath", "gate:sarr-gap", "shardfall"]},
+    {"id": "notch-road", "name": "Notch Road", "stops": ["brannock-ford", "gate:merrow-notch", "shardfall"]}
+  ]
+}

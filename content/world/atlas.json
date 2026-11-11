@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "status": "provisional",
+  "frame": {
+    "units": "metres",
+    "x": "east",
+    "z": "south; -z is map north, as in the Greyhaven zone",
+    "origin": "Greyhaven Outpost centre, the Greyhaven zone's (0, 0)",
+    "simUnitsPerMetre": 100
+  },
+  "domain": {
+    "minX": -12000,
+    "minZ": -12000,
+    "maxX": 12000,
+    "maxZ": 12000
+  },
+  "cell": 40,
+  "seed": 7331,
+  "layers": [
+    "terrain.json",
+    "water.json",
+    "overrides/height.json",
+    "anchors.json",
+    "climate.json",
+    "overrides/biome.json",
+    "regions.json",
+    "borders.json",
+    "polities.json"
+  ]
+}

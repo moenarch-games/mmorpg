@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "note": "Authored major rivers run source to mouth and are carved with a strictly falling bed. Minor streams and lakes are derived from the terrain. 'mouth' is sea, sink:<id> or river:<id>.",
+  "carve": {
+    "minGrade": 0.002,
+    "sideSlope": 0.3,
+    "bedDepth": 6,
+    "valleyHalfWidth": 700,
+    "headLength": 1500,
+    "meander": {"amplitude": 260, "wavelength": 1400}
+  },
+  "silting": {
+    "minLakeDepth": 18,
+    "note": "Hollows shallower than this fill with sediment and drain; deeper basins and declared lakes keep their water."
+  },
+  "rivers": [
+    {
+      "id": "greywater",
+      "name": "Greywater",
+      "source": "spring:greywell",
+      "mouth": "sea",
+      "points": [[200, 1500], [450, 3000], [250, 4800], [800, 6600], [1200, 8200], [1300, 9500]]
+    },
+    {
+      "id": "mill",
+      "name": "Millrace",
+      "source": "uplands:mill-hills",
+      "mouth": "river:greywater",
+      "points": [[-2500, 1900], [-1900, 3500], [-900, 4600], [300, 5400]]
+    },
+    {
+      "id": "fenwater",
+      "name": "Fenwater",
+      "source": "anchor:greyhaven",
+      "mouth": "sea",
+      "points": [[700, 0], [1500, 300], [2800, 1200], [4200, 2600], [5600, 4400], [7000, 6000], [8500, 7200]]
+    },
+    {
+      "id": "brannock",
+      "name": "Brannock",
+      "source": "gate:merrow-notch",
+      "mouth": "river:fenwater",
+      "points": [[2100, -2800], [3200, -1300], [4100, 800], [4350, 2350]]
+    },
+    {"id": "ash", "name": "Ashburn", "source": "uplands:ashen-hills", "mouth": "river:fenwater", "points": [[7300, 1900], [7300, 3300], [6900, 4700], [6400, 5300]]},
+    {"id": "wend", "name": "Wend", "source": "ridge:fenward-ridge", "mouth": "sea", "points": [[2500, 4700], [3000, 6200], [3500, 7900], [3900, 10300]]},
+    {"id": "lune", "name": "Lune", "source": "ridge:the-teeth", "mouth": "sea", "points": [[7900, 1900], [8400, 3200], [9200, 4300], [10400, 4900]]},
+    {"id": "lorn", "name": "Lorn", "source": "ridge:westspur", "mouth": "sea", "points": [[-4000, 900], [-4400, 2600], [-4900, 4600], [-5600, 6200], [-6600, 7300]]},
+    {
+      "id": "vess",
+      "name": "Vess",
+      "source": "gate:vessgate",
+      "mouth": "sea",
+      "points": [[-3400, -4400], [-4800, -3500], [-6500, -2200], [-8100, -1200], [-9300, -800]]
+    },
+    {"id": "tarn", "name": "Tarn", "source": "uplands:thornwood", "mouth": "sea", "points": [[-5600, -5500], [-7000, -5200], [-8600, -4800], [-10700, -4500]]},
+    {"id": "hagwater", "name": "Hagwater", "source": "uplands:hagmoor", "mouth": "sea", "points": [[-2600, -7500], [-3500, -8100], [-4300, -8800], [-5200, -10200]]},
+    {"id": "isen", "name": "Isen", "source": "lake:crownmere", "mouth": "sea", "points": [[-500, -6100], [-680, -7300], [-900, -8400], [-1150, -9800]]},
+    {"id": "rime", "name": "Rime", "source": "ridge:rimeback", "mouth": "sea", "points": [[2000, -7300], [3600, -7900], [5600, -8300], [7500, -9200]]},
+    {
+      "id": "sarr",
+      "name": "Sarr",
+      "source": "gate:sarr-gap",
+      "mouth": "sea",
+      "note": "Breaks through the Teeth in the Iron Throat gorge.",
+      "points": [[2600, -4800], [3900, -4300], [5300, -3700], [6800, -3500], [8000, -3100], [9000, -2800], [10800, -2600]]
+    },
+    {"id": "gullrun", "name": "Gullrun", "source": "ridge:rimeback", "mouth": "river:sarr", "points": [[6400, -5300], [6900, -4400], [7300, -3400]]}
+  ],
+  "lakes": [
+    {"id": "crownmere", "name": "Crownmere", "at": [-500, -5300], "note": "Caldera lake; must exist and drain through the Sundering."},
+    {"id": "saltmere", "name": "Saltmere", "at": [7250, 550], "note": "Shallow reed-fringed steppe lake in the Sarr plain."}
+  ],
+  "sinks": [
+    {
+      "id": "greyhaven-ponor",
+      "name": "Greyhaven Sink",
+      "at": [0, 150],
+      "kind": "karst ponor",
+      "resurgence": "greywell",
+      "note": "The Waterworn Gorge brook leaves the Outpost south through the palisade; the atlas sends it underground here. Zone content is unchanged."
+    }
+  ],
+  "springs": [{"id": "greywell", "name": "Greywell", "at": [200, 1500], "kind": "karst resurgence"}]
+}

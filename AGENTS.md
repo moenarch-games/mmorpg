@@ -64,6 +64,7 @@ python3 scripts/profile-browser.py --out artifacts/profile/report.json --trace a
 cargo run -p mmorpg-world-studio     # web app for the whole map, Krita and agent workflow (docs/WORLD_STUDIO.md)
 cargo run -p mmorpg-world-studio -- capture --tiles     # the same capture from the command line: layered Krita documents, masks and map tiles
 cargo run -p mmorpg-world-studio -- import <region>.ora # painted height and biome layers into content/greyhaven/paint/
+uv run content/world/authoring/atlas.py check         # provisional continent atlas: build, previews in artifacts/world-atlas/, geographic checks (docs/WORLD_ATLAS.md)
 ./scripts/dev-browser-online.sh      # zone host + browser client in online mode
 ```
 

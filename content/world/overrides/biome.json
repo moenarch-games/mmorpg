@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "cell": 40,
+  "note": "Hand-authored biome ids as [column, row, biome]; applied after classification. Never written by the generator.",
+  "cells": []
+}
