@@ -960,6 +960,30 @@ mod tests {
                     .bindings
                     .select_character(Some("settings-evidence"));
             }
+            // The Characters screen over the world, with two roster characters.
+            let selection_evidence =
+                std::env::var("MMORPG_NATIVE_SELECTION_EVIDENCE").as_deref() == Ok("1");
+            if selection_evidence {
+                use crate::roster::{Headwear, Roster};
+                let mut roster = Roster::default();
+                roster
+                    .create(
+                        "Aelric Stormward",
+                        mmorpg_core::PlayerClass::Warden,
+                        mmorpg_core::Sex::Male,
+                        Headwear::IroncrestHelm,
+                    )
+                    .unwrap();
+                roster
+                    .create(
+                        "Mira Ashvale",
+                        mmorpg_core::PlayerClass::Ranger,
+                        mmorpg_core::Sex::Female,
+                        Headwear::RangerCap,
+                    )
+                    .unwrap();
+                ui.set_roster(Ok(roster));
+            }
             let names = |entity| presentation.unit_name(entity);
             // Cosmetic combat events float over the units they concern.
             let mut struck = projection.clone();
@@ -993,13 +1017,13 @@ mod tests {
             }
             let hud = CombatHud::from_projection(&projection);
             let ui_frame = UiFrame {
-                snapshot: Some(&projection),
+                snapshot: (!selection_evidence).then_some(&projection),
                 content: &content,
                 hud: Some(&hud),
                 names: &names,
                 forward: [view.target[0] - view.eye[0], view.target[2] - view.eye[2]],
                 connection: None,
-                choosing: false,
+                choosing: selection_evidence,
                 labels: presentation.labels(),
                 project: &|point| {
                     project_to_viewport(view, size, point).map(|[x, y]| egui::pos2(x, y))
@@ -1011,6 +1035,7 @@ mod tests {
                 "the presented units carry nameplate anchors"
             );
             let context = egui::Context::default();
+            crate::ui::theme::apply(&context);
             context.set_pixels_per_point(scale);
             let mut paint = EguiPaint::default();
             // Passes advance time so window layout and fade-in animations settle.
@@ -1046,6 +1071,8 @@ mod tests {
                     "warden.ppm"
                 } else if world_map_evidence {
                     "world-map.ppm"
+                } else if selection_evidence {
+                    "selection.ppm"
                 } else if settings_evidence {
                     "settings.ppm"
                 } else {

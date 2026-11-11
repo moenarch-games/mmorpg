@@ -125,6 +125,7 @@ impl EguiWindow {
     #[must_use]
     pub fn new(window: &winit::window::Window) -> Self {
         let context = egui::Context::default();
+        super::theme::apply(&context);
         let state = egui_winit::State::new(
             context.clone(),
             egui::ViewportId::ROOT,

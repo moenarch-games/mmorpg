@@ -442,15 +442,18 @@ impl SettingsWindow {
         });
     }
 
-    /// Drawn on selection and in the world. Returns whether Settings owns input.
-    pub fn show(&mut self, ctx: &egui::Context) -> bool {
-        egui::Area::new(egui::Id::unique("settings-entry"))
-            .anchor(egui::Align2::RIGHT_BOTTOM, [-12.0, -12.0])
-            .show(ctx, |ui| {
-                if ui.button("Settings").clicked() {
-                    self.open = true;
-                }
-            });
+    /// Drawn on selection and in the world; `entry` adds the corner Settings
+    /// button (the selection screen has its own). Returns whether Settings owns input.
+    pub fn show(&mut self, ctx: &egui::Context, entry: bool) -> bool {
+        if entry {
+            egui::Area::new(egui::Id::unique("settings-entry"))
+                .anchor(egui::Align2::RIGHT_BOTTOM, [-12.0, -12.0])
+                .show(ctx, |ui| {
+                    if ui.button("Settings").clicked() {
+                        self.open = true;
+                    }
+                });
+        }
         if !self.open {
             return false;
         }
