@@ -72,6 +72,15 @@ fn terrain_probe_span(terrain: &crate::Terrain, x: i32, z: i32) -> (f32, f32) {
     (top, top - bottom)
 }
 
+/// Automatic step-up (#750) for every moving body of a [`World`], in units: a grounded body
+/// walking into a ledge at most `max_height` above its feet, with at least `min_width` of free
+/// depth on top, climbs onto it instead of stopping. Off unless set ([`World::set_step_up`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StepUp {
+    pub max_height: i32,
+    pub min_width: i32,
+}
+
 /// An integer vector in units: the rounded view gameplay rules read, and static geometry.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Vec3i {
@@ -821,6 +830,12 @@ impl World {
         dispatch!(self, &mut self.worlds, world => world.set_weightless(id, weightless))
     }
 
+    /// Lets every moving body step up small ledges from the next [`World::step`] on (#750), or
+    /// with `None` (the default) stops it at their faces.
+    pub fn set_step_up(&mut self, step_up: Option<StepUp>) {
+        dispatch!(self, &mut self.worlds, world => world.set_step_up(step_up));
+    }
+
     /// Moves platform `id`'s box (#56) to centre `to` during the next [`World::step`], before
     /// or after the units (so it never runs into the ones it carries), carrying every unit
     /// that stands on it and is not rising: the displacement is added to that unit's move.
@@ -1170,6 +1185,76 @@ mod tests {
         let x = world.body(unit).unwrap().exact_position()[0];
         let box_stop = 300.0 - 80.0 - BODY.x as f32;
         assert!(x >= box_stop - 1.0 && x < 300.0, "stopped at the rock: {x}");
+    }
+
+    /// A grounded unit walking at 10 units per tick into a 20-unit ledge: where it ends after a
+    /// second, with or without step-up (#750).
+    fn walk_into_a_ledge(world: &mut World, step_up: Option<StepUp>) -> [f32; 3] {
+        world.add_body(RigidBody::floor(BodyId(1), 0)).unwrap();
+        world
+            .add_body(RigidBody::fixed(
+                BodyId(2),
+                Vec3i::new(750, 10, 0),
+                Vec3i::new(500, 10, 500),
+            ))
+            .unwrap();
+        let unit = BodyId(10);
+        world
+            .add_body(RigidBody::dynamic(
+                unit,
+                Vec3i::new(0, 90, 0),
+                Vec3i::ZERO,
+                BODY,
+            ))
+            .unwrap();
+        world.set_step_up(step_up);
+        world.step().unwrap();
+        // The zone's run intent every tick, keeping physics' vertical velocity.
+        for _ in 0..60 {
+            let fall = world.body(unit).unwrap().velocity().y;
+            world
+                .set_velocity(unit, Vec3i::new(10 * S, fall, 0))
+                .unwrap();
+            world.step().unwrap();
+        }
+        world.body(unit).unwrap().exact_position()
+    }
+
+    const STEP_UP: StepUp = StepUp {
+        max_height: 30,
+        min_width: 10,
+    };
+
+    #[test]
+    fn step_up_climbs_a_ledge_only_when_enabled() {
+        on_each_backend(|| {
+            let mut world = World::new(Vec3i::new(0, -S, 0));
+            let [x, y, _] = walk_into_a_ledge(&mut world, None);
+            assert!((219.0..=222.0).contains(&x), "stopped at the ledge: {x}");
+            assert!((y - 90.0).abs() < 0.5, "still on the floor: {y}");
+            let mut world = World::new(Vec3i::new(0, -S, 0));
+            let [x, y, _] = walk_into_a_ledge(&mut world, Some(STEP_UP));
+            assert!(x > 500.0, "ran on over the ledge: {x}");
+            assert!((y - 110.0).abs() < 0.5, "feet on the ledge's top: {y}");
+        });
+    }
+
+    /// Physics Engine and the Rapier oracle agree on a step-up (#750).
+    #[cfg(feature = "physics-ab")]
+    #[test]
+    fn step_up_agrees_with_the_rapier_oracle() {
+        let [rapier, engine] = [Backend::Rapier, Backend::Engine].map(|backend| {
+            walk_into_a_ledge(
+                &mut World::with_backend(Vec3i::new(0, -S, 0), backend),
+                Some(STEP_UP),
+            )
+        });
+        for axis in 0..3 {
+            assert!(
+                (rapier[axis] - engine[axis]).abs() < 1.0,
+                "rapier {rapier:?} vs physics-engine {engine:?}"
+            );
+        }
     }
 
     fn a_unit_falls_lands_and_walks_into_a_wall_on() {
