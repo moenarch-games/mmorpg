@@ -71,6 +71,7 @@ The workspace provides:
 - player-scoped interest snapshots with a spatial index for network publication;
 - [deterministic visibility workloads](docs/INTEREST_WORKLOADS.md) with wire parity and snapshot-size evidence;
 - [deterministic Greyhaven combat workloads](docs/COMBAT_WORKLOADS.md) with AI/physics/publication counters, replay/recovery parity and ratcheted work/byte budgets;
+- [deterministic Greyhaven presentation workloads](docs/PRESENTATION_WORKLOADS.md): camera-only frames do no static scenery work, streaming and unit counters without a GPU (#645);
 - an explicit `game-server::GameSimulation` adapter;
 - deterministic mapping from `ZoneId` to `game-server::MatchId`;
 - a provider-neutral in-memory control-plane reference model with heartbeat-gated host placement and fenced, expiring zone leases;

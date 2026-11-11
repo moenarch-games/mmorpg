@@ -158,6 +158,8 @@ pub fn animal(
         dead,
     };
     let ts = spec.torso.0;
+    // TODO: breathing changes the torso box's size, which keys its geometry, so every breathing
+    // family uploads a new mesh each frame (docs/PRESENTATION_WORKLOADS.md); scale the model instead.
     p.bx(
         "torso",
         size([ts[0] * (1. + breathe), ts[1], ts[2] * (1. + breathe)]),

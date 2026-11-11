@@ -1,8 +1,23 @@
 {
   "schemaVersion": 2,
   "suite": "mmorpg/zone-operations",
-  "description": "Deterministic work bounds of zone interest and tick operations (#138); counters come from mmorpg-core, never wall-clock time.",
+  "description": "Deterministic work bounds of zone interest and tick operations (#138) and of Greyhaven client presentation (#645); counters come from mmorpg-core and mmorpg-presentation, never wall-clock time.",
   "scenarios": [
+    {
+      "id": "camera-orbit",
+      "kind": "common",
+      "description": "Camera-only frames orbiting a standing viewer at the Greyhaven hub",
+      "dimensions": { "frames": 128, "orbit_metres": 4 },
+      "metrics": [
+        {
+          "name": "static_builds",
+          "unit": "builds",
+          "direction": "lower",
+          "signal": "operation-count",
+          "blocking": true
+        }
+      ]
+    },
     {
       "id": "sparse-viewer",
       "kind": "scaling",
@@ -126,6 +141,86 @@
             { "dimension": "population", "bound": "linear" },
             { "dimension": "moved", "bound": "linear" }
           ]
+        }
+      ]
+    },
+    {
+      "id": "camera-only-frames",
+      "description": "Greyhaven client presentation (#645): camera-only frames around a standing viewer over settled static residency build, upload and evict no static scenery, whatever the authored scenery.",
+      "dimensions": {
+        "frames": { "description": "measured frames after residency settles and one warm-up lap" },
+        "orbit_metres": { "description": "camera orbit radius around the viewer, metres" }
+      },
+      "scalePoints": [
+        { "frames": 64, "orbit_metres": 4 },
+        { "frames": 128, "orbit_metres": 4 },
+        { "frames": 256, "orbit_metres": 4 },
+        { "frames": 128, "orbit_metres": 2 },
+        { "frames": 128, "orbit_metres": 8 }
+      ],
+      "metrics": [
+        {
+          "name": "static_builds",
+          "unit": "builds",
+          "signal": "operation-count",
+          "notes": "Static groups and near terrain tiles built (the complete static world is 4,169 groups and 96 tiles).",
+          "budget": { "max": 0 }
+        },
+        {
+          "name": "static_evictions",
+          "unit": "evictions",
+          "signal": "operation-count",
+          "budget": { "max": 0 }
+        },
+        {
+          "name": "uploaded_bytes",
+          "unit": "bytes",
+          "signal": "size",
+          "budget": { "max": 0 }
+        },
+        {
+          "name": "largest_frame_draws",
+          "unit": "draws",
+          "signal": "operation-count",
+          "notes": "Static draw records one frame selects before renderer batching; nothing is hidden to shrink it.",
+          "growth": [{ "dimension": "frames", "bound": "constant" }]
+        }
+      ]
+    },
+    {
+      "id": "region-walk",
+      "description": "Greyhaven client presentation (#645): walking east from the hub enters and leaves terrain tiles and group reaches; streaming builds stay within the per-frame budget.",
+      "dimensions": { "metres": { "description": "metres walked at a running pace (0.1 m per frame)" } },
+      "scalePoints": [{ "metres": 128 }, { "metres": 256 }, { "metres": 512 }],
+      "metrics": [
+        {
+          "name": "largest_frame_builds",
+          "unit": "builds",
+          "signal": "operation-count",
+          "notes": "tiles::BUILDS_PER_FRAME (2) plus GROUP_BUILDS_PER_FRAME (8).",
+          "budget": { "max": 10 },
+          "growth": [{ "dimension": "metres", "bound": "constant" }]
+        }
+      ]
+    },
+    {
+      "id": "unit-frame",
+      "description": "Greyhaven client presentation (#645): one frame of the shared unit presenter over a wolf crowd with one moving wolf; draws follow the animated characters, geometry uploads do not.",
+      "dimensions": { "characters": { "description": "wolves added around the viewer (animated characters A)" } },
+      "scalePoints": [{ "characters": 8 }, { "characters": 16 }, { "characters": 32 }, { "characters": 64 }],
+      "metrics": [
+        {
+          "name": "unit_draws",
+          "unit": "draws",
+          "signal": "operation-count",
+          "growth": [{ "dimension": "characters", "bound": "linear" }]
+        },
+        {
+          "name": "geometry_uploads",
+          "unit": "geometries",
+          "signal": "operation-count",
+          "notes": "New unit geometries over 64 frames after a warm-up frame; breathing animal torsos still add one per family and frame (advisory).",
+          "growth": [{ "dimension": "characters", "bound": "constant" }]
         }
       ]
     }
