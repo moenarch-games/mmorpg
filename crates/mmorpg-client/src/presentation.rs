@@ -514,6 +514,11 @@ impl Presentation {
             .prepare(mmorpg_core::AbilityId::new(ability), seconds);
     }
 
+    /// A held directed strike's wind-up shows the slash toward its current aim (#582, #636).
+    pub fn aim_attack_preparation(&mut self, aim: mmorpg_core::StrikeAim) {
+        self.units_presenter.aim_preparation(aim);
+    }
+
     /// Lost focus, a menu, a retired input context or a superseding gesture: no swing.
     pub fn abandon_attack_preparation(&mut self) {
         self.units_presenter.abandon_preparation();

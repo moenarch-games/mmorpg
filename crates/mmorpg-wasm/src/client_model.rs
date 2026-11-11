@@ -8,6 +8,7 @@
 use mmorpg_client_model::{
     chat::{self, LineKind, Logs},
     hud::{self, CooldownKind},
+    mouse_owner,
     outbox::{self, MovementCommands},
     power_draw::{self, DrawRelease},
     quest,
@@ -19,7 +20,8 @@ use wasm_bindgen::prelude::{JsError, JsValue, wasm_bindgen};
 
 use crate::host::hosted_content;
 use crate::wire::{
-    CastState, ChatChannel, ClassId, EmoteName, QuestSheet, WorldCommand, ZoneSnapshot,
+    CastState, ChatChannel, ClassId, EmoteName, QuestSheet, StrikeAim, StrikeHeight, WorldCommand,
+    ZoneSnapshot,
 };
 
 fn core_snapshot(snapshot: &ZoneSnapshot) -> Result<core::ZoneSnapshot, JsError> {
@@ -291,6 +293,208 @@ impl PowerDraw {
     #[must_use]
     pub fn drawing(&self) -> Option<u8> {
         self.draw.drawing()
+    }
+}
+
+/// Who owns the mouse (#636): free look, focus, or the gesture holding it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+#[serde(rename_all = "kebab-case")]
+pub enum MouseOwnerKind {
+    FreeLook,
+    Focus,
+    Strike,
+    Guard,
+    Aim,
+    Wheel,
+}
+
+/// A gesture that ended, or `none`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+#[serde(rename_all = "kebab-case")]
+pub enum EndedGesture {
+    None,
+    Strike,
+    Guard,
+    Aim,
+    Wheel,
+}
+
+impl From<Option<mouse_owner::Gesture>> for EndedGesture {
+    fn from(gesture: Option<mouse_owner::Gesture>) -> Self {
+        use mouse_owner::{Gesture, Hold};
+        match gesture {
+            None => Self::None,
+            Some(Gesture::Hold(Hold::Strike)) => Self::Strike,
+            Some(Gesture::Hold(Hold::Guard)) => Self::Guard,
+            Some(Gesture::Aim) => Self::Aim,
+            Some(Gesture::Wheel) => Self::Wheel,
+        }
+    }
+}
+
+/// A strike or guard hold.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+#[serde(rename_all = "kebab-case")]
+pub enum HoldKind {
+    Strike,
+    Guard,
+}
+
+impl From<HoldKind> for mouse_owner::Hold {
+    fn from(hold: HoldKind) -> Self {
+        match hold {
+            HoldKind::Strike => Self::Strike,
+            HoldKind::Guard => Self::Guard,
+        }
+    }
+}
+
+/// What a click means: a left click selects, confirms or does nothing; a right click cancels the
+/// cast or the gesture (`ended`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+#[serde(rename_all = "kebab-case")]
+pub enum ClickOutcome {
+    Select,
+    Confirm,
+    Nothing,
+    CancelCast,
+    Cancel,
+}
+
+/// A click's outcome and the gesture it ended, if any.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+pub struct Click {
+    pub outcome: ClickOutcome,
+    pub ended: EndedGesture,
+}
+
+/// A hold's press: whether it owns the mouse, and the other hold it ended without firing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+pub struct BeginHold {
+    pub started: bool,
+    pub preempted: EndedGesture,
+}
+
+/// The held gesture's current aim: a strike's side and height or a guard's lane.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+#[tsify(missing_as_null)]
+pub struct GestureAim {
+    pub strike: Option<StrikeAim>,
+    pub guard: Option<StrikeHeight>,
+}
+
+/// The shared mouse-owner state machine (#636, Atlas 5.2.i636-2); nothing here decides an outcome.
+#[wasm_bindgen]
+#[derive(Default)]
+pub struct MouseOwners {
+    owners: mouse_owner::MouseOwners,
+}
+
+#[wasm_bindgen]
+impl MouseOwners {
+    #[wasm_bindgen(constructor)]
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn owner(&self) -> Result<Ts<MouseOwnerKind>, JsError> {
+        use mouse_owner::{Gesture, Hold, MouseOwner};
+        Ok(match self.owners.owner() {
+            MouseOwner::FreeLook => MouseOwnerKind::FreeLook,
+            MouseOwner::Focus => MouseOwnerKind::Focus,
+            MouseOwner::Gesture(Gesture::Hold(Hold::Strike)) => MouseOwnerKind::Strike,
+            MouseOwner::Gesture(Gesture::Hold(Hold::Guard)) => MouseOwnerKind::Guard,
+            MouseOwner::Gesture(Gesture::Aim) => MouseOwnerKind::Aim,
+            MouseOwner::Gesture(Gesture::Wheel) => MouseOwnerKind::Wheel,
+        }
+        .into_ts()?)
+    }
+
+    #[wasm_bindgen(js_name = setFocus)]
+    pub fn set_focus(&mut self, focus: bool) {
+        self.owners.set_focus(focus);
+    }
+
+    /// The `controls.hold_camera` setting: `"free"`, otherwise locked.
+    #[wasm_bindgen(js_name = setHoldCamera)]
+    pub fn set_hold_camera(&mut self, value: &str) {
+        self.owners
+            .set_hold_camera(mouse_owner::HoldCamera::from_setting(value));
+    }
+
+    /// A hold's key went down: `true` if it owns the mouse; `preempted` ends the other hold.
+    #[wasm_bindgen(js_name = beginHold)]
+    pub fn begin_hold(&mut self, hold: Ts<HoldKind>) -> Result<Ts<BeginHold>, JsError> {
+        let (started, preempted) = match self.owners.begin_hold(hold.to_rust()?.into()) {
+            mouse_owner::Begin::Refused => (false, None),
+            mouse_owner::Begin::Started { preempted } => {
+                (true, preempted.map(mouse_owner::Gesture::Hold))
+            }
+        };
+        Ok(BeginHold {
+            started,
+            preempted: preempted.into(),
+        }
+        .into_ts()?)
+    }
+
+    /// A hold's key went up deliberately: `true` when it owned the mouse and now acts (the strike
+    /// fires with the aim read just before, the guard lowers).
+    #[wasm_bindgen(js_name = releaseHold)]
+    pub fn release_hold(&mut self, hold: Ts<HoldKind>) -> Result<bool, JsError> {
+        Ok(self.owners.release_hold(hold.to_rust()?.into()).is_some())
+    }
+
+    #[wasm_bindgen(js_name = leftClick)]
+    pub fn left_click(&mut self) -> Result<Ts<Click>, JsError> {
+        let (outcome, ended) = match self.owners.left_click() {
+            mouse_owner::LeftClick::Select => (ClickOutcome::Select, None),
+            mouse_owner::LeftClick::Nothing => (ClickOutcome::Nothing, None),
+            mouse_owner::LeftClick::Confirm(gesture) => (ClickOutcome::Confirm, Some(gesture)),
+        };
+        Ok(Click {
+            outcome,
+            ended: ended.into(),
+        }
+        .into_ts()?)
+    }
+
+    #[wasm_bindgen(js_name = rightClick)]
+    pub fn right_click(&mut self) -> Result<Ts<Click>, JsError> {
+        let (outcome, ended) = match self.owners.right_click() {
+            mouse_owner::RightClick::CancelCast => (ClickOutcome::CancelCast, None),
+            mouse_owner::RightClick::Cancel(gesture) => (ClickOutcome::Cancel, Some(gesture)),
+        };
+        Ok(Click {
+            outcome,
+            ended: ended.into(),
+        }
+        .into_ts()?)
+    }
+
+    /// Focus loss, a menu or panel, a lost pointer lock or a retired key: no firing.
+    pub fn interrupt(&mut self) -> Result<Ts<EndedGesture>, JsError> {
+        Ok(EndedGesture::from(self.owners.interrupt()).into_ts()?)
+    }
+
+    /// Death or a stun in the projection ends the gesture without firing.
+    pub fn observe(&mut self, snapshot: Ts<ZoneSnapshot>) -> Result<Ts<EndedGesture>, JsError> {
+        let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+        Ok(EndedGesture::from(self.owners.observe(&snapshot)).into_ts()?)
+    }
+
+    /// Mouse motion in CSS pixels; `true` when the camera turns with it.
+    pub fn motion(&mut self, dx: f64, dy: f64) -> bool {
+        self.owners.motion(dx, dy)
+    }
+
+    pub fn aim(&self) -> Result<Ts<GestureAim>, JsError> {
+        Ok(GestureAim {
+            strike: self.owners.strike_aim().map(Into::into),
+            guard: self.owners.guard_lane().map(Into::into),
+        }
+        .into_ts()?)
     }
 }
 

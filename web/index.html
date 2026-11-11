@@ -197,7 +197,7 @@
       <header class="topbar" data-world-ui hidden>
         <p id="world-mode" class="eyebrow">Greyhaven Vale · local zone host</p>
         <p id="connection-status" class="connection-status" role="status" aria-live="polite"></p>
-        <div class="world-toolbar"><button id="loot-toggle" type="button" aria-controls="loot-panel" aria-expanded="false">Loot</button><button id="bags-toggle" type="button" aria-controls="bags-panel" aria-expanded="false">Bags (B)</button><button id="character-toggle" type="button" aria-controls="character-panel" aria-expanded="false">Character (C)</button><button id="vendor-toggle" type="button" aria-controls="vendor-panel" aria-expanded="false">Vendor (V)</button><button id="quest-log-toggle" type="button" aria-controls="quest-log" aria-expanded="false">Quests (L)</button><button id="world-settings" type="button" aria-haspopup="dialog">Settings</button><button id="scenario-reset" type="button" hidden>Reset scenario (F9)</button><button id="return-to-characters" type="button">Characters</button></div>
+        <div class="world-toolbar"><button id="loot-toggle" type="button" aria-controls="loot-panel" aria-expanded="false">Loot</button><button id="bags-toggle" type="button" aria-controls="bags-panel" aria-expanded="false">Bags (B)</button><button id="character-toggle" type="button" aria-controls="character-panel" aria-expanded="false">Character (C)</button><button id="vendor-toggle" type="button" aria-controls="vendor-panel" aria-expanded="false">Vendor (V)</button><button id="quest-log-toggle" type="button" aria-controls="quest-log" aria-expanded="false">Quests (L)</button><button id="world-settings" type="button" aria-haspopup="dialog">Settings</button><button id="scenario-reset" type="button" hidden>Reset scenario (F9)</button><button id="game-menu-toggle" type="button" aria-haspopup="dialog" aria-controls="game-menu">Menu (Esc)</button></div>
       </header>
       <div id="world-map" class="world-map" hidden></div>
       <aside id="minimap" class="minimap" data-world-ui aria-label="Minimap" hidden>
@@ -313,6 +313,12 @@
         <progress id="experience-bar" max="1" value="0" aria-labelledby="experience-status"></progress>
         <p id="progression-feedback" aria-live="polite"></p>
       </section>
+      <dialog id="game-menu" class="game-menu" aria-labelledby="game-menu-title">
+        <h2 id="game-menu-title">Game menu</h2>
+        <button id="game-menu-resume" type="button">Resume</button>
+        <button id="game-menu-settings" type="button">Settings</button>
+        <button id="return-to-characters" type="button">Characters</button>
+      </dialog>
       <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
         <header class="settings-header">
           <h2 id="settings-title">Settings</h2>

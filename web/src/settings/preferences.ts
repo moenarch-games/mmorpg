@@ -17,6 +17,7 @@ export const SETTING = {
   fieldOfView: "camera.field_of_view",
   lookSensitivity: "controls.look_sensitivity",
   invertVerticalLook: "controls.invert_vertical_look",
+  holdCamera: "controls.hold_camera",
   reduceMotion: "accessibility.reduce_motion",
   masterVolume: "audio.master_volume",
   effectsVolume: "audio.effects_volume",
@@ -27,6 +28,7 @@ export const SETTING = {
 
 export const MOTION_CHOICES = ["system", "reduce", "full"] as const;
 export type MotionPreference = (typeof MOTION_CHOICES)[number];
+export type HoldCamera = "locked" | "free";
 
 /**
  * The most canvas pixels drawn per CSS pixel for each render-resolution choice. GPU time scales with the pixel count:
@@ -59,6 +61,8 @@ export type ClientPreferences = {
   fieldOfViewDegrees: number;
   lookSensitivity: number;
   invertVerticalLook: boolean;
+  /** The camera while a strike or guard hold owns the mouse (#636): locked still, or free to turn. */
+  holdCamera: HoldCamera;
   reduceMotion: MotionPreference;
   /** Most canvas pixels per CSS pixel (`RENDER_RESOLUTION_PIXEL_RATIO`). */
   maxPixelRatio: number;
@@ -85,12 +89,14 @@ function isRenderResolution(value: unknown): value is RenderResolution {
 export function clientPreferences(values: Readonly<Record<string, SettingValue>>): ClientPreferences {
   const motion = values[SETTING.reduceMotion];
   const inverted = values[SETTING.invertVerticalLook];
+  const holdCamera = values[SETTING.holdCamera];
   const muted = values[SETTING.muted];
   const resolution = values[SETTING.renderResolution];
   return {
     fieldOfViewDegrees: numberValue(values[SETTING.fieldOfView], 50),
     lookSensitivity: numberValue(values[SETTING.lookSensitivity], 1),
     invertVerticalLook: inverted?.type === "bool" && inverted.value === true,
+    holdCamera: holdCamera?.type === "choice" && holdCamera.value === "free" ? "free" : "locked",
     reduceMotion: motion?.type === "choice" && isMotionPreference(motion.value) ? motion.value : "system",
     maxPixelRatio: RENDER_RESOLUTION_PIXEL_RATIO[resolution?.type === "choice" && isRenderResolution(resolution.value) ? resolution.value : "balanced"],
     audio: {

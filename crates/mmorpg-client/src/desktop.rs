@@ -17,6 +17,9 @@ use mmorpg_client::{
     world_controls::{WorldAction, WorldControls},
 };
 use mmorpg_client_model::hud::{CombatHud, class_kit};
+use mmorpg_client_model::mouse_owner::{
+    Begin, Gesture, Hold, HoldCamera, HoldRelease, LeftClick, MouseOwners, RightClick,
+};
 use mmorpg_client_model::power_draw::{DrawRelease, PowerDraw};
 use mmorpg_core::{EntityKind, EntityRef, PlayerClass, Sex, ZoneContent};
 use mmorpg_scenery::Scenery;
@@ -82,7 +85,9 @@ pub fn run(
         last_look_frame: Instant::now(),
         orbit_buttons: HashSet::new(),
         cursor: None,
-        guard_offset: None,
+        mouse: MouseOwners::default(),
+        quit: false,
+        recapture_click: false,
         pad_guard: None,
         error: None,
         frames,
@@ -142,8 +147,13 @@ struct App {
     /// Held mouse buttons that orbit the camera while the cursor moves.
     orbit_buttons: HashSet<MouseButton>,
     cursor: Option<PhysicalPosition<f64>>,
-    /// Vertical pointer travel since the guard key went down, while it is held (#156).
-    guard_offset: Option<f64>,
+    /// One mouse owner at a time, the shared rule the browser also runs (#636): free look,
+    /// focus, or a held strike or guard aimed with mouse motion (#154, #156).
+    mouse: MouseOwners,
+    /// A left press in released free look: its click selects under the cursor, or recaptures.
+    recapture_click: bool,
+    /// The game menu's Quit was chosen; the event loop exits on its next wait.
+    quit: bool,
     /// The lane the pad's held left trigger aims with the right stick (#156).
     pad_guard: Option<mmorpg_core::StrikeHeight>,
     error: Option<String>,
@@ -217,25 +227,38 @@ fn held_movement(keyboard: PadMovement, pad: PadMovement) -> HeldMovement {
 }
 
 /// Browser-style pixel scrolling: this many pixels count as one wheel line.
-/// Pointer travel (physical pixels) from the middle lane before the guard moves high or low.
-const GUARD_LANE_THRESHOLD_PX: f64 = 24.;
 const PIXELS_PER_WHEEL_LINE: f64 = 40.0;
 
 impl App {
-    fn pointer_owner(&self) -> PointerOwner {
-        let interface = !self.focused
+    /// Whether an interface (a window, the menu, chat, Settings, an NPC context) or a lost
+    /// focus or connection owns the pointer.
+    fn interface_owns_pointer(&self) -> bool {
+        !self.focused
             || !self.connected()
             || self.choosing
             || self.chat_focused
             || self.ui.settings.open
             || self.npc_context.npc.is_some()
-            || self.ui.windows_open(self.presentation.latest());
-        self.camera_control
-            .pointer_owner(self.guard_offset.is_some(), interface)
+            || self.ui.windows_open(self.presentation.latest())
+    }
+
+    fn pointer_owner(&self) -> PointerOwner {
+        self.camera_control.pointer_owner(
+            self.mouse.gesture().is_some(),
+            self.interface_owns_pointer(),
+        )
     }
 
     fn sync_cursor(&mut self) {
-        let wants_grab = self.pointer_owner() == PointerOwner::Camera;
+        // An interface ends a held gesture without firing (#636).
+        let interface = self.interface_owns_pointer();
+        if interface && self.mouse.gesture().is_some() {
+            self.interrupt_gesture();
+        }
+        // A gesture keeps the capture free look had: its motion stays relative and the cursor
+        // never jumps (#636).
+        let wants_grab =
+            self.camera_control.pointer_owner(false, interface) == PointerOwner::Camera;
         if wants_grab == self.grabbed {
             return;
         }
@@ -293,6 +316,7 @@ impl App {
             });
         }
         self.camera_control.set_focus(target);
+        self.mouse.set_focus(target.is_some());
         let opponent = opponent.map(|entity| entity.position.map(|cm| cm as f32 / 100.0));
         self.camera
             .track(self.presentation.camera_target(now), opponent, dt);
@@ -311,17 +335,20 @@ impl App {
             && !self.presentation.is_stalled(Instant::now())
     }
 
-    fn select_pointer(&mut self, event_loop: &ActiveEventLoop) {
+    /// Selects (or swings the door) under the cursor or crosshair; `true` if anything was picked.
+    fn select_pointer(&mut self, event_loop: &ActiveEventLoop) -> bool {
         if !self.connected() {
-            return;
+            return false;
         }
         let cursor = if self.grabbed {
             let Some(size) = self.window.as_ref().map(|window| window.inner_size()) else {
-                return;
+                return false;
             };
             PhysicalPosition::new(f64::from(size.width) / 2.0, f64::from(size.height) / 2.0)
         } else {
-            let Some(cursor) = self.cursor else { return };
+            let Some(cursor) = self.cursor else {
+                return false;
+            };
             cursor
         };
         let scale = self.window.as_ref().map_or(1., |w| w.scale_factor());
@@ -334,7 +361,7 @@ impl App {
             Some(Ok(picked)) => picked,
             Some(Err(error)) => {
                 self.fail(event_loop, error);
-                return;
+                return false;
             }
             None => None,
         };
@@ -342,12 +369,19 @@ impl App {
         if let Some(mmorpg_client::picking::Picked::Door(door)) = picked {
             let command = self.presentation.toggle_door(door);
             self.send_interaction(command);
-            return;
+            return true;
         }
         let target = match picked {
             Some(mmorpg_client::picking::Picked::Unit(target)) => Some(target),
             _ => None,
         };
+        if picked.is_none() && matches!(self.camera_control.mode(), CameraMode::Focus(_)) {
+            // With Escape now the game menu (#636), a focused click on empty world clears it.
+            self.input.send_modify(|input| {
+                input.target = None;
+                input.selections = input.selections.wrapping_add(1);
+            });
+        }
         if let Some(target) = target {
             // Only a current visible creature, NPC or other player can become a requested
             // target; another player may be a friend to heal or shield (#303).
@@ -366,41 +400,23 @@ impl App {
                 });
             }
         }
+        picked.is_some()
     }
 
     fn world_action(&mut self, action: WorldAction) -> bool {
         match action {
             WorldAction::Cancel => {
-                // Escape only lets go of a held draw, before its other meanings.
-                if self.drop_power_draw() {
-                    return true;
-                }
-                if self.npc_context.npc.is_some() || !self.orbit_buttons.is_empty() {
+                // Escape is the game menu (#636): an NPC context or an open window closes first,
+                // otherwise the menu opens. Right click, not Escape, cancels gestures and casts.
+                if self.npc_context.npc.is_some() {
                     self.npc_context.close();
                     self.world_controls.set_interaction(false);
                     self.retire_pointer();
-                    return true;
+                } else if !self.ui.close_window(self.presentation.latest()) {
+                    self.open_game_menu();
                 }
-                if self
-                    .presentation
-                    .latest()
-                    .is_some_and(|snapshot| snapshot.viewer.cast.is_none())
-                    && !self.ui.windows_open(self.presentation.latest())
-                {
-                    if matches!(self.camera_control.mode(), CameraMode::Focus(_)) {
-                        self.input.send_modify(|input| {
-                            input.target = None;
-                            input.selections = input.selections.wrapping_add(1);
-                        });
-                        return true;
-                    }
-                    if self.pointer_owner() == PointerOwner::Camera {
-                        self.camera_control.release_cursor();
-                        self.sync_cursor();
-                        return true;
-                    }
-                }
-                return false;
+                self.sync_cursor();
+                return true;
             }
             WorldAction::Interact if self.connected() => {
                 if let Some(command) = self.presentation.reachable_raid_prep() {
@@ -493,8 +509,8 @@ impl App {
                     ),
                 );
             }
-            // A swing rebound to a key (#517); the mouse button swings from its pointer edge.
-            WorldAction::Swing => self.swing(),
+            // A dismiss rebound to a key; the mouse button dismisses from its pointer edge.
+            WorldAction::Dismiss => self.dismiss(),
             WorldAction::Select
             | WorldAction::Interact
             | WorldAction::NextNpc
@@ -585,6 +601,89 @@ impl App {
         dropped
     }
 
+    /// A gesture ended without firing (#636): a strike's wind-up goes, a guard lowers.
+    fn gesture_ended(&mut self, ended: Option<Gesture>) {
+        match ended {
+            Some(Gesture::Hold(Hold::Strike)) => self.presentation.abandon_attack_preparation(),
+            Some(Gesture::Hold(Hold::Guard)) => self.update_guard(),
+            Some(Gesture::Aim | Gesture::Wheel) | None => {}
+        }
+    }
+
+    /// Ends whatever gesture owns the mouse without firing: focus loss, a menu or window,
+    /// a retired key.
+    fn interrupt_gesture(&mut self) {
+        let ended = self.mouse.interrupt();
+        self.gesture_ended(ended);
+    }
+
+    /// Right click (#636): cancels a held gesture without firing, otherwise the cast; it also
+    /// drops a held draw (#607).
+    fn dismiss(&mut self) {
+        self.drop_power_draw();
+        match self.mouse.right_click() {
+            RightClick::Cancel(gesture) => self.gesture_ended(Some(gesture)),
+            RightClick::CancelCast => self.control(ControlAction::CancelCast),
+        }
+    }
+
+    /// Escape with nothing to close, or the menu toggle: the game menu (#636).
+    fn open_game_menu(&mut self) {
+        self.retire_held_input();
+        self.ui.game_menu_open = true;
+    }
+
+    /// The Warden's directed Heroic Strike key went down (#154): a living Warden starts aiming
+    /// with the mouse; an aim or wheel keeps the mouse and nothing starts.
+    fn begin_strike(&mut self) {
+        let can_strike = !self.dead()
+            && self
+                .abilities
+                .contains(&mmorpg_core::ability::ids::HEROIC_STRIKE.get());
+        if !can_strike || !self.connected() {
+            return;
+        }
+        if let Begin::Started { preempted } = self.mouse.begin_hold(Hold::Strike) {
+            // The most recent press owns the mouse (5.2.37): a held guard lowers.
+            self.gesture_ended(preempted.map(Gesture::Hold));
+            self.power_draw.cancel();
+            self.presentation.hold_attack_preparation(
+                mmorpg_core::ability::ids::HEROIC_STRIKE.get(),
+                Instant::now(),
+            );
+        }
+    }
+
+    /// The strike and guard keys that went up: a deliberate release of the owning hold strikes
+    /// or lowers; a retirement or a stale key ends it without firing.
+    fn follow_hold_releases(&mut self) {
+        for (hold, retired) in self.controls.drain_hold_releases() {
+            if self.mouse.gesture() != Some(Gesture::Hold(hold)) {
+                continue;
+            }
+            if retired {
+                self.interrupt_gesture();
+                continue;
+            }
+            match self.mouse.release_hold(hold) {
+                Some(HoldRelease::Strike(aim)) => {
+                    let facing = self.camera.facing();
+                    self.presentation.prepare_attack(
+                        mmorpg_core::ability::ids::HEROIC_STRIKE.get(),
+                        Instant::now(),
+                    );
+                    self.presentation.aim_attack_preparation(aim);
+                    self.send_interaction(mmorpg_core::ZoneCommand::DirectedStrike {
+                        ability: mmorpg_core::ability::ids::HEROIC_STRIKE.get(),
+                        facing,
+                        aim,
+                    });
+                }
+                Some(HoldRelease::LowerGuard) | None => self.update_guard(),
+            }
+        }
+    }
+
     /// The ability on `slot`, 1–20.
     fn slot_ability(&self, slot: u8) -> Option<u8> {
         usize::from(slot)
@@ -664,12 +763,15 @@ impl App {
             }
             ControlAction::TogglePanel(panel) => self.ui.toggle(panel),
             ControlAction::OpenChat => self.ui.open_chat(),
+            ControlAction::DirectedStrike => self.begin_strike(),
             ControlAction::Guard => {
-                // The raised shield supersedes an unanswered wind-up or a held draw.
-                self.power_draw.cancel();
-                self.presentation.abandon_attack_preparation();
-                self.guard_offset = Some(0.);
-                self.sync_cursor();
+                // The raised shield takes the mouse (5.2.37) and supersedes an unanswered
+                // wind-up or a held draw; an aim or wheel keeps the mouse and nothing rises.
+                if let Begin::Started { .. } = self.mouse.begin_hold(Hold::Guard) {
+                    self.power_draw.cancel();
+                    self.presentation.abandon_attack_preparation();
+                }
+                self.update_guard();
             }
             ControlAction::Minions(command) => {
                 if let Some(order) = self.minion_order(command) {
@@ -709,20 +811,15 @@ impl App {
                     .class
                     .is_some_and(|choice| choice.class == mmorpg_core::PlayerClass::Warden)
         });
-        if !self.controls.is_held(ControlAction::Guard) || !can_guard {
-            self.guard_offset = None;
+        if !can_guard && self.mouse.gesture() == Some(Gesture::Hold(Hold::Guard)) {
+            self.mouse.interrupt();
         }
-        let pointer = self.guard_offset.map(|offset| {
-            if offset <= -GUARD_LANE_THRESHOLD_PX {
-                mmorpg_core::StrikeHeight::High
-            } else if offset >= GUARD_LANE_THRESHOLD_PX {
-                mmorpg_core::StrikeHeight::Low
-            } else {
-                mmorpg_core::StrikeHeight::Middle
-            }
-        });
-        // The key's pointer aim wins over a pad guard held at the same time.
-        let lane = pointer.or(self.pad_guard.filter(|_| can_guard));
+        // The key's mouse aim (the shared mouse-owner rule, #636) wins over a pad guard held at
+        // the same time.
+        let lane = self
+            .mouse
+            .guard_lane()
+            .or(self.pad_guard.filter(|_| can_guard));
         if self.input.borrow().guard != lane {
             self.input.send_modify(|input| input.guard = lane);
         }
@@ -860,7 +957,8 @@ impl App {
         self.controls.focus_lost();
         self.world_controls.reset();
         self.orbit_buttons.clear();
-        self.guard_offset = None;
+        self.mouse.interrupt();
+        self.controls.drain_hold_releases();
         self.pad_guard = None;
         self.pad.retire("inputContextChanged");
         self.power_draw.cancel();
@@ -882,6 +980,7 @@ impl App {
             // A click has no release to wait for: it fires at once, power shots too (#607).
             UiIntent::AbilitySlot(slot) => self.control(ControlAction::AbilitySlot(slot)),
             UiIntent::ReleaseSpirit => self.combat_key(KeyCode::KeyR),
+            UiIntent::Quit => self.quit = true,
             UiIntent::Select(target) => {
                 self.input.send_modify(|input| {
                     input.target = target;
@@ -1033,6 +1132,12 @@ impl App {
             );
         }
         self.presentation.set_reduced_motion(matches!(preferences.value(mmorpg_client::settings::REDUCE_MOTION), Ok(settings_core::SettingValue::Choice(value)) if value == "reduce"));
+        self.mouse.set_hold_camera(
+            match preferences.value(mmorpg_client::settings::HOLD_CAMERA) {
+                Ok(settings_core::SettingValue::Choice(value)) => HoldCamera::from_setting(value),
+                _ => HoldCamera::default(),
+            },
+        );
         if let Some(audio) = &mut self.audio {
             audio.follow(preferences);
         }
@@ -1046,6 +1151,11 @@ impl App {
 
     /// The HUD and the `casting` control layer follow the latest projection.
     fn follow_projection(&mut self, now: Instant) {
+        if let Some(latest) = self.presentation.latest() {
+            // Death or a stun ends a held gesture without firing (#636).
+            let ended = self.mouse.observe(latest);
+            self.gesture_ended(ended);
+        }
         self.update_guard();
         let latest = self.presentation.latest();
         let casting = latest.is_some_and(|latest| latest.viewer.cast.is_some());
@@ -1210,6 +1320,7 @@ impl ApplicationHandler for App {
                 }
                 self.retire_held_input();
                 self.send_slot_releases();
+                self.follow_hold_releases();
                 self.retire_pointer();
                 self.update_movement();
             }
@@ -1221,15 +1332,12 @@ impl ApplicationHandler for App {
             } if ui_consumed => {}
             WindowEvent::MouseWheel { .. } if ui_consumed => {}
             WindowEvent::MouseInput { state, button, .. } => {
-                // A click drops a held draw (#607), as it does a directed strike in the browser,
-                // and is never also a swing or selection.
-                if state == ElementState::Pressed && self.drop_power_draw() {
-                    return;
-                }
-                if state == ElementState::Pressed
+                let pressed = state == ElementState::Pressed;
+                if pressed
                     && button == MouseButton::Left
                     && !self.grabbed
                     && self.camera_control.mode() == CameraMode::FreeLook
+                    && self.mouse.gesture().is_none()
                     && self.focused
                     && self.connected()
                     && !self.ui.settings.open
@@ -1237,11 +1345,18 @@ impl ApplicationHandler for App {
                     && self.npc_context.npc.is_none()
                     && !self.ui.windows_open(self.presentation.latest())
                 {
-                    self.camera_control.request_look();
-                    self.sync_cursor();
-                    if self.grabbed {
-                        return; // Recapture is not an unintended first swing.
+                    // A click on a unit or door under the free cursor selects it on release, as
+                    // in the browser; any other click recaptures mouse-look then (#636).
+                    self.recapture_click = self.cursor.is_some();
+                    if !self.recapture_click {
+                        self.camera_control.request_look();
+                        self.sync_cursor();
+                        if self.grabbed {
+                            return; // Recapture is not an unintended first selection.
+                        }
                     }
+                } else if pressed {
+                    self.recapture_click = false;
                 }
                 let index = match button {
                     MouseButton::Left => 0,
@@ -1252,38 +1367,50 @@ impl ApplicationHandler for App {
                     MouseButton::Other(index) => index,
                 };
                 let selecting = self.world_controls.selecting();
-                let edge = self.world_controls.pointer_button(
-                    index,
-                    state == ElementState::Pressed,
-                    binding_modifiers.clone(),
-                );
-                // The left button swings on the press (#517); a drag still orbits the camera.
-                if edge.swung {
-                    self.swing();
+                let edge =
+                    self.world_controls
+                        .pointer_button(index, pressed, binding_modifiers.clone());
+                // Right click cancels a held gesture without firing, otherwise the cast (#636).
+                if edge.dismissed {
+                    self.dismiss();
+                    self.sync_cursor();
+                    return;
                 }
-                if state == ElementState::Pressed {
+                if pressed {
                     if !selecting && self.world_controls.selecting() {
-                        self.pointer_origin = self
-                            .cursor
-                            .or_else(|| self.grabbed.then(|| PhysicalPosition::new(0.0, 0.0)));
+                        // A click drops a held draw (#607) and is nothing else; a held strike
+                        // or guard ignores the left button (#636).
+                        let selects =
+                            !self.drop_power_draw() && self.mouse.left_click() == LeftClick::Select;
+                        self.pointer_origin = selects
+                            .then(|| {
+                                self.cursor.or_else(|| {
+                                    self.grabbed.then(|| PhysicalPosition::new(0.0, 0.0))
+                                })
+                            })
+                            .flatten();
                     }
-                    if matches!(button, MouseButton::Left | MouseButton::Right) {
+                    if button == MouseButton::Left && self.mouse.gesture().is_none() {
                         self.orbit_buttons.insert(button);
                     }
                 } else {
-                    if edge.selected && self.pointer_origin.take().is_some() {
-                        self.select_pointer(event_loop);
+                    if edge.selected
+                        && self.pointer_origin.take().is_some()
+                        && self.mouse.gesture().is_none()
+                    {
+                        let picked = self.select_pointer(event_loop);
+                        if !picked && std::mem::take(&mut self.recapture_click) {
+                            self.camera_control.request_look();
+                            self.sync_cursor();
+                        }
+                    }
+                    if button == MouseButton::Left {
+                        self.recapture_click = false;
                     }
                     self.orbit_buttons.remove(&button);
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
-                if let (Some(previous), Some(offset)) = (self.cursor, self.guard_offset.as_mut())
-                    && self.orbit_buttons.is_empty()
-                {
-                    let limit = 2. * GUARD_LANE_THRESHOLD_PX;
-                    *offset = (*offset + position.y - previous.y).clamp(-limit, limit);
-                }
                 if let Some(previous) = self.cursor.replace(position)
                     && !self.orbit_buttons.is_empty()
                     && !self.grabbed
@@ -1294,9 +1421,7 @@ impl ApplicationHandler for App {
                     }) {
                         self.pointer_origin = None;
                     }
-                    if self.pointer_origin.is_none()
-                        || self.orbit_buttons.contains(&MouseButton::Right)
-                    {
+                    if self.pointer_origin.is_none() {
                         self.camera
                             .orbit(position.x - previous.x, position.y - previous.y);
                         self.update_movement();
@@ -1318,6 +1443,13 @@ impl ApplicationHandler for App {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
+                    // The game menu blocks game keys; Escape (world.cancel) closes it (#636).
+                    if self.ui.game_menu_open
+                        && event.state == ElementState::Pressed
+                        && code != KeyCode::Escape
+                    {
+                        return;
+                    }
                     let context_was_open = self.npc_context.npc.is_some();
                     let mut cancel_handled = false;
                     for action in self.world_controls.key_with_modifiers(
@@ -1358,18 +1490,6 @@ impl ApplicationHandler for App {
                             event.repeat,
                             binding_modifiers.clone(),
                         );
-                        // Escape cancels a cast through the controls, otherwise a
-                        // fresh press closes; a held Escape's repeats never close.
-                        if code == KeyCode::Escape && actions.is_empty() {
-                            if !event.repeat && self.ui.close_panels() {
-                                return;
-                            }
-                            if !event.repeat {
-                                self.stop();
-                                event_loop.exit();
-                            }
-                            return;
-                        }
                         for action in actions {
                             match action {
                                 ControlAction::AbilitySlot(slot) => self.press_slot(slot),
@@ -1471,6 +1591,7 @@ impl ApplicationHandler for App {
                 }
                 self.poll_pads(now);
                 self.send_slot_releases();
+                self.follow_hold_releases();
                 self.follow_power_draw();
                 // While choosing, the viewer turns on the turntable facing the camera.
                 let preview = self.choosing.then(|| {
@@ -1532,17 +1653,44 @@ impl ApplicationHandler for App {
         _device_id: winit::event::DeviceId,
         event: DeviceEvent,
     ) {
-        if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event
-            && self.grabbed
-            && self.pointer_owner() == PointerOwner::Camera
-            && !self.world_controls.selecting()
-        {
+        let DeviceEvent::MouseMotion { delta: (dx, dy) } = event else {
+            return;
+        };
+        if self.mouse.gesture().is_some() {
+            // The gesture owns the motion (#636), captured or not; a locked camera holds still.
+            let turn = self.mouse.motion(dx, dy);
+            if self.mouse.gesture() == Some(Gesture::Hold(Hold::Strike))
+                && let Some(aim) = self.mouse.strike_aim()
+            {
+                self.presentation.aim_attack_preparation(aim);
+            }
+            self.update_guard();
+            if turn && self.grabbed {
+                self.camera.orbit(dx, dy);
+                self.update_movement();
+            }
+            return;
+        }
+        if self.grabbed && self.pointer_owner() == PointerOwner::Camera {
+            // A captured left press stays a selection click only within a few pixels of travel.
+            if let Some(travel) = self.pointer_origin.as_mut() {
+                travel.x += dx;
+                travel.y += dy;
+                if travel.x.hypot(travel.y) > 5.0 {
+                    self.pointer_origin = None;
+                }
+            }
             self.camera.orbit(dx, dy);
             self.update_movement();
         }
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if self.quit {
+            self.stop();
+            event_loop.exit();
+            return;
+        }
         let now = Instant::now();
         if now >= self.next_frame {
             if let Some(window) = &self.window {

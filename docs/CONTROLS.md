@@ -1,8 +1,8 @@
 # Over-the-shoulder movement, focus and aiming
 
-**Status:** the #650 camera/strafe foundation is implemented in this candidate branch, pending real-client acceptance. Temporary manual aiming [#649](https://github.com/moenarch-games/mmorpg/issues/649), radial menus [#653](https://github.com/moenarch-games/mmorpg/issues/653) and further attack-input ownership [#636](https://github.com/moenarch-games/mmorpg/issues/636) remain separate. Canonical decisions: [Decision Atlas](decisions/atlas.md), entries `5.2.i650`, `5.2.i649`, `5.2.i649-2`, and `5.2.i649-3`.
+**Status:** the #650 camera/strafe foundation and the [#636](https://github.com/moenarch-games/mmorpg/issues/636) mouse owner (see [Owner decisions of 2026-11-08](#owner-decisions-of-2026-11-08)) are implemented in both clients, pending real-client acceptance. Temporary manual aiming [#649](https://github.com/moenarch-games/mmorpg/issues/649) and radial menus [#653](https://github.com/moenarch-games/mmorpg/issues/653) remain separate; the shared state machine already has their owners. Canonical decisions: [Decision Atlas](decisions/atlas.md), entries `5.2.i650`, `5.2.i649`, `5.2.i649-2`, and `5.2.i649-3`.
 
-The first slice uses the existing camera and input bindings: mouse-look in free exploration (click the world to capture in browsers), an uncaptured cursor for enemy focus, Tab/right-click target switching, and Escape to clear focus. Native recaptures on clearing; browsers require a world click once Pointer Lock has been released. Touch drag and directional strike/guard input remain available. The sections below also describe *planned* temporary manual aiming and radial menus, not implemented behavior.
+The first slice uses the existing camera and input bindings: mouse-look in free exploration (click the world to capture in browsers), an uncaptured cursor for enemy focus, Tab/left-click target switching, and a focused click on empty world to clear focus (#636; Escape is now the game menu). Native recaptures on clearing; browsers require a world click once Pointer Lock has been released. Touch drag and directional strike/guard input remain available. The sections below also describe *planned* temporary manual aiming and radial menus, not implemented behavior.
 
 ## Camera and locomotion
 
@@ -91,6 +91,8 @@ One owner holds the mouse at a time:
 
 A wheel cannot open during a hold or aim. Stun, death and focus loss end the current owner without firing. Camera lock and free camera during a hold are both selectable, to compare in play. Wheels are an option alongside the locked camera. Mobile is frozen: no new touch work. Timed hitboxes and clashes are tracked in [#679](https://github.com/moenarch-games/mmorpg/issues/679), arena first, and netcode options in [#680](https://github.com/moenarch-games/mmorpg/issues/680).
 
+**Implementation (#636).** Both clients run one state machine, `mmorpg-client-model::mouse_owner` (the browser through `mmorpg-wasm`'s `MouseOwners`). A held strike or guard reads relative mouse motion and keeps the capture free look had, so the cursor never jumps; Settings → Controls → "Camera during a strike or guard" selects **locked** (default for the comparison) or **free**. A click on empty world clears a focus, since Escape no longer does. The browser's game menu holds Resume, Settings and Characters; the native menu holds Resume, Settings and Quit game, as native has no in-session return to characters. Aim and wheel owners exist in the rules but have no input until #649 and #653.
+
 ## Action-bar rows (#294)
 
 Keys 1–9 and 0 use the first ten action-bar slots; **Shift+1 to Shift+0** use slots 11–20, a second row of the bar in both clients for every class whose kit outgrows ten (Atlas `5.2.i294`). Shift is now only this modifier: the dodge roll moved to **F** (`5.2.i294-2`). Gamepad and touch reach of the second row stays out of scope until the wheels (#653).
@@ -108,7 +110,7 @@ The draw does not own the pointer, so free look keeps steering and a focused cam
 ## Ownership and implementation order
 
 1. **#650** — focus/no-focus over-shoulder camera, automatic facing, pointer capture and consistent strafing; browser and native parity.
-2. **#636** — reconcile existing left-click immediate swing/right-click selection with input gesture ownership and the new camera states. Reuse `input-bindings`, including safe cancellation, instead of introducing another key system.
+2. **#636** — done: one mouse owner shared by both clients (`mmorpg-client-model::mouse_owner`), left click selects, Q swings, right click cancels, Escape opens the game menu; `input-bindings` keeps the keys and held lifecycle.
 3. **#649** — temporary manual-aim override for one existing throwable, preserving focus and authoritative ability outcomes; extend only after the first playable throw feels correct.
 
 The client owns camera framing, pointer capture and visual aim aids. `input-bindings` owns mapping/held lifecycle. `mmorpg-core` owns the authoritative facing/movement command interpretation, ability legality and spatial hits. `mmorpg-protocol`, local WASM and native/online must agree whenever a gameplay command changes. The renderer never determines damage or projectile impact.

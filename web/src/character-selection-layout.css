@@ -143,7 +143,7 @@
 #character-toggle,
 #vendor-toggle,
 #quest-log-toggle,
-#return-to-characters {
+#game-menu-toggle {
   min-height: 2.75rem;
   padding: .5rem .7rem;
   border: 1px solid var(--panel-border);
@@ -158,13 +158,13 @@
 #character-toggle:hover,
 #vendor-toggle:hover,
 #quest-log-toggle:hover,
-#return-to-characters:hover { background: #30453d; }
+#game-menu-toggle:hover { background: #30453d; }
 .turntable-controls button:focus-visible,
 #bags-toggle:focus-visible,
 #character-toggle:focus-visible,
 #vendor-toggle:focus-visible,
 #quest-log-toggle:focus-visible,
-#return-to-characters:focus-visible,
+#game-menu-toggle:focus-visible,
 .appearance-storage summary:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 2px; }
 .appearance-storage { margin-top: .8rem; font-size: .75rem; color: #aabbb1; }
 .appearance-storage summary { cursor: pointer; padding: .4rem 0; }
@@ -195,5 +195,31 @@
 }
 @media (max-width: 640px) {
   .world-toolbar { gap: .3rem; }
-  .world-toolbar :is(#bags-toggle, #character-toggle, #vendor-toggle, #quest-log-toggle, #return-to-characters) { min-height: 2.3rem; padding: .3rem .35rem; font-size: .72rem; }
+  .world-toolbar :is(#bags-toggle, #character-toggle, #vendor-toggle, #quest-log-toggle, #game-menu-toggle) { min-height: 2.3rem; padding: .3rem .35rem; font-size: .72rem; }
 }
+
+/* The game menu (#636): Escape opens it; it holds Resume, Settings and the return to characters. */
+.game-menu {
+  min-width: 16rem;
+  padding: 1.2rem;
+  border: 1px solid var(--panel-border);
+  border-radius: .4rem;
+  background: #101a18;
+  color: #edf4ee;
+}
+.game-menu::backdrop { background: rgb(4 7 9 / 55%); }
+.game-menu h2 { margin: 0 0 .9rem; font-size: 1.1rem; }
+.game-menu button {
+  display: block;
+  width: 100%;
+  min-height: 2.6rem;
+  margin-top: .5rem;
+  border: 1px solid var(--panel-border);
+  border-radius: .3rem;
+  background: #182522;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.game-menu button:hover { background: #30453d; }
+.game-menu button:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 2px; }

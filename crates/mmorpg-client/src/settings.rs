@@ -15,6 +15,7 @@ pub const FIELD_OF_VIEW: &str = "camera.field_of_view";
 pub const LOOK_SENSITIVITY: &str = "controls.look_sensitivity";
 pub const INVERT_VERTICAL_LOOK: &str = "controls.invert_vertical_look";
 pub const REDUCE_MOTION: &str = "accessibility.reduce_motion";
+pub const HOLD_CAMERA: &str = "controls.hold_camera";
 const CATALOG: &str = include_str!("../../../content/settings/catalog.json");
 
 #[derive(Deserialize)]

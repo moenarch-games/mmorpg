@@ -9,10 +9,10 @@ use winit::keyboard::KeyCode;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, strum::VariantArray)]
 pub enum WorldAction {
-    /// A right click that never became a camera drag selects (#517: the left button swings).
+    /// A left click that never became mouse-look travel selects (#636: it never attacks).
     Select,
-    /// The left mouse button swings the weapon on press (#517).
-    Swing,
+    /// A right click cancels a held strike or guard without firing, otherwise the cast (#636).
+    Dismiss,
     Interact,
     NextNpc,
     Cancel,
@@ -27,10 +27,10 @@ pub enum WorldAction {
 impl WorldAction {
     fn definition(self) -> (&'static str, &'static str, InputStroke) {
         let (id, key, context) = match self {
-            Self::Select => return ("world.select", "world", mouse(2)),
-            Self::Swing => return ("world.swing", "world", mouse(0)),
+            Self::Select => return ("world.select", "world", mouse(0)),
+            Self::Dismiss => return ("world.dismiss", "world", mouse(2)),
             Self::Details => ("interaction.details", "KeyH", "interaction"),
-            // E interacts (#515), as the browser's `ui.talk`; Enter only chats. Q stays unbound.
+            // E interacts (#515), as the browser's `ui.talk`; Enter only chats. Q swings (#636).
             Self::Interact => ("world.interact", "KeyE", "world"),
             Self::NextNpc => ("world.nextNpc", "KeyN", "world"),
             Self::Cancel => ("world.cancel", "Escape", "world"),
@@ -72,7 +72,7 @@ pub fn world_action_registry() -> ActionRegistry {
                     repeat_policy: RepeatPolicy::Never,
                     allowed_devices: vec![if matches!(
                         action,
-                        WorldAction::Select | WorldAction::Swing
+                        WorldAction::Select | WorldAction::Dismiss
                     ) {
                         DeviceClass::Mouse
                     } else {
@@ -97,8 +97,8 @@ pub fn world_action_registry() -> ActionRegistry {
 pub struct PointerEdge {
     /// The release ended a selection click.
     pub selected: bool,
-    /// The press swung the weapon (#517).
-    pub swung: bool,
+    /// The press asked to cancel a gesture or the cast (#636).
+    pub dismissed: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -190,8 +190,8 @@ impl WorldControls {
     pub fn selecting(&self) -> bool {
         self.state.is_held("world.select")
     }
-    /// One mouse button edge: whether it ended a selection click, and whether it swung the
-    /// weapon (#517), which happens on the press.
+    /// One mouse button edge: whether it ended a selection click, and whether it dismissed (a
+    /// held gesture or the cast, #636), which happens on the press.
     pub fn pointer_button(&mut self, button: u16, down: bool, modifiers: Modifiers) -> PointerEdge {
         let held = self.selecting();
         let stroke = if down {
@@ -215,14 +215,14 @@ impl WorldControls {
             self.runtime.input_up(&stroke, 0)
         };
         self.state.apply_decisions(&decisions);
-        let swung = self
+        let dismissed = self
             .state
             .drain_presses()
             .iter()
-            .any(|id| id == "world.swing");
+            .any(|id| id == "world.dismiss");
         PointerEdge {
             selected: !down && held && !self.selecting(),
-            swung,
+            dismissed,
         }
     }
     pub fn reset(&mut self) {
@@ -238,23 +238,24 @@ impl WorldControls {
 mod tests {
     use super::*;
     #[test]
-    fn the_left_button_swings_on_press_and_a_right_click_selects() {
+    fn a_left_click_selects_and_a_right_click_dismisses() {
         let mut controls = WorldControls::new();
         let press = controls.pointer_button(0, true, Modifiers::default());
-        assert!(
-            press.swung && !press.selected,
-            "the swing is immediate (#517)"
-        );
-        assert_eq!(
-            controls.pointer_button(0, false, Modifiers::default()),
-            PointerEdge::default()
-        );
-        assert!(!controls.pointer_button(2, true, Modifiers::default()).swung);
+        assert!(!press.dismissed && !press.selected, "#636: no swing");
         assert!(controls.selecting());
         assert!(
             controls
-                .pointer_button(2, false, Modifiers::default())
+                .pointer_button(0, false, Modifiers::default())
                 .selected
+        );
+        assert!(
+            controls
+                .pointer_button(2, true, Modifiers::default())
+                .dismissed
+        );
+        assert_eq!(
+            controls.pointer_button(2, false, Modifiers::default()),
+            PointerEdge::default()
         );
     }
     #[test]

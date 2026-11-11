@@ -129,6 +129,7 @@ const characterLocation = requireElement<HTMLElement>("#character-location");
 const fallbackCharacter = requireElement<HTMLElement>("#character-stage-fallback");
 const previewSurface = requireElement<HTMLElement>("#preview-surface");
 const returnButton = requireElement<HTMLButtonElement>("#return-to-characters");
+const gameMenu = requireElement<HTMLDialogElement>("#game-menu");
 const rosterPanel = requireElement<HTMLElement>("#roster-panel");
 const rosterContainer = requireElement<HTMLElement>("#character-roster");
 const rosterStatus = requireElement<HTMLElement>("#roster-status");
@@ -528,7 +529,8 @@ let settingsOpen = false;
 const controls = new GameControls({
   screen: () =>
     entryState.phase === "world"
-      ? { phase: "world", panelOpen: worldView.panelOpen, casting: Boolean(activeWorld?.source.latestProjection()?.viewer.cast), settingsOpen }
+      // The game menu is modal like Settings: it blocks game keys and retires held ones (#636).
+      ? { phase: "world", panelOpen: worldView.panelOpen, casting: Boolean(activeWorld?.source.latestProjection()?.viewer.cast), settingsOpen: settingsOpen || gameMenu.open }
       // A pending join is modal like creation: Escape cancels it.
       : { phase: "selection", creating: creationDraft !== null || joining !== null, settingsOpen },
   onAction: (action) => runAction(action),
@@ -576,6 +578,7 @@ function applyPreferences(preferences: ClientPreferences): void {
   camera.updateProjectionMatrix();
   worldView.setLookSensitivity(preferences.lookSensitivity);
   worldView.setLookInversion(preferences.invertVerticalLook);
+  worldView.setHoldCamera(preferences.holdCamera);
   worldView.setMotionPreference(preferences.reduceMotion);
   worldView.setAudioPreferences(preferences.audio);
   if (maxPixelRatio !== preferences.maxPixelRatio) {
@@ -1464,7 +1467,7 @@ function frame(now: number) {
   syncBindingProfile();
   if (entryState.phase === "world" && activeWorld) {
     // Settings pauses the browser-local zone; an online zone keeps running with input blocked.
-    const paused = settingsOpen && activeWorld !== onlineWorld && activeWorld !== arenaWorld?.world;
+    const paused = (settingsOpen || gameMenu.open) && activeWorld !== onlineWorld && activeWorld !== arenaWorld?.world;
     profileBegin(now);
     try {
       followLocalZone();
@@ -1755,6 +1758,7 @@ function showScenarioStatus(): void {
 
 /** Back to selection; `failure` says why when the world was left after an error. */
 function returnToCharacters(failure: string | null = null) {
+  if (gameMenu.open) { gameMenu.close(); }
   if (scenario && !failure) {
     // Leaving a review scenario is leaving review: the ordinary page has no scenario.
     window.location.search = "";
@@ -1830,7 +1834,40 @@ faceCloseUpButton.addEventListener("click", () => {
 saveCharacterButton.addEventListener("click", saveCurrentCharacter);
 loadCharacterButton.addEventListener("click", loadSavedCharacter);
 enterWorldButton.addEventListener("click", () => void enterWorld());
-returnButton.addEventListener("click", () => returnToCharacters());
+/**
+ * The game menu (#636, Atlas 5.2.i636-3): Escape opens it when no panel is open, and so does the
+ * browser taking Pointer Lock away. It ends any held gesture without firing and holds Resume,
+ * Settings and the return to characters.
+ */
+function openGameMenu(): void {
+  if (entryState.phase !== "world" || gameMenu.open || settingsOpen) {
+    return;
+  }
+  controls.retire("gameMenuOpened");
+  worldView.cancelPointer();
+  gameMenu.showModal();
+  requireElement<HTMLButtonElement>("#game-menu-resume").focus();
+}
+worldView.onPointerLockLost = openGameMenu;
+gameMenu.addEventListener("close", () => {
+  controls.retire("gameMenuClosed");
+  lastTime = performance.now();
+});
+requireElement<HTMLButtonElement>("#game-menu-toggle").addEventListener("click", openGameMenu);
+requireElement<HTMLButtonElement>("#game-menu-resume").addEventListener("click", () => {
+  gameMenu.close();
+  canvas.focus({ preventScroll: true });
+  // The browser may refuse a lock right after its Escape; the next world click retries.
+  worldView.recapture();
+});
+requireElement<HTMLButtonElement>("#game-menu-settings").addEventListener("click", () => {
+  gameMenu.close();
+  requireElement<HTMLButtonElement>("#world-settings").click();
+});
+returnButton.addEventListener("click", () => {
+  gameMenu.close();
+  returnToCharacters();
+});
 scenarioReset.addEventListener("click", () => void resetScenario());
 window.addEventListener("keydown", (event) => {
   if (resettableWorld() && event.key === "F9" && !event.repeat) {
@@ -1981,9 +2018,11 @@ function runAction(action: GameAction): void {
         worldView.closeBags();
       }
       return;
+    case "ui.gameMenu":
+      openGameMenu();
+      return;
     case "ui.leaveWorld":
-      // Escape first lets go of a held bow draw (#607), without a shot.
-      if (worldView.cancelPowerDraw() || worldView.clearCombatFocus() || worldView.releaseFreeLook()) { return; }
+      // The touch menu's direct route; the keyboard reaches it through the game menu (#636).
       returnToCharacters();
       return;
     case "ui.toggleDebug":

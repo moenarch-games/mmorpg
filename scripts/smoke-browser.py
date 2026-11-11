@@ -159,6 +159,17 @@ class BrowserAcceptance(unittest.TestCase):
     def enter_button(self):
         return self.page.get_by_role("button", name=re.compile("^Enter World"))
 
+    def leave_world(self):
+        """Characters lives in the game menu since #636: Escape (or a lost pointer lock) opens it."""
+        menu = self.page.locator("#game-menu")
+        for _ in range(3):
+            if menu.evaluate("dialog => dialog.open"):
+                break
+            self.page.locator("#world").focus()
+            self.page.keyboard.press("Escape")
+        expect(menu).to_be_visible()
+        menu.get_by_role("button", name="Characters", exact=True).click()
+
     def enter_world(self, ticking=True, fresh=True):
         """Enters the world. A fresh character starts at level 1 without XP; a
         returning one (`fresh=False`) resumes its stored progress. Tests that
@@ -381,7 +392,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.assertIsNotNone(creature, "The real Greyhaven projection must include a wolf")
         x, y, _ = self.aim_at_world_unit("creature", creature["id"])
         self.page.screenshot(path=str(ARTIFACTS / "world-click-wolf-before.png"))
-        self.page.mouse.click(x, y, button="right")
+        self.page.mouse.click(x, y)
         self.click_world_step()
         expected = {"kind": "creature", "id": creature["id"]}
         self.assertEqual(self.click_world_target(), expected, "Clicking the rendered wolf must select its exact authoritative identity")
@@ -402,7 +413,7 @@ class BrowserAcceptance(unittest.TestCase):
         # Aim at empty sky, then click the centre, which cannot denote a unit.
         self.page.evaluate("window.__valeDebug.flyToPose([0, 40, 0], [0, 80, -5])")
         self.frames(3)
-        self.page.mouse.click(x, y, button="right")
+        self.page.mouse.click(x, y)
         self.click_world_step()
         expect(self.page.get_by_role("complementary", name="Quest dialog", exact=True)).to_be_hidden()
         expect(self.page.get_by_role("complementary", name="Vendor", exact=True)).to_be_hidden()
@@ -410,8 +421,8 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.keyboard.press("Tab")
         self.click_world_step()
         self.assertEqual(self.click_world_target()["kind"], "creature", "Tab remains an alternative")
-        # A left click swings where the character faces (#517) and never selects.
-        self.page.mouse.click(x, y)
+        # Q swings where the character faces (#517, #636) and never changes the selection.
+        self.page.keyboard.press("q")
         self.click_world_step()
         self.assertEqual(self.click_world_target()["kind"], "creature", "A swing keeps the selection")
 
@@ -422,7 +433,7 @@ class BrowserAcceptance(unittest.TestCase):
         wolves = self.page.evaluate("window.__valeDebug.projectedUnits().filter(u => u.kind === 'creature' && u.family === 'wolf')")
         self.assertGreaterEqual(len(wolves), 1)
         x, y, _ = self.aim_at_world_unit("creature", wolves[0]["id"])
-        self.page.mouse.click(x, y, button="right")
+        self.page.mouse.click(x, y)
         self.click_world_step()
         self.page.evaluate("window.__valeDebug.follow()")
         self.frames(35)
@@ -450,12 +461,15 @@ class BrowserAcceptance(unittest.TestCase):
             self.click_world_step()
             self.assertNotEqual(self.click_world_target()["id"], wolves[0]["id"])
             self.assertEqual(self.page.evaluate("window.__valeDebug.controls().mode.kind"), "focused")
-        self.page.locator("#world").focus()
-        self.page.keyboard.press("Escape")
+        # Escape is the game menu (#636): a focused click on empty sky clears the focus, and a
+        # click on nothing in released free look recaptures mouse-look.
+        box = self.page.locator("#world").bounding_box()
+        sky = (box["x"] + 20, box["y"] + 20)
+        self.page.mouse.click(*sky)
         self.click_world_step()
         self.assertIsNone(self.click_world_target())
         self.assertEqual(self.page.evaluate("window.__valeDebug.controls().mode.kind"), "free-look")
-        self.page.mouse.click(x, y)
+        self.page.mouse.click(*sky)
         self.page.wait_for_function("document.pointerLockElement === document.querySelector('#world')")
         # `pointerlockchange` follows the DOM state as a separate task.
         self.page.wait_for_function("window.__valeDebug.controls().pointer === 'camera'")
@@ -468,7 +482,7 @@ class BrowserAcceptance(unittest.TestCase):
             return original(command);
           };
         }""")
-        self.page.mouse.click(x, y)
+        self.page.keyboard.press("q")
         self.click_world_step()
         self.assertTrue(self.page.evaluate("window.__focusSwings.length"), "a free-look sword swing needs no selection")
         self.assertIsNone(self.click_world_target())
@@ -539,13 +553,13 @@ class BrowserAcceptance(unittest.TestCase):
                 canvas = self.page.locator("#world")
                 canvas.evaluate("el => el.addEventListener('pointerdown', e => window.__clickPointerId = e.pointerId, {once:true})")
                 self.page.mouse.move(x, y)
-                self.page.mouse.down(button="right")
+                self.page.mouse.down()
                 if cancellation == "pointercancel":
                     canvas.evaluate("el => el.dispatchEvent(new PointerEvent('pointercancel', {pointerId:window.__clickPointerId, bubbles:true}))")
                 else:
                     canvas.evaluate("el => el.releasePointerCapture(window.__clickPointerId)")
                     self.page.mouse.move(x + 1, y)
-                self.page.mouse.up(button="right")
+                self.page.mouse.up()
                 self.click_world_step()
                 self.assertIsNone(self.click_world_target(), "A cancelled gesture cannot become selection")
                 expect(self.page.get_by_role("complementary", name="Quest dialog", exact=True)).to_be_hidden()
@@ -559,7 +573,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.frames(4)
         self.page.screenshot(path=str(ARTIFACTS / "world-click-solid-occluder.png"))
         box = self.page.locator("#world").bounding_box()
-        self.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, button="right")
+        self.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
         self.click_world_step()
         self.assertIsNone(self.click_world_target(), "A solid wall must block clicking the guard behind it")
         expect(self.page.get_by_role("complementary", name="Quest dialog", exact=True)).to_be_hidden()
@@ -586,7 +600,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.frames(4)
         box = self.page.locator("#world").bounding_box()
         self.page.screenshot(path=str(ARTIFACTS / "world-click-overlap-before.png"))
-        self.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, button="right")
+        self.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
         self.click_world_step()
         self.assertEqual(self.click_world_target(), {"kind": "creature", "id": pair[0]}, "Overlapping projection centres must choose the nearer visible body")
 
@@ -709,7 +723,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.evaluate("document.exitPointerLock()")
         self.page.wait_for_function("document.querySelector('#world').dataset.pointerOwner === 'interface'")
         # Leaving commits and releases the durable character; re-entry resumes it where it left.
-        self.page.get_by_role("button", name="Characters", exact=True).click()
+        self.leave_world()
         expect(self.page.locator("#character-select")).to_be_visible()
         self.assertEqual(self.page.evaluate("prefix => Object.keys(localStorage).filter(key => key.startsWith(prefix)).length",
                                             CHARACTER_ENTRY_PREFIX), 1, "Leaving stores the played character")
@@ -719,8 +733,8 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.screenshot(path=str(ARTIFACTS / "world-reentered.png"))
         self.assertFalse(self.wait_for_view(spawn, timeout_frames=20),
                          "Re-entering must resume the character where it left, not at the spawn")
-        self.page.locator("#world").focus()
-        self.page.keyboard.press("Escape")
+        # Escape opens the game menu (#636), which holds the way back to the characters.
+        self.leave_world()
         expect(self.page.locator("#character-select")).to_be_visible()
         self.assertEqual(self.legacy_checkpoints(), [])
 
@@ -766,7 +780,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.assert_rendering()
         self.enter_world()
         expect(self.page.locator("#area-name")).to_have_text("Greyhaven Outpost")
-        self.page.keyboard.press("Escape")
+        self.leave_world()
         expect(note).to_contain_text("Start ")
 
     def colour_stats(self, png: bytes):
@@ -1171,7 +1185,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.keyboard.down("KeyD")
         self.frames(10)
         self.page.keyboard.up("KeyD")
-        self.page.get_by_role("button", name="Characters", exact=True).click()
+        self.leave_world()
         expect(self.page.locator("#character-select")).to_be_visible()
 
     def test_mobile_touch_rotation_scroll_and_layout(self):
@@ -1287,7 +1301,7 @@ class BrowserAcceptance(unittest.TestCase):
         }""")
         self.assertEqual(self.page.evaluate("window.__lootLatest().events.some(e => e.kind === 'error' && e.code === 'empty-loot')"), True)
         self.assertEqual(self.page.evaluate("window.__lootLatest().viewer.copper"), 2)
-        self.page.get_by_role("button", name="Characters", exact=True).click()
+        self.leave_world()
         # The stored character returns with its looted copper and a closed, empty loot window.
         self.enter_world(ticking=False, fresh=False)
         expect(self.page.locator("#copper-status")).to_have_text("Copper: 2")
@@ -1334,7 +1348,7 @@ class BrowserAcceptance(unittest.TestCase):
           window.__lootFixture = null;
           window.__lootSource.latestProjection = window.__lootLatest;
         }""")
-        self.page.get_by_role("button", name="Characters", exact=True).click()
+        self.leave_world()
         # The third entry also resumes the stored character, never the fixture.
         self.enter_world(ticking=False, fresh=False)
         expect(self.page.locator("#copper-status")).to_have_text("Copper: 2")
@@ -1383,7 +1397,7 @@ class BrowserAcceptance(unittest.TestCase):
             self.page.screenshot(path=str(ARTIFACTS / f"bags-{width}x{height}.png"))
         self.page.get_by_role("button", name="Close bags").click()
         expect(panel).to_be_hidden()
-        self.page.get_by_role("button", name="Characters", exact=True).click()
+        self.leave_world()
         # Re-entry resumes the stored bags.
         self.enter_world()
         self.page.get_by_role("button", name="Bags (B)", exact=True).click()
@@ -1754,7 +1768,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.enter_world()
         self.frames(8)
         self.page.screenshot(path=str(ARTIFACTS / "character-ranger-world.png"))
-        self.page.keyboard.press("Escape")
+        self.leave_world()
         expect(self.page.locator("#character-name")).to_have_text("Lyra Vale")
         self.assertEqual(self.legacy_checkpoints(), [], "Entering the world must not write any progress save")
         roster_buttons.get_by_role("button", name=re.compile("Aelric Stormward")).click()

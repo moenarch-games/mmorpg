@@ -42,6 +42,8 @@ pub enum UiIntent {
     /// Use action-bar slot 1–20.
     AbilitySlot(u8),
     ReleaseSpirit,
+    /// The game menu's Quit.
+    Quit,
     /// Request a selection; `None` clears it.
     Select(Option<EntityRef>),
     /// Open the selected NPC's context.
@@ -149,6 +151,8 @@ pub struct GameUi {
     pub bags_open: bool,
     pub character_open: bool,
     pub quest_log_open: bool,
+    /// The game menu (#636): Escape opens it when nothing else is open.
+    pub game_menu_open: bool,
     /// The open world map (M) and its camera.
     world_map: Option<world_map::WorldMapWindow>,
     chat_text: String,
@@ -186,6 +190,7 @@ impl GameUi {
             bags_open: false,
             character_open: false,
             quest_log_open: false,
+            game_menu_open: false,
             world_map: None,
             chat_text: String::new(),
             chat_focus_requested: false,
@@ -315,11 +320,13 @@ impl GameUi {
         let open = self.bags_open
             || self.character_open
             || self.quest_log_open
+            || self.game_menu_open
             || self.world_map.is_some();
         self.world_map = None;
         self.bags_open = false;
         self.character_open = false;
         self.quest_log_open = false;
+        self.game_menu_open = false;
         self.selected_bag = None;
         open
     }
@@ -339,6 +346,7 @@ impl GameUi {
         self.bags_open
             || self.character_open
             || self.quest_log_open
+            || self.game_menu_open
             || self.world_map.is_some()
             || snapshot
                 .and_then(|snapshot| snapshot.loot)
@@ -379,6 +387,9 @@ impl GameUi {
         }
         if self.settings.show(ctx) {
             return intents;
+        }
+        if self.game_menu_open {
+            self.game_menu(ctx, &mut intents);
         }
         if let Some(text) = frame.connection {
             banner(
@@ -443,6 +454,27 @@ impl GameUi {
         self.loot(ctx, snapshot, &mut intents);
         waystone_window(ctx, frame, snapshot, &mut intents);
         intents
+    }
+
+    /// The game menu (#636): Escape opens it when nothing else is open; Escape or Resume closes it.
+    fn game_menu(&mut self, ctx: &egui::Context, intents: &mut Vec<UiIntent>) {
+        egui::Window::new("Game menu")
+            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+            .resizable(false)
+            .collapsible(false)
+            .show(ctx, |ui| {
+                ui.set_width(220.0);
+                if ui.button("Resume").clicked() {
+                    self.game_menu_open = false;
+                }
+                if ui.button("Settings").clicked() {
+                    self.game_menu_open = false;
+                    self.settings.open = true;
+                }
+                if ui.button("Quit game").clicked() {
+                    intents.push(UiIntent::Quit);
+                }
+            });
     }
 
     fn character_selection(&mut self, ctx: &egui::Context, intents: &mut Vec<UiIntent>) {

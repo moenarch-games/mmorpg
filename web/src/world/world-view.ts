@@ -52,9 +52,10 @@ import { SharedUnits, type AnimationBlend, type ImportedModelKind, type Loadout,
 
 import { BagsPanel, type BagsElements } from "./units/bags-panel";
 import { CharacterPane, type CharacterElements } from "./units/character-pane";
-import { abilitySlots, useAbilitySlot } from "./units/abilities";
+import { abilitySlots, cancelCast, useAbilitySlot } from "./units/abilities";
 import { PowerDrawInput } from "./units/power-draw";
-import { DirectedStrikeAim, HEROIC_STRIKE_ABILITY, canStrikeDirected, directedStrikeCommand } from "./units/directed-strike";
+import { HEROIC_STRIKE_ABILITY, canStrikeDirected, directedStrikeCommand } from "./units/directed-strike";
+import { MouseOwnerInput, type EndedGesture } from "./units/mouse-owner";
 import { ShieldGuardHold, canGuard, guardCommand } from "./units/shield-guard";
 import { ClassHud } from "./units/class-hud";
 import { CombatHud } from "./units/combat-hud";
@@ -68,7 +69,7 @@ import { DepthsLootPanel, type DepthsLootElements } from "./units/depths-loot-pa
 import { PartyFrame, type PartyElements } from "./units/party-frame";
 import { nearestAnimal, projectedUnit, type ProjectedUnit } from "./units/projected-units";
 import { ProgressionHud } from "./units/progression-hud";
-import { PointerClick, SecondaryClick, combatFocus } from "./units/targeting";
+import { PointerClick, combatFocus } from "./units/targeting";
 import { WorldPicking } from "./units/world-picking";
 import { QuaterniusUnits, type FaceFeature, type Hair, type Headwear } from "./units/quaternius-units";
 import type { ContentCatalog } from "./catalog";
@@ -415,8 +416,8 @@ export class WorldView {
   readonly #party: PartyFrame;
   #partySource: WorldSource | null = null;
   readonly #intents: { intent: Intent; onSent: ((sequence: number | null) => void) | undefined }[] = [];
-  readonly #secondaryClick = new SecondaryClick();
-  #lockedSecondaryTravel = 0;
+  /** Mouse-look travel since a captured left press; past a few pixels the press is no click. */
+  #lockedTravel = 0;
   readonly #primaryClick = new PointerClick(0);
   #lastLinkConnected = true;
   #presentationTime: number | null = null;
@@ -453,7 +454,7 @@ export class WorldView {
   #orbit = new OrbitCamera();
   #cameraMode: CameraMode = { kind: "free-look" };
   #pointerOwner: PointerOwner = "interface";
-  #lastPointerRelease = -Infinity;
+  #locked = false;
   /** A held Aimed or Piercing Shot draw (#607): shown locally, sent on the key's release. */
   readonly #powerDraw = new PowerDrawInput({
     prepare: (ability) => this.#units?.units.prepare(ability, this.#seconds),
@@ -469,8 +470,14 @@ export class WorldView {
   #pinch: number | null = null;
   /** A held shield guard whose lane follows the pointer (#156). */
   readonly #guardHold = new ShieldGuardHold();
-  /** A held directed Heroic Strike being aimed with the pointer (#154). */
-  readonly #strikeAim = new DirectedStrikeAim();
+  /** Who owns the mouse (#636): free look, focus, or a held strike or guard aimed with it (#154). */
+  readonly #mouse = new MouseOwnerInput();
+  /** Pointer Lock this view released itself, so its `pointerlockchange` opens no menu. */
+  #releasingLock = false;
+  /** A left press in released free look: its click selects under the cursor, or recaptures. */
+  #recaptureClick = false;
+  /** Called when the browser takes Pointer Lock away (its Escape): the game menu opens (#636). */
+  onPointerLockLost: (() => void) | null = null;
   #movementFacing = 0;
   #outbox: MovementOutbox;
   #shownArea: string | null = null;
@@ -698,13 +705,14 @@ export class WorldView {
     if (!projection || !this.#catalog || !canStrikeDirected(projection, this.#catalog)) {
       return;
     }
-    // The most recent press owns the pointer gesture (Atlas 5.2.37): the sword lowers a held guard.
-    this.endGuard();
+    // The most recent press owns the mouse (Atlas 5.2.37): the sword lowers a held guard. An aim or
+    // wheel keeps the mouse, and the press does nothing.
+    const begin = this.#mouse.beginHold("strike");
+    if (!begin.started) { return; }
+    this.#gestureEnded(begin.preempted);
     this.#powerDraw.cancel();
-    this.#strikeAim.begin();
-    this.#releasePointerLock();
     this.#updatePointerOwner();
-    this.#classHud.showStrikeAim(this.#strikeAim.aim());
+    this.#classHud.showStrikeAim(this.#mouse.aim().strike);
     // The sword winds up while the player aims (Atlas 6.6.10), toward the aimed slash (#582);
     // only the zone's strike swings it.
     this.#units?.units.prepare(HEROIC_STRIKE_ABILITY, this.#seconds);
@@ -713,7 +721,7 @@ export class WorldView {
 
   /** The held directed strike's wind-up shows the slash toward its current aim (#582). */
   #aimWindUp(): void {
-    const aim = this.#strikeAim.aim();
+    const aim = this.#mouse.aim().strike;
     if (aim) {
       this.#units?.units.aimPreparation(aim);
     }
@@ -721,12 +729,14 @@ export class WorldView {
 
   /** A deliberate release sends one directed strike toward the view's heading; the zone resolves it. */
   releaseDirectedStrike(): void {
-    const aim = this.#strikeAim.release();
+    const aim = this.#mouse.aim().strike;
+    const fires = this.#mouse.releaseHold("strike");
     this.#classHud.showStrikeAim(null);
     this.#updatePointerOwner();
     const catalog = this.#catalog;
-    if (!aim || !catalog) {
-      this.#units?.units.abandonPreparation();
+    if (!fires || !aim || !catalog) {
+      // A cancelled, preempted or interrupted hold's key: nothing fires (5.2.37).
+      if (!this.#mouse.gesture) { this.#units?.units.abandonPreparation(); }
       return;
     }
     const facing = this.#orbit.facing();
@@ -735,17 +745,37 @@ export class WorldView {
     this.#queuePrepared((projection) => directedStrikeCommand(projection, catalog, facing, aim));
   }
 
-  /** Blur, menus, retired input or a superseding gesture: no strike, and no wind-up. */
+  /** Blur, menus, retired input: no strike, and no wind-up. */
   cancelDirectedStrike(): void {
-    this.#strikeAim.cancel();
-    this.#classHud.showStrikeAim(null);
+    if (this.#mouse.owner() === "strike") {
+      this.#gestureEnded(this.#mouse.interrupt());
+    }
+  }
+
+  /** A gesture ended without firing (#636): its aim display, wind-up or raised guard goes. */
+  #gestureEnded(ended: EndedGesture): void {
+    if (ended === "strike") {
+      this.#classHud.showStrikeAim(null);
+      this.#units?.units.abandonPreparation();
+    } else if (ended === "guard") {
+      this.#lowerGuard();
+    }
     this.#updatePointerOwner();
-    this.#units?.units.abandonPreparation();
+  }
+
+  /** Ends whatever gesture owns the mouse without firing: a menu, a panel, focus or lock loss. */
+  interruptGesture(): void {
+    this.#gestureEnded(this.#mouse.interrupt());
+  }
+
+  /** Follows the Settings choice of the camera during a strike or guard hold (#636). */
+  setHoldCamera(value: "locked" | "free"): void {
+    this.#mouse.setHoldCamera(value);
   }
 
   /**
-   * One weapon swing where the character faces (#517): the left mouse button, gamepad X or the
-   * touch Attack pill. The zone resolves what it hits; the dead swing nothing.
+   * One weapon swing where the character faces (#517): Q, gamepad X or the touch Attack pill (the
+   * left mouse button selects since #636). The zone resolves what it hits; the dead swing nothing.
    */
   swing(): void {
     if (!this.#lastProjection || this.#lastProjection.viewer.dead) {
@@ -809,23 +839,31 @@ export class WorldView {
 
   /**
    * The guard action was pressed (#156): a living Warden raises the shield in the middle lane, and
-   * pointer motion moves it. The press supersedes an unreleased strike preparation, which never fires.
+   * mouse motion moves it. The press supersedes an unreleased strike preparation, which never fires.
    */
   beginGuard(): void {
     const projection = this.#lastProjection;
     if (!projection || !canGuard(projection)) {
       return;
     }
-    this.cancelDirectedStrike();
+    const begin = this.#mouse.beginHold("guard");
+    if (!begin.started) { return; }
+    this.#gestureEnded(begin.preempted);
     this.#powerDraw.cancel();
     this.#guardHold.begin();
-    this.#releasePointerLock();
     this.#updatePointerOwner();
     this.#sendGuardLane();
   }
 
-  /** A deliberate release, any retirement or a superseding gesture lowers the guard the zone holds. */
+  /** A release or any retirement lowers the guard the zone holds. */
   endGuard(): void {
+    if (this.#mouse.owner() === "guard") {
+      this.#mouse.releaseHold("guard");
+    }
+    this.#lowerGuard();
+  }
+
+  #lowerGuard(): void {
     if (this.#guardHold.end()) {
       this.queueIntent(() => guardCommand(null));
     }
@@ -841,7 +879,7 @@ export class WorldView {
 
   /** Starts a session: fresh camera, intent and animation state. */
   enter(input: WorldInput, projection: ZoneSnapshot | null): void {
-    this.cancelDirectedStrike();
+    this.interruptGesture();
     this.#guardHold.end();
     this.#orbit = new OrbitCamera();
     this.#cameraMode = { kind: "free-look" };
@@ -927,7 +965,7 @@ export class WorldView {
   leave(): void {
     this.cancelPointer();
     this.#cameraMode = { kind: "free-look" };
-    this.cancelDirectedStrike();
+    this.interruptGesture();
     this.#impacts.clear();
     this.#guardHold.end();
     this.#raidSmoke.clear();
@@ -1213,7 +1251,7 @@ export class WorldView {
 
   #input({ held, jumps, rolls }: WorldInput): MovementInput {
     const input = movementInput(held, this.#orbit.facing(), this.#movementFacing, jumps, this.#drag?.mode ?? "none",
-      this.#cameraMode.kind === "focused" || this.#pointerOwner === "camera");
+      this.#cameraMode.kind === "focused" || this.#pointerOwner === "camera" || (this.#pointerOwner === "gesture" && this.#locked));
     this.#movementFacing = input.facing;
     return rolls === undefined ? input : { ...input, rolls };
   }
@@ -1278,6 +1316,9 @@ export class WorldView {
     this.#lastProjection = projection;
     this.#powerDraw.observe(projection, this.panelOpen);
     this.#syncCameraMode(projection);
+    this.#mouse.setFocus(this.#cameraMode.kind === "focused");
+    // Death or a stun ends a held gesture without firing (#636).
+    this.#gestureEnded(this.#mouse.observe(projection));
     // Death already lowered the guard in the zone; a later life needs a new press.
     if (projection.viewer.dead) {
       this.#guardHold.end();
@@ -1297,7 +1338,8 @@ export class WorldView {
         }
       }
     }
-    if (this.panelOpen) { this.#releasePointerLock(); }
+    // An open panel ends a held gesture without firing (#636).
+    if (this.panelOpen) { this.#releasePointerLock(); if (this.#mouse.gesture) { this.interruptGesture(); } }
     const animate = this.#animate;
     this.#seconds += deltaSeconds;
     if (this.#units?.viewerId !== projection.viewerId) {
@@ -1604,49 +1646,76 @@ export class WorldView {
     return (1 - far.y) / 2;
   }
 
+  /**
+   * One mouse owner at a time (#636): the left button selects (or confirms an aim or wheel, and does
+   * nothing during a strike or guard hold); the right button cancels a held gesture without firing,
+   * otherwise the viewer's cast. Touch keeps its drag, pinch and tap selection.
+   */
   pointerDown(event: PointerEvent): void {
-    // A click or drag supersedes an aimed strike that has not been released.
-    const wasAiming = this.#strikeAim.active;
-    this.cancelDirectedStrike();
-    const wasDrawing = this.#powerDraw.cancel();
-    if (wasAiming || wasDrawing) { return; } // Cancellation is never also a sword attack.
-    if (event.pointerType === "touch") {
-      // A finger supersedes mouse capture; existing touch drag/pinch stays authoritative.
-      this.#releasePointerLock();
-      this.#updatePointerOwner();
-      this.#touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
-      // A second finger turns the look drag into a pinch zoom; neither finger selects.
-      if (this.#touches.size === 2 && this.#drag) {
-        try {
-          this.#elements.canvas.setPointerCapture(event.pointerId);
-        } catch {
-          // The pinch still tracks the finger while it stays over the canvas.
-        }
-        this.#primaryClick.reset();
-        this.#pinch = this.#touchSpread();
-        return;
+    if (event.pointerType !== "touch") {
+      this.#mousePress(event);
+      return;
+    }
+    this.#powerDraw.cancel();
+    // A finger supersedes mouse capture; existing touch drag/pinch stays authoritative.
+    this.#releasePointerLock();
+    this.#updatePointerOwner();
+    this.#touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    // A second finger turns the look drag into a pinch zoom; neither finger selects.
+    if (this.#touches.size === 2 && this.#drag) {
+      try {
+        this.#elements.canvas.setPointerCapture(event.pointerId);
+      } catch {
+        // The pinch still tracks the finger while it stays over the canvas.
       }
-    }
-    if (event.pointerType === "mouse" && this.#cameraMode.kind === "free-look"
-      && this.#pointerOwner === "interface" && event.button === 0 && !this.#strikeAim.active && !this.#guardHold.active) {
-      // Browsers require a deliberate user gesture to recapture after UI/focus/Escape.
-      void this.#elements.canvas.requestPointerLock().catch(() => {});
+      this.#primaryClick.reset();
+      this.#pinch = this.#touchSpread();
       return;
     }
-    // A captured left click swings immediately where the character faces (#517).
-    if (event.button === 0 && event.pointerType !== "touch") {
-      this.swing();
-    }
-    if (this.#pointerOwner === "camera" && event.pointerType !== "touch") {
-      this.#secondaryClick.down(event);
-      this.#lockedSecondaryTravel = 0;
+    this.#beginDrag(event, "turn");
+  }
+
+  #mousePress(event: PointerEvent): void {
+    if (event.button === 2) {
+      // Right click never fires: it drops a held draw (#607) and cancels the gesture or the cast.
+      this.#powerDraw.cancel();
+      const click = this.#mouse.rightClick();
+      if (click.outcome === "cancel") {
+        this.#gestureEnded(click.ended);
+      } else {
+        this.queueIntent(cancelCast);
+        // Without capture, a right drag still turns the character.
+        if (this.#cameraMode.kind === "free-look" && this.#pointerOwner === "interface") { this.#beginDrag(event, "turn"); }
+      }
       return;
     }
-    if (this.#cameraMode.kind === "focused" && event.pointerType === "mouse") {
-      this.#secondaryClick.down(event);
+    if (event.button !== 0) {
       return;
     }
-    if (this.#drag || (event.button !== 0 && event.button !== 2)) {
+    // A click drops a held draw (#607) and is nothing else.
+    if (this.#powerDraw.cancel()) { return; }
+    if (this.#cameraMode.kind === "free-look" && this.#pointerOwner === "interface" && event.pointerType === "mouse"
+      && !this.#mouse.gesture) {
+      // A click on a unit or door under the free cursor selects it on release; any other click
+      // recaptures mouse-look then, within the press's user activation (#636).
+      this.#beginDrag(event, "orbit");
+      this.#recaptureClick = true;
+      return;
+    }
+    const click = this.#mouse.leftClick();
+    // A hold ignores the left button; an aim or wheel confirmed (no producer yet, #649/#653).
+    if (click.outcome !== "select") { return; }
+    if (this.#pointerOwner === "camera" || this.#cameraMode.kind === "focused") {
+      // Selects on the release, unless the press became mouse-look travel.
+      this.#primaryClick.down(event);
+      this.#lockedTravel = 0;
+      return;
+    }
+    this.#beginDrag(event, "orbit");
+  }
+
+  #beginDrag(event: PointerEvent, mode: "orbit" | "turn"): void {
+    if (this.#drag) {
       return;
     }
     try {
@@ -1655,59 +1724,55 @@ export class WorldView {
       return;
     }
     // A finger drag looks and turns the character with the view (#434); a tap still selects.
-    const mode = event.button === 2 || event.pointerType === "touch" ? "turn" : "orbit";
     this.#drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, mode };
-    this.#secondaryClick.down(event);
     this.#primaryClick.down(event);
     this.#elements.canvas.dataset.drag = mode;
   }
 
-  /** Losing focus retires the gesture without selecting. */
+  /** Requests Pointer Lock for free look; the browser may refuse, and the next world click retries. */
+  recapture(): void {
+    if (this.#cameraMode.kind === "free-look" && document.pointerLockElement !== this.#elements.canvas) {
+      void this.#elements.canvas.requestPointerLock().catch(() => {});
+    }
+  }
+
+  /** Losing focus retires the gesture without firing or selecting. */
   cancelPointer(): void {
-    this.cancelDirectedStrike();
+    this.interruptGesture();
     this.#powerDraw.cancel();
-    this.endGuard();
     this.#endDrag();
     this.#releasePointerLock();
     this.#updatePointerOwner();
   }
 
-  /** Pointer Lock is browser-owned: the presentation only requests it during user input. */
+  /**
+   * Pointer Lock is browser-owned: the presentation only requests it during user input. Losing it
+   * without asking (the browser's Escape) ends a gesture without firing and opens the game menu.
+   */
   pointerLockChanged(): void {
-    if (this.#pointerOwner === "camera" && document.pointerLockElement !== this.#elements.canvas) {
-      this.#lastPointerRelease = performance.now();
-      // Some browsers consume the unlocking Escape; the draw still drops (#607).
+    const locked = document.pointerLockElement === this.#elements.canvas;
+    if (this.#locked && !locked) {
+      this.interruptGesture();
       this.#powerDraw.cancel();
+      if (!this.#releasingLock) { this.onPointerLockLost?.(); }
     }
+    this.#locked = locked;
+    this.#releasingLock = false;
     this.#updatePointerOwner();
-  }
-
-  /** Escape clears combat focus before the ordinary leave-world action. */
-  clearCombatFocus(): boolean {
-    if (this.#cameraMode.kind !== "focused") { return false; }
-    this.queueIntent(() => ({ kind: "select-target", target: null }));
-    return true;
-  }
-
-  releaseFreeLook(): boolean {
-    if (this.#pointerOwner === "camera") {
-      this.#releasePointerLock();
-      return true;
-    }
-    // Some browsers consume the Escape used to unlock before dispatching its key event.
-    return this.#cameraMode.kind === "free-look" && performance.now() - this.#lastPointerRelease < 300;
   }
 
   #releasePointerLock(): void {
     if (document.pointerLockElement === this.#elements.canvas) {
+      this.#releasingLock = true;
       document.exitPointerLock();
     }
   }
 
   #updatePointerOwner(): void {
     this.#pointerOwner = pointerOwner(this.#cameraMode, document.pointerLockElement === this.#elements.canvas,
-      this.#strikeAim.active || this.#guardHold.active);
+      this.#mouse.gesture);
     this.#elements.canvas.dataset.pointerOwner = this.#pointerOwner;
+    this.#elements.canvas.dataset.mouseOwner = this.#mouse.owner();
   }
 
   #syncCameraMode(projection: ZoneSnapshot): void {
@@ -1719,28 +1784,27 @@ export class WorldView {
     if (!target && this.#cameraMode.kind === "free-look") { return; }
     if (target && this.#cameraMode.kind === "focused" && sameEntity(target, this.#cameraMode.target)) { return; }
     this.#cameraMode = target ? { kind: "focused", target } : { kind: "free-look" };
+    this.#mouse.setFocus(target !== null);
     if (target) { this.#releasePointerLock(); }
     this.#updatePointerOwner();
   }
 
   pointerMove(event: PointerEvent): void {
-    this.#strikeAim.track(event.clientX, event.clientY);
-    if (this.#strikeAim.active) {
-      this.#classHud.showStrikeAim(this.#strikeAim.aim());
-      this.#aimWindUp();
-    }
-    // A camera drag owns the pointer: it turns the Warden without moving the guard's lane.
-    this.#guardHold.track(event.clientY, this.#drag !== null);
-    if (this.#guardHold.active) {
-      this.#sendGuardLane();
+    if (event.pointerType !== "touch" && this.#mouse.gesture) {
+      // The gesture owns the motion (#636); a locked camera holds still, a free one keeps turning.
+      const turn = this.#mouse.motion(event.movementX, event.movementY);
+      this.#followGestureAim();
+      if (turn && document.pointerLockElement === this.#elements.canvas) {
+        this.#orbit.orbit(event.movementX * this.#lookSensitivity, event.movementY * this.#lookSensitivity);
+      }
+      return;
     }
     if (this.#pointerOwner === "camera" && event.pointerType !== "touch") {
-      this.#lockedSecondaryTravel += Math.hypot(event.movementX, event.movementY);
-      if (this.#lockedSecondaryTravel > 6) { this.#secondaryClick.reset(); }
+      this.#lockedTravel += Math.hypot(event.movementX, event.movementY);
+      if (this.#lockedTravel > 6) { this.#primaryClick.reset(); }
       this.#orbit.orbit(event.movementX * this.#lookSensitivity, event.movementY * this.#lookSensitivity);
       return;
     }
-    this.#secondaryClick.move(event);
     this.#primaryClick.move(event);
     if (this.#touches.has(event.pointerId)) {
       this.#touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -1763,14 +1827,26 @@ export class WorldView {
     drag.y = event.clientY;
   }
 
-  pointerEnd(event: PointerEvent): void {
-    if (this.#pointerOwner === "camera" && event.pointerType !== "touch") {
-      if (this.#secondaryClick.end(event)) { this.#selectAt(event, true); }
-      this.#lockedSecondaryTravel = 0;
-      return;
+  /** The held strike's aim display and wind-up, or the held guard's lane, follow the mouse. */
+  #followGestureAim(): void {
+    const aim = this.#mouse.aim();
+    if (aim.strike) {
+      this.#classHud.showStrikeAim(aim.strike);
+      this.#aimWindUp();
     }
-    if (this.#cameraMode.kind === "focused" && event.pointerType === "mouse") {
-      if (this.#secondaryClick.end(event)) { this.#selectAt(event, false); }
+    if (aim.guard) {
+      this.#guardHold.aimWithPointer(aim.guard);
+      this.#sendGuardLane();
+    }
+  }
+
+  pointerEnd(event: PointerEvent): void {
+    if (event.pointerType !== "touch" && this.#drag?.pointerId !== event.pointerId) {
+      // A click that started selecting selects only if no gesture took the mouse meanwhile.
+      if (this.#primaryClick.end(event) && !this.#mouse.gesture) {
+        this.#selectAt(event, document.pointerLockElement === this.#elements.canvas);
+      }
+      this.#lockedTravel = 0;
       return;
     }
     if (this.#touches.delete(event.pointerId) && this.#pinch !== null) {
@@ -1791,18 +1867,20 @@ export class WorldView {
       this.#endDrag();
       return;
     }
-    // A tap, or a right click that never became a turn drag, selects (#517: the left mouse
-    // button swings instead).
-    const tapped = this.#primaryClick.end(event) && event.pointerType === "touch";
-    if (this.#secondaryClick.end(event) || tapped) {
-      this.#selectAt(event, false);
+    // A tap, or a click that never became a drag, selects; a released free look's click on
+    // nothing recaptures mouse-look.
+    const recapture = this.#recaptureClick;
+    this.#recaptureClick = false;
+    if (this.#primaryClick.end(event) && !this.#mouse.gesture && !this.#selectAt(event, false) && recapture) {
+      this.recapture();
     }
     if (this.#drag?.pointerId === event.pointerId) {
       this.#endDrag();
     }
   }
 
-  #selectAt(event: PointerEvent, centred: boolean): void {
+  /** Selects (or swings the door) under the pointer or crosshair; `true` if anything was picked. */
+  #selectAt(event: PointerEvent, centred: boolean): boolean {
     const rect = this.#elements.canvas.getBoundingClientRect();
     const point = new THREE.Vector2(
       centred ? 0 : ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -1820,6 +1898,10 @@ export class WorldView {
       this.queueIntent((projection) => doorToggle(projection, picked.id));
     }
     const target = picked?.kind === "door" ? null : picked;
+    if (!picked && this.#cameraMode.kind === "focused" && event.pointerType === "mouse") {
+      // With Escape now the game menu (#636), a focused click on empty world clears the focus.
+      this.queueIntent(() => ({ kind: "select-target", target: null }));
+    }
     if (target) {
       this.queueIntent((projection) => projection.entities.some((entity) => entity.kind === target.kind && entity.entityId === target.id)
         ? { kind: "select-target", target } : null, (sequence) => {
@@ -1828,6 +1910,7 @@ export class WorldView {
         }
       });
     }
+    return Boolean(picked);
   }
 
   /** The distance between the first two fingers on the canvas, in CSS pixels. */
@@ -1840,8 +1923,8 @@ export class WorldView {
     this.#touches.clear();
     this.#pinch = null;
     this.#primaryClick.reset();
-    this.#secondaryClick.reset();
-    this.#lockedSecondaryTravel = 0;
+    this.#recaptureClick = false;
+    this.#lockedTravel = 0;
     const drag = this.#drag;
     if (drag && this.#elements.canvas.hasPointerCapture(drag.pointerId)) {
       this.#elements.canvas.releasePointerCapture(drag.pointerId);
