@@ -1,5 +1,13 @@
-import { cpSync, mkdirSync, readFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { defineConfig, searchForWorkspaceRoot } from "vite";
+import { themeCss } from "./scripts/ui-theme";
+
+// The interface theme both clients share (content/ui/theme.json) as CSS custom properties.
+mkdirSync(new URL("./src/generated/", import.meta.url), { recursive: true });
+writeFileSync(
+  new URL("./src/generated/ui-theme.css", import.meta.url),
+  themeCss(readFileSync(new URL("../content/ui/theme.json", import.meta.url), "utf8")),
+);
 
 // Use the transcoder shipped with the pinned Three.js KTX2Loader.
 mkdirSync(new URL("./public/basis/", import.meta.url), { recursive: true });

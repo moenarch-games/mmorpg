@@ -122,7 +122,7 @@ def run(host_binary: Path):
             expect(page.locator("#enter-world")).to_be_enabled(timeout=30_000)
             pages.append(page)
         first, second = pages
-        first.locator("#arena-class").select_option("arcanist")
+        first.locator("label:has(#arena-class-arcanist)").click()
         expect(first.locator("#character-subtitle")).to_contain_text("Arcanist")
         for page in pages:
             page.locator("#enter-world").click()
@@ -130,7 +130,7 @@ def run(host_binary: Path):
         first.wait_for_function(f"{SOURCE}.match?.phase === 'combat'", timeout=20_000)
         first.wait_for_function(f"{SOURCE}.latestProjection()?.viewer.classChoice?.classId === 'arcanist'")
         for page in pages:
-            expect(page.locator("#arena-class")).to_be_disabled()
+            expect(page.locator("#arena-class-arcanist")).to_be_disabled()
         first.locator("#world").focus()
         first.keyboard.press("Tab")
         first.wait_for_function(f"{SOURCE}.latestProjection()?.viewer.target?.kind === 'player'")
@@ -162,7 +162,7 @@ def run(host_binary: Path):
                 raise
             expect(page.locator("#character-select")).to_be_visible()
             expect(page.locator("#arena-server")).to_have_value(route[:-1] + "2")
-        first.locator("#arena-class").select_option("ranger")
+        first.locator("label:has(#arena-class-ranger)").click()
         first.locator("#arena-slot-1").select_option("0")
         for page in pages:
             page.locator("#enter-world").click()

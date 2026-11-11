@@ -1,5 +1,5 @@
-import { ArenaPresentation } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
-import { CHARACTER_CLASSES, isCharacterClassId, isCharacterSex, type CharacterPreview } from "../../character-selection";
+import { ArenaPresentation, classCard } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
+import { CHARACTER_CLASSES, isCharacterClassId, isCharacterSex, type CharacterClassId, type CharacterPreview } from "../../character-selection";
 import { parseCertificateHash, parseSessionRoute } from "../../session/route";
 import { EQUIPMENT_SLOT_NAMES, type ContentCatalog } from "../catalog";
 import type { ZoneServer } from "../online-config";
@@ -14,37 +14,66 @@ function element<T extends HTMLElement>(root: ParentNode, selector: string): T {
   return found;
 }
 
-/** Match-local setup is held in this form only. It never writes the character roster or storage. */
+/** Where the Loadout screen draws: the class column, the equipment and look column, and the arena route in the bottom bar. */
+export type LoadoutRoots = { classes: HTMLElement; loadout: HTMLElement; route: HTMLElement };
+
+/** The roster characters whose look a match build may wear; choosing one selects it, it never changes it. */
+export type LookSource = {
+  characters(): readonly CharacterPreview[];
+  selected(): string;
+  choose(id: string): void;
+};
+
+/**
+ * The Battle Royale **Loadout** screen (`mmorpg_client_model::front_end`): pick only what one match
+ * needs, a class, equipment and a look. Match-local setup is held in these controls only; it never
+ * writes the character roster or storage.
+ */
 export class BattleRoyaleEntry {
   readonly #activity: HTMLSelectElement;
-  readonly #root: HTMLElement;
-  readonly #class: HTMLSelectElement;
+  readonly #roots: LoadoutRoots;
+  readonly #classGrid: HTMLElement;
+  readonly #classDescription: HTMLElement;
   readonly #sex: HTMLSelectElement;
-  readonly #mode: HTMLSelectElement;
+  readonly #look: HTMLSelectElement;
   readonly #hosted: HTMLElement;
   readonly #server: HTMLInputElement;
   readonly #hash: HTMLInputElement;
   readonly #equipment: HTMLSelectElement[] = [];
   readonly #note: HTMLElement;
+  readonly #looks: LookSource;
   readonly #changed: () => void;
+  #classId: CharacterClassId = "warden";
   #catalog: ContentCatalog | null = null;
   #presentation: ArenaPresentation | null = null;
 
-  constructor(activity: HTMLSelectElement, root: HTMLElement, changed: () => void) {
-    this.#activity = activity; this.#root = root; this.#changed = changed;
-    root.innerHTML = `<label>Arena<select id="arena-mode"><option value="practice">Practice arena (this browser)</option>
-      <option value="hosted">Hosted match</option></select></label>
-      <div class="arena-character-fields"><label>Class<select id="arena-class"></select></label>
-      <label>Appearance<select id="arena-sex"><option value="male">Male</option><option value="female">Female</option></select></label></div>
-      <fieldset id="arena-equipment"><legend>Equipment</legend></fieldset>
-      <div id="arena-hosted"><label>Match server<input id="arena-server" type="url" placeholder="https://host:4433/game/matches/br-0000000000000001" autocomplete="off"></label>
+  constructor(activity: HTMLSelectElement, roots: LoadoutRoots, looks: LookSource, changed: () => void) {
+    this.#activity = activity; this.#roots = roots; this.#looks = looks; this.#changed = changed;
+    roots.classes.innerHTML = `<h2 class="loadout-heading">Class</h2>
+      <div id="arena-classes-grid" class="arena-class-grid" role="radiogroup" aria-label="Class"></div>
+      <p id="arena-class-description" class="arena-class-description"></p>`;
+    roots.loadout.innerHTML = `<h2 class="loadout-heading">Equipment</h2>
+      <fieldset id="arena-equipment" class="arena-slots"><legend class="visually-hidden">Equipment</legend></fieldset>
+      <h2 class="loadout-heading">Look</h2>
+      <div class="arena-look">
+        <label>Character<select id="arena-look"></select></label>
+        <label>Body<select id="arena-sex"><option value="male">Male</option><option value="female">Female</option></select></label>
+      </div>
+      <p class="arena-look-note">Wears a roster character's look for this match. Nothing is changed or saved.</p>`;
+    roots.route.innerHTML = `<div class="arena-mode" role="radiogroup" aria-label="Arena">
+        <label><input type="radio" name="arena-mode" value="practice" checked><span>Practice</span></label>
+        <label><input type="radio" name="arena-mode" value="hosted"><span>Hosted match</span></label>
+      </div>
+      <div id="arena-hosted" class="arena-hosted"><label>Match server<input id="arena-server" type="url" placeholder="https://host:4433/game/matches/br-0000000000000001" autocomplete="off"></label>
       <details><summary>Development certificate</summary><label>Certificate hash<input id="arena-cert-hash" type="text" autocomplete="off" spellcheck="false"></label></details></div>
-      <p id="arena-setup-note"></p>`;
-    this.#mode = element(root, "#arena-mode"); this.#hosted = element(root, "#arena-hosted");
-    this.#class = element(root, "#arena-class"); this.#sex = element(root, "#arena-sex");
-    this.#server = element(root, "#arena-server"); this.#hash = element(root, "#arena-cert-hash"); this.#note = element(root, "#arena-setup-note");
-    for (const choice of CHARACTER_CLASSES) { this.#class.add(new Option(choice.name, choice.id)); }
-    const equipment = element<HTMLFieldSetElement>(root, "#arena-equipment");
+      <p id="arena-setup-note" class="arena-setup-note"></p>`;
+    this.#classGrid = element(roots.classes, "#arena-classes-grid");
+    this.#classDescription = element(roots.classes, "#arena-class-description");
+    this.#sex = element(roots.loadout, "#arena-sex"); this.#look = element(roots.loadout, "#arena-look");
+    this.#hosted = element(roots.route, "#arena-hosted");
+    this.#server = element(roots.route, "#arena-server"); this.#hash = element(roots.route, "#arena-cert-hash");
+    this.#note = element(roots.route, "#arena-setup-note");
+    const equipment = element<HTMLFieldSetElement>(roots.loadout, "#arena-equipment");
     SLOT_LABELS.forEach((name, slot) => {
       const label = document.createElement("label"); label.append(name);
       const select = document.createElement("select"); select.id = `arena-slot-${slot}`;
@@ -55,28 +84,73 @@ export class BattleRoyaleEntry {
     this.#server.value = server;
     this.#hash.value = query.get("certHash") ?? "";
     // A match server in the URL asks for the hosted match; otherwise the arena is practice.
-    this.#mode.value = server ? "hosted" : "practice";
+    this.#modeInput(server ? "hosted" : "practice").checked = true;
     this.#hosted.hidden = this.practice;
-    this.#mode.addEventListener("change", () => { this.#hosted.hidden = this.practice; this.#describe(); });
+    for (const input of roots.route.querySelectorAll<HTMLInputElement>('input[name="arena-mode"]')) {
+      input.addEventListener("change", () => { this.#hosted.hidden = this.practice; this.#describe(); });
+    }
     if (query.get("activity") === "battle-royale") { activity.value = "battle-royale"; }
-    this.#class.addEventListener("change", () => { this.#defaults(); changed(); });
-    root.addEventListener("change", (event) => { if (event.target !== this.#class) { changed(); } });
-    activity.addEventListener("change", () => { root.hidden = !this.selected; changed(); });
-    root.hidden = !this.selected;
+    this.#look.addEventListener("change", () => {
+      const character = looks.characters().find((candidate) => candidate.id === this.#look.value);
+      if (character) { this.#sex.value = character.sex; }
+      looks.choose(this.#look.value);
+    });
+    for (const root of [roots.loadout, roots.route]) {
+      root.addEventListener("change", (event) => { if (event.target !== this.#look) { changed(); } });
+    }
+    activity.addEventListener("change", () => { this.#show(); changed(); });
+    this.#show();
   }
   get selected(): boolean { return this.#activity.value === "battle-royale"; }
   /** Whether the arena is the local practice arena (#550) rather than a hosted match. */
-  get practice(): boolean { return this.#mode.value === "practice"; }
+  get practice(): boolean { return this.#modeInput("practice").checked; }
+  #modeInput(mode: "practice" | "hosted"): HTMLInputElement {
+    return element(this.#roots.route, `input[name="arena-mode"][value="${mode}"]`);
+  }
+  #show(): void {
+    for (const root of Object.values(this.#roots)) { root.hidden = !this.selected; }
+  }
   ready(catalog: ContentCatalog): void {
     this.#catalog = catalog; this.#presentation = new ArenaPresentation();
+    for (const choice of CHARACTER_CLASSES) {
+      const card = classCard(choice.id);
+      const tile = document.createElement("label");
+      tile.className = "arena-class-tile";
+      tile.innerHTML = `<input type="radio" name="arena-class" id="arena-class-${choice.id}" value="${choice.id}"><strong></strong><small></small>`;
+      tile.querySelector("strong")!.textContent = card.name;
+      tile.querySelector("small")!.textContent = card.role;
+      const input = element<HTMLInputElement>(tile, "input");
+      input.checked = choice.id === this.#classId;
+      input.addEventListener("change", () => {
+        if (!input.checked || !isCharacterClassId(input.value)) { return; }
+        this.#classId = input.value;
+        this.#defaults();
+        this.#describeClass();
+        this.#changed();
+      });
+      this.#classGrid.append(tile);
+    }
     this.#equipment.forEach((select, index) => {
       select.add(new Option("Empty", "0"));
       for (const item of catalog.items.values()) {
         if (item.slot === EQUIPMENT_SLOT_NAMES[index]) { select.add(new Option(item.name, String(item.id))); }
       }
     });
+    this.refreshLooks();
+    const look = this.#looks.characters().find((character) => character.id === this.#looks.selected());
+    if (look) { this.#sex.value = look.sex; }
     this.#defaults();
+    this.#describeClass();
     this.#describe();
+  }
+  /** Lists the roster's characters as looks again, after the roster or its selection changed. */
+  refreshLooks(): void {
+    const selected = this.#looks.selected();
+    this.#look.replaceChildren(...this.#looks.characters().map((character) =>
+      new Option(`${character.name} · ${character.className}`, character.id, false, character.id === selected)));
+  }
+  #describeClass(): void {
+    this.#classDescription.textContent = classCard(this.#classId).description;
   }
   #describe(): void {
     if (!this.#presentation) { return; }
@@ -92,7 +166,7 @@ export class BattleRoyaleEntry {
     this.#equipment.forEach((select, slot) => { select.value = String(defaults[slot] ?? 0); });
   }
   character(base: JoinCharacter): JoinCharacter {
-    const classId = this.#class.value; const sex = this.#sex.value;
+    const classId = this.#classId; const sex = this.#sex.value;
     if (!isCharacterClassId(classId) || !isCharacterSex(sex)) { throw new Error("Choose a supported class and appearance."); }
     return { id: base.id, classId, sex };
   }
@@ -115,7 +189,9 @@ export class BattleRoyaleEntry {
   }
   setLocked(locked: boolean): void {
     this.#activity.disabled = locked;
-    for (const input of this.#root.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input, select")) { input.disabled = locked; }
+    for (const root of Object.values(this.#roots)) {
+      for (const input of root.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input, select")) { input.disabled = locked; }
+    }
   }
   nextMatch(): void {
     const server = this.server();

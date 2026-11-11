@@ -14,9 +14,13 @@
       <span class="aim-reticle" aria-hidden="true"></span>
       <section id="character-select" class="character-select" data-hat="wayfarer-hood" aria-labelledby="selection-title">
         <div class="selection-brand">
-          <p class="eyebrow">MMORPG / Greyhaven realm</p>
+          <nav id="mode-tabs" class="mode-tabs" role="tablist" aria-label="Choose what to play"></nav>
+          <select id="activity-choice" aria-label="Activity" hidden><option value="world">Greyhaven Vale</option><option value="battle-royale">Battle Royale PvP</option></select>
           <p id="selection-title" class="selection-title">Choose your character</p>
+          <p id="selection-tagline" class="selection-tagline">Your characters and how they look</p>
         </div>
+
+        <section id="arena-classes" class="arena-classes loadout-panel" aria-label="Class" hidden></section>
 
         <section class="character-inspector" aria-label="Inspect your character">
           <div id="preview-surface" class="preview-surface" tabindex="0" role="slider"
@@ -38,9 +42,7 @@
           <div class="continuation-controls">
             <button id="enter-world" class="enter-world" type="button" disabled><span id="enter-world-label">Enter World</span><small id="enter-world-note">Loading the zone simulation…</small></button>
             <div class="continuation-secondary">
-              <label class="activity-choice">Activity
-                <select id="activity-choice"><option value="world">Greyhaven Vale</option><option value="battle-royale">Battle Royale PvP</option></select>
-              </label>
+              <div id="arena-route" class="arena-route" hidden></div>
               <label id="online-toggle" class="online-toggle" hidden>
                 <input id="play-online" type="checkbox" />
                 <span>Play online <small id="online-server"></small></span>
@@ -48,11 +50,11 @@
               <button id="selection-settings" class="selection-settings" type="button" aria-haspopup="dialog">Settings</button>
             </div>
           </div>
-          <section id="battle-royale-setup" class="arena-setup" aria-label="Battle Royale setup" hidden></section>
           <p id="selection-note" class="selection-note">Single-player demo: the shared Rust zone simulation runs in this browser. Character progress and the world are saved in this browser.</p>
         </footer>
 
         <div class="selection-sidebar">
+          <section id="battle-royale-setup" class="arena-setup loadout-panel" aria-label="Equipment and look" hidden></section>
           <div id="roster-panel" class="selection-sections">
           <section class="selection-section" aria-label="Characters">
             <h2 class="section-heading"><button id="characters-toggle" class="section-toggle" type="button" aria-expanded="true" aria-controls="characters-panel"><span class="section-title">Characters</span><span id="character-name" class="section-summary">Aelric Stormward</span><span class="section-chevron" aria-hidden="true"></span></button></h2>

@@ -35,6 +35,7 @@ import {
   type CharacterPreview,
   type EntryState,
 } from "./character-selection";
+import "./generated/ui-theme.css";
 import "./styles.css";
 import { frameDeltaSeconds } from "./demo-clock";
 import { markStartup, startupMarks } from "./startup-marks";
@@ -61,6 +62,7 @@ import { webTransportConnector } from "./session/webtransport";
 import { onlineChoice, type ZoneServer } from "./world/online-config";
 import { OnlineZoneSource } from "./world/online-zone-source";
 import { BattleRoyaleEntry, matchStatus } from "./world/battle-royale/entry";
+import { ModeTabs, labelGameMenu } from "./front-end";
 import { createArenaWorld, createPracticeWorld, type ArenaWorld, type PracticeWorld } from "./world/battle-royale/world";
 import "./world/battle-royale/style.css";
 import type { LinkState, ZoneWorld } from "./world/world-source";
@@ -236,10 +238,22 @@ const arenaStatus = requireElement<HTMLElement>("#battle-royale-status");
 const arenaResult = requireElement<HTMLElement>("#battle-royale-result");
 const arenaProgress = requireElement<HTMLElement>("#battle-royale-progress");
 const arenaNext = requireElement<HTMLButtonElement>("#battle-royale-next");
+const activityChoice = requireElement<HTMLSelectElement>("#activity-choice");
 const arenaEntry = new BattleRoyaleEntry(
-  requireElement<HTMLSelectElement>("#activity-choice"),
-  requireElement<HTMLElement>("#battle-royale-setup"),
+  activityChoice,
+  {
+    classes: requireElement<HTMLElement>("#arena-classes"),
+    loadout: requireElement<HTMLElement>("#battle-royale-setup"),
+    route: requireElement<HTMLElement>("#arena-route"),
+  },
+  { characters: () => characters, selected: selectedCharacterId, choose: selectCharacter },
   refreshArenaWorld,
+);
+const modeTabs = new ModeTabs(
+  requireElement<HTMLElement>("#mode-tabs"),
+  activityChoice,
+  requireElement<HTMLElement>("#selection-title"),
+  requireElement<HTMLElement>("#selection-tagline"),
 );
 
 function refreshArenaWorld(): void {
@@ -1063,6 +1077,7 @@ function renderRoster(): void {
     return button;
   });
   rosterContainer.replaceChildren(...buttons);
+  arenaEntry.refreshLooks();
   createCharacterButton.disabled = characters.length >= MAX_CHARACTER_SLOTS;
   createCharacterButton.title = createCharacterButton.disabled ? "All character slots are full." : "";
 }
@@ -1130,6 +1145,7 @@ function updateEntryButton(): void {
   enterWorldNote.textContent = entryNote(selectedCharacter());
   playOnlineInput.disabled = joining !== null;
   arenaEntry.setLocked(joining !== null || entryState.phase === "world");
+  modeTabs.sync();
   if (practiceWorld) {
     selectionNote.textContent = "Local practice: the shared Rust zone simulation runs in this browser. Change your build here between lives; nothing is saved.";
     return;
@@ -1845,6 +1861,11 @@ function openGameMenu(): void {
   }
   controls.retire("gameMenuOpened");
   worldView.cancelPointer();
+  labelGameMenu(arenaEntry.selected ? "battle-royale" : "world", {
+    resume: requireElement<HTMLButtonElement>("#game-menu-resume"),
+    settings: requireElement<HTMLButtonElement>("#game-menu-settings"),
+    leave: returnButton,
+  });
   gameMenu.showModal();
   requireElement<HTMLButtonElement>("#game-menu-resume").focus();
 }
@@ -2175,6 +2196,7 @@ void loadPageWorld().then((loaded) => {
   markStartup("picker-ready");
   onlineWorld = online.kind === "online" ? createOnlineWorld(loaded, online.server) : null;
   arenaEntry.ready(loaded.catalog);
+  modeTabs.ready();
   refreshArenaWorld();
   if (scenario) {
     try {

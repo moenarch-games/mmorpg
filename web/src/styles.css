@@ -1,13 +1,13 @@
 :root {
   color-scheme: dark;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #11161c;
-  color: #edf4ee;
+  background: var(--ui-color-ink);
+  color: var(--ui-color-text);
   font-synthesis: none;
-  --gold: #c6a85f;
-  --gold-bright: #e5cf86;
-  --panel: rgb(12 18 21 / 86%);
-  --panel-border: rgb(218 195 129 / 24%);
+  --gold: var(--ui-color-gold);
+  --gold-bright: var(--ui-color-gold-bright);
+  --panel: var(--ui-color-panel);
+  --panel-border: var(--ui-color-border);
 }
 
 * { box-sizing: border-box; }
@@ -21,7 +21,7 @@ html, body, #app {
   overflow: hidden;
 }
 
-body { background: #11161c; }
+body { background: var(--ui-color-ink); }
 button { font: inherit; }
 
 #world {

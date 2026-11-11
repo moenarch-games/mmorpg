@@ -21,7 +21,28 @@
   width: auto;
   transform: none;
 }
-.selection-brand { grid-area: brand; }
+.selection-brand { grid-area: brand; pointer-events: auto; }
+
+/* What to play (mmorpg_client_model::front_end): each mode opens its own selection screen. */
+.mode-tabs { display: flex; flex-wrap: wrap; gap: var(--ui-space-lg); margin-bottom: var(--ui-space-xs); }
+.mode-tab {
+  padding: .3rem 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ui-color-text-muted);
+  font-size: .74rem;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color var(--ui-motion-fast) ease, border-color var(--ui-motion-fast) ease;
+}
+.mode-tab:hover { color: var(--ui-color-text); }
+.mode-tab[aria-selected="true"] { border-bottom-color: var(--ui-color-gold); color: var(--ui-color-gold-bright); }
+.mode-tab:focus-visible { outline: 2px solid var(--ui-color-focus); outline-offset: 3px; }
+.mode-tab:disabled { cursor: default; }
+.selection-tagline { margin: .2rem 0 0; color: var(--ui-color-text-muted); font-size: .8rem; }
 .character-inspector {
   grid-area: preview;
   display: flex;

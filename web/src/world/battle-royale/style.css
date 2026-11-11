@@ -1,14 +1,129 @@
-.activity-choice { display: flex; align-items: center; gap: .7rem; }
-.activity-choice select, .arena-setup select, .arena-setup input { color: inherit; background: #17231f; border: 1px solid #718d84; border-radius: .25rem; padding: .4rem; min-width: 0; }
-.arena-setup { width: 100%; display: grid; gap: .6rem; text-align: left; }
-.arena-setup[hidden], .arena-status[hidden] { display: none; }
-.arena-setup label { display: grid; gap: .25rem; font-size: .85rem; }
-.arena-character-fields, .arena-setup fieldset { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
-.arena-setup fieldset { border: 1px solid #718d84; padding: .6rem; }
-.arena-setup p { font-size: .8rem; margin: 0; }
-.arena-status { position: fixed; z-index: 9; top: 5.5rem; left: 50%; transform: translateX(-50%); display: grid; gap: .25rem; text-align: center; padding: .6rem 1rem; color: #ecf1e8; background: #17231feb; border: 1px solid #718d84; pointer-events: auto; }
+/*
+ * The Battle Royale Loadout screen (mmorpg_client_model::front_end): class on the left, the build on
+ * the stage, equipment and look on the right, the arena and Ready in the bottom bar. It shares the
+ * Characters screen's stage, panels and theme; only what a match needs is on it.
+ */
+body[data-activity="battle-royale"] .character-select {
+  grid-template:
+    "brand brand brand" auto
+    "classes preview sidebar" minmax(0, 1fr)
+    "actions actions actions" auto / minmax(15rem, 19rem) minmax(0, 1fr) minmax(17rem, 22rem);
+}
+body[data-activity="battle-royale"] #roster-panel,
+body[data-activity="battle-royale"] #character-creation { display: none; }
+body[data-activity="battle-royale"] .character-select .selection-actions { justify-self: stretch; width: auto; }
+body[data-activity="battle-royale"] .continuation-panel .world-destination { display: none; }
+/* The bottom bar reads left to right: arena route, Settings, then the primary action. */
+body[data-activity="battle-royale"] .continuation-controls .enter-world { order: 2; flex: 0 1 20rem; }
+body[data-activity="battle-royale"] .continuation-secondary { flex: 1 1 24rem; }
+body[data-activity="battle-royale"] .continuation-secondary .selection-settings { margin-left: auto; }
+
+.loadout-panel {
+  display: grid;
+  align-content: start;
+  gap: var(--ui-space-sm);
+  min-width: 0;
+  padding: var(--ui-space-md) var(--ui-space-md) var(--ui-space-lg);
+  border: 1px solid var(--ui-color-border);
+  border-radius: var(--ui-radius-panel);
+  background: linear-gradient(145deg, rgb(17 25 28 / 92%), rgb(7 12 15 / 90%));
+  box-shadow: 0 18px 60px rgb(0 0 0 / 32%);
+  backdrop-filter: blur(18px);
+  pointer-events: auto;
+}
+.loadout-panel[hidden] { display: none; }
+.loadout-heading {
+  margin: var(--ui-space-xs) 0 0;
+  color: var(--ui-color-text-heading);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: .98rem;
+  font-weight: 500;
+  letter-spacing: .04em;
+}
+.loadout-panel select, .loadout-panel input, .arena-route input {
+  min-width: 0;
+  min-height: 2.4rem;
+  padding: .4rem .5rem;
+  border: 1px solid var(--ui-color-border);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-color-panel-raised);
+  color: inherit;
+  font: inherit;
+  font-size: .85rem;
+}
+.loadout-panel :is(select, input):focus-visible, .arena-route input:focus-visible { outline: 2px solid var(--ui-color-focus); outline-offset: 1px; }
+
+/* Class: one tile per class, the chosen one gilded. */
+.arena-classes { grid-area: classes; align-self: start; overflow: auto; max-height: 100%; min-height: 0; }
+.arena-class-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ui-space-sm); }
+.arena-class-tile {
+  position: relative;
+  display: grid;
+  gap: .15rem;
+  padding: .6rem .65rem;
+  border: 1px solid var(--ui-color-border);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-color-panel-raised);
+  cursor: pointer;
+  transition: border-color var(--ui-motion-fast) ease, background var(--ui-motion-fast) ease;
+}
+.arena-class-tile:hover { border-color: var(--ui-color-border-strong); }
+.arena-class-tile input { position: absolute; opacity: 0; pointer-events: none; }
+.arena-class-tile strong { color: var(--ui-color-text-heading); font-family: Georgia, "Times New Roman", serif; font-size: .92rem; font-weight: 500; }
+.arena-class-tile small { color: var(--ui-color-text-muted); font-size: .7rem; line-height: 1.25; }
+.arena-class-tile:has(input:checked) {
+  border-color: var(--ui-color-gold);
+  background: linear-gradient(145deg, rgb(198 168 95 / 22%), rgb(198 168 95 / 6%)), var(--ui-color-panel-raised);
+  box-shadow: inset 3px 0 0 var(--ui-color-gold);
+}
+.arena-class-tile:has(input:focus-visible) { outline: 2px solid var(--ui-color-focus); outline-offset: 2px; }
+.arena-class-tile:has(input:disabled) { cursor: default; opacity: .6; }
+.arena-class-description { margin: 0; color: var(--ui-color-text-muted); font-size: .78rem; line-height: 1.4; }
+
+/* Equipment and look. */
+.arena-setup { width: 100%; text-align: left; }
+.arena-slots { display: grid; gap: var(--ui-space-xs) var(--ui-space-sm); margin: 0; padding: 0; border: 0; }
+.arena-slots label, .arena-look label {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: var(--ui-space-sm);
+  color: var(--ui-color-text-muted);
+  font-size: .78rem;
+}
+.arena-look { display: grid; gap: var(--ui-space-xs); }
+.arena-look-note { margin: 0; color: var(--ui-color-text-muted); font-size: .7rem; }
+
+/* Arena route in the bottom bar: Practice or Hosted, the server when hosted. */
+.arena-route { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-sm) var(--ui-space-md); }
+.arena-route[hidden] { display: none; }
+.arena-mode { display: inline-flex; border: 1px solid var(--ui-color-border); border-radius: var(--ui-radius-control); overflow: hidden; }
+.arena-mode label { position: relative; cursor: pointer; }
+.arena-mode input { position: absolute; opacity: 0; pointer-events: none; }
+.arena-mode span { display: block; padding: .5rem .8rem; color: var(--ui-color-text-muted); font-size: .8rem; transition: background var(--ui-motion-fast) ease; }
+.arena-mode input:checked + span { background: var(--ui-color-accent-fill); color: var(--ui-color-text); box-shadow: inset 0 -2px 0 var(--ui-color-gold); }
+.arena-mode input:focus-visible + span { outline: 2px solid var(--ui-color-focus); outline-offset: -2px; }
+.arena-hosted { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-sm); font-size: .78rem; color: var(--ui-color-text-muted); }
+.arena-hosted[hidden] { display: none; }
+.arena-hosted > label { display: flex; align-items: center; gap: var(--ui-space-sm); }
+.arena-hosted #arena-server { width: min(26rem, 60vw); }
+.arena-setup-note { flex-basis: 100%; margin: 0; color: var(--ui-color-text-muted); font-size: .72rem; }
+
+@media (max-width: 1000px) {
+  body[data-activity="battle-royale"] .character-select {
+    grid-template: "brand" max-content "preview" clamp(18rem, 46vh, 26rem) "actions" max-content "classes" max-content "sidebar" max-content / minmax(0, 1fr);
+  }
+  .arena-classes { overflow: visible; }
+}
+@media (max-width: 600px) {
+  .arena-class-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* The match status while playing. */
+.arena-status { position: fixed; z-index: 9; top: 5.5rem; left: 50%; transform: translateX(-50%); display: grid; gap: .25rem; text-align: center; padding: .6rem 1rem; color: var(--ui-color-text); background: #17231feb; border: 1px solid var(--ui-color-accent); border-radius: var(--ui-radius-control); pointer-events: auto; }
+.arena-status[hidden] { display: none; }
 .arena-status span { font-size: .85rem; }
-.arena-status button { color: inherit; background: #314e41; border: 1px solid #718d84; padding: .45rem; }
+.arena-status button { color: inherit; background: var(--ui-color-accent-fill); border: 1px solid var(--ui-color-accent); border-radius: var(--ui-radius-control); padding: .45rem; }
 @media (max-width: 600px) { .arena-status { top: 6rem; max-width: 85vw; } }
 body[data-activity="battle-royale"] .equipment-slot button,
 body[data-activity="battle-royale"] #loot-toggle,
