@@ -12,6 +12,7 @@ pub mod minimap;
 pub mod overlay;
 mod panels;
 pub mod settings;
+mod splash;
 pub mod theme;
 pub mod world_labels;
 pub mod world_map;
@@ -155,6 +156,8 @@ pub struct GameUi {
     pub quest_log_open: bool,
     /// The game menu (#636): Escape opens it when nothing else is open.
     pub game_menu_open: bool,
+    /// The opening splash, while it plays.
+    splash: Option<splash::Splash>,
     /// The open world map (M) and its camera.
     world_map: Option<world_map::WorldMapWindow>,
     chat_text: String,
@@ -193,6 +196,7 @@ impl GameUi {
             character_open: false,
             quest_log_open: false,
             game_menu_open: false,
+            splash: None,
             world_map: None,
             chat_text: String::new(),
             chat_focus_requested: false,
@@ -219,6 +223,11 @@ impl GameUi {
             floating: world_labels::FloatingTexts::default(),
             dismissed_loot: None,
         }
+    }
+
+    /// Plays the opening splash over the next frames (`content/ui/logo.json`).
+    pub fn play_splash(&mut self) {
+        self.splash = Some(splash::Splash::default());
     }
 
     /// Uses the loaded local roster, or shows why it could not be loaded and
@@ -379,6 +388,16 @@ impl GameUi {
         now: Instant,
     ) -> Vec<UiIntent> {
         let mut intents = Vec::new();
+        let reduced_motion = matches!(
+            self.settings.preferences.value(crate::settings::REDUCE_MOTION),
+            Ok(settings_core::SettingValue::Choice(value)) if value == "reduce"
+        );
+        if let Some(splash) = &mut self.splash
+            && splash.show(ctx, now, reduced_motion)
+        {
+            // The splash still covers the window: nothing beneath takes a click yet.
+            return intents;
+        }
         if frame.choosing {
             let selected = self
                 .roster

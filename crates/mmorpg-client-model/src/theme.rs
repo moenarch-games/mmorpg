@@ -57,6 +57,31 @@ pub struct Colors {
     pub focus: Rgba,
 }
 
+impl Colors {
+    /// The colour the theme file names `name` (as the logo refers to them).
+    #[must_use]
+    pub fn named(&self, name: &str) -> Option<Rgba> {
+        Some(match name {
+            "ink" => self.ink,
+            "panel" => self.panel,
+            "panel_raised" => self.panel_raised,
+            "border" => self.border,
+            "border_strong" => self.border_strong,
+            "gold" => self.gold,
+            "gold_bright" => self.gold_bright,
+            "gold_ink" => self.gold_ink,
+            "text" => self.text,
+            "text_heading" => self.text_heading,
+            "text_muted" => self.text_muted,
+            "accent" => self.accent,
+            "accent_fill" => self.accent_fill,
+            "danger" => self.danger,
+            "focus" => self.focus,
+            _ => return None,
+        })
+    }
+}
+
 /// Corner radii in logical pixels.
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]

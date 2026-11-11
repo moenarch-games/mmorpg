@@ -1,13 +1,26 @@
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { defineConfig, searchForWorkspaceRoot } from "vite";
+import { cpSync, mkdirSync, readFileSync } from "node:fs";
+import { defineConfig, searchForWorkspaceRoot, type Plugin } from "vite";
+import { logoSvg, splashHtml } from "./scripts/ui-logo";
 import { themeCss } from "./scripts/ui-theme";
 
-// The interface theme both clients share (content/ui/theme.json) as CSS custom properties.
-mkdirSync(new URL("./src/generated/", import.meta.url), { recursive: true });
-writeFileSync(
-  new URL("./src/generated/ui-theme.css", import.meta.url),
-  themeCss(readFileSync(new URL("../content/ui/theme.json", import.meta.url), "utf8")),
-);
+const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
+
+/**
+ * The interface theme and logo both clients share (content/ui/theme.json, logo.json), written into
+ * the page itself: the theme's CSS custom properties and the splash styles in the head, the opening
+ * splash and the stage loader's mark in the body. They paint before any script or stylesheet loads.
+ */
+const sharedInterface: Plugin = {
+  name: "mmorpg-shared-interface",
+  transformIndexHtml(html) {
+    if (!html.includes("<!--ui:splash-->")) { return html; }
+    const logo = read("../content/ui/logo.json");
+    return html
+      .replace("<!--ui:style-->", `<style>${themeCss(read("../content/ui/theme.json"))}${read("./src/splash.css")}</style>`)
+      .replace("<!--ui:splash-->", splashHtml(logo))
+      .replace("<!--ui:logo-mark-->", logoSvg(logo, false));
+  },
+};
 
 // Use the transcoder shipped with the pinned Three.js KTX2Loader.
 mkdirSync(new URL("./public/basis/", import.meta.url), { recursive: true });
@@ -29,6 +42,7 @@ if (Boolean(certificate) !== Boolean(privateKey)) {
 
 export default defineConfig({
   base: "/mmorpg/",
+  plugins: [sharedInterface],
   // The Maps library's WASM loader finds the .wasm beside its own module (new URL(..., import.meta.url)),
   // which dependency pre-bundling would move away from it; the rest of the library is pre-bundled.
   optimizeDeps: { exclude: ["@moritzbrantner/maps/wasm"] },

@@ -6,8 +6,10 @@
     <meta name="theme-color" content="#11161c" />
     <meta name="description" content="Single-player browser tech demo for the mmorpg repository: the shared Rust zone simulation runs in the page through WebAssembly." />
     <title>MMORPG · character selection</title>
+    <!--ui:style-->
   </head>
   <body>
+    <!--ui:splash-->
     <main id="app">
       <div id="sky" class="sky" aria-hidden="true" hidden><div class="sky-clouds"></div></div>
       <canvas id="world" tabindex="-1" aria-label="3D MMORPG character and world preview"></canvas>
@@ -28,7 +30,7 @@
             aria-valuemin="0" aria-valuemax="359" aria-valuenow="0"
             aria-valuetext="0 degrees from front" aria-describedby="turntable-hint">
             <div id="character-stage-loader" class="stage-loader" data-state="loading" role="status" aria-busy="true">
-              <span class="stage-loader-sigil" aria-hidden="true"><span class="sigil-ring"></span><span class="sigil-arc"></span><span class="sigil-gem"></span></span>
+              <span class="stage-loader-sigil" aria-hidden="true"><!--ui:logo-mark--><span class="sigil-arc"></span></span>
               <p id="character-stage-loader-text" class="stage-loader-text">Preparing your character…</p>
             </div>
           </div>

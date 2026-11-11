@@ -22,6 +22,15 @@ The browser and the native client draw the same selection screens from one descr
 - Colours, corner radii, spacing, text sizes and motion timings come from
   `content/ui/theme.json`: the browser build turns it into `--ui-*` CSS custom properties,
   the native client into egui visuals (`ui/theme.rs`). Change the look of both there.
+- **The logo opens the game.** `content/ui/logo.json` defines the Greyhaven crest (a double
+  ring, the vale's peaks, the keep and the waystone gem) and its opening timeline. The browser
+  writes it as inline SVG into `index.html` at build time (`web/scripts/ui-logo.ts`, with the
+  theme and `src/splash.css` in the head), so the splash paints before any script loads; the
+  native window paints the same shapes with egui (`ui/splash.rs`, `mmorpg_client_model::logo`).
+  The crest draws on, the gem lights, the title settles, and after about 3.3 s the splash
+  dissolves into the selection screen; a click (or, in the browser, a key) skips it, and reduced
+  motion shows the finished crest, then fades. The browser's stage loader turns its arc around
+  the same crest.
 - **The stage shows only the real character.** The browser veils its stage with a turning
   gold sigil ("Preparing your character…") until the real model can stand there in its class
   outfit (at most 1.5 s more for the outfit), then lifts the veil; there is no stand-in figure.

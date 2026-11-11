@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "title": "GREYHAVEN",
+  "subtitle": "MMORPG",
+  "timeline_ms": {
+    "ring": [0, 1100],
+    "land": [450, 1650],
+    "gem": [1450, 1950],
+    "title": [1600, 2300],
+    "hold": 2700,
+    "fade": 650
+  },
+  "shapes": [
+    { "kind": "circle", "centre": [50, 50], "radius": 46, "width": 2.2, "color": "gold", "phase": "ring" },
+    { "kind": "circle", "centre": [50, 50], "radius": 41.5, "width": 0.8, "color": "border_strong", "phase": "ring" },
+    { "kind": "line", "points": [[17, 70], [83, 70]], "width": 1.6, "color": "gold", "phase": "land" },
+    { "kind": "line", "points": [[19, 70], [31, 47], [38, 56], [43.5, 48.5]], "width": 1.8, "color": "gold", "phase": "land" },
+    { "kind": "line", "points": [[81, 70], [69, 47], [62, 56], [56.5, 48.5]], "width": 1.8, "color": "gold", "phase": "land" },
+    { "kind": "outline", "points": [[44, 70], [44, 45], [50, 33], [56, 45], [56, 70]], "width": 1.9, "color": "gold_bright", "phase": "land" },
+    { "kind": "line", "points": [[50, 49], [50, 57]], "width": 1.8, "color": "gold_bright", "phase": "land" },
+    { "kind": "fill", "points": [[50, 16.5], [54.5, 22.5], [50, 28.5], [45.5, 22.5]], "color": "gold_bright", "phase": "gem" }
+  ]
+}

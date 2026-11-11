@@ -1070,7 +1070,19 @@ mod tests {
             context.set_pixels_per_point(scale);
             let mut paint = EguiPaint::default();
             // Passes advance time so window layout and fade-in animations settle.
+            // The opening splash at this many milliseconds, over the selection stage.
+            let splash_ms = std::env::var("MMORPG_NATIVE_SPLASH_EVIDENCE_MS")
+                .ok()
+                .and_then(|ms| ms.parse::<u64>().ok());
+            if splash_ms.is_some() {
+                ui.play_splash();
+            }
             for pass in 0..10 {
+                let at = splash_ms.map_or(now, |ms| {
+                    now + std::time::Duration::from_millis(
+                        ms * u64::try_from(pass).unwrap_or(0) / 9,
+                    )
+                });
                 let input = egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
                         egui::Pos2::ZERO,
@@ -1086,7 +1098,7 @@ mod tests {
                     ..Default::default()
                 };
                 let output = context.run_pass(input, |ctx| {
-                    let intents = ui.show(ctx, &ui_frame, &mut npc, now);
+                    let intents = ui.show(ctx, &ui_frame, &mut npc, at);
                     assert!(intents.is_empty(), "showing alone sends nothing");
                 });
                 let _ = paint.prepare(&context, output);
@@ -1102,6 +1114,8 @@ mod tests {
                     "warden.ppm"
                 } else if world_map_evidence {
                     "world-map.ppm"
+                } else if splash_ms.is_some() {
+                    "splash.ppm"
                 } else if selection_evidence {
                     "selection.ppm"
                 } else if settings_evidence {

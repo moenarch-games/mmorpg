@@ -70,6 +70,10 @@ pub fn run(
         }
     };
     let mut ui = GameUi::new(&scenery);
+    if stage.is_some() {
+        // The window opens on the logo, which dissolves into the selection stage.
+        ui.play_splash();
+    }
     if character.is_none() {
         // The local roster offers its characters; `--class` skips it.
         ui.set_roster(

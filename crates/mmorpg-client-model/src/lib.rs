@@ -2,7 +2,7 @@
 //! chat and quest windows show for a received projection, how a typed chat
 //! line becomes a command, and which movement commands the current input
 //! needs, when a held power shot fires, who owns the mouse, and the front end
-//! (selection modes, game menu, class cards) and theme both clients draw.
+//! (selection modes, game menu, class cards), theme and logo both clients draw.
 //!
 //! Everything here is a plain function or struct over `mmorpg-core` types and
 //! local input, with no I/O and no rendering. The native client calls it
@@ -14,6 +14,7 @@
 pub mod chat;
 pub mod front_end;
 pub mod hud;
+pub mod logo;
 pub mod mouse_owner;
 pub mod outbox;
 pub mod party;

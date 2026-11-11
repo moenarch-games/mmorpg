@@ -34,7 +34,6 @@ import {
   type CharacterPreview,
   type EntryState,
 } from "./character-selection";
-import "./generated/ui-theme.css";
 import "./styles.css";
 import { frameDeltaSeconds } from "./demo-clock";
 import { markStartup, startupMarks } from "./startup-marks";
@@ -94,6 +93,21 @@ function requireElement<T extends Element>(selector: string): T {
     throw new Error(`Tech demo shell is missing ${selector}`);
   }
   return element;
+}
+
+// The opening splash (index.html, content/ui/logo.json) plays on its own in CSS; a click, tap or
+// key skips it, and it leaves the page once faded.
+const splash = document.querySelector<HTMLElement>("#splash");
+if (splash) {
+  const skip = () => { splash.dataset.skipped = "true"; };
+  for (const type of ["pointerdown", "keydown"] as const) {
+    window.addEventListener(type, skip, { once: true, capture: true });
+  }
+  splash.addEventListener("animationend", (event) => {
+    if (event.target !== splash) { return; }
+    splash.remove();
+    for (const type of ["pointerdown", "keydown"] as const) { window.removeEventListener(type, skip, { capture: true }); }
+  });
 }
 
 const canvas = requireElement<HTMLCanvasElement>("#world");

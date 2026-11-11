@@ -1,0 +1,77 @@
+/*
+ * The opening splash (content/ui/logo.json): the logo draws itself on, the gem lights, the title
+ * settles, then the splash dissolves into the selection screen while the game loads beneath it.
+ * Vite inlines this file into index.html with the theme, so it paints before any script runs; a
+ * click or key skips it (main.ts), reduced motion shows the finished logo and fades.
+ */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: .9rem;
+  background:
+    radial-gradient(ellipse 45% 40% at 50% 44%, rgb(198 168 95 / 9%), transparent 70%),
+    radial-gradient(ellipse at 50% 45%, #182220 0%, var(--ui-color-ink) 68%);
+  color: var(--ui-color-text-heading);
+  font-family: Georgia, "Times New Roman", serif;
+  animation: splash-out var(--fade) ease var(--hold) forwards;
+}
+.splash[data-skipped] { animation: splash-out 260ms ease forwards; }
+.splash-mark .logo {
+  display: block;
+  width: min(36vmin, 13.5rem);
+  height: auto;
+  overflow: visible;
+  filter: drop-shadow(0 0 1.1rem rgb(198 168 95 / 22%));
+}
+.splash .logo-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: logo-draw var(--length) cubic-bezier(.33, 1, .68, 1) var(--start) forwards;
+}
+.splash .logo-gem {
+  opacity: 0;
+  transform: scale(.3);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: logo-gem var(--length) cubic-bezier(.34, 1.56, .64, 1) var(--start) forwards;
+}
+.splash-title, .splash-subtitle {
+  margin: 0;
+  opacity: 0;
+  animation: title-in var(--length) cubic-bezier(.33, 1, .68, 1) var(--start) forwards;
+}
+.splash-title {
+  margin-top: .4rem;
+  padding-left: .6em;
+  font-size: clamp(1.35rem, 4.4vmin, 2.15rem);
+  font-weight: 400;
+  letter-spacing: .6em;
+  text-shadow: 0 0 1.4rem rgb(229 207 134 / 25%);
+}
+.splash-subtitle {
+  padding-left: .55em;
+  color: var(--ui-color-text-muted);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: .68rem;
+  letter-spacing: .55em;
+}
+@keyframes logo-draw { to { stroke-dashoffset: 0; } }
+@keyframes logo-gem {
+  65% { opacity: 1; transform: scale(1.25); filter: drop-shadow(0 0 .5rem var(--ui-color-gold-bright)); }
+  to { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 .2rem var(--ui-color-gold)); }
+}
+@keyframes title-in { from { opacity: 0; transform: translateY(.45rem); } to { opacity: 1; transform: none; } }
+@keyframes splash-out { to { opacity: 0; visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) {
+  .splash .logo-draw, .splash .logo-gem, .splash-title, .splash-subtitle {
+    animation: none;
+    stroke-dashoffset: 0;
+    opacity: 1;
+    transform: none;
+  }
+  .splash { animation: splash-out 400ms ease 900ms forwards; }
+}
