@@ -45,3 +45,5 @@ Recorded measurement environment: Rust 1.98.1, `Cargo.lock` SHA-256 `36adf21ccc4
 | `tick-maintenance` | stationary population, players crossing a cell boundary | no full index rebuild; bucket writes constant in population and linear in movers; position re-reads linear |
 
 The checks hold at the declared scale points only; they are executable architectural budgets, not a proof of asymptotic complexity. Physics work is counted by the zone's Rapier step statistics (#271).
+
+The client presentation has its own operations in the same contract: see [presentation workloads](PRESENTATION_WORKLOADS.md) (#645).
