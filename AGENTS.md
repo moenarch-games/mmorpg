@@ -63,6 +63,7 @@ python3 scripts/smoke-handoff.py     # two handoff hosts on PostgreSQL 17 (Docke
 python3 scripts/smoke-browser.py     # real Chromium against the built web/dist (needs Playwright)
 python3 scripts/smoke-browser-online.py  # two Chromium pages join one real zone host over WebTransport
 python3 scripts/profile-browser.py --out artifacts/profile/report.json --trace artifacts/profile  # opt-in Greyhaven frame phases, input latency, GPU time (#546)
+python3 scripts/capture-browser-reference.py docs/reviews/greyhaven-reference/views.json --out artifacts/greyhaven-reference  # browser at the native reference shots' poses (render-engine#74)
 cargo run -p mmorpg-world-studio     # web app for the whole map, Krita and agent workflow (docs/WORLD_STUDIO.md)
 cargo run -p mmorpg-world-studio -- capture --tiles     # the same capture from the command line: layered Krita documents, masks and map tiles
 cargo run -p mmorpg-world-studio -- import <region>.ora # painted height and biome layers into content/greyhaven/paint/
