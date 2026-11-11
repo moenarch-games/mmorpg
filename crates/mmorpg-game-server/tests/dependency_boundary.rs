@@ -87,14 +87,15 @@ fn hosts_never_link_presentation_scenery() {
 const CLIENT_MODEL: &str = "mmorpg-client-model";
 
 /// The shared client rules (#543) are pure: core gameplay types in, views and
-/// commands out, with no I/O, rendering or presentation data. `mmorpg-protocol`
-/// is its test-only wire codec (the lockfile lists dev-dependencies too).
+/// commands out, with no I/O, rendering or presentation data. `serde_json` reads
+/// the committed world-map export from a string. `mmorpg-protocol` is its
+/// test-only wire codec (the lockfile lists dev-dependencies too).
 #[test]
 fn the_client_model_holds_only_client_rules_over_core() {
     let graph = dependency_graph(LOCKFILE);
     assert_eq!(
         graph.get(CLIENT_MODEL),
-        Some(&vec!["mmorpg-core", "mmorpg-protocol", "strum"])
+        Some(&vec!["mmorpg-core", "mmorpg-protocol", "serde_json", "strum"])
     );
     const MANIFEST: &str = include_str!("../../mmorpg-client-model/Cargo.toml");
     let (normal, dev) = MANIFEST
