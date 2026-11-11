@@ -5,14 +5,16 @@
 //! depths record (`thorn_defeated` u8, receipt run u64, credited u8, drops u8) ·
 //! health u32 · resource u16 · resource ticks u16 · mana delay u16 · global
 //! cooldown u16 · cooldown count u8 · (ability u8 · remaining u16)* · zone
-//! u32 · position 3 × i32 · facing u16`, big-endian. The decoder is strict:
+//! u32 · position 3 × i32 · facing u16 · physique`, big-endian (physique: see
+//! [`encode_physique`]). The decoder is strict:
 //! another version or schema, a truncated or over-long payload or an invalid
 //! field fails closed. Gameplay validity against content is checked when a
 //! zone admits the record.
 
 use mmorpg_core::{
     AbilityId, CHARACTER_RECORD_SCHEMA_VERSION, CharacterId, CharacterLocation, CharacterRecord,
-    ClassChoice, Cooldown, DepthsRecord, MAX_CHARACTER_ID_BYTES, MAX_COOLDOWNS, QuestLog, ZoneId,
+    ClassChoice, Cooldown, DepthsRecord, MAX_CHARACTER_ID_BYTES, MAX_COOLDOWNS, PHYSIQUE_PARAMS,
+    Physique, QuestLog, ZoneId,
 };
 
 use crate::ProtocolError;
@@ -74,6 +76,7 @@ pub fn encode_character_record(record: &CharacterRecord) -> Result<Vec<u8>, Prot
         payload.extend_from_slice(&component.to_be_bytes());
     }
     payload.extend_from_slice(&location.facing.to_be_bytes());
+    encode_physique(&mut payload, &record.physique);
     Ok(payload)
 }
 
@@ -84,11 +87,16 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
             "unsupported character record wire version",
         ));
     }
-    if u16::from_be_bytes(take(payload, offset)?) != CHARACTER_RECORD_SCHEMA_VERSION {
-        return Err(ProtocolError::new(
-            "unsupported character record schema version",
-        ));
-    }
+    let schema = u16::from_be_bytes(take(payload, offset)?);
+    let has_physique = match schema {
+        CHARACTER_RECORD_SCHEMA_VERSION => true,
+        PRE_PHYSIQUE_SCHEMA_VERSION => false,
+        _ => {
+            return Err(ProtocolError::new(
+                "unsupported character record schema version",
+            ));
+        }
+    };
     let id_length = decode_u8_count(
         payload,
         offset,
@@ -136,6 +144,11 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
     let zone_id = ZoneId::new(u32::from_be_bytes(take(payload, offset)?));
     let position = read_vector(payload, offset)?;
     let facing = u16::from_be_bytes(take(payload, offset)?);
+    let physique = if has_physique {
+        decode_physique(payload, offset)?
+    } else {
+        Physique::NEUTRAL
+    };
     if *offset != payload.len() {
         return Err(ProtocolError::new(
             "character record contains trailing bytes",
@@ -163,7 +176,42 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
             position,
             facing,
         },
+        physique,
     })
+}
+
+/// The record schema before physique (#633). Such records still load, with every slider neutral;
+/// they are written again in the current schema.
+const PRE_PHYSIQUE_SCHEMA_VERSION: u16 = 0x6671;
+
+/// Physique (#633): `count u8 · count × value u16`, each value at most
+/// [`mmorpg_core::PHYSIQUE_SCALE`], in canonical parameter order. A shorter list (such as a
+/// five-slider record) leaves the missing sliders neutral; more than eleven values fail closed.
+pub(crate) fn encode_physique(payload: &mut Vec<u8>, physique: &Physique) {
+    let values = physique.fixed();
+    // Eleven values: always fits.
+    #[allow(clippy::cast_possible_truncation)]
+    payload.push(values.len() as u8);
+    for value in values {
+        payload.extend_from_slice(&value.to_be_bytes());
+    }
+}
+
+pub(crate) fn decode_physique(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Physique, ProtocolError> {
+    let count = decode_u8_count(
+        payload,
+        offset,
+        PHYSIQUE_PARAMS,
+        "physique has too many values",
+    )?;
+    let mut values = Physique::NEUTRAL.fixed();
+    for value in values.iter_mut().take(count) {
+        *value = u16::from_be_bytes(take(payload, offset)?);
+    }
+    Physique::from_fixed(values).map_err(|_| ProtocolError::new("physique value is out of range"))
 }
 
 /// `thorn_defeated` u8 · receipt run u64 · credited u8 · drops u8.

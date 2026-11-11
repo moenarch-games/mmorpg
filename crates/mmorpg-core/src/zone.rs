@@ -160,6 +160,8 @@ pub(crate) struct PlayerState {
     /// depths receipts (#404).
     pub(crate) character: Option<crate::CharacterId>,
     pub(crate) depths: crate::DepthsRecord,
+    /// Physique sliders (#633); their stat effect is derived, never stored.
+    pub(crate) physique: crate::Physique,
 }
 
 impl PlayerState {
@@ -213,6 +215,7 @@ impl PlayerState {
             waystones: crate::WaystoneSet::EMPTY,
             character: None,
             depths: crate::DepthsRecord::default(),
+            physique: crate::Physique::NEUTRAL,
         }
     }
 
@@ -220,9 +223,9 @@ impl PlayerState {
         self.health > 0
     }
 
-    /// Level health plus the equipped stamina's bonus.
+    /// Level health plus the equipped stamina's bonus, adjusted by physique (#633).
     pub(crate) fn max_health(&self) -> u32 {
-        player_max_health(self.level) + self.equipment.totals().bonus_health()
+        crate::physique::max_health(self.level, &self.equipment, &self.physique)
     }
 
     /// The class damage bonus of the equipped primary stat.
@@ -236,7 +239,12 @@ impl PlayerState {
     pub(crate) fn melee_damage(&self) -> [u16; 2] {
         let [low, high] = crate::unit::player_damage(self.level);
         let bonus = self.damage_bonus();
-        [low + bonus, high + bonus]
+        [low + bonus, high + bonus].map(|end| {
+            let scaled = self
+                .physique
+                .apply(crate::PhysiqueAttribute::MeleeDamage, u32::from(end));
+            u16::try_from(scaled).unwrap_or(u16::MAX)
+        })
     }
 }
 

@@ -303,6 +303,8 @@ pub struct CanonicalPlayerSnapshot {
     /// The durable character this session plays and its depths receipts (#404).
     pub character: Option<crate::CharacterId>,
     pub depths: crate::DepthsRecord,
+    /// Physique sliders (#633).
+    pub physique: crate::Physique,
 }
 
 /// A creature; `position` is its body or corpse, zero once despawned, and
@@ -444,6 +446,7 @@ impl ZoneSimulation {
                     waystones: state.waystones,
                     character: state.character.clone(),
                     depths: state.depths,
+                    physique: state.physique,
                 })
             })
             .collect::<Result<Vec<_>, ZoneError>>()?;
@@ -717,7 +720,8 @@ impl ZoneSimulation {
         if player.inventory_revision == 0 {
             return Err(ZoneError::new("player inventory revision is invalid"));
         }
-        let max_health = player_max_health(combat.level) + player.equipment.totals().bonus_health();
+        let max_health =
+            crate::physique::max_health(combat.level, &player.equipment, &player.physique);
         if !crate::progression::valid_progression(combat.level, combat.experience)
             || combat.health > max_health
         {
@@ -863,6 +867,7 @@ impl ZoneSimulation {
                 waystones: player.waystones,
                 character: player.character,
                 depths: player.depths,
+                physique: player.physique,
             },
         );
         Ok(())
@@ -1243,8 +1248,10 @@ fn validate_auras(auras: &[Aura]) -> Result<(), ZoneError> {
                 },
             ) => (1..=crate::ability::scaled(base, per_level, top)).contains(&aura.amount),
             Some(crate::AbilityEffect::HealOverTime { percent, .. }) => {
-                let most_health = player_max_health(top)
-                    + u32::from(crate::MAX_EQUIPPED_STAMINA) * crate::HEALTH_PER_STAMINA;
+                let most_health = crate::physique::most(
+                    player_max_health(top)
+                        + u32::from(crate::MAX_EQUIPPED_STAMINA) * crate::HEALTH_PER_STAMINA,
+                );
                 let most = crate::unit::percent_of(most_health, u32::from(percent));
                 aura.amount > 0 && u32::from(aura.amount) <= most
             }

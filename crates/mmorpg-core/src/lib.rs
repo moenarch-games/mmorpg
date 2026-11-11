@@ -47,6 +47,7 @@ mod nav;
 mod party;
 #[cfg(feature = "physics-ab")]
 pub mod physics_ab;
+mod physique;
 mod platform;
 mod progression;
 mod projectile;
@@ -134,6 +135,11 @@ pub use ephemeral::EphemeralCharacterBuild;
 pub use equipment::{
     EQUIPMENT_SLOTS, Equipment, EquipmentSlot, HEALTH_PER_STAMINA, ItemStats, MAX_EQUIPPED_STAMINA,
     PRIMARY_STAT_PER_DAMAGE, StatTotals,
+};
+pub use physique::{
+    InvalidPhysique, MAX_PHYSIQUE_MODIFIER_BP, PHYSIQUE_ATTRIBUTES, PHYSIQUE_COEFFICIENTS,
+    PHYSIQUE_NEUTRAL, PHYSIQUE_PARAMS, PHYSIQUE_SCALE, PHYSIQUE_STAT_PARAMS, Physique,
+    PhysiqueAttribute, PhysiqueParam, PhysiquePreset,
 };
 pub use events::{ErrorCode, MAX_EVENTS_PER_PLAYER, ZoneEvent};
 pub use forced::{

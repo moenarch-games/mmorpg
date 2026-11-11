@@ -73,6 +73,7 @@ fn measure(name: &str) -> Result<(), Box<dyn Error>> {
             waystones: mmorpg_core::WaystoneSet::EMPTY,
             character: None,
             depths: mmorpg_core::DepthsRecord::default(),
+            physique: mmorpg_core::Physique::NEUTRAL,
         });
     }
     let mut zone = ZoneSimulation::from_snapshot(canonical, Arc::clone(empty.content()))?;
