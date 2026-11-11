@@ -19,7 +19,6 @@ use crate::physics::{RigidBody, Vec3i};
 
 use crate::entity::body_id;
 use crate::snapshot::{CanonicalPlayerAbilities, validate_player_abilities};
-use crate::unit::player_max_health;
 use crate::zone::{PLAYER_HALF_EXTENTS, PlayerState, vector, within_world_limits};
 use crate::{
     ClassChoice, Cooldown, EntityRef, Equipment, Inventory, MAX_PLAYERS_PER_ZONE, PlayerId,
@@ -29,7 +28,7 @@ use crate::{
 /// Identity of the [`CharacterRecord`] schema: a random token (ADR 0006), replaced with a
 /// fresh one on every change to the record's fields or their meaning; persisted records of
 /// another schema are rejected rather than reinterpreted.
-pub const CHARACTER_RECORD_SCHEMA_VERSION: u16 = 0x6671;
+pub const CHARACTER_RECORD_SCHEMA_VERSION: u16 = 0x9d41;
 
 /// Longest [`CharacterId`] in bytes.
 pub const MAX_CHARACTER_ID_BYTES: usize = 64;
@@ -102,6 +101,8 @@ pub struct CharacterRecord {
     /// Running cooldowns in ability order.
     pub cooldowns: Vec<Cooldown>,
     pub location: CharacterLocation,
+    /// Physique sliders (#633); records saved before physique load neutral.
+    pub physique: crate::Physique,
 }
 
 /// The durable receipts a character holds for its Redbrand Depths runs (#404 part 3), written in
@@ -186,6 +187,7 @@ impl ZoneSimulation {
                 position: [position.x, position.y, position.z],
                 facing: player.facing,
             },
+            physique: player.physique,
         })
     }
 
@@ -263,6 +265,7 @@ impl ZoneSimulation {
         state.quests = record.quests.clone();
         state.waystones = record.waystones;
         state.depths = record.depths;
+        state.physique = record.physique;
         state.character = Some(record.character_id.clone());
         state.health = record.health;
         state.resource.value = record.resource;
@@ -298,7 +301,8 @@ impl ZoneSimulation {
                 "a class player needs content that binds the ability catalog",
             ));
         }
-        let max_health = player_max_health(record.level) + record.equipment.totals().bonus_health();
+        let max_health =
+            crate::physique::max_health(record.level, &record.equipment, &record.physique);
         if !crate::progression::valid_progression(record.level, record.experience)
             || record.health > max_health
         {

@@ -47,6 +47,7 @@ mod nav;
 mod party;
 #[cfg(feature = "physics-ab")]
 pub mod physics_ab;
+mod physique;
 mod platform;
 mod progression;
 mod projectile;
@@ -166,6 +167,11 @@ pub use nav::NAV_CELL_UNITS;
 pub use party::{
     MAX_PARTY_MEMBERS, MAX_PARTY_NAME_BYTES, PartyInvite, PartyMember, PartyRefusal, PartyRoster,
     PartyState, valid_name as valid_party_name,
+};
+pub use physique::{
+    InvalidPhysique, MAX_PHYSIQUE_MODIFIER_BP, PHYSIQUE_ATTRIBUTES, PHYSIQUE_COEFFICIENTS,
+    PHYSIQUE_NEUTRAL, PHYSIQUE_PARAMS, PHYSIQUE_SCALE, PHYSIQUE_STAT_PARAMS, Physique,
+    PhysiqueAttribute, PhysiqueParam, PhysiquePreset,
 };
 pub use platform::{MAX_PLATFORMS, Platform, PlatformId, PlatformPhase};
 pub use progression::{MAX_PLAYER_LEVEL, experience_to_next_level, kill_experience};

@@ -363,6 +363,7 @@ fn encode_player(
     payload.extend_from_slice(&player.waystones.bits().to_be_bytes());
     crate::character::encode_optional_character(payload, player.character.as_ref())?;
     crate::character::encode_depths_record(payload, player.depths);
+    crate::character::encode_physique(payload, &player.physique);
     Ok(())
 }
 
@@ -1274,11 +1275,13 @@ fn decode_player(
     let waystones = crate::wire::decode_waystones(u32::from_be_bytes(take(payload, offset)?))?;
     let character = crate::character::decode_optional_character(payload, offset)?;
     let depths = crate::character::decode_depths_record(payload, offset)?;
+    let physique = crate::character::decode_physique(payload, offset)?;
     Ok(CanonicalPlayerSnapshot {
         quests,
         waystones,
         character,
         depths,
+        physique,
         chat_ready_at,
         chat,
         player_id,
@@ -2143,6 +2146,7 @@ mod tests {
                     waystones: mmorpg_core::WaystoneSet::EMPTY,
                     character: None,
                     depths: mmorpg_core::DepthsRecord::default(),
+                    physique: mmorpg_core::PhysiquePreset::Heavyset.physique(),
                 },
                 CanonicalPlayerSnapshot {
                     chat_ready_at: 0,
@@ -2167,6 +2171,7 @@ mod tests {
                     waystones: mmorpg_core::WaystoneSet::EMPTY,
                     character: None,
                     depths: mmorpg_core::DepthsRecord::default(),
+                    physique: mmorpg_core::Physique::NEUTRAL,
                 },
             ],
             creatures: vec![

@@ -145,6 +145,7 @@ pub fn initial_zone(fixture: Fixture) -> Result<ZoneSimulation, Box<dyn Error>> 
             waystones: mmorpg_core::WaystoneSet::EMPTY,
             character: None,
             depths: mmorpg_core::DepthsRecord::default(),
+            physique: mmorpg_core::Physique::NEUTRAL,
         });
     }
     Ok(ZoneSimulation::from_snapshot(state, content)?)

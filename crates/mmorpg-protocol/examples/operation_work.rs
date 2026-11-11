@@ -56,6 +56,7 @@ fn player(
         waystones: mmorpg_core::WaystoneSet::EMPTY,
         character: None,
         depths: mmorpg_core::DepthsRecord::default(),
+        physique: mmorpg_core::Physique::NEUTRAL,
     })
 }
 
