@@ -7,6 +7,7 @@ import {
   type CharacterPreview,
 } from "./character-selection";
 import { storageKeyForCharacter } from "./character-customization";
+import { pendingPhysiqueKey } from "./physique";
 import { bindingProfileKey } from "./settings/binding-profiles";
 import { characterEntryKey } from "./world/local-characters";
 
@@ -126,7 +127,7 @@ export function saveCreatedCharacters(
 }
 
 /**
- * True while a stored character entry, a legacy game checkpoint, an appearance save or a key-binding profile still exists for `characterId`.
+ * True while a stored character entry, a legacy game checkpoint, an appearance save, a pending physique or a key-binding profile still exists for `characterId`.
  * Such an identity must not be reissued to a new character, even when the roster
  * entry itself was lost or reset. Unreadable storage retains nothing.
  */
@@ -135,6 +136,7 @@ export function hasRetainedCharacterSaves(storage: CharacterRosterStorage, chara
     return storage.getItem(characterEntryKey(characterId)) !== null ||
       storage.getItem(legacyCheckpointKey(characterId)) !== null ||
       storage.getItem(storageKeyForCharacter(characterId)) !== null ||
+      storage.getItem(pendingPhysiqueKey(characterId)) !== null ||
       storage.getItem(bindingProfileKey(characterId)) !== null;
   } catch {
     return false;

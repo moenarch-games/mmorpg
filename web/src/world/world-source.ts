@@ -16,8 +16,10 @@ export type LinkState = "connected" | "reconnecting" | "travelling";
  * The character to enter as. `id` names the durable character; a local zone
  * leases and resumes it. Online clients resolve a persistent alias for the
  * roster slot and claim the host's durable record when character storage is enabled.
+ * `physique` holds the fixed-point sliders a never-stored local character is
+ * created with (#634); a stored one keeps its own.
  */
-export type JoinCharacter = { name?: string; id: string; classId: "warden" | "ranger" | "arcanist" | "necromancer" | "rogue" | "cleric" | "druid"; sex: "female" | "male" };
+export type JoinCharacter = { name?: string; id: string; classId: "warden" | "ranger" | "arcanist" | "necromancer" | "rogue" | "cleric" | "druid"; sex: "female" | "male"; physique?: readonly number[] };
 
 /** The default entry character: a male Warden, like the native client. */
 export const DEFAULT_JOIN_CHARACTER: JoinCharacter = { id: "default-warden", classId: "warden", sex: "male" };
