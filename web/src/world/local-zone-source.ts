@@ -7,7 +7,7 @@ import { classChoiceCodes, DEFAULT_JOIN_CHARACTER, type JoinCharacter, type Link
 /** The subset of the wasm-bindgen `LocalZone` this source drives. */
 export type LocalZoneHandle = {
   /** Leases and spawns a stored character, creating it with the class choice if it was never stored. */
-  enter(entries: CharacterEntries, characterId: string, classId: number, sex: number, zoneEpoch: bigint): number;
+  enter(entries: CharacterEntries, characterId: string, classId: number, sex: number, zoneEpoch: bigint, physique?: Uint16Array): number;
   /** Commits the player's character. */
   save(entries: CharacterEntries, player: number): bigint;
   /** Commits and releases the player's character and removes its unit. */
@@ -115,7 +115,8 @@ export class LocalZoneSource implements WorldSource {
         }
         zone = this.#openWorld();
         const choice = classChoiceCodes(character);
-        player = zone.enter(this.#characters.entries, character.id, choice.classId, choice.sex, this.#characters.nextZoneEpoch());
+        const physique = character.physique ? Uint16Array.from(character.physique) : undefined;
+        player = zone.enter(this.#characters.entries, character.id, choice.classId, choice.sex, this.#characters.nextZoneEpoch(), physique);
       } catch (error) {
         releaseBoth();
         throw error;

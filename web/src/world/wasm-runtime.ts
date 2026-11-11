@@ -9,6 +9,7 @@ import { markStartup } from "../startup-marks";
 import type { ActionGraph, LabOptions, LabSetup } from "./action-lab";
 import type { ConfigCheck, LabComparison, LabConfig, LabNetwork, LabRun, LabScenario } from "./lab-experiment";
 import type { ZoneWorld } from "./world-source";
+import type { PhysiqueModel } from "../physique";
 
 /** The derived-cache name of the presented scenery's terrain grids. */
 const TERRAIN_GRIDS = "terrain-grids";
@@ -120,6 +121,35 @@ export function committedArea(characters: LocalCharacters, characterId: string):
 /** The committed level of a stored local character, or null if it was never played. */
 export function committedLevel(characters: LocalCharacters, characterId: string): number | null {
   return generated.committedLevel(characters.entries, characterId) ?? null;
+}
+
+/** `mmorpg-core`'s physique model (#634): sliders, bound and preset vectors; call after the module loaded. */
+export function physiqueModel(): PhysiqueModel {
+  return JSON.parse(generated.physiqueModel()) as PhysiqueModel;
+}
+
+/** `mmorpg-core`'s combined, clamped modifiers of `values` in basis points, in `PhysiqueModel.attributes` order. */
+export function physiqueModifiers(values: readonly number[]): number[] {
+  return Array.from(generated.physiqueModifiers(Uint16Array.from(values)));
+}
+
+/** The committed physique of a stored local character, or null if it was never played. */
+export function committedPhysique(characters: LocalCharacters, characterId: string): number[] | null {
+  const values = generated.committedPhysique(characters.entries, characterId);
+  return values ? Array.from(values) : null;
+}
+
+/**
+ * Saves `values` to a stored local character under its lease while this tab holds it; rejects
+ * while another tab plays it. Resolves false, changing nothing, for a character never stored.
+ */
+export async function customizePhysique(characters: LocalCharacters, characterId: string, values: readonly number[]): Promise<boolean> {
+  const release = await characters.hold(characterId);
+  try {
+    return generated.customizePhysique(characters.entries, characterId, Uint16Array.from(values), characters.nextZoneEpoch());
+  } finally {
+    release();
+  }
 }
 
 /**

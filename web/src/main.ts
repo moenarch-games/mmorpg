@@ -49,7 +49,8 @@ import {
 import { characterVisualProfile, type CharacterVisualProfile } from "./character-visuals";
 import type { LocalWorld } from "./world/local-world";
 import { LocalCharacters, VisitStorage } from "./world/local-characters";
-import { actionLabDefinitions, committedArea, committedLevel, createScenarioWorld, labExperiments, loadLocalWorld, presentZone, soundManifest } from "./world/wasm-runtime";
+import { actionLabDefinitions, committedArea, committedLevel, committedPhysique, createScenarioWorld, customizePhysique, labExperiments, loadLocalWorld, physiqueModel, physiqueModifiers, presentZone, soundManifest } from "./world/wasm-runtime";
+import { loadPendingPhysique, neutralPhysique, PhysiqueEditor, savePendingPhysique, type PhysiqueModel } from "./physique";
 import { WorldSound } from "./world/world-sound";
 import { ActionLabPanel, labQuery } from "./world/action-lab";
 import { ExperimentPanel } from "./world/lab-experiment-panel";
@@ -258,6 +259,7 @@ function refreshArenaWorld(): void {
     }
   } catch (error) { arenaError = errorMessage(error); }
   worldView.load(practiceWorld?.world ?? arenaWorld?.world ?? world);
+  syncPhysiqueAvailability();
   onlineToggle.hidden = arenaEntry.selected || online.kind !== "online";
   refreshSelectionPresentation();
   updateEntryButton();
@@ -344,6 +346,76 @@ function savedAppearance(character: CharacterPreview): CharacterAppearance | nul
   } catch {
     return null;
   }
+}
+
+// Physique (#634): built once the WASM module is loaded; every value and modifier is mmorpg-core's.
+let physique: { model: PhysiqueModel; editor: PhysiqueEditor } | null = null;
+
+function installPhysiqueEditor(): void {
+  const model = physiqueModel();
+  const editor = new PhysiqueEditor(requireElement<HTMLElement>("#physique-editor"), {
+    model,
+    modifiers: physiqueModifiers,
+    confirm: confirmPhysique,
+  });
+  physique = { model, editor };
+  loadPhysique();
+}
+
+/** Saves confirmed sliders: into the stored character's record, else kept until its first entry creates it. */
+async function confirmPhysique(values: readonly number[]): Promise<string> {
+  if (creationDraft) {
+    return "Kept for the new character; Create saves it.";
+  }
+  if (!localCharacters) {
+    throw new Error("the local world is not loaded");
+  }
+  const id = selectedCharacter().id;
+  if (await customizePhysique(localCharacters, id, values)) {
+    return "Saved in the character record.";
+  }
+  const storage = browserStorage();
+  if (!storage) {
+    throw new Error("browser storage is unavailable");
+  }
+  savePendingPhysique(storage, id, values);
+  return "Saved; the first entry creates the character with it.";
+}
+
+/** The confirmed physique of a never-stored character, which its first entry is created with. */
+function pendingPhysique(characterId: string): number[] | null {
+  const storage = browserStorage();
+  return physique && storage ? loadPendingPhysique(storage, physique.model, characterId) : null;
+}
+
+/** Shows the selected character's saved physique (record, else pending, else neutral) and whether it can be saved. */
+function loadPhysique(): void {
+  if (!physique) { return; }
+  const { model, editor } = physique;
+  syncPhysiqueAvailability();
+  if (creationDraft) {
+    editor.load(neutralPhysique(model), "A new character starts neutral.");
+    return;
+  }
+  const id = selectedCharacter().id;
+  try {
+    const committed = localCharacters ? committedPhysique(localCharacters, id) : null;
+    if (committed) {
+      editor.load(committed, "Saved in the character record.");
+      return;
+    }
+  } catch (error) {
+    editor.load(neutralPhysique(model), `The saved physique could not be read: ${errorMessage(error)}`);
+    return;
+  }
+  const pending = pendingPhysique(id);
+  editor.load(pending ?? neutralPhysique(model), pending ? "Saved; the first entry creates the character with it." : "Neutral physique: never customized.");
+}
+
+function syncPhysiqueAvailability(): void {
+  physique?.editor.setUnavailable(chosenServer() || arenaEntry.selected
+    ? "Physique is saved with local characters; online and Battle Royale play do not carry it yet."
+    : null);
 }
 
 const camera = new THREE.PerspectiveCamera(50, 1, 0.2, 1_400);
@@ -1148,6 +1220,7 @@ function selectCharacter(characterId: string): void {
   entryState = initialEntryState(character);
   restoreAppearance(character);
   refreshSelectionPresentation();
+  loadPhysique();
   renderRoster();
   updateEntryButton();
   layoutPreview();
@@ -1200,6 +1273,7 @@ function openCharacterCreation(): void {
   creationStatus.textContent = "";
   setCreationMode(true);
   refreshSelectionPresentation();
+  loadPhysique();
   turntable.cancel();
   layoutPreview();
   creationName.focus();
@@ -1213,6 +1287,7 @@ function cancelCharacterCreation(): void {
   setCreationMode(false);
   restoreAppearance(selectedCharacter());
   refreshSelectionPresentation();
+  loadPhysique();
   renderRoster();
   updateEntryButton();
   layoutPreview();
@@ -1276,8 +1351,15 @@ function finishCharacterCreation(): void {
     } catch {
       // Browser storage unavailable: the appearance lasts for this session.
     }
+    // The drafted physique too (#634): kept until the first entry creates the record with it.
+    const draftedPhysique = physique?.editor.values;
+    const storage = browserStorage();
+    if (draftedPhysique && storage) {
+      try { savePendingPhysique(storage, character.id, draftedPhysique); } catch { /* lasts for this session */ }
+    }
     restoreAppearance(character);
     refreshSelectionPresentation();
+    loadPhysique();
     renderRoster();
     updateEntryButton();
     rosterStatus.textContent = persisted
@@ -1522,7 +1604,9 @@ async function enterWorld(): Promise<void> {
   try {
     const character = selectedCharacter();
     const entryCharacter = arenaEntry.selected ? arenaEntry.character(character) : character;
-    await target.source.join({ ...(entryCharacter.name ? { name: entryCharacter.name } : {}), id: entryCharacter.id, classId: entryCharacter.classId, sex: entryCharacter.sex });
+    // A never-stored local character is created with its confirmed physique (#634).
+    const pending = target === world ? pendingPhysique(entryCharacter.id) : null;
+    await target.source.join({ ...(entryCharacter.name ? { name: entryCharacter.name } : {}), id: entryCharacter.id, classId: entryCharacter.classId, sex: entryCharacter.sex, ...(pending ? { physique: pending } : {}) });
     markStartup("joined");
   } catch (error) {
     console.error(error);
@@ -1694,6 +1778,7 @@ function returnToCharacters(failure: string | null = null) {
   setCreationMode(false);
   creationDraft = null;
   refreshSelectionPresentation();
+  loadPhysique();
   renderRoster();
   updateEntryButton();
   lastTime = performance.now();
@@ -2010,6 +2095,7 @@ if (online.kind === "online") {
 }
 playOnlineInput.addEventListener("change", () => {
   worldFailure = null;
+  syncPhysiqueAvailability();
   updateEntryButton();
 });
 window.addEventListener("pagehide", () => {
@@ -2038,6 +2124,7 @@ void loadPageWorld().then((loaded) => {
   markStartup("view-loaded");
   world = loaded;
   refreshSelectionPresentation();
+  installPhysiqueEditor();
   renderRoster();
   markStartup("picker-ready");
   onlineWorld = online.kind === "online" ? createOnlineWorld(loaded, online.server) : null;
