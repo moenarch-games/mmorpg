@@ -27,7 +27,10 @@
             aria-label="Character rotation" aria-orientation="horizontal"
             aria-valuemin="0" aria-valuemax="359" aria-valuenow="0"
             aria-valuetext="0 degrees from front" aria-describedby="turntable-hint">
-            <p id="character-stage-fallback" class="preview-loading">Loading 3D preview…</p>
+            <div id="character-stage-loader" class="stage-loader" data-state="loading" role="status" aria-busy="true">
+              <span class="stage-loader-sigil" aria-hidden="true"><span class="sigil-ring"></span><span class="sigil-arc"></span><span class="sigil-gem"></span></span>
+              <p id="character-stage-loader-text" class="stage-loader-text">Preparing your character…</p>
+            </div>
           </div>
           <div class="turntable-controls" role="group" aria-label="Turn character">
             <button id="rotate-left" type="button" aria-label="Rotate character left">←</button>

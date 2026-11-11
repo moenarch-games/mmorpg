@@ -998,7 +998,8 @@ export class WorldView {
    * The selection turntable (#362): the real Ranger in its idle clip standing at `feet`, dressed as
    * the viewer would enter (class loadout, headwear, hair), through the same imported-model path as
    * the world. False before a world loaded, while the model loads or after it failed; the page then
-   * draws its procedural preview. Entering the world drops it like any unit no longer projected.
+   * keeps its stage veiled (see `selectionPreviewStatus`). Entering the world drops it like any unit
+   * no longer projected.
    */
   selectionPreview(look: ViewerLook, feet: [number, number, number], yaw: number, height: number, seconds: number,
     camera: RendererCamera): boolean {
@@ -1017,6 +1018,16 @@ export class WorldView {
     const { roots, changed } = this.#models.roots();
     if (changed) { this.#renderer.renderImportedRoots({ camera, roots }); }
     return true;
+  }
+
+  /**
+   * How far the selection turntable's real character is: the Ranger `loading`, `failed` for good, or
+   * `ready`, with whether the class outfit `look` wears can be drawn yet (it pops in otherwise).
+   */
+  selectionPreviewStatus(look: ViewerLook): { model: "loading" | "ready" | "failed"; outfit: boolean } {
+    if (!this.#regions) { return { model: "loading", outfit: false }; }
+    const model = this.#models.status("Ranger");
+    return { model, outfit: model === "ready" && (!look.classId || this.#models.outfitReady(`class.${look.classId}`)) };
   }
 
   /** The face features the loaded Ranger offers (#411): undefined while loading, null if it has none. */

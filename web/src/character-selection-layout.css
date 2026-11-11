@@ -190,7 +190,62 @@
 .appearance-storage { margin-top: .8rem; font-size: .75rem; color: #aabbb1; }
 .appearance-storage summary { cursor: pointer; padding: .4rem 0; }
 .world-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem; }
-.preview-loading { margin: auto; text-align: center; }
+/*
+ * The stage loader: until the real character can stand on the stage, a veil covers the 3D scene
+ * (beneath the panels, which stay usable) and a gold sigil turns over the character's spot. The
+ * veil lifts once, onto the character; it is never a stand-in figure.
+ */
+.preview-surface { display: flex; }
+.stage-loader {
+  margin: auto;
+  display: grid;
+  justify-items: center;
+  gap: var(--ui-space-md);
+  pointer-events: none;
+}
+.stage-loader::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 60% 55% at 40% 48%, rgb(198 168 95 / 7%), transparent 70%),
+    radial-gradient(ellipse at 40% 45%, #172220 0%, var(--ui-color-ink) 72%);
+  transition: opacity 520ms ease;
+}
+.stage-loader > * { transition: opacity 260ms ease, transform 260ms ease; }
+.stage-loader[data-state="revealed"]::before,
+.stage-loader[data-state="failed"]::before { opacity: 0; }
+.stage-loader[data-state="revealed"] > * { opacity: 0; transform: scale(.94); }
+.stage-loader[data-state="failed"] .stage-loader-sigil { display: none; }
+.stage-loader-text { margin: 0; color: var(--ui-color-text-muted); font-size: .8rem; letter-spacing: .06em; text-align: center; }
+
+.stage-loader-sigil { position: relative; width: 4.5rem; height: 4.5rem; }
+.stage-loader-sigil > span { position: absolute; border-radius: 50%; }
+.sigil-ring { inset: 0; border: 1px solid rgb(198 168 95 / 28%); }
+.sigil-arc {
+  inset: -1px;
+  border: 2px solid transparent;
+  border-top-color: var(--ui-color-gold-bright);
+  border-right-color: rgb(229 207 134 / 35%);
+  animation: sigil-turn 1.3s cubic-bezier(.5, .15, .5, .85) infinite;
+}
+.sigil-gem {
+  inset: 50% auto auto 50%;
+  width: .8rem;
+  height: .8rem;
+  border-radius: 2px;
+  background: linear-gradient(135deg, var(--ui-color-gold-bright), var(--ui-color-gold));
+  box-shadow: 0 0 18px rgb(229 207 134 / 55%);
+  transform: translate(-50%, -50%) rotate(45deg);
+  animation: sigil-glow 1.3s ease-in-out infinite alternate;
+}
+@keyframes sigil-turn { to { transform: rotate(360deg); } }
+@keyframes sigil-glow { from { opacity: .55; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .sigil-arc, .sigil-gem { animation: none; }
+  .stage-loader::before, .stage-loader > * { transition: none; }
+}
 
 @media (max-width: 1000px) {
   .character-select {
