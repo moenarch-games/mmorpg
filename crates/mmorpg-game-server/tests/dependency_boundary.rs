@@ -95,7 +95,12 @@ fn the_client_model_holds_only_client_rules_over_core() {
     let graph = dependency_graph(LOCKFILE);
     assert_eq!(
         graph.get(CLIENT_MODEL),
-        Some(&vec!["mmorpg-core", "mmorpg-protocol", "serde_json", "strum"])
+        Some(&vec![
+            "mmorpg-core",
+            "mmorpg-protocol",
+            "serde_json",
+            "strum"
+        ])
     );
     const MANIFEST: &str = include_str!("../../mmorpg-client-model/Cargo.toml");
     let (normal, dev) = MANIFEST
