@@ -140,7 +140,7 @@ describe("client preferences over the shared settings session", () => {
   test("a changed field of view persists, reloads and resets", async () => {
     const storage = new MemoryStorage();
     const first = await Preferences.open(storage);
-    expect(first.values()).toEqual({ fieldOfViewDegrees: 50, lookSensitivity: 1, invertVerticalLook: false, holdCamera: "locked", reduceMotion: "system", maxPixelRatio: 1.5, audio: DEFAULT_AUDIO });
+    expect(first.values()).toEqual({ fieldOfViewDegrees: 50, lookSensitivity: 1, invertVerticalLook: false, holdCamera: "locked", aimStyle: "hold", reduceMotion: "system", maxPixelRatio: 1.5, audio: DEFAULT_AUDIO });
     first.set(SETTING.fieldOfView, { type: "integer", value: 70 });
     first.set(SETTING.reduceMotion, { type: "choice", value: "reduce" });
     first.set(SETTING.renderResolution, { type: "choice", value: "sharp" });
@@ -148,7 +148,7 @@ describe("client preferences over the shared settings session", () => {
 
     const second = await Preferences.open(storage);
     expect(second.problem).toBeNull();
-    expect(second.values()).toEqual({ fieldOfViewDegrees: 70, lookSensitivity: 1, invertVerticalLook: false, holdCamera: "locked", reduceMotion: "reduce", maxPixelRatio: 2, audio: DEFAULT_AUDIO });
+    expect(second.values()).toEqual({ fieldOfViewDegrees: 70, lookSensitivity: 1, invertVerticalLook: false, holdCamera: "locked", aimStyle: "hold", reduceMotion: "reduce", maxPixelRatio: 2, audio: DEFAULT_AUDIO });
     second.resetAll();
     expect((await Preferences.open(storage)).values().fieldOfViewDegrees).toBe(50);
   });

@@ -54,20 +54,20 @@ describe("directed Heroic Strike input", () => {
     expect(mouse.beginHold("strike")).toEqual({ started: true, preempted: "none" });
     expect(mouse.motion(-40, 30)).toBe(false); // the locked camera holds still
     expect(mouse.aim()).toEqual({ strike: { side: "left", height: "low" }, guard: null });
-    expect(mouse.leftClick()).toEqual({ outcome: "nothing", ended: "none" });
+    expect(mouse.leftClick()).toEqual({ outcome: "nothing", ended: "none", ability: null });
     // The guard's press takes the mouse; the preempted strike never fires (5.2.37).
     expect(mouse.beginHold("guard")).toEqual({ started: true, preempted: "strike" });
     expect(mouse.releaseHold("strike")).toBe(false);
-    expect(mouse.rightClick()).toEqual({ outcome: "cancel", ended: "guard" });
+    expect(mouse.rightClick()).toEqual({ outcome: "cancel", ended: "guard", ability: null });
     expect(mouse.releaseHold("guard")).toBe(false);
-    expect(mouse.rightClick()).toEqual({ outcome: "cancel-cast", ended: "none" });
+    expect(mouse.rightClick()).toEqual({ outcome: "cancel-cast", ended: "none", ability: null });
     mouse.setHoldCamera("free");
     mouse.beginHold("strike");
     expect(mouse.motion(30, -30)).toBe(true);
     expect(mouse.releaseHold("strike")).toBe(true);
     mouse.setFocus(true);
     expect(mouse.owner()).toBe("focus");
-    expect(mouse.leftClick()).toEqual({ outcome: "select", ended: "none" });
+    expect(mouse.leftClick()).toEqual({ outcome: "select", ended: "none", ability: null });
     mouse.beginHold("strike");
     expect(mouse.interrupt()).toBe("strike");
     expect(mouse.releaseHold("strike")).toBe(false);

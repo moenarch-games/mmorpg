@@ -1158,3 +1158,18 @@ kbd {
 .world-map-tooltip strong { font-size: 0.86rem; }
 
 .world-map-zone-note { color: #ff8a7a; }
+
+/* A manual aim (#649): the reticle shows, and a ring marks where the throw is expected to land. */
+#world[data-mouse-owner="aim"] + .aim-reticle { display: block; }
+.aim-landing {
+  position: fixed;
+  width: 28px;
+  height: 28px;
+  z-index: 2;
+  transform: translate(-50%, -50%);
+  border: 2px solid rgb(255 178 74 / 90%);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 70%);
+  pointer-events: none;
+}
+.aim-landing[hidden] { display: none; }
