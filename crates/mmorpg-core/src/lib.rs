@@ -18,7 +18,6 @@ mod breakable;
 mod casting;
 mod character;
 mod chat;
-mod class;
 mod combat;
 mod combo;
 mod content;
@@ -65,7 +64,6 @@ mod structure;
 mod summoned;
 mod transfer;
 pub mod trap;
-pub mod unit;
 mod vendor;
 pub mod water;
 mod waystone;
@@ -91,7 +89,6 @@ pub use chat::{
     CHAT_INTERVAL_TICKS, ChatChannel, ChatLine, ChatMessage, ChatText, Emote, MAX_CHAT_BYTES,
     MAX_CHAT_PER_TICK, SAY_RANGE_UNITS, YELL_RANGE_UNITS,
 };
-pub use class::{ClassChoice, PlayerClass, ResourceKind, Sex};
 pub use climb::{ClimbSurfaces, Grip, Ledge, Traversal, TraversalView};
 pub use combo::{COMBO_IMPACT_TICKS, COMBO_WINDOW_TICKS, ComboOpening, ComboPhase};
 pub use content::greyhaven_vale::{self, greyhaven_vale_definition};
@@ -202,6 +199,9 @@ pub use routine::{
     NpcPlacement, NpcRoutine, ZONE_START_TIME, is_night, time_of_day,
 };
 pub use seat::{MAX_SEATS, PostureView, SEAT_REACH_UNITS, Seat, SeatId, Sitting};
+use sim_combat::class;
+pub use sim_combat::class::{ClassChoice, PlayerClass, ResourceKind, Sex};
+pub use sim_combat::unit;
 pub use sim_foundation::{
     PlayerId, TICK_HZ, ZoneError, ZoneId, long_ticks_from_ms, physics, rng, subunits_per_tick,
     subunits_per_tick_squared, ticks_from_ms, trig, units_per_tick,
