@@ -8,6 +8,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use crate::physics::Vec3i;
+use sim_combat::swing;
 
 use crate::action::authored::Step;
 use crate::ai::{creature_reach, distance_squared};
@@ -595,6 +596,7 @@ impl ZoneSimulation {
     /// and `half_width` either side of `facing`, in `EntityRef` order. A
     /// `melee` attack covers only bodies overlapping [`SWING_BAND_UNITS`] and
     /// needs line of sight to another player; any other needs it to every unit.
+    /// The geometry is `sim-combat`'s shared [`swing`] test (#754).
     pub(crate) fn facing_coverage(
         &self,
         player_id: PlayerId,
@@ -604,11 +606,11 @@ impl ZoneSimulation {
         melee: bool,
     ) -> Result<Vec<EntityRef>, ZoneError> {
         let origin = self.player_position(player_id)?;
-        let feet = origin.y - crate::PLAYER_HALF_EXTENTS_UNITS[1];
-        let [band_low, band_high] = SWING_BAND_UNITS;
-        let (dir_x, dir_z) = crate::trig::direction(facing);
-        let min_cos = i64::from(crate::trig::cos(half_width));
-        let reach_squared = i64::from(reach).pow(2);
+        let feet = Vec3i::new(
+            origin.x,
+            origin.y - crate::PLAYER_HALF_EXTENTS_UNITS[1],
+            origin.z,
+        );
         let mut covered = Vec::new();
         for entity in self.interest.near(origin.x, origin.z, reach) {
             if !self.attackable_by_player(player_id, entity) {
@@ -619,20 +621,26 @@ impl ZoneSimulation {
                 .body(body_id(entity))
                 .ok_or_else(|| ZoneError::new("unit physics body is missing"))?;
             let (centre, half) = (body.position(), body.half_extents());
-            if distance_squared([origin.x, origin.z], [centre.x, centre.z]) > reach_squared {
-                continue;
-            }
-            if melee
-                && (centre.y + half.y - feet < band_low || centre.y - half.y - feet > band_high)
-            {
-                continue;
-            }
-            // |v| cos(angle to the facing) >= |v| cos(half width), both Q16.
-            let (dx, dz) = (centre.x - origin.x, centre.z - origin.z);
-            let along = i64::from(dx) * i64::from(dir_x) + i64::from(dz) * i64::from(dir_z);
-            let length = i64::try_from(crate::trig::xz_length(dx, dz))
-                .map_err(|_| ZoneError::new("swing distance overflow"))?;
-            if along < length * min_cos {
+            let covers = if melee {
+                swing::swing_covers(
+                    feet,
+                    facing,
+                    centre,
+                    half,
+                    reach,
+                    half_width,
+                    SWING_BAND_UNITS,
+                )
+            } else {
+                swing::facing_covers(
+                    [origin.x, origin.z],
+                    facing,
+                    [centre.x, centre.z],
+                    reach,
+                    half_width,
+                )
+            };
+            if !covers {
                 continue;
             }
             if (!melee || matches!(entity, EntityRef::Player(_)))
