@@ -815,7 +815,6 @@ impl App {
             WheelAction::Swing => self.control(ControlAction::Swing),
             WheelAction::Roll => self.control(ControlAction::Roll),
             WheelAction::TargetNext => self.control(ControlAction::TargetNext),
-            WheelAction::ReleaseSpirit => self.control(ControlAction::ReleaseSpirit),
             WheelAction::ClearTarget => self.input.send_modify(|input| {
                 input.target = None;
                 input.selections = input.selections.wrapping_add(1);

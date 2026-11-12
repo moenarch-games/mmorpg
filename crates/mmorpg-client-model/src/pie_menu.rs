@@ -65,8 +65,6 @@ pub enum WheelAction {
     Interact,
     /// `ui.toggleVendor`: the selected vendor's wares (native: its NPC context).
     Trade,
-    /// `player.releaseSpirit`.
-    ReleaseSpirit,
     /// `minions.*`.
     Minions(MinionCall),
     /// `emote.*`: the emote chat commands.
@@ -87,7 +85,6 @@ impl WheelAction {
                 Self::ClearTarget,
                 Self::Interact,
                 Self::Trade,
-                Self::ReleaseSpirit,
             ])
             .chain(MinionCall::VARIANTS.iter().copied().map(Self::Minions))
             .chain(Emote::VARIANTS.iter().copied().map(Self::Emote))
@@ -105,7 +102,6 @@ impl WheelAction {
             Self::ClearTarget => "target.clear".into(),
             Self::Interact => "ui.talk".into(),
             Self::Trade => "ui.toggleVendor".into(),
-            Self::ReleaseSpirit => "player.releaseSpirit".into(),
             Self::Minions(call) => format!("minions.{}", call_name(call)),
             Self::Emote(emote) => format!("emote.{}", emote_name(emote)),
         }
@@ -130,7 +126,6 @@ impl WheelAction {
             Self::ClearTarget => "Clear target".into(),
             Self::Interact => "Talk / use".into(),
             Self::Trade => "Trade".into(),
-            Self::ReleaseSpirit => "Release spirit".into(),
             Self::Minions(MinionCall::Attack) => "Minions: attack".into(),
             Self::Minions(MinionCall::Defend) => "Minions: defend".into(),
             Self::Minions(MinionCall::Follow) => "Minions: follow".into(),
@@ -190,7 +185,7 @@ impl Wheel {
     /// The context wheel: only actions the projection says are relevant now. The zone still
     /// decides whether each one succeeds; nothing here grants availability.
     ///
-    /// - Dead: release spirit.
+    /// - Dead: nothing; death ends any wheel (Atlas `5.2.i636-2`).
     /// - A selected NPC: talk, trade when content lists it as a vendor, clear target.
     /// - A selected attackable unit: swing, the learned class abilities that reach a target, a
     ///   Necromancer's minion attack, next target, clear target.
@@ -211,7 +206,7 @@ impl Wheel {
                 .any(|unit| unit.entity() == target && unit.flags.attackable && !unit.flags.dead)
         });
         if viewer.dead {
-            actions.push(WheelAction::ReleaseSpirit);
+            // No action: death ends a wheel anyway.
         } else if let Some(EntityRef::Npc(npc)) = selected {
             actions.push(WheelAction::Interact);
             if content.vendor_stock(npc).is_some() {
@@ -539,9 +534,9 @@ mod tests {
         );
 
         view.viewer.dead = true;
-        assert_eq!(
-            Wheel::context(&view, &content).sectors(),
-            [Some(WheelAction::ReleaseSpirit)]
+        assert!(
+            Wheel::context(&view, &content).is_empty(),
+            "death opens no wheel"
         );
     }
 
