@@ -1131,9 +1131,12 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
     let mut roofs = 0;
     for (index, p) in s.props.iter().enumerate() {
         // Trees and rocks are the nature bundle's (#49), ladders and ropes the climbing kit's
-        // (#621); these are their fallback.
+        // (#621), the box crags and cliffs (with their worn handholds) the crag kit's (#668);
+        // these are their fallback.
         b.fallback = if crate::nature::draws(s, p) {
             Some(Kit::Nature)
+        } else if crate::crag::dresses(s, p) {
+            Some(Kit::Crag)
         } else {
             crate::climbing::draws(p).then_some(Kit::Climbing)
         };
