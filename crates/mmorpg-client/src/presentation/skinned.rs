@@ -1284,18 +1284,11 @@ pub(super) fn shrine_draws(key: &str) -> &'static [SceneDraw] {
         .map_or(&[], |(_, draws)| draws.as_slice())
 }
 
-/// The Outpost building kit's modules, roof variants and resources, embedded by `build.rs`
-/// (#420).
-mod outpost_bundle {
-    include!(concat!(env!("OUT_DIR"), "/outpost_bundle.rs"));
-}
-
-mod fort_bundle {
-    include!(concat!(env!("OUT_DIR"), "/fort_bundle.rs"));
-}
+use crate::nature::{fort_bundle, outpost_bundle};
 
 /// The Outpost kit's draws (in the module frame) of `entry` (`<key>` or `<key>/<variant>`),
-/// every entry imported once.
+/// every entry imported once, with their textures baked into vertex colours: what picking
+/// tests clicks against. The frame draws the modules textured through `crate::nature`.
 pub(super) fn outpost_draws(entry: &str) -> &'static [SceneDraw] {
     if entry.starts_with("greyhaven.fort.") {
         static FORT: OnceLock<BuildingDraws> = OnceLock::new();
@@ -2781,6 +2774,12 @@ mod rolling_ranger_tests {
         }
         for part in mmorpg_presentation::outpost_kit::parts(&scenery) {
             assert!(!outpost_draws(part.entry).is_empty(), "{}", part.entry);
+            // The frame draws it textured (#753).
+            assert!(
+                crate::nature::kit_entry(part.entry).is_some(),
+                "{}",
+                part.entry
+            );
         }
     }
 

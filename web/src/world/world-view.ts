@@ -438,6 +438,8 @@ export class WorldView {
   readonly #primaryClick = new PointerClick(0);
   #lastLinkConnected = true;
   #presentationTime: number | null = null;
+  /** Debug only (#753): the world source is not advanced, so reference captures see one zone state. */
+  #holdWorld = false;
   #lastEnvironment: RendererEnvironment | null = null;
   #lastInstanceBatches: RendererInstanceBatch[] = [];
   readonly #picking = new WorldPicking();
@@ -1490,7 +1492,7 @@ export class WorldView {
       source.sendCommand(command);
     }
     profilePhase("input");
-    const receivedProjections = source.advance(deltaSeconds);
+    const receivedProjections = source.advance(this.#holdWorld ? 0 : deltaSeconds);
     profilePhase("simulation");
     const connected = source.linkState() === "connected";
     if (connected !== this.#lastLinkConnected) {
@@ -2218,6 +2220,10 @@ export class WorldView {
       },
       flyToPose: (eye: Vec3, target: Vec3) => {
         this.#flyTo = { eye, target };
+      },
+      /** Stops (or resumes) advancing the world source, so captures at several poses see one zone state (#753). */
+      holdWorld: (hold: boolean) => {
+        this.#holdWorld = hold;
       },
       follow: () => {
         this.#flyTo = null;

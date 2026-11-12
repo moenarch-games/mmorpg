@@ -79,6 +79,34 @@ mod settlement_descriptor {
     include!(concat!(env!("OUT_DIR"), "/settlement_descriptor.rs"));
 }
 
+/// The Outpost building kit's modules, roof variants and resources, embedded by `build.rs`
+/// (#420).
+pub(crate) mod outpost_bundle {
+    include!(concat!(env!("OUT_DIR"), "/outpost_bundle.rs"));
+}
+
+/// Greyhaven's authored keep and timber defences, embedded by `build.rs`.
+pub(crate) mod fort_bundle {
+    include!(concat!(env!("OUT_DIR"), "/fort_bundle.rs"));
+}
+
+/// The Outpost kit's wear masks entry, which no placement draws.
+const OUTPOST_WEAR_MASKS: &str = "outpost.kit.wear-masks";
+
+/// The kits drawn at one level with their textures (#753), after the bundles' entries in the
+/// library: the Outpost kit's modules (`mmorpg_presentation::outpost_kit::parts`) and the fort.
+/// The browser draws them textured; baked into vertex colours their stone walls read flat.
+fn kit_entries() -> impl Iterator<Item = (&'static str, &'static str, Files)> {
+    let outpost = outpost_bundle::ENTRIES
+        .iter()
+        .filter(|(key, _)| *key != OUTPOST_WEAR_MASKS)
+        .map(|&(key, path)| (key, path, outpost_bundle::FILES));
+    let fort = fort_bundle::ENTRIES
+        .iter()
+        .map(|&(key, path)| (key, path, fort_bundle::FILES));
+    outpost.chain(fort)
+}
+
 type Files = &'static [(&'static str, &'static [u8])];
 
 /// One embedded bundle: the entries the presentation places, its glTF entries and files.
@@ -135,13 +163,24 @@ pub const FADE_STEPS: usize = 8;
 /// The library's entries: the nature bundle's (`mmorpg_presentation::nature::ENTRIES`), the
 /// climbing kit's (`mmorpg_presentation::climbing::ENTRIES`), the crag kit's modules and outcrops
 /// (`mmorpg_presentation::crag::KIT_ENTRIES`), the limestone blocks', the river
-/// stones' and the settlement props'.
+/// stones' and the settlement props', then the single-level kits' (`<key>` and
+/// `<key>/<variant>`, [`kit_entries`]), which have no [`lods`].
 #[must_use]
 pub fn entries() -> Vec<&'static str> {
     SOURCES
         .iter()
         .flat_map(|source| source.keys.iter().copied())
+        .chain(kit_entries().map(|(key, _, _)| key))
         .collect()
+}
+
+/// The library index of single-level kit entry `key`, drawn at level 0.
+#[must_use]
+pub fn kit_entry(key: &str) -> Option<usize> {
+    let bundled: usize = SOURCES.iter().map(|source| source.keys.len()).sum();
+    kit_entries()
+        .position(|(entry, _, _)| entry == key)
+        .map(|index| bundled + index)
 }
 
 /// The embedded crag kit's `crag-descriptor` (#668), whose climb metadata places climbers.
@@ -221,7 +260,7 @@ pub fn library() -> &'static Library {
                     .map(|surface| Layered::import(surface, source, &mut textures))
             })
             .collect();
-        let levels = SOURCES
+        let mut levels = SOURCES
             .iter()
             .zip(&layered)
             .flat_map(|(source, layered)| {
@@ -253,7 +292,10 @@ pub fn library() -> &'static Library {
                     })
                     .collect()
             })
-            .collect();
+            .collect::<Vec<_>>();
+        levels.extend(
+            kit_entries().map(|(_, path, files)| vec![import(path, files, &mut textures, None)]),
+        );
         Library {
             textures: textures.data,
             levels,
@@ -740,9 +782,14 @@ mod tests {
     fn every_entry_level_imports_with_its_textures() {
         let library = library();
         let lods = lods();
+        assert_eq!(entries().len(), library.levels.len());
         for (entry, levels) in entries().iter().zip(&library.levels) {
-            let expected = lods.iter().find(|lods| lods.entry == *entry).unwrap();
-            assert_eq!(levels.len(), expected.levels.len(), "{entry}");
+            // The single-level kits (#753) have no levels of detail.
+            let expected = lods
+                .iter()
+                .find(|lods| lods.entry == *entry)
+                .map_or(1, |lods| lods.levels.len());
+            assert_eq!(levels.len(), expected, "{entry}");
             for parts in levels {
                 assert!(!parts.is_empty(), "{entry}");
                 assert!(

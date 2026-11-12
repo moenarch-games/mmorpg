@@ -82,7 +82,7 @@
         31.0
       ],
       "fieldOfViewDegrees": 50.0,
-      "hour": 8.000055313110352,
+      "hour": 8.0,
       "name": "frame-hub",
       "target": [
         -14.0,
@@ -97,7 +97,7 @@
         16.0
       ],
       "fieldOfViewDegrees": 50.0,
-      "hour": 8.000055313110352,
+      "hour": 8.0,
       "name": "frame-woods",
       "target": [
         -69.0,
@@ -112,7 +112,7 @@
         95.0
       ],
       "fieldOfViewDegrees": 50.0,
-      "hour": 8.000055313110352,
+      "hour": 8.0,
       "name": "frame-vale",
       "target": [
         0.0,
@@ -127,7 +127,7 @@
         -39.0
       ],
       "fieldOfViewDegrees": 50.0,
-      "hour": 8.000055313110352,
+      "hour": 8.0,
       "name": "frame-lake",
       "target": [
         -87.0,
