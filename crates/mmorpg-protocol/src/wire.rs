@@ -241,7 +241,7 @@ pub(crate) fn decode_aim([side, height]: [u8; 2]) -> Result<StrikeAim, ProtocolE
 /// A timed swing's start (#679) in an event's `u16` amount: the aim's side code in bits 0–1,
 /// its height code in bits 2–3, the startup ticks in bits 4–9 and the active ticks in 10–15.
 pub(crate) fn encode_swing_began(aim: StrikeAim, startup: u8, active: u8) -> u16 {
-    let six = u16::from(mmorpg_core::MAX_SWING_PHASE_TICKS);
+    let six = mmorpg_core::MAX_SWING_PHASE_TICKS;
     u16::from(aim.side.code())
         | u16::from(aim.height.code()) << 2
         | (u16::from(startup) & six) << 4
@@ -252,7 +252,7 @@ pub(crate) fn decode_swing_began(amount: u16) -> Result<(StrikeAim, u8, u8), Pro
     #[allow(clippy::cast_possible_truncation)]
     let field = |shift: u16, mask: u16| ((amount >> shift) & mask) as u8;
     let aim = decode_aim([field(0, 0b11), field(2, 0b11)])?;
-    let six = u16::from(mmorpg_core::MAX_SWING_PHASE_TICKS);
+    let six = mmorpg_core::MAX_SWING_PHASE_TICKS;
     let (startup, active) = (field(4, six), field(10, six));
     if active == 0 {
         return Err(ProtocolError::new("timed swing has no active phase"));
