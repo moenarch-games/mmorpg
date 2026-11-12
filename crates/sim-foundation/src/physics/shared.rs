@@ -126,8 +126,6 @@ pub(super) struct Dynamic<'a> {
     pub units_block: bool,
     /// Bodies left out of the step: the movable props' own fixed boxes.
     pub exclude: &'a [BodyId],
-    /// Which isolated response lane retains this step's static geometry (below).
-    pub lane: usize,
     /// Each piece's water (#667), parallel to the pieces; empty puts none in water.
     pub media: &'a [Option<PieceMedium>],
 }
@@ -154,12 +152,6 @@ impl Dynamic<'_> {
         self.media.get(index).copied().flatten()
     }
 }
-
-/// One retained static-response world per dynamic-piece kind (lane 0 is debris), so each lane's
-/// retained fixed geometry stays stable while its own pieces step.
-pub(super) const PROP_LANE: usize = 1;
-pub(super) const BOULDER_LANE: usize = 2;
-pub(super) const RESPONSE_LANES: usize = 3;
 
 /// The game bodies a dynamic step takes part with: the floors and everything within
 /// [`DEBRIS_REACH_UNITS`] of a piece, units only when they block, minus `options.exclude`.
