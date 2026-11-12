@@ -1,6 +1,6 @@
 # Over-the-shoulder movement, focus and aiming
 
-**Status:** the #650 camera/strafe foundation and the [#636](https://github.com/moenarch-games/mmorpg/issues/636) mouse owner (see [Owner decisions of 2026-11-08](#owner-decisions-of-2026-11-08)) are implemented in both clients, pending real-client acceptance, and so is temporary manual aiming [#649](https://github.com/moenarch-games/mmorpg/issues/649) for the Rogue's Blasting Bomb (see [Manual bomb aim](#manual-bomb-aim-649)). Radial wheels [#653](https://github.com/moenarch-games/mmorpg/issues/653) are implemented in both clients as an option, also pending acceptance (see [Radial wheels as delivered](#radial-wheels-as-delivered-653)). Canonical decisions: [Decision Atlas](decisions/atlas.md), entries `5.2.i650`, `5.2.i649`, `5.2.i649-2`, and `5.2.i649-3`.
+**Status:** the #650 shoulder camera, focus tracking, automatic facing and strafing (#665) and the [#636](https://github.com/moenarch-games/mmorpg/issues/636) mouse owner (see [Owner decisions of 2026-11-08](#owner-decisions-of-2026-11-08)) are implemented in both clients, pending real-client acceptance, and so is temporary manual aiming [#649](https://github.com/moenarch-games/mmorpg/issues/649) for the Rogue's Blasting Bomb (see [Manual bomb aim](#manual-bomb-aim-649)). Radial wheels [#653](https://github.com/moenarch-games/mmorpg/issues/653) are implemented in both clients as an option, also pending acceptance (see [Radial wheels as delivered](#radial-wheels-as-delivered-653)). Canonical decisions: [Decision Atlas](decisions/atlas.md), entries `5.2.i650`, `5.2.i649`, `5.2.i649-2`, and `5.2.i649-3`.
 
 The first slice uses the existing camera and input bindings: mouse-look in free exploration (click the world to capture in browsers), an uncaptured cursor for enemy focus, Tab/left-click target switching, and a focused click on empty world to clear focus (#636; Escape is now the game menu). Native recaptures on clearing; browsers require a world click once Pointer Lock has been released. Touch drag and directional strike/guard input remain available. The radial wheels are off by default (Settings → Wheels).
 
@@ -128,7 +128,7 @@ The draw does not own the pointer, so free look keeps steering and a focused cam
 
 ## Ownership and implementation order
 
-1. **#650** — focus/no-focus over-shoulder camera, automatic facing, pointer capture and consistent strafing; browser and native parity.
+1. **#650** — done: focus/no-focus over-shoulder camera, automatic facing, pointer capture and consistent strafing; browser and native parity.
 2. **#636** — done: one mouse owner shared by both clients (`mmorpg-client-model::mouse_owner`), left click selects, Q swings, right click cancels, Escape opens the game menu; `input-bindings` keeps the keys and held lifecycle.
 3. **#649** — done for the Blasting Bomb: temporary manual-aim override for one existing throwable, preserving focus and authoritative ability outcomes; extend only after the first playable throw feels correct.
 
