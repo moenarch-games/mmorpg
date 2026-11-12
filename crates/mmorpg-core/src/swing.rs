@@ -208,6 +208,8 @@ pub struct Swing {
     pub active: u16,
     /// Whether it already struck a unit; it strikes at most one.
     pub struck: bool,
+    /// Ticks its sweep looks back at bodies (#680); 0 without hit rewind.
+    pub rewind: u16,
 }
 
 impl Swing {
@@ -219,6 +221,7 @@ impl Swing {
             && self.active <= MAX_SWING_PHASE_TICKS
             && self.startup <= MAX_SWING_PHASE_TICKS
             && self.elapsed < self.startup + self.active
+            && self.rewind <= crate::ticks_from_ms(crate::MAX_HIT_REWIND_MS)
     }
 
     /// The phase of its next tick.
@@ -310,6 +313,11 @@ impl ZoneSimulation {
             startup: timed.startup_ticks(),
             active: timed.active_ticks(),
             struck: false,
+            // Fixed now, from the lateness the zone measured itself (#680).
+            rewind: self
+                .content
+                .hit_rewind()
+                .map_or(0, |rewind| rewind.rewind_for(self.resolving_late)),
         };
         self.update_player(player_id, |player| player.swing = Some(swing));
         let source = EntityRef::Player(player_id);
@@ -393,7 +401,9 @@ impl ZoneSimulation {
             }
             let last = tick + 1 >= swing.active;
             if !swing.struck {
-                let victim = self.sweep_coverage(player_id, swing.slice(tick))?;
+                // Bodies only, rewound by the swing's own rewind (#680); clashes above stay
+                // in the present.
+                let victim = self.sweep_coverage(player_id, swing.slice(tick), swing.rewind)?;
                 if victim.is_some() {
                     swing.struck = true;
                     self.update_player(player_id, |player| player.swing = Some(swing));
@@ -414,8 +424,9 @@ impl ZoneSimulation {
         let Some(swing) = self.swing_of(player_id) else {
             return Ok(false);
         };
+        // In the present, never rewound (#680).
         Ok(self
-            .sweep_distance(player_id, swing.whole(), EntityRef::Player(other))?
+            .sweep_distance(player_id, swing.whole(), EntityRef::Player(other), 0)?
             .is_some())
     }
 

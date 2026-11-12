@@ -53,6 +53,8 @@ pub struct ZoneContent {
     player_combat: PlayerCombatPolicy,
     /// Timed swings and clashes (#679); `None` resolves strikes at once.
     timed_combat: Option<crate::TimedCombat>,
+    /// Capped rewind of timed swings' hits on bodies (#680); `None` strikes in the present.
+    hit_rewind: Option<crate::HitRewind>,
     rng_seed: u64,
     loot_bound: bool,
     loot_tables: Vec<(CreatureTemplateId, LootTable)>,
@@ -192,6 +194,7 @@ impl ZoneContent {
             character_persistence: CharacterPersistence::Durable,
             player_combat: PlayerCombatPolicy::Safe,
             timed_combat: None,
+            hit_rewind: None,
             rng_seed: 0,
             loot_bound: false,
             loot_tables: Vec::new(),
@@ -245,6 +248,7 @@ impl ZoneContent {
             character_persistence: CharacterPersistence::Durable,
             player_combat: PlayerCombatPolicy::Safe,
             timed_combat: None,
+            hit_rewind: None,
             rng_seed: 0,
             loot_bound: false,
             loot_tables: Vec::new(),
@@ -313,6 +317,28 @@ impl ZoneContent {
     #[must_use]
     pub const fn timed_combat(&self) -> Option<crate::TimedCombat> {
         self.timed_combat
+    }
+
+    /// Rewinds timed swings' hits on bodies by up to `rewind`'s cap (#680), the same for
+    /// every player of the match. The content revision binds recovery to the cap.
+    ///
+    /// # Errors
+    /// Fails without timed combat (rewind applies to timed swings only) or for a cap out of
+    /// range.
+    pub fn with_hit_rewind(mut self, rewind: crate::HitRewind) -> Result<Self, ZoneError> {
+        if self.timed_combat.is_none() {
+            return Err(ZoneError::new("hit rewind needs timed combat"));
+        }
+        rewind.validate()?;
+        self.hit_rewind = Some(rewind);
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// The hit rewind, if any (#680).
+    #[must_use]
+    pub const fn hit_rewind(&self) -> Option<crate::HitRewind> {
+        self.hit_rewind
     }
 
     #[must_use]
@@ -1352,6 +1378,18 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_timed_fingerprint();
+        let Some(rewind) = self.hit_rewind else {
+            return fingerprint;
+        };
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/hit-rewind-v1");
+        hash.u64(fingerprint);
+        hash.u32(rewind.max_ms);
+        hash.finish()
+    }
+
+    fn compute_timed_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_depths_fingerprint();
         let Some(rules) = self.timed_combat else {
             return fingerprint;
