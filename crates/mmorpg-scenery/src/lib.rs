@@ -154,8 +154,8 @@ pub enum PropKind {
     Ramp,
     /// A loading dock (#59): a stone block with a plank deck, fitted to its collider.
     LoadingDock,
-    /// A Sunken Shrine collider (#431): drawn by asset-tooling's shrine kit at [`shrine::placements`],
-    /// never procedurally.
+    /// A Sunken Shrine collider (#431): drawn by asset-tooling's shrine kit where the world
+    /// dressing places it ([`shrine`]), never procedurally.
     ShrineKit,
     /// A ladder (#490): two rails and rungs up its collider, against a tower.
     Ladder,
@@ -569,7 +569,7 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
         // asset-tooling kit gives it its own kind.
         ids::CAVE_THRESHOLD => PropKind::PalisadeSegment,
         // The Sunken Shrine (#431): the ruins, the altar and the cave's rock are asset-tooling's
-        // shrine kit modules ([`shrine::placements`]); the roof slabs over the cave stay the
+        // shrine kit modules, placed as world dressing; the roof slabs over the cave stay the
         // rock that caps its trench in the lake bed and the shore, cut away from inside.
         _ if ids::SHRINE_CAVE_ROOF.contains(&id) => PropKind::CaveRoof,
         _ if ids::SHRINE_RUINS.contains(&id) || ids::SHRINE_CAVE_WALLS.contains(&id) => {

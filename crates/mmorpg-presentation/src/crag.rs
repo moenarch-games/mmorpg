@@ -560,7 +560,10 @@ mod tests {
             .into_iter()
             .filter(|p| OUTCROPS.contains(&p.entry))
             .count();
-        assert_eq!(outcrops, crate::world_dressing::placed(&s).len());
+        assert_eq!(
+            outcrops,
+            crate::world_dressing::placements(&s, crate::Kit::Crag).len()
+        );
     }
 
     #[test]

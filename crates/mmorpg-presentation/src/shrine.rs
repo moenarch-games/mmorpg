@@ -1,15 +1,15 @@
 //! The Sunken Shrine (#431): where both clients draw asset-tooling's `shrine-kit` modules.
 //!
-//! [`mmorpg_scenery::shrine::placements`] lays the modules over the zone's shrine colliders;
-//! here each becomes an entry-to-world matrix lifted by the presentation relief like every
-//! prop. The modules are static: clients place them once. Presentation only.
-use mmorpg_core::UNITS_PER_METRE;
-use mmorpg_scenery::{Scenery, shrine};
+//! The modules are world dressing (#683): `content/greyhaven/dressing/sunken-shrine.json`
+//! places each over the zone's shrine colliders, and here each becomes an entry-to-world
+//! matrix. The modules are static: clients place them once. Presentation only: the colliders
+//! decide.
+use mmorpg_scenery::Scenery;
 
-use crate::{
-    batching::matrix,
-    geometry::{compose, ry, translate},
-};
+use crate::{batching::matrix, world_dressing};
+
+/// The asset-key prefix of the shrine kit's modules.
+const PREFIX: &str = "shrine.kit.";
 
 /// One drawn kit module.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -19,35 +19,26 @@ pub struct Part {
     pub model: [f32; 16],
 }
 
-fn metres(units: i32) -> f64 {
-    f64::from(units) / f64::from(UNITS_PER_METRE)
-}
-
 /// The kit entries the clients load, sorted and once each.
 #[must_use]
 pub fn entries() -> Vec<&'static str> {
-    shrine::entries()
+    let mut keys: Vec<_> = world_dressing::with_prefix(PREFIX)
+        .map(|placed| placed.asset.as_str())
+        .collect();
+    keys.sort_unstable();
+    keys.dedup();
+    keys
 }
 
-/// Every placed kit module on `scenery`'s relief; none outside Greyhaven Vale.
+/// Every placed kit module on `scenery`; none outside Greyhaven Vale.
 #[must_use]
 pub fn parts(scenery: &Scenery) -> Vec<Part> {
-    if !scenery.greyhaven() {
-        return Vec::new();
-    }
-    shrine::placements()
+    world_dressing::placed(scenery)
         .iter()
-        .map(|placement| {
-            let [x, y, z] = placement.position;
-            let lift = scenery.height_at(x, z);
-            let yaw = f64::from(placement.yaw) / 65_536. * std::f64::consts::TAU;
-            Part {
-                key: placement.key,
-                model: matrix(compose(&[
-                    translate(metres(x), metres(y + lift), metres(z)),
-                    ry(yaw),
-                ])),
-            }
+        .filter(|placed| placed.asset.starts_with(PREFIX))
+        .map(|placed| Part {
+            key: placed.asset.as_str(),
+            model: matrix(placed.frame()),
         })
         .collect()
 }
@@ -60,6 +51,7 @@ mod tests {
     fn every_kit_module_is_placed_once_or_more() {
         let keys = entries();
         assert_eq!(keys.len(), 14, "{keys:?}");
-        assert!(keys.iter().all(|key| key.starts_with("shrine.kit.")));
+        assert!(keys.iter().all(|key| key.starts_with(PREFIX)));
+        assert_eq!(parts(&mmorpg_scenery::greyhaven_vale_scenery()).len(), 41);
     }
 }
