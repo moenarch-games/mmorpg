@@ -48,6 +48,7 @@ mod party;
 pub mod physics_ab;
 mod physique;
 mod platform;
+mod prediction;
 mod progression;
 mod projectile;
 mod projection;
@@ -55,6 +56,7 @@ mod pvp;
 mod quest;
 pub mod raid;
 mod rewards;
+mod rewind;
 mod routine;
 mod seat;
 mod shapes;
@@ -170,6 +172,7 @@ pub use physique::{
     PhysiqueAttribute, PhysiqueParam, PhysiquePreset,
 };
 pub use platform::{MAX_PLATFORMS, Platform, PlatformId, PlatformPhase};
+pub use prediction::MovementPredictor;
 pub use progression::{MAX_PLAYER_LEVEL, experience_to_next_level, kill_experience};
 pub use projectile::{
     AIM_ASSIST_COS, ARROW_SPEED_UNITS, BOLT_SPEED_UNITS, BOMB_FUSE_TICKS, BOMB_RESTITUTION,
@@ -195,6 +198,7 @@ pub use raid::{
 };
 pub use ramp::{MAX_RAMPS, Ramp, RampRise};
 pub use rewards::{RewardGrant, RewardHistory, RewardKey};
+pub use rewind::{CLIENT_INTERPOLATION_TICKS, HitRewind, MAX_HIT_REWIND_MS, RewindFrame};
 pub use rock::{PROXIES as ROCK_PROXIES, RockProxy, RockShape};
 pub use roll::Roll;
 pub use routine::{

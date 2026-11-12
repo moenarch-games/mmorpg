@@ -13,8 +13,9 @@ use std::sync::{Arc, OnceLock};
 use battle_royale_core::arena::{self, ArenaPart};
 use mmorpg_core::{
     CharacterPersistence, ClassChoice, CreatureBehaviour, CreatureFamily, CreatureId,
-    CreatureSpawn, CreatureTemplate, CreatureTemplateId, EphemeralCharacterBuild, MAX_PLAYER_LEVEL,
-    PlayerClass, PropKind, Sex, SpawnGrid, TimedCombat, ZoneAreas, ZoneContent, ZoneDefinition,
+    CreatureSpawn, CreatureTemplate, CreatureTemplateId, EphemeralCharacterBuild, HitRewind,
+    MAX_PLAYER_LEVEL, PlayerClass, PlayerCombatPolicy, PropKind, Sex, SpawnGrid, TimedCombat,
+    ZoneAreas, ZoneContent, ZoneDefinition,
 };
 use mmorpg_presentation::StaticScene;
 use mmorpg_scenery::Scenery;
@@ -109,6 +110,27 @@ pub(crate) fn content() -> Arc<ZoneContent> {
                 .and_then(|content| content.with_timed_combat(TimedCombat::ARENA))
                 .expect("the fortress's lifts and ramps bind to the practice arena"),
         )
+    }))
+}
+
+/// The practice arena of a netcode trial (#680): the practice arena where players may fight
+/// (a sparring partner joins), with the arena trial's capped hit rewind when `rewind` (the
+/// match's option, the same for everyone in it).
+pub(crate) fn trial_content(rewind: bool) -> Arc<ZoneContent> {
+    static PLAIN: OnceLock<Arc<ZoneContent>> = OnceLock::new();
+    static REWOUND: OnceLock<Arc<ZoneContent>> = OnceLock::new();
+    let cell = if rewind { &REWOUND } else { &PLAIN };
+    Arc::clone(cell.get_or_init(|| {
+        let content = (*content())
+            .clone()
+            .with_player_combat(PlayerCombatPolicy::FreeForAll);
+        Arc::new(if rewind {
+            content
+                .with_hit_rewind(HitRewind::ARENA_TRIAL)
+                .expect("the practice arena has timed swings")
+        } else {
+            content
+        })
     }))
 }
 

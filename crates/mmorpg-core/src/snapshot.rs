@@ -383,6 +383,9 @@ pub struct CanonicalZoneSnapshot {
     pub wakes: Vec<crate::NpcWake>,
     /// The private run bound to a depths zone (#404).
     pub depths: Option<crate::DepthsRun>,
+    /// Where bodies stood over the last ticks of a match with hit rewind (#680), oldest
+    /// first; empty without it.
+    pub rewind_history: Vec<crate::RewindFrame>,
 }
 
 impl ZoneSimulation {
@@ -537,6 +540,7 @@ impl ZoneSimulation {
             raid: self.raid.clone(),
             wakes: self.canonical_wakes(),
             depths: self.depths.clone(),
+            rewind_history: self.canonical_rewind_history(),
         })
     }
 
@@ -663,6 +667,7 @@ impl ZoneSimulation {
             run.validate(site)?;
         }
         zone.depths = snapshot.depths;
+        zone.restore_rewind_history(snapshot.rewind_history, snapshot.tick)?;
         zone.place_npcs(false)?;
         zone.schedule_platforms(zone.tick, true)?;
         if let Some(rewards) = &snapshot.rewards {
@@ -787,6 +792,12 @@ impl ZoneSimulation {
                 || timed.is_none_or(|timed| {
                     timed.startup_ticks() != swing.startup || timed.active_ticks() != swing.active
                 })
+                // Its rewind (#680) stays within the content's cap.
+                || swing.rewind
+                    > self
+                        .content
+                        .hit_rewind()
+                        .map_or(0, |rewind| rewind.max_ticks())
             {
                 return Err(ZoneError::new("player timed swing is invalid"));
             }

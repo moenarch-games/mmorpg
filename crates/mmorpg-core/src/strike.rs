@@ -23,6 +23,7 @@
 
 use crate::ability::{AbilityEffect, AbilityId, ids};
 use crate::ai::distance_squared;
+use crate::physics::Vec3i;
 use crate::trig::{self, YAW_EIGHTH_TURN, YAW_QUARTER_TURN};
 use crate::unit::PLAYER_REACH_UNITS;
 use crate::{EntityRef, PLAYER_HALF_EXTENTS_UNITS, PlayerId, ZoneError, ZoneSimulation};
@@ -268,23 +269,31 @@ impl ZoneSimulation {
         facing: u16,
         aim: StrikeAim,
     ) -> Result<Option<EntityRef>, ZoneError> {
-        self.sweep_coverage(player_id, Sweep::full(facing, aim))
+        self.sweep_coverage(player_id, Sweep::full(facing, aim), 0)
     }
 
     /// The eligible living unit `sweep` covers: nearest first, then in
-    /// `EntityRef` order; `None` covers nobody.
+    /// `EntityRef` order; `None` covers nobody. With `rewind` (#680) each body
+    /// is tested where it stood that many ticks ago.
     pub(crate) fn sweep_coverage(
         &self,
         player_id: PlayerId,
         sweep: Sweep,
+        rewind: u16,
     ) -> Result<Option<EntityRef>, ZoneError> {
         let origin = self.player_position(player_id)?;
+        // A rewound body may since have run up to twice its run speed out of reach.
+        let margin =
+            i32::from(rewind) * 2 * crate::RUN_SPEED_UNITS_PER_SECOND / i32::from(crate::TICK_HZ);
         let mut best: Option<(i64, EntityRef)> = None;
-        for entity in self.interest.near(origin.x, origin.z, PLAYER_REACH_UNITS) {
+        for entity in self
+            .interest
+            .near(origin.x, origin.z, PLAYER_REACH_UNITS + margin)
+        {
             if !self.attackable_by_player(player_id, entity) {
                 continue;
             }
-            let Some(distance) = self.sweep_distance(player_id, sweep, entity)? else {
+            let Some(distance) = self.sweep_distance(player_id, sweep, entity, rewind)? else {
                 continue;
             };
             if best.is_some_and(|best| (distance, entity) >= best) {
@@ -297,12 +306,14 @@ impl ZoneSimulation {
 
     /// The squared XZ distance to `entity` when `sweep` from the player's body
     /// covers it: within reach, inside the arc, overlapping the height band and
-    /// in line of sight. Eligibility is the caller's.
+    /// in line of sight. Eligibility is the caller's. With `rewind` (#680) the
+    /// body is where it stood that many ticks ago, if the zone remembers it.
     pub(crate) fn sweep_distance(
         &self,
         player_id: PlayerId,
         sweep: Sweep,
         entity: EntityRef,
+        rewind: u16,
     ) -> Result<Option<i64>, ZoneError> {
         let origin = self.player_position(player_id)?;
         let feet = origin.y - PLAYER_HALF_EXTENTS_UNITS[1];
@@ -314,7 +325,11 @@ impl ZoneSimulation {
             .world
             .body(crate::entity::body_id(entity))
             .ok_or_else(|| ZoneError::new("creature physics body is missing"))?;
-        let (centre, half) = (body.position(), body.half_extents());
+        let rewound = self.rewound_centre(entity, rewind);
+        let (centre, half) = (
+            rewound.map_or_else(|| body.position(), |[x, y, z]| Vec3i::new(x, y, z)),
+            body.half_extents(),
+        );
         let distance = distance_squared([origin.x, origin.z], [centre.x, centre.z]);
         if distance > reach {
             return Ok(None);
@@ -332,7 +347,21 @@ impl ZoneSimulation {
         if top < band_low || bottom > band_high {
             return Ok(None);
         }
-        if !self.line_of_sight(EntityRef::Player(player_id), entity)? {
+        let sighted = if rewound.is_some() {
+            // Present cover between the swinger and the rewound body.
+            !self.world.segment_blocked(
+                origin,
+                Vec3i::new(
+                    centre.x - origin.x,
+                    centre.y - origin.y,
+                    centre.z - origin.z,
+                ),
+                |body| body.0 < crate::entity::PLAYER_BODY_BASE,
+            )
+        } else {
+            self.line_of_sight(EntityRef::Player(player_id), entity)?
+        };
+        if !sighted {
             return Ok(None);
         }
         Ok(Some(distance))

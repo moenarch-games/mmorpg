@@ -112,6 +112,8 @@ pub struct LocalZoneHost {
     /// The boss review weakens Thorn once he stands, so his adds and loot prompt can be reviewed
     /// in a short fight (#404).
     weaken_thorn: bool,
+    /// The netcode trial's sparring partner (#680), whom the page drives like any player.
+    sparring_partner: Option<PlayerId>,
 }
 
 impl LocalZoneHost {
@@ -130,6 +132,7 @@ impl LocalZoneHost {
             next_run: 1,
             depths_cleared: 0,
             weaken_thorn: false,
+            sparring_partner: None,
         })
     }
 
@@ -215,6 +218,40 @@ impl LocalZoneHost {
         Ok((host, player_id))
     }
 
+    /// A fresh practice arena for a netcode trial (#680): players may fight, `build` is
+    /// player 1 and a standard Warden sparring partner player 2 (the page drives it), with
+    /// capped hit rewind when `rewind`. Nothing is stored.
+    pub fn arena_trial(
+        build: &EphemeralCharacterBuild,
+        rewind: bool,
+    ) -> Result<(Self, PlayerId), LocalZoneError> {
+        let mut host = Self::empty(
+            ARENA_ZONE_ID,
+            crate::arena_presentation::trial_content(rewind),
+        )?;
+        let partner = EphemeralCharacterBuild::standard(mmorpg_core::ClassChoice {
+            class: mmorpg_core::PlayerClass::Warden,
+            sex: mmorpg_core::Sex::Male,
+        })
+        .map_err(|error| LocalZoneError::Zone(ZoneError::new(error.to_string())))?;
+        for build in [build, &partner] {
+            let player_id = host.next_player_id;
+            host.zone
+                .admit_ephemeral(player_id, build)
+                .map_err(LocalZoneError::Zone)?;
+            host.next_player_id += 1;
+            host.last_sequences.insert(player_id, 0);
+        }
+        host.sparring_partner = Some(2);
+        Ok((host, 1))
+    }
+
+    /// The netcode trial's sparring partner (#680), if this is a trial.
+    #[must_use]
+    pub const fn sparring_partner(&self) -> Option<PlayerId> {
+        self.sparring_partner
+    }
+
     fn empty(zone_id: ZoneId, content: Arc<ZoneContent>) -> Result<Self, LocalZoneError> {
         let mut zone =
             ZoneSimulation::with_content(zone_id, content).map_err(LocalZoneError::Zone)?;
@@ -230,6 +267,7 @@ impl LocalZoneHost {
             next_run: 1,
             depths_cleared: 0,
             weaken_thorn: false,
+            sparring_partner: None,
         })
     }
 
@@ -287,6 +325,7 @@ impl LocalZoneHost {
             next_run: 1,
             depths_cleared: 0,
             weaken_thorn: false,
+            sparring_partner: None,
         })
     }
 
@@ -681,6 +720,30 @@ mod tests {
             .find(|entity| entity.kind == EntityKind::Player && entity.id == player_id)
             .unwrap()
             .position
+    }
+
+    #[test]
+    fn a_netcode_trial_arena_admits_a_sparring_partner_and_sets_rewind_per_match() {
+        let build = EphemeralCharacterBuild::standard(ClassChoice {
+            class: mmorpg_core::PlayerClass::Ranger,
+            sex: mmorpg_core::Sex::Female,
+        })
+        .unwrap();
+        for rewind in [false, true] {
+            let (host, player) = LocalZoneHost::arena_trial(&build, rewind).unwrap();
+            assert_eq!((player, host.sparring_partner()), (1, Some(2)));
+            assert_eq!(host.zone().player_count(), 2);
+            assert_eq!(
+                host.zone().hit_rewind(),
+                rewind.then_some(mmorpg_core::HitRewind::ARENA_TRIAL)
+            );
+            assert_eq!(
+                host.zone().content().player_combat_policy(),
+                mmorpg_core::PlayerCombatPolicy::FreeForAll
+            );
+        }
+        let (practice, _) = LocalZoneHost::practice_arena(&build).unwrap();
+        assert_eq!(practice.sparring_partner(), None);
     }
 
     #[test]

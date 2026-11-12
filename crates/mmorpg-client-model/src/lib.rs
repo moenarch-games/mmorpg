@@ -21,6 +21,7 @@ pub mod outbox;
 pub mod party;
 pub mod pie_menu;
 pub mod power_draw;
+pub mod prediction;
 pub mod quest;
 pub mod theme;
 pub mod world_map;

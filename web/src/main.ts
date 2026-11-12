@@ -61,6 +61,7 @@ import { OnlineZoneSource } from "./world/online-zone-source";
 import { BattleRoyaleEntry, matchStatus } from "./world/battle-royale/entry";
 import { ModeTabs, labelGameMenu } from "./front-end";
 import { createArenaWorld, createPracticeWorld, type ArenaWorld, type PracticeWorld } from "./world/battle-royale/world";
+import type { NetcodeTrialSource } from "./world/battle-royale/netcode-trial";
 import "./world/battle-royale/style.css";
 import type { LinkState, ZoneWorld } from "./world/world-source";
 import { WorldView, webGpuProjection } from "./world/world-view";
@@ -277,7 +278,7 @@ function refreshArenaWorld(): void {
   try {
     if (arenaEntry.selected && arenaEntry.practice) {
       const base = selectedCharacter();
-      practiceWorld = createPracticeWorld(world, () => ({ character: arenaEntry.character(base), equipment: arenaEntry.equipment() }));
+      practiceWorld = createPracticeWorld(world, () => ({ character: arenaEntry.character(base), equipment: arenaEntry.equipment() }), arenaEntry.netcodeTrial());
     } else if (arenaEntry.selected) {
       arenaServer = arenaEntry.server();
       if (arenaServer) { arenaWorld = createArenaWorld(world, arenaServer, () => arenaEntry.equipment()); }
@@ -1533,7 +1534,7 @@ async function resetScenario(): Promise<void> {
 }
 
 /** Restarts the scenario world through `restart` (a reset, or an Action Lab replay) and re-enters the view. */
-async function restartScenario(restart: (source: ScenarioSource) => Promise<number>): Promise<void> {
+async function restartScenario(restart: (source: ScenarioSource | NetcodeTrialSource) => Promise<number>): Promise<void> {
   const restartable = resettableWorld();
   if (!restartable || entryState.phase !== "world") {
     return;
@@ -1584,7 +1585,7 @@ function mountActionLab(loaded: LocalWorld, choice: ScenarioChoice, source: Scen
     },
     replay: async (scenario, config, pauseAt) => {
       source.setZoneFactory(labExperiments.zoneFactory(scenario.setup, BigInt(scenario.seed), config));
-      await restartScenario((target) => target.replay(scenario.commands, pauseAt));
+      await restartScenario(() => source.replay(scenario.commands, pauseAt));
     },
     takeOver: () => source.stopReplay(),
   });
@@ -1595,7 +1596,7 @@ function mountActionLab(loaded: LocalWorld, choice: ScenarioChoice, source: Scen
 }
 
 /** The entered world a reset restarts fresh: a review scenario or the practice arena. */
-function resettableWorld(): { world: ZoneWorld; source: ScenarioSource } | null {
+function resettableWorld(): { world: ZoneWorld; source: ScenarioSource | NetcodeTrialSource } | null {
   const candidate = scenarioWorld ?? practiceWorld;
   return candidate && activeWorld === candidate.world ? candidate : null;
 }

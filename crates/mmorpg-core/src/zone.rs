@@ -316,6 +316,9 @@ pub struct ZoneSimulation {
     pub(crate) wakes: BTreeMap<crate::NpcId, crate::NpcWake>,
     /// The private run bound to this depths zone (#404); `None` in every other zone.
     pub(crate) depths: Option<crate::DepthsRun>,
+    /// Where bodies stood over the last ticks, for capped hit rewind (#680); canonical,
+    /// empty without it.
+    pub(crate) rewind_history: crate::rewind::RewindHistory,
 }
 
 impl ZoneSimulation {
@@ -483,6 +486,7 @@ impl ZoneSimulation {
             raid: crate::RaidState::default(),
             wakes: BTreeMap::new(),
             depths: None,
+            rewind_history: crate::rewind::RewindHistory::new(),
             rewards: None,
             transfers: crate::transfer::Transfers::default(),
             parties: crate::party::Parties::new(),
@@ -911,6 +915,8 @@ impl ZoneSimulation {
         // Routine NPCs stand where the new tick's time of day puts them (#158).
         self.place_npcs(true)?;
         self.advance_private_homes()?;
+        // Where bodies ended this tick, for a match with hit rewind (#680).
+        self.record_rewind_frame(now)?;
         Ok(())
     }
 
