@@ -1,9 +1,11 @@
-//! How a character's body moves: run and jump speeds, the dodge roll, climbing and surface
-//! hazards. Built on `sim-foundation`; it knows nothing of combat, zones or authored content.
+//! How a character's body moves: run and jump speeds, the grounded walk and jump step
+//! ([`walk`]), the dodge roll, climbing and surface hazards. Built on `sim-foundation`; it knows
+//! nothing of combat, zones or authored content.
 
 pub mod climb;
 pub mod roll;
 pub mod surface;
+pub mod walk;
 
 pub use roll::Roll;
 
