@@ -110,8 +110,10 @@ pub struct Presentation {
     last_buildings: Instant,
     /// The Sunken Shrine's kit modules (#431), placed once.
     shrine: crate::world::DrawBatch,
-    /// The Outpost kit buildings' modules (#420), placed once.
+    /// The Outpost kit buildings' modules (#420), placed once, as picking tests them.
     outpost: crate::world::DrawBatch,
+    /// The same modules drawn with their textures (#753).
+    outpost_textured: Vec<crate::world::NatureDraw>,
 }
 
 impl Presentation {
@@ -141,7 +143,19 @@ impl Presentation {
                     })
             })
             .collect();
-        let outpost = mmorpg_presentation::outpost_kit::parts(&scenery)
+        let outpost_parts = mmorpg_presentation::outpost_kit::parts(&scenery);
+        let outpost_textured = outpost_parts
+            .iter()
+            .filter_map(|part| {
+                Some(crate::world::NatureDraw {
+                    entry: crate::nature::kit_entry(part.entry)?,
+                    level: 0,
+                    fade: 1.,
+                    model: part.model,
+                })
+            })
+            .collect();
+        let outpost = outpost_parts
             .iter()
             .flat_map(|part| {
                 skinned::outpost_draws(part.entry)
@@ -194,6 +208,7 @@ impl Presentation {
             last_buildings: now,
             shrine,
             outpost,
+            outpost_textured,
         })
     }
 
@@ -724,9 +739,9 @@ impl Presentation {
         }
         frame.draws.extend(self.unit_draws(now, view));
         self.append_buildings(&mut frame.draws, now);
-        for batch in [&self.shrine, &self.outpost] {
-            frame.batches.push(Arc::clone(batch));
-        }
+        frame.batches.push(Arc::clone(&self.shrine));
+        frame.nature.extend_from_slice(&self.outpost_textured);
+        frame.occluders.push(Arc::clone(&self.outpost));
         self.append_ambient(&mut frame.draws, now);
         frame
     }

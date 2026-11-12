@@ -46,6 +46,8 @@ fn pickable(draw: &SceneDraw) -> bool {
 impl WorldPicking {
     pub fn present(&mut self, frame: &WorldFrame, bodies: &[(EntityRef, SceneDraw)]) {
         self.batches.clone_from(&frame.batches);
+        self.batches
+            .extend(frame.occluders.iter().map(std::sync::Arc::clone));
         self.world = frame
             .draws
             .iter()

@@ -112,6 +112,9 @@ pub struct WorldFrame {
     /// The `greyhaven-nature` trees, rocks and bushes and the climbing kit's parts drawn this
     /// frame (#49, #621).
     pub nature: Vec<NatureDraw>,
+    /// Draws that picking tests clicks against but the frame does not draw: the Outpost
+    /// kit's modules, drawn textured among `nature` (#753).
+    pub occluders: Vec<DrawBatch>,
 }
 
 /// One drawn level of a placed tree, rock or climbing kit part (#49, #621):
@@ -539,6 +542,7 @@ impl WorldScene {
             draws,
             lighting,
             nature: self.nature_draws(seconds, animate, eye, fov_y_degrees),
+            occluders: Vec::new(),
         }
     }
 
