@@ -19,10 +19,13 @@
 //!   body by body.
 //! - Rays, overlaps and segment checks are `cast_ray`/`cast_ray_first` and `overlap_shape`.
 //! - Debris (#288) and movable props (#58) use dynamic boxes, boulders (#299) real spheres.
-//!   Authored zones retain isolated static response worlds, built with the zone
+//!   Every zone retains one isolated static response world, built with the zone
 //!   ([`World::prepare_response_lanes`]) and kept in step with only the static bodies that
 //!   change (#666). Moving pieces transfer in and out on every tick; resting debris stays as
-//!   fixed bodies keyed by its game identity until it despawns.
+//!   fixed bodies keyed by its game identity until it despawns. Props, debris and boulders
+//!   share it: per-body solver iterations (physics-engine #521) give each kind its own
+//!   passes, and collision layers keep resting debris and a step's excluded bodies out of the
+//!   other kinds' way.
 //!
 //! Intentional differences from the Rapier backend (listed in `docs/PHYSICS_AB.md`):
 //!
@@ -39,17 +42,18 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use physics_engine::approximate::{
     Autostep, Body, CharacterMove, CharacterMoveResult, CharacterSettings, Config, ConvexHullDesc,
-    HeightfieldDesc, Material, Medium, Quaternion, QueryFilter, QueryPose, RayCast, Shape,
-    ShapeCast, TriangleMeshDesc, Vector,
+    HeightfieldDesc, Material, Medium, Quaternion, QueryFilter, QueryHit, QueryPose, RayCast,
+    Shape, ShapeCast, TriangleMeshDesc, Vector,
 };
 use physics_engine::{BodyId as EngineId, CollisionLayers3d};
 
 use super::shared::{
-    BOULDER_ANGULAR_DAMPING, BOULDER_DENSITY, BOULDER_LANE, BOULDER_LINEAR_DAMPING, Dynamic,
-    PROP_LANE, RESPONSE_LANES, TICKS_PER_SECOND, comes_to_rest, nearby, over_open_floor,
+    BOULDER_ANGULAR_DAMPING, BOULDER_DENSITY, BOULDER_LINEAR_DAMPING, Dynamic, TICKS_PER_SECOND,
+    comes_to_rest, nearby, over_open_floor,
 };
 use super::{
     Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, PhysicsError, PieceMedium, PieceShape,
@@ -69,6 +73,8 @@ const PIECE_RESTITUTION: f32 = 0.15;
 const GROUND_PREDICTION_UNITS: f32 = 5.0;
 /// A ceiling stops a rising body when it realizes less than this much (units) of its rise.
 const CEILING_TOLERANCE_UNITS: f32 = 1.0e-3;
+/// Solver passes of tumbling debris and boulders in an authored zone.
+const AUTHORED_PASSES: u8 = 4;
 
 fn vector(value: [f32; 3]) -> Vector {
     Vector(value[0], value[1], value[2])
@@ -129,15 +135,17 @@ struct Ground {
     floor: BodyId,
 }
 
-/// One isolated static-response world (#666): the zone's static bodies, kept in step with the
-/// ones that changed, and the resting debris it retains as fixed bodies.
+/// The isolated static-response world (#666): the zone's static bodies, kept in step with the
+/// ones that changed, and the resting debris it retains as fixed bodies. Props, debris and
+/// boulders all step in it, each with its own solver passes (physics-engine #521).
 #[derive(Clone)]
 struct ResponseLane {
     engine: physics_engine::approximate::World,
     fixed: BTreeMap<BodyId, (RigidBody, EngineId)>,
     /// Static bodies added, removed or moved since the lane's last sync.
     dirty: BTreeSet<BodyId>,
-    /// The bodies the lane's last sync left out (the movable props' own boxes).
+    /// The bodies the lane's last sync hid from its pieces ([`HIDDEN`]): the moving props' own
+    /// boxes, a boulder's own sphere.
     excluded: Vec<BodyId>,
     /// Resting pieces kept as fixed bodies, by engine key ([`piece_key`]).
     resting: BTreeMap<u64, (DebrisBody, EngineId)>,
@@ -159,6 +167,42 @@ struct GroundGap {
     gap: Option<f32>,
 }
 
+/// A placed body's last support cast in [`World::grounded`] (#666), exact like [`GroundGap`].
+#[derive(Clone, Copy)]
+struct Support {
+    revision: u64,
+    position: [u32; 3],
+    grounded: bool,
+}
+
+/// The ground casts' reused hit buffer and [`World::grounded`]'s cached answers (#666).
+#[derive(Clone, Default)]
+struct Probes {
+    hits: Vec<QueryHit>,
+    support: BTreeMap<BodyId, Support>,
+}
+
+/// [`Probes`] behind a mutex, because the casts are reached through `&self` and the world stays
+/// `Sync`; never contended, as the zone steps on one thread.
+#[derive(Default)]
+struct ProbeCache(Mutex<Probes>);
+
+impl Clone for ProbeCache {
+    fn clone(&self) -> Self {
+        Self(Mutex::new(self.lock().clone()))
+    }
+}
+
+impl ProbeCache {
+    fn lock(&self) -> MutexGuard<'_, Probes> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn get_mut(&mut self) -> &mut Probes {
+        self.0.get_mut().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct World {
     gravity: [f32; 3],
@@ -178,13 +222,14 @@ pub(super) struct World {
     moves: Vec<CharacterMove>,
     results: Vec<CharacterMoveResult>,
     velocities: Vec<(BodyId, [f32; 3])>,
-    response: [Option<ResponseLane>; RESPONSE_LANES],
+    response: Option<ResponseLane>,
     /// The moving bodies, the platforms and the count of authored meshes and rocks, kept on
     /// add and remove so a step never scans every body for them (#666).
     moving: BTreeSet<BodyId>,
     platforms: BTreeSet<BodyId>,
     authored: usize,
     ground_gaps: BTreeMap<BodyId, GroundGap>,
+    probes: ProbeCache,
 }
 
 impl fmt::Debug for World {
@@ -224,17 +269,18 @@ impl World {
             moves: Vec::new(),
             results: Vec::new(),
             velocities: Vec::new(),
-            response: std::array::from_fn(|_| None),
+            response: None,
             moving: BTreeSet::new(),
             platforms: BTreeSet::new(),
             authored: 0,
             ground_gaps: BTreeMap::new(),
+            probes: ProbeCache::default(),
         }
     }
 
-    /// Records a static body's change for every built response lane's next sync.
+    /// Records a static body's change for the response lane's next sync.
     fn static_changed(&mut self, id: BodyId) {
-        for lane in self.response.iter_mut().flatten() {
+        if let Some(lane) = &mut self.response {
             lane.dirty.insert(id);
         }
     }
@@ -252,6 +298,7 @@ impl World {
         if body.is_moving() {
             set(&mut self.moving);
             self.ground_gaps.remove(&body.id);
+            self.probes.get_mut().support.remove(&body.id);
             return;
         }
         if body.is_platform() {
@@ -343,10 +390,31 @@ fn insert_lane_body(
     insert_response_body(engine, body)
 }
 
-/// A piece's layers: everything, less the floor where the ground dips below it.
-fn piece_layers(open_floor: bool) -> CollisionLayers3d {
+/// The collision layer of the resting debris the response lane retains: only debris meets it,
+/// so props and boulders, which step in the same lane, pass it as they did in lanes of their
+/// own (#521).
+const RESTING_DEBRIS_LAYER: u32 = 1 << 2;
+/// A static body a step leaves out (a moving prop's own box, a boulder's own sphere) stays in
+/// the lane on no layer, so nothing meets it until a later step takes it back.
+const HIDDEN: CollisionLayers3d = CollisionLayers3d::new(0, 0);
+
+/// A piece's layers: everything, less the floor where the ground dips below it and less the
+/// resting debris unless the piece is debris itself.
+fn piece_layers(open_floor: bool, debris: bool) -> CollisionLayers3d {
+    let mut mask = u32::MAX;
     if open_floor {
-        CollisionLayers3d::new(u32::MAX, !FLOOR_LAYER)
+        mask &= !FLOOR_LAYER;
+    }
+    if !debris {
+        mask &= !RESTING_DEBRIS_LAYER;
+    }
+    CollisionLayers3d::new(u32::MAX, mask)
+}
+
+/// A static lane body's own layers: the floor's, else every layer.
+fn static_layers(body: &RigidBody) -> CollisionLayers3d {
+    if matches!(body.kind, Kind::Floor) {
+        response_body(body).layers
     } else {
         CollisionLayers3d::ALL
     }
@@ -566,7 +634,7 @@ impl World {
     /// row-major as the content stores them, with the flat cells removed like the Rapier
     /// backend removes them.
     pub fn set_terrain(&mut self, id: BodyId, terrain: crate::Terrain) {
-        self.response = std::array::from_fn(|_| None);
+        self.response = None;
         if let Some(ground) = self.ground.take() {
             self.engine.remove_body(ground.body);
             self.games.remove(&ground.body.to_bits());
@@ -845,7 +913,8 @@ impl World {
     /// Whether a moving body stands on static ground: its last move's engine result, or for a
     /// body placed or added since, the engine's grounded test as a downward shape cast
     /// (walkable static support within the contact offset plus 5 cm beyond the contact offset,
-    /// as on the Rapier arm).
+    /// as on the Rapier arm). The cast sees only static geometry, so its answer stands while
+    /// neither that (physics-engine `World::static_revision`) nor the body's position changed.
     pub fn grounded(&self, id: BodyId) -> bool {
         let Some(body) = self.bodies.get(&id).filter(|body| body.is_moving()) else {
             return false;
@@ -853,61 +922,60 @@ impl World {
         if let Some(&grounded) = self.grounded.get(&id) {
             return grounded;
         }
+        let revision = self.engine.static_revision();
+        let position = body.position.map(f32::to_bits);
+        let cached = self.probes.lock().support.get(&id).copied();
+        if let Some(support) = cached
+            && support.revision == revision
+            && support.position == position
+        {
+            return support.grounded;
+        }
         // The Rapier arm's support cast: ground prediction (offset + 5 cm) beyond the contact
         // offset the capsule keeps, so any walkable hit within the cast's reach supports.
         let offset = self.settings.offset;
         let reach = offset + GROUND_PREDICTION_UNITS + offset;
-        let cast = ShapeCast::new(
-            QueryPose::new(capsule(body.half_extents), lifted(body.position)),
-            Vector(0.0, -reach, 0.0),
+        let grounded = self
+            .support_fraction(body, capsule(body.half_extents), reach)
+            .is_some();
+        self.probes.lock().support.insert(
+            id,
+            Support {
+                revision,
+                position,
+                grounded,
+            },
         );
-        let filter = QueryFilter {
-            exclude: Some(self.handles[&id]),
-            ..QueryFilter::default()
-        };
-        let mut hits = Vec::new();
-        self.engine
-            .cast_shape(cast, filter, &mut hits)
-            .expect("physics-engine grounded cast failed");
-        // The nearest walkable static support: a too-steep face met first (a ramp's chute end)
-        // is passed over, as physics-engine's own support test does (physics-engine #395). Over
-        // the lake basin the floor is open, as in the body's moves.
-        let min_up = self.settings.max_slope.cos();
-        let open = self.open_floor(body);
-        hits.iter().any(|hit| {
-            Some(hit.body) != open
-                && (hit.starts_overlapping || hit.normal.1 > 0.0)
-                && hit.normal.1 >= min_up
-                && self
-                    .games
-                    .get(&hit.body.to_bits())
-                    .and_then(|game| self.bodies.get(game))
-                    .is_none_or(|body| !body.is_moving())
-        })
+        grounded
     }
 
     fn probe_ground_gap(&self, body: &RigidBody) -> Option<f32> {
         let offset = self.settings.offset;
         let reach = offset + GROUND_PREDICTION_UNITS;
         let (half_segment, radius) = super::capsule_dimensions(body.half_extents);
+        self.support_fraction(body, Shape::capsule(half_segment, radius + offset), reach)
+            .map(|fraction| fraction * reach)
+    }
+
+    /// The fraction of `reach` at which `shape`, cast down from `body`, first meets walkable
+    /// static support, in the reused hit buffer: a too-steep face met first (a ramp's chute end)
+    /// is passed over, as physics-engine's own support test does (physics-engine #395). Over
+    /// the lake basin the floor is open, as in the body's moves.
+    fn support_fraction(&self, body: &RigidBody, shape: Shape, reach: f32) -> Option<f32> {
         let cast = ShapeCast::new(
-            QueryPose::new(
-                Shape::capsule(half_segment, radius + offset),
-                lifted(body.position),
-            ),
+            QueryPose::new(shape, lifted(body.position)),
             Vector(0.0, -reach, 0.0),
         );
         let filter = QueryFilter {
             exclude: Some(self.handles[&body.id]),
             ..QueryFilter::default()
         };
-        let mut hits = Vec::new();
+        let mut probes = self.probes.lock();
+        let hits = &mut probes.hits;
+        hits.clear();
         self.engine
-            .cast_shape(cast, filter, &mut hits)
+            .cast_shape(cast, filter, hits)
             .expect("physics-engine grounded cast failed");
-        // The nearest walkable static support: a too-steep face met first (a ramp's chute end)
-        // is passed over, as physics-engine's own support test does (physics-engine #395). Over
-        // the lake basin the floor is open, as in the body's moves.
         let min_up = self.settings.max_slope.cos();
         let open = self.open_floor(body);
         hits.iter()
@@ -921,7 +989,7 @@ impl World {
                         .and_then(|game| self.bodies.get(game))
                         .is_none_or(|body| !body.is_moving())
             })
-            .map(|hit| hit.fraction * reach)
+            .map(|hit| hit.fraction)
     }
 
     pub fn overlap_query(&self, aabb: Aabb) -> Result<Vec<BodyId>, PhysicsError> {
@@ -1049,7 +1117,7 @@ impl World {
         })
     }
 
-    /// Debris (#288) uses Engine where every rigid contact shape is supported.
+    /// Debris (#288): free pieces keyed by their game identities `ids`.
     pub fn step_debris(
         &mut self,
         debris: &mut [DebrisBody],
@@ -1061,13 +1129,8 @@ impl World {
             media,
             ..Dynamic::default()
         };
-        if !self.has_authored_geometry() {
-            return self
-                .step_dynamic(debris, settle, &options)
-                .expect("physics-engine debris step failed");
-        }
-        self.step_authored(debris, Some(ids), settle, &options)
-            .expect("physics-engine authored debris step failed")
+        self.step_pieces(debris, Some(ids), settle, &options)
+            .expect("physics-engine debris step failed")
     }
 
     /// Movable props are upright boxes stopped by units' capsules.
@@ -1082,15 +1145,10 @@ impl World {
             upright: true,
             units_block: true,
             exclude,
-            lane: PROP_LANE,
             media,
         };
-        if self.has_authored_geometry() {
-            self.step_authored(props, None, &settle, &options)
-        } else {
-            self.step_dynamic(props, &settle, &options)
-        }
-        .expect("physics-engine props step failed")
+        self.step_pieces(props, None, &settle, &options)
+            .expect("physics-engine props step failed")
     }
 
     /// Rolling boulders (#299): free spheres; only slow ones stop at units.
@@ -1106,57 +1164,62 @@ impl World {
             upright: false,
             units_block,
             exclude,
-            lane: BOULDER_LANE,
             media,
         };
-        if self.has_authored_geometry() {
-            self.step_authored(boulders, None, &settle, &options)
-        } else {
-            self.step_dynamic(boulders, &settle, &options)
-        }
-        .expect("physics-engine boulder step failed")
+        self.step_pieces(boulders, None, &settle, &options)
+            .expect("physics-engine boulder step failed")
     }
+
     fn has_authored_geometry(&self) -> bool {
         self.authored > 0
     }
 
-    /// Builds every response lane an authored zone lacks, holding its static bodies now, so the
-    /// first break, shove or roll does not pay for it (#666). Zone construction and recovery call
-    /// this once the static world stands; a primitive zone keeps stepping fresh worlds.
-    pub fn prepare_response_lanes(&mut self) -> Result<(), PhysicsError> {
-        if !self.has_authored_geometry() {
-            return Ok(());
+    /// The solver passes a moving piece takes beyond the lane's one (physics-engine #521):
+    /// upright props none; tumbling debris and boulders four passes in all in an authored zone
+    /// and the engine's default eight in a primitive one, where four let a panel momentarily
+    /// fall below the settle thresholds while balanced on an edge (#643's primitive breakables
+    /// fixture).
+    fn extra_iterations(&self, upright: bool) -> u8 {
+        if upright {
+            0
+        } else if self.has_authored_geometry() {
+            AUTHORED_PASSES - 1
+        } else {
+            Config::default().velocity_iterations - 1
         }
-        for lane in 0..RESPONSE_LANES {
-            self.response_lane(lane)?;
-        }
-        Ok(())
     }
 
-    /// Lane `index`, built with every static body when missing. Upright props take one solver
-    /// pass, free debris and boulders four.
-    fn response_lane(&mut self, index: usize) -> Result<&mut ResponseLane, PhysicsError> {
-        if self.response[index].is_none() {
+    /// Builds the response lane if the zone lacks it, holding its static bodies now, so the
+    /// first break, shove or roll does not pay for it (#666). Zone construction and recovery
+    /// call this once the static world stands.
+    pub fn prepare_response_lanes(&mut self) -> Result<(), PhysicsError> {
+        self.response_lane().map(|_| ())
+    }
+
+    /// The response lane, built with every static body when missing. It runs one solver pass;
+    /// pieces that need more ask for them ([`Self::extra_iterations`]).
+    fn response_lane(&mut self) -> Result<&mut ResponseLane, PhysicsError> {
+        if self.response.is_none() {
             let per_second = TICKS_PER_SECOND * TICKS_PER_SECOND / UNITS_PER_METRE;
             let mut engine = physics_engine::approximate::World::new(Config {
                 gravity: vector(self.gravity.map(|g| g * per_second)),
                 substeps: 2,
-                velocity_iterations: if index == PROP_LANE { 1 } else { 4 },
+                velocity_iterations: 1,
                 length_unit: UNITS_PER_METRE,
                 ..Config::default()
             })
-            .map_err(|failure| engine_error("authored response world", failure))?;
+            .map_err(|failure| engine_error("response world", failure))?;
             if let Some(ground) = &self.ground {
                 engine
                     .add_heightfield(heightfield(&ground.terrain), None)
-                    .map_err(|failure| engine_error("authored response terrain", failure))?;
+                    .map_err(|failure| engine_error("response terrain", failure))?;
             }
             let mut fixed = BTreeMap::new();
             for body in self.bodies.values().filter(|body| !body.is_moving()) {
                 let handle = insert_lane_body(&mut engine, body)?;
                 fixed.insert(body.id, (body.clone(), handle));
             }
-            self.response[index] = Some(ResponseLane {
+            self.response = Some(ResponseLane {
                 engine,
                 fixed,
                 dirty: BTreeSet::new(),
@@ -1164,17 +1227,20 @@ impl World {
                 resting: BTreeMap::new(),
             });
         }
-        Ok(self.response[index]
-            .as_mut()
-            .expect("response lane initialized"))
+        Ok(self.response.as_mut().expect("response lane initialized"))
     }
 
+    /// One tick of debris, movable props or boulders in the response lane, with the same
+    /// materials as the Rapier backend's rebuilt worlds (see [`PIECE_FRICTION`], density 600,
+    /// linear damping 0.2, angular 0.8), engine sleep off and the game's settle rule. Upright
+    /// props take two substeps of one solver pass.
+    ///
     /// The retained part is static geometry and resting debris. Every tick transfers the moving
     /// canonical pieces in and out; neither characters nor hidden dynamic solver state cross this
     /// boundary. `ids` (debris) are the pieces' game identities, ascending with the slice: they
     /// key the pieces, and a resting keyed piece stays in the lane as a fixed body until it
     /// leaves the slice. Unkeyed pieces (props, boulders) all transfer every tick.
-    fn step_authored(
+    fn step_pieces(
         &mut self,
         pieces: &mut [DebrisBody],
         ids: Option<&[u32]>,
@@ -1189,10 +1255,9 @@ impl World {
         debug_assert!(keys.as_ref().is_none_or(|keys| {
             keys.len() == pieces.len() && keys.windows(2).all(|pair| pair[0] < pair[1])
         }));
-        self.response_lane(options.lane)?;
-        let lane = self.response[options.lane]
-            .as_mut()
-            .expect("response lane initialized");
+        let extra = self.extra_iterations(options.upright);
+        self.response_lane()?;
+        let lane = self.response.as_mut().expect("response lane initialized");
         lane.sync(&self.bodies, options.exclude)?;
         if let Some(keys) = &keys {
             lane.retain_resting(pieces, keys)?;
@@ -1218,9 +1283,9 @@ impl World {
             if piece.resting && key.is_some() {
                 continue;
             }
-            let mut body = piece_body(piece, key, options.upright);
+            let mut body = piece_body(piece, key, options.upright, extra);
             let terrain = self.ground.as_ref().map(|ground| &ground.terrain);
-            body.layers = piece_layers(over_open_floor(terrain, piece));
+            body.layers = piece_layers(over_open_floor(terrain, piece), keys.is_some());
             let handle = lane
                 .engine
                 .add_body(body)
@@ -1252,99 +1317,7 @@ impl World {
             baseline,
             "response lane retained a transient body"
         );
-        outcome.map_err(|failure| engine_error("authored response step", failure))?;
-        Ok(moving)
-    }
-
-    /// One tick of primitive-zone debris or movable props in a fresh engine world of nearby game bodies,
-    /// rebuilt from game state like the Rapier backend's step: the same materials (see
-    /// [`PIECE_FRICTION`], density 600, linear damping 0.2, angular 0.8), sleep off, and the
-    /// game's settle rule. Upright props use two substeps of one solver pass; tumbling debris
-    /// keeps the engine's default eight passes. Four passes let a panel momentarily fall below
-    /// the settle thresholds while balanced on an edge (#643's primitive breakables fixture).
-    fn step_dynamic(
-        &self,
-        pieces: &mut [DebrisBody],
-        settle: &[bool],
-        options: &Dynamic<'_>,
-    ) -> Result<usize, PhysicsError> {
-        let moving = pieces.iter().filter(|piece| !piece.resting).count();
-        if moving == 0 {
-            return Ok(0);
-        }
-        let per_second = TICKS_PER_SECOND * TICKS_PER_SECOND / UNITS_PER_METRE;
-        let mut engine = physics_engine::approximate::World::new(Config {
-            gravity: vector(self.gravity.map(|g| g * per_second)),
-            substeps: 2,
-            velocity_iterations: if options.upright {
-                1
-            } else {
-                Config::default().velocity_iterations
-            },
-            length_unit: UNITS_PER_METRE,
-            ..Config::default()
-        })
-        .map_err(|failure| engine_error("dynamic world", failure))?;
-        let add = |engine: &mut physics_engine::approximate::World, body: Body| {
-            engine
-                .add_body(body)
-                .map_err(|failure| engine_error("add_body", failure))
-        };
-        for body in nearby(&self.bodies, pieces, options) {
-            let mut fixed = response_body(body);
-            if body.is_moving() {
-                // A unit stands in the props' way as a fixed capsule (#58).
-                fixed.mass = 0.0;
-                fixed.external = false;
-            }
-            add(&mut engine, fixed)?;
-        }
-        if let Some(ground) = &self.ground {
-            engine
-                .add_heightfield(heightfield(&ground.terrain), None)
-                .map_err(|failure| engine_error("add_heightfield", failure))?;
-        }
-        let mut handles = Vec::with_capacity(pieces.len());
-        for (index, piece) in pieces.iter().enumerate() {
-            let (shape, mass) = piece_shape(piece);
-            let [x, y, z, w] = piece.rotation;
-            let mut body = Body::new(
-                shape,
-                vector(piece.position),
-                if piece.resting { 0.0 } else { mass },
-            );
-            body.orientation = Quaternion(x, y, z, w);
-            body.friction = PIECE_FRICTION;
-            body.restitution = PIECE_RESTITUTION;
-            if !piece.resting {
-                body.velocity = vector(piece.velocity.map(|v| v * TICKS_PER_SECOND));
-                body.angular_velocity = vector(piece.spin.map(|v| v * TICKS_PER_SECOND));
-                (body.linear_damping, body.angular_damping) = piece_damping(piece);
-                body.rotation_locked = options.upright;
-                body.sleep_allowed = false;
-                let terrain = self.ground.as_ref().map(|ground| &ground.terrain);
-                body.layers = piece_layers(over_open_floor(terrain, piece));
-            }
-            let handle = add(&mut engine, body)?;
-            if !piece.resting
-                && let Some(medium) = options.medium(index)
-            {
-                engine
-                    .set_medium(handle, Some(engine_medium(piece, medium)))
-                    .map_err(|failure| engine_error("piece medium", failure))?;
-            }
-            handles.push((!piece.resting).then_some(handle));
-        }
-        engine
-            .step(1.0 / f64::from(TICKS_PER_SECOND))
-            .map_err(|failure| engine_error("dynamic step", failure))?;
-        for (index, ((piece, handle), &settles)) in
-            pieces.iter_mut().zip(handles).zip(settle).enumerate()
-        {
-            if let Some(body) = handle.and_then(|handle| engine.body(handle)) {
-                take_piece(piece, body, settles, options.medium(index).is_some());
-            }
-        }
+        outcome.map_err(|failure| engine_error("response step", failure))?;
         Ok(moving)
     }
 }
@@ -1368,8 +1341,9 @@ fn engine_medium(piece: &DebrisBody, medium: PieceMedium) -> Medium {
     }
 }
 
-/// A piece's response-lane body: fixed while it rests, keyed by `key` when given.
-fn piece_body(piece: &DebrisBody, key: Option<u64>, upright: bool) -> Body {
+/// A piece's response-lane body: fixed while it rests, keyed by `key` when given, with `extra`
+/// solver passes while it moves.
+fn piece_body(piece: &DebrisBody, key: Option<u64>, upright: bool, extra: u8) -> Body {
     let (shape, mass) = piece_shape(piece);
     let [x, y, z, w] = piece.rotation;
     let mass = if piece.resting { 0. } else { mass };
@@ -1386,6 +1360,7 @@ fn piece_body(piece: &DebrisBody, key: Option<u64>, upright: bool) -> Body {
         body.angular_velocity = vector(piece.spin.map(|v| v * TICKS_PER_SECOND));
         (body.linear_damping, body.angular_damping) = piece_damping(piece);
         body.rotation_locked = upright;
+        body.additional_solver_iterations = extra;
     }
     body
 }
@@ -1408,29 +1383,20 @@ fn take_piece(piece: &mut DebrisBody, body: &Body, settles: bool, in_water: bool
 }
 
 impl ResponseLane {
-    /// Brings the lane's static bodies in step with `bodies` minus `exclude`, visiting only the
-    /// bodies changed since the last sync and those whose exclusion changed. A platform that
-    /// only moved moves in place (`set_static_position`); anything else is replaced under its
-    /// game key, so the body order stays that of a lane built afresh.
+    /// Brings the lane's static bodies in step with `bodies`, visiting only the bodies changed
+    /// since the last sync, and hides `exclude` from this step's pieces. A platform that only
+    /// moved moves in place (`set_static_position`); anything else is replaced under its game
+    /// key, so the body order stays that of a lane built afresh. An excluded body stays in the
+    /// lane on no layer ([`HIDDEN`]) and takes its own layers back once a step includes it.
     fn sync(
         &mut self,
         bodies: &BTreeMap<BodyId, RigidBody>,
         exclude: &[BodyId],
     ) -> Result<(), PhysicsError> {
-        if self.excluded != exclude {
-            self.dirty
-                .extend(self.excluded.iter().chain(exclude).copied());
-            self.excluded = exclude.to_vec();
-        }
         let dirty = std::mem::take(&mut self.dirty);
-        let wanted = |id: &BodyId| {
-            bodies
-                .get(id)
-                .filter(|body| !body.is_moving() && !exclude.contains(id))
-        };
         let mut added = Vec::new();
         for id in dirty {
-            let body = wanted(&id);
+            let body = bodies.get(&id).filter(|body| !body.is_moving());
             if let (Some((old, handle)), Some(body)) = (self.fixed.get_mut(&id), body) {
                 if *old == *body {
                     continue;
@@ -1456,6 +1422,21 @@ impl ResponseLane {
         for body in added {
             let handle = insert_lane_body(&mut self.engine, body)?;
             self.fixed.insert(body.id, (body.clone(), handle));
+        }
+        for id in self.excluded.iter().chain(exclude) {
+            if let Some((body, handle)) = self.fixed.get(id) {
+                let layers = if exclude.contains(id) {
+                    HIDDEN
+                } else {
+                    static_layers(body)
+                };
+                self.engine
+                    .set_layers(*handle, layers)
+                    .map_err(|failure| engine_error("response exclusion", failure))?;
+            }
+        }
+        if self.excluded != exclude {
+            self.excluded = exclude.to_vec();
         }
         Ok(())
     }
@@ -1486,9 +1467,11 @@ impl ResponseLane {
         }
         for (key, piece) in resting {
             if !self.resting.contains_key(&key) {
+                let mut body = piece_body(piece, Some(key), false, 0);
+                body.layers = CollisionLayers3d::new(RESTING_DEBRIS_LAYER, u32::MAX);
                 let handle = self
                     .engine
-                    .add_body(piece_body(piece, Some(key), false))
+                    .add_body(body)
                     .map_err(|failure| engine_error("response resting piece", failure))?;
                 self.resting.insert(key, (*piece, handle));
             }

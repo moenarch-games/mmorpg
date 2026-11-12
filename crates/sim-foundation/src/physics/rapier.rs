@@ -30,8 +30,8 @@ use rapier3d::prelude::{
 
 use super::queries::UprightShapes;
 use super::shared::{
-    BOULDER_ANGULAR_DAMPING, BOULDER_DENSITY, BOULDER_LANE, BOULDER_LINEAR_DAMPING, Dynamic,
-    PROP_LANE, TICKS_PER_SECOND, comes_to_rest, nearby, over_open_floor,
+    BOULDER_ANGULAR_DAMPING, BOULDER_DENSITY, BOULDER_LINEAR_DAMPING, Dynamic, TICKS_PER_SECOND,
+    comes_to_rest, nearby, over_open_floor,
 };
 use super::{
     Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, PhysicsError, PieceMedium, PieceShape,
@@ -1259,7 +1259,6 @@ impl World {
                 upright: true,
                 units_block: true,
                 exclude,
-                lane: PROP_LANE,
                 media,
             },
         )
@@ -1281,7 +1280,6 @@ impl World {
                 upright: false,
                 units_block,
                 exclude,
-                lane: BOULDER_LANE,
                 media,
             },
         )

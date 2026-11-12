@@ -12,14 +12,18 @@ backend selector or fallback. Hosts and clients continue to use the same core si
 Zone construction and recovery always use Physics Engine outside diagnostics. Greyhaven uses its
 retained hulls and cave meshes for characters, support, ray/projectile and shape queries.
 Free-rotating debris, upright movable props and rolling boulders also contact those exact
-shapes. Their three isolated response worlds are built with the zone (and on recovery), retain
-static geometry and engine scratch, and synchronize only the static bodies recorded as changed
-since their last step; a moving platform moves in place (`set_static_position`). Moving pieces
-transfer in and out each tick (one bulk `remove_bodies`). Resting debris stays in the debris lane
-as fixed bodies keyed above every game body ID by its debris ID until it despawns, so the body
-order is the one a lane rebuilt from the canonical pieces takes (#666). Units enter only the prop
-lane as temporary fixed capsules; the character world is separate. All temporary bodies are
-removed after stepping, so no hidden dynamic continuation state survives canonical recovery.
+shapes. They share one isolated response world, in primitive and authored zones alike, built
+with the zone (and on recovery); it retains static geometry and engine scratch and synchronizes
+only the static bodies recorded as changed since its last step; a moving platform moves in place
+(`set_static_position`). The world runs one solver pass; tumbling debris and boulders ask for
+more per body (physics-engine #521: four in all in authored zones, the engine's default eight in
+primitive ones), upright props keep one. A step's excluded bodies (a moving prop's own box, a
+boulder's own sphere) stay in the world on no collision layer. Moving pieces transfer in and out
+each tick (one bulk `remove_bodies`). Resting debris stays as fixed bodies on a layer only debris
+meets, keyed above every game body ID by its debris ID until it despawns, so the body order is
+the one a world rebuilt from the canonical pieces takes (#666). Units enter only prop and slow
+boulder steps as temporary fixed capsules; the character world is separate. All temporary bodies
+are removed after stepping, so no hidden dynamic continuation state survives canonical recovery.
 Character ground probes are cached per body and reused while its position and the character
 world's `static_revision` are unchanged.
 `World::step_debris` and `World::step_props` take `&mut self`, making retained response
