@@ -131,17 +131,18 @@
                 <div>
                   <p class="panel-label">New character</p>
                   <h2 id="character-creation-title">Create character</h2>
+                  <p id="creation-progress" class="creation-progress" aria-live="polite">Step 1 of 3 · Choose your class</p>
                 </div>
                 <button id="cancel-character-creation" class="creation-close" type="button" aria-label="Cancel character creation">×</button>
               </div>
 
-              <label class="creation-name">
+              <label class="creation-name" data-creation-step="2" hidden>
                 <span>Name</span>
                 <input id="new-character-name" name="characterName" type="text" minlength="2" maxlength="24"
                   autocomplete="off" spellcheck="false" placeholder="Character name" required />
               </label>
 
-              <fieldset class="creation-options">
+              <fieldset class="creation-options" data-creation-step="0">
                 <legend>Class</legend>
                 <div class="class-options">
                   <label class="class-option">
@@ -175,18 +176,24 @@
                 </div>
               </fieldset>
 
-              <fieldset class="creation-options">
-                <legend>Sex</legend>
-                <div class="sex-options">
-                  <label class="sex-option"><input type="radio" name="characterSex" value="male" checked /><span>Male</span></label>
-                  <label class="sex-option"><input type="radio" name="characterSex" value="female" /><span>Female</span></label>
-                </div>
-              </fieldset>
+              <div data-creation-step="1" hidden>
+                <fieldset class="creation-options">
+                  <legend>Sex</legend>
+                  <div class="sex-options">
+                    <label class="sex-option"><input type="radio" name="characterSex" value="male" checked /><span>Male</span></label>
+                    <label class="sex-option"><input type="radio" name="characterSex" value="female" /><span>Female</span></label>
+                  </div>
+                </fieldset>
+                <div id="creation-appearance-slot"></div>
+              </div>
+
+              <p id="creation-review" class="creation-review" data-creation-step="2" hidden></p>
 
               <p id="character-creation-status" class="creation-status" role="alert" aria-live="polite"></p>
               <div class="creation-actions">
                 <button id="cancel-character-creation-secondary" type="button">Cancel</button>
-                <button class="create-confirm" type="submit">Create character</button>
+                <button id="creation-back" type="button" hidden>Back</button>
+                <button id="creation-next" class="create-confirm" type="button">Continue</button>
               </div>
               <p class="creation-note">Characters created here are local to this browser prototype. Class and sex change the local preview, in-world presentation, and starter loadout; online account persistence remains server-side roadmap work.</p>
             </form>

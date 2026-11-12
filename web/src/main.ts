@@ -154,6 +154,13 @@ const creationPanel = requireElement<HTMLElement>("#character-creation");
 const creationForm = requireElement<HTMLFormElement>("#character-creation-form");
 const creationName = requireElement<HTMLInputElement>("#new-character-name");
 const creationStatus = requireElement<HTMLElement>("#character-creation-status");
+const creationTitle = requireElement<HTMLElement>("#character-creation-title");
+const creationProgress = requireElement<HTMLElement>("#creation-progress");
+const creationReview = requireElement<HTMLElement>("#creation-review");
+const creationBack = requireElement<HTMLButtonElement>("#creation-back");
+const creationNext = requireElement<HTMLButtonElement>("#creation-next");
+const creationAppearanceSlot = requireElement<HTMLElement>("#creation-appearance-slot");
+const creationSteps = [...document.querySelectorAll<HTMLElement>("[data-creation-step]")];
 const cancelCreationButtons = [
   requireElement<HTMLButtonElement>("#cancel-character-creation"),
   requireElement<HTMLButtonElement>("#cancel-character-creation-secondary"),
@@ -194,6 +201,7 @@ let rosterStorageHealthy = true;
 let characters: CharacterPreview[] = [PREVIEW_CHARACTER, ...loadCreatedRoster()];
 let entryState: EntryState = initialEntryState(PREVIEW_CHARACTER);
 let creationDraft: CharacterCreationDraft | null = null;
+let creationStep = 0;
 let characterAppearance: CharacterAppearance = savedAppearance(PREVIEW_CHARACTER) ?? { ...DEFAULT_CHARACTER_APPEARANCE };
 // Unsaved appearance edits survive switching characters within this page session.
 const appearanceByCharacterId = new Map<string, CharacterAppearance>();
@@ -1053,6 +1061,42 @@ function selectCharacter(characterId: string): void {
 const appearanceSection = requireElement<HTMLElement>('section[aria-label="Appearance"]');
 const equipmentSection = requireElement<HTMLElement>('section[aria-label="Equipment and loadout"]');
 const appearanceStorage = requireElement<HTMLElement>(".appearance-storage");
+const appearanceToggle = requireElement<HTMLButtonElement>("#appearance-toggle");
+const appearancePanel = requireElement<HTMLElement>("#appearance-panel");
+let previousAppearanceExpanded = false;
+
+const CREATION_STAGES = [
+  { title: "Choose your class", progress: "Step 1 of 3 · Choose your calling" },
+  { title: "Shape your character", progress: "Step 2 of 3 · Make them yours" },
+  { title: "Begin your story", progress: "Step 3 of 3 · Name your hero" },
+] as const;
+
+function showCreationStep(step: number): void {
+  creationStep = Math.max(0, Math.min(step, CREATION_STAGES.length - 1));
+  const stage = CREATION_STAGES[creationStep]!;
+  creationTitle.textContent = stage.title;
+  creationProgress.textContent = stage.progress;
+  for (const element of creationSteps) {
+    element.hidden = element.dataset.creationStep !== String(creationStep);
+  }
+  // An invisible required name field must not block progress through earlier steps.
+  creationName.disabled = creationStep !== 2;
+  creationBack.hidden = creationStep === 0;
+  creationNext.textContent = creationStep === 2 ? "Create character" : "Continue";
+  creationNext.type = creationStep === 2 ? "submit" : "button";
+  if (creationStep === 2 && creationDraft) {
+    const character = draftCharacterPreview(creationDraft);
+    creationReview.textContent = `${character.className} · ${character.sex === "male" ? "Male" : "Female"} · Ready for Greyhaven Outpost`;
+  }
+  creationStatus.textContent = "";
+}
+
+function advanceCreation(): void {
+  if (!creationDraft || creationStep === CREATION_STAGES.length - 1) { return; }
+  showCreationStep(creationStep + 1);
+  if (creationStep === 2) { creationName.focus(); }
+  else { appearanceToggle.focus(); }
+}
 
 function setCreationMode(active: boolean): void {
   creationPanel.hidden = !active;
@@ -1060,7 +1104,16 @@ function setCreationMode(active: boolean): void {
   selectionActions.hidden = active;
   // The one Appearance section (#411) joins the Create form while drafting; its per-character
   // saves stay with the roster, since Create itself saves the drafted look.
-  if (active) { creationStatus.before(appearanceSection); } else { equipmentSection.before(appearanceSection); }
+  if (active) {
+    previousAppearanceExpanded = appearanceToggle.getAttribute("aria-expanded") === "true";
+    creationAppearanceSlot.append(appearanceSection);
+    appearanceToggle.setAttribute("aria-expanded", "true");
+    appearancePanel.hidden = false;
+  } else {
+    equipmentSection.before(appearanceSection);
+    appearanceToggle.setAttribute("aria-expanded", String(previousAppearanceExpanded));
+    appearancePanel.hidden = !previousAppearanceExpanded;
+  }
   appearanceStorage.hidden = active;
 }
 
@@ -1096,11 +1149,12 @@ function openCharacterCreation(): void {
   creationName.value = "";
   creationStatus.textContent = "";
   setCreationMode(true);
+  showCreationStep(0);
   refreshSelectionPresentation();
   loadPhysique();
   turntable.cancel();
   layoutPreview();
-  creationName.focus();
+  classInputs.find((input) => input.checked)?.focus();
 }
 
 function cancelCharacterCreation(): void {
@@ -1748,12 +1802,21 @@ for (const button of cancelCreationButtons) {
   button.addEventListener("click", cancelCharacterCreation);
 }
 creationName.addEventListener("input", syncCreationDraft);
+creationBack.addEventListener("click", () => {
+  if (creationDraft && creationStep > 0) {
+    showCreationStep(creationStep - 1);
+    if (creationStep === 0) { classInputs.find((input) => input.checked)?.focus(); }
+    else { sexInputs.find((input) => input.checked)?.focus(); }
+  }
+});
+creationNext.addEventListener("click", advanceCreation);
 for (const input of [...classInputs, ...sexInputs]) {
   input.addEventListener("change", syncCreationDraft);
 }
 creationForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  finishCharacterCreation();
+  if (creationStep < CREATION_STAGES.length - 1) { advanceCreation(); }
+  else { finishCharacterCreation(); }
 });
 // Free look uses Pointer Lock after clicking the world; focus releases it for the UI.
 canvas.addEventListener("pointerdown", (event) => {

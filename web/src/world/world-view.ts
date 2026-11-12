@@ -326,6 +326,12 @@ class RegionArt {
     const areas = this.#world.scenery.scenery.areas;
     const home = areas.find((area) => area.id === entry);
     const near = home ? areas.filter((area) => area.id !== entry && boxGapSquared(area, home) <= STREAM_RADIUS_UNITS ** 2) : [];
+    // First paint the real character on the selection stage. Greyhaven art may be much larger;
+    // starting it in parallel used to compete with the avatar on a cold browser visit.
+    if (!this.#prefetch.settled("Ranger")) {
+      this.#prefetch.plan({ foreground: ["Ranger"], background: [] });
+      return;
+    }
     this.#prefetch.plan({
       foreground: this.#pieces(entry),
       background: [...others, ...near.map((area) => area.id)].flatMap((id) => this.#pieces(id)),
@@ -668,26 +674,19 @@ export class WorldView {
     this.#sceneryBatches = null;
     this.#minimap.reset();
     this.#nature = new PlacedKit(world.scenery.nature);
-    void this.#nature.load();
     this.#climbing = new PlacedKit(world.scenery.climbing);
-    void this.#climbing.load();
     this.#crag = new PlacedKit(world.scenery.crag);
-    void this.#crag.load();
     this.#limestone = new PlacedKit(world.scenery.limestone);
-    void this.#limestone.load();
     this.#river = new PlacedKit(world.scenery.river);
-    void this.#river.load();
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
     this.#inn = new WalkInBuildings(world.scenery.buildings.presenters());
     this.#shrine = new KitModules(SHRINE_BUNDLE, "shrine kit", world.scenery.shrine.entries, world.scenery.shrine.placements);
     const fortEntry = (key: string) => key.startsWith("greyhaven.fort.");
     this.#outpost = new KitModules(OUTPOST_BUNDLE, "Outpost kit", world.scenery.outpost.entries.filter((key) => !fortEntry(key)), world.scenery.outpost.placements.filter(({ key }) => !fortEntry(key)), { wear: true });
     this.#fortifications = new KitModules(`${import.meta.env.BASE_URL}authored/greyhaven-fort/`, "Greyhaven fortifications", world.scenery.outpost.entries.filter(fortEntry), world.scenery.outpost.placements.filter(({ key }) => fortEntry(key)));
-    void this.#fortifications.load();
     this.#settlement = new KitModules(SETTLEMENT_BUNDLE, "settlement props", world.scenery.settlement.entries, world.scenery.settlement.placements);
     // The arena's fortress kit (#591) loads at once: the whole fortress is in view from the courtyard.
     this.#fortress = world.scenery.fortress ? new CompositionKit(world.scenery.fortress) : null;
-    void this.#fortress?.load();
     // Greyhaven's art streams in region by region (#240): the selection screen fetches the
     // starting area's pieces, and play fetches each area the player approaches.
     this.#ambient = new AmbientAnimals(world.scenery.ambient);
@@ -703,12 +702,32 @@ export class WorldView {
     this.#units = null;
     this.#occluders = occluders(world);
     this.#buildMs = performance.now() - started;
-    // The static scene waits for idle time so the picker paints first; entering sooner builds it in the first frame.
+    // The selected character's imported model owns the first network/decoder work. Once it
+    // settles (including a failed load), background kits and the static scene can prepare while
+    // the player selects a character or moves through creation. No world entry waits for them.
     const prewarmed = world.scenery;
-    const prewarm = () => {
-      if (this.#loadedScenery === prewarmed && !this.#scene) { this.#buildStatic(world); }
-    };
-    if (typeof requestIdleCallback === "function") { requestIdleCallback(prewarm, { timeout: 2_000 }); } else { setTimeout(prewarm, 0); }
+    const nature = this.#nature;
+    const climbing = this.#climbing;
+    const crag = this.#crag;
+    const limestone = this.#limestone;
+    const river = this.#river;
+    const fortifications = this.#fortifications;
+    const fortress = this.#fortress;
+    void this.#models.preload("Ranger").then(() => {
+      if (this.#loadedScenery !== prewarmed || this.#loadedArena !== arena) { return; }
+      void nature.load();
+      void climbing.load();
+      void crag.load();
+      void limestone.load();
+      void river.load();
+      void fortifications.load();
+      void fortress?.load();
+      const prewarm = () => {
+        if (this.#loadedScenery === prewarmed && this.#loadedArena === arena && !this.#scene) { this.#buildStatic(world); }
+      };
+      if (typeof requestIdleCallback === "function") { requestIdleCallback(prewarm, { timeout: 2_000 }); }
+      else { setTimeout(prewarm, 0); }
+    });
   }
 
   /**
