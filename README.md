@@ -80,7 +80,7 @@ The workspace provides:
 - a fenced runtime interface that rejects expired/stale owners before commands, admission, ticks, or publication in the reference model;
 - a runnable multi-zone host with one WebTransport routing surface and separate operational status;
 - a deliberately single-player GitHub Pages tech demo that runs the shared zone simulation as a local WASM zone host and renders its player-scoped projections with the pinned `3d-lab` renderer;
-- local browser-demo character creation with Warden, Ranger, and Arcanist starter classes, male/female presentation variants, stable per-character local identities, and per-character appearance saves;
+- guided three-step local browser-demo character creation with seven starter classes, male/female presentation variants, stable per-character local identities, and per-character appearance saves;
 - facing-relative movement (run, strafe, backpedal) and grounded jumps driven by a const-generated integer trigonometry table;
 - units, targeting, free-aim swings (#517) with an integer hit table, death, corpses, respawn, release spirit, out-of-combat regeneration and tapping, driven by queued intents whose refusals are feedback events, never session errors;
 - deterministic creature AI (wander, aggro through the interest index, family assist, chase, leash and evade) with a canonical zone RNG, and recovery continuation proven tick by tick mid-chase, mid-swing, after a death and during an evade;

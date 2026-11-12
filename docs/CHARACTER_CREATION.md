@@ -4,11 +4,13 @@ The browser demo supports a local character roster for testing the character-sel
 
 ## Creation flow
 
-From **Choose your character**, select **Create character** and provide:
+From **Choose your character**, select **Create character**. Creation is a three-step journey:
 
-- a 2–24 character name;
-- one of exactly three starter classes: **Warden**, **Ranger**, or **Arcanist**;
-- **Male** or **Female** presentation.
+1. **Choose your class:** Warden, Ranger, Arcanist, Necromancer, Rogue, Cleric, or Druid.
+2. **Shape your character:** Male or Female presentation, face, hair, headwear, and the available physique options.
+3. **Begin your story:** enter a 2–24 character name, review the choice, and create the character.
+
+Back and Continue move between steps without discarding the draft. Creation stays on the character turntable; it does not enter Greyhaven. On a cold visit the real preview model loads before the optional world kits, and the world continues preparing in the background while the player makes their choices. Downloaded assets are already persisted by the versioned Pages Cache Storage worker; localStorage is for character records, not large model files.
 
 The 3D preview updates before creation and remains rotatable. Class changes update the starter equipment and main-hand presentation: Warden uses a sword, Ranger a bow, and Arcanist a staff. Sex changes the presentation frame only; it does not change gameplay statistics. Physique (#633, Atlas 5.1.i633) is the one appearance choice with a stat effect: eleven sliders in the durable character record, of which only frame, muscularity, body fat, shoulder width and height change maximum health and melee damage, by at most ±2 % each, computed in `mmorpg-core`. The browser edits it in the Appearance section (#634, Atlas 5.1.i634): six presets, the five Build sliders and a live preview of both modifiers as signed percentages with the ±2 % cap, all computed by `mmorpg-core` through `mmorpg-wasm`. Edits are a preview until **Confirm physique** saves them (into the stored record, or for a never-played character until its first entry creates the record); **Cancel** restores the saved values, and reopening shows them. The body draws what the player bundle has real shapes for (#635, Atlas 5.1.i635): body fat drives the male Ranger's `build.lean`/`build.heavy` morph targets, which every outfit, armour plate and hairstyle carries too, so clothing follows the body; height picks the bundle's declared height scale (0.91–1.09, presentation only); jaw width adds `face.broad` or `face.narrow` to the chosen face shape. The preview draws the values being edited and the local world draws the saved ones, baked into the unit when its look is built, never per frame. Frame, muscularity and shoulder width still change stats but not the body, and the editor says so. Bust, waist, hip, glute and jaw projection stay disabled with their saved values: no bundle has those morphs yet, and no female player body exists. Online and Battle Royale play do not carry physique yet.
 

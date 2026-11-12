@@ -84,6 +84,35 @@
   font-weight: 500;
 }
 
+.creation-progress {
+  margin: .45rem 0 0;
+  color: #cbb77c;
+  font-size: .72rem;
+  letter-spacing: .03em;
+}
+
+.character-creation [data-creation-step][hidden],
+.character-creation .creation-actions [hidden] {
+  display: none;
+}
+
+.creation-review {
+  margin: .8rem 0 0;
+  padding: .85rem;
+  border-left: 2px solid var(--gold);
+  background: rgb(183 148 70 / 9%);
+  color: #dce4df;
+  font-size: .79rem;
+}
+
+#creation-appearance-slot .selection-section {
+  margin-top: .8rem;
+}
+
+#creation-appearance-slot .section-panel {
+  padding: .5rem 0 0;
+}
+
 .creation-close {
   width: 2.5rem;
   height: 2.5rem;
@@ -221,7 +250,7 @@
 
 .creation-actions {
   display: grid;
-  grid-template-columns: 1fr 1.4fr;
+  grid-template-columns: 1fr 1fr 1.4fr;
   gap: .5rem;
   margin-top: .7rem;
 }
