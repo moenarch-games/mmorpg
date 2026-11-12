@@ -124,7 +124,11 @@ mirror!(
 mirror!(
     /// A directed strike's sweep side (#154).
     #[serde(rename_all = "lowercase")]
-    StrikeSide = core::StrikeSide { Left, Centre, Right }
+    StrikeSide = core::StrikeSide {
+        Left,
+        Centre,
+        Right
+    }
 );
 mirror!(
     /// A directed strike's height and a guard's lane (#154, #156).
@@ -134,12 +138,22 @@ mirror!(
 mirror!(
     /// What met in a clash (#679).
     #[serde(rename_all = "lowercase")]
-    ClashKind = core::ClashKind { Swings, Projectiles, Parry }
+    ClashKind = core::ClashKind {
+        Swings,
+        Projectiles,
+        Parry
+    }
 );
 mirror!(
     /// A living Warden's movement-dependent melee stance (#155).
     #[serde(rename_all = "lowercase")]
-    MeleeStance = core::MeleeStance { Planted, Charging, Moving, Airborne, Landing }
+    MeleeStance = core::MeleeStance {
+        Planted,
+        Charging,
+        Moving,
+        Airborne,
+        Landing
+    }
 );
 mirror!(
     /// A pending sword → Shield Bash follow-up (#157).
@@ -203,12 +217,21 @@ mirror!(
 mirror!(
     /// `available` is `!`, `complete` is `?` and `in-progress` is a grey `?`.
     #[serde(rename_all = "kebab-case")]
-    QuestMarkerKind = core::QuestMarker { Available, InProgress, Complete }
+    QuestMarkerKind = core::QuestMarker {
+        Available,
+        InProgress,
+        Complete
+    }
 );
 mirror!(
     /// A destructible piece's damage stage (#305); intact pieces are not sent.
     #[serde(rename_all = "lowercase")]
-    PieceStage = core::PieceStage { Intact, Damaged, Crumbling, Destroyed }
+    PieceStage = core::PieceStage {
+        Intact,
+        Damaged,
+        Crumbling,
+        Destroyed
+    }
 );
 mirror!(
     #[serde(rename_all = "lowercase")]
@@ -227,12 +250,25 @@ mirror!(
 mirror!(
     /// The breakable prop a debris piece came from (#288).
     #[serde(rename_all = "snake_case")]
-    DebrisKind = core::PropKind { Crate, Barrel, ExplosiveBarrel, Fence, HeavyCrate, Boulder }
+    DebrisKind = core::PropKind {
+        Crate,
+        Barrel,
+        ExplosiveBarrel,
+        Fence,
+        HeavyCrate,
+        Boulder
+    }
 );
 mirror!(
     /// The core emote vocabulary (#69).
     #[serde(rename_all = "lowercase")]
-    EmoteName = core::Emote { Wave, Bow, Cheer, Laugh, Point }
+    EmoteName = core::Emote {
+        Wave,
+        Bow,
+        Cheer,
+        Laugh,
+        Point
+    }
 );
 mirror!(
     #[serde(rename_all = "lowercase")]
@@ -241,7 +277,13 @@ mirror!(
 mirror!(
     /// A night raid acknowledgment for the viewer (#532).
     #[serde(rename_all = "lowercase")]
-    RaidNotice = core::RaidNotice { Tracks, Warned, Braced, Held, Fell }
+    RaidNotice = core::RaidNotice {
+        Tracks,
+        Warned,
+        Braced,
+        Held,
+        Fell
+    }
 );
 
 /// Unit identity shared by commands and projections.
@@ -711,7 +753,10 @@ pub struct PieceState {
 mirror!(
     /// What was summoned (#293).
     #[serde(rename_all = "snake_case")]
-    SummonedKind = core::SummonedTerrainKind { IceWall, EarthPillar }
+    SummonedKind = core::SummonedTerrainKind {
+        IceWall,
+        EarthPillar
+    }
 );
 
 /// Summoned terrain near the viewer (#293).
