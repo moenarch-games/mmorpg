@@ -14,7 +14,7 @@ use battle_royale_core::arena::{self, ArenaPart};
 use mmorpg_core::{
     CharacterPersistence, ClassChoice, CreatureBehaviour, CreatureFamily, CreatureId,
     CreatureSpawn, CreatureTemplate, CreatureTemplateId, EphemeralCharacterBuild, MAX_PLAYER_LEVEL,
-    PlayerClass, PropKind, Sex, SpawnGrid, ZoneAreas, ZoneContent, ZoneDefinition,
+    PlayerClass, PropKind, Sex, SpawnGrid, TimedCombat, ZoneAreas, ZoneContent, ZoneDefinition,
 };
 use mmorpg_presentation::StaticScene;
 use mmorpg_scenery::Scenery;
@@ -105,6 +105,8 @@ pub(crate) fn content() -> Arc<ZoneContent> {
                 .with_creature_abilities(Vec::new())
                 .and_then(|content| content.with_platforms(fortress.platforms().to_vec()))
                 .and_then(|content| content.with_ramps(fortress.ramps().to_vec()))
+                // Practice swings are timed and can clash, arena first (#679).
+                .and_then(|content| content.with_timed_combat(TimedCombat::ARENA))
                 .expect("the fortress's lifts and ramps bind to the practice arena"),
         )
     }))
@@ -630,6 +632,70 @@ mod tests {
             }
             panic!("stuck at {:?} on the way to ({x}, {z})", self.position());
         }
+    }
+
+    #[test]
+    fn a_practice_strike_winds_up_before_its_timed_sweep_strikes_a_target() {
+        let mut walker = Walker::new();
+        let [x, z] = TRAINING_TARGETS[1];
+        walker.walk_to(PRACTICE_SPAWN[0] + x, PRACTICE_SPAWN[1] + z - 150);
+        let target_health = |walker: &Walker| {
+            decode_snapshot(&walker.host.projection(walker.player).unwrap())
+                .unwrap()
+                .entities
+                .iter()
+                .find(|entity| entity.kind == EntityKind::Creature && entity.id == 2)
+                .unwrap()
+                .health_percent
+        };
+        // Ordinary swings at the target build the rage the strike costs.
+        for _ in 0..4 {
+            walker.sequence += 1;
+            let swing = encode_command(ZoneCommand::Swing { facing: 0 });
+            walker
+                .host
+                .submit(walker.player, walker.sequence, &swing)
+                .unwrap();
+            for _ in 0..130 {
+                walker.host.tick().unwrap();
+            }
+        }
+        let before = target_health(&walker);
+        walker.sequence += 1;
+        let strike = encode_command(ZoneCommand::DirectedStrike {
+            ability: 1,
+            facing: 0,
+            aim: mmorpg_core::StrikeAim::new(
+                mmorpg_core::StrikeSide::Centre,
+                mmorpg_core::StrikeHeight::Middle,
+            ),
+        });
+        walker
+            .host
+            .submit(walker.player, walker.sequence, &strike)
+            .unwrap();
+        walker.host.tick().unwrap();
+        let began = decode_snapshot(&walker.host.projection(walker.player).unwrap()).unwrap();
+        assert!(
+            began
+                .events
+                .iter()
+                .any(|event| matches!(event, mmorpg_core::ZoneEvent::SwingBegan { .. })),
+            "{:?}",
+            began.events
+        );
+        assert_eq!(
+            target_health(&walker),
+            before,
+            "nothing is struck in the wind-up"
+        );
+        for _ in 0..60 {
+            walker.host.tick().unwrap();
+        }
+        assert!(
+            target_health(&walker) < before,
+            "the sweep strikes the target"
+        );
     }
 
     /// Whether a body centre `at` stands on a surface at `y`.
