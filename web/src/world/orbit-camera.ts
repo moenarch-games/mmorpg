@@ -23,9 +23,9 @@ export const GROUND_CLEARANCE_METRES = 0.35;
 /** Smooth zoom covers about 1 − e^(−rate × seconds) of the remaining distance. */
 const ZOOM_RATE_PER_SECOND = 12;
 export const MIN_DISTANCE_METRES = 2;
-export const MAX_DISTANCE_METRES = 30;
-const MIN_PITCH_RADIANS = 0.05;
-const MAX_PITCH_RADIANS = 1.45;
+export const MAX_DISTANCE_METRES = 8;
+const MIN_PITCH_RADIANS = -1.0;
+const MAX_PITCH_RADIANS = 1.2;
 export const ORBIT_RADIANS_PER_PIXEL = 0.006;
 /** Each wheel line changes the distance by this factor. */
 const ZOOM_STEP = 0.88;
@@ -82,9 +82,9 @@ export class OrbitCamera {
   /** World yaw the camera looks along: 0 toward +Z, increasing toward +X. */
   #yaw = 0;
   #invertVerticalLook = false;
-  #pitch = 0.42;
-  #distance = 12;
-  #targetDistance = 12;
+  #pitch = 0.12;
+  #distance = 3.5;
+  #targetDistance = 3.5;
   #framing: Vec3 = [0, 0, 0];
 
   /** The distance the view uses now; it approaches `targetDistance` in `update`. */
@@ -175,12 +175,16 @@ export class OrbitCamera {
    * its own position; nothing else collides.
    */
   view(focus: Vec3, groundAt?: (x: number, z: number) => number): CameraView {
-    const target: Vec3 = [focus[0] + this.#framing[0], focus[1] + PIVOT_HEIGHT_METRES + this.#framing[1], focus[2] + this.#framing[2]];
+    // Shift the entire aim line to screen-right, leaving the character left of the reticle.
+    // Offsetting only the eye would still centre the character and skew the look heading.
+    const shoulderX = -Math.cos(this.#yaw) * SHOULDER_OFFSET_METRES;
+    const shoulderZ = Math.sin(this.#yaw) * SHOULDER_OFFSET_METRES;
+    const target: Vec3 = [focus[0] + shoulderX + this.#framing[0], focus[1] + PIVOT_HEIGHT_METRES + this.#framing[1], focus[2] + shoulderZ + this.#framing[2]];
     const horizontal = this.#distance * Math.cos(this.#pitch);
     const eye: Vec3 = [
-      focus[0] - Math.sin(this.#yaw) * horizontal + Math.cos(this.#yaw) * SHOULDER_OFFSET_METRES,
+      focus[0] - Math.sin(this.#yaw) * horizontal + shoulderX,
       focus[1] + PIVOT_HEIGHT_METRES + this.#distance * Math.sin(this.#pitch),
-      focus[2] - Math.cos(this.#yaw) * horizontal - Math.sin(this.#yaw) * SHOULDER_OFFSET_METRES,
+      focus[2] - Math.cos(this.#yaw) * horizontal + shoulderZ,
     ];
     if (groundAt) {
       const floor = groundAt(eye[0], eye[2]) + GROUND_CLEARANCE_METRES;

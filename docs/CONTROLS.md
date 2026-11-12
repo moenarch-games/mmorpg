@@ -8,6 +8,8 @@ The first slice uses the existing camera and input bindings: mouse-look in free 
 
 There is **one continuous third-person, over-the-shoulder camera**, including exploration, focused combat and temporary aiming. It never switches into first person. The camera framing and mouse owner change with the player's state; the physical character stays in the same world.
 
+The Fortnite-style framing (#787) starts **3.5 m behind the right shoulder**, looking almost horizontally along an offset aim line. The character sits to the left of the centred reticle, leaving the forward view clear. Both the eye and the look-at point carry the shoulder offset, so the free-look heading matches the horizontal direction through the reticle. The wheel adjusts the boom from **2 to 8 m**; looking up and down is available, with the existing vertical inversion and sensitivity settings. Terrain clearance and the adaptive indoor boom still pull the eye clear of the surroundings. Captured free look steers facing and A/D strafe; focus, held gestures, panels, chat and the game menu retain their existing mouse ownership and safe release behavior.
+
 | | Free exploration (no combat focus) | Focused combat (selected opponent) | Temporary manual aiming |
 | --- | --- | --- | --- |
 | Camera | Shooter-like over-shoulder mouse look | Smoothly tracks the focused enemy, framing both player and target | Same shoulder camera, smoothly handed back to mouse-look aim |
