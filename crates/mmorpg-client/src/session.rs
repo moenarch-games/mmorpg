@@ -324,6 +324,8 @@ impl Outbox {
 /// A roster choice, separate from high-frequency held input.
 #[derive(Clone, Debug)]
 pub struct CharacterSelection {
+    /// Connect to the explicitly started game-owned local world.
+    pub host_local: bool,
     /// The character's roster name, announced for party frames and `/invite`.
     pub name: Option<String>,
     pub local_id: String,

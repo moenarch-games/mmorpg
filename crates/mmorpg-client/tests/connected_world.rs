@@ -1221,6 +1221,7 @@ async fn durable_character_selection_worker_claims_before_gameplay_and_logs_out(
         ..PlayerInput::default()
     });
     let (_selection, characters) = watch::channel(Some(CharacterSelection {
+        host_local: false,
         name: None,
         local_id: "local-1".into(),
         class: ClassChoice::from_appearance(3).unwrap(),

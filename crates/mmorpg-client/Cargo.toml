@@ -22,6 +22,7 @@ settings-adapters = { git = "https://github.com/moritzbrantner/settings.git", re
 game-audio = { git = "https://github.com/moritzbrantner/game-audio.git", rev = "2643e342a7d071445186e421082acb553141811d", features = ["kira"] }
 gltf = { version = "=1.4.1", default-features = false, features = ["import", "utils", "names", "extras"] }
 game-server.workspace = true
+mmorpg-game-server = { path = "../mmorpg-game-server" }
 mmorpg-core.workspace = true
 mmorpg-protocol.workspace = true
 mmorpg-scenery.workspace = true
@@ -58,7 +59,6 @@ serde_json = "=1.0.154"
 [dev-dependencies]
 sha2 = "=0.11.1"
 mmorpg-wasm = { path = "../mmorpg-wasm" }
-mmorpg-game-server = { path = "../mmorpg-game-server" }
 wtransport = { version = "=0.7.2", default-features = false, features = ["ring", "self-signed", "quinn"] }
 
 [lints]

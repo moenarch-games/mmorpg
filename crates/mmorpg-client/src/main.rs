@@ -130,6 +130,7 @@ fn main() -> Result<(), ClientError> {
         options.sex.code(),
     );
     let selected = (options.class.is_some() || options.smoke).then(|| CharacterSelection {
+        host_local: false,
         name: None,
         local_id: format!("cli-{}-{}", class_choice.0, class_choice.1),
         class: mmorpg_core::ClassChoice {
@@ -223,6 +224,8 @@ fn main() -> Result<(), ClientError> {
     let (shutdown_sender, mut shutdown_receiver) = oneshot::channel();
     let (party_client, party) = party_link();
     let mut chosen = character_receiver.clone();
+    let hosting = mmorpg_client::hosting::Hosting::for_zone(options.zone_id);
+    let session_hosting = hosting.clone();
     let route = (
         options.url.clone(),
         options.certificate.clone(),
@@ -240,7 +243,23 @@ fn main() -> Result<(), ClientError> {
                         if !chosen { return; }
                     }
                 }
-                let (url, certificate, zone_id, revision) = route;
+                let (mut url, mut certificate, zone_id, revision) = route;
+                let host_local = chosen
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|character| character.host_local);
+                if host_local {
+                    match session_hosting.ready().await {
+                        Ok(world) => {
+                            url = world.url();
+                            certificate = Some(world.certificate);
+                        }
+                        Err(error) => {
+                            update_sender.send_replace(NetworkUpdate::Failed(error));
+                            return;
+                        }
+                    }
+                }
                 match ClientSession::connect(&url, certificate.as_deref(), zone_id, revision).await
                 {
                     Ok(session) => session,
@@ -276,6 +295,7 @@ fn main() -> Result<(), ClientError> {
         party_client,
         options.frames,
         options.class.map(|class| (class, options.sex)),
+        hosting,
     );
     // A closed worker already owns its connection cleanup.
     let _ = shutdown_sender.send(());

@@ -116,6 +116,7 @@ pub fn run(
     party: PartyClient,
     frames: Option<u32>,
     character: Option<(PlayerClass, Sex)>,
+    hosting: mmorpg_client::hosting::Hosting,
 ) -> Result<(), ClientError> {
     let event_loop = EventLoop::new()?;
     let now = Instant::now();
@@ -135,6 +136,8 @@ pub fn run(
         }
     };
     let mut ui = GameUi::new(&scenery);
+    hosting.refresh();
+    ui.hosting = hosting;
     if stage.is_some() {
         // The window opens on the logo, which dissolves into the selection stage.
         ui.play_splash();
@@ -1318,7 +1321,7 @@ impl App {
                 self.npc_context.close();
                 self.world_controls.set_interaction(false);
             }
-            UiIntent::ChooseCharacter(id, class, sex, headwear) => {
+            UiIntent::ChooseCharacter(id, class, sex, headwear, host_local) => {
                 if self.stage.as_ref().is_some_and(|stage| !stage.entered)
                     && self.preparing.is_none()
                 {
@@ -1344,6 +1347,7 @@ impl App {
                     input.class_choice = Some((class.code(), sex.code()));
                 });
                 self.characters.send_replace(Some(CharacterSelection {
+                    host_local,
                     name: self.ui.character_name.clone(),
                     local_id: id,
                     class: mmorpg_core::ClassChoice { class, sex },

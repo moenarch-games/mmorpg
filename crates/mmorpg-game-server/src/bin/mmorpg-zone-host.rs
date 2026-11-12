@@ -38,8 +38,27 @@ impl fmt::Display for ConfigError {
 
 impl Error for ConfigError {}
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
+    let arguments: Vec<_> = env::args_os().skip(1).collect();
+    if !arguments.is_empty() {
+        if arguments.len() != 2 || arguments[0] != "--local-world" {
+            return Err(ConfigError(
+                "usage: mmorpg-zone-host [--local-world SAVE_DIRECTORY]".into(),
+            )
+            .into());
+        }
+        let directory = PathBuf::from(&arguments[1]);
+        // Declare ownership before the runtime: even on failure/panic, runtime teardown
+        // joins every writer before the save lock can be released.
+        let mut owner = mmorpg_game_server::local_world::LocalWorldHost::acquire(&directory)
+            .map_err(|error| ConfigError(error.to_string()))?;
+        let runtime = tokio::runtime::Runtime::new()?;
+        return runtime.block_on(serve_local_world(directory, &mut owner));
+    }
+    tokio::runtime::Runtime::new()?.block_on(serve_configured_host())
+}
+
+async fn serve_configured_host() -> Result<(), Box<dyn Error>> {
     let zone_ids = parse_zone_ids(&read_string("MMORPG_ZONE_IDS", DEFAULT_ZONE_IDS)?)?;
     let port = read_number("MMORPG_PORT", DEFAULT_PORT)?;
     let status_port = read_number("MMORPG_STATUS_PORT", DEFAULT_HOST_STATUS_PORT)?;
@@ -166,6 +185,42 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .await
         .map_err(|error| ConfigError(error.to_string()))?;
     }
+    Ok(())
+}
+
+/// Local hosting config is deliberately isolated from developer environment overrides.
+async fn serve_local_world(
+    directory: PathBuf,
+    owner: &mut mmorpg_game_server::local_world::LocalWorldHost,
+) -> Result<(), Box<dyn Error>> {
+    let (shutdown_sender, shutdown_receiver) = mpsc::channel(4);
+    install_shutdown_forwarder(shutdown_sender.clone())?;
+    owner
+        .serve_control(shutdown_sender)
+        .map_err(|error| ConfigError(error.to_string()))?;
+    serve_development_character_host(
+        DevelopmentCharacterHostConfig {
+            directory: directory.join("characters"),
+            recovery_directory: Some(directory.join("recovery")),
+            zone_ids: vec![ZoneId::new(1)],
+            reconnect_grace_ticks: DEFAULT_RECONNECT_GRACE_TICKS,
+        },
+        MatchHostWebTransportConfig {
+            port: owner.world.port,
+            certificate_pem: owner.world.certificate.clone(),
+            private_key_pem: owner.private_key.clone(),
+            route_prefix: BrowserRoutePrefix::new(DEFAULT_ROUTE_PREFIX)?,
+            allowed_origins: None,
+            drain_grace: Duration::from_millis(DEFAULT_DRAIN_GRACE_MS),
+        },
+        MatchHostStatusConfig {
+            port: owner.world.status_port,
+        },
+        shutdown_receiver,
+    )
+    .await
+    .map_err(|error| ConfigError(error.to_string()))?;
+    // `owner` retains the lock until the server has flushed its final saves.
     Ok(())
 }
 

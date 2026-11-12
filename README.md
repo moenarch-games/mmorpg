@@ -6,6 +6,8 @@ The native Rust client now connects to the standalone zone host and renders serv
 
 Decision history and stable cross-references: [MMORPG Decision Atlas](docs/decisions/atlas.md). The atlas distinguishes implemented behavior from agreed but unimplemented design.
 
+The native character screen also offers **Host World** and **Stop World**: it manages a separate local zone-host process, automatically creates its certificate and resumes the game-owned save. A hosted world survives client exit; see [local hosting](docs/NATIVE_CLIENT.md#host-world). Invitation/remote guest joining remains later work under [#733](https://github.com/moenarch-games/mmorpg/issues/733).
+
 ## Authority map
 
 | Concern | Authority |
