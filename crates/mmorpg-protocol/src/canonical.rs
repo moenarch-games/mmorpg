@@ -350,6 +350,7 @@ fn encode_player(
     payload.extend_from_slice(&crate::wire::encode_piece(combat.repairing).to_be_bytes());
     encode_entity_ref(payload, combat.combo.map(|combo| combo.target));
     payload.extend_from_slice(&combat.combo.map_or(0, |combo| combo.elapsed).to_be_bytes());
+    encode_swing(payload, combat.swing);
     payload.extend_from_slice(&player.chat_ready_at.to_be_bytes());
     payload.push(encode_u8_count(
         player.chat.len(),
@@ -1260,6 +1261,7 @@ fn decode_player(
     } else {
         None
     };
+    let swing = decode_swing(payload, offset)?;
     let chat_ready_at = u64::from_be_bytes(take(payload, offset)?);
     let chat_count = decode_u8_count(
         payload,
@@ -1319,9 +1321,48 @@ fn decode_player(
             roll,
             combo,
             strike_recovery,
+            swing,
             repairing,
         },
     })
+}
+
+/// A running timed swing (#679): a presence byte, then ability, `u16` facing, aim, `u16`
+/// elapsed, `u16` startup and active ticks and the struck flag.
+fn encode_swing(payload: &mut Vec<u8>, swing: Option<mmorpg_core::Swing>) {
+    let Some(swing) = swing else {
+        payload.push(0);
+        return;
+    };
+    payload.extend_from_slice(&[1, swing.ability.get()]);
+    payload.extend_from_slice(&swing.facing.to_be_bytes());
+    payload.extend_from_slice(&crate::wire::encode_aim(swing.aim));
+    for ticks in [swing.elapsed, swing.startup, swing.active] {
+        payload.extend_from_slice(&ticks.to_be_bytes());
+    }
+    payload.push(u8::from(swing.struck));
+}
+
+fn decode_swing(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Option<mmorpg_core::Swing>, ProtocolError> {
+    if !read_bool(payload, offset)? {
+        return Ok(None);
+    }
+    let swing = mmorpg_core::Swing {
+        ability: mmorpg_core::AbilityId::new(read_u8(payload, offset)?),
+        facing: u16::from_be_bytes(take(payload, offset)?),
+        aim: crate::wire::decode_aim(take(payload, offset)?)?,
+        elapsed: u16::from_be_bytes(take(payload, offset)?),
+        startup: u16::from_be_bytes(take(payload, offset)?),
+        active: u16::from_be_bytes(take(payload, offset)?),
+        struck: read_bool(payload, offset)?,
+    };
+    if !swing.is_valid() {
+        return Err(ProtocolError::new("player timed swing is out of range"));
+    }
+    Ok(Some(swing))
 }
 
 fn decode_creature(
@@ -2140,6 +2181,18 @@ mod tests {
                             elapsed: 3,
                         }),
                         strike_recovery: 4,
+                        swing: Some(mmorpg_core::Swing {
+                            ability: mmorpg_core::ability::ids::HEROIC_STRIKE,
+                            facing: 1_234,
+                            aim: mmorpg_core::StrikeAim::new(
+                                mmorpg_core::StrikeSide::Right,
+                                mmorpg_core::StrikeHeight::High,
+                            ),
+                            elapsed: 5,
+                            startup: 18,
+                            active: 9,
+                            struck: false,
+                        }),
                         repairing: Some(mmorpg_core::PieceId::new(3)),
                     },
                     quests: mmorpg_core::QuestLog::default(),

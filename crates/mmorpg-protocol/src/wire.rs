@@ -46,6 +46,8 @@ const GUARD_BROKEN: u8 = 20;
 const LOST_INTEREST: u8 = 21;
 const RAID_NOTICE: u8 = 22;
 const TRAP_HIT: u8 = 23;
+const SWING_BEGAN: u8 = 24;
+const CLASHED: u8 = 25;
 const CRITICAL_FLAG: u8 = 1;
 
 pub(crate) const fn entity_kind_code(kind: EntityKind) -> u8 {
@@ -236,6 +238,28 @@ pub(crate) fn decode_aim([side, height]: [u8; 2]) -> Result<StrikeAim, ProtocolE
     }
 }
 
+/// A timed swing's start (#679) in an event's `u16` amount: the aim's side code in bits 0–1,
+/// its height code in bits 2–3, the startup ticks in bits 4–9 and the active ticks in 10–15.
+pub(crate) fn encode_swing_began(aim: StrikeAim, startup: u8, active: u8) -> u16 {
+    let six = u16::from(mmorpg_core::MAX_SWING_PHASE_TICKS);
+    u16::from(aim.side.code())
+        | u16::from(aim.height.code()) << 2
+        | (u16::from(startup) & six) << 4
+        | (u16::from(active) & six) << 10
+}
+
+pub(crate) fn decode_swing_began(amount: u16) -> Result<(StrikeAim, u8, u8), ProtocolError> {
+    #[allow(clippy::cast_possible_truncation)]
+    let field = |shift: u16, mask: u16| ((amount >> shift) & mask) as u8;
+    let aim = decode_aim([field(0, 0b11), field(2, 0b11)])?;
+    let six = u16::from(mmorpg_core::MAX_SWING_PHASE_TICKS);
+    let (startup, active) = (field(4, six), field(10, six));
+    if active == 0 {
+        return Err(ProtocolError::new("timed swing has no active phase"));
+    }
+    Ok((aim, startup, active))
+}
+
 /// A guard lane as one byte: 0 lowered (or no lane), 1 + the height code.
 pub(crate) const fn encode_lane(lane: Option<StrikeHeight>) -> u8 {
     match lane {
@@ -337,6 +361,24 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
             target,
             u16::from_be_bytes(encode_aim(aim)),
         ),
+        ZoneEvent::SwingBegan {
+            source,
+            ability,
+            aim,
+            startup,
+            active,
+        } => (
+            SWING_BEGAN,
+            ability.get(),
+            Some(source),
+            None,
+            encode_swing_began(aim, startup, active),
+        ),
+        ZoneEvent::Clashed {
+            source,
+            target,
+            kind,
+        } => (CLASHED, kind.code(), Some(source), Some(target), 0),
         ZoneEvent::Blocked {
             source,
             target,
@@ -527,6 +569,31 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
                     target,
                     ability,
                 }
+            }
+        }
+        SWING_BEGAN => {
+            if target.is_some() {
+                return Err(invalid());
+            }
+            let (aim, startup, active) = decode_swing_began(amount)?;
+            ZoneEvent::SwingBegan {
+                source: source.ok_or_else(invalid)?,
+                ability: decode_ability(flags)?,
+                aim,
+                startup,
+                active,
+            }
+        }
+        CLASHED => {
+            let (source, target) = pair()?;
+            if amount != 0 {
+                return Err(invalid());
+            }
+            ZoneEvent::Clashed {
+                source,
+                target,
+                kind: mmorpg_core::ClashKind::from_code(flags)
+                    .ok_or_else(|| ProtocolError::new("unknown clash kind"))?,
             }
         }
         STRIKE_SWEPT => ZoneEvent::StrikeSwept {
