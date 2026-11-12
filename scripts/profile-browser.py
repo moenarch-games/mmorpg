@@ -31,8 +31,10 @@ Sources, all opt-in and read-only:
 Prerequisites: build web/ (bun run build) and Playwright for Python (see smoke-browser.py).
 Run from the repository root:
     python scripts/profile-browser.py --out artifacts/profile/report.json --trace artifacts/profile
-Defaults: headless Chromium on the hardware GPU (ANGLE OpenGL), 1440x900 at pixel ratio 1, then a
-viewport/pixel-ratio sweep of `idle` and `overview`.
+Defaults: Playwright's full Chromium in new headless mode (`--channel chromium`) on the hardware GPU
+(ANGLE OpenGL), 1440x900 at pixel ratio 1, then a viewport/pixel-ratio sweep of `idle` and `overview`.
+Not the default headless shell: while the page holds Pointer Lock (mouse-look), the shell stalls
+WebGL for 100 to 500 ms every few frames, which headed and new-headless Chrome never do (#727).
 """
 from __future__ import annotations
 
@@ -549,7 +551,8 @@ def main():
     parser.add_argument("--out", type=Path, help="write the JSON report here as well as stdout")
     parser.add_argument("--trace", type=Path, help="directory for the move-rotate Chromium trace")
     parser.add_argument("--seconds", type=float, default=6.0)
-    parser.add_argument("--channel", help="Playwright browser channel, e.g. chrome")
+    parser.add_argument("--channel", default="chromium",
+                        help="Playwright browser channel, e.g. chrome (default chromium: new headless, not the headless shell)")
     parser.add_argument("--headed", action="store_true")
     parser.add_argument("--no-sweep", action="store_true", help="skip the viewport/pixel-ratio sweep")
     parser.add_argument("--activity", choices=["battle-royale"],
@@ -569,7 +572,7 @@ def main():
               "scenarios": {}, "sweep": []}
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=not args.headed, channel=args.channel, args=GPU_ARGS)
-        report["browser"] = {"version": browser.version, "channel": args.channel or "playwright-chromium",
+        report["browser"] = {"version": browser.version, "channel": args.channel,
                              "headless": not args.headed, "args": GPU_ARGS}
         report["activity"] = args.activity or "greyhaven"
         session = Session(browser, url, 1440, 900, 1, args.activity)
