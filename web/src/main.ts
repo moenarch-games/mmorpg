@@ -67,7 +67,7 @@ import type { LinkState, ZoneWorld } from "./world/world-source";
 import { WorldView, webGpuProjection } from "./world/world-view";
 import type { FaceFeature } from "./world/units/quaternius-units";
 import { nextTabTarget } from "./world/units/targeting";
-import { GameControls, type GameAction, type HeldAction, type HoldPhase, type ReleasedAction } from "./input/game-controls";
+import { GAME_ACTIONS, GameControls, type GameAction, type HeldAction, type HoldPhase, type ReleasedAction } from "./input/game-controls";
 import { actionBindingLabels } from "./input/binding-labels";
 import type { Profile } from "@moritzbrantner/input-bindings";
 import { cancelCast, minionCommand, useAbilitySlot, type MinionAction } from "./world/units/abilities";
@@ -580,6 +580,7 @@ function applyPreferences(preferences: ClientPreferences): void {
   worldView.setLookInversion(preferences.invertVerticalLook);
   worldView.setHoldCamera(preferences.holdCamera);
   worldView.setAimStyle(preferences.aimStyle);
+  worldView.setWheels(preferences.wheels);
   worldView.setMotionPreference(preferences.reduceMotion);
   worldView.setAudioPreferences(preferences.audio);
   if (maxPixelRatio !== preferences.maxPixelRatio) {
@@ -1850,6 +1851,7 @@ function openGameMenu(): void {
   requireElement<HTMLButtonElement>("#game-menu-resume").focus();
 }
 worldView.onPointerLockLost = openGameMenu;
+worldView.onWheelAction = runWheelAction;
 gameMenu.addEventListener("close", () => {
   controls.retire("gameMenuClosed");
   lastTime = performance.now();
@@ -2085,6 +2087,35 @@ function runHold(action: HeldAction, phase: HoldPhase): void {
         worldView.endGuard();
       }
       return;
+    case "wheel.fixed":
+    case "wheel.context": {
+      // Radial wheels (#653): a press in the open world opens one; a release flicks, keeps a tapped
+      // wheel open, or cancels; every retirement cancels without an action.
+      const open = entryState.phase === "world" && !settingsOpen && !worldView.panelOpen;
+      if (phase === "press") {
+        if (open) { worldView.pressWheel(action === "wheel.fixed" ? "fixed" : "context"); }
+      } else {
+        worldView.releaseWheel(phase === "cancel" || !open);
+      }
+      return;
+    }
+  }
+}
+
+/**
+ * A wheel's chosen action (#653), by the semantic id its own key has: it runs exactly as that key
+ * would (a slot is used at once, as an action-bar click), and the zone validates the command.
+ */
+function runWheelAction(id: string): void {
+  if (id === "target.clear") {
+    worldView.queueIntent(() => ({ kind: "select-target", target: null }));
+  } else if (id.startsWith("emote.")) {
+    const emote = id.slice("emote.".length) as "wave" | "bow" | "cheer" | "laugh" | "point";
+    worldView.queueIntent(() => ({ kind: "emote", emote }));
+  } else if (id.startsWith("ability.slot")) {
+    worldView.useSlot(Number(id.slice("ability.slot".length)));
+  } else if ((GAME_ACTIONS as readonly string[]).includes(id)) {
+    runAction(id as GameAction);
   }
 }
 controls.attach({ window, document });

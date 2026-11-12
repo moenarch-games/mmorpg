@@ -1173,3 +1173,32 @@ kbd {
   pointer-events: none;
 }
 .aim-landing[hidden] { display: none; }
+
+/* A radial wheel (#653): sectors around the screen centre, the pointed-at one lit; the centre ring
+   is the dead zone. It never takes the pointer: the mouse owner reads motion and clicks. */
+.pie-wheel {
+  position: fixed;
+  z-index: 3;
+  width: 328px;
+  height: 328px;
+  transform: translate(-50%, -50%);
+  border: 1.5px solid rgb(255 178 74 / 80%);
+  border-radius: 50%;
+  background: radial-gradient(circle, transparent 23px, rgb(245 237 211 / 70%) 24px, transparent 25px), rgb(8 10 14 / 60%);
+  pointer-events: none;
+}
+.pie-wheel[hidden] { display: none; }
+.pie-wheel-sector {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  max-width: 96px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: #f5edd3;
+  font: 600 0.82rem/1.15 Georgia, "Times New Roman", serif;
+  text-align: center;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 80%);
+}
+.pie-wheel-sector[data-empty] { opacity: 0.4; }
+.pie-wheel-sector.lit { color: #ffb24a; background: rgb(255 178 74 / 22%); font-size: 0.92rem; }

@@ -46,6 +46,8 @@ export const GAME_ACTIONS = [
   "ability.slot20",
   "combat.directedStrike",
   "combat.guard",
+  "wheel.fixed",
+  "wheel.context",
   "combat.cancelCast",
   "minions.attack",
   "minions.defend",
@@ -120,6 +122,7 @@ const ACTION_CATEGORIES: Readonly<Record<string, string>> = {
   combat: "Combat",
   ability: "Abilities",
   minions: "Combat",
+  wheel: "Interface",
   player: "Character",
   ui: "Interface",
 };
@@ -200,6 +203,10 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
     action("combat.guard", "Shield guard (hold, aim up/down)", "gameplay", [key("KeyZ"), button(6)]),
     // Right click cancels a cast in the world view (#636); Escape opens the game menu instead.
     action("combat.cancelCast", "Cancel cast", "casting", [button(1)]),
+    // Radial wheels (#653): hold, flick toward an action and release, or tap and left-click; they
+    // open only with Settings → Wheels → Radial wheels on.
+    action("wheel.fixed", "Fixed wheel (hold, flick, release)", "gameplay", [key("KeyT")]),
+    action("wheel.context", "Context wheel (hold, flick, release)", "gameplay", [key("KeyK")]),
     // A Necromancer's group orders for all its minions (#295, Atlas 5.2.84); the zone checks them.
     action("minions.attack", "Minions: attack target", "gameplay", [key("KeyY")]),
     action("minions.defend", "Minions: defend here", "gameplay", [key("KeyU")]),
@@ -242,7 +249,7 @@ export type GameControlsTargets = {
 };
 
 /** Held actions report their whole lifecycle instead of a one-shot press. */
-export const HELD_ACTIONS = ["combat.directedStrike", "combat.guard"] as const;
+export const HELD_ACTIONS = ["combat.directedStrike", "combat.guard", "wheel.fixed", "wheel.context"] as const;
 export type HeldAction = (typeof HELD_ACTIONS)[number];
 /**
  * `release` is a deliberate key release; `cancel` is any retirement (blur, hidden page, Settings,
