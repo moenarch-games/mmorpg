@@ -472,6 +472,8 @@ export class WorldView {
   readonly #guardHold = new ShieldGuardHold();
   /** Who owns the mouse (#636): free look, focus, or a held strike or guard aimed with it (#154). */
   readonly #mouse = new MouseOwnerInput();
+  /** The manual aim's expected landing marker (#649), made on the first aim. */
+  #aimLanding: HTMLElement | null = null;
   /** Pointer Lock this view released itself, so its `pointerlockchange` opens no menu. */
   #releasingLock = false;
   /** A left press in released free look: its click selects under the cursor, or recaptures. */
@@ -757,6 +759,9 @@ export class WorldView {
     if (ended === "strike") {
       this.#classHud.showStrikeAim(null);
       this.#units?.units.abandonPreparation();
+    } else if (ended === "aim") {
+      this.#units?.units.abandonPreparation();
+      this.#aimEnded();
     } else if (ended === "guard") {
       this.#lowerGuard();
     }
@@ -771,6 +776,11 @@ export class WorldView {
   /** Follows the Settings choice of the camera during a strike or guard hold (#636). */
   setHoldCamera(value: "locked" | "free"): void {
     this.#mouse.setHoldCamera(value);
+  }
+
+  /** Follows the Settings choice of how a manual aim throws (#649). */
+  setAimStyle(value: "hold" | "armed"): void {
+    this.#mouse.setAimStyle(value);
   }
 
   /**
@@ -802,14 +812,78 @@ export class WorldView {
     if (!projection || !ability) {
       return;
     }
+    // The bomb takes a temporary shoulder-camera aim (#649); a press while another gesture owns the
+    // mouse does nothing.
+    const aim = this.#mouse.pressAim(slot, ability.id, projection, this.panelOpen);
+    if (aim !== "use") {
+      if (aim === "aim") { this.#beginAim(ability.id); }
+      return;
+    }
     if (!this.#powerDraw.press(slot, ability.id, projection, this.panelOpen)) {
       this.useSlot(slot);
     }
   }
 
-  /** `slot`'s held input went up; a deliberate release sends the drawn shot once. */
+  /** `slot`'s held input went up; a deliberate release sends the drawn shot or the aimed throw once. */
   releaseSlot(slot: number, retired: boolean): void {
+    const aiming = this.#mouse.owner() === "aim";
+    const thrown = this.#mouse.releaseAim(slot, retired);
+    if (thrown !== undefined) {
+      this.#throwAimed(thrown);
+    } else if (aiming && this.#mouse.owner() !== "aim") {
+      this.#gestureEnded("aim");
+    }
     this.#powerDraw.release(slot, retired);
+  }
+
+  /**
+   * A manual aim began (#649): the mouse steers the same shoulder camera, which leaves the focused
+   * target (still selected) until the aim ends. Captured motion keeps the cursor from the edges.
+   */
+  #beginAim(ability: number): void {
+    this.#powerDraw.cancel();
+    this.#units?.units.prepare(ability, this.#seconds);
+    if (document.pointerLockElement !== this.#elements.canvas) {
+      void this.#elements.canvas.requestPointerLock().catch(() => {});
+    }
+    this.#updatePointerOwner();
+  }
+
+  /** Throws the aimed `ability` along the camera's heading; the zone decides its flight and hits. */
+  #throwAimed(ability: number): void {
+    this.#movementFacing = this.#orbit.facing();
+    const projection = this.#lastProjection;
+    const index = projection && this.#catalog
+      ? abilitySlots(projection, this.#catalog).findIndex((held) => held?.id === ability) : -1;
+    if (index >= 0) { this.useSlot(index + 1); }
+    this.#aimEnded();
+  }
+
+  /** The aim's landing marker goes, and a focus gets its free cursor back. */
+  #aimEnded(): void {
+    this.#aimLanding?.setAttribute("hidden", "");
+    if (this.#cameraMode.kind === "focused") { this.#releasePointerLock(); }
+    this.#updatePointerOwner();
+  }
+
+  /** The aim's expected landing (#649), drawn over the ground ahead: a non-authoritative aid. */
+  #showAimLanding(projection: ZoneSnapshot, unitsPerMetre: number): void {
+    if (this.#mouse.owner() !== "aim") { return; }
+    const landing = this.#mouse.aimLanding(projection, this.#orbit.facing());
+    if (!landing) { return; }
+    if (!this.#aimLanding) {
+      this.#aimLanding = document.createElement("span");
+      this.#aimLanding.className = "aim-landing";
+      this.#aimLanding.setAttribute("aria-hidden", "true");
+      (this.#elements.canvas.parentElement ?? document.body).append(this.#aimLanding);
+    }
+    const [x, y, z] = landing;
+    const relief = this.#reliefAt?.(x, z) ?? 0;
+    const point = new THREE.Vector3(x / unitsPerMetre, (y + relief) / unitsPerMetre, z / unitsPerMetre).project(this.#camera);
+    const rect = this.#elements.canvas.getBoundingClientRect();
+    this.#aimLanding.style.left = `${rect.left + ((point.x + 1) / 2) * rect.width}px`;
+    this.#aimLanding.style.top = `${rect.top + ((1 - point.y) / 2) * rect.height}px`;
+    this.#aimLanding.toggleAttribute("hidden", point.z > 1);
   }
 
   /** Escape drops a held draw before any other meaning; `true` if it did. */
@@ -1420,7 +1494,8 @@ export class WorldView {
     if (!self) {
       throw new Error("The projection is missing the viewer's own unit.");
     }
-    const opponent = this.#cameraMode.kind === "focused"
+    // A manual aim (#649) hands the camera to the mouse; it turns back to the kept focus after.
+    const opponent = this.#cameraMode.kind === "focused" && this.#mouse.owner() !== "aim"
       ? anchors.get(entityKey(this.#cameraMode.target)) : undefined;
     this.#orbit.track(self.focus, opponent ? [opponent.x, opponent.feetY + 1, opponent.z] : null, deltaSeconds);
     this.#combatHud.update(projection, catalog, now);
@@ -1444,6 +1519,7 @@ export class WorldView {
     this.#camera.lookAt(...view.target);
     this.#camera.updateMatrixWorld(true);
     if (this.#plan) { applyPlanProjection(this.#camera, this.#plan); }
+    this.#showAimLanding(projection, unitsPerMetre);
     if (this.#sound) {
       const right = new THREE.Vector3().setFromMatrixColumn(this.#camera.matrixWorld, 0);
       this.#sound.listen(view.eye, [right.x, right.y, right.z]);
@@ -1703,7 +1779,12 @@ export class WorldView {
       return;
     }
     const click = this.#mouse.leftClick();
-    // A hold ignores the left button; an aim or wheel confirmed (no producer yet, #649/#653).
+    // An armed aim throws (#649); a hold or held aim ignores the left button; a wheel confirmed
+    // (no producer yet, #653).
+    if (click.outcome === "throw" && click.ability !== null) {
+      this.#throwAimed(click.ability);
+      return;
+    }
     if (click.outcome !== "select") { return; }
     if (this.#pointerOwner === "camera" || this.#cameraMode.kind === "focused") {
       // Selects on the release, unless the press became mouse-look travel.
@@ -1758,6 +1839,8 @@ export class WorldView {
     }
     this.#locked = locked;
     this.#releasingLock = false;
+    // A capture an aim asked for that arrived after it ended gives a focus its cursor back (#649).
+    if (locked && this.#cameraMode.kind === "focused" && !this.#mouse.gesture) { this.#releasePointerLock(); }
     this.#updatePointerOwner();
   }
 
@@ -1794,7 +1877,7 @@ export class WorldView {
       // The gesture owns the motion (#636); a locked camera holds still, a free one keeps turning.
       const turn = this.#mouse.motion(event.movementX, event.movementY);
       this.#followGestureAim();
-      if (turn && document.pointerLockElement === this.#elements.canvas) {
+      if (turn && (document.pointerLockElement === this.#elements.canvas || this.#mouse.owner() === "aim")) {
         this.#orbit.orbit(event.movementX * this.#lookSensitivity, event.movementY * this.#lookSensitivity);
       }
       return;
