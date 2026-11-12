@@ -1503,7 +1503,8 @@ fn arena_build(
 }
 
 /// Predicted own movement for the arena netcode trial (#680): `mmorpg-client-model`'s
-/// reconciliation over the zone's own movement rules, for the practice arena's content.
+/// reconciliation over the zone's own movement rules, for the practice arena's content or a
+/// hosted match's fortress.
 #[wasm_bindgen]
 pub struct ArenaMovementPrediction {
     inner: mmorpg_client_model::prediction::PredictedMovement,
@@ -1513,10 +1514,23 @@ pub struct ArenaMovementPrediction {
 impl ArenaMovementPrediction {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Result<ArenaMovementPrediction, JsError> {
+        Self::over(arena_presentation::trial_content(false))
+    }
+
+    /// A prediction over the fortress a hosted match runs: the same bodies, lifts and movement
+    /// rules whether or not the match rewinds hits.
+    #[wasm_bindgen(js_name = forHostedArena)]
+    pub fn for_hosted_arena() -> Result<ArenaMovementPrediction, JsError> {
+        Self::over(arena_presentation::fortress())
+    }
+
+    fn over(
+        content: std::sync::Arc<mmorpg_core::ZoneContent>,
+    ) -> Result<ArenaMovementPrediction, JsError> {
         Ok(Self {
             inner: mmorpg_client_model::prediction::PredictedMovement::new(
                 host::ARENA_ZONE_ID,
-                arena_presentation::trial_content(false),
+                content,
             )
             .map_err(|error| JsError::new(&error.to_string()))?,
         })

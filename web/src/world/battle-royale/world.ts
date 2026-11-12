@@ -84,11 +84,16 @@ function arenaScenery(local: LocalWorld, presentation: ArenaPresentation): Scene
   };
 }
 
-/** Called after the ordinary world initializes WASM. Models and animation use the same presenters. */
+/**
+ * Called after the ordinary world initializes WASM. Models and animation use the same presenters.
+ * With `predicted` this client predicts its own body (#680); whether hits rewind is the match's
+ * option, chosen by its host.
+ */
 export function createArenaWorld(
   local: LocalWorld,
   server: ZoneServer,
   selectedEquipment: (character: JoinCharacter) => ArenaEquipment | null,
+  predicted = false,
 ): ArenaWorld {
   const presentation = new ArenaPresentation();
   const standardEquipment = (character: JoinCharacter): ArenaEquipment =>
@@ -96,8 +101,9 @@ export function createArenaWorld(
   const source = new BattleRoyaleSource({
     route: server.route,
     connector: webTransportConnector(server.certificateHash),
-    contentRevision: presentation.contentRevision(),
+    contentRevisions: { baseline: presentation.contentRevision(), hitRewind: presentation.hitRewindContentRevision() },
     equipment: (character) => selectedEquipment(character) ?? standardEquipment(character),
+    ...(predicted ? { prediction: () => ArenaMovementPrediction.forHostedArena() } : {}),
   });
   return {
     world: { source, scenery: arenaScenery(local, presentation), catalog: decodeCatalog(presentation.catalog()), name: "Battle Royale", arena: true },

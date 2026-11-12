@@ -2,7 +2,8 @@
 //! battle-royale hosts, drawn as graybox, and the practice arena (#550) the page hosts locally.
 //!
 //! `battle_royale_core::arena` is the one definition of the fortress. A hosted match supplies
-//! every physical/combat projection itself and must carry [`fortress`]'s content revision. The
+//! every physical/combat projection itself and must carry [`fortress`]'s content revision (or
+//! that of its per-match hit-rewind variant, #680). The
 //! practice arena is the same fortress bodies (colliders, ramps and lifts, unchanged) with its
 //! own spawn lattice in the south courtyard and stationary training targets, simulated by the
 //! shared `mmorpg-core` rules and Rapier in [`crate::host::LocalZoneHost::practice_arena`]. Both
@@ -389,6 +390,14 @@ impl ArenaPresentation {
     #[wasm_bindgen(js_name = contentRevision)]
     pub fn content_revision(&self) -> u64 {
         fortress().revision()
+    }
+    /// The fortress content revision of a hosted match that runs the arena trial's capped hit
+    /// rewind (#680): the same bodies, so the page draws it alike and tells the option apart.
+    #[wasm_bindgen(js_name = hitRewindContentRevision)]
+    pub fn hit_rewind_content_revision(&self) -> u64 {
+        arena::content_for(true)
+            .expect("the pinned battle-royale fortress content is valid")
+            .revision()
     }
     pub fn scenery(&self) -> String {
         // Fortress boxes export their exact colliders, so the camera treats them as structures.

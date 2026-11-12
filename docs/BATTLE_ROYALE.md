@@ -33,7 +33,16 @@ within reach, so movement, hits and clashes can be felt. The page's zone stays t
 authority; the trial source only delays commands to it and projections from it, sends timing-
 sensitive commands with the tick it had observed, and draws other units 67 ms behind like the
 online client. The option and delay hold for the match; **Reset practice (F9)** starts another
-with the current choice. Hosted matches do not offer the trial yet.
+with the current choice.
+
+In a **Hosted match** the same select chooses this client's movement: **1 · Baseline** (or Off)
+interpolates the own body like every other unit; **2** and **3** predict it
+(`ArenaMovementPrediction.forHostedArena()`, the fortress's own movement rules), reconciled
+against the match's `acknowledged_sequence`. Latency is real, so there is no simulated round
+trip. Hit rewind is the **match's** option, the same for everyone in it: the Battle Royale host
+runs it for match ids listed as `<id>:rewind` (`BATTLE_ROYALE_MATCH_IDS=1,2:rewind`), which
+changes the match's content revision. The page accepts either fortress revision and shows both
+options in the arena status line (`· predicted movement · hit rewind`).
 
 ## The fortress (#552)
 
