@@ -768,7 +768,11 @@ mod tests {
                 }
                 let mut frame = presentation.frame(&world, now, view);
                 if let Some(hour) = hour {
-                    frame.lighting.hour = hour;
+                    // The shot's hour sets the fog colour too, as in the browser capture
+                    // (render-engine#102); the content's lights stay.
+                    let at = crate::world::Lighting::at(hour);
+                    frame.lighting.hour = at.hour;
+                    frame.lighting.fog = at.fog;
                 }
                 let pixels = readback(&frame, &[], view, size, None).await.unwrap();
                 image::save_buffer(
