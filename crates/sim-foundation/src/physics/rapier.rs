@@ -18,7 +18,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use rapier3d::control::{CharacterLength, KinematicCharacterController};
+use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 use rapier3d::parry::query::{
     DefaultQueryDispatcher, QueryDispatcher, QueryDispatcherChain, ShapeCastOptions,
 };
@@ -34,7 +34,7 @@ use super::shared::{
 };
 use super::{
     Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, PhysicsError, PieceShape, RayHit,
-    RigidBody, StepStats, Vec3i, error, exact, from_subunits,
+    RigidBody, StepStats, StepUp, Vec3i, error, exact, from_subunits,
 };
 
 /// Centimetre units per metre.
@@ -416,7 +416,7 @@ impl World {
                 up: Vector::Y,
                 offset: CharacterLength::Absolute(CONTACT_OFFSET),
                 slide: true,
-                // No stairs or ledges exist yet (#59 adds slopes and steps).
+                // Off unless the consumer opts in (`set_step_up`, #750).
                 autostep: None,
                 max_slope_climb_angle: std::f32::consts::FRAC_PI_4,
                 min_slope_slide_angle: std::f32::consts::FRAC_PI_4,
@@ -622,6 +622,16 @@ impl World {
             .ok_or_else(|| error(format!("moving physics body {} is missing", id.0)))?;
         body.velocity = from_subunits(velocity);
         Ok(())
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    pub fn set_step_up(&mut self, step_up: Option<StepUp>) {
+        let metres = |units: i32| CharacterLength::Absolute(units as f32 / UNITS_PER_METRE);
+        self.controller.autostep = step_up.map(|step| CharacterAutostep {
+            max_height: metres(step.max_height),
+            min_width: metres(step.min_width),
+            include_dynamic_bodies: false,
+        });
     }
 
     pub fn set_weightless(&mut self, id: BodyId, weightless: bool) -> Result<(), PhysicsError> {

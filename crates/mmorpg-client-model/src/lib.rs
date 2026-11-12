@@ -15,6 +15,7 @@ pub mod chat;
 pub mod front_end;
 pub mod hud;
 pub mod logo;
+pub mod manual_aim;
 pub mod mouse_owner;
 pub mod outbox;
 pub mod party;

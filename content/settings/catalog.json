@@ -155,6 +155,38 @@
     {
       "target": "shared",
       "definition": {
+        "id": "controls.aim_style",
+        "kind": {
+          "type": "choice",
+          "options": [
+            "hold",
+            "armed"
+          ]
+        },
+        "default": {
+          "type": "choice",
+          "value": "hold"
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "controls.aim_style",
+        "metadata": {
+          "label_key": "settings.controls.aim_style.label",
+          "description_key": "settings.controls.aim_style.description",
+          "category_key": "settings.category.controls",
+          "order": 40,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.aim_style"
+          ]
+        }
+      }
+    },
+    {
+      "target": "shared",
+      "definition": {
         "id": "audio.master_volume",
         "kind": {
           "type": "integer",
@@ -342,6 +374,8 @@
     "settings.controls.invert_vertical_look.description": "Reverse vertical camera movement while looking around.",
     "settings.controls.hold_camera.label": "Camera during a strike or guard",
     "settings.controls.hold_camera.description": "Locked holds the camera still while the mouse aims a held strike or guard; free keeps turning it.",
+    "settings.controls.aim_style.label": "Throw aim",
+    "settings.controls.aim_style.description": "Hold aims a thrown bomb while its key is held and throws on release; armed aims on a press and throws on a left click. Right click cancels either.",
     "settings.controls.look_sensitivity.label": "Look sensitivity",
     "settings.controls.look_sensitivity.description": "How far a mouse drag turns the camera (1 is the default).",
     "settings.accessibility.reduce_motion.label": "Reduce motion",
@@ -354,6 +388,7 @@
     "settings.search.animation": "motion animation accessibility",
     "settings.search.invert": "invert reverse vertical look",
     "settings.search.hold_camera": "camera lock free strike guard hold gesture",
+    "settings.search.aim_style": "aim throw bomb grenade hold release armed click",
     "settings.category.graphics": "Graphics",
     "settings.graphics.render_resolution.label": "Render resolution",
     "settings.graphics.render_resolution.description": "Pixels drawn per screen point on high-density displays. Sharp costs the GPU far more on large screens.",
@@ -362,6 +397,8 @@
     "settings.choice.sharp": "Sharp (up to 2\u00d7)",
     "settings.choice.locked": "Locked",
     "settings.choice.free": "Free",
+    "settings.choice.hold": "Hold to aim, release to throw",
+    "settings.choice.armed": "Press to aim, click to throw",
     "settings.search.resolution": "graphics resolution pixel ratio quality performance gpu"
   }
 }

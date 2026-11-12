@@ -40,7 +40,7 @@ use std::fmt;
 
 use physics_engine::BodyId as EngineId;
 use physics_engine::approximate::{
-    Body, CharacterMove, CharacterMoveResult, CharacterSettings, Config, ConvexHullDesc,
+    Autostep, Body, CharacterMove, CharacterMoveResult, CharacterSettings, Config, ConvexHullDesc,
     HeightfieldDesc, Material, Quaternion, QueryFilter, QueryPose, RayCast, Shape, ShapeCast,
     TriangleMeshDesc, Vector,
 };
@@ -52,7 +52,7 @@ use super::shared::{
 };
 use super::{
     Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, PhysicsError, PieceShape, RayHit,
-    RigidBody, StepStats, Vec3i, error, exact, from_subunits,
+    RigidBody, StepStats, StepUp, Vec3i, error, exact, from_subunits,
 };
 
 /// The game's centimetres per metre: the engine's length unit.
@@ -138,6 +138,8 @@ pub(super) struct World {
     gravity: [f32; 3],
     engine: physics_engine::approximate::World,
     settings: CharacterSettings,
+    /// Every character move's step-up (#750), in units.
+    autostep: Option<Autostep>,
     bodies: BTreeMap<BodyId, RigidBody>,
     ground: Option<Ground>,
     /// Game body → engine body.
@@ -181,6 +183,7 @@ impl World {
             gravity: from_subunits(gravity),
             engine,
             settings,
+            autostep: None,
             bodies: BTreeMap::new(),
             ground: None,
             handles: BTreeMap::new(),
@@ -432,6 +435,14 @@ impl World {
         Ok(())
     }
 
+    #[allow(clippy::cast_precision_loss)]
+    pub fn set_step_up(&mut self, step_up: Option<StepUp>) {
+        self.autostep = step_up.map(|step| Autostep {
+            max_height: step.max_height as f32,
+            min_width: step.min_width as f32,
+        });
+    }
+
     pub fn set_weightless(&mut self, id: BodyId, weightless: bool) -> Result<(), PhysicsError> {
         let body = self
             .bodies
@@ -642,7 +653,7 @@ impl World {
                 body: self.handles[&body.id],
                 desired: vector(desired),
                 exclude: self.open_floor(body),
-                autostep: None,
+                autostep: self.autostep,
             });
         }
         let outcome = self.run_batch(&moves);

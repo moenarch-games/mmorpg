@@ -18,6 +18,7 @@ export const SETTING = {
   lookSensitivity: "controls.look_sensitivity",
   invertVerticalLook: "controls.invert_vertical_look",
   holdCamera: "controls.hold_camera",
+  aimStyle: "controls.aim_style",
   reduceMotion: "accessibility.reduce_motion",
   masterVolume: "audio.master_volume",
   effectsVolume: "audio.effects_volume",
@@ -29,6 +30,7 @@ export const SETTING = {
 export const MOTION_CHOICES = ["system", "reduce", "full"] as const;
 export type MotionPreference = (typeof MOTION_CHOICES)[number];
 export type HoldCamera = "locked" | "free";
+export type AimStyle = "hold" | "armed";
 
 /**
  * The most canvas pixels drawn per CSS pixel for each render-resolution choice. GPU time scales with the pixel count:
@@ -63,6 +65,8 @@ export type ClientPreferences = {
   invertVerticalLook: boolean;
   /** The camera while a strike or guard hold owns the mouse (#636): locked still, or free to turn. */
   holdCamera: HoldCamera;
+  /** How a manual aim (#649) throws: hold and release, or arm and left-click. */
+  aimStyle: AimStyle;
   reduceMotion: MotionPreference;
   /** Most canvas pixels per CSS pixel (`RENDER_RESOLUTION_PIXEL_RATIO`). */
   maxPixelRatio: number;
@@ -90,6 +94,7 @@ export function clientPreferences(values: Readonly<Record<string, SettingValue>>
   const motion = values[SETTING.reduceMotion];
   const inverted = values[SETTING.invertVerticalLook];
   const holdCamera = values[SETTING.holdCamera];
+  const aimStyle = values[SETTING.aimStyle];
   const muted = values[SETTING.muted];
   const resolution = values[SETTING.renderResolution];
   return {
@@ -97,6 +102,7 @@ export function clientPreferences(values: Readonly<Record<string, SettingValue>>
     lookSensitivity: numberValue(values[SETTING.lookSensitivity], 1),
     invertVerticalLook: inverted?.type === "bool" && inverted.value === true,
     holdCamera: holdCamera?.type === "choice" && holdCamera.value === "free" ? "free" : "locked",
+    aimStyle: aimStyle?.type === "choice" && aimStyle.value === "armed" ? "armed" : "hold",
     reduceMotion: motion?.type === "choice" && isMotionPreference(motion.value) ? motion.value : "system",
     maxPixelRatio: RENDER_RESOLUTION_PIXEL_RATIO[resolution?.type === "choice" && isRenderResolution(resolution.value) ? resolution.value : "balanced"],
     audio: {

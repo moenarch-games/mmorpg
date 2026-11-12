@@ -8,7 +8,7 @@
 use mmorpg_client_model::{
     chat::{self, LineKind, Logs},
     hud::{self, CooldownKind},
-    mouse_owner,
+    manual_aim, mouse_owner,
     outbox::{self, MovementCommands},
     power_draw::{self, DrawRelease},
     quest,
@@ -356,16 +356,33 @@ impl From<HoldKind> for mouse_owner::Hold {
 pub enum ClickOutcome {
     Select,
     Confirm,
+    /// An armed manual aim (#649) throws `ability` along the aim.
+    Throw,
     Nothing,
     CancelCast,
     Cancel,
 }
 
+/// What a held slot press does under the manual-aim rule (#649).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+#[serde(rename_all = "kebab-case")]
+pub enum AimPress {
+    /// Not a manual aim: use the slot as usual.
+    Use,
+    /// The aim owns the mouse now; nothing is sent.
+    Aim,
+    /// Another gesture owns the mouse; nothing happens.
+    Ignore,
+}
+
 /// A click's outcome and the gesture it ended, if any.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+#[tsify(missing_as_null)]
 pub struct Click {
     pub outcome: ClickOutcome,
     pub ended: EndedGesture,
+    /// The ability a `throw` uses.
+    pub ability: Option<u8>,
 }
 
 /// A hold's press: whether it owns the mouse, and the other hold it ended without firing.
@@ -423,6 +440,51 @@ impl MouseOwners {
             .set_hold_camera(mouse_owner::HoldCamera::from_setting(value));
     }
 
+    /// The `controls.aim_style` setting (#649): `"armed"`, otherwise hold.
+    #[wasm_bindgen(js_name = setAimStyle)]
+    pub fn set_aim_style(&mut self, value: &str) {
+        self.owners
+            .set_aim_style(mouse_owner::AimStyle::from_setting(value));
+    }
+
+    /// A held input pressed `slot`, holding `ability` (#649): `use` it as usual, it now `aim`s,
+    /// or another gesture owns the mouse and the press does nothing (`ignore`).
+    #[wasm_bindgen(js_name = pressAim)]
+    pub fn press_aim(
+        &mut self,
+        slot: u8,
+        ability: u8,
+        snapshot: Ts<ZoneSnapshot>,
+        interface_open: bool,
+    ) -> Result<Ts<AimPress>, JsError> {
+        let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+        let press = if !manual_aim::can_aim(&snapshot, slot, ability, interface_open) {
+            AimPress::Use
+        } else if self.owners.begin_aim(slot, ability) {
+            AimPress::Aim
+        } else {
+            AimPress::Ignore
+        };
+        Ok(press.into_ts()?)
+    }
+
+    /// `slot` went up, or its hold was retired: the ability to throw along the aim, if any.
+    #[wasm_bindgen(js_name = releaseAim)]
+    pub fn release_aim(&mut self, slot: u8, retired: bool) -> Option<u8> {
+        self.owners.release_aim(slot, retired)
+    }
+
+    /// Where a throw along `facing` is expected to land, in core units; an aid only.
+    #[wasm_bindgen(js_name = aimLanding)]
+    pub fn aim_landing(
+        &self,
+        snapshot: Ts<ZoneSnapshot>,
+        facing: u16,
+    ) -> Result<Option<Vec<i32>>, JsError> {
+        let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+        Ok(manual_aim::landing(&snapshot, facing).map(Vec::from))
+    }
+
     /// A hold's key went down: `true` if it owns the mouse; `preempted` ends the other hold.
     #[wasm_bindgen(js_name = beginHold)]
     pub fn begin_hold(&mut self, hold: Ts<HoldKind>) -> Result<Ts<BeginHold>, JsError> {
@@ -448,14 +510,17 @@ impl MouseOwners {
 
     #[wasm_bindgen(js_name = leftClick)]
     pub fn left_click(&mut self) -> Result<Ts<Click>, JsError> {
-        let (outcome, ended) = match self.owners.left_click() {
-            mouse_owner::LeftClick::Select => (ClickOutcome::Select, None),
-            mouse_owner::LeftClick::Nothing => (ClickOutcome::Nothing, None),
-            mouse_owner::LeftClick::Confirm(gesture) => (ClickOutcome::Confirm, Some(gesture)),
+        use mouse_owner::{Gesture, LeftClick};
+        let (outcome, ended, ability) = match self.owners.left_click() {
+            LeftClick::Select => (ClickOutcome::Select, None, None),
+            LeftClick::Nothing => (ClickOutcome::Nothing, None, None),
+            LeftClick::Confirm(gesture) => (ClickOutcome::Confirm, Some(gesture), None),
+            LeftClick::Throw(ability) => (ClickOutcome::Throw, Some(Gesture::Aim), Some(ability)),
         };
         Ok(Click {
             outcome,
             ended: ended.into(),
+            ability,
         }
         .into_ts()?)
     }
@@ -469,6 +534,7 @@ impl MouseOwners {
         Ok(Click {
             outcome,
             ended: ended.into(),
+            ability: None,
         }
         .into_ts()?)
     }

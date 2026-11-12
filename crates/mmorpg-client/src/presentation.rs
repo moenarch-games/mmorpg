@@ -1179,7 +1179,7 @@ impl Presentation {
     }
 
     /// Metres, lifted by the presentation relief under the unit.
-    fn rendered(&self, position: [i32; 3]) -> [f32; 3] {
+    pub fn rendered(&self, position: [i32; 3]) -> [f32; 3] {
         let relief = self.scenery.height_at(position[0], position[2]);
         let [x, y, z] = metres(position);
         [x, y + relief as f32 / UNITS_PER_METRE as f32, z]

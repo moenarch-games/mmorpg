@@ -1,8 +1,8 @@
-import type { BeginHold, Click, EndedGesture, GestureAim, HoldKind, MouseOwnerKind } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
+import type { AimPress, BeginHold, Click, EndedGesture, GestureAim, HoldKind, MouseOwnerKind } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
 import type { ZoneSnapshot } from "../../replication";
 import { wasm } from "../../wasm";
 
-export type { BeginHold, Click, EndedGesture, GestureAim, HoldKind, MouseOwnerKind };
+export type { AimPress, BeginHold, Click, EndedGesture, GestureAim, HoldKind, MouseOwnerKind };
 
 /**
  * One mouse owner at a time (#636, Atlas 5.2.i636-2): the shared `mmorpg-client-model` state
@@ -14,12 +14,14 @@ export class MouseOwnerInput {
   #owners: InstanceType<typeof wasm.MouseOwners> | null = null;
   #focus = false;
   #holdCamera = "locked";
+  #aimStyle = "hold";
 
   get #model(): InstanceType<typeof wasm.MouseOwners> {
     if (!this.#owners) {
       this.#owners = new wasm.MouseOwners();
       this.#owners.setFocus(this.#focus);
       this.#owners.setHoldCamera(this.#holdCamera);
+      this.#owners.setAimStyle(this.#aimStyle);
     }
     return this.#owners;
   }
@@ -42,6 +44,30 @@ export class MouseOwnerInput {
   setHoldCamera(value: "locked" | "free"): void {
     this.#holdCamera = value;
     this.#owners?.setHoldCamera(value);
+  }
+
+  setAimStyle(value: "hold" | "armed"): void {
+    this.#aimStyle = value;
+    this.#owners?.setAimStyle(value);
+  }
+
+  /**
+   * A held input pressed `slot` holding `ability` (#649): `use` it as usual, it now `aim`s (nothing
+   * is sent yet), or another gesture owns the mouse and the press does nothing.
+   */
+  pressAim(slot: number, ability: number, projection: ZoneSnapshot, interfaceOpen: boolean): AimPress {
+    return this.#model.pressAim(slot, ability, projection, interfaceOpen);
+  }
+
+  /** `slot` went up (or was `retired`): the ability to throw along the aim, if it throws now. */
+  releaseAim(slot: number, retired: boolean): number | undefined {
+    return this.#owners?.releaseAim(slot, retired);
+  }
+
+  /** Where a throw along `facing` is expected to land, in core units; an aid, never an outcome. */
+  aimLanding(projection: ZoneSnapshot, facing: number): [number, number, number] | null {
+    const landing = this.#owners?.aimLanding(projection, facing);
+    return landing && landing.length === 3 ? [landing[0]!, landing[1]!, landing[2]!] : null;
   }
 
   beginHold(hold: HoldKind): BeginHold {

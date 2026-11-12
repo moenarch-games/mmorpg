@@ -603,6 +603,7 @@ function applyPreferences(preferences: ClientPreferences): void {
   worldView.setLookSensitivity(preferences.lookSensitivity);
   worldView.setLookInversion(preferences.invertVerticalLook);
   worldView.setHoldCamera(preferences.holdCamera);
+  worldView.setAimStyle(preferences.aimStyle);
   worldView.setMotionPreference(preferences.reduceMotion);
   worldView.setAudioPreferences(preferences.audio);
   if (maxPixelRatio !== preferences.maxPixelRatio) {

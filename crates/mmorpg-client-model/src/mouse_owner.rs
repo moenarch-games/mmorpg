@@ -8,7 +8,7 @@
 //! | Free look | Camera and heading | Select under crosshair | Cancels a cast |
 //! | Focus | Cursor; camera tracks target | Select or click UI | Cancels a cast |
 //! | Strike or guard hold | Direction and lane | Nothing | Cancel, no attack |
-//! | Manual aim | Aim | Confirm | Cancel, no attack |
+//! | Manual aim | Aim | Throw (armed style) | Cancel, no attack |
 //! | Wheel | Pick a sector | Confirm | Cancel, no action |
 //!
 //! A wheel or aim cannot open during a hold, and a hold cannot start during an aim or wheel.
@@ -67,13 +67,44 @@ impl HoldCamera {
     }
 }
 
+/// How a manual aim (#649) throws (Atlas `5.2.i649-3`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AimStyle {
+    /// Hold the key to aim; its deliberate release throws (a quick tap throws at once).
+    #[default]
+    Hold,
+    /// Press the key to arm the aim; a left click throws.
+    Armed,
+}
+
+impl AimStyle {
+    /// The settings choice `controls.aim_style`: `"armed"`, otherwise hold.
+    #[must_use]
+    pub fn from_setting(value: &str) -> Self {
+        if value == "armed" {
+            Self::Armed
+        } else {
+            Self::Hold
+        }
+    }
+}
+
+/// The slot and ability a manual aim throws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Aiming {
+    slot: u8,
+    ability: u8,
+}
+
 /// What a left click means under the current owner.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LeftClick {
     /// Free look selects under the crosshair, focus under the cursor (or clicks the UI).
     Select,
-    /// An aim or wheel confirms and ends.
+    /// A wheel confirms and ends.
     Confirm(Gesture),
+    /// An armed aim (#649) ends and throws this ability along the aim.
+    Throw(u8),
     /// A strike or guard hold ignores the left button.
     Nothing,
 }
@@ -111,6 +142,9 @@ pub struct MouseOwners {
     focus: bool,
     gesture: Option<Gesture>,
     hold_camera: HoldCamera,
+    aim_style: AimStyle,
+    /// The slot a manual aim throws from, while [`Gesture::Aim`] owns the mouse.
+    aiming: Option<Aiming>,
     /// Pointer travel since the gesture began, clamped; screen y grows downward.
     offset: [f64; 2],
 }
@@ -144,9 +178,25 @@ impl MouseOwners {
         self.hold_camera = hold_camera;
     }
 
+    #[must_use]
+    pub fn aim_style(&self) -> AimStyle {
+        self.aim_style
+    }
+
+    pub fn set_aim_style(&mut self, aim_style: AimStyle) {
+        self.aim_style = aim_style;
+    }
+
     fn start(&mut self, gesture: Gesture) {
         self.gesture = Some(gesture);
+        self.aiming = None;
         self.offset = [0.0; 2];
+    }
+
+    /// Ends the gesture, whatever it was; returns it.
+    fn end(&mut self) -> Option<Gesture> {
+        self.aiming = None;
+        self.gesture.take()
     }
 
     /// The hold's key went down. The most recent of strike and guard owns the mouse (5.2.37).
@@ -167,16 +217,46 @@ impl MouseOwners {
             return None;
         }
         let aim = self.strike_aim();
-        self.gesture = None;
+        self.end();
         Some(match (hold, aim) {
             (Hold::Strike, Some(aim)) => HoldRelease::Strike(aim),
             _ => HoldRelease::LowerGuard,
         })
     }
 
-    /// Starts a manual aim; only from free look or focus.
-    pub fn begin_aim(&mut self) -> bool {
-        self.begin_free(Gesture::Aim)
+    /// A held press of `slot` starts a manual aim of `ability` (#649); only from free look or
+    /// focus. Callers check the ability aims manually ([`crate::manual_aim::can_aim`]).
+    pub fn begin_aim(&mut self, slot: u8, ability: u8) -> bool {
+        let started = self.begin_free(Gesture::Aim);
+        if started {
+            self.aiming = Some(Aiming { slot, ability });
+        }
+        started
+    }
+
+    /// The ability a manual aim would throw.
+    #[must_use]
+    pub fn aiming(&self) -> Option<u8> {
+        self.aiming.map(|aiming| aiming.ability)
+    }
+
+    /// `slot`'s key went up, or its hold was `retired`: the ability to throw along the aim, if
+    /// any. In the hold style a deliberate release throws; in the armed style it keeps the aim
+    /// for the left click. A retirement ends the aim without throwing, and any other key's
+    /// release does nothing.
+    pub fn release_aim(&mut self, slot: u8, retired: bool) -> Option<u8> {
+        let aiming = self.aiming.filter(|aiming| aiming.slot == slot)?;
+        if retired {
+            self.end();
+            return None;
+        }
+        match self.aim_style {
+            AimStyle::Hold => {
+                self.end();
+                Some(aiming.ability)
+            }
+            AimStyle::Armed => None,
+        }
     }
 
     /// Opens a wheel; only from free look or focus, never during a hold or aim.
@@ -193,18 +273,24 @@ impl MouseOwners {
     }
 
     pub fn left_click(&mut self) -> LeftClick {
-        match self.gesture {
-            None => LeftClick::Select,
-            Some(Gesture::Hold(_)) => LeftClick::Nothing,
-            Some(gesture) => {
-                self.gesture = None;
+        match (self.gesture, self.aiming) {
+            (None, _) => LeftClick::Select,
+            // A held aim throws on its key's release, not on a click.
+            (Some(Gesture::Hold(_)), _) => LeftClick::Nothing,
+            (Some(Gesture::Aim), Some(aiming)) if self.aim_style == AimStyle::Armed => {
+                self.end();
+                LeftClick::Throw(aiming.ability)
+            }
+            (Some(Gesture::Aim), _) => LeftClick::Nothing,
+            (Some(gesture), _) => {
+                self.end();
                 LeftClick::Confirm(gesture)
             }
         }
     }
 
     pub fn right_click(&mut self) -> RightClick {
-        match self.gesture.take() {
+        match self.end() {
             None => RightClick::CancelCast,
             Some(gesture) => RightClick::Cancel(gesture),
         }
@@ -213,16 +299,20 @@ impl MouseOwners {
     /// Focus loss, a menu, a panel, a lost pointer lock or a retired key: the gesture ends
     /// without firing. Returns the ended gesture.
     pub fn interrupt(&mut self) -> Option<Gesture> {
-        self.gesture.take()
+        self.end()
     }
 
-    /// Follows a projection: death or a stun ends the gesture without firing.
+    /// Follows a projection: death or a stun ends the gesture without firing, and so does an aim
+    /// whose ability is no longer usable from its slot (a cast, a changed bar).
     pub fn observe(&mut self, snapshot: &ZoneSnapshot) -> Option<Gesture> {
         let stunned = snapshot
             .auras
             .iter()
             .any(|aura| aura.kind == AuraKind::Stun);
-        if snapshot.viewer.dead || stunned {
+        let aim_lost = self.aiming.is_some_and(|aiming| {
+            !crate::manual_aim::still_aims(snapshot, aiming.slot, aiming.ability)
+        });
+        if snapshot.viewer.dead || stunned || aim_lost {
             self.interrupt()
         } else {
             None
@@ -293,6 +383,8 @@ mod tests {
     use crate::test_support::snapshot;
     use mmorpg_core::{AuraView, ability::ids};
 
+    const BOMB: u8 = ids::BLASTING_BOMB.get();
+
     #[test]
     fn the_table_maps_clicks_and_motion_per_owner() {
         let mut owners = MouseOwners::default();
@@ -304,10 +396,11 @@ mod tests {
         assert_eq!(owners.owner(), MouseOwner::Focus);
         assert!(!owners.motion(5.0, 0.0), "focus frees the cursor");
         assert_eq!(owners.left_click(), LeftClick::Select);
-        assert!(owners.begin_aim());
+        owners.set_aim_style(AimStyle::Armed);
+        assert!(owners.begin_aim(6, BOMB));
         assert!(!owners.begin_wheel(), "no wheel during an aim");
         assert_eq!(owners.begin_hold(Hold::Strike), Begin::Refused);
-        assert_eq!(owners.left_click(), LeftClick::Confirm(Gesture::Aim));
+        assert_eq!(owners.left_click(), LeftClick::Throw(BOMB));
         assert_eq!(owners.owner(), MouseOwner::Focus);
         assert!(owners.begin_wheel());
         assert_eq!(owners.right_click(), RightClick::Cancel(Gesture::Wheel));
@@ -375,5 +468,64 @@ mod tests {
         dead.viewer.dead = true;
         assert_eq!(owners.observe(&dead), Some(Gesture::Hold(Hold::Guard)));
         assert_eq!(owners.release_hold(Hold::Guard), None);
+    }
+
+    #[test]
+    fn a_held_aim_throws_once_on_its_own_release_and_never_on_a_cancel() {
+        let mut owners = MouseOwners::default();
+        owners.set_focus(true);
+        assert!(owners.begin_aim(6, BOMB));
+        assert_eq!(owners.aiming(), Some(BOMB));
+        assert!(
+            owners.motion(40.0, 0.0),
+            "aiming steers the shoulder camera"
+        );
+        assert_eq!(
+            owners.left_click(),
+            LeftClick::Nothing,
+            "the hold style ignores clicks"
+        );
+        assert_eq!(owners.release_aim(5, false), None, "another key");
+        assert_eq!(owners.release_aim(6, false), Some(BOMB));
+        assert_eq!(owners.owner(), MouseOwner::Focus, "the focus is kept");
+        assert_eq!(owners.release_aim(6, false), None, "no second throw");
+        // Right click, a retired key or an interruption end it without a throw.
+        owners.begin_aim(6, BOMB);
+        assert_eq!(owners.right_click(), RightClick::Cancel(Gesture::Aim));
+        assert_eq!(owners.release_aim(6, false), None);
+        owners.begin_aim(6, BOMB);
+        assert_eq!(owners.release_aim(6, true), None);
+        assert_eq!(owners.gesture(), None);
+        owners.begin_aim(6, BOMB);
+        assert_eq!(owners.interrupt(), Some(Gesture::Aim));
+        assert_eq!(owners.release_aim(6, false), None);
+        let mut dead = snapshot(1, 2);
+        dead.viewer.dead = true;
+        owners.begin_aim(6, BOMB);
+        assert_eq!(owners.observe(&dead), Some(Gesture::Aim));
+        assert_eq!(owners.release_aim(6, false), None);
+    }
+
+    #[test]
+    fn an_armed_aim_waits_for_the_left_click() {
+        let mut owners = MouseOwners::default();
+        owners.set_aim_style(AimStyle::from_setting("armed"));
+        assert!(owners.begin_aim(6, BOMB));
+        assert_eq!(
+            owners.release_aim(6, false),
+            None,
+            "the release keeps it armed"
+        );
+        assert_eq!(owners.gesture(), Some(Gesture::Aim));
+        assert!(!owners.begin_aim(6, BOMB), "a second press does nothing");
+        assert_eq!(owners.left_click(), LeftClick::Throw(BOMB));
+        assert_eq!(owners.left_click(), LeftClick::Select);
+        owners.begin_aim(6, BOMB);
+        assert_eq!(owners.right_click(), RightClick::Cancel(Gesture::Aim));
+        assert_eq!(
+            owners.left_click(),
+            LeftClick::Select,
+            "no throw after a cancel"
+        );
     }
 }
