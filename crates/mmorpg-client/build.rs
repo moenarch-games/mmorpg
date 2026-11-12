@@ -60,8 +60,9 @@ const MARSHAL_HOUSE: [&str; 5] = [
     "greyhaven.marshal-house.door",
 ];
 
-/// The crag kit modules the clients place (`mmorpg_presentation::crag::ENTRIES`, #668).
-const CRAG: [&str; 13] = [
+/// The crag kit entries the clients place (`mmorpg_presentation::crag::KIT_ENTRIES`): the box
+/// modules (#668) and the outcrops the world dressing places (#683).
+const CRAG: [&str; 18] = [
     "crag.kit.cap-1",
     "crag.kit.cap-2",
     "crag.kit.cap-corner",
@@ -75,6 +76,11 @@ const CRAG: [&str; 13] = [
     "crag.kit.face-sheer-1",
     "crag.kit.face-sheer-2",
     "crag.kit.face-sheer-3",
+    "crag.kit.outcrop-buttress-1",
+    "crag.kit.outcrop-buttress-2",
+    "crag.kit.outcrop-spire",
+    "crag.kit.outcrop-talus-1",
+    "crag.kit.outcrop-talus-2",
 ];
 
 fn main() {
@@ -244,8 +250,9 @@ fn main() {
     let climbing = manifest_dir.join("../../web/public/scenery/climbing.kit");
     static_bundle("climbing_bundle.rs", &climbing, None, true);
     descriptor(&climbing, "climbing-descriptor", "climbing_descriptor.rs");
-    // The crag kit's rock modules over the highland crags (#668) with every level of detail, and
-    // their descriptor; not its outcrops or macro texture, which nothing places.
+    // The crag kit's rock modules over the highland crags (#668) and its outcrops the world
+    // dressing places (#683), with every level of detail, and their descriptor; not its macro
+    // texture, which nothing places.
     let crag = manifest_dir.join("../../web/public/scenery/crag.kit");
     static_bundle("crag_bundle.rs", &crag, Some(&CRAG), true);
     descriptor(&crag, "crag-descriptor", "crag_descriptor.rs");

@@ -37,6 +37,7 @@ pub mod summoned;
 mod terrain;
 pub mod tiles;
 pub mod units;
+pub mod world_dressing;
 
 use std::sync::Arc;
 
@@ -186,8 +187,9 @@ pub enum Kit {
     /// The climbing kit's ladders and ropes (#621, [`climbing`]); the procedural ladders and
     /// ropes are the fallback.
     Climbing,
-    /// The crag kit's rock modules over the highland crags and the Hollow's box cliffs
-    /// (#668, [`crag`]); the plain rock boxes and their worn handholds are the fallback.
+    /// The crag kit's rock modules over the highland crags (#668, [`crag`]) and the outcrops
+    /// the world dressing places (#683, [`world_dressing`]); the plain rock boxes with their
+    /// worn handholds and the outcrops' collision surfaces are the fallback.
     Crag,
 }
 

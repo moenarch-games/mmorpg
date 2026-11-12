@@ -1287,7 +1287,7 @@ fn placed_kit(
             CLIMBING.get(|_| climbing::placements(scenery::hosted_scenery())),
         )),
         "crag" => Ok((
-            &crag::ENTRIES,
+            &crag::KIT_ENTRIES,
             CRAG.get(|_| crag::placements(scenery::hosted_scenery())),
         )),
         other => Err(JsError::new(&format!("no placed kit {other:?}"))),
@@ -1347,8 +1347,8 @@ impl KitLods {
     pub fn new(kit: &str, descriptor: &str) -> Result<Self, JsError> {
         let placements = placed_kit(kit)?.1;
         // The shared parse: every kit's levels, with the nature trees' own switch points.
-        // The crag kit's descriptor also lists its macro texture and outcrops, which are not
-        // placed (#668).
+        // The crag kit's descriptor lists its outcrops apart and a macro texture, which is not
+        // placed (#668, #683).
         let entries = if kit == "crag" {
             mmorpg_presentation::crag::descriptor_lods(descriptor)
         } else {
