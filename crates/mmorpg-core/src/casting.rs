@@ -1196,6 +1196,8 @@ impl ZoneSimulation {
             ZoneEvent::CastStarted { .. }
                 | ZoneEvent::AbilityUsed { .. }
                 | ZoneEvent::StrikeSwept { .. }
+                | ZoneEvent::SwingBegan { .. }
+                | ZoneEvent::Clashed { .. }
                 | ZoneEvent::Interrupted { .. }
         ) {
             let refs: Vec<_> = units.iter().flatten().copied().collect();

@@ -51,6 +51,8 @@ pub struct ZoneContent {
     fingerprint: u64,
     character_persistence: CharacterPersistence,
     player_combat: PlayerCombatPolicy,
+    /// Timed swings and clashes (#679); `None` resolves strikes at once.
+    timed_combat: Option<crate::TimedCombat>,
     rng_seed: u64,
     loot_bound: bool,
     loot_tables: Vec<(CreatureTemplateId, LootTable)>,
@@ -189,6 +191,7 @@ impl ZoneContent {
             fingerprint: 0,
             character_persistence: CharacterPersistence::Durable,
             player_combat: PlayerCombatPolicy::Safe,
+            timed_combat: None,
             rng_seed: 0,
             loot_bound: false,
             loot_tables: Vec::new(),
@@ -241,6 +244,7 @@ impl ZoneContent {
             fingerprint: 0,
             character_persistence: CharacterPersistence::Durable,
             player_combat: PlayerCombatPolicy::Safe,
+            timed_combat: None,
             rng_seed: 0,
             loot_bound: false,
             loot_tables: Vec::new(),
@@ -290,6 +294,25 @@ impl ZoneContent {
     #[must_use]
     pub const fn player_combat_policy(&self) -> PlayerCombatPolicy {
         self.player_combat
+    }
+
+    /// Runs directed strikes as timed swings that can clash (#679), for an arena first. The
+    /// content revision binds recovery to these rules, so a zone restored mid-swing continues
+    /// under exactly them.
+    ///
+    /// # Errors
+    /// Fails when a phase or clash radius is out of range.
+    pub fn with_timed_combat(mut self, rules: crate::TimedCombat) -> Result<Self, ZoneError> {
+        rules.validate()?;
+        self.timed_combat = Some(rules);
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// The timed swing and clash rules, if any (#679).
+    #[must_use]
+    pub const fn timed_combat(&self) -> Option<crate::TimedCombat> {
+        self.timed_combat
     }
 
     #[must_use]
@@ -1329,6 +1352,24 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_depths_fingerprint();
+        let Some(rules) = self.timed_combat else {
+            return fingerprint;
+        };
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/timed-combat-v1");
+        hash.u64(fingerprint);
+        hash.u32(rules.swing.startup_ms);
+        hash.u32(rules.swing.active_ms);
+        hash.u8(u8::from(rules.clashes.swings));
+        hash.u8(u8::from(rules.clashes.projectiles));
+        hash.u8(u8::from(rules.clashes.parries));
+        hash.u16(rules.clashes.arrow_radius_units);
+        hash.u16(rules.clashes.firebolt_radius_units);
+        hash.finish()
+    }
+
+    fn compute_depths_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_character_fingerprint();
         if self.depths_threshold.is_none() && self.depths_site.is_none() {
             return fingerprint;
