@@ -9,12 +9,14 @@
 //! | Focus | Cursor; camera tracks target | Select or click UI | Cancels a cast |
 //! | Strike or guard hold | Direction and lane | Nothing | Cancel, no attack |
 //! | Manual aim | Aim | Throw (armed style) | Cancel, no attack |
-//! | Wheel | Pick a sector | Confirm | Cancel, no action |
+//! | Wheel | Pick a sector | Run the sector (tap-opened) | Cancel, no action |
 //!
 //! A wheel or aim cannot open during a hold, and a hold cannot start during an aim or wheel.
 //! Sword against shield is last-pressed-wins (5.2.37). Stun, death, focus loss, a menu or a
 //! panel end the current gesture without firing.
 use mmorpg_core::{AuraKind, StrikeAim, StrikeHeight, StrikeSide, ZoneSnapshot};
+
+use crate::pie_menu::{WHEEL_TAP_MS, Wheel, WheelAction, WheelTally};
 
 /// Pointer travel (pixels) from the press before a gesture leaves the centre or middle lane.
 pub const GESTURE_THRESHOLD_PX: f64 = 24.0;
@@ -32,7 +34,7 @@ pub enum Gesture {
     Hold(Hold),
     /// Manual aim of a free-targeted attack (#649); confirmed by a left click.
     Aim,
-    /// A radial menu (#653); a left click confirms the sector.
+    /// A radial menu (#653, [`crate::pie_menu`]); a flick and release or a left click picks.
     Wheel,
 }
 
@@ -101,8 +103,8 @@ struct Aiming {
 pub enum LeftClick {
     /// Free look selects under the crosshair, focus under the cursor (or clicks the UI).
     Select,
-    /// A wheel confirms and ends.
-    Confirm(Gesture),
+    /// A wheel ends and runs the pointed-at action; the centre or a gap runs nothing.
+    Pick(Option<WheelAction>),
     /// An armed aim (#649) ends and throws this ability along the aim.
     Throw(u8),
     /// A strike or guard hold ignores the left button.
@@ -136,6 +138,19 @@ pub enum HoldRelease {
     LowerGuard,
 }
 
+/// The wheel's key went up, or was retired (#653).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WheelRelease {
+    /// No wheel owned the mouse; nothing happens.
+    Ignored,
+    /// A flick: the wheel ends and runs this action.
+    Pick(WheelAction),
+    /// A quick tap in the centre: the wheel stays open for a left click (tap-to-open).
+    Open,
+    /// The wheel ended without an action: a retirement, a held release in the centre or a gap.
+    Cancel,
+}
+
 /// The mouse owner state machine shared by native and browser.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct MouseOwners {
@@ -147,6 +162,10 @@ pub struct MouseOwners {
     aiming: Option<Aiming>,
     /// Pointer travel since the gesture began, clamped; screen y grows downward.
     offset: [f64; 2],
+    /// The open wheel, while [`Gesture::Wheel`] owns the mouse.
+    wheel: Option<Wheel>,
+    /// Wheel opens, picks and cancels not yet taken by the usage counters.
+    tally: WheelTally,
 }
 
 impl MouseOwners {
@@ -190,13 +209,30 @@ impl MouseOwners {
     fn start(&mut self, gesture: Gesture) {
         self.gesture = Some(gesture);
         self.aiming = None;
+        self.wheel = None;
         self.offset = [0.0; 2];
     }
 
-    /// Ends the gesture, whatever it was; returns it.
+    /// Ends the gesture, whatever it was, without an action; returns it. An open wheel counts as
+    /// cancelled.
     fn end(&mut self) -> Option<Gesture> {
         self.aiming = None;
+        if let Some(wheel) = self.wheel.take() {
+            self.tally.cancelled(wheel.kind);
+        }
         self.gesture.take()
+    }
+
+    /// Ends an open wheel with the action at the current pointer travel; `None` (the centre or a
+    /// gap) counts as a cancel.
+    fn pick_wheel(&mut self) -> Option<WheelAction> {
+        let action = self.wheel.and_then(|wheel| wheel.pick(self.offset));
+        if let (Some(wheel), Some(_)) = (self.wheel, action) {
+            self.tally.picked(wheel.kind);
+            self.wheel = None;
+        }
+        self.end();
+        action
     }
 
     /// The hold's key went down. The most recent of strike and guard owns the mouse (5.2.37).
@@ -259,9 +295,55 @@ impl MouseOwners {
         }
     }
 
-    /// Opens a wheel; only from free look or focus, never during a hold or aim.
-    pub fn begin_wheel(&mut self) -> bool {
-        self.begin_free(Gesture::Wheel)
+    /// The wheel's key went down (#653): opens `wheel` from free look or focus, never during a
+    /// hold or aim, and never empty. A press while a wheel is open (tap-to-open) closes it.
+    /// Returns whether the wheel is open now.
+    pub fn open_wheel(&mut self, wheel: Wheel) -> bool {
+        if self.gesture == Some(Gesture::Wheel) {
+            self.end();
+            return false;
+        }
+        if wheel.is_empty() || !self.begin_free(Gesture::Wheel) {
+            return false;
+        }
+        self.wheel = Some(wheel);
+        self.tally.opened(wheel.kind);
+        true
+    }
+
+    /// The open wheel.
+    #[must_use]
+    pub fn wheel(&self) -> Option<&Wheel> {
+        self.wheel.as_ref()
+    }
+
+    /// The open wheel's highlighted sector, `None` in the centre.
+    #[must_use]
+    pub fn wheel_sector(&self) -> Option<usize> {
+        self.wheel.and_then(|wheel| wheel.sector_at(self.offset))
+    }
+
+    /// The wheel's key went up after `held_ms`, or its hold was `retired`. A flick out of the
+    /// centre picks; a quick tap in the centre keeps the wheel open for a left click; a longer
+    /// hold released in the centre, a gap or a retirement cancels.
+    pub fn release_wheel(&mut self, held_ms: f64, retired: bool) -> WheelRelease {
+        if self.wheel.is_none() {
+            return WheelRelease::Ignored;
+        }
+        if retired {
+            self.end();
+            return WheelRelease::Cancel;
+        }
+        if self.wheel_sector().is_none() && held_ms < WHEEL_TAP_MS {
+            return WheelRelease::Open;
+        }
+        self.pick_wheel()
+            .map_or(WheelRelease::Cancel, WheelRelease::Pick)
+    }
+
+    /// Takes the wheel opens, picks and cancels since the last call, for the usage counters.
+    pub fn take_tally(&mut self) -> WheelTally {
+        std::mem::take(&mut self.tally)
     }
 
     fn begin_free(&mut self, gesture: Gesture) -> bool {
@@ -282,10 +364,7 @@ impl MouseOwners {
                 LeftClick::Throw(aiming.ability)
             }
             (Some(Gesture::Aim), _) => LeftClick::Nothing,
-            (Some(gesture), _) => {
-                self.end();
-                LeftClick::Confirm(gesture)
-            }
+            (Some(Gesture::Wheel), _) => LeftClick::Pick(self.pick_wheel()),
         }
     }
 
@@ -385,6 +464,57 @@ mod tests {
 
     const BOMB: u8 = ids::BLASTING_BOMB.get();
 
+    fn wheel() -> Wheel {
+        Wheel::fixed(&["ability.slot1", "ability.slot2", "move.roll"])
+    }
+
+    #[test]
+    fn a_wheel_picks_on_a_flick_or_a_click_and_counts_its_use() {
+        let mut owners = MouseOwners::default();
+        assert!(owners.open_wheel(wheel()));
+        assert!(!owners.motion(0.0, -40.0), "the locked camera holds still");
+        assert_eq!(owners.wheel_sector(), Some(0));
+        assert_eq!(
+            owners.release_wheel(80.0, false),
+            WheelRelease::Pick(WheelAction::Slot(1)),
+            "a quick flick picks"
+        );
+        assert_eq!(owners.release_wheel(80.0, false), WheelRelease::Ignored);
+        // Tap to open, then click to confirm the pointed-at sector.
+        owners.open_wheel(wheel());
+        assert_eq!(owners.release_wheel(100.0, false), WheelRelease::Open);
+        assert_eq!(owners.gesture(), Some(Gesture::Wheel));
+        assert_eq!(
+            owners.begin_hold(Hold::Strike),
+            Begin::Refused,
+            "no hold over a wheel"
+        );
+        owners.motion(40.0, 0.0);
+        assert_eq!(
+            owners.left_click(),
+            LeftClick::Pick(Some(WheelAction::Roll))
+        );
+        // A long hold released in the centre, a right click and a retirement cancel.
+        owners.open_wheel(wheel());
+        assert_eq!(owners.release_wheel(900.0, false), WheelRelease::Cancel);
+        owners.open_wheel(wheel());
+        assert_eq!(owners.right_click(), RightClick::Cancel(Gesture::Wheel));
+        owners.open_wheel(wheel());
+        owners.motion(0.0, -40.0);
+        assert_eq!(owners.release_wheel(50.0, true), WheelRelease::Cancel);
+        // A second press of a tapped-open wheel closes it; an empty wheel never opens.
+        owners.open_wheel(wheel());
+        owners.release_wheel(10.0, false);
+        assert!(!owners.open_wheel(wheel()));
+        assert_eq!(owners.gesture(), None);
+        assert!(!owners.open_wheel(Wheel::fixed(&[])));
+        let tally = owners.take_tally();
+        assert_eq!(tally.opens, [6, 0]);
+        assert_eq!(tally.picks, [2, 0]);
+        assert_eq!(tally.cancels, [4, 0]);
+        assert_eq!(owners.take_tally(), WheelTally::default());
+    }
+
     #[test]
     fn the_table_maps_clicks_and_motion_per_owner() {
         let mut owners = MouseOwners::default();
@@ -398,11 +528,11 @@ mod tests {
         assert_eq!(owners.left_click(), LeftClick::Select);
         owners.set_aim_style(AimStyle::Armed);
         assert!(owners.begin_aim(6, BOMB));
-        assert!(!owners.begin_wheel(), "no wheel during an aim");
+        assert!(!owners.open_wheel(wheel()), "no wheel during an aim");
         assert_eq!(owners.begin_hold(Hold::Strike), Begin::Refused);
         assert_eq!(owners.left_click(), LeftClick::Throw(BOMB));
         assert_eq!(owners.owner(), MouseOwner::Focus);
-        assert!(owners.begin_wheel());
+        assert!(owners.open_wheel(wheel()));
         assert_eq!(owners.right_click(), RightClick::Cancel(Gesture::Wheel));
     }
 
@@ -415,7 +545,7 @@ mod tests {
         );
         assert!(!owners.motion(30.0, -30.0), "the locked camera holds still");
         assert_eq!(owners.left_click(), LeftClick::Nothing);
-        assert!(!owners.begin_wheel(), "no wheel during a hold");
+        assert!(!owners.open_wheel(wheel()), "no wheel during a hold");
         assert_eq!(
             owners.release_hold(Hold::Strike),
             Some(HoldRelease::Strike(StrikeAim::new(
