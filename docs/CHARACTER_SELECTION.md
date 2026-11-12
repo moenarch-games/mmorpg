@@ -6,6 +6,38 @@ Product decision: [Decision Atlas 6.4.4](decisions/atlas.md). This document spec
 
 The schematic is the **structural reference**. The approved cinematic Greyhaven mockup defines the dark-fantasy atmosphere, restrained gold accents, readable contrast, and upgraded humanoid presentation. Illustrative concept artwork is **not** a shippable asset or proof that distinct class/sex models already exist.
 
+## One front end in both clients
+
+The browser and the native client draw the same selection screens from one description in
+`mmorpg_client_model::front_end` (the browser reads it through `mmorpg-wasm`):
+
+- **Mode tabs** above the heading choose what to play. **Greyhaven Vale** opens the
+  **Characters** screen below: it shapes a lasting character (roster, appearance).
+  **Battle Royale** opens the **Loadout** screen: it picks only what one match needs and changes
+  no roster character (see [BATTLE_ROYALE.md](BATTLE_ROYALE.md)). A platform that cannot play a
+  mode yet shows its tab disabled with the reason (the native client has no arena).
+- The heading, tagline, class names, roles and descriptions, and the game menu's entries
+  (Resume, Settings, then **Characters** or **Change loadout** in the browser, **Quit game**
+  natively, which claims its character for the whole session) come from the same module.
+- Colours, corner radii, spacing, text sizes and motion timings come from
+  `content/ui/theme.json`: the browser build turns it into `--ui-*` CSS custom properties,
+  the native client into egui visuals (`ui/theme.rs`). Change the look of both there.
+- **The logo opens the game.** `content/ui/logo.json` defines the Greyhaven crest (a double
+  ring, the vale's peaks, the keep and the waystone gem) and its opening timeline. The browser
+  writes it as inline SVG into `index.html` at build time (`web/scripts/ui-logo.ts`, with the
+  theme and `src/splash.css` in the head), so the splash paints before any script loads; the
+  native window paints the same shapes with egui (`ui/splash.rs`, `mmorpg_client_model::logo`).
+  The crest draws on, the gem lights, the title settles, and after about 3.3 s the splash
+  dissolves into the selection screen; a click (or, in the browser, a key) skips it, and reduced
+  motion shows the finished crest, then fades. The browser's stage loader turns its arc around
+  the same crest.
+- **The stage shows only the real character.** The browser veils its stage with a turning
+  gold sigil ("Preparing your character…") until the real model can stand there in its class
+  outfit (at most 1.5 s more for the outfit), then lifts the veil; there is no stand-in figure.
+  If the model fails to load, the veil lifts on the empty stage and says so. The native client
+  draws its own stage and loads nothing of the zone until Enter World
+  ([NATIVE_CLIENT.md](NATIVE_CLIENT.md)).
+
 ## Desktop layout
 
 - **Left / main:** Large real 3D character preview with existing drag, keyboard, left/right and reset rotation controls. The character and camera receive the space; explanatory chrome stays minimal.

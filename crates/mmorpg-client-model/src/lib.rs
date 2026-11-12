@@ -1,7 +1,8 @@
 //! The client rules both clients share (#543): what the action bar, cast bar,
 //! chat and quest windows show for a received projection, how a typed chat
 //! line becomes a command, and which movement commands the current input
-//! needs, when a held power shot fires, and who owns the mouse.
+//! needs, when a held power shot fires, who owns the mouse, and the front end
+//! (selection modes, game menu, class cards), theme and logo both clients draw.
 //!
 //! Everything here is a plain function or struct over `mmorpg-core` types and
 //! local input, with no I/O and no rendering. The native client calls it
@@ -11,13 +12,16 @@
 #![forbid(unsafe_code)]
 
 pub mod chat;
+pub mod front_end;
 pub mod hud;
+pub mod logo;
 pub mod manual_aim;
 pub mod mouse_owner;
 pub mod outbox;
 pub mod party;
 pub mod power_draw;
 pub mod quest;
+pub mod theme;
 pub mod world_map;
 
 #[cfg(test)]

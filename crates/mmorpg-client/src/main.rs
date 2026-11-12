@@ -122,19 +122,9 @@ fn main() -> Result<(), ClientError> {
         return Ok(());
     };
     let runtime = Arc::new(tokio::runtime::Runtime::new()?);
-    // Scenery derives from the shared core content revision the host runs;
-    // the content names and sizes its units. A redirect to another zone (#145)
-    // swaps both for that zone's.
-    let scenery = scenery_for_zone(options.zone_id);
+    // The content names and sizes the zone's units; its scenery derives from the same
+    // revision the host runs. A redirect to another zone (#145) swaps both for that zone's.
     let content = content_for_zone(options.zone_id);
-    let world = WorldScene::new(&scenery);
-    let mut session = runtime.block_on(ClientSession::connect(
-        &options.url,
-        options.certificate.as_deref(),
-        options.zone_id,
-        scenery.content_revision,
-    ))?;
-    let player_id = session.player_id();
     let class_choice = (
         options.class.unwrap_or(PlayerClass::Warden).code(),
         options.sex.code(),
@@ -146,66 +136,83 @@ fn main() -> Result<(), ClientError> {
             class: options.class.unwrap_or(PlayerClass::Warden),
             sex: options.sex,
         },
-        global_id: options.character_id,
+        global_id: options.character_id.clone(),
     });
-    if options.autopilot {
-        return runtime.block_on(async {
-            let selected = selected.ok_or("missing autopilot character")?;
-            let id = selected.global_id.ok_or("missing autopilot character ID")?;
-            if !session.claim_character(&id, selected.class).await? {
-                return Err::<(), ClientError>("--autopilot needs a host with character storage".into());
-            }
-            let journey = mmorpg_client::autopilot::seam_test_journey(&mut session).await?;
-            session.release_character().await?;
-            println!(
-                "{{\"event\":\"client_autopilot_passed\",\"walked\":[{},{}],\"teleported\":[{},{}],\"arrivals\":{:?}}}",
-                journey.walked.0.get(),
-                journey.walked.1.get(),
-                journey.teleported.0.get(),
-                journey.teleported.1.get(),
-                journey.arrivals,
-            );
-            Ok(())
-        });
-    }
-    if options.smoke {
-        return runtime.block_on(async {
-            // Choose the class until the zone confirms it (a datagram may be
-            // lost), then render the resumed authoritative world.
-            let selected = selected.ok_or("missing smoke character")?;
-            let durable = if session.character_service_enabled().await? {
-                let id = match selected.global_id {
-                    Some(id) => id,
-                    None => mmorpg_client::online_identity::for_character(
-                        &mmorpg_client::roster::config_dir().ok_or("no character configuration directory")?,
-                        &selected.local_id,
-                    )?,
-                };
-                session.claim_character(&id, selected.class).await?
-            } else { false };
-            let mut chosen = None;
-            for _ in 0..90 {
-                if !durable { session.send_choose_class(class_choice.0, class_choice.1)?; }
-                chosen = session.receive_snapshot().await?.viewer.class;
-                if chosen.is_some() {
-                    break;
+    // Without a chosen character the window opens on the selection stage: nothing of the
+    // zone is built or connected until Enter World, when the session task connects.
+    let staged = selected.is_none() && !options.autopilot;
+    let mut started = None;
+    if !staged {
+        let scenery = scenery_for_zone(options.zone_id);
+        let world = WorldScene::new(&scenery);
+        let mut session = runtime.block_on(ClientSession::connect(
+            &options.url,
+            options.certificate.as_deref(),
+            options.zone_id,
+            scenery.content_revision,
+        ))?;
+        let player_id = session.player_id();
+        if options.autopilot {
+            return runtime.block_on(async {
+                let selected = selected.ok_or("missing autopilot character")?;
+                let id = selected.global_id.ok_or("missing autopilot character ID")?;
+                if !session.claim_character(&id, selected.class).await? {
+                    return Err::<(), ClientError>("--autopilot needs a host with character storage".into());
                 }
-            }
-            let class = chosen.ok_or("the zone did not take the class choice")?.class;
-            let snapshot = session.reconnect().await?;
-            let connection_epoch = session.connection_epoch();
-            let tick = snapshot.tick;
-            let hud = hud::rects(&mmorpg_client_model::hud::CombatHud::from_projection(&snapshot));
-            let mut presentation = Presentation::new(player_id, scenery, content, Instant::now())?;
-            presentation.push(snapshot, Instant::now())?;
-            let now = Instant::now();
-            let view = OrbitCamera::default().view(presentation.camera_target(now));
-            let colors = render_offscreen(&world, &presentation.unit_draws(now, view), &hud, view).await?;
-            session.release_character().await?;
-            println!("{{\"event\":\"client_smoke_passed\",\"player_id\":{player_id},\"class\":\"{}\",\"tick\":{tick},\"connection_epoch\":{connection_epoch},\"rendered_colors\":{colors}}}", class.name());
-            Ok(())
-        });
+                let journey = mmorpg_client::autopilot::seam_test_journey(&mut session).await?;
+                session.release_character().await?;
+                println!(
+                    "{{\"event\":\"client_autopilot_passed\",\"walked\":[{},{}],\"teleported\":[{},{}],\"arrivals\":{:?}}}",
+                    journey.walked.0.get(),
+                    journey.walked.1.get(),
+                    journey.teleported.0.get(),
+                    journey.teleported.1.get(),
+                    journey.arrivals,
+                );
+                Ok(())
+            });
+        }
+        if options.smoke {
+            return runtime.block_on(async {
+                // Choose the class until the zone confirms it (a datagram may be
+                // lost), then render the resumed authoritative world.
+                let selected = selected.ok_or("missing smoke character")?;
+                let durable = if session.character_service_enabled().await? {
+                    let id = match selected.global_id {
+                        Some(id) => id,
+                        None => mmorpg_client::online_identity::for_character(
+                            &mmorpg_client::roster::config_dir().ok_or("no character configuration directory")?,
+                            &selected.local_id,
+                        )?,
+                    };
+                    session.claim_character(&id, selected.class).await?
+                } else { false };
+                let mut chosen = None;
+                for _ in 0..90 {
+                    if !durable { session.send_choose_class(class_choice.0, class_choice.1)?; }
+                    chosen = session.receive_snapshot().await?.viewer.class;
+                    if chosen.is_some() {
+                        break;
+                    }
+                }
+                let class = chosen.ok_or("the zone did not take the class choice")?.class;
+                let snapshot = session.reconnect().await?;
+                let connection_epoch = session.connection_epoch();
+                let tick = snapshot.tick;
+                let hud = hud::rects(&mmorpg_client_model::hud::CombatHud::from_projection(&snapshot));
+                let mut presentation = Presentation::new(player_id, scenery, content, Instant::now())?;
+                presentation.push(snapshot, Instant::now())?;
+                let now = Instant::now();
+                let view = OrbitCamera::default().view(presentation.camera_target(now));
+                let colors = render_offscreen(&world, &presentation.unit_draws(now, view), &hud, view).await?;
+                session.release_character().await?;
+                println!("{{\"event\":\"client_smoke_passed\",\"player_id\":{player_id},\"class\":\"{}\",\"tick\":{tick},\"connection_epoch\":{connection_epoch},\"rendered_colors\":{colors}}}", class.name());
+                Ok(())
+            });
+        }
+        started = Some((session, (player_id, scenery, world)));
     }
+    let (session, loaded) = started.unzip();
     // The session sends the class choice until a projection confirms it.
     let (input_sender, input_receiver) = watch::channel(PlayerInput {
         class_choice: options.class.map(|_| class_choice),
@@ -213,9 +220,37 @@ fn main() -> Result<(), ClientError> {
     });
     let (character_sender, character_receiver) = watch::channel(selected);
     let (update_sender, update_receiver) = watch::channel(NetworkUpdate::Waiting);
-    let (shutdown_sender, shutdown_receiver) = oneshot::channel();
+    let (shutdown_sender, mut shutdown_receiver) = oneshot::channel();
     let (party_client, party) = party_link();
+    let mut chosen = character_receiver.clone();
+    let route = (
+        options.url.clone(),
+        options.certificate.clone(),
+        options.zone_id,
+        content.revision(),
+    );
     let mut task = runtime.spawn(async move {
+        let session = match session {
+            Some(session) => session,
+            None => {
+                // The selection stage needs no zone: connect once a character is chosen.
+                tokio::select! {
+                    _ = &mut shutdown_receiver => return,
+                    chosen = async { chosen.wait_for(Option::is_some).await.is_ok() } => {
+                        if !chosen { return; }
+                    }
+                }
+                let (url, certificate, zone_id, revision) = route;
+                match ClientSession::connect(&url, certificate.as_deref(), zone_id, revision).await
+                {
+                    Ok(session) => session,
+                    Err(error) => {
+                        update_sender.send_replace(NetworkUpdate::Failed(error.to_string()));
+                        return;
+                    }
+                }
+            }
+        };
         if let Err(error) = run_session_with_characters(
             session,
             input_receiver,
@@ -232,10 +267,9 @@ fn main() -> Result<(), ClientError> {
     });
     let result = desktop::run(
         Arc::clone(&runtime),
-        player_id,
-        scenery,
+        options.zone_id,
+        loaded,
         content,
-        world,
         input_sender,
         character_sender,
         update_receiver,

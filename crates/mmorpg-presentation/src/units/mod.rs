@@ -1684,7 +1684,9 @@ impl UnitPresenter {
                 out.draws.extend(body);
             }
             let body = start..out.draws.len();
-            if !dead && entity.kind() != EntityKind::Npc {
+            // The viewer on the selection turntable is previewed, not in play: no bar.
+            let previewed = viewer && input.viewer.preview_yaw.is_some();
+            if !dead && entity.kind() != EntityKind::Npc && !previewed {
                 self.health_bar(&mut out.draws, &id, unit, half, input.bar_yaw);
             }
             if entity.kind() != EntityKind::Player && snapshot.viewer.target == Some(entity) {

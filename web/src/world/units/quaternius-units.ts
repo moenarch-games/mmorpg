@@ -1461,6 +1461,18 @@ export class QuaterniusUnits {
     return typeof state === "object";
   }
 
+  /** Starts loading `kind`; whether it is still loading, drawable or failed for good. */
+  status(kind: QuaterniusKind): "loading" | "ready" | "failed" {
+    if (this.ready(kind)) { return "ready"; }
+    return this.#assets.get(kind) === "failed" ? "failed" : "loading";
+  }
+
+  /** Whether the Ranger can be drawn in class starter outfit `preset` (#379); starts loading it. */
+  outfitReady(preset: string): boolean {
+    const ranger = this.#assets.get("Ranger");
+    return typeof ranger === "object" && (ranger.outfitReady?.(preset) ?? true);
+  }
+
   /** Starts loading `kind` and settles once it is drawable (true) or failed (false). */
   preload(kind: QuaterniusKind): Promise<boolean> {
     this.ready(kind);

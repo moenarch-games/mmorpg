@@ -943,17 +943,51 @@ mod tests {
                     break projection;
                 }
             };
-            let scenery = greyhaven_vale_scenery();
-            let world = WorldScene::new(&scenery);
+            // The Characters screen on the selection stage, with two roster characters.
+            let selection_evidence =
+                std::env::var("MMORPG_NATIVE_SELECTION_EVIDENCE").as_deref() == Ok("1");
             let now = Instant::now();
-            let mut presentation =
-                Presentation::new(1, scenery.clone(), Arc::clone(&content), now).unwrap();
-            presentation.push(projection.clone(), now).unwrap();
-            let view = presentation.camera_view(&mut OrbitCamera::default(), &world, now);
-            let mut frame = world.frame(0.0, false, view.eye, None);
-            frame
-                .draws
-                .extend(presentation.unit_draws(now, view).iter().cloned());
+            let (scenery, world, mut presentation) = if selection_evidence {
+                let scenery = crate::stage::scenery(&content);
+                let world = crate::stage::world(&scenery);
+                let presentation = crate::stage::presentation(
+                    scenery.clone(),
+                    Arc::clone(&content),
+                    ZoneId::new(1),
+                    now,
+                )
+                .unwrap();
+                (scenery, world, presentation)
+            } else {
+                let scenery = greyhaven_vale_scenery();
+                let world = WorldScene::new(&scenery);
+                let mut presentation =
+                    Presentation::new(1, scenery.clone(), Arc::clone(&content), now).unwrap();
+                presentation.push(projection.clone(), now).unwrap();
+                (scenery, world, presentation)
+            };
+            let mut camera = OrbitCamera::default();
+            let view = if selection_evidence {
+                crate::stage::camera(camera.view([0.0; 3]).field_of_view_degrees)
+            } else {
+                presentation.camera_view(&mut camera, &world, now)
+            };
+            let frame = if selection_evidence {
+                // The previewed Warden turned to face the camera, as the window does.
+                let choice = mmorpg_core::ClassChoice {
+                    class: mmorpg_core::PlayerClass::Warden,
+                    sex: mmorpg_core::Sex::Male,
+                };
+                presentation.set_default_appearance(choice.class);
+                presentation.set_preview(Some((choice, crate::stage::FACING_CAMERA)));
+                presentation.frame(&world, now, view)
+            } else {
+                let mut frame = world.frame(0.0, false, view.eye, None);
+                frame
+                    .draws
+                    .extend(presentation.unit_draws(now, view).iter().cloned());
+                frame
+            };
 
             let mut ui = GameUi::new(&scenery);
             let settings_evidence =
@@ -963,6 +997,27 @@ mod tests {
                 ui.settings
                     .bindings
                     .select_character(Some("settings-evidence"));
+            }
+            if selection_evidence {
+                use crate::roster::{Headwear, Roster};
+                let mut roster = Roster::default();
+                roster
+                    .create(
+                        "Aelric Stormward",
+                        mmorpg_core::PlayerClass::Warden,
+                        mmorpg_core::Sex::Male,
+                        Headwear::IroncrestHelm,
+                    )
+                    .unwrap();
+                roster
+                    .create(
+                        "Mira Ashvale",
+                        mmorpg_core::PlayerClass::Ranger,
+                        mmorpg_core::Sex::Female,
+                        Headwear::RangerCap,
+                    )
+                    .unwrap();
+                ui.set_roster(Ok(roster));
             }
             let names = |entity| presentation.unit_name(entity);
             // Cosmetic combat events float over the units they concern.
@@ -997,13 +1052,13 @@ mod tests {
             }
             let hud = CombatHud::from_projection(&projection);
             let ui_frame = UiFrame {
-                snapshot: Some(&projection),
+                snapshot: (!selection_evidence).then_some(&projection),
                 content: &content,
                 hud: Some(&hud),
                 names: &names,
                 forward: [view.target[0] - view.eye[0], view.target[2] - view.eye[2]],
                 connection: None,
-                choosing: false,
+                choosing: selection_evidence,
                 labels: presentation.labels(),
                 project: &|point| {
                     project_to_viewport(view, size, point).map(|[x, y]| egui::pos2(x, y))
@@ -1011,14 +1066,27 @@ mod tests {
                 eye: view.eye,
             };
             assert!(
-                presentation.labels().len() > 1,
+                selection_evidence || presentation.labels().len() > 1,
                 "the presented units carry nameplate anchors"
             );
             let context = egui::Context::default();
+            crate::ui::theme::apply(&context);
             context.set_pixels_per_point(scale);
             let mut paint = EguiPaint::default();
             // Passes advance time so window layout and fade-in animations settle.
+            // The opening splash at this many milliseconds, over the selection stage.
+            let splash_ms = std::env::var("MMORPG_NATIVE_SPLASH_EVIDENCE_MS")
+                .ok()
+                .and_then(|ms| ms.parse::<u64>().ok());
+            if splash_ms.is_some() {
+                ui.play_splash();
+            }
             for pass in 0..10 {
+                let at = splash_ms.map_or(now, |ms| {
+                    now + std::time::Duration::from_millis(
+                        ms * u64::try_from(pass).unwrap_or(0) / 9,
+                    )
+                });
                 let input = egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
                         egui::Pos2::ZERO,
@@ -1034,7 +1102,7 @@ mod tests {
                     ..Default::default()
                 };
                 let output = context.run_pass(input, |ctx| {
-                    let intents = ui.show(ctx, &ui_frame, &mut npc, now);
+                    let intents = ui.show(ctx, &ui_frame, &mut npc, at);
                     assert!(intents.is_empty(), "showing alone sends nothing");
                 });
                 let _ = paint.prepare(&context, output);
@@ -1050,6 +1118,10 @@ mod tests {
                     "warden.ppm"
                 } else if world_map_evidence {
                     "world-map.ppm"
+                } else if splash_ms.is_some() {
+                    "splash.ppm"
+                } else if selection_evidence {
+                    "selection.ppm"
                 } else if settings_evidence {
                     "settings.ppm"
                 } else {

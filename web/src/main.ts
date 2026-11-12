@@ -20,7 +20,6 @@ import {
   loadCharacter,
   saveCharacter,
   type CharacterAppearance,
-  type HatStyle,
 } from "./character-customization";
 import {
   MAX_CHARACTER_SLOTS,
@@ -46,7 +45,6 @@ import {
   mergeStoredRoster,
   saveCreatedCharacters,
 } from "./character-roster";
-import { characterVisualProfile, type CharacterVisualProfile } from "./character-visuals";
 import type { LocalWorld } from "./world/local-world";
 import { LocalCharacters, VisitStorage } from "./world/local-characters";
 import { actionLabDefinitions, committedArea, committedLevel, committedPhysique, createScenarioWorld, customizePhysique, labExperiments, loadLocalWorld, physiqueModel, physiqueModifiers, presentZone, soundManifest } from "./world/wasm-runtime";
@@ -61,6 +59,7 @@ import { webTransportConnector } from "./session/webtransport";
 import { onlineChoice, type ZoneServer } from "./world/online-config";
 import { OnlineZoneSource } from "./world/online-zone-source";
 import { BattleRoyaleEntry, matchStatus } from "./world/battle-royale/entry";
+import { ModeTabs, labelGameMenu } from "./front-end";
 import { createArenaWorld, createPracticeWorld, type ArenaWorld, type PracticeWorld } from "./world/battle-royale/world";
 import "./world/battle-royale/style.css";
 import type { LinkState, ZoneWorld } from "./world/world-source";
@@ -96,6 +95,21 @@ function requireElement<T extends Element>(selector: string): T {
   return element;
 }
 
+// The opening splash (index.html, content/ui/logo.json) plays on its own in CSS; a click, tap or
+// key skips it, and it leaves the page once faded.
+const splash = document.querySelector<HTMLElement>("#splash");
+if (splash) {
+  const skip = () => { splash.dataset.skipped = "true"; };
+  for (const type of ["pointerdown", "keydown"] as const) {
+    window.addEventListener(type, skip, { once: true, capture: true });
+  }
+  splash.addEventListener("animationend", (event) => {
+    if (event.target !== splash) { return; }
+    splash.remove();
+    for (const type of ["pointerdown", "keydown"] as const) { window.removeEventListener(type, skip, { capture: true }); }
+  });
+}
+
 const canvas = requireElement<HTMLCanvasElement>("#world");
 const characterSelect = requireElement<HTMLElement>("#character-select");
 const enterWorldButton = requireElement<HTMLButtonElement>("#enter-world");
@@ -126,7 +140,8 @@ for (const toggle of document.querySelectorAll<HTMLButtonElement>(".section-togg
   });
 }
 const characterLocation = requireElement<HTMLElement>("#character-location");
-const fallbackCharacter = requireElement<HTMLElement>("#character-stage-fallback");
+const stageLoader = requireElement<HTMLElement>("#character-stage-loader");
+const stageLoaderText = requireElement<HTMLElement>("#character-stage-loader-text");
 const previewSurface = requireElement<HTMLElement>("#preview-surface");
 const returnButton = requireElement<HTMLButtonElement>("#return-to-characters");
 const gameMenu = requireElement<HTMLDialogElement>("#game-menu");
@@ -169,10 +184,7 @@ const renderer = createThreeSceneRenderer(canvas, {
   draw: (target, scene, view) => lighting.draw(target, scene, view),
 });
 
-fallbackCharacter.hidden = true;
 
-type RotationQuaternion = [number, number, number, number];
-type LocalPoint = (x: number, y: number, z: number) => [number, number, number];
 
 let lastTime = performance.now();
 /** While Enter World prepares the first world frame (#547): no frame draws. */
@@ -236,10 +248,22 @@ const arenaStatus = requireElement<HTMLElement>("#battle-royale-status");
 const arenaResult = requireElement<HTMLElement>("#battle-royale-result");
 const arenaProgress = requireElement<HTMLElement>("#battle-royale-progress");
 const arenaNext = requireElement<HTMLButtonElement>("#battle-royale-next");
+const activityChoice = requireElement<HTMLSelectElement>("#activity-choice");
 const arenaEntry = new BattleRoyaleEntry(
-  requireElement<HTMLSelectElement>("#activity-choice"),
-  requireElement<HTMLElement>("#battle-royale-setup"),
+  activityChoice,
+  {
+    classes: requireElement<HTMLElement>("#arena-classes"),
+    loadout: requireElement<HTMLElement>("#battle-royale-setup"),
+    route: requireElement<HTMLElement>("#arena-route"),
+  },
+  { characters: () => characters, selected: selectedCharacterId, choose: selectCharacter },
   refreshArenaWorld,
+);
+const modeTabs = new ModeTabs(
+  requireElement<HTMLElement>("#mode-tabs"),
+  activityChoice,
+  requireElement<HTMLElement>("#selection-title"),
+  requireElement<HTMLElement>("#selection-tagline"),
 );
 
 function refreshArenaWorld(): void {
@@ -712,214 +736,6 @@ function node(
   return { id, geometry, color, transform: { translation } };
 }
 
-function selectionCharacterNodes(): RendererSceneNode[] {
-  const character = previewCharacter();
-  const visuals = characterVisualProfile(character);
-  const baseX = -1.2;
-  const yaw = turntable.yaw;
-  const halfYaw = yaw / 2;
-  const rotationQuaternion: RotationQuaternion = [0, Math.sin(halfYaw), 0, Math.cos(halfYaw)];
-  const localPoint: LocalPoint = (x, y, z) => {
-    const cos = Math.cos(yaw);
-    const sin = Math.sin(yaw);
-    return [baseX + x * cos + z * sin, y, -x * sin + z * cos];
-  };
-  const bodyY = 1.28 - (1.7 - visuals.bodyHeight) / 2;
-
-  return [
-    {
-      id: "preview-body",
-      geometry: { kind: "cylinder", radius: visuals.bodyRadius, height: visuals.bodyHeight },
-      color: visuals.bodyColor,
-      transform: { translation: localPoint(0, bodyY, 0), rotationQuaternion },
-    },
-    {
-      id: "preview-chest",
-      geometry: { kind: "box", size: [visuals.chestSize[0], visuals.chestSize[1], visuals.chestSize[2]] },
-      color: visuals.chestColor,
-      transform: { translation: localPoint(0, 1.58, 0), rotationQuaternion },
-    },
-    {
-      id: "preview-head",
-      geometry: { kind: "sphere", radius: visuals.headRadius },
-      color: "#c49b78",
-      transform: { translation: localPoint(0, 2.48, 0), rotationQuaternion },
-    },
-    ...previewHatNodes(characterAppearance.hat, localPoint, rotationQuaternion),
-    {
-      id: "preview-face",
-      geometry: { kind: "sphere", radius: visuals.headRadius * 0.8 },
-      color: "#c49b78",
-      transform: { translation: localPoint(0, 2.46, -0.18), rotationQuaternion },
-    },
-    {
-      id: "preview-shoulder-left",
-      geometry: { kind: "box", size: [0.42, 0.28, 0.62] },
-      color: visuals.shoulderColor,
-      transform: { translation: localPoint(-visuals.shoulderSpan, 1.96, 0), rotationQuaternion },
-    },
-    {
-      id: "preview-shoulder-right",
-      geometry: { kind: "box", size: [0.42, 0.28, 0.62] },
-      color: visuals.shoulderColor,
-      transform: { translation: localPoint(visuals.shoulderSpan, 1.96, 0), rotationQuaternion },
-    },
-    {
-      id: "preview-arm-left",
-      geometry: { kind: "cylinder", radius: visuals.armRadius, height: 1.02 },
-      color: visuals.bodyColor,
-      transform: { translation: localPoint(-visuals.shoulderSpan, 1.37, 0), rotationQuaternion },
-    },
-    {
-      id: "preview-arm-right",
-      geometry: { kind: "cylinder", radius: visuals.armRadius, height: 1.02 },
-      color: visuals.bodyColor,
-      transform: { translation: localPoint(visuals.shoulderSpan, 1.37, 0), rotationQuaternion },
-    },
-    {
-      id: "preview-boot-left",
-      geometry: { kind: "box", size: [0.34, 0.62, 0.48] },
-      color: "#745d49",
-      transform: { translation: localPoint(-0.24, 0.38, -0.06), rotationQuaternion },
-    },
-    {
-      id: "preview-boot-right",
-      geometry: { kind: "box", size: [0.34, 0.62, 0.48] },
-      color: "#745d49",
-      transform: { translation: localPoint(0.24, 0.38, -0.06), rotationQuaternion },
-    },
-    {
-      id: "preview-cloak",
-      geometry: { kind: "box", size: [0.82, 1.45, 0.08] },
-      color: visuals.cloakColor,
-      transform: { translation: localPoint(0, 1.37, 0.34), rotationQuaternion },
-    },
-    ...previewWeaponNodes(visuals, localPoint, rotationQuaternion),
-  ];
-}
-
-function previewWeaponNodes(
-  visuals: CharacterVisualProfile,
-  localPoint: LocalPoint,
-  rotationQuaternion: RotationQuaternion,
-): RendererSceneNode[] {
-  if (visuals.weapon === "bow") {
-    return [
-      {
-        id: "preview-bow-upper",
-        geometry: { kind: "box", size: [0.09, 0.9, 0.08] },
-        color: visuals.weaponColor,
-        transform: { translation: localPoint(0.82, 1.62, 0), rotationQuaternion },
-      },
-      {
-        id: "preview-bow-lower",
-        geometry: { kind: "box", size: [0.09, 0.9, 0.08] },
-        color: visuals.weaponColor,
-        transform: { translation: localPoint(0.82, 0.78, 0), rotationQuaternion },
-      },
-      {
-        id: "preview-bow-string",
-        geometry: { kind: "box", size: [0.025, 1.65, 0.025] },
-        color: "#d8d5c7",
-        transform: { translation: localPoint(0.7, 1.2, 0), rotationQuaternion },
-      },
-    ];
-  }
-  if (visuals.weapon === "staff") {
-    return [
-      {
-        id: "preview-staff",
-        geometry: { kind: "box", size: [0.1, 1.9, 0.1] },
-        color: visuals.weaponColor,
-        transform: { translation: localPoint(0.82, 1.2, 0), rotationQuaternion },
-      },
-      {
-        id: "preview-staff-focus",
-        geometry: { kind: "sphere", radius: 0.22 },
-        color: "#d6a677",
-        transform: { translation: localPoint(0.82, 2.18, 0), rotationQuaternion },
-      },
-    ];
-  }
-  // A dagger (#302) is the sword with a short blade under the same hilt.
-  const [bladeLength, bladeCentre] = visuals.weapon === "dagger" ? [0.7, 1.53] : [1.78, 1.1];
-  return [
-    {
-      id: "preview-sword-blade",
-      geometry: { kind: "box", size: [0.13, bladeLength, 0.09] },
-      color: visuals.weaponColor,
-      transform: { translation: localPoint(0.82, bladeCentre, -0.02), rotationQuaternion },
-    },
-    {
-      id: "preview-sword-hilt",
-      geometry: { kind: "box", size: [0.58, 0.1, 0.12] },
-      color: "#c7b66d",
-      transform: { translation: localPoint(0.82, 1.93, -0.02), rotationQuaternion },
-    },
-    {
-      id: "preview-sword-grip",
-      geometry: { kind: "cylinder", radius: 0.08, height: 0.44 },
-      color: "#715744",
-      transform: { translation: localPoint(0.82, 2.14, -0.02), rotationQuaternion },
-    },
-  ];
-}
-
-function previewHatNodes(
-  hat: HatStyle,
-  localPoint: LocalPoint,
-  rotationQuaternion: RotationQuaternion,
-): RendererSceneNode[] {
-  // The procedural stand-in has no class outfit to take headwear from.
-  if (hat === "none" || hat === "class") {
-    return [];
-  }
-  if (hat === "wayfarer-hood") {
-    return [{
-      id: "preview-hat-hood",
-      geometry: { kind: "sphere", radius: 0.4 },
-      color: "#b7c6bd",
-      transform: { translation: localPoint(0, 2.56, 0.06), rotationQuaternion },
-    }];
-  }
-  if (hat === "ranger-cap") {
-    return [
-      {
-        id: "preview-hat-cap-brim",
-        geometry: { kind: "cylinder", radius: 0.5, height: 0.08 },
-        color: "#6f875f",
-        transform: { translation: localPoint(0, 2.72, 0), rotationQuaternion },
-      },
-      {
-        id: "preview-hat-cap-crown",
-        geometry: { kind: "cylinder", radius: 0.31, height: 0.25 },
-        color: "#5d7351",
-        transform: { translation: localPoint(0, 2.84, 0.04), rotationQuaternion },
-      },
-    ];
-  }
-  return [
-    {
-      id: "preview-hat-helm",
-      geometry: { kind: "sphere", radius: 0.39 },
-      color: "#858e91",
-      transform: { translation: localPoint(0, 2.56, 0.04), rotationQuaternion },
-    },
-    {
-      id: "preview-hat-brow",
-      geometry: { kind: "box", size: [0.62, 0.1, 0.12] },
-      color: "#aab0b2",
-      transform: { translation: localPoint(0, 2.58, -0.33), rotationQuaternion },
-    },
-    {
-      id: "preview-hat-crest",
-      geometry: { kind: "box", size: [0.12, 0.44, 0.42] },
-      color: "#aab0b2",
-      transform: { translation: localPoint(0, 2.94, 0.04), rotationQuaternion },
-    },
-  ];
-}
-
 function renderCharacterDetails(character: CharacterPreview, appearance: CharacterAppearance) {
   characterName.textContent = character.name;
   const sex = character.sex === "male" ? "Male" : "Female";
@@ -1064,6 +880,7 @@ function renderRoster(): void {
     return button;
   });
   rosterContainer.replaceChildren(...buttons);
+  arenaEntry.refreshLooks();
   createCharacterButton.disabled = characters.length >= MAX_CHARACTER_SLOTS;
   createCharacterButton.title = createCharacterButton.disabled ? "All character slots are full." : "";
 }
@@ -1131,6 +948,7 @@ function updateEntryButton(): void {
   enterWorldNote.textContent = entryNote(selectedCharacter());
   playOnlineInput.disabled = joining !== null;
   arenaEntry.setLocked(joining !== null || entryState.phase === "world");
+  modeTabs.sync();
   if (practiceWorld) {
     selectionNote.textContent = "Local practice: the shared Rust zone simulation runs in this browser. Change your build here between lives; nothing is saved.";
     return;
@@ -1423,14 +1241,45 @@ function renderSelection() {
     viewMatrix: [...previewCamera.matrixWorldInverse.elements] as Matrix4Values,
     projectionMatrix: webGpuProjection(previewCamera),
   };
-  // The real Ranger once it loaded; the procedural figure while it loads or if it failed.
-  const real = worldView.selectionPreview(viewerLook(true), [-1.2, 0.1, 0], PREVIEW_FACING + turntable.yaw, PREVIEW_HEIGHT,
+  const look = viewerLook(true);
+  worldView.selectionPreview(look, [-1.2, 0.1, 0], PREVIEW_FACING + turntable.yaw, PREVIEW_HEIGHT,
     (performance.now() - previewStart) / 1000, camera);
   const features = worldView.faceFeatures();
   if (faceFeatures === undefined && features !== undefined) { showFaceFeatures(features); }
   // The selection stage stands in the mid-afternoon sun, without fog or lamps.
   lighting.apply({ hour: 15, sky: false, interior: 0, fog: null, pointLights: null });
-  renderer.render({ camera, nodes: real ? selectionStageNodes : [...selectionStageNodes, ...selectionCharacterNodes()] });
+  renderer.render({ camera, nodes: selectionStageNodes });
+  revealStage(look);
+}
+
+/** When the real character first became drawable, while its class outfit may still be loading. */
+let stageModelReadyAt: number | null = null;
+/** An outfit that has not arrived by then pops in after the reveal rather than holding the veil. */
+const OUTFIT_GRACE_MS = 1500;
+
+/**
+ * The stage stays veiled by a loading animation until the real character can stand on it in its
+ * class outfit, so the first thing the player sees is their character, never a stand-in. If the
+ * model cannot load at all, the veil lifts on the empty stage and says so.
+ */
+function revealStage(look: ViewerLook): void {
+  if (stageLoader.dataset.state !== "loading") { return; }
+  const status = worldView.selectionPreviewStatus(look);
+  if (status.model === "failed") {
+    stageLoader.dataset.state = "failed";
+    stageLoaderText.textContent = "The character model could not load. You can still enter the world.";
+    return;
+  }
+  if (status.model !== "ready") { return; }
+  const now = performance.now();
+  stageModelReadyAt ??= now;
+  if (!status.outfit && now - stageModelReadyAt < OUTFIT_GRACE_MS) { return; }
+  markStartup("character-shown");
+  stageLoader.dataset.state = "revealed";
+  stageLoader.setAttribute("aria-busy", "false");
+  stageLoaderText.textContent = "Character ready";
+  // The veil fades out (CSS); hide it once faded so it never takes a pointer.
+  window.setTimeout(() => { stageLoader.hidden = true; }, 600);
 }
 
 /**
@@ -1846,6 +1695,11 @@ function openGameMenu(): void {
   }
   controls.retire("gameMenuOpened");
   worldView.cancelPointer();
+  labelGameMenu(arenaEntry.selected ? "battle-royale" : "world", {
+    resume: requireElement<HTMLButtonElement>("#game-menu-resume"),
+    settings: requireElement<HTMLButtonElement>("#game-menu-settings"),
+    leave: returnButton,
+  });
   gameMenu.showModal();
   requireElement<HTMLButtonElement>("#game-menu-resume").focus();
 }
@@ -2176,6 +2030,7 @@ void loadPageWorld().then((loaded) => {
   markStartup("picker-ready");
   onlineWorld = online.kind === "online" ? createOnlineWorld(loaded, online.server) : null;
   arenaEntry.ready(loaded.catalog);
+  modeTabs.ready();
   refreshArenaWorld();
   if (scenario) {
     try {

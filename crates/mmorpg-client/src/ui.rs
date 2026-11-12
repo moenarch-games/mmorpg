@@ -12,6 +12,8 @@ pub mod minimap;
 pub mod overlay;
 mod panels;
 pub mod settings;
+mod splash;
+pub mod theme;
 pub mod world_labels;
 pub mod world_map;
 
@@ -23,6 +25,7 @@ use egui::{Align2, Color32, RichText, Vec2};
 use minimap::MinimapLayers;
 use mmorpg_client_model::{
     chat::{self, LineKind, Logs},
+    front_end::{self, MenuAction, Mode, Platform},
     hud::{self, CombatHud, CooldownKind},
 };
 use mmorpg_core::{
@@ -153,6 +156,8 @@ pub struct GameUi {
     pub quest_log_open: bool,
     /// The game menu (#636): Escape opens it when nothing else is open.
     pub game_menu_open: bool,
+    /// The opening splash, while it plays.
+    splash: Option<splash::Splash>,
     /// The open world map (M) and its camera.
     world_map: Option<world_map::WorldMapWindow>,
     chat_text: String,
@@ -191,6 +196,7 @@ impl GameUi {
             character_open: false,
             quest_log_open: false,
             game_menu_open: false,
+            splash: None,
             world_map: None,
             chat_text: String::new(),
             chat_focus_requested: false,
@@ -217,6 +223,11 @@ impl GameUi {
             floating: world_labels::FloatingTexts::default(),
             dismissed_loot: None,
         }
+    }
+
+    /// Plays the opening splash over the next frames (`content/ui/logo.json`).
+    pub fn play_splash(&mut self) {
+        self.splash = Some(splash::Splash::default());
     }
 
     /// Uses the loaded local roster, or shows why it could not be loaded and
@@ -377,6 +388,16 @@ impl GameUi {
         now: Instant,
     ) -> Vec<UiIntent> {
         let mut intents = Vec::new();
+        let reduced_motion = matches!(
+            self.settings.preferences.value(crate::settings::REDUCE_MOTION),
+            Ok(settings_core::SettingValue::Choice(value)) if value == "reduce"
+        );
+        if let Some(splash) = &mut self.splash
+            && splash.show(ctx, now, reduced_motion)
+        {
+            // The splash still covers the window: nothing beneath takes a click yet.
+            return intents;
+        }
         if frame.choosing {
             let selected = self
                 .roster
@@ -385,7 +406,7 @@ impl GameUi {
                 .map(|character| character.id.clone());
             self.settings.bindings.select_character(selected.as_deref());
         }
-        if self.settings.show(ctx) {
+        if self.settings.show(ctx, !frame.choosing) {
             return intents;
         }
         if self.game_menu_open {
@@ -457,106 +478,120 @@ impl GameUi {
     }
 
     /// The game menu (#636): Escape opens it when nothing else is open; Escape or Resume closes it.
+    /// Its entries are the shared front end's (`mmorpg_client_model::front_end`).
     fn game_menu(&mut self, ctx: &egui::Context, intents: &mut Vec<UiIntent>) {
-        egui::Window::new("Game menu")
+        let theme = theme::shared();
+        egui::Area::new(egui::Id::unique("game-menu"))
             .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-            .resizable(false)
-            .collapsible(false)
+            .order(egui::Order::Foreground)
             .show(ctx, |ui| {
-                ui.set_width(220.0);
-                if ui.button("Resume").clicked() {
-                    self.game_menu_open = false;
-                }
-                if ui.button("Settings").clicked() {
-                    self.game_menu_open = false;
-                    self.settings.open = true;
-                }
-                if ui.button("Quit game").clicked() {
-                    intents.push(UiIntent::Quit);
-                }
+                theme::panel().inner_margin(theme.space.lg).show(ui, |ui| {
+                    ui.set_width(240.0);
+                    ui.label(theme::heading("Game menu", theme.text.heading));
+                    ui.add_space(theme.space.sm);
+                    for entry in front_end::game_menu(Platform::Native, Mode::Greyhaven) {
+                        let button = egui::Button::new(entry.label)
+                            .min_size(Vec2::new(ui.available_width(), 40.0));
+                        if !ui.add(button).clicked() {
+                            continue;
+                        }
+                        match entry.action {
+                            MenuAction::Resume => self.game_menu_open = false,
+                            MenuAction::Settings => {
+                                self.game_menu_open = false;
+                                self.settings.open = true;
+                            }
+                            MenuAction::Leave | MenuAction::Quit => {
+                                intents.push(UiIntent::Quit);
+                            }
+                        }
+                    }
+                });
             });
     }
 
+    /// The Characters screen (`mmorpg_client_model::front_end`), laid out as
+    /// the browser's: mode tabs and heading top left, the stage in the middle,
+    /// the roster and appearance on the right, the continuation panel with
+    /// Enter World and Settings bottom left.
     fn character_selection(&mut self, ctx: &egui::Context, intents: &mut Vec<UiIntent>) {
+        let theme = theme::shared();
+        let margin = theme.space.xl;
+        let [characters, _] = front_end::modes(Platform::Native);
+
+        egui::Area::new(egui::Id::unique("selection-brand"))
+            .anchor(Align2::LEFT_TOP, Vec2::new(margin, margin))
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme.space.lg;
+                    for card in front_end::modes(Platform::Native) {
+                        mode_tab(ui, &card, card.mode == characters.mode);
+                    }
+                });
+                ui.label(theme::heading(characters.heading, theme.text.display));
+                ui.label(theme::muted(characters.tagline));
+            });
+
         let window = &mut self.roster;
         let mut entered = None;
-        egui::Window::new("Characters")
-            .anchor(Align2::LEFT_CENTER, Vec2::new(24.0, 0.0))
-            .resizable(false)
-            .collapsible(false)
+        egui::Area::new(egui::Id::unique("selection-sidebar"))
+            .anchor(Align2::RIGHT_TOP, Vec2::new(-margin, margin))
             .show(ctx, |ui| {
-                ui.set_width(300.0);
-                if let Some(problem) = &window.problem {
-                    ui.colored_label(Color32::from_rgb(255, 150, 90), problem);
-                }
-                for (index, character) in window.roster.characters.iter().enumerate() {
-                    let text = format!(
-                        "{} · level 1 {}",
-                        character.name,
-                        class_title(character.class)
-                    );
-                    if ui
-                        .selectable_label(window.selected == Some(index), text)
-                        .clicked()
-                    {
-                        window.selected = Some(index);
-                        window.confirm_delete = false;
+                theme::panel().show(ui, |ui| {
+                    ui.set_width(320.0);
+                    if let Some(problem) = &window.problem {
+                        ui.colored_label(theme::color(theme.color.danger), problem);
                     }
-                }
-                let full = window.roster.characters.len() >= MAX_CHARACTERS;
-                if ui
-                    .add_enabled(
-                        !full,
-                        egui::Button::selectable(
-                            window.selected.is_none(),
-                            "+ Create a new character",
-                        ),
-                    )
-                    .clicked()
-                {
-                    window.selected = None;
-                }
-                ui.small(format!(
-                    "{} / {MAX_CHARACTERS} local characters",
-                    window.roster.characters.len()
-                ));
-                ui.separator();
-                window.name_focused = false;
-                match window.selected {
-                    Some(index) if index < window.roster.characters.len() => {
-                        let character = window.roster.characters[index].clone();
-                        ui.label(RichText::new(&character.name).strong().size(18.0));
-                        ui.label(format!(
-                            "Human {} {} · Greyhaven Outpost",
-                            sex_title(character.sex),
-                            class_title(character.class)
+                    ui.label(theme::heading("Characters", theme.text.heading));
+                    let full = window.roster.characters.len() >= MAX_CHARACTERS;
+                    for (index, character) in window.roster.characters.iter().enumerate() {
+                        let selected = window.selected == Some(index);
+                        let text = RichText::new(format!(
+                            "{}\n{}",
+                            character.name,
+                            character_line(character.class, character.sex)
                         ));
-                        ui.label("Headwear");
-                        ui.horizontal(|ui| {
-                            for &hat in Headwear::VARIANTS {
-                                if ui
-                                    .selectable_label(character.headwear == hat, hat.title())
-                                    .clicked()
-                                    && hat != character.headwear
-                                    && let Err(problem) = window.roster.set_headwear(index, hat)
-                                {
-                                    window.problem = Some(problem);
+                        let row = egui::Button::selectable(selected, text)
+                            .min_size(Vec2::new(ui.available_width(), 44.0));
+                        if ui.add(row).clicked() {
+                            window.selected = Some(index);
+                            window.confirm_delete = false;
+                        }
+                    }
+                    let create =
+                        egui::Button::selectable(window.selected.is_none(), "+  Create character")
+                            .min_size(Vec2::new(ui.available_width(), 36.0));
+                    if ui.add_enabled(!full, create).clicked() {
+                        window.selected = None;
+                    }
+                    ui.label(theme::muted(format!(
+                        "{} / {MAX_CHARACTERS} local characters",
+                        window.roster.characters.len()
+                    )));
+                    ui.separator();
+                    window.name_focused = false;
+                    match window.selected {
+                        Some(index) if index < window.roster.characters.len() => {
+                            let character = window.roster.characters[index].clone();
+                            ui.label(theme::heading("Appearance", theme.text.heading));
+                            ui.label(theme::muted("Headwear"));
+                            ui.horizontal_wrapped(|ui| {
+                                for &hat in Headwear::VARIANTS {
+                                    if ui
+                                        .selectable_label(character.headwear == hat, hat.title())
+                                        .clicked()
+                                        && hat != character.headwear
+                                        && let Err(problem) = window.roster.set_headwear(index, hat)
+                                    {
+                                        window.problem = Some(problem);
+                                    }
                                 }
-                            }
-                        });
-                        turntable(ui, &mut window.degrees);
-                        ui.separator();
-                        ui.horizontal(|ui| {
-                            if ui
-                                .add(egui::Button::new(RichText::new("Enter world").strong()))
-                                .clicked()
-                            {
-                                entered = Some(character.clone());
-                            }
+                            });
+                            ui.add_space(theme.space.sm);
                             let delete = if window.confirm_delete {
                                 "Confirm delete"
                             } else {
-                                "Delete"
+                                "Delete character"
                             };
                             if ui.button(delete).clicked() {
                                 if window.confirm_delete {
@@ -572,83 +607,112 @@ impl GameUi {
                                     window.confirm_delete = true;
                                 }
                             }
-                        });
-                    }
-                    _ => {
-                        window.selected = None;
-                        ui.label("Name");
-                        let edit = ui.add(
-                            egui::TextEdit::singleline(&mut window.name)
-                                .hint_text("2–24 letters")
-                                .char_limit(48)
-                                .desired_width(f32::INFINITY),
-                        );
-                        window.name_focused = edit.has_focus();
-                        ui.label("Class");
-                        ui.horizontal(|ui| {
-                            for &class in PlayerClass::VARIANTS {
-                                if ui
-                                    .selectable_value(&mut window.class, class, class_title(class))
-                                    .clicked()
-                                {
-                                    window.headwear = Headwear::for_class(class);
+                        }
+                        _ => {
+                            window.selected = None;
+                            ui.label(theme::heading("Create character", theme.text.heading));
+                            ui.label(theme::muted("Name"));
+                            let edit = ui.add(
+                                egui::TextEdit::singleline(&mut window.name)
+                                    .hint_text("2–24 letters")
+                                    .char_limit(48)
+                                    .desired_width(f32::INFINITY),
+                            );
+                            window.name_focused = edit.has_focus();
+                            ui.label(theme::muted("Class"));
+                            ui.horizontal_wrapped(|ui| {
+                                for &class in PlayerClass::VARIANTS {
+                                    if ui
+                                        .selectable_value(
+                                            &mut window.class,
+                                            class,
+                                            front_end::class_card(class).name,
+                                        )
+                                        .clicked()
+                                    {
+                                        window.headwear = Headwear::for_class(class);
+                                    }
                                 }
-                            }
-                        });
-                        ui.small(match window.class {
-                            PlayerClass::Warden => "A shielded melee fighter who builds rage.",
-                            PlayerClass::Ranger => "A ranged archer who spends focus.",
-                            PlayerClass::Arcanist => "A spellcaster who spends mana.",
-                            PlayerClass::Necromancer => {
-                                "A shadow caster who drains life and spends mana."
-                            }
-                            PlayerClass::Rogue => {
-                                "A dagger fighter who poisons, stuns and throws knives, flasks and bombs with focus."
-                            }
-                            PlayerClass::Cleric => {
-                                "A holy caster who smites, heals and shields allies with faith."
-                            }
-                            PlayerClass::Druid => {
-                                "A nature caster who roots foes and heals allies with mana."
-                            }
-                        });
-                        ui.label("Body");
-                        ui.horizontal(|ui| {
-                            ui.selectable_value(&mut window.sex, Sex::Female, "Female");
-                            ui.selectable_value(&mut window.sex, Sex::Male, "Male");
-                        });
-                        ui.label("Headwear");
-                        ui.horizontal(|ui| {
-                            for &hat in Headwear::VARIANTS {
-                                ui.selectable_value(&mut window.headwear, hat, hat.title());
-                            }
-                        });
-                        turntable(ui, &mut window.degrees);
-                        ui.separator();
-                        if ui
-                            .add_enabled(
-                                !full,
-                                egui::Button::new(RichText::new("Create character").strong()),
-                            )
-                            .clicked()
-                        {
-                            match window.roster.create(
-                                &window.name,
-                                window.class,
-                                window.sex,
-                                window.headwear,
-                            ) {
-                                Ok(index) => {
-                                    window.selected = Some(index);
-                                    window.name.clear();
-                                    window.problem = None;
+                            });
+                            ui.label(theme::muted(
+                                front_end::class_card(window.class).description,
+                            ));
+                            ui.label(theme::muted("Body"));
+                            ui.horizontal(|ui| {
+                                ui.selectable_value(&mut window.sex, Sex::Female, "Female");
+                                ui.selectable_value(&mut window.sex, Sex::Male, "Male");
+                            });
+                            ui.label(theme::muted("Headwear"));
+                            ui.horizontal_wrapped(|ui| {
+                                for &hat in Headwear::VARIANTS {
+                                    ui.selectable_value(&mut window.headwear, hat, hat.title());
                                 }
-                                Err(problem) => window.problem = Some(problem),
+                            });
+                            ui.add_space(theme.space.sm);
+                            if ui
+                                .add_enabled(!full, egui::Button::new("Create character"))
+                                .clicked()
+                            {
+                                match window.roster.create(
+                                    &window.name,
+                                    window.class,
+                                    window.sex,
+                                    window.headwear,
+                                ) {
+                                    Ok(index) => {
+                                        window.selected = Some(index);
+                                        window.name.clear();
+                                        window.problem = None;
+                                    }
+                                    Err(problem) => window.problem = Some(problem),
+                                }
                             }
                         }
                     }
-                }
+                });
             });
+
+        egui::Area::new(egui::Id::unique("selection-turntable"))
+            .anchor(Align2::CENTER_BOTTOM, Vec2::new(0.0, -140.0))
+            .show(ctx, |ui| turntable(ui, &mut window.degrees));
+
+        let chosen = window
+            .selected
+            .and_then(|index| window.roster.characters.get(index))
+            .cloned();
+        let mut open_settings = false;
+        egui::Area::new(egui::Id::unique("selection-actions"))
+            .anchor(Align2::LEFT_BOTTOM, Vec2::new(margin, -margin))
+            .show(ctx, |ui| {
+                theme::panel().show(ui, |ui| {
+                    ui.set_width(420.0);
+                    ui.label(theme::muted("LAST LOCATION"));
+                    ui.label(RichText::new("Greyhaven Outpost").strong());
+                    ui.add_space(theme.space.xs);
+                    ui.horizontal(|ui| {
+                        let label = chosen
+                            .as_ref()
+                            .map_or("Enter World".to_owned(), |character| {
+                                format!("Enter World · {}", character.name)
+                            });
+                        if theme::primary_button(ui, &label, chosen.is_some()).clicked() {
+                            entered.clone_from(&chosen);
+                        }
+                        if ui
+                            .add(egui::Button::new("Settings").min_size(Vec2::new(0.0, 48.0)))
+                            .clicked()
+                        {
+                            open_settings = true;
+                        }
+                    });
+                    ui.label(theme::muted(
+                        "Characters on this machine are local presentation choices; the zone owns progress.",
+                    ));
+                });
+            });
+        if open_settings {
+            self.settings.open = true;
+        }
         if let Some(character) = entered {
             self.roster.name_focused = false;
             self.character_name = Some(character.name.clone());
@@ -674,7 +738,9 @@ impl GameUi {
             .show(ctx, |ui| {
                 panel_frame().show(ui, |ui| {
                     ui.set_width(230.0);
-                    let class = viewer.class.map_or("Adventurer", |c| class_title(c.class));
+                    let class = viewer
+                        .class
+                        .map_or("Adventurer", |c| front_end::class_card(c.class).name);
                     let name = self.character_name.as_deref().unwrap_or("You");
                     ui.label(
                         RichText::new(format!("{name} · level {} {class}", viewer.level)).strong(),
@@ -1008,29 +1074,51 @@ impl GameUi {
     }
 }
 
-fn class_title(class: PlayerClass) -> &'static str {
-    match class {
-        PlayerClass::Warden => "Warden",
-        PlayerClass::Ranger => "Ranger",
-        PlayerClass::Arcanist => "Arcanist",
-        PlayerClass::Necromancer => "Necromancer",
-        PlayerClass::Rogue => "Rogue",
-        PlayerClass::Cleric => "Cleric",
-        PlayerClass::Druid => "Druid",
+/// A roster row's second line, as the browser's: level, class, body and home.
+fn character_line(class: PlayerClass, sex: Sex) -> String {
+    let body = match sex {
+        Sex::Female => "Female",
+        Sex::Male => "Male",
+    };
+    format!(
+        "1 {} · {body} · Greyhaven",
+        front_end::class_card(class).name
+    )
+}
+
+/// One selection-screen mode tab: small capitals, gold underline when chosen,
+/// disabled with the reason when this platform cannot play the mode yet.
+fn mode_tab(ui: &mut egui::Ui, card: &front_end::ModeCard, selected: bool) {
+    let theme = theme::shared();
+    let ink = if selected {
+        theme.color.gold_bright
+    } else {
+        theme.color.text_muted
+    };
+    let text = RichText::new(card.label.to_uppercase())
+        .size(theme.text.small)
+        .strong()
+        .color(theme::color(ink));
+    let response = ui.add_enabled(
+        card.unavailable.is_none(),
+        egui::Button::new(text).frame(false),
+    );
+    if selected {
+        let rect = response.rect;
+        ui.painter().hline(
+            rect.x_range(),
+            rect.bottom() + 1.0,
+            egui::Stroke::new(2.0, theme::color(theme.color.gold)),
+        );
+    }
+    if let Some(reason) = card.unavailable {
+        response.on_disabled_hover_text(reason);
     }
 }
 
-const fn sex_title(sex: Sex) -> &'static str {
-    match sex {
-        Sex::Female => "female",
-        Sex::Male => "male",
-    }
-}
-
-/// Turntable controls, as the browser's left/right/front buttons.
+/// Turntable controls, as the browser's left/right/Reset view buttons.
 fn turntable(ui: &mut egui::Ui, degrees: &mut f32) {
     ui.horizontal(|ui| {
-        ui.label("Turn");
         if ui.button("<").on_hover_text("Turn left").clicked() {
             *degrees = (*degrees - TURN_STEP_DEGREES).rem_euclid(360.0);
         }
@@ -1042,7 +1130,7 @@ fn turntable(ui: &mut egui::Ui, degrees: &mut f32) {
         if ui.button(">").on_hover_text("Turn right").clicked() {
             *degrees = (*degrees + TURN_STEP_DEGREES).rem_euclid(360.0);
         }
-        if ui.button("Front").clicked() {
+        if ui.button("Reset view").clicked() {
             *degrees = 0.0;
         }
     });
@@ -1077,10 +1165,7 @@ const fn resource_color(kind: ResourceKind) -> Color32 {
 }
 
 fn panel_frame() -> egui::Frame {
-    egui::Frame::new()
-        .fill(Color32::from_black_alpha(170))
-        .corner_radius(4.0)
-        .inner_margin(8.0)
+    theme::panel().inner_margin(8.0)
 }
 
 /// Whether the viewer may invite someone: alone, or leading its party.

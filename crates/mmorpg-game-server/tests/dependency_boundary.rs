@@ -88,7 +88,8 @@ const CLIENT_MODEL: &str = "mmorpg-client-model";
 
 /// The shared client rules (#543) are pure: core gameplay types in, views and
 /// commands out, with no I/O, rendering or presentation data. `serde_json` reads
-/// the committed world-map export from a string. `mmorpg-protocol` is its
+/// the committed world-map export from a string, and `serde` derives the parse
+/// of the committed interface theme and logo files. `mmorpg-protocol` is its
 /// test-only wire codec (the lockfile lists dev-dependencies too).
 #[test]
 fn the_client_model_holds_only_client_rules_over_core() {
@@ -98,6 +99,7 @@ fn the_client_model_holds_only_client_rules_over_core() {
         Some(&vec![
             "mmorpg-core",
             "mmorpg-protocol",
+            "serde",
             "serde_json",
             "strum"
         ])

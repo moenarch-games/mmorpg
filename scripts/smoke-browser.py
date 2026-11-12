@@ -146,7 +146,7 @@ class BrowserAcceptance(unittest.TestCase):
     def open(self, query=""):
         self.page.goto(self.url + query)
         self.page.wait_for_function("window.__calls.draws > 0")
-        expect(self.page.locator("#character-stage-fallback")).to_be_hidden()
+        expect(self.page.locator("#character-stage-loader")).to_be_hidden(timeout=60_000)
         expect(self.page.get_by_role("slider", name="Character rotation")).to_be_visible()
         self.wait_for_zone()
         self.frames()
@@ -1194,7 +1194,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.page = self.context.new_page()
         self.page.on("pageerror", lambda error: self.errors.append(str(error)))
         self.page.goto(self.url)
-        expect(self.page.locator("#character-stage-fallback")).to_be_hidden()
+        expect(self.page.locator("#character-stage-loader")).to_be_hidden(timeout=60_000)
         surface = self.page.locator("#preview-surface")
         surface.scroll_into_view_if_needed()
         self.frames(10)
