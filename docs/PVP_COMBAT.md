@@ -101,9 +101,10 @@ what stays.
 
 The cap is tuning: at 50 ms round trip a hit is rewound fully (3 + 4 ticks); from about 85 ms on
 the cap is reached. In the browser the Loadout's **Practice** route offers the option and a
-simulated round trip (see [BATTLE_ROYALE.md](BATTLE_ROYALE.md#netcode-trial-680)). Hosted
-matches need Battle Royale to choose the option per match through its arena content and the
-browser's hosted source to predict; both remain on #680.
+simulated round trip (see [BATTLE_ROYALE.md](BATTLE_ROYALE.md#netcode-trial-680)). A hosted
+Battle Royale match chooses rewind per match through its arena content
+(`battle_royale_core::arena::content_for`, host configuration `<id>:rewind`), and the browser's
+hosted source predicts the own body when the client picks option 2 or 3.
 
 ## Mode observations and continuation
 
