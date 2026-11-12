@@ -6,6 +6,7 @@ pub use departures::{HandoffChannel, Redirect, arrival_input};
 mod dev_characters;
 mod dev_host;
 pub mod lifecycle;
+pub mod local_world;
 #[cfg(feature = "postgres")]
 pub mod persistence;
 pub use dev_characters::{DevCharacterService, DevCharacterStorage};

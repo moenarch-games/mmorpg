@@ -54,7 +54,7 @@ pub enum UiIntent {
     /// Close the NPC context.
     CloseContext,
     /// The chosen class, sex and local headwear to enter the world with.
-    ChooseCharacter(String, PlayerClass, Sex, Headwear),
+    ChooseCharacter(String, PlayerClass, Sex, Headwear, bool),
 }
 
 /// The latest self sheets: an omitted newer sheet is pending, never empty.
@@ -146,6 +146,9 @@ enum LogTab {
 
 /// Interface state that is purely local presentation.
 pub struct GameUi {
+    pub hosting: crate::hosting::Hosting,
+    enter_hosted_when_ready: bool,
+    next_host_probe: Instant,
     ability_art: ability_art::AbilityArt,
     pub settings: settings::SettingsWindow,
     pub sheets: Sheets,
@@ -188,6 +191,9 @@ impl GameUi {
     pub fn new(scenery: &Scenery) -> Self {
         Self {
             ability_art: ability_art::AbilityArt::default(),
+            hosting: crate::hosting::Hosting::default(),
+            enter_hosted_when_ready: false,
+            next_host_probe: Instant::now() + Duration::from_secs(3),
             settings: settings::SettingsWindow::default(),
             sheets: Sheets::default(),
             logs: Logs::default(),
@@ -388,6 +394,12 @@ impl GameUi {
         now: Instant,
     ) -> Vec<UiIntent> {
         let mut intents = Vec::new();
+        if now >= self.next_host_probe && !self.enter_hosted_when_ready {
+            self.next_host_probe = now + Duration::from_secs(3);
+            if matches!(self.hosting.state(), crate::hosting::State::Ready(_)) {
+                self.hosting.refresh();
+            }
+        }
         let reduced_motion = matches!(
             self.settings.preferences.value(crate::settings::REDUCE_MOTION),
             Ok(settings_core::SettingValue::Choice(value)) if value == "reduce"
@@ -488,6 +500,7 @@ impl GameUi {
                 theme::panel().inner_margin(theme.space.lg).show(ui, |ui| {
                     ui.set_width(240.0);
                     ui.label(theme::heading("Game menu", theme.text.heading));
+                    hosting_controls(ui, &self.hosting);
                     ui.add_space(theme.space.sm);
                     for entry in front_end::game_menu(Platform::Native, Mode::Greyhaven) {
                         let button = egui::Button::new(entry.label)
@@ -534,6 +547,7 @@ impl GameUi {
 
         let window = &mut self.roster;
         let mut entered = None;
+        let mut host_local = false;
         egui::Area::new(egui::Id::unique("selection-sidebar"))
             .anchor(Align2::RIGHT_TOP, Vec2::new(-margin, margin))
             .show(ctx, |ui| {
@@ -681,11 +695,31 @@ impl GameUi {
             .and_then(|index| window.roster.characters.get(index))
             .cloned();
         let mut open_settings = false;
+        if self.enter_hosted_when_ready {
+            match self.hosting.state() {
+                crate::hosting::State::Ready(_) => {
+                    entered.clone_from(&chosen);
+                    host_local = true;
+                    self.enter_hosted_when_ready = false;
+                }
+                crate::hosting::State::Failed(_) => self.enter_hosted_when_ready = false,
+                crate::hosting::State::Stopped | crate::hosting::State::Working(_) => {}
+            }
+        }
         egui::Area::new(egui::Id::unique("selection-actions"))
             .anchor(Align2::LEFT_BOTTOM, Vec2::new(margin, -margin))
             .show(ctx, |ui| {
                 theme::panel().show(ui, |ui| {
                     ui.set_width(420.0);
+                    hosting_controls(ui, &self.hosting);
+                    if ui.add_enabled(
+                        self.hosting.available && chosen.is_some() && !matches!(self.hosting.state(), crate::hosting::State::Working(_)),
+                        egui::Button::new("Host World"),
+                    ).clicked() {
+                        self.hosting.start();
+                        self.enter_hosted_when_ready = true;
+                    }
+                    ui.separator();
                     ui.label(theme::muted("LAST LOCATION"));
                     ui.label(RichText::new("Greyhaven Outpost").strong());
                     ui.add_space(theme.space.xs);
@@ -695,7 +729,7 @@ impl GameUi {
                             .map_or("Enter World".to_owned(), |character| {
                                 format!("Enter World · {}", character.name)
                             });
-                        if theme::primary_button(ui, &label, chosen.is_some()).clicked() {
+                        if theme::primary_button(ui, &label, chosen.is_some() && !matches!(self.hosting.state(), crate::hosting::State::Working(_))).clicked() {
                             entered.clone_from(&chosen);
                         }
                         if ui
@@ -721,6 +755,7 @@ impl GameUi {
                 character.class,
                 character.sex,
                 character.headwear,
+                host_local,
             ));
         }
     }
@@ -1289,5 +1324,34 @@ fn line_color(kind: LineKind) -> Color32 {
         LineKind::Combat => Color32::from_gray(210),
         LineKind::Quest => Color32::from_rgb(255, 210, 0),
         LineKind::Refusal => Color32::from_rgb(255, 110, 100),
+    }
+}
+
+/// Shared between character selection and the in-world game menu.
+fn hosting_controls(ui: &mut egui::Ui, hosting: &crate::hosting::Hosting) {
+    use crate::hosting::State;
+    match hosting.state() {
+        State::Stopped => {
+            ui.label("Local world stopped");
+        }
+        State::Working(message) => {
+            ui.spinner();
+            ui.label(message);
+        }
+        State::Ready(_) => {
+            ui.label("Local world running · continues after you quit");
+            if ui.button("Stop World").clicked() {
+                hosting.stop();
+            }
+        }
+        State::Failed(error) => {
+            ui.colored_label(theme::color(theme::shared().color.danger), error);
+            if ui.button("Check local world").clicked() {
+                hosting.refresh();
+            }
+            if ui.button("Retry Stop World").clicked() {
+                hosting.stop();
+            }
+        }
     }
 }
