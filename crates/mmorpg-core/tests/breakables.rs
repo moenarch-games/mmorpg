@@ -216,3 +216,105 @@ fn powder_barrels_chain_react_hurting_and_hurling_everything_near() {
     assert!(later.players[0].position[2] < before.players[0].position[2] - 50.0);
     assert!(later.creatures[4].position[0] > before.creatures[4].position[0] + 50.0);
 }
+
+#[test]
+fn redbrand_cave_supplies_break_against_the_authored_wall_and_recover_exactly() {
+    let shipped = mmorpg_core::greyhaven_vale::content();
+    let spawns: Vec<_> = shipped
+        .creature_spawns()
+        .iter()
+        .filter(|spawn| (926..=928).contains(&spawn.id.get()))
+        .cloned()
+        .collect();
+    assert_eq!(spawns.len(), 3, "two crates and one ordinary barrel");
+    // Keep the real terrain, cave triangles, templates and placements; isolate the supplies
+    // from the garrison so combat with enemies does not interrupt the rigid-mesh workload.
+    for spawn in spawns {
+        let content = Arc::new(
+            ZoneContent::new(
+                shipped.definition().clone(),
+                shipped.areas().clone(),
+                shipped.creature_templates().to_vec(),
+                vec![spawn.clone()],
+                Vec::new(),
+                shipped.graveyard(),
+            )
+            .unwrap(),
+        );
+        let template = content.creature_template(spawn.template).unwrap();
+        let kind = template.prop().unwrap();
+        assert!(matches!(kind, PropKind::Crate | PropKind::Barrel));
+        let mut zone = ZoneSimulation::with_content(ZoneId::new(3), content.clone()).unwrap();
+        zone.add_player(1).unwrap();
+        let mut state = zone.snapshot().unwrap();
+        let [x, z] = spawn.position.map(|axis| axis as f32);
+        state.players[0].position = [x + 150.0, 1190.0, z];
+        zone = ZoneSimulation::from_snapshot(state, content.clone()).unwrap();
+        let mut sequence = 0;
+        for _ in 0..mmorpg_core::ticks_from_ms(30_000) {
+            if let Some(swing) = arena::swing_at(&zone, 1, creature(spawn.id.get())) {
+                sequence += 1;
+                zone.apply_command(1, sequence, swing).unwrap();
+            }
+            zone.advance_tick().unwrap();
+            if zone.snapshot().unwrap().creatures.iter().any(|unit| {
+                unit.creature_id == spawn.id && matches!(unit.life, CreatureLife::Despawned { .. })
+            }) {
+                break;
+            }
+        }
+        let broken = zone.snapshot().unwrap();
+        assert_eq!(broken.debris.len(), mmorpg_core::debris_pieces(kind).len());
+        assert!(matches!(
+            broken
+                .creatures
+                .iter()
+                .find(|unit| unit.creature_id == spawn.id)
+                .unwrap()
+                .life,
+            CreatureLife::Despawned { .. }
+        ));
+        let mut copy = ZoneSimulation::from_snapshot(broken, content.clone()).unwrap();
+        let mut wall_contact = false;
+        let mut settled = false;
+        for _ in 0..DEBRIS_TICKS {
+            let before = zone.snapshot().unwrap();
+            zone.advance_tick().unwrap();
+            copy.advance_tick().unwrap();
+            let after = zone.snapshot().unwrap();
+            assert_eq!(
+                after,
+                copy.snapshot().unwrap(),
+                "recovery for {}",
+                spawn.id.get()
+            );
+            for (then, now) in before.debris.iter().zip(&after.debris) {
+                // A westbound airborne piece slows or rebounds at the actual west wall
+                // (x = 4800), before reaching the floor. Gravity alone cannot do this.
+                wall_contact |= then.body.position[0] < 4850.0
+                    && then.body.position[1] > 1145.0
+                    && then.body.velocity[0] < -0.1
+                    && now.body.velocity[0] > then.body.velocity[0] + 0.1;
+            }
+            settled |=
+                !after.debris.is_empty() && after.debris.iter().all(|piece| piece.body.resting);
+            assert!(
+                after.debris.iter().all(|piece| {
+                    piece.body.position[0] >= 4799.0 && piece.body.position[1] >= 1098.0
+                }),
+                "wall and floor retain the supplies' debris"
+            );
+        }
+        assert!(
+            wall_contact,
+            "{} debris contacted the cave wall",
+            spawn.id.get()
+        );
+        assert!(
+            settled,
+            "{} debris settled on the cave floor",
+            spawn.id.get()
+        );
+        assert!(zone.snapshot().unwrap().debris.is_empty());
+    }
+}
