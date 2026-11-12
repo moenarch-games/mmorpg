@@ -428,6 +428,8 @@ impl WorldScene {
         // The trees, rocks and bushes (#49), then the climbing kit's parts (#621): one library.
         let mut placements = mmorpg_presentation::nature::placements(scenery);
         placements.extend(mmorpg_presentation::climbing::placements(scenery));
+        // The crag kit's rock modules over the highland crags (#668).
+        placements.extend(mmorpg_presentation::crag::placements(scenery));
         placements.extend(mmorpg_presentation::river::placements(scenery));
         // The market square's wooden props through their packaged PBR materials (#53).
         placements.extend(mmorpg_presentation::settlement_props::placements(scenery));
