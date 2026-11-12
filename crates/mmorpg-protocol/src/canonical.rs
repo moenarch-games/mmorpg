@@ -112,6 +112,7 @@ pub fn encode_canonical_snapshot(
     encode_parties(&mut payload, &snapshot.parties)?;
     encode_wakes(&mut payload, &snapshot.wakes)?;
     crate::rewards::encode_history(&mut payload, snapshot.rewards.as_ref())?;
+    encode_rewind_history(&mut payload, &snapshot.rewind_history)?;
     Ok(payload)
 }
 
@@ -669,6 +670,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let parties = decode_parties(payload, &mut offset)?;
     let wakes = decode_wakes(payload, &mut offset)?;
     let rewards = crate::rewards::decode_history(payload, &mut offset)?;
+    let rewind_history = decode_rewind_history(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
         rewards,
@@ -696,6 +698,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         parties,
         wakes,
         depths,
+        rewind_history,
     })
 }
 
@@ -766,6 +769,76 @@ fn decode_wakes(
             })
         })
         .collect()
+}
+
+/// The longest hit-rewind history a snapshot may hold, in frames (#680).
+const MAX_REWIND_FRAMES: usize =
+    mmorpg_core::ticks_from_ms(mmorpg_core::MAX_HIT_REWIND_MS) as usize;
+
+/// Where bodies stood for hit rewind (#680): a frame count (`u8`), then per frame its tick
+/// (`u64`) and a body count (`u16`), then per body its reference and `i32` centre.
+fn encode_rewind_history(
+    payload: &mut Vec<u8>,
+    frames: &[mmorpg_core::RewindFrame],
+) -> Result<(), ProtocolError> {
+    payload.push(encode_u8_count(
+        frames.len(),
+        MAX_REWIND_FRAMES,
+        "hit rewind history is too long",
+    )?);
+    for frame in frames {
+        payload.extend_from_slice(&frame.tick.to_be_bytes());
+        payload.extend_from_slice(
+            &encode_u16_count(
+                frame.bodies.len(),
+                MAX_PLAYERS_PER_ZONE + MAX_CREATURE_SPAWNS,
+                "hit rewind frame has too many bodies",
+            )?
+            .to_be_bytes(),
+        );
+        for &(entity, centre) in &frame.bodies {
+            encode_entity_ref(payload, Some(entity));
+            for axis in centre {
+                payload.extend_from_slice(&axis.to_be_bytes());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn decode_rewind_history(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::RewindFrame>, ProtocolError> {
+    let count = decode_u8_count(
+        payload,
+        offset,
+        MAX_REWIND_FRAMES,
+        "hit rewind history is too long",
+    )?;
+    let mut frames = Vec::with_capacity(count);
+    for _ in 0..count {
+        let tick = u64::from_be_bytes(take(payload, offset)?);
+        let bodies = decode_u16_count(
+            payload,
+            offset,
+            MAX_PLAYERS_PER_ZONE + MAX_CREATURE_SPAWNS,
+            "hit rewind frame has too many bodies",
+        )?;
+        let mut frame = mmorpg_core::RewindFrame {
+            tick,
+            bodies: Vec::with_capacity(bodies),
+        };
+        for _ in 0..bodies {
+            let entity = crate::wire::decode_entity_ref(payload, offset)?
+                .ok_or_else(|| ProtocolError::new("hit rewind body needs a unit"))?;
+            let centre = [(); 3].map(|()| take(payload, offset).map(i32::from_be_bytes));
+            let [x, y, z] = centre;
+            frame.bodies.push((entity, [x?, y?, z?]));
+        }
+        frames.push(frame);
+    }
+    Ok(frames)
 }
 
 /// Summoned minions (#295): the next minion ID (`u32`) and count (`u16`), then per minion in ID
@@ -1341,6 +1414,7 @@ fn encode_swing(payload: &mut Vec<u8>, swing: Option<mmorpg_core::Swing>) {
         payload.extend_from_slice(&ticks.to_be_bytes());
     }
     payload.push(u8::from(swing.struck));
+    payload.extend_from_slice(&swing.rewind.to_be_bytes());
 }
 
 fn decode_swing(
@@ -1358,6 +1432,7 @@ fn decode_swing(
         startup: u16::from_be_bytes(take(payload, offset)?),
         active: u16::from_be_bytes(take(payload, offset)?),
         struck: read_bool(payload, offset)?,
+        rewind: u16::from_be_bytes(take(payload, offset)?),
     };
     if !swing.is_valid() {
         return Err(ProtocolError::new("player timed swing is out of range"));
@@ -2192,6 +2267,7 @@ mod tests {
                             startup: 18,
                             active: 9,
                             struck: false,
+                            rewind: 7,
                         }),
                         repairing: Some(mmorpg_core::PieceId::new(3)),
                     },
@@ -2376,6 +2452,16 @@ mod tests {
                 idle_since: 3,
             }],
             depths: None,
+            rewind_history: vec![mmorpg_core::RewindFrame {
+                tick: 41,
+                bodies: vec![
+                    (EntityRef::Player(7), [10, 90, -20]),
+                    (
+                        EntityRef::Creature(mmorpg_core::CreatureId::new(3)),
+                        [-400, 45, 900],
+                    ),
+                ],
+            }],
         }
     }
 
