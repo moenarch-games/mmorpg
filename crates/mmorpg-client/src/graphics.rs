@@ -1,5 +1,6 @@
 //! Native wgpu adapter. The same submitted mesh frames drive presentation and picking.
 mod frame;
+mod particles;
 #[cfg(test)]
 mod profile;
 use crate::{
@@ -314,6 +315,27 @@ pub(crate) async fn readback(
     [width, height]: [u32; 2],
     overlay: Option<&mut dyn Overlay>,
 ) -> Result<Vec<u8>, ClientError> {
+    readback_sequence(
+        std::iter::once((frame.clone(), view)),
+        hud,
+        [width, height],
+        overlay,
+        0,
+        Duration::from_secs(10),
+    )
+    .await
+}
+
+/// Keep one GPU world alive across frames for accumulated, presentation-only effects. A
+/// screenshot may fast-forward GPU particles without hundreds of full Greyhaven draw passes.
+async fn readback_sequence(
+    frames: impl IntoIterator<Item = (WorldFrame, CameraView)>,
+    hud: &[HudRect],
+    [width, height]: [u32; 2],
+    mut overlay: Option<&mut dyn Overlay>,
+    #[allow(unused_variables)] prewarm_steps: u32,
+    timeout: Duration,
+) -> Result<Vec<u8>, ClientError> {
     let instance = wgpu::Instance::default();
     let adapter = instance.request_adapter(&Default::default()).await?;
     let mut renderer =
@@ -332,13 +354,33 @@ pub(crate) async fn readback(
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
-    renderer.render(
-        &texture.create_view(&Default::default()),
-        frame,
-        hud,
-        view,
-        overlay,
-    )?;
+    let view = texture.create_view(&Default::default());
+    let mut frames = frames.into_iter().peekable();
+    if frames.peek().is_none() {
+        return Err("native readback requires at least one frame".into());
+    }
+    #[cfg(test)]
+    let mut first = true;
+    while let Some((frame, camera)) = frames.next() {
+        // Only before the first frame: later frames advance on their own clock.
+        #[cfg(test)]
+        if std::mem::take(&mut first) && prewarm_steps > 0 {
+            renderer.frame.prewarm_particles(
+                &renderer.device,
+                &renderer.queue,
+                &frame,
+                prewarm_steps,
+            );
+        }
+        let last = frames.peek().is_none();
+        renderer.render(
+            &view,
+            &frame,
+            hud,
+            camera,
+            if last { overlay.take() } else { None },
+        )?;
+    }
     let buffer = renderer.device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("native readback"),
         size: u64::from(width * height * 4),
@@ -369,9 +411,9 @@ pub(crate) async fn readback(
     });
     renderer.device.poll(wgpu::PollType::Wait {
         submission_index: None,
-        timeout: Some(Duration::from_secs(10)),
+        timeout: Some(timeout),
     })?;
-    receiver.recv_timeout(Duration::from_secs(10))??;
+    receiver.recv_timeout(timeout)??;
     let mapped = buffer.slice(..).get_mapped_range()?;
     let pixels = mapped.to_vec();
     drop(mapped);
@@ -614,17 +656,24 @@ mod tests {
             if timed {
                 renderer.frame.enable_gpu_timing(&renderer.device);
             }
+            let particles_enabled = std::env::var_os("MMORPG_PROFILE_NO_PARTICLES").is_none();
             println!(
-                "adapter={} gpu_timestamps={timed} lights={:?}",
+                "adapter={} gpu_timestamps={timed} lights={:?} particles_enabled={particles_enabled}",
                 adapter.get_info().name,
                 renderer.frame.light_assignment()
             );
             // Statistics leave out the first frames of each view (uploads, pipeline
             // creation); the first frame and the raw lists keep them.
             const WARM: usize = 40;
+            let samples = std::env::var("MMORPG_PROFILE_FRAMES")
+                .ok()
+                .and_then(|value| value.parse::<usize>().ok())
+                .filter(|count| *count >= 8)
+                .unwrap_or(240);
+            let warmup = WARM.min(samples / 4);
             let ms = |span: Duration| span.as_secs_f64() * 1e3;
             let stats = |name: &str, samples: &[f64]| {
-                let mut warm = samples.get(WARM..).unwrap_or_default().to_vec();
+                let mut warm = samples.get(warmup..).unwrap_or_default().to_vec();
                 if warm.is_empty() {
                     return format!("{name} n/a");
                 }
@@ -654,20 +703,27 @@ mod tests {
                 };
                 let [mut frames, mut renders, mut prepares, mut encodes, mut gpus] =
                     std::array::from_fn(|_| Vec::new());
+                let mut particle_steps = Vec::new();
                 // GPU time per pass label (several sky or shadow passes summed), in pass order.
                 let mut passes: Vec<(&str, Vec<f64>)> = Vec::new();
                 let world_before = renderer.frame.profile().world;
-                for index in 0..240 {
-                    let now = start + Duration::from_millis(16 * index);
+                for index in 0..samples {
+                    let now = start
+                        + Duration::from_millis(
+                            16 * u64::try_from(index).expect("benchmark frame index fits u64"),
+                        );
                     let begin = Instant::now();
-                    let frame = presentation.frame(&world, now, view);
+                    let mut frame = presentation.frame(&world, now, view);
+                    frame.particles_animated &= particles_enabled;
                     let rendering = Instant::now();
                     renderer.render(&target, &frame, &[], view, None).unwrap();
                     renderer
                         .device
                         .poll(wgpu::PollType::Wait {
                             submission_index: None,
-                            timeout: Some(Duration::from_secs(10)),
+                            // The manual profile also runs on software Vulkan, where the
+                            // first full-scene shader compilation exceeds ten seconds.
+                            timeout: Some(Duration::from_secs(120)),
                         })
                         .unwrap();
                     frames.push(ms(begin.elapsed()));
@@ -675,6 +731,7 @@ mod tests {
                     let profile = renderer.frame.profile();
                     prepares.push(ms(profile.prepare));
                     encodes.push(ms(profile.encode));
+                    particle_steps.push(ms(profile.particle_step));
                     let Some(spans) = renderer
                         .frame
                         .gpu_passes(&renderer.device, &renderer.queue)
@@ -698,17 +755,18 @@ mod tests {
                     }
                 }
                 println!(
-                    "view={name} {} | {} | {} | {} | {}",
+                    "view={name} {} | {} | {} | {} | {} | {}",
                     stats("frame_ms", &frames),
                     stats("render_ms", &renders),
                     stats("prepare_ms", &prepares),
                     stats("encode_ms", &encodes),
+                    stats("particle_step_cpu_ms", &particle_steps),
                     stats("gpu_ms", &gpus),
                 );
                 let passes: Vec<_> = passes
                     .iter_mut()
                     .map(|(label, samples)| {
-                        let skip = WARM.min(samples.len() - 1);
+                        let skip = warmup.min(samples.len() - 1);
                         let warm = &mut samples[skip..];
                         warm.sort_by(f64::total_cmp);
                         format!("{}={:.3}", label.replace(' ', "_"), warm[warm.len() / 2])
@@ -725,6 +783,239 @@ mod tests {
                 println!("view={name} raw render_ms=[{}]", list(&renders));
                 println!("view={name} raw gpu_ms=[{}]", list(&gpus));
             }
+        });
+    }
+
+    /// GPU particle lifecycle (#769): a new scene replaces the environment emitters, a moved
+    /// camera keeps them and reduced motion retires them; repeated confirmed impacts reuse the
+    /// same few burst emitters, stay within their capacity and die out after their sequence.
+    /// No server tick or projection drives the environment particles.
+    #[test]
+    #[ignore = "requires a GPU; native particle lifetime"]
+    fn greyhaven_particle_lifetime() {
+        use crate::world::{ImpactBurst, ImpactKind};
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let scenery = greyhaven_vale_scenery();
+            let world = WorldScene::new(&scenery);
+            let view = CameraView {
+                field_of_view_degrees: 50.0,
+                eye: [5.0, 8.5, 31.0],
+                target: [-14.0, 3.0, 4.0],
+            };
+            let adapter = wgpu::Instance::default()
+                .request_adapter(&Default::default())
+                .await
+                .unwrap();
+            let mut renderer =
+                SceneRenderer::new(&adapter, wgpu::TextureFormat::Rgba8UnormSrgb, 640, 360)
+                    .await
+                    .unwrap();
+            let target = renderer.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("particle lifetime"),
+                size: wgpu::Extent3d {
+                    width: 640,
+                    height: 360,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            let target = target.create_view(&Default::default());
+            let first = world.frame(0.0, true, view.eye, None);
+            let sites = &first.particle_sites;
+            assert!(!sites.campfires.is_empty() && !sites.mist.is_empty());
+            let environment = 3 * sites.campfires.len() + sites.mist.len();
+            renderer.render(&target, &first, &[], view, None).unwrap();
+            assert_eq!(renderer.frame.environment_emitter_count(), environment);
+
+            // Repeated confirmed impacts at 60 Hz for two thirds of a second, then quiet.
+            let moved = CameraView {
+                eye: [view.eye[0] + 3.0, view.eye[1], view.eye[2]],
+                ..view
+            };
+            let impacts = [
+                (ImpactKind::Hit, [-2.0, 3.0, 12.0]),
+                (ImpactKind::Hit, [-4.0, 3.0, 10.0]),
+                (ImpactKind::Block, [-3.0, 3.0, 11.0]),
+            ]
+            .map(|(kind, position)| ImpactBurst {
+                kind,
+                position,
+                direction: [0.0, 0.0, -1.0],
+            });
+            let mut seconds = 0.0;
+            for step in 0..40 {
+                seconds += 1.0 / 60.0;
+                let mut frame = world.frame(seconds, true, moved.eye, None);
+                if step % 2 == 0 {
+                    frame.impacts = impacts.to_vec();
+                }
+                renderer.render(&target, &frame, &[], moved, None).unwrap();
+            }
+            assert_eq!(renderer.frame.environment_emitter_count(), environment);
+            let alive = renderer.frame.alive_particles();
+            assert_eq!(alive.len(), environment + 6, "impacts reuse six emitters");
+            let impact_ids = renderer.frame.impact_emitters();
+            let impact_alive = |alive: &[(render_engine::world::EmitterId, u32)]| {
+                alive
+                    .iter()
+                    .filter(|(id, _)| impact_ids.contains(id))
+                    .map(|(_, count)| *count)
+                    .collect::<Vec<_>>()
+            };
+            let during = impact_alive(&alive);
+            println!("impact particles alive during the bursts: {during:?}");
+            assert!(during.iter().any(|count| *count > 0));
+            assert!(during.iter().all(|count| *count <= 128));
+            for _ in 0..60 {
+                seconds += 1.0 / 60.0;
+                let frame = world.frame(seconds, true, moved.eye, None);
+                renderer.render(&target, &frame, &[], moved, None).unwrap();
+            }
+            let after = impact_alive(&renderer.frame.alive_particles());
+            assert!(after.iter().all(|count| *count == 0), "{after:?}");
+
+            // A newly loaded world with the same sites is nevertheless a new source owner, so
+            // it must replace the previous set, never accumulate emitters.
+            let next = WorldScene::new(&scenery);
+            renderer
+                .render(
+                    &target,
+                    &next.frame(seconds, true, moved.eye, None),
+                    &[],
+                    moved,
+                    None,
+                )
+                .unwrap();
+            assert_eq!(renderer.frame.environment_emitter_count(), environment);
+            assert_eq!(renderer.frame.alive_particles().len(), environment + 6);
+            renderer
+                .render(
+                    &target,
+                    &next.frame(seconds + 0.016, false, moved.eye, None),
+                    &[],
+                    moved,
+                    None,
+                )
+                .unwrap();
+            assert_eq!(renderer.frame.environment_emitter_count(), 0);
+            assert_eq!(renderer.frame.alive_particles().len(), 6);
+        });
+    }
+
+    /// Reviewable GPU particle evidence (#769), as PNGs in `MMORPG_PARTICLE_SHOTS`: a campfire
+    /// by day and night after five seconds of genuine GPU simulation, mist on Stillwater Lake
+    /// at dawn, and confirmed hit and block bursts from a gameplay camera a fifth of a second
+    /// after they landed.
+    #[test]
+    #[ignore = "requires GPU; manual native particle screenshots"]
+    fn greyhaven_particle_shots() {
+        use crate::world::{ImpactBurst, ImpactKind};
+        let Some(directory) = std::env::var_os("MMORPG_PARTICLE_SHOTS") else {
+            return;
+        };
+        let directory = std::path::PathBuf::from(directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let world = WorldScene::new(&greyhaven_vale_scenery());
+            let sites = Arc::clone(&world.frame(0.0, false, [0.0; 3], None).particle_sites);
+            let fire = sites.campfires[0];
+            let view = CameraView {
+                field_of_view_degrees: 50.0,
+                eye: [fire[0] + 6.0, fire[1] + 2.9, fire[2] + 7.0],
+                target: [fire[0], fire[1] + 0.8, fire[2]],
+            };
+            let size = [1280, 720];
+            let save = |name: &str, pixels: &[u8]| {
+                image::save_buffer(
+                    directory.join(format!("particles-{name}.png")),
+                    pixels,
+                    size[0],
+                    size[1],
+                    image::ExtendedColorType::Rgba8,
+                )
+                .unwrap();
+            };
+            let shot = |frames: Vec<(WorldFrame, CameraView)>, prewarm: u32| {
+                readback_sequence(frames, &[], size, None, prewarm, Duration::from_secs(120))
+            };
+            let mut daytime = None;
+            for (name, hour) in [("campfire-day", 15.0), ("campfire-night", 22.0)] {
+                let mut frame = world.frame(5.0, true, view.eye, None);
+                frame.lighting.hour = hour;
+                let pixels = shot(vec![(frame, view)], 300).await.unwrap();
+                save(name, &pixels);
+                daytime.get_or_insert(pixels);
+            }
+            let mut baseline = world.frame(5.0, true, view.eye, None);
+            baseline.lighting.hour = 15.0;
+            baseline.particles_animated = false;
+            let without = shot(vec![(baseline, view)], 0).await.unwrap();
+            let changed = daytime
+                .unwrap()
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .zip(without.as_chunks::<4>().0.iter())
+                .filter(|(a, b)| a != b)
+                .count();
+            println!(
+                "campfire particles change {changed} of {} pixels",
+                size[0] * size[1]
+            );
+            assert!(changed > 0, "the GPU campfire must be visible");
+
+            let lake = sites.mist[0];
+            let mist_view = CameraView {
+                field_of_view_degrees: 50.0,
+                eye: [
+                    lake.centre[0],
+                    lake.centre[1] + 4.0,
+                    lake.centre[2] + lake.half[1] + 14.0,
+                ],
+                target: [lake.centre[0], lake.centre[1] + 0.5, lake.centre[2]],
+            };
+            let mut dawn = world.frame(5.0, true, mist_view.eye, None);
+            dawn.lighting.hour = 6.5;
+            save(
+                "mist-dawn",
+                &shot(vec![(dawn, mist_view)], 300).await.unwrap(),
+            );
+
+            // Over the shoulder of a player facing the fire, as the orbit camera frames it.
+            let struck = [fire[0] + 1.5, fire[1] + 0.9, fire[2] + 1.5];
+            let gameplay = CameraView {
+                field_of_view_degrees: 60.0,
+                eye: [struck[0] + 3.5, struck[1] + 1.6, struck[2] + 4.5],
+                target: struck,
+            };
+            let mut frames = Vec::new();
+            for step in 0..=12 {
+                let mut frame = world.frame(5.0 + f64::from(step) / 60.0, true, gameplay.eye, None);
+                frame.lighting.hour = 17.0;
+                if step == 0 {
+                    frame.impacts = vec![
+                        ImpactBurst {
+                            kind: ImpactKind::Hit,
+                            position: struck,
+                            direction: [-0.6, 0.0, -0.8],
+                        },
+                        ImpactBurst {
+                            kind: ImpactKind::Block,
+                            position: [struck[0] + 1.4, struck[1], struck[2] - 0.6],
+                            direction: [0.8, 0.0, -0.6],
+                        },
+                    ];
+                }
+                frames.push((frame, gameplay));
+            }
+            save("impacts", &shot(frames, 120).await.unwrap());
         });
     }
 

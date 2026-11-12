@@ -10,6 +10,8 @@ use std::time::Duration;
 /// What the last [`super::frame::FrameRenderer::render`] did on the CPU.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FrameProfile {
+    /// CPU work to advance cosmetic GPU particles; GPU simulation runs on the encoder.
+    pub particle_step: Duration,
     /// `Renderer::prepare`: culling, sorting and the frame's uploads.
     pub prepare: Duration,
     /// `Renderer::encode`: recording the passes.
@@ -52,6 +54,21 @@ impl GpuTimer {
             }),
             capacity,
             labels: Vec::new(),
+        }
+    }
+
+    /// A dedicated query pair for the GPU particle compute step, before the renderer's
+    /// viewport-dependent passes. This does not consume or offset their query range.
+    pub fn particle(device: &wgpu::Device) -> Self {
+        let mut timer = Self::new(device, 2);
+        timer.labels.push("particle_sim");
+        timer
+    }
+
+    pub fn stamp(&self) -> FrameTimestamps<'_> {
+        FrameTimestamps {
+            query_set: &self.query_set,
+            first: 0,
         }
     }
 

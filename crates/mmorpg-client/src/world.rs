@@ -102,6 +102,70 @@ impl DrawSkin {
 /// GPU instances once and reuses them until the batch is dropped (#588).
 pub type DrawBatch = Arc<[SceneDraw]>;
 
+/// The scenery's cosmetic GPU particle anchors (#769), derived once per scene from authored
+/// presentation data, never from gameplay or network state.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ParticleSites {
+    /// Each campfire's embers, 0.45 m under its flickering point light: flames, sparks, smoke.
+    pub campfires: Vec<[f32; 3]>,
+    /// Low mist wisps over the scenery's still water (lake and marsh pools).
+    pub mist: Vec<MistPatch>,
+}
+
+/// A box of mist over one water body: its centre on the surface and its half extents (x, z).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MistPatch {
+    pub centre: [f32; 3],
+    pub half: [f32; 2],
+}
+
+/// Which authored impact a confirmed event plays: hits puff, blocks ring (as the browser, #52).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImpactKind {
+    Hit,
+    Block,
+}
+
+/// One zone-confirmed impact on a presented unit, in world metres.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ImpactBurst {
+    pub kind: ImpactKind,
+    /// The struck unit's presented body centre.
+    pub position: [f32; 3],
+    /// Unit vector from the striking unit towards the struck one (up when unknown).
+    pub direction: [f32; 3],
+}
+
+impl ParticleSites {
+    fn new(scenery: &Scenery, point_lights: &[mmorpg_presentation::lights::PointLight]) -> Self {
+        let campfires = point_lights
+            .iter()
+            .filter(|light| {
+                light.flicker.is_some()
+                    && light.lumens == mmorpg_presentation::lights::CAMPFIRE.lumens
+            })
+            .map(|light| {
+                let [x, y, z] = light.position.map(|axis| axis as f32);
+                [x, y - 0.45, z]
+            })
+            .collect();
+        // Boxes inside each ellipse, so few wisps stray over the shore.
+        let mist = scenery
+            .water
+            .iter()
+            .map(|water| MistPatch {
+                centre: [
+                    metres(water.centre[0]),
+                    metres(water.surface),
+                    metres(water.centre[1]),
+                ],
+                half: [metres(water.radii[0]) * 0.75, metres(water.radii[1]) * 0.75],
+            })
+            .collect();
+        Self { campfires, mist }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct WorldFrame {
     /// Unchanging draws shown this frame.
@@ -109,6 +173,15 @@ pub struct WorldFrame {
     /// Draws sampled this frame: units, effects, animated props and door swings.
     pub draws: Vec<SceneDraw>,
     pub lighting: Lighting,
+    /// Where the scenery's GPU particle effects stand (#769): campfires and water mist.
+    /// Shared with every frame so the GPU emitter lifetimes survive camera movement.
+    pub particle_sites: Arc<ParticleSites>,
+    /// Presentation-only time; never advances the authoritative zone simulation.
+    pub particle_seconds: f64,
+    /// Reduced motion retires the moving environment particles and plays impacts subtly.
+    pub particles_animated: bool,
+    /// Bursts of zone-confirmed hits and blocks first presented this frame (#769).
+    pub impacts: Vec<ImpactBurst>,
     /// The `greyhaven-nature` trees, rocks and bushes and the climbing kit's parts drawn this
     /// frame (#49, #621).
     pub nature: Vec<NatureDraw>,
@@ -188,6 +261,7 @@ pub struct WorldScene {
     animated: Vec<Vec<SceneDraw>>,
     /// The scenery's campfires and lantern posts (#529).
     point_lights: Vec<mmorpg_presentation::lights::PointLight>,
+    particle_sites: Arc<ParticleSites>,
     nature: NatureState,
 }
 
@@ -456,11 +530,14 @@ impl WorldScene {
             models: placements.iter().map(|placement| placement.model).collect(),
             seconds: None,
         };
+        let point_lights = mmorpg_presentation::lights::point_lights(&scene, scenery);
+        let particle_sites = Arc::new(ParticleSites::new(scenery, &point_lights));
         Self {
             nature: NatureState::new(nature),
             cave_lighting: scenery.greyhaven(),
             additional_draws: Vec::new(),
-            point_lights: mmorpg_presentation::lights::point_lights(&scene, scenery),
+            point_lights,
+            particle_sites,
             statics,
             water_draws,
             animated,
@@ -541,6 +618,10 @@ impl WorldScene {
             batches,
             draws,
             lighting,
+            particle_sites: Arc::clone(&self.particle_sites),
+            particle_seconds: seconds,
+            particles_animated: animate,
+            impacts: Vec::new(),
             nature: self.nature_draws(seconds, animate, eye, fov_y_degrees),
             occluders: Vec::new(),
         }
@@ -932,5 +1013,39 @@ fn blockout(prop: &Prop, base: f32, boxes: &mut Vec<SceneBox>) {
         | PropKind::GrayboxTower
         | PropKind::GrayboxWalkway
         | PropKind::GrayboxRamp => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn particle_sites_follow_authored_campfires_and_water_and_are_stable_across_frames() {
+        let scenery = mmorpg_scenery::greyhaven_vale_scenery();
+        let world = WorldScene::new(&scenery);
+        let a = world.frame(0.0, true, [0.0, 4.0, 10.0], None);
+        let b = world.frame(0.1, true, [20.0, 4.0, 10.0], None);
+        let fires: Vec<_> = a
+            .lighting
+            .point_lights
+            .iter()
+            .filter(|light| light.range == 16.0 && light.lumens < 2_000.0)
+            .map(|light| {
+                [
+                    light.position[0],
+                    light.position[1] - 0.45,
+                    light.position[2],
+                ]
+            })
+            .collect();
+        assert!(!fires.is_empty());
+        assert_eq!(a.particle_sites.campfires, fires);
+        assert_eq!(a.particle_sites.mist.len(), scenery.water.len());
+        assert!(!a.particle_sites.mist.is_empty());
+        assert!(a.impacts.is_empty());
+        assert!(Arc::ptr_eq(&a.particle_sites, &b.particle_sites));
+        assert_eq!(a.particle_seconds, 0.0);
+        assert_eq!(b.particle_seconds, 0.1);
     }
 }
