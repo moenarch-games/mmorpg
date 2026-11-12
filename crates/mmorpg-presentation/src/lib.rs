@@ -20,6 +20,7 @@ pub mod buildings;
 mod cliffs;
 pub mod climbing;
 pub mod composition;
+pub mod crag;
 pub mod geometry;
 pub mod ground;
 mod handholds;
@@ -185,6 +186,9 @@ pub enum Kit {
     /// The climbing kit's ladders and ropes (#621, [`climbing`]); the procedural ladders and
     /// ropes are the fallback.
     Climbing,
+    /// The crag kit's rock modules over the highland crags and the Hollow's box cliffs
+    /// (#668, [`crag`]); the plain rock boxes and their worn handholds are the fallback.
+    Crag,
 }
 
 /// Which kits a client draws; the static scene hides a drawn kit's fallback.
@@ -197,6 +201,7 @@ pub struct Kits<'a> {
     pub dressed: &'a [usize],
     pub nature: bool,
     pub climbing: bool,
+    pub crag: bool,
 }
 
 impl Kits<'_> {
@@ -207,6 +212,7 @@ impl Kits<'_> {
         dressed: &[],
         nature: true,
         climbing: true,
+        crag: true,
     };
 
     #[must_use]
@@ -217,6 +223,7 @@ impl Kits<'_> {
             Kit::Graybox(prop) => self.dressed.binary_search(&prop).is_ok(),
             Kit::Nature => self.nature,
             Kit::Climbing => self.climbing,
+            Kit::Crag => self.crag,
         }
     }
 }

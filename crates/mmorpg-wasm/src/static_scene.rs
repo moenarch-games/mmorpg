@@ -199,6 +199,7 @@ pub(crate) fn encode(scene: &StaticScene) -> SceneBuffers {
                 mmorpg_presentation::Kit::SettlementProps => "settlementProps",
                 mmorpg_presentation::Kit::Nature => "nature",
                 mmorpg_presentation::Kit::Climbing => "climbing",
+                mmorpg_presentation::Kit::Crag => "crag",
                 // Graybox fallbacks are animated parts per body, never batched groups.
                 mmorpg_presentation::Kit::Graybox(_) => "fortress",
             }),
@@ -411,6 +412,7 @@ impl GroupStream {
         settlement_props: bool,
         nature: bool,
         climbing: bool,
+        crag: bool,
         dressed: &[usize],
     ) -> Vec<u32> {
         let scene = if self.arena {
@@ -425,6 +427,7 @@ impl GroupStream {
             dressed,
             nature,
             climbing,
+            crag,
         };
         let mut built = Vec::new();
         let evicted = self.streamer.stream(

@@ -318,6 +318,12 @@ impl Units {
             });
     }
 
+    /// The crag kit's descriptor once the page draws it, `""` while it does not (#668).
+    pub fn set_crag_descriptor(&mut self, json: &str) -> Result<(), String> {
+        self.presenter
+            .set_crag_descriptor((!json.is_empty()).then_some(json))
+    }
+
     /// The platforms the page's kit draws instead of their procedural pillar (#591).
     pub fn set_kit_platforms(&mut self, platforms: &[u8]) {
         self.presenter.set_kit_platforms(

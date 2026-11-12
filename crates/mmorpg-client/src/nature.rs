@@ -37,6 +37,14 @@ mod climbing_descriptor {
     include!(concat!(env!("OUT_DIR"), "/climbing_descriptor.rs"));
 }
 
+mod crag_bundle {
+    include!(concat!(env!("OUT_DIR"), "/crag_bundle.rs"));
+}
+
+mod crag_descriptor {
+    include!(concat!(env!("OUT_DIR"), "/crag_descriptor.rs"));
+}
+
 mod limestone_bundle {
     include!(concat!(env!("OUT_DIR"), "/limestone_bundle.rs"));
 }
@@ -70,7 +78,7 @@ struct Source {
     files: Files,
 }
 
-const SOURCES: [Source; 5] = [
+const SOURCES: [Source; 6] = [
     Source {
         keys: &mmorpg_presentation::nature::ENTRIES,
         entries: bundle::ENTRIES,
@@ -80,6 +88,11 @@ const SOURCES: [Source; 5] = [
         keys: &mmorpg_presentation::climbing::ENTRIES,
         entries: climbing_bundle::ENTRIES,
         files: climbing_bundle::FILES,
+    },
+    Source {
+        keys: &mmorpg_presentation::crag::ENTRIES,
+        entries: crag_bundle::ENTRIES,
+        files: crag_bundle::FILES,
     },
     Source {
         keys: &mmorpg_presentation::nature::LIMESTONE_ENTRIES,
@@ -102,7 +115,8 @@ const SOURCES: [Source; 5] = [
 pub const FADE_STEPS: usize = 8;
 
 /// The library's entries: the nature bundle's (`mmorpg_presentation::nature::ENTRIES`), the
-/// climbing kit's (`mmorpg_presentation::climbing::ENTRIES`), the limestone blocks', the river
+/// climbing kit's (`mmorpg_presentation::climbing::ENTRIES`), the crag kit's modules
+/// (`mmorpg_presentation::crag::ENTRIES`), the limestone blocks', the river
 /// stones' and the settlement props'.
 #[must_use]
 pub fn entries() -> Vec<&'static str> {
@@ -110,6 +124,12 @@ pub fn entries() -> Vec<&'static str> {
         .iter()
         .flat_map(|source| source.keys.iter().copied())
         .collect()
+}
+
+/// The embedded crag kit's `crag-descriptor` (#668), whose climb metadata places climbers.
+#[must_use]
+pub fn crag_descriptor() -> &'static str {
+    crag_descriptor::DESCRIPTOR
 }
 
 /// Every entry's levels of detail from the embedded descriptors.
@@ -120,6 +140,10 @@ pub fn lods() -> Vec<EntryLods> {
     lods.extend(
         mmorpg_presentation::climbing::descriptor_lods(climbing_descriptor::DESCRIPTOR)
             .expect("the embedded climbing descriptor is valid"),
+    );
+    lods.extend(
+        mmorpg_presentation::crag::descriptor_lods(crag_descriptor::DESCRIPTOR)
+            .expect("the embedded crag descriptor is valid"),
     );
     lods.extend(
         mmorpg_presentation::nature::descriptor_lods(limestone_descriptor::DESCRIPTOR)

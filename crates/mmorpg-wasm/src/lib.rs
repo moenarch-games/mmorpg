@@ -783,6 +783,7 @@ pub fn static_scene_shown(viewer: &[f64], outpost_kit: bool, settlement_props: b
             // hides itself.
             nature: false,
             climbing: false,
+            crag: false,
             dressed: &[],
         },
     )
@@ -908,6 +909,19 @@ impl UnitPresenter {
                 lower_weight,
                 upper_weight,
             });
+    }
+
+    /// The crag kit's `crag-descriptor` JSON once the page draws the kit, or `""` while it
+    /// does not (#668): climbers on its climbable faces are drawn out to the modules' rock.
+    ///
+    /// # Errors
+    ///
+    /// For a malformed descriptor.
+    #[wasm_bindgen(js_name = setCragDescriptor)]
+    pub fn set_crag_descriptor(&mut self, json: &str) -> Result<(), JsError> {
+        self.0
+            .set_crag_descriptor(json)
+            .map_err(|error| JsError::new(&error))
     }
 
     /// The platforms (ids) the page's kit draws instead of their procedural pillar, the
@@ -1242,9 +1256,10 @@ fn placed_kit(
     ),
     JsError,
 > {
-    use mmorpg_presentation::{climbing, lod::Placement, nature, river};
+    use mmorpg_presentation::{climbing, crag, lod::Placement, nature, river};
     static NATURE: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     static CLIMBING: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
+    static CRAG: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     static LIMESTONE: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     static RIVER: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     // The placement lists mix bundles, so each kit takes the placements of its own entries.
@@ -1270,6 +1285,10 @@ fn placed_kit(
         "climbing" => Ok((
             &climbing::ENTRIES,
             CLIMBING.get(|_| climbing::placements(scenery::hosted_scenery())),
+        )),
+        "crag" => Ok((
+            &crag::ENTRIES,
+            CRAG.get(|_| crag::placements(scenery::hosted_scenery())),
         )),
         other => Err(JsError::new(&format!("no placed kit {other:?}"))),
     }
@@ -1328,8 +1347,14 @@ impl KitLods {
     pub fn new(kit: &str, descriptor: &str) -> Result<Self, JsError> {
         let placements = placed_kit(kit)?.1;
         // The shared parse: every kit's levels, with the nature trees' own switch points.
-        let entries = mmorpg_presentation::nature::descriptor_lods(descriptor)
-            .map_err(|error| JsError::new(&format!("{kit}: {error}")))?;
+        // The crag kit's descriptor also lists its macro texture and outcrops, which are not
+        // placed (#668).
+        let entries = if kit == "crag" {
+            mmorpg_presentation::crag::descriptor_lods(descriptor)
+        } else {
+            mmorpg_presentation::nature::descriptor_lods(descriptor)
+        }
+        .map_err(|error| JsError::new(&format!("{kit}: {error}")))?;
         Ok(Self(mmorpg_presentation::lod::Lods::new(
             entries,
             placements

@@ -60,6 +60,23 @@ const MARSHAL_HOUSE: [&str; 5] = [
     "greyhaven.marshal-house.door",
 ];
 
+/// The crag kit modules the clients place (`mmorpg_presentation::crag::ENTRIES`, #668).
+const CRAG: [&str; 13] = [
+    "crag.kit.cap-1",
+    "crag.kit.cap-2",
+    "crag.kit.cap-corner",
+    "crag.kit.corner-climb-1",
+    "crag.kit.corner-climb-2",
+    "crag.kit.corner-sheer-1",
+    "crag.kit.corner-sheer-2",
+    "crag.kit.face-climb-1",
+    "crag.kit.face-climb-2",
+    "crag.kit.face-climb-3",
+    "crag.kit.face-sheer-1",
+    "crag.kit.face-sheer-2",
+    "crag.kit.face-sheer-3",
+];
+
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("cargo sets it"));
     let art = manifest_dir.join("../../web/assets/warden-icons");
@@ -227,6 +244,11 @@ fn main() {
     let climbing = manifest_dir.join("../../web/public/scenery/climbing.kit");
     static_bundle("climbing_bundle.rs", &climbing, None, true);
     descriptor(&climbing, "climbing-descriptor", "climbing_descriptor.rs");
+    // The crag kit's rock modules over the highland crags (#668) with every level of detail, and
+    // their descriptor; not its outcrops or macro texture, which nothing places.
+    let crag = manifest_dir.join("../../web/public/scenery/crag.kit");
+    static_bundle("crag_bundle.rs", &crag, Some(&CRAG), true);
+    descriptor(&crag, "crag-descriptor", "crag_descriptor.rs");
     // Greyhaven's limestone rocks (asset-tooling#536) with every level of detail, and their descriptor.
     let limestone = manifest_dir.join("../../web/public/scenery/limestone-rocks.kit");
     static_bundle("limestone_bundle.rs", &limestone, None, true);
@@ -435,13 +457,18 @@ fn static_bundle(name: &str, bundle: &Path, keys: Option<&[&str]>, variants: boo
     let mut files = Vec::new();
     let assets = manifest["assets"].as_array().expect("bundle assets");
     let entries: Vec<&serde_json::Value> = match keys {
+        // The listed keys (with every level when `variants`).
         Some(keys) => keys
             .iter()
-            .map(|key| {
-                assets
+            .flat_map(|key| {
+                let levels: Vec<_> = assets
                     .iter()
-                    .find(|asset| asset["key"] == *key && asset["variant"] == "default")
-                    .unwrap_or_else(|| panic!("the bundle declares {key}"))
+                    .filter(|asset| {
+                        asset["key"] == *key && (variants || asset["variant"] == "default")
+                    })
+                    .collect();
+                assert!(!levels.is_empty(), "the bundle declares {key}");
+                levels
             })
             .collect(),
         None => assets

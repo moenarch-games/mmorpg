@@ -224,10 +224,19 @@ fn covers(s: &Scenery, g: &TerrainGrid, parts: &mut Vec<Placement>) {
             continue;
         };
         let [hx, _, hz] = p.half_extents.map(metres);
+        // On a box the crag kit dresses (#668) the ivy hangs clear of its rock.
+        let lift = if crate::crag::dresses(s, p) {
+            crate::crag::IVY_STAND_OFF
+        } else {
+            0.
+        };
         let centre = [metres(p.position[0]), metres(p.position[2])];
         let out = [f64::from(normal[0]), 0., f64::from(normal[1])];
         let along = [-out[2], out[0]];
-        let face = [centre[0] + out[0] * hx, centre[1] + out[2] * hz];
+        let face = [
+            centre[0] + out[0] * (hx + lift),
+            centre[1] + out[2] * (hz + lift),
+        ];
         for &offset in strips {
             let base = [face[0] + along[0] * offset, face[1] + along[1] * offset];
             let ground = surface(g, base[0] + out[0] * 0.2, base[1] + out[2] * 0.2);

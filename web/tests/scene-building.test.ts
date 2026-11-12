@@ -110,9 +110,9 @@ describe("the shared static scene in the browser", () => {
     const ground = new Ground(empty, [], [roof]);
     const batch = ground.root.children.find((child) => child instanceof BatchedMesh);
     if (!(batch instanceof BatchedMesh)) { throw new Error("roof did not enter the material batch"); }
-    ground.update([64, 30, -138], scene.shown([64, 11, -138], { outpost: false, settlementProps: false, nature: false, climbing: false, fortress: false }));
+    ground.update([64, 30, -138], scene.shown([64, 11, -138], { outpost: false, settlementProps: false, nature: false, climbing: false, crag: false, fortress: false }));
     expect(batch.getVisibleAt(0)).toBe(false);
-    ground.update([64, 30, -138], scene.shown(null, { outpost: false, settlementProps: false, nature: false, climbing: false, fortress: false }));
+    ground.update([64, 30, -138], scene.shown(null, { outpost: false, settlementProps: false, nature: false, climbing: false, crag: false, fortress: false }));
     expect(batch.getVisibleAt(0)).toBe(true);
     batch.dispose();
   });
@@ -139,7 +139,7 @@ test("the arena's static groups stream from the arena scene", () => {
   const presentation = new wasm.ArenaPresentation();
   const layout = JSON.parse(presentation.staticScene()) as { groups: { min: [number, number] }[] };
   const stream = presentation.groupStream();
-  const update = stream.update(0, 2, 0, false, false, false, false, Uint32Array.from(presentation.dressedProps()));
+  const update = stream.update(0, 2, 0, false, false, false, false, false, Uint32Array.from(presentation.dressedProps()));
   const built = Array.from(update.subarray(1, 1 + update[0]!));
   expect(built.length).toBeGreaterThan(0);
   expect(built.every((group) => group < layout.groups.length)).toBe(true);

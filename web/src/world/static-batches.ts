@@ -358,7 +358,7 @@ function sceneGeometry(geometry: StaticBatch["node"]["geometry"]): THREE.BufferG
 }
 
 /** The kits a client draws (`SceneryMotion.kits`) with the stream's dressed props, for a group stream update. */
-export type StreamKits = { outpost: boolean; settlementProps: boolean; nature: boolean; climbing: boolean; dressed: Uint32Array };
+export type StreamKits = { outpost: boolean; settlementProps: boolean; nature: boolean; climbing: boolean; crag: boolean; dressed: Uint32Array };
 
 type ResidentGroup = { placed: GrowingPlaced; shadow: GrowingPlaced | null; visible: boolean };
 
@@ -464,7 +464,7 @@ export class BatchedScenery {
 
   /** Advances residency for the camera `eye` and builds or drops the groups the stream names (a few per frame). */
   stream(eye: readonly [number, number, number], kits: StreamKits): void {
-    const update = this.#stream.update(eye[0], eye[1], eye[2], kits.outpost, kits.settlementProps, kits.nature, kits.climbing, kits.dressed);
+    const update = this.#stream.update(eye[0], eye[1], eye[2], kits.outpost, kits.settlementProps, kits.nature, kits.climbing, kits.crag, kits.dressed);
     let at = 0;
     const built = update[at++]!;
     for (let index = 0; index < built; index += 1) {

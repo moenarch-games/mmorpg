@@ -199,7 +199,12 @@ pub(crate) fn groups(scenery: &Scenery) -> Vec<Group> {
                     .any(|mesh| Some(mesh.id) == p.collider)
         })
         .enumerate()
-        .map(|(i, p)| group(format!("rock-face-{i}"), rock(p)));
+        .map(|(i, p)| {
+            let mut group = group(format!("rock-face-{i}"), rock(p));
+            // The crag kit dresses the box crags and cliffs (#668): their plain box is its fallback.
+            group.fallback = crate::crag::dresses(scenery, p).then_some(crate::Kit::Crag);
+            group
+        });
     let surfaces = scenery
         .collision_surfaces
         .iter()

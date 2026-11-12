@@ -11,7 +11,8 @@
 # web/public/buildings/greyhaven.marshal-house and the CC0 combat sounds (#447) into
 # web/public/sounds/combat-sounds and Greyhaven's trees and rocks (#49) into
 # web/public/scenery/greyhaven.nature and Greyhaven's ground materials (#525) into
-# web/public/scenery/greyhaven.terrain and the climbing kit (#621) into web/public/scenery/climbing.kit, where the
+# web/public/scenery/greyhaven.terrain and the climbing kit (#621) into web/public/scenery/climbing.kit and the
+# crag kit (#668) into web/public/scenery/crag.kit, where the
 # browser serves them and the native client build embeds them,
 # and the Battle Royale fortress kit (#591) into web/public/scenery/fortress.kit for the browser's arena.
 # The directories are ignored build input, never committed.
@@ -142,6 +143,8 @@ fetch_rolling combat-sounds combat-sounds sounds/combat-sounds
 fetch_rolling greyhaven-terrain greyhaven.terrain scenery/greyhaven.terrain
 # Greyhaven's ladders, climbable ropes and climbing ivy with their LOD chains (#621).
 fetch_rolling climbing-kit climbing.kit scenery/climbing.kit
+# The rock modules that dress Greyhaven's crags and the Redbrand Hollow's cliffs (#668, asset-tooling#480).
+fetch_rolling crag-kit crag.kit scenery/crag.kit
 # The limestone blocks Greyhaven's rocks are drawn as (asset-tooling#536).
 fetch_rolling limestone-rocks limestone-rocks.kit scenery/limestone-rocks.kit
 # The stones along Greyhaven's watercourses (asset-tooling#538).
