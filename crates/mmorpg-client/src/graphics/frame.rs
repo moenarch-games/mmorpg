@@ -20,7 +20,7 @@ use render_engine::{
         Ambient, Camera, DayCycle, Fog, FogFalloff, Moon, PointLight, RAW_SUNLIGHT, Scene,
         ShadowFilter, ShadowMapSizes, Sky, Sun, SunShadows, Tonemapping,
     },
-    world::{Instance, MaterialId, MeshId, SkinId, TextureId, World},
+    world::{Instance, InstanceId, MaterialId, MeshId, SkinId, TextureId, World},
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -102,9 +102,15 @@ type MaterialKey = [u32; 10];
 
 /// A [`DrawBatch`] resolved into instances once (#588). It stays valid while the batch lives,
 /// drawn or culled, and is dropped with it; its meshes and materials stay resident until then.
+/// While drawn, its instances are retained in the world (#728), so a steady frame lists and
+/// uploads none of them; they are removed when a frame no longer draws it or it dies.
 struct CachedBatch {
     source: Weak<[SceneDraw]>,
     instances: Vec<Instance>,
+    /// The world's retained copies of `instances` while the batch is drawn; empty otherwise.
+    retained: Vec<InstanceId>,
+    /// Whether this frame draws the batch.
+    drawn: bool,
     meshes: Vec<String>,
     materials: Vec<MaterialKey>,
 }
@@ -439,6 +445,27 @@ struct NatureGpu {
     complete: bool,
 }
 
+/// A drawn tree or rock level's identity among the frame's nature draws (#728): its entry,
+/// level, placement and dissolve state.
+type NatureKey = (usize, usize, [u32; 16], u32);
+
+fn nature_key(draw: &crate::world::NatureDraw) -> NatureKey {
+    (
+        draw.entry,
+        draw.level,
+        draw.model.map(f32::to_bits),
+        draw.fade.to_bits(),
+    )
+}
+
+/// The retained instances of the nature draws sharing one [`NatureKey`], one group per draw.
+#[derive(Default)]
+struct RetainedNature {
+    groups: Vec<Vec<InstanceId>>,
+    /// How many groups this frame drew.
+    used: usize,
+}
+
 /// Whether an upload spread over frames has used up this frame's share.
 fn past(deadline: Option<std::time::Instant>) -> bool {
     deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline)
@@ -550,7 +577,11 @@ pub(super) struct FrameRenderer {
     /// A palette converted for upload; the allocation is kept across frames.
     palette: Vec<Mat4>,
     batches: HashMap<usize, CachedBatch>,
-    /// This frame's instances; the allocation is kept across frames.
+    /// The drawn trees and rocks, retained in the world while drawn (#728).
+    nature_drawn: HashMap<NatureKey, RetainedNature>,
+    /// Scratch space for one nature draw's instances; the allocation is kept across frames.
+    nature_scratch: Vec<Instance>,
+    /// This frame's listed (not retained) instances; the allocation is kept across frames.
     instances: Vec<Instance>,
     hud_pipeline: wgpu::RenderPipeline,
     hud_buffer: wgpu::Buffer,
@@ -629,6 +660,8 @@ impl FrameRenderer {
             skins: HashMap::new(),
             palette: Vec::new(),
             batches: HashMap::new(),
+            nature_drawn: HashMap::new(),
+            nature_scratch: Vec::new(),
             instances: Vec::new(),
             hud_pipeline,
             hud_buffer: device.create_buffer(&wgpu::BufferDescriptor {
@@ -807,11 +840,69 @@ impl FrameRenderer {
         }
     }
 
-    /// Appends `batch`'s instances, resolving them only the first time the batch is drawn.
+    /// Draws `batch`, resolving it only the first time it is seen and retaining its instances
+    /// in the world while it stays drawn (#728). A batch drawn twice in one frame lists its
+    /// second copy.
     fn push_batch(&mut self, batch: &DrawBatch) {
         let key = self.resolve_batch(batch);
-        self.instances
-            .extend_from_slice(&self.batches[&key].instances);
+        let Self {
+            world,
+            batches,
+            instances,
+            ..
+        } = self;
+        let cached = batches.get_mut(&key).expect("resolved above");
+        if cached.drawn {
+            instances.extend_from_slice(&cached.instances);
+            return;
+        }
+        cached.drawn = true;
+        if cached.retained.is_empty() {
+            cached.retained = cached
+                .instances
+                .iter()
+                .map(|instance| world.add_instance(*instance))
+                .collect();
+        }
+    }
+
+    /// Retains this frame's trees and rocks (#728): a draw seen last frame keeps its instances,
+    /// a new one adds them, and those no longer drawn are removed.
+    fn push_nature(&mut self, frame: &WorldFrame) {
+        let Self {
+            nature,
+            world,
+            nature_drawn,
+            nature_scratch,
+            ..
+        } = self;
+        if !frame.nature.is_empty() {
+            nature.upload(world, None);
+        }
+        for draw in &frame.nature {
+            let retained = nature_drawn.entry(nature_key(draw)).or_default();
+            if retained.used == retained.groups.len() {
+                nature_scratch.clear();
+                nature.instances(draw, nature_scratch);
+                retained.groups.push(
+                    nature_scratch
+                        .iter()
+                        .map(|instance| world.add_instance(*instance))
+                        .collect(),
+                );
+            }
+            retained.used += 1;
+        }
+        nature_drawn.retain(|_, retained| {
+            for group in retained.groups.drain(retained.used..) {
+                for id in group {
+                    world.remove_instance(id);
+                }
+            }
+            let keep = retained.used > 0;
+            retained.used = 0;
+            keep
+        });
     }
 
     /// Uploads what `frame` draws into the world without drawing it, stopping at `deadline`
@@ -868,6 +959,8 @@ impl FrameRenderer {
                 CachedBatch {
                     source: Arc::downgrade(batch),
                     instances,
+                    retained: Vec::new(),
+                    drawn: false,
                     meshes: meshes.into_iter().map(str::to_owned).collect(),
                     materials: materials.into_iter().collect(),
                 },
@@ -898,6 +991,13 @@ impl FrameRenderer {
         });
         batches.retain(|_, batch| {
             let live = batch.source.strong_count() > 0;
+            // Retained instances go before their meshes and materials can be freed.
+            if !(live && batch.drawn) {
+                for id in batch.retained.drain(..) {
+                    world.remove_instance(id);
+                }
+            }
+            batch.drawn = false;
             if !live {
                 for key in &batch.meshes {
                     if let Some(mesh) = meshes.get_mut(key) {
@@ -950,18 +1050,7 @@ impl FrameRenderer {
             let instance = self.instance(draw);
             self.instances.push(instance);
         }
-        if !frame.nature.is_empty() {
-            let Self {
-                nature,
-                world,
-                instances,
-                ..
-            } = self;
-            nature.upload(world, None);
-            for draw in &frame.nature {
-                nature.instances(draw, instances);
-            }
-        }
+        self.push_nature(frame);
         self.evict();
         let scene = scene(&frame.lighting, view);
         #[cfg(test)]
