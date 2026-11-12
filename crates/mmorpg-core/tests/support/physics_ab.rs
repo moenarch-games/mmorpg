@@ -267,6 +267,10 @@ pub enum Workload {
     /// bank into the lake, swims out, dives to the basin's floor and rises again; another starts
     /// on the floor in the deep water, presses down onto it and rises to the surface.
     Swim,
+    /// Floating and drifting (#667): a Warden breaks a barrel standing in Greyhaven Brook, whose
+    /// pieces float and drift downstream; a heavy crate dropped into Stillwater settles afloat
+    /// and a boulder sinks.
+    BrookFloat,
 }
 
 /// The swim workload's length.
@@ -555,6 +559,111 @@ fn barrel_chain_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
                 target: None,
             },
         )],
+        _ => Vec::new(),
+    }
+}
+
+/// The brook-float workload's length (#667): the barrel breaks, its pieces float and drift
+/// until they despawn; the crate settles afloat and the boulder sinks in Stillwater (8 s).
+pub const BROOK_FLOAT_TICKS: usize = mmorpg_core::golden::t30(240) as usize;
+
+/// A Warden wading in Greyhaven Brook 1.5 m upstream (south) of the barrel, and a watcher on
+/// Stillwater's terrace.
+const BROOK_FLOAT_PLAYERS: [(u32, [f32; 2]); 2] =
+    [(1, [-838.0, 7_180.0]), (2, [-6_500.0, -5_300.0])];
+
+/// The barrel standing in the brook, the heavy crate and the boulder dropped into Stillwater.
+pub const BROOK_FLOAT_BARREL: u32 = 9_300;
+pub const BROOK_FLOAT_CRATE: u32 = 9_301;
+pub const BROOK_FLOAT_BOULDER: u32 = 9_302;
+/// Where the crate and the boulder fall into the lake, their centres 40 and 80 units over the
+/// surface, drifting east at one unit per tick.
+pub const BROOK_FLOAT_LAKE: [[f32; 2]; 2] = [[-9_200.0, -5_300.0], [-8_000.0, -5_000.0]];
+
+/// Greyhaven with a barrel in the brook's last open reach and a heavy crate and a boulder on
+/// Stillwater's south shore.
+fn brook_float_content() -> Result<std::sync::Arc<mmorpg_core::ZoneContent>, Box<dyn Error>> {
+    let hosted = mmorpg_core::greyhaven_vale::content();
+    let template = |kind| {
+        hosted
+            .creature_templates()
+            .iter()
+            .find(|template| template.prop() == Some(kind))
+            .map(|template| template.id)
+            .ok_or("Greyhaven lacks a prop kind")
+    };
+    let spawn = |id, template, position| mmorpg_core::CreatureSpawn {
+        id: CreatureId::new(id),
+        template,
+        position,
+        facing: 0,
+        wander_radius: 0,
+        levels: None,
+    };
+    Ok(mmorpg_core::greyhaven_vale::content_with_extra_spawns([
+        spawn(
+            BROOK_FLOAT_BARREL,
+            template(mmorpg_core::PropKind::Barrel)?,
+            [-838, 7_330],
+        ),
+        spawn(
+            BROOK_FLOAT_CRATE,
+            template(mmorpg_core::PropKind::HeavyCrate)?,
+            [-9_000, -6_700],
+        ),
+        spawn(
+            BROOK_FLOAT_BOULDER,
+            template(mmorpg_core::PropKind::Boulder)?,
+            [-9_200, -6_700],
+        ),
+    ])?)
+}
+
+/// The brook-float zone: the players placed, the Warden at level 6, the crate and the boulder
+/// falling into the lake.
+fn brook_float_zone() -> Result<ZoneSimulation, Box<dyn Error>> {
+    let zone = placed_zone_in(brook_float_content()?, &BROOK_FLOAT_PLAYERS)?;
+    let mut state = zone.snapshot()?;
+    for player in &mut state.players {
+        player.combat.level = 6;
+        player.combat.health = mmorpg_core::unit::player_max_health(6);
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let surface = mmorpg_core::greyhaven_vale::lake::SURFACE as f32;
+    for creature in &mut state.creatures {
+        let (at, over) = match creature.creature_id.get() {
+            BROOK_FLOAT_CRATE => (BROOK_FLOAT_LAKE[0], 40.0),
+            BROOK_FLOAT_BOULDER => (BROOK_FLOAT_LAKE[1], 80.0),
+            _ => continue,
+        };
+        creature.position = [at[0], surface + over, at[1]];
+        creature.velocity = [1.0, 0.0, 0.0];
+    }
+    Ok(ZoneSimulation::from_snapshot(
+        state,
+        std::sync::Arc::clone(zone.content()),
+    )?)
+}
+
+/// The brook-float commands: the Warden faces downstream (north), targets the barrel and swings
+/// at it until it breaks.
+fn brook_float_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    match tick {
+        0 => vec![(
+            1,
+            ZoneCommand::Move {
+                forward: 0,
+                strafe: 0,
+                facing: 0,
+            },
+        )],
+        1 => vec![(
+            1,
+            ZoneCommand::SelectTarget(Some(EntityRef::Creature(CreatureId::new(
+                BROOK_FLOAT_BARREL,
+            )))),
+        )],
+        2..BROOK_FLOAT_TICKS => vec![(1, ZoneCommand::Swing { facing: 0 })],
         _ => Vec::new(),
     }
 }
@@ -942,6 +1051,7 @@ impl Workload {
             Self::Climb => "vale-climb",
             Self::Roll => "vale-roll",
             Self::Swim => "vale-swim",
+            Self::BrookFloat => "vale-brook-float",
         }
     }
 
@@ -949,6 +1059,7 @@ impl Workload {
     pub fn content(&self) -> Result<std::sync::Arc<mmorpg_core::ZoneContent>, Box<dyn Error>> {
         match self {
             Self::BarrelChain => barrel_chain_content(),
+            Self::BrookFloat => brook_float_content(),
             _ => Ok(mmorpg_core::greyhaven_vale::content()),
         }
     }
@@ -971,6 +1082,7 @@ impl Workload {
             Self::Climb => CLIMB_TICKS,
             Self::Roll => ROLL_TICKS,
             Self::Swim => SWIM_TICKS,
+            Self::BrookFloat => BROOK_FLOAT_TICKS,
         }
     }
 }
@@ -1003,6 +1115,7 @@ pub fn workloads() -> Result<Vec<Workload>, String> {
     workloads.push(Workload::Climb);
     workloads.push(Workload::Roll);
     workloads.push(Workload::Swim);
+    workloads.push(Workload::BrookFloat);
     Ok(workloads)
 }
 
@@ -1046,6 +1159,7 @@ impl Run {
             Workload::Climb => (placed_zone(&CLIMB_PLAYERS)?, 0),
             Workload::Roll => (roll_zone()?, 0),
             Workload::Swim => (placed_zone(&SWIM_PLAYERS)?, 0),
+            Workload::BrookFloat => (brook_float_zone()?, 0),
         };
         Ok(Self {
             zone,
@@ -1120,7 +1234,8 @@ impl Run {
             | Workload::Traversal
             | Workload::Climb
             | Workload::Roll
-            | Workload::Swim => {
+            | Workload::Swim
+            | Workload::BrookFloat => {
                 // The scripts are written in 30 Hz ticks: they run at the same moments at TICK_HZ.
                 let scale = usize::from(mmorpg_core::TICK_HZ) / 30;
                 let at = if self.tick.is_multiple_of(scale) {
@@ -1142,6 +1257,7 @@ impl Run {
                     Workload::Climb => climb_commands(at),
                     Workload::Roll => roll_commands(at),
                     Workload::Swim => swim_commands(at),
+                    Workload::BrookFloat => brook_float_commands(at),
                     _ => mill_ramps_commands(at),
                 };
                 for (player, command) in commands {

@@ -1603,6 +1603,7 @@ impl ZoneContent {
             if let Some(channel) = &water.channel {
                 hash.bytes(b"channel");
                 hash.i32(channel.half_width);
+                hash.i32(channel.current);
                 hash.len(channel.points.len());
                 for point in &channel.points {
                     hash.i32s(point);
