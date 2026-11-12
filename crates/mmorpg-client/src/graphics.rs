@@ -226,6 +226,12 @@ impl WindowRenderer {
             }),
         )
     }
+    /// Uploads what `frame` will draw without presenting it, until `deadline`; true once all of
+    /// it is resident (#726). The window keeps presenting other frames meanwhile.
+    pub fn preload(&mut self, frame: &WorldFrame, deadline: std::time::Instant) -> bool {
+        self.renderer.frame.preload(frame, deadline)
+    }
+
     pub fn resize(&mut self, width: u32, height: u32) {
         self.last_view = None;
         self.suspended = width == 0 || height == 0;
