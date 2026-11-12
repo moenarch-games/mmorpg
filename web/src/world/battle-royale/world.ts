@@ -1,4 +1,4 @@
-import { ArenaPresentation, LocalZone, UnitPresenter } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
+import { ArenaMovementPrediction, ArenaPresentation, LocalZone, UnitPresenter } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
 import { decodeCatalog } from "../catalog";
 import { FORTRESS_BUNDLE, type CompositionDressing } from "../composition-kit";
 import type { LocalWorld } from "../local-world";
@@ -9,6 +9,7 @@ import { webTransportConnector } from "../../session/webtransport";
 import { classChoiceCodes, type JoinCharacter, type ZoneWorld } from "../world-source";
 import type { ArenaEquipment } from "./protocol";
 import { BattleRoyaleSource } from "./source";
+import { NetcodeTrialSource, type NetcodeTrial } from "./netcode-trial";
 
 export type ArenaWorld = {
   world: ZoneWorld;
@@ -18,7 +19,7 @@ export type ArenaWorld = {
 };
 
 /** The local practice arena (#550): the shared zone simulation in WASM, reset to a fresh life. */
-export type PracticeWorld = { world: ZoneWorld; source: ScenarioSource };
+export type PracticeWorld = { world: ZoneWorld; source: ScenarioSource | NetcodeTrialSource };
 
 /** Values come from Rust admission defaults, not a second client-side gear catalog. */
 export function equipmentSlots(ids: ArrayLike<number>): ArenaEquipment {
@@ -109,18 +110,29 @@ export function createArenaWorld(
 /**
  * The practice arena (#550): no match host, account or stored character. Each join or reset
  * admits `build()` (read then, so builds change only between lives) at the maximum level in front
- * of stationary training targets; combat and health are the shared `mmorpg-core` rules.
+ * of stationary training targets; combat and health are the shared `mmorpg-core` rules. With
+ * `trial` the match runs a netcode option under a simulated round trip (#680).
  */
 export function createPracticeWorld(
   local: LocalWorld,
   build: () => { character: JoinCharacter; equipment: ArenaEquipment },
+  trial: NetcodeTrial | null = null,
 ): PracticeWorld {
   const presentation = new ArenaPresentation();
-  const source = new ScenarioSource(() => {
+  const codes = () => {
     const { character, equipment } = build();
-    const codes = classChoiceCodes(character);
-    return LocalZone.forPracticeArena(codes.classId, codes.sex, Uint16Array.from(equipment, (id) => id ?? 0));
-  });
+    return { ...classChoiceCodes(character), equipment: Uint16Array.from(equipment, (id) => id ?? 0) };
+  };
+  // A netcode trial (#680) delays the same local zone like a network and adds a sparring partner.
+  const source = trial
+    ? new NetcodeTrialSource(() => {
+      const { classId, sex, equipment } = codes();
+      return LocalZone.forArenaTrial(classId, sex, equipment, trial.option === "rewind");
+    }, () => new ArenaMovementPrediction(), trial)
+    : new ScenarioSource(() => {
+      const { classId, sex, equipment } = codes();
+      return LocalZone.forPracticeArena(classId, sex, equipment);
+    });
   return {
     world: { source, scenery: arenaScenery(local, presentation), catalog: decodeCatalog(presentation.catalog()), name: "Battle Royale practice", arena: true },
     source,

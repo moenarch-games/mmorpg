@@ -6,6 +6,7 @@ import type { ZoneServer } from "../online-config";
 import { classChoiceCodes, type JoinCharacter } from "../world-source";
 import { equipmentSlots } from "./world";
 import type { ArenaEquipment, MatchProjection } from "./protocol";
+import { DELAY_PRESETS, NETCODE_OPTIONS, isNetcodeOption, netcodeTrialFromQuery, type NetcodeTrial } from "./netcode-trial";
 
 const SLOT_LABELS = ["Main hand", "Off hand", "Head", "Chest", "Legs", "Feet"];
 function element<T extends HTMLElement>(root: ParentNode, selector: string): T {
@@ -39,6 +40,9 @@ export class BattleRoyaleEntry {
   readonly #hosted: HTMLElement;
   readonly #server: HTMLInputElement;
   readonly #hash: HTMLInputElement;
+  readonly #netcode: HTMLElement;
+  readonly #netcodeOption: HTMLSelectElement;
+  readonly #netcodeDelay: HTMLSelectElement;
   readonly #equipment: HTMLSelectElement[] = [];
   readonly #note: HTMLElement;
   readonly #looks: LookSource;
@@ -66,6 +70,8 @@ export class BattleRoyaleEntry {
       </div>
       <div id="arena-hosted" class="arena-hosted"><label>Match server<input id="arena-server" type="url" placeholder="https://host:4433/game/matches/br-0000000000000001" autocomplete="off"></label>
       <details><summary>Development certificate</summary><label>Certificate hash<input id="arena-cert-hash" type="text" autocomplete="off" spellcheck="false"></label></details></div>
+      <div id="arena-netcode" class="arena-hosted"><label>Netcode trial<select id="arena-netcode-option"><option value="">Off</option></select></label>
+      <label>Simulated round trip<select id="arena-netcode-delay"></select></label></div>
       <p id="arena-setup-note" class="arena-setup-note"></p>`;
     this.#classGrid = element(roots.classes, "#arena-classes-grid");
     this.#classDescription = element(roots.classes, "#arena-class-description");
@@ -73,6 +79,11 @@ export class BattleRoyaleEntry {
     this.#hosted = element(roots.route, "#arena-hosted");
     this.#server = element(roots.route, "#arena-server"); this.#hash = element(roots.route, "#arena-cert-hash");
     this.#note = element(roots.route, "#arena-setup-note");
+    this.#netcode = element(roots.route, "#arena-netcode");
+    this.#netcodeOption = element(roots.route, "#arena-netcode-option");
+    this.#netcodeDelay = element(roots.route, "#arena-netcode-delay");
+    for (const option of NETCODE_OPTIONS) { this.#netcodeOption.add(new Option(option.name, option.id)); }
+    for (const preset of DELAY_PRESETS) { this.#netcodeDelay.add(new Option(preset.name, String(preset.roundTripMs))); }
     const equipment = element<HTMLFieldSetElement>(roots.loadout, "#arena-equipment");
     SLOT_LABELS.forEach((name, slot) => {
       const label = document.createElement("label"); label.append(name);
@@ -85,9 +96,18 @@ export class BattleRoyaleEntry {
     this.#hash.value = query.get("certHash") ?? "";
     // A match server in the URL asks for the hosted match; otherwise the arena is practice.
     this.#modeInput(server ? "hosted" : "practice").checked = true;
-    this.#hosted.hidden = this.practice;
+    // A netcode trial in the URL (#680): `?netcode=baseline|predicted|rewind&delay=50|100|150`.
+    const trial = netcodeTrialFromQuery(window.location.search);
+    if (trial) {
+      this.#netcodeOption.value = trial.option;
+      this.#netcodeDelay.value = String(trial.roundTripMs);
+    }
+    this.#showRoute();
     for (const input of roots.route.querySelectorAll<HTMLInputElement>('input[name="arena-mode"]')) {
-      input.addEventListener("change", () => { this.#hosted.hidden = this.practice; this.#describe(); });
+      input.addEventListener("change", () => { this.#showRoute(); this.#describe(); });
+    }
+    for (const select of [this.#netcodeOption, this.#netcodeDelay]) {
+      select.addEventListener("change", () => { this.#showRoute(); this.#describe(); });
     }
     if (query.get("activity") === "battle-royale") { activity.value = "battle-royale"; }
     this.#look.addEventListener("change", () => {
@@ -104,6 +124,20 @@ export class BattleRoyaleEntry {
   get selected(): boolean { return this.#activity.value === "battle-royale"; }
   /** Whether the arena is the local practice arena (#550) rather than a hosted match. */
   get practice(): boolean { return this.#modeInput("practice").checked; }
+  /**
+   * The practice match's netcode trial (#680), or null for ordinary practice: an option to compare
+   * and a simulated round trip, fixed for the match (a reset starts another with the current choice).
+   */
+  netcodeTrial(): NetcodeTrial | null {
+    const option = this.#netcodeOption.value;
+    if (!this.practice || !isNetcodeOption(option)) { return null; }
+    return { option, roundTripMs: Number(this.#netcodeDelay.value) };
+  }
+  #showRoute(): void {
+    this.#hosted.hidden = this.practice;
+    this.#netcode.hidden = !this.practice;
+    this.#netcodeDelay.disabled = !isNetcodeOption(this.#netcodeOption.value);
+  }
   #modeInput(mode: "practice" | "hosted"): HTMLInputElement {
     return element(this.#roots.route, `input[name="arena-mode"][value="${mode}"]`);
   }
@@ -155,7 +189,11 @@ export class BattleRoyaleEntry {
   #describe(): void {
     if (!this.#presentation) { return; }
     const level = this.#presentation.maximumLevel();
-    this.#note.textContent = this.practice
+    const trial = this.netcodeTrial();
+    const option = trial && NETCODE_OPTIONS.find((candidate) => candidate.id === trial.option);
+    this.#note.textContent = option
+      ? `Netcode trial: ${option.name.slice(4)} at ${trial.roundTripMs} ms round trip, against a sparring partner and training targets. Nothing is saved.`
+      : this.practice
       ? `Level ${level} practice against training targets, in this browser. Nothing is saved.`
       : `Level ${level} sandbox. Your world character progress stays separate. A real match host is required.`;
   }
