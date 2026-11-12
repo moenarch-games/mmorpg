@@ -184,6 +184,19 @@ export function eventText(event: ZoneEvent, snapshot: ZoneSnapshot, catalog: Con
         ? `Your ${aim} ${ability} cuts only air.`
         : `Your ${aim} ${ability} strikes ${name(event.target)}.`;
     }
+    // A timed swing's wind-up (#679): an opponent's shows, the viewer's own does not.
+    case "swing-began":
+      return isViewer(event.source) ? "" : `${capitalise(name(event.source))} winds up ${abilityName(event.ability, catalog)}!`;
+    case "clashed":
+      switch (event.meeting) {
+        case "swings":
+          return `${capitalise(name(event.source))} and ${name(event.target)} clash blades.`;
+        case "projectiles":
+          return "Two shots collide in the air.";
+        case "parry":
+          return `${capitalise(name(event.source))} ${isViewer(event.source) ? "cut" : "cuts"} down ${name(event.target)}'s shot.`;
+      }
+      return "";
     case "healed":
       return `${abilityName(event.ability, catalog)} heals ${name(event.target)} for ${event.amount}.`;
     case "aura-applied":
