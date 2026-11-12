@@ -3,7 +3,7 @@ import { InstancedLevels } from "./instanced-levels";
 import { drawnResources, generateMissingTangents, loadBundleGltfs, shareMaterials } from "./static-bundle";
 
 /** A bundle the shared Rust presentation places at fixed placements. */
-export type PlacedKitName = "nature" | "climbing" | "limestone" | "river";
+export type PlacedKitName = "nature" | "climbing" | "crag" | "limestone" | "river";
 
 /** Where `scripts/fetch-bundles.sh` puts each bundle in `web/public`, and its descriptor attachment. */
 const KITS: Record<PlacedKitName, { bundle: string; descriptor: string; label: string }> = {
@@ -11,6 +11,8 @@ const KITS: Record<PlacedKitName, { bundle: string; descriptor: string; label: s
   nature: { bundle: `${import.meta.env.BASE_URL}scenery/greyhaven.nature/`, descriptor: "nature-descriptor", label: "greyhaven.nature" },
   /** The rolling `climbing-kit` bundle: Greyhaven's ladders, ropes and ivy (#621). */
   climbing: { bundle: `${import.meta.env.BASE_URL}scenery/climbing.kit/`, descriptor: "climbing-descriptor", label: "climbing.kit" },
+  /** The rolling `crag-kit` bundle: the rock modules over Greyhaven's highland crags (#668), KTX2 textures. */
+  crag: { bundle: `${import.meta.env.BASE_URL}scenery/crag.kit/`, descriptor: "crag-descriptor", label: "crag.kit" },
   /** The rolling `limestone-rocks` bundle: the blocks Greyhaven's rocks are drawn as (asset-tooling#536). */
   limestone: { bundle: `${import.meta.env.BASE_URL}scenery/limestone-rocks.kit/`, descriptor: "limestone-rocks-descriptor", label: "limestone-rocks.kit" },
   /** The rolling `river-stones` bundle: the stones along Greyhaven's watercourses (asset-tooling#538). */
@@ -49,6 +51,7 @@ export class PlacedKit {
   readonly #source: PlacedKitSource;
   #levels: InstancedLevels | null = null;
   #lods: KitLodsHandle | null = null;
+  #descriptor: string | null = null;
   #loading: Promise<boolean> | null = null;
   #changed = false;
   readonly #clip = new THREE.Matrix4();
@@ -79,7 +82,8 @@ export class PlacedKit {
     if (!attachment) { throw new Error(`the bundle has no ${kit.descriptor}`); }
     const descriptor = await fetch(new URL(attachment.path, base));
     if (!descriptor.ok) { throw new Error(`${kit.descriptor} ${descriptor.status}`); }
-    const lods = this.#source.lods(await descriptor.text());
+    const text = await descriptor.text();
+    const lods = this.#source.lods(text);
     const entries = this.#source.entries;
     const variants = entries.map((entry) => lods.variants(entry));
     const gltfs = await loadBundleGltfs(kit.bundle, variants.flat());
@@ -92,8 +96,14 @@ export class PlacedKit {
     let next = 0;
     const levels = variants.map((entryLevels) => entryLevels.map(() => gltfs[next++]!.scene));
     this.#levels = new InstancedLevels(kit.label, entries, levels, placements);
+    this.#descriptor = text;
     this.#lods = lods;
     this.#changed = true;
+  }
+
+  /** The bundle's descriptor JSON once the kit is drawn. */
+  get descriptor(): string | null {
+    return this.#lods ? this.#descriptor : null;
   }
 
   /** Whether the kit is drawn (loaded); the static scene hides its fallback then. */

@@ -66,6 +66,7 @@ function arenaScenery(local: LocalWorld, presentation: ArenaPresentation): Scene
     settlement: { entries: [], placements: [] },
     nature: { kit: "nature", entries: [], placements: [], lods: () => { throw new Error("The arena has no trees or rocks."); } },
     climbing: { kit: "climbing", entries: [], placements: [], lods: () => { throw new Error("The arena has no climbing kit."); } },
+    crag: { kit: "crag", entries: [], placements: [], lods: () => { throw new Error("The arena has no crags."); } },
     limestone: { kit: "limestone", entries: [], placements: [], lods: () => { throw new Error("The arena has no rocks."); } },
     river: { kit: "river", entries: [], placements: [], lods: () => { throw new Error("The arena has no river."); } },
     ambient: { entries: [], clips: [], anchors: [], frame: () => emptyMotion },

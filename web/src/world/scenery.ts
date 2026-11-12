@@ -181,6 +181,8 @@ export type SceneryProvider = {
   readonly nature: PlacedKitSource;
   /** Greyhaven's ladders, ropes and ivy from the `climbing-kit` bundle (#621). */
   readonly climbing: PlacedKitSource;
+  /** Greyhaven's highland crags dressed with the `crag-kit` rock modules (#668). */
+  readonly crag: PlacedKitSource;
   /** The limestone blocks Greyhaven's rocks are drawn as, from the `limestone-rocks` bundle. */
   readonly limestone: PlacedKitSource;
   /** The stones along Greyhaven's watercourses, from the `river-stones` bundle. */
@@ -505,6 +507,7 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
     fortress: null,
     nature: placedKit(content, "nature"),
     climbing: placedKit(content, "climbing"),
+    crag: placedKit(content, "crag"),
     limestone: placedKit(content, "limestone"),
     river: placedKit(content, "river"),
     ambient: (() => {

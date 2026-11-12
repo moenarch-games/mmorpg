@@ -386,6 +386,7 @@ export class WorldView {
   /** Greyhaven's trees, rocks and bushes (#49), drawn from asset-tooling's bundle once loaded; the procedural ones until then. */
   #nature: PlacedKit | null = null;
   #climbing: PlacedKit | null = null;
+  #crag: PlacedKit | null = null;
   #limestone: PlacedKit | null = null;
   #river: PlacedKit | null = null;
   #ground: Ground | null = null;
@@ -411,7 +412,7 @@ export class WorldView {
   /** Models loaded so far with their clip lengths, replayed into each new presenter. */
   readonly #loadedModels: [ImportedModelKind, [string, number][], string | null][] = [];
   /** The shared unit presenter (#184) of the current viewer. */
-  #units: { viewerId: number; units: SharedUnits; pushed: ZoneSnapshot | null; residents: boolean; kitPlatforms: boolean } | null = null;
+  #units: { viewerId: number; units: SharedUnits; pushed: ZoneSnapshot | null; residents: boolean; kitPlatforms: boolean; cragFaces: boolean } | null = null;
   /** Combat sounds (#447), once the bundle loaded; silent until then. */
   #sound: WorldSound | null = null;
   #audioPreferences: AudioPreferences | null = null;
@@ -670,6 +671,8 @@ export class WorldView {
     void this.#nature.load();
     this.#climbing = new PlacedKit(world.scenery.climbing);
     void this.#climbing.load();
+    this.#crag = new PlacedKit(world.scenery.crag);
+    void this.#crag.load();
     this.#limestone = new PlacedKit(world.scenery.limestone);
     void this.#limestone.load();
     this.#river = new PlacedKit(world.scenery.river);
@@ -1143,7 +1146,7 @@ export class WorldView {
     this.#models.clear();
     const { roots, changed } = this.#models.roots();
     if (changed && this.#lastCamera) {
-      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...(this.#sceneryBatches ? [this.#sceneryBatches.root] : []), ...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.drawn && this.#fortifications?.drawn ? [...this.#outpost.roots().roots, ...this.#fortifications.roots().roots] : []), ...(this.#settlement?.roots().roots ?? []), ...(this.#fortress?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#nature?.roots().roots ?? []), ...(this.#climbing?.roots().roots ?? []), ...(this.#limestone?.roots().roots ?? []), ...(this.#river?.roots().roots ?? []),...(this.#ground?.roots().roots ?? []), this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root] });
+      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...(this.#sceneryBatches ? [this.#sceneryBatches.root] : []), ...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.drawn && this.#fortifications?.drawn ? [...this.#outpost.roots().roots, ...this.#fortifications.roots().roots] : []), ...(this.#settlement?.roots().roots ?? []), ...(this.#fortress?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#nature?.roots().roots ?? []), ...(this.#climbing?.roots().roots ?? []), ...(this.#crag?.roots().roots ?? []), ...(this.#limestone?.roots().roots ?? []), ...(this.#river?.roots().roots ?? []),...(this.#ground?.roots().roots ?? []), this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root] });
     }
   }
 
@@ -1543,13 +1546,19 @@ export class WorldView {
       for (const [kind, clips, descriptor] of this.#loadedModels) { units.modelReady(kind, clips, descriptor); }
       if (this.#blend) { units.setBlend(this.#blend); }
       if (this.#bodyOverlay) { units.setBodyOverlay(true); }
-      this.#units = { viewerId: projection.viewerId, units, pushed: null, residents: false, kitPlatforms: false };
+      this.#units = { viewerId: projection.viewerId, units, pushed: null, residents: false, kitPlatforms: false, cragFaces: false };
     }
     const units = this.#units.units;
     if (!this.#units.kitPlatforms && this.#fortress?.drawn) {
       // The fortress kit's lifts (#591) replace the presenter's pillars once drawn.
       this.#units.kitPlatforms = true;
       units.setKitPlatforms(this.#fortress.platforms);
+    }
+    const cragDescriptor = this.#crag?.descriptor;
+    if (!this.#units.cragFaces && cragDescriptor) {
+      // Climbers on the crag kit's climbable faces (#668) are drawn out to its rock once it is drawn.
+      this.#units.cragFaces = true;
+      units.setCragDescriptor(cragDescriptor);
     }
     this.#regions?.approach(entitiesSelf(projection), scenery.scenery.areas);
     for (const [kind, clips, descriptor] of this.#models.drainLoaded()) {
@@ -1652,7 +1661,7 @@ export class WorldView {
       this.#sound.pump();
     }
     const outpostReady = (this.#outpost?.drawn ?? false) && (this.#fortifications?.drawn ?? false);
-    const kits = { outpost: outpostReady, settlementProps: this.#settlement?.drawn ?? false, nature: this.#nature?.drawn ?? false, climbing: this.#climbing?.drawn ?? false, fortress: this.#fortress?.drawn ?? false };
+    const kits = { outpost: outpostReady, settlementProps: this.#settlement?.drawn ?? false, nature: this.#nature?.drawn ?? false, climbing: this.#climbing?.drawn ?? false, crag: this.#crag?.drawn ?? false, fortress: this.#fortress?.drawn ?? false };
     const batches = this.#sceneryBatches;
     if (batches) { batches.stream(view.eye, { ...kits, dressed: this.#fortress?.drawn ? world.scenery.dressedProps?.() ?? NO_DRESSED : NO_DRESSED }); }
     const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits, resident: batches ? (group) => batches.resident(group) : () => true });
@@ -1660,6 +1669,7 @@ export class WorldView {
     this.#ground?.update(this.#plan ? [view.eye[0], 0, view.eye[2]] : view.eye, frame.shown);
     this.#nature?.update(this.#camera, deltaSeconds, animate);
     this.#climbing?.update(this.#camera, deltaSeconds, animate);
+    this.#crag?.update(this.#camera, deltaSeconds, animate);
     this.#limestone?.update(this.#camera, deltaSeconds, animate);
     this.#river?.update(this.#camera, deltaSeconds, animate);
     this.#fortress?.update(this.#camera, deltaSeconds, animate);
@@ -1708,13 +1718,14 @@ export class WorldView {
     const ambient = this.#ambient?.roots() ?? { roots: [], changed: false };
     const nature = this.#nature?.roots() ?? { roots: [], changed: false };
     const climbing = this.#climbing?.roots() ?? { roots: [], changed: false };
+    const crag = this.#crag?.roots() ?? { roots: [], changed: false };
     const limestone = this.#limestone?.roots() ?? { roots: [], changed: false };
     const river = this.#river?.roots() ?? { roots: [], changed: false };
     const sceneryBatches = this.#sceneryBatches ? [this.#sceneryBatches.root] : [];
     const sceneryChanged = this.#sceneryBatchesChanged;
     this.#sceneryBatchesChanged = false;
     const ground = this.#ground?.roots() ?? { roots: [], changed: false };
-    const roots = [...sceneryBatches, ...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...fortifications.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, ...climbing.roots, ...limestone.roots, ...river.roots, ...ground.roots, this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root];
+    const roots = [...sceneryBatches, ...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...fortifications.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, ...climbing.roots, ...crag.roots, ...limestone.roots, ...river.roots, ...ground.roots, this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root];
     // No scene background: `Lighting` clears its own frame, and three would clear to the background again in each of its
     // passes, wiping the sky (#600). The environment's fog still fogs the unlit sprites.
     const { background: _background, ...withoutBackground } = environment;
@@ -1736,7 +1747,7 @@ export class WorldView {
       this.#preparing.push(this.#renderer.prepare(rendererFrame, { roots }));
       return;
     }
-    if (sceneryChanged || models.changed || inn.changed || shrine.changed || outpost.changed || fortifications.changed || settlement.changed || fortress.changed || ambient.changed || nature.changed || climbing.changed || limestone.changed || river.changed || ground.changed || !this.#impacts.root.parent || !this.#raidSmoke.root.parent || !this.#raidSigns.root.parent) {
+    if (sceneryChanged || models.changed || inn.changed || shrine.changed || outpost.changed || fortifications.changed || settlement.changed || fortress.changed || ambient.changed || nature.changed || climbing.changed || crag.changed || limestone.changed || river.changed || ground.changed || !this.#impacts.root.parent || !this.#raidSmoke.root.parent || !this.#raidSigns.root.parent) {
       this.#renderer.renderImportedRoots({ camera, roots });
     }
     const work = this.#renderer.render(rendererFrame);
@@ -2261,6 +2272,8 @@ export class WorldView {
       nature: () => this.#nature?.observe() ?? null,
       /** Greyhaven's ladders, ropes and ivy (#621): whether the climbing kit loaded, and how many instances each part level draws. */
       climbing: () => this.#climbing?.observe() ?? null,
+      /** Greyhaven's highland crags (#668): whether the crag kit loaded, and how many instances each module level draws. */
+      crag: () => this.#crag?.observe() ?? null,
       /** The limestone blocks Greyhaven's rocks are drawn as (asset-tooling#536), likewise. */
       limestone: () => this.#limestone?.observe() ?? null,
       /** The stones along Greyhaven's watercourses (asset-tooling#538), likewise. */

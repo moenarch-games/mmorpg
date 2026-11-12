@@ -388,10 +388,22 @@ impl UnitPresenter {
         self.kit_platforms = platforms;
     }
 
-    /// The climbable crag faces the client's crag kit dresses (#668, [`crate::crag::Faces`]):
-    /// a climber holding one is drawn out to the modules' rock. Empty while the kit is not drawn.
-    pub fn set_crag_faces(&mut self, faces: crate::crag::Faces) {
-        self.crag_faces = faces;
+    /// The crag kit's `crag-descriptor` JSON once the client draws the kit (#668), or `None`
+    /// while it does not: a climber holding a dressed climbable face is drawn out to the
+    /// modules' grip plane ([`crate::crag::Faces`]).
+    ///
+    /// # Errors
+    ///
+    /// For a malformed descriptor; the faces are then left undressed.
+    pub fn set_crag_descriptor(&mut self, json: Option<&str>) -> Result<(), String> {
+        self.crag_faces = crate::crag::Faces::default();
+        if let Some(json) = json {
+            let radius = f64::from(mmorpg_core::PLAYER_HALF_EXTENTS_UNITS[0])
+                / f64::from(mmorpg_core::UNITS_PER_METRE);
+            let climbs = crate::crag::descriptor_climbs(json)?;
+            self.crag_faces = crate::crag::Faces::new(&self.scenery, &climbs, radius);
+        }
+        Ok(())
     }
 
     /// Shows or hides the development body overlay (#39): every unit's authoritative collision

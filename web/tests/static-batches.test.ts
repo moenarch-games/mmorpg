@@ -71,7 +71,7 @@ describe("BatchedScenery", () => {
   }) satisfies StaticBatch;
   const updates: number[][] = [];
   const stream: GroupStreamSource = { update: () => Uint32Array.from(updates.shift() ?? [0, 0]) };
-  const kits = { outpost: false, settlementProps: false, nature: false, climbing: false, dressed: new Uint32Array() };
+  const kits = { outpost: false, settlementProps: false, nature: false, climbing: false, crag: false, dressed: new Uint32Array() };
   const scenery = () => new BatchedScenery({ batches: [group(0), group(1), group(2)], instanceBatches: [], water: [], animated: [] }, stream);
 
   test("a group draws only once resident and an evicted one frees its instance", () => {
