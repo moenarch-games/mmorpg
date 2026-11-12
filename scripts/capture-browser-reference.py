@@ -5,6 +5,9 @@ The native test `greyhaven_lighting_shots` writes `re9-<name>.png` and `views.js
 eye, target, field of view and zone hour. This script poses the browser's camera
 (`window.__valeDebug.flyToPose`) and sky clock (`setPresentationTime`) the same way and saves the
 world canvas alone, with the HUD hidden, as `<name>.web.png` at the native size and pixel ratio 1.
+Like the native test it captures with reduced motion (flames' flicker, reeds and idle poses held,
+levels of detail switched at once) and the default character (a male Warden), and it holds the
+zone (`holdWorld`) once entered, so the shots differ only in rendering (#753).
 Compare the pairs with FLIP (render-engine's `oracle --flip-images`); the numbers are records,
 not a gate.
 
@@ -75,7 +78,8 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel=args.channel, args=GPU_ARGS)
-        context = browser.new_context(viewport={"width": width, "height": height}, device_scale_factor=1)
+        context = browser.new_context(viewport={"width": width, "height": height}, device_scale_factor=1,
+                                      reduced_motion="reduce")
         page = context.new_page()
         errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
@@ -85,6 +89,7 @@ def main():
         enter.focus()
         page.keyboard.press("Enter")
         expect(page.locator("#character-select")).to_be_hidden(timeout=60_000)
+        page.evaluate("window.__valeDebug.holdWorld(true)")
         page.evaluate("window.__valeDebug.fetchAllArt()")
         page.add_style_tag(content=WORLD_ONLY)
         box = page.locator("#world").bounding_box()

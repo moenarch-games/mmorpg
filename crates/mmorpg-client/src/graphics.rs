@@ -732,6 +732,11 @@ mod tests {
     /// campfire and the lantern post by night, the woods' levels of detail and the
     /// `outpost_frame_time` views at the zone's hour (`re9-frame-*`), as PNGs in
     /// `MMORPG_LIGHTING_SHOTS` with each shot's pose and hour in `views.json`.
+    ///
+    /// The browser captures the same shots (scripts/capture-browser-reference.py), so both
+    /// differ only in rendering (#753): the browser's default character (a male Warden), and
+    /// reduced motion, which holds the flames' flicker, the reeds and the idle poses still and
+    /// switches levels of detail at once instead of cross-fading.
     #[test]
     #[ignore = "requires a GPU; manual lighting evidence"]
     fn greyhaven_lighting_shots() {
@@ -747,7 +752,7 @@ mod tests {
             let mut zone =
                 ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content)).unwrap();
             zone.add_player(1).unwrap();
-            zone.apply_command(1, 1, ZoneCommand::ChooseClass { class: 1, sex: 0 })
+            zone.apply_command(1, 1, ZoneCommand::ChooseClass { class: 0, sex: 1 })
                 .unwrap();
             zone.advance_tick().unwrap();
             let projection = zone.snapshot_for_player(1).unwrap();
@@ -756,6 +761,7 @@ mod tests {
             let now = Instant::now();
             let mut presentation =
                 Presentation::new(1, scenery.clone(), Arc::clone(&content), now).unwrap();
+            presentation.set_reduced_motion(true);
             presentation.push(projection, now).unwrap();
             let hub = presentation.camera_view(&mut OrbitCamera::default(), &world, now);
             let lights = world.frame(0.0, false, hub.eye, None).lighting.point_lights;
