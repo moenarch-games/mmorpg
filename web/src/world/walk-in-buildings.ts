@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { CameraView, Vec3 } from "./orbit-camera";
 import { BatchedRoots } from "./static-batches";
 import { loadStaticBundle } from "./static-bundle";
 import type { BuildingPresenterHandle } from "./scenery";
@@ -66,6 +67,25 @@ export class WalkInBuildings {
       building.frame = building.presenter.frame(open, Float64Array.from(viewer ?? []), dt, reducedMotion);
       place(building);
     }
+  }
+
+  /** Shared adaptive boom; each presenter retains its smooth recovery outside the room. */
+  camera(view: CameraView, viewer: Vec3, dt: number, reduced: boolean): CameraView {
+    let eye = view.eye;
+    for (const building of this.#buildings) {
+      const result = building.presenter.camera(Float64Array.from(viewer), Float64Array.from(eye), Float64Array.from(view.target), dt, reduced);
+      eye = [result[0]!, result[1]!, result[2]!];
+    }
+    return { eye, target: view.target };
+  }
+
+  interior(viewer: Vec3): number {
+    return this.#buildings.reduce((value, building) => Math.max(value, building.presenter.lighting(Float64Array.from(viewer))), 0);
+  }
+
+  pointLights(existing: Float32Array): Float32Array {
+    const lamps = this.#buildings.flatMap((building) => Array.from(building.presenter.pointLight()));
+    return lamps.length ? Float32Array.from([...existing, ...lamps]) : existing;
   }
 
   /** The drawn roots, and whether the set changed since the last call. */

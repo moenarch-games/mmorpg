@@ -87,7 +87,15 @@ pub fn point_lights(scene: &StaticScene, scenery: &Scenery) -> Vec<PointLight> {
             range: 16.,
             flicker: Some(i as f64 * 1.7),
         });
-    fires.chain(lamps).chain(lanterns).chain(torches).collect()
+    let rooms = crate::buildings::WalkIn::all(scenery)
+        .into_iter()
+        .filter_map(|building| building.light());
+    fires
+        .chain(lamps)
+        .chain(lanterns)
+        .chain(torches)
+        .chain(rooms)
+        .collect()
 }
 
 /// Torch flames in Redbrand's public cave: above head height, attached to solid walls.

@@ -127,6 +127,7 @@ fetch_rolling redbrand-kit redbrand.kit characters/redbrand.kit
 # The hair and beard kit (#677, asset-tooling#525): the male figures' hairstyles and beards as
 # skinned pieces on his head joint, with KTX2 textures.
 fetch_rolling hair-kit hair.kit characters/hair.kit
+fetch_rolling monuments monuments.kit buildings/monuments.kit
 fetch greyhaven-inn-v1 greyhaven.inn buildings/greyhaven.inn
 fetch_rolling shrine-kit shrine.kit scenery/shrine.kit
 # Greyhaven's cosmetic cat, dog and rodent (#419).

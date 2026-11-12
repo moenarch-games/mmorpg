@@ -206,6 +206,15 @@ fn main() {
         Some(&MARSHAL_HOUSE),
         false,
     );
+    static_bundle(
+        "monuments_bundle.rs",
+        &manifest_dir.join("../../web/public/buildings/monuments.kit"),
+        Some(&[
+            "monuments.kit.mausoleum-walk-in",
+            "monuments.kit.mausoleum-walk-in-roof",
+        ]),
+        false,
+    );
     // Every module of the Sunken Shrine kit (#431).
     static_bundle(
         "shrine_bundle.rs",

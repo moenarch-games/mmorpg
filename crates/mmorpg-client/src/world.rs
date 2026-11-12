@@ -255,6 +255,7 @@ pub struct WorldScene {
     pub additional_draws: Vec<SceneDraw>,
     scene: StaticScene,
     cave_lighting: bool,
+    building_interiors: Vec<mmorpg_presentation::buildings::WalkIn>,
     /// The static groups and terrain tiles resident around the camera (#526).
     statics: Locked<Statics>,
     water_draws: DrawBatch,
@@ -535,6 +536,7 @@ impl WorldScene {
         Self {
             nature: NatureState::new(nature),
             cave_lighting: scenery.greyhaven(),
+            building_interiors: mmorpg_presentation::buildings::WalkIn::all(scenery),
             additional_draws: Vec::new(),
             point_lights,
             particle_sites,
@@ -604,6 +606,14 @@ impl WorldScene {
         } else {
             0.
         };
+        if let Some(viewer) = viewer {
+            lighting.interior = self
+                .building_interiors
+                .iter()
+                .fold(lighting.interior, |value, building| {
+                    value.max(building.lighting(viewer))
+                });
+        }
         lighting.point_lights = self
             .point_lights
             .iter()

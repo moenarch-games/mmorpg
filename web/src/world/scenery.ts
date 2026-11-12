@@ -88,6 +88,7 @@ export type SceneryContent = StaticSceneContent & {
   /** The shared walk-in building presenters (#158): door swing and interior look, one per building. */
   BuildingPresenter: (new (index: number) => BuildingPresenterHandle) & {
     count(): number;
+    mausoleum(descriptor: string, x: number, y: number, z: number, quarters: number): BuildingPresenterHandle;
     reachableDoor(x: number, z: number): number;
     reachableSeat(x: number, z: number): number;
   };
@@ -146,6 +147,9 @@ export type BuildingPresenterHandle = {
   bundle(): string;
   door(): number;
   doorEntry(): string;
+  camera(viewer: Float64Array, eye: Float64Array, target: Float64Array, dt: number, reduced: boolean): Float64Array;
+  lighting(viewer: Float64Array): number;
+  pointLight(): Float64Array;
   /** The bundle entries, in `frame` order. */
   entries(): string[];
   /** Per entry 16 column-major model floats then 1 shown / 0 hidden; `viewer` is feet in metres or empty. */
