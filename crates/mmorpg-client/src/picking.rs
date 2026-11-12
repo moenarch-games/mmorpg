@@ -430,7 +430,9 @@ mod tests {
         let out = (x - pixel_of([0., 1., -0.05])[0]).signum();
         assert_eq!(
             click(&p, [x + 4. * out, y]),
-            Some(Picked::Door(mmorpg_presentation::buildings::INN.door))
+            Some(Picked::Door(
+                mmorpg_presentation::buildings::INN.door.unwrap()
+            ))
         );
     }
 }
