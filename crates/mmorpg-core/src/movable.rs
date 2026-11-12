@@ -131,7 +131,18 @@ impl ZoneSimulation {
             .iter()
             .map(|&(id, _)| body_id(EntityRef::Creature(id)))
             .collect();
-        self.world.step_props(&mut bodies, &exclude);
+        // A crate in water floats and drifts with the current (#667).
+        let kinds: Vec<_> = moving
+            .iter()
+            .map(|&(id, _)| {
+                Self::creature_content(&self.content, id)
+                    .ok()
+                    .and_then(|(_, template)| template.prop())
+                    .unwrap_or(crate::PropKind::HeavyCrate)
+            })
+            .collect();
+        let media = self.piece_media(&bodies, kinds);
+        self.world.step_props(&mut bodies, &exclude, &media);
         for ((id, _), body) in moving.into_iter().zip(bodies) {
             let velocity = if body.resting {
                 [0.0; 3]

@@ -1079,6 +1079,15 @@ impl ZoneSimulation {
                 Vec3i::ZERO
             };
             velocity.y = vertical_velocity;
+            // A channel's current carries a swimmer, and a wader by depth (#667, Decision 17).
+            if alive {
+                let [x, z] = crate::water::current_push(
+                    self.content.waters(),
+                    [centre.x, centre.y - PLAYER_HALF_EXTENTS_UNITS[1], centre.z],
+                );
+                velocity.x = velocity.x.saturating_add(x);
+                velocity.z = velocity.z.saturating_add(z);
+            }
             // A follow-up's launch (#413), along the facing and upward.
             if let Some([forward, up]) = state.impulse.filter(|_| alive) {
                 let (dx, dz) = trig::direction(state.facing);

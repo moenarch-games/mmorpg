@@ -15,6 +15,7 @@ mod aura;
 mod boss;
 mod boulder;
 mod breakable;
+pub mod buoyancy;
 mod casting;
 mod character;
 mod chat;

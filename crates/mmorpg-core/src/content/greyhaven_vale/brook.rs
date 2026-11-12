@@ -11,6 +11,12 @@ pub const BED_DEPTH: i32 = 35;
 pub const UPPER_SURFACE: i32 = super::lake::SURFACE;
 pub const UPPER_HALF_WIDTH: i32 = 130;
 
+/// Current speeds (units per second, #667), downstream along the authored points: the village
+/// brook runs gently, the rim's inflow and outlet faster. Tuning, not approved numbers.
+pub const CURRENT: i32 = 60;
+pub const INFLOW_CURRENT: i32 = 90;
+pub const OUTLET_CURRENT: i32 = 120;
+
 /// Authored control points, shared by terrain, authoritative water and client scenery.
 pub fn village() -> &'static [[i32; 2]] {
     &super::landscape::data().watercourses.village
@@ -35,12 +41,13 @@ pub fn channel() -> WaterChannel {
     WaterChannel {
         points: village().to_vec(),
         half_width: HALF_WIDTH,
+        current: CURRENT,
     }
 }
 
 #[must_use]
 pub fn waters() -> [WaterVolume; 3] {
-    let volume = |name: &str, points: &[[i32; 2]], width, surface| WaterVolume {
+    let volume = |name: &str, points: &[[i32; 2]], width, surface, current| WaterVolume {
         name: name.to_owned(),
         centre: points[0],
         radii: [width, width],
@@ -49,21 +56,24 @@ pub fn waters() -> [WaterVolume; 3] {
         channel: Some(WaterChannel {
             points: points.to_vec(),
             half_width: width,
+            current,
         }),
     };
     [
-        volume("Greyhaven Brook", village(), HALF_WIDTH, SURFACE),
+        volume("Greyhaven Brook", village(), HALF_WIDTH, SURFACE, CURRENT),
         volume(
             "Stillwater Inflow",
             inflow(),
             UPPER_HALF_WIDTH,
             UPPER_SURFACE,
+            INFLOW_CURRENT,
         ),
         volume(
             "Stillwater Outlet",
             outlet(),
             UPPER_HALF_WIDTH,
             UPPER_SURFACE,
+            OUTLET_CURRENT,
         ),
     ]
 }

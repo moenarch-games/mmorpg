@@ -32,6 +32,8 @@ pub const BREATH_REFILL_PER_TICK: u16 = 6;
 pub const DROWN_DAMAGE_PERCENT: u32 = 10;
 /// … every this many ticks (1 s).
 pub const DROWN_INTERVAL_TICKS: u16 = crate::ticks_from_ms(1_000);
+/// A channel's current is at most 5 m/s (#667).
+pub const MAX_CURRENT_UNITS_PER_SECOND: i32 = 500;
 /// At most this many water volumes per zone.
 pub const MAX_WATER_VOLUMES: usize = 10;
 /// An idle aquatic creature notices a submerged player this close (8 m) …
@@ -75,9 +77,47 @@ impl AirPocket {
 /// A shallow channel swept along an authored centre line; caps are round, in centimetres.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WaterChannel {
+    /// The centre line, downstream: the water runs from the first point to the last.
     pub points: Vec<[i32; 2]>,
     pub half_width: i32,
+    /// The current's speed along the centre line (units per second, #667).
+    pub current: i32,
 }
+impl WaterChannel {
+    /// The current at `(x, z)` (subunits per tick, XZ): [`Self::current`] along the closest
+    /// centre-line segment, downstream. Ties go to the earlier segment; integer arithmetic only,
+    /// so every host and client derives the same flow.
+    #[must_use]
+    pub fn flow_at(&self, x: i32, z: i32) -> [i32; 2] {
+        let mut best: Option<(i128, [i128; 2])> = None;
+        for p in self.points.windows(2) {
+            let [ax, az] = p[0].map(i128::from);
+            let [bx, bz] = p[1].map(i128::from);
+            let (dx, dz) = (bx - ax, bz - az);
+            let (px, pz) = (i128::from(x) - ax, i128::from(z) - az);
+            let length = dx * dx + dz * dz;
+            let along = px * dx + pz * dz;
+            // Squared distance to the segment (whole units², rounded down).
+            let distance = if along <= 0 {
+                px * px + pz * pz
+            } else if along >= length {
+                (px - dx).pow(2) + (pz - dz).pow(2)
+            } else {
+                (px * dz - pz * dx).pow(2) / length
+            };
+            if best.is_none_or(|(best, _)| distance < best) {
+                best = Some((distance, [dx, dz]));
+            }
+        }
+        let Some((_, [dx, dz])) = best else {
+            return [0, 0];
+        };
+        let length = (dx * dx + dz * dz).isqrt().max(1);
+        let speed = i128::from(crate::subunits_per_tick(self.current));
+        [dx, dz].map(|axis| i32::try_from(speed * axis / length).unwrap_or(0))
+    }
+}
+
 impl WaterChannel {
     #[must_use]
     pub fn contains(&self, x: i32, z: i32) -> bool {
@@ -132,6 +172,7 @@ impl WaterVolume {
         if let Some(channel) = &self.channel
             && (!(2..=32).contains(&channel.points.len())
                 || channel.half_width <= 0
+                || !(0..=MAX_CURRENT_UNITS_PER_SECOND).contains(&channel.current)
                 || channel.points.windows(2).any(|p| p[0] == p[1])
                 || channel.points.iter().flatten().any(|v| {
                     i64::from(*v).abs() + i64::from(channel.half_width)
@@ -315,6 +356,45 @@ pub fn swim_depth(waters: &[WaterVolume], feet: [i32; 3]) -> Option<i32> {
         .iter()
         .find(|water| water.contains(feet[0], feet[2]))?;
     Some(water.surface - feet[1])
+}
+
+/// Wading feet less than this deep (60 cm, about knee height) feel no current (#667, Decision
+/// 17): crossing the shallow brook stays ordinary movement. Tuning, not an approved number.
+pub const CURRENT_WADE_DEPTH_UNITS: i32 = 60;
+
+/// The share (percent) of the current that carries a unit with its feet `depth` units under the
+/// surface in `mode` (#667): none on dry land or in shallow water, rising linearly from
+/// [`CURRENT_WADE_DEPTH_UNITS`] to all of it at swimming depth ([`SWIM_DEPTH_UNITS`]); a swimmer
+/// drifts with all of it.
+#[must_use]
+pub fn current_share_percent(mode: WaterMode, depth: i32) -> i32 {
+    match mode {
+        WaterMode::Dry => 0,
+        WaterMode::Wading => ((depth - CURRENT_WADE_DEPTH_UNITS) * 100
+            / (SWIM_DEPTH_UNITS - CURRENT_WADE_DEPTH_UNITS))
+            .clamp(0, 100),
+        WaterMode::Swimming | WaterMode::Submerged => 100,
+    }
+}
+
+/// The current (subunits per tick, XZ) that carries a player-sized unit with its feet at `feet`
+/// (#667, Decision 17): the flow of the first volume over its feet, scaled by
+/// [`current_share_percent`] of its depth. Lakes and pools are still.
+#[must_use]
+pub fn current_push(waters: &[WaterVolume], feet: [i32; 3]) -> [i32; 2] {
+    let Some(water) = waters.iter().find(|water| water.contains(feet[0], feet[2])) else {
+        return [0, 0];
+    };
+    let Some(channel) = &water.channel else {
+        return [0, 0];
+    };
+    let share = current_share_percent(WaterMode::of_feet(waters, feet), water.surface - feet[1]);
+    if share == 0 {
+        return [0, 0];
+    }
+    channel
+        .flow_at(feet[0], feet[2])
+        .map(|axis| axis.saturating_mul(share) / 100)
 }
 
 /// The vertical velocity (subunits per tick) of a swimmer whose feet are `depth` units below the

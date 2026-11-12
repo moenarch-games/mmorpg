@@ -234,7 +234,10 @@ impl ZoneSimulation {
         let exclude: [BodyId; 1] = [body];
         // A slow boulder stops at units; a fast one rolls through and the zone resolves the hit.
         let units_block = length(motion.velocity) < IMPACT_SPEED;
-        self.world.step_boulders(&mut pieces, &exclude, units_block);
+        // A boulder in water sinks, slowed and pushed by the current (#667).
+        let media = self.piece_media(&pieces, [crate::PropKind::Boulder]);
+        self.world
+            .step_boulders(&mut pieces, &exclude, units_block, &media);
         let [piece] = pieces;
         motion.position = piece.position;
         motion.velocity = if piece.resting {
