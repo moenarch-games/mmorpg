@@ -48,6 +48,33 @@ const HEALTH_BAR_WIDTH: f32 = 1.0;
 const HEALTH_BAR_BACKGROUND: [f32; 3] = [0.12, 0.12, 0.14];
 const HEALTH_BAR_FILL: [f32; 3] = [0.18, 0.9, 0.25];
 
+/// Bound on confirmed impacts awaiting a frame; the oldest are dropped first.
+const MAX_PENDING_IMPACTS: usize = 32;
+
+/// The particle impacts one projection's confirmed events produce, in event order: hits puff
+/// and blocks ring on the struck unit (the browser's `impactCues`, #52). Only events the
+/// zone already delivered to this viewer; never a predicted or inferred outcome.
+#[must_use]
+pub fn impact_cues(
+    snapshot: &ZoneSnapshot,
+) -> Vec<(crate::world::ImpactKind, EntityRef, EntityRef)> {
+    use crate::world::ImpactKind;
+    use mmorpg_core::ZoneEvent;
+    snapshot
+        .events
+        .iter()
+        .filter_map(|event| match *event {
+            ZoneEvent::DamageDealt { source, target, .. }
+            | ZoneEvent::DamageTaken { source, target, .. }
+            | ZoneEvent::DamageObserved { source, target, .. } => {
+                Some((ImpactKind::Hit, source, target))
+            }
+            ZoneEvent::Blocked { source, target, .. } => Some((ImpactKind::Block, source, target)),
+            _ => None,
+        })
+        .collect()
+}
+
 /// One model (at most [`MODEL_BOX_BUDGET`] boxes) and two health-bar boxes per
 /// projected unit, plus one target marker.
 pub const MAX_SCENE_BOXES: usize = (MODEL_BOX_BUDGET + 2) * mmorpg_core::MAX_VISIBLE_ENTITIES + 1;
@@ -94,6 +121,11 @@ pub struct Presentation {
     /// Sound cues of the presented projections until the client plays them (#447).
     audio: mmorpg_presentation::audio::AudioCues,
     audio_ops: Vec<mmorpg_presentation::audio::AudioOp>,
+    /// Confirmed hits and blocks of newly accepted projections, until a frame places their GPU
+    /// particle bursts (#769): `(kind, striking unit, struck unit)`.
+    impacts: VecDeque<(crate::world::ImpactKind, EntityRef, EntityRef)>,
+    /// Each presented unit's body centre from the last draw, where impacts burst.
+    unit_centres: Vec<(EntityRef, [f32; 3])>,
     /// Native meshes of the shared draws, uploaded once per resource.
     lowering: crate::world::Lowering,
     headwear: Option<player::Hat>,
@@ -196,6 +228,8 @@ impl Presentation {
             units_presenter,
             audio: mmorpg_presentation::audio::AudioCues::default(),
             audio_ops: Vec::new(),
+            impacts: VecDeque::new(),
+            unit_centres: Vec::new(),
             lowering: crate::world::Lowering::default(),
             headwear: None,
             preview: None,
@@ -243,6 +277,8 @@ impl Presentation {
         self.gaits.clear();
         self.units_presenter.reset();
         self.audio_ops.extend(self.audio.reset());
+        self.impacts.clear();
+        self.unit_centres.clear();
         self.lowering = crate::world::Lowering::default();
         self.last_draw = now;
         self.last_scene = now;
@@ -288,6 +324,11 @@ impl Presentation {
             self.audio
                 .push(&snapshot, |unit| presenter.rendered(unit.position)),
         );
+        // Each accepted (strictly newer) projection admits its impacts exactly once.
+        self.impacts.extend(impact_cues(&snapshot));
+        while self.impacts.len() > MAX_PENDING_IMPACTS {
+            self.impacts.pop_front();
+        }
         self.latest_received = now;
         self.history.push_back(snapshot);
         if self.history.len() > 32 {
@@ -592,6 +633,15 @@ impl Presentation {
             .collect();
         self.picked_draws.clear();
         self.labels.clear();
+        self.unit_centres = frame
+            .units
+            .iter()
+            .map(|unit| {
+                #[allow(clippy::cast_possible_truncation)]
+                let [x, z] = [unit.feet[0], unit.feet[2]].map(|axis| axis as f32);
+                (unit.entity, [x, unit.centre_y, z])
+            })
+            .collect();
         for unit in &frame.units {
             self.picked_draws.extend(
                 draws[unit.body.clone()]
@@ -738,12 +788,42 @@ impl Presentation {
             frame.lighting.interior = interior;
         }
         frame.draws.extend(self.unit_draws(now, view));
+        frame.impacts = self.take_impacts();
         self.append_buildings(&mut frame.draws, now);
         frame.batches.push(Arc::clone(&self.shrine));
         frame.nature.extend_from_slice(&self.outpost_textured);
         frame.occluders.push(Arc::clone(&self.outpost));
         self.append_ambient(&mut frame.draws, now);
         frame
+    }
+
+    /// The pending impacts placed on their presented units (#769). An impact on a unit the
+    /// last draw did not present is dropped: particles never reveal an unseen unit.
+    fn take_impacts(&mut self) -> Vec<crate::world::ImpactBurst> {
+        let centre = |entity| {
+            self.unit_centres
+                .iter()
+                .find(|(unit, _)| *unit == entity)
+                .map(|(_, centre)| *centre)
+        };
+        self.impacts
+            .drain(..)
+            .filter_map(|(kind, source, target)| {
+                let position = centre(target)?;
+                let direction = centre(source)
+                    .map(|from| std::array::from_fn(|axis| position[axis] - from[axis]))
+                    .and_then(|d: [f32; 3]| {
+                        let length = d[0].hypot(d[1]).hypot(d[2]);
+                        (length > 1e-3).then(|| d.map(|axis| axis / length))
+                    })
+                    .unwrap_or([0.0, 1.0, 0.0]);
+                Some(crate::world::ImpactBurst {
+                    kind,
+                    position,
+                    direction,
+                })
+            })
+            .collect()
     }
 
     /// Greyhaven's cosmetic cat, dog and rodent (#419), skinned on their authored loops.
@@ -1398,4 +1478,58 @@ pub(crate) fn observed_imported_draws(count: usize, time: f32) -> Vec<crate::wor
             )
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mmorpg_core::{ZoneEvent, ZoneId, ZoneSimulation, greyhaven_vale};
+
+    /// A confirmed hit becomes exactly one GPU impact on the struck, presented unit (#769);
+    /// a repeated projection admits nothing twice, and an unseen unit's impact is dropped.
+    #[test]
+    fn confirmed_impacts_are_admitted_once_on_presented_units() {
+        let content = greyhaven_vale::content();
+        let scenery = mmorpg_scenery::greyhaven_vale_scenery();
+        let world = crate::world::WorldScene::new(&scenery);
+        let mut zone = ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content)).unwrap();
+        zone.add_player(1).unwrap();
+        zone.advance_tick().unwrap();
+        let now = Instant::now();
+        let mut presentation = Presentation::new(1, scenery, content, now).unwrap();
+        let viewer = EntityRef::Player(1);
+        let unseen = EntityRef::Player(99);
+        let mut snapshot = zone.snapshot_for_player(1).unwrap();
+        snapshot.events.extend([
+            ZoneEvent::DamageTaken {
+                source: unseen,
+                target: viewer,
+                amount: 3,
+                critical: false,
+            },
+            ZoneEvent::DamageDealt {
+                source: viewer,
+                target: unseen,
+                amount: 3,
+                critical: false,
+            },
+        ]);
+        let view = CameraView {
+            field_of_view_degrees: 50.0,
+            eye: [5.0, 8.5, 31.0],
+            target: [-14.0, 3.0, 4.0],
+        };
+        assert!(presentation.push(snapshot.clone(), now).unwrap());
+        let frame = presentation.frame(&world, now, view);
+        assert_eq!(frame.impacts.len(), 1, "{:?}", frame.impacts);
+        let impact = frame.impacts[0];
+        assert_eq!(impact.kind, crate::world::ImpactKind::Hit);
+        assert_eq!(
+            impact.direction,
+            [0.0, 1.0, 0.0],
+            "the unseen striker stays hidden"
+        );
+        assert!(!presentation.push(snapshot, now).unwrap());
+        assert!(presentation.frame(&world, now, view).impacts.is_empty());
+    }
 }
