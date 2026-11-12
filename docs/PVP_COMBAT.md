@@ -66,8 +66,9 @@ directed strikes still resolve in the tick their command arrives.
 
 Health alone decides fights: no clash moves anyone (Atlas 5.2.i679-2). The phase lengths, clash
 switches and radii are starting values to tune in play, as is the 2 s basic swing timer.
-The browser's practice arena runs these rules; hosted Battle Royale matches adopt them when
-`battle_royale_core::arena::content()` opts in.
+The browser's practice arena and hosted Battle Royale matches run these rules:
+`battle_royale_core::arena::content()` opts in (battle-royale #50). Greyhaven is unchanged
+until the arena playtest settles them.
 
 ## Arena netcode trial (#680, Atlas 5.9.i680)
 
