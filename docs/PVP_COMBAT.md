@@ -69,6 +69,41 @@ switches and radii are starting values to tune in play, as is the 2 s basic swin
 The browser's practice arena runs these rules; hosted Battle Royale matches adopt them when
 `battle_royale_core::arena::content()` opts in.
 
+## Arena netcode trial (#680, Atlas 5.9.i680)
+
+Three options a tester compares in an arena match; nothing is assumed to win and the owner picks
+what stays.
+
+1. **Baseline:** zone authority, every unit drawn 67 ms behind the newest projection, the own
+   body included (today's online path).
+2. **Predicted movement** (per client): `mmorpg_client_model::prediction::PredictedMovement`
+   moves the own body at once with `mmorpg_core::MovementPredictor`, a private zone over the same
+   content holding only that body, so it is the zone's own movement and physics. It keeps every
+   sent command until a projection acknowledges it; the first acknowledgement dates the command
+   on the zone's ticks, and each projection restarts the prediction from the zone's own body and
+   replays what was sent since. Other units, auras and combat are absent from the prediction;
+   the zone's answer corrects them within a round trip. Projections round velocity to whole units
+   per tick, so mid-air replays may drift by about half a unit per replayed tick
+   (`cargo test -p mmorpg-client-model --test prediction`).
+3. **Predicted movement plus capped hit rewind** (per match, the same for everyone):
+   `ZoneContent::with_hit_rewind(HitRewind::ARENA_TRIAL)` (needs timed swings; bound into the
+   content revision). When a swing begins the zone fixes its rewind from its own knowledge: the
+   ticks since the tick the strike's client had observed (the #415 lateness, which the zone
+   validates and caps at 150 ms) plus the clients' 67 ms interpolation (4 ticks), capped at the
+   match's **150 ms** (9 ticks; at most 200 ms for any match). The sweep then tests each body
+   where it stood that many ticks earlier, from the swinger's present position, through present
+   cover; eligibility, damage and deaths stay in the present. **Clashes are never rewound**: a
+   clash compares two swings launched from different views of the past, so it reads the
+   present. The position history is canonical (`RewindFrame`s for the last cap of ticks), so a
+   restored zone rewinds exactly like the original (`cargo test -p mmorpg-core --test
+   hit_rewind`). A command without an observation counts as on time (interpolation only).
+
+The cap is tuning: at 50 ms round trip a hit is rewound fully (3 + 4 ticks); from about 85 ms on
+the cap is reached. In the browser the Loadout's **Practice** route offers the option and a
+simulated round trip (see [BATTLE_ROYALE.md](BATTLE_ROYALE.md#netcode-trial-680)). Hosted
+matches need Battle Royale to choose the option per match through its arena content and the
+browser's hosted source to predict; both remain on #680.
+
 ## Mode observations and continuation
 
 A mode controller reads authoritative health/death from the zone's canonical snapshot;

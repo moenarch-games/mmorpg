@@ -20,6 +20,21 @@ in portrait the status line sits under the frames and the hotbar above the thumb
 (#551). Nothing is saved, and the Greyhaven roster,
 saves and the hosted path below are untouched.
 
+### Netcode trial (#680)
+
+Under **Practice** the route also offers a **Netcode trial**: Off (the practice above),
+**1 · Baseline**, **2 · Predicted movement** or **3 · Predicted + hit rewind**
+([PVP_COMBAT.md](PVP_COMBAT.md#arena-netcode-trial-680-atlas-59i680)), and a **simulated round
+trip** of none, 50, 100 or 150 ms (split into whole uplink and downlink ticks, no jitter). The
+URL can preset both: `?activity=battle-royale&netcode=rewind&delay=150`. A trial match
+(`LocalZone.forArenaTrial`) lets players fight and adds a **sparring partner**, a standard Warden
+the page drives inside the zone without delay: it closes to 2 m, circles and swings every 2.5 s
+within reach, so movement, hits and clashes can be felt. The page's zone stays the one
+authority; the trial source only delays commands to it and projections from it, sends timing-
+sensitive commands with the tick it had observed, and draws other units 67 ms behind like the
+online client. The option and delay hold for the match; **Reset practice (F9)** starts another
+with the current choice. Hosted matches do not offer the trial yet.
+
 ## The fortress (#552)
 
 Practice and hosted matches show the **same symmetric multilevel fortress** that Battle Royale
