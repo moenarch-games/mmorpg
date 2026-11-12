@@ -19,6 +19,8 @@ export const SETTING = {
   invertVerticalLook: "controls.invert_vertical_look",
   holdCamera: "controls.hold_camera",
   aimStyle: "controls.aim_style",
+  wheels: "controls.wheels",
+  wheelUsage: "controls.wheel_usage",
   reduceMotion: "accessibility.reduce_motion",
   masterVolume: "audio.master_volume",
   effectsVolume: "audio.effects_volume",
@@ -31,6 +33,10 @@ export const MOTION_CHOICES = ["system", "reduce", "full"] as const;
 export type MotionPreference = (typeof MOTION_CHOICES)[number];
 export type HoldCamera = "locked" | "free";
 export type AimStyle = "hold" | "armed";
+/** The fixed wheel's eight sector settings (#653), north first and clockwise. */
+export const WHEEL_SECTOR_SETTINGS = [1, 2, 3, 4, 5, 6, 7, 8].map((sector) => `controls.wheel_sector_${sector}`);
+/** Radial wheels (#653): on, the opt-in local usage counters, and the fixed wheel's action ids. */
+export type WheelPreferences = { enabled: boolean; countUsage: boolean; sectors: string[] };
 
 /**
  * The most canvas pixels drawn per CSS pixel for each render-resolution choice. GPU time scales with the pixel count:
@@ -67,6 +73,7 @@ export type ClientPreferences = {
   holdCamera: HoldCamera;
   /** How a manual aim (#649) throws: hold and release, or arm and left-click. */
   aimStyle: AimStyle;
+  wheels: WheelPreferences;
   reduceMotion: MotionPreference;
   /** Most canvas pixels per CSS pixel (`RENDER_RESOLUTION_PIXEL_RATIO`). */
   maxPixelRatio: number;
@@ -103,6 +110,14 @@ export function clientPreferences(values: Readonly<Record<string, SettingValue>>
     invertVerticalLook: inverted?.type === "bool" && inverted.value === true,
     holdCamera: holdCamera?.type === "choice" && holdCamera.value === "free" ? "free" : "locked",
     aimStyle: aimStyle?.type === "choice" && aimStyle.value === "armed" ? "armed" : "hold",
+    wheels: {
+      enabled: values[SETTING.wheels]?.type === "bool" && values[SETTING.wheels]?.value === true,
+      countUsage: values[SETTING.wheelUsage]?.type === "bool" && values[SETTING.wheelUsage]?.value === true,
+      sectors: WHEEL_SECTOR_SETTINGS.map((id) => {
+        const value = values[id];
+        return value?.type === "choice" ? value.value : "none";
+      }),
+    },
     reduceMotion: motion?.type === "choice" && isMotionPreference(motion.value) ? motion.value : "system",
     maxPixelRatio: RENDER_RESOLUTION_PIXEL_RATIO[resolution?.type === "choice" && isRenderResolution(resolution.value) ? resolution.value : "balanced"],
     audio: {

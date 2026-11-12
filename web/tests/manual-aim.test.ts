@@ -22,12 +22,12 @@ describe("manual bomb aim (#649)", () => {
     expect(mouse.motion(20, 0)).toBe(true);
     const landing = mouse.aimLanding(rogue(), 0);
     expect(landing?.[2]).toBeGreaterThan(1_100);
-    expect(mouse.leftClick()).toEqual({ outcome: "nothing", ended: "none", ability: null });
+    expect(mouse.leftClick()).toEqual({ outcome: "nothing", ended: "none", ability: null, action: null });
     expect(mouse.releaseAim(BOMB_SLOT, false)).toBe(BLASTING_BOMB);
     expect(mouse.owner()).toBe("focus");
     expect(mouse.releaseAim(BOMB_SLOT, false)).toBeUndefined();
     mouse.pressAim(BOMB_SLOT, BLASTING_BOMB, rogue(), false);
-    expect(mouse.rightClick()).toEqual({ outcome: "cancel", ended: "aim", ability: null });
+    expect(mouse.rightClick()).toEqual({ outcome: "cancel", ended: "aim", ability: null, action: null });
     expect(mouse.releaseAim(BOMB_SLOT, false)).toBeUndefined();
     mouse.pressAim(BOMB_SLOT, BLASTING_BOMB, rogue(), false);
     expect(mouse.releaseAim(BOMB_SLOT, true)).toBeUndefined();
@@ -43,7 +43,7 @@ describe("manual bomb aim (#649)", () => {
     expect(mouse.pressAim(BOMB_SLOT, BLASTING_BOMB, rogue(), false)).toBe("aim");
     expect(mouse.releaseAim(BOMB_SLOT, false)).toBeUndefined();
     expect(mouse.pressAim(BOMB_SLOT, BLASTING_BOMB, rogue(), false)).toBe("ignore");
-    expect(mouse.leftClick()).toEqual({ outcome: "throw", ended: "aim", ability: BLASTING_BOMB });
+    expect(mouse.leftClick()).toEqual({ outcome: "throw", ended: "aim", ability: BLASTING_BOMB, action: null });
     expect(mouse.owner()).toBe("free-look");
   });
 });

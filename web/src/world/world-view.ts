@@ -55,7 +55,8 @@ import { CharacterPane, type CharacterElements } from "./units/character-pane";
 import { abilitySlots, cancelCast, useAbilitySlot } from "./units/abilities";
 import { PowerDrawInput } from "./units/power-draw";
 import { HEROIC_STRIKE_ABILITY, canStrikeDirected, directedStrikeCommand } from "./units/directed-strike";
-import { MouseOwnerInput, type EndedGesture } from "./units/mouse-owner";
+import { MouseOwnerInput, type EndedGesture, type WheelKindName } from "./units/mouse-owner";
+import type { WheelPreferences } from "../settings/preferences";
 import { ShieldGuardHold, canGuard, guardCommand } from "./units/shield-guard";
 import { ClassHud } from "./units/class-hud";
 import { CombatHud } from "./units/combat-hud";
@@ -111,6 +112,21 @@ export type WorldViewElements = {
   /** Action bar, unit frames, cast bars and combat text. */
   classHud: HTMLElement;
 };
+
+/**
+ * Where the opt-in radial wheel usage counters (#653, Atlas 5.2.i653-2) live: this browser's local
+ * storage only, as JSON (opens, picks, cancels per wheel; milliseconds per mouse owner). Nothing is
+ * ever sent; read or copy it from the browser's storage tools.
+ */
+export const WHEEL_USAGE_KEY = "mmorpg.wheelUsage.v1";
+
+function readWheelUsage(): string | null {
+  try {
+    return localStorage.getItem(WHEEL_USAGE_KEY);
+  } catch {
+    return null;
+  }
+}
 
 /** A targeting or attack intent, resolved against the latest projection when it is sent. */
 export type Intent = (projection: ZoneSnapshot) => WorldCommand | null;
@@ -480,6 +496,17 @@ export class WorldView {
   #recaptureClick = false;
   /** Called when the browser takes Pointer Lock away (its Escape): the game menu opens (#636). */
   onPointerLockLost: (() => void) | null = null;
+  /** Runs a radial wheel's chosen action (#653) by its semantic id, as its own key would. */
+  onWheelAction: ((id: string) => void) | null = null;
+  /** Radial wheels (#653): Settings → Wheels. */
+  #wheels: WheelPreferences = { enabled: false, countUsage: false, sectors: [] };
+  /** When the open wheel's key went down: a quick tap keeps it open for a click. */
+  #wheelPressedAt = 0;
+  /** The open wheel's overlay, made on the first wheel, and the sectors it shows. */
+  #wheelElement: HTMLElement | null = null;
+  #wheelShown: string | null = null;
+  /** When the opt-in usage counters were last stored. */
+  #usageSavedAt = 0;
   #movementFacing = 0;
   #outbox: MovementOutbox;
   #shownArea: string | null = null;
@@ -781,6 +808,90 @@ export class WorldView {
   /** Follows the Settings choice of how a manual aim throws (#649). */
   setAimStyle(value: "hold" | "armed"): void {
     this.#mouse.setAimStyle(value);
+  }
+
+  /**
+   * Follows Settings → Wheels (#653): wheels on, the fixed wheel's sectors, and the opt-in usage
+   * counters, kept only in this browser's local storage under `WHEEL_USAGE_KEY`.
+   */
+  setWheels(wheels: WheelPreferences): void {
+    if (wheels.countUsage !== this.#wheels.countUsage) {
+      if (wheels.countUsage) {
+        this.#mouse.setUsageCounting(readWheelUsage() ?? "");
+      } else {
+        this.#saveWheelUsage(this.#mouse.countUsage(0));
+        this.#mouse.setUsageCounting(null);
+      }
+    }
+    this.#wheels = wheels;
+    if (!wheels.enabled && this.#mouse.owner() === "wheel") { this.interruptGesture(); }
+  }
+
+  /** A wheel key went down (#653): with wheels on, the fixed or context wheel takes the mouse. */
+  pressWheel(kind: WheelKindName): void {
+    const projection = this.#lastProjection;
+    if (!this.#wheels.enabled || !projection) { return; }
+    if (this.#mouse.openWheel(kind, this.#wheels.sectors, projection)) {
+      this.#powerDraw.cancel();
+      this.#wheelPressedAt = performance.now();
+    }
+    this.#updatePointerOwner();
+  }
+
+  /** The wheel key went up (or was `retired`): a flick runs its action; a tap keeps it open. */
+  releaseWheel(retired: boolean): void {
+    const release = this.#mouse.releaseWheel(performance.now() - this.#wheelPressedAt, retired);
+    if (release.outcome === "pick" && release.action !== null) { this.onWheelAction?.(release.action); }
+    this.#updatePointerOwner();
+  }
+
+  /** The open wheel (#653) over the canvas centre, its pointed-at sector lit; hidden otherwise. */
+  #showWheel(): void {
+    const projection = this.#lastProjection;
+    const view = projection ? this.#mouse.wheel(projection) : null;
+    if (!view) {
+      this.#wheelElement?.setAttribute("hidden", "");
+      this.#wheelShown = null;
+      return;
+    }
+    if (!this.#wheelElement) {
+      this.#wheelElement = document.createElement("div");
+      this.#wheelElement.className = "pie-wheel";
+      this.#wheelElement.setAttribute("aria-hidden", "true");
+      (this.#elements.canvas.parentElement ?? document.body).append(this.#wheelElement);
+    }
+    const wheel = this.#wheelElement;
+    const shown = JSON.stringify(view.sectors);
+    if (shown !== this.#wheelShown) {
+      this.#wheelShown = shown;
+      const radius = 118;
+      wheel.replaceChildren(...view.sectors.map((sector, index) => {
+        const turn = (index / view.sectors.length) * Math.PI * 2;
+        const label = document.createElement("span");
+        label.className = "pie-wheel-sector";
+        label.textContent = sector?.label ?? "—";
+        label.toggleAttribute("data-empty", !sector);
+        label.style.transform = `translate(-50%, -50%) translate(${Math.sin(turn) * radius}px, ${-Math.cos(turn) * radius}px)`;
+        return label;
+      }));
+    }
+    const rect = this.#elements.canvas.getBoundingClientRect();
+    wheel.style.left = `${rect.left + rect.width / 2}px`;
+    wheel.style.top = `${rect.top + rect.height / 2}px`;
+    wheel.dataset.kind = view.kind;
+    [...wheel.children].forEach((child, index) => child.classList.toggle("lit", index === view.highlight));
+    wheel.removeAttribute("hidden");
+  }
+
+  /** Stores the counters' JSON at most every 10 s, or at once with `now` 0; local only. */
+  #saveWheelUsage(json: string | undefined, now = 0): void {
+    if (json === undefined || (now !== 0 && now - this.#usageSavedAt < 10_000)) { return; }
+    this.#usageSavedAt = now;
+    try {
+      localStorage.setItem(WHEEL_USAGE_KEY, json);
+    } catch {
+      // Storage refused (private mode, quota): the counters keep counting in memory.
+    }
   }
 
   /**
@@ -1531,6 +1642,10 @@ export class WorldView {
     this.#camera.updateMatrixWorld(true);
     if (this.#plan) { applyPlanProjection(this.#camera, this.#plan); }
     this.#showAimLanding(projection, unitsPerMetre);
+    // The opt-in wheel usage counters (#653): time under each mouse owner, stored every 10 s.
+    if (this.#wheels.countUsage) {
+      this.#saveWheelUsage(this.#mouse.countUsage(Math.min(deltaSeconds, 1) * 1000), Math.max(now, 1));
+    }
     if (this.#sound) {
       const right = new THREE.Vector3().setFromMatrixColumn(this.#camera.matrixWorld, 0);
       this.#sound.listen(view.eye, [right.x, right.y, right.z]);
@@ -1790,10 +1905,15 @@ export class WorldView {
       return;
     }
     const click = this.#mouse.leftClick();
-    // An armed aim throws (#649); a hold or held aim ignores the left button; a wheel confirmed
-    // (no producer yet, #653).
+    // An armed aim throws (#649); a hold or held aim ignores the left button; a tapped-open wheel
+    // runs the pointed-at sector, or nothing from the centre (#653).
     if (click.outcome === "throw" && click.ability !== null) {
       this.#throwAimed(click.ability);
+      return;
+    }
+    if (click.outcome === "confirm") {
+      if (click.action !== null) { this.onWheelAction?.(click.action); }
+      this.#updatePointerOwner();
       return;
     }
     if (click.outcome !== "select") { return; }
@@ -1867,6 +1987,7 @@ export class WorldView {
       this.#mouse.gesture);
     this.#elements.canvas.dataset.pointerOwner = this.#pointerOwner;
     this.#elements.canvas.dataset.mouseOwner = this.#mouse.owner();
+    this.#showWheel();
   }
 
   #syncCameraMode(projection: ZoneSnapshot): void {
@@ -1888,6 +2009,8 @@ export class WorldView {
       // The gesture owns the motion (#636); a locked camera holds still, a free one keeps turning.
       const turn = this.#mouse.motion(event.movementX, event.movementY);
       this.#followGestureAim();
+      // An open wheel (#653) lights the sector the motion points at; the camera holds still.
+      if (this.#mouse.owner() === "wheel") { this.#showWheel(); }
       if (turn && (document.pointerLockElement === this.#elements.canvas || this.#mouse.owner() === "aim")) {
         this.#orbit.orbit(event.movementX * this.#lookSensitivity, event.movementY * this.#lookSensitivity);
       }

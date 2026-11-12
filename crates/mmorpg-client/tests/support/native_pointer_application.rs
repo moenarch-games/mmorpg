@@ -242,6 +242,7 @@ impl NativeApplication {
             orbit_buttons: HashSet::new(),
             cursor: None,
             mouse: MouseOwners::default(),
+            wheels: Wheels::default(),
             quit: false,
             recapture_click: false,
             pad_guard: None,

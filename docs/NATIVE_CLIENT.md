@@ -88,6 +88,7 @@ Controls:
 | Q | Swing immediately where the character faces (#517, #636), with or without selection |
 | G (hold) | A Warden's directed Heroic Strike: mouse motion picks side and height, release strikes (#154, #636) |
 | Z (hold) | A Warden's shield guard: mouse motion picks the lane (#156) |
+| T / K (hold) | With Settings → Wheels on: the fixed / context radial wheel; flick toward a sector and release, or tap and left-click; right click cancels ([controls](CONTROLS.md#radial-wheels-as-delivered-653), #653) |
 | Left click | Select at the centre reticle in captured free look, or under the visible cursor while focused (a focused click on empty world clears the focus); does nothing during a held strike or guard; when free look has been released, the first world click recaptures instead (#636) |
 | Right click | Cancel a held strike or guard without firing, otherwise cancel the cast (#636) |
 | N | Cycle visible NPCs |

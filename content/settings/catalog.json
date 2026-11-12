@@ -187,6 +187,590 @@
     {
       "target": "shared",
       "definition": {
+        "id": "controls.wheels",
+        "kind": {
+          "type": "bool"
+        },
+        "default": {
+          "type": "bool",
+          "value": false
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "controls.wheels",
+        "metadata": {
+          "label_key": "settings.controls.wheels.label",
+          "description_key": "settings.controls.wheels.description",
+          "category_key": "settings.category.wheels",
+          "order": 10,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.wheels"
+          ]
+        }
+      }
+    },
+    {
+      "target": "shared",
+      "definition": {
+        "id": "controls.wheel_usage",
+        "kind": {
+          "type": "bool"
+        },
+        "default": {
+          "type": "bool",
+          "value": false
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "controls.wheel_usage",
+        "metadata": {
+          "label_key": "settings.controls.wheel_usage.label",
+          "description_key": "settings.controls.wheel_usage.description",
+          "category_key": "settings.category.wheels",
+          "order": 20,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.wheel_usage"
+          ]
+        }
+      }
+    },
+    {
+      "target": "shared",
+      "definition": {
+        "id": "controls.wheel_sector_1",
+        "kind": {
+          "type": "choice",
+          "options": [
+            "none",
+            "ability.slot1",
+            "ability.slot2",
+            "ability.slot3",
+            "ability.slot4",
+            "ability.slot5",
+            "ability.slot6",
+            "ability.slot7",
+            "ability.slot8",
+            "ability.slot9",
+            "ability.slot10",
+            "ability.slot11",
+            "ability.slot12",
+            "ability.slot13",
+            "ability.slot14",
+            "ability.slot15",
+            "ability.slot16",
+            "ability.slot17",
+            "ability.slot18",
+            "ability.slot19",
+            "ability.slot20",
+            "combat.swing",
+            "move.roll",
+            "target.next",
+            "target.clear",
+            "ui.talk",
+            "ui.toggleVendor",
+            "minions.attack",
+            "minions.defend",
+            "minions.follow",
+            "minions.retreat",
+            "emote.wave",
+            "emote.bow",
+            "emote.cheer",
+            "emote.laugh",
+            "emote.point"
+          ]
+        },
+        "default": {
+          "type": "choice",
+          "value": "ability.slot1"
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "controls.wheel_sector_1",
+        "metadata": {
+          "label_key": "settings.controls.wheel_sector_1.label",
+          "description_key": "settings.controls.wheel_sector_1.description",
+          "category_key": "settings.category.wheels",
+          "order": 30,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.wheels"
+          ]
+        }
+      }
+    },
+    {
+      "target": "shared",
+      "definition": {
+        "id": "controls.wheel_sector_2",
+        "kind": {
+          "type": "choice",
+          "options": [
+            "none",
+            "ability.slot1",
+            "ability.slot2",
+            "ability.slot3",
+            "ability.slot4",
+            "ability.slot5",
+            "ability.slot6",
+            "ability.slot7",
+            "ability.slot8",
+            "ability.slot9",
+            "ability.slot10",
+            "ability.slot11",
+            "ability.slot12",
+            "ability.slot13",
+            "ability.slot14",
+            "ability.slot15",
+            "ability.slot16",
+            "ability.slot17",
+            "ability.slot18",
+            "ability.slot19",
+            "ability.slot20",
+            "combat.swing",
+            "move.roll",
+            "target.next",
+            "target.clear",
+            "ui.talk",
+            "ui.toggleVendor",
+            "minions.attack",
+            "minions.defend",
+            "minions.follow",
+            "minions.retreat",
+            "emote.wave",
+            "emote.bow",
+            "emote.cheer",
+            "emote.laugh",
+            "emote.point"
+          ]
+        },
+        "default": {
+          "type": "choice",
+          "value": "ability.slot2"
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "controls.wheel_sector_2",
+        "metadata": {
+          "label_key": "settings.controls.wheel_sector_2.label",
+          "description_key": "settings.controls.wheel_sector_2.description",
+          "category_key": "settings.category.wheels",
+          "order": 40,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.wheels"
+          ]
+        }
+      }
+    },
+    {
+      "target": "shared",
+      "definition": {
+        "id": "controls.wheel_sector_3",
+        "kind": {
+          "type": "choice",
+          "options": [
+            "none",
+            "ability.slot1",
+            "ability.slot2",
+            "ability.slot3",
+            "ability.slot4",
+            "ability.slot5",
+            "ability.slot6",
+            "ability.slot7",
+            "ability.slot8",
+            "ability.slot9",
+            "ability.slot10",
+            "ability.slot11",
+            "ability.slot12",
+            "ability.slot13",
+            "ability.slot14",
+            "ability.slot15",
+            "ability.slot16",
+            "ability.slot17",
+            "ability.slot18",
+            "ability.slot19",
+            "ability.slot20",
+            "combat.swing",
+            "move.roll",
+            "target.next",
+            "target.clear",
+            "ui.talk",
+            "ui.toggleVendor",
+            "minions.attack",
+            "minions.defend",
+            "minions.follow",
+            "minions.retreat",
+            "emote.wave",
+            "emote.bow",
+            "emote.cheer",
+            "emote.laugh",
+            "emote.point"
+          ]
+        },
+        "default": {
+          "type": "choice",
+          "value": "ability.slot3"
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "controls.wheel_sector_3",
+        "metadata": {
+          "label_key": "settings.controls.wheel_sector_3.label",
+          "description_key": "settings.controls.wheel_sector_3.description",
+          "category_key": "settings.category.wheels",
+          "order": 50,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.wheels"
+          ]
+        }
+      }
+    },
+    {
+      "target": "shared",
+      "definition": {
+        "id": "controls.wheel_sector_4",
+        "kind": {
+          "type": "choice",
+          "options": [
+            "none",
+            "ability.slot1",
+            "ability.slot2",
+            "ability.slot3",
+            "ability.slot4",
+            "ability.slot5",
+            "ability.slot6",
+            "ability.slot7",
+            "ability.slot8",
+            "ability.slot9",
+            "ability.slot10",
+            "ability.slot11",
+            "ability.slot12",
+            "ability.slot13",
+            "ability.slot14",
+            "ability.slot15",
+            "ability.slot16",
+            "ability.slot17",
+            "ability.slot18",
+            "ability.slot19",
+            "ability.slot20",
+            "combat.swing",
+            "move.roll",
+            "target.next",
+            "target.clear",
+            "ui.talk",
+            "ui.toggleVendor",
+            "minions.attack",
+            "minions.defend",
+            "minions.follow",
+            "minions.retreat",
+            "emote.wave",
+            "emote.bow",
+            "emote.cheer",
+            "emote.laugh",
+            "emote.point"
+          ]
+        },
+        "default": {
+          "type": "choice",
+          "value": "ability.slot4"
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "controls.wheel_sector_4",
+        "metadata": {
+          "label_key": "settings.controls.wheel_sector_4.label",
+          "description_key": "settings.controls.wheel_sector_4.description",
+          "category_key": "settings.category.wheels",
+          "order": 60,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.wheels"
+          ]
+        }
+      }
+    },
+    {
+      "target": "shared",
+      "definition": {
+        "id": "controls.wheel_sector_5",
+        "kind": {
+          "type": "choice",
+          "options": [
+            "none",
+            "ability.slot1",
+            "ability.slot2",
+            "ability.slot3",
+            "ability.slot4",
+            "ability.slot5",
+            "ability.slot6",
+            "ability.slot7",
+            "ability.slot8",
+            "ability.slot9",
+            "ability.slot10",
+            "ability.slot11",
+            "ability.slot12",
+            "ability.slot13",
+            "ability.slot14",
+            "ability.slot15",
+            "ability.slot16",
+            "ability.slot17",
+            "ability.slot18",
+            "ability.slot19",
+            "ability.slot20",
+            "combat.swing",
+            "move.roll",
+            "target.next",
+            "target.clear",
+            "ui.talk",
+            "ui.toggleVendor",
+            "minions.attack",
+            "minions.defend",
+            "minions.follow",
+            "minions.retreat",
+            "emote.wave",
+            "emote.bow",
+            "emote.cheer",
+            "emote.laugh",
+            "emote.point"
+          ]
+        },
+        "default": {
+          "type": "choice",
+          "value": "move.roll"
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "controls.wheel_sector_5",
+        "metadata": {
+          "label_key": "settings.controls.wheel_sector_5.label",
+          "description_key": "settings.controls.wheel_sector_5.description",
+          "category_key": "settings.category.wheels",
+          "order": 70,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.wheels"
+          ]
+        }
+      }
+    },
+    {
+      "target": "shared",
+      "definition": {
+        "id": "controls.wheel_sector_6",
+        "kind": {
+          "type": "choice",
+          "options": [
+            "none",
+            "ability.slot1",
+            "ability.slot2",
+            "ability.slot3",
+            "ability.slot4",
+            "ability.slot5",
+            "ability.slot6",
+            "ability.slot7",
+            "ability.slot8",
+            "ability.slot9",
+            "ability.slot10",
+            "ability.slot11",
+            "ability.slot12",
+            "ability.slot13",
+            "ability.slot14",
+            "ability.slot15",
+            "ability.slot16",
+            "ability.slot17",
+            "ability.slot18",
+            "ability.slot19",
+            "ability.slot20",
+            "combat.swing",
+            "move.roll",
+            "target.next",
+            "target.clear",
+            "ui.talk",
+            "ui.toggleVendor",
+            "minions.attack",
+            "minions.defend",
+            "minions.follow",
+            "minions.retreat",
+            "emote.wave",
+            "emote.bow",
+            "emote.cheer",
+            "emote.laugh",
+            "emote.point"
+          ]
+        },
+        "default": {
+          "type": "choice",
+          "value": "emote.wave"
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "controls.wheel_sector_6",
+        "metadata": {
+          "label_key": "settings.controls.wheel_sector_6.label",
+          "description_key": "settings.controls.wheel_sector_6.description",
+          "category_key": "settings.category.wheels",
+          "order": 80,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.wheels"
+          ]
+        }
+      }
+    },
+    {
+      "target": "shared",
+      "definition": {
+        "id": "controls.wheel_sector_7",
+        "kind": {
+          "type": "choice",
+          "options": [
+            "none",
+            "ability.slot1",
+            "ability.slot2",
+            "ability.slot3",
+            "ability.slot4",
+            "ability.slot5",
+            "ability.slot6",
+            "ability.slot7",
+            "ability.slot8",
+            "ability.slot9",
+            "ability.slot10",
+            "ability.slot11",
+            "ability.slot12",
+            "ability.slot13",
+            "ability.slot14",
+            "ability.slot15",
+            "ability.slot16",
+            "ability.slot17",
+            "ability.slot18",
+            "ability.slot19",
+            "ability.slot20",
+            "combat.swing",
+            "move.roll",
+            "target.next",
+            "target.clear",
+            "ui.talk",
+            "ui.toggleVendor",
+            "minions.attack",
+            "minions.defend",
+            "minions.follow",
+            "minions.retreat",
+            "emote.wave",
+            "emote.bow",
+            "emote.cheer",
+            "emote.laugh",
+            "emote.point"
+          ]
+        },
+        "default": {
+          "type": "choice",
+          "value": "target.next"
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "controls.wheel_sector_7",
+        "metadata": {
+          "label_key": "settings.controls.wheel_sector_7.label",
+          "description_key": "settings.controls.wheel_sector_7.description",
+          "category_key": "settings.category.wheels",
+          "order": 90,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.wheels"
+          ]
+        }
+      }
+    },
+    {
+      "target": "shared",
+      "definition": {
+        "id": "controls.wheel_sector_8",
+        "kind": {
+          "type": "choice",
+          "options": [
+            "none",
+            "ability.slot1",
+            "ability.slot2",
+            "ability.slot3",
+            "ability.slot4",
+            "ability.slot5",
+            "ability.slot6",
+            "ability.slot7",
+            "ability.slot8",
+            "ability.slot9",
+            "ability.slot10",
+            "ability.slot11",
+            "ability.slot12",
+            "ability.slot13",
+            "ability.slot14",
+            "ability.slot15",
+            "ability.slot16",
+            "ability.slot17",
+            "ability.slot18",
+            "ability.slot19",
+            "ability.slot20",
+            "combat.swing",
+            "move.roll",
+            "target.next",
+            "target.clear",
+            "ui.talk",
+            "ui.toggleVendor",
+            "minions.attack",
+            "minions.defend",
+            "minions.follow",
+            "minions.retreat",
+            "emote.wave",
+            "emote.bow",
+            "emote.cheer",
+            "emote.laugh",
+            "emote.point"
+          ]
+        },
+        "default": {
+          "type": "choice",
+          "value": "emote.cheer"
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "controls.wheel_sector_8",
+        "metadata": {
+          "label_key": "settings.controls.wheel_sector_8.label",
+          "description_key": "settings.controls.wheel_sector_8.description",
+          "category_key": "settings.category.wheels",
+          "order": 100,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.wheels"
+          ]
+        }
+      }
+    },
+    {
+      "target": "shared",
+      "definition": {
         "id": "audio.master_volume",
         "kind": {
           "type": "integer",
@@ -344,6 +928,10 @@
       "order": 20
     },
     {
+      "key": "settings.category.wheels",
+      "order": 25
+    },
+    {
       "key": "settings.category.accessibility",
       "order": 30
     },
@@ -359,6 +947,65 @@
   "text": {
     "settings.category.camera": "Camera",
     "settings.category.controls": "Controls",
+    "settings.category.wheels": "Wheels",
+    "settings.controls.wheels.label": "Radial wheels",
+    "settings.controls.wheels.description": "Hold T for your fixed wheel or K for the context wheel, flick the mouse toward an action and release; tap to open and left-click to pick. Right click cancels. The camera holds still while a wheel is open.",
+    "settings.controls.wheel_usage.label": "Count wheel use (playtest)",
+    "settings.controls.wheel_usage.description": "Keeps local counts of wheel opens, picks and cancels and the time spent in each camera mode, on this device only. Nothing is sent.",
+    "settings.search.wheels": "wheel pie radial menu marking flick",
+    "settings.search.wheel_usage": "wheel usage counters playtest statistics",
+    "settings.controls.wheel_sector_1.label": "Fixed wheel: north",
+    "settings.controls.wheel_sector_1.description": "The action a flick north picks on the fixed wheel.",
+    "settings.controls.wheel_sector_2.label": "Fixed wheel: north-east",
+    "settings.controls.wheel_sector_2.description": "The action a flick north-east picks on the fixed wheel.",
+    "settings.controls.wheel_sector_3.label": "Fixed wheel: east",
+    "settings.controls.wheel_sector_3.description": "The action a flick east picks on the fixed wheel.",
+    "settings.controls.wheel_sector_4.label": "Fixed wheel: south-east",
+    "settings.controls.wheel_sector_4.description": "The action a flick south-east picks on the fixed wheel.",
+    "settings.controls.wheel_sector_5.label": "Fixed wheel: south",
+    "settings.controls.wheel_sector_5.description": "The action a flick south picks on the fixed wheel.",
+    "settings.controls.wheel_sector_6.label": "Fixed wheel: south-west",
+    "settings.controls.wheel_sector_6.description": "The action a flick south-west picks on the fixed wheel.",
+    "settings.controls.wheel_sector_7.label": "Fixed wheel: west",
+    "settings.controls.wheel_sector_7.description": "The action a flick west picks on the fixed wheel.",
+    "settings.controls.wheel_sector_8.label": "Fixed wheel: north-west",
+    "settings.controls.wheel_sector_8.description": "The action a flick north-west picks on the fixed wheel.",
+    "settings.choice.none": "Empty",
+    "settings.choice.ability.slot1": "Ability 1",
+    "settings.choice.ability.slot2": "Ability 2",
+    "settings.choice.ability.slot3": "Ability 3",
+    "settings.choice.ability.slot4": "Ability 4",
+    "settings.choice.ability.slot5": "Ability 5",
+    "settings.choice.ability.slot6": "Ability 6",
+    "settings.choice.ability.slot7": "Ability 7",
+    "settings.choice.ability.slot8": "Ability 8",
+    "settings.choice.ability.slot9": "Ability 9",
+    "settings.choice.ability.slot10": "Ability 10",
+    "settings.choice.ability.slot11": "Ability 11 (Shift+1)",
+    "settings.choice.ability.slot12": "Ability 12 (Shift+2)",
+    "settings.choice.ability.slot13": "Ability 13 (Shift+3)",
+    "settings.choice.ability.slot14": "Ability 14 (Shift+4)",
+    "settings.choice.ability.slot15": "Ability 15 (Shift+5)",
+    "settings.choice.ability.slot16": "Ability 16 (Shift+6)",
+    "settings.choice.ability.slot17": "Ability 17 (Shift+7)",
+    "settings.choice.ability.slot18": "Ability 18 (Shift+8)",
+    "settings.choice.ability.slot19": "Ability 19 (Shift+9)",
+    "settings.choice.ability.slot20": "Ability 20 (Shift+0)",
+    "settings.choice.combat.swing": "Swing weapon",
+    "settings.choice.move.roll": "Dodge roll",
+    "settings.choice.target.next": "Next target",
+    "settings.choice.target.clear": "Clear target",
+    "settings.choice.ui.talk": "Interact: talk or use",
+    "settings.choice.ui.toggleVendor": "Trade with the selected vendor",
+    "settings.choice.minions.attack": "Minions: attack target",
+    "settings.choice.minions.defend": "Minions: defend here",
+    "settings.choice.minions.follow": "Minions: follow",
+    "settings.choice.minions.retreat": "Minions: retreat",
+    "settings.choice.emote.wave": "Emote: wave",
+    "settings.choice.emote.bow": "Emote: bow",
+    "settings.choice.emote.cheer": "Emote: cheer",
+    "settings.choice.emote.laugh": "Emote: laugh",
+    "settings.choice.emote.point": "Emote: point",
     "settings.category.accessibility": "Accessibility",
     "settings.category.audio": "Audio",
     "settings.audio.master_volume.label": "Master volume (%)",

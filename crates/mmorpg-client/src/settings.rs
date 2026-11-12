@@ -17,6 +17,19 @@ pub const INVERT_VERTICAL_LOOK: &str = "controls.invert_vertical_look";
 pub const REDUCE_MOTION: &str = "accessibility.reduce_motion";
 pub const HOLD_CAMERA: &str = "controls.hold_camera";
 pub const AIM_STYLE: &str = "controls.aim_style";
+/// Radial wheels on (#653), the opt-in local usage counters and the fixed wheel's sectors.
+pub const WHEELS: &str = "controls.wheels";
+pub const WHEEL_USAGE: &str = "controls.wheel_usage";
+pub const WHEEL_SECTORS: [&str; 8] = [
+    "controls.wheel_sector_1",
+    "controls.wheel_sector_2",
+    "controls.wheel_sector_3",
+    "controls.wheel_sector_4",
+    "controls.wheel_sector_5",
+    "controls.wheel_sector_6",
+    "controls.wheel_sector_7",
+    "controls.wheel_sector_8",
+];
 const CATALOG: &str = include_str!("../../../content/settings/catalog.json");
 
 #[derive(Deserialize)]
@@ -365,7 +378,8 @@ impl Preferences {
         Ok((id, definition.scope))
     }
 }
-fn atomic_write(path: &Path, contents: &[u8]) -> Result<(), String> {
+/// Writes `contents` through a temporary file and an atomic rename.
+pub fn atomic_write(path: &Path, contents: &[u8]) -> Result<(), String> {
     let parent = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -409,6 +423,7 @@ mod tests {
             &[
                 "settings.category.camera",
                 "settings.category.controls",
+                "settings.category.wheels",
                 "settings.category.accessibility",
                 "settings.category.audio"
             ]

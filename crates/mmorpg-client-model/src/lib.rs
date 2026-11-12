@@ -19,6 +19,7 @@ pub mod manual_aim;
 pub mod mouse_owner;
 pub mod outbox;
 pub mod party;
+pub mod pie_menu;
 pub mod power_draw;
 pub mod quest;
 pub mod theme;

@@ -1,8 +1,8 @@
-import type { AimPress, BeginHold, Click, EndedGesture, GestureAim, HoldKind, MouseOwnerKind } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
+import type { AimPress, BeginHold, Click, EndedGesture, GestureAim, HoldKind, MouseOwnerKind, WheelKindName, WheelReleaseView, WheelView } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
 import type { ZoneSnapshot } from "../../replication";
 import { wasm } from "../../wasm";
 
-export type { AimPress, BeginHold, Click, EndedGesture, GestureAim, HoldKind, MouseOwnerKind };
+export type { AimPress, BeginHold, Click, EndedGesture, GestureAim, HoldKind, MouseOwnerKind, WheelKindName, WheelReleaseView, WheelView };
 
 /**
  * One mouse owner at a time (#636, Atlas 5.2.i636-2): the shared `mmorpg-client-model` state
@@ -68,6 +68,36 @@ export class MouseOwnerInput {
   aimLanding(projection: ZoneSnapshot, facing: number): [number, number, number] | null {
     const landing = this.#owners?.aimLanding(projection, facing);
     return landing && landing.length === 3 ? [landing[0]!, landing[1]!, landing[2]!] : null;
+  }
+
+  /**
+   * A wheel key went down (#653): opens the fixed wheel from its sector `choices` or the context
+   * wheel from the projection; `true` if a wheel is open now.
+   */
+  openWheel(kind: WheelKindName, choices: string[], projection: ZoneSnapshot): boolean {
+    return this.#model.openWheel(kind, choices, projection);
+  }
+
+  /** The open wheel, labelled for the viewer's class, or `null`. */
+  wheel(projection: ZoneSnapshot): WheelView | null {
+    return this.#owners && this.owner() === "wheel" ? this.#owners.wheel(projection) as WheelView | null : null;
+  }
+
+  /** The wheel key went up after `heldMs`, or was retired: pick, stay open or cancel. */
+  releaseWheel(heldMs: number, retired: boolean): WheelReleaseView {
+    return this.#owners?.releaseWheel(heldMs, retired) ?? { outcome: "ignored", action: null };
+  }
+
+  /** Turns the opt-in local wheel usage counters on from their stored JSON, or off with `null`. */
+  setUsageCounting(stored: string | null): void {
+    this.#model.setUsageCounting(stored ?? undefined);
+  }
+
+  /** `ms` milliseconds passed under the current owner; returns the counters' JSON while counting. */
+  countUsage(ms: number): string | undefined {
+    if (!this.#owners) { return undefined; }
+    this.#owners.countUsage(ms);
+    return this.#owners.usageJson();
   }
 
   beginHold(hold: HoldKind): BeginHold {
