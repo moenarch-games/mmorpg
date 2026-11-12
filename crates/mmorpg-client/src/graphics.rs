@@ -608,7 +608,11 @@ mod tests {
             if timed {
                 renderer.frame.enable_gpu_timing(&renderer.device);
             }
-            println!("adapter={} gpu_timestamps={timed}", adapter.get_info().name);
+            println!(
+                "adapter={} gpu_timestamps={timed} lights={:?}",
+                adapter.get_info().name,
+                renderer.frame.light_assignment()
+            );
             // Statistics leave out the first frames of each view (uploads, pipeline
             // creation); the first frame and the raw lists keep them.
             const WARM: usize = 40;
