@@ -6,10 +6,10 @@ use mmorpg_core::EntityRef;
 /// The camera pivots around the character's upper body, not its feet.
 const PIVOT_HEIGHT_METRES: f32 = 0.6;
 const MIN_DISTANCE_METRES: f32 = 2.0;
-const MAX_DISTANCE_METRES: f32 = 30.0;
-/// Keeps the eye above the pivot's horizon and short of straight down.
-const MIN_PITCH_RADIANS: f32 = 0.05;
-const MAX_PITCH_RADIANS: f32 = 1.45;
+const MAX_DISTANCE_METRES: f32 = 8.0;
+/// Allows looking up and down while staying short of the vertical singularity.
+const MIN_PITCH_RADIANS: f32 = -1.0;
+const MAX_PITCH_RADIANS: f32 = 1.2;
 const ORBIT_RADIANS_PER_PIXEL: f32 = 0.006;
 /// Each wheel line changes the distance by this factor.
 const ZOOM_STEP: f32 = 0.88;
@@ -103,8 +103,8 @@ impl Default for OrbitCamera {
             look_sensitivity: 1.0,
             invert_vertical_look: false,
             yaw: 0.0,
-            pitch: 0.42,
-            distance: 12.0,
+            pitch: 0.12,
+            distance: 3.5,
             framing: [0.0; 3],
         }
     }
@@ -209,18 +209,21 @@ impl OrbitCamera {
 
     #[must_use]
     pub fn view(&self, focus: [f32; 3]) -> CameraView {
+        // Shift the whole aim line to screen-right so the character stays left of the reticle.
+        let shoulder_x = -self.yaw.cos() * SHOULDER_OFFSET_METRES;
+        let shoulder_z = self.yaw.sin() * SHOULDER_OFFSET_METRES;
         let target = [
-            focus[0] + self.framing[0],
+            focus[0] + shoulder_x + self.framing[0],
             focus[1] + PIVOT_HEIGHT_METRES + self.framing[1],
-            focus[2] + self.framing[2],
+            focus[2] + shoulder_z + self.framing[2],
         ];
         let horizontal = self.distance * self.pitch.cos();
         CameraView {
             field_of_view_degrees: self.field_of_view_degrees,
             eye: [
-                focus[0] - self.yaw.sin() * horizontal + self.yaw.cos() * SHOULDER_OFFSET_METRES,
+                focus[0] - self.yaw.sin() * horizontal + shoulder_x,
                 focus[1] + PIVOT_HEIGHT_METRES + self.distance * self.pitch.sin(),
-                focus[2] - self.yaw.cos() * horizontal - self.yaw.sin() * SHOULDER_OFFSET_METRES,
+                focus[2] - self.yaw.cos() * horizontal + shoulder_z,
             ],
             target,
         }
@@ -239,19 +242,19 @@ mod tests {
     fn default_view_looks_over_the_shoulder_toward_positive_z() {
         let camera = OrbitCamera::default();
         let view = camera.view([1.0, 0.9, -2.0]);
-        assert!(close(view.target, [1.0, 1.5, -2.0]));
+        assert!(close(view.target, [0.35, 1.5, -2.0]));
         assert!(
             view.eye[2] < view.target[2],
             "the eye is behind the character"
         );
         assert!(view.eye[1] > view.target[1], "and above it");
         assert!(
-            view.eye[0] > view.target[0],
+            view.eye[0] < 1.0 && (view.eye[0] - view.target[0]).abs() < 1e-4,
             "the eye sits over the right shoulder"
         );
         let offset: [f32; 3] = std::array::from_fn(|axis| view.eye[axis] - view.target[axis]);
         let length = offset.iter().map(|value| value * value).sum::<f32>().sqrt();
-        assert!(length > camera.distance());
+        assert!((length - camera.distance()).abs() < 1e-4);
         assert_eq!(camera.facing(), 0);
     }
 
@@ -307,8 +310,8 @@ mod tests {
         camera.orbit(0.0, -1e9);
         let low = camera.view([0.0; 3]);
         assert!(
-            low.eye[1] > low.target[1],
-            "the eye never drops below the pivot"
+            low.eye[1] < low.target[1],
+            "looking up can place the eye below the pivot"
         );
         camera.zoom(1e3);
         assert_eq!(camera.distance(), MIN_DISTANCE_METRES);
@@ -337,7 +340,11 @@ mod tests {
         for _ in 0..90 {
             camera.track([0.0, 1.0, 0.0], None, 1.0 / 60.0);
         }
-        assert!(camera.view([0.0, 1.0, 0.0]).target[0].abs() < 0.001);
+        assert!(
+            (camera.view([0.0, 1.0, 0.0]).target[0] + camera.yaw().cos() * SHOULDER_OFFSET_METRES)
+                .abs()
+                < 0.001
+        );
     }
 
     #[test]

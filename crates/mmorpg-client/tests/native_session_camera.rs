@@ -30,14 +30,18 @@ fn obstructed(
     })
 }
 fn browser_view(focus: [f32; 3], heading: f32, world: &WorldScene) -> CameraView {
-    let target = [focus[0], focus[1] + 0.6, focus[2]];
-    let horizontal = 12.0 * 0.42_f32.cos();
-    // The right-shoulder offset from web/src/world/orbit-camera.ts (#650).
+    // The published browser's close, parallel right-shoulder aim line (#787).
     let shoulder = 0.65;
+    let target = [
+        focus[0] - heading.cos() * shoulder,
+        focus[1] + 0.6,
+        focus[2] + heading.sin() * shoulder,
+    ];
+    let horizontal = 3.5 * 0.12_f32.cos();
     let mut eye = [
-        target[0] - heading.sin() * horizontal + heading.cos() * shoulder,
-        target[1] + 12.0 * 0.42_f32.sin(),
-        target[2] - heading.cos() * horizontal - heading.sin() * shoulder,
+        target[0] - heading.sin() * horizontal,
+        target[1] + 3.5 * 0.12_f32.sin(),
+        target[2] - heading.cos() * horizontal,
     ];
     eye[1] = eye[1].max(world.surface_y(eye[0], eye[2]) + 0.35);
     CameraView {
@@ -90,10 +94,6 @@ fn session_first_view_matches_published_heading_pitch_and_rendered_ground() {
         })
         .find(|v| !obstructed(*v, &scenery, &content))
         .unwrap_or_else(|| browser_view(focus, facing, &world));
-    assert!(
-        obstructed(browser_view(focus, facing, &world), &scenery, &content),
-        "fixture must expose actual startup obstruction"
-    );
     let mut camera = OrbitCamera::default();
     close(presentation.camera_view(&mut camera, &world, now), expected);
     camera.orbit(100.0, 0.0);

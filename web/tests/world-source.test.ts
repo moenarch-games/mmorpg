@@ -207,11 +207,12 @@ describe("camera-relative input", () => {
   test("the default orbit view looks over the shoulder toward +Z", () => {
     const camera = new OrbitCamera();
     const view = camera.view([1, 0.9, -2]);
-    expect(view.target).toEqual([1, 1.5, -2]);
+    expect(view.target).toEqual([0.35, 1.5, -2]);
     expect(view.eye[2]).toBeLessThan(view.target[2]);
     expect(view.eye[1]).toBeGreaterThan(view.target[1]);
-    expect(view.eye[0]).toBeGreaterThan(view.target[0]);
-    expect(Math.hypot(...view.eye.map((value, axis) => value - view.target[axis]!))).toBeGreaterThan(camera.distance);
+    expect(view.eye[0]).toBeLessThan(1);
+    expect(view.eye[0]).toBeCloseTo(view.target[0], 9);
+    expect(Math.hypot(...view.eye.map((value, axis) => value - view.target[axis]!))).toBeCloseTo(camera.distance, 9);
     expect(camera.facing()).toBe(0);
   });
 
@@ -227,7 +228,7 @@ describe("camera-relative input", () => {
     const camera = new OrbitCamera();
     camera.orbit(0, -1e9);
     const low = camera.view([0, 0, 0]);
-    expect(low.eye[1]).toBeGreaterThan(low.target[1]);
+    expect(low.eye[1]).toBeLessThan(low.target[1]);
     camera.zoom(1e3);
     expect(camera.targetDistance).toBe(MIN_DISTANCE_METRES);
     camera.update(0, true);
@@ -300,7 +301,7 @@ describe("camera-relative input", () => {
     camera.track([0, 1, 0], null, 1 / 60);
     expect(camera.heading).toBe(beforeRelease);
     for (let i = 0; i < 90; i += 1) { camera.track([0, 1, 0], null, 1 / 60); }
-    expect(camera.view([0, 1, 0]).target[0]).toBeCloseTo(0, 3);
+    expect(camera.view([0, 1, 0]).target[0]).toBeCloseTo(-Math.cos(camera.heading) * 0.65, 3);
   });
 
   test("pointer owner hands mouse-look to focus, direction gestures and UI cancellation", () => {
