@@ -6,19 +6,19 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::physics::{RigidBody, Vec3i, World};
+use sim_movement::walk;
 
 use crate::creature::CreatureState;
 use crate::entity::{WORLD_LIMIT_BODY_BASE, body_id};
 use crate::interest::InterestIndex;
 use crate::rng::ZoneRng;
 use crate::snapshot::PlayerIntent;
-use crate::trig::{self, YAW_EIGHTH_TURN, YAW_QUARTER_TURN};
+use crate::trig::{self, YAW_QUARTER_TURN};
 use crate::unit::{PLAYER_START_LEVEL, player_max_health};
 use crate::{
-    BACKPEDAL_SPEED_SUBUNITS_PER_TICK, CreatureId, EntityRef, InterestMaintenanceStats,
-    JUMP_VELOCITY_SUBUNITS_PER_TICK, MAX_CONTENT_COORDINATE_UNITS, MAX_PLAYERS_PER_ZONE,
-    PLAYER_HALF_EXTENTS_UNITS, PlayerId, RUN_SPEED_SUBUNITS_PER_TICK, ZoneCommand, ZoneContent,
-    ZoneDefinition, ZoneError, ZoneEvent, ZoneId,
+    CreatureId, EntityRef, InterestMaintenanceStats, JUMP_VELOCITY_SUBUNITS_PER_TICK,
+    MAX_CONTENT_COORDINATE_UNITS, MAX_PLAYERS_PER_ZONE, PLAYER_HALF_EXTENTS_UNITS, PlayerId,
+    ZoneCommand, ZoneContent, ZoneDefinition, ZoneError, ZoneEvent, ZoneId,
 };
 
 /// Discrete intents (targeting, attacking, releasing) a player may queue
@@ -1050,8 +1050,12 @@ impl ZoneSimulation {
             let vertical_velocity = if let Some(depth) = swim_depth {
                 let rise = if stunned { 0 } else { state.rise.get() };
                 crate::water::swim_vertical_velocity(depth, rise)
-            } else if alive && !stunned && state.jump_pending && grounded {
-                JUMP_VELOCITY_SUBUNITS_PER_TICK
+            } else if let Some(jump) = walk::jump_velocity(
+                grounded,
+                alive && !stunned && state.jump_pending,
+                JUMP_VELOCITY_SUBUNITS_PER_TICK,
+            ) {
+                jump
             } else if state.traversal.holds() {
                 // Letting go of a face or landing a mantle keeps no upward climb.
                 body.velocity().y.min(0)
@@ -1378,43 +1382,28 @@ fn world_limit_bodies() -> impl Iterator<Item = RigidBody> {
         })
 }
 
-/// Horizontal controller velocity: `speed × direction(facing + local offset)`,
-/// where the offset is one of eight multiples of 45°. The character's right is
-/// `direction(facing - 90°)`. Zero intent yields zero horizontal velocity.
+/// The walk intent `state` holds: its facing, forward and strafe, and a pending jump.
+fn walk_intent(state: &PlayerState) -> walk::Intent {
+    walk::Intent {
+        forward: state.forward.get(),
+        strafe: state.strafe.get(),
+        yaw: state.facing,
+        jump: state.jump_pending,
+    }
+}
+
+/// Horizontal controller velocity: run or backpedal speed along [`movement_yaw`]
+/// (`sim_movement::walk`, #749). Zero intent yields zero horizontal velocity.
 fn movement_velocity(state: &PlayerState) -> Result<Vec3i, ZoneError> {
-    let Some(yaw) = movement_yaw(state) else {
-        return Ok(Vec3i::ZERO);
-    };
-    let speed = match state.forward {
-        Axis::Negative => BACKPEDAL_SPEED_SUBUNITS_PER_TICK,
-        Axis::Zero | Axis::Positive => RUN_SPEED_SUBUNITS_PER_TICK,
-    };
-    let (x, z) = trig::direction(yaw);
-    let component = |unit| {
-        trig::checked_scale(speed, unit).ok_or_else(|| ZoneError::new("movement velocity overflow"))
-    };
-    Ok(Vec3i::new(component(x)?, 0, component(z)?))
+    let [x, z] = walk::walk_velocity(walk_intent(state), walk::Speeds::RUN)
+        .ok_or_else(|| ZoneError::new("movement velocity overflow"))?;
+    Ok(Vec3i::new(x, 0, z))
 }
 
 /// The yaw held movement intent moves along: `facing` plus one of eight multiples of 45°, or
 /// `None` without intent.
 fn movement_yaw(state: &PlayerState) -> Option<u16> {
-    const FORWARD: u16 = 0;
-    const LEFT: u16 = YAW_QUARTER_TURN;
-    const BACKWARD: u16 = 2 * YAW_QUARTER_TURN;
-    const RIGHT: u16 = 3 * YAW_QUARTER_TURN;
-    let offset = match (state.forward, state.strafe) {
-        (Axis::Zero, Axis::Zero) => return None,
-        (Axis::Positive, Axis::Zero) => FORWARD,
-        (Axis::Positive, Axis::Negative) => FORWARD + YAW_EIGHTH_TURN,
-        (Axis::Zero, Axis::Negative) => LEFT,
-        (Axis::Negative, Axis::Negative) => LEFT + YAW_EIGHTH_TURN,
-        (Axis::Negative, Axis::Zero) => BACKWARD,
-        (Axis::Negative, Axis::Positive) => BACKWARD + YAW_EIGHTH_TURN,
-        (Axis::Zero, Axis::Positive) => RIGHT,
-        (Axis::Positive, Axis::Positive) => RIGHT + YAW_EIGHTH_TURN,
-    };
-    Some(state.facing.wrapping_add(offset))
+    walk::move_yaw(walk_intent(state))
 }
 
 /// A thin probe directly under the feet, inset by one unit horizontally so
