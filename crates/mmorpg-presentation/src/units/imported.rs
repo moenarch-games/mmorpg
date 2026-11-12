@@ -2436,7 +2436,7 @@ impl Preparation {
 }
 
 /// One emote or interaction clip being shown (#619): upper-body over any gait, or whole-body
-/// while the unit stands still.
+/// while the unit stands still and upper-body once it moves (Atlas 6.6.i745).
 #[derive(Clone, Copy, Debug)]
 struct Gesture {
     clip: &'static str,
@@ -2549,8 +2549,9 @@ impl Playback {
     }
 
     /// Starts an emote or interaction `clip`, `duration` seconds long, at `now` (#619). A
-    /// `whole`-body one plays only while the unit stands; anything the zone accepts for the
-    /// unit, a strike, a cast or a blow, ends it at once.
+    /// `whole`-body one takes the legs only while the unit stands and otherwise plays on the
+    /// upper body over the gait (Atlas 6.6.i745); anything the zone accepts for the unit, a
+    /// strike, a cast or a blow, ends it at once.
     pub fn gesture(&mut self, clip: &'static str, duration: f32, whole: bool, now: f64) {
         self.serial = self.serial.wrapping_add(1);
         self.gesture = Some(Gesture {
@@ -3161,17 +3162,14 @@ impl Playback {
         let standing =
             matches!(self.flight, Flight::Ground) && speed <= 0.25 && !swims && !traversing;
         let layered = clips.upper_body.is_some();
-        // Emotes and interactions (#619): the zone's own actions and blows end them at once, a
-        // whole-body one also the moment the unit moves.
+        // Emotes and interactions (#619): the zone's own actions and blows end them at once.
+        // A whole-body one (the bow) takes the legs only while the unit stands; on the move it
+        // plays on the upper body over the gait (Atlas 6.6.i745), so it never holds the legs
+        // still against the zone's projected motion.
         let moving = speed > 0.25;
         let acting = self.strike.is_some() || self.cast.is_some();
         if self.gesture.is_some_and(|gesture| {
-            now >= gesture.until
-                || dead
-                || acting
-                || guarding
-                || stun.is_some()
-                || (gesture.whole && (moving || !standing))
+            now >= gesture.until || dead || acting || guarding || stun.is_some()
         }) {
             self.gesture = None;
         }
@@ -3179,7 +3177,7 @@ impl Playback {
             #[allow(clippy::cast_possible_truncation)]
             let at = (now - gesture.started).max(0.) as f32;
             (
-                gesture.whole,
+                gesture.whole && standing,
                 Want {
                     at: Some(at),
                     ..Want::hold(gesture.clip, gesture.serial)

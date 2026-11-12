@@ -808,13 +808,58 @@ fn an_emote_in_the_projection_plays_on_its_speaker_until_a_blow_ends_it() {
 }
 
 #[test]
-fn the_whole_body_bow_plays_standing_and_stops_for_a_step() {
+fn the_whole_body_bow_plays_standing_and_moves_to_the_upper_body_for_a_step() {
     let mut scene = social_scene();
     emote(&mut scene, Emote::Bow, 1.);
     assert_eq!(viewer_lower(&frame(&mut scene, 1.1)).0, "Emote_Bow");
-    // Walking away cuts it: the projected velocity moves the unit.
+    // Walking away frees the legs at once (Atlas 6.6.i745): the projected velocity moves the
+    // unit and the bow finishes on the upper body, at its own clock, over the gait.
     scene.snapshot.entities[0].velocity = [4, 0, 0];
-    assert_ne!(viewer_lower(&frame(&mut scene, 1.2)).0, "Emote_Bow");
+    let walking = frame(&mut scene, 1.2);
+    assert_ne!(viewer_lower(&walking).0, "Emote_Bow");
+    let (clip, at) = viewer_upper(&walking);
+    assert_eq!(clip, "Emote_Bow");
+    assert!(at > 0.1, "the bow continues rather than restarting: {at}");
+}
+
+#[test]
+fn a_remote_players_accepted_emote_plays_on_it_for_a_nearby_observer() {
+    // Two players in one zone; the zone accepts player 2's wave and projects it to player 1.
+    let content = greyhaven_vale::content();
+    let mut zone = ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content)).unwrap();
+    zone.add_player(1).unwrap();
+    zone.add_player(2).unwrap();
+    zone.advance_tick().unwrap();
+    zone.apply_command(2, 1, mmorpg_core::ZoneCommand::Emote(Emote::Wave))
+        .unwrap();
+    zone.advance_tick().unwrap();
+    let snapshot = zone.snapshot_for_player(1).unwrap();
+    let wave = ChatLine {
+        speaker: 2,
+        message: ChatMessage::Emote(Emote::Wave),
+    };
+    assert_eq!(snapshot.chat, [wave]);
+    let scenery = Arc::new(mmorpg_scenery::greyhaven_vale_scenery());
+    let mut scene = Scene {
+        presenter: UnitPresenter::new(1, content, scenery),
+        snapshot,
+        wolf: EntityRef::Player(2),
+    };
+    scene.presenter.model_ready(
+        Kind::Ranger,
+        [("Idle_Loop".to_owned(), 1.), ("Emote_Wave".to_owned(), 1.6)],
+    );
+    scene.presenter.push(&scene.snapshot, 1.);
+    let shown = frame(&mut scene, 1.2);
+    let remote = shown
+        .imported
+        .iter()
+        .find(|unit| unit.entity == EntityRef::Player(2))
+        .expect("the remote player is drawn with the imported model");
+    assert_eq!(remote.animation.upper.0, "Emote_Wave");
+    assert_eq!(remote.animation.lower.0, "Idle_Loop");
+    // The observer itself does not wave.
+    assert_ne!(viewer_upper(&shown).0, "Emote_Wave");
 }
 
 #[test]
