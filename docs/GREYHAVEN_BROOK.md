@@ -482,6 +482,13 @@ owner's reference. Convention source revision remains
 
 ## Authored basin buttresses and talus
 
+> **Superseded by world dressing (#683).** These rocks, the brook spurs (65128–65136) and the
+> three basin crags (65030–65032) are now the crag kit's sculpted outcrops, placed at the same
+> sites by `content/greyhaven/dressing/vale.json` on the ground beneath them. Their collision
+> is generated from the outcrops' `collisionMesh` into `greyhaven-dressing.json` (see
+> [STATIC_COLLISION.md](STATIC_COLLISION.md)), and `fortifications.py` no longer authors them.
+> The history below describes the earlier hand-authored slabs.
+
 Three rock clusters interrupt bare cliff feet northwest of the keep, beside the western
 basin edge and before the southern cliff. Each combines a leaning main slab with two lower
 talus pieces, authored in `fortifications.py` as closed, simplified indexed meshes with

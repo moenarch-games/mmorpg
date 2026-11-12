@@ -723,10 +723,9 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
         s.collision_surfaces
             .iter()
             .filter(|mesh| {
-                use mmorpg_core::greyhaven_vale::fort;
-                fort::BROOK_MILL.contains(&mesh.id)
-                    || fort::BASIN_ROCKS.contains(&mesh.id)
-                    || fort::WESTERN_ROCKS.contains(&mesh.id)
+                // The mill and the world dressing's rocks (#683) stand on the bank.
+                mmorpg_core::greyhaven_vale::fort::BROOK_MILL.contains(&mesh.id)
+                    || crate::world_dressing::stand_in(s, mesh.id).is_some()
             })
             .map(|mesh| mmorpg_scenery::Rect {
                 min: [0, 2].map(|axis| {

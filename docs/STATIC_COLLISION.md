@@ -21,6 +21,15 @@ The same path also carries Greyhaven's simplified architecture and bank outcrops
 in `sunken-shore.json`. The latter retains roof IDs 580–596 and the tunnel/air-room clearance;
 its Blender source is `content/greyhaven/authoring/sunken_shore.py`.
 
+`greyhaven-dressing.json` is generated, not hand-authored (#683): the world dressing's rocks
+(`content/greyhaven/dressing/*.json`) collide as their kit asset's `collisionMesh` scaled
+and turned by their placement. Rerun `python3 content/greyhaven/authoring/dressing_collision.py`
+after `scripts/fetch-bundles.sh` when a placement or the art changes, and review the diff:
+each mesh is one line, and the header names the descriptor and bundle digests it came from.
+The zone only ever reads the committed file, so a new art release never changes collision
+on its own. The asset meshes are closed and outward wound and leave the apron and rubble out,
+so characters walk onto them.
+
 `cave::collision_meshes()` embeds the JSON at compile time; `base_definition()`
 adds it through `ZoneDefinition::with_static_meshes()`. Outpost layout compilation
 preserves those meshes. Validation rejects duplicate/overlapping IDs, invalid

@@ -1138,7 +1138,7 @@ pub fn climbing() -> crate::ClimbSurfaces {
         .map(|(_, (id, _))| (id, Rock));
     let colliders = range(ids::PALISADE, Timber)
         .chain(range(65050..=65059, Timber))
-        .chain(range(65030..=65032, Rock))
+        .chain(range(fort::BASIN_CRAGS, Rock))
         .chain(range(ids::FENCES, Timber))
         .chain(range(ids::RUIN_FENCES, Timber))
         .chain(range(ids::FARMLAND_FENCES, Timber).take(farmland::fences().len()))

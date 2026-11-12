@@ -2859,6 +2859,7 @@ version = "0.1.0"
 dependencies = [
  "mmorpg-core",
  "mmorpg-scenery",
+ "serde",
  "serde_json",
  "strum",
  "tobj",

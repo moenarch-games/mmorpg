@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "area": "greyhaven-vale",
+  "placements": [
+    {"id": "basin-crag-1", "asset": "crag.kit.outcrop-spire", "position": [-4700, 217, 4300], "yaw": 0, "scale": [1115, 1000, 1036], "collider": 65030},
+    {"id": "basin-crag-2", "asset": "crag.kit.outcrop-spire", "position": [-4600, 379, 6200], "yaw": 21845, "scale": [1115, 1000, 1036], "collider": 65031},
+    {"id": "basin-crag-3", "asset": "crag.kit.outcrop-spire", "position": [4700, 537, 5600], "yaw": 43691, "scale": [1115, 1000, 1036], "collider": 65032},
+    {"id": "basin-north-buttress", "asset": "crag.kit.outcrop-buttress-1", "position": [-3700, 0, -4000], "yaw": 55722, "scale": [1077, 1107, 1064], "collider": 65094},
+    {"id": "basin-north-talus-1", "asset": "crag.kit.outcrop-talus-1", "position": [-3438, 0, -3733], "yaw": 64626, "scale": [1120, 1282, 1091], "collider": 65095},
+    {"id": "basin-north-talus-2", "asset": "crag.kit.outcrop-talus-2", "position": [-4042, 0, -3824], "yaw": 37724, "scale": [1292, 1276, 1250], "collider": 65096},
+    {"id": "basin-west-buttress", "asset": "crag.kit.outcrop-buttress-2", "position": [-3900, 0, 5700], "yaw": 11891, "scale": [968, 955, 1128], "collider": 65097},
+    {"id": "basin-west-talus-1", "asset": "crag.kit.outcrop-talus-1", "position": [-3542, 0, 5809], "yaw": 5637, "scale": [800, 868, 960], "collider": 65098},
+    {"id": "basin-west-talus-2", "asset": "crag.kit.outcrop-talus-2", "position": [-4116, 92, 6018], "yaw": 44287, "scale": [923, 865, 1100], "collider": 65099},
+    {"id": "basin-south-buttress", "asset": "crag.kit.outcrop-buttress-1", "position": [-2500, 15, 8300], "yaw": 9707, "scale": [923, 821, 1021], "collider": 65100},
+    {"id": "basin-south-talus-1", "asset": "crag.kit.outcrop-talus-1", "position": [-2363, 28, 8648], "yaw": 19533, "scale": [960, 951, 1047], "collider": 65101},
+    {"id": "basin-south-talus-2", "asset": "crag.kit.outcrop-talus-2", "position": [-2883, 112, 8329], "yaw": 58201, "scale": [1108, 947, 1200], "collider": 65102},
+    {"id": "brook-spur-middle-buttress", "asset": "crag.kit.outcrop-buttress-2", "position": [-4400, 0, 3600], "yaw": 12323, "scale": [903, 1036, 1179], "collider": 65128},
+    {"id": "brook-spur-middle-talus-1", "asset": "crag.kit.outcrop-talus-1", "position": [-4054, 0, 3744], "yaw": 6172, "scale": [747, 943, 1004], "collider": 65129},
+    {"id": "brook-spur-middle-talus-2", "asset": "crag.kit.outcrop-talus-2", "position": [-4646, 179, 3895], "yaw": 44746, "scale": [862, 939, 1150], "collider": 65130},
+    {"id": "brook-spur-south-spire", "asset": "crag.kit.outcrop-spire", "position": [-4500, 170, 4900], "yaw": 36558, "scale": [1231, 1000, 1071], "collider": 65131},
+    {"id": "brook-spur-south-talus-1", "asset": "crag.kit.outcrop-talus-1", "position": [-4266, 123, 5192], "yaw": 1265, "scale": [853, 1092, 655], "collider": 65132},
+    {"id": "brook-spur-south-talus-2", "asset": "crag.kit.outcrop-talus-2", "position": [-4858, 527, 5041], "yaw": 39638, "scale": [985, 1087, 750], "collider": 65133},
+    {"id": "brook-spur-north-buttress", "asset": "crag.kit.outcrop-buttress-1", "position": [-4800, 140, 1300], "yaw": 57490, "scale": [718, 893, 809], "collider": 65134},
+    {"id": "brook-spur-north-talus-1", "asset": "crag.kit.outcrop-talus-1", "position": [-4442, 76, 1409], "yaw": 1930, "scale": [747, 1034, 829], "collider": 65135},
+    {"id": "brook-spur-north-talus-2", "asset": "crag.kit.outcrop-talus-2", "position": [-5016, 616, 1618], "yaw": 40598, "scale": [862, 1029, 950], "collider": 65136}
+  ]
+}

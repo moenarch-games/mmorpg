@@ -90,7 +90,7 @@ const SOURCES: [Source; 6] = [
         files: climbing_bundle::FILES,
     },
     Source {
-        keys: &mmorpg_presentation::crag::ENTRIES,
+        keys: &mmorpg_presentation::crag::KIT_ENTRIES,
         entries: crag_bundle::ENTRIES,
         files: crag_bundle::FILES,
     },
@@ -115,8 +115,8 @@ const SOURCES: [Source; 6] = [
 pub const FADE_STEPS: usize = 8;
 
 /// The library's entries: the nature bundle's (`mmorpg_presentation::nature::ENTRIES`), the
-/// climbing kit's (`mmorpg_presentation::climbing::ENTRIES`), the crag kit's modules
-/// (`mmorpg_presentation::crag::ENTRIES`), the limestone blocks', the river
+/// climbing kit's (`mmorpg_presentation::climbing::ENTRIES`), the crag kit's modules and outcrops
+/// (`mmorpg_presentation::crag::KIT_ENTRIES`), the limestone blocks', the river
 /// stones' and the settlement props'.
 #[must_use]
 pub fn entries() -> Vec<&'static str> {

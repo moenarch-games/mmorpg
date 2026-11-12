@@ -692,17 +692,9 @@ gltf=json.loads((OUT/'settlement.gltf').read_text());uris=[v['uri'] for key in [
 resources=[dict(path=p,byteLength=(OUT/p).stat().st_size,sha256=hashlib.sha256((OUT/p).read_bytes()).hexdigest()) for p in sorted(set(uris))]
 manifest=dict(assets=[dict(key='greyhaven.fort.settlement',variant='default',path='settlement.gltf',resources=resources)],authoring='content/greyhaven/authoring/fortifications.py',license='MIT',coordinateSystem='right-handed-y-up',unit='metre')
 (OUT/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
-# Three coarse, fractured crags break up the basin's formerly uniform cliff lip.
-# The shared rock presenter draws their exact collision triangles with its existing PBR rock.
-for k,(x,z) in enumerate([(-47,43),(-46,62),(47,56)]):
-    n=7;vs=[]
-    for y,r in [(0,2.4),(8.8,2.9),(13.2,1.8)]:
-        for j in range(n):
-            a=j*math.tau/n;w=1+.12*math.sin(j*17+k*3)
-            vs.append((x+r*w*math.sin(a),y+.3*math.sin(j*7+k),z+r*w*math.cos(a)))
-    fs=[tuple(range(n-1,-1,-1)),tuple(range(2*n,3*n))]
-    fs += [(r*n+j,r*n+(j+1)%n,(r+1)*n+(j+1)%n,(r+1)*n+j) for r in range(2) for j in range(n)]
-    solid_record(65030+k,vs,fs)
+# The basin crags (65030-65032), basin buttresses (65094-65102) and brook spurs (65128-65136)
+# are world dressing now (#683): content/greyhaven/dressing/vale.json places the crag kit's
+# outcrops and dressing_collision.py generates their collision from the art.
 # Low shoreline clusters: game collision and shared rock skins use these same coarse
 # facets. They break the water outline without new render assets or blocking the dock.
 shore_preview=flat('Stillwater shore rock preview',(.29,.31,.23))
@@ -723,42 +715,6 @@ for cluster,(x,z,turn) in enumerate([(39,-60,.4),(38,-65,1.1),(47,-70.5,.2),
         fs += [(r*n+j,r*n+(j+1)%n,(r+1)*n+(j+1)%n,(r+1)*n+j) for r in range(2) for j in range(n)]
         solid_record(id,vs,fs)
         mesh('Stillwater fractured bank '+str(id),vs,fs,shore_preview)
-# Authored basin buttresses: a large leaning slab and two lower talus pieces at each
-# site, clear of the village gates, switchbacks and water. The shared rock presenter
-# draws these collision facets directly, independent of the settlement glTF and visual LOD.
-basin_rock=bpy.data.materials.get('Greyhaven game rock - terrain context') or shore_preview
-basin_rock['tile_metres']=2.7
-for first_id,x,z,rx,rz,h,turn,lean_x,lean_z in [
-    (65094,-37,-40,4.2,5.0,15.5,.2,-5,-3),
-    (65097,-39,57,3.0,4.4,10.5,-.3,-5,0),
-    (65100,-25,83,3.6,4.8,11.5,.6,-1,5),
-    # Brook-facing fractured spurs and their talus, outside the mill/water and
-    # the strip walked between the western stockade and the cliff foot.
-    (65128,-44,36,2.8,4.6,11.4,-.2,-3.5,0),
-    (65131,-45,49,3.2,3.0,13.2,.3,-4,-1),
-    # Fit between the Wolfrun Climb's lower (-42 m) and upper (-54 m) lanes.
-    (65134,-48,13,2.8,3.8,12.5,-.3,-3,-1),
-]:
-    for piece,(dx,dz,size,rise) in enumerate([(0,0,1,1),(3.1,2.1,.48,.43),(-3.0,2.4,.40,.28)]):
-        id=first_id+piece;n=9;vs=[]
-        cx=x+dx*math.cos(turn)-dz*math.sin(turn)
-        cz=z+dx*math.sin(turn)+dz*math.cos(turn)
-        profile=[(-.8,.72,0),(.18*h*rise,1,.20),(.63*h*rise,.78,-.35),(h*rise,.42,-.8)]
-        if first_id>=65128:
-            # A projecting bedding ledge splits the face into two leaning masses.
-            profile=[(-.8,.72,0),(.18*h*rise,1,.20),(.42*h*rise,.78,-.35),
-                (.44*h*rise,.95,-.1),(.69*h*rise,.65,-.5),(h*rise,.42,-.8)]
-        for row,(height,width,lean) in enumerate(profile):
-            for j in range(n):
-                a=j*math.tau/n;w=1+.09*math.sin(j*7.1+id)
-                px,pz=rx*size*w*width*math.sin(a),rz*size*w*width*math.cos(a)+lean
-                vs.append((cx+px*math.cos(turn)-pz*math.sin(turn)+lean_x*size*row/(len(profile)-1),
-                    height+(0 if row==0 else .20*rise*math.sin(j*2.1+id)),
-                    cz+px*math.sin(turn)+pz*math.cos(turn)+lean_z*size*row/(len(profile)-1)))
-        fs=[tuple(range(n-1,-1,-1)),tuple(range((len(profile)-1)*n,len(profile)*n))]
-        fs += [(r*n+j,r*n+(j+1)%n,(r+1)*n+(j+1)%n,(r+1)*n+j) for r in range(len(profile)-1) for j in range(n)]
-        solid_record(id,vs,fs)
-        mesh('Greyhaven basin buttress '+str(id),vs,fs,basin_rock)
 COLLISION.write_text(json.dumps(collision,separators=(',',':'))+'\n')
 print('Authored',len(o.data.polygons),'faces;',len(collision),'simplified collision meshes;',len(resources),'resources.')
 

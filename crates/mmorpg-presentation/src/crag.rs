@@ -15,6 +15,9 @@
 //! `standOff` ([`Faces::stand_off`]), so the hands meet the rock rather than the collider
 //! inside it. While a client does not draw the kit, the static scene draws the plain rock
 //! boxes and their worn handholds ([`crate::Kit::Crag`] fallback groups). Presentation only.
+//!
+//! The kit's freestanding outcrops ([`OUTCROPS`]) are placed by the world dressing
+//! ([`crate::world_dressing`], #683) through the same placements, levels and fallback.
 use std::collections::BTreeMap;
 
 use mmorpg_core::{Grip, UNITS_PER_METRE, greyhaven_vale::ids};
@@ -64,6 +67,36 @@ pub const ENTRIES: [&str; 13] = [
     "crag.kit.face-sheer-1",
     "crag.kit.face-sheer-2",
     "crag.kit.face-sheer-3",
+];
+/// The freestanding outcrops the world dressing places (#683, [`crate::world_dressing`]),
+/// sorted.
+pub const OUTCROPS: [&str; 5] = [
+    "crag.kit.outcrop-buttress-1",
+    "crag.kit.outcrop-buttress-2",
+    "crag.kit.outcrop-spire",
+    "crag.kit.outcrop-talus-1",
+    "crag.kit.outcrop-talus-2",
+];
+/// Every entry the clients load: the box modules, then the outcrops.
+pub const KIT_ENTRIES: [&str; 18] = [
+    ENTRIES[0],
+    ENTRIES[1],
+    ENTRIES[2],
+    ENTRIES[3],
+    ENTRIES[4],
+    ENTRIES[5],
+    ENTRIES[6],
+    ENTRIES[7],
+    ENTRIES[8],
+    ENTRIES[9],
+    ENTRIES[10],
+    ENTRIES[11],
+    ENTRIES[12],
+    OUTCROPS[0],
+    OUTCROPS[1],
+    OUTCROPS[2],
+    OUTCROPS[3],
+    OUTCROPS[4],
 ];
 
 /// A crag's module family.
@@ -303,10 +336,11 @@ fn frame(b: &CragBox, m: &Module) -> Affine {
     ])
 }
 
-/// Every crag kit module placed on `s`, box by box in prop order. Only Greyhaven Vale has them.
+/// Every crag kit module placed on `s`, box by box in prop order, then the outcrops the world
+/// dressing places (#683). Only Greyhaven Vale has them.
 #[must_use]
 pub fn placements(s: &Scenery) -> Vec<Placement> {
-    boxes(s)
+    let mut placements: Vec<_> = boxes(s)
         .iter()
         .flat_map(|b| {
             layout(b).into_iter().map(move |m| Placement {
@@ -316,7 +350,9 @@ pub fn placements(s: &Scenery) -> Vec<Placement> {
                 cull: Cull::Far,
             })
         })
-        .collect()
+        .collect();
+    placements.extend(crate::world_dressing::placements(s, crate::Kit::Crag));
+    placements
 }
 
 /// A module's `climb` metadata from the descriptor, in the climbing kit's shape.
@@ -395,8 +431,8 @@ pub fn descriptor_climbs(json: &str) -> Result<BTreeMap<String, Climb>, String> 
     Ok(out)
 }
 
-/// Every placed module's levels from the bundle's `crag-descriptor` attachment JSON; the macro
-/// texture and the outcrops are not placed.
+/// Every placed module's and outcrop's levels from the bundle's `crag-descriptor` attachment
+/// JSON ([`KIT_ENTRIES`]); the macro texture is not placed.
 ///
 /// # Errors
 ///
@@ -404,11 +440,17 @@ pub fn descriptor_climbs(json: &str) -> Result<BTreeMap<String, Climb>, String> 
 pub fn descriptor_lods(json: &str) -> Result<Vec<EntryLods>, String> {
     let mut value: Value =
         serde_json::from_str(json).map_err(|error| format!("crag descriptor: {error}"))?;
+    // The outcrops are listed apart from the modules, in the same shape.
+    let outcrops = value["outcrops"]["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     if let Some(assets) = value["assets"].as_array_mut() {
+        assets.extend(outcrops);
         assets.retain(|asset| {
             asset["key"]
                 .as_str()
-                .is_some_and(|key| ENTRIES.contains(&key))
+                .is_some_and(|key| KIT_ENTRIES.contains(&key))
         });
     }
     crate::lod::descriptor_lods(&value)
@@ -504,6 +546,22 @@ impl Faces {
 mod tests {
     use super::*;
     use mmorpg_core::greyhaven_vale::{SHEER_CRAGS, highlands};
+
+    #[test]
+    fn the_kit_loads_every_outcrop_the_dressing_places() {
+        let s = mmorpg_scenery::greyhaven_vale_scenery();
+        let assets = crate::world_dressing::assets(&s, crate::Kit::Crag);
+        assert!(!assets.is_empty());
+        assert!(
+            assets.iter().all(|asset| OUTCROPS.contains(asset)),
+            "{assets:?}"
+        );
+        let outcrops = placements(&s)
+            .into_iter()
+            .filter(|p| OUTCROPS.contains(&p.entry))
+            .count();
+        assert_eq!(outcrops, crate::world_dressing::placed(&s).len());
+    }
 
     #[test]
     fn every_crag_is_dressed_sheer_where_the_content_is_sheer() {
@@ -662,7 +720,7 @@ mod tests {
         assert!(FACE_CLIMB.iter().all(|k| climbs[*k].face > 0.));
         assert!(climbs.values().all(|c| (c.stand_off - 0.36).abs() < 1e-9));
         let lods = descriptor_lods(&json).unwrap();
-        assert_eq!(lods.len(), ENTRIES.len());
+        assert_eq!(lods.len(), KIT_ENTRIES.len());
         assert!(lods.iter().all(|l| l.levels.len() == 3));
         // The ivy on dressed climbable faces stands clear of the rock.
         let most = FACE_CLIMB
