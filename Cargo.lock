@@ -436,7 +436,7 @@ dependencies = [
 [[package]]
 name = "battle-royale-core"
 version = "0.1.0"
-source = "git+https://github.com/moenarch-games/battle-royale.git?rev=91700ebca3d5f231a3b043383de8a7c9f7675396#91700ebca3d5f231a3b043383de8a7c9f7675396"
+source = "git+https://github.com/moenarch-games/battle-royale.git?rev=ea2489062c5671bd3a9533dd78e098fe8ac3d3fc#ea2489062c5671bd3a9533dd78e098fe8ac3d3fc"
 dependencies = [
  "mmorpg-core",
 ]
