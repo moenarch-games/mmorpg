@@ -65,6 +65,60 @@ export type PredictionHandle = {
   free(): void;
 };
 
+/**
+ * The predicted own body (#680) a source drives: commands as it sends them, `step()` and
+ * `record()` once per local tick, and every projection it receives, the newest restarting the
+ * prediction from the zone's own answer. `draw` puts the own body where the prediction stands,
+ * between its last two recorded ticks.
+ */
+export class OwnBodyPrediction {
+  readonly #handle: PredictionHandle;
+  #reconciled = false;
+  /** The predicted own body after the previous and the latest local tick: `[x, y, z, facing]`. */
+  #predicted: [Float32Array | null, Float32Array | null] = [null, null];
+
+  constructor(handle: PredictionHandle) { this.#handle = handle; }
+
+  /** `bytes` are the plain or observed zone command wire bytes sent under `sequence`. */
+  sent(sequence: number, bytes: Uint8Array): void { this.#handle.sent(sequence, bytes); }
+
+  /** One local tick of the prediction. */
+  step(): void { this.#handle.step(); }
+
+  /** Every projection received, in order: each acknowledges, the newest reconciles. */
+  receive(snapshots: readonly ZoneSnapshot[]): void {
+    for (const snapshot of snapshots) { this.#handle.acknowledge(snapshot.tick, snapshot.acknowledgedSequence); }
+    const newest = snapshots.at(-1);
+    const own = newest && ownEntity(newest, newest.viewerId);
+    if (!newest || !own) { return; }
+    const [x, y, z] = own.position;
+    const [vx, vy, vz] = own.velocity;
+    this.#handle.reconcile(newest.tick, x, y, z, vx, vy, vz, own.facing);
+    this.#reconciled = true;
+  }
+
+  /** Remembers where the prediction stands after this local tick, once it was reconciled. */
+  record(): void {
+    if (!this.#reconciled) { return; }
+    const position = this.#handle.position();
+    this.#predicted = [this.#predicted[1], position.length === 4 ? position : null];
+  }
+
+  /** `entities` with the viewer's own body where the prediction puts it, `alpha` into the tick. */
+  draw(entities: readonly EntityState[], viewerId: number, alpha: number): readonly EntityState[] {
+    const [previous, current] = this.#predicted;
+    if (!current) { return entities; }
+    const from = previous ?? current;
+    const at = (axis: number) => from[axis]! + (current[axis]! - from[axis]!) * alpha;
+    const velocity = (axis: number) => Math.max(-128, Math.min(127, Math.round(current[axis]! - from[axis]!)));
+    return entities.map((entity) => entity.kind === "player" && entity.entityId === viewerId
+      ? { ...entity, position: [at(0), at(1), at(2)], velocity: [velocity(0), velocity(1), velocity(2)], facing: current[3]! }
+      : entity);
+  }
+
+  free(): void { this.#handle.free(); }
+}
+
 const YAW_STEPS = 65_536;
 /** The sparring partner closes to this distance (units), then circles, and swings within reach. */
 const PARTNER_CLOSE = 200;
@@ -97,7 +151,7 @@ export class NetcodeTrialSource implements WorldSource {
   readonly #clock = new FixedTickClock();
   readonly #history = new SnapshotBuffer();
   #zone: TrialZoneHandle | null = null;
-  #prediction: PredictionHandle | null = null;
+  #prediction: OwnBodyPrediction | null = null;
   #player: number | null = null;
   #partner: number | null = null;
   #partnerSequence = 0;
@@ -107,8 +161,6 @@ export class NetcodeTrialSource implements WorldSource {
   #uplink: { due: number; sequence: number; bytes: Uint8Array }[] = [];
   #downlink: { due: number; bytes: Uint8Array }[] = [];
   #latest: ZoneSnapshot | null = null;
-  /** The predicted own body after the previous and the latest local tick: `[x, y, z, facing]`. */
-  #predicted: [Float32Array | null, Float32Array | null] = [null, null];
 
   constructor(createZone: () => TrialZoneHandle, createPrediction: () => PredictionHandle, trial: NetcodeTrial) {
     this.#createZone = createZone;
@@ -129,7 +181,7 @@ export class NetcodeTrialSource implements WorldSource {
     }
     this.#zone = zone;
     this.#partner = zone.sparringPartner ?? null;
-    this.#prediction = this.#trial.option === "baseline" ? null : this.#createPrediction();
+    this.#prediction = this.#trial.option === "baseline" ? null : new OwnBodyPrediction(this.#createPrediction());
     this.#player = player;
     this.#clock.reset();
     this.#history.reset();
@@ -138,9 +190,8 @@ export class NetcodeTrialSource implements WorldSource {
     this.#ticks = 0;
     this.#uplink = [];
     this.#downlink = [];
-    this.#predicted = [null, null];
     // The joining projection arrives at once, like an online welcome.
-    this.#receive(zone.projection(player));
+    this.#prediction?.receive([this.#receive(zone.projection(player))]);
     return player;
   }
 
@@ -197,17 +248,8 @@ export class NetcodeTrialSource implements WorldSource {
     while (this.#downlink.length > 0 && this.#downlink[0]!.due <= this.#ticks) {
       received.push(this.#receive(this.#downlink.shift()!.bytes));
     }
-    const newest = received.at(-1);
-    const own = newest && ownEntity(newest, player);
-    if (this.#prediction && newest && own) {
-      const [x, y, z] = own.position;
-      const [vx, vy, vz] = own.velocity;
-      this.#prediction.reconcile(newest.tick, x, y, z, vx, vy, vz, own.facing);
-    }
-    if (this.#prediction) {
-      const position = this.#prediction.position();
-      this.#predicted = [this.#predicted[1], position.length === 4 ? position : null];
-    }
+    this.#prediction?.receive(received);
+    this.#prediction?.record();
     return received;
   }
 
@@ -215,7 +257,6 @@ export class NetcodeTrialSource implements WorldSource {
     const snapshot = decodeSnapshot(bytes);
     this.#latest = snapshot;
     this.#history.push(snapshot);
-    this.#prediction?.acknowledge(snapshot.tick, snapshot.acknowledgedSequence);
     return snapshot;
   }
 
@@ -258,15 +299,7 @@ export class NetcodeTrialSource implements WorldSource {
     if (!latest) { return []; }
     const tick = latest.tick - BigInt(INTERPOLATION_DELAY_TICKS);
     const entities = tick < 0n ? this.#history.sample(0n) : this.#history.sample(tick, this.#clock.fraction);
-    const [previous, current] = this.#predicted;
-    if (!this.#prediction || !current) { return entities; }
     // The own body is drawn where the prediction puts it, between its last two ticks.
-    const from = previous ?? current;
-    const alpha = this.#clock.fraction;
-    const at = (axis: number) => from[axis]! + (current[axis]! - from[axis]!) * alpha;
-    const velocity = (axis: number) => Math.max(-128, Math.min(127, Math.round(current[axis]! - from[axis]!)));
-    return entities.map((entity) => entity.kind === "player" && entity.entityId === latest.viewerId
-      ? { ...entity, position: [at(0), at(1), at(2)], velocity: [velocity(0), velocity(1), velocity(2)], facing: current[3]! }
-      : entity);
+    return this.#prediction ? this.#prediction.draw(entities, latest.viewerId, this.#clock.fraction) : entities;
   }
 }

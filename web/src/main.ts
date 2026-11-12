@@ -281,7 +281,7 @@ function refreshArenaWorld(): void {
       practiceWorld = createPracticeWorld(world, () => ({ character: arenaEntry.character(base), equipment: arenaEntry.equipment() }), arenaEntry.netcodeTrial());
     } else if (arenaEntry.selected) {
       arenaServer = arenaEntry.server();
-      if (arenaServer) { arenaWorld = createArenaWorld(world, arenaServer, () => arenaEntry.equipment()); }
+      if (arenaServer) { arenaWorld = createArenaWorld(world, arenaServer, () => arenaEntry.equipment(), arenaEntry.hostedPrediction()); }
     }
   } catch (error) { arenaError = errorMessage(error); }
   worldView.load(practiceWorld?.world ?? arenaWorld?.world ?? world);
@@ -303,8 +303,12 @@ function showArenaMatch(): void {
   arenaStatus.hidden = !showing;
   if (!showing || !match || viewerId === undefined) { return; }
   const status = matchStatus(match, viewerId);
+  // The netcode trial (#680): this client's movement option and the match's hit rewind.
+  const source = arenaWorld!.source;
+  const detail = `${status.detail} · ${source.predicted ? "predicted movement" : "interpolated movement"}` +
+    ` · ${source.hitRewind ? "hit rewind" : "no hit rewind"}`;
   if (arenaResult.textContent !== status.result) { arenaResult.textContent = status.result; }
-  if (arenaProgress.textContent !== status.detail) { arenaProgress.textContent = status.detail; }
+  if (arenaProgress.textContent !== detail) { arenaProgress.textContent = detail; }
   arenaNext.hidden = !status.canConfigure;
   if (match.zone.viewer.dead) {
     requireElement<HTMLElement>("#unit-status").textContent = "Eliminated from this match.";

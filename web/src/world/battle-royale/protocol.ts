@@ -1,6 +1,7 @@
 /**
  * Battle Royale protocol 2, schema 2, ruleset 3 (battle-royale #33). The arena's content
- * revision is the shared fortress's (#552), read from `ArenaPresentation.contentRevision()`.
+ * revision is the shared fortress's (#552), read from `ArenaPresentation.contentRevision()`, or its
+ * hit-rewind variant's (`hitRewindContentRevision()`, #680) in a match the host runs with rewind.
  * The host sends zone sheets until a character command acknowledges them, as a zone host does
  * (#544), so projections decode through the session's `ProjectionDecoder`.
  */
@@ -72,10 +73,11 @@ class Reader {
 }
 
 /**
- * `contentRevision` is the fortress content both host and client must run; `sheets` is the
- * session's decoder, holding the sheets the host sent earlier.
+ * `contentRevisions` are the fortress contents the client can run, one of which the host must
+ * run (a match may rewind hits, #680); `sheets` is the session's decoder, holding the sheets the
+ * host sent earlier.
  */
-export function decodeMatchProjection(bytes: Uint8Array, contentRevision: bigint, sheets: ProjectionDecoder): MatchProjection {
+export function decodeMatchProjection(bytes: Uint8Array, contentRevisions: readonly bigint[], sheets: ProjectionDecoder): MatchProjection {
   const reader = new Reader(bytes);
   if (new TextDecoder().decode(reader.bytes(4)) !== "BRPL" || reader.u16() !== 2 || reader.u16() !== 2 || reader.u64() !== 3n) {
     throw new Error("Unsupported Battle Royale projection version.");
@@ -109,7 +111,7 @@ export function decodeMatchProjection(bytes: Uint8Array, contentRevision: bigint
   const zone = sheets.decode(reader.bytes(zoneBytes));
   reader.finish();
   const viewer = players.find((player) => player.id === zone.viewerId);
-  if (zone.zoneId !== ARENA_ZONE_ID || zone.contentRevision !== contentRevision || !viewer ||
+  if (zone.zoneId !== ARENA_ZONE_ID || !contentRevisions.includes(zone.contentRevision) || !viewer ||
     viewer.alive === zone.viewer.dead || zone.tick > tick || (phase !== "finished" && zone.tick !== tick)) {
     throw new Error("Battle Royale roster, content or clock disagrees with its character projection.");
   }

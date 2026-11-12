@@ -42,7 +42,7 @@ export type ActivityProtocol = {
 
 export type OnlineZoneOptions = {
   route: SessionRoute;
-  /** The content revision of the scenery this page loaded; every projection must carry it. */
+  /** The content revision of the scenery this page loaded; every projection must carry it, unless an activity's decoder checks it. */
   contentRevision: bigint;
   connector: SessionConnector;
   resolveCharacterId?: (localId: string) => Promise<string>;
@@ -483,7 +483,8 @@ export class OnlineZoneSource implements WorldSource {
   #project(welcome: Welcome, frame: SnapshotFrame): void {
     const activity = this.#activityProtocol?.decodeProjection(frame.payload, this.#sheets);
     const snapshot = activity ? activity.snapshot : this.#sheets.decode(frame.payload);
-    if (snapshot.contentRevision !== this.#contentRevision) {
+    // An activity's decoder checks the revision itself: a match may run one of several (#680).
+    if (!activity && snapshot.contentRevision !== this.#contentRevision) {
       throw new Error(
         `The zone host runs content revision ${snapshot.contentRevision}, but this page loaded revision ${this.#contentRevision}. ` +
         "Both must come from the same build.",

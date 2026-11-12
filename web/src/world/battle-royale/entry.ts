@@ -40,7 +40,6 @@ export class BattleRoyaleEntry {
   readonly #hosted: HTMLElement;
   readonly #server: HTMLInputElement;
   readonly #hash: HTMLInputElement;
-  readonly #netcode: HTMLElement;
   readonly #netcodeOption: HTMLSelectElement;
   readonly #netcodeDelay: HTMLSelectElement;
   readonly #equipment: HTMLSelectElement[] = [];
@@ -79,7 +78,6 @@ export class BattleRoyaleEntry {
     this.#hosted = element(roots.route, "#arena-hosted");
     this.#server = element(roots.route, "#arena-server"); this.#hash = element(roots.route, "#arena-cert-hash");
     this.#note = element(roots.route, "#arena-setup-note");
-    this.#netcode = element(roots.route, "#arena-netcode");
     this.#netcodeOption = element(roots.route, "#arena-netcode-option");
     this.#netcodeDelay = element(roots.route, "#arena-netcode-delay");
     for (const option of NETCODE_OPTIONS) { this.#netcodeOption.add(new Option(option.name, option.id)); }
@@ -133,9 +131,18 @@ export class BattleRoyaleEntry {
     if (!this.practice || !isNetcodeOption(option)) { return null; }
     return { option, roundTripMs: Number(this.#netcodeDelay.value) };
   }
+  /**
+   * Whether this client predicts its own body in a hosted match (#680): options 2 and 3. A hosted
+   * match has real latency, and whether its hits rewind is the host's per-match option.
+   */
+  hostedPrediction(): boolean {
+    const option = this.#netcodeOption.value;
+    return !this.practice && isNetcodeOption(option) && option !== "baseline";
+  }
   #showRoute(): void {
     this.#hosted.hidden = this.practice;
-    this.#netcode.hidden = !this.practice;
+    // Hosted matches have real latency (#680): no simulated round trip.
+    this.#netcodeDelay.closest("label")!.hidden = !this.practice;
     this.#netcodeDelay.disabled = !isNetcodeOption(this.#netcodeOption.value);
   }
   #modeInput(mode: "practice" | "hosted"): HTMLInputElement {
@@ -191,7 +198,11 @@ export class BattleRoyaleEntry {
     const level = this.#presentation.maximumLevel();
     const trial = this.netcodeTrial();
     const option = trial && NETCODE_OPTIONS.find((candidate) => candidate.id === trial.option);
-    this.#note.textContent = option
+    const hosted = !this.practice && NETCODE_OPTIONS.find((candidate) => candidate.id === this.#netcodeOption.value);
+    this.#note.textContent = hosted
+      ? `Netcode trial: ${this.hostedPrediction() ? "predicted movement" : "baseline (interpolated)"} in a hosted match. ` +
+        "Hit rewind is the match's own option: its host lists the match id as <id>:rewind."
+      : option
       ? `Netcode trial: ${option.name.slice(4)} at ${trial.roundTripMs} ms round trip, against a sparring partner and training targets. Nothing is saved.`
       : this.practice
       ? `Level ${level} practice against training targets, in this browser. Nothing is saved.`
