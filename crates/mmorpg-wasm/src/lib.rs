@@ -1066,9 +1066,63 @@ impl BuildingPresenter {
             .get(index)
             .ok_or_else(|| JsError::new("no such walk-in building"))?;
         Ok(Self(mmorpg_presentation::buildings::WalkIn::new(
-            *spec,
+            spec.clone(),
             scenery::hosted_scenery(),
         )))
+    }
+
+    /// A mausoleum at a caller-owned content placement (#683); descriptor is the kit attachment.
+    pub fn mausoleum(
+        descriptor: &str,
+        x: i32,
+        y: i32,
+        z: i32,
+        quarters: u8,
+    ) -> Result<Self, JsError> {
+        let spec = mmorpg_presentation::buildings::Spec::mausoleum(descriptor, [x, y, z], quarters)
+            .map_err(|e| JsError::new(&e))?;
+        Ok(Self(mmorpg_presentation::buildings::WalkIn::new(
+            spec,
+            scenery::hosted_scenery(),
+        )))
+    }
+
+    /// Same adaptive indoor boom as the native presenter. Vectors are metres.
+    pub fn camera(
+        &mut self,
+        viewer: &[f64],
+        eye: &[f64],
+        target: &[f64],
+        dt: f64,
+        reduced: bool,
+    ) -> Vec<f64> {
+        let (Ok(viewer), Ok(eye), Ok(target)) =
+            (viewer.try_into(), eye.try_into(), target.try_into())
+        else {
+            return eye.to_vec();
+        };
+        self.0.camera(viewer, eye, target, dt, reduced).to_vec()
+    }
+
+    pub fn lighting(&self, viewer: &[f64]) -> f32 {
+        viewer.try_into().map_or(0., |p| self.0.lighting(p))
+    }
+
+    /// Eight floats, matching static scene lights: position, sRGB, lumens and range.
+    #[wasm_bindgen(js_name = pointLight)]
+    pub fn point_light(&self) -> Vec<f64> {
+        self.0.light().map_or_else(Vec::new, |light| {
+            vec![
+                light.position[0],
+                light.position[1],
+                light.position[2],
+                f64::from((light.color >> 16) & 255) / 255.,
+                f64::from((light.color >> 8) & 255) / 255.,
+                f64::from(light.color & 255) / 255.,
+                light.lumens,
+                light.range,
+            ]
+        })
     }
 
     /// How many walk-in buildings there are.
@@ -1090,14 +1144,14 @@ impl BuildingPresenter {
     /// The content door the building presents.
     #[must_use]
     pub fn door(&self) -> u8 {
-        self.0.spec().door.get()
+        self.0.spec().door.map_or(0, |door| door.get())
     }
 
     /// The door leaf's bundle entry.
     #[wasm_bindgen(js_name = doorEntry)]
     #[must_use]
     pub fn door_entry(&self) -> String {
-        self.0.spec().door_entry().to_owned()
+        self.0.spec().door_entry().unwrap_or("").to_owned()
     }
 
     /// The asset-tooling bundle entries to draw, in [`Self::frame`] order.

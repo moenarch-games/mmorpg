@@ -166,8 +166,11 @@ impl WorldPicking {
 fn door_of(draw: &SceneDraw) -> Option<DoorId> {
     mmorpg_presentation::buildings::BUILDINGS
         .iter()
-        .find(|spec| draw.id.starts_with(spec.door_entry()))
-        .map(|spec| spec.door)
+        .find(|spec| {
+            spec.door_entry()
+                .is_some_and(|key| draw.id.starts_with(key))
+        })
+        .and_then(|spec| spec.door)
 }
 
 fn cull(draw: &SceneDraw) -> CullMode {
@@ -427,7 +430,9 @@ mod tests {
         let out = (x - pixel_of([0., 1., -0.05])[0]).signum();
         assert_eq!(
             click(&p, [x + 4. * out, y]),
-            Some(Picked::Door(mmorpg_presentation::buildings::INN.door))
+            Some(Picked::Door(
+                mmorpg_presentation::buildings::INN.door.unwrap()
+            ))
         );
     }
 }

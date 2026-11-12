@@ -140,6 +140,7 @@ pub struct Presentation {
     /// The walk-in buildings' door swings and interior looks (#158).
     buildings: Vec<mmorpg_presentation::buildings::WalkIn>,
     last_buildings: Instant,
+    last_camera: Instant,
     /// The Sunken Shrine's kit modules (#431), placed once.
     shrine: crate::world::DrawBatch,
     /// The Outpost kit buildings' modules (#420), placed once, as picking tests them.
@@ -240,6 +241,7 @@ impl Presentation {
             camera_framed: false,
             buildings,
             last_buildings: now,
+            last_camera: now,
             shrine,
             outpost,
             outpost_textured,
@@ -870,7 +872,12 @@ impl Presentation {
         let opens: Vec<bool> = self
             .buildings
             .iter()
-            .map(|building| self.door_open(building.spec().door))
+            .map(|building| {
+                building
+                    .spec()
+                    .door
+                    .is_some_and(|door| self.door_open(door))
+            })
             .collect();
         let reduced_motion = self.reduced_motion;
         for (building, open) in self.buildings.iter_mut().zip(opens) {
@@ -1099,7 +1106,23 @@ impl Presentation {
                 camera.look_along(viewer.yaw);
             }
         }
-        camera.view_above_ground(focus, ground)
+        let mut view = camera.view_above_ground(focus, ground);
+        let dt = now
+            .saturating_duration_since(self.last_camera)
+            .as_secs_f64();
+        self.last_camera = self.last_camera.max(now);
+        for building in &mut self.buildings {
+            view.eye = building
+                .camera(
+                    focus.map(f64::from),
+                    view.eye.map(f64::from),
+                    view.target.map(f64::from),
+                    dt,
+                    self.reduced_motion,
+                )
+                .map(|v| v as f32);
+        }
+        view
     }
 
     #[must_use]

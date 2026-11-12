@@ -1224,6 +1224,10 @@ mod marshal_house_bundle {
     include!(concat!(env!("OUT_DIR"), "/marshal_house_bundle.rs"));
 }
 
+mod monuments_bundle {
+    include!(concat!(env!("OUT_DIR"), "/monuments_bundle.rs"));
+}
+
 type BuildingDraws = Vec<(&'static str, Vec<SceneDraw>)>;
 
 fn building_draws(
@@ -1247,7 +1251,10 @@ fn building_draws(
 pub(super) fn building_draws_of(bundle: &str) -> &'static [(&'static str, Vec<SceneDraw>)] {
     static INN: OnceLock<BuildingDraws> = OnceLock::new();
     static MARSHAL_HOUSE: OnceLock<BuildingDraws> = OnceLock::new();
+    static MONUMENTS: OnceLock<BuildingDraws> = OnceLock::new();
     match bundle {
+        "monuments.kit" => MONUMENTS
+            .get_or_init(|| building_draws(monuments_bundle::ENTRIES, monuments_bundle::FILES)),
         "greyhaven.inn" => {
             INN.get_or_init(|| building_draws(inn_bundle::ENTRIES, inn_bundle::FILES))
         }

@@ -1646,8 +1646,9 @@ export class WorldView {
       this.#frameFirstView(self.focus, self.facing, scene.surfaceY);
     }
     const orbit = this.#orbit.view(self.focus, scene.surfaceY);
-    // The fortress's walls and roofs (#552) pull the eye in; Greyhaven's camera never collides.
-    const view = this.#plan ? planPose(this.#plan) : this.#flyTo ?? (this.#arena ? clearSightLine(orbit, this.#occluders) : orbit);
+    // The arena and authored indoor rooms use an adaptive boom, retaining normal orbit controls.
+    const indoor = this.#inn?.camera(orbit, [self.x, self.feetY, self.z], deltaSeconds, !animate) ?? orbit;
+    const view = this.#plan ? planPose(this.#plan) : this.#flyTo ?? (this.#arena ? clearSightLine(indoor, this.#occluders) : indoor);
     this.#camera.position.set(...view.eye);
     this.#camera.lookAt(...view.target);
     this.#camera.updateMatrixWorld(true);
@@ -1701,9 +1702,9 @@ export class WorldView {
     this.#lighting.apply({
       hour: (12 + seconds / DAY_SECONDS * 24) % 24,
       sky: true,
-      interior: this.#scene?.interior([self.x, self.feetY, self.z]) ?? 0,
+      interior: Math.max(this.#scene?.interior([self.x, self.feetY, self.z]) ?? 0, this.#inn?.interior([self.x, self.feetY, self.z]) ?? 0),
       fog: environment.fog && !this.#plan ? String(environment.fog.color) : null,
-      pointLights: this.#scene?.pointLights(this.#seconds, animate) ?? null,
+      pointLights: this.#inn?.pointLights(this.#scene?.pointLights(this.#seconds, animate) ?? new Float32Array()) ?? this.#scene?.pointLights(this.#seconds, animate) ?? null,
     });
     this.#lastInstanceBatches = frame.instanceBatches;
     this.#lastCamera = camera;

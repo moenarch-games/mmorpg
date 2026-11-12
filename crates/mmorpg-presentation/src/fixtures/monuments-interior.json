@@ -1,0 +1,297 @@
+{
+  "assets": [
+    {
+      "bounds": {
+        "max": [
+          3.30224,
+          3.38939,
+          4.152229
+        ],
+        "min": [
+          -3.30061,
+          -0.108484,
+          -4.152943
+        ]
+      },
+      "bury": 0.112,
+      "collisionProxies": [
+        {
+          "center": [
+            0,
+            0.142,
+            -0.001
+          ],
+          "name": "floor",
+          "size": [
+            6.619,
+            0.285,
+            8.32
+          ],
+          "tag": "solid"
+        },
+        {
+          "center": [
+            -2.325,
+            1.821,
+            -0.603
+          ],
+          "name": "side-left",
+          "size": [
+            0.467,
+            3.098,
+            5.915
+          ],
+          "tag": "solid"
+        },
+        {
+          "center": [
+            -1.451,
+            1.821,
+            2.123
+          ],
+          "name": "pier-left",
+          "size": [
+            1.31,
+            3.088,
+            0.461
+          ],
+          "tag": "solid"
+        },
+        {
+          "center": [
+            -1.948,
+            1.822,
+            2.849
+          ],
+          "name": "column-left",
+          "size": [
+            0.6,
+            3.135,
+            0.611
+          ],
+          "tag": "solid"
+        },
+        {
+          "center": [
+            2.324,
+            1.823,
+            -0.601
+          ],
+          "name": "side-right",
+          "size": [
+            0.468,
+            3.096,
+            5.912
+          ],
+          "tag": "solid"
+        },
+        {
+          "center": [
+            1.449,
+            1.821,
+            2.124
+          ],
+          "name": "pier-right",
+          "size": [
+            1.309,
+            3.095,
+            0.466
+          ],
+          "tag": "solid"
+        },
+        {
+          "center": [
+            1.954,
+            1.816,
+            2.852
+          ],
+          "name": "column-right",
+          "size": [
+            0.609,
+            3.131,
+            0.606
+          ],
+          "tag": "solid"
+        },
+        {
+          "center": [
+            0,
+            1.821,
+            -3.326
+          ],
+          "name": "back",
+          "size": [
+            4.21,
+            3.094,
+            0.467
+          ],
+          "tag": "solid"
+        },
+        {
+          "center": [
+            -0.001,
+            3.023,
+            2.124
+          ],
+          "name": "lintel",
+          "size": [
+            1.609,
+            0.695,
+            0.463
+          ],
+          "tag": "solid"
+        },
+        {
+          "center": [
+            0.001,
+            0.74,
+            -1.1
+          ],
+          "name": "tomb",
+          "size": [
+            1.271,
+            0.94,
+            2.314
+          ],
+          "tag": "solid"
+        }
+      ],
+      "fit": {
+        "blocks": 21,
+        "weather": {
+          "erosion": 0.5,
+          "moss": 0.5,
+          "wear": 0.55
+        }
+      },
+      "footprint": {
+        "depth": 8.305172,
+        "height": 3.38939,
+        "width": 6.60285
+      },
+      "interior": {
+        "roof": "mausoleum-walk-in-roof",
+        "volume": {
+          "center": [
+            0,
+            1.82,
+            -0.6
+          ],
+          "size": [
+            4.2,
+            3.08,
+            5
+          ]
+        }
+      },
+      "key": "monuments.kit.mausoleum-walk-in",
+      "kind": "mausoleum",
+      "lods": {
+        "boundingSphere": {
+          "center": [
+            0.000815,
+            1.640453,
+            -0.000357
+          ],
+          "radius": 5.585889
+        },
+        "levels": [
+          {
+            "minScreenSize": 0.0403,
+            "referenceMaxDistance": 240,
+            "triangles": 4588,
+            "variant": "default"
+          },
+          {
+            "minScreenSize": 0.0134,
+            "referenceMaxDistance": 720,
+            "triangles": 1604,
+            "variant": "lod1"
+          },
+          {
+            "minScreenSize": 0,
+            "referenceMaxDistance": null,
+            "triangles": 457,
+            "variant": "lod2"
+          }
+        ]
+      },
+      "role": "mausoleum-walk-in",
+      "triangles": 4588
+    },
+    {
+      "bounds": {
+        "max": [
+          3.001858,
+          4.884641,
+          3.326884
+        ],
+        "min": [
+          -3.002155,
+          3.356669,
+          -3.829924
+        ]
+      },
+      "bury": -3.351,
+      "collision": "none",
+      "fit": {
+        "blocks": 2,
+        "weather": {
+          "erosion": 0.5,
+          "moss": 0.5,
+          "wear": 0.55
+        }
+      },
+      "footprint": {
+        "depth": 7.156808,
+        "height": 4.884641,
+        "width": 6.004013
+      },
+      "key": "monuments.kit.mausoleum-walk-in-roof",
+      "kind": "mausoleum",
+      "lods": {
+        "boundingSphere": {
+          "center": [
+            -0.000149,
+            4.120655,
+            -0.25152
+          ],
+          "radius": 4.732937
+        },
+        "levels": [
+          {
+            "minScreenSize": 0.0342,
+            "referenceMaxDistance": 240,
+            "triangles": 600,
+            "variant": "default"
+          },
+          {
+            "minScreenSize": 0.0114,
+            "referenceMaxDistance": 720,
+            "triangles": 210,
+            "variant": "lod1"
+          },
+          {
+            "minScreenSize": 0,
+            "referenceMaxDistance": null,
+            "triangles": 60,
+            "variant": "lod2"
+          }
+        ]
+      },
+      "role": "mausoleum-walk-in-roof",
+      "triangles": 600
+    }
+  ],
+  "handedness": "right",
+  "lodSelection": {
+    "metric": "projected-bounding-sphere-height-fraction",
+    "referenceFovYDegrees": 60,
+    "rule": "Use the first level whose minScreenSize is at most the asset's projected bounding-sphere diameter divided by the viewport height (radius / (distance * tan(fovY / 2)), scaled by the instance scale). referenceMaxDistance is the distance in metres at which that level ends for an unscaled instance at referenceFovYDegrees."
+  },
+  "origin": "footprint-base-center",
+  "placement": "Fronts face +Z. Solid pieces carry `collisionProxies` boxes; `floor` boxes are walkable steps. mausoleum-walk-in and mausoleum-walk-in-roof share one frame, so place them with the same transform; `interior` on the walk-in names the roof piece and gives the room's volume, for a game that hides the roof while a character is inside.",
+  "schema": "monuments-descriptor-v1",
+  "units": "metre",
+  "up": "+Y"
+}
