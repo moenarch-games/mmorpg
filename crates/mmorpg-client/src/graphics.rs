@@ -516,6 +516,15 @@ mod tests {
         }
     }
 
+    /// Where the `crowd` view of `outpost_frame_time` looks: the hub plaza's first two spawn
+    /// rows, where the crowd's players stand.
+    const CROWD_VIEW: CameraView = debug_view([0.0, 9.0, 32.0], [0.0, 1.0, 13.0]);
+
+    /// The four debug views, then `starter`, the camera a new character gets on entering (the
+    /// `OrbitCamera` default at spawn, as `greyhaven_lighting_shots` poses it), and `crowd`,
+    /// [`CROWD_VIEW`] over a zone holding as many players as a projection shows (#724).
+    /// `MMORPG_PROFILE_VIEW=<name>` times that view alone.
+    ///
     /// Advisory frame time (PRINCIPLE-015): the Outpost hub with its units and the woods
     /// (#49), 1280×720, each frame posed, submitted and waited for. Per view it prints the
     /// median, p95, p99 and maximum of the frame's wall time, `render` (prepare, encode,
@@ -544,7 +553,32 @@ mod tests {
             let mut presentation =
                 Presentation::new(1, scenery.clone(), Arc::clone(&content), start).unwrap();
             presentation.push(projection, start).unwrap();
-            let views = FRAME_TIME_VIEWS;
+            // The crowd: as many players as a projection shows, on the plaza's spawn grid (two
+            // rows of 32, one metre apart), each with a class and sex of its own.
+            let mut crowd =
+                ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content)).unwrap();
+            for player in 1..=mmorpg_core::MAX_VISIBLE_ENTITIES as u32 {
+                crowd.add_player(player).unwrap();
+                let [class, sex] = [player % 7, player / 7 % 2].map(|code| code as u8);
+                crowd
+                    .apply_command(player, 1, ZoneCommand::ChooseClass { class, sex })
+                    .unwrap();
+            }
+            crowd.advance_tick().unwrap();
+            let mut crowded =
+                Presentation::new(1, scenery.clone(), Arc::clone(&content), start).unwrap();
+            crowded
+                .push(crowd.snapshot_for_player(1).unwrap(), start)
+                .unwrap();
+            let starter = presentation.camera_view(&mut OrbitCamera::default(), &world, start);
+            let only = std::env::var("MMORPG_PROFILE_VIEW").ok();
+            let views: Vec<_> = FRAME_TIME_VIEWS
+                .map(|(name, view)| (name, view, false))
+                .into_iter()
+                .chain([("starter", starter, false), ("crowd", CROWD_VIEW, true)])
+                .filter(|(name, ..)| only.as_deref().is_none_or(|only| only == *name))
+                .collect();
+            assert!(!views.is_empty(), "MMORPG_PROFILE_VIEW names no view");
             let size = [1280, 720];
             let instance = wgpu::Instance::default();
             let adapter = instance.request_adapter(&Default::default()).await.unwrap();
@@ -602,7 +636,12 @@ mod tests {
                     .collect::<Vec<_>>()
                     .join(",")
             };
-            for (name, view) in views {
+            for (name, view, crowd_view) in views {
+                let presentation = if crowd_view {
+                    &mut crowded
+                } else {
+                    &mut presentation
+                };
                 let [mut frames, mut renders, mut prepares, mut encodes, mut gpus] =
                     std::array::from_fn(|_| Vec::new());
                 // GPU time per pass label (several sky or shadow passes summed), in pass order.
