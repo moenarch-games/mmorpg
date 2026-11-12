@@ -300,6 +300,25 @@ impl Logs {
                 ZoneEvent::Evade { target, .. } => {
                     (LineKind::Combat, format!("{} evades.", who(target)))
                 }
+                // Two attacks met (#679).
+                ZoneEvent::Clashed {
+                    source,
+                    target,
+                    kind,
+                } => (
+                    LineKind::Combat,
+                    match kind {
+                        mmorpg_core::ClashKind::Swings => {
+                            format!("{} and {} clash blades.", who(source), who(target))
+                        }
+                        mmorpg_core::ClashKind::Projectiles => {
+                            format!("{}'s and {}'s shots collide.", who(source), who(target))
+                        }
+                        mmorpg_core::ClashKind::Parry => {
+                            format!("{} cuts down {}'s shot.", who(source), who(target))
+                        }
+                    },
+                ),
                 // A trailing lurker gave up on the diver (#274).
                 ZoneEvent::LostInterest { .. } => {
                     (LineKind::Combat, "The lurker loses interest.".into())
