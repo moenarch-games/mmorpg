@@ -429,67 +429,85 @@ struct NaturePart {
     fades: Vec<MaterialId>,
 }
 
-/// The `greyhaven-nature` library uploaded once: per entry, per level, its primitives.
-struct NatureGpu(Vec<Vec<Vec<NaturePart>>>);
+/// The `greyhaven-nature` library, uploaded once: its textures, then per entry, per level, its
+/// primitives. It fills in library order, all at once or a few items per frame
+/// ([`FrameRenderer::preload`]), and is drawn only once `complete`.
+#[derive(Default)]
+struct NatureGpu {
+    textures: Vec<TextureId>,
+    levels: Vec<Vec<Vec<NaturePart>>>,
+    complete: bool,
+}
+
+/// Whether an upload spread over frames has used up this frame's share.
+fn past(deadline: Option<std::time::Instant>) -> bool {
+    deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline)
+}
 
 impl NatureGpu {
-    fn upload(world: &mut World) -> Self {
+    /// Uploads the rest of the library, stopping at `deadline`; true once all of it is resident.
+    fn upload(&mut self, world: &mut World, deadline: Option<std::time::Instant>) -> bool {
+        if self.complete {
+            return true;
+        }
         let library = crate::nature::library();
-        let textures: Vec<_> = library
-            .textures
-            .iter()
-            .map(|texture| world.add_texture(texture))
-            .collect();
-        let levels = library
-            .levels
-            .iter()
-            .map(|levels| {
-                levels
-                    .iter()
-                    .map(|parts| {
-                        parts
-                            .iter()
-                            .map(|part| {
-                                let texture = |slot: Option<usize>| slot.map(|i| textures[i]);
-                                let material = StandardMaterial {
-                                    base_color_texture: texture(part.textures.base_color),
-                                    normal_map_texture: part
-                                        .textures
-                                        .normal
-                                        .filter(|_| !part.mesh.tangents.is_empty())
-                                        .map(|i| textures[i]),
-                                    metallic_roughness_texture: texture(
-                                        part.textures.metallic_roughness,
-                                    ),
-                                    ..part.material
-                                };
-                                NaturePart {
-                                    mesh: world.add_mesh(&part.mesh),
-                                    fade_in: world.add_mesh(&part.fade_in),
-                                    fade_out: world.add_mesh(&part.fade_out),
-                                    fades: (0..crate::nature::FADE_STEPS)
-                                        .map(|step| {
-                                            world.add_material(&crate::nature::fade_material(
-                                                &material,
-                                                crate::nature::fade_threshold(step),
-                                            ))
-                                        })
-                                        .collect(),
-                                    material: world.add_material(&material),
-                                }
+        for texture in &library.textures[self.textures.len()..] {
+            if past(deadline) {
+                return false;
+            }
+            self.textures.push(world.add_texture(texture));
+        }
+        let textures = &self.textures;
+        for (entry, levels) in library.levels.iter().enumerate() {
+            if self.levels.len() == entry {
+                self.levels.push(Vec::new());
+            }
+            let uploaded = &mut self.levels[entry];
+            for (level, parts) in levels.iter().enumerate() {
+                if uploaded.len() == level {
+                    uploaded.push(Vec::new());
+                }
+                let uploaded = &mut uploaded[level];
+                for part in &parts[uploaded.len()..] {
+                    if past(deadline) {
+                        return false;
+                    }
+                    let texture = |slot: Option<usize>| slot.map(|i| textures[i]);
+                    let material = StandardMaterial {
+                        base_color_texture: texture(part.textures.base_color),
+                        normal_map_texture: part
+                            .textures
+                            .normal
+                            .filter(|_| !part.mesh.tangents.is_empty())
+                            .map(|i| textures[i]),
+                        metallic_roughness_texture: texture(part.textures.metallic_roughness),
+                        ..part.material
+                    };
+                    uploaded.push(NaturePart {
+                        mesh: world.add_mesh(&part.mesh),
+                        fade_in: world.add_mesh(&part.fade_in),
+                        fade_out: world.add_mesh(&part.fade_out),
+                        fades: (0..crate::nature::FADE_STEPS)
+                            .map(|step| {
+                                world.add_material(&crate::nature::fade_material(
+                                    &material,
+                                    crate::nature::fade_threshold(step),
+                                ))
                             })
-                            .collect()
-                    })
-                    .collect()
-            })
-            .collect();
-        Self(levels)
+                            .collect(),
+                        material: world.add_material(&material),
+                    });
+                }
+            }
+        }
+        self.complete = true;
+        true
     }
 
     /// The instances of one drawn tree or rock level: settled, or its dissolve copy.
     fn instances(&self, draw: &crate::world::NatureDraw, out: &mut Vec<Instance>) {
         let Some(parts) = self
-            .0
+            .levels
             .get(draw.entry)
             .and_then(|levels| levels.get(draw.level))
         else {
@@ -521,7 +539,7 @@ impl NatureGpu {
 pub(super) struct FrameRenderer {
     renderer: Renderer,
     world: World,
-    nature: Option<NatureGpu>,
+    nature: NatureGpu,
     /// The ground layer textures (#525), uploaded with the first ground material.
     ground: Option<GroundGpu>,
     viewport: Viewport,
@@ -600,7 +618,7 @@ impl FrameRenderer {
         Self {
             renderer,
             world,
-            nature: None,
+            nature: NatureGpu::default(),
             ground: None,
             viewport,
             meshes: HashMap::new(),
@@ -781,6 +799,40 @@ impl FrameRenderer {
 
     /// Appends `batch`'s instances, resolving them only the first time the batch is drawn.
     fn push_batch(&mut self, batch: &DrawBatch) {
+        let key = self.resolve_batch(batch);
+        self.instances
+            .extend_from_slice(&self.batches[&key].instances);
+    }
+
+    /// Uploads what `frame` draws into the world without drawing it, stopping at `deadline`
+    /// (#726): the nature library, the static batches, then the frame's own draws. Returns true
+    /// once all of it is resident, so the frame's first draw uploads nothing more. A window
+    /// keeps presenting another frame meanwhile; the static batches stay resident while they
+    /// live, the per-frame draws until a drawn frame no longer uses them.
+    pub fn preload(&mut self, frame: &WorldFrame, deadline: std::time::Instant) -> bool {
+        if !frame.nature.is_empty() && !self.nature.upload(&mut self.world, Some(deadline)) {
+            return false;
+        }
+        for batch in &frame.batches {
+            if self.batches.contains_key(&batch_key(batch)) {
+                continue;
+            }
+            if past(Some(deadline)) {
+                return false;
+            }
+            self.resolve_batch(batch);
+        }
+        for draw in frame.draws.iter().filter(|draw| drawn(draw)) {
+            if past(Some(deadline)) {
+                return false;
+            }
+            self.instance(draw);
+        }
+        true
+    }
+
+    /// Resolves `batch` into cached instances the first time it is seen; returns its key.
+    fn resolve_batch(&mut self, batch: &DrawBatch) -> usize {
         let key = batch_key(batch);
         if !self.batches.contains_key(&key) {
             let mut instances = Vec::with_capacity(batch.len());
@@ -811,8 +863,7 @@ impl FrameRenderer {
                 },
             );
         }
-        self.instances
-            .extend_from_slice(&self.batches[&key].instances);
+        key
     }
 
     /// Drops the batches that are gone, then frees meshes whose resource was not drawn, whose
@@ -896,7 +947,7 @@ impl FrameRenderer {
                 instances,
                 ..
             } = self;
-            let nature = nature.get_or_insert_with(|| NatureGpu::upload(world));
+            nature.upload(world, None);
             for draw in &frame.nature {
                 nature.instances(draw, instances);
             }
