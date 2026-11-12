@@ -15,6 +15,10 @@ isolating it from the garrison and neighbouring intact props. Normal melee break
 airborne pieces slow or rebound at the western wall, settle on the cave floor and
 despawn. Recovery from breakage reproduces every subsequent canonical tick exactly.
 This is the representative gameplay rigid-mesh workload for #719, not a timing benchmark.
+The existing protocol combat workload's spawn-index sampling also shifts when the row is
+added: `vale-fights-8` emits 1,825,497 bytes (31,188 above its former ceiling) and
+`vale-fights-32` tests 431,424 candidates (6,705 above its former ceiling). Those two existing ceilings are
+updated; other ceilings and all replay/recovery assertions remain in force.
 Native/browser visual acceptance and the full workspace suites were not run.
 
 The first beta environment pass (#641) replaces the large stacked cliff slabs

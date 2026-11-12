@@ -73,10 +73,13 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // spread fights' bots stay on the Vale's part of the spawn table. The rock the brook sinks
     // under adds one fixed body: 360 more body visits per 360 ticks. The Marsh-Lake Wetlands'
     // creatures (#506) add 31 more (11,160 of each per 360 ticks), and the bots keep off them too.
+    // Three cave supplies (#719) add fixed prop bodies and shift the spread fixtures' sampled
+    // spawn indices: fights-8 emits 1,825,497 bytes and fights-32 tests 431,424 candidates.
+    // Refresh only those exceeded ceilings; the idle/crowded fixtures keep their ceilings.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
         [49_320, 1_326_240, 288_000, 6_088_352],
-        [49_320, 1_323_360, 93_060, 1_794_309],
-        [49_320, 1_332_000, 424_719, 7_878_807],
+        [49_320, 1_323_360, 93_060, 1_825_497],
+        [49_320, 1_332_000, 431_424, 7_878_807],
         [48_964, 1_343_164, 2_323_474, 24_322_842],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
