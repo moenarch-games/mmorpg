@@ -207,6 +207,8 @@ pub fn concerned_unit(event: &ZoneEvent, viewer: EntityRef) -> Option<EntityRef>
         | ZoneEvent::CastStarted { source, target, .. }
         | ZoneEvent::AbilityUsed { source, target, .. }
         | ZoneEvent::StrikeSwept { source, target, .. } => other(source, target),
+        ZoneEvent::SwingBegan { source, .. } => Some(source),
+        ZoneEvent::Clashed { source, target, .. } => other(source, Some(target)),
         ZoneEvent::Died { entity, .. } => Some(entity),
         ZoneEvent::Error { target, .. } => target,
         ZoneEvent::AuraApplied { target, .. }
@@ -442,6 +444,24 @@ pub fn event_token(event: &ZoneEvent, name: impl Fn(EntityRef) -> String) -> Str
             aim.height.code(),
             target.map_or_else(|| "-".to_owned(), &name)
         ),
+        ZoneEvent::SwingBegan {
+            source,
+            ability,
+            aim,
+            startup,
+            active,
+        } => format!(
+            "swing:{}:{}:{}{}:{startup}+{active}",
+            name(source),
+            ability.get(),
+            aim.side.code(),
+            aim.height.code(),
+        ),
+        ZoneEvent::Clashed {
+            source,
+            target,
+            kind,
+        } => format!("clash:{}>{}:{}", name(source), name(target), kind.code()),
         ZoneEvent::Blocked {
             source,
             target,

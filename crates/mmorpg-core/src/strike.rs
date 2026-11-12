@@ -133,7 +133,8 @@ pub const fn has_directed_mode(ability: AbilityId) -> bool {
 }
 
 impl ZoneSimulation {
-    /// Validates and resolves one directed strike of `ability`. Validation
+    /// Validates and resolves one directed strike of `ability`; in a zone
+    /// with timed combat (#679) it begins a timed swing instead. Validation
     /// is the selected-target order (class, learned, alive, stunned,
     /// casting, cooldowns, resource) with "has a directed mode" after
     /// learned; coverage replaces the target and range checks.
@@ -145,6 +146,16 @@ impl ZoneSimulation {
         aim: StrikeAim,
         now: u64,
     ) -> Result<crate::casting::Refusal, ZoneError> {
+        // A timed swing (#679) runs to its end before the next begins.
+        let timed = self.content.timed_combat();
+        if timed.is_some()
+            && self
+                .players
+                .get(&player_id)
+                .is_some_and(|player| player.swing.is_some())
+        {
+            return Ok(Some((crate::ErrorCode::NotReady, None)));
+        }
         // An edge out of a landing may answer the strike (#413).
         let follow_up = self.follow_up_of(player_id, crate::action::ActionInput::WardenMelee);
         let waive = follow_up
@@ -156,7 +167,6 @@ impl ZoneSimulation {
             Some(Err(code)) => return Ok(Some((code, None))),
             Some(Ok(ability)) => ability,
         };
-        let source = EntityRef::Player(player_id);
         let global_cooldown = follow_up
             .as_ref()
             .and_then(crate::action::FollowUp::recovery_ticks)
@@ -167,11 +177,16 @@ impl ZoneSimulation {
                     ability.id,
                 )
             });
-        let strike_recovery = self.recovery_of(
-            player_id,
-            crate::action::ActionId::DirectedSlash,
-            ability.id,
-        );
+        let strike_recovery = if timed.is_some() {
+            // A timed swing (#679) commits to its recovery when its active phase ends.
+            0
+        } else {
+            self.recovery_of(
+                player_id,
+                crate::action::ActionId::DirectedSlash,
+                ability.id,
+            )
+        };
         self.update_player(player_id, |player| {
             player.global_cooldown = global_cooldown;
             player.facing = facing;
@@ -185,25 +200,46 @@ impl ZoneSimulation {
             self.spend_follow_up(player_id, follow_up);
             self.refund(player_id, follow_up.refund().min(ability.cost));
         }
+        if let Some(timed) = timed {
+            // The zone times the wind-up; the sweep resolves over the active ticks.
+            self.begin_swing(player_id, ability.id, facing, aim, timed);
+            return Ok(None);
+        }
         let victim = self.strike_coverage(player_id, facing, aim)?;
+        self.strike_resolves(player_id, ability.id, victim, aim, now)?;
+        Ok(None)
+    }
+
+    /// A directed strike's sweep of `ability` covered `victim` (`None` a whiff):
+    /// observers see the sweep, and the victim takes the weapon strike.
+    pub(crate) fn strike_resolves(
+        &mut self,
+        player_id: PlayerId,
+        ability: AbilityId,
+        victim: Option<EntityRef>,
+        aim: StrikeAim,
+        now: u64,
+    ) -> Result<(), ZoneError> {
+        let source = EntityRef::Player(player_id);
         let target = victim;
         self.notify_units(
             [Some(source), target],
             crate::ZoneEvent::StrikeSwept {
                 source,
                 target,
-                ability: ability.id,
+                ability,
                 aim,
             },
         );
-        if let (Some(victim), AbilityEffect::WeaponStrike { .. }) = (victim, ability.effect) {
-            let amount = self.weapon_strike_amount(player_id, ability.effect);
+        let effect = crate::ability_by_id(ability).map(|ability| ability.effect);
+        if let (Some(victim), Some(effect @ AbilityEffect::WeaponStrike { .. })) = (victim, effect)
+        {
+            let amount = self.weapon_strike_amount(player_id, effect);
             let amount = self.stance_damage(player_id, target, amount)?;
             let before = self.struck_health(victim);
             self.player_melee_hits_at(player_id, victim, amount, false, now, Some(aim.height))?;
             // Only positive health damage after absorbs opens the combo (#157).
-            if ability.id == crate::ability::ids::HEROIC_STRIKE
-                && self.struck_health(victim) < before
+            if ability == crate::ability::ids::HEROIC_STRIKE && self.struck_health(victim) < before
             {
                 self.update_player(player_id, |player| {
                     player.combo = Some(crate::ComboOpening {
@@ -213,7 +249,7 @@ impl ZoneSimulation {
                 });
             }
         }
-        Ok(None)
+        Ok(())
     }
 
     fn struck_health(&self, target: EntityRef) -> u32 {
@@ -232,44 +268,93 @@ impl ZoneSimulation {
         facing: u16,
         aim: StrikeAim,
     ) -> Result<Option<EntityRef>, ZoneError> {
+        self.sweep_coverage(player_id, Sweep::full(facing, aim))
+    }
+
+    /// The eligible living unit `sweep` covers: nearest first, then in
+    /// `EntityRef` order; `None` covers nobody.
+    pub(crate) fn sweep_coverage(
+        &self,
+        player_id: PlayerId,
+        sweep: Sweep,
+    ) -> Result<Option<EntityRef>, ZoneError> {
         let origin = self.player_position(player_id)?;
-        let feet = origin.y - PLAYER_HALF_EXTENTS_UNITS[1];
-        let [band_low, band_high] = aim.height.band();
-        let (dir_x, dir_z) = trig::direction(aim.side.arc_centre(facing));
-        let min_cos = i64::from(trig::cos(STRIKE_ARC_HALF_WIDTH));
-        let reach = i64::from(PLAYER_REACH_UNITS).pow(2);
         let mut best: Option<(i64, EntityRef)> = None;
         for entity in self.interest.near(origin.x, origin.z, PLAYER_REACH_UNITS) {
             if !self.attackable_by_player(player_id, entity) {
                 continue;
             }
-            let body = self
-                .world
-                .body(crate::entity::body_id(entity))
-                .ok_or_else(|| ZoneError::new("creature physics body is missing"))?;
-            let (centre, half) = (body.position(), body.half_extents());
-            let distance = distance_squared([origin.x, origin.z], [centre.x, centre.z]);
-            if distance > reach || best.is_some_and(|best| (distance, entity) >= best) {
+            let Some(distance) = self.sweep_distance(player_id, sweep, entity)? else {
                 continue;
-            }
-            // |v| cos(angle to the arc centre) >= |v| cos(half width), both
-            // Q16; a creature centred on the striker is always in the arc.
-            let (dx, dz) = (centre.x - origin.x, centre.z - origin.z);
-            let along = i64::from(dx) * i64::from(dir_x) + i64::from(dz) * i64::from(dir_z);
-            let length = i64::try_from(trig::xz_length(dx, dz))
-                .map_err(|_| ZoneError::new("strike distance overflow"))?;
-            if along < length * min_cos {
-                continue;
-            }
-            let (bottom, top) = (centre.y - half.y - feet, centre.y + half.y - feet);
-            if top < band_low || bottom > band_high {
-                continue;
-            }
-            if !self.line_of_sight(EntityRef::Player(player_id), entity)? {
+            };
+            if best.is_some_and(|best| (distance, entity) >= best) {
                 continue;
             }
             best = Some((distance, entity));
         }
         Ok(best.map(|(_, entity)| entity))
+    }
+
+    /// The squared XZ distance to `entity` when `sweep` from the player's body
+    /// covers it: within reach, inside the arc, overlapping the height band and
+    /// in line of sight. Eligibility is the caller's.
+    pub(crate) fn sweep_distance(
+        &self,
+        player_id: PlayerId,
+        sweep: Sweep,
+        entity: EntityRef,
+    ) -> Result<Option<i64>, ZoneError> {
+        let origin = self.player_position(player_id)?;
+        let feet = origin.y - PLAYER_HALF_EXTENTS_UNITS[1];
+        let [band_low, band_high] = sweep.height.band();
+        let (dir_x, dir_z) = trig::direction(sweep.centre);
+        let min_cos = i64::from(trig::cos(sweep.half_width));
+        let reach = i64::from(PLAYER_REACH_UNITS).pow(2);
+        let body = self
+            .world
+            .body(crate::entity::body_id(entity))
+            .ok_or_else(|| ZoneError::new("creature physics body is missing"))?;
+        let (centre, half) = (body.position(), body.half_extents());
+        let distance = distance_squared([origin.x, origin.z], [centre.x, centre.z]);
+        if distance > reach {
+            return Ok(None);
+        }
+        // |v| cos(angle to the arc centre) >= |v| cos(half width), both
+        // Q16; a creature centred on the striker is always in the arc.
+        let (dx, dz) = (centre.x - origin.x, centre.z - origin.z);
+        let along = i64::from(dx) * i64::from(dir_x) + i64::from(dz) * i64::from(dir_z);
+        let length = i64::try_from(trig::xz_length(dx, dz))
+            .map_err(|_| ZoneError::new("strike distance overflow"))?;
+        if along < length * min_cos {
+            return Ok(None);
+        }
+        let (bottom, top) = (centre.y - half.y - feet, centre.y + half.y - feet);
+        if top < band_low || bottom > band_high {
+            return Ok(None);
+        }
+        if !self.line_of_sight(EntityRef::Player(player_id), entity)? {
+            return Ok(None);
+        }
+        Ok(Some(distance))
+    }
+}
+
+/// The horizontal arc and height band a blade covers: `half_width` either
+/// side of the `centre` yaw.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct Sweep {
+    pub(crate) centre: u16,
+    pub(crate) half_width: u16,
+    pub(crate) height: StrikeHeight,
+}
+
+impl Sweep {
+    /// The whole arc of a strike aimed at `aim` from `facing`.
+    pub(crate) const fn full(facing: u16, aim: StrikeAim) -> Self {
+        Self {
+            centre: aim.side.arc_centre(facing),
+            half_width: STRIKE_ARC_HALF_WIDTH,
+            height: aim.height,
+        }
     }
 }

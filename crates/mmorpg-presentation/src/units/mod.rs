@@ -43,6 +43,9 @@ const HEALTH_BAR_BACKGROUND: [f32; 3] = [0.12, 0.12, 0.14];
 const HEALTH_BAR_FILL: [f32; 3] = [0.18, 0.9, 0.25];
 /// How much a corpse's imported model darkens.
 const CORPSE_TINT: f32 = 0.6;
+/// A timed swing (#679) still counts as showing this long past its sweep, so a late sweep
+/// report adds no second swing.
+const TIMED_SWING_SLACK_SECONDS: f64 = 0.25;
 /// The Druid companion's green tint (#296) on the CC0 wolf model hostile Timber Wolves also use.
 pub const COMPANION_TINT: [f32; 3] = [0.6, 1.0, 0.45];
 /// How long a sent attack's local wind-up (Atlas 6.6.10) waits for the zone's answer before it
@@ -297,6 +300,9 @@ pub struct UnitPresenter {
     stuns: BTreeMap<EntityRef, f64>,
     /// Each unit under Rapid Fire's haste the client saw the zone apply, until when (#607).
     hastes: BTreeMap<EntityRef, f64>,
+    /// Each unit showing a timed swing (#679), until its sweep ends: its sweep report adds no
+    /// second swing.
+    timed_swings: BTreeMap<EntityRef, f64>,
     /// Swings that covered nobody, for alternating their forehand and backhand slashes (#582).
     whiffs: u32,
     /// Platforms a client's kit draws instead of their procedural pillar (#591).
@@ -355,6 +361,7 @@ impl UnitPresenter {
             bodies: false,
             stuns: BTreeMap::new(),
             hastes: BTreeMap::new(),
+            timed_swings: BTreeMap::new(),
             whiffs: 0,
             kit_platforms: BTreeSet::new(),
             channel_origins: BTreeMap::new(),
@@ -611,6 +618,34 @@ impl UnitPresenter {
                 ZoneEvent::Blocked { target, .. } => {
                     self.react(snapshot, target, Reaction::Block, seconds);
                 }
+                // A timed swing (#679) winds up and holds through its startup, then sweeps.
+                ZoneEvent::SwingBegan {
+                    source,
+                    ability,
+                    aim,
+                    startup,
+                    active,
+                } => {
+                    self.timed_swing(
+                        snapshot,
+                        viewer,
+                        source,
+                        (ability, aim),
+                        [startup, active],
+                        seconds,
+                    );
+                }
+                // Two blades met (#679): both recoil as from a block, and neither swing sweeps on.
+                ZoneEvent::Clashed {
+                    source,
+                    target,
+                    kind: mmorpg_core::ClashKind::Swings,
+                } => {
+                    for unit in [source, target] {
+                        self.timed_swings.remove(&unit);
+                        self.react(snapshot, unit, Reaction::Block, seconds);
+                    }
+                }
                 ZoneEvent::GuardBroken { target, .. } => {
                     self.react(snapshot, target, Reaction::GuardBreak, seconds);
                 }
@@ -712,7 +747,13 @@ impl UnitPresenter {
                     ability,
                     aim,
                     ..
-                } => (source, Some(ability), Some(aim), Some(ability), false),
+                } if !self
+                    .timed_swings
+                    .get(&source)
+                    .is_some_and(|&until| seconds <= until) =>
+                {
+                    (source, Some(ability), Some(aim), Some(ability), false)
+                }
                 ZoneEvent::AbilityUsed {
                     source,
                     ability,
@@ -1131,6 +1172,55 @@ impl UnitPresenter {
     }
 
     /// `entity` reacts to a blow the zone resolved (#538), when its model has the reaction.
+    /// Shows `source`'s timed swing (#679) of `strike` fitted to the zone's phases: the slash
+    /// winds up to its held peak during the `[startup, active]` ticks' startup and swings
+    /// through from the active phase. The viewer's own prepared wind-up continues into it.
+    fn timed_swing(
+        &mut self,
+        snapshot: &ZoneSnapshot,
+        viewer: EntityRef,
+        source: EntityRef,
+        (ability, aim): (AbilityId, StrikeAim),
+        [startup, active]: [u8; 2],
+        seconds: f64,
+    ) {
+        if source == viewer
+            && self
+                .preparation
+                .is_some_and(|preparation| preparation.ability == ability)
+        {
+            self.preparation = None;
+        }
+        let Some((kind, class, loadout)) = self.class_of(snapshot, source) else {
+            return;
+        };
+        let swing = self.playbacks.get(&source).map_or(0, Playback::swings);
+        let (clip, _) = self.strike_clip(
+            kind,
+            class,
+            loadout,
+            Some(ability),
+            Some(aim),
+            false,
+            swing,
+            false,
+        );
+        let duration = self.duration(kind, clip);
+        let region = kind.strike_region(clip);
+        let tick = 1. / f32::from(mmorpg_core::TICK_HZ);
+        let wind_up = f32::from(startup) * tick;
+        let hold = imported::windup_seconds(duration, None, true);
+        self.playbacks
+            .entry(source)
+            .or_default()
+            .timed(clip, duration, hold, region, wind_up, seconds);
+        self.timed_swings.retain(|_, &mut until| until >= seconds);
+        self.timed_swings.insert(
+            source,
+            seconds + f64::from(wind_up + f32::from(active) * tick) + TIMED_SWING_SLACK_SECONDS,
+        );
+    }
+
     fn react(
         &mut self,
         snapshot: &ZoneSnapshot,

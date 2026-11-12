@@ -84,7 +84,7 @@
 //! interruptions. Every class ability starts [`ActionId::GlobalCooldown`].
 //!
 //! Runtime state stays in the existing canonical fields: `landing` for the
-//! movement region, `cast`, `strike_recovery`, `combo` and `global_cooldown`
+//! movement region, `cast`, a timed `swing` (#679), `strike_recovery`, `combo` and `global_cooldown`
 //! for the offense region, `guard` for the defense region, and auras, the
 //! guard break and health for the reaction region.
 //! [`ZoneSimulation::action_inspection`] is the read-only query surface that
@@ -1018,7 +1018,12 @@ pub const fn phases(id: ActionId) -> &'static [Phase] {
         | ActionId::Stun
         | ActionId::Death => &[Phase::Active],
         ActionId::Landing | ActionId::GlobalCooldown | ActionId::GuardBreak => &[Phase::Recovery],
-        ActionId::DirectedSlash => &[Phase::Recovery, Phase::FollowUp],
+        ActionId::DirectedSlash => &[
+            Phase::Startup,
+            Phase::Active,
+            Phase::Recovery,
+            Phase::FollowUp,
+        ],
         ActionId::Authored(_) => &[Phase::Startup, Phase::Active, Phase::Recovery],
     }
 }
@@ -1666,6 +1671,8 @@ fn running(state: &PlayerState, id: ActionId) -> bool {
 fn holds_during(state: &PlayerState, id: ActionId) -> bool {
     match id {
         id if lasting(id) => running(state, id),
+        // A timed swing (#679) holds from its wind-up through its recovery.
+        ActionId::DirectedSlash => state.swing.is_some() || recovery_left(state, id).is_some(),
         _ => recovery_left(state, id).is_some(),
     }
 }
@@ -1793,6 +1800,21 @@ fn region_actions(graph: &ActionGraph, state: &PlayerState) -> [RegionReport; 4]
                 Region::Offense,
                 Some(ActionId::Cast),
                 Some(Phase::Active),
+                None,
+            )
+        }
+    } else if let Some(swing) = state.swing {
+        // A timed swing (#679) winds up, then sweeps.
+        let phase = match swing.phase() {
+            crate::SwingPhase::Startup => Phase::Startup,
+            crate::SwingPhase::Active => Phase::Active,
+        };
+        RegionReport {
+            active_left: Some(swing.active_left()),
+            ..report(
+                Region::Offense,
+                Some(ActionId::DirectedSlash),
+                Some(phase),
                 None,
             )
         }

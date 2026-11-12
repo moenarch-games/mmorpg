@@ -11,7 +11,8 @@ names an `arenaServer`. Pick a class and equipment, then **Start practice**: the
 (`LocalZone.forPracticeArena`) admits that `EphemeralCharacterBuild` at the maximum level just
 inside the fortress's south gate, facing the keep across the courtyard and five stationary
 **Training Targets** (three about 8–9 m ahead, two at 21 m). Targets are breakable props: they take real `mmorpg-core` damage, never move, fight or
-hold threat, break, and stand again after 30 s. There is no storm, matchmaking, team, reward
+hold threat, break, and stand again after 30 s. Directed strikes are **timed swings** that wind
+up visibly, sweep over their active ticks and can clash ([PVP_COMBAT.md](PVP_COMBAT.md#timed-swings-and-clashes-679-arena-first)). There is no storm, matchmaking, team, reward
 or other player. **Reset practice (F9)** starts a fresh life with the build chosen at entry;
 **Change build** returns to setup to change it. On a phone the touch overlay shows **Target** and
 **Attack** from the first moment, and **Menu** offers **Reset practice** and **Change build**;

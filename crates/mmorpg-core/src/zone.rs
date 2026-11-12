@@ -108,6 +108,8 @@ pub(crate) struct PlayerState {
     /// Ticks left of a directed strike's committed recovery; a guard raised
     /// meanwhile waits to protect (#156, Atlas 5.2.39, 5.2.41).
     pub(crate) strike_recovery: u16,
+    /// A running timed swing (#679); canonical.
+    pub(crate) swing: Option<crate::Swing>,
     /// The destructible piece the player is repairing (#305).
     pub(crate) repairing: Option<crate::PieceId>,
     pub(crate) last_sequence: u32,
@@ -184,6 +186,7 @@ impl PlayerState {
             holds: crate::action::authored::Holds::default(),
             combo: None,
             strike_recovery: 0,
+            swing: None,
             repairing: None,
             last_sequence: 0,
             spawn_slot,
@@ -888,6 +891,9 @@ impl ZoneSimulation {
         self.update_interest()?;
         self.discover_waystones();
         self.advance_casts(now)?;
+        // Timed swings clash, parry and sweep before projectiles fly (#679).
+        self.advance_swings(now)?;
+        self.clash_projectiles();
         self.advance_projectiles(now)?;
         self.advance_auras(now)?;
         self.resolve_combat(now)?;

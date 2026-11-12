@@ -207,6 +207,8 @@ pub struct CanonicalPlayerCombat {
     pub combo: Option<crate::ComboOpening>,
     /// Ticks left of a directed strike's committed recovery (#156).
     pub strike_recovery: u16,
+    /// A running timed swing (#679).
+    pub swing: Option<crate::Swing>,
     /// The destructible piece the player is repairing (#305).
     pub repairing: Option<crate::PieceId>,
 }
@@ -264,6 +266,7 @@ impl Default for CanonicalPlayerCombat {
             roll: crate::Roll::Ready,
             combo: None,
             strike_recovery: 0,
+            swing: None,
             repairing: None,
         }
     }
@@ -438,6 +441,7 @@ impl ZoneSimulation {
                         roll: state.roll,
                         combo: state.combo,
                         strike_recovery: state.strike_recovery,
+                        swing: state.swing,
                         repairing: state.repairing,
                     },
                     chat_ready_at: state.chat_ready_at,
@@ -775,6 +779,18 @@ impl ZoneSimulation {
         if combat.strike_recovery > crate::STRIKE_RECOVERY_TICKS {
             return Err(ZoneError::new("player strike recovery is out of range"));
         }
+        // A running swing (#679) needs content with timed combat, whose timing it carries.
+        if let Some(swing) = combat.swing {
+            let timed = self.content.timed_combat();
+            if !swing.is_valid()
+                || combat.health == 0
+                || timed.is_none_or(|timed| {
+                    timed.startup_ticks() != swing.startup || timed.active_ticks() != swing.active
+                })
+            {
+                return Err(ZoneError::new("player timed swing is invalid"));
+            }
+        }
         if combat.repairing.is_some_and(|piece| {
             !alive || !self.content.pieces().iter().any(|known| known.id == piece)
         }) {
@@ -832,6 +848,7 @@ impl ZoneSimulation {
                 holds: crate::action::authored::Holds::default(),
                 combo: combat.combo,
                 strike_recovery: combat.strike_recovery,
+                swing: combat.swing,
                 repairing: combat.repairing,
                 last_sequence: player.last_sequence,
                 spawn_slot: player.spawn_slot,

@@ -132,6 +132,11 @@ mirror!(
     StrikeHeight = core::StrikeHeight { Low, Middle, High }
 );
 mirror!(
+    /// What met in a clash (#679).
+    #[serde(rename_all = "lowercase")]
+    ClashKind = core::ClashKind { Swings, Projectiles, Parry }
+);
+mirror!(
     /// A living Warden's movement-dependent melee stance (#155).
     #[serde(rename_all = "lowercase")]
     MeleeStance = core::MeleeStance { Planted, Charging, Moving, Airborne, Landing }
@@ -865,6 +870,21 @@ pub enum ZoneEvent {
         ability: u8,
         aim: StrikeAim,
     },
+    /// `source` began a timed swing toward `aim` (#679): `startup` ticks of wind-up, then
+    /// `active` ticks of sweep.
+    SwingBegan {
+        source: EntityRef,
+        ability: u8,
+        aim: StrikeAim,
+        startup: u8,
+        active: u8,
+    },
+    /// An attack of `source` met one of `target`'s (#679).
+    Clashed {
+        source: EntityRef,
+        target: EntityRef,
+        meeting: ClashKind,
+    },
     /// `target`'s guard fully blocked `source`'s blow of `amount` in `lane` (#156).
     Blocked {
         source: EntityRef,
@@ -1015,6 +1035,28 @@ impl From<core::ZoneEvent> for ZoneEvent {
                 target: entity(target),
                 ability: ability.get(),
                 aim: aim.into(),
+            },
+            E::SwingBegan {
+                source,
+                ability,
+                aim,
+                startup,
+                active,
+            } => Self::SwingBegan {
+                source: source.into(),
+                ability: ability.get(),
+                aim: aim.into(),
+                startup,
+                active,
+            },
+            E::Clashed {
+                source,
+                target,
+                kind,
+            } => Self::Clashed {
+                source: source.into(),
+                target: target.into(),
+                meeting: kind.into(),
             },
             E::Blocked {
                 source,
@@ -1207,6 +1249,28 @@ impl From<ZoneEvent> for core::ZoneEvent {
                 target: core_entity(target),
                 ability: AbilityId::new(ability),
                 aim: aim.into(),
+            },
+            E::SwingBegan {
+                source,
+                ability,
+                aim,
+                startup,
+                active,
+            } => Self::SwingBegan {
+                source: source.into(),
+                ability: AbilityId::new(ability),
+                aim: aim.into(),
+                startup,
+                active,
+            },
+            E::Clashed {
+                source,
+                target,
+                meeting,
+            } => Self::Clashed {
+                source: source.into(),
+                target: target.into(),
+                kind: meeting.into(),
             },
             E::Blocked {
                 source,

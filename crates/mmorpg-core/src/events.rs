@@ -202,6 +202,22 @@ pub enum ZoneEvent {
         ability: AbilityId,
         aim: crate::StrikeAim,
     },
+    /// `source` began a timed swing of `ability` toward `aim` (#679): `startup` ticks of
+    /// wind-up, then `active` ticks of sweep.
+    SwingBegan {
+        source: EntityRef,
+        ability: AbilityId,
+        aim: crate::StrikeAim,
+        startup: u8,
+        active: u8,
+    },
+    /// An attack of `source` met one of `target`'s (#679): two swings, two projectiles, or
+    /// `source`'s swing destroying `target`'s projectile.
+    Clashed {
+        source: EntityRef,
+        target: EntityRef,
+        kind: crate::ClashKind,
+    },
     /// `target`'s shield guard fully blocked `source`'s melee blow of
     /// `amount` in `lane` (#156).
     Blocked {
@@ -281,6 +297,10 @@ impl ZoneEvent {
             {
                 Some([Some(source), target])
             }
+            Self::SwingBegan { source, .. } if source != own => Some([Some(source), None]),
+            Self::Clashed { source, target, .. } if source != own && target != own => {
+                Some([Some(source), Some(target)])
+            }
             Self::Blocked { source, target, .. } | Self::GuardBroken { source, target, .. }
                 if target != own =>
             {
@@ -305,6 +325,8 @@ impl ZoneEvent {
             Self::CastStarted { .. }
             | Self::AbilityUsed { .. }
             | Self::StrikeSwept { .. }
+            | Self::SwingBegan { .. }
+            | Self::Clashed { .. }
             | Self::Healed { .. }
             | Self::AuraApplied { .. }
             | Self::AuraRemoved { .. }
