@@ -614,3 +614,68 @@ fn a_player_climbs_the_basin_cliff_over_its_rounded_rim_without_falling() {
     player.ticks(60);
     assert!(player.feet()[1] > 950.0, "on the rim: {:?}", player.feet());
 }
+
+/// A basin crag's collision is generated from its art (#683): the climber grabs the generated
+/// rock surface and climbs it.
+#[test]
+fn a_player_climbs_a_dressed_basin_crag() {
+    let crag = greyhaven_vale::content()
+        .definition()
+        .static_meshes()
+        .iter()
+        .find(|mesh| mesh.id == *greyhaven_vale::fort::BASIN_CRAGS.start())
+        .unwrap()
+        .clone();
+    let [x, _, z] = crag.position;
+    // From the east, downhill of it: the brook spur stands south of it.
+    let west = 49_152;
+    let mut player = Player::at([x + 700, z]);
+    player.hold(1, west);
+    player.ticks(200);
+    player.jump();
+    player.ticks(1);
+    player.hold(1, west);
+    let start = player.feet();
+    let mut climbed = false;
+    for _ in 0..300 {
+        player.ticks(1);
+        climbed |= matches!(player.traversal(), Traversal::Climbing { .. });
+    }
+    assert!(climbed, "never held the crag from {start:?}");
+    assert!(
+        player.feet()[1] > start[1] + 300.0,
+        "climbed from {start:?} to {:?}",
+        player.feet()
+    );
+}
+
+/// A basin buttress's generated collision leaves its art's apron and rubble out (#683): a
+/// player walks up onto the apron, to within a metre or so of the rock's foot, before the rock
+/// stops them.
+#[test]
+fn a_player_walks_onto_a_dressed_buttress_apron() {
+    let buttress = greyhaven_vale::content()
+        .definition()
+        .static_meshes()
+        .iter()
+        .find(|mesh| mesh.id == *greyhaven_vale::fort::BASIN_ROCKS.start())
+        .unwrap()
+        .clone();
+    let [x, _, z] = buttress.position;
+    // The rock's own extent south of its origin at the foot.
+    let south = buttress
+        .vertices
+        .iter()
+        .filter(|v| v[1] < 100)
+        .map(|v| v[2])
+        .max()
+        .unwrap();
+    let mut player = Player::at([x, z + south + 600]);
+    player.walk_into(NORTH);
+    let feet = player.feet();
+    let gap = feet[2] - (z + south) as f32;
+    assert!(
+        gap < 150.0,
+        "stopped {gap} units short of the rock's foot: {feet:?}"
+    );
+}

@@ -16,11 +16,37 @@ pub const SHORE_ROCKS: std::ops::RangeInclusive<u32> = 65070..=65093;
 /// The mill's walk-off gallery, outside the hoist shaft and clear of the axle housing.
 pub const MILL_GALLERY: std::ops::RangeInclusive<u32> = 65103..=65110;
 
-/// Three fractured brook-facing spurs and their smaller talus pieces.
+/// Three fractured brook-facing spurs and their smaller talus pieces: world dressing whose
+/// collision is generated from its art ([`dressing_meshes`], #683).
 pub const WESTERN_ROCKS: std::ops::RangeInclusive<u32> = 65128..=65136;
 
-/// Authored leaning rock slabs and their smaller talus pieces at the basin cliff feet.
+/// Leaning rock slabs and their smaller talus pieces at the basin cliff feet: world dressing
+/// whose collision is generated from its art ([`dressing_meshes`], #683).
 pub const BASIN_ROCKS: std::ops::RangeInclusive<u32> = 65094..=65102;
+
+/// The three climbable crags on the basin rim: world dressing whose collision is generated
+/// from its art ([`dressing_meshes`], #683).
+pub const BASIN_CRAGS: std::ops::RangeInclusive<u32> = 65030..=65032;
+
+/// The committed collision generated from the world dressing's art (#683): each placed rock's
+/// asset collision mesh, scaled and turned by its placement by
+/// `content/greyhaven/authoring/dressing_collision.py`. The zone reads only this reviewed
+/// output, never the art, so a new art release changes no collision until it is regenerated.
+/// Its `generator` and `sources` (the descriptor and bundle digests) are for review only.
+#[derive(serde::Deserialize)]
+struct Generated {
+    meshes: Vec<StaticMesh>,
+}
+
+/// The world dressing's generated collision meshes, by collider ID (#683).
+#[must_use]
+pub fn dressing_meshes() -> Vec<StaticMesh> {
+    let generated: Generated = serde_json::from_str(include_str!(
+        "../../../content/collision/greyhaven-dressing.json"
+    ))
+    .expect("committed Greyhaven dressing collision is valid");
+    generated.meshes
+}
 
 #[must_use]
 pub fn meshes() -> Vec<StaticMesh> {
@@ -37,6 +63,7 @@ pub fn meshes() -> Vec<StaticMesh> {
                 mesh
             }
         })
+        .chain(dressing_meshes())
         .collect()
 }
 
