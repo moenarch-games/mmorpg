@@ -40,21 +40,21 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use physics_engine::BodyId as EngineId;
 use physics_engine::approximate::{
     Autostep, Body, CharacterMove, CharacterMoveResult, CharacterSettings, Config, ConvexHullDesc,
-    HeightfieldDesc, Material, Quaternion, QueryFilter, QueryPose, RayCast, Shape, ShapeCast,
-    TriangleMeshDesc, Vector,
+    HeightfieldDesc, Material, Medium, Quaternion, QueryFilter, QueryPose, RayCast, Shape,
+    ShapeCast, TriangleMeshDesc, Vector,
 };
+use physics_engine::{BodyId as EngineId, CollisionLayers3d};
 
 use super::shared::{
-    BOULDER_ANGULAR_DAMPING, BOULDER_DENSITY, BOULDER_LANE, BOULDER_LINEAR_DAMPING,
-    DEBRIS_REST_SPEED_UNITS, DEBRIS_REST_SPIN, Dynamic, PROP_LANE, RESPONSE_LANES,
-    TICKS_PER_SECOND, nearby,
+    BOULDER_ANGULAR_DAMPING, BOULDER_DENSITY, BOULDER_LANE, BOULDER_LINEAR_DAMPING, Dynamic,
+    PROP_LANE, RESPONSE_LANES, TICKS_PER_SECOND, comes_to_rest, nearby, over_open_floor,
 };
 use super::{
-    Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, PhysicsError, PieceShape, RayHit,
-    RigidBody, StepStats, StepUp, Vec3i, error, exact, from_subunits,
+    Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, PhysicsError, PieceMedium, PieceShape,
+    RayHit, RigidBody, StepStats, StepUp, Vec3i, WATER_ANGULAR_DRAG, WATER_LINEAR_DRAG, error,
+    exact, from_subunits,
 };
 
 /// The game's centimetres per metre: the engine's length unit.
@@ -315,6 +315,41 @@ fn insert_response_body(
         engine.add_body(engine_body(body))
     }
     .map_err(|failure| engine_error("add authored or primitive body", failure))
+}
+
+/// The collision layer of the floor half-space in the dynamic-piece worlds: a piece over ground
+/// that dips below it masks it out (#667, [`super::shared::over_open_floor`]).
+const FLOOR_LAYER: u32 = 1 << 1;
+
+/// `body`'s engine body in a dynamic-piece world: the floor on its own layer.
+fn response_body(body: &RigidBody) -> Body {
+    let mut engine = engine_body(body);
+    if matches!(body.kind, Kind::Floor) {
+        engine.layers = CollisionLayers3d::new(FLOOR_LAYER, u32::MAX);
+    }
+    engine
+}
+
+/// [`insert_response_body`] into a dynamic-piece lane, the floor on its own layer.
+fn insert_lane_body(
+    engine: &mut physics_engine::approximate::World,
+    body: &RigidBody,
+) -> Result<EngineId, PhysicsError> {
+    if matches!(body.kind, Kind::Floor) {
+        return engine
+            .add_body(response_body(body))
+            .map_err(|failure| engine_error("add lane floor", failure));
+    }
+    insert_response_body(engine, body)
+}
+
+/// A piece's layers: everything, less the floor where the ground dips below it.
+fn piece_layers(open_floor: bool) -> CollisionLayers3d {
+    if open_floor {
+        CollisionLayers3d::new(u32::MAX, !FLOOR_LAYER)
+    } else {
+        CollisionLayers3d::ALL
+    }
 }
 
 /// `body`'s engine body, keyed by its game ID: a unit is an external capsule, everything else
@@ -1020,24 +1055,35 @@ impl World {
         debris: &mut [DebrisBody],
         ids: &[u32],
         settle: &[bool],
+        media: &[Option<PieceMedium>],
     ) -> usize {
+        let options = Dynamic {
+            media,
+            ..Dynamic::default()
+        };
         if !self.has_authored_geometry() {
             return self
-                .step_dynamic(debris, settle, &Dynamic::default())
+                .step_dynamic(debris, settle, &options)
                 .expect("physics-engine debris step failed");
         }
-        self.step_authored(debris, Some(ids), settle, &Dynamic::default())
+        self.step_authored(debris, Some(ids), settle, &options)
             .expect("physics-engine authored debris step failed")
     }
 
     /// Movable props are upright boxes stopped by units' capsules.
-    pub fn step_props(&mut self, props: &mut [DebrisBody], exclude: &[BodyId]) -> usize {
+    pub fn step_props(
+        &mut self,
+        props: &mut [DebrisBody],
+        exclude: &[BodyId],
+        media: &[Option<PieceMedium>],
+    ) -> usize {
         let settle = vec![true; props.len()];
         let options = Dynamic {
             upright: true,
             units_block: true,
             exclude,
             lane: PROP_LANE,
+            media,
         };
         if self.has_authored_geometry() {
             self.step_authored(props, None, &settle, &options)
@@ -1053,6 +1099,7 @@ impl World {
         boulders: &mut [DebrisBody],
         exclude: &[BodyId],
         units_block: bool,
+        media: &[Option<PieceMedium>],
     ) -> usize {
         let settle = vec![true; boulders.len()];
         let options = Dynamic {
@@ -1060,6 +1107,7 @@ impl World {
             units_block,
             exclude,
             lane: BOULDER_LANE,
+            media,
         };
         if self.has_authored_geometry() {
             self.step_authored(boulders, None, &settle, &options)
@@ -1105,7 +1153,7 @@ impl World {
             }
             let mut fixed = BTreeMap::new();
             for body in self.bodies.values().filter(|body| !body.is_moving()) {
-                let handle = insert_response_body(&mut engine, body)?;
+                let handle = insert_lane_body(&mut engine, body)?;
                 fixed.insert(body.id, (body.clone(), handle));
             }
             self.response[index] = Some(ResponseLane {
@@ -1170,11 +1218,21 @@ impl World {
             if piece.resting && key.is_some() {
                 continue;
             }
+            let mut body = piece_body(piece, key, options.upright);
+            let terrain = self.ground.as_ref().map(|ground| &ground.terrain);
+            body.layers = piece_layers(over_open_floor(terrain, piece));
             let handle = lane
                 .engine
-                .add_body(piece_body(piece, key, options.upright))
+                .add_body(body)
                 .map_err(|failure| engine_error("response piece", failure))?;
             transient.push(handle);
+            if !piece.resting
+                && let Some(medium) = options.medium(index)
+            {
+                lane.engine
+                    .set_medium(handle, Some(engine_medium(piece, medium)))
+                    .map_err(|failure| engine_error("response piece medium", failure))?;
+            }
             stepped.push(index);
         }
         let outcome = lane.engine.step(1. / f64::from(TICKS_PER_SECOND));
@@ -1186,7 +1244,7 @@ impl World {
         for (index, body) in stepped.into_iter().zip(&removed[units..]) {
             let piece = &mut pieces[index];
             if !piece.resting {
-                take_piece(piece, body, settle[index]);
+                take_piece(piece, body, settle[index], options.medium(index).is_some());
             }
         }
         assert_eq!(
@@ -1233,7 +1291,7 @@ impl World {
                 .map_err(|failure| engine_error("add_body", failure))
         };
         for body in nearby(&self.bodies, pieces, options) {
-            let mut fixed = engine_body(body);
+            let mut fixed = response_body(body);
             if body.is_moving() {
                 // A unit stands in the props' way as a fixed capsule (#58).
                 fixed.mass = 0.0;
@@ -1247,7 +1305,7 @@ impl World {
                 .map_err(|failure| engine_error("add_heightfield", failure))?;
         }
         let mut handles = Vec::with_capacity(pieces.len());
-        for piece in pieces.iter() {
+        for (index, piece) in pieces.iter().enumerate() {
             let (shape, mass) = piece_shape(piece);
             let [x, y, z, w] = piece.rotation;
             let mut body = Body::new(
@@ -1264,19 +1322,49 @@ impl World {
                 (body.linear_damping, body.angular_damping) = piece_damping(piece);
                 body.rotation_locked = options.upright;
                 body.sleep_allowed = false;
+                let terrain = self.ground.as_ref().map(|ground| &ground.terrain);
+                body.layers = piece_layers(over_open_floor(terrain, piece));
             }
             let handle = add(&mut engine, body)?;
+            if !piece.resting
+                && let Some(medium) = options.medium(index)
+            {
+                engine
+                    .set_medium(handle, Some(engine_medium(piece, medium)))
+                    .map_err(|failure| engine_error("piece medium", failure))?;
+            }
             handles.push((!piece.resting).then_some(handle));
         }
         engine
             .step(1.0 / f64::from(TICKS_PER_SECOND))
             .map_err(|failure| engine_error("dynamic step", failure))?;
-        for ((piece, handle), &settles) in pieces.iter_mut().zip(handles).zip(settle) {
+        for (index, ((piece, handle), &settles)) in
+            pieces.iter_mut().zip(handles).zip(settle).enumerate()
+        {
             if let Some(body) = handle.and_then(|handle| engine.body(handle)) {
-                take_piece(piece, body, settles);
+                take_piece(piece, body, settles, options.medium(index).is_some());
             }
         }
         Ok(moving)
+    }
+}
+
+/// A moving piece's engine medium (#667, physics-engine #525): the water's density is the
+/// piece's own (its mass over its volume) times `buoyancy`, the flow per second.
+fn engine_medium(piece: &DebrisBody, medium: PieceMedium) -> Medium {
+    let (_, mass) = piece_shape(piece);
+    let [hx, hy, hz] = exact(piece.half_extents);
+    let volume = match piece.shape {
+        PieceShape::Cuboid => 8. * hx * hy * hz,
+        PieceShape::Sphere => 4. / 3. * std::f32::consts::PI * hx.powi(3),
+    };
+    Medium {
+        surface_point: Vector(0., medium.surface, 0.),
+        surface_normal: Vector(0., 1., 0.),
+        density: medium.buoyancy * mass / volume,
+        flow: vector(medium.flow.map(|v| v * TICKS_PER_SECOND)),
+        linear_drag: WATER_LINEAR_DRAG,
+        angular_drag: WATER_ANGULAR_DRAG,
     }
 }
 
@@ -1303,17 +1391,16 @@ fn piece_body(piece: &DebrisBody, key: Option<u64>, upright: bool) -> Body {
 }
 
 /// Takes a stepped piece's state back from its engine body, settling it once it may and has
-/// slowed below the rest thresholds.
-fn take_piece(piece: &mut DebrisBody, body: &Body, settles: bool) {
+/// come to rest ([`comes_to_rest`]).
+fn take_piece(piece: &mut DebrisBody, body: &Body, settles: bool, in_water: bool) {
     let Quaternion(x, y, z, w) = body.orientation;
     let norm = (x * x + y * y + z * z + w * w).sqrt();
+    let before = piece.velocity;
     piece.position = array(body.position);
     piece.rotation = [x / norm, y / norm, z / norm, w / norm];
     piece.velocity = array(body.velocity).map(|v| v / TICKS_PER_SECOND);
     piece.spin = array(body.angular_velocity).map(|v| v / TICKS_PER_SECOND);
-    let speed = piece.velocity.iter().map(|v| v * v).sum::<f32>().sqrt();
-    let spin = piece.spin.iter().map(|v| v * v).sum::<f32>().sqrt();
-    if settles && speed < DEBRIS_REST_SPEED_UNITS && spin < DEBRIS_REST_SPIN {
+    if comes_to_rest(piece, before, settles, in_water) {
         piece.resting = true;
         piece.velocity = [0.; 3];
         piece.spin = [0.; 3];
@@ -1367,7 +1454,7 @@ impl ResponseLane {
             }
         }
         for body in added {
-            let handle = insert_response_body(&mut self.engine, body)?;
+            let handle = insert_lane_body(&mut self.engine, body)?;
             self.fixed.insert(body.id, (body.clone(), handle));
         }
         Ok(())

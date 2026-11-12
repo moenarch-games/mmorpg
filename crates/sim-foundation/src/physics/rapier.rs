@@ -23,22 +23,26 @@ use rapier3d::parry::query::{
     DefaultQueryDispatcher, QueryDispatcher, QueryDispatcherChain, ShapeCastOptions,
 };
 use rapier3d::prelude::{
-    Capsule, ColliderBuilder, ColliderHandle, Cuboid, PhysicsWorld, Pose, QueryFilter,
-    Ray as RapierRay, RigidBodyBuilder, RigidBodyHandle, Rotation, SharedShape, Vector,
+    Capsule, ColliderBuilder, ColliderHandle, Cuboid, Group, InteractionGroups,
+    InteractionTestMode, PhysicsWorld, Pose, QueryFilter, Ray as RapierRay, RigidBodyBuilder,
+    RigidBodyHandle, Rotation, SharedShape, Vector,
 };
 
 use super::queries::UprightShapes;
 use super::shared::{
-    BOULDER_ANGULAR_DAMPING, BOULDER_DENSITY, BOULDER_LANE, BOULDER_LINEAR_DAMPING,
-    DEBRIS_REST_SPEED_UNITS, DEBRIS_REST_SPIN, Dynamic, PROP_LANE, TICKS_PER_SECOND, nearby,
+    BOULDER_ANGULAR_DAMPING, BOULDER_DENSITY, BOULDER_LANE, BOULDER_LINEAR_DAMPING, Dynamic,
+    PROP_LANE, TICKS_PER_SECOND, comes_to_rest, nearby, over_open_floor,
 };
 use super::{
-    Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, PhysicsError, PieceShape, RayHit,
-    RigidBody, StepStats, StepUp, Vec3i, error, exact, from_subunits,
+    Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, PhysicsError, PieceMedium, PieceShape,
+    RayHit, RigidBody, StepStats, StepUp, Vec3i, WATER_ANGULAR_DRAG, WATER_LINEAR_DRAG, error,
+    exact, from_subunits,
 };
 
 /// Centimetre units per metre.
 const UNITS_PER_METRE: f32 = 100.0;
+/// The floor half-space's collision group in dynamic-piece worlds (#667).
+const FLOOR_GROUP: Group = Group::GROUP_2;
 /// [`CONTACT_OFFSET_UNITS`] in metres.
 const CONTACT_OFFSET: f32 = CONTACT_OFFSET_UNITS / UNITS_PER_METRE;
 /// How far (in metres) below a body the controller still finds the ground: its contact
@@ -1222,40 +1226,78 @@ impl World {
     ///
     /// Rapier gap (#288): rebuilding each tick drops the solver's warm-start contact impulses,
     /// so a resting stack jitters; pieces settle into fixed obstacles instead of sleeping.
-    pub fn step_debris(&self, debris: &mut [DebrisBody], _ids: &[u32], settle: &[bool]) -> usize {
-        let ground = self
-            .ground
-            .as_ref()
-            .map(|ground| (ground.id, &ground.terrain));
-        step_debris(self.gravity, &self.bodies, ground, debris, settle)
+    pub fn step_debris(
+        &self,
+        debris: &mut [DebrisBody],
+        _ids: &[u32],
+        settle: &[bool],
+        media: &[Option<PieceMedium>],
+    ) -> usize {
+        self.step_pieces(
+            debris,
+            settle,
+            &Dynamic {
+                media,
+                ..Dynamic::default()
+            },
+        )
     }
 
-    pub fn step_props(&self, props: &mut [DebrisBody], exclude: &[BodyId]) -> usize {
-        let ground = self
-            .ground
-            .as_ref()
-            .map(|ground| (ground.id, &ground.terrain));
-        step_props(self.gravity, &self.bodies, ground, props, exclude)
+    /// Movable props (#58) slide upright under gravity and impulses, stopped by the fixed world
+    /// and by units.
+    pub fn step_props(
+        &self,
+        props: &mut [DebrisBody],
+        exclude: &[BodyId],
+        media: &[Option<PieceMedium>],
+    ) -> usize {
+        let settle = vec![true; props.len()];
+        self.step_pieces(
+            props,
+            &settle,
+            &Dynamic {
+                upright: true,
+                units_block: true,
+                exclude,
+                lane: PROP_LANE,
+                media,
+            },
+        )
     }
 
+    /// Rolling boulders (#299): free spheres, stopped by units only when slow.
     pub fn step_boulders(
         &self,
         boulders: &mut [DebrisBody],
         exclude: &[BodyId],
         units_block: bool,
+        media: &[Option<PieceMedium>],
+    ) -> usize {
+        let settle = vec![true; boulders.len()];
+        self.step_pieces(
+            boulders,
+            &settle,
+            &Dynamic {
+                upright: false,
+                units_block,
+                exclude,
+                lane: BOULDER_LANE,
+                media,
+            },
+        )
+    }
+
+    fn step_pieces(
+        &self,
+        pieces: &mut [DebrisBody],
+        settle: &[bool],
+        options: &Dynamic<'_>,
     ) -> usize {
         let ground = self
             .ground
             .as_ref()
             .map(|ground| (ground.id, &ground.terrain));
-        step_boulders(
-            self.gravity,
-            &self.bodies,
-            ground,
-            boulders,
-            exclude,
-            units_block,
-        )
+        step_dynamic(self.gravity, &self.bodies, ground, pieces, settle, options)
     }
 
     /// Brings Rapier's broad phase (the query structure) up to date.
@@ -1264,65 +1306,37 @@ impl World {
     }
 }
 
-/// [`World::step_debris`] over the game's fixed `bodies` and `ground`.
-pub(super) fn step_debris(
-    gravity: [f32; 3],
-    bodies: &BTreeMap<BodyId, RigidBody>,
-    ground: Option<(BodyId, &crate::Terrain)>,
-    debris: &mut [DebrisBody],
-    settle: &[bool],
-) -> usize {
-    step_dynamic(gravity, bodies, ground, debris, settle, &Dynamic::default())
-}
-
-/// [`World::step_props`] (#58): movable props slide upright under gravity and impulses,
-/// stopped by the fixed world and by units.
-pub(super) fn step_props(
-    gravity: [f32; 3],
-    bodies: &BTreeMap<BodyId, RigidBody>,
-    ground: Option<(BodyId, &crate::Terrain)>,
-    props: &mut [DebrisBody],
-    exclude: &[BodyId],
-) -> usize {
-    let settle = vec![true; props.len()];
-    step_dynamic(
-        gravity,
-        bodies,
-        ground,
-        props,
-        &settle,
-        &Dynamic {
-            upright: true,
-            units_block: true,
-            exclude,
-            lane: PROP_LANE,
-        },
-    )
-}
-
-/// [`World::step_boulders`] (#299): free spheres, stopped by units only when slow.
-pub(super) fn step_boulders(
-    gravity: [f32; 3],
-    bodies: &BTreeMap<BodyId, RigidBody>,
-    ground: Option<(BodyId, &crate::Terrain)>,
-    boulders: &mut [DebrisBody],
-    exclude: &[BodyId],
-    units_block: bool,
-) -> usize {
-    let settle = vec![true; boulders.len()];
-    step_dynamic(
-        gravity,
-        bodies,
-        ground,
-        boulders,
-        &settle,
-        &Dynamic {
-            upright: false,
-            units_block,
-            exclude,
-            lane: BOULDER_LANE,
-        },
-    )
+/// The oracle's water (#667) on a Rapier piece of `mass` (kg) with velocity `velocity`
+/// (m/s): the share of its vertical extent under the surface stands in for the submerged
+/// volume share (Physics Engine clips the exact shape), the buoyancy acts at its centre, and the
+/// same implicit drag toward the flow is applied once per tick before the step. Returns the
+/// buoyant force (N) and the dragged linear and angular velocities.
+fn oracle_medium(
+    piece: &DebrisBody,
+    medium: PieceMedium,
+    mass: f32,
+    gravity: Vector,
+    velocity: Vector,
+    spin: Vector,
+) -> (Vector, Vector, Vector) {
+    let [hx, hy, hz] = exact(piece.half_extents);
+    let [x, y, z, w] = piece.rotation;
+    // The rotated box's vertical half extent: the world-y row of its rotation matrix.
+    let reach = match piece.shape {
+        PieceShape::Sphere => hx,
+        PieceShape::Cuboid => {
+            (2. * (x * y + w * z)).abs() * hx
+                + (1. - 2. * (x * x + z * z)).abs() * hy
+                + (2. * (y * z - w * x)).abs() * hz
+        }
+    };
+    let share = ((medium.surface - (piece.position[1] - reach)) / (2. * reach)).clamp(0., 1.);
+    let buoyancy = -gravity * (medium.buoyancy * mass * share);
+    let step = 1. / TICKS_PER_SECOND;
+    let flow = metres(medium.flow) * TICKS_PER_SECOND;
+    let velocity = flow + (velocity - flow) / (1. + step * WATER_LINEAR_DRAG * share);
+    let spin = spin / (1. + step * WATER_ANGULAR_DRAG * share);
+    (buoyancy, velocity, spin)
 }
 
 fn step_dynamic(
@@ -1349,7 +1363,17 @@ fn step_dynamic(
                     .build(),
             );
         } else {
-            insert(&mut world, body);
+            let handles = insert(&mut world, body);
+            if matches!(body.kind, Kind::Floor)
+                && let Some(floor) = world.colliders.get_mut(handles.collider)
+            {
+                // Pieces over ground that dips below the floor pass through it (#667).
+                floor.set_collision_groups(InteractionGroups::new(
+                    FLOOR_GROUP,
+                    Group::ALL,
+                    InteractionTestMode::And,
+                ));
+            }
         }
     }
     if let Some((id, terrain)) = ground {
@@ -1360,7 +1384,7 @@ fn step_dynamic(
         Pose::from_parts(metres(piece.position), Rotation::from_xyzw(x, y, z, w))
     };
     let mut handles = Vec::with_capacity(debris.len());
-    for piece in debris.iter() {
+    for (index, piece) in debris.iter().enumerate() {
         let (shape, density, damping) = match piece.shape {
             PieceShape::Cuboid => (
                 SharedShape::new(cuboid(piece.half_extents)),
@@ -1373,10 +1397,20 @@ fn step_dynamic(
                 (BOULDER_LINEAR_DAMPING, BOULDER_ANGULAR_DAMPING),
             ),
         };
-        let collider = ColliderBuilder::new(shape)
+        let filter = if over_open_floor(ground.map(|(_, terrain)| terrain), piece) {
+            Group::ALL.difference(FLOOR_GROUP)
+        } else {
+            Group::ALL
+        };
+        let collider = ColliderBuilder::new(shape.clone())
             .friction(0.8)
             .restitution(0.15)
-            .density(density);
+            .density(density)
+            .collision_groups(InteractionGroups::new(
+                Group::ALL,
+                filter,
+                InteractionTestMode::And,
+            ));
         if piece.resting {
             world
                 .colliders
@@ -1384,33 +1418,48 @@ fn step_dynamic(
             handles.push(None);
             continue;
         }
+        let mut velocity = metres(piece.velocity) * TICKS_PER_SECOND;
+        let mut spin = Vector::from(piece.spin) * TICKS_PER_SECOND;
+        let mut buoyancy = None;
+        if let Some(medium) = options.medium(index) {
+            let mass = density * shape.mass_properties(1.).mass();
+            let force;
+            (force, velocity, spin) =
+                oracle_medium(piece, medium, mass, world.gravity, velocity, spin);
+            buoyancy = Some(force);
+        }
         let mut builder = RigidBodyBuilder::dynamic()
             .pose(pose(piece))
-            .linvel(metres(piece.velocity) * TICKS_PER_SECOND)
-            .angvel(Vector::from(piece.spin) * TICKS_PER_SECOND)
+            .linvel(velocity)
+            .angvel(spin)
             .linear_damping(damping.0)
             .angular_damping(damping.1);
         if options.upright {
             builder = builder.lock_rotations();
         }
-        let handle = world.bodies.insert(builder.build());
+        let mut body = builder.build();
+        if let Some(force) = buoyancy {
+            body.add_force(force, true);
+        }
+        let handle = world.bodies.insert(body);
         world
             .colliders
             .insert_with_parent(collider.build(), handle, &mut world.bodies);
         handles.push(Some(handle));
     }
     world.step();
-    for ((piece, handle), &settles) in debris.iter_mut().zip(handles).zip(settle) {
+    for (index, ((piece, handle), &settles)) in
+        debris.iter_mut().zip(handles).zip(settle).enumerate()
+    {
         let Some(body) = handle.and_then(|handle| world.bodies.get(handle)) else {
             continue;
         };
+        let before = piece.velocity;
         piece.position = units(body.translation());
         piece.rotation = body.rotation().normalize().to_array();
         piece.velocity = units(body.linvel() / TICKS_PER_SECOND);
         piece.spin = (body.angvel() / TICKS_PER_SECOND).to_array();
-        let speed = piece.velocity.iter().map(|v| v * v).sum::<f32>().sqrt();
-        let spin = piece.spin.iter().map(|v| v * v).sum::<f32>().sqrt();
-        if settles && speed < DEBRIS_REST_SPEED_UNITS && spin < DEBRIS_REST_SPIN {
+        if comes_to_rest(piece, before, settles, options.medium(index).is_some()) {
             piece.resting = true;
             piece.velocity = [0.0; 3];
             piece.spin = [0.0; 3];

@@ -1,6 +1,6 @@
 //! Game-owned movement intent and rigid-piece policies shared by both backends.
 
-use super::{BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, RigidBody, Vec3i};
+use super::{BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, PieceMedium, RigidBody, Vec3i};
 use std::collections::BTreeMap;
 
 /// Approaches within 60 degrees of head-on step fully aside in [`slide_around`].
@@ -17,6 +17,32 @@ pub(super) const BOULDER_DENSITY: f32 = 2_400.0;
 /// [`DEBRIS_REST_SPIN`] (radians per tick: 0.9 rad/s) settles.
 pub(super) const DEBRIS_REST_SPEED_UNITS: f32 = 18.0 / crate::TICK_HZ as f32;
 pub(super) const DEBRIS_REST_SPIN: f32 = 0.9 / crate::TICK_HZ as f32;
+/// In water (#667) a piece settles only once it is slower than this (units per tick: 2 units/s)
+/// and its velocity changes less than [`WATER_REST_CHANGE_UNITS`] over a step (1 unit/s, an
+/// acceleration of 0.6 m/s²): a floating piece drifting toward its depth, or bobbing through a
+/// turning point, does not freeze short of where buoyancy, weight and contact balance.
+pub(super) const WATER_REST_SPEED_UNITS: f32 = 2.0 / crate::TICK_HZ as f32;
+pub(super) const WATER_REST_CHANGE_UNITS: f32 = 1.0 / crate::TICK_HZ as f32;
+
+/// Whether a just-stepped piece, moving at `before` ahead of the step, settles: it may, it is
+/// slower than [`DEBRIS_REST_SPEED_UNITS`] and turns slower than [`DEBRIS_REST_SPIN`], and in
+/// water it has all but stopped ([`WATER_REST_SPEED_UNITS`], [`WATER_REST_CHANGE_UNITS`]).
+pub(super) fn comes_to_rest(
+    piece: &DebrisBody,
+    before: [f32; 3],
+    settles: bool,
+    in_water: bool,
+) -> bool {
+    let length = |v: [f32; 3]| v.iter().map(|v| v * v).sum::<f32>().sqrt();
+    let change = [0, 1, 2].map(|axis| piece.velocity[axis] - before[axis]);
+    settles
+        && length(piece.velocity) < DEBRIS_REST_SPEED_UNITS
+        && length(piece.spin) < DEBRIS_REST_SPIN
+        && (!in_water
+            || (length(piece.velocity) < WATER_REST_SPEED_UNITS
+                && length(change) < WATER_REST_CHANGE_UNITS))
+}
+
 /// Fixed geometry this far (units) around the pieces takes part in a debris step.
 pub(super) const DEBRIS_REACH_UNITS: f32 = 1_000.0;
 pub(super) const TICKS_PER_SECOND: f32 = crate::TICK_HZ as f32;
@@ -102,6 +128,31 @@ pub(super) struct Dynamic<'a> {
     pub exclude: &'a [BodyId],
     /// Which isolated response lane retains this step's static geometry (below).
     pub lane: usize,
+    /// Each piece's water (#667), parallel to the pieces; empty puts none in water.
+    pub media: &'a [Option<PieceMedium>],
+}
+
+/// Whether `piece` lies over ground that dips below the floor half-space (a brook bed or lake
+/// basin, #667): the same footprint test units use, with the piece's reach in any turn. There it
+/// passes through the floor and only the terrain holds it, so it can sink into the water.
+pub(super) fn over_open_floor(terrain: Option<&crate::Terrain>, piece: &DebrisBody) -> bool {
+    let Some(terrain) = terrain else {
+        return false;
+    };
+    #[allow(clippy::cast_possible_truncation)]
+    let (x, z) = (
+        piece.position[0].round() as i32,
+        piece.position[2].round() as i32,
+    );
+    let half = piece.half_extents;
+    terrain.low_within(x, z, half.x + half.y + half.z + 1) < 0
+}
+
+impl Dynamic<'_> {
+    /// Piece `index`'s water, if any.
+    pub fn medium(&self, index: usize) -> Option<PieceMedium> {
+        self.media.get(index).copied().flatten()
+    }
 }
 
 /// One retained static-response world per dynamic-piece kind (lane 0 is debris), so each lane's
