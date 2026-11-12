@@ -45,6 +45,63 @@ use winit::{
 /// A zone's scenery and static world built off the window thread for Enter World.
 type Preparing = (ZoneId, std::thread::JoinHandle<(Scenery, WorldScene)>);
 
+/// How long one stage frame may spend uploading the zone's first frame after entry (#726).
+const UPLOAD_SHARE: Duration = Duration::from_millis(8);
+
+/// The selection stage, shown instead of the zone from the window's start until the zone's
+/// first frame is resident on the GPU.
+struct Stage {
+    presentation: Presentation,
+    world: WorldScene,
+    /// The zone is entered: its first frame uploads a share per frame while the stage shows.
+    entered: bool,
+}
+
+/// Builds zone `zone`'s scenery and static world off the window thread for Enter World. Once
+/// the zone's first projection arrives (or after 30 s without one) it also composes one frame
+/// of the zone around the viewer (#726): that imports the trees, rocks, buildings and unit
+/// models the frame draws and lowers the static scenery around the viewer into the returned
+/// world, so the window thread's first zone frame only uploads.
+fn prepare_zone(
+    zone: ZoneId,
+    updates: watch::Receiver<NetworkUpdate>,
+    headwear: &'static str,
+) -> (Scenery, WorldScene) {
+    let scenery = mmorpg_scenery::scenery_for_zone(zone);
+    let world = WorldScene::new(&scenery);
+    // The trees, rocks and climbing kit and the ground textures, imported once per process.
+    let _ = mmorpg_client::nature::library();
+    let _ = mmorpg_client::ground::library();
+    let waited = Instant::now() + Duration::from_secs(30);
+    let snapshot = loop {
+        if let NetworkUpdate::Snapshot { snapshot, .. } = &*updates.borrow()
+            && snapshot.zone_id == zone
+        {
+            break Some(Arc::clone(snapshot));
+        }
+        if Instant::now() >= waited {
+            break None;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    let now = Instant::now();
+    let content = mmorpg_core::content_for_zone(zone);
+    if let Some(snapshot) = snapshot
+        && let Ok(mut presentation) =
+            Presentation::new(snapshot.viewer_id, scenery.clone(), content, now)
+        && presentation.set_headwear(Some(headwear)).is_ok()
+        && presentation.push((*snapshot).clone(), now).is_ok()
+    {
+        let mut camera = OrbitCamera::default();
+        let _ = presentation.camera_view(&mut camera, &world, now);
+        let view = camera.view_above_ground(presentation.camera_target(now), |x, z| {
+            world.surface_y(x, z)
+        });
+        let _ = presentation.frame(&world, now, view);
+    }
+    (scenery, world)
+}
+
 /// Opens the window. `loaded` is the connected player's ID with its zone's scenery and world;
 /// without it the window opens on the selection stage and builds zone `zone_id` at Enter World.
 #[allow(clippy::too_many_arguments)]
@@ -69,7 +126,12 @@ pub fn run(
             let scenery = stage::scenery(&content);
             let world = stage::world(&scenery);
             let shown = stage::presentation(scenery.clone(), Arc::clone(&content), zone_id, now)?;
-            (0, scenery, world, Some(shown))
+            let stage = Stage {
+                presentation: shown,
+                world: world.clone(),
+                entered: false,
+            };
+            (0, scenery, world, Some(stage))
         }
     };
     let mut ui = GameUi::new(&scenery);
@@ -264,9 +326,9 @@ struct App {
     /// Static geometry uploaded when the window's renderer is created.
     world: WorldScene,
     presentation: Presentation,
-    /// The selection stage's own presentation, shown instead of the zone's until the first
-    /// projection after Enter World; `world` is the stage's meanwhile.
-    stage: Option<Presentation>,
+    /// The selection stage, shown instead of the zone until the zone's first frame is resident
+    /// after Enter World; `world` and `presentation` are placeholders until the zone is entered.
+    stage: Option<Stage>,
     /// The zone's scenery and world, building since Enter World.
     preparing: Option<Preparing>,
     /// The zone the window connects to.
@@ -1257,16 +1319,16 @@ impl App {
                 self.world_controls.set_interaction(false);
             }
             UiIntent::ChooseCharacter(id, class, sex, headwear) => {
-                if self.stage.is_some() && self.preparing.is_none() {
+                if self.stage.as_ref().is_some_and(|stage| !stage.entered)
+                    && self.preparing.is_none()
+                {
                     // The zone's world builds while the session connects and claims.
                     let zone = self.zone_id;
+                    let updates = self.updates.clone();
+                    let headwear = headwear.id();
                     self.preparing = Some((
                         zone,
-                        std::thread::spawn(move || {
-                            let scenery = mmorpg_scenery::scenery_for_zone(zone);
-                            let world = WorldScene::new(&scenery);
-                            (scenery, world)
-                        }),
+                        std::thread::spawn(move || prepare_zone(zone, updates, headwear)),
                     ));
                 }
                 self.retire_held_input();
@@ -1319,6 +1381,24 @@ impl App {
             return;
         }
         self.bindings_revision = revision;
+    }
+
+    /// Composes the entered zone's frame from its camera without drawing it and uploads up to
+    /// [`UPLOAD_SHARE`] of it (#726); true once all of it is resident.
+    fn preload_zone(&mut self, now: Instant) -> bool {
+        // First-view collision framing runs once, here, for the zone's first drawn frame.
+        let _ = self
+            .presentation
+            .camera_view(&mut self.camera, &self.world, now);
+        let view = self
+            .camera
+            .view_above_ground(self.presentation.camera_target(now), |x, z| {
+                self.world.surface_y(x, z)
+            });
+        let frame = self.presentation.frame(&self.world, now, view);
+        self.renderer
+            .as_mut()
+            .is_none_or(|renderer| renderer.preload(&frame, Instant::now() + UPLOAD_SHARE))
     }
 
     /// Runs one egui pass over the latest projection and applies its intents.
@@ -1892,9 +1972,9 @@ impl ApplicationHandler for App {
                         snapshot,
                         refusal,
                     } => {
-                        // The first projection after Enter World leaves the stage; a later one
-                        // from another zone (#145) travels.
-                        let entering = self.stage.is_some()
+                        // The first projection after Enter World enters the zone behind the
+                        // stage; a later one from another zone (#145) travels.
+                        let entering = self.stage.as_ref().is_some_and(|stage| !stage.entered)
                             || self.zone.is_some_and(|zone| zone != snapshot.zone_id);
                         self.zone = Some(snapshot.zone_id);
                         if entering {
@@ -1911,7 +1991,10 @@ impl ApplicationHandler for App {
                                 (scenery, world)
                             });
                             let content = mmorpg_core::content_for_zone(zone);
-                            self.stage = None;
+                            // The stage keeps showing until the zone's first frame is resident.
+                            if let Some(stage) = &mut self.stage {
+                                stage.entered = true;
+                            }
                             self.world = world;
                             self.ui.set_scenery(&scenery);
                             if let Err(error) = self.presentation.enter_zone(
@@ -1971,8 +2054,11 @@ impl ApplicationHandler for App {
                 // On the stage, the viewer turns on the turntable facing the camera, also while
                 // Enter World waits for the zone.
                 let staged = self.choosing || self.stage.is_some();
-                // Until the zone's first projection the stage shows instead of the zone.
-                let shown = self.stage.as_mut().unwrap_or(&mut self.presentation);
+                // Until the zone's first frame is resident the stage shows instead of the zone.
+                let shown = self
+                    .stage
+                    .as_mut()
+                    .map_or(&mut self.presentation, |stage| &mut stage.presentation);
                 let preview = staged.then(|| {
                     let preview = self.ui.preview();
                     let _ = shown.set_headwear(Some(preview.headwear.id()));
@@ -2001,8 +2087,14 @@ impl ApplicationHandler for App {
                 let loot_window = self.ui.loot_window_open(self.presentation.latest());
                 self.presentation
                     .set_interaction(loot_window, self.npc_context.npc);
-                let shown = self.stage.as_mut().unwrap_or(&mut self.presentation);
-                let frame = shown.frame(&self.world, now, view);
+                // Once entered, the zone's first frame uploads a share per stage frame (#726);
+                // the stage leaves after the frame on which all of it became resident.
+                let resident = self.stage.as_ref().is_some_and(|stage| stage.entered)
+                    && self.preload_zone(now);
+                let frame = match &mut self.stage {
+                    Some(stage) => stage.presentation.frame(&stage.world, now, view),
+                    None => self.presentation.frame(&self.world, now, view),
+                };
                 self.interface(now, view);
                 // The egui action bar replaces the flat combat HUD rectangles.
                 let overlay = self
@@ -2016,13 +2108,16 @@ impl ApplicationHandler for App {
                         view,
                         self.stage
                             .as_ref()
-                            .unwrap_or(&self.presentation)
+                            .map_or(&self.presentation, |stage| &stage.presentation)
                             .picked_draws(),
                         overlay,
                     )
                 {
                     self.fail(event_loop, error);
                     return;
+                }
+                if resident {
+                    self.stage = None;
                 }
                 self.rendered = self.rendered.saturating_add(1);
                 if self.frames.is_some_and(|limit| self.rendered >= limit) {
