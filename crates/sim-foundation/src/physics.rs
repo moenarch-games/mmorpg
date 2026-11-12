@@ -972,8 +972,29 @@ impl World {
     ///
     /// Rapier gap (#288): rebuilding each tick drops the solver's warm-start contact impulses,
     /// so a resting stack jitters; pieces settle into fixed obstacles instead of sleeping.
-    pub fn step_debris(&mut self, debris: &mut [DebrisBody], settle: &[bool]) -> usize {
-        dispatch!(self, &mut self.worlds, world => world.step_debris(debris, settle))
+    ///
+    /// `ids` are the pieces' game identities, ascending with the slice. Physics Engine keys the
+    /// pieces by them and keeps a resting piece as a fixed body until it leaves the slice
+    /// (#666); the body order, and so the step, is the one a world rebuilt from the same
+    /// canonical pieces takes.
+    pub fn step_debris(
+        &mut self,
+        debris: &mut [DebrisBody],
+        ids: &[u32],
+        settle: &[bool],
+    ) -> usize {
+        dispatch!(self, &mut self.worlds, world => world.step_debris(debris, ids, settle))
+    }
+
+    /// Builds the backend's retained dynamic-response worlds from the static bodies now in
+    /// place (#666): zone construction and recovery call it once the static world stands, so a
+    /// zone's first break, shove or roll does not build them. A no-op where nothing is retained.
+    ///
+    /// # Errors
+    ///
+    /// When the backend refuses a static body.
+    pub fn prepare_response_lanes(&mut self) -> Result<(), PhysicsError> {
+        dispatch!(self, &mut self.worlds, world => world.prepare_response_lanes())
     }
 
     /// Advances movable props (#58) one tick: like debris, but upright (they slide, never

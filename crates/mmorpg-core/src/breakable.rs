@@ -20,6 +20,9 @@ use crate::{CreatureId, PlayerId, PropKind, ZoneError, ZoneEvent, ZoneSimulation
 pub const DEBRIS_TICKS: u16 = crate::ticks_from_ms(5_000);
 /// At most this many pieces exist in one zone; the oldest goes first.
 pub const MAX_DEBRIS: usize = 192;
+/// At most this many pieces spawn in one tick (#666): a chain of explosions throws the first
+/// props' pieces and leaves the rest of the chain without debris.
+pub const MAX_DEBRIS_PER_TICK: usize = 64;
 /// At most this many pieces reach one player projection, nearest first.
 pub const MAX_VISIBLE_DEBRIS: usize = 16;
 /// A piece may settle once it has flown this many ticks.
@@ -132,6 +135,17 @@ fn yaw_rotation(yaw: u16) -> [f32; 4] {
     [0.0, sin, 0.0, cos]
 }
 
+/// A piece's horizontal distance (units) from a viewer at `centre`, as its projection measures.
+fn view_distance(piece: &Debris, centre: [i32; 3]) -> f64 {
+    let [x, _, z] = crate::physics::to_units(piece.body.position);
+    f64::from(x - centre[0]).hypot(f64::from(z - centre[2]))
+}
+
+/// Whether a viewer at `centre` sees `piece`: within the interest radius.
+fn in_view(piece: &Debris, centre: [i32; 3]) -> bool {
+    view_distance(piece, centre) <= f64::from(crate::INTEREST_RADIUS_UNITS)
+}
+
 impl ZoneSimulation {
     /// Whether `unit` is a breakable prop.
     pub(crate) fn is_prop(&self, unit: EntityRef) -> bool {
@@ -231,7 +245,10 @@ impl ZoneSimulation {
                 (length > 0.0).then(|| [x / length * 3.0, z / length * 3.0])
             })
             .unwrap_or([0.0; 2]);
-        for (index, piece) in debris_pieces(kind).iter().enumerate() {
+        // This tick's pieces are the ones not yet aged: canonical state, so recovery agrees.
+        let fresh = self.debris.values().filter(|piece| piece.age == 0).count();
+        let room = MAX_DEBRIS_PER_TICK.saturating_sub(fresh);
+        for (index, piece) in debris_pieces(kind).iter().enumerate().take(room) {
             #[allow(clippy::cast_precision_loss)]
             let [ox, oy, oz] = piece.offset.map(|axis| axis as f32);
             let [x, z] = turned(facing, [ox, oz]);
@@ -325,16 +342,30 @@ impl ZoneSimulation {
             piece.age += 1;
             piece.age < DEBRIS_TICKS
         });
+        // Interest gates the simulation (#666): a piece no player's projection can show goes
+        // now instead of flying on unseen.
+        let viewers: Vec<[i32; 3]> = self
+            .players
+            .keys()
+            .filter_map(|&id| self.world.body(body_id(EntityRef::Player(id))))
+            .map(|body| {
+                let centre = body.position();
+                [centre.x, centre.y, centre.z]
+            })
+            .collect();
+        self.debris
+            .retain(|_, piece| viewers.iter().any(|&viewer| in_view(piece, viewer)));
         if self.debris.is_empty() {
             return;
         }
         let mut bodies: Vec<_> = self.debris.values().map(|piece| piece.body).collect();
+        let ids: Vec<_> = self.debris.keys().copied().collect();
         let settle: Vec<_> = self
             .debris
             .values()
             .map(|piece| piece.age >= SETTLE_AFTER_TICKS)
             .collect();
-        self.world.step_debris(&mut bodies, &settle);
+        self.world.step_debris(&mut bodies, &ids, &settle);
         for (piece, body) in self.debris.values_mut().zip(bodies) {
             piece.body = body;
         }
@@ -342,19 +373,18 @@ impl ZoneSimulation {
 
     /// The pieces a viewer at `centre` sees, nearest first.
     pub(crate) fn debris_views(&self, centre: [i32; 3]) -> Vec<DebrisView> {
-        let radius = f64::from(crate::INTEREST_RADIUS_UNITS);
         let mut near: Vec<_> = self
             .debris
             .values()
             .filter_map(|piece| {
                 let [x, y, z] = crate::physics::to_units(piece.body.position);
-                let distance = f64::from(x - centre[0]).hypot(f64::from(z - centre[2]));
+                let distance = view_distance(piece, centre);
                 #[allow(clippy::cast_possible_truncation)]
                 let rotation = piece
                     .body
                     .rotation
                     .map(|axis| (axis.clamp(-1.0, 1.0) * 32_767.0).round() as i16);
-                (distance <= radius).then_some((
+                in_view(piece, centre).then_some((
                     distance,
                     DebrisView {
                         #[allow(clippy::cast_possible_truncation)]

@@ -1209,6 +1209,12 @@ impl World {
         })
     }
 
+    /// Rapier keeps no response worlds: every dynamic step rebuilds its own.
+    #[allow(clippy::unnecessary_wraps, clippy::unused_self)]
+    pub fn prepare_response_lanes(&mut self) -> Result<(), PhysicsError> {
+        Ok(())
+    }
+
     /// Advances `debris` (#288) one tick: Rapier steps a world of the pieces still moving as
     /// dynamic bodies, the settled ones and the fixed geometry around them, rebuilt from the
     /// game's state in slice order like every step here. A piece that slows below the rest
@@ -1216,7 +1222,7 @@ impl World {
     ///
     /// Rapier gap (#288): rebuilding each tick drops the solver's warm-start contact impulses,
     /// so a resting stack jitters; pieces settle into fixed obstacles instead of sleeping.
-    pub fn step_debris(&self, debris: &mut [DebrisBody], settle: &[bool]) -> usize {
+    pub fn step_debris(&self, debris: &mut [DebrisBody], _ids: &[u32], settle: &[bool]) -> usize {
         let ground = self
             .ground
             .as_ref()

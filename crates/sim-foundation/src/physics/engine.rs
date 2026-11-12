@@ -19,8 +19,10 @@
 //!   body by body.
 //! - Rays, overlaps and segment checks are `cast_ray`/`cast_ray_first` and `overlap_shape`.
 //! - Debris (#288) and movable props (#58) use dynamic boxes, boulders (#299) real spheres.
-//!   Authored zones retain isolated static response worlds; canonical pieces transfer in and
-//!   out on every tick.
+//!   Authored zones retain isolated static response worlds, built with the zone
+//!   ([`World::prepare_response_lanes`]) and kept in step with only the static bodies that
+//!   change (#666). Moving pieces transfer in and out on every tick; resting debris stays as
+//!   fixed bodies keyed by its game identity until it despawns.
 //!
 //! Intentional differences from the Rapier backend (listed in `docs/PHYSICS_AB.md`):
 //!
@@ -35,7 +37,7 @@
 //! - Overlap queries see the terrain (Rapier skips box–heightfield pairs). Flat terrain cells
 //!   are removed on both backends and left to the floor half-space.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use physics_engine::BodyId as EngineId;
@@ -127,10 +129,34 @@ struct Ground {
     floor: BodyId,
 }
 
+/// One isolated static-response world (#666): the zone's static bodies, kept in step with the
+/// ones that changed, and the resting debris it retains as fixed bodies.
 #[derive(Clone)]
 struct ResponseLane {
     engine: physics_engine::approximate::World,
     fixed: BTreeMap<BodyId, (RigidBody, EngineId)>,
+    /// Static bodies added, removed or moved since the lane's last sync.
+    dirty: BTreeSet<BodyId>,
+    /// The bodies the lane's last sync left out (the movable props' own boxes).
+    excluded: Vec<BodyId>,
+    /// Resting pieces kept as fixed bodies, by engine key ([`piece_key`]).
+    resting: BTreeMap<u64, (DebrisBody, EngineId)>,
+}
+
+/// A keyed piece's engine key: above every game body ID and ascending with the piece's game
+/// identity, so keyed pieces keep the body order (slice order) they had as unkeyed bodies, and
+/// a lane rebuilt from canonical state orders them the same (#666).
+const fn piece_key(id: u32) -> u64 {
+    (1 << 63) | id as u64
+}
+
+/// A moving body's last ground probe (#666): exact while the character world's static revision
+/// (`World::static_revision`) and the body's position are unchanged.
+#[derive(Clone, Copy)]
+struct GroundGap {
+    revision: u64,
+    position: [u32; 3],
+    gap: Option<f32>,
 }
 
 #[derive(Clone)]
@@ -153,6 +179,12 @@ pub(super) struct World {
     results: Vec<CharacterMoveResult>,
     velocities: Vec<(BodyId, [f32; 3])>,
     response: [Option<ResponseLane>; RESPONSE_LANES],
+    /// The moving bodies, the platforms and the count of authored meshes and rocks, kept on
+    /// add and remove so a step never scans every body for them (#666).
+    moving: BTreeSet<BodyId>,
+    platforms: BTreeSet<BodyId>,
+    authored: usize,
+    ground_gaps: BTreeMap<BodyId, GroundGap>,
 }
 
 impl fmt::Debug for World {
@@ -193,7 +225,46 @@ impl World {
             results: Vec::new(),
             velocities: Vec::new(),
             response: std::array::from_fn(|_| None),
+            moving: BTreeSet::new(),
+            platforms: BTreeSet::new(),
+            authored: 0,
+            ground_gaps: BTreeMap::new(),
         }
+    }
+
+    /// Records a static body's change for every built response lane's next sync.
+    fn static_changed(&mut self, id: BodyId) {
+        for lane in self.response.iter_mut().flatten() {
+            lane.dirty.insert(id);
+        }
+    }
+
+    /// Keeps the moving, platform and authored indexes and the lanes' change sets in step with
+    /// `body` being added or removed.
+    fn track(&mut self, body: &RigidBody, added: bool) {
+        let set = |ids: &mut BTreeSet<BodyId>| {
+            if added {
+                ids.insert(body.id);
+            } else {
+                ids.remove(&body.id);
+            }
+        };
+        if body.is_moving() {
+            set(&mut self.moving);
+            self.ground_gaps.remove(&body.id);
+            return;
+        }
+        if body.is_platform() {
+            set(&mut self.platforms);
+        }
+        if body.mesh.is_some() || matches!(body.kind, Kind::Rock(_)) {
+            if added {
+                self.authored += 1;
+            } else {
+                self.authored -= 1;
+            }
+        }
+        self.static_changed(body.id);
     }
 
     fn insert(&mut self, body: &RigidBody) -> Result<EngineId, PhysicsError> {
@@ -318,6 +389,7 @@ impl World {
         let handle = self.insert(&body)?;
         self.handles.insert(body.id, handle);
         self.grounded.remove(&body.id);
+        self.track(&body, true);
         self.bodies.insert(body.id, body);
         Ok(())
     }
@@ -336,6 +408,7 @@ impl World {
             self.games.remove(&handle.to_bits());
         }
         self.grounded.remove(&id);
+        self.track(&body, false);
         Some(body)
     }
 
@@ -391,6 +464,7 @@ impl World {
         platform.velocity = [0.0; 3];
         let position = platform.position;
         let handle = self.handles[&id];
+        self.static_changed(id);
         self.engine
             .set_static_position(handle, vector(position))
             .map_err(|failure| engine_error("set_static_position", failure))
@@ -576,14 +650,15 @@ impl World {
     /// does not rise moves before the units and a rising one after them.
     pub fn step(&mut self) -> Result<StepStats, PhysicsError> {
         let platforms: Vec<_> = self
-            .bodies
-            .values()
-            .filter(|body| body.is_platform() && body.velocity != [0.0; 3])
+            .platforms
+            .iter()
+            .map(|id| &self.bodies[id])
+            .filter(|body| body.velocity != [0.0; 3])
             .map(|body| (body.id, body.velocity))
             .collect();
         let mut carried = BTreeMap::new();
         for &(platform, displacement) in &platforms {
-            for body in self.bodies.values().filter(|body| body.is_moving()) {
+            for body in self.moving.iter().map(|id| &self.bodies[id]) {
                 if body.velocity[1] <= 0.0
                     && !carried.contains_key(&body.id)
                     && self.stands_on(body, platform)
@@ -618,12 +693,35 @@ impl World {
         moves.clear();
         let mut velocities = std::mem::take(&mut self.velocities);
         velocities.clear();
-        for body in self.bodies.values().filter(|body| body.is_moving()) {
+        let mut ground_gaps = std::mem::take(&mut self.ground_gaps);
+        let revision = self.engine.static_revision();
+        let movers = || self.moving.iter().map(|id| &self.bodies[id]);
+        for body in movers() {
             let mut velocity = body.velocity;
             let mut settle = 0.0;
             // A swimmer (#274) keeps the zone's vertical velocity.
             if !body.weightless {
-                if let Some(gap) = self.probe_ground_gap(body).filter(|_| velocity[1] <= 0.0) {
+                // The probe sees only static geometry: it stands while neither that nor the
+                // body's position changed (physics-engine `World::static_revision`).
+                let position = body.position.map(f32::to_bits);
+                let gap = match ground_gaps.get(&body.id) {
+                    Some(cached) if cached.revision == revision && cached.position == position => {
+                        cached.gap
+                    }
+                    _ => {
+                        let gap = self.probe_ground_gap(body);
+                        ground_gaps.insert(
+                            body.id,
+                            GroundGap {
+                                revision,
+                                position,
+                                gap,
+                            },
+                        );
+                        gap
+                    }
+                };
+                if let Some(gap) = gap.filter(|_| velocity[1] <= 0.0) {
                     velocity[1] = 0.0;
                     if gap > 1.0e-3 {
                         settle = -gap;
@@ -641,7 +739,7 @@ impl World {
             }
             // Turned around touching characters as on the Rapier arm (#534, Rapier oracle).
             let desired = super::shared::slide_around(
-                self.bodies.values(),
+                movers(),
                 body,
                 [
                     velocity[0] + carry[0],
@@ -656,6 +754,7 @@ impl World {
                 autostep: self.autostep,
             });
         }
+        self.ground_gaps = ground_gaps;
         let outcome = self.run_batch(&moves);
         self.moves = moves;
         if let Err(failure) = outcome {
@@ -916,13 +1015,18 @@ impl World {
     }
 
     /// Debris (#288) uses Engine where every rigid contact shape is supported.
-    pub fn step_debris(&mut self, debris: &mut [DebrisBody], settle: &[bool]) -> usize {
+    pub fn step_debris(
+        &mut self,
+        debris: &mut [DebrisBody],
+        ids: &[u32],
+        settle: &[bool],
+    ) -> usize {
         if !self.has_authored_geometry() {
             return self
                 .step_dynamic(debris, settle, &Dynamic::default())
                 .expect("physics-engine debris step failed");
         }
-        self.step_authored(debris, settle, &Dynamic::default())
+        self.step_authored(debris, Some(ids), settle, &Dynamic::default())
             .expect("physics-engine authored debris step failed")
     }
 
@@ -936,7 +1040,7 @@ impl World {
             lane: PROP_LANE,
         };
         if self.has_authored_geometry() {
-            self.step_authored(props, &settle, &options)
+            self.step_authored(props, None, &settle, &options)
         } else {
             self.step_dynamic(props, &settle, &options)
         }
@@ -958,38 +1062,38 @@ impl World {
             lane: BOULDER_LANE,
         };
         if self.has_authored_geometry() {
-            self.step_authored(boulders, &settle, &options)
+            self.step_authored(boulders, None, &settle, &options)
         } else {
             self.step_dynamic(boulders, &settle, &options)
         }
         .expect("physics-engine boulder step failed")
     }
-
     fn has_authored_geometry(&self) -> bool {
-        self.bodies
-            .values()
-            .any(|body| body.mesh.is_some() || matches!(body.kind, Kind::Rock(_)))
+        self.authored > 0
     }
 
-    /// The retained part is static geometry only. Every tick transfers the canonical game
-    /// bodies in and out; neither characters nor hidden dynamic solver state cross this boundary.
-    fn step_authored(
-        &mut self,
-        pieces: &mut [DebrisBody],
-        settle: &[bool],
-        options: &Dynamic<'_>,
-    ) -> Result<usize, PhysicsError> {
-        let moving = pieces.iter().filter(|piece| !piece.resting).count();
-        if moving == 0 {
-            return Ok(0);
+    /// Builds every response lane an authored zone lacks, holding its static bodies now, so the
+    /// first break, shove or roll does not pay for it (#666). Zone construction and recovery call
+    /// this once the static world stands; a primitive zone keeps stepping fresh worlds.
+    pub fn prepare_response_lanes(&mut self) -> Result<(), PhysicsError> {
+        if !self.has_authored_geometry() {
+            return Ok(());
         }
-        let cached = &mut self.response[options.lane];
-        if cached.is_none() {
+        for lane in 0..RESPONSE_LANES {
+            self.response_lane(lane)?;
+        }
+        Ok(())
+    }
+
+    /// Lane `index`, built with every static body when missing. Upright props take one solver
+    /// pass, free debris and boulders four.
+    fn response_lane(&mut self, index: usize) -> Result<&mut ResponseLane, PhysicsError> {
+        if self.response[index].is_none() {
             let per_second = TICKS_PER_SECOND * TICKS_PER_SECOND / UNITS_PER_METRE;
             let mut engine = physics_engine::approximate::World::new(Config {
                 gravity: vector(self.gravity.map(|g| g * per_second)),
                 substeps: 2,
-                velocity_iterations: if options.upright { 1 } else { 4 },
+                velocity_iterations: if index == PROP_LANE { 1 } else { 4 },
                 length_unit: UNITS_PER_METRE,
                 ..Config::default()
             })
@@ -999,33 +1103,51 @@ impl World {
                     .add_heightfield(heightfield(&ground.terrain), None)
                     .map_err(|failure| engine_error("authored response terrain", failure))?;
             }
-            *cached = Some(ResponseLane {
+            let mut fixed = BTreeMap::new();
+            for body in self.bodies.values().filter(|body| !body.is_moving()) {
+                let handle = insert_response_body(&mut engine, body)?;
+                fixed.insert(body.id, (body.clone(), handle));
+            }
+            self.response[index] = Some(ResponseLane {
                 engine,
-                fixed: BTreeMap::new(),
+                fixed,
+                dirty: BTreeSet::new(),
+                excluded: Vec::new(),
+                resting: BTreeMap::new(),
             });
         }
-        let lane = cached.as_mut().expect("response lane initialized");
-        let removed: Vec<_> = lane
-            .fixed
-            .iter()
-            .filter_map(|(id, (body, handle))| {
-                (options.exclude.contains(id) || self.bodies.get(id) != Some(body))
-                    .then_some((*id, *handle))
-            })
-            .collect();
-        for (id, handle) in removed {
-            lane.engine.remove_body(handle);
-            lane.fixed.remove(&id);
+        Ok(self.response[index]
+            .as_mut()
+            .expect("response lane initialized"))
+    }
+
+    /// The retained part is static geometry and resting debris. Every tick transfers the moving
+    /// canonical pieces in and out; neither characters nor hidden dynamic solver state cross this
+    /// boundary. `ids` (debris) are the pieces' game identities, ascending with the slice: they
+    /// key the pieces, and a resting keyed piece stays in the lane as a fixed body until it
+    /// leaves the slice. Unkeyed pieces (props, boulders) all transfer every tick.
+    fn step_authored(
+        &mut self,
+        pieces: &mut [DebrisBody],
+        ids: Option<&[u32]>,
+        settle: &[bool],
+        options: &Dynamic<'_>,
+    ) -> Result<usize, PhysicsError> {
+        let moving = pieces.iter().filter(|piece| !piece.resting).count();
+        if moving == 0 {
+            return Ok(0);
         }
-        for body in self
-            .bodies
-            .values()
-            .filter(|body| !body.is_moving() && !options.exclude.contains(&body.id))
-        {
-            if !lane.fixed.contains_key(&body.id) {
-                let handle = insert_response_body(&mut lane.engine, body)?;
-                lane.fixed.insert(body.id, (body.clone(), handle));
-            }
+        let keys: Option<Vec<u64>> = ids.map(|ids| ids.iter().map(|&id| piece_key(id)).collect());
+        debug_assert!(keys.as_ref().is_none_or(|keys| {
+            keys.len() == pieces.len() && keys.windows(2).all(|pair| pair[0] < pair[1])
+        }));
+        self.response_lane(options.lane)?;
+        let lane = self.response[options.lane]
+            .as_mut()
+            .expect("response lane initialized");
+        lane.sync(&self.bodies, options.exclude)?;
+        if let Some(keys) = &keys {
+            lane.retain_resting(pieces, keys)?;
         }
         let baseline = lane.engine.body_count();
         let mut transient = Vec::new();
@@ -1041,57 +1163,31 @@ impl World {
                 );
             }
         }
-        let mut handles = Vec::with_capacity(pieces.len());
-        for piece in pieces.iter() {
-            let (shape, mass) = piece_shape(piece);
-            let [x, y, z, w] = piece.rotation;
-            let mut body = Body::new(
-                shape,
-                vector(piece.position),
-                if piece.resting { 0. } else { mass },
-            );
-            body.orientation = Quaternion(x, y, z, w);
-            body.friction = PIECE_FRICTION;
-            body.restitution = PIECE_RESTITUTION;
-            body.sleep_allowed = false;
-            if !piece.resting {
-                body.velocity = vector(piece.velocity.map(|v| v * TICKS_PER_SECOND));
-                body.angular_velocity = vector(piece.spin.map(|v| v * TICKS_PER_SECOND));
-                (body.linear_damping, body.angular_damping) = piece_damping(piece);
-                body.rotation_locked = options.upright;
+        let units = transient.len();
+        let mut stepped = Vec::with_capacity(moving);
+        for (index, piece) in pieces.iter().enumerate() {
+            let key = keys.as_ref().map(|keys| keys[index]);
+            if piece.resting && key.is_some() {
+                continue;
             }
             let handle = lane
                 .engine
-                .add_body(body)
+                .add_body(piece_body(piece, key, options.upright))
                 .map_err(|failure| engine_error("response piece", failure))?;
             transient.push(handle);
-            handles.push(handle);
+            stepped.push(index);
         }
         let outcome = lane.engine.step(1. / f64::from(TICKS_PER_SECOND));
         // Removal returns ownership of the physical state and clears contacts before recovery.
-        for ((piece, handle), &settles) in pieces.iter_mut().zip(handles).zip(settle) {
-            let body = lane
-                .engine
-                .remove_body(handle)
-                .expect("response piece exists");
+        let removed = lane
+            .engine
+            .remove_bodies(&transient)
+            .expect("response transients exist");
+        for (index, body) in stepped.into_iter().zip(&removed[units..]) {
+            let piece = &mut pieces[index];
             if !piece.resting {
-                let Quaternion(x, y, z, w) = body.orientation;
-                let norm = (x * x + y * y + z * z + w * w).sqrt();
-                piece.position = array(body.position);
-                piece.rotation = [x / norm, y / norm, z / norm, w / norm];
-                piece.velocity = array(body.velocity).map(|v| v / TICKS_PER_SECOND);
-                piece.spin = array(body.angular_velocity).map(|v| v / TICKS_PER_SECOND);
-                let speed = piece.velocity.iter().map(|v| v * v).sum::<f32>().sqrt();
-                let spin = piece.spin.iter().map(|v| v * v).sum::<f32>().sqrt();
-                if settles && speed < DEBRIS_REST_SPEED_UNITS && spin < DEBRIS_REST_SPIN {
-                    piece.resting = true;
-                    piece.velocity = [0.; 3];
-                    piece.spin = [0.; 3];
-                }
+                take_piece(piece, body, settle[index]);
             }
-        }
-        for handle in transient {
-            lane.engine.remove_body(handle);
         }
         assert_eq!(
             lane.engine.body_count(),
@@ -1176,23 +1272,140 @@ impl World {
             .step(1.0 / f64::from(TICKS_PER_SECOND))
             .map_err(|failure| engine_error("dynamic step", failure))?;
         for ((piece, handle), &settles) in pieces.iter_mut().zip(handles).zip(settle) {
-            let Some(body) = handle.and_then(|handle| engine.body(handle)) else {
-                continue;
-            };
-            let Quaternion(x, y, z, w) = body.orientation;
-            let norm = (x * x + y * y + z * z + w * w).sqrt();
-            piece.position = array(body.position);
-            piece.rotation = [x / norm, y / norm, z / norm, w / norm];
-            piece.velocity = array(body.velocity).map(|v| v / TICKS_PER_SECOND);
-            piece.spin = array(body.angular_velocity).map(|v| v / TICKS_PER_SECOND);
-            let speed = piece.velocity.iter().map(|v| v * v).sum::<f32>().sqrt();
-            let spin = piece.spin.iter().map(|v| v * v).sum::<f32>().sqrt();
-            if settles && speed < DEBRIS_REST_SPEED_UNITS && spin < DEBRIS_REST_SPIN {
-                piece.resting = true;
-                piece.velocity = [0.0; 3];
-                piece.spin = [0.0; 3];
+            if let Some(body) = handle.and_then(|handle| engine.body(handle)) {
+                take_piece(piece, body, settles);
             }
         }
         Ok(moving)
+    }
+}
+
+/// A piece's response-lane body: fixed while it rests, keyed by `key` when given.
+fn piece_body(piece: &DebrisBody, key: Option<u64>, upright: bool) -> Body {
+    let (shape, mass) = piece_shape(piece);
+    let [x, y, z, w] = piece.rotation;
+    let mass = if piece.resting { 0. } else { mass };
+    let mut body = match key {
+        Some(key) => Body::keyed(key, shape, vector(piece.position), mass),
+        None => Body::new(shape, vector(piece.position), mass),
+    };
+    body.orientation = Quaternion(x, y, z, w);
+    body.friction = PIECE_FRICTION;
+    body.restitution = PIECE_RESTITUTION;
+    body.sleep_allowed = false;
+    if !piece.resting {
+        body.velocity = vector(piece.velocity.map(|v| v * TICKS_PER_SECOND));
+        body.angular_velocity = vector(piece.spin.map(|v| v * TICKS_PER_SECOND));
+        (body.linear_damping, body.angular_damping) = piece_damping(piece);
+        body.rotation_locked = upright;
+    }
+    body
+}
+
+/// Takes a stepped piece's state back from its engine body, settling it once it may and has
+/// slowed below the rest thresholds.
+fn take_piece(piece: &mut DebrisBody, body: &Body, settles: bool) {
+    let Quaternion(x, y, z, w) = body.orientation;
+    let norm = (x * x + y * y + z * z + w * w).sqrt();
+    piece.position = array(body.position);
+    piece.rotation = [x / norm, y / norm, z / norm, w / norm];
+    piece.velocity = array(body.velocity).map(|v| v / TICKS_PER_SECOND);
+    piece.spin = array(body.angular_velocity).map(|v| v / TICKS_PER_SECOND);
+    let speed = piece.velocity.iter().map(|v| v * v).sum::<f32>().sqrt();
+    let spin = piece.spin.iter().map(|v| v * v).sum::<f32>().sqrt();
+    if settles && speed < DEBRIS_REST_SPEED_UNITS && spin < DEBRIS_REST_SPIN {
+        piece.resting = true;
+        piece.velocity = [0.; 3];
+        piece.spin = [0.; 3];
+    }
+}
+
+impl ResponseLane {
+    /// Brings the lane's static bodies in step with `bodies` minus `exclude`, visiting only the
+    /// bodies changed since the last sync and those whose exclusion changed. A platform that
+    /// only moved moves in place (`set_static_position`); anything else is replaced under its
+    /// game key, so the body order stays that of a lane built afresh.
+    fn sync(
+        &mut self,
+        bodies: &BTreeMap<BodyId, RigidBody>,
+        exclude: &[BodyId],
+    ) -> Result<(), PhysicsError> {
+        if self.excluded != exclude {
+            self.dirty
+                .extend(self.excluded.iter().chain(exclude).copied());
+            self.excluded = exclude.to_vec();
+        }
+        let dirty = std::mem::take(&mut self.dirty);
+        let wanted = |id: &BodyId| {
+            bodies
+                .get(id)
+                .filter(|body| !body.is_moving() && !exclude.contains(id))
+        };
+        let mut added = Vec::new();
+        for id in dirty {
+            let body = wanted(&id);
+            if let (Some((old, handle)), Some(body)) = (self.fixed.get_mut(&id), body) {
+                if *old == *body {
+                    continue;
+                }
+                if body.is_platform()
+                    && old.kind == body.kind
+                    && old.half_extents == body.half_extents
+                {
+                    self.engine
+                        .set_static_position(*handle, vector(body.position))
+                        .map_err(|failure| engine_error("response platform", failure))?;
+                    *old = body.clone();
+                    continue;
+                }
+            }
+            if let Some((_, handle)) = self.fixed.remove(&id) {
+                self.engine.remove_body(handle);
+            }
+            if let Some(body) = body {
+                added.push(body);
+            }
+        }
+        for body in added {
+            let handle = insert_response_body(&mut self.engine, body)?;
+            self.fixed.insert(body.id, (body.clone(), handle));
+        }
+        Ok(())
+    }
+
+    /// Keeps exactly the resting keyed pieces of `pieces` as fixed bodies: a piece that settled
+    /// since joins, one that left the slice (despawned) goes.
+    fn retain_resting(&mut self, pieces: &[DebrisBody], keys: &[u64]) -> Result<(), PhysicsError> {
+        let resting: BTreeMap<u64, &DebrisBody> = keys
+            .iter()
+            .zip(pieces)
+            .filter(|(_, piece)| piece.resting)
+            .map(|(&key, piece)| (key, piece))
+            .collect();
+        let gone: Vec<_> = self
+            .resting
+            .iter()
+            .filter(|(key, (piece, _))| resting.get(key).is_none_or(|now| **now != *piece))
+            .map(|(&key, &(_, handle))| (key, handle))
+            .collect();
+        if !gone.is_empty() {
+            let handles: Vec<_> = gone.iter().map(|&(_, handle)| handle).collect();
+            self.engine
+                .remove_bodies(&handles)
+                .map_err(|failure| engine_error("response resting removal", failure))?;
+            for (key, _) in gone {
+                self.resting.remove(&key);
+            }
+        }
+        for (key, piece) in resting {
+            if !self.resting.contains_key(&key) {
+                let handle = self
+                    .engine
+                    .add_body(piece_body(piece, Some(key), false))
+                    .map_err(|failure| engine_error("response resting piece", failure))?;
+                self.resting.insert(key, (*piece, handle));
+            }
+        }
+        Ok(())
     }
 }
