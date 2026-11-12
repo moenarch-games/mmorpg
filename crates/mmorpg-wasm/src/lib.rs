@@ -357,23 +357,37 @@ impl LocalZone {
     /// [`LocalZone::scenario_player`]; nothing is stored.
     #[wasm_bindgen(js_name = forPracticeArena)]
     pub fn for_practice_arena(class: u8, sex: u8, equipment: &[u16]) -> Result<LocalZone, JsError> {
-        let class = PlayerClass::from_code(class)
-            .zip(Sex::from_code(sex))
-            .map(|(class, sex)| ClassChoice { class, sex })
-            .ok_or_else(|| JsError::new("the class choice is invalid"))?;
-        let slots: [u16; mmorpg_core::EQUIPMENT_SLOTS] = equipment
-            .try_into()
-            .map_err(|_| JsError::new("an arena build has one item per equipment slot"))?;
-        let build = mmorpg_core::EphemeralCharacterBuild::new(
-            class,
-            slots.map(|id| (id != 0).then(|| mmorpg_core::ItemId::new(id))),
-        )
-        .map_err(|error| JsError::new(&error.to_string()))?;
+        let build = arena_build(class, sex, equipment)?;
         let (host, player) = LocalZoneHost::practice_arena(&build).map_err(js_error)?;
         Ok(Self {
             host,
             scenario_player: Some(player),
         })
+    }
+
+    /// A fresh practice arena for a netcode trial (#680): the build of
+    /// [`LocalZone::for_practice_arena`] as [`LocalZone::scenario_player`], players may fight, a
+    /// sparring partner ([`LocalZone::sparring_partner`]) stands in, and `rewind` turns on the
+    /// match's capped hit rewind. Throws for an illegal build; nothing is stored.
+    #[wasm_bindgen(js_name = forArenaTrial)]
+    pub fn for_arena_trial(
+        class: u8,
+        sex: u8,
+        equipment: &[u16],
+        rewind: bool,
+    ) -> Result<LocalZone, JsError> {
+        let build = arena_build(class, sex, equipment)?;
+        let (host, player) = LocalZoneHost::arena_trial(&build, rewind).map_err(js_error)?;
+        Ok(Self {
+            host,
+            scenario_player: Some(player),
+        })
+    }
+
+    /// The netcode trial's sparring partner (#680), which the page drives; undefined otherwise.
+    #[wasm_bindgen(getter, js_name = sparringPartner)]
+    pub fn sparring_partner(&self) -> Option<u32> {
+        self.host.sparring_partner()
     }
 
     /// A fresh Action Lab world (#381) with a configured ephemeral character
@@ -1466,4 +1480,94 @@ pub fn ambient_animal_frame(seconds: f64, animate: bool) -> Vec<f32> {
 
 fn js_error(error: host::LocalZoneError) -> JsError {
     JsError::new(&error.to_string())
+}
+
+/// A practice arena build of `class` and `sex` wearing `equipment` (six item IDs, 0 empty).
+fn arena_build(
+    class: u8,
+    sex: u8,
+    equipment: &[u16],
+) -> Result<mmorpg_core::EphemeralCharacterBuild, JsError> {
+    let class = PlayerClass::from_code(class)
+        .zip(Sex::from_code(sex))
+        .map(|(class, sex)| ClassChoice { class, sex })
+        .ok_or_else(|| JsError::new("the class choice is invalid"))?;
+    let slots: [u16; mmorpg_core::EQUIPMENT_SLOTS] = equipment
+        .try_into()
+        .map_err(|_| JsError::new("an arena build has one item per equipment slot"))?;
+    mmorpg_core::EphemeralCharacterBuild::new(
+        class,
+        slots.map(|id| (id != 0).then(|| mmorpg_core::ItemId::new(id))),
+    )
+    .map_err(|error| JsError::new(&error.to_string()))
+}
+
+/// Predicted own movement for the arena netcode trial (#680): `mmorpg-client-model`'s
+/// reconciliation over the zone's own movement rules, for the practice arena's content.
+#[wasm_bindgen]
+pub struct ArenaMovementPrediction {
+    inner: mmorpg_client_model::prediction::PredictedMovement,
+}
+
+#[wasm_bindgen]
+impl ArenaMovementPrediction {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Result<ArenaMovementPrediction, JsError> {
+        Ok(Self {
+            inner: mmorpg_client_model::prediction::PredictedMovement::new(
+                host::ARENA_ZONE_ID,
+                arena_presentation::trial_content(false),
+            )
+            .map_err(|error| JsError::new(&error.to_string()))?,
+        })
+    }
+
+    /// The page sent `command` (plain or observed wire bytes) under `sequence`.
+    pub fn sent(&mut self, sequence: u32, command: &[u8]) -> Result<(), JsError> {
+        let (command, _) = mmorpg_protocol::decode_observed_command(command)
+            .map_err(|error| JsError::new(&error.to_string()))?;
+        self.inner
+            .sent(sequence, command)
+            .map_err(|error| JsError::new(&error.to_string()))
+    }
+
+    /// One local tick.
+    pub fn step(&mut self) -> Result<(), JsError> {
+        self.inner
+            .step()
+            .map_err(|error| JsError::new(&error.to_string()))
+    }
+
+    /// Every projection's tick and acknowledged sequence, in order.
+    pub fn acknowledge(&mut self, tick: u64, acknowledged: u32) {
+        self.inner.acknowledge(tick, acknowledged);
+    }
+
+    /// Restarts from the newest projection's own body (centre in units, velocity in whole
+    /// units per tick) and replays what was sent since.
+    #[allow(clippy::too_many_arguments)]
+    pub fn reconcile(
+        &mut self,
+        tick: u64,
+        x: i32,
+        y: i32,
+        z: i32,
+        vx: i32,
+        vy: i32,
+        vz: i32,
+        facing: u16,
+    ) -> Result<(), JsError> {
+        self.inner
+            .reconcile(tick, [x, y, z], [vx, vy, vz], facing)
+            .map_err(|error| JsError::new(&error.to_string()))
+    }
+
+    /// The predicted centre in units and facing: `[x, y, z, facing]`.
+    pub fn position(&self) -> Vec<f32> {
+        self.inner
+            .position()
+            .map_or_else(Vec::new, |([x, y, z], facing)| {
+                vec![x, y, z, f32::from(facing)]
+            })
+    }
 }
