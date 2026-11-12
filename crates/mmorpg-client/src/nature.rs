@@ -10,10 +10,20 @@
 //! ([`mmorpg_presentation::nature::Shown`]): the same mesh with a per-vertex alpha noise, and
 //! with the complementary noise. A fading level draws its copy through a masked material
 //! whose cut-off rises with the fade ([`fade_material`]), so the outgoing level dissolves
-//! away where the incoming one dissolves in. Presentation only.
+//! away where the incoming one dissolves in.
+//!
+//! A kit whose descriptor declares a layered surface (#732, `mmorpg_presentation::surface`)
+//! has untextured pieces with a per-vertex surface mask instead. Each of its primitives becomes
+//! limestone from the shared library, box-projected in the piece's frame with a normal map,
+//! and two blended overlays on the same triangles, soil and then moss, whose vertex alphas
+//! composite to the blend's weights; the vertex colours carry the cavity shade. Presentation
+//! only.
 use std::{collections::BTreeMap, sync::OnceLock};
 
-use mmorpg_presentation::lod::EntryLods;
+use mmorpg_presentation::{
+    lod::EntryLods,
+    surface::{self, LayeredSurface},
+};
 use render_engine::{
     glam::{Mat4, Vec2, Vec3, Vec4},
     material::{AlphaMode, Sampler, StandardMaterial, TextureData},
@@ -76,6 +86,8 @@ struct Source {
     keys: &'static [&'static str],
     entries: &'static [(&'static str, &'static str)],
     files: Files,
+    /// The bundle's descriptor JSON, which may declare a layered surface.
+    descriptor: &'static str,
 }
 
 const SOURCES: [Source; 6] = [
@@ -83,31 +95,37 @@ const SOURCES: [Source; 6] = [
         keys: &mmorpg_presentation::nature::ENTRIES,
         entries: bundle::ENTRIES,
         files: bundle::FILES,
+        descriptor: descriptor::DESCRIPTOR,
     },
     Source {
         keys: &mmorpg_presentation::climbing::ENTRIES,
         entries: climbing_bundle::ENTRIES,
         files: climbing_bundle::FILES,
+        descriptor: climbing_descriptor::DESCRIPTOR,
     },
     Source {
         keys: &mmorpg_presentation::crag::KIT_ENTRIES,
         entries: crag_bundle::ENTRIES,
         files: crag_bundle::FILES,
+        descriptor: crag_descriptor::DESCRIPTOR,
     },
     Source {
         keys: &mmorpg_presentation::nature::LIMESTONE_ENTRIES,
         entries: limestone_bundle::ENTRIES,
         files: limestone_bundle::FILES,
+        descriptor: limestone_descriptor::DESCRIPTOR,
     },
     Source {
         keys: &mmorpg_presentation::river::ENTRIES,
         entries: river_bundle::ENTRIES,
         files: river_bundle::FILES,
+        descriptor: river_descriptor::DESCRIPTOR,
     },
     Source {
         keys: &mmorpg_presentation::settlement_props::ENTRIES,
         entries: settlement_bundle::ENTRIES,
         files: settlement_bundle::FILES,
+        descriptor: settlement_descriptor::DESCRIPTOR,
     },
 ];
 
@@ -177,6 +195,9 @@ pub struct Part {
     /// The material without its textures, which [`Part::textures`] names.
     pub material: StandardMaterial,
     pub textures: Textures,
+    /// A layered surface's blended overlay (#732): drawn over its level's limestone only while
+    /// the level is settled, never through a dissolve copy.
+    pub overlay: bool,
 }
 
 /// Every entry level's primitives and their shared textures.
@@ -192,10 +213,24 @@ pub fn library() -> &'static Library {
     LIBRARY.get_or_init(|| {
         let lods = lods();
         let mut textures = TextureSet::default();
+        let layered: Vec<Option<Layered>> = SOURCES
+            .iter()
+            .map(|source| {
+                LayeredSurface::from_descriptor(source.descriptor)
+                    .expect("an embedded descriptor's surface is valid")
+                    .map(|surface| Layered::import(surface, source, &mut textures))
+            })
+            .collect();
         let levels = SOURCES
             .iter()
-            .flat_map(|source| source.keys.iter().map(move |entry| (source, entry)))
-            .map(|(source, entry)| {
+            .zip(&layered)
+            .flat_map(|(source, layered)| {
+                source
+                    .keys
+                    .iter()
+                    .map(move |entry| (source, layered.as_ref(), entry))
+            })
+            .map(|(source, layered, entry)| {
                 let Some(entry_lods) = lods.iter().find(|lods| lods.entry == *entry) else {
                     return Vec::new();
                 };
@@ -214,7 +249,7 @@ pub fn library() -> &'static Library {
                             .find(|(name, _)| *name == key)
                             .map(|(_, path)| *path)
                             .unwrap_or_else(|| panic!("a bundle embeds {key}"));
-                        import(path, source.files, &mut textures)
+                        import(path, source.files, &mut textures, layered)
                     })
                     .collect()
             })
@@ -350,14 +385,236 @@ fn with_alpha(mesh: &MeshData, alpha: impl Fn(usize) -> f32) -> MeshData {
     faded
 }
 
-/// Every primitive of the bundle glTF at `path`, in its scene frame.
-fn import(path: &str, files: Files, textures: &mut TextureSet) -> Vec<Part> {
-    // KTX2 textures (KHR_texture_basisu) become core sources that `texture` transcodes.
+/// The bundle glTF at `path`; KTX2 textures (`KHR_texture_basisu`) become core sources that
+/// [`texture`] transcodes.
+fn parse(path: &str, files: Files) -> gltf::Gltf {
     let mut json: serde_json::Value =
         serde_json::from_slice(file(files, path)).expect("a bundle entry is JSON");
     crate::ground::basisu_as_core(&mut json);
-    let gltf = gltf::Gltf::from_slice(&serde_json::to_vec(&json).expect("JSON serializes"))
-        .expect("a bundle entry is valid glTF");
+    gltf::Gltf::from_slice(&serde_json::to_vec(&json).expect("JSON serializes"))
+        .expect("a bundle entry is valid glTF")
+}
+
+/// The [`TextureSet`] index of `info`'s image, imported once per path and colour space.
+fn slot(
+    textures: &mut TextureSet,
+    files: Files,
+    path: &str,
+    info: Option<gltf::texture::Texture<'_>>,
+    srgb: bool,
+) -> Option<usize> {
+    let info = info?;
+    let gltf::image::Source::Uri { uri, .. } = info.source().source() else {
+        return None;
+    };
+    let resolved = resolve(path, uri);
+    Some(
+        *textures
+            .by_path
+            .entry((resolved.clone(), srgb))
+            .or_insert_with(|| {
+                textures.data.push(texture(file(files, &resolved), srgb));
+                textures.data.len() - 1
+            }),
+    )
+}
+
+/// A layered kit's surface with its library's textures in the [`TextureSet`] (#732).
+struct Layered {
+    surface: LayeredSurface,
+    thresholds: surface::Thresholds,
+    /// The limestone's colour and normal map.
+    limestone: Textures,
+    moss: Option<usize>,
+    soil: Option<usize>,
+}
+
+impl Layered {
+    fn import(surface: LayeredSurface, source: &Source, textures: &mut TextureSet) -> Self {
+        let path = source
+            .entries
+            .iter()
+            .find(|(name, _)| *name == surface.library)
+            .map(|(_, path)| *path)
+            .unwrap_or_else(|| panic!("a layered bundle embeds {}", surface.library));
+        let gltf = parse(path, source.files);
+        let mut layer = |name: &str| {
+            let material = gltf
+                .materials()
+                .find(|material| material.name() == Some(name))
+                .unwrap_or_else(|| panic!("the surface library has {name}"));
+            let pbr = material.pbr_metallic_roughness();
+            Textures {
+                base_color: slot(
+                    textures,
+                    source.files,
+                    path,
+                    pbr.base_color_texture().map(|t| t.texture()),
+                    true,
+                ),
+                normal: slot(
+                    textures,
+                    source.files,
+                    path,
+                    material.normal_texture().map(|t| t.texture()),
+                    false,
+                ),
+                metallic_roughness: None,
+            }
+        };
+        let limestone = layer(&surface.layers.limestone.material);
+        let moss = layer(&surface.layers.moss.material).base_color;
+        let soil = layer(&surface.layers.soil.material).base_color;
+        Self {
+            thresholds: surface.thresholds(surface::GREYHAVEN_WEATHERING),
+            surface,
+            limestone,
+            moss,
+            soil,
+        }
+    }
+
+    /// One layered primitive (positions, normals and indices in the entry frame, one mask per
+    /// vertex) as its limestone part and its soil and moss overlays.
+    fn parts(&self, data: &MeshData, mask: &[[f32; 4]], source: &StandardMaterial) -> Vec<Part> {
+        // Each triangle projects along its normal's major axis; a vertex is split once per
+        // axis its triangles use, so every projection stays continuous within it.
+        let mut split: BTreeMap<(u32, usize), u32> = BTreeMap::new();
+        let mut original = Vec::new();
+        let mut axes = Vec::new();
+        let mut indices = Vec::with_capacity(data.indices.len());
+        for triangle in data.indices.as_chunks::<3>().0 {
+            let [a, b, c] = [0, 1, 2].map(|i| data.positions[triangle[i] as usize]);
+            let normal = (b - a).cross(c - a).abs();
+            let axis = if normal.x >= normal.y && normal.x >= normal.z {
+                0
+            } else if normal.y >= normal.z {
+                1
+            } else {
+                2
+            };
+            for &index in triangle {
+                indices.push(*split.entry((index, axis)).or_insert_with(|| {
+                    original.push(index as usize);
+                    axes.push(axis);
+                    (original.len() - 1) as u32
+                }));
+            }
+        }
+        let blends: Vec<surface::Blend> = original
+            .iter()
+            .map(|&i| surface::blend(mask.get(i).copied().unwrap_or_default(), self.thresholds))
+            .collect();
+        let mesh = |tile: f32, alpha: &dyn Fn(&surface::Blend) -> f32| {
+            let mut mesh = MeshData {
+                positions: original.iter().map(|&i| data.positions[i]).collect(),
+                normals: original.iter().map(|&i| data.normals[i]).collect(),
+                indices: indices.clone(),
+                ..MeshData::default()
+            };
+            mesh.uvs = mesh
+                .positions
+                .iter()
+                .zip(&axes)
+                .map(|(p, axis)| {
+                    let uv = match axis {
+                        0 => Vec2::new(p.z, -p.y),
+                        1 => Vec2::new(p.x, p.z),
+                        _ => Vec2::new(p.x, -p.y),
+                    };
+                    uv / tile.max(1e-3)
+                })
+                .collect();
+            mesh.colors = blends
+                .iter()
+                .map(|blend| Vec3::from(blend.shade).extend(alpha(blend)))
+                .collect();
+            mesh
+        };
+        let layers = &self.surface.layers;
+        let mut limestone = mesh(layers.limestone.tile_metres, &|_| 1.);
+        let normal = self
+            .limestone
+            .normal
+            .filter(|_| limestone.generate_tangents().is_ok());
+        let base = StandardMaterial {
+            base_color: Vec4::ONE,
+            alpha_mode: AlphaMode::Opaque,
+            ..*source
+        };
+        let mut parts = vec![Part {
+            fade_in: with_alpha(&limestone, noise),
+            fade_out: with_alpha(&limestone, |index| {
+                1. - noise(index) + 1. / FADE_STEPS as f32
+            }),
+            mesh: limestone,
+            material: base,
+            textures: Textures {
+                normal,
+                ..self.limestone
+            },
+            overlay: false,
+        }];
+        // Soil under moss: limestone, then soil at its alpha, then moss at its alpha.
+        type Alpha = fn(&surface::Blend) -> f32;
+        let soil: Alpha = |blend| blend.overlay_alphas().0;
+        let moss: Alpha = |blend| blend.overlay_alphas().1;
+        for (layer, texture, alpha) in [
+            (&layers.soil, self.soil, soil),
+            (&layers.moss, self.moss, moss),
+        ] {
+            if texture.is_none() || blends.iter().all(|blend| alpha(blend) < 1. / 255.) {
+                continue;
+            }
+            let overlay = mesh(layer.tile_metres, &alpha);
+            parts.push(Part {
+                fade_in: overlay.clone(),
+                fade_out: overlay.clone(),
+                mesh: overlay,
+                material: StandardMaterial {
+                    alpha_mode: AlphaMode::Blend,
+                    // Only the limestone casts the piece's shadow.
+                    blend_shadow_alpha_cutoff: 1.,
+                    double_sided: false,
+                    ..base
+                },
+                textures: Textures {
+                    base_color: texture,
+                    ..Textures::default()
+                },
+                overlay: true,
+            });
+        }
+        parts
+    }
+}
+
+/// One mask per vertex from `accessor` (normalized integers or floats).
+fn read_mask<'a, 's, F>(accessor: gltf::Accessor<'a>, buffers: F) -> Vec<[f32; 4]>
+where
+    F: Clone + Fn(gltf::Buffer<'a>) -> Option<&'s [u8]>,
+{
+    use gltf::accessor::{DataType, Iter};
+    match accessor.data_type() {
+        DataType::U8 => Iter::<[u8; 4]>::new(accessor, buffers)
+            .map(|values| values.map(|v| v.map(|c| f32::from(c) / 255.)).collect()),
+        DataType::U16 => Iter::<[u16; 4]>::new(accessor, buffers)
+            .map(|values| values.map(|v| v.map(|c| f32::from(c) / 65535.)).collect()),
+        DataType::F32 => Iter::<[f32; 4]>::new(accessor, buffers).map(Iterator::collect),
+        _ => None,
+    }
+    .unwrap_or_default()
+}
+
+/// Every primitive of the bundle glTF at `path`, in its scene frame; a layered kit's masked
+/// primitives as their limestone and overlays ([`Layered::parts`]).
+fn import(
+    path: &str,
+    files: Files,
+    textures: &mut TextureSet,
+    layered: Option<&Layered>,
+) -> Vec<Part> {
+    let gltf = parse(path, files);
     let buffers: Vec<&[u8]> = gltf
         .buffers()
         .map(|buffer| match buffer.source() {
@@ -366,20 +623,7 @@ fn import(path: &str, files: Files, textures: &mut TextureSet) -> Vec<Part> {
         })
         .collect();
     let mut slot = |info: Option<gltf::texture::Texture<'_>>, srgb: bool| {
-        let info = info?;
-        let gltf::image::Source::Uri { uri, .. } = info.source().source() else {
-            return None;
-        };
-        let resolved = resolve(path, uri);
-        Some(
-            *textures
-                .by_path
-                .entry((resolved.clone(), srgb))
-                .or_insert_with(|| {
-                    textures.data.push(texture(file(files, &resolved), srgb));
-                    textures.data.len() - 1
-                }),
-        )
+        slot(textures, files, path, info, srgb)
     };
     let scene = gltf
         .default_scene()
@@ -430,6 +674,24 @@ fn import(path: &str, files: Files, textures: &mut TextureSet) -> Vec<Part> {
             );
             let source = primitive.material();
             let pbr = source.pbr_metallic_roughness();
+            let masked = layered.and_then(|layered| {
+                let name = layered.surface.mask_attribute.trim_start_matches('_');
+                let accessor = primitive.get(&gltf::Semantic::Extras(name.to_owned()))?;
+                Some((
+                    layered,
+                    read_mask(accessor, |buffer| buffers.get(buffer.index()).copied()),
+                ))
+            });
+            if let Some((layered, mask)) = masked {
+                let material = StandardMaterial {
+                    metallic: pbr.metallic_factor(),
+                    perceptual_roughness: pbr.roughness_factor(),
+                    double_sided: source.double_sided(),
+                    ..StandardMaterial::default()
+                };
+                parts.extend(layered.parts(&data, &mask, &material));
+                continue;
+            }
             let textures = Textures {
                 base_color: slot(pbr.base_color_texture().map(|t| t.texture()), true),
                 normal: slot(source.normal_texture().map(|t| t.texture()), false),
@@ -463,6 +725,7 @@ fn import(path: &str, files: Files, textures: &mut TextureSet) -> Vec<Part> {
                 fade_out,
                 material,
                 textures,
+                overlay: false,
             });
         }
     }
@@ -490,6 +753,33 @@ mod tests {
             }
         }
         assert!(library.textures.iter().all(|t| t.levels.len() > 1));
+    }
+
+    /// A layered limestone kit (#732) draws each piece as textured, normal-mapped limestone
+    /// first, then its blended overlays; a baked kit has none.
+    #[test]
+    fn a_layered_kit_draws_limestone_under_its_overlays() {
+        let layered = LayeredSurface::from_descriptor(limestone_descriptor::DESCRIPTOR)
+            .unwrap()
+            .is_some();
+        let library = library();
+        for (entry, levels) in entries().iter().zip(&library.levels) {
+            let limestone = mmorpg_presentation::nature::LIMESTONE_ENTRIES.contains(entry);
+            for parts in levels {
+                let overlays = parts.iter().filter(|part| part.overlay).count();
+                if !(layered && limestone) {
+                    assert_eq!(overlays, 0, "{entry}");
+                    continue;
+                }
+                let base = &parts[0];
+                assert!(
+                    !base.overlay && base.textures.base_color.is_some(),
+                    "{entry}"
+                );
+                assert!(base.textures.normal.is_some(), "{entry}");
+                assert!(overlays > 0, "{entry}");
+            }
+        }
     }
 
     /// The core rock proxies (`mmorpg_core::ROCK_PROXIES`) transcribe the bundle's

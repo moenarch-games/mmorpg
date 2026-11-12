@@ -25,7 +25,11 @@ function crossFaded(material: THREE.ShaderMaterial): THREE.Material {
   // The same LitMaterial (#600): its uniforms, alpha mode and sides, so shadows and lighting treat both alike.
   Object.assign(faded, { uniforms: material.uniforms, alphaMode: (material as { alphaMode?: string }).alphaMode,
     doubleSided: (material as { doubleSided?: boolean }).doubleSided, unlit: (material as { unlit?: boolean }).unlit });
-  faded.onBeforeCompile = (shader) => {
+  // The material's own patch first, such as a layered surface's blend (#732).
+  const own = material.onBeforeCompile.bind(material);
+  const ownKey = material.customProgramCacheKey();
+  faded.onBeforeCompile = (shader, renderer) => {
+    own(shader, renderer);
     shader.vertexShader = shader.vertexShader
       .replace("void main() {", "in float instanceFade;\nout float vInstanceFade;\nvoid main() {\n    vInstanceFade = instanceFade;");
     shader.fragmentShader = shader.fragmentShader
@@ -36,7 +40,7 @@ void main() {
         if (vInstanceFade >= 0.0 ? screenDoor >= vInstanceFade : screenDoor < -vInstanceFade) discard;
     }`);
   };
-  faded.customProgramCacheKey = () => "instanced-levels-cross-fade";
+  faded.customProgramCacheKey = () => `${ownKey}|instanced-levels-cross-fade`;
   return faded;
 }
 

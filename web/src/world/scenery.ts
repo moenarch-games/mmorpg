@@ -1,5 +1,6 @@
 import type { CompositionKitSource } from "./composition-kit";
 import type { KitLodsHandle, PlacedKitName, PlacedKitSource } from "./placed-kit";
+import type { LayeredSurface } from "./layered-surface";
 import type { StaticSceneContent } from "./scenery-nodes";
 import type { UnitPresenterHandle } from "./unit-presenter";
 import type { WaystoneSite } from "./units/waystone-panel";
@@ -112,6 +113,8 @@ export type SceneryContent = StaticSceneContent & {
   kitKeys(kit: PlacedKitName): string[];
   kitModels(kit: PlacedKitName): Float32Array;
   KitLods: new (kit: PlacedKitName, descriptor: string) => KitLodsHandle;
+  /** A placed kit descriptor's layered surface (#732) as JSON at Greyhaven's weathering, or undefined for a baked kit. */
+  kitSurface(descriptor: string): string | undefined;
   /** Greyhaven's ambient animals (#419): entries, clip names, first-waypoint anchors (x, z units) and per animal 16 model floats, clip index and clip time. */
   ambientAnimalEntries(): string[];
   ambientAnimalClips(): string[];
@@ -463,6 +466,10 @@ function placedKit(content: SceneryContent, kit: PlacedKitName): PlacedKitSource
     entries: content.kitEntries(kit),
     placements: content.kitKeys(kit).map((key, index) => ({ key, matrix: models.slice(index * 16, index * 16 + 16) })),
     lods: (descriptor: string) => new content.KitLods(kit, descriptor),
+    surface: (descriptor: string) => {
+      const surface = content.kitSurface(descriptor);
+      return surface === undefined ? null : JSON.parse(surface) as LayeredSurface;
+    },
   };
 }
 

@@ -34,6 +34,7 @@ pub mod settlement_props;
 pub mod shrine;
 pub mod structures;
 pub mod summoned;
+pub mod surface;
 mod terrain;
 pub mod tiles;
 pub mod units;
