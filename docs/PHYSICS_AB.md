@@ -32,8 +32,18 @@ props, with sleeping disabled. Primitive-only debris preserves its existing eigh
 CCD. Unsupported future content still needs a demonstrated consumer requirement before its
 capabilities can be adopted; authored geometry is never reduced to bounds.
 
+Pieces in water (#667) carry a per-step `PieceMedium` (surface, buoyancy ratio, current) that the
+zone derives from its water content and never stores. Physics Engine applies it as the pinned
+engine's per-body `Medium` (physics-engine #525, already in `ceef58fa`): buoyancy at the exact
+submerged centroid and implicit drag toward the flow each substep. The Rapier oracle approximates
+it once per tick: the share of the piece's vertical extent under the surface stands in for the
+submerged volume share (exact for an upright box), the buoyant force acts at the centre, and the
+same implicit drag is applied to the velocity before the step. In both dynamic-piece worlds the
+floor half-space sits on its own collision layer/group, which a piece over ground dipping below
+it (the brook bed) masks out, as units already pass through it there.
+
 The native and WASM A/B runners execute the same Rust assertions and embedded fixtures:
-all 20 workloads, both backends, same-backend exact replay, exact canonical midpoint recovery,
+all 21 workloads, both backends, same-backend exact replay, exact canonical midpoint recovery,
 behaviour invariants and identical-state gameplay-query parity. The WASM runner builds a
 separate diagnostic `cdylib` example, then executes the actual `wasm32-unknown-unknown` module
 through wasm-bindgen in Bun. It also executes the same authored Redbrand/Greyhaven geometry
@@ -192,7 +202,7 @@ and back out; a third rolls back off the mill's loading dock and falls to the ya
 and `vale-swim` (#537: one player runs and jumps off Stillwater Lake's west bank, swims out,
 dives to the basin's floor and rises; another presses down onto the floor in the deep water and
 rises; both arms open the floor half-space over the basin, the engine's through
-`CharacterMove::exclude`) through the real zone simulation, from the same initial state with the
+`CharacterMove::exclude`) and `vale-brook-float` (#667, below) through the real zone simulation, from the same initial state with the
 same inputs and tick count.
 
 No workload places a unit inside geometry (#534, physics-engine #404): squat creatures' capsules
@@ -227,6 +237,11 @@ On **each** backend, every run must:
   Firebolted from beyond the blast), chain every explosion into one tick on both arms, throw
   exactly the 64-piece per-tick cap then, keep every piece finite and above the ground and
   despawn them all;
+- in `vale-brook-float` (#667: a level-6 Warden wading in Greyhaven Brook breaks a barrel
+  standing in it; a heavy crate and a boulder fall into Stillwater), break the barrel at the same
+  tick on both arms; two seconds later at least two of its pieces float in the brook within 10
+  units of the surface and drift downstream at over half the current; by the end the crate has
+  settled within 3 units of the depth its density gives and the boulder has sunk 3 m;
 - in `vale-traversal`, keep the Warden flying south on its momentum two (30 Hz) ticks after it
   let go of the keys mid-air;
 - in `vale-missiles`, strike some wolf with a missile, with every missile spent the same way
