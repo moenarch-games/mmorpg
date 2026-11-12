@@ -2,12 +2,30 @@
 
 The approved visual reference for Greyhaven (owner decision 2026-11-11 on
 [render-engine#74](https://github.com/moritzbrantner/render-engine/issues/74)): native captures
-from `greyhaven_lighting_shots`, 1280×720, render-engine `df5597b5`. The four `frame-*` shots are
-from mmorpg `05a1e3eb`. The shots at a set hour (`noon`, `dusk`, `night`, `torch-*`) were
-captured again at `eb58c43b` with the fog of their own hour (#757): before, they kept the fog
-colour of the zone's 08:00, which the renderer adds unexposed, so the night shots were lifted
-by a daytime grey-blue that neither client shows in play
-([render-engine#102](https://github.com/moritzbrantner/render-engine/issues/102)).
+from `greyhaven_lighting_shots`, 1280×720, render-engine `3d0acc68`. All nine shots were captured
+again for #753 (on mmorpg `620a7b55` with #753's changes), so that the native and browser shots
+differ only in rendering:
+
+- **Motion:** both capture with reduced motion. The campfire and cave-torch flames hold a steady
+  brightness instead of flickering at whatever moment each client sampled, the reeds and idle
+  poses hold still, and levels of detail switch at once instead of cross-fading. Neither client
+  sways its trees in the wind, so there is no wind time to fix.
+- **Content:** both show the browser's default character, a male Warden (the native shots
+  showed a female Ranger). The browser holds its local zone once entered (`holdWorld`), so the
+  units stand where they were at entry, as in the native shots.
+- **Outpost material:** the native client baked the Outpost kit's and the fort's textures into
+  vertex colours, so the stone hall and the chimneys read flat grey. It now draws them with
+  their textures and normal maps, as the browser does (client asset loading; the asset-tooling
+  output was fine).
+- **Anti-aliasing:** already the same. Both draw the main HDR pass with 4× MSAA (render-engine
+  `SAMPLE_COUNT`, three-lighting's `samples: 4`) and alpha-masked leaves by an alpha-test
+  `discard` at the material's cutoff (0.5 by default); neither uses alpha-to-coverage.
+- **Levels of detail:** already the same. Both pick levels through the shared
+  `mmorpg_presentation::lod::Lods` with the same descriptors, bias 1 and the camera's vertical
+  field of view. A browser capture of `frame-lake` alone measured exactly as the one after all
+  other shots, so the selection's hysteresis does not depend on the shot order either.
+
+Files:
 
 - `re9-<shot>.png`: the native reference, lossless. The Outpost at noon, dusk and night, a
   campfire and the lantern post by night (`noon`, `dusk`, `night`, `torch-campfire`,
@@ -18,38 +36,40 @@ by a daytime grey-blue that neither client shows in play
   FLIP heat map, left to right.
 
 The browser is compared against the native reference with FLIP per shot. The numbers are
-recorded, not a gate. Browser at the same revision: three.js 0.186.1 with
-`@moritzbrantner/three-lighting`, Chromium 158.0.8127.18 headless (Playwright 1.65.0), ANGLE on
-OpenGL ES 3.2, RTX 3060 Ti, pixel ratio 1.
+recorded, not a gate. Browser: three.js 0.186.1 with `@moritzbrantner/three-lighting`, Chrome
+157.0.8103.38 (Playwright `--channel chrome` under `xvfb-run`), ANGLE on OpenGL ES 3.2, RTX 3060
+Ti, pixel ratio 1. Before is `620a7b55` without #753's changes on the same machine.
 
-| Shot | Hour | FLIP mean | FLIP p99 | Before #757 (mean / p99) |
+| Shot | Hour | FLIP mean | FLIP p99 | Before #753 (mean / p99) |
 | --- | --- | --- | --- | --- |
-| `noon` | 12.0 | 0.0593 | 0.3211 | 0.0594 / 0.3211 |
-| `dusk` | 17.8 | 0.0482 | 0.2629 | 0.0663 / 0.2657 |
-| `night` | 23.5 | 0.0355 | 0.1994 | 0.0984 / 0.2373 |
-| `torch-campfire` | 22.0 | 0.0206 | 0.0905 | 0.0771 / 0.2399 |
-| `torch-lantern` | 22.0 | 0.0763 | 0.2024 | 0.0955 / 0.2755 |
-| `frame-hub` | 8.0 | 0.0601 | 0.3496 | |
-| `frame-woods` | 8.0 | 0.0537 | 0.5587 | |
-| `frame-vale` | 8.0 | 0.0295 | 0.2084 | |
-| `frame-lake` | 8.0 | 0.0697 | 0.6465 | |
+| `noon` | 12.0 | 0.0402 | 0.3054 | 0.0634 / 0.3428 |
+| `dusk` | 17.8 | 0.0184 | 0.1908 | 0.0514 / 0.2688 |
+| `night` | 23.5 | 0.0177 | 0.1465 | 0.0381 / 0.2101 |
+| `torch-campfire` | 22.0 | 0.0131 | 0.1062 | 0.0567 / 0.2636 |
+| `torch-lantern` | 22.0 | 0.0137 | 0.0422 | 0.0731 / 0.1489 |
+| `frame-hub` | 8.0 | 0.0429 | 0.3298 | 0.0643 / 0.3852 |
+| `frame-woods` | 8.0 | 0.0618 | 0.6759 | 0.0618 / 0.6758 |
+| `frame-vale` | 8.0 | 0.0315 | 0.2668 | 0.0352 / 0.2793 |
+| `frame-lake` | 8.0 | 0.0697 | 0.6463 | 0.0697 / 0.6465 |
 
-The campfire and the cave torches flicker, and the two clients capture them at different
-moments, so the torch shots vary between browser captures: over five captures, `torch-campfire`
-0.021 to 0.036 and `torch-lantern` 0.037 to 0.076 (before #757: 0.068 to 0.078 and 0.071 to
-0.109). With the flicker held steady on both sides (reduced motion) they measure 0.0134 and
-0.0137, and their mean luminance matches within 0.2 %: the point lights themselves agree.
+Two browser captures in a row measured the same to four places for every shot here. What
+remains is rendering, and these known differences:
 
-Reproduce (the `frame-*` shots at `05a1e3eb` with this directory's test and script changes
-applied, the others at `eb58c43b` with #757's):
+- The Outpost modules' wear: the browser ages each building from the kit's wear masks
+  (darker, mossy stone, missing roof units); the native client draws the pristine modules.
+- The woods (`frame-woods`, `frame-lake`): the error stays on the leaf cards' and trunks'
+  edges and their shadows, with the levels picked by the same shared selection; it is the
+  shading and shadowing of the foliage, not its content.
+
+Reproduce:
 
 ```sh
 bash scripts/fetch-bundles.sh && bash scripts/prepare-ranger-native.sh
 MMORPG_LIGHTING_SHOTS="$PWD/artifacts/lighting" cargo test --release --locked -p mmorpg-client \
   --lib greyhaven_lighting_shots -- --ignored --nocapture
 (cd web && bun install --frozen-lockfile && bun run build)
-python scripts/capture-browser-reference.py docs/reviews/greyhaven-reference/views.json \
-  --out artifacts/greyhaven-reference
+xvfb-run -a python scripts/capture-browser-reference.py docs/reviews/greyhaven-reference/views.json \
+  --out artifacts/greyhaven-reference --channel chrome
 # in a render-engine checkout, per shot:
 cargo run --release --locked --manifest-path oracle/Cargo.toml -- --flip-images \
   <mmorpg>/docs/reviews/greyhaven-reference/re9-noon.png \
