@@ -365,7 +365,9 @@ impl ZoneSimulation {
             .values()
             .map(|piece| piece.age >= SETTLE_AFTER_TICKS)
             .collect();
-        self.world.step_debris(&mut bodies, &ids, &settle);
+        // Pieces in water float and drift (#667).
+        let media = self.piece_media(&bodies, self.debris.values().map(|piece| piece.kind));
+        self.world.step_debris(&mut bodies, &ids, &settle, &media);
         for (piece, body) in self.debris.values_mut().zip(bodies) {
             piece.body = body;
         }

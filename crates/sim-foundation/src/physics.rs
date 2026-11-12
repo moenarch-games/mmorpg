@@ -535,6 +535,30 @@ impl DebrisBody {
     }
 }
 
+/// The water a dynamic piece is in for one step (#667): a flat surface, how buoyant the piece
+/// is there and the current. The game derives it from its water content each tick and never
+/// stores it, so canonical pieces stay exactly what they were.
+///
+/// Each substep the piece is lifted by the weight of the water its submerged part displaces
+/// and dragged toward `flow` in proportion to how much of it is under the surface
+/// ([`WATER_LINEAR_DRAG`], [`WATER_ANGULAR_DRAG`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PieceMedium {
+    /// Surface height, in units.
+    pub surface: f32,
+    /// The water's density over the piece's own: above one it floats with `1 / buoyancy` of
+    /// its volume under the surface, below one it sinks.
+    pub buoyancy: f32,
+    /// The current, in units per tick.
+    pub flow: [f32; 3],
+}
+
+/// How fast (per second, fully submerged) water drags a piece's velocity toward the current
+/// and its spin toward rest (#667): a floating piece settles at its depth without lasting
+/// bobbing and takes on the current within about a second.
+pub const WATER_LINEAR_DRAG: f32 = 8.0;
+pub const WATER_ANGULAR_DRAG: f32 = 3.0;
+
 /// What one step did.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct StepStats {
@@ -977,13 +1001,16 @@ impl World {
     /// pieces by them and keeps a resting piece as a fixed body until it leaves the slice
     /// (#666); the body order, and so the step, is the one a world rebuilt from the same
     /// canonical pieces takes.
+    ///
+    /// `media` holds each piece's water (#667), parallel to `debris`; empty puts none in water.
     pub fn step_debris(
         &mut self,
         debris: &mut [DebrisBody],
         ids: &[u32],
         settle: &[bool],
+        media: &[Option<PieceMedium>],
     ) -> usize {
-        dispatch!(self, &mut self.worlds, world => world.step_debris(debris, ids, settle))
+        dispatch!(self, &mut self.worlds, world => world.step_debris(debris, ids, settle, media))
     }
 
     /// Builds the backend's retained dynamic-response worlds from the static bodies now in
@@ -999,8 +1026,13 @@ impl World {
 
     /// Advances movable props (#58) one tick: like debris, but upright (they slide, never
     /// turn), stopped by units, and leaving out the props' own fixed boxes `exclude`.
-    pub fn step_props(&mut self, props: &mut [DebrisBody], exclude: &[BodyId]) -> usize {
-        dispatch!(self, &mut self.worlds, world => world.step_props(props, exclude))
+    pub fn step_props(
+        &mut self,
+        props: &mut [DebrisBody],
+        exclude: &[BodyId],
+        media: &[Option<PieceMedium>],
+    ) -> usize {
+        dispatch!(self, &mut self.worlds, world => world.step_props(props, exclude, media))
     }
 
     /// Advances rolling boulders (#299) one tick: free spheres under gravity against the fixed
@@ -1011,8 +1043,9 @@ impl World {
         boulders: &mut [DebrisBody],
         exclude: &[BodyId],
         units_block: bool,
+        media: &[Option<PieceMedium>],
     ) -> usize {
-        dispatch!(self, &mut self.worlds, world => world.step_boulders(boulders, exclude, units_block))
+        dispatch!(self, &mut self.worlds, world => world.step_boulders(boulders, exclude, units_block, media))
     }
 }
 

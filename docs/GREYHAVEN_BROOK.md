@@ -41,13 +41,39 @@ and their then-open work.
 
 The village occupies a rounded, asymmetric basin with an adjoining northern lobe. Fixed-seed integer weathering varies the cliff outline and shoulders. The heightfield is still authoritative: scenery samples the same terrain, and the six existing switchback lanes override the weathering. This is separate from visual terrain tile LOD and the authored Redbrand Cave meshes.
 
-`mmorpg-core/src/content/greyhaven_vale/brook.rs` authors Stillwater's upper inflow and rim outlet, the west-cliff waterfall and a narrow brook through the village, a timber footbridge, and a low drainage opening through the southern palisade. Its centimetre centreline supplies the shallow terrain bed and a `WaterChannel` footprint. Existing wading/swimming rules apply; foam motion is cosmetic and exerts no current. The upstream river enters the existing Stillwater ellipse; its outlet loops around the rim to the waterfall. Both upper channels share the lake's surface height. Neither water shape introduces another movement solver.
+`mmorpg-core/src/content/greyhaven_vale/brook.rs` authors Stillwater's upper inflow and rim outlet, the west-cliff waterfall and a narrow brook through the village, a timber footbridge, and a low drainage opening through the southern palisade. Its centimetre centreline supplies the shallow terrain bed and a `WaterChannel` footprint. Existing wading/swimming rules apply; foam motion is cosmetic. Each channel carries an authored downstream current (#667, `WaterChannel::current`: brook 0.6 m/s, inflow 0.9 m/s, outlet 1.2 m/s, tuning only) along its centreline, which floats and drifts debris, sliding props and boulders and carries swimmers and deep waders; see [floating and currents](#floating-and-currents-667). The upstream river enters the existing Stillwater ellipse; its outlet loops around the rim to the waterfall. Both upper channels share the lake's surface height. Neither water shape introduces another movement solver.
 
 The bridge deck, approaches, rails and culvert are ordinary stable-ID colliders/ramps. Channel points and width participate in the immutable content revision. Rebuilding or recovering a zone therefore uses the same terrain, water and colliders; there is no protocol or canonical-state layout change.
 
 `content/greyhaven/outpost-layout.json` adds three modest cottages using the existing collision authoring and textured Outpost kit. Four named residents reuse existing rigged villagers; they have no new quest or vendor interaction. Elden's daily route uses the open lane beside the northwest cottage.
 
 Both clients use `mmorpg-presentation/src/brook.rs` for water ribbons, moving foam, wet banks, reeds and bridge timber. New caves continue to use the separate authored collision geometry described in [Redbrand Cave](REDBRAND_ENVIRONMENT.md). No collision streaming or hydrology system is introduced here.
+
+## Floating and currents (#667)
+
+Before each physics step the zone derives a water medium for every moving debris piece, sliding
+heavy crate and rolling boulder whose centre lies over a `WaterVolume` and whose body reaches its
+surface (`mmorpg-core/src/buoyancy.rs`): the surface, the water's density over the prop kind's
+(`buoyancy::density`: crate 500, fence 550, barrel 650, heavy crate 700, powder barrel 850,
+boulder 2,600 kg/m³) and the channel's flow at the piece. Physics Engine's per-body `Medium`
+(physics-engine #525) adds the buoyancy and the drag toward the flow. The medium is never stored:
+replay and canonical recovery rebuild it from the same positions and content. Pieces over ground
+that dips below the floor half-space (the brook bed) pass through it, as units do, and in water a
+piece settles only once it has all but stopped, so a bobbing piece settles at its float depth and
+a drifting one where a bank or the brook's end stops it. Wood floats and drifts at about the
+current's speed; a boulder sinks at a steady speed. Lakes and pools are still.
+
+Characters stay kinematic (Decision 17, Atlas 5.1.i667): `water::current_push` adds the channel's
+flow to a living player's controller velocity, none while the feet are less than 60 cm deep,
+rising linearly to all of it at the 1.3 m swimming depth, all of it while swimming. Crossing the
+shallow village brook is unaffected; a swimmer in a 1.5 m/s current drifts 3 m in 2 s. The
+thresholds and current speeds are tuning, not approved numbers. Splash and ripple presentation
+for floating props is not part of this slice.
+
+`cargo test -p mmorpg-core --test water_current --locked` checks a lid floating, drifting and
+beaching in the real brook, a crate settling afloat and a boulder sinking in Stillwater, and the
+character rule, each with exact twin replay and midpoint recovery; the `vale-brook-float` physics
+A/B workload ([PHYSICS_AB.md](PHYSICS_AB.md)) does the same on both backends.
 
 ## Focused validation
 

@@ -356,9 +356,9 @@ pub fn authored_rigid_boxes_keep_contacts_replay_and_exact_midpoint_recovery() {
                 ([piece], [piece], [piece]);
             let step = |world: &mut World, pieces: &mut [DebrisBody]| {
                 if upright {
-                    world.step_props(pieces, &[])
+                    world.step_props(pieces, &[], &[])
                 } else {
-                    world.step_debris(pieces, &[1], &[true])
+                    world.step_debris(pieces, &[1], &[true], &[])
                 }
             };
             let separation = |piece: &DebrisBody, position: Vector, target: &SharedShape| {

@@ -617,6 +617,84 @@ fn check_barrel_chain(name: &str, rapier: &Trace, engine: &Trace) {
     );
 }
 
+/// The barrel in the brook breaks at the same tick on each backend (#667). On each, two seconds
+/// later its pieces in the water float at the surface and drift downstream with the current; by
+/// the end the heavy crate dropped into Stillwater has settled at the depth its density gives
+/// and the boulder sinks.
+fn check_brook_float(name: &str, rapier: &Trace, engine: &Trace) {
+    use mmorpg_core::greyhaven_vale::{brook, lake};
+    let broke = |trace: &Trace| {
+        trace
+            .snapshots
+            .iter()
+            .position(|snapshot| !snapshot.debris.is_empty())
+    };
+    let hz = usize::from(mmorpg_core::TICK_HZ);
+    #[allow(clippy::cast_precision_loss)]
+    let (brook_surface, lake_surface, current) = (
+        brook::SURFACE as f32,
+        lake::SURFACE as f32,
+        brook::CURRENT as f32 / f32::from(mmorpg_core::TICK_HZ),
+    );
+    let channel = brook::channel();
+    for (trace, backend) in [(rapier, "rapier"), (engine, "engine")] {
+        let first = broke(trace).unwrap_or_else(|| panic!("{name} on {backend}: no debris"));
+        let later = &trace.snapshots[(first + 2 * hz).min(trace.snapshots.len() - 1)];
+        #[allow(clippy::cast_possible_truncation)]
+        let afloat = later
+            .debris
+            .iter()
+            .filter(|piece| {
+                let [x, y, z] = piece.body.position;
+                channel.contains(x as i32, z as i32)
+                    && (y - brook_surface).abs() < 10.0
+                    && piece.body.velocity[2] > 0.5 * current
+            })
+            .count();
+        println!(
+            "  {name} on {backend}: barrel broke at tick {first}, {afloat} of {} pieces afloat \
+             and drifting 2 s later",
+            later.debris.len()
+        );
+        assert!(
+            afloat >= 2,
+            "{name} on {backend}: too few pieces drift: {:?}",
+            later.debris
+        );
+        let last = trace.snapshots.last().expect("ticks ran");
+        let creature = |id| {
+            last.creatures
+                .iter()
+                .find(|creature| creature.creature_id.get() == id)
+                .unwrap_or_else(|| panic!("{name}: creature {id} is missing"))
+        };
+        let floating = creature(drivers::BROOK_FLOAT_CRATE);
+        let float = lake_surface + 35.0
+            - 70.0 * mmorpg_core::buoyancy::density(mmorpg_core::PropKind::HeavyCrate)
+                / mmorpg_core::buoyancy::WATER_DENSITY;
+        let sunk = creature(drivers::BROOK_FLOAT_BOULDER);
+        println!(
+            "  {name} on {backend}: crate at {:?} (floats at {float}), boulder at {:?}",
+            floating.position, sunk.position
+        );
+        assert!(
+            floating.velocity == [0.0; 3] && (floating.position[1] - float).abs() < 3.0,
+            "{name} on {backend}: the crate does not float: {:?}",
+            floating.position
+        );
+        assert!(
+            sunk.position[1] < lake_surface - 300.0,
+            "{name} on {backend}: the boulder does not sink: {:?}",
+            sunk.position
+        );
+    }
+    assert_eq!(
+        broke(rapier),
+        broke(engine),
+        "{name}: the barrel breaks at different ticks"
+    );
+}
+
 fn run(workload: &Workload, backend: Backend) -> Result<(Trace, Check)> {
     using_backend(backend, || {
         let mut run = Run::new(workload)?;
@@ -1198,6 +1276,9 @@ fn check_workload(workload: Workload) -> Result<()> {
     }
     if matches!(workload, Workload::CrateSmash) {
         check_crate_smash(&name, &rapier, &engine);
+    }
+    if matches!(workload, Workload::BrookFloat) {
+        check_brook_float(&name, &rapier, &engine);
     }
     if matches!(workload, Workload::BarrelChain) {
         check_barrel_chain(&name, &rapier, &engine);
