@@ -236,8 +236,8 @@ pub use summoned::{
 };
 pub use surface::{SurfaceEffect, SurfaceKind, SurfacePatch};
 pub use swing::{
-    ClashKind, ClashRules, MAX_CLASH_RADIUS_UNITS, MAX_SWING_PHASE_TICKS, Swing, SwingPhase,
-    SwingTiming, TimedCombat,
+    ClashKind, ClashRules, MAX_CLASH_RADIUS_UNITS, MAX_SWING_PHASE_TICKS, ProjectileInterception,
+    Swing, SwingPhase, SwingTiming, TimedCombat,
 };
 pub use transfer::{CharacterTransfer, MAX_REMEMBERED_TRANSFERS, TransferId, TransferMotion};
 pub use trap::{

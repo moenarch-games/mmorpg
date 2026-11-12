@@ -204,9 +204,22 @@ fn flying(zone: &ZoneSimulation) -> usize {
 }
 
 #[test]
-fn free_firebolts_or_arrows_that_meet_both_vanish_only_in_a_timed_arena() {
-    for (timed, class, ability) in [(true, 2, 9), (false, 2, 9), (true, 1, 5), (false, 1, 5)] {
-        let content = arena(timed);
+fn free_or_homing_firebolts_and_arrows_clash_only_in_a_timed_arena() {
+    for (timed, class, ability, targeted, permitted) in [
+        (true, 2, 9, false, true),
+        (false, 2, 9, false, true),
+        (true, 1, 5, false, true),
+        (false, 1, 5, false, true),
+        (true, 2, 9, true, true),
+        (true, 2, 9, true, false),
+        (true, 1, 5, true, true),
+    ] {
+        let mut content = arena(timed);
+        if timed && !permitted {
+            let mut rules = TimedCombat::ARENA;
+            rules.clashes.firebolt_interception.firebolts = false;
+            content = Arc::new((*content).clone().with_timed_combat(rules).unwrap());
+        }
         let mut zone = duel(&content, [class, class], 1_200);
         let before = [health(&zone, 1), health(&zone, 2)];
         for player in [1, 2] {
@@ -215,7 +228,7 @@ fn free_firebolts_or_arrows_that_meet_both_vanish_only_in_a_timed_arena() {
                 2,
                 ZoneCommand::UseAbility {
                     ability,
-                    target: None,
+                    target: targeted.then_some(EntityRef::Player(3 - player)),
                 },
             )
             .unwrap();
@@ -241,9 +254,9 @@ fn free_firebolts_or_arrows_that_meet_both_vanish_only_in_a_timed_arena() {
                 });
         }
         assert!(shot, "both casts released missiles");
-        assert_eq!(clashed, timed);
+        assert_eq!(clashed, timed && permitted);
         let after = [health(&zone, 1), health(&zone, 2)];
-        if timed {
+        if timed && permitted {
             assert_eq!(after, before);
         } else {
             assert!(after[0] < before[0] && after[1] < before[1]);
@@ -252,44 +265,70 @@ fn free_firebolts_or_arrows_that_meet_both_vanish_only_in_a_timed_arena() {
 }
 
 #[test]
-fn a_swing_destroys_a_firebolt_and_swings_on() {
-    let content = arena(true);
-    // The Warden (player 1) faces the Arcanist (player 2) 20 m east.
-    let mut zone = duel(&content, [0, 2], 2_000);
-    let before = health(&zone, 1);
-    zone.apply_command(
-        2,
-        2,
-        ZoneCommand::UseAbility {
-            ability: 9,
-            target: None,
-        },
-    )
-    .unwrap();
-    let timed = zone.timed_combat().unwrap();
-    let lead = i32::from(timed.startup_ticks() + timed.active_ticks() / 2);
-    let speed = mmorpg_core::MISSILE_SPEED_UNITS;
-    let mut swung = false;
-    let mut parried = false;
-    for _ in 0..mmorpg_core::golden::t30(150) {
-        zone.advance_tick().unwrap();
-        let view = zone.snapshot_for_player(1).unwrap();
-        if !swung
-            && let Some(missile) = view.projectiles.first()
-            && (missile.position[0] as f32) < speed * lead as f32 + 100.0
-        {
-            strike(&mut zone, 1, 2, EAST);
-            swung = true;
+fn ordinary_swords_parry_arrows_but_not_free_or_homing_firebolts() {
+    for (class, ability, targeted, parry) in [
+        (1, 5, false, true),
+        (1, 5, true, true),
+        (2, 9, false, false),
+        (2, 9, true, false),
+    ] {
+        let content = arena(true);
+        // The Warden faces the shooter 20 m east.
+        let mut zone = duel(&content, [0, class], 2_000);
+        let before = health(&zone, 1);
+        zone.apply_command(
+            2,
+            2,
+            ZoneCommand::UseAbility {
+                ability,
+                target: targeted.then_some(EntityRef::Player(1)),
+            },
+        )
+        .unwrap();
+        let timed = zone.timed_combat().unwrap();
+        let lead = i32::from(timed.startup_ticks() + timed.active_ticks() / 2);
+        let speed = if class == 1 {
+            mmorpg_core::ARROW_SPEED_UNITS
+        } else {
+            mmorpg_core::MISSILE_SPEED_UNITS
+        };
+        let mut swung = false;
+        let mut parried = false;
+        for _ in 0..mmorpg_core::golden::t30(150) {
+            zone.advance_tick().unwrap();
+            let view = zone.snapshot_for_player(1).unwrap();
+            if !swung
+                && let Some(missile) = view.projectiles.first()
+                && (missile.position[0] as f32) < speed * lead as f32 + 100.0
+            {
+                strike(&mut zone, 1, 2, EAST);
+                swung = true;
+            }
+            parried |= view.events.iter().any(|event| {
+                *event
+                    == ZoneEvent::Clashed {
+                        source: EntityRef::Player(1),
+                        target: EntityRef::Player(2),
+                        kind: ClashKind::Parry,
+                    }
+            });
         }
-        parried |= view.events.iter().any(|event| {
-            *event
-                == ZoneEvent::Clashed {
-                    source: EntityRef::Player(1),
-                    target: EntityRef::Player(2),
-                    kind: ClashKind::Parry,
-                }
-        });
+        assert!(swung);
+        assert_eq!(parried, parry);
+        if parry {
+            assert_eq!(health(&zone, 1), before);
+        } else {
+            assert!(health(&zone, 1) < before);
+        }
     }
-    assert!(swung && parried);
-    assert_eq!(health(&zone, 1), before);
+}
+
+#[test]
+fn recovery_is_bound_to_interception_permissions() {
+    let content = arena(true);
+    let zone = duel(&content, [0, 2], 2_000);
+    let mut rules = TimedCombat::ARENA;
+    rules.clashes.firebolt_interception.arrows = true;
+    let changed = Arc::new((*content).clone().with_timed_combat(rules).unwrap());
+    assert!(ZoneSimulation::from_snapshot(zone.snapshot().unwrap(), changed).is_err());
 }

@@ -58,9 +58,14 @@ directed strikes still resolve in the tick their command arrives.
   two hostile active swings whose whole arcs cover each other deal nothing and both recover;
   an active swing destroys a clashable hostile projectile passing through its arc and swings
   on; two clashable projectiles of opposing owners that pass within their clash radii (arrows
-  15 cm, Firebolts 25 cm) both vanish. Clashable means a plain arrow or a free Firebolt: bombs,
-  flasks, piercing and ricochet shots stay out, and homing (targeted) missiles need their own
-  rule. `Clashed` names both sides. A stun or death ends a running swing.
+  15 cm, Firebolts 25 cm) both vanish when both attacks' content permits the interaction.
+  `ProjectileInterception` declares ordinary melee, arrow and Firebolt permissions separately
+  for plain arrows and Firebolts. Arena defaults permit swords to parry plain arrows and
+  arrows to intercept arrows; Firebolts intercept other Firebolts but cannot be parried by an
+  ordinary sword or intercepted by an arrow. Free and targeted/homing flight use the same
+  permissions and the actual current tracking segment. Bombs, flasks, piercing, ricochet and
+  other unsupported shots stay out; no new shield or magical-defense ability is introduced.
+  `Clashed` names both sides. A stun or death ends a running swing.
 - **Recovery.** The running swing is canonical player state, so a zone restored mid-swing
   continues it exactly (`cargo test -p mmorpg-core --test timed_swing`).
 
