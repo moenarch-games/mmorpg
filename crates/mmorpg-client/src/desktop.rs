@@ -20,7 +20,9 @@ use mmorpg_client_model::hud::{CombatHud, class_kit};
 use mmorpg_client_model::manual_aim;
 use mmorpg_client_model::mouse_owner::{
     AimStyle, Begin, Gesture, Hold, HoldCamera, HoldRelease, LeftClick, MouseOwners, RightClick,
+    WheelRelease,
 };
+use mmorpg_client_model::pie_menu::{MinionCall, Wheel, WheelAction, WheelKind, WheelUsage};
 use mmorpg_client_model::power_draw::{DrawRelease, PowerDraw};
 use mmorpg_core::{EntityKind, EntityRef, PlayerClass, Sex, ZoneContent};
 use mmorpg_scenery::Scenery;
@@ -87,6 +89,7 @@ pub fn run(
         orbit_buttons: HashSet::new(),
         cursor: None,
         mouse: MouseOwners::default(),
+        wheels: Wheels::default(),
         quit: false,
         recapture_click: false,
         pad_guard: None,
@@ -123,6 +126,113 @@ pub fn run(
     }
 }
 
+/// Paints an open radial wheel at the screen centre (#653): one label per sector, north first and
+/// clockwise, the pointed-at sector lit, gaps as a dash; the centre ring is the dead zone.
+fn draw_wheel(ctx: &egui::Context, labels: &[Option<String>], highlight: Option<usize>) {
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::unique("pie-wheel"),
+    ));
+    let center = ctx.content_rect().center();
+    let radius = 118.0;
+    let gold = egui::Color32::from_rgb(255, 178, 74);
+    let parchment = egui::Color32::from_rgb(245, 237, 211);
+    painter.circle_filled(center, radius + 46.0, egui::Color32::from_black_alpha(150));
+    painter.circle_stroke(center, radius + 46.0, egui::Stroke::new(1.5, gold));
+    painter.circle_stroke(center, 24.0, egui::Stroke::new(1.0, parchment));
+    #[allow(clippy::cast_precision_loss)]
+    let step = std::f32::consts::TAU / labels.len().max(1) as f32;
+    for (index, label) in labels.iter().enumerate() {
+        #[allow(clippy::cast_precision_loss)]
+        let turn = index as f32 * step;
+        let at = center + egui::vec2(turn.sin(), -turn.cos()) * radius;
+        let lit = highlight == Some(index);
+        if lit {
+            painter.circle_filled(at, 38.0, gold.gamma_multiply(0.35));
+            painter.line_segment(
+                [center + (at - center) * 0.22, center + (at - center) * 0.62],
+                egui::Stroke::new(2.0, gold),
+            );
+        }
+        painter.text(
+            at,
+            egui::Align2::CENTER_CENTER,
+            label.as_deref().unwrap_or("—"),
+            egui::FontId::proportional(if lit { 15.0 } else { 13.0 }),
+            if lit { gold } else { parchment },
+        );
+    }
+}
+
+/// Radial wheels (#653, Atlas `5.2.i653-2`): an option, off by default.
+#[derive(Default)]
+struct Wheels {
+    /// `controls.wheels`.
+    enabled: bool,
+    /// The fixed wheel's sector choices, north first, clockwise.
+    sectors: Vec<String>,
+    /// When the open wheel's key went down: a quick tap keeps it open for a click.
+    pressed_at: Option<Instant>,
+    /// The opt-in local counters (`controls.wheel_usage`), saved to `wheel-usage.json` in the
+    /// configuration directory; never sent anywhere.
+    usage: Option<WheelUsage>,
+    /// When the counters last advanced and were last written.
+    counted_at: Option<Instant>,
+    saved_at: Option<Instant>,
+}
+
+impl Wheels {
+    fn usage_path() -> Option<std::path::PathBuf> {
+        config_dir().map(|dir| dir.join("wheel-usage.json"))
+    }
+
+    /// Turns the counters on (reading the earlier file) or off (writing them a last time).
+    fn set_counting(&mut self, on: bool) {
+        match (on, self.usage.is_some()) {
+            (true, false) => {
+                let text = Self::usage_path()
+                    .and_then(|path| std::fs::read_to_string(path).ok())
+                    .unwrap_or_default();
+                self.usage = Some(WheelUsage::from_json(&text));
+                self.counted_at = None;
+            }
+            (false, true) => {
+                self.save();
+                self.usage = None;
+            }
+            _ => {}
+        }
+    }
+
+    /// Adds the frame's time under the current owner and the wheel events; saves every 10 s.
+    fn count(&mut self, mouse: &mut MouseOwners, now: Instant) {
+        let tally = mouse.take_tally();
+        let Some(usage) = self.usage.as_mut() else {
+            return;
+        };
+        usage.add(tally);
+        if let Some(at) = self.counted_at {
+            let ms = now.saturating_duration_since(at).as_secs_f64() * 1000.0;
+            // A stalled frame (a debugger, a suspended laptop) is not play time.
+            usage.spend(mouse.owner(), ms.min(1000.0));
+        }
+        self.counted_at = Some(now);
+        if self
+            .saved_at
+            .is_none_or(|at| now.saturating_duration_since(at) >= Duration::from_secs(10))
+        {
+            self.saved_at = Some(now);
+            self.save();
+        }
+    }
+
+    fn save(&self) {
+        if let (Some(usage), Some(path)) = (&self.usage, Self::usage_path()) {
+            let _ = mmorpg_client::settings::atomic_write(&path, usage.to_json().as_bytes());
+        }
+    }
+}
+
 struct App {
     runtime: Arc<tokio::runtime::Runtime>,
     window: Option<Arc<Window>>,
@@ -151,6 +261,8 @@ struct App {
     /// One mouse owner at a time, the shared rule the browser also runs (#636): free look,
     /// focus, or a held strike or guard aimed with mouse motion (#154, #156).
     mouse: MouseOwners,
+    /// Radial wheels (#653): their settings, the held key's press time and the usage counters.
+    wheels: Wheels,
     /// A left press in released free look: its click selects under the cursor, or recaptures.
     recapture_click: bool,
     /// The game menu's Quit was chosen; the event loop exits on its next wait.
@@ -656,6 +768,75 @@ impl App {
         }
     }
 
+    /// A wheel key went down (#653): with wheels on, opens the fixed or context wheel from free
+    /// look or focus; never over a window, a hold or an aim. The camera holds still meanwhile.
+    fn open_wheel(&mut self, kind: WheelKind) {
+        if !self.wheels.enabled || !self.connected() {
+            return;
+        }
+        let latest = self.presentation.latest();
+        if self.ui.windows_open(latest) {
+            return;
+        }
+        let wheel = match kind {
+            WheelKind::Fixed => {
+                let choices: Vec<&str> = self.wheels.sectors.iter().map(String::as_str).collect();
+                Wheel::fixed(&choices)
+            }
+            WheelKind::Context => match latest {
+                Some(latest) => Wheel::context(latest, self.presentation.content()),
+                None => return,
+            },
+        };
+        if self.mouse.open_wheel(wheel) {
+            self.drop_power_draw();
+            self.wheels.pressed_at = Some(Instant::now());
+        }
+    }
+
+    /// The wheel keys that went up: a flick picks, a quick tap keeps the wheel open for a left
+    /// click, anything else ends it without an action.
+    fn follow_wheel_releases(&mut self) {
+        for retired in self.controls.drain_wheel_releases() {
+            let held_ms = self
+                .wheels
+                .pressed_at
+                .map_or(f64::INFINITY, |at| at.elapsed().as_secs_f64() * 1000.0);
+            if let WheelRelease::Pick(action) = self.mouse.release_wheel(held_ms, retired) {
+                self.run_wheel_action(action);
+            }
+        }
+    }
+
+    /// Runs a wheel's chosen action exactly as its own key would; the zone decides the outcome.
+    fn run_wheel_action(&mut self, action: WheelAction) {
+        match action {
+            WheelAction::Slot(slot) => self.control(ControlAction::AbilitySlot(slot)),
+            WheelAction::Swing => self.control(ControlAction::Swing),
+            WheelAction::Roll => self.control(ControlAction::Roll),
+            WheelAction::TargetNext => self.control(ControlAction::TargetNext),
+            WheelAction::ReleaseSpirit => self.control(ControlAction::ReleaseSpirit),
+            WheelAction::ClearTarget => self.input.send_modify(|input| {
+                input.target = None;
+                input.selections = input.selections.wrapping_add(1);
+            }),
+            // Native shows a vendor's wares in its NPC context, which interact opens.
+            WheelAction::Interact | WheelAction::Trade => {
+                self.world_action(WorldAction::Interact);
+            }
+            WheelAction::Minions(call) => self.control(ControlAction::Minions(match call {
+                MinionCall::Attack => MinionCommand::Attack,
+                MinionCall::Defend => MinionCommand::Defend,
+                MinionCall::Follow => MinionCommand::Follow,
+                MinionCall::Retreat => MinionCommand::Retreat,
+            })),
+            WheelAction::Emote(emote) => {
+                self.send_interaction(mmorpg_core::ZoneCommand::Emote(emote));
+            }
+        }
+        self.sync_cursor();
+    }
+
     /// Escape with nothing to close, or the menu toggle: the game menu (#636).
     fn open_game_menu(&mut self) {
         self.retire_held_input();
@@ -818,6 +999,8 @@ impl App {
                     self.send_interaction(mmorpg_core::ZoneCommand::CommandMinions(order));
                 }
             }
+            ControlAction::FixedWheel => self.open_wheel(WheelKind::Fixed),
+            ControlAction::ContextWheel => self.open_wheel(WheelKind::Context),
         }
     }
 
@@ -1135,6 +1318,20 @@ impl App {
             .flatten()
             .and_then(|latest| manual_aim::landing(latest, self.camera.facing()))
             .and_then(|point| project(presentation.rendered(point)));
+        // An open radial wheel (#653): each sector's label, north first and clockwise, and the
+        // sector the mouse points at.
+        let class = presentation
+            .latest()
+            .and_then(|latest| latest.viewer.class)
+            .map(|choice| choice.class);
+        let wheel = self.mouse.wheel().map(|wheel| {
+            let labels: Vec<Option<String>> = wheel
+                .sectors()
+                .iter()
+                .map(|sector| sector.map(|action| action.label(class)))
+                .collect();
+            (labels, self.mouse.wheel_sector())
+        });
         let mut raw = egui.state.take_egui_input(window);
         raw.events.append(&mut self.pad_ui);
         let mut intents = Vec::new();
@@ -1158,6 +1355,9 @@ impl App {
                     painter.circle_stroke(at, 14.0, stroke);
                     painter.circle_filled(at, 2.5, stroke.color);
                 }
+            }
+            if let Some((labels, highlight)) = &wheel {
+                draw_wheel(ctx, labels, *highlight);
             }
         });
         let platform = egui.paint.prepare(&egui.context, output);
@@ -1204,6 +1404,25 @@ impl App {
                 _ => AimStyle::default(),
             },
         );
+        let on = |id| {
+            matches!(
+                preferences.value(id),
+                Ok(settings_core::SettingValue::Bool(true))
+            )
+        };
+        self.wheels.enabled = on(mmorpg_client::settings::WHEELS);
+        let counting = on(mmorpg_client::settings::WHEEL_USAGE);
+        self.wheels.sectors = mmorpg_client::settings::WHEEL_SECTORS
+            .iter()
+            .map(|id| match preferences.value(id) {
+                Ok(settings_core::SettingValue::Choice(value)) => value.clone(),
+                _ => String::new(),
+            })
+            .collect();
+        self.wheels.set_counting(counting);
+        if !self.wheels.enabled && self.mouse.gesture() == Some(Gesture::Wheel) {
+            self.mouse.interrupt();
+        }
         if let Some(audio) = &mut self.audio {
             audio.follow(preferences);
         }
@@ -1274,6 +1493,10 @@ impl App {
 }
 
 impl ApplicationHandler for App {
+    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        self.wheels.save();
+    }
+
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
             return;
@@ -1387,6 +1610,7 @@ impl ApplicationHandler for App {
                 self.retire_held_input();
                 self.send_slot_releases();
                 self.follow_hold_releases();
+                self.follow_wheel_releases();
                 self.retire_pointer();
                 self.update_movement();
             }
@@ -1453,6 +1677,13 @@ impl ApplicationHandler for App {
                         };
                         if let LeftClick::Throw(ability) = click {
                             self.throw_aimed(ability);
+                            return;
+                        }
+                        // A tapped-open wheel (#653) runs the pointed-at sector, or nothing.
+                        if let LeftClick::Pick(action) = click {
+                            if let Some(action) = action {
+                                self.run_wheel_action(action);
+                            }
                             return;
                         }
                         let selects = click == LeftClick::Select;
@@ -1666,6 +1897,8 @@ impl ApplicationHandler for App {
                 self.poll_pads(now);
                 self.send_slot_releases();
                 self.follow_hold_releases();
+                self.follow_wheel_releases();
+                self.wheels.count(&mut self.mouse, now);
                 self.follow_power_draw();
                 // While choosing, the viewer turns on the turntable facing the camera.
                 let preview = self.choosing.then(|| {

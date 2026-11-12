@@ -47,6 +47,10 @@ pub enum ControlAction {
     Guard,
     /// A Necromancer's group order for all its minions (#295, Atlas 5.2.84).
     Minions(MinionCommand),
+    /// Hold for the player's fixed radial wheel; flick and release, or tap and click (#653).
+    FixedWheel,
+    /// Hold for the context radial wheel: the target's and situation's actions (#653).
+    ContextWheel,
 }
 
 /// The four minion orders, as in the browser's `minions.*` actions.
@@ -144,6 +148,8 @@ impl ControlAction {
             Self::Minions(MinionCommand::Defend) => "minions.defend",
             Self::Minions(MinionCommand::Follow) => "minions.follow",
             Self::Minions(MinionCommand::Retreat) => "minions.retreat",
+            Self::FixedWheel => "wheel.fixed",
+            Self::ContextWheel => "wheel.context",
         }
     }
 
@@ -202,6 +208,9 @@ impl ControlAction {
             Self::Minions(MinionCommand::Defend) => ("Minions: defend here", GAMEPLAY, &["KeyU"]),
             Self::Minions(MinionCommand::Follow) => ("Minions: follow", GAMEPLAY, &["KeyI"]),
             Self::Minions(MinionCommand::Retreat) => ("Minions: retreat", GAMEPLAY, &["KeyO"]),
+            // Radial wheels (#653): only open with Settings → Wheels → Radial wheels on.
+            Self::FixedWheel => ("Fixed wheel (hold, flick, release)", GAMEPLAY, &["KeyT"]),
+            Self::ContextWheel => ("Context wheel (hold, flick, release)", GAMEPLAY, &["KeyK"]),
         }
     }
 }
@@ -349,6 +358,8 @@ pub struct NativeControls {
     releases: Vec<SlotRelease>,
     /// Held strike and guard releases not yet drained: the hold and whether a retirement let it go.
     hold_releases: Vec<(mmorpg_client_model::mouse_owner::Hold, bool)>,
+    /// Wheel key releases not yet drained: whether a retirement let it go (#653).
+    wheel_releases: Vec<bool>,
 }
 
 impl Default for NativeControls {
@@ -382,6 +393,7 @@ impl NativeControls {
             sources: KeyboardSources::default(),
             releases: Vec::new(),
             hold_releases: Vec::new(),
+            wheel_releases: Vec::new(),
         }
     }
 
@@ -493,8 +505,24 @@ impl NativeControls {
         std::mem::take(&mut self.hold_releases)
     }
 
+    /// The wheel key releases since the last drain, in order: whether a retirement (focus loss,
+    /// a context or profile change) rather than a key-up let it go (#653).
+    pub fn drain_wheel_releases(&mut self) -> Vec<bool> {
+        std::mem::take(&mut self.wheel_releases)
+    }
+
     fn apply(&mut self, decisions: &[RuntimeDecision]) {
         self.releases.extend(slot_releases(decisions));
+        self.wheel_releases.extend(
+            decisions
+                .iter()
+                .flat_map(|decision| &decision.dispatches)
+                .filter(|dispatch| {
+                    dispatch.phase == RuntimeActionPhase::Release
+                        && matches!(dispatch.action.as_str(), "wheel.fixed" | "wheel.context")
+                })
+                .map(|dispatch| dispatch.reason != RuntimeDispatchReason::KeyUp),
+        );
         use mmorpg_client_model::mouse_owner::Hold;
         self.hold_releases.extend(
             decisions

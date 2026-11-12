@@ -10,6 +10,7 @@ use mmorpg_client_model::{
     hud::{self, CooldownKind},
     manual_aim, mouse_owner,
     outbox::{self, MovementCommands},
+    pie_menu,
     power_draw::{self, DrawRelease},
     quest,
 };
@@ -376,13 +377,61 @@ pub enum AimPress {
 }
 
 /// A click's outcome and the gesture it ended, if any.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
 #[tsify(missing_as_null)]
 pub struct Click {
     pub outcome: ClickOutcome,
     pub ended: EndedGesture,
     /// The ability a `throw` uses.
     pub ability: Option<u8>,
+    /// The wheel action (#653) a `confirm` runs, by its semantic id; `null` for the centre.
+    pub action: Option<String>,
+}
+
+/// Which radial wheel a key opens (#653).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+#[serde(rename_all = "kebab-case")]
+pub enum WheelKindName {
+    Fixed,
+    Context,
+}
+
+/// One wheel sector: the semantic action id it runs and its label.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+pub struct WheelSector {
+    pub id: String,
+    pub label: String,
+}
+
+/// The open wheel: its sectors north first and clockwise (`null` gaps), and the pointed-at one.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+#[tsify(missing_as_null)]
+pub struct WheelView {
+    pub kind: WheelKindName,
+    pub sectors: Vec<Option<WheelSector>>,
+    pub highlight: Option<u8>,
+}
+
+/// What a wheel key's release did.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+#[serde(rename_all = "kebab-case")]
+pub enum WheelOutcome {
+    /// No wheel was open.
+    Ignored,
+    /// The wheel ended and runs `action`.
+    Pick,
+    /// A quick tap: the wheel stays open for a left click.
+    Open,
+    /// The wheel ended without an action.
+    Cancel,
+}
+
+/// A wheel key release: its outcome and the picked action's id.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+#[tsify(missing_as_null)]
+pub struct WheelReleaseView {
+    pub outcome: WheelOutcome,
+    pub action: Option<String>,
 }
 
 /// A hold's press: whether it owns the mouse, and the other hold it ended without firing.
@@ -405,6 +454,8 @@ pub struct GestureAim {
 #[derive(Default)]
 pub struct MouseOwners {
     owners: mouse_owner::MouseOwners,
+    /// The opt-in local wheel usage counters (#653), while counting.
+    usage: Option<pie_menu::WheelUsage>,
 }
 
 #[wasm_bindgen]
@@ -511,16 +562,21 @@ impl MouseOwners {
     #[wasm_bindgen(js_name = leftClick)]
     pub fn left_click(&mut self) -> Result<Ts<Click>, JsError> {
         use mouse_owner::{Gesture, LeftClick};
+        let mut action = None;
         let (outcome, ended, ability) = match self.owners.left_click() {
             LeftClick::Select => (ClickOutcome::Select, None, None),
             LeftClick::Nothing => (ClickOutcome::Nothing, None, None),
-            LeftClick::Confirm(gesture) => (ClickOutcome::Confirm, Some(gesture), None),
+            LeftClick::Pick(picked) => {
+                action = picked.map(pie_menu::WheelAction::id);
+                (ClickOutcome::Confirm, Some(Gesture::Wheel), None)
+            }
             LeftClick::Throw(ability) => (ClickOutcome::Throw, Some(Gesture::Aim), Some(ability)),
         };
         Ok(Click {
             outcome,
             ended: ended.into(),
             ability,
+            action,
         }
         .into_ts()?)
     }
@@ -535,8 +591,105 @@ impl MouseOwners {
             outcome,
             ended: ended.into(),
             ability: None,
+            action: None,
         }
         .into_ts()?)
+    }
+
+    /// A wheel key went down (#653): opens the fixed wheel from its eight sector `choices`, or
+    /// the context wheel from the projection and the hosted content. `true` if it is open now;
+    /// a hold, an aim, an empty wheel or a second press of a tapped-open wheel refuse.
+    #[wasm_bindgen(js_name = openWheel)]
+    pub fn open_wheel(
+        &mut self,
+        kind: Ts<WheelKindName>,
+        choices: Vec<String>,
+        snapshot: Ts<ZoneSnapshot>,
+    ) -> Result<bool, JsError> {
+        let wheel = match kind.to_rust()? {
+            WheelKindName::Fixed => {
+                let choices: Vec<&str> = choices.iter().map(String::as_str).collect();
+                pie_menu::Wheel::fixed(&choices)
+            }
+            WheelKindName::Context => {
+                let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+                pie_menu::Wheel::context(&snapshot, &hosted_content())
+            }
+        };
+        Ok(self.owners.open_wheel(wheel))
+    }
+
+    /// The open wheel, labelled for `snapshot`'s class, or `null`.
+    pub fn wheel(&self, snapshot: Ts<ZoneSnapshot>) -> Result<JsValue, JsError> {
+        let Some(wheel) = self.owners.wheel() else {
+            return Ok(JsValue::NULL);
+        };
+        let class = core_snapshot(&snapshot.to_rust()?)?
+            .viewer
+            .class
+            .map(|choice| choice.class);
+        let view = WheelView {
+            kind: match wheel.kind {
+                pie_menu::WheelKind::Fixed => WheelKindName::Fixed,
+                pie_menu::WheelKind::Context => WheelKindName::Context,
+            },
+            sectors: wheel
+                .sectors()
+                .iter()
+                .map(|sector| {
+                    sector.map(|action| WheelSector {
+                        id: action.id(),
+                        label: action.label(class),
+                    })
+                })
+                .collect(),
+            highlight: self
+                .owners
+                .wheel_sector()
+                .and_then(|sector| u8::try_from(sector).ok()),
+        };
+        to_js(&view)
+    }
+
+    /// The wheel key went up after `held_ms`, or was `retired`: pick, stay open or cancel.
+    #[wasm_bindgen(js_name = releaseWheel)]
+    pub fn release_wheel(
+        &mut self,
+        held_ms: f64,
+        retired: bool,
+    ) -> Result<Ts<WheelReleaseView>, JsError> {
+        use mouse_owner::WheelRelease;
+        let (outcome, action) = match self.owners.release_wheel(held_ms, retired) {
+            WheelRelease::Ignored => (WheelOutcome::Ignored, None),
+            WheelRelease::Pick(action) => (WheelOutcome::Pick, Some(action.id())),
+            WheelRelease::Open => (WheelOutcome::Open, None),
+            WheelRelease::Cancel => (WheelOutcome::Cancel, None),
+        };
+        Ok(WheelReleaseView { outcome, action }.into_ts()?)
+    }
+
+    /// Turns the opt-in local wheel usage counters (#653) on from their stored JSON (`""` starts
+    /// at zero), or off with `null`.
+    #[wasm_bindgen(js_name = setUsageCounting)]
+    pub fn set_usage_counting(&mut self, stored: Option<String>) {
+        self.usage = stored.map(|text| pie_menu::WheelUsage::from_json(&text));
+        self.owners.take_tally();
+    }
+
+    /// `ms` milliseconds passed under the current owner; takes the wheel events too.
+    #[wasm_bindgen(js_name = countUsage)]
+    pub fn count_usage(&mut self, ms: f64) {
+        let tally = self.owners.take_tally();
+        if let Some(usage) = self.usage.as_mut() {
+            usage.add(tally);
+            usage.spend(self.owners.owner(), ms);
+        }
+    }
+
+    /// The counters as JSON, while counting.
+    #[wasm_bindgen(js_name = usageJson)]
+    pub fn usage_json(&self) -> Option<String> {
+        self.usage.as_ref().map(pie_menu::WheelUsage::to_json)
     }
 
     /// Focus loss, a menu or panel, a lost pointer lock or a retired key: no firing.
