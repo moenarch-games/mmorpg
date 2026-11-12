@@ -94,6 +94,7 @@ describe("scenery provider and local world", () => {
     kitKeys: () => [],
     kitModels: () => new Float32Array(),
     KitLods: class { variants() { return []; } update() { return new Float32Array(); } },
+    kitSurface: () => undefined,
     ambientAnimalEntries: () => ["greyhaven.ambient.cat"],
     ambientAnimalClips: () => ["Idle", "Walk"],
     ambientAnimalAnchors: () => Int32Array.from([1_800, 600]),

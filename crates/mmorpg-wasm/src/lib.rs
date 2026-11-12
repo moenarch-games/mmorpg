@@ -1350,6 +1350,41 @@ pub fn kit_models(kit: &str) -> Result<Vec<f32>, JsError> {
         .collect())
 }
 
+/// A placed kit's layered surface (#732) from its bundle's descriptor, as JSON: the mask
+/// attribute, the pieces' material, the library entry and its layers, and the blend's numbers
+/// at Greyhaven's weathering (`mmorpg_presentation::surface`); `undefined` for a baked kit.
+///
+/// # Errors
+///
+/// For a malformed descriptor.
+#[wasm_bindgen(js_name = kitSurface)]
+pub fn kit_surface(descriptor: &str) -> Result<Option<String>, JsError> {
+    use mmorpg_presentation::surface::{
+        CAVITY_COLOUR, GREYHAVEN_WEATHERING, LayeredSurface, MOSS_COVER, MOSS_RAMP,
+    };
+    let Some(surface) =
+        LayeredSurface::from_descriptor(descriptor).map_err(|error| JsError::new(&error))?
+    else {
+        return Ok(None);
+    };
+    let thresholds = surface.thresholds(GREYHAVEN_WEATHERING);
+    Ok(Some(
+        serde_json::json!({
+            "maskAttribute": surface.mask_attribute,
+            "material": surface.material,
+            "library": surface.library,
+            "layers": surface.layers,
+            "weathering": GREYHAVEN_WEATHERING,
+            "moss": thresholds.moss,
+            "cavity": thresholds.cavity,
+            "mossRamp": MOSS_RAMP,
+            "mossCover": MOSS_COVER,
+            "cavityColour": CAVITY_COLOUR,
+        })
+        .to_string(),
+    ))
+}
+
 /// A placed kit's levels of detail (#49, #621), from its bundle's descriptor, for the
 /// placements [`kit_keys`] lists: the same selection and cross-fade the native client runs.
 #[wasm_bindgen]

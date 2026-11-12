@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { InstancedLevels } from "./instanced-levels";
+import { applyLayeredSurface, layeredSurfaceMaterial, type LayeredSurface } from "./layered-surface";
 import { drawnResources, generateMissingTangents, loadBundleGltfs, shareMaterials } from "./static-bundle";
 
 /** A bundle the shared Rust presentation places at fixed placements. */
@@ -37,6 +38,8 @@ export type PlacedKitSource = {
   placements: readonly { key: string; matrix: Float32Array }[];
   /** The shared selection for these placements from the bundle's descriptor JSON. */
   lods(descriptor: string): KitLodsHandle;
+  /** The layered surface the descriptor JSON declares (#732), or null for a baked kit. */
+  surface?(descriptor: string): LayeredSurface | null;
 };
 
 /**
@@ -86,9 +89,15 @@ export class PlacedKit {
     const lods = this.#source.lods(text);
     const entries = this.#source.entries;
     const variants = entries.map((entry) => lods.variants(entry));
-    const gltfs = await loadBundleGltfs(kit.bundle, variants.flat());
+    // A layered kit (#732) loads its shared surface library too, last.
+    const surface = this.#source.surface?.(text) ?? null;
+    const gltfs = await loadBundleGltfs(kit.bundle, surface ? [...variants.flat(), surface.library] : variants.flat());
+    const library = surface ? gltfs.pop()!.scene : null;
     // One texture per image and one material per name, across every entry and level (#53).
     shareMaterials(gltfs);
+    if (surface && library) {
+      applyLayeredSurface(gltfs.map((gltf) => gltf.scene), surface, layeredSurfaceMaterial(surface, library));
+    }
     // Without tangents the normal maps are not applied, but the bundle's art still draws.
     await generateMissingTangents(gltfs).catch((error: unknown) => {
       console.warn(`${kit.label}: drawing without generated tangents: ${error instanceof Error ? error.message : String(error)}`);

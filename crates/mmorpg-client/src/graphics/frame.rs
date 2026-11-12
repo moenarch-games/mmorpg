@@ -433,6 +433,8 @@ struct NaturePart {
     material: MaterialId,
     /// One dissolve material per fade step (`crate::nature::FADE_STEPS`).
     fades: Vec<MaterialId>,
+    /// A layered surface's overlay (`crate::nature::Part::overlay`).
+    overlay: bool,
 }
 
 /// The `greyhaven-nature` library, uploaded once: its textures, then per entry, per level, its
@@ -523,6 +525,7 @@ impl NatureGpu {
                             })
                             .collect(),
                         material: world.add_material(&material),
+                        overlay: part.overlay,
                     });
                 }
             }
@@ -544,6 +547,10 @@ impl NatureGpu {
         let steps = crate::nature::FADE_STEPS;
         let step = |threshold: f32| ((threshold * steps as f32) as usize).min(steps - 1);
         for part in parts {
+            // A layered surface's overlay (#732) covers only a settled level.
+            if part.overlay && draw.fade < 1. {
+                continue;
+            }
             let (mesh, material) = if draw.fade >= 1. {
                 (part.mesh, part.material)
             } else if draw.fade > 0. {
