@@ -556,6 +556,9 @@ impl FrameRenderer {
     ) -> Self {
         let renderer = Renderer::new(device, queue, format);
         let world = World::new(&renderer);
+        // Clustered light assignment where the device supports it, the per-fragment loop
+        // otherwise (render-engine#94, #725): each fragment shades only its cluster's point
+        // lights instead of all of Greyhaven's lamps and campfires.
         let viewport = Viewport::new(&renderer, width, height);
         let hud_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("combat HUD"),
@@ -623,6 +626,13 @@ impl FrameRenderer {
             #[cfg(test)]
             gpu_timer: None,
         }
+    }
+
+    /// How the viewport assigns point lights to fragments: clustered, or per fragment on a
+    /// device without the clustered path's storage buffers (#725).
+    #[cfg(test)]
+    pub(super) fn light_assignment(&self) -> render_engine::renderer::LightAssignment {
+        self.viewport.light_assignment()
     }
 
     #[cfg(test)]
