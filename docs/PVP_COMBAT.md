@@ -37,6 +37,38 @@ collision includes eligible opponents and retains physical cover and shield inte
 Area effects include eligible opponents, excluding the caster; hostile aura pulses use
 the same damage resolver. No PvE XP/copper or creature loot is awarded for killing a player.
 
+## Timed swings and clashes (#679, arena first)
+
+An arena opts in with `ZoneContent::with_timed_combat(TimedCombat::ARENA)`
+(`crates/mmorpg-core/src/swing.rs`). The content revision binds the rules, so restoring
+arena state into content without them fails closed. Greyhaven does not opt in: its
+directed strikes still resolve in the tick their command arrives.
+
+- **Begin on the wire.** The ordinary `DirectedStrike` command begins the swing: validation,
+  Rage, cooldowns, the global cooldown and the guard release apply at once, and observers get
+  `SwingBegan` with the aim and the phase lengths, so opponents see the wind-up.
+- **Timed hitbox.** After the startup (0.3 s) the blade sweeps the strike's usual arc, reach and
+  height lane over the active ticks (0.15 s), one contiguous slice per tick, travelling toward
+  the aimed side (a centre strike right to left). The nearest eligible unit a tick's slice covers
+  takes the ordinary weapon strike, physical cover still blocking; one swing strikes at most one
+  unit and reports a whiff on its last active tick. Then the action graph's `DirectedSlash`
+  recovery runs. The action graph reports the swing as `DirectedSlash` in its startup and
+  active phases; a guard raised meanwhile waits like during the recovery.
+- **Clashes**, in the zone's present tick and stable ID order, before any slice strikes:
+  two hostile active swings whose whole arcs cover each other deal nothing and both recover;
+  an active swing destroys a clashable hostile projectile passing through its arc and swings
+  on; two clashable projectiles of opposing owners that pass within their clash radii (arrows
+  15 cm, Firebolts 25 cm) both vanish. Clashable means a plain arrow or a free Firebolt: bombs,
+  flasks, piercing and ricochet shots stay out, and homing (targeted) missiles need their own
+  rule. `Clashed` names both sides. A stun or death ends a running swing.
+- **Recovery.** The running swing is canonical player state, so a zone restored mid-swing
+  continues it exactly (`cargo test -p mmorpg-core --test timed_swing`).
+
+Health alone decides fights: no clash moves anyone (Atlas 5.2.i679-2). The phase lengths, clash
+switches and radii are starting values to tune in play, as is the 2 s basic swing timer.
+The browser's practice arena runs these rules; hosted Battle Royale matches adopt them when
+`battle_royale_core::arena::content()` opts in.
+
 ## Mode observations and continuation
 
 A mode controller reads authoritative health/death from the zone's canonical snapshot;

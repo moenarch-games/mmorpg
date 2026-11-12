@@ -84,7 +84,7 @@
 //! interruptions. Every class ability starts [`ActionId::GlobalCooldown`].
 //!
 //! Runtime state stays in the existing canonical fields: `landing` for the
-//! movement region, `cast`, `strike_recovery`, `combo` and `global_cooldown`
+//! movement region, `cast`, a timed `swing` (#679), `strike_recovery`, `combo` and `global_cooldown`
 //! for the offense region, `guard` for the defense region, and auras, the
 //! guard break and health for the reaction region.
 //! [`ZoneSimulation::action_inspection`] is the read-only query surface that
