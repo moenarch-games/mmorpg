@@ -44,9 +44,10 @@ import { useBundleKtx2Loader } from "./static-bundle";
 import { BatchedScenery } from "./static-batches";
 import { CompositionKit } from "./composition-kit";
 import { Ground } from "./ground";
-import { PlacedKit } from "./placed-kit";
+import { PlacedKit, type PlacedKitSource } from "./placed-kit";
 import { AmbientAnimals } from "./ambient-animals";
 import { ArtPrefetch } from "./art-prefetch";
+import { isOutpostArea, kitNearArea, kitNearPoint, shelteredOutpost } from "./crater-streaming";
 import { SkyLayer } from "./sky";
 import { SharedUnits, type AnimationBlend, type ImportedModelKind, type Loadout, type ViewerAnimation, type ViewerLook } from "./unit-presenter";
 
@@ -74,6 +75,7 @@ import { PointerClick, combatFocus } from "./units/targeting";
 import { WorldPicking } from "./units/world-picking";
 import { QuaterniusUnits, type FaceFeature, type Hair, type Headwear } from "./units/quaternius-units";
 import type { ContentCatalog } from "./catalog";
+import type { Area } from "./scenery";
 import type { WorldSource, ZoneWorld } from "./world-source";
 import type { AudioPreferences, WorldSound } from "./world-sound";
 import { touchContext, type TouchContext } from "../input/touch-layout";
@@ -325,7 +327,9 @@ class RegionArt {
   plan(entry: number, others: readonly number[]): void {
     const areas = this.#world.scenery.scenery.areas;
     const home = areas.find((area) => area.id === entry);
-    const near = home ? areas.filter((area) => area.id !== entry && boxGapSquared(area, home) <= STREAM_RADIUS_UNITS ** 2) : [];
+    // The Outpost's rim screens the other regions from the village floor. Fetch only the
+    // currently selected location during selection; the exit approach warms its neighbours.
+    const near = home && !isOutpostArea(home) ? areas.filter((area) => area.id !== entry && boxGapSquared(area, home) <= STREAM_RADIUS_UNITS ** 2) : [];
     // First paint the real character on the selection stage. Greyhaven art may be much larger;
     // starting it in parallel used to compete with the avatar on a cold browser visit.
     if (!this.#prefetch.settled("Ranger")) {
@@ -334,7 +338,7 @@ class RegionArt {
     }
     this.#prefetch.plan({
       foreground: this.#pieces(entry),
-      background: [...others, ...near.map((area) => area.id)].flatMap((id) => this.#pieces(id)),
+      background: (isOutpostArea(home) ? [] : [...others, ...near.map((area) => area.id)]).flatMap((id) => this.#pieces(id)),
     });
   }
 
@@ -354,6 +358,11 @@ class RegionArt {
   /** Fetches the area at `at` and every area within the streaming radius of it. */
   approach(at: [number, number] | null, areas: readonly AreaBounds[]): void {
     if (!at) { return; }
+    const sheltered = shelteredOutpost(at, this.#world.scenery.scenery.areas);
+    if (sheltered) {
+      this.fetch(sheltered.id);
+      return;
+    }
     for (const area of areas) {
       if (boxGapSquared(area, { minXz: at, maxXz: at }) <= STREAM_RADIUS_UNITS ** 2) {
         this.fetch(area.id);
@@ -395,6 +404,10 @@ export class WorldView {
   #crag: PlacedKit | null = null;
   #limestone: PlacedKit | null = null;
   #river: PlacedKit | null = null;
+  /** Bundles are fetched only once some authored placement is near the selected area/player. */
+  #placedKits: { kit: PlacedKit; source: PlacedKitSource; requested: boolean }[] = [];
+  #pendingKitArea: Area | null = null;
+  #avatarPrepared = false;
   #ground: Ground | null = null;
   #regions: RegionArt | null = null;
   #onArtProgress: (() => void) | null = null;
@@ -653,6 +666,8 @@ export class WorldView {
     }
     this.#loadedScenery = world.scenery;
     this.#loadedArena = arena;
+    this.#avatarPrepared = false;
+    this.#pendingKitArea = null;
     this.#picking.reset();
     const started = performance.now();
     this.#catalog = world.catalog;
@@ -678,6 +693,13 @@ export class WorldView {
     this.#crag = new PlacedKit(world.scenery.crag);
     this.#limestone = new PlacedKit(world.scenery.limestone);
     this.#river = new PlacedKit(world.scenery.river);
+    this.#placedKits = [
+      { kit: this.#nature, source: world.scenery.nature, requested: false },
+      { kit: this.#climbing, source: world.scenery.climbing, requested: false },
+      { kit: this.#crag, source: world.scenery.crag, requested: false },
+      { kit: this.#limestone, source: world.scenery.limestone, requested: false },
+      { kit: this.#river, source: world.scenery.river, requested: false },
+    ];
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
     this.#inn = new WalkInBuildings(world.scenery.buildings.presenters());
     this.#shrine = new KitModules(SHRINE_BUNDLE, "shrine kit", world.scenery.shrine.entries, world.scenery.shrine.placements);
@@ -706,20 +728,12 @@ export class WorldView {
     // settles (including a failed load), background kits and the static scene can prepare while
     // the player selects a character or moves through creation. No world entry waits for them.
     const prewarmed = world.scenery;
-    const nature = this.#nature;
-    const climbing = this.#climbing;
-    const crag = this.#crag;
-    const limestone = this.#limestone;
-    const river = this.#river;
     const fortifications = this.#fortifications;
     const fortress = this.#fortress;
     void this.#models.preload("Ranger").then(() => {
       if (this.#loadedScenery !== prewarmed || this.#loadedArena !== arena) { return; }
-      void nature.load();
-      void climbing.load();
-      void crag.load();
-      void limestone.load();
-      void river.load();
+      this.#avatarPrepared = true;
+      if (this.#pendingKitArea) { this.#loadKitsForArea(this.#pendingKitArea); }
       void fortifications.load();
       void fortress?.load();
       const prewarm = () => {
@@ -728,6 +742,31 @@ export class WorldView {
       if (typeof requestIdleCallback === "function") { requestIdleCallback(prewarm, { timeout: 2_000 }); }
       else { setTimeout(prewarm, 0); }
     });
+  }
+
+  /** Prepare only the authored kits around the selected area, including the Outpost cliff rim. */
+  #loadKitsForArea(area: Area): void {
+    const units = this.#loadedScenery?.scenery.unitsPerMetre;
+    if (!units) { return; }
+    for (const entry of this.#placedKits) {
+      if (!entry.requested && kitNearArea(entry.source, area, units, 5_000)) {
+        entry.requested = true;
+        void entry.kit.load();
+      }
+    }
+  }
+
+  /** The terrain already screens distant placed kits; stream new categories on approach. */
+  #loadKitsNearPoint(at: readonly [number, number]): void {
+    if (!this.#avatarPrepared || shelteredOutpost(at, this.#areas)) { return; }
+    const units = this.#loadedScenery?.scenery.unitsPerMetre;
+    if (!units) { return; }
+    for (const entry of this.#placedKits) {
+      if (!entry.requested && kitNearPoint(entry.source, at, units, STREAM_RADIUS_UNITS)) {
+        entry.requested = true;
+        void entry.kit.load();
+      }
+    }
   }
 
   /**
@@ -1579,7 +1618,9 @@ export class WorldView {
       this.#units.cragFaces = true;
       units.setCragDescriptor(cragDescriptor);
     }
-    this.#regions?.approach(entitiesSelf(projection), scenery.scenery.areas);
+    const at = entitiesSelf(projection);
+    this.#regions?.approach(at, scenery.scenery.areas);
+    if (at) { this.#loadKitsNearPoint(at); }
     for (const [kind, clips, descriptor] of this.#models.drainLoaded()) {
       this.#loadedModels.push([kind, clips, descriptor]);
       units.modelReady(kind, clips, descriptor);
@@ -2193,6 +2234,8 @@ export class WorldView {
    * `others` (other characters' saved areas) and `entry`'s neighbours.
    */
   prefetchSelection(entry: number, others: readonly number[]): void {
+    this.#pendingKitArea = this.#areas.find((area) => area.id === entry) ?? null;
+    if (this.#avatarPrepared && this.#pendingKitArea) { this.#loadKitsForArea(this.#pendingKitArea); }
     this.#regions?.plan(entry, others);
   }
 

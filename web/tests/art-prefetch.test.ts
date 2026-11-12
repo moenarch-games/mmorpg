@@ -1,5 +1,36 @@
 import { describe, expect, test } from "bun:test";
 import { ArtPrefetch } from "../src/world/art-prefetch";
+import { isOutpostArea, kitNearArea, kitNearPoint, shelteredOutpost } from "../src/world/crater-streaming";
+import type { PlacedKitSource } from "../src/world/placed-kit";
+
+const outpost = { id: 1, name: "Greyhaven Outpost", minXz: [-3500, -1300], maxXz: [3500, 5300] } as const;
+const farm = { id: 3, name: "Millbrook Farm", minXz: [4000, 1300], maxXz: [10500, 9000] } as const;
+
+test("the Outpost screens adjacent region art until a player approaches its edge", () => {
+  expect(isOutpostArea(outpost)).toBe(true);
+  expect(shelteredOutpost([0, 2000], [outpost, farm])?.id).toBe(1);
+  expect(shelteredOutpost([2600, 2000], [outpost, farm])).toBeNull();
+  expect(shelteredOutpost([4000, 2000], [outpost, farm])).toBeNull();
+  expect(shelteredOutpost([0, 2000], [farm])).toBeNull();
+});
+
+test("placed kit downloads include near-rim art, not unrelated distant placements", () => {
+  const placement = (x: number, z: number) => {
+    const matrix = new Float32Array(16);
+    matrix[12] = x;
+    matrix[14] = z;
+    return { key: `${x}:${z}`, matrix };
+  };
+  const source = (x: number, z: number): PlacedKitSource => ({
+    kit: "nature", entries: [], placements: [placement(x, z)],
+    lods: () => { throw new Error("not used in proximity tests"); },
+  });
+  expect(kitNearArea(source(45, 20), outpost, 100, 5000)).toBe(true);
+  expect(kitNearArea(source(170, 20), outpost, 100, 5000)).toBe(false);
+  expect(kitNearPoint(source(45, 20), [0, 2000], 100, 6000)).toBe(true);
+  expect(kitNearPoint(source(170, 20), [0, 2000], 100, 6000)).toBe(false);
+  expect(kitNearPoint(source(170, 20), [12000, 2000], 100, 6000)).toBe(true);
+});
 
 /** A prefetch whose loads settle only when the test resolves them. */
 function harness() {
