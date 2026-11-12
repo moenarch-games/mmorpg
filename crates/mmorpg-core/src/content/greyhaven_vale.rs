@@ -1335,11 +1335,28 @@ static CONTENT: LazyLock<Arc<ZoneContent>> = LazyLock::new(|| {
 pub fn content_with_definition(
     definition: ZoneDefinition,
 ) -> Result<Arc<ZoneContent>, crate::ZoneError> {
+    content_with_spawns(definition, units::creature_spawns())
+}
+
+/// The hosted content with `extra` creature spawns beside Greyhaven's own, validated the same
+/// way: diagnostic workloads such as the A/B chain of powder barrels (#666).
+pub fn content_with_extra_spawns(
+    extra: impl IntoIterator<Item = crate::CreatureSpawn>,
+) -> Result<Arc<ZoneContent>, crate::ZoneError> {
+    let mut spawns = units::creature_spawns();
+    spawns.extend(extra);
+    content_with_spawns(greyhaven_vale_definition(), spawns)
+}
+
+fn content_with_spawns(
+    definition: ZoneDefinition,
+    spawns: Vec<crate::CreatureSpawn>,
+) -> Result<Arc<ZoneContent>, crate::ZoneError> {
     let content = ZoneContent::new(
         definition,
         areas().clone(),
         units::creature_templates(),
-        units::creature_spawns(),
+        spawns,
         units::npcs(),
         units::GRAVEYARD,
     )?

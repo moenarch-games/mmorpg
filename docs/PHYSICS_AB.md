@@ -12,10 +12,16 @@ backend selector or fallback. Hosts and clients continue to use the same core si
 Zone construction and recovery always use Physics Engine outside diagnostics. Greyhaven uses its
 retained hulls and cave meshes for characters, support, ray/projectile and shape queries.
 Free-rotating debris, upright movable props and rolling boulders also contact those exact
-shapes. Their three isolated response worlds retain static geometry and engine scratch, synchronize changed
-static bodies, and transfer canonical pieces in and out each tick. Units enter only the prop
+shapes. Their three isolated response worlds are built with the zone (and on recovery), retain
+static geometry and engine scratch, and synchronize only the static bodies recorded as changed
+since their last step; a moving platform moves in place (`set_static_position`). Moving pieces
+transfer in and out each tick (one bulk `remove_bodies`). Resting debris stays in the debris lane
+as fixed bodies keyed above every game body ID by its debris ID until it despawns, so the body
+order is the one a lane rebuilt from the canonical pieces takes (#666). Units enter only the prop
 lane as temporary fixed capsules; the character world is separate. All temporary bodies are
 removed after stepping, so no hidden dynamic continuation state survives canonical recovery.
+Character ground probes are cached per body and reused while its position and the character
+world's `static_revision` are unchanged.
 `World::step_debris` and `World::step_props` take `&mut self`, making retained response
 state ownership explicit while keeping the zone `Send + Sync`. The game does not consume Engine contact events; this is a physical/game-state continuation
 claim, not a checkpoint event-stream claim (physics-engine #505).
@@ -27,7 +33,7 @@ CCD. Unsupported future content still needs a demonstrated consumer requirement 
 capabilities can be adopted; authored geometry is never reduced to bounds.
 
 The native and WASM A/B runners execute the same Rust assertions and embedded fixtures:
-all 19 workloads, both backends, same-backend exact replay, exact canonical midpoint recovery,
+all 20 workloads, both backends, same-backend exact replay, exact canonical midpoint recovery,
 behaviour invariants and identical-state gameplay-query parity. The WASM runner builds a
 separate diagnostic `cdylib` example, then executes the actual `wasm32-unknown-unknown` module
 through wasm-bindgen in Bun. It also executes the same authored Redbrand/Greyhaven geometry
@@ -217,6 +223,10 @@ On **each** backend, every run must:
 - in `vale-crate-smash`, break both crates into twelve panels at the same tick on both arms,
   keep every piece finite and above the ground, settle every piece before it despawns, and
   rest each within 150 units (the `debris` oracle bound) of Rapier's;
+- in `vale-barrel-chain` (#666: sixteen powder barrels added north of the spawn plaza, one
+  Firebolted from beyond the blast), chain every explosion into one tick on both arms, throw
+  exactly the 64-piece per-tick cap then, keep every piece finite and above the ground and
+  despawn them all;
 - in `vale-traversal`, keep the Warden flying south on its momentum two (30 Hz) ticks after it
   let go of the keys mid-air;
 - in `vale-missiles`, strike some wolf with a missile, with every missile spent the same way

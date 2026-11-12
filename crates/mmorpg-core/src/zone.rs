@@ -446,6 +446,9 @@ impl ZoneSimulation {
                 .map_err(physics_error)?;
             interest.insert(entity, npc.position[0], npc.position[1]);
         }
+        // The debris, prop and boulder response worlds hold the static world from the start, so
+        // the first break does not build them (#666); later static changes sync incrementally.
+        world.prepare_response_lanes().map_err(physics_error)?;
         Ok(Self {
             zone_id,
             tick: 0,

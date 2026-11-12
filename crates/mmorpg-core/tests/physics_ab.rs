@@ -48,7 +48,7 @@ const SCRIPTED_POSITION_TOLERANCE_UNITS: f32 = 1.0;
 /// fighting fixtures (their bots stand clear of all geometry, #534) and the scripted scenes.
 /// At 60 Hz (#379) `vale-wolf-hunt`'s creatures, which part from tick 1, reach the scripted
 /// hunter's fights after 38 s, so it is bounded only over its scripted walk ([`CLIMBS`]).
-const SCRIPTED: [&str; 14] = [
+const SCRIPTED: [&str; 15] = [
     "two-bots-move",
     "vale-hub-walk",
     "vale-idle-16",
@@ -59,6 +59,7 @@ const SCRIPTED: [&str; 14] = [
     "vale-mill-hoist",
     "vale-crate-shove",
     "vale-crate-smash",
+    "vale-barrel-chain",
     "vale-missiles",
     "vale-traversal",
     "vale-climb",
@@ -561,6 +562,61 @@ fn check_crate_smash(name: &str, rapier: &Trace, engine: &Trace) {
     );
 }
 
+/// The chain explodes all sixteen barrels in one tick on each backend; the per-tick cap (#666)
+/// throws exactly its 64 pieces then, which stay finite and above the plaza, settle and
+/// despawn.
+fn check_barrel_chain(name: &str, rapier: &Trace, engine: &Trace) {
+    let thrown = |trace: &Trace| {
+        trace
+            .snapshots
+            .iter()
+            .position(|snapshot| !snapshot.debris.is_empty())
+    };
+    for (trace, backend) in [(rapier, "rapier"), (engine, "engine")] {
+        let first = thrown(trace).unwrap_or_else(|| panic!("{name} on {backend}: no debris"));
+        let most = trace
+            .snapshots
+            .iter()
+            .map(|snapshot| snapshot.debris.len())
+            .max()
+            .unwrap_or_default();
+        println!(
+            "  {name} on {backend}: {} pieces thrown at tick {first}, at most {most} at once",
+            trace.snapshots[first].debris.len()
+        );
+        assert_eq!(
+            trace.snapshots[first].debris.len(),
+            mmorpg_core::MAX_DEBRIS_PER_TICK,
+            "{name} on {backend}: the chain did not reach the per-tick cap in one tick"
+        );
+        assert_eq!(
+            most,
+            mmorpg_core::MAX_DEBRIS_PER_TICK,
+            "{name} on {backend}"
+        );
+        for piece in trace.snapshots.iter().flat_map(|snapshot| &snapshot.debris) {
+            assert!(
+                piece.body.is_valid() && piece.body.position[1] > -2.0,
+                "{name} on {backend}: piece {} at {:?}",
+                piece.id,
+                piece.body.position
+            );
+        }
+        assert!(
+            trace
+                .snapshots
+                .last()
+                .is_some_and(|last| last.debris.is_empty()),
+            "{name} on {backend}: debris did not despawn"
+        );
+    }
+    assert_eq!(
+        thrown(rapier),
+        thrown(engine),
+        "{name}: the chain explodes at different ticks"
+    );
+}
+
 fn run(workload: &Workload, backend: Backend) -> Result<(Trace, Check)> {
     using_backend(backend, || {
         let mut run = Run::new(workload)?;
@@ -826,7 +882,7 @@ fn decision_differences(rapier: &Decisions, engine: &Decisions) -> Vec<String> {
 /// Rapier's state at sampled ticks, recovered onto each backend, must yield the same
 /// decisions. Returns the number of probes compared.
 fn query_parity(workload: &Workload, rapier: &Trace) -> Result<usize> {
-    let content = mmorpg_core::greyhaven_vale::content();
+    let content = workload.content()?;
     let mut probes = 0;
     let last = rapier.snapshots.len() - 1;
     for (index, snapshot) in rapier.snapshots.iter().enumerate() {
@@ -1142,6 +1198,9 @@ fn check_workload(workload: Workload) -> Result<()> {
     }
     if matches!(workload, Workload::CrateSmash) {
         check_crate_smash(&name, &rapier, &engine);
+    }
+    if matches!(workload, Workload::BarrelChain) {
+        check_barrel_chain(&name, &rapier, &engine);
     }
     if matches!(workload, Workload::MillRamps) {
         // Both hold the chute's walker at its foot (physics-engine #351: too-steep slopes are

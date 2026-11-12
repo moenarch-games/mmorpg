@@ -358,7 +358,7 @@ pub fn authored_rigid_boxes_keep_contacts_replay_and_exact_midpoint_recovery() {
                 if upright {
                     world.step_props(pieces, &[])
                 } else {
-                    world.step_debris(pieces, &[true])
+                    world.step_debris(pieces, &[1], &[true])
                 }
             };
             let separation = |piece: &DebrisBody, position: Vector, target: &SharedShape| {

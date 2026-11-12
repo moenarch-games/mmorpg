@@ -246,6 +246,10 @@ pub enum Workload {
     /// Greyhaven Outpost's crates (#288): two players smash crates 900 and 901, whose pieces
     /// fly, settle and despawn as debris on each backend.
     CrateSmash,
+    /// A chain of sixteen powder barrels (#666): an Arcanist Firebolts one from beyond the
+    /// blast, the explosions chain through the rest in one tick, and the per-tick cap throws
+    /// the first 64 pieces, which fly, settle and despawn.
+    BarrelChain,
     /// Magic missiles in Wolfrun Woods (#289): four level-6 Arcanists Firebolt wolves among the
     /// trunks (homing missiles), then cast free Firebolts along their facing into the woods.
     Missiles,
@@ -470,6 +474,89 @@ fn crate_smash_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
             _ => None,
         })
         .collect()
+}
+
+/// The barrel chain's length: the Firebolt's cast and flight, then the debris flies, settles
+/// and despawns (5 s).
+pub const BARREL_CHAIN_TICKS: usize = mmorpg_core::golden::t30(300) as usize;
+
+/// The Arcanist, 9 m south of the barrels: beyond every blast, within Firebolt's reach.
+const BARREL_CHAIN_PLAYERS: [(u32, [f32; 2]); 1] = [(1, [-1_060.0, 2_060.0])];
+
+/// The first chain barrel's spawn ID: above every Greyhaven creature.
+pub const BARREL_CHAIN_FIRST: u32 = 9_000;
+
+/// Greyhaven with sixteen powder barrels in a 4×4 grid, 1.2 m apart, north of the spawn plaza,
+/// and the Arcanist placed south of them.
+fn barrel_chain_zone() -> Result<ZoneSimulation, Box<dyn Error>> {
+    let zone = placed_zone_in(barrel_chain_content()?, &BARREL_CHAIN_PLAYERS)?;
+    let mut state = zone.snapshot()?;
+    for player in &mut state.players {
+        player.combat.level = 6;
+        player.combat.health = mmorpg_core::unit::player_max_health(6);
+        player.combat.abilities.class = Some(mmorpg_core::ClassChoice {
+            class: mmorpg_core::PlayerClass::Arcanist,
+            sex: mmorpg_core::Sex::Female,
+        });
+        player.combat.abilities.resource = 100;
+    }
+    Ok(ZoneSimulation::from_snapshot(
+        state,
+        std::sync::Arc::clone(zone.content()),
+    )?)
+}
+
+/// Greyhaven with the barrel chain's sixteen powder barrels.
+fn barrel_chain_content() -> Result<std::sync::Arc<mmorpg_core::ZoneContent>, Box<dyn Error>> {
+    let hosted = mmorpg_core::greyhaven_vale::content();
+    let barrel = hosted
+        .creature_templates()
+        .iter()
+        .find(|template| template.prop() == Some(mmorpg_core::PropKind::ExplosiveBarrel))
+        .ok_or("Greyhaven has no powder barrel")?
+        .id;
+    let spawns = (0..16).map(|index: u32| mmorpg_core::CreatureSpawn {
+        id: CreatureId::new(BARREL_CHAIN_FIRST + index),
+        template: barrel,
+        position: [
+            -1_180 + 120 * i32::try_from(index % 4).expect("column"),
+            800 + 120 * i32::try_from(index / 4).expect("row"),
+        ],
+        facing: 0,
+        wander_radius: 0,
+        levels: None,
+    });
+    Ok(mmorpg_core::greyhaven_vale::content_with_extra_spawns(
+        spawns,
+    )?)
+}
+
+/// The barrel chain's commands: face the barrels (north), target the nearest and Firebolt it.
+fn barrel_chain_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    match tick {
+        0 => vec![(
+            1,
+            ZoneCommand::Move {
+                forward: 0,
+                strafe: 0,
+                facing: 32_768,
+            },
+        )],
+        1 => vec![(
+            1,
+            ZoneCommand::SelectTarget(Some(EntityRef::Creature(CreatureId::new(
+                BARREL_CHAIN_FIRST + 13,
+            )))),
+        )],
+        2 => vec![(
+            1,
+            ZoneCommand::UseAbility {
+                ability: mmorpg_core::ability::ids::FIREBOLT.get(),
+                target: None,
+            },
+        )],
+        _ => Vec::new(),
+    }
 }
 
 /// The missile workload's length.
@@ -810,7 +897,14 @@ fn traversal_zone(players: &[(u32, [f32; 2])]) -> Result<ZoneSimulation, Box<dyn
 
 /// Greyhaven with `players` placed at their feet XZ, standing on the ground.
 fn placed_zone(players: &[(u32, [f32; 2])]) -> Result<ZoneSimulation, Box<dyn Error>> {
-    let content = mmorpg_core::greyhaven_vale::content();
+    placed_zone_in(mmorpg_core::greyhaven_vale::content(), players)
+}
+
+/// [`placed_zone`] in `content`.
+fn placed_zone_in(
+    content: std::sync::Arc<mmorpg_core::ZoneContent>,
+    players: &[(u32, [f32; 2])],
+) -> Result<ZoneSimulation, Box<dyn Error>> {
     let mut zone = ZoneSimulation::with_content(ZoneId::new(1), std::sync::Arc::clone(&content))?;
     for &(player, _) in players {
         zone.add_player(player)?;
@@ -842,11 +936,20 @@ impl Workload {
             Self::WatchPost => "vale-watch-post",
             Self::CrateShove => "vale-crate-shove",
             Self::CrateSmash => "vale-crate-smash",
+            Self::BarrelChain => "vale-barrel-chain",
             Self::Missiles => "vale-missiles",
             Self::Traversal => "vale-traversal",
             Self::Climb => "vale-climb",
             Self::Roll => "vale-roll",
             Self::Swim => "vale-swim",
+        }
+    }
+
+    /// The zone content the workload runs: Greyhaven, with the barrel chain's barrels added.
+    pub fn content(&self) -> Result<std::sync::Arc<mmorpg_core::ZoneContent>, Box<dyn Error>> {
+        match self {
+            Self::BarrelChain => barrel_chain_content(),
+            _ => Ok(mmorpg_core::greyhaven_vale::content()),
         }
     }
 
@@ -862,6 +965,7 @@ impl Workload {
             Self::WatchPost => WATCH_POST_TICKS,
             Self::CrateShove => CRATE_SHOVE_TICKS,
             Self::CrateSmash => CRATE_SMASH_TICKS,
+            Self::BarrelChain => BARREL_CHAIN_TICKS,
             Self::Missiles => MISSILES_TICKS,
             Self::Traversal => TRAVERSAL_TICKS,
             Self::Climb => CLIMB_TICKS,
@@ -893,6 +997,7 @@ pub fn workloads() -> Result<Vec<Workload>, String> {
     workloads.push(Workload::WatchPost);
     workloads.push(Workload::CrateShove);
     workloads.push(Workload::CrateSmash);
+    workloads.push(Workload::BarrelChain);
     workloads.push(Workload::Missiles);
     workloads.push(Workload::Traversal);
     workloads.push(Workload::Climb);
@@ -935,6 +1040,7 @@ impl Run {
             Workload::WatchPost => (placed_zone_at_level(&WATCH_POST_PLAYERS, 6)?, 0),
             Workload::CrateShove => (crate_shove_zone()?, 0),
             Workload::CrateSmash => (placed_zone_at_level(&CRATE_SMASH_PLAYERS, 6)?, 0),
+            Workload::BarrelChain => (barrel_chain_zone()?, 0),
             Workload::Missiles => (placed_zone_at_level(&CHARGE_PATH_PLAYERS, 6)?, 0),
             Workload::Traversal => (traversal_zone(&TRAVERSAL_PLAYERS)?, 0),
             Workload::Climb => (placed_zone(&CLIMB_PLAYERS)?, 0),
@@ -1009,6 +1115,7 @@ impl Run {
             | Workload::WatchPost
             | Workload::CrateShove
             | Workload::CrateSmash
+            | Workload::BarrelChain
             | Workload::Missiles
             | Workload::Traversal
             | Workload::Climb
@@ -1029,6 +1136,7 @@ impl Run {
                     Workload::WatchPost => watch_post_commands(at, &self.zone),
                     Workload::CrateShove => crate_shove_commands(at),
                     Workload::CrateSmash => crate_smash_commands(at),
+                    Workload::BarrelChain => barrel_chain_commands(at),
                     Workload::Missiles => missiles_commands(at),
                     Workload::Traversal => traversal_commands(at),
                     Workload::Climb => climb_commands(at),
