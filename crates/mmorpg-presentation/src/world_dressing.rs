@@ -30,7 +30,7 @@ use crate::{
 };
 
 /// Greyhaven Vale's dressing files.
-const GREYHAVEN: [&str; 3] = [
+const GREYHAVEN: [&str; 4] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/vale.json"
@@ -43,12 +43,17 @@ const GREYHAVEN: [&str; 3] = [
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/outpost.json"
     )),
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../content/greyhaven/dressing/market.json"
+    )),
 ];
 
 /// Every kit that draws dressing, by its asset keys' prefix, with the static-scene fallback
 /// ([`Kit`]) it hides while drawn, if it has one.
-pub const KITS: [(&str, Option<Kit>); 4] = [
+pub const KITS: [(&str, Option<Kit>); 5] = [
     ("crag.kit.", Some(Kit::Crag)),
+    ("settlement.props.", Some(Kit::SettlementProps)),
     ("outpost.kit.", Some(Kit::Outpost)),
     ("greyhaven.fort.", Some(Kit::Outpost)),
     // The Sunken Shrine's modules (#431) stand on their own colliders and need no stand-in.

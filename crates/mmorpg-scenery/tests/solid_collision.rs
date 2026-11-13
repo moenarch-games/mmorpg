@@ -1,9 +1,9 @@
 //! Everything in Greyhaven that looks solid collides (#577): every placed prop of a solid kind
 //! inside the walls is drawn from a collider of the hosted content, and the market square's
 //! kit props each have their collision proxies. Foliage alone stays walk-through.
-use mmorpg_core::greyhaven_vale::{self, ids, market};
+use mmorpg_core::greyhaven_vale::{self, ids};
 use mmorpg_core::{StaticCollider, greyhaven_vale_definition};
-use mmorpg_scenery::{PropKind, Rect, greyhaven_vale_scenery, settlement_props};
+use mmorpg_scenery::{PropKind, Rect, greyhaven_vale_scenery};
 
 /// Whether a kind looks solid. Every kind decides here, so a new prop kind cannot ship
 /// without choosing.
@@ -102,44 +102,6 @@ fn every_solid_prop_inside_the_walls_has_its_collider() {
         "{} solid props have no collider, e.g. {:?}",
         missing.len(),
         &missing[..missing.len().min(5)]
-    );
-}
-
-#[test]
-fn every_market_prop_collides_through_its_proxies() {
-    let definition = greyhaven_vale_definition();
-    let scenery = greyhaven_vale_scenery();
-    let placements = settlement_props::placements(&scenery);
-    assert_eq!(placements.len(), market::SQUARE.len() + 2);
-    let colliders: Vec<_> = definition
-        .colliders()
-        .iter()
-        .filter(|collider| ids::MARKET.contains(&collider.id))
-        .collect();
-    let proxies: usize = placements
-        .iter()
-        .map(|placement| placement.item.proxies().len())
-        .sum();
-    assert_eq!(colliders.len(), proxies);
-    let mut next = colliders.iter();
-    for placement in &placements {
-        let [x, _, z] = placement.position;
-        for _ in placement.item.proxies() {
-            let collider = next.next().unwrap();
-            // Each turned proxy's box stands over its prop.
-            assert!(
-                footprint(collider).intersects(Rect::around([x, z], [1, 1])),
-                "{placement:?}"
-            );
-        }
-    }
-    // The walkway along the square's X axis stays open.
-    let [cx, cz] = settlement_props::centre(&scenery).unwrap();
-    let walkway = Rect::around([cx, cz], [settlement_props::HALF_EXTENTS[0], 140]);
-    assert!(
-        colliders
-            .iter()
-            .all(|collider| !footprint(collider).intersects(walkway))
     );
 }
 

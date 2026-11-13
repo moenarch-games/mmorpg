@@ -68,7 +68,7 @@ fn is_terrain(collider: &StaticCollider) -> bool {
 }
 
 /// The market square's collision proxies (#577): drawn by its kit at
-/// `settlement_props::placements`, not as scenery props.
+/// shared world dressing, not as scenery props.
 fn is_market(collider: &StaticCollider) -> bool {
     ids::MARKET.contains(&collider.id)
 }

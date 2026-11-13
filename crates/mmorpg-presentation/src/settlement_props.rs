@@ -1,19 +1,20 @@
 //! The Outpost market square (#421): where both clients draw asset-tooling's
 //! `settlement-props`.
 //!
-//! [`mmorpg_scenery::settlement_props::placements`] composes the square before house 106; here
-//! each prop becomes an entry-to-world matrix on the drawn surface. The props are static:
+//! Shared world dressing supplies each prop's committed transform, including its surface
+//! height. The props are static:
 //! clients place them once. While a client does not draw them (its bundle has not loaded or
 //! failed), the static scene draws [`fallback`] boxes in their place
 //! ([`crate::Motion::Fallback`] for [`crate::Kit::SettlementProps`]). Presentation only.
 use mmorpg_core::UNITS_PER_METRE;
-use mmorpg_scenery::{Scenery, settlement_props};
+use mmorpg_scenery::Scenery;
 
 use crate::{
-    Cull,
+    Kit,
     batching::matrix,
-    geometry::{Affine, compose, ry, translate},
+    geometry::Affine,
     lod::{EntryLods, Placement},
+    world_dressing,
 };
 
 /// The bundle entries the clients draw, sorted; [`entries`] derives the same list from the
@@ -47,22 +48,19 @@ fn metres(units: i32) -> f64 {
 /// The prop entries the clients load, sorted and once each.
 #[must_use]
 pub fn entries() -> Vec<&'static str> {
-    settlement_props::entries()
+    world_dressing::with_prefix("settlement.props.")
+        .map(|p| p.asset.as_str())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 /// Every placed prop's entry and entry-to-world frame on `scenery`'s drawn surface.
 pub(crate) fn frames(scenery: &Scenery) -> Vec<(&'static str, Affine)> {
-    settlement_props::placements(scenery)
+    world_dressing::placed(scenery)
         .iter()
-        .map(|placement| {
-            let [x, y, z] = placement.position;
-            let lift = scenery.surface_at(x, z);
-            let yaw = f64::from(placement.yaw) / 65_536. * std::f64::consts::TAU;
-            (
-                placement.entry,
-                compose(&[translate(metres(x), metres(y + lift), metres(z)), ry(yaw)]),
-            )
-        })
+        .filter(|placed| placed.kit() == Some(Kit::SettlementProps))
+        .map(|placed| (placed.asset.as_str(), placed.frame()))
         .collect()
 }
 
@@ -82,15 +80,7 @@ pub fn parts(scenery: &Scenery) -> Vec<Part> {
 /// props' packaged textures, drawn at their own single level.
 #[must_use]
 pub fn placements(scenery: &Scenery) -> Vec<Placement> {
-    parts(scenery)
-        .into_iter()
-        .map(|part| Placement {
-            entry: part.entry,
-            model: part.model,
-            scale: 1.,
-            cull: Cull::Far,
-        })
-        .collect()
+    world_dressing::placements(scenery, Kit::SettlementProps)
 }
 
 /// Each prop's one level (the bundle ships only `default`) and its bounds, from the
@@ -146,7 +136,11 @@ const SOIL: u32 = 0x6b5a3e;
 /// `(centre, half extents, colour)` in metres.
 pub(crate) fn fallback(entry: &str) -> Vec<([f64; 3], [f64; 3], u32)> {
     use mmorpg_core::greyhaven_vale::market::Item;
-    let Some(item) = settlement_props::item(entry) else {
+    let Some(item) = mmorpg_core::greyhaven_vale::market::SQUARE
+        .iter()
+        .map(|(item, ..)| *item)
+        .find(|item| entry.strip_prefix("settlement.props.") == Some(item.name()))
+    else {
         return Vec::new();
     };
     let colour = match item {

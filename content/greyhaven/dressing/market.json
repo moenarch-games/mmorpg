@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "area": "outpost-market",
+  "placements": [
+    {"id":"market-stall-1","asset":"settlement.props.stall","position":[2770,0,3000],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"market-stall-2","asset":"settlement.props.stall","position":[2450,0,3000],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"market-crate-1","asset":"settlement.props.crate","position":[2940,0,2960],"yaw":34952,"scale":[1000,1000,1000]},
+    {"id":"market-crate-2","asset":"settlement.props.crate","position":[2940,70,2960],"yaw":38229,"scale":[1000,1000,1000]},
+    {"id":"market-crate-3","asset":"settlement.props.crate","position":[2945,0,3050],"yaw":31311,"scale":[1000,1000,1000]},
+    {"id":"market-barrel-1","asset":"settlement.props.barrel","position":[2290,0,2930],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"market-barrel-2","asset":"settlement.props.barrel","position":[2285,0,3000],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"market-cart-1","asset":"settlement.props.cart","position":[2175,0,3030],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"market-fence-1","asset":"settlement.props.fence","position":[2950,0,3130],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"market-fence-2","asset":"settlement.props.fence","position":[2750,0,3130],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"market-fence-3","asset":"settlement.props.fence","position":[2550,0,3130],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"market-fence-4","asset":"settlement.props.fence","position":[2350,0,3130],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"market-fence-5","asset":"settlement.props.fence","position":[2150,0,3130],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"market-fence-6","asset":"settlement.props.fence","position":[1950,0,3130],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"market-firewood-1","asset":"settlement.props.firewood","position":[1960,0,3075],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"market-lantern-post-1","asset":"settlement.props.lantern-post","position":[2610,0,2470],"yaw":0,"scale":[1000,1000,1000]},
+    {"id":"market-bench-1","asset":"settlement.props.bench","position":[2450,0,2460],"yaw":0,"scale":[1000,1000,1000]},
+    {"id":"market-planter-1","asset":"settlement.props.planter","position":[2280,0,2450],"yaw":0,"scale":[1000,1000,1000]},
+    {"id":"market-barrel-3","asset":"settlement.props.barrel","position":[2810,0,2440],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"market-signpost-1","asset":"settlement.props.signpost","position":[2010,0,2480],"yaw":0,"scale":[1000,1000,1000]},
+    {"id":"market-crate-4","asset":"settlement.props.crate","position":[2890,0,2450],"yaw":37319,"scale":[1000,1000,1000]},
+    {"id":"market-stall-3","asset":"settlement.props.stall","position":[-1200,-12,2950],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"market-barrel-4","asset":"settlement.props.barrel","position":[-1450,-7,2900],"yaw":0,"scale":[1000,1000,1000]}
+  ]
+}

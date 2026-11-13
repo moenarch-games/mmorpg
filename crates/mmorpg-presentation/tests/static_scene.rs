@@ -499,7 +499,7 @@ fn the_outpost_kit_buildings_keep_their_blockouts_only_as_the_fallback() {
 
 #[test]
 fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
-    use mmorpg_scenery::settlement_props;
+    use mmorpg_core::greyhaven_vale::market;
     let scenery = greyhaven_vale_scenery();
     let scene = StaticScene::new(&scenery);
     let fallback = |kit| {
@@ -535,8 +535,61 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
     }
     // The square stays off the roads, the spawn plaza and every other collider's footprint; its
     // own props collide through their proxies (#577).
-    let [cx, cz] = settlement_props::centre(&scenery).unwrap();
-    let [hx, hz] = settlement_props::HALF_EXTENTS;
+    let house = scenery
+        .props
+        .iter()
+        .find(|prop| prop.collider == Some(market::HOUSE))
+        .unwrap();
+    let [cx, cz] = market::centre([house.position[0], house.position[2]]);
+    let [hx, hz] = market::HALF_EXTENTS;
+    // Keep the former scenery collision test at the boundary that now owns the actual art
+    // placements. A prop moved in dressing must still stand over its solid proxy boxes.
+    let definition = greyhaven_vale_definition();
+    let colliders: Vec<_> = definition
+        .colliders()
+        .iter()
+        .filter(|collider| mmorpg_core::greyhaven_vale::ids::MARKET.contains(&collider.id))
+        .collect();
+    let footprint = |collider: &mmorpg_core::StaticCollider| {
+        mmorpg_scenery::Rect::around(
+            [collider.position[0], collider.position[2]],
+            [collider.half_extents[0], collider.half_extents[2]],
+        )
+    };
+    let proxy_count = |entry: &str| {
+        market::SQUARE
+            .iter()
+            .map(|(item, ..)| *item)
+            .find(|item| entry.strip_prefix("settlement.props.") == Some(item.name()))
+            .unwrap_or_else(|| panic!("{entry} has no collision proxy kind"))
+            .proxies()
+            .len()
+    };
+    assert_eq!(
+        colliders.len(),
+        parts
+            .iter()
+            .map(|part| proxy_count(part.entry))
+            .sum::<usize>()
+    );
+    let mut next = colliders.iter();
+    for part in &parts {
+        let [x, z] = [part.model[12], part.model[14]].map(|metres| (metres * 100.).round() as i32);
+        for _ in 0..proxy_count(part.entry) {
+            let collider = next.next().unwrap();
+            assert!(
+                footprint(collider).intersects(mmorpg_scenery::Rect::around([x, z], [1, 1])),
+                "{part:?} does not stand over proxy {}",
+                collider.id
+            );
+        }
+    }
+    let walkway = mmorpg_scenery::Rect::around([cx, cz], [hx, 140]);
+    assert!(
+        colliders
+            .iter()
+            .all(|collider| !footprint(collider).intersects(walkway))
+    );
     let square = mmorpg_core::StaticCollider {
         id: 0,
         position: [cx, 100, cz],

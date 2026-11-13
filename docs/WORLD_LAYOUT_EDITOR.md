@@ -180,3 +180,25 @@ wear values. The committed dressing is its generated output; make durable prefab
 edits in the authoring templates rather than editing that output before an export.
 Art regeneration never changes authoritative collision. The editor's existing
 layout JSON and core validator contract remain unchanged.
+
+## Market kit dressing
+
+Blender export also regenerates and saves `content/greyhaven/dressing/market.json`
+from the candidate layout. Review and commit the layout and both dressing outputs
+together. `content/greyhaven/authoring/market-props.json` owns the market art's
+persistent placement IDs, asset keys, yaw, scale and unit positions. Entries with
+`relativeToHouse` use offsets from the `anchorHouse` centre; the others retain
+absolute X/Z positions. All source Y values are lifts above the drawn surface.
+As before, removing house 106 removes its whole market composition, including
+the two gathering-space props; moving it moves only the 21 frontage props.
+
+After manual authoring changes, regenerate explicitly and review the diff:
+
+```sh
+cargo run --quiet --locked -p mmorpg-scenery --example export-market-dressing > content/greyhaven/dressing/market.json
+```
+
+The command also accepts a candidate layout path. Clients read only the committed
+result, with surface heights already applied. The existing core market proxies
+and bench interaction remain authoritative; an art edit does not change collision.
+Durable art edits belong in the authoring source rather than the generated output.

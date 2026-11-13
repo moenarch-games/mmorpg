@@ -37,7 +37,6 @@ mod outpost_relief;
 pub mod paint;
 mod redbrand_depths;
 mod seam_test;
-pub mod settlement_props;
 pub mod shrine;
 
 use std::collections::BTreeMap;
@@ -594,7 +593,7 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
         _ if ids::TREES.contains(&id) => PropKind::Tree(tree_variant(splitmix64(u64::from(id)))),
         // Solid dressing (#577): the Outpost layout's lamps and signposts, then the fixed
         // dressing and loose rocks. The market square's proxies are drawn by its kit at
-        // [`settlement_props::placements`].
+        // the committed world dressing placements.
         _ if ids::LAYOUT_LAMPS.contains(&id) => PropKind::Lamp,
         _ if ids::LAYOUT_SIGNPOSTS.contains(&id) => PropKind::Signpost,
         _ if ids::DRESSING.contains(&id) || ids::LOOSE_ROCKS.contains(&id) => {
