@@ -126,9 +126,10 @@ authoritative Battle Royale server.
 ## Local hosted path
 
 Use the `battle-royale` revision this workspace pins,
-**91700ebca3d5f231a3b043383de8a7c9f7675396** (battle-royale #50, the arena's timed swings and
-clashes, #679), or a later one whose core/protocol pin carries this checkout's `PROTOCOL_ID`
-(it pins MMORPG `ed38765`). Mode protocol 2, schema 2 and ruleset 3 wrap the MMORPG snapshot
+**9221a450ebd4ac856b097eb84c6a5e68a4269d51** (battle-royale #53), or a later compatible
+revision. It pins MMORPG `72c313b4`, including the arena's per-attack interception rules
+(#679) and updated content identity. The host and browser must agree on both
+`PROTOCOL_ID` and arena content revision. Mode protocol 2, schema 2 and ruleset 3 wrap the MMORPG snapshot
 and command. Character commands echo the sheet revisions the session's decoder holds, and the
 host sends a sheet only until a command acknowledges it, as a zone host does. Ruleset 3's storm
 waits 60 s and closes over 120 s, so it reaches no spawn slot in the first two minutes of
