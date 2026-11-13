@@ -500,6 +500,23 @@ impl ZoneSimulation {
         })
     }
 
+    /// The segment this projectile will actually travel, including this tick's tracking.
+    /// Clashes and body collisions must use the same present-time trajectory.
+    pub(crate) fn projectile_velocity(&self, projectile: &Projectile) -> [f32; 3] {
+        if let Flight::Tracking { target, remaining } = projectile.flight
+            && let Some(centre) = self.unit_centre(target).filter(|_| self.unit_alive(target))
+        {
+            let delta = sub(centre, projectile.position);
+            if projectile.kind.is_magic() {
+                homing(delta, projectile.kind.speed())
+            } else {
+                ballistic(delta, remaining, projectile.kind.gravity())
+            }
+        } else {
+            projectile.velocity
+        }
+    }
+
     /// Every projectile flies, sticks or vanishes, in ID order.
     pub(crate) fn advance_projectiles(&mut self, now: u64) -> Result<(), ZoneError> {
         let ids: Vec<_> = self.projectiles.keys().copied().collect();
@@ -558,13 +575,8 @@ impl ZoneSimulation {
             }
             if let Flight::Tracking { target, remaining } = projectile.flight {
                 match self.unit_centre(target).filter(|_| self.unit_alive(target)) {
-                    Some(centre) => {
-                        let delta = sub(centre, projectile.position);
-                        projectile.velocity = if projectile.kind.is_magic() {
-                            homing(delta, projectile.kind.speed())
-                        } else {
-                            ballistic(delta, remaining, projectile.kind.gravity())
-                        };
+                    Some(_) => {
+                        projectile.velocity = self.projectile_velocity(&projectile);
                         projectile.flight = Flight::Tracking {
                             target,
                             remaining: remaining.saturating_sub(1).max(1),

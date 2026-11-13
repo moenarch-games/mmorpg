@@ -1395,7 +1395,7 @@ impl ZoneContent {
             return fingerprint;
         };
         let mut hash = Fnv1a::new();
-        hash.bytes(b"mmorpg.zone-content/timed-combat-v1");
+        hash.bytes(b"mmorpg.zone-content/timed-combat-interception");
         hash.u64(fingerprint);
         hash.u32(rules.swing.startup_ms);
         hash.u32(rules.swing.active_ms);
@@ -1404,6 +1404,14 @@ impl ZoneContent {
         hash.u8(u8::from(rules.clashes.parries));
         hash.u16(rules.clashes.arrow_radius_units);
         hash.u16(rules.clashes.firebolt_radius_units);
+        for interception in [
+            rules.clashes.arrow_interception,
+            rules.clashes.firebolt_interception,
+        ] {
+            hash.u8(u8::from(interception.ordinary_melee));
+            hash.u8(u8::from(interception.arrows));
+            hash.u8(u8::from(interception.firebolts));
+        }
         hash.finish()
     }
 

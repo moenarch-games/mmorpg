@@ -28,9 +28,10 @@
 //!   paths this tick come within their clash radii of each other both vanish. Pairs are
 //!   examined in projectile-ID order.
 //!
-//! Clashable projectiles are plain arrows and free (non-homing) Firebolts, each with its own
-//! clash radius. Bombs, flasks, piercing and ricochet shots stay out, and homing missiles need
-//! their own rule. Health alone decides fights: a clash moves nobody (5.2.i679-2).
+//! Content declares interception permissions separately for plain arrows and Firebolts,
+//! independent of free or homing flight. Arena arrows permit ordinary melee parries and arrow
+//! interception; Firebolts permit Firebolt interception but never ordinary sword parries.
+//! Unsupported shots stay out. Health alone decides fights: a clash moves nobody (5.2.i679-2).
 //!
 //! The rules are part of the zone content, so its revision binds a recovered zone to them, and
 //! a running swing is canonical player state: a zone restored mid-swing continues it exactly.
@@ -41,7 +42,7 @@ use std::collections::BTreeSet;
 
 use crate::ability::{Shot, ids};
 use crate::entity::body_id;
-use crate::projectile::{Flight, Projectile, ProjectileKind};
+use crate::projectile::{Projectile, ProjectileKind};
 use crate::strike::{STRIKE_ARC_HALF_WIDTH, Sweep};
 use crate::unit::PLAYER_REACH_UNITS;
 use crate::{
@@ -66,6 +67,25 @@ pub struct SwingTiming {
     pub active_ms: u32,
 }
 
+/// Which supported attacks may intercept this projectile (#679).
+/// Both projectiles must permit their opponent before a meeting destroys both.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ProjectileInterception {
+    pub ordinary_melee: bool,
+    pub arrows: bool,
+    pub firebolts: bool,
+}
+
+impl ProjectileInterception {
+    fn permits(self, kind: ProjectileKind) -> bool {
+        match kind {
+            ProjectileKind::Arrow => self.arrows,
+            ProjectileKind::Missile => self.firebolts,
+            _ => false,
+        }
+    }
+}
+
 /// Which meetings clash, and how large clashable projectiles are (units).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ClashRules {
@@ -77,8 +97,10 @@ pub struct ClashRules {
     pub parries: bool,
     /// A plain arrow's clash radius.
     pub arrow_radius_units: u16,
-    /// A free Firebolt's clash radius.
+    /// A free or homing Firebolt's clash radius.
     pub firebolt_radius_units: u16,
+    pub arrow_interception: ProjectileInterception,
+    pub firebolt_interception: ProjectileInterception,
 }
 
 /// Timed swings and clashes for one zone's content (#679).
@@ -90,7 +112,8 @@ pub struct TimedCombat {
 
 impl TimedCombat {
     /// The arena's starting values (5.2.i679), to tune in play: a 0.3 s wind-up, a 0.15 s
-    /// sweep, every clash on, arrows 15 cm and Firebolts 25 cm across.
+    /// sweep, every clash switch on, with per-attack permissions below. Radii: arrows 15 cm,
+    /// Firebolts 25 cm.
     pub const ARENA: Self = Self {
         swing: SwingTiming {
             startup_ms: 300,
@@ -102,6 +125,16 @@ impl TimedCombat {
             parries: true,
             arrow_radius_units: 15,
             firebolt_radius_units: 25,
+            arrow_interception: ProjectileInterception {
+                ordinary_melee: true,
+                arrows: true,
+                firebolts: false,
+            },
+            firebolt_interception: ProjectileInterception {
+                ordinary_melee: false,
+                arrows: false,
+                firebolts: true,
+            },
         },
     };
 
@@ -135,22 +168,24 @@ impl TimedCombat {
         Ok(())
     }
 
-    /// The clash radius of `projectile` while it flies, if it is clashable: a plain arrow or a
-    /// free Firebolt.
-    fn clash_radius(&self, projectile: &Projectile) -> Option<f32> {
+    /// Interception data depends on the attack, never its trajectory. Unsupported shots
+    /// fail closed; adding a projectile kind alone does not opt it into clashes.
+    fn interception(&self, projectile: &Projectile) -> Option<(f32, ProjectileInterception)> {
         if projectile.is_stuck() || projectile.is_burst() || projectile.shot() != Shot::Plain {
             return None;
         }
-        let radius = match projectile.kind {
-            ProjectileKind::Arrow => self.clashes.arrow_radius_units,
-            ProjectileKind::Missile
-                if projectile.ability == ids::FIREBOLT && projectile.flight == Flight::Free =>
-            {
-                self.clashes.firebolt_radius_units
-            }
+        let (radius, rules) = match projectile.kind {
+            ProjectileKind::Arrow => (
+                self.clashes.arrow_radius_units,
+                self.clashes.arrow_interception,
+            ),
+            ProjectileKind::Missile if projectile.ability == ids::FIREBOLT => (
+                self.clashes.firebolt_radius_units,
+                self.clashes.firebolt_interception,
+            ),
             _ => return None,
         };
-        Some(f32::from(radius))
+        Some((f32::from(radius), rules))
     }
 }
 
@@ -489,16 +524,18 @@ impl ZoneSimulation {
         let (low, high, reach) = (low as f32, high as f32, PLAYER_REACH_UNITS as f32);
         let mut parried = Vec::new();
         for projectile in self.projectiles.values() {
-            let Some(radius) = timed.clash_radius(projectile) else {
+            let Some((radius, interception)) = timed.interception(projectile) else {
                 continue;
             };
-            if !self.projectile_meets(projectile.owner, body_id(swinger)) {
+            if !interception.ordinary_melee
+                || !self.projectile_meets(projectile.owner, body_id(swinger))
+            {
                 continue;
             }
+            let [vx, vy, vz] = self.projectile_velocity(projectile);
             let meets = (0..=PARRY_SAMPLES).any(|step| {
                 let t = f32::from(step) / f32::from(PARRY_SAMPLES);
                 let [px, py, pz] = projectile.position;
-                let [vx, vy, vz] = projectile.velocity;
                 let (dx, dz) = (px + vx * t - x, pz + vz * t - z);
                 let height = py + vy * t - feet;
                 let distance = dx.hypot(dz);
@@ -534,19 +571,26 @@ impl ZoneSimulation {
         if !timed.clashes.projectiles {
             return;
         }
-        let flying: Vec<(Projectile, f32)> = self
+        let flying: Vec<(Projectile, f32, ProjectileInterception)> = self
             .projectiles
             .values()
-            .filter_map(|projectile| Some((*projectile, timed.clash_radius(projectile)?)))
+            .filter_map(|projectile| {
+                let (radius, rules) = timed.interception(projectile)?;
+                let mut path = *projectile;
+                path.velocity = self.projectile_velocity(projectile);
+                Some((path, radius, rules))
+            })
             .collect();
         let mut gone = BTreeSet::new();
         let mut clashes = Vec::new();
-        for (index, (first, first_radius)) in flying.iter().enumerate() {
-            for (second, second_radius) in &flying[index + 1..] {
+        for (index, (first, first_radius, first_rules)) in flying.iter().enumerate() {
+            for (second, second_radius, second_rules) in &flying[index + 1..] {
                 if gone.contains(&first.id) {
                     break;
                 }
                 if gone.contains(&second.id)
+                    || !first_rules.permits(second.kind)
+                    || !second_rules.permits(first.kind)
                     || first.owner == second.owner
                     || !self.projectile_meets(first.owner, body_id(second.owner))
                 {
