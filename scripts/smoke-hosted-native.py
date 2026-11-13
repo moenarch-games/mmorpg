@@ -169,12 +169,25 @@ def main():
             cache_file.write_bytes(b"corrupted guest cache")
             repaired = native("repaired")
             assert repaired["bytes_received"] == 146384 and repaired["cache_hits"] == 1
+            # The production host cannot serve invalid bytes. An isolated real peer in the
+            # existing test executable deliberately corrupts one normal catalogue response.
+            corrupt_host = spawn([str(probe), "corrupt-host"], owner_env, "corrupt-host")
+            corrupt_invite = event(corrupt_host, "corrupt_host_ready")["invitation"]
+            cache_file.unlink()
+            corrupt_guest = spawn([str(client), "--smoke", "--join-invite", corrupt_invite], guest_env, "corrupt-download")
+            assert corrupt_guest.wait(timeout=120) != 0
+            failure = (directory / "corrupt-download.log").read_text()
+            assert "hash verification" in failure and "unverified bytes were not used" in failure
+            assert not cache_file.exists(), "corrupt received bytes entered the verified cache"
+            corrupt_host.terminate()
+            corrupt_host.wait(timeout=10)
+            print(json.dumps({"phase":"corrupt_received_hash", "refused":True, "bad_file_installed":False}), flush=True)
             control("remove")
             refused = spawn([str(client), "--smoke", "--join-invite", ready["invitation"]], guest_env, "revoked")
             assert refused.wait(timeout=120) != 0
             assert "could not admit" in (directory / "revoked.log").read_text()
             stop_world()
-            print(json.dumps({"event":"hosted_assets_passed", "cold":cold, "warm":warm, "repaired":repaired, "guestInstallAbsent":True, "guestBinaryAbsent":True, "ownerClientExit":True, "revokedInvitation":True, "nativeWindowActions":False, "twoNetworkAcceptance":False, "artifacts":str(directory)}))
+            print(json.dumps({"event":"hosted_assets_passed", "cold":cold, "warm":warm, "repaired":repaired, "guestInstallAbsent":True, "guestBinaryAbsent":True, "ownerClientExit":True, "revokedInvitation":True, "corruptReceivedHashRefused":True, "nativeWindowActions":False, "twoNetworkAcceptance":False, "artifacts":str(directory)}))
             success = True
             return
         guest = spawn([str(probe), "guest", ready["invitation"]], guest_env, "guest")

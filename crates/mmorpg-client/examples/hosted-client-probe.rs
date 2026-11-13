@@ -69,6 +69,48 @@ async fn main() -> Result<(), ClientError> {
         .map(String::as_str)
         .ok_or("Probe mode missing")?;
     match mode {
+        "corrupt-host" => {
+            use game_server::webrtc_transport::{Lobby, WebRtcHost, WebRtcHostConfig};
+            use std::sync::Arc;
+            let access = mmorpg_game_server::guest_access::GuestAccess::open(&directory()?)?;
+            let catalogue = mmorpg_game_server::shared_assets::Catalogue::open(
+                &mmorpg_game_server::shared_assets::installed_directory()?,
+                mmorpg_core::content_for_zone(ZoneId::new(1)).revision(),
+            )?;
+            let lobby = Lobby::create(mmorpg_game_server::invitation::setup_config()?, 4).await?;
+            let lobby_id = lobby.lobby_id().to_owned();
+            let matched = game_server::MatchId::new("zone-1")?;
+            let runtime = game_server::MatchRuntime::new(
+                mmorpg_game_server::ZoneGameServerAdapter::new(ZoneId::new(1)),
+                u64::from(mmorpg_core::TICK_HZ) * 20,
+            );
+            let host = WebRtcHost::new(
+                lobby,
+                matched.clone(),
+                Arc::new(tokio::sync::Mutex::new(runtime)),
+                Arc::new(NoCharacters),
+                WebRtcHostConfig {
+                    bind_ip: "127.0.0.1".into(),
+                    relay_only: false,
+                },
+            )?
+            .with_content_service(Arc::new(CorruptArt(catalogue)));
+            report(
+                serde_json::json!({"event":"corrupt_host_ready", "invitation":JoinInvite { lobby_id:lobby_id.clone(), match_id:matched.clone() }.url()}),
+            );
+            let validator = access.clone();
+            host.run_with_authorization(
+                move |participant, proof| {
+                    let access = access.clone();
+                    let lobby = lobby_id.clone();
+                    let matched = matched.as_str().to_owned();
+                    async move { access.authorize(lobby, matched, participant, proof).await }
+                },
+                move |participant| validator.character(participant).is_some(),
+                std::future::pending(),
+            )
+            .await?;
+        }
         "owner" => {
             let world = local_world::start(&directory()?, &executable()?)?;
             let invitation = invite(&world).await?;
@@ -221,4 +263,42 @@ async fn main() -> Result<(), ClientError> {
         _ => return Err("Unknown probe mode".into()),
     }
     Ok(())
+}
+
+// Deliberately hostile content provider lives only in this opt-in test executable.
+// The production host always verifies and serves its immutable approved bytes.
+struct CorruptArt(mmorpg_game_server::shared_assets::Catalogue);
+impl game_server::webrtc_transport::WebRtcContentService for CorruptArt {
+    fn handle<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a game_server::MatchId,
+        _: game_server::ControlContext,
+        request: &'a [u8],
+    ) -> game_server::webrtc_transport::WebRtcContentFuture<'a> {
+        Box::pin(async move {
+            let mut bytes = self
+                .0
+                .response(request)
+                .map_err(game_server::ControlServiceError::new)?;
+            if request.first() == Some(&1)
+                && let Some(first) = bytes.first_mut()
+            {
+                *first ^= 1;
+            }
+            Ok(bytes)
+        })
+    }
+}
+struct NoCharacters;
+impl game_server::ControlService for NoCharacters {
+    fn handle(
+        &self,
+        _: game_server::ControlContext,
+        _: &[u8],
+    ) -> Result<Vec<u8>, game_server::ControlServiceError> {
+        Err(game_server::ControlServiceError::new(
+            "isolated fault-test world has no character storage",
+        ))
+    }
 }
