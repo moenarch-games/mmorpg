@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { DRAWN_PHYSIQUE, formatModifier, loadPendingPhysique, matchingPreset, neutralPhysique, physiqueLook, savePendingPhysique } from "../src/physique";
-import { physiqueShape } from "../src/world/units/quaternius-units";
+import { formatModifier, loadPendingPhysique, matchingPreset, neutralPhysique, physiqueLook, savePendingPhysique } from "../src/physique";
+import * as THREE from "three";
+import { physiqueShape, physiqueSupport } from "../src/world/units/quaternius-units";
 import { committedPhysique, customizePhysique, physiqueModel, physiqueModifiers } from "../src/world/wasm-runtime";
 import { createLocalWorld } from "../src/world/local-world";
 import { MemoryStorage, testCharacters } from "./support/local-characters";
@@ -27,8 +28,27 @@ describe("physique picker", () => {
     expect(shape("Stocky").scale).toBeCloseTo(0.973);
     const jaw = model.params.map((param) => (param.key === "jawWidth" ? 0 : model.neutral));
     expect(physiqueShape(physiqueLook(model, jaw), heights).jaw).toEqual({ "face.broad": 0, "face.narrow": 1 });
-    // Only sliders with real shapes are enabled; the rest stay off.
-    expect(DRAWN_PHYSIQUE).toEqual(["bodyFat", "height", "jawWidth"]);
+
+  });
+
+  test("descriptor controls need real base targets, interpolate around neutral, and respect LOD availability", () => {
+    const mesh = new THREE.Mesh();
+    mesh.morphTargetDictionary = { "waist.narrow": 0, "waist.wide": 1, "bust.small": 2, "bust.full": 3 };
+    const appearance = { physique: { variants: ["default"], controls: {
+      waistWidth: { min: 0, default: 0.5, max: 1, lower: "waist.narrow", upper: "waist.wide" },
+      bustFullness: { min: 0, default: 0.5, max: 1, lower: "bust.small", upper: "bust.full" },
+      frame: { min: 0, default: 0.5, max: 1, lower: "frame.narrow", upper: "frame.broad" },
+    } } };
+    const support = physiqueSupport(appearance, "default", mesh);
+    expect(support.supported).toEqual(["waistWidth", "bustFullness"]);
+    const shape = physiqueShape({ waistWidth: 0.25, bustFullness: 0.875 }, support.heights, support.controls);
+    expect(shape.build["waist.narrow"]).toBe(0.5);
+    expect(shape.build["waist.wide"]).toBe(0);
+    expect(shape.build["bust.full"]).toBe(0.75);
+    expect(shape.build["bust.small"]).toBe(0);
+    expect(shape.scale).toBe(1);
+    expect(physiqueSupport(appearance, "lod2", mesh).supported).toEqual([]);
+    expect(physiqueSupport(appearance, "default", new THREE.Group()).supported).toEqual([]);
   });
 
   test("the preview is core's clamped modifier; cosmetic sliders change nothing", () => {

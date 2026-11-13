@@ -41,6 +41,8 @@ MALE["humanoid.ranger.male"] |= {"outfit.knight", "outfit.knight.skin.light", "o
 # Tanner Hilda Brook's `resident.tanner` outfit in the light skin with its armour (#493),
 # plus the base outfit requested by the figure loader before the skin variant is applied.
 FEMALE = {"humanoid.ranger.female": {"default", "outfit.tanner", "outfit.tanner.skin.light"}, "armor.tanner": {"default"}}
+# Female players use the same real carried-item/socket path, from their own release.
+FEMALE.update({key: {"default"} for key in MALE if key.startswith("equipment.")})
 # Plus every hairstyle a release offers, in its tintable variant: the viewer's styles and the
 # varied guards' (#376, asset-tooling #380), and the painted head skins when the release has them
 # (asset-tooling #380).
