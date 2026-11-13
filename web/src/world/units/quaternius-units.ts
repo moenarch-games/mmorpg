@@ -58,21 +58,49 @@ type Dress = {
 /** Physique sliders (#633) by canonical key, normalized to [0, 1] with 0.5 neutral. */
 export type PhysiqueLook = Readonly<Record<string, number>>;
 type Heights = { min: number; max: number };
+export type PlayerAppearanceOptions = { headwear: readonly Headwear[]; hair: readonly Hair["style"][]; knight: boolean };
+type ShapeControl = { min: number; max: number; default: number; lower: string; upper: string };
+type PhysiqueSupport = { heights: Heights; controls: Readonly<Record<string, ShapeControl>>; supported: readonly string[] };
+
+/** Read only controls whose declared targets really exist on the loaded base/LOD. */
+export function physiqueSupport(appearance: unknown, variant: string, model: THREE.Object3D): PhysiqueSupport {
+  const value = appearance as { physique?: { variants?: string[]; controls?: Record<string, ShapeControl> }; heights?: Heights };
+  const targets = new Set<string>();
+  model.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      for (const name of Object.keys(child.morphTargetDictionary ?? {})) { targets.add(name); }
+    }
+  });
+  const controls = Object.fromEntries(Object.entries(value.physique?.controls ?? {}).filter(([, control]) =>
+    value.physique?.variants?.includes(variant) && control.min === 0 && control.default === 0.5 && control.max === 1 &&
+    targets.has(control.lower) && targets.has(control.upper)));
+  const supported = Object.keys(controls);
+  if (targets.has("build.lean") && targets.has("build.heavy")) { supported.push("bodyFat"); }
+  if (targets.has("face.broad") && targets.has("face.narrow")) { supported.push("jawWidth"); }
+  const heights = value.heights;
+  const heightSupported = heights && Number.isFinite(heights.min) && Number.isFinite(heights.max) && heights.min > 0 && heights.max > heights.min;
+  if (heightSupported) { supported.push("height"); }
+  return { controls, heights: heightSupported ? heights : { min: 1, max: 1 }, supported };
+}
 
 /**
- * What a physique draws on the male Ranger (#635), presentation only. Body fat drives the bundle's
- * `build.lean` (below neutral) or `build.heavy` (above) keys, which asset-tooling authors on the
- * body and on every outfit, plate and hairstyle, so clothing follows the body. Jaw width adds
- * `face.broad` or `face.narrow` on top of the chosen face option. Height picks the bundle's
- * declared root scale (`humanoid-appearance.heights`). The capsule, reach and stats never read it.
+ * Continuous weights for the loaded base's authored shape descriptor (#635). Body fat and jaw
+ * width retain the existing build/face keys; each new control names its actual lower/upper keys.
+ * Only height uses the declared root scale. Capsule, reach and stats never read this result.
  */
-export function physiqueShape(physique: PhysiqueLook, heights: Heights):
+export function physiqueShape(physique: PhysiqueLook, heights: Heights, controls: Readonly<Record<string, ShapeControl>> = {}):
   { build: Record<string, number>; jaw: Record<string, number>; scale: number } {
   const signed = (key: string) => Math.max(-1, Math.min(1, ((physique[key] ?? 0.5) - 0.5) * 2));
   const fat = signed("bodyFat");
   const jaw = signed("jawWidth");
+  const build: Record<string, number> = { "build.lean": Math.max(0, -fat), "build.heavy": Math.max(0, fat) };
+  for (const [key, control] of Object.entries(controls)) {
+    const value = signed(key);
+    build[control.lower] = Math.max(0, -value);
+    build[control.upper] = Math.max(0, value);
+  }
   return {
-    build: { "build.lean": Math.max(0, -fat), "build.heavy": Math.max(0, fat) },
+    build,
     jaw: { "face.broad": Math.max(0, jaw), "face.narrow": Math.max(0, -jaw) },
     scale: heights.min + (heights.max - heights.min) * (signed("height") + 1) / 2,
   };
@@ -82,8 +110,8 @@ export function physiqueShape(physique: PhysiqueLook, heights: Heights):
  * Shapes a dressed player `model` (after its face and worn items) by `physique` and returns its
  * height scale. Set once when the look is built or edited, and baked into the merged meshes.
  */
-function applyPhysique(model: THREE.Object3D, physique: PhysiqueLook, heights: Heights): number {
-  const { build, jaw, scale } = physiqueShape(physique, heights);
+function applyPhysique(model: THREE.Object3D, physique: PhysiqueLook, support: PhysiqueSupport): number {
+  const { build, jaw, scale } = physiqueShape(physique, support.heights, support.controls);
   model.traverse((child) => {
     if (!(child instanceof THREE.Mesh) || !child.morphTargetInfluences || !child.morphTargetDictionary) { return; }
     const influences = child.morphTargetInfluences;
@@ -131,12 +159,13 @@ const ANIMAL_URLS: Readonly<Record<Exclude<QuaterniusKind, "Ranger">, string>> =
   Pig: new URL("../../../../assets/quaternius/Pig.glb", import.meta.url).href,
 };
 /**
- * The Ranger figures (`imported::Figure`): the male carries the players, the class outfits and the
- * male residents and enemies, the female Tanner Hilda Brook (#493). `scripts/fetch-bundles.sh`
- * places each figure's bundle in `web/public/characters/<character>/`.
+ * The Ranger figures (`imported::Figure`): male and female local player bodies, plus each
+ * resident's declared base (#493, #635). Only the male catalog currently has class outfits.
+ * `scripts/fetch-bundles.sh` places each bundle in `web/public/characters/<character>/`.
  */
 const MALE = "humanoid.ranger.male";
-const FIGURES = [MALE, "humanoid.ranger.female"] as const;
+const FEMALE = "humanoid.ranger.female";
+const FIGURES = [MALE, FEMALE] as const;
 
 /** One drawn model of an asset, posed by weighted, masked clip layers (Atlas 6.6.45). */
 type Posable = {
@@ -170,6 +199,12 @@ type Asset = {
   variedReady?: (preset: string, seed: number, figure: string) => boolean;
   /** The face features the drawn entry supports (#411); null when it carries no face morphs. */
   face?: FaceLook | null;
+  playerReady?: (figure: string) => boolean;
+  playerOptions?: (figure: string) => PlayerAppearanceOptions | undefined;
+  knightReady?: () => boolean;
+  playerFailed?: (figure: string) => boolean;
+  playerFace?: (figure: string) => FaceLook | null | undefined;
+  physiqueSupport?: (figure: string) => readonly string[];
   /** Rest (idle at 0) bounds: lowest point, height and horizontal centre, model space. */
   floor: number;
   height: number;
@@ -780,6 +815,8 @@ type FigureBundle = {
   look: HeadLook;
   /** The face features of the default entry (#411); null when it carries no face morphs. */
   face: FaceLook | null;
+  physique: PhysiqueSupport;
+  options: PlayerAppearanceOptions;
   /** A bundle entry's scene, loaded once: the residents', the class outfits' and the drops'. */
   scene(key: string, variant: string): Promise<THREE.Object3D>;
   /** Dresses `model`: socket items, then the hair tinted with its eyebrows. */
@@ -890,10 +927,21 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
   };
   // Every hairstyle the bundle offers in the tintable variant: the viewer's and the varied residents'.
   const hairKeys = [...new Set([...hair, ...tintableHair(appearance)])];
+  const available = new Set((manifest as { entries: DownloadEntry[] }).entries
+    .filter((entry) => entry.variant === "default").map((entry) => entry.key));
+  const selectedKeys = keys.filter((key) => available.has(key));
   const items = new Map(await Promise.all([
-    ...keys.map((key) => load(key)),
+    ...selectedKeys.map((key) => load(key)),
     ...hairKeys.map((key) => load(key, HAIR_VARIANT)),
   ]));
+  const knight = (appearance as { outfits?: { id?: string }[] }).outfits?.some((outfit) => outfit.id === "outfit.knight") ?? false;
+  const hasClassOutfits = (appearance as { presets?: { id?: string }[] }).presets?.some((preset) => preset.id?.startsWith("class.")) ?? false;
+  const options: PlayerAppearanceOptions = {
+    knight,
+    headwear: (Object.keys(HEADWEAR_ITEMS) as Headwear[]).filter((key) =>
+      (key !== "class" || hasClassOutfits || knight) && HEADWEAR_ITEMS[key].every((item) => items.has(item.key))),
+    hair: ["bald", ...(Object.keys(HAIR_ENTRIES) as (keyof typeof HAIR_ENTRIES)[]).filter((style) => items.has(HAIR_ENTRIES[style]))],
+  };
   const sources = new Map(animationLibrary.animations.map((clip) => [clip.name, clip]));
   withSecondaryPoses(sources, descriptor);
   const wear: FigureBundle["wear"] = (model, worn, hairKey, tint) => {
@@ -979,7 +1027,7 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
   const probe = mixerPosable(cloneSkinned(gltf.scene), sources);
   const bounds = measure(probe, rest);
   probe.dispose();
-  return { character, gltf, sources, sockets, motions, descriptor: JSON.stringify(descriptor), appearance, look, face, scene, wear, bounds };
+  return { character, gltf, sources, sockets, motions, descriptor: JSON.stringify(descriptor), appearance, look, face, options, physique: physiqueSupport(appearance, entry.variant, gltf.scene), scene, wear, bounds };
 }
 
 async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
@@ -987,12 +1035,46 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
   const keys = [...new Set([...[...Object.values(LOADOUT_ITEMS), ...Object.values(HEADWEAR_ITEMS)].flat().map((item) => item.key), "equipment.hat.straw", ...Object.values(THROWABLE_ITEMS)])];
   const male = await loadFigure(loader, MALE, keys, Object.values(HAIR_ENTRIES), rest);
   const { gltf, sources, sockets, motions, appearance, look, face, scene, wear } = male;
-  // The bundle's declared height range (#380), which the physique's height picks from (#635).
-  const declared = (appearance as { heights?: { min?: unknown; max?: unknown } }).heights;
-  const heights: Heights = typeof declared?.min === "number" && typeof declared.max === "number"
-    ? { min: declared.min, max: declared.max } : { min: 1, max: 1 };
-  /** The other figures, loaded with the residents (#493). */
   const figures = new Map<string, FigureBundle>([[MALE, male]]);
+  const loadingFigures = new Map<string, Promise<FigureBundle>>();
+  const figure = (character: string): Promise<FigureBundle> => {
+    const ready = figures.get(character);
+    if (ready) { return Promise.resolve(ready); }
+    let pending = loadingFigures.get(character);
+    if (!pending) {
+      pending = loadFigure(loader, character, keys, [], rest).then((loaded) => {
+        figures.set(character, loaded);
+        return loaded;
+      });
+      loadingFigures.set(character, pending);
+    }
+    return pending;
+  };
+  const failedFigures = new Set<string>();
+  const playerReady = (character: string): boolean => {
+    if (figures.has(character)) { return true; }
+    if (!loadingFigures.has(character) && !failedFigures.has(character)) {
+      void figure(character).catch((error: unknown) => {
+        failedFigures.add(character);
+        console.warn(`The player figure ${character} failed to load.`, error);
+      });
+    }
+    return false;
+  };
+  let femaleKnight: ResidentLook | null = null;
+  let loadingKnight: Promise<void> | null = null;
+  const knightReady = (): boolean => {
+    const female = figures.get(FEMALE);
+    if (!female?.options.knight) { return false; }
+    loadingKnight ??= residentLooks({ ...(female.appearance as object), presets: [
+      { id: "player.knight", outfit: "outfit.knight", skin: "skin.light" },
+    ] }, female.look, female.scene).then((looks) => {
+      femaleKnight = looks.get("player.knight") ?? null;
+    }).catch((error: unknown) => {
+      console.warn("The female knight outfit failed to load; keeping the archer outfit.", error);
+    });
+    return femaleKnight !== null;
+  };
   let residents: Map<string, ResidentLook> | null = null;
   /** Loaded class outfit presets (#379): a look, or null while loading or after failing. */
   const outfits = new Map<string, ResidentLook | null>();
@@ -1080,11 +1162,44 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     const { loadout, headwear, hair, face: chosen, resident } = dress;
     // A player's physique (#635) shapes the dressed model, so outfit, plates and hair follow it.
     const shaped = (model: THREE.Object3D): Posable => {
-      const scale = dress.physique ? applyPhysique(model, dress.physique, heights) : 1;
+      const scale = dress.physique ? applyPhysique(model, dress.physique, male.physique) : 1;
       const posable = mixerPosable(model, sources);
       if (scale !== 1) { posable.scale = scale; }
       return posable;
     };
+    if (resident === null && dress.figure === FEMALE) {
+      const female = figures.get(FEMALE);
+      if (!female) { throw new Error("The female player figure has not loaded."); }
+      const knight = dress.outfit ? femaleKnight : null;
+      const model = cloneSkinned(knight?.character ?? female.gltf.scene);
+      const face = knight?.face ?? female.face;
+      if (face && chosen) { applyFace(model, face, chosen); }
+      const hooded = female.look.hood.some((name) => model.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name))) &&
+        (headwear === "wayfarer-hood" || headwear === "class" || headwear === null);
+      let armoredHead = false;
+      for (const piece of knight?.pieces ?? []) {
+        if (dress.outfit?.preset !== "class.warden" && !dress.outfit?.replaced.includes(piece.socket)) { continue; }
+        if (piece.socket === "head.armor" && headwear !== "class") { continue; }
+        const place = female.sockets.get(piece.socket);
+        if (!place) { throw new Error(`The female knight has no socket ${piece.socket}.`); }
+        attachItem(model, clonePiece(piece), new THREE.Matrix4(), place);
+        if (piece.socket === "head.armor") { armoredHead = true; }
+      }
+      for (const name of female.look.hood) {
+        const node = model.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name));
+        if (node) { node.visible = hooded; }
+      }
+      const headItems = headwear && female.options.headwear.includes(headwear) ? HEADWEAR_ITEMS[headwear] : [];
+      const worn = [...(loadout ? LOADOUT_ITEMS[loadout] : []), ...headItems];
+      // This base authors long hair and buns only. Unsupported saved styles remain saved.
+      const hairKey = !hooded && !armoredHead && headItems.length === 0 && hair?.style === "long" ? "hair.long" : null;
+      female.wear(model, worn, hairKey, hair ? female.look.tints.get(`tint.${hair.color}`) : undefined);
+      const scale = dress.physique ? applyPhysique(model, dress.physique, female.physique) : 1;
+      const posable = mixerPosable(model, female.sources);
+      posable.scale = scale;
+      posable.bounds = female.bounds;
+      return posable;
+    }
     if (dress.outfit !== null) { return shaped(dressOutfit(dress.outfit, dress)); }
     if (resident !== null) {
       const figure = figures.get(dress.figure ?? MALE);
@@ -1137,8 +1252,7 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
   /** Every figure's residents (and the male's enemies), all or none (#418, #39, #493). */
   const loadResidents = () => {
     pending ??= (async () => {
-      const others = await Promise.all(FIGURES.filter((character) => character !== MALE)
-        .map((character) => loadFigure(loader, character, [], [], rest)));
+      const others = await Promise.all(FIGURES.filter((character) => character !== MALE).map(figure));
       for (const figure of others) { figures.set(figure.character, figure); }
       const looks = await Promise.all([...figures.values()].map((figure) =>
         residentLooks(figure.appearance, figure.look, figure.scene, (id) => id.startsWith("resident.") || id.startsWith("enemy."))));
@@ -1166,7 +1280,11 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     return false;
   };
   const clips = new Map([...sources].map(([name, clip]) => [name, clip.duration]));
-  return { clips, motions, descriptor: male.descriptor, instantiate, loadResidents, outfitReady, variedReady, face, ...male.bounds };
+  return { clips, motions, descriptor: male.descriptor, instantiate, loadResidents, outfitReady, variedReady, face, playerReady, knightReady,
+    playerFailed: (character) => failedFigures.has(character),
+    playerOptions: (character) => figures.get(character)?.options,
+    playerFace: (character) => figures.get(character)?.face,
+    physiqueSupport: (character) => figures.get(character)?.physique.supported ?? [], ...male.bounds };
 }
 
 /** The drop armour outfit's plates by socket (#379), from the bundle's `DROP_ARMOR_OUTFIT`. */
@@ -1512,17 +1630,50 @@ export class QuaterniusUnits {
    * The face features the loaded Ranger supports (#411): undefined while it loads, null when it
    * failed or carries no face morphs.
    */
-  faceFeatures(): readonly FaceFeature[] | null | undefined {
+  faceFeatures(sex: "male" | "female" = "male"): readonly FaceFeature[] | null | undefined {
     const asset = this.#assets.get("Ranger");
     if (asset === undefined || asset === "loading") { return undefined; }
-    return asset === "failed" ? null : asset.face?.features ?? null;
+    if (asset === "failed") { return null; }
+    const face = asset.playerFace?.(sex === "female" ? FEMALE : MALE);
+    return face === undefined ? undefined : face?.features ?? null;
+  }
+
+  /** Player-base loading shares the resident figure loader, including its real failure. */
+  playerStatus(sex: "male" | "female"): "loading" | "ready" | "failed" {
+    const status = this.status("Ranger");
+    const asset = this.#assets.get("Ranger");
+    if (status !== "ready" || typeof asset !== "object") { return status; }
+    const figure = sex === "female" ? FEMALE : MALE;
+    if (asset.playerFailed?.(figure)) { return "failed"; }
+    return asset.playerReady?.(figure) ? "ready" : "loading";
+  }
+
+  /** Wear options come from entries actually loaded for this figure. */
+  playerOutfitReady(preset: string, sex: "male" | "female"): boolean {
+    if (sex === "male") { return this.outfitReady(preset); }
+    const asset = this.#assets.get("Ranger");
+    if (typeof asset !== "object") { return false; }
+    if (preset !== "class.warden" || !asset.playerOptions?.(FEMALE)?.knight) { return true; }
+    return asset.knightReady?.() ?? false;
+  }
+
+  /** Wear options come from entries actually loaded for this figure. */
+  appearanceOptions(sex: "male" | "female"): PlayerAppearanceOptions | undefined {
+    const asset = this.#assets.get("Ranger");
+    return typeof asset === "object" ? asset.playerOptions?.(sex === "female" ? FEMALE : MALE) : undefined;
+  }
+
+  /** The actually loaded player base's supported sliders; none while loading or after failure. */
+  physiqueControls(sex: "male" | "female"): readonly string[] {
+    const asset = this.#assets.get("Ranger");
+    return typeof asset === "object" ? asset.physiqueSupport?.(sex === "female" ? FEMALE : MALE) ?? [] : [];
   }
 
   /**
    * Poses every imported unit, and returns where each caster's spell starts in the world: its `channel`
    * point on the posed hand (#612), for {@link SharedUnits.setChannelOrigins}.
    */
-  update(units: readonly ImportedRequest[], viewer: { headwear: Headwear; hair: Hair; face: FaceChoice; physique?: PhysiqueLook | null }):
+  update(units: readonly ImportedRequest[], viewer: { headwear: Headwear; hair: Hair; face: FaceChoice; physique?: PhysiqueLook | null; sex?: "male" | "female" }):
     { entity: EntityRef; point: [number, number, number] }[] {
     const seen = new Set<string>();
     const origins: { entity: EntityRef; point: [number, number, number] }[] = [];
@@ -1532,11 +1683,20 @@ export class QuaterniusUnits {
       seen.add(unit.id);
       let instance = this.#instances.get(unit.id);
       const dressed = unit.headwear && unit.kind === "Ranger";
+      const playerFigure = dressed && viewer.sex === "female" ? FEMALE : MALE;
+      if (unit.kind === "Ranger" && dressed && !asset.playerReady?.(playerFigure)) { continue; }
       const resident = unit.kind === "Ranger" && this.#residentsLoaded ? unit.resident : null;
       // Until its preset loads, a player keeps the bundle's default look.
-      const outfit = unit.kind === "Ranger" && unit.outfit && asset.outfitReady?.(unit.outfit.preset) ? unit.outfit : null;      const dress: Dress = {
+      let outfit: ClassOutfit | null = null;
+      if (unit.kind === "Ranger" && unit.outfit) {
+        if (playerFigure === MALE && asset.outfitReady?.(unit.outfit.preset)) { outfit = unit.outfit; }
+        if (playerFigure === FEMALE && (unit.outfit.preset === "class.warden" || unit.outfit.replaced.length > 0) && asset.knightReady?.()) {
+          outfit = unit.outfit;
+        }
+      }
+      const dress: Dress = {
         loadout: unit.loadout, headwear: dressed ? viewer.headwear : null, hair: dressed ? viewer.hair : null,
-        face: dressed ? viewer.face : null, physique: dressed ? viewer.physique ?? null : null, resident, figure: resident !== null ? unit.figure : null, outfit,
+        face: dressed ? viewer.face : null, physique: dressed ? viewer.physique ?? null : null, resident, figure: resident !== null ? unit.figure : playerFigure, outfit,
         // Until a guard's own look has built, he wears the plain preset.
         variety: resident !== null && unit.variety !== null && asset.variedReady?.(resident, unit.variety, unit.figure ?? MALE) ? unit.variety : null,
       };

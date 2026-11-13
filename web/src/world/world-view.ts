@@ -1251,7 +1251,7 @@ export class WorldView {
    */
   selectionPreview(look: ViewerLook, feet: [number, number, number], yaw: number, height: number, seconds: number,
     camera: RendererCamera): boolean {
-    if (!this.#regions || !this.#models.ready("Ranger")) { return false; }
+    if (!this.#regions || this.#models.playerStatus(look.sex) !== "ready") { return false; }
     const clip = this.#restClip("Ranger");
     const length = this.#models.clipLength("Ranger", clip) ?? 1;
     // Reduced motion holds the idle pose, as it does for the procedural figure.
@@ -1262,7 +1262,7 @@ export class WorldView {
       loadout: look.classId ? CLASS_LOADOUTS[look.classId] : null, resident: null, figure: null, variety: null,
       outfit: look.classId ? { preset: `class.${look.classId}`, replaced: [] } : null, headwear: true, swing: null, chains: null, bow: null,
       sheathed: [false, false], throwable: null, belted: null, crossbow: null, channel: null,
-    }], { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {}, physique: look.physique ?? null });
+    }], { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {}, physique: look.physique ?? null, sex: look.sex });
     const { roots, changed } = this.#models.roots();
     if (changed) { this.#renderer.renderImportedRoots({ camera, roots }); }
     return true;
@@ -1274,13 +1274,21 @@ export class WorldView {
    */
   selectionPreviewStatus(look: ViewerLook): { model: "loading" | "ready" | "failed"; outfit: boolean } {
     if (!this.#regions) { return { model: "loading", outfit: false }; }
-    const model = this.#models.status("Ranger");
-    return { model, outfit: model === "ready" && (!look.classId || this.#models.outfitReady(`class.${look.classId}`)) };
+    const model = this.#models.playerStatus(look.sex);
+    return { model, outfit: model === "ready" && (!look.classId || this.#models.playerOutfitReady(`class.${look.classId}`, look.sex)) };
   }
 
   /** The face features the loaded Ranger offers (#411): undefined while loading, null if it has none. */
-  faceFeatures(): readonly FaceFeature[] | null | undefined {
-    return this.#models.faceFeatures();
+  appearanceOptions(sex: "male" | "female") {
+    return this.#models.appearanceOptions(sex);
+  }
+
+  physiqueControls(sex: "male" | "female"): readonly string[] {
+    return this.#models.physiqueControls(sex);
+  }
+
+  faceFeatures(sex: "male" | "female" = "male"): readonly FaceFeature[] | null | undefined {
+    return this.#models.faceFeatures(sex);
   }
 
   /** Sends a party request; a refusal or a world without a party service becomes a chat note. */
@@ -1670,7 +1678,7 @@ export class WorldView {
       }
     }
     // The posed casters' spell origins: the next frames' beams leave the staff's head from there (#612).
-    units.setChannelOrigins(this.#models.update(presented.imported, { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {}, physique: look.physique ?? null }));
+    units.setChannelOrigins(this.#models.update(presented.imported, { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {}, physique: look.physique ?? null, sex: look.sex }));
     const intensity = animate ? "strong" : "subtle";
     this.#impacts.preload(intensity);
     for (const received of receivedProjections) {

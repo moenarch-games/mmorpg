@@ -37,14 +37,6 @@ const COSMETIC_GROUPS: readonly { title: string; keys: readonly string[] }[] = [
   { title: "Face structure", keys: ["jawWidth", "jawProjection"] },
 ];
 
-/**
- * The sliders the player body draws (#635), from the audit of the bundles players wear: the male
- * Ranger has `build.lean`/`build.heavy` keys on the body and every outfit, plate and hairstyle
- * (body fat), a declared height scale (height) and `face.broad`/`face.narrow` keys (jaw width).
- * No bundle has frame, muscularity, shoulder, bust, waist, hip, glute or jaw-projection morphs.
- */
-export const DRAWN_PHYSIQUE: readonly string[] = ["bodyFat", "height", "jawWidth"];
-
 export const label = (key: string): string => LABELS[key] ?? key;
 
 /** `values` as the renderer's physique look: slider key to its value in [0, 1]. */
@@ -116,7 +108,7 @@ const percent = (model: PhysiqueModel, value: number) => Math.round((value / mod
 /**
  * The Physique group inside the Appearance panel. Edits are a preview until Confirm saves them;
  * Cancel returns to the saved values. A cosmetic slider is enabled only when the player body
- * draws it (#635, `DRAWN_PHYSIQUE`): the others never pretend to change the preview.
+ * draws it (#635, loaded mesh capabilities): the others never pretend to change the preview.
  */
 export class PhysiqueEditor {
   readonly #root: HTMLElement;
@@ -125,6 +117,10 @@ export class PhysiqueEditor {
   readonly #presetButtons: HTMLButtonElement[] = [];
   readonly #stats: { bp: HTMLElement; attribute: string }[] = [];
   readonly #statNote: HTMLElement;
+  readonly #disclosure: HTMLElement;
+  readonly #cosmeticNote: HTMLElement;
+  #capabilityKey = "";
+  #supported: ReadonlySet<string> = new Set();
   readonly #status: HTMLElement;
   readonly #cancel: HTMLButtonElement;
   readonly #confirm: HTMLButtonElement;
@@ -148,9 +144,9 @@ export class PhysiqueEditor {
       return node;
     };
 
-    const drawn = (key: string) => DRAWN_PHYSIQUE.includes(key);
-    const disclosure = element("p", "physique-disclosure",
-      "The body shows body fat, height and jaw width. Frame, muscularity and shoulder width change stats only: the body has no shapes for them yet. Your values are saved either way, and the stat preview below is exact.");
+    const drawn = (_key: string) => false;
+    const disclosure = element("p", "physique-disclosure", "Loading body shapes…");
+    this.#disclosure = disclosure;
 
     const presets = element("div", "physique-presets");
     presets.setAttribute("role", "group");
@@ -213,8 +209,8 @@ export class PhysiqueEditor {
       }
       return fieldset;
     });
-    const cosmeticNote = element("p", "physique-unavailable",
-      "Bust, waist, hip, glute and jaw projection are disabled: the body has no shapes for them yet, so they stay off rather than fake one. Saved values are kept, and these never change stats.");
+    const cosmeticNote = element("p", "physique-unavailable");
+    this.#cosmeticNote = cosmeticNote;
 
     this.#cancel = element("button", "physique-cancel", "Cancel");
     this.#cancel.type = "button";
@@ -232,6 +228,38 @@ export class PhysiqueEditor {
 
     root.replaceChildren(disclosure, presets, build, stats, ...cosmetic, cosmeticNote, actions, this.#status);
     this.#render();
+  }
+
+  /** Reconcile availability from the base/LOD actually loaded by the renderer. */
+  setCapabilities(supported: readonly string[], female: boolean, knight = false): void {
+    const key = JSON.stringify([supported, female, knight]);
+    if (key === this.#capabilityKey) { return; }
+    this.#capabilityKey = key;
+    this.#supported = new Set(supported);
+    const missing = this.#options.model.params.filter((param) => !supported.includes(param.key));
+    const statsOnly = missing.filter((param) => param.affectsStats).map((param) => label(param.key));
+    this.#disclosure.textContent = "Build changes the body and the bounded stats below. Body proportions and face structure are cosmetic only.";
+    if (supported.length === 0) {
+      this.#disclosure.textContent = "Body shapes are not available yet. Build sliders still preview stats.";
+    } else if (statsOnly.length > 0) {
+      this.#disclosure.textContent = `${statsOnly.join(", ")} change stats only on this body; their visual shapes are unavailable.`;
+    }
+    const unavailable = missing.filter((param) => !param.affectsStats).map((param) => label(param.key));
+    const notes: string[] = [];
+    if (unavailable.length > 0) { notes.push(`Unavailable on this body: ${unavailable.join(", ")}. Saved values are kept.`); }
+    if (female) {
+      notes.push(knight
+        ? "This body wears the archer outfit, or fitted knight armor for Warden and equipped armor. Other class outfits are unavailable."
+        : "This body wears the fitted archer outfit; class armor is unavailable.");
+      notes.push("Ranger cap, iron helm, buzzed and parted hair are unavailable. Saved choices are kept; choose hood, long hair or bald.");
+    }
+    this.#cosmeticNote.textContent = notes.join(" ");
+    this.#cosmeticNote.hidden = notes.length === 0;
+    this.#render();
+    for (const group of this.#root.querySelectorAll<HTMLElement>(".physique-group")) {
+      const inputs = [...group.querySelectorAll<HTMLInputElement>("input")];
+      group.classList.toggle("physique-group--unavailable", inputs.length > 0 && inputs.every((input) => input.disabled));
+    }
   }
 
   /** The values on screen, saved or not. */
@@ -298,6 +326,8 @@ export class PhysiqueEditor {
   #render(): void {
     const { model } = this.#options;
     for (const { index, input, output } of this.#inputs) {
+      const param = model.params[index]!;
+      input.disabled = this.#unavailable !== null || this.#saving || (!param.affectsStats && !this.#supported.has(param.key));
       const shown = percent(model, this.#values[index]!);
       input.value = String(shown);
       input.setAttribute("aria-valuetext", `${shown}%`);
@@ -305,6 +335,7 @@ export class PhysiqueEditor {
     }
     const preset = matchingPreset(model, this.#values);
     for (const button of this.#presetButtons) {
+      button.disabled = this.#unavailable !== null || this.#saving;
       const selected = button.dataset.physiquePreset === preset;
       button.classList.toggle("is-selected", selected);
       button.setAttribute("aria-pressed", String(selected));

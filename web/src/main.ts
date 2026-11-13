@@ -792,6 +792,15 @@ function syncAppearanceButtons(): void {
       button.setAttribute("aria-pressed", String(selected));
     }
   };
+  const supported = worldView.appearanceOptions(previewCharacter().sex);
+  for (const button of hatButtons) {
+    button.disabled = !supported?.headwear.some((key) => key === button.dataset.hatStyle);
+    button.title = button.disabled ? "Unavailable on this body" : "";
+  }
+  for (const button of hairButtons) {
+    button.disabled = !supported?.hair.some((key) => key === button.dataset.hairStyle);
+    button.title = button.disabled ? "Unavailable on this body" : "";
+  }
   mark(hatButtons, (button) => button.dataset.hatStyle === characterAppearance.hat);
   mark(hairButtons, (button) => button.dataset.hairStyle === characterAppearance.hair);
   mark(hairColorButtons, (button) => button.dataset.hairColor === characterAppearance.hairColor);
@@ -807,7 +816,7 @@ function faceOptionId(feature: FaceFeature, face: CharacterAppearance["face"]): 
 }
 
 /** Builds one select per bundle face feature once the Ranger has loaded (#411). */
-function showFaceFeatures(features: readonly FaceFeature[] | null): void {
+function showFaceFeatures(features: readonly FaceFeature[] | null, female = false): void {
   faceFeatures = features;
   faceSelects = (features ?? []).map((feature) => {
     const label = document.createElement("label");
@@ -826,7 +835,25 @@ function showFaceFeatures(features: readonly FaceFeature[] | null): void {
     label.append(name, select);
     return { feature, select };
   });
-  faceOptions.replaceChildren(...faceSelects.map(({ select }) => select.parentElement!));
+  const identities: HTMLButtonElement[] = [];
+  if (female && features) {
+    // Deliberate compositions of the actual face keys; independent feature edits remain available.
+    const presets = [
+      { name: "Refined", face: { face: "face.narrow", eyes: "eyes.narrow", nose: "nose.base", mouth: "mouth.full" } },
+      { name: "Bright", face: { face: "face.base", eyes: "eyes.large", nose: "nose.base", mouth: "mouth.full" } },
+      { name: "Resolute", face: { face: "face.broad", eyes: "eyes.narrow", nose: "nose.long", mouth: "mouth.base" } },
+    ];
+    for (const preset of presets) {
+      if (!Object.entries(preset.face).every(([key, value]) => features.find((feature) => feature.id === key)?.options.some((option) => option.id === value))) { continue; }
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "hair-option";
+      button.textContent = preset.name;
+      button.addEventListener("click", () => applyAppearance({ ...characterAppearance, face: preset.face }, `Unsaved face · ${preset.name}`));
+      identities.push(button);
+    }
+  }
+  faceOptions.replaceChildren(...identities, ...faceSelects.map(({ select }) => select.parentElement!));
   faceStatus.textContent = features
     ? "Close-up shows eyes, nose and mouth; face shape also reads in the world."
     : "This character model has no face options; the base face is shown.";
@@ -1304,8 +1331,9 @@ function renderSelection() {
   const look = viewerLook(true);
   worldView.selectionPreview(look, [-1.2, 0.1, 0], PREVIEW_FACING + turntable.yaw, PREVIEW_HEIGHT,
     (performance.now() - previewStart) / 1000, camera);
-  const features = worldView.faceFeatures();
-  if (faceFeatures === undefined && features !== undefined) { showFaceFeatures(features); }
+  physique?.editor.setCapabilities(worldView.physiqueControls(look.sex), look.sex === "female", worldView.appearanceOptions(look.sex)?.knight ?? false);
+  const features = worldView.faceFeatures(look.sex);
+  if (faceFeatures !== features && features !== undefined) { showFaceFeatures(features, look.sex === "female"); }
   // The selection stage stands in the mid-afternoon sun, without fog or lamps.
   lighting.apply({ hour: 15, sky: false, interior: 0, fog: null, pointLights: null });
   renderer.render({ camera, nodes: selectionStageNodes });

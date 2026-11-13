@@ -657,6 +657,8 @@ kbd {
 .face-close-up:disabled { opacity: .45; cursor: default; }
 .face-status { margin: .45rem 0 0; color: #8f9993; font-size: .66rem; }
 
+.hat-option:disabled, .hair-option:disabled { opacity: .4; cursor: default; }
+
 /* Physique (#634): presets, sliders and the stat preview, inside the Appearance panel. */
 .physique-editor { display: grid; gap: .55rem; color: #b9c4be; font-size: .67rem; }
 .physique-disclosure, .physique-unavailable, .physique-stat-note, .physique-status { margin: 0; color: #8f9993; font-size: .66rem; }
