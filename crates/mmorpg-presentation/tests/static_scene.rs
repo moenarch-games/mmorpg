@@ -481,17 +481,18 @@ fn the_outpost_kit_buildings_keep_their_blockouts_only_as_the_fallback() {
             .unwrap();
         let [cx, _, cz] = prop.position.map(|units| f64::from(units) / 100.);
         let [hx, _, hz] = prop.half_extents.map(|units| f64::from(units) / 100.);
-        let walls = mmorpg_scenery::outpost_kit::placements(&scenery)
-            .into_iter()
+        let walls = mmorpg_presentation::world_dressing::placed(&scenery)
+            .iter()
             .filter(|placement| {
-                placement.collider == collider && placement.entry.starts_with("outpost.kit.wall")
+                placement.fallback_collider == Some(collider)
+                    && placement.asset.starts_with("outpost.kit.wall")
             })
             .collect::<Vec<_>>();
         assert!(!walls.is_empty());
         for wall in walls {
             let [x, _, z] = wall.position.map(|units| f64::from(units) / 100.);
             let on_edge = ((x - cx).abs() - hx).abs() < 1e-9 || ((z - cz).abs() - hz).abs() < 1e-9;
-            assert!(on_edge, "{} at {x}, {z} on collider {collider}", wall.entry);
+            assert!(on_edge, "{} at {x}, {z} on collider {collider}", wall.asset);
         }
     }
 }

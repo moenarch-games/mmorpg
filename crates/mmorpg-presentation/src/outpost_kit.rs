@@ -1,18 +1,15 @@
 //! The Outpost's kit buildings (#420): where both clients draw asset-tooling's `outpost-kit`
 //! modules.
 //!
-//! [`mmorpg_scenery::outpost_kit::placements`] composes the modules on the adopted buildings'
-//! collider footprints; here each becomes an entry-to-world matrix. The modules are static:
+//! World dressing data supplies each module and its transform; here the existing clients'
+//! placed-kit adapters receive those entries. The modules are static:
 //! clients place them once. While a client does not draw them (its bundle has not loaded or
 //! failed), the static scene keeps the buildings' procedural blockouts
 //! ([`crate::Motion::Fallback`]). Presentation only.
 use mmorpg_core::UNITS_PER_METRE;
-use mmorpg_scenery::{Scenery, outpost_kit};
+use mmorpg_scenery::Scenery;
 
-use crate::{
-    batching::matrix,
-    geometry::{compose, ry, translate},
-};
+use crate::{Kit, batching::matrix, world_dressing};
 
 /// One drawn kit module.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -21,7 +18,7 @@ pub struct Part {
     pub entry: &'static str,
     /// Column-major entry-to-world matrix, metres.
     pub model: [f32; 16],
-    /// The building's wear in [0, 1] ([`outpost_kit::Placement::wear`]), which the browser blends
+    /// The building's wear in [0, 1] ([`world_dressing::Placed::wear`]), which the browser blends
     /// from the kit's wear masks; the native client draws the pristine modules.
     pub wear: f32,
 }
@@ -33,39 +30,21 @@ fn metres(units: i32) -> f64 {
 /// The kit entries the clients load, sorted and once each.
 #[must_use]
 pub fn entries(scenery: &Scenery) -> Vec<&'static str> {
-    let mut entries = outpost_kit::entries(scenery);
-    if scenery.greyhaven() {
-        entries.push("greyhaven.fort.settlement");
-    }
-    entries
+    world_dressing::assets(scenery, Kit::Outpost)
 }
 
-/// Every placed kit module on `scenery`.
+/// Every placed kit module on `scenery`, in the committed dressing order.
 #[must_use]
 pub fn parts(scenery: &Scenery) -> Vec<Part> {
-    let mut parts: Vec<_> = outpost_kit::placements(scenery)
+    world_dressing::placed(scenery)
         .iter()
-        .map(|placement| {
-            let [x, y, z] = placement.position;
-            let yaw = f64::from(placement.yaw) / 65_536. * std::f64::consts::TAU;
-            Part {
-                entry: placement.entry,
-                model: matrix(compose(&[
-                    translate(metres(x), metres(y), metres(z)),
-                    ry(yaw),
-                ])),
-                wear: f32::from(placement.wear) / 255.,
-            }
+        .filter(|placed| placed.kit() == Some(Kit::Outpost))
+        .map(|placed| Part {
+            entry: placed.asset.as_str(),
+            model: matrix(placed.frame()),
+            wear: f32::from(placed.wear) / 255.,
         })
-        .collect();
-    if scenery.greyhaven() {
-        parts.push(Part {
-            entry: "greyhaven.fort.settlement",
-            model: matrix(crate::geometry::ID),
-            wear: 0.,
-        });
-    }
-    parts
+        .collect()
 }
 
 /// Exact coloured collision surfaces remain visible if the authored fort bundle fails to load.

@@ -286,6 +286,9 @@ def export_scene(args: argparse.Namespace) -> None:
     updated, ids = build_document(layout, base_houses, records)
     candidate = (json.dumps(updated, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
     fd, staging = tempfile.mkstemp(prefix=".greyhaven-layout-", suffix=".json", dir=layout_path.parent)
+    dressing_path = layout_path.parent / "dressing" / "outpost.json"
+    dressing_source = dressing_path.read_bytes()
+    dressing_staging = None
     try:
         with os.fdopen(fd, "wb") as stream:
             stream.write(candidate)
@@ -294,8 +297,23 @@ def export_scene(args: argparse.Namespace) -> None:
              "--example", "validate-layout", "--", staging],
             cwd=args.root, check=True,
         )
-        if hashlib.sha256(layout_path.read_bytes()).hexdigest() != digest:
-            raise ValueError("Greyhaven layout changed during validation; nothing was replaced")
+        # Compose kit art offline from the same candidate layout. Runtime clients never
+        # infer kit placements from gameplay colliders (#683).
+        dressing = subprocess.run(
+            ["cargo", "run", "--quiet", "--locked", "-p", "mmorpg-scenery",
+             "--example", "export-outpost-dressing", "--", staging],
+            cwd=args.root, check=True, capture_output=True,
+        ).stdout
+        json.loads(dressing)
+        fd, dressing_staging = tempfile.mkstemp(
+            prefix=".outpost-dressing-", suffix=".json", dir=dressing_path.parent,
+        )
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(dressing)
+        if (hashlib.sha256(layout_path.read_bytes()).hexdigest() != digest
+                or dressing_path.read_bytes() != dressing_source):
+            raise ValueError("Greyhaven layout/dressing changed during validation; nothing was replaced")
+        os.replace(dressing_staging, dressing_path)
         os.replace(staging, layout_path)
         for name, placement_id in ids.items():
             objects[name]["gh_id"] = placement_id
@@ -306,6 +324,8 @@ def export_scene(args: argparse.Namespace) -> None:
     finally:
         if os.path.exists(staging):
             os.unlink(staging)
+        if dressing_staging and os.path.exists(dressing_staging):
+            os.unlink(dressing_staging)
 
 
 def main() -> None:

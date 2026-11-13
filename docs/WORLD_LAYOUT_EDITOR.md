@@ -155,3 +155,28 @@ at one pixel per sample (value = height in cm + 32768).
 `tiles/style.json` for the `mapStyle` of `@moritzbrantner/maps`. The pyramid's
 whole Web Mercator world is a 2048 m square centred on the origin; the conversion
 is in `manifest.json`. Set the served path with `--tiles-url`.
+
+## Outpost kit dressing
+
+The validated Blender export also writes `content/greyhaven/dressing/outpost.json`
+from the candidate layout before either file is replaced. Review and commit both
+files together. It preserves the existing closed-building gameplay collision;
+`fallbackCollider` only hides each blockout while the kit is drawn, and `wear`
+is cosmetic. Clients read the committed placements through shared world dressing,
+without composing module transforms from collider footprints at runtime.
+
+The house and smithy module compositions live in
+`content/greyhaven/authoring/outpost-buildings.json`. Change those data templates
+rather than Rust renderer code when editing a prefab's art. After a manual layout
+or template edit, regenerate the dressing explicitly and review its diff:
+
+```sh
+cargo run --quiet --locked -p mmorpg-scenery --example export-outpost-dressing > content/greyhaven/dressing/outpost.json
+```
+
+The command accepts an optional layout path for offline candidate generation.
+It emits persistent per-building/module IDs, exact unit transforms and the original
+wear values. The committed dressing is its generated output; make durable prefab
+edits in the authoring templates rather than editing that output before an export.
+Art regeneration never changes authoritative collision. The editor's existing
+layout JSON and core validator contract remain unchanged.

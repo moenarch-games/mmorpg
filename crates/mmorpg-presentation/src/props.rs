@@ -1746,10 +1746,10 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
         }
         // An Outpost kit building (#420) keeps its blockout as the fallback while the kit is
         // not drawn.
-        if let Some(id) = p
-            .collider
-            .filter(|&id| mmorpg_scenery::outpost_kit::adopts(id))
-        {
+        if let Some(id) = p.collider.filter(|&id| {
+            mmorpg_core::greyhaven_vale::fort::dresses(id)
+                || crate::world_dressing::stand_in(s, id) == Some(Kit::Outpost)
+        }) {
             animations.push(animated(
                 m,
                 |part| format!("outpost-fallback-{id}-{part}"),
