@@ -120,7 +120,10 @@ pub enum NetworkUpdate {
         snapshot: Arc<ZoneSnapshot>,
         refusal: Option<RefusalReceipt>,
     },
+    /// Pre-entry connection failure: character selection retains a live retry consumer.
     Failed(String),
+    /// The connected session ended; its consumer is gone. Close and reopen to rejoin.
+    Ended(String),
 }
 
 /// Commands to send for one input observation, in order: a selection, a

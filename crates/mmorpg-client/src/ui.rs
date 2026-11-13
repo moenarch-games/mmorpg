@@ -188,7 +188,7 @@ pub struct GameUi {
     dismissed_loot: Option<LootClaim>,
 }
 
-const REFUSAL_SECONDS: Duration = Duration::from_secs(1);
+const REFUSAL_SECONDS: Duration = Duration::from_secs(3);
 
 impl GameUi {
     /// Draws the minimap of another zone's scenery (#145).

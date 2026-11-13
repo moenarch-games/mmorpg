@@ -364,7 +364,7 @@ async fn run_selected_session(
     if let Err(error) =
         run_session_with_characters(session, input, characters, party, &updates, shutdown).await
     {
-        updates.send_replace(NetworkUpdate::Failed(format!(
+        updates.send_replace(NetworkUpdate::Ended(format!(
             "Connection ended. Reopen the client to rejoin your saved character: {error}"
         )));
     }

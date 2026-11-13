@@ -18,6 +18,12 @@ Remove denies the entitlement immediately; game-server revalidation fences comma
 
 Registration uses the existing lobby API and its bounded lifetime/renewal. The ready local host registers, then exposes the canonical public `https://moenarch.com/native.html?lobbyId=…&matchId=…` URL through private local status. Both native paste and `--join-invite` use one strict parser with a fixed setup origin; no URL-supplied endpoint, executable, credential or additional parameter is accepted. A setup failure clears sharing status; local owner gameplay and saves remain independent. Stop World stops the authority and invalidates actual joins. Public lobby metadata can outlive the host until setup expiry, so neither the website nor native code treats metadata existence as proof of readiness.
 
+## Compatibility
+
+The owner request `[1, 3, …]` is an extension of the opaque application payload inside the existing `GSCT` control frame. It changes neither `ZoneCommand` encoding, player projections, observations nor canonical recovery layout. `PROTOCOL_ID` therefore stays unchanged; no gameplay fixtures need re-recording. Dedicated development/LAN controls keep their existing behavior. An old managed-host binary rejects the new operation instead of interpreting it as a different gameplay layout; build/install matching host and client binaries together.
+
+Pre-entry connection failure retains the live character-selection retry consumer. Once a connected session terminates, a distinct internal `Ended` update closes the native window through its existing error path and reports an instruction to reopen for the saved character. It never presents entry controls backed by an exited network task. This internal UI/session state is not a network format change.
+
 ## Validation and limits
 
 `scripts/smoke-hosted-native.py` starts a real loopback setup service, coturn, zone-host process and two headless native session processes. It checks authoritative movement, owner approval, refusal to use a supplied owner `CharacterId`, reconnect/epoch rotation, continued guest play after the owner client exits, removal, saved-character return after host restart, stale invitation rejection and clearing invitation status after signaling fails. Its selected local ICE path is reported as observed; localhost is not NAT traversal evidence. This check does not drive a native window, fetch missing shareable art, or complete #733's stage 6 acceptance.

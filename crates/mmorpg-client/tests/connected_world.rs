@@ -1076,7 +1076,9 @@ async fn next_snapshot(
                 snapshot,
                 ..
             } => return Ok((*connection_epoch, Arc::clone(snapshot))),
-            NetworkUpdate::Failed(error) => return Err(error.clone().into()),
+            NetworkUpdate::Failed(error) | NetworkUpdate::Ended(error) => {
+                return Err(error.clone().into());
+            }
             NetworkUpdate::Waiting
             | NetworkUpdate::Joining(_)
             | NetworkUpdate::Reconnecting
@@ -1263,7 +1265,7 @@ async fn durable_character_selection_worker_claims_before_gameplay_and_logs_out(
                     assert!(refusal.is_none());
                     break;
                 }
-                NetworkUpdate::Failed(error) => panic!("{error}"),
+                NetworkUpdate::Failed(error) | NetworkUpdate::Ended(error) => panic!("{error}"),
                 _ => {}
             }
         }

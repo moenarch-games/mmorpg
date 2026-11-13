@@ -1415,9 +1415,9 @@ impl App {
         };
         let network = self.updates.borrow().clone();
         let connection = match &network {
-            NetworkUpdate::Joining(message) | NetworkUpdate::Failed(message) => {
-                Some(message.as_str())
-            }
+            NetworkUpdate::Joining(message)
+            | NetworkUpdate::Failed(message)
+            | NetworkUpdate::Ended(message) => Some(message.as_str()),
             _ if self.stage.is_some() && self.choosing => None,
             _ if self.stage.is_some() => Some("Entering the world…"),
             NetworkUpdate::Waiting => Some("Connecting to the world…"),
@@ -2056,6 +2056,12 @@ impl ApplicationHandler for App {
                             self.choosing = true;
                         }
                         self.retire_held_input();
+                    }
+                    NetworkUpdate::Ended(error) => {
+                        // The session owner has exited: the ordinary fatal path closes
+                        // this window and returns its explicit reopen instruction.
+                        self.fail(event_loop, error);
+                        return;
                     }
                 }
                 self.poll_pads(now);
