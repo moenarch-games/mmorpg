@@ -14,6 +14,39 @@ Tanner Hilda Brook is drawn on the female figure (#493), asset-tooling's rolling
 
 ## Browser
 
+### Player physique (#635)
+
+The local browser picker and world use each selected player's real male or female Ranger base.
+The existing loader reads `humanoid-appearance.physique.controls` and enables a control only when
+its declared lower/upper morph targets exist on the loaded base and variant. Body fat uses
+`build.lean`/`build.heavy`, jaw width composes `face.narrow`/`face.broad` with the chosen face,
+and height uses the bundle's declared 0.91–1.09 root scale. Other controls interpolate the
+descriptor's named targets about the neutral midpoint. The six presets and stat preview remain
+the exact values supplied by core through WASM; the renderer owns no stat formula.
+
+| Path/base | Real physique | Clothing and other limits |
+| --- | --- | --- |
+| Browser local, male | Frame, muscularity, body fat, shoulders, height, waist, hips, glutes, jaw width and projection | Existing class outfits, armor and fitted hair; no bust target |
+| Browser local, female | All eleven controls, including bust fullness | Archer tunic/pants and the available knight outfit; long hair or bald; no ranger cap, iron helm, buzzed or parted entries |
+| Browser online / Battle Royale | Average physique; editor unavailable | Physique is not carried by those sessions |
+| Native online | Average physique; no editor | Its existing importer bakes named morphs for resident looks, but player physique is not wired or carried online |
+
+The female Warden wears the actual `outfit.knight`/`skin.light` with the descriptor's
+`armor.knight` pieces when those entries are available. Other equipped armor uses the knight's
+pieces only on the replaced sockets. This is a game-owned selection of an existing outfit, not
+an invented female class catalog. Older catalogs keep the archer outfit and disclose the gap.
+Other female class outfits remain unavailable. Acquisition selects the knight variants only
+when present in the release. Headwear/hair buttons follow the loaded entries and preserve
+unavailable saved choices. Three deliberate female face compositions (Refined, Bright, Resolute)
+reuse the existing face, eye, nose and mouth targets and the same appearance save.
+
+Deformation is applied to the dressed look, including its fitted garments, plates and hair,
+before the existing mesh merger bakes it. It does not rebuild geometry each pose frame or
+change bind matrices, clips, sockets, distance/detail policy, collision, reach, authoritative
+stat coefficients or animation event timing. New physique targets are authored on the full
+detail variants; no additional physique LOD is adopted here. The capability table describes
+wiring and catalog support, not a substitute for the issue's in-game visual acceptance.
+
 ```sh
 cd web
 bun run dev

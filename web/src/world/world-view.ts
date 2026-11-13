@@ -1275,10 +1275,14 @@ export class WorldView {
   selectionPreviewStatus(look: ViewerLook): { model: "loading" | "ready" | "failed"; outfit: boolean } {
     if (!this.#regions) { return { model: "loading", outfit: false }; }
     const model = this.#models.playerStatus(look.sex);
-    return { model, outfit: model === "ready" && (look.sex === "female" || !look.classId || this.#models.outfitReady(`class.${look.classId}`)) };
+    return { model, outfit: model === "ready" && (!look.classId || this.#models.playerOutfitReady(`class.${look.classId}`, look.sex)) };
   }
 
   /** The face features the loaded Ranger offers (#411): undefined while loading, null if it has none. */
+  appearanceOptions(sex: "male" | "female") {
+    return this.#models.appearanceOptions(sex);
+  }
+
   physiqueControls(sex: "male" | "female"): readonly string[] {
     return this.#models.physiqueControls(sex);
   }

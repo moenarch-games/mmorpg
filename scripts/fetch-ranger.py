@@ -42,7 +42,8 @@ MALE["humanoid.ranger.male"] |= {"outfit.knight", "outfit.knight.skin.light", "o
 # plus the base outfit requested by the figure loader before the skin variant is applied.
 FEMALE = {"humanoid.ranger.female": {"default", "outfit.tanner", "outfit.tanner.skin.light"}, "armor.tanner": {"default"}}
 # Female players use the same real carried-item/socket path, from their own release.
-FEMALE.update({key: {"default"} for key in MALE if key.startswith("equipment.")})
+FEMALE.update({key: {"default"} for key in MALE if key.startswith("equipment.")
+               and key not in {"equipment.cap.ranger", "equipment.helm.ironcrest", "equipment.hat.straw"}})
 # Plus every hairstyle a release offers, in its tintable variant: the viewer's styles and the
 # varied guards' (#376, asset-tooling #380), and the painted head skins when the release has them
 # (asset-tooling #380).
@@ -72,7 +73,12 @@ FIGURES = (Figure("humanoid.ranger.male", MALE), Figure("humanoid.ranger.female"
 
 def selected(figure, index):
     """The selected (key, variant) pairs of a release index."""
-    return figure.pairs | {(entry.get("key"), entry.get("variant")) for entry in index.get("entries", [])
+    # Female knight entries are selected only when the rolling catalog actually provides them.
+    knight = {(entry.get("key"), entry.get("variant")) for entry in index.get("entries", [])
+              if figure.release == "humanoid-ranger-female" and
+              ((entry.get("key") == "humanoid.ranger.female" and entry.get("variant") in {"outfit.knight", "outfit.knight.skin.light"})
+               or (entry.get("key"), entry.get("variant")) == ("armor.knight", "default"))}
+    return figure.pairs | knight | {(entry.get("key"), entry.get("variant")) for entry in index.get("entries", [])
                            if (str(entry.get("key")).startswith("hair.") and entry.get("variant") == HAIR_VARIANT)
                            or (entry.get("key"), entry.get("variant")) == HEAD_SKINS}
 

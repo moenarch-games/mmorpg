@@ -120,6 +120,7 @@ export class PhysiqueEditor {
   readonly #disclosure: HTMLElement;
   readonly #cosmeticNote: HTMLElement;
   #capabilityKey = "";
+  #supported: ReadonlySet<string> = new Set();
   readonly #status: HTMLElement;
   readonly #cancel: HTMLButtonElement;
   readonly #confirm: HTMLButtonElement;
@@ -230,25 +231,31 @@ export class PhysiqueEditor {
   }
 
   /** Reconcile availability from the base/LOD actually loaded by the renderer. */
-  setCapabilities(supported: readonly string[], female: boolean): void {
-    const key = JSON.stringify([supported, female]);
+  setCapabilities(supported: readonly string[], female: boolean, knight = false): void {
+    const key = JSON.stringify([supported, female, knight]);
     if (key === this.#capabilityKey) { return; }
     this.#capabilityKey = key;
+    this.#supported = new Set(supported);
     const missing = this.#options.model.params.filter((param) => !supported.includes(param.key));
     const statsOnly = missing.filter((param) => param.affectsStats).map((param) => label(param.key));
-    this.#disclosure.textContent = supported.length === 0 ? "Loading body shapes…" :
-      statsOnly.length > 0 ? `${statsOnly.join(", ")} change stats only on this body; their visual shapes are unavailable.` :
-      "Build changes the body and the bounded stats below. Body proportions and face structure are cosmetic only.";
+    this.#disclosure.textContent = "Build changes the body and the bounded stats below. Body proportions and face structure are cosmetic only.";
+    if (supported.length === 0) {
+      this.#disclosure.textContent = "Body shapes are not available yet. Build sliders still preview stats.";
+    } else if (statsOnly.length > 0) {
+      this.#disclosure.textContent = `${statsOnly.join(", ")} change stats only on this body; their visual shapes are unavailable.`;
+    }
     const unavailable = missing.filter((param) => !param.affectsStats).map((param) => label(param.key));
     const notes: string[] = [];
     if (unavailable.length > 0) { notes.push(`Unavailable on this body: ${unavailable.join(", ")}. Saved values are kept.`); }
-    if (female) { notes.push("Female characters wear the fitted archer outfit; female class armor is unavailable. Long hair and bald are supported; other saved hairstyles are kept for compatible bodies."); }
+    if (female) {
+      notes.push(knight
+        ? "This body wears the archer outfit, or fitted knight armor for Warden and equipped armor. Other class outfits are unavailable."
+        : "This body wears the fitted archer outfit; class armor is unavailable.");
+      notes.push("Ranger cap, iron helm, buzzed and parted hair are unavailable. Saved choices are kept; choose hood, long hair or bald.");
+    }
     this.#cosmeticNote.textContent = notes.join(" ");
     this.#cosmeticNote.hidden = notes.length === 0;
-    for (const { index, input } of this.#inputs) {
-      const param = this.#options.model.params[index]!;
-      input.disabled = !param.affectsStats && !supported.includes(param.key);
-    }
+    this.#render();
     for (const group of this.#root.querySelectorAll<HTMLElement>(".physique-group")) {
       const inputs = [...group.querySelectorAll<HTMLInputElement>("input")];
       group.classList.toggle("physique-group--unavailable", inputs.length > 0 && inputs.every((input) => input.disabled));
@@ -319,6 +326,8 @@ export class PhysiqueEditor {
   #render(): void {
     const { model } = this.#options;
     for (const { index, input, output } of this.#inputs) {
+      const param = model.params[index]!;
+      input.disabled = this.#unavailable !== null || this.#saving || (!param.affectsStats && !this.#supported.has(param.key));
       const shown = percent(model, this.#values[index]!);
       input.value = String(shown);
       input.setAttribute("aria-valuetext", `${shown}%`);
@@ -326,6 +335,7 @@ export class PhysiqueEditor {
     }
     const preset = matchingPreset(model, this.#values);
     for (const button of this.#presetButtons) {
+      button.disabled = this.#unavailable !== null || this.#saving;
       const selected = button.dataset.physiquePreset === preset;
       button.classList.toggle("is-selected", selected);
       button.setAttribute("aria-pressed", String(selected));

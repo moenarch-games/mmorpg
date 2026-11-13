@@ -792,6 +792,15 @@ function syncAppearanceButtons(): void {
       button.setAttribute("aria-pressed", String(selected));
     }
   };
+  const supported = worldView.appearanceOptions(previewCharacter().sex);
+  for (const button of hatButtons) {
+    button.disabled = !supported?.headwear.some((key) => key === button.dataset.hatStyle);
+    button.title = button.disabled ? "Unavailable on this body" : "";
+  }
+  for (const button of hairButtons) {
+    button.disabled = !supported?.hair.some((key) => key === button.dataset.hairStyle);
+    button.title = button.disabled ? "Unavailable on this body" : "";
+  }
   mark(hatButtons, (button) => button.dataset.hatStyle === characterAppearance.hat);
   mark(hairButtons, (button) => button.dataset.hairStyle === characterAppearance.hair);
   mark(hairColorButtons, (button) => button.dataset.hairColor === characterAppearance.hairColor);
@@ -835,7 +844,7 @@ function showFaceFeatures(features: readonly FaceFeature[] | null, female = fals
       { name: "Resolute", face: { face: "face.broad", eyes: "eyes.narrow", nose: "nose.long", mouth: "mouth.base" } },
     ];
     for (const preset of presets) {
-      if (!features.every((feature) => feature.options.some((option) => option.id === preset.face[feature.id as keyof typeof preset.face]))) { continue; }
+      if (!Object.entries(preset.face).every(([key, value]) => features.find((feature) => feature.id === key)?.options.some((option) => option.id === value))) { continue; }
       const button = document.createElement("button");
       button.type = "button";
       button.className = "hair-option";
@@ -1322,7 +1331,7 @@ function renderSelection() {
   const look = viewerLook(true);
   worldView.selectionPreview(look, [-1.2, 0.1, 0], PREVIEW_FACING + turntable.yaw, PREVIEW_HEIGHT,
     (performance.now() - previewStart) / 1000, camera);
-  physique?.editor.setCapabilities(worldView.physiqueControls(look.sex), look.sex === "female");
+  physique?.editor.setCapabilities(worldView.physiqueControls(look.sex), look.sex === "female", worldView.appearanceOptions(look.sex)?.knight ?? false);
   const features = worldView.faceFeatures(look.sex);
   if (faceFeatures !== features && features !== undefined) { showFaceFeatures(features, look.sex === "female"); }
   // The selection stage stands in the mid-afternoon sun, without fog or lamps.
