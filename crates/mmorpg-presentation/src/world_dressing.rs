@@ -10,8 +10,10 @@
 //! committed output. Gameplay never reads this file.
 //!
 //! Adding a placed asset is a data change: the kit that owns its key ([`KITS`]: the crag kit for
-//! `crag.kit.*`, the shrine kit for `shrine.kit.*`) draws it with its levels of detail, and
-//! while that kit is not drawn the collider's own surface is the visible stand-in
+//! `crag.kit.*`, the shrine kit for `shrine.kit.*`) draws it with its levels of detail.
+//! Outpost modules also carry cosmetic wear and may name an existing `fallbackCollider`
+//! shared by their composition; this does not generate or mutate collision.
+//! While that kit is not drawn the collider's own surface is the visible stand-in
 //! ([`stand_in`]).
 use std::collections::BTreeSet;
 use std::sync::LazyLock;
@@ -28,7 +30,7 @@ use crate::{
 };
 
 /// Greyhaven Vale's dressing files.
-const GREYHAVEN: [&str; 2] = [
+const GREYHAVEN: [&str; 3] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/vale.json"
@@ -37,12 +39,18 @@ const GREYHAVEN: [&str; 2] = [
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/sunken-shrine.json"
     )),
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../content/greyhaven/dressing/outpost.json"
+    )),
 ];
 
 /// Every kit that draws dressing, by its asset keys' prefix, with the static-scene fallback
 /// ([`Kit`]) it hides while drawn, if it has one.
-pub const KITS: [(&str, Option<Kit>); 2] = [
+pub const KITS: [(&str, Option<Kit>); 4] = [
     ("crag.kit.", Some(Kit::Crag)),
+    ("outpost.kit.", Some(Kit::Outpost)),
+    ("greyhaven.fort.", Some(Kit::Outpost)),
     // The Sunken Shrine's modules (#431) stand on their own colliders and need no stand-in.
     ("shrine.kit.", None),
 ];
@@ -76,6 +84,13 @@ pub struct Placed {
     /// The collider generated from this placement's art, if it collides.
     #[serde(default)]
     pub collider: Option<u32>,
+    /// Existing gameplay body hidden by this art, without generating or changing collision.
+    /// Multiple composed modules may share one body. Presentation only.
+    #[serde(default, rename = "fallbackCollider")]
+    pub fallback_collider: Option<u32>,
+    /// Cosmetic wear in 255ths, independent from the collider identity.
+    #[serde(default)]
+    pub wear: u8,
 }
 
 impl Placed {
@@ -218,7 +233,7 @@ pub fn assets(s: &Scenery, kit: Kit) -> Vec<&'static str> {
 pub fn stand_in(s: &Scenery, id: u32) -> Option<Kit> {
     placed(s)
         .iter()
-        .find(|placed| placed.collider == Some(id))
+        .find(|placed| placed.collider == Some(id) || placed.fallback_collider == Some(id))
         .and_then(Placed::kit)
 }
 
