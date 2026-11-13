@@ -341,6 +341,9 @@ fn spawns_populate_their_subzones() {
         ((greyhaven_vale::vale::MILLBROOK_FARM, "Barrel"), 2),
         ((greyhaven_vale::vale::MILLBROOK_FARM, "Fence"), 3),
         ((greyhaven_vale::vale::MILLBROOK_FARM, "Heavy Crate"), 2),
+        // Redbrand Cave supplies inside Greyfang Ridge (#719).
+        ((greyhaven_vale::vale::GREYFANG_RIDGE, "Crate"), 2),
+        ((greyhaven_vale::vale::GREYFANG_RIDGE, "Barrel"), 1),
         (
             (
                 greyhaven_vale::vale::REDBRAND_HOLLOW,

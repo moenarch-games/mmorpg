@@ -145,9 +145,9 @@ pub const CAVERN_WANDER_RADIUS_UNITS: i32 = 200;
 
 /// Breakable props (#288) as `(spawn id, template, feet XZ, facing)`: crates and barrels by
 /// Greyhaven's smithy and houses, crates, barrels and fences at Millbrook Farm, and powder
-/// barrels in the Redbrand camp, set close enough to chain-react.
+/// barrels in the Redbrand camp, set close enough to chain-react, and supplies inside its cave.
 #[rustfmt::skip]
-const PROPS: [(u32, CreatureTemplateId, [i32; 2], u16); 20] = {
+const PROPS: [(u32, CreatureTemplateId, [i32; 2], u16); 23] = {
     use templates::*;
     [
         // Greyhaven Outpost.
@@ -176,6 +176,12 @@ const PROPS: [(u32, CreatureTemplateId, [i32; 2], u16); 20] = {
         // The boulder trap above the camp's south edge (#299): it rests on the rise north of the
         // watch post, and rolling down it sends the boulder across the bandits' camp.
         (925, BOULDER, [950, -7_420], 0),
+        // Redbrand Cave (#719): a small supply row along the outer chamber's west wall.
+        // Broken panels/staves meet the authored wall and floor, clear of the mouth,
+        // south shelf and passage to the inner chamber. These barrels contain no powder.
+        (926, CRATE, [4_900, -13_900], 0),
+        (927, CRATE, [4_900, -13_800], 0),
+        (928, BARREL, [4_900, -13_700], 0),
     ]
 };
 

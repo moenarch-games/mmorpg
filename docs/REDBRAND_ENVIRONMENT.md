@@ -1,5 +1,26 @@
 # Redbrand environment pass
 
+## Breakable cave supplies
+
+Two targetable crates (926–927) and one ordinary barrel (928) stand along the outer
+chamber's western wall, at `(49, -139)`, `(49, -138)` and `(49, -137)` metres XZ.
+Their feet rest on the authored floor at 11 m. The entrance, south shelf approach,
+inner passage and sealed threshold remain clear. These are supplies, not powder barrels.
+They reuse the existing no-loot breakage, five-minute clear-spot respawn and shared
+client presentation. Breaking the row can produce twenty panels, staves and lids.
+
+`cargo test -p mmorpg-core --test breakables redbrand_cave_supplies --locked`
+exercises each shipped placement with its real template, terrain and cave triangles,
+isolating it from the garrison and neighbouring intact props. Normal melee breaks it;
+airborne pieces slow or rebound at the western wall, settle on the cave floor and
+despawn. Recovery from breakage reproduces every subsequent canonical tick exactly.
+This is the representative gameplay rigid-mesh workload for #719, not a timing benchmark.
+The existing protocol combat workload's spawn-index sampling also shifts when the row is
+added: `vale-fights-8` emits 1,825,497 bytes (31,188 above its former ceiling) and
+`vale-fights-32` tests 431,424 candidates (6,705 above its former ceiling). Those two existing ceilings are
+updated; other ceilings and all replay/recovery assertions remain in force.
+Native/browser visual acceptance and the full workspace suites were not run.
+
 The first beta environment pass (#641) replaces the large stacked cliff slabs
 with fractured rock surfaces and the existing `greyhaven.terrain.rock` PBR material
 (base colour, normal, occlusion/roughness/metallic). Texture coordinates follow each
