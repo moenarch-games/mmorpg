@@ -15,6 +15,7 @@ getrandom = "=0.4.3"
 ring = "=0.17.14"
 tempfile = "=3.27.0"
 serde_json = "=1.0.154"
+sha2 = "=0.11.1"
 serde = { version = "=1.0.229", features = ["derive"] }
 settings-presentation = { git = "https://github.com/moritzbrantner/settings.git", rev = "01e8ea5dc682adadb395e46966b4e43dc4edef67" }
 settings-core = { git = "https://github.com/moritzbrantner/settings.git", rev = "01e8ea5dc682adadb395e46966b4e43dc4edef67" }

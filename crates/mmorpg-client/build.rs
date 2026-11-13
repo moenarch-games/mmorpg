@@ -222,13 +222,32 @@ fn main() {
         None,
         false,
     );
-    // Greyhaven's ambient cat, dog and rodent (#419).
+    // The cat is installed separately and may be received from the host (#733).
+    // The binary contains only its immutable manifest identity, never its mesh bytes.
     static_bundle(
         "ambient_bundle.rs",
         &manifest_dir.join("../../web/public/scenery/greyhaven.ambient-animals"),
-        None,
+        Some(&["greyhaven.ambient.dog", "greyhaven.ambient.rodent"]),
         false,
     );
+    let ambient: serde_json::Value = serde_json::from_slice(
+        &fs::read(
+            manifest_dir.join("../../web/public/scenery/greyhaven.ambient-animals/manifest.json"),
+        )
+        .expect("ambient manifest"),
+    )
+    .expect("ambient manifest JSON");
+    use sha2::{Digest, Sha256};
+    let identity: String =
+        Sha256::digest(serde_json::to_vec(&ambient).expect("manifest serializes"))
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+    fs::write(
+        PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR")).join("shared_art.rs"),
+        format!("pub const BUNDLE_IDENTITY: &str = {identity:?};\n"),
+    )
+    .expect("shared art metadata");
     // Every module and roof variant of the Outpost building kit (#420).
     static_bundle(
         "outpost_bundle.rs",

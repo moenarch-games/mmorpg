@@ -1324,13 +1324,13 @@ pub(super) fn outpost_draws(entry: &str) -> &'static [SceneDraw] {
         .map_or(&[], |(_, draws)| draws.as_slice())
 }
 
-/// Greyhaven's ambient animals and their resources, embedded by `build.rs` (#419).
+/// Embedded dog and rodent. The cat is a separately installed or received asset (#733).
 mod ambient_bundle {
     include!(concat!(env!("OUT_DIR"), "/ambient_bundle.rs"));
 }
 
 /// A skinned ambient model and its clip lengths by clip name.
-type AmbientModel = (Model, BTreeMap<String, f32>);
+pub(super) type AmbientModel = (Model, BTreeMap<String, f32>);
 
 /// The skinned ambient animal of entry `key` with its clip lengths, each imported once.
 pub(super) fn ambient_model(key: &str) -> Option<&'static AmbientModel> {
@@ -1350,6 +1350,28 @@ pub(super) fn ambient_model(key: &str) -> Option<&'static AmbientModel> {
         .iter()
         .find(|(entry, _)| *entry == key)
         .map(|(_, model)| model)
+}
+
+/// Uses the same converter, glTF importer, clip sampler and draw path as embedded animals.
+/// VerifiedBundle admits only the immutable release identity built into this client.
+pub(super) fn shared_cat(
+    bundle: &crate::shared_assets::VerifiedBundle,
+) -> Result<AmbientModel, String> {
+    let files: Vec<_> = bundle
+        .files
+        .iter()
+        .map(|(path, bytes)| (path.as_str(), bytes.as_slice()))
+        .collect();
+    let entry = &bundle
+        .manifest
+        .files
+        .first()
+        .ok_or("Missing cat entry")?
+        .path;
+    let model = Model::parse(&bundle_glb(entry, &files), "Idle")
+        .map_err(|e| format!("World detail import failed: {e}"))?;
+    let clips = model.clip_durations().collect();
+    Ok((model, clips))
 }
 
 /// Normalizes `base`'s directory joined with a relative `uri` ("../../resources/x.bin").
@@ -2757,7 +2779,18 @@ mod rolling_ranger_tests {
             ("greyhaven.ambient.dog", 0.65),
             ("greyhaven.ambient.rodent", 0.17),
         ] {
-            let (model, clips) = ambient_model(key).expect(key);
+            let cat = (key == mmorpg_game_server::shared_assets::CAT).then(|| {
+                let catalogue = mmorpg_game_server::shared_assets::Catalogue::open(
+                    &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .join("../../web/public/scenery/greyhaven.ambient-animals"),
+                    0,
+                )
+                .expect("installed cat");
+                let bundle = crate::shared_assets::VerifiedBundle::from_catalogue(&catalogue, 0)
+                    .expect("verified cat");
+                shared_cat(&bundle).expect("imported cat")
+            });
+            let (model, clips) = cat.as_ref().or_else(|| ambient_model(key)).expect(key);
             assert!(
                 (model.height - height).abs() < 0.03,
                 "{key} {}",
