@@ -3,7 +3,7 @@
 //! kit props each have their collision proxies. Foliage alone stays walk-through.
 use mmorpg_core::greyhaven_vale::{self, ids, market};
 use mmorpg_core::{StaticCollider, greyhaven_vale_definition};
-use mmorpg_scenery::{PropKind, Rect, greyhaven_vale_scenery, settlement_props};
+use mmorpg_scenery::{PropKind, Rect, greyhaven_vale_scenery};
 
 /// Whether a kind looks solid. Every kind decides here, so a new prop kind cannot ship
 /// without choosing.
@@ -108,8 +108,13 @@ fn every_solid_prop_inside_the_walls_has_its_collider() {
 #[test]
 fn every_market_prop_collides_through_its_proxies() {
     let definition = greyhaven_vale_definition();
-    let scenery = greyhaven_vale_scenery();
-    let placements = settlement_props::placements(&scenery);
+    let house = definition
+        .colliders()
+        .iter()
+        .find(|c| c.id == market::HOUSE)
+        .unwrap();
+    let anchor = [house.position[0], house.position[2]];
+    let placements = market::placements(anchor);
     assert_eq!(placements.len(), market::SQUARE.len() + 2);
     let colliders: Vec<_> = definition
         .colliders()
@@ -134,8 +139,8 @@ fn every_market_prop_collides_through_its_proxies() {
         }
     }
     // The walkway along the square's X axis stays open.
-    let [cx, cz] = settlement_props::centre(&scenery).unwrap();
-    let walkway = Rect::around([cx, cz], [settlement_props::HALF_EXTENTS[0], 140]);
+    let [cx, cz] = market::centre(anchor);
+    let walkway = Rect::around([cx, cz], [market::HALF_EXTENTS[0], 140]);
     assert!(
         colliders
             .iter()

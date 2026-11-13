@@ -286,9 +286,12 @@ def export_scene(args: argparse.Namespace) -> None:
     updated, ids = build_document(layout, base_houses, records)
     candidate = (json.dumps(updated, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
     fd, staging = tempfile.mkstemp(prefix=".greyhaven-layout-", suffix=".json", dir=layout_path.parent)
-    dressing_path = layout_path.parent / "dressing" / "outpost.json"
-    dressing_source = dressing_path.read_bytes()
-    dressing_staging = None
+    dressing_paths = {
+        name: layout_path.parent / "dressing" / f"{name}.json"
+        for name in ("outpost", "market")
+    }
+    dressing_sources = {name: path.read_bytes() for name, path in dressing_paths.items()}
+    dressing_stages = {}
     try:
         with os.fdopen(fd, "wb") as stream:
             stream.write(candidate)
@@ -299,21 +302,24 @@ def export_scene(args: argparse.Namespace) -> None:
         )
         # Compose kit art offline from the same candidate layout. Runtime clients never
         # infer kit placements from gameplay colliders (#683).
-        dressing = subprocess.run(
-            ["cargo", "run", "--quiet", "--locked", "-p", "mmorpg-scenery",
-             "--example", "export-outpost-dressing", "--", staging],
-            cwd=args.root, check=True, capture_output=True,
-        ).stdout
-        json.loads(dressing)
-        fd, dressing_staging = tempfile.mkstemp(
-            prefix=".outpost-dressing-", suffix=".json", dir=dressing_path.parent,
-        )
-        with os.fdopen(fd, "wb") as stream:
-            stream.write(dressing)
+        for name, path in dressing_paths.items():
+            dressing = subprocess.run(
+                ["cargo", "run", "--quiet", "--locked", "-p", "mmorpg-scenery",
+                 "--example", f"export-{name}-dressing", "--", staging],
+                cwd=args.root, check=True, capture_output=True,
+            ).stdout
+            json.loads(dressing)
+            fd, dressing_stages[name] = tempfile.mkstemp(
+                prefix=f".{name}-dressing-", suffix=".json", dir=path.parent,
+            )
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(dressing)
         if (hashlib.sha256(layout_path.read_bytes()).hexdigest() != digest
-                or dressing_path.read_bytes() != dressing_source):
+                or any(path.read_bytes() != dressing_sources[name]
+                       for name, path in dressing_paths.items())):
             raise ValueError("Greyhaven layout/dressing changed during validation; nothing was replaced")
-        os.replace(dressing_staging, dressing_path)
+        for name, path in dressing_paths.items():
+            os.replace(dressing_stages[name], path)
         os.replace(staging, layout_path)
         for name, placement_id in ids.items():
             objects[name]["gh_id"] = placement_id
@@ -324,8 +330,9 @@ def export_scene(args: argparse.Namespace) -> None:
     finally:
         if os.path.exists(staging):
             os.unlink(staging)
-        if dressing_staging and os.path.exists(dressing_staging):
-            os.unlink(dressing_staging)
+        for path in dressing_stages.values():
+            if os.path.exists(path):
+                os.unlink(path)
 
 
 def main() -> None:

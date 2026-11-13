@@ -499,7 +499,7 @@ fn the_outpost_kit_buildings_keep_their_blockouts_only_as_the_fallback() {
 
 #[test]
 fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
-    use mmorpg_scenery::settlement_props;
+    use mmorpg_core::greyhaven_vale::market;
     let scenery = greyhaven_vale_scenery();
     let scene = StaticScene::new(&scenery);
     let fallback = |kit| {
@@ -535,8 +535,13 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
     }
     // The square stays off the roads, the spawn plaza and every other collider's footprint; its
     // own props collide through their proxies (#577).
-    let [cx, cz] = settlement_props::centre(&scenery).unwrap();
-    let [hx, hz] = settlement_props::HALF_EXTENTS;
+    let house = scenery
+        .props
+        .iter()
+        .find(|prop| prop.collider == Some(market::HOUSE))
+        .unwrap();
+    let [cx, cz] = market::centre([house.position[0], house.position[2]]);
+    let [hx, hz] = market::HALF_EXTENTS;
     let square = mmorpg_core::StaticCollider {
         id: 0,
         position: [cx, 100, cz],

@@ -1,0 +1,28 @@
+{
+  "anchorHouse": 106,
+  "placements": [
+    {"asset": "settlement.props.stall", "position": [370, 0, -600], "scale": [1000, 1000, 1000], "yaw": 32768, "id": "market-stall-1", "relativeToHouse": true},
+    {"asset": "settlement.props.stall", "position": [50, 0, -600], "scale": [1000, 1000, 1000], "yaw": 32768, "id": "market-stall-2", "relativeToHouse": true},
+    {"asset": "settlement.props.crate", "position": [540, 0, -640], "scale": [1000, 1000, 1000], "yaw": 34952, "id": "market-crate-1", "relativeToHouse": true},
+    {"asset": "settlement.props.crate", "position": [540, 70, -640], "scale": [1000, 1000, 1000], "yaw": 38229, "id": "market-crate-2", "relativeToHouse": true},
+    {"asset": "settlement.props.crate", "position": [545, 0, -550], "scale": [1000, 1000, 1000], "yaw": 31311, "id": "market-crate-3", "relativeToHouse": true},
+    {"asset": "settlement.props.barrel", "position": [-110, 0, -670], "scale": [1000, 1000, 1000], "yaw": 32768, "id": "market-barrel-1", "relativeToHouse": true},
+    {"asset": "settlement.props.barrel", "position": [-115, 0, -600], "scale": [1000, 1000, 1000], "yaw": 32768, "id": "market-barrel-2", "relativeToHouse": true},
+    {"asset": "settlement.props.cart", "position": [-225, 0, -570], "scale": [1000, 1000, 1000], "yaw": 32768, "id": "market-cart-1", "relativeToHouse": true},
+    {"asset": "settlement.props.fence", "position": [550, 0, -470], "scale": [1000, 1000, 1000], "yaw": 32768, "id": "market-fence-1", "relativeToHouse": true},
+    {"asset": "settlement.props.fence", "position": [350, 0, -470], "scale": [1000, 1000, 1000], "yaw": 32768, "id": "market-fence-2", "relativeToHouse": true},
+    {"asset": "settlement.props.fence", "position": [150, 0, -470], "scale": [1000, 1000, 1000], "yaw": 32768, "id": "market-fence-3", "relativeToHouse": true},
+    {"asset": "settlement.props.fence", "position": [-50, 0, -470], "scale": [1000, 1000, 1000], "yaw": 32768, "id": "market-fence-4", "relativeToHouse": true},
+    {"asset": "settlement.props.fence", "position": [-250, 0, -470], "scale": [1000, 1000, 1000], "yaw": 32768, "id": "market-fence-5", "relativeToHouse": true},
+    {"asset": "settlement.props.fence", "position": [-450, 0, -470], "scale": [1000, 1000, 1000], "yaw": 32768, "id": "market-fence-6", "relativeToHouse": true},
+    {"asset": "settlement.props.firewood", "position": [-440, 0, -525], "scale": [1000, 1000, 1000], "yaw": 32768, "id": "market-firewood-1", "relativeToHouse": true},
+    {"asset": "settlement.props.lantern-post", "position": [210, 0, -1130], "scale": [1000, 1000, 1000], "yaw": 0, "id": "market-lantern-post-1", "relativeToHouse": true},
+    {"asset": "settlement.props.bench", "position": [50, 0, -1140], "scale": [1000, 1000, 1000], "yaw": 0, "id": "market-bench-1", "relativeToHouse": true},
+    {"asset": "settlement.props.planter", "position": [-120, 0, -1150], "scale": [1000, 1000, 1000], "yaw": 0, "id": "market-planter-1", "relativeToHouse": true},
+    {"asset": "settlement.props.barrel", "position": [410, 0, -1160], "scale": [1000, 1000, 1000], "yaw": 32768, "id": "market-barrel-3", "relativeToHouse": true},
+    {"asset": "settlement.props.signpost", "position": [-390, 0, -1120], "scale": [1000, 1000, 1000], "yaw": 0, "id": "market-signpost-1", "relativeToHouse": true},
+    {"asset": "settlement.props.crate", "position": [490, 0, -1150], "scale": [1000, 1000, 1000], "yaw": 37319, "id": "market-crate-4", "relativeToHouse": true},
+    {"asset": "settlement.props.stall", "position": [-1200, 0, 2950], "scale": [1000, 1000, 1000], "yaw": 32768, "id": "market-stall-3", "relativeToHouse": false},
+    {"asset": "settlement.props.barrel", "position": [-1450, 0, 2900], "scale": [1000, 1000, 1000], "yaw": 0, "id": "market-barrel-4", "relativeToHouse": false}
+  ]
+}

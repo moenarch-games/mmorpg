@@ -9,7 +9,7 @@
 use std::path::Path;
 
 /// The most ID-based visual lookup lines allowed.
-const CAP: usize = 92;
+const CAP: usize = 91;
 
 fn word(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_'
