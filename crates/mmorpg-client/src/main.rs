@@ -6,12 +6,12 @@ mod desktop;
 use mmorpg_client::{
     ClientError,
     camera::OrbitCamera,
-    graphics::render_offscreen,
+    graphics::render_offscreen_frame,
     hud,
     network::ClientSession,
     presentation::Presentation,
     session::{
-        CharacterSelection, NetworkUpdate, PlayerInput, party_link, run_session_with_characters,
+        CharacterSelection, NetworkUpdate, PlayerInput, party_link, run_session_with_detail,
     },
     world::WorldScene,
 };
@@ -221,15 +221,67 @@ fn main() -> Result<(), ClientError> {
                     }
                 }
                 let class = chosen.ok_or("the zone did not take the class choice")?.class;
-                let snapshot = session.reconnect().await?;
+                let mut snapshot = session.reconnect().await?;
                 let connection_epoch = session.connection_epoch();
-                let tick = snapshot.tick;
                 let hud = hud::rects(&mmorpg_client_model::hud::CombatHud::from_projection(&snapshot));
                 let mut presentation = Presentation::new(player_id, scenery, content, Instant::now())?;
+                let mut detail = None;
+                let mut snapshots_while_loading = 0;
+                if options.join_invite.is_some() {
+                    let first = own_position(&snapshot)?;
+                    let deadline = Instant::now() + Duration::from_secs(30);
+                    session.send_move(1, 0, 0).await?;
+                    let mut loading = mmorpg_client::shared_assets::Load::start(&session).await;
+                    let mut resend = tokio::time::interval(Duration::from_millis(100));
+                    while detail.is_none() || own_position(&snapshot)? == first {
+                        if Instant::now() > deadline { return Err("Native asset journey did not finish with authoritative movement".into()); }
+                        tokio::select! {
+                            result = loading.finished(), if detail.is_none() => {
+                                let (bundle, receipt) = result?;
+                                presentation.install_shared_detail(&bundle)?;
+                                detail = Some(receipt);
+                            }
+                            received = session.receive_snapshot() => {
+                                snapshot = received?;
+                                if detail.is_none() { snapshots_while_loading += 1; }
+                            }
+                            _ = resend.tick() => { session.send_move(1, 0, 0).await?; }
+                        }
+                    }
+                    session.send_move(0, 0, 0).await?;
+                } else if let Some(task) = mmorpg_client::shared_assets::load_for_session(&session).await {
+                    match task.await? {
+                        Ok((bundle, _)) => presentation.install_shared_detail(&bundle)?,
+                        Err(error) => eprintln!("Optional detail: {error}"),
+                    }
+                }
+                let tick = snapshot.tick;
                 presentation.push(snapshot, Instant::now())?;
                 let now = Instant::now();
-                let view = OrbitCamera::default().view(presentation.camera_target(now));
-                let colors = render_offscreen(&world, &presentation.unit_draws(now, view), &hud, view).await?;
+                let view = match presentation.shared_detail_target(now) {
+                    Some(target) => mmorpg_client::camera::CameraView {
+                        eye: [target[0] + 1.8, target[1] + 1.1, target[2] + 2.8],
+                        target,
+                        field_of_view_degrees: 50.,
+                    },
+                    None => OrbitCamera::default().view(presentation.camera_target(now)),
+                };
+                let frame = presentation.frame(&world, now, view);
+                let cat_draws = frame.draws.iter().filter(|draw| draw.id.starts_with(mmorpg_game_server::shared_assets::CAT)).count();
+                // First GPU resource creation may be slow. Keep draining projections on the
+                // independent native runtime so SCTP receive windows cannot starve logout/control.
+                let handle = tokio::runtime::Handle::current();
+                let mut rendering = tokio::task::spawn_blocking(move || handle.block_on(render_offscreen_frame(&frame, &hud, view)));
+                let colors = loop {
+                    tokio::select! {
+                        rendered = &mut rendering => break rendered??,
+                        received = session.receive_snapshot() => { received?; }
+                    }
+                };
+                if let Some(receipt) = detail {
+                    if cat_draws == 0 { return Err("Received cat was not consumed by the native renderer".into()); }
+                    println!("{}", serde_json::json!({"event":"native_detail_rendered", "bytes_received":receipt.bytes_received, "cache_hits":receipt.cache_hits, "files_verified":receipt.files_verified, "manifest":receipt.manifest_identity, "snapshots_while_loading":snapshots_while_loading, "cat_draws":cat_draws, "rendered_colors":colors, "tick":tick}));
+                }
                 session.release_character().await?;
                 println!("{{\"event\":\"client_smoke_passed\",\"player_id\":{player_id},\"class\":\"{}\",\"tick\":{tick},\"connection_epoch\":{connection_epoch},\"rendered_colors\":{colors}}}", class.name());
                 Ok(())
@@ -247,6 +299,8 @@ fn main() -> Result<(), ClientError> {
     let (update_sender, update_receiver) = watch::channel(NetworkUpdate::Waiting);
     let (shutdown_sender, mut shutdown_receiver) = oneshot::channel();
     let (party_client, party) = party_link();
+    let detail = mmorpg_client::shared_assets::Updates::default();
+    let window_detail = detail.clone();
     let mut chosen = character_receiver.clone();
     let hosting = mmorpg_client::hosting::Hosting::for_zone(options.zone_id);
     let session_hosting = hosting.clone();
@@ -314,6 +368,7 @@ fn main() -> Result<(), ClientError> {
             party,
             update_sender,
             shutdown_receiver,
+            detail,
         )
         .await;
     });
@@ -333,6 +388,7 @@ fn main() -> Result<(), ClientError> {
             .map(mmorpg_game_server::invitation::JoinInvite::url),
         options.class.map(|class| (class, options.sex)),
         hosting,
+        window_detail,
     );
     // A closed worker already owns its connection cleanup.
     let _ = shutdown_sender.send(());
@@ -360,9 +416,12 @@ async fn run_selected_session(
     party: mmorpg_client::session::PartyLink,
     updates: watch::Sender<NetworkUpdate>,
     shutdown: oneshot::Receiver<()>,
+    detail: mmorpg_client::shared_assets::Updates,
 ) {
-    if let Err(error) =
-        run_session_with_characters(session, input, characters, party, &updates, shutdown).await
+    if let Err(error) = run_session_with_detail(
+        session, input, characters, party, &updates, shutdown, detail,
+    )
+    .await
     {
         updates.send_replace(NetworkUpdate::Ended(format!(
             "Connection ended. Reopen the client to rejoin your saved character: {error}"
@@ -388,4 +447,15 @@ mod tests {
             assert!(Options::parse(args.into_iter().map(str::to_owned)).is_err());
         }
     }
+}
+
+fn own_position(snapshot: &mmorpg_core::ZoneSnapshot) -> Result<[i32; 3], ClientError> {
+    snapshot
+        .entities
+        .iter()
+        .find(|entity| {
+            entity.id == snapshot.viewer_id && entity.kind == mmorpg_core::EntityKind::Player
+        })
+        .map(|entity| entity.position)
+        .ok_or_else(|| "Missing own authoritative position".into())
 }

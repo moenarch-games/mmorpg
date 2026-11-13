@@ -341,19 +341,41 @@ pub struct CharacterSelection {
 }
 
 pub async fn run_session_with_characters(
+    session: ClientSession,
+    input: watch::Receiver<PlayerInput>,
+    characters: watch::Receiver<Option<CharacterSelection>>,
+    party: PartyLink,
+    updates: &watch::Sender<NetworkUpdate>,
+    shutdown: oneshot::Receiver<()>,
+) -> Result<(), ClientError> {
+    run_session_with_detail(
+        session,
+        input,
+        characters,
+        party,
+        updates,
+        shutdown,
+        crate::shared_assets::Updates::default(),
+    )
+    .await
+}
+
+pub async fn run_session_with_detail(
     mut session: ClientSession,
     input: watch::Receiver<PlayerInput>,
     mut characters: watch::Receiver<Option<CharacterSelection>>,
     party: PartyLink,
     updates: &watch::Sender<NetworkUpdate>,
     mut shutdown: oneshot::Receiver<()>,
+    detail: crate::shared_assets::Updates,
 ) -> Result<(), ClientError> {
     let enabled = tokio::select! {
         _ = &mut shutdown => return Ok(()),
         enabled = session.character_service_enabled() => enabled?,
     };
     if !enabled {
-        return run_connected_session(session, input, characters, party, updates, shutdown).await;
+        return run_connected_session(session, input, characters, party, updates, shutdown, detail)
+            .await;
     }
     let selected = loop {
         if let Some(selected) = characters.borrow_and_update().clone() {
@@ -382,7 +404,7 @@ pub async fn run_session_with_characters(
         _ = &mut shutdown => { session.release_character().await?; return Ok(()); },
         claimed = session.claim_character(&id, selected.class) => { claimed?; }
     }
-    run_connected_session(session, input, characters, party, updates, shutdown).await
+    run_connected_session(session, input, characters, party, updates, shutdown, detail).await
 }
 
 /// Runs a session with no character selection or party link (tests and tools).
@@ -394,7 +416,16 @@ pub async fn run_session(
 ) -> Result<(), ClientError> {
     let (_characters, characters) = watch::channel(None);
     let (_party, party) = party_link();
-    run_connected_session(session, input, characters, party, updates, shutdown).await
+    run_connected_session(
+        session,
+        input,
+        characters,
+        party,
+        updates,
+        shutdown,
+        crate::shared_assets::Updates::default(),
+    )
+    .await
 }
 
 async fn run_connected_session(
@@ -404,7 +435,9 @@ async fn run_connected_session(
     mut party: PartyLink,
     updates: &watch::Sender<NetworkUpdate>,
     mut shutdown: oneshot::Receiver<()>,
+    detail: crate::shared_assets::Updates,
 ) -> Result<(), ClientError> {
+    let mut loading = crate::shared_assets::Load::start(&session).await;
     // Announced to the current connection's party service; a follow or reconnect announces anew.
     let mut character_name = characters
         .borrow_and_update()
@@ -441,6 +474,7 @@ async fn run_connected_session(
                 }
                 None
             },
+            result = loading.finished() => { detail.publish(result); None },
             Some(request) = party.requests.recv() => {
                 match session.party_request(&request).await {
                     Ok(Ok(())) => {}
@@ -488,6 +522,7 @@ async fn run_connected_session(
                 _ = &mut shutdown => { session.release_character().await?; return Ok(()); },
                 followed = session.follow(notice) => followed?,
             }
+            loading = crate::shared_assets::Load::start(&session).await;
             // Another zone counts its own ticks; only current input carries over.
             announced = false;
             last_tick = None;
@@ -509,6 +544,7 @@ async fn run_connected_session(
                 _ = &mut shutdown => { session.release_character().await?; return Ok(()); },
                 snapshot = session.reconnect() => snapshot?,
             };
+            loading = crate::shared_assets::Load::start(&session).await;
             announced = false;
             outbox.observe(&snapshot);
             last_tick = Some(snapshot.tick);

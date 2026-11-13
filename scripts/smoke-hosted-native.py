@@ -7,6 +7,8 @@ Exercises one authoritative world, owner approval, private guest identity, nativ
 WebRTC movement/reconnect, client-independent hosting, removal and durable resume.
 This does not verify native window interaction, missing assets or Internet NAT/TURN.
 """
+import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -26,6 +28,9 @@ def target(directory):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--assets", action="store_true", help="use the shipped native --join-invite/offscreen path with absent optional art")
+    options = parser.parse_args()
     root = Path(__file__).resolve().parent.parent
     setup = root.parent / "multiplayer-setup-service"
     turnserver = os.environ.get("MMORPG_TEST_TURNSERVER") or shutil.which("turnserver")
@@ -34,7 +39,7 @@ def main():
     temporary_root = root / "target" / "host-world-tmp"
     temporary_root.mkdir(parents=True, exist_ok=True)
     environment = dict(os.environ, RUSTC_WRAPPER="", TMPDIR=str(temporary_root))
-    subprocess.run(["cargo", "build", "--locked", "-p", "mmorpg-game-server", "-p", "mmorpg-client", "--example", "hosted-client-probe", "--bin", "mmorpg-zone-host"], cwd=root, env=environment, check=True, timeout=900)
+    subprocess.run(["cargo", "build", "--locked", "-p", "mmorpg-game-server", "-p", "mmorpg-client", "--example", "hosted-client-probe", "--bin", "mmorpg-zone-host", "--bin", "mmorpg-client"], cwd=root, env=environment, check=True, timeout=900)
     subprocess.run(["cargo", "build", "--locked", "--bin", "multiplayer-setup-service"], cwd=setup, env=environment, check=True, timeout=300)
     probe = target(root) / "examples" / "hosted-client-probe"
     api = target(setup) / "multiplayer-setup-service"
@@ -50,6 +55,21 @@ def main():
     base.update(MMORPG_TEST_SETUP_ENDPOINT=endpoint, MMORPG_WEBRTC_BIND_IP="127.0.0.1")
     owner_env = dict(base, MMORPG_CONFIG_DIR=str(directory / "owner"))
     guest_env = dict(base, MMORPG_CONFIG_DIR=str(directory / "guest"))
+    if options.assets:
+        owner_env["MMORPG_SHARED_ART_DIR"] = str(root / "web/public/scenery/greyhaven.ambient-animals")
+        guest_install = directory / "guest-install"
+        guest_install.mkdir()
+        client = guest_install / "mmorpg-client"
+        os.link(target(root) / "mmorpg-client", client)
+        assert not (guest_install / "assets").exists()
+        bundle = json.loads((root / "web/public/scenery/greyhaven.ambient-animals/manifest.json").read_text())
+        cat = next(asset for asset in bundle["assets"] if asset["key"] == "greyhaven.ambient.cat" and asset["variant"] == "default")
+        resource = root / "web/public/scenery/greyhaven.ambient-animals" / cat["resources"][0]["path"]
+        raw = resource.read_bytes()
+        assert len(raw) == 146384 and hashlib.sha256(raw).hexdigest() == cat["resources"][0]["sha256"]
+        assert raw not in client.read_bytes(), "guest binary embeds the supposedly missing cat"
+        assert not (directory / "guest/asset-cache").exists()
+
     processes = []
     logs = []
     success = False
@@ -80,6 +100,21 @@ def main():
 
     def control(mode):
         return subprocess.check_output([str(probe), mode], cwd=root, env=owner_env, text=True, timeout=45)
+
+    def stop_world():
+        # The control endpoint closes before final replay/save releases the world lock.
+        # Observe that existing lock through the real stop command; never kill the writer.
+        deadline = time.monotonic() + 120
+        while True:
+            result = subprocess.run([str(probe), "stop"], cwd=root, env=owner_env,
+                                    capture_output=True, text=True, timeout=45)
+            if result.returncode == 0:
+                return
+            if "World is still stopping" not in result.stderr and "Connection refused" not in result.stderr:
+                raise RuntimeError(result.stderr)
+            if time.monotonic() >= deadline:
+                raise TimeoutError("host did not release its save lock after graceful stop")
+            time.sleep(0.2)
 
     def entitlement():
         entries = json.loads((directory / "owner/worlds/default/guest-access.json").read_text())
@@ -115,6 +150,33 @@ def main():
                 time.sleep(0.1)
         owner = spawn([str(probe), "owner"], owner_env, "owner")
         ready = event(owner, "hosting_ready")
+        if options.assets:
+            def native(name):
+                env = dict(guest_env, MMORPG_SMOKE_FRAME=str(directory / f"{name}.png"))
+                process = spawn([str(client), "--smoke", "--join-invite", ready["invitation"]], env, name)
+                received = event(process, "native_detail_rendered", 120)
+                print(json.dumps({"phase":name, **received}), flush=True)
+                assert received["files_verified"] == 2 and received["cat_draws"] > 0
+                assert process.wait(timeout=20) == 0
+                assert (directory / f"{name}.png").is_file()
+                return received
+            cold = native("cold")
+            assert owner.wait(timeout=20) == 0
+            assert cold["bytes_received"] > 146384 and cold["snapshots_while_loading"] > 0
+            warm = native("warm")
+            assert warm["bytes_received"] == 0 and warm["cache_hits"] == 2
+            cache_file = directory / "guest/asset-cache/sha256" / cat["resources"][0]["sha256"]
+            cache_file.write_bytes(b"corrupted guest cache")
+            repaired = native("repaired")
+            assert repaired["bytes_received"] == 146384 and repaired["cache_hits"] == 1
+            control("remove")
+            refused = spawn([str(client), "--smoke", "--join-invite", ready["invitation"]], guest_env, "revoked")
+            assert refused.wait(timeout=120) != 0
+            assert "could not admit" in (directory / "revoked.log").read_text()
+            stop_world()
+            print(json.dumps({"event":"hosted_assets_passed", "cold":cold, "warm":warm, "repaired":repaired, "guestInstallAbsent":True, "guestBinaryAbsent":True, "ownerClientExit":True, "revokedInvitation":True, "nativeWindowActions":False, "twoNetworkAcceptance":False, "artifacts":str(directory)}))
+            success = True
+            return
         guest = spawn([str(probe), "guest", ready["invitation"]], guest_env, "guest")
         first = event(guest, "guest_ready")
         assert owner.wait(timeout=10) == 0
@@ -156,8 +218,8 @@ def main():
             if process.poll() is None:
                 process.terminate()
         try:
-            control("stop")
-        except (subprocess.SubprocessError, OSError):
+            stop_world()
+        except (subprocess.SubprocessError, OSError, RuntimeError, TimeoutError):
             pass
         for process in processes:
             try:
@@ -167,7 +229,7 @@ def main():
                 process.wait(timeout=5)
         for log in logs:
             log.close()
-        if success:
+        if success and not options.assets:
             shutil.rmtree(directory)
         else:
             print(f"Focused hosting failure retained at {directory}")

@@ -139,6 +139,99 @@ impl Cache {
     }
 }
 
+/// Shared by the shipped window and offscreen native journey. The independent handle lets
+/// authoritative inputs/projections continue while optional detail is received.
+pub async fn receive(
+    client: game_server::webrtc_transport::WebRtcContentClient,
+    revision: u64,
+) -> Result<(VerifiedBundle, Receipt), String> {
+    let bytes = client.request(&[0]).await.map_err(|e| {
+        format!("Optional world detail unavailable: {e}. Ask the host to install its art package.")
+    })?;
+    let manifest: HostManifest =
+        serde_json::from_slice(&bytes).map_err(|e| format!("Invalid host art manifest: {e}"))?;
+    let directory = crate::roster::config_dir()
+        .ok_or("No configuration directory for the art cache")?
+        .join("asset-cache/sha256");
+    Cache::open(&directory)?
+        .retrieve(manifest, revision, |request| {
+            let client = client.clone();
+            async move {
+                client.request(&request).await.map_err(|e| {
+                    format!(
+                        "World detail download interrupted: {e}. Rejoin the running host to retry."
+                    )
+                })
+            }
+        })
+        .await
+}
+
+pub async fn load_for_session(
+    session: &crate::network::ClientSession,
+) -> Option<tokio::task::JoinHandle<Result<(VerifiedBundle, Receipt), String>>> {
+    if let Some(client) = session.content_client().await {
+        Some(tokio::spawn(receive(
+            client,
+            mmorpg_core::content_for_zone(mmorpg_core::ZoneId::new(1)).revision(),
+        )))
+    } else if session.is_peer_session() {
+        Some(tokio::spawn(async {
+            Err("This host does not offer world detail. Ask the host to update its native game; no installed guest asset fallback was used.".into())
+        }))
+    } else if session.zone_id() == mmorpg_core::ZoneId::new(1) {
+        Some(tokio::task::spawn_blocking(|| {
+            let revision = mmorpg_core::content_for_zone(mmorpg_core::ZoneId::new(1)).revision();
+            let catalogue = mmorpg_game_server::shared_assets::Catalogue::open(
+                &mmorpg_game_server::shared_assets::installed_directory()?,
+                revision,
+            )?;
+            Ok((
+                VerifiedBundle::from_catalogue(&catalogue, revision)?,
+                Receipt::default(),
+            ))
+        }))
+    } else {
+        None
+    }
+}
+
+pub type LoadResult = Result<(VerifiedBundle, Receipt), String>;
+/// One bounded completion slot, independent of coalesced high-frequency snapshots.
+#[derive(Clone, Default)]
+pub struct Updates(std::sync::Arc<std::sync::Mutex<Option<LoadResult>>>);
+impl Updates {
+    pub fn take(&self) -> Option<LoadResult> {
+        self.0.lock().ok()?.take()
+    }
+    pub fn publish(&self, result: LoadResult) {
+        if let Ok(mut slot) = self.0.lock() {
+            *slot = Some(result);
+        }
+    }
+}
+pub struct Load(Option<tokio::task::JoinHandle<LoadResult>>);
+impl Load {
+    pub async fn start(session: &crate::network::ClientSession) -> Self {
+        Self(load_for_session(session).await)
+    }
+    pub async fn finished(&mut self) -> LoadResult {
+        let Some(task) = self.0.as_mut() else {
+            return std::future::pending().await;
+        };
+        let result = task.await;
+        self.0 = None;
+        result.map_err(|e| format!("World detail loading stopped: {e}"))?
+    }
+}
+impl Drop for Load {
+    fn drop(&mut self) {
+        if let Some(task) = self.0.take() {
+            task.abort();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

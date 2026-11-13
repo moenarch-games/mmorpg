@@ -118,6 +118,7 @@ pub fn run(
     invitation: Option<String>,
     character: Option<(PlayerClass, Sex)>,
     hosting: mmorpg_client::hosting::Hosting,
+    detail: mmorpg_client::shared_assets::Updates,
 ) -> Result<(), ClientError> {
     let event_loop = EventLoop::new()?;
     let now = Instant::now();
@@ -173,6 +174,7 @@ pub fn run(
         characters,
         updates,
         party,
+        detail,
         camera: OrbitCamera::default(),
         camera_control: CameraControl::default(),
         grabbed: false,
@@ -348,6 +350,7 @@ struct App {
     characters: watch::Sender<Option<CharacterSelection>>,
     updates: watch::Receiver<NetworkUpdate>,
     party: PartyClient,
+    detail: mmorpg_client::shared_assets::Updates,
     camera: OrbitCamera,
     camera_control: CameraControl,
     /// Actual OS grab, not an assumption about the window manager.
@@ -2063,6 +2066,27 @@ impl ApplicationHandler for App {
                         self.fail(event_loop, error);
                         return;
                     }
+                }
+                if self.stage.as_ref().is_none_or(|stage| stage.entered)
+                    && let Some(result) = self.detail.take()
+                {
+                    let result = result.and_then(|(bundle, receipt)| {
+                        self.presentation.install_shared_detail(&bundle)?;
+                        eprintln!(
+                            "World detail ready: verified={} received={} cache_hits={}",
+                            receipt.files_verified, receipt.bytes_received, receipt.cache_hits
+                        );
+                        Ok(())
+                    });
+                    let message = match result {
+                        Ok(()) => "World detail ready.".to_owned(),
+                        Err(error) => format!(
+                            "Optional world detail unavailable: {error} You can keep playing."
+                        ),
+                    };
+                    self.ui
+                        .logs
+                        .note(mmorpg_client_model::chat::LineKind::System, message);
                 }
                 self.poll_pads(now);
                 self.send_slot_releases();

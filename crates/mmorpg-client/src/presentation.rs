@@ -262,6 +262,16 @@ impl Presentation {
         Ok(())
     }
 
+    /// Actual optional animal placement, also used by the native offscreen journey's camera.
+    pub fn shared_detail_target(&self, now: Instant) -> Option<[f32; 3]> {
+        self.shared_cat.as_ref()?;
+        let seconds = now.saturating_duration_since(self.origin).as_secs_f64();
+        mmorpg_presentation::ambient::poses(&self.scenery, seconds, !self.reduced_motion)
+            .into_iter()
+            .find(|pose| pose.key == mmorpg_game_server::shared_assets::CAT)
+            .map(|pose| [pose.model[12], pose.model[13] + 0.25, pose.model[14]])
+    }
+
     #[must_use]
     pub fn shared_detail_ready(&self) -> bool {
         self.shared_cat.is_some()

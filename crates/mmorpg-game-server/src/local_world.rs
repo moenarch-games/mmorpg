@@ -163,7 +163,8 @@ pub fn start(directory: &Path, executable: &Path) -> Result<RunningWorld> {
                 && !matches!(
                     name.to_str(),
                     Some(
-                        "MMORPG_TEST_SETUP_ENDPOINT"
+                        "MMORPG_SHARED_ART_DIR"
+                            | "MMORPG_TEST_SETUP_ENDPOINT"
                             | "MMORPG_WEBRTC_BIND_IP"
                             | "MMORPG_TEST_OFFLINE_HOST"
                     )

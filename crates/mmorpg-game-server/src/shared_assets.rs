@@ -217,3 +217,36 @@ pub fn verify(file: &AssetFile, bytes: &[u8]) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// Installed host art is separate from executables. No checkout lookup or remote URL fallback.
+pub fn installed_directory() -> Result<std::path::PathBuf, String> {
+    if let Some(path) = std::env::var_os("MMORPG_SHARED_ART_DIR") {
+        return Ok(path.into());
+    }
+    Ok(std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .parent()
+        .ok_or("Native installation directory unavailable")?
+        .join("assets/ambient"))
+}
+
+/// Transport owns admission, epochs, backpressure and shutdown. Only approved immutable
+/// presentation bytes are exposed here, never save files or requested filesystem paths.
+pub(crate) struct ContentService(pub Result<Catalogue, String>);
+impl game_server::webrtc_transport::WebRtcContentService for ContentService {
+    fn handle<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a game_server::MatchId,
+        _: game_server::ControlContext,
+        request: &'a [u8],
+    ) -> game_server::webrtc_transport::WebRtcContentFuture<'a> {
+        Box::pin(async move {
+            self.0
+                .as_ref()
+                .map_err(|e| game_server::ControlServiceError::new(e.clone()))?
+                .response(request)
+                .map_err(game_server::ControlServiceError::new)
+        })
+    }
+}

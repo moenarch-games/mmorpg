@@ -296,7 +296,25 @@ pub async fn render_offscreen(
 ) -> Result<usize, ClientError> {
     let mut frame = world.frame(0., true, view.eye, None);
     frame.draws.extend_from_slice(units);
-    let bytes = readback(&frame, hud, view, SMOKE_SIZE, None).await?;
+    render_offscreen_frame(&frame, hud, view).await
+}
+
+/// Reads the complete production frame, including asynchronously installed ambient detail.
+pub async fn render_offscreen_frame(
+    frame: &WorldFrame,
+    hud: &[HudRect],
+    view: CameraView,
+) -> Result<usize, ClientError> {
+    let bytes = readback(frame, hud, view, SMOKE_SIZE, None).await?;
+    if let Some(path) = std::env::var_os("MMORPG_SMOKE_FRAME") {
+        image::save_buffer(
+            std::path::Path::new(&path),
+            &bytes,
+            SMOKE_SIZE[0],
+            SMOKE_SIZE[1],
+            image::ColorType::Rgba8,
+        )?;
+    }
     let mut colors = std::collections::BTreeMap::<[u8; 3], usize>::new();
     for p in bytes.as_chunks::<4>().0 {
         *colors.entry([p[0], p[1], p[2]]).or_default() += 1;
