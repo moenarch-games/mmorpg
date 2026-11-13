@@ -359,6 +359,7 @@ mod tests {
                 host.clone(),
                 RejectMatchControlService,
                 MatchHostWebTransportConfig {
+                    bind_ip: None,
                     port,
                     certificate_pem: certificate,
                     private_key_pem: key,

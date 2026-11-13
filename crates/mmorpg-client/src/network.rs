@@ -34,6 +34,7 @@ pub enum SessionError {
     Receive(ConnectionError),
     Send(SendDatagramError),
     SnapshotTimeout,
+    WebRtc(game_server::webrtc_transport::WebRtcError),
     InvalidData(ClientError),
     InvalidMovement,
     SequenceExhausted,
@@ -53,6 +54,7 @@ impl fmt::Display for SessionError {
             Self::Receive(error) => error.fmt(formatter),
             Self::Send(error) => error.fmt(formatter),
             Self::SnapshotTimeout => formatter.write_str("server snapshot timed out"),
+            Self::WebRtc(error) => error.fmt(formatter),
             Self::InvalidData(error) => write!(formatter, "invalid session data: {error}"),
             Self::InvalidMovement => {
                 formatter.write_str("forward and strafe intent must be in [-1, 1]")
@@ -68,6 +70,7 @@ impl Error for SessionError {
             Self::Receive(error) => Some(error),
             Self::Send(error) => Some(error),
             Self::InvalidData(error) => Some(error.as_ref()),
+            Self::WebRtc(error) => Some(error),
             _ => None,
         }
     }
@@ -119,10 +122,12 @@ impl SessionRoute {
 
 pub struct ClientSession {
     // The endpoint and its verified TLS configuration outlive every connection.
-    endpoint: Endpoint<Client>,
-    connection: Connection,
+    endpoint: Option<Endpoint<Client>>,
+    connection: Option<Connection>,
     reassembler: Mutex<SnapshotReassembler>,
-    route: SessionRoute,
+    route: Option<SessionRoute>,
+    rtc: Option<Mutex<Option<game_server::webrtc_transport::WebRtcClient>>>,
+    owner: Option<mmorpg_game_server::local_world::RunningWorld>,
     welcome: Welcome,
     sequence: u32,
     /// Facing of the latest movement intent, reused by the stopped resume intent.
@@ -144,6 +149,70 @@ pub struct ClientSession {
 }
 
 impl ClientSession {
+    pub async fn connectivity_metrics(
+        &self,
+    ) -> Option<game_server::webrtc_transport::ConnectionMetrics> {
+        let rtc = self.rtc.as_ref()?.lock().await;
+        Some(rtc.as_ref()?.metrics().await)
+    }
+
+    fn connection(&self) -> Result<&Connection, ClientError> {
+        self.connection
+            .as_ref()
+            .ok_or_else(|| "WebTransport session unavailable".into())
+    }
+
+    pub fn set_local_owner(&mut self, owner: mmorpg_game_server::local_world::RunningWorld) {
+        self.owner = Some(owner);
+    }
+
+    pub async fn connect_invite(
+        invite: &mmorpg_game_server::invitation::JoinInvite,
+        local_id: &str,
+        progress: impl Fn(String),
+    ) -> Result<Self, ClientError> {
+        use game_server::webrtc_transport::{Lobby, WebRtcClient};
+        let lobby = Lobby::join(mmorpg_game_server::invitation::setup_config()?, &invite.lobby_id).await
+            .map_err(|_| "This invitation is expired, full or unavailable. Ask the host to check hosting and share a current link.")?;
+        let directory = crate::roster::config_dir()
+            .ok_or("No configuration directory for the guest identity")?;
+        let proof = crate::guest_identity::proof(
+            &directory,
+            local_id,
+            lobby.lobby_id(),
+            lobby.participant_id(),
+            invite.match_id.as_str(),
+        )?;
+        progress(format!(
+            "Waiting for host approval · guest {}. The host can approve this code in the game menu.",
+            mmorpg_game_server::guest_access::hex(&proof[..6])
+        ));
+        let transport = WebRtcClient::connect_with_authorization(lobby, invite.match_id.clone(), &mmorpg_game_server::invitation::bind_ip()?, false, proof).await
+            .map_err(|error| format!("The host could not admit this guest ({error}). Ask the host to approve your guest request, check that the world is running, then retry the invitation."))?;
+        let welcome = validate_welcome(*transport.welcome())?;
+        let zone_id = ZoneId::new(1);
+        Ok(Self {
+            endpoint: None,
+            connection: None,
+            route: None,
+            rtc: Some(Mutex::new(Some(transport))),
+            owner: None,
+            reassembler: Mutex::new(SnapshotReassembler::new()),
+            welcome,
+            sequence: 0,
+            facing: 0,
+            observed: AtomicU64::new(0),
+            sheets: std::sync::Mutex::new(SnapshotDecoder::new()),
+            resume_available: true,
+            zone_id,
+            content_revision: mmorpg_core::content_for_zone(zone_id).revision(),
+            durable_character: false,
+            character_service: None,
+            character: None,
+            followed: None,
+        })
+    }
+
     pub async fn connect(
         url: &str,
         certificate: Option<&Path>,
@@ -167,10 +236,12 @@ impl ClientSession {
             let connection = endpoint.connect(route.url.as_str()).await?;
             let welcome = read_welcome(&connection).await?;
             Ok(Self {
-                endpoint,
-                connection,
+                endpoint: Some(endpoint),
+                connection: Some(connection),
                 reassembler: Mutex::new(SnapshotReassembler::new()),
-                route,
+                route: Some(route),
+                rtc: None,
+                owner: None,
                 welcome,
                 sequence: 0,
                 facing: 0,
@@ -193,8 +264,18 @@ impl ClientSession {
         &self,
         payload: &[u8],
     ) -> Result<game_server::ControlResponse, ClientError> {
+        if let Some(rtc) = &self.rtc {
+            return rtc
+                .lock()
+                .await
+                .as_mut()
+                .ok_or("WebRTC session unavailable")?
+                .control(payload)
+                .await
+                .map_err(Into::into);
+        }
         tokio::time::timeout(Duration::from_secs(5), async {
-            let (mut send, mut receive) = self.connection.open_bi().await?.await?;
+            let (mut send, mut receive) = self.connection()?.open_bi().await?.await?;
             send.write_all(&game_server::encode_control_request(payload)?)
                 .await?;
             send.finish().await?;
@@ -240,8 +321,32 @@ impl ClientSession {
         if !self.character_service_enabled().await? {
             return Ok(false);
         }
-        if !self.try_claim(id, class).await? {
-            return Err("the zone host refused this character; it may already be in play".into());
+        // A restarted host restores the previous offline session under its existing
+        // reconnect grace. Keep the authenticated entitlement fixed and wait for that
+        // holder's normal release; never steal its fenced lease or choose another ID.
+        let deadline = std::time::Instant::now()
+            + Duration::from_secs_f64(
+                self.welcome.reconnect_grace_ticks as f64 / f64::from(TICK_HZ),
+            )
+            + Duration::from_secs(2);
+        loop {
+            if self.try_claim(id, class).await? {
+                break;
+            }
+            if self.rtc.is_none() || std::time::Instant::now() >= deadline {
+                return Err("The host could not restore this saved character. It may still be in play, or its saved class differs. Close the other client and retry with this character's original class.".into());
+            }
+            // Keep projections draining while the old lease expires. Leaving the
+            // realtime channel unread can exhaust SCTP's association receive window
+            // and stall the independent reliable character-control response.
+            let retry = tokio::time::sleep(Duration::from_millis(250));
+            tokio::pin!(retry);
+            loop {
+                tokio::select! {
+                    _ = &mut retry => break,
+                    snapshot = self.receive_snapshot() => { snapshot?; }
+                }
+            }
         }
         self.durable_character = true;
         self.character = Some((id.clone(), class));
@@ -251,6 +356,9 @@ impl ClientSession {
     async fn try_claim(&self, id: &CharacterId, class: ClassChoice) -> Result<bool, ClientError> {
         let mut request = vec![1, 1, class.appearance() as u8];
         request.extend_from_slice(id.as_str().as_bytes());
+        if let Some(owner) = &self.owner {
+            request = owner.sign_owner_claim(&request, self.player_id(), self.connection_epoch());
+        }
         let result = self.character_control(&request).await?;
         Ok(result.accepted && result.payload == [1, 1])
     }
@@ -295,6 +403,9 @@ impl ClientSession {
     /// zone, of an already followed transfer or naming a route of another zone is refused,
     /// and so is a destination that does not take the character within the connect timeout.
     pub async fn follow(&mut self, notice: &RedirectNotice) -> Result<(), ClientError> {
+        if self.rtc.is_some() {
+            return Err("This hosted world does not offer cross-host travel.".into());
+        }
         let (id, class) = self
             .character
             .clone()
@@ -311,27 +422,33 @@ impl ClientSession {
         }
         self.followed = Some(notice.transfer_id);
         // The source retired the character: its connection and resume token are spent.
-        self.connection
+        self.connection()?
             .close(VarInt::from_u32(0), b"followed redirect");
         self.resume_available = false;
         tokio::time::timeout(FOLLOW_TIMEOUT, async {
             // The destination serves its route once its host is up; it takes the claim
             // once the source retired the character.
             let connection = loop {
-                match self.endpoint.connect(route.url.as_str()).await {
+                match self
+                    .endpoint
+                    .as_ref()
+                    .ok_or("WebTransport endpoint unavailable")?
+                    .connect(route.url.as_str())
+                    .await
+                {
                     Ok(connection) => break connection,
                     Err(_) => tokio::time::sleep(RECONNECT_SETTLE).await,
                 }
             };
             self.welcome = read_welcome(&connection).await?;
-            self.connection = connection;
+            self.connection = Some(connection);
             self.reassembler = Mutex::new(SnapshotReassembler::new());
             self.observed.store(0, Ordering::Relaxed);
             // Another zone sends its own sheets.
             *self.sheets_mut() = SnapshotDecoder::new();
             self.zone_id = notice.destination;
             self.content_revision = mmorpg_core::content_for_zone(notice.destination).revision();
-            self.route = route;
+            self.route = Some(route);
             self.character_service = None;
             if !self.character_service_enabled().await? {
                 return Err::<(), ClientError>(
@@ -382,13 +499,24 @@ impl ClientSession {
     /// observes its own current budget when sending each snapshot.
     #[must_use]
     pub fn max_datagram_size(&self) -> Option<usize> {
-        self.connection.max_datagram_size()
+        if self.rtc.is_some() {
+            Some(1200)
+        } else {
+            self.connection
+                .as_ref()
+                .and_then(Connection::max_datagram_size)
+        }
     }
 
     /// Interrupt transport while retaining the in-memory resume identity.
-    pub fn disconnect(&self) {
-        self.connection
-            .close(VarInt::from_u32(0), b"client disconnected");
+    pub async fn disconnect(&self) {
+        if let Some(rtc) = &self.rtc {
+            if let Some(rtc) = rtc.lock().await.as_ref() {
+                let _ = rtc.disconnect().await;
+            }
+        } else if let Some(connection) = &self.connection {
+            connection.close(VarInt::from_u32(0), b"client disconnected");
+        }
     }
 
     /// One bounded resume attempt, never a fallback to fresh admission. A failure
@@ -402,32 +530,57 @@ impl ClientSession {
         let grace =
             Duration::from_secs_f64(self.welcome.reconnect_grace_ticks as f64 / f64::from(TICK_HZ));
         let bound = CONNECT_TIMEOUT.min(grace);
-        self.disconnect();
+        self.disconnect().await;
         let result = tokio::time::timeout(bound, async {
             // Let the server observe connection closure before it handles resume.
             // There is no protocol-level disconnect acknowledgement in this pin.
             tokio::time::sleep(RECONNECT_SETTLE).await;
-            let url = self.route.reconnect_url(self.welcome.reconnect_token);
-            // Do not propagate an error containing the credential-bearing URL.
-            self.connection = self
-                .endpoint
-                .connect(url.as_str())
-                .await
-                .map_err(|_| "could not reconnect to the existing session")?;
-            // Fragment and delivered-tick state belongs to the old connection.
-            self.reassembler = Mutex::new(SnapshotReassembler::new());
-            let welcome = read_welcome(&self.connection).await?;
-            if welcome.player_id != self.welcome.player_id
-                || welcome.connection_epoch <= self.welcome.connection_epoch
-                || welcome.reconnect_token == self.welcome.reconnect_token
-            {
-                return Err("server did not resume the expected player and epoch".into());
+            if let Some(rtc) = &self.rtc {
+                let transport = rtc
+                    .lock()
+                    .await
+                    .take()
+                    .ok_or("WebRTC session unavailable")?;
+                let transport = transport.reconnect().await?;
+                let welcome = validate_welcome(*transport.welcome())?;
+                if welcome.player_id != self.welcome.player_id
+                    || welcome.connection_epoch <= self.welcome.connection_epoch
+                    || welcome.reconnect_token == self.welcome.reconnect_token
+                {
+                    return Err("Server did not resume the expected guest session".into());
+                }
+                self.welcome = welcome;
+                *rtc.lock().await = Some(transport);
+            } else {
+                let url = self
+                    .route
+                    .as_ref()
+                    .ok_or("Session route unavailable")?
+                    .reconnect_url(self.welcome.reconnect_token);
+                // Do not propagate an error containing the credential-bearing URL.
+                self.connection = Some(
+                    self.endpoint
+                        .as_ref()
+                        .ok_or("WebTransport endpoint unavailable")?
+                        .connect(url.as_str())
+                        .await
+                        .map_err(|_| "could not reconnect to the existing session")?,
+                );
+                // Fragment and delivered-tick state belongs to the old connection.
+                self.reassembler = Mutex::new(SnapshotReassembler::new());
+                let welcome = read_welcome(self.connection()?).await?;
+                if welcome.player_id != self.welcome.player_id
+                    || welcome.connection_epoch <= self.welcome.connection_epoch
+                    || welcome.reconnect_token == self.welcome.reconnect_token
+                {
+                    return Err("server did not resume the expected player and epoch".into());
+                }
+                self.welcome = welcome;
             }
-            self.welcome = welcome;
             // Keep the highest *sent* sequence, even if its acknowledgement was
             // lost. Never replay old inputs. Start the resumed connection stopped.
             let facing = self.facing;
-            self.send_move(0, 0, facing)?;
+            self.send_move(0, 0, facing).await?;
             let stopped_sequence = self.sequence;
             let mut resend = tokio::time::interval(Duration::from_millis(50));
             resend.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -439,7 +592,7 @@ impl ClientSession {
                             return Ok(snapshot);
                         }
                     }
-                    _ = resend.tick() => self.send_move(0, 0, facing)?,
+                    _ = resend.tick() => self.send_move(0, 0, facing).await?,
                 }
             }
         })
@@ -447,7 +600,7 @@ impl ClientSession {
         .map_err(|_| ClientError::from("session reconnect timed out"))
         .and_then(|result| result);
         if result.is_err() {
-            self.disconnect();
+            self.disconnect().await;
         } else {
             self.resume_available = true;
         }
@@ -460,20 +613,36 @@ impl ClientSession {
         if !self.resume_available {
             return false;
         }
+        if self.rtc.is_some() {
+            return matches!(
+                error,
+                SessionError::SnapshotTimeout | SessionError::WebRtc(_)
+            );
+        }
         match error {
             SessionError::SnapshotTimeout => true,
             SessionError::Receive(error) => transient_connection_error(error),
             SessionError::Send(SendDatagramError::NotConnected) => {
-                tokio::time::timeout(Duration::from_secs(1), self.connection.closed())
-                    .await
-                    .is_ok_and(|error| transient_connection_error(&error))
+                tokio::time::timeout(Duration::from_secs(1), async {
+                    match self.connection.as_ref() {
+                        Some(connection) => transient_connection_error(&connection.closed().await),
+                        None => false,
+                    }
+                })
+                .await
+                .unwrap_or(false)
             }
             _ => false,
         }
     }
 
     /// Held movement relative to `facing`; positive strafe is the character's right.
-    pub fn send_move(&mut self, forward: i8, strafe: i8, facing: u16) -> Result<(), SessionError> {
+    pub async fn send_move(
+        &mut self,
+        forward: i8,
+        strafe: i8,
+        facing: u16,
+    ) -> Result<(), SessionError> {
         if !(-1..=1).contains(&forward) || !(-1..=1).contains(&strafe) {
             return Err(SessionError::InvalidMovement);
         }
@@ -481,56 +650,62 @@ impl ClientSession {
             forward,
             strafe,
             facing,
-        })?;
+        })
+        .await?;
         self.facing = facing;
         Ok(())
     }
 
     /// One edge-triggered jump; the server ignores it unless grounded.
-    pub fn send_jump(&mut self) -> Result<(), SessionError> {
-        self.send_command(ZoneCommand::Jump)
+    pub async fn send_jump(&mut self) -> Result<(), SessionError> {
+        self.send_command(ZoneCommand::Jump).await
     }
 
     /// Selects a unit, or clears the selection; the zone validates it.
-    pub fn send_select_target(&mut self, target: Option<EntityRef>) -> Result<(), SessionError> {
-        self.send_command(ZoneCommand::SelectTarget(target))
+    pub async fn send_select_target(
+        &mut self,
+        target: Option<EntityRef>,
+    ) -> Result<(), SessionError> {
+        self.send_command(ZoneCommand::SelectTarget(target)).await
     }
 
     /// Swings the weapon toward `facing` (#517); the zone resolves what it hits.
-    pub fn send_swing(&mut self, facing: u16) -> Result<(), SessionError> {
-        self.send_command(ZoneCommand::Swing { facing })
+    pub async fn send_swing(&mut self, facing: u16) -> Result<(), SessionError> {
+        self.send_command(ZoneCommand::Swing { facing }).await
     }
 
     /// Asks a dead character to return to the graveyard.
-    pub fn send_release_spirit(&mut self) -> Result<(), SessionError> {
-        self.send_command(ZoneCommand::ReleaseSpirit)
+    pub async fn send_release_spirit(&mut self) -> Result<(), SessionError> {
+        self.send_command(ZoneCommand::ReleaseSpirit).await
     }
 
     /// Chooses the class and sex once; the zone refuses a repeat with an event.
-    pub fn send_choose_class(&mut self, class: u8, sex: u8) -> Result<(), SessionError> {
+    pub async fn send_choose_class(&mut self, class: u8, sex: u8) -> Result<(), SessionError> {
         self.send_command(ZoneCommand::ChooseClass { class, sex })
+            .await
     }
 
     /// Uses a class ability at the current selection; the zone validates it.
-    pub fn send_use_ability(&mut self, ability: u8) -> Result<(), SessionError> {
+    pub async fn send_use_ability(&mut self, ability: u8) -> Result<(), SessionError> {
         self.send_command(ZoneCommand::UseAbility {
             ability,
             target: None,
         })
+        .await
     }
 
     /// Stops the character's own cast or channel.
-    pub fn send_cancel_cast(&mut self) -> Result<(), SessionError> {
-        self.send_command(ZoneCommand::CancelCast)
+    pub async fn send_cancel_cast(&mut self) -> Result<(), SessionError> {
+        self.send_command(ZoneCommand::CancelCast).await
     }
 
     /// Claims all remaining rewards from the projected corpse death.
-    pub fn send_loot(&mut self, claim: mmorpg_core::LootClaim) -> Result<(), SessionError> {
-        self.send_command(ZoneCommand::Loot(claim))
+    pub async fn send_loot(&mut self, claim: mmorpg_core::LootClaim) -> Result<(), SessionError> {
+        self.send_command(ZoneCommand::Loot(claim)).await
     }
 
     /// Queues a move within the player's own authoritative bag.
-    pub fn send_move_item(
+    pub async fn send_move_item(
         &mut self,
         source: u8,
         destination: u8,
@@ -541,10 +716,11 @@ impl ClientSession {
             destination,
             quantity,
         })
+        .await
     }
 
     /// Sends any zone command under the next sequence; the zone validates it.
-    pub fn send_command(&mut self, command: ZoneCommand) -> Result<(), SessionError> {
+    pub async fn send_command(&mut self, command: ZoneCommand) -> Result<(), SessionError> {
         let sequence = self
             .sequence
             .checked_add(1)
@@ -563,9 +739,23 @@ impl ClientSession {
             mmorpg_protocol::encode_acknowledged_command(self.sheets_mut().revisions(), &payload);
         let frame = game_server::encode_command(sequence, &payload)
             .map_err(|error| SessionError::InvalidData(error.into()))?;
-        self.connection
-            .send_datagram(frame)
-            .map_err(SessionError::Send)?;
+        if let Some(rtc) = &self.rtc {
+            rtc.lock()
+                .await
+                .as_ref()
+                .ok_or_else(|| SessionError::InvalidData("WebRTC session unavailable".into()))?
+                .send_intent(sequence, &payload)
+                .await
+                .map_err(SessionError::WebRtc)?;
+        } else {
+            self.connection
+                .as_ref()
+                .ok_or_else(|| {
+                    SessionError::InvalidData("WebTransport session unavailable".into())
+                })?
+                .send_datagram(frame)
+                .map_err(SessionError::Send)?;
+        }
         self.sequence = sequence;
         Ok(())
     }
@@ -573,17 +763,34 @@ impl ClientSession {
     pub async fn receive_snapshot(&self) -> Result<ZoneSnapshot, SessionError> {
         tokio::time::timeout(SNAPSHOT_TIMEOUT, async {
             loop {
-                let datagram = self
-                    .connection
-                    .receive_datagram()
-                    .await
-                    .map_err(SessionError::Receive)?;
-                let frame = self
-                    .reassembler
-                    .lock()
-                    .await
-                    .accept(&datagram)
-                    .map_err(|error| SessionError::InvalidData(error.into()))?;
+                let frame = if let Some(rtc) = &self.rtc {
+                    Some(
+                        rtc.lock()
+                            .await
+                            .as_mut()
+                            .ok_or_else(|| {
+                                SessionError::InvalidData("WebRTC session unavailable".into())
+                            })?
+                            .snapshot()
+                            .await
+                            .map_err(SessionError::WebRtc)?,
+                    )
+                } else {
+                    let datagram = self
+                        .connection
+                        .as_ref()
+                        .ok_or_else(|| {
+                            SessionError::InvalidData("WebTransport session unavailable".into())
+                        })?
+                        .receive_datagram()
+                        .await
+                        .map_err(SessionError::Receive)?;
+                    self.reassembler
+                        .lock()
+                        .await
+                        .accept(&datagram)
+                        .map_err(|error| SessionError::InvalidData(error.into()))?
+                };
                 if let Some(frame) = frame {
                     if mmorpg_protocol::is_redirect_notice(&frame.payload) {
                         return Err(self
@@ -658,6 +865,10 @@ async fn read_welcome(connection: &Connection) -> Result<Welcome, ClientError> {
         return Err("welcome contains trailing bytes".into());
     }
     let welcome = game_server::decode_welcome(&bytes)?;
+    validate_welcome(welcome)
+}
+
+fn validate_welcome(welcome: Welcome) -> Result<Welcome, ClientError> {
     if welcome.tick_hz != TICK_HZ || welcome.player_id == 0 || welcome.connection_epoch == 0 {
         return Err("server welcome is incompatible with this client".into());
     }
@@ -673,7 +884,11 @@ fn transient_connection_error(error: &ConnectionError) -> bool {
 
 impl Drop for ClientSession {
     fn drop(&mut self) {
-        self.disconnect();
+        if let Some(connection) = &self.connection {
+            connection.close(VarInt::from_u32(0), b"client disconnected");
+        }
+        // Dropping the WebRTC provider owners releases its reactor/channels. Explicit
+        // async disconnect retains the lobby identity for the resume path.
     }
 }
 

@@ -27,6 +27,7 @@ use tokio::sync::{oneshot, watch};
 struct Options {
     url: String,
     certificate: Option<PathBuf>,
+    join_invite: Option<mmorpg_game_server::invitation::JoinInvite>,
     zone_id: ZoneId,
     smoke: bool,
     /// The headless Seam Test journey (#145) instead of a window.
@@ -43,6 +44,7 @@ impl Options {
         let mut options = Self {
             url: "https://localhost:4433/game/matches/zone-1".into(),
             certificate: None,
+            join_invite: None,
             zone_id: ZoneId::new(1),
             smoke: false,
             autopilot: false,
@@ -56,6 +58,13 @@ impl Options {
             match arg.as_str() {
                 "--help" | "-h" => return Ok(None),
                 "--url" => options.url = args.next().ok_or("--url needs a value")?,
+                "--join-invite" => {
+                    options.join_invite = Some(mmorpg_game_server::invitation::JoinInvite::parse(
+                        &args
+                            .next()
+                            .ok_or("--join-invite needs a moenarch.com invitation URL")?,
+                    )?);
+                }
                 "--certificate" => {
                     options.certificate =
                         Some(args.next().ok_or("--certificate needs a PEM path")?.into())
@@ -110,6 +119,10 @@ impl Options {
         if options.autopilot && (options.smoke || options.character_id.is_none()) {
             return Err("--autopilot needs --class and --character-id, without --smoke".into());
         }
+        if options.join_invite.is_some() && (options.zone_id != ZoneId::new(1) || options.autopilot)
+        {
+            return Err("Native invitations join Greyhaven zone 1; do not combine --join-invite with another zone or handoff autopilot.".into());
+        }
         Ok(Some(options))
     }
 }
@@ -117,7 +130,7 @@ impl Options {
 fn main() -> Result<(), ClientError> {
     let Some(options) = Options::parse(std::env::args().skip(1))? else {
         println!(
-            "mmorpg-client [--url https://host:4433/game/matches/zone-1] [--zone 1] [--certificate cert.pem] [--class warden|ranger|arcanist] [--sex female|male] [--character-id ID] [--smoke | --autopilot] [--frames N]\nW/S move, A/D strafe, Space jumps (hold to swim up), Shift dodge-rolls, X swims down; Tab targets the nearest creature, Q swings, hold G (a Warden's directed strike) or Z (shield guard) and move the mouse to aim, 1-8 use the class abilities, Y/U/I/O order a Necromancer's skeletons to attack the target, defend here, follow or retreat, R releases a dead spirit; left click selects, right click cancels a held strike, guard or cast, wheel zooms. E talks to a selected NPC or uses a door in reach, Enter chats, B bags, C character, L quests, M the world map. Escape closes panels, otherwise opens the game menu. --smoke connects, chooses the class and verifies an offscreen GPU frame. --autopilot claims the character in a Seam Test zone (901/902) on trusted-LAN handoff hosts, walks it through the seam and teleports it back by waystone, following each redirect, without a window.\nWithout --certificate, system certificate trust is used. Without --class the window offers character selection (smoke uses a male Warden)."
+            "mmorpg-client [--url https://host:4433/game/matches/zone-1] [--zone 1] [--certificate cert.pem] [--join-invite https://moenarch.com/native.html?... ] [--class warden|ranger|arcanist] [--sex female|male] [--character-id ID] [--smoke | --autopilot] [--frames N]\nW/S move, A/D strafe, Space jumps (hold to swim up), Shift dodge-rolls, X swims down; Tab targets the nearest creature, Q swings, hold G (a Warden's directed strike) or Z (shield guard) and move the mouse to aim, 1-8 use the class abilities, Y/U/I/O order a Necromancer's skeletons to attack the target, defend here, follow or retreat, R releases a dead spirit; left click selects, right click cancels a held strike, guard or cast, wheel zooms. E talks to a selected NPC or uses a door in reach, Enter chats, B bags, C character, L quests, M the world map. Escape closes panels, otherwise opens the game menu. --smoke connects, chooses the class and verifies an offscreen GPU frame. --autopilot claims the character in a Seam Test zone (901/902) on trusted-LAN handoff hosts, walks it through the seam and teleports it back by waystone, following each redirect, without a window.\nWithout --certificate, system certificate trust is used. Without --class the window offers character selection (smoke uses a male Warden)."
         );
         return Ok(());
     };
@@ -130,6 +143,7 @@ fn main() -> Result<(), ClientError> {
         options.sex.code(),
     );
     let selected = (options.class.is_some() || options.smoke).then(|| CharacterSelection {
+        invitation: options.join_invite.clone(),
         host_local: false,
         name: None,
         local_id: format!("cli-{}-{}", class_choice.0, class_choice.1),
@@ -146,12 +160,22 @@ fn main() -> Result<(), ClientError> {
     if !staged {
         let scenery = scenery_for_zone(options.zone_id);
         let world = WorldScene::new(&scenery);
-        let mut session = runtime.block_on(ClientSession::connect(
-            &options.url,
-            options.certificate.as_deref(),
-            options.zone_id,
-            scenery.content_revision,
-        ))?;
+        let mut session = match &options.join_invite {
+            Some(invite) => runtime.block_on(ClientSession::connect_invite(
+                invite,
+                &selected
+                    .as_ref()
+                    .ok_or("Select a character before joining")?
+                    .local_id,
+                |message| eprintln!("{message}"),
+            ))?,
+            None => runtime.block_on(ClientSession::connect(
+                &options.url,
+                options.certificate.as_deref(),
+                options.zone_id,
+                scenery.content_revision,
+            ))?,
+        };
         let player_id = session.player_id();
         if options.autopilot {
             return runtime.block_on(async {
@@ -190,7 +214,7 @@ fn main() -> Result<(), ClientError> {
                 } else { false };
                 let mut chosen = None;
                 for _ in 0..90 {
-                    if !durable { session.send_choose_class(class_choice.0, class_choice.1)?; }
+                    if !durable { session.send_choose_class(class_choice.0, class_choice.1).await?; }
                     chosen = session.receive_snapshot().await?.viewer.class;
                     if chosen.is_some() {
                         break;
@@ -235,54 +259,63 @@ fn main() -> Result<(), ClientError> {
     let mut task = runtime.spawn(async move {
         let session = match session {
             Some(session) => session,
-            None => {
-                // The selection stage needs no zone: connect once a character is chosen.
-                tokio::select! {
+            None => loop {
+                let selected = loop {
+                    if let Some(selected) = chosen.borrow_and_update().clone() {
+                        break selected;
+                    }
+                    tokio::select! {
+                        _ = &mut shutdown_receiver => return,
+                        changed = chosen.changed() => { if changed.is_err() { return; } }
+                    }
+                };
+                update_sender.send_replace(NetworkUpdate::Waiting);
+                let connecting = async {
+                    if selected.host_local {
+                        let world = session_hosting.ready().await?;
+                        let mut connected = ClientSession::connect(
+                            &world.url(),
+                            Some(&world.certificate),
+                            route.2,
+                            route.3,
+                        )
+                        .await?;
+                        connected.set_local_owner(world);
+                        Ok(connected)
+                    } else if let Some(invite) = selected.invitation {
+                        ClientSession::connect_invite(&invite, &selected.local_id, |message| {
+                            update_sender.send_replace(NetworkUpdate::Joining(message));
+                        })
+                        .await
+                    } else {
+                        ClientSession::connect(&route.0, route.1.as_deref(), route.2, route.3).await
+                    }
+                };
+                let result = tokio::select! {
                     _ = &mut shutdown_receiver => return,
-                    chosen = async { chosen.wait_for(Option::is_some).await.is_ok() } => {
-                        if !chosen { return; }
-                    }
-                }
-                let (mut url, mut certificate, zone_id, revision) = route;
-                let host_local = chosen
-                    .borrow()
-                    .as_ref()
-                    .is_some_and(|character| character.host_local);
-                if host_local {
-                    match session_hosting.ready().await {
-                        Ok(world) => {
-                            url = world.url();
-                            certificate = Some(world.certificate);
-                        }
-                        Err(error) => {
-                            update_sender.send_replace(NetworkUpdate::Failed(error));
-                            return;
-                        }
-                    }
-                }
-                match ClientSession::connect(&url, certificate.as_deref(), zone_id, revision).await
-                {
-                    Ok(session) => session,
+                    result = connecting => result,
+                };
+                match result {
+                    Ok(connected) => break connected,
                     Err(error) => {
                         update_sender.send_replace(NetworkUpdate::Failed(error.to_string()));
-                        return;
+                        tokio::select! {
+                            _ = &mut shutdown_receiver => return,
+                            changed = chosen.changed() => { if changed.is_err() { return; } }
+                        }
                     }
                 }
-            }
+            },
         };
-        if let Err(error) = run_session_with_characters(
+        run_selected_session(
             session,
             input_receiver,
             character_receiver,
             party,
-            &update_sender,
+            update_sender,
             shutdown_receiver,
         )
-        .await
-        {
-            // The owning window observes this final state; no detached errors.
-            update_sender.send_replace(NetworkUpdate::Failed(error.to_string()));
-        }
+        .await;
     });
     let result = desktop::run(
         Arc::clone(&runtime),
@@ -294,6 +327,10 @@ fn main() -> Result<(), ClientError> {
         update_receiver,
         party_client,
         options.frames,
+        options
+            .join_invite
+            .as_ref()
+            .map(mmorpg_game_server::invitation::JoinInvite::url),
         options.class.map(|class| (class, options.sex)),
         hosting,
     );
@@ -314,6 +351,23 @@ fn main() -> Result<(), ClientError> {
         Ok::<(), ClientError>(())
     })?;
     result
+}
+
+async fn run_selected_session(
+    session: ClientSession,
+    input: watch::Receiver<PlayerInput>,
+    characters: watch::Receiver<Option<CharacterSelection>>,
+    party: mmorpg_client::session::PartyLink,
+    updates: watch::Sender<NetworkUpdate>,
+    shutdown: oneshot::Receiver<()>,
+) {
+    if let Err(error) =
+        run_session_with_characters(session, input, characters, party, &updates, shutdown).await
+    {
+        updates.send_replace(NetworkUpdate::Ended(format!(
+            "Connection ended. Reopen the client to rejoin your saved character: {error}"
+        )));
+    }
 }
 
 #[cfg(test)]

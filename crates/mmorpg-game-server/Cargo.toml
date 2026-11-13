@@ -9,13 +9,15 @@ publish.workspace = true
 # Network hosts never depend on presentation data such as mmorpg-scenery;
 # tests/dependency_boundary.rs checks the resolved graph.
 [dependencies]
-game-server.workspace = true
+game-server = { workspace = true, features = ["webrtc-transport"] }
 mmorpg-core.workspace = true
 mmorpg-characters.workspace = true
 mmorpg-control-plane.workspace = true
 mmorpg-protocol.workspace = true
 tokio.workspace = true
 getrandom = "=0.4.3"
+ring = "=0.17.14"
+url = "=2.5.8"
 wtransport = { version = "=0.7.2", default-features = false, features = ["ring", "self-signed"] }
 
 postgres = { workspace = true, optional = true }

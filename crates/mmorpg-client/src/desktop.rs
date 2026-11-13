@@ -115,6 +115,7 @@ pub fn run(
     updates: watch::Receiver<NetworkUpdate>,
     party: PartyClient,
     frames: Option<u32>,
+    invitation: Option<String>,
     character: Option<(PlayerClass, Sex)>,
     hosting: mmorpg_client::hosting::Hosting,
 ) -> Result<(), ClientError> {
@@ -138,6 +139,7 @@ pub fn run(
     let mut ui = GameUi::new(&scenery);
     hosting.refresh();
     ui.hosting = hosting;
+    ui.invitation_text = invitation.unwrap_or_default();
     if stage.is_some() {
         // The window opens on the logo, which dissolves into the selection stage.
         ui.play_splash();
@@ -1321,7 +1323,7 @@ impl App {
                 self.npc_context.close();
                 self.world_controls.set_interaction(false);
             }
-            UiIntent::ChooseCharacter(id, class, sex, headwear, host_local) => {
+            UiIntent::ChooseCharacter(id, class, sex, headwear, host_local, invitation) => {
                 if self.stage.as_ref().is_some_and(|stage| !stage.entered)
                     && self.preparing.is_none()
                 {
@@ -1347,6 +1349,7 @@ impl App {
                     input.class_choice = Some((class.code(), sex.code()));
                 });
                 self.characters.send_replace(Some(CharacterSelection {
+                    invitation,
                     host_local,
                     name: self.ui.character_name.clone(),
                     local_id: id,
@@ -1410,7 +1413,11 @@ impl App {
         let (Some(egui), Some(window)) = (self.egui.as_mut(), self.window.as_ref()) else {
             return;
         };
-        let connection = match &*self.updates.borrow() {
+        let network = self.updates.borrow().clone();
+        let connection = match &network {
+            NetworkUpdate::Joining(message)
+            | NetworkUpdate::Failed(message)
+            | NetworkUpdate::Ended(message) => Some(message.as_str()),
             _ if self.stage.is_some() && self.choosing => None,
             _ if self.stage.is_some() => Some("Entering the world…"),
             NetworkUpdate::Waiting => Some("Connecting to the world…"),
@@ -1941,7 +1948,7 @@ impl ApplicationHandler for App {
                 let now = Instant::now();
                 let update = self.updates.borrow_and_update().clone();
                 match update {
-                    NetworkUpdate::Waiting => {}
+                    NetworkUpdate::Waiting | NetworkUpdate::Joining(_) => {}
                     NetworkUpdate::Reconnecting => {
                         self.retire_pointer();
                         self.npc_context.close();
@@ -2044,7 +2051,15 @@ impl ApplicationHandler for App {
                         self.update_movement();
                         self.show_title(now);
                     }
-                    NetworkUpdate::Failed(error) => {
+                    NetworkUpdate::Failed(_) => {
+                        if self.stage.is_some() {
+                            self.choosing = true;
+                        }
+                        self.retire_held_input();
+                    }
+                    NetworkUpdate::Ended(error) => {
+                        // The session owner has exited: the ordinary fatal path closes
+                        // this window and returns its explicit reopen instruction.
                         self.fail(event_loop, error);
                         return;
                     }
