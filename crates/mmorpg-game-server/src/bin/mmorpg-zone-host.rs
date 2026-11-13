@@ -77,6 +77,7 @@ async fn serve_configured_host() -> Result<(), Box<dyn Error>> {
     let (shutdown_sender, shutdown_receiver) = mpsc::channel(4);
     install_shutdown_forwarder(shutdown_sender)?;
     let transport_config = MatchHostWebTransportConfig {
+        bind_ip: None,
         port,
         certificate_pem,
         private_key_pem,
@@ -198,7 +199,7 @@ async fn serve_local_world(
     owner
         .serve_control(shutdown_sender)
         .map_err(|error| ConfigError(error.to_string()))?;
-    serve_development_character_host(
+    mmorpg_game_server::serve_managed_character_host(
         DevelopmentCharacterHostConfig {
             directory: directory.join("characters"),
             recovery_directory: Some(directory.join("recovery")),
@@ -206,6 +207,7 @@ async fn serve_local_world(
             reconnect_grace_ticks: DEFAULT_RECONNECT_GRACE_TICKS,
         },
         MatchHostWebTransportConfig {
+            bind_ip: Some(std::net::Ipv4Addr::LOCALHOST.into()),
             port: owner.world.port,
             certificate_pem: owner.world.certificate.clone(),
             private_key_pem: owner.private_key.clone(),
@@ -217,6 +219,7 @@ async fn serve_local_world(
             port: owner.world.status_port,
         },
         shutdown_receiver,
+        owner.managed.clone(),
     )
     .await
     .map_err(|error| ConfigError(error.to_string()))?;

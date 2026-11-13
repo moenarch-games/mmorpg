@@ -54,7 +54,14 @@ pub enum UiIntent {
     /// Close the NPC context.
     CloseContext,
     /// The chosen class, sex and local headwear to enter the world with.
-    ChooseCharacter(String, PlayerClass, Sex, Headwear, bool),
+    ChooseCharacter(
+        String,
+        PlayerClass,
+        Sex,
+        Headwear,
+        bool,
+        Option<mmorpg_game_server::invitation::JoinInvite>,
+    ),
 }
 
 /// The latest self sheets: an omitted newer sheet is pending, never empty.
@@ -146,6 +153,8 @@ enum LogTab {
 
 /// Interface state that is purely local presentation.
 pub struct GameUi {
+    pub invitation_text: String,
+    invitation_problem: Option<String>,
     pub hosting: crate::hosting::Hosting,
     enter_hosted_when_ready: bool,
     next_host_probe: Instant,
@@ -179,7 +188,7 @@ pub struct GameUi {
     dismissed_loot: Option<LootClaim>,
 }
 
-const REFUSAL_SECONDS: Duration = Duration::from_secs(3);
+const REFUSAL_SECONDS: Duration = Duration::from_secs(1);
 
 impl GameUi {
     /// Draws the minimap of another zone's scenery (#145).
@@ -192,8 +201,10 @@ impl GameUi {
         Self {
             ability_art: ability_art::AbilityArt::default(),
             hosting: crate::hosting::Hosting::default(),
+            invitation_text: String::new(),
+            invitation_problem: None,
             enter_hosted_when_ready: false,
-            next_host_probe: Instant::now() + Duration::from_secs(3),
+            next_host_probe: Instant::now() + Duration::from_secs(1),
             settings: settings::SettingsWindow::default(),
             sheets: Sheets::default(),
             logs: Logs::default(),
@@ -395,8 +406,8 @@ impl GameUi {
     ) -> Vec<UiIntent> {
         let mut intents = Vec::new();
         if now >= self.next_host_probe && !self.enter_hosted_when_ready {
-            self.next_host_probe = now + Duration::from_secs(3);
-            if matches!(self.hosting.state(), crate::hosting::State::Ready(_)) {
+            self.next_host_probe = now + Duration::from_secs(1);
+            if matches!(self.hosting.state(), crate::hosting::State::Ready(..)) {
                 self.hosting.refresh();
             }
         }
@@ -548,6 +559,7 @@ impl GameUi {
         let window = &mut self.roster;
         let mut entered = None;
         let mut host_local = false;
+        let mut join_invitation = None;
         egui::Area::new(egui::Id::unique("selection-sidebar"))
             .anchor(Align2::RIGHT_TOP, Vec2::new(-margin, margin))
             .show(ctx, |ui| {
@@ -697,7 +709,7 @@ impl GameUi {
         let mut open_settings = false;
         if self.enter_hosted_when_ready {
             match self.hosting.state() {
-                crate::hosting::State::Ready(_) => {
+                crate::hosting::State::Ready(..) => {
                     entered.clone_from(&chosen);
                     host_local = true;
                     self.enter_hosted_when_ready = false;
@@ -718,6 +730,16 @@ impl GameUi {
                     ).clicked() {
                         self.hosting.start();
                         self.enter_hosted_when_ready = true;
+                    }
+                    ui.separator();
+                    ui.label("Join an invited world");
+                    ui.add(egui::TextEdit::singleline(&mut self.invitation_text).hint_text("Paste moenarch.com invitation"));
+                    if let Some(problem) = &self.invitation_problem { ui.colored_label(theme::color(theme.color.danger), problem); }
+                    if ui.add_enabled(chosen.is_some(), egui::Button::new("Join World")).clicked() {
+                        match mmorpg_game_server::invitation::JoinInvite::parse(&self.invitation_text) {
+                            Ok(invite) => { join_invitation = Some(invite); entered.clone_from(&chosen); self.invitation_problem = None; }
+                            Err(error) => self.invitation_problem = Some(error),
+                        }
                     }
                     ui.separator();
                     ui.label(theme::muted("LAST LOCATION"));
@@ -756,6 +778,7 @@ impl GameUi {
                 character.sex,
                 character.headwear,
                 host_local,
+                join_invitation,
             ));
         }
     }
@@ -1338,8 +1361,55 @@ fn hosting_controls(ui: &mut egui::Ui, hosting: &crate::hosting::Hosting) {
             ui.spinner();
             ui.label(message);
         }
-        State::Ready(_) => {
+        State::Ready(world, status) => {
             ui.label("Local world running · continues after you quit");
+            if let Some(invitation) = status.invitation {
+                ui.label("World invitation");
+                let mut displayed = invitation.clone();
+                ui.add(
+                    egui::TextEdit::multiline(&mut displayed)
+                        .desired_rows(2)
+                        .interactive(false),
+                );
+                if ui.button("Copy invitation").clicked() {
+                    ui.ctx().copy_text(invitation);
+                }
+            } else {
+                ui.label(
+                    status
+                        .problem
+                        .unwrap_or_else(|| "Registering world for invitations…".into()),
+                );
+                if ui.button("Retry sharing").clicked() {
+                    hosting.retry_sharing();
+                }
+            }
+            for guest in status.guests {
+                ui.horizontal(|ui| {
+                    ui.label(format!(
+                        "Guest {}{}",
+                        guest.code,
+                        if guest.pending {
+                            " wants to join"
+                        } else if guest.revoked {
+                            " · access removed"
+                        } else {
+                            " · admitted"
+                        }
+                    ));
+                    if (guest.pending || guest.revoked) && ui.button("Approve").clicked() {
+                        hosting.guest_decision(guest.key.clone(), true);
+                    }
+                    if !guest.revoked
+                        && ui
+                            .button(if guest.pending { "Deny" } else { "Remove" })
+                            .clicked()
+                    {
+                        hosting.guest_decision(guest.key.clone(), false);
+                    }
+                });
+            }
+            let _ = world;
             if ui.button("Stop World").clicked() {
                 hosting.stop();
             }

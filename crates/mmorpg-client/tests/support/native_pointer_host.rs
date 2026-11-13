@@ -55,6 +55,7 @@ impl LocalHost {
         let task = tokio::spawn(serve_match_host_with_shutdown(
             host,
             MatchHostWebTransportConfig {
+                bind_ip: None,
                 port,
                 certificate_pem: certificate.clone(),
                 private_key_pem: key,

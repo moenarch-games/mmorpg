@@ -108,6 +108,7 @@ pub struct RefusalReceipt {
 
 #[derive(Clone)]
 pub enum NetworkUpdate {
+    Joining(String),
     Waiting,
     Reconnecting,
     /// The character moves on to another zone (#145); its snapshots follow from there.
@@ -141,36 +142,38 @@ struct Outgoing {
 }
 
 impl Outgoing {
-    fn deliver(self, session: &mut ClientSession) -> Result<(), SessionError> {
+    async fn deliver(self, session: &mut ClientSession) -> Result<(), SessionError> {
         if let Some((class, sex)) = self.choose {
-            session.send_choose_class(class, sex)?;
+            session.send_choose_class(class, sex).await?;
         }
         if let Some(target) = self.select {
-            session.send_select_target(target)?;
+            session.send_select_target(target).await?;
         }
         if let Some(facing) = self.swing {
-            session.send_swing(facing)?;
+            session.send_swing(facing).await?;
         }
         if self.release {
-            session.send_release_spirit()?;
+            session.send_release_spirit().await?;
         }
         if self.cancel {
-            session.send_cancel_cast()?;
+            session.send_cancel_cast().await?;
         }
         if let Some(lane) = self.guard {
-            session.send_command(ZoneCommand::Guard { lane })?;
+            session.send_command(ZoneCommand::Guard { lane }).await?;
         }
         if let Some(ability) = self.ability {
-            session.send_use_ability(ability)?;
+            session.send_use_ability(ability).await?;
         }
         if let Some((ability, retired)) = self.ability_release {
-            session.send_command(ZoneCommand::ReleaseAbility { ability, retired })?;
+            session
+                .send_command(ZoneCommand::ReleaseAbility { ability, retired })
+                .await?;
         }
         if let Some(command) = self.interaction {
-            session.send_command(command)?;
+            session.send_command(command).await?;
         }
         for command in self.movement.commands() {
-            session.send_command(command)?;
+            session.send_command(command).await?;
         }
         Ok(())
     }
@@ -324,6 +327,7 @@ impl Outbox {
 /// A roster choice, separate from high-frequency held input.
 #[derive(Clone, Debug)]
 pub struct CharacterSelection {
+    pub invitation: Option<mmorpg_game_server::invitation::JoinInvite>,
     /// Connect to the explicitly started game-owned local world.
     pub host_local: bool,
     /// The character's roster name, announced for party frames and `/invite`.
@@ -368,6 +372,9 @@ pub async fn run_session_with_characters(
             .await??
         }
     };
+    updates.send_replace(NetworkUpdate::Joining(
+        "Restoring the saved character…".into(),
+    ));
     tokio::select! {
         _ = &mut shutdown => { session.release_character().await?; return Ok(()); },
         claimed = session.claim_character(&id, selected.class) => { claimed?; }
@@ -447,13 +454,13 @@ async fn run_connected_session(
                     // release. Peek without marking the value seen, so a pending
                     // jump still reaches the change branch.
                     let current = *input.borrow();
-                    outbox.heartbeat(current, Instant::now()).deliver(&mut session).err()
+                    outbox.heartbeat(current, Instant::now()).deliver(&mut session).await.err()
                 }
             },
             changed = input.changed() => match changed {
                 Ok(()) => {
                     let current = *input.borrow_and_update();
-                    outbox.changes(current, Instant::now()).deliver(&mut session).err()
+                    outbox.changes(current, Instant::now()).deliver(&mut session).await.err()
                 }
                 // The owning window has closed; it also requests shutdown.
                 Err(_) => { session.release_character().await?; return Ok(()); },

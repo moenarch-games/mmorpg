@@ -23,6 +23,7 @@ async fn actual_transport_refusal_survives_two_publications_before_gui_consumpti
             offer: 0,
             quantity: 1,
         })
+        .await
         .unwrap();
     let refusal = tokio::time::timeout(Duration::from_secs(5), async {
         loop {

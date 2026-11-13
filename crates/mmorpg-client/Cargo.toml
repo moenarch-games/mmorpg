@@ -12,6 +12,7 @@ image = { version = "=0.25.10", default-features = false, features = ["png", "jp
 # Transcodes the KTX2 (Basis Universal) ground textures (asset-tooling#475); pure Rust.
 basisu = "=0.1.0"
 getrandom = "=0.4.3"
+ring = "=0.17.14"
 tempfile = "=3.27.0"
 serde_json = "=1.0.154"
 serde = { version = "=1.0.229", features = ["derive"] }
@@ -21,7 +22,7 @@ settings-adapters = { git = "https://github.com/moritzbrantner/settings.git", re
 # The shared audio director on kira (#447); Linux builds need ALSA headers (libasound2-dev).
 game-audio = { git = "https://github.com/moritzbrantner/game-audio.git", rev = "2643e342a7d071445186e421082acb553141811d", features = ["kira"] }
 gltf = { version = "=1.4.1", default-features = false, features = ["import", "utils", "names", "extras"] }
-game-server.workspace = true
+game-server = { workspace = true, features = ["webrtc-transport"] }
 mmorpg-game-server = { path = "../mmorpg-game-server" }
 mmorpg-core.workspace = true
 mmorpg-protocol.workspace = true

@@ -76,11 +76,11 @@ async fn walk(
         };
         let at = feet(&snapshot)?;
         if reach.is_some_and(|reach| distance(at, target) <= reach) {
-            session.send_move(0, 0, 0)?;
+            session.send_move(0, 0, 0).await?;
             return Ok(None);
         }
         let facing = trig::yaw_from_vector(target[0] - at[0], target[1] - at[1]).unwrap_or(0);
-        session.send_move(1, 0, facing)?;
+        session.send_move(1, 0, facing).await?;
     }
     Err(format!(
         "did not reach {target:?} in zone {}",
@@ -150,7 +150,9 @@ pub async fn seam_test_journey(session: &mut ClientSession) -> Result<Journey, C
         match step(session).await? {
             // Once a second, in case a datagram was lost; the departure holds meanwhile.
             Step::Projection(_) if waited % 20 == 0 => {
-                session.send_command(ZoneCommand::UseWaystone { waystone: home })?;
+                session
+                    .send_command(ZoneCommand::UseWaystone { waystone: home })
+                    .await?;
             }
             Step::Projection(_) if waited > MAX_SNAPSHOTS => {
                 return Err("waystone travel never redirected".into());

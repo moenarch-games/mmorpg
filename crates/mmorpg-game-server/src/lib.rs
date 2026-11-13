@@ -5,12 +5,17 @@ mod departures;
 pub use departures::{HandoffChannel, Redirect, arrival_input};
 mod dev_characters;
 mod dev_host;
+pub mod guest_access;
+pub mod hosted_access;
+pub mod invitation;
 pub mod lifecycle;
 pub mod local_world;
 #[cfg(feature = "postgres")]
 pub mod persistence;
 pub use dev_characters::{DevCharacterService, DevCharacterStorage};
-pub use dev_host::{DevelopmentCharacterHostConfig, serve_development_character_host};
+pub use dev_host::{
+    DevelopmentCharacterHostConfig, serve_development_character_host, serve_managed_character_host,
+};
 mod fenced_runtime;
 pub mod handoff;
 pub mod handoff_host;
@@ -30,7 +35,7 @@ use mmorpg_protocol::{
     SheetRevisions, decode_command_envelope, encode_canonical_snapshot, pack_snapshot_acknowledged,
 };
 
-pub const PINNED_GAME_SERVER_REVISION: &str = "f9da1f462f0b0c7f87bbd17588a979df4745c00b";
+pub const PINNED_GAME_SERVER_REVISION: &str = "0817c9da548eeb44914a403f7515ab3bffdfbe47";
 pub const PINNED_PHYSICS_ENGINE_REVISION: &str = "1b98f84d409796b2a15b84f3fa4ed7f03a11f8bd";
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -80,6 +80,7 @@ impl LocalHost {
         let (shutdown, receiver) = tokio::sync::mpsc::channel(1);
         drop(reservation);
         let config = MatchHostWebTransportConfig {
+            bind_ip: None,
             port,
             certificate_pem: certificate.clone(),
             private_key_pem: key,
@@ -196,11 +197,15 @@ async fn corpse_loot_crosses_real_transport_and_resume_without_double_credit() {
     let result = tokio::time::timeout(Duration::from_secs(15), async {
         let mut session =
             ClientSession::connect(&local.url, Some(&local.certificate), zone_id, revision).await?;
-        session.send_select_target(Some(EntityRef::Creature(CreatureId::new(1))))?;
+        session
+            .send_select_target(Some(EntityRef::Creature(CreatureId::new(1))))
+            .await?;
         let mut sheet = None;
         for _ in 0..mmorpg_core::golden::t30(90) {
             // The wolf stands 180 units toward -X: swing that way (#517) until it falls.
-            session.send_swing(3 * mmorpg_core::trig::YAW_QUARTER_TURN)?;
+            session
+                .send_swing(3 * mmorpg_core::trig::YAW_QUARTER_TURN)
+                .await?;
             let snapshot = session.receive_snapshot().await?;
             if let Some(view) = snapshot.loot {
                 sheet = Some(view);
@@ -212,7 +217,7 @@ async fn corpse_loot_crosses_real_transport_and_resume_without_double_credit() {
         assert_eq!(sheet.rewards.item.unwrap().quantity(), 2);
         let mut other =
             ClientSession::connect(&local.url, Some(&local.certificate), zone_id, revision).await?;
-        other.send_loot(sheet.claim)?;
+        other.send_loot(sheet.claim).await?;
         let mut rejected_owner = false;
         for _ in 0..mmorpg_core::golden::t30(30) {
             let snapshot = other.receive_snapshot().await?;
@@ -232,7 +237,7 @@ async fn corpse_loot_crosses_real_transport_and_resume_without_double_credit() {
             }
         }
         assert!(rejected_owner);
-        session.send_loot(sheet.claim)?;
+        session.send_loot(sheet.claim).await?;
         let mut credited = false;
         for _ in 0..mmorpg_core::golden::t30(30) {
             let snapshot = session.receive_snapshot().await?;
@@ -246,7 +251,7 @@ async fn corpse_loot_crosses_real_transport_and_resume_without_double_credit() {
         let identity = session.player_id();
         session.reconnect().await?;
         assert_eq!(session.player_id(), identity);
-        session.send_loot(sheet.claim)?;
+        session.send_loot(sheet.claim).await?;
         let mut saw_refusal = false;
         let mut saw_bag = false;
         for _ in 0..mmorpg_core::golden::t30(30) {
@@ -293,7 +298,7 @@ async fn bag_intents_cross_real_transport_and_resume_without_losing_items() {
             greyhaven_vale::content().revision(),
         )
         .await?;
-        session.send_move_item(0, 15, 2)?;
+        session.send_move_item(0, 15, 2).await?;
         let mut changed = None;
         for _ in 0..mmorpg_core::golden::t30(30) {
             let snapshot = session.receive_snapshot().await?;
@@ -322,7 +327,7 @@ async fn bag_intents_cross_real_transport_and_resume_without_losing_items() {
             recovered,
             "resume recovers the durable bag from its held sheet"
         );
-        session.send_move_item(15, 0, 2)?;
+        session.send_move_item(15, 0, 2).await?;
         let mut merged = false;
         for _ in 0..mmorpg_core::golden::t30(30) {
             let snapshot = session.receive_snapshot().await?;
@@ -368,7 +373,7 @@ async fn clients_share_authority_resume_identity_and_reject_wrong_content() {
             .find(|player| player.id == first.player_id())
             .unwrap()
             .position;
-        first.send_move(1, 0, SOUTH)?;
+        first.send_move(1, 0, SOUTH).await?;
         let mut moved = false;
         for _ in 0..mmorpg_core::golden::t30(30) {
             let snapshot = second.receive_snapshot().await?;
@@ -386,7 +391,7 @@ async fn clients_share_authority_resume_identity_and_reject_wrong_content() {
             moved,
             "other clients must see the server-resolved movement and facing"
         );
-        first.send_move(0, 0, SOUTH)?;
+        first.send_move(0, 0, SOUTH).await?;
         let mut stopped = false;
         for _ in 0..mmorpg_core::golden::t30(30) {
             let snapshot = first.receive_snapshot().await?;
@@ -409,7 +414,7 @@ async fn clients_share_authority_resume_identity_and_reject_wrong_content() {
         // Commands may have reached the server even if their ACK was lost.
         // Preserve the highest sent sequence across connection replacement.
         for _ in 0..mmorpg_core::golden::t30(32) {
-            first.send_move(0, 0, SOUTH)?;
+            first.send_move(0, 0, SOUTH).await?;
         }
         let player_id = first.player_id();
         let previous_epoch = first.connection_epoch();
@@ -444,7 +449,7 @@ async fn clients_share_authority_resume_identity_and_reject_wrong_content() {
         let again = first.reconnect().await?;
         assert_eq!(first.connection_epoch(), previous_epoch + 2);
         assert!(again.acknowledged_sequence > resumed.acknowledged_sequence);
-        first.send_move(1, 0, NORTH)?;
+        first.send_move(1, 0, NORTH).await?;
         let mut resumed_movement = false;
         for _ in 0..mmorpg_core::golden::t30(30) {
             let snapshot = second.receive_snapshot().await?;
@@ -461,7 +466,7 @@ async fn clients_share_authority_resume_identity_and_reject_wrong_content() {
             resumed_movement,
             "resumed commands must reach the same authoritative player"
         );
-        first.send_jump()?;
+        first.send_jump().await?;
         let mut jumped = false;
         for _ in 0..mmorpg_core::golden::t30(30) {
             let snapshot = second.receive_snapshot().await?;
@@ -529,7 +534,7 @@ async fn walk(
             let [dx, dz] = [goal[0] - at[0], goal[1] - at[2]];
             if f64::from(dx).hypot(f64::from(dz)) <= 15. {
                 if index + 1 == waypoints.len() {
-                    session.send_move(0, 0, 0)?;
+                    session.send_move(0, 0, 0).await?;
                 }
                 break;
             }
@@ -538,7 +543,9 @@ async fn walk(
             }
             // Yaw 0 faces +Z and a quarter turn faces +X.
             let turns = f64::from(dx).atan2(f64::from(dz)) / std::f64::consts::TAU;
-            session.send_move(1, 0, (turns.rem_euclid(1.) * 65_536.) as u16)?;
+            session
+                .send_move(1, 0, (turns.rem_euclid(1.) * 65_536.) as u16)
+                .await?;
             snapshot = session.receive_snapshot().await?;
         }
     }
@@ -597,7 +604,7 @@ async fn the_inn_journey_crosses_real_transport_and_both_players_see_the_door() 
         // Straight past the watcher one slot east: the walker slides around it.
         let outside = [[1_495, spawn[2]], [1_495, 620]];
         walk(&mut walker, &outside).await?;
-        walker.send_command(door(true))?;
+        walker.send_command(door(true)).await?;
         let opened = door_reaches(&walker, true, [0, u64::MAX]).await?.tick;
         door_reaches(&watcher, true, [opened, opened + 40]).await?;
         let bar = walk(&mut walker, &[[1_495, -10], [1_915, -10], [1_915, -178]]).await?;
@@ -605,11 +612,13 @@ async fn the_inn_journey_crosses_real_transport_and_both_players_see_the_door() 
             own(&bar, walker.player_id()).position[2] < 0,
             "inside the inn"
         );
-        walker.send_command(ZoneCommand::SellItem {
-            npc: NpcId::new(3),
-            bag_slot: 0,
-            quantity: 1,
-        })?;
+        walker
+            .send_command(ZoneCommand::SellItem {
+                npc: NpcId::new(3),
+                bag_slot: 0,
+                quantity: 1,
+            })
+            .await?;
         let mut sold = false;
         for _ in 0..mmorpg_core::golden::t30(40) {
             if walker.receive_snapshot().await?.viewer.copper > 0 {
@@ -619,7 +628,7 @@ async fn the_inn_journey_crosses_real_transport_and_both_players_see_the_door() 
         }
         assert!(sold, "Bram buys across his bar");
         walk(&mut walker, &[[1_915, -10], [1_495, -10], [1_495, 620]]).await?;
-        walker.send_command(door(false))?;
+        walker.send_command(door(false)).await?;
         let closed = door_reaches(&walker, false, [0, u64::MAX]).await?.tick;
         door_reaches(&watcher, false, [closed, closed + 40]).await?;
         Ok::<(), ClientError>(())
@@ -906,7 +915,7 @@ async fn verify_automatic_resume(session: ClientSession) -> Result<(), ClientErr
     use tokio::sync::{oneshot, watch};
     let player_id = session.player_id();
     let epoch = session.connection_epoch();
-    session.disconnect();
+    session.disconnect().await;
     let (_input, input) = watch::channel(PlayerInput::default());
     let (updates, mut receiver) = watch::channel(NetworkUpdate::Waiting);
     let (shutdown, stopped) = oneshot::channel();
@@ -942,7 +951,7 @@ async fn verify_automatic_resume(session: ClientSession) -> Result<(), ClientErr
 async fn verify_shutdown_during_resume(session: ClientSession) -> Result<(), ClientError> {
     use mmorpg_client::session::{NetworkUpdate, PlayerInput, run_session};
     use tokio::sync::{oneshot, watch};
-    session.disconnect();
+    session.disconnect().await;
     let (_input, input) = watch::channel(PlayerInput::default());
     let (updates, mut receiver) = watch::channel(NetworkUpdate::Waiting);
     let (shutdown, stopped) = oneshot::channel();
@@ -978,7 +987,7 @@ async fn verify_live_input(session: ClientSession) -> Result<(), ClientError> {
     // A freshly admitted player stands still on flat ground.
     let spawned = session.receive_snapshot().await?;
     assert!(is_at_rest(own(&spawned, player_id)));
-    session.disconnect();
+    session.disconnect().await;
     let (input, watched) = watch::channel(PlayerInput::default());
     let (updates, mut receiver) = watch::channel(NetworkUpdate::Waiting);
     let (shutdown, stopped) = oneshot::channel();
@@ -1133,7 +1142,7 @@ async fn durable_character_resumes_after_logout_and_host_restart() -> Result<(),
         .receive_snapshot()
         .await
         .map_err(|error| format!("receive durable snapshot: {error}"))?;
-    client.send_move(1, 0, EAST)?;
+    client.send_move(1, 0, EAST).await?;
     let mut moved = initial.clone();
     for _ in 0..mmorpg_core::golden::t30(6) {
         moved = client
@@ -1141,7 +1150,7 @@ async fn durable_character_resumes_after_logout_and_host_restart() -> Result<(),
             .await
             .map_err(|error| format!("receive durable snapshot: {error}"))?;
     }
-    client.send_move(0, 0, EAST)?;
+    client.send_move(0, 0, EAST).await?;
     while moved.acknowledged_sequence < 2 {
         moved = client
             .receive_snapshot()
@@ -1221,6 +1230,7 @@ async fn durable_character_selection_worker_claims_before_gameplay_and_logs_out(
         ..PlayerInput::default()
     });
     let (_selection, characters) = watch::channel(Some(CharacterSelection {
+        invitation: None,
         host_local: false,
         name: None,
         local_id: "local-1".into(),

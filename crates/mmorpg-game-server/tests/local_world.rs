@@ -29,6 +29,7 @@ fn managed_world_survives_client_exit_and_resumes() {
     let launched = Command::new(std::env::current_exe().unwrap())
         .args(["--ignored", "--exact", "launcher_process"])
         .env("MMORPG_TEST_SAVE", directory)
+        .env("MMORPG_TEST_OFFLINE_HOST", "1")
         .output()
         .unwrap();
     assert!(
@@ -63,7 +64,13 @@ fn managed_world_survives_client_exit_and_resumes() {
         .unwrap()
         .current_tick;
     assert!(before > 0);
-    local_world::start(directory, Path::new(env!("CARGO_BIN_EXE_mmorpg-zone-host"))).unwrap();
+    let restarted = Command::new(std::env::current_exe().unwrap())
+        .args(["--ignored", "--exact", "launcher_process"])
+        .env("MMORPG_TEST_SAVE", directory)
+        .env("MMORPG_TEST_OFFLINE_HOST", "1")
+        .output()
+        .unwrap();
+    assert!(restarted.status.success());
     local_world::stop(directory).unwrap();
     let after = game_server::RecoveryImage::read_file(&recovery)
         .unwrap()

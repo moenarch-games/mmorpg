@@ -150,10 +150,60 @@ pub async fn serve_development_character_host(
     .await
 }
 
+/// Managed native hosting retains the existing persistence and party composition.
+pub async fn serve_managed_character_host(
+    config: DevelopmentCharacterHostConfig,
+    transport: MatchHostWebTransportConfig,
+    status: MatchHostStatusConfig,
+    shutdown: mpsc::Receiver<()>,
+    managed: crate::hosted_access::ManagedWorld,
+) -> HostResult<()> {
+    let directory = config.directory;
+    let recovery = config
+        .recovery_directory
+        .unwrap_or_else(|| directory.join("zone-recovery"));
+    let storage =
+        tokio::task::spawn_blocking(move || DevCharacterStorage::open(&directory)).await??;
+    let ids = config
+        .zone_ids
+        .into_iter()
+        .map(zone_match_id)
+        .collect::<Result<Vec<_>, _>>()?;
+    serve_characters_managed(
+        storage,
+        ids,
+        recovery,
+        config.reconnect_grace_ticks,
+        None,
+        transport,
+        status,
+        shutdown,
+        Some(managed),
+    )
+    .await
+}
+
 /// Serves `ids` with character claims against `storage`, and, with
 /// `handoffs`, live transfers to and from other hosts.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn serve_characters<B: EntryBackend + Send + 'static>(
+    storage: DevCharacterStorage<B>,
+    ids: Vec<MatchId>,
+    recovery: PathBuf,
+    grace: u64,
+    handoffs: Option<HandoffWiring<B>>,
+    transport: MatchHostWebTransportConfig,
+    status: MatchHostStatusConfig,
+    shutdown: mpsc::Receiver<()>,
+) -> HostResult<()> {
+    serve_characters_managed(
+        storage, ids, recovery, grace, handoffs, transport, status, shutdown, None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn serve_characters_managed<B: EntryBackend + Send + 'static>(
     mut storage: DevCharacterStorage<B>,
     ids: Vec<MatchId>,
     recovery: PathBuf,
@@ -162,6 +212,7 @@ pub(crate) async fn serve_characters<B: EntryBackend + Send + 'static>(
     transport: MatchHostWebTransportConfig,
     status: MatchHostStatusConfig,
     shutdown: mpsc::Receiver<()>,
+    managed: Option<crate::hosted_access::ManagedWorld>,
 ) -> HostResult<()> {
     let ownership = storage.ownership();
     let channels = handoffs
@@ -233,12 +284,23 @@ pub(crate) async fn serve_characters<B: EntryBackend + Send + 'static>(
     };
     let service =
         DevCharacterService::with_shared_storage(host.clone(), storage, handoff_host.clone());
-    let serving = serve_prepared_live_match_host_with_status_and_control_and_shutdown(
-        prepared,
+    let control = Arc::new(crate::hosted_access::ScopedControl::new(
         PartyControl {
             inner: service.clone(),
             parties,
         },
+        managed.clone(),
+    ));
+    let sharing = async {
+        match managed {
+            Some(managed) => managed.run(host.clone(), control.clone()).await,
+            None => std::future::pending().await,
+        }
+    };
+    tokio::pin!(sharing);
+    let serving = serve_prepared_live_match_host_with_status_and_control_and_shutdown(
+        prepared,
+        (*control).clone(),
         transport,
         status,
         shutdown,
@@ -256,6 +318,7 @@ pub(crate) async fn serve_characters<B: EntryBackend + Send + 'static>(
     loop {
         tokio::select! {
             result = &mut serving => { result?; break; }
+            _ = &mut sharing => return Err("Hosted sharing worker ended".into()),
             result = &mut links => {
                 return Err(format!("transfer link stopped: {}", result.err().unwrap_or_default()).into());
             }

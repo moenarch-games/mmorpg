@@ -24,12 +24,21 @@ pub struct RunningWorld {
 }
 
 impl RunningWorld {
-    #[must_use]
-    pub fn url(&self) -> String {
-        format!("https://localhost:{}/game/matches/zone-1", self.port)
+    pub fn sign_owner_claim(&self, body: &[u8], player: u32, epoch: u32) -> Vec<u8> {
+        let mut message = player.to_be_bytes().to_vec();
+        message.extend_from_slice(&epoch.to_be_bytes());
+        message.extend_from_slice(body);
+        let signature = ring::hmac::sign(
+            &ring::hmac::Key::new(ring::hmac::HMAC_SHA256, self.token.as_bytes()),
+            &message,
+        );
+        let mut payload = vec![1, 3];
+        payload.extend_from_slice(signature.as_ref());
+        payload.extend_from_slice(body);
+        payload
     }
 
-    fn request(&self, action: &str) -> Result<()> {
+    fn control_socket(&self, action: &str) -> Result<TcpStream> {
         let mut socket = TcpStream::connect_timeout(&self.control, Duration::from_millis(300))?;
         socket.set_read_timeout(Some(Duration::from_secs(1)))?;
         socket.set_write_timeout(Some(Duration::from_secs(1)))?;
@@ -37,9 +46,43 @@ impl RunningWorld {
         let mut response = [0; 2];
         socket.read_exact(&mut response)?;
         if &response != b"OK" {
-            return Err("local host did not recognize this world; do not delete its lock".into());
+            return Err("Local hosting action failed. Check local world status and retry.".into());
         }
-        Ok(())
+        Ok(socket)
+    }
+
+    pub fn share_status(&self) -> Result<crate::hosted_access::ShareStatus> {
+        let mut socket = self.control_socket("status")?;
+        let mut size = [0; 4];
+        socket.read_exact(&mut size)?;
+        let length = u32::from_be_bytes(size) as usize;
+        if length > 1_048_576 {
+            return Err("Invalid local hosting status".into());
+        }
+        let mut bytes = vec![0; length];
+        socket.read_exact(&mut bytes)?;
+        Ok(serde_json::from_slice(&bytes)?)
+    }
+
+    pub fn guest_decision(&self, key: &str, allow: bool) -> Result<()> {
+        if key.len() != 64 || !key.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err("Invalid guest key".into());
+        }
+        self.request(&format!(
+            "{} {key}",
+            if allow { "approve" } else { "remove" }
+        ))
+    }
+    pub fn retry_sharing(&self) -> Result<()> {
+        self.request("share")
+    }
+    #[must_use]
+    pub fn url(&self) -> String {
+        format!("https://localhost:{}/game/matches/zone-1", self.port)
+    }
+
+    fn request(&self, action: &str) -> Result<()> {
+        self.control_socket(action).map(|_| ())
     }
 
     fn ready(&self) -> Result<()> {
@@ -116,7 +159,16 @@ pub fn start(directory: &Path, executable: &Path) -> Result<RunningWorld> {
         let mut command = Command::new(executable);
         // Managed hosting must not inherit development endpoints, stores or routing.
         for (name, _) in std::env::vars_os() {
-            if name.to_string_lossy().starts_with("MMORPG_") {
+            if name.to_string_lossy().starts_with("MMORPG_")
+                && !matches!(
+                    name.to_str(),
+                    Some(
+                        "MMORPG_TEST_SETUP_ENDPOINT"
+                            | "MMORPG_WEBRTC_BIND_IP"
+                            | "MMORPG_TEST_OFFLINE_HOST"
+                    )
+                )
+            {
                 command.env_remove(name);
             }
         }
@@ -188,6 +240,7 @@ pub struct LocalWorldHost {
     pub world: RunningWorld,
     pub private_key: PathBuf,
     listener: Option<TcpListener>,
+    pub managed: crate::hosted_access::ManagedWorld,
 }
 
 impl LocalWorldHost {
@@ -218,6 +271,7 @@ impl LocalWorldHost {
             token,
             certificate,
         };
+        let managed = crate::hosted_access::ManagedWorld::open(&directory, world.token.as_bytes())?;
         fs::write(directory.join("running.json"), serde_json::to_vec(&world)?)?;
         Ok(Self {
             _lock: lock,
@@ -225,6 +279,7 @@ impl LocalWorldHost {
             world,
             private_key,
             listener: Some(listener),
+            managed,
         })
     }
 
@@ -237,10 +292,11 @@ impl LocalWorldHost {
         listener.set_nonblocking(true)?;
         let listener = tokio::net::TcpListener::from_std(listener)?;
         let token = self.world.token.clone();
+        let managed = self.managed.clone();
         tokio::spawn(async move {
             use tokio::io::{AsyncReadExt, AsyncWriteExt};
             while let Ok((mut socket, _)) = listener.accept().await {
-                let mut bytes = [0; 128];
+                let mut bytes = [0; 256];
                 let request = tokio::time::timeout(Duration::from_secs(1), async {
                     let mut length = 0;
                     while length < bytes.len() {
@@ -260,8 +316,29 @@ impl LocalWorldHost {
                 .await;
                 if let Ok(Ok(request)) = request {
                     if request == format!("{token} status") {
+                        if let Ok(bytes) = serde_json::to_vec(&managed.status()) {
+                            let mut response = b"OK".to_vec();
+                            response.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+                            response.extend_from_slice(&bytes);
+                            let _ = socket.write_all(&response).await;
+                        }
+                    } else if request == format!("{token} share") {
+                        managed.request_share();
                         let _ = socket.write_all(b"OK").await;
+                    } else if let Some(action) = request.strip_prefix(&format!("{token} "))
+                        && let Some((kind, key)) = action.split_once(' ')
+                        && matches!(kind, "approve" | "remove")
+                    {
+                        let access = managed.access.clone();
+                        let key = key.to_owned();
+                        let allow = kind == "approve";
+                        let success =
+                            tokio::task::spawn_blocking(move || access.decide(&key, allow))
+                                .await
+                                .is_ok_and(|r| r.is_ok());
+                        let _ = socket.write_all(if success { b"OK" } else { b"NO" }).await;
                     } else if request == format!("{token} stop") {
+                        managed.clear(None);
                         let _ = socket.write_all(b"OK").await;
                         let _ = shutdown.send(()).await;
                         break;
