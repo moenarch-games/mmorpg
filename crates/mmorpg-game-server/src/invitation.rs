@@ -66,31 +66,6 @@ pub fn admission_message(lobby: &str, participant: &str, matched: &str) -> Vec<u
     format!("mmorpg-guest-v1\0{lobby}\0{participant}\0{matched}").into_bytes()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn exact_landing_contract_and_canonical_emission() {
-        let url = "https://moenarch.com/native.html?lobbyId=0123456789AB&matchId=zone-1";
-        assert_eq!(JoinInvite::parse(url).unwrap().url(), url);
-        for suffix in [
-            "&api=http://evil",
-            "&matchId=other",
-            "#secret",
-            "&participantToken=secret",
-        ] {
-            assert!(JoinInvite::parse(&format!("{url}{suffix}")).is_err());
-        }
-        for bad in [
-            url.replace("moenarch.com", "evil.example"),
-            url.replace("0123456789AB", "0123456789ab"),
-            url.replace("native.html", "index.html"),
-        ] {
-            assert!(JoinInvite::parse(&bad).is_err());
-        }
-    }
-}
-
 /// Production is fixed to the same-origin service. The opt-in real-process test may
 /// address only a loopback HTTP service; this is never accepted from invitation text.
 pub fn setup_config() -> Result<game_server::webrtc_transport::SetupConfig, String> {
@@ -133,4 +108,29 @@ pub fn bind_ip() -> Result<String, String> {
         .map_err(|e| e.to_string())?
         .ip()
         .to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn exact_landing_contract_and_canonical_emission() {
+        let url = "https://moenarch.com/native.html?lobbyId=0123456789AB&matchId=zone-1";
+        assert_eq!(JoinInvite::parse(url).unwrap().url(), url);
+        for suffix in [
+            "&api=http://evil",
+            "&matchId=other",
+            "#secret",
+            "&participantToken=secret",
+        ] {
+            assert!(JoinInvite::parse(&format!("{url}{suffix}")).is_err());
+        }
+        for bad in [
+            url.replace("moenarch.com", "evil.example"),
+            url.replace("0123456789AB", "0123456789ab"),
+            url.replace("native.html", "index.html"),
+        ] {
+            assert!(JoinInvite::parse(&bad).is_err());
+        }
+    }
 }
