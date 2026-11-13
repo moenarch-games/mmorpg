@@ -155,6 +155,7 @@ enum LogTab {
 pub struct GameUi {
     pub invitation_text: String,
     invitation_problem: Option<String>,
+    invitation_focused: bool,
     pub hosting: crate::hosting::Hosting,
     enter_hosted_when_ready: bool,
     next_host_probe: Instant,
@@ -203,6 +204,7 @@ impl GameUi {
             hosting: crate::hosting::Hosting::default(),
             invitation_text: String::new(),
             invitation_problem: None,
+            invitation_focused: false,
             enter_hosted_when_ready: false,
             next_host_probe: Instant::now() + Duration::from_secs(1),
             settings: settings::SettingsWindow::default(),
@@ -315,10 +317,13 @@ impl GameUi {
         self.floating.observe(snapshot, now);
     }
 
-    /// Whether a text field (chat or a new character's name) owns the keyboard.
+    /// Whether chat, a new character's name or the invitation field owns the keyboard.
     #[must_use]
     pub fn chat_focused(&self) -> bool {
-        self.chat_focused || self.chat_focus_requested || self.roster.name_focused
+        self.chat_focused
+            || self.chat_focus_requested
+            || self.roster.name_focused
+            || self.invitation_focused
     }
 
     pub fn open_chat(&mut self) {
@@ -448,6 +453,7 @@ impl GameUi {
             self.character_selection(ctx, &mut intents);
         } else {
             self.roster.name_focused = false;
+            self.invitation_focused = false;
         }
         let Some(snapshot) = frame.snapshot else {
             return intents;
@@ -733,7 +739,7 @@ impl GameUi {
                     }
                     ui.separator();
                     ui.label("Join an invited world");
-                    ui.add(egui::TextEdit::singleline(&mut self.invitation_text).hint_text("Paste moenarch.com invitation"));
+                    self.invitation_focused = ui.add(egui::TextEdit::singleline(&mut self.invitation_text).hint_text("Paste moenarch.com invitation")).has_focus();
                     if let Some(problem) = &self.invitation_problem { ui.colored_label(theme::color(theme.color.danger), problem); }
                     if ui.add_enabled(chosen.is_some(), egui::Button::new("Join World")).clicked() {
                         match mmorpg_game_server::invitation::JoinInvite::parse(&self.invitation_text) {
@@ -771,6 +777,7 @@ impl GameUi {
         }
         if let Some(character) = entered {
             self.roster.name_focused = false;
+            self.invitation_focused = false;
             self.character_name = Some(character.name.clone());
             intents.push(UiIntent::ChooseCharacter(
                 character.id.clone(),

@@ -36,7 +36,7 @@ wgpu = "=30.0.1"
 winit = "=0.30.13"
 egui = { version = "=0.37.0", default-features = false, features = ["default_fonts"] }
 egui-wgpu = { version = "=0.37.0", default-features = false }
-egui-winit = { version = "=0.37.0", default-features = false, features = ["x11", "wayland"] }
+egui-winit = { version = "=0.37.0", default-features = false, features = ["x11", "wayland", "clipboard"] }
 bytemuck = { version = "=1.25.2", features = ["derive"] }
 tobj = { version = "=4.0.5", default-features = false, features = ["use_f64"] }
 # Lighting and rendering (#529): sun/moon, sky, cascaded shadows, sky ambient light, fog and
