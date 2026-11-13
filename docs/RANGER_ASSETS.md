@@ -27,7 +27,7 @@ the exact values supplied by core through WASM; the renderer owns no stat formul
 | Path/base | Real physique | Clothing and other limits |
 | --- | --- | --- |
 | Browser local, male | Frame, muscularity, body fat, shoulders, height, waist, hips, glutes, jaw width and projection | Existing class outfits, armor and fitted hair; no bust target |
-| Browser local, female | All eleven controls, including bust fullness | Archer tunic/pants; optional knight entries await producer #630 publication/acceptance; long hair or bald; no ranger cap, iron helm, buzzed or parted entries |
+| Browser local, female | All eleven controls, including bust fullness | Archer tunic/pants and published fitted knight armor (15 body plates, no bascinet); long hair or bald; no ranger cap, iron helm, buzzed or parted entries |
 | Browser online / Battle Royale | Average physique; editor unavailable | Physique is not carried by those sessions |
 | Native online | Average physique; no editor | Its existing importer bakes named morphs for resident looks, but player physique is not wired or carried online |
 

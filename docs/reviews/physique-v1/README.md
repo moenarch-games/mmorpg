@@ -1,8 +1,9 @@
 # Physique V1 browser evidence (#635)
 
-This records the supported body-morph stage, not final acceptance of every requirement in #635.
-The actual female knight outfit's rolling publication and final published-input acceptance remain
-open under [asset-tooling #630](https://github.com/moritzbrantner/asset-tooling/issues/630).
+This records the supported body-morph stage and the completed published female knight check.
+The final release follow-up below resolves the publication prerequisite from
+[asset-tooling #630](https://github.com/moritzbrantner/asset-tooling/issues/630); #635 remains open
+for its remaining scope and art review.
 The client selects that outfit only if its real descriptor/catalog provides it; a catalog without
 it keeps the archer outfit and discloses the gap. The separate corrected-candidate check below
 does not claim that armor is already published.
@@ -18,11 +19,13 @@ match the published female bundle; the final world/save check uses its published
 Acquired the actual rolling releases. Their `export.ref.json` asset-bundle hashes are:
 
 - Male: `9f512bc8c5732e42386d4a40a0108a61f09f38fb469770171b484a31d5a99478`.
-- Female: `7e1be2008546d98a385450a5be26a4d044989010b7d72e76f80fdb2d310bdc84`.
+- Female initial body views: `7e1be2008546d98a385450a5be26a4d044989010b7d72e76f80fdb2d310bdc84`.
+- Female published knight follow-up: `b264f687c0d7fbd29bc3e7bcd2f47cfa68033c33a22950889c4caef1a2f6af63`.
 - Hair kit: `2ff756cff0bc26d9818e64da362ec0c4b571301be995b3cff05369ac5e3b06b7`.
 
 Both bases have 65 joints and 179 clip descriptors. The male descriptor names 27 full-detail
-variants with seven new bipolar controls; the female names four with eight, including bust.
+variants with seven new bipolar controls; the initial female names four with eight, including bust.
+The published knight extends the female catalog to six physique variants.
 Both also have the existing build, face and height controls. New named targets include
 `frame.narrow/broad`, `muscularity.soft/defined`, `shoulders.narrow/broad`, `waist.narrow/wide`,
 `hips.narrow/wide`, `glutes.small/full`, `jaw.receding/projected`, and female `bust.small/full`.
@@ -93,5 +96,36 @@ With motion enabled, the real local-world check captured
 [walking](female-knight-walk-candidate.jpg) (`Jog_Fwd_Loop`, 0.3959 s),
 [sword attack](female-knight-attack-candidate.jpg) (`Sword_Slash_Mid_L`, 0.0666 s),
 and [jump](female-knight-jump-candidate.jpg) (`Jump_Start`, 0.0333 s), with the existing
-weapon/shield grip layers and no uncaught page exceptions. The final rolling armor
-release remains an external prerequisite; #635 stays open.
+weapon/shield grip layers and no uncaught page exceptions. At that time the rolling armor
+release remained an external prerequisite; the follow-up below resolves it.
+
+## Published female knight follow-up
+
+Fetched the actual rolling female release through `scripts/fetch-ranger.py` after producer
+PR #633 merged. Its `export.ref.json` asset-bundle identity is
+`b264f687c0d7fbd29bc3e7bcd2f47cfa68033c33a22950889c4caef1a2f6af63`
+(72,505 bytes). The downloaded index provides `armor.knight/default`,
+`humanoid.ranger.female/outfit.knight`, and `outfit.knight.skin.light`. The descriptor
+confirms six physique variants, eight new controls, 15 body plates and no bascinet.
+`physiqueFit` declares `bounded-exterior`, body scale 0.35 and head scale 1; these are
+already baked into the targets, so client weights remain unchanged.
+
+Rebuilt this branch's production browser artifact and reused the focused armor journey on
+those downloaded inputs: neutral, lower/upper limits, combined curvy look, creation and world
+entry, live `Jog_Fwd_Loop` (0.3959 s), `Sword_Slash_Mid_L` (0.0666 s) and `Jump_Start`
+(0.0333 s), with the weapon/shield grip layers and zero uncaught page exceptions.
+The previous gallery was retained. One [actual published-input frame](female-knight-published-check.jpg)
+was inspected at the sword attack: armor, hands, shield, sword, hair and tabard remained attached
+in that sampled pose. This closes the published-input verification gap, without claiming all
+clip/corner combinations or final owner art approval. Other female class outfits/headwear and
+native/online physique remain outside the delivered capability.
+
+## Browser #634 acceptance covered by the same evidence
+
+| Acceptance | Existing evidence and limits |
+| --- | --- |
+| Six presets without accumulated bonuses | Each preset was selected in both male clothing series; each replaces the vector. The focused WASM-backed tests verify the six canonical presets and core-derived modifiers. No second balance formula exists in the editor. |
+| Supported real controls | Ten male controls with bust disclosed unavailable; eleven female controls. Lower/upper/intermediate cosmetic values, combined silhouette, rotation and jaw close-up were exercised. |
+| Stat cap and cosmetic neutrality | Five Build inputs remain core-owned; focused tests verify the ±2% clamp and zero cosmetic coefficients. The browser cosmetic edits left both neutral modifiers at 0%. |
+| Confirm, Cancel, entry, reopening and reload | Confirmed a female draft, created it, entered/left Greyhaven, reselected it after reload, and restored identical physique/face values; Cancel after reopening restored saved values. The existing-record mutation API is also covered by the focused test. A separate browser Confirm on an already-stored record was not exercised. |
+| Keyboard and touch | A keyboard range adjustment from waist 25% to 26% and keyboard rotation/Home were exercised. Touch and mobile viewport behavior were not independently exercised in this focused run; no observed functional failure is claimed. Native UI parity is excluded from #634. |
