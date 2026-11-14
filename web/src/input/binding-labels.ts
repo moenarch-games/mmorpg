@@ -4,13 +4,14 @@ import { contextStack, GAME_ACTION_REGISTRY, type GameAction } from "./game-cont
 /**
  * Short labels of the bindings that actually trigger `action` in the world: the character's
  * profile applied over the MMORPG defaults, kept only when the stroke resolves to this action in
- * the gameplay context (an unbound, removed or conflicting binding yields no label). Presentation
+ * the combat context (an unbound, removed or conflicting binding yields no label). Presentation
  * only: `input-bindings` owns the bindings themselves.
  */
 export function actionBindingLabels(action: GameAction, profile: Profile): string[] {
   const defaults: Binding[] = GAME_ACTION_REGISTRY.actions.flatMap((entry) => entry.defaults ?? []);
   const { bindings } = applyProfile(defaults, profile);
-  const stack = contextStack({ phase: "world", panelOpen: false });
+  // Preview the combat bindings even before the player draws their weapon (#802).
+  const stack = contextStack({ phase: "world", panelOpen: false, weaponDrawn: true });
   const labels: string[] = [];
   for (const binding of bindings) {
     const [stroke] = binding.sequence;

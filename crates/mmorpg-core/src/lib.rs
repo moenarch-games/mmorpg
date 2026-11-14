@@ -337,6 +337,8 @@ pub enum ZoneCommand {
     /// (#156). Held state like movement: the zone keeps it until the next
     /// guard command, death or a directed strike.
     Guard { lane: Option<StrikeHeight> },
+    /// Explicit exploration (sheathed) or fight (drawn) mode (#802).
+    SetWeaponDrawn(bool),
     /// Opens (`open`) or closes a door (#158). Asking for the state it
     /// already has changes nothing; reach and blocking bodies are checked in
     /// the tick.

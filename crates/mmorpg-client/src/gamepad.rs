@@ -7,7 +7,7 @@
 //! closes the panel or cancels the cast instead), X swings the weapon (#517), Y releases the
 //! spirit, the right bumper cycles targets, the d-pad uses slots 1–4 and
 //! Select toggles bags. Native additions use otherwise unbound buttons: the
-//! left bumper cycles NPCs, Start talks to the selected NPC, the left stick
+//! left bumper draws/sheathes weapons, Start talks to the selected NPC, the left stick
 //! click toggles the character pane and the right trigger the quest log.
 //! Holding the left trigger raises the Warden's shield guard (#156, owner
 //! answer #156.Q1 A): the right stick's vertical deflection picks the lane
@@ -38,14 +38,13 @@ pub enum PadAction {
     /// Dodge roll (#516).
     Roll,
     TargetNext,
+    ToggleWeapon,
     Swing,
     /// Action-bar slot 1–4.
     AbilitySlot(u8),
     CancelCast,
     ReleaseSpirit,
     TogglePanel(Panel),
-    /// Cycle the selected NPC (native `world.nextNpc`).
-    NextNpc,
     /// Talk to the selected NPC (native `world.interact`).
     Talk,
     /// Close the topmost interface window.
@@ -94,6 +93,8 @@ pub struct PadState {
 
 const WORLD: &str = "world";
 const GAMEPLAY: &str = "gameplay";
+const COMBAT: &str = "combat";
+const EXPLORATION: &str = "exploration";
 const CASTING: &str = "casting";
 const PANELS: &str = "panels";
 const NO_CLOCK_MS: u64 = 0;
@@ -157,31 +158,31 @@ fn catalog() -> Vec<Entry> {
         ),
         (
             "combat.swing",
-            GAMEPLAY,
+            COMBAT,
             vec![button(X)],
             Some(PadAction::Swing),
         ),
         (
             "ability.slot1",
-            GAMEPLAY,
+            COMBAT,
             vec![button(DPAD_UP)],
             Some(PadAction::AbilitySlot(1)),
         ),
         (
             "ability.slot2",
-            GAMEPLAY,
+            COMBAT,
             vec![button(DPAD_RIGHT)],
             Some(PadAction::AbilitySlot(2)),
         ),
         (
             "ability.slot3",
-            GAMEPLAY,
+            COMBAT,
             vec![button(DPAD_DOWN)],
             Some(PadAction::AbilitySlot(3)),
         ),
         (
             "ability.slot4",
-            GAMEPLAY,
+            COMBAT,
             vec![button(DPAD_LEFT)],
             Some(PadAction::AbilitySlot(4)),
         ),
@@ -215,12 +216,12 @@ fn catalog() -> Vec<Entry> {
             vec![button(RT)],
             Some(PadAction::TogglePanel(Panel::QuestLog)),
         ),
-        (GUARD, GAMEPLAY, vec![button(LT)], None),
+        (GUARD, COMBAT, vec![button(LT)], None),
         (
-            "world.nextNpc",
+            "combat.toggleWeapon",
             GAMEPLAY,
             vec![button(LB)],
-            Some(PadAction::NextNpc),
+            Some(PadAction::ToggleWeapon),
         ),
         (
             "ui.talk",
@@ -353,6 +354,7 @@ pub struct PadControls {
     /// Every distinct pad stroke the catalog binds, with whether it is down.
     triggers: Vec<(InputStroke, bool)>,
     casting: bool,
+    weapon_drawn: bool,
     panels: bool,
     settings: bool,
     inactive: bool,
@@ -390,12 +392,17 @@ impl PadControls {
             "the native pad catalog is invalid: {:?}",
             report.diagnostics
         );
-        runtime.set_context_stack(Some(vec![layer(WORLD), layer(GAMEPLAY)]));
+        runtime.set_context_stack(Some(vec![
+            layer(WORLD),
+            layer(GAMEPLAY),
+            layer(EXPLORATION),
+        ]));
         Self {
             runtime,
             state: SemanticControlState::new(),
             triggers,
             casting: false,
+            weapon_drawn: false,
             panels: false,
             settings: false,
             inactive: false,
@@ -407,6 +414,13 @@ impl PadControls {
     pub fn set_casting(&mut self, casting: bool) {
         if casting != self.casting {
             self.casting = casting;
+            self.restack();
+        }
+    }
+
+    pub fn set_weapon_drawn(&mut self, drawn: bool) {
+        if drawn != self.weapon_drawn {
+            self.weapon_drawn = drawn;
             self.restack();
         }
     }
@@ -460,7 +474,15 @@ impl PadControls {
     }
 
     fn restack(&mut self) {
-        let mut stack = vec![layer(WORLD), layer(GAMEPLAY)];
+        let mut stack = vec![
+            layer(WORLD),
+            layer(GAMEPLAY),
+            layer(if self.weapon_drawn {
+                COMBAT
+            } else {
+                EXPLORATION
+            }),
+        ];
         if self.casting {
             stack.push(layer(CASTING));
         }
@@ -764,6 +786,7 @@ mod tests {
         // Held: no repeat.
         assert!(controls.sample(&[pressed(standard::A)]).is_empty());
         assert!(controls.sample(&[pad()]).is_empty());
+        controls.set_weapon_drawn(true);
         for (button, action) in [
             (standard::RB, PadAction::TargetNext),
             (standard::X, PadAction::Swing),
@@ -773,7 +796,7 @@ mod tests {
             (standard::DPAD_DOWN, PadAction::AbilitySlot(3)),
             (standard::DPAD_LEFT, PadAction::AbilitySlot(4)),
             (standard::SELECT, PadAction::TogglePanel(Panel::Bags)),
-            (standard::LB, PadAction::NextNpc),
+            (standard::LB, PadAction::ToggleWeapon),
             (standard::START, PadAction::Talk),
             (standard::L3, PadAction::TogglePanel(Panel::Character)),
             (standard::RT, PadAction::TogglePanel(Panel::QuestLog)),
@@ -857,6 +880,10 @@ mod tests {
     #[test]
     fn the_left_trigger_holds_the_guard_and_the_right_stick_aims_it() {
         let mut controls = PadControls::new();
+        assert!(controls.sample(&[pressed(standard::LT)]).is_empty());
+        assert!(!controls.guarding()); // Hands-free exploration has no guard (#802).
+        controls.sample(&[pad()]);
+        controls.set_weapon_drawn(true);
         let mut held = pressed(standard::LT);
         assert!(controls.sample(&[held]).is_empty());
         assert!(controls.guarding());

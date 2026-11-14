@@ -53,6 +53,8 @@ const ROLL_DEPTHS_DROP_TAG: u8 = 34;
 const CLAIM_DEPTHS_DROP_TAG: u8 = 35;
 /// Sit (#619): version, tag, seat (u8, 0 the ground).
 const SIT_TAG: u8 = 36;
+/// Explicit weapon mode (#802): version, tag, drawn (0 or 1).
+const SET_WEAPON_DRAWN_TAG: u8 = 37;
 /// Version, tag, ability (u8), retired (0 key up, 1 retired).
 const RELEASE_ABILITY_COMMAND_BYTES: usize = 4;
 /// Version, tag, observed tick (u64), before the inner command's tag.
@@ -126,6 +128,9 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
         }
         ZoneCommand::Guard { lane } => {
             vec![PROTOCOL_BYTE, GUARD_TAG, crate::wire::encode_lane(lane)]
+        }
+        ZoneCommand::SetWeaponDrawn(drawn) => {
+            vec![PROTOCOL_BYTE, SET_WEAPON_DRAWN_TAG, u8::from(drawn)]
         }
         ZoneCommand::UseDoor { door, open } => {
             vec![PROTOCOL_BYTE, USE_DOOR_TAG, door.get(), u8::from(open)]
@@ -478,6 +483,18 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
                 lane: crate::wire::decode_lane(*lane)?,
             })
         }
+        SET_WEAPON_DRAWN_TAG => {
+            let [_, _, drawn] = payload else {
+                return Err(ProtocolError::new(
+                    "weapon mode payload must be exactly 3 bytes",
+                ));
+            };
+            Ok(ZoneCommand::SetWeaponDrawn(match drawn {
+                0 => false,
+                1 => true,
+                _ => return Err(ProtocolError::new("weapon mode must be 0 or 1")),
+            }))
+        }
         USE_DOOR_TAG => {
             let [_, _, door, open] = payload else {
                 return Err(ProtocolError::new(
@@ -739,6 +756,14 @@ mod tests {
             [PROTOCOL_BYTE, 9, 3, 0, 0, 0, 0, 0]
         );
         assert_eq!(encode_command(ZoneCommand::CancelCast), [PROTOCOL_BYTE, 10]);
+        assert_eq!(
+            encode_command(ZoneCommand::SetWeaponDrawn(true)),
+            [PROTOCOL_BYTE, 37, 1]
+        );
+        assert_eq!(
+            decode_command(&[PROTOCOL_BYTE, 37, 0]).unwrap(),
+            ZoneCommand::SetWeaponDrawn(false)
+        );
         assert_eq!(
             encode_command(ZoneCommand::DirectedStrike {
                 ability: 1,
@@ -1027,6 +1052,8 @@ mod tests {
                 door: mmorpg_core::DoorId::new(1),
                 open: true,
             },
+            ZoneCommand::SetWeaponDrawn(true),
+            ZoneCommand::SetWeaponDrawn(false),
             ZoneCommand::UseDoor {
                 door: mmorpg_core::DoorId::new(u8::MAX),
                 open: false,
@@ -1190,6 +1217,7 @@ mod tests {
                 }
                 ZoneCommand::RaidPrepare { prep } => format!("raid_prepare {prep:?}"),
                 ZoneCommand::Swing { facing } => format!("swing {facing}"),
+                ZoneCommand::SetWeaponDrawn(drawn) => format!("set_weapon_drawn {drawn}"),
                 ZoneCommand::ReleaseSpirit => "release_spirit".to_owned(),
                 ZoneCommand::MoveItem {
                     source,
@@ -1351,6 +1379,8 @@ mod tests {
             // Unknown guard lanes are malformed.
             vec![PROTOCOL_BYTE, 22, 4],
             vec![PROTOCOL_BYTE, 22, u8::MAX],
+            vec![PROTOCOL_BYTE, 37, 2],
+            vec![PROTOCOL_BYTE, 37, 1, 0],
             vec![PROTOCOL_BYTE, 25, 2],
             vec![PROTOCOL_BYTE, 25, 0xfe],
             // Unknown emote IDs are malformed.

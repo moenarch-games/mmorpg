@@ -166,6 +166,8 @@ impl Throwable {
 /// Everything else keeps the daggers in hand.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Carry {
+    /// Explicit player weapon mode; `None` preserves non-player clip-authored carry (#802).
+    pub weapon_drawn: Option<bool>,
     /// Each hand's dagger sheathed on [`DAGGER_SHEATH_SOCKETS`], left then right.
     pub sheathed: [bool; 2],
     /// The throwable in [`THROWABLE_SOCKET`].
@@ -2137,6 +2139,8 @@ pub struct Cues<'a> {
     pub rolling: bool,
     /// The zone projects the unit in combat: a crossbowman standing in combat aims (#607).
     pub engaged: bool,
+    /// Explicit player mode, independent of threat. `None` leaves NPC/effect carry untouched.
+    pub weapon_drawn: Option<bool>,
     /// The pose the unit should hold while still (#619): the viewer's loot kneel, or a resident
     /// asleep at its bed.
     pub posture: Option<Posture>,
@@ -3514,7 +3518,18 @@ impl Playback {
         let climbing = self.held.holds() || self.mantle.is_some() || self.letting_go.is_some();
         // A throw or a bandage moves the daggers (#603): a sheathed dagger's hand opens, a
         // drawn throwable's closes round it.
-        let carry = self.carry(clips, cues, &duration);
+        let mut carry = self.carry(clips, cues, &duration);
+        // Never let sheathing retime a previously accepted strike/cast. Clips, not the next
+        // input mode, own that action until completion (#802).
+        carry.weapon_drawn =
+            if cues.weapon_drawn == Some(false) && (self.strike.is_some() || self.cast.is_some()) {
+                Some(true)
+            } else {
+                cues.weapon_drawn
+            };
+        if carry.weapon_drawn == Some(false) {
+            carry.sheathed = [true; 2];
+        }
         let hands = cues.loadout.map(Loadout::hands).unwrap_or_default();
         // A reload winds the crossbow's crank with the left hand, then hands the crossbow to the
         // left hand while the right draws a bolt (#607).
@@ -3543,7 +3558,8 @@ impl Playback {
                     hands
                         .get(hand)
                         .filter(|_| {
-                            !carry.sheathed[hand.index()]
+                            carry.weapon_drawn != Some(false)
+                                && !carry.sheathed[hand.index()]
                                 && !(crossbow.left_hand && hand == Hand::Right)
                                 && !(left_open && hand == Hand::Left)
                         })

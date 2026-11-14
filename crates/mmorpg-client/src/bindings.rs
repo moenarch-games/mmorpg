@@ -152,6 +152,27 @@ mod tests {
     use super::*;
     use input_bindings_core::{BindingPatch, InputStroke, KeyMatch};
     #[test]
+    fn weapon_mode_retains_h_and_contextual_combat_keys() {
+        use crate::controls::{ControlAction, NativeControls};
+        use winit::keyboard::KeyCode;
+        let mut keyboard = NativeControls::new();
+        assert!(keyboard.key_down(KeyCode::KeyQ, false).is_empty());
+        keyboard.key_up(KeyCode::KeyQ);
+        assert_eq!(
+            keyboard.key_down(KeyCode::KeyH, false),
+            vec![ControlAction::ToggleWeapon]
+        );
+        keyboard.key_up(KeyCode::KeyH);
+        keyboard.set_weapon_drawn(true);
+        assert_eq!(
+            keyboard.key_down(KeyCode::KeyQ, false),
+            vec![ControlAction::Swing]
+        );
+        keyboard.key_up(KeyCode::KeyQ);
+        keyboard.set_weapon_drawn(false);
+        assert!(keyboard.key_down(KeyCode::KeyQ, false).is_empty());
+    }
+    #[test]
     fn one_character_profile_contains_all_devices_and_reload_does_not_change_another() {
         let registry = action_registry();
         let report = validate_registry(&registry, None);

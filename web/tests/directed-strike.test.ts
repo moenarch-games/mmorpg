@@ -35,7 +35,7 @@ function holdHarness() {
   const window = new FakeTarget();
   const document = new FakeTarget();
   const controls = new GameControls({
-    screen: () => ({ phase: "world", panelOpen: false }),
+    screen: () => ({ phase: "world", panelOpen: false, weaponDrawn: true }),
     onAction: (action) => actions.push(action),
     onHold: (action, phase) => {
       expect(action).toBe("combat.directedStrike");
@@ -94,13 +94,13 @@ describe("directed Heroic Strike input", () => {
     expect(actionBindingLabels("combat.directedStrike", profile([]))).toEqual(["G"]);
     const remapped = profile([
       { op: "remove", bindingId: "combat.directedStrike.0" },
-      { op: "add", binding: { id: "custom.strike", action: "combat.directedStrike", sequence: [{ key: { kind: "physical", value: "KeyJ" } }], when: { op: "context", id: "gameplay" } } },
+      { op: "add", binding: { id: "custom.strike", action: "combat.directedStrike", sequence: [{ key: { kind: "physical", value: "KeyJ" } }], when: { op: "context", id: "combat" } } },
     ]);
     expect(actionBindingLabels("combat.directedStrike", remapped)).toEqual(["J"]);
     expect(actionBindingLabels("combat.directedStrike", profile([{ op: "remove", bindingId: "combat.directedStrike.0" }]))).toEqual([]);
-    // G also bound to jump in the same context: ambiguous, so no shortcut is claimed.
+    // G also bound to jump in the combat context: ambiguous, so no shortcut is claimed.
     const conflict = profile([
-      { op: "add", binding: { id: "custom.jump", action: "move.jump", sequence: [{ key: { kind: "physical", value: "KeyG" } }], when: { op: "context", id: "gameplay" } } },
+      { op: "add", binding: { id: "custom.jump", action: "move.jump", sequence: [{ key: { kind: "physical", value: "KeyG" } }], when: { op: "context", id: "combat" } } },
     ]);
     expect(actionBindingLabels("combat.directedStrike", conflict)).toEqual([]);
   });
@@ -122,7 +122,7 @@ describe("ability slot releases (#414)", () => {
     const window = new FakeTarget();
     const document = new FakeTarget();
     const controls = new GameControls({
-      screen: () => ({ phase: "world", panelOpen: false }),
+      screen: () => ({ phase: "world", panelOpen: false, weaponDrawn: true }),
       onAction: (action) => actions.push(action),
       onRelease: (action, phase) => releases.push(`${action} ${phase}`),
     });

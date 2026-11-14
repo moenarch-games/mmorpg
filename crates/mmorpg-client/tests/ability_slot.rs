@@ -21,6 +21,7 @@ fn shift_number_keys_use_the_second_action_bar_row() {
         ..Default::default()
     };
     let mut controls = NativeControls::new();
+    controls.set_weapon_drawn(true);
     assert_eq!(
         controls.key_down_with_modifiers(KeyCode::Digit1, false, shift.clone()),
         [ControlAction::AbilitySlot(11)]
@@ -70,6 +71,10 @@ fn native_warden_slot_one_spends_rage_and_projects_global_cooldown() {
     zone.advance_tick().unwrap();
     let before = received(&zone.snapshot_for_player(1).unwrap());
     let mut controls = NativeControls::new();
+    // Hands-free exploration keeps the action bar quiet until the weapon is drawn (#802).
+    assert_eq!(controls.key_down(KeyCode::Digit1, false), []);
+    controls.key_up(KeyCode::Digit1);
+    controls.set_weapon_drawn(true);
     let actions = controls.key_down(KeyCode::Digit1, false);
     assert_eq!(actions, [ControlAction::AbilitySlot(1)]);
     let ControlAction::AbilitySlot(slot) = actions[0] else {

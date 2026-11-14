@@ -48,6 +48,7 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "not-while-swimming": "You can't do that while swimming.",
   "handoff-corridor": "Not here: you are crossing into another region.",
   "in-combat": "You can't travel while in combat.",
+  "weapon-drawn": "Sheathe your weapon to interact (H).",
   "invalid-waystone": "The waystone cannot take you there.",
   "private-home": "This is a private home.",
   "no-answer": "You knock, but no one answers at this hour.",

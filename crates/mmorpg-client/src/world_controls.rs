@@ -83,7 +83,13 @@ pub fn world_action_registry() -> ActionRegistry {
                         action: id.into(),
                         sequence: vec![stroke],
                         when: WhenExpr::Context { id: context.into() },
-                        priority: 0,
+                        // NPC detail H owns the interaction context before the global H
+                        // weapon toggle (#802); both remain independently rebindable.
+                        priority: if action == WorldAction::Details {
+                            10
+                        } else {
+                            0
+                        },
                     }],
                     provenance: None,
                 }
@@ -237,6 +243,17 @@ impl WorldControls {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn npc_detail_h_still_owns_the_interaction_context() {
+        let mut controls = WorldControls::new();
+        assert!(controls.key(KeyCode::KeyH, true, false).is_empty());
+        controls.key(KeyCode::KeyH, false, false);
+        controls.set_interaction(true);
+        assert_eq!(
+            controls.key(KeyCode::KeyH, true, false),
+            vec![WorldAction::Details]
+        );
+    }
     #[test]
     fn a_left_click_selects_and_a_right_click_dismisses() {
         let mut controls = WorldControls::new();

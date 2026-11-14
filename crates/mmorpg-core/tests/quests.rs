@@ -217,6 +217,8 @@ impl Run {
                 .find(|record| record.creature_id == creature)
                 .unwrap();
             if matches!(record.life, CreatureLife::Corpse { .. }) {
+                // Swings draw the weapon; quest conversations need free hands (#802).
+                events.extend(self.act(ZoneCommand::SetWeaponDrawn(false)));
                 return events;
             }
         }

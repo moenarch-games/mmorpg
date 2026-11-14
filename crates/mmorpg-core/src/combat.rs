@@ -143,7 +143,19 @@ impl ZoneSimulation {
                 self.update_player(player_id, |player| {
                     player.facing = facing;
                     player.swing_queued = true;
+                    player.weapon_drawn = true;
                     player.sitting = crate::Sitting::No;
+                });
+                None
+            }
+            PlayerIntent::SetWeaponDrawn(_) if !alive => Some((ErrorCode::YouAreDead, None)),
+            PlayerIntent::SetWeaponDrawn(drawn) => {
+                self.update_player(player_id, |player| {
+                    player.weapon_drawn = drawn;
+                    if !drawn {
+                        // Committed swings and casts continue through cosmetic stowing (#802).
+                        player.guard.raised = None;
+                    }
                 });
                 None
             }
@@ -169,7 +181,13 @@ impl ZoneSimulation {
             PlayerIntent::CommandMinions(order) => self.command_minions(player_id, order)?,
             PlayerIntent::Repair(piece) => {
                 if alive {
-                    self.start_repair(player_id, piece)?
+                    if piece.is_some()
+                        && self.players.get(&player_id).is_some_and(|p| p.weapon_drawn)
+                    {
+                        Some((ErrorCode::WeaponDrawn, None))
+                    } else {
+                        self.start_repair(player_id, piece)?
+                    }
                 } else {
                     Some((ErrorCode::YouAreDead, None))
                 }
@@ -177,7 +195,12 @@ impl ZoneSimulation {
             // Held like movement; the dead hold no guard.
             PlayerIntent::Guard(lane) => {
                 if alive {
-                    self.update_player(player_id, |player| player.guard.raised = lane);
+                    self.update_player(player_id, |player| {
+                        player.guard.raised = lane;
+                        if lane.is_some() {
+                            player.weapon_drawn = true;
+                        }
+                    });
                 }
                 None
             }
@@ -199,6 +222,18 @@ impl ZoneSimulation {
                 if !alive =>
             {
                 Some((ErrorCode::YouAreDead, None))
+            }
+            PlayerIntent::UseDoor { .. }
+            | PlayerIntent::BuyItem { .. }
+            | PlayerIntent::SellItem { .. }
+            | PlayerIntent::AcceptQuest { .. }
+            | PlayerIntent::CompleteQuest { .. }
+            | PlayerIntent::Sit(Some(_))
+            | PlayerIntent::RaidAid(_)
+            | PlayerIntent::RaidPrepare(_)
+                if self.players.get(&player_id).is_some_and(|p| p.weapon_drawn) =>
+            {
+                Some((ErrorCode::WeaponDrawn, None))
             }
             // Nothing economically meaningful begins at a cross-zone seam (#145).
             PlayerIntent::Loot(_)

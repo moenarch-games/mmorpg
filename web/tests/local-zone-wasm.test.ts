@@ -339,7 +339,7 @@ describe("WASM local zone host", () => {
     expect(projection).toMatchObject({ zoneId: 1, tick: 0n, contentRevision: HOSTED_REVISION, viewerId: player, acknowledgedSequence: 0 });
     // A new character has made its class choice on entry.
     expect(projection.viewer).toEqual({
-      copper: 0, health: 50, maxHealth: 50, experience: 0, experienceToNextLevel: 100, level: 1, dead: false, inCombat: false, target: null,
+      copper: 0, health: 50, maxHealth: 50, experience: 0, experienceToNextLevel: 100, level: 1, dead: false, inCombat: false, weaponDrawn: false, target: null,
       classChoice: { classId: "arcanist", sex: "female" }, resource: { kind: "mana", value: 110, max: 110 }, cast: null, globalCooldown: 0, damage: { min: 3, max: 6 },
       guard: { raised: null, protecting: false, broken: 0 }, stance: null, combo: null, breath: wireCatalog().breathMaxTicks, waystones: [],
     });

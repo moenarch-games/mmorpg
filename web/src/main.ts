@@ -567,7 +567,7 @@ const controls = new GameControls({
   screen: () =>
     entryState.phase === "world"
       // The game menu is modal like Settings: it blocks game keys and retires held ones (#636).
-      ? { phase: "world", panelOpen: worldView.panelOpen, casting: Boolean(activeWorld?.source.latestProjection()?.viewer.cast), settingsOpen: settingsOpen || gameMenu.open }
+      ? { phase: "world", panelOpen: worldView.panelOpen, weaponDrawn: Boolean(activeWorld?.source.latestProjection()?.viewer.weaponDrawn), casting: Boolean(activeWorld?.source.latestProjection()?.viewer.cast), settingsOpen: settingsOpen || gameMenu.open }
       // A pending join is modal like creation: Escape cancels it.
       : { phase: "selection", creating: creationDraft !== null || joining !== null, settingsOpen },
   onAction: (action) => runAction(action),
@@ -1395,6 +1395,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+let lastWeaponDrawn: boolean | null = null;
 function frame(now: number) {
   // Re-arm first: one failed frame must never stop the render loop.
   requestAnimationFrame(frame);
@@ -1410,6 +1411,11 @@ function frame(now: number) {
     try {
       followLocalZone();
       worldView.frame(activeWorld, worldInput(), viewerLook(), paused ? 0 : deltaSeconds, now);
+      if (lastWeaponDrawn !== null && lastWeaponDrawn !== worldView.weaponDrawn) {
+        controls.retire("weaponModeChanged");
+        touchControls.reset();
+      }
+      lastWeaponDrawn = worldView.weaponDrawn;
       touchControls.update();
       showLinkState(activeWorld.source.linkState());
       showArenaMatch();
@@ -1903,6 +1909,9 @@ function runAction(action: GameAction): void {
         const target = nextTabTarget(projection);
         return target ? { kind: "select-target", target } : null;
       });
+      return;
+    case "combat.toggleWeapon":
+      worldView.toggleWeapon();
       return;
     case "combat.swing":
       worldView.swing();

@@ -29,6 +29,8 @@ pub enum ControlAction {
     /// Held while swimming: descend (#274).
     Descend,
     TargetNext,
+    /// Explicitly draw or sheathe the current weapon (#802).
+    ToggleWeapon,
     /// Swing the weapon where the character faces (#517): Q and gamepad X; the left mouse
     /// button selects since #636.
     Swing,
@@ -113,6 +115,7 @@ impl ControlAction {
             Self::Roll => "move.roll",
             Self::Descend => "move.descend",
             Self::TargetNext => "target.next",
+            Self::ToggleWeapon => "combat.toggleWeapon",
             Self::Swing => "combat.swing",
             Self::ReleaseSpirit => "player.releaseSpirit",
             Self::AbilitySlot(1) => "ability.slot1",
@@ -159,7 +162,8 @@ impl ControlAction {
 
     /// Title, context and default physical keys, as in the browser catalog.
     fn default_binding(self) -> (&'static str, &'static str, &'static [&'static str]) {
-        match self {
+        type Spec = (&'static str, &'static str, &'static [&'static str]);
+        let (title, context, keys): Spec = match self {
             Self::MoveForward => ("Move forward", GAMEPLAY, &["KeyW", "ArrowUp"]),
             Self::MoveBackward => ("Move backward", GAMEPLAY, &["KeyS", "ArrowDown"]),
             Self::MoveLeft => ("Strafe left", GAMEPLAY, &["KeyA", "ArrowLeft"]),
@@ -169,6 +173,7 @@ impl ControlAction {
             Self::Roll => ("Dodge roll", GAMEPLAY, &["KeyF"]),
             Self::Descend => ("Swim down (hold)", GAMEPLAY, &["KeyX"]),
             Self::TargetNext => ("Next target", GAMEPLAY, &["Tab"]),
+            Self::ToggleWeapon => ("Draw / sheathe weapon", GAMEPLAY, &["KeyH"]),
             Self::Swing => ("Swing weapon", GAMEPLAY, &["KeyQ"]),
             Self::ReleaseSpirit => ("Release spirit", GAMEPLAY, &["KeyR"]),
             Self::AbilitySlot(1) => ("Ability 1", GAMEPLAY, &["Digit1"]),
@@ -211,7 +216,16 @@ impl ControlAction {
             // Radial wheels (#653): only open with Settings → Wheels → Radial wheels on.
             Self::FixedWheel => ("Fixed wheel (hold, flick, release)", GAMEPLAY, &["KeyT"]),
             Self::ContextWheel => ("Context wheel (hold, flick, release)", GAMEPLAY, &["KeyK"]),
-        }
+        };
+        let context = if matches!(
+            self,
+            Self::Swing | Self::AbilitySlot(_) | Self::DirectedStrike | Self::Guard
+        ) {
+            COMBAT
+        } else {
+            context
+        };
+        (title, context, keys)
     }
 }
 
@@ -247,6 +261,8 @@ pub(crate) fn slot_releases(decisions: &[RuntimeDecision]) -> impl Iterator<Item
 
 const WORLD: &str = "world";
 const GAMEPLAY: &str = "gameplay";
+const COMBAT: &str = "combat";
+const EXPLORATION: &str = "exploration";
 const CASTING: &str = "casting";
 
 /// The catalog has no chords, so no timeout is ever pending and the runtime
@@ -353,6 +369,7 @@ pub struct NativeControls {
     runtime: InputRuntime,
     state: SemanticControlState,
     casting: bool,
+    weapon_drawn: bool,
     sources: KeyboardSources,
     /// Slot releases not yet drained.
     releases: Vec<SlotRelease>,
@@ -385,11 +402,16 @@ impl NativeControls {
             "the native control catalog is invalid: {:?}",
             report.diagnostics
         );
-        runtime.set_context_stack(Some(vec![layer(WORLD), layer(GAMEPLAY)]));
+        runtime.set_context_stack(Some(vec![
+            layer(WORLD),
+            layer(GAMEPLAY),
+            layer(EXPLORATION),
+        ]));
         Self {
             runtime,
             state: SemanticControlState::new(),
             casting: false,
+            weapon_drawn: false,
             sources: KeyboardSources::default(),
             releases: Vec::new(),
             hold_releases: Vec::new(),
@@ -422,11 +444,35 @@ impl NativeControls {
             return;
         }
         self.casting = casting;
-        let decision = if casting {
-            self.runtime.push_context(layer(CASTING))
-        } else {
-            self.runtime.pop_context().1
-        };
+        self.restack();
+    }
+
+    /// A projected mode change retires held strikes, guards and slot input.
+    pub fn set_weapon_drawn(&mut self, drawn: bool) {
+        if drawn != self.weapon_drawn {
+            self.weapon_drawn = drawn;
+            self.restack();
+        }
+    }
+
+    pub fn weapon_drawn(&self) -> bool {
+        self.weapon_drawn
+    }
+
+    fn restack(&mut self) {
+        let mut stack = vec![
+            layer(WORLD),
+            layer(GAMEPLAY),
+            layer(if self.weapon_drawn {
+                COMBAT
+            } else {
+                EXPLORATION
+            }),
+        ];
+        if self.casting {
+            stack.push(layer(CASTING));
+        }
+        let decision = self.runtime.set_context_stack(Some(stack));
         self.apply(&[decision]);
     }
 
