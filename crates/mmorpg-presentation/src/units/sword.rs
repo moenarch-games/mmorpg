@@ -60,6 +60,16 @@ impl Swing {
         let reach = f64::from(mmorpg_core::unit::PLAYER_REACH_UNITS) / f64::from(UNITS_PER_METRE);
         let grip_height = height.clamp(0.8, 1.45);
         let slope = (height - grip_height) / (reach - 0.55);
+        // A low grip cannot be lowered through the knees. Its blade tilts into the low
+        // lane; only the portion inside that lane leaves an affected-area afterimage.
+        let band = [bottom, top].map(|value| f64::from(value) / f64::from(UNITS_PER_METRE));
+        let inner = if grip_height > band[1] {
+            0.55 + (band[1] - grip_height) / slope
+        } else if grip_height < band[0] {
+            0.55 + (band[0] - grip_height) / slope
+        } else {
+            0.55
+        };
         let mut geometry = crate::geometry::Geometry::default();
         for part in 0..8 {
             let at = |step: u32, radius: f64| {
@@ -72,10 +82,10 @@ impl Swing {
                 ]
             };
             geometry.face(&[
-                at(part, 0.55),
+                at(part, inner),
                 at(part, reach),
                 at(part + 1, reach),
-                at(part + 1, 0.55),
+                at(part + 1, inner),
             ]);
         }
         let fade = (1. - (elapsed - self.active).max(0.) / 0.06).clamp(0., 1.);
@@ -241,6 +251,17 @@ mod tests {
         for side in [StrikeSide::Left, StrikeSide::Centre, StrikeSide::Right] {
             for height in [StrikeHeight::Low, StrikeHeight::Middle, StrikeHeight::High] {
                 let aim = StrikeAim::new(side, height);
+                let [bottom, top] = height
+                    .band()
+                    .map(|v| f64::from(v) / f64::from(UNITS_PER_METRE));
+                let trail = Swing { aim, ..swing }.trail("lane", [0.; 3], 0.4).unwrap();
+                assert!(
+                    trail
+                        .geometry
+                        .p
+                        .iter()
+                        .all(|p| p[1] >= bottom - 1e-9 && p[1] <= top + 1e-9)
+                );
                 for progress in [0., 0.5, 1.] {
                     let rotations = fit(
                         frames,
