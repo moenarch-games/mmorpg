@@ -184,16 +184,23 @@ fn lake_beds_follow_the_actual_terrace_instead_of_world_zero() {
 }
 
 #[test]
-fn new_ground_cover_is_instanced_and_keeps_routes_and_water_clear() {
+fn remaining_ground_cover_is_instanced_and_keeps_routes_and_water_clear() {
     let scenery = greyhaven_vale_scenery();
     let scene = StaticScene::new(&scenery);
+    assert!(
+        scene
+            .groups
+            .iter()
+            .flat_map(|group| &group.draws)
+            .all(|draw| !draw.id.contains("greyhaven-ground-cover")),
+        "the six-blade pyramid clumps should no longer be drawn"
+    );
     let mut clumps = 0;
     let mut ferns = 0;
     for group in scene.groups.iter().filter(|group| {
         group.instanced
             && group.draws.first().is_some_and(|draw| {
-                draw.id.contains("greyhaven-ground-cover")
-                    || draw.id.contains("greyhaven-fern-understory")
+                draw.id.contains("greyhaven-fern-understory")
                     || draw.id.contains("greyhaven-brook-turf")
             })
     }) {
