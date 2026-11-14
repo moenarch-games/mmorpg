@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 14912)
-Total output lines: 1424
-
 //! Greyhaven Vale, the starter zone: immutable collision content, named
 //! areas, the road corridors that must stay walkable, and the creatures,
 //! NPCs and graveyard of [`units`].
@@ -570,7 +567,252 @@ const fn standing(id: u32, min: [i32; 2], max: [i32; 2], height: i32) -> StaticC
 }
 
 /// A box over an authored footprint, resting on the terrain there (#159).
-fn on_terrain(i…2912 tokens truncated…::ruins(*ids::SHRINE_RUINS.start()))
+fn on_terrain(id: u32, min: [i32; 2], max: [i32; 2], height: i32) -> StaticCollider {
+    let mut collider = standing(id, min, max, height);
+    collider.position[1] += footing(min, max);
+    collider
+}
+
+/// Wolfrun Woods trunk generator: a jittered grid of 4.5 m cells west of the
+/// outpost. Seeded integer hashing keeps it deterministic; a trunk centre stays
+/// at least 1.2 m from its cell edge, so neighbouring trunks (at most 0.9 m
+/// wide) always leave a walkable gap of 1.5 m or more.
+mod woods {
+    pub const ORIGIN: [i32; 2] = [-11_600, -4_500];
+    pub const CELLS: [i32; 2] = [15, 20];
+    pub const CELL: i32 = 450;
+    pub const EDGE_MARGIN: i32 = 120;
+    pub const SEED: u64 = 0x5752_4f4c_4652_554e;
+    /// The wolf den clearing where the Wolfrun Trail ends.
+    pub const CLEARING_CENTRE: [i32; 2] = [-8_000, 0];
+    pub const CLEARING_RADIUS: i32 = 900;
+    pub const TRUNK_HEIGHT: i32 = 500;
+}
+
+/// The outer valley's woods (#159): `(origin, cells, seed, percent of cells
+/// with a trunk)` on the same 4.5 m jittered grid as Wolfrun Woods.
+const OUTER_FORESTS: [([i32; 2], [i32; 2], u64, u64); 7] = [
+    // Hollowpine Reach: dense pines west of Wolfrun Woods.
+    ([-20_400, -11_600], [17, 52], 0x484f_4c4c_4f57_5049, 60),
+    // Greyfang Ridge and Southmeadow Downs: scattered copses.
+    ([-18_000, -20_400], [80, 10], 0x4752_4559_4641_4e47, 12),
+    ([-18_000, 16_400], [80, 9], 0x534f_5554_484d_4544, 12),
+    // Eastwater Fen: sparse alders east of the farm and the lake.
+    ([12_600, -11_600], [17, 52], 0x4541_5354_5741_5445, 15),
+    // Farmland and Hamlets (#424): lone trees between the fields, off the level ground.
+    ([-20_400, 25_600], [90, 84], 0x4641_524d_5452_4545, 5),
+    // Bandit Highlands (#425): scattered pines across the high ground, off its level ground
+    // and clear of its crags.
+    ([-20_400, -62_800], [90, 77], 0x4849_4748_5452_4545, 4),
+    // Marsh-Lake Wetlands (#426): lone trees across the wetlands, off the water.
+    ([25_600, -20_400], [82, 90], 0x4d41_5253_4854_5245, 3),
+];
+
+/// Small, patchy groves frame Stillwater's eastern shore, the Hollow's distant backdrop
+/// and the southwest ridge. Appended after existing forests to retain their collider IDs.
+const RIM_GROVES: [([i32; 2], [i32; 2], u64, u64); 5] = [
+    ([8200, -10500], [9, 19], 0x0051_3f01, 72),
+    ([-11000, -15500], [14, 9], 0x0051_3f02, 76),
+    ([-11000, 5000], [14, 13], 0x0051_3f03, 70),
+    // Continue the woodland behind the western ridge and below Millbrook. Existing
+    // groves stay first so their tree identities survive this appended authoring.
+    ([-12500, -10500], [13, 14], 0x0051_3f04, 76),
+    ([6500, 5800], [13, 12], 0x0051_3f05, 74),
+];
+
+/// Lower, patchy woodland between the northern cliff feet and the existing Vale places.
+/// These groves may root on the low valley floor; appended last to retain older tree IDs.
+const NORTH_GROVES: [([i32; 2], [i32; 2], u64, u64); 4] = [
+    ([-17_000, -20_000], [15, 13], 0x0051_4f01, 78),
+    ([-10_000, -20_000], [15, 9], 0x0051_4f02, 78),
+    ([-1_500, -20_000], [14, 8], 0x0051_4f03, 76),
+    ([10_000, -19_000], [15, 12], 0x0051_4f04, 76),
+];
+
+/// SplitMix64 finaliser: a fixed integer hash, identical on every platform.
+const fn splitmix64(value: u64) -> u64 {
+    let mut z = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^ (z >> 31)
+}
+
+fn trees() -> Vec<StaticCollider> {
+    let mut trees = Vec::new();
+    let mut next_id = *ids::TREES.start();
+    let span = woods::CELL - 2 * woods::EDGE_MARGIN;
+    for row in 0..woods::CELLS[1] {
+        for column in 0..woods::CELLS[0] {
+            let cell = (u64::from(row.unsigned_abs()) << 32) | u64::from(column.unsigned_abs());
+            let hash = splitmix64(woods::SEED ^ cell);
+            let border = row == 0
+                || column == 0
+                || row == woods::CELLS[1] - 1
+                || column == woods::CELLS[0] - 1;
+            // A quarter of the cells are glades; half of the border cells thin the edge.
+            if hash.is_multiple_of(4) || (border && (hash >> 2).is_multiple_of(2)) {
+                continue;
+            }
+            let jitter = |shift: u32| (hash >> shift) as i32 & 0xff;
+            let x = woods::ORIGIN[0]
+                + column * woods::CELL
+                + woods::EDGE_MARGIN
+                + jitter(8) % (span + 1);
+            let z =
+                woods::ORIGIN[1] + row * woods::CELL + woods::EDGE_MARGIN + jitter(16) % (span + 1);
+            // Trunks 0.6 m to 0.9 m wide.
+            let half = 30 + jitter(24) % 16;
+            let dx = i64::from(x - woods::CLEARING_CENTRE[0]);
+            let dz = i64::from(z - woods::CLEARING_CENTRE[1]);
+            let keep_out = i64::from(woods::CLEARING_RADIUS + half);
+            if dx * dx + dz * dz < keep_out * keep_out {
+                continue;
+            }
+            // On the rim (#423).
+            let base = footing([x - half, z - half], [x + half, z + half]);
+            let collider = StaticCollider {
+                id: next_id,
+                position: [x, base + woods::TRUNK_HEIGHT / 2, z],
+                half_extents: [half, woods::TRUNK_HEIGHT / 2, half],
+            };
+            if !clear_of_roads(&collider) {
+                continue;
+            }
+            if !brook::wet_ground(x, z) && !shrine::flattens(x, z) {
+                trees.push(collider);
+            }
+            next_id += 1;
+        }
+    }
+    for (origin, cells, seed, percent) in OUTER_FORESTS
+        .into_iter()
+        .chain(RIM_GROVES)
+        .chain(NORTH_GROVES)
+    {
+        let rim_grove = RIM_GROVES.iter().any(|grove| grove.2 == seed);
+        let north_grove = NORTH_GROVES.iter().any(|grove| grove.2 == seed);
+        let minimum_height = if rim_grove { 600 } else { 0 };
+        for row in 0..cells[1] {
+            for column in 0..cells[0] {
+                let cell = (u64::from(row.unsigned_abs()) << 32) | u64::from(column.unsigned_abs());
+                let hash = splitmix64(seed ^ cell);
+                if hash % 100 >= percent {
+                    continue;
+                }
+                let jitter = |shift: u32| (hash >> shift) as i32 & 0xff;
+                let x =
+                    origin[0] + column * woods::CELL + woods::EDGE_MARGIN + jitter(8) % (span + 1);
+                let z =
+                    origin[1] + row * woods::CELL + woods::EDGE_MARGIN + jitter(16) % (span + 1);
+                // Gaps in the canopy are broad patches, not one evenly occupied lattice.
+                // Leave the highest spurs bare so the ridges remain visible above the trees.
+                if (rim_grove || north_grove)
+                    && (value_noise_q10(i64::from(x), i64::from(z), 1800, seed) < 440
+                        || !(minimum_height..2300).contains(&TERRAIN.height_at(x, z)))
+                {
+                    continue;
+                }
+                // Hamlets, fields and the tower's yard, with their aprons, stay clear (#424).
+                if farmland::level(x, z)
+                    || !highlands::clear_for_tree(x, z)
+                    || (x >= marsh::RIDGE[0] - 600 && !marsh::clear_for_tree(x, z))
+                {
+                    continue;
+                }
+                let half = 30 + jitter(24) % 16;
+                let base = footing([x - half, z - half], [x + half, z + half]);
+                let collider = StaticCollider {
+                    id: next_id,
+                    position: [x, base + woods::TRUNK_HEIGHT / 2, z],
+                    half_extents: [half, woods::TRUNK_HEIGHT / 2, half],
+                };
+                // These patches overlap the sparse old northern band. Preserve the old
+                // trunks and a walkable gap rather than planting a second trunk beside one.
+                if north_grove
+                    && trees.iter().any(|tree| {
+                        (x - tree.position[0]).abs() < half + tree.half_extents[0] + 150
+                            && (z - tree.position[2]).abs() < half + tree.half_extents[2] + 150
+                    })
+                {
+                    continue;
+                }
+                if !clear_of_roads(&collider) || near_structure(&collider) {
+                    continue;
+                }
+                if !brook::wet_ground(x, z) && !shrine::flattens(x, z) {
+                    trees.push(collider);
+                }
+                next_id += 1;
+            }
+        }
+    }
+    // New canopy patches are authored separately so older forest identities remain stable.
+    let posts: Vec<_> = units::creature_spawns()
+        .into_iter()
+        .map(|unit| unit.position)
+        .chain(units::npcs().into_iter().map(|unit| unit.position))
+        .collect();
+    for forest in &landscape::data().forests {
+        for row in 0..forest.cells[1] {
+            for column in 0..forest.cells[0] {
+                let cell = (u64::from(row.unsigned_abs()) << 32) | u64::from(column.unsigned_abs());
+                let hash = splitmix64(forest.seed ^ cell);
+                if hash % 100 >= forest.percent {
+                    continue;
+                }
+                let jitter = |shift: u32| (hash >> shift) as i32 & 0xff;
+                let x = forest.origin[0]
+                    + column * woods::CELL
+                    + woods::EDGE_MARGIN
+                    + jitter(8) % (span + 1);
+                let z = forest.origin[1]
+                    + row * woods::CELL
+                    + woods::EDGE_MARGIN
+                    + jitter(16) % (span + 1);
+                if value_noise_q10(i64::from(x), i64::from(z), 1800, forest.seed) < 300
+                    || !(forest.elevation[0]..forest.elevation[1])
+                        .contains(&TERRAIN.height_at(x, z))
+                    || farmland::level(x, z)
+                    || !highlands::clear_for_tree(x, z)
+                    || brook::wet_ground(x, z)
+                    || shrine::flattens(x, z)
+                    || posts
+                        .iter()
+                        .any(|post| (x - post[0]).abs() < 350 && (z - post[1]).abs() < 350)
+                {
+                    continue;
+                }
+                let half = 30 + jitter(24) % 16;
+                if trees.iter().any(|tree| {
+                    (x - tree.position[0]).abs() < half + tree.half_extents[0] + 150
+                        && (z - tree.position[2]).abs() < half + tree.half_extents[2] + 150
+                }) {
+                    continue;
+                }
+                let base = footing([x - half, z - half], [x + half, z + half]);
+                let collider = StaticCollider {
+                    id: next_id,
+                    position: [x, base + woods::TRUNK_HEIGHT / 2, z],
+                    half_extents: [half, woods::TRUNK_HEIGHT / 2, half],
+                };
+                if !clear_of_roads(&collider) || near_structure(&collider) {
+                    continue;
+                }
+                assert!(
+                    ids::TREES.contains(&next_id),
+                    "authored forests exceed reserved tree identities"
+                );
+                trees.push(collider);
+                next_id += 1;
+            }
+        }
+    }
+    // The shore rocks and shrine moved with Stillwater. Reject intersecting trunks
+    // after assigning IDs, so clearing their new sites never renumbers other trees.
+    let shore: Vec<_> = (vale::REGION.colliders)()
+        .into_iter()
+        .filter(|body| ids::SHORE_ROCKS.contains(&body.id))
+        .chain(shrine::ruins(*ids::SHRINE_RUINS.start()))
         .chain(shrine::walls(*ids::SHRINE_CAVE_WALLS.start()))
         .chain(
             fort::meshes()
