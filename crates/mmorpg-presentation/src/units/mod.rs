@@ -620,6 +620,7 @@ impl UnitPresenter {
                 ZoneEvent::SwingBegan {
                     source,
                     ability,
+                    facing,
                     aim,
                     startup,
                     active,
@@ -628,7 +629,7 @@ impl UnitPresenter {
                         snapshot,
                         viewer,
                         source,
-                        (ability, aim),
+                        (ability, aim, facing),
                         [startup, active],
                         seconds,
                     );
@@ -1179,7 +1180,7 @@ impl UnitPresenter {
         snapshot: &ZoneSnapshot,
         viewer: EntityRef,
         source: EntityRef,
-        (ability, aim): (AbilityId, StrikeAim),
+        (ability, aim, facing): (AbilityId, StrikeAim, u16),
         [startup, active]: [u8; 2],
         seconds: f64,
     ) {
@@ -1219,22 +1220,16 @@ impl UnitPresenter {
         );
         self.timed_swings
             .retain(|_, swing| swing.until() >= seconds);
-        if let Some(record) = snapshot
-            .entities
-            .iter()
-            .find(|record| record.entity() == source)
-        {
-            self.timed_swings.insert(
-                source,
-                sword::Swing {
-                    aim,
-                    facing: record.facing,
-                    began: seconds,
-                    startup: f64::from(wind_up),
-                    active: f64::from(active) * f64::from(tick),
-                },
-            );
-        }
+        self.timed_swings.insert(
+            source,
+            sword::Swing {
+                aim,
+                facing,
+                began: seconds,
+                startup: f64::from(wind_up),
+                active: f64::from(active) * f64::from(tick),
+            },
+        );
     }
 
     fn react(

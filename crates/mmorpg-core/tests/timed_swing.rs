@@ -78,6 +78,38 @@ fn health(zone: &ZoneSimulation, player: PlayerId) -> u32 {
 }
 
 #[test]
+fn swing_begin_reports_its_accepted_heading_after_a_later_turn() {
+    let mut zone = duel(&arena(true), [0, 0], 100);
+    strike(&mut zone, 1, 2, EAST);
+    zone.advance_tick().unwrap();
+    zone.apply_command(
+        1,
+        3,
+        ZoneCommand::Move {
+            forward: 0,
+            strafe: 0,
+            facing: WEST,
+        },
+    )
+    .unwrap();
+    let view = zone.snapshot_for_player(1).unwrap();
+    assert_eq!(
+        view.entities
+            .iter()
+            .find(|entity| entity.entity() == EntityRef::Player(1))
+            .unwrap()
+            .facing,
+        WEST
+    );
+    assert_eq!(zone.swing_of(1).unwrap().facing, EAST);
+    assert!(
+        view.events
+            .iter()
+            .any(|event| matches!(event, ZoneEvent::SwingBegan { facing: EAST, .. }))
+    );
+}
+
+#[test]
 fn greyhaven_adopts_the_approved_timing_and_recovers_a_running_swing() {
     let content = mmorpg_core::greyhaven_vale::content();
     assert_eq!(content.timed_combat(), Some(TimedCombat::ARENA));

@@ -88,8 +88,11 @@ Reduced motion omits the fit and trail. Right-click combat cancel remains unchan
 
 Greyhaven's content hash changes to bind the timed rules, including per-attack
 interception; old world checkpoints fail content matching instead of silently resuming
-with different combat. Character records retain their existing format. No command,
-projection or canonical layout changes, and no protocol-ID bump is needed.
+with different combat. Character records retain their existing format. `SwingBegan` now carries the heading
+frozen at acceptance, rather than inferring it from the snapshot's mutable facing.
+Both snapshot scopes pack that heading into the event's formerly unused target slot;
+the event remains 14 bytes, but its semantics and protocol identity change.
+The native/browser producers must agree on the new protocol ID.
 
 ## Arena netcode trial (#680, Atlas 5.9.i680)
 

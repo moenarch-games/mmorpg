@@ -367,6 +367,7 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
             aim,
             startup,
             active,
+            ..
         } => (
             SWING_BEGAN,
             ability.get(),
@@ -449,7 +450,14 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
     payload.push(kind);
     payload.push(flags);
     encode_entity_ref(payload, source);
-    encode_entity_ref(payload, target);
+    if let ZoneEvent::SwingBegan { facing, .. } = event {
+        // This event has no target: reserve that slot for its accepted heading, with a
+        // strict zero prefix. The event stays 14 bytes in both snapshot scopes.
+        payload.extend_from_slice(&[0, 0, 0]);
+        payload.extend_from_slice(&facing.to_be_bytes());
+    } else {
+        encode_entity_ref(payload, target);
+    }
     payload.extend_from_slice(&amount.to_be_bytes());
 }
 
@@ -457,7 +465,14 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
     let kind = read_u8(payload, offset)?;
     let flags = read_u8(payload, offset)?;
     let source = decode_entity_ref(payload, offset)?;
-    let target = decode_entity_ref(payload, offset)?;
+    let (target, swing_facing) = if kind == SWING_BEGAN {
+        if take::<3>(payload, offset)? != [0, 0, 0] {
+            return Err(ProtocolError::new("malformed swing heading"));
+        }
+        (None, u16::from_be_bytes(take(payload, offset)?))
+    } else {
+        (decode_entity_ref(payload, offset)?, 0)
+    };
     let amount = u16::from_be_bytes(take(payload, offset)?);
     let invalid = || ProtocolError::new("malformed event record");
     let damage = |critical_allowed: bool| -> Result<bool, ProtocolError> {
@@ -579,6 +594,7 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
             ZoneEvent::SwingBegan {
                 source: source.ok_or_else(invalid)?,
                 ability: decode_ability(flags)?,
+                facing: swing_facing,
                 aim,
                 startup,
                 active,
@@ -1237,5 +1253,24 @@ mod tests {
                 "unknown error code"
             );
         }
+    }
+
+    #[test]
+    fn swing_heading_uses_the_reserved_target_slot_without_an_entity_reference() {
+        let event = ZoneEvent::SwingBegan {
+            source: EntityRef::Player(1),
+            ability: AbilityId::new(1),
+            facing: 16384,
+            aim: StrikeAim::new(StrikeSide::Centre, StrikeHeight::Middle),
+            startup: 18,
+            active: 9,
+        };
+        let mut bytes = Vec::new();
+        encode_event(&mut bytes, &event);
+        assert_eq!(bytes.len(), 14);
+        assert_eq!(&bytes[7..12], &[0, 0, 0, 0x40, 0]);
+        assert_eq!(decode_event(&bytes, &mut 0).unwrap(), event);
+        bytes[7] = PLAYER_KIND;
+        assert!(decode_event(&bytes, &mut 0).is_err());
     }
 }

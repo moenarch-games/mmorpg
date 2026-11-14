@@ -335,10 +335,11 @@ fn timed_sword_motion_and_trail_follow_the_accepted_aim_until_a_clash() {
         .iter_mut()
         .find(|record| record.entity() == me)
         .unwrap()
-        .facing = 16384;
+        .facing = 0; // A turn after beginning the accepted eastward swing.
     scene.snapshot.events = vec![ZoneEvent::SwingBegan {
         source: me,
         ability: AbilityId::new(1),
+        facing: 16384,
         aim: StrikeAim::new(StrikeSide::Centre, StrikeHeight::Middle),
         startup: 18,
         active: 9,
@@ -357,6 +358,10 @@ fn timed_sword_motion_and_trail_follow_the_accepted_aim_until_a_clash() {
         .iter()
         .find(|unit| unit.entity == me)
         .unwrap();
+    assert!(
+        (unit.root.q[1] - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-6,
+        "the accepted eastward heading must survive a later northward turn"
+    );
     let pose = unit
         .animation
         .layers

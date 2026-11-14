@@ -450,6 +450,7 @@ pub fn event_token(event: &ZoneEvent, name: impl Fn(EntityRef) -> String) -> Str
             aim,
             startup,
             active,
+            ..
         } => format!(
             "swing:{}:{}:{}{}:{startup}+{active}",
             name(source),
