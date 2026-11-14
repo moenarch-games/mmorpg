@@ -880,6 +880,10 @@ mod tests {
     #[test]
     fn the_left_trigger_holds_the_guard_and_the_right_stick_aims_it() {
         let mut controls = PadControls::new();
+        assert!(controls.sample(&[pressed(standard::LT)]).is_empty());
+        assert!(!controls.guarding()); // Hands-free exploration has no guard (#802).
+        controls.sample(&[pad()]);
+        controls.set_weapon_drawn(true);
         let mut held = pressed(standard::LT);
         assert!(controls.sample(&[held]).is_empty());
         assert!(controls.guarding());
