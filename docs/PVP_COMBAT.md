@@ -41,8 +41,9 @@ the same damage resolver. No PvE XP/copper or creature loot is awarded for killi
 
 An arena opts in with `ZoneContent::with_timed_combat(TimedCombat::ARENA)`
 (`crates/mmorpg-core/src/swing.rs`). The content revision binds the rules, so restoring
-arena state into content without them fails closed. Greyhaven does not opt in: its
-directed strikes still resolve in the tick their command arrives.
+state into content without them fails closed. Greyhaven now deliberately opts into the same
+rules after the owner approved the timings and requested clearer sweep motion (Atlas 5.2.i679-5–6).
+Its player combat policy remains Safe; this does not enable world PvP.
 
 - **Begin on the wire.** The ordinary `DirectedStrike` command begins the swing: validation,
   Rage, cooldowns, the global cooldown and the guard release apply at once, and observers get
@@ -69,11 +70,26 @@ directed strikes still resolve in the tick their command arrives.
 - **Recovery.** The running swing is canonical player state, so a zone restored mid-swing
   continues it exactly (`cargo test -p mmorpg-core --test timed_swing`).
 
-Health alone decides fights: no clash moves anyone (Atlas 5.2.i679-2). The phase lengths, clash
-switches and radii are starting values to tune in play, as is the 2 s basic swing timer.
-The browser's practice arena and hosted Battle Royale matches run these rules:
-`battle_royale_core::arena::content()` opts in (battle-royale #50). Greyhaven is unchanged
-until the arena playtest settles them.
+Health alone decides fights: no clash moves anyone (Atlas 5.2.i679-2). The owner approved the 0.3 s wind-up, 0.15 s sweep and 2 s
+basic swing timer on 2026-11-14; that approval is not a claim of a human playtest.
+The browser practice arena, hosted Battle Royale matches and Greyhaven run these rules;
+`battle_royale_core::arena::content()` opts in (battle-royale #50).
+
+Both clients consume the same `mmorpg-presentation::units::sword` motion: the authored
+body/guard clips remain, with a bounded fit of the existing right arm and sword toward
+the accepted sweep. The centre aim sweeps too, replacing the old thrust/chop path.
+Wind-up fills startup; the arm travels through the authoritative angular progression
+during the active phase and returns to the authored recovery. A brief airborne blade
+ribbon follows the traversed arc at the selected lane, retaining only 60 ms of trail.
+Its outer edge denotes the 2.5 m centre-hit reach (which includes the victim body),
+not an enlarged sword or stretched arm. There is no ground-area arc. Turning after
+begin does not turn the accepted attack; clashes, death and stuns retire its visual.
+Reduced motion omits the fit and trail. Right-click combat cancel remains unchanged.
+
+Greyhaven's content hash changes to bind the timed rules, including per-attack
+interception; old world checkpoints fail content matching instead of silently resuming
+with different combat. Character records retain their existing format. No command,
+projection or canonical layout changes, and no protocol-ID bump is needed.
 
 ## Arena netcode trial (#680, Atlas 5.9.i680)
 

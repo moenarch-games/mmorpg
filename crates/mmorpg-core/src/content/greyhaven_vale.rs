@@ -1377,6 +1377,7 @@ fn content_with_spawns(
         .collect();
     Ok(Arc::new(
         content
+            .with_timed_combat(crate::TimedCombat::ARENA)?
             .with_loot_tables(tables)?
             .with_creature_abilities(units::creature_abilities())?
             .with_bosses(units::bosses())?

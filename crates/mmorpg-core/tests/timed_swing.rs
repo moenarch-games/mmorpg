@@ -78,6 +78,23 @@ fn health(zone: &ZoneSimulation, player: PlayerId) -> u32 {
 }
 
 #[test]
+fn greyhaven_adopts_the_approved_timing_and_recovers_a_running_swing() {
+    let content = mmorpg_core::greyhaven_vale::content();
+    assert_eq!(content.timed_combat(), Some(TimedCombat::ARENA));
+    assert_eq!(content.player_combat_policy(), PlayerCombatPolicy::Safe);
+    let mut zone = duel(&content, [0, 0], 100);
+    strike(&mut zone, 1, 2, EAST);
+    zone.advance_tick().unwrap();
+    assert!(zone.swing_of(1).is_some());
+    let mut restored = ZoneSimulation::from_snapshot(zone.snapshot().unwrap(), content).unwrap();
+    for _ in 0..40 {
+        zone.advance_tick().unwrap();
+        restored.advance_tick().unwrap();
+        assert_eq!(zone.snapshot().unwrap(), restored.snapshot().unwrap());
+    }
+}
+
+#[test]
 fn a_timed_swing_winds_up_visibly_then_strikes_and_restores_mid_swing_exactly() {
     let content = arena(true);
     let mut zone = duel(&content, [0, 0], 100);
