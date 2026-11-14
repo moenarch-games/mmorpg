@@ -5,7 +5,41 @@
   "spacing": 1530,
   "blendCells": 5,
   "regions": [
-    {"id": "greyhaven", "name": "Greyhaven Vale", "seed": [212, 0], "anchor": "greyhaven", "locked": true},
+    {"id": "greyhaven", "name": "Greyhaven Vale", "seed": [0, 0], "anchor": "greyhaven", "locked": true, "group": "greyhaven"},
+    {
+      "id": "greyhaven-highlands",
+      "name": "Bandit Highlands",
+      "seed": [0, -420],
+      "anchor": "greyhaven",
+      "parts": ["Bandit Highlands"],
+      "locked": true,
+      "group": "greyhaven"
+    },
+    {
+      "id": "greyhaven-farmland",
+      "name": "Farmland and Hamlets",
+      "seed": [0, 424],
+      "anchor": "greyhaven",
+      "parts": ["Farmland and Hamlets"],
+      "locked": true,
+      "group": "greyhaven"
+    },
+    {
+      "id": "greyhaven-wetlands",
+      "name": "Marsh-Lake Wetlands",
+      "seed": [420, 0],
+      "anchor": "greyhaven",
+      "parts": ["Marsh-Lake Wetlands"],
+      "locked": true,
+      "group": "greyhaven"
+    },
+    {"id": "greyhaven-greyfang-approach", "name": "Greyfang Approach", "seed": [200, -1000], "group": "greyhaven"},
+    {"id": "greyhaven-delving-heights", "name": "Delving Heights", "seed": [1100, -650], "group": "greyhaven"},
+    {"id": "greyhaven-fenwater-crossing", "name": "Fenwater Crossing", "seed": [1150, 300], "group": "greyhaven"},
+    {"id": "greyhaven-kings-road-downs", "name": "King's Road Downs", "seed": [700, 750], "group": "greyhaven"},
+    {"id": "greyhaven-southwood", "name": "Southwood", "seed": [-600, 750], "group": "greyhaven"},
+    {"id": "greyhaven-westmere-woods", "name": "Westmere Woods", "seed": [-1000, 150], "group": "greyhaven"},
+    {"id": "greyhaven-crown-foothills", "name": "Crown Foothills", "seed": [-1200, -700], "group": "greyhaven"},
     {"id": "crownhollow", "name": "Crownhollow", "seed": [-300, -4600]},
     {"id": "saltmere", "name": "Saltmere", "seed": [7250, 550]},
     {"id": "gull-isle", "name": "Gull Isle", "seed": [-11000, 5200]},
