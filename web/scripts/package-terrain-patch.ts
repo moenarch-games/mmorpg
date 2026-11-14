@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const producerRevision = "8a22d6950d00d881500472ff781dfc5b874a0831";
+const producerRevision = "b2166ba96285ed36093e9c71aeb38907d1218635";
 const source = path.resolve(process.argv[2] ?? `${process.env.HOME}/.cache/mmorpg/ranger-tools/asset-tooling-${producerRevision}`);
 const root = path.resolve(import.meta.dir, "../..");
 const directory = path.join(root, "content/greyhaven/terrain-patches/southmeadow");
