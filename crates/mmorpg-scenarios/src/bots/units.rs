@@ -320,6 +320,7 @@ pub const fn error_code_name(code: ErrorCode) -> &'static str {
         ErrorCode::NoRoom => "no_room",
         ErrorCode::NoLanding => "no_landing",
         ErrorCode::MovementImmune => "movement_immune",
+        ErrorCode::WeaponDrawn => "weapon_drawn",
     }
 }
 
@@ -374,6 +375,7 @@ fn parse_error_code(name: &str) -> Option<ErrorCode> {
         "no_room" => ErrorCode::NoRoom,
         "no_landing" => ErrorCode::NoLanding,
         "movement_immune" => ErrorCode::MovementImmune,
+        "weapon_drawn" => ErrorCode::WeaponDrawn,
         _ => return None,
     })
 }

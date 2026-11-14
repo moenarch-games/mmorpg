@@ -1955,6 +1955,7 @@ impl Equipment {
         let (joint, matrix) = socket(&descriptor, "head.hair");
         Self {
             items: vec![(model, joint, matrix)],
+            stowed: vec![None],
             hanging: vec![false],
             bow: None,
             sheaths: vec![None],

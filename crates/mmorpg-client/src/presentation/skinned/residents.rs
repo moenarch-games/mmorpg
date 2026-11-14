@@ -652,6 +652,7 @@ fn dress(figure: Figure, preset: &Value) -> ResidentLook {
         model,
         plates: Plates { items: plates },
         items: Equipment {
+            stowed: vec![None; items.len()],
             hanging: vec![false; items.len()],
             sheaths: vec![None; items.len()],
             throwables: None,

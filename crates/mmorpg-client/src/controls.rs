@@ -163,7 +163,7 @@ impl ControlAction {
     /// Title, context and default physical keys, as in the browser catalog.
     fn default_binding(self) -> (&'static str, &'static str, &'static [&'static str]) {
         let (title, context, keys) = match self {
-            Self::MoveForward => ("Move forward", GAMEPLAY, &["KeyW", "ArrowUp"]),
+            Self::MoveForward => ("Move forward", GAMEPLAY, &["KeyW", "ArrowUp"] as &[_]),
             Self::MoveBackward => ("Move backward", GAMEPLAY, &["KeyS", "ArrowDown"]),
             Self::MoveLeft => ("Strafe left", GAMEPLAY, &["KeyA", "ArrowLeft"]),
             Self::MoveRight => ("Strafe right", GAMEPLAY, &["KeyD", "ArrowRight"]),
