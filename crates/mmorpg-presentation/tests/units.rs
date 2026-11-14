@@ -318,6 +318,86 @@ fn viewer_upper(frame: &UnitFrame) -> (&'static str, f32) {
 }
 
 #[test]
+fn timed_sword_motion_and_trail_follow_the_accepted_aim_until_a_clash() {
+    let mut scene = scene();
+    scene.snapshot.viewer.class = Some(mmorpg_core::ClassChoice {
+        class: mmorpg_core::PlayerClass::Warden,
+        sex: mmorpg_core::Sex::Male,
+    });
+    scene.presenter.model_ready(
+        Kind::Ranger,
+        ["Idle_Loop", "Sword_Slash_Mid_C"].map(|clip| (clip.to_owned(), 0.6)),
+    );
+    let me = EntityRef::Player(1);
+    scene
+        .snapshot
+        .entities
+        .iter_mut()
+        .find(|record| record.entity() == me)
+        .unwrap()
+        .facing = 0; // A turn after beginning the accepted eastward swing.
+    scene.snapshot.events = vec![ZoneEvent::SwingBegan {
+        source: me,
+        ability: AbilityId::new(1),
+        facing: 16384,
+        aim: StrikeAim::new(StrikeSide::Centre, StrikeHeight::Middle),
+        startup: 18,
+        active: 9,
+    }];
+    scene.presenter.push(&scene.snapshot, 0.);
+    let startup = frame(&mut scene, 0.2);
+    assert!(
+        startup
+            .draws
+            .iter()
+            .all(|draw| !draw.id.ends_with("-sword-trail"))
+    );
+    let active = frame(&mut scene, 0.4);
+    let unit = active
+        .imported
+        .iter()
+        .find(|unit| unit.entity == me)
+        .unwrap();
+    assert!(
+        (unit.root.q[1] - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-6,
+        "the accepted eastward heading must survive a later northward turn"
+    );
+    let pose = unit
+        .animation
+        .layers
+        .iter()
+        .find(|layer| layer.clip == "TimedSword_Mid_C")
+        .unwrap();
+    assert!((pose.time - 2. / 3.).abs() < 1e-5);
+    assert!(
+        active
+            .draws
+            .iter()
+            .any(|draw| draw.id.ends_with("-sword-trail"))
+    );
+    scene.snapshot.tick += 1;
+    scene.snapshot.events = vec![ZoneEvent::Clashed {
+        source: me,
+        target: scene.wolf,
+        kind: mmorpg_core::ClashKind::Swings,
+    }];
+    scene.presenter.push(&scene.snapshot, 0.41);
+    let clashed = frame(&mut scene, 0.42);
+    assert!(
+        clashed
+            .draws
+            .iter()
+            .all(|draw| !draw.id.ends_with("-sword-trail"))
+    );
+    assert!(clashed.imported.iter().all(|unit| {
+        unit.animation
+            .layers
+            .iter()
+            .all(|layer| !layer.clip.starts_with("TimedSword_"))
+    }));
+}
+
+#[test]
 fn the_local_wind_up_waits_for_the_zone_to_commit_or_refuse_it() {
     let heroic = AbilityId::new(1);
     let mut scene = scene();

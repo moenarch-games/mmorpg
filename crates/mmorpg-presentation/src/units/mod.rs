@@ -17,6 +17,7 @@ pub mod player;
 pub mod presets;
 pub mod sway;
 pub mod swim;
+pub mod sword;
 pub mod traps;
 pub mod traversal;
 
@@ -43,9 +44,6 @@ const HEALTH_BAR_BACKGROUND: [f32; 3] = [0.12, 0.12, 0.14];
 const HEALTH_BAR_FILL: [f32; 3] = [0.18, 0.9, 0.25];
 /// How much a corpse's imported model darkens.
 const CORPSE_TINT: f32 = 0.6;
-/// A timed swing (#679) still counts as showing this long past its sweep, so a late sweep
-/// report adds no second swing.
-const TIMED_SWING_SLACK_SECONDS: f64 = 0.25;
 /// The Druid companion's green tint (#296) on the CC0 wolf model hostile Timber Wolves also use.
 pub const COMPANION_TINT: [f32; 3] = [0.6, 1.0, 0.45];
 /// How long a sent attack's local wind-up (Atlas 6.6.10) waits for the zone's answer before it
@@ -302,7 +300,7 @@ pub struct UnitPresenter {
     hastes: BTreeMap<EntityRef, f64>,
     /// Each unit showing a timed swing (#679), until its sweep ends: its sweep report adds no
     /// second swing.
-    timed_swings: BTreeMap<EntityRef, f64>,
+    timed_swings: BTreeMap<EntityRef, sword::Swing>,
     /// Swings that covered nobody, for alternating their forehand and backhand slashes (#582).
     whiffs: u32,
     /// Platforms a client's kit draws instead of their procedural pillar (#591).
@@ -622,6 +620,7 @@ impl UnitPresenter {
                 ZoneEvent::SwingBegan {
                     source,
                     ability,
+                    facing,
                     aim,
                     startup,
                     active,
@@ -630,7 +629,7 @@ impl UnitPresenter {
                         snapshot,
                         viewer,
                         source,
-                        (ability, aim),
+                        (ability, aim, facing),
                         [startup, active],
                         seconds,
                     );
@@ -666,6 +665,7 @@ impl UnitPresenter {
                 } if stuns(ability) => {
                     let until = seconds + f64::from(ticks) / f64::from(mmorpg_core::TICK_HZ);
                     self.stuns.insert(target, until);
+                    self.timed_swings.remove(&target);
                 }
                 ZoneEvent::AuraRemoved {
                     target, ability, ..
@@ -750,7 +750,7 @@ impl UnitPresenter {
                 } if !self
                     .timed_swings
                     .get(&source)
-                    .is_some_and(|&until| seconds <= until) =>
+                    .is_some_and(|swing| seconds <= swing.until()) =>
                 {
                     (source, Some(ability), Some(aim), Some(ability), false)
                 }
@@ -1180,7 +1180,7 @@ impl UnitPresenter {
         snapshot: &ZoneSnapshot,
         viewer: EntityRef,
         source: EntityRef,
-        (ability, aim): (AbilityId, StrikeAim),
+        (ability, aim, facing): (AbilityId, StrikeAim, u16),
         [startup, active]: [u8; 2],
         seconds: f64,
     ) {
@@ -1210,14 +1210,25 @@ impl UnitPresenter {
         let tick = 1. / f32::from(mmorpg_core::TICK_HZ);
         let wind_up = f32::from(startup) * tick;
         let hold = imported::windup_seconds(duration, None, true);
-        self.playbacks
-            .entry(source)
-            .or_default()
-            .timed(clip, duration, hold, region, wind_up, seconds);
-        self.timed_swings.retain(|_, &mut until| until >= seconds);
+        self.playbacks.entry(source).or_default().timed(
+            clip,
+            duration,
+            hold,
+            region,
+            [wind_up, f32::from(active) * tick],
+            seconds,
+        );
+        self.timed_swings
+            .retain(|_, swing| swing.until() >= seconds);
         self.timed_swings.insert(
             source,
-            seconds + f64::from(wind_up + f32::from(active) * tick) + TIMED_SWING_SLACK_SECONDS,
+            sword::Swing {
+                aim,
+                facing,
+                began: seconds,
+                startup: f64::from(wind_up),
+                active: f64::from(active) * f64::from(tick),
+            },
         );
     }
 
@@ -1475,6 +1486,8 @@ impl UnitPresenter {
         let present: BTreeSet<_> = input.units.iter().map(|u| u.record.entity()).collect();
         self.animators.retain(|e, _| present.contains(e));
         self.playbacks.retain(|e, _| present.contains(e));
+        self.timed_swings
+            .retain(|e, swing| present.contains(e) && seconds <= swing.until());
         // A unit back from an interest gap swings again from rest.
         self.sways.retain(|e, _| present.contains(e));
         self.aligns.retain(|e, _| present.contains(e));
@@ -1517,6 +1530,16 @@ impl UnitPresenter {
                     .filter(|_| viewer)
                     .unwrap_or(unit.yaw),
             );
+            // The zone fixes a swing's facing when it begins; turning afterwards never
+            // rotates its blade or trail. Movement still uses the sampled body position.
+            let sweep = self
+                .timed_swings
+                .get(&entity)
+                .copied()
+                .filter(|_| !unit.record.flags.dead);
+            let yaw = sweep
+                .filter(|swing| swing.pose(seconds).is_some())
+                .map_or(yaw, |swing| swing.yaw());
             let bar_y = unit.centre[1] + half[1] + 0.3;
             let root = Frame {
                 p: feet,
@@ -1681,7 +1704,7 @@ impl UnitPresenter {
                 let crag_push = *crag_push;
                 let (posture, face, bed) = self.social_cues(snapshot, unit, entity, yaw);
                 let durations = &self.durations;
-                let animation = self.playbacks.entry(entity).or_default().advance(
+                let mut animation = self.playbacks.entry(entity).or_default().advance(
                     kind.clips(),
                     |clip| {
                         durations
@@ -1719,6 +1742,13 @@ impl UnitPresenter {
                     },
                     self.blend,
                 );
+                if !dead
+                    && !stunned
+                    && !reduced
+                    && let Some(layer) = sweep.and_then(|swing| swing.pose(seconds))
+                {
+                    animation.layers.push(layer);
+                }
                 // A mantle's in-place clip holds the drawn body on its authored root path,
                 // trailing the projected body within a bound (#500).
                 let lift = self.aligns.entry(entity).or_default().advance(
@@ -1826,6 +1856,12 @@ impl UnitPresenter {
                 out.draws.extend(body);
             }
             let body = start..out.draws.len();
+            if !dead
+                && !reduced
+                && let Some(trail) = sweep.and_then(|swing| swing.trail(&id, feet, seconds))
+            {
+                out.draws.push(trail);
+            }
             // The viewer on the selection turntable is previewed, not in play: no bar.
             let previewed = viewer && input.viewer.preview_yaw.is_some();
             if !dead && entity.kind() != EntityKind::Npc && !previewed {

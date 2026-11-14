@@ -362,6 +362,7 @@ impl ZoneSimulation {
             ZoneEvent::SwingBegan {
                 source,
                 ability,
+                facing,
                 aim,
                 startup: swing.startup as u8,
                 active: swing.active as u8,
