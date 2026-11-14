@@ -63,17 +63,19 @@ for outfit in warden.skin.light ranger arcanist.skin.light necromancer.skin.grey
   entries+=",humanoid.ranger.male/outfit.class.${outfit},armor.class.${outfit%%.*}/default"
 done
 # The residents' and humanoid enemies' presets (#418, #39): the outfit variants `fetch-ranger.py`
-# acquires, their armour, the beards, the straw hat and every tintable hairstyle.
+# acquires, their armour, the straw hat and every tintable hairstyle and the beards the release still offers
+# (the male hair and beards come from the hair kit, #677; asset-tooling #517 retires the release's own).
 for variant in outfit.knight outfit.knight.skin.light outfit.soldier outfit.soldier.skin.light outfit.innkeeper.skin.light outfit.farmer outfit.farmer.skin.light outfit.monk.skin.light; do
   entries+=",humanoid.ranger.male/${variant}"
 done
-entries+=",armor.soldier/default,armor.farmer/default,armor.innkeeper/default,armor.monk/default,facial-hair.beards/default,equipment.hat.straw/default"
+entries+=",armor.soldier/default,armor.farmer/default,armor.innkeeper/default,armor.monk/default,equipment.hat.straw/default"
 INDEX="${ROOT_DIR}/web/public/characters/humanoid.ranger.male/humanoid-ranger-male.index.json"
 # Every tintable hairstyle the live release offers, as `fetch-ranger.py` acquires them (#507).
 entries+="$(python3 - "${INDEX}" <<'PY'
 import json, sys
 entries = json.load(open(sys.argv[1]))["entries"]
-print("".join("," + e["key"] + "/hair-1" for e in entries if e["key"].startswith("hair.") and e["variant"] == "hair-1"))
+print("".join("," + e["key"] + "/" + e["variant"] for e in entries if (e["key"].startswith("hair.") and e["variant"] == "hair-1")
+              or (e["key"], e["variant"]) == ("facial-hair.beards", "default")))
 PY
 )"
 # The painted head skins (asset-tooling #380), when the release has them.
