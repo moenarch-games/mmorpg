@@ -9,7 +9,7 @@ import { mergeUnitMeshes, type MergedUnit } from "./merged-unit";
 import type { EntityRef } from "../../entity-ref";
 import { characterVisualProfile } from "../../character-visuals";
 import type { CharacterClassId } from "../../character-selection";
-import { declaredChains, figureAppearance, varyPreset } from "../wasm-runtime";
+import { declaredChains, figureAppearance, swordArmPose, varyPreset } from "../wasm-runtime";
 import { ChainSway, declareChains } from "./chain-sway";
 import type { BowShot, ClassOutfit, ClipLayer, CrossbowCarry, ImportedModelKind, ImportedRequest, LayerMask, Loadout as CarriedLoadout, Throwable } from "../unit-presenter";
 
@@ -399,6 +399,37 @@ async function loadAnimal(loader: GLTFLoader, kind: Exclude<QuaterniusKind, "Ran
 
 /** A humanoid-sockets descriptor socket as a matrix in its joint's frame. */
 type Socket = { id: string; joint: string; matrix: THREE.Matrix4 };
+
+/** The sword fit uses the existing rig and weapon socket, after authored clip mixing. */
+const swordSockets = new WeakMap<THREE.Object3D, THREE.Matrix4>();
+function poseSword(model: THREE.Object3D, layers: readonly ClipLayer[], bounds: Pick<Asset, "height" | "floor">): void {
+  const layer = layers.find((layer) => layer.clip.startsWith("TimedSword_"));
+  const socket = swordSockets.get(model);
+  const upper = model.getObjectByName("upperarm_r");
+  const lower = model.getObjectByName("lowerarm_r");
+  const hand = model.getObjectByName("hand_r");
+  const parent = upper?.parent;
+  if (!layer || !socket || !upper || !lower || !hand || !parent) { return; }
+  model.updateWorldMatrix(true, true);
+  const inverse = model.matrixWorld.clone().invert();
+  const position = new THREE.Vector3();
+  const rotation = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  const frames = new Float64Array(35);
+  const matrices = [parent, upper, lower, hand].map((joint) => new THREE.Matrix4().multiplyMatrices(inverse, joint.matrixWorld));
+  matrices.push(socket);
+  matrices.forEach((matrix, index) => {
+    matrix.decompose(position, rotation, scale);
+    frames.set([...position.toArray(), ...rotation.toArray()], index * 7);
+  });
+  const rotations = swordArmPose(layer.clip, layer.time, layer.weight, frames, bounds.height, bounds.floor);
+  if (rotations.length !== 12) { return; }
+  [upper, lower, hand].forEach((joint, index) => {
+    joint.quaternion.fromArray(rotations, index * 4);
+    joint.updateMatrix();
+  });
+  model.updateWorldMatrix(true, true);
+}
 
 function socketsOf(descriptor: unknown): Map<string, Socket> {
   const sockets = new Map<string, Socket>();
@@ -945,6 +976,8 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
   const sources = new Map(animationLibrary.animations.map((clip) => [clip.name, clip]));
   withSecondaryPoses(sources, descriptor);
   const wear: FigureBundle["wear"] = (model, worn, hairKey, tint) => {
+    const weaponSocket = sockets.get("hand_r.weapon");
+    if (weaponSocket) { swordSockets.set(model, weaponSocket.matrix); }
     for (const { key, socket } of [...worn, ...(hairKey ? [{ key: hairKey, socket: "head.hair" }] : [])]) {
       const item = items.get(key);
       const place = sockets.get(socket);
@@ -1769,6 +1802,7 @@ export class QuaterniusUnits {
     instance.layers = unit.layers;
     instance.chains?.beforePose();
     instance.posable.pose(unit.layers);
+    poseSword(instance.posable.model, unit.layers, instance.posable.bounds ?? asset);
     const tint = unit.tint;
     if (instance.tint === undefined || String(instance.tint) !== String(tint)) {
       instance.tint = tint;

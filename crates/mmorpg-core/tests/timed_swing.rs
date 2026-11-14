@@ -78,6 +78,55 @@ fn health(zone: &ZoneSimulation, player: PlayerId) -> u32 {
 }
 
 #[test]
+fn swing_begin_reports_its_accepted_heading_after_a_later_turn() {
+    let mut zone = duel(&arena(true), [0, 0], 100);
+    strike(&mut zone, 1, 2, EAST);
+    zone.advance_tick().unwrap();
+    zone.apply_command(
+        1,
+        3,
+        ZoneCommand::Move {
+            forward: 0,
+            strafe: 0,
+            facing: WEST,
+        },
+    )
+    .unwrap();
+    let view = zone.snapshot_for_player(1).unwrap();
+    assert_eq!(
+        view.entities
+            .iter()
+            .find(|entity| entity.entity() == EntityRef::Player(1))
+            .unwrap()
+            .facing,
+        WEST
+    );
+    assert_eq!(zone.swing_of(1).unwrap().facing, EAST);
+    assert!(
+        view.events
+            .iter()
+            .any(|event| matches!(event, ZoneEvent::SwingBegan { facing: EAST, .. }))
+    );
+}
+
+#[test]
+fn greyhaven_adopts_the_approved_timing_and_recovers_a_running_swing() {
+    let content = mmorpg_core::greyhaven_vale::content();
+    assert_eq!(content.timed_combat(), Some(TimedCombat::ARENA));
+    assert_eq!(content.player_combat_policy(), PlayerCombatPolicy::Safe);
+    let mut zone = duel(&content, [0, 0], 100);
+    strike(&mut zone, 1, 2, EAST);
+    zone.advance_tick().unwrap();
+    assert!(zone.swing_of(1).is_some());
+    let mut restored = ZoneSimulation::from_snapshot(zone.snapshot().unwrap(), content).unwrap();
+    for _ in 0..40 {
+        zone.advance_tick().unwrap();
+        restored.advance_tick().unwrap();
+        assert_eq!(zone.snapshot().unwrap(), restored.snapshot().unwrap());
+    }
+}
+
+#[test]
 fn a_timed_swing_winds_up_visibly_then_strikes_and_restores_mid_swing_exactly() {
     let content = arena(true);
     let mut zone = duel(&content, [0, 0], 100);

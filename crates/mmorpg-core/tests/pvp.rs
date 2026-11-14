@@ -488,6 +488,12 @@ fn directed_arena_strikes_use_the_aimed_guard_lane_and_restore_combo_followup() 
         )
         .unwrap();
         zone.advance_tick().unwrap();
+        let swing = zone.swing_of(1).expect("Greyhaven begins a timed sweep");
+        assert_eq!(zone.snapshot_for_player(2).unwrap().viewer.health, before);
+        assert!(zone.snapshot().unwrap().players[0].combat.combo.is_none());
+        for _ in swing.elapsed..swing.startup + swing.active {
+            zone.advance_tick().unwrap();
+        }
         let state = zone.snapshot().unwrap();
         assert_eq!(
             zone.snapshot_for_player(2).unwrap().viewer.health < before,

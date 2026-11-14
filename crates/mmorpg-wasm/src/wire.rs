@@ -920,6 +920,7 @@ pub enum ZoneEvent {
     SwingBegan {
         source: EntityRef,
         ability: u8,
+        facing: u16,
         aim: StrikeAim,
         startup: u8,
         active: u8,
@@ -1084,11 +1085,13 @@ impl From<core::ZoneEvent> for ZoneEvent {
             E::SwingBegan {
                 source,
                 ability,
+                facing,
                 aim,
                 startup,
                 active,
             } => Self::SwingBegan {
                 source: source.into(),
+                facing,
                 ability: ability.get(),
                 aim: aim.into(),
                 startup,
@@ -1298,11 +1301,13 @@ impl From<ZoneEvent> for core::ZoneEvent {
             E::SwingBegan {
                 source,
                 ability,
+                facing,
                 aim,
                 startup,
                 active,
             } => Self::SwingBegan {
                 source: source.into(),
+                facing,
                 ability: AbilityId::new(ability),
                 aim: aim.into(),
                 startup,
