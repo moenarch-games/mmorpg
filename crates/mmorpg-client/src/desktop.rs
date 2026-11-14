@@ -2092,7 +2092,7 @@ impl ApplicationHandler for App {
                             println!("{}", serde_json::json!({"event":"native_detail_ready", "tick":self.presentation.latest().map_or(0, |snapshot| snapshot.tick), "bytes_received":receipt.bytes_received,
                                 "cache_hits":receipt.cache_hits,"files_verified":receipt.files_verified,"manifest":receipt.manifest_identity,
                                 "snapshots_while_loading":receipt.snapshots_while_loading,"moved_while_loading":receipt.moved_while_loading}));
-                            smoke.capture(&mut self.presentation, &self.world, receipt, self.runtime.handle().clone());
+                            smoke.capture(receipt);
                         }
                         Ok(())
                     });
@@ -2161,6 +2161,16 @@ impl ApplicationHandler for App {
                 let resident = self.stage.as_ref().is_some_and(|stage| stage.entered)
                     && self.preload_zone(now);
                 let zone_drawn = self.stage.is_none() && self.connected();
+                let capture_view = self
+                    .stage
+                    .is_none()
+                    .then(|| {
+                        self.smoke
+                            .as_ref()
+                            .and_then(|smoke| smoke.capture_view(&self.presentation, now))
+                    })
+                    .flatten();
+                let view = capture_view.unwrap_or(view);
                 let frame = match &mut self.stage {
                     Some(stage) => stage.presentation.frame(&stage.world, now, view),
                     None => self.presentation.frame(&self.world, now, view),
@@ -2171,8 +2181,10 @@ impl ApplicationHandler for App {
                     .egui
                     .as_mut()
                     .map(|egui| &mut egui.paint as &mut dyn mmorpg_client::graphics::Overlay);
-                if let Some(renderer) = &mut self.renderer
-                    && let Err(error) = renderer.render(
+                if let Some(renderer) = &mut self.renderer {
+                    let capture_path = capture_view
+                        .and_then(|_| self.smoke.as_ref().and_then(smoke::Smoke::capture_path));
+                    let rendered = renderer.render(
                         &frame,
                         &[],
                         view,
@@ -2181,10 +2193,24 @@ impl ApplicationHandler for App {
                             .map_or(&self.presentation, |stage| &stage.presentation)
                             .picked_draws(),
                         overlay,
-                    )
-                {
-                    self.fail(event_loop, error);
-                    return;
+                        capture_path,
+                    );
+                    match rendered {
+                        Ok(Some(colors)) => {
+                            if let Some(smoke) = &mut self.smoke {
+                                smoke.rendered(
+                                    &frame,
+                                    self.presentation.content().revision(),
+                                    colors,
+                                );
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            self.fail(event_loop, error);
+                            return;
+                        }
+                    }
                 }
                 if self.choosing
                     && self.stage.is_some()

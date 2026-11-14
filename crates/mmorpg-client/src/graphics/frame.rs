@@ -979,8 +979,9 @@ impl FrameRenderer {
 
     /// Uploads what `frame` draws into the world without drawing it, stopping at `deadline`
     /// (#726): the nature library, the static batches, then the frame's own draws. Returns true
-    /// once all of it is resident, so the frame's first draw uploads nothing more. A window
-    /// keeps presenting another frame meanwhile; the static batches stay resident while they
+    /// once its resources are resident. Animation geometry and palettes refresh on the draw
+    /// as usual; replaying their updates in every loading slice can starve later resources.
+    /// A window keeps presenting another frame meanwhile; the static batches stay resident while they
     /// live, the per-frame draws until a drawn frame no longer uses them.
     pub fn preload(&mut self, frame: &WorldFrame, deadline: std::time::Instant) -> bool {
         if !frame.nature.is_empty() && !self.nature.upload(&mut self.world, Some(deadline)) {
@@ -995,11 +996,39 @@ impl FrameRenderer {
             }
             self.resolve_batch(batch);
         }
+        let mut uploaded = false;
         for draw in frame.draws.iter().filter(|draw| drawn(draw)) {
-            if past(Some(deadline)) {
+            // Keep these handles through the loading-stage draw's eviction, without
+            // repeatedly rewriting poses that will change again before world entry.
+            let mesh = self
+                .meshes
+                .get_mut(&draw.resource_key)
+                .is_some_and(|cached| {
+                    cached.used = true;
+                    true
+                });
+            let material = self
+                .materials
+                .get_mut(&material_key(&draw.material))
+                .is_some_and(|cached| {
+                    cached.used = true;
+                    true
+                });
+            let skin = draw.skin.as_ref().is_none_or(|skin| {
+                self.skins.get_mut(&skin.figure).is_some_and(|cached| {
+                    cached.used = true;
+                    true
+                })
+            });
+            if mesh && material && skin {
+                continue;
+            }
+            // A slow resident prefix must still allow one missing draw to progress.
+            if uploaded && past(Some(deadline)) {
                 return false;
             }
             self.instance(draw);
+            uploaded = true;
         }
         true
     }

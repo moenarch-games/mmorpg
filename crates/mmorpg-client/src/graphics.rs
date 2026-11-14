@@ -170,6 +170,14 @@ impl WindowRenderer {
             .get_default_config(&adapter, size.width.max(1), size.height.max(1))
             .ok_or("surface has no compatible format")?;
         config.present_mode = wgpu::PresentMode::AutoVsync;
+        if std::env::var_os("MMORPG_SMOKE_FRAME").is_some_and(|path| !path.is_empty())
+            && surface
+                .get_capabilities(&adapter)
+                .usages
+                .contains(wgpu::TextureUsages::COPY_SRC)
+        {
+            config.usage |= wgpu::TextureUsages::COPY_SRC;
+        }
         if let Some(format) = surface
             .get_capabilities(&adapter)
             .formats
@@ -252,20 +260,21 @@ impl WindowRenderer {
         view: CameraView,
         bodies: &[(mmorpg_core::EntityRef, SceneDraw)],
         overlay: Option<&mut dyn Overlay>,
-    ) -> Result<(), ClientError> {
+        capture: Option<&std::path::Path>,
+    ) -> Result<Option<usize>, ClientError> {
         self.last_view = None;
         if self.suspended {
-            return Ok(());
+            return Ok(None);
         }
         let target = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(f)
             | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
             wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
-                return Ok(());
+                return Ok(None);
             }
             wgpu::CurrentSurfaceTexture::Outdated => {
                 self.resize(self.config.width, self.config.height);
-                return Ok(());
+                return Ok(None);
             }
             wgpu::CurrentSurfaceTexture::Lost => {
                 return Err("GPU surface lost; restart the client".into());
@@ -281,10 +290,42 @@ impl WindowRenderer {
             view,
             overlay,
         )?;
+        let colors = capture
+            .map(|path| {
+                if !self.config.usage.contains(wgpu::TextureUsages::COPY_SRC) {
+                    return Err(
+                        "The window surface cannot be captured on this graphics adapter".into(),
+                    );
+                }
+                let mut bytes = texture_pixels(
+                    &self.renderer,
+                    &target.texture,
+                    [self.config.width, self.config.height],
+                    Duration::from_secs(10),
+                )?;
+                match self.config.format {
+                    wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb => {
+                        for pixel in bytes.chunks_exact_mut(4) {
+                            pixel.swap(0, 2);
+                        }
+                    }
+                    wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Rgba8UnormSrgb => {}
+                    _ => return Err("The window surface uses an unsupported capture format".into()),
+                }
+                image::save_buffer(
+                    path,
+                    &bytes,
+                    self.config.width,
+                    self.config.height,
+                    image::ColorType::Rgba8,
+                )?;
+                frame_color_count(&bytes)
+            })
+            .transpose()?;
         self.renderer.queue.present(target);
         self.picking.present(frame, bodies);
         self.last_view = Some(view);
-        Ok(())
+        Ok(colors)
     }
 }
 /// Explicit native GPU smoke over the production frame adapter.
@@ -315,6 +356,9 @@ pub async fn render_offscreen_frame(
             image::ColorType::Rgba8,
         )?;
     }
+    frame_color_count(&bytes)
+}
+fn frame_color_count(bytes: &[u8]) -> Result<usize, ClientError> {
     let mut colors = std::collections::BTreeMap::<[u8; 3], usize>::new();
     for p in bytes.as_chunks::<4>().0 {
         *colors.entry([p[0], p[1], p[2]]).or_default() += 1;
@@ -399,9 +443,21 @@ async fn readback_sequence(
             if last { overlay.take() } else { None },
         )?;
     }
+    texture_pixels(&renderer, &texture, [width, height], timeout)
+}
+
+/// Read pixels from an existing GPU world; a window capture never creates another renderer.
+fn texture_pixels(
+    renderer: &SceneRenderer,
+    texture: &wgpu::Texture,
+    [width, height]: [u32; 2],
+    timeout: Duration,
+) -> Result<Vec<u8>, ClientError> {
+    let row_bytes = (width * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
+        * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
     let buffer = renderer.device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("native readback"),
-        size: u64::from(width * height * 4),
+        size: u64::from(row_bytes) * u64::from(height),
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -412,7 +468,7 @@ async fn readback_sequence(
             buffer: &buffer,
             layout: wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(width * 4),
+                bytes_per_row: Some(row_bytes),
                 rows_per_image: Some(height),
             },
         },
@@ -433,7 +489,10 @@ async fn readback_sequence(
     })?;
     receiver.recv_timeout(timeout)??;
     let mapped = buffer.slice(..).get_mapped_range()?;
-    let pixels = mapped.to_vec();
+    let pixels = mapped
+        .chunks_exact(row_bytes as usize)
+        .flat_map(|row| row[..(width * 4) as usize].iter().copied())
+        .collect();
     drop(mapped);
     buffer.unmap();
     Ok(pixels)
@@ -513,6 +572,48 @@ mod tests {
     use mmorpg_core::{ZoneId, ZoneSimulation, greyhaven_vale};
     use mmorpg_scenery::greyhaven_vale_scenery;
     use std::time::Instant;
+
+    #[test]
+    #[ignore = "requires a GPU; regression for bounded native world entry"]
+    fn preloading_advances_even_when_each_upload_slice_has_expired() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let instance = wgpu::Instance::default();
+            let adapter = instance.request_adapter(&Default::default()).await.unwrap();
+            let mut renderer =
+                SceneRenderer::new(&adapter, wgpu::TextureFormat::Rgba8UnormSrgb, 32, 32)
+                    .await
+                    .unwrap();
+            let frame = WorldFrame {
+                batches: Vec::new(),
+                draws: (0..3)
+                    .map(|id| crate::world::SceneDraw {
+                        id: format!("loading-{id}"),
+                        resource_key: format!("loading-{id}"),
+                        mesh: Arc::new(three_d_core::Mesh::unit_cube()),
+                        model: three_d_animation::Mat4::IDENTITY,
+                        material: crate::world::DrawMaterial {
+                            color: [1.; 3],
+                            emissive: [0.; 3],
+                            opacity: 1.,
+                            unlit: false,
+                            double_sided: false,
+                            ground: None,
+                        },
+                        skin: None,
+                    })
+                    .collect(),
+                lighting: crate::environment::Lighting::at(12.),
+                particle_sites: Default::default(),
+                particle_seconds: 0.,
+                particles_animated: false,
+                impacts: Vec::new(),
+                nature: Vec::new(),
+                occluders: Vec::new(),
+            };
+            assert!((0..3).any(|_| renderer.frame.preload(&frame, Instant::now())));
+        });
+    }
 
     #[test]
     #[ignore = "requires a GPU; scripts/smoke-native.py runs this explicitly"]

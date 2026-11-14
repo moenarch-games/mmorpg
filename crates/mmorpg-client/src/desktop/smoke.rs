@@ -1,10 +1,14 @@
 //! Bounded opt-in receipts for the existing native smoke path, from the actual window's
 //! projections and imported presentation. Ordinary play never captures or changes camera.
 use mmorpg_client::{
-    camera::CameraView, presentation::Presentation, shared_assets::Receipt, world::WorldScene,
+    camera::CameraView, presentation::Presentation, shared_assets::Receipt, world::WorldFrame,
 };
 use mmorpg_core::EntityKind;
-use std::{collections::BTreeMap, time::Instant};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    time::Instant,
+};
 
 #[derive(Default)]
 pub(super) struct Smoke {
@@ -13,6 +17,7 @@ pub(super) struct Smoke {
     resident: bool,
     positions: Option<BTreeMap<u32, [i32; 3]>>,
     settled: u8,
+    capture: Option<(Receipt, PathBuf)>,
     captured: bool,
     failed: bool,
 }
@@ -74,53 +79,44 @@ impl Smoke {
         self.failed = true;
         println!("{}", serde_json::json!({"event":event, "error":error}));
     }
-    pub fn capture(
-        &mut self,
-        presentation: &mut Presentation,
-        world: &WorldScene,
-        receipt: Receipt,
-        runtime: tokio::runtime::Handle,
-    ) {
-        // An empty opt-in path requests bounded window receipts without another image.
-        if std::env::var_os("MMORPG_SMOKE_FRAME").is_none_or(|path| path.is_empty()) {
-            return;
-        }
-        if self.captured {
-            return;
-        }
-        self.captured = true;
-        let now = Instant::now();
-        let Some(target) = presentation.shared_detail_target(now) else {
+    pub fn capture(&mut self, receipt: Receipt) {
+        let Some(path) = std::env::var_os("MMORPG_SMOKE_FRAME").filter(|path| !path.is_empty())
+        else {
             return;
         };
-        let view = CameraView {
+        if !self.captured {
+            self.capture = Some((receipt, path.into()));
+        }
+    }
+    pub fn capture_view(&self, presentation: &Presentation, now: Instant) -> Option<CameraView> {
+        self.capture.as_ref()?;
+        let target = presentation.shared_detail_target(now)?;
+        Some(CameraView {
             eye: [target[0] + 1.8, target[1] + 1.1, target[2] + 2.8],
             target,
             field_of_view_degrees: 50.,
+        })
+    }
+    pub fn capture_path(&self) -> Option<&Path> {
+        self.capture.as_ref().map(|(_, path)| path.as_path())
+    }
+    pub fn rendered(&mut self, frame: &WorldFrame, revision: u64, colors: usize) {
+        let Some((receipt, _)) = self.capture.take() else {
+            return;
         };
-        let frame = presentation.frame(world, now, view);
+        self.captured = true;
         let cat_draws = frame
             .draws
             .iter()
             .filter(|draw| draw.id.starts_with(mmorpg_game_server::shared_assets::CAT))
             .count();
-        let revision = presentation.content().revision();
-        runtime.clone().spawn_blocking(move || {
-            match runtime.block_on(mmorpg_client::graphics::render_offscreen_frame(
-                &frame,
-                &[],
-                view,
-            )) {
-                Ok(colors) if cat_draws > 0 => println!(
-                    "{}",
-                    serde_json::json!({"event":"native_detail_rendered",
-                    "bytes_received":receipt.bytes_received,"cache_hits":receipt.cache_hits,"files_verified":receipt.files_verified,
-                    "manifest":receipt.manifest_identity,"snapshots_while_loading":receipt.snapshots_while_loading,"moved_while_loading":receipt.moved_while_loading,"content_revision":revision,"cat_draws":cat_draws,"rendered_colors":colors})
-                ),
-                result => {
-                    eprintln!("Native detail frame failed: {result:?}; cat_draws={cat_draws}")
-                }
-            }
-        });
+        println!(
+            "{}",
+            serde_json::json!({"event":"native_detail_rendered",
+            "bytes_received":receipt.bytes_received,"cache_hits":receipt.cache_hits,"files_verified":receipt.files_verified,
+            "manifest":receipt.manifest_identity,"snapshots_while_loading":receipt.snapshots_while_loading,
+            "moved_while_loading":receipt.moved_while_loading,"content_revision":revision,
+            "cat_draws":cat_draws,"rendered_colors":colors,"actual_window_surface":true})
+        );
     }
 }
