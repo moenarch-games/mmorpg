@@ -13,7 +13,7 @@ use mmorpg_presentation::units::{
     },
     kit::{Frame, model},
     player::Hat,
-    sway,
+    sway, sword,
     traversal::{self, Motions, SecondaryPose},
 };
 use std::{
@@ -806,6 +806,40 @@ impl Model {
                 if sums[2].1 > 0. {
                     let s = mix(sums[2], extend(r.s));
                     r.s = [s[0], s[1], s[2]];
+                }
+            }
+        }
+        // A timed sword layer fits just this existing rig's right arm after the authored
+        // clip mix. Equipment and armour use `joint`, so they follow the same fitted pose.
+        if let Some(sample) = pose.iter().find(|layer| sword::aim(layer.clip).is_some()) {
+            let node = |name: &str| self.names.iter().position(|n| n.as_deref() == Some(name));
+            if let (Some(upper), Some(lower), Some(hand)) =
+                (node("upperarm_r"), node("lowerarm_r"), node("hand_r"))
+                && let Some(parent) = self.parents[upper]
+            {
+                static SOCKET: OnceLock<Frame> = OnceLock::new();
+                let frame = |m: M4| Frame {
+                    p: [m[12], m[13], m[14]].map(f64::from),
+                    q: rotation_of(&m).map(f64::from),
+                };
+                let socket = *SOCKET.get_or_init(|| {
+                    let descriptor: serde_json::Value =
+                        serde_json::from_slice(ranger_file(ranger_bundle::SOCKETS))
+                            .expect("embedded sockets JSON");
+                    frame(socket(&descriptor, "hand_r.weapon").1.elements)
+                });
+                let globals = self.globals_of(&local);
+                let frames = [parent, upper, lower, hand].map(|i| frame(globals[i]));
+                if let Some(rotations) = sword::fit(
+                    frames,
+                    socket,
+                    f64::from(self.height),
+                    f64::from(self.floor),
+                    *sample,
+                ) {
+                    for (node, q) in [upper, lower, hand].into_iter().zip(rotations) {
+                        local[node].r = q.map(|v| v as f32);
+                    }
                 }
             }
         }

@@ -2342,7 +2342,7 @@ struct Strike {
     item: Option<Throwable>,
     /// A timed swing (#679): wound up to this clip time and held until the zone's active phase
     /// begins at this time, then swung on from there.
-    timed: Option<(f32, f64)>,
+    timed: Option<(f32, f64, f32)>,
 }
 
 impl Strike {
@@ -2367,10 +2367,18 @@ impl Strike {
     #[allow(clippy::cast_possible_truncation)]
     fn want(self, now: f64) -> Want {
         let at = match self.timed {
-            Some((hold, release)) if now < release => {
-                ((now - self.started).max(0.) as f32).min(hold)
+            Some((hold, release, _)) if now < release => {
+                let startup = (release - self.started).max(1e-6);
+                hold * (((now - self.started) / startup).clamp(0., 1.) as f32)
             }
-            Some((hold, release)) => hold + (now - release) as f32,
+            Some((hold, release, active)) => {
+                // The authored slash reaches its follow-through at 68% (#447). Fit that
+                // motion to the zone's whole active window, then recover at authored speed.
+                let end = self.length * 0.68;
+                let elapsed = (now - release).max(0.) as f32;
+                hold + (end - hold).max(0.) * (elapsed / active.max(1e-6)).min(1.)
+                    + (elapsed - active).max(0.)
+            }
             None => (now - self.started).max(0.) as f32,
         };
         let at = self.hold.map_or(at, |hold| at.min(hold));
@@ -2608,15 +2616,15 @@ impl Playback {
     }
 
     /// Shows a timed swing (#679) of `clip`, `duration` seconds long, begun at `now`: it winds
-    /// up to `hold` seconds into the clip and holds there until the zone's active phase begins
-    /// `wind_up` seconds later, then swings on. A prepared wind-up of the same clip continues.
+    /// up to `hold` over `wind_up`, fits the cut to `active`, then recovers at authored speed.
+    /// A prepared wind-up of the same clip continues.
     pub fn timed(
         &mut self,
         clip: &'static str,
         duration: f32,
         hold: f32,
         region: Region,
-        wind_up: f32,
+        [wind_up, active]: [f32; 2],
         now: f64,
     ) {
         let (serial, started) = match self.preparation.take() {
@@ -2631,8 +2639,8 @@ impl Playback {
         let hold = hold.min(duration.max(0.));
         let release = now + f64::from(wind_up.max(0.));
         let mut strike = Strike::new(clip, duration, serial, started, region);
-        strike.timed = Some((hold, release));
-        strike.until = release + f64::from((duration - hold).max(0.3));
+        strike.timed = Some((hold, release, active));
+        strike.until = release + f64::from(active + (duration * 0.32).max(0.12));
         self.strike = Some(strike);
         self.cast = None;
     }
@@ -4880,14 +4888,17 @@ mod tests {
             0.6,
             SLASH_WINDUP_SECONDS,
             Region::Upper,
-            0.3,
+            [0.3, 0.15],
             0.,
         );
         let held = frame(&mut playback, &with, 0.25, Cues::default());
-        assert_eq!(held.upper, ("Sword_Slash_Mid_L", SLASH_WINDUP_SECONDS));
+        assert!((held.upper.1 - SLASH_WINDUP_SECONDS * (0.25 / 0.3)).abs() < 1e-4);
         let swung = frame(&mut playback, &with, 0.4, Cues::default());
         assert!(
-            (swung.upper.1 - (SLASH_WINDUP_SECONDS + 0.1)).abs() < 1e-4,
+            (swung.upper.1
+                - (SLASH_WINDUP_SECONDS + (0.6 * 0.68 - SLASH_WINDUP_SECONDS) * (0.1 / 0.15)))
+                .abs()
+                < 1e-4,
             "{swung:?}"
         );
     }

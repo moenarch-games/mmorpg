@@ -69,6 +69,11 @@ export function declaredChains(appearance: unknown): { joints: string[]; limit: 
   return JSON.parse(generated.declaredChains(JSON.stringify(appearance))) as { joints: string[]; limit: number }[];
 }
 
+/** Shared bounded right-arm fit after the provider mixes a timed sword's authored clips. */
+export function swordArmPose(name: string, progress: number, weight: number, frames: Float64Array, height: number, floor: number): Float64Array {
+  return generated.swordArmPose(name, progress, weight, frames, height, floor);
+}
+
 /**
  * A unit's own seeded variation of the preset `id` (asset-tooling #380) over `appearance`: the
  * same man the native client draws; call after the module loaded.
