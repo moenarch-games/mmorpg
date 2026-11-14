@@ -205,7 +205,8 @@ merged. From now on the borders are the source. Growing from seeds is only the b
 and retracing needs `--replace`.
 
 **Greyhaven's sub-regions** (#810, Atlas 5.1.i810). The Greyhaven Vale region (4.9 km²) is cut
-into eleven regions with `"group": "greyhaven"`, the intended future zone boundaries. The size
+into eleven regions with `"group": "greyhaven"`: units of authoring and the map, while one zone
+host simulates the whole region. The size
 and count checks treat the group as the one region it subdivides, and a kingdom claim on the
 group covers every member. Four hold the zone's hand-authored parts: Greyhaven Vale itself (id
 `greyhaven`, which also keeps the ridge strips), Bandit Highlands, Farmland and Hamlets and
