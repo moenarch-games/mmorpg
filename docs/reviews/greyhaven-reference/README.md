@@ -56,7 +56,7 @@ Two browser captures in a row measured the same to four places for every shot he
 remains is rendering, and these known differences:
 
 - The Outpost modules' wear: the browser ages each building from the kit's wear masks
-  (darker, mossy stone, missing roof units); the native client draws the pristine modules.
+  (stained plaster, greyed timber, mossy stone and roofs); the native client draws pristine modules.
 - The woods (`frame-woods`, `frame-lake`): the error stays on the leaf cards' and trunks'
   edges and their shadows, with the levels picked by the same shared selection; it is the
   shading and shadowing of the foliage, not its content.
