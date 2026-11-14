@@ -39,6 +39,16 @@ class RangerCacheTest(unittest.TestCase):
         self.assertIn(("hair.long", "hair-1"), selected)
         self.assertNotIn(("hair.long", "hair-2"), selected)
 
+    def test_the_figures_items_come_from_the_equipment_release(self):
+        figure = {"schema": "asset-downloads-v1", "release": "humanoid-ranger-male", "entries": [
+            {"key": "humanoid.ranger.male", "variant": "default"}, {"key": "equipment.sword.arming", "variant": "default", "old": True}]}
+        equipment = {"schema": "asset-downloads-v1", "release": "humanoid-equipment", "entries": [
+            {"key": "equipment.sword.arming", "variant": "default"}, {"key": "equipment.venom-flask", "variant": "lod1"}]}
+        merged = fetch_ranger.merge_equipment(figure, equipment)
+        self.assertEqual(merged["release"], "humanoid-ranger-male")
+        self.assertEqual(merged["entries"], [figure["entries"][0], *equipment["entries"]])
+        self.assertEqual(fetch_ranger.EQUIPMENT.release, "humanoid-equipment")
+
     def test_missing_or_incompatible_class_presets_invalidate_the_cache(self):
         with tempfile.TemporaryDirectory(prefix="ranger-cache-") as temporary:
             directory = Path(temporary)
@@ -47,6 +57,7 @@ class RangerCacheTest(unittest.TestCase):
             appearance = "humanoid.ranger.male.default.humanoid-appearance.json"
             (directory / "RELEASE").write_text(figure.release + "\n")
             (directory / "export.ref.json").write_bytes(b"revision")
+            (directory / fetch_ranger.EQUIPMENT_REF).write_bytes(b"equipment")
             (directory / "humanoid-ranger-male.index.json").write_text(json.dumps({
                 "entries": [{"key": "humanoid.ranger.male", "variant": "default", "files": [appearance]}]
             }))
@@ -56,6 +67,9 @@ class RangerCacheTest(unittest.TestCase):
             }
             (directory / appearance).write_text(json.dumps(valid))
             self.assertTrue(fetch_ranger.complete(figure, b"revision"))
+            # A newer equipment upload (asset-tooling #517) refreshes the copy too.
+            self.assertTrue(fetch_ranger.complete(figure, b"revision", b"equipment"))
+            self.assertFalse(fetch_ranger.complete(figure, b"revision", b"newer equipment"))
             for descriptor in ({"outfits": []}, {**valid, "presets": []},
                                {**valid, "schema": "unknown"}, {**valid, "presets": [{"id": []}]}):
                 (directory / appearance).write_text(json.dumps(descriptor))
