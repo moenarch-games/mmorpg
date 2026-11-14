@@ -60,14 +60,17 @@ fn class() -> ClassChoice {
 
 #[tokio::main]
 async fn main() -> Result<(), ClientError> {
-    if std::env::var_os("MMORPG_TEST_SETUP_ENDPOINT").is_none() {
-        return Err("This opt-in probe requires a loopback test setup service".into());
-    }
     let args: Vec<_> = std::env::args().skip(1).collect();
     let mode = args
         .first()
         .map(String::as_str)
         .ok_or("Probe mode missing")?;
+    // Observing/stopping an already managed local world does not create public lobbies.
+    if std::env::var_os("MMORPG_TEST_SETUP_ENDPOINT").is_none()
+        && !matches!(mode, "status" | "stop" | "approve" | "remove")
+    {
+        return Err("Starting probe sessions requires a loopback test setup service".into());
+    }
     match mode {
         "corrupt-host" => {
             use game_server::webrtc_transport::{Lobby, WebRtcHost, WebRtcHostConfig};

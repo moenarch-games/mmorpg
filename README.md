@@ -6,7 +6,7 @@ The native Rust client now connects to the standalone zone host and renders serv
 
 Decision history and stable cross-references: [MMORPG Decision Atlas](docs/decisions/atlas.md). The atlas distinguishes implemented behavior from agreed but unimplemented design.
 
-The native character screen also offers **Host World** and **Stop World**: it manages a separate local zone-host process, automatically creates its certificate and resumes the game-owned save. A hosted world survives client exit; see [local hosting](docs/NATIVE_CLIENT.md#host-world). It registers a ready world, offers a copyable `moenarch.com` invitation and admits owner-approved native guests over WebRTC. Verified missing-asset streaming and two-network MMORPG acceptance remain later work under [#733](https://github.com/moenarch-games/mmorpg/issues/733).
+The native character screen also offers **Host World** and **Stop World**: it manages a separate local zone-host process, automatically creates its certificate and resumes the game-owned save. A hosted world survives client exit; see [local hosting](docs/NATIVE_CLIENT.md#host-world). It registers a ready world, offers a copyable `moenarch.com` invitation and admits owner-approved native guests over WebRTC. Invited native guests receive missing optional cat art from the host, verify its manifest and hashes, and render it while gameplay continues; see [hosted world detail](docs/NATIVE_CLIENT.md#optional-hosted-world-detail) and [#733](https://github.com/moenarch-games/mmorpg/issues/733).
 
 ## Authority map
 
@@ -232,7 +232,7 @@ The PostgreSQL/S3 host now [suspends empty zones and cold-restores them on admis
 
 - `rapier3d`: `=0.36.1` (crates.io, default features)
 - `physics-engine`: pinned workspace dependency, the default native/WASM backend for authored static meshes and convex hulls; `physics-ab` adds comparison diagnostics ([physics backends](docs/PHYSICS_AB.md))
-- `game-server`: `a3cdf8c8bf915167988de2ef5e1f9b39cf847d13`
+- `game-server`: `d5f3c6ef54a73b70e442247f415d331e51f6a505`
 - `render-engine` (native client rendering and lighting, #529): `d5afb5deefa9b22e7f187ae6e6e2e8460aaa4b28`
 - `3d-lab` (`three-d-core`, `three-d-camera`, `three-d-projective`, `three-d-animation` and the browser `@moritzbrantner/three-d-renderer`, kept on one commit): `235774615f1367065093deb6988f5217bdf4d7e1`
 - reusable validation workflow: `45042e56be120b438096e774027637cac0280075`
