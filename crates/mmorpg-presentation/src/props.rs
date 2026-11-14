@@ -647,30 +647,16 @@ fn brook_turf() -> Geometry {
     turf
 }
 
-/// Fine, walk-through grass and woodland ferns between the sparse saved Outpost tufts.
-/// Both clients draw the existing shared instanced batches; these are never gameplay
-/// props or colliders. The brook uses clustered Poisson-disc roots; older regions keep
-/// their existing sparse cover until their own art pass.
+/// Short brook turf and woodland ferns are shared instanced, walk-through scenery.
+/// The isolated six-blade pyramid clumps elsewhere in Greyhaven are intentionally
+/// omitted; saved Outpost grass placements and gameplay collision are unchanged.
 pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
     if !s.greyhaven() {
         return;
     }
     use mmorpg_core::greyhaven_vale::{SPAWN_PLAZA, VALE_BOUNDS};
 
-    let mut clump = Geometry::default();
     let blade = blade();
-    for i in 0..6 {
-        let angle = i as f64 * TAU / 6.;
-        clump.add(
-            &blade,
-            compose(&[
-                translate(angle.sin() * 0.24, -0.03, angle.cos() * 0.24),
-                ry(angle),
-                rx(-0.12 - 0.07 * f64::from(i % 3)),
-                scale(0.17, 0.32 + 0.05 * f64::from(i % 3), 0.17),
-            ]),
-        );
-    }
     let bank_grass = brook_turf();
     let mut fern = Geometry::default();
     for i in 0..8 {
@@ -832,6 +818,9 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
         let is_fern = (wooded && hash(&[seed[0], seed[1], 187.]) < 0.70)
             || (in_brook_cover(x, z) && hash(&[seed[0], seed[1], 189.]) < 0.08);
         let turf = in_brook_cover(x, z) && !is_fern;
+        if !is_fern && !turf {
+            continue;
+        }
         let support = if turf {
             // Fit distributed roots to the local ground plane; reject a sharp crease
             // rather than allowing a patch to bridge a ditch or float above a bank.
@@ -850,30 +839,18 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
         };
         let color = if is_fern {
             [0x405c32, 0x53723c, 0x6b7942][pick]
-        } else if turf {
-            [0x667c47, 0x73834d, 0x81905a][pick]
-        } else if wooded {
-            [0x526c38, 0x657944, 0x7b8451][pick]
         } else {
-            [0x607e3e, 0x738d45, 0x898c52][pick]
+            [0x667c47, 0x73834d, 0x81905a][pick]
         };
         let size = 0.8 + 0.45 * hash(&[seed[0], seed[1], 183.]);
         b.instance(
             if is_fern {
                 "greyhaven-fern-understory"
-            } else if turf {
-                "greyhaven-brook-turf"
             } else {
-                "greyhaven-ground-cover"
+                "greyhaven-brook-turf"
             },
             color,
-            if is_fern {
-                &fern
-            } else if in_brook_cover(x, z) {
-                &bank_grass
-            } else {
-                &clump
-            },
+            if is_fern { &fern } else { &bank_grass },
             compose(&[
                 translate(mx, y, mz),
                 support,
