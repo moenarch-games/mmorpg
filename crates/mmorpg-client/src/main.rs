@@ -429,6 +429,17 @@ async fn run_selected_session(
     }
 }
 
+fn own_position(snapshot: &mmorpg_core::ZoneSnapshot) -> Result<[i32; 3], ClientError> {
+    snapshot
+        .entities
+        .iter()
+        .find(|entity| {
+            entity.id == snapshot.viewer_id && entity.kind == mmorpg_core::EntityKind::Player
+        })
+        .map(|entity| entity.position)
+        .ok_or_else(|| "Missing own authoritative position".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -447,15 +458,4 @@ mod tests {
             assert!(Options::parse(args.into_iter().map(str::to_owned)).is_err());
         }
     }
-}
-
-fn own_position(snapshot: &mmorpg_core::ZoneSnapshot) -> Result<[i32; 3], ClientError> {
-    snapshot
-        .entities
-        .iter()
-        .find(|entity| {
-            entity.id == snapshot.viewer_id && entity.kind == mmorpg_core::EntityKind::Player
-        })
-        .map(|entity| entity.position)
-        .ok_or_else(|| "Missing own authoritative position".into())
 }

@@ -404,7 +404,7 @@ mod tests {
             .write_atomic(&directory.path().join("zone-1.recovery"))
             .unwrap();
         assert_eq!(
-            stopped_snapshots(directory.path(), &[id.clone()]).unwrap(),
+            stopped_snapshots(directory.path(), std::slice::from_ref(&id)).unwrap(),
             vec![(id, final_snapshot.payload)]
         );
         // The codec/file association must not permit another match's final commit.
