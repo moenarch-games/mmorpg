@@ -22,6 +22,15 @@ in immediately when required to avoid showing an obstructing wall, and eases bac
 out at the normal zoom rate. Reduced motion restores distance immediately.
 Selective wall fading is a later improvement, as approved in Atlas 6.3.i714.
 
+The Greyhaven inn and Marshal's home have separate authoritative closed gable meshes in
+`mmorpg-core` (IDs 148 and 199). Each follows the pitched outer roof and extends down to
+the real ceiling underside; the enclosed attic is not traversable. These static shapes
+remain solid even when `WalkIn` hides the roof and ceiling for the indoor camera. Entering
+and leaving still requires the open doorway, and jumping or mantling cannot use the
+cutaway as a hole. The cutaway is limited to feet below the actual ceiling, so a
+character above the roof cannot make it disappear. The zone content hash and recovery
+include both meshes.
+
 An interior presenter also supplies sky occlusion / exposure (`lighting`) and a
 steady warm 1,800 lm lamp above the room centre (`light`). The browser building
 collection composes these with scenery lights; the native world uses the same
