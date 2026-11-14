@@ -103,6 +103,8 @@ pub struct Placed<'a> {
     pub scale: f64,
     /// Camera distance (metres, flat, to the sphere's edge) beyond which it is hidden.
     pub reach: f64,
+    /// Optional fixed origin-distance ceiling, independent of bounding sphere and scale.
+    pub max_distance: Option<f64>,
 }
 
 /// One placed entry of a bundle drawn at fixed placements: the nature bundle's trees, rocks and
@@ -128,6 +130,7 @@ impl Placement {
             model: self.model,
             scale: self.scale,
             reach: self.cull.reach(),
+            max_distance: (self.cull == crate::Cull::Scatter).then_some(60.),
         }
     }
 }
@@ -159,6 +162,8 @@ struct Instance {
     centre: [f64; 3],
     radius: f64,
     reach: f64,
+    max_distance: Option<f64>,
+    origin: [f64; 3],
     /// The world box's centre and its three half axes (the sphere's when the entry states no
     /// bounds).
     box_centre: [f64; 3],
@@ -185,6 +190,8 @@ impl Instance {
                 centre: [0.; 3],
                 radius: 0.,
                 reach: placed.reach,
+                max_distance: placed.max_distance,
+                origin: at([0.; 3]),
                 box_centre: [0.; 3],
                 half_axes: None,
             };
@@ -203,6 +210,8 @@ impl Instance {
             centre,
             radius: entry.radius * placed.scale,
             reach: placed.reach,
+            max_distance: placed.max_distance,
+            origin: at([0.; 3]),
             box_centre,
             half_axes,
         }
@@ -337,7 +346,10 @@ impl Lods {
             };
             let [dx, dy, dz] = std::array::from_fn(|axis| instance.centre[axis] - eye[axis]);
             let flat = dx.hypot(dz);
-            let target = if flat - instance.radius > instance.reach {
+            let beyond_max = instance.max_distance.is_some_and(|limit| {
+                (instance.origin[0] - eye[0]).hypot(instance.origin[2] - eye[2]) > limit
+            });
+            let target = if flat - instance.radius > instance.reach || beyond_max {
                 None
             } else {
                 let distance = (flat.hypot(dy)).max(1e-3);
@@ -476,7 +488,25 @@ mod tests {
             model: translated(x, 0.),
             scale: 1.,
             reach: 420.,
+            max_distance: None,
         }
+    }
+
+    #[test]
+    fn ground_scatter_stops_at_sixty_metres_independent_of_scale_and_bounds() {
+        let mut placement = at(0.);
+        placement.scale = 5.;
+        placement.max_distance = Some(60.);
+        let mut lods = Lods::new(vec![tree()], [placement]);
+        assert!(
+            !lods
+                .update([59., 4., 0.], 1., 0., 1., false, None)
+                .is_empty()
+        );
+        assert!(
+            lods.update([61., 4., 0.], 1., 0., 1., false, None)
+                .is_empty()
+        );
     }
 
     #[test]
@@ -587,6 +617,7 @@ mod tests {
             model: turned(50.),
             scale: 1.,
             reach: f64::INFINITY,
+            max_distance: None,
         };
         let mut boxed = Lods::new(vec![wall], [placed]);
         let mut round = Lods::new(vec![sphere], [placed]);

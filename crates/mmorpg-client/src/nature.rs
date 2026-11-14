@@ -107,6 +107,13 @@ fn kit_entries() -> impl Iterator<Item = (&'static str, &'static str, Files)> {
     outpost.chain(fort)
 }
 
+mod meadow_bundle {
+    include!(concat!(env!("OUT_DIR"), "/meadow_bundle.rs"));
+}
+mod meadow_descriptor {
+    include!(concat!(env!("OUT_DIR"), "/meadow_descriptor.rs"));
+}
+
 type Files = &'static [(&'static str, &'static [u8])];
 
 /// One embedded bundle: the entries the presentation places, its glTF entries and files.
@@ -118,7 +125,13 @@ struct Source {
     descriptor: &'static str,
 }
 
-const SOURCES: [Source; 6] = [
+const SOURCES: [Source; 7] = [
+    Source {
+        keys: &mmorpg_presentation::terrain_patch::MEADOW_ENTRIES,
+        entries: meadow_bundle::ENTRIES,
+        files: meadow_bundle::FILES,
+        descriptor: meadow_descriptor::DESCRIPTOR,
+    },
     Source {
         keys: &mmorpg_presentation::nature::ENTRIES,
         entries: bundle::ENTRIES,
@@ -213,6 +226,10 @@ pub fn lods() -> Vec<EntryLods> {
     lods.extend(
         mmorpg_presentation::settlement_props::descriptor_lods(settlement_descriptor::DESCRIPTOR)
             .expect("the embedded settlement descriptor is valid"),
+    );
+    lods.extend(
+        mmorpg_presentation::nature::descriptor_lods(meadow_descriptor::DESCRIPTOR)
+            .expect("the meadow descriptor is valid"),
     );
     lods
 }

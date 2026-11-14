@@ -403,6 +403,7 @@ export class WorldView {
   #climbing: PlacedKit | null = null;
   #crag: PlacedKit | null = null;
   #limestone: PlacedKit | null = null;
+  #meadow: PlacedKit | null = null;
   #river: PlacedKit | null = null;
   /** Bundles are fetched only once some authored placement is near the selected area/player. */
   #placedKits: { kit: PlacedKit; source: PlacedKitSource; requested: boolean }[] = [];
@@ -702,12 +703,14 @@ export class WorldView {
     this.#crag = new PlacedKit(world.scenery.crag);
     this.#limestone = new PlacedKit(world.scenery.limestone);
     this.#river = new PlacedKit(world.scenery.river);
+    this.#meadow = new PlacedKit(world.scenery.meadow);
     this.#placedKits = [
       { kit: this.#nature, source: world.scenery.nature, requested: false },
       { kit: this.#climbing, source: world.scenery.climbing, requested: false },
       { kit: this.#crag, source: world.scenery.crag, requested: false },
       { kit: this.#limestone, source: world.scenery.limestone, requested: false },
       { kit: this.#river, source: world.scenery.river, requested: false },
+      { kit: this.#meadow, source: world.scenery.meadow, requested: false },
     ];
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
     this.#inn = new WalkInBuildings(world.scenery.buildings.presenters());
@@ -1213,7 +1216,7 @@ export class WorldView {
     this.#models.clear();
     const { roots, changed } = this.#models.roots();
     if (changed && this.#lastCamera) {
-      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...(this.#sceneryBatches ? [this.#sceneryBatches.root] : []), ...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.drawn && this.#fortifications?.drawn ? [...this.#outpost.roots().roots, ...this.#fortifications.roots().roots] : []), ...(this.#settlement?.roots().roots ?? []), ...(this.#fortress?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#nature?.roots().roots ?? []), ...(this.#climbing?.roots().roots ?? []), ...(this.#crag?.roots().roots ?? []), ...(this.#limestone?.roots().roots ?? []), ...(this.#river?.roots().roots ?? []),...(this.#ground?.roots().roots ?? []), this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root] });
+      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...(this.#sceneryBatches ? [this.#sceneryBatches.root] : []), ...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.drawn && this.#fortifications?.drawn ? [...this.#outpost.roots().roots, ...this.#fortifications.roots().roots] : []), ...(this.#settlement?.roots().roots ?? []), ...(this.#fortress?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#nature?.roots().roots ?? []), ...(this.#climbing?.roots().roots ?? []), ...(this.#crag?.roots().roots ?? []), ...(this.#limestone?.roots().roots ?? []), ...(this.#river?.roots().roots ?? []), ...(this.#meadow?.roots().roots ?? []),...(this.#ground?.roots().roots ?? []), this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root] });
     }
   }
 
@@ -1781,6 +1784,7 @@ export class WorldView {
     this.#crag?.update(this.#camera, deltaSeconds, animate);
     this.#limestone?.update(this.#camera, deltaSeconds, animate);
     this.#river?.update(this.#camera, deltaSeconds, animate);
+    this.#meadow?.update(this.#camera, deltaSeconds, animate);
     this.#fortress?.update(this.#camera, deltaSeconds, animate);
     this.#lastSceneryNodes = frame.nodes;
     this.#barYaw = Math.atan2(view.target[0] - view.eye[0], view.target[2] - view.eye[2]);
@@ -1830,11 +1834,12 @@ export class WorldView {
     const crag = this.#crag?.roots() ?? { roots: [], changed: false };
     const limestone = this.#limestone?.roots() ?? { roots: [], changed: false };
     const river = this.#river?.roots() ?? { roots: [], changed: false };
+    const meadow = this.#meadow?.roots() ?? { roots: [], changed: false };
     const sceneryBatches = this.#sceneryBatches ? [this.#sceneryBatches.root] : [];
     const sceneryChanged = this.#sceneryBatchesChanged;
     this.#sceneryBatchesChanged = false;
     const ground = this.#ground?.roots() ?? { roots: [], changed: false };
-    const roots = [...sceneryBatches, ...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...fortifications.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, ...climbing.roots, ...crag.roots, ...limestone.roots, ...river.roots, ...ground.roots, this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root];
+    const roots = [...sceneryBatches, ...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...fortifications.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, ...climbing.roots, ...crag.roots, ...limestone.roots, ...river.roots, ...meadow.roots, ...ground.roots, this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root];
     // No scene background: `Lighting` clears its own frame, and three would clear to the background again in each of its
     // passes, wiping the sky (#600). The environment's fog still fogs the unlit sprites.
     const { background: _background, ...withoutBackground } = environment;
@@ -1856,7 +1861,7 @@ export class WorldView {
       this.#preparing.push(this.#renderer.prepare(rendererFrame, { roots }));
       return;
     }
-    if (sceneryChanged || models.changed || inn.changed || shrine.changed || outpost.changed || fortifications.changed || settlement.changed || fortress.changed || ambient.changed || nature.changed || climbing.changed || crag.changed || limestone.changed || river.changed || ground.changed || !this.#impacts.root.parent || !this.#raidSmoke.root.parent || !this.#raidSigns.root.parent) {
+    if (sceneryChanged || models.changed || inn.changed || shrine.changed || outpost.changed || fortifications.changed || settlement.changed || fortress.changed || ambient.changed || nature.changed || climbing.changed || crag.changed || limestone.changed || river.changed || meadow.changed || ground.changed || !this.#impacts.root.parent || !this.#raidSmoke.root.parent || !this.#raidSigns.root.parent) {
       this.#renderer.renderImportedRoots({ camera, roots });
     }
     const work = this.#renderer.render(rendererFrame);

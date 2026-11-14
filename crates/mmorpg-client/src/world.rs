@@ -509,6 +509,14 @@ impl WorldScene {
         // The crag kit's rock modules over the highland crags (#668).
         placements.extend(mmorpg_presentation::crag::placements(scenery));
         placements.extend(mmorpg_presentation::river::placements(scenery));
+        for entries in [
+            &mmorpg_presentation::terrain_patch::MEADOW_ENTRIES[..],
+            &mmorpg_presentation::river::ENTRIES[..],
+        ] {
+            placements.extend(mmorpg_presentation::world_dressing::ground_details(
+                scenery, entries,
+            ));
+        }
         // The market square's wooden props through their packaged PBR materials (#53).
         placements.extend(mmorpg_presentation::settlement_props::placements(scenery));
         let library = crate::nature::entries();

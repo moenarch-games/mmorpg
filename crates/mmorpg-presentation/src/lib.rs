@@ -36,6 +36,7 @@ pub mod structures;
 pub mod summoned;
 pub mod surface;
 mod terrain;
+pub mod terrain_patch;
 pub mod tiles;
 pub mod units;
 pub mod world_dressing;

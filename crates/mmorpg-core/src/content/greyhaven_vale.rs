@@ -38,6 +38,7 @@ pub mod marshal_house;
 pub mod paint;
 pub mod quests;
 pub mod raid;
+mod roofs;
 pub mod shrine;
 pub mod traps;
 pub mod units;
@@ -130,6 +131,8 @@ pub mod ids {
     pub const PALISADE: RangeInclusive<u32> = 110..=117;
     pub const GATE_POSTS: RangeInclusive<u32> = 120..=127;
     pub const GRAVESTONES: RangeInclusive<u32> = 130..=137;
+    /// Closed roof/ceiling collision for the walk-in inn.
+    pub const INN_ROOF: u32 = 148;
     /// The inn's front door leaf (#158).
     pub const INN_DOOR: u32 = 149;
     /// The inn's walls and furniture (#158).
@@ -139,6 +142,8 @@ pub mod ids {
     pub const MARSHAL_HOUSE: u32 = 103;
     pub const MARSHAL_HOUSE_DOOR: u32 = 182;
     pub const MARSHAL_HOUSE_PARTS: RangeInclusive<u32> = 183..=198;
+    /// Closed roof/ceiling collision for Elden's walk-in house.
+    pub const MARSHAL_HOUSE_ROOF: u32 = 199;
 
     pub const BARN: u32 = 200;
     pub const FARMHOUSE: u32 = 201;
@@ -1316,6 +1321,7 @@ pub fn base_definition() -> ZoneDefinition {
                     .into_iter()
                     .chain(fort::meshes())
                     .chain(shrine::collision_meshes())
+                    .chain(roofs::meshes())
                     .collect(),
             )
         })

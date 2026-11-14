@@ -205,3 +205,76 @@ pub fn hollow_tent_flaps_block_and_sloped_roofs_have_no_square_corners() {
         edge.feet()
     );
 }
+
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
+pub fn walk_in_houses_keep_the_roof_solid_when_hidden_indoors() {
+    use mmorpg_core::physics::{BodyId, RigidBody, Vec3i, World};
+
+    let definition = greyhaven_vale::greyhaven_vale_definition();
+    for (id, origin, ceiling, eave, ridge, half_z) in [
+        (
+            greyhaven_vale::ids::INN_ROOF,
+            greyhaven_vale::inn::ORIGIN,
+            300,
+            321,
+            600,
+            500,
+        ),
+        (
+            greyhaven_vale::ids::MARSHAL_HOUSE_ROOF,
+            greyhaven_vale::marshal_house::ORIGIN,
+            295,
+            350,
+            552,
+            335,
+        ),
+    ] {
+        let mesh = definition
+            .static_meshes()
+            .iter()
+            .find(|mesh| mesh.id == id)
+            .expect("walk-in roof belongs to authoritative content");
+        let mut world = World::new(Vec3i::new(0, -64, 0));
+        world
+            .add_body(RigidBody::static_mesh(mesh).unwrap())
+            .unwrap();
+        let roof = |from, travel| {
+            world
+                .cast_ray(from, travel, |body| body == BodyId(u64::from(id)))
+                .expect("physical roof blocks ray")
+        };
+        let [x, _, z] = origin;
+        let above = roof([x as f32, 800., z as f32], [0., -800., 0.]);
+        assert!(
+            ((800. - above.fraction * 800.) - ridge as f32).abs() < 2.,
+            "roof {id} must follow its ridge: {above:?}"
+        );
+        for side in [-1, 1] {
+            let slope = roof(
+                [(x + 100) as f32, 800., (z + side * half_z / 2) as f32],
+                [0., -800., 0.],
+            );
+            assert!(
+                ((800. - slope.fraction * 800.) - ((eave + ridge) / 2) as f32).abs() < 3.,
+                "roof {id} needs pitched collision on both sides: {slope:?}"
+            );
+        }
+        let below = roof([x as f32, 200., z as f32], [0., 500., 0.]);
+        assert!(
+            ((200. + below.fraction * 500.) - ceiling as f32).abs() < 2.,
+            "roof {id} must have a solid ceiling: {below:?}"
+        );
+
+        let mut player = Player::at([x, 0, z]);
+        player.command(ZoneCommand::Jump);
+        for _ in 0..50 {
+            player.ticks(1);
+            assert!(
+                player.feet()[1] <= (ceiling - 180 + 4) as f32,
+                "jumped through walk-in ceiling {id}: {:?}",
+                player.feet()
+            );
+        }
+    }
+}
