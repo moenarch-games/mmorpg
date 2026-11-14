@@ -3,7 +3,7 @@
 set -euo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 TOOLS="${XDG_CACHE_HOME:-${HOME}/.cache}/mmorpg/ranger-tools"
-PROCESSOR_REV=c13e053800d0a296d9594f84d84e60a9c0f944ee
+PROCESSOR_REV=b2166ba96285ed36093e9c71aeb38907d1218635
 PROCESSOR="${ASSET_TOOLING_ROOT:-${TOOLS}/asset-tooling-${PROCESSOR_REV}}"
 KTX="${ASSET_TOOLING_KTX:-ktx}"
 KTX_ASSET='KTX-Software-4.4.2-Linux-x86_64.tar.bz2'
