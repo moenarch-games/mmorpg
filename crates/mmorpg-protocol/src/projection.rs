@@ -2600,12 +2600,11 @@ mod posture_tests {
         assert!(!received.viewer.in_combat);
         assert!(received.entities[0].flags.weapon_drawn);
         assert!(!received.entities[0].flags.in_combat);
-        assert_eq!(
-            round_trip(&record(EntityKind::Creature, PostureView::Free))
+        assert!(
+            !round_trip(&record(EntityKind::Creature, PostureView::Free))
                 .unwrap()
                 .flags
-                .weapon_drawn,
-            false
+                .weapon_drawn
         );
     }
 
