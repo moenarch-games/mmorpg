@@ -1550,6 +1550,8 @@ fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
 /// The Warden's carried items: a model each and the joint and socket it is held at.
 pub(super) struct Equipment {
     pub items: Vec<(Model, &'static str, three_d_animation::Mat4)>,
+    /// Per-item back/hip socket for explicit sheathing, if the authored figure has one.
+    pub stowed: Vec<Option<(&'static str, three_d_animation::Mat4)>>,
     /// Per item, whether it hangs loose on its socket and swings (Atlas 6.6.39, `sway::hangs`).
     pub hanging: Vec<bool>,
     /// The item stowed on [`BOW_STOWED_SOCKET`] that a bow shot takes in hand (#556).
@@ -1755,6 +1757,18 @@ impl Equipment {
             });
         Self {
             items: items_of,
+            stowed: items
+                .iter()
+                .map(|&(_, hand)| {
+                    let socket_id = match hand {
+                        "hand_r.weapon" => "hip_r.stowed",
+                        "hand_l.weapon" => "hip_l.stowed",
+                        "hand_l.shield" | "hand_r.staff" | CROSSBOW_SOCKET => "back.stowed",
+                        _ => return None,
+                    };
+                    socket_of(&descriptor, socket_id)
+                })
+                .collect(),
             hanging: items
                 .iter()
                 .map(|&(_, socket_id)| sway::hangs(socket_id))
@@ -2214,6 +2228,14 @@ impl Equipment {
                 let socket = match left {
                     Some((offset, hand)) => mul(&hand.elements, &offset),
                     None => {
+                        let (joint, matrix) = if carry.weapon_drawn == Some(false) {
+                            self.stowed[index]
+                                .as_ref()
+                                .map(|(joint, matrix)| (*joint, matrix))
+                                .unwrap_or((*joint, matrix))
+                        } else {
+                            (*joint, matrix)
+                        };
                         let Some(at) = character.joint(joint, pose) else {
                             continue;
                         };
@@ -2245,7 +2267,9 @@ impl Equipment {
                 continue;
             }
             let bow = self.bow.as_ref().filter(|bow| bow.index == index);
-            let in_hand = bow.zip(shot);
+            let in_hand = bow
+                .filter(|_| shot.is_some() || carry.weapon_drawn == Some(true))
+                .map(|bow| (bow, shot));
             let sheath = self
                 .sheaths
                 .get(index)
@@ -2253,17 +2277,21 @@ impl Equipment {
                 .flatten()
                 .filter(|&(hand, _)| carry.sheathed[hand])
                 .map(|(_, sheath)| sheath);
-            let (joint, matrix) = match (in_hand, &sheath) {
-                (Some((bow, _)), _) => (bow.hand.0, &bow.hand.1),
-                (None, Some((joint, matrix))) => (*joint, matrix),
-                (None, None) => (*joint, matrix),
+            let stowed = (carry.weapon_drawn == Some(false))
+                .then(|| self.stowed.get(index).and_then(Option::as_ref))
+                .flatten();
+            let (joint, matrix) = match (in_hand, &sheath, stowed) {
+                (Some((bow, _)), _, _) => (bow.hand.0, &bow.hand.1),
+                (None, Some((joint, matrix)), _) => (*joint, matrix),
+                (None, None, Some((joint, matrix))) => (*joint, matrix),
+                (None, None, None) => (*joint, matrix),
             };
             let Some(at) = character.joint(joint, pose) else {
                 continue;
             };
             // The item's grip frame is its origin: holder = placement × joint × socket.
             let mut socket = mul(&at.elements, &matrix.elements);
-            if let Some((bow, shot)) = in_hand {
+            if let Some((bow, Some(shot))) = in_hand {
                 // The nock follows the clip's draw along the bow's draw axis.
                 let draw = bow_draws()
                     .get(shot.clip)

@@ -125,6 +125,7 @@ export type TouchContext = {
   /** A living attackable opponent is selected or near: show target and attack. */
   combat: boolean;
   dead: boolean;
+  weaponDrawn: boolean;
   interact: InteractKind | null;
   /** The NPC an interact talks to or trades with. */
   npc: EntityRef | null;
@@ -153,7 +154,7 @@ export type TouchContextInputs = {
 export function touchContext(snapshot: ZoneSnapshot | null, inputs: TouchContextInputs): TouchContext {
   const viewer = snapshot?.entities[0];
   if (!snapshot || !viewer) {
-    return { combat: false, dead: false, interact: null, npc: null };
+    return { combat: false, dead: false, weaponDrawn: false, interact: null, npc: null };
   }
   const distance = (position: readonly number[]) =>
     Math.hypot((position[0] ?? 0) - viewer.position[0], (position[2] ?? 0) - viewer.position[2]);
@@ -163,7 +164,7 @@ export function touchContext(snapshot: ZoneSnapshot | null, inputs: TouchContext
     || opponents.some((entity) => sameEntity(snapshot.viewer.target, { kind: entity.kind, id: entity.entityId }))
     || opponents.some((entity) => (entity.flags.hostile || entity.flags.targetsViewer) && distance(entity.position) <= COMBAT_NEAR_UNITS);
   if (snapshot.viewer.dead) {
-    return { combat: false, dead: true, interact: null, npc: null };
+    return { combat: false, dead: true, weaponDrawn: snapshot.viewer.weaponDrawn, interact: null, npc: null };
   }
   const corpse = others.some((entity) => entity.kind === "creature" && entity.flags.lootable && !entity.flags.tappedByOther
     && distance(entity.position) <= LOOT_REACH_UNITS);
@@ -174,7 +175,7 @@ export function touchContext(snapshot: ZoneSnapshot | null, inputs: TouchContext
   const interact: InteractKind | null = corpse ? "loot"
     : npc ? (inputs.isVendor(npc.entityId) ? "vendor" : "talk")
       : inputs.doorInReach ? "open" : inputs.repairInReach ? "repair" : null;
-  return { combat, dead: false, interact, npc: npcRef };
+  return { combat, dead: false, weaponDrawn: snapshot.viewer.weaponDrawn, interact, npc: npcRef };
 }
 
 export const INTERACT_LABELS: Readonly<Record<InteractKind, string>> = {

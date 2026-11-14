@@ -638,6 +638,14 @@ impl App {
                 return true;
             }
             WorldAction::Interact if self.connected() => {
+                if self
+                    .presentation
+                    .latest()
+                    .is_some_and(|s| s.viewer.weapon_drawn)
+                {
+                    self.npc_context.feedback = "Sheathe your weapon to interact (H)".into();
+                    return true;
+                }
                 if let Some(command) = self.presentation.reachable_raid_prep() {
                     // On a forewarned evening, reads the tracks, reports them to the lookout
                     // or braces the barn in reach (#532), even with the lookout selected.
@@ -1058,6 +1066,12 @@ impl App {
             ControlAction::Roll => self.roll(),
             ControlAction::Descend => {}
             ControlAction::TargetNext => self.combat_key(KeyCode::Tab),
+            ControlAction::ToggleWeapon => {
+                if let Some(drawn) = self.presentation.latest().map(|s| s.viewer.weapon_drawn) {
+                    self.retire_held_input();
+                    self.send_interaction(mmorpg_core::ZoneCommand::SetWeaponDrawn(!drawn));
+                }
+            }
             ControlAction::Swing => self.swing(),
             ControlAction::ReleaseSpirit => self.combat_key(KeyCode::KeyR),
             // The one place a slot use is sent: a press that cannot draw, an action-bar click or
@@ -1202,14 +1216,12 @@ impl App {
             PadAction::Jump => self.jump(),
             PadAction::Roll => self.roll(),
             PadAction::TargetNext => self.combat_key(KeyCode::Tab),
+            PadAction::ToggleWeapon => self.control(ControlAction::ToggleWeapon),
             PadAction::Swing => self.swing(),
             PadAction::ReleaseSpirit => self.combat_key(KeyCode::KeyR),
             PadAction::AbilitySlot(slot) => self.press_slot(slot),
             PadAction::CancelCast => self.control(ControlAction::CancelCast),
             PadAction::TogglePanel(panel) => self.control(ControlAction::TogglePanel(panel)),
-            PadAction::NextNpc => {
-                self.world_action(WorldAction::NextNpc);
-            }
             PadAction::Talk => {
                 self.world_action(WorldAction::Interact);
             }
@@ -1300,6 +1312,9 @@ impl App {
     fn ui_intent(&mut self, intent: UiIntent) {
         match intent {
             UiIntent::Command(command) => {
+                if matches!(command, mmorpg_core::ZoneCommand::SetWeaponDrawn(_)) {
+                    self.retire_held_input();
+                }
                 self.input.send_modify(|input| {
                     input.interaction = Some(command);
                     input.interactions = input.interactions.wrapping_add(1);
@@ -1579,6 +1594,12 @@ impl App {
         self.update_guard();
         let latest = self.presentation.latest();
         let casting = latest.is_some_and(|latest| latest.viewer.cast.is_some());
+        let drawn = latest.is_some_and(|latest| latest.viewer.weapon_drawn);
+        if self.controls.weapon_drawn() != drawn {
+            self.retire_held_input();
+        }
+        self.controls.set_weapon_drawn(drawn);
+        self.pad.set_weapon_drawn(drawn);
         self.controls.set_casting(casting);
         self.pad.set_casting(casting);
         self.hud = latest.map(CombatHud::from_projection);

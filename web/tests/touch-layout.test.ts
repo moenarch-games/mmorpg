@@ -38,7 +38,7 @@ test("context buttons follow nearby loot, NPCs, doors and opponents", () => {
     flags: { ...NO_FLAGS, dead: true, lootable: true } };
 
   const idle = touchContext(testSnapshot({ ...base, entities: [playerEntity(1, [0, 90, 0])] }), { ...inputs, doorInReach: true });
-  expect(idle).toEqual({ combat: false, dead: false, interact: "open", npc: null });
+  expect(idle).toEqual({ combat: false, dead: false, weaponDrawn: false, interact: "open", npc: null });
   // In an arena (#551) target and attack show from the first moment, before any fight.
   const arena = touchContext(testSnapshot({ ...base, entities: [playerEntity(1, [0, 90, 0])] }), { ...inputs, arena: true });
   expect(arena).toMatchObject({ combat: true, dead: false });
@@ -48,7 +48,7 @@ test("context buttons follow nearby loot, NPCs, doors and opponents", () => {
   expect(fight).toMatchObject({ combat: true, interact: "loot" });
   const dead = touchContext({ ...testSnapshot({ ...base, entities: [playerEntity(1, [0, 90, 0])] }),
     viewer: { ...HEALTHY_VIEWER, health: 0, dead: true } }, inputs);
-  expect(dead).toEqual({ combat: false, dead: true, interact: null, npc: null });
+  expect(dead).toEqual({ combat: false, dead: true, weaponDrawn: false, interact: null, npc: null });
 });
 
 test("a lifted face releases its slot; a cancelled pointer or retirement releases it retired (#485)", () => {

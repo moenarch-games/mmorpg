@@ -27,6 +27,8 @@ pub struct EntityFlags {
     pub dead: bool,
     /// On a threat table, engaged, or recently attacking or attacked.
     pub in_combat: bool,
+    /// Explicit weapon mode for projected player posture (#802), not the combat timer.
+    pub weapon_drawn: bool,
     /// An aggressive creature: it attacks players on sight.
     pub hostile: bool,
     /// The viewer may attack it (living creatures).
@@ -126,6 +128,8 @@ pub struct ViewerState {
     pub level: u8,
     pub dead: bool,
     pub in_combat: bool,
+    /// Explicit draw/sheathe state, independent of `in_combat`.
+    pub weapon_drawn: bool,
     pub target: Option<EntityRef>,
     pub class: Option<crate::ClassChoice>,
     /// Present exactly when the viewer has a class.
@@ -287,6 +291,7 @@ impl ZoneSimulation {
                     level: viewer.level,
                     dead: !viewer.is_alive(),
                     in_combat: viewer.combat_timer > 0 || threatened.contains(&player_id),
+                    weapon_drawn: viewer.weapon_drawn,
                     target: viewer.target,
                     class: viewer.class,
                     resource: viewer.class.map(|choice| {
@@ -426,6 +431,7 @@ impl ZoneSimulation {
                             && player.is_alive(),
                         dead: !player.is_alive(),
                         in_combat: player.combat_timer > 0 || threatened.contains(&player_id),
+                        weapon_drawn: player.weapon_drawn,
                         targets_viewer,
                         ..EntityFlags::default()
                     },
@@ -467,6 +473,7 @@ impl ZoneSimulation {
                     ),
                     flags: EntityFlags {
                         dead: !alive,
+                        weapon_drawn: false,
                         in_combat: alive
                             && (creature.ai == CreatureAi::Engaged || creature.combat_timer > 0),
                         hostile: template.behaviour == CreatureBehaviour::Aggressive,

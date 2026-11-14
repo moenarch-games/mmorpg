@@ -181,10 +181,13 @@ pub fn pack_snapshot_acknowledged(
         flag_byte(&[viewer.dead, viewer.in_combat]) | viewer_waystone_bits(viewer.waystones)?,
     );
     encode_entity_ref(&mut payload, viewer.target);
+    // Class appearances fit seven bits. The high bit carries the distinct
+    // drawn/sheathed choice without growing the projection datagram (#802).
     payload.push(
         viewer
             .class
-            .map_or(0, |choice| u8::try_from(choice.appearance()).unwrap_or(0)),
+            .map_or(0, |choice| u8::try_from(choice.appearance()).unwrap_or(0))
+            | (u8::from(viewer.weapon_drawn) << 7),
     );
     match viewer.resource {
         Some(resource) => {
@@ -511,7 +514,16 @@ fn decode_projectile(
 fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), ProtocolError> {
     payload.push(entity_kind_code(entity.kind));
     payload.extend_from_slice(&entity.id.to_be_bytes());
-    payload.extend_from_slice(&entity.appearance.to_be_bytes());
+    if (entity.kind == EntityKind::Player && entity.appearance & 0x8000 != 0)
+        || (entity.kind != EntityKind::Player && entity.flags.weapon_drawn)
+    {
+        return Err(ProtocolError::new("invalid drawn weapon appearance"));
+    }
+    // The player-only high bit is free in the appearance word. Threat remains
+    // its own flag; NPC and creature appearance IDs are untouched.
+    payload.extend_from_slice(
+        &(entity.appearance | (u16::from(entity.flags.weapon_drawn) << 15)).to_be_bytes(),
+    );
     for component in entity.position {
         payload.extend_from_slice(&component.to_be_bytes());
     }
@@ -663,7 +675,9 @@ fn decode_projection(
     {
         return Err(ProtocolError::new("viewer state is inconsistent"));
     }
-    let class_code = read_u8(payload, &mut offset)?;
+    let encoded_class = read_u8(payload, &mut offset)?;
+    let weapon_drawn = encoded_class & 0x80 != 0;
+    let class_code = encoded_class & 0x7f;
     let class = ClassChoice::from_appearance(u16::from(class_code));
     if class_code != 0 && class.is_none() {
         return Err(ProtocolError::new("viewer ability state is inconsistent"));
@@ -915,6 +929,7 @@ fn decode_projection(
             level,
             dead,
             in_combat,
+            weapon_drawn,
             target,
             class,
             resource,
@@ -988,7 +1003,13 @@ fn loot_matches(
 fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, ProtocolError> {
     let kind = decode_entity_kind(read_u8(payload, offset)?)?;
     let id = u32::from_be_bytes(take(payload, offset)?);
-    let appearance = u16::from_be_bytes(take(payload, offset)?);
+    let encoded_appearance = u16::from_be_bytes(take(payload, offset)?);
+    let weapon_drawn = kind == EntityKind::Player && encoded_appearance & 0x8000 != 0;
+    let appearance = if kind == EntityKind::Player {
+        encoded_appearance & 0x7fff
+    } else {
+        encoded_appearance
+    };
     let position = [
         i32::from_be_bytes(take(payload, offset)?),
         i32::from_be_bytes(take(payload, offset)?),
@@ -1081,6 +1102,7 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
         flags: EntityFlags {
             dead,
             in_combat,
+            weapon_drawn,
             hostile,
             attackable,
             tapped_by_other,
@@ -1244,6 +1266,7 @@ pub(crate) mod tests {
                 level: 4,
                 dead: false,
                 in_combat: true,
+                weapon_drawn: false,
                 target: Some(WOLF),
                 class: Some(ClassChoice {
                     class: mmorpg_core::PlayerClass::Arcanist,
@@ -1429,6 +1452,7 @@ pub(crate) mod tests {
                         lootable: false,
                         dead: false,
                         in_combat: true,
+                        weapon_drawn: false,
                         hostile: true,
                         attackable: true,
                         tapped_by_other: false,
@@ -2203,7 +2227,12 @@ pub(crate) mod tests {
                 EntitySnapshot {
                     kind,
                     id,
-                    appearance: u16::MAX,
+                    // A player appearance reserves its high bit for weapon mode (#802).
+                    appearance: if kind == EntityKind::Player {
+                        1
+                    } else {
+                        u16::MAX
+                    },
                     position: [low, high, low],
                     velocity: [i8::MIN, i8::MAX, i8::MIN],
                     facing: u16::MAX,
@@ -2213,6 +2242,7 @@ pub(crate) mod tests {
                         lootable: false,
                         dead: false,
                         in_combat: true,
+                        weapon_drawn: false,
                         hostile: true,
                         attackable: true,
                         tapped_by_other: kind == EntityKind::Creature,
@@ -2280,6 +2310,7 @@ pub(crate) mod tests {
                 experience_to_next_level: 900,
                 dead: false,
                 in_combat: true,
+                weapon_drawn: false,
                 target: Some(target),
                 class: None,
                 resource: None,
@@ -2530,7 +2561,9 @@ pub(crate) mod tests {
 mod posture_tests {
     use mmorpg_core::{EntityFlags, EntityKind, EntitySnapshot, PostureView};
 
-    use super::{decode_entity, encode_entity};
+    use super::{
+        decode_entity, decode_snapshot, encode_entity, encode_snapshot, tests::fixture_snapshot,
+    };
 
     fn record(kind: EntityKind, posture: PostureView) -> EntitySnapshot {
         EntitySnapshot {
@@ -2553,6 +2586,27 @@ mod posture_tests {
         let mut bytes = Vec::new();
         encode_entity(&mut bytes, entity)?;
         decode_entity(&bytes, &mut 0)
+    }
+
+    #[test]
+    fn player_weapon_mode_survives_packed_projection_without_changing_threat() {
+        let mut snapshot = fixture_snapshot();
+        snapshot.viewer.weapon_drawn = true;
+        snapshot.entities[0].flags.weapon_drawn = true;
+        snapshot.viewer.in_combat = false;
+        snapshot.entities[0].flags.in_combat = false;
+        let received = decode_snapshot(&encode_snapshot(&snapshot).unwrap()).unwrap();
+        assert!(received.viewer.weapon_drawn);
+        assert!(!received.viewer.in_combat);
+        assert!(received.entities[0].flags.weapon_drawn);
+        assert!(!received.entities[0].flags.in_combat);
+        assert_eq!(
+            round_trip(&record(EntityKind::Creature, PostureView::Free))
+                .unwrap()
+                .flags
+                .weapon_drawn,
+            false
+        );
     }
 
     #[test]

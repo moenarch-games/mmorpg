@@ -23,6 +23,7 @@ export const GAME_ACTIONS = [
   "move.roll",
   "move.descend",
   "target.next",
+  "combat.toggleWeapon",
   "combat.swing",
   "ability.slot1",
   "ability.slot2",
@@ -79,11 +80,11 @@ export type GameAction = (typeof GAME_ACTIONS)[number];
  * - `settings`: the Settings modal blocks every lower context on either screen, so no game key
  *   resolves (or suppresses a browser default) while it is open; the dialog owns its keys.
  */
-export type GameContext = "selection" | "creation" | "world" | "gameplay" | "casting" | "panels" | "settings";
+export type GameContext = "selection" | "creation" | "world" | "gameplay" | "exploration" | "combat" | "casting" | "panels" | "settings";
 
 export type ControlScreen =
   | { phase: "selection"; creating: boolean; settingsOpen?: boolean }
-  | { phase: "world"; panelOpen: boolean; casting?: boolean; settingsOpen?: boolean };
+  | { phase: "world"; panelOpen: boolean; weaponDrawn?: boolean; casting?: boolean; settingsOpen?: boolean };
 
 export function contextStack(screen: ControlScreen): ContextLayer[] {
   const settings: ContextLayer[] = screen.settingsOpen ? [{ id: "settings", blocksLower: true }] : [];
@@ -95,6 +96,7 @@ export function contextStack(screen: ControlScreen): ContextLayer[] {
   return [
     { id: "world" },
     { id: "gameplay" },
+    { id: screen.weaponDrawn ? "combat" : "exploration" },
     ...(screen.casting ? [{ id: "casting" }] : []),
     ...(screen.panelOpen ? [{ id: "panels" }] : []),
     ...settings,
@@ -173,34 +175,35 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
     // Held while swimming (#274): Space or A ascends (held Jump), X or R3 descends.
     action("move.descend", "Swim down (hold)", "gameplay", [key("KeyX"), button(11)]),
     action("target.next", "Target next", "gameplay", [key("Tab"), button(5)]),
+    action("combat.toggleWeapon", "Draw / sheathe weapon", "gameplay", [key("KeyH"), button(4)]),
     // One swing where the character faces (#517): Q or gamepad X (#636: the left mouse button selects).
-    action("combat.swing", "Swing weapon", "gameplay", [key("KeyQ"), button(2)]),
-    action("ability.slot1", "Ability 1", "gameplay", [key("Digit1"), button(12)]),
-    action("ability.slot2", "Ability 2", "gameplay", [key("Digit2"), button(15)]),
-    action("ability.slot3", "Ability 3", "gameplay", [key("Digit3"), button(13)]),
-    action("ability.slot4", "Ability 4", "gameplay", [key("Digit4"), button(14)]),
+    action("combat.swing", "Swing weapon", "combat", [key("KeyQ"), button(2)]),
+    action("ability.slot1", "Ability 1", "combat", [key("Digit1"), button(12)]),
+    action("ability.slot2", "Ability 2", "combat", [key("Digit2"), button(15)]),
+    action("ability.slot3", "Ability 3", "combat", [key("Digit3"), button(13)]),
+    action("ability.slot4", "Ability 4", "combat", [key("Digit4"), button(14)]),
     // Slots 5–10 are keyboard-only by default; the d-pad holds slots 1–4.
-    action("ability.slot5", "Ability 5", "gameplay", [key("Digit5")]),
-    action("ability.slot6", "Ability 6", "gameplay", [key("Digit6")]),
-    action("ability.slot7", "Ability 7", "gameplay", [key("Digit7")]),
-    action("ability.slot8", "Ability 8", "gameplay", [key("Digit8")]),
-    action("ability.slot9", "Ability 9", "gameplay", [key("Digit9")]),
-    action("ability.slot10", "Ability 10", "gameplay", [key("Digit0")]),
+    action("ability.slot5", "Ability 5", "combat", [key("Digit5")]),
+    action("ability.slot6", "Ability 6", "combat", [key("Digit6")]),
+    action("ability.slot7", "Ability 7", "combat", [key("Digit7")]),
+    action("ability.slot8", "Ability 8", "combat", [key("Digit8")]),
+    action("ability.slot9", "Ability 9", "combat", [key("Digit9")]),
+    action("ability.slot10", "Ability 10", "combat", [key("Digit0")]),
     // The second row, Shift+1 to Shift+0 (#294, Atlas 5.2.i294).
-    action("ability.slot11", "Ability 11 (Shift row)", "gameplay", [shifted("Digit1")]),
-    action("ability.slot12", "Ability 12 (Shift row)", "gameplay", [shifted("Digit2")]),
-    action("ability.slot13", "Ability 13 (Shift row)", "gameplay", [shifted("Digit3")]),
-    action("ability.slot14", "Ability 14 (Shift row)", "gameplay", [shifted("Digit4")]),
-    action("ability.slot15", "Ability 15 (Shift row)", "gameplay", [shifted("Digit5")]),
-    action("ability.slot16", "Ability 16 (Shift row)", "gameplay", [shifted("Digit6")]),
-    action("ability.slot17", "Ability 17 (Shift row)", "gameplay", [shifted("Digit7")]),
-    action("ability.slot18", "Ability 18 (Shift row)", "gameplay", [shifted("Digit8")]),
-    action("ability.slot19", "Ability 19 (Shift row)", "gameplay", [shifted("Digit9")]),
-    action("ability.slot20", "Ability 20 (Shift row)", "gameplay", [shifted("Digit0")]),
+    action("ability.slot11", "Ability 11 (Shift row)", "combat", [shifted("Digit1")]),
+    action("ability.slot12", "Ability 12 (Shift row)", "combat", [shifted("Digit2")]),
+    action("ability.slot13", "Ability 13 (Shift row)", "combat", [shifted("Digit3")]),
+    action("ability.slot14", "Ability 14 (Shift row)", "combat", [shifted("Digit4")]),
+    action("ability.slot15", "Ability 15 (Shift row)", "combat", [shifted("Digit5")]),
+    action("ability.slot16", "Ability 16 (Shift row)", "combat", [shifted("Digit6")]),
+    action("ability.slot17", "Ability 17 (Shift row)", "combat", [shifted("Digit7")]),
+    action("ability.slot18", "Ability 18 (Shift row)", "combat", [shifted("Digit8")]),
+    action("ability.slot19", "Ability 19 (Shift row)", "combat", [shifted("Digit9")]),
+    action("ability.slot20", "Ability 20 (Shift row)", "combat", [shifted("Digit0")]),
     // Hold, aim with the pointer, release (#154): the Warden's directed Heroic Strike.
-    action("combat.directedStrike", "Directed Heroic Strike (hold, aim, release)", "gameplay", [key("KeyG")]),
+    action("combat.directedStrike", "Directed Heroic Strike (hold, aim, release)", "combat", [key("KeyG")]),
     // Hold to raise the Warden's shield; pointer up/down (or the right stick, holding LT) picks the lane (#156).
-    action("combat.guard", "Shield guard (hold, aim up/down)", "gameplay", [key("KeyZ"), button(6)]),
+    action("combat.guard", "Shield guard (hold, aim up/down)", "combat", [key("KeyZ"), button(6)]),
     // Right click cancels a cast in the world view (#636); Escape opens the game menu instead.
     action("combat.cancelCast", "Cancel cast", "casting", [button(1)]),
     // Radial wheels (#653): hold, flick toward an action and release, or tap and left-click; they
@@ -217,6 +220,7 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
     action("ui.toggleCharacter", "Toggle character pane", "gameplay", [key("KeyC")]),
     action("ui.toggleVendor", "Toggle vendor", "gameplay", [key("KeyV")]),
     // Interact (#158; E since #515): talk to the selected NPC, or open or close a door in reach.
+    // E remains an explicit interaction attempt in combat so the drawn-weapon hint is actionable.
     action("ui.talk", "Interact: talk, or open or close a door", "gameplay", [key("KeyE"), button(9)]),
     action("ui.toggleQuestLog", "Toggle quest log", "gameplay", [key("KeyL")]),
     action("ui.toggleWorldMap", "Toggle world map", "gameplay", [key("KeyM")]),

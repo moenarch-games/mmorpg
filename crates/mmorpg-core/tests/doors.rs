@@ -83,6 +83,54 @@ impl Zone {
 const NORTH: u16 = 32_768;
 
 #[test]
+fn explicit_weapon_mode_is_authoritative_for_doors_and_vendors_and_survives_recovery() {
+    let mut run = Zone::new(OUTSIDE);
+    assert!(!run.zone.snapshot_for_player(1).unwrap().viewer.weapon_drawn);
+    assert_eq!(run.act(ZoneCommand::SetWeaponDrawn(true)), []);
+    assert!(run.zone.snapshot_for_player(1).unwrap().viewer.weapon_drawn);
+    assert_eq!(
+        run.act(ZoneCommand::UseDoor {
+            door: DOOR,
+            open: true
+        }),
+        [ErrorCode::WeaponDrawn]
+    );
+    assert!(!run.door_open());
+    run.teleport([1_920, -180]);
+    assert_eq!(
+        run.act(ZoneCommand::SellItem {
+            npc: BRAM,
+            bag_slot: 0,
+            quantity: 1
+        }),
+        [ErrorCode::WeaponDrawn]
+    );
+    run.zone.add_player(2).unwrap();
+    let other = run.zone.snapshot_for_player(2).unwrap();
+    assert!(
+        other
+            .entities
+            .iter()
+            .any(|entity| entity.id == 1 && entity.flags.weapon_drawn)
+    );
+    run.teleport(OUTSIDE);
+    assert!(
+        run.zone.snapshot_for_player(1).unwrap().viewer.weapon_drawn,
+        "recovery must restore the mode"
+    );
+    assert_eq!(run.act(ZoneCommand::SetWeaponDrawn(false)), []);
+    assert!(!run.zone.snapshot_for_player(1).unwrap().viewer.weapon_drawn);
+    assert_eq!(
+        run.act(ZoneCommand::UseDoor {
+            door: DOOR,
+            open: true
+        }),
+        []
+    );
+    assert!(run.door_open());
+}
+
+#[test]
 fn the_door_blocks_until_opened_within_reach_and_projects_to_everyone() {
     let mut zone = Zone::new([OUTSIDE[0], 1_200]);
     assert!(!zone.door_open());

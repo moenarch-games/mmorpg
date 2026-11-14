@@ -212,6 +212,7 @@ mirror!(
         MovementImmune,
         SeatTaken,
         CannotSitHere,
+        WeaponDrawn,
     }
 );
 mirror!(
@@ -322,6 +323,7 @@ fn core_entity(entity: Option<EntityRef>) -> Option<core::EntityRef> {
 pub struct EntityFlags {
     pub dead: bool,
     pub in_combat: bool,
+    pub weapon_drawn: bool,
     /// An aggressive creature.
     pub hostile: bool,
     /// The viewer may attack it (living creatures).
@@ -372,6 +374,7 @@ impl From<&core::EntitySnapshot> for EntityState {
             flags: EntityFlags {
                 dead: flags.dead,
                 in_combat: flags.in_combat,
+                weapon_drawn: flags.weapon_drawn,
                 hostile: flags.hostile,
                 attackable: flags.attackable,
                 tapped_by_other: flags.tapped_by_other,
@@ -400,6 +403,7 @@ impl From<&EntityState> for core::EntitySnapshot {
             flags: core::EntityFlags {
                 dead: flags.dead,
                 in_combat: flags.in_combat,
+                weapon_drawn: flags.weapon_drawn,
                 hostile: flags.hostile,
                 attackable: flags.attackable,
                 tapped_by_other: flags.tapped_by_other,
@@ -524,6 +528,7 @@ pub struct ViewerState {
     pub level: u8,
     pub dead: bool,
     pub in_combat: bool,
+    pub weapon_drawn: bool,
     pub target: Option<EntityRef>,
     pub class_choice: Option<ClassChoice>,
     /// Present exactly when the viewer has a class.
@@ -1537,6 +1542,7 @@ impl From<&core::ZoneSnapshot> for ZoneSnapshot {
                 level: viewer.level,
                 dead: viewer.dead,
                 in_combat: viewer.in_combat,
+                weapon_drawn: viewer.weapon_drawn,
                 target: entity(viewer.target),
                 class_choice: viewer.class.map(|choice| ClassChoice {
                     class_id: choice.class.into(),
@@ -1791,6 +1797,7 @@ impl TryFrom<&ZoneSnapshot> for core::ZoneSnapshot {
                 level: viewer.level,
                 dead: viewer.dead,
                 in_combat: viewer.in_combat,
+                weapon_drawn: viewer.weapon_drawn,
                 target: core_entity(viewer.target),
                 class: viewer.class_choice.map(|choice| core::ClassChoice {
                     class: choice.class_id.into(),
@@ -1993,6 +2000,10 @@ pub enum WorldCommand {
     Guard {
         lane: Option<StrikeHeight>,
     },
+    /// Explicit draw or sheathe (#802); ordinary hands-free actions require sheathing.
+    SetWeaponDrawn {
+        drawn: bool,
+    },
     CancelCast,
     /// Class 0 Warden … 6 Druid; sex 0 female, 1 male. The zone refuses invalid values.
     ChooseClass {
@@ -2148,6 +2159,7 @@ impl TryFrom<&WorldCommand> for core::ZoneCommand {
             C::Guard { lane } => Self::Guard {
                 lane: lane.map(Into::into),
             },
+            C::SetWeaponDrawn { drawn } => Self::SetWeaponDrawn(drawn),
             C::CancelCast => Self::CancelCast,
             C::ChooseClass { class_id, sex } => Self::ChooseClass {
                 class: class_id,

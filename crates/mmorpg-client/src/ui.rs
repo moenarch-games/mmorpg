@@ -865,6 +865,24 @@ impl GameUi {
                             ui.colored_label(Color32::from_rgb(255, 120, 90), "in combat");
                         }
                     });
+                    if ui
+                        .button(if viewer.weapon_drawn {
+                            "Sheathe weapon [H]"
+                        } else {
+                            "Draw weapon [H]"
+                        })
+                        .clicked()
+                        && !viewer.dead
+                    {
+                        intents.push(UiIntent::Command(ZoneCommand::SetWeaponDrawn(
+                            !viewer.weapon_drawn,
+                        )));
+                    }
+                    if viewer.weapon_drawn {
+                        ui.small("Sheathe your weapon to interact");
+                    } else {
+                        ui.small("E interact · H draw · Q/1–20/G/Z fight mode");
+                    }
                     if let Some(stance) = viewer.stance {
                         ui.colored_label(Color32::from_rgb(230, 200, 120), stance_text(stance));
                     }

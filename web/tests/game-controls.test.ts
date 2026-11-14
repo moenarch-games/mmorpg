@@ -95,7 +95,7 @@ describe("MMORPG semantic controls", () => {
       { id: "selection" },
       { id: "creation", blocksLower: true },
     ]);
-    expect(contextStack({ phase: "world", panelOpen: true }).map((layer) => layer.id)).toEqual(["world", "gameplay", "panels"]);
+    expect(contextStack({ phase: "world", panelOpen: true }).map((layer) => layer.id)).toEqual(["world", "gameplay", "exploration", "panels"]);
   });
 
   test("WASD and arrows map to forward/backpedal and strafe; opposites cancel", () => {
@@ -109,12 +109,19 @@ describe("MMORPG semantic controls", () => {
     expect(app.controls.heldIntent()).toEqual({ forward: 0, strafe: 0, steering: true, rise: 0 });
   });
 
-  test("E interacts, Q swings (#636), and neither strafes (#515)", () => {
+  test("H toggles modes; exploration prevents Q and slots, E still interacts (#802)", () => {
     const app = harness();
     app.window.emit("keydown", key("KeyQ"));
+    app.window.emit("keydown", key("Digit1"));
     app.window.emit("keydown", key("KeyE"));
     expect(app.controls.heldIntent()).toEqual({ forward: 0, strafe: 0, steering: false, rise: 0 });
-    expect(app.actions).toEqual(["combat.swing", "ui.talk"]);
+    expect(app.actions).toEqual(["ui.talk"]);
+    app.window.emit("keydown", key("KeyH"));
+    app.setScreen({ phase: "world", panelOpen: false, weaponDrawn: true });
+    app.window.emit("keyup", key("KeyQ"));
+    app.window.emit("keyup", key("Digit1"));
+    app.window.emit("keydown", key("KeyQ"));
+    expect(app.actions).toEqual(["ui.talk", "combat.toggleWeapon", "combat.swing"]);
   });
 
   test("the gamepad drives the same semantic movement and one-shot actions as the keyboard", () => {
@@ -133,7 +140,7 @@ describe("MMORPG semantic controls", () => {
   });
 
   test("Shift+digit reaches the second action-bar row (#294)", () => {
-    const app = harness();
+    const app = harness({ phase: "world", panelOpen: false, weaponDrawn: true });
     app.window.emit("keydown", { ...key("Digit1"), shiftKey: true });
     app.window.emit("keyup", { ...key("Digit1"), shiftKey: true });
     app.window.emit("keydown", { ...key("Digit0"), shiftKey: true });
@@ -171,16 +178,16 @@ describe("MMORPG semantic controls", () => {
   });
 
   test("1–4 and the d-pad use ability slots; while casting, Escape still opens the menu (#636: right click cancels)", () => {
-    const app = harness();
+    const app = harness({ phase: "world", panelOpen: false, weaponDrawn: true });
     for (const code of ["Digit1", "Digit2", "Digit3", "Digit4"]) {
       app.window.emit("keydown", key(code));
     }
     expect(app.actions).toEqual(["ability.slot1", "ability.slot2", "ability.slot3", "ability.slot4"]);
-    const pad = harness();
+    const pad = harness({ phase: "world", panelOpen: false, weaponDrawn: true });
     pad.pad([0, 0], [12, 15, 13, 14]);
     expect([...pad.actions].sort()).toEqual(["ability.slot1", "ability.slot2", "ability.slot3", "ability.slot4"]);
     expect(contextStack({ phase: "world", panelOpen: true, casting: true }).map((layer) => layer.id))
-      .toEqual(["world", "gameplay", "casting", "panels"]);
+      .toEqual(["world", "gameplay", "exploration", "casting", "panels"]);
     const casting = harness({ phase: "world", panelOpen: false, casting: true });
     casting.window.emit("keydown", key("Escape"));
     expect(casting.actions).toEqual(["ui.gameMenu"]);
