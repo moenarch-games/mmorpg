@@ -275,6 +275,7 @@ fn placed(entry: &str, model: [f32; 16]) -> Placed<'_> {
         model,
         scale: 1.,
         reach: f64::INFINITY,
+        max_distance: None,
     }
 }
 

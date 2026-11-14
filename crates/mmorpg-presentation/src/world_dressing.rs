@@ -30,7 +30,7 @@ use crate::{
 };
 
 /// Greyhaven Vale's dressing files.
-const GREYHAVEN: [&str; 4] = [
+const GREYHAVEN: [&str; 5] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/vale.json"
@@ -47,17 +47,23 @@ const GREYHAVEN: [&str; 4] = [
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/market.json"
     )),
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../content/greyhaven/dressing/southmeadow.json"
+    )),
 ];
 
 /// Every kit that draws dressing, by its asset keys' prefix, with the static-scene fallback
 /// ([`Kit`]) it hides while drawn, if it has one.
-pub const KITS: [(&str, Option<Kit>); 5] = [
+pub const KITS: [(&str, Option<Kit>); 7] = [
     ("crag.kit.", Some(Kit::Crag)),
     ("settlement.props.", Some(Kit::SettlementProps)),
     ("outpost.kit.", Some(Kit::Outpost)),
     ("greyhaven.fort.", Some(Kit::Outpost)),
     // The Sunken Shrine's modules (#431) stand on their own colliders and need no stand-in.
     ("shrine.kit.", None),
+    ("greyhaven-meadow.kit.", None),
+    ("river-stones.kit.", None),
 ];
 
 /// The dressing format's version.
@@ -96,6 +102,9 @@ pub struct Placed {
     /// Cosmetic wear in 255ths, independent from the collider identity.
     #[serde(default)]
     pub wear: u8,
+    /// Recipe scatter rooted on the existing floor, drawn only within 60 m.
+    #[serde(default, rename = "groundDetail")]
+    pub ground_detail: bool,
 }
 
 impl Placed {
@@ -215,6 +224,40 @@ pub fn placements(s: &Scenery, kit: Kit) -> Vec<Placement> {
                     .map(|permille| f64::from(permille) / 1_000.)
                     .fold(0., f64::max),
                 cull: Cull::Far,
+            }
+        })
+        .collect()
+}
+
+/// Cosmetic ground dressing belonging to the supplied bundle entries. No gameplay body is created.
+#[must_use]
+pub fn ground_details(s: &Scenery, entries: &'static [&'static str]) -> Vec<Placement> {
+    let grid = s.terrain_grid(crate::TERRAIN_STEP_UNITS);
+    placed(s)
+        .iter()
+        .filter(|p| p.ground_detail && entries.contains(&p.asset.as_str()))
+        .filter(|p| {
+            let at = [p.position[0], p.position[2]];
+            s.road_distance(at) > 250
+                && s.water_distance(at) > 250
+                && s.farmland().iter().all(|field| field.distance(at) > 200)
+        })
+        .map(|p| {
+            let mut frame = p.frame();
+            frame.t[1] += crate::terrain::surface(&grid, frame.t[0], frame.t[2]);
+            Placement {
+                entry: entries
+                    .iter()
+                    .copied()
+                    .find(|entry| *entry == p.asset)
+                    .expect("filtered bundle entry"),
+                model: matrix(frame),
+                scale: p
+                    .scale
+                    .into_iter()
+                    .map(|v| f64::from(v) / 1000.)
+                    .fold(0., f64::max),
+                cull: Cull::Scatter,
             }
         })
         .collect()

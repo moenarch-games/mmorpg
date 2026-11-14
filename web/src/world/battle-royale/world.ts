@@ -70,6 +70,7 @@ function arenaScenery(local: LocalWorld, presentation: ArenaPresentation): Scene
     crag: { kit: "crag", entries: [], placements: [], lods: () => { throw new Error("The arena has no crags."); } },
     limestone: { kit: "limestone", entries: [], placements: [], lods: () => { throw new Error("The arena has no rocks."); } },
     river: { kit: "river", entries: [], placements: [], lods: () => { throw new Error("The arena has no river."); } },
+    meadow: { kit: "meadow", entries: [], placements: [], lods: () => { throw new Error("The arena has no meadow."); } },
     ambient: { entries: [], clips: [], anchors: [], frame: () => emptyMotion },
     importedRestClip: (kind) => local.scenery.importedRestClip(kind),
     areaAt: () => null,

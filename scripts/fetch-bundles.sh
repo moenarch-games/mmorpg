@@ -152,6 +152,8 @@ fetch_rolling limestone-rocks limestone-rocks.kit scenery/limestone-rocks.kit
 fetch_rolling river-stones river-stones.kit scenery/river-stones.kit
 # Greyhaven's trees and rocks with their LOD chains and rock collision proxies (#49).
 fetch_rolling greyhaven-nature greyhaven.nature scenery/greyhaven.nature
+# Cosmetic meadow ground detail (#782), using the existing placed-kit loaders.
+fetch_rolling greyhaven-meadow greyhaven-meadow.kit scenery/greyhaven-meadow.kit
 # The Battle Royale fortress's authored art (#591, asset-tooling#458/#461, pass 2), fitted to its
 # collision.
 fetch_rolling fortress-kit fortress.kit scenery/fortress.kit
