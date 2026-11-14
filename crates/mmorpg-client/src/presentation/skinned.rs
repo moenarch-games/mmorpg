@@ -1954,9 +1954,21 @@ impl Equipment {
         static HAIR: OnceLock<Equipment> = OnceLock::new();
         HAIR.get_or_init(|| {
             let mut hair = residents::kit_hair(ranger_bundle::HAIR_KEY).map_or_else(
-                || Self::of(&[(ranger_bundle::HAIR, "head.hair")]),
+                || {
+                    if ranger_bundle::FILES
+                        .iter()
+                        .any(|(path, _)| *path == ranger_bundle::HAIR)
+                    {
+                        Self::of(&[(ranger_bundle::HAIR, "head.hair")])
+                    } else {
+                        Self::of(&[])
+                    }
+                },
                 Self::on_head_hair,
             );
+            if hair.items.is_empty() {
+                return hair;
+            }
             let look = residents::look(Figure::Male);
             let materials = look["hair"]
                 .as_array()

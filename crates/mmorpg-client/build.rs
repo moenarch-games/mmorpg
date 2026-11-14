@@ -166,9 +166,8 @@ fn main() {
     code.push_str(&format!(
         "pub const HAIR: &str = {hair:?};\npub const HAIR_KEY: &str = {HAIR:?};\npub const CAP_KEY: &str = {CAP:?};\npub const HELM_KEY: &str = {HELM:?};\n"
     ));
-    files.push(hair);
-    // Every other prepared entry too: the residents' and humanoid enemies' outfit variants,
-    // armour, beards, headwear and hairstyles (#418, #39), looked up by key and variant.
+    // The legacy Ranger hair is optional after asset-tooling #517. Include it only if
+    // present, alongside the other prepared outfit, armour and hairstyle entries.
     files.extend(prepared(&bundle));
     write("ranger_bundle.rs", &bundle, code, files);
     // The female figure (#493): Tanner Hilda Brook's outfit, armour and hair.
