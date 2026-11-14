@@ -215,6 +215,8 @@ impl NativeApplication {
         let app = App {
             characters,
             party: mmorpg_client::session::party_link().0,
+            detail: Default::default(),
+            smoke: None,
             runtime,
             window: None,
             renderer: None,
