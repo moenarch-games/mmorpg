@@ -1,7 +1,7 @@
 import { wireCatalog, type EntityFlags, type EntityState, type QuestSheet, type ViewerState, type Vector3, type ZoneSnapshot } from "../../src/replication";
 
 export const NO_FLAGS: EntityFlags = {
-  dead: false, inCombat: false, hostile: false, attackable: false, tappedByOther: false, evading: false, targetsViewer: false, lootable: false,
+  dead: false, inCombat: false, weaponDrawn: false, hostile: false, attackable: false, tappedByOther: false, evading: false, targetsViewer: false, lootable: false,
   traversal: "free",
   posture: "free",
 };
@@ -12,7 +12,7 @@ export function playerEntity(entityId: number, position: Vector3, velocity: Vect
 }
 
 export const HEALTHY_VIEWER: ViewerState = {
-  copper: 0, health: 50, maxHealth: 50, experience: 0, experienceToNextLevel: 100, level: 1, dead: false, inCombat: false, target: null,
+  copper: 0, health: 50, maxHealth: 50, experience: 0, experienceToNextLevel: 100, level: 1, dead: false, inCombat: false, weaponDrawn: false, target: null,
   classChoice: null, resource: null, cast: null, globalCooldown: 0, damage: { min: 3, max: 6 },
   guard: { raised: null, protecting: false, broken: 0 },
   stance: null,

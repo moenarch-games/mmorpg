@@ -151,6 +151,7 @@ export function canSendCharacterCommand(command: WorldCommand, phase: MatchPhase
     case "roll":
     case "rise":
     case "select-target":
+    case "set-weapon-drawn":
     case "chat":
     case "emote":
     // A release never acts by itself; it only ends a hold (#414).

@@ -294,6 +294,11 @@ impl Script {
     /// Sends one quest command, then waits for the sheet that reflects it.
     fn quest_command(&mut self, command: ZoneCommand) {
         self.stand();
+        // Quest conversations require free hands, including after a hunt.
+        if self.view.viewer.weapon_drawn {
+            self.send(ZoneCommand::SetWeaponDrawn(false));
+            self.tick();
+        }
         self.events.clear();
         self.send(command);
         self.tick();

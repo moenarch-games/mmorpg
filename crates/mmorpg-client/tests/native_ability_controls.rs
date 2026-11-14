@@ -126,6 +126,21 @@ fn native_default(registry: &ActionRegistry, id: &str) -> (Vec<String>, Vec<Stri
     (contexts, keys)
 }
 
+/// Controls with the weapon drawn: combat keys act only in drawn mode (#802).
+fn drawn_controls() -> NativeControls {
+    let mut controls = NativeControls::new();
+    controls.set_weapon_drawn(true);
+    controls
+}
+
+#[test]
+fn sheathed_controls_use_no_combat_keys() {
+    let mut controls = NativeControls::new();
+    for key in [KeyCode::Digit1, KeyCode::KeyQ, KeyCode::KeyG, KeyCode::KeyZ] {
+        assert_eq!(press(&mut controls, key), NONE, "{key:?}");
+    }
+}
+
 #[test]
 fn action_ids_are_the_shared_semantic_ids() {
     for (_, slot) in SLOT_KEYS {
@@ -163,17 +178,17 @@ fn native_defaults_match_the_browser_catalog() {
     // Pin the expectation itself, so a browser edit cannot silently move both.
     assert_eq!(
         browser_default("ability.slot1"),
-        ("gameplay".to_owned(), vec!["Digit1".to_owned()])
+        ("combat".to_owned(), vec!["Digit1".to_owned()])
     );
     assert_eq!(
         browser_default("combat.swing"),
-        ("gameplay".to_owned(), vec!["KeyQ".to_owned()])
+        ("combat".to_owned(), vec!["KeyQ".to_owned()])
     );
 }
 
 #[test]
 fn digits_one_to_four_use_slots_one_to_four() {
-    let mut controls = NativeControls::new();
+    let mut controls = drawn_controls();
     for (key, slot) in SLOT_KEYS {
         assert_eq!(
             press(&mut controls, key),
@@ -196,7 +211,7 @@ fn digits_one_to_four_use_slots_one_to_four() {
 
 #[test]
 fn a_held_slot_key_uses_its_ability_once_per_press() {
-    let mut controls = NativeControls::new();
+    let mut controls = drawn_controls();
     assert_eq!(
         controls.key_down(KeyCode::Digit1, false),
         [ControlAction::AbilitySlot(1)]
@@ -225,7 +240,7 @@ fn a_held_slot_key_uses_its_ability_once_per_press() {
 
 #[test]
 fn focus_loss_releases_held_slots_and_uses_nothing() {
-    let mut controls = NativeControls::new();
+    let mut controls = drawn_controls();
     assert_eq!(
         controls.key_down(KeyCode::Digit1, false),
         [ControlAction::AbilitySlot(1)]
@@ -272,7 +287,7 @@ fn unbound_keys_use_nothing() {
 #[test]
 fn escape_never_cancels_a_cast() {
     // #636: right click cancels a cast; Escape is the game menu, a world action.
-    let mut controls = NativeControls::new();
+    let mut controls = drawn_controls();
     controls.set_casting(true);
     assert_eq!(press(&mut controls, KeyCode::Escape), NONE);
     // The casting layer does not block gameplay: slots still work mid-cast.
@@ -284,7 +299,7 @@ fn escape_never_cancels_a_cast() {
 
 #[test]
 fn a_cast_starting_under_a_held_key_does_not_repeat_it() {
-    let mut controls = NativeControls::new();
+    let mut controls = drawn_controls();
     assert_eq!(
         controls.key_down(KeyCode::Digit1, false),
         [ControlAction::AbilitySlot(1)]
@@ -297,7 +312,7 @@ fn a_cast_starting_under_a_held_key_does_not_repeat_it() {
 
 #[test]
 fn q_swings_and_g_holds_the_directed_strike() {
-    let mut controls = NativeControls::new();
+    let mut controls = drawn_controls();
     assert_eq!(press(&mut controls, KeyCode::KeyQ), [ControlAction::Swing]);
     assert_eq!(
         controls.key_down(KeyCode::KeyG, false),
@@ -319,7 +334,7 @@ fn q_swings_and_g_holds_the_directed_strike() {
 
 #[test]
 fn z_holds_the_shield_guard() {
-    let mut controls = NativeControls::new();
+    let mut controls = drawn_controls();
     assert_eq!(
         controls.key_down(KeyCode::KeyZ, false),
         [ControlAction::Guard]
@@ -416,7 +431,7 @@ fn modifier_rebinding_releases_the_original_activation_when_modifiers_change() {
 #[test]
 fn slot_key_ups_and_retirements_queue_releases() {
     use mmorpg_client::controls::SlotRelease;
-    let mut controls = NativeControls::new();
+    let mut controls = drawn_controls();
     assert_eq!(
         press(&mut controls, KeyCode::Digit3),
         [ControlAction::AbilitySlot(3)]

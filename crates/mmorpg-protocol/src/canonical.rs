@@ -50,6 +50,7 @@ const NOTICE_INTENT: u8 = 26;
 const ROLL_DEPTHS_DROP_INTENT: u8 = 27;
 const CLAIM_DEPTHS_DROP_INTENT: u8 = 28;
 const SIT_INTENT: u8 = 29;
+const SET_WEAPON_DRAWN_INTENT: u8 = 30;
 const ALIVE: u8 = 1;
 const CORPSE: u8 = 2;
 const DESPAWNED: u8 = 3;
@@ -143,6 +144,7 @@ fn encode_player(
     payload.extend_from_slice(&combat.health.to_be_bytes());
     encode_entity_ref(payload, combat.target);
     payload.push(u8::from(combat.swing_queued));
+    payload.push(u8::from(combat.weapon_drawn));
     for timer in [combat.swing_timer, combat.combat_timer, combat.calm_ticks] {
         payload.extend_from_slice(&timer.to_be_bytes());
     }
@@ -195,6 +197,10 @@ fn encode_player(
             PlayerIntent::CancelCast => (CANCEL_CAST_INTENT, None),
             PlayerIntent::Guard(lane) => {
                 payload.extend_from_slice(&[GUARD_INTENT, crate::wire::encode_lane(lane)]);
+                continue;
+            }
+            PlayerIntent::SetWeaponDrawn(drawn) => {
+                payload.extend_from_slice(&[SET_WEAPON_DRAWN_INTENT, u8::from(drawn)]);
                 continue;
             }
             PlayerIntent::UseDoor { door, open } => {
@@ -1060,6 +1066,7 @@ fn decode_player(
     let health = u32::from_be_bytes(take(payload, offset)?);
     let target = decode_entity_ref(payload, offset)?;
     let swing_queued = read_bool(payload, offset)?;
+    let weapon_drawn = read_bool(payload, offset)?;
     let swing_timer = u16::from_be_bytes(take(payload, offset)?);
     let combat_timer = u16::from_be_bytes(take(payload, offset)?);
     let calm_ticks = u16::from_be_bytes(take(payload, offset)?);
@@ -1107,6 +1114,10 @@ fn decode_player(
             intents.push(PlayerIntent::Guard(crate::wire::decode_lane(read_u8(
                 payload, offset,
             )?)?));
+            continue;
+        }
+        if code == SET_WEAPON_DRAWN_INTENT {
+            intents.push(PlayerIntent::SetWeaponDrawn(read_bool(payload, offset)?));
             continue;
         }
         if code == USE_DOOR_INTENT {
@@ -1382,6 +1393,7 @@ fn decode_player(
             swing_queued,
             swing_timer,
             combat_timer,
+            weapon_drawn,
             calm_ticks,
             intents,
             intents_dropped,
@@ -2206,6 +2218,7 @@ mod tests {
                         health: 17,
                         target: Some(wolf),
                         swing_queued: true,
+                        weapon_drawn: true,
                         swing_timer: 12,
                         combat_timer: 149,
                         calm_ticks: 0,
@@ -2605,7 +2618,7 @@ mod tests {
         // The intent count follows the player's timers; the seven intents
         // occupy 7 + 7 + 6 + 6 + 3 + 2 + 2 bytes after their lateness byte each, then
         // the dropped flag, the last observation (u64) and two events.
-        let intents = 16 + 24 + 2 + 153;
+        let intents = 16 + 24 + 2 + 154;
         let player_abilities =
             intents + 1 + (8 + 8 + 7 + 7 + 4 + 3 + 3) + 1 + 8 + 1 + 2 * EVENT_BYTES;
         assert_eq!(encoded[player_abilities], 6, "Arcanist, male");
@@ -2784,9 +2797,10 @@ mod tests {
         // Player 7's queued-swing flag follows its target reference.
         let player = 16 + 24 + 2;
         let swing_queued = player + 44 + 88 + 1 + 4 + 4 + 5;
-        let intents = swing_queued + 1 + 6;
+        let intents = swing_queued + 2 + 6;
         let mut cases = vec![
             (swing_queued, 2, "boolean field must be 0 or 1"),
+            (swing_queued + 1, 2, "boolean field must be 0 or 1"),
             (intents, 17, "player has too many pending intents"),
             // Each intent is its lateness, then its code and fields.
             (intents + 2, 99, "malformed pending intent"),

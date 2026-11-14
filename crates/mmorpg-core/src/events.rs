@@ -93,6 +93,8 @@ pub enum ErrorCode {
     HandoffCorridor,
     /// Waystone travel does not start in combat (#145).
     InCombat,
+    /// Ordinary hands-free interactions require a sheathed weapon (#802).
+    WeaponDrawn,
     /// No waystone is within reach, or the destination is locked, unknown,
     /// the stone in reach or not reachable from this zone yet (#145).
     InvalidWaystone,

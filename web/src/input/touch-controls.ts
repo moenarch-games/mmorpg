@@ -61,6 +61,7 @@ export class TouchControls {
   readonly #sources: (HTMLElement | null)[] = [null, null, null, null];
   readonly #ring: HTMLElement;
   readonly #modifier: HTMLButtonElement;
+  readonly #mode: HTMLButtonElement;
   readonly #menu: HTMLElement;
   readonly #menuItems = new Map<MenuAction, HTMLButtonElement>();
   readonly #context: { target: HTMLButtonElement; attack: HTMLButtonElement; interact: HTMLButtonElement; release: HTMLButtonElement };
@@ -90,6 +91,7 @@ export class TouchControls {
 
     const top = element("div", "touch-top");
     const chat = button("touch-pill", "Chat", () => this.#options.onChat());
+    this.#mode = button("touch-pill", "Draw", () => this.#options.onAction("combat.toggleWeapon"));
     const menuToggle = button("touch-pill", "Menu", () => this.#toggleMenu());
     menuToggle.setAttribute("aria-haspopup", "menu");
     this.#menu = element("div", "touch-menu");
@@ -113,7 +115,7 @@ export class TouchControls {
       this.#menu.append(entry);
     }
     this.setMenu({ reset: null, leave: "Characters", inventory: true });
-    top.append(chat, menuToggle, this.#menu);
+    top.append(chat, this.#mode, menuToggle, this.#menu);
 
     const context = element("div", "touch-context");
     this.#context = {
@@ -218,8 +220,11 @@ export class TouchControls {
   update(): void {
     const now = performance.now();
     const context = this.#options.context();
+    this.#mode.textContent = context.weaponDrawn ? "Sheathe" : "Draw";
+    this.#mode.setAttribute("aria-label", context.weaponDrawn ? "Sheathe weapon" : "Draw weapon");
+    this.#mode.disabled = context.dead;
     this.#context.target.hidden = !context.combat;
-    this.#context.attack.hidden = !context.combat;
+    this.#context.attack.hidden = !context.combat || !context.weaponDrawn;
     this.#context.release.hidden = !context.dead;
     this.#context.interact.hidden = context.interact === null;
     if (context.interact !== null && this.#context.interact.textContent !== INTERACT_LABELS[context.interact]) {
@@ -232,6 +237,7 @@ export class TouchControls {
       this.#showPage(page);
     }
     this.#mirrorSlots();
+    this.#faces.forEach((entry, index) => { entry.disabled = !context.weaponDrawn || this.#sources[index] === null; });
   }
 
   /** Shows the slots the next tap fires: the action bar's own icon, cooldown sweep and timer, and the slot number. */

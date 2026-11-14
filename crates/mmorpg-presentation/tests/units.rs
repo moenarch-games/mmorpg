@@ -603,6 +603,8 @@ fn caster_scene(class: mmorpg_core::PlayerClass) -> Scene {
         class,
         sex: mmorpg_core::Sex::Male,
     });
+    // A caster in combat has drawn: sheathed players stow their grips (#802).
+    scene.snapshot.entities[0].flags.weapon_drawn = true;
     scene.presenter.model_ready(
         Kind::Ranger,
         CASTER_CLIPS.map(|(clip, seconds)| (clip.to_owned(), seconds)),

@@ -54,6 +54,7 @@ pub enum PlayerIntent {
     /// Holds or releases the shield guard (#156), in order with strikes so
     /// the last-pressed gesture wins.
     Guard(Option<crate::StrikeHeight>),
+    SetWeaponDrawn(bool),
     UseDoor {
         door: crate::DoorId,
         open: bool,
@@ -183,6 +184,8 @@ pub struct CanonicalPlayerCombat {
     pub swing_queued: bool,
     pub swing_timer: u16,
     pub combat_timer: u16,
+    /// Explicit weapon mode, independent of the combat threat/regen timer (#802).
+    pub weapon_drawn: bool,
     pub calm_ticks: u16,
     /// Queued intents in sequence order.
     pub intents: Vec<QueuedIntent>,
@@ -254,6 +257,7 @@ impl Default for CanonicalPlayerCombat {
             swing_queued: false,
             swing_timer: 0,
             combat_timer: 0,
+            weapon_drawn: false,
             calm_ticks: 0,
             intents: Vec::new(),
             intents_dropped: false,
@@ -422,6 +426,7 @@ impl ZoneSimulation {
                         swing_queued: state.swing_queued,
                         swing_timer: state.swing_timer,
                         combat_timer: state.combat_timer,
+                        weapon_drawn: state.weapon_drawn,
                         calm_ticks: state.calm_ticks,
                         intents: state.intents.clone(),
                         intents_dropped: state.intents_dropped,
@@ -874,6 +879,7 @@ impl ZoneSimulation {
                 swing_queued: combat.swing_queued,
                 swing_timer: combat.swing_timer,
                 combat_timer: combat.combat_timer,
+                weapon_drawn: combat.weapon_drawn,
                 calm_ticks: combat.calm_ticks,
                 intents: combat.intents,
                 intents_dropped: combat.intents_dropped,

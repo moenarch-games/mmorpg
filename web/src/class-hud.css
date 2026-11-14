@@ -6,6 +6,27 @@
   pointer-events: none;
 }
 
+.weapon-mode {
+  position: absolute;
+  left: 1rem;
+  top: 1.1rem;
+  border: 1px solid rgb(125 181 138 / 70%);
+  border-radius: .6rem;
+  background: rgb(11 29 21 / 88%);
+  color: #e6f6e7;
+  padding: .4rem .65rem;
+  font-size: .78rem;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.weapon-mode[data-mode="combat"] {
+  border-color: rgb(232 146 87 / 70%);
+  background: rgb(48 22 19 / 88%);
+}
+@media (pointer: coarse) {
+  .weapon-mode { display: none; }
+}
+
 .unit-frames {
   position: absolute;
   top: 4.1rem;

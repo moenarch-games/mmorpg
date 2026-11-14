@@ -1725,7 +1725,13 @@ impl UnitPresenter {
                         guard,
                         stunned,
                         rolling,
-                        engaged: unit.record.flags.in_combat,
+                        engaged: if unit.record.kind == EntityKind::Player {
+                            unit.record.flags.weapon_drawn
+                        } else {
+                            unit.record.flags.in_combat
+                        },
+                        weapon_drawn: (unit.record.kind == EntityKind::Player)
+                            .then_some(unit.record.flags.weapon_drawn),
                         posture,
                         talking: Some(entity) == self.interaction.npc.map(EntityRef::Npc),
                         face,

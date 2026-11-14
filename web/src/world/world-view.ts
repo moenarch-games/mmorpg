@@ -442,6 +442,7 @@ export class WorldView {
   readonly #combatHud: CombatHud;
   readonly #progressionHud: ProgressionHud;
   readonly #classHud: ClassHud;
+  readonly #weaponMode: HTMLButtonElement;
   readonly #bags: BagsPanel;
   readonly #character: CharacterPane;
   readonly #loot: LootPanel;
@@ -578,6 +579,12 @@ export class WorldView {
       // A click on the bar has no release to wait for: it fires at once, power shots too (#607).
       onUse: (slot) => this.useSlot(slot),
     });
+    this.#weaponMode = document.createElement("button");
+    this.#weaponMode.type = "button";
+    this.#weaponMode.className = "weapon-mode";
+    this.#weaponMode.textContent = "Exploration · Draw weapon [H]";
+    this.#weaponMode.addEventListener("click", () => this.toggleWeapon());
+    elements.classHud.append(this.#weaponMode);
     this.#progressionHud = new ProgressionHud(elements.experienceBar, elements.experienceStatus, elements.progressionFeedback);
     this.#bags = new BagsPanel(elements.bags, (command, onSent) => this.queueIntent(() => command, onSent));
     // The pane and the vendor share the bags' received sheet: one revision covers bag and equipment.
@@ -1265,6 +1272,7 @@ export class WorldView {
       loadout: look.classId ? CLASS_LOADOUTS[look.classId] : null, resident: null, figure: null, variety: null,
       outfit: look.classId ? { preset: `class.${look.classId}`, replaced: [] } : null, headwear: true, swing: null, chains: null, bow: null,
       sheathed: [false, false], throwable: null, belted: null, crossbow: null, channel: null,
+      weaponDrawn: false,
     }], { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {}, physique: look.physique ?? null, sex: look.sex });
     const { roots, changed } = this.#models.roots();
     if (changed) { this.#renderer.renderImportedRoots({ camera, roots }); }
@@ -1313,6 +1321,27 @@ export class WorldView {
     this.#intents.push({ intent, onSent });
   }
 
+  get weaponDrawn(): boolean {
+    return this.#lastProjection?.viewer.weaponDrawn ?? false;
+  }
+
+  /** Explicitly enter/leave combat mode; the zone owns the resulting state (#802). */
+  toggleWeapon(): void {
+    const projection = this.#lastProjection;
+    if (!projection || projection.viewer.dead) { return; }
+    this.interruptGesture();
+    this.#powerDraw.cancel();
+    this.#lowerGuard();
+    const drawn = !projection.viewer.weaponDrawn;
+    this.queueIntent(() => ({ kind: "set-weapon-drawn", drawn }));
+  }
+
+  #requireFreeHands(): boolean {
+    if (!this.weaponDrawn) { return true; }
+    this.#chat.note("Sheathe your weapon to interact (H).");
+    return false;
+  }
+
   toggleBags(): void {
     this.#loot.close(false);
     this.#vendor.close(false);
@@ -1333,6 +1362,7 @@ export class WorldView {
   }
 
   toggleVendor(): void {
+    if (!this.#requireFreeHands()) { return; }
     this.#vendor.toggle();
   }
 
@@ -1340,16 +1370,18 @@ export class WorldView {
 
   /** Talks to the selected or nearest quest giver: the NPC dialog. */
   toggleQuestDialog(): void {
+    if (!this.#requireFreeHands()) { return; }
     this.#quests.toggleDialog();
   }
 
   /**
-   * Interact (T / gamepad Start): talk to a selected NPC; without one, swing the door in reach
+   * Interact (E / gamepad Start): talk to a selected NPC; without one, swing the door in reach
    * (#158), repair a damaged structure piece in reach (#305, free; moving stops it), or help a
    * lost night raid's aftermath in reach (#531);
    * otherwise open the quest dialog, which says whom to approach.
    */
   interact(): void {
+    if (!this.#requireFreeHands()) { return; }
     const projection = this.#lastProjection;
     // The viewer leads every projection; positions are in units.
     const at = projection?.entities[0]?.position;
@@ -1417,6 +1449,7 @@ export class WorldView {
    */
   touchInteract(): void {
     const context = this.touchContext();
+    if (context.interact !== "loot" && !this.#requireFreeHands()) { return; }
     if (context.interact === "loot") {
       if (!this.#loot.open) {
         this.#loot.toggle();
@@ -1596,7 +1629,7 @@ export class WorldView {
     const pendingNpc = this.#pendingNpc;
     if (pendingNpc && projection.acknowledgedSequence >= pendingNpc.sequence) {
       this.#pendingNpc = null;
-      if (sameEntity(projection.viewer.target, pendingNpc.target)) {
+      if (sameEntity(projection.viewer.target, pendingNpc.target) && !projection.viewer.weaponDrawn) {
         if (catalog.vendors.has(pendingNpc.target.id)) {
           if (!this.#vendor.open) {
             this.#vendor.toggle();
@@ -1704,6 +1737,11 @@ export class WorldView {
     this.#orbit.track(self.focus, opponent ? [opponent.x, opponent.feetY + 1, opponent.z] : null, deltaSeconds);
     this.#combatHud.update(projection, catalog, now);
     this.#classHud.update(projection, catalog, now);
+    this.#weaponMode.textContent = projection.viewer.weaponDrawn
+      ? "Combat · Sheathe weapon [H]"
+      : "Exploration · Draw weapon [H]";
+    this.#weaponMode.dataset.mode = projection.viewer.weaponDrawn ? "combat" : "exploration";
+    this.#weaponMode.disabled = projection.viewer.dead;
     this.#progressionHud.update(projection, now);
     this.#bags.update(projection);
     this.#character.update(projection);
@@ -2199,6 +2237,7 @@ export class WorldView {
     this.#pendingNpc = null;
     // A click on the door leaf asks the zone to swing it; the zone checks reach (#158).
     if (picked?.kind === "door") {
+      if (this.weaponDrawn) { this.#requireFreeHands(); }
       this.queueIntent((projection) => doorToggle(projection, picked.id));
     }
     const target = picked?.kind === "door" ? null : picked;
@@ -2210,7 +2249,8 @@ export class WorldView {
       this.queueIntent((projection) => projection.entities.some((entity) => entity.kind === target.kind && entity.entityId === target.id)
         ? { kind: "select-target", target } : null, (sequence) => {
         if (target.kind === "npc" && sequence !== null) {
-          this.#pendingNpc = { target, sequence };
+          if (this.weaponDrawn) { this.#requireFreeHands(); }
+          else { this.#pendingNpc = { target, sequence }; }
         }
       });
     }

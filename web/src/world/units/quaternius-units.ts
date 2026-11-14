@@ -511,6 +511,15 @@ const LOADOUT_ITEMS: Readonly<Record<CarriedLoadout, readonly { key: string; soc
   ],
 };
 
+/** Approved humanoid carry sockets; missing sockets retain the equipped pose (#802). */
+const WEAPON_STOW_SOCKETS: Readonly<Record<string, string>> = {
+  "hand_r.weapon": "hip_r.stowed",
+  "hand_l.weapon": "hip_l.stowed",
+  "hand_l.shield": "back.stowed",
+  "hand_r.staff": "back.stowed",
+  "hand_r.crossbow": "back.stowed",
+};
+
 type DownloadEntry = { key: string; variant: string; files: string[]; clips?: string };
 
 /** Select the existing Dark archer default from the rolling download index. */
@@ -570,10 +579,10 @@ const bows = new WeakMap<THREE.Object3D, CarriedBow>();
  * the presenter's bow `shot`, or back on the back with the string braced for null. Call after
  * posing and before {@link swingHanging}.
  */
-function poseBow(model: THREE.Object3D, shot: BowShot | null, motions: ReadonlyMap<string, ClipMotion> | undefined): void {
+function poseBow(model: THREE.Object3D, shot: BowShot | null, weaponDrawn: boolean | null, motions: ReadonlyMap<string, ClipMotion> | undefined): void {
   const bow = bows.get(model);
   if (!bow) { return; }
-  const place = shot ? bow.hand : bow.stowed;
+  const place = shot || weaponDrawn === true ? bow.hand : bow.stowed;
   if (bow.holder.parent !== place.joint) { place.joint.add(bow.holder); }
   if (!bow.holder.matrix.equals(place.matrix)) { bow.holder.matrix.copy(place.matrix); }
   const draw = shot ? motions?.get(shot.clip)?.draw : null;
@@ -600,6 +609,16 @@ type CarriedDaggers = {
   throwables: Map<Throwable, { holder: THREE.Group; hand: Place; belt: Place | null }>;
 };
 const daggers = new WeakMap<THREE.Object3D, CarriedDaggers>();
+
+const stowedWeapons = new WeakMap<THREE.Object3D, { holder: THREE.Group; hand: Place; stowed: Place }[]>();
+
+function poseWeapons(model: THREE.Object3D, weaponDrawn: boolean | null): void {
+  for (const item of stowedWeapons.get(model) ?? []) {
+    const place = weaponDrawn === false ? item.stowed : item.hand;
+    if (item.holder.parent !== place.joint) { place.joint.add(item.holder); }
+    if (!item.holder.matrix.equals(place.matrix)) { item.holder.matrix.copy(place.matrix); }
+  }
+}
 
 /**
  * Sheathes `model`'s daggers by the presenter's carry (#603) and shows the throw's item on the belt
@@ -988,6 +1007,17 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
       const clone = cloneSkinned(item.scene);
       if (key === hairKey && tint) { tintMaterials(clone, look.hairMaterials.get(key) ?? [], tint); }
       const holder = attachItem(model, clone, item.gripInverse, place);
+      const stowedSocket = key !== DAGGER_ITEM && key !== BOW_ITEM ? sockets.get(WEAPON_STOW_SOCKETS[socket] ?? "") : undefined;
+      const stowedJoint = stowedSocket && model.getObjectByName(stowedSocket.joint);
+      if (stowedSocket && stowedJoint) {
+        const carried = stowedWeapons.get(model) ?? [];
+        carried.push({
+          holder,
+          hand: { joint: holder.parent!, matrix: holder.matrix.clone() },
+          stowed: { joint: stowedJoint, matrix: new THREE.Matrix4().multiplyMatrices(stowedSocket.matrix, item.gripInverse) },
+        });
+        stowedWeapons.set(model, carried);
+      }
       const hand = sockets.get(BOW_HAND_SOCKET);
       const handJoint = hand && model.getObjectByName(hand.joint);
       if (key === BOW_ITEM && socket === BOW_STOWED_SOCKET && hand && handJoint) {
@@ -1815,9 +1845,10 @@ export class QuaterniusUnits {
     root.position.set(unit.feet[0], unit.feet[1], unit.feet[2]);
     root.rotation.set(unit.pitch, unit.yaw, 0, "YXZ");
     root.scale.setScalar((unit.heightMetres / (instance.posable.bounds ?? asset).height) * (instance.posable.scale ?? 1));
-    poseBow(instance.posable.model, unit.bow, asset.motions);
+    poseBow(instance.posable.model, unit.bow, unit.weaponDrawn, asset.motions);
     poseDaggers(instance.posable.model, unit.sheathed, unit.throwable, unit.belted);
     poseCrossbow(instance.posable.model, unit.crossbow);
+    poseWeapons(instance.posable.model, unit.weaponDrawn);
     swingHanging(instance.posable.model, unit.swing);
     instance.chains?.apply(instance.posable.model, unit.chains);
   }

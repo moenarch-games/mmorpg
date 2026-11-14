@@ -106,6 +106,8 @@ struct ImportedEntry {
     /// A dagger holder's sheathed daggers, left then right (`hip_l.stowed`, `hip_r.stowed`),
     /// and the throwable in `hand_r.weapon`, `knife`, `flask`, `bomb` or null (#603).
     sheathed: [bool; 2],
+    /// Player's explicit weapon mode, null for creatures and residents.
+    weapon_drawn: Option<bool>,
     throwable: Option<&'static str>,
     /// A throw's item on `belt.throwable` before the clip's draw, named like `throwable` (#611).
     belted: Option<&'static str>,
@@ -520,6 +522,7 @@ impl Units {
                         time: shot.time,
                     }),
                     sheathed: unit.animation.carry.sheathed,
+                    weapon_drawn: unit.animation.carry.weapon_drawn,
                     throwable: unit.animation.carry.throwable.map(Throwable::name),
                     belted: unit.animation.carry.belted.map(Throwable::name),
                     crossbow: unit.animation.carry.crossbow.map(|crossbow| CrossbowEntry {

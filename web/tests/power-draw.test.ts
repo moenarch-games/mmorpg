@@ -81,7 +81,7 @@ describe("hold-to-draw power shots (#607)", () => {
     const released: [ReleasedAction, Exclude<HoldPhase, "press">][] = [];
     const pressed: GameAction[] = [];
     const controls = new GameControls({
-      screen: () => ({ phase: "world", panelOpen: false }),
+      screen: () => ({ phase: "world", panelOpen: false, weaponDrawn: true }),
       onAction: (action) => pressed.push(action),
       onRelease: (action, phase) => released.push([action, phase]),
     });

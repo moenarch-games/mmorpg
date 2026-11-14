@@ -86,6 +86,7 @@ pub fn exhaustive_projection(
             level: combat.level,
             dead: combat.health == 0,
             in_combat: combat.combat_timer > 0,
+            weapon_drawn: combat.weapon_drawn,
             target: combat.target,
             // The oracle's players never choose a class.
             class: None,
@@ -130,6 +131,7 @@ pub fn exhaustive_projection(
                 flags: EntityFlags {
                     dead: candidate.combat.health == 0,
                     in_combat: candidate.combat.combat_timer > 0,
+                    weapon_drawn: candidate.combat.weapon_drawn,
                     targets_viewer: candidate.player_id != observer.player_id
                         && candidate.combat.target == Some(viewer),
                     ..EntityFlags::default()

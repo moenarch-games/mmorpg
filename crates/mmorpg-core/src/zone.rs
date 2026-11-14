@@ -130,6 +130,8 @@ pub(crate) struct PlayerState {
     pub(crate) swing_timer: u16,
     /// Ticks the player stays in combat after dealing or taking an attack.
     pub(crate) combat_timer: u16,
+    /// The owner's explicit draw/sheathe choice; not the threat timer (#802).
+    pub(crate) weapon_drawn: bool,
     /// Ticks spent out of combat, driving regeneration.
     pub(crate) calm_ticks: u16,
     /// Discrete intents in sequence order, consumed by the next tick.
@@ -201,6 +203,7 @@ impl PlayerState {
             swing_queued: false,
             swing_timer: 0,
             combat_timer: 0,
+            weapon_drawn: false,
             calm_ticks: 0,
             intents: Vec::new(),
             intents_dropped: false,
@@ -726,6 +729,7 @@ impl ZoneSimulation {
             }
             // Queued so a guard pressed after a strike stays raised (5.2.37).
             ZoneCommand::Guard { lane } => Some(PlayerIntent::Guard(lane)),
+            ZoneCommand::SetWeaponDrawn(drawn) => Some(PlayerIntent::SetWeaponDrawn(drawn)),
             ZoneCommand::UseDoor { door, open } => Some(PlayerIntent::UseDoor { door, open }),
             ZoneCommand::Sit { seat } => Some(PlayerIntent::Sit(seat)),
             ZoneCommand::Repair { piece } => Some(PlayerIntent::Repair(piece)),
