@@ -204,6 +204,80 @@ fn between(a: V, b: V) -> Q {
     q.map(|v| v / n.sqrt())
 }
 
+fn blend(a: Q, b: Q, weight: f64) -> Q {
+    let sign = if a.iter().zip(b).map(|(a, b)| a * b).sum::<f64>() < 0. {
+        -1.
+    } else {
+        1.
+    };
+    let q: Q = std::array::from_fn(|i| a[i] + (b[i] * sign - a[i]) * weight);
+    let n = q.iter().map(|v| v * v).sum::<f64>().sqrt().max(1e-9);
+    q.map(|v| v / n)
+}
+
+/// Right-arm local rotations, parent/upperarm/lowerarm/hand in model space and the weapon's
+/// socket in hand space. Bone lengths and the existing sword stay unchanged. The wrist aims
+/// toward the lane inside the effective centre-hit reach; it never stretches the arm to it.
+pub fn fit(
+    frames: [Frame; 4],
+    socket: Frame,
+    height: f64,
+    floor: f64,
+    sample: Layer,
+) -> Option<[Q; 3]> {
+    let aim = aim(sample.clip)?;
+    let [parent, upper, lower, hand] = frames;
+    let scale = height / 1.8;
+    let yaw = angle(aim, f64::from(sample.time));
+    let [bottom, top] = aim.height.band();
+    let lane = f64::from(bottom + top) / (2. * f64::from(UNITS_PER_METRE));
+    // Keep the grip within the existing arm's range, tilting the blade into low/high lanes.
+    let grip_height = lane.clamp(0.8, 1.45);
+    let grip = [
+        0.55 * yaw.sin() * scale,
+        floor + grip_height * scale,
+        0.55 * yaw.cos() * scale,
+    ];
+    let reach = f64::from(mmorpg_core::unit::PLAYER_REACH_UNITS) / f64::from(UNITS_PER_METRE);
+    let pitch = ((lane - grip_height) / (reach - 0.55)).atan();
+    let socket_q = qm(qa(1, yaw), qa(0, FRAC_PI_2 - pitch));
+    let hand_q = qm(socket_q, conjugate(socket.q));
+    let wanted = sub(grip, qr(hand_q, socket.p));
+    let (a, b) = (length(sub(lower.p, upper.p)), length(sub(hand.p, lower.p)));
+    if a < 1e-5 || b < 1e-5 {
+        return None;
+    }
+    let direction = norm(sub(wanted, upper.p));
+    let distance = length(sub(wanted, upper.p)).clamp((a - b).abs() + 1e-5, a + b - 1e-5);
+    let wrist = add(upper.p, direction.map(|v| v * distance));
+    let along = (a * a - b * b + distance * distance) / (2. * distance);
+    let pole = [-1., -0.35, 0.];
+    let bend = norm(sub(pole, direction.map(|v| v * dot(pole, direction))));
+    let elbow = add(
+        add(upper.p, direction.map(|v| v * along)),
+        bend.map(|v| v * (a * a - along * along).max(0.).sqrt()),
+    );
+    let upper_q = qm(between(sub(lower.p, upper.p), sub(elbow, upper.p)), upper.q);
+    let lower_q = qm(between(sub(hand.p, lower.p), sub(wrist, elbow)), lower.q);
+    let original = [
+        qm(conjugate(parent.q), upper.q),
+        qm(conjugate(upper.q), lower.q),
+        qm(conjugate(lower.q), hand.q),
+    ];
+    let fitted = [
+        qm(conjugate(parent.q), upper_q),
+        qm(conjugate(upper_q), lower_q),
+        qm(conjugate(lower_q), hand_q),
+    ];
+    Some(std::array::from_fn(|i| {
+        blend(
+            original[i],
+            fitted[i],
+            f64::from(sample.weight.clamp(0., 1.)),
+        )
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::kit::IQ;
@@ -288,78 +362,4 @@ mod tests {
             }
         }
     }
-}
-
-fn blend(a: Q, b: Q, weight: f64) -> Q {
-    let sign = if a.iter().zip(b).map(|(a, b)| a * b).sum::<f64>() < 0. {
-        -1.
-    } else {
-        1.
-    };
-    let q: Q = std::array::from_fn(|i| a[i] + (b[i] * sign - a[i]) * weight);
-    let n = q.iter().map(|v| v * v).sum::<f64>().sqrt().max(1e-9);
-    q.map(|v| v / n)
-}
-
-/// Right-arm local rotations, parent/upperarm/lowerarm/hand in model space and the weapon's
-/// socket in hand space. Bone lengths and the existing sword stay unchanged. The wrist aims
-/// toward the lane inside the effective centre-hit reach; it never stretches the arm to it.
-pub fn fit(
-    frames: [Frame; 4],
-    socket: Frame,
-    height: f64,
-    floor: f64,
-    sample: Layer,
-) -> Option<[Q; 3]> {
-    let aim = aim(sample.clip)?;
-    let [parent, upper, lower, hand] = frames;
-    let scale = height / 1.8;
-    let yaw = angle(aim, f64::from(sample.time));
-    let [bottom, top] = aim.height.band();
-    let lane = f64::from(bottom + top) / (2. * f64::from(UNITS_PER_METRE));
-    // Keep the grip within the existing arm's range, tilting the blade into low/high lanes.
-    let grip_height = lane.clamp(0.8, 1.45);
-    let grip = [
-        0.55 * yaw.sin() * scale,
-        floor + grip_height * scale,
-        0.55 * yaw.cos() * scale,
-    ];
-    let reach = f64::from(mmorpg_core::unit::PLAYER_REACH_UNITS) / f64::from(UNITS_PER_METRE);
-    let pitch = ((lane - grip_height) / (reach - 0.55)).atan();
-    let socket_q = qm(qa(1, yaw), qa(0, FRAC_PI_2 - pitch));
-    let hand_q = qm(socket_q, conjugate(socket.q));
-    let wanted = sub(grip, qr(hand_q, socket.p));
-    let (a, b) = (length(sub(lower.p, upper.p)), length(sub(hand.p, lower.p)));
-    if a < 1e-5 || b < 1e-5 {
-        return None;
-    }
-    let direction = norm(sub(wanted, upper.p));
-    let distance = length(sub(wanted, upper.p)).clamp((a - b).abs() + 1e-5, a + b - 1e-5);
-    let wrist = add(upper.p, direction.map(|v| v * distance));
-    let along = (a * a - b * b + distance * distance) / (2. * distance);
-    let pole = [-1., -0.35, 0.];
-    let bend = norm(sub(pole, direction.map(|v| v * dot(pole, direction))));
-    let elbow = add(
-        add(upper.p, direction.map(|v| v * along)),
-        bend.map(|v| v * (a * a - along * along).max(0.).sqrt()),
-    );
-    let upper_q = qm(between(sub(lower.p, upper.p), sub(elbow, upper.p)), upper.q);
-    let lower_q = qm(between(sub(hand.p, lower.p), sub(wrist, elbow)), lower.q);
-    let original = [
-        qm(conjugate(parent.q), upper.q),
-        qm(conjugate(upper.q), lower.q),
-        qm(conjugate(lower.q), hand.q),
-    ];
-    let fitted = [
-        qm(conjugate(parent.q), upper_q),
-        qm(conjugate(upper_q), lower_q),
-        qm(conjugate(lower_q), hand_q),
-    ];
-    Some(std::array::from_fn(|i| {
-        blend(
-            original[i],
-            fitted[i],
-            f64::from(sample.weight.clamp(0., 1.)),
-        )
-    }))
 }
