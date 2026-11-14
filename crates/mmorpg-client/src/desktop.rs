@@ -1592,9 +1592,9 @@ impl App {
             self.gesture_ended(ended);
         }
         self.update_guard();
-        let latest = self.presentation.latest();
-        let casting = latest.is_some_and(|latest| latest.viewer.cast.is_some());
-        let drawn = latest.is_some_and(|latest| latest.viewer.weapon_drawn);
+        let (casting, drawn) = self.presentation.latest().map_or((false, false), |latest| {
+            (latest.viewer.cast.is_some(), latest.viewer.weapon_drawn)
+        });
         if self.controls.weapon_drawn() != drawn {
             self.retire_held_input();
         }
@@ -1602,6 +1602,7 @@ impl App {
         self.pad.set_weapon_drawn(drawn);
         self.controls.set_casting(casting);
         self.pad.set_casting(casting);
+        let latest = self.presentation.latest();
         self.hud = latest.map(CombatHud::from_projection);
         if let Some(choice) = latest.and_then(|latest| latest.viewer.class) {
             // The zone keeps the class; the bar follows the projected kit.
