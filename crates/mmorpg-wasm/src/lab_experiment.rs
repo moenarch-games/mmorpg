@@ -1047,8 +1047,8 @@ pub struct CommandResult {
     pub label: String,
     /// Errors the zone reported in the tick that applied it; empty when accepted.
     pub refused: Vec<String>,
-    /// The first tick with an effect of the player's (an attack, strike, cast
-    /// or ability) before the next action command, for action commands.
+    /// The first tick with an effect of the player's (an attack, swing begin, strike,
+    /// cast start or ability) before the next action command, for action commands.
     pub effect_tick: Option<u64>,
     /// `effect_tick - tick`, the input-to-effect delay in ticks, network included.
     pub delay_ticks: Option<u64>,
@@ -1192,6 +1192,7 @@ fn own_effect(event: &ZoneEvent, me: EntityRef) -> bool {
         | ZoneEvent::DamageDealt { source, .. }
         | ZoneEvent::Miss { source, .. }
         | ZoneEvent::CastStarted { source, .. }
+        | ZoneEvent::SwingBegan { source, .. }
         | ZoneEvent::AbilityUsed { source, .. }
         | ZoneEvent::StrikeSwept { source, .. }
         | ZoneEvent::Healed { source, .. }
@@ -1696,8 +1697,20 @@ mod tests {
         ]);
         let replay = run(&scenario, &config, &Network::LOCAL).unwrap();
         let strike = replay.commands.last().unwrap();
-        // The use waited out the 12-tick startup: past the lag threshold.
+        // The visible swing begin waited out the authored startup: past the lag threshold.
+        // Its subsequent wind-up and active sweep are action timing, like a cast after
+        // CastStarted, and must not be added to input-to-action latency.
         let delay = strike.delay_ticks.expect("the strike took effect");
+        let began = replay
+            .ticks
+            .iter()
+            .find(|tick| {
+                tick.events
+                    .iter()
+                    .any(|event| event.starts_with("SwingBegan {"))
+            })
+            .expect("the accepted timed swing visibly begins");
+        assert_eq!(strike.effect_tick, Some(began.tick));
         let threshold = 1 + u64::from(mmorpg_core::ticks_from_ms(lab_diagnostics::LAG_MS));
         assert!(delay > threshold, "{delay}");
         assert!(
