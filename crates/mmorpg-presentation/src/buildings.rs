@@ -37,6 +37,8 @@ pub struct Spec {
     pub hidden: &'static [&'static str],
     /// Authored room and camera obstacles; absent on the older footprint-based buildings.
     pub interior: Option<Interior>,
+    /// Height of the old rooms' ceilings, in local units; never treat their rooftops as indoors.
+    room_ceiling: Option<i32>,
     /// The door this building presents.
     pub door: Option<DoorId>,
     /// The frame's origin in the zone, units.
@@ -133,6 +135,7 @@ impl Spec {
                 volume: room.volume,
                 obstacles: body.collision_proxies,
             }),
+            room_ceiling: None,
             origin,
             quarters: quarters % 4,
             footprint: [0; 3],
@@ -153,6 +156,7 @@ pub const INN: Spec = Spec {
     ],
     hidden: &["greyhaven.inn.ceiling", "greyhaven.inn.roof"],
     interior: None,
+    room_ceiling: Some(inn::CEILING_UNDERSIDE),
     door: Some(inn::DOOR),
     origin: inn::ORIGIN,
     quarters: 0,
@@ -175,6 +179,7 @@ pub const MARSHAL_HOUSE: Spec = Spec {
         "greyhaven.marshal-house.roof",
     ],
     interior: None,
+    room_ceiling: Some(marshal_house::CEILING_UNDERSIDE),
     door: Some(marshal_house::DOOR),
     origin: marshal_house::ORIGIN,
     quarters: 2,
@@ -246,11 +251,17 @@ impl WalkIn {
     }
 
     /// Whether feet at `position` (metres, zone frame) stand inside the authored room,
-    /// or the legacy footprint when no room descriptor exists.
+    /// or the legacy footprint below its actual ceiling when no room descriptor exists.
     #[must_use]
     pub fn inside(&self, position: [f64; 3]) -> bool {
         if let Some(interior) = &self.spec.interior {
             return interior.volume.contains(self.local(position));
+        }
+        if let Some(ceiling) = self.spec.room_ceiling {
+            let y = position[1] - self.origin[1];
+            if !(-0.1..metres(ceiling)).contains(&y) {
+                return false;
+            }
         }
         let [mut hx, _, mut hz] = self.spec.footprint.map(metres);
         if self.spec.quarters % 2 == 1 {
@@ -471,6 +482,12 @@ mod tests {
                 .iter()
                 .all(|part| part.visible)
         );
+        // Standing above the attic is outside even when horizontally within the building.
+        assert!(
+            inn.frame(true, Some([15., 6., 0.]), 0., false)
+                .iter()
+                .all(|part| part.visible)
+        );
     }
 
     #[test]
@@ -482,6 +499,12 @@ mod tests {
                 part.key,
                 "greyhaven.marshal-house.roof" | "greyhaven.marshal-house.ceiling"
             )));
+        assert!(
+            house
+                .frame(false, Some([-24., 5.5, 36.]), 0., false)
+                .iter()
+                .all(|part| part.visible)
+        );
         // The closed leaf's hinge sits on the north (−Z) front, east of the doorway's centre.
         let door = parts[4].model;
         assert!((f64::from(door[12]) - (-24. + 0.58)).abs() < 1e-4);

@@ -41,6 +41,17 @@ fn observation_records_round_trip_through_the_shared_fixture() {
             amount: 7,
             critical: true,
         },
+        ZoneEvent::SwingBegan {
+            source,
+            ability: mmorpg_core::AbilityId::new(1),
+            facing: 16384,
+            aim: mmorpg_core::StrikeAim::new(
+                mmorpg_core::StrikeSide::Centre,
+                mmorpg_core::StrikeHeight::Middle,
+            ),
+            startup: 18,
+            active: 9,
+        },
     ];
     let bytes = encode_snapshot(&view).unwrap();
     let expected = mmorpg_core::golden::golden_hex(
@@ -56,7 +67,8 @@ fn observation_records_round_trip_through_the_shared_fixture() {
         decode_snapshot(&packed.payload).unwrap().events,
         view.events
     );
-    let state = zone.snapshot().unwrap();
+    let mut state = zone.snapshot().unwrap();
+    state.players[0].combat.events = view.events.clone();
     assert_eq!(
         decode_canonical_snapshot(&encode_canonical_snapshot(&state).unwrap()).unwrap(),
         state

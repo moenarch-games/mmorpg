@@ -207,6 +207,8 @@ pub enum ZoneEvent {
     SwingBegan {
         source: EntityRef,
         ability: AbilityId,
+        /// Heading frozen when the zone accepted the swing, independent of later turns.
+        facing: u16,
         aim: crate::StrikeAim,
         startup: u8,
         active: u8,

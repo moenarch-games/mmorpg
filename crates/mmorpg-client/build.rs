@@ -295,6 +295,13 @@ fn main() {
     let river = manifest_dir.join("../../web/public/scenery/river-stones.kit");
     static_bundle("river_bundle.rs", &river, None, true);
     descriptor(&river, "river-stones-descriptor", "river_descriptor.rs");
+    let meadow = manifest_dir.join("../../web/public/scenery/greyhaven-meadow.kit");
+    static_bundle("meadow_bundle.rs", &meadow, None, true);
+    descriptor(
+        &meadow,
+        "greyhaven-meadow-descriptor",
+        "meadow_descriptor.rs",
+    );
     // Greyhaven's ground layer materials (#525).
     let terrain = manifest_dir.join("../../web/public/scenery/greyhaven.terrain");
     static_bundle("terrain_bundle.rs", &terrain, None, false);

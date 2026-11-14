@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 2,
+  "id": "southmeadow",
+  "seed": 782,
+  "origin": [
+    80,
+    164
+  ],
+  "sampleSpacing": 1,
+  "samples": [
+    33,
+    33
+  ],
+  "height": {
+    "min": -4,
+    "max": 4,
+    "precision": 0.001
+  },
+  "noise": {
+    "baseHeight": 0,
+    "amplitude": 2,
+    "featureSize": 19,
+    "octaves": 3,
+    "roughness": 0.45
+  },
+  "shaping": {
+    "kind": "noise"
+  },
+  "edits": [],
+  "exclusions": [
+    {
+      "kind": "polyline",
+      "points": [
+        [
+          80,
+          164
+        ],
+        [
+          112,
+          164
+        ],
+        [
+          112,
+          196
+        ],
+        [
+          80,
+          196
+        ],
+        [
+          80,
+          164
+        ]
+      ],
+      "width": 3,
+      "falloff": 1
+    }
+  ],
+  "paint": {
+    "meadow": [
+      {
+        "kind": "circle",
+        "center": [
+          94,
+          180
+        ],
+        "radius": 9,
+        "falloff": 7
+      }
+    ],
+    "gravel": [
+      {
+        "kind": "circle",
+        "center": [
+          104,
+          172
+        ],
+        "radius": 4,
+        "falloff": 7
+      }
+    ]
+  },
+  "detail": [
+    {
+      "id": "grass",
+      "seed": 7821,
+      "density": 0.65,
+      "minSpacing": 0.7,
+      "slopeDegrees": [
+        0,
+        90
+      ],
+      "height": [
+        -4,
+        4
+      ],
+      "maxExclusion": 0,
+      "paint": "meadow",
+      "scale": [
+        0.75,
+        1.15
+      ],
+      "variants": 4
+    },
+    {
+      "id": "flowers",
+      "seed": 7822,
+      "density": 0.12,
+      "minSpacing": 1.1,
+      "slopeDegrees": [
+        0,
+        90
+      ],
+      "height": [
+        -4,
+        4
+      ],
+      "maxExclusion": 0,
+      "paint": "meadow",
+      "scale": [
+        0.8,
+        1.1
+      ],
+      "variants": 4
+    },
+    {
+      "id": "stones",
+      "seed": 7823,
+      "density": 0.07,
+      "minSpacing": 1.8,
+      "slopeDegrees": [
+        0,
+        90
+      ],
+      "height": [
+        -4,
+        4
+      ],
+      "maxExclusion": 0,
+      "paint": "gravel",
+      "scale": [
+        0.12,
+        0.22
+      ],
+      "variants": 2
+    }
+  ]
+}

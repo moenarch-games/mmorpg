@@ -101,6 +101,53 @@ pub fn tick_hz() -> u16 {
     mmorpg_core::TICK_HZ
 }
 
+/// The shared timed-sword arm fit, over the browser provider's already mixed pose. Five
+/// frames (parent, upper arm, forearm, hand, weapon socket), each position + quaternion.
+#[wasm_bindgen(js_name = swordArmPose)]
+pub fn sword_arm_pose(
+    name: &str,
+    progress: f32,
+    weight: f32,
+    frames: &[f64],
+    height: f64,
+    floor: f64,
+) -> Result<Vec<f64>, JsError> {
+    use mmorpg_presentation::units::{
+        imported::{Layer, Mask},
+        kit::Frame,
+        sword,
+    };
+    if frames.len() != 35
+        || frames.iter().any(|value| !value.is_finite())
+        || !height.is_finite()
+        || height <= 0.
+        || !floor.is_finite()
+    {
+        return Err(JsError::new(
+            "a sword arm needs five finite frames and valid model bounds",
+        ));
+    }
+    let frame = |i: usize| Frame {
+        p: [frames[i], frames[i + 1], frames[i + 2]],
+        q: [frames[i + 3], frames[i + 4], frames[i + 5], frames[i + 6]],
+    };
+    Ok(sword::fit(
+        [frame(0), frame(7), frame(14), frame(21)],
+        frame(28),
+        height,
+        floor,
+        Layer {
+            clip: sword::aim(name).map_or("", |aim| sword::layer(aim, 0., 0.).clip),
+            time: progress,
+            weight,
+            mask: Mask::Upper,
+        },
+    )
+    .map_or_else(Vec::new, |rotations| {
+        rotations.into_iter().flatten().collect()
+    }))
+}
+
 /// The committed level of a stored character, or `undefined` if it was
 /// never stored. Reads only the committed record, like a global profile query.
 #[wasm_bindgen(js_name = committedLevel)]
@@ -1330,11 +1377,20 @@ fn placed_kit(
     static CRAG: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     static LIMESTONE: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     static RIVER: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
+    static MEADOW: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     // The placement lists mix bundles, so each kit takes the placements of its own entries.
     let all = || {
         let scenery = scenery::hosted_scenery();
         let mut placements = nature::placements(scenery);
         placements.extend(river::placements(scenery));
+        for entries in [
+            &mmorpg_presentation::terrain_patch::MEADOW_ENTRIES[..],
+            &river::ENTRIES[..],
+        ] {
+            placements.extend(mmorpg_presentation::world_dressing::ground_details(
+                scenery, entries,
+            ));
+        }
         placements
     };
     let of = |entries: &[&str]| {
@@ -1350,6 +1406,10 @@ fn placed_kit(
             LIMESTONE.get(|_| of(&nature::LIMESTONE_ENTRIES)),
         )),
         "river" => Ok((&river::ENTRIES, RIVER.get(|_| of(&river::ENTRIES)))),
+        "meadow" => {
+            let entries = &mmorpg_presentation::terrain_patch::MEADOW_ENTRIES;
+            Ok((entries, MEADOW.get(|_| of(entries))))
+        }
         "climbing" => Ok((
             &climbing::ENTRIES,
             CLIMBING.get(|_| climbing::placements(scenery::hosted_scenery())),
