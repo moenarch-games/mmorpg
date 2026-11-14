@@ -1,6 +1,6 @@
 # Ranger assets in both clients
 
-The accepted default remains the Dark archer. Both clients acquire only the default character and equipment they draw from asset-tooling's rolling [`humanoid-ranger-male` release](https://github.com/moritzbrantner/asset-tooling/releases/tag/humanoid-ranger-male), using its `asset-downloads-v1` index. Other skin, outfit and LOD variants are available upstream but are not selected by this update.
+The accepted default remains the Dark archer. Both clients acquire only the default character and equipment they draw from asset-tooling's rolling [`humanoid-ranger-male` release](https://github.com/moritzbrantner/asset-tooling/releases/tag/humanoid-ranger-male), using its `asset-downloads-v1` index. The weapons, throwables, archery pieces and headwear come from the rolling [`humanoid-equipment` release](https://github.com/moritzbrantner/asset-tooling/releases/tag/humanoid-equipment) (asset-tooling #517), built once for both figures: `scripts/fetch-ranger.py` puts the selected items in each figure's directory and merges their entries into the figure's local index, keying the copy on both releases' `export.ref.json`, so both clients and the native pack read them as before. Other skin, outfit and LOD variants are available upstream but are not selected by this update.
 
 ```sh
 scripts/fetch-bundles.sh

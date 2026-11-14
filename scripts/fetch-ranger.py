@@ -70,6 +70,19 @@ class Figure:
         self.asset_ids = None
 
 
+# The figures' weapons, throwables, archery and headwear come from the rolling `humanoid-equipment`
+# release (asset-tooling #517), built once for both figures. Acquisition puts the selected items
+# in each figure's directory beside its own entries and merges their index entries into the
+# figure's local index, so the clients and the native pack read them as before.
+EQUIPMENT = Figure("humanoid.equipment", {})
+EQUIPMENT_REF = "equipment.export.ref.json"
+
+
+def is_equipment(key):
+    """Whether entry `key` is an item of the equipment release."""
+    return str(key).startswith("equipment.")
+
+
 FIGURES = (Figure("humanoid.ranger.male", MALE), Figure("humanoid.ranger.female", FEMALE))
 
 
@@ -139,13 +152,15 @@ def live_ref(figure):
         return None
 
 
-def complete(figure, ref):
-    """The local copy holds export `ref` (any export when None) and every file of the selected entries."""
+def complete(figure, ref, equipment_ref=None):
+    """The local copy holds export `ref` and equipment export `equipment_ref` (any export when None)
+    and every file of the selected entries."""
     dest = figure.dest
     if not (dest / "RELEASE").is_file() or (dest / "RELEASE").read_text().strip() != figure.release:
         return False
-    if not (dest / "export.ref.json").is_file() or (ref is not None and (dest / "export.ref.json").read_bytes() != ref):
-        return False
+    for name, expected in (("export.ref.json", ref), (EQUIPMENT_REF, equipment_ref)):
+        if not (dest / name).is_file() or (expected is not None and (dest / name).read_bytes() != expected):
+            return False
     try:
         index = json.loads((dest / (figure.release + ".index.json")).read_text())
     except (OSError, ValueError):
@@ -169,41 +184,46 @@ def complete(figure, ref):
 def acquire(figure):
     # A copy of an older upload, or missing a selected entry, is fetched again. Offline, a complete
     # copy of any upload is kept, except in CI, where it may be a restored cache of an older upload.
-    ref = live_ref(figure)
-    if ref is None and os.environ.get("GITHUB_ACTIONS") == "true":
-        raise OSError(f"could not reach the {figure.release} release")
-    if complete(figure, ref):
+    ref, equipment_ref = live_ref(figure), live_ref(EQUIPMENT)
+    if (ref is None or equipment_ref is None) and os.environ.get("GITHUB_ACTIONS") == "true":
+        raise OSError(f"could not reach the {figure.release} or {EQUIPMENT.release} release")
+    if complete(figure, ref, equipment_ref):
         return
     release, dest = figure.release, figure.dest
-    if ref is None:
-        raise OSError(f"could not reach the {release} release")
+    if ref is None or equipment_ref is None:
+        raise OSError(f"could not reach the {release} or {EQUIPMENT.release} release")
     dest.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".ranger-", dir=dest.parent) as temporary:
         directory = Path(temporary)
 
-        def download(name):
+        def download(name, source=figure):
             if Path(name).name != name or not name or name in {".", ".."}:
                 raise ValueError(f"unsafe release filename: {name}")
-            (directory / name).write_bytes(read_asset(figure, name, 300))
+            (directory / name).write_bytes(read_asset(source, name, 300))
 
-        index_name = release + ".index.json"
-        download(index_name)
-        index = json.loads((directory / index_name).read_text())
-        if index["schema"] != "asset-downloads-v1" or index["release"] != release:
-            raise ValueError(f"unsupported {release} index")
+        def read_index(source):
+            name = source.release + ".index.json"
+            download(name, source)
+            index = json.loads((directory / name).read_text())
+            if index["schema"] != "asset-downloads-v1" or index["release"] != source.release:
+                raise ValueError(f"unsupported {source.release} index")
+            return index
+
+        index = merge_equipment(read_index(figure), read_index(EQUIPMENT))
+        (directory / (release + ".index.json")).write_text(json.dumps(index, indent=2) + "\n")
         pairs = selected(figure, index)
         entries = [entry for entry in index["entries"] if (entry["key"], entry["variant"]) in pairs]
         if len(entries) != len(pairs) or {(entry["key"], entry["variant"]) for entry in entries} != pairs:
             raise ValueError("index must declare every selected entry exactly once")
         (directory / "export.ref.json").write_bytes(ref)
-        files = set()
+        (directory / EQUIPMENT_REF).write_bytes(equipment_ref)
+        files = {}
         for entry in entries:
-            files.update(entry["files"])
-            files.update(entry["textures"])
-            if entry.get("clips"):
-                files.add(entry["clips"])
+            source = EQUIPMENT if is_equipment(entry["key"]) else figure
+            for name in [*entry["files"], *entry["textures"], *([entry["clips"]] if entry.get("clips") else [])]:
+                files[name] = source
         for name in sorted(files):
-            download(name)
+            download(name, files[name])
         (directory / "RELEASE").write_text(release + "\n")
         if dest.exists():
             shutil.rmtree(dest)
@@ -211,12 +231,19 @@ def acquire(figure):
     print(f"Fetched selected {release} entries into {dest}")
 
 
+def merge_equipment(index, equipment):
+    """The figure's index with its own items replaced by the equipment release's entries."""
+    entries = [entry for entry in index["entries"] if not is_equipment(entry["key"])]
+    return {**index, "entries": entries + [entry for entry in equipment["entries"] if is_equipment(entry["key"])]}
+
+
 def print_identity(figure):
-    """Print the figure's cache identity line (`scripts/ci-asset-cache.sh`), failing when the release cannot be reached."""
-    ref = live_ref(figure)
-    if ref is None:
-        raise OSError(f"could not reach the {figure.release} release")
-    print(figure.release, hashlib.sha256(ref).hexdigest(), figure.dest.relative_to(ROOT))
+    """Print the figure's cache identity line (`scripts/ci-asset-cache.sh`), failing when a release cannot be reached:
+    the figure's and the equipment's exports together."""
+    ref, equipment_ref = live_ref(figure), live_ref(EQUIPMENT)
+    if ref is None or equipment_ref is None:
+        raise OSError(f"could not reach the {figure.release} or {EQUIPMENT.release} release")
+    print(figure.release, hashlib.sha256(ref + equipment_ref).hexdigest(), figure.dest.relative_to(ROOT))
 
 
 if __name__ == "__main__":
