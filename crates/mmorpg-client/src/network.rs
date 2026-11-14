@@ -149,6 +149,18 @@ pub struct ClientSession {
 }
 
 impl ClientSession {
+    #[must_use]
+    pub fn is_peer_session(&self) -> bool {
+        self.rtc.is_some()
+    }
+
+    /// Independent content handle: file requests never hold the gameplay client mutex.
+    pub async fn content_client(
+        &self,
+    ) -> Option<game_server::webrtc_transport::WebRtcContentClient> {
+        self.rtc.as_ref()?.lock().await.as_ref()?.content_client()
+    }
+
     pub async fn connectivity_metrics(
         &self,
     ) -> Option<game_server::webrtc_transport::ConnectionMetrics> {
@@ -187,7 +199,7 @@ impl ClientSession {
             "Waiting for host approval · guest {}. The host can approve this code in the game menu.",
             mmorpg_game_server::guest_access::hex(&proof[..6])
         ));
-        let transport = WebRtcClient::connect_with_authorization(lobby, invite.match_id.clone(), &mmorpg_game_server::invitation::bind_ip()?, false, proof).await
+        let transport = WebRtcClient::connect_with_content_authorization(lobby, invite.match_id.clone(), &mmorpg_game_server::invitation::bind_ip()?, false, proof).await
             .map_err(|error| format!("The host could not admit this guest ({error}). Ask the host to approve your guest request, check that the world is running, then retry the invitation."))?;
         let welcome = validate_welcome(*transport.welcome())?;
         let zone_id = ZoneId::new(1);

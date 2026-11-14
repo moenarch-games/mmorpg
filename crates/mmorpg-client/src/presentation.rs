@@ -106,6 +106,7 @@ pub struct UnitPose {
 
 pub struct Presentation {
     player_id: u32,
+    shared_cat: Option<skinned::AmbientModel>,
     scenery: Scenery,
     content: Arc<ZoneContent>,
     history: VecDeque<ZoneSnapshot>,
@@ -217,6 +218,7 @@ impl Presentation {
             .set_crag_descriptor(Some(crate::nature::crag_descriptor()))
             .expect("the embedded crag descriptor is valid");
         Ok(Self {
+            shared_cat: None,
             player_id,
             scenery,
             content,
@@ -246,6 +248,33 @@ impl Presentation {
             outpost,
             outpost_textured,
         })
+    }
+
+    /// Installs optional verified world detail without changing simulation or blocking play.
+    pub fn install_shared_detail(
+        &mut self,
+        bundle: &crate::shared_assets::VerifiedBundle,
+    ) -> Result<(), String> {
+        if bundle.manifest.content_revision != self.content.revision() {
+            return Err("World detail belongs to another content revision.".into());
+        }
+        self.shared_cat = Some(skinned::shared_cat(bundle)?);
+        Ok(())
+    }
+
+    /// Actual optional animal placement, also used by the native offscreen journey's camera.
+    pub fn shared_detail_target(&self, now: Instant) -> Option<[f32; 3]> {
+        self.shared_cat.as_ref()?;
+        let seconds = now.saturating_duration_since(self.origin).as_secs_f64();
+        mmorpg_presentation::ambient::poses(&self.scenery, seconds, !self.reduced_motion)
+            .into_iter()
+            .find(|pose| pose.key == mmorpg_game_server::shared_assets::CAT)
+            .map(|pose| [pose.model[12], pose.model[13] + 0.25, pose.model[14]])
+    }
+
+    #[must_use]
+    pub fn shared_detail_ready(&self) -> bool {
+        self.shared_cat.is_some()
     }
 
     /// Presents another zone (#145) as `player_id` from its first projection on, keeping the
@@ -834,7 +863,12 @@ impl Presentation {
         for pose in
             mmorpg_presentation::ambient::poses(&self.scenery, seconds, !self.reduced_motion)
         {
-            let Some((model, clips)) = skinned::ambient_model(pose.key) else {
+            let animal = if pose.key == mmorpg_game_server::shared_assets::CAT {
+                self.shared_cat.as_ref()
+            } else {
+                skinned::ambient_model(pose.key)
+            };
+            let Some((model, clips)) = animal else {
                 continue;
             };
             let clip = mmorpg_presentation::ambient::CLIPS[pose.clip];
