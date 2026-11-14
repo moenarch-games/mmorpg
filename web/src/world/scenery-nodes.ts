@@ -15,7 +15,7 @@ import type { Color, PropKind, Scenery } from "./scenery";
  * WASM export (`mmorpg.static-scene` v1) into renderer nodes once per content
  * revision and per frame only hides far groups and places animated parts.
  */
-export type CullClass = "always" | "far" | "mid" | "near" | "detail";
+export type CullClass = "always" | "far" | "mid" | "near" | "detail" | "scatter";
 
 /** Beyond this camera distance (metres, to the group's bounding circle) a class is hidden. */
 export const CULL_DISTANCE_METRES: Readonly<Record<CullClass, number>> = {
@@ -24,6 +24,7 @@ export const CULL_DISTANCE_METRES: Readonly<Record<CullClass, number>> = {
   mid: 150,
   near: 75,
   detail: 30,
+  scatter: 60,
 };
 
 /** What the WASM module exposes about the shared static world. */
@@ -125,7 +126,7 @@ export type SceneryStats = {
 };
 
 const FORMAT = "mmorpg.static-scene";
-const CULLS: readonly CullClass[] = ["always", "far", "mid", "near", "detail"];
+const CULLS: readonly CullClass[] = ["always", "far", "mid", "near", "detail", "scatter"];
 /**
  * Instanced detail (ground cover, handholds, repeated prop pieces) casts only into the two near sun cascades: in the
  * far one it covers less than a texel and cost about a fifth of its draws (three-lighting `shadowCascades`).

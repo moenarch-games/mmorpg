@@ -353,6 +353,9 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
             0.
         };
         let path = camp_wear.max(hearth).max(verge);
+        let recipe = crate::terrain_patch::weights(s, ux, uz);
+        let gravel = gravel.max(recipe[0]);
+        let rock = rock.max(recipe[1]);
         for (layer, weight, color) in [
             (Layer::Forest, forest, mix(0x4d653b, 0x6e5a3c, 0.28)),
             (Layer::Gravel, gravel, 0x8f8a7c),

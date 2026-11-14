@@ -318,6 +318,8 @@ These endpoints consume `game-server` host state and never mutate or redefine zo
 
 The [saved grass authoring package](docs/SCATTER_AUTHORING.md) freezes accepted Outpost placements and reproduces their exclusion-mask filtering through pinned asset-tooling. Both clients consume its saved selection through shared scenery.
 
+The [Southmeadow terrain patch](docs/TERRAIN_PATCHES.md) uses saved asset-tooling paint/slope masks and real meadow/stone ground detail through both clients, retaining the existing gameplay floor.
+
 The [saved relief authoring package](docs/RELIEF_AUTHORING.md) freezes the Outpost heightfield and reproduces its saved flatten coverage through the same pinned producer. Both clients consume the saved result through shared scenery.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [ROADMAP.md](ROADMAP.md).

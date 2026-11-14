@@ -12,6 +12,8 @@ pub enum Cull {
     /// Ankle-high ground cover (turf, ferns, grass clumps): small cells and a short reach, so
     /// the main pass and every sun cascade draw only the cover around the camera.
     Detail,
+    /// Recipe ground dressing, visible to 60 m.
+    Scatter,
 }
 impl Cull {
     pub fn name(self) -> &'static str {
@@ -21,6 +23,7 @@ impl Cull {
             Self::Mid => "mid",
             Self::Near => "near",
             Self::Detail => "detail",
+            Self::Scatter => "scatter",
         }
     }
     pub fn size(self) -> f64 {
@@ -29,7 +32,7 @@ impl Cull {
             Self::Far => 80.,
             Self::Mid => 60.,
             Self::Near => 40.,
-            Self::Detail => 10.,
+            Self::Detail | Self::Scatter => 10.,
         }
     }
     /// Camera distance (metres, to the group's bounding circle) beyond which the class is hidden.
@@ -41,6 +44,7 @@ impl Cull {
             Self::Mid => 150.,
             Self::Near => 75.,
             Self::Detail => 30.,
+            Self::Scatter => 60.,
         }
     }
 }

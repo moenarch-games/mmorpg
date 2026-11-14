@@ -1330,11 +1330,20 @@ fn placed_kit(
     static CRAG: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     static LIMESTONE: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     static RIVER: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
+    static MEADOW: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     // The placement lists mix bundles, so each kit takes the placements of its own entries.
     let all = || {
         let scenery = scenery::hosted_scenery();
         let mut placements = nature::placements(scenery);
         placements.extend(river::placements(scenery));
+        for entries in [
+            &mmorpg_presentation::terrain_patch::MEADOW_ENTRIES[..],
+            &river::ENTRIES[..],
+        ] {
+            placements.extend(mmorpg_presentation::world_dressing::ground_details(
+                scenery, entries,
+            ));
+        }
         placements
     };
     let of = |entries: &[&str]| {
@@ -1350,6 +1359,10 @@ fn placed_kit(
             LIMESTONE.get(|_| of(&nature::LIMESTONE_ENTRIES)),
         )),
         "river" => Ok((&river::ENTRIES, RIVER.get(|_| of(&river::ENTRIES)))),
+        "meadow" => {
+            let entries = &mmorpg_presentation::terrain_patch::MEADOW_ENTRIES;
+            Ok((entries, MEADOW.get(|_| of(entries))))
+        }
         "climbing" => Ok((
             &climbing::ENTRIES,
             CLIMBING.get(|_| climbing::placements(scenery::hosted_scenery())),

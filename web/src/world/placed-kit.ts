@@ -4,10 +4,11 @@ import { applyLayeredSurface, layeredSurfaceMaterial, type LayeredSurface } from
 import { drawnResources, generateMissingTangents, loadBundleGltfs, shareMaterials } from "./static-bundle";
 
 /** A bundle the shared Rust presentation places at fixed placements. */
-export type PlacedKitName = "nature" | "climbing" | "crag" | "limestone" | "river";
+export type PlacedKitName = "nature" | "climbing" | "crag" | "limestone" | "river" | "meadow";
 
 /** Where `scripts/fetch-bundles.sh` puts each bundle in `web/public`, and its descriptor attachment. */
 const KITS: Record<PlacedKitName, { bundle: string; descriptor: string; label: string }> = {
+  meadow: { bundle: `${import.meta.env.BASE_URL}scenery/greyhaven-meadow.kit/`, descriptor: "greyhaven-meadow-descriptor", label: "greyhaven-meadow.kit" },
   /** The pinned `greyhaven-nature` bundle: Greyhaven's trees, rocks and bushes (#49). */
   nature: { bundle: `${import.meta.env.BASE_URL}scenery/greyhaven.nature/`, descriptor: "nature-descriptor", label: "greyhaven.nature" },
   /** The rolling `climbing-kit` bundle: Greyhaven's ladders, ropes and ivy (#621). */
