@@ -1,3 +1,4 @@
+mod smoke;
 use mmorpg_client::session::{CharacterSelection, NetworkUpdate, PartyClient, PlayerInput};
 use mmorpg_client::{
     ClientError,
@@ -175,6 +176,7 @@ pub fn run(
         updates,
         party,
         detail,
+        smoke: smoke::Smoke::enabled(),
         camera: OrbitCamera::default(),
         camera_control: CameraControl::default(),
         grabbed: false,
@@ -351,6 +353,7 @@ struct App {
     updates: watch::Receiver<NetworkUpdate>,
     party: PartyClient,
     detail: mmorpg_client::shared_assets::Updates,
+    smoke: Option<smoke::Smoke>,
     camera: OrbitCamera,
     camera_control: CameraControl,
     /// Actual OS grab, not an assumption about the window manager.
@@ -2054,7 +2057,10 @@ impl ApplicationHandler for App {
                         self.update_movement();
                         self.show_title(now);
                     }
-                    NetworkUpdate::Failed(_) => {
+                    NetworkUpdate::Failed(error) => {
+                        if let Some(smoke) = &mut self.smoke {
+                            smoke.failed("native_entry_failed", &error);
+                        }
                         if self.stage.is_some() {
                             self.choosing = true;
                         }
@@ -2076,13 +2082,33 @@ impl ApplicationHandler for App {
                             "World detail ready: verified={} received={} cache_hits={}",
                             receipt.files_verified, receipt.bytes_received, receipt.cache_hits
                         );
+                        if self
+                            .characters
+                            .borrow()
+                            .as_ref()
+                            .is_some_and(|selected| selected.invitation.is_some())
+                            && let Some(smoke) = &mut self.smoke
+                        {
+                            println!("{}", serde_json::json!({"event":"native_detail_ready", "tick":self.presentation.latest().map_or(0, |snapshot| snapshot.tick), "bytes_received":receipt.bytes_received,
+                                "cache_hits":receipt.cache_hits,"files_verified":receipt.files_verified,"manifest":receipt.manifest_identity,
+                                "snapshots_while_loading":receipt.snapshots_while_loading,"moved_while_loading":receipt.moved_while_loading}));
+                            smoke.capture(&mut self.presentation, &self.world, receipt, self.runtime.handle().clone());
+                        }
                         Ok(())
                     });
                     let message = match result {
                         Ok(()) => "World detail ready.".to_owned(),
-                        Err(error) => format!(
-                            "Optional world detail unavailable: {error} You can keep playing."
-                        ),
+                        Err(error) => {
+                            if let Some(smoke) = &mut self.smoke {
+                                smoke.failed("native_detail_failed", &error);
+                            }
+                            eprintln!(
+                                "Optional world detail unavailable: {error}. You can keep playing."
+                            );
+                            format!(
+                                "Optional world detail unavailable: {error} You can keep playing."
+                            )
+                        }
                     };
                     self.ui
                         .logs
@@ -2134,6 +2160,7 @@ impl ApplicationHandler for App {
                 // the stage leaves after the frame on which all of it became resident.
                 let resident = self.stage.as_ref().is_some_and(|stage| stage.entered)
                     && self.preload_zone(now);
+                let zone_drawn = self.stage.is_none() && self.connected();
                 let frame = match &mut self.stage {
                     Some(stage) => stage.presentation.frame(&stage.world, now, view),
                     None => self.presentation.frame(&self.world, now, view),
@@ -2159,7 +2186,22 @@ impl ApplicationHandler for App {
                     self.fail(event_loop, error);
                     return;
                 }
+                if self.choosing
+                    && self.stage.is_some()
+                    && let Some(smoke) = &mut self.smoke
+                {
+                    smoke.frontend();
+                }
+                if zone_drawn {
+                    self.detail.presented();
+                    if let Some(smoke) = &mut self.smoke {
+                        smoke.observe(&self.presentation);
+                    }
+                }
                 if resident {
+                    if let Some(smoke) = &mut self.smoke {
+                        smoke.resident();
+                    }
                     self.stage = None;
                 }
                 self.rendered = self.rendered.saturating_add(1);

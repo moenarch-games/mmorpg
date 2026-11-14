@@ -2,7 +2,10 @@
 use mmorpg_game_server::local_world::{self, RunningWorld};
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use tokio::sync::watch;
 
@@ -17,7 +20,7 @@ pub enum State {
 #[derive(Clone)]
 pub struct Hosting {
     state: watch::Sender<State>,
-    operation: Arc<Mutex<()>>,
+    operation: Arc<AtomicBool>,
     directory: Option<PathBuf>,
     pub available: bool,
 }
@@ -70,31 +73,31 @@ impl Hosting {
         if matches!(self.state(), State::Working(_)) {
             return;
         }
-        let Ok(guard) = self.operation.try_lock() else {
+        if self
+            .operation
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
             return;
-        };
-        self.state.send_replace(State::Working(if stop {
-            "Stopping world and saving…"
-        } else if probe {
-            "Checking local world…"
-        } else if decision.is_some() {
-            "Updating guest access…"
-        } else if share {
-            "Retrying world registration…"
-        } else {
-            "Starting world…"
-        }));
+        }
+        // Polls must not remove and reposition Copy/Approve underneath the pointer.
+        // The operation reservation still serializes background probes and user actions.
+        if !probe || !matches!(self.state(), State::Ready(..)) {
+            self.state.send_replace(State::Working(if stop {
+                "Stopping world and saving…"
+            } else if probe {
+                "Checking local world…"
+            } else if decision.is_some() {
+                "Updating guest access…"
+            } else if share {
+                "Retrying world registration…"
+            } else {
+                "Starting world…"
+            }));
+        }
         let this = self.clone();
-        // Reserve the operation before leaving the window thread. The next operation
-        // observes Working, while the worker serializes the actual filesystem work.
-        let operation = Arc::clone(&self.operation);
+        // Reserve before leaving the window thread, including probes that retain Ready.
         std::thread::spawn(move || {
-            let Ok(_guard) = operation.lock() else {
-                this.state.send_replace(State::Failed(
-                    "Local hosting operation failed. Restart the client to retry.".into(),
-                ));
-                return;
-            };
             let result = (|| {
                 let directory = this
                     .directory
@@ -149,8 +152,8 @@ impl Hosting {
             })();
             this.state
                 .send_replace(result.unwrap_or_else(State::Failed));
+            this.operation.store(false, Ordering::Release);
         });
-        drop(guard);
     }
 
     /// Called after Host World selected a character. Wait for the real /readyz result.

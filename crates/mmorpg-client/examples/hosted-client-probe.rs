@@ -81,7 +81,10 @@ async fn main() -> Result<(), ClientError> {
             let lobby_id = lobby.lobby_id().to_owned();
             let matched = game_server::MatchId::new("zone-1")?;
             let runtime = game_server::MatchRuntime::new(
-                mmorpg_game_server::ZoneGameServerAdapter::new(ZoneId::new(1)),
+                mmorpg_game_server::ZoneGameServerAdapter::with_content(
+                    ZoneId::new(1),
+                    mmorpg_core::content_for_zone(ZoneId::new(1)),
+                )?,
                 u64::from(mmorpg_core::TICK_HZ) * 20,
             );
             let host = WebRtcHost::new(

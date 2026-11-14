@@ -51,6 +51,8 @@ pub struct Receipt {
     pub bytes_received: usize,
     pub files_verified: usize,
     pub manifest_identity: String,
+    pub snapshots_while_loading: usize,
+    pub moved_while_loading: bool,
 }
 
 impl Cache {
@@ -198,20 +200,49 @@ pub async fn load_for_session(
 
 pub type LoadResult = Result<(VerifiedBundle, Receipt), String>;
 /// One bounded completion slot, independent of coalesced high-frequency snapshots.
-#[derive(Clone, Default)]
-pub struct Updates(std::sync::Arc<std::sync::Mutex<Option<LoadResult>>>);
+#[derive(Clone)]
+pub struct Updates {
+    result: std::sync::Arc<std::sync::Mutex<Option<LoadResult>>>,
+    presented: tokio::sync::watch::Sender<bool>,
+}
+impl Default for Updates {
+    fn default() -> Self {
+        Self {
+            result: Default::default(),
+            presented: tokio::sync::watch::channel(false).0,
+        }
+    }
+}
 impl Updates {
     pub fn take(&self) -> Option<LoadResult> {
-        self.0.lock().ok()?.take()
+        self.result.lock().ok()?.take()
     }
     pub fn publish(&self, result: LoadResult) {
-        if let Ok(mut slot) = self.0.lock() {
+        if let Ok(mut slot) = self.result.lock() {
             *slot = Some(result);
         }
+    }
+    /// Essential world data has been drawn. Optional detail may now stream during play.
+    pub fn presented(&self) {
+        self.presented.send_if_modified(|ready| {
+            if *ready {
+                false
+            } else {
+                *ready = true;
+                true
+            }
+        });
+    }
+    pub async fn wait_until_presented(&self) {
+        let mut ready = self.presented.subscribe();
+        let _ = ready.wait_for(|ready| *ready).await;
     }
 }
 pub struct Load(Option<tokio::task::JoinHandle<LoadResult>>);
 impl Load {
+    pub fn idle() -> Self {
+        Self(None)
+    }
     pub async fn start(session: &crate::network::ClientSession) -> Self {
         Self(load_for_session(session).await)
     }
