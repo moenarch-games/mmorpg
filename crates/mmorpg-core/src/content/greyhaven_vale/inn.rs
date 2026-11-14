@@ -1,6 +1,7 @@
 //! The Greyhaven inn (#158): asset-tooling's `greyhaven-inn-v1` building, walk-in through a
-//! hinged door. Boxes are the bundle descriptor's wall and furniture colliders (the visual floor
-//! lies on the flat ground and adds no collider), in units in the inn frame: origin at the
+//! hinged door. Boxes are the bundle descriptor's wall and furniture colliders, while the solid
+//! gabled roof includes its ceiling (`roofs`). The visual floor lies on the flat ground and adds
+//! no collider. Coordinates are in the inn frame: origin at the
 //! footprint's base centre, door on the +Z front. [`ORIGIN`] places the frame at the former
 //! inn block's centre, unrotated, so the door faces the square.
 
@@ -10,6 +11,8 @@ use crate::{Door, DoorBox, DoorId, StaticCollider};
 pub const ORIGIN: [i32; 3] = [1_500, 0, 0];
 /// The building's footprint half extents (14 × 6 × 10 m), for presentation and relief.
 pub const FOOTPRINT_HALF_EXTENTS: [i32; 3] = [700, 300, 500];
+/// The visible ceiling's underside, also the lower face of the authoritative solid roof.
+pub const CEILING_UNDERSIDE: i32 = 300;
 /// The inn's front door.
 pub const DOOR: DoorId = DoorId::new(1);
 /// Two chairs on the north side of the third table, facing it (−Z) (#619): `(id, chair x in the

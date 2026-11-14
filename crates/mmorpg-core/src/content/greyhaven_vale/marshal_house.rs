@@ -1,7 +1,8 @@
 //! Marshal Elden Greywatch's private home (#158, Atlas 5.1.48): asset-tooling's rolling
 //! `greyhaven-marshal-house` building on house 103's 8 × 6 m footprint, entered through a
-//! hinged door. Boxes are the bundle descriptor's wall and furniture colliders (the visual floor
-//! lies on the flat ground and adds no collider), in units in the house frame: origin at the
+//! hinged door. Boxes are the bundle descriptor's wall and furniture colliders; `roofs` supplies
+//! a solid roof/ceiling above the room. The visual floor lies on flat ground and adds no collider.
+//! Coordinates are in the house frame: origin at the
 //! footprint's base centre, door on the +Z front. [`ORIGIN`] places the frame at collider 103's
 //! centre, turned half a turn so the door faces the square to the north (−Z).
 
@@ -11,6 +12,8 @@ use crate::{Door, DoorBox, DoorId, NpcId, PrivateHome, StaticCollider};
 pub const ORIGIN: [i32; 3] = [-2_400, 0, 3_600];
 /// The footprint's half extents (8 × 5 × 6 m), for presentation and relief.
 pub const FOOTPRINT_HALF_EXTENTS: [i32; 3] = [400, 250, 300];
+/// The visible ceiling's underside, also the lower face of the authoritative solid roof.
+pub const CEILING_UNDERSIDE: i32 = 295;
 /// The house's front door.
 pub const DOOR: DoorId = DoorId::new(2);
 /// Its resident.
