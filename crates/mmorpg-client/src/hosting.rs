@@ -3,8 +3,8 @@ use mmorpg_game_server::local_world::{self, RunningWorld};
 use std::{
     path::PathBuf,
     sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
     },
 };
 use tokio::sync::watch;
@@ -20,7 +20,8 @@ pub enum State {
 #[derive(Clone)]
 pub struct Hosting {
     state: watch::Sender<State>,
-    operation: Arc<AtomicBool>,
+    operation: Arc<Mutex<()>>,
+    revision: Arc<AtomicU64>,
     directory: Option<PathBuf>,
     pub available: bool,
 }
@@ -31,6 +32,7 @@ impl Default for Hosting {
         Self {
             state,
             operation: Arc::default(),
+            revision: Arc::default(),
             available: true,
             directory: crate::roster::config_dir().map(|dir| dir.join("worlds/default")),
         }
@@ -73,15 +75,17 @@ impl Hosting {
         if matches!(self.state(), State::Working(_)) {
             return;
         }
-        if self
-            .operation
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
+        // A user action queues behind a read-only probe instead of silently disappearing.
+        if probe && self.operation.try_lock().is_err() {
             return;
         }
+        let revision = if probe {
+            self.revision.load(Ordering::Acquire)
+        } else {
+            self.revision.fetch_add(1, Ordering::AcqRel) + 1
+        };
         // Polls must not remove and reposition Copy/Approve underneath the pointer.
-        // The operation reservation still serializes background probes and user actions.
+        // The worker mutex still serializes background probes and user actions.
         if !probe || !matches!(self.state(), State::Ready(..)) {
             self.state.send_replace(State::Working(if stop {
                 "Stopping world and saving…"
@@ -96,8 +100,13 @@ impl Hosting {
             }));
         }
         let this = self.clone();
-        // Reserve before leaving the window thread, including probes that retain Ready.
         std::thread::spawn(move || {
+            let Ok(_guard) = this.operation.lock() else {
+                this.state.send_replace(State::Failed(
+                    "Local hosting operation failed. Restart the client to retry.".into(),
+                ));
+                return;
+            };
             let result = (|| {
                 let directory = this
                     .directory
@@ -150,9 +159,11 @@ impl Hosting {
                     .and_then(ready)
                     .map_err(|error| error.to_string())
             })();
-            this.state
-                .send_replace(result.unwrap_or_else(State::Failed));
-            this.operation.store(false, Ordering::Release);
+            // A probe started before a user action must not replace its Working state.
+            if this.revision.load(Ordering::Acquire) == revision {
+                this.state
+                    .send_replace(result.unwrap_or_else(State::Failed));
+            }
         });
     }
 
@@ -172,5 +183,31 @@ impl Hosting {
                 .await
                 .map_err(|_| "Local host controls closed.")?;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn stop_is_not_lost_while_a_background_probe_owns_the_worker() {
+        let directory = tempfile::tempdir().unwrap();
+        let hosting = Hosting {
+            directory: Some(directory.path().into()),
+            ..Hosting::default()
+        };
+        let mut state = {
+            let _probe = hosting.operation.lock().unwrap();
+            hosting.stop();
+            assert!(matches!(hosting.state(), State::Working(_)));
+            hosting.state.subscribe()
+        };
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            state.wait_for(|state| matches!(state, State::Stopped)),
+        )
+        .await
+        .unwrap()
+        .unwrap();
     }
 }
