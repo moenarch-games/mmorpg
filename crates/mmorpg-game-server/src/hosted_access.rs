@@ -70,6 +70,19 @@ impl ManagedWorld {
     where
         C: WebRtcControlService + 'static,
     {
+        // Read/verify once outside the simulation lock; every peer sees one immutable release.
+        let content = crate::shared_assets::installed_directory().and_then(|path| {
+            crate::shared_assets::Catalogue::open(
+                &path,
+                mmorpg_core::content_for_zone(mmorpg_core::ZoneId::new(1)).revision(),
+            )
+        });
+        if let Err(error) = &content {
+            eprintln!(
+                "Optional host detail unavailable: {error}. Install assets/ambient or set MMORPG_SHARED_ART_DIR."
+            );
+        }
+        let content = Arc::new(crate::shared_assets::ContentService(content));
         loop {
             tokio::time::sleep(Duration::from_millis(100)).await;
             if !host.is_serving() || !self.requested.swap(false, Ordering::Relaxed) {
@@ -100,7 +113,8 @@ impl ManagedWorld {
                         relay_only: false,
                     },
                 )
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| e.to_string())?
+                .with_content_service(content.clone());
                 if let Ok(mut status) = self.shared.lock() {
                     status.invitation = Some(
                         JoinInvite {

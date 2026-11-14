@@ -341,19 +341,41 @@ pub struct CharacterSelection {
 }
 
 pub async fn run_session_with_characters(
+    session: ClientSession,
+    input: watch::Receiver<PlayerInput>,
+    characters: watch::Receiver<Option<CharacterSelection>>,
+    party: PartyLink,
+    updates: &watch::Sender<NetworkUpdate>,
+    shutdown: oneshot::Receiver<()>,
+) -> Result<(), ClientError> {
+    run_session_with_detail(
+        session,
+        input,
+        characters,
+        party,
+        updates,
+        shutdown,
+        crate::shared_assets::Updates::default(),
+    )
+    .await
+}
+
+pub async fn run_session_with_detail(
     mut session: ClientSession,
     input: watch::Receiver<PlayerInput>,
     mut characters: watch::Receiver<Option<CharacterSelection>>,
     party: PartyLink,
     updates: &watch::Sender<NetworkUpdate>,
     mut shutdown: oneshot::Receiver<()>,
+    detail: crate::shared_assets::Updates,
 ) -> Result<(), ClientError> {
     let enabled = tokio::select! {
         _ = &mut shutdown => return Ok(()),
         enabled = session.character_service_enabled() => enabled?,
     };
     if !enabled {
-        return run_connected_session(session, input, characters, party, updates, shutdown).await;
+        return run_connected_session(session, input, characters, party, updates, shutdown, detail)
+            .await;
     }
     let selected = loop {
         if let Some(selected) = characters.borrow_and_update().clone() {
@@ -382,7 +404,7 @@ pub async fn run_session_with_characters(
         _ = &mut shutdown => { session.release_character().await?; return Ok(()); },
         claimed = session.claim_character(&id, selected.class) => { claimed?; }
     }
-    run_connected_session(session, input, characters, party, updates, shutdown).await
+    run_connected_session(session, input, characters, party, updates, shutdown, detail).await
 }
 
 /// Runs a session with no character selection or party link (tests and tools).
@@ -394,7 +416,16 @@ pub async fn run_session(
 ) -> Result<(), ClientError> {
     let (_characters, characters) = watch::channel(None);
     let (_party, party) = party_link();
-    run_connected_session(session, input, characters, party, updates, shutdown).await
+    run_connected_session(
+        session,
+        input,
+        characters,
+        party,
+        updates,
+        shutdown,
+        crate::shared_assets::Updates::default(),
+    )
+    .await
 }
 
 async fn run_connected_session(
@@ -404,7 +435,15 @@ async fn run_connected_session(
     mut party: PartyLink,
     updates: &watch::Sender<NetworkUpdate>,
     mut shutdown: oneshot::Receiver<()>,
+    detail: crate::shared_assets::Updates,
 ) -> Result<(), ClientError> {
+    let mut loading = crate::shared_assets::Load::idle();
+    let mut detail_started = false;
+    let mut detail_pending = false;
+    let mut detail_snapshots = 0;
+    let mut detail_moved = false;
+    let mut detail_origin = None;
+    let mut own_position = None;
     // Announced to the current connection's party service; a follow or reconnect announces anew.
     let mut character_name = characters
         .borrow_and_update()
@@ -441,6 +480,29 @@ async fn run_connected_session(
                 }
                 None
             },
+            _ = detail.wait_until_presented(), if !detail_started => {
+                if std::env::var_os("MMORPG_SMOKE_FRAME").is_some()
+                    && let Some(metrics) = session.connectivity_metrics().await
+                {
+                    println!("{}", serde_json::json!({"event":"native_connection", "metrics":metrics}));
+                }
+                loading = crate::shared_assets::Load::start(&session).await;
+                detail_started = true;
+                detail_pending = true;
+                detail_snapshots = 0;
+                detail_moved = false;
+                detail_origin = own_position;
+                None
+            },
+            result = loading.finished() => {
+                detail_pending = false;
+                detail.publish(result.map(|(bundle, mut receipt)| {
+                    receipt.snapshots_while_loading = detail_snapshots;
+                    receipt.moved_while_loading = detail_moved;
+                    (bundle, receipt)
+                }));
+                None
+            },
             Some(request) = party.requests.recv() => {
                 match session.party_request(&request).await {
                     Ok(Ok(())) => {}
@@ -471,6 +533,14 @@ async fn run_connected_session(
             snapshot = session.receive_snapshot() => match snapshot {
                 Ok(snapshot) => {
                     if last_tick.is_none_or(|tick| snapshot.tick > tick) {
+                        let position = snapshot.entities.iter()
+                            .find(|entity| entity.kind == mmorpg_core::EntityKind::Player && entity.id == snapshot.viewer_id)
+                            .map(|entity| entity.position);
+                        if detail_pending {
+                            detail_snapshots += 1;
+                            detail_moved |= detail_origin.zip(position).is_some_and(|(first, next)| first != next);
+                        }
+                        own_position = position;
                         outbox.observe(&snapshot);
                         last_tick = Some(snapshot.tick);
                         last_snapshot = Instant::now();
@@ -488,6 +558,9 @@ async fn run_connected_session(
                 _ = &mut shutdown => { session.release_character().await?; return Ok(()); },
                 followed = session.follow(notice) => followed?,
             }
+            loading = crate::shared_assets::Load::idle();
+            detail_started = false;
+            detail_pending = false;
             // Another zone counts its own ticks; only current input carries over.
             announced = false;
             last_tick = None;
@@ -509,6 +582,9 @@ async fn run_connected_session(
                 _ = &mut shutdown => { session.release_character().await?; return Ok(()); },
                 snapshot = session.reconnect() => snapshot?,
             };
+            loading = crate::shared_assets::Load::idle();
+            detail_started = false;
+            detail_pending = false;
             announced = false;
             outbox.observe(&snapshot);
             last_tick = Some(snapshot.tick);

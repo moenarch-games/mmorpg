@@ -7,7 +7,8 @@ use crate::{
 };
 use game_server::{
     LiveMatchHost, MatchHostRecoveryConfig, MatchHostStatusConfig, MatchHostWebTransportConfig,
-    MatchId, PreparedLiveMatchHost, prepare_live_match_host_for_recovery,
+    MatchId, PreparedLiveMatchHost, RecoveryImage, ReplayRecord,
+    prepare_live_match_host_for_recovery,
     serve_prepared_live_match_host_with_status_and_control_and_shutdown,
 };
 use mmorpg_characters::EntryBackend;
@@ -17,7 +18,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     error::Error,
     fs::File,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -119,7 +120,7 @@ async fn snapshots(
 }
 
 /// Explicit development/LAN trust mode. Persistent characters use the existing
-/// whole-host graceful recovery so final commits read stopped, replayed state.
+/// whole-host graceful recovery so final commits read the exact stopped checkpoint.
 pub async fn serve_development_character_host(
     config: DevelopmentCharacterHostConfig,
     transport: MatchHostWebTransportConfig,
@@ -330,20 +331,92 @@ pub(crate) async fn serve_characters_managed<B: EntryBackend + Send + 'static>(
             }
         }
     }
-    // Serving has stopped all writers and saved the exact final recovery image.
-    // Prepare without serving: replay is shared game-server behavior, and the
-    // bundle remains unconsumed for the next actual startup.
-    let stopped = prepare(
-        ids,
-        ownership,
-        BTreeMap::new(),
-        BTreeMap::new(),
-        BTreeMap::new(),
-        recovery,
-        grace,
-    )
-    .await?;
-    let final_snapshots = snapshots(&stopped.host()).await?;
+    // The provider has frozen every writer and atomically saved the exact final image.
+    // Its typed final checkpoint is already the canonical state we need. Re-preparing
+    // here replays the entire session a second time and can keep Stop World locked
+    // for minutes. Leave the bundle untouched: normal next-start verification/replay
+    // still owns restoration, while final character commits use this same frozen state.
+    let final_snapshots =
+        tokio::task::spawn_blocking(move || stopped_snapshots(&recovery, &ids)).await??;
     tokio::task::spawn_blocking(move || service.finish_snapshots(final_snapshots)).await??;
     Ok(())
+}
+
+/// Read only our just-written, stopped recovery bundle through its owner's typed codec.
+fn stopped_snapshots(directory: &Path, ids: &[MatchId]) -> HostResult<Vec<(MatchId, Vec<u8>)>> {
+    ids.iter()
+        .map(|id| {
+            let image =
+                RecoveryImage::read_file(&directory.join(format!("{}.recovery", id.as_str())))?;
+            let Some(ReplayRecord::Checkpoint { snapshot }) = image.replay.records().last() else {
+                return Err(
+                    format!("Stopped recovery for {id} has no final canonical checkpoint").into(),
+                );
+            };
+            if snapshot.tick != image.current_tick
+                || snapshot.state_hash
+                    != game_server::snapshot_hash(snapshot.tick, &snapshot.payload)
+            {
+                return Err(format!(
+                    "Stopped recovery for {id} has an inconsistent final checkpoint"
+                )
+                .into());
+            }
+            let expected = crate::dev_characters::zone_of(id)?;
+            let (zone, _) = ZoneGameServerAdapter::decode_stored_zone(
+                &snapshot.payload,
+                mmorpg_core::content_for_zone(expected),
+            )?;
+            if zone.zone_id() != expected || zone.current_tick() != image.current_tick {
+                return Err(format!(
+                    "Stopped recovery checkpoint does not match {id} and its final tick"
+                )
+                .into());
+            }
+            Ok((id.clone(), snapshot.payload.clone()))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn final_character_snapshot_is_the_exact_last_stopped_checkpoint() {
+        let directory = tempfile::tempdir().unwrap();
+        let id = zone_match_id(ZoneId::new(1)).unwrap();
+        let mut runtime = game_server::MatchRuntime::new_with_replay_capture(
+            ZoneGameServerAdapter::with_content(
+                ZoneId::new(1),
+                mmorpg_core::content_for_zone(ZoneId::new(1)),
+            )
+            .unwrap(),
+            120,
+        );
+        for _ in 0..4 {
+            runtime.advance_tick().unwrap();
+        }
+        runtime.freeze_for_recovery();
+        let final_snapshot = runtime.snapshot().unwrap();
+        runtime
+            .recovery_image()
+            .unwrap()
+            .write_atomic(&directory.path().join("zone-1.recovery"))
+            .unwrap();
+        assert_eq!(
+            stopped_snapshots(directory.path(), std::slice::from_ref(&id)).unwrap(),
+            vec![(id, final_snapshot.payload)]
+        );
+        // The codec/file association must not permit another match's final commit.
+        std::fs::copy(
+            directory.path().join("zone-1.recovery"),
+            directory.path().join("zone-2.recovery"),
+        )
+        .unwrap();
+        assert!(
+            stopped_snapshots(directory.path(), &[zone_match_id(ZoneId::new(2)).unwrap()]).is_err()
+        );
+        // Reading final character state never consumes next startup's recovery bundle.
+        assert!(RecoveryImage::read_file(&directory.path().join("zone-1.recovery")).is_ok());
+    }
 }
