@@ -888,7 +888,7 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
   // The Redbrand faction kit's figures and armour (#675) ride with the male's entries.
   const kit = character === MALE ? await loadKit(REDBRAND_KIT, "redbrand-descriptor", "the bandits keep the soldier's outfit.") : null;
   // The hair kit's pieces are fitted to the male head (#677).
-  const hairKit = character === MALE ? await loadKit(HAIR_KIT, "hair-descriptor", "the figure keeps the Ranger bundle's hair and beards.") : null;
+  const hairKit = character === MALE ? await loadKit(HAIR_KIT, "hair-descriptor", "the figure has only the hair and beards the Ranger bundle still offers.") : null;
   const kitScene = (id: string) => kit?.scenes.get(id) ?? hairKit?.scenes.get(id);
   const appearance = figureAppearance(character, await json(entryFile(entry, ".humanoid-appearance.json")), kit?.descriptor ?? null, hairKit?.descriptor ?? null);
   declareChains(declaredChains(appearance));

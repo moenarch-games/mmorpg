@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 URL = "https://github.com/moritzbrantner/asset-tooling/releases/download/{release}/"
 API = "https://api.github.com/repos/moritzbrantner/asset-tooling/releases/"
 # The male figure's selected entries by key and variants: the default character and equipment, the class weapons
-# (asset-tooling #375) and props (#379), the Greyhaven residents' outfit variants, armour, straw hat and beards (#418), the class
+# (asset-tooling #375) and props (#379), the Greyhaven residents' outfit variants, armour and straw hat (#418), the class
 # starter outfits' armour (#379), the Redbrand Crossbowmen's crossbow with an arrow standing in for its bolt (#607), and
 # the Rogue's throwing knife, venom flask and blasting bomb (asset-tooling #467, #611).
 MALE = {key: {"default"} for key in (
@@ -26,7 +26,7 @@ MALE = {key: {"default"} for key in (
     "equipment.quiver.back", "equipment.cap.ranger", "equipment.helm.ironcrest", "equipment.dagger.blackened",
     "equipment.staff.bone", "equipment.staff.crystal", "equipment.staff.gnarled", "equipment.book.tome",
     "equipment.mace.flanged", "equipment.hat.straw", "equipment.crossbow", "equipment.arrow",
-    "equipment.throwing-knife", "equipment.venom-flask", "equipment.blasting-bomb", "facial-hair.beards", "armor.knight", "armor.soldier",
+    "equipment.throwing-knife", "equipment.venom-flask", "equipment.blasting-bomb", "armor.knight", "armor.soldier",
     "armor.farmer", "armor.innkeeper", "armor.monk", *(f"armor.class.{name}" for name in CLASS_NAMES))}
 # The full-detail outfit variant of each resident and class preset's outfit and skin, and the
 # guards' and the varied enemies' outfits in both skins (each draws his own look,
@@ -46,9 +46,11 @@ FEMALE.update({key: {"default"} for key in MALE if key.startswith("equipment.")
                and key not in {"equipment.cap.ranger", "equipment.helm.ironcrest", "equipment.hat.straw"}})
 # Plus every hairstyle a release offers, in its tintable variant: the viewer's styles and the
 # varied guards' (#376, asset-tooling #380), and the painted head skins when the release has them
-# (asset-tooling #380).
+# (asset-tooling #380). The male hair and beards come from the hair kit (#677, `fetch-bundles.sh`); the
+# release's own hairstyles and `facial-hair.beards` are taken only while it still offers them (asset-tooling #517).
 HAIR_VARIANT = "hair-1"
 HEAD_SKINS = ("skin.head", "default")
+BEARDS = ("facial-hair.beards", "default")
 # The wait before each retry of a transient release failure (REL-003).
 RETRY_DELAYS = (1, 2, 4, 8, 16)
 
@@ -80,7 +82,7 @@ def selected(figure, index):
                or (entry.get("key"), entry.get("variant")) == ("armor.knight", "default"))}
     return figure.pairs | knight | {(entry.get("key"), entry.get("variant")) for entry in index.get("entries", [])
                            if (str(entry.get("key")).startswith("hair.") and entry.get("variant") == HAIR_VARIANT)
-                           or (entry.get("key"), entry.get("variant")) == HEAD_SKINS}
+                           or (entry.get("key"), entry.get("variant")) in {HEAD_SKINS, BEARDS}}
 
 
 def github_token():

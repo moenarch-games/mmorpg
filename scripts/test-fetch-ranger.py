@@ -28,6 +28,17 @@ class RangerCacheTest(unittest.TestCase):
         for entry in entries:
             self.assertIn((entry["key"], entry["variant"]), selected)
 
+    def test_male_hair_and_beards_are_selected_only_while_the_release_offers_them(self):
+        figure = fetch_ranger.Figure("humanoid.ranger.male", fetch_ranger.MALE)
+        # The hair kit is their source (#677); the release may drop its own (asset-tooling #517).
+        self.assertNotIn(("facial-hair.beards", "default"), fetch_ranger.selected(figure, {"entries": []}))
+        entries = [{"key": "facial-hair.beards", "variant": "default"}, {"key": "hair.long", "variant": "hair-1"},
+                   {"key": "hair.long", "variant": "hair-2"}]
+        selected = fetch_ranger.selected(figure, {"entries": entries})
+        self.assertIn(("facial-hair.beards", "default"), selected)
+        self.assertIn(("hair.long", "hair-1"), selected)
+        self.assertNotIn(("hair.long", "hair-2"), selected)
+
     def test_missing_or_incompatible_class_presets_invalidate_the_cache(self):
         with tempfile.TemporaryDirectory(prefix="ranger-cache-") as temporary:
             directory = Path(temporary)
