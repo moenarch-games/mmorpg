@@ -743,16 +743,37 @@ def region_seed_candidates(g: Grid, land, anchor_mask, regions, seed):
     return out
 
 
+def anchor_claims(g, regions, anchors_f):
+    """Each anchored region with the footprint it owns: the anchor parts it names in `parts`, or
+    else every part of its anchor that no other region names. Footprints never overlap: where a
+    named part overlaps an unnamed one (a ridge strip), the cells go to the region naming it."""
+    claims = []
+    for k, reg in enumerate(regions["regions"]):
+        for a, _, _, _ in anchors_f:
+            if reg.get("anchor") != a["id"]:
+                continue
+            named = {p for r in regions["regions"] if r.get("anchor") == a["id"] for p in r.get("parts", [])}
+            own = reg.get("parts") or [p["name"] for p in a["parts"] if p["name"] not in named]
+            mask = np.zeros(g.X.shape, bool)
+            for part in a["parts"]:
+                if part["name"] in own:
+                    mask |= dist_to_rect(g.X, g.Z, part["rect"]) == 0
+            claims.append((k, mask))
+    named_cells = np.zeros(g.X.shape, bool)
+    for k, mask in claims:
+        if regions["regions"][k].get("parts"):
+            named_cells |= mask
+    return [(k, mask if regions["regions"][k].get("parts") else mask & ~named_cells) for k, mask in claims]
+
+
 def grow_regions(g, elev, land, hyd, anchors_f, regions, big_river):
     sources = []
     ids = [r["id"] for r in regions["regions"]]
     for k, reg in enumerate(regions["regions"]):
         r, c = g.index(*reg["seed"])
         sources.append(((r, c), k))
-        if reg.get("anchor"):
-            for a, mask, _, _ in anchors_f:
-                if a["id"] == reg["anchor"]:
-                    sources += [((rr, cc), k) for rr, cc in zip(*np.nonzero(mask))]
+    claims = anchor_claims(g, regions, anchors_f)
+    sources += [((rr, cc), k) for k, mask in claims for rr, cc in zip(*np.nonzero(mask))]
     extra = np.where(big_river, 900.0, 0.0)
     passable = land.copy()
     anchor_any = np.zeros_like(land)
@@ -777,12 +798,9 @@ def grow_regions(g, elev, land, hyd, anchors_f, regions, big_river):
         for dr, dc in NB8:
             nb = p[1 + dr : 1 + dr + g.nz, 1 + dc : 1 + dc + g.nx]
             label = np.where(missing & (label < 0) & (nb >= 0), nb, label)
-    # an anchor belongs wholly to its region
-    for k, reg in enumerate(regions["regions"]):
-        if reg.get("anchor"):
-            for a, mask, _, _ in anchors_f:
-                if a["id"] == reg["anchor"]:
-                    label[mask] = k
+    # an anchor's parts belong wholly to the regions claiming them
+    for k, mask in claims:
+        label[mask] = k
     return label, ids
 
 
@@ -986,11 +1004,9 @@ def region_raster(g: Grid, land: np.ndarray, regions: dict, borders: dict, ancho
     ids = [r["id"] for r in regions["regions"]]
     label, open_, problems, slivers = atlas_regions.pieces(g, land, wall, [(r["id"], r["seed"]) for r in regions["regions"]])
     stray = 0
-    for k, reg in enumerate(regions["regions"]):
-        for a, mask, _, _ in anchors_f:
-            if reg.get("anchor") == a["id"]:
-                stray += int((mask & open_ & (label != k)).sum())
-                label[mask] = k
+    for k, mask in anchor_claims(g, regions, anchors_f):
+        stray += int((mask & open_ & (label != k)).sum())
+        label[mask] = k
     return label, ids, {"problems": problems, "slivers": slivers, "anchorStray": stray, "wall": wall}
 
 
@@ -1094,7 +1110,8 @@ def claim_regions(b):
         mx, mz = float(b["grid"].X[m].mean()), float(b["grid"].Z[m].mean())
         rc = np.array([np.median(costs[i][m]) for i in range(len(kingdoms))])
         order = np.argsort(rc)
-        pinned = layers["polities"]["claims"].get(b["ids"][k]) or capitals.get(k)
+        claims = layers["polities"]["claims"]
+        pinned = claims.get(b["ids"][k]) or claims.get(reg[k].get("group")) or capitals.get(k)
         inside = math.hypot(mx - cx, mz - cz) < crown["radius"]
         if pinned:
             owner = pinned
@@ -1285,15 +1302,21 @@ def run_checks(b) -> list[dict]:
     # regions: ~150 of 2–4 km², every land cell in exactly one, contiguous
     label = b["label"]
     stats = [s for s in b["region_stats"] if s]
-    areas = [s["areaKm2"] for s in stats]
+    # a group (Greyhaven's sub-regions) counts as the one region it subdivides
+    grouped = {}
+    for reg, s in zip(layers["regions"]["regions"], b["region_stats"]):
+        if s:
+            key = reg.get("group", reg["id"])
+            grouped[key] = grouped.get(key, 0.0) + s["areaKm2"]
+    areas = list(grouped.values())
     lo, hi = layers["regions"]["targetAreaKm2"]
     in_band = sum(1 for a in areas if lo * 0.6 <= a <= hi * 1.4) / len(areas)
     uncovered = np.argwhere(land & (label < 0))
     check("regions.cover", len(uncovered) == 0,
           f"{len(stats)} regions; {len(uncovered)} land cells uncovered"
           + (f", e.g. at {g.centre(*uncovered[0])}" if len(uncovered) else ""))
-    check("regions.size", 120 <= len(stats) <= 180 and in_band >= 0.85,
-          f"{len(stats)} regions; median {np.median(areas):.1f} km² (min {min(areas):.1f}, max {max(areas):.1f}); "
+    check("regions.size", 120 <= len(areas) <= 180 and in_band >= 0.85,
+          f"{len(areas)} regions ({len(stats)} with sub-regions); median {np.median(areas):.1f} km² (min {min(areas):.1f}, max {max(areas):.1f}); "
           f"{in_band:.0%} within 0.6×–1.4× of {lo}–{hi} km²")
     split = 0
     for k in range(len(b["ids"])):
