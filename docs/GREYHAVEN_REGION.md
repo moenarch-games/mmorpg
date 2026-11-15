@@ -117,6 +117,8 @@ Everything round the heart comes from committed data:
 - **Landmarks** in the new sub-regions: the Delving workings with their bridge over the ravine, a
   Greyfang watchtower, hamlets on the downs.
 - **Quests** and NPCs out there.
-- **The basin's climbs:** the six ways up the heart's 11 m cliffs keep their right-angled ledges
-  and landings.
+- **The basin's climbs' ground:** the six ways up the heart's 11 m cliffs are still straight ledges
+  cut into the cliff; only their roads round their turns (every authored road turns on a 4 m curve).
+- **The forest-floor texture:** its overlay repeats every 3 m and reads as stripes on open ground,
+  so the designed forests show the woods' darker ground tone instead; the heart's woods keep it.
 - **Visual acceptance** from the owner.
