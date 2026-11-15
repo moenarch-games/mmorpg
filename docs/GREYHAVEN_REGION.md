@@ -179,6 +179,25 @@ quest needs them. Rewards are experience, copper and the Vale's existing gear.
 Review the Downs chain with `?scenario=greyhaven-downs`: a level 4 Warden on Barrowdown Lane with
 *Trouble in the Woods* turned in and *Word from the Downs* accepted, a few steps from Gwen Barrow.
 
+## Grass and houses
+
+Grass grows as blades, not tufts (#832). `mmorpg_presentation::grass` decides where: thickly on
+meadow and foothills, thinner on the hub, hollows and highland, sparse under woods, and nowhere the
+near terrain's overlays (forest floor, gravel, mud, sand, paths, rock) or its worn roads, plaza and
+fields cover the turf, nor in water, river beds, terrain holes or the footprint of anything that
+stands on the ground. Each clump takes the ground's tone, leaning greener, with dry straw patches
+over about 18 m. It lays out 16 m cells on a 0.3 m jittered lattice; a cell's clumps come in a
+random order, so any prefix is an even thinning. The browser draws every clump of a cell within
+12 m of the eye and thins them out to 48 m, where the field sinks away; each clump is 15 thin,
+tapered, curved blades, bent by the wind and pushed aside round the player's feet in the vertex
+stage. The old procedural tufts draw nothing; the native client has no grass field yet.
+
+The region's seven 8 × 6 m houses are the Outpost's timber-framed house in asset-tooling's Outpost
+kit, each door turned to its settlement's yard (`content/greyhaven/dressing/settlements.json`,
+written by `cargo run -p mmorpg-scenery --example export-settlement-dressing`); their boxes remain
+the stand-in until the kit loads. Westmere Lodge's larger hall, the farmhouses, barns and the inn
+keep the Vale's procedural buildings.
+
 ## Not yet done
 
 - **Homes you can enter:** residents end their day on their doorstep; only the Marshal and the
