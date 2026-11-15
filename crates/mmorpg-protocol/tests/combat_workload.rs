@@ -76,11 +76,13 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // Three cave supplies (#719) add fixed prop bodies and shift the spread fixtures' sampled
     // spawn indices: fights-8 emits 1,825,497 bytes and fights-32 tests 431,424 candidates.
     // Refresh only those exceeded ceilings; the idle/crowded fixtures keep their ceilings.
+    // The whole Greyhaven region (#810) trades the eight boundary wall boxes for wall mesh
+    // pieces along its outline: 36 more body visits a tick (12,960 per 360 ticks).
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [49_320, 1_326_240, 288_000, 6_088_352],
-        [49_320, 1_323_360, 93_060, 1_825_497],
-        [49_320, 1_332_000, 431_424, 7_878_807],
-        [48_964, 1_343_164, 2_323_474, 24_322_842],
+        [49_320, 1_339_200, 288_000, 6_088_352],
+        [49_320, 1_336_320, 93_060, 1_825_497],
+        [49_320, 1_344_960, 431_424, 7_878_807],
+        [48_964, 1_356_124, 2_323_474, 24_322_842],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();

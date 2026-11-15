@@ -52,27 +52,26 @@ pub use outpost_grass::outpost_grass_placements;
 pub use redbrand_depths::redbrand_depths_scenery;
 pub use seam_test::seam_test_scenery;
 
-/// The rectangle the terrain grid covers: the playable rectangle and 72 m beyond its walls
-/// (80 m past the farmland's, #424, and 88 m past the highlands', #425, and the wetlands', #426,
-/// so every grid step divides it).
+/// The rectangle the terrain grid covers: the region round its outline (#810), 20 to 80 m
+/// beyond the playable rectangle and inside the zone's terrain grid, so every grid step
+/// divides it.
 pub const TERRAIN_BOUNDS: XzBounds = XzBounds {
-    min: [-28_000, -72_000],
-    max: [72_000, 72_000],
+    min: [-190_000, -140_000],
+    max: [190_000, 136_000],
 };
-/// The rectangle the far terrain ring covers: 392 m beyond the playable rectangle's walls on
-/// every side (400 m past the farmland's, 408 m past the highlands' and the wetlands').
+/// The rectangle the far terrain ring covers: 400 m beyond the terrain grid on every side.
 pub const FAR_TERRAIN_BOUNDS: XzBounds = XzBounds {
-    min: [-60_000, -104_000],
-    max: [104_000, 104_000],
+    min: [-230_000, -180_000],
+    max: [230_000, 176_000],
 };
 /// Largest relief magnitude inside the playable square (0.6 m).
 pub const WALKABLE_RELIEF_UNITS: i32 = 60;
-/// Highest mountain relief beyond the boundary walls, within the terrain
-/// grid (40 m).
-pub const MOUNTAIN_PEAK_UNITS: i32 = 4_000;
-/// Snow caps start here (50 m): above every mountain within the terrain grid,
-/// so only the distant ranges beyond it carry snow and read as far peaks.
-pub const SNOW_LINE_UNITS: i32 = 5_000;
+/// Beyond the boundary walls the surface is snow from this height (450 m above the Vale) …
+pub const SNOW_LINE_UNITS: i32 = 45_000;
+/// … bare rock from this one (250 m) …
+const ROCK_LINE_UNITS: i32 = 25_000;
+/// … and highland grass from this one (100 m), which also marks high ground inside them.
+const HIGHLAND_LINE_UNITS: i32 = 10_000;
 /// Highest relief of the distant ranges beyond the terrain grid (140 m).
 pub const FAR_PEAK_UNITS: i32 = 14_000;
 /// The distant ranges rise from nothing at the terrain grid's edge to full
@@ -476,7 +475,8 @@ pub struct Scenery {
     pub props: Vec<Prop>,
     /// Authored surface hazards (#294) to dress: ice and tar on the ground.
     pub surfaces: Vec<mmorpg_core::SurfacePatch>,
-    /// Simplified presentation fallback for authored surfaces without detailed art.
+    /// Simplified presentation fallback for authored surfaces without detailed art. The
+    /// invisible boundary walls (#810) are left out.
     pub collision_surfaces: Vec<mmorpg_core::StaticMesh>,
     pub roads: Vec<Road>,
     pub water: Vec<Water>,
@@ -727,7 +727,6 @@ fn tree_variant(hash: u64) -> TreeVariant {
 
 const SEED_ROLLING: u64 = 0x4752_4559_4841_5645;
 const SEED_DETAIL: u64 = 0x5641_4c45_4445_5441;
-const SEED_RIDGE: u64 = 0x5249_4447_4553_2121;
 const SEED_TINT: u64 = 0x5449_4e54_5449_4e54;
 const SEED_PROPS: u64 = 0x5052_4f50_5345_4544;
 const SEED_MASSIF: u64 = 0x4d41_5353_4946_2121;
@@ -895,7 +894,12 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
         content_revision: content.revision(),
         props: Vec::new(),
         surfaces: content.surfaces().to_vec(),
-        collision_surfaces: definition.static_meshes().to_vec(),
+        collision_surfaces: definition
+            .static_meshes()
+            .iter()
+            .filter(|mesh| !ids::BOUNDARY_WALLS.contains(&mesh.id))
+            .cloned()
+            .collect(),
         roads,
         water,
         terrain_holes: Vec::new(),
@@ -1237,12 +1241,25 @@ impl Scenery {
     /// Biome of a terrain vertex whose relief is `height`.
     fn biome_at(&self, x: i32, z: i32, height: i32) -> Biome {
         let point = [x, z];
-        if beyond_playable(x, z) > 0 {
-            return match height {
+        if !greyhaven_vale::inside_walls(x, z) {
+            // Beyond the boundary walls: the region's surroundings by their height (#810).
+            return match self.ground_at(x, z) + height {
                 SNOW_LINE_UNITS.. => Biome::Snow,
-                1_500..SNOW_LINE_UNITS => Biome::Rock,
-                700..=1_499 => Biome::Highland,
+                ROCK_LINE_UNITS..SNOW_LINE_UNITS => Biome::Rock,
+                _ if self.cliff_at(x, z) => Biome::Rock,
+                HIGHLAND_LINE_UNITS..ROCK_LINE_UNITS => Biome::Highland,
                 _ => Biome::Foothills,
+            };
+        }
+        if greyhaven_vale::beyond_authored(x, z) > 0 {
+            // The region's base terrain round the authored parts (#810): it has no roads, water,
+            // paint or fields yet.
+            return if self.cliff_at(x, z) {
+                Biome::Rock
+            } else if self.ground_at(x, z) >= HIGHLAND_LINE_UNITS {
+                Biome::Highland
+            } else {
+                Biome::Meadow
             };
         }
         let water = self.water_distance(point);
@@ -1303,12 +1320,6 @@ pub const SNOW_COLOR: [u8; 3] = [236, 238, 242];
 
 fn clamp_channel(value: i32) -> u8 {
     u8::try_from(value.clamp(0, 255)).unwrap_or(u8::MAX)
-}
-
-/// Chebyshev distance outside the walled ground, zero or negative inside: the corners of the
-/// playable rectangle beside the wetlands (#426) lie outside, under mountains.
-fn beyond_playable(x: i32, z: i32) -> i64 {
-    greyhaven_vale::beyond_walls(x, z)
 }
 
 /// Chebyshev distance outside `bounds`, zero or negative inside.
@@ -1455,16 +1466,10 @@ impl Relief {
         let rolling =
             (3 * value_noise(SEED_ROLLING, x, z, 2_400) + value_noise(SEED_DETAIL, x, z, 700)) / 4;
         let walkable = rolling * i64::from(WALKABLE_RELIEF_UNITS) / 1024;
-        let beyond = beyond_playable(x, z);
-        let height = if beyond > 0 {
-            let base = (beyond * 2 / 3).min(3_200);
-            let ridge =
-                value_noise(SEED_RIDGE, x, z, 3_000) * 800 / 1024 * beyond.min(3_000) / 3_000;
-            let near = (walkable + base + ridge).clamp(
-                -i64::from(WALKABLE_RELIEF_UNITS),
-                i64::from(MOUNTAIN_PEAK_UNITS),
-            );
-            (near + distant_ranges(x, z)).min(i64::from(FAR_PEAK_UNITS))
+        // Beyond the boundary walls the region's own terrain carries the mountains (#810); the
+        // distant ranges rise past the terrain grid.
+        let height = if !greyhaven_vale::inside_walls(x, z) {
+            (walkable + distant_ranges(x, z)).min(i64::from(FAR_PEAK_UNITS))
         } else {
             let cell = (
                 x.div_euclid(RELIEF_BUCKET_UNITS),
@@ -1671,8 +1676,13 @@ impl Placer<'_> {
                 placed += 1;
             }
         }
-        // Background forest on the mountain slopes beyond the walls, round the Vale and the
-        // farmland (#424).
+        // Background forest on the slopes at least 4 m beyond the boundary walls, below the
+        // rock line (#424, #810).
+        let beyond_walls = |at: [i32; 2]| {
+            [(0, 0), (-400, 0), (400, 0), (0, -400), (0, 400)]
+                .iter()
+                .all(|(dx, dz)| !greyhaven_vale::inside_walls(at[0] + dx, at[1] + dz))
+        };
         let mut placed = 0;
         for _ in 0..12_000 {
             if placed == 700 {
@@ -1696,9 +1706,9 @@ impl Placer<'_> {
             let supported = heights.into_iter().max().unwrap_or(0)
                 - heights.into_iter().min().unwrap_or(0)
                 <= 300;
-            if beyond_playable(at[0], at[1]) >= 400
+            if beyond_walls(at)
                 && supported
-                && self.scenery.height_at(at[0], at[1]) < 2_600
+                && heights[0] < ROCK_LINE_UNITS
                 && self.place(PropKind::Tree(variant), at, yaw, scale, Ground::Shore)
             {
                 placed += 1;
@@ -1893,7 +1903,7 @@ impl Placer<'_> {
             let yaw = u16::try_from(rng.next_u64() % 65_536).unwrap_or(0);
             let scale = u16::try_from(rng.range(700, 1_300)).unwrap_or(1_000);
             if let Some((kind, at)) = candidate
-                && greyhaven_vale::inside_walls(at[0], at[1])
+                && greyhaven_vale::inside_authored(at[0], at[1])
                 && self.place(kind, at, yaw, scale, Ground::Open)
             {
                 placed += 1;
