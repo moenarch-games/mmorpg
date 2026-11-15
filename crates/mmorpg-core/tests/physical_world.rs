@@ -176,7 +176,7 @@ fn world_limits_hold_bodies_in_the_compact_range_on_unenclosed_content() {
     let limit = MAX_CONTENT_COORDINATE_UNITS;
     let [half_x, half_y, half_z] = PLAYER_HALF_EXTENTS_UNITS;
     // Default content has no colliders and no gravity. Each player runs along
-    // one horizontal axis until the 1 km limit stops it (#424).
+    // one horizontal axis until the 4 km limit stops it (#424).
     let mut open = ZoneSimulation::new(ZoneId::new(1));
     for (player_id, facing) in [
         (1, WEST),
@@ -187,7 +187,7 @@ fn world_limits_hold_bodies_in_the_compact_range_on_unenclosed_content() {
         open.add_player(player_id).unwrap();
         open.apply_command(player_id, 1, run(facing)).unwrap();
     }
-    for _ in 0..mmorpg_core::golden::t30(4_900) {
+    for _ in 0..mmorpg_core::golden::t30(19_600) {
         open.advance_tick().unwrap();
     }
     let players = open.snapshot().unwrap().players;

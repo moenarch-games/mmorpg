@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
-use super::{clear_of_roads, highlands, ids, inside_walls, marsh, units, vale};
+use super::{clear_of_roads, highlands, ids, inside_authored, marsh, units, vale};
 use crate::{StaticCollider, XzBounds};
 
 /// What a solid piece of dressing is.
@@ -209,7 +209,7 @@ fn rect(collider: &StaticCollider) -> ([i32; 2], [i32; 2]) {
 /// walls and every creature's and NPC's post.
 fn rocks(colliders: &[StaticCollider]) -> Vec<Piece> {
     // Grid buckets of 20 m over every other body's footprint; the ground and walls are left
-    // to `inside_walls`.
+    // to `inside_authored`.
     const BUCKET: i32 = 2_000;
     type Area = ([i32; 2], [i32; 2]);
     fn block(area: Area, buckets: &mut BTreeMap<(i32, i32), Vec<Area>>) {
@@ -263,8 +263,8 @@ fn rocks(colliders: &[StaticCollider]) -> Vec<Piece> {
             let dry = marsh::WATERS
                 .iter()
                 .all(|water| water.distance_q10(at[0], at[1]) > 1_150);
-            let clear = inside_walls(area.0[0], area.0[1])
-                && inside_walls(area.1[0], area.1[1])
+            let clear = inside_authored(area.0[0], area.0[1])
+                && inside_authored(area.1[0], area.1[1])
                 && dry
                 && clear_of_roads(&collider)
                 && posts.iter().all(|post| !near(area, (*post, *post), 200))

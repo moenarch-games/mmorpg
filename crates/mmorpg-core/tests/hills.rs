@@ -29,8 +29,7 @@ fn feet(zone: &ZoneSimulation) -> [f32; 3] {
 
 #[test]
 fn the_original_valley_is_flat_and_the_ring_has_gentle_hills() {
-    let definition = greyhaven_vale::greyhaven_vale_definition();
-    let grid = definition.terrain().expect("Greyhaven has terrain");
+    let grid = greyhaven_vale::authored_terrain();
     assert_eq!((grid.columns, grid.rows), (terrain::COLUMNS, terrain::ROWS));
     let mut tallest = 0;
     let mut steepest = 0_i64;
