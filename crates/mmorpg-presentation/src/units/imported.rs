@@ -484,7 +484,9 @@ impl Resident {
             | "Fisher Ada" | "Washer Elin"
             // The region's people (#819).
             | "Alewife Gwen Barrow" | "Old Maud" | "Pip" | "Netter Ilsa" | "Trapper Sela"
-            | "Goodwife Ena" | "Shepherd Lise" | "Miller Hanne" => Some(Self::VillagerWoman),
+            | "Goodwife Ena" | "Shepherd Lise" | "Miller Hanne" | "Trader Maren" => {
+                Some(Self::VillagerWoman)
+            }
             "Carpenter Owen Alder"
             | "Davin Moss"
             | "Miller Tomas"
@@ -3875,7 +3877,7 @@ mod tests {
             ]
             .into_iter()
             .chain([
-                // The region's people (#819), NPCs 22–41.
+                // The region's people (#819), NPCs 22–41 …
                 Some("resident.tanner"),
                 Some("resident.farmer"),
                 Some("resident.tanner"),
@@ -3896,6 +3898,8 @@ mod tests {
                 Some("resident.tanner"),
                 Some("resident.tanner"),
                 Some("resident.farmer"),
+                // Trader Maren (#826).
+                Some("resident.tanner"),
             ])
             .collect::<Vec<_>>()
         );

@@ -247,7 +247,8 @@ pub use trap::{
 };
 pub use vendor::{
     MAX_VENDOR_OFFERS, VENDOR_REACH_UNITS, VendorOffer, VendorStock, VendorStockError,
-    VendorTradeError, sell_price, settle_purchase, settle_sale, starter_vendor_stock,
+    VendorTradeError, fenford_trader_stock, sell_price, settle_purchase, settle_sale,
+    starter_vendor_stock,
 };
 pub use water::{AirPocket, Breath, WaterChannel, WaterMode, WaterVolume};
 pub use waystone::{

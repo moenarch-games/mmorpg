@@ -149,7 +149,9 @@ exactly.
   their midday ale there, Old Maud keeps watch at the barrow ring, and Pip runs to the stones in
   the morning and to the alehouse in the afternoon.
 - **Fenford:** Hob Ferris keeps the Ford Inn, Miller Wynne works the mill, Ferryman Osk waits at
-  the ford and Netter Ilsa mends nets in the square.
+  the ford, Netter Ilsa mends nets in the square, and Trader Maren keeps a stall with the
+  region's gear by day (#826): padded armour, the buckler and shortsword, and the level 6 mace,
+  jerkin and cowl.
 - **Westmere Lodge:** Fisher Brann fishes the tarn and eats at the fire at noon.
 - **The hunters' camp:** Huntsman Edric Vale keeps the fire; Trapper Sela walks her lines in
   Southwood each morning.

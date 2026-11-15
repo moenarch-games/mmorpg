@@ -17,7 +17,7 @@ const WEST: u16 = 49_152;
 
 /// `(id, name, level, feet XZ, facing)` of the region's new residents.
 #[rustfmt::skip]
-const NEW: [(u32, &str, u8, [i32; 2], u16); 20] = [
+const NEW: [(u32, &str, u8, [i32; 2], u16); 21] = [
     // Barrowdown (#818).
     (22, "Alewife Gwen Barrow", 4, [55_800, 67_400], EAST),
     (23, "Shepherd Corin", 3, [53_000, 70_600], SOUTH),
@@ -44,6 +44,8 @@ const NEW: [(u32, &str, u8, [i32; 2], u16); 20] = [
     (39, "Shepherd Lise", 2, [15_200, 47_200], EAST),
     (40, "Miller Hanne", 3, [-4_350, 56_150], SOUTH),
     (41, "Farmhand Jory", 2, [-6_400, 54_000], WEST),
+    // Fenford's trader (#826).
+    (42, "Trader Maren", 4, [102_000, 20_600], EAST),
 ];
 
 /// The region's new residents.
@@ -56,6 +58,7 @@ pub(super) fn npcs() -> Vec<Npc> {
             role: match id {
                 22 | 27 | 31 | 32 | 34 => NpcRole::QuestGiver,
                 35 => NpcRole::Guard,
+                42 => NpcRole::Vendor,
                 _ => NpcRole::Resident,
             },
             level,
@@ -249,6 +252,8 @@ pub(super) fn routines() -> Vec<NpcRoutine> {
         ),
         // Fenford.
         routine(27, &[[105_300, 19_500]], EAST, Vec::new()),
+        // Maren keeps her stall by the square and shuts it for the night (#826).
+        routine(42, &[[100_200, 21_950]], SOUTH, Vec::new()),
         routine(
             28,
             &[[100_750, 23_000], [100_750, 22_400]],

@@ -123,6 +123,28 @@ pub fn starter_vendor_stock() -> VendorStock {
     .expect("the starter vendor stock is valid")
 }
 
+/// Trader Maren's stock at Fenford (#826): the padded armour, the buckler and the shortsword at
+/// Bram's prices, and the level 6 mace, jerkin and cowl at five times their sale value, for
+/// players working the region's eastern chains.
+#[must_use]
+pub fn fenford_trader_stock() -> VendorStock {
+    let offer = |item, price| VendorOffer {
+        item: ItemId::new(item),
+        price,
+    };
+    VendorStock::new(&[
+        offer(9, 12),
+        offer(8, 12),
+        offer(7, 15),
+        offer(5, 20),
+        offer(3, 25),
+        offer(12, 45),
+        offer(13, 45),
+        offer(14, 45),
+    ])
+    .expect("the Fenford trader's stock is valid")
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VendorTradeError {
     /// The copper balance does not cover the price.
@@ -287,7 +309,11 @@ mod tests {
         }
         assert_eq!(sell_price(ItemId::new(0)), 0);
         assert_eq!(sell_price(ItemId::new(99)), 0);
-        for offer in starter_vendor_stock().offers() {
+        for offer in starter_vendor_stock()
+            .offers()
+            .iter()
+            .chain(fenford_trader_stock().offers())
+        {
             assert!(offer.price > sell_price(offer.item));
         }
     }
