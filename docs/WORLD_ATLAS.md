@@ -204,6 +204,22 @@ trace was then rounded with a majority filter, smoothed, and junctions closer th
 merged. From now on the borders are the source. Growing from seeds is only the bootstrap,
 and retracing needs `--replace`.
 
+**Greyhaven's sub-regions** (#810, Atlas 5.1.i810). The Greyhaven Vale region (4.9 km²) is cut
+into eleven regions with `"group": "greyhaven"`: units of authoring and the map, while one zone
+host simulates the whole region. The size
+and count checks treat the group as the one region it subdivides, and a kingdom claim on the
+group covers every member. Four hold the zone's hand-authored parts: Greyhaven Vale itself (id
+`greyhaven`, which also keeps the ridge strips), Bandit Highlands, Farmland and Hamlets and
+Marsh-Lake Wetlands. An anchored region names its parts in `parts`, and a region without
+`parts` owns the rest of its anchor. Seven are new ground around them, still atlas-generated:
+Greyfang Approach (north, toward the Greyfang Gate), Delving Heights (north-east, the highest
+ground), Fenwater Crossing (east, the Fen Road), King's Road Downs (south-east), Southwood
+(south-west), Westmere Woods (west, facing the lake) and Crown Foothills (north-west). Their
+borders were grown from the seeds inside the old outline in the same way as the continent's, then
+attached to the unchanged outer border. The playable zone is still the walled T.
+
+![Greyhaven's sub-regions](images/world/greyhaven-subregions.png)
+
 **One Blender file per region.** Each region gets its own working file:
 
 - its terrain piece (40 m cells that share corner heights with the next piece);
@@ -334,7 +350,7 @@ neighbours:
 - Exteriors run counter-clockwise (RFC 7946).
 - Properties: kingdom, contested flag, area, mean elevation and main biomes.
 
-The reference decoder `topojson-client` reads the file as 151 valid polygons. They are
+The reference decoder `topojson-client` reads the file as 161 valid polygons. They are
 identical to `regions.geojson`, cover the 347 km² of land without overlaps, and match the
 region raster's areas to a median of 0.6 % (at most 6 %).
 
