@@ -413,6 +413,8 @@ export class WorldView {
   #ground: Ground | null = null;
   #grass: Grass | null = null;
   #worldDetail: WorldDetail = "medium";
+  /** The roots last submitted to the renderer. */
+  #submittedRoots = new Set<THREE.Object3D>();
   #regions: RegionArt | null = null;
   #onArtProgress: (() => void) | null = null;
   /** Authored hit/block bursts (#52) on zone-confirmed events; one permanent imported root. */
@@ -482,7 +484,6 @@ export class WorldView {
   #sceneryFrame: SceneryFrame | null = null;
   /** The static scene's draw groups, batched per material (#615); the frame's nodes only show and hide them. */
   #sceneryBatches: BatchedScenery | null = null;
-  #sceneryBatchesChanged = false;
   #presentationFingerprint: string | null = null;
   #reliefAt: ((x: number, z: number) => number) | null = null;
   readonly #minimap: MinimapPresenter;
@@ -802,7 +803,6 @@ export class WorldView {
     this.#sceneryFrame = new SceneryFrame(scene);
     this.#sceneryBatches?.dispose();
     this.#sceneryBatches = new BatchedScenery(scene, world.scenery.staticScene.groupStream());
-    this.#sceneryBatchesChanged = true;
     this.#ground = new Ground(world.scenery.staticScene.terrainStream(), scene.surfaces, scene.cutaways);
     void this.#ground.load(this.#models.ktx2Loader);
     const content = world.scenery.staticScene;
@@ -1853,8 +1853,6 @@ export class WorldView {
     const river = this.#river?.roots() ?? { roots: [], changed: false };
     const meadow = this.#meadow?.roots() ?? { roots: [], changed: false };
     const sceneryBatches = this.#sceneryBatches ? [this.#sceneryBatches.root] : [];
-    const sceneryChanged = this.#sceneryBatchesChanged;
-    this.#sceneryBatchesChanged = false;
     const ground = this.#ground?.roots() ?? { roots: [], changed: false };
     const grass = this.#plan ? { roots: [], changed: false } : this.#grass?.roots() ?? { roots: [], changed: false };
     const roots = [...sceneryBatches, ...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...fortifications.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, ...climbing.roots, ...crag.roots, ...limestone.roots, ...river.roots, ...meadow.roots, ...ground.roots, ...grass.roots, this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root];
@@ -1879,8 +1877,12 @@ export class WorldView {
       this.#preparing.push(this.#renderer.prepare(rendererFrame, { roots }));
       return;
     }
-    if (sceneryChanged || models.changed || inn.changed || shrine.changed || outpost.changed || fortifications.changed || settlement.changed || fortress.changed || ambient.changed || nature.changed || climbing.changed || crag.changed || limestone.changed || river.changed || meadow.changed || ground.changed || grass.changed || !this.#impacts.root.parent || !this.#raidSmoke.root.parent || !this.#raidSigns.root.parent) {
+    // Submitting roots adds them to the renderer's scene, and anything later added under a submitted root is drawn without
+    // it; `renderImportedRoots` also draws a whole frame, so it runs only when the set of roots changes, not each time a
+    // streamed cell, tile or group joins one (a doubled frame every few metres of walking).
+    if (roots.length !== this.#submittedRoots.size || roots.some((root) => !this.#submittedRoots.has(root)) || !this.#impacts.root.parent || !this.#raidSmoke.root.parent || !this.#raidSigns.root.parent) {
       this.#renderer.renderImportedRoots({ camera, roots });
+      this.#submittedRoots = new Set(roots);
     }
     const work = this.#renderer.render(rendererFrame);
     this.#lastWork = work;

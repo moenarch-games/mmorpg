@@ -46,12 +46,19 @@ export type GrowingPlaced = { batch: GrowingBatch; geometry: number; instance: n
 /**
  * One `BatchedMesh` for one material (#526, as #615 batches the static scenery): every streamed tile or group drawn with
  * that material is one instance, drawn whole in every view ([`drawWhole`]), so a streamed layer costs one multi-draw call
- * per material and pass. Room grows as levels stream in; evicted ones free theirs for reuse.
+ * per material and pass. Room grows as levels stream in; evicted ones leave their room for the next that fits it.
+ *
+ * Evicting never frees buffer space: `BatchedMesh` only appends, and reclaiming its holes (`optimize`) shifts and
+ * re-uploads the whole buffer in one frame, a hitch every few metres of walking. Instead an evicted level's geometry
+ * slot (reserved at a power of two, so slots fit many levels) waits on a free list, the smallest fitting slot takes
+ * the next level, uploading only its own range, and a full buffer doubles.
  */
 export class GrowingBatch {
   readonly mesh: THREE.BatchedMesh;
   #vertices: number;
   #indices: number;
+  /** Geometry slots no instance uses, with their reserved room. */
+  readonly #free: { id: number; vertices: number; indices: number }[] = [];
 
   constructor(name: string, material: THREE.Material, vertices: number, indices: number, instances: number) {
     this.#vertices = vertices;
@@ -68,18 +75,27 @@ export class GrowingBatch {
     const vertices = geometry.attributes.position!.count;
     const indices = geometry.index!.count;
     const mesh = this.mesh;
-    if (mesh.unusedVertexCount < vertices || mesh.unusedIndexCount < indices) {
-      mesh.optimize();
+    let slot = -1;
+    for (let index = 0; index < this.#free.length; index += 1) {
+      const free = this.#free[index]!;
+      if (free.vertices >= vertices && free.indices >= indices && (slot < 0 || free.indices < this.#free[slot]!.indices)) { slot = index; }
     }
-    if (mesh.unusedVertexCount < vertices || mesh.unusedIndexCount < indices) {
-      this.#vertices = Math.max(this.#vertices * 2, this.#vertices + vertices);
-      this.#indices = Math.max(this.#indices * 2, this.#indices + indices);
-      mesh.setGeometrySize(this.#vertices, this.#indices);
+    let id: number;
+    if (slot >= 0) {
+      id = this.#free.splice(slot, 1)[0]!.id;
+      mesh.setGeometryAt(id, geometry);
+    } else {
+      const [reservedVertices, reservedIndices] = [roomFor(vertices), roomFor(indices)];
+      if (mesh.unusedVertexCount < reservedVertices || mesh.unusedIndexCount < reservedIndices) {
+        this.#vertices = Math.max(this.#vertices * 2, this.#vertices + reservedVertices);
+        this.#indices = Math.max(this.#indices * 2, this.#indices + reservedIndices);
+        mesh.setGeometrySize(this.#vertices, this.#indices);
+      }
+      id = mesh.addGeometry(geometry, reservedVertices, reservedIndices);
     }
     if (mesh.instanceCount >= mesh.maxInstanceCount) {
       mesh.setInstanceCount(mesh.maxInstanceCount * 2);
     }
-    const id = mesh.addGeometry(geometry);
     const instance = mesh.addInstance(id);
     if (matrix) { mesh.setMatrixAt(instance, matrix); }
     if (color) { mesh.setColorAt(instance, color); }
@@ -90,8 +106,14 @@ export class GrowingBatch {
 
   remove(placed: GrowingPlaced): void {
     this.mesh.deleteInstance(placed.instance);
-    this.mesh.deleteGeometry(placed.geometry);
+    const room = this.mesh.getGeometryRangeAt(placed.geometry)!;
+    this.#free.push({ id: placed.geometry, vertices: room.reservedVertexCount, indices: room.reservedIndexCount });
   }
+}
+
+/** A slot's reserved room for `count` vertices or indices: the next power of two. */
+function roomFor(count: number): number {
+  return 2 ** Math.ceil(Math.log2(Math.max(count, 1)));
 }
 
 /**
