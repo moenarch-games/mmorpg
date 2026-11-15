@@ -158,9 +158,23 @@ exactly.
 - **The farmland's hamlets:** Goodwife Ena, Ploughman Garr, Old Bertil, Shepherd Lise, Miller
   Hanne and Farmhand Jory work their fields, wells and mills.
 
+## Quests
+
+Sixteen quests carry players from the Vale's chain out into the region (#820,
+`greyhaven_vale::quests`). The Marshal starts three chains, each through one or two
+settlements:
+
+| Chain | Starts | Giver | Quests |
+| --- | --- | --- | --- |
+| The Downs and the ford | After *Trouble in the Woods* | Gwen Barrow at Barrowdown, then Hob Ferris at Fenford | *Word from the Downs*, *Raiders on the Downs*, *Grain for the Barrow Rest* (stolen grain sacks from marauders), *The Barrow Ring* (hear out Old Maud), *Down to the Ford*, *Tusks and Tallow* (boar tusks), *The Fenwater Raiders* |
+| The tarn and Southwood | After *Scout the Lake* | Brann at Westmere Lodge, then Edric Vale at the hunters' camp | *The Lodge on the Tarn*, *Scales of Westmere* (lurker scales), *Wolves at the Water*, *The Hunters' Camp*, *Southwood Hunt* |
+| The Greyfang Road | After *Garrick Redbrand* | Watchman Garth at Greyfang Watch | *The Greyfang Watch*, *Orders on the Road* (crossbowmen's orders), *The Delving Workings* (retake the mine camp), *Ogres of the Heights* |
+
+The four quest items (boar tusks, grain sacks, lurker scales and Redbrand orders) drop only while a
+quest needs them. Rewards are experience, copper and the Vale's existing gear.
+
 ## Not yet done
 
-- **Quests** out there (#820).
 - **Homes you can enter:** residents end their day on their doorstep; only the Marshal and the
   tanner sleep indoors.
 - **A bridge** over the Delving Run's ravine (the Delving Track fords it).
