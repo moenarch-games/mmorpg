@@ -186,11 +186,15 @@ meadow and foothills, thinner on the hub, hollows and highland, sparse under woo
 near terrain's overlays (forest floor, gravel, mud, sand, paths, rock) or its worn roads, plaza and
 fields cover the turf, nor in water, river beds, terrain holes or the footprint of anything that
 stands on the ground. Each clump takes the ground's tone, leaning greener, with dry straw patches
-over about 18 m. It lays out 16 m cells on a 0.3 m jittered lattice; a cell's clumps come in a
-random order, so any prefix is an even thinning. The browser draws every clump of a cell within
-12 m of the eye and thins them out to 48 m, where the field sinks away; each clump is 15 thin,
-tapered, curved blades, bent by the wind and pushed aside round the player's feet in the vertex
-stage. The old procedural tufts draw nothing; the native client has no grass field yet.
+over about 18 m. It lays out 8 m cells on a jittered lattice about 0.3 m apart; a cell's clumps
+come in a random order, so any prefix is an even thinning. The browser draws the field by the
+**World detail** graphics setting (`graphics.world_detail`): **low** draws no grass; **medium**
+(the default) draws 60 % of the clumps within 6 m of the eye, thinning out to 30 m; **high** draws
+them all within 10 m, thinning out to 44 m. Clumps within 8 m (medium) or 12 m (high) are 15 thin,
+tapered, curved blades of five triangles; further ones are 7 wider blades of three, sharing the
+same instances. The wind bends them and the player's feet push them aside in the vertex stage. At
+Barrowdown's lane, medium draws about 5,700 clumps (230 k triangles) and high about 19,000 (740 k).
+The old procedural tufts draw nothing; the native client has no grass field yet.
 
 The region's seven 8 × 6 m houses are the Outpost's timber-framed house in asset-tooling's Outpost
 kit, each door turned to its settlement's yard (`content/greyhaven/dressing/settlements.json`,

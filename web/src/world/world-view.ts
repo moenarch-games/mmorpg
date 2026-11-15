@@ -58,7 +58,7 @@ import { abilitySlots, cancelCast, useAbilitySlot } from "./units/abilities";
 import { PowerDrawInput } from "./units/power-draw";
 import { HEROIC_STRIKE_ABILITY, canStrikeDirected, directedStrikeCommand } from "./units/directed-strike";
 import { MouseOwnerInput, type EndedGesture, type WheelKindName } from "./units/mouse-owner";
-import type { WheelPreferences } from "../settings/preferences";
+import type { WheelPreferences, WorldDetail } from "../settings/preferences";
 import { ShieldGuardHold, canGuard, guardCommand } from "./units/shield-guard";
 import { ClassHud } from "./units/class-hud";
 import { CombatHud } from "./units/combat-hud";
@@ -412,6 +412,7 @@ export class WorldView {
   #avatarPrepared = false;
   #ground: Ground | null = null;
   #grass: Grass | null = null;
+  #worldDetail: WorldDetail = "medium";
   #regions: RegionArt | null = null;
   #onArtProgress: (() => void) | null = null;
   /** Authored hit/block bursts (#52) on zone-confirmed events; one permanent imported root. */
@@ -651,6 +652,12 @@ export class WorldView {
   }
 
   /** Applies the Settings volume and mute preferences. */
+  /** The world detail setting (`graphics.world_detail`): how far and how thick the grass grows, if at all. */
+  setWorldDetail(detail: WorldDetail): void {
+    this.#worldDetail = detail;
+    this.#grass?.setDetail(detail);
+  }
+
   setAudioPreferences(preferences: AudioPreferences): void {
     this.#audioPreferences = preferences;
     this.#sound?.setPreferences(preferences);
@@ -801,7 +808,7 @@ export class WorldView {
     const content = world.scenery.staticScene;
     this.#grass?.dispose();
     this.#grass = content.grassCell && content.grassCellMetres
-      ? new Grass({ cell: (column, row) => content.grassCell!(column, row), cellMetres: content.grassCellMetres() })
+      ? new Grass({ cell: (column, row) => content.grassCell!(column, row), cellMetres: content.grassCellMetres() }, this.#worldDetail)
       : null;
   }
 
@@ -2412,7 +2419,10 @@ export class WorldView {
       /** The stones along Greyhaven's watercourses (asset-tooling#538), likewise. */
       river: () => this.#river?.observe() ?? null,
       ground: () => this.#ground?.observe() ?? null,
+      /** The grass field (#832): resident cells, clumps and triangles drawn last frame, or null without one. */
       grass: () => this.#grass?.observe() ?? null,
+      /** Applies a world detail level as the setting would. */
+      setWorldDetail: (detail: WorldDetail) => this.setWorldDetail(detail),
       /** The static groups (#526): how many exist, are resident, and of the merged ones are in their batches. */
       staticStream: () => this.#sceneryBatches?.observe() ?? null,
       /** The ambient animals (#419): whether they loaded, and each one's entry, clip and feet. */

@@ -916,6 +916,39 @@
           "description_key": "settings.graphics.render_resolution.description"
         }
       }
+    },
+    {
+      "target": "browser",
+      "definition": {
+        "id": "graphics.world_detail",
+        "kind": {
+          "type": "choice",
+          "options": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "default": {
+          "type": "choice",
+          "value": "medium"
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "graphics.world_detail",
+        "metadata": {
+          "label_key": "settings.graphics.world_detail.label",
+          "category_key": "settings.category.graphics",
+          "order": 20,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.world_detail"
+          ],
+          "description_key": "settings.graphics.world_detail.description"
+        }
+      }
     }
   ],
   "categories": [
@@ -1046,6 +1079,12 @@
     "settings.choice.free": "Free",
     "settings.choice.hold": "Hold to aim, release to throw",
     "settings.choice.armed": "Press to aim, click to throw",
-    "settings.search.resolution": "graphics resolution pixel ratio quality performance gpu"
+    "settings.search.resolution": "graphics resolution pixel ratio quality performance gpu",
+    "settings.graphics.world_detail.label": "World detail",
+    "settings.graphics.world_detail.description": "The grass around you. Low draws none; high draws the densest field and furthest out, at a real GPU cost.",
+    "settings.choice.low": "Low (no grass)",
+    "settings.choice.medium": "Medium",
+    "settings.choice.high": "High",
+    "settings.search.world_detail": "graphics grass detail foliage quality performance gpu low medium high"
   }
 }

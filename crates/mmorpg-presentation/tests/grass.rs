@@ -54,5 +54,5 @@ fn grass_grows_round_barrowdown_but_not_in_its_houses_or_on_its_lane() {
             assert!((0.1..1.).contains(&clump[4]), "{clump:?} height");
         }
     }
-    assert!(clumps > 2_000, "only {clumps} clumps round Barrowdown");
+    assert!(clumps > 500, "only {clumps} clumps round Barrowdown");
 }

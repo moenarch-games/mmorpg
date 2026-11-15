@@ -20,12 +20,14 @@ use crate::{
 };
 
 /// The side of one grass cell, in metres.
-pub const CELL_METRES: f64 = 16.;
+pub const CELL_METRES: f64 = 8.;
 /// Floats per clump in [`Grass::cell`]: position (metres), yaw (radians), height (metres) and
 /// linear RGB.
 pub const CLUMP_FLOATS: usize = 8;
-/// The lattice clumps are jittered on, in metres.
+/// Roughly the spacing of the lattice clumps are jittered on, in metres.
 const SPACING: f64 = 0.3;
+/// Lattice points along a cell's side; the lattice step divides the cell exactly, so no seam shows.
+const SIDE: i32 = (CELL_METRES / SPACING) as i32;
 /// The richer green the blades lean towards, and the straw of their dry patches.
 const LUSH: u32 = 0x5a8a34;
 const DRY: u32 = 0xa49d56;
@@ -173,13 +175,13 @@ impl Grass {
                 metres(g.origin[1] + (g.rows as i32 - 1) * g.step),
             ],
         );
-        let side = (CELL_METRES / SPACING) as i32;
+        let (side, step) = (SIDE, CELL_METRES / f64::from(SIDE));
         let mut clumps: Vec<(f64, [f32; CLUMP_FLOATS])> = Vec::new();
         for j in 0..side {
             for i in 0..side {
                 let (gi, gj) = (f64::from(column * side + i), f64::from(row * side + j));
-                let x = x0 + (f64::from(i) + 0.5 + 0.9 * (hash(&[gi, gj, 1.]) - 0.5)) * SPACING;
-                let z = z0 + (f64::from(j) + 0.5 + 0.9 * (hash(&[gi, gj, 2.]) - 0.5)) * SPACING;
+                let x = x0 + (f64::from(i) + 0.5 + 0.9 * (hash(&[gi, gj, 1.]) - 0.5)) * step;
+                let z = z0 + (f64::from(j) + 0.5 + 0.9 * (hash(&[gi, gj, 2.]) - 0.5)) * step;
                 if x < lo[0] || z < lo[1] || x > hi[0] || z > hi[1] {
                     continue;
                 }
