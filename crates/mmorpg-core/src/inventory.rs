@@ -37,7 +37,7 @@ pub struct ItemTemplate {
 /// Starter catalog, in stable ID order. Equippable items stack to one;
 /// consumable effects, prices and loot tables are separate rules. Quest
 /// items are plain bag items that quest content names as collect objectives.
-pub const ITEM_CATALOG: [ItemTemplate; 18] = [
+pub const ITEM_CATALOG: [ItemTemplate; 22] = [
     ItemTemplate {
         id: ItemId::new(1),
         name: "Torn Fur",
@@ -243,6 +243,35 @@ pub const ITEM_CATALOG: [ItemTemplate; 18] = [
             agility: 3,
             intellect: 3,
         },
+    },
+    // The region's quest items (#820): what its creatures carry while a quest needs it.
+    ItemTemplate {
+        id: ItemId::new(19),
+        name: "Boar Tusk",
+        max_stack: 10,
+        slot: None,
+        stats: ItemStats::NONE,
+    },
+    ItemTemplate {
+        id: ItemId::new(20),
+        name: "Stolen Grain Sack",
+        max_stack: 10,
+        slot: None,
+        stats: ItemStats::NONE,
+    },
+    ItemTemplate {
+        id: ItemId::new(21),
+        name: "Lurker Scale",
+        max_stack: 10,
+        slot: None,
+        stats: ItemStats::NONE,
+    },
+    ItemTemplate {
+        id: ItemId::new(22),
+        name: "Redbrand Orders",
+        max_stack: 5,
+        slot: None,
+        stats: ItemStats::NONE,
     },
 ];
 

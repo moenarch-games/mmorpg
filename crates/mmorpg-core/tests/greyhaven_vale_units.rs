@@ -642,20 +642,22 @@ fn region_residents() -> Vec<(&'static str, NpcRole, Option<mmorpg_core::AreaId>
     use greyhaven_vale::{farmland::FARMLAND_AND_HAMLETS, settlements, wilds};
     let resident = |name, area| (name, NpcRole::Resident, Some(area));
     let guard = |name, area| (name, NpcRole::Guard, Some(area));
+    // The region's quest givers (#820).
+    let giver = |name, area| (name, NpcRole::QuestGiver, Some(area));
     vec![
-        resident("Alewife Gwen Barrow", settlements::BARROWDOWN),
+        giver("Alewife Gwen Barrow", settlements::BARROWDOWN),
         resident("Shepherd Corin", settlements::BARROWDOWN),
         resident("Old Maud", wilds::KINGS_ROAD_DOWNS),
         resident("Farmer Tobin Hale", settlements::BARROWDOWN),
         resident("Pip", settlements::BARROWDOWN),
-        resident("Innkeeper Hob Ferris", settlements::FENFORD),
+        giver("Innkeeper Hob Ferris", settlements::FENFORD),
         resident("Miller Wynne", settlements::FENFORD),
         resident("Ferryman Osk", wilds::FENWATER_CROSSING),
         resident("Netter Ilsa", settlements::FENFORD),
-        resident("Fisher Brann", settlements::WESTMERE_LODGE),
-        resident("Huntsman Edric Vale", settlements::HUNTERS_CAMP),
+        giver("Fisher Brann", settlements::WESTMERE_LODGE),
+        giver("Huntsman Edric Vale", settlements::HUNTERS_CAMP),
         resident("Trapper Sela", settlements::HUNTERS_CAMP),
-        guard("Watchman Garth", settlements::GREYFANG_WATCH),
+        giver("Watchman Garth", settlements::GREYFANG_WATCH),
         guard("Watchman Pell", settlements::GREYFANG_WATCH),
         resident("Goodwife Ena", FARMLAND_AND_HAMLETS),
         resident("Ploughman Garr", FARMLAND_AND_HAMLETS),

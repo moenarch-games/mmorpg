@@ -1,17 +1,26 @@
 //! The Greyhaven chain (quest catalog 3): twelve quests from the outpost's
-//! three quest givers, from the Wolfrun Woods to Garrick Redbrand and back.
+//! three quest givers, from the Wolfrun Woods to Garrick Redbrand and back, and sixteen more
+//! through the region (#820).
 //!
 //! Marshal Elden Greywatch (NPC 1) sends new characters against the wolves
 //! and later the lake and the hollow; Tanner Hilda Brook (NPC 2) wants
 //! pelts and worries about her missing farmhand; Farmer Osric Mill (NPC 4)
 //! asks for help against the marauders. Each quest unlocks the next.
+//!
+//! The Marshal also sends players out into the region: to Gwen Barrow at Barrowdown, whose
+//! chain leads on to Hob Ferris at Fenford; to Brann at Westmere Lodge, whose leads on to Edric
+//! Vale's hunters in Southwood; and, once Garrick is gone, to Watchman Garth at Greyfang Watch,
+//! whose chain retakes the Delving Workings from the Redbrands.
 
+use super::settlements::DELVING_WORKINGS;
 use super::shrine::SUNKEN_SHRINE;
 use super::vale::{REDBRAND_HOLLOW, STILLWATER_LAKE};
+use super::wilds::FENWATER_CROSSING;
 use crate::{ItemId, NpcId, Quest, QuestId, QuestObjective, QuestRewards};
 
 use super::units::templates::{
-    FIELD_MARAUDER, GARRICK_REDBRAND, MIREFIN_LURKER, REDBRAND_BANDIT, REDBRAND_BRUTE, TIMBER_WOLF,
+    FIELD_MARAUDER, GARRICK_REDBRAND, HILL_OGRE, MIREFIN_LURKER, REDBRAND_BANDIT, REDBRAND_BRUTE,
+    REDBRAND_CROSSBOWMAN, TIMBER_WOLF, YOUNG_BOAR,
 };
 
 pub const MARSHAL: NpcId = NpcId::new(1);
@@ -42,6 +51,40 @@ pub const DEEPER_INTO_THE_HOLLOW: QuestId = QuestId::new(11);
 /// victory, so a victory won before Garrick's quest still counts (5.1.37).
 pub const THE_CAPTAIN_BELOW: QuestId = QuestId::new(12);
 
+/// The region's quests (#820).
+pub const WORD_FROM_THE_DOWNS: QuestId = QuestId::new(13);
+pub const RAIDERS_ON_THE_DOWNS: QuestId = QuestId::new(14);
+pub const GRAIN_FOR_THE_BARROW_REST: QuestId = QuestId::new(15);
+pub const THE_BARROW_RING: QuestId = QuestId::new(16);
+pub const DOWN_TO_THE_FORD: QuestId = QuestId::new(17);
+pub const TUSKS_AND_TALLOW: QuestId = QuestId::new(18);
+pub const THE_FENWATER_RAIDERS: QuestId = QuestId::new(19);
+pub const THE_LODGE_ON_THE_TARN: QuestId = QuestId::new(20);
+pub const SCALES_OF_WESTMERE: QuestId = QuestId::new(21);
+pub const WOLVES_AT_THE_WATER: QuestId = QuestId::new(22);
+pub const THE_HUNTERS_CAMP: QuestId = QuestId::new(23);
+pub const SOUTHWOOD_HUNT: QuestId = QuestId::new(24);
+pub const THE_GREYFANG_WATCH: QuestId = QuestId::new(25);
+pub const ORDERS_ON_THE_ROAD: QuestId = QuestId::new(26);
+pub const THE_DELVING_WORKINGS: QuestId = QuestId::new(27);
+pub const OGRES_OF_THE_HEIGHTS: QuestId = QuestId::new(28);
+
+/// The region's quest givers (#820): Barrowdown's alewife, Fenford's innkeeper, Westmere
+/// Lodge's fisher, the hunters' huntsman and Greyfang Watch's watchman; and Old Maud, whom a
+/// quest sends players to talk to.
+pub const ALEWIFE: NpcId = NpcId::new(22);
+pub const OLD_MAUD: NpcId = NpcId::new(24);
+pub const INNKEEPER: NpcId = NpcId::new(27);
+pub const FISHER: NpcId = NpcId::new(31);
+pub const HUNTSMAN: NpcId = NpcId::new(32);
+pub const WATCHMAN: NpcId = NpcId::new(34);
+
+/// The region's quest items (#820).
+pub const BOAR_TUSK: ItemId = ItemId::new(19);
+pub const STOLEN_GRAIN_SACK: ItemId = ItemId::new(20);
+pub const LURKER_SCALE: ItemId = ItemId::new(21);
+pub const REDBRAND_ORDERS: ItemId = ItemId::new(22);
+
 /// The relic on the Sunken Shrine's altar (#274).
 pub const SUNKEN_RELIC: ItemId = ItemId::new(11);
 
@@ -65,7 +108,7 @@ const fn kill(template: crate::CreatureTemplateId, count: u8) -> QuestObjective 
 }
 
 #[rustfmt::skip]
-const QUESTS: [QuestRow; 12] = [
+const QUESTS: [QuestRow; 28] = [
     (
         TROUBLE_IN_THE_WOODS, "Trouble in the Woods",
         "Timber wolves prowl the Wolfrun Trail west of the gate. Thin the pack: slay six of them.",
@@ -135,6 +178,107 @@ const QUESTS: [QuestRow; 12] = [
         "Garrick's ledger names the man he answered to: Captain Ulric Thorn, who rules the Redbrands from the depths under the Greyfang cave. Take friends you trust and end him, or tell me it is already done.",
         MARSHAL, MARSHAL, Some(GARRICK_REDBRAND_QUEST),
         &[QuestObjective::DefeatThorn], 900, 120, &[18],
+    ),
+    // The region's chains (#820): the Downs and the ford, the tarn and Southwood, the Greyfang
+    // Road and the Delving Workings.
+    (
+        WORD_FROM_THE_DOWNS, "Word from the Downs",
+        "Barrowdown on the King's Road Downs has sent no grain this season. Take the Fen Road and the Fenwater Link south and ask Gwen Barrow at the Barrow Rest what is wrong.",
+        MARSHAL, ALEWIFE, Some(TROUBLE_IN_THE_WOODS),
+        &[QuestObjective::Talk { npc: ALEWIFE }], 120, 5, &[],
+    ),
+    (
+        RAIDERS_ON_THE_DOWNS, "Raiders on the Downs",
+        "Marauders camp in the hollow south of the knoll and raid our carts on the King's Road. Drive them off: defeat six Field Marauders.",
+        ALEWIFE, ALEWIFE, Some(WORD_FROM_THE_DOWNS), &[kill(FIELD_MARAUDER, 6)], 350, 30, &[],
+    ),
+    (
+        GRAIN_FOR_THE_BARROW_REST, "Grain for the Barrow Rest",
+        "They carried off our grain in sacks. Bring four of them back from the marauders, and the Barrow Rest will brew again.",
+        ALEWIFE, ALEWIFE, Some(RAIDERS_ON_THE_DOWNS),
+        &[QuestObjective::Collect { item: STOLEN_GRAIN_SACK, count: 4, source: FIELD_MARAUDER }],
+        300, 20, &[7, 8],
+    ),
+    (
+        THE_BARROW_RING, "The Barrow Ring",
+        "Old Maud keeps the barrow ring west of the hamlet and swears the stones are restless. Humour an old woman: go and hear her out.",
+        ALEWIFE, ALEWIFE, Some(RAIDERS_ON_THE_DOWNS),
+        &[QuestObjective::Talk { npc: OLD_MAUD }], 150, 10, &[],
+    ),
+    (
+        DOWN_TO_THE_FORD, "Down to the Ford",
+        "Hob Ferris at the Ford Inn buys our ale and sells us news. Follow the Fen Road east to Fenford and tell him the Barrow Rest is brewing again.",
+        ALEWIFE, INNKEEPER, Some(GRAIN_FOR_THE_BARROW_REST),
+        &[QuestObjective::Talk { npc: INNKEEPER }], 150, 10, &[],
+    ),
+    (
+        TUSKS_AND_TALLOW, "Tusks and Tallow",
+        "The boars by the Fenwater grow fat and bold. Bring me five tusks for the carver, and the tallow pays your supper.",
+        INNKEEPER, INNKEEPER, Some(DOWN_TO_THE_FORD),
+        &[QuestObjective::Collect { item: BOAR_TUSK, count: 5, source: YOUNG_BOAR }],
+        300, 25, &[],
+    ),
+    (
+        THE_FENWATER_RAIDERS, "The Fenwater Raiders",
+        "Marauders watch the ford from the meadows across the Fenwater. Walk the crossing and break them: defeat four.",
+        INNKEEPER, INNKEEPER, Some(DOWN_TO_THE_FORD),
+        &[QuestObjective::Explore { area: FENWATER_CROSSING }, kill(FIELD_MARAUDER, 4)],
+        350, 30, &[5, 3],
+    ),
+    (
+        THE_LODGE_ON_THE_TARN, "The Lodge on the Tarn",
+        "The fisher at Westmere Lodge sends word of trouble on the tarn. Follow the Westmere Road west from the Wolfrun Climb and find Brann.",
+        MARSHAL, FISHER, Some(SCOUT_THE_LAKE),
+        &[QuestObjective::Talk { npc: FISHER }], 150, 10, &[],
+    ),
+    (
+        SCALES_OF_WESTMERE, "Scales of Westmere",
+        "Lurkers crept up the beck into the tarn and foul my nets. Bring me four of their scales so the lodge believes it.",
+        FISHER, FISHER, Some(THE_LODGE_ON_THE_TARN),
+        &[QuestObjective::Collect { item: LURKER_SCALE, count: 4, source: MIREFIN_LURKER }],
+        350, 25, &[6, 9],
+    ),
+    (
+        WOLVES_AT_THE_WATER, "Wolves at the Water",
+        "Wolf packs come down through Westmere Woods to drink at dusk. Thin them: slay eight timber wolves.",
+        FISHER, FISHER, Some(THE_LODGE_ON_THE_TARN), &[kill(TIMBER_WOLF, 8)], 300, 20, &[],
+    ),
+    (
+        THE_HUNTERS_CAMP, "The Hunters' Camp",
+        "Edric Vale's hunters camp on the Southwood Trail. He pays for good hands. Take the Westwood Track south through the woods and find him.",
+        FISHER, HUNTSMAN, Some(WOLVES_AT_THE_WATER),
+        &[QuestObjective::Talk { npc: HUNTSMAN }], 150, 10, &[],
+    ),
+    (
+        SOUTHWOOD_HUNT, "Southwood Hunt",
+        "The camp needs meat and the trails need clearing. Bring down six boars and four wolves in Southwood.",
+        HUNTSMAN, HUNTSMAN, Some(THE_HUNTERS_CAMP),
+        &[kill(YOUNG_BOAR, 6), kill(TIMBER_WOLF, 4)], 400, 30, &[5, 3, 4],
+    ),
+    (
+        THE_GREYFANG_WATCH, "The Greyfang Watch",
+        "With Garrick gone the Redbrands still ride the Greyfang Road. Watchman Garth holds the tower below the mountains; go up through the Highland Pass and report to him.",
+        MARSHAL, WATCHMAN, Some(GARRICK_REDBRAND_QUEST),
+        &[QuestObjective::Talk { npc: WATCHMAN }], 200, 15, &[],
+    ),
+    (
+        ORDERS_ON_THE_ROAD, "Orders on the Road",
+        "Their crossbowmen carry written orders. Take three from them on the Greyfang Road, and we will know where they are bound.",
+        WATCHMAN, WATCHMAN, Some(THE_GREYFANG_WATCH),
+        &[QuestObjective::Collect { item: REDBRAND_ORDERS, count: 3, source: REDBRAND_CROSSBOWMAN }],
+        500, 40, &[],
+    ),
+    (
+        THE_DELVING_WORKINGS, "The Delving Workings",
+        "The orders name the Delving Workings east of the lookout: the Redbrands have taken the miners' camp. Go there by the Delving Track and break them: defeat six bandits.",
+        WATCHMAN, WATCHMAN, Some(ORDERS_ON_THE_ROAD),
+        &[QuestObjective::Explore { area: DELVING_WORKINGS }, kill(REDBRAND_BANDIT, 6)],
+        650, 60, &[12, 13, 14],
+    ),
+    (
+        OGRES_OF_THE_HEIGHTS, "Ogres of the Heights",
+        "Hill ogres roam the Delving Heights and the miners will not go back while they do. Fell two of them.",
+        WATCHMAN, WATCHMAN, Some(THE_DELVING_WORKINGS), &[kill(HILL_OGRE, 2)], 800, 80, &[],
     ),
 ];
 
