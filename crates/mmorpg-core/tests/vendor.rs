@@ -443,14 +443,18 @@ fn vendor_stock_is_validated() {
 }
 
 #[test]
-fn greyhaven_binds_bram_tolliver_as_its_vendor() {
+fn greyhaven_binds_bram_tolliver_and_trader_maren_as_its_vendors() {
     let content = greyhaven_vale::content();
-    let [(npc, stock)] = content.vendors() else {
-        panic!("one vendor");
+    let [(npc, stock), (trader, trader_stock)] = content.vendors() else {
+        panic!("two vendors");
     };
     assert_eq!(*npc, VENDOR);
     assert_eq!(content.npc(VENDOR).unwrap().role, NpcRole::Vendor);
     assert_eq!(stock, &starter_vendor_stock());
+    // Fenford's trader (#826).
+    assert_eq!(content.npc(*trader).unwrap().name, "Trader Maren");
+    assert_eq!(content.npc(*trader).unwrap().role, NpcRole::Vendor);
+    assert_eq!(trader_stock, &mmorpg_core::fenford_trader_stock());
 }
 
 #[test]

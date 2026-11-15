@@ -456,10 +456,17 @@ mod tests {
         let offer = |item, price| json!({"item": item, "price": price});
         assert_eq!(
             value["vendors"],
-            json!([{"npc": 3, "offers": [
-                offer(2, 5), offer(9, 12), offer(8, 12), offer(7, 15),
-                offer(6, 15), offer(5, 20), offer(3, 25), offer(4, 25),
-            ]}])
+            json!([
+                {"npc": 3, "offers": [
+                    offer(2, 5), offer(9, 12), offer(8, 12), offer(7, 15),
+                    offer(6, 15), offer(5, 20), offer(3, 25), offer(4, 25),
+                ]},
+                // Trader Maren at Fenford (#826).
+                {"npc": 42, "offers": [
+                    offer(9, 12), offer(8, 12), offer(7, 15), offer(5, 20),
+                    offer(3, 25), offer(12, 45), offer(13, 45), offer(14, 45),
+                ]},
+            ])
         );
         assert_eq!(value["contentRevision"], content.revision().to_string());
         assert_eq!(

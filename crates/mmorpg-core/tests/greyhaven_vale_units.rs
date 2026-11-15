@@ -665,5 +665,6 @@ fn region_residents() -> Vec<(&'static str, NpcRole, Option<mmorpg_core::AreaId>
         resident("Shepherd Lise", FARMLAND_AND_HAMLETS),
         resident("Miller Hanne", FARMLAND_AND_HAMLETS),
         resident("Farmhand Jory", FARMLAND_AND_HAMLETS),
+        ("Trader Maren", NpcRole::Vendor, Some(settlements::FENFORD)),
     ]
 }

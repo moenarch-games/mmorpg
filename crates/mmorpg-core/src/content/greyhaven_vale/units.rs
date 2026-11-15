@@ -482,7 +482,11 @@ pub fn bosses() -> Vec<crate::BossRules> {
 
 /// Innkeeper Bram Tolliver (NPC 3) sells the starter stock.
 pub(crate) fn vendors() -> Vec<(NpcId, crate::VendorStock)> {
-    vec![(NpcId::new(3), crate::starter_vendor_stock())]
+    vec![
+        (NpcId::new(3), crate::starter_vendor_stock()),
+        // Trader Maren at Fenford (#826).
+        (NpcId::new(42), crate::fenford_trader_stock()),
+    ]
 }
 
 /// Tanner Hilda Brook (NPC 2) works by her tannery and spends the night in the inn's common
@@ -558,7 +562,8 @@ pub(crate) fn seats() -> Vec<crate::Seat> {
     bench.into_iter().chain(chairs).collect()
 }
 
-/// Bram (NPC 3) closes his shop at night (#158, Atlas 5.1.47).
+/// Bram (NPC 3) closes his shop at night (#158, Atlas 5.1.47), and so does Trader Maren at Fenford
+/// (NPC 42, #826).
 pub(crate) fn closed_at_night() -> Vec<NpcId> {
-    vec![NpcId::new(3)]
+    vec![NpcId::new(3), NpcId::new(42)]
 }
