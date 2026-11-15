@@ -346,7 +346,8 @@ mod tests {
         let item = |id, name, slot, stats| {
             let max_stack = match id {
                 1 => 20,
-                10 => 10,
+                10 | 19..=21 => 10,
+                22 => 5,
                 _ => 1,
             };
             let sell_price = mmorpg_core::sell_price(mmorpg_core::ItemId::new(id));
@@ -408,6 +409,11 @@ mod tests {
                     json!("feet"),
                     stats(1, 3, 3, 3)
                 ),
+                // The region's quest items (#820).
+                item(19, "Boar Tusk", Value::Null, stats(0, 0, 0, 0)),
+                item(20, "Stolen Grain Sack", Value::Null, stats(0, 0, 0, 0)),
+                item(21, "Lurker Scale", Value::Null, stats(0, 0, 0, 0)),
+                item(22, "Redbrand Orders", Value::Null, stats(0, 0, 0, 0)),
             ])
         );
         let quests = value["quests"].as_array().unwrap();
