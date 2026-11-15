@@ -41,6 +41,7 @@ pub mod paint;
 pub mod quests;
 pub mod raid;
 pub mod region;
+pub mod residents;
 mod roofs;
 pub mod settlements;
 pub mod shrine;

@@ -52,7 +52,7 @@ mod tests {
         // Re-recorded for solid dressing (#577), ropes (#621), the authored landscape (#644),
         // surface hazards (#294), the Highlands' landforms (#528), the whole region (#810) and its
         // redesign and its heart (#816).
-        assert_eq!(before.stable_hash(), 0xf3dc_9573_1544_98a1);
+        assert_eq!(before.stable_hash(), 0x3fa0_ff47_7c5d_cd29);
         let original: Vec<_> = before
             .props
             .iter()
