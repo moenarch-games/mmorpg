@@ -81,11 +81,14 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // Sleeping far creatures and idle ones deciding one tick in ten (#814) cut AI evaluations
     // (49,320 to 9,972 idle; swimmers still decide every tick), and the changed wandering moves
     // fights-32's candidates a little.
+    // The redesigned region (#816) stands its forests, rock fields and new creatures in every
+    // step's world (about 10,500 more admitted bodies a tick); its far creatures sleep, but the
+    // Westmere Tarn's three lurkers swim and decide every tick (1,080 more per 360 ticks).
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [9_972, 1_339_200, 288_000, 6_088_352],
-        [15_673, 1_336_320, 93_060, 1_825_497],
-        [23_130, 1_344_960, 433_961, 7_878_807],
-        [12_146, 1_356_124, 2_323_474, 24_322_842],
+        [11_052, 5_126_040, 288_000, 6_088_352],
+        [16_903, 5_123_160, 93_060, 1_825_497],
+        [25_840, 5_131_800, 433_961, 7_878_807],
+        [13_226, 5_142_964, 2_323_474, 24_322_842],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();
