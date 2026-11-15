@@ -30,7 +30,7 @@ use crate::{
 };
 
 /// Greyhaven Vale's dressing files.
-const GREYHAVEN: [&str; 6] = [
+const GREYHAVEN: [&str; 7] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/vale.json"
@@ -55,6 +55,11 @@ const GREYHAVEN: [&str; 6] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/crossings.json"
+    )),
+    // The region's settlement houses in the Outpost kit (#818).
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../content/greyhaven/dressing/settlements.json"
     )),
 ];
 

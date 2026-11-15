@@ -118,7 +118,13 @@ fn every_prop_kind_draws_valid_geometry_and_the_same_scenery_builds_the_same_sce
     // (`mmorpg_presentation::buildings`, `mmorpg_presentation::shrine`).
     for &kind in PropKind::all()
         .iter()
-        .filter(|kind| !matches!(kind, PropKind::Inn | PropKind::ShrineKit))
+        // Grass tufts draw nothing: the clients' grass fields grow the turf (`mmorpg_presentation::grass`).
+        .filter(|kind| {
+            !matches!(
+                kind,
+                PropKind::Inn | PropKind::ShrineKit | PropKind::GrassTuft
+            )
+        })
     {
         // Greyhaven has no graybox geometry (#552); place one box of each such kind.
         let prop = if kind.graybox() {
@@ -220,7 +226,6 @@ fn props_stand_on_the_drawn_terrain() {
     let scene = StaticScene::new(&scenery);
     for kind in [
         PropKind::Tree(TreeVariant::Oak),
-        PropKind::GrassTuft,
         PropKind::Flowers,
         PropKind::House,
     ] {
@@ -305,7 +310,6 @@ fn repeated_props_add_instance_transforms_not_geometry() {
     for kind in [
         PropKind::Tree(TreeVariant::Oak),
         PropKind::Tree(TreeVariant::Pine),
-        PropKind::GrassTuft,
         PropKind::Rock(RockSize::Small),
     ] {
         let prop = Prop {
@@ -347,7 +351,6 @@ fn scenery_classes_keep_their_distance_policy() {
         (PropKind::Tree(TreeVariant::Pine), true, Cull::Far),
         (PropKind::Rock(RockSize::Small), false, Cull::Mid),
         (PropKind::Rock(RockSize::Large), true, Cull::Always),
-        (PropKind::GrassTuft, false, Cull::Near),
     ] {
         let original = first(&scenery, kind);
         let prop = Prop {
@@ -470,10 +473,17 @@ fn the_outpost_kit_buildings_keep_their_blockouts_only_as_the_fallback() {
     let parts = mmorpg_presentation::outpost_kit::parts(&scenery);
     assert_eq!(
         parts.len(),
-        203,
-        "adopted modules and the authored settlement"
+        406,
+        "adopted modules, the authored settlement and the region's seven houses (#818)"
     );
-    for collider in [102, 105] {
+    let houses = scenery.props.iter().filter_map(|prop| {
+        prop.collider.filter(|&id| {
+            mmorpg_core::greyhaven_vale::settlements::building(id)
+                == Some(mmorpg_core::greyhaven_vale::settlements::Building::House)
+                && mmorpg_presentation::world_dressing::stand_in(&scenery, id).is_some()
+        })
+    });
+    for collider in [102, 105].into_iter().chain(houses) {
         let prop = scenery
             .props
             .iter()

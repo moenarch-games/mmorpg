@@ -620,6 +620,7 @@ function applyPreferences(preferences: ClientPreferences): void {
   worldView.setWheels(preferences.wheels);
   worldView.setMotionPreference(preferences.reduceMotion);
   worldView.setAudioPreferences(preferences.audio);
+  worldView.setWorldDetail(preferences.worldDetail);
   if (maxPixelRatio !== preferences.maxPixelRatio) {
     maxPixelRatio = preferences.maxPixelRatio;
     resize();

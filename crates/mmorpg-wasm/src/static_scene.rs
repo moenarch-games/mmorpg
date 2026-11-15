@@ -34,6 +34,13 @@ pub fn hosted_static_scene() -> &'static StaticScene {
     SCENE.get(|_| StaticScene::new(hosted_scenery()))
 }
 
+/// Where the hosted scene's grass grows, built on the first cell asked for.
+#[must_use]
+pub fn hosted_grass() -> &'static mmorpg_presentation::grass::Grass {
+    static GRASS: PerZone<mmorpg_presentation::grass::Grass> = PerZone::new();
+    GRASS.get(|_| mmorpg_presentation::grass::Grass::new(hosted_static_scene(), hosted_scenery()))
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Layout {

@@ -224,6 +224,14 @@ impl Weights {
         })
     }
 
+    /// How much the overlays together cover grid sample `i`: the heaviest one's weight.
+    pub(crate) fn cover(&self, i: usize) -> f64 {
+        self.layers
+            .values()
+            .map(|weights| weights[i])
+            .fold(0., f64::max)
+    }
+
     /// Every weight, in a stable order: identity input for the tiles built from them.
     pub(crate) fn values(&self) -> impl Iterator<Item = f64> + '_ {
         self.layers

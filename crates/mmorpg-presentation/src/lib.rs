@@ -22,6 +22,7 @@ pub mod climbing;
 pub mod composition;
 pub mod crag;
 pub mod geometry;
+pub mod grass;
 pub mod ground;
 mod handholds;
 pub mod lights;

@@ -27,6 +27,7 @@ export const SETTING = {
   uiVolume: "audio.ui_volume",
   muted: "audio.muted",
   renderResolution: "graphics.render_resolution",
+  worldDetail: "graphics.world_detail",
 } as const;
 
 export const MOTION_CHOICES = ["system", "reduce", "full"] as const;
@@ -44,6 +45,10 @@ export type WheelPreferences = { enabled: boolean; countUsage: boolean; sectors:
  */
 export const RENDER_RESOLUTION_PIXEL_RATIO = { performance: 1, balanced: 1.5, sharp: 2 } as const;
 export type RenderResolution = keyof typeof RENDER_RESOLUTION_PIXEL_RATIO;
+
+/** How much ground detail the world draws round the camera: `low` draws no grass. */
+export const WORLD_DETAIL_CHOICES = ["low", "medium", "high"] as const;
+export type WorldDetail = (typeof WORLD_DETAIL_CHOICES)[number];
 
 if (catalog.schema_version !== 1) throw new Error("Unsupported MMORPG settings catalog");
 const browserEntries = catalog.entries.filter((entry) => entry.target === "shared" || entry.target === "browser");
@@ -77,6 +82,8 @@ export type ClientPreferences = {
   reduceMotion: MotionPreference;
   /** Most canvas pixels per CSS pixel (`RENDER_RESOLUTION_PIXEL_RATIO`). */
   maxPixelRatio: number;
+  /** Ground detail (`graphics.world_detail`): the grass field's reach and density, or none. */
+  worldDetail: WorldDetail;
   /** Volume percentages and mute for the game-audio mixer (#447). */
   audio: { masterVolume: number; effectsVolume: number; uiVolume: number; muted: boolean };
 };
@@ -104,6 +111,7 @@ export function clientPreferences(values: Readonly<Record<string, SettingValue>>
   const aimStyle = values[SETTING.aimStyle];
   const muted = values[SETTING.muted];
   const resolution = values[SETTING.renderResolution];
+  const detail = values[SETTING.worldDetail];
   return {
     fieldOfViewDegrees: numberValue(values[SETTING.fieldOfView], 50),
     lookSensitivity: numberValue(values[SETTING.lookSensitivity], 1),
@@ -120,6 +128,7 @@ export function clientPreferences(values: Readonly<Record<string, SettingValue>>
     },
     reduceMotion: motion?.type === "choice" && isMotionPreference(motion.value) ? motion.value : "system",
     maxPixelRatio: RENDER_RESOLUTION_PIXEL_RATIO[resolution?.type === "choice" && isRenderResolution(resolution.value) ? resolution.value : "balanced"],
+    worldDetail: detail?.type === "choice" && (WORLD_DETAIL_CHOICES as readonly unknown[]).includes(detail.value) ? detail.value as WorldDetail : "medium",
     audio: {
       masterVolume: numberValue(values[SETTING.masterVolume], 80),
       effectsVolume: numberValue(values[SETTING.effectsVolume], 100),
