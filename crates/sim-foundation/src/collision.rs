@@ -107,7 +107,8 @@ pub struct StaticCollider {
     pub half_extents: [i32; 3],
 }
 
-pub const MAX_STATIC_COLLIDERS: usize = 4_096;
+/// At most this many static colliders per zone: room for a whole region's forests (#816).
+pub const MAX_STATIC_COLLIDERS: usize = 16_384;
 
 /// Half-open XZ rectangle `[min, max)` in units.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
