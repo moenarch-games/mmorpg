@@ -1368,6 +1368,12 @@ pub fn watch_post() -> Vec<crate::StructurePiece> {
     ]
 }
 
+/// Whether `mesh` is a piece of the invisible boundary wall (#810), which clients never draw.
+#[must_use]
+pub fn is_boundary_wall(mesh: &crate::StaticMesh) -> bool {
+    ids::BOUNDARY_WALLS.contains(&mesh.id)
+}
+
 /// The boundary wall along the region's outline (#810): invisible upright faces from
 /// [`WALL_HEIGHT`] below the ground to as far above it, solid from both sides, in pieces of
 /// [`WALL_EDGES_PER_PIECE`] edges so each piece's bounds stay near the outline.
