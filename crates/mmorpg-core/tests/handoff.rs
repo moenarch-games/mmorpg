@@ -401,7 +401,13 @@ fn creatures_evade_attacks_from_a_corridor_and_never_follow_into_it() {
 
     // Engaged outside, it gives up once its target steps into the corridor.
     let mut zone = placed(&zone, 1, 4_500.0, 0.0);
-    zone.advance_tick().unwrap();
+    // An idle creature notices players on its staggered decision tick (#814).
+    for _ in 0..mmorpg_core::IDLE_DECISION_INTERVAL_TICKS {
+        zone.advance_tick().unwrap();
+        if wolf_ai(&zone).0 == CreatureAi::Engaged {
+            break;
+        }
+    }
     assert_eq!(wolf_ai(&zone).0, CreatureAi::Engaged);
     zone.apply_command(1, 2, walk_east()).unwrap();
     let mut gave_up = false;

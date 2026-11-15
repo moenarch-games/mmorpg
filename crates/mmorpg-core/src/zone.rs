@@ -1167,11 +1167,15 @@ impl ZoneSimulation {
         );
         let minions = self.minions.keys().map(|&id| EntityRef::Minion(id));
         for entity in bodies.chain(minions) {
-            let position = self
+            let body = self
                 .world
                 .body(body_id(entity))
-                .ok_or_else(|| ZoneError::new("unit physics body is missing"))?
-                .position();
+                .ok_or_else(|| ZoneError::new("unit physics body is missing"))?;
+            // An asleep creature sat the step out where it was (#814).
+            if body.asleep() {
+                continue;
+            }
+            let position = body.position();
             self.interest_work.units_inspected += 1;
             if self.interest.move_if_needed(entity, position.x, position.z) {
                 self.interest_work.bucket_moves += 1;
