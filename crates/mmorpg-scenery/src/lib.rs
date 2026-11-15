@@ -860,9 +860,11 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
         ],
         half_extents: greyhaven_vale::inn::FOOTPRINT_HALF_EXTENTS,
     };
-    // Ramps (#59) are wedges in their boxes; their boxes anchor them like structures.
+    // Ramps (#59) are wedges in their boxes; their boxes anchor them like structures. A
+    // footbridge's end ramps are drawn with its dressing (#828).
     let ramps: Vec<_> = greyhaven_vale::ramps()
         .iter()
+        .filter(|ramp| !greyhaven_vale::crossings::is_crossing(ramp.body))
         .map(|ramp| StaticCollider {
             id: ramp.body,
             position: ramp.position,
