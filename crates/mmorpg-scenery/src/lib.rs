@@ -509,6 +509,27 @@ fn rock_kind(collider: &StaticCollider) -> PropKind {
 
 pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
     let id = collider.id;
+    // The region's settlements and landmarks (#818) reuse the Vale's visuals.
+    if let Some(building) = greyhaven_vale::settlements::building(id) {
+        use greyhaven_vale::settlements::Building;
+        return Some(match building {
+            Building::House => PropKind::House,
+            Building::Farmhouse => PropKind::Farmhouse,
+            Building::Barn => PropKind::Barn,
+            Building::Windmill => PropKind::Windmill,
+            Building::Well => PropKind::Well,
+            Building::Tower => PropKind::Keep,
+            Building::Tent => PropKind::Tent,
+            Building::Campfire => PropKind::Campfire,
+            Building::Crate => PropKind::Crate,
+            Building::Barrel => PropKind::Barrel,
+            Building::Cart => PropKind::Cart,
+            Building::Fence => PropKind::Fence,
+            Building::Stone | Building::Waystone => PropKind::Waystone,
+            Building::MineEntrance => PropKind::MineEntrance,
+            Building::Rock => PropKind::Cliff,
+        });
+    }
     let kind = match id {
         ids::KEEP => PropKind::Keep,
         _ if greyhaven_vale::fort::TOWER_BODIES.contains(&id) => PropKind::Keep,

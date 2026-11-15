@@ -522,7 +522,14 @@ mod tests {
                 "Farmland and Hamlets",
                 "Bandit Highlands",
                 "Marsh-Lake Wetlands",
-                // The region's new sub-regions (#816).
+                // The settlements (#818) and the region's new sub-regions (#816).
+                "Barrowdown",
+                "Fenford",
+                "Westmere Lodge",
+                "Hunters' Camp",
+                "Delving Workings",
+                "Greyfang Watch",
+                "Crown Stones",
                 "Westmere Woods",
                 "Southwood",
                 "Crown Foothills",
