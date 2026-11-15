@@ -578,16 +578,16 @@ fn prop_counts_stay_within_their_budgets() {
         .count();
     assert_eq!(derived, structures);
     let count = |kind| counts.get(&kind).copied().unwrap_or(0);
-    // The outer valley (#159), the farmland (#424), the highlands (#425) and the wetlands (#426)
-    // add their own grass, flowers and undergrowth.
+    // The region beyond the original valley gathers its own grass, flowers and scrub from the
+    // land itself (#816).
     assert!(
-        (6_400..=7_000).contains(&count(PropKind::GrassTuft)),
+        (2_200..=3_200).contains(&count(PropKind::GrassTuft)),
         "{counts:?}"
     );
-    assert!((1_300..=1_600).contains(&count(PropKind::Flowers)));
+    assert!((2_600..=3_400).contains(&count(PropKind::Flowers)));
     // The region's designed forests add their undergrowth (#816).
     assert!(
-        (11_000..=14_000).contains(&count(PropKind::Bush)),
+        (14_000..=16_500).contains(&count(PropKind::Bush)),
         "{counts:?}"
     );
     // Stillwater Lake's shore, then every marsh water's (#426).

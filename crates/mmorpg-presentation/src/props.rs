@@ -745,8 +745,9 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
     for row in VALE_BOUNDS.min[1].div_euclid(CELL)..VALE_BOUNDS.max[1].div_euclid(CELL) {
         for column in VALE_BOUNDS.min[0].div_euclid(CELL)..VALE_BOUNDS.max[0].div_euclid(CELL) {
             let seed = [f64::from(column), f64::from(row)];
-            let x = column * CELL + (hash(&[seed[0], seed[1], 171.]) * 160.).round() as i32 - 80;
-            let z = row * CELL + (hash(&[seed[0], seed[1], 173.]) * 160.).round() as i32 - 80;
+            let x =
+                column * CELL + (hash(&[seed[0], seed[1], 171.]) * f64::from(CELL)).round() as i32;
+            let z = row * CELL + (hash(&[seed[0], seed[1], 173.]) * f64::from(CELL)).round() as i32;
             if !in_brook_cover(x, z) {
                 roots.push(([x, z], seed));
             }
@@ -759,6 +760,7 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
     );
     for ([x, z], seed) in roots {
         if !VALE_BOUNDS.contains(x, z)
+            || mmorpg_core::greyhaven_vale::beyond_core(x, z) > 0
             || (SPAWN_PLAZA.contains(x, z) && !in_brook_cover(x, z))
             || s.road_distance([x, z]) < if in_brook_cover(x, z) { 35 } else { 240 }
             || s.water_distance([x, z]) < if in_brook_cover(x, z) { 100 } else { 230 }
@@ -790,8 +792,12 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
             let patch = noise(metres(x), metres(z), 4.2, 51392.);
             let glade = noise(metres(x), metres(z), 15., 51393.);
             ((patch - 0.22) * 3.5).clamp(0., 1.) * (0.75 + glade * 0.25)
-        } else {
+        } else if wooded {
             density
+        } else {
+            // Open ground gathers its turf in patches over about 12 m (#816).
+            let patch = noise(metres(x), metres(z), 12., 51394.);
+            density * ((patch - 0.35) * 2.5).clamp(0., 1.)
         };
         if hash(&[seed[0], seed[1], 179.]) > density {
             continue;

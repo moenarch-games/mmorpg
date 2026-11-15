@@ -80,12 +80,8 @@ const FAR_RISE_UNITS: i64 = 12_000;
 /// Half the side of the original 240 m valley, whose scatter predates the outer
 /// valley (#159).
 const ORIGINAL_HALF_EXTENT_UNITS: i32 = 12_000;
-/// Seed of the outer valley's scatter (#159).
+/// Seed of the region's ground cover beyond the original valley (#159, #816).
 const SEED_OUTER_PROPS: u64 = 0x4f55_5445_5256_414c;
-/// Seed of the farmland's scatter (#424).
-const SEED_FARMLAND_PROPS: u64 = 0x4641_524d_5052_4f50;
-/// Seed of the highlands' scatter (#425).
-const SEED_HIGHLAND_PROPS: u64 = 0x4849_4748_5052_4f50;
 /// Seed of the wetlands' scatter (#426).
 const SEED_MARSH_PROPS: u64 = 0x4d41_5253_5052_4f50;
 
@@ -1294,8 +1290,13 @@ impl Scenery {
         if self.farmland.iter().any(|field| field.distance(point) == 0) {
             return Biome::Farmland;
         }
+        // A road's cut and fill banks are turf, not bare rock.
         if self.cliff_at(x, z) {
-            return Biome::Rock;
+            return if greyhaven_vale::road_distance(x, z) < 1_400 {
+                Biome::Foothills
+            } else {
+                Biome::Rock
+            };
         }
         // Broad patches over 90 m with a finer 25 m break-up.
         let patch = (3 * value_noise(SEED_TINT ^ 0x5157, x, z, 9_000)
@@ -1430,6 +1431,28 @@ fn distant_ranges(x: i32, z: i32) -> i64 {
     rise * shape.max(0) / 1024
 }
 
+/// Crags and gullies on the mountains beyond the boundary walls (#816): ridged noise at two
+/// scales, up to 14 m high, growing from 40 m up the region's macro terrain and fading in
+/// over the 20 m beyond the walls, so the slopes break into spurs and rock faces instead of
+/// rising smooth.
+fn mountain_crags(x: i32, z: i32) -> i64 {
+    let macro_height = greyhaven_vale::design::macro_height(x, z);
+    let weight = ((i64::from(macro_height) - 4_000) * 1024 / 8_000).clamp(0, 1024);
+    if weight == 0 {
+        return 0;
+    }
+    let near_walls = [(-2_000, 0), (2_000, 0), (0, -2_000), (0, 2_000)]
+        .iter()
+        .filter(|(dx, dz)| greyhaven_vale::inside_walls(x + dx, z + dz))
+        .count();
+    let weight = weight * i64::try_from(4 - near_walls).unwrap_or(0) / 4;
+    let ridged = |seed: u64, cell: i32| 1024 - 2 * value_noise(seed, x, z, cell).abs();
+    // Spurs stand out of the slope; they never cut below it.
+    let crags =
+        ((2 * ridged(SEED_CRAGS ^ 0x51, 3_500) + ridged(SEED_CRAGS ^ 0x52, 1_200)) / 3 + 1024) / 2;
+    weight * crags * 1_400 / (1024 * 1024)
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Shape {
     Rect(Rect),
@@ -1555,7 +1578,7 @@ impl Relief {
         // Beyond the boundary walls the region's own terrain carries the mountains (#810); the
         // distant ranges rise past the terrain grid.
         let height = if !greyhaven_vale::inside_walls(x, z) {
-            (walkable + distant_ranges(x, z)).min(i64::from(FAR_PEAK_UNITS))
+            (walkable + distant_ranges(x, z) + mountain_crags(x, z)).min(i64::from(FAR_PEAK_UNITS))
         } else {
             let cell = (
                 x.div_euclid(RELIEF_BUCKET_UNITS),
@@ -1802,10 +1825,8 @@ impl Placer<'_> {
         }
         self.ridge_scrub();
         self.hollow_scrub();
-        self.outer_decorations();
-        self.farmland_decorations();
-        self.highland_decorations();
         self.marsh_decorations();
+        self.region_ground_cover();
         self.region_undergrowth();
     }
 
@@ -1883,8 +1904,7 @@ impl Placer<'_> {
         }
     }
 
-    /// Reeds round every marsh water, partly standing in it, and tussock grass, scrub and
-    /// loose rocks across the wetlands (#426).
+    /// Reeds round every marsh water, partly standing in it (#426).
     fn marsh_decorations(&mut self) {
         let mut rng = Rng::new(SEED_MARSH_PROPS);
         for water in greyhaven_vale::marsh::WATERS {
@@ -1917,106 +1937,53 @@ impl Placer<'_> {
                 }
             }
         }
-        let wetlands = greyhaven_vale::marsh::BOUNDS;
-        let lowland = |rng: &mut Rng| {
-            [
-                rng.range(greyhaven_vale::marsh::RIDGE[3] + 100, wetlands.max[0] - 100),
-                rng.range(wetlands.min[1] + 100, wetlands.max[1] - 100),
-            ]
-        };
-        self.scatter(&mut rng, 900, 5_000, |rng| {
-            Some((PropKind::GrassTuft, lowland(rng)))
-        });
-        self.scatter(&mut rng, 220, 2_000, |rng| {
-            Some((PropKind::Bush, lowland(rng)))
-        });
     }
 
-    /// Sparse grass, scrub and loose rocks across the highlands' broken high ground (#425).
-    fn highland_decorations(&mut self) {
-        let mut rng = Rng::new(SEED_HIGHLAND_PROPS);
-        let highlands = greyhaven_vale::highlands::BOUNDS;
-        let high_ground = |rng: &mut Rng| {
-            [
-                rng.range(highlands.min[0] + 100, highlands.max[0] - 100),
-                rng.range(
-                    highlands.min[1] + 100,
-                    greyhaven_vale::highlands::ESCARPMENT[3] - 100,
-                ),
-            ]
-        };
-        self.scatter(&mut rng, 700, 4_000, |rng| {
-            Some((PropKind::GrassTuft, high_ground(rng)))
-        });
-        self.scatter(&mut rng, 160, 1_500, |rng| {
-            Some((PropKind::Bush, high_ground(rng)))
-        });
-    }
-
-    /// Grass, flowers and bushes across the farmland's plateau (#424), off its fields.
-    fn farmland_decorations(&mut self) {
-        let mut rng = Rng::new(SEED_FARMLAND_PROPS);
-        let farmland = greyhaven_vale::farmland::BOUNDS;
-        let scenery = self.scenery;
-        let plateau = |rng: &mut Rng| {
-            let at = [
-                rng.range(farmland.min[0] + 100, farmland.max[0] - 100),
-                rng.range(
-                    greyhaven_vale::farmland::RIDGE[3] + 100,
-                    farmland.max[1] - 100,
-                ),
-            ];
-            scenery
-                .farmland
-                .iter()
-                .all(|field| field.distance(at) > 0)
-                .then_some(at)
-        };
-        self.scatter(&mut rng, 1_200, 6_000, |rng| {
-            plateau(rng).map(|at| (PropKind::GrassTuft, at))
-        });
-        self.scatter(&mut rng, 400, 3_000, |rng| {
-            plateau(rng).map(|at| (PropKind::Flowers, at))
-        });
-        self.scatter(&mut rng, 120, 1_500, |rng| {
-            plateau(rng).map(|at| (PropKind::Bush, at))
-        });
-    }
-
-    /// Grass, flowers and undergrowth across the outer valley's ring (#159), on the Vale's
-    /// own square so the farmland (#424) leaves it unchanged.
-    fn outer_decorations(&mut self) {
+    /// Grass, flowers and scrub across the region beyond the original valley (#816), drawn from
+    /// the land itself rather than from rectangles, in clumps of three to seven: flower drifts in
+    /// the meadows, scrub on rough grass and the high ground, tussocks in the damp hollows and
+    /// high patches, and nothing on roads, fields, rock or water.
+    fn region_ground_cover(&mut self) {
         let mut rng = Rng::new(SEED_OUTER_PROPS);
-        let vale = greyhaven_vale::VALE_BOUNDS;
-        let ring = |rng: &mut Rng| {
-            let at = [
-                rng.range(vale.min[0] + 100, vale.max[0] - 100),
-                rng.range(vale.min[1] + 100, vale.max[1] - 100),
+        let bounds = greyhaven_vale::PLAYABLE_BOUNDS;
+        let mut clumps = 0;
+        for _ in 0..40_000 {
+            if clumps == 1_100 {
+                break;
+            }
+            let centre = [
+                rng.range(bounds.min[0], bounds.max[0]),
+                rng.range(bounds.min[1], bounds.max[1]),
             ];
-            let outer = at[0].abs().max(at[1].abs()) >= ORIGINAL_HALF_EXTENT_UNITS;
-            outer.then_some(at)
-        };
-        self.scatter(&mut rng, 1_600, 8_000, |rng| {
-            ring(rng).map(|at| (PropKind::GrassTuft, at))
-        });
-        self.scatter(&mut rng, 400, 4_000, |rng| {
-            ring(rng)
-                .filter(|at| {
-                    greyhaven_vale::area_at(at[0], at[1]).map(Area::id)
-                        != Some(greyhaven_vale::vale::HOLLOWPINE_REACH)
-                })
-                .map(|at| (PropKind::Flowers, at))
-        });
-        let reach = area_bounds(greyhaven_vale::vale::HOLLOWPINE_REACH);
-        self.scatter(&mut rng, 140, 2_000, |rng| {
-            Some((
-                PropKind::Bush,
-                [
-                    rng.range(reach.min[0], reach.max[0]),
-                    rng.range(reach.min[1], reach.max[1]),
-                ],
-            ))
-        });
+            let original = centre[0].abs().max(centre[1].abs()) < ORIGINAL_HALF_EXTENT_UNITS
+                && greyhaven_vale::beyond_core(centre[0], centre[1]) <= 0;
+            if original || !greyhaven_vale::inside_walls(centre[0], centre[1]) {
+                continue;
+            }
+            // Patches over about 40 m and drifts over about 20 m decide what grows, so cover
+            // gathers in places instead of spreading evenly.
+            let patch = value_noise(SEED_OUTER_PROPS ^ 0x50, centre[0], centre[1], 4_000);
+            let drift = value_noise(SEED_OUTER_PROPS ^ 0x51, centre[0], centre[1], 2_200);
+            let kind = match self.scenery.designed_biome(centre[0], centre[1]) {
+                Biome::Meadow if drift > 300 => PropKind::Flowers,
+                Biome::Meadow | Biome::Foothills if patch > 450 => PropKind::Bush,
+                Biome::Foothills | Biome::Highland if drift > 350 => PropKind::Bush,
+                Biome::Hollow | Biome::Highland if patch > 250 => PropKind::GrassTuft,
+                _ => continue,
+            };
+            clumps += 1;
+            for _ in 0..3 + rng.next_u64() % 5 {
+                let at = [
+                    centre[0] + rng.range(-250, 250),
+                    centre[1] + rng.range(-250, 250),
+                ];
+                let yaw = u16::try_from(rng.next_u64() % 65_536).unwrap_or(0);
+                let scale = u16::try_from(rng.range(700, 1_300)).unwrap_or(1_000);
+                if greyhaven_vale::inside_walls(at[0], at[1]) {
+                    self.place(kind, at, yaw, scale, Ground::Open);
+                }
+            }
+        }
     }
 
     /// Up to `target` props from at most `attempts` candidates.
@@ -2036,7 +2003,7 @@ impl Placer<'_> {
             let yaw = u16::try_from(rng.next_u64() % 65_536).unwrap_or(0);
             let scale = u16::try_from(rng.range(700, 1_300)).unwrap_or(1_000);
             if let Some((kind, at)) = candidate
-                && greyhaven_vale::inside_authored(at[0], at[1])
+                && greyhaven_vale::inside_walls(at[0], at[1])
                 && self.place(kind, at, yaw, scale, Ground::Open)
             {
                 placed += 1;
