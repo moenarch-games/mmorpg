@@ -500,7 +500,15 @@ fn named_areas_are_ordered_disjoint_and_contain_their_landmarks() {
             "Farmland and Hamlets",
             "Bandit Highlands",
             "Marsh-Lake Wetlands",
-            // The new sub-regions (#816).
+            // The settlements and landmarks (#818), inside the sub-regions …
+            "Barrowdown",
+            "Fenford",
+            "Westmere Lodge",
+            "Hunters' Camp",
+            "Delving Workings",
+            "Greyfang Watch",
+            "Crown Stones",
+            // … and the new sub-regions (#816).
             "Westmere Woods",
             "Southwood",
             "Crown Foothills",
@@ -521,13 +529,25 @@ fn named_areas_are_ordered_disjoint_and_contain_their_landmarks() {
         assert!(PLAYABLE_BOUNDS.contains(area.min_xz()[0], area.min_xz()[1]));
         assert!(PLAYABLE_BOUNDS.contains(area.max_xz()[0], area.max_xz()[1]));
         for other in &areas[index + 1..] {
+            // A settlement (#818) lies inside its sub-region, which it names where it stands.
+            let nested = greyhaven_vale::settlements::AREAS
+                .iter()
+                .any(|(id, ..)| *id == area.id())
+                && greyhaven_vale::wilds::AREAS
+                    .iter()
+                    .any(|(id, ..)| *id == other.id());
             assert!(
-                !bounds(area).overlaps(bounds(other)),
+                nested || !bounds(area).overlaps(bounds(other)),
                 "{} / {}",
                 area.name(),
                 other.name()
             );
         }
+    }
+    for (id, name, _) in greyhaven_vale::settlements::AREAS {
+        let area = areas.iter().find(|area| area.id() == *id).unwrap();
+        let [x, z] = [0, 1].map(|axis| (area.min_xz()[axis] + area.max_xz()[axis]) / 2);
+        assert_eq!(area_at(x, z).map(Area::name), Some(*name));
     }
     // The authored half-open outpost rectangle [-3 500, 3 500) × [-1 300, 5 300).
     assert_eq!(

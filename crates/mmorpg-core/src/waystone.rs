@@ -126,12 +126,18 @@ pub const GREYHAVEN_OUTPOST: WaystoneId = id(1);
 pub const SEAM_TEST_WEST: WaystoneId = id(2);
 /// The stone of the Seam Test East zone (#145).
 pub const SEAM_TEST_EAST: WaystoneId = id(3);
+/// Barrowdown's stone, by the hamlet's well on the King's Road Downs (#818).
+pub const BARROWDOWN: WaystoneId = id(4);
+/// Fenford's stone, by the Fenwater's ford (#818).
+pub const FENFORD: WaystoneId = id(5);
+/// The Westmere Lodge's stone, on Westmere Tarn's eastern shore (#818).
+pub const WESTMERE_LODGE: WaystoneId = id(6);
 
 /// The logical zone Greyhaven Vale runs as in the waystone network.
 pub const GREYHAVEN_ZONE: ZoneId = ZoneId::new(1);
 
 /// The whole network, in ID order.
-pub const WAYSTONES: [WaystoneSite; 3] = [
+pub const WAYSTONES: [WaystoneSite; 6] = [
     WaystoneSite {
         id: GREYHAVEN_OUTPOST,
         name: "Greyhaven Outpost",
@@ -155,6 +161,30 @@ pub const WAYSTONES: [WaystoneSite; 3] = [
         stone: crate::seam_test::STONE,
         arrival: crate::seam_test::ARRIVAL,
         facing: 0,
+    },
+    WaystoneSite {
+        id: BARROWDOWN,
+        name: "Barrowdown",
+        zone: GREYHAVEN_ZONE,
+        stone: [55_000, 64_800],
+        arrival: [55_000, 65_200],
+        facing: 0,
+    },
+    WaystoneSite {
+        id: FENFORD,
+        name: "Fenford",
+        zone: GREYHAVEN_ZONE,
+        stone: [104_400, 22_600],
+        arrival: [104_400, 22_200],
+        facing: 32_768,
+    },
+    WaystoneSite {
+        id: WESTMERE_LODGE,
+        name: "Westmere Lodge",
+        zone: GREYHAVEN_ZONE,
+        stone: [-65_200, 8_400],
+        arrival: [-65_200, 8_000],
+        facing: 32_768,
     },
 ];
 

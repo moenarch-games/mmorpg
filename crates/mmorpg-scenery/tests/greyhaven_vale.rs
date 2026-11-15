@@ -601,14 +601,15 @@ fn prop_counts_stay_within_their_budgets() {
     assert_eq!(count(PropKind::CropRow), 13 + 11 * 14 - 5);
     assert_eq!(count(PropKind::Lamp), 4);
     assert_eq!(count(PropKind::Signpost), 3);
-    assert_eq!(count(PropKind::Barrel), 4);
-    assert_eq!(count(PropKind::Cart), 2);
+    // The settlements (#818) bring their own barrels, carts, towers and houses.
+    assert_eq!(count(PropKind::Barrel), 8);
+    assert_eq!(count(PropKind::Cart), 5);
     assert_eq!(count(PropKind::Dock), 1);
     // The Eastwater watchtower and the Southmeadow ruins join the keep and houses (#159), and
     // the farmland's tower and hamlet houses join them (#424), and the highlands' stronghold
     // and lookout towers (#425), and the wetlands' drowned watchtower and ruined cottage (#426).
-    assert_eq!(count(PropKind::Keep), 10);
-    assert_eq!(count(PropKind::House), 19);
+    assert_eq!(count(PropKind::Keep), 12);
+    assert_eq!(count(PropKind::House), 27);
     // The highlands and wetlands add about a tenth each; #644 adds the extended woodland
     // and hideout. The region's designed forests, rock fields and undergrowth (#816) bring the
     // content to 36,780 scenery props.

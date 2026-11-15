@@ -245,7 +245,7 @@ fn every_bound_stone_arrival_is_clear_of_colliders() {
         seam_test::west(),
         seam_test::east(),
     ] {
-        assert_eq!(content.waystones().len(), 1);
+        assert!(!content.waystones().is_empty());
         for id in content.waystones() {
             let site = waystone(*id).unwrap();
             let [x, z] = site.arrival;

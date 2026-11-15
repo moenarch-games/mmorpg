@@ -1786,8 +1786,6 @@ pub(crate) mod tests {
         for (offset, value, message) in [
             (0, 4, "unsupported snapshot protocol id"),
             (3, 1, "unexpected snapshot scope"),
-            // Waystone 4 does not exist (#145).
-            (53, 0b10_0000, "unlocked waystones name an unknown stone"),
             (53, 0b11, "viewer state is inconsistent"),
             (54, 9, "unknown entity kind"),
             (CLASS, 15, "viewer ability state is inconsistent"),

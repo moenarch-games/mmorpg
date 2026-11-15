@@ -509,6 +509,27 @@ fn rock_kind(collider: &StaticCollider) -> PropKind {
 
 pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
     let id = collider.id;
+    // The region's settlements and landmarks (#818) reuse the Vale's visuals.
+    if let Some(building) = greyhaven_vale::settlements::building(id) {
+        use greyhaven_vale::settlements::Building;
+        return Some(match building {
+            Building::House => PropKind::House,
+            Building::Farmhouse => PropKind::Farmhouse,
+            Building::Barn => PropKind::Barn,
+            Building::Windmill => PropKind::Windmill,
+            Building::Well => PropKind::Well,
+            Building::Tower => PropKind::Keep,
+            Building::Tent => PropKind::Tent,
+            Building::Campfire => PropKind::Campfire,
+            Building::Crate => PropKind::Crate,
+            Building::Barrel => PropKind::Barrel,
+            Building::Cart => PropKind::Cart,
+            Building::Fence => PropKind::Fence,
+            Building::Stone | Building::Waystone => PropKind::Waystone,
+            Building::MineEntrance => PropKind::MineEntrance,
+            Building::Rock => PropKind::Cliff,
+        });
+    }
     let kind = match id {
         ids::KEEP => PropKind::Keep,
         _ if greyhaven_vale::fort::TOWER_BODIES.contains(&id) => PropKind::Keep,
@@ -659,6 +680,11 @@ pub fn is_dressing(id: u32) -> bool {
         || ids::LAYOUT_LAMPS.contains(&id)
         || ids::LAYOUT_SIGNPOSTS.contains(&id)
         || ids::LOOSE_ROCKS.contains(&id)
+        // The settlements' barrels and carts (#818) are drawn like the Vale's.
+        || matches!(
+            greyhaven_vale::settlements::building(id),
+            Some(greyhaven_vale::settlements::Building::Barrel | greyhaven_vale::settlements::Building::Cart)
+        )
 }
 
 /// The yaw that turns a ramp's +Z rise toward its content rise (#59).

@@ -112,11 +112,31 @@ Everything round the heart comes from committed data:
   The heart's own woods and groves are rounded into clumps. Beyond the wall the mountains are
   wooded low down, with crags, rock and snow above.
 
+## Settlements and landmarks
+
+The roads lead to places (#818, `greyhaven_vale::settlements`). Each is a named area inside its
+sub-region (it names the ground it stands on), its yard is a level pad of the designed land, and
+its buildings reuse the Vale's visuals:
+
+| Place | Where | What stands there |
+| --- | --- | --- |
+| Barrowdown | A knoll of the King's Road Downs, off the Fenwater Link by Barrowdown Lane | Three houses, the Barrow Rest alehouse, a barn, a well, a waystone |
+| Barrowdown Ring | West of the hamlet | Eight standing stones round an old barrow |
+| Fenford | North of the Fenwater's ford, up Fenford Lane from the Fen Road | Three houses, the Ford Inn, a mill, a well, a waystone |
+| Westmere Lodge | Westmere Tarn's eastern shore, at the Westmere Road's end | The fisher's lodge, a tent and fire, a waystone |
+| Hunters' Camp | On the Southwood Trail | A lodge, tents, a fire and drying racks |
+| Delving Workings | At the Delving Track's end | A mine mouth in the rock, a watchtower, a camp; the Redbrands hold it |
+| Greyfang Watch | Beside the Greyfang Road below the mountains | A tall watchtower and a fire |
+| Crown Stones | Beside the Crown Track | A ring of eight standing stones |
+
+Barrowdown, Fenford and Westmere Lodge hold the network's fourth to sixth waystones, so a
+traveller who has found them can return there from the Outpost's stone.
+
 ## Not yet done
 
-- **Landmarks** in the new sub-regions: the Delving workings with their bridge over the ravine, a
-  Greyfang watchtower, hamlets on the downs.
-- **Quests** and NPCs out there.
+- **People:** the settlements stand empty until their residents and daily routines (#819).
+- **Quests** out there (#820).
+- **A bridge** over the Delving Run's ravine (the Delving Track fords it).
 - **The basin's climbs' ground:** the six ways up the heart's 11 m cliffs are still straight ledges
   cut into the cliff; only their roads round their turns (every authored road turns on a 4 m curve).
 - **The forest-floor texture:** its overlay repeats every 3 m and reads as stripes on open ground,

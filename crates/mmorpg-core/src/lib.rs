@@ -251,9 +251,9 @@ pub use vendor::{
 };
 pub use water::{AirPocket, Breath, WaterChannel, WaterMode, WaterVolume};
 pub use waystone::{
-    GREYHAVEN_OUTPOST, GREYHAVEN_ZONE, MAX_WAYSTONES, SEAM_TEST_EAST, SEAM_TEST_WEST,
-    WAYSTONE_DISCOVERY_UNITS, WAYSTONES, WaystoneId, WaystoneSet, WaystoneSite, waystone,
-    waystone_within_reach,
+    BARROWDOWN, FENFORD, GREYHAVEN_OUTPOST, GREYHAVEN_ZONE, MAX_WAYSTONES, SEAM_TEST_EAST,
+    SEAM_TEST_WEST, WAYSTONE_DISCOVERY_UNITS, WAYSTONES, WESTMERE_LODGE, WaystoneId, WaystoneSet,
+    WaystoneSite, waystone, waystone_within_reach,
 };
 pub use zone::{MAX_PENDING_INTENTS, ZoneSimulation, ZoneTickWork};
 

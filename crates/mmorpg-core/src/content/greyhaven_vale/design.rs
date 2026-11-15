@@ -710,6 +710,11 @@ static PADS: LazyLock<Vec<Pad>> = LazyLock::new(|| {
         .chain(&super::farmland::FIELDS)
         .copied()
         .chain([super::highlands::STRONGHOLD, super::highlands::LOOKOUT])
+        .chain(
+            super::settlements::SETTLEMENTS
+                .iter()
+                .map(|settlement| settlement.yard),
+        )
         .map(|(min, max)| Pad {
             min,
             max,
@@ -728,7 +733,8 @@ static PADS: LazyLock<Vec<Pad>> = LazyLock::new(|| {
             super::marsh::BUILDINGS
                 .iter()
                 .map(|&(_, min, max, _)| (min, max)),
-        );
+        )
+        .chain(super::settlements::structures().map(|(_, min, max, _)| (min, max)));
     let touching = |min: [i32; 2], max: [i32; 2]| {
         areas.iter().find(|area| {
             min[0] <= area.max[0] + 200
