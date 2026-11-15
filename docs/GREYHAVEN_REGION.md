@@ -176,6 +176,9 @@ settlements:
 The four quest items (boar tusks, grain sacks, lurker scales and Redbrand orders) drop only while a
 quest needs them. Rewards are experience, copper and the Vale's existing gear.
 
+Review the Downs chain with `?scenario=greyhaven-downs`: a level 4 Warden on Barrowdown Lane with
+*Trouble in the Woods* turned in and *Word from the Downs* accepted, a few steps from Gwen Barrow.
+
 ## Not yet done
 
 - **Homes you can enter:** residents end their day on their doorstep; only the Marshal and the

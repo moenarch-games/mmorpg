@@ -135,6 +135,10 @@ pub enum Scenario {
     DruidCasts,
     /// … and a level 6 Warden's Rallying Cry.
     WardenWarcry,
+    /// A level 4 Warden on Barrowdown Lane at the hamlet's edge (#816), with *Trouble in the
+    /// Woods* turned in and *Word from the Downs* accepted, facing Gwen Barrow at the Barrow
+    /// Rest: play the Greyhaven region's first chain from its first errand.
+    GreyhavenDowns,
 }
 
 impl Scenario {
@@ -189,6 +193,7 @@ impl Scenario {
             Self::ClericCasts => "cleric-casts",
             Self::DruidCasts => "druid-casts",
             Self::WardenWarcry => "warden-warcry",
+            Self::GreyhavenDowns => "greyhaven-downs",
         }
     }
 
@@ -200,7 +205,8 @@ impl Scenario {
             | Self::RedbrandTraps
             | Self::RedbrandCavern
             | Self::RedbrandDepths
-            | Self::RedbrandThorn => ClassChoice {
+            | Self::RedbrandThorn
+            | Self::GreyhavenDowns => ClassChoice {
                 class: PlayerClass::Warden,
                 sex: Sex::Female,
             },
@@ -319,6 +325,8 @@ impl Scenario {
             | Self::RedbrandSmash
             | Self::RedbrandBandage
             | Self::RedbrandCrossbowman => 8,
+            // The Downs' Field Marauders are level 2–3.
+            Self::GreyhavenDowns => 4,
             Self::MantleLow
             | Self::MantleMid
             | Self::MantleHigh
@@ -394,6 +402,8 @@ impl Scenario {
             // 3 m south of the watchtower's ladder and of the crag's rope; facing north.
             Self::ClimbLadder => ([16_700, -5_500], 32_768),
             Self::ClimbRope => ([-13_400, -35_100], 32_768),
+            // On Barrowdown Lane at the hamlet's north edge; facing south down it to the inn.
+            Self::GreyhavenDowns => ([54_700, 65_000], 0),
         }
     }
 
@@ -453,6 +463,17 @@ impl Scenario {
                 completed: (1..=RETURN_TO_GREYHAVEN.get())
                     .filter_map(|id| mmorpg_core::QuestId::new(id).bit())
                     .fold(0, |mask, bit| mask | bit),
+            };
+        }
+        if self == Self::GreyhavenDowns {
+            use mmorpg_core::greyhaven_vale::quests::{TROUBLE_IN_THE_WOODS, WORD_FROM_THE_DOWNS};
+            // *Trouble in the Woods* turned in; the errand to Barrowdown accepted.
+            record.quests = mmorpg_core::QuestLog {
+                entries: vec![mmorpg_core::QuestEntry {
+                    quest: WORD_FROM_THE_DOWNS,
+                    progress: [0; mmorpg_core::MAX_QUEST_OBJECTIVES],
+                }],
+                completed: TROUBLE_IN_THE_WOODS.bit().unwrap_or(0),
             };
         }
         if self.class().class == PlayerClass::Warden && self.level() >= 6 {

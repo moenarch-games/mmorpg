@@ -959,6 +959,25 @@ mod tests {
     }
 
     #[test]
+    fn the_greyhaven_downs_start_on_barrowdown_lane_with_the_errand_accepted() {
+        assert_eq!(
+            Scenario::from_name("greyhaven-downs"),
+            Some(Scenario::GreyhavenDowns)
+        );
+        let (host, player) = LocalZoneHost::scenario(Scenario::GreyhavenDowns, 0).unwrap();
+        let start = own_position(&host, player);
+        assert_eq!([start[0], start[2]], [54_700, 65_000]);
+        let quests = decode_snapshot(&host.projection(player).unwrap())
+            .unwrap()
+            .quests
+            .unwrap();
+        assert_eq!(
+            quests.entries[0].quest,
+            mmorpg_core::greyhaven_vale::quests::WORD_FROM_THE_DOWNS
+        );
+    }
+
+    #[test]
     fn the_redbrand_cavern_starts_before_the_cave_with_quest_11_accepted() {
         assert_eq!(
             Scenario::from_name("redbrand-cavern"),
