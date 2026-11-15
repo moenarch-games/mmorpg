@@ -25,6 +25,7 @@ use crate::{Area, AreaId, Terrain, ZoneAreas};
 pub mod basin;
 pub mod brook;
 pub mod cave;
+pub mod design;
 pub mod dressing;
 pub mod farmland;
 pub mod fort;
@@ -46,6 +47,7 @@ pub mod shrine;
 pub mod traps;
 pub mod units;
 pub mod vale;
+pub mod wilds;
 
 /// The fixed simulation seed, independent of the content revision, so content and economy
 /// changes do not reroll Greyhaven's existing creature/combat scripts.
@@ -58,9 +60,26 @@ pub const PLAYABLE_BOUNDS: XzBounds = XzBounds {
     min: [-184_000, -134_000],
     max: [188_000, 128_000],
 };
-/// The hand-authored parts: the column of the highlands (#425), the Vale and the farmland
-/// (#424), and the wetlands east of the Vale (#426). Their ground is authored here; round them
-/// the region's base terrain takes over within [`terrain::BLEND_UNITS`].
+/// The hand-authored core (#816): the Vale and the highlands' escarpment above it. Its ground is
+/// authored here; round it the region's designed landscape ([`design`]) takes over within
+/// [`terrain::BLEND_UNITS`].
+pub const CORE: XzBounds = XzBounds {
+    min: [-20_800, highlands::ESCARPMENT[3]],
+    max: [20_800, 20_800],
+};
+
+/// Chebyshev distance (units) from `(x, z)` to the hand-authored core ([`CORE`]): positive
+/// outside it, zero or negative inside.
+#[must_use]
+pub fn beyond_core(x: i32, z: i32) -> i64 {
+    let over = |value: i32, low: i32, high: i32| {
+        (i64::from(low) - i64::from(value)).max(i64::from(value) - i64::from(high))
+    };
+    over(x, CORE.min[0], CORE.max[0]).max(over(z, CORE.min[1], CORE.max[1]))
+}
+
+/// The first regions' extents: the column of the highlands (#425), the Vale and the farmland
+/// (#424), and the wetlands east of the Vale (#426). Their decoration scatters within them.
 pub const AUTHORED: [XzBounds; 2] = [
     XzBounds {
         min: [-20_800, highlands::BOUNDS.min[1]],
@@ -69,8 +88,8 @@ pub const AUTHORED: [XzBounds; 2] = [
     marsh::BOUNDS,
 ];
 
-/// Chebyshev distance (units) from `(x, z)` to the hand-authored ground ([`AUTHORED`]):
-/// positive outside it, zero or negative inside.
+/// Chebyshev distance (units) from `(x, z)` to the first regions ([`AUTHORED`]): positive
+/// outside them, zero or negative inside.
 #[must_use]
 pub fn beyond_authored(x: i32, z: i32) -> i64 {
     AUTHORED
@@ -85,7 +104,7 @@ pub fn beyond_authored(x: i32, z: i32) -> i64 {
         .unwrap_or(i64::MAX)
 }
 
-/// Whether `(x, z)` lies on the hand-authored ground (half-open, like every rectangle here).
+/// Whether `(x, z)` lies in the first regions (half-open, like every rectangle here).
 #[must_use]
 pub fn inside_authored(x: i32, z: i32) -> bool {
     AUTHORED.iter().any(|bounds| bounds.contains(x, z))
@@ -120,10 +139,10 @@ pub const ROAD_CLEARANCE_UNITS: i32 = 200;
 const WALL_HEIGHT: i32 = 2_000;
 /// The ground's box reaches this far beyond [`PLAYABLE_BOUNDS`].
 const WALL_THICKNESS: i32 = 200;
-/// Outline edges per boundary wall piece, and the longest stretch of wall between two of its
-/// columns, so its faces follow the ground.
-const WALL_EDGES_PER_PIECE: usize = 3;
+/// The longest stretch of boundary wall between two of its columns, so its faces follow the
+/// ground, and the spans per wall piece: at most 40 m, so a piece's bounds hug the wall (#816).
 const WALL_COLUMN_SPACING: i64 = 2_000;
+const WALL_SPANS_PER_PIECE: usize = 2;
 const GROUND_THICKNESS: i32 = 100;
 
 /// Collider IDs by structure. `mmorpg-scenery` maps each ID to its visual.
@@ -132,8 +151,8 @@ pub mod ids {
 
     pub const GROUND: u32 = 1;
     /// The boundary wall along the region's outline (#810): invisible mesh pieces in outline
-    /// order, each over a few of its edges.
-    pub const BOUNDARY_WALLS: RangeInclusive<u32> = 9_000..=9_199;
+    /// order, each over at most 40 m of it (#816).
+    pub const BOUNDARY_WALLS: RangeInclusive<u32> = 9_000..=9_999;
 
     pub const KEEP: u32 = 100;
     /// The inn's footprint: a presentation anchor, not a collider (#158).
@@ -240,6 +259,11 @@ pub mod ids {
     pub const MARKET: RangeInclusive<u32> = 7_500..=7_599;
     /// … and the loose rocks.
     pub const LOOSE_ROCKS: RangeInclusive<u32> = 8_000..=8_999;
+
+    /// The region's designed forests' trunks (#816), in forest order …
+    pub const REGION_TREES: RangeInclusive<u32> = 20_000..=39_999;
+    /// … and its rock fields' boulders.
+    pub const REGION_BOULDERS: RangeInclusive<u32> = 40_000..=41_999;
 }
 
 /// One region's tables (#542): its named areas, its roads and its own colliders. Each region
@@ -260,6 +284,7 @@ const REGIONS: &[Region] = &[
     farmland::REGION,
     highlands::REGION,
     marsh::REGION,
+    wilds::REGION,
 ];
 
 static AREAS: LazyLock<ZoneAreas> = LazyLock::new(|| {
@@ -306,10 +331,30 @@ static ROADS: LazyLock<Vec<Road>> = LazyLock::new(|| {
             name: path.name.as_str(),
             points: path.points.as_slice(),
         }))
+        .chain(design::data().roads.iter().map(|road| Road {
+            name: road.name.as_str(),
+            points: road.points.as_slice(),
+        }))
         .collect()
 });
 
-/// Every region's roads, followed by the committed landscape paths in authoring order.
+/// Every road's centre line, bucketed.
+static ALL_ROAD_LINES: LazyLock<design::LineIndex> =
+    LazyLock::new(|| design::LineIndex::new(ROADS.iter().map(|road| road.points), 4_000, 1_000));
+
+/// Units from `(x, z)` to the nearest road's centre line, as far as 10 m; `i64::MAX` beyond.
+#[must_use]
+pub fn road_distance(x: i32, z: i32) -> i64 {
+    ALL_ROAD_LINES
+        .near(x, z)
+        .iter()
+        .map(|&index| design::polyline_distance(ROADS[index].points, x, z).0)
+        .min()
+        .unwrap_or(i64::MAX)
+}
+
+/// Every region's roads, followed by the committed landscape paths and the region's designed
+/// roads (#816), in authoring order.
 #[must_use]
 pub fn roads() -> &'static [Road] {
     &ROADS
@@ -549,38 +594,127 @@ fn authored_ground(column: i32, row: i32) -> i32 {
     }
 }
 
-/// The zone's ground at a grid sample `(x, z)` (#810): the authored ground on [`AUTHORED`],
-/// the region's base terrain from [`terrain::BLEND_UNITS`] beyond it, and between them a smooth
-/// blend from the nearest authored sample.
+/// A graded road lies level across this half width (3 m: the drawn road and a shoulder) …
+const ROAD_FLAT_UNITS: i64 = 300;
+/// … and meets the landscape again across this much more (6 m).
+const ROAD_FADE_UNITS: i64 = 600;
+/// Road profiles are sampled this often along a road.
+const ROAD_SAMPLE_UNITS: i64 = 400;
+
+/// The designed roads' centre lines, bucketed (#816).
+static ROAD_LINES: LazyLock<design::LineIndex> = LazyLock::new(|| {
+    design::LineIndex::new(
+        design::data()
+            .roads
+            .iter()
+            .map(|road| road.points.as_slice()),
+        4_000,
+        i32::try_from(ROAD_FLAT_UNITS + ROAD_FADE_UNITS).unwrap_or(0),
+    )
+});
+
+/// Each designed road's height every [`ROAD_SAMPLE_UNITS`] along it: the ungraded ground,
+/// smoothed over 12 m either way so the road rises and falls gently.
+static ROAD_PROFILES: LazyLock<Vec<Vec<i32>>> = LazyLock::new(|| {
+    design::data()
+        .roads
+        .iter()
+        .map(|road| {
+            let mut samples = Vec::new();
+            for pair in road.points.windows(2) {
+                let (a, b) = (pair[0], pair[1]);
+                let span = (i64::from(b[0] - a[0]).pow(2) + i64::from(b[1] - a[1]).pow(2))
+                    .unsigned_abs()
+                    .isqrt();
+                let steps = (i64::try_from(span).unwrap_or(0) / ROAD_SAMPLE_UNITS).max(1);
+                for step in 0..steps {
+                    let at = |from: i32, to: i32| {
+                        from + i32::try_from(i64::from(to - from) * step / steps).unwrap_or(0)
+                    };
+                    samples.push(ungraded_ground(at(a[0], b[0]), at(a[1], b[1])));
+                }
+            }
+            let last = road.points[road.points.len() - 1];
+            samples.push(ungraded_ground(last[0], last[1]));
+            let mut heights = samples;
+            for _ in 0..2 {
+                heights = (0..heights.len())
+                    .map(|index| {
+                        let window =
+                            &heights[index.saturating_sub(3)..(index + 4).min(heights.len())];
+                        let sum: i64 = window.iter().map(|&height| i64::from(height)).sum();
+                        i32::try_from(sum / i64::try_from(window.len()).unwrap_or(1)).unwrap_or(0)
+                    })
+                    .collect();
+            }
+            heights
+        })
+        .collect()
+});
+
+/// The zone's ground at a grid sample `(x, z)`: the ground of [`ungraded_ground`], with the
+/// region's designed roads graded into it beyond the core (#816), except where a road fords a
+/// river.
 fn zone_ground(x: i32, z: i32) -> i32 {
+    let ground = ungraded_ground(x, z);
+    let outside = beyond_core(x, z);
+    if outside <= 0 {
+        return ground;
+    }
+    let design = design::data();
+    let mut nearest: Option<(i64, i32)> = None;
+    for &index in ROAD_LINES.near(x, z) {
+        let (distance, along) = design::polyline_distance(&design.roads[index].points, x, z);
+        if distance < ROAD_FLAT_UNITS + ROAD_FADE_UNITS
+            && nearest.is_none_or(|(best, _)| distance < best)
+        {
+            let profile = &ROAD_PROFILES[index];
+            let at = usize::try_from(along / ROAD_SAMPLE_UNITS)
+                .unwrap_or(0)
+                .min(profile.len() - 1);
+            let next = (at + 1).min(profile.len() - 1);
+            let fraction = along % ROAD_SAMPLE_UNITS;
+            let height = i64::from(profile[at])
+                + i64::from(profile[next] - profile[at]) * fraction / ROAD_SAMPLE_UNITS;
+            nearest = Some((distance, i32::try_from(height).unwrap_or(ground)));
+        }
+    }
+    let Some((distance, road)) = nearest else {
+        return ground;
+    };
+    let along_road =
+        1_024 - smooth_q10(distance, ROAD_FLAT_UNITS, ROAD_FLAT_UNITS + ROAD_FADE_UNITS);
+    let past_core = smooth_q10(outside, 0, 1_200);
+    let ford = 1_024 - smooth_q10(design::river_distance(x, z), 200, 800);
+    let weight = along_road * past_core / 1_024 * (1_024 - ford) / 1_024;
+    ground + i32::try_from(i64::from(road - ground) * weight / 1_024).unwrap_or(0)
+}
+
+/// The zone's ground at a grid sample `(x, z)` before its roads are graded (#816): the authored
+/// ground on [`CORE`], the designed landscape from [`terrain::BLEND_UNITS`] beyond it, and
+/// between them a smooth blend from the nearest authored sample.
+fn ungraded_ground(x: i32, z: i32) -> i32 {
     let authored = |x: i32, z: i32| {
         authored_ground(
             (x - terrain::ORIGIN[0]) / terrain::STEP,
             (z - terrain::ORIGIN[1]) / terrain::STEP,
         )
     };
-    let beyond = beyond_authored(x, z);
+    let beyond = beyond_core(x, z);
     if beyond <= 0 {
         return authored(x, z);
     }
-    let base = region::data().base_height(x, z);
+    let land = design::ground(x, z);
     if beyond >= terrain::BLEND_UNITS {
-        return base;
+        return land;
     }
-    // The nearest authored sample: the point clamped into the nearest authored rectangle,
-    // whose edges lie on the grid.
-    let edge = AUTHORED
-        .iter()
-        .map(|bounds| {
-            [
-                x.clamp(bounds.min[0], bounds.max[0]),
-                z.clamp(bounds.min[1], bounds.max[1]),
-            ]
-        })
-        .min_by_key(|point| (point[0] - x).abs().max((point[1] - z).abs()))
-        .map_or(base, |point| authored(point[0], point[1]));
+    // The nearest authored sample: the point clamped into the core, whose edges lie on the grid.
+    let edge = authored(
+        x.clamp(CORE.min[0], CORE.max[0]),
+        z.clamp(CORE.min[1], CORE.max[1]),
+    );
     let weight = smooth_q10(beyond, 0, terrain::BLEND_UNITS);
-    edge + i32::try_from(i64::from(base - edge) * weight / 1_024).unwrap_or(0)
+    edge + i32::try_from(i64::from(land - edge) * weight / 1_024).unwrap_or(0)
 }
 
 /// The zone's terrain grid: the authored ground (#159) within the region's base terrain (#810).
@@ -683,7 +817,9 @@ mod woods {
 
 /// The outer valley's woods (#159): `(origin, cells, seed, percent of cells
 /// with a trunk)` on the same 4.5 m jittered grid as Wolfrun Woods.
-const OUTER_FORESTS: [([i32; 2], [i32; 2], u64, u64); 7] = [
+/// The farmland's, highlands' and wetlands' trees are the region's designed forests (#816,
+/// [`region_forest_trees`]).
+const OUTER_FORESTS: [([i32; 2], [i32; 2], u64, u64); 4] = [
     // Hollowpine Reach: dense pines west of Wolfrun Woods.
     ([-20_400, -11_600], [17, 52], 0x484f_4c4c_4f57_5049, 60),
     // Greyfang Ridge and Southmeadow Downs: scattered copses.
@@ -691,13 +827,6 @@ const OUTER_FORESTS: [([i32; 2], [i32; 2], u64, u64); 7] = [
     ([-18_000, 16_400], [80, 9], 0x534f_5554_484d_4544, 12),
     // Eastwater Fen: sparse alders east of the farm and the lake.
     ([12_600, -11_600], [17, 52], 0x4541_5354_5741_5445, 15),
-    // Farmland and Hamlets (#424): lone trees between the fields, off the level ground.
-    ([-20_400, 25_600], [90, 84], 0x4641_524d_5452_4545, 5),
-    // Bandit Highlands (#425): scattered pines across the high ground, off its level ground
-    // and clear of its crags.
-    ([-20_400, -62_800], [90, 77], 0x4849_4748_5452_4545, 4),
-    // Marsh-Lake Wetlands (#426): lone trees across the wetlands, off the water.
-    ([25_600, -20_400], [82, 90], 0x4d41_5253_4854_5245, 3),
 ];
 
 /// Small, patchy groves frame Stillwater's eastern shore, the Hollow's distant backdrop
@@ -927,7 +1056,189 @@ fn trees() -> Vec<StaticCollider> {
                 })
             })
     });
+    trees.extend(region_forest_trees());
     trees
+}
+
+/// The region's designed forests (#816): trunks on a jittered grid of each forest's spacing
+/// inside its outline, thinned to its cover and opened into natural glades by noise, inside the
+/// walls and clear of the core, the roads, the waters and the region's structures. They take
+/// [`ids::REGION_TREES`] in forest order.
+fn region_forest_trees() -> Vec<StaticCollider> {
+    let design = design::data();
+    let mut trees = Vec::new();
+    let mut next_id = *ids::REGION_TREES.start();
+    // Creature and NPC posts keep a wandering creature's reach (7 m) clear, and the crags 2 m.
+    let posts: Vec<_> = units::creature_spawns()
+        .into_iter()
+        .map(|unit| unit.position)
+        .chain(units::npcs().into_iter().map(|unit| unit.position))
+        .collect();
+    let near_crag = |x: i32, z: i32| {
+        highlands::CRAGS.iter().any(|&(min, max, _)| {
+            x > min[0] - 200 && x < max[0] + 200 && z > min[1] - 200 && z < max[1] + 200
+        })
+    };
+    for forest in &design.forests {
+        let [min, max] = forest.bounds();
+        let spacing = forest.spacing;
+        // Anywhere in its cell but its outer 0.6 m, so the trunks never line up in rows.
+        let margin = 60;
+        let span = (spacing - 2 * margin).max(1);
+        for row in 0..=(max[1] - min[1]) / spacing {
+            for column in 0..=(max[0] - min[0]) / spacing {
+                let cell = (u64::from(row.unsigned_abs()) << 32) | u64::from(column.unsigned_abs());
+                let hash = splitmix64(forest.seed ^ cell);
+                let jitter = |shift: u32| (hash >> shift) as i32 & 0xffff;
+                let x = min[0] + column * spacing + margin + jitter(8) % span;
+                let z = min[1] + row * spacing + margin + jitter(24) % span;
+                // Cover clumps: from 40 % to 160 % of the forest's over about 25 m.
+                let clump = value_noise_q10(i64::from(x), i64::from(z), 2_500, forest.seed ^ 0xc1);
+                let cover = i64::from(forest.cover) * (410 + clump * 1_230 / 1_024) / 1_024;
+                if i64::try_from(hash % 100).unwrap_or(0) >= cover
+                    || design::forest_at(x, z).map(|grows| grows.seed) != Some(forest.seed)
+                    || beyond_core(x, z) < terrain::BLEND_UNITS
+                    || [(0, 0), (-400, 0), (400, 0), (0, -400), (0, 400)]
+                        .iter()
+                        .any(|(dx, dz)| !inside_walls(x + dx, z + dz))
+                    || design::river_distance(x, z) < 400
+                    || design::in_lake(x, z, 600)
+                    || marsh::WATERS
+                        .iter()
+                        .any(|water| water.distance_q10(x, z) < 1_200)
+                    || design::on_pad(x, z, 300)
+                    || near_crag(x, z)
+                    || posts
+                        .iter()
+                        .any(|post| (x - post[0]).abs() < 700 && (z - post[1]).abs() < 700)
+                {
+                    continue;
+                }
+                let half = 30 + jitter(40) % 16;
+                let base = footing([x - half, z - half], [x + half, z + half]);
+                let collider = StaticCollider {
+                    id: next_id,
+                    position: [x, base + woods::TRUNK_HEIGHT / 2, z],
+                    half_extents: [half, woods::TRUNK_HEIGHT / 2, half],
+                };
+                if !clear_of_roads(&collider) {
+                    continue;
+                }
+                assert!(
+                    ids::REGION_TREES.contains(&next_id),
+                    "the region's forests exceed their reserved tree identities"
+                );
+                trees.push(collider);
+                next_id += 1;
+            }
+        }
+    }
+    trees
+}
+
+/// The region's designed boulders (#816): one per kept cell of each rock field's spacing, inside
+/// its outline, 1.2 m to 2.8 m across and half as tall, resting on the terrain; inside the walls
+/// and clear of the core, the roads, the waters, the pads, the posts and every other collider.
+/// They take [`ids::REGION_BOULDERS`] in field order.
+fn region_boulders(existing: &[StaticCollider]) -> Vec<StaticCollider> {
+    /// Footprints `(min, max)` bucketed on a 20 m grid.
+    type Footprints = std::collections::BTreeMap<(i32, i32), Vec<([i32; 2], [i32; 2])>>;
+    const BUCKET: i32 = 2_000;
+    let mut buckets = Footprints::new();
+    let block = |min: [i32; 2], max: [i32; 2], buckets: &mut Footprints| {
+        for bx in (min[0] - 200).div_euclid(BUCKET)..=(max[0] + 200).div_euclid(BUCKET) {
+            for bz in (min[1] - 200).div_euclid(BUCKET)..=(max[1] + 200).div_euclid(BUCKET) {
+                buckets.entry((bx, bz)).or_default().push((min, max));
+            }
+        }
+    };
+    for collider in existing {
+        if collider.id == ids::GROUND {
+            continue;
+        }
+        let [x, _, z] = collider.position;
+        let [hx, _, hz] = collider.half_extents;
+        if beyond_core(x, z) > 0 {
+            block([x - hx, z - hz], [x + hx, z + hz], &mut buckets);
+        }
+    }
+    let posts: Vec<_> = units::creature_spawns()
+        .into_iter()
+        .map(|unit| unit.position)
+        .chain(units::npcs().into_iter().map(|unit| unit.position))
+        .collect();
+    let mut boulders = Vec::new();
+    let mut next_id = *ids::REGION_BOULDERS.start();
+    for field in &design::data().rockfields {
+        let [min, max] = {
+            let mut bounds = [[i32::MAX; 2], [i32::MIN; 2]];
+            for point in &field.polygon {
+                for axis in 0..2 {
+                    bounds[0][axis] = bounds[0][axis].min(point[axis]);
+                    bounds[1][axis] = bounds[1][axis].max(point[axis]);
+                }
+            }
+            bounds
+        };
+        let spacing = field.spacing;
+        for row in 0..=(max[1] - min[1]) / spacing {
+            for column in 0..=(max[0] - min[0]) / spacing {
+                let cell = (u64::from(row.unsigned_abs()) << 32) | u64::from(column.unsigned_abs());
+                let hash = splitmix64(field.seed ^ cell);
+                let jitter = |shift: u32| (hash >> shift) as i32 & 0xffff;
+                let x = min[0] + 150 + jitter(8) % (spacing - 300).max(1);
+                let z = min[1] + 150 + jitter(24) % (spacing - 300).max(1);
+                let half = 60 + jitter(40) % 81;
+                let (lo, hi) = ([x - half, z - half], [x + half, z + half]);
+                let near_other = buckets
+                    .get(&(x.div_euclid(BUCKET), z.div_euclid(BUCKET)))
+                    .is_some_and(|others| {
+                        others.iter().any(|(min, max)| {
+                            lo[0] < max[0] + 150
+                                && hi[0] > min[0] - 150
+                                && lo[1] < max[1] + 150
+                                && hi[1] > min[1] - 150
+                        })
+                    });
+                if hash % 100 >= u64::from(field.cover)
+                    || !design::polygon_contains(&field.polygon, x, z)
+                    || beyond_core(x, z) < terrain::BLEND_UNITS
+                    || [(0, 0), (-500, 0), (500, 0), (0, -500), (0, 500)]
+                        .iter()
+                        .any(|(dx, dz)| !inside_walls(x + dx, z + dz))
+                    || design::river_distance(x, z) < 600
+                    || design::in_lake(x, z, 800)
+                    || marsh::WATERS
+                        .iter()
+                        .any(|water| water.distance_q10(x, z) < 1_250)
+                    || design::on_pad(x, z, 500)
+                    || near_other
+                    || posts
+                        .iter()
+                        .any(|post| (x - post[0]).abs() < 800 && (z - post[1]).abs() < 800)
+                {
+                    continue;
+                }
+                let base = footing(lo, hi);
+                let collider = StaticCollider {
+                    id: next_id,
+                    position: [x, base + half / 2, z],
+                    half_extents: [half, half / 2, half],
+                };
+                if !clear_of_roads(&collider) {
+                    continue;
+                }
+                assert!(
+                    ids::REGION_BOULDERS.contains(&next_id),
+                    "the region's rock fields exceed their reserved identities"
+                );
+                block(lo, hi, &mut buckets);
+                boulders.push(collider);
+                next_id += 1;
+            }
+        }
+    }
+    boulders
 }
 
 /// Whether a trunk stands within 1.5 m of an authored structure's footprint.
@@ -1062,6 +1373,8 @@ fn undressed_colliders() -> Vec<StaticCollider> {
     }];
     colliders.extend(REGIONS.iter().flat_map(|region| (region.colliders)()));
     colliders.extend(trees());
+    let boulders = region_boulders(&colliders);
+    colliders.extend(boulders);
     colliders.extend((*ids::LADDERS.start()..).zip(LADDER_TOWERS).map(ladder));
     // Rope placement reads the authored rock's bounds, not a removed box proxy.
     colliders.extend(
@@ -1219,10 +1532,8 @@ pub fn climbing() -> crate::ClimbSurfaces {
         // The sheer cliff under Stillwater Lake, then the rest of the Vale basin's cliffs.
         (SHEER_LAKE_CLIFF, None),
         (VALE_BASIN, Some(Rock)),
-        // One hard route up each boundary ridge or escarpment, beside its pass.
+        // One hard route up the escarpment, beside its pass.
         (CLIMBING_ROUTES[0], Some(Rock)),
-        (CLIMBING_ROUTES[1], Some(Rock)),
-        (CLIMBING_ROUTES[2], Some(Rock)),
     ];
     crate::ClimbSurfaces::new(colliders, terrain).expect("Greyhaven climbing is valid")
 }
@@ -1241,23 +1552,13 @@ pub const SHEER_LAKE_CLIFF: XzBounds = XzBounds {
     min: [2_000, -3_200],
     max: [12_800, -2_000],
 };
-/// The boundary climbing routes (#490): up the highlands' escarpment east of the Highland Pass,
-/// over the farmland's ridge west of the South Road's notch and over the wetlands' ridge south
-/// of the Marsh Pass. Each is 8 m wide.
-pub const CLIMBING_ROUTES: [XzBounds; 3] = [
-    XzBounds {
-        min: [12_000, -28_000],
-        max: [12_800, -20_800],
-    },
-    XzBounds {
-        min: [-2_400, 20_800],
-        max: [-1_600, 25_600],
-    },
-    XzBounds {
-        min: [20_800, 6_400],
-        max: [25_600, 7_200],
-    },
-];
+/// The climbing route (#490) up the highlands' escarpment east of the Highland Pass, 8 m wide.
+/// The farmland's and wetlands' ridges it once shared the role with gave way to the region's
+/// open landscape (#816).
+pub const CLIMBING_ROUTES: [XzBounds; 1] = [XzBounds {
+    min: [12_000, -28_000],
+    max: [12_800, -20_800],
+}];
 
 /// The mill hoist (#56): a 2 m square stone pillar against the windmill's south face that
 /// rests with its top flush with the farm terrace, rises 8 m to the windmill's east gallery
@@ -1376,29 +1677,32 @@ pub fn is_boundary_wall(mesh: &crate::StaticMesh) -> bool {
 
 /// The boundary wall along the region's outline (#810): invisible upright faces from
 /// [`WALL_HEIGHT`] below the ground to as far above it, solid from both sides, in pieces of
-/// [`WALL_EDGES_PER_PIECE`] edges so each piece's bounds stay near the outline.
+/// [`WALL_SPANS_PER_PIECE`] spans so each piece's bounds stay near the outline.
 fn boundary_walls() -> Vec<crate::StaticMesh> {
     let outline = &region::data().outline;
-    let mut walls = Vec::new();
-    for (id, start) in ids::BOUNDARY_WALLS.zip((0..outline.len()).step_by(WALL_EDGES_PER_PIECE)) {
-        let end = (start + WALL_EDGES_PER_PIECE).min(outline.len());
-        let anchor = outline[start];
-        let mut columns = vec![anchor];
-        for index in start..end {
-            let (a, b) = (outline[index], outline[(index + 1) % outline.len()]);
-            let length = i64::from(b[0] - a[0])
-                .abs()
-                .max(i64::from(b[1] - a[1]).abs());
-            let steps = (length + WALL_COLUMN_SPACING - 1) / WALL_COLUMN_SPACING;
-            for step in 1..=steps.max(1) {
-                let along = |from: i32, to: i32| {
-                    from + i32::try_from(i64::from(to - from) * step / steps.max(1)).unwrap_or(0)
-                };
-                columns.push([along(a[0], b[0]), along(a[1], b[1])]);
-            }
+    // The wall's columns all round the outline, at most [`WALL_COLUMN_SPACING`] apart …
+    let mut all = Vec::new();
+    for index in 0..outline.len() {
+        let (a, b) = (outline[index], outline[(index + 1) % outline.len()]);
+        let length = i64::from(b[0] - a[0])
+            .abs()
+            .max(i64::from(b[1] - a[1]).abs());
+        let steps = ((length + WALL_COLUMN_SPACING - 1) / WALL_COLUMN_SPACING).max(1);
+        for step in 0..steps {
+            let along = |from: i32, to: i32| {
+                from + i32::try_from(i64::from(to - from) * step / steps).unwrap_or(0)
+            };
+            all.push([along(a[0], b[0]), along(a[1], b[1])]);
         }
+    }
+    all.push(outline[0]);
+    // … in pieces of [`WALL_SPANS_PER_PIECE`] spans, so each piece's bounds hug the wall.
+    let mut walls = Vec::new();
+    for (id, start) in ids::BOUNDARY_WALLS.zip((0..all.len() - 1).step_by(WALL_SPANS_PER_PIECE)) {
+        let columns = &all[start..=(start + WALL_SPANS_PER_PIECE).min(all.len() - 1)];
+        let anchor = columns[0];
         let mut vertices = Vec::with_capacity(columns.len() * 2);
-        for point in &columns {
+        for point in columns {
             let ground = TERRAIN.height_at(point[0], point[1]);
             let local = [point[0] - anchor[0], point[1] - anchor[1]];
             vertices.push([local[0], ground - WALL_HEIGHT, local[1]]);
@@ -1423,6 +1727,10 @@ fn boundary_walls() -> Vec<crate::StaticMesh> {
             triangles,
         });
     }
+    assert!(
+        walls.len() * WALL_SPANS_PER_PIECE >= all.len() - 1,
+        "the boundary wall needs more identities than it reserves"
+    );
     walls
 }
 
@@ -1524,6 +1832,7 @@ fn content_with_spawns(
                     .into_iter()
                     .chain(marsh::water_volumes())
                     .chain(brook::waters())
+                    .chain(design::water_volumes())
                     .collect(),
             )?
             .with_surfaces(surface_hazards())?

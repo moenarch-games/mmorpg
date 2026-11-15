@@ -536,8 +536,8 @@ pub const AREAS: &[(AreaId, &str, XzBounds)] = &[(BANDIT_HIGHLANDS, "Bandit High
 
 /// The region's roads.
 pub const ROADS: &[Road] = &[
-    // Bandit Highlands (#425): the pass up the escarpment from the Vale Ring Road, the trail to
-    // the stronghold and the path to the lookout.
+    // Bandit Highlands (#425): the pass up the escarpment from the Vale Ring Road. The roads on
+    // from its top are designed with the region's other roads (#816, [`super::design`]).
     Road {
         name: "Highland Pass",
         points: &[
@@ -550,20 +550,5 @@ pub const ROADS: &[Road] = &[
             [3_600, -25_600],
             [3_600, -27_600],
         ],
-    },
-    Road {
-        name: "Highland Trail",
-        points: &[
-            [3_600, -27_600],
-            [3_600, -33_000],
-            [-8_000, -38_000],
-            [-8_000, -44_000],
-            [0, -47_000],
-            [0, -53_000],
-        ],
-    },
-    Road {
-        name: "Lookout Path",
-        points: &[[3_600, -33_000], [9_000, -35_000], [12_400, -37_600]],
     },
 ];

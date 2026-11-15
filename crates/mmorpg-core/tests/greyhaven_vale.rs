@@ -53,8 +53,18 @@ fn content_is_a_bounded_deterministic_revision() {
         .iter()
         .filter(|collider| ids::TREES.contains(&collider.id))
         .count();
-    // Authored western and northern canopy patches join the older regional woods.
-    assert!((2_500..=4_000).contains(&trees), "{trees} trees");
+    // Authored western and northern canopy patches join the Vale's older woods; the
+    // farmland's, highlands' and wetlands' trees are the region's designed forests (#816).
+    assert!((1_500..=4_000).contains(&trees), "{trees} trees");
+    let region_trees = definition
+        .colliders()
+        .iter()
+        .filter(|collider| ids::REGION_TREES.contains(&collider.id))
+        .count();
+    assert!(
+        (5_000..=12_000).contains(&region_trees),
+        "{region_trees} region trees"
+    );
     for collider in definition.colliders() {
         let (min, max) = footprint(collider);
         let within = |point: [i32; 2]| {
@@ -489,7 +499,15 @@ fn named_areas_are_ordered_disjoint_and_contain_their_landmarks() {
             "Sunken Shrine",
             "Farmland and Hamlets",
             "Bandit Highlands",
-            "Marsh-Lake Wetlands"
+            "Marsh-Lake Wetlands",
+            // The new sub-regions (#816).
+            "Westmere Woods",
+            "Southwood",
+            "Crown Foothills",
+            "Greyfang Approach",
+            "Delving Heights",
+            "Fenwater Crossing",
+            "King's Road Downs"
         ]
     );
     // Area bounds are inclusive; as half-open rectangles they compare with

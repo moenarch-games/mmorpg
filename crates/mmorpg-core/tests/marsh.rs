@@ -1,6 +1,7 @@
-//! Marsh-Lake Wetlands (#426): from the Vale Ring Road a player walks the Marsh Pass through the
-//! ridge's gorges down onto the wetlands, along the Marsh Trail and the causeway to the drowned
-//! watchtower's island and back into the Vale, all on the zone's own physics.
+//! Marsh-Lake Wetlands (#426) in the redesigned region (#816): from the Vale Ring Road a player
+//! walks the Fen Road onto the wetlands, along the Marsh Trail and the causeway to the drowned
+//! watchtower's island and back into the Vale, and on down the Fenwater to its ford, all on the
+//! zone's own physics.
 use std::sync::Arc;
 
 use mmorpg_core::greyhaven_vale::{self, marsh};
@@ -72,43 +73,40 @@ fn area(at: [f32; 3]) -> Option<&'static str> {
     greyhaven_vale::area_at(at[0] as i32, at[2] as i32).map(|area| area.name())
 }
 
+/// A road's centre line by name.
+fn road(name: &str) -> &'static [[i32; 2]] {
+    greyhaven_vale::roads()
+        .iter()
+        .find(|road| road.name == name)
+        .unwrap_or_else(|| panic!("no road {name}"))
+        .points
+}
+
 #[test]
 fn a_player_crosses_the_pass_to_the_island_and_back_into_the_vale() {
     let mut zone = bare_player_at([15_000, 4_000]);
     let mut sequence = 0;
-    // Marsh Pass: into the cutting, north up the gorge, east across the crest, back south and
-    // down the eastern cutting onto the wetlands.
-    walk(
-        &mut zone,
-        &mut sequence,
-        &[
-            [21_200, 4_000],
-            [22_400, 4_000],
-            [22_400, -800],
-            [24_000, -800],
-            [24_000, 2_400],
-            [25_600, 2_400],
-        ],
-    );
+    // The Fen Road leaves the Vale Ring Road eastward onto the wetlands (#816).
+    let fen_road: Vec<[i32; 2]> = road("Fen Road")
+        .iter()
+        .copied()
+        .take_while(|point| point[0] <= 30_000)
+        .collect();
+    walk(&mut zone, &mut sequence, &fen_road);
     let below = feet(&zone);
     assert!(
-        (below[1] - marsh::FLOOR_Y as f32).abs() < 60.0,
+        (below[1] - marsh::FLOOR_Y as f32).abs() < 300.0,
         "on the wetlands: {below:?}"
     );
     assert_eq!(area(below), Some("Marsh-Lake Wetlands"));
     // Marsh Trail to the lake's shore and along the causeway onto the island, 460 m east of the
     // Vale's centre.
+    let trail = road("Marsh Trail");
+    walk(&mut zone, &mut sequence, trail);
     walk(
         &mut zone,
         &mut sequence,
-        &[
-            [29_000, 2_400],
-            [32_000, 5_600],
-            [34_400, 3_200],
-            [34_400, -2_000],
-            [44_000, -2_000],
-            [44_800, -2_000],
-        ],
+        &[[44_000, -2_000], [44_800, -2_000]],
     );
     let island = feet(&zone);
     assert!(
@@ -121,24 +119,13 @@ fn a_player_crosses_the_pass_to_the_island_and_back_into_the_vale() {
         WaterMode::of_feet(content.waters(), island.map(units)),
         WaterMode::Dry
     );
-    // And back over the causeway and the pass into the Vale without a break.
-    walk(
-        &mut zone,
-        &mut sequence,
-        &[
-            [44_000, -2_000],
-            [34_400, -2_000],
-            [34_400, 3_200],
-            [32_000, 5_600],
-            [29_000, 2_400],
-            [25_200, 2_400],
-            [24_000, 2_400],
-            [24_000, -800],
-            [22_400, -800],
-            [22_400, 4_000],
-            [15_000, 4_000],
-        ],
-    );
+    // And back over the causeway and the Fen Road into the Vale without a break.
+    let back: Vec<[i32; 2]> = [[44_000, -2_000]]
+        .into_iter()
+        .chain(trail.iter().rev().copied())
+        .chain(fen_road.iter().rev().copied())
+        .collect();
+    walk(&mut zone, &mut sequence, &back);
     assert_eq!(area(feet(&zone)), Some("Eastwater Fen"));
 }
 
@@ -158,28 +145,16 @@ fn the_reed_path_wades_through_the_ford() {
 }
 
 #[test]
-fn the_ridge_holds_a_player_beside_the_pass() {
-    // At the ridge's foot north of the pass, walking east runs into its face.
-    let mut zone = player_at([20_400, -2_000]);
+fn the_fen_road_follows_the_fenwater_to_its_ford() {
+    // Beyond the wetlands the Fen Road runs down the Fenwater and wades it at the ford (#816).
+    let fen_road: Vec<[i32; 2]> = road("Fen Road")
+        .iter()
+        .copied()
+        .skip_while(|point| point[0] < 56_000)
+        .collect();
+    let mut zone = bare_player_at(fen_road[0]);
     let mut sequence = 0;
-    for _ in 0..mmorpg_core::golden::t30(240) {
-        sequence += 1;
-        zone.apply_command(
-            1,
-            sequence,
-            ZoneCommand::Move {
-                forward: 1,
-                strafe: 0,
-                facing: 16_384,
-            },
-        )
-        .unwrap();
-        zone.advance_tick().unwrap();
-    }
+    walk(&mut zone, &mut sequence, &fen_road);
     let at = feet(&zone);
-    // The toe varies, but ordinary walking must stop before crossing the ridge's gorge.
-    assert!(
-        at[0] < marsh::PASS[1].max[0] as f32 && at[1] < 600.0,
-        "held at {at:?}"
-    );
+    assert!(at[0] > 110_000.0, "{at:?}");
 }

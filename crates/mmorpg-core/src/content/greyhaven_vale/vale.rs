@@ -216,8 +216,8 @@ pub const ROADS: &[Road] = &[
     },
     Road {
         name: "South Road",
-        // Up the South Climb (#423) onto the rim, across the Vale Ring Road and up the ridge's
-        // notch onto the farmland's plateau (#424).
+        // Up the South Climb (#423) onto the rim and across the Vale Ring Road to the King's Road
+        // (#816).
         points: &[
             [0, 2_800],
             [0, 5_000],
@@ -226,9 +226,7 @@ pub const ROADS: &[Road] = &[
             [-3_600, 10_200],
             [0, 10_200],
             [0, 15_000],
-            [0, 23_200],
-            [2_800, 23_200],
-            [2_800, 25_200],
+            [0, 20_000],
         ],
     },
     // The outer valley (#159): a ring road through the four outer regions and

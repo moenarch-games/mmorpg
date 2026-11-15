@@ -3,7 +3,7 @@
 //! of each other and of the hub spawn plaza.
 use std::collections::BTreeMap;
 
-use mmorpg_core::greyhaven_vale::{self, SPAWN_GRID, area_at, units};
+use mmorpg_core::greyhaven_vale::{self, SPAWN_GRID, area_at, units, wilds};
 use mmorpg_core::physics::{BodyId, RigidBody, Vec3i, World};
 use mmorpg_core::{
     AreaId, CreatureBehaviour, CreatureFamily, INTEREST_RADIUS_UNITS, MAX_PLAYERS_PER_ZONE,
@@ -387,6 +387,23 @@ fn spawns_populate_their_subzones() {
             ),
             3,
         ),
+        // The new sub-regions (#816).
+        ((wilds::WESTMERE_WOODS, "Timber Wolf"), 8),
+        ((wilds::WESTMERE_WOODS, "Young Boar"), 4),
+        ((wilds::WESTMERE_WOODS, "Mirefin Lurker"), 3),
+        ((wilds::SOUTHWOOD, "Timber Wolf"), 4),
+        ((wilds::SOUTHWOOD, "Young Boar"), 6),
+        ((wilds::CROWN_FOOTHILLS, "Timber Wolf"), 6),
+        ((wilds::CROWN_FOOTHILLS, "Hill Ogre"), 1),
+        ((wilds::GREYFANG_APPROACH, "Redbrand Bandit"), 4),
+        ((wilds::GREYFANG_APPROACH, "Redbrand Crossbowman"), 3),
+        ((wilds::DELVING_HEIGHTS, "Redbrand Bandit"), 3),
+        ((wilds::DELVING_HEIGHTS, "Redbrand Crossbowman"), 2),
+        ((wilds::DELVING_HEIGHTS, "Hill Ogre"), 2),
+        ((wilds::FENWATER_CROSSING, "Field Marauder"), 4),
+        ((wilds::KINGS_ROAD_DOWNS, "Field Marauder"), 4),
+        ((wilds::KINGS_ROAD_DOWNS, "Young Boar"), 6),
+        ((wilds::KINGS_ROAD_DOWNS, "Grain Rat"), 3),
     ]);
     assert_eq!(counts, expected);
 }

@@ -84,7 +84,7 @@ pub const FIELDS: [([i32; 2], [i32; 2]); 11] = [
 ];
 
 /// Level ground `(min, max)`: the hamlets, the tower's yard and (through [`FIELDS`]) the fields.
-const LEVEL: [([i32; 2], [i32; 2]); 4] = [
+pub(super) const LEVEL: [([i32; 2], [i32; 2]); 4] = [
     // The western hamlet.
     ([-12_400, 30_400], [-5_600, 37_200]),
     // The eastern hamlet.
@@ -259,23 +259,6 @@ pub fn building(id: u32) -> Option<Building> {
 pub const AREAS: &[(AreaId, &str, XzBounds)] =
     &[(FARMLAND_AND_HAMLETS, "Farmland and Hamlets", BOUNDS)];
 
-/// The region's roads, in table order.
-pub const ROADS: &[Road] = &[
-    // Farmland and Hamlets (#424): the farm road south from the notch and the hamlets' lanes.
-    Road {
-        name: "Farmland Road",
-        points: &[[2_800, 25_200], [2_800, 58_000]],
-    },
-    Road {
-        name: "West Hamlet Lane",
-        points: &[[2_800, 31_000], [-9_000, 31_000], [-9_000, 36_400]],
-    },
-    Road {
-        name: "East Hamlet Lane",
-        points: &[[2_800, 42_000], [13_000, 42_000], [13_000, 47_000]],
-    },
-    Road {
-        name: "South Hamlet Lane",
-        points: &[[2_800, 54_000], [-8_000, 54_000]],
-    },
-];
+/// The region's roads: the King's Road and the hamlets' lanes are designed with the region's
+/// other roads (#816, [`super::design`]).
+pub const ROADS: &[Road] = &[];

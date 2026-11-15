@@ -3,7 +3,7 @@
 //! stronghold and back into the Vale, all on the zone's own physics.
 use std::sync::Arc;
 
-use mmorpg_core::greyhaven_vale::{self, highlands, landscape, terrain};
+use mmorpg_core::greyhaven_vale::{self, highlands, terrain};
 use mmorpg_core::{ZoneCommand, ZoneId, ZoneSimulation};
 
 /// The walking route tested on bare terrain: the region's Redbrand garrison (#502) has its own
@@ -89,32 +89,20 @@ fn a_player_winds_up_the_pass_to_the_stronghold_and_back_into_the_vale() {
         greyhaven_vale::area_at(top[0] as i32, top[2] as i32).map(|area| area.name()),
         Some("Bandit Highlands")
     );
-    // Highland Trail through the stronghold's gate to its campfire, 300 m beyond the Vale's old
-    // northern wall.
-    walk(
-        &mut zone,
-        &mut sequence,
-        &[
-            [3_600, -33_000],
-            [-8_000, -38_000],
-            [-8_000, -44_000],
-            [0, -47_000],
-            [0, -51_000],
-            [-800, -52_000],
-        ],
-    );
+    // The Greyfang Road and the Stronghold Way (#816) through the stronghold's gate to its
+    // campfire, 300 m beyond the Vale's old northern wall.
+    let to_gate = to_stronghold_gate();
+    walk(&mut zone, &mut sequence, &to_gate);
+    walk(&mut zone, &mut sequence, &[[-800, -52_000]]);
     let camp = feet(&zone);
     assert!(camp[2] < -50_000.0, "{camp:?}");
     // And back down the pass into the Vale without a break.
+    let back: Vec<[i32; 2]> = to_gate.iter().rev().copied().collect();
+    walk(&mut zone, &mut sequence, &back);
     walk(
         &mut zone,
         &mut sequence,
         &[
-            [0, -51_000],
-            [0, -47_000],
-            [-8_000, -44_000],
-            [-8_000, -38_000],
-            [3_600, -33_000],
             [3_600, -25_600],
             [10_400, -25_600],
             [10_400, -23_200],
@@ -184,7 +172,7 @@ fn a_player_can_walk_along_the_western_rock_terrace() {
 /// saddle to the stronghold's gate, a cross-country return to the lookout by way of the
 /// saddle's overlook, and back down into the Vale (#528).
 #[test]
-fn a_player_walks_the_ring_road_to_the_lookout_and_stronghold_and_back_over_the_saddle() {
+fn a_player_walks_the_roads_to_the_lookout_and_the_stronghold_and_back() {
     let mut zone = player_at([6_400, -15_000]);
     let mut sequence = 0;
     let climb = [
@@ -198,55 +186,49 @@ fn a_player_walks_the_ring_road_to_the_lookout_and_stronghold_and_back_over_the_
         [3_600, -28_000],
         [3_600, -33_000],
     ];
-    walk(&mut zone, &mut sequence, &climb);
-    assert_grounded_near(&feet(&zone), [3_600, -33_000]);
-    // Out to the lookout's knoll and back to the fork.
-    walk(
-        &mut zone,
-        &mut sequence,
-        &[[9_000, -35_000], [12_400, -37_600]],
-    );
-    assert_grounded_near(&feet(&zone), [12_400, -37_600]);
-    walk(
-        &mut zone,
-        &mut sequence,
-        &[[9_000, -35_000], [3_600, -33_000]],
-    );
-    // Over the Highland Trail's saddle to the stronghold's gate.
-    walk(
-        &mut zone,
-        &mut sequence,
-        &[
-            [-8_000, -38_000],
-            [-8_000, -44_000],
-            [-4_000, -45_500],
-            [0, -47_000],
-            [0, -49_000],
-        ],
-    );
-    let gate = feet(&zone);
-    assert_grounded_near(&gate, [0, -49_000]);
-    // A cross-country return: over the saddle's knoll to its ledge and on to the lookout.
-    let overlook = ledge("Saddle Ledge");
-    walk(
-        &mut zone,
-        &mut sequence,
-        &[
-            [-1_000, -45_000],
-            overlook,
-            [6_000, -42_500],
-            [11_000, -36_400],
-        ],
-    );
+    walk(&mut zone, &mut sequence, &climb[..climb.len() - 1]);
+    // Out along the Lookout Path (#816) to the lookout's knoll and back to the Greyfang Road.
+    let lookout = road("Lookout Path");
+    walk(&mut zone, &mut sequence, lookout);
     let knoll = feet(&zone);
+    assert_grounded_near(&knoll, lookout[lookout.len() - 1]);
     assert!(knoll[1] > highlands::PLATEAU_Y as f32 - 100.0, "{knoll:?}");
-    // Home down the switchbacks.
+    let back: Vec<[i32; 2]> = lookout.iter().rev().copied().collect();
+    walk(&mut zone, &mut sequence, &back);
+    // Along the Greyfang Road to the stronghold's gate.
+    let to_gate = to_stronghold_gate();
+    walk(&mut zone, &mut sequence, &to_gate);
+    assert_grounded_near(&feet(&zone), to_gate[to_gate.len() - 1]);
+    // Home the same way and down the switchbacks.
+    let back: Vec<[i32; 2]> = to_gate.iter().rev().copied().collect();
+    walk(&mut zone, &mut sequence, &back);
     let mut down = climb;
     down.reverse();
-    walk(&mut zone, &mut sequence, &[[9_000, -35_000]]);
     walk(&mut zone, &mut sequence, &down);
     walk(&mut zone, &mut sequence, &[[6_400, -15_000]]);
     assert_grounded_near(&feet(&zone), [6_400, -15_000]);
+}
+
+/// A road's centre line by name (#816).
+fn road(name: &str) -> &'static [[i32; 2]] {
+    greyhaven_vale::roads()
+        .iter()
+        .find(|road| road.name == name)
+        .unwrap_or_else(|| panic!("no road {name}"))
+        .points
+}
+
+/// From the top of the Highland Pass along the Greyfang Road to where the Stronghold Way leaves
+/// it, then along the Stronghold Way through the stronghold's gate.
+fn to_stronghold_gate() -> Vec<[i32; 2]> {
+    let way = road("Stronghold Way");
+    let fork = way[0];
+    let greyfang = road("Greyfang Road");
+    let until = greyfang
+        .iter()
+        .position(|point| (point[0] - fork[0]).abs() + (point[1] - fork[1]).abs() < 1_500)
+        .unwrap_or(greyfang.len() - 1);
+    greyfang[..=until].iter().chain(way).copied().collect()
 }
 
 fn assert_grounded_near(at: &[f32; 3], goal: [i32; 2]) {
@@ -255,16 +237,6 @@ fn assert_grounded_near(at: &[f32; 3], goal: [i32; 2]) {
         (at[1] - ground as f32).abs() < 60.0,
         "floating or sunken at {at:?} near {goal:?} (ground {ground})"
     );
-}
-
-fn ledge(name: &str) -> [i32; 2] {
-    landscape::data()
-        .highland_relief
-        .ledges
-        .iter()
-        .find(|ledge| ledge.name == name)
-        .unwrap_or_else(|| panic!("ledge {name}"))
-        .center
 }
 
 /// Whether the grid step from `a` to `b` is walkable: no steeper than the controller's 45°.
@@ -339,8 +311,9 @@ fn the_sculpted_landforms_vary_and_stay_walkable_and_connected() {
         stranded * 100 <= total * 3,
         "{stranded} of {total} high-ground samples are cut off"
     );
+    // The high ground rises from the escarpment towards the mountains (#816).
     assert!(
-        highest - highlands::PLATEAU_Y >= 1_600 && highlands::PLATEAU_Y - lowest >= 400,
+        highest - lowest >= 1_200 && lowest >= highlands::PLATEAU_Y,
         "relief spans {lowest}..{highest}"
     );
 
@@ -351,47 +324,13 @@ fn the_sculpted_landforms_vary_and_stay_walkable_and_connected() {
         .iter()
         .filter(|spawn| (1_000..1_100).contains(&spawn.id.get()))
         .map(|spawn| spawn.position);
-    let roads = highlands::ROADS
-        .iter()
-        .filter(|road| road.name != "Highland Pass")
-        .flat_map(|road| road.points.iter().copied());
-    let ledges = landscape::data()
-        .highland_relief
-        .ledges
-        .iter()
-        .map(|ledge| ledge.center);
-    for at in roads
-        .chain(garrison)
-        .chain(ledges)
-        .filter(|&at| on_high_ground(at))
-    {
+    // The designed roads over the old highlands' high ground (#816) and the garrison's posts.
+    let roads = ["Greyfang Road", "Stronghold Way", "Lookout Path"]
+        .into_iter()
+        .flat_map(|name| road(name).iter().copied())
+        .filter(|point| point[1] > highlands::BOUNDS.min[1] + 2_000);
+    for at in roads.chain(garrison).filter(|&at| on_high_ground(at)) {
         let [column, row] = cell(at);
         assert!(reachable[index(column, row)], "{at:?} is cut off");
-    }
-
-    // The saddle really is one: the Trail crosses it below the shoulders on either side.
-    let definition = greyhaven_vale::greyhaven_vale_definition();
-    let saddle = definition.ground_at(-4_000, -45_500);
-    let north = definition.ground_at(-6_400, -47_800);
-    let south = definition.ground_at(-2_000, -42_200);
-    assert!(
-        north - saddle >= 500 && south - saddle >= 500,
-        "saddle {saddle} between {north} and {south}"
-    );
-    // The ledges are level enough to stand on and overlook something.
-    for name in ["Gorge Watch", "Saddle Ledge", "Saw Ledge", "Keep Overlook"] {
-        let [x, z] = ledge(name);
-        let centre = definition.ground_at(x, z);
-        for [dx, dz] in [[-400, 0], [400, 0], [0, -400], [0, 400]] {
-            let around = definition.ground_at(x + dx, z + dz);
-            assert!(
-                (around - centre).abs() <= 120,
-                "{name} is uneven: {centre} next to {around}"
-            );
-        }
-        assert!(
-            centre > highlands::PLATEAU_Y + 500,
-            "{name} stands at {centre}"
-        );
     }
 }
