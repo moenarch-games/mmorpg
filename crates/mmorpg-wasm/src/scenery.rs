@@ -780,19 +780,16 @@ mod tests {
         assert_eq!(value["water"].as_array().map(Vec::len), Some(7));
         assert_eq!(value["roads"][0]["name"], "Hollow Road");
         assert_eq!(value["roads"][0]["halfWidth"], 150);
+        // The Hollow Road with its switchback's turns rounded (#816).
         assert_eq!(
             value["roads"][0]["points"],
-            serde_json::json!([
-                [0, 1_200],
-                [0, -1_000],
-                [0, -4_000],
-                [0, -6_200],
-                [-3_600, -6_200],
-                [-3_600, -7_000],
-                [0, -7_000],
-                [0, -8_600]
-            ])
+            serde_json::json!(greyhaven_vale::roads()[0].points)
         );
+        assert_eq!(
+            value["roads"][0]["points"][0],
+            serde_json::json!([0, 1_200])
+        );
+        assert!(value["roads"][0]["points"].as_array().map_or(0, Vec::len) > 8);
         assert_eq!(value["structures"][0]["colliderId"], 100);
     }
 
