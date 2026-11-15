@@ -43,7 +43,8 @@ establish parity, not checksum equality alone.
 ## Counters and cost model
 
 `ZoneSimulation::tick_work()` describes the latest attempted tick. It counts each
-living creature AI decision, including idle decisions, and retains the successful
+creature AI decision actually made, including idle decisions (asleep and between-decision
+creatures make none, #814), and retains the successful
 engine step's `StepStats` without duplicating physics instrumentation. A failed
 physics step supplies no successful report. Counters start at zero on construction
 or recovery and never enter canonical state, RNG, commands or projections.
@@ -243,3 +244,23 @@ The brook mill adds 16 net fixed bodies (5,760 visits per 360 ticks). At content
 `9a8e9b17c7144f74`, the workloads record 1,305,360 / 1,302,480 / 1,311,120 /
 1,322,284 body visits. AI, candidate and byte ceilings remain unchanged; all four
 replay and recovery checks pass.
+
+### Sleeping and paced creatures (#814)
+
+An idle land creature with no player within 60 m sleeps: it makes no AI decision, its body
+sits out the physics step (it still blocks others) and the interest index skips re-reading it.
+An awake idle one decides on one tick in ten, staggered by creature ID. Fighting, evading,
+trailing and rallying creatures, swimmers and raiders still decide every tick.
+
+| Workload | AI evaluations | Dynamic body visits |
+| --- | ---: | ---: |
+| vale-idle-16 | 49,320 → 9,972 | 21,240 |
+| vale-fights-8 | 49,320 → 15,673 | 35,213 |
+| vale-fights-32 | 49,320 → 23,130 | 46,080 |
+| vale-crowded-fights-64 | 48,964 → 12,146 | 37,804 |
+
+In the idle workload the physics steps 21,240 moving bodies instead of 55,080.
+
+Admitted-body counts are unchanged; the changed wandering moves fights-32's projection
+candidates to 433,961. The AI ceilings are tightened to these counts; all four replay and
+recovery checks pass.
