@@ -245,6 +245,16 @@ impl Tiles {
         built
     }
 
+    /// Per grid sample, how much the near overlays and the worn roads, plaza and fields cover
+    /// the turf, for [`crate::grass`].
+    pub(crate) fn grass_cover(&self) -> Vec<f64> {
+        self.worn
+            .iter()
+            .enumerate()
+            .map(|(i, (worn, _))| self.weights.cover(i).max(*worn))
+            .collect()
+    }
+
     /// The far levels merged into chunks of `side` × `side` tiles, row-major.
     fn merge_far(&self, side: usize) -> Vec<FarChunk> {
         let (columns, rows) = (self.columns.div_ceil(side), self.rows.div_ceil(side));

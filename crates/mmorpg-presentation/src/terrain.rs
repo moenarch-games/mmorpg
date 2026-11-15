@@ -29,8 +29,8 @@ pub fn surface(g: &TerrainGrid, x: f64, z: f64) -> f64 {
 }
 pub fn biome_color(b: Biome) -> u32 {
     match b.name() {
-        "meadow" => 0x667d46,
-        "hub" => 0x71834e,
+        "meadow" => 0x5a7640,
+        "hub" => 0x667c47,
         "woods" => 0x4d653b,
         "hollow" => 0x667348,
         "farmland" => 0x7a5836,
@@ -38,7 +38,7 @@ pub fn biome_color(b: Biome) -> u32 {
         "plaza" => 0x8e7e61,
         "shore" => 0xcdbb88,
         "lake bed" => 0x5e5a44,
-        "foothills" => 0x61774b,
+        "foothills" => 0x5a7244,
         "highland" => 0x6f7d52,
         "rock" => 0x8b877e,
         "snow" => 0xeef1f5,

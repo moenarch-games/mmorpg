@@ -44,6 +44,7 @@ import { useBundleKtx2Loader } from "./static-bundle";
 import { BatchedScenery } from "./static-batches";
 import { CompositionKit } from "./composition-kit";
 import { Ground } from "./ground";
+import { Grass } from "./grass";
 import { PlacedKit, type PlacedKitSource } from "./placed-kit";
 import { AmbientAnimals } from "./ambient-animals";
 import { ArtPrefetch } from "./art-prefetch";
@@ -410,6 +411,7 @@ export class WorldView {
   #pendingKitArea: Area | null = null;
   #avatarPrepared = false;
   #ground: Ground | null = null;
+  #grass: Grass | null = null;
   #regions: RegionArt | null = null;
   #onArtProgress: (() => void) | null = null;
   /** Authored hit/block bursts (#52) on zone-confirmed events; one permanent imported root. */
@@ -695,6 +697,8 @@ export class WorldView {
     this.#scene = null;
     this.#sceneryFrame = null;
     this.#ground = null;
+    this.#grass?.dispose();
+    this.#grass = null;
     this.#sceneryBatches?.dispose();
     this.#sceneryBatches = null;
     this.#minimap.reset();
@@ -794,6 +798,11 @@ export class WorldView {
     this.#sceneryBatchesChanged = true;
     this.#ground = new Ground(world.scenery.staticScene.terrainStream(), scene.surfaces, scene.cutaways);
     void this.#ground.load(this.#models.ktx2Loader);
+    const content = world.scenery.staticScene;
+    this.#grass?.dispose();
+    this.#grass = content.grassCell && content.grassCellMetres
+      ? new Grass({ cell: (column, row) => content.grassCell!(column, row), cellMetres: content.grassCellMetres() })
+      : null;
   }
 
   /** The directed-strike action's working binding labels, for the Heroic Strike slot hint. */
@@ -1216,7 +1225,7 @@ export class WorldView {
     this.#models.clear();
     const { roots, changed } = this.#models.roots();
     if (changed && this.#lastCamera) {
-      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...(this.#sceneryBatches ? [this.#sceneryBatches.root] : []), ...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.drawn && this.#fortifications?.drawn ? [...this.#outpost.roots().roots, ...this.#fortifications.roots().roots] : []), ...(this.#settlement?.roots().roots ?? []), ...(this.#fortress?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#nature?.roots().roots ?? []), ...(this.#climbing?.roots().roots ?? []), ...(this.#crag?.roots().roots ?? []), ...(this.#limestone?.roots().roots ?? []), ...(this.#river?.roots().roots ?? []), ...(this.#meadow?.roots().roots ?? []),...(this.#ground?.roots().roots ?? []), this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root] });
+      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...(this.#sceneryBatches ? [this.#sceneryBatches.root] : []), ...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.drawn && this.#fortifications?.drawn ? [...this.#outpost.roots().roots, ...this.#fortifications.roots().roots] : []), ...(this.#settlement?.roots().roots ?? []), ...(this.#fortress?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#nature?.roots().roots ?? []), ...(this.#climbing?.roots().roots ?? []), ...(this.#crag?.roots().roots ?? []), ...(this.#limestone?.roots().roots ?? []), ...(this.#river?.roots().roots ?? []), ...(this.#meadow?.roots().roots ?? []),...(this.#ground?.roots().roots ?? []), ...(this.#grass?.roots().roots ?? []), this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root] });
     }
   }
 
@@ -1779,6 +1788,7 @@ export class WorldView {
     const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits, resident: batches ? (group) => batches.resident(group) : () => true });
     // A map view's eye is high only to clear the terrain: its ground streams as if standing on it.
     this.#ground?.update(this.#plan ? [view.eye[0], 0, view.eye[2]] : view.eye, frame.shown);
+    if (!this.#plan) { this.#grass?.update(view.eye, [self.x, self.feetY, self.z], this.#seconds); }
     this.#nature?.update(this.#camera, deltaSeconds, animate);
     this.#climbing?.update(this.#camera, deltaSeconds, animate);
     this.#crag?.update(this.#camera, deltaSeconds, animate);
@@ -1839,7 +1849,8 @@ export class WorldView {
     const sceneryChanged = this.#sceneryBatchesChanged;
     this.#sceneryBatchesChanged = false;
     const ground = this.#ground?.roots() ?? { roots: [], changed: false };
-    const roots = [...sceneryBatches, ...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...fortifications.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, ...climbing.roots, ...crag.roots, ...limestone.roots, ...river.roots, ...meadow.roots, ...ground.roots, this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root];
+    const grass = this.#plan ? { roots: [], changed: false } : this.#grass?.roots() ?? { roots: [], changed: false };
+    const roots = [...sceneryBatches, ...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...fortifications.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, ...climbing.roots, ...crag.roots, ...limestone.roots, ...river.roots, ...meadow.roots, ...ground.roots, ...grass.roots, this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root];
     // No scene background: `Lighting` clears its own frame, and three would clear to the background again in each of its
     // passes, wiping the sky (#600). The environment's fog still fogs the unlit sprites.
     const { background: _background, ...withoutBackground } = environment;
@@ -1861,7 +1872,7 @@ export class WorldView {
       this.#preparing.push(this.#renderer.prepare(rendererFrame, { roots }));
       return;
     }
-    if (sceneryChanged || models.changed || inn.changed || shrine.changed || outpost.changed || fortifications.changed || settlement.changed || fortress.changed || ambient.changed || nature.changed || climbing.changed || crag.changed || limestone.changed || river.changed || meadow.changed || ground.changed || !this.#impacts.root.parent || !this.#raidSmoke.root.parent || !this.#raidSigns.root.parent) {
+    if (sceneryChanged || models.changed || inn.changed || shrine.changed || outpost.changed || fortifications.changed || settlement.changed || fortress.changed || ambient.changed || nature.changed || climbing.changed || crag.changed || limestone.changed || river.changed || meadow.changed || ground.changed || grass.changed || !this.#impacts.root.parent || !this.#raidSmoke.root.parent || !this.#raidSigns.root.parent) {
       this.#renderer.renderImportedRoots({ camera, roots });
     }
     const work = this.#renderer.render(rendererFrame);
@@ -2401,6 +2412,7 @@ export class WorldView {
       /** The stones along Greyhaven's watercourses (asset-tooling#538), likewise. */
       river: () => this.#river?.observe() ?? null,
       ground: () => this.#ground?.observe() ?? null,
+      grass: () => this.#grass?.observe() ?? null,
       /** The static groups (#526): how many exist, are resident, and of the merged ones are in their batches. */
       staticStream: () => this.#sceneryBatches?.observe() ?? null,
       /** The ambient animals (#419): whether they loaded, and each one's entry, clip and feet. */

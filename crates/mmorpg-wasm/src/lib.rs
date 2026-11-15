@@ -901,6 +901,21 @@ pub fn surface_y(x: f64, z: f64) -> f64 {
     static_scene::surface_y(x, z)
 }
 
+/// The grass clumps of the hosted scene's cell `(column, row)`, each `mmorpg_presentation::grass::CLUMP_FLOATS`
+/// floats (position in metres, yaw, height, linear RGB), in a random order: any prefix thins evenly.
+#[wasm_bindgen(js_name = grassCell)]
+#[must_use]
+pub fn grass_cell(column: i32, row: i32) -> Vec<f32> {
+    static_scene::hosted_grass().cell(column, row)
+}
+
+/// The side of a grass cell, in metres.
+#[wasm_bindgen(js_name = grassCellMetres)]
+#[must_use]
+pub fn grass_cell_metres() -> f64 {
+    mmorpg_presentation::grass::CELL_METRES
+}
+
 /// The rest (idle) clip of an imported unit model, which the page measures it in.
 #[wasm_bindgen(js_name = importedRestClip)]
 pub fn imported_rest_clip(kind: &str) -> Option<String> {

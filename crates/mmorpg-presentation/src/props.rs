@@ -539,35 +539,6 @@ fn tree(m: &mut Model, p: &Prop, v: TreeVariant) {
         }
     }
 }
-fn grass(m: &mut Model, p: &Prop) {
-    m.cull = Cull::Near;
-    let [hx, hy, _] = half(p);
-    let s = seed(p);
-    let variant = (s * 4.).floor();
-    let mut tuft = Geometry::default();
-    for blade_i in 0..4 {
-        let i = blade_i as f64;
-        let a = i / 4. * TAU + variant * 1.5;
-        let lean = 0.2 + hash(&[variant, i]) * 0.35;
-        let h = 3.4 * (0.7 + hash(&[variant, i, 1.]) * 0.6);
-        let spread = 0.3 + hash(&[variant, i, 2.]) * 0.5;
-        tuft.add(
-            &blade(),
-            compose(&[
-                translate(a.sin() * spread, 0., a.cos() * spread),
-                ry(a),
-                rx(-lean),
-                scale(0.34, h, 0.34),
-            ]),
-        );
-    }
-    m.put(
-        if s > 0.5 { 0x6f9f44 } else { 0x5b8a39 },
-        tuft,
-        compose(&[translate(0., -0.02, 0.), scale(hx, hy, hx)]),
-    );
-}
-
 // Brook slice, in core centimetres. These are decorative roots, never collision bodies.
 const BROOK_COVER_MIN: [i32; 2] = [-5400, 1200];
 const BROOK_COVER_MAX: [i32; 2] = [4000, 6500];
@@ -1304,11 +1275,8 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
                     );
                 }
             }
-            PropKind::GrassTuft => {
-                if !in_brook_cover(p.position[0], p.position[2]) {
-                    grass(&mut m, p);
-                }
-            }
+            // The clients' grass fields grow the turf (`crate::grass`); a tuft draws nothing.
+            PropKind::GrassTuft => {}
             PropKind::Flowers => {
                 m.cull = Cull::Near;
                 let c = [0xf2d64b, 0xb98ae0, 0xf4f1ea, 0xe5675c][usize::from(p.yaw) % 4];
