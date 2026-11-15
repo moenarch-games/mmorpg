@@ -648,6 +648,16 @@ impl World {
         Ok(())
     }
 
+    pub fn set_asleep(&mut self, id: BodyId, asleep: bool) -> Result<(), PhysicsError> {
+        let body = self
+            .bodies
+            .get_mut(&id)
+            .filter(|body| body.is_moving())
+            .ok_or_else(|| error(format!("moving physics body {} is missing", id.0)))?;
+        body.asleep = asleep;
+        Ok(())
+    }
+
     /// The floor half-space's collider, when `body` at `position` stands over terrain that dips
     /// below it (a lake basin, #274): there only the heightfield is ground. Every grid cell
     /// under the body's footprint counts, since the triangulated heightfield may dip below zero
@@ -792,10 +802,11 @@ impl World {
                 self.shift_platform(platform, displacement)?;
             }
         }
+        // Asleep bodies (#814) sit the step out; the others still meet them.
         let ids: Vec<_> = self
             .bodies
             .values()
-            .filter(|body| body.is_moving())
+            .filter(|body| body.is_moving() && !body.asleep)
             .map(|body| body.id)
             .collect();
         let mut moved_bodies = 0;

@@ -198,6 +198,9 @@ pub struct RigidBody {
     /// or ground settling; its vertical velocity is the zone's. Set by the zone every tick,
     /// never canonical.
     weightless: bool,
+    /// An asleep unit (#814): the step leaves it where it is, though it still blocks others.
+    /// Set by the zone every tick, never canonical.
+    asleep: bool,
     mesh: Option<std::sync::Arc<crate::StaticMesh>>,
 }
 
@@ -259,6 +262,7 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents,
             weightless: false,
+            asleep: false,
             mesh: None,
         }
     }
@@ -288,6 +292,7 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents: Vec3i::ZERO,
             weightless: false,
+            asleep: false,
             mesh: None,
         }
     }
@@ -308,6 +313,7 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents,
             weightless: false,
+            asleep: false,
             mesh: None,
         }
     }
@@ -327,6 +333,7 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents,
             weightless: false,
+            asleep: false,
             mesh: None,
         }
     }
@@ -354,6 +361,7 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents: Vec3i::new(bound(hx, hz), hy, bound(hz, hx)),
             weightless: false,
+            asleep: false,
             mesh: None,
         }
     }
@@ -368,6 +376,7 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents: Vec3i::new(radius, radius, radius),
             weightless: false,
+            asleep: false,
             mesh: None,
         }
     }
@@ -382,6 +391,7 @@ impl RigidBody {
             velocity: [0.0; 3],
             half_extents,
             weightless: false,
+            asleep: false,
             mesh: None,
         }
     }
@@ -412,6 +422,7 @@ impl RigidBody {
             velocity,
             half_extents,
             weightless: false,
+            asleep: false,
             mesh: None,
         }
     }
@@ -420,6 +431,12 @@ impl RigidBody {
     #[must_use]
     pub const fn weightless(&self) -> bool {
         self.weightless
+    }
+
+    /// Whether the zone put this unit to sleep for the next step (#814).
+    #[must_use]
+    pub const fn asleep(&self) -> bool {
+        self.asleep
     }
 
     #[must_use]
@@ -852,6 +869,12 @@ impl World {
     /// settling, its vertical velocity as set.
     pub fn set_weightless(&mut self, id: BodyId, weightless: bool) -> Result<(), PhysicsError> {
         dispatch!(self, &mut self.worlds, world => world.set_weightless(id, weightless))
+    }
+
+    /// Puts moving body `id` to sleep for the next step (#814): it neither moves nor falls,
+    /// and other bodies still meet it. Waking it lets it step again.
+    pub fn set_asleep(&mut self, id: BodyId, asleep: bool) -> Result<(), PhysicsError> {
+        dispatch!(self, &mut self.worlds, world => world.set_asleep(id, asleep))
     }
 
     /// Lets every moving body step up small ledges from the next [`World::step`] on (#750), or

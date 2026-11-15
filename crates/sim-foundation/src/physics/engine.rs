@@ -630,6 +630,16 @@ impl World {
         Ok(())
     }
 
+    pub fn set_asleep(&mut self, id: BodyId, asleep: bool) -> Result<(), PhysicsError> {
+        let body = self
+            .bodies
+            .get_mut(&id)
+            .filter(|body| body.is_moving())
+            .ok_or_else(|| error(format!("moving physics body {} is missing", id.0)))?;
+        body.asleep = asleep;
+        Ok(())
+    }
+
     /// Lays `terrain` as an engine heightfield: rows along +Z, columns along +X, heights
     /// row-major as the content stores them, with the flat cells removed like the Rapier
     /// backend removes them.
@@ -799,7 +809,8 @@ impl World {
         let mut ground_gaps = std::mem::take(&mut self.ground_gaps);
         let revision = self.engine.static_revision();
         let movers = || self.moving.iter().map(|id| &self.bodies[id]);
-        for body in movers() {
+        // Asleep bodies (#814) sit the step out; the others still slide around them.
+        for body in movers().filter(|body| !body.asleep) {
             let mut velocity = body.velocity;
             let mut settle = 0.0;
             // A swimmer (#274) keeps the zone's vertical velocity.
