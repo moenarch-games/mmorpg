@@ -143,6 +143,7 @@ Step 8a implemented the kit in core (abilities 1–12 of the catalog; lurkers ca
 
 - States: `Idle` (wander within a radius using the zone RNG), `Engaged` (chase to melee or cast range, attack on the swing timer), `Evading` (leash beyond 40 m from spawn or no valid threat: run home, reset to full health, ignore damage), `Dead` (corpse until timeout, then a respawn timer; claiming rewards does not shorten this schedule).
 - Aggro radius is 10 m ± 1 m per level difference, clamped. Nearby same-family creatures assist when one is engaged.
+- Idle land creatures with no player within 60 m sleep: no AI and no physics step. Awake idle ones decide on one tick in ten, staggered by creature, and walk on in between, so they notice a player up to a sixth of a second late. Fighting, evading, trailing and rallying creatures, swimmers and raiders decide every tick (#814).
 - The threat table is ordered by `(threat desc, entity asc)`.
 - Steering is direct toward the target. Physics blocks obstacles; no navmesh in this slice.
 

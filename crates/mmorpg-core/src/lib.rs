@@ -274,6 +274,12 @@ pub const fn f32_units_per_tick_squared(units_per_second_squared: f32) -> f32 {
 pub const MAX_PLAYERS_PER_ZONE: usize = 512;
 /// Inclusive XZ radius of player-scoped relevance (45 m).
 pub const INTEREST_RADIUS_UNITS: i32 = 4_500;
+/// An idle creature with no player within this XZ radius sleeps (#814): no AI and no physics
+/// step. It reaches 15 m beyond relevance, so no player sees a creature fall asleep.
+pub const CREATURE_WAKE_RADIUS_UNITS: i32 = INTEREST_RADIUS_UNITS + 1_500;
+/// An awake idle creature decides on one tick in this many, staggered by creature ID, and
+/// keeps its velocity in between (#814). Every other creature decides every tick.
+pub const IDLE_DECISION_INTERVAL_TICKS: u16 = 10;
 /// Deterministic relevance cap of one player projection: the viewer, its
 /// target and the nearest units. `mmorpg-protocol` packs a projection into
 /// its per-datagram byte budget in this priority order.

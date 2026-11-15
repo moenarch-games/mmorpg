@@ -109,6 +109,16 @@ const CHASE_CLOSE_IN_UNITS: i64 = 10;
 /// A creature that held a boss's rally walks home within this many ticks (#276).
 const RALLY_RETURN_TICKS: u16 = crate::ticks_from_ms(20_000);
 
+/// How a creature takes this tick (#814): its body when the zone sets its rest, whether that
+/// body sits the physics step out, whether the creature decides and the ticks its decision
+/// covers.
+struct Pace {
+    body: Option<crate::physics::BodyId>,
+    asleep: bool,
+    decides: bool,
+    elapsed: u16,
+}
+
 /// Subunits per unit, for steering in subunits per tick over unit offsets.
 const SUBUNITS: i64 = crate::physics::SUBUNITS_PER_UNIT as i64;
 
@@ -141,16 +151,80 @@ pub(crate) const fn creature_reach(target: EntityRef) -> i32 {
 }
 
 impl ZoneSimulation {
-    /// Step 2: every living creature decides and sets its body velocity.
+    /// Step 2: every living creature decides and sets its body velocity. An idle creature
+    /// with no player near sleeps instead, and an awake idle one decides on its staggered
+    /// tick only, walking on in between (#814).
     pub(crate) fn decide_creatures(&mut self) -> Result<(), ZoneError> {
         let ids: Vec<_> = self.creatures.keys().copied().collect();
         for id in ids {
-            self.decide_creature(id)?;
+            let pace = self.creature_pace(id)?;
+            if let Some(body) = pace.body {
+                self.world
+                    .set_asleep(body, pace.asleep)
+                    .map_err(physics_error)?;
+                if pace.asleep {
+                    self.world
+                        .set_velocity(body, Vec3i::ZERO)
+                        .map_err(physics_error)?;
+                }
+            }
+            if pace.decides {
+                self.decide_creature(id, pace.elapsed)?;
+            }
         }
         Ok(())
     }
 
-    fn decide_creature(&mut self, id: CreatureId) -> Result<(), ZoneError> {
+    /// Whether creature `id` sleeps, holds its course or decides this tick (#814). Only a
+    /// living idle land creature on the ground, outside any raid, ever rests: a swimmer's
+    /// swimming sets its height every tick, so it decides every tick. The pace is derived from
+    /// canonical state each tick, so replay and recovery need nothing stored.
+    fn creature_pace(&self, id: CreatureId) -> Result<Pace, ZoneError> {
+        let body = body_id(EntityRef::Creature(id));
+        let current = self.world.body(body).filter(|body| body.is_moving());
+        // Every other creature with a body is awake.
+        let decides = Pace {
+            body: current.map(|_| body),
+            asleep: false,
+            decides: true,
+            elapsed: 1,
+        };
+        let (_, template) = Self::creature_content(&self.content, id)?;
+        let (Some(creature), Some(current)) = (self.creatures.get(&id), current) else {
+            return Ok(decides);
+        };
+        if creature.life != Life::Alive
+            || template.prop().is_some()
+            || template.family.swims()
+            || creature.raid.is_some()
+            || !matches!(creature.ai, CreatureAi::Idle { .. })
+            || current.velocity().y != 0
+        {
+            return Ok(decides);
+        }
+        let position = current.position();
+        let near = self
+            .interest
+            .near(position.x, position.z, crate::CREATURE_WAKE_RADIUS_UNITS)
+            .into_iter()
+            .any(|entity| matches!(entity, EntityRef::Player(_)));
+        if !near {
+            return Ok(Pace {
+                asleep: true,
+                decides: false,
+                ..decides
+            });
+        }
+        let interval = u64::from(crate::IDLE_DECISION_INTERVAL_TICKS);
+        Ok(Pace {
+            decides: (self.tick + u64::from(id.get())).is_multiple_of(interval),
+            elapsed: crate::IDLE_DECISION_INTERVAL_TICKS,
+            ..decides
+        })
+    }
+
+    /// `elapsed`: ticks since its last decision, which idle timers count down by (#814).
+    fn decide_creature(&mut self, id: CreatureId, elapsed: u16) -> Result<(), ZoneError> {
         let content = Arc::clone(&self.content);
         let (spawn, template) = Self::creature_content(&content, id)?;
         let Some(creature) = self.creatures.get(&id) else {
@@ -342,6 +416,7 @@ impl ZoneSimulation {
                 here,
                 home,
                 spawn.wander_radius,
+                elapsed,
             ),
             CreatureAi::Engaged => match chase {
                 // A casting creature stands and faces its target; a smash (#160) keeps the
@@ -656,7 +731,19 @@ fn wander_wait(rng: &mut ZoneRng) -> u16 {
     u16::try_from(wait).unwrap_or(WANDER_WAIT_TICKS[1])
 }
 
-/// Idle behaviour: count down, pick a wander point, walk to it, repeat.
+/// Walking velocity toward `(dx, dz)` that a creature may keep for `ticks` ticks without
+/// overshooting it (#814).
+fn walk(dx: i32, dz: i32, ticks: u16) -> [i32; 2] {
+    let reach = i64::try_from(xz_length(dx, dz))
+        .unwrap_or(i64::MAX)
+        .saturating_mul(SUBUNITS)
+        / i64::from(ticks.max(1));
+    let speed = i64::from(CREATURE_WALK_SPEED_SUBUNITS_PER_TICK).min(reach);
+    steer(dx, dz, i32::try_from(speed).unwrap_or(0))
+}
+
+/// Idle behaviour: count down, pick a wander point, walk to it, repeat. `elapsed` ticks have
+/// passed since the last call, and the velocity holds until the next (#814).
 /// Returns the horizontal velocity and a new facing, if any.
 fn wander(
     rng: &mut ZoneRng,
@@ -664,6 +751,7 @@ fn wander(
     here: [i32; 2],
     home: [i32; 2],
     radius: i32,
+    elapsed: u16,
 ) -> ([i32; 2], Option<u16>) {
     let CreatureAi::Idle { timer, destination } = ai else {
         return ([0, 0], None);
@@ -676,16 +764,13 @@ fn wander(
                 *timer = wander_wait(rng);
                 ([0, 0], None)
             } else {
-                *timer -= 1;
+                *timer = timer.saturating_sub(elapsed);
                 let (dx, dz) = offset(here, to);
-                (
-                    steer(dx, dz, CREATURE_WALK_SPEED_SUBUNITS_PER_TICK),
-                    yaw_from_vector(dx, dz),
-                )
+                (walk(dx, dz, elapsed), yaw_from_vector(dx, dz))
             }
         }
         None if *timer > 0 => {
-            *timer -= 1;
+            *timer = timer.saturating_sub(elapsed);
             ([0, 0], None)
         }
         None => {
@@ -696,10 +781,7 @@ fn wander(
             *destination = Some(to);
             *timer = WANDER_WALK_TIMEOUT_TICKS;
             let (dx, dz) = offset(here, to);
-            (
-                steer(dx, dz, CREATURE_WALK_SPEED_SUBUNITS_PER_TICK),
-                yaw_from_vector(dx, dz),
-            )
+            (walk(dx, dz, elapsed), yaw_from_vector(dx, dz))
         }
     }
 }

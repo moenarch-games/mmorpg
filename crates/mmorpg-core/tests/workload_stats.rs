@@ -24,10 +24,9 @@ fn tick_work_counts_real_ai_and_engine_work_without_entering_recovery() {
         })
         .count();
     let raiders = content.raid().map_or(0, |site| site.raiders().count());
-    assert_eq!(
-        work.creature_ai_evaluations,
-        content.creature_spawns().len() - props - raiders
-    );
+    // Far-away idle creatures sleep and near ones decide on their staggered tick (#814).
+    let thinking = content.creature_spawns().len() - props - raiders;
+    assert!(0 < work.creature_ai_evaluations && work.creature_ai_evaluations < thinking);
     let physics = work.physics.unwrap();
     assert_eq!(
         physics.bodies,
@@ -48,11 +47,22 @@ fn tick_work_counts_real_ai_and_engine_work_without_entering_recovery() {
     let mut recovered = ZoneSimulation::from_snapshot(checkpoint.clone(), content).unwrap();
     assert_eq!(recovered.snapshot().unwrap(), checkpoint);
     assert!(recovered.tick_work().physics.is_none());
-    for _ in 0..10 {
+    let mut decisions = 0;
+    for _ in 0..mmorpg_core::IDLE_DECISION_INTERVAL_TICKS {
         zone.advance_tick().unwrap();
         recovered.advance_tick().unwrap();
-        // Counters describe one tick rather than accumulating or surviving a save.
-        assert_eq!(zone.tick_work().creature_ai_evaluations, 137);
+        // Counters describe one tick rather than accumulating or surviving a save, and the
+        // recovered zone paces its creatures exactly as the original (#814).
+        let work = zone.tick_work().creature_ai_evaluations;
+        assert_eq!(work, recovered.tick_work().creature_ai_evaluations);
+        decisions += work;
         assert_eq!(zone.snapshot().unwrap(), recovered.snapshot().unwrap());
     }
+    // Swimmers still decide every tick; the others at most once an interval, or not at all
+    // while asleep.
+    let every_tick = thinking * usize::from(mmorpg_core::IDLE_DECISION_INTERVAL_TICKS);
+    assert!(
+        decisions * 2 < every_tick,
+        "{decisions} decisions in one interval"
+    );
 }

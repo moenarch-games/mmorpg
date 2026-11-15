@@ -78,11 +78,14 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // Refresh only those exceeded ceilings; the idle/crowded fixtures keep their ceilings.
     // The whole Greyhaven region (#810) trades the eight boundary wall boxes for wall mesh
     // pieces along its outline: 36 more body visits a tick (12,960 per 360 ticks).
+    // Sleeping far creatures and idle ones deciding one tick in ten (#814) cut AI evaluations
+    // (49,320 to 9,972 idle; swimmers still decide every tick), and the changed wandering moves
+    // fights-32's candidates a little.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [49_320, 1_339_200, 288_000, 6_088_352],
-        [49_320, 1_336_320, 93_060, 1_825_497],
-        [49_320, 1_344_960, 431_424, 7_878_807],
-        [48_964, 1_356_124, 2_323_474, 24_322_842],
+        [9_972, 1_339_200, 288_000, 6_088_352],
+        [15_673, 1_336_320, 93_060, 1_825_497],
+        [23_130, 1_344_960, 433_961, 7_878_807],
+        [12_146, 1_356_124, 2_323_474, 24_322_842],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();
@@ -94,10 +97,8 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
         );
         assert_eq!(report.physics_steps, TICKS);
         assert_eq!(report.projections, fixture.players * TICKS);
-        assert_eq!(
-            report.dynamic_body_visits,
-            fixture.players * TICKS + report.ai_evaluations
-        );
+        // Every player steps every tick; awake creatures step whether or not they decide (#814).
+        assert!(report.dynamic_body_visits >= fixture.players * TICKS);
         assert_eq!(report.maintenance_inspections, report.dynamic_body_visits);
         assert!(report.max_projection_bytes <= MAX_PLAYER_PROJECTION_BYTES);
         let actual = [
@@ -119,7 +120,8 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
             assert!(report.death_records > 0);
         } else {
             assert_eq!(report.event_records, 0);
-            assert_eq!(report.ai_evaluations, 137 * TICKS);
+            // Far land creatures sleep and near idle ones decide one tick in ten (#814).
+            assert!(report.ai_evaluations < 137 * TICKS / 4);
         }
         if fixture.crowded {
             // Whole 14-byte events and 27-byte records beside the fixed part
