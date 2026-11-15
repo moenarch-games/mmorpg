@@ -201,6 +201,7 @@ impl ZoneSimulation {
         }
         [routine.home_seat, routine.work_seat]
             .into_iter()
+            .chain(routine.errands.iter().map(|errand| errand.seat))
             .flatten()
             .find(|&id| {
                 self.content

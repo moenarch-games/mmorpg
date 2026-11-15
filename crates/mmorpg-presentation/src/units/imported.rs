@@ -475,19 +475,32 @@ impl Resident {
     pub fn of_name(name: &str) -> Option<Self> {
         match name {
             "Marshal Elden Greywatch" => Some(Self::Marshal),
-            "Greyhaven Guard" => Some(Self::Guard),
+            "Greyhaven Guard" | "Watchman Garth" | "Watchman Pell" => Some(Self::Guard),
             "Innkeeper Bram Tolliver" => Some(Self::Innkeeper),
             "Farmer Osric Mill" => Some(Self::Farmer),
             "Brother Aldous" => Some(Self::Healer),
             "Tanner Hilda Brook" => Some(Self::Tanner),
             "Weaver Lysa Reed" | "Mara Wells" | "Baker Anwen" | "Herbalist Nessa"
-            | "Fisher Ada" | "Washer Elin" => Some(Self::VillagerWoman),
+            | "Fisher Ada" | "Washer Elin"
+            // The region's people (#819).
+            | "Alewife Gwen Barrow" | "Old Maud" | "Pip" | "Netter Ilsa" | "Trapper Sela"
+            | "Goodwife Ena" | "Shepherd Lise" | "Miller Hanne" => Some(Self::VillagerWoman),
             "Carpenter Owen Alder"
             | "Davin Moss"
             | "Miller Tomas"
             | "Peddler Rowan"
             | "Porter Ben"
-            | "Apprentice Finn" => Some(Self::Villager),
+            | "Apprentice Finn"
+            | "Shepherd Corin"
+            | "Farmer Tobin Hale"
+            | "Innkeeper Hob Ferris"
+            | "Miller Wynne"
+            | "Ferryman Osk"
+            | "Fisher Brann"
+            | "Huntsman Edric Vale"
+            | "Ploughman Garr"
+            | "Old Bertil"
+            | "Farmhand Jory" => Some(Self::Villager),
             _ => None,
         }
     }
@@ -3860,6 +3873,31 @@ mod tests {
                 Some("resident.tanner"),
                 Some("resident.farmer"),
             ]
+            .into_iter()
+            .chain([
+                // The region's people (#819), NPCs 22–41.
+                Some("resident.tanner"),
+                Some("resident.farmer"),
+                Some("resident.tanner"),
+                Some("resident.farmer"),
+                Some("resident.tanner"),
+                Some("resident.farmer"),
+                Some("resident.farmer"),
+                Some("resident.farmer"),
+                Some("resident.tanner"),
+                Some("resident.farmer"),
+                Some("resident.farmer"),
+                Some("resident.tanner"),
+                Some("resident.guard"),
+                Some("resident.guard"),
+                Some("resident.tanner"),
+                Some("resident.farmer"),
+                Some("resident.farmer"),
+                Some("resident.tanner"),
+                Some("resident.tanner"),
+                Some("resident.farmer"),
+            ])
+            .collect::<Vec<_>>()
         );
         let names: Vec<_> = PlayerClass::VARIANTS
             .iter()

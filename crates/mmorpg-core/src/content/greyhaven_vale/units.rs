@@ -430,6 +430,7 @@ pub(super) fn npcs() -> Vec<Npc> {
             position,
             facing,
         })
+        .chain(super::residents::npcs())
         .collect()
 }
 
@@ -490,7 +491,7 @@ pub(crate) fn vendors() -> Vec<(NpcId, crate::VendorStock)> {
 /// 103 at dusk and sleeps by his bed until dawn (#158, Atlas 5.1.48). Hilda takes a chair at the
 /// inn's table for the night; Apprentice Finn (NPC 21) sits on the market bench by day (#619).
 pub(crate) fn routines() -> Vec<crate::NpcRoutine> {
-    vec![
+    let mut routines = vec![
         crate::NpcRoutine {
             npc: NpcId::new(1),
             path: super::marshal_house::path(),
@@ -498,6 +499,7 @@ pub(crate) fn routines() -> Vec<crate::NpcRoutine> {
             door: Some(super::marshal_house::DOOR),
             home_seat: None,
             work_seat: None,
+            errands: Vec::new(),
         },
         crate::NpcRoutine {
             npc: NpcId::new(2),
@@ -513,6 +515,7 @@ pub(crate) fn routines() -> Vec<crate::NpcRoutine> {
             door: Some(super::inn::DOOR),
             home_seat: Some(SeatId::new(3)),
             work_seat: None,
+            errands: Vec::new(),
         },
         crate::NpcRoutine {
             npc: NpcId::new(21),
@@ -521,8 +524,12 @@ pub(crate) fn routines() -> Vec<crate::NpcRoutine> {
             door: None,
             home_seat: None,
             work_seat: Some(SeatId::new(1)),
+            errands: Vec::new(),
         },
-    ]
+    ];
+    // Everyone else's day (#819).
+    routines.extend(super::residents::routines());
+    routines
 }
 
 /// The authored seats (#619): the market bench's two places, then two chairs at the inn's third

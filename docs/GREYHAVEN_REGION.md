@@ -132,10 +132,37 @@ its buildings reuse the Vale's visuals:
 Barrowdown, Fenford and Westmere Lodge hold the network's fourth to sixth waystones, so a
 traveller who has found them can return there from the Outpost's stone.
 
+## People and their days
+
+Greyhaven's people keep a day (#819, `greyhaven_vale::residents`). Each works at its post by day,
+walks home at dusk (20:00) and back at dawn (06:00), and runs errands at set hours: out along an
+authored path, a while at the far end, then back to work (`mmorpg_core::Errand`).
+Where a resident is is a pure function of the zone's tick, so it needs no saved state and replays
+exactly.
+
+- **The Outpost's residents** live in the houses round the square. The weaver, the fisher and the
+  baker fetch water at the well, Davin and the peddler call at the inn, the porter waits for loads
+  at the north and east gates, the washer works at the brook below the bridge, the peddler greets
+  travellers at the south gate, the herbalist gathers along the South Road each morning and the
+  miller spends his working day at Millbrook Farm's windmill.
+- **Barrowdown:** Gwen Barrow keeps the Barrow Rest, Shepherd Corin and Farmer Tobin Hale take
+  their midday ale there, Old Maud keeps watch at the barrow ring, and Pip runs to the stones in
+  the morning and to the alehouse in the afternoon.
+- **Fenford:** Hob Ferris keeps the Ford Inn, Miller Wynne works the mill, Ferryman Osk waits at
+  the ford and Netter Ilsa mends nets in the square.
+- **Westmere Lodge:** Fisher Brann fishes the tarn and eats at the fire at noon.
+- **The hunters' camp:** Huntsman Edric Vale keeps the fire; Trapper Sela walks her lines in
+  Southwood each morning.
+- **Greyfang Watch:** Watchman Garth holds the tower, Watchman Pell walks the road north twice a
+  day.
+- **The farmland's hamlets:** Goodwife Ena, Ploughman Garr, Old Bertil, Shepherd Lise, Miller
+  Hanne and Farmhand Jory work their fields, wells and mills.
+
 ## Not yet done
 
-- **People:** the settlements stand empty until their residents and daily routines (#819).
 - **Quests** out there (#820).
+- **Homes you can enter:** residents end their day on their doorstep; only the Marshal and the
+  tanner sleep indoors.
 - **A bridge** over the Delving Run's ravine (the Delving Track fords it).
 - **The basin's climbs' ground:** the six ways up the heart's 11 m cliffs are still straight ledges
   cut into the cliff; only their roads round their turns (every authored road turns on a 4 m curve).

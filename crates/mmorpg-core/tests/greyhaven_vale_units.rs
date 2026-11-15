@@ -496,6 +496,9 @@ fn npcs_stand_at_their_posts() {
             ("Washer Elin", NpcRole::Resident, outpost),
             ("Apprentice Finn", NpcRole::Resident, outpost),
         ]
+        .into_iter()
+        .chain(region_residents())
+        .collect::<Vec<_>>()
     );
     let graveyard = content.graveyard();
     assert_eq!(graveyard, units::GRAVEYARD);
@@ -631,4 +634,34 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
             spawn.id.get()
         );
     }
+}
+
+/// The region's people (#819): the settlements' residents and watchmen (#818) and the
+/// farmland's hamlets' (#424), each in the area it works in.
+fn region_residents() -> Vec<(&'static str, NpcRole, Option<mmorpg_core::AreaId>)> {
+    use greyhaven_vale::{farmland::FARMLAND_AND_HAMLETS, settlements, wilds};
+    let resident = |name, area| (name, NpcRole::Resident, Some(area));
+    let guard = |name, area| (name, NpcRole::Guard, Some(area));
+    vec![
+        resident("Alewife Gwen Barrow", settlements::BARROWDOWN),
+        resident("Shepherd Corin", settlements::BARROWDOWN),
+        resident("Old Maud", wilds::KINGS_ROAD_DOWNS),
+        resident("Farmer Tobin Hale", settlements::BARROWDOWN),
+        resident("Pip", settlements::BARROWDOWN),
+        resident("Innkeeper Hob Ferris", settlements::FENFORD),
+        resident("Miller Wynne", settlements::FENFORD),
+        resident("Ferryman Osk", wilds::FENWATER_CROSSING),
+        resident("Netter Ilsa", settlements::FENFORD),
+        resident("Fisher Brann", settlements::WESTMERE_LODGE),
+        resident("Huntsman Edric Vale", settlements::HUNTERS_CAMP),
+        resident("Trapper Sela", settlements::HUNTERS_CAMP),
+        guard("Watchman Garth", settlements::GREYFANG_WATCH),
+        guard("Watchman Pell", settlements::GREYFANG_WATCH),
+        resident("Goodwife Ena", FARMLAND_AND_HAMLETS),
+        resident("Ploughman Garr", FARMLAND_AND_HAMLETS),
+        resident("Old Bertil", FARMLAND_AND_HAMLETS),
+        resident("Shepherd Lise", FARMLAND_AND_HAMLETS),
+        resident("Miller Hanne", FARMLAND_AND_HAMLETS),
+        resident("Farmhand Jory", FARMLAND_AND_HAMLETS),
+    ]
 }
