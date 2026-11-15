@@ -317,6 +317,30 @@ def outline(rects):
     return rings
 
 
+def group_outline(b, group):
+    """The outline of the regions in `group` taken together, as closed rings of atlas metres
+    (exterior first, counter-clockwise in x/z), along the authored borders with their
+    neighbours. The group's internal borders do not appear. None when no region is in it."""
+    layers, g, ids = b["layers"], b["grid"], b["ids"]
+    regions = layers["regions"]["regions"]
+    members = [k for k, r in enumerate(regions) if r.get("group") == group]
+    if not members:
+        return None
+    head = next((k for k in members if ids[k] == group), members[0])
+    label = np.where(np.isin(b["label"], members), head, b["label"])
+    rename = {ids[k]: ids[head] for k in members}
+    doc = json.loads(json.dumps(layers["borders"]))
+    doc["borders"] = [bd for bd in doc["borders"] if not all(r in rename for r in bd["regions"])]
+    for bd in doc["borders"]:
+        bd["regions"] = [rename.get(r, r) for r in bd["regions"]]
+    # borders now meeting end to end between the group and one neighbour join into one line
+    seeds = [(r["id"], r["seed"]) for k, r in enumerate(regions) if k == head or k not in members]
+    atlas_regions.sync(g, b["land"], doc, seeds)
+    arcs = topology(g, label, ids, doc)
+    rings, coords = region_rings(arcs, head, lambda x, z: [x, z])
+    return [coords(r) for r in rings]
+
+
 def map_bundle(b, digest):
     """The world map both game clients draw: kingdoms, regions, lakes, rivers, roads, settlements,
     the Crown's gates and the playable zones, in WGS84 at 0° N 0° E (see the module note), with
@@ -362,7 +386,9 @@ def map_bundle(b, digest):
                   for u in terrain.get("uplands", [])]
     crown = terrain["crown"]
     landmarks.append(feature({"type": "Point", "coordinates": to(*crown["center"])}, {"name": crown["name"], "kind": "massif"}))
-    zones = [feature({"type": "Polygon", "coordinates": [[to(*p) for p in ring] for ring in outline([part["rect"] for part in a["parts"]])]},
+    # a zone covering a group of regions is outlined by the group; otherwise by its anchor's parts
+    zones = [feature({"type": "Polygon", "coordinates": [[to(*p) for p in ring] for ring in
+                                                         group_outline(b, a["id"]) or outline([part["rect"] for part in a["parts"]])]},
                      {"id": a["id"], "name": a.get("name", a["id"].title())}, a["id"]) for a in layers["anchors"]["anchors"]]
     kingdoms = [{"id": k["id"], "name": k["name"], "color": k["color"]} for k in pol["kingdoms"]]
     kingdoms.append({"id": pol["unclaimed"]["id"], "name": pol["unclaimed"]["name"], "color": "#968c96"})
