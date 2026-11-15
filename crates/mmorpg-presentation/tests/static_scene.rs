@@ -522,7 +522,11 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
     assert_eq!(fallback(true), 0);
     // One adopted prop or more from each family, shared by entry.
     let parts = mmorpg_presentation::settlement_props::parts(&scenery);
-    assert_eq!(parts.len(), 23, "market square and brook additions");
+    assert_eq!(
+        parts.len(),
+        24,
+        "market square, brook additions and the Delving Run footbridge (#828)"
+    );
     for family in [
         ["stall", "cart", "crate"],
         ["signpost", "lantern-post", "bench"],
@@ -533,6 +537,11 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
             assert!(parts.iter().any(|part| part.entry == entry), "{entry}");
         }
     }
+    // The footbridge (#828) collides through its own crossing bodies, not the square's proxies.
+    let parts: Vec<_> = parts
+        .into_iter()
+        .filter(|part| part.entry != "settlement.props.footbridge")
+        .collect();
     // The square stays off the roads, the spawn plaza and every other collider's footprint; its
     // own props collide through their proxies (#577).
     let house = scenery

@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "area": "region-crossings",
+  "placements": [
+    {"id":"delving-run-footbridge","asset":"settlement.props.footbridge","position":[70156,4780,-61400],"yaw":16384,"scale":[1000,1000,1000]}
+  ]
+}

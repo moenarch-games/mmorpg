@@ -24,6 +24,7 @@ use crate::{Area, AreaId, Terrain, ZoneAreas};
 pub mod basin;
 pub mod brook;
 pub mod cave;
+pub mod crossings;
 pub mod design;
 pub mod dressing;
 pub mod farmland;
@@ -259,6 +260,9 @@ pub mod ids {
     pub const REGION_BOULDERS: RangeInclusive<u32> = 40_000..=41_999;
     /// The settlements' and landmarks' structures (#818), in [`super::settlements`] order.
     pub const SETTLEMENTS: RangeInclusive<u32> = 42_000..=42_999;
+    /// The footbridges' decks and rails, then (from +50) their end ramps (#828), in
+    /// [`super::crossings::BRIDGES`] order.
+    pub const CROSSINGS: RangeInclusive<u32> = 43_000..=43_099;
 }
 
 /// One region's tables (#542): its named areas, its roads and its own colliders. Each region
@@ -281,6 +285,7 @@ const REGIONS: &[Region] = &[
     marsh::REGION,
     wilds::REGION,
     settlements::REGION,
+    crossings::REGION,
 ];
 
 static AREAS: LazyLock<ZoneAreas> = LazyLock::new(|| {
@@ -1681,6 +1686,8 @@ pub fn ramps() -> Vec<crate::Ramp> {
         rises,
     });
     ramps.extend(brook::ramps());
+    // The footbridges' end ramps (#828).
+    ramps.extend(crossings::ramps());
     ramps
 }
 

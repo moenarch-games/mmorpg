@@ -181,6 +181,8 @@ fn every_structure_collider_has_exactly_one_visual_and_vice_versa() {
             || (is_authored_mesh(collider.id) && visual_kind(collider).is_none())
             || (greyhaven_vale::brook::BRIDGE..=greyhaven_vale::brook::SINK_ROCK)
                 .contains(&collider.id)
+            // A footbridge is drawn by its dressing (#828).
+            || greyhaven_vale::crossings::is_crossing(collider.id)
         {
             assert!(visual_kind(collider).is_none());
             assert!(

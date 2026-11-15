@@ -19,13 +19,14 @@ use crate::{
 
 /// The bundle entries the clients draw, sorted; [`entries`] derives the same list from the
 /// square's content.
-pub const ENTRIES: [&str; 10] = [
+pub const ENTRIES: [&str; 11] = [
     "settlement.props.barrel",
     "settlement.props.bench",
     "settlement.props.cart",
     "settlement.props.crate",
     "settlement.props.fence",
     "settlement.props.firewood",
+    "settlement.props.footbridge",
     "settlement.props.lantern-post",
     "settlement.props.planter",
     "settlement.props.signpost",
@@ -136,6 +137,16 @@ const SOIL: u32 = 0x6b5a3e;
 /// `(centre, half extents, colour)` in metres.
 pub(crate) fn fallback(entry: &str) -> Vec<([f64; 3], [f64; 3], u32)> {
     use mmorpg_core::greyhaven_vale::market::Item;
+    // The footbridge (#828) stands in as its deck, end ramps and rails, in its own frame.
+    if entry == "settlement.props.footbridge" {
+        return vec![
+            ([0., 0.51, 0.], [1.1, 0.04, 3.3], WOOD),
+            ([0., 0.285, -3.9], [1.1, 0.265, 0.6], WOOD),
+            ([0., 0.285, 3.9], [1.1, 0.265, 0.6], WOOD),
+            ([-1.05, 0.795, 0.], [0.06, 0.775, 4.5], DARK),
+            ([1.05, 0.795, 0.], [0.06, 0.775, 4.5], DARK),
+        ];
+    }
     let Some(item) = mmorpg_core::greyhaven_vale::market::SQUARE
         .iter()
         .map(|(item, ..)| *item)
@@ -171,7 +182,8 @@ mod tests {
     #[test]
     fn every_prop_has_a_fallback() {
         let keys = entries();
-        assert_eq!(keys.len(), 10, "{keys:?}");
+        // The market square's ten, and the region's footbridge (#828).
+        assert_eq!(keys.len(), 11, "{keys:?}");
         assert!(keys.iter().all(|key| !fallback(key).is_empty()), "{keys:?}");
     }
 
