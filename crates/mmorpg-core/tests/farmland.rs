@@ -1,6 +1,6 @@
-//! Farmland and Hamlets (#424): from the Vale Ring Road a player walks the South Road up the
-//! ridge's cliff notch onto the farmland's plateau, down the farm road to the landmark tower,
-//! and back into the Vale, all on the zone's own physics.
+//! Farmland and Hamlets (#424) in the redesigned region (#816): from the Vale a player walks the
+//! King's Road across the open downs to the landmark tower and back, and on to the region's
+//! southern edge, all on the zone's own physics.
 use std::sync::Arc;
 
 use mmorpg_core::greyhaven_vale::{self, farmland};
@@ -56,45 +56,42 @@ fn walk(zone: &mut ZoneSimulation, sequence: &mut u32, waypoints: &[[i32; 2]]) {
     }
 }
 
+/// The designed road named `name` (#816).
+fn road(name: &str) -> &'static [[i32; 2]] {
+    greyhaven_vale::roads()
+        .iter()
+        .find(|road| road.name == name)
+        .unwrap_or_else(|| panic!("no road {name}"))
+        .points
+}
+
 #[test]
-fn a_player_walks_up_the_notch_to_the_tower_and_back_into_the_vale() {
+fn a_player_walks_the_kings_road_to_the_tower_and_back_into_the_vale() {
     let mut zone = player_at([0, 15_000]);
     let mut sequence = 0;
-    // South Road: up the cutting, east along the gorge and up onto the plateau.
-    walk(
-        &mut zone,
-        &mut sequence,
-        &[[0, 21_200], [0, 23_200], [2_800, 23_200], [2_800, 25_600]],
-    );
-    let top = feet(&zone);
-    assert!(
-        (top[1] - farmland::PLATEAU_Y as f32).abs() < 30.0,
-        "on the plateau: {top:?}"
-    );
-    assert_eq!(
-        greyhaven_vale::area_at(top[0] as i32, top[2] as i32).map(|area| area.name()),
-        Some("Farmland and Hamlets")
-    );
-    // Farmland Road to the landmark tower, 200 m beyond the Vale's old southern wall.
-    walk(
-        &mut zone,
-        &mut sequence,
-        &[[2_800, 44_000], [2_000, 44_000]],
-    );
+    // The King's Road leaves the Vale southward across the open downs (#816).
+    let kings_road = road("King's Road");
+    let to_tower: Vec<[i32; 2]> = kings_road
+        .iter()
+        .copied()
+        .take_while(|point| point[1] <= 48_000)
+        .collect();
+    walk(&mut zone, &mut sequence, &to_tower);
+    walk(&mut zone, &mut sequence, &[[2_000, 44_000]]);
     let tower = feet(&zone);
-    assert!(tower[2] > 40_000.0, "{tower:?}");
-    // And back down into the Vale without a break.
-    walk(
-        &mut zone,
-        &mut sequence,
-        &[
-            [2_800, 44_000],
-            [2_800, 23_200],
-            [0, 23_200],
-            [0, 20_000],
-            [0, 15_000],
-        ],
+    assert_eq!(
+        greyhaven_vale::area_at(tower[0] as i32, tower[2] as i32).map(|area| area.name()),
+        Some("Farmland and Hamlets"),
+        "{tower:?}"
     );
+    // And back up into the Vale without a break.
+    let home: Vec<[i32; 2]> = to_tower
+        .iter()
+        .rev()
+        .copied()
+        .chain([[0, 15_000]])
+        .collect();
+    walk(&mut zone, &mut sequence, &home);
     let home = feet(&zone);
     assert_eq!(
         greyhaven_vale::area_at(home[0] as i32, home[2] as i32).map(|area| area.name()),
@@ -103,24 +100,17 @@ fn a_player_walks_up_the_notch_to_the_tower_and_back_into_the_vale() {
 }
 
 #[test]
-fn the_ridge_holds_a_player_beside_the_notch() {
-    // At the ridge's foot west of the notch, walking south runs into its face.
-    let mut zone = player_at([-4_000, 20_200]);
+fn the_kings_road_runs_on_to_the_regions_southern_edge() {
+    let kings_road = road("King's Road");
+    let start = kings_road[kings_road.len() / 2];
+    let mut zone = player_at(start);
     let mut sequence = 0;
-    for _ in 0..mmorpg_core::golden::t30(240) {
-        sequence += 1;
-        zone.apply_command(
-            1,
-            sequence,
-            ZoneCommand::Move {
-                forward: 1,
-                strafe: 0,
-                facing: 0,
-            },
-        )
-        .unwrap();
-        zone.advance_tick().unwrap();
-    }
-    let at = feet(&zone);
-    assert!(at[2] < 21_800.0 && at[1] < 600.0, "held at {at:?}");
+    walk(
+        &mut zone,
+        &mut sequence,
+        &kings_road[kings_road.len() / 2..],
+    );
+    let end = feet(&zone);
+    assert!(end[2] > 90_000.0, "{end:?}");
+    assert!(farmland::BOUNDS.max[1] < end[2] as i32);
 }

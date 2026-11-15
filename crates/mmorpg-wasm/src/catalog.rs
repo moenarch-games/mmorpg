@@ -521,7 +521,15 @@ mod tests {
                 "Sunken Shrine",
                 "Farmland and Hamlets",
                 "Bandit Highlands",
-                "Marsh-Lake Wetlands"
+                "Marsh-Lake Wetlands",
+                // The region's new sub-regions (#816).
+                "Westmere Woods",
+                "Southwood",
+                "Crown Foothills",
+                "Greyfang Approach",
+                "Delving Heights",
+                "Fenwater Crossing",
+                "King's Road Downs"
             ]
         );
         assert_eq!(

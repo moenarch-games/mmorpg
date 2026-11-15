@@ -280,11 +280,13 @@ fn no_prop_intersects_a_collider_it_does_not_visualise() {
 #[test]
 fn walkable_water_has_no_colliders() {
     let scenery = greyhaven_vale_scenery();
-    // Stillwater Lake, then the wetlands' lake and pools (#426) beyond the Vale.
-    let [lake, wetlands @ ..] = &scenery.water[..] else {
+    // Stillwater Lake, then the wetlands' lake and pools (#426) beyond the Vale, then the
+    // region's designed lakes (#816).
+    let [lake, rest @ ..] = &scenery.water[..] else {
         panic!("the vale has a lake");
     };
-    assert_eq!(wetlands.len(), greyhaven_vale::marsh::WATERS.len());
+    let (wetlands, designed) = rest.split_at(greyhaven_vale::marsh::WATERS.len());
+    assert_eq!(designed.len(), greyhaven_vale::design::data().lakes.len());
     for water in wetlands {
         assert_eq!(
             greyhaven_vale::area_at(water.centre[0], water.centre[1]).map(Area::id),
@@ -576,18 +578,23 @@ fn prop_counts_stay_within_their_budgets() {
         .count();
     assert_eq!(derived, structures);
     let count = |kind| counts.get(&kind).copied().unwrap_or(0);
-    // The outer valley (#159), the farmland (#424), the highlands (#425) and the wetlands (#426)
-    // add their own grass, flowers and undergrowth.
+    // The region beyond the original valley gathers its own grass, flowers and scrub from the
+    // land itself (#816).
     assert!(
-        (6_400..=7_000).contains(&count(PropKind::GrassTuft)),
+        (2_200..=3_200).contains(&count(PropKind::GrassTuft)),
         "{counts:?}"
     );
-    assert!((1_300..=1_600).contains(&count(PropKind::Flowers)));
-    assert!((900..=1_000).contains(&count(PropKind::Bush)), "{counts:?}");
+    assert!((2_600..=3_400).contains(&count(PropKind::Flowers)));
+    // The region's designed forests add their undergrowth (#816).
+    assert!(
+        (14_000..=16_500).contains(&count(PropKind::Bush)),
+        "{counts:?}"
+    );
     // Stillwater Lake's shore, then every marsh water's (#426).
     assert!((300..=400).contains(&count(PropKind::Reeds)), "{counts:?}");
+    // The mountains' wooded slopes beyond the region's wall (#816).
     assert!(
-        (600..=700).contains(&background_trees),
+        (1_500..=1_800).contains(&background_trees),
         "{background_trees}"
     );
     // Millbrook's 13 rows, then 14 in each of the farmland's eleven fields.
@@ -603,8 +610,9 @@ fn prop_counts_stay_within_their_budgets() {
     assert_eq!(count(PropKind::Keep), 10);
     assert_eq!(count(PropKind::House), 19);
     // The highlands and wetlands add about a tenth each; #644 adds the extended woodland
-    // and hideout. The combined content places 13,510 scenery props.
-    assert!(scenery.props.len() <= 14_000, "{}", scenery.props.len());
+    // and hideout. The region's designed forests, rock fields and undergrowth (#816) bring the
+    // content to 36,780 scenery props.
+    assert!(scenery.props.len() <= 38_000, "{}", scenery.props.len());
 }
 
 #[test]

@@ -168,11 +168,11 @@ fn rock_fields() -> [(XzBounds, usize, usize, u64); 3] {
     let wetlands = marsh::BOUNDS;
     [
         (hollow, 24, 1_000, 3),
-        // The highlands' broken high ground (#425), north of the escarpment.
+        // The highlands' ridge and broken high ground (#425).
         (
             XzBounds {
                 min: [highlands.min[0] + 100, highlands.min[1] + 100],
-                max: [highlands.max[0] - 100, highlands::ESCARPMENT[3] - 100],
+                max: [highlands.max[0] - 100, highlands.max[1] - 100],
             },
             220,
             2_000,
@@ -267,7 +267,11 @@ fn rocks(colliders: &[StaticCollider]) -> Vec<Piece> {
                 && inside_authored(area.1[0], area.1[1])
                 && dry
                 && clear_of_roads(&collider)
-                && posts.iter().all(|post| !near(area, (*post, *post), 200))
+                // Beyond the core a post keeps a wandering creature's reach clear (#816).
+                && posts.iter().all(|post| {
+                    let clearance = if super::beyond_core(at[0], at[1]) > 0 { 700 } else { 200 };
+                    !near(area, (*post, *post), clearance)
+                })
                 && buckets
                     .get(&bucket)
                     .is_none_or(|others| others.iter().all(|other| !near(area, *other, 50)));

@@ -282,7 +282,8 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
     };
     let woods = blur(g, &indicator(&grounds, &["woods"]), 2);
     let hollow = blur(g, &indicator(&grounds, &["hollow"]), 2);
-    let highland = blur(g, &indicator(&grounds, &["foothills", "highland"]), 2);
+    // Foothills are rough grass (#816); only the high ground takes the gravel.
+    let highland = blur(g, &indicator(&grounds, &["highland"]), 2);
     let bare = blur(g, &indicator(&g.biomes, &["rock"]), 1);
     let mut layers: BTreeMap<Layer, Vec<f64>> = BTreeMap::new();
     let mut colors: BTreeMap<Layer, Vec<u32>> = BTreeMap::new();
@@ -317,7 +318,15 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
             0.
         };
         let gravel = gravel.max(wash * 0.92);
-        let forest = smoothstep(0.3, 0.7, woods[i] + 0.45 * breakup);
+        // The forest-floor overlay is cut by its texture's height alpha, which repeats every 3 m
+        // and reads as stripes across open ground. The region's designed forests (#816), sparse
+        // and open between their trunks, keep the woods' darker base tone instead.
+        let designed = s.greyhaven() && mmorpg_core::greyhaven_vale::beyond_core(ux, uz) > 0;
+        let forest = if designed {
+            0.
+        } else {
+            smoothstep(0.3, 0.7, woods[i] + 0.45 * breakup)
+        };
         let mud = if shore > 0. {
             (1. - smoothstep(2., 6.5, shore + 3.5 * breakup)).max(if marsh {
                 smoothstep(0.15, 0.35, breakup) * (1. - smoothstep(4., 12., shore))

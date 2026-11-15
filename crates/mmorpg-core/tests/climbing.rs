@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use mmorpg_core::greyhaven_vale::{self, highlands, ids};
+use mmorpg_core::greyhaven_vale::{self, ids};
 use mmorpg_core::{
     Grip, Ledge, StaticCollider, Traversal, ZoneAreas, ZoneCommand, ZoneContent, ZoneDefinition,
     ZoneId, ZoneSimulation,
@@ -308,48 +308,6 @@ fn a_player_climbs_the_rope_up_the_sheer_crag() {
     assert!(over(&crag, feet), "on the crag: {feet:?}");
 }
 
-#[test]
-fn the_climbing_route_beside_the_highland_pass_leads_up_the_escarpment() {
-    let route = greyhaven_vale::CLIMBING_ROUTES[0];
-    let x = (route.min[0] + route.max[0]) / 2;
-    let mut player = Player::at([x, -20_400]);
-    player.walk_into(NORTH);
-    player.jump();
-    player.ticks(1);
-    assert!(
-        matches!(player.traversal(), Traversal::Climbing { .. }),
-        "{:?}",
-        player.traversal()
-    );
-    // Up the southern face onto the crest, then down its northern face onto the high ground.
-    assert!(
-        player.until(1, NORTH, 6_000, |p| p.feet()[2]
-            < highlands::ESCARPMENT[1] as f32
-            && p.traversal() == Traversal::Free),
-        "{:?} {:?}",
-        player.feet(),
-        player.traversal()
-    );
-    assert!(player.until(1, NORTH, 1_200, |p| p.feet()[2] < -28_400.0));
-    let feet = player.feet();
-    assert_eq!(
-        greyhaven_vale::area_at(feet[0] as i32, feet[2] as i32).map(|area| area.name()),
-        Some("Bandit Highlands")
-    );
-    assert!(
-        (feet[1] - highlands::PLATEAU_Y as f32).abs() < 400.0,
-        "{feet:?}"
-    );
-}
-
-#[test]
-fn the_escarpment_beside_the_route_is_sheer() {
-    let route = greyhaven_vale::CLIMBING_ROUTES[0];
-    let mut player = Player::at([route.max[0] + 1_200, -20_400]);
-    player.walk_into(NORTH);
-    player.refused(NORTH);
-}
-
 /// Flat ground with a 1.5 m block 4 m north of the spawn; `roof` lays a slab 1 m above it.
 fn block_arena(roof: bool) -> Arc<ZoneContent> {
     let mut colliders = vec![
@@ -489,57 +447,6 @@ fn climbing_and_mantling_run_in_the_movement_region() {
         Traversal::Mantling { .. }
     )));
     assert_eq!(movement(&player), Some(ActionId::Mantle));
-}
-
-/// Climbs a boundary route from `start` toward `facing` until `beyond` holds of the feet, then
-/// walks on into `area`.
-fn take_route(start: [i32; 2], facing: u16, beyond: impl Fn([f32; 3]) -> bool, area: &str) {
-    let mut player = Player::at(start);
-    player.walk_into(facing);
-    player.jump();
-    player.ticks(1);
-    assert!(
-        matches!(player.traversal(), Traversal::Climbing { .. }),
-        "{:?} at {:?}",
-        player.traversal(),
-        player.feet()
-    );
-    assert!(
-        player.until(1, facing, 9_000, |p| beyond(p.feet())),
-        "{:?} {:?}",
-        player.feet(),
-        player.traversal()
-    );
-    let feet = player.feet();
-    assert_eq!(
-        greyhaven_vale::area_at(feet[0] as i32, feet[2] as i32).map(|area| area.name()),
-        Some(area),
-        "{feet:?}"
-    );
-}
-
-#[test]
-fn the_climbing_route_beside_the_south_road_crosses_the_farmland_ridge() {
-    let route = greyhaven_vale::CLIMBING_ROUTES[1];
-    let x = (route.min[0] + route.max[0]) / 2;
-    take_route(
-        [x, 20_400],
-        0,
-        |feet| feet[2] > 25_600.0,
-        "Farmland and Hamlets",
-    );
-}
-
-#[test]
-fn the_climbing_route_beside_the_marsh_pass_crosses_the_wetlands_ridge() {
-    let route = greyhaven_vale::CLIMBING_ROUTES[2];
-    let z = (route.min[1] + route.max[1]) / 2;
-    take_route(
-        [20_400, z],
-        16_384,
-        |feet| feet[0] > 25_600.0,
-        "Marsh-Lake Wetlands",
-    );
 }
 
 #[test]

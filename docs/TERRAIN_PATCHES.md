@@ -3,7 +3,7 @@
 Issue [#782](https://github.com/moenarch-games/mmorpg/issues/782) adopts the public
 `asset-tooling/recipes/terrain-patches` recipe for a bounded Southmeadow Downs
 patch: X = 80–112 m, Z = 164–196 m. This is east of the ruined farmstead,
-south of the Vale Ring Road, and outside Millbrook Farm and every crop field.
+south of the Vale's heart, and outside Millbrook Farm and every crop field.
 The bounds are an implementation choice under the issue's one-area scope.
 
 `content/greyhaven/terrain-patches/southmeadow/recipe.json` owns the saved inputs.

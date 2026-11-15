@@ -698,8 +698,9 @@ mod tests {
         let json = hosted_scenery_json();
         assert_eq!(json, serde_json::to_string(&hosted_export()).unwrap());
         // Denser western/northern woods and the authored hideout export 1,548,250 bytes; the
-        // whole region's terrain grid (#810, about 7× the samples) brings it to 6,091,179.
-        assert!(json.len() < 6_200_000, "{} bytes", json.len());
+        // whole region's terrain grid (#810, about 7× the samples) brings it to 6,091,179, and the
+        // redesigned region's forests, rock fields and undergrowth (#816) to 7,907,239.
+        assert!(json.len() < 8_200_000, "{} bytes", json.len());
         let value: Value = serde_json::from_str(json).unwrap();
         assert_eq!(value["format"], SCENERY_FORMAT);
         assert_eq!(value["source"], SCENERY_SOURCE);
@@ -742,7 +743,15 @@ mod tests {
                 "Sunken Shrine",
                 "Farmland and Hamlets",
                 "Bandit Highlands",
-                "Marsh-Lake Wetlands"
+                "Marsh-Lake Wetlands",
+                // The region's new sub-regions (#816).
+                "Westmere Woods",
+                "Southwood",
+                "Crown Foothills",
+                "Greyfang Approach",
+                "Delving Heights",
+                "Fenwater Crossing",
+                "King's Road Downs"
             ]
         );
         assert_eq!(
@@ -767,22 +776,20 @@ mod tests {
                 { "centerXz": [46_000, -2_000], "radiiXz": [10_000, 8_000], "surfaceY": 415 }
             )
         );
-        assert_eq!(value["water"].as_array().map(Vec::len), Some(6));
+        // … then the region's designed lakes (#816).
+        assert_eq!(value["water"].as_array().map(Vec::len), Some(7));
         assert_eq!(value["roads"][0]["name"], "Hollow Road");
         assert_eq!(value["roads"][0]["halfWidth"], 150);
+        // The Hollow Road with its switchback's turns rounded (#816).
         assert_eq!(
             value["roads"][0]["points"],
-            serde_json::json!([
-                [0, 1_200],
-                [0, -1_000],
-                [0, -4_000],
-                [0, -6_200],
-                [-3_600, -6_200],
-                [-3_600, -7_000],
-                [0, -7_000],
-                [0, -8_600]
-            ])
+            serde_json::json!(greyhaven_vale::roads()[0].points)
         );
+        assert_eq!(
+            value["roads"][0]["points"][0],
+            serde_json::json!([0, 1_200])
+        );
+        assert!(value["roads"][0]["points"].as_array().map_or(0, Vec::len) > 8);
         assert_eq!(value["structures"][0]["colliderId"], 100);
     }
 

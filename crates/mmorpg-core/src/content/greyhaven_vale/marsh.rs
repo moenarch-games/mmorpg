@@ -366,6 +366,19 @@ fn wetlands(x: i32, z: i32) -> i64 {
     ground.max(island)
 }
 
+/// The wetlands' own ground round their waters (#816): the causeway's lanes, and within 1.25
+/// shore radii of a water its bed, the shore's hummocks and the island, fading out by 1.8 radii
+/// into the region's ground. The ground and the weight (Q10) it carries, or `None` beyond.
+#[must_use]
+pub fn water_ground(x: i32, z: i32) -> Option<(i32, i64)> {
+    if let Some(lane) = CAUSEWAY.iter().find(|lane| lane.contains(x, z)) {
+        return Some((lane.height(x, z), 1_024));
+    }
+    let near = WATERS.iter().map(|water| water.distance_q10(x, z)).min()?;
+    let weight = 1_024 - smooth_q10(near, 1_280, 1_840);
+    (weight > 0).then(|| (i32::try_from(wetlands(x, z)).unwrap_or(FLOOR_Y), weight))
+}
+
 /// The third major region beyond the Vale (#426): its ridge and wetlands.
 pub const MARSH_LAKE_WETLANDS: AreaId = AreaId::new(13);
 
@@ -398,26 +411,15 @@ pub const AREAS: &[(AreaId, &str, XzBounds)] =
 
 /// The region's roads.
 pub const ROADS: &[Road] = &[
-    // Marsh-Lake Wetlands (#426): the pass through the ridge from the Vale Ring Road, the trail
-    // to the lake, the causeway to the island and the paths to the pools.
-    Road {
-        name: "Marsh Pass",
-        points: &[
-            [15_000, 4_000],
-            [22_400, 4_000],
-            [22_400, -800],
-            [24_000, -800],
-            [24_000, 2_400],
-            [25_200, 2_400],
-        ],
-    },
+    // Marsh-Lake Wetlands (#426): the trail from the Fen Road (#816) to the lake, the causeway to
+    // the island and the path round the lake's north side.
     Road {
         name: "Marsh Trail",
         points: &[
-            [25_200, 2_400],
+            [30_000, 7_200],
+            [29_200, 4_000],
             [29_000, 2_400],
-            [32_000, 5_600],
-            [34_400, 3_200],
+            [31_800, 600],
             [34_400, -2_000],
         ],
     },
@@ -433,9 +435,5 @@ pub const ROADS: &[Road] = &[
             [34_000, -12_000],
             [54_000, -12_000],
         ],
-    },
-    Road {
-        name: "Heron Path",
-        points: &[[32_000, 5_600], [40_000, 9_600], [50_000, 9_600]],
     },
 ];
