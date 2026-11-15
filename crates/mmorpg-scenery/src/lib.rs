@@ -680,6 +680,11 @@ pub fn is_dressing(id: u32) -> bool {
         || ids::LAYOUT_LAMPS.contains(&id)
         || ids::LAYOUT_SIGNPOSTS.contains(&id)
         || ids::LOOSE_ROCKS.contains(&id)
+        // The settlements' barrels and carts (#818) are drawn like the Vale's.
+        || matches!(
+            greyhaven_vale::settlements::building(id),
+            Some(greyhaven_vale::settlements::Building::Barrel | greyhaven_vale::settlements::Building::Cart)
+        )
 }
 
 /// The yaw that turns a ramp's +Z rise toward its content rise (#59).
