@@ -34,8 +34,8 @@ Mountain streams feed both basins:
 
 | Sub-region | Character | Creatures (levels) |
 | --- | --- | --- |
-| Greyhaven Vale | The authored basin with the Outpost, unchanged | the quest chain's |
-| Bandit Highlands | Uplands above the authored escarpment, rising to the mountains | Redbrand garrison (3–5) |
+| Greyhaven Vale | The authored heart round the Outpost's basin, and the land round it | the quest chain's |
+| Bandit Highlands | Greyfang Ridge and the uplands beyond its pass, rising to the mountains | Redbrand garrison (3–5) |
 | Farmland and Hamlets | Rolling downs with three hamlets, hedgerow trees and the landmark tower | — |
 | Marsh-Lake Wetlands | The marsh basin round the lake and pools, alder copses | lurkers, boars, wolves |
 | Greyfang Approach | Pine slopes and scree under the mountains, the road north | Redbrand outriders (4–5) |
@@ -54,13 +54,15 @@ Every sub-region is on a road, and loops join them without passing through the O
 
 - **King's Road:** from the South Road through the hamlets and down the Greywater's west bank to
   the southern edge, toward Millford. The hamlets' lanes branch off it.
-- **Greyfang Road:** from the top of the Highland Pass, past the stronghold (by the **Stronghold
-  Way**) and the **Lookout Path**, north to the mountains.
+- **Greyfang Road:** from the Redbrand camp at the Greyfang cave's north mouth, winding up
+  through the **Highland Pass** (a saddle in Greyfang Ridge), past the stronghold (by the
+  **Stronghold Way**) and the **Lookout Path**, north to the mountains.
 - **Delving Track:** east from the lookout across the ravine to the Delving Heights.
-- **Fen Road:** east from the Vale Ring Road, south of the Marsh Lake and down the Fenwater to
+- **Fen Road:** east from the top of the Millbrook Climb, south of the Marsh Lake and down the
+  Fenwater to
   its ford. The **Marsh Trail** leads off it to the causeway.
 - **Fenwater Link:** from the Fen Road south to the King's Road.
-- **Westmere Road:** west from the Downs Trail to the tarn. The **Crown Track** leads off it
+- **Westmere Road:** west from the top of the Wolfrun Climb to the tarn. The **Crown Track** leads off it
   north into the Crown Foothills.
 - **Southwood Trail** and **Westwood Track:** from the south hamlet through Southwood and back
   north to the Westmere Road.
@@ -70,8 +72,13 @@ Where a road meets a river it fords it.
 
 ## How it is built
 
-The hand-authored **core** stays as it was: the Vale and the highlands' escarpment above it
-(`greyhaven_vale::CORE`). Everything round it comes from committed data:
+Only the Vale's **heart** is hand-authored: the Outpost's basin and the rim round it with
+Millbrook Farm, Stillwater Lake and the Sunken Shrine, Redbrand Hollow and the Greyfang cave.
+Its outline is the `heart` in `design.json`, rounded into curves and swollen outwards by up to
+15 m in broad lobes (`greyhaven_vale::beyond_core`), so no straight edge or square ring is left
+of the old rectangular core. The old outer valley ring, its square Vale Ring Road, the straight
+escarpment and its right-angled pass, and the farmland's and wetlands' ridges are gone.
+Everything round the heart comes from committed data:
 
 - **`content/greyhaven/design.json`** holds the design, in metres:
   - height controls and roughness;
@@ -89,23 +96,27 @@ The hand-authored **core** stays as it was: the Vale and the highlands' escarpme
   - the river channels, cut at the 4 m grid and filled with water reaches;
   - level pads under the yards, fields and buildings (buildings in a yard share its height);
   - the wetlands' own waters, island and causeway;
-  - the roads, each graded to a smoothed profile along it except at fords.
+  - the roads, each graded to a smoothed profile along it except at fords; a branch eases onto
+    the height of the road it leaves.
 
-  Within 60 m of the core this blends into the authored ground.
+  Within 40 m of the heart this blends into the authored ground.
 - **Forests and rock fields** are colliders: trunks and boulders, kept clear of roads, waters,
   pads, creature posts and each other. The clients draw the ground cover from the land itself:
   - forest floor under the closer forests;
   - damp hollows by the rivers and the marsh;
   - rock on cliffs, highland grass high up;
   - meadow in broad patches;
-  - undergrowth clumps in and along the forests.
+  - undergrowth clumps in and along the forests;
+  - tussocks, flower drifts and scrub gathered in patches across the open land.
 
-  Beyond the wall the mountains are wooded low down, with rock and snow above.
+  The heart's own woods and groves are rounded into clumps. Beyond the wall the mountains are
+  wooded low down, with crags, rock and snow above.
 
 ## Not yet done
 
 - **Landmarks** in the new sub-regions: the Delving workings with their bridge over the ravine, a
   Greyfang watchtower, hamlets on the downs.
 - **Quests** and NPCs out there.
-- **The core's own rectangles:** the square Vale Ring Road and the Vale's woods.
+- **The basin's climbs:** the six ways up the heart's 11 m cliffs keep their right-angled ledges
+  and landings.
 - **Visual acceptance** from the owner.
