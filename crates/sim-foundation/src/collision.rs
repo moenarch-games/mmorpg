@@ -5,9 +5,9 @@ use crate::ZoneError;
 /// Every collider bound and every spawned body lies within `±` this many units
 /// on each axis. `ZoneSimulation` closes this cube with fixed world-limit
 /// bodies, so no body admitted at a spawn slot leaves it, whatever the
-/// content's walls or gravity (1 km, room for regions beyond Greyhaven Vale,
-/// #424). Player projections carry positions as full `i32` units.
-pub const MAX_CONTENT_COORDINATE_UNITS: i32 = 100_000;
+/// content's walls or gravity (4 km: the whole Greyhaven Vale region, #424,
+/// #810). Player projections carry positions as full `i32` units.
+pub const MAX_CONTENT_COORDINATE_UNITS: i32 = 400_000;
 
 pub const fn within_content_range(value: i32) -> bool {
     -MAX_CONTENT_COORDINATE_UNITS <= value && value <= MAX_CONTENT_COORDINATE_UNITS
@@ -25,8 +25,8 @@ pub struct Terrain {
     pub heights: Vec<i32>,
 }
 
-/// Terrain heights stay within ±this many units (100 m).
-pub const MAX_TERRAIN_HEIGHT_UNITS: i32 = 10_000;
+/// Terrain heights stay within ±this many units (1 km: the mountains round a region, #810).
+pub const MAX_TERRAIN_HEIGHT_UNITS: i32 = 100_000;
 
 impl Terrain {
     /// The ground height at `(x, z)` in units: bilinear between samples, clamped to the edge

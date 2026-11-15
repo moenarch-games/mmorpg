@@ -6,7 +6,9 @@
 //! the Farmland and Hamlets region of [`farmland`] reaches z = +640 m (#424), and north of it,
 //! above an escarpment, the Bandit Highlands of [`highlands`] reach z = −632 m (#425); east of
 //! it, beyond a second ridge, the Marsh-Lake Wetlands of [`marsh`] reach x = +632 m (#426).
-//! Invisible boundary walls enclose all four ([`WALLED`]). Map north is −Z, toward the Redbrand
+//! Those four are the hand-authored parts ([`AUTHORED`]); round them the zone covers the whole
+//! Greyhaven Vale region of the continent atlas on its exported base terrain ([`region`], #810),
+//! and invisible boundary walls follow the region's outline. Map north is −Z, toward the Redbrand
 //! cliffs, matching the
 //! layout table in `docs/STARTER_ZONE.md`. The Outpost's settled floor stays level (y = 0),
 //! with gentle rises on its northern approach in [`basin`], below the rim and outer hills; relief, props
@@ -38,6 +40,7 @@ pub mod marshal_house;
 pub mod paint;
 pub mod quests;
 pub mod raid;
+pub mod region;
 mod roofs;
 pub mod shrine;
 pub mod traps;
@@ -49,17 +52,16 @@ pub mod vale;
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
 /// Gravity in subunits per tick squared, authored as 9 m/s² down.
 pub const GRAVITY: [i32; 3] = crate::STANDARD_GRAVITY;
-/// The rectangle round everything the boundary walls enclose: the Vale, the Farmland and
-/// Hamlets region south of it (#424), the Bandit Highlands north of it (#425) and the
-/// Marsh-Lake Wetlands east of it (#426). Its corners beyond the farmland and the highlands lie
-/// outside the walls ([`WALLED`]).
+/// The rectangle round the region's outline, which the boundary walls follow (#810): the
+/// bounds of [`region::Region::outline`].
 pub const PLAYABLE_BOUNDS: XzBounds = XzBounds {
-    min: [-20_800, highlands::BOUNDS.min[1]],
-    max: [marsh::BOUNDS.max[0], farmland::BOUNDS.max[1]],
+    min: [-184_000, -134_000],
+    max: [188_000, 128_000],
 };
-/// The inner faces of the boundary walls enclose these rectangles: the column of the
-/// highlands, the Vale and the farmland, and the wetlands east of the Vale (#426).
-pub const WALLED: [XzBounds; 2] = [
+/// The hand-authored parts: the column of the highlands (#425), the Vale and the farmland
+/// (#424), and the wetlands east of the Vale (#426). Their ground is authored here; round them
+/// the region's base terrain takes over within [`terrain::BLEND_UNITS`].
+pub const AUTHORED: [XzBounds; 2] = [
     XzBounds {
         min: [-20_800, highlands::BOUNDS.min[1]],
         max: [20_800, farmland::BOUNDS.max[1]],
@@ -67,11 +69,11 @@ pub const WALLED: [XzBounds; 2] = [
     marsh::BOUNDS,
 ];
 
-/// Chebyshev distance (units) from `(x, z)` to the walled ground ([`WALLED`]): positive
-/// outside the walls, zero or negative inside.
+/// Chebyshev distance (units) from `(x, z)` to the hand-authored ground ([`AUTHORED`]):
+/// positive outside it, zero or negative inside.
 #[must_use]
-pub fn beyond_walls(x: i32, z: i32) -> i64 {
-    WALLED
+pub fn beyond_authored(x: i32, z: i32) -> i64 {
+    AUTHORED
         .iter()
         .map(|bounds| {
             let over = |value: i32, low: i32, high: i32| {
@@ -83,10 +85,16 @@ pub fn beyond_walls(x: i32, z: i32) -> i64 {
         .unwrap_or(i64::MAX)
 }
 
-/// Whether `(x, z)` lies inside the walls (half-open, like every rectangle here).
+/// Whether `(x, z)` lies on the hand-authored ground (half-open, like every rectangle here).
+#[must_use]
+pub fn inside_authored(x: i32, z: i32) -> bool {
+    AUTHORED.iter().any(|bounds| bounds.contains(x, z))
+}
+
+/// Whether `(x, z)` lies inside the boundary walls: the region's outline (#810).
 #[must_use]
 pub fn inside_walls(x: i32, z: i32) -> bool {
-    WALLED.iter().any(|bounds| bounds.contains(x, z))
+    region::data().contains(x, z)
 }
 /// Greyhaven Vale itself, the square between the highlands' escarpment and the farmland's
 /// ridge.
@@ -107,9 +115,15 @@ pub const SPAWN_GRID: SpawnGrid = SpawnGrid {
 };
 /// No collider comes closer than this to a road centre line (2 m).
 pub const ROAD_CLEARANCE_UNITS: i32 = 200;
-/// Boundary walls are 20 m tall; a jump peaks near 1.4 m.
+/// Boundary walls stand 20 m above the ground (a jump peaks near 1.4 m) and reach as far below
+/// it.
 const WALL_HEIGHT: i32 = 2_000;
+/// The ground's box reaches this far beyond [`PLAYABLE_BOUNDS`].
 const WALL_THICKNESS: i32 = 200;
+/// Outline edges per boundary wall piece, and the longest stretch of wall between two of its
+/// columns, so its faces follow the ground.
+const WALL_EDGES_PER_PIECE: usize = 3;
+const WALL_COLUMN_SPACING: i64 = 2_000;
 const GROUND_THICKNESS: i32 = 100;
 
 /// Collider IDs by structure. `mmorpg-scenery` maps each ID to its visual.
@@ -117,9 +131,9 @@ pub mod ids {
     use std::ops::RangeInclusive;
 
     pub const GROUND: u32 = 1;
-    /// West, east, north (−Z) and south (+Z) walls, then the column's eastern walls north and
-    /// south of the wetlands and the wetlands' northern and southern walls (#426).
-    pub const BOUNDARY_WALLS: RangeInclusive<u32> = 2..=9;
+    /// The boundary wall along the region's outline (#810): invisible mesh pieces in outline
+    /// order, each over a few of its edges.
+    pub const BOUNDARY_WALLS: RangeInclusive<u32> = 9_000..=9_199;
 
     pub const KEEP: u32 = 100;
     /// The inn's footprint: a presentation anchor, not a collider (#158).
@@ -322,6 +336,15 @@ pub mod terrain {
     pub const COLUMNS: u16 = 213;
     /// Rows reach 4 m beyond the farmland's southern wall (#424).
     pub const ROWS: u16 = 321;
+    /// The zone's whole grid (#810): the authored grid above ([`ORIGIN`], [`COLUMNS`],
+    /// [`ROWS`], which painted cells index) within whole physics ground tiles of 106 cells,
+    /// out past the region's outline on every side.
+    pub const ZONE_ORIGIN: [i32; 2] = [ORIGIN[0] - 4 * TILE, ORIGIN[1] - 2 * TILE];
+    pub const ZONE_COLUMNS: u16 = 9 * 106 + 1;
+    pub const ZONE_ROWS: u16 = 7 * 106 + 1;
+    const TILE: i32 = 106 * STEP;
+    /// Beyond the authored ground the region's base terrain takes over across this band.
+    pub const BLEND_UNITS: i64 = 6_000;
     /// Tallest hill (10 m).
     pub const HILL_UNITS: i64 = 1_000;
     /// Hills start beyond this Chebyshev distance from the origin and reach full height at
@@ -503,32 +526,103 @@ fn open_ground(x: i32, z: i32) -> i32 {
     ) - lake_depth(x, z)
 }
 
-/// The outer valley's terrain grid (#159), sampled from [`hill_height`].
+/// One sample of the authored grid (#159), at `column` and `row` from [`terrain::ORIGIN`].
+fn authored_ground(column: i32, row: i32) -> i32 {
+    let x = terrain::ORIGIN[0] + column * terrain::STEP;
+    let z = terrain::ORIGIN[1] + row * terrain::STEP;
+    // The cave floor stays flat inside its hillside.
+    if cave::GREYFANG.flattens(x, z) {
+        cave::GREYFANG.floor_y
+    } else if shrine::flattens(x, z) {
+        // The Sunken Shrine's plaza and cave floor (#274).
+        shrine::FLOOR_Y
+    } else {
+        let base = open_ground(x, z);
+        let base = cave::approach_ground(x, z, base);
+        let base = base + landscape::brook_relief(x, z);
+        let base = brook::upper_ground(x, z, base);
+        base - if base < 100 {
+            brook::bed_depth(x, z)
+        } else {
+            0
+        } + paint::height_delta(column, row)
+    }
+}
+
+/// The zone's ground at a grid sample `(x, z)` (#810): the authored ground on [`AUTHORED`],
+/// the region's base terrain from [`terrain::BLEND_UNITS`] beyond it, and between them a smooth
+/// blend from the nearest authored sample.
+fn zone_ground(x: i32, z: i32) -> i32 {
+    let authored = |x: i32, z: i32| {
+        authored_ground(
+            (x - terrain::ORIGIN[0]) / terrain::STEP,
+            (z - terrain::ORIGIN[1]) / terrain::STEP,
+        )
+    };
+    let beyond = beyond_authored(x, z);
+    if beyond <= 0 {
+        return authored(x, z);
+    }
+    let base = region::data().base_height(x, z);
+    if beyond >= terrain::BLEND_UNITS {
+        return base;
+    }
+    // The nearest authored sample: the point clamped into the nearest authored rectangle,
+    // whose edges lie on the grid.
+    let edge = AUTHORED
+        .iter()
+        .map(|bounds| {
+            [
+                x.clamp(bounds.min[0], bounds.max[0]),
+                z.clamp(bounds.min[1], bounds.max[1]),
+            ]
+        })
+        .min_by_key(|point| (point[0] - x).abs().max((point[1] - z).abs()))
+        .map_or(base, |point| authored(point[0], point[1]));
+    let weight = smooth_q10(beyond, 0, terrain::BLEND_UNITS);
+    edge + i32::try_from(i64::from(base - edge) * weight / 1_024).unwrap_or(0)
+}
+
+/// The zone's terrain grid: the authored ground (#159) within the region's base terrain (#810).
 #[must_use]
 pub fn terrain() -> Terrain {
+    let (columns, rows) = (
+        i32::from(terrain::ZONE_COLUMNS),
+        i32::from(terrain::ZONE_ROWS),
+    );
+    let heights = (0..rows)
+        .flat_map(|row| {
+            (0..columns).map(move |column| {
+                zone_ground(
+                    terrain::ZONE_ORIGIN[0] + column * terrain::STEP,
+                    terrain::ZONE_ORIGIN[1] + row * terrain::STEP,
+                )
+            })
+        })
+        .collect();
+    Terrain {
+        origin: terrain::ZONE_ORIGIN,
+        step: terrain::STEP,
+        columns: terrain::ZONE_COLUMNS,
+        rows: terrain::ZONE_ROWS,
+        heights,
+    }
+}
+
+static TERRAIN: LazyLock<Terrain> = LazyLock::new(terrain);
+
+/// The zone's terrain over the authored grid alone ([`terrain::ORIGIN`], [`terrain::COLUMNS`],
+/// [`terrain::ROWS`]), the window painted cells and the authored landforms index.
+#[must_use]
+pub fn authored_terrain() -> Terrain {
     let (columns, rows) = (i32::from(terrain::COLUMNS), i32::from(terrain::ROWS));
     let heights = (0..rows)
         .flat_map(|row| {
             (0..columns).map(move |column| {
-                let x = terrain::ORIGIN[0] + column * terrain::STEP;
-                let z = terrain::ORIGIN[1] + row * terrain::STEP;
-                // The cave floor stays flat inside its hillside.
-                if cave::GREYFANG.flattens(x, z) {
-                    cave::GREYFANG.floor_y
-                } else if shrine::flattens(x, z) {
-                    // The Sunken Shrine's plaza and cave floor (#274).
-                    shrine::FLOOR_Y
-                } else {
-                    let base = open_ground(x, z);
-                    let base = cave::approach_ground(x, z, base);
-                    let base = base + landscape::brook_relief(x, z);
-                    let base = brook::upper_ground(x, z, base);
-                    base - if base < 100 {
-                        brook::bed_depth(x, z)
-                    } else {
-                        0
-                    } + paint::height_delta(column, row)
-                }
+                TERRAIN.height_at(
+                    terrain::ORIGIN[0] + column * terrain::STEP,
+                    terrain::ORIGIN[1] + row * terrain::STEP,
+                )
             })
         })
         .collect();
@@ -540,8 +634,6 @@ pub fn terrain() -> Terrain {
         heights,
     }
 }
-
-static TERRAIN: LazyLock<Terrain> = LazyLock::new(terrain);
 
 /// Where a footprint `[min, max]` rests on the terrain: on level ground (the valley floor, the
 /// farm terrace) at its height, on a slope at its lowest corner, sunk 0.3 m so nothing floats.
@@ -962,45 +1054,12 @@ fn undressed_colliders() -> Vec<StaticCollider> {
     let max = PLAYABLE_BOUNDS.max.map(|value| value + WALL_THICKNESS);
     let centre = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2];
     let half = [(max[0] - min[0]) / 2, (max[1] - min[1]) / 2];
-    // A wall over the footprint `[min, max]`.
-    let wall = |id, min: [i32; 2], max: [i32; 2]| StaticCollider {
-        id,
-        position: [
-            (min[0] + max[0]) / 2,
-            WALL_HEIGHT / 2,
-            (min[1] + max[1]) / 2,
-        ],
-        half_extents: [
-            (max[0] - min[0]) / 2,
-            WALL_HEIGHT / 2,
-            (max[1] - min[1]) / 2,
-        ],
-    };
-    // The walls close round the column of the highlands, the Vale and the farmland and round
-    // the wetlands east of the Vale (#426).
-    let [column, wetlands] = WALLED;
-    let thick = WALL_THICKNESS;
-    let ([west, north], [east, south]) = (column.min, column.max);
-    let ([_, wet_north], [wet_east, wet_south]) = (wetlands.min, wetlands.max);
-    let mut colliders = vec![
-        StaticCollider {
-            id: ids::GROUND,
-            position: [centre[0], -GROUND_THICKNESS / 2, centre[1]],
-            half_extents: [half[0], GROUND_THICKNESS / 2, half[1]],
-        },
-        wall(2, [west - thick, north - thick], [west, south + thick]),
-        wall(
-            3,
-            [wet_east, wet_north - thick],
-            [wet_east + thick, wet_south + thick],
-        ),
-        wall(4, [west - thick, north - thick], [east + thick, north]),
-        wall(5, [west - thick, south], [east + thick, south + thick]),
-        wall(6, [east, north - thick], [east + thick, wet_north]),
-        wall(7, [east, wet_south], [east + thick, south + thick]),
-        wall(8, [east, wet_north - thick], [wet_east + thick, wet_north]),
-        wall(9, [east, wet_south], [wet_east + thick, wet_south + thick]),
-    ];
+    // The boundary walls are meshes along the region's outline ([`boundary_walls`]).
+    let mut colliders = vec![StaticCollider {
+        id: ids::GROUND,
+        position: [centre[0], -GROUND_THICKNESS / 2, centre[1]],
+        half_extents: [half[0], GROUND_THICKNESS / 2, half[1]],
+    }];
     colliders.extend(REGIONS.iter().flat_map(|region| (region.colliders)()));
     colliders.extend(trees());
     colliders.extend((*ids::LADDERS.start()..).zip(LADDER_TOWERS).map(ladder));
@@ -1309,6 +1368,64 @@ pub fn watch_post() -> Vec<crate::StructurePiece> {
     ]
 }
 
+/// Whether `mesh` is a piece of the invisible boundary wall (#810), which clients never draw.
+#[must_use]
+pub fn is_boundary_wall(mesh: &crate::StaticMesh) -> bool {
+    ids::BOUNDARY_WALLS.contains(&mesh.id)
+}
+
+/// The boundary wall along the region's outline (#810): invisible upright faces from
+/// [`WALL_HEIGHT`] below the ground to as far above it, solid from both sides, in pieces of
+/// [`WALL_EDGES_PER_PIECE`] edges so each piece's bounds stay near the outline.
+fn boundary_walls() -> Vec<crate::StaticMesh> {
+    let outline = &region::data().outline;
+    let mut walls = Vec::new();
+    for (id, start) in ids::BOUNDARY_WALLS.zip((0..outline.len()).step_by(WALL_EDGES_PER_PIECE)) {
+        let end = (start + WALL_EDGES_PER_PIECE).min(outline.len());
+        let anchor = outline[start];
+        let mut columns = vec![anchor];
+        for index in start..end {
+            let (a, b) = (outline[index], outline[(index + 1) % outline.len()]);
+            let length = i64::from(b[0] - a[0])
+                .abs()
+                .max(i64::from(b[1] - a[1]).abs());
+            let steps = (length + WALL_COLUMN_SPACING - 1) / WALL_COLUMN_SPACING;
+            for step in 1..=steps.max(1) {
+                let along = |from: i32, to: i32| {
+                    from + i32::try_from(i64::from(to - from) * step / steps.max(1)).unwrap_or(0)
+                };
+                columns.push([along(a[0], b[0]), along(a[1], b[1])]);
+            }
+        }
+        let mut vertices = Vec::with_capacity(columns.len() * 2);
+        for point in &columns {
+            let ground = TERRAIN.height_at(point[0], point[1]);
+            let local = [point[0] - anchor[0], point[1] - anchor[1]];
+            vertices.push([local[0], ground - WALL_HEIGHT, local[1]]);
+            vertices.push([local[0], ground + WALL_HEIGHT, local[1]]);
+        }
+        let mut triangles = Vec::with_capacity(columns.len() * 4);
+        for column in 0..u32::try_from(columns.len() - 1).unwrap_or(0) {
+            let [low, high, next_low, next_high] =
+                [2 * column, 2 * column + 1, 2 * column + 2, 2 * column + 3];
+            // Both windings, so the face is solid from either side.
+            triangles.extend([
+                [low, high, next_high],
+                [low, next_high, next_low],
+                [low, next_high, high],
+                [low, next_low, next_high],
+            ]);
+        }
+        walls.push(crate::StaticMesh {
+            id,
+            position: [anchor[0], 0, anchor[1]],
+            vertices,
+            triangles,
+        });
+    }
+    walls
+}
+
 /// The hosted collision content. Hosts, clients and scenery consume this
 /// exact definition; the spawn grid is validated clear of every collider.
 #[must_use]
@@ -1322,6 +1439,7 @@ pub fn base_definition() -> ZoneDefinition {
                     .chain(fort::meshes())
                     .chain(shrine::collision_meshes())
                     .chain(roofs::meshes())
+                    .chain(boundary_walls())
                     .collect(),
             )
         })

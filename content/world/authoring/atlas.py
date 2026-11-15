@@ -13,6 +13,7 @@ geographic consistency.
     uv run content/world/authoring/atlas.py borders [--replace]
     uv run content/world/authoring/atlas.py sync
     uv run content/world/authoring/atlas.py map-export
+    uv run content/world/authoring/atlas.py zone-export greyhaven
     uv run content/world/authoring/atlas.py gis-export [--out artifacts/world-atlas/gis]
     uv run content/world/authoring/atlas.py gis-import artifacts/world-atlas/gis/wgs84
 
@@ -2053,6 +2054,47 @@ def cmd_map_export(args) -> int:
     return 0
 
 
+ZONE_MARGIN = 200  # metres of terrain beyond a zone's outline, for its walls and the view past them
+
+
+def cmd_zone_export(args) -> int:
+    """A zone's outline and base terrain from the atlas, as zone content: the outline of the
+    regions grouped under its anchor, and the atlas elevation (40 m cells, relative to the anchor's
+    reference elevation, in units) over it and a margin. Written once when the zone grows; from
+    then on the committed file is the zone's authority, as the zone's other content is."""
+    layers = load_layers()
+    if "borders" not in layers:
+        sys.exit("no borders.json yet; run atlas.py borders first")
+    anchor = next((a for a in layers["anchors"]["anchors"] if a["id"] == args.zone), None)
+    if anchor is None:
+        sys.exit(f"no anchor {args.zone!r}")
+    b = build(layers)
+    g = b["grid"]
+    rings = atlas_gis.group_outline(b, args.zone)
+    if not rings or len(rings) != 1:
+        sys.exit(f"the regions grouped as {args.zone!r} must form one piece without holes")
+    ring = rings[0][:-1] if rings[0][0] == rings[0][-1] else rings[0]
+    xs, zs = [p[0] for p in ring], [p[1] for p in ring]
+    r0, c0 = g.index(min(xs) - ZONE_MARGIN, min(zs) - ZONE_MARGIN)
+    r1, c1 = g.index(max(xs) + ZONE_MARGIN, max(zs) + ZONE_MARGIN)
+    ox, oz = g.centre(r0, c0)
+    limit = 100_000  # the zone terrain's height range (sim-foundation's MAX_TERRAIN_HEIGHT_UNITS)
+    rel = np.clip(np.rint((b["elev"][r0 : r1 + 1, c0 : c1 + 1] - anchor["referenceElevation"]) * 100), -limit, limit)
+    data = {"version": 1,
+            "note": f"Generated once by atlas.py zone-export {args.zone}: the zone's outline and base terrain outside its "
+                    "hand-authored parts. Units (cm) in the zone frame; heights relative to the anchor's reference "
+                    "elevation. The zone's content, not the atlas, is now the authority here.",
+            "outline": [[int(round(x * 100)), int(round(z * 100))] for x, z in ring],
+            "terrain": {"origin": [int(round(ox * 100)), int(round(oz * 100))], "step": g.cell * 100,
+                        "columns": int(c1 - c0 + 1), "rows": int(r1 - r0 + 1),
+                        "heights": rel.astype(int).tolist()}}
+    path = REPO / "content" / args.zone / "region.json"
+    changed = write_json(path, data)
+    print(f"{'wrote' if changed else 'unchanged'}: {path} ({len(ring)} outline points, "
+          f"{data['terrain']['columns']} × {data['terrain']['rows']} heights)")
+    return 0
+
+
 def cmd_gis_export(args) -> int:
     """GeoJSON layers and a TopoJSON of the regions, in EPSG:3857 metres and in WGS84 (atlas_gis.py)."""
     layers = load_layers()
@@ -2118,6 +2160,8 @@ def main() -> int:
     sub.add_parser("format")
     sub.add_parser("sync", help="bring borders.json in step with hand edits of borders or seeds")
     sub.add_parser("map-export", help="the world map the game clients draw (content/world/export/world-map.json)")
+    s = sub.add_parser("zone-export", help="a zone's outline and base terrain (content/<zone>/region.json), once")
+    s.add_argument("zone", help="the zone's anchor id, e.g. greyhaven")
     s = sub.add_parser("gis-export", help="GeoJSON layers and regions.topojson for GIS tools")
     s.add_argument("--out", default=str(OUT / "gis"))
     s = sub.add_parser("gis-import", help="bring edits made in a GIS tool back")
@@ -2131,6 +2175,8 @@ def main() -> int:
         return cmd_borders(args)
     if args.cmd == "map-export":
         return cmd_map_export(args)
+    if args.cmd == "zone-export":
+        return cmd_zone_export(args)
     if args.cmd == "gis-export":
         return cmd_gis_export(args)
     if args.cmd == "gis-import":

@@ -274,7 +274,7 @@ fn walkable_step(a: i32, b: i32) -> bool {
 
 #[test]
 fn the_sculpted_landforms_vary_and_stay_walkable_and_connected() {
-    let grid = greyhaven_vale::terrain();
+    let grid = greyhaven_vale::authored_terrain();
     let (columns, rows) = (i32::from(grid.columns), i32::from(grid.rows));
     let index = |column: i32, row: i32| usize::try_from(row * columns + column).unwrap();
     let position = |column: i32, row: i32| {

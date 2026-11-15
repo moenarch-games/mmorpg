@@ -573,14 +573,16 @@ fn structures_and_boundary_walls_block_movement() {
     );
     assert_eq!(mmorpg_core::physics::to_units(player.velocity), [0, 0, 0]);
 
-    // Down the Farmland Road (#424), then jumping against the southern wall.
+    // South across the region's base terrain beyond the farmland (#810), then jumping against
+    // the boundary wall, whose outline crosses x = 28 m at z ≈ 1044.2 m.
+    const WALL_Z: i32 = 104_419;
     let definition = greyhaven_vale_definition();
     let mut zone = ZoneSimulation::with_definition(ZoneId::new(1), definition.clone()).unwrap();
     zone.add_player(1).unwrap();
     let mut snapshot = zone.snapshot().unwrap();
-    // On the plateau's ground: start standing on it.
-    let ground = definition.ground_at(2_800, 60_000);
-    snapshot.players[0].position = mmorpg_core::physics::from_units([2_800, ground + 92, 60_000]);
+    let start = WALL_Z - 3_000;
+    let ground = definition.ground_at(2_800, start);
+    snapshot.players[0].position = mmorpg_core::physics::from_units([2_800, ground + 92, start]);
     let mut zone = ZoneSimulation::from_snapshot(snapshot, Arc::clone(zone.content())).unwrap();
     zone.apply_command(1, 1, run(FACE_SOUTH)).unwrap();
     let mut sequence = 1;
@@ -591,11 +593,10 @@ fn structures_and_boundary_walls_block_movement() {
         }
         zone.advance_tick().unwrap();
         let z = mmorpg_core::physics::to_units(zone.snapshot().unwrap().players[0].position)[2];
-        assert!(z <= PLAYABLE_BOUNDS.max[1] - PLAYER_HALF_EXTENTS_UNITS[2]);
+        assert!(z < WALL_Z, "z {z}");
     }
     let player = &zone.snapshot().unwrap().players[0];
-    assert_eq!(
-        mmorpg_core::physics::to_units(player.position)[2],
-        PLAYABLE_BOUNDS.max[1] - PLAYER_HALF_EXTENTS_UNITS[2]
-    );
+    let [x, _, z] = mmorpg_core::physics::to_units(player.position);
+    assert!(z >= WALL_Z - 200, "the player stops at the wall, z {z}");
+    assert!(greyhaven_vale::inside_walls(x, z));
 }

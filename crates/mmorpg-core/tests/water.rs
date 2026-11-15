@@ -40,8 +40,7 @@ fn run(zone: &mut ZoneSimulation, ticks: u32) {
 
 #[test]
 fn the_basin_is_about_nine_metres_deep_with_walkable_banks() {
-    let definition = greyhaven_vale::greyhaven_vale_definition();
-    let grid = definition.terrain().unwrap();
+    let grid = greyhaven_vale::authored_terrain();
     let height = |column: i32, row: i32| {
         grid.heights[usize::try_from(row * i32::from(grid.columns) + column).unwrap()]
     };

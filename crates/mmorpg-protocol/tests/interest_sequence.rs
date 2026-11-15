@@ -159,13 +159,13 @@ fn collision_corrections_and_extreme_bodies_preserve_reference_parity() {
 #[test]
 fn players_running_on_unenclosed_content_stay_encodable() {
     // Default content has no walls, no ground and no gravity. Two players who
-    // see each other run east until the 1 km world limits stop them (#424).
+    // see each other run east until the 4 km world limits stop them (#424).
     let mut zone = ZoneSimulation::new(ZoneId::new(9));
     for player_id in [1, 2] {
         zone.add_player(player_id).unwrap();
         zone.apply_command(player_id, 1, run(EAST)).unwrap();
     }
-    for _ in 0..mmorpg_core::golden::t30(4_900) {
+    for _ in 0..mmorpg_core::golden::t30(19_600) {
         zone.advance_tick().unwrap();
         for viewer in [1, 2] {
             let projection = zone.snapshot_for_player(viewer).unwrap();

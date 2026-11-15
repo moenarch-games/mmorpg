@@ -5,8 +5,8 @@
 //! client draws, onto that format:
 //!
 //! - **terrain**: [`Scenery::terrain_grid`] every [`TERRAIN_STEP_UNITS`]
-//!   over the playable rectangle and 72 m beyond its walls, with one biome ID per sample, and **farTerrain**: the
-//!   same relief every [`FAR_TERRAIN_STEP_UNITS`] over 392 m beyond them for a coarse
+//!   over the region round its boundary walls (#810), with one biome ID per sample, and **farTerrain**: the
+//!   same relief every [`FAR_TERRAIN_STEP_UNITS`] over 400 m beyond it for a coarse
 //!   ring of distant mountains around it. The browser renderer has no vertex
 //!   colours, so clients draw one surface per biome in its base colour;
 //! - **props**: a kind table (`propKinds`, [`PropKind::name`]) and one
@@ -88,9 +88,9 @@ pub fn presented_content() -> Arc<ZoneContent> {
 pub const SCENERY_FORMAT: &str = "mmorpg.scenery";
 /// Where this export's props and terrain come from.
 pub const SCENERY_SOURCE: &str = "mmorpg-scenery";
-/// Terrain sample spacing: 4 m, 251 × 361 samples over [`mmorpg_scenery::TERRAIN_BOUNDS`].
+/// Terrain sample spacing: 4 m, 951 × 691 samples over [`mmorpg_scenery::TERRAIN_BOUNDS`].
 pub const TERRAIN_STEP_UNITS: i32 = 400;
-/// Far ring sample spacing: 20 m, 83 × 105 samples over [`mmorpg_scenery::FAR_TERRAIN_BOUNDS`].
+/// Far ring sample spacing: 20 m, 231 × 179 samples over [`mmorpg_scenery::FAR_TERRAIN_BOUNDS`].
 pub const FAR_TERRAIN_STEP_UNITS: i32 = 2_000;
 
 #[derive(Clone, Debug, Serialize)]
@@ -610,7 +610,7 @@ mod tests {
         let export = hosted_export();
         let terrain = &export.terrain;
         assert_samples_relief(terrain, TERRAIN_STEP_UNITS, TERRAIN_BOUNDS);
-        assert_eq!((terrain.columns, terrain.rows), (251, 361));
+        assert_eq!((terrain.columns, terrain.rows), (951, 691));
         let biome_ids: Vec<u8> = export.biomes.iter().map(|biome| biome.id).collect();
         assert!(terrain.biomes.iter().all(|id| biome_ids.contains(id)));
         assert!(
@@ -635,7 +635,7 @@ mod tests {
         let export = hosted_export();
         let far = &export.far_terrain;
         assert_samples_relief(far, FAR_TERRAIN_STEP_UNITS, FAR_TERRAIN_BOUNDS);
-        assert_eq!((far.columns, far.rows), (83, 105));
+        assert_eq!((far.columns, far.rows), (231, 179));
         let biome_ids: Vec<u8> = export.biomes.iter().map(|biome| biome.id).collect();
         assert!(far.biomes.iter().all(|id| biome_ids.contains(id)));
         let highest_near = export.terrain.heights.iter().max().unwrap();
@@ -697,8 +697,9 @@ mod tests {
     fn export_is_deterministic_lean_json_with_core_areas_and_roads() {
         let json = hosted_scenery_json();
         assert_eq!(json, serde_json::to_string(&hosted_export()).unwrap());
-        // Denser western/northern woods and the authored hideout export 1,548,250 bytes.
-        assert!(json.len() < 1_600_000, "{} bytes", json.len());
+        // Denser western/northern woods and the authored hideout export 1,548,250 bytes; the
+        // whole region's terrain grid (#810, about 7× the samples) brings it to 6,091,179.
+        assert!(json.len() < 6_200_000, "{} bytes", json.len());
         let value: Value = serde_json::from_str(json).unwrap();
         assert_eq!(value["format"], SCENERY_FORMAT);
         assert_eq!(value["source"], SCENERY_SOURCE);
