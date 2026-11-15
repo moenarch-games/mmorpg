@@ -50,8 +50,9 @@ mod tests {
         // The scenery the family was accepted against (captured under content
         // revisions 3 and 4; the hash leaves the revision out).
         // Re-recorded for solid dressing (#577), ropes (#621), the authored landscape (#644),
-        // surface hazards (#294), the Highlands' landforms (#528) and the whole region (#810).
-        assert_eq!(before.stable_hash(), 0xea081880854f2340);
+        // surface hazards (#294), the Highlands' landforms (#528), the whole region (#810) and its
+        // redesign (#816).
+        assert_eq!(before.stable_hash(), 0x69d883d00343606c);
         let original: Vec<_> = before
             .props
             .iter()

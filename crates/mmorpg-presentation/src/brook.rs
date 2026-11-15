@@ -307,6 +307,25 @@ pub(crate) fn build(
         ]);
     }
     water.push(draw("greyhaven-waterfall", fall, 0x9ed1d2, 0.78));
+    // The region's rivers (#816), each reach at its own surface.
+    for river in &mmorpg_core::greyhaven_vale::design::data().rivers {
+        for (index, reach) in river.reaches.iter().enumerate() {
+            water.push(draw(
+                &format!(
+                    "river-{}-{index}",
+                    river.name.to_lowercase().replace(' ', "-")
+                ),
+                water_ribbon(
+                    &reach.points,
+                    metres(river.half_width),
+                    metres(reach.surface) + 0.012,
+                    g,
+                ),
+                0xffffff,
+                WATER_OPACITY,
+            ));
+        }
+    }
     // White strands move down the actual cliff face, with a small plunge-pool foam ring.
     for i in 0..7 {
         let mut strand = Geometry::default();

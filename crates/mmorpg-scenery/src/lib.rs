@@ -501,6 +501,16 @@ pub struct Scenery {
 /// The visual of a Greyhaven Vale collider, or `None` for the ground and
 /// boundary walls (and for IDs the vale does not use).
 #[must_use]
+/// A rock by its footprint's larger half extent.
+fn rock_kind(collider: &StaticCollider) -> PropKind {
+    let largest = collider.half_extents[0].max(collider.half_extents[2]);
+    PropKind::Rock(match largest {
+        100.. => RockSize::Large,
+        75..=99 => RockSize::Medium,
+        _ => RockSize::Small,
+    })
+}
+
 pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
     let id = collider.id;
     let kind = match id {
@@ -582,15 +592,29 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
         _ if ids::STANDING_STONES.contains(&id) => PropKind::Waystone,
         _ if ids::RUINS.contains(&id) => PropKind::House,
         _ if ids::RUIN_FENCES.contains(&id) => PropKind::Fence,
-        _ if ids::SHORE_ROCKS.contains(&id) || ids::BOULDERS.contains(&id) => {
-            let largest = collider.half_extents[0].max(collider.half_extents[2]);
-            PropKind::Rock(match largest {
-                100.. => RockSize::Large,
-                75..=99 => RockSize::Medium,
-                _ => RockSize::Small,
-            })
-        }
+        _ if ids::SHORE_ROCKS.contains(&id) || ids::BOULDERS.contains(&id) => rock_kind(collider),
         _ if ids::TREES.contains(&id) => PropKind::Tree(tree_variant(splitmix64(u64::from(id)))),
+        // The region's designed forests' trunks and rock fields' boulders (#816).
+        _ if let Some(body) = greyhaven_vale::design::region_body(collider) => match body {
+            greyhaven_vale::design::RegionBody::Boulder => rock_kind(collider),
+            greyhaven_vale::design::RegionBody::Trunk(species) => {
+                // Each trunk's kind follows its forest's species.
+                let hash = splitmix64(u64::from(id)) % 10;
+                PropKind::Tree(match species {
+                    Some(greyhaven_vale::design::Species::Pine) => match hash {
+                        0..=7 => TreeVariant::Pine,
+                        8 => TreeVariant::Birch,
+                        _ => TreeVariant::Oak,
+                    },
+                    Some(greyhaven_vale::design::Species::Broadleaf) => match hash {
+                        0..=5 => TreeVariant::Oak,
+                        6..=8 => TreeVariant::Birch,
+                        _ => TreeVariant::Pine,
+                    },
+                    _ => tree_variant(hash),
+                })
+            }
+        },
         // Solid dressing (#577): the Outpost layout's lamps and signposts, then the fixed
         // dressing and loose rocks. The market square's proxies are drawn by its kit at
         // the committed world dressing placements.
@@ -853,6 +877,18 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
             radii: water.radii,
             surface: greyhaven_vale::marsh::SURFACE_Y,
         }))
+        // The region's designed lakes (#816).
+        .chain(
+            greyhaven_vale::design::data()
+                .lakes
+                .iter()
+                .map(|lake| Water {
+                    name: lake.name.as_str(),
+                    centre: lake.centre,
+                    radii: lake.radii,
+                    surface: lake.surface,
+                }),
+        )
         .collect();
     let relief = Relief::new(
         structures.iter().map(|(collider, kind)| (*collider, *kind)),
@@ -1238,29 +1274,79 @@ impl Scenery {
             || rise(self.ground_at(x, z + REACH), self.ground_at(x, z - REACH))
     }
 
+    /// Biome of the region's designed land beyond the core (#816), from the land itself:
+    /// water and shores, roads and fields, bare rock on cliffs, forest floor under the designed
+    /// forests, damp hollows by the rivers and the marsh, high ground, and meadow broken into
+    /// natural patches of rougher grass.
+    fn designed_biome(&self, x: i32, z: i32) -> Biome {
+        let point = [x, z];
+        let water = self.water_distance(point);
+        let river = greyhaven_vale::design::river_distance(x, z);
+        if water == 0 || river <= 0 {
+            return Biome::LakeBed;
+        }
+        if water < 300 || river < 250 {
+            return Biome::Shore;
+        }
+        if greyhaven_vale::road_distance(x, z) <= i64::from(ROAD_HALF_WIDTH_UNITS) {
+            return Biome::Road;
+        }
+        if self.farmland.iter().any(|field| field.distance(point) == 0) {
+            return Biome::Farmland;
+        }
+        if self.cliff_at(x, z) {
+            return Biome::Rock;
+        }
+        // Broad patches over 90 m with a finer 25 m break-up.
+        let patch = (3 * value_noise(SEED_TINT ^ 0x5157, x, z, 9_000)
+            + value_noise(SEED_TINT ^ 0x5158, x, z, 2_500))
+            / 4;
+        // Forest floor under the closer forests; sparse trees stand in grass.
+        if greyhaven_vale::design::forest_at(x, z).is_some_and(|forest| forest.cover >= 30) {
+            return Biome::Woods;
+        }
+        let damp = river < 2_500
+            || greyhaven_vale::marsh::WATERS
+                .iter()
+                .any(|water| water.distance_q10(x, z) < 1_500);
+        if damp && patch > -300 {
+            return Biome::Hollow;
+        }
+        let ground = i64::from(self.ground_at(x, z)) + patch * 3;
+        if ground >= i64::from(HIGHLAND_LINE_UNITS) {
+            return if patch > 500 {
+                Biome::Rock
+            } else {
+                Biome::Highland
+            };
+        }
+        if patch > 250 {
+            Biome::Foothills
+        } else {
+            Biome::Meadow
+        }
+    }
+
     /// Biome of a terrain vertex whose relief is `height`.
     fn biome_at(&self, x: i32, z: i32, height: i32) -> Biome {
         let point = [x, z];
         if !greyhaven_vale::inside_walls(x, z) {
             // Beyond the boundary walls: the region's surroundings by their height (#810).
-            return match self.ground_at(x, z) + height {
+            // Forest climbs the lower slopes in broad tongues, rock and snow crown the peaks.
+            let surface = self.ground_at(x, z) + height;
+            let tongue = value_noise(SEED_TINT ^ 0x7a11, x, z, 12_000) * 6;
+            return match surface {
                 SNOW_LINE_UNITS.. => Biome::Snow,
                 ROCK_LINE_UNITS..SNOW_LINE_UNITS => Biome::Rock,
                 _ if self.cliff_at(x, z) => Biome::Rock,
-                HIGHLAND_LINE_UNITS..ROCK_LINE_UNITS => Biome::Highland,
+                _ if i64::from(surface) + tongue >= i64::from(HIGHLAND_LINE_UNITS) / 2 => {
+                    Biome::Woods
+                }
                 _ => Biome::Foothills,
             };
         }
-        if greyhaven_vale::beyond_authored(x, z) > 0 {
-            // The region's base terrain round the authored parts (#810): it has no roads, water,
-            // paint or fields yet.
-            return if self.cliff_at(x, z) {
-                Biome::Rock
-            } else if self.ground_at(x, z) >= HIGHLAND_LINE_UNITS {
-                Biome::Highland
-            } else {
-                Biome::Meadow
-            };
+        if greyhaven_vale::beyond_core(x, z) > 0 {
+            return self.designed_biome(x, z);
         }
         let water = self.water_distance(point);
         if water == 0 {
@@ -1684,8 +1770,8 @@ impl Placer<'_> {
                 .all(|(dx, dz)| !greyhaven_vale::inside_walls(at[0] + dx, at[1] + dz))
         };
         let mut placed = 0;
-        for _ in 0..12_000 {
-            if placed == 700 {
+        for _ in 0..30_000 {
+            if placed == 1_800 {
                 break;
             }
             let at = [
@@ -1720,6 +1806,7 @@ impl Placer<'_> {
         self.farmland_decorations();
         self.highland_decorations();
         self.marsh_decorations();
+        self.region_undergrowth();
     }
 
     /// Patches of low scrub soften the rocky basin shoulders. This independent seed leaves
@@ -1748,6 +1835,52 @@ impl Placer<'_> {
                     .all(|z| (at[1] - z).abs() > 220))
             .then_some((PropKind::Bush, at))
         });
+    }
+
+    /// Undergrowth in the region's designed forests and along their edges (#816): clumps of two
+    /// to four bushes, foliage that never blocks, thicker under the trees than out in the open.
+    fn region_undergrowth(&mut self) {
+        let design = greyhaven_vale::design::data();
+        let mut rng = Rng::new(0x554e_4445_5247_524f);
+        for forest in &design.forests {
+            let [min, max] = forest.bounds();
+            let area = i64::from(max[0] - min[0]) * i64::from(max[1] - min[1]);
+            // About one clump per 400 m² of the outline's bounds, kept where the forest grows
+            // or within a few metres of its edge.
+            let attempts = usize::try_from(area / 4_000_000).unwrap_or(0);
+            for _ in 0..attempts {
+                let centre = [rng.range(min[0], max[0]), rng.range(min[1], max[1])];
+                let inside = greyhaven_vale::design::forest_at(centre[0], centre[1])
+                    .is_some_and(|grows| grows.seed == forest.seed);
+                let edge = !inside
+                    && [(-600, 0), (600, 0), (0, -600), (0, 600)]
+                        .iter()
+                        .any(|(dx, dz)| {
+                            greyhaven_vale::design::forest_at(centre[0] + dx, centre[1] + dz)
+                                .is_some_and(|grows| grows.seed == forest.seed)
+                        });
+                if !(inside || edge)
+                    || (inside && forest.cover < 30 && !rng.next_u64().is_multiple_of(3))
+                    || greyhaven_vale::road_distance(centre[0], centre[1]) < 400
+                    || greyhaven_vale::design::river_distance(centre[0], centre[1]) < 300
+                    || self.scenery.water_distance(centre) < 400
+                    || !greyhaven_vale::inside_walls(centre[0], centre[1])
+                {
+                    continue;
+                }
+                for _ in 0..2 + rng.next_u64() % 3 {
+                    let at = [
+                        centre[0] + rng.range(-220, 220),
+                        centre[1] + rng.range(-220, 220),
+                    ];
+                    let yaw = u16::try_from(rng.next_u64() % 65_536).unwrap_or(0);
+                    let scale = u16::try_from(rng.range(700, 1_400)).unwrap_or(1_000);
+                    if greyhaven_vale::inside_walls(at[0], at[1]) {
+                        self.place(PropKind::Bush, at, yaw, scale, Ground::Open);
+                    }
+                }
+            }
+        }
     }
 
     /// Reeds round every marsh water, partly standing in it, and tussock grass, scrub and
