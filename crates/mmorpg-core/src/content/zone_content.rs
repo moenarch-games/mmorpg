@@ -1093,6 +1093,33 @@ impl ZoneContent {
                     "an npc routine's seat does not match where it stops",
                 ));
             }
+            // Errands (#819) run by day, in order, after the walk back from home at dawn and
+            // done before dusk; each stops where its seat stands.
+            let work = npc.map_or([0, 0], |npc| npc.position);
+            let home_walk = crate::routine::walk_ticks(
+                crate::routine::legs(work, &routine.path)
+                    .iter()
+                    .map(|leg| leg.2)
+                    .sum(),
+            );
+            let mut free_from = i64::from(crate::DAWN) + home_walk;
+            for errand in &routine.errands {
+                if errand.path.is_empty()
+                    || errand.path.len() > crate::MAX_ROUTINE_WAYPOINTS
+                    || errand
+                        .path
+                        .iter()
+                        .flatten()
+                        .any(|value| value.abs() > super::MAX_CONTENT_COORDINATE_UNITS)
+                    || i64::from(errand.leave) < free_from
+                    || i64::from(errand.leave) + i64::from(errand.span(work))
+                        > i64::from(crate::DUSK)
+                    || bad_seat(errand.seat, errand.path.last().copied(), errand.facing)
+                {
+                    return Err(ZoneError::new("invalid npc errand"));
+                }
+                free_from = i64::from(errand.leave) + i64::from(errand.span(work));
+            }
         }
         if closed_at_night
             .iter()
@@ -1229,13 +1256,15 @@ impl ZoneContent {
                     "an npc or the graveyard is in a handoff corridor",
                 ));
             }
-            for routine in &self.routines {
+            for path in self.routines.iter().flat_map(|routine| {
+                std::iter::once(&routine.path)
+                    .chain(routine.errands.iter().map(|errand| &errand.path))
+            }) {
                 // Each leg's bounding box: conservative, never too lenient.
-                let legs = routine
-                    .path
+                let legs = path
                     .windows(2)
                     .map(|pair| (pair[0], pair[1]))
-                    .chain(routine.path.iter().map(|&point| (point, point)));
+                    .chain(path.iter().map(|&point| (point, point)));
                 let reach = margin + player[0].max(player[1]);
                 if legs.into_iter().any(|(from, to)| {
                     let leg = crate::XzBounds {
@@ -1831,6 +1860,17 @@ impl ZoneContent {
             hash.u8(routine.door.map_or(0, crate::DoorId::get));
             hash.u8(routine.home_seat.map_or(0, crate::SeatId::get));
             hash.u8(routine.work_seat.map_or(0, crate::SeatId::get));
+            hash.len(routine.errands.len());
+            for errand in &routine.errands {
+                hash.u32(errand.leave);
+                hash.len(errand.path.len());
+                for value in errand.path.iter().flatten() {
+                    hash.i32(*value);
+                }
+                hash.u32(errand.stay);
+                hash.u16(errand.facing);
+                hash.u8(errand.seat.map_or(0, crate::SeatId::get));
+            }
         }
         hash.len(self.seats.len());
         for seat in &self.seats {

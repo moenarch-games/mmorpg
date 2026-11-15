@@ -9,7 +9,8 @@
 //! function of the tick, so it needs no canonical state: recovery and replay place the NPC
 //! exactly. While walking it opens a closed door on its path (`with_routines`' `door`), which
 //! then stays open like any door a player left. Vendors listed as closed at night refuse trade
-//! from dusk to dawn.
+//! from dusk to dawn. By day an NPC may run [`Errand`]s (#819): to the well, the inn's table, the
+//! fields or the market at set hours, staying a while and walking back to work.
 
 use crate::{DoorId, EntityRef, NpcId, ZoneError, ZoneSimulation, trig};
 
@@ -53,6 +54,54 @@ pub struct NpcRoutine {
     pub home_seat: Option<crate::SeatId>,
     /// The seat at its content position, where it sits while it is at work (#619).
     pub work_seat: Option<crate::SeatId>,
+    /// Its day's errands from work and back (#819), in time order.
+    pub errands: Vec<Errand>,
+}
+
+/// One daytime errand (#819): at `leave` (ticks since midnight) the NPC walks `path` from its
+/// work post, stays `stay` ticks at the path's end facing `facing` (sitting on `seat`, if any,
+/// whose stand is that end), then walks the path back to work.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Errand {
+    pub leave: u32,
+    pub path: Vec<[i32; 2]>,
+    pub stay: u32,
+    pub facing: u16,
+    pub seat: Option<crate::SeatId>,
+}
+
+/// Ticks a walk of `length` units takes, rounded up.
+pub(crate) fn walk_ticks(length: i64) -> i64 {
+    (length + NPC_WALK_UNITS_PER_TICK - 1) / NPC_WALK_UNITS_PER_TICK
+}
+
+impl Errand {
+    /// The ticks from leaving work to being back: out, the stay and home.
+    #[must_use]
+    pub fn span(&self, work: [i32; 2]) -> u32 {
+        let total: i64 = legs(work, &self.path).iter().map(|leg| leg.2).sum();
+        u32::try_from(2 * walk_ticks(total) + i64::from(self.stay)).unwrap_or(u32::MAX)
+    }
+
+    /// Where the NPC is `since` ticks after leaving work, if the errand is still under way.
+    fn placement(&self, work: [i32; 2], since: u32) -> Option<NpcPlacement> {
+        let legs = legs(work, &self.path);
+        let total: i64 = legs.iter().map(|leg| leg.2).sum();
+        let walk = walk_ticks(total);
+        let since = i64::from(since);
+        if since < walk {
+            return Some(along(&legs, since * NPC_WALK_UNITS_PER_TICK, true));
+        }
+        if since < walk + i64::from(self.stay) {
+            return Some(NpcPlacement {
+                position: legs.last().map_or(work, |leg| leg.1),
+                facing: self.facing,
+                velocity: [0, 0],
+            });
+        }
+        let back = since - walk - i64::from(self.stay);
+        (back < walk).then(|| along(&legs, back * NPC_WALK_UNITS_PER_TICK, false))
+    }
 }
 
 /// Where a routine NPC is at one tick.
@@ -137,6 +186,12 @@ impl NpcRoutine {
         }
         if back < total {
             return along(&legs, back, false);
+        }
+        if let Some(placement) = self.errands.iter().find_map(|errand| {
+            time.checked_sub(errand.leave)
+                .and_then(|since| errand.placement(work, since))
+        }) {
+            return placement;
         }
         NpcPlacement {
             position: work,
@@ -249,5 +304,49 @@ impl ZoneSimulation {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DUSK, Errand, HOUR_TICKS, NPC_WALK_UNITS_PER_TICK, NpcRoutine, walk_ticks};
+    use crate::NpcId;
+
+    #[test]
+    fn an_errand_walks_out_stays_and_walks_back_by_day() {
+        let leave = 10 * HOUR_TICKS;
+        let routine = NpcRoutine {
+            npc: NpcId::new(1),
+            path: vec![[0, 5_000]],
+            home_facing: 0,
+            door: None,
+            home_seat: None,
+            work_seat: None,
+            errands: vec![Errand {
+                leave,
+                path: vec![[2_400, 0]],
+                stay: HOUR_TICKS,
+                facing: 16_384,
+                seat: None,
+            }],
+        };
+        let walk = u32::try_from(walk_ticks(2_400)).unwrap();
+        let at = |time: u32| routine.placement([0, 0], 0, time);
+        // At work before it leaves, on the way out, at the errand, on the way back, at work.
+        assert_eq!(at(leave - 1).position, [0, 0]);
+        let out = at(leave + walk / 2);
+        assert!(out.position[0] > 0 && out.position[0] < 2_400 && out.velocity[0] > 0);
+        assert_eq!(at(leave + walk + 10).position, [2_400, 0]);
+        assert_eq!(at(leave + walk + 10).facing, 16_384);
+        let back = at(leave + walk + HOUR_TICKS + walk / 2);
+        assert!(back.position[0] > 0 && back.velocity[0] < 0);
+        assert_eq!(at(leave + 2 * walk + HOUR_TICKS).position, [0, 0]);
+        // It still walks home at dusk.
+        assert!(at(DUSK + 1).position[1] > 0);
+        assert_eq!(
+            routine.errands[0].span([0, 0]),
+            2 * walk + HOUR_TICKS,
+            "{NPC_WALK_UNITS_PER_TICK}"
+        );
     }
 }

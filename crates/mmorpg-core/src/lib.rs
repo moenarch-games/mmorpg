@@ -202,7 +202,7 @@ pub use rewind::{CLIENT_INTERPOLATION_TICKS, HitRewind, MAX_HIT_REWIND_MS, Rewin
 pub use rock::{PROXIES as ROCK_PROXIES, RockProxy, RockShape};
 pub use roll::Roll;
 pub use routine::{
-    DAWN, DAY_TICKS, DUSK, HOUR_TICKS, MAX_ROUTINE_WAYPOINTS, NPC_WALK_UNITS_PER_TICK,
+    DAWN, DAY_TICKS, DUSK, Errand, HOUR_TICKS, MAX_ROUTINE_WAYPOINTS, NPC_WALK_UNITS_PER_TICK,
     NpcPlacement, NpcRoutine, ZONE_START_TIME, is_night, time_of_day,
 };
 pub use seat::{MAX_SEATS, PostureView, SEAT_REACH_UNITS, Seat, SeatId, Sitting};
