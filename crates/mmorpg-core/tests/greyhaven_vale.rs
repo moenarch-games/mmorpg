@@ -53,16 +53,16 @@ fn content_is_a_bounded_deterministic_revision() {
         .iter()
         .filter(|collider| ids::TREES.contains(&collider.id))
         .count();
-    // Authored western and northern canopy patches join the Vale's older woods; the
-    // farmland's, highlands' and wetlands' trees are the region's designed forests (#816).
-    assert!((1_500..=4_000).contains(&trees), "{trees} trees");
+    // The heart keeps its own woods and groves, rounded into clumps; round it, the
+    // region's designed forests grow (#816).
+    assert!((300..=1_500).contains(&trees), "{trees} trees");
     let region_trees = definition
         .colliders()
         .iter()
         .filter(|collider| ids::REGION_TREES.contains(&collider.id))
         .count();
     assert!(
-        (5_000..=12_000).contains(&region_trees),
+        (8_000..=14_000).contains(&region_trees),
         "{region_trees} region trees"
     );
     for collider in definition.colliders() {

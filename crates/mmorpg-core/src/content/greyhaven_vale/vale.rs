@@ -216,8 +216,7 @@ pub const ROADS: &[Road] = &[
     },
     Road {
         name: "South Road",
-        // Up the South Climb (#423) onto the rim and across the Vale Ring Road to the King's Road
-        // (#816).
+        // Up the South Climb (#423) onto the rim, where the King's Road leaves the heart (#816).
         points: &[
             [0, 2_800],
             [0, 5_000],
@@ -225,31 +224,8 @@ pub const ROADS: &[Road] = &[
             [-3_600, 9_400],
             [-3_600, 10_200],
             [0, 10_200],
-            [0, 15_000],
-            [0, 20_000],
+            [0, 11_200],
         ],
-    },
-    // The outer valley (#159): a ring road through the four outer regions and
-    // two trails that join the farm and the woods to it without the outpost.
-    Road {
-        name: "Vale Ring Road",
-        points: &[
-            [-15_000, -15_000],
-            [15_000, -15_000],
-            [15_000, 15_000],
-            [-15_000, 15_000],
-            [-15_000, -15_000],
-        ],
-    },
-    Road {
-        name: "Fen Track",
-        // From the top of the Millbrook Climb down the terrace's eastern slope (#423).
-        points: &[[5_400, 1_200], [11_000, -1_000], [15_000, -3_000]],
-    },
-    Road {
-        // From the top of the Wolfrun Climb along the rim (#423).
-        name: "Downs Trail",
-        points: &[[-5_400, 1_200], [-5_400, 6_000], [-15_000, 6_000]],
     },
 ];
 

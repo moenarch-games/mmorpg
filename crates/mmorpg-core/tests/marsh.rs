@@ -84,9 +84,9 @@ fn road(name: &str) -> &'static [[i32; 2]] {
 
 #[test]
 fn a_player_crosses_the_pass_to_the_island_and_back_into_the_vale() {
-    let mut zone = bare_player_at([15_000, 4_000]);
+    let mut zone = bare_player_at(road("Fen Road")[0]);
     let mut sequence = 0;
-    // The Fen Road leaves the Vale Ring Road eastward onto the wetlands (#816).
+    // The Fen Road leaves the top of the Millbrook Climb eastward onto the wetlands (#816).
     let fen_road: Vec<[i32; 2]> = road("Fen Road")
         .iter()
         .copied()
@@ -126,7 +126,11 @@ fn a_player_crosses_the_pass_to_the_island_and_back_into_the_vale() {
         .chain(fen_road.iter().rev().copied())
         .collect();
     walk(&mut zone, &mut sequence, &back);
-    assert_eq!(area(feet(&zone)), Some("Eastwater Fen"));
+    let home = feet(&zone);
+    assert!(
+        greyhaven_vale::beyond_core(home[0] as i32, home[2] as i32) <= 0,
+        "{home:?}"
+    );
 }
 
 #[test]

@@ -178,7 +178,7 @@ def build():
     ridges = 1 - np.abs(fbm(X, Z, 260, 3, SEED + 101))
     # Rolling ground at walking scale: knolls and dips over about 110 m.
     knolls = fbm(X, Z, 110, 3, SEED + 211)
-    H = H + amplitude * (0.75 * hills + 0.5 * (ridges - 0.5) + 0.45 * knolls)
+    H = H + amplitude * (0.75 * hills + 0.5 * (ridges - 0.5) + 0.6 * knolls)
     # The mountains grow craggier with height: ridged spurs and gullies above 80 m.
     crags = 1 - np.abs(fbm(X, Z, 150, 4, SEED + 307))
     H = H + np.clip((H - 80) / 220, 0, 1) * 34 * (crags - 0.45)

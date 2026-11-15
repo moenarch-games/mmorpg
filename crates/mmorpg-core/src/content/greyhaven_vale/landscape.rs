@@ -9,8 +9,6 @@ pub struct Landscape {
     pub watercourses: Watercourses,
     pub paths: Vec<Path>,
     pub basin: Basin,
-    pub northern_ridge: NorthernRidge,
-    pub highland_relief: HighlandRelief,
     pub forests: Vec<Forest>,
     // Blender consumes this authoring profile; runtime collision comes from its exported mesh.
     #[serde(rename = "redbrandExterior")]
@@ -42,46 +40,6 @@ pub struct BasinLobe {
     pub center: [i32; 2],
     pub radii: [i32; 2],
     pub shoulder_q10: i32,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct NorthernRidge {
-    pub protected_approach: [[i32; 2]; 2],
-    pub sections: Vec<RidgeSection>,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-/// One cross-section: X, then eight [Z, height] points in cm, south to north.
-pub struct RidgeSection {
-    pub x: i32,
-    pub profile: [[i32; 2]; 8],
-}
-/// The sculpted landforms on the Bandit Highlands' high ground (#528), in centimetres.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct HighlandRelief {
-    /// Rising height bands, cycled through for the terraces' stratification.
-    pub strata_bands: Vec<i32>,
-    /// Ridges rising above the high ground, the union of their flanks.
-    pub spines: Vec<ReliefFeature>,
-    /// Dry gullies cut below the high ground.
-    pub gullies: Vec<ReliefFeature>,
-    /// Overlooks levelled into the flanks at their centre's own height.
-    pub ledges: Vec<Ledge>,
-}
-/// One authored landform along `[x, z, half width, crown or depth]` points.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ReliefFeature {
-    pub name: String,
-    pub points: Vec<[i32; 4]>,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Ledge {
-    pub name: String,
-    pub center: [i32; 2],
-    pub radius: i32,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -163,41 +121,6 @@ static LANDSCAPE: LazyLock<Landscape> = LazyLock::new(|| {
             .iter()
             .all(|m| m.radius >= 400 && (0..=100).contains(&m.height)),
         "low, supported brook ground profiles"
-    );
-    let sections = &landscape.northern_ridge.sections;
-    assert!(
-        sections.len() >= 2 && sections.windows(2).all(|pair| pair[0].x < pair[1].x),
-        "ridge sections are ordered west to east"
-    );
-    assert!(
-        sections.iter().all(
-            |section| section.profile.windows(2).all(|p| p[0][0] > p[1][0])
-                && section.profile[0][1] == 0
-                && section.profile[7][1] == super::highlands::PLATEAU_Y
-        ),
-        "ridge profiles join the valley and plateau"
-    );
-    let relief = &landscape.highland_relief;
-    assert!(
-        !relief.strata_bands.is_empty() && relief.strata_bands.iter().all(|band| *band >= 400),
-        "strata bands span at least 4 m"
-    );
-    assert!(
-        relief.spines.iter().chain(&relief.gullies).all(|feature| {
-            !feature.name.is_empty()
-                && feature.points.len() >= 2
-                && feature.points.windows(2).all(|p| p[0][..2] != p[1][..2])
-                // No flank is steeper than about 20° before its terraces: walkable after them.
-                && feature.points.iter().all(|p| p[3] > 0 && p[3] * 100 <= p[2] * 36)
-        }),
-        "relief features are connected, positive and leave walkable flanks"
-    );
-    assert!(
-        relief
-            .ledges
-            .iter()
-            .all(|ledge| !ledge.name.is_empty() && ledge.radius >= 400),
-        "ledges are named and at least 8 m across"
     );
     landscape
 });

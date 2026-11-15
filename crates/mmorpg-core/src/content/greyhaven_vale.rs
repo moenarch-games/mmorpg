@@ -2,16 +2,15 @@
 //! areas, the road corridors that must stay walkable, and the creatures,
 //! NPCs and graveyard of [`units`].
 //!
-//! The Vale spans ±208 m around the origin; south of it, behind a mountain ridge,
-//! the Farmland and Hamlets region of [`farmland`] reaches z = +640 m (#424), and north of it,
-//! above an escarpment, the Bandit Highlands of [`highlands`] reach z = −632 m (#425); east of
-//! it, beyond a second ridge, the Marsh-Lake Wetlands of [`marsh`] reach x = +632 m (#426).
-//! Those four are the hand-authored parts ([`AUTHORED`]); round them the zone covers the whole
-//! Greyhaven Vale region of the continent atlas on its exported base terrain ([`region`], #810),
-//! and invisible boundary walls follow the region's outline. Map north is −Z, toward the Redbrand
-//! cliffs, matching the
-//! layout table in `docs/STARTER_ZONE.md`. The Outpost's settled floor stays level (y = 0),
-//! with gentle rises on its northern approach in [`basin`], below the rim and outer hills; relief, props
+//! The zone covers the whole Greyhaven Vale region of the continent atlas ([`region`], #810),
+//! and invisible boundary walls follow the region's outline. Its ground is hand-authored only in
+//! the Vale's heart round the Outpost's basin ([`beyond_core`]); everywhere else it is the
+//! region's designed landscape ([`design`], #816), with the Farmland and Hamlets of
+//! [`farmland`] to the south (#424), the Bandit Highlands of [`highlands`] beyond Greyfang
+//! Ridge to the north (#425) and the Marsh-Lake Wetlands of [`marsh`] to the east (#426). Map
+//! north is −Z, toward the Redbrand cliffs, matching the layout table in
+//! `docs/STARTER_ZONE.md`. The Outpost's settled floor stays level (y = 0),
+//! with gentle rises on its northern approach in [`basin`], below the rim; relief, props
 //! without colliders, water and mountains are presentation owned by
 //! `mmorpg-scenery`, which derives its structures from the collider IDs in
 //! [`ids`]. [`content`] bundles it as the hosted [`ZoneContent`], whose revision
@@ -60,22 +59,14 @@ pub const PLAYABLE_BOUNDS: XzBounds = XzBounds {
     min: [-184_000, -134_000],
     max: [188_000, 128_000],
 };
-/// The hand-authored core (#816): the Vale and the highlands' escarpment above it. Its ground is
-/// authored here; round it the region's designed landscape ([`design`]) takes over within
-/// [`terrain::BLEND_UNITS`].
-pub const CORE: XzBounds = XzBounds {
-    min: [-20_800, highlands::ESCARPMENT[3]],
-    max: [20_800, 20_800],
-};
-
-/// Chebyshev distance (units) from `(x, z)` to the hand-authored core ([`CORE`]): positive
-/// outside it, zero or negative inside.
+/// Units from `(x, z)` to the hand-authored core (#816): the Vale's heart round the Outpost's
+/// basin, Millbrook Farm, Stillwater Lake, Redbrand Hollow and the Greyfang cave, inside the
+/// organic outline of `design.json`'s `heart` ([`design::heart_distance`]). Positive outside
+/// it, zero or negative inside. Its ground is authored here; round it the region's designed
+/// landscape ([`design`]) takes over within [`terrain::BLEND_UNITS`].
 #[must_use]
 pub fn beyond_core(x: i32, z: i32) -> i64 {
-    let over = |value: i32, low: i32, high: i32| {
-        (i64::from(low) - i64::from(value)).max(i64::from(value) - i64::from(high))
-    };
-    over(x, CORE.min[0], CORE.max[0]).max(over(z, CORE.min[1], CORE.max[1]))
+    design::heart_distance(x, z)
 }
 
 /// The first regions' extents: the column of the highlands (#425), the Vale and the farmland
@@ -389,7 +380,7 @@ pub mod terrain {
     pub const ZONE_ROWS: u16 = 7 * 106 + 1;
     const TILE: i32 = 106 * STEP;
     /// Beyond the authored ground the region's base terrain takes over across this band.
-    pub const BLEND_UNITS: i64 = 6_000;
+    pub const BLEND_UNITS: i64 = 4_000;
     /// Tallest hill (10 m).
     pub const HILL_UNITS: i64 = 1_000;
     /// Hills start beyond this Chebyshev distance from the origin and reach full height at
@@ -549,26 +540,11 @@ pub fn lake_depth(x: i32, z: i32) -> i32 {
     i32::try_from(lake::DEPTH * (lake::RIM_Q10 - distance) / lake::RIM_Q10).unwrap_or(0)
 }
 
-/// The ground wherever no cave flattens it: the hills (#159), the basin's terraces and their
-/// ways down (#423), less the lake's basin (#274); the farmland's ridge, notch and plateau
-/// (#424) and the highlands' escarpment, pass and high ground (#425) beyond.
+/// The heart's ground wherever no cave flattens it: the basin's terraces and their ways down
+/// (#423), less the lake's basin (#274). Round the heart the designed landscape takes over
+/// (#816), so the old outer hills, ridges and escarpment no longer shape it.
 fn open_ground(x: i32, z: i32) -> i32 {
-    if let Some(height) = farmland::height_at(x, z) {
-        return height;
-    }
-    // The north and east ridges overlap at the outer corner. Join their rock masses;
-    // precedence alone cut the eastern crest down to the northern ridge's low toe.
-    match (highlands::height_at(x, z), marsh::height_at(x, z)) {
-        (Some(north), Some(east)) => return north.max(east),
-        (Some(height), None) | (None, Some(height)) => return height,
-        (None, None) => {}
-    }
-    let hill = hill_height(x, z);
-    lake::shore_ground(
-        x,
-        z,
-        basin::height_at(x, z).map_or(hill, |terrace| terrace.max(hill)),
-    ) - lake_depth(x, z)
+    lake::shore_ground(x, z, basin::height_at(x, z).unwrap_or(0)) - lake_depth(x, z)
 }
 
 /// One sample of the authored grid (#159), at `column` and `row` from [`terrain::ORIGIN`].
@@ -596,8 +572,8 @@ fn authored_ground(column: i32, row: i32) -> i32 {
 
 /// A graded road lies level across this half width (3 m: the drawn road and a shoulder) …
 const ROAD_FLAT_UNITS: i64 = 300;
-/// … and meets the landscape again across this much more (6 m).
-const ROAD_FADE_UNITS: i64 = 600;
+/// … and meets the landscape again across this much more (10 m), so its banks stay gentle.
+const ROAD_FADE_UNITS: i64 = 1_000;
 /// Road profiles are sampled this often along a road.
 const ROAD_SAMPLE_UNITS: i64 = 400;
 
@@ -613,30 +589,63 @@ static ROAD_LINES: LazyLock<design::LineIndex> = LazyLock::new(|| {
     )
 });
 
+/// The point `along` units along a polyline, clamped to its ends.
+fn point_along(points: &[[i32; 2]], along: i64) -> [i32; 2] {
+    let mut run = 0_i64;
+    for pair in points.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        let span = i64::try_from(
+            (i64::from(b[0] - a[0]).pow(2) + i64::from(b[1] - a[1]).pow(2))
+                .unsigned_abs()
+                .isqrt(),
+        )
+        .unwrap_or(0);
+        if run + span >= along && span > 0 {
+            let t = along - run;
+            let at = |from: i32, to: i32| {
+                from + i32::try_from(i64::from(to - from) * t / span).unwrap_or(0)
+            };
+            return [at(a[0], b[0]), at(a[1], b[1])];
+        }
+        run += span;
+    }
+    points[points.len() - 1]
+}
+
+/// A road profile's height `along` units along its road.
+fn profile_height(profile: &[i32], along: i64) -> i32 {
+    let at = usize::try_from(along / ROAD_SAMPLE_UNITS)
+        .unwrap_or(0)
+        .min(profile.len() - 1);
+    let next = (at + 1).min(profile.len() - 1);
+    let fraction = along.max(0) % ROAD_SAMPLE_UNITS;
+    let height = i64::from(profile[at])
+        + i64::from(profile[next] - profile[at]) * fraction / ROAD_SAMPLE_UNITS;
+    i32::try_from(height).unwrap_or(profile[at])
+}
+
+/// A branch eases onto the road it leaves across this many profile samples (24 m).
+const ROAD_JOIN_SAMPLES: usize = 6;
+
 /// Each designed road's height every [`ROAD_SAMPLE_UNITS`] along it: the ungraded ground,
-/// smoothed over 12 m either way so the road rises and falls gently.
+/// smoothed over 12 m either way so the road rises and falls gently. A branch ends at the
+/// height of the road it leaves, easing onto it, so no step lies where two roads meet.
 static ROAD_PROFILES: LazyLock<Vec<Vec<i32>>> = LazyLock::new(|| {
-    design::data()
-        .roads
+    let roads = &design::data().roads;
+    let smoothed: Vec<Vec<i32>> = roads
         .iter()
         .map(|road| {
-            let mut samples = Vec::new();
-            for pair in road.points.windows(2) {
-                let (a, b) = (pair[0], pair[1]);
-                let span = (i64::from(b[0] - a[0]).pow(2) + i64::from(b[1] - a[1]).pow(2))
-                    .unsigned_abs()
-                    .isqrt();
-                let steps = (i64::try_from(span).unwrap_or(0) / ROAD_SAMPLE_UNITS).max(1);
-                for step in 0..steps {
-                    let at = |from: i32, to: i32| {
-                        from + i32::try_from(i64::from(to - from) * step / steps).unwrap_or(0)
-                    };
-                    samples.push(ungraded_ground(at(a[0], b[0]), at(a[1], b[1])));
-                }
-            }
-            let last = road.points[road.points.len() - 1];
-            samples.push(ungraded_ground(last[0], last[1]));
-            let mut heights = samples;
+            let (_, length) = design::polyline_distance(
+                &road.points,
+                road.points[road.points.len() - 1][0],
+                road.points[road.points.len() - 1][1],
+            );
+            let mut heights: Vec<i32> = (0..=length / ROAD_SAMPLE_UNITS + 1)
+                .map(|step| {
+                    let [x, z] = point_along(&road.points, step * ROAD_SAMPLE_UNITS);
+                    ungraded_ground(x, z)
+                })
+                .collect();
             for _ in 0..2 {
                 heights = (0..heights.len())
                     .map(|index| {
@@ -649,7 +658,32 @@ static ROAD_PROFILES: LazyLock<Vec<Vec<i32>>> = LazyLock::new(|| {
             }
             heights
         })
-        .collect()
+        .collect();
+    // Roads earlier in the design are the main roads; a later road ending on one is its branch.
+    let mut profiles = smoothed.clone();
+    for (index, road) in roads.iter().enumerate() {
+        let ends = [
+            (road.points[0], true),
+            (road.points[road.points.len() - 1], false),
+        ];
+        for (end, first) in ends {
+            let joined = roads[..index].iter().enumerate().find_map(|(other, main)| {
+                let (distance, along) = design::polyline_distance(&main.points, end[0], end[1]);
+                (distance <= 50).then(|| profile_height(&profiles[other], along))
+            });
+            let Some(target) = joined else { continue };
+            let last = profiles[index].len() - 1;
+            let shift = i64::from(target - smoothed[index][if first { 0 } else { last }]);
+            let samples = ROAD_JOIN_SAMPLES.min(last + 1);
+            for step in 0..samples {
+                let sample = if first { step } else { last - step };
+                let weight = i64::try_from(samples - step).unwrap_or(0);
+                let samples = i64::try_from(samples).unwrap_or(1);
+                profiles[index][sample] += i32::try_from(shift * weight / samples).unwrap_or(0);
+            }
+        }
+    }
+    profiles
 });
 
 /// The zone's ground at a grid sample `(x, z)`: the ground of [`ungraded_ground`], with the
@@ -668,15 +702,7 @@ fn zone_ground(x: i32, z: i32) -> i32 {
         if distance < ROAD_FLAT_UNITS + ROAD_FADE_UNITS
             && nearest.is_none_or(|(best, _)| distance < best)
         {
-            let profile = &ROAD_PROFILES[index];
-            let at = usize::try_from(along / ROAD_SAMPLE_UNITS)
-                .unwrap_or(0)
-                .min(profile.len() - 1);
-            let next = (at + 1).min(profile.len() - 1);
-            let fraction = along % ROAD_SAMPLE_UNITS;
-            let height = i64::from(profile[at])
-                + i64::from(profile[next] - profile[at]) * fraction / ROAD_SAMPLE_UNITS;
-            nearest = Some((distance, i32::try_from(height).unwrap_or(ground)));
+            nearest = Some((distance, profile_height(&ROAD_PROFILES[index], along)));
         }
     }
     let Some((distance, road)) = nearest else {
@@ -708,13 +734,9 @@ fn ungraded_ground(x: i32, z: i32) -> i32 {
     if beyond >= terrain::BLEND_UNITS {
         return land;
     }
-    // The nearest authored sample: the point clamped into the core, whose edges lie on the grid.
-    let edge = authored(
-        x.clamp(CORE.min[0], CORE.max[0]),
-        z.clamp(CORE.min[1], CORE.max[1]),
-    );
+    let heart = authored(x, z);
     let weight = smooth_q10(beyond, 0, terrain::BLEND_UNITS);
-    edge + i32::try_from(i64::from(land - edge) * weight / 1_024).unwrap_or(0)
+    heart + i32::try_from(i64::from(land - heart) * weight / 1_024).unwrap_or(0)
 }
 
 /// The zone's terrain grid: the authored ground (#159) within the region's base terrain (#810).
@@ -815,22 +837,10 @@ mod woods {
     pub const TRUNK_HEIGHT: i32 = 500;
 }
 
-/// The outer valley's woods (#159): `(origin, cells, seed, percent of cells
-/// with a trunk)` on the same 4.5 m jittered grid as Wolfrun Woods.
-/// The farmland's, highlands' and wetlands' trees are the region's designed forests (#816,
-/// [`region_forest_trees`]).
-const OUTER_FORESTS: [([i32; 2], [i32; 2], u64, u64); 4] = [
-    // Hollowpine Reach: dense pines west of Wolfrun Woods.
-    ([-20_400, -11_600], [17, 52], 0x484f_4c4c_4f57_5049, 60),
-    // Greyfang Ridge and Southmeadow Downs: scattered copses.
-    ([-18_000, -20_400], [80, 10], 0x4752_4559_4641_4e47, 12),
-    ([-18_000, 16_400], [80, 9], 0x534f_5554_484d_4544, 12),
-    // Eastwater Fen: sparse alders east of the farm and the lake.
-    ([12_600, -11_600], [17, 52], 0x4541_5354_5741_5445, 15),
-];
-
 /// Small, patchy groves frame Stillwater's eastern shore, the Hollow's distant backdrop
-/// and the southwest ridge. Appended after existing forests to retain their collider IDs.
+/// and the southwest ridge: `(origin, cells, seed, percent of cells with a trunk)` on the same
+/// 4.5 m jittered grid as Wolfrun Woods. Beyond the heart the region's designed forests grow
+/// instead (#816, [`region_forest_trees`]).
 const RIM_GROVES: [([i32; 2], [i32; 2], u64, u64); 5] = [
     ([8200, -10500], [9, 19], 0x0051_3f01, 72),
     ([-11000, -15500], [14, 9], 0x0051_3f02, 76),
@@ -841,14 +851,17 @@ const RIM_GROVES: [([i32; 2], [i32; 2], u64, u64); 5] = [
     ([6500, 5800], [13, 12], 0x0051_3f05, 74),
 ];
 
-/// Lower, patchy woodland between the northern cliff feet and the existing Vale places.
-/// These groves may root on the low valley floor; appended last to retain older tree IDs.
-const NORTH_GROVES: [([i32; 2], [i32; 2], u64, u64); 4] = [
-    ([-17_000, -20_000], [15, 13], 0x0051_4f01, 78),
-    ([-10_000, -20_000], [15, 9], 0x0051_4f02, 78),
-    ([-1_500, -20_000], [14, 8], 0x0051_4f03, 76),
-    ([10_000, -19_000], [15, 12], 0x0051_4f04, 76),
-];
+/// Whether a grove on the grid `origin`, `cells` grows at `(x, z)` (#816): inside the heart, in
+/// a rounded clump inscribed in its rectangle whose edge the noise wobbles by about a fifth, so
+/// no wood keeps its grid's straight sides.
+fn in_grove(x: i32, z: i32, origin: [i32; 2], cells: [i32; 2], seed: u64) -> bool {
+    let half = cells.map(|count| i64::from(count * woods::CELL / 2));
+    let dx = (i64::from(x) - i64::from(origin[0]) - half[0]) * 1_024 / half[0];
+    let dz = (i64::from(z) - i64::from(origin[1]) - half[1]) * 1_024 / half[1];
+    let wobble =
+        (value_noise_q10(i64::from(x), i64::from(z), 2_400, seed ^ 0x0043_4c55_4d50) - 512) * 2 / 5;
+    beyond_core(x, z) <= 0 && (dx * dx + dz * dz).isqrt() <= 1_100 + wobble
+}
 
 /// SplitMix64 finaliser: a fixed integer hash, identical on every platform.
 const fn splitmix64(value: u64) -> u64 {
@@ -886,7 +899,9 @@ fn trees() -> Vec<StaticCollider> {
             let dx = i64::from(x - woods::CLEARING_CENTRE[0]);
             let dz = i64::from(z - woods::CLEARING_CENTRE[1]);
             let keep_out = i64::from(woods::CLEARING_RADIUS + half);
-            if dx * dx + dz * dz < keep_out * keep_out {
+            if dx * dx + dz * dz < keep_out * keep_out
+                || !in_grove(x, z, woods::ORIGIN, woods::CELLS, woods::SEED)
+            {
                 continue;
             }
             // On the rim (#423).
@@ -905,14 +920,7 @@ fn trees() -> Vec<StaticCollider> {
             next_id += 1;
         }
     }
-    for (origin, cells, seed, percent) in OUTER_FORESTS
-        .into_iter()
-        .chain(RIM_GROVES)
-        .chain(NORTH_GROVES)
-    {
-        let rim_grove = RIM_GROVES.iter().any(|grove| grove.2 == seed);
-        let north_grove = NORTH_GROVES.iter().any(|grove| grove.2 == seed);
-        let minimum_height = if rim_grove { 600 } else { 0 };
+    for (origin, cells, seed, percent) in RIM_GROVES {
         for row in 0..cells[1] {
             for column in 0..cells[0] {
                 let cell = (u64::from(row.unsigned_abs()) << 32) | u64::from(column.unsigned_abs());
@@ -927,16 +935,9 @@ fn trees() -> Vec<StaticCollider> {
                     origin[1] + row * woods::CELL + woods::EDGE_MARGIN + jitter(16) % (span + 1);
                 // Gaps in the canopy are broad patches, not one evenly occupied lattice.
                 // Leave the highest spurs bare so the ridges remain visible above the trees.
-                if (rim_grove || north_grove)
-                    && (value_noise_q10(i64::from(x), i64::from(z), 1800, seed) < 440
-                        || !(minimum_height..2300).contains(&TERRAIN.height_at(x, z)))
-                {
-                    continue;
-                }
-                // Hamlets, fields and the tower's yard, with their aprons, stay clear (#424).
-                if farmland::level(x, z)
-                    || !highlands::clear_for_tree(x, z)
-                    || (x >= marsh::RIDGE[0] - 600 && !marsh::clear_for_tree(x, z))
+                if value_noise_q10(i64::from(x), i64::from(z), 1800, seed) < 440
+                    || !(600..2300).contains(&TERRAIN.height_at(x, z))
+                    || !in_grove(x, z, origin, cells, seed)
                 {
                     continue;
                 }
@@ -947,16 +948,6 @@ fn trees() -> Vec<StaticCollider> {
                     position: [x, base + woods::TRUNK_HEIGHT / 2, z],
                     half_extents: [half, woods::TRUNK_HEIGHT / 2, half],
                 };
-                // These patches overlap the sparse old northern band. Preserve the old
-                // trunks and a walkable gap rather than planting a second trunk beside one.
-                if north_grove
-                    && trees.iter().any(|tree| {
-                        (x - tree.position[0]).abs() < half + tree.half_extents[0] + 150
-                            && (z - tree.position[2]).abs() < half + tree.half_extents[2] + 150
-                    })
-                {
-                    continue;
-                }
                 if !clear_of_roads(&collider) || near_structure(&collider) {
                     continue;
                 }
@@ -993,8 +984,7 @@ fn trees() -> Vec<StaticCollider> {
                 if value_noise_q10(i64::from(x), i64::from(z), 1800, forest.seed) < 300
                     || !(forest.elevation[0]..forest.elevation[1])
                         .contains(&TERRAIN.height_at(x, z))
-                    || farmland::level(x, z)
-                    || !highlands::clear_for_tree(x, z)
+                    || !in_grove(x, z, forest.origin, forest.cells, forest.seed)
                     || brook::wet_ground(x, z)
                     || shrine::flattens(x, z)
                     || posts
@@ -1097,7 +1087,7 @@ fn region_forest_trees() -> Vec<StaticCollider> {
                 let cover = i64::from(forest.cover) * (410 + clump * 1_230 / 1_024) / 1_024;
                 if i64::try_from(hash % 100).unwrap_or(0) >= cover
                     || design::forest_at(x, z).map(|grows| grows.seed) != Some(forest.seed)
-                    || beyond_core(x, z) < terrain::BLEND_UNITS
+                    || beyond_core(x, z) <= 0
                     || [(0, 0), (-400, 0), (400, 0), (0, -400), (0, 400)]
                         .iter()
                         .any(|(dx, dz)| !inside_walls(x + dx, z + dz))
@@ -1121,7 +1111,7 @@ fn region_forest_trees() -> Vec<StaticCollider> {
                     position: [x, base + woods::TRUNK_HEIGHT / 2, z],
                     half_extents: [half, woods::TRUNK_HEIGHT / 2, half],
                 };
-                if !clear_of_roads(&collider) {
+                if !clear_of_roads(&collider) || near_structure(&collider) {
                     continue;
                 }
                 assert!(
@@ -1202,7 +1192,7 @@ fn region_boulders(existing: &[StaticCollider]) -> Vec<StaticCollider> {
                     });
                 if hash % 100 >= u64::from(field.cover)
                     || !design::polygon_contains(&field.polygon, x, z)
-                    || beyond_core(x, z) < terrain::BLEND_UNITS
+                    || beyond_core(x, z) <= 0
                     || [(0, 0), (-500, 0), (500, 0), (0, -500), (0, 500)]
                         .iter()
                         .any(|(dx, dz)| !inside_walls(x + dx, z + dz))
@@ -1532,8 +1522,6 @@ pub fn climbing() -> crate::ClimbSurfaces {
         // The sheer cliff under Stillwater Lake, then the rest of the Vale basin's cliffs.
         (SHEER_LAKE_CLIFF, None),
         (VALE_BASIN, Some(Rock)),
-        // One hard route up the escarpment, beside its pass.
-        (CLIMBING_ROUTES[0], Some(Rock)),
     ];
     crate::ClimbSurfaces::new(colliders, terrain).expect("Greyhaven climbing is valid")
 }
@@ -1552,13 +1540,10 @@ pub const SHEER_LAKE_CLIFF: XzBounds = XzBounds {
     min: [2_000, -3_200],
     max: [12_800, -2_000],
 };
-/// The climbing route (#490) up the highlands' escarpment east of the Highland Pass, 8 m wide.
-/// The farmland's and wetlands' ridges it once shared the role with gave way to the region's
-/// open landscape (#816).
-pub const CLIMBING_ROUTES: [XzBounds; 1] = [XzBounds {
-    min: [12_000, -28_000],
-    max: [12_800, -20_800],
-}];
+/// Marked climbing routes up terrain faces (#490). The escarpment's, farmland's and wetlands'
+/// ridges that held them gave way to the region's designed landscape, whose slopes are walked
+/// (#816).
+pub const CLIMBING_ROUTES: [XzBounds; 0] = [];
 
 /// The mill hoist (#56): a 2 m square stone pillar against the windmill's south face that
 /// rests with its top flush with the farm terrace, rises 8 m to the windmill's east gallery

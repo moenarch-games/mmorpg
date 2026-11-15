@@ -29,6 +29,7 @@ struct Source {
     forests: Vec<ForestSource>,
     #[serde(default)]
     rockfields: Vec<RockfieldSource>,
+    heart: Vec<[f64; 2]>,
 }
 
 #[derive(Deserialize)]
@@ -191,6 +192,8 @@ pub struct Design {
     pub roads: Vec<DesignRoad>,
     pub forests: Vec<Forest>,
     pub rockfields: Vec<Rockfield>,
+    /// The hand-authored heart's outline (#816), rounded into curves, in units.
+    pub heart: Vec<[i32; 2]>,
 }
 
 /// A stable seed from a name.
@@ -217,6 +220,21 @@ fn units(metres: f64) -> i32 {
 
 fn line(points: &[[f64; 2]]) -> Vec<[i32; 2]> {
     points.iter().map(|p| [units(p[0]), units(p[1])]).collect()
+}
+
+/// A closed outline rounded into curves: three rounds of corner cutting all the way round.
+fn rounded(points: &[[f64; 2]]) -> Vec<[i32; 2]> {
+    let mut outline = points.to_vec();
+    for _ in 0..3 {
+        let mut cut = Vec::with_capacity(outline.len() * 2);
+        for index in 0..outline.len() {
+            let (a, b) = (outline[index], outline[(index + 1) % outline.len()]);
+            cut.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25]);
+            cut.push([a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
+        }
+        outline = cut;
+    }
+    line(&outline)
 }
 
 /// A centre line rounded into curves (#816): two rounds of corner cutting, keeping its ends, so
@@ -267,10 +285,10 @@ fn reaches(terrain: &Terrain, points: &[[i32; 2]]) -> Vec<Reach> {
                     a + i32::try_from(i64::from(b - a) * step / steps).unwrap_or(0)
                 };
                 lowest = lowest
-                    .min(terrain.height_at(at(from[0], point[0]), at(from[1], point[1])) - 40);
+                    .min(smooth_height(terrain, at(from[0], point[0]), at(from[1], point[1])) - 40);
             }
         }
-        lowest = lowest.min(terrain.height_at(point[0], point[1]) - 40);
+        lowest = lowest.min(smooth_height(terrain, point[0], point[1]) - 40);
         surfaces.push(lowest);
     }
     let mut along = vec![0_i64];
@@ -389,6 +407,9 @@ fn parse(design: &str, terrain: &str) -> Result<Design, String> {
             polygon: line(&field.polygon),
         })
         .collect();
+    if source.heart.len() < 3 {
+        return Err("the heart needs an outline".to_owned());
+    }
     Ok(Design {
         terrain,
         rivers,
@@ -396,6 +417,7 @@ fn parse(design: &str, terrain: &str) -> Result<Design, String> {
         roads,
         forests,
         rockfields,
+        heart: rounded(&source.heart),
     })
 }
 
@@ -406,6 +428,53 @@ static DATA: LazyLock<Design> =
 #[must_use]
 pub fn data() -> &'static Design {
     &DATA
+}
+
+/// The heart's outline reaches up to this much (15 m) further out where the noise swells it.
+const HEART_SWELL_UNITS: i64 = 1_500;
+
+/// The heart outline's bounding rectangle, grown by the swell.
+static HEART_BOUNDS: LazyLock<[[i32; 2]; 2]> = LazyLock::new(|| {
+    let mut bounds = [[i32::MAX; 2], [i32::MIN; 2]];
+    for point in &data().heart {
+        for axis in 0..2 {
+            bounds[0][axis] = bounds[0][axis].min(point[axis]);
+            bounds[1][axis] = bounds[1][axis].max(point[axis]);
+        }
+    }
+    let swell = i32::try_from(HEART_SWELL_UNITS).unwrap_or(0);
+    [
+        bounds[0].map(|value| value - swell),
+        bounds[1].map(|value| value + swell),
+    ]
+});
+
+/// Units from `(x, z)` to the hand-authored heart (#816): positive outside it, zero or negative
+/// inside. The heart is its rounded outline, swollen outwards by up to [`HEART_SWELL_UNITS`] in
+/// broad lobes so its edge never runs in one smooth line.
+#[must_use]
+pub fn heart_distance(x: i32, z: i32) -> i64 {
+    let [min, max] = *HEART_BOUNDS;
+    let outside = i64::from((min[0] - x).max(x - max[0]).max(0))
+        .max(i64::from((min[1] - z).max(z - max[1]).max(0)));
+    // Far from the heart a lower bound on the distance is enough.
+    if outside > 20_000 {
+        return outside;
+    }
+    let outline = &data().heart;
+    let edge = outline
+        .iter()
+        .zip(outline.iter().cycle().skip(1))
+        .map(|(&a, &b)| polyline_distance(&[a, b], x, z).0)
+        .min()
+        .unwrap_or(i64::MAX);
+    if polygon_contains(outline, x, z) {
+        return -edge;
+    }
+    let swell = super::value_noise_q10(i64::from(x), i64::from(z), 5_000, 0x0048_4541_5254)
+        * HEART_SWELL_UNITS
+        / 1_024;
+    (edge - swell).max(1)
 }
 
 impl River {
@@ -476,11 +545,58 @@ static RIVERS: LazyLock<LineIndex> = LazyLock::new(|| {
     )
 });
 
+/// The macro terrain's height at `(x, z)`, interpolated by Catmull–Rom splines through its
+/// 16 m samples so its slopes bend smoothly instead of creasing at every sample line (#816).
+#[must_use]
+pub fn macro_height(x: i32, z: i32) -> i32 {
+    smooth_height(&data().terrain, x, z)
+}
+
+fn smooth_height(terrain: &Terrain, x: i32, z: i32) -> i32 {
+    let step = i64::from(terrain.step);
+    let (columns, rows) = (i64::from(terrain.columns), i64::from(terrain.rows));
+    let fx = i64::from(x - terrain.origin[0]);
+    let fz = i64::from(z - terrain.origin[1]);
+    let (column, row) = (fx.div_euclid(step), fz.div_euclid(step));
+    // Fractions in Q10.
+    let (tx, tz) = (
+        fx.rem_euclid(step) * 1_024 / step,
+        fz.rem_euclid(step) * 1_024 / step,
+    );
+    let sample = |c: i64, r: i64| {
+        let c = usize::try_from(c.clamp(0, columns - 1)).unwrap_or(0);
+        let r = usize::try_from(r.clamp(0, rows - 1)).unwrap_or(0);
+        i64::from(terrain.heights[r * usize::from(terrain.columns) + c])
+    };
+    // Catmull–Rom weights of the four samples round a fraction `t` (Q10), summing to 1024³.
+    let weights = |t: i64| {
+        let (t2, t3) = (t * t, t * t * t);
+        let one = 1_024_i64;
+        [
+            (-t3 + 2 * t2 * one - t * one * one) / 2,
+            (3 * t3 - 5 * t2 * one + 2 * one * one * one) / 2,
+            (-3 * t3 + 4 * t2 * one + t * one * one) / 2,
+            (t3 - t2 * one) / 2,
+        ]
+    };
+    let (wx, wz) = (weights(tx), weights(tz));
+    let mut sum = 0_i64;
+    for (j, wj) in wz.iter().enumerate() {
+        let mut across = 0_i64;
+        for (i, wi) in wx.iter().enumerate() {
+            let offset = |k: usize| i64::try_from(k).unwrap_or(0) - 1;
+            across += sample(column + offset(i), row + offset(j)) * wi;
+        }
+        sum += across / (1_024 * 1_024) * wj;
+    }
+    i32::try_from(sum / (1_024 * 1_024 * 1_024 * 1_024)).unwrap_or(0)
+}
+
 /// The macro terrain with the rivers' channels cut into it: a bed [`RIVER_DEPTH_UNITS`] below
 /// each reach's surface across the channel, and banks rising from just above the water.
 fn carved(x: i32, z: i32) -> i32 {
     let design = data();
-    let mut ground = design.terrain.height_at(x, z);
+    let mut ground = macro_height(x, z);
     for &index in RIVERS.near(x, z) {
         let river = &design.rivers[index];
         let (distance, along) = polyline_distance(&river.points, x, z);

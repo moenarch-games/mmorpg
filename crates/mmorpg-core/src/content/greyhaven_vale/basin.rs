@@ -2,8 +2,8 @@
 //! basin, and the rest of the inner valley is one rim 11 m above it, behind cliffs the
 //! controllers cannot climb (a 4 m grid cell rising 11 m is 70°; they climb at most 45°).
 //! Millbrook Farm (slice 1), Stillwater Lake with the Sunken Shrine (slice 2), and Redbrand
-//! Hollow with the Greyfang cave and Wolfrun Woods (slice 3) all stand on the rim. Beyond 128 m
-//! from the Outpost the rim descends gently (17°) into the outer valley's hills (#159).
+//! Hollow with the Greyfang cave and Wolfrun Woods (slice 3) all stand on the rim. The rim runs
+//! on to the heart's edge, where the region's designed land takes over (#816).
 //!
 //! The basin is an irregular, rounded apron with a northern lobe west of the lake.
 //! Fixed-seed weathering varies its rock faces and shoulders (#513). Six ways between the floor and the rim are cut into the terrain itself:
@@ -30,10 +30,6 @@
 
 /// The rim's height above the valley floor (11 m).
 pub const TERRACE_Y: i32 = 1_100;
-
-/// The rim descends from the first to the second Chebyshev distance from the Outpost (17°),
-/// into the outer valley's hills, beyond the Sunken Shrine's cave.
-pub const OUTER_SLOPE: [i32; 2] = [12_800, 16_400];
 
 /// The axis along which a [`Lane`]'s height varies.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -200,12 +196,6 @@ fn lanes() -> impl Iterator<Item = &'static Lane> {
         .chain(&SOUTH)
 }
 
-/// Linear rise from 0 at `edge[0]` to 1024 at `edge[1]` (Q10).
-fn rise_q10(value: i32, edge: [i32; 2]) -> i64 {
-    let (value, [start, end]) = (i64::from(value), edge.map(i64::from));
-    ((value - start) * 1_024 / (end - start)).clamp(0, 1_024)
-}
-
 /// How much of the valley floor shows at `(x, z)` (Q10): 1024 inside the basin, 0 on the rim.
 fn floor_q10(x: i32, z: i32) -> i64 {
     // Keep foundations, gates and the village's working lanes on their existing floor.
@@ -343,8 +333,8 @@ pub fn height_at(x: i32, z: i32) -> Option<i32> {
     if let Some(height) = lane_height(x, z) {
         return Some(height);
     }
-    let reach = i32::try_from(x.unsigned_abs().max(z.unsigned_abs())).unwrap_or(i32::MAX);
-    let weight = (1_024 - floor_q10(x, z)).min(1_024 - rise_q10(reach, OUTER_SLOPE));
+    // The rim runs on to the heart's edge, where the region's designed land takes over (#816).
+    let weight = 1_024 - floor_q10(x, z);
     let terrace = i32::try_from(i64::from(TERRACE_Y) * weight / 1_024).unwrap_or(0);
     // Rounded grassy banks and broken rim crests, outside foundations and route lanes.
     let mound = |cx: i32, cz: i32, radius: i32, high: i32| {

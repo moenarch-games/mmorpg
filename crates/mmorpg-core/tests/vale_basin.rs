@@ -186,9 +186,9 @@ fn the_lake_and_the_shrine_lie_in_the_terrace() {
     let [x, z] = lake::place([3_200, -5_600]);
     assert_eq!(definition.ground_at(x, z), basin::TERRACE_Y);
     let [x, z] = lake::place([10_000, -4_400]);
-    // Beyond the level lake apron, the weathered ground over the far cave stays high
-    // enough above its floor and vaulted room rather than matching the old flat terrace.
-    assert_eq!(definition.ground_at(x, z), 978);
+    // Beyond the level lake apron, the rim over the far cave runs on at the terrace
+    // height to the heart's edge (#816), high above its floor and vaulted room.
+    assert_eq!(definition.ground_at(x, z), basin::TERRACE_Y);
     assert!(definition.ground_at(x, z) > shrine::FLOOR_Y + shrine::ROOM_CLEAR);
     // … the water lies just above it and the shrine's floor 9 m below.
     assert_eq!(lake::SURFACE, basin::TERRACE_Y + 15);

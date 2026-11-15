@@ -1,6 +1,6 @@
-//! Bandit Highlands (#425): from the Vale Ring Road a player walks the Highland Pass up the
-//! escarpment's switchbacks onto the high ground, along the Highland Trail into the bandit
-//! stronghold and back into the Vale, all on the zone's own physics.
+//! Bandit Highlands (#425): from the Redbrand camp at the Greyfang cave's north mouth a player
+//! walks the Greyfang Road up through the Highland Pass onto the high ground, along it into the
+//! bandit stronghold and back into the Vale, all on the zone's own physics (#816).
 use std::sync::Arc;
 
 use mmorpg_core::greyhaven_vale::{self, highlands, terrain};
@@ -61,57 +61,23 @@ fn walk(zone: &mut ZoneSimulation, sequence: &mut u32, waypoints: &[[i32; 2]]) {
 
 #[test]
 fn a_player_winds_up_the_pass_to_the_stronghold_and_back_into_the_vale() {
-    let mut zone = player_at([6_400, -16_000]);
-    let mut sequence = 0;
-    // Highland Pass: up the cutting, east along the first ledge, round the hairpin, back west
-    // along the second ledge and north through the gorge onto the high ground.
-    walk(
-        &mut zone,
-        &mut sequence,
-        &[
-            // Leave the north-entrance camp through its gate before turning toward the pass.
-            [6_400, -17_600],
-            [5_200, -17_600],
-            [5_200, -21_200],
-            [5_200, -23_200],
-            [10_400, -23_200],
-            [10_400, -25_600],
-            [3_600, -25_600],
-            [3_600, -28_000],
-        ],
-    );
-    let top = feet(&zone);
-    assert!(
-        (top[1] - highlands::PLATEAU_Y as f32).abs() < 60.0,
-        "on the high ground: {top:?}"
-    );
-    assert_eq!(
-        greyhaven_vale::area_at(top[0] as i32, top[2] as i32).map(|area| area.name()),
-        Some("Bandit Highlands")
-    );
-    // The Greyfang Road and the Stronghold Way (#816) through the stronghold's gate to its
-    // campfire, 300 m beyond the Vale's old northern wall.
     let to_gate = to_stronghold_gate();
+    let mut zone = player_at(to_gate[0]);
+    let mut sequence = 0;
+    // The Greyfang Road through the Highland Pass and the Stronghold Way (#816) through the
+    // stronghold's gate to its campfire, 300 m beyond the Vale's old northern wall.
     walk(&mut zone, &mut sequence, &to_gate);
     walk(&mut zone, &mut sequence, &[[-800, -52_000]]);
     let camp = feet(&zone);
     assert!(camp[2] < -50_000.0, "{camp:?}");
-    // And back down the pass into the Vale without a break.
+    assert!(camp[1] > highlands::PLATEAU_Y as f32, "{camp:?}");
+    assert_eq!(
+        greyhaven_vale::area_at(camp[0] as i32, camp[2] as i32).map(|area| area.name()),
+        Some("Bandit Highlands")
+    );
+    // And back down through the pass into the Vale without a break.
     let back: Vec<[i32; 2]> = to_gate.iter().rev().copied().collect();
     walk(&mut zone, &mut sequence, &back);
-    walk(
-        &mut zone,
-        &mut sequence,
-        &[
-            [3_600, -25_600],
-            [10_400, -25_600],
-            [10_400, -23_200],
-            [5_200, -23_200],
-            [5_200, -17_600],
-            [6_400, -17_600],
-            [6_400, -16_000],
-        ],
-    );
     let home = feet(&zone);
     assert_eq!(
         greyhaven_vale::area_at(home[0] as i32, home[2] as i32).map(|area| area.name()),
@@ -119,76 +85,20 @@ fn a_player_winds_up_the_pass_to_the_stronghold_and_back_into_the_vale() {
     );
 }
 
-#[test]
-fn the_escarpment_holds_a_player_beside_the_pass() {
-    // At the escarpment's foot west of the pass, walking north runs into its face.
-    let mut zone = player_at([1_000, -20_200]);
-    let mut sequence = 0;
-    for _ in 0..mmorpg_core::golden::t30(240) {
-        sequence += 1;
-        zone.apply_command(
-            1,
-            sequence,
-            ZoneCommand::Move {
-                forward: 1,
-                strafe: 0,
-                facing: 32_768,
-            },
-        )
-        .unwrap();
-        zone.advance_tick().unwrap();
-    }
-    let at = feet(&zone);
-    // The weathered toe varies in depth, but ordinary walking must stop below the first
-    // pass ledge rather than cross the rock face or reach the crest.
-    assert!(
-        at[2] > highlands::PASS[1].max[1] as f32 && at[1] < 600.0,
-        "held at {at:?}"
-    );
-}
-
-#[test]
-fn a_player_can_walk_along_the_western_rock_terrace() {
-    let mut zone = player_at([-15_200, -22_400]);
-    let mut sequence = 0;
-    walk(
-        &mut zone,
-        &mut sequence,
-        &[
-            [-15_200, -22_800],
-            [-15_200, -23_200],
-            [-14_800, -23_200],
-            [-14_800, -22_400],
-        ],
-    );
-    let at = feet(&zone);
-    assert!(
-        (2_100. ..2_900.).contains(&at[1]),
-        "supported by the upper terrace: {at:?}"
-    );
-}
-
-/// The Vale Ring Road, the pass's switchbacks, the Lookout Path, the Highland Trail over its
-/// saddle to the stronghold's gate, a cross-country return to the lookout by way of the
-/// saddle's overlook, and back down into the Vale (#528).
+/// The Greyfang Road through the pass, the Lookout Path out to the lookout's knoll and back,
+/// on to the stronghold's gate and home to the Vale (#528, #816).
 #[test]
 fn a_player_walks_the_roads_to_the_lookout_and_the_stronghold_and_back() {
-    let mut zone = player_at([6_400, -15_000]);
-    let mut sequence = 0;
-    let climb = [
-        [6_400, -16_000],
-        [6_400, -17_600],
-        [5_200, -17_600],
-        [5_200, -23_200],
-        [10_400, -23_200],
-        [10_400, -25_600],
-        [3_600, -25_600],
-        [3_600, -28_000],
-        [3_600, -33_000],
-    ];
-    walk(&mut zone, &mut sequence, &climb[..climb.len() - 1]);
-    // Out along the Lookout Path (#816) to the lookout's knoll and back to the Greyfang Road.
     let lookout = road("Lookout Path");
+    let greyfang = road("Greyfang Road");
+    let fork = greyfang
+        .iter()
+        .position(|point| (point[0] - lookout[0][0]).abs() + (point[1] - lookout[0][1]).abs() < 800)
+        .expect("the Lookout Path leaves the Greyfang Road");
+    let climb = &greyfang[..=fork];
+    let mut zone = player_at(climb[0]);
+    let mut sequence = 0;
+    walk(&mut zone, &mut sequence, climb);
     walk(&mut zone, &mut sequence, lookout);
     let knoll = feet(&zone);
     assert_grounded_near(&knoll, lookout[lookout.len() - 1]);
@@ -197,16 +107,12 @@ fn a_player_walks_the_roads_to_the_lookout_and_the_stronghold_and_back() {
     walk(&mut zone, &mut sequence, &back);
     // Along the Greyfang Road to the stronghold's gate.
     let to_gate = to_stronghold_gate();
-    walk(&mut zone, &mut sequence, &to_gate);
+    walk(&mut zone, &mut sequence, &to_gate[fork..]);
     assert_grounded_near(&feet(&zone), to_gate[to_gate.len() - 1]);
-    // Home the same way and down the switchbacks.
+    // Home the same way, down through the pass.
     let back: Vec<[i32; 2]> = to_gate.iter().rev().copied().collect();
     walk(&mut zone, &mut sequence, &back);
-    let mut down = climb;
-    down.reverse();
-    walk(&mut zone, &mut sequence, &down);
-    walk(&mut zone, &mut sequence, &[[6_400, -15_000]]);
-    assert_grounded_near(&feet(&zone), [6_400, -15_000]);
+    assert_grounded_near(&feet(&zone), climb[0]);
 }
 
 /// A road's centre line by name (#816).
@@ -218,7 +124,7 @@ fn road(name: &str) -> &'static [[i32; 2]] {
         .points
 }
 
-/// From the top of the Highland Pass along the Greyfang Road to where the Stronghold Way leaves
+/// From the Greyfang Road's start through the Highland Pass to where the Stronghold Way leaves
 /// it, then along the Stronghold Way through the stronghold's gate.
 fn to_stronghold_gate() -> Vec<[i32; 2]> {
     let way = road("Stronghold Way");
@@ -262,12 +168,12 @@ fn the_sculpted_landforms_vary_and_stay_walkable_and_connected() {
         ]
     };
 
-    // The high ground proper: inside the walls, north of the escarpment's rear.
+    // The high ground proper: inside the walls, north of the Highland Pass.
     let on_high_ground = |[x, z]: [i32; 2]| {
         x > highlands::BOUNDS.min[0]
             && x < highlands::BOUNDS.max[0]
             && z > highlands::BOUNDS.min[1]
-            && z <= highlands::ESCARPMENT[3] - 1_600
+            && z <= -30_000
     };
 
     let mut reachable = vec![false; grid.heights.len()];
