@@ -313,15 +313,88 @@ pub struct Road {
     pub points: &'static [[i32; 2]],
 }
 
-static ROADS: LazyLock<Vec<Road>> = LazyLock::new(|| {
+/// A turn's corner is rounded off across at most this much (4 m) of each leg (#816): the width
+/// of the basin's climbs (#423), so a rounded switchback stays on its ledge and landing.
+const TURN_RADIUS_UNITS: i64 = 400;
+
+/// An authored centre line with its corners rounded (#816): each turn becomes a quarter-step
+/// curve from [`TURN_RADIUS_UNITS`] (or half the shorter leg) before the corner to as far after
+/// it, so a road bends instead of turning on the spot.
+fn rounded_turns(points: &[[i32; 2]]) -> Vec<[i32; 2]> {
+    let length = |a: [i32; 2], b: [i32; 2]| {
+        let (dx, dz) = (i64::from(b[0] - a[0]), i64::from(b[1] - a[1]));
+        i64::try_from((dx * dx + dz * dz).unsigned_abs().isqrt()).unwrap_or(0)
+    };
+    let toward = |from: [i32; 2], to: [i32; 2], distance: i64| {
+        let span = length(from, to).max(1);
+        [0, 1].map(|axis| {
+            from[axis]
+                + i32::try_from(i64::from(to[axis] - from[axis]) * distance / span).unwrap_or(0)
+        })
+    };
+    let mut out = vec![points[0]];
+    for window in points.windows(3) {
+        let [before, corner, after] = [window[0], window[1], window[2]];
+        let cross = i64::from(corner[0] - before[0]) * i64::from(after[1] - corner[1])
+            - i64::from(corner[1] - before[1]) * i64::from(after[0] - corner[0]);
+        if cross == 0 {
+            // Straight on: no turn to round.
+            out.push(corner);
+            continue;
+        }
+        let reach = TURN_RADIUS_UNITS
+            .min(length(before, corner) / 2)
+            .min(length(corner, after) / 2);
+        let (start, end) = (toward(corner, before, reach), toward(corner, after, reach));
+        // A quadratic Bézier from `start` to `end` with the corner as its control point.
+        for step in 0..=4_i64 {
+            let point = [0, 1].map(|axis| {
+                let (a, c, b) = (
+                    i64::from(start[axis]),
+                    i64::from(corner[axis]),
+                    i64::from(end[axis]),
+                );
+                let t = step;
+                let value = (a * (4 - t) * (4 - t) + 2 * c * t * (4 - t) + b * t * t) / 16;
+                i32::try_from(value).unwrap_or(0)
+            });
+            if out.last() != Some(&point) {
+                out.push(point);
+            }
+        }
+    }
+    let last = points[points.len() - 1];
+    if out.last() != Some(&last) {
+        out.push(last);
+    }
+    out
+}
+
+/// A road's name and centre line.
+type NamedLine = (&'static str, Vec<[i32; 2]>);
+
+/// The regions' roads and the landscape paths, with their turns rounded.
+static AUTHORED_ROADS: LazyLock<Vec<NamedLine>> = LazyLock::new(|| {
     REGIONS
         .iter()
         .flat_map(|region| region.roads)
-        .copied()
-        .chain(landscape::data().paths.iter().map(|path| Road {
-            name: path.name.as_str(),
-            points: path.points.as_slice(),
-        }))
+        .map(|road| (road.name, rounded_turns(road.points)))
+        .chain(
+            landscape::data()
+                .paths
+                .iter()
+                .map(|path| (path.name.as_str(), rounded_turns(&path.points))),
+        )
+        .collect()
+});
+
+static ROADS: LazyLock<Vec<Road>> = LazyLock::new(|| {
+    AUTHORED_ROADS
+        .iter()
+        .map(|(name, points)| Road {
+            name,
+            points: points.as_slice(),
+        })
         .chain(design::data().roads.iter().map(|road| Road {
             name: road.name.as_str(),
             points: road.points.as_slice(),
