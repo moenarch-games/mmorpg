@@ -112,6 +112,8 @@ fn content_is_a_bounded_deterministic_revision() {
                 // Bridge rails and culvert headers stand above a carved stream bed.
                 && !(greyhaven_vale::brook::BRIDGE..=greyhaven_vale::brook::BRIDGE + 7)
                     .contains(&collider.id)
+                // The footbridges (#828) span carved stream banks from ends set between them.
+                && !greyhaven_vale::crossings::is_crossing(collider.id)
                 // Layout cottages have explicit authored foundation depths (their prefab
                 // plinth is sunk below the grass), rather than procedural terrain footing.
                 && !(60_000..65_000).contains(&collider.id)
@@ -254,6 +256,8 @@ fn roads_are_open_corridors() {
             // The brook's deck and rails deliberately frame a narrower road crossing.
             && collider.id != greyhaven_vale::brook::BRIDGE
             && !greyhaven_vale::brook::RAILS.contains(&collider.id)
+            // The footbridges (#828) carry their roads between their rails.
+            && !greyhaven_vale::crossings::is_crossing(collider.id)
             // The mill's narrower bank passage is checked with real capsules on both backends.
             && ![124, 125].contains(&collider.id)
             && !definition

@@ -128,6 +128,7 @@ its buildings reuse the Vale's visuals:
 | Delving Workings | At the Delving Track's end | A mine mouth in the rock, a watchtower, a camp; the Redbrands hold it |
 | Greyfang Watch | Beside the Greyfang Road below the mountains | A tall watchtower and a fire |
 | Crown Stones | Beside the Crown Track | A ring of eight standing stones |
+| Delving Run footbridge | Where the Delving Track crosses the Delving Run | A 9 m plank footbridge on trestles (#828), asset-tooling's `settlement.props.footbridge` (asset-tooling#651); players walk its deck, end ramps and between its rails |
 
 Barrowdown, Fenford and Westmere Lodge hold the network's fourth to sixth waystones, so a
 traveller who has found them can return there from the Outpost's stone.
@@ -179,7 +180,6 @@ quest needs them. Rewards are experience, copper and the Vale's existing gear.
 
 - **Homes you can enter:** residents end their day on their doorstep; only the Marshal and the
   tanner sleep indoors.
-- **A bridge** over the Delving Run's ravine (the Delving Track fords it).
 - **The basin's climbs' ground:** the six ways up the heart's 11 m cliffs are still straight ledges
   cut into the cliff; only their roads round their turns (every authored road turns on a 4 m curve).
 - **The forest-floor texture:** its overlay repeats every 3 m and reads as stripes on open ground,
