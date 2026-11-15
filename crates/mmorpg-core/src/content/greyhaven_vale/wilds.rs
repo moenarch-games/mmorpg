@@ -20,6 +20,8 @@ pub const GREYFANG_APPROACH: AreaId = AreaId::new(17);
 pub const DELVING_HEIGHTS: AreaId = AreaId::new(18);
 pub const FENWATER_CROSSING: AreaId = AreaId::new(19);
 pub const KINGS_ROAD_DOWNS: AreaId = AreaId::new(20);
+/// The wild sub-regions' creature spawn IDs.
+pub const SPAWN_IDS: std::ops::RangeInclusive<u32> = 1_200..=1_399;
 
 const fn bounds(min: [i32; 2], max: [i32; 2]) -> XzBounds {
     XzBounds { min, max }

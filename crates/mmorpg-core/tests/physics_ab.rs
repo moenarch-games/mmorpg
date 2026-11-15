@@ -83,8 +83,17 @@ const CLIMBS: [(&str, usize); 1] = [("vale-wolf-hunt", 1_492)];
 const SHOT_FRACTION_TOLERANCE: f32 = 1.0e-4;
 /// Terrain heights on identical states, in units: both backends cast the same ray at the same
 /// heightfield, so only `f32` noise separates them. Compared unrounded, because a height on a
-/// half unit rounds either way on that noise.
+/// half unit rounds either way on that noise. The noise grows with the height: a few `f32` steps
+/// at the region's high ground (#816), where one step is already about 1.0e-3.
 const GROUND_HEIGHT_TOLERANCE: f32 = 1.0e-3;
+/// Ground heights may differ by this many `f32` steps of their magnitude.
+const GROUND_HEIGHT_STEPS: f32 = 4.0;
+
+/// Whether two backends' terrain heights agree within `f32` noise.
+fn ground_heights_agree(left: f32, right: f32) -> bool {
+    let tolerance = GROUND_HEIGHT_TOLERANCE.max(left.abs() * f32::EPSILON * GROUND_HEIGHT_STEPS);
+    (left - right).abs() <= tolerance
+}
 /// A unit at rest this many ticks must be grounded.
 const REST_TICKS: usize = 3;
 /// Penetration is checked on every this-many-th tick (and the last), over every content box.
@@ -933,7 +942,7 @@ fn decision_differences(rapier: &Decisions, engine: &Decisions) -> Vec<String> {
     exact("door blocked", &rapier.doors, &engine.doors, &mut out);
     for (key, left) in &rapier.ground {
         let right = engine.ground.get(key).copied();
-        if right.is_none_or(|right| (left - right).abs() > GROUND_HEIGHT_TOLERANCE) {
+        if right.is_none_or(|right| !ground_heights_agree(*left, right)) {
             out.push(format!("ground {key}: rapier {left:?}, engine {right:?}"));
         }
     }

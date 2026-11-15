@@ -84,10 +84,12 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // The redesigned region (#816) stands its forests, rock fields and new creatures in every
     // step's world (about 10,500 more admitted bodies a tick); its far creatures sleep, but the
     // Westmere Tarn's three lurkers swim and decide every tick (1,080 more per 360 ticks).
+    // The spread fixtures leave the wild sub-regions' creatures out (#816), and the Vale's heart
+    // (#816) moves fights-32's candidates a little: 434,117 tested.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
         [11_052, 5_126_040, 288_000, 6_088_352],
         [16_903, 5_123_160, 93_060, 1_825_497],
-        [25_840, 5_131_800, 433_961, 7_878_807],
+        [25_840, 5_131_800, 434_117, 7_878_807],
         [13_226, 5_142_964, 2_323_474, 24_322_842],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
