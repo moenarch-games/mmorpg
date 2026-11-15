@@ -75,7 +75,8 @@ pub fn measure(fixture: Fixture) -> Result<Report, Box<dyn Error>> {
         let maintenance_before = zone.interest_maintenance_stats();
         zone.advance_tick()?;
         let work = zone.tick_work();
-        assert_eq!(work.creature_ai_evaluations, expected_ai);
+        // Asleep and between-decision creatures (#814) do not decide.
+        assert!(work.creature_ai_evaluations <= expected_ai);
         let physics = work.physics.ok_or("missing completed physics step")?;
         report.ai_evaluations += work.creature_ai_evaluations;
         report.physics_steps += 1;
