@@ -42,6 +42,7 @@ pub mod quests;
 pub mod raid;
 pub mod region;
 mod roofs;
+pub mod settlements;
 pub mod shrine;
 pub mod traps;
 pub mod units;
@@ -255,6 +256,8 @@ pub mod ids {
     pub const REGION_TREES: RangeInclusive<u32> = 20_000..=39_999;
     /// … and its rock fields' boulders.
     pub const REGION_BOULDERS: RangeInclusive<u32> = 40_000..=41_999;
+    /// The settlements' and landmarks' structures (#818), in [`super::settlements`] order.
+    pub const SETTLEMENTS: RangeInclusive<u32> = 42_000..=42_999;
 }
 
 /// One region's tables (#542): its named areas, its roads and its own colliders. Each region
@@ -276,6 +279,7 @@ const REGIONS: &[Region] = &[
     highlands::REGION,
     marsh::REGION,
     wilds::REGION,
+    settlements::REGION,
 ];
 
 static AREAS: LazyLock<ZoneAreas> = LazyLock::new(|| {
@@ -1897,7 +1901,12 @@ fn content_with_spawns(
             .with_traps(traps::traps())?
             .with_climbing(climbing())?
             .with_raid(raid::millbrook_barn())?
-            .with_waystones(vec![crate::GREYHAVEN_OUTPOST])?
+            .with_waystones(vec![
+                crate::GREYHAVEN_OUTPOST,
+                crate::BARROWDOWN,
+                crate::FENFORD,
+                crate::WESTMERE_LODGE,
+            ])?
             .with_depths_threshold(cave::depths_threshold()),
     ))
 }

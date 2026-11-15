@@ -397,8 +397,21 @@ fn spawns_populate_their_subzones() {
         ((wilds::CROWN_FOOTHILLS, "Hill Ogre"), 1),
         ((wilds::GREYFANG_APPROACH, "Redbrand Bandit"), 4),
         ((wilds::GREYFANG_APPROACH, "Redbrand Crossbowman"), 3),
-        ((wilds::DELVING_HEIGHTS, "Redbrand Bandit"), 3),
-        ((wilds::DELVING_HEIGHTS, "Redbrand Crossbowman"), 2),
+        // The Redbrands hold the Delving Workings (#818).
+        (
+            (
+                greyhaven_vale::settlements::DELVING_WORKINGS,
+                "Redbrand Bandit",
+            ),
+            3,
+        ),
+        (
+            (
+                greyhaven_vale::settlements::DELVING_WORKINGS,
+                "Redbrand Crossbowman",
+            ),
+            2,
+        ),
         ((wilds::DELVING_HEIGHTS, "Hill Ogre"), 2),
         ((wilds::FENWATER_CROSSING, "Field Marauder"), 4),
         ((wilds::KINGS_ROAD_DOWNS, "Field Marauder"), 4),

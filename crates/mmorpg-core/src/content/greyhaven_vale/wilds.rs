@@ -13,13 +13,13 @@ use super::units::templates::{
     TIMBER_WOLF, YOUNG_BOAR,
 };
 
-pub const WESTMERE_WOODS: AreaId = AreaId::new(14);
-pub const SOUTHWOOD: AreaId = AreaId::new(15);
-pub const CROWN_FOOTHILLS: AreaId = AreaId::new(16);
-pub const GREYFANG_APPROACH: AreaId = AreaId::new(17);
-pub const DELVING_HEIGHTS: AreaId = AreaId::new(18);
-pub const FENWATER_CROSSING: AreaId = AreaId::new(19);
-pub const KINGS_ROAD_DOWNS: AreaId = AreaId::new(20);
+pub const WESTMERE_WOODS: AreaId = AreaId::new(21);
+pub const SOUTHWOOD: AreaId = AreaId::new(22);
+pub const CROWN_FOOTHILLS: AreaId = AreaId::new(23);
+pub const GREYFANG_APPROACH: AreaId = AreaId::new(24);
+pub const DELVING_HEIGHTS: AreaId = AreaId::new(25);
+pub const FENWATER_CROSSING: AreaId = AreaId::new(26);
+pub const KINGS_ROAD_DOWNS: AreaId = AreaId::new(27);
 /// The wild sub-regions' creature spawn IDs.
 pub const SPAWN_IDS: std::ops::RangeInclusive<u32> = 1_200..=1_399;
 
@@ -156,11 +156,11 @@ const SPAWNS: &[Row] = {
         (1284, YOUNG_BOAR, [850, 430], EAST, TOP, W),
         (1285, YOUNG_BOAR, [900, 470], NORTH, TOP, W),
         (1286, YOUNG_BOAR, [820, 470], WEST, TOP, W),
-        // King's Road Downs: a marauders' camp on the knoll, boars and rats by the spinney.
-        (1290, FIELD_MARAUDER, [520, 620], SOUTH, MARAUDER, W),
-        (1291, FIELD_MARAUDER, [532, 630], WEST, MARAUDER, W),
-        (1292, FIELD_MARAUDER, [508, 632], EAST, MARAUDER, W),
-        (1293, FIELD_MARAUDER, [540, 612], NORTH, MARAUDER, W),
+        // King's Road Downs: a marauders' camp in the southern hollow, boars and rats by the spinney.
+        (1290, FIELD_MARAUDER, [640, 780], SOUTH, MARAUDER, W),
+        (1291, FIELD_MARAUDER, [652, 792], WEST, MARAUDER, W),
+        (1292, FIELD_MARAUDER, [628, 792], EAST, MARAUDER, W),
+        (1293, FIELD_MARAUDER, [660, 770], NORTH, MARAUDER, W),
         (1294, YOUNG_BOAR, [700, 820], WEST, TOP, W),
         (1295, YOUNG_BOAR, [760, 760], SOUTH, TOP, W),
         (1296, YOUNG_BOAR, [600, 830], NORTH, TOP, W),
