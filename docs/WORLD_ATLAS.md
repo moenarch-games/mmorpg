@@ -216,7 +216,14 @@ Greyfang Approach (north, toward the Greyfang Gate), Delving Heights (north-east
 ground), Fenwater Crossing (east, the Fen Road), King's Road Downs (south-east), Southwood
 (south-west), Westmere Woods (west, facing the lake) and Crown Foothills (north-west). Their
 borders were grown from the seeds inside the old outline in the same way as the continent's, then
-attached to the unchanged outer border. The playable zone is still the walled T.
+attached to the unchanged outer border.
+
+**The zone covers the group.** `atlas.py zone-export greyhaven` wrote the group's outline and
+the atlas elevation round it (40 m samples, relative to the anchor's reference elevation) into
+`content/greyhaven/region.json` once. That file is zone content: the zone's walls follow its
+outline and its terrain blends from the hand-authored parts into those heights, and later
+atlas changes do not reach it unless the export is run again on purpose. The map's zone
+outline is the group's outline.
 
 ![Greyhaven's sub-regions](images/world/greyhaven-subregions.png)
 
