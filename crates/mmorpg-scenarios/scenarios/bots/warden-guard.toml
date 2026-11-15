@@ -86,15 +86,15 @@ bot = "warden"
 action = "select_target"
 entity = "creature:108"
 
-# Stand facing the den, close enough that Wolf 108 engages wherever it wanders, and raise a
-# middle guard before the wolf arrives.
+# Stand facing where Wolf 108 comes in from the den, close enough that it engages wherever it
+# wanders, and raise a middle guard before the wolf arrives.
 [[steps]]
 tick = 1540
 bot = "warden"
 action = "move"
 forward = 0
 strafe = 0
-facing = 32768
+facing = 20000
 
 [[steps]]
 tick = 1540
