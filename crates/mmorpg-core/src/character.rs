@@ -28,7 +28,7 @@ use crate::{
 /// Identity of the [`CharacterRecord`] schema: a random token (ADR 0006), replaced with a
 /// fresh one on every change to the record's fields or their meaning; persisted records of
 /// another schema are rejected rather than reinterpreted.
-pub const CHARACTER_RECORD_SCHEMA_VERSION: u16 = 0x20ba;
+pub const CHARACTER_RECORD_SCHEMA_VERSION: u16 = 0xb809;
 
 /// Longest [`CharacterId`] in bytes.
 pub const MAX_CHARACTER_ID_BYTES: usize = 64;
@@ -174,7 +174,7 @@ impl ZoneSimulation {
             inventory: player.inventory.clone(),
             equipment: player.equipment,
             quests: player.quests.clone(),
-            waystones: player.waystones,
+            waystones: player.waystones.clone(),
             depths: player.depths,
             health: player.health,
             resource: player.resource.value,
@@ -263,7 +263,7 @@ impl ZoneSimulation {
         state.inventory = record.inventory.clone();
         state.equipment = record.equipment;
         state.quests = record.quests.clone();
-        state.waystones = record.waystones;
+        state.waystones = record.waystones.clone();
         state.depths = record.depths;
         state.physique = record.physique;
         state.character = Some(record.character_id.clone());

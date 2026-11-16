@@ -44,16 +44,16 @@ impl NpcId {
 
 /// A creature template of zone content; clients name creatures by it.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CreatureTemplateId(u16);
+pub struct CreatureTemplateId(u32);
 
 impl CreatureTemplateId {
     #[must_use]
-    pub const fn new(value: u16) -> Self {
+    pub const fn new(value: u32) -> Self {
         Self(value)
     }
 
     #[must_use]
-    pub const fn get(self) -> u16 {
+    pub const fn get(self) -> u32 {
         self.0
     }
 }

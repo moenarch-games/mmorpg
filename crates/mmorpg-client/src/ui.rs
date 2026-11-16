@@ -1319,7 +1319,7 @@ fn waystone_window(
         return;
     };
     let name = mmorpg_core::waystone(here).map_or("Waystone", |site| site.name);
-    let unlocked = snapshot.viewer.waystones;
+    let unlocked = &snapshot.viewer.waystones;
     egui::Window::new("Waystone")
         .anchor(Align2::RIGHT_CENTER, Vec2::new(-24.0, 0.0))
         .resizable(false)

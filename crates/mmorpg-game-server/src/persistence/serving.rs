@@ -183,7 +183,7 @@ impl Characters {
     ) -> std::result::Result<Vec<u8>, String> {
         let (&appearance, raw) = payload.split_first().ok_or("missing character claim")?;
         let class =
-            ClassChoice::from_appearance(u16::from(appearance)).ok_or("invalid character class")?;
+            ClassChoice::from_appearance(u32::from(appearance)).ok_or("invalid character class")?;
         let character = CharacterId::new(std::str::from_utf8(raw).map_err(message)?.to_owned())
             .map_err(message)?;
         let store = self.stores.0.get(id).ok_or("unknown zone persistence")?;

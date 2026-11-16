@@ -164,7 +164,7 @@ impl MinimapLayers {
         }
         // A night raid's approximate disturbance area while its assault runs (#530): a soft
         // circle, or a pip on the rim pointing at it while it is off the map.
-        if snapshot.raid.is_some_and(|raid| raid.phase > 0)
+        if snapshot.raid.as_ref().is_some_and(|raid| raid.phase > 0)
             && let Some(([x, z], area)) = content.raid().map(mmorpg_core::RaidSite::area)
         {
             let colour = Color32::from_rgb(255, 122, 61);

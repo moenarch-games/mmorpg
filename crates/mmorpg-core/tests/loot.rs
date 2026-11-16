@@ -39,7 +39,7 @@ fn invalid_authored_tables_fail_before_rolling() {
         ),
         (
             [0, 1],
-            vec![item(1, ItemId::new(u16::MAX), [1, 1])],
+            vec![item(1, ItemId::new(u32::MAX), [1, 1])],
             LootTableError::UnknownItem,
         ),
         (
@@ -204,7 +204,7 @@ fn starter_tables_are_pinned_and_cover_every_hosted_template() {
         assert_eq!(table.outcomes(), outcomes);
         assert_eq!(*table, LootTable::new(money, &outcomes).unwrap());
     }
-    for unknown in [0, 9, 14, 16, u16::MAX] {
+    for unknown in [0, 9, 14, 16, u32::MAX] {
         assert!(loot_table(CreatureTemplateId::new(unknown)).is_none());
     }
 }

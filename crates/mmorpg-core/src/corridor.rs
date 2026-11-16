@@ -21,9 +21,6 @@
 
 use crate::{PlayerId, XzBounds, ZoneError, ZoneId, ZoneSimulation};
 
-/// Upper bound on corridors per content revision.
-pub const MAX_HANDOFF_CORRIDORS: usize = 16;
-
 /// How far before a corridor a creature turns back, measured from its body's
 /// edge in units.
 pub const CORRIDOR_TURN_BACK_UNITS: i32 = 200;

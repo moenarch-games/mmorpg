@@ -26,10 +26,10 @@ describe("the mmorpg-wasm wire boundary (#541)", () => {
     const jump = encodeCommand({ kind: "jump" });
     // Nothing held yet: the acknowledgement wraps the command with zero revisions, one per sheet.
     const none = sheets.acknowledge(jump);
-    expect(none.length).toBe(jump.length + 1 + 24);
+    expect(none.length).toBe(jump.length + 1 + 32);
     expect(none[1]).toBe(31);
-    expect([...none.subarray(2, 26)]).toEqual(new Array(24).fill(0));
-    expect([...none.subarray(26)]).toEqual([...jump.subarray(1)]);
+    expect([...none.subarray(2, 34)]).toEqual(new Array(32).fill(0));
+    expect([...none.subarray(34)]).toEqual([...jump.subarray(1)]);
     const sent = snapshot(5);
     const bytes = encodeSnapshot(sent);
     const decoded = sheets.decode(bytes);
@@ -52,12 +52,12 @@ describe("the mmorpg-wasm wire boundary (#541)", () => {
       { kind: "loot", creatureId: -1, diedAt: 0n },
       { kind: "loot", creatureId: 1, diedAt: -1n },
       { kind: "loot", creatureId: 1, diedAt: 1n << 64n },
-      { kind: "use-ability", ability: 256, target: null },
+      { kind: "use-ability", ability: 2 ** 32, target: null },
       { kind: "emote", emote: "dance" },
       { kind: "directed-strike", ability: 1, facing: 0, aim: { side: "up", height: "low" } },
       { kind: "choose-class", classId: 0, sex: 256 },
       { kind: "use-waystone", waystone: 0 },
-      { kind: "repair", piece: 65_535 },
+      { kind: "repair", piece: 2 ** 32 - 1 },
       { kind: "chat", channel: "say", text: " " },
     ]) {
       expect(() => encodeCommand(invalid as WorldCommand)).toThrow();

@@ -2,6 +2,7 @@
 //! size, the threshold request, chambers, the checkpoint, wipes and the way back out.
 mod support;
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use mmorpg_core::greyhaven_vale::{
@@ -27,7 +28,7 @@ fn run(run_id: u64, roster: &[&str]) -> DepthsRunStart {
             .iter()
             .map(|name| CharacterId::new(*name).unwrap())
             .collect(),
-        cleared: 0,
+        cleared: BTreeSet::new(),
         checkpoint: false,
         outcome: None,
     }
@@ -158,7 +159,7 @@ fn clearing_the_first_chamber_clears_it_and_unlocks_the_checkpoint() {
     // A party of two fights the first chamber's two bandits and one more.
     let mut zone = depths_with(&party(2));
     zone.advance_tick().unwrap();
-    assert_eq!(zone.depths_run().unwrap().cleared, 0);
+    assert!(zone.depths_run().unwrap().cleared.is_empty());
     assert!(!zone.depths_run().unwrap().checkpoint);
 
     let chamber: Vec<u32> = standing(&zone)
@@ -169,7 +170,7 @@ fn clearing_the_first_chamber_clears_it_and_unlocks_the_checkpoint() {
     let mut zone = with_fallen(zone, &chamber, 1);
     zone.advance_tick().unwrap();
     let progress = zone.depths_run().unwrap();
-    assert_eq!(progress.cleared & 1, 1);
+    assert!(progress.cleared.contains(&0));
     assert!(progress.checkpoint);
     // The checkpoint survives recovery.
     let state = zone.snapshot().unwrap();
@@ -333,8 +334,8 @@ fn two_runs_keep_their_own_state() {
         .collect();
     let mut first = with_fallen(first, &chamber, 1);
     first.advance_tick().unwrap();
-    assert_eq!(first.depths_run().unwrap().cleared & 1, 1);
-    assert_eq!(second.depths_run().unwrap().cleared, 0);
+    assert!(first.depths_run().unwrap().cleared.contains(&0));
+    assert!(second.depths_run().unwrap().cleared.is_empty());
     assert!(first.depths_admits(&CharacterId::new("aria").unwrap()));
     assert!(!second.depths_admits(&CharacterId::new("aria").unwrap()));
 }
@@ -443,5 +444,5 @@ fn a_wipe_stands_the_party_up_at_the_entrance_and_leaves_the_fallen_fallen() {
     let healed = creature(survivor.get());
     assert_eq!(healed.life, CreatureLife::Alive);
     assert!(healed.health > 1, "survivors go home healed");
-    assert_eq!(zone.depths_run().unwrap().cleared, 0);
+    assert!(zone.depths_run().unwrap().cleared.is_empty());
 }

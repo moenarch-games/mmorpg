@@ -162,7 +162,7 @@ pub fn committed_level(entries: &CharacterEntries, character: &str) -> Result<Op
 /// The area of a stored character's committed location, or `undefined` if it was never stored
 /// or stands outside every area (#240: the page loads that region's art first).
 #[wasm_bindgen(js_name = committedArea)]
-pub fn committed_area(entries: &CharacterEntries, character: &str) -> Result<Option<u16>, JsError> {
+pub fn committed_area(entries: &CharacterEntries, character: &str) -> Result<Option<u32>, JsError> {
     let id = character_id(character)?;
     let committed = store(entries)
         .committed(&id)
@@ -403,7 +403,7 @@ impl LocalZone {
     /// 0 for an empty slot). Throws for an illegal build. The character is
     /// [`LocalZone::scenario_player`]; nothing is stored.
     #[wasm_bindgen(js_name = forPracticeArena)]
-    pub fn for_practice_arena(class: u8, sex: u8, equipment: &[u16]) -> Result<LocalZone, JsError> {
+    pub fn for_practice_arena(class: u8, sex: u8, equipment: &[u32]) -> Result<LocalZone, JsError> {
         let build = arena_build(class, sex, equipment)?;
         let (host, player) = LocalZoneHost::practice_arena(&build).map_err(js_error)?;
         Ok(Self {
@@ -420,7 +420,7 @@ impl LocalZone {
     pub fn for_arena_trial(
         class: u8,
         sex: u8,
-        equipment: &[u16],
+        equipment: &[u32],
         rewind: bool,
     ) -> Result<LocalZone, JsError> {
         let build = arena_build(class, sex, equipment)?;
@@ -450,7 +450,7 @@ impl LocalZone {
         class: &str,
         level: u8,
         gear: &str,
-        #[wasm_bindgen(js_name = mainHand)] main_hand: u16,
+        #[wasm_bindgen(js_name = mainHand)] main_hand: u32,
         resource: Option<u16>,
         seed: u64,
         config: Option<String>,
@@ -669,7 +669,7 @@ pub fn content_catalog() -> String {
 /// The hosted content's waystone (#145) within reach of `(x, z)` units, 0 for none.
 #[wasm_bindgen(js_name = waystoneAt)]
 #[must_use]
-pub fn waystone_at(x: i32, z: i32) -> u8 {
+pub fn waystone_at(x: i32, z: i32) -> u32 {
     mmorpg_core::waystone_within_reach(&host::hosted_content(), [x, z]).map_or(0, |id| id.get())
 }
 
@@ -686,7 +686,7 @@ pub fn waystone_names() -> Vec<String> {
 /// The destructible pieces (#305) feet at `(x, z)` units can repair, in ID order.
 #[wasm_bindgen(js_name = reachablePieces)]
 #[must_use]
-pub fn reachable_pieces(x: i32, z: i32) -> Vec<u16> {
+pub fn reachable_pieces(x: i32, z: i32) -> Vec<u32> {
     host::hosted_content()
         .pieces()
         .iter()
@@ -774,14 +774,14 @@ pub fn action_lab_options() -> String {
 /// The area the Action Lab starts in.
 #[wasm_bindgen(js_name = actionLabArea)]
 #[must_use]
-pub fn action_lab_area() -> Option<u16> {
+pub fn action_lab_area() -> Option<u32> {
     let ([x, z], _) = action_lab::LAB_LOCATION;
     area_at(x, z)
 }
 
 /// The ID of the named core area containing `(x, z)` in units, if any.
 #[wasm_bindgen(js_name = areaAt)]
-pub fn area_at(x: i32, z: i32) -> Option<u16> {
+pub fn area_at(x: i32, z: i32) -> Option<u32> {
     scenery::hosted_areas()
         .area_at(x, z)
         .map(|area| area.id().get())
@@ -790,7 +790,7 @@ pub fn area_at(x: i32, z: i32) -> Option<u16> {
 /// The area a review scenario (#371) starts in, so the page can load its art
 /// first; undefined for an unknown name or a start outside every area.
 #[wasm_bindgen(js_name = scenarioArea)]
-pub fn scenario_area(name: &str) -> Option<u16> {
+pub fn scenario_area(name: &str) -> Option<u32> {
     let ([x, z], _) = Scenario::from_name(name)?.location();
     area_at(x, z)
 }
@@ -1017,7 +1017,7 @@ impl UnitPresenter {
     /// The platforms (ids) the page's kit draws instead of their procedural pillar, the
     /// fortress kit's lifts (#591): each frame's `platforms` says where each stands.
     #[wasm_bindgen(js_name = setKitPlatforms)]
-    pub fn set_kit_platforms(&mut self, platforms: &[u8]) {
+    pub fn set_kit_platforms(&mut self, platforms: &[u32]) {
         self.0.set_kit_platforms(platforms);
     }
 
@@ -1055,7 +1055,7 @@ impl UnitPresenter {
 
     /// The local player pressed or began aiming an attack with `ability` at `seconds`: the
     /// viewer winds up until the zone answers (Atlas 6.6.10). Presentation only.
-    pub fn prepare(&mut self, ability: u8, seconds: f64) {
+    pub fn prepare(&mut self, ability: u32, seconds: f64) {
         self.0
             .presenter_mut()
             .prepare(mmorpg_core::AbilityId::new(ability), seconds);
@@ -1095,7 +1095,7 @@ impl UnitPresenter {
         dt: f64,
         #[wasm_bindgen(js_name = reducedMotion)] reduced_motion: bool,
         #[wasm_bindgen(js_name = barYaw)] bar_yaw: f32,
-        choice: u16,
+        choice: u32,
         headwear: &str,
         #[wasm_bindgen(js_name = previewYaw)] preview_yaw: f32,
     ) -> Result<String, JsError> {
@@ -1228,7 +1228,7 @@ impl BuildingPresenter {
 
     /// The content door the building presents.
     #[must_use]
-    pub fn door(&self) -> u8 {
+    pub fn door(&self) -> u32 {
         self.0.spec().door.map_or(0, |door| door.get())
     }
 
@@ -1274,7 +1274,7 @@ impl BuildingPresenter {
     /// The content door the zone would let feet at `(x, z)` units use, or 0.
     #[wasm_bindgen(js_name = reachableDoor)]
     #[must_use]
-    pub fn reachable_door(x: i32, z: i32) -> u8 {
+    pub fn reachable_door(x: i32, z: i32) -> u32 {
         host::hosted_content()
             .doors()
             .iter()
@@ -1285,7 +1285,7 @@ impl BuildingPresenter {
     /// The seat feet at `(x, z)` units reach, 0 for none (#619); the zone decides.
     #[wasm_bindgen(js_name = reachableSeat)]
     #[must_use]
-    pub fn reachable_seat(x: i32, z: i32) -> u8 {
+    pub fn reachable_seat(x: i32, z: i32) -> u32 {
         host::hosted_content()
             .seat_in_reach([x, z])
             .map_or(0, |seat| seat.id.get())
@@ -1673,13 +1673,13 @@ fn js_error(error: host::LocalZoneError) -> JsError {
 fn arena_build(
     class: u8,
     sex: u8,
-    equipment: &[u16],
+    equipment: &[u32],
 ) -> Result<mmorpg_core::EphemeralCharacterBuild, JsError> {
     let class = PlayerClass::from_code(class)
         .zip(Sex::from_code(sex))
         .map(|(class, sex)| ClassChoice { class, sex })
         .ok_or_else(|| JsError::new("the class choice is invalid"))?;
-    let slots: [u16; mmorpg_core::EQUIPMENT_SLOTS] = equipment
+    let slots: [u32; mmorpg_core::EQUIPMENT_SLOTS] = equipment
         .try_into()
         .map_err(|_| JsError::new("an arena build has one item per equipment slot"))?;
     mmorpg_core::EphemeralCharacterBuild::new(

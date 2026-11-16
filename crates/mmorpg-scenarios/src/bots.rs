@@ -208,11 +208,11 @@ pub struct Step {
     /// `choose_class`: `female` or `male`.
     pub sex: Option<String>,
     /// `use_ability`: the global ability ID, passed through unchanged.
-    pub ability: Option<u8>,
+    pub ability: Option<u32>,
     /// `guard`: `high`, `middle`, `low`, or `none` to lower the guard.
     pub lane: Option<String>,
     /// `use_door`: the door ID and whether to open (`true`) or close it.
-    pub door: Option<u8>,
+    pub door: Option<u32>,
     pub open: Option<bool>,
     pub creature: Option<u32>,
     pub died_at: Option<u64>,
@@ -226,11 +226,11 @@ pub struct Step {
     pub npc: Option<u32>,
     /// `accept_quest`, `complete_quest` and `abandon_quest`: the quest ID,
     /// passed through unchanged.
-    pub quest: Option<u8>,
+    pub quest: Option<u32>,
     /// `complete_quest`: the reward choice index, passed through unchanged.
     pub choice: Option<u8>,
     /// `buy_item`: the offer index in the vendor's stock, passed through unchanged.
-    pub offer: Option<u8>,
+    pub offer: Option<u32>,
     /// `chat`: `say` or `yell`.
     pub channel: Option<String>,
     /// `chat`: the line; the runner refuses text core would refuse.
@@ -348,7 +348,7 @@ pub struct Expectation {
     pub inventory_revision: Option<u64>,
     pub sheet: Option<bool>,
     pub slot: Option<u8>,
-    pub item: Option<u16>,
+    pub item: Option<u32>,
     pub quantity: Option<u16>,
     /// The equipment slot an `equipment` expectation checks in the sheet.
     pub equipment_slot: Option<u8>,
@@ -365,7 +365,7 @@ pub struct Expectation {
     /// `chat`: the emote heard from bot `target`.
     pub emote: Option<String>,
     /// `quest`: the quest ID checked in the bot's latest quest sheet.
-    pub quest: Option<u8>,
+    pub quest: Option<u32>,
     /// `quest`: `active`, `completed` or `absent`.
     pub quest_state: Option<String>,
     /// `quest`: the progress of every objective slot of an active quest.

@@ -23,11 +23,6 @@ use crate::physics::{BodyId, RigidBody};
 use crate::zone::{physics_error, vector};
 use crate::{ZoneError, ZoneSimulation};
 
-/// Pieces a zone's content may author: every one may be projected not intact, and the
-/// projection budget leaves room for six (#305).
-pub const MAX_PIECES: usize = 6;
-/// Sites a zone's content may author.
-pub const MAX_SITES: usize = 8;
 /// What a projectile that hits a piece takes off its health.
 pub const PROJECTILE_PIECE_DAMAGE: u32 = 3;
 /// A player repairs a piece within this horizontal distance (units) of its box (2.5 m).
@@ -37,16 +32,16 @@ pub const REPAIR_REACH_UNITS: i32 = 250;
 pub const REPAIR_SPEEDUP_TICKS: u32 = 4;
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct PieceId(u16);
+pub struct PieceId(u32);
 
 impl PieceId {
     #[must_use]
-    pub const fn new(value: u16) -> Self {
+    pub const fn new(value: u32) -> Self {
         Self(value)
     }
 
     #[must_use]
-    pub const fn get(self) -> u16 {
+    pub const fn get(self) -> u32 {
         self.0
     }
 }
@@ -54,7 +49,7 @@ impl PieceId {
 /// A designated destructible site and its restoration policy.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StructureSite {
-    pub id: u8,
+    pub id: u32,
     pub name: String,
     /// Ticks after a piece's last change before it rebuilds.
     pub regrowth_ticks: u32,
@@ -67,7 +62,7 @@ pub type PieceBox = ([i32; 3], [i32; 3]);
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StructurePiece {
     pub id: PieceId,
-    pub site: u8,
+    pub site: u32,
     /// Its physics body, in the static collider namespace.
     pub body: u32,
     pub position: [i32; 3],
@@ -163,9 +158,6 @@ pub(crate) fn validate(
     sites: &[StructureSite],
     pieces: &[StructurePiece],
 ) -> Result<(), ZoneError> {
-    if sites.len() > MAX_SITES || pieces.len() > MAX_PIECES {
-        return Err(ZoneError::new("structure content capacity reached"));
-    }
     if sites.windows(2).any(|pair| pair[0].id >= pair[1].id)
         || pieces.windows(2).any(|pair| pair[0].id >= pair[1].id)
     {

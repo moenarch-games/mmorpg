@@ -232,7 +232,7 @@ export class QuestPanel {
     this.#state.update(snapshot, catalog);
     this.#npc = dialogNpc(snapshot, catalog);
     this.#raidUnderway = (snapshot.raid?.phase ?? 0) > 0;
-    this.#raidReady = (snapshot.raid?.readiness ?? 0) !== 0;
+    this.#raidReady = snapshot.raid?.warned === true || (snapshot.raid?.braced.length ?? 0) > 0;
     this.#aftermath = aftermathOpen(snapshot.raid);
     this.#forewarning = snapshot.raid?.signs ? snapshot.raid : null;
     this.#night = isZoneNight(snapshot.tick);

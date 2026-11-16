@@ -77,7 +77,7 @@ pub use ability::{
     ABILITY_CATALOG, Ability, AbilityEffect, AbilityId, AbilityRange, AbilityUser, AuraKind,
     AuraSpec, CastTime, GLOBAL_COOLDOWN_TICKS, MAX_AURAS, MAX_COOLDOWNS, Shot, ability_by_id,
 };
-pub use areas::{Area, AreaId, MAX_AREA_NAME_BYTES, MAX_ZONE_AREAS, ZoneAreas};
+pub use areas::{Area, AreaId, MAX_AREA_NAME_BYTES, ZoneAreas};
 pub use aura::{Aura, CastState, Cooldown};
 pub use boss::{BossEncounter, BossRules, MAX_ENCOUNTER_PLAYERS, MAX_SCALING_PARTICIPANTS};
 pub use boulder::{CanonicalBoulder, IMPACT_SPEED, RETURN_TICKS, WALK_PUSH_SPEED};
@@ -107,7 +107,7 @@ pub use content::{
     XzBounds, ZoneContent, ZoneDefinition,
 };
 pub use corpse_loot::{LOOT_REACH_UNITS, LootClaim, LootView};
-pub use corridor::{CORRIDOR_TURN_BACK_UNITS, Departure, HandoffCorridor, MAX_HANDOFF_CORRIDORS};
+pub use corridor::{CORRIDOR_TURN_BACK_UNITS, Departure, HandoffCorridor};
 pub use creature::{
     AGGRO_MAX_RADIUS_UNITS, AGGRO_MIN_RADIUS_UNITS, AGGRO_PER_LEVEL_UNITS, AGGRO_RADIUS_UNITS,
     ARRIVAL_RADIUS_UNITS, ASSIST_RADIUS_UNITS, CREATURE_EVADE_SPEED_SUBUNITS_PER_TICK,
@@ -117,7 +117,7 @@ pub use creature::{
 };
 pub use depths::{
     DepthsChamber, DepthsRun, DepthsRunStart, DepthsSite, DepthsSpawn, DepthsThreshold,
-    MAX_CHAMBERS, ThresholdRequest, WIPE_DELAY_TICKS, depths_arrival,
+    ThresholdRequest, WIPE_DELAY_TICKS, depths_arrival,
 };
 pub use depths_boss::{
     BossAttempt, BossDrop, BossOutcome, BossProgress, BossReport, DepthsBoss, DepthsDropView,
@@ -126,7 +126,7 @@ pub use depths_boss::{
 };
 pub use door::{
     CanonicalDoor, DOOR_COOLDOWN_TICKS, DOOR_REACH_UNITS, Door, DoorBox, DoorId, DoorView,
-    MAX_DOORS, NPC_SIGHT_HEIGHT_UNITS,
+    NPC_SIGHT_HEIGHT_UNITS,
 };
 pub use entity::{CreatureId, CreatureTemplateId, EntityKind, EntityRef, MinionId, NpcId};
 pub use ephemeral::EphemeralCharacterBuild;
@@ -171,7 +171,7 @@ pub use physique::{
     PHYSIQUE_NEUTRAL, PHYSIQUE_PARAMS, PHYSIQUE_SCALE, PHYSIQUE_STAT_PARAMS, Physique,
     PhysiqueAttribute, PhysiqueParam, PhysiquePreset,
 };
-pub use platform::{MAX_PLATFORMS, Platform, PlatformId, PlatformPhase};
+pub use platform::{Platform, PlatformId, PlatformPhase};
 pub use prediction::MovementPredictor;
 pub use progression::{MAX_PLAYER_LEVEL, experience_to_next_level, kill_experience};
 pub use projectile::{
@@ -202,10 +202,10 @@ pub use rewind::{CLIENT_INTERPOLATION_TICKS, HitRewind, MAX_HIT_REWIND_MS, Rewin
 pub use rock::{PROXIES as ROCK_PROXIES, RockProxy, RockShape};
 pub use roll::Roll;
 pub use routine::{
-    DAWN, DAY_TICKS, DUSK, Errand, HOUR_TICKS, MAX_ROUTINE_WAYPOINTS, NPC_WALK_UNITS_PER_TICK,
-    NpcPlacement, NpcRoutine, ZONE_START_TIME, is_night, time_of_day,
+    DAWN, DAY_TICKS, DUSK, Errand, HOUR_TICKS, NPC_WALK_UNITS_PER_TICK, NpcPlacement, NpcRoutine,
+    ZONE_START_TIME, is_night, time_of_day,
 };
-pub use seat::{MAX_SEATS, PostureView, SEAT_REACH_UNITS, Seat, SeatId, Sitting};
+pub use seat::{PostureView, SEAT_REACH_UNITS, Seat, SeatId, Sitting};
 use sim_combat::class;
 pub use sim_combat::class::{ClassChoice, PlayerClass, ResourceKind, Sex};
 pub use sim_combat::unit;
@@ -227,8 +227,8 @@ pub use snapshot::{
 pub use stance::{LANDING_RECOVERY_TICKS, LandingState, MeleeStance, OVERHEAD_LANDING_TICKS};
 pub use strike::{STRIKE_ARC_HALF_WIDTH, StrikeAim, StrikeHeight, StrikeSide, has_directed_mode};
 pub use structure::{
-    CanonicalPiece, MAX_PIECES, MAX_SITES, PROJECTILE_PIECE_DAMAGE, PieceBox, PieceId, PieceStage,
-    PieceView, REPAIR_REACH_UNITS, REPAIR_SPEEDUP_TICKS, StructurePiece, StructureSite,
+    CanonicalPiece, PROJECTILE_PIECE_DAMAGE, PieceBox, PieceId, PieceStage, PieceView,
+    REPAIR_REACH_UNITS, REPAIR_SPEEDUP_TICKS, StructurePiece, StructureSite,
 };
 pub use summoned::{
     MAX_SUMMONED_TERRAIN, MAX_VISIBLE_SUMMONED, PROJECTILE_SUMMONED_DAMAGE, SUMMON_DISTANCE_UNITS,
@@ -241,20 +241,19 @@ pub use swing::{
 };
 pub use transfer::{CharacterTransfer, MAX_REMEMBERED_TRANSFERS, TransferId, TransferMotion};
 pub use trap::{
-    Blade, BladePose, CanonicalTrap, CanonicalTrapHit, MAX_ROCKS, MAX_TRAP_HITS, MAX_TRAPS,
-    MAX_VISIBLE_TRAPS, RockDrop, RockPose, Rockfall, Trap, TrapEffect, TrapId, TrapKind,
-    TrapRuntime, TrapTrigger, TrapView, TriggerVolume,
+    Blade, BladePose, CanonicalTrap, CanonicalTrapHit, MAX_ROCKS, MAX_TRAP_HITS, MAX_VISIBLE_TRAPS,
+    RockDrop, RockPose, Rockfall, Trap, TrapEffect, TrapId, TrapKind, TrapRuntime, TrapTrigger,
+    TrapView, TriggerVolume,
 };
 pub use vendor::{
-    MAX_VENDOR_OFFERS, VENDOR_REACH_UNITS, VendorOffer, VendorStock, VendorStockError,
-    VendorTradeError, fenford_trader_stock, sell_price, settle_purchase, settle_sale,
-    starter_vendor_stock,
+    VENDOR_REACH_UNITS, VendorOffer, VendorStock, VendorStockError, VendorTradeError,
+    fenford_trader_stock, sell_price, settle_purchase, settle_sale, starter_vendor_stock,
 };
 pub use water::{AirPocket, Breath, WaterChannel, WaterMode, WaterVolume};
 pub use waystone::{
-    BARROWDOWN, FENFORD, GREYHAVEN_OUTPOST, GREYHAVEN_ZONE, MAX_WAYSTONES, SEAM_TEST_EAST,
-    SEAM_TEST_WEST, WAYSTONE_DISCOVERY_UNITS, WAYSTONES, WESTMERE_LODGE, WaystoneId, WaystoneSet,
-    WaystoneSite, waystone, waystone_within_reach,
+    BARROWDOWN, FENFORD, GREYHAVEN_OUTPOST, GREYHAVEN_ZONE, SEAM_TEST_EAST, SEAM_TEST_WEST,
+    WAYSTONE_DISCOVERY_UNITS, WAYSTONES, WESTMERE_LODGE, WaystoneId, WaystoneSet, WaystoneSite,
+    waystone, waystone_within_reach,
 };
 pub use zone::{MAX_PENDING_INTENTS, ZoneSimulation, ZoneTickWork};
 
@@ -324,19 +323,19 @@ pub enum ZoneCommand {
     /// `None`; self-centred abilities ignore the target. Unknown IDs are
     /// refused in the tick, not here.
     UseAbility {
-        ability: u8,
+        ability: u32,
         target: Option<EntityRef>,
     },
     /// Releases the held input that pressed `ability` (#414): `retired` when
     /// `input-bindings` retired the hold (focus loss, a menu, a profile
     /// change) rather than the key going up. Held state like movement: only
     /// an experimental graph's hold-to-charge and chord triggers read it.
-    ReleaseAbility { ability: u8, retired: bool },
+    ReleaseAbility { ability: u32, retired: bool },
     /// Executes `ability`'s directed mode (#154; only Heroic Strike has
     /// one): the player turns to `facing` and sweeps toward `aim`; the zone
     /// resolves which creature the sweep physically covers.
     DirectedStrike {
-        ability: u8,
+        ability: u32,
         facing: u16,
         aim: StrikeAim,
     },
@@ -375,7 +374,7 @@ pub enum ZoneCommand {
     /// Buys `quantity` units of offer `offer` (stock index) from vendor `npc`.
     BuyItem {
         npc: NpcId,
-        offer: u8,
+        offer: u32,
         quantity: u16,
     },
     /// Sells `quantity` units from one of the player's own bag slots to vendor `npc`.
@@ -392,19 +391,19 @@ pub enum ZoneCommand {
     /// Performs one emote for the players in `/say` range (#69).
     Emote(Emote),
     /// Accepts `quest` from its giver `npc` (#25).
-    AcceptQuest { npc: NpcId, quest: u8 },
+    AcceptQuest { npc: NpcId, quest: u32 },
     /// Turns `quest` in at its ender `npc`, taking reward `choice` (an
     /// index into the quest's choices; 0 when it offers none).
-    CompleteQuest { npc: NpcId, quest: u8, choice: u8 },
+    CompleteQuest { npc: NpcId, quest: u32, choice: u8 },
     /// Drops `quest` from the log; its progress is lost.
-    AbandonQuest { quest: u8 },
+    AbandonQuest { quest: u32 },
     /// Travels from the waystone within reach to the unlocked `waystone` (#145, Atlas
     /// 5.1.9); the zone checks reach, unlocks and combat in the tick.
     UseWaystone { waystone: WaystoneId },
     /// Tends or mends aid task `task` of the night raid's aftermath (#531, Atlas 5.1.51): an
     /// index into the raid site's authored tasks. The zone checks that it is open and within
     /// reach in the tick.
-    RaidAid { task: u8 },
+    RaidAid { task: u32 },
     /// One preparation step before a forewarned night raid (#532, Atlas 5.1.59–5.1.62); the zone
     /// checks the evening, reach and order in the tick.
     RaidPrepare { prep: RaidPrep },

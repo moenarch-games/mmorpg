@@ -76,10 +76,10 @@ pub struct PlayerInput {
     pub swings: u32,
     pub releases: u32,
     /// The latest requested ability ID.
-    pub ability: u8,
+    pub ability: u32,
     pub ability_uses: u32,
     /// The latest released ability ID and whether a retirement let it go (#485).
-    pub ability_release: (u8, bool),
+    pub ability_release: (u32, bool),
     pub ability_releases: u32,
     pub cancels: u32,
     /// Latest intentional NPC action, delivered once and retired on reconnect.
@@ -137,8 +137,8 @@ struct Outgoing {
     swing: Option<u16>,
     release: bool,
     cancel: bool,
-    ability: Option<u8>,
-    ability_release: Option<(u8, bool)>,
+    ability: Option<u32>,
+    ability_release: Option<(u32, bool)>,
     interaction: Option<ZoneCommand>,
     guard: Option<Option<mmorpg_core::StrikeHeight>>,
     movement: MovementCommands,

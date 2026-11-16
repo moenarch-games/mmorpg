@@ -25,8 +25,6 @@ use crate::entity::{EntityRef, body_id};
 use crate::physics::{RigidBody, capsule_dimensions};
 use crate::{ZoneError, ZoneEvent, ZoneSimulation, trig};
 
-/// Traps a zone's content may author.
-pub const MAX_TRAPS: usize = 32;
 /// Fired traps one player's projection names, nearest first.
 pub const MAX_VISIBLE_TRAPS: usize = 4;
 /// Units a trap remembers having hit recently.
@@ -41,16 +39,16 @@ const FLOOR_MARGIN_UNITS: f32 = 8.0;
 
 /// A trap's stable authored ID.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct TrapId(u8);
+pub struct TrapId(u32);
 
 impl TrapId {
     #[must_use]
-    pub const fn new(value: u8) -> Self {
+    pub const fn new(value: u32) -> Self {
         Self(value)
     }
 
     #[must_use]
-    pub const fn get(self) -> u8 {
+    pub const fn get(self) -> u32 {
         self.0
     }
 }
@@ -377,11 +375,8 @@ impl Trap {
     }
 }
 
-/// Validates a zone's authored traps: at most [`MAX_TRAPS`], in ID order, each sound.
+/// Validates a zone's authored traps: in ID order, each sound.
 pub(crate) fn validate(traps: &[Trap]) -> Result<(), ZoneError> {
-    if traps.len() > MAX_TRAPS {
-        return Err(ZoneError::new("zone trap capacity reached"));
-    }
     if traps.windows(2).any(|pair| pair[0].id >= pair[1].id) {
         return Err(ZoneError::new("traps need ordered unique IDs"));
     }

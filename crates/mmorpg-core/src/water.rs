@@ -34,8 +34,6 @@ pub const DROWN_DAMAGE_PERCENT: u32 = 10;
 pub const DROWN_INTERVAL_TICKS: u16 = crate::ticks_from_ms(1_000);
 /// A channel's current is at most 5 m/s (#667).
 pub const MAX_CURRENT_UNITS_PER_SECOND: i32 = 500;
-/// At most this many water volumes per zone: a region's lakes and its rivers' reaches (#816).
-pub const MAX_WATER_VOLUMES: usize = 128;
 /// An idle aquatic creature notices a submerged player this close (8 m) …
 pub const TRAIL_NOTICE_UNITS: i32 = 800;
 /// … follows it for this long (6 s), then loses interest and swims home.

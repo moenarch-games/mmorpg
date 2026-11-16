@@ -16,11 +16,11 @@ const ARCANIST: u8 = 2;
 /// Spawn slots lie along +X and +Z; the tests play out toward −Z.
 const SOUTH: u16 = 32_768;
 
-fn piece(id: u16, x: i32, z: i32, half: [i32; 3]) -> StructurePiece {
+fn piece(id: u32, x: i32, z: i32, half: [i32; 3]) -> StructurePiece {
     StructurePiece {
         id: PieceId::new(id),
         site: 1,
-        body: 60 + u32::from(id),
+        body: 60 + id,
         position: [x, half[1], z],
         half_extents: half,
         health: 10,

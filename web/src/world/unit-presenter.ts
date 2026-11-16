@@ -16,7 +16,7 @@ export type UnitPresenterHandle = {
   setBlend(lowerSeconds: number, upperSeconds: number, lowerWeight: number, upperWeight: number): void;
   setBodyOverlay(shown: boolean): void;
   setInteraction(lootWindow: boolean, npc: number | undefined): void;
-  setKitPlatforms(platforms: Uint8Array): void;
+  setKitPlatforms(platforms: Uint32Array): void;
   setCragDescriptor(json: string): void;
   setChannelOrigins(origins: Float64Array): void;
   push(projection: Uint8Array, seconds: number): void;
@@ -243,7 +243,7 @@ export class SharedUnits {
 
   /** The platforms a kit draws (the fortress lifts, #591): no procedural pillar; each frame's `platforms` places them. */
   setKitPlatforms(platforms: readonly number[]): void {
-    this.#handle.setKitPlatforms(Uint8Array.from(platforms));
+    this.#handle.setKitPlatforms(Uint32Array.from(platforms));
   }
 
   /**

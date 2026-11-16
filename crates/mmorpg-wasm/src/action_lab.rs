@@ -78,7 +78,7 @@ impl LabSetup {
         class: &str,
         level: u8,
         gear: &str,
-        main_hand: u16,
+        main_hand: u32,
         resource: Option<u16>,
     ) -> Result<Self, String> {
         let class = PlayerClass::VARIANTS
@@ -142,7 +142,7 @@ impl LabSetup {
 /// Main-hand catalog items, for the setup form: `[{id, name}]`.
 #[must_use]
 pub fn main_hand_items() -> Value {
-    (1..=u16::MAX)
+    (1..=u32::MAX)
         .map(ItemId::new)
         .map_while(|id| item_template(id).map(|template| (id, template)))
         .filter(|(_, template)| template.slot == Some(mmorpg_core::EquipmentSlot::MainHand))

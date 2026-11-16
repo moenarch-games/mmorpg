@@ -6,10 +6,9 @@ mod support;
 use std::sync::Arc;
 
 use mmorpg_core::{
-    EntityRef, ErrorCode, INVENTORY_SLOTS, Inventory, ItemId, ItemStack, MAX_VENDOR_OFFERS, Npc,
-    NpcId, NpcRole, VENDOR_REACH_UNITS, VendorOffer, VendorStock, VendorStockError, ZoneCommand,
-    ZoneContent, ZoneEvent, ZoneId, ZoneSimulation, greyhaven_vale, sell_price,
-    starter_vendor_stock,
+    EntityRef, ErrorCode, INVENTORY_SLOTS, Inventory, ItemId, ItemStack, Npc, NpcId, NpcRole,
+    VENDOR_REACH_UNITS, VendorOffer, VendorStock, VendorStockError, ZoneCommand, ZoneContent,
+    ZoneEvent, ZoneId, ZoneSimulation, greyhaven_vale, sell_price, starter_vendor_stock,
 };
 use support::arena;
 
@@ -22,9 +21,9 @@ const VENDOR: NpcId = NpcId::new(3);
 const GUARD: NpcId = NpcId::new(6);
 /// The starter stock lists the Worn Dagger first (5 copper), Worn Boots
 /// second (12 copper) and the Militia Shortsword seventh (25 copper).
-const DAGGER_OFFER: u8 = 0;
-const BOOTS_OFFER: u8 = 1;
-const SHORTSWORD_OFFER: u8 = 6;
+const DAGGER_OFFER: u32 = 0;
+const BOOTS_OFFER: u32 = 1;
+const SHORTSWORD_OFFER: u32 = 6;
 
 type Bag = [Option<ItemStack>; INVENTORY_SLOTS];
 /// Vendor position, bag, copper, health, command, refusal and its target.
@@ -93,7 +92,7 @@ fn step(zone: &mut ZoneSimulation, sequence: u32, command: ZoneCommand) -> Vec<Z
     zone.snapshot_for_player(1).unwrap().events
 }
 
-fn buy(offer: u8, quantity: u16) -> ZoneCommand {
+fn buy(offer: u32, quantity: u16) -> ZoneCommand {
     ZoneCommand::BuyItem {
         npc: VENDOR,
         offer,
@@ -219,7 +218,7 @@ fn every_refusal_leaves_bag_copper_and_revision_unchanged() {
             starter_bag(),
             99,
             None,
-            buy(u8::MAX, 1),
+            buy(u32::MAX, 1),
             ErrorCode::InvalidVendor,
             vendor,
         ),
@@ -413,10 +412,6 @@ fn vendor_stock_is_validated() {
     };
     assert_eq!(VendorStock::new(&[]), Err(VendorStockError::OfferCount));
     assert_eq!(
-        VendorStock::new(&[offer(9, 1); MAX_VENDOR_OFFERS + 1]),
-        Err(VendorStockError::OfferCount)
-    );
-    assert_eq!(
         VendorStock::new(&[offer(99, 1)]),
         Err(VendorStockError::UnknownItem)
     );
@@ -433,7 +428,7 @@ fn vendor_stock_is_validated() {
         Err(VendorStockError::DuplicateItem)
     );
     let stock = starter_vendor_stock();
-    assert_eq!(stock.offers().len(), MAX_VENDOR_OFFERS);
+    assert_eq!(stock.offers().len(), 8);
     assert_eq!(stock.offer(DAGGER_OFFER), Some(offer(2, 5)));
     assert_eq!(stock.offer(BOOTS_OFFER), Some(offer(9, 12)));
     assert_eq!(stock.offer(2), Some(offer(8, 12)));

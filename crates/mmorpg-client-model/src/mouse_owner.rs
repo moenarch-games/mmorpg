@@ -95,7 +95,7 @@ impl AimStyle {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Aiming {
     slot: u8,
-    ability: u8,
+    ability: u32,
 }
 
 /// What a left click means under the current owner.
@@ -106,7 +106,7 @@ pub enum LeftClick {
     /// A wheel ends and runs the pointed-at action; the centre or a gap runs nothing.
     Pick(Option<WheelAction>),
     /// An armed aim (#649) ends and throws this ability along the aim.
-    Throw(u8),
+    Throw(u32),
     /// A strike or guard hold ignores the left button.
     Nothing,
 }
@@ -262,7 +262,7 @@ impl MouseOwners {
 
     /// A held press of `slot` starts a manual aim of `ability` (#649); only from free look or
     /// focus. Callers check the ability aims manually ([`crate::manual_aim::can_aim`]).
-    pub fn begin_aim(&mut self, slot: u8, ability: u8) -> bool {
+    pub fn begin_aim(&mut self, slot: u8, ability: u32) -> bool {
         let started = self.begin_free(Gesture::Aim);
         if started {
             self.aiming = Some(Aiming { slot, ability });
@@ -272,7 +272,7 @@ impl MouseOwners {
 
     /// The ability a manual aim would throw.
     #[must_use]
-    pub fn aiming(&self) -> Option<u8> {
+    pub fn aiming(&self) -> Option<u32> {
         self.aiming.map(|aiming| aiming.ability)
     }
 
@@ -280,7 +280,7 @@ impl MouseOwners {
     /// any. In the hold style a deliberate release throws; in the armed style it keeps the aim
     /// for the left click. A retirement ends the aim without throwing, and any other key's
     /// release does nothing.
-    pub fn release_aim(&mut self, slot: u8, retired: bool) -> Option<u8> {
+    pub fn release_aim(&mut self, slot: u8, retired: bool) -> Option<u32> {
         let aiming = self.aiming.filter(|aiming| aiming.slot == slot)?;
         if retired {
             self.end();
@@ -462,7 +462,7 @@ mod tests {
     use crate::test_support::snapshot;
     use mmorpg_core::{AuraView, ability::ids};
 
-    const BOMB: u8 = ids::BLASTING_BOMB.get();
+    const BOMB: u32 = ids::BLASTING_BOMB.get();
 
     fn wheel() -> Wheel {
         Wheel::fixed(&["ability.slot1", "ability.slot2", "move.roll"])

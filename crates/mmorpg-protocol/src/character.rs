@@ -1,13 +1,13 @@
 //! Durable character record encoding (#30).
 //!
 //! `version u8 · schema u16 · id length u8 · id · appearance u8 · level u8 ·
-//! experience u32 · copper u32 · inventory · equipment · quest log · unlocked waystones u32 ·
+//! experience u32 · copper u32 · inventory · equipment · quest log · unlocked waystones ·
 //! depths record (`thorn_defeated` u8, receipt run u64, credited u8, drops u8) ·
 //! health u32 · resource u16 · resource ticks u16 · mana delay u16 · global
-//! cooldown u16 · cooldown count u8 · (ability u8 · remaining u16)* · zone
+//! cooldown u16 · cooldown count u8 · (ability u32 · remaining u16)* · zone
 //! u32 · position 3 × i32 · facing u16 · physique`, big-endian (physique: see
-//! [`encode_physique`]; quest log: turned-in quest count u8 and IDs, then entries). The decoder
-//! is strict:
+//! [`encode_physique`]; quest log: turned-in quest count u16 and IDs, then entries;
+//! waystones: count u16 and IDs). Every content ID is a `u32` (#882). The decoder is strict:
 //! another version or schema, a truncated or over-long payload or an invalid
 //! field fails closed. Gameplay validity against content is checked when a
 //! zone admits the record.
@@ -15,12 +15,14 @@
 use mmorpg_core::{
     AbilityId, CHARACTER_RECORD_SCHEMA_VERSION, CharacterId, CharacterLocation, CharacterRecord,
     ClassChoice, Cooldown, DepthsRecord, MAX_CHARACTER_ID_BYTES, MAX_COOLDOWNS, PHYSIQUE_PARAMS,
-    Physique, QuestLog, ZoneId,
+    Physique, QuestLog, WaystoneId, WaystoneSet, ZoneId,
 };
 
 use crate::ProtocolError;
-use crate::inventory::{decode_equipment, decode_inventory, encode_equipment, encode_inventory};
-use crate::quest::{decode_completed_mask, decode_entries, decode_log, encode_log};
+use crate::inventory::{
+    ItemIdWidth, decode_equipment_ids, decode_inventory_ids, encode_equipment, encode_inventory,
+};
+use crate::quest::{QuestIdWidth, decode_completed_mask, decode_entries, decode_log, encode_log};
 use crate::wire::{decode_u8_count, encode_u8_count, read_u8, read_vector, take};
 
 /// Version of the byte layout above, independent of the record schema.
@@ -47,7 +49,7 @@ pub fn encode_character_record(record: &CharacterRecord) -> Result<Vec<u8>, Prot
     encode_inventory(&mut payload, &record.inventory);
     encode_equipment(&mut payload, &record.equipment);
     encode_log(&mut payload, &record.quests)?;
-    payload.extend_from_slice(&record.waystones.bits().to_be_bytes());
+    crate::wire::encode_waystones(&mut payload, &record.waystones)?;
     encode_depths_record(&mut payload, record.depths);
     payload.extend_from_slice(&record.health.to_be_bytes());
     for value in [
@@ -64,7 +66,7 @@ pub fn encode_character_record(record: &CharacterRecord) -> Result<Vec<u8>, Prot
         "character has too many cooldowns",
     )?);
     for cooldown in &record.cooldowns {
-        payload.push(cooldown.ability.get());
+        payload.extend_from_slice(&cooldown.ability.get().to_be_bytes());
         payload.extend_from_slice(&cooldown.remaining.to_be_bytes());
     }
     let location = record.location;
@@ -85,10 +87,11 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
         ));
     }
     let schema = u16::from_be_bytes(take(payload, offset)?);
-    let (has_physique, quest_set) = match schema {
-        CHARACTER_RECORD_SCHEMA_VERSION => (true, true),
-        PRE_QUEST_SET_SCHEMA_VERSION => (true, false),
-        PRE_PHYSIQUE_SCHEMA_VERSION => (false, false),
+    let (has_physique, quest_set, wide_ids) = match schema {
+        CHARACTER_RECORD_SCHEMA_VERSION => (true, true, true),
+        PRE_WIDE_ID_SCHEMA_VERSION => (true, true, false),
+        PRE_QUEST_SET_SCHEMA_VERSION => (true, false, false),
+        PRE_PHYSIQUE_SCHEMA_VERSION => (false, false, false),
         _ => {
             return Err(ProtocolError::new(
                 "unsupported character record schema version",
@@ -110,23 +113,32 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
         .ok()
         .and_then(|id| CharacterId::new(id).ok())
         .ok_or_else(|| ProtocolError::new("character ID is invalid"))?;
-    let class = ClassChoice::from_appearance(u16::from(read_u8(payload, offset)?))
+    let class = ClassChoice::from_appearance(u32::from(read_u8(payload, offset)?))
         .ok_or_else(|| ProtocolError::new("character class is invalid"))?;
     let level = read_u8(payload, offset)?;
     let experience = u32::from_be_bytes(take(payload, offset)?);
     let copper = u32::from_be_bytes(take(payload, offset)?);
-    let inventory = decode_inventory(payload, offset)?;
-    let equipment = decode_equipment(payload, offset)?;
+    let (items, quest_ids) = if wide_ids {
+        (ItemIdWidth::Word, QuestIdWidth::Word)
+    } else {
+        (ItemIdWidth::Half, QuestIdWidth::Byte)
+    };
+    let inventory = decode_inventory_ids(payload, offset, items)?;
+    let equipment = decode_equipment_ids(payload, offset, items)?;
     let quests = if quest_set {
-        decode_log(payload, offset)?
+        decode_log(payload, offset, quest_ids)?
     } else {
         let completed = decode_completed_mask(payload, offset)?;
         QuestLog {
-            entries: decode_entries(payload, offset)?,
+            entries: decode_entries(payload, offset, quest_ids)?,
             completed,
         }
     };
-    let waystones = crate::wire::decode_waystones(u32::from_be_bytes(take(payload, offset)?))?;
+    let waystones = if wide_ids {
+        crate::wire::decode_waystones(payload, offset)?
+    } else {
+        decode_waystone_mask(u32::from_be_bytes(take(payload, offset)?))?
+    };
     let depths = decode_depths_record(payload, offset)?;
     let health = u32::from_be_bytes(take(payload, offset)?);
     let resource = u16::from_be_bytes(take(payload, offset)?);
@@ -141,7 +153,11 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
     )?;
     let mut cooldowns = Vec::with_capacity(cooldown_count);
     for _ in 0..cooldown_count {
-        let ability = AbilityId::new(read_u8(payload, offset)?);
+        let ability = AbilityId::new(if wide_ids {
+            u32::from_be_bytes(take(payload, offset)?)
+        } else {
+            u32::from(read_u8(payload, offset)?)
+        });
         cooldowns.push(Cooldown {
             ability,
             remaining: u16::from_be_bytes(take(payload, offset)?),
@@ -194,6 +210,21 @@ const PRE_PHYSIQUE_SCHEMA_VERSION: u16 = 0x6671;
 /// `id - 1`). Such records still load, migrated to the set; they are written again in the
 /// current schema.
 const PRE_QUEST_SET_SCHEMA_VERSION: u16 = 0x9d41;
+
+/// The record schema before 32-bit content IDs and the unlocked waystone set (#882): item IDs
+/// were `u16`, quest and ability IDs one byte, and the unlocked waystones a `u32` mask (bit
+/// `id - 1`). Such records still load, migrated; they are written again in the current schema.
+const PRE_WIDE_ID_SCHEMA_VERSION: u16 = 0x20ba;
+
+/// The unlocked waystones of a record before #882: bit `id - 1` per stone of the network.
+fn decode_waystone_mask(mask: u32) -> Result<WaystoneSet, ProtocolError> {
+    WaystoneSet::from_ids(
+        (1..=32_u32)
+            .filter(|id| mask & (1 << (id - 1)) != 0)
+            .filter_map(WaystoneId::new),
+    )
+    .ok_or_else(|| ProtocolError::new("unlocked waystones name an unknown stone"))
+}
 
 /// Physique (#633): `count u8 · count × value u16`, each value at most
 /// [`mmorpg_core::PHYSIQUE_SCALE`], in canonical parameter order. A shorter list (such as a

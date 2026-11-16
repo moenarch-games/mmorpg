@@ -144,7 +144,7 @@ impl NpcContext {
                 content.vendor_stock(npc)?.offers().get(self.row)?;
                 Some(ZoneCommand::BuyItem {
                     npc,
-                    offer: self.row as u8,
+                    offer: u32::try_from(self.row).ok()?,
                     quantity: 1,
                 })
             }
@@ -345,7 +345,7 @@ mod tests {
                     action,
                     Some(ZoneCommand::BuyItem {
                         npc,
-                        offer: row as u8,
+                        offer: u32::try_from(row).unwrap(),
                         quantity: 1
                     })
                 );

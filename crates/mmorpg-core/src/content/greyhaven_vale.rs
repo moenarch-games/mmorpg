@@ -1736,7 +1736,7 @@ pub fn structure_sites() -> Vec<crate::StructureSite> {
 pub fn watch_post() -> Vec<crate::StructurePiece> {
     let [west, east, deck] = [460, 461, 462];
     let wall =
-        |id: u16, body: u32, x: i32, rubble: Option<crate::PieceBox>| crate::StructurePiece {
+        |id: u32, body: u32, x: i32, rubble: Option<crate::PieceBox>| crate::StructurePiece {
             id: crate::PieceId::new(id),
             site: 1,
             body,

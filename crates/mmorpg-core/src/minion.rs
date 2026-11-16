@@ -176,8 +176,8 @@ pub fn is_companion(ability: AbilityId) -> bool {
 
 /// The summoning ability a projected minion's appearance names (#295).
 #[must_use]
-pub fn minion_ability(appearance: u16) -> AbilityId {
-    AbilityId::new(u8::try_from(appearance).unwrap_or(0))
+pub fn minion_ability(appearance: u32) -> AbilityId {
+    AbilityId::new(appearance)
 }
 
 /// The collision half extents of a minion raised by `ability`: a skeleton stands 1.6 m tall,

@@ -46,8 +46,9 @@ use crate::snapshot::{PlayerIntent, QueuedIntent};
 use crate::zone::{Axis, PlayerState};
 use crate::{AbilityId, AbilityUser, PlayerClass, PlayerId, ZoneError, ZoneSimulation, aura};
 
-/// The most authored actions one graph may have; their slots are below it.
-pub const MAX_AUTHORED_ACTIONS: u8 = 8;
+/// The most authored actions one graph may have; their slots are below it. Generous (#882):
+/// slots stay one byte, so an action's stable code stays below `512`.
+pub const MAX_AUTHORED_ACTIONS: u8 = 128;
 /// The most edges out of authored actions; their ids are below it.
 pub const MAX_AUTHORED_EDGES: u8 = 16;
 /// The longest authored action, all three phases together.
@@ -637,7 +638,7 @@ pub(crate) struct AuthoredRun {
     pub(crate) releasing: bool,
     /// The triggering ability, and whether a directed strike pressed it: a
     /// charge reads its hold.
-    pub(crate) ability: u8,
+    pub(crate) ability: u32,
     pub(crate) directed: bool,
     /// A follow-up's input came before its buffer: this run lost it.
     pub(crate) missed: bool,

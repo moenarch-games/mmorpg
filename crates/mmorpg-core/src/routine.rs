@@ -26,8 +26,6 @@ pub const DUSK: u32 = 20 * HOUR_TICKS;
 pub const DAWN: u32 = 6 * HOUR_TICKS;
 /// A walking NPC covers this many units per tick (2.4 m/s).
 pub const NPC_WALK_UNITS_PER_TICK: i64 = crate::units_per_tick(240) as i64;
-/// Waypoints a routine path may have.
-pub const MAX_ROUTINE_WAYPOINTS: usize = 16;
 
 /// Ticks since midnight at `tick`.
 #[must_use]
@@ -210,7 +208,7 @@ impl ZoneSimulation {
         if let Some(position) = self
             .content
             .raid()
-            .and_then(|site| site.injured_at(npc, self.raid.aftermath))
+            .and_then(|site| site.injured_at(npc, &self.raid.aftermath))
         {
             return Some(NpcPlacement {
                 position,

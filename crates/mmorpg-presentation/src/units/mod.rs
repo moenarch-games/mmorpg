@@ -124,7 +124,7 @@ fn imported_tint(dead: bool, companion: bool) -> Option<[f32; 3]> {
 /// The display name of a minion whose projected appearance is `appearance`: a Necromancer's
 /// skeleton (#295) or a Druid's companion (#296).
 #[must_use]
-pub fn minion_name(appearance: u16) -> &'static str {
+pub fn minion_name(appearance: u32) -> &'static str {
     if mmorpg_core::is_companion(mmorpg_core::minion_ability(appearance)) {
         "Wolf Companion"
     } else {
@@ -317,7 +317,7 @@ pub struct UnitPresenter {
     copper: Option<u32>,
     quest_log: Option<(usize, usize)>,
     /// The viewer's quests last projected, to see which one a window just added (#619).
-    quest_entries: BTreeSet<u8>,
+    quest_entries: BTreeSet<u32>,
     /// The objective each NPC last pointed the viewer toward (#619).
     directing: BTreeMap<EntityRef, [i32; 2]>,
     /// Private-home residents last seen asleep in bed: getting up is a knock (#619).
@@ -2427,7 +2427,7 @@ fn metres(value: [i32; 3]) -> [f32; 3] {
 
 /// Where `quest`'s accept line points (#619), for `Talk_Gesture_B`: the two lines that name a
 /// place to go.
-fn directing_line(quest: u8) -> Option<[i32; 2]> {
+fn directing_line(quest: u32) -> Option<[i32; 2]> {
     use mmorpg_core::greyhaven_vale::{lake, quests};
     // "Something stirs at Stillwater Lake, south-east of the outpost."
     // "The Redbrand bandits camp in the hollow under the northern cliffs."

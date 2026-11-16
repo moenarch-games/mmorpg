@@ -14,8 +14,10 @@ use mmorpg_core::{
     ThreatEntry, ZoneCommand, ZoneEvent, ZoneId, ZoneSimulation, greyhaven_vale,
 };
 
-/// Every aid task Greyhaven authors.
-const ALL_TASKS: u8 = 0b1_1111;
+/// The open aid tasks from `first` on, of the farm's five.
+fn open_from(first: u32) -> std::collections::BTreeSet<u32> {
+    (first..5).collect()
+}
 /// A fresh level-1 character, and one who earned the reward: level 2 with the rest of the XP.
 const FRESH: (u8, u32, u32) = (1, 0, 0);
 const REWARDED: (u8, u32, u32) = (2, REWARD_EXPERIENCE - 100, REWARD_COPPER);
@@ -79,7 +81,7 @@ fn guard(zone: &ZoneSimulation, viewer: PlayerId, npc: u32) -> ([i32; 2], u8) {
 }
 
 /// Aids `task` as `player` and returns the refusal, if any.
-fn aid(zone: &mut ZoneSimulation, player: PlayerId, sequence: u32, task: u8) -> Option<ErrorCode> {
+fn aid(zone: &mut ZoneSimulation, player: PlayerId, sequence: u32, task: u32) -> Option<ErrorCode> {
     zone.apply_command(player, sequence, ZoneCommand::RaidAid { task })
         .unwrap();
     zone.advance_tick().unwrap();
@@ -110,28 +112,28 @@ fn a_lost_raid_injures_the_gate_guards_and_the_farm_recovers_on_its_own_in_order
     // A viewer by the farmhouse, a metre from the shelter.
     let mut zone = zone_at(&[[5_600, 4_650]]);
     zone = lose_raid(zone);
-    assert_eq!(zone.raid().aftermath, ALL_TASKS);
+    assert_eq!(zone.raid().aftermath, open_from(0));
     assert_eq!(guard(&zone, 1, east), (tasks[2].at, INJURED_HEALTH_PERCENT));
     assert_eq!(
         guard(&zone, 1, south),
         (tasks[4].at, INJURED_HEALTH_PERCENT)
     );
     let view = zone.snapshot_for_player(1).unwrap().raid.unwrap();
-    assert_eq!((view.phase, view.integrity, view.aid), (0, 0, ALL_TASKS));
+    assert_eq!((view.phase, view.integrity, view.aid), (0, 0, open_from(0)));
     // Nobody helps: the barn regrows a point at a time, and each task settles, in order, as the
     // restoration reaches its share; the last one once the barn is whole. Skip ahead to the
     // point just above each share instead of simulating the whole 20 min.
-    for task in 0..5_u8 {
-        let share = OBJECTIVE_INTEGRITY * u32::from(4 - task) / 5;
+    for task in 0..5_u32 {
+        let share = OBJECTIVE_INTEGRITY * (4 - task) / 5;
         zone = restored(&zone, |state| state.raid.damage = share + 1);
-        assert_eq!(zone.raid().aftermath, ALL_TASKS << task & ALL_TASKS);
+        assert_eq!(zone.raid().aftermath, open_from(task));
         for _ in 0..=RECOVERY_TICKS_PER_POINT {
             zone.advance_tick().unwrap();
         }
         assert_eq!(zone.raid().damage, share);
         assert_eq!(
             zone.raid().aftermath,
-            ALL_TASKS << (task + 1) & ALL_TASKS,
+            open_from(task + 1),
             "task {task} settled on its own"
         );
     }
@@ -160,10 +162,13 @@ fn aid_closes_a_task_once_speeds_the_shared_restoration_and_rewards_each_helper_
 
     assert_eq!(aid(&mut zone, 3, 1, 0), Some(ErrorCode::OutOfRange));
     assert_eq!(aid(&mut zone, 1, 1, 7), Some(ErrorCode::InvalidTarget));
-    assert_eq!(zone.raid().aftermath, ALL_TASKS);
+    assert_eq!(zone.raid().aftermath, open_from(0));
 
     assert_eq!(aid(&mut zone, 1, 2, 2), None);
-    assert_eq!(zone.raid().aftermath, ALL_TASKS & !0b100);
+    assert_eq!(
+        zone.raid().aftermath,
+        std::collections::BTreeSet::from([0, 1, 3, 4])
+    );
     assert!(zone.raid().damage <= before - AID_RESTORE_POINTS);
     assert_eq!(purse(&zone, 1), REWARDED);
     let history = zone.reward_history().unwrap();

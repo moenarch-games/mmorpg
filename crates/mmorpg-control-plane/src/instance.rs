@@ -13,7 +13,7 @@
 //! Empty-run retention uses host time (`now`, milliseconds), not simulation ticks: it is a
 //! lifecycle setting and never enters deterministic gameplay.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use mmorpg_core::{CharacterId, ErrorCode, MAX_PARTY_MEMBERS, ZoneId};
@@ -38,8 +38,8 @@ pub struct InstanceRun {
     pub slot: ZoneId,
     /// The frozen original roster, in entry order; its length is the party-size profile.
     pub roster: Vec<CharacterId>,
-    /// Bit `i` set: chamber `i` is cleared.
-    pub cleared: u8,
+    /// Indices of the cleared chambers (#882).
+    pub cleared: BTreeSet<u32>,
     pub checkpoint: bool,
     /// The boss outcome the host recorded, once Captain Thorn fell (#404 part 3); `None` while
     /// the run is unfinished. Opaque bytes the zone host encoded.
@@ -146,7 +146,7 @@ impl InstanceDirectory {
                 .iter()
                 .map(|candidate| candidate.character.clone())
                 .collect(),
-            cleared: 0,
+            cleared: BTreeSet::new(),
             checkpoint: false,
             outcome: None,
             outstanding: Vec::new(),
@@ -214,7 +214,7 @@ impl InstanceDirectory {
 
     /// Merges a run's reported progress; a report for another run or an older state changes
     /// nothing. Progress is only ever added (a stale report cannot undo a cleared chamber).
-    pub fn report(&mut self, slot: ZoneId, run_id: u64, cleared: u8, checkpoint: bool) {
+    pub fn report(&mut self, slot: ZoneId, run_id: u64, cleared: &BTreeSet<u32>, checkpoint: bool) {
         let Some(held) = self.slots.get(&slot).copied().flatten() else {
             return;
         };
@@ -222,7 +222,7 @@ impl InstanceDirectory {
             return;
         }
         if let Some(run) = self.runs.get_mut(&run_id) {
-            run.cleared |= cleared;
+            run.cleared.extend(cleared);
             run.checkpoint |= checkpoint;
         }
     }
@@ -295,7 +295,10 @@ impl InstanceDirectory {
             for character in &run.roster {
                 encode_text(&mut out, character.as_str());
             }
-            out.push(run.cleared);
+            out.extend_from_slice(&(run.cleared.len() as u32).to_be_bytes());
+            for chamber in &run.cleared {
+                out.extend_from_slice(&chamber.to_be_bytes());
+            }
             out.push(u8::from(run.checkpoint));
             out.extend_from_slice(&run.emptied_at_ms.unwrap_or(u64::MAX).to_be_bytes());
             match &run.outcome {
@@ -336,7 +339,12 @@ impl InstanceDirectory {
                 directory.by_character.insert(character.clone(), id);
                 roster.push(character);
             }
-            let cleared = reader.u8()?;
+            let mut cleared = BTreeSet::new();
+            for _ in 0..reader.u32()? {
+                if !cleared.insert(reader.u32()?) {
+                    return Err(InstanceStoreError::corrupt());
+                }
+            }
             let checkpoint = reader.u8()? != 0;
             let emptied = reader.u64()?;
             let outcome = match reader.u8()? {
@@ -639,11 +647,16 @@ mod tests {
     fn progress_is_kept_for_the_right_run_and_only_grows() {
         let mut directory = directory();
         let entry = directory.enter(&[candidate("aria", true)], 0).unwrap();
-        directory.report(entry.run.slot, entry.run.id, 0b001, true);
-        directory.report(entry.run.slot, entry.run.id, 0b000, false);
-        directory.report(entry.run.slot, entry.run.id + 1, 0b111, true);
+        directory.report(entry.run.slot, entry.run.id, &BTreeSet::from([0]), true);
+        directory.report(entry.run.slot, entry.run.id, &BTreeSet::new(), false);
+        directory.report(
+            entry.run.slot,
+            entry.run.id + 1,
+            &BTreeSet::from([0, 1, 2]),
+            true,
+        );
         let run = directory.run_in_slot(entry.run.slot).unwrap();
-        assert_eq!(run.cleared, 0b001);
+        assert_eq!(run.cleared, BTreeSet::from([0]));
         assert!(run.checkpoint);
     }
 
@@ -653,7 +666,12 @@ mod tests {
         let entry = directory
             .enter(&[candidate("aria", true), candidate("bren", false)], 5)
             .unwrap();
-        directory.report(entry.run.slot, entry.run.id, 1, true);
+        directory.report(
+            entry.run.slot,
+            entry.run.id,
+            &BTreeSet::from([0, 70_000]),
+            true,
+        );
         let bytes = directory.encode();
         assert_eq!(InstanceDirectory::decode(&bytes).unwrap(), directory);
         assert!(InstanceDirectory::decode(&bytes[..bytes.len() - 1]).is_err());

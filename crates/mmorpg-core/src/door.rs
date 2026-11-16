@@ -15,24 +15,20 @@ use crate::{EntityRef, ErrorCode, PlayerId, ZoneError, ZoneSimulation};
 pub const DOOR_REACH_UNITS: i32 = 250;
 /// NPC service sight lines run between heads, this far above the feet (1.6 m).
 pub const NPC_SIGHT_HEIGHT_UNITS: i32 = 160;
-/// Doors a zone's content may author: nine, so a projection's viewer and target records still
-/// fit beside every other full section with `i32` positions (#424) and the night raid's signal
-/// (#530).
-pub const MAX_DOORS: usize = 9;
 /// Players cannot move a door leaf again within 1.5 s of its last change.
 pub const DOOR_COOLDOWN_TICKS: u64 = crate::ticks_from_ms(1_500) as u64;
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct DoorId(u8);
+pub struct DoorId(u32);
 
 impl DoorId {
     #[must_use]
-    pub const fn new(value: u8) -> Self {
+    pub const fn new(value: u32) -> Self {
         Self(value)
     }
 
     #[must_use]
-    pub const fn get(self) -> u8 {
+    pub const fn get(self) -> u32 {
         self.0
     }
 }

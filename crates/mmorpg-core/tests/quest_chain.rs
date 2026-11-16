@@ -17,7 +17,7 @@ use mmorpg_core::{
 
 /// Generous bound on the whole run (about 28 minutes of game time).
 const MAX_TICKS: u64 = 30 * 60 * 28;
-const TIMBER_WOLF: u16 = 1;
+const TIMBER_WOLF: u32 = 1;
 /// The plaza's west edge, where every trip starts and ends.
 const HUB: [i32; 2] = [-1_800, 2_000];
 /// Each trip ends within quest reach of the NPC, arrival slack included.

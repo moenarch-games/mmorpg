@@ -20,21 +20,19 @@ use crate::{EntityRef, ErrorCode, NpcId, PlayerId, ZoneError, ZoneEvent, ZoneSim
 
 /// A player reaches a seat within this horizontal distance of its `stand` (2.5 m).
 pub const SEAT_REACH_UNITS: i32 = 250;
-/// Seats a zone's content may author.
-pub const MAX_SEATS: usize = 32;
 
 /// A seat's stable content ID, nonzero.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SeatId(u8);
+pub struct SeatId(u32);
 
 impl SeatId {
     #[must_use]
-    pub const fn new(value: u8) -> Self {
+    pub const fn new(value: u32) -> Self {
         Self(value)
     }
 
     #[must_use]
-    pub const fn get(self) -> u8 {
+    pub const fn get(self) -> u32 {
         self.0
     }
 }
@@ -451,7 +449,7 @@ mod tests {
         assert_eq!(bench.yaw, 0, "its front faces +Z, as the seats sit");
     }
 
-    fn z_seat(id: u8) -> &'static crate::Seat {
+    fn z_seat(id: u32) -> &'static crate::Seat {
         // The hosted content lives for the process, so tests can hold its seats.
         let content: &'static _ = Box::leak(Box::new(greyhaven_vale::content()));
         content.seat(SeatId::new(id)).unwrap()

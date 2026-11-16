@@ -14,7 +14,13 @@ use support::{arena, classes};
 
 const SLOT: ZoneId = ZoneId::new(20_000);
 const GREYHAVEN: ZoneId = ZoneId::new(1);
+/// Every chamber of the depths cleared, as a bit mask.
 const ALL_CLEARED: u8 = 0b111;
+
+/// The chamber indices of a bit mask.
+fn chambers(mask: u8) -> std::collections::BTreeSet<u32> {
+    (0..8).filter(|index| mask & (1 << index) != 0).collect()
+}
 
 fn id(name: &str) -> CharacterId {
     CharacterId::new(name).unwrap()
@@ -49,7 +55,7 @@ fn fight(roster: &[&str], cleared: u8) -> ZoneSimulation {
     zone.begin_depths_run(DepthsRunStart {
         run_id: 7,
         roster: roster.iter().map(|name| id(name)).collect(),
-        cleared,
+        cleared: chambers(cleared),
         checkpoint: true,
         outcome: None,
     })
@@ -360,7 +366,11 @@ fn a_wipe_resets_the_attempt_within_the_run_and_a_later_kill_counts_once() {
         run.boss.attempt.is_none(),
         "no attempt until he is engaged again"
     );
-    assert_eq!(run.cleared, ALL_CLEARED, "cleared chambers stay cleared");
+    assert_eq!(
+        run.cleared,
+        chambers(ALL_CLEARED),
+        "cleared chambers stay cleared"
+    );
     assert_eq!(run.run_id, 7, "the same run, the same frozen profile");
     // The second attempt wins; only one outcome is ever recorded.
     let mut zone = edit(zone, |state| {
@@ -511,7 +521,7 @@ fn a_recovered_run_never_rerolls_or_regrants_and_a_fresh_run_is_a_new_identity()
         .begin_depths_run(DepthsRunStart {
             run_id: 7,
             roster: vec![id("aria")],
-            cleared: ALL_CLEARED,
+            cleared: chambers(ALL_CLEARED),
             checkpoint: true,
             outcome: Some(report.outcome.clone()),
         })
@@ -554,7 +564,7 @@ fn a_recovered_run_never_rerolls_or_regrants_and_a_fresh_run_is_a_new_identity()
         .begin_depths_run(DepthsRunStart {
             run_id: 7,
             roster: vec![id("aria")],
-            cleared: ALL_CLEARED,
+            cleared: chambers(ALL_CLEARED),
             checkpoint: true,
             outcome: Some(report.outcome.clone()),
         })
@@ -582,7 +592,7 @@ fn a_recovered_run_never_rerolls_or_regrants_and_a_fresh_run_is_a_new_identity()
         .begin_depths_run(DepthsRunStart {
             run_id: 7,
             roster: vec![id("aria")],
-            cleared: ALL_CLEARED,
+            cleared: chambers(ALL_CLEARED),
             checkpoint: true,
             outcome: Some(open.outcome),
         })

@@ -2,7 +2,7 @@
 use egui::{ColorImage, TextureHandle, TextureOptions, Vec2};
 use std::{collections::BTreeMap, io::Cursor};
 
-const IMAGES: [(u8, &[u8]); 4] = [
+const IMAGES: [(u32, &[u8]); 4] = [
     (
         1,
         include_bytes!("../../../../web/assets/warden-icons/warden-1-512.png"),
@@ -28,7 +28,7 @@ struct Illustration {
 enum State {
     #[default]
     Unloaded,
-    Ready(BTreeMap<u8, Illustration>),
+    Ready(BTreeMap<u32, Illustration>),
     Failed(String),
 }
 #[derive(Default)]
@@ -36,7 +36,7 @@ pub(super) struct AbilityArt {
     state: State,
 }
 impl AbilityArt {
-    fn load(ctx: &egui::Context) -> Result<BTreeMap<u8, Illustration>, String> {
+    fn load(ctx: &egui::Context) -> Result<BTreeMap<u32, Illustration>, String> {
         let mut icons = BTreeMap::new();
         for (ability, bytes) in IMAGES {
             let mut reader =
@@ -75,7 +75,7 @@ impl AbilityArt {
     pub(super) fn image(
         &mut self,
         ctx: &egui::Context,
-        ability: u8,
+        ability: u32,
         locked: bool,
     ) -> Option<egui::Image<'static>> {
         if !(1..=4).contains(&ability) {

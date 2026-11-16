@@ -15,20 +15,17 @@
 
 use crate::ZoneError;
 
-/// Platforms a zone's content may author.
-pub const MAX_PLATFORMS: usize = 8;
-
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct PlatformId(u8);
+pub struct PlatformId(u32);
 
 impl PlatformId {
     #[must_use]
-    pub const fn new(value: u8) -> Self {
+    pub const fn new(value: u32) -> Self {
         Self(value)
     }
 
     #[must_use]
-    pub const fn get(self) -> u8 {
+    pub const fn get(self) -> u32 {
         self.0
     }
 }

@@ -64,10 +64,10 @@ export const TICK_MS = 1_000 / TICK_HZ;
  * complete and abandon quest, directed strike, guard, use door, repair and rise.
  */
 const COMMAND_LENGTHS = new Map([
-  [1, 6], [2, 2], [3, 7], [4, 4], [6, 2], [7, 6], [8, 14], [9, 8], [10, 2], [11, 4], [12, 3], [13, 3],
-  [14, 9], [15, 9], [17, 3], [18, 7], [19, 8], [20, 3], [21, 7], [22, 3], [23, 4], [24, 4], [25, 3],
+  [1, 6], [2, 2], [3, 7], [4, 4], [6, 2], [7, 6], [8, 14], [9, 11], [10, 2], [11, 4], [12, 3], [13, 3],
+  [14, 12], [15, 12], [17, 3], [18, 10], [19, 11], [20, 6], [21, 10], [22, 3], [23, 7], [24, 6], [25, 3],
 ]);
-/** Wraps a command with the six `u32` sheet revisions the client holds (#544). */
+/** Wraps a command with the eight `u32` sheet revisions the client holds (#544, #882). */
 const ACKNOWLEDGED_TAG = 31;
 
 /** The command inside an acknowledgement, which every online command arrives in. */
@@ -75,12 +75,12 @@ function unwrapAcknowledged(payload: Uint8Array): Uint8Array {
   if (payload[1] !== ACKNOWLEDGED_TAG) {
     return payload;
   }
-  if (payload.length < 2 + 24 + 1) {
+  if (payload.length < 2 + 32 + 1) {
     throw new Error("malformed acknowledged command");
   }
-  const inner = new Uint8Array(payload.length - 24 - 1);
+  const inner = new Uint8Array(payload.length - 32 - 1);
   inner[0] = payload[0]!;
-  inner.set(payload.subarray(2 + 24), 1);
+  inner.set(payload.subarray(2 + 32), 1);
   return inner;
 }
 

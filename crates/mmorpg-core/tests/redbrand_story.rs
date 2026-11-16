@@ -15,7 +15,10 @@ use support::{arena, classes};
 
 const SLOT: ZoneId = ZoneId::new(20_000);
 const GREYHAVEN: ZoneId = ZoneId::new(1);
-const ALL_CLEARED: u8 = 0b111;
+/// Every chamber of the depths cleared.
+fn all_cleared() -> std::collections::BTreeSet<u32> {
+    (0..3).collect()
+}
 const GREAVES: ItemId = ItemId::new(18);
 /// The chain turned in up to *Into Redbrand Hollow*, Garrick's quest not yet.
 fn before_garrick() -> std::collections::BTreeSet<mmorpg_core::QuestId> {
@@ -143,7 +146,7 @@ fn thorn_fight(roster: &[CharacterRecord], run_id: u64) -> ZoneSimulation {
             .iter()
             .map(|record| record.character_id.clone())
             .collect(),
-        cleared: ALL_CLEARED,
+        cleared: all_cleared(),
         checkpoint: true,
         outcome: None,
     })

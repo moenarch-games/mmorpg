@@ -127,7 +127,7 @@ export type SceneryContent = StaticSceneContent & {
   importedRestClip(kind: string): string | undefined;
   areaAt(x: number, z: number): number | undefined;
   /** Destructible pieces (#305) feet at `(x, z)` units can repair, in ID order. */
-  reachablePieces(x: number, z: number): Uint16Array;
+  reachablePieces(x: number, z: number): Uint32Array;
   /** The night raid target's disturbance circle (#530): `[x, z, radius]` units, or empty. */
   raidArea(): Int32Array;
   /** The night raid target's aftermath aid tasks (#531): `[x, z, npc]` units per task, npc 0 for a breach. */

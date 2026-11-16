@@ -702,9 +702,6 @@ impl ZoneContent {
     /// Binds doors (#158): unique IDs, leaf bodies in the static collider namespace that no
     /// content collider uses, and non-empty leaf boxes inside the content range.
     pub fn with_doors(mut self, mut doors: Vec<crate::Door>) -> Result<Self, ZoneError> {
-        if doors.len() > crate::MAX_DOORS {
-            return Err(ZoneError::new("zone door content capacity reached"));
-        }
         doors.sort_by_key(|door| door.id);
         if doors
             .windows(2)
@@ -746,9 +743,6 @@ impl ZoneContent {
         mut self,
         mut platforms: Vec<crate::Platform>,
     ) -> Result<Self, ZoneError> {
-        if platforms.len() > crate::MAX_PLATFORMS {
-            return Err(ZoneError::new("zone platform content capacity reached"));
-        }
         platforms.sort_by_key(|platform| platform.id);
         if platforms
             .windows(2)
@@ -873,12 +867,8 @@ impl ZoneContent {
         Ok(self)
     }
 
-    /// Binds authored water volumes (#274), at most [`crate::water::MAX_WATER_VOLUMES`],
-    /// in authoring order; volumes must not share a name.
+    /// Binds authored water volumes (#274) in authoring order; volumes must not share a name.
     pub fn with_waters(mut self, waters: Vec<crate::WaterVolume>) -> Result<Self, ZoneError> {
-        if waters.len() > crate::water::MAX_WATER_VOLUMES {
-            return Err(ZoneError::new("zone water volume capacity reached"));
-        }
         for (index, water) in waters.iter().enumerate() {
             water.validate()?;
             if waters[..index].iter().any(|other| other.name == water.name) {
@@ -990,12 +980,11 @@ impl ZoneContent {
             .map(|index| &self.doors[index])
     }
 
-    /// Binds the authored seats (#619): distinct nonzero IDs, at most [`crate::MAX_SEATS`], no
-    /// two standing on one spot. Bind before the routines that name them.
+    /// Binds the authored seats (#619): distinct nonzero IDs, no two standing on one
+    /// spot. Bind before the routines that name them.
     pub fn with_seats(mut self, mut seats: Vec<crate::Seat>) -> Result<Self, ZoneError> {
         seats.sort_by_key(|seat| seat.id);
-        if seats.len() > crate::MAX_SEATS
-            || seats.iter().any(|seat| seat.id.get() == 0)
+        if seats.iter().any(|seat| seat.id.get() == 0)
             || seats.windows(2).any(|pair| pair[0].id == pair[1].id)
             || seats.iter().enumerate().any(|(index, seat)| {
                 seats[index + 1..]
@@ -1046,8 +1035,8 @@ impl ZoneContent {
     }
 
     /// Binds NPC day/night routines and the vendors that close at night (#158): each routine
-    /// names a distinct content NPC, has 1..=[`crate::MAX_ROUTINE_WAYPOINTS`] in-range
-    /// waypoints and at most a content door; each closing NPC is a content vendor.
+    /// names a distinct content NPC, has at least one in-range waypoint and at most a content
+    /// door; each closing NPC is a content vendor.
     pub fn with_routines(
         mut self,
         mut routines: Vec<crate::NpcRoutine>,
@@ -1063,7 +1052,6 @@ impl ZoneContent {
         for routine in &routines {
             if self.npc(routine.npc).is_none()
                 || routine.path.is_empty()
-                || routine.path.len() > crate::MAX_ROUTINE_WAYPOINTS
                 || routine
                     .path
                     .iter()
@@ -1105,7 +1093,6 @@ impl ZoneContent {
             let mut free_from = i64::from(crate::DAWN) + home_walk;
             for errand in &routine.errands {
                 if errand.path.is_empty()
-                    || errand.path.len() > crate::MAX_ROUTINE_WAYPOINTS
                     || errand
                         .path
                         .iter()
@@ -1191,8 +1178,7 @@ impl ZoneContent {
         self.private_homes.iter().find(|home| home.door == door)
     }
 
-    /// Binds the cross-zone seam corridors of this zone (#145), at most
-    /// [`crate::MAX_HANDOFF_CORRIDORS`]. Corridors must not overlap, and every
+    /// Binds the cross-zone seam corridors of this zone (#145). Corridors must not overlap, and every
     /// creature's wander area, NPC, routine path, the graveyard and every
     /// player spawn slot must stay clear of each corridor and its turn-back
     /// margin, so no unit of this zone reaches the seam.
@@ -1200,9 +1186,6 @@ impl ZoneContent {
         mut self,
         corridors: Vec<crate::HandoffCorridor>,
     ) -> Result<Self, ZoneError> {
-        if corridors.len() > crate::MAX_HANDOFF_CORRIDORS {
-            return Err(ZoneError::new("zone handoff corridor capacity reached"));
-        }
         for (index, corridor) in corridors.iter().enumerate() {
             corridor.validate()?;
             if corridors[..index]
@@ -1458,7 +1441,7 @@ impl ZoneContent {
                 hash.i32s(&bounds.min);
                 hash.i32s(&bounds.max);
             }
-            hash.u8(threshold.qualifying_quest.get());
+            hash.u32(threshold.qualifying_quest.get());
             hash.i32s(&threshold.entrance);
             hash.bytes(&threshold.facing.to_be_bytes());
         }
@@ -1521,8 +1504,8 @@ impl ZoneContent {
         hash.u64(fingerprint);
         hash.len(self.carried_quests.len());
         for quest in &self.carried_quests {
-            hash.u8(quest.id.get());
-            hash.u8(quest.prerequisite.map_or(0, crate::QuestId::get));
+            hash.u32(quest.id.get());
+            hash.u32(quest.prerequisite.map_or(0, crate::QuestId::get));
             hash.len(quest.objectives.len());
             for objective in &quest.objectives {
                 hash.u8(objective.required());
@@ -1544,7 +1527,7 @@ impl ZoneContent {
         hash.u64(fingerprint);
         hash.len(self.waystones.len());
         for site in self.waystones.iter().filter_map(|id| crate::waystone(*id)) {
-            hash.u8(site.id.get());
+            hash.u32(site.id.get());
             hash.u32(site.zone.get());
             hash.i32s(&site.stone);
             hash.i32s(&site.arrival);
@@ -1661,7 +1644,8 @@ impl ZoneContent {
         hash.u64(fingerprint);
         hash.len(self.traps.len());
         for trap in &self.traps {
-            hash.bytes(&[trap.id.get(), trap.kind() as u8]);
+            hash.u32(trap.id.get());
+            hash.u8(trap.kind() as u8);
             hash.i32s(&[i32::from(trap.damage), i32::from(trap.rehit_ticks)]);
             match trap.trigger {
                 crate::TrapTrigger::Live => hash.bytes(&[0]),
@@ -1766,14 +1750,14 @@ impl ZoneContent {
         hash.u64(fingerprint);
         hash.len(self.sites.len());
         for site in &self.sites {
-            hash.u8(site.id);
+            hash.u32(site.id);
             hash.text(&site.name);
             hash.u32(site.regrowth_ticks);
         }
         hash.len(self.pieces.len());
         for piece in &self.pieces {
-            hash.u32(u32::from(piece.id.get()));
-            hash.u8(piece.site);
+            hash.u32(piece.id.get());
+            hash.u32(piece.site);
             hash.u32(piece.body);
             for value in piece.position.iter().chain(&piece.half_extents) {
                 hash.i32(*value);
@@ -1781,7 +1765,7 @@ impl ZoneContent {
             hash.u32(piece.health);
             hash.len(piece.supports.len());
             for support in &piece.supports {
-                hash.u32(u32::from(support.get()));
+                hash.u32(support.get());
             }
             match piece.rubble {
                 None => hash.u8(0),
@@ -1825,7 +1809,7 @@ impl ZoneContent {
         hash.u64(fingerprint);
         hash.len(self.platforms.len());
         for platform in &self.platforms {
-            hash.u8(platform.id.get());
+            hash.u32(platform.id.get());
             hash.u32(platform.body);
             for value in platform
                 .half_extents
@@ -1857,9 +1841,9 @@ impl ZoneContent {
                 hash.i32(*value);
             }
             hash.u16(routine.home_facing);
-            hash.u8(routine.door.map_or(0, crate::DoorId::get));
-            hash.u8(routine.home_seat.map_or(0, crate::SeatId::get));
-            hash.u8(routine.work_seat.map_or(0, crate::SeatId::get));
+            hash.u32(routine.door.map_or(0, crate::DoorId::get));
+            hash.u32(routine.home_seat.map_or(0, crate::SeatId::get));
+            hash.u32(routine.work_seat.map_or(0, crate::SeatId::get));
             hash.len(routine.errands.len());
             for errand in &routine.errands {
                 hash.u32(errand.leave);
@@ -1869,12 +1853,12 @@ impl ZoneContent {
                 }
                 hash.u32(errand.stay);
                 hash.u16(errand.facing);
-                hash.u8(errand.seat.map_or(0, crate::SeatId::get));
+                hash.u32(errand.seat.map_or(0, crate::SeatId::get));
             }
         }
         hash.len(self.seats.len());
         for seat in &self.seats {
-            hash.u8(seat.id.get());
+            hash.u32(seat.id.get());
             hash.i32(seat.stand[0]);
             hash.i32(seat.stand[1]);
             hash.i32(seat.root[0]);
@@ -1898,7 +1882,7 @@ impl ZoneContent {
         hash.u64(fingerprint);
         hash.len(self.doors.len());
         for door in &self.doors {
-            hash.u8(door.id.get());
+            hash.u32(door.id.get());
             hash.u32(door.body);
             for leaf in [door.closed, door.open] {
                 for value in leaf.position.iter().chain(&leaf.half_extents) {
@@ -1919,18 +1903,18 @@ impl ZoneContent {
         hash.u64(fingerprint);
         hash.len(self.quests.len());
         for quest in &self.quests {
-            hash.u8(quest.id.get());
+            hash.u32(quest.id.get());
             hash.text(&quest.name);
             hash.text(&quest.text);
             hash.u32(quest.giver.get());
             hash.u32(quest.ender.get());
-            hash.u8(quest.prerequisite.map_or(0, crate::QuestId::get));
+            hash.u32(quest.prerequisite.map_or(0, crate::QuestId::get));
             hash.len(quest.objectives.len());
             for objective in &quest.objectives {
                 hash.u8(objective.code());
                 match *objective {
                     crate::QuestObjective::Kill { template, count } => {
-                        hash.u16(template.get());
+                        hash.u32(template.get());
                         hash.u8(count);
                     }
                     crate::QuestObjective::Collect {
@@ -1938,15 +1922,15 @@ impl ZoneContent {
                         count,
                         source,
                     } => {
-                        hash.u16(item.get());
+                        hash.u32(item.get());
                         hash.u8(count);
-                        hash.u16(source.get());
+                        hash.u32(source.get());
                     }
                     crate::QuestObjective::Talk { npc } => hash.u32(npc.get()),
-                    crate::QuestObjective::Explore { area } => hash.u16(area.get()),
+                    crate::QuestObjective::Explore { area } => hash.u32(area.get()),
                     crate::QuestObjective::Retrieve { item, area } => {
-                        hash.u16(item.get());
-                        hash.u16(area.get());
+                        hash.u32(item.get());
+                        hash.u32(area.get());
                     }
                     crate::QuestObjective::DefeatThorn => {}
                 }
@@ -1955,7 +1939,7 @@ impl ZoneContent {
             hash.u32(quest.rewards.copper);
             hash.len(quest.rewards.choices.len());
             for item in &quest.rewards.choices {
-                hash.u16(item.get());
+                hash.u32(item.get());
             }
         }
         hash.finish()
@@ -1970,7 +1954,7 @@ impl ZoneContent {
         hash.bytes(b"mmorpg.zone-content/v5");
         hash.u64(fingerprint);
         for item in crate::ITEM_CATALOG {
-            hash.u16(item.id.get());
+            hash.u32(item.id.get());
             hash.u32(crate::sell_price(item.id));
         }
         hash.len(self.vendors.len());
@@ -1978,7 +1962,7 @@ impl ZoneContent {
             hash.u32(npc.get());
             hash.len(stock.offers().len());
             for offer in stock.offers() {
-                hash.u16(offer.item.get());
+                hash.u32(offer.item.get());
                 hash.u32(offer.price);
             }
         }
@@ -1996,15 +1980,15 @@ impl ZoneContent {
         hash.bytes(&crate::ability::catalog_bytes());
         hash.len(self.creature_abilities.len());
         for (template, ability) in &self.creature_abilities {
-            hash.u16(template.get());
-            hash.u8(ability.get());
+            hash.u32(template.get());
+            hash.u32(ability.get());
         }
         // Bosses (#276) join the identity only when content has any, so other zones keep theirs.
         if !self.bosses.is_empty() {
             hash.bytes(b"bosses");
             hash.len(self.bosses.len());
             for rules in &self.bosses {
-                hash.u16(rules.template.get());
+                hash.u32(rules.template.get());
                 hash.u16(rules.health_percent_per_extra);
                 hash.u16(rules.damage_percent_per_extra);
                 hash.i32(rules.engage_radius);
@@ -2019,7 +2003,7 @@ impl ZoneContent {
             hash.bytes(b"shielded");
             hash.len(self.shielded.len());
             for template in &self.shielded {
-                hash.u16(template.get());
+                hash.u32(template.get());
             }
         }
         hash.finish()
@@ -2032,7 +2016,7 @@ impl ZoneContent {
         hash.u64(self.rng_seed);
         hash.len(crate::ITEM_CATALOG.len());
         for item in crate::ITEM_CATALOG {
-            hash.u16(item.id.get());
+            hash.u32(item.id.get());
             hash.text(item.name);
             hash.u16(item.max_stack);
             let stats = item.stats;
@@ -2045,7 +2029,7 @@ impl ZoneContent {
             ]);
         }
         for slot in crate::Inventory::starter().slots() {
-            hash.u16(slot.map_or(0, |stack| stack.item().get()));
+            hash.u32(slot.map_or(0, |stack| stack.item().get()));
             hash.u16(slot.map_or(0, |stack| stack.quantity()));
         }
         let base_fingerprint = hash.finish();
@@ -2057,7 +2041,7 @@ impl ZoneContent {
         hash.u64(base_fingerprint);
         hash.len(self.loot_tables.len());
         for (template, table) in &self.loot_tables {
-            hash.u16(template.get());
+            hash.u32(template.get());
             for bound in table.money_range() {
                 hash.u32(bound);
             }
@@ -2075,7 +2059,7 @@ impl ZoneContent {
                     } => {
                         hash.u8(1);
                         hash.u16(weight);
-                        hash.u16(item.get());
+                        hash.u32(item.get());
                         hash.u16(quantity[0]);
                         hash.u16(quantity[1]);
                     }
@@ -2129,14 +2113,14 @@ impl ZoneContent {
         }
         hash.len(self.areas.areas().len());
         for area in self.areas.areas() {
-            hash.u16(area.id().get());
+            hash.u32(area.id().get());
             hash.text(area.name());
             hash.i32s(&area.min_xz());
             hash.i32s(&area.max_xz());
         }
         hash.len(self.templates.len());
         for template in &self.templates {
-            hash.u16(template.id.get());
+            hash.u32(template.id.get());
             hash.text(&template.name);
             hash.u8(family_code(template.family));
             hash.u8(match template.behaviour {
@@ -2159,7 +2143,7 @@ impl ZoneContent {
         hash.len(self.spawns.len());
         for spawn in &self.spawns {
             hash.u32(spawn.id.get());
-            hash.u16(spawn.template.get());
+            hash.u32(spawn.template.get());
             hash.i32s(&spawn.position);
             hash.u16(spawn.facing);
             hash.i32(spawn.wander_radius);

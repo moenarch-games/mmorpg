@@ -12,7 +12,7 @@ use crate::power_draw::can_draw;
 /// The first opted-in throwable is the Rogue's Blasting Bomb; others follow once its throw feels
 /// right (docs/CONTROLS.md, step 3).
 #[must_use]
-pub fn aims_manually(ability: u8) -> bool {
+pub fn aims_manually(ability: u32) -> bool {
     AbilityId::new(ability) == ids::BLASTING_BOMB
 }
 
@@ -20,13 +20,13 @@ pub fn aims_manually(ability: u8) -> bool {
 /// learned and still on that slot, the viewer can act (alive, unstunned, not casting) and no
 /// interface window is open. Otherwise the slot is used as usual.
 #[must_use]
-pub fn can_aim(snapshot: &ZoneSnapshot, slot: u8, ability: u8, interface_open: bool) -> bool {
+pub fn can_aim(snapshot: &ZoneSnapshot, slot: u8, ability: u32, interface_open: bool) -> bool {
     aims_manually(ability) && !interface_open && can_draw(snapshot, slot, ability)
 }
 
 /// Whether an aim on `slot` holding `ability` is still possible in this projection.
 #[must_use]
-pub fn still_aims(snapshot: &ZoneSnapshot, slot: u8, ability: u8) -> bool {
+pub fn still_aims(snapshot: &ZoneSnapshot, slot: u8, ability: u32) -> bool {
     can_draw(snapshot, slot, ability)
 }
 
@@ -92,7 +92,7 @@ mod tests {
     use crate::test_support::snapshot;
     use mmorpg_core::{ClassChoice, EntityFlags, EntityKind, EntitySnapshot, PlayerClass, Sex};
 
-    const BOMB: u8 = ids::BLASTING_BOMB.get();
+    const BOMB: u32 = ids::BLASTING_BOMB.get();
 
     fn unit(kind: EntityKind, id: u32, position: [i32; 3], attackable: bool) -> EntitySnapshot {
         EntitySnapshot {

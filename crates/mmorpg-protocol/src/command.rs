@@ -4,7 +4,7 @@
 use mmorpg_core::{NpcId, ZoneCommand};
 
 use crate::ProtocolError;
-use crate::wire::{decode_entity_ref, encode_entity_ref};
+use crate::wire::{decode_entity_ref, encode_entity_ref, take};
 
 /// Every command leads with the low byte of [`crate::PROTOCOL_ID`].
 pub(crate) const PROTOCOL_BYTE: u8 = crate::PROTOCOL_ID.to_be_bytes()[3];
@@ -41,40 +41,41 @@ const OBSERVED_TAG: u8 = 27;
 const RELEASE_ABILITY_TAG: u8 = 28;
 /// A dodge roll (#516).
 const ROLL_TAG: u8 = 29;
-/// Waystone travel (#145): version, tag, waystone (u8).
+/// Waystone travel (#145): version, tag, waystone (u32).
 const USE_WAYSTONE_TAG: u8 = 30;
 /// Wraps a plain or observed command with the sheet revisions its client holds (#544).
 pub(crate) const ACKNOWLEDGED_TAG: u8 = 31;
-/// Night raid aftermath aid (#531): version, tag, task (u8).
+/// Night raid aftermath aid (#531): version, tag, task (u32).
 const RAID_AID_TAG: u8 = 32;
-/// Night raid preparation (#532): version, tag, step (u8: 0 investigate, 1 report, 2 + k brace k).
+/// Night raid preparation (#532): version, tag, step kind (u8: 0 investigate, 1 report, 2 brace)
+/// and brace spot (u32).
 const RAID_PREPARE_TAG: u8 = 33;
 const ROLL_DEPTHS_DROP_TAG: u8 = 34;
 const CLAIM_DEPTHS_DROP_TAG: u8 = 35;
-/// Sit (#619): version, tag, seat (u8, 0 the ground).
+/// Sit (#619): version, tag, seat (u32, 0 the ground).
 const SIT_TAG: u8 = 36;
 /// Explicit weapon mode (#802): version, tag, drawn (0 or 1).
 const SET_WEAPON_DRAWN_TAG: u8 = 37;
-/// Version, tag, ability (u8), retired (0 key up, 1 retired).
-const RELEASE_ABILITY_COMMAND_BYTES: usize = 4;
+/// Version, tag, ability (u32), retired (0 key up, 1 retired).
+const RELEASE_ABILITY_COMMAND_BYTES: usize = 7;
 /// Version, tag, observed tick (u64), before the inner command's tag.
 const OBSERVED_PREFIX_BYTES: usize = 10;
 /// Version, tag, minion order (9 bytes, #295).
 const COMMAND_MINIONS_COMMAND_BYTES: usize = 2 + crate::wire::MINION_ORDER_BYTES;
 /// Version, tag, rise (i8: -1, 0 or 1).
 const RISE_COMMAND_BYTES: usize = 3;
-/// Version, tag, piece reference (u16: 0 none, else the piece ID plus one).
-const REPAIR_COMMAND_BYTES: usize = 4;
 /// Version, tag, lane code (0 lowered, 1 + the height code raised).
 const GUARD_COMMAND_BYTES: usize = 3;
-const USE_DOOR_COMMAND_BYTES: usize = 4;
-/// Version, tag, ability (u8), facing (u16), side and height codes (u8 each).
-const DIRECTED_STRIKE_COMMAND_BYTES: usize = 7;
+/// Version, tag, door (u32), open (0 or 1).
+const USE_DOOR_COMMAND_BYTES: usize = 7;
+/// Version, tag, ability (u32), facing (u16), side and height codes (u8 each).
+const DIRECTED_STRIKE_COMMAND_BYTES: usize = 10;
 /// Version, tag, emote ID (u8).
 const EMOTE_COMMAND_BYTES: usize = 3;
-/// Version, tag, NPC (u32), offer or bag slot (u8), quantity (u16).
-const TRADE_COMMAND_BYTES: usize = 9;
-const USE_ABILITY_COMMAND_BYTES: usize = 8;
+/// Version, tag, NPC (u32), offer or bag slot (u32), quantity (u16).
+const TRADE_COMMAND_BYTES: usize = 12;
+/// Version, tag, ability (u32), target reference.
+const USE_ABILITY_COMMAND_BYTES: usize = 11;
 const CHOOSE_CLASS_COMMAND_BYTES: usize = 4;
 const MOVE_COMMAND_BYTES: usize = 6;
 const SELECT_TARGET_COMMAND_BYTES: usize = 7;
@@ -105,23 +106,25 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
         ZoneCommand::Rise(rise) => vec![PROTOCOL_BYTE, RISE_TAG, rise.to_be_bytes()[0]],
         ZoneCommand::UseAbility { ability, target } => {
             let mut payload = Vec::with_capacity(USE_ABILITY_COMMAND_BYTES);
-            payload.extend_from_slice(&[PROTOCOL_BYTE, USE_ABILITY_TAG, ability]);
+            payload.extend_from_slice(&[PROTOCOL_BYTE, USE_ABILITY_TAG]);
+            payload.extend_from_slice(&ability.to_be_bytes());
             encode_entity_ref(&mut payload, target);
             payload
         }
-        ZoneCommand::ReleaseAbility { ability, retired } => vec![
-            PROTOCOL_BYTE,
-            RELEASE_ABILITY_TAG,
-            ability,
-            u8::from(retired),
-        ],
+        ZoneCommand::ReleaseAbility { ability, retired } => {
+            let mut payload = vec![PROTOCOL_BYTE, RELEASE_ABILITY_TAG];
+            payload.extend_from_slice(&ability.to_be_bytes());
+            payload.push(u8::from(retired));
+            payload
+        }
         ZoneCommand::DirectedStrike {
             ability,
             facing,
             aim,
         } => {
             let mut payload = Vec::with_capacity(DIRECTED_STRIKE_COMMAND_BYTES);
-            payload.extend_from_slice(&[PROTOCOL_BYTE, DIRECTED_STRIKE_TAG, ability]);
+            payload.extend_from_slice(&[PROTOCOL_BYTE, DIRECTED_STRIKE_TAG]);
+            payload.extend_from_slice(&ability.to_be_bytes());
             payload.extend_from_slice(&facing.to_be_bytes());
             payload.extend_from_slice(&crate::wire::encode_aim(aim));
             payload
@@ -133,19 +136,15 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
             vec![PROTOCOL_BYTE, SET_WEAPON_DRAWN_TAG, u8::from(drawn)]
         }
         ZoneCommand::UseDoor { door, open } => {
-            vec![PROTOCOL_BYTE, USE_DOOR_TAG, door.get(), u8::from(open)]
+            let mut payload = vec![PROTOCOL_BYTE, USE_DOOR_TAG];
+            payload.extend_from_slice(&door.get().to_be_bytes());
+            payload.push(u8::from(open));
+            payload
         }
         ZoneCommand::Sit { seat } => {
-            vec![
-                PROTOCOL_BYTE,
-                SIT_TAG,
-                seat.map_or(0, mmorpg_core::SeatId::get),
-            ]
+            word_command(SIT_TAG, seat.map_or(0, mmorpg_core::SeatId::get))
         }
-        ZoneCommand::Repair { piece } => {
-            let [high, low] = crate::wire::encode_piece(piece).to_be_bytes();
-            vec![PROTOCOL_BYTE, REPAIR_TAG, high, low]
-        }
+        ZoneCommand::Repair { piece } => word_command(REPAIR_TAG, crate::wire::encode_piece(piece)),
         ZoneCommand::CancelCast => vec![PROTOCOL_BYTE, CANCEL_CAST_TAG],
         ZoneCommand::CommandMinions(order) => {
             let mut payload = Vec::with_capacity(COMMAND_MINIONS_COMMAND_BYTES);
@@ -182,27 +181,24 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
             npc,
             bag_slot,
             quantity,
-        } => encode_trade(SELL_ITEM_TAG, npc, bag_slot, quantity),
+        } => encode_trade(SELL_ITEM_TAG, npc, u32::from(bag_slot), quantity),
         ZoneCommand::Emote(emote) => vec![PROTOCOL_BYTE, EMOTE_TAG, emote.code()],
         ZoneCommand::AcceptQuest { npc, quest } => {
             let mut payload = vec![PROTOCOL_BYTE, ACCEPT_QUEST_TAG];
             payload.extend_from_slice(&npc.get().to_be_bytes());
-            payload.push(quest);
+            payload.extend_from_slice(&quest.to_be_bytes());
             payload
         }
         ZoneCommand::CompleteQuest { npc, quest, choice } => {
             let mut payload = vec![PROTOCOL_BYTE, COMPLETE_QUEST_TAG];
             payload.extend_from_slice(&npc.get().to_be_bytes());
-            payload.extend_from_slice(&[quest, choice]);
+            payload.extend_from_slice(&quest.to_be_bytes());
+            payload.push(choice);
             payload
         }
-        ZoneCommand::AbandonQuest { quest } => {
-            vec![PROTOCOL_BYTE, ABANDON_QUEST_TAG, quest]
-        }
-        ZoneCommand::UseWaystone { waystone } => {
-            vec![PROTOCOL_BYTE, USE_WAYSTONE_TAG, waystone.get()]
-        }
-        ZoneCommand::RaidAid { task } => vec![PROTOCOL_BYTE, RAID_AID_TAG, task],
+        ZoneCommand::AbandonQuest { quest } => word_command(ABANDON_QUEST_TAG, quest),
+        ZoneCommand::UseWaystone { waystone } => word_command(USE_WAYSTONE_TAG, waystone.get()),
+        ZoneCommand::RaidAid { task } => word_command(RAID_AID_TAG, task),
         ZoneCommand::RollDepthsDrop { run, drop, choice } => {
             let mut payload = vec![PROTOCOL_BYTE, ROLL_DEPTHS_DROP_TAG];
             payload.extend_from_slice(&run.to_be_bytes());
@@ -217,11 +213,9 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
             payload
         }
         ZoneCommand::RaidPrepare { prep } => {
-            vec![
-                PROTOCOL_BYTE,
-                RAID_PREPARE_TAG,
-                crate::raid::prep_code(prep),
-            ]
+            let mut payload = vec![PROTOCOL_BYTE, RAID_PREPARE_TAG];
+            payload.extend_from_slice(&crate::raid::encode_prep(prep));
+            payload
         }
         ZoneCommand::Chat { channel, text } => {
             let mut payload = vec![PROTOCOL_BYTE, CHAT_TAG];
@@ -239,25 +233,42 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
     }
 }
 
-fn encode_trade(tag: u8, npc: NpcId, index: u8, quantity: u16) -> Vec<u8> {
+/// Version, tag and one `u32` field.
+fn word_command(tag: u8, value: u32) -> Vec<u8> {
+    let mut payload = vec![PROTOCOL_BYTE, tag];
+    payload.extend_from_slice(&value.to_be_bytes());
+    payload
+}
+
+/// The `u32` field of a version, tag and `u32` command.
+fn decode_word_command(payload: &[u8], name: &str) -> Result<u32, ProtocolError> {
+    let [_, _, a, b, c, d] = payload else {
+        return Err(ProtocolError::new(format!(
+            "{name} command payload must be exactly 6 bytes"
+        )));
+    };
+    Ok(u32::from_be_bytes([*a, *b, *c, *d]))
+}
+
+fn encode_trade(tag: u8, npc: NpcId, index: u32, quantity: u16) -> Vec<u8> {
     let mut payload = Vec::with_capacity(TRADE_COMMAND_BYTES);
     payload.extend_from_slice(&[PROTOCOL_BYTE, tag]);
     payload.extend_from_slice(&npc.get().to_be_bytes());
-    payload.push(index);
+    payload.extend_from_slice(&index.to_be_bytes());
     payload.extend_from_slice(&quantity.to_be_bytes());
     payload
 }
 
-/// The NPC, offer or bag slot, and quantity of a 9-byte trade command.
-fn decode_trade(payload: &[u8], name: &str) -> Result<(NpcId, u8, u16), ProtocolError> {
-    let [_, _, n0, n1, n2, n3, index, q0, q1] = payload else {
+/// The NPC, offer or bag slot, and quantity of a 12-byte trade command.
+fn decode_trade(payload: &[u8], name: &str) -> Result<(NpcId, u32, u16), ProtocolError> {
+    let [_, _, n0, n1, n2, n3, i0, i1, i2, i3, q0, q1] = payload else {
         return Err(ProtocolError::new(format!(
-            "{name} command payload must be exactly 9 bytes"
+            "{name} command payload must be exactly 12 bytes"
         )));
     };
     Ok((
         NpcId::new(u32::from_be_bytes([*n0, *n1, *n2, *n3])),
-        *index,
+        u32::from_be_bytes([*i0, *i1, *i2, *i3]),
         u16::from_be_bytes([*q0, *q1]),
     ))
 }
@@ -410,19 +421,19 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
         USE_ABILITY_TAG => {
             if payload.len() != USE_ABILITY_COMMAND_BYTES {
                 return Err(ProtocolError::new(
-                    "use ability command payload must be exactly 8 bytes",
+                    "use ability command payload must be exactly 11 bytes",
                 ));
             }
-            let mut offset = BARE_COMMAND_BYTES + 1;
+            let mut offset = BARE_COMMAND_BYTES;
             Ok(ZoneCommand::UseAbility {
-                ability: payload[BARE_COMMAND_BYTES],
+                ability: u32::from_be_bytes(take(payload, &mut offset)?),
                 target: decode_entity_ref(payload, &mut offset)?,
             })
         }
         RELEASE_ABILITY_TAG => {
-            let [_, _, ability, retired] = payload else {
+            let [_, _, a, b, c, d, retired] = payload else {
                 return Err(ProtocolError::new(
-                    "release ability command payload must be exactly 4 bytes",
+                    "release ability command payload must be exactly 7 bytes",
                 ));
             };
             debug_assert_eq!(payload.len(), RELEASE_ABILITY_COMMAND_BYTES);
@@ -432,19 +443,19 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
                 _ => return Err(ProtocolError::new("release retired flag must be 0 or 1")),
             };
             Ok(ZoneCommand::ReleaseAbility {
-                ability: *ability,
+                ability: u32::from_be_bytes([*a, *b, *c, *d]),
                 retired,
             })
         }
         DIRECTED_STRIKE_TAG => {
-            let [_, _, ability, high, low, side, height] = payload else {
+            let [_, _, a, b, c, d, high, low, side, height] = payload else {
                 return Err(ProtocolError::new(
-                    "directed strike command payload must be exactly 7 bytes",
+                    "directed strike command payload must be exactly 10 bytes",
                 ));
             };
             debug_assert_eq!(payload.len(), DIRECTED_STRIKE_COMMAND_BYTES);
             Ok(ZoneCommand::DirectedStrike {
-                ability: *ability,
+                ability: u32::from_be_bytes([*a, *b, *c, *d]),
                 facing: u16::from_be_bytes([*high, *low]),
                 aim: crate::wire::decode_aim([*side, *height])?,
             })
@@ -496,9 +507,9 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
             }))
         }
         USE_DOOR_TAG => {
-            let [_, _, door, open] = payload else {
+            let [_, _, a, b, c, d, open] = payload else {
                 return Err(ProtocolError::new(
-                    "use door command payload must be exactly 4 bytes",
+                    "use door command payload must be exactly 7 bytes",
                 ));
             };
             debug_assert_eq!(payload.len(), USE_DOOR_COMMAND_BYTES);
@@ -508,18 +519,14 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
                 _ => return Err(ProtocolError::new("door state must be 0 or 1")),
             };
             Ok(ZoneCommand::UseDoor {
-                door: mmorpg_core::DoorId::new(*door),
+                door: mmorpg_core::DoorId::new(u32::from_be_bytes([*a, *b, *c, *d])),
                 open,
             })
         }
         SIT_TAG => {
-            let [_, _, seat] = payload else {
-                return Err(ProtocolError::new(
-                    "sit command payload must be exactly 3 bytes",
-                ));
-            };
+            let seat = decode_word_command(payload, "sit")?;
             Ok(ZoneCommand::Sit {
-                seat: (*seat != 0).then(|| mmorpg_core::SeatId::new(*seat)),
+                seat: (seat != 0).then(|| mmorpg_core::SeatId::new(seat)),
             })
         }
         COMMAND_MINIONS_TAG => {
@@ -533,17 +540,9 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
                 crate::wire::decode_minion_order(payload, &mut offset)?,
             ))
         }
-        REPAIR_TAG => {
-            let [_, _, high, low] = payload else {
-                return Err(ProtocolError::new(
-                    "repair command payload must be exactly 4 bytes",
-                ));
-            };
-            debug_assert_eq!(payload.len(), REPAIR_COMMAND_BYTES);
-            Ok(ZoneCommand::Repair {
-                piece: crate::wire::decode_piece(u16::from_be_bytes([*high, *low])),
-            })
-        }
+        REPAIR_TAG => Ok(ZoneCommand::Repair {
+            piece: crate::wire::decode_piece(decode_word_command(payload, "repair")?),
+        }),
         CHOOSE_CLASS_TAG => {
             let [_, _, class, sex] = payload else {
                 return Err(ProtocolError::new(
@@ -588,7 +587,8 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
             let (npc, bag_slot, quantity) = decode_trade(payload, "sell item")?;
             Ok(ZoneCommand::SellItem {
                 npc,
-                bag_slot,
+                bag_slot: u8::try_from(bag_slot)
+                    .map_err(|_| ProtocolError::new("sell item bag slot is out of range"))?,
                 quantity,
             })
         }
@@ -615,62 +615,45 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
             )?))
         }
         ACCEPT_QUEST_TAG => {
-            let [_, _, n0, n1, n2, n3, quest] = payload else {
+            let [_, _, n0, n1, n2, n3, q0, q1, q2, q3] = payload else {
                 return Err(ProtocolError::new(
-                    "accept quest command payload must be exactly 7 bytes",
+                    "accept quest command payload must be exactly 10 bytes",
                 ));
             };
             Ok(ZoneCommand::AcceptQuest {
                 npc: NpcId::new(u32::from_be_bytes([*n0, *n1, *n2, *n3])),
-                quest: *quest,
+                quest: u32::from_be_bytes([*q0, *q1, *q2, *q3]),
             })
         }
         COMPLETE_QUEST_TAG => {
-            let [_, _, n0, n1, n2, n3, quest, choice] = payload else {
+            let [_, _, n0, n1, n2, n3, q0, q1, q2, q3, choice] = payload else {
                 return Err(ProtocolError::new(
-                    "complete quest command payload must be exactly 8 bytes",
+                    "complete quest command payload must be exactly 11 bytes",
                 ));
             };
             Ok(ZoneCommand::CompleteQuest {
                 npc: NpcId::new(u32::from_be_bytes([*n0, *n1, *n2, *n3])),
-                quest: *quest,
+                quest: u32::from_be_bytes([*q0, *q1, *q2, *q3]),
                 choice: *choice,
             })
         }
-        ABANDON_QUEST_TAG => {
-            let [_, _, quest] = payload else {
-                return Err(ProtocolError::new(
-                    "abandon quest command payload must be exactly 3 bytes",
-                ));
-            };
-            Ok(ZoneCommand::AbandonQuest { quest: *quest })
-        }
-        USE_WAYSTONE_TAG => {
-            let [_, _, waystone] = payload else {
-                return Err(ProtocolError::new(
-                    "use waystone command payload must be exactly 3 bytes",
-                ));
-            };
-            Ok(ZoneCommand::UseWaystone {
-                waystone: crate::wire::decode_waystone(*waystone)?,
-            })
-        }
-        RAID_AID_TAG => {
-            let [_, _, task] = payload else {
-                return Err(ProtocolError::new(
-                    "raid aid command payload must be exactly 3 bytes",
-                ));
-            };
-            Ok(ZoneCommand::RaidAid { task: *task })
-        }
+        ABANDON_QUEST_TAG => Ok(ZoneCommand::AbandonQuest {
+            quest: decode_word_command(payload, "abandon quest")?,
+        }),
+        USE_WAYSTONE_TAG => Ok(ZoneCommand::UseWaystone {
+            waystone: crate::wire::decode_waystone(decode_word_command(payload, "use waystone")?)?,
+        }),
+        RAID_AID_TAG => Ok(ZoneCommand::RaidAid {
+            task: decode_word_command(payload, "raid aid")?,
+        }),
         RAID_PREPARE_TAG => {
-            let [_, _, prep] = payload else {
+            let [_, _, a, b, c, d, e] = payload else {
                 return Err(ProtocolError::new(
-                    "raid prepare command payload must be exactly 3 bytes",
+                    "raid prepare command payload must be exactly 7 bytes",
                 ));
             };
             Ok(ZoneCommand::RaidPrepare {
-                prep: crate::raid::decode_prep(*prep)?,
+                prep: crate::raid::decode_prep([*a, *b, *c, *d, *e])?,
             })
         }
         ROLL_DEPTHS_DROP_TAG => {
@@ -746,14 +729,14 @@ mod tests {
                 ability: 9,
                 target: Some(EntityRef::Creature(CreatureId::new(0x0102_0304))),
             }),
-            [PROTOCOL_BYTE, 9, 9, 2, 1, 2, 3, 4]
+            [PROTOCOL_BYTE, 9, 0, 0, 0, 9, 2, 1, 2, 3, 4]
         );
         assert_eq!(
             encode_command(ZoneCommand::UseAbility {
                 ability: 3,
                 target: None,
             }),
-            [PROTOCOL_BYTE, 9, 3, 0, 0, 0, 0, 0]
+            [PROTOCOL_BYTE, 9, 0, 0, 0, 3, 0, 0, 0, 0, 0]
         );
         assert_eq!(encode_command(ZoneCommand::CancelCast), [PROTOCOL_BYTE, 10]);
         assert_eq!(
@@ -770,7 +753,7 @@ mod tests {
                 facing: 0xabcd,
                 aim: StrikeAim::new(StrikeSide::Right, StrikeHeight::Low),
             }),
-            [PROTOCOL_BYTE, 21, 1, 0xab, 0xcd, 2, 0]
+            [PROTOCOL_BYTE, 21, 0, 0, 0, 1, 0xab, 0xcd, 2, 0]
         );
         assert_eq!(
             encode_command(ZoneCommand::Guard {
@@ -800,7 +783,7 @@ mod tests {
                 offer: 6,
                 quantity: 0x0a0b,
             }),
-            [PROTOCOL_BYTE, 14, 1, 2, 3, 4, 6, 0x0a, 0x0b]
+            [PROTOCOL_BYTE, 14, 1, 2, 3, 4, 0, 0, 0, 6, 0x0a, 0x0b]
         );
         assert_eq!(
             encode_command(ZoneCommand::SellItem {
@@ -808,7 +791,7 @@ mod tests {
                 bag_slot: 15,
                 quantity: 2,
             }),
-            [PROTOCOL_BYTE, 15, 0, 0, 0, 3, 15, 0, 2]
+            [PROTOCOL_BYTE, 15, 0, 0, 0, 3, 0, 0, 0, 15, 0, 2]
         );
         for command in [
             movement,
@@ -826,12 +809,12 @@ mod tests {
             ZoneCommand::CancelCast,
             // Abilities without a directed mode are tick-time refusals.
             ZoneCommand::DirectedStrike {
-                ability: u8::MAX,
+                ability: u32::MAX,
                 facing: u16::MAX,
                 aim: StrikeAim::new(StrikeSide::Left, StrikeHeight::High),
             },
             ZoneCommand::UseAbility {
-                ability: u8::MAX,
+                ability: u32::MAX,
                 target: Some(EntityRef::Npc(NpcId::new(u32::MAX))),
             },
             // Out-of-range class values are gameplay refusals, not wire errors.
@@ -851,14 +834,14 @@ mod tests {
             },
             ZoneCommand::CompleteQuest {
                 npc: NpcId::new(0),
-                quest: u8::MAX,
+                quest: u32::MAX,
                 choice: u8::MAX,
             },
-            ZoneCommand::AbandonQuest { quest: u8::MAX },
+            ZoneCommand::AbandonQuest { quest: u32::MAX },
             // Unknown vendors, offers, slots and quantities are tick-time refusals.
             ZoneCommand::BuyItem {
                 npc: NpcId::new(u32::MAX),
-                offer: u8::MAX,
+                offer: u32::MAX,
                 quantity: u16::MAX,
             },
             ZoneCommand::SellItem {
@@ -943,7 +926,7 @@ mod tests {
                 target: Some(EntityRef::Creature(CreatureId::new(108))),
             },
             ZoneCommand::UseAbility {
-                ability: u8::MAX,
+                ability: u32::MAX,
                 target: Some(EntityRef::Player(4_000_000_000)),
             },
             ZoneCommand::CancelCast,
@@ -958,7 +941,7 @@ mod tests {
                 aim: StrikeAim::new(StrikeSide::Left, StrikeHeight::High),
             },
             ZoneCommand::DirectedStrike {
-                ability: u8::MAX,
+                ability: u32::MAX,
                 facing: u16::MAX,
                 aim: StrikeAim::new(StrikeSide::Right, StrikeHeight::Low),
             },
@@ -993,7 +976,7 @@ mod tests {
             },
             ZoneCommand::BuyItem {
                 npc: NpcId::new(u32::MAX),
-                offer: u8::MAX,
+                offer: u32::MAX,
                 quantity: u16::MAX,
             },
             ZoneCommand::SellItem {
@@ -1022,7 +1005,7 @@ mod tests {
             },
             ZoneCommand::AcceptQuest {
                 npc: NpcId::new(u32::MAX),
-                quest: u8::MAX,
+                quest: u32::MAX,
             },
             ZoneCommand::CompleteQuest {
                 npc: NpcId::new(2),
@@ -1055,7 +1038,7 @@ mod tests {
             ZoneCommand::SetWeaponDrawn(true),
             ZoneCommand::SetWeaponDrawn(false),
             ZoneCommand::UseDoor {
-                door: mmorpg_core::DoorId::new(u8::MAX),
+                door: mmorpg_core::DoorId::new(u32::MAX),
                 open: false,
             },
             ZoneCommand::Sit { seat: None },
@@ -1077,7 +1060,7 @@ mod tests {
                 retired: false,
             },
             ZoneCommand::ReleaseAbility {
-                ability: u8::MAX,
+                ability: u32::MAX,
                 retired: true,
             },
         ];
@@ -1351,15 +1334,15 @@ mod tests {
             npc: NpcId::new(1),
             quest: 2,
         });
-        assert_eq!(accept, [PROTOCOL_BYTE, 18, 0, 0, 0, 1, 2]);
+        assert_eq!(accept, [PROTOCOL_BYTE, 18, 0, 0, 0, 1, 0, 0, 0, 2]);
         let complete = encode_command(ZoneCommand::CompleteQuest {
             npc: NpcId::new(0x0102_0304),
             quest: 9,
             choice: 2,
         });
-        assert_eq!(complete, [PROTOCOL_BYTE, 19, 1, 2, 3, 4, 9, 2]);
+        assert_eq!(complete, [PROTOCOL_BYTE, 19, 1, 2, 3, 4, 0, 0, 0, 9, 2]);
         let abandon = encode_command(ZoneCommand::AbandonQuest { quest: 7 });
-        assert_eq!(abandon, [PROTOCOL_BYTE, 20, 7]);
+        assert_eq!(abandon, [PROTOCOL_BYTE, 20, 0, 0, 0, 7]);
         let emote = encode_command(ZoneCommand::Emote(mmorpg_core::Emote::Bow));
         assert_eq!(emote, [PROTOCOL_BYTE, 17, 2]);
         for invalid in [
@@ -1373,9 +1356,9 @@ mod tests {
                 .chain([b'a'; 81])
                 .collect(),
             // Unknown strike sides and heights are malformed.
-            vec![PROTOCOL_BYTE, 21, 1, 0, 0, 3, 0],
-            vec![PROTOCOL_BYTE, 21, 1, 0, 0, 0, 3],
-            vec![PROTOCOL_BYTE, 21, 1, 0, 0, u8::MAX, u8::MAX],
+            vec![PROTOCOL_BYTE, 21, 0, 0, 0, 1, 0, 0, 3, 0],
+            vec![PROTOCOL_BYTE, 21, 0, 0, 0, 1, 0, 0, 0, 3],
+            vec![PROTOCOL_BYTE, 21, 0, 0, 0, 1, 0, 0, u8::MAX, u8::MAX],
             // Unknown guard lanes are malformed.
             vec![PROTOCOL_BYTE, 22, 4],
             vec![PROTOCOL_BYTE, 22, u8::MAX],
@@ -1446,7 +1429,7 @@ mod tests {
         trailing.push(0);
         assert!(decode_command(&trailing).is_err());
         let mut flag = release;
-        flag[3] = 2;
+        flag[6] = 2;
         assert!(decode_command(&flag).is_err());
         for unknown in [0, 27, u8::MAX] {
             assert_eq!(
@@ -1484,7 +1467,7 @@ mod tests {
             "unknown entity kind"
         );
         assert_eq!(
-            decode_command(&[PROTOCOL_BYTE, 9, 1, 5, 0, 0, 0, 1])
+            decode_command(&[PROTOCOL_BYTE, 9, 0, 0, 0, 1, 5, 0, 0, 0, 1])
                 .unwrap_err()
                 .to_string(),
             "unknown entity kind"

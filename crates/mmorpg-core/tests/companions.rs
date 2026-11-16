@@ -75,8 +75,7 @@ impl Druid {
             .entities
             .iter()
             .filter(|entity| {
-                entity.kind == EntityKind::Minion
-                    && entity.appearance == u16::from(ids::CALL_COMPANION.get())
+                entity.kind == EntityKind::Minion && entity.appearance == ids::CALL_COMPANION.get()
             })
             .map(|entity| [entity.position[0], entity.position[2]])
             .collect()

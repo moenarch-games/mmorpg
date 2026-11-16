@@ -378,7 +378,7 @@ struct App {
     rendered: u32,
     next_frame: Instant,
     /// Ability IDs on action-bar slots 1–10: the class kit in catalog order.
-    abilities: Vec<u8>,
+    abilities: Vec<u32>,
     /// Ability slots and cast cancelling through the shared input runtime.
     controls: NativeControls,
     /// The held Aimed or Piercing Shot draw, the shared rule the browser also runs (#607).
@@ -850,7 +850,7 @@ impl App {
 
     /// Throws the aimed `ability` along the aim (#649): the character faces the camera and its
     /// slot is used as usual; the zone decides the flight, landing and hits.
-    fn throw_aimed(&mut self, ability: u8) {
+    fn throw_aimed(&mut self, ability: u32) {
         self.update_movement();
         let slot = self
             .abilities
@@ -1006,7 +1006,7 @@ impl App {
     }
 
     /// The ability on `slot`, 1–20.
-    fn slot_ability(&self, slot: u8) -> Option<u8> {
+    fn slot_ability(&self, slot: u8) -> Option<u32> {
         usize::from(slot)
             .checked_sub(1)
             .and_then(|index| self.abilities.get(index))

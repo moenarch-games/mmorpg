@@ -698,7 +698,7 @@ impl ClientSession {
     }
 
     /// Uses a class ability at the current selection; the zone validates it.
-    pub async fn send_use_ability(&mut self, ability: u8) -> Result<(), SessionError> {
+    pub async fn send_use_ability(&mut self, ability: u32) -> Result<(), SessionError> {
         self.send_command(ZoneCommand::UseAbility {
             ability,
             target: None,

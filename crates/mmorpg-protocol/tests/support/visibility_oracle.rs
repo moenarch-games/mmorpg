@@ -107,7 +107,7 @@ pub fn exhaustive_projection(
             stance: None,
             combo: None,
             breath: mmorpg_core::water::BREATH_MAX_TICKS,
-            waystones: observer.waystones,
+            waystones: observer.waystones.clone(),
         },
         cooldowns: Vec::new(),
         auras: Vec::new(),

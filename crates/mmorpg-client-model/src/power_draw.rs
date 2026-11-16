@@ -8,7 +8,7 @@ use crate::hud::class_kit;
 
 /// Aimed Shot and Piercing Shot draw while held, wherever they sit on the bar.
 #[must_use]
-pub fn draws_on_hold(ability: u8) -> bool {
+pub fn draws_on_hold(ability: u32) -> bool {
     let ability = AbilityId::new(ability);
     ability == ids::AIMED_SHOT || ability == ids::PIERCING_SHOT
 }
@@ -17,7 +17,7 @@ pub fn draws_on_hold(ability: u8) -> bool {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DrawRelease {
     /// A deliberate release: send this ability once.
-    Fire(u8),
+    Fire(u32),
     /// A retirement (focus loss, Settings, a context change): nothing is sent.
     Drop,
 }
@@ -25,7 +25,7 @@ pub enum DrawRelease {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct HeldDraw {
     slot: u8,
-    ability: u8,
+    ability: u32,
 }
 
 /// The one draw a player can hold. Newer presses supersede it and every cancel path drops it;
@@ -38,7 +38,7 @@ pub struct PowerDraw {
 /// A press on slot `slot` of `ability` can start a draw: the ability is learned and still on
 /// that slot, and the viewer is alive, unstunned and not casting. A cooldown does not stop a
 /// draw: the shot is refused when released, as any other cast.
-pub(crate) fn can_draw(snapshot: &ZoneSnapshot, slot: u8, ability: u8) -> bool {
+pub(crate) fn can_draw(snapshot: &ZoneSnapshot, slot: u8, ability: u32) -> bool {
     let viewer = &snapshot.viewer;
     let on_slot = viewer.class.is_some_and(|choice| {
         usize::from(slot)
@@ -65,7 +65,7 @@ impl PowerDraw {
     pub fn press(
         &mut self,
         slot: u8,
-        ability: u8,
+        ability: u32,
         snapshot: Option<&ZoneSnapshot>,
         interface_open: bool,
     ) -> bool {
@@ -106,7 +106,7 @@ impl PowerDraw {
 
     /// The ability being drawn, if any.
     #[must_use]
-    pub fn drawing(&self) -> Option<u8> {
+    pub fn drawing(&self) -> Option<u32> {
         self.held.map(|held| held.ability)
     }
 }
@@ -120,8 +120,8 @@ mod tests {
     const AIMED_SHOT_SLOT: u8 = 1;
     const SERPENT_STING_SLOT: u8 = 2;
     const PIERCING_SHOT_SLOT: u8 = 5;
-    const AIMED_SHOT: u8 = ids::AIMED_SHOT.get();
-    const PIERCING_SHOT: u8 = ids::PIERCING_SHOT.get();
+    const AIMED_SHOT: u32 = ids::AIMED_SHOT.get();
+    const PIERCING_SHOT: u32 = ids::PIERCING_SHOT.get();
 
     fn ranger(level: u8) -> ZoneSnapshot {
         let mut snapshot = snapshot(1, 1);
@@ -133,7 +133,7 @@ mod tests {
         snapshot
     }
 
-    fn drawn(slot: u8, ability: u8) -> PowerDraw {
+    fn drawn(slot: u8, ability: u32) -> PowerDraw {
         let mut draw = PowerDraw::default();
         assert!(draw.press(slot, ability, Some(&ranger(60)), false));
         draw

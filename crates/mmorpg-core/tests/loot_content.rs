@@ -81,7 +81,7 @@ fn binding_orders_template_ids_and_keeps_missing_templates_explicit() {
     assert!(first.loot_table(CreatureTemplateId::new(3)).is_none());
     assert!(
         first
-            .loot_table(CreatureTemplateId::new(u16::MAX))
+            .loot_table(CreatureTemplateId::new(u32::MAX))
             .is_none()
     );
     let empty = bound(vec![]);
@@ -93,7 +93,7 @@ fn binding_orders_template_ids_and_keeps_missing_templates_explicit() {
 fn malformed_bindings_fail_closed() {
     for tables in [
         vec![(WOLF, rule()), (WOLF, rule())],
-        vec![(CreatureTemplateId::new(u16::MAX), rule())],
+        vec![(CreatureTemplateId::new(u32::MAX), rule())],
         vec![(WOLF, rule()); MAX_CREATURE_TEMPLATES + 1],
     ] {
         assert!(unbound().with_loot_tables(tables).is_err());
