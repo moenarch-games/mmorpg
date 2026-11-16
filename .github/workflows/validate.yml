@@ -194,7 +194,7 @@ jobs:
       cache_bun: false
       # Once per job: libudev headers, the asset bundles and cargo-nextest (tests run per process, in parallel).
       apt_packages: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'libudev-dev libasound2-dev' || '' }}
-      pre_validate_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.settings_only == 'true' && 'export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh' || 'export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh && scripts/ci-install-nextest.sh') || '' }}
+      pre_validate_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.settings_only == 'true' && 'export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/fetch-bundles.sh' || 'export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/fetch-bundles.sh && scripts/ci-install-nextest.sh') || '' }}
       cache_cargo: ${{ needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true' }}
       # A push to main resolves the key for seed-asset-cache even when this job has nothing to do.
       cache_paths: ${{ needs.scope.outputs.asset_cache_paths }}
@@ -225,7 +225,7 @@ jobs:
       install_command: export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/ci-install-bun.sh
       cache_bun: false
       apt_packages: libudev-dev libasound2-dev
-      pre_validate_command: export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh
+      pre_validate_command: export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/fetch-bundles.sh
       cache_cargo: true
       cache_paths: ${{ needs.scope.outputs.asset_cache_paths }}
       cache_key: ${{ needs.scope.outputs.asset_cache_key }}

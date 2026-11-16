@@ -8,8 +8,8 @@
 //! own clips, sockets and appearance; options a figure's bundle lacks (the female's beards, head
 //! skins and headwear) are simply absent. Presentation only.
 use super::{
-    Equipment, Model, Plates, SecondaryPose, appearance, bundle_glb, ranger_bundle,
-    ranger_female_bundle, ranger_file, secondary_of, socket, strings,
+    Equipment, Model, Plates, SecondaryPose, appearance, bundle_glb, packed_glb, ranger_bundle,
+    ranger_clips, ranger_female_bundle, ranger_file, secondary_of, socket, strings,
 };
 use crate::world::SceneDraw;
 use mmorpg_presentation::units::{
@@ -85,7 +85,7 @@ fn file(figure: Figure, path: &str) -> &'static [u8] {
             .iter()
             .find(|(name, _)| *name == path)
             .map(|(_, bytes)| *bytes)
-            .unwrap_or_else(|| panic!("prepared {} file {path} is embedded", figure.character())),
+            .unwrap_or_else(|| panic!("{} file {path} is embedded", figure.character())),
     }
 }
 
@@ -223,11 +223,14 @@ fn hood(figure: Figure) -> &'static [String] {
     })
 }
 
-/// The clip library prepared with `figure`'s outfit variants.
+/// The clip library shared by `figure`'s outfit variants, decoded once.
 fn clips(figure: Figure) -> &'static [u8] {
+    static FEMALE: OnceLock<Vec<u8>> = OnceLock::new();
     match figure {
-        Figure::Male => file(figure, ranger_bundle::CLIPS),
-        Figure::Female => file(figure, ranger_female_bundle::CLIPS),
+        Figure::Male => ranger_clips(),
+        Figure::Female => FEMALE
+            .get_or_init(|| packed_glb(file(figure, ranger_female_bundle::CLIPS)))
+            .as_slice(),
     }
 }
 
@@ -333,7 +336,7 @@ fn head_skin(figure: Figure, preset: &Value) -> Option<(&'static str, &'static g
     Some((skins["material"].as_str()?, image))
 }
 
-/// The base-colour image of material `name` in `figure`'s prepared head-skin entry `key`,
+/// The base-colour image of material `name` in `figure`'s head-skin entry `key`,
 /// decoded once per process; None when the entry is not embedded or has no such textured
 /// material. Only the male bundle publishes head skins.
 fn head_skin_image(figure: Figure, key: &str, name: &str) -> Option<&'static gltf::image::Data> {
@@ -345,14 +348,11 @@ fn head_skin_image(figure: Figure, key: &str, name: &str) -> Option<&'static glt
     }
     let (document, buffers) = ENTRY
         .get_or_init(|| {
-            if !embedded(figure, key, "default") {
-                eprintln!(
-                    "head skins keep the authored skin; {} is not prepared",
-                    prepared(key, "default")
-                );
+            let Some(path) = entry_path(figure, key, "default") else {
+                eprintln!("head skins keep the authored skin; {key}/default is not embedded");
                 return None;
-            }
-            let gltf = gltf::Gltf::from_slice(file(figure, &prepared(key, "default"))).ok()?;
+            };
+            let gltf = gltf::Gltf::from_slice(&bundle_glb(path, bundle(figure))).ok()?;
             let buffers = gltf::import_buffers(&gltf.document, None, gltf.blob).ok()?;
             Some((gltf.document, buffers))
         })
@@ -372,40 +372,53 @@ fn head_skin_image(figure: Figure, key: &str, name: &str) -> Option<&'static glt
         })
 }
 
-/// The prepared file of bundle entry `key` in `variant`.
-fn prepared(key: &str, variant: &str) -> String {
-    format!("native/{key}.{variant}.native.glb")
+/// The embedded glTF path of entry `key` in `variant` of `figure`'s download or the equipment's.
+fn entry_path(figure: Figure, key: &str, variant: &str) -> Option<&'static str> {
+    let entries = match figure {
+        Figure::Male => ranger_bundle::ENTRIES,
+        Figure::Female => ranger_female_bundle::ENTRIES,
+    };
+    let id = format!("{key}/{variant}");
+    entries
+        .iter()
+        .find(|(entry, _)| *entry == id)
+        .map(|(_, path)| *path)
 }
 
 fn embedded(figure: Figure, key: &str, variant: &str) -> bool {
-    let path = prepared(key, variant);
-    kit_file(figure, key, variant).is_some() || bundle(figure).iter().any(|(name, _)| *name == path)
+    kit_file(figure, key, variant).is_some() || entry_path(figure, key, variant).is_some()
 }
 
-/// A prepared entry of `figure`'s bundle imported once per process: the figure in an outfit
-/// variant with its shared clips, or an item.
+/// An entry of `figure`'s bundle imported once per process: the figure in an outfit variant with
+/// its shared clips, or an item.
 fn entry(figure: Figure, key: &str, variant: &str) -> &'static Model {
     static MODELS: OnceLock<Mutex<HashMap<(Figure, String), &'static Model>>> = OnceLock::new();
-    let path = prepared(key, variant);
     let mut models = MODELS
         .get_or_init(Mutex::default)
         .lock()
         .expect("the model cache is not poisoned");
-    models.entry((figure, path.clone())).or_insert_with(|| {
-        // A kit entry (#675, #677) is a gltf-resources-v1 entry with KTX2 textures, packed into
-        // one GLB with its textures transcoded; the figure's own entries are prepared GLBs.
-        let packed = kit_file(figure, key, variant).map(|(kit, files)| bundle_glb(kit, files));
-        let bytes = packed.as_deref().unwrap_or_else(|| file(figure, &path));
-        let model = if is_figure(figure, key) {
-            Model::parse_with_clips(bytes, Kind::Ranger.clips().idle, Some(clips(figure)))
-                .map(|model| model.with_secondary(secondary(figure)))
-        } else {
-            Model::parse(bytes, "")
-        };
-        Box::leak(Box::new(
-            model.expect("a prepared Ranger entry is valid glTF"),
-        ))
-    })
+    models
+        .entry((figure, format!("{key}/{variant}")))
+        .or_insert_with(|| {
+            // A kit entry (#675, #677) is a gltf-resources-v1 entry and the figure's own a published
+            // download (#866), each packed into one GLB with its views decoded and textures transcoded.
+            let bytes = kit_file(figure, key, variant).map_or_else(
+                || {
+                    let path = entry_path(figure, key, variant)
+                        .unwrap_or_else(|| panic!("{} embeds {key}/{variant}", figure.character()));
+                    bundle_glb(path, bundle(figure))
+                },
+                |(kit, files)| bundle_glb(kit, files),
+            );
+            let bytes = bytes.as_slice();
+            let model = if is_figure(figure, key) {
+                Model::parse_with_clips(bytes, Kind::Ranger.clips().idle, Some(clips(figure)))
+                    .map(|model| model.with_secondary(secondary(figure)))
+            } else {
+                Model::parse(bytes, "")
+            };
+            Box::leak(Box::new(model.expect("a Ranger entry is valid glTF")))
+        })
 }
 
 /// The outfit `preset` wears and its skin's figure entry and variant, in `figure`'s look.
@@ -422,7 +435,7 @@ fn skin_entry(figure: Figure, skin: &'static Value) -> Option<(&'static str, &'s
     Some((key, skin["variant"].as_str()?))
 }
 
-/// Every prepared file `resident`'s looks draw: for a varied preset, both skins and every
+/// Every entry `resident`'s looks draw: for a varied preset, both skins and every
 /// tintable hairstyle.
 fn files(resident: Resident) -> Option<Vec<(String, String)>> {
     let figure = resident.figure();
@@ -473,7 +486,7 @@ fn files(resident: Resident) -> Option<Vec<(String, String)>> {
 }
 
 /// Whether every resident's and humanoid enemy's preset can be drawn from the embedded
-/// preparation; otherwise they keep their procedural models.
+/// downloads; otherwise they keep their procedural models.
 pub(in crate::presentation) fn residents_drawable() -> bool {
     let missing: Vec<String> = Resident::VARIANTS
         .iter()
@@ -484,7 +497,7 @@ pub(in crate::presentation) fn residents_drawable() -> bool {
                     files
                         .into_iter()
                         .filter(|(key, variant)| !embedded(resident.figure(), key, variant))
-                        .map(|(key, variant)| prepared(&key, &variant))
+                        .map(|(key, variant)| format!("{key}/{variant}"))
                         .collect()
                 },
             )
@@ -492,7 +505,7 @@ pub(in crate::presentation) fn residents_drawable() -> bool {
         .collect();
     if !missing.is_empty() {
         eprintln!(
-            "residents keep their procedural models; missing {} (run scripts/prepare-ranger-native.sh)",
+            "residents keep their procedural models; missing {} (run scripts/fetch-bundles.sh)",
             missing.join(", ")
         );
     }

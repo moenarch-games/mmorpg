@@ -41,8 +41,8 @@ dependencies installed, run from the MMORPG root:
 bun web/scripts/package-terrain-patch.ts /path/to/asset-tooling-b2166ba96285ed36093e9c71aeb38907d1218635
 ```
 
-The default path is the existing `~/.cache/mmorpg/ranger-tools/asset-tooling-<revision>`
-source cache. This merged revision has the same source tree as the originally
+The default path is `~/.cache/mmorpg/ranger-tools/asset-tooling-<revision>`, where the retired Ranger preparation step kept that source (#866); pass the path of another copy explicitly.
+This merged revision has the same source tree as the originally
 validated `8a22d6950d00d881500472ff781dfc5b874a0831`; changing that identity
 does not change generated masks or placements. The command writes the saved masks and dressing; these small
 runtime distribution artifacts are committed, so no producer or generation

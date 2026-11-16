@@ -69,7 +69,6 @@ def main():
     args = parser.parse_args()
     root = Path(__file__).resolve().parent.parent
     subprocess.run([str(root / "scripts" / "fetch-bundles.sh")], cwd=root, check=True, timeout=600)
-    subprocess.run([str(root / "scripts" / "prepare-ranger-native.sh")], cwd=root, check=True, timeout=600)
     subprocess.run([
         "cargo", "build", "--locked", "-p", "mmorpg-client", "-p", "mmorpg-game-server",
         "--features", "mmorpg-game-server/postgres",

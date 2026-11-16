@@ -64,7 +64,7 @@ remains is rendering, and these known differences:
 Reproduce:
 
 ```sh
-bash scripts/fetch-bundles.sh && bash scripts/prepare-ranger-native.sh
+bash scripts/fetch-bundles.sh
 MMORPG_LIGHTING_SHOTS="$PWD/artifacts/lighting" cargo test --release --locked -p mmorpg-client \
   --lib greyhaven_lighting_shots -- --ignored --nocapture
 (cd web && bun install --frozen-lockfile && bun run build)

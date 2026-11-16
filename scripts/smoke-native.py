@@ -35,7 +35,6 @@ def main():
     root = Path(__file__).resolve().parent.parent
     # The client build embeds the asset-tooling Ranger and inn bundles; fetching is idempotent.
     subprocess.run([str(root / "scripts" / "fetch-bundles.sh")], cwd=root, check=True, timeout=600)
-    subprocess.run([str(root / "scripts" / "prepare-ranger-native.sh")], cwd=root, check=True, timeout=600)
     if args.review_shots:
         environment = dict(os.environ, MMORPG_REVIEW_SHOTS=str(args.review_shots.resolve()))
         if args.review_poses:

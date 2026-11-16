@@ -166,6 +166,10 @@ const ANIMAL_URLS: Readonly<Record<Exclude<QuaterniusKind, "Ranger">, string>> =
 const MALE = "humanoid.ranger.male";
 const FEMALE = "humanoid.ranger.female";
 const FIGURES = [MALE, FEMALE] as const;
+/** The figures' equipment release (asset-tooling #517), fetched beside them (#866). */
+const EQUIPMENT = "humanoid.equipment";
+/** The equipment only the male figure wears: his cap, helm and straw hat. */
+const MALE_HEADWEAR = new Set(["equipment.cap.ranger", "equipment.helm.ironcrest", "equipment.hat.straw"]);
 
 /** One drawn model of an asset, posed by weighted, masked clip layers (Atlas 6.6.45). */
 type Posable = {
@@ -916,17 +920,24 @@ async function loadKit(directory: string, attachmentName: string, absent: string
  */
 async function loadFigure(loader: GLTFLoader, character: string, keys: readonly string[], hair: readonly string[],
   rest: string): Promise<FigureBundle> {
-  const directory = `${import.meta.env.BASE_URL}characters/${character}/`;
-  const url = (path: string) => new URL(path, new URL(directory, window.location.href)).href;
-  const json = async (path: string): Promise<unknown> => {
-    const response = await fetch(url(path));
+  const url = (path: string, release = character) =>
+    new URL(path, new URL(`${import.meta.env.BASE_URL}characters/${release}/`, window.location.href)).href;
+  const json = async (path: string, release = character): Promise<unknown> => {
+    const response = await fetch(url(path, release));
     if (!response.ok) {
       throw new Error(`Ranger bundle file ${path} is missing (${response.status}); run scripts/fetch-bundles.sh.`);
     }
     return response.json();
   };
-  const manifest = await json(`${character.replaceAll(".", "-")}.index.json`);
+  const [manifest, equipment] = await Promise.all([
+    json(`${character.replaceAll(".", "-")}.index.json`),
+    json(`${EQUIPMENT.replaceAll(".", "-")}.index.json`, EQUIPMENT),
+  ]);
   const entry = bundleEntry(manifest, character);
+  /** The glTF URL of entry `key`: an item from the equipment release, anything else the figure's own. */
+  const entryUrl = (key: string, variant?: string) => key.startsWith("equipment.")
+    ? url(entryFile(bundleEntry(equipment, key, variant), ".gltf"), EQUIPMENT)
+    : url(entryFile(bundleEntry(manifest, key, variant), ".gltf"));
   if (!entry.clips) { throw new Error(`The ${character} download index has no shared clips.`); }
   const [gltf, animationLibrary, sockets, descriptor] = await Promise.all([
     loader.loadAsync(url(entryFile(entry, ".gltf"))),
@@ -946,7 +957,7 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
   const face = faceLookOf(appearance, entry.variant, gltf.scene);
   if (!face) { console.info(`The ${character} bundle has no face morphs for its drawn entry; faces keep the base shape.`); }
   const load = async (key: string, variant?: string) => {
-    const path = (variant !== undefined ? kitScene(`${key}/${variant}`) : undefined) ?? url(entryFile(bundleEntry(manifest, key, variant), ".gltf"));
+    const path = (variant !== undefined ? kitScene(`${key}/${variant}`) : undefined) ?? entryUrl(key, variant);
     const scene = (await loader.loadAsync(path)).scene;
     if (character === MALE && key === "hair.long") {
       // The male long locks are authored lower than the buzzed scalp in the same asset.
@@ -966,7 +977,7 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
     const id = `${key}/${variant}`;
     let loaded = scenes.get(id);
     if (!loaded) {
-      const path = kitScene(id) ?? url(entryFile(bundleEntry(manifest, key, variant), ".gltf"));
+      const path = kitScene(id) ?? entryUrl(key, variant);
       loaded = loader.loadAsync(path).then((result) => {
         result.scene.updateMatrixWorld(true);
         return result.scene;
@@ -977,7 +988,7 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
   };
   // Every hairstyle the bundle offers in the tintable variant: the viewer's and the varied residents'.
   const hairKeys = [...new Set([...hair, ...tintableHair(appearance)])];
-  const available = new Set((manifest as { entries: DownloadEntry[] }).entries
+  const available = new Set([manifest, equipment].flatMap((index) => (index as { entries: DownloadEntry[] }).entries)
     .filter((entry) => entry.variant === "default").map((entry) => entry.key));
   const selectedKeys = keys.filter((key) => available.has(key));
   const items = new Map(await Promise.all([
@@ -1105,7 +1116,9 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     if (ready) { return Promise.resolve(ready); }
     let pending = loadingFigures.get(character);
     if (!pending) {
-      pending = loadFigure(loader, character, keys, [], rest).then((loaded) => {
+      // The headwear is fitted to the male head; the other figures carry the rest.
+      const carried = keys.filter((key) => !MALE_HEADWEAR.has(key));
+      pending = loadFigure(loader, character, carried, [], rest).then((loaded) => {
         figures.set(character, loaded);
         return loaded;
       });
