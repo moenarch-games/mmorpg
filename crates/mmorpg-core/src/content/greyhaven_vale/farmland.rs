@@ -233,7 +233,8 @@ pub(super) const REGION: super::Region = super::Region {
     colliders,
 };
 
-/// The hamlets' buildings, the tower and the field fences.
+/// The hamlets' buildings, the tower and the field fences; a walk-in cottage's (#847) walls and
+/// furniture come with the settlements' instead of its house's box.
 fn colliders() -> Vec<StaticCollider> {
     let buildings = BUILDINGS
         .iter()
@@ -242,6 +243,7 @@ fn colliders() -> Vec<StaticCollider> {
     (*ids::FARMLAND_BUILDINGS.start()..)
         .zip(buildings)
         .chain((*ids::FARMLAND_FENCES.start()..).zip(fences))
+        .filter(|(id, _)| !super::cottages::is_house(*id))
         .map(|(id, (min, max, height))| on_terrain(id, min, max, height))
         .collect()
 }
