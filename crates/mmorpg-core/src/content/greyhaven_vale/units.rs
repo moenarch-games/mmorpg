@@ -417,6 +417,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::marsh_creatures::spawns())
         // The new sub-regions' creatures (#816).
         .chain(super::wilds::spawns())
+        // The farmland hamlets' creatures (#859).
+        .chain(super::hamlet_creatures::spawns())
         .collect()
 }
 

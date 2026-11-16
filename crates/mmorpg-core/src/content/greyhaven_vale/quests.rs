@@ -11,6 +11,9 @@
 //! chain leads on to Hob Ferris at Fenford; to Brann at Westmere Lodge, whose leads on to Edric
 //! Vale's hunters in Southwood; and, once Garrick is gone, to Watchman Garth at Greyfang Watch,
 //! whose chain retakes the Delving Workings from the Redbrands.
+//!
+//! Farmer Osric Mill sends players up the farm road to the farmland's hamlets (#859), where
+//! Goodwife Ena, Miller Hanne and Shepherd Lise each need a hand.
 
 use super::settlements::DELVING_WORKINGS;
 use super::shrine::SUNKEN_SHRINE;
@@ -19,8 +22,8 @@ use super::wilds::FENWATER_CROSSING;
 use crate::{ItemId, NpcId, Quest, QuestId, QuestObjective, QuestRewards};
 
 use super::units::templates::{
-    FIELD_MARAUDER, GARRICK_REDBRAND, HILL_OGRE, MIREFIN_LURKER, REDBRAND_BANDIT, REDBRAND_BRUTE,
-    REDBRAND_CROSSBOWMAN, TIMBER_WOLF, YOUNG_BOAR,
+    FIELD_MARAUDER, GARRICK_REDBRAND, GRAIN_RAT, HILL_OGRE, MIREFIN_LURKER, REDBRAND_BANDIT,
+    REDBRAND_BRUTE, REDBRAND_CROSSBOWMAN, TIMBER_WOLF, YOUNG_BOAR,
 };
 
 pub const MARSHAL: NpcId = NpcId::new(1);
@@ -69,6 +72,12 @@ pub const ORDERS_ON_THE_ROAD: QuestId = QuestId::new(26);
 pub const THE_DELVING_WORKINGS: QuestId = QuestId::new(27);
 pub const OGRES_OF_THE_HEIGHTS: QuestId = QuestId::new(28);
 
+/// The farmland hamlets' quests (#859); 32 is the quest log's last.
+pub const THE_HAMLETS: QuestId = QuestId::new(29);
+pub const RATS_IN_THE_GRANARY: QuestId = QuestId::new(30);
+pub const BOARS_IN_THE_BARLEY: QuestId = QuestId::new(31);
+pub const THE_SHEPHERDS_WOLVES: QuestId = QuestId::new(32);
+
 /// The region's quest givers (#820): Barrowdown's alewife, Fenford's innkeeper, Westmere
 /// Lodge's fisher, the hunters' huntsman and Greyfang Watch's watchman; and Old Maud, whom a
 /// quest sends players to talk to.
@@ -78,6 +87,11 @@ pub const INNKEEPER: NpcId = NpcId::new(27);
 pub const FISHER: NpcId = NpcId::new(31);
 pub const HUNTSMAN: NpcId = NpcId::new(32);
 pub const WATCHMAN: NpcId = NpcId::new(34);
+/// The hamlets' quest givers (#859): the western hamlet's goodwife, the southern hamlet's miller
+/// and the eastern hamlet's shepherd.
+pub const GOODWIFE: NpcId = NpcId::new(36);
+pub const SHEPHERD: NpcId = NpcId::new(39);
+pub const MILLER: NpcId = NpcId::new(40);
 
 /// The region's quest items (#820).
 pub const BOAR_TUSK: ItemId = ItemId::new(19);
@@ -108,7 +122,7 @@ const fn kill(template: crate::CreatureTemplateId, count: u8) -> QuestObjective 
 }
 
 #[rustfmt::skip]
-const QUESTS: [QuestRow; 28] = [
+const QUESTS: [QuestRow; 32] = [
     (
         TROUBLE_IN_THE_WOODS, "Trouble in the Woods",
         "Timber wolves prowl the Wolfrun Trail west of the gate. Thin the pack: slay six of them.",
@@ -279,6 +293,28 @@ const QUESTS: [QuestRow; 28] = [
         OGRES_OF_THE_HEIGHTS, "Ogres of the Heights",
         "Hill ogres roam the Delving Heights and the miners will not go back while they do. Fell two of them.",
         WATCHMAN, WATCHMAN, Some(THE_DELVING_WORKINGS), &[kill(HILL_OGRE, 2)], 800, 80, &[],
+    ),
+    // The farmland hamlets (#859).
+    (
+        THE_HAMLETS, "The Hamlets",
+        "With the marauders gone the hamlets up the farm road can sow again, but they are short of hands. Take the road north past the fields and find Goodwife Ena in the western hamlet.",
+        FARMER, GOODWIFE, Some(MARAUDERS_IN_THE_FIELDS),
+        &[QuestObjective::Talk { npc: GOODWIFE }], 120, 5, &[],
+    ),
+    (
+        RATS_IN_THE_GRANARY, "Rats in the Granary",
+        "Rats have got into the barn and the haystack, and what they leave the damp takes. Kill eight of them before they eat the seed corn.",
+        GOODWIFE, GOODWIFE, Some(THE_HAMLETS), &[kill(GRAIN_RAT, 8)], 250, 15, &[],
+    ),
+    (
+        BOARS_IN_THE_BARLEY, "Boars in the Barley",
+        "Miller Hanne down at the southern hamlet says boars root up the barley west of her mill every night. Bring down five of them, then tell her the fields are safe.",
+        GOODWIFE, MILLER, Some(RATS_IN_THE_GRANARY), &[kill(YOUNG_BOAR, 5)], 300, 20, &[8, 5],
+    ),
+    (
+        THE_SHEPHERDS_WOLVES, "The Shepherd's Wolves",
+        "A wolf pack hunts east of the eastern hamlet's pastures, and Shepherd Lise has lost two ewes. Slay five wolves and let her know her flock can graze again.",
+        MILLER, SHEPHERD, Some(BOARS_IN_THE_BARLEY), &[kill(TIMBER_WOLF, 5)], 350, 25, &[6, 9],
     ),
 ];
 

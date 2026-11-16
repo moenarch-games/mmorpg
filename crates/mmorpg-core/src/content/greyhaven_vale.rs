@@ -30,6 +30,7 @@ pub mod design;
 pub mod dressing;
 pub mod farmland;
 pub mod fort;
+pub mod hamlet_creatures;
 pub mod highland_bandits;
 pub mod highlands;
 pub mod inn;
