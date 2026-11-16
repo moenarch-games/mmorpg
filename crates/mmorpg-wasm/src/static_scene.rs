@@ -22,6 +22,7 @@
 use mmorpg_presentation::tiles::{BUILDS_PER_FRAME, Level, Streamer};
 use mmorpg_presentation::{Draw, StaticScene};
 use serde::Serialize;
+use std::collections::HashMap;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use crate::scenery::{PerZone, hosted_scenery};
@@ -104,7 +105,8 @@ struct GroundEntry {
 }
 
 struct Buffers {
-    keys: Vec<String>,
+    /// Each geometry's index by resource key.
+    keys: HashMap<String, usize>,
     geometries: Vec<GeometryEntry>,
     vertices: Vec<f32>,
     indices: Vec<u32>,
@@ -123,45 +125,45 @@ fn hex(color: [f32; 3]) -> String {
 
 impl Buffers {
     fn draw(&mut self, draw: &Draw) -> DrawEntry {
-        let geometry =
-            if let Some(index) = self.keys.iter().position(|key| *key == draw.resource_key) {
-                index
-            } else {
-                let g = &draw.geometry;
-                let vertex_offset = self.vertices.len();
-                for values in [&g.p, &g.n] {
-                    self.vertices
-                        .extend(values.iter().flatten().map(|value| *value as f32));
-                }
-                let colored = !g.colors.is_empty();
+        let geometry = if let Some(&index) = self.keys.get(&draw.resource_key) {
+            index
+        } else {
+            let g = &draw.geometry;
+            let vertex_offset = self.vertices.len();
+            for values in [&g.p, &g.n] {
                 self.vertices
-                    .extend(g.colors.iter().flatten().map(|value| *value as f32));
-                // Ground layers (#525): texture coordinates, tangents and per-vertex weights.
-                let textured = !g.uv.is_empty();
-                if textured {
-                    self.vertices
-                        .extend(g.uv.iter().flatten().map(|value| *value as f32));
-                    self.vertices
-                        .extend(g.tangents.iter().flatten().map(|value| *value as f32));
-                }
-                let weighted = !g.alpha.is_empty();
+                    .extend(values.iter().flatten().map(|value| *value as f32));
+            }
+            let colored = !g.colors.is_empty();
+            self.vertices
+                .extend(g.colors.iter().flatten().map(|value| *value as f32));
+            // Ground layers (#525): texture coordinates, tangents and per-vertex weights.
+            let textured = !g.uv.is_empty();
+            if textured {
                 self.vertices
-                    .extend(g.alpha.iter().map(|value| *value as f32));
-                let index_offset = self.indices.len();
-                self.indices.extend(&g.indices);
-                self.keys.push(draw.resource_key.clone());
-                self.geometries.push(GeometryEntry {
-                    resource_key: draw.resource_key.clone(),
-                    vertex_offset,
-                    vertex_count: g.p.len(),
-                    colored,
-                    textured,
-                    weighted,
-                    index_offset,
-                    index_count: g.indices.len(),
-                });
-                self.keys.len() - 1
-            };
+                    .extend(g.uv.iter().flatten().map(|value| *value as f32));
+                self.vertices
+                    .extend(g.tangents.iter().flatten().map(|value| *value as f32));
+            }
+            let weighted = !g.alpha.is_empty();
+            self.vertices
+                .extend(g.alpha.iter().map(|value| *value as f32));
+            let index_offset = self.indices.len();
+            self.indices.extend(&g.indices);
+            self.keys
+                .insert(draw.resource_key.clone(), self.geometries.len());
+            self.geometries.push(GeometryEntry {
+                resource_key: draw.resource_key.clone(),
+                vertex_offset,
+                vertex_count: g.p.len(),
+                colored,
+                textured,
+                weighted,
+                index_offset,
+                index_count: g.indices.len(),
+            });
+            self.keys.len() - 1
+        };
         let model = self.models.len() / 16;
         self.models.extend(draw.model);
         let material = &draw.material;
@@ -189,7 +191,7 @@ fn buffers() -> &'static SceneBuffers {
 
 pub(crate) fn encode(scene: &StaticScene) -> SceneBuffers {
     let mut buffers = Buffers {
-        keys: Vec::new(),
+        keys: HashMap::new(),
         geometries: Vec::new(),
         vertices: Vec::new(),
         indices: Vec::new(),

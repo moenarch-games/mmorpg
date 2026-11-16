@@ -462,12 +462,14 @@ pub fn heart_distance(x: i32, z: i32) -> i64 {
         return outside;
     }
     let outline = &data().heart;
+    // The square root is monotonic, so the nearest edge's root is the polyline distance's minimum
+    // at one root per sample instead of two per edge (#855).
     let edge = outline
         .iter()
         .zip(outline.iter().cycle().skip(1))
-        .map(|(&a, &b)| polyline_distance(&[a, b], x, z).0)
+        .map(|(&a, &b)| segment_distance2(a, b, x, z).0)
         .min()
-        .unwrap_or(i64::MAX);
+        .map_or(i64::MAX, root);
     if polygon_contains(outline, x, z) {
         return -edge;
     }
@@ -806,16 +808,8 @@ pub fn polyline_distance(points: &[[i32; 2]], x: i32, z: i32) -> (i64, i64) {
     let mut best = (i64::MAX, 0);
     let mut run = 0_i64;
     for pair in points.windows(2) {
-        let [ax, az] = pair[0].map(i64::from);
-        let [bx, bz] = pair[1].map(i64::from);
-        let (vx, vz) = (bx - ax, bz - az);
-        let length2 = (vx * vx + vz * vz).max(1);
-        let (px, pz) = (i64::from(x) - ax, i64::from(z) - az);
-        let t = ((px * vx + pz * vz) * 1_024 / length2).clamp(0, 1_024);
-        let (cx, cz) = (ax + vx * t / 1_024, az + vz * t / 1_024);
-        let (dx, dz) = (i64::from(x) - cx, i64::from(z) - cz);
-        let distance =
-            i64::try_from((dx * dx + dz * dz).unsigned_abs().isqrt()).unwrap_or(i64::MAX);
+        let (distance2, t) = segment_distance2(pair[0], pair[1], x, z);
+        let distance = root(distance2);
         let segment = length(pair[0], pair[1]);
         if distance < best.0 {
             best = (distance, run + segment * t / 1_024);
@@ -823,6 +817,25 @@ pub fn polyline_distance(points: &[[i32; 2]], x: i32, z: i32) -> (i64, i64) {
         run += segment;
     }
     best
+}
+
+/// The squared distance (units²) from `(x, z)` to segment `a`–`b`, and the nearest point's
+/// position along it in 1/1024ths, as [`polyline_distance`] measures it.
+fn segment_distance2(a: [i32; 2], b: [i32; 2], x: i32, z: i32) -> (u64, i64) {
+    let [ax, az] = a.map(i64::from);
+    let [bx, bz] = b.map(i64::from);
+    let (vx, vz) = (bx - ax, bz - az);
+    let length2 = (vx * vx + vz * vz).max(1);
+    let (px, pz) = (i64::from(x) - ax, i64::from(z) - az);
+    let t = ((px * vx + pz * vz) * 1_024 / length2).clamp(0, 1_024);
+    let (cx, cz) = (ax + vx * t / 1_024, az + vz * t / 1_024);
+    let (dx, dz) = (i64::from(x) - cx, i64::from(z) - cz);
+    ((dx * dx + dz * dz).unsigned_abs(), t)
+}
+
+/// The distance (units) of a squared distance from [`segment_distance2`].
+fn root(distance2: u64) -> i64 {
+    i64::try_from(distance2.isqrt()).unwrap_or(i64::MAX)
 }
 
 /// Polyline segments bucketed on a coarse grid, so a point finds the lines near it quickly.
