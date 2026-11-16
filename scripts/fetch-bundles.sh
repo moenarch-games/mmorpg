@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Downloads the asset-tooling bundles the clients draw: the Ranger
-# humanoid (Atlas 6.3.7) into web/public/characters/humanoid.ranger.male, the Redbrand faction
+# Downloads the asset-tooling bundles the clients draw: the Ranger figures (Atlas 6.3.7) and
+# their equipment into web/public/characters/humanoid.ranger.{male,female} and
+# web/public/characters/humanoid.equipment, the Redbrand faction
 # kit (#675) into web/public/characters/redbrand.kit, the hair and beard kit (#677) into
 # web/public/characters/hair.kit and the
 # Greyhaven inn (#158) into web/public/buildings/greyhaven.inn and the Sunken Shrine kit
@@ -122,7 +123,103 @@ fetch_rolling() {
   place "${tag}" "${dest}" "${work}"
 }
 
-python3 "${ROOT_DIR}/scripts/fetch-ranger.py" ${IDENTITY:+"${IDENTITY}"}
+# The release's assets as "<name> <sha256>" lines, sorted, from its REST description `json`:
+# every file but the review tar, which the file-by-file releases also publish.
+release_digests() {
+  python3 -I -c 'import json, re, sys
+for asset in sorted(json.load(open(sys.argv[1]))["assets"], key=lambda asset: asset["name"]):
+    name, digest = asset["name"], asset.get("digest") or ""
+    if name.endswith((".tar", ".tar.sha256")):
+        continue
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+        sys.exit(f"unexpected release asset {name!r} ({digest!r})")
+    print(name, digest.removeprefix("sha256:"))' "$1"
+}
+
+# Downloads release `tag`'s asset `name` into `work`/bundle and checks its SHA-256 `digest`.
+fetch_file() {
+  local tag="$1" name="$2" digest="$3" work="$4"
+  download_asset "${tag}" "${name}" "${work}/bundle/${name}" 300 "${work}"
+  if [[ "$(sha256sum "${work}/bundle/${name}" | cut -d' ' -f1)" != "${digest}" ]]; then
+    echo "${tag}/${name} does not match its release digest" >&2
+    return 1
+  fi
+}
+
+# Writes the REST description of release `tag` to `out`: with the token when there is one.
+release_json() {
+  local tag="$1" out="$2"
+  if [[ -n "${GITHUB_RELEASE_TOKEN}" ]]; then
+    github_release_json "moritzbrantner/asset-tooling/releases/tags/${tag}" "${out}"
+  else
+    curl -fsSL "${CURL_RETRY[@]}" --max-time 60 -H 'Accept: application/vnd.github+json' \
+      -o "${out}" "${GITHUB_RELEASE_API}/moritzbrantner/asset-tooling/releases/tags/${tag}"
+  fi
+}
+
+# A rolling release published file by file, as the Ranger figures and their equipment are
+# (#866): every file but the review tar, each refreshed when its SHA-256 digest in the live
+# release changes, so a re-upload that keeps export.ref.json still reaches both clients, and only
+# the changed files are downloaded again. Offline, an existing copy is kept, except in CI.
+fetch_rolling_files() {
+  local tag="$1" dest="${ROOT_DIR}/web/public/$2"
+  local work
+  work="$(mktemp -d)"
+  if ! release_json "${tag}" "${work}/release.json" ||
+    ! release_digests "${work}/release.json" > "${work}/DIGESTS"; then
+    if [[ -z "${IDENTITY}" && "${GITHUB_ACTIONS:-}" != true && -f "${dest}/RELEASE" && "$(cat "${dest}/RELEASE")" == "${tag}" ]]; then
+      echo "Could not read the ${tag} release; keeping ${dest}" >&2
+      rm -rf -- "${work}"
+      return 0
+    fi
+    echo "Could not read the ${tag} release's file digests" >&2
+    rm -rf -- "${work}"
+    return 1
+  fi
+  if [[ -n "${IDENTITY}" ]]; then
+    printf '%s %s web/public/%s\n' "${tag}" "$(sha256sum "${work}/DIGESTS" | cut -d' ' -f1)" "$2"
+    rm -rf -- "${work}"
+    return 0
+  fi
+  if [[ -f "${dest}/RELEASE" && "$(cat "${dest}/RELEASE")" == "${tag}" ]] &&
+    cmp -s "${work}/DIGESTS" "${dest}/DIGESTS"; then
+    rm -rf -- "${work}"
+    return 0
+  fi
+  mkdir "${work}/bundle"
+  local name digest pid failed=0
+  local -a pids=()
+  while read -r name digest; do
+    if [[ -f "${dest}/DIGESTS" && -f "${dest}/${name}" ]] && grep -Fxq -- "${name} ${digest}" "${dest}/DIGESTS"; then
+      cp -- "${dest}/${name}" "${work}/bundle/${name}"
+      continue
+    fi
+    # Eight downloads at a time: a figure release holds a few hundred files.
+    if ((${#pids[@]} >= 8)); then
+      wait "${pids[0]}" || failed=1
+      pids=("${pids[@]:1}")
+    fi
+    fetch_file "${tag}" "${name}" "${digest}" "${work}" &
+    pids+=("$!")
+  done < "${work}/DIGESTS"
+  for pid in "${pids[@]}"; do
+    wait "${pid}" || failed=1
+  done
+  if ((failed)); then
+    echo "Could not download the ${tag} release" >&2
+    rm -rf -- "${work}"
+    return 1
+  fi
+  cp -- "${work}/DIGESTS" "${work}/bundle/DIGESTS"
+  printf '%s\n' "${tag}" > "${work}/bundle/RELEASE"
+  place "${tag}" "${dest}" "${work}"
+}
+
+# The Ranger figures (Atlas 6.3.7, #493) and the equipment both carry (asset-tooling #517), file by
+# file: the browser loads each entry it draws and the native build embeds them as published.
+fetch_rolling_files humanoid-ranger-male characters/humanoid.ranger.male
+fetch_rolling_files humanoid-ranger-female characters/humanoid.ranger.female
+fetch_rolling_files humanoid-equipment characters/humanoid.equipment
 # The Redbrand faction kit (#675, asset-tooling#522): the bandits' figures on the male rig and
 # their belt and bracers, with KTX2 textures; they play the male figure's clips by joint name.
 fetch_rolling redbrand-kit redbrand.kit characters/redbrand.kit
