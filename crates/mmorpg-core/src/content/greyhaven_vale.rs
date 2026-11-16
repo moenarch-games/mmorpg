@@ -1372,6 +1372,16 @@ pub fn clear_of_roads(collider: &StaticCollider) -> bool {
 /// cross the rectangle, the closest pair involves a segment endpoint or a
 /// rectangle corner.
 fn segment_clears_rectangle(a: [i32; 2], b: [i32; 2], min: [i32; 2], max: [i32; 2]) -> bool {
+    // A segment whose bounding box is a clearance or more from the rectangle on either axis is at least that far
+    // from it: the exact test below never answers otherwise, so most segments skip its 128-bit arithmetic.
+    let gap = |low: i32, high: i32, axis: usize| {
+        let (lo, hi) = (i64::from(low.min(high)), i64::from(low.max(high)));
+        (i64::from(min[axis]) - hi).max(lo - i64::from(max[axis]))
+    };
+    let reach = i64::from(ROAD_CLEARANCE_UNITS);
+    if gap(a[0], b[0], 0) >= reach || gap(a[1], b[1], 1) >= reach {
+        return true;
+    }
     let clearance = i128::from(ROAD_CLEARANCE_UNITS);
     let clearance_squared = clearance * clearance;
     let corners = [min, [max[0], min[1]], max, [min[0], max[1]]];
@@ -1825,6 +1835,14 @@ fn boundary_walls() -> Vec<crate::StaticMesh> {
 /// exact definition; the spawn grid is validated clear of every collider.
 #[must_use]
 pub fn base_definition() -> ZoneDefinition {
+    BASE_DEFINITION.clone()
+}
+
+static BASE_DEFINITION: LazyLock<ZoneDefinition> = LazyLock::new(build_base_definition);
+static VALE_DEFINITION: LazyLock<ZoneDefinition> =
+    LazyLock::new(|| layout::compile(layout::SOURCE).expect("committed Outpost layout is valid"));
+
+fn build_base_definition() -> ZoneDefinition {
     ZoneDefinition::with_spawn_grid(GRAVITY, SPAWN_GRID, colliders())
         .and_then(|definition| definition.with_terrain(TERRAIN.clone()))
         .and_then(|definition| {
@@ -1842,7 +1860,7 @@ pub fn base_definition() -> ZoneDefinition {
 }
 
 pub fn greyhaven_vale_definition() -> ZoneDefinition {
-    layout::compile(layout::SOURCE).expect("committed Outpost layout is valid")
+    VALE_DEFINITION.clone()
 }
 
 static CONTENT: LazyLock<Arc<ZoneContent>> = LazyLock::new(|| {
