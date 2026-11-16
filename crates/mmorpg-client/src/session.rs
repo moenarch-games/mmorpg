@@ -137,7 +137,7 @@ struct Outgoing {
     swing: Option<u16>,
     release: bool,
     cancel: bool,
-    ability: Option<u32>,
+    ability: Option<(u32, u16)>,
     ability_release: Option<(u32, bool)>,
     interaction: Option<ZoneCommand>,
     guard: Option<Option<mmorpg_core::StrikeHeight>>,
@@ -164,8 +164,8 @@ impl Outgoing {
         if let Some(lane) = self.guard {
             session.send_command(ZoneCommand::Guard { lane }).await?;
         }
-        if let Some(ability) = self.ability {
-            session.send_use_ability(ability).await?;
+        if let Some((ability, facing)) = self.ability {
+            session.send_use_ability(ability, facing).await?;
         }
         if let Some((ability, retired)) = self.ability_release {
             session
@@ -293,7 +293,8 @@ impl Outbox {
             swing: (pressed.swings != handled.swings).then_some(input.facing),
             release: pressed.releases != handled.releases,
             cancel: pressed.cancels != handled.cancels,
-            ability: (pressed.ability_uses != handled.ability_uses).then_some(input.ability),
+            ability: (pressed.ability_uses != handled.ability_uses)
+                .then_some((input.ability, input.facing)),
             ability_release: (pressed.ability_releases != handled.ability_releases)
                 .then_some(input.ability_release),
             interaction: (pressed.interactions != handled.interactions)
@@ -793,7 +794,7 @@ mod tests {
             outbox.changes(input, now),
             Outgoing {
                 cancel: true,
-                ability: Some(9),
+                ability: Some((9, 0)),
                 ..Outgoing::default()
             },
             "merged presses send the latest ability once"
@@ -816,7 +817,7 @@ mod tests {
         assert_eq!(
             outbox.changes(tapped, now),
             Outgoing {
-                ability: Some(9),
+                ability: Some((9, 0)),
                 ability_release: Some((9, false)),
                 ..Outgoing::default()
             },

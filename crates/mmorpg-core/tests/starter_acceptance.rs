@@ -156,6 +156,7 @@ fn a_new_warden_reaches_level_two_and_equips_a_marauder_drop() {
                     script.send(ZoneCommand::UseAbility {
                         ability: ids::HEROIC_STRIKE.get(),
                         target: None,
+                        facing: None,
                     });
                 }
             }

@@ -77,6 +77,7 @@ fn shoot(
         ZoneCommand::UseAbility {
             ability: ability.get(),
             target: None,
+            facing: None,
         },
     ];
     let mut events = Vec::new();

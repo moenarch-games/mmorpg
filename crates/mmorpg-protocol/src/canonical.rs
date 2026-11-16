@@ -16,9 +16,9 @@ use crate::ProtocolError;
 use crate::inventory::{decode_equipment, decode_inventory, encode_equipment, encode_inventory};
 use crate::wire::{
     CANONICAL_SNAPSHOT_SCOPE, decode_common_header, decode_entity_ref, decode_event,
-    decode_u8_count, decode_u16_count, encode_common_header, encode_entity_ref, encode_event,
-    encode_u8_count, encode_u16_count, ensure_fully_consumed, read_bool, read_f32_vector, read_u8,
-    take,
+    decode_optional_yaw, decode_u8_count, decode_u16_count, encode_common_header,
+    encode_entity_ref, encode_event, encode_optional_yaw, encode_u8_count, encode_u16_count,
+    ensure_fully_consumed, read_bool, read_f32_vector, read_u8, take,
 };
 
 const SELECT_TARGET_INTENT: u8 = 1;
@@ -179,10 +179,15 @@ fn encode_player(
                 payload.push(0);
                 continue;
             }
-            PlayerIntent::UseAbility { ability, target } => {
+            PlayerIntent::UseAbility {
+                ability,
+                target,
+                facing,
+            } => {
                 payload.push(USE_ABILITY_INTENT);
                 payload.extend_from_slice(&ability.to_be_bytes());
                 encode_entity_ref(payload, target);
+                encode_optional_yaw(payload, facing);
                 continue;
             }
             PlayerIntent::DirectedStrike {
@@ -1116,6 +1121,7 @@ fn decode_player(
             intents.push(PlayerIntent::UseAbility {
                 ability,
                 target: decode_entity_ref(payload, offset)?,
+                facing: decode_optional_yaw(payload, offset)?,
             });
             continue;
         }
@@ -2560,10 +2566,12 @@ mod tests {
             PlayerIntent::UseAbility {
                 ability: 9,
                 target: Some(wolf),
+                facing: None,
             },
             PlayerIntent::UseAbility {
                 ability: u32::MAX,
                 target: None,
+                facing: Some(0x8001),
             },
             PlayerIntent::DirectedStrike {
                 ability: 1,
@@ -2655,18 +2663,18 @@ mod tests {
         // Structural checks: a class code beyond the six choices, a point
         // flag without a point and an aura without a caster.
         // The intent count follows the player's timers; the seven intents
-        // occupy 10 + 10 + 9 + 6 + 3 + 2 + 2 bytes after their lateness byte each, then
+        // occupy 13 + 13 + 9 + 6 + 3 + 2 + 2 bytes after their lateness byte each, then
         // the dropped flag, the last observation (u64) and two events.
         let intents = 16 + 24 + 2 + 198;
         let player_abilities =
-            intents + 1 + (11 + 11 + 10 + 7 + 4 + 3 + 3) + 1 + 8 + 1 + 2 * EVENT_BYTES;
+            intents + 1 + (14 + 14 + 10 + 7 + 4 + 3 + 3) + 1 + 8 + 1 + 2 * EVENT_BYTES;
         assert_eq!(encoded[player_abilities], 6, "Arcanist, male");
         let cast = player_abilities + 1 + 8 + 1 + 2 * 6;
         let aura = cast + 20 + 1;
         for (offset, value, message) in [
             (player_abilities, 15, "unknown class choice"),
             // The directed strike's side code.
-            (intents + 1 + 11 + 11 + 8, 3, "unknown strike aim"),
+            (intents + 1 + 14 + 14 + 8, 3, "unknown strike aim"),
             (cast + 11, 2, "boolean field must be 0 or 1"),
             (aura + 4, 0, "an absent entity must have ID 0"),
         ] {

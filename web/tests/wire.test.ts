@@ -52,7 +52,7 @@ describe("the mmorpg-wasm wire boundary (#541)", () => {
       { kind: "loot", creatureId: -1, diedAt: 0n },
       { kind: "loot", creatureId: 1, diedAt: -1n },
       { kind: "loot", creatureId: 1, diedAt: 1n << 64n },
-      { kind: "use-ability", ability: 2 ** 32, target: null },
+      { kind: "use-ability", ability: 2 ** 32, target: null, facing: null },
       { kind: "emote", emote: "dance" },
       { kind: "directed-strike", ability: 1, facing: 0, aim: { side: "up", height: "low" } },
       { kind: "choose-class", classId: 0, sex: 256 },

@@ -225,7 +225,10 @@ pub use snapshot::{
     CreatureLife, PlayerIntent, QueuedIntent, ThreatEntry,
 };
 pub use stance::{LANDING_RECOVERY_TICKS, LandingState, MeleeStance, OVERHEAD_LANDING_TICKS};
-pub use strike::{STRIKE_ARC_HALF_WIDTH, StrikeAim, StrikeHeight, StrikeSide, has_directed_mode};
+pub use strike::{
+    STRIKE_ARC_HALF_WIDTH, STRIKE_SIDE_OFFSET, StrikeAim, StrikeHeight, StrikeSide,
+    has_directed_mode,
+};
 pub use structure::{
     CanonicalPiece, PROJECTILE_PIECE_DAMAGE, PieceBox, PieceId, PieceStage, PieceView,
     REPAIR_REACH_UNITS, REPAIR_SPEEDUP_TICKS, StructurePiece, StructureSite,
@@ -319,12 +322,16 @@ pub enum ZoneCommand {
         destination: u8,
         quantity: u16,
     },
-    /// Uses a class ability at `target`, or at the current selection with
-    /// `None`; self-centred abilities ignore the target. Unknown IDs are
-    /// refused in the tick, not here.
+    /// Uses a class ability (#517, #884): a hostile one aims at `target`, or the current
+    /// selection with `None`, when it lies in the ability's aim cone, else at the unit in front;
+    /// a friendly one lands on a selected friendly player or the caster; self-centred abilities
+    /// ignore the target. Unknown IDs are refused in the tick, not here.
     UseAbility {
         ability: u32,
         target: Option<EntityRef>,
+        /// Turns the player to this yaw first when given (#884), so the ability fires where the
+        /// client aimed it rather than at a facing an earlier move left.
+        facing: Option<u16>,
     },
     /// Releases the held input that pressed `ability` (#414): `retired` when
     /// `input-bindings` retired the hold (focus loss, a menu, a profile

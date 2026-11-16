@@ -1,27 +1,31 @@
 //! Physical projectiles (#286, Atlas 5.2.71): arrows, crossbow bolts and magic missiles (#289).
 //!
-//! A target-based shot **tracks** its target: every tick it re-plans the ballistic arc that
-//! lands on the target's body centre after the remaining flight ticks, so it follows a moving
-//! target but still flies a visible arc. A free shot (Aimed Shot without a target) leaves along
-//! the shooter's facing and falls under gravity. Each tick a projectile sweeps the segment it
-//! travels with a Rapier ray, so it never tunnels: walls, props, terrain and units in the way
-//! stop it, and a Warden's raised shield turned toward it blocks it. The ability's effect lands
-//! only when the shot reaches a valid victim. Spent projectiles stay stuck where they hit — in a
-//! wall for [`STUCK_TICKS`], riding a unit for [`STUCK_IN_UNIT_TICKS`] — then vanish.
+//! Under free aim (#517) a player's shot flies freely from where the player faces. It aims at a
+//! unit (Atlas 5.2.i884): the selection when it lies in the aim cone (15° either side of the
+//! facing, within the ability's range and in sight), otherwise the unit nearest the aim line in
+//! that cone. The shot turns and pitches to meet that unit's body centre where it stands at
+//! release, so short creatures and units uphill are hit; with nothing in the cone it leaves
+//! along the facing. A free arrow, bolt or knife falls under gravity. A **tracking** shot (a
+//! combo follow-up's, or a creature's) re-plans every tick the ballistic arc that lands on its
+//! target's body centre after the remaining flight ticks, so it follows a moving target but
+//! still flies a visible arc. Each tick a projectile sweeps the segment it travels with a
+//! Rapier ray, so it never tunnels: walls, props, terrain and units in the way stop it, and a
+//! Warden's raised shield turned toward it blocks it. The ability's effect lands only when the
+//! shot reaches a valid victim. Spent projectiles stay stuck where they hit — in a wall for
+//! [`STUCK_TICKS`], riding a unit for [`STUCK_IN_UNIT_TICKS`] — then vanish.
 //!
-//! A magic missile (Firebolt) ignores gravity: a target-based missile homes on its target in a
-//! straight line, so only something in the way stops it; one cast without a target flies
-//! straight along the facing and can miss or be dodged.
+//! A magic missile (Firebolt, Shadow Bolt, Smite, Wrath) ignores gravity: a free one flies in a
+//! straight line at its aimed unit, or level along the facing, and can miss or be dodged; a
+//! tracking one homes on its target, so only something in the way stops it.
 //!
 //! Aimed specials (#291) change what a meeting does: a Piercing Shot passes through up to
 //! [`PIERCE_HITS`] enemies in a line, each later hit weaker ([`PIERCE_DAMAGE_PERCENT`]), and a
 //! Ricochet Shot mirrors off walls, props and terrain up to [`RICOCHET_BOUNCES`] times about
 //! the hit's surface normal. Walls stop a piercing shot; raised shields stop both.
 //!
-//! The Rogue's thrown weapons (#290) fly the same way. A throwing knife is a plain shot that
-//! tracks a selected target or flies along the facing. A venom flask and a bomb are lobbed
-//! along the facing in a high arc (pitched to land on the nearest hostile straight ahead within
-//! [`THROW_RANGE_UNITS`]): the flask shatters on the first thing it meets and splashes its
+//! The Rogue's thrown weapons (#290) fly the same way. A throwing knife is a plain shot. A venom
+//! flask and a bomb are lobbed in a high arc (onto the aimed unit within [`THROW_RANGE_UNITS`],
+//! else along the facing): the flask shatters on the first thing it meets and splashes its
 //! effect around that point; the bomb bounces off what it meets ([`BOMB_RESTITUTION`]), rolls
 //! to rest under gravity and friction, and bursts when it touches a unit or after
 //! [`BOMB_FUSE_TICKS`]. A burst stays visible for [`BURST_TICKS`] where it happened.
@@ -42,10 +46,10 @@ pub const PIERCE_HITS: usize = 3;
 pub const PIERCE_DAMAGE_PERCENT: [u32; PIERCE_HITS] = [100, 70, 50];
 /// A Ricochet Shot mirrors off surfaces at most this many times (#291).
 pub const RICOCHET_BOUNCES: u8 = 2;
-/// A free arrow or bolt pitches to meet the nearest hostile unit within this distance …
-pub const AIM_ASSIST_RANGE_UNITS: i32 = 3_000;
-/// … whose centre lies within this angle of the facing (about 8°, as its cosine).
-pub const AIM_ASSIST_COS: f32 = 0.990;
+/// The aim cone of a free shot, as the cosine of its half-angle: the zone aims a shot at a unit
+/// whose centre lies within [`crate::unit::AIM_CONE_HALF_WIDTH`] (15°) of the facing (#884).
+/// Client aids such as the throw's landing marker use it.
+pub const AIM_ASSIST_COS: f32 = 0.966;
 /// A shielded creature (#160) blocks arrows and bolts arriving within this angle of its
 /// facing; magic missiles pass its shield.
 pub const CREATURE_SHIELD_HALF_ANGLE_DEGREES: f32 = 60.0;
@@ -72,8 +76,8 @@ pub const STUCK_IN_UNIT_TICKS: u16 = crate::ticks_from_ms(1_000);
 /// Shots leave this far above the shooter's body centre (chest height). A level free shot
 /// drops to the ground about 32 m out.
 pub const LAUNCH_HEIGHT_UNITS: f32 = 20.0;
-/// A free missile flies level this high above the caster's feet (#289), low enough to meet
-/// wolf-sized creatures and humanoids alike.
+/// A free missile leaves this high above the caster's feet (#289): it flies straight at the
+/// aimed unit's body centre (#884), or level along the facing with nothing to aim at.
 pub const MISSILE_FLIGHT_HEIGHT_UNITS: f32 = 50.0;
 /// Flight speed of a throwing knife (36 m/s), units per tick (#290).
 pub const KNIFE_SPEED_UNITS: f32 = crate::f32_units_per_tick(3_600.0);
@@ -274,6 +278,11 @@ impl Projectile {
     }
 }
 
+/// The horizontal length of `delta`; plain `sqrt`, correctly rounded on every target (#884).
+fn xz_length(delta: [f32; 3]) -> f32 {
+    (delta[0] * delta[0] + delta[2] * delta[2]).sqrt()
+}
+
 fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
@@ -406,13 +415,18 @@ impl ZoneSimulation {
         Ok(())
     }
 
-    /// `owner` shoots `kind` freely along `facing`; `ability` lands on whatever it hits.
+    /// `owner` shoots `kind` freely along `facing`; `ability` lands on whatever it hits. With an
+    /// `aim` unit (the selection inside the aim cone, else the nearest unit in front, #884) the
+    /// shot turns and pitches to meet that unit's body centre where it stands now: an arrow,
+    /// bolt or knife arcs through it, a missile flies straight at it, and a throw lobs onto it
+    /// within [`THROW_RANGE_UNITS`]. It still flies freely, so a unit that steps aside dodges it.
     pub(crate) fn shoot_free(
         &mut self,
         owner: EntityRef,
         facing: u16,
         kind: ProjectileKind,
         ability: AbilityId,
+        aim: Option<EntityRef>,
     ) -> Result<(), ZoneError> {
         let from = if kind.is_magic() {
             let body = self
@@ -431,22 +445,43 @@ impl ZoneSimulation {
         let unit = |value: i32| value as f32 / crate::trig::TRIG_ONE as f32;
         let speed = kind.speed();
         let ahead = [unit(x), unit(z)];
-        // An arrow leaves at chest height; aimed at a short creature it would sail over it, so
-        // it pitches to arc through the nearest hostile body centre straight ahead (#291).
-        // A flask or bomb is lobbed high, arcing onto the nearest hostile straight ahead (#290).
-        let rise = if kind.is_thrown() {
-            self.aim_rise(
-                owner,
-                from,
-                ahead,
-                kind,
-                THROW_RANGE_UNITS,
-                THROW_RISE_UNITS,
-            )
-        } else if kind.gravity() > 0.0 {
-            self.aim_rise(owner, from, ahead, kind, AIM_ASSIST_RANGE_UNITS, 0.0)
-        } else {
-            0.0
+        #[allow(clippy::cast_precision_loss)]
+        let throw_range = THROW_RANGE_UNITS as f32;
+        let delta = aim
+            .and_then(|unit| self.unit_centre(unit))
+            .map(|centre| sub(centre, from))
+            .filter(|delta| !kind.is_thrown() || xz_length(*delta) <= throw_range);
+        let velocity = match delta {
+            Some(delta) if kind.is_magic() => {
+                let distance = dot(delta, delta).sqrt();
+                if distance > 0.0 {
+                    scale(delta, speed / distance)
+                } else {
+                    [ahead[0] * speed, 0.0, ahead[1] * speed]
+                }
+            }
+            Some(delta) => {
+                // Level along the bearing at the kind's speed, rising to pass through the centre
+                // after the ticks it takes to get there.
+                let distance = xz_length(delta);
+                let bearing = if distance > 0.0 {
+                    [delta[0] / distance, delta[2] / distance]
+                } else {
+                    ahead
+                };
+                let ticks = (distance / speed).max(1.0);
+                let rise = delta[1] / ticks + kind.gravity() * (ticks - 1.0) / 2.0;
+                [bearing[0] * speed, rise, bearing[1] * speed]
+            }
+            // Nothing to aim at: a throw is lobbed high, anything else leaves level.
+            None => {
+                let rise = if kind.is_thrown() {
+                    THROW_RISE_UNITS
+                } else {
+                    0.0
+                };
+                [ahead[0] * speed, rise, ahead[1] * speed]
+            }
         };
         self.add_projectile(Projectile {
             id: 0,
@@ -454,50 +489,13 @@ impl ZoneSimulation {
             owner,
             ability,
             position: from,
-            velocity: [ahead[0] * speed, rise, ahead[1] * speed],
+            velocity,
             flight: Flight::Free,
             age: 0,
             struck: [None; PIERCE_HITS - 1],
             bounces: 0,
         });
         Ok(())
-    }
-
-    /// The upward launch speed (units per tick) that arcs a free `kind` shot from `from` along
-    /// `ahead` through the nearest hostile unit's centre within `range` and about 8° of it;
-    /// `otherwise` without one. Ties go to the lower entity.
-    fn aim_rise(
-        &self,
-        owner: EntityRef,
-        from: [f32; 3],
-        ahead: [f32; 2],
-        kind: ProjectileKind,
-        range: i32,
-        otherwise: f32,
-    ) -> f32 {
-        #[allow(clippy::cast_possible_truncation)]
-        let here = [from[0].round() as i32, from[2].round() as i32];
-        let mut best: Option<(f32, [f32; 3])> = None;
-        for unit in self.interest.near(here[0], here[1], range) {
-            if !self.projectile_meets(owner, body_id(unit)) {
-                continue;
-            }
-            let Some(centre) = self.unit_centre(unit) else {
-                continue;
-            };
-            let delta = sub(centre, from);
-            let distance = delta[0].hypot(delta[2]);
-            #[allow(clippy::cast_precision_loss)]
-            let in_range = distance > 0.0 && distance <= range as f32;
-            let along = (delta[0] * ahead[0] + delta[2] * ahead[1]) / distance;
-            if in_range && along >= AIM_ASSIST_COS && best.is_none_or(|(near, _)| distance < near) {
-                best = Some((distance, delta));
-            }
-        }
-        best.map_or(otherwise, |(distance, delta)| {
-            let ticks = (distance / kind.speed()).max(1.0);
-            delta[1] / ticks + kind.gravity() * (ticks - 1.0) / 2.0
-        })
     }
 
     /// The segment this projectile will actually travel, including this tick's tracking.

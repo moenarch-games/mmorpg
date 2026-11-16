@@ -749,9 +749,15 @@ impl ZoneSimulation {
                 destination,
                 quantity,
             }),
-            ZoneCommand::UseAbility { ability, target } => {
-                Some(PlayerIntent::UseAbility { ability, target })
-            }
+            ZoneCommand::UseAbility {
+                ability,
+                target,
+                facing,
+            } => Some(PlayerIntent::UseAbility {
+                ability,
+                target,
+                facing,
+            }),
             // Held state like movement, in arrival ticks (#414).
             ZoneCommand::ReleaseAbility { ability, retired } => {
                 if tracks_holds {

@@ -7,6 +7,7 @@
 use mmorpg_core::{
     ABILITY_CATALOG, Ability, AbilityId, AbilityRange, AbilityUser, CastView, Cooldown, EntityRef,
     GLOBAL_COOLDOWN_TICKS, PlayerClass, ResourceView, ViewerState, ZoneSnapshot, ability_by_id,
+    trig, unit,
 };
 
 /// At most this many abilities sit on the action bar: two rows, the second reached with Shift
@@ -110,6 +111,37 @@ pub fn target_distance(snapshot: &ZoneSnapshot) -> Option<f64> {
     Some(position(selected).map_or(f64::INFINITY, |target| {
         f64::from(target[0] - viewer[0]).hypot(f64::from(target[2] - viewer[2]))
     }))
+}
+
+/// Whether the zone would aim `ability` at the viewer's selection (Atlas `5.2.i884`): the
+/// selection lies inside the ability's aim cone around the viewer's facing, the swing arc for a
+/// melee ability or 15° either side for a ranged one. A selection outside it is ignored for the
+/// unit in front, so its distance says nothing about the slot; one the projection omits counts
+/// as inside, beyond every reach.
+#[must_use]
+pub fn aims_at_selection(snapshot: &ZoneSnapshot, ability: &Ability) -> bool {
+    let me = EntityRef::Player(snapshot.viewer_id);
+    let find = |entity: EntityRef| {
+        snapshot
+            .entities
+            .iter()
+            .find(|candidate| candidate.entity() == entity)
+    };
+    let (Some(viewer), Some(selected)) = (find(me), snapshot.viewer.target) else {
+        return false;
+    };
+    let Some(target) = find(selected) else {
+        return true;
+    };
+    let half_width = match ability.range {
+        AbilityRange::Melee => unit::SWING_ARC_HALF_WIDTH,
+        _ => unit::AIM_CONE_HALF_WIDTH,
+    };
+    trig::yaw_from_vector(
+        target.position[0] - viewer.position[0],
+        target.position[2] - viewer.position[2],
+    )
+    .is_none_or(|yaw| yaw.wrapping_sub(viewer.facing).cast_signed().unsigned_abs() <= half_width)
 }
 
 /// The wait a slot shows: the longer of the ability's own cooldown and the
@@ -217,13 +249,17 @@ impl CombatHud {
     pub fn from_projection(snapshot: &ZoneSnapshot) -> Self {
         let viewer = &snapshot.viewer;
         let distance = target_distance(snapshot);
+        // Each slot counts the selection only where the zone would aim at it (#884).
         let slots = viewer
             .class
             .map(|choice| class_kit(choice.class))
             .unwrap_or_default()
             .into_iter()
             .filter_map(|ability| ability_by_id(AbilityId::new(ability)))
-            .map(|ability| slot_state(ability, viewer, &snapshot.cooldowns, distance))
+            .map(|ability| {
+                let distance = distance.filter(|_| aims_at_selection(snapshot, ability));
+                slot_state(ability, viewer, &snapshot.cooldowns, distance)
+            })
             .collect();
         Self {
             resource: viewer.resource,
@@ -402,5 +438,40 @@ mod tests {
         assert_eq!(target_distance(&snapshot), None);
         snapshot.viewer.target = None;
         assert_eq!(target_distance(&snapshot), None);
+    }
+
+    #[test]
+    fn a_slot_counts_the_selection_only_inside_the_aim_cone() {
+        let entity = |kind, id, x, z| EntitySnapshot {
+            kind,
+            id,
+            appearance: 0,
+            position: [x, 90, z],
+            velocity: [0; 3],
+            facing: 0,
+            level: 1,
+            health_percent: 100,
+            flags: EntityFlags::default(),
+        };
+        let firebolt = ability(FIREBOLT);
+        let mut snapshot = crate::test_support::snapshot(7, 1);
+        snapshot.viewer.target = Some(EntityRef::new(EntityKind::Creature, 3));
+        // Facing +Z: a wolf straight ahead is aimed at, one 45° off is not (the zone aims at
+        // the unit in front instead), though the swing arc still holds it.
+        snapshot.entities = vec![
+            entity(EntityKind::Player, 7, 0, 0),
+            entity(EntityKind::Creature, 3, 0, 5_000),
+        ];
+        assert!(aims_at_selection(&snapshot, firebolt));
+        snapshot.entities[1].position = [3_000, 90, 3_000];
+        assert!(!aims_at_selection(&snapshot, firebolt));
+        assert!(aims_at_selection(&snapshot, ability(STRIKE)));
+        snapshot.entities[1].position = [-3_000, 90, -3_000];
+        assert!(!aims_at_selection(&snapshot, ability(STRIKE)));
+        // An unseen selection stays beyond every reach.
+        snapshot.viewer.target = Some(EntityRef::new(EntityKind::Creature, 999));
+        assert!(aims_at_selection(&snapshot, firebolt));
+        snapshot.viewer.target = None;
+        assert!(!aims_at_selection(&snapshot, firebolt));
     }
 }

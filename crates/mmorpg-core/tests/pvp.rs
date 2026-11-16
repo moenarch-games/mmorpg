@@ -58,6 +58,7 @@ fn an_explicit_arena_weapon_ability_uses_shared_player_damage_and_safe_world_ref
             ZoneCommand::UseAbility {
                 ability: 1,
                 target: Some(EntityRef::Player(2)),
+                facing: None,
             },
         )
         .unwrap();
@@ -153,6 +154,7 @@ fn an_arena_weapon_hit_respects_the_existing_raised_shield() {
         ZoneCommand::UseAbility {
             ability: 1,
             target: Some(EntityRef::Player(2)),
+            facing: None,
         },
     )
     .unwrap();
@@ -245,6 +247,7 @@ fn an_aimed_melee_ability_finds_nobody_above_its_height_band() {
         ZoneCommand::UseAbility {
             ability: 1,
             target: None,
+            facing: None,
         },
     )
     .unwrap();
@@ -355,6 +358,7 @@ fn an_arena_firebolt_completes_its_cast_and_hits_through_a_real_projectile() {
             ZoneCommand::UseAbility {
                 ability: 9,
                 target: Some(EntityRef::Player(2)),
+                facing: None,
             },
         )
         .unwrap();
@@ -392,6 +396,7 @@ fn an_arena_cast_restores_and_continues_identically() {
         ZoneCommand::UseAbility {
             ability: 9,
             target: Some(EntityRef::Player(2)),
+            facing: None,
         },
     )
     .unwrap();
@@ -422,6 +427,7 @@ fn an_arena_damage_over_time_aura_restores_and_pulses_identically() {
         ZoneCommand::UseAbility {
             ability: 6,
             target: Some(EntityRef::Player(2)),
+            facing: None,
         },
     )
     .unwrap();
@@ -514,6 +520,7 @@ fn directed_arena_strikes_use_the_aimed_guard_lane_and_restore_combo_followup() 
                     ZoneCommand::UseAbility {
                         ability: 2,
                         target: None,
+                        facing: None,
                     },
                 )
                 .unwrap();
@@ -555,6 +562,7 @@ fn area_roots_affect_eligible_opponents_without_harming_the_caster_or_safe_playe
             ZoneCommand::UseAbility {
                 ability: 10,
                 target: None,
+                facing: None,
             },
         )
         .unwrap();
@@ -592,6 +600,7 @@ fn arena_death_reports_the_player_killer_and_restores_without_pve_rewards() {
         ZoneCommand::UseAbility {
             ability: 1,
             target: Some(EntityRef::Player(2)),
+            facing: None,
         },
     )
     .unwrap();
@@ -653,6 +662,7 @@ fn a_physics_wall_stops_aimed_melee_swings_and_directed_arena_sweeps() {
         ZoneCommand::UseAbility {
             ability: 1,
             target: Some(EntityRef::Player(2)),
+            facing: None,
         },
     )
     .unwrap();
@@ -710,6 +720,7 @@ fn a_charge_at_an_arena_player_restores_and_uses_existing_forced_movement() {
         ZoneCommand::UseAbility {
             ability: 17,
             target: Some(EntityRef::Player(2)),
+            facing: None,
         },
     )
     .unwrap();
@@ -760,6 +771,7 @@ fn retirement_during_arena_cast_combo_or_charge_leaves_valid_continuation() {
             ZoneCommand::UseAbility {
                 ability: if mode == 0 { 9 } else { 17 },
                 target: Some(EntityRef::Player(2)),
+                facing: None,
             }
         };
         zone.apply_command(1, 2, command).unwrap();

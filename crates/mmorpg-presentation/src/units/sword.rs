@@ -2,7 +2,9 @@
 //! consume the same procedural layer over the authored body clips; no pose decides a hit.
 use std::f64::consts::{FRAC_PI_2, TAU};
 
-use mmorpg_core::{STRIKE_ARC_HALF_WIDTH, StrikeAim, StrikeHeight, StrikeSide, UNITS_PER_METRE};
+use mmorpg_core::{
+    STRIKE_ARC_HALF_WIDTH, STRIKE_SIDE_OFFSET, StrikeAim, StrikeHeight, StrikeSide, UNITS_PER_METRE,
+};
 
 use super::{
     imported::Layer,
@@ -154,10 +156,11 @@ pub fn aim(name: &str) -> Option<StrikeAim> {
 /// Angle in the attacker's frame: the same side centre, width and direction as `Swing::slice`.
 pub fn angle(aim: StrikeAim, progress: f64) -> f64 {
     let half = f64::from(STRIKE_ARC_HALF_WIDTH) / 65536. * TAU;
+    let offset = f64::from(STRIKE_SIDE_OFFSET) / 65536. * TAU;
     let centre = match aim.side {
-        StrikeSide::Left => TAU / 8.,
+        StrikeSide::Left => offset,
         StrikeSide::Centre => 0.,
-        StrikeSide::Right => -TAU / 8.,
+        StrikeSide::Right => -offset,
     };
     let direction = if aim.side == StrikeSide::Right {
         -1.

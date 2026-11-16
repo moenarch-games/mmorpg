@@ -1777,6 +1777,7 @@ mod tests {
                 ZoneCommand::UseAbility {
                     ability: bash,
                     target: None,
+                    facing: None,
                 },
             ),
             (
@@ -1825,6 +1826,7 @@ mod tests {
         let strike = ZoneCommand::UseAbility {
             ability: mmorpg_core::ability::ids::HEROIC_STRIKE.get(),
             target: None,
+            facing: None,
         };
         let mut scenario = scenario(&[(3, strike), (20, ZoneCommand::Jump), (40, strike)]);
         // The arena records plain commands: replay them directly.
@@ -1860,6 +1862,7 @@ mod tests {
         let strike = ZoneCommand::UseAbility {
             ability: mmorpg_core::ability::ids::HEROIC_STRIKE.get(),
             target: None,
+            facing: None,
         };
         let scenario = scenario(&[(2, ZoneCommand::Jump), (3, strike), (40, strike)]);
         let baseline = Config::baseline();

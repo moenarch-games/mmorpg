@@ -5,8 +5,9 @@
 //!
 //! **Coverage** is a horizontal arc and a vertical band:
 //!
-//! - the arc is centred on the strike facing turned 45° toward the aimed
-//!   side and spans [`STRIKE_ARC_HALF_WIDTH`] either way; it reaches
+//! - the arc is centred on the strike facing turned [`STRIKE_SIDE_OFFSET`]
+//!   (25°) toward the aimed side and spans [`STRIKE_ARC_HALF_WIDTH`] either way,
+//!   so a side arc also covers a unit straight ahead (#884); it reaches
 //!   [`PLAYER_REACH_UNITS`] (XZ centre distance), the same melee reach as the
 //!   selected-target strike;
 //! - the band is a height range above the Warden's feet ([`StrikeHeight`]);
@@ -24,12 +25,15 @@
 use crate::ability::{AbilityEffect, AbilityId, ids};
 use crate::ai::distance_squared;
 use crate::physics::Vec3i;
-use crate::trig::{self, YAW_EIGHTH_TURN, YAW_QUARTER_TURN};
+use crate::trig::{self, YAW_QUARTER_TURN};
 use crate::unit::PLAYER_REACH_UNITS;
 use crate::{EntityRef, PLAYER_HALF_EXTENTS_UNITS, PlayerId, ZoneError, ZoneSimulation};
 
 /// Half the horizontal arc one directed strike sweeps (30°).
 pub const STRIKE_ARC_HALF_WIDTH: u16 = YAW_QUARTER_TURN / 3;
+/// How far a side strike's arc turns from the facing toward its side (25°): less than the
+/// half-width, so left and right sweeps overlap the centre line (#884).
+pub const STRIKE_SIDE_OFFSET: u16 = 4_551;
 
 /// Which way the sword sweeps relative to the strike facing.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
@@ -65,9 +69,9 @@ impl StrikeSide {
     #[must_use]
     pub const fn arc_centre(self, facing: u16) -> u16 {
         match self {
-            Self::Left => facing.wrapping_add(YAW_EIGHTH_TURN),
+            Self::Left => facing.wrapping_add(STRIKE_SIDE_OFFSET),
             Self::Centre => facing,
-            Self::Right => facing.wrapping_sub(YAW_EIGHTH_TURN),
+            Self::Right => facing.wrapping_sub(STRIKE_SIDE_OFFSET),
         }
     }
 }

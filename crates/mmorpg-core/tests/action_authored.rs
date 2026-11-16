@@ -181,6 +181,7 @@ impl Hero {
         self.send(ZoneCommand::UseAbility {
             ability: ids::SHIELD_BASH.get(),
             target: Some(EntityRef::Creature(CreatureId::new(1))),
+            facing: None,
         });
     }
 
@@ -202,6 +203,7 @@ impl Hero {
                 ZoneCommand::UseAbility {
                     ability: ids::SHIELD_BASH.get(),
                     target: Some(EntityRef::Creature(CreatureId::new(1))),
+                    facing: None,
                 },
                 observed,
             )
@@ -611,6 +613,7 @@ fn a_chord_needs_its_partner_held() {
     warden.send(ZoneCommand::UseAbility {
         ability: ids::HEROIC_STRIKE.get(),
         target: Some(EntityRef::Creature(CreatureId::new(1))),
+        facing: None,
     });
     warden.tick();
     assert!(!matches!(

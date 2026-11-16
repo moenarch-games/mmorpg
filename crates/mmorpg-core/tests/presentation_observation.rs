@@ -361,6 +361,7 @@ fn visible_remote_player_ability_has_start_resolution_and_neutral_impact() {
         ZoneCommand::UseAbility {
             ability: ids::FIREBOLT.get(),
             target: Some(WOLF),
+            facing: None,
         },
     )
     .unwrap();

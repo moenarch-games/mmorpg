@@ -30,9 +30,9 @@ pub fn still_aims(snapshot: &ZoneSnapshot, slot: u8, ability: u32) -> bool {
     can_draw(snapshot, slot, ability)
 }
 
-/// Where a throw along `facing` is expected to land, in core units: on the nearest attackable
-/// unit straight ahead within the throw's reach, as the zone arcs it, otherwise on level ground
-/// the nominal lob away. A non-authoritative aid; terrain, walls and bounces are the zone's.
+/// Where a throw along `facing` is expected to land, in core units: on the selection when it
+/// stands in the aim cone within the throw's reach (#884), else on the nearest attackable unit
+/// there, as the zone arcs it, otherwise on level ground the nominal lob away. A non-authoritative aid; terrain, walls and bounces are the zone's.
 #[must_use]
 pub fn landing(snapshot: &ZoneSnapshot, facing: u16) -> Option<[i32; 3]> {
     let viewer = EntityRef::Player(snapshot.viewer_id);
@@ -48,6 +48,7 @@ pub fn landing(snapshot: &ZoneSnapshot, facing: u16) -> Option<[i32; 3]> {
     ];
     #[allow(clippy::cast_precision_loss)]
     let range = THROW_RANGE_UNITS as f32;
+    let selected = snapshot.viewer.target;
     let target = snapshot
         .entities
         .iter()
@@ -60,11 +61,14 @@ pub fn landing(snapshot: &ZoneSnapshot, facing: u16) -> Option<[i32; 3]> {
             ];
             let distance = delta[0].hypot(delta[1]);
             let along = (delta[0] * ahead[0] + delta[1] * ahead[1]) / distance;
-            (distance > 0.0 && distance <= range && along >= AIM_ASSIST_COS)
-                .then_some((distance, entity.position))
+            (distance > 0.0 && distance <= range && along >= AIM_ASSIST_COS).then_some((
+                Some(entity.entity()) != selected,
+                distance,
+                entity.position,
+            ))
         })
-        .min_by(|a, b| a.0.total_cmp(&b.0));
-    if let Some((_, position)) = target {
+        .min_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
+    if let Some((_, _, position)) = target {
         return Some(position);
     }
     // Level ground: the lob leaves chest-high at the throw's speed and rise and falls under its

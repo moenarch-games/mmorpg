@@ -178,6 +178,7 @@ impl Swimmer {
         self.send(ZoneCommand::UseAbility {
             ability: ability.get(),
             target: Some(EntityRef::Creature(CreatureId::new(1))),
+            facing: None,
         });
     }
 }

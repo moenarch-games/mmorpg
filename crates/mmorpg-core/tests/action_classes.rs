@@ -190,6 +190,7 @@ impl Hero {
         self.send(ZoneCommand::UseAbility {
             ability: ability.get(),
             target,
+            facing: None,
         });
         self.tick()
     }
@@ -210,6 +211,7 @@ impl Hero {
                 ZoneCommand::UseAbility {
                     ability: ids::SHIELD_BASH.get(),
                     target: Some(EntityRef::Player(1)),
+                    facing: None,
                 },
             )
             .unwrap();

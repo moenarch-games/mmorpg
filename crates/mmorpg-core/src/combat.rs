@@ -166,7 +166,15 @@ impl ZoneSimulation {
                 None
             }
             PlayerIntent::ChooseClass { class, sex } => self.choose_class(player_id, class, sex),
-            PlayerIntent::UseAbility { ability, target } => {
+            // The cast turns the living player to the facing it was aimed along (#884) first.
+            PlayerIntent::UseAbility {
+                ability,
+                target,
+                facing,
+            } => {
+                if let Some(facing) = facing.filter(|_| alive) {
+                    self.update_player(player_id, |player| player.facing = facing);
+                }
                 self.use_ability(player_id, ability, target, now)?
             }
             PlayerIntent::DirectedStrike {
@@ -624,13 +632,15 @@ impl ZoneSimulation {
             PLAYER_REACH_UNITS,
             SWING_ARC_HALF_WIDTH,
             true,
+            false,
         )
     }
 
     /// Every unit the player may attack within `reach` (XZ centre distance)
     /// and `half_width` either side of `facing`, in `EntityRef` order. A
     /// `melee` attack covers only bodies overlapping [`SWING_BAND_UNITS`] and
-    /// needs line of sight to another player; any other needs it to every unit.
+    /// needs line of sight to another player; any other needs it to every unit,
+    /// unless lobbed `over_cover` (a throw, #884).
     /// The geometry is `sim-combat`'s shared [`swing`] test (#754).
     pub(crate) fn facing_coverage(
         &self,
@@ -639,6 +649,7 @@ impl ZoneSimulation {
         reach: i32,
         half_width: u16,
         melee: bool,
+        over_cover: bool,
     ) -> Result<Vec<EntityRef>, ZoneError> {
         let origin = self.player_position(player_id)?;
         let feet = Vec3i::new(
@@ -678,7 +689,8 @@ impl ZoneSimulation {
             if !covers {
                 continue;
             }
-            if (!melee || matches!(entity, EntityRef::Player(_)))
+            if !over_cover
+                && (!melee || matches!(entity, EntityRef::Player(_)))
                 && !self.line_of_sight(EntityRef::Player(player_id), entity)?
             {
                 continue;

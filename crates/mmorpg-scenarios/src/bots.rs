@@ -1136,7 +1136,11 @@ impl Runner<'_> {
                 let entity = step.entity.as_ref().unwrap_or(&UnitSpec::None);
                 match entity.resolve(|name| self.player_of(name)) {
                     Ok(target) => (
-                        ZoneCommand::UseAbility { ability, target },
+                        ZoneCommand::UseAbility {
+                            ability,
+                            target,
+                            facing: None,
+                        },
                         format!(" ability={ability} entity={entity}"),
                     ),
                     Err(_) => return Ok(("rejected:unknown_entity".into(), String::new())),

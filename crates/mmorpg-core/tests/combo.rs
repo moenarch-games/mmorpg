@@ -80,10 +80,14 @@ impl Warden {
     }
 
     fn slash(&mut self, side: StrikeSide) -> Vec<ZoneEvent> {
+        self.slash_at(StrikeAim::new(side, StrikeHeight::Middle))
+    }
+
+    fn slash_at(&mut self, aim: StrikeAim) -> Vec<ZoneEvent> {
         self.send(ZoneCommand::DirectedStrike {
             ability: ids::HEROIC_STRIKE.get(),
             facing: SOUTH,
-            aim: StrikeAim::new(side, StrikeHeight::Middle),
+            aim,
         });
         self.tick()
     }
@@ -92,6 +96,7 @@ impl Warden {
         self.send(ZoneCommand::UseAbility {
             ability: ids::SHIELD_BASH.get(),
             target: None,
+            facing: None,
         });
     }
 
@@ -157,8 +162,8 @@ fn a_confirmed_slash_lets_an_early_bash_follow_up_on_the_struck_creature() {
 #[test]
 fn a_whiff_opens_nothing_and_the_slash_cooldown_still_applies() {
     let mut warden = Warden::new();
-    // Nothing stands west of the spawn.
-    let events = warden.slash(StrikeSide::Left);
+    // A high slash passes over both wolves.
+    let events = warden.slash_at(StrikeAim::new(StrikeSide::Left, StrikeHeight::High));
     assert!(
         events
             .iter()

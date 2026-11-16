@@ -80,6 +80,7 @@ fn throw(
         ZoneCommand::UseAbility {
             ability: ability.get(),
             target,
+            facing: None,
         },
     ];
     let mut events = Vec::new();

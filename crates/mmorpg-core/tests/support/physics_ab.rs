@@ -557,6 +557,7 @@ fn barrel_chain_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
             ZoneCommand::UseAbility {
                 ability: mmorpg_core::ability::ids::FIREBOLT.get(),
                 target: None,
+                facing: None,
             },
         )],
         _ => Vec::new(),
@@ -677,6 +678,7 @@ fn missiles_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
     let firebolt = |target| ZoneCommand::UseAbility {
         ability: mmorpg_core::ability::ids::FIREBOLT.get(),
         target,
+        facing: None,
     };
     (1..=4)
         .flat_map(|player: u32| {
@@ -753,6 +755,7 @@ fn crate_shove_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
                 ZoneCommand::UseAbility {
                     ability: mmorpg_core::ability::ids::SHIELD_BASH.get(),
                     target: None,
+                    facing: None,
                 },
             )],
             60 if player == 2 => vec![(player, stand(1))],
@@ -791,6 +794,7 @@ fn charge_path_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
                     ZoneCommand::UseAbility {
                         ability: mmorpg_core::ability::ids::CHARGE.get(),
                         target: None,
+                        facing: None,
                     },
                 )],
                 _ => Vec::new(),
@@ -818,6 +822,7 @@ fn watch_post_commands(tick: usize, zone: &ZoneSimulation) -> Vec<(u32, ZoneComm
     let ability = |ability: mmorpg_core::AbilityId, target| ZoneCommand::UseAbility {
         ability: ability.get(),
         target,
+        facing: None,
     };
     use mmorpg_core::ability::ids;
     match tick {

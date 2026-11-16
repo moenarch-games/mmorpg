@@ -125,6 +125,7 @@ fn sight_session() -> u64 {
                 ZoneCommand::UseAbility {
                     ability: FIREBOLT,
                     target: None,
+                    facing: None,
                 },
             );
         }

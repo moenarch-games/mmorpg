@@ -151,6 +151,7 @@ fn melee_requested_while_landing_waits_for_the_recovery_to_end() {
     warden.send(ZoneCommand::UseAbility {
         ability: ids::HEROIC_STRIKE.get(),
         target: Some(TARGET),
+        facing: None,
     });
     let mut waited = 0;
     loop {

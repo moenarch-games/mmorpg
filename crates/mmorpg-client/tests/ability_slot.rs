@@ -88,6 +88,7 @@ fn native_warden_slot_one_spends_rage_and_projects_global_cooldown() {
         ZoneCommand::UseAbility {
             ability,
             target: None,
+            facing: None,
         },
     )
     .unwrap();

@@ -95,6 +95,7 @@ impl Warden {
         self.send(ZoneCommand::UseAbility {
             ability: ids::SHIELD_BASH.get(),
             target: None,
+            facing: None,
         });
     }
 
@@ -204,10 +205,11 @@ fn a_grounded_slash_buffers_bash_and_guard_until_the_inspected_ticks() {
 #[test]
 fn a_whiff_reports_the_unmet_damage_condition_and_the_bash_is_direct() {
     let mut warden = Warden::new();
+    // A high slash passes over the wolf ahead.
     warden.send(ZoneCommand::DirectedStrike {
         ability: ids::HEROIC_STRIKE.get(),
         facing: SOUTH,
-        aim: StrikeAim::new(StrikeSide::Left, StrikeHeight::Middle),
+        aim: StrikeAim::new(StrikeSide::Left, StrikeHeight::High),
     });
     warden.tick();
     assert_eq!(

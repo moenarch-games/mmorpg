@@ -1418,9 +1418,13 @@ impl ActionGraph {
 #[must_use]
 pub fn command_input(command: &crate::ZoneCommand) -> Option<ActionInput> {
     match *command {
-        crate::ZoneCommand::UseAbility { ability, target } => {
-            input_of(&PlayerIntent::UseAbility { ability, target })
-        }
+        crate::ZoneCommand::UseAbility {
+            ability, target, ..
+        } => input_of(&PlayerIntent::UseAbility {
+            ability,
+            target,
+            facing: None,
+        }),
         crate::ZoneCommand::DirectedStrike { .. } => Some(ActionInput::WardenMelee),
         _ => None,
     }

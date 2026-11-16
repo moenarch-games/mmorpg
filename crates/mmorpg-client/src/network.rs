@@ -697,11 +697,17 @@ impl ClientSession {
             .await
     }
 
-    /// Uses a class ability at the current selection; the zone validates it.
-    pub async fn send_use_ability(&mut self, ability: u32) -> Result<(), SessionError> {
+    /// Uses a class ability aimed along `facing` (#884): the zone turns the character first, so
+    /// the cast never races a facing move. The zone validates it.
+    pub async fn send_use_ability(
+        &mut self,
+        ability: u32,
+        facing: u16,
+    ) -> Result<(), SessionError> {
         self.send_command(ZoneCommand::UseAbility {
             ability,
             target: None,
+            facing: Some(facing),
         })
         .await
     }

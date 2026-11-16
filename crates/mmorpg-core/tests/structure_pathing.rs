@@ -162,6 +162,7 @@ fn a_destroyed_piece_opens_the_way_and_the_sight_line() {
     let blast = ZoneCommand::UseAbility {
         ability: ids::FIRE_BLAST.get(),
         target: None,
+        facing: None,
     };
     // The north wall stands between them: no sight line, nobody in front.
     send(&mut zone, blast);

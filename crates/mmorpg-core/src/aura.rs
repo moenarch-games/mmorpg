@@ -101,7 +101,8 @@ pub(crate) fn speed_percent(auras: &[Aura]) -> i32 {
 
 pub(crate) use sim_movement::scale_velocity;
 
-/// A swing interval shortened by the strongest haste: `ticks × 100 / (100 + haste)`.
+/// A swing interval, or a shot's global cooldown (#884), shortened by the strongest haste:
+/// `ticks × 100 / (100 + haste)`.
 pub(crate) fn hasted_swing(ticks: u16, auras: &[Aura]) -> u16 {
     let haste = auras
         .iter()

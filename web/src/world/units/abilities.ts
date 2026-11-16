@@ -16,10 +16,15 @@ export function abilitySlots(snapshot: ZoneSnapshot, catalog: ContentCatalog): r
   return [...wasm.classKit(classId)].flatMap((id) => catalog.abilities.get(id) ?? []);
 }
 
-/** The command for ability slot `slot` (1–10) at the current selection, or null without one. */
-export function useAbilitySlot(slot: number, snapshot: ZoneSnapshot, catalog: ContentCatalog): WorldCommand | null {
+/**
+ * The command for ability slot `slot` (1–20), or null without one. It carries the yaw the player
+ * aimed along (#884), so the zone turns the character before the ability fires; `null` keeps the
+ * zone's facing. The zone picks the unit: the selection when it lies in the ability's aim cone,
+ * otherwise the nearest unit in front.
+ */
+export function useAbilitySlot(slot: number, snapshot: ZoneSnapshot, catalog: ContentCatalog, facing: number | null = null): WorldCommand | null {
   const ability = abilitySlots(snapshot, catalog)[slot - 1];
-  return ability ? { kind: "use-ability", ability: ability.id, target: null } : null;
+  return ability ? { kind: "use-ability", ability: ability.id, target: null, facing } : null;
 }
 
 /** Cancels the viewer's own cast or channel; nothing to send without one. */

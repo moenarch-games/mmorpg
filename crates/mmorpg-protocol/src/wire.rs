@@ -81,6 +81,25 @@ pub(crate) fn encode_entity_ref(payload: &mut Vec<u8>, entity: Option<EntityRef>
     }
 }
 
+/// An optional yaw (#884): a presence flag, then the yaw (`u16`), zero when absent.
+pub(crate) fn encode_optional_yaw(payload: &mut Vec<u8>, yaw: Option<u16>) {
+    payload.push(u8::from(yaw.is_some()));
+    payload.extend_from_slice(&yaw.unwrap_or(0).to_be_bytes());
+}
+
+pub(crate) fn decode_optional_yaw(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Option<u16>, ProtocolError> {
+    let present = read_bool(payload, offset)?;
+    let yaw = u16::from_be_bytes(take(payload, offset)?);
+    match (present, yaw) {
+        (true, yaw) => Ok(Some(yaw)),
+        (false, 0) => Ok(None),
+        (false, _) => Err(ProtocolError::new("an absent yaw must be 0")),
+    }
+}
+
 pub(crate) fn decode_entity_ref(
     payload: &[u8],
     offset: &mut usize,

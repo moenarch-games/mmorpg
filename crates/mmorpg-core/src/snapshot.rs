@@ -44,6 +44,7 @@ pub enum PlayerIntent {
     UseAbility {
         ability: u32,
         target: Option<EntityRef>,
+        facing: Option<u16>,
     },
     /// A directed strike (#154), resolved by the next tick.
     DirectedStrike {
