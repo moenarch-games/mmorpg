@@ -1,17 +1,23 @@
 import * as THREE from "three";
+import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
+import type { GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { loadBundleGltfs } from "./static-bundle";
 import { litObject } from "./lighting";
 import type { AmbientAnimalsSource } from "./scenery";
 
 /** The rolling `greyhaven-ambient-animals` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
 const AMBIENT_BUNDLE = `${import.meta.env.BASE_URL}scenery/greyhaven.ambient-animals/`;
+/** The rolling `greyhaven-farm-animals` bundle (#849), whose keys start `greyhaven.farm.`. */
+const FARM_BUNDLE = `${import.meta.env.BASE_URL}scenery/greyhaven.farm-animals/`;
+const FARM_PREFIX = "greyhaven.farm.";
 
 type Animal = { root: THREE.Object3D; mixer: THREE.AnimationMixer; actions: (THREE.AnimationAction | null)[]; clip: number };
 
 /**
- * Greyhaven's ambient cat, dog and rodent (#419): asset-tooling's skinned animals drawn as imported
- * roots, each posed every frame by the shared Rust presenter's authored loop (`Idle` and in-place
- * `Walk`) through its own `AnimationMixer`, as the native client does. Cosmetic only: never picked,
+ * Greyhaven's ambient cat, dog and rodent (#419) and its farm animals (#849): asset-tooling's skinned animals drawn
+ * as imported roots, each posed every frame by the shared Rust presenter's authored loop (`Idle`, in-place `Walk` and
+ * a grazer's `Eat`, or `Idle` for a model without it) through its own `AnimationMixer`, as the native client does.
+ * Each species loads once; its animals are skinned clones. Cosmetic only: never picked,
  * collided or replicated. Until the bundle loads, or if it fails, the animals are simply absent.
  */
 export class AmbientAnimals {
@@ -37,11 +43,24 @@ export class AmbientAnimals {
 
   async #load(): Promise<void> {
     if (this.#source.entries.length === 0) { return; }
-    const gltfs = await loadBundleGltfs(AMBIENT_BUNDLE, this.#source.entries);
-    this.#animals = gltfs.map((gltf, index) => {
+    const entries = this.#source.entries;
+    const species = [...new Set(entries)];
+    const loaded = new Map<string, GLTF>();
+    for (const [bundle, keys] of [
+      [AMBIENT_BUNDLE, species.filter((key) => !key.startsWith(FARM_PREFIX))],
+      [FARM_BUNDLE, species.filter((key) => key.startsWith(FARM_PREFIX))],
+    ] as const) {
+      if (keys.length === 0) { continue; }
+      (await loadBundleGltfs(bundle, keys)).forEach((gltf, index) => loaded.set(keys[index]!, gltf));
+    }
+    const shared = entries.filter((key, index) => entries.indexOf(key) !== index);
+    this.#animals = entries.map((key, index) => {
+      const gltf = loaded.get(key)!;
+      // A species with more than one animal gives each a skinned clone of its untouched scene.
+      const scene = shared.includes(key) ? cloneSkinned(gltf.scene) : gltf.scene;
       // Lit like the rest of the world (#600).
-      const root = litObject(gltf.scene);
-      root.name = this.#source.entries[index]!;
+      const root = litObject(scene);
+      root.name = entries[index]!;
       root.matrixAutoUpdate = false;
       const mixer = new THREE.AnimationMixer(root);
       const actions = this.#source.clips.map((name) => {
@@ -63,7 +82,8 @@ export class AmbientAnimals {
       const at = index * 18;
       animal.root.matrix.fromArray(frame, at);
       animal.root.matrixWorldNeedsUpdate = true;
-      const clip = frame[at + 16]!;
+      // A model without the clip (`Eat` on a pig or sheep) rests in `Idle`.
+      const clip = animal.actions[frame[at + 16]!] ? frame[at + 16]! : 0;
       const action = animal.actions[clip];
       if (!action) { return; }
       if (animal.clip !== clip) {

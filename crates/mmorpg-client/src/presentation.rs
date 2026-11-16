@@ -886,7 +886,10 @@ impl Presentation {
             let Some((model, clips)) = animal else {
                 continue;
             };
-            let clip = mmorpg_presentation::ambient::CLIPS[pose.clip];
+            // A model without the clip (`Eat` on a pig or sheep) rests in `Idle`.
+            let clip = Some(mmorpg_presentation::ambient::CLIPS[pose.clip])
+                .filter(|clip| clips.contains_key(*clip))
+                .unwrap_or(mmorpg_presentation::ambient::CLIPS[0]);
             let length = f64::from(clips.get(clip).copied().unwrap_or(0.));
             #[allow(clippy::cast_possible_truncation)]
             let time = if length > 0. {
