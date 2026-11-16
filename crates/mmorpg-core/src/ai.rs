@@ -407,11 +407,11 @@ impl ZoneSimulation {
                 }
             },
             // Large creatures (#297) hold their ground while idle instead of wandering, so they
-            // draw nothing from the zone RNG until a fight.
+            // draw nothing from their stream until a fight.
             CreatureAi::Idle { .. } if march.is_some() => march.unwrap_or(([0, 0], None)),
             CreatureAi::Idle { .. } if template.is_large() => ([0, 0], None),
             CreatureAi::Idle { .. } => wander(
-                &mut self.rng,
+                &mut creature.rng,
                 &mut creature.ai,
                 here,
                 home,
@@ -498,7 +498,7 @@ impl ZoneSimulation {
                         timer: if marching {
                             0
                         } else {
-                            wander_wait(&mut self.rng)
+                            wander_wait(&mut creature.rng)
                         },
                         destination: None,
                     };

@@ -6,8 +6,9 @@ use std::sync::Arc;
 use crate::physics::{RigidBody, Vec3i};
 
 use crate::entity::body_id;
+use crate::rng::ZoneRng;
 use crate::snapshot::{CreatureAi, ThreatEntry};
-use crate::zone::{physics_error, vector};
+use crate::zone::{LOOT_STREAM_SALT, physics_error, vector};
 use crate::{
     CreatureId, CreatureSpawn, CreatureTemplate, CreatureTemplateId, EntityRef, ZoneError,
     ZoneSimulation,
@@ -56,6 +57,9 @@ pub(crate) enum Life {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CreatureState {
     pub(crate) generation: u64,
+    /// This life's own random stream (#861): its level, wander, swings, abilities and the
+    /// rolls against it, so another spawn never shifts them.
+    pub(crate) rng: ZoneRng,
     pub(crate) level: u8,
     pub(crate) health: u32,
     pub(crate) facing: u16,
@@ -216,8 +220,41 @@ impl ZoneSimulation {
         Ok((spawn, template))
     }
 
+    /// The initial random stream of creature `id`'s life `generation` (#861).
+    pub(crate) fn creature_stream(&self, id: CreatureId, generation: u64) -> ZoneRng {
+        ZoneRng::seeded_for(
+            self.content.rng_seed(),
+            self.zone_id,
+            u64::from(id.get()),
+            generation,
+        )
+    }
+
+    /// The loot rolls of creature `id`'s life `generation` (#861): a pure function of that
+    /// life, apart from its fight and from every other creature.
+    pub(crate) fn creature_loot_stream(&self, id: CreatureId, generation: u64) -> ZoneRng {
+        ZoneRng::seeded_for(
+            self.content.rng_seed() ^ LOOT_STREAM_SALT,
+            self.zone_id,
+            u64::from(id.get()),
+            generation,
+        )
+    }
+
+    /// The stream a roll about `unit` draws from (#861): a creature's own, so a fight with it
+    /// is independent of every other creature, else the zone's shared stream.
+    pub(crate) fn stream(&mut self, unit: EntityRef) -> &mut ZoneRng {
+        match unit {
+            EntityRef::Creature(id) => match self.creatures.get_mut(&id) {
+                Some(creature) => &mut creature.rng,
+                None => &mut self.rng,
+            },
+            EntityRef::Player(_) | EntityRef::Npc(_) | EntityRef::Minion(_) => &mut self.rng,
+        }
+    }
+
     /// (Re)spawns a creature at its spawn point: a new level roll and first
-    /// wander delay from the zone RNG, full health, no threat or tap.
+    /// wander delay from its own life's stream, full health, no threat or tap.
     pub(crate) fn spawn_creature(&mut self, id: CreatureId) -> Result<(), ZoneError> {
         let generation = self
             .creatures
@@ -226,15 +263,15 @@ impl ZoneSimulation {
             .ok_or_else(|| ZoneError::new("creature life identities exhausted"))?;
         let content = Arc::clone(&self.content);
         let (spawn, template) = Self::creature_content(&content, id)?;
+        let mut rng = self.creature_stream(id, generation);
         // A prop (#288) or a large creature (#297), which holds its ground while idle, stands
-        // at its lowest level and draws nothing from the zone RNG, so adding one rerolls no
-        // other creature.
+        // at its lowest level and draws nothing.
         let (level, wait) = if template.prop().is_some() || template.is_large() {
             (template.min_level, 0)
         } else {
             let [low, high] = spawn.level_range(template);
-            let level = self.rng.inclusive(u32::from(low), u32::from(high));
-            let wait = self.rng.inclusive(
+            let level = rng.inclusive(u32::from(low), u32::from(high));
+            let wait = rng.inclusive(
                 u32::from(WANDER_WAIT_TICKS[0]),
                 u32::from(WANDER_WAIT_TICKS[1]),
             );
@@ -269,6 +306,7 @@ impl ZoneSimulation {
             id,
             CreatureState {
                 generation,
+                rng,
                 level,
                 health: template.max_health(level),
                 facing: spawn.facing,
@@ -302,6 +340,7 @@ impl ZoneSimulation {
             id,
             CreatureState {
                 generation: 1,
+                rng: self.creature_stream(id, 1),
                 level: template.min_level,
                 health: 0,
                 facing: 0,

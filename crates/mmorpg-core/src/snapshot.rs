@@ -319,6 +319,8 @@ pub struct CanonicalPlayerSnapshot {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CanonicalCreatureSnapshot {
     pub generation: u64,
+    /// This life's own random stream (#861).
+    pub rng_state: u64,
     pub creature_id: CreatureId,
     pub level: u8,
     pub health: u32,
@@ -491,6 +493,7 @@ impl ZoneSimulation {
                 };
                 Ok(CanonicalCreatureSnapshot {
                     generation: creature.generation,
+                    rng_state: creature.rng.state(),
                     creature_id,
                     level: creature.level,
                     health: creature.health,
@@ -1087,6 +1090,7 @@ impl ZoneSimulation {
             record.creature_id,
             CreatureState {
                 generation: record.generation,
+                rng: ZoneRng::from_state(record.rng_state),
                 level: record.level,
                 health: record.health,
                 facing: record.facing,

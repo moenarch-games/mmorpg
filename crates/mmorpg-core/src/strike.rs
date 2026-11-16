@@ -235,7 +235,7 @@ impl ZoneSimulation {
         let effect = crate::ability_by_id(ability).map(|ability| ability.effect);
         if let (Some(victim), Some(effect @ AbilityEffect::WeaponStrike { .. })) = (victim, effect)
         {
-            let amount = self.weapon_strike_amount(player_id, effect);
+            let amount = self.weapon_strike_amount(player_id, victim, effect);
             let amount = self.stance_damage(player_id, target, amount)?;
             let before = self.struck_health(victim);
             self.player_melee_hits_at(player_id, victim, amount, false, now, Some(aim.height))?;

@@ -236,7 +236,7 @@ impl ZoneSimulation {
             .map_or(0, |player| u32::from(player.damage_bonus()));
         for &victim in &trace.victims {
             let amount = self
-                .rng
+                .stream(victim)
                 .inclusive(u32::from(damage[0]), u32::from(damage[1]))
                 + u32::from(scaled(0, per_level, level))
                 + bonus;
