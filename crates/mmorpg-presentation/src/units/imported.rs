@@ -1661,8 +1661,9 @@ impl Kind {
     /// The authored strike an accepted attack or ability of a `class` user plays: the Warden's
     /// Shield Bash its shield-arm clip, Heroic Strike the slash toward its `aim` or, undirected,
     /// the heroic strike, Cleave its sweep, the Redbrand whirl and smash their own (#582); a bow
-    /// class its bow release, a staff or spell class its spell release; everyone else the slash
-    /// toward the swing's `aim`, or its attack. A model without them plays its attack.
+    /// class's ability its bow release, a staff or spell class's ability its spell release; a
+    /// basic swing (no ability) of any class, and everything else, the slash toward the swing's
+    /// `aim`, or its attack (#884). A model without them plays its attack.
     #[must_use]
     pub fn strike(
         self,
@@ -1692,7 +1693,7 @@ impl Kind {
                 _ => {}
             }
         }
-        match class {
+        match class.filter(|_| ability.is_some()) {
             Some(PlayerClass::Ranger) => strikes.bow,
             Some(
                 PlayerClass::Arcanist
@@ -4999,13 +5000,18 @@ mod tests {
             Kind::Ranger.strike(None, Some(ids::OVERHEAD_SMASH), None),
             "Sword_Overhead_Smash"
         );
-        // A bow class keeps its release whatever the swing's aim.
+        // A bow class's basic swing is a melee slash like everyone else's (#884); its shots keep
+        // the release.
         assert_eq!(
             Kind::Ranger.strike(
                 Some(PlayerClass::Ranger),
                 None,
                 aim(mmorpg_core::StrikeSide::Centre, StrikeHeight::Middle)
             ),
+            "Sword_Slash_Mid_C"
+        );
+        assert_eq!(
+            Kind::Ranger.strike(Some(PlayerClass::Ranger), Some(ids::SERPENT_STING), None),
             "Bow_Release"
         );
         assert_eq!(
@@ -5020,7 +5026,11 @@ mod tests {
         );
         assert_eq!(
             Kind::Ranger.strike(Some(PlayerClass::Ranger), None, None),
-            "Bow_Release"
+            "Sword_Attack"
+        );
+        assert_eq!(
+            Kind::Ranger.strike(Some(PlayerClass::Arcanist), None, None),
+            "Sword_Attack"
         );
         assert_eq!(
             Kind::Ranger.strike(Some(PlayerClass::Arcanist), Some(ids::FIREBOLT), None),

@@ -522,6 +522,7 @@ fn a_ranger_power_draws_aimed_shot_and_looses_rapidly_under_rapid_fire() {
             ("Bow_Rapid_Release", 0.33),
             ("Bow_Power_Draw", 1.),
             ("Flourish_Haste", 0.7),
+            ("Sword_Attack", 1.),
         ]
         .map(|(clip, seconds)| (clip.to_owned(), seconds)),
     );
@@ -554,9 +555,10 @@ fn a_ranger_power_draws_aimed_shot_and_looses_rapidly_under_rapid_fire() {
     assert_eq!(shoot(&mut scene, used, 0.4), "Bow_Release_Upper");
     assert_eq!(viewer_upper(&frame(&mut scene, 1.)).0, "Bow_Recovery_Upper");
     // An ordinary shot standing keeps the full-body release.
-    let attack = ZoneEvent::AttackPerformed {
+    let attack = ZoneEvent::AbilityUsed {
         source: me,
-        target: Some(scene.wolf),
+        target: None,
+        ability: ids::SERPENT_STING,
     };
     assert_eq!(shoot(&mut scene, attack, 3.), "Bow_Release");
     // Under Rapid Fire every shot is the rapid release, back to back.
@@ -568,6 +570,12 @@ fn a_ranger_power_draws_aimed_shot_and_looses_rapidly_under_rapid_fire() {
     }];
     assert_eq!(shoot(&mut scene, attack, 5.), "Bow_Rapid_Release");
     assert_eq!(shoot(&mut scene, attack, 5.4), "Bow_Rapid_Release");
+    // The Q swing is a melee blow, not a bow release (#884).
+    let swing = ZoneEvent::AttackPerformed {
+        source: me,
+        target: Some(scene.wolf),
+    };
+    assert_eq!(shoot(&mut scene, swing, 8.), "Sword_Attack");
 }
 
 /// The caster clips (#609, asset-tooling #420) by name and length.
@@ -797,6 +805,7 @@ fn a_bundle_without_the_caster_clips_keeps_the_simple_spell() {
             ("Spell_Simple_Idle_Loop", 1.),
             ("Spell_Simple_Shoot", 0.5),
             ("Spell_Simple_Exit", 0.4),
+            ("Sword_Attack", 1.),
         ]
         .map(|(clip, seconds)| (clip.to_owned(), seconds)),
     );
@@ -822,7 +831,11 @@ fn a_bundle_without_the_caster_clips_keeps_the_simple_spell() {
         source: me,
         target: Some(scene.wolf),
     };
-    assert_eq!(play(&mut scene, vec![swing], 3.), "Spell_Simple_Shoot");
+    assert_eq!(
+        play(&mut scene, vec![swing], 3.),
+        "Sword_Attack",
+        "a basic swing is a melee blow (#884)"
+    );
 }
 
 /// A scene whose viewer is an imported Ranger with every social clip loaded (#619).
