@@ -77,7 +77,8 @@ impl Layer {
     #[must_use]
     pub const fn tile_metres(self) -> f64 {
         match self {
-            Self::Grass | Self::Forest | Self::Sand => 3.,
+            Self::Grass | Self::Sand => 3.,
+            Self::Forest => 4.5,
             Self::Gravel | Self::Path => 2.5,
             Self::Mud => 2.,
             Self::Rock => 2.7,
@@ -326,15 +327,10 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
             0.
         };
         let gravel = gravel.max(wash * 0.92);
-        // The forest-floor overlay is cut by its texture's height alpha, which repeats every 3 m
-        // and reads as stripes across open ground. The region's designed forests (#816), sparse
-        // and open between their trunks, keep the woods' darker base tone instead.
-        let designed = s.greyhaven() && mmorpg_core::greyhaven_vale::beyond_core(ux, uz) > 0;
-        let forest = if designed {
-            0.
-        } else {
-            smoothstep(0.3, 0.7, woods[i] + 0.45 * breakup)
-        };
+        // Leaf litter under the woods, the heart's and the region's designed forests (#816)
+        // alike: its texture is turned off the grid (`Projection::Turned`), so its repeat no
+        // longer reads as stripes.
+        let forest = smoothstep(0.3, 0.7, woods[i] + 0.45 * breakup);
         let mud = if shore > 0. {
             (1. - smoothstep(2., 6.5, shore + 3.5 * breakup)).max(if marsh {
                 smoothstep(0.15, 0.35, breakup) * (1. - smoothstep(4., 12., shore))
@@ -398,6 +394,9 @@ fn overlaps(a: [f64; 4], b: [f64; 4]) -> bool {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Projection {
     Top,
+    /// Top, turned about 35° (the forest floor): its repeat lines up with neither the terrain
+    /// grid nor the world axes, so it does not read as stripes.
+    Turned,
     AlongX,
     AlongZ,
 }
@@ -407,6 +406,7 @@ impl Projection {
     fn axes(self) -> (V, V) {
         match self {
             Self::Top => ([1., 0., 0.], [0., 0., 1.]),
+            Self::Turned => ([0.819, 0., -0.574], [0.574, 0., 0.819]),
             Self::AlongX => ([0., 0., 1.], [0., -1., 0.]),
             Self::AlongZ => ([1., 0., 0.], [0., -1., 0.]),
         }
@@ -414,8 +414,12 @@ impl Projection {
 
     /// Rock uses dominant-axis mapping per triangle: slopes up to about 53° keep the top
     /// projection. Near overlays supply smooth normals; coarse cliffs supply their face
-    /// normal so a broad crease cannot turn a vertical wall into a top projection.
+    /// normal so a broad crease cannot turn a vertical wall into a top projection. The forest
+    /// floor always takes the turned top projection.
     fn of(layer: Layer, normals: [V; 3]) -> Self {
+        if layer == Layer::Forest {
+            return Self::Turned;
+        }
         if layer != Layer::Rock {
             return Self::Top;
         }

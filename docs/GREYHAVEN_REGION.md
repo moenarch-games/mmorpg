@@ -197,7 +197,9 @@ same instances. The wind bends them and the player's feet push them aside in the
 Barrowdown's lane, medium draws about 5,700 clumps (230 k triangles) and high about 19,000 (740 k).
 Wildflowers grow in drifts of one colour over several metres on thick turf (buttercup, daisy,
 harebell and poppy, `grass::FLOWERS`): a flowering clump also draws five small heads just above its
-blade tips, thinned with the grass. The old procedural tufts draw nothing; the native client has no
+blade tips, thinned with the grass. Under the woods, heart and designed forests alike, the ground is
+the forest floor's leaf litter, its texture turned about 35° off the grid and repeating every 4.5 m
+so it does not read as stripes. The old procedural tufts draw nothing; the native client has no
 grass field yet.
 
 The region's seven 8 × 6 m houses are the Outpost's timber-framed house in asset-tooling's Outpost
@@ -212,6 +214,4 @@ keep the Vale's procedural buildings.
   tanner sleep indoors.
 - **The basin's climbs' ground:** the six ways up the heart's 11 m cliffs are still straight ledges
   cut into the cliff; only their roads round their turns (every authored road turns on a 4 m curve).
-- **The forest-floor texture:** its overlay repeats every 3 m and reads as stripes on open ground,
-  so the designed forests show the woods' darker ground tone instead; the heart's woods keep it.
 - **Visual acceptance** from the owner.
