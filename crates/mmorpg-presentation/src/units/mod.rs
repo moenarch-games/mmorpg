@@ -315,7 +315,7 @@ pub struct UnitPresenter {
     /// The viewer's copper and quest log as last projected: a change with a vendor or quest
     /// window open is the zone completing the trade or the quest (#619).
     copper: Option<u32>,
-    quest_log: Option<(u32, usize)>,
+    quest_log: Option<(usize, usize)>,
     /// The viewer's quests last projected, to see which one a window just added (#619).
     quest_entries: BTreeSet<u8>,
     /// The objective each NPC last pointed the viewer toward (#619).
@@ -874,7 +874,7 @@ impl UnitPresenter {
         let log = snapshot
             .quests
             .as_ref()
-            .map(|sheet| (sheet.completed, sheet.entries.len()));
+            .map(|sheet| (sheet.completed.len(), sheet.entries.len()));
         let quest_turned = log.is_some() && self.quest_log.is_some() && log != self.quest_log;
         if log.is_some() {
             self.quest_log = log;

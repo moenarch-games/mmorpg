@@ -63,10 +63,10 @@ impl RewardKey {
         match self {
             Self::KillObjective {
                 quest, objective, ..
-            } if quest.bit().is_none() || usize::from(objective) >= crate::MAX_QUEST_OBJECTIVES => {
+            } if quest.get() == 0 || usize::from(objective) >= crate::MAX_QUEST_OBJECTIVES => {
                 Err(ZoneError::new("invalid reward quest objective"))
             }
-            Self::QuestCompletion { quest } if quest.bit().is_none() => {
+            Self::QuestCompletion { quest } if quest.get() == 0 => {
                 Err(ZoneError::new("invalid reward quest"))
             }
             Self::RaidParticipation { incident: 0 } => {

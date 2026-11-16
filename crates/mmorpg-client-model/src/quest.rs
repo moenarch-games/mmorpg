@@ -11,7 +11,7 @@ use mmorpg_core::{
 /// Whether `quest` is turned in according to `sheet`.
 #[must_use]
 pub fn turned_in(sheet: &QuestSheet, quest: QuestId) -> bool {
-    quest.bit().is_some_and(|bit| sheet.completed & bit != 0)
+    sheet.completed.contains(&quest)
 }
 
 fn active(sheet: &QuestSheet, quest: QuestId) -> bool {
@@ -374,19 +374,12 @@ mod tests {
         }
     }
 
-    fn sheet(completed: u32, entries: Vec<QuestEntry>) -> QuestSheet {
+    fn sheet(completed: &[QuestId], entries: Vec<QuestEntry>) -> QuestSheet {
         QuestSheet {
-            completed,
+            completed: completed.iter().copied().collect(),
             entries,
             markers: Vec::new(),
         }
-    }
-
-    fn bits(quests: &[QuestId]) -> u32 {
-        quests
-            .iter()
-            .filter_map(|quest| quest.bit())
-            .fold(0, |all, bit| all | bit)
     }
 
     #[test]
@@ -436,18 +429,18 @@ mod tests {
             .expect("a chained quest with separate giver and ender");
         let prerequisite = quest.prerequisite.unwrap();
         let (giver, ender) = (quest.giver, quest.ender);
-        let locked = sheet(0, Vec::new());
+        let locked = sheet(&[], Vec::new());
         assert_eq!(standing(&locked, quest, giver), QuestStanding::Locked);
-        let unlocked = sheet(bits(&[prerequisite]), Vec::new());
+        let unlocked = sheet(&[prerequisite], Vec::new());
         assert_eq!(standing(&unlocked, quest, giver), QuestStanding::Offered);
         assert_eq!(
             standing(&unlocked, quest, ender),
             QuestStanding::OfferedElsewhere
         );
-        let accepted = sheet(bits(&[prerequisite]), vec![entry(quest.id, &[])]);
+        let accepted = sheet(&[prerequisite], vec![entry(quest.id, &[])]);
         assert_eq!(standing(&accepted, quest, ender), QuestStanding::TurnIn);
         assert_eq!(standing(&accepted, quest, giver), QuestStanding::InProgress);
-        let done = sheet(bits(&[prerequisite, quest.id]), Vec::new());
+        let done = sheet(&[prerequisite, quest.id], Vec::new());
         assert_eq!(standing(&done, quest, ender), QuestStanding::Completed);
 
         // The dialog offers it once unlocked and takes it back where it ends.
@@ -471,7 +464,7 @@ mod tests {
             [quest.id]
         );
         let full: Vec<_> = quest.objectives.iter().map(|o| o.required()).collect();
-        let ready = sheet(bits(&[prerequisite]), vec![entry(quest.id, &full)]);
+        let ready = sheet(&[prerequisite], vec![entry(quest.id, &full)]);
         let ready = dialog_view(&ready, &content, ender, false);
         assert_eq!(ready.ready.len(), 1);
         assert!(ready.in_progress.is_empty());
@@ -485,7 +478,7 @@ mod tests {
             .iter()
             .find(|home| content.quests().iter().any(|quest| quest.giver == home.npc))
             .expect("a private home whose resident gives quests");
-        let empty = sheet(0, Vec::new());
+        let empty = sheet(&[], Vec::new());
         let day = dialog_view(&empty, &content, home.npc, false);
         assert_eq!(day.greeting, None);
         let night = dialog_view(&empty, &content, home.npc, true);
@@ -498,7 +491,7 @@ mod tests {
         let content = content();
         let quest = &content.quests()[0];
         let full: Vec<_> = quest.objectives.iter().map(|o| o.required()).collect();
-        let rows = tracker_rows(&sheet(0, vec![entry(quest.id, &full)]), &content);
+        let rows = tracker_rows(&sheet(&[], vec![entry(quest.id, &full)]), &content);
         assert_eq!(rows.len(), 1 + quest.objectives.len());
         assert_eq!(
             rows[0].text,
@@ -510,7 +503,7 @@ mod tests {
         );
         assert!(rows[1].text.starts_with("  ✓ ") && rows[1].done);
         assert_eq!(rows[1].objective, Some(0));
-        let started = tracker_rows(&sheet(0, vec![entry(quest.id, &[])]), &content);
+        let started = tracker_rows(&sheet(&[], vec![entry(quest.id, &[])]), &content);
         assert_eq!(started[0].text, quest.name);
         assert!(started[1].text.starts_with("  · ") && !started[1].done);
     }

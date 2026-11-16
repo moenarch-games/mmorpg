@@ -72,13 +72,23 @@ const MAX_ABILITY_SHEET_BYTES: usize = ENTITY_REF_BYTES
     + 1
     + MAX_COOLDOWNS * COOLDOWN_RECORD_BYTES
     + 2 * (1 + MAX_AURAS * AURA_RECORD_BYTES);
-/// Every sheet at its largest.
-pub(crate) const MAX_SHEETS_BYTES: usize = MAX_INVENTORY_SHEET_BYTES
-    + crate::quest::MAX_QUEST_SHEET_BYTES
+/// Every sheet but the quest sheet at its largest; a tick without events or chat carries them
+/// all at once.
+pub(crate) const MAX_OTHER_SHEETS_BYTES: usize = MAX_INVENTORY_SHEET_BYTES
     + MAX_LOOT_SHEET_BYTES
     + MAX_ABILITY_SHEET_BYTES
     + crate::party::MAX_PARTY_SHEET_BYTES
     + crate::depths::MAX_DEPTHS_LOOT_SHEET_BYTES;
+/// The quest sheet is bounded by the packet budget alone (#862): it fits what a tick without
+/// events or chat leaves, so it goes out once no other sheet is waiting beside it. Content whose
+/// fullest sheet (every quest turned in, a full log, every quest NPC marked) outgrows it fails to
+/// encode.
+pub(crate) const MAX_QUEST_SHEET_BYTES: usize =
+    crate::MAX_PLAYER_PROJECTION_BYTES - crate::projection::MAX_QUIET_TICK_BYTES;
+// The quest sheet always holds a full log beside its three counts.
+const _: () = assert!(
+    MAX_QUEST_SHEET_BYTES >= 3 + mmorpg_core::MAX_QUEST_LOG * crate::quest::QUEST_ENTRY_BYTES
+);
 
 /// The sheet revisions a client holds, `0` for a sheet it has none of. A host sends a sheet
 /// only while the client's revision differs from the current one.

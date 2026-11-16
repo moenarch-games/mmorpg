@@ -100,15 +100,18 @@ const MAX_PER_TICK_BYTES: usize = PLAYER_SNAPSHOT_FIXED_BYTES
     + RAID_VIEW_BYTES
     + 2 * ENTITY_RECORD_BYTES;
 
+/// Every per-tick section at its largest on a tick without events or chat.
+pub(crate) const MAX_QUIET_TICK_BYTES: usize =
+    MAX_PER_TICK_BYTES - MAX_EVENT_SECTION_BYTES - MAX_CHAT_SECTION_BYTES;
+
 // With every list full, a full event section and four 80-byte chat lines, the viewer and its
 // target always fit: 106 + 16 × 14 + 4 × 86 + doors + pieces + raid + 2 × 27 ≤ 1,077 bytes.
 // Sheets (#544) take what that leaves and wait for a later tick when they do not fit.
 const _: () = assert!(MAX_PER_TICK_BYTES <= MAX_PLAYER_PROJECTION_BYTES);
-// A tick without events or chat carries every sheet at its largest at once.
+// A tick without events or chat carries every other sheet at its largest at once; the quest
+// sheet, bounded by the budget alone, fits such a tick by itself (#862).
 const _: () = assert!(
-    MAX_PER_TICK_BYTES - MAX_EVENT_SECTION_BYTES - MAX_CHAT_SECTION_BYTES
-        + crate::sheet::MAX_SHEETS_BYTES
-        <= MAX_PLAYER_PROJECTION_BYTES
+    MAX_QUIET_TICK_BYTES + crate::sheet::MAX_OTHER_SHEETS_BYTES <= MAX_PLAYER_PROJECTION_BYTES
 );
 // Budget packing, not the relevance cap, bounds the entity count.
 const _: () = assert!(MAX_WIRE_ENTITIES <= MAX_VISIBLE_ENTITIES);
@@ -1497,7 +1500,7 @@ pub(crate) mod tests {
     /// NPC 1 and grey `?` over NPC 2: 4 + 1 + 4 + 1 + 2 × 3 bytes.
     fn quest_sheet() -> mmorpg_core::QuestSheet {
         mmorpg_core::QuestSheet {
-            completed: 0b1,
+            completed: [mmorpg_core::QuestId::new(1)].into(),
             entries: vec![mmorpg_core::QuestEntry {
                 quest: mmorpg_core::QuestId::new(2),
                 progress: [3, 0, 0],
@@ -1515,10 +1518,10 @@ pub(crate) mod tests {
         }
     }
 
-    /// Ten active quests with full progress bytes and eight markers.
+    /// Twenty-two turned-in quests, ten active ones with full progress bytes and eight markers.
     fn full_quest_sheet() -> mmorpg_core::QuestSheet {
         mmorpg_core::QuestSheet {
-            completed: 0xffff_fc00,
+            completed: (11..=32).map(mmorpg_core::QuestId::new).collect(),
             entries: (1..=10)
                 .map(|quest| mmorpg_core::QuestEntry {
                     quest: mmorpg_core::QuestId::new(quest),
@@ -1570,8 +1573,8 @@ pub(crate) mod tests {
     const EQUIPMENT: usize = INVENTORY + 8 + INVENTORY_RECORD_BYTES;
     const STATS: usize = EQUIPMENT + EQUIPMENT_RECORD_BYTES;
     const QUESTS: usize = STATS + 8;
-    /// The fixture's quest sheet.
-    const QUEST_BYTES: usize = 4 + 1 + 4 + 1 + 2 * 3;
+    /// The fixture's quest sheet: one turned-in quest, one entry and two markers.
+    const QUEST_BYTES: usize = 1 + 1 + 1 + 4 + 1 + 2 * 3;
     /// The loot sheet: no corpse sheet.
     const LOOT: usize = QUESTS + QUEST_BYTES;
     /// The ability sheet: its target, then the cooldown, aura and target aura lists.
@@ -1635,7 +1638,7 @@ pub(crate) mod tests {
         assert_eq!(encoded[EVENTS], 16);
         assert_eq!(
             encoded[QUESTS..LOOT],
-            [0, 0, 0, 1, 1, 2, 3, 0, 0, 2, 0, 1, 1, 0, 2, 2],
+            [1, 1, 1, 2, 3, 0, 0, 2, 0, 1, 1, 0, 2, 2],
             "the quest sheet follows the bag sheet"
         );
         assert_eq!(encoded[FIRST_ENTITY], 1, "the viewer's record leads");
@@ -1881,7 +1884,7 @@ pub(crate) mod tests {
             ),
             (
                 EVENTS + 1 + 15 * EVENT_RECORD_BYTES + 1,
-                33,
+                0,
                 "quest id is out of range",
             ),
             (
@@ -1889,11 +1892,11 @@ pub(crate) mod tests {
                 1,
                 "malformed event record",
             ),
-            (QUESTS + 4, 11, "quest log exceeds its capacity"),
-            (QUESTS + 5, 1, "an active quest is also turned in"),
-            (QUESTS + 9, 17, "quest sheet has too many markers"),
-            (QUESTS + 12, 4, "unknown quest marker"),
-            (QUESTS + 14, 1, "quest markers are not ordered"),
+            (QUESTS + 1, 0, "quest id is out of range"),
+            (QUESTS + 2, 11, "quest log exceeds its capacity"),
+            (QUESTS + 3, 1, "an active quest is also turned in"),
+            (QUESTS + 10, 4, "unknown quest marker"),
+            (QUESTS + 12, 1, "quest markers are not ordered"),
             (FIRST_ENTITY, 0, "unknown entity kind"),
             (FIRST_ENTITY, 5, "unknown entity kind"),
             (wolf_record + 25, 101, "health percent exceeds 100"),
@@ -2389,13 +2392,13 @@ pub(crate) mod tests {
             assert_eq!(decoded.events, with_sheet.events);
             assert_eq!(decoded.entities[1].entity(), target);
             assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
-            // The full bag and quest sheets are 92 + 70 bytes beside the other 9:
-            // (1,077 − 106 − 171) / 27 = 29 and (1,077 − 106 − 171 − 224) / 27 = 21.
+            // The full bag and quest sheets are 92 + 89 bytes beside the other 9:
+            // (1,077 − 106 − 190) / 27 = 28 and (1,077 − 106 − 190 − 224) / 27 = 20.
             if events == 0 {
-                assert_eq!(packed.packed_entities, 29);
+                assert_eq!(packed.packed_entities, 28);
             }
             if events == 16 {
-                assert_eq!(packed.packed_entities, 21);
+                assert_eq!(packed.packed_entities, 20);
             }
         }
         // Whole records only, within the budget.
@@ -2456,9 +2459,9 @@ pub(crate) mod tests {
                 assert_eq!(decoded.viewer.copper, u32::MAX);
                 assert_eq!(decoded.inventory, with_loot.inventory);
                 assert_eq!(decoded.entities[1].entity(), target);
-                // (1,077 − 117 − 154 − 26 − 224) / 27 = 20.
+                // (1,077 − 117 − 173 − 26 − 224) / 27 = 19.
                 if events == 16 && item.is_some() {
-                    assert_eq!(packed.packed_entities, 20);
+                    assert_eq!(packed.packed_entities, 19);
                 }
             }
         }
@@ -2516,8 +2519,8 @@ pub(crate) mod tests {
             auras: full_auras,
         };
         let packed = pack_snapshot(&loaded).unwrap();
-        // (1,077 − 117 − 120 − 154 − 16 × 14) / 27 = 17 records.
-        assert_eq!(packed.packed_entities, 17);
+        // (1,077 − 117 − 120 − 173 − 16 × 14) / 27 = 16 records.
+        assert_eq!(packed.packed_entities, 16);
         assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
         let decoded = decode_snapshot(&packed.payload).unwrap();
         assert_eq!(decoded.entities[1].entity(), target);

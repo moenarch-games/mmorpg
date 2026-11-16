@@ -42,9 +42,9 @@ export function wireCatalog(): WireCatalog {
   return catalog;
 }
 
-/** Whether `quest` is turned in according to a completed mask (bit `quest - 1`). */
-export function questCompleted(completed: number, quest: number): boolean {
-  return quest >= 1 && quest <= 32 && ((completed >>> (quest - 1)) & 1) === 1;
+/** Whether `quest` is among a sheet's turned-in quest IDs. */
+export function questCompleted(completed: readonly number[], quest: number): boolean {
+  return completed.includes(quest);
 }
 
 /** Whether a session snapshot payload is a redirect notice rather than a player projection. */

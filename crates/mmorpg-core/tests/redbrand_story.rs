@@ -18,7 +18,9 @@ const GREYHAVEN: ZoneId = ZoneId::new(1);
 const ALL_CLEARED: u8 = 0b111;
 const GREAVES: ItemId = ItemId::new(18);
 /// The chain turned in up to *Into Redbrand Hollow*, Garrick's quest not yet.
-const BEFORE_GARRICK: u32 = 0b0111_1111;
+fn before_garrick() -> std::collections::BTreeSet<mmorpg_core::QuestId> {
+    (1..=7).map(mmorpg_core::QuestId::new).collect()
+}
 
 fn id(name: &str) -> CharacterId {
     CharacterId::new(name).unwrap()
@@ -39,7 +41,7 @@ fn character(name: &str, garrick_slain: u8) -> CharacterRecord {
             quest: quests::GARRICK_REDBRAND_QUEST,
             progress: [garrick_slain, 0, 0],
         }],
-        completed: BEFORE_GARRICK,
+        completed: before_garrick(),
     };
     record
 }
@@ -343,7 +345,11 @@ fn an_early_victory_satisfies_the_objective_only_after_garricks_quest() {
     // Aria enters with a qualified friend and has not ended Garrick herself.
     let mut friend = character("bren", 1);
     friend.quests.entries.clear();
-    friend.quests.completed = BEFORE_GARRICK | quests::GARRICK_REDBRAND_QUEST.bit().unwrap();
+    friend.quests.completed = before_garrick();
+    friend
+        .quests
+        .completed
+        .insert(quests::GARRICK_REDBRAND_QUEST);
     let aria = character("aria", 0);
     let copper = aria.copper;
 

@@ -60,7 +60,7 @@ fn walker() -> Player {
         .unwrap();
     record.quests = QuestLog {
         entries: Vec::new(),
-        completed: quests::TROUBLE_IN_THE_WOODS.bit().unwrap(),
+        completed: [quests::TROUBLE_IN_THE_WOODS].into(),
     };
     let content = greyhaven_vale::content();
     let [x, z] = content.npc(quests::MARSHAL).unwrap().position;
@@ -98,10 +98,7 @@ fn the_marshal_sends_a_player_to_barrowdown_and_the_alewife_carries_on() {
     });
     let log = player.log();
     assert!(log.entries.is_empty(), "{log:?}");
-    assert_ne!(
-        log.completed & quests::WORD_FROM_THE_DOWNS.bit().unwrap(),
-        0
-    );
+    assert!(log.completed.contains(&quests::WORD_FROM_THE_DOWNS));
     // Her own chain opens.
     player.send(ZoneCommand::AcceptQuest {
         npc: quests::ALEWIFE,

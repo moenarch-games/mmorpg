@@ -54,8 +54,8 @@ fn public_zone(players: &[(u32, &str, bool)]) -> (ZoneGameServerAdapter, Instanc
             record.experience = 0;
             record.health = mmorpg_core::unit::player_max_health(6);
             record.quests.completed = (1..=quests::GARRICK_REDBRAND_QUEST.get())
-                .filter_map(|id| mmorpg_core::QuestId::new(id).bit())
-                .fold(0, |mask, bit| mask | bit);
+                .map(mmorpg_core::QuestId::new)
+                .collect();
         }
         let input = ZoneGameServerAdapter::character_admission_input(&record).unwrap();
         adapter.apply_host_input(player, &input).unwrap();

@@ -400,7 +400,10 @@ fn a_new_warden_completes_the_first_quests_of_the_greyhaven_chain() {
         quest: TROUBLE_IN_THE_WOODS
     }));
     assert_eq!(script.view.viewer.copper, copper + 10);
-    assert_eq!(script.sheet.completed, 0b1);
+    assert_eq!(
+        script.sheet.completed,
+        std::collections::BTreeSet::from([mmorpg_core::QuestId::new(1)])
+    );
     assert_eq!(script.marker(TANNER), Some(QuestMarker::Available));
 
     // Pelts for the Tanner: five quest-only pelts from Timber Wolves.
@@ -452,7 +455,10 @@ fn a_new_warden_completes_the_first_quests_of_the_greyhaven_chain() {
         quest: THE_MISSING_FARMHAND.get(),
         choice: 0,
     });
-    assert_eq!(script.sheet.completed, 0b111);
+    assert_eq!(
+        script.sheet.completed,
+        (1..=3).map(mmorpg_core::QuestId::new).collect()
+    );
     assert!(script.sheet.entries.is_empty());
     // Osric now offers Marauders in the Fields.
     assert_eq!(script.marker(FARMER), Some(QuestMarker::Available));

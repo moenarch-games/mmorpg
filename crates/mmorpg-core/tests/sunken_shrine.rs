@@ -31,7 +31,7 @@ fn zone_with_player_at(centre: [i32; 3], with_quest: bool) -> ZoneSimulation {
                 quest: THE_SUNKEN_SHRINE,
                 progress: [0; 3],
             }],
-            completed: 0b1_1111,
+            completed: (1..=5).map(mmorpg_core::QuestId::new).collect(),
         };
     }
     ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap()

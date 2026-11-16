@@ -1142,7 +1142,7 @@ fn a_resident_getting_up_plays_the_wake_and_a_directing_line_points() {
     frame(&mut scene, 3.05);
     // Accepting a quest whose line names a place: the NPC points.
     let sheet = |entries| mmorpg_core::QuestSheet {
-        completed: 0,
+        completed: std::collections::BTreeSet::new(),
         entries,
         markers: Vec::new(),
     };

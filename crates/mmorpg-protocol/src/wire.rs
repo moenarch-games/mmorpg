@@ -217,11 +217,11 @@ pub(crate) fn decode_waystones(bits: u32) -> Result<mmorpg_core::WaystoneSet, Pr
         .ok_or_else(|| ProtocolError::new("unlocked waystones name an unknown stone"))
 }
 
-/// A quest ID, `1..=MAX_QUESTS`; whether content defines it is the
+/// A quest ID, never `0`; whether content defines it is the
 /// client's concern.
 pub(crate) fn decode_quest(code: u8) -> Result<QuestId, ProtocolError> {
     let quest = QuestId::new(code);
-    if quest.bit().is_some() {
+    if code != 0 {
         Ok(quest)
     } else {
         Err(ProtocolError::new("quest id is out of range"))

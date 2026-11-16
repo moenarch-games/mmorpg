@@ -25,7 +25,7 @@ export const HEALTHY_VIEWER: ViewerState = {
 export const NO_EQUIPMENT: readonly null[] = Array<null>(6).fill(null);
 export const NO_STATS = { stamina: 0, strength: 0, agility: 0, intellect: 0 } as const;
 /** No active, turned-in or marked quests. */
-export const NO_QUESTS: QuestSheet = { completed: 0, entries: [], markers: [] };
+export const NO_QUESTS: QuestSheet = { completed: [], entries: [], markers: [] };
 
 /** A projection with a healthy viewer, no target and no events. */
 export function testSnapshot(

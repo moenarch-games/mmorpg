@@ -437,8 +437,8 @@ impl Scenario {
                     progress: [0; mmorpg_core::MAX_QUEST_OBJECTIVES],
                 }],
                 completed: (1..=SCOUT_THE_LAKE.get())
-                    .filter_map(|id| mmorpg_core::QuestId::new(id).bit())
-                    .fold(0, |mask, bit| mask | bit),
+                    .map(mmorpg_core::QuestId::new)
+                    .collect(),
             };
         }
         if matches!(self, Self::RedbrandDepths | Self::RedbrandThorn) {
@@ -446,8 +446,8 @@ impl Scenario {
             record.quests = mmorpg_core::QuestLog {
                 entries: Vec::new(),
                 completed: (1..=GARRICK_REDBRAND_QUEST.get())
-                    .filter_map(|id| mmorpg_core::QuestId::new(id).bit())
-                    .fold(0, |mask, bit| mask | bit),
+                    .map(mmorpg_core::QuestId::new)
+                    .collect(),
             };
         }
         if self == Self::RedbrandCavern {
@@ -461,8 +461,8 @@ impl Scenario {
                     progress: [0; mmorpg_core::MAX_QUEST_OBJECTIVES],
                 }],
                 completed: (1..=RETURN_TO_GREYHAVEN.get())
-                    .filter_map(|id| mmorpg_core::QuestId::new(id).bit())
-                    .fold(0, |mask, bit| mask | bit),
+                    .map(mmorpg_core::QuestId::new)
+                    .collect(),
             };
         }
         if self == Self::GreyhavenDowns {
@@ -473,7 +473,7 @@ impl Scenario {
                     quest: WORD_FROM_THE_DOWNS,
                     progress: [0; mmorpg_core::MAX_QUEST_OBJECTIVES],
                 }],
-                completed: TROUBLE_IN_THE_WOODS.bit().unwrap_or(0),
+                completed: [TROUBLE_IN_THE_WOODS].into(),
             };
         }
         if self.class().class == PlayerClass::Warden && self.level() >= 6 {

@@ -2756,7 +2756,7 @@ mod tests {
                     progress: [u8::MAX, 2, 7],
                 },
             ],
-            completed: 0b11,
+            completed: [mmorpg_core::QuestId::new(1), mmorpg_core::QuestId::new(2)].into(),
         };
         let encoded = encode_canonical_snapshot(&snapshot).unwrap();
         assert_eq!(decode_canonical_snapshot(&encoded).unwrap(), snapshot);
@@ -2766,7 +2766,7 @@ mod tests {
             &[0, ABANDON_QUEST_INTENT, 0],
         ]
         .concat();
-        let log = [0, 0, 0, 0b11, 2, 3, 1, 0, 0, 32, 0xff, 2, 7].to_vec();
+        let log = [2, 1, 2, 2, 3, 1, 0, 0, 32, 0xff, 2, 7].to_vec();
         for records in [intents, log] {
             assert!(
                 encoded
@@ -2779,14 +2779,15 @@ mod tests {
             assert!(decode_canonical_snapshot(&encoded[..length]).is_err());
         }
         let at = encoded
-            .windows(13)
-            .position(|window| window == [0, 0, 0, 0b11, 2, 3, 1, 0, 0, 32, 0xff, 2, 7])
+            .windows(12)
+            .position(|window| window == [2, 1, 2, 2, 3, 1, 0, 0, 32, 0xff, 2, 7])
             .unwrap();
         for (offset, value, message) in [
-            (at + 4, 11, "quest log exceeds its capacity"),
-            (at + 5, 0, "quest id is out of range"),
-            (at + 9, 33, "quest id is out of range"),
-            (at + 9, 3, "quest log entries are not ordered"),
+            (at + 1, 0, "quest id is out of range"),
+            (at + 2, 1, "turned-in quests are not ordered"),
+            (at + 3, 11, "quest log exceeds its capacity"),
+            (at + 4, 0, "quest id is out of range"),
+            (at + 8, 3, "quest log entries are not ordered"),
         ] {
             let mut invalid = encoded.clone();
             invalid[offset] = value;
