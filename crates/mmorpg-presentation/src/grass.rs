@@ -21,9 +21,11 @@ use crate::{
 
 /// The side of one grass cell, in metres.
 pub const CELL_METRES: f64 = 8.;
-/// Floats per clump in [`Grass::cell`]: position (metres), yaw (radians), height (metres) and
-/// linear RGB.
-pub const CLUMP_FLOATS: usize = 8;
+/// Floats per clump in [`Grass::cell`]: position (metres), yaw (radians), height (metres),
+/// linear RGB and its wildflower: 0 for none, else [`FLOWERS`] colour 1–4.
+pub const CLUMP_FLOATS: usize = 9;
+/// The wildflowers' colours: buttercup, daisy, harebell and poppy, in sRGB.
+pub const FLOWERS: [u32; 4] = [0xf2cf3a, 0xf3efe2, 0x8f7ad6, 0xd9493a];
 /// Roughly the spacing of the lattice clumps are jittered on, in metres.
 const SPACING: f64 = 0.3;
 /// Lattice points along a cell's side; the lattice step divides the cell exactly, so no seam shows.
@@ -207,6 +209,16 @@ impl Grass {
                         ((c + 0.055) / 1.055).powf(2.4)
                     }) as f32
                 };
+                // Wildflowers in drifts of one colour over several metres, on thick turf only.
+                let drift = noise(x, z, 7., 6109.);
+                let flower = if density > 0.5
+                    && drift > 0.55
+                    && hash(&[gi, gj, 8.]) < (drift - 0.55) * 1.6
+                {
+                    1. + (noise(x, z, 23., 6111.) * 4.).floor().min(3.)
+                } else {
+                    0.
+                };
                 // Tall meadow grass in drifts, shorter turf between them.
                 let height =
                     (0.22 + 0.42 * noise(x, z, 9., 6107.)) * (0.75 + 0.5 * hash(&[gi, gj, 5.]));
@@ -221,6 +233,7 @@ impl Grass {
                         linear(16),
                         linear(8),
                         linear(0),
+                        flower as f32,
                     ],
                 ));
             }

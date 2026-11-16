@@ -902,7 +902,7 @@ pub fn surface_y(x: f64, z: f64) -> f64 {
 }
 
 /// The grass clumps of the hosted scene's cell `(column, row)`, each `mmorpg_presentation::grass::CLUMP_FLOATS`
-/// floats (position in metres, yaw, height, linear RGB), in a random order: any prefix thins evenly.
+/// floats (position in metres, yaw, height, linear RGB, wildflower), in a random order: any prefix thins evenly.
 #[wasm_bindgen(js_name = grassCell)]
 #[must_use]
 pub fn grass_cell(column: i32, row: i32) -> Vec<f32> {
