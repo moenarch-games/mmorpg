@@ -473,8 +473,8 @@ fn the_outpost_kit_buildings_keep_their_blockouts_only_as_the_fallback() {
     let parts = mmorpg_presentation::outpost_kit::parts(&scenery);
     assert_eq!(
         parts.len(),
-        406,
-        "adopted modules, the authored settlement and the region's seven houses (#818)"
+        399,
+        "adopted modules, the authored settlement and the region's seven cottages (#818), their doorways open (#843)"
     );
     let houses = scenery.props.iter().filter_map(|prop| {
         prop.collider.filter(|&id| {
@@ -534,8 +534,8 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
     let parts = mmorpg_presentation::settlement_props::parts(&scenery);
     assert_eq!(
         parts.len(),
-        24,
-        "market square, brook additions and the Delving Run footbridge (#828)"
+        59,
+        "market square, brook additions, the Delving Run footbridge (#828) and the seven cottages' furniture (#843)"
     );
     for family in [
         ["stall", "cart", "crate"],
@@ -547,10 +547,16 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
             assert!(parts.iter().any(|part| part.entry == entry), "{entry}");
         }
     }
-    // The footbridge (#828) collides through its own crossing bodies, not the square's proxies.
+    // The footbridge (#828) and the cottages' furniture (#843) collide through their own bodies,
+    // not the square's proxies.
     let parts: Vec<_> = parts
         .into_iter()
-        .filter(|part| part.entry != "settlement.props.footbridge")
+        .filter(|part| {
+            part.entry != "settlement.props.footbridge"
+                && !mmorpg_core::greyhaven_vale::cottages::FURNITURE
+                    .iter()
+                    .any(|piece| piece.asset == part.entry)
+        })
         .collect();
     // The square stays off the roads, the spawn plaza and every other collider's footprint; its
     // own props collide through their proxies (#577).

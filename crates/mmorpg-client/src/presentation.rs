@@ -147,7 +147,9 @@ pub struct Presentation {
     /// The Outpost kit buildings' modules (#420), placed once, as picking tests them.
     outpost: crate::world::DrawBatch,
     /// The same modules drawn with their textures (#753).
-    outpost_textured: Vec<crate::world::NatureDraw>,
+    /// The same modules drawn with their textures (#753), each with the walk-in cottage (#843)
+    /// whose roof part it is: hidden while the viewer is inside it.
+    outpost_textured: Vec<(crate::world::NatureDraw, Option<u32>)>,
 }
 
 impl Presentation {
@@ -178,15 +180,23 @@ impl Presentation {
             })
             .collect();
         let outpost_parts = mmorpg_presentation::outpost_kit::parts(&scenery);
+        let roofs: std::collections::BTreeMap<usize, u32> =
+            mmorpg_presentation::outpost_kit::cottage_roofs(&scenery)
+                .into_iter()
+                .collect();
         let outpost_textured = outpost_parts
             .iter()
-            .filter_map(|part| {
-                Some(crate::world::NatureDraw {
-                    entry: crate::nature::kit_entry(part.entry)?,
-                    level: 0,
-                    fade: 1.,
-                    model: part.model,
-                })
+            .enumerate()
+            .filter_map(|(index, part)| {
+                Some((
+                    crate::world::NatureDraw {
+                        entry: crate::nature::kit_entry(part.entry)?,
+                        level: 0,
+                        fade: 1.,
+                        model: part.model,
+                    },
+                    roofs.get(&index).copied(),
+                ))
             })
             .collect();
         let outpost = outpost_parts
@@ -820,9 +830,14 @@ impl Presentation {
         }
         frame.draws.extend(self.unit_draws(now, view));
         frame.impacts = self.take_impacts();
-        self.append_buildings(&mut frame.draws, now);
+        let inside = self.append_buildings(&mut frame.draws, now);
         frame.batches.push(Arc::clone(&self.shrine));
-        frame.nature.extend_from_slice(&self.outpost_textured);
+        frame.nature.extend(
+            self.outpost_textured
+                .iter()
+                .filter(|(_, cottage)| !cottage.is_some_and(|house| inside.contains(&house)))
+                .map(|(draw, _)| *draw),
+        );
         frame.occluders.push(Arc::clone(&self.outpost));
         self.append_ambient(&mut frame.draws, now);
         frame
@@ -894,7 +909,13 @@ impl Presentation {
 
     /// Each walk-in building's bundle entries with its door at its eased swing; roof and
     /// ceiling are hidden while the viewer stands inside (#158).
-    fn append_buildings(&mut self, draws: &mut Vec<crate::world::SceneDraw>, now: Instant) {
+    /// Draws the walk-in buildings and returns the walk-in cottages (#843), by house collider,
+    /// whose room the viewer stands in.
+    fn append_buildings(
+        &mut self,
+        draws: &mut Vec<crate::world::SceneDraw>,
+        now: Instant,
+    ) -> std::collections::BTreeSet<u32> {
         let dt = now
             .saturating_duration_since(self.last_buildings)
             .as_secs_f64();
@@ -914,7 +935,13 @@ impl Presentation {
             })
             .collect();
         let reduced_motion = self.reduced_motion;
+        let mut inside = std::collections::BTreeSet::new();
         for (building, open) in self.buildings.iter_mut().zip(opens) {
+            if let Some(house) = building.spec().cottage
+                && viewer.is_some_and(|feet| building.inside(feet))
+            {
+                inside.insert(house);
+            }
             let entries = skinned::building_draws_of(building.spec().bundle);
             let parts = building.frame(open, viewer, dt, reduced_motion);
             for (part, (_, entry)) in parts.iter().zip(entries) {
@@ -929,6 +956,7 @@ impl Presentation {
                 }));
             }
         }
+        inside
     }
 
     /// Whether the latest snapshot shows `door` open.

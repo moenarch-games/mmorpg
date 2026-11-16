@@ -47,6 +47,29 @@ pub fn parts(scenery: &Scenery) -> Vec<Part> {
         .collect()
 }
 
+/// The walk-in cottages' (#843) roofs among [`parts`]: per part index, the house collider of the
+/// cottage whose roof, verge, gable or chimney it is. Clients hide them while the viewer is in
+/// that cottage, as a walk-in building hides its roof.
+#[must_use]
+pub fn cottage_roofs(scenery: &Scenery) -> Vec<(usize, u32)> {
+    world_dressing::placed(scenery)
+        .iter()
+        .filter(|placed| placed.kit() == Some(Kit::Outpost))
+        .enumerate()
+        .filter_map(|(index, placed)| {
+            let house = placed.fallback_collider?;
+            let roof = ["roof", "gable", "chimney"].iter().any(|part| {
+                placed
+                    .asset
+                    .strip_prefix("outpost.kit.")
+                    .is_some_and(|name| name.starts_with(part))
+            });
+            (roof && mmorpg_core::greyhaven_vale::cottages::is_house(house))
+                .then_some((index, house))
+        })
+        .collect()
+}
+
 /// Exact coloured collision surfaces remain visible if the authored fort bundle fails to load.
 pub(crate) fn fallbacks(scenery: &Scenery) -> Vec<crate::Group> {
     use crate::{

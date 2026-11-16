@@ -12,7 +12,8 @@ export const OUTPOST_BUNDLE = `${import.meta.env.BASE_URL}buildings/outpost.kit/
 export const SETTLEMENT_BUNDLE = `${import.meta.env.BASE_URL}scenery/settlement.props/`;
 
 /** A placed module; `wear` in [0, 1] ages it when its kit ships wear masks (the Outpost kit). */
-export type KitPlacement = { key: string; matrix: Float32Array; wear?: number };
+/** `cottage`: the walk-in cottage (#843) whose roof part it is, by its house collider. */
+export type KitPlacement = { key: string; matrix: Float32Array; wear?: number; cottage?: number };
 
 /**
  * How a kit loads: `ktx2` transcodes its KTX2 textures (the Outpost kit's, asset-tooling docs/outpost-kit.md), and
@@ -34,6 +35,8 @@ export class KitModules {
   readonly #placements: readonly KitPlacement[];
   /** The placed modules, batched per material (#615); null until loaded. */
   #batched: BatchedRoots | null = null;
+  /** The placed modules' roots, in placement order, once loaded. */
+  #roots: THREE.Object3D[] = [];
   readonly #options: KitOptions;
   #loading: Promise<boolean> | null = null;
   #changed = false;
@@ -79,8 +82,28 @@ export class KitModules {
       return root;
     });
     // Static modules: a few draw calls per material instead of one per module and primitive.
+    this.#roots = roots;
     this.#batched = new BatchedRoots(this.#name, roots, this.#worn > 0 ? this.#placements.map((placement) => placement.wear ?? 0) : null);
     this.#changed = true;
+  }
+
+  /** Hides the roof parts of the walk-in cottages in `houses` (#843) and shows every other. */
+  hideCottages(houses: ReadonlySet<number>): void {
+    const batched = this.#batched;
+    if (!batched) { return; }
+    this.#placements.forEach((placement, index) => {
+      if (placement.cottage === undefined) { return; }
+      const root = this.#roots[index]!;
+      const visible = !houses.has(placement.cottage);
+      if (root.visible === visible) { return; }
+      root.visible = visible;
+      batched.sync(index);
+    });
+  }
+
+  /** How many placements are walk-in cottages' roof parts (#843). */
+  cottageRoofCount(): number {
+    return this.#placements.filter((placement) => placement.cottage !== undefined).length;
   }
 
   /** Whether the modules are drawn (loaded); the static scene hides their fallback then. */

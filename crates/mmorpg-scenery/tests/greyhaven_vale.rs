@@ -181,8 +181,10 @@ fn every_structure_collider_has_exactly_one_visual_and_vice_versa() {
             || (is_authored_mesh(collider.id) && visual_kind(collider).is_none())
             || (greyhaven_vale::brook::BRIDGE..=greyhaven_vale::brook::SINK_ROCK)
                 .contains(&collider.id)
-            // A footbridge is drawn by its dressing (#828).
+            // A footbridge (#828) and a walk-in cottage's walls and furniture (#843) are drawn by
+            // their dressing.
             || greyhaven_vale::crossings::is_crossing(collider.id)
+            || greyhaven_vale::cottages::is_cottage(collider.id)
         {
             assert!(visual_kind(collider).is_none());
             assert!(
@@ -611,7 +613,8 @@ fn prop_counts_stay_within_their_budgets() {
     // the farmland's tower and hamlet houses join them (#424), and the highlands' stronghold
     // and lookout towers (#425), and the wetlands' drowned watchtower and ruined cottage (#426).
     assert_eq!(count(PropKind::Keep), 12);
-    assert_eq!(count(PropKind::House), 27);
+    // The seven walk-in cottages (#843) are the Outpost kit's, not house props.
+    assert_eq!(count(PropKind::House), 20);
     // The highlands and wetlands add about a tenth each; #644 adds the extended woodland
     // and hideout. The region's designed forests, rock fields and undergrowth (#816) bring the
     // content to 36,780 scenery props.

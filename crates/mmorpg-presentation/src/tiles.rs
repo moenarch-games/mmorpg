@@ -135,6 +135,24 @@ impl Tiles {
             let field = (field.min.map(metres), field.max.map(metres));
             ground::patch(&mut extras, g, Layer::Mud, 0x7a5836, field, 1.);
         }
+        // The walk-in cottages' (#843) packed-earth floors.
+        if s.greyhaven() {
+            use mmorpg_core::greyhaven_vale::cottages;
+            for cottage in cottages::cottages() {
+                let [hx, hz] = cottages::HALF;
+                let floor = (
+                    [
+                        metres(cottage.centre[0] - hx),
+                        metres(cottage.centre[1] - hz),
+                    ],
+                    [
+                        metres(cottage.centre[0] + hx),
+                        metres(cottage.centre[1] + hz),
+                    ],
+                );
+                ground::patch(&mut extras, g, Layer::Path, 0x6e5a40, floor, 1.);
+            }
+        }
         ground::roads(&mut extras, s, g);
         let (cells_x, cells_z) = (g.columns - 1, g.rows - 1);
         let (columns, rows) = (cells_x.div_ceil(TILE_CELLS), cells_z.div_ceil(TILE_CELLS));

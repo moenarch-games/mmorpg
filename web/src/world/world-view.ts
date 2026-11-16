@@ -1764,6 +1764,8 @@ export class WorldView {
     this.#loot.update(projection);
     this.#lastSelf = { x: self.x, z: self.z, facing: self.facing };
     this.#inn?.update(projection.doors, [self.x, self.feetY, self.z], deltaSeconds, !animate);
+    // A walk-in cottage's roof lifts away while the viewer is inside it (#843).
+    this.#outpost?.hideCottages(this.#inn?.cottagesInside([self.x, self.feetY, self.z]) ?? new Set());
     // Low world detail draws no ambient creatures.
     if (this.#worldDetail !== "low") { this.#ambient?.update(this.#seconds, animate); }
     this.#raidSigns.update(projection.raid, this.#raidPrep, scene.surfaceY, scenery.scenery.unitsPerMetre);
@@ -2425,6 +2427,8 @@ export class WorldView {
       ground: () => this.#ground?.observe() ?? null,
       /** The grass field (#832): resident cells, clumps and triangles drawn last frame, or null without one. */
       grass: () => this.#grass?.observe() ?? null,
+      /** The walk-in cottages (#843) the viewer stands in, and how many Outpost kit parts are cottage roofs. */
+      cottages: (feet: [number, number, number]) => ({ inside: [...(this.#inn?.cottagesInside(feet) ?? [])], roofs: this.#outpost?.cottageRoofCount() ?? 0 }),
       /** Applies a world detail level as the setting would. */
       setWorldDetail: (detail: WorldDetail) => this.setWorldDetail(detail),
       /** The static groups (#526): how many exist, are resident, and of the merged ones are in their batches. */

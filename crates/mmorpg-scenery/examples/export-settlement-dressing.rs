@@ -1,10 +1,11 @@
-//! Offline: the region's settlement houses (#818) → committed world dressing, built from the
+//! Offline: the region's walk-in cottages (#818, #843) → committed world dressing, built from the
 //! Outpost's house composition (`content/greyhaven/authoring/outpost-buildings.json`) in
-//! asset-tooling's Outpost kit. Each 8 × 6 m house turns its door to its settlement's yard; its
-//! box stays the stand-in while the kit is not drawn. Runtime clients read only the result.
+//! asset-tooling's Outpost kit, with its doorway left open, and furnished from its
+//! `settlement.props` furniture at `greyhaven_vale::cottages::FURNITURE`. The zone's collision is
+//! `greyhaven_vale::cottages`; runtime clients read only the result.
 //!
 //! `cargo run -p mmorpg-scenery --example export-settlement-dressing > content/greyhaven/dressing/settlements.json`
-use mmorpg_core::greyhaven_vale::settlements::{self, Building};
+use mmorpg_core::{greyhaven_vale::cottages, trig::YAW_QUARTER_TURN};
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -22,9 +23,6 @@ struct Compositions {
     templates: BTreeMap<String, Vec<Module>>,
 }
 
-/// The house template's footprint half extents, in units.
-const HALF: [i32; 2] = [400, 300];
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let compositions: Compositions = serde_json::from_str(include_str!(
         "../../../content/greyhaven/authoring/outpost-buildings.json"
@@ -33,42 +31,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .templates
         .get("house")
         .ok_or("no house composition")?;
-    let scenery = mmorpg_scenery::greyhaven_vale_scenery();
     let mut placements = Vec::new();
-    for prop in &scenery.props {
-        let Some(collider) = prop.collider else {
-            continue;
-        };
-        if settlements::building(collider) != Some(Building::House)
-            || [prop.half_extents[0], prop.half_extents[2]] != HALF
-        {
-            continue;
-        }
-        let [cx, cy, cz] = prop.position;
-        let yard = settlements::SETTLEMENTS
+    for cottage in cottages::cottages() {
+        let wear = (cottage.house.wrapping_mul(0x9E37_79B1) >> 24) as u8;
+        let yaw = |quarters: u8| u16::from((quarters + cottage.quarters) % 4) * YAW_QUARTER_TURN;
+        // The doorway stays open: the zone has no door there.
+        for module in house
             .iter()
-            .map(|settlement| settlement.yard)
-            .find(|(min, max)| (min[0]..=max[0]).contains(&cx) && (min[1]..=max[1]).contains(&cz))
-            .ok_or_else(|| format!("house {collider} stands in no settlement yard"))?;
-        // The template's door is on its +Z side: turn it a half turn when the yard lies north.
-        let quarters: u8 = if (yard.0[1] + yard.1[1]) / 2 >= cz {
-            0
-        } else {
-            2
-        };
-        let turn = |[x, z]: [i32; 2]| if quarters == 0 { [x, z] } else { [-x, -z] };
-        let wear = (collider.wrapping_mul(0x9E37_79B1) >> 24) as u8;
-        for module in house {
+            .filter(|module| module.asset != "outpost.kit.door")
+        {
             let [x, y, z] = module.position;
-            let [dx, dz] = turn([x, z]);
+            let [px, pz] = cottage.spot([x, z]);
             placements.push(json!({
-                "id": format!("settlement-{collider}-{}", module.id),
+                "id": format!("settlement-{}-{}", cottage.house, module.id),
                 "asset": module.asset,
-                "position": [cx + dx, cy + y, cz + dz],
-                "yaw": u16::from((module.quarters + quarters) % 4) * mmorpg_core::trig::YAW_QUARTER_TURN,
+                "position": [px, cottage.floor + y, pz],
+                "yaw": yaw(module.quarters),
                 "scale": [1000, 1000, 1000],
-                "fallbackCollider": collider,
+                "fallbackCollider": cottage.house,
                 "wear": wear
+            }));
+        }
+        for piece in &cottages::FURNITURE {
+            let [px, pz] = cottage.spot(piece.position);
+            let name = piece.asset.rsplit('.').next().unwrap_or(piece.asset);
+            placements.push(json!({
+                "id": format!("settlement-{}-{name}", cottage.house),
+                "asset": piece.asset,
+                "position": [px, cottage.floor, pz],
+                "yaw": yaw(piece.quarters),
+                "scale": [1000, 1000, 1000]
             }));
         }
     }
