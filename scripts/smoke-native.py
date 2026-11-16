@@ -3,6 +3,8 @@
 
 Requires OpenSSL and a working GPU backend (a software Vulkan adapter also works).
 --window additionally opens a native window for 120 frames. No external services.
+--review-shots DIR instead saves offscreen frames at the fixed poses of scripts/review-poses.json
+(the browser review shots', #865) as DIR/<name>.png, without the host smoke.
 """
 import argparse
 import json
@@ -25,11 +27,24 @@ def free_port(kind):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--window", action="store_true")
+    parser.add_argument("--review-shots", type=Path, metavar="DIR",
+                        help="only save native frames at the review poses into DIR")
+    parser.add_argument("--review-poses", type=Path, metavar="FILE",
+                        help="poses for --review-shots (default scripts/review-poses.json)")
     args = parser.parse_args()
     root = Path(__file__).resolve().parent.parent
     # The client build embeds the asset-tooling Ranger and inn bundles; fetching is idempotent.
     subprocess.run([str(root / "scripts" / "fetch-bundles.sh")], cwd=root, check=True, timeout=600)
     subprocess.run([str(root / "scripts" / "prepare-ranger-native.sh")], cwd=root, check=True, timeout=600)
+    if args.review_shots:
+        environment = dict(os.environ, MMORPG_REVIEW_SHOTS=str(args.review_shots.resolve()))
+        if args.review_poses:
+            environment["MMORPG_REVIEW_POSES"] = str(args.review_poses.resolve())
+        subprocess.run([
+            "cargo", "test", "--release", "--locked", "-p", "mmorpg-client", "--lib",
+            "review_pose_shots", "--", "--ignored", "--nocapture",
+        ], cwd=root, env=environment, check=True, timeout=1800)
+        return
     subprocess.run(["cargo", "build", "--locked", "-p", "mmorpg-client", "-p", "mmorpg-game-server"], cwd=root, check=True, timeout=600)
     metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--no-deps", "--locked", "--format-version", "1"], cwd=root, timeout=30))
     suffix = ".exe" if os.name == "nt" else ""

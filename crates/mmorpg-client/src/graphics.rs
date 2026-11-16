@@ -1266,6 +1266,89 @@ mod tests {
         });
     }
 
+    /// Native frames at the browser review shots' named poses (#865): every fixed `eye`/`target`
+    /// pose (metres) in `scripts/review-poses.json`, or `MMORPG_REVIEW_POSES`, as `<name>.png` in
+    /// `MMORPG_REVIEW_SHOTS`, 1440×900 at the zone's hour. Entity-relative and player poses are
+    /// the browser's alone. `scripts/smoke-native.py --review-shots DIR` runs it.
+    #[test]
+    #[ignore = "requires a GPU; scripts/smoke-native.py --review-shots runs this explicitly"]
+    fn review_pose_shots() {
+        use mmorpg_core::ZoneCommand;
+        let Some(directory) = std::env::var_os("MMORPG_REVIEW_SHOTS") else {
+            return;
+        };
+        let directory = std::path::PathBuf::from(directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let poses = std::env::var_os("MMORPG_REVIEW_POSES").map_or_else(
+            || {
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../scripts/review-poses.json")
+            },
+            std::path::PathBuf::from,
+        );
+        let manifest: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(poses).unwrap()).unwrap();
+        let point = |value: &serde_json::Value| -> Option<[f32; 3]> {
+            let axes = value.as_array()?;
+            let axis = |index: usize| axes.get(index)?.as_f64().map(|v| v as f32);
+            Some([axis(0)?, axis(1)?, axis(2)?])
+        };
+        let views: Vec<(String, CameraView)> = manifest["poses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|pose| {
+                Some((
+                    pose["name"].as_str()?.to_owned(),
+                    debug_view(point(&pose["eye"])?, point(&pose["target"])?),
+                ))
+            })
+            .collect();
+        assert!(!views.is_empty(), "the review poses name no fixed pose");
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let content = greyhaven_vale::content();
+            let mut zone =
+                ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content)).unwrap();
+            zone.add_player(1).unwrap();
+            zone.apply_command(1, 1, ZoneCommand::ChooseClass { class: 0, sex: 1 })
+                .unwrap();
+            zone.advance_tick().unwrap();
+            let projection = zone.snapshot_for_player(1).unwrap();
+            let scenery = greyhaven_vale_scenery();
+            let world = WorldScene::new(&scenery);
+            let now = Instant::now();
+            let mut presentation =
+                Presentation::new(1, scenery.clone(), Arc::clone(&content), now).unwrap();
+            presentation.set_reduced_motion(true);
+            presentation.push(projection, now).unwrap();
+            let size = [1440, 900];
+            for (index, (name, view)) in views.into_iter().enumerate() {
+                // Settle the levels of detail at this view before the shot.
+                let now = now + Duration::from_secs(2 * index as u64);
+                for step in 0..4 {
+                    let _ = presentation.frame(
+                        &world,
+                        now - Duration::from_millis(250 * (4 - step)),
+                        view,
+                    );
+                }
+                let frame = presentation.frame(&world, now, view);
+                let pixels = readback(&frame, &[], view, size, None).await.unwrap();
+                let path = directory.join(format!("{name}.png"));
+                image::save_buffer(
+                    &path,
+                    &pixels,
+                    size[0],
+                    size[1],
+                    image::ExtendedColorType::Rgba8,
+                )
+                .unwrap();
+                println!("saved {}", path.display());
+            }
+        });
+    }
+
     /// Reviewable ground evidence (#525): the woods, vale, lake and hub debug viewpoints and a
     /// walking-height view of the Outpost road at noon, and the climbing kit (#621), as PNGs in
     /// `MMORPG_GROUND_SHOTS`.
