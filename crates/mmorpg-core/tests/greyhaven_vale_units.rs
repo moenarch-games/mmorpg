@@ -334,6 +334,22 @@ fn spawns_populate_their_subzones() {
         ((greyhaven_vale::vale::HOLLOWPINE_REACH, "Timber Wolf"), 4),
         ((greyhaven_vale::vale::HOLLOWPINE_REACH, "Young Boar"), 2),
         ((greyhaven_vale::vale::EASTWATER_FEN, "Mirefin Lurker"), 3),
+        // The farmland hamlets' rats, boars and wolves (#859).
+        (
+            (greyhaven_vale::farmland::FARMLAND_AND_HAMLETS, "Grain Rat"),
+            4,
+        ),
+        (
+            (greyhaven_vale::farmland::FARMLAND_AND_HAMLETS, "Young Boar"),
+            4,
+        ),
+        (
+            (
+                greyhaven_vale::farmland::FARMLAND_AND_HAMLETS,
+                "Timber Wolf",
+            ),
+            4,
+        ),
         // Breakable props (#288): around Greyhaven and the farm, powder barrels in the camp.
         ((greyhaven_vale::vale::OUTPOST, "Crate"), 3),
         ((greyhaven_vale::vale::OUTPOST, "Barrel"), 2),
@@ -642,7 +658,7 @@ fn region_residents() -> Vec<(&'static str, NpcRole, Option<mmorpg_core::AreaId>
     use greyhaven_vale::{farmland::FARMLAND_AND_HAMLETS, settlements, wilds};
     let resident = |name, area| (name, NpcRole::Resident, Some(area));
     let guard = |name, area| (name, NpcRole::Guard, Some(area));
-    // The region's quest givers (#820).
+    // The region's quest givers (#820) and the hamlets' (#859).
     let giver = |name, area| (name, NpcRole::QuestGiver, Some(area));
     vec![
         giver("Alewife Gwen Barrow", settlements::BARROWDOWN),
@@ -659,11 +675,11 @@ fn region_residents() -> Vec<(&'static str, NpcRole, Option<mmorpg_core::AreaId>
         resident("Trapper Sela", settlements::HUNTERS_CAMP),
         giver("Watchman Garth", settlements::GREYFANG_WATCH),
         guard("Watchman Pell", settlements::GREYFANG_WATCH),
-        resident("Goodwife Ena", FARMLAND_AND_HAMLETS),
+        giver("Goodwife Ena", FARMLAND_AND_HAMLETS),
         resident("Ploughman Garr", FARMLAND_AND_HAMLETS),
         resident("Old Bertil", FARMLAND_AND_HAMLETS),
-        resident("Shepherd Lise", FARMLAND_AND_HAMLETS),
-        resident("Miller Hanne", FARMLAND_AND_HAMLETS),
+        giver("Shepherd Lise", FARMLAND_AND_HAMLETS),
+        giver("Miller Hanne", FARMLAND_AND_HAMLETS),
         resident("Farmhand Jory", FARMLAND_AND_HAMLETS),
         ("Trader Maren", NpcRole::Vendor, Some(settlements::FENFORD)),
     ]

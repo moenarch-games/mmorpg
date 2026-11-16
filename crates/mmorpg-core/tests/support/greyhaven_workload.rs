@@ -82,12 +82,14 @@ pub fn initial_zone(fixture: Fixture) -> Result<ZoneSimulation, Box<dyn Error>> 
     // Level 1 bots spread over the Vale's spawns: the highlands' level 5 garrison (#502) would
     // kill them within the horizon, and a spirit's release is not a physics comparison. The
     // wetlands' lurkers (#506) float in deep water, and a bot there would drown or swim. The
-    // wild sub-regions' creatures (#816) are as tough and stand on the designed high ground.
+    // wild sub-regions' creatures (#816) are as tough and stand on the designed high ground, and
+    // the hamlets' (#859) keep to the farmland, outside the Vale.
     let vale_spawns: Vec<_> = content
         .creature_spawns()
         .iter()
         .filter(|spawn| {
             !greyhaven_vale::wilds::SPAWN_IDS.contains(&spawn.id.get())
+                && !greyhaven_vale::hamlet_creatures::SPAWN_IDS.contains(&spawn.id.get())
                 && greyhaven_vale::area_at(spawn.position[0], spawn.position[1]).is_none_or(
                     |area| {
                         area.id() != greyhaven_vale::highlands::BANDIT_HIGHLANDS
