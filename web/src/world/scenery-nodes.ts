@@ -43,6 +43,9 @@ export type StaticSceneContent = {
   grassCell?(column: number, row: number): Float32Array;
   /** The side of a grass cell, in metres. */
   grassCellMetres?(): number;
+  /** The sparse far clumps of one far cell, laid out as `grassCell`'s, and a far cell's side in metres. */
+  grassFarCell?(column: number, row: number): Float32Array;
+  grassFarCellMetres?(): number;
   /** A fresh stream of the terrain tiles (#526). */
   terrainStream(): TerrainStreamSource;
   /** A fresh stream of the static groups (#526), indexed as the layout's `groups`. */

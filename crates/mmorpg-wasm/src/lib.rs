@@ -916,6 +916,20 @@ pub fn grass_cell_metres() -> f64 {
     mmorpg_presentation::grass::CELL_METRES
 }
 
+/// The sparse far clumps of the hosted scene's far cell `(column, row)`, laid out as [`grass_cell`]'s.
+#[wasm_bindgen(js_name = grassFarCell)]
+#[must_use]
+pub fn grass_far_cell(column: i32, row: i32) -> Vec<f32> {
+    static_scene::hosted_grass().far_cell(column, row)
+}
+
+/// The side of a far grass cell, in metres.
+#[wasm_bindgen(js_name = grassFarCellMetres)]
+#[must_use]
+pub fn grass_far_cell_metres() -> f64 {
+    mmorpg_presentation::grass::FAR_CELL_METRES
+}
+
 /// The rest (idle) clip of an imported unit model, which the page measures it in.
 #[wasm_bindgen(js_name = importedRestClip)]
 pub fn imported_rest_clip(kind: &str) -> Option<String> {

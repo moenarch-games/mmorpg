@@ -56,3 +56,35 @@ fn grass_grows_round_barrowdown_but_not_in_its_houses_or_on_its_lane() {
     }
     assert!(clumps > 500, "only {clumps} clumps round Barrowdown");
 }
+
+#[test]
+fn far_cells_lay_a_sparse_field_over_the_same_ground() {
+    use mmorpg_presentation::grass::FAR_CELL_METRES;
+    let scenery = greyhaven_vale_scenery();
+    let scene = StaticScene::new(&scenery);
+    let grass = Grass::new(&scene, &scenery);
+    let (column, row) = (
+        (530. / FAR_CELL_METRES).floor() as i32,
+        (660. / FAR_CELL_METRES).floor() as i32,
+    );
+    let far = grass.far_cell(column, row);
+    assert_eq!(far.len() % CLUMP_FLOATS, 0);
+    let clumps = far.len() / CLUMP_FLOATS;
+    // About a clump a square metre where grass grows: far sparser than the near field's.
+    assert!((100..1024).contains(&clumps), "{clumps} far clumps");
+    for clump in far.chunks(CLUMP_FLOATS) {
+        let (x, z) = (f64::from(clump[0]), f64::from(clump[2]));
+        assert!(
+            (f64::from(column) * FAR_CELL_METRES..f64::from(column + 1) * FAR_CELL_METRES)
+                .contains(&x)
+                && (f64::from(row) * FAR_CELL_METRES..f64::from(row + 1) * FAR_CELL_METRES)
+                    .contains(&z),
+            "{clump:?} outside its cell"
+        );
+        let ground = scene.surface_y(x, z);
+        assert!(
+            (f64::from(clump[1]) - ground).abs() < 0.01,
+            "{clump:?} floats"
+        );
+    }
+}
