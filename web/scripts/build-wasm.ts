@@ -121,8 +121,8 @@ export function buildWasm(): string {
   const expected = lockedWasmBindgenVersion(readFileSync(join(repoRoot, "Cargo.lock"), "utf8"));
   const targetDirectory = cargoTargetDirectory();
   const bindgenCli = matchingCli(expected, targetDirectory);
-  run("cargo", ["build", "--release", "--locked", "--target", TARGET, "-p", CRATE], CARGO_BUILD_TIMEOUT_MS);
-  const wasm = join(targetDirectory, TARGET, "release", `${ARTIFACT}.wasm`);
+  run("cargo", ["build", "--profile", "wasm-release", "--locked", "--target", TARGET, "-p", CRATE], CARGO_BUILD_TIMEOUT_MS);
+  const wasm = join(targetDirectory, TARGET, "wasm-release", `${ARTIFACT}.wasm`);
   if (!existsSync(wasm)) {
     throw new Error(`cargo did not produce ${wasm}.`);
   }

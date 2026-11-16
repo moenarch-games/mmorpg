@@ -75,3 +75,11 @@ opt-level = 2
 # Dependencies keep the dev override above, so test and dev builds share their compiled deps.
 [profile.test]
 opt-level = 1
+
+# The browser's WASM module (`web/scripts/build-wasm.ts`): whole-program optimised, about a tenth
+# less CPU on the browser's world build at load (#855). Native release builds keep the faster
+# default release profile.
+[profile.wasm-release]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
