@@ -5,7 +5,8 @@
 # web/public/characters/hair.kit and the
 # Greyhaven inn (#158) into web/public/buildings/greyhaven.inn and the Sunken Shrine kit
 # (#431) into web/public/scenery/shrine.kit and the ambient animals (#419) into
-# web/public/scenery/greyhaven.ambient-animals and the Outpost building kit (#420) into
+# web/public/scenery/greyhaven.ambient-animals and the farm animals (#849) into
+# web/public/scenery/greyhaven.farm-animals and the Outpost building kit (#420) into
 # web/public/buildings/outpost.kit and the settlement props (#421) into
 # web/public/scenery/settlement.props and Elden's house (#158) into
 # web/public/buildings/greyhaven.marshal-house and the CC0 combat sounds (#447) into
@@ -132,6 +133,8 @@ fetch greyhaven-inn-v1 greyhaven.inn buildings/greyhaven.inn
 fetch_rolling shrine-kit shrine.kit scenery/shrine.kit
 # Greyhaven's cosmetic cat, dog and rodent (#419).
 fetch_rolling greyhaven-ambient-animals greyhaven.ambient-animals scenery/greyhaven.ambient-animals
+# Greyhaven's farm animals (#849): cows, horses, a donkey, pigs, sheep, goats and chickens.
+fetch_rolling greyhaven-farm-animals greyhaven.farm-animals scenery/greyhaven.farm-animals
 # The Outpost building kit (#420): the smithy and one house.
 fetch_rolling outpost-kit outpost.kit buildings/outpost.kit
 # Greyhaven's reusable settlement props (#421): the market square before house 106.

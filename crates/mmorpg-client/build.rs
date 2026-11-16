@@ -229,6 +229,13 @@ fn main() {
         Some(&["greyhaven.ambient.dog", "greyhaven.ambient.rodent"]),
         false,
     );
+    // Greyhaven's farm animals (#849), every one.
+    static_bundle(
+        "farm_bundle.rs",
+        &manifest_dir.join("../../web/public/scenery/greyhaven.farm-animals"),
+        None,
+        false,
+    );
     let ambient: serde_json::Value = serde_json::from_slice(
         &fs::read(
             manifest_dir.join("../../web/public/scenery/greyhaven.ambient-animals/manifest.json"),
