@@ -140,8 +140,11 @@ impl Group {
             (self.min[0] + self.max[0]) / 2.,
             (self.min[1] + self.max[1]) / 2.,
         ];
-        let radius = (self.max[0] - self.min[0]).hypot(self.max[1] - self.min[1]) / 2.;
-        (centre[0] - f64::from(eye[0])).hypot(centre[1] - f64::from(eye[2])) - radius
+        // `sqrt` rather than `hypot`, which is a slow software routine in wasm; the static scene
+        // streams every group by this each frame.
+        let (w, d) = (self.max[0] - self.min[0], self.max[1] - self.min[1]);
+        let (x, z) = (centre[0] - f64::from(eye[0]), centre[1] - f64::from(eye[2]));
+        (x * x + z * z).sqrt() - (w * w + d * d).sqrt() / 2.
     }
 }
 

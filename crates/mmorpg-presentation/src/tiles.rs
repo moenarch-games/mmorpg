@@ -394,14 +394,13 @@ impl Tiles {
     #[must_use]
     pub fn distance(&self, index: usize, eye: [f64; 3]) -> f64 {
         let tile = &self.tiles[index];
-        let d: Vec<f64> = (0..3)
-            .map(|axis| {
-                (tile.min[axis] - eye[axis])
-                    .max(eye[axis] - tile.max[axis])
-                    .max(0.)
-            })
-            .collect();
-        d[0].hypot(d[1]).hypot(d[2])
+        let d: [f64; 3] = std::array::from_fn(|axis| {
+            (tile.min[axis] - eye[axis])
+                .max(eye[axis] - tile.max[axis])
+                .max(0.)
+        });
+        // `sqrt` rather than `hypot`, which is a slow software routine in wasm; this runs per tile per frame.
+        (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
     }
 
     fn draw(&self, index: usize, name: &str, geometry: Arc<Geometry>, ground: Ground) -> Draw {
