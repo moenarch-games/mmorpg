@@ -12,8 +12,6 @@ import type { RaidNotice, RaidSignal } from "../replication";
 export const TRACKS_REACH_UNITS = 300;
 export const BRACE_REACH_UNITS = 300;
 export const LOOKOUT_REACH_UNITS = 500;
-/** The readiness bit of the warned guards; brace `k` is bit `k + 1`. */
-export const READINESS_WARNED = 1;
 
 export interface RaidPrepSpots {
   readonly tracks: { readonly x: number; readonly z: number };
@@ -43,14 +41,14 @@ export function reachablePrepStep(signal: RaidSignal | null | undefined, spots: 
   if (!signal?.signs || !spots) {
     return null;
   }
-  const warned = (signal.readiness & READINESS_WARNED) !== 0;
+  const warned = signal.warned;
   if (signal.scouted && !warned && lookoutAt && within(lookoutAt, x, z, LOOKOUT_REACH_UNITS)) {
     return 1;
   }
   if (!signal.scouted && within(spots.tracks, x, z, TRACKS_REACH_UNITS)) {
     return 0;
   }
-  const brace = warned ? spots.braces.findIndex((at, index) => (signal.readiness & (1 << (index + 1))) === 0 && within(at, x, z, BRACE_REACH_UNITS)) : -1;
+  const brace = warned ? spots.braces.findIndex((at, index) => !signal.braced.includes(index) && within(at, x, z, BRACE_REACH_UNITS)) : -1;
   return brace < 0 ? null : 2 + brace;
 }
 
@@ -75,7 +73,7 @@ export function raidNoticeText(notice: RaidNotice): string {
  * viewer looked, the lookout's ask once they did, and the guards' readiness once warned.
  */
 export function forewarningLine(name: string, signal: RaidSignal, lookout: boolean): string {
-  if ((signal.readiness & READINESS_WARNED) !== 0) {
+  if (signal.warned) {
     return `${name}: "The watch is posted. If you have a moment, brace the barn's walls at Millbrook."`;
   }
   if (signal.scouted && lookout) {

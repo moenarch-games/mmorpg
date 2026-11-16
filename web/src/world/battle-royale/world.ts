@@ -128,7 +128,7 @@ export function createPracticeWorld(
   const presentation = new ArenaPresentation();
   const codes = () => {
     const { character, equipment } = build();
-    return { ...classChoiceCodes(character), equipment: Uint16Array.from(equipment, (id) => id ?? 0) };
+    return { ...classChoiceCodes(character), equipment: Uint32Array.from(equipment, (id) => id ?? 0) };
   };
   // A netcode trial (#680) delays the same local zone like a network and adds a sparring partner.
   const source = trial

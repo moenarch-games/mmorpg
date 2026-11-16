@@ -47,7 +47,7 @@ export class RaidSigns {
     this.root.visible = true;
     this.#tracks.visible = signal?.signs === true;
     this.#braces.forEach((mesh, index) => {
-      mesh.visible = ((signal?.readiness ?? 0) & (1 << (index + 1))) !== 0;
+      mesh.visible = signal?.braced.includes(index) === true;
     });
   }
 
