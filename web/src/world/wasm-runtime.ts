@@ -14,19 +14,30 @@ import type { PhysiqueModel } from "../physique";
 /** The derived-cache name of the presented scenery's terrain grids. */
 const TERRAIN_GRIDS = "terrain-grids";
 
+/** Settles after the page has run its queued tasks, such as starting the next request of a chained download. */
+function nextTask(): Promise<void> {
+  return new Promise((resolve) => { setTimeout(resolve, 0); });
+}
+
 /**
  * Fetches and instantiates the generated `mmorpg-wasm` module, then builds the
- * local world over this browser's character storage.
+ * local world over this browser's character storage. `wasmReady` runs as soon as the module is
+ * usable, before the world build, so art downloads can start beside it (#855).
  */
-export async function loadLocalWorld(characters: LocalCharacters): Promise<LocalWorld> {
+export async function loadLocalWorld(characters: LocalCharacters, wasmReady: () => void = () => {}): Promise<LocalWorld> {
   markStartup("wasm-fetch");
   await loadWasm();
   markStartup("wasm-ready");
+  wasmReady();
   // The terrain grids are the slowest pure derivation of the presented scenery; a later visit reuses them per release
   // (#526). Without a manifest or storage, or on a stale or damaged entry, the module derives them.
   const release = await fetchRelease(import.meta.env.BASE_URL);
   const storage = typeof caches === "undefined" ? undefined : caches;
   const cached = release ? await readDerived(storage, location.origin, release, TERRAIN_GRIDS) : null;
+  // The zone content (built once, the catalog's source) blocks the page for a while; let the art
+  // downloads `wasmReady` started issue their follow-up requests before the scenery's turn.
+  generated.catalog();
+  await nextTask();
   const seeded = cached !== null && generated.seedTerrainGrids(cached);
   const world = createLocalWorld(generated, characters);
   markStartup("world-created");
@@ -42,6 +53,13 @@ export async function loadLocalWorld(characters: LocalCharacters): Promise<Local
 export function presentZone(zoneId: number): SceneryProvider {
   generated.presentZone(zoneId);
   return createSceneryProvider(generated);
+}
+
+/** The rest clip imported unit model `kind` is measured in; call after the module loaded. */
+export function importedRestClip(kind: string): string {
+  const clip = generated.importedRestClip(kind);
+  if (clip === undefined) { throw new Error(`No imported unit model ${kind}.`); }
+  return clip;
 }
 
 /** The combat-sounds SoundManifest with mmorpg's cues added (#447); call after the module loaded. */

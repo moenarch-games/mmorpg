@@ -494,6 +494,10 @@ export class WorldView {
   /** The world `load` last readied, so re-selecting it (`refreshArenaWorld`) rebuilds nothing. */
   #loadedScenery: ZoneWorld["scenery"] | null = null;
   #loadedArena = false;
+  /** The world `load` last readied, whose static scene `prewarmStatic` prepares. */
+  #loadedWorld: ZoneWorld | null = null;
+  /** The world whose static scene prewarm is already queued. */
+  #prewarmQueued: ZoneWorld | null = null;
   #buildMs = 0;
   #orbit = new OrbitCamera();
   #cameraMode: CameraMode = { kind: "free-look" };
@@ -676,8 +680,17 @@ export class WorldView {
   }
 
   /**
+   * Starts loading the player figure before any world is loaded (#855): the page calls this as soon as the module
+   * can name the figure's rest clip, so the download runs beside the world build.
+   */
+  prefetchPlayer(restClip: (kind: ImportedModelKind) => string): void {
+    if (!this.#loadedScenery) { this.#restClip = restClip; }
+    void this.#models.preload("Ranger");
+  }
+
+  /**
    * Readies the loaded world's panels and region art. Its static scene (#526) is built by [`buildStatic`], from idle
-   * time or the first frame, so entering a world never waits for the whole scene.
+   * time once the page asks (`prewarmStatic`) or the first frame, so entering a world never waits for the whole scene.
    */
   load(world: ZoneWorld): void {
     const arena = world.arena ?? false;
@@ -686,6 +699,8 @@ export class WorldView {
     }
     this.#loadedScenery = world.scenery;
     this.#loadedArena = arena;
+    this.#loadedWorld = world;
+    this.#prewarmQueued = null;
     this.#avatarPrepared = false;
     this.#pendingKitArea = null;
     this.#picking.reset();
@@ -749,8 +764,8 @@ export class WorldView {
     this.#occluders = occluders(world);
     this.#buildMs = performance.now() - started;
     // The selected character's imported model owns the first network/decoder work. Once it
-    // settles (including a failed load), background kits and the static scene can prepare while
-    // the player selects a character or moves through creation. No world entry waits for them.
+    // settles (including a failed load), background kits can prepare while the player selects a
+    // character or moves through creation. No world entry waits for them.
     const prewarmed = world.scenery;
     const fortifications = this.#fortifications;
     const fortress = this.#fortress;
@@ -760,12 +775,23 @@ export class WorldView {
       if (this.#pendingKitArea) { this.#loadKitsForArea(this.#pendingKitArea); }
       void fortifications.load();
       void fortress?.load();
-      const prewarm = () => {
-        if (this.#loadedScenery === prewarmed && this.#loadedArena === arena && !this.#scene) { this.#buildStatic(world); }
-      };
-      if (typeof requestIdleCallback === "function") { requestIdleCallback(prewarm, { timeout: 2_000 }); }
-      else { setTimeout(prewarm, 0); }
     });
+  }
+
+  /**
+   * Builds the loaded world's static scene in the next idle moment (#855). The build blocks the page for seconds, so
+   * the page asks only once the entry art has loaded and entry is possible, never on the way there; the first world frame
+   * builds it if entry comes first.
+   */
+  prewarmStatic(): void {
+    const world = this.#loadedWorld;
+    if (!world || this.#scene || this.#prewarmQueued === world) { return; }
+    this.#prewarmQueued = world;
+    const prewarm = () => {
+      if (this.#loadedWorld === world && !this.#scene) { this.#buildStatic(world); }
+    };
+    if (typeof requestIdleCallback === "function") { requestIdleCallback(prewarm, { timeout: 2_000 }); }
+    else { setTimeout(prewarm, 0); }
   }
 
   /** Prepare only the authored kits around the selected area, including the Outpost cliff rim. */
