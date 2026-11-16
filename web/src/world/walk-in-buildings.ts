@@ -54,6 +54,8 @@ export class WalkInBuildings {
   }
 
   async #load(building: Building): Promise<void> {
+    // A walk-in cottage (#843) has no bundle: the Outpost kit and the settlement props draw it.
+    if (building.entries.length === 0) { return; }
     building.roots = await loadStaticBundle(`${BUILDINGS}${building.bundle}/`, building.entries);
     building.batched = new BatchedRoots(building.bundle, building.roots);
     this.#changed = true;
@@ -77,6 +79,14 @@ export class WalkInBuildings {
       eye = [result[0]!, result[1]!, result[2]!];
     }
     return { eye, target: view.target };
+  }
+
+  /** The walk-in cottages (#843), by house collider, whose room feet at `viewer` (metres) stand in. */
+  cottagesInside(viewer: Vec3): Set<number> {
+    const feet = Float64Array.from(viewer);
+    return new Set(this.#buildings
+      .map((building) => building.presenter.cottage())
+      .filter((house, index) => house !== 0 && this.#buildings[index]!.presenter.inside(feet)));
   }
 
   interior(viewer: Vec3): number {

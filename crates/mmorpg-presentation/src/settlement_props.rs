@@ -19,18 +19,23 @@ use crate::{
 
 /// The bundle entries the clients draw, sorted; [`entries`] derives the same list from the
 /// square's content.
-pub const ENTRIES: [&str; 11] = [
+pub const ENTRIES: [&str; 16] = [
     "settlement.props.barrel",
+    "settlement.props.bed",
     "settlement.props.bench",
     "settlement.props.cart",
+    "settlement.props.chair",
+    "settlement.props.chest",
     "settlement.props.crate",
     "settlement.props.fence",
     "settlement.props.firewood",
     "settlement.props.footbridge",
+    "settlement.props.hearth",
     "settlement.props.lantern-post",
     "settlement.props.planter",
     "settlement.props.signpost",
     "settlement.props.stall",
+    "settlement.props.table",
 ];
 
 /// One drawn prop.
@@ -147,6 +152,24 @@ pub(crate) fn fallback(entry: &str) -> Vec<([f64; 3], [f64; 3], u32)> {
             ([1.05, 0.795, 0.], [0.06, 0.775, 4.5], DARK),
         ];
     }
+    // The cottages' furniture (#843), as the boxes of its descriptor's collision proxies.
+    let furniture = match entry {
+        "settlement.props.bed" => Some(vec![
+            ([0., 0.275, 0.], [0.5, 0.275, 1.], WOOD),
+            ([0., 0.475, -0.965], [0.5, 0.475, 0.035], DARK),
+        ]),
+        "settlement.props.table" => Some(vec![([0., 0.38, 0.], [0.7, 0.38, 0.4], WOOD)]),
+        "settlement.props.chair" => Some(vec![([0., 0.225, 0.], [0.225, 0.225, 0.225], WOOD)]),
+        "settlement.props.chest" => Some(vec![([0., 0.275, 0.], [0.46, 0.275, 0.26], DARK)]),
+        "settlement.props.hearth" => Some(vec![
+            ([0., 0.565, -0.175], [0.9, 0.565, 0.425], IRON),
+            ([0., 1.865, -0.34], [0.7, 0.735, 0.26], IRON),
+        ]),
+        _ => None,
+    };
+    if let Some(boxes) = furniture {
+        return boxes;
+    }
     let Some(item) = mmorpg_core::greyhaven_vale::market::SQUARE
         .iter()
         .map(|(item, ..)| *item)
@@ -182,8 +205,8 @@ mod tests {
     #[test]
     fn every_prop_has_a_fallback() {
         let keys = entries();
-        // The market square's ten, and the region's footbridge (#828).
-        assert_eq!(keys.len(), 11, "{keys:?}");
+        // The market square's ten, the region's footbridge (#828) and the cottages' furniture (#843).
+        assert_eq!(keys.len(), 16, "{keys:?}");
         assert!(keys.iter().all(|key| !fallback(key).is_empty()), "{keys:?}");
     }
 

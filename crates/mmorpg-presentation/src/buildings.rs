@@ -10,7 +10,7 @@
 //! building colliders decide everything.
 use mmorpg_core::{
     DoorId, UNITS_PER_METRE,
-    greyhaven_vale::{inn, marshal_house},
+    greyhaven_vale::{cottages, inn, marshal_house},
 };
 use mmorpg_scenery::Scenery;
 
@@ -47,6 +47,9 @@ pub struct Spec {
     quarters: u8,
     /// The footprint's half extents in the frame, units.
     footprint: [i32; 3],
+    /// The walk-in cottage (#843) this is, by its house collider: the Outpost kit draws it, and
+    /// clients hide its roof parts (`outpost_kit::cottage_roofs`) while the viewer is inside.
+    pub cottage: Option<u32>,
     /// The descriptor's hinge mount in the frame, metres; the leaf opens inward about +Y.
     hinge: [f64; 3],
 }
@@ -140,8 +143,58 @@ impl Spec {
             quarters: quarters % 4,
             footprint: [0; 3],
             hinge: [0.; 3],
+            cottage: None,
         })
     }
+
+    /// A walk-in cottage (#843): no bundle of its own (the Outpost kit and the settlement props
+    /// draw it), its room the space inside the kit's walls up to the roof, and its walls and
+    /// furniture the camera's obstacles.
+    #[must_use]
+    pub fn cottage(cottage: &cottages::Cottage) -> Self {
+        let volume = |(min, max): ([i32; 3], [i32; 3])| Volume {
+            center: std::array::from_fn(|i| metres(min[i] + max[i]) / 2.),
+            size: std::array::from_fn(|i| metres(max[i] - min[i])),
+        };
+        let [hx, hz] = cottages::HALF;
+        let wall = cottages::WALL;
+        Self {
+            bundle: "",
+            entries: &[],
+            hidden: &[],
+            interior: Some(Interior {
+                volume: volume(([-hx + wall, -30, -hz + wall], [hx - wall, 330, hz - wall])),
+                obstacles: cottages::boxes().into_iter().map(volume).collect(),
+            }),
+            room_ceiling: None,
+            door: None,
+            origin: [cottage.centre[0], 0, cottage.centre[1]],
+            quarters: cottage.quarters,
+            footprint: [hx, cottages::WALL_HEIGHT / 2, hz],
+            hinge: [0.; 3],
+            cottage: Some(cottage.house),
+        }
+    }
+}
+
+/// Every walk-in building: [`BUILDINGS`], then the walk-in cottages (#843), in the order
+/// clients present them; none outside Greyhaven Vale.
+#[must_use]
+pub fn specs(scenery: &Scenery) -> Vec<Spec> {
+    if !scenery.greyhaven() {
+        return Vec::new();
+    }
+    BUILDINGS
+        .iter()
+        .cloned()
+        .chain(cottages::cottages().iter().map(|cottage| {
+            // `WalkIn::new` lifts the origin by the ground there; the floor is the cottage's own.
+            let mut spec = Spec::cottage(cottage);
+            spec.origin[1] =
+                cottage.floor - scenery.height_at(cottage.centre[0], cottage.centre[1]);
+            spec
+        }))
+        .collect()
 }
 
 /// The Greyhaven inn, unrotated at [`inn::ORIGIN`].
@@ -162,6 +215,7 @@ pub const INN: Spec = Spec {
     quarters: 0,
     footprint: inn::FOOTPRINT_HALF_EXTENTS,
     hinge: [-0.6, 0., 4.53],
+    cottage: None,
 };
 
 /// Elden's house on house 103, turned half a turn so its door faces the square.
@@ -185,6 +239,7 @@ pub const MARSHAL_HOUSE: Spec = Spec {
     quarters: 2,
     footprint: marshal_house::FOOTPRINT_HALF_EXTENTS,
     hinge: [-0.58, 0.01, 2.88],
+    cottage: None,
 };
 
 /// Every walk-in building, in the order clients present them.
@@ -210,6 +265,9 @@ pub struct WalkIn {
     open: bool,
     hold: f64,
     camera_ratio: f64,
+    /// Whether the viewer stood inside at the last [`Self::frame`]: a cottage lights its lamp
+    /// only then, since the light passes through its walls.
+    occupied: bool,
 }
 
 fn metres(units: i32) -> f64 {
@@ -229,19 +287,17 @@ impl WalkIn {
             open: false,
             hold: 0.,
             camera_ratio: 1.,
+            occupied: false,
         }
     }
 
-    /// Every walk-in building on `scenery`, in [`BUILDINGS`] order; none outside Greyhaven
+    /// Every walk-in building on `scenery`, in [`specs`] order; none outside Greyhaven
     /// Vale.
     #[must_use]
     pub fn all(scenery: &Scenery) -> Vec<Self> {
-        if !scenery.greyhaven() {
-            return Vec::new();
-        }
-        BUILDINGS
-            .iter()
-            .map(|spec| Self::new(spec.clone(), scenery))
+        specs(scenery)
+            .into_iter()
+            .map(|spec| Self::new(spec, scenery))
             .collect()
     }
 
@@ -296,6 +352,7 @@ impl WalkIn {
             self.angle += (goal - self.angle).clamp(-step, step);
         }
         let interior = viewer.is_some_and(|feet| self.inside(feet));
+        self.occupied = interior;
         let building = matrix(self.frame_transform());
         let door = matrix(self.leaf());
         let spec = &self.spec;
@@ -389,6 +446,9 @@ impl WalkIn {
     /// A warm steady lamp above the room, in the building's actual frame.
     #[must_use]
     pub fn light(&self) -> Option<crate::lights::PointLight> {
+        if self.spec.cottage.is_some() && !self.occupied {
+            return None;
+        }
         let room = self.spec.interior.as_ref()?;
         let mut position = room.volume.center;
         position[1] += room.volume.size[1] * 0.25;

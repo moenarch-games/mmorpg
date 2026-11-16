@@ -914,8 +914,25 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
                 }),
         )
         .collect();
+    // The walk-in cottages (#843) are walls round open rooms, not one box: their footprints
+    // still level the ground and keep the scatter out, as a house did.
+    let cottages: Vec<_> = greyhaven_vale::cottages::cottages()
+        .iter()
+        .map(|cottage| {
+            let [hx, hz] = greyhaven_vale::cottages::HALF;
+            let hy = greyhaven_vale::cottages::WALL_HEIGHT / 2;
+            StaticCollider {
+                id: cottage.house,
+                position: [cottage.centre[0], cottage.floor + hy, cottage.centre[1]],
+                half_extents: [hx, hy, hz],
+            }
+        })
+        .collect();
     let relief = Relief::new(
-        structures.iter().map(|(collider, kind)| (*collider, *kind)),
+        structures
+            .iter()
+            .map(|(collider, kind)| (*collider, *kind))
+            .chain(cottages.iter().map(|cottage| (cottage, PropKind::House))),
         &roads,
         &water,
     );
@@ -981,7 +998,8 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
         structures
             .iter()
             .map(|(collider, _)| *collider)
-            .chain(market),
+            .chain(market)
+            .chain(cottages.iter()),
     );
     let mut placer = Placer {
         scenery: &scenery,

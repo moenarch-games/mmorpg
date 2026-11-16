@@ -114,6 +114,8 @@ fn content_is_a_bounded_deterministic_revision() {
                     .contains(&collider.id)
                 // The footbridges (#828) span carved stream banks from ends set between them.
                 && !greyhaven_vale::crossings::is_crossing(collider.id)
+                // A walk-in cottage's lintel and flue (#843) stand on its walls and hearth.
+                && !greyhaven_vale::cottages::is_cottage(collider.id)
                 // Layout cottages have explicit authored foundation depths (their prefab
                 // plinth is sunk below the grass), rather than procedural terrain footing.
                 && !(60_000..65_000).contains(&collider.id)

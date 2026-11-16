@@ -24,6 +24,7 @@ use crate::{Area, AreaId, Terrain, ZoneAreas};
 pub mod basin;
 pub mod brook;
 pub mod cave;
+pub mod cottages;
 pub mod crossings;
 pub mod design;
 pub mod dressing;
@@ -263,6 +264,9 @@ pub mod ids {
     /// The footbridges' decks and rails, then (from +50) their end ramps (#828), in
     /// [`super::crossings::BRIDGES`] order.
     pub const CROSSINGS: RangeInclusive<u32> = 43_000..=43_099;
+    /// The walk-in cottages' walls and furniture (#843), 16 IDs each, in
+    /// [`super::cottages::cottages`] order.
+    pub const COTTAGES: RangeInclusive<u32> = 43_100..=43_999;
 }
 
 /// One region's tables (#542): its named areas, its roads and its own colliders. Each region

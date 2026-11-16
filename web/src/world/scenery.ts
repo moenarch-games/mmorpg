@@ -100,6 +100,8 @@ export type SceneryContent = StaticSceneContent & {
   outpostKitEntries(): string[];
   outpostKitKeys(): string[];
   outpostKitModels(): Float32Array;
+  /** The walk-in cottages' roof parts among the Outpost kit placements: index, then house collider (#843). */
+  cottageRoofs(): Uint32Array;
   /** Per placed Outpost kit module its building's wear in [0, 1], blended from the kit's wear masks. */
   outpostKitWear(): Float32Array;
   /** The market square's settlement props (#421): their entries, and per placed prop its entry and 16 model floats. */
@@ -152,6 +154,9 @@ export type BuildingPresenterHandle = {
   pointLight(): Float64Array;
   /** The bundle entries, in `frame` order. */
   entries(): string[];
+  /** The walk-in cottage this building is, by its house collider (#843), or 0; and whether feet stand in its room. */
+  cottage(): number;
+  inside(viewer: Float64Array): boolean;
   /** Per entry 16 column-major model floats then 1 shown / 0 hidden; `viewer` is feet in metres or empty. */
   frame(open: boolean, viewer: Float64Array, dt: number, reducedMotion: boolean): Float32Array;
 };
@@ -179,7 +184,7 @@ export type SceneryProvider = {
   /** The Sunken Shrine's kit entries and placed modules (#431), column-major matrices in metres. */
   readonly shrine: { entries: readonly string[]; placements: readonly { key: string; matrix: Float32Array }[] };
   /** The Outpost kit buildings' entries and placed modules (#420), column-major matrices in metres. */
-  readonly outpost: { entries: readonly string[]; placements: readonly { key: string; matrix: Float32Array }[] };
+  readonly outpost: { entries: readonly string[]; placements: readonly { key: string; matrix: Float32Array; wear?: number; cottage?: number }[] };
   /** The market square's settlement-prop entries and placed props (#421), column-major matrices in metres. */
   readonly settlement: { entries: readonly string[]; placements: readonly { key: string; matrix: Float32Array }[] };
   /** A composition kit drawn over the zone's graybox (the Battle Royale fortress kit, #591), if the zone has one. */
@@ -504,9 +509,13 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
     outpost: (() => {
       const models = content.outpostKitModels();
       const wear = content.outpostKitWear();
+      // The walk-in cottages' roof parts (#843): placement index, then its cottage's house.
+      const roofs = content.cottageRoofs();
+      const cottage = new Map<number, number>();
+      for (let at = 0; at + 1 < roofs.length; at += 2) { cottage.set(roofs[at]!, roofs[at + 1]!); }
       return {
         entries: content.outpostKitEntries(),
-        placements: content.outpostKitKeys().map((key, index) => ({ key, matrix: models.slice(index * 16, index * 16 + 16), wear: wear[index] ?? 0 })),
+        placements: content.outpostKitKeys().map((key, index) => ({ key, matrix: models.slice(index * 16, index * 16 + 16), wear: wear[index] ?? 0, ...(cottage.has(index) ? { cottage: cottage.get(index)! } : {}) })),
       };
     })(),
     settlement: (() => {

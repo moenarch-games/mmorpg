@@ -122,6 +122,15 @@ impl Grass {
             .expanded(25)
         }));
         blocked.extend(s.terrain_holes.iter().map(|hole| hole.expanded(100)));
+        // The walk-in cottages (#843) have no house box, but nothing grows on their floors.
+        if s.greyhaven() {
+            use mmorpg_core::greyhaven_vale::cottages;
+            blocked.extend(
+                cottages::cottages()
+                    .iter()
+                    .map(|cottage| Rect::around(cottage.centre, cottages::HALF).expanded(25)),
+            );
+        }
         Self {
             grid: g.clone(),
             density,

@@ -1124,11 +1124,12 @@ impl BuildingPresenter {
     /// Building `index` of [`Self::count`].
     #[wasm_bindgen(constructor)]
     pub fn new(index: usize) -> Result<Self, JsError> {
-        let spec = mmorpg_presentation::buildings::BUILDINGS
-            .get(index)
+        let spec = mmorpg_presentation::buildings::specs(scenery::hosted_scenery())
+            .into_iter()
+            .nth(index)
             .ok_or_else(|| JsError::new("no such walk-in building"))?;
         Ok(Self(mmorpg_presentation::buildings::WalkIn::new(
-            spec.clone(),
+            spec,
             scenery::hosted_scenery(),
         )))
     }
@@ -1190,11 +1191,19 @@ impl BuildingPresenter {
     /// How many walk-in buildings there are.
     #[must_use]
     pub fn count() -> usize {
-        if scenery::hosted_scenery().greyhaven() {
-            mmorpg_presentation::buildings::BUILDINGS.len()
-        } else {
-            0
-        }
+        mmorpg_presentation::buildings::specs(scenery::hosted_scenery()).len()
+    }
+
+    /// The walk-in cottage (#843) this building is, by its house collider, or 0.
+    #[must_use]
+    pub fn cottage(&self) -> u32 {
+        self.0.spec().cottage.unwrap_or(0)
+    }
+
+    /// Whether feet at `viewer` (metres) stand in the room.
+    #[must_use]
+    pub fn inside(&self, viewer: &[f64]) -> bool {
+        viewer.try_into().is_ok_and(|p| self.0.inside(p))
     }
 
     /// The bundle directory under `buildings/`.
@@ -1748,4 +1757,15 @@ impl ArenaMovementPrediction {
                 vec![x, y, z, f32::from(facing)]
             })
     }
+}
+
+/// The walk-in cottages' roof parts among the Outpost kit placements ([`outpost_kit_keys`]):
+/// per part, its placement index then its cottage's house collider, flat (#843).
+#[wasm_bindgen(js_name = cottageRoofs)]
+#[must_use]
+pub fn cottage_roofs() -> Vec<u32> {
+    mmorpg_presentation::outpost_kit::cottage_roofs(scenery::hosted_scenery())
+        .into_iter()
+        .flat_map(|(index, house)| [u32::try_from(index).unwrap_or(u32::MAX), house])
+        .collect()
 }
