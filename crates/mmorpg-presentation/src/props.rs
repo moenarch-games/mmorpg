@@ -1756,7 +1756,7 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
     }
     // The market square's settlement props (#421) stand as boxes of their collision proxies
     // while the client does not draw the props.
-    let square = crate::settlement_props::frames(s);
+    let square = crate::settlement_props::fallback_frames(s);
     if !square.is_empty() {
         let mut m = Model::new(Cull::Always);
         for (entry, frame) in square {

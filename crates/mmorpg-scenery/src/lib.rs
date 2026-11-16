@@ -928,11 +928,20 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
             }
         })
         .collect();
+    // The villages' clutter (#851) is drawn by its kit alone; its proxies level the ground and
+    // keep the scatter out like a crate's.
+    let village: Vec<_> = definition
+        .colliders()
+        .iter()
+        .filter(|collider| greyhaven_vale::village_props::is_village_prop(collider.id))
+        .cloned()
+        .collect();
     let relief = Relief::new(
         structures
             .iter()
             .map(|(collider, kind)| (*collider, *kind))
-            .chain(cottages.iter().map(|cottage| (cottage, PropKind::House))),
+            .chain(cottages.iter().map(|cottage| (cottage, PropKind::House)))
+            .chain(village.iter().map(|collider| (collider, PropKind::Crate))),
         &roads,
         &water,
     );
@@ -999,7 +1008,8 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
             .iter()
             .map(|(collider, _)| *collider)
             .chain(market)
-            .chain(cottages.iter()),
+            .chain(cottages.iter())
+            .chain(village.iter()),
     );
     let mut placer = Placer {
         scenery: &scenery,

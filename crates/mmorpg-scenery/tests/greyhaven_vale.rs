@@ -185,6 +185,7 @@ fn every_structure_collider_has_exactly_one_visual_and_vice_versa() {
             // their dressing.
             || greyhaven_vale::crossings::is_crossing(collider.id)
             || greyhaven_vale::cottages::is_cottage(collider.id)
+            || greyhaven_vale::village_props::is_village_prop(collider.id)
         {
             assert!(visual_kind(collider).is_none());
             assert!(

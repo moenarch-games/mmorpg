@@ -5,7 +5,10 @@
 //! `greyhaven_vale::cottages`; runtime clients read only the result.
 //!
 //! `cargo run -p mmorpg-scenery --example export-settlement-dressing > content/greyhaven/dressing/settlements.json`
-use mmorpg_core::{greyhaven_vale::cottages, trig::YAW_QUARTER_TURN};
+use mmorpg_core::{
+    greyhaven_vale::{self, cottages, farmland, settlements, village_props},
+    trig::YAW_QUARTER_TURN,
+};
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -63,6 +66,59 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "scale": [1000, 1000, 1000]
             }));
         }
+    }
+    // The settlements' and hamlets' wells, barrels, crates, carts and ring stones (#851): the
+    // props stand in over their structures' boxes, which keep colliding, scaled to them.
+    let terrain = greyhaven_vale::terrain();
+    let structures = (*greyhaven_vale::ids::SETTLEMENTS.start()..)
+        .zip(settlements::SETTLEMENTS.iter().flat_map(|s| s.structures))
+        .map(|(id, &(kind, centre, _, height))| {
+            use settlements::Building as B;
+            let kind = match kind {
+                B::Well => "well",
+                B::Barrel => "barrel",
+                B::Crate => "crate",
+                B::Cart => "cart",
+                B::Stone => "standing-stone",
+                _ => "",
+            };
+            (id, kind, centre, height)
+        });
+    let wells = (*greyhaven_vale::ids::FARMLAND_BUILDINGS.start()..)
+        .zip(farmland::BUILDINGS)
+        .filter(|(_, (kind, ..))| *kind == farmland::Building::Well)
+        .map(|(id, &(_, min, max, height))| {
+            let centre = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2];
+            (id, "well", centre, height)
+        });
+    for (id, kind, [x, z], height) in structures.chain(wells) {
+        // Quarter turns and scale (permille) to the box: the cart's length lies along its own Z,
+        // the box's along X; a crate box is larger than the prop, a stone smaller.
+        let (quarters, scale) = match kind {
+            "well" | "barrel" => (0_u16, [1000, 1000, 1000]),
+            "crate" => (0, [1390, 1430, 1390]),
+            "cart" => (1, [900, 1000, 900]),
+            "standing-stone" => (0, [490, height * 1000 / 240, 490]),
+            _ => continue,
+        };
+        placements.push(json!({
+            "id": format!("settlement-{id}-{kind}"),
+            "asset": format!("settlement.props.{kind}"),
+            "position": [x, terrain.height_at(x, z), z],
+            "yaw": quarters * YAW_QUARTER_TURN,
+            "scale": scale,
+            "fallbackCollider": id
+        }));
+    }
+    // The villages' clutter (#851), solid as greyhaven_vale::village_props.
+    for (index, prop) in village_props::PROPS.iter().enumerate() {
+        placements.push(json!({
+            "id": format!("village-{index}-{}", prop.name),
+            "asset": format!("settlement.props.{}", prop.name),
+            "position": [prop.position[0], prop.ground(), prop.position[1]],
+            "yaw": u16::from(prop.quarters) * YAW_QUARTER_TURN,
+            "scale": [1000, 1000, 1000]
+        }));
     }
     println!("{{\n  \"version\": 1,\n  \"area\": \"settlements\",\n  \"placements\": [");
     for (index, placement) in placements.iter().enumerate() {
