@@ -33,6 +33,25 @@ photographs the zone into `artifacts/studio/world/tiles`.
 
 Set `WORLD_STUDIO_AGENT` to run a different executable with the same arguments.
 
+## Finding clear ground
+
+To place an animal, prop or spawn, ask `mmorpg-scenery`'s `clear-spot` example for the nearest
+clear ground (#863). Coordinates and distances are in units (100 per metre), as content source
+writes them:
+
+```sh
+cargo run --release -p mmorpg-scenery --example clear-spot -- --near 52000,66000 --radius 300 --off-routes --count 5
+```
+
+It indexes Greyhaven once (about 2 s): colliders and static meshes, props with colliders, the
+cottages' footprints, roads, lakes, lake beds and rivers. Each spot printed has nothing within
+`--radius` (default 200) and lies at least two radii from the others. `--shore` keeps spots
+300–900 units from water, `--off-routes` keeps clear of every resident's walk home and errand
+legs, and `--avoid-fields` keeps off the farmland's fields. `--max-distance` (default 20000)
+and `--step` (default 50) bound the search. It prints each spot in units and metres, with its
+ground height and its distance from water within 900 units. It exits with status 1 when no
+spot is clear.
+
 ## Boundaries
 
 The studio is development tooling: no game crate reads it and it reads none. One program
