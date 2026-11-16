@@ -1650,7 +1650,7 @@ impl Runner<'_> {
                 let sheet = bot.quests.as_ref().ok_or("no quest sheet received")?;
                 let quest = mmorpg_core::QuestId::new(expectation.quest.unwrap_or_default());
                 let entry = sheet.entries.iter().find(|entry| entry.quest == quest);
-                let completed = quest.bit().is_some_and(|bit| sheet.completed & bit != 0);
+                let completed = sheet.completed.contains(&quest);
                 let (state, progress) = match (entry, completed) {
                     (Some(entry), _) => ("active", Some(entry.progress)),
                     (None, true) => ("completed", None),

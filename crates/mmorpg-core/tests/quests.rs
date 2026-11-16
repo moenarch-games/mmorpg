@@ -517,7 +517,10 @@ fn kills_credit_the_tapper_and_the_turn_in_grants_the_chosen_reward() {
     assert!(events.contains(&ZoneEvent::QuestCompleted { quest: BOARS }));
     let after = run.player();
     assert!(after.quests.entries.is_empty());
-    assert_eq!(after.quests.completed, 0b1);
+    assert_eq!(
+        after.quests.completed,
+        std::collections::BTreeSet::from([mmorpg_core::QuestId::new(1)])
+    );
     assert_eq!(after.copper, before.copper + 7);
     assert_eq!(after.inventory.count(HOOD), 1, "the second choice");
     assert_eq!(after.inventory.count(BOOTS), 0);
@@ -541,7 +544,7 @@ fn kills_credit_the_tapper_and_the_turn_in_grants_the_chosen_reward() {
 fn quest_items_drop_only_while_needed_and_the_turn_in_consumes_them() {
     let mut run = Run::new();
     let mut state = run.zone.snapshot().unwrap();
-    state.players[0].quests.completed = 0b1;
+    state.players[0].quests.completed = [mmorpg_core::QuestId::new(1)].into();
     run.zone = ZoneSimulation::from_snapshot(state, Arc::clone(run.zone.content())).unwrap();
     run.kill(FIRST_BOAR);
     let corpse = |run: &Run, creature| {
@@ -610,7 +613,13 @@ fn quest_items_drop_only_while_needed_and_the_turn_in_consumes_them() {
     let after = run.player();
     assert_eq!(after.inventory.count(PELT), 0);
     assert_eq!(after.copper, before.copper + 1);
-    assert_eq!(after.quests.completed, 0b11);
+    assert_eq!(
+        after.quests.completed,
+        std::collections::BTreeSet::from([
+            mmorpg_core::QuestId::new(1),
+            mmorpg_core::QuestId::new(2)
+        ])
+    );
 }
 
 #[test]
@@ -707,8 +716,12 @@ fn recovery_continues_quests_exactly_and_refuses_inconsistent_logs() {
         .push(player.quests.entries[0])));
     assert!(refuse(&|player| player.quests.entries[0].progress[0] = 3));
     assert!(refuse(&|player| player.quests.entries[0].progress[1] = 1));
-    assert!(refuse(&|player| player.quests.completed = 0b1));
-    assert!(refuse(&|player| player.quests.completed = 1 << 9));
+    assert!(refuse(
+        &|player| player.quests.completed = [mmorpg_core::QuestId::new(1)].into()
+    ));
+    assert!(refuse(
+        &|player| player.quests.completed = [mmorpg_core::QuestId::new(10)].into()
+    ));
     assert!(refuse(&|player| player.quests.entries[0].quest = HIDES));
     assert!(refuse(&|player| {
         player.quests.entries = (1..=11)
@@ -737,5 +750,5 @@ fn the_hosted_chain_starts_at_the_marshal() {
             QuestMarker::Available
         )]
     );
-    assert!(sheet.entries.is_empty() && sheet.completed == 0);
+    assert!(sheet.entries.is_empty() && sheet.completed.is_empty());
 }

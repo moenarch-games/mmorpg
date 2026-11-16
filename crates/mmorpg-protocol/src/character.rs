@@ -1,12 +1,13 @@
 //! Durable character record encoding (#30).
 //!
 //! `version u8 · schema u16 · id length u8 · id · appearance u8 · level u8 ·
-//! experience u32 · copper u32 · inventory · equipment · quest entries · unlocked waystones u32 ·
+//! experience u32 · copper u32 · inventory · equipment · quest log · unlocked waystones u32 ·
 //! depths record (`thorn_defeated` u8, receipt run u64, credited u8, drops u8) ·
 //! health u32 · resource u16 · resource ticks u16 · mana delay u16 · global
 //! cooldown u16 · cooldown count u8 · (ability u8 · remaining u16)* · zone
 //! u32 · position 3 × i32 · facing u16 · physique`, big-endian (physique: see
-//! [`encode_physique`]). The decoder is strict:
+//! [`encode_physique`]; quest log: turned-in quest count u8 and IDs, then entries). The decoder
+//! is strict:
 //! another version or schema, a truncated or over-long payload or an invalid
 //! field fails closed. Gameplay validity against content is checked when a
 //! zone admits the record.
@@ -19,7 +20,7 @@ use mmorpg_core::{
 
 use crate::ProtocolError;
 use crate::inventory::{decode_equipment, decode_inventory, encode_equipment, encode_inventory};
-use crate::quest::{decode_entries, encode_entries};
+use crate::quest::{decode_completed_mask, decode_entries, decode_log, encode_log};
 use crate::wire::{decode_u8_count, encode_u8_count, read_u8, read_vector, take};
 
 /// Version of the byte layout above, independent of the record schema.
@@ -45,11 +46,7 @@ pub fn encode_character_record(record: &CharacterRecord) -> Result<Vec<u8>, Prot
     payload.extend_from_slice(&record.copper.to_be_bytes());
     encode_inventory(&mut payload, &record.inventory);
     encode_equipment(&mut payload, &record.equipment);
-    encode_entries(
-        &mut payload,
-        record.quests.completed,
-        &record.quests.entries,
-    )?;
+    encode_log(&mut payload, &record.quests)?;
     payload.extend_from_slice(&record.waystones.bits().to_be_bytes());
     encode_depths_record(&mut payload, record.depths);
     payload.extend_from_slice(&record.health.to_be_bytes());
@@ -88,9 +85,10 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
         ));
     }
     let schema = u16::from_be_bytes(take(payload, offset)?);
-    let has_physique = match schema {
-        CHARACTER_RECORD_SCHEMA_VERSION => true,
-        PRE_PHYSIQUE_SCHEMA_VERSION => false,
+    let (has_physique, quest_set) = match schema {
+        CHARACTER_RECORD_SCHEMA_VERSION => (true, true),
+        PRE_QUEST_SET_SCHEMA_VERSION => (true, false),
+        PRE_PHYSIQUE_SCHEMA_VERSION => (false, false),
         _ => {
             return Err(ProtocolError::new(
                 "unsupported character record schema version",
@@ -119,7 +117,15 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
     let copper = u32::from_be_bytes(take(payload, offset)?);
     let inventory = decode_inventory(payload, offset)?;
     let equipment = decode_equipment(payload, offset)?;
-    let (completed, entries) = decode_entries(payload, offset)?;
+    let quests = if quest_set {
+        decode_log(payload, offset)?
+    } else {
+        let completed = decode_completed_mask(payload, offset)?;
+        QuestLog {
+            entries: decode_entries(payload, offset)?,
+            completed,
+        }
+    };
     let waystones = crate::wire::decode_waystones(u32::from_be_bytes(take(payload, offset)?))?;
     let depths = decode_depths_record(payload, offset)?;
     let health = u32::from_be_bytes(take(payload, offset)?);
@@ -162,7 +168,7 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
         copper,
         inventory,
         equipment,
-        quests: QuestLog { entries, completed },
+        quests,
         waystones,
         depths,
         health,
@@ -183,6 +189,11 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
 /// The record schema before physique (#633). Such records still load, with every slider neutral;
 /// they are written again in the current schema.
 const PRE_PHYSIQUE_SCHEMA_VERSION: u16 = 0x6671;
+
+/// The record schema before the turned-in quest set (#862), which stored a `u32` mask (bit
+/// `id - 1`). Such records still load, migrated to the set; they are written again in the
+/// current schema.
+const PRE_QUEST_SET_SCHEMA_VERSION: u16 = 0x9d41;
 
 /// Physique (#633): `count u8 · count × value u16`, each value at most
 /// [`mmorpg_core::PHYSIQUE_SCALE`], in canonical parameter order. A shorter list (such as a

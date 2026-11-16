@@ -238,8 +238,8 @@ fn in_greyhaven(class: u8, at: [i32; 2], qualified: bool) -> (ZoneSimulation, u3
     if qualified {
         // The whole Garrick chain turned in, as a log must be.
         state.players[0].quests.completed = (1..=quests::GARRICK_REDBRAND_QUEST.get())
-            .filter_map(|id| mmorpg_core::QuestId::new(id).bit())
-            .fold(0, |mask, bit| mask | bit);
+            .map(mmorpg_core::QuestId::new)
+            .collect();
     }
     let mut zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
     zone.enable_depths_entry();
@@ -347,7 +347,7 @@ fn a_gathered_party_enters_together_with_each_members_qualification() {
     let mut mate = state.players[0].clone();
     mate.player_id = 2;
     mate.spawn_slot = 1;
-    mate.quests.completed = 0;
+    mate.quests.completed.clear();
     // A step along the strip: gathered, unqualified, and clear of the first character.
     mate.position[2] -= 200.0;
     state.players.push(mate);

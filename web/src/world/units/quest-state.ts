@@ -211,7 +211,7 @@ export class QuestState {
         const active = (sheet: QuestSheet, quest: number) => sheet.entries.some((entry) => entry.quest === quest);
         const accepted = after.entries.find((entry) => !active(before, entry.quest));
         const dropped = before.entries.find((entry) => !active(after, entry.quest) && !questCompleted(after.completed, entry.quest));
-        // The quest-completed event is cosmetic and may be lost; the sheet's completion bit is not.
+        // The quest-completed event is cosmetic and may be lost; the sheet's turned-in set is not.
         const completed = before.entries.find(
           (entry) => !questCompleted(before.completed, entry.quest) && questCompleted(after.completed, entry.quest),
         );

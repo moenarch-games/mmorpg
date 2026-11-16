@@ -83,7 +83,7 @@ fn an_active_quest_and_its_pending_intents_continue_through_canonical_bytes() {
     // pelt on the corpse, and the corpse continues across recovery.
     let mut state = zone.snapshot().unwrap();
     state.players[0].quests.entries.clear();
-    state.players[0].quests.completed = 0b1;
+    state.players[0].quests.completed = [mmorpg_core::QuestId::new(1)].into();
     let zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
     let mut zone = teleported(&zone, [-2_400, 2_850]);
     zone.apply_command(

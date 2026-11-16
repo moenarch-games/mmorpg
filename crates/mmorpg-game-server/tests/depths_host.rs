@@ -94,8 +94,8 @@ fn threshold_record(id: &CharacterId, qualified: bool, offset: i32) -> Character
         record.experience = 0;
         record.health = mmorpg_core::unit::player_max_health(6);
         record.quests.completed = (1..=quests::GARRICK_REDBRAND_QUEST.get())
-            .filter_map(|quest| mmorpg_core::QuestId::new(quest).bit())
-            .fold(0, |mask, bit| mask | bit);
+            .map(mmorpg_core::QuestId::new)
+            .collect();
     }
     record
 }

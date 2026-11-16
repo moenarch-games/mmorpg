@@ -28,7 +28,7 @@ use crate::{
 /// Identity of the [`CharacterRecord`] schema: a random token (ADR 0006), replaced with a
 /// fresh one on every change to the record's fields or their meaning; persisted records of
 /// another schema are rejected rather than reinterpreted.
-pub const CHARACTER_RECORD_SCHEMA_VERSION: u16 = 0x9d41;
+pub const CHARACTER_RECORD_SCHEMA_VERSION: u16 = 0x20ba;
 
 /// Longest [`CharacterId`] in bytes.
 pub const MAX_CHARACTER_ID_BYTES: usize = 64;

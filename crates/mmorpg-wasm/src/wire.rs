@@ -710,10 +710,11 @@ pub struct QuestMarker {
     pub marker: QuestMarkerKind,
 }
 
-/// The viewer's quests: turned-in quests (bit `id - 1`), the log and the markers of quest NPCs.
+/// The viewer's quests: turned-in quest IDs in ascending order, the log and the markers of quest
+/// NPCs.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
 pub struct QuestSheet {
-    pub completed: u32,
+    pub completed: Vec<u8>,
     pub entries: Vec<QuestEntry>,
     pub markers: Vec<QuestMarker>,
 }
@@ -721,7 +722,12 @@ pub struct QuestSheet {
 impl From<&QuestSheet> for core::QuestSheet {
     fn from(sheet: &QuestSheet) -> Self {
         Self {
-            completed: sheet.completed,
+            completed: sheet
+                .completed
+                .iter()
+                .copied()
+                .map(core::QuestId::new)
+                .collect(),
             entries: sheet
                 .entries
                 .iter()
@@ -1614,7 +1620,7 @@ impl From<&core::ZoneSnapshot> for ZoneSnapshot {
                 }
             }),
             quests: snapshot.quests.as_ref().map(|sheet| QuestSheet {
-                completed: sheet.completed,
+                completed: sheet.completed.iter().map(|quest| quest.get()).collect(),
                 entries: sheet
                     .entries
                     .iter()

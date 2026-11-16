@@ -370,7 +370,7 @@ impl GameUi {
                     "{} of {} quests in the log · {} completed",
                     sheet.entries.len(),
                     mmorpg_core::MAX_QUEST_LOG,
-                    sheet.completed.count_ones()
+                    sheet.completed.len()
                 ));
             });
         self.quest_log_open = open;

@@ -959,7 +959,7 @@ fn native_pointer_application_contract() {
     // never an application-authored acceptance/completion result.
     let mut ready = app.snapshot();
     let player = &mut ready.players[0];
-    player.quests.completed = 1;
+    player.quests.completed = [mmorpg_core::QuestId::new(1)].into();
     player.quests.entries = vec![mmorpg_core::QuestEntry {
         quest: mmorpg_core::QuestId::new(2),
         progress: [0; 3],
@@ -979,7 +979,7 @@ fn native_pointer_application_contract() {
                 .as_ref()
                 .is_some_and(|inventory| inventory.count(mmorpg_core::ItemId::new(10)) == 5)
                 && context.quests.as_ref().is_some_and(|quests| {
-                    quests.completed == 1
+                    quests.completed == [mmorpg_core::QuestId::new(1)].into()
                         && quests.entries.iter().any(|entry| {
                             entry.quest == mmorpg_core::QuestId::new(2) && entry.progress[0] == 5
                         })

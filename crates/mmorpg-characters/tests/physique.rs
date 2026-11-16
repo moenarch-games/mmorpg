@@ -1,10 +1,11 @@
 //! Physique V1 (#633) through the character store: every slider survives create, commit,
-//! reload, reconnect and later editing, and records saved before physique load neutral.
+//! reload, reconnect and later editing, and records saved before physique load neutral. Records
+//! saved before the turned-in quest set (#862) load with their `u32` mask migrated to it.
 
 use mmorpg_characters::{CharacterStore, FileEntries, LeaseHolder};
 use mmorpg_core::{
     CharacterId, CharacterRecord, ClassChoice, PHYSIQUE_PARAMS, Physique, PhysiqueParam,
-    PhysiquePreset, PlayerClass, Sex, ZoneId, ZoneSimulation, greyhaven_vale,
+    PhysiquePreset, PlayerClass, QuestId, Sex, ZoneId, ZoneSimulation, greyhaven_vale,
 };
 use mmorpg_protocol::{decode_character_record, encode_character_record};
 
@@ -80,11 +81,35 @@ fn physique_survives_create_save_reload_reconnect_and_edit() {
     let _ = std::fs::remove_dir_all(&directory);
 }
 
-/// The bytes the record had before physique: the earlier schema identity and no physique tail.
+/// The record's bytes in the layout before the turned-in quest set (#862): a `u32` mask (bit
+/// `id - 1`) where the set's count and IDs are, under `schema`.
+fn mask_layout(record: &CharacterRecord, schema: u16) -> Vec<u8> {
+    let mut without = record.clone();
+    without.quests.completed.clear();
+    let empty = encode_character_record(&without).unwrap();
+    let mut one = without.clone();
+    one.quests.completed.insert(QuestId::new(1));
+    // The first byte that differs is the set's count.
+    let at = empty
+        .iter()
+        .zip(encode_character_record(&one).unwrap())
+        .position(|(left, right)| *left != right)
+        .unwrap();
+    let mask = record
+        .quests
+        .completed
+        .iter()
+        .fold(0_u32, |mask, quest| mask | 1 << (quest.get() - 1));
+    let mut bytes = [&empty[..at], &mask.to_be_bytes()[..], &empty[at + 1..]].concat();
+    bytes[1..3].copy_from_slice(&schema.to_be_bytes());
+    bytes
+}
+
+/// The bytes the record had before physique: the earlier schema identity, the quest mask and no
+/// physique tail.
 fn pre_physique_bytes(record: &CharacterRecord) -> Vec<u8> {
-    let mut bytes = encode_character_record(record).unwrap();
+    let mut bytes = mask_layout(record, 0x6671);
     bytes.truncate(bytes.len() - 1 - 2 * PHYSIQUE_PARAMS);
-    bytes[1..3].copy_from_slice(&0x6671_u16.to_be_bytes());
     bytes
 }
 
@@ -132,4 +157,31 @@ fn older_records_load_neutral_and_keep_everything_else() {
     too_many[tail] = 12;
     too_many.extend_from_slice(&[0, 0]);
     assert!(decode_character_record(&too_many).is_err());
+}
+
+#[test]
+fn records_with_the_quest_mask_load_with_the_same_quests_turned_in() {
+    let mut zone = zone();
+    zone.create_character(
+        1,
+        ClassChoice {
+            class: PlayerClass::Warden,
+            sex: Sex::Female,
+        },
+    )
+    .unwrap();
+    let mut record = zone
+        .capture_character(1, CharacterId::new("before-quest-set").unwrap())
+        .unwrap();
+    record.quests.completed = [1, 2, 13, 32].map(QuestId::new).into();
+
+    // The schema before the set (#862), and the pre-physique one before that.
+    let migrated = decode_character_record(&mask_layout(&record, 0x9d41)).unwrap();
+    assert_eq!(migrated, record);
+    let migrated = decode_character_record(&pre_physique_bytes(&record)).unwrap();
+    assert_eq!(migrated.quests, record.quests);
+
+    // Written again, it is in the current schema and reads back unchanged.
+    let bytes = encode_character_record(&migrated).unwrap();
+    assert_eq!(decode_character_record(&bytes).unwrap(), migrated);
 }

@@ -10,7 +10,7 @@ const MARSHAL = 1;
 const TANNER = 2;
 
 function sheet(fields: Partial<QuestSheet> = {}): QuestSheet {
-  return { completed: 0, entries: [], markers: [], ...fields };
+  return { completed: [], entries: [], markers: [], ...fields };
 }
 
 function projection(tick: number, fields: Partial<ZoneSnapshot> = {}, entities: EntityState[] = []): ZoneSnapshot {
@@ -80,7 +80,7 @@ describe("quest state", () => {
     expect(state.complete(near, 1, 0)).not.toBeNull();
     expect(state.feedback).toBe("Turning in…");
     // The projection carrying `quest-completed` never arrived; a periodic sheet did.
-    state.update(projection(3, { inventory: bag, quests: sheet({ completed: 1 }) }), catalog);
+    state.update(projection(3, { inventory: bag, quests: sheet({ completed: [1] }) }), catalog);
     expect(state.feedback).toBe("Trouble in the Woods completed.");
     expect(state.busy).toBe(false);
   });

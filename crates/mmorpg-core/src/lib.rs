@@ -187,10 +187,10 @@ pub use projection::{
     ViewerState, ZoneSnapshot,
 };
 pub use quest::{
-    MAX_QUEST_EXPERIENCE, MAX_QUEST_LOG, MAX_QUEST_NAME_BYTES, MAX_QUEST_NPCS,
-    MAX_QUEST_OBJECTIVES, MAX_QUEST_TEXT_BYTES, MAX_QUESTS, MAX_REWARD_CHOICES, NpcMarker,
-    QUEST_REACH_UNITS, Quest, QuestContentError, QuestEntry, QuestId, QuestLog, QuestMarker,
-    QuestObjective, QuestRewards, QuestSheet,
+    MAX_QUEST_EXPERIENCE, MAX_QUEST_LOG, MAX_QUEST_NAME_BYTES, MAX_QUEST_OBJECTIVES,
+    MAX_QUEST_TEXT_BYTES, MAX_REWARD_CHOICES, NpcMarker, QUEST_REACH_UNITS, Quest,
+    QuestContentError, QuestEntry, QuestId, QuestLog, QuestMarker, QuestObjective, QuestRewards,
+    QuestSheet,
 };
 pub use raid::{
     AidKind, AidTask, RaidApproach, RaidIncident, RaidLeg, RaidMember, RaidNotice, RaidOutcome,

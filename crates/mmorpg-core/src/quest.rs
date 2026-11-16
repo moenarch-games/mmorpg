@@ -12,7 +12,7 @@
 //! character's durable victory evidence (5.1.37), so a victory won before the quest was taken
 //! counts without another fight.
 
-use std::{error::Error, fmt};
+use std::{collections::BTreeSet, error::Error, fmt};
 
 use crate::events::push_event;
 use crate::{
@@ -21,15 +21,11 @@ use crate::{
     ZoneSimulation, item_template,
 };
 
-/// Quest IDs are `1..=MAX_QUESTS`, so completed quests fit a `u32` mask.
-pub const MAX_QUESTS: usize = 32;
 /// A player's quest log holds at most this many active quests.
 pub const MAX_QUEST_LOG: usize = 10;
 pub const MAX_QUEST_OBJECTIVES: usize = 3;
 /// A turn-in offers at most this many items to choose one from.
 pub const MAX_REWARD_CHOICES: usize = 4;
-/// Distinct givers and enders of a content's quests: Greyhaven names eleven (#859).
-pub const MAX_QUEST_NPCS: usize = 16;
 pub const MAX_QUEST_NAME_BYTES: usize = 64;
 pub const MAX_QUEST_TEXT_BYTES: usize = 240;
 /// Inclusive horizontal (XZ) distance from an NPC's feet within which a
@@ -38,7 +34,7 @@ pub const QUEST_REACH_UNITS: i32 = 500;
 /// The most quest experience one turn-in grants.
 pub const MAX_QUEST_EXPERIENCE: u32 = 10_000;
 
-/// Stable quest identity within one content revision, `1..=MAX_QUESTS`.
+/// Stable quest identity within one content revision; `0` names no quest.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct QuestId(u8);
 
@@ -51,16 +47,6 @@ impl QuestId {
     #[must_use]
     pub const fn get(self) -> u8 {
         self.0
-    }
-
-    /// The quest's bit in a completed mask; `None` outside `1..=MAX_QUESTS`.
-    #[must_use]
-    pub const fn bit(self) -> Option<u32> {
-        if self.0 == 0 || self.0 as usize > MAX_QUESTS {
-            None
-        } else {
-            Some(1 << (self.0 - 1))
-        }
     }
 }
 
@@ -169,21 +155,19 @@ pub enum QuestContentError {
     InvalidPrerequisite,
     InvalidObjective,
     InvalidRewards,
-    TooManyQuestNpcs,
 }
 
 impl fmt::Display for QuestContentError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
-            Self::QuestCount => "zone content has one to 32 quests",
-            Self::InvalidId => "a quest id must be 1..=32",
+            Self::QuestCount => "zone content has no quests",
+            Self::InvalidId => "a quest id must not be 0",
             Self::DuplicateId => "a quest id is used twice",
             Self::InvalidText => "a quest name or text is empty or too long",
             Self::InvalidNpc => "a quest giver or ender is no quest-giver npc",
             Self::InvalidPrerequisite => "a quest prerequisite must be an earlier quest",
             Self::InvalidObjective => "a quest objective names unknown content or no count",
             Self::InvalidRewards => "quest rewards are out of range",
-            Self::TooManyQuestNpcs => "quests name more than sixteen npcs",
         })
     }
 }
@@ -195,11 +179,11 @@ pub(crate) fn validate_quests(
     content: &ZoneContent,
     mut quests: Vec<Quest>,
 ) -> Result<Vec<Quest>, QuestContentError> {
-    if quests.is_empty() || quests.len() > MAX_QUESTS {
+    if quests.is_empty() {
         return Err(QuestContentError::QuestCount);
     }
     quests.sort_by_key(|quest| quest.id);
-    if quests.iter().any(|quest| quest.id.bit().is_none()) {
+    if quests.iter().any(|quest| quest.id.get() == 0) {
         return Err(QuestContentError::InvalidId);
     }
     if quests.windows(2).any(|pair| pair[0].id == pair[1].id) {
@@ -211,7 +195,6 @@ pub(crate) fn validate_quests(
             .npc(npc)
             .is_some_and(|npc| npc.role == NpcRole::QuestGiver)
     };
-    let mut quest_npcs = Vec::new();
     for quest in &quests {
         if !text(&quest.name, MAX_QUEST_NAME_BYTES) || !text(&quest.text, MAX_QUEST_TEXT_BYTES) {
             return Err(QuestContentError::InvalidText);
@@ -219,7 +202,6 @@ pub(crate) fn validate_quests(
         if !quest_giver(quest.giver) || !quest_giver(quest.ender) {
             return Err(QuestContentError::InvalidNpc);
         }
-        quest_npcs.extend([quest.giver, quest.ender]);
         if let Some(prerequisite) = quest.prerequisite
             && (prerequisite >= quest.id
                 || quests
@@ -292,11 +274,6 @@ pub(crate) fn validate_quests(
             return Err(QuestContentError::InvalidRewards);
         }
     }
-    quest_npcs.sort_unstable();
-    quest_npcs.dedup();
-    if quest_npcs.len() > MAX_QUEST_NPCS {
-        return Err(QuestContentError::TooManyQuestNpcs);
-    }
     Ok(quests)
 }
 
@@ -310,11 +287,11 @@ pub struct QuestEntry {
 }
 
 /// A player's quests: at most [`MAX_QUEST_LOG`] active entries in quest-ID
-/// order and the mask of turned-in quests (bit `id - 1`).
+/// order and the turned-in quests, as many as content defines.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct QuestLog {
     pub entries: Vec<QuestEntry>,
-    pub completed: u32,
+    pub completed: BTreeSet<QuestId>,
 }
 
 impl QuestLog {
@@ -325,7 +302,7 @@ impl QuestLog {
 
     #[must_use]
     pub fn is_completed(&self, quest: QuestId) -> bool {
-        quest.bit().is_some_and(|bit| self.completed & bit != 0)
+        self.completed.contains(&quest)
     }
 }
 
@@ -374,7 +351,7 @@ pub struct NpcMarker {
 /// markers of every quest NPC that shows one, in NPC-ID order.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct QuestSheet {
-    pub completed: u32,
+    pub completed: BTreeSet<QuestId>,
     pub entries: Vec<QuestEntry>,
     pub markers: Vec<NpcMarker>,
 }
@@ -434,7 +411,7 @@ pub(crate) fn quest_sheet(
         })
         .collect();
     QuestSheet {
-        completed: log.completed,
+        completed: log.completed.clone(),
         entries,
         markers: markers(content, log, bag, depths, night),
     }
@@ -512,9 +489,7 @@ pub(crate) fn validate_log(content: &ZoneContent, log: &QuestLog) -> Result<(), 
     {
         return invalid();
     }
-    let mut known = 0_u32;
     for quest in content.log_quests() {
-        known |= quest.id.bit().unwrap_or(0);
         if log.is_completed(quest.id)
             && quest
                 .prerequisite
@@ -523,7 +498,11 @@ pub(crate) fn validate_log(content: &ZoneContent, log: &QuestLog) -> Result<(), 
             return invalid();
         }
     }
-    if log.completed & !known != 0 {
+    if log
+        .completed
+        .iter()
+        .any(|quest| content.log_quest(*quest).is_none())
+    {
         return invalid();
     }
     for entry in &log.entries {
@@ -771,9 +750,6 @@ impl ZoneSimulation {
                 None => return Ok(Some((ErrorCode::InvalidInventoryMove, target))),
             }
         };
-        let Some(bit) = definition.id.bit() else {
-            return Ok(Some((ErrorCode::InvalidQuest, target)));
-        };
         player.inventory = bag;
         player.copper = copper;
         if let Some(revision) = revision {
@@ -783,7 +759,7 @@ impl ZoneSimulation {
             .quests
             .entries
             .retain(|candidate| candidate.quest != definition.id);
-        player.quests.completed |= bit;
+        player.quests.completed.insert(definition.id);
         push_event(
             &mut player.events,
             ZoneEvent::QuestCompleted {
