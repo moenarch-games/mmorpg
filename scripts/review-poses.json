@@ -1,0 +1,34 @@
+{
+  "size": [1440, 900],
+  "poses": [
+    {
+      "name": "barrowdown-cottage",
+      "note": "A Barrowdown cottage's corner, walls against the ground",
+      "eye": [521.5, 11, 642],
+      "target": [516, 10.5, 636.5]
+    },
+    {
+      "name": "barrowdown-well",
+      "note": "Barrowdown's well and the green round it",
+      "eye": [532, 13, 640],
+      "target": [540, 9.5, 648]
+    },
+    {
+      "name": "stag",
+      "note": "The stag, ambient animal 30, from 5 m off",
+      "ambient": 30,
+      "offset": [5, 2.5, 5]
+    },
+    {
+      "name": "meadow",
+      "note": "The meadow from the default third-person view",
+      "player": true
+    },
+    {
+      "name": "hamlet-cottage",
+      "note": "A farmland hamlet's cottage",
+      "eye": [-34, 9, 560],
+      "target": [-34, 5, 550]
+    }
+  ]
+}
