@@ -219,6 +219,16 @@ viewer is inside, both clients lift the cottage's roof (`outpost_kit::cottage_ro
 camera in before its walls and light a lamp in the room (`buildings::Spec::cottage`). Westmere
 Lodge's larger hall, the farmhouses, barns and the inn keep the Vale's procedural buildings.
 
+The villages carry asset-tooling's everyday `settlement.props` (#851). The settlements' and hamlets'
+wells, barrels, crates and carts and the two stone rings' stones are drawn as the kit's well,
+barrel, crate, cart and carved standing stone over their unchanged boxes (the boxes draw again if the
+bundle fails). Solid new clutter stands by the barns, houses and camps
+(`greyhaven_vale::village_props`, colliding as each prop's descriptor proxies): haystacks and hay bales
+by every barn, grain sacks by the windmills, washing lines between cottages, vegetable beds, kennels
+by the dogs' rounds, a wheelbarrow, chopping blocks at Westmere Lodge and the hunters' camp, and the
+inn's barrels and the lodge's crates, each on clear ground off roads, fields, shores and every
+resident's way.
+
 ## Not yet done
 
 - **More homes you can enter:** the Outpost's three kit houses, the farmhouses (8 × 7 m) and

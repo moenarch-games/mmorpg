@@ -116,6 +116,8 @@ fn content_is_a_bounded_deterministic_revision() {
                 && !greyhaven_vale::crossings::is_crossing(collider.id)
                 // A walk-in cottage's lintel and flue (#843) stand on its walls and hearth.
                 && !greyhaven_vale::cottages::is_cottage(collider.id)
+                // A village prop's boxes (#851) share its lowest corner, as one piece.
+                && !greyhaven_vale::village_props::is_village_prop(collider.id)
                 // Layout cottages have explicit authored foundation depths (their prefab
                 // plinth is sunk below the grass), rather than procedural terrain footing.
                 && !(60_000..65_000).contains(&collider.id)

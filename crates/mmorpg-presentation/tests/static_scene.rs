@@ -534,8 +534,8 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
     let parts = mmorpg_presentation::settlement_props::parts(&scenery);
     assert_eq!(
         parts.len(),
-        104,
-        "market square, brook additions, the Delving Run footbridge (#828) and the sixteen cottages' furniture (#843, #847)"
+        164,
+        "market square, brook additions, the Delving Run footbridge (#828) and the sixteen cottages' furniture (#843, #847), and the villages' clutter and stand-ins (#851)"
     );
     for family in [
         ["stall", "cart", "crate"],
@@ -567,6 +567,19 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
         .unwrap();
     let [cx, cz] = market::centre([house.position[0], house.position[2]]);
     let [hx, hz] = market::HALF_EXTENTS;
+    // The square's own props, not the villages' clutter and stand-ins (#851) elsewhere.
+    let elsewhere: Vec<[i32; 2]> = mmorpg_presentation::world_dressing::placed(&scenery)
+        .iter()
+        .filter(|placed| placed.id.starts_with("village-") || placed.fallback_collider.is_some())
+        .map(|placed| [placed.position[0], placed.position[2]])
+        .collect();
+    let parts: Vec<_> = parts
+        .into_iter()
+        .filter(|part| {
+            let at = [part.model[12], part.model[14]].map(|m| (m * 100.).round() as i32);
+            !elsewhere.contains(&at)
+        })
+        .collect();
     // Keep the former scenery collision test at the boundary that now owns the actual art
     // placements. A prop moved in dressing must still stand over its solid proxy boxes.
     let definition = greyhaven_vale_definition();

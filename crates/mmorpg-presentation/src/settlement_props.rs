@@ -19,23 +19,35 @@ use crate::{
 
 /// The bundle entries the clients draw, sorted; [`entries`] derives the same list from the
 /// square's content.
-pub const ENTRIES: [&str; 16] = [
+pub const ENTRIES: [&str; 28] = [
     "settlement.props.barrel",
+    "settlement.props.barrel-group",
     "settlement.props.bed",
     "settlement.props.bench",
     "settlement.props.cart",
     "settlement.props.chair",
     "settlement.props.chest",
+    "settlement.props.chopping-block",
     "settlement.props.crate",
+    "settlement.props.crate-stack",
     "settlement.props.fence",
     "settlement.props.firewood",
     "settlement.props.footbridge",
+    "settlement.props.grain-sacks",
+    "settlement.props.hay-bale",
+    "settlement.props.haystack",
     "settlement.props.hearth",
+    "settlement.props.kennel",
     "settlement.props.lantern-post",
     "settlement.props.planter",
     "settlement.props.signpost",
     "settlement.props.stall",
+    "settlement.props.standing-stone",
     "settlement.props.table",
+    "settlement.props.vegetable-bed",
+    "settlement.props.washing-line",
+    "settlement.props.well",
+    "settlement.props.wheelbarrow",
 ];
 
 /// One drawn prop.
@@ -66,6 +78,18 @@ pub(crate) fn frames(scenery: &Scenery) -> Vec<(&'static str, Affine)> {
     world_dressing::placed(scenery)
         .iter()
         .filter(|placed| placed.kit() == Some(Kit::SettlementProps))
+        .map(|placed| (placed.asset.as_str(), placed.frame()))
+        .collect()
+}
+
+/// The props that stand as their [`fallback`] boxes while the client does not draw them: every
+/// one but a stand-in (#851) over a procedural structure, which draws itself then.
+pub(crate) fn fallback_frames(scenery: &Scenery) -> Vec<(&'static str, Affine)> {
+    world_dressing::placed(scenery)
+        .iter()
+        .filter(|placed| {
+            placed.kit() == Some(Kit::SettlementProps) && placed.fallback_collider.is_none()
+        })
         .map(|placed| (placed.asset.as_str(), placed.frame()))
         .collect()
 }
@@ -136,6 +160,7 @@ const DARK: u32 = 0x5f4430;
 const CANVAS: u32 = 0xd9cbad;
 const IRON: u32 = 0x55585e;
 const SOIL: u32 = 0x6b5a3e;
+const STRAW: u32 = 0xc9a94e;
 
 /// The fallback boxes of `entry` in its own frame: the descriptor's solid collision proxies
 /// the zone collides with (`mmorpg_core::greyhaven_vale::market`), as
@@ -169,6 +194,21 @@ pub(crate) fn fallback(entry: &str) -> Vec<([f64; 3], [f64; 3], u32)> {
     };
     if let Some(boxes) = furniture {
         return boxes;
+    }
+    // The villages' clutter (#851), as its proxies in the zone.
+    let name = entry.strip_prefix("settlement.props.").unwrap_or(entry);
+    let village = mmorpg_core::greyhaven_vale::village_props::proxies(name);
+    if !village.is_empty() {
+        let colour = match name {
+            "haystack" | "hay-bale" => STRAW,
+            "vegetable-bed" => SOIL,
+            "grain-sacks" | "washing-line" => CANVAS,
+            _ => WOOD,
+        };
+        return village
+            .iter()
+            .map(|(centre, half)| (centre.map(metres), half.map(metres), colour))
+            .collect();
     }
     let Some(item) = mmorpg_core::greyhaven_vale::market::SQUARE
         .iter()
@@ -205,9 +245,16 @@ mod tests {
     #[test]
     fn every_prop_has_a_fallback() {
         let keys = entries();
-        // The market square's ten, the region's footbridge (#828) and the cottages' furniture (#843).
-        assert_eq!(keys.len(), 16, "{keys:?}");
-        assert!(keys.iter().all(|key| !fallback(key).is_empty()), "{keys:?}");
+        // The market square's ten, the region's footbridge (#828), the cottages' furniture
+        // (#843), and the villages' clutter and the wells and stones standing in over the
+        // structures (#851), which draw themselves while the props are not drawn.
+        assert_eq!(keys.len(), 28, "{keys:?}");
+        let stand_ins = ["settlement.props.well", "settlement.props.standing-stone"];
+        assert!(
+            keys.iter()
+                .all(|key| stand_ins.contains(key) != !fallback(key).is_empty()),
+            "{keys:?}"
+        );
     }
 
     #[test]
