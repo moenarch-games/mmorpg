@@ -1,13 +1,14 @@
-//! Cottages you can walk into (#843): every 8 × 6 m settlement house (#818) is the Outpost kit's
-//! timber-framed house (`content/greyhaven/dressing/settlements.json`), and its body is no
-//! longer one solid box but the kit's walls round an open doorway and its furniture: a bed, a
-//! hearth, a table with a chair and a chest (asset-tooling's `settlement.props`).
+//! Cottages you can walk into (#843): every 8 × 6 m house of the settlements (#818) and of the
+//! farmland's hamlets (#424, #847) is the Outpost kit's timber-framed house
+//! (`content/greyhaven/dressing/settlements.json`), and its body is no longer one solid box but the
+//! kit's walls round an open doorway and its furniture: a bed, a hearth, a table with a chair and
+//! a chest (asset-tooling's `settlement.props`).
 //!
 //! Coordinates are in the cottage frame: origin at the footprint's floor centre, the doorway in
-//! the +Z wall. A cottage's door faces its settlement's yard: the frame turns a half turn when
-//! the yard lies to the north.
+//! the +Z wall. A settlement cottage's door faces its settlement's yard: the frame turns a half turn when
+//! the yard lies to the north; a hamlet cottage's faces [`HAMLET_QUARTERS`].
 
-use super::{footing, ids, settlements};
+use super::{farmland, ids, lowest_corner, settlements};
 use crate::StaticCollider;
 
 /// The footprint's half extents, in units.
@@ -26,6 +27,8 @@ const PARTS: u32 = 16;
 pub struct Cottage {
     pub house: u32,
     pub centre: [i32; 2],
+    /// The floor stands on the footprint's lowest corner, not sunk below it as a solid box is: on
+    /// a slope the ground inside then rises a little above it, but never to the lintel.
     pub floor: i32,
     /// Quarter turns about +Y from the frame to the zone: 0 or 2.
     pub quarters: u8,
@@ -120,9 +123,34 @@ pub const MIDROOM: [i32; 2] = [0, -60];
 pub const BEDSIDE: [i32; 2] = [-225, -160];
 pub const HEARTHSIDE: [i32; 2] = [180, -130];
 
-/// Every cottage, in settlement collider order.
+/// The farmland hamlets' cottages' quarter turns, in [`farmland::BUILDINGS`] order: each door faces
+/// the hamlet's lane or its resident's way home (the southern hamlet's west cottage, to the south).
+const HAMLET_QUARTERS: [u8; 9] = [0, 0, 0, 0, 0, 0, 0, 0, 2];
+
+/// Every cottage: the settlements', in settlement collider order, then the hamlets'.
 #[must_use]
 pub fn cottages() -> Vec<Cottage> {
+    let mut cottages = settlement_cottages();
+    let houses = (*ids::FARMLAND_BUILDINGS.start()..)
+        .zip(farmland::BUILDINGS)
+        .filter(|(_, (kind, min, max, _))| {
+            *kind == farmland::Building::House
+                && [max[0] - min[0], max[1] - min[1]] == [2 * HALF[0], 2 * HALF[1]]
+        });
+    cottages.extend(
+        houses
+            .zip(HAMLET_QUARTERS)
+            .map(|((house, &(_, min, max, _)), quarters)| Cottage {
+                house,
+                centre: [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2],
+                floor: lowest_corner(min, max),
+                quarters,
+            }),
+    );
+    cottages
+}
+
+fn settlement_cottages() -> Vec<Cottage> {
     (*ids::SETTLEMENTS.start()..)
         .zip(settlements::SETTLEMENTS.iter().flat_map(|settlement| {
             settlement
@@ -139,7 +167,7 @@ pub fn cottages() -> Vec<Cottage> {
             Cottage {
                 house,
                 centre,
-                floor: footing(min, max),
+                floor: lowest_corner(min, max),
                 // The doorway is on the frame's +Z side: turn it to face the yard.
                 quarters: if (yard.0[1] + yard.1[1]) / 2 >= centre[1] {
                     0
@@ -255,7 +283,7 @@ pub fn is_cottage(id: u32) -> bool {
     ids::COTTAGES.contains(&id)
 }
 
-/// Whether settlement collider `id` is a cottage's house, which no longer collides as a box.
+/// Whether settlement or farmland collider `id` is a cottage's house, which no longer collides as a box.
 #[must_use]
 pub fn is_house(id: u32) -> bool {
     of_house(id).is_some()

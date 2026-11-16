@@ -473,8 +473,8 @@ fn the_outpost_kit_buildings_keep_their_blockouts_only_as_the_fallback() {
     let parts = mmorpg_presentation::outpost_kit::parts(&scenery);
     assert_eq!(
         parts.len(),
-        399,
-        "adopted modules, the authored settlement and the region's seven cottages (#818), their doorways open (#843)"
+        651,
+        "adopted modules, the authored settlement and the region's sixteen cottages (#818, #847), their doorways open (#843)"
     );
     let houses = scenery.props.iter().filter_map(|prop| {
         prop.collider.filter(|&id| {
@@ -534,8 +534,8 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
     let parts = mmorpg_presentation::settlement_props::parts(&scenery);
     assert_eq!(
         parts.len(),
-        59,
-        "market square, brook additions, the Delving Run footbridge (#828) and the seven cottages' furniture (#843)"
+        104,
+        "market square, brook additions, the Delving Run footbridge (#828) and the sixteen cottages' furniture (#843, #847)"
     );
     for family in [
         ["stall", "cart", "crate"],

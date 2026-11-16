@@ -206,12 +206,14 @@ the forest floor's leaf litter, its texture turned about 35° off the grid and r
 so it does not read as stripes. The old procedural tufts draw nothing; the native client has no
 grass field yet.
 
-The region's seven 8 × 6 m houses are walk-in cottages (#843): the Outpost's timber-framed house in
-asset-tooling's Outpost kit, its doorway open and turned to its settlement's yard, with a bed, a
+The region's sixteen 8 × 6 m houses, the settlements' seven (#843) and the farmland hamlets' nine
+(#847), are walk-in cottages: the Outpost's timber-framed house in asset-tooling's Outpost kit, its
+doorway open and turned to its settlement's yard or its hamlet's lane, with a bed, a
 hearth, a table and chair and a chest from `settlement.props` on a packed-earth floor
 (`content/greyhaven/dressing/settlements.json`, written by `cargo run -p mmorpg-scenery --example
 export-settlement-dressing`). In the zone (`greyhaven_vale::cottages`) each is the kit's walls round
-the doorway and its furniture, not one box. Eight residents walk in at dusk, round the house to the
+the doorway and its furniture, not one box; its floor stands on the footprint's lowest corner, so
+on a slope the ground inside rises a little but never to the lintel. Fourteen residents walk in at dusk, round the house to the
 door and through the room, to the bed, or for a cottage's second resident to the hearth. While the
 viewer is inside, both clients lift the cottage's roof (`outpost_kit::cottage_roofs`), pull the
 camera in before its walls and light a lamp in the room (`buildings::Spec::cottage`). Westmere
@@ -219,8 +221,8 @@ Lodge's larger hall, the farmhouses, barns and the inn keep the Vale's procedura
 
 ## Not yet done
 
-- **More homes you can enter:** the Outpost's three kit houses, the farmhouses and Westmere
-  Lodge's hall are still solid; their residents end their day on the doorstep.
+- **More homes you can enter:** the Outpost's three kit houses, the farmhouses (8 × 7 m) and
+  Westmere Lodge's hall are still solid; their residents end their day on the doorstep.
 - **The basin's climbs' ground:** the six ways up the heart's 11 m cliffs are still straight ledges
   cut into the cliff; only their roads round their turns (every authored road turns on a 4 m curve).
 - **Visual acceptance** from the owner.

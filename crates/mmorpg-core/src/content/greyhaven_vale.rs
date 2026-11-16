@@ -881,14 +881,24 @@ pub fn authored_terrain() -> Terrain {
 /// Where a footprint `[min, max]` rests on the terrain: on level ground (the valley floor, the
 /// farm terrace) at its height, on a slope at its lowest corner, sunk 0.3 m so nothing floats.
 fn footing(min: [i32; 2], max: [i32; 2]) -> i32 {
-    let corners = [min, [max[0], min[1]], max, [min[0], max[1]]]
-        .map(|corner| TERRAIN.height_at(corner[0], corner[1]));
-    let lowest = corners.iter().copied().min().unwrap_or(0);
+    let corners = corners(min, max);
+    let lowest = lowest_corner(min, max);
     if corners.iter().all(|&height| height == lowest) {
         lowest
     } else {
         lowest - 30
     }
+}
+
+/// The terrain's height at a footprint's corners.
+fn corners(min: [i32; 2], max: [i32; 2]) -> [i32; 4] {
+    [min, [max[0], min[1]], max, [min[0], max[1]]]
+        .map(|corner| TERRAIN.height_at(corner[0], corner[1]))
+}
+
+/// The terrain's lowest corner under a footprint.
+fn lowest_corner(min: [i32; 2], max: [i32; 2]) -> i32 {
+    corners(min, max).into_iter().min().unwrap_or(0)
 }
 
 /// A box standing on y = 0 over an authored footprint.
