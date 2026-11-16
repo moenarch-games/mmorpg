@@ -212,6 +212,4 @@ keep the Vale's procedural buildings.
   tanner sleep indoors.
 - **The basin's climbs' ground:** the six ways up the heart's 11 m cliffs are still straight ledges
   cut into the cliff; only their roads round their turns (every authored road turns on a 4 m curve).
-- **The forest-floor texture:** its overlay repeats every 3 m and reads as stripes on open ground,
-  so the designed forests show the woods' darker ground tone instead; the heart's woods keep it.
 - **Visual acceptance** from the owner.
