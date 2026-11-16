@@ -428,31 +428,7 @@ for side in [-1,1]:
     for y in [.7,3.6]:box('Barn forged hinge',(side*.85,y,8.17),(.65,.055,.025),iron)
 farm_place(start,solid_start,80,44,2)
 
-# Farmhouse: pale limewash, exposed framing, slate roof, chimney and closed oak front door.
-start,solid_start=len(objects),len(collision)
-box('Millbrook farmhouse footing',(0,.35,0),(4,.35,3.5),stone_mat,.06)
-box('Millbrook farmhouse limewash',(0,2.85,0),(4,2.15,3.5),plaster_mat,.035)
-roof('Millbrook farmhouse slate roof',0,0,4.25,3.75,5,2.4,slate_mat,65061,open_gables=True)
-# Ridge along X: gable infill on the two X ends.
-for side in [-1,1]:
-    mesh('Farmhouse plaster gable',[(side*4,5,-3.5),(side*4,5,3.5),(side*4,7.4,0)],[(0,1,2)],plaster_mat)
-    for z in [-3.5,3.5]:beam('Farmhouse gable rake',(side*4.04,5,z),(side*4.04,7.4,0),.09,wood_mat)
-    for z in [-3.25,0,3.25]:box('Farmhouse side framing',(side*4.02,2.8,z),(.10,2.15,.11),wood_mat)
-    for x in [-3.85,-1.75,1.75,3.85]:box('Farmhouse front framing',(x,2.85,side*3.52),(.10,2.15,.10),wood_mat)
-    for y in [.8,2.8,4.9]:
-        box('Farmhouse horizontal front beam',(0,y,side*3.54),(4,.095,.11),wood_mat)
-        box('Farmhouse horizontal side beam',(side*4.04,y,0),(.11,.095,3.5),wood_mat)
-    for x in [-2.7,2.7]:farm_window(x,3.8,side*3.57,outward=side)
-for side in [-1,1]:farm_window(side*4.08,3.7,0,True,side)
-box('Farmhouse oak door',(0,1.3,3.565),(.65,1.3,.065),wood_mat)
-for x in [-.73,.73]:box('Farmhouse portal post',(x,1.4,3.62),(.10,1.4,.12),wood_mat)
-box('Farmhouse portal lintel',(0,2.8,3.62),(.83,.11,.14),wood_mat)
-box('Farmhouse latch',(.45,1.3,3.66),(.07,.035,.03),iron)
-box('Farmhouse chimney',(-2.5,6.3,-1.3),(.40,1.3,.40),stone_mat,.04)
-box('Farmhouse chimney crown',(-2.5,7.6,-1.3),(.47,.10,.47),trim,.025)
-vs=[(-2.5+sx*.47,y,-1.3+sz*.47) for y in [5,7.7] for sx,sz in [(-1,-1),(1,-1),(1,1),(-1,1)]]
-solid_record(65063,vs,BOX_FACES)
-farm_place(start,solid_start,62,46.5,2)
+# Millbrook's farmhouse is the Outpost kit's walk-in farmhouse (#886), placed by the world dressing.
 
 # Tapered mill tower: exact closed 20-sided collision instead of the old invisible square
 # corners. Its animated sails retain their existing hub at local (0,8.9,2.85).

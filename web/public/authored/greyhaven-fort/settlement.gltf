@@ -354,15 +354,6 @@
 				},
 				{
 					"attributes":{
-						"POSITION":40,
-						"NORMAL":41,
-						"TEXCOORD_0":42
-					},
-					"indices":43,
-					"material":10
-				},
-				{
-					"attributes":{
 						"POSITION":44,
 						"NORMAL":45,
 						"TEXCOORD_0":46
@@ -562,7 +553,7 @@
 		{
 			"bufferView":3,
 			"componentType":5123,
-			"count":9480,
+			"count":8832,
 			"type":"SCALAR"
 		},
 		{
@@ -596,7 +587,7 @@
 		{
 			"bufferView":7,
 			"componentType":5123,
-			"count":53820,
+			"count":53496,
 			"type":"SCALAR"
 		},
 		{
@@ -630,7 +621,7 @@
 		{
 			"bufferView":11,
 			"componentType":5123,
-			"count":1284,
+			"count":1266,
 			"type":"SCALAR"
 		},
 		{
@@ -664,7 +655,7 @@
 		{
 			"bufferView":15,
 			"componentType":5123,
-			"count":3960,
+			"count":2016,
 			"type":"SCALAR"
 		},
 		{
@@ -698,7 +689,7 @@
 		{
 			"bufferView":19,
 			"componentType":5123,
-			"count":18696,
+			"count":18660,
 			"type":"SCALAR"
 		},
 		{
@@ -732,7 +723,7 @@
 		{
 			"bufferView":23,
 			"componentType":5125,
-			"count":160440,
+			"count":147552,
 			"type":"SCALAR"
 		},
 		{
@@ -902,7 +893,7 @@
 		{
 			"bufferView":43,
 			"componentType":5123,
-			"count":330,
+			"count":0,
 			"type":"SCALAR"
 		},
 		{
@@ -936,7 +927,7 @@
 		{
 			"bufferView":47,
 			"componentType":5123,
-			"count":2268,
+			"count":324,
 			"type":"SCALAR"
 		},
 		{
