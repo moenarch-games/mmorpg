@@ -191,10 +191,14 @@ come in a random order, so any prefix is an even thinning. The browser draws the
 **World detail** graphics setting (`graphics.world_detail`): **low** draws no grass (nor the ambient
 creatures, nor the light of lamps and fires); **medium**
 (the default) draws 60 % of the clumps within 6 m of the eye, thinning out to 30 m; **high** draws
-them all within 10 m, thinning out to 44 m. Clumps within 8 m (medium) or 12 m (high) are 15 thin,
-tapered, curved blades of five triangles; further ones are 7 wider blades of three, sharing the
-same instances. The wind bends them and the player's feet push them aside in the vertex stage. At
-Barrowdown's lane, medium draws about 5,700 clumps (230 k triangles) and high about 19,000 (740 k).
+them all within 10 m, thinning out to 44 m. Each clump thins out on its own (#845): it sinks into
+the ground once its distance's share falls below its rank in its cell's random order, so no line
+shows where the field thins. Clumps within about 9 m (medium) or 13 m (high), jittered by 3 m per
+clump, are 15 thin, tapered, curved blades of five triangles; further ones are 7 wider blades of
+three, sharing the same instances. Beyond the near field a far field of sparse, wide clumps of six
+single-triangle blades (`Grass::far_cell`, 32 m cells about a metre apart, with larger flower
+heads) grows in as the near one thins and reaches 70 m (medium) or 100 m (high). The wind bends
+them and the player's feet push them aside in the vertex stage.
 Wildflowers grow in drifts of one colour over several metres on thick turf (buttercup, daisy,
 harebell and poppy, `grass::FLOWERS`): a flowering clump also draws five small heads just above its
 blade tips, thinned with the grass. Under the woods, heart and designed forests alike, the ground is

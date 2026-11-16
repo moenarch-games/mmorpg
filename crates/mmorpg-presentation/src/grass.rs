@@ -9,7 +9,8 @@
 //!
 //! [`Grass::cell`] lays out one [`CELL_METRES`] square on a jittered lattice; its clumps come in
 //! a random order, so any prefix of them is an even thinning that a client can draw at a
-//! distance.
+//! distance. [`Grass::far_cell`] lays out a [`FAR_CELL_METRES`] square the same way on a lattice
+//! [`FAR_SPACING`] apart, for the sparse, wide clumps a client draws beyond the near field.
 use mmorpg_scenery::{Rect, Scenery, TerrainGrid};
 
 use crate::{
@@ -30,6 +31,10 @@ pub const FLOWERS: [u32; 4] = [0xf2cf3a, 0xf3efe2, 0x8f7ad6, 0xd9493a];
 const SPACING: f64 = 0.3;
 /// Lattice points along a cell's side; the lattice step divides the cell exactly, so no seam shows.
 const SIDE: i32 = (CELL_METRES / SPACING) as i32;
+/// The side of one far cell, in metres, and roughly its lattice's spacing.
+pub const FAR_CELL_METRES: f64 = 32.;
+pub const FAR_SPACING: f64 = 1.;
+const FAR_SIDE: i32 = (FAR_CELL_METRES / FAR_SPACING) as i32;
 /// The richer green the blades lean towards, and the straw of their dry patches.
 const LUSH: u32 = 0x5a8a34;
 const DRY: u32 = 0xa49d56;
@@ -159,14 +164,24 @@ impl Grass {
     /// `row × CELL_METRES`), [`CLUMP_FLOATS`] each, in a random order.
     #[must_use]
     pub fn cell(&self, column: i32, row: i32) -> Vec<f32> {
-        let (x0, z0) = (
-            f64::from(column) * CELL_METRES,
-            f64::from(row) * CELL_METRES,
-        );
+        self.lay(column, row, CELL_METRES, SIDE, 0.)
+    }
+
+    /// The far clumps of far cell `(column, row)` (the square from `column × FAR_CELL_METRES`,
+    /// `row × FAR_CELL_METRES`), as [`Self::cell`] lays them out but about [`FAR_SPACING`] apart.
+    #[must_use]
+    pub fn far_cell(&self, column: i32, row: i32) -> Vec<f32> {
+        self.lay(column, row, FAR_CELL_METRES, FAR_SIDE, 10.)
+    }
+
+    /// The clumps of the `size`-metre square `(column, row)` on a lattice of `side` points a side;
+    /// `salt` sets a lattice's own random draws apart from another's.
+    fn lay(&self, column: i32, row: i32, size: f64, side: i32, salt: f64) -> Vec<f32> {
+        let (x0, z0) = (f64::from(column) * size, f64::from(row) * size);
         let units = |v: f64| (v * 100.).round() as i32;
         let area = Rect {
             min: [units(x0), units(z0)],
-            max: [units(x0 + CELL_METRES), units(z0 + CELL_METRES)],
+            max: [units(x0 + size), units(z0 + size)],
         };
         let blocked: Vec<_> = self
             .blocked
@@ -186,13 +201,13 @@ impl Grass {
                 metres(g.origin[1] + (g.rows as i32 - 1) * g.step),
             ],
         );
-        let (side, step) = (SIDE, CELL_METRES / f64::from(SIDE));
+        let step = size / f64::from(side);
         let mut clumps: Vec<(f64, [f32; CLUMP_FLOATS])> = Vec::new();
         for j in 0..side {
             for i in 0..side {
                 let (gi, gj) = (f64::from(column * side + i), f64::from(row * side + j));
-                let x = x0 + (f64::from(i) + 0.5 + 0.9 * (hash(&[gi, gj, 1.]) - 0.5)) * step;
-                let z = z0 + (f64::from(j) + 0.5 + 0.9 * (hash(&[gi, gj, 2.]) - 0.5)) * step;
+                let x = x0 + (f64::from(i) + 0.5 + 0.9 * (hash(&[gi, gj, 1. + salt]) - 0.5)) * step;
+                let z = z0 + (f64::from(j) + 0.5 + 0.9 * (hash(&[gi, gj, 2. + salt]) - 0.5)) * step;
                 if x < lo[0] || z < lo[1] || x > hi[0] || z > hi[1] {
                     continue;
                 }
@@ -201,7 +216,7 @@ impl Grass {
                 let density =
                     f64::from(self.sample(&self.density, x, z, |a, b, t| a + (b - a) * t as f32))
                         * patch;
-                if hash(&[gi, gj, 3.]) >= density {
+                if hash(&[gi, gj, 3. + salt]) >= density {
                     continue;
                 }
                 let at = [units(x), units(z)];
@@ -209,7 +224,7 @@ impl Grass {
                     continue;
                 }
                 let tint = self.sample(&self.tint, x, z, mix);
-                let tint = mix(tint, 0x000000, 0.12 * hash(&[gi, gj, 4.]));
+                let tint = mix(tint, 0x000000, 0.12 * hash(&[gi, gj, 4. + salt]));
                 let linear = |shift: u32| {
                     let c = f64::from((tint >> shift) & 255) / 255.;
                     (if c <= 0.04045 {
@@ -222,22 +237,22 @@ impl Grass {
                 let drift = noise(x, z, 7., 6109.);
                 let flower = if density > 0.5
                     && drift > 0.55
-                    && hash(&[gi, gj, 8.]) < (drift - 0.55) * 1.6
+                    && hash(&[gi, gj, 8. + salt]) < (drift - 0.55) * 1.6
                 {
                     1. + (noise(x, z, 23., 6111.) * 4.).floor().min(3.)
                 } else {
                     0.
                 };
                 // Tall meadow grass in drifts, shorter turf between them.
-                let height =
-                    (0.22 + 0.42 * noise(x, z, 9., 6107.)) * (0.75 + 0.5 * hash(&[gi, gj, 5.]));
+                let height = (0.22 + 0.42 * noise(x, z, 9., 6107.))
+                    * (0.75 + 0.5 * hash(&[gi, gj, 5. + salt]));
                 clumps.push((
-                    hash(&[gi, gj, 6.]),
+                    hash(&[gi, gj, 6. + salt]),
                     [
                         x as f32,
                         surface(g, x, z) as f32,
                         z as f32,
-                        (hash(&[gi, gj, 7.]) * std::f64::consts::TAU) as f32,
+                        (hash(&[gi, gj, 7. + salt]) * std::f64::consts::TAU) as f32,
                         (height * density.sqrt().max(0.5)) as f32,
                         linear(16),
                         linear(8),

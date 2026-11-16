@@ -8,10 +8,10 @@ function upload(attribute: THREE.BufferAttribute, count: number): void {
   attribute.needsUpdate = true;
 }
 
-/** Draws the first `count` instances of `mesh` (hidden at none); whether it draws any. */
-function place(mesh: THREE.InstancedMesh, count: number): boolean {
+/** Draws the first `count` instances of `mesh` (hidden at none unless `warm`); whether it draws any. */
+function place(mesh: THREE.InstancedMesh, count: number, warm: boolean): boolean {
   mesh.count = count;
-  mesh.visible = count > 0;
+  mesh.visible = count > 0 || warm;
   if (count > 0) { upload(mesh.instanceMatrix, count); }
   return count > 0;
 }
@@ -71,6 +71,11 @@ export class InstancedLevels {
   #slots: Slot[][];
   /** Per entry, per level how many placements it draws (settled and fading). */
   #counts: number[][];
+  /**
+   * Until the first selection is placed, every level is drawn empty: the renderer compiles each level's programs on the
+   * frame the kit arrives rather than mid-walk, when a level first comes into reach (a hitch of tens of ms each).
+   */
+  #warm = true;
 
   /**
    * `levels[entry][level]` is the level's glTF scene in the entry frame; `placements` name their entry and carry 16
@@ -115,7 +120,6 @@ export class InstancedLevels {
           mesh.frustumCulled = false;
           mesh.matrixAutoUpdate = false;
           mesh.count = 0;
-          mesh.visible = false;
           mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
           this.root.add(mesh);
           return mesh;
@@ -159,10 +163,11 @@ export class InstancedLevels {
       const fadingCount = fading[entry]![level]!;
       this.#counts[entry]![level] = settledCount + fadingCount;
       for (const part of parts) {
-        place(part.settled, settledCount);
-        if (place(part.fading, fadingCount)) { upload(part.fade, fadingCount); }
+        place(part.settled, settledCount, this.#warm);
+        if (place(part.fading, fadingCount, this.#warm)) { upload(part.fade, fadingCount); }
       }
     }));
+    this.#warm = false;
   }
 
   /** Moves `placement` to `matrix` (16 column-major floats), uploading only its own instances. */

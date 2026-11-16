@@ -808,7 +808,12 @@ export class WorldView {
     const content = world.scenery.staticScene;
     this.#grass?.dispose();
     this.#grass = content.grassCell && content.grassCellMetres
-      ? new Grass({ cell: (column, row) => content.grassCell!(column, row), cellMetres: content.grassCellMetres() }, this.#worldDetail)
+      ? new Grass({
+        cell: (column, row) => content.grassCell!(column, row), cellMetres: content.grassCellMetres(),
+        ...(content.grassFarCell && content.grassFarCellMetres
+          ? { farCell: (column: number, row: number) => content.grassFarCell!(column, row), farCellMetres: content.grassFarCellMetres() }
+          : {}),
+      }, this.#worldDetail)
       : null;
   }
 

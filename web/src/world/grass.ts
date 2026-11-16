@@ -8,27 +8,56 @@ export type GrassSource = {
   cell(column: number, row: number): Float32Array;
   /** The side of one cell, in metres. */
   cellMetres: number;
+  /** The sparse far clumps of far cell `(column, row)`, laid out as `cell`'s; without them the field ends at the near one. */
+  farCell?(column: number, row: number): Float32Array;
+  farCellMetres?: number;
 };
 
 const CLUMP_FLOATS = 9;
 /** `mmorpg_presentation::grass::FLOWERS` (sRGB): buttercup, daisy, harebell and poppy, for flower 1–4. */
 const FLOWERS = [0xf2cf3a, 0xf3efe2, 0x8f7ad6, 0xd9493a] as const;
 const BUILDS_PER_FRAME = 3;
+/** How far either side of a profile's `swap` distance a clump changes from the full to the light clump. */
+const SWAP_JITTER = 3;
+/** The share of the rank range over which a clump grows from the ground as its distance's share passes its rank. */
+const GROW = 0.08;
+/** How much wider than a near clump a far clump spreads, which stands for about ten of them. */
+const FAR_SPREAD = 2.6;
 
 /**
- * The field at each world detail (`graphics.world_detail`; `low` draws none). A `density` share of a cell's clumps is drawn within
- * `full` metres of the eye; beyond, the cells thin out until the field sinks away at `fade`. Cells within `near` metres
- * draw the full blade clump; further ones the light one, which costs about a fifth of it.
+ * The field at each world detail (`graphics.world_detail`; `low` draws none). A `density` share of the near clumps is
+ * drawn within `full` metres of the eye; beyond, they thin out to none at `fade`, each clump sinking into the ground on
+ * its own as its distance's share passes its rank, so no line shows where the field ends. Within `swap` metres a clump
+ * has all its blades; beyond, the light clump. The far field's sparse wide clumps grow in from `farFrom` as the near
+ * one thins, at most a `farDensity` share of them, and thin out again to none at `farTo`.
  */
 const PROFILES = {
-  medium: { full: 6, fade: 30, near: 8, falloff: 2.4, density: 0.6 },
-  high: { full: 10, fade: 44, near: 12, falloff: 2.2, density: 1 },
+  medium: { full: 6, fade: 30, swap: 9, falloff: 1.6, density: 0.6, farFrom: 18, farTo: 70, farDensity: 0.55 },
+  high: { full: 10, fade: 44, swap: 13, falloff: 1.5, density: 1, farFrom: 26, farTo: 100, farDensity: 0.7 },
 } as const;
 type Profile = (typeof PROFILES)[keyof typeof PROFILES];
 
 /**
+ * How a layer thins by distance `d`: `density × in(d) × out(d)`, rising linearly over `[a0, a1]` (none when `a1 <= a0`)
+ * and falling over `[b0, b1]` with exponent `p`. The vertex stage evaluates the same per clump.
+ */
+type Share = { density: number; p: number; a0: number; a1: number; b0: number; b1: number };
+
+function share({ density, p, a0, a1, b0, b1 }: Share, d: number): number {
+  const rise = a1 > a0 ? Math.min(Math.max((d - a0) / (a1 - a0), 0), 1) : 1;
+  const fall = (1 - Math.min(Math.max((d - b0) / (b1 - b0), 0), 1)) ** p;
+  return density * rise * fall;
+}
+
+/** The most `s` reaches between `near` and `far` metres: at either end or where it levels. */
+function mostShare(s: Share, near: number, far: number): number {
+  return Math.max(...[near, far, s.a1, s.b0, (near + far) / 2].map((d) => share(s, Math.min(Math.max(d, near), far))));
+}
+
+/**
  * One clump of thin, tapered, curved blades, a metre tall and about 0.5 m across: `uv.y` runs up each blade. `rows`
- * are the heights each blade bends at below its tip; the light clump has fewer, wider blades of one bend.
+ * are the heights each blade bends at below its tip; the light clump has fewer, wider blades of one bend, the far
+ * clump a single triangle a blade.
  */
 export function clumpGeometry(blades: number, rows: readonly number[], widen = 1): THREE.BufferGeometry {
   const positions: number[] = [];
@@ -88,17 +117,18 @@ export function clumpGeometry(blades: number, rows: readonly number[], widen = 1
 }
 
 /**
- * Five five-petalled heads just above a clump's blade tips (a clump is a metre tall before its height scales it), each
- * cupped slightly upward with a darker heart; `uv.y` is 1, so they sway with the blade tips.
+ * Five-petalled heads just above a clump's blade tips (a clump is a metre tall before its height scales it), each
+ * cupped slightly upward with a darker heart; `uv.y` is 1, so they sway with the blade tips. The near clump has five,
+ * the far one `heads` fewer, larger ones (`grow` times the radius).
  */
-export function flowerGeometry(): THREE.BufferGeometry {
+export function flowerGeometry(heads = 5, grow = 1): THREE.BufferGeometry {
   const positions: number[] = [];
   const colors: number[] = [];
   const indices: number[] = [];
   const HEADS: readonly [number, number, number, number][] = [
     [0.05, 0.02, 1.08, 0.075], [-0.1, 0.07, 1.0, 0.065], [0.03, -0.12, 1.04, 0.07], [0.13, -0.04, 0.96, 0.06], [-0.06, -0.05, 1.12, 0.07],
   ];
-  for (const [x, z, y, radius] of HEADS) {
+  for (const [x, z, y, radius] of HEADS.slice(0, heads).map(([x, z, y, r]) => [x, z, y, r * grow] as const)) {
     const heart = positions.length / 3;
     positions.push(x, y + 0.01, z);
     colors.push(0.55, 0.45, 0.2, 1);
@@ -124,33 +154,59 @@ export function flowerGeometry(): THREE.BufferGeometry {
   return geometry;
 }
 
-type Uniforms = {
+/** The uniforms every grass material shares. */
+type Shared = {
   grassTime: { value: number };
   grassEye: { value: THREE.Vector3 };
   grassPush: { value: THREE.Vector3 };
-  /** The profile's `full` and `fade` distances. */
-  grassReach: { value: THREE.Vector2 };
+};
+
+/** One material's own: its layer's thinning, its band of the full/light swap and how far out it spreads. */
+type Own = {
+  /** `[a0, a1, b0, b1]` of its layer's `Share`. */
+  grassRamp: { value: THREE.Vector4 };
+  /** Its layer's `density` and `p`, and the band `[lo, hi)` of (jittered) distances it draws a clump in. */
+  grassMix: { value: THREE.Vector4 };
+  /** Spreads its clumps up to `1 + z` times as wide from `x` to `y` metres. */
+  grassSpread: { value: THREE.Vector3 };
 };
 
 /**
  * The blades' material: render-engine's lit material with its vertex stage bent by the wind, pushed aside around the
- * player's feet, spread wider with distance and sunk away at the field's edge.
+ * player's feet, spread wider with distance and grown from or sunk into the ground clump by clump by its layer's share.
+ * Every clump carries its rank in its cell's random order (`grassRank`).
  */
-function grassMaterial(uniforms: Uniforms): LitMaterial {
+function grassMaterial(shared: Shared): { material: LitMaterial; own: Own } {
   const material = new LitMaterial({ perceptualRoughness: 0.82, metallic: 0, reflectance: 0.35 });
   material.side = THREE.DoubleSide;
-  Object.assign(material.uniforms, uniforms);
+  const own: Own = {
+    grassRamp: { value: new THREE.Vector4() },
+    grassMix: { value: new THREE.Vector4() },
+    grassSpread: { value: new THREE.Vector3() },
+  };
+  Object.assign(material.uniforms, shared, own);
   const anchor = "vec4 world = model * vec4(position, 1.0);";
   if (!material.vertexShader.includes(anchor)) { throw new Error("The lit vertex stage has no world position to bend"); }
   material.vertexShader = material.vertexShader
-    .replace("void main() {", "uniform float grassTime;\nuniform vec3 grassEye;\nuniform vec3 grassPush;\nuniform vec2 grassReach;\nvoid main() {")
+    .replace("void main() {", `uniform float grassTime;
+uniform vec3 grassEye;
+uniform vec3 grassPush;
+uniform vec4 grassRamp;
+uniform vec4 grassMix;
+uniform vec3 grassSpread;
+in float grassRank;
+void main() {`)
     .replace(anchor, `${anchor}
     {
         vec3 origin = (model * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
         float d = distance(origin.xz, grassEye.xz);
-        float far = clamp((d - grassReach.x) / (grassReach.y - grassReach.x), 0.0, 1.0);
-        world.xz = origin.xz + (world.xz - origin.xz) * (1.0 + 1.4 * far);
-        world.y = origin.y + (world.y - origin.y) * (1.0 - smoothstep(grassReach.y - 8.0, grassReach.y, d));
+        float rise = grassRamp.y > grassRamp.x ? clamp((d - grassRamp.x) / (grassRamp.y - grassRamp.x), 0.0, 1.0) : 1.0;
+        float share = grassMix.x * rise * pow(1.0 - clamp((d - grassRamp.z) / (grassRamp.w - grassRamp.z), 0.0, 1.0), grassMix.y);
+        float jittered = d + (fract(grassRank * 61.7) * 2.0 - 1.0) * ${SWAP_JITTER.toFixed(1)};
+        float shown = clamp((share - grassRank) / ${GROW.toFixed(2)}, 0.0, 1.0) * step(grassMix.z, jittered) * step(jittered, grassMix.w);
+        float spread = 1.0 + grassSpread.z * clamp((d - grassSpread.x) / (grassSpread.y - grassSpread.x), 0.0, 1.0);
+        world.xz = origin.xz + (world.xz - origin.xz) * spread;
+        world.y = origin.y + (world.y - origin.y) * shown;
         float up = max(world.y - origin.y, 0.0);
         float bend = uv.y * uv.y;
         float gust = 0.5 + 0.5 * sin(grassTime * 0.55 + origin.x * 0.045 + origin.z * 0.03);
@@ -162,38 +218,62 @@ function grassMaterial(uniforms: Uniforms): LitMaterial {
         world.xz += normalize(away + vec2(1e-4, 0.0)) * near * bend * 0.6 * up;
         world.y -= near * bend * 0.45 * up;
     }`);
-  return material;
+  return { material, own };
 }
 
-/** One cell's clumps as the full and the light clump, sharing their instances; one of them draws. */
-/** `flowers` draws the cell's flowering clumps; `flowering[i]` is the clump index of its i-th, ascending. */
-type Cell = { full: THREE.InstancedMesh; light: THREE.InstancedMesh; flowers: THREE.InstancedMesh | null; flowering: number[]; centre: [number, number]; clumps: number };
+/** A drawn kind of clump: its geometry, its material and that material's own uniforms. */
+type Kind = { geometry: THREE.BufferGeometry; material: LitMaterial; own: Own };
+
+/**
+ * One cell's clumps: per kind of clump drawn from them a mesh, the blade kinds sharing their instances; `flowers` draws
+ * its flowering clumps, `flowering[i]` the clump index of its i-th, ascending.
+ */
+type Cell = { meshes: { kind: Kind; mesh: THREE.InstancedMesh; blades: boolean }[]; flowering: number[]; clumps: number };
+
+/** A layer of cells: the near field's or the far one's. */
+type Layer = { size: number; cells: Map<string, Cell | null>; build: (column: number, row: number) => Float32Array };
 
 /**
  * Grass blades over the ground around the camera (presentation only): clumps of thin blades on the cells the shared
- * owner grows them in, every clump drawn near the eye and fewer, wider, lighter ones further out, as far as the world
- * detail setting reaches. At `low` it draws nothing and keeps no cells.
+ * owner grows them in, every clump drawn near the eye and fewer, wider, lighter ones further out, then the far field's
+ * sparse wide clumps as far as the world detail setting reaches. At `low` it draws nothing and keeps no cells.
  */
 export class Grass {
   readonly root = new THREE.Group();
-  readonly #source: GrassSource;
-  /** 15 blades of five triangles near the eye; 7 wider blades of three further out. */
-  readonly #full = clumpGeometry(15, [0, 0.4, 0.75]);
-  readonly #light = clumpGeometry(7, [0, 0.5], 1.5);
-  readonly #flower = flowerGeometry();
-  readonly #uniforms: Uniforms = {
+  readonly #shared: Shared = {
     grassTime: { value: 0 }, grassEye: { value: new THREE.Vector3() }, grassPush: { value: new THREE.Vector3(0, -1e4, 0) },
-    grassReach: { value: new THREE.Vector2(PROFILES.medium.full, PROFILES.medium.fade) },
   };
-  readonly #material = grassMaterial(this.#uniforms);
-  readonly #cells = new Map<string, Cell | null>();
-  #profile: Profile | null = PROFILES.medium;
+  /** 15 blades of five triangles near the eye, 7 wider blades of three beyond `swap`, and 6 of one in the far field. */
+  readonly #full: Kind;
+  readonly #light: Kind;
+  readonly #flowers: Kind;
+  readonly #far: Kind;
+  readonly #farFlowers: Kind;
+  readonly #near: Layer;
+  readonly #distant: Layer | null;
+  #profile: Profile | null = null;
   #changed = true;
 
   constructor(source: GrassSource, detail: WorldDetail = "medium") {
-    this.#source = source;
     this.root.name = "greyhaven.grass";
+    const kind = (geometry: THREE.BufferGeometry): Kind => ({ geometry, ...grassMaterial(this.#shared) });
+    this.#full = kind(clumpGeometry(15, [0, 0.4, 0.75]));
+    this.#light = kind(clumpGeometry(7, [0, 0.5], 1.5));
+    this.#flowers = kind(flowerGeometry());
+    this.#far = kind(clumpGeometry(6, [0], 2.6));
+    this.#farFlowers = kind(flowerGeometry(3, 1.2));
+    this.#near = { size: source.cellMetres, cells: new Map(), build: (column, row) => source.cell(column, row) };
+    const { farCell, farCellMetres } = source;
+    this.#distant = farCell && farCellMetres ? { size: farCellMetres, cells: new Map(), build: (column, row) => farCell(column, row) } : null;
     this.setDetail(detail);
+  }
+
+  /** The near and far layers' thinning under `profile`. */
+  static #shares(profile: Profile): { near: Share; far: Share } {
+    return {
+      near: { density: profile.density, p: profile.falloff, a0: 0, a1: 0, b0: profile.full, b1: profile.fade },
+      far: { density: profile.farDensity, p: 1.2, a0: profile.farFrom, a1: profile.fade, b0: profile.fade + 8, b1: profile.farTo },
+    };
   }
 
   /** Applies the world detail setting: `low` drops every cell, another level reaches as far as its profile. */
@@ -201,8 +281,23 @@ export class Grass {
     const profile = detail === "low" ? null : PROFILES[detail];
     if (profile === this.#profile) { return; }
     this.#profile = profile;
-    if (profile) { this.#uniforms.grassReach.value.set(profile.full, profile.fade); }
-    if (!profile) { this.#clear(); }
+    if (!profile) {
+      this.#clear();
+    } else {
+      const { near, far } = Grass.#shares(profile);
+      const set = (kind: Kind, s: Share, band: [number, number], spread: [number, number, number]) => {
+        kind.own.grassRamp.value.set(s.a0, s.a1, s.b0, s.b1);
+        kind.own.grassMix.value.set(s.density, s.p, band[0], band[1]);
+        kind.own.grassSpread.value.set(...spread);
+      };
+      const everywhere: [number, number] = [-1e4, 1e4];
+      const nearSpread: [number, number, number] = [profile.full, profile.fade, 1.2];
+      set(this.#full, near, [-1e4, profile.swap], nearSpread);
+      set(this.#light, near, [profile.swap, 1e4], nearSpread);
+      set(this.#flowers, near, everywhere, nearSpread);
+      set(this.#far, far, everywhere, [profile.fade, profile.farTo, 0.6]);
+      set(this.#farFlowers, far, everywhere, [profile.fade, profile.farTo, 0.6]);
+    }
     this.#changed = true;
   }
 
@@ -210,21 +305,31 @@ export class Grass {
   update(eye: readonly [number, number, number], feet: readonly [number, number, number] | null, seconds: number): void {
     const profile = this.#profile;
     if (!profile) { return; }
-    this.#uniforms.grassTime.value = seconds;
-    this.#uniforms.grassEye.value.set(eye[0], eye[1], eye[2]);
-    if (feet) { this.#uniforms.grassPush.value.set(feet[0], feet[1], feet[2]); }
-    const size = this.#source.cellMetres;
-    const keep = profile.fade + 6;
-    const distance = (column: number, row: number) => {
+    this.#shared.grassTime.value = seconds;
+    this.#shared.grassEye.value.set(eye[0], eye[1], eye[2]);
+    if (feet) { this.#shared.grassPush.value.set(feet[0], feet[1], feet[2]); }
+    const { near, far } = Grass.#shares(profile);
+    let builds = BUILDS_PER_FRAME;
+    builds -= this.#stream(this.#near, eye, profile.fade + 6, near, builds, false);
+    if (this.#distant) { this.#stream(this.#distant, eye, profile.farTo + 8, far, Math.max(builds, 1), true); }
+  }
+
+  /** Keeps `layer`'s cells within `keep` metres of `eye`, builds up to `builds` missing ones, nearest first; how many it built. */
+  #stream(layer: Layer, eye: readonly [number, number, number], keep: number, thinning: Share, builds: number, far: boolean): number {
+    const size = layer.size;
+    // The nearest and furthest the cell's ground lies from the eye.
+    const range = (column: number, row: number): [number, number] => {
       const dx = Math.max(column * size - eye[0], 0, eye[0] - (column + 1) * size);
       const dz = Math.max(row * size - eye[2], 0, eye[2] - (row + 1) * size);
-      return Math.hypot(dx, dz);
+      const fx = Math.max(Math.abs(column * size - eye[0]), Math.abs((column + 1) * size - eye[0]));
+      const fz = Math.max(Math.abs(row * size - eye[2]), Math.abs((row + 1) * size - eye[2]));
+      return [Math.sqrt(dx * dx + dz * dz), Math.sqrt(fx * fx + fz * fz)];
     };
-    for (const [key, cell] of this.#cells) {
+    for (const [key, cell] of layer.cells) {
       const [column, row] = key.split(",").map(Number) as [number, number];
-      if (distance(column, row) > keep + size * 1.5) {
+      if (range(column, row)[0] > keep + size) {
         this.#drop(cell);
-        this.#cells.delete(key);
+        layer.cells.delete(key);
       }
     }
     const reach = Math.ceil(keep / size);
@@ -232,97 +337,112 @@ export class Grass {
     const wanted: [number, number, number][] = [];
     for (let row = er - reach; row <= er + reach; row += 1) {
       for (let column = ec - reach; column <= ec + reach; column += 1) {
-        const d = distance(column, row);
-        if (d <= keep && !this.#cells.has(`${column},${row}`)) { wanted.push([d, column, row]); }
+        const d = range(column, row)[0];
+        if (d <= keep && !layer.cells.has(`${column},${row}`)) { wanted.push([d, column, row]); }
       }
     }
     wanted.sort((a, b) => a[0] - b[0]);
-    for (const [, column, row] of wanted.slice(0, BUILDS_PER_FRAME)) { this.#build(column, row); }
-    for (const [key, cell] of this.#cells) {
+    const built = wanted.slice(0, builds);
+    for (const [, column, row] of built) { this.#build(layer, column, row, far); }
+    for (const [key, cell] of layer.cells) {
       if (!cell) { continue; }
       const [column, row] = key.split(",").map(Number) as [number, number];
-      const d = distance(column, row);
-      const share = d <= profile.full ? 1 : Math.max(0, 1 - (d - profile.full) / (profile.fade - profile.full)) ** profile.falloff;
-      const count = d > profile.fade ? 0 : Math.max(1, Math.ceil(cell.clumps * profile.density * Math.max(share, 0.05)));
-      const nearby = d < profile.near;
-      for (const [mesh, drawn] of [[cell.full, nearby], [cell.light, !nearby]] as const) {
-        const visible = drawn && count > 0;
+      const [nearest, furthest] = range(column, row);
+      // Every clump whose rank its share may pass somewhere on the cell; the vertex stage sinks the rest.
+      const most = mostShare(thinning, nearest, furthest);
+      const count = most <= 0 ? 0 : Math.min(cell.clumps, Math.ceil(cell.clumps * (most + GROW)));
+      const flowers = cell.flowering.findIndex((index) => index >= count);
+      const flowering = flowers < 0 ? cell.flowering.length : flowers;
+      for (const { kind, mesh, blades } of cell.meshes) {
+        const swapped = kind === this.#full ? nearest < this.#profile!.swap + SWAP_JITTER
+          : kind === this.#light ? furthest > this.#profile!.swap - SWAP_JITTER : true;
+        const drawn = blades ? count : flowering;
+        const visible = swapped && drawn > 0;
         if (mesh.visible !== visible) { mesh.visible = visible; }
-        if (visible && mesh.count !== count) { mesh.count = count; }
-      }
-      if (cell.flowers) {
-        // The flowering clumps among the first `count`, which are the drawn ones.
-        let flowers = 0;
-        while (flowers < cell.flowering.length && cell.flowering[flowers]! < count) { flowers += 1; }
-        const visible = flowers > 0;
-        if (cell.flowers.visible !== visible) { cell.flowers.visible = visible; }
-        if (visible && cell.flowers.count !== flowers) { cell.flowers.count = flowers; }
+        if (visible && mesh.count !== drawn) { mesh.count = drawn; }
       }
     }
+    return built.length;
   }
 
-  #build(column: number, row: number): void {
-    const clumps = this.#source.cell(column, row);
+  #build(layer: Layer, column: number, row: number, far: boolean): void {
+    const clumps = layer.build(column, row);
     const count = clumps.length / CLUMP_FLOATS;
+    const key = `${column},${row}`;
     if (count === 0) {
-      this.#cells.set(`${column},${row}`, null);
+      layer.cells.set(key, null);
       return;
     }
-    const full = new THREE.InstancedMesh(this.#full, this.#material, count);
+    const spread = far ? FAR_SPREAD : 1;
+    const matrices = new Float32Array(count * 16);
+    const colors = new Float32Array(count * 3);
+    const ranks = new Float32Array(count);
     const matrix = new THREE.Matrix4();
     const rotation = new THREE.Matrix4();
-    const color = new THREE.Color();
-    for (let index = 0; index < count; index += 1) {
-      const at = index * CLUMP_FLOATS;
-      matrix.makeScale(1, clumps[at + 4]!, 1).premultiply(rotation.makeRotationY(clumps[at + 3]!));
-      matrix.setPosition(clumps[at]!, clumps[at + 1]! - 0.03, clumps[at + 2]!);
-      full.setMatrixAt(index, matrix);
-      full.setColorAt(index, color.setRGB(clumps[at + 5]!, clumps[at + 6]!, clumps[at + 7]!, THREE.LinearSRGBColorSpace));
-    }
-    const light = new THREE.InstancedMesh(this.#light, this.#material, count);
-    light.instanceMatrix = full.instanceMatrix;
-    light.instanceColor = full.instanceColor;
     const flowering: number[] = [];
     for (let index = 0; index < count; index += 1) {
-      if (clumps[index * CLUMP_FLOATS + 8]! > 0) { flowering.push(index); }
+      const at = index * CLUMP_FLOATS;
+      matrix.makeScale(spread, clumps[at + 4]!, spread).premultiply(rotation.makeRotationY(clumps[at + 3]!));
+      matrix.setPosition(clumps[at]!, clumps[at + 1]! - 0.03, clumps[at + 2]!);
+      matrix.toArray(matrices, index * 16);
+      colors.set([clumps[at + 5]!, clumps[at + 6]!, clumps[at + 7]!], index * 3);
+      // The clumps come in a random order: an index's share of them is an even random rank.
+      ranks[index] = (index + 0.5) / count;
+      if (clumps[at + 8]! > 0) { flowering.push(index); }
     }
-    let flowers: THREE.InstancedMesh | null = null;
+    const instanceMatrix = new THREE.InstancedBufferAttribute(matrices, 16);
+    const instanceColor = new THREE.InstancedBufferAttribute(colors, 3);
+    const rank = new THREE.InstancedBufferAttribute(ranks, 1);
+    // A copy of `kind`'s small clump with this cell's ranks: disposing a geometry frees its buffers, which a geometry
+    // sharing them would go on binding.
+    const ranked = (kind: Kind, ranksOf: THREE.InstancedBufferAttribute) => kind.geometry.clone().setAttribute("grassRank", ranksOf);
+    const meshes: Cell["meshes"] = [];
+    for (const kind of far ? [this.#far] : [this.#full, this.#light]) {
+      const mesh = new THREE.InstancedMesh(ranked(kind, rank), kind.material, count);
+      mesh.instanceMatrix = instanceMatrix;
+      mesh.instanceColor = instanceColor;
+      meshes.push({ kind, mesh, blades: true });
+    }
     if (flowering.length > 0) {
-      flowers = new THREE.InstancedMesh(this.#flower, this.#material, flowering.length);
+      const kind = far ? this.#farFlowers : this.#flowers;
+      const flowerRanks = new THREE.InstancedBufferAttribute(Float32Array.from(flowering, (index) => ranks[index]!), 1);
+      const mesh = new THREE.InstancedMesh(ranked(kind, flowerRanks), kind.material, flowering.length);
+      const color = new THREE.Color();
       flowering.forEach((index, slot) => {
-        const at = index * CLUMP_FLOATS;
-        full.getMatrixAt(index, matrix);
-        flowers!.setMatrixAt(slot, matrix);
-        const hue = FLOWERS[Math.min(FLOWERS.length, Math.max(1, clumps[at + 8]!)) - 1]!;
-        flowers!.setColorAt(slot, color.setHex(hue, THREE.SRGBColorSpace));
+        mesh.instanceMatrix.array.set(matrices.subarray(index * 16, index * 16 + 16), slot * 16);
+        const hue = FLOWERS[Math.min(FLOWERS.length, Math.max(1, clumps[index * CLUMP_FLOATS + 8]!)) - 1]!;
+        mesh.setColorAt(slot, color.setHex(hue, THREE.SRGBColorSpace));
       });
+      meshes.push({ kind, mesh, blades: false });
     }
-    for (const mesh of flowers ? [full, light, flowers] : [full, light]) {
-      mesh.name = `grass:${column},${row}`;
+    for (const { mesh } of meshes) {
+      mesh.name = `grass:${far ? "far:" : ""}${key}`;
       mesh.userData.notShadowCaster = true;
       mesh.visible = false;
       mesh.computeBoundingSphere();
-      // The field widens its far clumps in the vertex stage.
-      if (mesh.boundingSphere) { mesh.boundingSphere.radius += 1; }
+      // The field spreads its far clumps in the vertex stage.
+      if (mesh.boundingSphere) { mesh.boundingSphere.radius += far ? 3 : 1.5; }
       this.root.add(mesh);
     }
-    const size = this.#source.cellMetres;
-    this.#cells.set(`${column},${row}`, { full, light, flowers, flowering, centre: [(column + 0.5) * size, (row + 0.5) * size], clumps: count });
+    layer.cells.set(key, { meshes, flowering, clumps: count });
     this.#changed = true;
   }
 
   #drop(cell: Cell | null): void {
     if (!cell) { return; }
-    for (const mesh of [cell.full, cell.light, ...(cell.flowers ? [cell.flowers] : [])]) {
+    for (const { mesh } of cell.meshes) {
       this.root.remove(mesh);
+      mesh.geometry.dispose();
       mesh.dispose();
     }
     this.#changed = true;
   }
 
   #clear(): void {
-    for (const cell of this.#cells.values()) { this.#drop(cell); }
-    this.#cells.clear();
+    for (const layer of [this.#near, ...(this.#distant ? [this.#distant] : [])]) {
+      for (const cell of layer.cells.values()) { this.#drop(cell); }
+      layer.cells.clear();
+    }
   }
 
   /** The drawn root, and whether its cells changed since the last call. */
@@ -332,27 +452,36 @@ export class Grass {
     return { roots: [this.root], changed };
   }
 
-  /** Acceptance state: resident cells, the clumps drawn this frame, their triangles (before frustum culling) and flowers. */
-  observe(): { cells: number; drawn: number; triangles: number; flowers: number } {
+  /**
+   * Acceptance state: resident cells (near and far), the clumps drawn this frame (at most; the vertex stage sinks some),
+   * their triangles (before frustum culling), the flowers among them and the far clumps.
+   */
+  observe(): { cells: number; drawn: number; triangles: number; flowers: number; far: number } {
+    let cells = 0;
     let drawn = 0;
     let triangles = 0;
     let flowers = 0;
-    for (const cell of this.#cells.values()) {
-      for (const mesh of cell ? [cell.full, cell.light, ...(cell.flowers ? [cell.flowers] : [])] : []) {
-        if (!mesh.visible) { continue; }
-        drawn += mesh.count;
-        if (mesh === cell!.flowers) { flowers += mesh.count; }
-        triangles += mesh.count * mesh.geometry.index!.count / 3;
+    let far = 0;
+    for (const layer of [this.#near, ...(this.#distant ? [this.#distant] : [])]) {
+      cells += layer.cells.size;
+      for (const cell of layer.cells.values()) {
+        for (const { kind, mesh, blades } of cell?.meshes ?? []) {
+          if (!mesh.visible) { continue; }
+          drawn += mesh.count;
+          if (!blades) { flowers += mesh.count; }
+          if (kind === this.#far) { far += mesh.count; }
+          triangles += mesh.count * mesh.geometry.index!.count / 3;
+        }
       }
     }
-    return { cells: this.#cells.size, drawn, triangles, flowers };
+    return { cells, drawn, triangles, flowers, far };
   }
 
   dispose(): void {
     this.#clear();
-    this.#full.dispose();
-    this.#light.dispose();
-    this.#flower.dispose();
-    this.#material.dispose();
+    for (const kind of [this.#full, this.#light, this.#flowers, this.#far, this.#farFlowers]) {
+      kind.geometry.dispose();
+      kind.material.dispose();
+    }
   }
 }
