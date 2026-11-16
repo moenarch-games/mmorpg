@@ -47,7 +47,7 @@ import {
 } from "./character-roster";
 import type { LocalWorld } from "./world/local-world";
 import { LocalCharacters, VisitStorage } from "./world/local-characters";
-import { actionLabDefinitions, committedArea, committedLevel, committedPhysique, createScenarioWorld, customizePhysique, labExperiments, loadLocalWorld, physiqueModel, physiqueModifiers, presentZone, soundManifest } from "./world/wasm-runtime";
+import { actionLabDefinitions, committedArea, committedLevel, committedPhysique, createScenarioWorld, customizePhysique, importedRestClip, labExperiments, loadLocalWorld, physiqueModel, physiqueModifiers, presentZone, soundManifest } from "./world/wasm-runtime";
 import { loadPendingPhysique, neutralPhysique, PhysiqueEditor, physiqueLook, savePendingPhysique, type PhysiqueModel } from "./physique";
 import { WorldSound } from "./world/world-sound";
 import { ActionLabPanel, labQuery } from "./world/action-lab";
@@ -982,7 +982,11 @@ function updateEntryButton(): void {
   const server = chosenServer();
   if (artReady()) { markStartup("art-settled"); }
   enterWorldButton.disabled = chosenWorld() === null || joining !== null || !entryArtReady();
-  if (!enterWorldButton.disabled) { markStartup("enter-enabled"); }
+  if (!enterWorldButton.disabled) {
+    markStartup("enter-enabled");
+    // The static scene's seconds-long build waits until the character stands and entry is open (#855).
+    worldView.prewarmStatic();
+  }
   let entryLabel = "Enter World";
   if (arenaEntry.selected) { entryLabel = practiceWorld ? "Start practice" : "Join Battle Royale"; }
   if (joining) { entryLabel = "Entering…"; }
@@ -2149,7 +2153,8 @@ window.addEventListener("pagehide", () => {
 function loadPageWorld(): Promise<LocalWorld> {
   // Without browser storage the characters still follow the record and lease rules, for this visit only.
   const characters = new LocalCharacters(browserStorage() ?? new VisitStorage(), navigator.locks);
-  return loadLocalWorld(characters).then((loaded) => {
+  // The player figure downloads beside the world build (#855).
+  return loadLocalWorld(characters, () => worldView.prefetchPlayer(importedRestClip)).then((loaded) => {
     localCharacters = characters;
     return loaded;
   });
