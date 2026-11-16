@@ -780,7 +780,7 @@ export class WorldView {
 
   /**
    * Builds the loaded world's static scene in the next idle moment (#855). The build blocks the page for seconds, so
-   * the page asks only once the character stands and entry is possible, never on the way there; the first world frame
+   * the page asks only once the entry art has loaded and entry is possible, never on the way there; the first world frame
    * builds it if entry comes first.
    */
   prewarmStatic(): void {

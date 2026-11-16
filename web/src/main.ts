@@ -984,7 +984,7 @@ function updateEntryButton(): void {
   enterWorldButton.disabled = chosenWorld() === null || joining !== null || !entryArtReady();
   if (!enterWorldButton.disabled) {
     markStartup("enter-enabled");
-    // The static scene's seconds-long build waits until the character stands and entry is open (#855).
+    // The static scene's seconds-long build waits until the entry art has loaded and entry is open (#855).
     worldView.prewarmStatic();
   }
   let entryLabel = "Enter World";
