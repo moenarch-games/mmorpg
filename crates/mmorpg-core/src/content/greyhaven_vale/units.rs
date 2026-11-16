@@ -52,6 +52,8 @@ pub const WANDER_RADIUS_UNITS: i32 = 600;
 /// above the basin's slope (#423; physics-engine #394 sinks units resting on slopes).
 pub const LAKE_LURKERS: std::ops::Range<u32> = 300..308;
 pub const LAKE_WANDER_RADIUS_UNITS: i32 = 200;
+/// Wolf 108 at the den clearing where the Wolfrun Trail ends.
+const DEN_WOLF: u32 = 108;
 /// Released spirits return beside the graveyard, south of the gravestones'
 /// western end and clear of houses.
 pub const GRAVEYARD: [i32; 2] = [-2_000, 4_150];
@@ -384,7 +386,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
             } else {
                 WANDER_RADIUS_UNITS
             },
-            levels: None,
+            // The den wolf, a new hunter's first fight on the Wolfrun Trail, is always level 1 (#861).
+            levels: (id == DEN_WOLF).then_some([1, 1]),
         })
         .chain(
             CAVERN

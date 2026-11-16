@@ -33,7 +33,7 @@ The browser demo runs the same `ZoneSimulation` through a WASM build as a local,
 - One writer per zone epoch; fencing, handoff and interest contracts are unchanged.
 - Gameplay failures are **outcomes**, not transport errors. A command that is well-formed but not currently allowed, such as an ability on cooldown or an out-of-range target, is accepted by `apply_command`, produces a player-visible feedback event, and never closes the session. Only malformed payloads return errors.
 - Discrete intents such as casting, looting or accepting quests are processed during the tick in `(player_id, sequence)` order. They are never applied inside `apply_command` against a partially advanced world.
-- All authoritative state enters the canonical snapshot: units, auras, cooldowns, AI state, spawn timers, corpses, loot, inventories, quest progress and the zone RNG state. Recovery at any tick must reproduce the continuation exactly (tested per step).
+- All authoritative state enters the canonical snapshot: units, auras, cooldowns, AI state, spawn timers, corpses, loot, inventories, quest progress and the zone and per-creature RNG states. Recovery at any tick must reproduce the continuation exactly (tested per step).
 - Iteration over units is ordered (`BTreeMap` or sorted `Vec`). No `HashMap` iteration, wall clock or floating point decides authoritative state. Integer trigonometry uses a const-generated table.
 - Snapshot projections are bounded: a deterministic priority cap on entity count plus a byte budget test. Events per snapshot are bounded, and losing a datagram may drop cosmetic events only. Durable facts such as quest progress, inventory and XP also live in periodically re-sent state.
 - Content (collision, creature templates, items, quests, abilities) is identified by the zone content revision. Changing it requires a new revision.
@@ -142,7 +142,7 @@ Step 8a implemented the kit in core (abilities 1–12 of the catalog; lurkers ca
 
 ### Creature AI
 
-- States: `Idle` (wander within a radius using the zone RNG), `Engaged` (chase to melee or cast range, attack on the swing timer), `Evading` (leash beyond 40 m from spawn or no valid threat: run home, reset to full health, ignore damage), `Dead` (corpse until timeout, then a respawn timer; claiming rewards does not shorten this schedule).
+- States: `Idle` (wander within a radius using its own random stream, #861), `Engaged` (chase to melee or cast range, attack on the swing timer), `Evading` (leash beyond 40 m from spawn or no valid threat: run home, reset to full health, ignore damage), `Dead` (corpse until timeout, then a respawn timer; claiming rewards does not shorten this schedule).
 - Aggro radius is 10 m ± 1 m per level difference, clamped. Nearby same-family creatures assist when one is engaged.
 - Idle land creatures with no player within 60 m sleep: no AI and no physics step. Awake idle ones decide on one tick in ten, staggered by creature, and walk on in between, so they notice a player up to a sixth of a second late. Fighting, evading, trailing and rallying creatures, swimmers and raiders decide every tick (#814).
 - The threat table is ordered by `(threat desc, entity asc)`.

@@ -34,11 +34,9 @@ fn content(behaviour: CreatureBehaviour, damage: [u16; 2]) -> Arc<ZoneContent> {
             GRAVEYARD,
         )
         .unwrap()
-        // Fixed seeds whose first swings land as plain hits, independent of content identity.
-        .with_rng_seed(match behaviour {
-            CreatureBehaviour::Aggressive => 0x8881_3771_efc1_e1cf,
-            _ => 0x8f98_4419_a65c_8c20,
-        })
+        // A fixed seed whose creature stream (#861) lands the first swings either way as plain
+        // hits, independent of content identity.
+        .with_rng_seed(8)
         .with_creature_abilities(Default::default())
         .unwrap(),
     )

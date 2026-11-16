@@ -70,12 +70,15 @@ draws its own values.
 
 ## Corpse authority
 
-On creature death, core draws exactly three values from a separate `ZoneRng`
-initialized with `content.rng_seed() XOR 0x6c6f6f742f763031`. Each value is the
-upper 32 bits of the next 64-bit draw, in money/outcome/quantity order. A bound
+On creature death, core draws exactly three values from a fresh `ZoneRng` of that
+creature life (#861): `ZoneRng::seeded_for(content.rng_seed() XOR 0x6c6f6f742f763031,
+zone, creature ID, life generation)`. Each value is the upper 32 bits of the next
+64-bit draw, in money/outcome/quantity order, so a corpse's loot depends on
+nothing but that life: not the fight, other deaths or other spawns. A bound
 table rolls once; the tapper's corpse retains that result, including an empty
 roll, until successful settlement or expiry. Queries and refused claims draw
-nothing. This stream's state is canonical; it never advances the AI/combat RNG.
+nothing. Creature loot never advances the zone's canonical loot stream, which
+remains for the Redbrand Depths boss outcome, nor any combat stream.
 
 `Loot { creature, died_at }` is sequenced and queued like other discrete intents.
 The next tick requires a living sender, that exact unexpired corpse death,

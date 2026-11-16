@@ -3,7 +3,7 @@
 # rewards remain consumed across reconnect and stale connection fencing.
 name = "corpse-loot-resume"
 zone = 1
-ticks = 3171
+ticks = 2811
 digest_interval = 200
 
 [[bots]]
@@ -106,70 +106,70 @@ tick = 1540
 bot = "hunter"
 action = "swing"
 entity = "creature:108"
-until = 3120
+until = 2760
 every = 30
 
 
 [[steps]]
-tick = 3147
+tick = 2787
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 2979
+died_at = 2619
 
 [[steps]]
-tick = 3149
+tick = 2789
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 2981
+died_at = 2621
 
 [[steps]]
-tick = 3149
+tick = 2789
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 2981
+died_at = 2621
 
 [[steps]]
-tick = 3149
+tick = 2789
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 2981
+died_at = 2621
 seq = 11
 expect = "ignored_stale"
 
 [[steps]]
-tick = 3153
+tick = 2793
 bot = "hunter"
 action = "disconnect"
 
 
 [[steps]]
-tick = 3157
+tick = 2797
 bot = "hunter"
 action = "reconnect"
 
 
 [[steps]]
-tick = 3157
+tick = 2797
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 2981
+died_at = 2621
 
 [[steps]]
-tick = 3159
+tick = 2799
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 2981
+died_at = 2621
 connection_epoch = 1
 expect = "rejected:stale_connection"
 
 [[steps]]
-tick = 3163
+tick = 2803
 bot = "hunter"
 action = "loot"
 creature = 108
@@ -178,55 +178,55 @@ died_at = 18446744073709551615
 [[expect]]
 kind = "loot"
 bot = "hunter"
-tick = 3144
+tick = 2784
 sheet = true
 creature = 108
-died_at = 2981
+died_at = 2621
 
 [[expect]]
 kind = "copper"
 bot = "hunter"
-tick = 3144
+tick = 2784
 copper = 0
 
 [[expect]]
 kind = "event"
 bot = "hunter"
-tick = 3148
+tick = 2788
 event = "error:invalid_loot"
 entity = "creature:108"
 
 [[expect]]
 kind = "loot"
 bot = "hunter"
-tick = 3148
+tick = 2788
 sheet = true
 creature = 108
-died_at = 2981
+died_at = 2621
 
 [[expect]]
 kind = "loot"
 bot = "hunter"
-tick = 3150
+tick = 2790
 sheet = false
 
 [[expect]]
 kind = "copper"
 bot = "hunter"
-tick = 3150
-copper = 2
+tick = 2790
+copper = 1
 
 [[expect]]
 kind = "event"
 bot = "hunter"
-tick = 3150
+tick = 2790
 event = "error:empty_loot"
 entity = "creature:108"
 
 [[expect]]
 kind = "inventory"
 bot = "hunter"
-tick = 3150
+tick = 2790
 inventory_revision = 2
 sheet = true
 slot = 0
@@ -236,32 +236,32 @@ quantity = 5
 [[expect]]
 kind = "identity"
 bot = "hunter"
-tick = 3158
+tick = 2798
 
 
 [[expect]]
 kind = "copper"
 bot = "hunter"
-tick = 3158
-copper = 2
+tick = 2798
+copper = 1
 
 [[expect]]
 kind = "loot"
 bot = "hunter"
-tick = 3158
+tick = 2798
 sheet = false
 
 [[expect]]
 kind = "event"
 bot = "hunter"
-tick = 3158
+tick = 2798
 event = "error:empty_loot"
 entity = "creature:108"
 
 [[expect]]
 kind = "inventory"
 bot = "hunter"
-tick = 3166
+tick = 2806
 inventory_revision = 2
 sheet = true
 slot = 0
@@ -271,12 +271,12 @@ quantity = 5
 [[expect]]
 kind = "event"
 bot = "hunter"
-tick = 3164
+tick = 2804
 event = "error:invalid_loot"
 entity = "creature:108"
 
 [[expect]]
 kind = "copper"
 bot = "hunter"
-tick = 3170
-copper = 2
+tick = 2810
+copper = 1
