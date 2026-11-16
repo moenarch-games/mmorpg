@@ -133,7 +133,7 @@ impl Grass {
             blocked.extend(
                 cottages::cottages()
                     .iter()
-                    .map(|cottage| Rect::around(cottage.centre, cottages::HALF).expanded(25)),
+                    .map(|cottage| Rect::around(cottage.centre, cottage.plan.half()).expanded(25)),
             );
         }
         Self {

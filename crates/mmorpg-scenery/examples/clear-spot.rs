@@ -14,6 +14,9 @@
 //! - `--shore`: only spots 300–900 units from water.
 //! - `--off-routes`: also clear of every resident's walk home and errand legs.
 //! - `--avoid-fields`: also clear of the farmland's fields.
+//! - `--indoors`: inside a walk-in house, to furnish it (#886): its footprint no longer blocks,
+//!   only its walls and furniture (core colliders) do; with `--off-routes`, clear of the
+//!   residents' walks in too.
 //! - `--count n` (default 5): how many spots, each at least two radii from the others.
 //! - `--max-distance d` (default 20000): how far from `--near` to look.
 //! - `--step s` (default 50): the candidate grid spacing.
@@ -145,6 +148,7 @@ struct Query {
     shore: bool,
     off_routes: bool,
     avoid_fields: bool,
+    indoors: bool,
     count: usize,
     max_distance: i32,
     step: i32,
@@ -157,6 +161,7 @@ fn parse() -> Result<Query, String> {
         shore: false,
         off_routes: false,
         avoid_fields: false,
+        indoors: false,
         count: 5,
         max_distance: 20_000,
         step: 50,
@@ -190,6 +195,7 @@ fn parse() -> Result<Query, String> {
             "--shore" => query.shore = true,
             "--off-routes" => query.off_routes = true,
             "--avoid-fields" => query.avoid_fields = true,
+            "--indoors" => query.indoors = true,
             other => return Err(format!("unknown argument {other} (see the example's docs)")),
         }
     }
@@ -197,7 +203,7 @@ fn parse() -> Result<Query, String> {
     Ok(query)
 }
 
-fn build(scenery: &Scenery) -> Index {
+fn build(scenery: &Scenery, indoors: bool) -> Index {
     let mut index = Index {
         shapes: Vec::new(),
         cells: HashMap::new(),
@@ -234,8 +240,8 @@ fn build(scenery: &Scenery) -> Index {
             },
         );
     }
-    for cottage in cottages::cottages() {
-        let [hx, hz] = cottages::HALF;
+    for cottage in cottages::cottages().into_iter().filter(|_| !indoors) {
+        let [hx, hz] = cottage.plan.half();
         let corners = [[-hx, -hz], [hx, hz]].map(|corner| cottage.spot(corner));
         index.insert(
             Layer::Obstacle,
@@ -324,7 +330,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let query = parse()?;
     let started = std::time::Instant::now();
     let scenery = greyhaven_vale_scenery();
-    let index = build(&scenery);
+    let index = build(&scenery, query.indoors);
     let built = started.elapsed();
 
     let mut blocking = vec![Layer::Obstacle, Layer::Road, Layer::Water];

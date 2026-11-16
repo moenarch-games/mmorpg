@@ -139,7 +139,7 @@ impl Tiles {
         if s.greyhaven() {
             use mmorpg_core::greyhaven_vale::cottages;
             for cottage in cottages::cottages() {
-                let [hx, hz] = cottages::HALF;
+                let [hx, hz] = cottage.plan.half();
                 let floor = (
                     [
                         metres(cottage.centre[0] - hx),
