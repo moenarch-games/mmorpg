@@ -87,9 +87,12 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // The spread fixtures leave the wild sub-regions' creatures out (#816), and the Vale's heart
     // (#816) moves fights-32's candidates a little: 434,117 tested.
     // Residents walking their day (#819) cross fights-8's projections: 1,833,583 bytes.
+    // The hamlets' rats, boars and wolves (#859) keep out of the bots' spread but share the zone:
+    // fights-8 evaluates 17,004 AI decisions, and the hamlets' three quest givers' markers join
+    // every quest sheet: 1,841,725 bytes.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
         [11_052, 5_126_040, 288_000, 6_088_352],
-        [16_903, 5_123_160, 93_060, 1_833_583],
+        [17_004, 5_123_160, 93_060, 1_841_725],
         [25_840, 5_131_800, 434_117, 7_878_807],
         [13_226, 5_142_964, 2_323_474, 24_322_842],
     ];

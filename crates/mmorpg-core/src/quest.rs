@@ -28,8 +28,8 @@ pub const MAX_QUEST_LOG: usize = 10;
 pub const MAX_QUEST_OBJECTIVES: usize = 3;
 /// A turn-in offers at most this many items to choose one from.
 pub const MAX_REWARD_CHOICES: usize = 4;
-/// Distinct givers and enders of a content's quests.
-pub const MAX_QUEST_NPCS: usize = 8;
+/// Distinct givers and enders of a content's quests: Greyhaven names eleven (#859).
+pub const MAX_QUEST_NPCS: usize = 16;
 pub const MAX_QUEST_NAME_BYTES: usize = 64;
 pub const MAX_QUEST_TEXT_BYTES: usize = 240;
 /// Inclusive horizontal (XZ) distance from an NPC's feet within which a
@@ -183,7 +183,7 @@ impl fmt::Display for QuestContentError {
             Self::InvalidPrerequisite => "a quest prerequisite must be an earlier quest",
             Self::InvalidObjective => "a quest objective names unknown content or no count",
             Self::InvalidRewards => "quest rewards are out of range",
-            Self::TooManyQuestNpcs => "quests name more than eight npcs",
+            Self::TooManyQuestNpcs => "quests name more than sixteen npcs",
         })
     }
 }

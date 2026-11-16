@@ -1891,7 +1891,7 @@ pub(crate) mod tests {
             ),
             (QUESTS + 4, 11, "quest log exceeds its capacity"),
             (QUESTS + 5, 1, "an active quest is also turned in"),
-            (QUESTS + 9, 9, "quest sheet has too many markers"),
+            (QUESTS + 9, 17, "quest sheet has too many markers"),
             (QUESTS + 12, 4, "unknown quest marker"),
             (QUESTS + 14, 1, "quest markers are not ordered"),
             (FIRST_ENTITY, 0, "unknown entity kind"),

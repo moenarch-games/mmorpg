@@ -120,7 +120,7 @@ fn every_region_quest_has_its_givers_items_and_creatures_in_the_region() {
         .into_iter()
         .filter(|quest| quest.id.get() >= quests::WORD_FROM_THE_DOWNS.get())
         .collect();
-    assert_eq!(region.len(), 16);
+    assert_eq!(region.len(), 20);
     for quest in &region {
         assert!(content.npc(quest.giver).is_some(), "{}", quest.name);
         assert!(content.npc(quest.ender).is_some(), "{}", quest.name);

@@ -163,15 +163,21 @@ exactly.
 
 ## Quests
 
-Sixteen quests carry players from the Vale's chain out into the region (#820,
+Twenty quests carry players from the Vale's chain out into the region (#820, #859,
 `greyhaven_vale::quests`). The Marshal starts three chains, each through one or two
-settlements:
+settlements, and Farmer Osric Mill a fourth through the farmland's hamlets:
 
 | Chain | Starts | Giver | Quests |
 | --- | --- | --- | --- |
 | The Downs and the ford | After *Trouble in the Woods* | Gwen Barrow at Barrowdown, then Hob Ferris at Fenford | *Word from the Downs*, *Raiders on the Downs*, *Grain for the Barrow Rest* (stolen grain sacks from marauders), *The Barrow Ring* (hear out Old Maud), *Down to the Ford*, *Tusks and Tallow* (boar tusks), *The Fenwater Raiders* |
 | The tarn and Southwood | After *Scout the Lake* | Brann at Westmere Lodge, then Edric Vale at the hunters' camp | *The Lodge on the Tarn*, *Scales of Westmere* (lurker scales), *Wolves at the Water*, *The Hunters' Camp*, *Southwood Hunt* |
 | The Greyfang Road | After *Garrick Redbrand* | Watchman Garth at Greyfang Watch | *The Greyfang Watch*, *Orders on the Road* (crossbowmen's orders), *The Delving Workings* (retake the mine camp), *Ogres of the Heights* |
+| The hamlets | After *Marauders in the Fields* | Farmer Osric Mill, then Goodwife Ena, Miller Hanne and Shepherd Lise | *The Hamlets*, *Rats in the Granary* (grain rats about the western barn), *Boars in the Barley* (boars west of the southern hamlet), *The Shepherd's Wolves* (a pack east of the eastern pastures) |
+
+The hamlets' rats, boars and wolves (`greyhaven_vale::hamlet_creatures`, spawns 1400–1411) stand
+clear of the hamlets' buildings, fields, roads and residents' ways. With them the quest log's
+32 quests are all used; the next chain needs a wider completed-quest mask. Up to sixteen NPCs may
+give or end quests (`MAX_QUEST_NPCS`, eleven used).
 
 The four quest items (boar tusks, grain sacks, lurker scales and Redbrand orders) drop only while a
 quest needs them. Rewards are experience, copper and the Vale's existing gear.
