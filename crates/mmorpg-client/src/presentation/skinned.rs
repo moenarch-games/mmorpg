@@ -1368,6 +1368,11 @@ mod farm_bundle {
     include!(concat!(env!("OUT_DIR"), "/farm_bundle.rs"));
 }
 
+/// Embedded wildlife (#857).
+mod wild_bundle {
+    include!(concat!(env!("OUT_DIR"), "/wild_bundle.rs"));
+}
+
 /// A skinned ambient model and its clip lengths by clip name.
 pub(super) type AmbientModel = (Model, BTreeMap<String, f32>);
 
@@ -1382,8 +1387,12 @@ pub(super) fn ambient_model(key: &str) -> Option<&'static AmbientModel> {
             let farm = farm_bundle::ENTRIES
                 .iter()
                 .map(|entry| (entry, farm_bundle::FILES));
+            let wild = wild_bundle::ENTRIES
+                .iter()
+                .map(|entry| (entry, wild_bundle::FILES));
             ambient
                 .chain(farm)
+                .chain(wild)
                 .map(|(&(key, path), files)| {
                     let model = Model::parse(&bundle_glb(path, files), "Idle")
                         .expect("an ambient animal is valid glTF");

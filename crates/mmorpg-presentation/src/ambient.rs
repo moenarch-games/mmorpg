@@ -3,8 +3,10 @@
 //! Millbrook farmhouse and a brown rodent along the crates by the barn, and in the region's
 //! settlements dogs, cats and a rodent of their own. Its `greyhaven-farm-animals` (#849) graze by
 //! the barns of Millbrook Farm, Barrowdown, the farmland's three hamlets, the Ford Inn and
-//! Westmere Lodge: cows, horses, a donkey, pigs, sheep, goats and chickens. Each stands on the
-//! drawn surface.
+//! Westmere Lodge: cows, horses, a donkey, pigs, sheep, goats and chickens. Its `greyhaven-wildlife`
+//! (#857) roams the wilder ground: deer by the hunters' camp, Westmere and the Delving Workings,
+//! boar in the hunters' woods, foxes by the farmland and Greyfang Watch, rabbits on the meadows,
+//! crows by the fields and a songbird by Barrowdown. Each stands on the drawn surface.
 //!
 //! Each animal rests (`Idle`, turning toward its next waypoint, then `Eat` once a grazer has
 //! turned; a client whose model has no `Eat` keeps `Idle`) and walks (`Walk`, in place) round
@@ -24,6 +26,9 @@ use crate::{
 pub const RELEASE: &str = "greyhaven-ambient-animals";
 pub const FARM_RELEASE: &str = "greyhaven-farm-animals";
 pub const FARM_PREFIX: &str = "greyhaven.farm.";
+/// The wildlife's release (#857), whose keys start [`WILD_PREFIX`].
+pub const WILD_RELEASE: &str = "greyhaven-wildlife";
+pub const WILD_PREFIX: &str = "greyhaven.wild.";
 /// The bundles' clips, in the index order of [`Pose::clip`].
 pub const CLIPS: [&str; 3] = ["Idle", "Walk", "Eat"];
 /// Seconds a rest spends turning toward the next waypoint.
@@ -89,6 +94,20 @@ const EAST_HAMLET: [i32; 2] = [14_000, 39_500];
 const SOUTH_HAMLET: [i32; 2] = [-8_000, 57_500];
 const FORD_INN: [i32; 2] = [104_900, 22_100];
 const WESTMERE: [i32; 2] = [-64_500, 6_000];
+/// The wildlife's haunts (#857): open ground near woods, meadows and fields, clear like the
+/// pastures.
+const HUNTERS_WOOD: [i32; 2] = [-46_300, 72_500];
+const WESTMERE_GLADE: [i32; 2] = [-60_000, 12_000];
+const BOAR_WOOD: [i32; 2] = [-51_600, 81_300];
+const FARMLAND_EDGE: [i32; 2] = [1_700, 47_000];
+const BARROW_MEADOW: [i32; 2] = [49_000, 64_000];
+const FARMLAND_MEADOW: [i32; 2] = [-1_600, 39_600];
+const VALE_MEADOW: [i32; 2] = [3_000, 9_100];
+const FIELD_EDGE: [i32; 2] = [6_000, 50_000];
+const MILLBROOK_FIELD: [i32; 2] = [10_500, 5_300];
+const BARROW_HEDGE: [i32; 2] = [55_500, 72_500];
+const DELVING_SLOPE: [i32; 2] = [100_000, -60_500];
+const GREYFANG_HEATH: [i32; 2] = [16_000, -82_300];
 
 /// `pasture` moved to its quarter `q` (0–3).
 const fn quarter([x, z]: [i32; 2], q: u8) -> [i32; 2] {
@@ -102,7 +121,7 @@ const fn quarter([x, z]: [i32; 2], q: u8) -> [i32; 2] {
 }
 
 #[rustfmt::skip]
-const BEATS: [Beat; 30] = [
+const BEATS: [Beat; 52] = [
     // East of the inn door, between the front wall and the square.
     roam("greyhaven.ambient.cat", [[1_800, 600], [2_080, 640], [1_950, 820]], 0.45, 4.5, 0.),
     // Before the Millbrook farmhouse, inside the field fence.
@@ -139,6 +158,29 @@ const BEATS: [Beat; 30] = [
     graze("greyhaven.farm.chicken", quarter(FORD_INN, 2), 70, 0.4, 3., 1.),
     graze("greyhaven.farm.horse", quarter(WESTMERE, 0), 120, 0.8, 8., 2.),
     graze("greyhaven.farm.donkey", quarter(WESTMERE, 2), 110, 0.6, 9., 4.),
+    // The wildlife (#857).
+    graze("greyhaven.wild.stag", quarter(HUNTERS_WOOD, 0), 120, 0.7, 8., 1.),
+    graze("greyhaven.wild.doe", quarter(HUNTERS_WOOD, 1), 120, 0.7, 7., 4.),
+    graze("greyhaven.wild.doe", quarter(HUNTERS_WOOD, 2), 120, 0.7, 9., 2.),
+    graze("greyhaven.wild.doe", quarter(WESTMERE_GLADE, 0), 120, 0.7, 8., 0.),
+    graze("greyhaven.wild.doe", quarter(WESTMERE_GLADE, 3), 120, 0.7, 7., 3.),
+    graze("greyhaven.wild.boar", quarter(BOAR_WOOD, 0), 110, 0.6, 6., 1.),
+    graze("greyhaven.wild.boar", quarter(BOAR_WOOD, 2), 110, 0.6, 7., 4.),
+    graze("greyhaven.wild.fox", quarter(FARMLAND_EDGE, 0), 120, 0.9, 4., 2.),
+    graze("greyhaven.wild.rabbit", quarter(BARROW_MEADOW, 0), 70, 0.6, 3., 0.),
+    graze("greyhaven.wild.rabbit", quarter(BARROW_MEADOW, 2), 70, 0.6, 4., 1.5),
+    graze("greyhaven.wild.rabbit", quarter(FARMLAND_MEADOW, 1), 70, 0.6, 3., 0.5),
+    graze("greyhaven.wild.rabbit", quarter(FARMLAND_MEADOW, 3), 70, 0.6, 3.5, 2.),
+    graze("greyhaven.wild.rabbit", quarter(VALE_MEADOW, 0), 70, 0.6, 3., 1.),
+    graze("greyhaven.wild.crow", quarter(FIELD_EDGE, 0), 70, 0.5, 3., 0.),
+    graze("greyhaven.wild.crow", quarter(FIELD_EDGE, 1), 70, 0.5, 4., 1.),
+    graze("greyhaven.wild.crow", quarter(MILLBROOK_FIELD, 2), 70, 0.5, 3., 2.),
+    graze("greyhaven.wild.songbird", quarter(BARROW_HEDGE, 0), 60, 0.4, 3., 0.5),
+    graze("greyhaven.wild.stag", quarter(DELVING_SLOPE, 0), 120, 0.7, 9., 3.),
+    graze("greyhaven.wild.doe", quarter(DELVING_SLOPE, 2), 120, 0.7, 8., 0.),
+    graze("greyhaven.wild.fox", quarter(GREYFANG_HEATH, 0), 120, 0.9, 4., 1.),
+    graze("greyhaven.wild.boar", quarter(BOAR_WOOD, 1), 110, 0.6, 5., 2.5),
+    graze("greyhaven.wild.fox", quarter(BARROW_MEADOW, 1), 120, 0.9, 5., 3.),
 ];
 
 /// One posed animal.
