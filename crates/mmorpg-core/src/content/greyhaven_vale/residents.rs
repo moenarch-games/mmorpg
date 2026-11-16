@@ -106,9 +106,9 @@ const INN_FRONT: [i32; 2] = [1_450, 620];
 const WEST_HOUSE: [i32; 2] = [-2_400, 1_840];
 const EAST_HOUSE: [i32; 2] = [2_400, 1_840];
 
-/// Every resident's day.
+/// Every resident's day as authored, its walk home ending outside.
 #[allow(clippy::too_many_lines)]
-pub(super) fn routines() -> Vec<NpcRoutine> {
+fn table() -> Vec<NpcRoutine> {
     vec![
         // The Outpost (NPCs 10–20): homes along the square's edges.
         routine(
@@ -355,4 +355,26 @@ pub(super) fn routines() -> Vec<NpcRoutine> {
             vec![errand(140, &[[-6_400, 55_600], [-4_700, 56_000]], 10, EAST)],
         ),
     ]
+}
+
+/// Every resident's day. A walk home that ends at a walk-in cottage's doorstep (#843) carries on
+/// through the doorway to the bed, or for the cottage's second resident to the hearth.
+pub(super) fn routines() -> Vec<NpcRoutine> {
+    let mut routines = table();
+    let mut housed: Vec<u32> = Vec::new();
+    for routine in &mut routines {
+        let Some(cottage) = routine
+            .path
+            .last()
+            .and_then(|&end| super::cottages::home_of(end))
+        else {
+            continue;
+        };
+        let second = housed.contains(&cottage.house);
+        if !second {
+            housed.push(cottage.house);
+        }
+        routine.home_facing = cottage.walk_in(&mut routine.path, second);
+    }
+    routines
 }

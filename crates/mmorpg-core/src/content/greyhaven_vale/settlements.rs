@@ -244,12 +244,16 @@ pub fn structures() -> impl Iterator<Item = (Building, [i32; 2], [i32; 2], i32)>
     })
 }
 
-/// The settlements' structures, standing on their yards.
+/// The settlements' structures, standing on their yards; a walk-in cottage (#843) is its walls
+/// and furniture rather than its house's box.
 fn colliders() -> Vec<StaticCollider> {
-    (*ids::SETTLEMENTS.start()..)
+    let mut colliders: Vec<_> = (*ids::SETTLEMENTS.start()..)
         .zip(structures())
+        .filter(|(id, _)| !super::cottages::is_house(*id))
         .map(|(id, (_, min, max, height))| on_terrain(id, min, max, height))
-        .collect()
+        .collect();
+    colliders.extend(super::cottages::colliders());
+    colliders
 }
 
 /// The settlement structure a collider ID belongs to (#818).
