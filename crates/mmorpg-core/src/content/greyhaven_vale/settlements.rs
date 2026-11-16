@@ -253,6 +253,7 @@ fn colliders() -> Vec<StaticCollider> {
         .map(|(id, (_, min, max, height))| on_terrain(id, min, max, height))
         .collect();
     colliders.extend(super::cottages::colliders());
+    colliders.extend(super::village_props::colliders());
     colliders
 }
 

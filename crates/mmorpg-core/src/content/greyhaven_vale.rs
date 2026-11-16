@@ -50,6 +50,7 @@ pub mod shrine;
 pub mod traps;
 pub mod units;
 pub mod vale;
+pub mod village_props;
 pub mod wilds;
 
 /// The fixed simulation seed, independent of the content revision, so content and economy
@@ -267,6 +268,8 @@ pub mod ids {
     /// The walk-in cottages' walls and furniture (#843), 16 IDs each, in
     /// [`super::cottages::cottages`] order.
     pub const COTTAGES: RangeInclusive<u32> = 43_100..=43_999;
+    /// The villages' clutter (#851), 4 IDs each, in [`super::village_props::PROPS`] order.
+    pub const VILLAGE_PROPS: RangeInclusive<u32> = 44_000..=44_199;
 }
 
 /// One region's tables (#542): its named areas, its roads and its own colliders. Each region
