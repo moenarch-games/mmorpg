@@ -16,6 +16,8 @@ The Outpost grass family uses the [saved exclusion-mask package](SCATTER_AUTHORI
 
 The Outpost terrain and presentation heights consume the [saved relief field](RELIEF_AUTHORING.md) through the same shared scenery owner. Native smoke also renders its road/plaza/building-approach camera poses; `MMORPG_SMOKE_FRAME_DIR` saves their GPU frames.
 
+Review frames (#865): `python3 scripts/smoke-native.py --review-shots DIR` skips the host smoke and saves offscreen release frames at every fixed eye/target pose in `scripts/review-poses.json` (the browser review shots' poses, `scripts/review-shots.py`) as `DIR/<name>.png`, 1440×900; `--review-poses FILE` reads other poses. It runs the ignored `review_pose_shots` test with `MMORPG_REVIEW_SHOTS` (and `MMORPG_REVIEW_POSES`). Entity-relative and player poses are browser-only.
+
 ## Host World
 
 Build/install both native binaries together (`cargo build --locked -p mmorpg-client -p mmorpg-game-server`), then start `mmorpg-client` without `--class`. On the character screen, create or select a character and choose **Host World**. The game starts/reuses the sibling `mmorpg-zone-host`, waits for readiness and connects the owner through authenticated loopback WebTransport using its automatically generated certificate. The game-owned save is `<native configuration directory>/worlds/default/`: on Linux, `$XDG_CONFIG_HOME/mmorpg/worlds/default` or `~/.config/mmorpg/worlds/default`. `MMORPG_CONFIG_DIR` selects an isolated configuration directory and roster. Managed hosting serves Greyhaven (zone 1).
