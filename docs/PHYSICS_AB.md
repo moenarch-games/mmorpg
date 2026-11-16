@@ -270,7 +270,8 @@ Across backends:
   both backends): line of sight, shots, charge paths (a capsule `cast_shape`, #57) and creature routes
   (#307: shape casts and overlap queries on the navigation grid) for player–creature pairs
   within 40 m, NPC sight,
-  open and closed door-leaf occupancy, ground height and grounded must agree exactly; shot
+  open and closed door-leaf occupancy and grounded must agree exactly; ground heights within
+  four `f32` steps of the probe's largest coordinate (at least 10⁻³); shot
   fractions within 10⁻⁴. Grounded is compared for every unit, over the lake basin's open floor
   too.
 - Restored from its canonical snapshot halfway, each arm continues exactly (Atlas 2.1.5).

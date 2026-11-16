@@ -83,15 +83,21 @@ const CLIMBS: [(&str, usize); 1] = [("vale-wolf-hunt", 1_492)];
 const SHOT_FRACTION_TOLERANCE: f32 = 1.0e-4;
 /// Terrain heights on identical states, in units: both backends cast the same ray at the same
 /// heightfield, so only `f32` noise separates them. Compared unrounded, because a height on a
-/// half unit rounds either way on that noise. The noise grows with the height: a few `f32` steps
-/// at the region's high ground (#816), where one step is already about 1.0e-3.
+/// half unit rounds either way on that noise. The noise grows with the probe's coordinates, not
+/// only its height: a slope's plane is solved at the probe's world `x` and `z`, so far from the
+/// origin (about 7,000 units out in Wolfrun Woods, #861) a few `f32` steps are several 1.0e-3.
 const GROUND_HEIGHT_TOLERANCE: f32 = 1.0e-3;
-/// Ground heights may differ by this many `f32` steps of their magnitude.
+/// Ground heights may differ by this many `f32` steps of the probe's largest coordinate.
 const GROUND_HEIGHT_STEPS: f32 = 4.0;
 
-/// Whether two backends' terrain heights agree within `f32` noise.
-fn ground_heights_agree(left: f32, right: f32) -> bool {
-    let tolerance = GROUND_HEIGHT_TOLERANCE.max(left.abs() * f32::EPSILON * GROUND_HEIGHT_STEPS);
+/// Whether two backends' terrain heights at column `(x, z)` agree within `f32` noise.
+#[allow(clippy::cast_precision_loss)]
+fn ground_heights_agree((x, z, left): (i32, i32, f32), right: f32) -> bool {
+    let magnitude = left
+        .abs()
+        .max(x.unsigned_abs() as f32)
+        .max(z.unsigned_abs() as f32);
+    let tolerance = GROUND_HEIGHT_TOLERANCE.max(magnitude * f32::EPSILON * GROUND_HEIGHT_STEPS);
     (left - right).abs() <= tolerance
 }
 /// A unit at rest this many ticks must be grounded.
@@ -842,7 +848,8 @@ struct Decisions {
     sight: BTreeMap<String, bool>,
     npc_sight: BTreeMap<String, bool>,
     doors: BTreeMap<String, bool>,
-    ground: BTreeMap<String, f32>,
+    /// Each unit's terrain column and the height probed there.
+    ground: BTreeMap<String, (i32, i32, f32)>,
     shots: BTreeMap<String, Option<(Option<EntityRef>, BodyId, f32)>>,
     /// Whether the player's body fits along a charge at the creature (#57, shape cast).
     charges: BTreeMap<String, bool>,
@@ -859,9 +866,10 @@ fn decisions(zone: &mut ZoneSimulation) -> Result<Decisions> {
         decisions
             .grounded
             .insert(format!("{:?}", unit.unit), unit.grounded);
-        decisions
-            .ground
-            .insert(format!("{:?}", unit.unit), zone.ground_height_probe(x, z));
+        decisions.ground.insert(
+            format!("{:?}", unit.unit),
+            (x, z, zone.ground_height_probe(x, z)),
+        );
     }
     let near = |a: &UnitBody, b: &UnitBody| {
         let (p, q) = (a.body.exact_position(), b.body.exact_position());
@@ -941,7 +949,7 @@ fn decision_differences(rapier: &Decisions, engine: &Decisions) -> Vec<String> {
     exact("npc sight", &rapier.npc_sight, &engine.npc_sight, &mut out);
     exact("door blocked", &rapier.doors, &engine.doors, &mut out);
     for (key, left) in &rapier.ground {
-        let right = engine.ground.get(key).copied();
+        let right = engine.ground.get(key).map(|&(_, _, height)| height);
         if right.is_none_or(|right| !ground_heights_agree(*left, right)) {
             out.push(format!("ground {key}: rapier {left:?}, engine {right:?}"));
         }
