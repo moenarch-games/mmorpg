@@ -188,7 +188,8 @@ fields cover the turf, nor in water, river beds, terrain holes or the footprint 
 stands on the ground. Each clump takes the ground's tone, leaning greener, with dry straw patches
 over about 18 m. It lays out 8 m cells on a jittered lattice about 0.3 m apart; a cell's clumps
 come in a random order, so any prefix is an even thinning. The browser draws the field by the
-**World detail** graphics setting (`graphics.world_detail`): **low** draws no grass; **medium**
+**World detail** graphics setting (`graphics.world_detail`): **low** draws no grass (nor the ambient
+creatures, nor the light of lamps and fires); **medium**
 (the default) draws 60 % of the clumps within 6 m of the eye, thinning out to 30 m; **high** draws
 them all within 10 m, thinning out to 44 m. Clumps within 8 m (medium) or 12 m (high) are 15 thin,
 tapered, curved blades of five triangles; further ones are 7 wider blades of three, sharing the
