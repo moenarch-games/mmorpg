@@ -345,14 +345,17 @@ impl Lods {
                 continue;
             };
             let [dx, dy, dz] = std::array::from_fn(|axis| instance.centre[axis] - eye[axis]);
-            let flat = dx.hypot(dz);
+            // `sqrt` rather than `hypot`: wasm's `hypot` is a slow software routine, and this runs for every
+            // placement every frame the camera moves; these distances never near overflow.
+            let flat = (dx * dx + dz * dz).sqrt();
             let beyond_max = instance.max_distance.is_some_and(|limit| {
-                (instance.origin[0] - eye[0]).hypot(instance.origin[2] - eye[2]) > limit
+                let (ox, oz) = (instance.origin[0] - eye[0], instance.origin[2] - eye[2]);
+                (ox * ox + oz * oz).sqrt() > limit
             });
             let target = if flat - instance.radius > instance.reach || beyond_max {
                 None
             } else {
-                let distance = (flat.hypot(dy)).max(1e-3);
+                let distance = (flat * flat + dy * dy).sqrt().max(1e-3);
                 let size = instance.radius / (distance * tan);
                 let first = |margin: f64| {
                     entry
