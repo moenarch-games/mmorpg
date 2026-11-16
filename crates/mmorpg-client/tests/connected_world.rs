@@ -735,10 +735,15 @@ async fn a_budget_packed_crowded_projection_reaches_a_client() {
             let snapshot = session.receive_snapshot().await?;
             // This session sends no command, so it acknowledges no sheet and every projection
             // carries them all (#544): the bag sheet (revision, bag, equipment and stat totals),
-            // the quest sheet (mask, entry count, entries, marker count, markers), no corpse
-            // sheet and an empty ability sheet.
+            // the quest sheet (completed count and IDs, entry count, entries, marker count,
+            // markers), no corpse sheet and an empty ability sheet.
             let sheet_bytes = snapshot.quests.as_ref().map_or(0, |quests| {
-                92 + 4 + 1 + 4 * quests.entries.len() + 1 + 3 * quests.markers.len()
+                92 + 1
+                    + quests.completed.len()
+                    + 1
+                    + 4 * quests.entries.len()
+                    + 1
+                    + 3 * quests.markers.len()
             }) + 1
                 + 8;
             // Every projection also carries the content doors (#158).
