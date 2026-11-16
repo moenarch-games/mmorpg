@@ -1,0 +1,324 @@
+{
+  "version": 1,
+  "quests": [
+    {
+      "id": 1,
+      "name": "Trouble in the Woods",
+      "text": "Timber wolves prowl the Wolfrun Trail west of the gate. Thin the pack: slay six of them.",
+      "giver": 1,
+      "ender": 1,
+      "objectives": [{"kill": {"template": 1, "count": 6}}],
+      "rewards": {"experience": 150, "copper": 10, "choices": []}
+    },
+    {
+      "id": 2,
+      "name": "Pelts for the Tanner",
+      "text": "The Marshal's wolves left good fur behind. Bring me five wolf pelts from the Wolfrun Woods.",
+      "giver": 2,
+      "ender": 2,
+      "prerequisite": 1,
+      "objectives": [{"collect": {"item": 10, "count": 5, "source": 1}}],
+      "rewards": {"experience": 200, "copper": 15, "choices": [9, 6]}
+    },
+    {
+      "id": 3,
+      "name": "The Missing Farmhand",
+      "text": "My farmhand never came back from Millbrook. Follow the Millbrook Road east and ask Farmer Osric Mill.",
+      "giver": 2,
+      "ender": 4,
+      "prerequisite": 2,
+      "objectives": [{"talk": {"npc": 4}}],
+      "rewards": {"experience": 100, "copper": 5, "choices": []}
+    },
+    {
+      "id": 4,
+      "name": "Marauders in the Fields",
+      "text": "Marauders took my fields, and my farmhand ran from them. Drive them off: defeat eight Field Marauders.",
+      "giver": 4,
+      "ender": 4,
+      "prerequisite": 3,
+      "objectives": [{"kill": {"template": 4, "count": 8}}],
+      "rewards": {"experience": 300, "copper": 25, "choices": [8, 5]}
+    },
+    {
+      "id": 5,
+      "name": "Scout the Lake",
+      "text": "Something stirs at Stillwater Lake, south-east of the outpost. Scout it, then report to the Marshal.",
+      "giver": 4,
+      "ender": 1,
+      "prerequisite": 4,
+      "objectives": [{"explore": {"area": 4}}],
+      "rewards": {"experience": 150, "copper": 10, "choices": []}
+    },
+    {
+      "id": 6,
+      "name": "Mirefin Menace",
+      "text": "Mirefin lurkers foul the lake's shallows. Slay six of them.",
+      "giver": 1,
+      "ender": 1,
+      "prerequisite": 5,
+      "objectives": [{"kill": {"template": 5, "count": 6}}],
+      "rewards": {"experience": 350, "copper": 30, "choices": []}
+    },
+    {
+      "id": 7,
+      "name": "Into Redbrand Hollow",
+      "text": "The Redbrand bandits camp in the hollow under the northern cliffs. Break their camp: defeat ten of them.",
+      "giver": 1,
+      "ender": 1,
+      "prerequisite": 6,
+      "objectives": [{"explore": {"area": 5}}, {"kill": {"template": 6, "count": 10}}],
+      "rewards": {"experience": 450, "copper": 40, "choices": [7, 3]}
+    },
+    {
+      "id": 8,
+      "name": "Garrick Redbrand",
+      "text": "Garrick Redbrand holds the mine entrance at the back of the hollow. End his raids.",
+      "giver": 1,
+      "ender": 1,
+      "prerequisite": 7,
+      "objectives": [{"kill": {"template": 7, "count": 1}}],
+      "rewards": {"experience": 600, "copper": 60, "choices": []}
+    },
+    {
+      "id": 9,
+      "name": "Return to Greyhaven",
+      "text": "The vale is safe again. Tell Tanner Hilda Brook that Greyhaven stands, and take her thanks.",
+      "giver": 1,
+      "ender": 2,
+      "prerequisite": 8,
+      "objectives": [{"talk": {"npc": 2}}],
+      "rewards": {"experience": 300, "copper": 100, "choices": [4, 3, 5]}
+    },
+    {
+      "id": 10,
+      "name": "The Sunken Shrine",
+      "text": "Old stones lie at the bottom of Stillwater Lake, and a flooded cave runs east from them. Dive down, bring back the relic from its altar, and mind your breath.",
+      "giver": 1,
+      "ender": 1,
+      "prerequisite": 5,
+      "objectives": [{"retrieve": {"item": 11, "area": 10}}],
+      "rewards": {"experience": 300, "copper": 25, "choices": []}
+    },
+    {
+      "id": 11,
+      "name": "Deeper into the Hollow",
+      "text": "Garrick is gone, but his men still hold the Greyfang cave east of the hollow, and shield-bearing brutes guard a sealed way deeper. Break two Redbrand Brutes and see what they guard.",
+      "giver": 1,
+      "ender": 1,
+      "prerequisite": 9,
+      "objectives": [{"kill": {"template": 15, "count": 2}}],
+      "rewards": {"experience": 700, "copper": 70, "choices": [12, 13, 14]}
+    },
+    {
+      "id": 12,
+      "name": "The Captain Below",
+      "text": "Garrick's ledger names the man he answered to: Captain Ulric Thorn, who rules the Redbrands from the depths under the Greyfang cave. Take friends you trust and end him, or tell me it is already done.",
+      "giver": 1,
+      "ender": 1,
+      "prerequisite": 8,
+      "objectives": ["defeat_thorn"],
+      "rewards": {"experience": 900, "copper": 120, "choices": [18]}
+    },
+    {
+      "id": 13,
+      "name": "Word from the Downs",
+      "text": "Barrowdown on the King's Road Downs has sent no grain this season. Take the Fen Road and the Fenwater Link south and ask Gwen Barrow at the Barrow Rest what is wrong.",
+      "giver": 1,
+      "ender": 22,
+      "prerequisite": 1,
+      "objectives": [{"talk": {"npc": 22}}],
+      "rewards": {"experience": 120, "copper": 5, "choices": []}
+    },
+    {
+      "id": 14,
+      "name": "Raiders on the Downs",
+      "text": "Marauders camp in the hollow south of the knoll and raid our carts on the King's Road. Drive them off: defeat six Field Marauders.",
+      "giver": 22,
+      "ender": 22,
+      "prerequisite": 13,
+      "objectives": [{"kill": {"template": 4, "count": 6}}],
+      "rewards": {"experience": 350, "copper": 30, "choices": []}
+    },
+    {
+      "id": 15,
+      "name": "Grain for the Barrow Rest",
+      "text": "They carried off our grain in sacks. Bring four of them back from the marauders, and the Barrow Rest will brew again.",
+      "giver": 22,
+      "ender": 22,
+      "prerequisite": 14,
+      "objectives": [{"collect": {"item": 20, "count": 4, "source": 4}}],
+      "rewards": {"experience": 300, "copper": 20, "choices": [7, 8]}
+    },
+    {
+      "id": 16,
+      "name": "The Barrow Ring",
+      "text": "Old Maud keeps the barrow ring west of the hamlet and swears the stones are restless. Humour an old woman: go and hear her out.",
+      "giver": 22,
+      "ender": 22,
+      "prerequisite": 14,
+      "objectives": [{"talk": {"npc": 24}}],
+      "rewards": {"experience": 150, "copper": 10, "choices": []}
+    },
+    {
+      "id": 17,
+      "name": "Down to the Ford",
+      "text": "Hob Ferris at the Ford Inn buys our ale and sells us news. Follow the Fen Road east to Fenford and tell him the Barrow Rest is brewing again.",
+      "giver": 22,
+      "ender": 27,
+      "prerequisite": 15,
+      "objectives": [{"talk": {"npc": 27}}],
+      "rewards": {"experience": 150, "copper": 10, "choices": []}
+    },
+    {
+      "id": 18,
+      "name": "Tusks and Tallow",
+      "text": "The boars by the Fenwater grow fat and bold. Bring me five tusks for the carver, and the tallow pays your supper.",
+      "giver": 27,
+      "ender": 27,
+      "prerequisite": 17,
+      "objectives": [{"collect": {"item": 19, "count": 5, "source": 2}}],
+      "rewards": {"experience": 300, "copper": 25, "choices": []}
+    },
+    {
+      "id": 19,
+      "name": "The Fenwater Raiders",
+      "text": "Marauders watch the ford from the meadows across the Fenwater. Walk the crossing and break them: defeat four.",
+      "giver": 27,
+      "ender": 27,
+      "prerequisite": 17,
+      "objectives": [{"explore": {"area": 26}}, {"kill": {"template": 4, "count": 4}}],
+      "rewards": {"experience": 350, "copper": 30, "choices": [5, 3]}
+    },
+    {
+      "id": 20,
+      "name": "The Lodge on the Tarn",
+      "text": "The fisher at Westmere Lodge sends word of trouble on the tarn. Follow the Westmere Road west from the Wolfrun Climb and find Brann.",
+      "giver": 1,
+      "ender": 31,
+      "prerequisite": 5,
+      "objectives": [{"talk": {"npc": 31}}],
+      "rewards": {"experience": 150, "copper": 10, "choices": []}
+    },
+    {
+      "id": 21,
+      "name": "Scales of Westmere",
+      "text": "Lurkers crept up the beck into the tarn and foul my nets. Bring me four of their scales so the lodge believes it.",
+      "giver": 31,
+      "ender": 31,
+      "prerequisite": 20,
+      "objectives": [{"collect": {"item": 21, "count": 4, "source": 5}}],
+      "rewards": {"experience": 350, "copper": 25, "choices": [6, 9]}
+    },
+    {
+      "id": 22,
+      "name": "Wolves at the Water",
+      "text": "Wolf packs come down through Westmere Woods to drink at dusk. Thin them: slay eight timber wolves.",
+      "giver": 31,
+      "ender": 31,
+      "prerequisite": 20,
+      "objectives": [{"kill": {"template": 1, "count": 8}}],
+      "rewards": {"experience": 300, "copper": 20, "choices": []}
+    },
+    {
+      "id": 23,
+      "name": "The Hunters' Camp",
+      "text": "Edric Vale's hunters camp on the Southwood Trail. He pays for good hands. Take the Westwood Track south through the woods and find him.",
+      "giver": 31,
+      "ender": 32,
+      "prerequisite": 22,
+      "objectives": [{"talk": {"npc": 32}}],
+      "rewards": {"experience": 150, "copper": 10, "choices": []}
+    },
+    {
+      "id": 24,
+      "name": "Southwood Hunt",
+      "text": "The camp needs meat and the trails need clearing. Bring down six boars and four wolves in Southwood.",
+      "giver": 32,
+      "ender": 32,
+      "prerequisite": 23,
+      "objectives": [{"kill": {"template": 2, "count": 6}}, {"kill": {"template": 1, "count": 4}}],
+      "rewards": {"experience": 400, "copper": 30, "choices": [5, 3, 4]}
+    },
+    {
+      "id": 25,
+      "name": "The Greyfang Watch",
+      "text": "With Garrick gone the Redbrands still ride the Greyfang Road. Watchman Garth holds the tower below the mountains; go up through the Highland Pass and report to him.",
+      "giver": 1,
+      "ender": 34,
+      "prerequisite": 8,
+      "objectives": [{"talk": {"npc": 34}}],
+      "rewards": {"experience": 200, "copper": 15, "choices": []}
+    },
+    {
+      "id": 26,
+      "name": "Orders on the Road",
+      "text": "Their crossbowmen carry written orders. Take three from them on the Greyfang Road, and we will know where they are bound.",
+      "giver": 34,
+      "ender": 34,
+      "prerequisite": 25,
+      "objectives": [{"collect": {"item": 22, "count": 3, "source": 8}}],
+      "rewards": {"experience": 500, "copper": 40, "choices": []}
+    },
+    {
+      "id": 27,
+      "name": "The Delving Workings",
+      "text": "The orders name the Delving Workings east of the lookout: the Redbrands have taken the miners' camp. Go there by the Delving Track and break them: defeat six bandits.",
+      "giver": 34,
+      "ender": 34,
+      "prerequisite": 26,
+      "objectives": [{"explore": {"area": 18}}, {"kill": {"template": 6, "count": 6}}],
+      "rewards": {"experience": 650, "copper": 60, "choices": [12, 13, 14]}
+    },
+    {
+      "id": 28,
+      "name": "Ogres of the Heights",
+      "text": "Hill ogres roam the Delving Heights and the miners will not go back while they do. Fell two of them.",
+      "giver": 34,
+      "ender": 34,
+      "prerequisite": 27,
+      "objectives": [{"kill": {"template": 13, "count": 2}}],
+      "rewards": {"experience": 800, "copper": 80, "choices": []}
+    },
+    {
+      "id": 29,
+      "name": "The Hamlets",
+      "text": "With the marauders gone the hamlets up the farm road can sow again, but they are short of hands. Take the road north past the fields and find Goodwife Ena in the western hamlet.",
+      "giver": 4,
+      "ender": 36,
+      "prerequisite": 4,
+      "objectives": [{"talk": {"npc": 36}}],
+      "rewards": {"experience": 120, "copper": 5, "choices": []}
+    },
+    {
+      "id": 30,
+      "name": "Rats in the Granary",
+      "text": "Rats have got into the barn and the haystack, and what they leave the damp takes. Kill eight of them before they eat the seed corn.",
+      "giver": 36,
+      "ender": 36,
+      "prerequisite": 29,
+      "objectives": [{"kill": {"template": 3, "count": 8}}],
+      "rewards": {"experience": 250, "copper": 15, "choices": []}
+    },
+    {
+      "id": 31,
+      "name": "Boars in the Barley",
+      "text": "Miller Hanne down at the southern hamlet says boars root up the barley west of her mill every night. Bring down five of them, then tell her the fields are safe.",
+      "giver": 36,
+      "ender": 40,
+      "prerequisite": 30,
+      "objectives": [{"kill": {"template": 2, "count": 5}}],
+      "rewards": {"experience": 300, "copper": 20, "choices": [8, 5]}
+    },
+    {
+      "id": 32,
+      "name": "The Shepherd's Wolves",
+      "text": "A wolf pack hunts east of the eastern hamlet's pastures, and Shepherd Lise has lost two ewes. Slay five wolves and let her know her flock can graze again.",
+      "giver": 40,
+      "ender": 39,
+      "prerequisite": 31,
+      "objectives": [{"kill": {"template": 1, "count": 5}}],
+      "rewards": {"experience": 350, "copper": 25, "choices": [6, 9]}
+    }
+  ]
+}
