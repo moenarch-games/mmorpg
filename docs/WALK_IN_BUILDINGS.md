@@ -37,6 +37,13 @@ collection composes these with scenery lights; the native world uses the same
 building collection as its camera and draws. New placements must enter that
 shared collection so their transforms, room, camera and lighting stay together.
 
+The walk-in cottages (#843, #847) and farmhouses (#886) are bundle-less specs
+(`Spec::cottage`) over `greyhaven_vale::cottages`: the room is the whole footprint inside
+the kit's walls (a farmhouse's hall and chamber both), the camera's obstacles are the
+plan's wall and furniture boxes (`Plan::boxes`), and `outpost_kit::cottage_roofs` hides
+the roof, verge, gable and chimney modules while the viewer stands inside. A farmhouse's
+authoritative walls leave both its front doorway and its partition's doorway free.
+
 The focused Rust building test uses an excerpt of the actual monuments release
 descriptor (bundle ref `77387a7c0f9c7e193bd6e2f0e546d0c8c2da6d0d7ec50be987c3328593ebbc75`,
 descriptor attachment `f2b9e29ab4242ee412658534458fc57eb79a4c85de5af886f696cd8791e8f81a`).
