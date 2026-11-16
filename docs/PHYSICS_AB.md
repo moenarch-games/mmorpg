@@ -340,7 +340,11 @@ Intentional or explained differences:
    charging player in `vale-fights-32` rises 0.9 units for a tick on flat terrain, and a diver
    gliding along the lake's floor stalls for a tick now and then. Its ground snap also snaps a
    walker stepping off a too-steep bank 2 units down onto the bank's face. `vale-swim`'s wader
-   therefore leaves the bank in a jump and nobody glides along the floor.
+   therefore leaves the bank in a jump and nobody glides along the floor. On a level face
+   (normal straight up) Rapier's slope handling finds no horizontal tangent, so a body settling
+   the last fraction of a unit onto it lost its whole horizontal move for the tick (a knocked-back
+   player in `vale-fights-32` fell 5 units behind, #861); when only level faces stop a settling
+   body short, the Rapier arm now settles it straight down first and moves it level from there.
 7. **Exact ties.** Content is authored on round coordinates; a sight line run exactly along a
    box face is a tie each arm breaks its own way (Rapier in `f32` metres). The fighting fixtures
    stand their players 7 units off their spawns' rows.
