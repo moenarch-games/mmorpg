@@ -10,6 +10,9 @@ const AMBIENT_BUNDLE = `${import.meta.env.BASE_URL}scenery/greyhaven.ambient-ani
 /** The rolling `greyhaven-farm-animals` bundle (#849), whose keys start `greyhaven.farm.`. */
 const FARM_BUNDLE = `${import.meta.env.BASE_URL}scenery/greyhaven.farm-animals/`;
 const FARM_PREFIX = "greyhaven.farm.";
+/** The rolling `greyhaven-wildlife` bundle (#857), whose keys start `greyhaven.wild.`. */
+const WILD_BUNDLE = `${import.meta.env.BASE_URL}scenery/greyhaven.wildlife/`;
+const WILD_PREFIX = "greyhaven.wild.";
 
 type Animal = { root: THREE.Object3D; mixer: THREE.AnimationMixer; actions: (THREE.AnimationAction | null)[]; clip: number };
 
@@ -47,8 +50,9 @@ export class AmbientAnimals {
     const species = [...new Set(entries)];
     const loaded = new Map<string, GLTF>();
     for (const [bundle, keys] of [
-      [AMBIENT_BUNDLE, species.filter((key) => !key.startsWith(FARM_PREFIX))],
+      [AMBIENT_BUNDLE, species.filter((key) => !key.startsWith(FARM_PREFIX) && !key.startsWith(WILD_PREFIX))],
       [FARM_BUNDLE, species.filter((key) => key.startsWith(FARM_PREFIX))],
+      [WILD_BUNDLE, species.filter((key) => key.startsWith(WILD_PREFIX))],
     ] as const) {
       if (keys.length === 0) { continue; }
       (await loadBundleGltfs(bundle, keys)).forEach((gltf, index) => loaded.set(keys[index]!, gltf));

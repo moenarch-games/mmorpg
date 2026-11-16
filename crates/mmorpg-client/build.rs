@@ -236,6 +236,13 @@ fn main() {
         None,
         false,
     );
+    // Greyhaven's wildlife (#857), every one.
+    static_bundle(
+        "wild_bundle.rs",
+        &manifest_dir.join("../../web/public/scenery/greyhaven.wildlife"),
+        None,
+        false,
+    );
     let ambient: serde_json::Value = serde_json::from_slice(
         &fs::read(
             manifest_dir.join("../../web/public/scenery/greyhaven.ambient-animals/manifest.json"),
