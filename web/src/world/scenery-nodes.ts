@@ -39,7 +39,7 @@ export type StaticSceneContent = {
   staticScenePointLights(seconds: number, animate: boolean): Float32Array;
   staticSceneShown(viewer: Float64Array, outpostKit: boolean, settlementProps: boolean, fortressKit: boolean): Uint8Array;
   surfaceY(x: number, z: number): number;
-  /** The grass clumps of one cell (`mmorpg_presentation::grass`), eight floats each; absent where nothing grows. */
+  /** The grass clumps of one cell (`mmorpg_presentation::grass`), nine floats each (the ninth its wildflower); absent where nothing grows. */
   grassCell?(column: number, row: number): Float32Array;
   /** The side of a grass cell, in metres. */
   grassCellMetres?(): number;

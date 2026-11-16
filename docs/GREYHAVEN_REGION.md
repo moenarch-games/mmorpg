@@ -194,7 +194,10 @@ them all within 10 m, thinning out to 44 m. Clumps within 8 m (medium) or 12 m (
 tapered, curved blades of five triangles; further ones are 7 wider blades of three, sharing the
 same instances. The wind bends them and the player's feet push them aside in the vertex stage. At
 Barrowdown's lane, medium draws about 5,700 clumps (230 k triangles) and high about 19,000 (740 k).
-The old procedural tufts draw nothing; the native client has no grass field yet.
+Wildflowers grow in drifts of one colour over several metres on thick turf (buttercup, daisy,
+harebell and poppy, `grass::FLOWERS`): a flowering clump also draws five small heads just above its
+blade tips, thinned with the grass. The old procedural tufts draw nothing; the native client has no
+grass field yet.
 
 The region's seven 8 × 6 m houses are the Outpost's timber-framed house in asset-tooling's Outpost
 kit, each door turned to its settlement's yard (`content/greyhaven/dressing/settlements.json`,

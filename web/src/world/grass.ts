@@ -4,13 +4,15 @@ import type { WorldDetail } from "../settings/preferences";
 
 /** Where grass grows, from the WASM owner (`mmorpg_presentation::grass`). */
 export type GrassSource = {
-  /** The clumps of cell `(column, row)`: position (m), yaw, height (m), linear RGB; any prefix thins evenly. */
+  /** The clumps of cell `(column, row)`: position (m), yaw, height (m), linear RGB, wildflower; any prefix thins evenly. */
   cell(column: number, row: number): Float32Array;
   /** The side of one cell, in metres. */
   cellMetres: number;
 };
 
-const CLUMP_FLOATS = 8;
+const CLUMP_FLOATS = 9;
+/** `mmorpg_presentation::grass::FLOWERS` (sRGB): buttercup, daisy, harebell and poppy, for flower 1–4. */
+const FLOWERS = [0xf2cf3a, 0xf3efe2, 0x8f7ad6, 0xd9493a] as const;
 const BUILDS_PER_FRAME = 3;
 
 /**
@@ -85,6 +87,43 @@ export function clumpGeometry(blades: number, rows: readonly number[], widen = 1
   return geometry;
 }
 
+/**
+ * Five five-petalled heads just above a clump's blade tips (a clump is a metre tall before its height scales it), each
+ * cupped slightly upward with a darker heart; `uv.y` is 1, so they sway with the blade tips.
+ */
+export function flowerGeometry(): THREE.BufferGeometry {
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const indices: number[] = [];
+  const HEADS: readonly [number, number, number, number][] = [
+    [0.05, 0.02, 1.08, 0.075], [-0.1, 0.07, 1.0, 0.065], [0.03, -0.12, 1.04, 0.07], [0.13, -0.04, 0.96, 0.06], [-0.06, -0.05, 1.12, 0.07],
+  ];
+  for (const [x, z, y, radius] of HEADS) {
+    const heart = positions.length / 3;
+    positions.push(x, y + 0.01, z);
+    colors.push(0.55, 0.45, 0.2, 1);
+    for (let petal = 0; petal < 10; petal += 1) {
+      // Petal tips and the notches between them, alternately.
+      const angle = (petal / 10) * Math.PI * 2;
+      const reach = petal % 2 === 0 ? radius : radius * 0.45;
+      positions.push(x + Math.sin(angle) * reach, y + (petal % 2 === 0 ? 0.012 : 0), z + Math.cos(angle) * reach);
+      colors.push(1, 1, 1, 1);
+    }
+    for (let petal = 0; petal < 10; petal += 1) {
+      indices.push(heart, heart + 1 + petal, heart + 1 + ((petal + 1) % 10));
+    }
+  }
+  const count = positions.length / 3;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(Array.from({ length: count }, () => [0, 1, 0]).flat(), 3));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 4));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(Array.from({ length: count }, () => [0.5, 1]).flat(), 2));
+  geometry.setIndex(indices);
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
 type Uniforms = {
   grassTime: { value: number };
   grassEye: { value: THREE.Vector3 };
@@ -127,7 +166,8 @@ function grassMaterial(uniforms: Uniforms): LitMaterial {
 }
 
 /** One cell's clumps as the full and the light clump, sharing their instances; one of them draws. */
-type Cell = { full: THREE.InstancedMesh; light: THREE.InstancedMesh; centre: [number, number]; clumps: number };
+/** `flowers` draws the cell's flowering clumps; `flowering[i]` is the clump index of its i-th, ascending. */
+type Cell = { full: THREE.InstancedMesh; light: THREE.InstancedMesh; flowers: THREE.InstancedMesh | null; flowering: number[]; centre: [number, number]; clumps: number };
 
 /**
  * Grass blades over the ground around the camera (presentation only): clumps of thin blades on the cells the shared
@@ -140,6 +180,7 @@ export class Grass {
   /** 15 blades of five triangles near the eye; 7 wider blades of three further out. */
   readonly #full = clumpGeometry(15, [0, 0.4, 0.75]);
   readonly #light = clumpGeometry(7, [0, 0.5], 1.5);
+  readonly #flower = flowerGeometry();
   readonly #uniforms: Uniforms = {
     grassTime: { value: 0 }, grassEye: { value: new THREE.Vector3() }, grassPush: { value: new THREE.Vector3(0, -1e4, 0) },
     grassReach: { value: new THREE.Vector2(PROFILES.medium.full, PROFILES.medium.fade) },
@@ -209,6 +250,14 @@ export class Grass {
         if (mesh.visible !== visible) { mesh.visible = visible; }
         if (visible && mesh.count !== count) { mesh.count = count; }
       }
+      if (cell.flowers) {
+        // The flowering clumps among the first `count`, which are the drawn ones.
+        let flowers = 0;
+        while (flowers < cell.flowering.length && cell.flowering[flowers]! < count) { flowers += 1; }
+        const visible = flowers > 0;
+        if (cell.flowers.visible !== visible) { cell.flowers.visible = visible; }
+        if (visible && cell.flowers.count !== flowers) { cell.flowers.count = flowers; }
+      }
     }
   }
 
@@ -233,7 +282,22 @@ export class Grass {
     const light = new THREE.InstancedMesh(this.#light, this.#material, count);
     light.instanceMatrix = full.instanceMatrix;
     light.instanceColor = full.instanceColor;
-    for (const mesh of [full, light]) {
+    const flowering: number[] = [];
+    for (let index = 0; index < count; index += 1) {
+      if (clumps[index * CLUMP_FLOATS + 8]! > 0) { flowering.push(index); }
+    }
+    let flowers: THREE.InstancedMesh | null = null;
+    if (flowering.length > 0) {
+      flowers = new THREE.InstancedMesh(this.#flower, this.#material, flowering.length);
+      flowering.forEach((index, slot) => {
+        const at = index * CLUMP_FLOATS;
+        full.getMatrixAt(index, matrix);
+        flowers!.setMatrixAt(slot, matrix);
+        const hue = FLOWERS[Math.min(FLOWERS.length, Math.max(1, clumps[at + 8]!)) - 1]!;
+        flowers!.setColorAt(slot, color.setHex(hue, THREE.SRGBColorSpace));
+      });
+    }
+    for (const mesh of flowers ? [full, light, flowers] : [full, light]) {
       mesh.name = `grass:${column},${row}`;
       mesh.userData.notShadowCaster = true;
       mesh.visible = false;
@@ -243,13 +307,13 @@ export class Grass {
       this.root.add(mesh);
     }
     const size = this.#source.cellMetres;
-    this.#cells.set(`${column},${row}`, { full, light, centre: [(column + 0.5) * size, (row + 0.5) * size], clumps: count });
+    this.#cells.set(`${column},${row}`, { full, light, flowers, flowering, centre: [(column + 0.5) * size, (row + 0.5) * size], clumps: count });
     this.#changed = true;
   }
 
   #drop(cell: Cell | null): void {
     if (!cell) { return; }
-    for (const mesh of [cell.full, cell.light]) {
+    for (const mesh of [cell.full, cell.light, ...(cell.flowers ? [cell.flowers] : [])]) {
       this.root.remove(mesh);
       mesh.dispose();
     }
@@ -268,24 +332,27 @@ export class Grass {
     return { roots: [this.root], changed };
   }
 
-  /** Acceptance state: resident cells, the clumps drawn this frame and their triangles (before frustum culling). */
-  observe(): { cells: number; drawn: number; triangles: number } {
+  /** Acceptance state: resident cells, the clumps drawn this frame, their triangles (before frustum culling) and flowers. */
+  observe(): { cells: number; drawn: number; triangles: number; flowers: number } {
     let drawn = 0;
     let triangles = 0;
+    let flowers = 0;
     for (const cell of this.#cells.values()) {
-      for (const mesh of cell ? [cell.full, cell.light] : []) {
+      for (const mesh of cell ? [cell.full, cell.light, ...(cell.flowers ? [cell.flowers] : [])] : []) {
         if (!mesh.visible) { continue; }
         drawn += mesh.count;
+        if (mesh === cell!.flowers) { flowers += mesh.count; }
         triangles += mesh.count * mesh.geometry.index!.count / 3;
       }
     }
-    return { cells: this.#cells.size, drawn, triangles };
+    return { cells: this.#cells.size, drawn, triangles, flowers };
   }
 
   dispose(): void {
     this.#clear();
     this.#full.dispose();
     this.#light.dispose();
+    this.#flower.dispose();
     this.#material.dispose();
   }
 }
