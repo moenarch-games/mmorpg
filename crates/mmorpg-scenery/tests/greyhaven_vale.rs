@@ -613,8 +613,8 @@ fn prop_counts_stay_within_their_budgets() {
     // the farmland's tower and hamlet houses join them (#424), and the highlands' stronghold
     // and lookout towers (#425), and the wetlands' drowned watchtower and ruined cottage (#426).
     assert_eq!(count(PropKind::Keep), 12);
-    // The seven walk-in cottages (#843) are the Outpost kit's, not house props.
-    assert_eq!(count(PropKind::House), 20);
+    // The sixteen walk-in cottages (#843, #847) are the Outpost kit's, not house props.
+    assert_eq!(count(PropKind::House), 11);
     // The highlands and wetlands add about a tenth each; #644 adds the extended woodland
     // and hideout. The region's designed forests, rock fields and undergrowth (#816) bring the
     // content to 36,780 scenery props.
