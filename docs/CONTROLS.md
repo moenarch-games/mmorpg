@@ -41,7 +41,7 @@ An ability's targeting requirement belongs to **that ability**, for example:
 | Self | Self-defense, self buff | No |
 | Manual ground/arc aim | Grenade/bomb, aimed area spell | No; choose a point/direction manually |
 
-The table classifies intended input semantics; it does not silently change all current spells, existing class kits, damage or balance. Preserve per-ability rules such as homing target-based projectiles versus freely moving projectiles (Atlas `5.2.71`). A dedicated hold-key directional strike or guard may temporarily own mouse motion without moving the camera, per [#636](https://github.com/moenarch-games/mmorpg/issues/636), [#154](https://github.com/moenarch-games/mmorpg/issues/154), and [#156](https://github.com/moenarch-games/mmorpg/issues/156).
+The table classifies intended input semantics; it does not silently change all current spells, existing class kits, damage or balance. Preserve per-ability rules such as homing target-based projectiles versus freely moving projectiles (Atlas `5.2.71`). Under free aim (Atlas `5.2.i884`) a player's hostile ability aims at the selected unit when it lies inside that ability's aim cone (the swing arc for melee, 15° either side of the facing for ranged), in range and sight, and otherwise at the unit in front; a shot then turns and pitches to meet that unit's body but still flies freely, so it can be dodged. Only a combo follow-up's shot homes. A dedicated hold-key directional strike or guard may temporarily own mouse motion without moving the camera, per [#636](https://github.com/moenarch-games/mmorpg/issues/636), [#154](https://github.com/moenarch-games/mmorpg/issues/154), and [#156](https://github.com/moenarch-games/mmorpg/issues/156).
 
 ## Temporary manual aiming, such as a grenade
 
