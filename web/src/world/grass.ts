@@ -22,7 +22,12 @@ const SWAP_JITTER = 3;
 /** The share of the rank range over which a clump grows from the ground as its distance's share passes its rank. */
 const GROW = 0.08;
 /** How much wider than a near clump a far clump spreads, which stands for about ten of them. */
-const FAR_SPREAD = 2.6;
+const FAR_SPREAD = 2;
+/**
+ * The far clumps' linear RGB scale (#852): a distant meadow reads deeper and less yellow than the near blades' sunlit
+ * tips, so the far field sits on the turf rather than over it as a pale straw carpet.
+ */
+const FAR_TONE = [0.72, 0.86, 0.7] as const;
 
 /**
  * The field at each world detail (`graphics.world_detail`; `low` draws none). A `density` share of the near clumps is
@@ -32,8 +37,8 @@ const FAR_SPREAD = 2.6;
  * one thins, at most a `farDensity` share of them, and thin out again to none at `farTo`.
  */
 const PROFILES = {
-  medium: { full: 6, fade: 30, swap: 9, falloff: 1.6, density: 0.6, farFrom: 18, farTo: 70, farDensity: 0.55 },
-  high: { full: 10, fade: 44, swap: 13, falloff: 1.5, density: 1, farFrom: 26, farTo: 100, farDensity: 0.7 },
+  medium: { full: 6, fade: 30, swap: 9, falloff: 2.2, density: 0.6, farFrom: 18, farTo: 70, farDensity: 0.3 },
+  high: { full: 10, fade: 44, swap: 13, falloff: 2, density: 1, farFrom: 26, farTo: 100, farDensity: 0.4 },
 } as const;
 type Profile = (typeof PROFILES)[keyof typeof PROFILES];
 
@@ -59,7 +64,7 @@ function mostShare(s: Share, near: number, far: number): number {
  * are the heights each blade bends at below its tip; the light clump has fewer, wider blades of one bend, the far
  * clump a single triangle a blade.
  */
-export function clumpGeometry(blades: number, rows: readonly number[], widen = 1): THREE.BufferGeometry {
+export function clumpGeometry(blades: number, rows: readonly number[], widen = 1, tone: readonly [number, number] = [0.34, 1]): THREE.BufferGeometry {
   const positions: number[] = [];
   const normals: number[] = [];
   const colors: number[] = [];
@@ -93,7 +98,7 @@ export function clumpGeometry(blades: number, rows: readonly number[], widen = 1
       // Lit mostly from above, so both faces read alike against the light.
       const n = new THREE.Vector3(Math.sin(lean) * 0.35, 1, Math.cos(lean) * 0.35).normalize();
       normals.push(n.x, n.y, n.z);
-      const shade = 0.34 + 0.66 * t ** 0.8;
+      const shade = tone[0] + (tone[1] - tone[0]) * t ** 0.8;
       colors.push(shade, shade, shade * (0.92 - 0.1 * t), 1);
       uvs.push(side * 0.5 + 0.5, t);
     };
@@ -258,9 +263,11 @@ export class Grass {
     this.root.name = "greyhaven.grass";
     const kind = (geometry: THREE.BufferGeometry): Kind => ({ geometry, ...grassMaterial(this.#shared) });
     this.#full = kind(clumpGeometry(15, [0, 0.4, 0.75]));
-    this.#light = kind(clumpGeometry(7, [0, 0.5], 1.5));
+    // Seen from further off, its tips a little darker, so the field deepens with distance.
+    this.#light = kind(clumpGeometry(7, [0, 0.5], 1.5, [0.34, 0.8]));
     this.#flowers = kind(flowerGeometry());
-    this.#far = kind(clumpGeometry(6, [0], 2.6));
+    // Its blades darker at the tip than a near blade's, as a distant meadow's shade.
+    this.#far = kind(clumpGeometry(6, [0], 2, [0.42, 0.74]));
     this.#farFlowers = kind(flowerGeometry(3, 1.2));
     this.#near = { size: source.cellMetres, cells: new Map(), build: (column, row) => source.cell(column, row) };
     const { farCell, farCellMetres } = source;
@@ -291,12 +298,12 @@ export class Grass {
         kind.own.grassSpread.value.set(...spread);
       };
       const everywhere: [number, number] = [-1e4, 1e4];
-      const nearSpread: [number, number, number] = [profile.full, profile.fade, 1.2];
+      const nearSpread: [number, number, number] = [profile.full, profile.fade, 0.5];
       set(this.#full, near, [-1e4, profile.swap], nearSpread);
       set(this.#light, near, [profile.swap, 1e4], nearSpread);
       set(this.#flowers, near, everywhere, nearSpread);
-      set(this.#far, far, everywhere, [profile.fade, profile.farTo, 0.6]);
-      set(this.#farFlowers, far, everywhere, [profile.fade, profile.farTo, 0.6]);
+      set(this.#far, far, everywhere, [profile.fade, profile.farTo, 0.3]);
+      set(this.#farFlowers, far, everywhere, [profile.fade, profile.farTo, 0.3]);
     }
     this.#changed = true;
   }
@@ -385,7 +392,8 @@ export class Grass {
       matrix.makeScale(spread, clumps[at + 4]!, spread).premultiply(rotation.makeRotationY(clumps[at + 3]!));
       matrix.setPosition(clumps[at]!, clumps[at + 1]! - 0.03, clumps[at + 2]!);
       matrix.toArray(matrices, index * 16);
-      colors.set([clumps[at + 5]!, clumps[at + 6]!, clumps[at + 7]!], index * 3);
+      const tone = far ? FAR_TONE : [1, 1, 1];
+      colors.set([clumps[at + 5]! * tone[0]!, clumps[at + 6]! * tone[1]!, clumps[at + 7]! * tone[2]!], index * 3);
       // The clumps come in a random order: an index's share of them is an even random rank.
       ranks[index] = (index + 0.5) / count;
       if (clumps[at + 8]! > 0) { flowering.push(index); }
