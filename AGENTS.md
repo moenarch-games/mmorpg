@@ -45,6 +45,7 @@ Lookup is read-only and does not replace the full completion gate or required na
 ## Commands
 
 ```sh
+scripts/fetch-bundles.sh             # asset-tooling bundles both clients build from, the Ranger figures file by file (#866); run before any client build
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked
