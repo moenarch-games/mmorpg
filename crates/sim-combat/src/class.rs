@@ -144,7 +144,7 @@ impl ClassChoice {
 
     /// Inverse of [`Self::appearance`]; `None` for 0 and unknown codes.
     #[must_use]
-    pub const fn from_appearance(code: u16) -> Option<Self> {
+    pub const fn from_appearance(code: u32) -> Option<Self> {
         if code == 0 || code > 14 {
             return None;
         }
@@ -293,7 +293,7 @@ mod tests {
             for sex in [Sex::Female, Sex::Male] {
                 let choice = ClassChoice { class, sex };
                 assert_eq!(
-                    ClassChoice::from_appearance(choice.appearance()),
+                    ClassChoice::from_appearance(u32::from(choice.appearance())),
                     Some(choice)
                 );
                 codes.push(choice.appearance());

@@ -9,16 +9,16 @@ pub const INVENTORY_SLOTS: usize = 16;
 
 /// Stable catalog identity. Zero and unknown values fail closed on lookup.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ItemId(u16);
+pub struct ItemId(u32);
 
 impl ItemId {
     #[must_use]
-    pub const fn new(value: u16) -> Self {
+    pub const fn new(value: u32) -> Self {
         Self(value)
     }
 
     #[must_use]
-    pub const fn get(self) -> u16 {
+    pub const fn get(self) -> u32 {
         self.0
     }
 }

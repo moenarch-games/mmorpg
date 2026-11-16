@@ -345,7 +345,7 @@ pub struct EntityState {
     pub kind: EntityKind,
     pub entity_id: u32,
     /// Creature template ID, NPC ID, or for players 0 without a class and otherwise `1 + class × 2 + sex`.
-    pub appearance: u16,
+    pub appearance: u32,
     #[tsify(type = "Vector3")]
     pub position: [i32; 3],
     /// Presentation velocity in units per tick, saturated to the i8 wire range.
@@ -434,7 +434,7 @@ pub struct ResourceState {
 /// A cast or channel in progress: `elapsed` of `total` ticks.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
 pub struct CastState {
-    pub ability: u8,
+    pub ability: u32,
     pub elapsed: u16,
     pub total: u16,
     pub channel: bool,
@@ -465,7 +465,7 @@ impl From<CastState> for core::CastView {
 /// `amount`: total of a damage/heal over time, remaining shield, snare/haste percent, 0 otherwise.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
 pub struct AuraState {
-    pub ability: u8,
+    pub ability: u32,
     pub kind: AuraKind,
     pub remaining: u16,
     pub amount: u16,
@@ -495,7 +495,7 @@ impl From<&AuraState> for core::AuraView {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
 pub struct CooldownState {
-    pub ability: u8,
+    pub ability: u32,
     pub remaining: u16,
 }
 
@@ -544,7 +544,7 @@ pub struct ViewerState {
     /// Ticks of breath left (#274); at 0 a submerged player drowns.
     pub breath: u16,
     /// Waystone IDs (#145) the viewer unlocked by exploration, ascending.
-    pub waystones: Vec<u8>,
+    pub waystones: Vec<u32>,
 }
 
 /// The viewer's target's cast and auras; empty without a living visible target.
@@ -559,7 +559,7 @@ pub struct TargetDetail {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
 #[serde(rename_all = "camelCase")]
 pub struct ItemStack {
-    pub item_id: u16,
+    pub item_id: u32,
     pub quantity: u16,
 }
 
@@ -596,7 +596,7 @@ pub struct StatTotals {
 #[tsify(missing_as_null)]
 pub struct DepthsDropView {
     pub drop: u8,
-    pub item_id: u16,
+    pub item_id: u32,
     pub item_name: String,
     pub state: DepthsDropState,
 }
@@ -700,7 +700,7 @@ pub struct LootView {
 /// An active quest and the current progress of each objective slot (collect counts included).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
 pub struct QuestEntry {
-    pub quest: u8,
+    pub quest: u32,
     pub progress: [u8; 3],
 }
 
@@ -714,7 +714,7 @@ pub struct QuestMarker {
 /// NPCs.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
 pub struct QuestSheet {
-    pub completed: Vec<u8>,
+    pub completed: Vec<u32>,
     pub entries: Vec<QuestEntry>,
     pub markers: Vec<QuestMarker>,
 }
@@ -751,13 +751,13 @@ impl From<&QuestSheet> for core::QuestSheet {
 /// A door as every player sees it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
 pub struct DoorState {
-    pub door: u8,
+    pub door: u32,
     pub open: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
 pub struct PieceState {
-    pub piece: u16,
+    pub piece: u32,
     pub stage: PieceStage,
 }
 
@@ -783,24 +783,26 @@ pub struct SummonedState {
 /// A fired pressure trap near the viewer (#300).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
 pub struct TrapState {
-    pub id: u8,
+    pub id: u32,
     pub age: u16,
 }
 
 /// The night raid as seen near its target (#530): the assault phase (1–3, or 0 once it resolved
 /// while the barn still recovers) and the barn's integrity in percent.
-/// `aid` holds the aid tasks a lost raid left open, one bit per task in `raidAid()` order (#531).
-/// `signs` is set on a forewarned evening, when the scouts' tracks lie on the approach, and
-/// `scouted` once the viewer read them; `readiness` holds the coming or running raid's accepted
-/// preparations: bit 0 the warned guards, then one bit per brace in `raidPrep()` order (#532).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+/// `aid` holds the indices of the aid tasks a lost raid left open, in `raidAid()` order (#531,
+/// #882). `signs` is set on a forewarned evening, when the scouts' tracks lie on the approach,
+/// and `scouted` once the viewer read them; `warned` once the guards accepted a report for the
+/// coming or running raid, and `braced` holds the indices of its braced spots in `raidPrep()`
+/// order (#532, #882).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
 #[serde(rename_all = "camelCase")]
 pub struct RaidSignal {
     pub phase: u8,
     pub integrity: u8,
-    pub aid: u8,
+    pub aid: Vec<u32>,
     pub signs: bool,
-    pub readiness: u8,
+    pub warned: bool,
+    pub braced: Vec<u32>,
     pub scouted: bool,
 }
 
@@ -896,7 +898,7 @@ pub enum ZoneEvent {
     },
     /// A world trap struck a unit (#300).
     TrapHit {
-        trap: u8,
+        trap: u32,
         target: EntityRef,
         amount: u16,
     },
@@ -911,26 +913,26 @@ pub enum ZoneEvent {
     CastStarted {
         source: EntityRef,
         target: Option<EntityRef>,
-        ability: u8,
+        ability: u32,
         ticks: u16,
     },
     AbilityUsed {
         source: EntityRef,
         target: Option<EntityRef>,
-        ability: u8,
+        ability: u32,
     },
     /// `source` swept a directed strike toward `aim`; `target` is the creature it struck, null a whiff.
     StrikeSwept {
         source: EntityRef,
         target: Option<EntityRef>,
-        ability: u8,
+        ability: u32,
         aim: StrikeAim,
     },
     /// `source` began a timed swing toward `aim` (#679): `startup` ticks of wind-up, then
     /// `active` ticks of sweep.
     SwingBegan {
         source: EntityRef,
-        ability: u8,
+        ability: u32,
         facing: u16,
         aim: StrikeAim,
         startup: u8,
@@ -959,24 +961,24 @@ pub enum ZoneEvent {
     Healed {
         source: EntityRef,
         target: EntityRef,
-        ability: u8,
+        ability: u32,
         amount: u16,
     },
     AuraApplied {
         source: EntityRef,
         target: EntityRef,
-        ability: u8,
+        ability: u32,
         ticks: u16,
     },
     AuraRemoved {
         source: EntityRef,
         target: EntityRef,
-        ability: u8,
+        ability: u32,
     },
     Interrupted {
         source: Option<EntityRef>,
         target: EntityRef,
-        ability: u8,
+        ability: u32,
     },
     Absorbed {
         source: EntityRef,
@@ -984,9 +986,13 @@ pub enum ZoneEvent {
         amount: u16,
     },
     /// Objective `objective` (its index) of `quest` reached `count`.
-    QuestProgress { quest: u8, objective: u8, count: u8 },
+    QuestProgress {
+        quest: u32,
+        objective: u8,
+        count: u8,
+    },
     /// The viewer turned `quest` in.
-    QuestCompleted { quest: u8 },
+    QuestCompleted { quest: u32 },
     /// The trailing lurker `source` lost interest in the diving viewer and swims home (#274).
     LostInterest { source: EntityRef },
     /// A night raid acknowledgment for the viewer (#532).
@@ -1502,7 +1508,7 @@ pub struct ZoneSnapshot {
     /// Complete self bag; null only until an online session receives its first bag sheet (#544).
     pub inventory: Option<Vec<Option<ItemStack>>>,
     /// Item IDs by equipment slot (0 main hand … 5 feet), null when empty; present exactly with the bag.
-    pub equipment: Option<Vec<Option<u16>>>,
+    pub equipment: Option<Vec<Option<u32>>>,
     /// The equipment's stat totals, present exactly with the equipment.
     pub stats: Option<StatTotals>,
     /// Quest log, turned-in quests and NPC markers, present exactly with the bag.
@@ -1685,12 +1691,13 @@ impl From<&core::ZoneSnapshot> for ZoneSnapshot {
                 .as_ref()
                 .map(|state| crate::party::party_view(state, snapshot.viewer_id)),
             depths_loot: snapshot.depths_loot.as_ref().map(DepthsLootView::from),
-            raid: snapshot.raid.map(|raid| RaidSignal {
+            raid: snapshot.raid.as_ref().map(|raid| RaidSignal {
                 phase: raid.phase,
                 integrity: raid.integrity,
-                aid: raid.aid,
+                aid: raid.aid.iter().copied().collect(),
                 signs: raid.signs,
-                readiness: raid.readiness,
+                warned: raid.warned,
+                braced: raid.braced.iter().copied().collect(),
                 scouted: raid.scouted,
             }),
             events: snapshot.events.iter().copied().map(Into::into).collect(),
@@ -1923,12 +1930,13 @@ impl TryFrom<&ZoneSnapshot> for core::ZoneSnapshot {
                     age: view.age,
                 })
                 .collect(),
-            raid: snapshot.raid.map(|raid| core::RaidView {
+            raid: snapshot.raid.as_ref().map(|raid| core::RaidView {
                 phase: raid.phase,
                 integrity: raid.integrity,
-                aid: raid.aid,
+                aid: raid.aid.iter().copied().collect(),
                 signs: raid.signs,
-                readiness: raid.readiness,
+                warned: raid.warned,
+                braced: raid.braced.iter().copied().collect(),
                 scouted: raid.scouted,
             }),
             // The party sheet only informs the page's own frame; nothing presents it back.
@@ -1993,17 +2001,17 @@ pub enum WorldCommand {
     },
     /// A class ability at `target`, or at the current selection with `null`.
     UseAbility {
-        ability: u8,
+        ability: u32,
         target: Option<EntityRef>,
     },
     /// The held key that used `ability` went up, or `input-bindings` retired its hold (#414).
     ReleaseAbility {
-        ability: u8,
+        ability: u32,
         retired: bool,
     },
     /// Heroic Strike's directed mode: turn to `facing` (u16 yaw) and sweep toward `aim`.
     DirectedStrike {
-        ability: u8,
+        ability: u32,
         facing: u16,
         aim: StrikeAim,
     },
@@ -2032,7 +2040,7 @@ pub enum WorldCommand {
     /// Buys `quantity` units of the vendor NPC's offer at index `offer`.
     BuyItem {
         npc: u32,
-        offer: u8,
+        offer: u32,
         quantity: u16,
     },
     /// Sells `quantity` units from one of the player's own bag slots to the vendor NPC.
@@ -2052,33 +2060,33 @@ pub enum WorldCommand {
     /// Accepts `quest` from its giver `npc`; the zone checks reach and availability.
     AcceptQuest {
         npc: u32,
-        quest: u8,
+        quest: u32,
     },
     /// Turns `quest` in at its ender `npc`, taking reward `choice` (0 when it offers none).
     CompleteQuest {
         npc: u32,
-        quest: u8,
+        quest: u32,
         choice: u8,
     },
     AbandonQuest {
-        quest: u8,
+        quest: u32,
     },
     /// Opens (`open`) or closes content door `door` (#158); the zone checks reach and blockers.
     UseDoor {
-        door: u8,
+        door: u32,
         open: bool,
     },
     /// Sits on seat `seat`, or on the ground with none (#619); the zone checks the rest.
     Sit {
-        seat: Option<u8>,
+        seat: Option<u32>,
     },
     /// Travels from the waystone in reach to unlocked waystone `waystone` (#145).
     UseWaystone {
-        waystone: u8,
+        waystone: u32,
     },
     /// Tends or mends open aid task `task` of a lost night raid's aftermath (#531).
     RaidAid {
-        task: u8,
+        task: u32,
     },
     /// Answers a boss drop's roll window (#404): `choice` is need, greed or pass.
     RollDepthsDrop {
@@ -2096,11 +2104,11 @@ pub enum WorldCommand {
     /// One preparation step before a forewarned night raid (#532): 0 reads the tracks, 1 reports
     /// them to the lookout, `2 + k` braces the barn at brace spot `k`.
     RaidPrepare {
-        step: u8,
+        step: u32,
     },
     /// Starts repairing a destructible piece (#305), or stops with `null`.
     Repair {
-        piece: Option<u16>,
+        piece: Option<u32>,
     },
     /// Orders all of a Necromancer's minions at once (#295); the zone checks the target or point.
     CommandMinions {
@@ -2245,8 +2253,8 @@ impl TryFrom<&WorldCommand> for core::ZoneCommand {
                 // The wire carries the piece plus one, so the largest ID has no reference.
                 piece: piece
                     .map(|piece| {
-                        if piece == u16::MAX {
-                            Err("piece IDs must be below 65 535".to_owned())
+                        if piece == u32::MAX {
+                            Err("piece IDs must be below 4 294 967 295".to_owned())
                         } else {
                             Ok(core::PieceId::new(piece))
                         }
@@ -2501,7 +2509,7 @@ mod tests {
         assert!(encode(WorldCommand::UseWaystone { waystone: 0 }).is_err());
         assert!(
             encode(WorldCommand::Repair {
-                piece: Some(u16::MAX)
+                piece: Some(u32::MAX)
             })
             .is_err()
         );

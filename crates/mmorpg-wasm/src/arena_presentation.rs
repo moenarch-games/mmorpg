@@ -216,7 +216,7 @@ struct PlacementEntry {
 #[derive(Serialize)]
 struct LiftEntry {
     /// The platform whose `UnitPresenter` frame `platforms` entry places it.
-    platform: u8,
+    platform: u32,
     /// Its index into the placements.
     placement: usize,
 }
@@ -321,7 +321,7 @@ impl ArenaPresentation {
     /// 16 column-major model floats, or none when the kit draws no piece for that platform or
     /// it has not moved.
     #[wasm_bindgen(js_name = kitPlace)]
-    pub fn kit_place(&mut self, platform: u8, x: f64, y: f64, z: f64) -> Option<Vec<f32>> {
+    pub fn kit_place(&mut self, platform: u32, x: f64, y: f64, z: f64) -> Option<Vec<f32>> {
         let kit = self.kit.as_mut()?;
         let index = kit
             .dressing
@@ -418,7 +418,7 @@ impl ArenaPresentation {
     }
     /// Default choices come from the actual admission API; the UI can choose other legal slots.
     #[wasm_bindgen(js_name = standardEquipment)]
-    pub fn standard_equipment(&self, class: u8) -> Result<Vec<u16>, JsError> {
+    pub fn standard_equipment(&self, class: u8) -> Result<Vec<u32>, JsError> {
         let class = PlayerClass::from_code(class).ok_or_else(|| JsError::new("unknown class"))?;
         let build = EphemeralCharacterBuild::standard(ClassChoice {
             class,

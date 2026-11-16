@@ -162,7 +162,8 @@ fn travel_is_refused_in_combat_away_from_stones_and_across_zones() {
     let mut record = west
         .capture_character(1, CharacterId::new("traveller").unwrap())
         .unwrap();
-    record.waystones = WaystoneSet::from_bits(0b111).unwrap();
+    record.waystones =
+        WaystoneSet::from_ids([GREYHAVEN_OUTPOST, SEAM_TEST_WEST, SEAM_TEST_EAST]).unwrap();
     let mut west = ZoneSimulation::with_content(seam_test::WEST_ZONE, seam_test::west()).unwrap();
     west.admit_character(1, &record).unwrap();
     west.advance_tick().unwrap();

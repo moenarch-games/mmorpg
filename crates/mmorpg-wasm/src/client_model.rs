@@ -37,7 +37,7 @@ pub(crate) fn to_js<T: Serialize>(value: &T) -> Result<JsValue, JsError> {
 
 /// The class abilities on action-bar slots 1–8, in catalog order.
 #[wasm_bindgen(js_name = classKit)]
-pub fn class_kit(class: Ts<ClassId>) -> Result<Vec<u8>, JsError> {
+pub fn class_kit(class: Ts<ClassId>) -> Result<Vec<u32>, JsError> {
     Ok(hud::class_kit(class.to_rust()?.into()))
 }
 
@@ -61,7 +61,7 @@ pub struct SlotCooldown {
 #[serde(rename_all = "camelCase")]
 #[tsify(missing_as_null)]
 pub struct SlotState {
-    pub ability: u8,
+    pub ability: u32,
     pub learned: bool,
     /// Level at which the class learns the ability.
     pub unlock_level: u8,
@@ -257,7 +257,7 @@ impl PowerDraw {
     pub fn press(
         &mut self,
         slot: u8,
-        ability: u8,
+        ability: u32,
         snapshot: Ts<ZoneSnapshot>,
         interface_open: bool,
     ) -> Result<bool, JsError> {
@@ -268,7 +268,7 @@ impl PowerDraw {
     }
 
     /// `slot` went up, or its hold was retired; the ability to send, if it fires.
-    pub fn release(&mut self, slot: u8, retired: bool) -> Option<u8> {
+    pub fn release(&mut self, slot: u8, retired: bool) -> Option<u32> {
         match self.draw.release(slot, retired) {
             Some(DrawRelease::Fire(ability)) => Some(ability),
             Some(DrawRelease::Drop) | None => None,
@@ -292,7 +292,7 @@ impl PowerDraw {
 
     /// The ability being drawn.
     #[must_use]
-    pub fn drawing(&self) -> Option<u8> {
+    pub fn drawing(&self) -> Option<u32> {
         self.draw.drawing()
     }
 }
@@ -383,7 +383,7 @@ pub struct Click {
     pub outcome: ClickOutcome,
     pub ended: EndedGesture,
     /// The ability a `throw` uses.
-    pub ability: Option<u8>,
+    pub ability: Option<u32>,
     /// The wheel action (#653) a `confirm` runs, by its semantic id; `null` for the centre.
     pub action: Option<String>,
 }
@@ -504,7 +504,7 @@ impl MouseOwners {
     pub fn press_aim(
         &mut self,
         slot: u8,
-        ability: u8,
+        ability: u32,
         snapshot: Ts<ZoneSnapshot>,
         interface_open: bool,
     ) -> Result<Ts<AimPress>, JsError> {
@@ -521,7 +521,7 @@ impl MouseOwners {
 
     /// `slot` went up, or its hold was retired: the ability to throw along the aim, if any.
     #[wasm_bindgen(js_name = releaseAim)]
-    pub fn release_aim(&mut self, slot: u8, retired: bool) -> Option<u8> {
+    pub fn release_aim(&mut self, slot: u8, retired: bool) -> Option<u32> {
         self.owners.release_aim(slot, retired)
     }
 
@@ -822,7 +822,7 @@ impl From<quest::ObjectiveView> for ObjectiveView {
 /// An active quest with each objective's received progress.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
 pub struct QuestView {
-    pub quest: u8,
+    pub quest: u32,
     pub objectives: Vec<ObjectiveView>,
     pub complete: bool,
 }
@@ -853,7 +853,7 @@ pub fn quest_views(sheet: Ts<QuestSheet>) -> Result<JsValue, JsError> {
 
 /// `quest` at `progress`, one count per objective; `null` for an unknown quest.
 #[wasm_bindgen(js_name = questView, unchecked_return_type = "QuestView | null")]
-pub fn quest_view(quest: u8, progress: &[u8]) -> Result<JsValue, JsError> {
+pub fn quest_view(quest: u32, progress: &[u8]) -> Result<JsValue, JsError> {
     let content = hosted_content();
     let view: Option<QuestView> = content
         .quest(core::QuestId::new(quest))
@@ -866,7 +866,7 @@ pub fn quest_view(quest: u8, progress: &[u8]) -> Result<JsValue, JsError> {
 #[tsify(missing_as_null)]
 pub struct TrackerRow {
     pub text: String,
-    pub quest: u8,
+    pub quest: u32,
     pub objective: Option<u8>,
     pub done: bool,
 }
@@ -912,7 +912,7 @@ pub fn dialog_npc(snapshot: Ts<ZoneSnapshot>) -> Result<JsValue, JsError> {
 pub struct DialogView {
     /// A woken private-home resident's line before its turn-ins (#158).
     pub greeting: Option<String>,
-    pub offered: Vec<u8>,
+    pub offered: Vec<u32>,
     pub ready: Vec<QuestView>,
     pub in_progress: Vec<QuestView>,
 }

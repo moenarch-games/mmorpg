@@ -70,7 +70,7 @@ enum GuardState {
 struct Effect {
     id: u64,
     visual: Visual,
-    ability: u8,
+    ability: u32,
     source: EntityRef,
     target: Option<EntityRef>,
     ground: Option<V>,
@@ -106,7 +106,7 @@ struct ActorAction {
     start: f64,
     duration: f64,
     hold: bool,
-    ability: u8,
+    ability: u32,
     release: bool,
     /// The viewer's own projected cast progress, which wins over the clock.
     projected: Option<f64>,
@@ -118,18 +118,18 @@ const SWEEP_SECONDS: f64 = 0.34;
 const BLOCK_SECONDS: f64 = 0.45;
 const IMPACT_SECONDS: f64 = 0.32;
 const DANGER_BURST_SECONDS: f64 = 0.35;
-const BLIZZARD: u8 = 12;
-const LIGHTNING_BEAM: u8 = 22;
+const BLIZZARD: u32 = 12;
+const LIGHTNING_BEAM: u32 = 22;
 /// The beam's reach and the cone's, metres (the zone's 20 m and 8 m).
 const BEAM_METRES: f64 = 20.;
 const CONE_METRES: f64 = 8.;
 const CONE_HALF_ANGLE: f64 = PI / 6.;
-const BARRIER: u8 = 11;
-const DRAIN_LIFE: u8 = 28;
-const BONE_SHIELD: u8 = 29;
-const HOLY_BEAM: u8 = 36;
-const DIVINE_SHIELD: u8 = 37;
-const BARKSKIN: u8 = 41;
+const BARRIER: u32 = 11;
+const DRAIN_LIFE: u32 = 28;
+const BONE_SHIELD: u32 = 29;
+const HOLY_BEAM: u32 = 36;
+const DIVINE_SHIELD: u32 = 37;
+const BARKSKIN: u32 = 41;
 /// The zone's guard coverage is centred 30° toward the shield (left) side of the facing.
 const GUARD_SIDE: f64 = PI / 6.;
 const SWEEP_HALF_WIDTH: f64 = PI / 6.;
@@ -146,7 +146,7 @@ pub struct Effects {
 }
 
 /// Each ability's caster pose, visual and accent colour.
-fn presentation(id: u8) -> (Option<Stance>, Option<Visual>, u32) {
+fn presentation(id: u32) -> (Option<Stance>, Option<Visual>, u32) {
     match id {
         1 => (Some(Stance::Sword), Some(Visual::Swing), 0xe0a15c),
         2 => (Some(Stance::Sword), None, 0x9fb4c8),
@@ -208,7 +208,7 @@ fn presentation(id: u8) -> (Option<Stance>, Option<Visual>, u32) {
 
 /// The self-centred creature specials with a reliable ring footprint, in metres: Stomp's 3.5 m
 /// and Redbrand Whirl's 4 m (the zone's radii).
-fn danger_radius(id: u8) -> Option<f64> {
+fn danger_radius(id: u32) -> Option<f64> {
     match id {
         18 => Some(3.5),
         24 => Some(4.),
@@ -248,7 +248,7 @@ impl Effects {
     fn add(
         &mut self,
         visual: Visual,
-        ability: u8,
+        ability: u32,
         source: EntityRef,
         target: Option<EntityRef>,
         duration: Option<f64>,
@@ -294,7 +294,7 @@ impl Effects {
     }
 
     /// Lightning Beam or Holy Beam (#303), in the ability's own colour.
-    fn beam(&mut self, ability: u8, source: EntityRef, now: f64) {
+    fn beam(&mut self, ability: u32, source: EntityRef, now: f64) {
         if !self
             .effects
             .iter()

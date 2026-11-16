@@ -36,16 +36,16 @@ pub const MAX_QUEST_EXPERIENCE: u32 = 10_000;
 
 /// Stable quest identity within one content revision; `0` names no quest.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct QuestId(u8);
+pub struct QuestId(u32);
 
 impl QuestId {
     #[must_use]
-    pub const fn new(value: u8) -> Self {
+    pub const fn new(value: u32) -> Self {
         Self(value)
     }
 
     #[must_use]
-    pub const fn get(self) -> u8 {
+    pub const fn get(self) -> u32 {
         self.0
     }
 }
@@ -569,9 +569,9 @@ pub(crate) fn drops_quest_item(
 /// A quest request at an NPC.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum QuestRequest {
-    Accept { npc: NpcId, quest: u8 },
-    Complete { npc: NpcId, quest: u8, choice: u8 },
-    Abandon { quest: u8 },
+    Accept { npc: NpcId, quest: u32 },
+    Complete { npc: NpcId, quest: u32, choice: u8 },
+    Abandon { quest: u32 },
 }
 
 type Refusal = Option<(ErrorCode, Option<EntityRef>)>;
@@ -627,7 +627,7 @@ impl ZoneSimulation {
         &mut self,
         player_id: PlayerId,
         npc: NpcId,
-        quest: u8,
+        quest: u32,
     ) -> Result<Refusal, ZoneError> {
         let target = Some(EntityRef::Npc(npc));
         self.keep_awake(npc);
@@ -678,7 +678,7 @@ impl ZoneSimulation {
         &mut self,
         player_id: PlayerId,
         npc: NpcId,
-        quest: u8,
+        quest: u32,
         choice: u8,
     ) -> Result<Refusal, ZoneError> {
         let target = Some(EntityRef::Npc(npc));

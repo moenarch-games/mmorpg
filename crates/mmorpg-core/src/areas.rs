@@ -5,23 +5,21 @@
 
 use crate::ZoneError;
 
-/// Upper bound on named areas per content revision.
-pub const MAX_ZONE_AREAS: usize = 64;
 /// Longest area name in bytes.
 pub const MAX_AREA_NAME_BYTES: usize = 64;
 
 /// Stable identifier of a named area within one content revision.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct AreaId(u16);
+pub struct AreaId(u32);
 
 impl AreaId {
     #[must_use]
-    pub const fn new(value: u16) -> Self {
+    pub const fn new(value: u32) -> Self {
         Self(value)
     }
 
     #[must_use]
-    pub const fn get(self) -> u16 {
+    pub const fn get(self) -> u32 {
         self.0
     }
 }
@@ -92,9 +90,6 @@ pub struct ZoneAreas {
 impl ZoneAreas {
     /// Validates unique IDs and names and orders the table by ID.
     pub fn new(mut areas: Vec<Area>) -> Result<Self, ZoneError> {
-        if areas.len() > MAX_ZONE_AREAS {
-            return Err(ZoneError::new("zone area capacity reached"));
-        }
         areas.sort_by_key(Area::id);
         if areas.windows(2).any(|pair| pair[0].id == pair[1].id) {
             return Err(ZoneError::new("duplicate area id"));
@@ -123,7 +118,7 @@ impl ZoneAreas {
 mod tests {
     use super::*;
 
-    fn area(id: u16, name: &str, min_xz: [i32; 2], max_xz: [i32; 2]) -> Area {
+    fn area(id: u32, name: &str, min_xz: [i32; 2], max_xz: [i32; 2]) -> Area {
         Area::new(AreaId::new(id), name, min_xz, max_xz).unwrap()
     }
 
@@ -160,9 +155,5 @@ mod tests {
             ])
             .is_err()
         );
-        let too_many = (0..=u16::try_from(MAX_ZONE_AREAS).unwrap())
-            .map(|id| area(id, &format!("Area {id}"), [0, 0], [1, 1]))
-            .collect();
-        assert!(ZoneAreas::new(too_many).is_err());
     }
 }

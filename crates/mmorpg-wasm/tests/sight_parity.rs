@@ -28,7 +28,7 @@ const MOVES: [(u64, i8, u16); 4] = [
 /// `(tick, prop)`: a crate by the smithy first, then the one beside it.
 const TARGETS: [(u64, u32); 2] = [(4, 901), (342, 900)];
 const CASTS: [u64; 2] = [162, 344];
-const FIREBOLT: u8 = 9;
+const FIREBOLT: u32 = 9;
 const TICKS: u64 = 520;
 /// When set, the path this test writes the native digest to (16 hex digits and a newline).
 const DIGEST_OUT: &str = "MMORPG_SIGHT_DIGEST_OUT";

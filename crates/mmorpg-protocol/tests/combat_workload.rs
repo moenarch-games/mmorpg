@@ -93,11 +93,13 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // Per-creature random streams (#861) re-roll every creature's level, wander and fight once:
     // fights-8 evaluates 17,156 AI decisions and crowded-fights-64 13,344. From here on a new
     // spawn moves no other creature's rolls, so content alone no longer shifts these counters.
+    // 32-bit content IDs and the world and waystone sheets (#882) widen the projections:
+    // 6,151,648, 1,915,421, 8,176,453 and 24,553,949 bytes.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [11_052, 5_126_040, 288_000, 6_088_352],
-        [17_156, 5_123_160, 93_060, 1_841_725],
-        [25_840, 5_131_800, 434_117, 7_878_807],
-        [13_344, 5_142_964, 2_323_474, 24_322_842],
+        [11_052, 5_126_040, 288_000, 6_151_648],
+        [17_156, 5_123_160, 93_060, 1_915_421],
+        [25_840, 5_131_800, 434_117, 8_176_453],
+        [13_344, 5_142_964, 2_323_474, 24_553_949],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();

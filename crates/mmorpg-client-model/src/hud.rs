@@ -65,7 +65,7 @@ impl SlotCooldown {
 /// One action-bar slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SlotState {
-    pub ability: u8,
+    pub ability: u32,
     /// The viewer's level reaches the ability's unlock level.
     pub learned: bool,
     /// Level at which the class learns the ability.
@@ -82,7 +82,7 @@ pub struct SlotState {
 /// The class abilities in catalog id order: action-bar slots 1–20, the first ten on the first
 /// row and the rest on the Shift row.
 #[must_use]
-pub fn class_kit(class: PlayerClass) -> Vec<u8> {
+pub fn class_kit(class: PlayerClass) -> Vec<u32> {
     ABILITY_CATALOG
         .iter()
         .filter(|ability| ability.user == AbilityUser::Class(class))
@@ -174,7 +174,7 @@ pub fn slot_state(
 /// What the cast bar shows for a cast or channel.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CastBar {
-    pub ability: u8,
+    pub ability: u32,
     /// Filled share, 0–1: a cast fills, a channel drains as it runs out.
     pub fill: f32,
     /// Ticks left.
@@ -251,12 +251,12 @@ mod tests {
     use super::*;
     use mmorpg_core::{EntityFlags, EntityKind, EntitySnapshot, ResourceKind};
 
-    const FIREBOLT: u8 = 9;
-    const FROST_NOVA: u8 = 10;
-    const BLIZZARD: u8 = 12;
-    const STRIKE: u8 = 1;
+    const FIREBOLT: u32 = 9;
+    const FROST_NOVA: u32 = 10;
+    const BLIZZARD: u32 = 12;
+    const STRIKE: u32 = 1;
 
-    fn ability(id: u8) -> &'static Ability {
+    fn ability(id: u32) -> &'static Ability {
         ability_by_id(AbilityId::new(id)).unwrap()
     }
 

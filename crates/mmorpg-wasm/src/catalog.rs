@@ -45,17 +45,17 @@ pub struct CatalogExport {
 /// what it asks for and what it grants.
 #[derive(Clone, Debug, Serialize)]
 pub struct QuestExport {
-    pub id: u8,
+    pub id: u32,
     pub name: String,
     pub text: String,
     pub giver: u32,
     pub ender: u32,
-    pub prerequisite: Option<u8>,
+    pub prerequisite: Option<u32>,
     pub objectives: Vec<ObjectiveExport>,
     pub experience: u32,
     pub copper: u32,
     /// Item IDs; the reward choice is the index into this list.
-    pub choices: Vec<u16>,
+    pub choices: Vec<u32>,
 }
 
 /// `kind` is `kill` (`target` is a creature template), `collect` (`target`
@@ -67,22 +67,18 @@ pub struct QuestExport {
 pub struct ObjectiveExport {
     pub kind: &'static str,
     pub target: u32,
-    pub source: Option<u16>,
+    pub source: Option<u32>,
     pub count: u8,
 }
 
 fn objective(objective: mmorpg_core::QuestObjective) -> ObjectiveExport {
     use mmorpg_core::QuestObjective;
     let (kind, target, source) = match objective {
-        QuestObjective::Kill { template, .. } => ("kill", u32::from(template.get()), None),
-        QuestObjective::Collect { item, source, .. } => {
-            ("collect", u32::from(item.get()), Some(source.get()))
-        }
+        QuestObjective::Kill { template, .. } => ("kill", template.get(), None),
+        QuestObjective::Collect { item, source, .. } => ("collect", item.get(), Some(source.get())),
         QuestObjective::Talk { npc } => ("talk", npc.get(), None),
-        QuestObjective::Explore { area } => ("explore", u32::from(area.get()), None),
-        QuestObjective::Retrieve { item, area } => {
-            ("retrieve", u32::from(item.get()), Some(area.get()))
-        }
+        QuestObjective::Explore { area } => ("explore", area.get(), None),
+        QuestObjective::Retrieve { item, area } => ("retrieve", item.get(), Some(area.get())),
         QuestObjective::DefeatThorn => ("victory", 0, None),
     };
     ObjectiveExport {
@@ -102,7 +98,7 @@ pub struct VendorExport {
 /// One unit of `item` costs `price` copper.
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct VendorOfferExport {
-    pub item: u16,
+    pub item: u32,
     pub price: u32,
 }
 
@@ -118,7 +114,7 @@ pub struct ClassExport {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AbilityExport {
-    pub id: u8,
+    pub id: u32,
     pub name: &'static str,
     /// A class name, or `creature`.
     pub user: &'static str,
@@ -138,7 +134,7 @@ pub struct AbilityExport {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreatureTemplateExport {
-    pub id: u16,
+    pub id: u32,
     pub name: String,
     pub family: &'static str,
     pub behaviour: &'static str,
@@ -164,14 +160,14 @@ pub struct NpcExport {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct AreaNameExport {
-    pub id: u16,
+    pub id: u32,
     pub name: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ItemExport {
-    pub id: u16,
+    pub id: u32,
     pub name: &'static str,
     pub max_stack: u16,
     /// The camel-case equipment slot name, or `null` for plain bag items.

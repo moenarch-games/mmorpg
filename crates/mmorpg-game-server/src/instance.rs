@@ -43,7 +43,7 @@ pub struct ThresholdEntry {
 }
 
 /// A run's reported progress: run ID, cleared chambers, checkpoint.
-pub type RunProgress = (u64, u8, bool);
+pub type RunProgress = (u64, std::collections::BTreeSet<u32>, bool);
 
 #[derive(Default)]
 struct Exchange {
@@ -77,7 +77,7 @@ impl InstanceChannel {
     /// Whether a character is in the zone, and its run's progress, as of its last tick.
     #[must_use]
     pub fn presence(&self) -> (bool, Option<RunProgress>) {
-        self.with(|exchange| (exchange.occupied, exchange.progress))
+        self.with(|exchange| (exchange.occupied, exchange.progress.clone()))
     }
 
     /// The boss outcome the zone reports, if its boss fell.
@@ -212,7 +212,7 @@ impl ZoneGameServerAdapter {
         let progress = self
             .zone
             .depths_run()
-            .map(|run| (run.run_id, run.cleared, run.checkpoint));
+            .map(|run| (run.run_id, run.cleared.clone(), run.checkpoint));
         let boss = self.zone.boss_report();
         channel.with(|exchange| {
             for entry in entries {
@@ -416,8 +416,8 @@ impl InstanceService {
         let slot = zone.zone;
         self.transact(zone, &mut |directory, now| {
             directory.sync_slot(slot, occupied, now);
-            if let Some((run, cleared, checkpoint)) = progress {
-                directory.report(slot, run, cleared, checkpoint);
+            if let Some((run, cleared, checkpoint)) = &progress {
+                directory.report(slot, *run, cleared, *checkpoint);
             }
             if let (Some(report), Some(bytes)) = (&report, &encoded) {
                 directory.report_outcome(

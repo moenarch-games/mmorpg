@@ -738,20 +738,30 @@ async fn a_budget_packed_crowded_projection_reaches_a_client() {
             // the quest sheet (completed count and IDs, entry count, entries, marker count,
             // markers), no corpse sheet and an empty ability sheet.
             let sheet_bytes = snapshot.quests.as_ref().map_or(0, |quests| {
-                92 + 1
-                    + quests.completed.len()
+                136 + 2
+                    + 4 * quests.completed.len()
                     + 1
-                    + 4 * quests.entries.len()
-                    + 1
-                    + 3 * quests.markers.len()
+                    + 7 * quests.entries.len()
+                    + 2
+                    + 5 * quests.markers.len()
             }) + 1
                 + 8;
-            // Every projection also carries the content doors (#158).
-            let door_bytes = 2 * snapshot.doors.len();
+            // The world sheet carries the content doors, the pieces that are not intact and the
+            // raid signal, and the waystone sheet the unlocked stones (#158, #882).
+            let raid_bytes = snapshot.raid.as_ref().map_or(1, |raid| {
+                1 + 3 + 2 + 4 * raid.aid.len() + 2 + 4 * raid.braced.len()
+            });
+            let world_bytes = 2
+                + 5 * snapshot.doors.len()
+                + 2
+                + 5 * snapshot.pieces.len()
+                + raid_bytes
+                + 2
+                + 4 * snapshot.viewer.waystones.len();
             let expected_entities = (MAX_PLAYER_PROJECTION_BYTES
                 - PLAYER_SNAPSHOT_FIXED_BYTES
                 - sheet_bytes
-                - door_bytes)
+                - world_bytes)
                 / ENTITY_RECORD_BYTES;
             assert_eq!(snapshot.entities.len(), expected_entities);
             assert_eq!(snapshot.entities[0].id, session.player_id());
@@ -760,7 +770,7 @@ async fn a_budget_packed_crowded_projection_reaches_a_client() {
                 mmorpg_protocol::encode_snapshot(&snapshot)?.len(),
                 PLAYER_SNAPSHOT_FIXED_BYTES
                     + sheet_bytes
-                    + door_bytes
+                    + world_bytes
                     + expected_entities * ENTITY_RECORD_BYTES
             );
             assert!(
@@ -825,7 +835,8 @@ async fn fragmented_projection_reaches_the_native_client() {
         auras: Vec::new(),
         events: Vec::new(),
         chat: Vec::new(),
-        entities: (0..MAX_WIRE_ENTITIES)
+        // The most records beside the empty world and waystone sheets a first projection carries.
+        entities: (0..MAX_WIRE_ENTITIES - 1)
             .map(|index| EntitySnapshot {
                 kind: EntityKind::Player,
                 id: player_id + u32::try_from(index).unwrap(),

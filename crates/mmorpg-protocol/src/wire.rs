@@ -1,6 +1,8 @@
 //! Byte-level primitives shared by the snapshot scopes: the common prefix,
 //! entity references, gameplay events and strict readers.
 
+use std::collections::BTreeSet;
+
 use mmorpg_core::{
     AbilityId, EntityKind, EntityRef, ErrorCode, MAX_QUEST_OBJECTIVES, QuestId, StrikeAim,
     StrikeHeight, StrikeSide, ZoneEvent, ZoneId, ability_by_id,
@@ -48,7 +50,7 @@ const RAID_NOTICE: u8 = 22;
 const TRAP_HIT: u8 = 23;
 const SWING_BEGAN: u8 = 24;
 const CLASHED: u8 = 25;
-const CRITICAL_FLAG: u8 = 1;
+const CRITICAL_FLAG: u32 = 1;
 
 pub(crate) const fn entity_kind_code(kind: EntityKind) -> u8 {
     match kind {
@@ -206,20 +208,56 @@ pub fn decode_error_code(code: u16) -> Result<ErrorCode, ProtocolError> {
     })
 }
 
-/// A waystone of the network (#145).
-pub(crate) fn decode_waystone(code: u8) -> Result<mmorpg_core::WaystoneId, ProtocolError> {
+/// A waystone ID, never `0` (#145); whether the network has it is core's to decide.
+pub(crate) fn decode_waystone(code: u32) -> Result<mmorpg_core::WaystoneId, ProtocolError> {
     mmorpg_core::WaystoneId::new(code).ok_or_else(|| ProtocolError::new("unknown waystone"))
 }
 
-/// Unlocked waystones: bits of network stones only (#145).
-pub(crate) fn decode_waystones(bits: u32) -> Result<mmorpg_core::WaystoneSet, ProtocolError> {
-    mmorpg_core::WaystoneSet::from_bits(bits)
+/// Unlocked waystones (#145, #882): `count u16 · count × id u32`, strictly ascending, network
+/// stones only.
+pub(crate) fn encode_waystones(
+    payload: &mut Vec<u8>,
+    waystones: &mmorpg_core::WaystoneSet,
+) -> Result<(), ProtocolError> {
+    payload.extend_from_slice(
+        &encode_u16_count(
+            waystones.len(),
+            usize::from(u16::MAX),
+            "too many unlocked waystones",
+        )?
+        .to_be_bytes(),
+    );
+    for id in waystones.iter() {
+        payload.extend_from_slice(&id.get().to_be_bytes());
+    }
+    Ok(())
+}
+
+pub(crate) fn decode_waystones(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<mmorpg_core::WaystoneSet, ProtocolError> {
+    let count = decode_u16_count(
+        payload,
+        offset,
+        usize::from(u16::MAX),
+        "too many unlocked waystones",
+    )?;
+    let mut ids: Vec<mmorpg_core::WaystoneId> = Vec::with_capacity(count);
+    for _ in 0..count {
+        let id = decode_waystone(u32::from_be_bytes(take(payload, offset)?))?;
+        if ids.last().is_some_and(|last| *last >= id) {
+            return Err(ProtocolError::new("unlocked waystones are not ordered"));
+        }
+        ids.push(id);
+    }
+    mmorpg_core::WaystoneSet::from_ids(ids)
         .ok_or_else(|| ProtocolError::new("unlocked waystones name an unknown stone"))
 }
 
 /// A quest ID, never `0`; whether content defines it is the
 /// client's concern.
-pub(crate) fn decode_quest(code: u8) -> Result<QuestId, ProtocolError> {
+pub(crate) fn decode_quest(code: u32) -> Result<QuestId, ProtocolError> {
     let quest = QuestId::new(code);
     if code != 0 {
         Ok(quest)
@@ -279,8 +317,8 @@ pub(crate) fn decode_lane(code: u8) -> Result<Option<StrikeHeight>, ProtocolErro
     }
 }
 
-/// A catalog ability ID carried in an event's flag byte.
-pub(crate) fn decode_ability(code: u8) -> Result<AbilityId, ProtocolError> {
+/// A catalog ability ID.
+pub(crate) fn decode_ability(code: u32) -> Result<AbilityId, ProtocolError> {
     let ability = AbilityId::new(code);
     if ability_by_id(ability).is_some() {
         Ok(ability)
@@ -289,8 +327,8 @@ pub(crate) fn decode_ability(code: u8) -> Result<AbilityId, ProtocolError> {
     }
 }
 
-/// 14 bytes: kind, flags (or the ability ID of ability events, or the
-/// quest ID of quest events), source reference, target reference, `u16`
+/// 17 bytes: kind, `u32` flags (or the ability ID of ability events, the quest ID of
+/// quest events or the trap ID of trap hits, #882), source reference, target reference, `u16`
 /// amount (a quest progress event packs the objective index high and the
 /// count low; a strike sweep packs the aim's side code high and its height
 /// code low). Guard events carry the lane's height code as flags, and the
@@ -304,7 +342,7 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
             critical,
         } => (
             DAMAGE_DEALT,
-            u8::from(critical),
+            u32::from(critical),
             Some(source),
             Some(target),
             amount,
@@ -316,7 +354,7 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
             critical,
         } => (
             DAMAGE_TAKEN,
-            u8::from(critical),
+            u32::from(critical),
             Some(source),
             Some(target),
             amount,
@@ -331,7 +369,7 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
             critical,
         } => (
             DAMAGE_OBSERVED,
-            u8::from(critical),
+            u32::from(critical),
             Some(source),
             Some(target),
             amount,
@@ -381,19 +419,37 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
             source,
             target,
             kind,
-        } => (CLASHED, kind.code(), Some(source), Some(target), 0),
+        } => (
+            CLASHED,
+            u32::from(kind.code()),
+            Some(source),
+            Some(target),
+            0,
+        ),
         ZoneEvent::Blocked {
             source,
             target,
             lane,
             amount,
-        } => (BLOCKED, lane.code(), Some(source), Some(target), amount),
+        } => (
+            BLOCKED,
+            u32::from(lane.code()),
+            Some(source),
+            Some(target),
+            amount,
+        ),
         ZoneEvent::GuardBroken {
             source,
             target,
             lane,
             ticks,
-        } => (GUARD_BROKEN, lane.code(), Some(source), Some(target), ticks),
+        } => (
+            GUARD_BROKEN,
+            u32::from(lane.code()),
+            Some(source),
+            Some(target),
+            ticks,
+        ),
         ZoneEvent::Healed {
             source,
             target,
@@ -445,16 +501,20 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
             target,
             amount,
         } => (TRAP_HIT, trap.get(), None, Some(target), amount),
-        ZoneEvent::Raid { notice } => {
-            (RAID_NOTICE, crate::raid::notice_code(notice), None, None, 0)
-        }
+        ZoneEvent::Raid { notice } => (
+            RAID_NOTICE,
+            u32::from(crate::raid::notice_code(notice)),
+            None,
+            None,
+            0,
+        ),
     };
     payload.push(kind);
-    payload.push(flags);
+    payload.extend_from_slice(&flags.to_be_bytes());
     encode_entity_ref(payload, source);
     if let ZoneEvent::SwingBegan { facing, .. } = event {
         // This event has no target: reserve that slot for its accepted heading, with a
-        // strict zero prefix. The event stays 14 bytes in both snapshot scopes.
+        // strict zero prefix. The event stays the same size in both snapshot scopes.
         payload.extend_from_slice(&[0, 0, 0]);
         payload.extend_from_slice(&facing.to_be_bytes());
     } else {
@@ -465,7 +525,8 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
 
 pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEvent, ProtocolError> {
     let kind = read_u8(payload, offset)?;
-    let flags = read_u8(payload, offset)?;
+    let flags = u32::from_be_bytes(take(payload, offset)?);
+    let code = || u8::try_from(flags).map_err(|_| ProtocolError::new("event flags are invalid"));
     let source = decode_entity_ref(payload, offset)?;
     let (target, swing_facing) = if kind == SWING_BEGAN {
         if take::<3>(payload, offset)? != [0, 0, 0] {
@@ -610,7 +671,7 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
             ZoneEvent::Clashed {
                 source,
                 target,
-                kind: mmorpg_core::ClashKind::from_code(flags)
+                kind: mmorpg_core::ClashKind::from_code(code()?)
                     .ok_or_else(|| ProtocolError::new("unknown clash kind"))?,
             }
         }
@@ -621,7 +682,7 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
             aim: decode_aim(amount.to_be_bytes())?,
         },
         BLOCKED | GUARD_BROKEN => {
-            let lane = StrikeHeight::from_code(flags)
+            let lane = StrikeHeight::from_code(code()?)
                 .ok_or_else(|| ProtocolError::new("unknown guard lane"))?;
             let (source, target) = pair()?;
             if kind == BLOCKED {
@@ -720,7 +781,7 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
                 return Err(invalid());
             }
             ZoneEvent::Raid {
-                notice: crate::raid::decode_notice(flags)?,
+                notice: crate::raid::decode_notice(code()?)?,
             }
         }
         _ => return Err(ProtocolError::new("unknown event kind")),
@@ -830,6 +891,39 @@ pub(crate) fn decode_u16_count(
     Ok(count)
 }
 
+/// An ordered set of `u32` indices or IDs (#882): `count u16 · count × u32`, strictly
+/// ascending.
+pub(crate) fn encode_u32_set(
+    payload: &mut Vec<u8>,
+    set: &BTreeSet<u32>,
+    message: &str,
+) -> Result<(), ProtocolError> {
+    payload.extend_from_slice(
+        &encode_u16_count(set.len(), usize::from(u16::MAX), message)?.to_be_bytes(),
+    );
+    for value in set {
+        payload.extend_from_slice(&value.to_be_bytes());
+    }
+    Ok(())
+}
+
+pub(crate) fn decode_u32_set(
+    payload: &[u8],
+    offset: &mut usize,
+    message: &str,
+) -> Result<BTreeSet<u32>, ProtocolError> {
+    let count = decode_u16_count(payload, offset, usize::from(u16::MAX), message)?;
+    let mut set = BTreeSet::new();
+    for _ in 0..count {
+        let value = u32::from_be_bytes(take(payload, offset)?);
+        if set.last().is_some_and(|last| *last >= value) {
+            return Err(ProtocolError::new(message));
+        }
+        set.insert(value);
+    }
+    Ok(set)
+}
+
 pub(crate) fn ensure_fully_consumed(payload: &[u8], offset: usize) -> Result<(), ProtocolError> {
     if offset != payload.len() {
         return Err(ProtocolError::new(
@@ -885,18 +979,17 @@ pub(crate) fn take<const N: usize>(
     Ok(array)
 }
 
-/// A door-state list: count (`u8`), then door ID and open flag per door (#158).
+/// A door-state list: count (`u16`), then door ID (`u32`) and open flag per door, in ascending
+/// ID order (#158, #882).
 pub(crate) fn encode_doors(
     payload: &mut Vec<u8>,
     doors: &[mmorpg_core::DoorView],
 ) -> Result<(), ProtocolError> {
-    payload.push(encode_u8_count(
-        doors.len(),
-        mmorpg_core::MAX_DOORS,
-        "too many doors",
-    )?);
+    payload.extend_from_slice(
+        &encode_u16_count(doors.len(), usize::from(u16::MAX), "too many doors")?.to_be_bytes(),
+    );
     for door in doors {
-        payload.push(door.door.get());
+        payload.extend_from_slice(&door.door.get().to_be_bytes());
         payload.push(u8::from(door.open));
     }
     Ok(())
@@ -906,10 +999,10 @@ pub(crate) fn decode_doors(
     payload: &[u8],
     offset: &mut usize,
 ) -> Result<Vec<mmorpg_core::DoorView>, ProtocolError> {
-    let count = decode_u8_count(payload, offset, mmorpg_core::MAX_DOORS, "too many doors")?;
+    let count = decode_u16_count(payload, offset, usize::from(u16::MAX), "too many doors")?;
     let mut doors: Vec<mmorpg_core::DoorView> = Vec::with_capacity(count);
     for _ in 0..count {
-        let door = mmorpg_core::DoorId::new(read_u8(payload, offset)?);
+        let door = mmorpg_core::DoorId::new(u32::from_be_bytes(take(payload, offset)?));
         let open = match read_u8(payload, offset)? {
             0 => false,
             1 => true,
@@ -924,11 +1017,11 @@ pub(crate) fn decode_doors(
 }
 
 /// A destructible piece reference (#305): 0 for none, else the piece ID plus one.
-pub(crate) fn encode_piece(piece: Option<mmorpg_core::PieceId>) -> u16 {
+pub(crate) fn encode_piece(piece: Option<mmorpg_core::PieceId>) -> u32 {
     piece.map_or(0, |piece| piece.get().saturating_add(1))
 }
 
-pub(crate) fn decode_piece(value: u16) -> Option<mmorpg_core::PieceId> {
+pub(crate) fn decode_piece(value: u32) -> Option<mmorpg_core::PieceId> {
     value.checked_sub(1).map(mmorpg_core::PieceId::new)
 }
 
@@ -993,17 +1086,19 @@ pub(crate) fn decode_minion_order(
     })
 }
 
-/// The not-intact pieces of a projection (#305): count (`u8`), then per piece its ID (`u16`)
+/// The not-intact pieces of a projection (#305): count (`u16`), then per piece its ID (`u32`)
 /// and stage (`u8`), in ascending ID order.
 pub(crate) fn encode_piece_views(
     payload: &mut Vec<u8>,
     pieces: &[mmorpg_core::PieceView],
 ) -> Result<(), ProtocolError> {
-    payload.push(
-        u8::try_from(pieces.len())
-            .ok()
-            .filter(|&count| usize::from(count) <= mmorpg_core::MAX_PIECES)
-            .ok_or_else(|| ProtocolError::new("too many structure pieces"))?,
+    payload.extend_from_slice(
+        &encode_u16_count(
+            pieces.len(),
+            usize::from(u16::MAX),
+            "too many structure pieces",
+        )?
+        .to_be_bytes(),
     );
     for piece in pieces {
         payload.extend_from_slice(&piece.piece.get().to_be_bytes());
@@ -1016,16 +1111,15 @@ pub(crate) fn decode_piece_views(
     payload: &[u8],
     offset: &mut usize,
 ) -> Result<Vec<mmorpg_core::PieceView>, ProtocolError> {
-    let count = usize::from(read_u8(payload, offset)?);
-    if count > mmorpg_core::MAX_PIECES {
-        return Err(ProtocolError::new("too many structure pieces"));
-    }
+    let count = decode_u16_count(
+        payload,
+        offset,
+        usize::from(u16::MAX),
+        "too many structure pieces",
+    )?;
     let mut pieces: Vec<mmorpg_core::PieceView> = Vec::with_capacity(count);
     for _ in 0..count {
-        let piece = mmorpg_core::PieceId::new(u16::from_be_bytes([
-            read_u8(payload, offset)?,
-            read_u8(payload, offset)?,
-        ]));
+        let piece = mmorpg_core::PieceId::new(u32::from_be_bytes(take(payload, offset)?));
         let stage = mmorpg_core::PieceStage::from_code(read_u8(payload, offset)?)
             .filter(|stage| *stage != mmorpg_core::PieceStage::Intact)
             .ok_or_else(|| ProtocolError::new("unknown structure piece stage"))?;
@@ -1039,7 +1133,7 @@ pub(crate) fn decode_piece_views(
     Ok(pieces)
 }
 
-/// Fired pressure traps near the viewer (#300): count (`u8`), then per trap its ID (`u8`) and
+/// Fired pressure traps near the viewer (#300): count (`u8`), then per trap its ID (`u32`) and
 /// age in ticks (`u16`), nearest first.
 pub(crate) fn encode_trap_views(
     payload: &mut Vec<u8>,
@@ -1052,7 +1146,7 @@ pub(crate) fn encode_trap_views(
             .ok_or_else(|| ProtocolError::new("too many trap views"))?,
     );
     for view in views {
-        payload.push(view.id.get());
+        payload.extend_from_slice(&view.id.get().to_be_bytes());
         payload.extend_from_slice(&view.age.to_be_bytes());
     }
     Ok(())
@@ -1068,7 +1162,7 @@ pub(crate) fn decode_trap_views(
     }
     let mut views = Vec::with_capacity(count);
     for _ in 0..count {
-        let id = mmorpg_core::TrapId::new(read_u8(payload, offset)?);
+        let id = mmorpg_core::TrapId::new(u32::from_be_bytes(take(payload, offset)?));
         let age = u16::from_be_bytes([read_u8(payload, offset)?, read_u8(payload, offset)?]);
         views.push(mmorpg_core::TrapView { id, age });
     }
@@ -1163,7 +1257,7 @@ mod tests {
             let mut payload = Vec::new();
             encode_event(&mut payload, &event);
             assert_eq!(
-                &payload[..2],
+                [payload[0], payload[4]],
                 [
                     if matches!(event, ZoneEvent::Blocked { .. }) {
                         BLOCKED
@@ -1173,8 +1267,9 @@ mod tests {
                     event_lane(event)
                 ]
             );
+            assert_eq!(&payload[1..4], [0, 0, 0]);
             assert_eq!(decode_event(&payload, &mut 0).unwrap(), event);
-            payload[1] = 3;
+            payload[4] = 3;
             assert_eq!(
                 decode_event(&payload, &mut 0).unwrap_err().to_string(),
                 "unknown guard lane"
@@ -1270,10 +1365,10 @@ mod tests {
         };
         let mut bytes = Vec::new();
         encode_event(&mut bytes, &event);
-        assert_eq!(bytes.len(), 14);
-        assert_eq!(&bytes[7..12], &[0, 0, 0, 0x40, 0]);
+        assert_eq!(bytes.len(), crate::EVENT_RECORD_BYTES);
+        assert_eq!(&bytes[10..15], &[0, 0, 0, 0x40, 0]);
         assert_eq!(decode_event(&bytes, &mut 0).unwrap(), event);
-        bytes[7] = PLAYER_KIND;
+        bytes[10] = PLAYER_KIND;
         assert!(decode_event(&bytes, &mut 0).is_err());
     }
 }

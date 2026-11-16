@@ -8,8 +8,12 @@ use mmorpg_core::{
 };
 use std::collections::BTreeSet;
 
-/// Version byte plus the largest tagged receipt (kill objective or quest item).
-pub const MAX_REWARD_RECEIPT_BYTES: usize = 16;
+/// Version byte plus the largest tagged receipt (kill objective: tag, creature, life, `u32`
+/// quest and objective).
+pub const MAX_REWARD_RECEIPT_BYTES: usize = 1 + 1 + 4 + 8 + 4 + 1;
+/// The receipt version with `u32` quest and item IDs (#882); version 1 receipts carried a one-byte
+/// quest and a `u16` item and still decode.
+const REWARD_RECEIPT_VERSION: u8 = 2;
 
 fn error(cause: impl std::fmt::Display) -> ProtocolError {
     ProtocolError::new(cause.to_string())
@@ -44,11 +48,16 @@ pub(crate) fn encode_key(payload: &mut Vec<u8>, key: RewardKey) -> Result<(), Pr
     match key {
         RewardKey::KillObjective {
             quest, objective, ..
-        } => payload.extend_from_slice(&[quest.get(), objective]),
+        } => {
+            payload.extend_from_slice(&quest.get().to_be_bytes());
+            payload.push(objective);
+        }
         RewardKey::LootQuestItem { item, .. } => {
             payload.extend_from_slice(&item.get().to_be_bytes())
         }
-        RewardKey::QuestCompletion { quest } => payload.push(quest.get()),
+        RewardKey::QuestCompletion { quest } => {
+            payload.extend_from_slice(&quest.get().to_be_bytes())
+        }
         RewardKey::RaidParticipation { incident } => {
             payload.extend_from_slice(&incident.to_be_bytes());
         }
@@ -57,10 +66,26 @@ pub(crate) fn encode_key(payload: &mut Vec<u8>, key: RewardKey) -> Result<(), Pr
     Ok(())
 }
 pub(crate) fn decode_key(payload: &[u8], offset: &mut usize) -> Result<RewardKey, ProtocolError> {
+    decode_key_ids(payload, offset, true)
+}
+
+/// A key with `u32` quest and item IDs, or with the narrow IDs of version 1 receipts.
+fn decode_key_ids(
+    payload: &[u8],
+    offset: &mut usize,
+    wide: bool,
+) -> Result<RewardKey, ProtocolError> {
+    let quest = |offset: &mut usize| -> Result<QuestId, ProtocolError> {
+        Ok(QuestId::new(if wide {
+            u32::from_be_bytes(take(payload, offset)?)
+        } else {
+            u32::from(read_u8(payload, offset)?)
+        }))
+    };
     let code = read_u8(payload, offset)?;
     let key = if code == 6 {
         RewardKey::QuestCompletion {
-            quest: QuestId::new(read_u8(payload, offset)?),
+            quest: quest(offset)?,
         }
     } else if code == 7 {
         RewardKey::RaidParticipation {
@@ -77,7 +102,7 @@ pub(crate) fn decode_key(payload: &[u8], offset: &mut usize) -> Result<RewardKey
             2 => RewardKey::KillObjective {
                 creature,
                 life,
-                quest: QuestId::new(read_u8(payload, offset)?),
+                quest: quest(offset)?,
                 objective: read_u8(payload, offset)?,
             },
             3 => RewardKey::LootMoney { creature, life },
@@ -85,7 +110,11 @@ pub(crate) fn decode_key(payload: &[u8], offset: &mut usize) -> Result<RewardKey
             5 => RewardKey::LootQuestItem {
                 creature,
                 life,
-                item: ItemId::new(u16::from_be_bytes(take(payload, offset)?)),
+                item: ItemId::new(if wide {
+                    u32::from_be_bytes(take(payload, offset)?)
+                } else {
+                    u32::from(u16::from_be_bytes(take(payload, offset)?))
+                }),
             },
             _ => return Err(error("unknown reward key tag")),
         }
@@ -192,16 +221,18 @@ pub(crate) fn decode_history(
 
 /// Versioned receipt metadata used by the PostgreSQL adapter and trusted inputs.
 pub fn encode_reward_receipt(key: RewardKey) -> Result<Vec<u8>, ProtocolError> {
-    let mut bytes = vec![1];
+    let mut bytes = vec![REWARD_RECEIPT_VERSION];
     encode_key(&mut bytes, key)?;
     Ok(bytes)
 }
 pub fn decode_reward_receipt(bytes: &[u8]) -> Result<RewardKey, ProtocolError> {
-    if bytes.first() != Some(&1) {
-        return Err(error("unsupported reward receipt version"));
-    }
+    let wide = match bytes.first() {
+        Some(&REWARD_RECEIPT_VERSION) => true,
+        Some(1) => false,
+        _ => return Err(error("unsupported reward receipt version")),
+    };
     let mut offset = 1;
-    let key = decode_key(bytes, &mut offset)?;
+    let key = decode_key_ids(bytes, &mut offset, wide)?;
     crate::wire::ensure_fully_consumed(bytes, offset)?;
     Ok(key)
 }

@@ -170,7 +170,7 @@ struct FrameLayout {
 /// A platform the page's kit draws (#591): where its box's bottom centre stands, metres.
 #[derive(Serialize)]
 struct PlatformEntry {
-    platform: u8,
+    platform: u32,
     base: [f32; 3],
 }
 
@@ -327,7 +327,7 @@ impl Units {
     }
 
     /// The platforms the page's kit draws instead of their procedural pillar (#591).
-    pub fn set_kit_platforms(&mut self, platforms: &[u8]) {
+    pub fn set_kit_platforms(&mut self, platforms: &[u32]) {
         self.presenter.set_kit_platforms(
             platforms
                 .iter()
@@ -416,7 +416,7 @@ impl Units {
         dt: f64,
         reduced_motion: bool,
         bar_yaw: f32,
-        choice: u16,
+        choice: u32,
         headwear: &str,
         preview_yaw: f32,
     ) -> Result<String, String> {

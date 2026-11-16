@@ -600,7 +600,7 @@ impl Presentation {
     /// The player sent an attack with `ability` at `now`: the character winds up at once and
     /// holds short of the swing until the zone accepts or refuses it (Atlas 6.6.10).
     /// Presentation only; the zone decides the outcome.
-    pub fn prepare_attack(&mut self, ability: u8, now: Instant) {
+    pub fn prepare_attack(&mut self, ability: u32, now: Instant) {
         let seconds = now.saturating_duration_since(self.origin).as_secs_f64();
         self.units_presenter
             .prepare(mmorpg_core::AbilityId::new(ability), seconds);
@@ -609,7 +609,7 @@ impl Presentation {
 
     /// The player began holding a power shot (#607): the bow draws and stays drawn; nothing is
     /// sent until the key's release, when [`Self::prepare_attack`] carries the same draw on.
-    pub fn hold_attack_preparation(&mut self, ability: u8, now: Instant) {
+    pub fn hold_attack_preparation(&mut self, ability: u32, now: Instant) {
         let seconds = now.saturating_duration_since(self.origin).as_secs_f64();
         self.units_presenter
             .prepare(mmorpg_core::AbilityId::new(ability), seconds);
@@ -1025,7 +1025,7 @@ impl Presentation {
     #[must_use]
     pub fn reachable_raid_aid(&self) -> Option<mmorpg_core::ZoneCommand> {
         let snapshot = self.latest()?;
-        let open = snapshot.raid?.aid;
+        let open = &snapshot.raid.as_ref()?.aid;
         let feet = snapshot
             .entities
             .iter()
@@ -1043,10 +1043,11 @@ impl Presentation {
                     i64::from(task.at[0] - feet[0]),
                     i64::from(task.at[1] - feet[2]),
                 );
-                open & (1 << index) != 0 && dx * dx + dz * dz <= reach
+                u32::try_from(index).is_ok_and(|index| open.contains(&index))
+                    && dx * dx + dz * dz <= reach
             })?;
         Some(mmorpg_core::ZoneCommand::RaidAid {
-            task: u8::try_from(task).ok()?,
+            task: u32::try_from(task).ok()?,
         })
     }
 
@@ -1055,9 +1056,9 @@ impl Presentation {
     /// barn wall in reach once the guards are warned.
     #[must_use]
     pub fn reachable_raid_prep(&self) -> Option<mmorpg_core::ZoneCommand> {
-        use mmorpg_core::raid::{BRACE_REACH_UNITS, READINESS_WARNED, TRACKS_REACH_UNITS};
+        use mmorpg_core::raid::{BRACE_REACH_UNITS, TRACKS_REACH_UNITS};
         let snapshot = self.latest()?;
-        let signal = snapshot.raid.filter(|signal| signal.signs)?;
+        let signal = snapshot.raid.as_ref().filter(|signal| signal.signs)?;
         let site = self.content.raid()?;
         let feet = snapshot
             .entities
@@ -1068,7 +1069,7 @@ impl Presentation {
             let (dx, dz) = (i64::from(at[0] - feet[0]), i64::from(at[1] - feet[2]));
             dx * dx + dz * dz <= i64::from(reach).pow(2)
         };
-        let warned = signal.readiness & READINESS_WARNED != 0;
+        let warned = signal.warned;
         let lookout = snapshot
             .entities
             .iter()
@@ -1083,9 +1084,11 @@ impl Presentation {
             mmorpg_core::RaidPrep::Investigate
         } else {
             let brace = site.braces.iter().enumerate().position(|(index, &at)| {
-                warned && signal.readiness & (1 << (index + 1)) == 0 && near(at, BRACE_REACH_UNITS)
+                warned
+                    && u32::try_from(index).is_ok_and(|index| !signal.braced.contains(&index))
+                    && near(at, BRACE_REACH_UNITS)
             })?;
-            mmorpg_core::RaidPrep::Brace(u8::try_from(brace).ok()?)
+            mmorpg_core::RaidPrep::Brace(u32::try_from(brace).ok()?)
         };
         Some(mmorpg_core::ZoneCommand::RaidPrepare { prep })
     }
@@ -1253,7 +1256,7 @@ impl Presentation {
     #[must_use]
     pub fn status(&self) -> Option<String> {
         let latest = self.latest()?;
-        let viewer = latest.viewer;
+        let viewer = &latest.viewer;
         if viewer.dead {
             return Some("dead — R releases your spirit".into());
         }

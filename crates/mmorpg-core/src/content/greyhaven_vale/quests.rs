@@ -116,13 +116,13 @@ struct Source {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct QuestSource {
-    id: u8,
+    id: u32,
     name: String,
     text: String,
     giver: u32,
     ender: u32,
     #[serde(default)]
-    prerequisite: Option<u8>,
+    prerequisite: Option<u32>,
     objectives: Vec<ObjectiveSource>,
     rewards: RewardsSource,
 }
@@ -130,11 +130,11 @@ struct QuestSource {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 enum ObjectiveSource {
-    Kill { template: u16, count: u8 },
-    Collect { item: u16, count: u8, source: u16 },
+    Kill { template: u32, count: u8 },
+    Collect { item: u32, count: u8, source: u32 },
     Talk { npc: u32 },
-    Explore { area: u16 },
-    Retrieve { item: u16, area: u16 },
+    Explore { area: u32 },
+    Retrieve { item: u32, area: u32 },
     DefeatThorn,
 }
 
@@ -143,7 +143,7 @@ enum ObjectiveSource {
 struct RewardsSource {
     experience: u32,
     copper: u32,
-    choices: Vec<u16>,
+    choices: Vec<u32>,
 }
 
 impl From<ObjectiveSource> for QuestObjective {

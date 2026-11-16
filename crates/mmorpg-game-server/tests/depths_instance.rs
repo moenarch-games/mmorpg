@@ -232,7 +232,7 @@ fn a_party_of_five_gets_a_larger_different_run_than_a_solo_player() {
     let start = DepthsRunStart {
         run_id: entered.run.id,
         roster: entered.run.roster.clone(),
-        cleared: 0,
+        cleared: std::collections::BTreeSet::new(),
         checkpoint: false,
         outcome: None,
     };
@@ -248,7 +248,7 @@ fn a_party_of_five_gets_a_larger_different_run_than_a_solo_player() {
     let solo_start = DepthsRunStart {
         run_id: 99,
         roster: vec![character("aria")],
-        cleared: 0,
+        cleared: std::collections::BTreeSet::new(),
         checkpoint: false,
         outcome: None,
     };
@@ -272,7 +272,7 @@ fn the_roster_and_difficulty_stay_frozen_and_no_one_joins_late() {
     let start = DepthsRunStart {
         run_id: entered.run.id,
         roster: entered.run.roster.clone(),
-        cleared: 0,
+        cleared: std::collections::BTreeSet::new(),
         checkpoint: false,
         outcome: None,
     };
@@ -317,7 +317,7 @@ fn a_disconnected_member_resumes_the_same_run_and_an_expired_run_retires() {
     let start = DepthsRunStart {
         run_id: entered.run.id,
         roster: entered.run.roster.clone(),
-        cleared: 0,
+        cleared: std::collections::BTreeSet::new(),
         checkpoint: false,
         outcome: None,
     };
@@ -364,7 +364,12 @@ fn progress_reaches_the_directory_and_can_rebind_the_run_after_a_restart() {
     let entered = directory.enter(&candidates(&requests[0]), 0).unwrap();
 
     // The directory's copy of the progress stands in for a report from the slot.
-    directory.report(entered.run.slot, entered.run.id, 0b001, true);
+    directory.report(
+        entered.run.slot,
+        entered.run.id,
+        &std::collections::BTreeSet::from([0]),
+        true,
+    );
     let run = directory.run_in_slot(entered.run.slot).unwrap().clone();
     let rebuilt = DepthsRunStart {
         run_id: run.id,
@@ -376,7 +381,10 @@ fn progress_reaches_the_directory_and_can_rebind_the_run_after_a_restart() {
     let mut slot = slot_adapter(entered.run.slot);
     let transfer = transfer_of(&mut public, 1, "aria", entered.run.slot);
     arrive(&mut slot, 1, &transfer, &rebuilt).unwrap();
-    assert_eq!(slot.zone().depths_run().unwrap().cleared, 1);
+    assert_eq!(
+        slot.zone().depths_run().unwrap().cleared,
+        std::collections::BTreeSet::from([0])
+    );
     // The cleared chamber's creatures never stood again in this new binding.
     let standing: BTreeMap<_, _> = slot
         .zone()

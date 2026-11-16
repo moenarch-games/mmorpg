@@ -10,8 +10,6 @@ use crate::{
     ZoneSimulation, item_template,
 };
 
-/// A vendor offers at most this many items.
-pub const MAX_VENDOR_OFFERS: usize = 8;
 /// Inclusive horizontal (XZ) distance from a vendor's feet to the player (5 m).
 pub const VENDOR_REACH_UNITS: i32 = 500;
 
@@ -22,7 +20,7 @@ pub struct VendorOffer {
     pub price: u32,
 }
 
-/// One to [`MAX_VENDOR_OFFERS`] offers of distinct catalog items with
+/// One or more offers of distinct catalog items with
 /// nonzero prices, in authored order; the offer index is the wire identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VendorStock {
@@ -31,7 +29,7 @@ pub struct VendorStock {
 
 impl VendorStock {
     pub fn new(offers: &[VendorOffer]) -> Result<Self, VendorStockError> {
-        if offers.is_empty() || offers.len() > MAX_VENDOR_OFFERS {
+        if offers.is_empty() || u32::try_from(offers.len()).is_err() {
             return Err(VendorStockError::OfferCount);
         }
         for (index, offer) in offers.iter().enumerate() {
@@ -56,8 +54,8 @@ impl VendorStock {
     }
 
     #[must_use]
-    pub fn offer(&self, index: u8) -> Option<VendorOffer> {
-        self.offers.get(usize::from(index)).copied()
+    pub fn offer(&self, index: u32) -> Option<VendorOffer> {
+        self.offers.get(usize::try_from(index).ok()?).copied()
     }
 }
 
@@ -212,7 +210,7 @@ pub fn settle_sale(
 /// A buy or sell request at one vendor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Trade {
-    Buy { offer: u8, quantity: u16 },
+    Buy { offer: u32, quantity: u16 },
     Sell { bag_slot: u8, quantity: u16 },
 }
 

@@ -21,16 +21,16 @@ pub const CREATURE_ABILITY_JITTER_TICKS: u16 = ticks_from_ms(1_000);
 
 /// A global ability ID; 0 is never an ability.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct AbilityId(u8);
+pub struct AbilityId(u32);
 
 impl AbilityId {
     #[must_use]
-    pub const fn new(value: u8) -> Self {
+    pub const fn new(value: u32) -> Self {
         Self(value)
     }
 
     #[must_use]
-    pub const fn get(self) -> u8 {
+    pub const fn get(self) -> u32 {
         self.0
     }
 }
@@ -462,7 +462,7 @@ impl Ability {
 }
 
 const fn ability(
-    id: u8,
+    id: u32,
     name: &'static str,
     user: AbilityUser,
     level: u8,
@@ -1469,7 +1469,7 @@ pub const ABILITY_CATALOG: [Ability; 53] = [
 /// The catalog row of `id`, if any.
 #[must_use]
 pub fn ability_by_id(id: AbilityId) -> Option<&'static Ability> {
-    ABILITY_CATALOG.get(usize::from(id.get().checked_sub(1)?))
+    ABILITY_CATALOG.get(usize::try_from(id.get().checked_sub(1)?).ok()?)
 }
 
 /// The class ability `id` that `class` has learned at `level`.
@@ -1487,7 +1487,7 @@ pub(crate) const fn scaled(value: u16, per_level: u16, level: u8) -> u16 {
 pub(crate) fn catalog_bytes() -> Vec<u8> {
     let mut bytes = Vec::new();
     for ability in &ABILITY_CATALOG {
-        bytes.push(ability.id.get());
+        bytes.extend_from_slice(&ability.id.get().to_be_bytes());
         bytes.extend_from_slice(&u32::try_from(ability.name.len()).unwrap_or(0).to_be_bytes());
         bytes.extend_from_slice(ability.name.as_bytes());
         bytes.push(match ability.user {
@@ -1765,7 +1765,7 @@ mod tests {
     #[test]
     fn the_catalog_is_ordered_bounded_and_consistent() {
         for (index, ability) in ABILITY_CATALOG.iter().enumerate() {
-            assert_eq!(usize::from(ability.id.get()), index + 1, "{}", ability.name);
+            assert_eq!(ability.id.get() as usize, index + 1, "{}", ability.name);
             assert_eq!(ability_by_id(ability.id), Some(ability));
             if let Some(aura) = ability.aura() {
                 assert!(aura.duration > 0);

@@ -142,7 +142,7 @@ impl ZoneSimulation {
     pub(crate) fn directed_strike(
         &mut self,
         player_id: PlayerId,
-        ability: u8,
+        ability: u32,
         facing: u16,
         aim: StrikeAim,
         now: u64,

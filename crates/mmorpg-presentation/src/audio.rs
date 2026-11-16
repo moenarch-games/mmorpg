@@ -27,7 +27,7 @@ pub const BUNDLE: &str = "combat-sounds";
 pub const WINDUP: &str = "danger.windup";
 
 /// Creature specials whose wind-up is consequential enough to sound (Atlas 6.6.37).
-const DANGEROUS: [u8; 5] = [
+const DANGEROUS: [u32; 5] = [
     18, // Stomp
     24, // Redbrand Whirl (Garrick)
     25, // Overhead Smash (Redbrand Brute)
@@ -110,7 +110,7 @@ pub fn sound_manifest(bundle: &str) -> Result<String, String> {
 
 #[derive(Clone, Copy)]
 struct Windup {
-    ability: u8,
+    ability: u32,
     end_tick: u64,
 }
 

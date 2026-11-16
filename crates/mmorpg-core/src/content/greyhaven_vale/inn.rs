@@ -17,7 +17,7 @@ pub const CEILING_UNDERSIDE: i32 = 300;
 pub const DOOR: DoorId = DoorId::new(1);
 /// Two chairs on the north side of the third table, facing it (−Z) (#619): `(id, chair x in the
 /// inn's frame)`. A sitter's body stands clear behind the chair; its feet draw under the table.
-pub const SEATS: [(u8, i32); 2] = [(3, -198), (4, -122)];
+pub const SEATS: [(u32, i32); 2] = [(3, -198), (4, -122)];
 /// The chairs' body spot and drawn feet along Z, in the inn's frame.
 pub const SEAT_STAND_Z: i32 = 10;
 pub const SEAT_ROOT_Z: i32 = -84;

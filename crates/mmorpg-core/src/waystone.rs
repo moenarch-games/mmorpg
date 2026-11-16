@@ -23,6 +23,8 @@
 //! [`crate::ErrorCode::InvalidWaystone`]
 //! ([`crate::ZoneSimulation::enable_waystone_departures`]).
 
+use std::collections::BTreeSet;
+
 use crate::{
     CharacterLocation, ErrorCode, PLAYER_HALF_EXTENTS_UNITS, PlayerId, ZoneError, ZoneId,
     ZoneSimulation,
@@ -32,70 +34,68 @@ use crate::{
 /// unlock it or travel from it.
 pub const WAYSTONE_DISCOVERY_UNITS: i64 = 800;
 
-/// Upper bound on stones in the network: one bit each of a [`WaystoneSet`]; a player
-/// projection carries them in six spare flag bits.
-pub const MAX_WAYSTONES: usize = 6;
-
-/// A stone of the global network, `1..=MAX_WAYSTONES`.
+/// A stone of the global network; `0` names no stone. Whether a stone exists is the catalog's
+/// ([`WAYSTONES`]) to say.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct WaystoneId(u8);
+pub struct WaystoneId(u32);
 
 impl WaystoneId {
     #[must_use]
-    pub const fn new(value: u8) -> Option<Self> {
-        if value == 0 || value as usize > MAX_WAYSTONES {
-            None
-        } else {
-            Some(Self(value))
-        }
+    pub const fn new(value: u32) -> Option<Self> {
+        if value == 0 { None } else { Some(Self(value)) }
     }
 
     #[must_use]
-    pub const fn get(self) -> u8 {
+    pub const fn get(self) -> u32 {
         self.0
-    }
-
-    const fn bit(self) -> u32 {
-        1 << (self.0 - 1)
     }
 }
 
-/// The stones a character has unlocked, one bit per [`WaystoneId`].
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub struct WaystoneSet(u32);
+/// The stones a character has unlocked, in ID order, as many as the network has (#882).
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct WaystoneSet(BTreeSet<WaystoneId>);
 
 impl WaystoneSet {
-    pub const EMPTY: Self = Self(0);
+    pub const EMPTY: Self = Self(BTreeSet::new());
 
-    /// The set of these bits; `None` when one names no stone of [`WAYSTONES`].
+    /// The set of these stones; `None` when one is not a stone of [`WAYSTONES`].
     #[must_use]
-    pub fn from_bits(bits: u32) -> Option<Self> {
-        let known = WAYSTONES
-            .iter()
-            .fold(0, |known, site| known | site.id.bit());
-        (bits & !known == 0).then_some(Self(bits))
+    pub fn from_ids(ids: impl IntoIterator<Item = WaystoneId>) -> Option<Self> {
+        let set: BTreeSet<_> = ids.into_iter().collect();
+        set.iter()
+            .all(|id| waystone(*id).is_some())
+            .then_some(Self(set))
     }
 
     #[must_use]
-    pub const fn bits(self) -> u32 {
-        self.0
+    pub fn contains(&self, id: WaystoneId) -> bool {
+        self.0.contains(&id)
     }
 
     #[must_use]
-    pub const fn contains(self, id: WaystoneId) -> bool {
-        self.0 & id.bit() != 0
+    pub fn with(mut self, id: WaystoneId) -> Self {
+        self.0.insert(id);
+        self
+    }
+
+    /// Unlocks `id`; whether it was locked.
+    pub fn insert(&mut self, id: WaystoneId) -> bool {
+        self.0.insert(id)
     }
 
     #[must_use]
-    pub const fn with(self, id: WaystoneId) -> Self {
-        Self(self.0 | id.bit())
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     /// Unlocked stones in ID order.
-    pub fn iter(self) -> impl Iterator<Item = WaystoneId> {
-        (1..=MAX_WAYSTONES as u8)
-            .filter_map(WaystoneId::new)
-            .filter(move |id| self.contains(*id))
+    pub fn iter(&self) -> impl Iterator<Item = WaystoneId> + '_ {
+        self.0.iter().copied()
     }
 }
 
@@ -113,10 +113,10 @@ pub struct WaystoneSite {
     pub facing: u16,
 }
 
-const fn id(value: u8) -> WaystoneId {
+const fn id(value: u32) -> WaystoneId {
     match WaystoneId::new(value) {
         Some(id) => id,
-        None => panic!("waystone IDs are 1..=MAX_WAYSTONES"),
+        None => panic!("waystone IDs are nonzero"),
     }
 }
 
@@ -217,7 +217,7 @@ impl ZoneSimulation {
     pub fn unlocked_waystones(&self, player_id: PlayerId) -> Result<WaystoneSet, ZoneError> {
         self.players
             .get(&player_id)
-            .map(|player| player.waystones)
+            .map(|player| player.waystones.clone())
             .ok_or_else(|| ZoneError::new("unknown player"))
     }
 
@@ -240,7 +240,7 @@ impl ZoneSimulation {
             .collect();
         for (player_id, id) in found {
             if let Some(player) = self.players.get_mut(&player_id) {
-                player.waystones = player.waystones.with(id);
+                player.waystones.insert(id);
             }
         }
     }
@@ -263,7 +263,7 @@ impl ZoneSimulation {
         if player.combat_timer > 0 || self.threatened_players().contains(&player_id) {
             return Ok(Some((ErrorCode::InCombat, None)));
         }
-        let unlocked = player.waystones;
+        let unlocked = &player.waystones;
         let Some(origin) = self.waystone_in_reach(player_id) else {
             return Ok(Some((ErrorCode::InvalidWaystone, None)));
         };

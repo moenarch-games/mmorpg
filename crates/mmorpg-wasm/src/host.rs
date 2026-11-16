@@ -108,7 +108,7 @@ pub struct LocalZoneHost {
     /// The current local run id (#404): the next run after this one is complete uses a new one.
     next_run: u64,
     /// Whether a run this host starts has its chambers cleared already (the boss review).
-    depths_cleared: u8,
+    depths_cleared: BTreeSet<u32>,
     /// The boss review weakens Thorn once he stands, so his adds and loot prompt can be reviewed
     /// in a short fight (#404).
     weaken_thorn: bool,
@@ -130,7 +130,7 @@ impl LocalZoneHost {
             threshold_held: BTreeSet::new(),
             next_transfer: 1,
             next_run: 1,
-            depths_cleared: 0,
+            depths_cleared: BTreeSet::new(),
             weaken_thorn: false,
             sparring_partner: None,
         })
@@ -190,7 +190,11 @@ impl LocalZoneHost {
         let record = scenario.record(&content)?;
         let (mut host, player) = Self::with_ephemeral(content, &record)?;
         host.weaken_thorn = matches!(scenario, Scenario::RedbrandThorn);
-        host.depths_cleared = if host.weaken_thorn { 0b111 } else { 0 };
+        host.depths_cleared = if host.weaken_thorn {
+            BTreeSet::from([0, 1, 2])
+        } else {
+            BTreeSet::new()
+        };
         Ok((host, player))
     }
 
@@ -265,7 +269,7 @@ impl LocalZoneHost {
             threshold_held: BTreeSet::new(),
             next_transfer: 1,
             next_run: 1,
-            depths_cleared: 0,
+            depths_cleared: BTreeSet::new(),
             weaken_thorn: false,
             sparring_partner: None,
         })
@@ -323,7 +327,7 @@ impl LocalZoneHost {
             threshold_held: BTreeSet::new(),
             next_transfer: 1,
             next_run: 1,
-            depths_cleared: 0,
+            depths_cleared: BTreeSet::new(),
             weaken_thorn: false,
             sparring_partner: None,
         })
@@ -626,7 +630,7 @@ impl LocalZoneHost {
         depths.begin_depths_run(DepthsRunStart {
             run_id: self.next_run,
             roster: vec![character.clone()],
-            cleared: self.depths_cleared,
+            cleared: self.depths_cleared.clone(),
             checkpoint: false,
             outcome: None,
         })?;

@@ -36,6 +36,11 @@ pub(crate) enum Sheet {
     Party,
     /// The viewer's copy of the boss loot pool, or none (#404).
     DepthsLoot,
+    /// The zone's doors, its pieces that are not intact and the night raid's signal, if near
+    /// (#158, #305, #530, #882).
+    World,
+    /// The viewer's unlocked waystones (#145, #882).
+    Waystones,
 }
 
 impl Sheet {
@@ -46,6 +51,8 @@ impl Sheet {
         Self::Abilities,
         Self::Party,
         Self::DepthsLoot,
+        Self::World,
+        Self::Waystones,
     ];
 
     pub(crate) const fn index(self) -> usize {
@@ -53,7 +60,7 @@ impl Sheet {
     }
 }
 
-pub(crate) const SHEET_COUNT: usize = 6;
+pub(crate) const SHEET_COUNT: usize = 8;
 
 /// The `u32` revisions a client echoes, one per sheet.
 pub const SHEET_REVISIONS_BYTES: usize = SHEET_COUNT * 4;
@@ -63,32 +70,35 @@ const MAX_INVENTORY_SHEET_BYTES: usize =
     8 + INVENTORY_RECORD_BYTES + EQUIPMENT_RECORD_BYTES + 4 * 2;
 /// Presence byte, then the claim and rewards.
 const MAX_LOOT_SHEET_BYTES: usize = 1 + crate::loot::MAX_LOOT_SHEET_BYTES;
-/// Ability ID and the `u16` tick it ends.
-const COOLDOWN_RECORD_BYTES: usize = 1 + 2;
-/// Ability ID, aura kind, the `u16` tick it ends and amount.
-const AURA_RECORD_BYTES: usize = 1 + 1 + 2 + 2;
+/// Ability ID (`u32`) and the `u16` tick it ends.
+const COOLDOWN_RECORD_BYTES: usize = 4 + 2;
+/// Ability ID (`u32`), aura kind, the `u16` tick it ends and amount.
+const AURA_RECORD_BYTES: usize = 4 + 1 + 2 + 2;
 /// The target the target auras belong to, then the cooldown, aura and target aura lists.
 const MAX_ABILITY_SHEET_BYTES: usize = ENTITY_REF_BYTES
     + 1
     + MAX_COOLDOWNS * COOLDOWN_RECORD_BYTES
     + 2 * (1 + MAX_AURAS * AURA_RECORD_BYTES);
-/// Every sheet but the quest sheet at its largest; a tick without events or chat carries them
-/// all at once.
+/// The bag, corpse loot, ability and boss loot sheets at their largest; a tick without events or
+/// chat carries them all at once.
 pub(crate) const MAX_OTHER_SHEETS_BYTES: usize = MAX_INVENTORY_SHEET_BYTES
     + MAX_LOOT_SHEET_BYTES
     + MAX_ABILITY_SHEET_BYTES
-    + crate::party::MAX_PARTY_SHEET_BYTES
     + crate::depths::MAX_DEPTHS_LOOT_SHEET_BYTES;
-/// The quest sheet is bounded by the packet budget alone (#862): it fits what a tick without
-/// events or chat leaves, so it goes out once no other sheet is waiting beside it. Content whose
-/// fullest sheet (every quest turned in, a full log, every quest NPC marked) outgrows it fails to
-/// encode.
-pub(crate) const MAX_QUEST_SHEET_BYTES: usize =
+/// The party sheet fits such a tick by itself (#882); the quest, world and waystone sheets are
+/// bounded by the packet budget alone (#862, #882):
+/// each fits what a tick without events or chat leaves, so it goes out once no other sheet is
+/// waiting beside it. Content whose fullest such sheet (every quest turned in, a full log and
+/// every quest NPC marked; every door and piece listed beside the raid signal; every waystone
+/// unlocked) outgrows it fails to encode.
+pub(crate) const MAX_BUDGETED_SHEET_BYTES: usize =
     crate::MAX_PLAYER_PROJECTION_BYTES - crate::projection::MAX_QUIET_TICK_BYTES;
 // The quest sheet always holds a full log beside its three counts.
 const _: () = assert!(
-    MAX_QUEST_SHEET_BYTES >= 3 + mmorpg_core::MAX_QUEST_LOG * crate::quest::QUEST_ENTRY_BYTES
+    MAX_BUDGETED_SHEET_BYTES >= 5 + mmorpg_core::MAX_QUEST_LOG * crate::quest::QUEST_ENTRY_BYTES
 );
+// A full party sheet waits for a tick with room for it alone.
+const _: () = assert!(crate::party::MAX_PARTY_SHEET_BYTES <= MAX_BUDGETED_SHEET_BYTES);
 
 /// The sheet revisions a client holds, `0` for a sheet it has none of. A host sends a sheet
 /// only while the client's revision differs from the current one.
@@ -100,6 +110,8 @@ pub struct SheetRevisions {
     pub abilities: u32,
     pub party: u32,
     pub depths_loot: u32,
+    pub world: u32,
+    pub waystones: u32,
 }
 
 impl SheetRevisions {
@@ -111,6 +123,8 @@ impl SheetRevisions {
             Sheet::Abilities => self.abilities,
             Sheet::Party => self.party,
             Sheet::DepthsLoot => self.depths_loot,
+            Sheet::World => self.world,
+            Sheet::Waystones => self.waystones,
         }
     }
 
@@ -122,6 +136,8 @@ impl SheetRevisions {
             Sheet::Abilities => self.abilities = revision,
             Sheet::Party => self.party = revision,
             Sheet::DepthsLoot => self.depths_loot = revision,
+            Sheet::World => self.world = revision,
+            Sheet::Waystones => self.waystones = revision,
         }
     }
 
@@ -149,7 +165,7 @@ pub(crate) fn revision(bytes: &[u8]) -> u32 {
 }
 
 /// Each sheet's bytes at `snapshot.tick`; the bag and quest sheets are absent when the
-/// projection has none to send.
+/// projection has none to send. A budgeted sheet that outgrows its budget fails.
 pub(crate) fn encode_sheets(
     snapshot: &ZoneSnapshot,
 ) -> Result<[Option<Vec<u8>>; SHEET_COUNT], ProtocolError> {
@@ -188,7 +204,7 @@ pub(crate) fn encode_sheets(
     )?);
     let now = tick_bits(snapshot.tick);
     for cooldown in &snapshot.cooldowns {
-        abilities.push(cooldown.ability.get());
+        abilities.extend_from_slice(&cooldown.ability.get().to_be_bytes());
         abilities.extend_from_slice(&now.wrapping_add(cooldown.remaining).to_be_bytes());
     }
     encode_auras(&mut abilities, now, &snapshot.auras)?;
@@ -202,6 +218,17 @@ pub(crate) fn encode_sheets(
         .as_ref()
         .map(crate::depths::encode_loot_sheet)
         .transpose()?;
+    let mut world = Vec::new();
+    crate::wire::encode_doors(&mut world, &snapshot.doors)?;
+    crate::wire::encode_piece_views(&mut world, &snapshot.pieces)?;
+    crate::raid::encode_view(&mut world, snapshot.raid.as_ref())?;
+    let mut waystones = Vec::new();
+    crate::wire::encode_waystones(&mut waystones, &snapshot.viewer.waystones)?;
+    if world.len().max(waystones.len()) > MAX_BUDGETED_SHEET_BYTES {
+        return Err(ProtocolError::new(
+            "a world or waystone sheet exceeds its packet budget",
+        ));
+    }
     Ok([
         inventory,
         quests,
@@ -209,6 +236,8 @@ pub(crate) fn encode_sheets(
         Some(abilities),
         party,
         depths_loot,
+        Some(world),
+        Some(waystones),
     ])
 }
 
@@ -243,7 +272,8 @@ fn encode_auras(payload: &mut Vec<u8>, now: u16, auras: &[AuraView]) -> Result<(
         "player projection has too many auras",
     )?);
     for aura in auras {
-        payload.extend_from_slice(&[aura.ability.get(), aura.kind.code()]);
+        payload.extend_from_slice(&aura.ability.get().to_be_bytes());
+        payload.push(aura.kind.code());
         payload.extend_from_slice(&now.wrapping_add(aura.remaining).to_be_bytes());
         payload.extend_from_slice(&aura.amount.to_be_bytes());
     }
@@ -276,6 +306,12 @@ pub(crate) fn read_sheet<'a>(
         }
         Sheet::DepthsLoot => {
             crate::depths::read_loot_sheet(payload, offset)?;
+        }
+        Sheet::World => {
+            read_world_sheet(payload, offset)?;
+        }
+        Sheet::Waystones => {
+            crate::wire::decode_waystones(payload, offset)?;
         }
     }
     Ok(&payload[start..*offset])
@@ -317,6 +353,37 @@ fn read_inventory_sheet(
         return Err(ProtocolError::new("stat totals do not match the equipment"));
     }
     Ok((revision, inventory, equipment))
+}
+
+/// The world sheet: doors, pieces that are not intact and the raid signal.
+pub(crate) type WorldSheet = (
+    Vec<mmorpg_core::DoorView>,
+    Vec<mmorpg_core::PieceView>,
+    Option<mmorpg_core::RaidView>,
+);
+
+pub(crate) fn decode_world_sheet(bytes: &[u8]) -> Result<WorldSheet, ProtocolError> {
+    let mut offset = 0;
+    let sheet = read_world_sheet(bytes, &mut offset)?;
+    ensure_fully_consumed(bytes, offset)?;
+    Ok(sheet)
+}
+
+fn read_world_sheet(payload: &[u8], offset: &mut usize) -> Result<WorldSheet, ProtocolError> {
+    Ok((
+        crate::wire::decode_doors(payload, offset)?,
+        crate::wire::decode_piece_views(payload, offset)?,
+        crate::raid::decode_view(payload, offset)?,
+    ))
+}
+
+pub(crate) fn decode_waystone_sheet(
+    bytes: &[u8],
+) -> Result<mmorpg_core::WaystoneSet, ProtocolError> {
+    let mut offset = 0;
+    let sheet = crate::wire::decode_waystones(bytes, &mut offset)?;
+    ensure_fully_consumed(bytes, offset)?;
+    Ok(sheet)
 }
 
 pub(crate) fn decode_quest_sheet(bytes: &[u8]) -> Result<QuestSheet, ProtocolError> {
@@ -401,7 +468,7 @@ fn read_ability_sheet(
     let mut cooldowns = Vec::with_capacity(count);
     let mut last: Option<AbilityId> = None;
     for _ in 0..count {
-        let ability = AbilityId::new(read_u8(payload, offset)?);
+        let ability = AbilityId::new(u32::from_be_bytes(take(payload, offset)?));
         let end = u16::from_be_bytes(take(payload, offset)?);
         let catalog = ability_by_id(ability)
             .filter(|_| last.is_none_or(|last| last < ability))
@@ -440,7 +507,7 @@ fn read_auras(
     let count = decode_u8_count(payload, offset, MAX_AURAS, "snapshot has too many auras")?;
     let mut auras = Vec::with_capacity(count);
     for _ in 0..count {
-        let ability = AbilityId::new(read_u8(payload, offset)?);
+        let ability = AbilityId::new(u32::from_be_bytes(take(payload, offset)?));
         let kind = AuraKind::from_code(read_u8(payload, offset)?);
         let end = u16::from_be_bytes(take(payload, offset)?);
         let amount = u16::from_be_bytes(take(payload, offset)?);

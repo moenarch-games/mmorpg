@@ -15,8 +15,8 @@ const MAX_TICKS: u64 = 30 * 60 * 20;
 const START: [i32; 3] = [8_050, greyhaven_vale::basin::TERRACE_Y + 90, 3_000];
 /// Rats north of this line forage within the marauders' aggro radius.
 const RAT_LINE_Z: i32 = 4_600;
-const GRAIN_RAT: u16 = 3;
-const FIELD_MARAUDER: u16 = 4;
+const GRAIN_RAT: u32 = 3;
+const FIELD_MARAUDER: u32 = 4;
 
 struct Script {
     zone: ZoneSimulation,

@@ -2,8 +2,8 @@
 //! The turned-in quests are a count and their IDs in ascending order, as many as content
 //! defines (#862); entries are a quest ID and one progress byte per objective slot; the
 //! sheet adds the viewer's NPC markers, as many as the packet budget holds (see
-//! [`crate::sheet::MAX_QUEST_SHEET_BYTES`]). Whether content defines a quest is for core (recovery)
-//! and clients (catalog) to decide.
+//! [`crate::sheet::MAX_BUDGETED_SHEET_BYTES`]). Quest and NPC IDs are `u32` (#882). Whether
+//! content defines a quest is for core (recovery) and clients (catalog) to decide.
 
 use std::collections::BTreeSet;
 
@@ -13,45 +13,66 @@ use mmorpg_core::{
 };
 
 use crate::ProtocolError;
-use crate::wire::{decode_quest, decode_u8_count, encode_u8_count, read_u8, take};
+use crate::wire::{
+    decode_quest, decode_u8_count, decode_u16_count, encode_u8_count, encode_u16_count, read_u8,
+    take,
+};
 
 /// Quest ID and one progress byte per objective slot.
-pub(crate) const QUEST_ENTRY_BYTES: usize = 1 + MAX_QUEST_OBJECTIVES;
+pub(crate) const QUEST_ENTRY_BYTES: usize = 4 + MAX_QUEST_OBJECTIVES;
 
-/// Turned-in quests: `count u8 · count × quest u8`, ascending. Quest IDs are one byte and
-/// never `0`, so every set fits.
+/// How wide a record's quest IDs are: `u32` now, one byte in character records before #882.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum QuestIdWidth {
+    Byte,
+    Word,
+}
+
+impl QuestIdWidth {
+    fn read(self, payload: &[u8], offset: &mut usize) -> Result<QuestId, ProtocolError> {
+        decode_quest(match self {
+            Self::Byte => u32::from(read_u8(payload, offset)?),
+            Self::Word => u32::from_be_bytes(take(payload, offset)?),
+        })
+    }
+}
+
+/// Turned-in quests: `count u16 · count × quest u32`, ascending; quest IDs are never `0`.
 fn encode_completed(
     payload: &mut Vec<u8>,
     completed: &BTreeSet<QuestId>,
 ) -> Result<(), ProtocolError> {
-    payload.push(encode_u8_count(
-        completed.len(),
-        usize::from(u8::MAX),
-        "too many quests are turned in",
-    )?);
+    payload.extend_from_slice(
+        &encode_u16_count(
+            completed.len(),
+            usize::from(u16::MAX),
+            "too many quests are turned in",
+        )?
+        .to_be_bytes(),
+    );
     for quest in completed {
         if quest.get() == 0 {
             return Err(ProtocolError::new("quest id is out of range"));
         }
-        payload.push(quest.get());
+        payload.extend_from_slice(&quest.get().to_be_bytes());
     }
     Ok(())
 }
 
-/// Distinct in-range IDs in strictly ascending order.
+/// Distinct in-range IDs in strictly ascending order; before #882 the count and IDs were bytes.
 fn decode_completed(
     payload: &[u8],
     offset: &mut usize,
+    width: QuestIdWidth,
 ) -> Result<BTreeSet<QuestId>, ProtocolError> {
-    let count = decode_u8_count(
-        payload,
-        offset,
-        usize::from(u8::MAX),
-        "too many quests are turned in",
-    )?;
+    let message = "too many quests are turned in";
+    let count = match width {
+        QuestIdWidth::Byte => decode_u8_count(payload, offset, usize::from(u8::MAX), message)?,
+        QuestIdWidth::Word => decode_u16_count(payload, offset, usize::from(u16::MAX), message)?,
+    };
     let mut completed = BTreeSet::new();
     for _ in 0..count {
-        let quest = decode_quest(read_u8(payload, offset)?)?;
+        let quest = width.read(payload, offset)?;
         if completed.last().is_some_and(|last| *last >= quest) {
             return Err(ProtocolError::new("turned-in quests are not ordered"));
         }
@@ -66,7 +87,7 @@ pub(crate) fn decode_completed_mask(
     offset: &mut usize,
 ) -> Result<BTreeSet<QuestId>, ProtocolError> {
     let mask = u32::from_be_bytes(take(payload, offset)?);
-    Ok((1..=32_u8)
+    Ok((1..=32_u32)
         .filter(|id| mask & (1 << (id - 1)) != 0)
         .map(QuestId::new)
         .collect())
@@ -79,7 +100,7 @@ fn encode_entries(payload: &mut Vec<u8>, entries: &[QuestEntry]) -> Result<(), P
         "quest log exceeds its capacity",
     )?);
     for entry in entries {
-        payload.push(entry.quest.get());
+        payload.extend_from_slice(&entry.quest.get().to_be_bytes());
         payload.extend_from_slice(&entry.progress);
     }
     Ok(())
@@ -89,6 +110,7 @@ fn encode_entries(payload: &mut Vec<u8>, entries: &[QuestEntry]) -> Result<(), P
 pub(crate) fn decode_entries(
     payload: &[u8],
     offset: &mut usize,
+    width: QuestIdWidth,
 ) -> Result<Vec<QuestEntry>, ProtocolError> {
     let count = decode_u8_count(
         payload,
@@ -98,7 +120,7 @@ pub(crate) fn decode_entries(
     )?;
     let mut entries: Vec<QuestEntry> = Vec::with_capacity(count);
     for _ in 0..count {
-        let quest = decode_quest(read_u8(payload, offset)?)?;
+        let quest = width.read(payload, offset)?;
         let progress = take(payload, offset)?;
         if entries.last().is_some_and(|last| last.quest >= quest) {
             return Err(ProtocolError::new("quest log entries are not ordered"));
@@ -114,30 +136,35 @@ pub(crate) fn encode_log(payload: &mut Vec<u8>, log: &QuestLog) -> Result<(), Pr
     encode_entries(payload, &log.entries)
 }
 
-pub(crate) fn decode_log(payload: &[u8], offset: &mut usize) -> Result<QuestLog, ProtocolError> {
-    let completed = decode_completed(payload, offset)?;
-    let entries = decode_entries(payload, offset)?;
+pub(crate) fn decode_log(
+    payload: &[u8],
+    offset: &mut usize,
+    width: QuestIdWidth,
+) -> Result<QuestLog, ProtocolError> {
+    let completed = decode_completed(payload, offset, width)?;
+    let entries = decode_entries(payload, offset, width)?;
     Ok(QuestLog { entries, completed })
 }
 
-/// Fails when the sheet outgrows [`crate::sheet::MAX_QUEST_SHEET_BYTES`], what the packet
+/// Fails when the sheet outgrows [`crate::sheet::MAX_BUDGETED_SHEET_BYTES`], what the packet
 /// budget leaves a quiet tick.
 pub(crate) fn encode_sheet(payload: &mut Vec<u8>, sheet: &QuestSheet) -> Result<(), ProtocolError> {
     let start = payload.len();
     encode_completed(payload, &sheet.completed)?;
     encode_entries(payload, &sheet.entries)?;
-    payload.push(encode_u8_count(
-        sheet.markers.len(),
-        usize::from(u8::MAX),
-        "quest sheet has too many markers",
-    )?);
+    payload.extend_from_slice(
+        &encode_u16_count(
+            sheet.markers.len(),
+            usize::from(u16::MAX),
+            "quest sheet has too many markers",
+        )?
+        .to_be_bytes(),
+    );
     for marker in &sheet.markers {
-        let npc = u16::try_from(marker.npc.get())
-            .map_err(|_| ProtocolError::new("a marked npc id must fit u16"))?;
-        payload.extend_from_slice(&npc.to_be_bytes());
+        payload.extend_from_slice(&marker.npc.get().to_be_bytes());
         payload.push(marker.marker.code());
     }
-    if payload.len() - start > crate::sheet::MAX_QUEST_SHEET_BYTES {
+    if payload.len() - start > crate::sheet::MAX_BUDGETED_SHEET_BYTES {
         return Err(ProtocolError::new("quest sheet exceeds its packet budget"));
     }
     Ok(())
@@ -149,20 +176,20 @@ pub(crate) fn decode_sheet(
     payload: &[u8],
     offset: &mut usize,
 ) -> Result<QuestSheet, ProtocolError> {
-    let completed = decode_completed(payload, offset)?;
-    let entries = decode_entries(payload, offset)?;
+    let completed = decode_completed(payload, offset, QuestIdWidth::Word)?;
+    let entries = decode_entries(payload, offset, QuestIdWidth::Word)?;
     if entries.iter().any(|entry| completed.contains(&entry.quest)) {
         return Err(ProtocolError::new("an active quest is also turned in"));
     }
-    let count = decode_u8_count(
+    let count = decode_u16_count(
         payload,
         offset,
-        usize::from(u8::MAX),
+        usize::from(u16::MAX),
         "quest sheet has too many markers",
     )?;
     let mut markers: Vec<NpcMarker> = Vec::with_capacity(count);
     for _ in 0..count {
-        let npc = NpcId::new(u32::from(u16::from_be_bytes(take(payload, offset)?)));
+        let npc = NpcId::new(u32::from_be_bytes(take(payload, offset)?));
         let marker = QuestMarker::from_code(read_u8(payload, offset)?)
             .ok_or_else(|| ProtocolError::new("unknown quest marker"))?;
         if markers.last().is_some_and(|last| last.npc >= npc) {
@@ -198,7 +225,7 @@ mod tests {
             completed: quests.iter().map(|quest| quest.id).collect(),
             entries: (1..=MAX_QUEST_LOG)
                 .map(|quest| QuestEntry {
-                    quest: QuestId::new(u8::try_from(quest).unwrap()),
+                    quest: QuestId::new(u32::try_from(quest).unwrap()),
                     progress: [u8::MAX; MAX_QUEST_OBJECTIVES],
                 })
                 .collect(),
@@ -212,7 +239,7 @@ mod tests {
         };
         let mut payload = Vec::new();
         encode_sheet(&mut payload, &sheet).unwrap();
-        assert!(payload.len() <= crate::sheet::MAX_QUEST_SHEET_BYTES);
+        assert!(payload.len() <= crate::sheet::MAX_BUDGETED_SHEET_BYTES);
 
         let log = QuestLog {
             entries: Vec::new(),
@@ -220,6 +247,9 @@ mod tests {
         };
         let mut payload = Vec::new();
         encode_log(&mut payload, &log).unwrap();
-        assert_eq!(decode_log(&payload, &mut 0).unwrap(), log);
+        assert_eq!(
+            decode_log(&payload, &mut 0, QuestIdWidth::Word).unwrap(),
+            log
+        );
     }
 }

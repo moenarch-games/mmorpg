@@ -53,7 +53,7 @@ pub struct EntitySnapshot {
     pub id: u32,
     /// Creature template ID, NPC ID, or for players 0 without a class and
     /// otherwise `1 + class × 2 + sex`.
-    pub appearance: u16,
+    pub appearance: u32,
     pub position: [i32; 3],
     /// Presentation-only velocity, saturated to the `i8` range per axis.
     /// Canonical state keeps the exact physics velocity.
@@ -118,7 +118,7 @@ pub struct GuardView {
 }
 
 /// The viewer's own exact unit state.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ViewerState {
     pub copper: u32,
     pub experience: u32,
@@ -313,7 +313,7 @@ impl ZoneSimulation {
                     stance: self.melee_stance(player_id, viewer.target)?,
                     combo: self.combo_phase(viewer),
                     breath: viewer.breath.remaining,
-                    waystones: viewer.waystones,
+                    waystones: viewer.waystones.clone(),
                 },
                 cooldowns: viewer.cooldowns.clone(),
                 auras: aura_views(&viewer.auras),
@@ -413,7 +413,9 @@ impl ZoneSimulation {
                 EntitySnapshot {
                     kind: EntityKind::Player,
                     id: player_id,
-                    appearance: player.class.map_or(0, crate::ClassChoice::appearance),
+                    appearance: player
+                        .class
+                        .map_or(0, |class| u32::from(class.appearance())),
                     position: [position.x, position.y, position.z],
                     velocity: [velocity.x, velocity.y, velocity.z].map(saturate_i8),
                     facing: player.traversal.wall().unwrap_or(player.facing),
@@ -503,7 +505,7 @@ impl ZoneSimulation {
                 EntitySnapshot {
                     kind: EntityKind::Npc,
                     id: npc_id.get(),
-                    appearance: u16::try_from(npc_id.get()).unwrap_or(u16::MAX),
+                    appearance: npc_id.get(),
                     position: [
                         placement.position[0],
                         self.content
@@ -519,7 +521,7 @@ impl ZoneSimulation {
                     health_percent: if self
                         .content
                         .raid()
-                        .and_then(|site| site.injured_at(npc_id, self.raid.aftermath))
+                        .and_then(|site| site.injured_at(npc_id, &self.raid.aftermath))
                         .is_some()
                     {
                         crate::raid::INJURED_HEALTH_PERCENT
@@ -547,7 +549,7 @@ impl ZoneSimulation {
                 EntitySnapshot {
                     kind: EntityKind::Minion,
                     id: minion_id.get(),
-                    appearance: u16::from(minion.ability.get()),
+                    appearance: minion.ability.get(),
                     position: [position.x, position.y, position.z],
                     velocity: [velocity.x, velocity.y, velocity.z].map(saturate_i8),
                     facing: minion.facing,

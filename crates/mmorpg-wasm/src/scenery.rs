@@ -174,7 +174,7 @@ pub struct Water {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AreaExport {
-    pub id: u16,
+    pub id: u32,
     pub name: String,
     pub min_xz: [i32; 2],
     pub max_xz: [i32; 2],

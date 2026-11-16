@@ -3,19 +3,42 @@
 //! reports to the east gate guard, braces on the barn once the guards are warned, a readiness that
 //! softens every raider's hit without saving an unopposed barn, and that retires with its incident
 //! or expires with a false alarm. None of it cancels, postpones or rewards anything.
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use mmorpg_core::raid::{
-    FOREWARNING_TIME, OBJECTIVE_INTEGRITY, PHASE_TICKS, RAID_PHASES, READINESS_WARNED,
-    TRIGGER_TIME, raid_night, signs_night,
+    FOREWARNING_TIME, OBJECTIVE_INTEGRITY, PHASE_TICKS, RAID_PHASES, TRIGGER_TIME, raid_night,
+    signs_night,
 };
 use mmorpg_core::{
-    DAY_TICKS, ErrorCode, PlayerId, RaidNotice, RaidOutcome, RaidPrep, ZONE_START_TIME,
+    DAY_TICKS, ErrorCode, PlayerId, RaidNotice, RaidOutcome, RaidPrep, RaidState, ZONE_START_TIME,
     ZoneCommand, ZoneEvent, ZoneId, ZoneSimulation, greyhaven_vale,
 };
 
+/// A raid's accepted preparations: whether the guards are warned, and the braced spots.
+type Readiness = (bool, BTreeSet<u32>);
+
+fn readiness(raid: &RaidState) -> Readiness {
+    (raid.warned, raid.braced.clone())
+}
+
+fn prepare_raid(raid: &mut RaidState, (warned, braced): Readiness) {
+    raid.warned = warned;
+    raid.braced = braced;
+}
+
+fn unprepared() -> Readiness {
+    (false, BTreeSet::new())
+}
+
+fn warned() -> Readiness {
+    (true, BTreeSet::new())
+}
+
 /// Every preparation Greyhaven authors: the warning and both braces.
-const FULL: u8 = 0b111;
+fn full() -> Readiness {
+    (true, BTreeSet::from([0, 1]))
+}
 
 fn seed() -> u64 {
     greyhaven_vale::content().rng_seed()
@@ -140,24 +163,25 @@ fn signs_come_before_every_raid_and_some_false_alarms_and_never_change_the_trigg
         let view = zone.snapshot_for_player(1).unwrap().raid.unwrap();
         assert!(view.signs && !view.scouted);
         assert_eq!(
-            (view.phase, view.integrity, view.aid, view.readiness),
-            (0, 100, 0, 0)
+            (view.phase, view.integrity, view.aid.is_empty(), view.warned),
+            (0, 100, true, false)
         );
         // Fully prepared or not, the nightly check decides exactly as its roll says.
-        for readiness in [0, FULL] {
+        for prepared in [unprepared(), full()] {
             let check = dusk + u64::from(TRIGGER_TIME - FOREWARNING_TIME);
             let mut zone = restored(&zone_at(check - 1, &[BY_LOOKOUT]), |state| {
-                state.raid.readiness = readiness;
+                prepare_raid(&mut state.raid, prepared.clone());
                 state.raid.scouted = vec![1];
             });
             zone.advance_tick().unwrap();
-            assert_eq!(zone.raid().active.is_some(), raid, "readiness {readiness}");
+            assert_eq!(zone.raid().active.is_some(), raid, "readiness {prepared:?}");
             assert!(
                 zone.raid().scouted.is_empty(),
                 "the evening's tracks are moot"
             );
             // The readiness serves the raid; a false alarm's expires.
-            assert_eq!(zone.raid().readiness, if raid { readiness } else { 0 });
+            let expected = if raid { prepared } else { unprepared() };
+            assert_eq!(readiness(zone.raid()), expected);
             let view = zone.snapshot_for_player(1).unwrap().raid;
             assert!(view.is_none_or(|view| !view.signs));
         }
@@ -192,7 +216,7 @@ fn players_read_the_tracks_warn_the_lookout_and_brace_the_barn_once_each() {
         Reply::Refused(ErrorCode::InvalidTarget),
         "the guards ask for braces once warned"
     );
-    assert_eq!(zone.raid().readiness, 0);
+    assert_eq!(readiness(zone.raid()), unprepared());
 
     // Player 1 reads the tracks, once.
     let mut zone = move_to(&zone, 1, near_tracks);
@@ -221,7 +245,7 @@ fn players_read_the_tracks_warn_the_lookout_and_brace_the_barn_once_each() {
         prepare(&mut zone, 1, 7, RaidPrep::Report),
         Reply::Notice(RaidNotice::Warned)
     );
-    assert_eq!(zone.raid().readiness, READINESS_WARNED);
+    assert_eq!(readiness(zone.raid()), warned());
     assert_eq!(
         prepare(&mut zone, 1, 8, RaidPrep::Report),
         Reply::Refused(ErrorCode::InvalidTarget),
@@ -250,9 +274,9 @@ fn players_read_the_tracks_warn_the_lookout_and_brace_the_barn_once_each() {
         prepare(&mut zone, 2, 4, RaidPrep::Brace(7)),
         Reply::Refused(ErrorCode::InvalidTarget)
     );
-    assert_eq!(zone.raid().readiness, FULL);
+    assert_eq!(readiness(zone.raid()), full());
     let view = zone.snapshot_for_player(2).unwrap().raid.unwrap();
-    assert_eq!((view.readiness, view.scouted), (FULL, false));
+    assert_eq!(((view.warned, view.braced), view.scouted), (full(), false));
     assert_eq!(
         [purse(&zone, 1), purse(&zone, 2)],
         before,
@@ -290,14 +314,18 @@ fn readiness_slows_an_unopposed_raid_without_saving_the_barn_and_retires_with_it
     let start = zone_at(100_000, &[BY_LOOKOUT]);
     let mut plain = restored(&start, |_| {});
     assert!(plain.begin_raid().unwrap());
-    let mut prepared = restored(&start, |state| state.raid.readiness = FULL);
+    let mut prepared = restored(&start, |state| prepare_raid(&mut state.raid, full()));
     assert!(prepared.begin_raid().unwrap());
     let plain_ticks = run_raid(&mut plain);
     let prepared_ticks = run_raid(&mut prepared);
     for zone in [&plain, &prepared] {
         assert_eq!(zone.raid().last.unwrap().outcome, RaidOutcome::Lost);
         assert_eq!(zone.raid().damage, OBJECTIVE_INTEGRITY);
-        assert_eq!(zone.raid().readiness, 0, "readiness retires with its raid");
+        assert_eq!(
+            readiness(zone.raid()),
+            unprepared(),
+            "readiness retires with its raid"
+        );
     }
     assert!(
         prepared_ticks > plain_ticks + 600,
@@ -308,7 +336,7 @@ fn readiness_slows_an_unopposed_raid_without_saving_the_barn_and_retires_with_it
     assert_eq!(reply(&plain, 1), Reply::Nothing);
 
     // A prepared raid the defenders hold: the notice says so, and the next raid starts bare.
-    let mut held = restored(&start, |state| state.raid.readiness = READINESS_WARNED);
+    let mut held = restored(&start, |state| prepare_raid(&mut state.raid, warned()));
     assert!(held.begin_raid().unwrap());
     let mut held = restored(&held, |state| {
         let incident = state.raid.active.as_mut().unwrap();
@@ -319,5 +347,5 @@ fn readiness_slows_an_unopposed_raid_without_saving_the_barn_and_retires_with_it
     held.advance_tick().unwrap();
     assert_eq!(held.raid().last.unwrap().outcome, RaidOutcome::Defended);
     assert_eq!(reply(&held, 1), Reply::Notice(RaidNotice::Held));
-    assert_eq!(held.raid().readiness, 0);
+    assert_eq!(readiness(held.raid()), unprepared());
 }

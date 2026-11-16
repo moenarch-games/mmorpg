@@ -180,7 +180,8 @@ fn encode_player(
                 continue;
             }
             PlayerIntent::UseAbility { ability, target } => {
-                payload.extend_from_slice(&[USE_ABILITY_INTENT, ability]);
+                payload.push(USE_ABILITY_INTENT);
+                payload.extend_from_slice(&ability.to_be_bytes());
                 encode_entity_ref(payload, target);
                 continue;
             }
@@ -189,7 +190,8 @@ fn encode_player(
                 facing,
                 aim,
             } => {
-                payload.extend_from_slice(&[DIRECTED_STRIKE_INTENT, ability]);
+                payload.push(DIRECTED_STRIKE_INTENT);
+                payload.extend_from_slice(&ability.to_be_bytes());
                 payload.extend_from_slice(&facing.to_be_bytes());
                 payload.extend_from_slice(&crate::wire::encode_aim(aim));
                 continue;
@@ -204,11 +206,14 @@ fn encode_player(
                 continue;
             }
             PlayerIntent::UseDoor { door, open } => {
-                payload.extend_from_slice(&[USE_DOOR_INTENT, door.get(), u8::from(open)]);
+                payload.push(USE_DOOR_INTENT);
+                payload.extend_from_slice(&door.get().to_be_bytes());
+                payload.push(u8::from(open));
                 continue;
             }
             PlayerIntent::Sit(seat) => {
-                payload.extend_from_slice(&[SIT_INTENT, seat.map_or(0, mmorpg_core::SeatId::get)]);
+                payload.push(SIT_INTENT);
+                payload.extend_from_slice(&seat.map_or(0, mmorpg_core::SeatId::get).to_be_bytes());
                 continue;
             }
             PlayerIntent::Repair(piece) => {
@@ -246,7 +251,13 @@ fn encode_player(
                 bag_slot,
                 quantity,
             } => {
-                encode_trade_intent(payload, SELL_ITEM_INTENT, npc, bag_slot, quantity);
+                encode_trade_intent(
+                    payload,
+                    SELL_ITEM_INTENT,
+                    npc,
+                    u32::from(bag_slot),
+                    quantity,
+                );
                 continue;
             }
             PlayerIntent::Chat(message) => {
@@ -257,29 +268,34 @@ fn encode_player(
             PlayerIntent::AcceptQuest { npc, quest } => {
                 payload.push(ACCEPT_QUEST_INTENT);
                 payload.extend_from_slice(&npc.get().to_be_bytes());
-                payload.push(quest);
+                payload.extend_from_slice(&quest.to_be_bytes());
                 continue;
             }
             PlayerIntent::CompleteQuest { npc, quest, choice } => {
                 payload.push(COMPLETE_QUEST_INTENT);
                 payload.extend_from_slice(&npc.get().to_be_bytes());
-                payload.extend_from_slice(&[quest, choice]);
+                payload.extend_from_slice(&quest.to_be_bytes());
+                payload.push(choice);
                 continue;
             }
             PlayerIntent::AbandonQuest { quest } => {
-                payload.extend_from_slice(&[ABANDON_QUEST_INTENT, quest]);
+                payload.push(ABANDON_QUEST_INTENT);
+                payload.extend_from_slice(&quest.to_be_bytes());
                 continue;
             }
             PlayerIntent::UseWaystone(waystone) => {
-                payload.extend_from_slice(&[USE_WAYSTONE_INTENT, waystone.get()]);
+                payload.push(USE_WAYSTONE_INTENT);
+                payload.extend_from_slice(&waystone.get().to_be_bytes());
                 continue;
             }
             PlayerIntent::RaidAid(task) => {
-                payload.extend_from_slice(&[RAID_AID_INTENT, task]);
+                payload.push(RAID_AID_INTENT);
+                payload.extend_from_slice(&task.to_be_bytes());
                 continue;
             }
             PlayerIntent::RaidPrepare(prep) => {
-                payload.extend_from_slice(&[RAID_PREPARE_INTENT, crate::raid::prep_code(prep)]);
+                payload.push(RAID_PREPARE_INTENT);
+                payload.extend_from_slice(&crate::raid::encode_prep(prep));
                 continue;
             }
             PlayerIntent::Notice(code) => {
@@ -334,7 +350,7 @@ fn encode_player(
         "player has too many cooldowns",
     )?);
     for cooldown in &abilities.cooldowns {
-        payload.push(cooldown.ability.get());
+        payload.extend_from_slice(&cooldown.ability.get().to_be_bytes());
         payload.extend_from_slice(&cooldown.remaining.to_be_bytes());
     }
     encode_cast(payload, abilities.cast);
@@ -346,12 +362,14 @@ fn encode_player(
     payload.extend_from_slice(&landing.recovery.to_be_bytes());
     payload.push(u8::from(landing.attacked_airborne));
     encode_traversal(payload, combat.traversal);
-    // What the player sits on (#619): 0 nothing, 1 the ground, 2 + a seat ID's byte.
-    match combat.sitting {
-        mmorpg_core::Sitting::No => payload.extend_from_slice(&[0, 0]),
-        mmorpg_core::Sitting::Ground => payload.extend_from_slice(&[1, 0]),
-        mmorpg_core::Sitting::On(seat) => payload.extend_from_slice(&[2, seat.get()]),
-    }
+    // What the player sits on (#619): 0 nothing, 1 the ground, 2 + a seat ID (`u32`).
+    let (sitting, seat) = match combat.sitting {
+        mmorpg_core::Sitting::No => (0, 0),
+        mmorpg_core::Sitting::Ground => (1, 0),
+        mmorpg_core::Sitting::On(seat) => (2, seat.get()),
+    };
+    payload.push(sitting);
+    payload.extend_from_slice(&seat.to_be_bytes());
     encode_roll(payload, combat.roll);
     payload.extend_from_slice(&combat.strike_recovery.to_be_bytes());
     payload.extend_from_slice(&crate::wire::encode_piece(combat.repairing).to_be_bytes());
@@ -368,7 +386,7 @@ fn encode_player(
         crate::chat::encode_line(payload, line);
     }
     crate::quest::encode_log(payload, &player.quests)?;
-    payload.extend_from_slice(&player.waystones.bits().to_be_bytes());
+    crate::wire::encode_waystones(payload, &player.waystones)?;
     crate::character::encode_optional_character(payload, player.character.as_ref())?;
     crate::character::encode_depths_record(payload, player.depths);
     crate::character::encode_physique(payload, &player.physique);
@@ -476,14 +494,14 @@ fn decode_roll(payload: &[u8], offset: &mut usize) -> Result<mmorpg_core::Roll, 
     Ok(roll)
 }
 
-/// 17 bytes: ability (0 for none), elapsed ticks, target reference, point
+/// 20 bytes: ability (`u32`, 0 for none), elapsed ticks, target reference, point
 /// present and the point (`2 × i32`, zero when absent).
 fn encode_cast(payload: &mut Vec<u8>, cast: Option<CastState>) {
     let Some(cast) = cast else {
-        payload.extend_from_slice(&[0; 17]);
+        payload.extend_from_slice(&[0; 20]);
         return;
     };
-    payload.push(cast.ability.get());
+    payload.extend_from_slice(&cast.ability.get().to_be_bytes());
     payload.extend_from_slice(&cast.elapsed.to_be_bytes());
     encode_entity_ref(payload, cast.target);
     payload.push(u8::from(cast.point.is_some()));
@@ -493,7 +511,7 @@ fn encode_cast(payload: &mut Vec<u8>, cast: Option<CastState>) {
 }
 
 fn decode_cast(payload: &[u8], offset: &mut usize) -> Result<Option<CastState>, ProtocolError> {
-    let ability = read_u8(payload, offset)?;
+    let ability = u32::from_be_bytes(take(payload, offset)?);
     let elapsed = u16::from_be_bytes(take(payload, offset)?);
     let target = decode_entity_ref(payload, offset)?;
     let has_point = read_bool(payload, offset)?;
@@ -520,7 +538,7 @@ fn decode_cast(payload: &[u8], offset: &mut usize) -> Result<Option<CastState>, 
     }))
 }
 
-/// A count, then 10 bytes per aura: ability, caster reference, remaining
+/// A count, then 13 bytes per aura: ability (`u32`), caster reference, remaining
 /// ticks and amount.
 fn encode_auras(payload: &mut Vec<u8>, auras: &[Aura]) -> Result<(), ProtocolError> {
     payload.push(encode_u8_count(
@@ -529,7 +547,7 @@ fn encode_auras(payload: &mut Vec<u8>, auras: &[Aura]) -> Result<(), ProtocolErr
         "unit has too many auras",
     )?);
     for aura in auras {
-        payload.push(aura.ability.get());
+        payload.extend_from_slice(&aura.ability.get().to_be_bytes());
         encode_entity_ref(payload, Some(aura.caster));
         payload.extend_from_slice(&aura.remaining.to_be_bytes());
         payload.extend_from_slice(&aura.amount.to_be_bytes());
@@ -541,7 +559,7 @@ fn decode_auras(payload: &[u8], offset: &mut usize) -> Result<Vec<Aura>, Protoco
     let count = decode_u8_count(payload, offset, MAX_AURAS, "unit has too many auras")?;
     let mut auras = Vec::with_capacity(count);
     for _ in 0..count {
-        let ability = AbilityId::new(read_u8(payload, offset)?);
+        let ability = AbilityId::new(u32::from_be_bytes(take(payload, offset)?));
         let caster = decode_entity_ref(payload, offset)?
             .ok_or_else(|| ProtocolError::new("an aura needs a caster"))?;
         auras.push(Aura {
@@ -868,7 +886,8 @@ fn encode_minions(
         let minion = &record.minion;
         payload.extend_from_slice(&minion.id.get().to_be_bytes());
         payload.extend_from_slice(&minion.summoner.to_be_bytes());
-        payload.extend_from_slice(&[minion.ability.get(), minion.level]);
+        payload.extend_from_slice(&minion.ability.get().to_be_bytes());
+        payload.push(minion.level);
         payload.extend_from_slice(&minion.health.to_be_bytes());
         payload.extend_from_slice(&minion.facing.to_be_bytes());
         crate::wire::encode_minion_order(payload, minion.order);
@@ -897,7 +916,7 @@ fn decode_minions(
         .map(|_| {
             let id = mmorpg_core::MinionId::new(u32::from_be_bytes(take(payload, offset)?));
             let summoner = u32::from_be_bytes(take(payload, offset)?);
-            let ability = AbilityId::new(read_u8(payload, offset)?);
+            let ability = AbilityId::new(u32::from_be_bytes(take(payload, offset)?));
             let level = read_u8(payload, offset)?;
             let health = u32::from_be_bytes(take(payload, offset)?);
             let facing = u16::from_be_bytes(take(payload, offset)?);
@@ -995,17 +1014,19 @@ fn decode_summoned_terrain(
     Ok((next, obstacles))
 }
 
-/// Destructible pieces (#305): count (`u8`), then per piece its ID (`u16`), health (`u32`),
+/// Destructible pieces (#305): count (`u16`), then per piece its ID (`u32`), health (`u32`),
 /// last change tick (`u64`) and repaired regrowth ticks (`u32`), in content order.
 fn encode_pieces(
     payload: &mut Vec<u8>,
     pieces: &[mmorpg_core::CanonicalPiece],
 ) -> Result<(), ProtocolError> {
-    payload.push(
-        u8::try_from(pieces.len())
-            .ok()
-            .filter(|&count| usize::from(count) <= mmorpg_core::MAX_PIECES)
-            .ok_or_else(|| ProtocolError::new("too many structure pieces"))?,
+    payload.extend_from_slice(
+        &encode_u16_count(
+            pieces.len(),
+            usize::from(u16::MAX),
+            "too many structure pieces",
+        )?
+        .to_be_bytes(),
     );
     for piece in pieces {
         payload.extend_from_slice(&piece.piece.get().to_be_bytes());
@@ -1020,14 +1041,16 @@ fn decode_pieces(
     payload: &[u8],
     offset: &mut usize,
 ) -> Result<Vec<mmorpg_core::CanonicalPiece>, ProtocolError> {
-    let count = usize::from(read_u8(payload, offset)?);
-    if count > mmorpg_core::MAX_PIECES {
-        return Err(ProtocolError::new("too many structure pieces"));
-    }
+    let count = decode_u16_count(
+        payload,
+        offset,
+        usize::from(u16::MAX),
+        "too many structure pieces",
+    )?;
     (0..count)
         .map(|_| {
             Ok(mmorpg_core::CanonicalPiece {
-                piece: mmorpg_core::PieceId::new(u16::from_be_bytes(take(payload, offset)?)),
+                piece: mmorpg_core::PieceId::new(u32::from_be_bytes(take(payload, offset)?)),
                 health: u32::from_be_bytes(take(payload, offset)?),
                 changed_tick: u64::from_be_bytes(take(payload, offset)?),
                 repaired: u32::from_be_bytes(take(payload, offset)?),
@@ -1089,7 +1112,7 @@ fn decode_player(
             continue;
         }
         if code == USE_ABILITY_INTENT {
-            let ability = read_u8(payload, offset)?;
+            let ability = u32::from_be_bytes(take(payload, offset)?);
             intents.push(PlayerIntent::UseAbility {
                 ability,
                 target: decode_entity_ref(payload, offset)?,
@@ -1097,7 +1120,8 @@ fn decode_player(
             continue;
         }
         if code == DIRECTED_STRIKE_INTENT {
-            let [ability, high, low, side, height] = take(payload, offset)?;
+            let ability = u32::from_be_bytes(take(payload, offset)?);
+            let [high, low, side, height] = take(payload, offset)?;
             intents.push(PlayerIntent::DirectedStrike {
                 ability,
                 facing: u16::from_be_bytes([high, low]),
@@ -1122,7 +1146,8 @@ fn decode_player(
             continue;
         }
         if code == USE_DOOR_INTENT {
-            let [door, open] = take(payload, offset)?;
+            let door = u32::from_be_bytes(take(payload, offset)?);
+            let open = read_u8(payload, offset)?;
             intents.push(PlayerIntent::UseDoor {
                 door: mmorpg_core::DoorId::new(door),
                 open: match open {
@@ -1134,14 +1159,14 @@ fn decode_player(
             continue;
         }
         if code == SIT_INTENT {
-            let seat = read_u8(payload, offset)?;
+            let seat = u32::from_be_bytes(take(payload, offset)?);
             intents.push(PlayerIntent::Sit(
                 (seat != 0).then(|| mmorpg_core::SeatId::new(seat)),
             ));
             continue;
         }
         if code == REPAIR_INTENT {
-            let piece = u16::from_be_bytes(take(payload, offset)?);
+            let piece = u32::from_be_bytes(take(payload, offset)?);
             intents.push(PlayerIntent::Repair(crate::wire::decode_piece(piece)));
             continue;
         }
@@ -1158,7 +1183,7 @@ fn decode_player(
         }
         if code == ACCEPT_QUEST_INTENT || code == COMPLETE_QUEST_INTENT {
             let npc = mmorpg_core::NpcId::new(u32::from_be_bytes(take(payload, offset)?));
-            let quest = read_u8(payload, offset)?;
+            let quest = u32::from_be_bytes(take(payload, offset)?);
             intents.push(if code == ACCEPT_QUEST_INTENT {
                 PlayerIntent::AcceptQuest { npc, quest }
             } else {
@@ -1172,18 +1197,20 @@ fn decode_player(
         }
         if code == ABANDON_QUEST_INTENT {
             intents.push(PlayerIntent::AbandonQuest {
-                quest: read_u8(payload, offset)?,
+                quest: u32::from_be_bytes(take(payload, offset)?),
             });
             continue;
         }
         if code == USE_WAYSTONE_INTENT {
             intents.push(PlayerIntent::UseWaystone(crate::wire::decode_waystone(
-                read_u8(payload, offset)?,
+                u32::from_be_bytes(take(payload, offset)?),
             )?));
             continue;
         }
         if code == RAID_AID_INTENT {
-            intents.push(PlayerIntent::RaidAid(read_u8(payload, offset)?));
+            intents.push(PlayerIntent::RaidAid(u32::from_be_bytes(take(
+                payload, offset,
+            )?)));
             continue;
         }
         if code == NOTICE_INTENT {
@@ -1205,9 +1232,9 @@ fn decode_player(
             continue;
         }
         if code == RAID_PREPARE_INTENT {
-            intents.push(PlayerIntent::RaidPrepare(crate::raid::decode_prep(
-                read_u8(payload, offset)?,
-            )?));
+            intents.push(PlayerIntent::RaidPrepare(crate::raid::decode_prep(take(
+                payload, offset,
+            )?)?));
             continue;
         }
         if code == CHAT_INTENT {
@@ -1218,8 +1245,8 @@ fn decode_player(
         }
         if code == BUY_ITEM_INTENT || code == SELL_ITEM_INTENT {
             let npc = mmorpg_core::NpcId::new(u32::from_be_bytes(take(payload, offset)?));
-            let [index, high, low] = take(payload, offset)?;
-            let quantity = u16::from_be_bytes([high, low]);
+            let index = u32::from_be_bytes(take(payload, offset)?);
+            let quantity = u16::from_be_bytes(take(payload, offset)?);
             intents.push(if code == BUY_ITEM_INTENT {
                 PlayerIntent::BuyItem {
                     npc,
@@ -1229,7 +1256,8 @@ fn decode_player(
             } else {
                 PlayerIntent::SellItem {
                     npc,
-                    bag_slot: index,
+                    bag_slot: u8::try_from(index)
+                        .map_err(|_| ProtocolError::new("sell intent bag slot is out of range"))?,
                     quantity,
                 }
             });
@@ -1283,7 +1311,7 @@ fn decode_player(
         events.push(decode_event(payload, offset)?);
     }
     let class_code = read_u8(payload, offset)?;
-    let class = ClassChoice::from_appearance(u16::from(class_code));
+    let class = ClassChoice::from_appearance(u32::from(class_code));
     if class_code != 0 && class.is_none() {
         return Err(ProtocolError::new("unknown class choice"));
     }
@@ -1299,7 +1327,7 @@ fn decode_player(
     )?;
     let mut cooldowns = Vec::with_capacity(cooldown_count);
     for _ in 0..cooldown_count {
-        let ability = AbilityId::new(read_u8(payload, offset)?);
+        let ability = AbilityId::new(u32::from_be_bytes(take(payload, offset)?));
         cooldowns.push(Cooldown {
             ability,
             remaining: u16::from_be_bytes(take(payload, offset)?),
@@ -1325,7 +1353,10 @@ fn decode_player(
         attacked_airborne: read_bool(payload, offset)?,
     };
     let traversal = decode_traversal(payload, offset)?;
-    let sitting = match (read_u8(payload, offset)?, read_u8(payload, offset)?) {
+    let sitting = match (
+        read_u8(payload, offset)?,
+        u32::from_be_bytes(take(payload, offset)?),
+    ) {
         (0, 0) => mmorpg_core::Sitting::No,
         (1, 0) => mmorpg_core::Sitting::Ground,
         (2, seat) if seat != 0 => mmorpg_core::Sitting::On(mmorpg_core::SeatId::new(seat)),
@@ -1333,7 +1364,7 @@ fn decode_player(
     };
     let roll = decode_roll(payload, offset)?;
     let strike_recovery = u16::from_be_bytes(take(payload, offset)?);
-    let repairing = crate::wire::decode_piece(u16::from_be_bytes(take(payload, offset)?));
+    let repairing = crate::wire::decode_piece(u32::from_be_bytes(take(payload, offset)?));
     let combo_target = decode_entity_ref(payload, offset)?;
     let combo_elapsed = u16::from_be_bytes(take(payload, offset)?);
     let combo = if let Some(target) = combo_target {
@@ -1358,8 +1389,8 @@ fn decode_player(
     for _ in 0..chat_count {
         chat.push(crate::chat::decode_line(payload, offset)?);
     }
-    let quests = crate::quest::decode_log(payload, offset)?;
-    let waystones = crate::wire::decode_waystones(u32::from_be_bytes(take(payload, offset)?))?;
+    let quests = crate::quest::decode_log(payload, offset, crate::quest::QuestIdWidth::Word)?;
+    let waystones = crate::wire::decode_waystones(payload, offset)?;
     let character = crate::character::decode_optional_character(payload, offset)?;
     let depths = crate::character::decode_depths_record(payload, offset)?;
     let physique = crate::character::decode_physique(payload, offset)?;
@@ -1413,14 +1444,15 @@ fn decode_player(
     })
 }
 
-/// A running timed swing (#679): a presence byte, then ability, `u16` facing, aim, `u16`
+/// A running timed swing (#679): a presence byte, then ability (`u32`), `u16` facing, aim, `u16`
 /// elapsed, `u16` startup and active ticks and the struck flag.
 fn encode_swing(payload: &mut Vec<u8>, swing: Option<mmorpg_core::Swing>) {
     let Some(swing) = swing else {
         payload.push(0);
         return;
     };
-    payload.extend_from_slice(&[1, swing.ability.get()]);
+    payload.push(1);
+    payload.extend_from_slice(&swing.ability.get().to_be_bytes());
     payload.extend_from_slice(&swing.facing.to_be_bytes());
     payload.extend_from_slice(&crate::wire::encode_aim(swing.aim));
     for ticks in [swing.elapsed, swing.startup, swing.active] {
@@ -1438,7 +1470,7 @@ fn decode_swing(
         return Ok(None);
     }
     let swing = mmorpg_core::Swing {
-        ability: mmorpg_core::AbilityId::new(read_u8(payload, offset)?),
+        ability: mmorpg_core::AbilityId::new(u32::from_be_bytes(take(payload, offset)?)),
         facing: u16::from_be_bytes(take(payload, offset)?),
         aim: crate::wire::decode_aim(take(payload, offset)?)?,
         elapsed: u16::from_be_bytes(take(payload, offset)?),
@@ -1593,12 +1625,12 @@ fn encode_trade_intent(
     payload: &mut Vec<u8>,
     code: u8,
     npc: mmorpg_core::NpcId,
-    index: u8,
+    index: u32,
     quantity: u16,
 ) {
     payload.push(code);
     payload.extend_from_slice(&npc.get().to_be_bytes());
-    payload.push(index);
+    payload.extend_from_slice(&index.to_be_bytes());
     payload.extend_from_slice(&quantity.to_be_bytes());
 }
 
@@ -1627,7 +1659,7 @@ fn encode_projectiles(
         payload.extend_from_slice(&projectile.id.to_be_bytes());
         payload.push(projectile.kind.code());
         encode_entity_ref(payload, Some(projectile.owner));
-        payload.push(projectile.ability.get());
+        payload.extend_from_slice(&projectile.ability.get().to_be_bytes());
         for component in projectile.position.into_iter().chain(projectile.velocity) {
             payload.extend_from_slice(&component.to_be_bytes());
         }
@@ -1682,7 +1714,7 @@ fn decode_projectiles(
             .ok_or_else(|| ProtocolError::new("unknown projectile kind"))?;
         let owner = decode_entity_ref(payload, offset)?
             .ok_or_else(|| ProtocolError::new("a projectile needs an owner"))?;
-        let ability = mmorpg_core::AbilityId::new(crate::wire::read_u8(payload, offset)?);
+        let ability = mmorpg_core::AbilityId::new(u32::from_be_bytes(take(payload, offset)?));
         let position = crate::wire::read_f32_vector(payload, offset)?;
         let velocity = crate::wire::read_f32_vector(payload, offset)?;
         let age = u16::from_be_bytes(take(payload, offset)?);
@@ -1771,20 +1803,18 @@ fn decode_boulders(
     Ok(boulders)
 }
 
-/// World traps (#300), in trap-ID order: a `u8` count, then per trap its ID (`u8`), a fired flag
+/// World traps (#300), in trap-ID order: a `u16` count, then per trap its ID (`u32`), a fired flag
 /// and the fired tick (`u64`), and a `u8` hit count with, per hit in unit order, the unit
 /// reference and the tick from which it may be hit again (`u64`).
 fn encode_traps(
     payload: &mut Vec<u8>,
     traps: &[mmorpg_core::CanonicalTrap],
 ) -> Result<(), ProtocolError> {
-    payload.push(encode_u8_count(
-        traps.len(),
-        mmorpg_core::MAX_TRAPS,
-        "too many traps",
-    )?);
+    payload.extend_from_slice(
+        &encode_u16_count(traps.len(), usize::from(u16::MAX), "too many traps")?.to_be_bytes(),
+    );
     for trap in traps {
-        payload.push(trap.id.get());
+        payload.extend_from_slice(&trap.id.get().to_be_bytes());
         payload.push(u8::from(trap.fired_at.is_some()));
         payload.extend_from_slice(&trap.fired_at.unwrap_or(0).to_be_bytes());
         payload.push(encode_u8_count(
@@ -1804,10 +1834,10 @@ fn decode_traps(
     payload: &[u8],
     offset: &mut usize,
 ) -> Result<Vec<mmorpg_core::CanonicalTrap>, ProtocolError> {
-    let count = decode_u8_count(payload, offset, mmorpg_core::MAX_TRAPS, "too many traps")?;
-    let mut traps = Vec::with_capacity(count);
+    let count = decode_u16_count(payload, offset, usize::from(u16::MAX), "too many traps")?;
+    let mut traps = Vec::new();
     for _ in 0..count {
-        let id = mmorpg_core::TrapId::new(read_u8(payload, offset)?);
+        let id = mmorpg_core::TrapId::new(u32::from_be_bytes(take(payload, offset)?));
         let fired = read_bool(payload, offset)?;
         let tick = u64::from_be_bytes(take(payload, offset)?);
         let hit_count = decode_u8_count(
@@ -1937,7 +1967,8 @@ fn encode_forced(
                 encode_entity_ref(payload, Some(target));
                 payload.extend_from_slice(&knockback.to_be_bytes());
             }
-            payload.push(moving.leap.map_or(0, |ability| ability.get()));
+            payload
+                .extend_from_slice(&moving.leap.map_or(0, |ability| ability.get()).to_be_bytes());
         }
         payload.extend_from_slice(&state.immune.to_be_bytes());
     }
@@ -1974,7 +2005,7 @@ fn decode_forced(
             } else {
                 None
             };
-            let leap = match crate::wire::read_u8(payload, offset)? {
+            let leap = match u32::from_be_bytes(take(payload, offset)?) {
                 0 => None,
                 id => Some(mmorpg_core::AbilityId::new(id)),
             };
@@ -2461,10 +2492,11 @@ mod tests {
                     at: 1,
                     outcome: mmorpg_core::RaidOutcome::Lost,
                 }),
-                aftermath: 0,
+                aftermath: std::collections::BTreeSet::new(),
                 rewarded: vec![1, 2],
                 scouted: vec![2],
-                readiness: 0b11,
+                warned: true,
+                braced: std::collections::BTreeSet::from([0, 70_000]),
             },
             wakes: vec![mmorpg_core::NpcWake {
                 npc: mmorpg_core::NpcId::new(1),
@@ -2530,7 +2562,7 @@ mod tests {
                 target: Some(wolf),
             },
             PlayerIntent::UseAbility {
-                ability: u8::MAX,
+                ability: u32::MAX,
                 target: None,
             },
             PlayerIntent::DirectedStrike {
@@ -2623,20 +2655,20 @@ mod tests {
         // Structural checks: a class code beyond the six choices, a point
         // flag without a point and an aura without a caster.
         // The intent count follows the player's timers; the seven intents
-        // occupy 7 + 7 + 6 + 6 + 3 + 2 + 2 bytes after their lateness byte each, then
+        // occupy 10 + 10 + 9 + 6 + 3 + 2 + 2 bytes after their lateness byte each, then
         // the dropped flag, the last observation (u64) and two events.
-        let intents = 16 + 24 + 2 + 154;
+        let intents = 16 + 24 + 2 + 198;
         let player_abilities =
-            intents + 1 + (8 + 8 + 7 + 7 + 4 + 3 + 3) + 1 + 8 + 1 + 2 * EVENT_BYTES;
+            intents + 1 + (11 + 11 + 10 + 7 + 4 + 3 + 3) + 1 + 8 + 1 + 2 * EVENT_BYTES;
         assert_eq!(encoded[player_abilities], 6, "Arcanist, male");
-        let cast = player_abilities + 1 + 8 + 1 + 2 * 3;
-        let aura = cast + 17 + 1;
+        let cast = player_abilities + 1 + 8 + 1 + 2 * 6;
+        let aura = cast + 20 + 1;
         for (offset, value, message) in [
             (player_abilities, 15, "unknown class choice"),
             // The directed strike's side code.
-            (intents + 1 + 8 + 8 + 5, 3, "unknown strike aim"),
-            (cast + 8, 2, "boolean field must be 0 or 1"),
-            (aura + 1, 0, "an absent entity must have ID 0"),
+            (intents + 1 + 11 + 11 + 8, 3, "unknown strike aim"),
+            (cast + 11, 2, "boolean field must be 0 or 1"),
+            (aura + 4, 0, "an absent entity must have ID 0"),
         ] {
             let mut invalid = encoded.clone();
             invalid[offset] = value;
@@ -2650,14 +2682,14 @@ mod tests {
         no_cast.players[0].combat.abilities.cast = None;
         let encoded = encode_canonical_snapshot(&no_cast).unwrap();
         let mut stray = encoded;
-        stray[cast + 2] = 1;
+        stray[cast + 5] = 1;
         assert_eq!(
             decode_canonical_snapshot(&stray).unwrap_err().to_string(),
             "malformed cast state"
         );
     }
 
-    const EVENT_BYTES: usize = 14;
+    const EVENT_BYTES: usize = crate::EVENT_RECORD_BYTES;
 
     #[test]
     fn canonical_snapshot_round_trip_preserves_continuation_state() {
@@ -2718,19 +2750,24 @@ mod tests {
         ]);
         let encoded = encode_canonical_snapshot(&snapshot).unwrap();
         assert_eq!(decode_canonical_snapshot(&encoded).unwrap(), snapshot);
-        let buy = [0, BUY_ITEM_INTENT, 1, 2, 3, 4, 6, 0x0a, 0x0b];
-        let sell = [0, SELL_ITEM_INTENT, 0, 0, 0, 3, 15, 0xff, 0xff];
+        let buy = [0, BUY_ITEM_INTENT, 1, 2, 3, 4, 0, 0, 0, 6, 0x0a, 0x0b];
+        let sell = [0, SELL_ITEM_INTENT, 0, 0, 0, 3, 0, 0, 0, 15, 0xff, 0xff];
         let records: Vec<u8> = [buy, sell].concat();
         assert!(
             encoded
                 .windows(records.len())
                 .any(|window| window == records.as_slice()),
-            "pending trades are 8-byte records after their lateness"
+            "pending trades are 11-byte records after their lateness"
         );
         for length in 0..encoded.len() {
             assert!(decode_canonical_snapshot(&encoded[..length]).is_err());
         }
     }
+
+    /// The quest log below: two turned-in quests, then quests 3 and 32 with their progress.
+    const LOG: [u8; 25] = [
+        0, 2, 0, 0, 0, 1, 0, 0, 0, 2, 2, 0, 0, 0, 3, 1, 0, 0, 0, 0, 0, 32, 0xff, 2, 7,
+    ];
 
     #[test]
     fn quest_logs_and_pending_quest_intents_round_trip_with_exact_records() {
@@ -2761,12 +2798,12 @@ mod tests {
         let encoded = encode_canonical_snapshot(&snapshot).unwrap();
         assert_eq!(decode_canonical_snapshot(&encoded).unwrap(), snapshot);
         let intents = [
-            &[0, ACCEPT_QUEST_INTENT, 1, 2, 3, 4, 2][..],
-            &[0, COMPLETE_QUEST_INTENT, 0, 0, 0, 1, 9, 0xff],
-            &[0, ABANDON_QUEST_INTENT, 0],
+            &[0, ACCEPT_QUEST_INTENT, 1, 2, 3, 4, 0, 0, 0, 2][..],
+            &[0, COMPLETE_QUEST_INTENT, 0, 0, 0, 1, 0, 0, 0, 9, 0xff],
+            &[0, ABANDON_QUEST_INTENT, 0, 0, 0, 0],
         ]
         .concat();
-        let log = [2, 1, 2, 2, 3, 1, 0, 0, 32, 0xff, 2, 7].to_vec();
+        let log = LOG.to_vec();
         for records in [intents, log] {
             assert!(
                 encoded
@@ -2779,15 +2816,15 @@ mod tests {
             assert!(decode_canonical_snapshot(&encoded[..length]).is_err());
         }
         let at = encoded
-            .windows(12)
-            .position(|window| window == [2, 1, 2, 2, 3, 1, 0, 0, 32, 0xff, 2, 7])
+            .windows(LOG.len())
+            .position(|window| window == LOG)
             .unwrap();
         for (offset, value, message) in [
-            (at + 1, 0, "quest id is out of range"),
-            (at + 2, 1, "turned-in quests are not ordered"),
-            (at + 3, 11, "quest log exceeds its capacity"),
-            (at + 4, 0, "quest id is out of range"),
-            (at + 8, 3, "quest log entries are not ordered"),
+            (at + 5, 0, "quest id is out of range"),
+            (at + 9, 1, "turned-in quests are not ordered"),
+            (at + 10, 11, "quest log exceeds its capacity"),
+            (at + 14, 0, "quest id is out of range"),
+            (at + 21, 3, "quest log entries are not ordered"),
         ] {
             let mut invalid = encoded.clone();
             invalid[offset] = value;
@@ -2804,7 +2841,7 @@ mod tests {
         let encoded = encode_canonical_snapshot(&snapshot()).unwrap();
         // Player 7's queued-swing flag follows its target reference.
         let player = 16 + 24 + 2;
-        let swing_queued = player + 44 + 88 + 1 + 4 + 4 + 5;
+        let swing_queued = player + 44 + 132 + 1 + 4 + 4 + 5;
         let intents = swing_queued + 2 + 6;
         let mut cases = vec![
             (swing_queued, 2, "boolean field must be 0 or 1"),
@@ -2864,16 +2901,16 @@ mod tests {
     #[test]
     fn canonical_equipment_rejects_unknown_and_misplaced_items() {
         let encoded = encode_canonical_snapshot(&snapshot()).unwrap();
-        // Player 7's equipment follows its 72-byte inventory block (revision and slots).
-        let equipment = 16 + 24 + 2 + 44 + 72;
-        assert_eq!(encoded[equipment..equipment + 2], [0, 3]);
+        // Player 7's equipment follows its 104-byte inventory block (revision and slots).
+        let equipment = 16 + 24 + 2 + 44 + 104;
+        assert_eq!(encoded[equipment..equipment + 4], [0, 0, 0, 3]);
         for (slot, item, message) in [
             (0, 99, "unknown item"),
             (1, 2, "item cannot be equipped there"),
             (2, 1, "item cannot be equipped there"),
         ] {
             let mut invalid = encoded.clone();
-            invalid[equipment + 2 * slot + 1] = item;
+            invalid[equipment + 4 * slot + 3] = item;
             assert_eq!(
                 decode_canonical_snapshot(&invalid).unwrap_err().to_string(),
                 message,

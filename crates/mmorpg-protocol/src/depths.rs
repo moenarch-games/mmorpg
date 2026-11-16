@@ -106,7 +106,7 @@ pub(crate) const fn encode_choice(choice: RollChoice) -> u8 {
     choice_code(choice)
 }
 
-/// Canonical run state: a present flag, then the run ID, roster, cleared mask, checkpoint flag
+/// Canonical run state: a present flag, then the run ID, roster, cleared chambers (a `u32` set, #882), checkpoint flag
 /// and optional wipe tick, then the boss progress.
 pub(crate) fn encode_run(
     payload: &mut Vec<u8>,
@@ -118,7 +118,7 @@ pub(crate) fn encode_run(
     };
     payload.extend_from_slice(&run.run_id.to_be_bytes());
     encode_roster(payload, &run.roster)?;
-    payload.push(run.cleared);
+    crate::wire::encode_u32_set(payload, &run.cleared, "too many cleared chambers")?;
     payload.push(u8::from(run.checkpoint));
     payload.push(u8::from(run.wipe_at.is_some()));
     if let Some(at) = run.wipe_at {
@@ -148,7 +148,7 @@ pub(crate) fn decode_run(
     }
     let run_id = u64::from_be_bytes(take(payload, offset)?);
     let roster = decode_roster(payload, offset)?;
-    let cleared = read_u8(payload, offset)?;
+    let cleared = crate::wire::decode_u32_set(payload, offset, "cleared chambers are invalid")?;
     let checkpoint = read_bool(payload, offset)?;
     let wipe_at = if read_bool(payload, offset)? {
         Some(u64::from_be_bytes(take(payload, offset)?))
@@ -247,7 +247,7 @@ fn decode_outcome(payload: &[u8], offset: &mut usize) -> Result<BossOutcome, Pro
     let drop_count = decode_u8_count(payload, offset, MAX_BOSS_DROPS, "too many boss drops")?;
     let mut drops = Vec::with_capacity(drop_count);
     for _ in 0..drop_count {
-        let item = ItemId::new(u16::from_be_bytes(take(payload, offset)?));
+        let item = ItemId::new(u32::from_be_bytes(take(payload, offset)?));
         let state = match read_u8(payload, offset)? {
             0 => {
                 let deadline = u64::from_be_bytes(take(payload, offset)?);
@@ -308,13 +308,13 @@ pub fn decode_boss_outcome(payload: &[u8]) -> Result<BossOutcome, ProtocolError>
     Ok(outcome)
 }
 
-/// The run start a host binds to a depths zone: run ID, roster, cleared mask, checkpoint and
+/// The run start a host binds to a depths zone: run ID, roster, cleared chambers, checkpoint and
 /// the recorded boss outcome, if any.
 pub fn encode_depths_run_start(start: &DepthsRunStart) -> Result<Vec<u8>, ProtocolError> {
     let mut payload = Vec::with_capacity(32 + MAX_CHARACTER_ID_BYTES);
     payload.extend_from_slice(&start.run_id.to_be_bytes());
     encode_roster(&mut payload, &start.roster)?;
-    payload.push(start.cleared);
+    crate::wire::encode_u32_set(&mut payload, &start.cleared, "too many cleared chambers")?;
     payload.push(u8::from(start.checkpoint));
     payload.push(u8::from(start.outcome.is_some()));
     if let Some(outcome) = &start.outcome {
@@ -327,7 +327,8 @@ pub fn decode_depths_run_start(payload: &[u8]) -> Result<DepthsRunStart, Protoco
     let mut offset = 0;
     let run_id = u64::from_be_bytes(take(payload, &mut offset)?);
     let roster = decode_roster(payload, &mut offset)?;
-    let cleared = read_u8(payload, &mut offset)?;
+    let cleared =
+        crate::wire::decode_u32_set(payload, &mut offset, "cleared chambers are invalid")?;
     let checkpoint = read_bool(payload, &mut offset)?;
     let outcome = if read_bool(payload, &mut offset)? {
         Some(decode_outcome(payload, &mut offset)?)
@@ -346,9 +347,9 @@ pub fn decode_depths_run_start(payload: &[u8]) -> Result<DepthsRunStart, Protoco
     })
 }
 
-/// Bytes of a loot sheet record: drop and item (`1 + 2`), a state tag (`1`), an answer code (`1`),
+/// Bytes of a loot sheet record: drop and item (`1 + 4`), a state tag (`1`), an answer code (`1`),
 /// `may_need`, `claimable`, `won`, `need`, `pending` (5 × `1`), roll (`1`), deadline (`8`).
-const DROP_SHEET_BYTES: usize = 3 + 1 + 1 + 5 + 1 + 8;
+const DROP_SHEET_BYTES: usize = 5 + 1 + 1 + 5 + 1 + 8;
 /// The run ID and the count, then the drops.
 pub(crate) const MAX_DEPTHS_LOOT_SHEET_BYTES: usize = 8 + 1 + MAX_BOSS_DROPS * DROP_SHEET_BYTES;
 
@@ -418,7 +419,7 @@ pub(crate) fn read_loot_sheet(
     let mut drops = Vec::with_capacity(count);
     for _ in 0..count {
         let drop = read_u8(bytes, offset)?;
-        let item = ItemId::new(u16::from_be_bytes(take(bytes, offset)?));
+        let item = ItemId::new(u32::from_be_bytes(take(bytes, offset)?));
         let tag = read_u8(bytes, offset)?;
         let answer = read_u8(bytes, offset)?;
         let may_need = read_bool(bytes, offset)?;
@@ -498,7 +499,7 @@ mod tests {
         let start = DepthsRunStart {
             run_id: 7,
             roster: roster(&["aria", "bren"]),
-            cleared: 0b101,
+            cleared: std::collections::BTreeSet::from([0, 2]),
             checkpoint: true,
             outcome: Some(outcome()),
         };
@@ -521,7 +522,7 @@ mod tests {
         let run = DepthsRun {
             run_id: 9,
             roster: roster(&["aria"]),
-            cleared: 1,
+            cleared: std::collections::BTreeSet::from([0, 70_000]),
             checkpoint: true,
             wipe_at: Some(120),
             boss: BossProgress {

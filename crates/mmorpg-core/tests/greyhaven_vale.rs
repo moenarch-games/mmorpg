@@ -533,7 +533,7 @@ fn named_areas_are_ordered_disjoint_and_contain_their_landmarks() {
         max: area.max_xz().map(|value| value + 1),
     };
     for (index, area) in areas.iter().enumerate() {
-        assert_eq!(area.id(), AreaId::new(u16::try_from(index + 1).unwrap()));
+        assert_eq!(area.id(), AreaId::new(u32::try_from(index + 1).unwrap()));
         assert!(PLAYABLE_BOUNDS.contains(area.min_xz()[0], area.min_xz()[1]));
         assert!(PLAYABLE_BOUNDS.contains(area.max_xz()[0], area.max_xz()[1]));
         for other in &areas[index + 1..] {

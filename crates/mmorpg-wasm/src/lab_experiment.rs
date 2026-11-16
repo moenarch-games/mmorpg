@@ -288,8 +288,8 @@ pub struct InterruptionDto {
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum ScopeDto {
     Class { class: String },
-    Weapon { item: u16 },
-    Ability { ability: u8 },
+    Weapon { item: u32 },
+    Ability { ability: u32 },
 }
 
 /// The value an override replaces.
@@ -389,7 +389,7 @@ pub struct AuthoredActionDto {
     /// `WardenMelee`, `ShieldBash` or `Ability`.
     pub input: String,
     /// Only this ability's use; `None` is any the input covers.
-    pub ability: Option<u8>,
+    pub ability: Option<u32>,
     /// `Direct`, `Airborne` or `Moving(Any|Forward|Backward|Sideways)`.
     pub context: String,
     /// A hold-to-charge or a chord; absent for the plain press.
@@ -843,7 +843,7 @@ pub struct SetupDto {
     pub class_name: String,
     pub level: u8,
     pub gear: String,
-    pub main_hand: u16,
+    pub main_hand: u32,
     pub resource: Option<u16>,
 }
 

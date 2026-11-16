@@ -9,7 +9,7 @@ use crate::{
 
 /// Claim, copper, then the item and the quest item, each a presence byte
 /// and an optional stack.
-pub(crate) const MAX_LOOT_SHEET_BYTES: usize = 12 + 4 + 2 * (1 + 4);
+pub(crate) const MAX_LOOT_SHEET_BYTES: usize = 12 + 4 + 2 * (1 + 4 + 2);
 
 pub(crate) fn encode_claim(payload: &mut Vec<u8>, claim: LootClaim) {
     payload.extend_from_slice(&claim.creature.get().to_be_bytes());
@@ -38,7 +38,7 @@ fn decode_stack(payload: &[u8], offset: &mut usize) -> Result<Option<ItemStack>,
     if !read_bool(payload, offset)? {
         return Ok(None);
     }
-    let id = ItemId::new(u16::from_be_bytes(take(payload, offset)?));
+    let id = ItemId::new(u32::from_be_bytes(take(payload, offset)?));
     let quantity = u16::from_be_bytes(take(payload, offset)?);
     ItemStack::new(id, quantity)
         .map(Some)

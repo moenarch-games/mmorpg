@@ -23,6 +23,7 @@
 //! - **The boss chamber** holds Captain Ulric Thorn once every chamber is cleared; his fight and
 //!   shared loot are [`crate::depths_boss`].
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use crate::creature::Life;
@@ -102,8 +103,8 @@ impl DepthsSite {
     }
 
     pub(crate) fn validate(&self, content: &crate::ZoneContent) -> Result<(), ZoneError> {
-        if self.chambers.is_empty() || self.chambers.len() > usize::from(MAX_CHAMBERS) {
-            return Err(ZoneError::new("a depths site needs one to eight chambers"));
+        if self.chambers.is_empty() || u32::try_from(self.chambers.len()).is_err() {
+            return Err(ZoneError::new("a depths site needs at least one chamber"));
         }
         let mut seen = std::collections::BTreeSet::new();
         for chamber in &self.chambers {
@@ -138,16 +139,15 @@ impl DepthsSite {
     }
 }
 
-/// The most chambers a site may author (the `cleared` mask is one byte).
-pub const MAX_CHAMBERS: u8 = 8;
+/// A chamber's position in its site; a validated site's chambers all fit.
+#[allow(clippy::cast_possible_truncation)]
+const fn chamber_index(index: usize) -> u32 {
+    index as u32
+}
 
-/// The `cleared` mask with every one of `chambers` chambers cleared.
-pub(crate) fn chamber_mask(chambers: usize) -> u8 {
-    if chambers >= 8 {
-        u8::MAX
-    } else {
-        (1_u8 << chambers) - 1
-    }
+/// Whether every one of `chambers` chambers is in `cleared`.
+pub(crate) fn all_cleared(cleared: &BTreeSet<u32>, chambers: usize) -> bool {
+    cleared.len() == chambers && cleared.iter().all(|index| (*index as usize) < chambers)
 }
 
 /// The state a host binds a depths zone to: the frozen parts of a [`DepthsRun`], and the
@@ -157,7 +157,8 @@ pub struct DepthsRunStart {
     pub run_id: u64,
     /// The frozen roster, in entry order; `profile` is its length.
     pub roster: Vec<CharacterId>,
-    pub cleared: u8,
+    /// Indices of the cleared chambers.
+    pub cleared: BTreeSet<u32>,
     pub checkpoint: bool,
     /// The boss outcome the run directory recorded: restored, never fought or rolled again.
     pub outcome: Option<crate::BossOutcome>,
@@ -168,8 +169,8 @@ pub struct DepthsRunStart {
 pub struct DepthsRun {
     pub run_id: u64,
     pub roster: Vec<CharacterId>,
-    /// Bit `i` is set once chamber `i` is cleared.
-    pub cleared: u8,
+    /// Indices of the cleared chambers, ascending (#882).
+    pub cleared: BTreeSet<u32>,
     /// Whether the first chamber's checkpoint is unlocked.
     pub checkpoint: bool,
     /// Tick at which an all-dead zone's wipe resolves.
@@ -201,7 +202,10 @@ impl DepthsRun {
         if self.roster.is_empty()
             || self.roster.len() > MAX_PARTY_MEMBERS
             || self.run_id == 0
-            || (site.chambers.len() < 8 && self.cleared >> site.chambers.len() != 0)
+            || self
+                .cleared
+                .iter()
+                .any(|index| *index as usize >= site.chambers.len())
             || self
                 .roster
                 .iter()
@@ -396,7 +400,7 @@ impl ZoneSimulation {
         self.debris.clear();
         self.forced.clear();
         for (index, chamber) in site.chambers.iter().enumerate() {
-            if run.cleared & (1 << index) != 0 {
+            if run.cleared.contains(&chamber_index(index)) {
                 continue;
             }
             for spawn in &chamber.spawns {
@@ -463,9 +467,9 @@ impl ZoneSimulation {
             return Ok(());
         };
         let profile = run.profile();
-        let mut cleared = run.cleared;
+        let mut cleared = run.cleared.clone();
         for (index, chamber) in site.chambers.iter().enumerate() {
-            if cleared & (1 << index) != 0 {
+            if cleared.contains(&chamber_index(index)) {
                 continue;
             }
             let standing: Vec<_> = chamber
@@ -490,7 +494,7 @@ impl ZoneSimulation {
                 }
             }
             if !standing.is_empty() && fallen == standing.len() {
-                cleared |= 1 << index;
+                cleared.insert(chamber_index(index));
             }
         }
         let wiped = !self.players.is_empty() && self.players.values().all(|p| !p.is_alive());
@@ -501,23 +505,27 @@ impl ZoneSimulation {
         };
         let due = wiped && wipe_at.is_some_and(|at| now >= at);
         if let Some(state) = self.depths.as_mut() {
-            state.cleared = cleared;
-            if !state.checkpoint && cleared & 1 != 0 {
+            if !state.checkpoint && cleared.contains(&0) {
                 state.checkpoint = true;
             }
             state.wipe_at = if due { None } else { wipe_at };
+            state.cleared = cleared.clone();
         }
         if due {
-            self.resolve_wipe(site, cleared)?;
+            self.resolve_wipe(site, &cleared)?;
         }
         self.advance_boss(site, now)
     }
 
     /// Survivors of uncleared chambers go home at full health; every player stands up again.
-    fn resolve_wipe(&mut self, site: &DepthsSite, cleared: u8) -> Result<(), ZoneError> {
+    fn resolve_wipe(
+        &mut self,
+        site: &DepthsSite,
+        cleared: &BTreeSet<u32>,
+    ) -> Result<(), ZoneError> {
         let content = Arc::clone(&self.content);
         for (index, chamber) in site.chambers.iter().enumerate() {
-            if cleared & (1 << index) != 0 {
+            if cleared.contains(&chamber_index(index)) {
                 continue;
             }
             for spawn in &chamber.spawns {

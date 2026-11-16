@@ -91,7 +91,7 @@ impl ZoneSimulation {
     pub(crate) fn use_ability(
         &mut self,
         player_id: PlayerId,
-        ability: u8,
+        ability: u32,
         target: Option<EntityRef>,
         now: u64,
     ) -> Result<Refusal, ZoneError> {
@@ -366,7 +366,7 @@ impl ZoneSimulation {
     pub(crate) fn ready_ability(
         &self,
         player_id: PlayerId,
-        ability: u8,
+        ability: u32,
         directed: bool,
         waive_global_cooldown: bool,
     ) -> Option<Result<&'static Ability, ErrorCode>> {

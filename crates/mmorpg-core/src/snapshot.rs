@@ -42,12 +42,12 @@ pub enum PlayerIntent {
         quantity: u16,
     },
     UseAbility {
-        ability: u8,
+        ability: u32,
         target: Option<EntityRef>,
     },
     /// A directed strike (#154), resolved by the next tick.
     DirectedStrike {
-        ability: u8,
+        ability: u32,
         facing: u16,
         aim: crate::StrikeAim,
     },
@@ -78,7 +78,7 @@ pub enum PlayerIntent {
     },
     BuyItem {
         npc: crate::NpcId,
-        offer: u8,
+        offer: u32,
         quantity: u16,
     },
     SellItem {
@@ -90,20 +90,20 @@ pub enum PlayerIntent {
     Chat(crate::ChatMessage),
     AcceptQuest {
         npc: crate::NpcId,
-        quest: u8,
+        quest: u32,
     },
     CompleteQuest {
         npc: crate::NpcId,
-        quest: u8,
+        quest: u32,
         choice: u8,
     },
     AbandonQuest {
-        quest: u8,
+        quest: u32,
     },
     /// Waystone travel (#145).
     UseWaystone(crate::WaystoneId),
     /// Night raid aftermath aid (#531): the task's index.
-    RaidAid(u8),
+    RaidAid(u32),
     /// Night raid preparation (#532).
     RaidPrepare(crate::RaidPrep),
     /// A Need/Greed/Pass answer to a boss drop (#404).
@@ -457,7 +457,7 @@ impl ZoneSimulation {
                     chat_ready_at: state.chat_ready_at,
                     chat: state.chat.clone(),
                     quests: state.quests.clone(),
-                    waystones: state.waystones,
+                    waystones: state.waystones.clone(),
                     character: state.character.clone(),
                     depths: state.depths,
                     physique: state.physique,
@@ -571,13 +571,7 @@ impl ZoneSimulation {
         zone.tick = snapshot.tick;
         zone.rng = ZoneRng::from_state(snapshot.rng_state);
         zone.loot_rng = ZoneRng::from_state(snapshot.loot_rng_state);
-        snapshot.raid.validate(
-            snapshot.tick,
-            zone.content.raid().map_or(0, crate::RaidSite::aid_mask),
-            zone.content
-                .raid()
-                .map_or(0, crate::RaidSite::readiness_mask),
-        )?;
+        snapshot.raid.validate(snapshot.tick, zone.content.raid())?;
         if zone.content.raid().is_none() && snapshot.raid != crate::RaidState::default() {
             return Err(ZoneError::new("snapshot raid state needs a raid site"));
         }

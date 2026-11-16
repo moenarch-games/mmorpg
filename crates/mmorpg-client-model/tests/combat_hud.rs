@@ -101,13 +101,13 @@ const fn resource_kind(class: PlayerClass) -> ResourceKind {
     }
 }
 
-fn catalog_cooldown(ability: u8) -> u16 {
+fn catalog_cooldown(ability: u32) -> u16 {
     ability_by_id(AbilityId::new(ability))
         .expect("a catalog ability")
         .cooldown
 }
 
-fn slot_ids(hud: &CombatHud) -> Vec<u8> {
+fn slot_ids(hud: &CombatHud) -> Vec<u32> {
     hud.slots.iter().map(|slot| slot.ability).collect()
 }
 

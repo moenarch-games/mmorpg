@@ -189,7 +189,7 @@ fn a_resumed_connection_discards_old_interpolation_even_when_ticks_regress() {
     assert_eq!(presentation.camera_target(now), [0.0, 0.5, 9.0]);
 }
 
-fn creature(id: u32, template: u16, position: [i32; 3], flags: EntityFlags) -> EntitySnapshot {
+fn creature(id: u32, template: u32, position: [i32; 3], flags: EntityFlags) -> EntitySnapshot {
     EntitySnapshot {
         kind: EntityKind::Creature,
         id,

@@ -25,10 +25,10 @@ fn yaw(x: f64, z: f64) -> u16 {
 
 /// Flat ground, a sturdy neutral boar 14.5 m south between two weak walls and a deck on both.
 fn content(regrowth_ticks: u32) -> Arc<ZoneContent> {
-    let wall = |id: u16, x: i32, rubble| StructurePiece {
+    let wall = |id: u32, x: i32, rubble| StructurePiece {
         id: PieceId::new(id),
         site: 1,
-        body: 50 + u32::from(id),
+        body: 50 + id,
         position: [x, 125, -1_450],
         half_extents: [20, 125, 150],
         health: 10,
@@ -109,7 +109,7 @@ impl Player {
         self.zone.snapshot_for_player(1).unwrap().pieces
     }
 
-    fn health(&self, piece: u16) -> u32 {
+    fn health(&self, piece: u32) -> u32 {
         self.zone
             .snapshot()
             .unwrap()
@@ -129,7 +129,7 @@ impl Player {
     }
 }
 
-fn view(piece: u16, stage: PieceStage) -> PieceView {
+fn view(piece: u32, stage: PieceStage) -> PieceView {
     PieceView {
         piece: PieceId::new(piece),
         stage,

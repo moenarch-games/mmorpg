@@ -1,8 +1,9 @@
 //! Player-visible scope: one player's projection, packed into a single
 //! datagram by fixed section priority (header, self with its class,
 //! resource and cast, the target's target and cast, the sheets the client
-//! lacks (#544), world state, events, chat, then entities by relevance until
-//! the budget is used).
+//! lacks (#544; doors, pieces, the raid signal and waystones travel in sheets too, #882), the
+//! nearby summoned terrain and traps, events, chat, then entities by relevance until the budget
+//! is used).
 
 use std::collections::BTreeSet;
 
@@ -26,9 +27,9 @@ use crate::{MAX_PLAYER_PROJECTION_BYTES, ProtocolError};
 const HEADER_BYTES: usize = COMMON_HEADER_BYTES + 8 + 4 + 4;
 /// Health, maximum health, level, flags and the viewer's target.
 const SELF_BYTES: usize = 4 + 4 + 1 + 8 + 4 + 1 + ENTITY_REF_BYTES;
-/// Ability ID, flags (bit 0 channel), elapsed and total ticks; ability 0
+/// Ability ID (`u32`), flags (bit 0 channel), elapsed and total ticks; ability 0
 /// means no cast.
-pub const CAST_RECORD_BYTES: usize = 1 + 1 + 2 + 2;
+pub const CAST_RECORD_BYTES: usize = 4 + 1 + 2 + 2;
 /// Class code, resource kind/value/max, global cooldown, cast, melee damage
 /// range, the guard (lane code, protecting flag, break ticks), the melee
 /// stance and combo phase codes and breath ticks (#274).
@@ -36,32 +37,15 @@ const SELF_ABILITY_BYTES: usize =
     1 + 1 + 2 + 2 + 2 + CAST_RECORD_BYTES + 2 + 2 + 1 + 1 + 2 + 1 + 1 + 2;
 /// The target's own target and the target's cast.
 const TARGET_BYTES: usize = ENTITY_REF_BYTES + CAST_RECORD_BYTES;
-/// Every section's fixed part: header, self, target, sheet mask (`u8`, #544), door count
-/// (`u8`), piece count (`u8`), raid code (`u8`, #530), event count (`u8`), chat count (`u8`),
-/// entity count (`u16`), projectile count (`u8`) and debris count (`u8`).
-pub const PLAYER_SNAPSHOT_FIXED_BYTES: usize = HEADER_BYTES
-    + SELF_BYTES
-    + SELF_ABILITY_BYTES
-    + TARGET_BYTES
-    + 1
-    + 1
-    + 1
-    + 1
-    + 1
-    + 1
-    + 2
-    + 1
-    + 1
-    + 1
-    + 1;
-/// Destructible piece ID (`u16`) and stage (#305).
-pub const PIECE_RECORD_BYTES: usize = 3;
+/// Every section's fixed part: header, self, target, sheet mask (`u8`, #544), summoned count
+/// (`u8`), trap count (`u8`), event count (`u8`), chat count (`u8`), entity count (`u16`),
+/// projectile count (`u8`) and debris count (`u8`).
+pub const PLAYER_SNAPSHOT_FIXED_BYTES: usize =
+    HEADER_BYTES + SELF_BYTES + SELF_ABILITY_BYTES + TARGET_BYTES + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1;
 /// A summoned obstacle (#293): `u32` ID, kind, `3 × i32` centre, `u16` facing, health percent.
 pub const SUMMONED_RECORD_BYTES: usize = 4 + 1 + 12 + 2 + 1;
-/// A fired trap (#300): `u8` ID and `u16` age.
-pub const TRAP_RECORD_BYTES: usize = 1 + 2;
-/// A night raid's signal (#530) after its code byte: the integrity.
-pub const RAID_VIEW_BYTES: usize = 1;
+/// A fired trap (#300): `u32` ID and `u16` age.
+pub const TRAP_RECORD_BYTES: usize = 4 + 2;
 /// `u16` ID, prop kind, piece index, `3 × i32` position, `4 × i16` rotation quaternion and age
 /// (#288).
 pub const DEBRIS_RECORD_BYTES: usize = 2 + 1 + 1 + 12 + 8 + 1;
@@ -71,20 +55,20 @@ pub const MAX_WIRE_DEBRIS: usize = 16;
 pub const PROJECTILE_RECORD_BYTES: usize = 2 + 1 + 12 + 2 + 2 + 1;
 /// At most this many projectiles, nearest first, share a projection's budget.
 pub const MAX_WIRE_PROJECTILES: usize = 8;
-/// Door ID and open flag (#158).
-pub const DOOR_RECORD_BYTES: usize = 2;
-/// Kind, flags, source and target references, `u16` amount.
-pub const EVENT_RECORD_BYTES: usize = 2 + 2 * ENTITY_REF_BYTES + 2;
-/// Kind, ID, appearance, `3 × i32` position, `3 × i8` velocity, `u16`
+/// Kind, `u32` flags or ID, source and target references, `u16` amount.
+pub const EVENT_RECORD_BYTES: usize = 1 + 4 + 2 * ENTITY_REF_BYTES + 2;
+/// Kind, ID, `u32` appearance, `3 × i32` position, `3 × i8` velocity, `u16`
 /// facing, level, health percent and flags. Only creatures are tapped, evade or are lootable,
 /// so on a player record those three flag bits carry its [`mmorpg_core::TraversalView`] code
 /// instead (#490, #516, #500): tapped is bit 0, evading bit 1 and lootable bit 2.
 /// On an NPC record the tapped and evading bits carry its posture code instead, and on a
 /// player record the health byte's high bit says it sits (#619).
-pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 2 + 12 + 3 + 2 + 1 + 1 + 1;
+pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 4 + 12 + 3 + 2 + 1 + 1 + 1;
 /// The health byte's high bit on a player record: the player sits (#619).
 const SITTING_BIT: u8 = 0x80;
-/// Records that fit the budget without events or sheets: (1,077 − 108) / 27 = 35.
+/// The appearance word's high bit on a player record: the weapon is drawn (#802).
+const DRAWN_BIT: u32 = 0x8000_0000;
+/// Records that fit the budget without events or sheets: (1,077 − 111) / 29 = 33.
 pub const MAX_WIRE_ENTITIES: usize =
     (MAX_PLAYER_PROJECTION_BYTES - PLAYER_SNAPSHOT_FIXED_BYTES) / ENTITY_RECORD_BYTES;
 const MAX_EVENT_SECTION_BYTES: usize = MAX_EVENTS_PER_PLAYER * EVENT_RECORD_BYTES;
@@ -93,11 +77,8 @@ const MAX_CHAT_SECTION_BYTES: usize = MAX_CHAT_PER_TICK * crate::chat::MAX_CHAT_
 const MAX_PER_TICK_BYTES: usize = PLAYER_SNAPSHOT_FIXED_BYTES
     + MAX_EVENT_SECTION_BYTES
     + MAX_CHAT_SECTION_BYTES
-    + mmorpg_core::MAX_DOORS * DOOR_RECORD_BYTES
-    + mmorpg_core::MAX_PIECES * PIECE_RECORD_BYTES
     + mmorpg_core::MAX_VISIBLE_SUMMONED * SUMMONED_RECORD_BYTES
     + mmorpg_core::MAX_VISIBLE_TRAPS * TRAP_RECORD_BYTES
-    + RAID_VIEW_BYTES
     + 2 * ENTITY_RECORD_BYTES;
 
 /// Every per-tick section at its largest on a tick without events or chat.
@@ -105,11 +86,12 @@ pub(crate) const MAX_QUIET_TICK_BYTES: usize =
     MAX_PER_TICK_BYTES - MAX_EVENT_SECTION_BYTES - MAX_CHAT_SECTION_BYTES;
 
 // With every list full, a full event section and four 80-byte chat lines, the viewer and its
-// target always fit: 106 + 16 × 14 + 4 × 86 + doors + pieces + raid + 2 × 27 ≤ 1,077 bytes.
+// target always fit: 111 + 16 × 17 + 4 × 86 + summoned + traps + 2 × 29 ≤ 1,077 bytes.
 // Sheets (#544) take what that leaves and wait for a later tick when they do not fit.
 const _: () = assert!(MAX_PER_TICK_BYTES <= MAX_PLAYER_PROJECTION_BYTES);
-// A tick without events or chat carries every other sheet at its largest at once; the quest
-// sheet, bounded by the budget alone, fits such a tick by itself (#862).
+// A tick without events or chat carries the bag, loot, ability and boss loot sheets at their
+// largest at once; the party sheet and the quest, world and waystone sheets, bounded by the
+// budget alone, each fit such a tick by itself (#862, #882).
 const _: () = assert!(
     MAX_QUIET_TICK_BYTES + crate::sheet::MAX_OTHER_SHEETS_BYTES <= MAX_PLAYER_PROJECTION_BYTES
 );
@@ -179,10 +161,7 @@ pub fn pack_snapshot_acknowledged(
     payload.extend_from_slice(&viewer.experience.to_be_bytes());
     payload.extend_from_slice(&viewer.experience_to_next_level.to_be_bytes());
     payload.extend_from_slice(&viewer.copper.to_be_bytes());
-    // Bits 0 and 1 are the flags, bits 2.. the unlocked waystones (#145).
-    payload.push(
-        flag_byte(&[viewer.dead, viewer.in_combat]) | viewer_waystone_bits(viewer.waystones)?,
-    );
+    payload.push(flag_byte(&[viewer.dead, viewer.in_combat]));
     encode_entity_ref(&mut payload, viewer.target);
     // Class appearances fit seven bits. The high bit carries the distinct
     // drawn/sheathed choice without growing the projection datagram (#802).
@@ -215,11 +194,8 @@ pub fn pack_snapshot_acknowledged(
     encode_cast(&mut payload, snapshot.target_detail.cast);
 
     let mut world_payload = Vec::new();
-    crate::wire::encode_doors(&mut world_payload, &snapshot.doors)?;
-    crate::wire::encode_piece_views(&mut world_payload, &snapshot.pieces)?;
     crate::wire::encode_summoned_views(&mut world_payload, &snapshot.summoned)?;
     crate::wire::encode_trap_views(&mut world_payload, &snapshot.traps)?;
-    crate::raid::encode_view(&mut world_payload, snapshot.raid)?;
     let mut chat_payload = Vec::new();
     chat_payload.push(encode_u8_count(
         snapshot.chat.len(),
@@ -367,20 +343,11 @@ const fn resource_code(kind: ResourceKind) -> u8 {
     }
 }
 
-/// The viewer's unlocked waystones in the flag byte's six upper bits: the network has at
-/// most [`mmorpg_core::MAX_WAYSTONES`] stones.
-fn viewer_waystone_bits(waystones: mmorpg_core::WaystoneSet) -> Result<u8, ProtocolError> {
-    u8::try_from(waystones.bits())
-        .ok()
-        .filter(|bits| *bits < 1 << 6)
-        .map(|bits| bits << 2)
-        .ok_or_else(|| ProtocolError::new("unlocked waystones exceed the viewer flag bits"))
-}
-
 fn encode_cast(payload: &mut Vec<u8>, cast: Option<CastView>) {
     match cast {
         Some(cast) => {
-            payload.extend_from_slice(&[cast.ability.get(), u8::from(cast.channel)]);
+            payload.extend_from_slice(&cast.ability.get().to_be_bytes());
+            payload.push(u8::from(cast.channel));
             payload.extend_from_slice(&cast.elapsed.to_be_bytes());
             payload.extend_from_slice(&cast.total.to_be_bytes());
         }
@@ -391,7 +358,7 @@ fn encode_cast(payload: &mut Vec<u8>, cast: Option<CastView>) {
 /// A cast must name a casting catalog ability with its exact cast time and
 /// channel flag, and be in progress.
 fn decode_cast(payload: &[u8], offset: &mut usize) -> Result<Option<CastView>, ProtocolError> {
-    let ability = read_u8(payload, offset)?;
+    let ability = u32::from_be_bytes(take(payload, offset)?);
     let [channel] = read_flags(read_u8(payload, offset)?)?;
     let elapsed = u16::from_be_bytes(take(payload, offset)?);
     let total = u16::from_be_bytes(take(payload, offset)?);
@@ -517,7 +484,7 @@ fn decode_projectile(
 fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), ProtocolError> {
     payload.push(entity_kind_code(entity.kind));
     payload.extend_from_slice(&entity.id.to_be_bytes());
-    if (entity.kind == EntityKind::Player && entity.appearance & 0x8000 != 0)
+    if (entity.kind == EntityKind::Player && entity.appearance & DRAWN_BIT != 0)
         || (entity.kind != EntityKind::Player && entity.flags.weapon_drawn)
     {
         return Err(ProtocolError::new("invalid drawn weapon appearance"));
@@ -525,7 +492,13 @@ fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), P
     // The player-only high bit is free in the appearance word. Threat remains
     // its own flag; NPC and creature appearance IDs are untouched.
     payload.extend_from_slice(
-        &(entity.appearance | (u16::from(entity.flags.weapon_drawn) << 15)).to_be_bytes(),
+        &(entity.appearance
+            | if entity.flags.weapon_drawn {
+                DRAWN_BIT
+            } else {
+                0
+            })
+        .to_be_bytes(),
     );
     for component in entity.position {
         payload.extend_from_slice(&component.to_be_bytes());
@@ -666,9 +639,7 @@ fn decode_projection(
     let experience = u32::from_be_bytes(take(payload, &mut offset)?);
     let experience_to_next_level = u32::from_be_bytes(take(payload, &mut offset)?);
     let copper = u32::from_be_bytes(take(payload, &mut offset)?);
-    let flags = read_u8(payload, &mut offset)?;
-    let [dead, in_combat] = read_flags(flags & 0b11)?;
-    let waystones = crate::wire::decode_waystones(u32::from(flags >> 2))?;
+    let [dead, in_combat] = read_flags(read_u8(payload, &mut offset)?)?;
     let target = decode_entity_ref(payload, &mut offset)?;
     if !(1..=10).contains(&level)
         || (level == 10 && (experience != 0 || experience_to_next_level != 0))
@@ -681,7 +652,7 @@ fn decode_projection(
     let encoded_class = read_u8(payload, &mut offset)?;
     let weapon_drawn = encoded_class & 0x80 != 0;
     let class_code = encoded_class & 0x7f;
-    let class = ClassChoice::from_appearance(u16::from(class_code));
+    let class = ClassChoice::from_appearance(u32::from(class_code));
     if class_code != 0 && class.is_none() {
         return Err(ProtocolError::new("viewer ability state is inconsistent"));
     }
@@ -757,7 +728,7 @@ fn decode_projection(
     }
 
     let mask = read_u8(payload, &mut offset)?;
-    if mask >> SHEET_COUNT != 0 {
+    if u32::from(mask) >> SHEET_COUNT != 0 {
         return Err(ProtocolError::new("unknown sheet in the sheet mask"));
     }
     let mut fresh: [Option<ReceivedSheet>; SHEET_COUNT] = Default::default();
@@ -771,11 +742,8 @@ fn decode_projection(
             });
         }
     }
-    let doors = crate::wire::decode_doors(payload, &mut offset)?;
-    let pieces = crate::wire::decode_piece_views(payload, &mut offset)?;
     let summoned = crate::wire::decode_summoned_views(payload, &mut offset)?;
     let traps = crate::wire::decode_trap_views(payload, &mut offset)?;
-    let raid = crate::raid::decode_view(payload, &mut offset)?;
     let event_count = decode_u8_count(
         payload,
         &mut offset,
@@ -885,6 +853,14 @@ fn decode_projection(
         && (!abilities.cooldowns.is_empty() || !abilities.auras.is_empty()))
         || (dead && !abilities.auras.is_empty())
         || abilities.target != target;
+    let (doors, pieces, raid) = sheet_bytes(Sheet::World)
+        .map(|received| crate::sheet::decode_world_sheet(&received.bytes))
+        .transpose()?
+        .unwrap_or_default();
+    let waystones = sheet_bytes(Sheet::Waystones)
+        .map(|received| crate::sheet::decode_waystone_sheet(&received.bytes))
+        .transpose()?
+        .unwrap_or_default();
     let depths_loot = sheet_bytes(Sheet::DepthsLoot)
         .map(|received| crate::depths::decode_loot_sheet(&received.bytes))
         .transpose()?;
@@ -1006,10 +982,10 @@ fn loot_matches(
 fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, ProtocolError> {
     let kind = decode_entity_kind(read_u8(payload, offset)?)?;
     let id = u32::from_be_bytes(take(payload, offset)?);
-    let encoded_appearance = u16::from_be_bytes(take(payload, offset)?);
-    let weapon_drawn = kind == EntityKind::Player && encoded_appearance & 0x8000 != 0;
+    let encoded_appearance = u32::from_be_bytes(take(payload, offset)?);
+    let weapon_drawn = kind == EntityKind::Player && encoded_appearance & DRAWN_BIT != 0;
     let appearance = if kind == EntityKind::Player {
-        encoded_appearance & 0x7fff
+        encoded_appearance & !DRAWN_BIT
     } else {
         encoded_appearance
     };
@@ -1166,9 +1142,10 @@ pub(crate) mod tests {
             raid: Some(mmorpg_core::RaidView {
                 phase: 2,
                 integrity: 63,
-                aid: 0,
+                aid: BTreeSet::new(),
                 signs: false,
-                readiness: 0b101,
+                warned: true,
+                braced: BTreeSet::from([1]),
                 scouted: false,
             }),
             pieces: vec![
@@ -1538,7 +1515,7 @@ pub(crate) mod tests {
     }
 
     /// Equipment holding each catalog item in its own slot.
-    fn equipment(items: &[u16]) -> mmorpg_core::Equipment {
+    fn equipment(items: &[u32]) -> mmorpg_core::Equipment {
         let mut slots = [None; mmorpg_core::EQUIPMENT_SLOTS];
         for &item in items {
             let id = mmorpg_core::ItemId::new(item);
@@ -1574,24 +1551,23 @@ pub(crate) mod tests {
     const STATS: usize = EQUIPMENT + EQUIPMENT_RECORD_BYTES;
     const QUESTS: usize = STATS + 8;
     /// The fixture's quest sheet: one turned-in quest, one entry and two markers.
-    const QUEST_BYTES: usize = 1 + 1 + 1 + 4 + 1 + 2 * 3;
+    const QUEST_BYTES: usize = 2 + 4 + 1 + crate::quest::QUEST_ENTRY_BYTES + 2 + 2 * 5;
     /// The loot sheet: no corpse sheet.
     const LOOT: usize = QUESTS + QUEST_BYTES;
     /// The ability sheet: its target, then the cooldown, aura and target aura lists.
     const ABILITIES: usize = LOOT + 1;
     const COOLDOWNS: usize = ABILITIES + ENTITY_REF_BYTES;
-    const AURAS: usize = COOLDOWNS + 1 + 2 * 3;
-    const TARGET_AURAS: usize = AURAS + 1 + 6;
-    const SHEETS_END: usize = TARGET_AURAS + 1 + 6;
-    /// The fixture's door section: count and two door records.
-    const DOORS: usize = 1 + 2 * DOOR_RECORD_BYTES;
+    const AURAS: usize = COOLDOWNS + 1 + 2 * 6;
+    const TARGET_AURAS: usize = AURAS + 1 + 9;
+    /// The world sheet (#882): two doors, two pieces and the raid signal with one braced spot.
+    const WORLD: usize = TARGET_AURAS + 1 + 9;
+    const WORLD_BYTES: usize = (2 + 2 * 5) + (2 + 2 * 5) + (4 + 2 + 2 + 4);
+    /// The waystone sheet (#882): none unlocked.
+    const WAYSTONES: usize = WORLD + WORLD_BYTES;
+    const SHEETS_END: usize = WAYSTONES + 2;
     const SUMMONED: usize = 1 + 2 * SUMMONED_RECORD_BYTES;
-    /// The fixture's piece section (#305): count and two piece records.
-    const PIECES: usize = 1 + 2 * PIECE_RECORD_BYTES;
-    /// The fixture's raid section (#530): code and integrity.
-    const RAID: usize = 1 + RAID_VIEW_BYTES;
     const TRAPS: usize = 1 + TRAP_RECORD_BYTES;
-    const EVENTS: usize = SHEETS_END + DOORS + PIECES + SUMMONED + TRAPS + RAID;
+    const EVENTS: usize = SHEETS_END + SUMMONED + TRAPS;
     /// The fixture's chat records: 6 + 16 and 6 + 8 bytes, then a 6-byte emote.
     const CHAT_BYTES: usize = 22 + 14 + 6;
     const CHAT: usize = EVENTS + 1 + EVENT_COUNT * EVENT_RECORD_BYTES;
@@ -1607,8 +1583,10 @@ pub(crate) mod tests {
         + 1
         + ENTITY_REF_BYTES
         + 1
-        + 2 * 3
-        + 2 * (1 + 6);
+        + 2 * 6
+        + 2 * (1 + 9)
+        + WORLD_BYTES
+        + 2;
 
     #[test]
     fn player_snapshot_matches_the_shared_golden_fixture() {
@@ -1620,11 +1598,8 @@ pub(crate) mod tests {
                 + SHEET_BYTES
                 + EVENT_COUNT * EVENT_RECORD_BYTES
                 + CHAT_BYTES
-                + 2 * DOOR_RECORD_BYTES
                 + 2 * SUMMONED_RECORD_BYTES
                 + TRAP_RECORD_BYTES
-                + 2 * PIECE_RECORD_BYTES
-                + RAID_VIEW_BYTES
                 + 4 * ENTITY_RECORD_BYTES
                 + 4 * PROJECTILE_RECORD_BYTES
         );
@@ -1638,7 +1613,9 @@ pub(crate) mod tests {
         assert_eq!(encoded[EVENTS], 16);
         assert_eq!(
             encoded[QUESTS..LOOT],
-            [1, 1, 1, 2, 3, 0, 0, 2, 0, 1, 1, 0, 2, 2],
+            [
+                0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 2, 3, 0, 0, 0, 2, 0, 0, 0, 1, 1, 0, 0, 0, 2, 2
+            ],
             "the quest sheet follows the bag sheet"
         );
         assert_eq!(encoded[FIRST_ENTITY], 1, "the viewer's record leads");
@@ -1742,13 +1719,13 @@ pub(crate) mod tests {
             (presence + 4, 109),
             (presence + 12, 100),
             (presence + 17, 2),
-            (presence + 19, 9),
-            (presence + 21, 0),
-            (presence + 22, 2),
-            (presence + 24, 99),
-            (presence + 26, 0),
+            (presence + 21, 9),
+            (presence + 23, 0),
+            (presence + 24, 2),
+            (presence + 28, 99),
+            (presence + 30, 0),
             // A quest drop of two units.
-            (presence + 26, 2),
+            (presence + 30, 2),
         ] {
             let mut invalid = bytes.clone();
             invalid[offset] = value;
@@ -1802,10 +1779,10 @@ pub(crate) mod tests {
             ),
             (CAST, 1, "cast state is inconsistent"),
             (CAST + 1, 1, "cast state is inconsistent"),
-            (CAST + 1, 2, "reserved flag bits are set"),
+            (CAST + 4, 2, "reserved flag bits are set"),
             // Elapsed reaches the 2 s total.
             (
-                CAST + 3,
+                CAST + 6,
                 u8::try_from(mmorpg_core::ticks_from_ms(2_000)).unwrap(),
                 "cast state is inconsistent",
             ),
@@ -1815,40 +1792,40 @@ pub(crate) mod tests {
                 MAX_COOLDOWNS as u8 + 1,
                 "snapshot has too many cooldowns",
             ),
-            (COOLDOWNS + 1, 11, "cooldown record is inconsistent"),
-            (COOLDOWNS + 2, 9, "cooldown record is inconsistent"),
+            (COOLDOWNS + 4, 11, "cooldown record is inconsistent"),
+            (COOLDOWNS + 5, 9, "cooldown record is inconsistent"),
             (AURAS, 9, "snapshot has too many auras"),
-            (AURAS + 1, 9, "aura record is inconsistent"),
-            (AURAS + 2, 4, "aura record is inconsistent"),
-            (AURAS + 3, 9, "aura record is inconsistent"),
+            (AURAS + 4, 9, "aura record is inconsistent"),
+            (AURAS + 5, 4, "aura record is inconsistent"),
+            (AURAS + 6, 9, "aura record is inconsistent"),
             (TARGET_OF_TARGET, 0, "an absent entity must have ID 0"),
-            (TARGET_CAST, 0, "cast state is inconsistent"),
-            (TARGET_AURAS + 4, 0, "aura record is inconsistent"),
+            (TARGET_CAST + 3, 0, "cast state is inconsistent"),
+            (TARGET_AURAS + 7, 0, "aura record is inconsistent"),
             (EVENTS, 17, "snapshot exceeds the per-player event capacity"),
             (EVENTS + 1, 255, "unknown event kind"),
-            (EVENTS + 2, 2, "event flags are invalid"),
+            (EVENTS + 5, 2, "event flags are invalid"),
             (
-                EVENTS + 1 + 2 * EVENT_RECORD_BYTES + 1,
+                EVENTS + 1 + 2 * EVENT_RECORD_BYTES + 4,
                 1,
                 "event flags are invalid",
             ),
             (
-                EVENTS + 1 + 5 * EVENT_RECORD_BYTES + 13,
+                EVENTS + 1 + 5 * EVENT_RECORD_BYTES + 16,
                 99,
                 "unknown error code",
             ),
             (
-                EVENTS + 1 + 6 * EVENT_RECORD_BYTES + 13,
+                EVENTS + 1 + 6 * EVENT_RECORD_BYTES + 16,
                 3,
                 "unknown strike aim",
             ),
             (
-                EVENTS + 1 + 7 * EVENT_RECORD_BYTES + 1,
+                EVENTS + 1 + 7 * EVENT_RECORD_BYTES + 4,
                 mmorpg_core::ABILITY_CATALOG.len() as u8 + 1,
                 "unknown ability",
             ),
             (
-                EVENTS + 1 + 7 * EVENT_RECORD_BYTES + 1,
+                EVENTS + 1 + 7 * EVENT_RECORD_BYTES + 4,
                 0,
                 "unknown ability",
             ),
@@ -1858,50 +1835,50 @@ pub(crate) mod tests {
                 "unknown event kind",
             ),
             (
-                EVENTS + 1 + 8 * EVENT_RECORD_BYTES + 13,
+                EVENTS + 1 + 8 * EVENT_RECORD_BYTES + 16,
                 1,
                 "malformed event record",
             ),
             (
-                EVENTS + 1 + 13 * EVENT_RECORD_BYTES + 1,
+                EVENTS + 1 + 13 * EVENT_RECORD_BYTES + 4,
                 1,
                 "event flags are invalid",
             ),
             (
-                EVENTS + 1 + 14 * EVENT_RECORD_BYTES + 1,
+                EVENTS + 1 + 14 * EVENT_RECORD_BYTES + 4,
                 0,
                 "quest id is out of range",
             ),
             (
-                EVENTS + 1 + 14 * EVENT_RECORD_BYTES + 12,
+                EVENTS + 1 + 14 * EVENT_RECORD_BYTES + 15,
                 3,
                 "malformed event record",
             ),
             (
-                EVENTS + 1 + 14 * EVENT_RECORD_BYTES + 13,
+                EVENTS + 1 + 14 * EVENT_RECORD_BYTES + 16,
                 0,
                 "malformed event record",
             ),
             (
-                EVENTS + 1 + 15 * EVENT_RECORD_BYTES + 1,
+                EVENTS + 1 + 15 * EVENT_RECORD_BYTES + 4,
                 0,
                 "quest id is out of range",
             ),
             (
-                EVENTS + 1 + 15 * EVENT_RECORD_BYTES + 2,
+                EVENTS + 1 + 15 * EVENT_RECORD_BYTES + 5,
                 1,
                 "malformed event record",
             ),
-            (QUESTS + 1, 0, "quest id is out of range"),
-            (QUESTS + 2, 11, "quest log exceeds its capacity"),
-            (QUESTS + 3, 1, "an active quest is also turned in"),
-            (QUESTS + 10, 4, "unknown quest marker"),
-            (QUESTS + 12, 1, "quest markers are not ordered"),
+            (QUESTS + 5, 0, "quest id is out of range"),
+            (QUESTS + 6, 11, "quest log exceeds its capacity"),
+            (QUESTS + 10, 1, "an active quest is also turned in"),
+            (QUESTS + 20, 4, "unknown quest marker"),
+            (QUESTS + 24, 1, "quest markers are not ordered"),
             (FIRST_ENTITY, 0, "unknown entity kind"),
             (FIRST_ENTITY, 5, "unknown entity kind"),
-            (wolf_record + 25, 101, "health percent exceeds 100"),
+            (wolf_record + 27, 101, "health percent exceeds 100"),
             (
-                wolf_record + 26,
+                wolf_record + 28,
                 0x80,
                 "lootable entity flags are inconsistent",
             ),
@@ -1974,16 +1951,16 @@ pub(crate) mod tests {
         zero_revision[INVENTORY..INVENTORY + 8].fill(0);
         assert!(decode_snapshot(&zero_revision).is_err());
         for (slot, item, quantity) in [
-            (0, 0_u16, 3_u16),
+            (0, 0_u32, 3_u16),
             (0, 99, 1),
             (0, 1, 0),
             (0, 1, 21),
             (1, 2, 2),
         ] {
             let mut invalid = encoded.clone();
-            let offset = INVENTORY + 8 + slot * 4;
-            invalid[offset..offset + 2].copy_from_slice(&item.to_be_bytes());
-            invalid[offset + 2..offset + 4].copy_from_slice(&quantity.to_be_bytes());
+            let offset = INVENTORY + 8 + slot * 6;
+            invalid[offset..offset + 4].copy_from_slice(&item.to_be_bytes());
+            invalid[offset + 4..offset + 6].copy_from_slice(&quantity.to_be_bytes());
             assert!(decode_snapshot(&invalid).is_err());
         }
         let mut omitted = fixture_snapshot();
@@ -2010,7 +1987,7 @@ pub(crate) mod tests {
         let mut decoder = SnapshotDecoder::new();
         assert_eq!(decoder.revisions(), SheetRevisions::default());
         let full = pack_snapshot(&snapshot).unwrap();
-        assert_eq!(full.payload[SHEET_MASK], 0b1111);
+        assert_eq!(full.payload[SHEET_MASK], 0b1100_1111);
         assert_eq!(decoder.decode(&full.payload).unwrap(), snapshot);
         let held = decoder.revisions();
         assert!(
@@ -2107,6 +2084,8 @@ pub(crate) mod tests {
             abilities: 0xdead_beef,
             party: 5,
             depths_loot: 6,
+            world: 7,
+            waystones: 8,
         };
         let command = mmorpg_core::ZoneCommand::Jump;
         for inner in [
@@ -2141,15 +2120,15 @@ pub(crate) mod tests {
     #[test]
     fn equipment_decoder_rejects_unknown_misplaced_items_and_wrong_totals() {
         let encoded = fixture_bytes();
-        assert_eq!(encoded[EQUIPMENT..EQUIPMENT + 2], [0, 4], "the wand");
+        assert_eq!(encoded[EQUIPMENT..EQUIPMENT + 4], [0, 0, 0, 4], "the wand");
         // Slot 0 holds the wand; slot 1 (off hand) is empty.
         for (offset, item, message) in [
-            (EQUIPMENT, 99_u16, "unknown item"),
+            (EQUIPMENT, 99_u32, "unknown item"),
             (EQUIPMENT, 1, "item cannot be equipped there"),
-            (EQUIPMENT + 2, 6, "item cannot be equipped there"),
+            (EQUIPMENT + 4, 6, "item cannot be equipped there"),
         ] {
             let mut invalid = encoded.clone();
-            invalid[offset..offset + 2].copy_from_slice(&item.to_be_bytes());
+            invalid[offset..offset + 4].copy_from_slice(&item.to_be_bytes());
             assert_eq!(
                 decode_snapshot(&invalid).unwrap_err().to_string(),
                 message,
@@ -2158,7 +2137,7 @@ pub(crate) mod tests {
         }
         // Removing the wand leaves the intellect total stale.
         let mut stale = encoded.clone();
-        stale[EQUIPMENT..EQUIPMENT + 2].fill(0);
+        stale[EQUIPMENT..EQUIPMENT + 4].fill(0);
         assert_eq!(
             decode_snapshot(&stale).unwrap_err().to_string(),
             "stat totals do not match the equipment"
@@ -2208,9 +2187,9 @@ pub(crate) mod tests {
                 EVENT_RECORD_BYTES,
                 ENTITY_RECORD_BYTES
             ),
-            (108, 14, 27)
+            (111, 17, 29)
         );
-        assert_eq!(MAX_WIRE_ENTITIES, 35);
+        assert_eq!(MAX_WIRE_ENTITIES, 33);
         let viewer_id = u32::MAX;
         let target = EntityRef::Creature(CreatureId::new(u32::MAX));
         let entities: Vec<_> = (0..MAX_VISIBLE_ENTITIES)
@@ -2232,7 +2211,7 @@ pub(crate) mod tests {
                     appearance: if kind == EntityKind::Player {
                         1
                     } else {
-                        u16::MAX
+                        u32::MAX
                     },
                     position: [low, high, low],
                     velocity: [i8::MIN, i8::MAX, i8::MIN],
@@ -2271,9 +2250,10 @@ pub(crate) mod tests {
             raid: Some(mmorpg_core::RaidView {
                 phase: 2,
                 integrity: 63,
-                aid: 0,
+                aid: BTreeSet::new(),
                 signs: false,
-                readiness: 0b1_1111,
+                warned: true,
+                braced: BTreeSet::from([0, 1, 2, 3]),
                 scouted: false,
             }),
             projectiles: Vec::new(),
@@ -2283,12 +2263,12 @@ pub(crate) mod tests {
                     door: mmorpg_core::DoorId::new(1),
                     open: true,
                 };
-                mmorpg_core::MAX_DOORS
+                9
             ]
             .into_iter()
             .enumerate()
             .map(|(index, view)| mmorpg_core::DoorView {
-                door: mmorpg_core::DoorId::new(u8::try_from(index + 1).unwrap()),
+                door: mmorpg_core::DoorId::new(u32::try_from(index + 1).unwrap()),
                 ..view
             })
             .collect(),
@@ -2336,16 +2316,17 @@ pub(crate) mod tests {
             traps: Vec::new(),
         };
         let packed = pack_snapshot(&snapshot).unwrap();
-        // (1,077 − 106 − 9 − 1 − 16 × 14 − 9 × 2) / 27 = 26 records fit beside the empty loot and
-        // ability sheets, a full event section, every door and a raid signal.
-        assert_eq!(packed.packed_entities, 26);
+        // (1,077 − 111 − 9 − 73 − 2 − 16 × 17) / 29 = 21 records fit beside the empty loot and
+        // ability sheets, the world sheet with nine doors and a raid signal (#882), the empty
+        // waystone sheet and a full event section.
+        assert_eq!(packed.packed_entities, 21);
         assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
         assert!(
             packed.payload.len() + SESSION_SNAPSHOT_HEADER_BYTES + DATAGRAM_SAFETY_MARGIN_BYTES
                 <= MEASURED_MIN_DATAGRAM_BYTES
         );
         let decoded = decode_snapshot(&packed.payload).unwrap();
-        assert_eq!(decoded.entities[..], snapshot.entities[..26]);
+        assert_eq!(decoded.entities[..], snapshot.entities[..21]);
         assert_eq!(
             decoded.entities[1].entity(),
             target,
@@ -2356,8 +2337,9 @@ pub(crate) mod tests {
             encode_snapshot(&snapshot).unwrap_err().to_string(),
             "player projection exceeds the byte budget"
         );
-        // Without events, doors, a raid signal or a bag sheet the budget holds 35 records beside
-        // the empty loot sheet (1 byte) and ability sheet (8 bytes).
+        // Without events, doors, a raid signal or a bag sheet the budget holds 32 records beside
+        // the empty loot (1 byte), ability (8), world (5) and waystone (2) sheets, and all 33
+        // once the client holds those sheets.
         let quiet = ZoneSnapshot {
             events: Vec::new(),
             doors: Vec::new(),
@@ -2365,10 +2347,18 @@ pub(crate) mod tests {
             ..snapshot
         };
         let packed = pack_snapshot(&quiet).unwrap();
-        assert_eq!(packed.packed_entities, MAX_WIRE_ENTITIES);
+        assert_eq!(packed.packed_entities, 32);
         assert_eq!(
             packed.payload.len(),
-            PLAYER_SNAPSHOT_FIXED_BYTES + 9 + MAX_WIRE_ENTITIES * ENTITY_RECORD_BYTES
+            PLAYER_SNAPSHOT_FIXED_BYTES + 16 + 32 * ENTITY_RECORD_BYTES
+        );
+        let mut holder = SnapshotDecoder::new();
+        holder.decode(&packed.payload).unwrap();
+        let held = pack_snapshot_acknowledged(&quiet, holder.revisions()).unwrap();
+        assert_eq!(held.packed_entities, MAX_WIRE_ENTITIES);
+        assert_eq!(
+            held.payload.len(),
+            PLAYER_SNAPSHOT_FIXED_BYTES + MAX_WIRE_ENTITIES * ENTITY_RECORD_BYTES
         );
         let full_bag = mmorpg_core::Inventory::from_slots(
             [Some(mmorpg_core::ItemStack::new(mmorpg_core::ItemId::new(1), 20).unwrap()); 16],
@@ -2392,13 +2382,13 @@ pub(crate) mod tests {
             assert_eq!(decoded.events, with_sheet.events);
             assert_eq!(decoded.entities[1].entity(), target);
             assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
-            // The full bag and quest sheets are 92 + 89 bytes beside the other 9:
-            // (1,077 − 106 − 190) / 27 = 28 and (1,077 − 106 − 190 − 224) / 27 = 20.
+            // The full bag and quest sheets are 136 + 203 bytes beside the other 16:
+            // (1,077 − 111 − 355) / 29 = 21 and (1,077 − 111 − 355 − 272) / 29 = 11.
             if events == 0 {
-                assert_eq!(packed.packed_entities, 28);
+                assert_eq!(packed.packed_entities, 21);
             }
             if events == 16 {
-                assert_eq!(packed.packed_entities, 20);
+                assert_eq!(packed.packed_entities, 11);
             }
         }
         // Whole records only, within the budget.
@@ -2416,8 +2406,8 @@ pub(crate) mod tests {
             MAX_CHAT_PER_TICK
         ];
         let packed = pack_snapshot(&chatty).unwrap();
-        // (1,077 − 106 − 9 − 224 − 4 × 84) / 27 = 14 records.
-        assert_eq!(packed.packed_entities, 14);
+        // (1,077 − 111 − 16 − 272 − 4 × 84) / 29 = 11 records.
+        assert_eq!(packed.packed_entities, 11);
         assert_eq!(decode_snapshot(&packed.payload).unwrap().chat, chatty.chat);
         for item in [
             None,
@@ -2459,9 +2449,10 @@ pub(crate) mod tests {
                 assert_eq!(decoded.viewer.copper, u32::MAX);
                 assert_eq!(decoded.inventory, with_loot.inventory);
                 assert_eq!(decoded.entities[1].entity(), target);
-                // (1,077 − 117 − 173 − 26 − 224) / 27 = 19.
+                // The bag, quest and corpse sheets beside the other 16 bytes are 385:
+                // (1,077 − 111 − 385 − 272) / 29 = 10.
                 if events == 16 && item.is_some() {
-                    assert_eq!(packed.packed_entities, 19);
+                    assert_eq!(packed.packed_entities, 10);
                 }
             }
         }
@@ -2469,7 +2460,7 @@ pub(crate) mod tests {
         assert!(maximum_bytes > 1_077 - ENTITY_RECORD_BYTES && maximum_bytes <= 1_077);
         // Full cooldown and aura lists for the viewer and its target, both
         // sheets and every event still leave the viewer and its target.
-        let aura = |ability: u8| {
+        let aura = |ability: u32| {
             let ability = AbilityId::new(ability);
             let spec = ability_by_id(ability).unwrap().aura().unwrap();
             AuraView {
@@ -2519,8 +2510,9 @@ pub(crate) mod tests {
             auras: full_auras,
         };
         let packed = pack_snapshot(&loaded).unwrap();
-        // (1,077 − 117 − 120 − 173 − 16 × 14) / 27 = 16 records.
-        assert_eq!(packed.packed_entities, 16);
+        // The full ability sheet is 176 bytes beside the bag, quest and other sheets' 347:
+        // (1,077 − 111 − 523 − 16 × 17) / 29 = 5 records.
+        assert_eq!(packed.packed_entities, 5);
         assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
         let decoded = decode_snapshot(&packed.payload).unwrap();
         assert_eq!(decoded.entities[1].entity(), target);

@@ -337,7 +337,7 @@ impl ZoneSimulation {
             return Ok(());
         };
         let finished = run.boss.outcome.is_some();
-        let all_cleared = run.cleared == crate::depths::chamber_mask(site.chambers.len());
+        let all_cleared = crate::depths::all_cleared(&run.cleared, site.chambers.len());
         if !finished && all_cleared {
             self.raise_boss(boss)?;
         }
