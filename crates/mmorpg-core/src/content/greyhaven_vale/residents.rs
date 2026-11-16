@@ -217,6 +217,8 @@ fn table() -> Vec<NpcRoutine> {
             SOUTH,
             vec![errand(100, &[[700, 3_300], [650, 3_650]], 15, WEST)],
         ),
+        // Farmer Osric Mill sleeps in Millbrook's farmhouse, behind his post (#886).
+        routine(4, &[[6_200, 4_150]], SOUTH, Vec::new()),
         // Barrowdown.
         routine(
             22,
@@ -252,7 +254,8 @@ fn table() -> Vec<NpcRoutine> {
             ],
         ),
         // Fenford.
-        routine(27, &[[105_300, 19_500]], EAST, Vec::new()),
+        // The innkeeper sleeps at the Ford Inn (#886).
+        routine(27, &[[105_300, 20_600]], EAST, Vec::new()),
         // Maren keeps her stall by the square and shuts it for the night (#826).
         routine(42, &[[100_200, 21_950]], SOUTH, Vec::new()),
         routine(
@@ -313,10 +316,11 @@ fn table() -> Vec<NpcRoutine> {
                 errand(150, &[[14_600, -88_000], [16_000, -90_000]], 10, NORTH),
             ],
         ),
-        // The farmland's hamlets.
+        // The farmland's hamlets. The goodwife, Old Bertil and the farmhand live in their
+        // hamlets' farmhouses (#886).
         routine(
             36,
-            &[[-9_600, 33_200], [-10_200, 32_850]],
+            &[[-8_800, 34_800], [-7_900, 34_800]],
             NORTH,
             vec![errand(
                 130,
@@ -328,7 +332,7 @@ fn table() -> Vec<NpcRoutine> {
         routine(37, &[[-11_200, 32_800], [-9_600, 33_000]], WEST, Vec::new()),
         routine(
             38,
-            &[[11_000, 45_000], [10_600, 41_800]],
+            &[[12_000, 45_600]],
             NORTH,
             vec![errand(
                 120,
@@ -351,7 +355,7 @@ fn table() -> Vec<NpcRoutine> {
         ),
         routine(
             41,
-            &[[-6_000, 52_600], [-5_200, 52_500]],
+            &[[-5_600, 54_000]],
             NORTH,
             vec![errand(140, &[[-6_400, 55_600], [-4_700, 56_000]], 10, EAST)],
         ),

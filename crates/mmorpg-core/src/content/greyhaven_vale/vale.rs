@@ -27,6 +27,8 @@ fn colliders() -> Vec<StaticCollider> {
         .iter()
         // Elden's house collides through its walls and furniture (#158).
         .filter(|&&(id, ..)| id != ids::MARSHAL_HOUSE && !(400..=406).contains(&id))
+        // Millbrook's farmhouse is a walk-in farmhouse's walls and furniture (#886).
+        .filter(|&&(id, ..)| id != ids::FARMHOUSE)
         // Structures out on the hills stand on the terrain (#159).
         .map(|&(id, min, max, height)| {
             let (min, max) = if (300..=305).contains(&id) {
