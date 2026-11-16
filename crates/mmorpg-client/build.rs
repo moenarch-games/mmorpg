@@ -1,6 +1,6 @@
 //! Embeds locally acquired assets; builds perform no network acquisition.
-//! Ranger default models and the shared clip library are standard GLBs prepared by
-//! asset-tooling (`scripts/prepare-ranger-native.sh`), with original socket metadata.
+//! The Ranger figures and their equipment are embedded as asset-tooling publishes them, file by
+//! file (#866): packed glTF the client decodes itself (`presentation::skinned::packed`).
 //! The Greyhaven inn, the Sunken Shrine kit (#431), the ambient animals (#419), the
 //! Outpost building kit (#420), the settlement props (#421) and Greyhaven's trees, rocks and bushes
 //! (#49) and their ground layer materials (#525) keep the manifest/resource embedding path.
@@ -15,6 +15,8 @@ use std::{
 const CHARACTER: &str = "humanoid.ranger.male";
 /// The female figure (#493, `imported::Figure::Female`).
 const FEMALE: &str = "humanoid.ranger.female";
+/// The figures' weapons, throwables and headwear (asset-tooling #517).
+const EQUIPMENT: &str = "humanoid.equipment";
 const SWORD: &str = "equipment.sword.arming";
 const SHIELD: &str = "equipment.shield.heater";
 /// The Ranger's longbow and quiver stowed on the back (#244).
@@ -90,8 +92,9 @@ fn main() {
     warden_icons::validate(&art)
         .unwrap_or_else(|cause| panic!("Warden artwork validation failed: {cause}"));
     let characters = manifest_dir.join("../../web/public/characters");
-    let bundle = characters.join(CHARACTER);
-    let (mut code, mut files, appearance) = figure(&bundle, CHARACTER);
+    let equipment = Downloads::read(&characters, EQUIPMENT);
+    let male = Downloads::read(&characters, CHARACTER);
+    let (mut code, appearance) = figure(&male, &equipment);
     for (name, key) in [
         ("CHARACTER", CHARACTER),
         ("SWORD", SWORD),
@@ -112,13 +115,13 @@ fn main() {
         ("CAP", CAP),
         ("HELM", HELM),
     ] {
-        let path = format!("native/{key}.default.native.glb");
+        let source = if key == CHARACTER { &male } else { &equipment };
+        let path = source.gltf(key, "default");
         code.push_str(&format!("pub const {name}: &str = {path:?};\n"));
-        files.push(path);
     }
     // The class starter outfits (asset-tooling #379): per `class.<id>` preset, its outfit's
     // variant for the preset's skin and its armour, and the drop armour.
-    let appearance_path = bundle.join(&appearance);
+    let appearance_path = characters.join(&appearance);
     println!("cargo:rerun-if-changed={}", appearance_path.display());
     let look: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(&appearance_path).expect("the Ranger appearance is embedded"),
@@ -134,15 +137,14 @@ fn main() {
         let entry = outfit["armor"]["entry"]
             .as_str()
             .expect("an outfit armour entry");
-        format!("native/{entry}.default.native.glb")
+        male.gltf(entry, "default")
     };
     let drop = armor(outfit(DROP_ARMOR_OUTFIT));
     code.push_str(&format!("pub const DROP_ARMOR: &str = {drop:?};\n"));
-    files.push(drop);
     code.push_str("pub const OUTFITS: &[(&str, &str, &str)] = &[\n");
     for preset in look["presets"].as_array().unwrap_or_else(|| {
         panic!(
-            "Ranger appearance {} has no presets; refresh the downloaded assets with scripts/fetch-bundles.sh, then scripts/prepare-ranger-native.sh",
+            "Ranger appearance {} has no presets; refresh the downloaded assets with scripts/fetch-bundles.sh",
             appearance_path.display()
         )
     }) {
@@ -156,25 +158,25 @@ fn main() {
             .and_then(|skins| skins.iter().find(|skin| skin["id"] == preset["skin"]))
             .and_then(|skin| skin["variant"].as_str())
             .unwrap_or_else(|| panic!("the preset {id} names its skin's outfit variant"));
-        let model = format!("native/{CHARACTER}.{variant}.native.glb");
+        let model = male.gltf(CHARACTER, variant);
         let plates = armor(worn);
         code.push_str(&format!("    ({id:?}, {model:?}, {plates:?}),\n"));
-        files.extend([model, plates]);
     }
     code.push_str("];\n");
-    let hair = format!("native/{HAIR}.{HAIR_VARIANT}.native.glb");
+    // The legacy Ranger hair is optional after asset-tooling #517: an empty path names no file.
+    let hair = male
+        .entry(HAIR, HAIR_VARIANT)
+        .map_or_else(String::new, |entry| male.file(entry, ".gltf"));
     code.push_str(&format!(
         "pub const HAIR: &str = {hair:?};\npub const HAIR_KEY: &str = {HAIR:?};\npub const CAP_KEY: &str = {CAP:?};\npub const HELM_KEY: &str = {HELM:?};\n"
     ));
-    // The legacy Ranger hair is optional after asset-tooling #517. Include it only if
-    // present, alongside the other prepared outfit, armour and hairstyle entries.
-    files.extend(prepared(&bundle));
-    write("ranger_bundle.rs", &bundle, code, files);
+    let files = [male.files(), equipment.files()].concat();
+    write("ranger_bundle.rs", &characters, code, files);
     // The female figure (#493): Tanner Hilda Brook's outfit, armour and hair.
-    let female = characters.join(FEMALE);
-    let (code, mut files, _) = figure(&female, FEMALE);
-    files.extend(prepared(&female));
-    write("ranger_female_bundle.rs", &female, code, files);
+    let female = Downloads::read(&characters, FEMALE);
+    let (code, _) = figure(&female, &equipment);
+    let files = [female.files(), equipment.files()].concat();
+    write("ranger_female_bundle.rs", &characters, code, files);
     // The Redbrand faction kit (#675): every entry and its descriptor. Optional: without it the
     // bandits keep the soldier's outfit.
     optional_kit(
@@ -424,73 +426,120 @@ fn sound_bundle(bundle: &Path) {
     );
 }
 
-/// A Ranger figure's acquired bundle (`imported::Figure`): its `SOCKETS`, prepared `CLIPS`,
-/// `APPEARANCE` and clip metadata `MOTIONS` as code, those files, and the appearance path.
-fn figure(bundle: &Path, character: &str) -> (String, Vec<String>, String) {
-    println!(
-        "cargo:rerun-if-changed={}",
-        bundle.join("RELEASE").display()
-    );
-    let index = bundle.join(format!("{}.index.json", character.replace('.', "-")));
-    println!("cargo:rerun-if-changed={}", index.display());
-    let index: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(index)
-            .expect("Ranger downloads are missing; run scripts/fetch-bundles.sh"),
-    )
-    .expect("Ranger download index is JSON");
-    assert_eq!(index["schema"], "asset-downloads-v1");
-    let entry = index["entries"]
-        .as_array()
-        .expect("download entries")
-        .iter()
-        .find(|entry| entry["key"] == character && entry["variant"] == "default")
-        .expect("default character entry");
-    let file = |suffix: &str| {
-        entry["files"]
+/// A release `scripts/fetch-bundles.sh` fetches file by file (`fetch_rolling_files`, #866): a
+/// Ranger figure or their equipment, with its `asset-downloads-v1` index. Paths are relative to
+/// `web/public/characters/`, the root both figures' `FILES` are embedded from.
+struct Downloads {
+    directory: String,
+    entries: Vec<serde_json::Value>,
+}
+
+impl Downloads {
+    fn read(characters: &Path, directory: &str) -> Self {
+        let bundle = characters.join(directory);
+        for watched in ["RELEASE", "DIGESTS"] {
+            println!("cargo:rerun-if-changed={}", bundle.join(watched).display());
+        }
+        let index = bundle.join(format!("{}.index.json", directory.replace('.', "-")));
+        let index: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&index).unwrap_or_else(|error| {
+                panic!(
+                    "{} is missing ({error}); run scripts/fetch-bundles.sh",
+                    index.display()
+                )
+            }))
+            .expect("a download index is JSON");
+        assert_eq!(index["schema"], "asset-downloads-v1");
+        Self {
+            directory: directory.to_owned(),
+            entries: index["entries"]
+                .as_array()
+                .expect("download entries")
+                .clone(),
+        }
+    }
+
+    fn entry(&self, key: &str, variant: &str) -> Option<&serde_json::Value> {
+        self.entries
+            .iter()
+            .find(|entry| entry["key"] == key && entry["variant"] == variant)
+    }
+
+    /// The path of `entry`'s one file ending in `suffix`.
+    fn file(&self, entry: &serde_json::Value, suffix: &str) -> String {
+        let name = entry["files"]
             .as_array()
             .expect("entry files")
             .iter()
             .filter_map(serde_json::Value::as_str)
             .find(|file| file.ends_with(suffix))
-            .unwrap_or_else(|| panic!("the {character} entry has its {suffix}"))
-            .to_owned()
-    };
-    let sockets = file(".humanoid-sockets.json");
-    let appearance = file(".humanoid-appearance.json");
-    let clips = format!(
-        "native/{}",
-        entry["clips"]
-            .as_str()
-            .expect("shared clips")
-            .replace(".glb", ".native.glb")
-    );
-    // The clips' `humanoid-clips` metadata: the bow clips' draw (#556).
-    let motions = file(".humanoid-clips.json");
-    let code = format!(
-        "pub const SOCKETS: &str = {sockets:?};\npub const CLIPS: &str = {clips:?};\npub const APPEARANCE: &str = {appearance:?};\npub const MOTIONS: &str = {motions:?};\n"
-    );
-    (
-        code,
-        vec![sockets, clips, appearance.clone(), motions],
-        appearance,
-    )
+            .unwrap_or_else(|| panic!("the {} entry has its {suffix}", entry["key"]));
+        format!("{}/{name}", self.directory)
+    }
+
+    /// The glTF path of entry `key` in `variant`.
+    fn gltf(&self, key: &str, variant: &str) -> String {
+        let entry = self.entry(key, variant).unwrap_or_else(|| {
+            panic!(
+                "{} declares no {key}/{variant}; run scripts/fetch-bundles.sh",
+                self.directory
+            )
+        });
+        self.file(entry, ".gltf")
+    }
+
+    /// Every entry's files, textures and shared clips, as published.
+    fn files(&self) -> Vec<String> {
+        self.entries
+            .iter()
+            .flat_map(|entry| {
+                ["files", "textures"]
+                    .iter()
+                    .flat_map(|list| entry[*list].as_array().into_iter().flatten())
+                    .chain(entry.get("clips"))
+                    .filter_map(serde_json::Value::as_str)
+            })
+            .map(|name| format!("{}/{name}", self.directory))
+            .collect()
+    }
+
+    /// `ENTRIES` lines: each entry's `<key>/<variant>` and glTF path.
+    fn entries(&self) -> String {
+        self.entries
+            .iter()
+            .map(|entry| {
+                let id = format!(
+                    "{}/{}",
+                    entry["key"].as_str().expect("an entry key"),
+                    entry["variant"].as_str().expect("an entry variant")
+                );
+                format!("    ({id:?}, {:?}),\n", self.file(entry, ".gltf"))
+            })
+            .collect()
+    }
 }
 
-/// Every prepared GLB of a figure's bundle (`scripts/prepare-ranger-native.sh`).
-fn prepared(bundle: &Path) -> Vec<String> {
-    let native = bundle.join("native");
-    println!("cargo:rerun-if-changed={}", native.display());
-    fs::read_dir(&native)
-        .expect("run scripts/prepare-ranger-native.sh")
-        .map(|prepared| {
-            let name = prepared.expect("a prepared file").file_name();
-            name.to_str()
-                .expect("prepared file names are UTF-8")
-                .to_owned()
-        })
-        .filter(|name| name.ends_with(".native.glb"))
-        .map(|name| format!("native/{name}"))
-        .collect()
+/// A Ranger figure's code (`imported::Figure`): its `SOCKETS`, shared `CLIPS`, `APPEARANCE`, clip
+/// metadata `MOTIONS` and `ENTRIES` (its own and the `equipment`'s), and the appearance path.
+fn figure(figure: &Downloads, equipment: &Downloads) -> (String, String) {
+    let character = figure.directory.as_str();
+    let entry = figure
+        .entry(character, "default")
+        .unwrap_or_else(|| panic!("{character} declares its default entry"));
+    let sockets = figure.file(entry, ".humanoid-sockets.json");
+    let appearance = figure.file(entry, ".humanoid-appearance.json");
+    let clips = format!(
+        "{character}/{}",
+        entry["clips"].as_str().expect("shared clips")
+    );
+    // The clips' `humanoid-clips` metadata: the bow clips' draw (#556).
+    let motions = figure.file(entry, ".humanoid-clips.json");
+    let code = format!(
+        "pub const SOCKETS: &str = {sockets:?};\npub const CLIPS: &str = {clips:?};\npub const APPEARANCE: &str = {appearance:?};\npub const MOTIONS: &str = {motions:?};\npub const ENTRIES: &[(&str, &str)] = &[\n{}{}];\n",
+        figure.entries(),
+        equipment.entries()
+    );
+    (code, appearance)
 }
 
 /// A static bundle's drawn entries (`keys`, or every entry) as `ENTRIES` (key, glTF path) and
@@ -559,10 +608,9 @@ fn write(name: &str, bundle: &Path, mut code: String, mut files: Vec<String>) {
     files.dedup();
     code.push_str("pub const FILES: &[(&str, &[u8])] = &[\n");
     for file in &files {
-        let absolute = bundle
-            .join(file)
-            .canonicalize()
-            .unwrap_or_else(|error| panic!("bundle file {file} is missing ({error}); run scripts/fetch-bundles.sh and scripts/prepare-ranger-native.sh"));
+        let absolute = bundle.join(file).canonicalize().unwrap_or_else(|error| {
+            panic!("bundle file {file} is missing ({error}); run scripts/fetch-bundles.sh")
+        });
         code.push_str(&format!(
             "    ({file:?}, include_bytes!({:?})),\n",
             absolute.display().to_string()

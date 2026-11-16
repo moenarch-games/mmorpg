@@ -23,6 +23,7 @@ use std::{
 use strum::VariantArray;
 use three_d_core::{Color3, Mesh, Vec3, VertexAttributes};
 
+mod packed;
 mod residents;
 pub(super) use residents::{resident_look, residents_drawable};
 
@@ -1239,7 +1240,7 @@ mod ranger_bundle {
     include!(concat!(env!("OUT_DIR"), "/ranger_bundle.rs"));
 }
 
-/// The female figure's bundle (#493): her sockets, clips, appearance and prepared entries.
+/// The female figure's bundle (#493): her sockets, clips, appearance and entries.
 #[allow(
     dead_code,
     reason = "only the male figure carries the bow whose draw MOTIONS holds"
@@ -1444,8 +1445,6 @@ fn resolve(base: &str, uri: &str) -> String {
     parts.join("/")
 }
 
-/// One GLB of an asset-tooling `gltf-resources-v1` entry: every external buffer and image
-/// becomes a view of a single binary chunk, so the ordinary GLB import reads it.
 /// A KTX2 image's base level as an RGBA8 PNG.
 fn ktx2_png(bytes: &[u8]) -> Vec<u8> {
     let (width, height, levels) =
@@ -1515,6 +1514,9 @@ fn zero_accessors(json: &mut serde_json::Value, append: &mut impl FnMut(&[u8]) -
     }
 }
 
+/// One GLB of an asset-tooling `gltf-resources-v1` entry or published download (#866): every
+/// external buffer and image becomes a view of a single binary chunk, so the ordinary GLB import
+/// reads it.
 fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
     let file = |path: &str| {
         files
@@ -1523,8 +1525,60 @@ fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
             .map(|(_, bytes)| *bytes)
             .unwrap_or_else(|| panic!("the bundle embeds {path}"))
     };
-    let mut json: serde_json::Value =
+    let json: serde_json::Value =
         serde_json::from_slice(file(entry)).expect("the bundle glTF is JSON");
+    let buffers = list_of(&json["buffers"])
+        .iter()
+        .map(|buffer| {
+            buffer["uri"]
+                .as_str()
+                // A meshopt fallback buffer holds nothing: its views are decoded.
+                .map_or_else(Vec::new, |uri| file(&resolve(entry, uri)).to_vec())
+        })
+        .collect();
+    glb(json, buffers, |uri| file(&resolve(entry, uri)))
+}
+
+/// A published GLB, such as a figure's shared clip library (#866), with its packed views decoded.
+fn packed_glb(bytes: &[u8]) -> Vec<u8> {
+    let chunk = |at: usize| {
+        let length = u32::from_le_bytes(bytes[at..at + 4].try_into().expect("a chunk length"));
+        &bytes[at + 8..at + 8 + length as usize]
+    };
+    let text = chunk(12);
+    let json: serde_json::Value = serde_json::from_slice(text).expect("the GLB's JSON chunk");
+    let bin = (20 + text.len() < bytes.len()).then(|| chunk(20 + text.len()));
+    // The binary chunk is buffer 0; a meshopt fallback buffer holds nothing.
+    let buffers = list_of(&json["buffers"])
+        .iter()
+        .enumerate()
+        .map(|(index, buffer)| match bin {
+            Some(bin) if index == 0 && buffer.get("uri").is_none() => bin.to_vec(),
+            _ => Vec::new(),
+        })
+        .collect();
+    glb(json, buffers, |uri| {
+        panic!("a GLB names no external image ({uri})")
+    })
+}
+
+fn list_of(value: &serde_json::Value) -> &[serde_json::Value] {
+    value.as_array().map_or(&[], Vec::as_slice)
+}
+
+/// The GLB of glTF `json` with its `buffers` and its external images read through `read_image`.
+fn glb<'a>(
+    mut json: serde_json::Value,
+    mut buffers: Vec<Vec<u8>>,
+    read_image: impl Fn(&str) -> &'a [u8],
+) -> Vec<u8> {
+    packed::decode_views(&mut json, &mut buffers).expect("a packed bundle view decodes");
+    packed::dequantize(&mut json, &mut buffers).expect("a quantized bundle accessor decodes");
+    for list in ["extensionsUsed", "extensionsRequired"] {
+        if let Some(names) = json.get_mut(list).and_then(serde_json::Value::as_array_mut) {
+            names.retain(|name| !packed::EXTENSIONS.iter().any(|resolved| name == resolved));
+        }
+    }
     let mut bin = Vec::new();
     let mut append = |bytes: &[u8]| {
         while !bin.len().is_multiple_of(4) {
@@ -1534,11 +1588,7 @@ fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
         bin.extend_from_slice(bytes);
         offset
     };
-    let mut offsets = Vec::new();
-    for buffer in json["buffers"].as_array().cloned().unwrap_or_default() {
-        let uri = buffer["uri"].as_str().expect("bundle buffers are external");
-        offsets.push(append(file(&resolve(entry, uri))));
-    }
+    let offsets: Vec<usize> = buffers.iter().map(|buffer| append(buffer)).collect();
     for view in json
         .get_mut("bufferViews")
         .and_then(serde_json::Value::as_array_mut)
@@ -1551,17 +1601,19 @@ fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
         view["byteOffset"] = start.into();
     }
     let mut views = Vec::new();
-    for image in json
+    let mut external = Vec::new();
+    for (index, image) in json
         .get_mut("images")
         .and_then(serde_json::Value::as_array_mut)
         .into_iter()
         .flatten()
+        .enumerate()
     {
-        let uri = image["uri"]
-            .as_str()
-            .expect("bundle images are external")
-            .to_owned();
-        let bytes = file(&resolve(entry, &uri));
+        let Some(uri) = image["uri"].as_str().map(str::to_owned) else {
+            continue;
+        };
+        external.push(index);
+        let bytes = read_image(&uri);
         // The `gltf` crate decodes PNG and JPEG only: a KTX2 (Basis Universal) image, such as the
         // Outpost kit's (asset-tooling#511), is transcoded here and re-encoded as a PNG.
         let png = crate::ground::is_ktx2(bytes).then(|| ktx2_png(bytes));
@@ -1581,14 +1633,8 @@ fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
     // KHR_texture_basisu's source becomes the texture's core source, now a PNG.
     crate::ground::basisu_as_core(&mut json);
     let first = json["bufferViews"].as_array().map_or(0, Vec::len);
-    for (index, image) in json
-        .get_mut("images")
-        .and_then(serde_json::Value::as_array_mut)
-        .into_iter()
-        .flatten()
-        .enumerate()
-    {
-        image["bufferView"] = (first + index).into();
+    for (view, index) in external.into_iter().enumerate() {
+        json["images"][index]["bufferView"] = (first + view).into();
     }
     if let Some(list) = json
         .get_mut("bufferViews")
@@ -1652,7 +1698,7 @@ pub(super) struct Throwables {
     belt: Option<(&'static str, three_d_animation::Mat4)>,
 }
 
-/// The prepared bundle file of a throwable's item.
+/// The bundle glTF of a throwable's item.
 fn throwable_file(throwable: Throwable) -> &'static str {
     match throwable {
         Throwable::Knife => ranger_bundle::THROWING_KNIFE,
@@ -1775,7 +1821,7 @@ impl Equipment {
             .iter()
             .map(|&(entry, socket_id)| {
                 let model =
-                    Model::parse(ranger_file(entry), "").expect("a bundle item is valid glTF");
+                    Model::parse(&ranger_model(entry), "").expect("a bundle item is valid glTF");
                 let (joint, mut matrix) = socket(&descriptor, socket_id);
                 if bolt(entry, socket_id) {
                     // The arrow stands in for the crossbow's bolt at its length (#607).
@@ -1825,7 +1871,7 @@ impl Equipment {
             .any(|sheath| matches!(sheath, Some((1, _))))
             .then(|| Throwables {
                 models: Throwable::ALL.map(|throwable| {
-                    Model::parse(ranger_file(throwable_file(throwable)), "")
+                    Model::parse(&ranger_model(throwable_file(throwable)), "")
                         .expect("a bundle item is valid glTF")
                 }),
                 hand: socket(&descriptor, THROWABLE_SOCKET),
@@ -2111,7 +2157,7 @@ impl Plates {
         let descriptor: serde_json::Value =
             serde_json::from_slice(ranger_file(ranger_bundle::SOCKETS))
                 .expect("the sockets descriptor is JSON");
-        let armor = Model::parse(ranger_file(path), "").expect("a bundle armour is valid glTF");
+        let armor = Model::parse(&ranger_model(path), "").expect("a bundle armour is valid glTF");
         Self {
             items: pieces
                 .as_array()
@@ -2195,9 +2241,9 @@ pub(super) fn class_outfit(outfit: Outfit) -> &'static ClassOutfit {
             .expect("the appearance declares the class preset");
         let entry = outfit_entry(preset["outfit"].as_str().expect("a preset outfit"));
         let mut model = Model::parse_with_clips(
-            ranger_file(path),
+            &ranger_model(path),
             Kind::Ranger.clips().idle,
-            Some(ranger_file(ranger_bundle::CLIPS)),
+            Some(ranger_clips()),
         )
         .expect("a class outfit is valid glTF")
         .with_secondary(ranger_secondary());
@@ -2417,7 +2463,18 @@ fn ranger_file(path: &str) -> &'static [u8] {
         .iter()
         .find(|(name, _)| *name == path)
         .map(|(_, bytes)| *bytes)
-        .expect("prepared Ranger file is embedded")
+        .expect("the Ranger file is embedded")
+}
+
+/// The male figure's (or an item's) published entry at glTF `path`, as one GLB (#866).
+fn ranger_model(path: &str) -> Vec<u8> {
+    bundle_glb(path, ranger_bundle::FILES)
+}
+
+/// The male figure's shared clip library, decoded once.
+fn ranger_clips() -> &'static [u8] {
+    static CLIPS: OnceLock<Vec<u8>> = OnceLock::new();
+    CLIPS.get_or_init(|| packed_glb(ranger_file(ranger_bundle::CLIPS)))
 }
 
 /// The model file of an imported unit kind: asset-tooling's Ranger humanoid for players
@@ -2425,7 +2482,7 @@ fn ranger_file(path: &str) -> &'static [u8] {
 /// `assets/quaternius/PROVENANCE.md`).
 fn source(kind: Kind) -> std::borrow::Cow<'static, [u8]> {
     match kind {
-        Kind::Ranger => ranger_file(ranger_bundle::CHARACTER).into(),
+        Kind::Ranger => ranger_model(ranger_bundle::CHARACTER).into(),
         Kind::Wolf => bundled!("Wolf.glb").into(),
         Kind::Rat => bundled!("Rat.glb").into(),
         Kind::Pig => bundled!("Pig.glb").into(),
@@ -2444,7 +2501,7 @@ pub(super) fn asset(kind: Kind) -> &'static Asset {
         model: Model::parse_with_clips(
             &source(kind),
             kind.clips().idle,
-            matches!(kind, Kind::Ranger).then(|| ranger_file(ranger_bundle::CLIPS)),
+            matches!(kind, Kind::Ranger).then(ranger_clips),
         )
         .expect("an imported unit model is valid glTF")
         .with_secondary(if matches!(kind, Kind::Ranger) {
