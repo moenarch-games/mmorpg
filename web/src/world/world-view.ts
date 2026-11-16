@@ -1764,7 +1764,8 @@ export class WorldView {
     this.#loot.update(projection);
     this.#lastSelf = { x: self.x, z: self.z, facing: self.facing };
     this.#inn?.update(projection.doors, [self.x, self.feetY, self.z], deltaSeconds, !animate);
-    this.#ambient?.update(this.#seconds, animate);
+    // Low world detail draws no ambient creatures.
+    if (this.#worldDetail !== "low") { this.#ambient?.update(this.#seconds, animate); }
     this.#raidSigns.update(projection.raid, this.#raidPrep, scene.surfaceY, scenery.scenery.unitsPerMetre);
     if (this.#framePending) {
       this.#framePending = false;
@@ -1831,7 +1832,8 @@ export class WorldView {
       sky: true,
       interior: Math.max(this.#scene?.interior([self.x, self.feetY, self.z]) ?? 0, this.#inn?.interior([self.x, self.feetY, self.z]) ?? 0),
       fog: environment.fog && !this.#plan ? String(environment.fog.color) : null,
-      pointLights: this.#inn?.pointLights(this.#scene?.pointLights(this.#seconds, animate) ?? new Float32Array()) ?? this.#scene?.pointLights(this.#seconds, animate) ?? null,
+      // Low world detail lights no lamps or fires: each local light is shaded on every lit pixel near it.
+      pointLights: this.#worldDetail === "low" ? null : this.#inn?.pointLights(this.#scene?.pointLights(this.#seconds, animate) ?? new Float32Array()) ?? this.#scene?.pointLights(this.#seconds, animate) ?? null,
     });
     this.#lastInstanceBatches = frame.instanceBatches;
     this.#lastCamera = camera;
@@ -1845,7 +1847,7 @@ export class WorldView {
     // This combined Outpost kit replaces one shared fallback only when both bundles draw.
     if (!outpostReady) { outpost.roots = []; fortifications.roots = []; }
     const fortress = this.#fortress?.roots() ?? { roots: [], changed: false };
-    const ambient = this.#ambient?.roots() ?? { roots: [], changed: false };
+    const ambient = this.#worldDetail === "low" ? { roots: [], changed: false } : this.#ambient?.roots() ?? { roots: [], changed: false };
     const nature = this.#nature?.roots() ?? { roots: [], changed: false };
     const climbing = this.#climbing?.roots() ?? { roots: [], changed: false };
     const crag = this.#crag?.roots() ?? { roots: [], changed: false };

@@ -1081,8 +1081,8 @@
     "settings.choice.armed": "Press to aim, click to throw",
     "settings.search.resolution": "graphics resolution pixel ratio quality performance gpu",
     "settings.graphics.world_detail.label": "World detail",
-    "settings.graphics.world_detail.description": "The grass around you. Low draws none; high draws the densest field and furthest out, at a real GPU cost.",
-    "settings.choice.low": "Low (no grass)",
+    "settings.graphics.world_detail.description": "Grass, ambient creatures and the light of lamps and fires. Low draws none of them; high draws the densest grass and furthest out, at a real GPU cost.",
+    "settings.choice.low": "Low (no grass, creatures or lamp light)",
     "settings.choice.medium": "Medium",
     "settings.choice.high": "High",
     "settings.search.world_detail": "graphics grass detail foliage quality performance gpu low medium high"
