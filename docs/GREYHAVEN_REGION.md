@@ -164,7 +164,7 @@ exactly.
 ## Quests
 
 Twenty quests carry players from the Vale's chain out into the region (#820, #859,
-`greyhaven_vale::quests`). The Marshal starts three chains, each through one or two
+`content/greyhaven/quests.json`). The Marshal starts three chains, each through one or two
 settlements, and Farmer Osric Mill a fourth through the farmland's hamlets:
 
 | Chain | Starts | Giver | Quests |
@@ -175,9 +175,9 @@ settlements, and Farmer Osric Mill a fourth through the farmland's hamlets:
 | The hamlets | After *Marauders in the Fields* | Farmer Osric Mill, then Goodwife Ena, Miller Hanne and Shepherd Lise | *The Hamlets*, *Rats in the Granary* (grain rats about the western barn), *Boars in the Barley* (boars west of the southern hamlet), *The Shepherd's Wolves* (a pack east of the eastern pastures) |
 
 The hamlets' rats, boars and wolves (`greyhaven_vale::hamlet_creatures`, spawns 1400–1411) stand
-clear of the hamlets' buildings, fields, roads and residents' ways. With them the quest log's
-32 quests are all used; the next chain needs a wider completed-quest mask. Up to sixteen NPCs may
-give or end quests (`MAX_QUEST_NPCS`, eleven used).
+clear of the hamlets' buildings, fields, roads and residents' ways. The quests themselves are
+content in `content/greyhaven/quests.json` (#862); a new chain adds entries there, with no fixed cap
+on quests or quest NPCs beyond the quest sheet's packet budget.
 
 The four quest items (boar tusks, grain sacks, lurker scales and Redbrand orders) drop only while a
 quest needs them. Rewards are experience, copper and the Vale's existing gear.
