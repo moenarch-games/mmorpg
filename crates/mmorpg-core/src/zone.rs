@@ -26,6 +26,9 @@ use crate::{
 /// tick reports [`crate::ErrorCode::TooManyIntents`] once.
 pub const MAX_PENDING_INTENTS: usize = 16;
 
+/// Separates the loot streams from the combat streams of the same seed.
+pub(crate) const LOOT_STREAM_SALT: u64 = 0x6c6f_6f74_2f76_3031;
+
 /// The engine sweeps motion, so any positive thickness stops a body; a thick
 /// slab also keeps contact correction pushing overlapping bodies back inside.
 const WORLD_LIMIT_THICKNESS_UNITS: i32 = 1_000;
@@ -463,7 +466,7 @@ impl ZoneSimulation {
             tick: 0,
             world,
             rng: ZoneRng::seeded(content.rng_seed(), zone_id),
-            loot_rng: ZoneRng::seeded(content.rng_seed() ^ 0x6c6f_6f74_2f76_3031, zone_id),
+            loot_rng: ZoneRng::seeded(content.rng_seed() ^ LOOT_STREAM_SALT, zone_id),
             traps: Self::fresh_traps(&content),
             content,
             players: BTreeMap::new(),

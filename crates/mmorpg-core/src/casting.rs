@@ -541,8 +541,9 @@ impl ZoneSimulation {
         match ability.effect {
             AbilityEffect::WeaponStrike { .. } => {
                 if let Some(victim) = target {
-                    let amount =
-                        self.weapon_strike_amount(player_id, ability.effect) * percent / 100;
+                    let amount = self.weapon_strike_amount(player_id, victim, ability.effect)
+                        * percent
+                        / 100;
                     let amount = self.stance_damage(player_id, target, amount)?;
                     self.player_melee_hits(player_id, victim, amount, false, now)?;
                 }
@@ -596,7 +597,7 @@ impl ZoneSimulation {
                             .take(usize::from(extra)),
                     );
                     for victim in victims {
-                        let amount = self.weapon_roll(melee);
+                        let amount = self.weapon_roll(victim, melee);
                         let amount = self.stance_damage(player_id, target, amount)?;
                         self.player_melee_hits(player_id, victim, amount, false, now)?;
                     }
@@ -627,7 +628,7 @@ impl ZoneSimulation {
             AbilityEffect::Bolt { damage, per_level } => {
                 if let Some(victim) = target {
                     let amount = self
-                        .rng
+                        .stream(victim)
                         .inclusive(u32::from(damage[0]), u32::from(damage[1]))
                         + u32::from(scaled(0, per_level, level))
                         + bonus;
@@ -638,7 +639,7 @@ impl ZoneSimulation {
                 let centre = self.player_position(player_id)?;
                 for victim in self.living_hostiles_near(player_id, [centre.x, centre.z], radius)? {
                     let amount = self
-                        .rng
+                        .stream(victim)
                         .inclusive(u32::from(damage[0]), u32::from(damage[1]))
                         + bonus;
                     self.player_damages_unit(player_id, victim, amount, false, now)?;
@@ -696,7 +697,7 @@ impl ZoneSimulation {
             } => {
                 for victim in self.cone_victims(player_id, range, half_angle)? {
                     let amount = self
-                        .rng
+                        .stream(victim)
                         .inclusive(u32::from(damage[0]), u32::from(damage[1]))
                         + u32::from(scaled(0, per_level, level))
                         + bonus;
@@ -715,7 +716,7 @@ impl ZoneSimulation {
                 if let Some(first) = target {
                     for victim in self.chain_victims(player_id, first, jumps, radius)? {
                         let amount = self
-                            .rng
+                            .stream(victim)
                             .inclusive(u32::from(damage[0]), u32::from(damage[1]))
                             + u32::from(scaled(0, per_level, level))
                             + bonus;
@@ -735,7 +736,7 @@ impl ZoneSimulation {
             AbilityEffect::Hook { damage, per_level } => {
                 if let Some(victim) = target {
                     let amount = self
-                        .rng
+                        .stream(victim)
                         .inclusive(u32::from(damage[0]), u32::from(damage[1]))
                         + u32::from(scaled(0, per_level, level))
                         + bonus;
@@ -825,11 +826,12 @@ impl ZoneSimulation {
         }
     }
 
-    /// A weapon strike's damage: weapon damage × numerator / denominator +
+    /// A weapon strike's damage against `victim`: weapon damage × numerator / denominator +
     /// bonus; zero for any other effect.
     pub(crate) fn weapon_strike_amount(
         &mut self,
         player_id: PlayerId,
+        victim: EntityRef,
         effect: AbilityEffect,
     ) -> u32 {
         let AbilityEffect::WeaponStrike {
@@ -847,13 +849,14 @@ impl ZoneSimulation {
         else {
             return 0;
         };
-        let weapon = self.weapon_roll(melee);
+        let weapon = self.weapon_roll(victim, melee);
         weapon * u32::from(numerator) / u32::from(denominator.max(1)) + u32::from(bonus)
     }
 
-    /// Weapon damage: one uniform draw in the player's melee range.
-    fn weapon_roll(&mut self, [low, high]: [u16; 2]) -> u32 {
-        self.rng.inclusive(u32::from(low), u32::from(high))
+    /// Weapon damage against `victim`: one uniform draw in the player's melee range.
+    fn weapon_roll(&mut self, victim: EntityRef, [low, high]: [u16; 2]) -> u32 {
+        self.stream(victim)
+            .inclusive(u32::from(low), u32::from(high))
     }
 
     /// Living creatures whose bodies lie within `radius` of `centre`, in
@@ -940,7 +943,7 @@ impl ZoneSimulation {
             // Linear falloff to half at the edge, in per-mille.
             let share = 1_000 - 500 * distance / i64::from(radius.max(1));
             let amount = self
-                .rng
+                .stream(victim)
                 .inclusive(u32::from(damage[0]), u32::from(damage[1]))
                 + bonus;
             let amount = u32::try_from(i64::from(amount) * share / 1_000)
@@ -997,7 +1000,7 @@ impl ZoneSimulation {
             // Linear falloff to half at the edge, in per-mille.
             let share = 1_000 - 500 * distance / i64::from(radius);
             let amount = self
-                .rng
+                .stream(EntityRef::Creature(creature_id))
                 .inclusive(u32::from(stomp.damage[0]), u32::from(stomp.damage[1]))
                 + stomp.bonus;
             let amount = u32::try_from(i64::from(amount) * share / 1_000)
@@ -1291,7 +1294,7 @@ impl ZoneSimulation {
                     if period > 0 && cast.elapsed % period == 0 {
                         for victim in self.living_hostiles_near(player_id, point, radius)? {
                             let amount = self
-                                .rng
+                                .stream(victim)
                                 .inclusive(u32::from(damage[0]), u32::from(damage[1]))
                                 + u32::from(scaled(0, per_level, level));
                             self.player_damages_unit(player_id, victim, amount, false, now)?;
@@ -1377,7 +1380,7 @@ impl ZoneSimulation {
         };
         let before = self.unit_health(target);
         let amount = self
-            .rng
+            .stream(target)
             .inclusive(u32::from(damage[0]), u32::from(damage[1]));
         self.player_damages_unit(player_id, target, amount, false, now)?;
         let drained = before.saturating_sub(self.unit_health(target));
@@ -1508,7 +1511,7 @@ impl ZoneSimulation {
                     return self.shoot_at(source, target, kind, ability.id);
                 }
                 let amount = self
-                    .rng
+                    .stream(EntityRef::Creature(creature_id))
                     .inclusive(u32::from(damage[0]), u32::from(damage[1]))
                     + u32::from(scaled(0, per_level, level));
                 self.creature_damages_player(creature_id, player_id, amount, false)?;
@@ -1597,7 +1600,7 @@ impl ZoneSimulation {
                         continue;
                     };
                     let amount = self
-                        .rng
+                        .stream(EntityRef::Creature(creature_id))
                         .inclusive(u32::from(damage[0]), u32::from(damage[1]))
                         + u32::from(scaled(0, per_level, level));
                     self.creature_damages_player(creature_id, player_id, amount, false)?;
@@ -1625,7 +1628,7 @@ impl ZoneSimulation {
             .get(&creature_id)
             .map_or(1, |creature| creature.level);
         let amount = self
-            .rng
+            .stream(EntityRef::Creature(creature_id))
             .inclusive(u32::from(damage[0]), u32::from(damage[1]))
             + u32::from(scaled(0, per_level, level));
         match victim {
@@ -1642,7 +1645,7 @@ impl ZoneSimulation {
     /// The creature's ability waits its cooldown plus a 0–30 tick jitter.
     fn restart_creature_ability(&mut self, creature_id: CreatureId, ability: &Ability) {
         let jitter = self
-            .rng
+            .stream(EntityRef::Creature(creature_id))
             .inclusive(0, u32::from(CREATURE_ABILITY_JITTER_TICKS));
         if let Some(creature) = self.creatures.get_mut(&creature_id) {
             creature.ability_timer = ability
@@ -1663,7 +1666,7 @@ impl ZoneSimulation {
             return Ok(());
         }
         let jitter = self
-            .rng
+            .stream(EntityRef::Creature(creature_id))
             .inclusive(0, u32::from(CREATURE_ABILITY_JITTER_TICKS));
         if let Some(creature) = self.creatures.get_mut(&creature_id) {
             creature.ability_timer = u16::try_from(jitter).unwrap_or(0);

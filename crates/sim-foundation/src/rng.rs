@@ -3,8 +3,10 @@
 //! The 64-bit state is canonical: checkpoints store it, and recovery resumes
 //! the same stream. A zone seeds it from its declared content RNG seed and zone ID,
 //! so different zones retain separate streams; content may explicitly retain
-//! a seed when an economy-only revision must preserve simulation behavior. Draws
-//! happen only at fixed points of the tick order, in unit order.
+//! a seed when an economy-only revision must preserve simulation behavior. Each
+//! unit life may draw from its own stream ([`ZoneRng::seeded_for`]), so adding a
+//! unit never shifts another's draws. Draws happen only at fixed points of the
+//! tick order, in unit order.
 
 use crate::ZoneId;
 
@@ -29,6 +31,22 @@ impl ZoneRng {
     pub const fn seeded(content_seed: u64, zone_id: ZoneId) -> Self {
         Self {
             state: mix(content_seed ^ mix(zone_id.get() as u64)),
+        }
+    }
+
+    /// The initial stream of one unit's life inside a zone (#861): a pure function of the
+    /// zone's stream seed, the unit's stable ID and its life generation, so adding or removing
+    /// another unit never shifts this one's draws.
+    #[must_use]
+    pub const fn seeded_for(
+        content_seed: u64,
+        zone_id: ZoneId,
+        unit: u64,
+        generation: u64,
+    ) -> Self {
+        let zone = Self::seeded(content_seed, zone_id).state;
+        Self {
+            state: mix(zone ^ mix(unit ^ mix(generation ^ GAMMA))),
         }
     }
 
@@ -85,6 +103,17 @@ mod tests {
         assert_eq!(base, ZoneRng::seeded(7, ZoneId::new(1)));
         assert_ne!(base, ZoneRng::seeded(7, ZoneId::new(2)));
         assert_ne!(base, ZoneRng::seeded(8, ZoneId::new(1)));
+    }
+
+    #[test]
+    fn unit_streams_differ_by_unit_and_life() {
+        let zone = ZoneId::new(1);
+        let base = ZoneRng::seeded_for(7, zone, 3, 1);
+        assert_eq!(base, ZoneRng::seeded_for(7, zone, 3, 1));
+        assert_ne!(base, ZoneRng::seeded_for(7, zone, 4, 1));
+        assert_ne!(base, ZoneRng::seeded_for(7, zone, 3, 2));
+        assert_ne!(base, ZoneRng::seeded_for(7, ZoneId::new(2), 3, 1));
+        assert_ne!(base, ZoneRng::seeded(7, zone));
     }
 
     #[test]

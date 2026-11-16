@@ -716,7 +716,7 @@ impl ZoneSimulation {
                 target: Some(target),
             },
         );
-        let swing = roll_swing(&mut self.rng, damage);
+        let swing = roll_swing(self.stream(target), damage);
         let swing = match swing {
             Swing::Hit { amount, critical } => Swing::Hit {
                 amount: u16::try_from(self.stance_damage(
@@ -1062,7 +1062,7 @@ impl ZoneSimulation {
                 target: Some(target),
             },
         );
-        let swing = match roll_swing(&mut self.rng, template.damage_at(level)) {
+        let swing = match roll_swing(self.stream(source), template.damage_at(level)) {
             // A boss hits harder under a larger attempt's profile (#276).
             Swing::Hit { amount, critical } => Swing::Hit {
                 amount: self.creatures.get(&creature_id).map_or(amount, |creature| {
@@ -1190,15 +1190,21 @@ impl ZoneSimulation {
         let template = spawn.template;
         // The depths boss pays through its committed outcome; his adds pay nothing (#404).
         let pays_rewards = !self.pays_no_kill_rewards(creature_id);
+        // The rolls belong to this life alone (#861): no other death or fight moves them.
+        let generation = self
+            .creatures
+            .get(&creature_id)
+            .map_or(0, |creature| creature.generation);
+        let mut rolls = self.creature_loot_stream(creature_id, generation);
         let mut loot = self
             .content
             .loot_table(template)
             .filter(|_| pays_rewards)
             .map(|table| {
                 table.roll(crate::LootRolls {
-                    money: (self.loot_rng.next_u64() >> 32) as u32,
-                    outcome: (self.loot_rng.next_u64() >> 32) as u32,
-                    quantity: (self.loot_rng.next_u64() >> 32) as u32,
+                    money: (rolls.next_u64() >> 32) as u32,
+                    outcome: (rolls.next_u64() >> 32) as u32,
+                    quantity: (rolls.next_u64() >> 32) as u32,
                 })
             });
         // A quest item drops for the tapper only while a quest needs it; it

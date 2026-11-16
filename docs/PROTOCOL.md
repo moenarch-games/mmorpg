@@ -239,7 +239,7 @@ The shared fixture is `fixtures/protocol/player-snapshot.hex`: a level-4 Arcanis
 After the common prefix:
 
 1. content revision (`u64`);
-2. zone AI/combat RNG state (`u64`);
+2. zone shared RNG state (`u64`; each creature's own stream is in its record);
 3. independent loot RNG state (`u64`);
 4. player count (`u16`, at most 512), then player records;
 5. creature count (`u16`, at most 1,024), then creature records in creature-ID order.
@@ -289,7 +289,7 @@ A player record starts with 39 movement bytes, 92 inventory and equipment bytes 
 
 Pending intent codes 7–11 extend the list: code 7 (use ability, 7 bytes) carries the ability ID and an entity reference, code 8 (cancel cast, 6 bytes) the absent reference, code 9 (choose class, 3 bytes) class and sex, code 10 (equip item, 2 bytes) the bag slot, code 11 (unequip item, 2 bytes) the equipment slot, codes 12 (buy item) and 13 (sell item), 8 bytes each, the vendor NPC (`u32`), the offer or bag slot (`u8`) and the quantity (`u16`), code 14 (chat) the channel, length and text as in the command, codes 15 (accept quest, 6 bytes) and 16 (complete quest, 7 bytes) the NPC (`u32`), the quest (`u8`) and for code 16 the choice (`u8`), code 17 (abandon quest, 2 bytes) the quest, code 18 (directed strike, 6 bytes) the ability, facing (`u16`) and side and height codes, and code 19 (guard, 2 bytes) the lane as in the command. After each player's auras come its guard (lane `u8` as in the command, break ticks `u16`, at most 45; a dead player holds none) and its landing state (airborne `u8` 0 or 1, landing recovery ticks `u16` at most 15 and only on the ground, airborne-attack `u8` 0 or 1 and only while airborne), its climb or mantle (#490, 18 bytes: kind `u8` 0 free, 1 released, 2 climbing, 3 mantling; ticks `u16`, a release's at most 30, a mantle's at most 120; the wall's yaw `u16`; a mantle's feet goal `3 × i32`; a mantle's across flag `u8`; every field a kind does not use is zero), its dodge roll (#516, 5 bytes: kind `u8` 0 ready, 1 pending, 2 rolling, 3 recovering; the roll's yaw `u16`; ticks `u16`, a roll's below 36, a recovery's below 60; every field a kind does not use is zero; a dead player's is ready), its strike recovery (`u16`, at most 6) and its combo opening (present `u8`, struck creature `u32` and ticks since the slash `u16`, at most 24, all zero when absent; a dead player holds none), then the first tick it may speak again (`u64`, at most one interval ahead) and the chat lines it heard this tick (count `u8`, at most 4, then records as in the projection) follow, then the quest log: the turned-in mask (`u32`), the active quest count (`u8`, at most 10) and the active quests (quest ID and three stored progress bytes each, ascending). Stored progress of a collect objective is 0: its progress is the bag's count.
 
-A creature record:
+A creature record (after its ID come its life generation (`u64`) and its life's random stream state (`u64`, #861); the offsets below leave both out):
 
 | Offset | Width | Field |
 | --- | --- | --- |

@@ -531,7 +531,7 @@ bot = "arcanist"
 resource = 110
 tick = 1661
 
-# Rage from two swings dealt and one hit taken pays for Heroic Strike.
+# Rage from two swings dealt and three hits taken pays for Heroic Strike.
 [[expect]]
 kind = "event"
 bot = "warden"
@@ -541,7 +541,7 @@ tick = 1681
 [[expect]]
 kind = "resource"
 bot = "warden"
-resource = 20
+resource = 24
 tick = 1759
 
 [[expect]]
@@ -560,7 +560,7 @@ tick = 1761
 [[expect]]
 kind = "resource"
 bot = "warden"
-resource = 5
+resource = 9
 tick = 1761
 
 [[expect]]
@@ -654,13 +654,13 @@ tick = 2239
 kind = "resource"
 bot = "warden"
 resource = 11
-tick = 2518
+tick = 2469
 
 [[expect]]
 kind = "resource"
 bot = "warden"
 resource = 9
-tick = 2519
+tick = 2470
 
 # #27: a visible recipient observes other actors without receiving their damage credit.
 [[expect]]

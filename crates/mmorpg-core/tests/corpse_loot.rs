@@ -64,8 +64,8 @@ fn command(zone: &mut ZoneSimulation, player: u32, command: ZoneCommand) {
 
 fn kill(zone: &mut ZoneSimulation) -> LootClaim {
     command(zone, 1, ZoneCommand::SelectTarget(Some(TARGET)));
-    for _ in 0..180 {
-        // Swing at the wolf whenever it is in reach (#517).
+    for _ in 0..600 {
+        // Swing at the wolf whenever it is in reach (#517), through any misses.
         if let Some(swing) = arena::swing_at(zone, 1, TARGET) {
             command(zone, 1, swing);
         }
@@ -130,10 +130,8 @@ fn death_rolls_once_on_a_separate_stream_and_recovery_preserves_the_rewards() {
     let rng = zone.snapshot().unwrap().loot_rng_state;
     let claim = kill(&mut zone);
     let state = zone.snapshot().unwrap();
-    assert_eq!(
-        state.loot_rng_state,
-        rng.wrapping_add(0x9e37_79b9_7f4a_7c15_u64.wrapping_mul(3))
-    );
+    // A creature's loot rolls belong to its life (#861): the zone's loot stream is untouched.
+    assert_eq!(state.loot_rng_state, rng);
     let view = zone.snapshot_for_player(1).unwrap().loot.unwrap();
     assert_eq!(view.claim, claim);
     assert_eq!(

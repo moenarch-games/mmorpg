@@ -705,7 +705,7 @@ impl ZoneSimulation {
             let EntityRef::Creature(creature_id) = target else {
                 continue;
             };
-            match roll_swing(&mut self.rng, stats.damage) {
+            match roll_swing(self.stream(target), stats.damage) {
                 Swing::Miss => {
                     if let Some(creature) = self.creatures.get_mut(&creature_id) {
                         creature.combat_timer = COMBAT_LINGER_TICKS;

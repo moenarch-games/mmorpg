@@ -560,6 +560,7 @@ fn encode_creature(
 ) -> Result<(), ProtocolError> {
     payload.extend_from_slice(&creature.creature_id.get().to_be_bytes());
     payload.extend_from_slice(&creature.generation.to_be_bytes());
+    payload.extend_from_slice(&creature.rng_state.to_be_bytes());
     payload.push(creature.level);
     payload.extend_from_slice(&creature.health.to_be_bytes());
     payload.extend_from_slice(&creature.facing.to_be_bytes());
@@ -1461,6 +1462,7 @@ fn decode_creature(
     if generation == 0 {
         return Err(ProtocolError::new("invalid creature life identity"));
     }
+    let rng_state = u64::from_be_bytes(take(payload, offset)?);
     let level = read_u8(payload, offset)?;
     let health = u32::from_be_bytes(take(payload, offset)?);
     let facing = u16::from_be_bytes(take(payload, offset)?);
@@ -1565,6 +1567,7 @@ fn decode_creature(
     let raid = crate::raid::decode_member(payload, offset)?;
     Ok(CanonicalCreatureSnapshot {
         generation,
+        rng_state,
         creature_id,
         level,
         health,
@@ -2319,6 +2322,7 @@ mod tests {
             creatures: vec![
                 CanonicalCreatureSnapshot {
                     generation: 1,
+                    rng_state: 0,
                     loot: None,
                     creature_id: CreatureId::new(4),
                     level: 1,
@@ -2345,6 +2349,7 @@ mod tests {
                 },
                 CanonicalCreatureSnapshot {
                     generation: 1,
+                    rng_state: 0,
                     loot: None,
                     creature_id: CreatureId::new(5),
                     level: 1,
@@ -2374,6 +2379,7 @@ mod tests {
                 },
                 CanonicalCreatureSnapshot {
                     generation: 1,
+                    rng_state: 0,
                     loot: None,
                     creature_id: CreatureId::new(6),
                     level: 1,
@@ -2397,6 +2403,7 @@ mod tests {
                 },
                 CanonicalCreatureSnapshot {
                     generation: 1,
+                    rng_state: 0,
                     loot: None,
                     creature_id: CreatureId::new(7),
                     level: 1,
@@ -2829,7 +2836,7 @@ mod tests {
         };
         let encoded = encode_canonical_snapshot(&without_players).unwrap();
         let creature = 16 + 24 + 2 + 2;
-        let life = creature + 4 + 8 + 1 + 4 + 2 + 24;
+        let life = creature + 4 + 8 + 8 + 1 + 4 + 2 + 24;
         let ai = life + 9;
         for (offset, value, message) in [
             (life, 4, "malformed creature life cycle"),

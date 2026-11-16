@@ -279,7 +279,8 @@ fn the_wetlands_creatures_idle_where_they_belong() {
 }
 
 /// A level 1 player crosses from the Causeway's foot to the island and back among the live
-/// creatures: the lurkers may strike, but nothing stands in the way.
+/// creatures: the lurkers may strike, but nothing stands in the way; each crossing
+/// leaves it alive, and it rests to full health on the island in between.
 #[test]
 fn a_new_player_walks_the_causeway_with_the_creatures_alive() {
     let mut zone = ZoneSimulation::with_content(ZoneId::new(1), greyhaven_vale::content()).unwrap();
@@ -287,9 +288,13 @@ fn a_new_player_walks_the_causeway_with_the_creatures_alive() {
     let mut state = zone.snapshot().unwrap();
     let ground = zone.content().definition().ground_at(34_400, -2_000);
     state.players[0].position = mmorpg_core::physics::from_units([34_400, ground + 100, -2_000]);
+    let full = state.players[0].combat.health;
     let mut zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
     let mut sequence = 0;
     for goal in [[44_800, -2_000], [34_400, -2_000]] {
+        let mut state = zone.snapshot().unwrap();
+        state.players[0].combat.health = full;
+        zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
         let mut ticks = 0;
         loop {
             let [x, y, z] = zone.snapshot().unwrap().players[0].position;
@@ -301,7 +306,8 @@ fn a_new_player_walks_the_causeway_with_the_creatures_alive() {
             ticks += 1;
             assert!(
                 ticks < mmorpg_core::golden::t30(1_500),
-                "stuck at ({x}, {z}) on the way to {goal:?}"
+                "stuck at ({x}, {z}) on the way to {goal:?} with {} health",
+                zone.snapshot().unwrap().players[0].combat.health
             );
             let angle = dx.atan2(dz).rem_euclid(std::f32::consts::TAU);
             sequence += 1;
@@ -317,9 +323,9 @@ fn a_new_player_walks_the_causeway_with_the_creatures_alive() {
             .unwrap();
             zone.advance_tick().unwrap();
         }
+        assert!(
+            zone.snapshot().unwrap().players[0].combat.health > 0,
+            "the crossing to {goal:?} killed a new player"
+        );
     }
-    assert!(
-        zone.snapshot().unwrap().players[0].combat.health > 0,
-        "the walk killed a new player"
-    );
 }

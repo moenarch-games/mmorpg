@@ -306,7 +306,7 @@ impl ZoneSimulation {
             )]
             let bonus = (IMPACT_DAMAGE_BONUS as f32 * share) as u32;
             let amount = self
-                .rng
+                .stream(victim)
                 .inclusive(u32::from(IMPACT_DAMAGE[0]), u32::from(IMPACT_DAMAGE[1]))
                 + bonus;
             let body = self

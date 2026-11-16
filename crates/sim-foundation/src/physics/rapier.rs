@@ -53,6 +53,9 @@ const SUPPORT_REACH: f32 = CONTACT_OFFSET + 0.05;
 const TIE_UNITS: f32 = 1.0e-3;
 /// A ground gap (units) below this counts as standing on it.
 const GAP_TOLERANCE_UNITS: f32 = 1.0e-3;
+/// A controller hit whose normal rises at least this steeply is on a level face (within a
+/// quarter degree).
+const LEVEL_NORMAL_Y: f32 = 1.0 - 1.0e-5;
 
 /// A body's Rapier handles.
 #[derive(Clone, Copy)]
@@ -857,12 +860,23 @@ impl World {
                 continue;
             }
             let desired = super::shared::slide_around(self.bodies.values(), body, desired);
-            let (moved, grounded, vertical_contact) = self.move_shape(body, desired)?;
-            let to = [
-                body.position[0] + moved[0],
-                body.position[1] + moved[1],
-                body.position[2] + moved[2],
-            ];
+            let mut from = body.position;
+            let (mut moved, mut grounded, mut vertical_contact, level) =
+                self.move_shape(body, from, desired)?;
+            // Rapier's slope handling finds no horizontal tangent on a level face (normal
+            // straight up), so a settle's slight descent onto one counts as slipping and drops
+            // the whole horizontal move for the tick (a knocked-back player in
+            // `vale-fights-32`, #861). A level face never blocks a horizontal move: settle
+            // straight onto the ground the support cast found clear, then move level from there.
+            if level
+                && settle != 0.0
+                && (desired[0] - moved[0]).hypot(desired[2] - moved[2]) > GAP_TOLERANCE_UNITS
+            {
+                from[1] += settle;
+                (moved, grounded, vertical_contact, _) =
+                    self.move_shape(body, from, [desired[0], desired[1] - settle, desired[2]])?;
+            }
+            let to = [from[0] + moved[0], from[1] + moved[1], from[2] + moved[2]];
             let supported = grounded && self.ground_below(body, to);
             if (supported && velocity[1] <= 0.0)
                 || (velocity[1] > 0.0 && vertical_contact && moved[1] < velocity[1] - 1.0e-3)
@@ -895,13 +909,15 @@ impl World {
         })
     }
 
-    /// The translation (units) the controller applies to `body` for `desired`, and whether
-    /// it ends grounded or contacts a ceiling.
+    /// The translation (units) the controller applies to `body` at `from` for `desired`,
+    /// whether it ends grounded or contacts a ceiling, and whether it met only level faces
+    /// (at least one).
     fn move_shape(
         &self,
         body: &RigidBody,
+        from: [f32; 3],
         desired: [f32; 3],
-    ) -> Result<([f32; 3], bool, bool), PhysicsError> {
+    ) -> Result<([f32; 3], bool, bool, bool), PhysicsError> {
         let handle = self
             .handles
             .get(&body.id)
@@ -913,17 +929,18 @@ impl World {
             &self.world.colliders,
             Self::without_open_floor(
                 QueryFilter::default().exclude_rigid_body(handle),
-                self.open_floor(body, body.position),
+                self.open_floor(body, from),
             ),
         );
         #[cfg(feature = "physics-ab")]
         let mut collisions = 0_u64;
         let mut vertical_contact = false;
+        let (mut hits, mut level_hits) = (0_u32, 0_u32);
         let movement = self.controller.move_shape(
             self.world.integration_parameters.dt,
             &queries,
             &capsule(body.half_extents),
-            &Pose::from_translation(lifted(body.position)),
+            &Pose::from_translation(lifted(from)),
             metres(desired),
             |collision| {
                 // A cast against a vertical mesh face can return a slightly tilted GJK normal,
@@ -942,6 +959,8 @@ impl World {
                     .unwrap_or(false);
                 vertical_contact |= !vertical_face
                     || collision.hit.normal1.y.abs() >= self.controller.max_slope_climb_angle.cos();
+                hits += 1;
+                level_hits += u32::from(collision.hit.normal1.y >= LEVEL_NORMAL_Y);
                 #[cfg(feature = "physics-ab")]
                 {
                     collisions += 1;
@@ -955,6 +974,7 @@ impl World {
             units(movement.translation),
             movement.grounded,
             vertical_contact,
+            hits > 0 && level_hits == hits,
         ))
     }
 
