@@ -146,7 +146,7 @@ Players, the guards, the Redbrands and the marauders all grip this way. Empty ha
 
 The native `held_items_sit_in_their_gripping_hand_through_the_clips` test checks these holds on the bundle through idle, the jog and each loadout's strikes. The gripped fingers sit within about 3.5 cm of the handle's axis. Each item's long axis leaves the fist on the thumb side. The staff swings bring the second hand onto the shaft.
 
-Gaits keep their feet planted (#804). Each walk, jog, sprint, backpedal, side-step and wade plays at the projected ground speed divided by the clip's own `groundSpeedMetersPerSecond`, or `sourceRootSpeedMetersPerSecond` for the side-steps (`imported::gait_rate`, bounded to 0.5–5×). The authored stride is kept (Atlas 6.6.12), so the cadence follows the speed. A model whose clips record no ground speed, such as the animals, keeps the earlier fixed pacing.
+Gaits keep their feet planted (#804). Each walk, run, sprint, backpedal, side-step and wade plays at the projected ground speed divided by the clip's own `groundSpeedMetersPerSecond`, or `sourceRootSpeedMetersPerSecond` for the side-steps (`imported::gait_rate`). The authored stride is kept (Atlas 6.6.12), so the rate is the legs' cadence, and it is bounded to 0.5–1.5×: a clip whose stride is too short for the speed slides its feet rather than spinning its legs. The player's 6.3 m/s run and side-runs play `Run_Fwd_Loop` and `Run_Strafe_*_Loop` (asset-tooling #746, authored at 6.3 m/s) at 1×; without them the jog and its side-steps stand in. A 2.4 m/s creature walk plays `Walk_Loop` (1.04 m/s) and the 3.9 m/s backpedal `Jog_Bwd_Loop` (1.76 m/s) at 1.5×, sliding. #919 bounded the rate only at 5×, so those gaits, and the jog under the run, played at 2.2–3.6×: legs at double speed. A model whose clips record no ground speed, such as the animals, keeps the earlier fixed pacing.
 
 ### Hold and gait inventory (#804)
 
@@ -155,7 +155,7 @@ Measured on the male Ranger bundle by posing the clips in the native client (13 
 | Defect | State | Cause | Owner |
 | --- | --- | --- | --- |
 | Feet slid about 2.4× at the 6.3 m/s run and 1.7× at walking speeds. Side-steps slid a further 25%. | Any gait | The playback rates used fixed guesses (5 m/s run, 1.8 m/s walk), clamped to 1.5–1.6×. The side-steps used the forward clips' speeds. | mmorpg presentation, fixed here |
-| The 6.3 m/s run plays the jog at 3.6× and the side-steps at 4.5×, a hurried cadence. | Running and strafing | The source gaits' strides are short for the game's speed: about 0.8 m per jog step and 0.35 m per side-step. | asset-tooling: a run and side-steps authored near 6 m/s |
+| The 6.3 m/s run played the jog at 3.6× and the side-steps at 4.5×, a hurried cadence. | Running and strafing | The source gaits' strides are short for the game's speed: about 0.8 m per jog step and 0.35 m per side-step. | fixed: asset-tooling #746 runs at 6.3 m/s, played here |
 | The blade passes within the torso. | `Sword_Cleave` at 0.41 s | Clip pose | asset-tooling clip |
 | The shaft passes within the torso. | `Staff_Strike_A` at 0.41 s, `Staff_Strike_B` at 0.29 s | Clip pose | asset-tooling clip |
 | The mace's grip end passes within the torso. | `Mace_Swing_B` at 0.12 s | Clip pose | asset-tooling clip |

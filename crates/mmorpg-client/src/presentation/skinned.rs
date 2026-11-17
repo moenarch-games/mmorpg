@@ -2511,6 +2511,17 @@ pub(super) fn asset(kind: Kind) -> &'static Asset {
 mod rolling_ranger_tests {
     use super::*;
 
+    /// The run and side-runs the player's 6.3 m/s run plays at their authored pace (#804,
+    /// asset-tooling #746) ship in the clips both clients load.
+    #[test]
+    fn the_ranger_carries_its_runs_at_the_players_speed() {
+        let clips = &asset(Kind::Ranger).model.clips;
+        let gaits = Kind::Ranger.clips().gaits.expect("the Ranger's gaits");
+        for clip in [gaits.run, gaits.run_left, gaits.run_right] {
+            assert!(clips.contains_key(clip), "{clip} is in the bundle");
+        }
+    }
+
     #[test]
     fn class_outfits_wear_their_plates_trim_and_drops_cover_every_armour_socket() {
         use mmorpg_presentation::units::imported::ARMOR_SOCKETS;

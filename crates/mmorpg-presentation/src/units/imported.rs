@@ -1253,6 +1253,9 @@ pub fn draw_meters(table: &[f32], sample_rate: f32, time: f32) -> f32 {
 /// back to the forward walk or run.
 #[derive(Clone, Copy, Debug)]
 pub struct GaitClips {
+    /// The forward run authored at the player's run speed (asset-tooling #746); without it the
+    /// model's jog ([`Clips::run`]) runs.
+    pub run: &'static str,
     pub walk_back: &'static str,
     pub walk_left: &'static str,
     pub walk_right: &'static str,
@@ -1456,10 +1459,12 @@ pub const SPRINT_CLIP_SPEED: f64 = 7.5;
 /// Ground speed in metres per second at which the sprint plays at its authored rate: the run's,
 /// scaled by the clips' `groundSpeedMetersPerSecond` (2.13 m/s sprint, 1.76 m/s jog).
 pub const SPRINT_CLIP_GROUND: f64 = RUN_CLIP_GROUND * 2.1345 / 1.7637;
-/// The slowest and fastest a gait with an authored ground speed plays ([`gait_rate`], #804):
-/// wide enough that the player's 6.3 m/s run and side-steps keep their feet planted (3.6 and
-/// 4.5 times the Ranger's jog and side-step), bounding only a glitch in the projected speed.
-pub const GAIT_RATES: [f64; 2] = [0.5, 5.];
+/// The slowest and fastest a gait with an authored ground speed plays ([`gait_rate`], #804). The
+/// stride is authored (Atlas 6.6.12), so the rate is the legs' cadence: past 1.5 times it a
+/// clip whose stride is too short for the speed (the Ranger's 1.04 m/s walk under a 2.4 m/s
+/// creature walk, its 1.76 m/s jog under a 3.9 m/s backpedal) slides its feet rather than
+/// spinning its legs at double speed. The 6.3 m/s runs keep the player's run at 1.
+pub const GAIT_RATES: [f64; 2] = [0.5, 1.5];
 /// Travel within this angle of the facing, in radians, plays the forward gait; beyond
 /// [`BACKPEDAL_ANGLE`] the backward one; in between the strafes (#538). A diagonal stays
 /// forward or backward, so it never flickers between gaits.
@@ -1587,12 +1592,13 @@ impl Kind {
                 }),
                 upper_body: Some(UPPER_BODY_ROOT),
                 gaits: Some(GaitClips {
+                    run: "Run_Fwd_Loop",
                     walk_back: "Walk_Bwd_Loop",
                     walk_left: "Walk_Strafe_Left_Loop",
                     walk_right: "Walk_Strafe_Right_Loop",
                     run_back: "Jog_Bwd_Loop",
-                    run_left: "Jog_Strafe_Left_Loop",
-                    run_right: "Jog_Strafe_Right_Loop",
+                    run_left: "Run_Strafe_Left_Loop",
+                    run_right: "Run_Strafe_Right_Loop",
                     sprint: "Sprint_Loop",
                     turn_left: "Turn_Left",
                     turn_right: "Turn_Right",
@@ -3063,6 +3069,7 @@ impl Playback {
         let left = direction > 0.;
         #[allow(clippy::cast_possible_truncation)]
         let run_rate = (speed / RUN_CLIP_GROUND).clamp(0.7, 1.5) as f32;
+        let run = gait(|gaits| gaits.run).unwrap_or(clips.run);
         let (clip, fallback) = if speed > RUN_CLIP_SPEED {
             let directed = if angle <= STRAFE_ANGLE {
                 if speed > SPRINT_CLIP_SPEED
@@ -3072,7 +3079,7 @@ impl Playback {
                     let rate = (speed / SPRINT_CLIP_GROUND).clamp(0.7, 1.5) as f32;
                     return Want::looped(sprint, gait_rate(motions, sprint, speed, rate));
                 }
-                Some(clips.run)
+                Some(run)
             } else if angle >= BACKPEDAL_ANGLE {
                 gait(|gaits| gaits.run_back)
             } else if left {
@@ -3084,7 +3091,7 @@ impl Playback {
                 Some(clip) => (clip, run_rate),
                 // Running forward or strafing at the player's run speed plays the run (#515);
                 // backpedalling keeps the walk.
-                None if angle <= FRAC_PI_2 => (clips.run, run_rate),
+                None if angle <= FRAC_PI_2 => (run, run_rate),
                 None => (clips.walk, walk_rate(speed)),
             }
         } else {
@@ -4242,20 +4249,22 @@ mod tests {
         (sum(true), sum(false))
     }
 
-    /// Each gait plays at the rate that keeps its planted foot still at the travel speed (#804):
-    /// the speed over the clip's authored ground speed, so the feet cover the ground the body
-    /// does. The figures are the male Ranger's `humanoid-clips` values.
+    /// Each gait plays at the rate that keeps its planted foot still at the travel speed (#804),
+    /// the speed over the clip's authored ground speed, as far as a natural cadence allows: a
+    /// stride too short for the speed slides rather than doubling the legs' pace. The figures
+    /// are the male Ranger's `humanoid-clips` values.
     #[test]
     fn gaits_keep_their_planted_foot_at_the_travel_speed() {
         let motions = super::super::traversal::Motions::parse(
             r#"{"schema": "humanoid-clips-v1", "clips": [
                 {"name": "Walk_Loop", "groundSpeedMetersPerSecond": 1.0434},
                 {"name": "Jog_Fwd_Loop", "groundSpeedMetersPerSecond": 1.7637},
+                {"name": "Run_Fwd_Loop", "groundSpeedMetersPerSecond": 6.3},
                 {"name": "Sprint_Loop", "groundSpeedMetersPerSecond": 2.1345},
                 {"name": "Jog_Bwd_Loop", "groundSpeedMetersPerSecond": 1.7637},
                 {"name": "Walk_Bwd_Loop", "groundSpeedMetersPerSecond": 1.0434},
-                {"name": "Jog_Strafe_Left_Loop", "sourceRootSpeedMetersPerSecond": 1.4},
-                {"name": "Jog_Strafe_Right_Loop", "sourceRootSpeedMetersPerSecond": 1.4},
+                {"name": "Run_Strafe_Left_Loop", "groundSpeedMetersPerSecond": 6.3},
+                {"name": "Run_Strafe_Right_Loop", "groundSpeedMetersPerSecond": 6.3},
                 {"name": "Walk_Strafe_Left_Loop", "sourceRootSpeedMetersPerSecond": 0.875},
                 {"name": "Walk_Strafe_Right_Loop", "sourceRootSpeedMetersPerSecond": 0.875}
             ]}"#,
@@ -4270,14 +4279,12 @@ mod tests {
         let creature_walk = 2.4;
         let pi = std::f64::consts::PI;
         for (speed, direction, clip, ground) in [
-            (run, 0., "Jog_Fwd_Loop", 1.7637),
-            (run, FRAC_PI_2, "Jog_Strafe_Left_Loop", 1.4),
-            (run, -FRAC_PI_2, "Jog_Strafe_Right_Loop", 1.4),
-            (backpedal, pi, "Jog_Bwd_Loop", 1.7637),
-            (creature_walk, 0., "Walk_Loop", 1.0434),
+            (run, 0., "Run_Fwd_Loop", 6.3),
+            (run, FRAC_PI_2, "Run_Strafe_Left_Loop", 6.3),
+            (run, -FRAC_PI_2, "Run_Strafe_Right_Loop", 6.3),
+            (1.2, 0., "Walk_Loop", 1.0434),
             (1.2, pi, "Walk_Bwd_Loop", 1.0434),
             (1.2, FRAC_PI_2, "Walk_Strafe_Left_Loop", 0.875),
-            (SPRINT_CLIP_SPEED + 1., 0., "Sprint_Loop", 2.1345),
         ] {
             let want = gait(Some(&motions), speed, direction);
             assert_eq!(want.clip, clip);
@@ -4288,12 +4295,76 @@ mod tests {
                 "{clip} at {speed} m/s: {foot} m/s"
             );
         }
+        // Too short a stride for the speed keeps a natural cadence and slides instead: the walk
+        // under a creature's 2.4 m/s, the jog backpedalling, the sprint charging.
+        for (speed, direction, clip) in [
+            (creature_walk, 0., "Walk_Loop"),
+            (backpedal, pi, "Jog_Bwd_Loop"),
+            (SPRINT_CLIP_SPEED + 1., 0., "Sprint_Loop"),
+        ] {
+            let want = gait(Some(&motions), speed, direction);
+            assert_eq!(want.clip, clip);
+            assert!((f64::from(want.rate) - GAIT_RATES[1]).abs() < 1e-6);
+        }
         // A creeping walk and a glitched speed stay within the rate bounds.
         assert!((gait(Some(&motions), 0.3, 0.).rate - 0.5).abs() < 1e-6);
-        assert!((gait(Some(&motions), 40., FRAC_PI_2).rate - 5.).abs() < 1e-6);
+        assert!((gait(Some(&motions), 40., FRAC_PI_2).rate - 1.5).abs() < 1e-6);
         // A model whose clips record no ground speed (the animals) keeps the earlier pacing.
         assert!((gait(None, run, 0.).rate - 1.26).abs() < 1e-4);
         assert!((gait(None, creature_walk, 0.).rate - 2.4 / 1.8).abs() < 1e-4);
+    }
+
+    /// The fetched Ranger bundles' own gait metadata (#804): at every speed the game moves a
+    /// figure, its legs keep a natural cadence, and the player's run and side-runs plant their
+    /// feet at about their authored pace. #919 played the jog at 3.6 times and the walk under a
+    /// creature at 2.3 times, legs visibly spinning at double speed.
+    #[test]
+    fn the_fetched_rangers_walk_and_run_at_a_natural_cadence() {
+        let run = f64::from(mmorpg_core::RUN_SPEED_UNITS_PER_SECOND) / 100.;
+        let backpedal = f64::from(mmorpg_core::BACKPEDAL_SPEED_UNITS_PER_SECOND) / 100.;
+        let creature_walk = 2.4;
+        let pi = std::f64::consts::PI;
+        for sex in ["male", "female"] {
+            let path = format!(
+                "{}/../../web/public/characters/humanoid.ranger.{sex}/humanoid.ranger.{sex}.default.humanoid-clips.json",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let Ok(json) = std::fs::read_to_string(&path) else {
+                eprintln!("the {sex} Ranger is not fetched; skipping");
+                continue;
+            };
+            let motions = Motions::parse(&json).expect("valid descriptor");
+            // Every gait records its ground speed, so a gait the descriptor lacks is missing.
+            let available = |clip: &str| motions.get(clip).is_some();
+            for (speed, direction, running) in [
+                (run, 0., true),
+                (run, FRAC_PI_2, true),
+                (run, -FRAC_PI_2, true),
+                (backpedal, pi, false),
+                (creature_walk, 0., false),
+                (run / 2., 0., false),
+                (run / 2., FRAC_PI_2, false),
+                (1.2, pi, false),
+            ] {
+                let want = Playback::default().gait(
+                    Kind::Ranger.clips(),
+                    &available,
+                    Some(&motions),
+                    speed,
+                    direction,
+                );
+                assert!(
+                    (0.5..=1.5).contains(&want.rate),
+                    "{sex} {} at {speed} m/s plays at {}",
+                    want.clip,
+                    want.rate
+                );
+                if running {
+                    assert!(want.clip.starts_with("Run_"), "{sex} runs {}", want.clip);
+                    assert!((want.rate - 1.).abs() < 0.05, "{sex} {}", want.rate);
+                }
+            }
+        }
     }
 
     #[test]
@@ -4323,11 +4394,11 @@ mod tests {
         let run = f64::from(mmorpg_core::RUN_SPEED_UNITS_PER_SECOND) / 100.;
         let backpedal = f64::from(mmorpg_core::BACKPEDAL_SPEED_UNITS_PER_SECOND) / 100.;
         let pi = std::f64::consts::PI;
-        assert_eq!(gait(run, 0., true), "Jog_Fwd_Loop");
+        assert_eq!(gait(run, 0., true), "Run_Fwd_Loop");
         // A diagonal stays forward.
-        assert_eq!(gait(run, pi / 4., true), "Jog_Fwd_Loop");
-        assert_eq!(gait(run, FRAC_PI_2, true), "Jog_Strafe_Left_Loop");
-        assert_eq!(gait(run, -FRAC_PI_2, true), "Jog_Strafe_Right_Loop");
+        assert_eq!(gait(run, pi / 4., true), "Run_Fwd_Loop");
+        assert_eq!(gait(run, FRAC_PI_2, true), "Run_Strafe_Left_Loop");
+        assert_eq!(gait(run, -FRAC_PI_2, true), "Run_Strafe_Right_Loop");
         assert_eq!(gait(run, pi, true), "Jog_Bwd_Loop");
         assert_eq!(gait(backpedal, -2.4, true), "Jog_Bwd_Loop");
         assert_eq!(gait(run / 2., pi, true), "Walk_Bwd_Loop");
@@ -4335,7 +4406,7 @@ mod tests {
         assert_eq!(gait(run / 2., 0., true), "Walk_Loop");
         assert_eq!(gait(SPRINT_CLIP_SPEED + 1., 0., true), "Sprint_Loop");
         // Without the directional clips: the run for strafes, the walk for backpedalling.
-        assert_eq!(gait(run, FRAC_PI_2, false), "Jog_Fwd_Loop");
+        assert_eq!(gait(run, FRAC_PI_2, false), "Run_Fwd_Loop");
         assert_eq!(gait(run, pi, false), "Walk_Loop");
         assert_eq!(gait(backpedal, pi, false), "Walk_Loop");
         assert_eq!(gait(run / 2., FRAC_PI_2, false), "Walk_Loop");
@@ -4643,7 +4714,7 @@ mod tests {
             )
             .upper
             .0,
-            "Jog_Fwd_Loop"
+            "Run_Fwd_Loop"
         );
         playback.strike("Sword_Attack", 1., Region::Footwork, 0.);
         let running = advance(
@@ -4659,7 +4730,7 @@ mod tests {
             false,
         );
         assert_eq!(running.upper.0, "Sword_Attack");
-        assert_eq!(running.lower.0, "Jog_Fwd_Loop");
+        assert_eq!(running.lower.0, "Run_Fwd_Loop");
         advance(
             &mut playback,
             clips,
@@ -4750,7 +4821,7 @@ mod tests {
             )
             .upper
             .0,
-            "Jog_Fwd_Loop"
+            "Run_Fwd_Loop"
         );
         let one = |_: &str| 1.;
         assert_eq!(
@@ -5419,7 +5490,7 @@ mod tests {
         );
         // After the roll the run takes over and the body eases back toward its facing.
         let after = roll_frame(&mut playback, false, 0., 0.7);
-        assert_eq!(after.lower.0, "Jog_Fwd_Loop");
+        assert_eq!(after.lower.0, "Run_Fwd_Loop");
         assert!(after.attitude.heading.abs() < back);
         // A second roll starts its clip again.
         let again = roll_frame(&mut playback, true, 0., 0.8);
