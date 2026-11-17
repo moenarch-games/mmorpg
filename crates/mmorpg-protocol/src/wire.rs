@@ -50,6 +50,7 @@ const RAID_NOTICE: u8 = 22;
 const TRAP_HIT: u8 = 23;
 const SWING_BEGAN: u8 = 24;
 const CLASHED: u8 = 25;
+const STRIKE_BEGAN: u8 = 26;
 const CRITICAL_FLAG: u32 = 1;
 
 pub(crate) const fn entity_kind_code(kind: EntityKind) -> u8 {
@@ -434,6 +435,20 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
             None,
             encode_swing_began(aim, startup, active),
         ),
+        // A basic strike (#885): the variant code and the family code in the flags' low bytes,
+        // the contact countdown in the amount.
+        ZoneEvent::StrikeBegan {
+            source,
+            family,
+            variant,
+            contact,
+        } => (
+            STRIKE_BEGAN,
+            u32::from(variant.code()) | u32::from(family.code()) << 8,
+            Some(source),
+            None,
+            contact,
+        ),
         ZoneEvent::Clashed {
             source,
             target,
@@ -680,6 +695,18 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
                 aim,
                 startup,
                 active,
+            }
+        }
+        STRIKE_BEGAN => {
+            if target.is_some() || flags > 0xffff {
+                return Err(invalid());
+            }
+            let [family, variant] = u16::try_from(flags).map_err(|_| invalid())?.to_be_bytes();
+            ZoneEvent::StrikeBegan {
+                source: source.ok_or_else(invalid)?,
+                family: mmorpg_core::WeaponFamily::from_code(family).ok_or_else(invalid)?,
+                variant: mmorpg_core::StrikeVariant::from_code(variant).ok_or_else(invalid)?,
+                contact: amount,
             }
         }
         CLASHED => {

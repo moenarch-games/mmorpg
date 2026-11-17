@@ -346,6 +346,7 @@ fn encode_player(
         abilities.resource_ticks,
         abilities.mana_delay,
         abilities.global_cooldown,
+        abilities.global_cooldown_total,
     ] {
         payload.extend_from_slice(&value.to_be_bytes());
     }
@@ -381,6 +382,7 @@ fn encode_player(
     encode_entity_ref(payload, combat.combo.map(|combo| combo.target));
     payload.extend_from_slice(&combat.combo.map_or(0, |combo| combo.elapsed).to_be_bytes());
     encode_swing(payload, combat.swing);
+    encode_melee(payload, combat.melee);
     payload.extend_from_slice(&player.chat_ready_at.to_be_bytes());
     payload.push(encode_u8_count(
         player.chat.len(),
@@ -1325,6 +1327,7 @@ fn decode_player(
     let resource_ticks = u16::from_be_bytes(take(payload, offset)?);
     let mana_delay = u16::from_be_bytes(take(payload, offset)?);
     let global_cooldown = u16::from_be_bytes(take(payload, offset)?);
+    let global_cooldown_total = u16::from_be_bytes(take(payload, offset)?);
     let cooldown_count = decode_u8_count(
         payload,
         offset,
@@ -1345,6 +1348,7 @@ fn decode_player(
         resource_ticks,
         mana_delay,
         global_cooldown,
+        global_cooldown_total,
         cooldowns,
         cast: decode_cast(payload, offset)?,
         auras: decode_auras(payload, offset)?,
@@ -1384,6 +1388,7 @@ fn decode_player(
         None
     };
     let swing = decode_swing(payload, offset)?;
+    let melee = decode_melee(payload, offset)?;
     let chat_ready_at = u64::from_be_bytes(take(payload, offset)?);
     let chat_count = decode_u8_count(
         payload,
@@ -1445,6 +1450,7 @@ fn decode_player(
             combo,
             strike_recovery,
             swing,
+            melee,
             repairing,
         },
     })
@@ -1489,6 +1495,60 @@ fn decode_swing(
         return Err(ProtocolError::new("player timed swing is out of range"));
     }
     Ok(Some(swing))
+}
+
+/// The basic strike's state (#885): the chain (`u8`), its window (`u16`), then a pending
+/// strike's family code plus one (`0` for none), its variant code, its `u16` contact countdown
+/// and the Warden's stance code (`0` for none).
+fn encode_melee(payload: &mut Vec<u8>, melee: mmorpg_core::MeleeState) {
+    payload.push(melee.chain);
+    payload.extend_from_slice(&melee.window.to_be_bytes());
+    let Some(pending) = melee.pending else {
+        payload.extend_from_slice(&[0, 0, 0, 0, 0]);
+        return;
+    };
+    payload.push(pending.family.code() + 1);
+    payload.push(pending.variant.code());
+    payload.extend_from_slice(&pending.contact.to_be_bytes());
+    payload.push(pending.stance.map_or(0, mmorpg_core::MeleeStance::code));
+}
+
+fn decode_melee(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<mmorpg_core::MeleeState, ProtocolError> {
+    let invalid = || ProtocolError::new("player strike state is out of range");
+    let chain = read_u8(payload, offset)?;
+    let window = u16::from_be_bytes(take(payload, offset)?);
+    let family = read_u8(payload, offset)?;
+    let variant = read_u8(payload, offset)?;
+    let contact = u16::from_be_bytes(take(payload, offset)?);
+    let stance = read_u8(payload, offset)?;
+    let pending = if family == 0 {
+        if (variant, contact, stance) != (0, 0, 0) {
+            return Err(invalid());
+        }
+        None
+    } else {
+        Some(mmorpg_core::PendingStrike {
+            family: mmorpg_core::WeaponFamily::from_code(family - 1).ok_or_else(invalid)?,
+            variant: mmorpg_core::StrikeVariant::from_code(variant).ok_or_else(invalid)?,
+            contact,
+            stance: match stance {
+                0 => None,
+                code => Some(mmorpg_core::MeleeStance::from_code(code).ok_or_else(invalid)?),
+            },
+        })
+    };
+    let melee = mmorpg_core::MeleeState {
+        chain,
+        window,
+        pending,
+    };
+    if !melee.is_valid() {
+        return Err(invalid());
+    }
+    Ok(melee)
 }
 
 fn decode_creature(
@@ -2322,6 +2382,16 @@ mod tests {
                             struck: false,
                             rewind: 7,
                         }),
+                        melee: mmorpg_core::MeleeState {
+                            chain: 2,
+                            window: 40,
+                            pending: Some(mmorpg_core::PendingStrike {
+                                family: mmorpg_core::WeaponFamily::Spear,
+                                variant: mmorpg_core::StrikeVariant::Second,
+                                contact: 9,
+                                stance: Some(mmorpg_core::MeleeStance::Planted),
+                            }),
+                        },
                         repairing: Some(mmorpg_core::PieceId::new(3)),
                     },
                     quests: mmorpg_core::QuestLog::default(),
@@ -2598,6 +2668,7 @@ mod tests {
             resource_ticks: 29,
             mana_delay: 150,
             global_cooldown: 44,
+            global_cooldown_total: 90,
             guard: mmorpg_core::GuardState {
                 raised: Some(mmorpg_core::StrikeHeight::Low),
                 broken: 7,
@@ -2669,7 +2740,7 @@ mod tests {
         let player_abilities =
             intents + 1 + (14 + 14 + 10 + 7 + 4 + 3 + 3) + 1 + 8 + 1 + 2 * EVENT_BYTES;
         assert_eq!(encoded[player_abilities], 6, "Arcanist, male");
-        let cast = player_abilities + 1 + 8 + 1 + 2 * 6;
+        let cast = player_abilities + 1 + 10 + 1 + 2 * 6;
         let aura = cast + 20 + 1;
         for (offset, value, message) in [
             (player_abilities, 15, "unknown class choice"),

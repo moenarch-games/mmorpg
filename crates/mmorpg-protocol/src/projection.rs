@@ -179,7 +179,14 @@ pub fn pack_snapshot_acknowledged(
         }
         None => payload.extend_from_slice(&[0; 5]),
     }
-    payload.extend_from_slice(&viewer.global_cooldown.to_be_bytes());
+    // The global cooldown's length and ticks left share its two bytes (#885): neither exceeds
+    // [`GLOBAL_COOLDOWN_TICKS`], which fits a byte.
+    const _: () = assert!(GLOBAL_COOLDOWN_TICKS <= u8::MAX as u16);
+    let byte = |ticks: u16| u8::try_from(ticks).unwrap_or(u8::MAX);
+    payload.extend_from_slice(&[
+        byte(viewer.global_cooldown_total),
+        byte(viewer.global_cooldown),
+    ]);
     encode_cast(&mut payload, viewer.cast);
     for value in viewer.damage {
         payload.extend_from_slice(&value.to_be_bytes());
@@ -659,7 +666,7 @@ fn decode_projection(
     let resource_kind = read_u8(payload, &mut offset)?;
     let resource_value = u16::from_be_bytes(take(payload, &mut offset)?);
     let resource_max = u16::from_be_bytes(take(payload, &mut offset)?);
-    let global_cooldown = u16::from_be_bytes(take(payload, &mut offset)?);
+    let [global_cooldown_total, global_cooldown] = take::<2>(payload, &mut offset)?.map(u16::from);
     let cast = decode_cast(payload, &mut offset)?;
     let damage = [
         u16::from_be_bytes(take(payload, &mut offset)?),
@@ -715,8 +722,9 @@ fn decode_projection(
         }
         _ => return Err(ProtocolError::new("viewer resource is inconsistent")),
     };
-    if global_cooldown > GLOBAL_COOLDOWN_TICKS
-        || (class.is_none() && (global_cooldown != 0 || cast.is_some()))
+    if global_cooldown > global_cooldown_total
+        || global_cooldown_total > GLOBAL_COOLDOWN_TICKS
+        || (class.is_none() && (global_cooldown_total != 0 || cast.is_some()))
         || (dead && cast.is_some())
     {
         return Err(ProtocolError::new("viewer ability state is inconsistent"));
@@ -914,6 +922,7 @@ fn decode_projection(
             resource,
             cast,
             global_cooldown,
+            global_cooldown_total,
             damage,
             guard,
             stance,
@@ -1264,6 +1273,7 @@ pub(crate) mod tests {
                     channel: false,
                 }),
                 global_cooldown: 25,
+                global_cooldown_total: 60,
                 // Level 4's 6–9 plus half of 6 intellect.
                 damage: [9, 12],
                 // A held guard recovering from a break.
@@ -2297,6 +2307,7 @@ pub(crate) mod tests {
                 resource: None,
                 cast: None,
                 global_cooldown: 0,
+                global_cooldown_total: 0,
                 damage: [u16::MAX; 2],
                 guard: GuardView::default(),
                 stance: None,
@@ -2486,6 +2497,7 @@ pub(crate) mod tests {
             max: 100,
         });
         loaded.viewer.global_cooldown = GLOBAL_COOLDOWN_TICKS;
+        loaded.viewer.global_cooldown_total = GLOBAL_COOLDOWN_TICKS;
         loaded.viewer.cast = Some(CastView {
             ability: AbilityId::new(12),
             elapsed: mmorpg_core::golden::t30(179) as _,

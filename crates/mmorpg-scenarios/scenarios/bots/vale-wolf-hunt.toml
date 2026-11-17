@@ -190,7 +190,7 @@ action = "release_spirit"
 [[expect]]
 kind = "event"
 bot = "hunter"
-event = "attack_performed"
+event = "strike_began"
 tick = 3
 
 [[expect]]
@@ -299,7 +299,7 @@ tick = 4609
 kind = "position"
 bot = "hunter"
 tick = 4808
-position = [-9637, 1190, -1394]
+position = [-9645, 1190, -1408]
 
 [[expect]]
 kind = "position"

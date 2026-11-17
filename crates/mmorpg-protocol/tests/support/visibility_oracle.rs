@@ -93,6 +93,7 @@ pub fn exhaustive_projection(
             resource: None,
             cast: None,
             global_cooldown: 0,
+            global_cooldown_total: 0,
             damage: {
                 let bonus = observer.equipment.totals().damage_bonus(None);
                 player_damage(combat.level).map(|end| end + bonus)

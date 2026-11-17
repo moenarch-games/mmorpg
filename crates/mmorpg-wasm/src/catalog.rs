@@ -410,6 +410,7 @@ mod tests {
                 item(20, "Stolen Grain Sack", Value::Null, stats(0, 0, 0, 0)),
                 item(21, "Lurker Scale", Value::Null, stats(0, 0, 0, 0)),
                 item(22, "Redbrand Orders", Value::Null, stats(0, 0, 0, 0)),
+                item(23, "Militia Spear", json!("mainHand"), stats(1, 3, 0, 0)),
             ])
         );
         let quests = value["quests"].as_array().unwrap();
@@ -456,11 +457,12 @@ mod tests {
                 {"npc": 3, "offers": [
                     offer(2, 5), offer(9, 12), offer(8, 12), offer(7, 15),
                     offer(6, 15), offer(5, 20), offer(3, 25), offer(4, 25),
+                    offer(23, 25),
                 ]},
                 // Trader Maren at Fenford (#826).
                 {"npc": 42, "offers": [
                     offer(9, 12), offer(8, 12), offer(7, 15), offer(5, 20),
-                    offer(3, 25), offer(12, 45), offer(13, 45), offer(14, 45),
+                    offer(3, 25), offer(23, 25), offer(12, 45), offer(13, 45), offer(14, 45),
                 ]},
             ])
         );

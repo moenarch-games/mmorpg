@@ -1193,6 +1193,7 @@ fn own_effect(event: &ZoneEvent, me: EntityRef) -> bool {
         | ZoneEvent::Miss { source, .. }
         | ZoneEvent::CastStarted { source, .. }
         | ZoneEvent::SwingBegan { source, .. }
+        | ZoneEvent::StrikeBegan { source, .. }
         | ZoneEvent::AbilityUsed { source, .. }
         | ZoneEvent::StrikeSwept { source, .. }
         | ZoneEvent::Healed { source, .. }
