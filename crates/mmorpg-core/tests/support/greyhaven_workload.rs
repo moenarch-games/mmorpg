@@ -83,12 +83,18 @@ pub fn initial_zone(fixture: Fixture) -> Result<ZoneSimulation, Box<dyn Error>> 
     // kill them within the horizon, and a spirit's release is not a physics comparison. The
     // wetlands' lurkers (#506) float in deep water, and a bot there would drown or swim. The
     // wild sub-regions' creatures (#816) are as tough and stand on the designed high ground, and
-    // the hamlets' (#859) keep to the farmland, outside the Vale.
+    // the hamlets' (#859) keep to the farmland, outside the Vale. The beasts of #889 (bears,
+    // cave spiders, marsh lurkers) hold caves and ambushes, not the Vale's fight slots.
+    let beasts = {
+        use greyhaven_vale::units::templates::{BROWN_BEAR, CAVE_SPIDER, MARSH_LURKER};
+        [BROWN_BEAR, CAVE_SPIDER, MARSH_LURKER]
+    };
     let vale_spawns: Vec<_> = content
         .creature_spawns()
         .iter()
         .filter(|spawn| {
-            !greyhaven_vale::wilds::SPAWN_IDS.contains(&spawn.id.get())
+            !beasts.contains(&spawn.template)
+                && !greyhaven_vale::wilds::SPAWN_IDS.contains(&spawn.id.get())
                 && !greyhaven_vale::hamlet_creatures::SPAWN_IDS.contains(&spawn.id.get())
                 && greyhaven_vale::area_at(spawn.position[0], spawn.position[1]).is_none_or(
                     |area| {
