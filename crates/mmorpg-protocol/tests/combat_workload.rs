@@ -99,10 +99,12 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // 17,264 AI decisions, and fights-8 and fights-32 project 1,934,086 and 8,204,294 bytes.
     // The second settlement props batch (#891) stands 84 proxy boxes in every step's world:
     // 30,240 more body visits per 360 ticks, and nothing else moves.
+    // Beasts wind up their bites (#889), so their fights last a little longer: fights-32
+    // evaluates 26,270 AI decisions, tests 443,384 candidates and projects 8,299,384 bytes.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
         [11_052, 5_137_560, 288_000, 6_151_648],
         [17_264, 5_134_680, 93_060, 1_934_086],
-        [25_840, 5_143_320, 434_117, 8_204_294],
+        [26_270, 5_143_320, 443_384, 8_299_384],
         [13_344, 5_154_184, 2_323_474, 24_553_949],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {

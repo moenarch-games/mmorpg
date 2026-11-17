@@ -626,6 +626,7 @@ fn encode_creature(
         payload.extend_from_slice(&entry.threat.to_be_bytes());
     }
     payload.extend_from_slice(&creature.swing_timer.to_be_bytes());
+    encode_creature_attack(payload, creature.attack);
     payload.extend_from_slice(&creature.combat_timer.to_be_bytes());
     payload.push(u8::from(creature.tapped_by.is_some()));
     payload.extend_from_slice(&creature.tapped_by.unwrap_or(0).to_be_bytes());
@@ -1613,6 +1614,7 @@ fn decode_creature(
         });
     }
     let swing_timer = u16::from_be_bytes(take(payload, offset)?);
+    let attack = decode_creature_attack(payload, offset)?;
     let combat_timer = u16::from_be_bytes(take(payload, offset)?);
     let tapped = read_bool(payload, offset)?;
     let tapper = u32::from_be_bytes(take(payload, offset)?);
@@ -1676,6 +1678,7 @@ fn decode_creature(
         ai,
         threat,
         swing_timer,
+        attack,
         combat_timer,
         tapped_by,
         loot,
@@ -1684,6 +1687,37 @@ fn decode_creature(
         encounter,
         raid,
     })
+}
+
+/// A beast's pending bite (#889): `0` for none, else `1 +` its attack code, the unit it began on
+/// and its contact countdown.
+fn encode_creature_attack(payload: &mut Vec<u8>, attack: Option<mmorpg_core::PendingAttack>) {
+    let Some(attack) = attack else {
+        payload.push(0);
+        return;
+    };
+    payload.push(1 + attack.attack.code());
+    encode_entity_ref(payload, Some(attack.target));
+    payload.extend_from_slice(&attack.contact.to_be_bytes());
+}
+
+fn decode_creature_attack(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Option<mmorpg_core::PendingAttack>, ProtocolError> {
+    let code = read_u8(payload, offset)?;
+    if code == 0 {
+        return Ok(None);
+    }
+    let malformed = || ProtocolError::new("malformed creature attack");
+    let attack = mmorpg_core::CreatureAttack::from_code(code - 1).ok_or_else(malformed)?;
+    let target = decode_entity_ref(payload, offset)?.ok_or_else(malformed)?;
+    let contact = u16::from_be_bytes(take(payload, offset)?);
+    Ok(Some(mmorpg_core::PendingAttack {
+        attack,
+        target,
+        contact,
+    }))
 }
 
 /// A pending trade: code, NPC (u32), offer or bag slot (u8), quantity (u16).
@@ -2444,6 +2478,7 @@ mod tests {
                         threat: 12,
                     }],
                     swing_timer: 5,
+                    attack: None,
                     combat_timer: 150,
                     tapped_by: Some(7),
                     loot_party: Vec::new(),
@@ -2471,6 +2506,7 @@ mod tests {
                     },
                     threat: Vec::new(),
                     swing_timer: 0,
+                    attack: None,
                     combat_timer: 0,
                     tapped_by: Some(8),
                     loot_party: Vec::new(),
@@ -2501,6 +2537,7 @@ mod tests {
                     },
                     threat: Vec::new(),
                     swing_timer: 0,
+                    attack: None,
                     combat_timer: 0,
                     tapped_by: None,
                     loot_party: Vec::new(),
@@ -2522,6 +2559,7 @@ mod tests {
                     ai: CreatureAi::Evading { ticks: 44 },
                     threat: Vec::new(),
                     swing_timer: 0,
+                    attack: None,
                     combat_timer: 0,
                     tapped_by: None,
                     loot_party: Vec::new(),
@@ -2963,8 +3001,10 @@ mod tests {
             (ai + 4, 1, "malformed creature destination"),
             (ai + 12, 65, "creature threat table exceeds its capacity"),
             (ai + 13, 0, "an absent entity must have ID 0"),
-            (ai + 12 + 1 + 9 + 4, 2, "boolean field must be 0 or 1"),
-            (ai + 12 + 1 + 9 + 4, 0, "malformed creature tap"),
+            // A pending bite (#889) follows the swing timer: `0` for none.
+            (ai + 12 + 1 + 9 + 2, 3, "malformed creature attack"),
+            (ai + 12 + 1 + 9 + 5, 2, "boolean field must be 0 or 1"),
+            (ai + 12 + 1 + 9 + 5, 0, "malformed creature tap"),
             (42, 5, "snapshot exceeds the creature spawn capacity"),
         ] {
             let mut invalid = encoded.clone();
