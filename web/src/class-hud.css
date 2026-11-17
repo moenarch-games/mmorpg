@@ -127,6 +127,8 @@
   text-shadow: 0 0 2px #000, 0 1px 1px #000;
 }
 
+/* The dock measures everything in em (#873): 1rem on phones and touch screens, growing with the
+   viewport on desktop so slots, keys and captions stay legible on large monitors. */
 .action-dock {
   position: absolute;
   bottom: 1rem;
@@ -134,18 +136,25 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: .45rem;
+  gap: .45em;
+  font-size: 1rem;
   transform: translateX(-50%);
 }
 
+@media (min-width: 881px) and (min-height: 481px) {
+  /* 1366 × 768 → ~16.4 px (width-capped, clear of the status panel), 1920 × 1080 → ~21.5 px,
+     2078 × 1240 → ~23.5 px. */
+  :root:not([data-input="touch"]) .action-dock { font-size: clamp(16px, min(8px + 1.25vh, 1.2vw), 26px); }
+}
+
 .player-cast {
-  width: 15rem;
-  height: 1.2rem;
+  width: 15em;
+  height: 1.2em;
   margin: 0;
 }
 
 .player-cast .cast-name,
-.player-cast .cast-time { line-height: 1.2rem; }
+.player-cast .cast-time { font-size: .7em; line-height: calc(1.2em / .7); }
 
 .action-bar-wrap { position: relative; }
 
@@ -154,26 +163,28 @@
   flex-wrap: wrap;
   justify-content: center;
   /* Ten slots a row; a second row holds the Shift slots (#294). */
-  max-width: calc(10 * 3.1rem + 9 * .35rem + .7rem + 2px);
-  gap: .35rem;
-  padding: .35rem;
-  border: 1px solid rgb(255 255 255 / 10%);
-  border-radius: .75rem;
-  background: rgb(9 14 20 / 76%);
+  max-width: calc(10 * 3.1em + 9 * .35em + .7em + 2px);
+  gap: .35em;
+  padding: .35em;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: .75em;
+  background: rgb(9 14 20 / 82%);
   backdrop-filter: blur(14px);
+  box-shadow: 0 .5em 1.6em rgb(0 0 0 / 35%);
   pointer-events: auto;
 }
 
 .action-slot {
   position: relative;
-  width: 3.1rem;
-  height: 3.1rem;
+  width: 3.1em;
+  height: 3.1em;
   padding: 0;
   overflow: hidden;
-  border: 2px solid #56626c;
-  border-radius: .5rem;
-  background: #141a20;
+  border: 2px solid #7d8b96;
+  border-radius: .5em;
+  background: #1c252e;
   color: #fff;
+  font-size: inherit;
   cursor: pointer;
   touch-action: manipulation;
   -webkit-touch-callout: none;
@@ -182,85 +193,96 @@
 
 .action-slot:hover { border-color: var(--gold-bright); }
 .slot-icon { position: absolute; inset: 0; display: grid; place-items: center; }
-.slot-icon svg { width: 68%; height: 68%; }
+.slot-icon svg { width: 72%; height: 72%; filter: drop-shadow(0 1px 1px rgb(0 0 0 / 70%)); }
 .slot-icon img { width: 100%; height: 100%; object-fit: cover; }
+/* Ready abilities read bright; anything unusable is dimmed by its own state below. */
+.action-slot[data-state="ready"] .slot-icon { filter: brightness(1.18) saturate(1.1); }
 .slot-sweep { position: absolute; inset: 0; background: conic-gradient(rgb(0 0 0 / 66%) var(--sweep, 0deg), transparent 0); }
 
 .slot-key {
   position: absolute;
-  top: 1px;
+  top: 2px;
   left: 2px;
   min-width: 0;
-  padding: 0 .2rem;
+  padding: .05em .28em;
   border: 0;
-  border-radius: .2rem;
-  background: rgb(0 0 0 / 45%);
-  font-size: .68rem;
+  border-radius: .25em;
+  background: rgb(0 0 0 / 70%);
+  font-family: inherit;
+  font-size: .8em;
+  font-weight: 700;
   line-height: 1.1;
-  color: #e9efe9;
+  color: #fff;
+  text-shadow: 0 1px 1px #000;
 }
 
 .slot-alt {
   position: absolute;
   right: 2px;
   bottom: 1px;
-  padding: 0 .2rem;
+  padding: 0 .2em;
   border: 0;
-  border-radius: .2rem;
-  background: rgb(120 84 20 / 80%);
-  font-size: .6rem;
+  border-radius: .2em;
+  background: rgb(120 84 20 / 85%);
+  font-size: .64em;
   line-height: 1.1;
   color: #ffe9b0;
 }
 
-.slot-alt::after { content: "⇅"; margin-left: .1rem; }
+.slot-alt::after { content: "⇅"; margin-left: .1em; }
 
 .slot-timer {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
-  font-size: 1.15rem;
+  font-size: 1.25em;
   font-weight: 700;
   text-shadow: 0 0 3px #000, 0 1px 2px #000;
 }
 
 .slot-unlock {
   position: absolute;
-  inset: auto 0 2px;
+  inset: auto 0 0;
+  padding: .1em 0;
+  background: rgb(0 0 0 / 62%);
   text-align: center;
-  font-size: .62rem;
+  font-size: .72em;
   font-weight: 700;
-  color: #cbd4cc;
+  line-height: 1.15;
+  color: #f1e2b4;
   text-shadow: 0 1px 2px #000;
 }
 
-.action-slot[data-state="locked"] { border-color: #3a434b; }
+.slot-unlock:empty { display: none; }
+
+.action-slot[data-state="locked"] { border-color: #3a434b; border-style: dashed; background: #12171c; cursor: default; }
 .action-slot[data-state="locked"] .slot-icon { filter: grayscale(1); opacity: .35; }
-.action-slot[data-state="casting"] { border-color: var(--gold-bright); box-shadow: 0 0 .7rem rgb(229 207 134 / 65%); }
+.action-slot[data-state="cooldown"] .slot-icon { filter: saturate(.6) brightness(.85); }
+.action-slot[data-state="casting"] { border-color: var(--gold-bright); box-shadow: 0 0 .7em rgb(229 207 134 / 65%); }
 .action-slot[data-resource="short"] .slot-icon::after { content: ""; position: absolute; inset: 0; background: rgb(44 90 220 / 52%); }
-.action-slot[data-range="out"] .slot-key { color: #ff5b5b; background: rgb(60 0 0 / 70%); }
+.action-slot[data-range="out"] .slot-key { color: #ff6b6b; background: rgb(60 0 0 / 80%); }
 
 .ability-tooltip {
   position: absolute;
-  bottom: calc(100% + .5rem);
-  width: min(15rem, calc(100vw - 1rem));
-  padding: .55rem .65rem;
+  bottom: calc(100% + .5em);
+  width: min(15em, calc(100vw - 1rem));
+  padding: .55em .65em;
   border: 1px solid var(--panel-border);
-  border-radius: .55rem;
+  border-radius: .55em;
   background: rgb(8 12 16 / 94%);
   box-shadow: 0 12px 32px rgb(0 0 0 / 40%);
   transform: translateX(-50%);
-  font-size: .76rem;
+  font-size: .76em;
   line-height: 1.4;
   pointer-events: none;
 }
 
-.ability-tooltip strong { display: block; color: var(--gold-bright); font-size: .88rem; }
+.ability-tooltip strong { display: block; color: var(--gold-bright); font-size: 1.16em; }
 .ability-tooltip span { display: block; color: #cbd6cd; }
-.ability-tooltip p { margin: .3rem 0 0; color: #edf4ee; }
-.ability-tooltip .tooltip-directed { margin-top: .3rem; color: #ffe0a0; }
-.ability-tooltip em { display: block; margin-top: .3rem; color: #ff9d8a; font-style: normal; }
+.ability-tooltip p { margin: .3em 0 0; color: #edf4ee; }
+.ability-tooltip .tooltip-directed { margin-top: .3em; color: #ffe0a0; }
+.ability-tooltip em { display: block; margin-top: .3em; color: #ff9d8a; font-style: normal; }
 
 .combat-text {
   position: absolute;
