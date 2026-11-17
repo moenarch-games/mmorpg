@@ -3012,4 +3012,138 @@ mod rolling_ranger_tests {
                 .all(|(a, b)| Arc::ptr_eq(&a.mesh, &b.mesh))
         );
     }
+
+    /// Every held item sits in the hand that grips it, through idle, travel and its own strikes
+    /// (#804): the gripped fingers close round its handle, its long axis (`+Y` from the grip)
+    /// leaves the fist on the thumb side, and a two-handed staff swing's second hand meets the
+    /// shaft it grips. The hold is the bundle's socket and grip frame (asset-tooling #285); the
+    /// hand and grip choice is the shared presentation's ([`Loadout::hands`]).
+    #[test]
+    fn held_items_sit_in_their_gripping_hand_through_the_clips() {
+        use mmorpg_presentation::units::imported::{Hand, Held, Mask};
+        let character = &asset(Kind::Ranger).model;
+        let position = |m: &M4| [m[12], m[13], m[14]];
+        let sub = |a: [f32; 3], b: [f32; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+        let dot = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let unit = |a: [f32; 3]| {
+            let length = dot(a, a).sqrt();
+            [a[0] / length, a[1] / length, a[2] / length]
+        };
+        // Along the item's long axis, `y` metres from its grip.
+        let along =
+            |held: &M4, y: f32| position(&mul(held, &trs([0., y, 0.], [0., 0., 0., 1.], [1.; 3])));
+        // From `point` to the item's axis between `from` and `to` metres along it.
+        let to_axis = |point: [f32; 3], held: &M4, from: f32, to: f32| {
+            let (a, b) = (along(held, from), along(held, to));
+            let ab = sub(b, a);
+            let t = (dot(sub(point, a), ab) / dot(ab, ab)).clamp(0., 1.);
+            let off = sub(
+                point,
+                [a[0] + ab[0] * t, a[1] + ab[1] * t, a[2] + ab[2] * t],
+            );
+            dot(off, off).sqrt()
+        };
+        for (loadout, clips) in [
+            (
+                Loadout::SwordAndShield,
+                &[
+                    "Sword_Idle",
+                    "Jog_Fwd_Loop",
+                    "Sword_Regular_A",
+                    "Sword_Slash_High_R",
+                ][..],
+            ),
+            (
+                Loadout::TwinDaggers,
+                &[
+                    "Dagger_Idle_Loop",
+                    "Jog_Fwd_Loop",
+                    "Dagger_Stab_R",
+                    "Dagger_Slash_L",
+                ],
+            ),
+            (
+                Loadout::BoneStaff,
+                &[
+                    "Idle_Loop",
+                    "Jog_Fwd_Loop",
+                    "Staff_Strike_A",
+                    "Staff_Strike_B",
+                ],
+            ),
+            (
+                Loadout::FlangedMace,
+                &["Idle_Loop", "Jog_Fwd_Loop", "Mace_Swing_A", "Mace_Swing_B"],
+            ),
+        ] {
+            let equipment = Equipment::loadout(loadout);
+            let hands = loadout.hands();
+            for &clip in clips {
+                let staff_swing = clip.starts_with("Staff_Strike");
+                let duration = character.clips[clip].duration;
+                for step in 0..=12u8 {
+                    let time = duration * f32::from(step) / 12.;
+                    let mut pose = vec![Layer::single(clip, time)];
+                    for hand in Hand::BOTH {
+                        let held = hands
+                            .get(hand)
+                            .or_else(|| (staff_swing && hand == Hand::Left).then_some(Held::Staff));
+                        if let Some(held) = held {
+                            pose.push(Layer {
+                                clip: held.grip(hand),
+                                time: 0.,
+                                weight: 1.,
+                                mask: Mask::Fingers(hand),
+                            });
+                        }
+                    }
+                    let joint = |name: String| {
+                        position(
+                            &character
+                                .joint(&name, &pose)
+                                .expect("a Ranger joint")
+                                .elements,
+                        )
+                    };
+                    for (_, joint_name, socket) in &equipment.items {
+                        let side = &joint_name[joint_name.len() - 1..];
+                        let held = mul(
+                            &character.joint(joint_name, &pose).unwrap().elements,
+                            &socket.elements,
+                        );
+                        let at = format!("{loadout:?} {joint_name} in {clip} at {time:.2} s");
+                        // The proximal finger joints wrap the handle as a closed fist does, within
+                        // 3.5 cm of its axis on average, the staff grip's index reaching further.
+                        let offs = ["index", "middle", "ring", "pinky"].map(|finger| {
+                            to_axis(joint(format!("{finger}_02_{side}")), &held, -0.12, 0.12)
+                        });
+                        let mean = offs.iter().sum::<f32>() / 4.;
+                        let far = offs.iter().copied().fold(0., f32::max);
+                        assert!(
+                            mean < 0.035 && far < 0.05,
+                            "{at}: fingers {offs:.3?} m off the handle"
+                        );
+                        // Thumb side: the axis leaves the fist past the thumb, not the pinky.
+                        let thumb = unit(sub(
+                            joint(format!("thumb_02_{side}")),
+                            joint(format!("pinky_01_{side}")),
+                        ));
+                        let axis = unit(sub(along(&held, 0.1), position(&held)));
+                        assert!(
+                            dot(axis, thumb) > 0.5,
+                            "{at}: the item leaves the fist backwards"
+                        );
+                        if staff_swing && *joint_name == "hand_r" {
+                            let palm = joint("middle_01_l".into());
+                            let off = to_axis(palm, &held, -0.8, 1.2);
+                            assert!(
+                                off < 0.12,
+                                "{at}: the second hand is {off:.3} m off the shaft"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

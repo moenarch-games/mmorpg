@@ -1447,7 +1447,8 @@ pub const WATER_BLEND_SECONDS: f32 = 0.3;
 /// The zone's dodge roll lasts this long in seconds (#516); its clip plays once over it.
 pub const ROLL_SECONDS: f64 = mmorpg_core::roll::ROLL_TICKS as f64 / mmorpg_core::TICK_HZ as f64;
 /// Ground speed in metres per second at which the forward run, and the run-speed strafes and
-/// backpedal, play at their authored rate.
+/// backpedal, play at their authored rate on a model whose clips record no ground speed
+/// ([`gait_rate`]).
 pub const RUN_CLIP_GROUND: f64 = 5.;
 /// Ground speed in metres per second above which forward travel sprints (#538): above the
 /// player's 6.3 m/s run, so only a faster mover (a charge) sprints.
@@ -1455,6 +1456,10 @@ pub const SPRINT_CLIP_SPEED: f64 = 7.5;
 /// Ground speed in metres per second at which the sprint plays at its authored rate: the run's,
 /// scaled by the clips' `groundSpeedMetersPerSecond` (2.13 m/s sprint, 1.76 m/s jog).
 pub const SPRINT_CLIP_GROUND: f64 = RUN_CLIP_GROUND * 2.1345 / 1.7637;
+/// The slowest and fastest a gait with an authored ground speed plays ([`gait_rate`], #804):
+/// wide enough that the player's 6.3 m/s run and side-steps keep their feet planted (3.6 and
+/// 4.5 times the Ranger's jog and side-step), bounding only a glitch in the projected speed.
+pub const GAIT_RATES: [f64; 2] = [0.5, 5.];
 /// Travel within this angle of the facing, in radians, plays the forward gait; beyond
 /// [`BACKPEDAL_ANGLE`] the backward one; in between the strafes (#538). A diagonal stays
 /// forward or backward, so it never flickers between gaits.
@@ -2405,10 +2410,27 @@ impl Track {
     }
 }
 
-/// The walk's rate at `speed` metres per second.
+/// The walk's rate at `speed` metres per second, for a model whose clips record no ground speed.
 #[allow(clippy::cast_possible_truncation)]
 fn walk_rate(speed: f64) -> f32 {
     (speed / 1.8).clamp(0.6, 1.6) as f32
+}
+
+/// The rate at which the in-place gait `clip` keeps its planted foot still at `speed` metres
+/// per second (#804): the speed over the clip's authored ground speed ([`super::traversal::Motion::ground_speed`]),
+/// within [`GAIT_RATES`], at the authored stride (Atlas 6.6.12). A clip without one keeps
+/// `fallback`.
+#[must_use]
+pub fn gait_rate(motions: Option<&Motions>, clip: &str, speed: f64, fallback: f32) -> f32 {
+    motions
+        .and_then(|motions| motions.get(clip))
+        .and_then(|motion| motion.ground_speed)
+        .filter(|&ground| ground > 0.)
+        .map_or(fallback, |ground| {
+            #[allow(clippy::cast_possible_truncation)]
+            let rate = (speed / ground).clamp(GAIT_RATES[0], GAIT_RATES[1]) as f32;
+            rate
+        })
 }
 
 /// `clip`'s upper-body twin when it is a clip of the full-body bow cycle and the model has the
@@ -3025,11 +3047,12 @@ impl Playback {
     /// The legs' gait at `speed` in `direction` from the facing (#538): forward, strafing or
     /// backpedalling at walk or run speed, sprinting beyond [`SPRINT_CLIP_SPEED`]. A gait the
     /// model lacks keeps the earlier choice: the forward run for strafes at run speed, the walk
-    /// otherwise.
+    /// otherwise. Each plays at [`gait_rate`], so its planted foot keeps pace with the ground.
     fn gait(
         &self,
         clips: Clips,
         available: &impl Fn(&str) -> bool,
+        motions: Option<&Motions>,
         speed: f64,
         direction: f64,
     ) -> Want {
@@ -3040,14 +3063,14 @@ impl Playback {
         let left = direction > 0.;
         #[allow(clippy::cast_possible_truncation)]
         let run_rate = (speed / RUN_CLIP_GROUND).clamp(0.7, 1.5) as f32;
-        if speed > RUN_CLIP_SPEED {
+        let (clip, fallback) = if speed > RUN_CLIP_SPEED {
             let directed = if angle <= STRAFE_ANGLE {
                 if speed > SPRINT_CLIP_SPEED
                     && let Some(sprint) = gait(|gaits| gaits.sprint)
                 {
                     #[allow(clippy::cast_possible_truncation)]
                     let rate = (speed / SPRINT_CLIP_GROUND).clamp(0.7, 1.5) as f32;
-                    return Want::looped(sprint, rate);
+                    return Want::looped(sprint, gait_rate(motions, sprint, speed, rate));
                 }
                 Some(clips.run)
             } else if angle >= BACKPEDAL_ANGLE {
@@ -3058,11 +3081,11 @@ impl Playback {
                 gait(|gaits| gaits.run_right)
             };
             match directed {
-                Some(clip) => Want::looped(clip, run_rate),
+                Some(clip) => (clip, run_rate),
                 // Running forward or strafing at the player's run speed plays the run (#515);
                 // backpedalling keeps the walk.
-                None if angle <= FRAC_PI_2 => Want::looped(clips.run, run_rate),
-                None => Want::looped(clips.walk, walk_rate(speed)),
+                None if angle <= FRAC_PI_2 => (clips.run, run_rate),
+                None => (clips.walk, walk_rate(speed)),
             }
         } else {
             let directed = if angle <= STRAFE_ANGLE {
@@ -3074,8 +3097,9 @@ impl Playback {
             } else {
                 gait(|gaits| gaits.walk_right)
             };
-            Want::looped(directed.unwrap_or(clips.walk), walk_rate(speed))
-        }
+            (directed.unwrap_or(clips.walk), walk_rate(speed))
+        };
+        Want::looped(clip, gait_rate(motions, clip, speed, fallback))
     }
 
     /// A standing unit turning past [`TURN_CLIP_RATE`] steps round with its turn clip (#538),
@@ -3436,10 +3460,10 @@ impl Playback {
             && cues.water == WaterMode::Wading
             && speed > 0.25
         {
-            Want::looped(wade, walk_rate(speed))
+            Want::looped(wade, gait_rate(cues.motions, wade, speed, walk_rate(speed)))
         } else if speed > 0.25 {
             self.turning = None;
-            self.gait(clips, &available, speed, cues.direction)
+            self.gait(clips, &available, cues.motions, speed, cues.direction)
         } else if let Some(turn) = self.turn(clips, &duration, cues, guarding) {
             turn
         } else {
@@ -4216,6 +4240,60 @@ mod tests {
                 .sum()
         };
         (sum(true), sum(false))
+    }
+
+    /// Each gait plays at the rate that keeps its planted foot still at the travel speed (#804):
+    /// the speed over the clip's authored ground speed, so the feet cover the ground the body
+    /// does. The figures are the male Ranger's `humanoid-clips` values.
+    #[test]
+    fn gaits_keep_their_planted_foot_at_the_travel_speed() {
+        let motions = super::super::traversal::Motions::parse(
+            r#"{"schema": "humanoid-clips-v1", "clips": [
+                {"name": "Walk_Loop", "groundSpeedMetersPerSecond": 1.0434},
+                {"name": "Jog_Fwd_Loop", "groundSpeedMetersPerSecond": 1.7637},
+                {"name": "Sprint_Loop", "groundSpeedMetersPerSecond": 2.1345},
+                {"name": "Jog_Bwd_Loop", "groundSpeedMetersPerSecond": 1.7637},
+                {"name": "Walk_Bwd_Loop", "groundSpeedMetersPerSecond": 1.0434},
+                {"name": "Jog_Strafe_Left_Loop", "sourceRootSpeedMetersPerSecond": 1.4},
+                {"name": "Jog_Strafe_Right_Loop", "sourceRootSpeedMetersPerSecond": 1.4},
+                {"name": "Walk_Strafe_Left_Loop", "sourceRootSpeedMetersPerSecond": 0.875},
+                {"name": "Walk_Strafe_Right_Loop", "sourceRootSpeedMetersPerSecond": 0.875}
+            ]}"#,
+        )
+        .expect("valid descriptor");
+        let one = |_: &str| true;
+        let gait = |motions, speed, direction| {
+            Playback::default().gait(Kind::Ranger.clips(), &one, motions, speed, direction)
+        };
+        let run = f64::from(mmorpg_core::RUN_SPEED_UNITS_PER_SECOND) / 100.;
+        let backpedal = f64::from(mmorpg_core::BACKPEDAL_SPEED_UNITS_PER_SECOND) / 100.;
+        let creature_walk = 2.4;
+        let pi = std::f64::consts::PI;
+        for (speed, direction, clip, ground) in [
+            (run, 0., "Jog_Fwd_Loop", 1.7637),
+            (run, FRAC_PI_2, "Jog_Strafe_Left_Loop", 1.4),
+            (run, -FRAC_PI_2, "Jog_Strafe_Right_Loop", 1.4),
+            (backpedal, pi, "Jog_Bwd_Loop", 1.7637),
+            (creature_walk, 0., "Walk_Loop", 1.0434),
+            (1.2, pi, "Walk_Bwd_Loop", 1.0434),
+            (1.2, FRAC_PI_2, "Walk_Strafe_Left_Loop", 0.875),
+            (SPRINT_CLIP_SPEED + 1., 0., "Sprint_Loop", 2.1345),
+        ] {
+            let want = gait(Some(&motions), speed, direction);
+            assert_eq!(want.clip, clip);
+            // The foot's authored speed times the rate is the body's.
+            let foot = f64::from(want.rate) * ground;
+            assert!(
+                (foot - speed).abs() < 1e-4,
+                "{clip} at {speed} m/s: {foot} m/s"
+            );
+        }
+        // A creeping walk and a glitched speed stay within the rate bounds.
+        assert!((gait(Some(&motions), 0.3, 0.).rate - 0.5).abs() < 1e-6);
+        assert!((gait(Some(&motions), 40., FRAC_PI_2).rate - 5.).abs() < 1e-6);
+        // A model whose clips record no ground speed (the animals) keeps the earlier pacing.
+        assert!((gait(None, run, 0.).rate - 1.26).abs() < 1e-4);
+        assert!((gait(None, creature_walk, 0.).rate - 2.4 / 1.8).abs() < 1e-4);
     }
 
     #[test]
