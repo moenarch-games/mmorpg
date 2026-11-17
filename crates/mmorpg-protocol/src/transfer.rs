@@ -4,8 +4,9 @@
 //!
 //! `version u8 · transfer ID u64 · source zone u32 · cutover tick u64 ·
 //! cutover sequence u32 · forward i8 · strafe i8 · rise i8 · velocity 3 × i32 ·
-//! record length u32 · record`, big-endian, strict: another version, a zero
-//! transfer ID, a truncated, over-long or trailing payload fails closed.
+//! weapon drawn u8 · record length u32 · record`, big-endian, strict: another
+//! version, a zero transfer ID, a weapon mode other than 0 or 1, a truncated,
+//! over-long or trailing payload fails closed.
 
 use mmorpg_core::{CharacterTransfer, TransferId, TransferMotion, ZoneId};
 
@@ -14,7 +15,7 @@ use crate::character::{decode_character_record, encode_character_record};
 use crate::wire::{read_u8, take};
 
 /// Identity of the layout above: a random token, not a counter (ADR 0006).
-pub const CHARACTER_TRANSFER_WIRE_VERSION: u8 = 0x5c;
+pub const CHARACTER_TRANSFER_WIRE_VERSION: u8 = 0x28;
 /// Far above any record; bounds what a corrupt length can make a reader take.
 const MAX_TRANSFER_RECORD_BYTES: usize = 64 * 1024;
 
@@ -37,6 +38,7 @@ pub fn encode_character_transfer(transfer: &CharacterTransfer) -> Result<Vec<u8>
     for component in motion.velocity {
         payload.extend_from_slice(&component.to_be_bytes());
     }
+    payload.push(u8::from(motion.weapon_drawn));
     payload.extend_from_slice(&length.to_be_bytes());
     payload.extend_from_slice(&record);
     Ok(payload)
@@ -61,6 +63,11 @@ pub fn decode_character_transfer(payload: &[u8]) -> Result<CharacterTransfer, Pr
     for component in &mut velocity {
         *component = i32::from_be_bytes(take(payload, offset)?);
     }
+    let weapon_drawn = match read_u8(payload, offset)? {
+        0 => false,
+        1 => true,
+        _ => return Err(ProtocolError::new("invalid transfer weapon mode")),
+    };
     let length = usize::try_from(u32::from_be_bytes(take(payload, offset)?)).unwrap_or(usize::MAX);
     if length > MAX_TRANSFER_RECORD_BYTES {
         return Err(ProtocolError::new("transferred record is too large"));
@@ -81,6 +88,7 @@ pub fn decode_character_transfer(payload: &[u8]) -> Result<CharacterTransfer, Pr
             strafe,
             rise,
             velocity,
+            weapon_drawn,
         },
     })
 }

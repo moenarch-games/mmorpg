@@ -26,7 +26,8 @@
 //! Frozen and staged transfers are host-phase state, not canonical: recovery
 //! reconciles them from the handoff record and the character store. Session
 //! and tick-local state (target, queued intents, casts, auras, guard, combo,
-//! swing and roll timers) ends at the cutover, as at logout.
+//! swing and roll timers) ends at the cutover, as at logout; the explicit
+//! weapon mode (#802) travels with the held movement.
 
 use std::collections::{BTreeMap, VecDeque};
 
@@ -67,6 +68,8 @@ pub struct TransferMotion {
     pub rise: i8,
     /// Body velocity in subunits per tick.
     pub velocity: [i32; 3],
+    /// The explicit draw/sheathe mode (#802), so a handoff keeps the posture.
+    pub weapon_drawn: bool,
 }
 
 /// Everything a destination needs to continue a character the source froze.
@@ -189,6 +192,7 @@ impl ZoneSimulation {
                 strafe: player.strafe.get(),
                 rise: player.rise.get(),
                 velocity: [velocity.x, velocity.y, velocity.z],
+                weapon_drawn: player.weapon_drawn,
             },
         };
         let state = player.clone();
@@ -367,6 +371,7 @@ impl ZoneSimulation {
         let alive = transfer.record.health > 0;
         if let Some(player) = self.players.get_mut(&player_id) {
             player.last_sequence = transfer.cutover_sequence;
+            player.weapon_drawn = alive && motion.weapon_drawn;
             if alive {
                 player.forward = Axis::new(motion.forward)?;
                 player.strafe = Axis::new(motion.strafe)?;

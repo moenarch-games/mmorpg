@@ -295,13 +295,19 @@ fn a_teleport_uses_the_same_transfer_without_a_corridor() {
         .is_err(),
         "a transfer leaves its zone"
     );
+    // The explicit weapon mode travels with the character (#802).
+    west.apply_command(1, 1, ZoneCommand::SetWeaponDrawn(true))
+        .unwrap();
+    west.advance_tick().unwrap();
     let transfer: CharacterTransfer = west
         .freeze_for_transfer(1, character(), transfer_id(3), waystone)
         .unwrap();
+    assert!(transfer.motion.weapon_drawn);
     let mut east = east();
     east.stage_transfer(transfer).unwrap();
     east.activate_transfer(transfer_id(3), 2).unwrap();
     assert!(west.retire_transfer(transfer_id(3)));
+    assert!(east.snapshot_for_player(2).unwrap().viewer.weapon_drawn);
     let (position, _) = east.player_motion(2).unwrap();
     assert_eq!(position, [2_000.0, 90.0, 2_000.0]);
 }
