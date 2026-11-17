@@ -919,7 +919,7 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
     let cottages: Vec<_> = greyhaven_vale::cottages::cottages()
         .iter()
         .map(|cottage| {
-            let [hx, hz] = greyhaven_vale::cottages::HALF;
+            let [hx, hz] = cottage.plan.half();
             let hy = greyhaven_vale::cottages::WALL_HEIGHT / 2;
             StaticCollider {
                 id: cottage.house,

@@ -271,6 +271,9 @@ pub mod ids {
     pub const COTTAGES: RangeInclusive<u32> = 43_100..=43_999;
     /// The villages' clutter (#851), 4 IDs each, in [`super::village_props::PROPS`] order.
     pub const VILLAGE_PROPS: RangeInclusive<u32> = 44_000..=44_199;
+    /// The walk-in farmhouses' walls and furniture (#886), 24 IDs each, in
+    /// [`super::cottages::cottages`] order.
+    pub const FARMHOUSES: RangeInclusive<u32> = 44_200..=44_399;
 }
 
 /// One region's tables (#542): its named areas, its roads and its own colliders. Each region

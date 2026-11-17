@@ -126,8 +126,9 @@ fn every_prop_kind_draws_valid_geometry_and_the_same_scenery_builds_the_same_sce
             )
         })
     {
-        // Greyhaven has no graybox geometry (#552); place one box of each such kind.
-        let prop = if kind.graybox() {
+        // Greyhaven has no graybox geometry (#552), and its farmhouses are all walk-in (#886):
+        // place one box of each such kind.
+        let prop = if kind.graybox() || kind == PropKind::Farmhouse {
             Prop {
                 kind,
                 position: [0, 200, 0],
@@ -473,8 +474,8 @@ fn the_outpost_kit_buildings_keep_their_blockouts_only_as_the_fallback() {
     let parts = mmorpg_presentation::outpost_kit::parts(&scenery);
     assert_eq!(
         parts.len(),
-        651,
-        "adopted modules, the authored settlement and the region's sixteen cottages (#818, #847), their doorways open (#843)"
+        837,
+        "adopted modules, the authored settlement and the region's sixteen cottages (#818, #847) and six farmhouses (#886), their doorways open (#843)"
     );
     let houses = scenery.props.iter().filter_map(|prop| {
         prop.collider.filter(|&id| {
@@ -534,8 +535,8 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
     let parts = mmorpg_presentation::settlement_props::parts(&scenery);
     assert_eq!(
         parts.len(),
-        164,
-        "market square, brook additions, the Delving Run footbridge (#828) and the sixteen cottages' furniture (#843, #847), and the villages' clutter and stand-ins (#851)"
+        206,
+        "market square, brook additions, the Delving Run footbridge (#828), the sixteen cottages' and six farmhouses' furniture (#843, #847, #886), and the villages' clutter and stand-ins (#851)"
     );
     for family in [
         ["stall", "cart", "crate"],
@@ -567,10 +568,15 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
         .unwrap();
     let [cx, cz] = market::centre([house.position[0], house.position[2]]);
     let [hx, hz] = market::HALF_EXTENTS;
-    // The square's own props, not the villages' clutter and stand-ins (#851) elsewhere.
+    // The square's own props, not the villages' clutter and stand-ins (#851) or the walk-in
+    // houses' furniture (#843, #886) elsewhere.
     let elsewhere: Vec<[i32; 2]> = mmorpg_presentation::world_dressing::placed(&scenery)
         .iter()
-        .filter(|placed| placed.id.starts_with("village-") || placed.fallback_collider.is_some())
+        .filter(|placed| {
+            placed.id.starts_with("village-")
+                || placed.id.starts_with("settlement-")
+                || placed.fallback_collider.is_some()
+        })
         .map(|placed| [placed.position[0], placed.position[2]])
         .collect();
     let parts: Vec<_> = parts

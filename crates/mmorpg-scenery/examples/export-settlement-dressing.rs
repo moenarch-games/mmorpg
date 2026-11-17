@@ -1,7 +1,8 @@
-//! Offline: the region's walk-in cottages (#818, #843) → committed world dressing, built from the
-//! Outpost's house composition (`content/greyhaven/authoring/outpost-buildings.json`) in
-//! asset-tooling's Outpost kit, with its doorway left open, and furnished from its
-//! `settlement.props` furniture at `greyhaven_vale::cottages::FURNITURE`. The zone's collision is
+//! Offline: the region's walk-in cottages (#818, #843) and farmhouses (#886) → committed world
+//! dressing, built from the Outpost's house and farmhouse compositions
+//! (`content/greyhaven/authoring/outpost-buildings.json`) in asset-tooling's Outpost kit, with
+//! their doorways left open, and furnished from its `settlement.props` furniture at
+//! `greyhaven_vale::cottages::Plan::furniture`. The zone's collision is
 //! `greyhaven_vale::cottages`; runtime clients read only the result.
 //!
 //! `cargo run -p mmorpg-scenery --example export-settlement-dressing > content/greyhaven/dressing/settlements.json`
@@ -30,12 +31,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let compositions: Compositions = serde_json::from_str(include_str!(
         "../../../content/greyhaven/authoring/outpost-buildings.json"
     ))?;
-    let house = compositions
-        .templates
-        .get("house")
-        .ok_or("no house composition")?;
     let mut placements = Vec::new();
     for cottage in cottages::cottages() {
+        let template = cottage.plan.template();
+        let house = compositions
+            .templates
+            .get(template)
+            .ok_or(format!("no {template} composition"))?;
         let wear = (cottage.house.wrapping_mul(0x9E37_79B1) >> 24) as u8;
         let yaw = |quarters: u8| u16::from((quarters + cottage.quarters) % 4) * YAW_QUARTER_TURN;
         // The doorway stays open: the zone has no door there.
@@ -55,11 +57,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "wear": wear
             }));
         }
-        for piece in &cottages::FURNITURE {
+        for (index, piece) in cottage.plan.furniture().iter().enumerate() {
             let [px, pz] = cottage.spot(piece.position);
             let name = piece.asset.rsplit('.').next().unwrap_or(piece.asset);
+            // A farmhouse has two benches.
+            let id = match cottage.plan {
+                cottages::Plan::Cottage => format!("settlement-{}-{name}", cottage.house),
+                cottages::Plan::Farmhouse => format!("settlement-{}-{name}-{index}", cottage.house),
+            };
             placements.push(json!({
-                "id": format!("settlement-{}-{name}", cottage.house),
+                "id": id,
                 "asset": piece.asset,
                 "position": [px, cottage.floor, pz],
                 "yaw": yaw(piece.quarters),

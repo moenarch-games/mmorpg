@@ -51,8 +51,9 @@ mod tests {
         // revisions 3 and 4; the hash leaves the revision out).
         // Re-recorded for solid dressing (#577), ropes (#621), the authored landscape (#644),
         // surface hazards (#294), the Highlands' landforms (#528), the whole region (#810) and its
-        // redesign and its heart (#816), its walk-in cottages (#843, #847), its village props (#851) and the hamlets' creatures (#859).
-        assert_eq!(before.stable_hash(), 0xd55e_1ec3_afaa_3a5b);
+        // redesign and its heart (#816), its walk-in cottages (#843, #847), its village props (#851), the hamlets' creatures (#859)
+        // and its walk-in farmhouses (#886).
+        assert_eq!(before.stable_hash(), 0x6669_5325_62f6_d640);
         let original: Vec<_> = before
             .props
             .iter()

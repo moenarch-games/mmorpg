@@ -646,3 +646,64 @@ fn structures_and_boundary_walls_block_movement() {
     assert!(z >= WALL_Z - 200, "the player stops at the wall, z {z}");
     assert!(greyhaven_vale::inside_walls(x, z));
 }
+
+/// A player walks into each walk-in farmhouse (#886) through its open front doorway, down the
+/// hall, through the partition's doorway and up beside the bed; each farmhouse resident's walk
+/// home ends inside.
+#[test]
+fn players_and_residents_walk_into_the_farmhouses() {
+    use greyhaven_vale::cottages::{self, Plan};
+    let definition = greyhaven_vale_definition();
+    let farmhouses: Vec<_> = cottages::cottages()
+        .into_iter()
+        .filter(|cottage| cottage.plan == Plan::Farmhouse)
+        .collect();
+    assert_eq!(farmhouses.len(), 6);
+    let zone = ZoneSimulation::with_definition(ZoneId::new(1), definition.clone()).unwrap();
+    for farmhouse in &farmhouses {
+        let route: Vec<[i32; 2]> = [cottages::FARMHOUSE_DOORSTEP, [0, 170]]
+            .into_iter()
+            .chain(cottages::FARMHOUSE_TO_BED)
+            .map(|point| farmhouse.spot(point))
+            .collect();
+        let mut start =
+            ZoneSimulation::with_definition(ZoneId::new(1), definition.clone()).unwrap();
+        start.add_player(1).unwrap();
+        let mut snapshot = start.snapshot().unwrap();
+        let [x, z] = route[0];
+        snapshot.players[0].position =
+            mmorpg_core::physics::from_units([x, definition.ground_at(x, z) + 92, z]);
+        let mut walker =
+            ZoneSimulation::from_snapshot(snapshot, Arc::clone(zone.content())).unwrap();
+        let mut sequence = 0;
+        for &target in &route[1..] {
+            let reached = (0..mmorpg_core::golden::t30(150)).any(|_| {
+                let [px, _, pz] =
+                    mmorpg_core::physics::to_units(walker.snapshot().unwrap().players[0].position);
+                let (dx, dz) = (target[0] - px, target[1] - pz);
+                if dx.abs().max(dz.abs()) <= 30 {
+                    return true;
+                }
+                sequence += 1;
+                let facing = mmorpg_core::trig::yaw_from_vector(dx, dz).unwrap();
+                walker.apply_command(1, sequence, run(facing)).unwrap();
+                walker.advance_tick().unwrap();
+                false
+            });
+            assert!(reached, "farmhouse {}: toward {target:?}", farmhouse.house);
+        }
+    }
+    // The farmer, the Barrow Rest's alewife, the Ford Inn's innkeeper and three hamlet folk.
+    let content = greyhaven_vale::content();
+    for npc in [4, 22, 27, 36, 38, 41] {
+        let routine = content.routine(mmorpg_core::NpcId::new(npc)).unwrap();
+        let [x, z] = *routine.path.last().unwrap();
+        assert!(
+            farmhouses.iter().any(|farmhouse| {
+                let [hx, hz] = cottages::FARMHOUSE_HALF;
+                (x - farmhouse.centre[0]).abs() < hx && (z - farmhouse.centre[1]).abs() < hz
+            }),
+            "NPC {npc} sleeps at {x}, {z}"
+        );
+    }
+}

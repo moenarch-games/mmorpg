@@ -229,6 +229,11 @@ visual mesh. Rapier consumes these through the existing authored-collision loade
 resource manifest contains hashes for the normal glTF resources; content revision still
 comes from immutable gameplay content, with no protocol/canonical-layout change.
 
+The farmhouse has since become a walk-in farmhouse from the Outpost kit (#886,
+[GREYHAVEN_REGION.md](GREYHAVEN_REGION.md#grass-and-houses)): its triangles left the
+authored bundle, its roof and chimney meshes 65061 and 65063 left `greyhaven-fort.json`, and
+collider 201 is no longer a box.
+
 The focused Rapier test `millbrook_windmill_has_a_solid_round_footprint` walks through a
 former square-box corner and then into the curved wall, checking the character reaches the
 tower, stays out of the solid and can slide around it. That test and all 15 basin routes

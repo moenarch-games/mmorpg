@@ -147,7 +147,7 @@ impl Spec {
         })
     }
 
-    /// A walk-in cottage (#843): no bundle of its own (the Outpost kit and the settlement props
+    /// A walk-in cottage (#843) or farmhouse (#886): no bundle of its own (the Outpost kit and the settlement props
     /// draw it), its room the space inside the kit's walls up to the roof, and its walls and
     /// furniture the camera's obstacles.
     #[must_use]
@@ -156,7 +156,7 @@ impl Spec {
             center: std::array::from_fn(|i| metres(min[i] + max[i]) / 2.),
             size: std::array::from_fn(|i| metres(max[i] - min[i])),
         };
-        let [hx, hz] = cottages::HALF;
+        let [hx, hz] = cottage.plan.half();
         let wall = cottages::WALL;
         Self {
             bundle: "",
@@ -164,7 +164,7 @@ impl Spec {
             hidden: &[],
             interior: Some(Interior {
                 volume: volume(([-hx + wall, -30, -hz + wall], [hx - wall, 330, hz - wall])),
-                obstacles: cottages::boxes().into_iter().map(volume).collect(),
+                obstacles: cottage.plan.boxes().into_iter().map(volume).collect(),
             }),
             room_ceiling: None,
             door: None,
