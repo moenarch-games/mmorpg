@@ -32,7 +32,9 @@ pub const MASK_CUTOFF: f32 = 0.5;
 pub const OVERLAY_ALPHA: f32 = 0.25;
 
 /// One ground material, in draw order: later overlays cover earlier ones.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
+)]
 pub enum Layer {
     Grass,
     Forest,
@@ -198,14 +200,22 @@ fn tinted(color: u32, x: f64, z: f64, seed: f64) -> u32 {
     shade(color, 0.92 + 0.16 * noise(x, z, 9., seed))
 }
 
-/// Per-vertex weights of the grid overlays over the near terrain grid.
-#[derive(Clone, Debug)]
+/// Per-vertex weights of the grid overlays over the near terrain grid. Deriving them is most of
+/// the terrain tiles' cost, so a client that derived them elsewhere hands them over in the
+/// static scene's skeleton (#855).
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub(crate) struct Weights {
     layers: BTreeMap<Layer, Vec<f64>>,
     colors: BTreeMap<Layer, Vec<u32>>,
 }
 
 impl Weights {
+    /// Whether every layer holds one weight and colour per sample of a grid of `count` samples.
+    pub(crate) fn fits(&self, count: usize) -> bool {
+        self.layers.values().all(|weights| weights.len() == count)
+            && self.colors.values().all(|colors| colors.len() == count)
+    }
+
     /// Whether an overlay hides the terrain triangle of grid samples `tri` entirely: one at full
     /// weight on every corner always passes its mask, so the base need not draw there.
     pub(crate) fn covers(&self, tri: [usize; 3]) -> bool {

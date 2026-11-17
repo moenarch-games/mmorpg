@@ -67,11 +67,34 @@ pub fn skeleton() -> Vec<u8> {
     hosted_static_scene().skeleton()
 }
 
-/// Where the hosted scene's grass grows, built on the first cell asked for.
+/// Where the hosted scene's grass grows, built on the first cell asked for, from a seeded
+/// [`grass_seed`] when another instance derived it (#855).
 #[must_use]
 pub fn hosted_grass() -> &'static mmorpg_presentation::grass::Grass {
     static GRASS: PerZone<mmorpg_presentation::grass::Grass> = PerZone::new();
-    GRASS.get(|_| mmorpg_presentation::grass::Grass::new(hosted_static_scene(), hosted_scenery()))
+    GRASS.get(|_| {
+        let (scene, scenery) = (hosted_static_scene(), hosted_scenery());
+        GRASS_SEED
+            .peek()
+            .and_then(|seed| mmorpg_presentation::grass::Grass::from_seed(seed, scene, scenery))
+            .unwrap_or_else(|| mmorpg_presentation::grass::Grass::new(scene, scenery))
+    })
+}
+
+/// A [`grass_seed`] seeded by [`seed_grass`], which the grass is rebuilt from instead of derived.
+static GRASS_SEED: PerZone<Vec<u8>> = PerZone::new();
+
+/// The hosted grass's per-sample fields (`Grass::seed`), for [`seed_grass`] in another instance.
+#[must_use]
+pub fn grass_seed() -> Vec<u8> {
+    hosted_grass().seed(hosted_static_scene())
+}
+
+/// Reuses the grass another instance of this module derived for the presented content (#855):
+/// false, nothing seeded, once a seed was given. A seed of another scene is ignored on first use.
+#[must_use]
+pub fn seed_grass(seed: Vec<u8>) -> bool {
+    GRASS_SEED.seed(seed)
 }
 
 #[derive(Serialize)]

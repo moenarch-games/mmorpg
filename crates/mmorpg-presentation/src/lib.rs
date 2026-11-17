@@ -261,6 +261,8 @@ struct Skeleton {
     prefix: String,
     groups: Vec<GroupSkeleton>,
     motions: Vec<Motion>,
+    /// The terrain's overlay weights, most of the cost of its tiles.
+    weights: ground::Weights,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -317,8 +319,9 @@ impl StaticScene {
     }
 
     /// The scene without its geometry (#855), serialized: the prefix, every group's cull class,
-    /// fallback and bounds, and every animated part's motion. A client that hands the draws to
-    /// its renderer elsewhere rebuilds the rest with [`Self::from_skeleton`].
+    /// fallback and bounds, every animated part's motion and the terrain's overlay weights. A
+    /// client that hands the draws to its renderer elsewhere rebuilds the rest with
+    /// [`Self::from_skeleton`].
     #[must_use]
     pub fn skeleton(&self) -> Vec<u8> {
         let skeleton = Skeleton {
@@ -335,14 +338,16 @@ impl StaticScene {
                 })
                 .collect(),
             motions: self.animated.iter().map(|part| part.motion).collect(),
+            weights: self.terrain.weights().clone(),
         };
         postcard::to_allocvec(&skeleton).expect("the scene skeleton is plain data")
     }
 
     /// The scene of `scenery` from its [`Self::skeleton`] `bytes`, without draws: no group,
     /// water or animated part carries geometry, so motion, visibility, streaming, lights and
-    /// the terrain tiles (built here) answer as [`Self::new`]'s would, but [`Self::frame`]
-    /// draws nothing static. `None` for damaged bytes or another content revision's.
+    /// the terrain tiles (built here over the skeleton's weights) answer as [`Self::new`]'s
+    /// would, but [`Self::frame`] draws nothing static. `None` for damaged bytes or another
+    /// content revision's.
     #[must_use]
     pub fn from_skeleton(bytes: &[u8], scenery: &Scenery) -> Option<Self> {
         let skeleton: Skeleton = postcard::from_bytes(bytes).ok()?;
@@ -351,7 +356,10 @@ impl StaticScene {
             return None;
         }
         let grid = scenery.terrain_grid(TERRAIN_STEP_UNITS);
-        let mut terrain = tiles::Tiles::new(scenery, &grid);
+        if !skeleton.weights.fits(grid.columns * grid.rows) {
+            return None;
+        }
+        let mut terrain = tiles::Tiles::with_weights(scenery, &grid, skeleton.weights);
         terrain.set_prefix(&skeleton.prefix);
         Some(Self {
             prefix: skeleton.prefix,
