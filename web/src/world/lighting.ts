@@ -48,7 +48,7 @@ const SHADOWLESS_BELOW = -3;
  * `FOG_VISIBILITY_METRES` (Bevy's Koschmieder threshold), red light fading and blue gathering first, so distant ranges
  * turn blue but keep their shading.
  */
-const FOG_VISIBILITY_METRES = 6000;
+export const FOG_VISIBILITY_METRES = 6000;
 const FOG_DENSITY = -Math.log(0.05) / FOG_VISIBILITY_METRES;
 const FOG_EXTINCTION: Vec3 = [1.1 * FOG_DENSITY, FOG_DENSITY, 0.9 * FOG_DENSITY];
 const FOG_INSCATTERING: Vec3 = [0.9 * FOG_DENSITY, FOG_DENSITY, 1.1 * FOG_DENSITY];

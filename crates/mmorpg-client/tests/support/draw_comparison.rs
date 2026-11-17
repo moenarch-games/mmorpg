@@ -55,15 +55,38 @@ fn digest(mesh: &three_d_core::Mesh) -> String {
     }
     format!("{hash:016x}")
 }
-/// Draws by their exact ID; both clients name draws from the same shared source.
+/// `id` without the static scene's identity hash: `scenery:<revision>:<hash>` becomes
+/// `scenery:<revision>:*`. The hash covers every geometry bit, and native and wasm32 `f64`
+/// maths (libm) may round a last bit apart (the lake bed and water surface do), so it names a
+/// per-target cache entry; the content revision must still match, and the geometry is compared
+/// below within tolerance.
+fn without_identity(id: &str) -> String {
+    let Some(start) = id.find("scenery:") else {
+        return id.to_owned();
+    };
+    let rest = &id[start + "scenery:".len()..];
+    let revision = rest.split(':').next().unwrap_or_default();
+    let identity = rest[revision.len()..].strip_prefix(':').filter(|tail| {
+        tail.get(..16)
+            .is_some_and(|hash| hash.bytes().all(|b| b.is_ascii_hexdigit()))
+    });
+    match identity {
+        Some(tail) if !revision.is_empty() && revision.bytes().all(|b| b.is_ascii_digit()) => {
+            format!("{}scenery:{revision}:*{}", &id[..start], &tail[16..])
+        }
+        _ => id.to_owned(),
+    }
+}
+
+/// Draws by their ID; both clients name draws from the same shared source.
 fn unique_index<'a, T>(
     values: impl IntoIterator<Item = (&'a str, T)>,
     label: &str,
-) -> std::collections::BTreeMap<&'a str, T> {
+) -> std::collections::BTreeMap<String, T> {
     let mut indexed = std::collections::BTreeMap::new();
     for (id, value) in values {
         assert!(
-            indexed.insert(id, value).is_none(),
+            indexed.insert(without_identity(id), value).is_none(),
             "duplicate {label} draw ID {id}"
         );
     }
@@ -80,7 +103,8 @@ pub fn compare_draws(actual: &[SceneDraw], expected: &Value, resources: &Value) 
             .map(|draw| (draw["id"].as_str().unwrap(), draw)),
         "expected",
     );
-    for (id, draw) in expected_by_id {
+    for (id, draw) in &expected_by_id {
+        let id = id.as_str();
         let actual = *by_id
             .get(id)
             .unwrap_or_else(|| panic!("missing actual submitted draw {id}"));
