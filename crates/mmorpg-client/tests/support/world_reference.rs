@@ -32,6 +32,25 @@ fn export(cases: &[Value]) -> Value {
     let input = json!({"scenery":serde_json::from_str::<Value>(mmorpg_wasm::scenery::hosted_scenery_json()).unwrap(),
         "requests":cases});
     let started = Instant::now();
+    // The exporter imports the browser's packages (`three`, the renderer), so sync them as
+    // `bun run build` does; a no-op once installed. A git dependency's prepare script builds
+    // with Cargo and reads its own `target/`, so a redirected target directory must not leak in.
+    let install = Command::new("bun")
+        .args(["install", "--frozen-lockfile"])
+        .current_dir(root.join("web"))
+        .env_remove("CARGO_TARGET_DIR")
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("the Pages reference needs Bun on PATH");
+    // A git dependency's prepare script needs the wasm-bindgen CLI on PATH, which CI installs
+    // (scripts/ci-install-wasm-bindgen.sh); its error is in this output.
+    assert!(
+        install.status.success(),
+        "bun install in web/ failed: {}\n{}",
+        install.status,
+        String::from_utf8_lossy(&install.stderr)
+    );
     let mut child = Command::new("bun")
         .arg("tests/support/native-world-reference.ts")
         .current_dir(root.join("web"))
@@ -39,19 +58,20 @@ fn export(cases: &[Value]) -> Value {
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
-        .unwrap();
-    child
+        .expect("the Pages reference needs Bun on PATH");
+    // An exporter that exits early closes its input; its status below says why.
+    let written = child
         .stdin
         .take()
         .unwrap()
-        .write_all(input.to_string().as_bytes())
-        .unwrap();
+        .write_all(input.to_string().as_bytes());
     let result = child.wait_with_output().unwrap();
     assert!(
         result.status.success(),
-        "Pages reference exporter failed: {}",
+        "Pages reference exporter failed: {} (see its stderr above)",
         result.status
     );
+    written.expect("the Pages reference exporter did not read its input");
     eprintln!(
         "Pages reference: {} bytes for {} cases in {:?}",
         result.stdout.len(),

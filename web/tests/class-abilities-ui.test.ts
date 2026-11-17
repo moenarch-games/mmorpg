@@ -45,7 +45,7 @@ function snapshot(fields: Partial<Parameters<typeof testSnapshot>[0]> = {}, self
 describe("action bar", () => {
   test("the shared model fills the bar with the class kit and each slot's state", () => {
     const cast: CastState = { ability: 9, elapsed: t(10), total: t(60), channel: false };
-    const cooling = snapshot({ cooldowns: [{ ability: 10, remaining: t(300) }] }, { globalCooldown: t(40), cast });
+    const cooling = snapshot({ cooldowns: [{ ability: 10, remaining: t(300) }] }, { globalCooldown: t(40), globalCooldownTotal: t(45), cast });
     const bar = actionBar(cooling);
     expect(bar.slice(0, 4).map((slot) => slot.ability)).toEqual([firebolt.id, nova.id, barrier.id, blizzard.id]);
     expect(bar[0]).toMatchObject({ learned: true, casting: true, outOfRange: false, cooldown: { kind: "gcd", remaining: t(40), total: t(45) } });

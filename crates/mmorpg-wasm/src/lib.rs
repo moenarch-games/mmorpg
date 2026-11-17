@@ -808,6 +808,13 @@ pub fn relief_at(x: i32, z: i32) -> i32 {
     scenery::relief_at(x, z)
 }
 
+/// The drawn terrain surface at `(x, z)` in units: the physical ground plus the relief, where
+/// the ambient animals stand.
+#[wasm_bindgen(js_name = surfaceAt)]
+pub fn surface_at(x: i32, z: i32) -> i32 {
+    scenery::hosted_scenery().surface_at(x, z)
+}
+
 /// The JSON layout of the shared static world both clients draw (#184).
 #[wasm_bindgen(js_name = staticScene)]
 pub fn static_scene() -> String {

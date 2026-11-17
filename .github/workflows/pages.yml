@@ -115,11 +115,12 @@ jobs:
         if: env.FULL_VALIDATION == 'true'
         working-directory: web
         run: bunx --no-install tsc --noEmit -p tsconfig.assets.json
+      # Every run: these stay green on main (#896). The producer replays need the checkout above
+      # and skip without it.
       - name: Test browser contracts and the WASM local zone host
-        if: env.FULL_VALIDATION == 'true'
         working-directory: web
         env:
-          ASSET_TOOLING_MASK_SOURCE: ${{ github.workspace }}/artifacts/asset-tooling-mask-source
+          ASSET_TOOLING_MASK_SOURCE: ${{ env.FULL_VALIDATION == 'true' && format('{0}/artifacts/asset-tooling-mask-source', github.workspace) || '' }}
         run: bun test
       - name: Build tech demo with the WASM local zone host
         working-directory: web

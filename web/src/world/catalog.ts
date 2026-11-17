@@ -267,7 +267,8 @@ export function decodeCatalog(json: string): ContentCatalog {
     if (npcs.find((candidate) => candidate.id === npc)?.role !== "vendor") {
       fail(`${name} must name a vendor npc`);
     }
-    const offers = list(record.offers, `${name} offers`, 8).map((offer, slot) => {
+    // Vendor offers have no fixed cap (Atlas 2.2.i882); the bound only rejects malformed input.
+    const offers = list(record.offers, `${name} offers`, 0xffff).map((offer, slot) => {
       const entry = object(offer, ["item", "price"], `${name} offer ${slot}`);
       const item = int(entry.item, `${name} offer ${slot} item`, 1, 0xffff);
       if (!itemsById.has(item)) {

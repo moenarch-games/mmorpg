@@ -43,7 +43,11 @@ fn every_world_prop_region_and_day_phase_matches_pages_submitted_content() {
         for (a, b) in fog.color.iter().zip(rgb(&want["color"])) {
             close(*a, f64::from(b), name);
         }
-        close(fog.visibility, 3200.0, name);
+        close(
+            fog.visibility,
+            expected["fog_visibility"].as_f64().unwrap(),
+            name,
+        );
         let next = world.frame(
             request["seconds"].as_f64().unwrap() + 0.25,
             request["animate"].as_bool().unwrap(),

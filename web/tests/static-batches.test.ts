@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { LitMaterial } from "@moritzbrantner/three-lighting";
 import type { RendererSceneNode } from "@moritzbrantner/three-d-renderer";
 import type { GroupBuffers, GroupStreamSource, StaticBatch } from "../src/world/scenery-nodes";
-import { BatchedRoots, BatchedScenery } from "../src/world/static-batches";
+import { BatchedRoots, BatchedScenery, SHADOW_ONLY } from "../src/world/static-batches";
 
 // Walk-in buildings and kit modules draw through BatchedMeshes (#615): the batches follow their source roots.
 describe("BatchedRoots", () => {
@@ -23,8 +23,14 @@ describe("BatchedRoots", () => {
     const door = root("door", new THREE.Mesh(box, opaque), new THREE.Mesh(box, glass));
     const batched = new BatchedRoots("inn", [shell, door]);
     const batches = batched.root.children.filter((child) => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh[];
-    expect(batches).toHaveLength(1);
-    expect(batches[0]!.instanceCount).toBe(3);
+    // The opaque draws' batch, and their shared shadow-only caster batch (#671).
+    const drawn = batches.filter((batch) => batch.material === opaque);
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]!.instanceCount).toBe(3);
+    const casters = batches.filter((batch) => batch.material === SHADOW_ONLY.single);
+    expect(casters).toHaveLength(1);
+    expect(casters[0]!.instanceCount).toBe(3);
+    expect(batches).toHaveLength(2);
     expect(batched.root.children.filter((child) => !(child instanceof THREE.BatchedMesh))).toHaveLength(1);
   });
 
@@ -34,24 +40,31 @@ describe("BatchedRoots", () => {
     const pane = new THREE.Mesh(box, glass);
     const door = root("door", leaf, pane);
     const batched = new BatchedRoots("inn", [door]);
-    const batch = batched.root.children.find((child) => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
-    const copy = batched.root.children.find((child) => !(child instanceof THREE.BatchedMesh))!;
+    const material = (child: THREE.Object3D) => (child as THREE.Mesh).material;
+    // A lone opaque draw stays its own mesh (#834) and still casts through the shadow batch (#671).
+    const own = batched.root.children.find((child) => !(child instanceof THREE.BatchedMesh) && material(child) === opaque)!;
+    const caster = batched.root.children.find((child) => child instanceof THREE.BatchedMesh && material(child) === SHADOW_ONLY.single) as THREE.BatchedMesh;
+    const copy = batched.root.children.find((child) => material(child) === glass)!;
     const at = new THREE.Matrix4();
-    expect(new THREE.Vector3().setFromMatrixPosition(batch.getMatrixAt(0, at)).toArray()).toEqual([0, 1, 0]);
+    expect(new THREE.Vector3().setFromMatrixPosition(own.matrix).toArray()).toEqual([0, 1, 0]);
+    expect(new THREE.Vector3().setFromMatrixPosition(caster.getMatrixAt(0, at)).toArray()).toEqual([0, 1, 0]);
 
     door.matrix.makeTranslation(5, 0, 2);
     batched.sync(0);
-    expect(new THREE.Vector3().setFromMatrixPosition(batch.getMatrixAt(0, at)).toArray()).toEqual([5, 1, 2]);
+    expect(new THREE.Vector3().setFromMatrixPosition(own.matrix).toArray()).toEqual([5, 1, 2]);
+    expect(new THREE.Vector3().setFromMatrixPosition(caster.getMatrixAt(0, at)).toArray()).toEqual([5, 1, 2]);
     expect(new THREE.Vector3().setFromMatrixPosition(copy.matrix).toArray()).toEqual([5, 0, 2]);
 
     door.visible = false;
     batched.sync(0);
-    expect(batch.getVisibleAt(0)).toBe(false);
+    expect(own.visible).toBe(false);
+    expect(caster.getVisibleAt(0)).toBe(false);
     expect(copy.visible).toBe(false);
     door.visible = true;
     leaf.visible = false;
     batched.sync(0);
-    expect(batch.getVisibleAt(0)).toBe(false);
+    expect(own.visible).toBe(false);
+    expect(caster.getVisibleAt(0)).toBe(false);
     expect(copy.visible).toBe(true);
   });
 });
