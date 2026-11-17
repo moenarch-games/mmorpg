@@ -149,7 +149,7 @@ impl Group {
 }
 
 /// How an animated part moves.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
 pub enum Motion {
     /// Windmill sails turn about their hub.
     Sail { hub: [f64; 3], yaw: f64 },
@@ -177,7 +177,7 @@ pub enum Motion {
 }
 
 /// An asset-tooling bundle the clients draw over a procedural fallback.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub enum Kit {
     /// The Outpost kit buildings (#420); their blockouts are the fallback.
     Outpost,
@@ -255,6 +255,23 @@ pub struct StaticScene {
     pub terrain: tiles::Tiles,
 }
 
+/// [`StaticScene::skeleton`]'s serialized form.
+#[derive(serde::Deserialize, serde::Serialize)]
+struct Skeleton {
+    prefix: String,
+    groups: Vec<GroupSkeleton>,
+    motions: Vec<Motion>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct GroupSkeleton {
+    cull: Cull,
+    instanced: bool,
+    fallback: Option<Kit>,
+    min: [f64; 2],
+    max: [f64; 2],
+}
+
 impl StaticScene {
     #[must_use]
     pub fn new(scenery: &Scenery) -> Self {
@@ -297,6 +314,70 @@ impl StaticScene {
             animated,
             terrain,
         }
+    }
+
+    /// The scene without its geometry (#855), serialized: the prefix, every group's cull class,
+    /// fallback and bounds, and every animated part's motion. A client that hands the draws to
+    /// its renderer elsewhere rebuilds the rest with [`Self::from_skeleton`].
+    #[must_use]
+    pub fn skeleton(&self) -> Vec<u8> {
+        let skeleton = Skeleton {
+            prefix: self.prefix.clone(),
+            groups: self
+                .groups
+                .iter()
+                .map(|group| GroupSkeleton {
+                    cull: group.cull,
+                    instanced: group.instanced,
+                    fallback: group.fallback,
+                    min: group.min,
+                    max: group.max,
+                })
+                .collect(),
+            motions: self.animated.iter().map(|part| part.motion).collect(),
+        };
+        postcard::to_allocvec(&skeleton).expect("the scene skeleton is plain data")
+    }
+
+    /// The scene of `scenery` from its [`Self::skeleton`] `bytes`, without draws: no group,
+    /// water or animated part carries geometry, so motion, visibility, streaming, lights and
+    /// the terrain tiles (built here) answer as [`Self::new`]'s would, but [`Self::frame`]
+    /// draws nothing static. `None` for damaged bytes or another content revision's.
+    #[must_use]
+    pub fn from_skeleton(bytes: &[u8], scenery: &Scenery) -> Option<Self> {
+        let skeleton: Skeleton = postcard::from_bytes(bytes).ok()?;
+        let revision = format!("scenery:{}:", scenery.content_revision);
+        if !skeleton.prefix.starts_with(&revision) {
+            return None;
+        }
+        let grid = scenery.terrain_grid(TERRAIN_STEP_UNITS);
+        let mut terrain = tiles::Tiles::new(scenery, &grid);
+        terrain.set_prefix(&skeleton.prefix);
+        Some(Self {
+            prefix: skeleton.prefix,
+            groups: skeleton
+                .groups
+                .into_iter()
+                .map(|group| Group {
+                    draws: Vec::new(),
+                    cull: group.cull,
+                    instanced: group.instanced,
+                    fallback: group.fallback,
+                    min: group.min,
+                    max: group.max,
+                })
+                .collect(),
+            water: Vec::new(),
+            animated: skeleton
+                .motions
+                .into_iter()
+                .map(|motion| Animated {
+                    draws: Vec::new(),
+                    motion,
+                })
+                .collect(),
+            terrain,
+        })
     }
 
     /// Height of the rendered terrain triangles at `(x, z)` metres, in metres.
