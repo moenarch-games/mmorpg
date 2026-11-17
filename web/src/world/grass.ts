@@ -19,26 +19,26 @@ const FLOWERS = [0xf2cf3a, 0xf3efe2, 0x8f7ad6, 0xd9493a] as const;
 const BUILDS_PER_FRAME = 3;
 /** How far either side of a profile's `swap` distance a clump changes from the full to the light clump. */
 const SWAP_JITTER = 3;
-/** The share of the rank range over which a clump grows from the ground as its distance's share passes its rank. */
+/** The share of the rank range over which a clump dissolves in as its distance's share passes its rank. */
 const GROW = 0.08;
 /** How much wider than a near clump a far clump spreads, which stands for about ten of them. */
 const FAR_SPREAD = 2;
 /**
- * The far clumps' linear RGB scale (#852): a distant meadow reads deeper and less yellow than the near blades' sunlit
- * tips, so the far field sits on the turf rather than over it as a pale straw carpet.
+ * The flat shade of a distant blade over its clump's colour (#871): about the ground's own tone under it, so the field
+ * thins into the turf rather than leaving darker or paler clumps standing on it.
  */
-const FAR_TONE = [0.72, 0.86, 0.7] as const;
+const FLAT_SHADE = 0.72;
 
 /**
  * The field at each world detail (`graphics.world_detail`; `low` draws none). A `density` share of the near clumps is
- * drawn within `full` metres of the eye; beyond, they thin out to none at `fade`, each clump sinking into the ground on
+ * drawn within `full` metres of the eye; beyond, they thin out to none at `fade`, each clump dissolving on
  * its own as its distance's share passes its rank, so no line shows where the field ends. Within `swap` metres a clump
  * has all its blades; beyond, the light clump. The far field's sparse wide clumps grow in from `farFrom` as the near
  * one thins, at most a `farDensity` share of them, and thin out again to none at `farTo`.
  */
 const PROFILES = {
-  medium: { full: 6, fade: 30, swap: 9, falloff: 2.2, density: 0.6, farFrom: 18, farTo: 70, farDensity: 0.3 },
-  high: { full: 10, fade: 44, swap: 13, falloff: 2, density: 1, farFrom: 26, farTo: 100, farDensity: 0.4 },
+  medium: { full: 6, fade: 30, swap: 9, falloff: 2.2, density: 0.6, farFrom: 18, farTo: 70, farDensity: 0.45 },
+  high: { full: 10, fade: 44, swap: 13, falloff: 2, density: 1, farFrom: 26, farTo: 100, farDensity: 0.6 },
 } as const;
 type Profile = (typeof PROFILES)[keyof typeof PROFILES];
 
@@ -86,6 +86,10 @@ export function clumpGeometry(blades: number, rows: readonly number[], widen = 1
     const leanBy = 0.12 + random() * 0.28;
     const height = 0.55 + random() * 0.45;
     const width = (0.022 + random() * 0.014) * widen;
+    // Each blade its own shade and hue, some fresher, some drier, so a clump never reads as one stamped colour.
+    const dry = random() - 0.5;
+    const light = 0.86 + random() * 0.24;
+    const hue = [light * (1 + 0.22 * dry), light * (1 + 0.04 * (random() - 0.5)), light * (1 - 0.3 * dry)];
     const first = positions.length / 3;
     const point = (t: number, side: number) => {
       const bend = leanBy * t * t;
@@ -99,7 +103,7 @@ export function clumpGeometry(blades: number, rows: readonly number[], widen = 1
       const n = new THREE.Vector3(Math.sin(lean) * 0.35, 1, Math.cos(lean) * 0.35).normalize();
       normals.push(n.x, n.y, n.z);
       const shade = tone[0] + (tone[1] - tone[0]) * t ** 0.8;
-      colors.push(shade, shade, shade * (0.92 - 0.1 * t), 1);
+      colors.push(shade * hue[0]!, shade * hue[1]!, shade * hue[2]! * (0.97 - 0.06 * t), 1);
       uvs.push(side * 0.5 + 0.5, t);
     };
     for (const t of rows) { point(t, -1); point(t, 1); }
@@ -251,6 +255,8 @@ type Own = {
   grassMix: { value: THREE.Vector4 };
   /** Spreads its clumps up to `1 + z` times as wide from `x` to `y` metres. */
   grassSpread: { value: THREE.Vector3 };
+  /** Flattens its blades towards their clump's colour, by up to `z`, from `x` to `y` metres. */
+  grassFlat: { value: THREE.Vector3 };
 };
 
 /**
@@ -265,6 +271,7 @@ function grassMaterial(shared: Shared, flower = false): { material: LitMaterial;
     grassRamp: { value: new THREE.Vector4() },
     grassMix: { value: new THREE.Vector4() },
     grassSpread: { value: new THREE.Vector3() },
+    grassFlat: { value: new THREE.Vector3() },
   };
   Object.assign(material.uniforms, shared, own);
   const anchor = "vec4 world = model * vec4(position, 1.0);";
@@ -276,8 +283,11 @@ uniform vec3 grassPush;
 uniform vec4 grassRamp;
 uniform vec4 grassMix;
 uniform vec3 grassSpread;
+uniform vec3 grassFlat;
 in float grassRank;
-void main() {`)
+out float grassShown;
+void main() {
+    float grassFlatten = 0.0;`)
     .replace(anchor, `${anchor}
     {
         vec3 origin = (model * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
@@ -288,7 +298,8 @@ void main() {`)
         float shown = clamp((share - grassRank) / ${GROW.toFixed(2)}, 0.0, 1.0) * step(grassMix.z, jittered) * step(jittered, grassMix.w);
         float spread = 1.0 + grassSpread.z * clamp((d - grassSpread.x) / (grassSpread.y - grassSpread.x), 0.0, 1.0);
         world.xz = origin.xz + (world.xz - origin.xz) * spread;
-        world.y = origin.y + (world.y - origin.y) * shown;
+        grassShown = shown;
+        grassFlatten = smoothstep(grassFlat.x, grassFlat.y, d) * grassFlat.z;
         float up = max(world.y - origin.y, 0.0);
         float bend = uv.y * uv.y;
         float gust = 0.5 + 0.5 * sin(grassTime * 0.55 + origin.x * 0.045 + origin.z * 0.03);
@@ -300,27 +311,31 @@ void main() {`)
         world.xz += normalize(away + vec2(1e-4, 0.0)) * near * bend * 0.6 * up;
         world.y -= near * bend * 0.45 * up;
     }`);
+  // A clump never grows from or sinks into the ground with its share, which raised and lowered the field as the eye
+  // moved (#868, #871): it keeps its height and dissolves in and out in a screen-door dither instead.
+  const sampled = "MaterialSample m = sampleMaterial();";
+  if (!material.fragmentShader.includes(sampled)) { throw new Error("The lit fragment stage has no material sample to dither after"); }
+  material.fragmentShader = material.fragmentShader
+    .replace("void main() {", "in float grassShown;\nvoid main() {")
+    .replace(sampled, `${sampled}
+    if (grassShown < 1.0 && grassShown <= fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))))) {
+        discard;
+    }`);
+  const projected = "gl_Position = projectionMatrix";
+  if (!material.vertexShader.includes(projected)) { throw new Error("The lit vertex stage has no projection to colour before"); }
   if (flower) {
-    // A head keeps its shape however short its clump; the stem and leaf take the clump's own green. A plant never grows
-    // from or sinks into the ground with its share, which would raise and lower its head as the eye nears (#868): it
-    // keeps its own height and dissolves in and out in a screen-door dither instead.
-    const sink = "world.y = origin.y + (world.y - origin.y) * shown;";
-    if (!material.vertexShader.includes(sink)) { throw new Error("The grass vertex stage no longer sinks its clumps"); }
+    // A head keeps its shape however short its clump; the stem and leaf take the clump's own green.
     material.vertexShader = material.vertexShader
-      .replace("in float grassRank;", "in float grassRank;\nin float flowerPart;\nin vec3 flowerHead;\nin vec3 flowerStem;\nout float flowerShown;")
-      .replace(sink, "flowerShown = shown;")
+      .replace("in float grassRank;", "in float grassRank;\nin float flowerPart;\nin vec3 flowerHead;\nin vec3 flowerStem;")
       .replace(anchor, `float flowerKeep = length(model[0].xyz) / length(model[1].xyz);
     vec4 world = model * vec4(mix(position, flowerHead + (position - flowerHead) * vec3(1.0, flowerKeep, 1.0), flowerPart), 1.0);`)
       .replace("vec3 n = normal;", "vec3 n = normal * mix(vec3(1.0), vec3(1.0, 1.0 / flowerKeep, 1.0), flowerPart);")
-      .replace("gl_Position = projectionMatrix", "vColor.rgb = mix(color.rgb * flowerStem, vColor.rgb, flowerPart);\n    gl_Position = projectionMatrix");
-    const sampled = "MaterialSample m = sampleMaterial();";
-    if (!material.fragmentShader.includes(sampled)) { throw new Error("The lit fragment stage has no material sample to dither after"); }
-    material.fragmentShader = material.fragmentShader
-      .replace("void main() {", "in float flowerShown;\nvoid main() {")
-      .replace(sampled, `${sampled}
-    if (flowerShown < 1.0 && flowerShown <= fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))))) {
-        discard;
-    }`);
+      .replace(projected, `vColor.rgb = mix(color.rgb * flowerStem, vColor.rgb, flowerPart);\n    ${projected}`);
+  } else {
+    // With distance a blade loses its root-to-tip shading and takes its clump's flat colour, the turf's tone, so a far
+    // or thinning clump melts into the ground under it instead of standing on it as a dark shard.
+    material.vertexShader = material.vertexShader
+      .replace(projected, `vColor.rgb = mix(vColor.rgb, instanceColor * ${FLAT_SHADE.toFixed(2)}, grassFlatten);\n    ${projected}`);
   }
   return { material, own };
 }
@@ -347,7 +362,7 @@ export class Grass {
   readonly #shared: Shared = {
     grassTime: { value: 0 }, grassEye: { value: new THREE.Vector3() }, grassPush: { value: new THREE.Vector3(0, -1e4, 0) },
   };
-  /** 15 blades of five triangles near the eye, 7 wider blades of three beyond `swap`, and 6 of one in the far field. */
+  /** 15 blades of five triangles near the eye, 7 wider blades of three beyond `swap`, and 8 of one in the far field. */
   readonly #full: Kind;
   readonly #light: Kind;
   readonly #flowers: Kind;
@@ -361,12 +376,12 @@ export class Grass {
   constructor(source: GrassSource, detail: WorldDetail = "medium") {
     this.root.name = "greyhaven.grass";
     const kind = (geometry: THREE.BufferGeometry, flower = false): Kind => ({ geometry, ...grassMaterial(this.#shared, flower) });
-    this.#full = kind(clumpGeometry(15, [0, 0.4, 0.75]));
+    this.#full = kind(clumpGeometry(15, [0, 0.4, 0.75], 1, [0.4, 1]));
     // Seen from further off, its tips a little darker, so the field deepens with distance.
-    this.#light = kind(clumpGeometry(7, [0, 0.5], 1.5, [0.34, 0.8]));
+    this.#light = kind(clumpGeometry(7, [0, 0.5], 1.5, [0.45, 0.9]));
     this.#flowers = kind(flowerGeometry(), true);
-    // Its blades darker at the tip than a near blade's, as a distant meadow's shade.
-    this.#far = kind(clumpGeometry(6, [0], 2, [0.42, 0.74]));
+    // Narrow blades in the turf's own shade, so a far clump reads as texture on the ground, not a spike over it.
+    this.#far = kind(clumpGeometry(8, [0], 1.4, [0.6, 0.85]));
     this.#farFlowers = kind(flowerGeometry(3, 1.2, [0, 1]), true);
     this.#near = { size: source.cellMetres, cells: new Map(), build: (column, row) => source.cell(column, row) };
     const { farCell, farCellMetres } = source;
@@ -391,17 +406,19 @@ export class Grass {
       this.#clear();
     } else {
       const { near, far } = Grass.#shares(profile);
-      const set = (kind: Kind, s: Share, band: [number, number], spread: [number, number, number]) => {
+      const set = (kind: Kind, s: Share, band: [number, number], spread: [number, number, number], flat: [number, number, number] = [0, 1, 0]) => {
+        kind.own.grassFlat.value.set(...flat);
         kind.own.grassRamp.value.set(s.a0, s.a1, s.b0, s.b1);
         kind.own.grassMix.value.set(s.density, s.p, band[0], band[1]);
         kind.own.grassSpread.value.set(...spread);
       };
       const everywhere: [number, number] = [-1e4, 1e4];
       const nearSpread: [number, number, number] = [profile.full, profile.fade, 0.5];
-      set(this.#full, near, [-1e4, profile.swap], nearSpread);
-      set(this.#light, near, [profile.swap, 1e4], nearSpread);
+      const nearFlat: [number, number, number] = [profile.full, profile.fade, 0.75];
+      set(this.#full, near, [-1e4, profile.swap], nearSpread, nearFlat);
+      set(this.#light, near, [profile.swap, 1e4], nearSpread, nearFlat);
       set(this.#flowers, near, everywhere, nearSpread);
-      set(this.#far, far, everywhere, [profile.fade, profile.farTo, 0.3]);
+      set(this.#far, far, everywhere, [profile.fade, profile.farTo, 0.3], [profile.farFrom, profile.fade + 10, 0.9]);
       set(this.#farFlowers, far, everywhere, [profile.fade, profile.farTo, 0.3]);
     }
     this.#changed = true;
@@ -491,8 +508,7 @@ export class Grass {
       matrix.makeScale(spread, clumps[at + 4]!, spread).premultiply(rotation.makeRotationY(clumps[at + 3]!));
       matrix.setPosition(clumps[at]!, clumps[at + 1]! - 0.03, clumps[at + 2]!);
       matrix.toArray(matrices, index * 16);
-      const tone = far ? FAR_TONE : [1, 1, 1];
-      colors.set([clumps[at + 5]! * tone[0]!, clumps[at + 6]! * tone[1]!, clumps[at + 7]! * tone[2]!], index * 3);
+      colors.set([clumps[at + 5]!, clumps[at + 6]!, clumps[at + 7]!], index * 3);
       // The clumps come in a random order: an index's share of them is an even random rank.
       ranks[index] = (index + 0.5) / count;
       if (clumps[at + 8]! > 0) { flowering.push(index); }
