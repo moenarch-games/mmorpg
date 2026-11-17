@@ -320,6 +320,16 @@ impl Logs {
                         }
                     },
                 ),
+                // A strike's timing reward (#928).
+                ZoneEvent::StrikeRewarded { reward, .. } => (
+                    LineKind::Combat,
+                    match reward {
+                        mmorpg_core::StrikeReward::LandingStrike => {
+                            "Landing strike! You recover quickly.".into()
+                        }
+                        mmorpg_core::StrikeReward::FollowUp => "Follow up!".into(),
+                    },
+                ),
                 // A trailing lurker gave up on the diver (#274).
                 ZoneEvent::LostInterest { .. } => {
                     (LineKind::Combat, "The lurker loses interest.".into())
