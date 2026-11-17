@@ -6,6 +6,7 @@ import { createLocalWorld, type LocalWorld } from "./local-world";
 import { createSceneryProvider, type SceneryProvider } from "./scenery";
 import { ScenarioSource, type ScenarioChoice, type ScenarioZoneHandle } from "./scenario-source";
 import { markStartup } from "../startup-marks";
+import { deriveWorld } from "./derived-world";
 import type { ActionGraph, LabOptions, LabSetup } from "./action-lab";
 import type { ConfigCheck, LabComparison, LabConfig, LabNetwork, LabRun, LabScenario } from "./lab-experiment";
 import type { ZoneWorld } from "./world-source";
@@ -26,23 +27,47 @@ function nextTask(): Promise<void> {
  */
 export async function loadLocalWorld(characters: LocalCharacters, wasmReady: () => void = () => {}): Promise<LocalWorld> {
   markStartup("wasm-fetch");
-  await loadWasm();
+  const module = await loadWasm();
   markStartup("wasm-ready");
   wasmReady();
+  // A worker derives the scenery export and the static scene meanwhile (#855); this instance seeds them.
+  const derived = deriveWorld(module);
   // The terrain grids are the slowest pure derivation of the presented scenery; a later visit reuses them per release
   // (#526). Without a manifest or storage, or on a stale or damaged entry, the module derives them.
   const release = await fetchRelease(import.meta.env.BASE_URL);
   const storage = typeof caches === "undefined" ? undefined : caches;
   const cached = release ? await readDerived(storage, location.origin, release, TERRAIN_GRIDS) : null;
+  derived.supplyGrids(cached);
   // The zone content (built once, the catalog's source) blocks the page for a while; let the art
   // downloads `wasmReady` started issue their follow-up requests before the scenery's turn.
   generated.catalog();
   await nextTask();
-  const seeded = cached !== null && generated.seedTerrainGrids(cached);
+  const reused = cached !== null && generated.seedTerrainGrids(cached);
+  // Without cached grids, build the presentation scenery itself (not its grids) while the worker derives.
+  if (!reused) { generated.reliefAt(0, 0); }
+  await nextTask();
+  const scenery = await derived.scenery;
+  const seeded = reused || (scenery !== null && generated.seedTerrainGrids(scenery.grids));
+  if (scenery) { generated.seedScenery(scenery.scenery); }
+  staticSceneDerived = derived.scene.then((scene) => {
+    if (scene) { generated.seedStaticScene(scene.skeleton, scene.layout, scene.vertices, scene.indices, scene.models); }
+  });
   const world = createLocalWorld(generated, characters);
   markStartup("world-created");
-  if (release && !seeded) { void writeDerived(storage, location.origin, release, TERRAIN_GRIDS, generated.terrainGridCache()); }
+  if (release && !reused) {
+    void writeDerived(storage, location.origin, release, TERRAIN_GRIDS, seeded && scenery ? scenery.grids : generated.terrainGridCache());
+  }
   return world;
+}
+
+let staticSceneDerived: Promise<void> = Promise.resolve();
+
+/**
+ * Settles once the worker's static scene (#855) was seeded into this page's module, or failed, so building the scene
+ * then costs only its terrain tiles and the renderer's own work; call after `loadLocalWorld`.
+ */
+export function whenStaticSceneDerived(): Promise<void> {
+  return staticSceneDerived;
 }
 
 /**

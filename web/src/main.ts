@@ -47,7 +47,7 @@ import {
 } from "./character-roster";
 import type { LocalWorld } from "./world/local-world";
 import { LocalCharacters, VisitStorage } from "./world/local-characters";
-import { actionLabDefinitions, committedArea, committedLevel, committedPhysique, createScenarioWorld, customizePhysique, importedRestClip, labExperiments, loadLocalWorld, physiqueModel, physiqueModifiers, presentZone, soundManifest } from "./world/wasm-runtime";
+import { actionLabDefinitions, committedArea, committedLevel, committedPhysique, createScenarioWorld, customizePhysique, importedRestClip, labExperiments, loadLocalWorld, physiqueModel, physiqueModifiers, presentZone, soundManifest, whenStaticSceneDerived } from "./world/wasm-runtime";
 import { loadPendingPhysique, neutralPhysique, PhysiqueEditor, physiqueLook, savePendingPhysique, type PhysiqueModel } from "./physique";
 import { WorldSound } from "./world/world-sound";
 import { ActionLabPanel, labQuery } from "./world/action-lab";
@@ -984,8 +984,9 @@ function updateEntryButton(): void {
   enterWorldButton.disabled = chosenWorld() === null || joining !== null || !entryArtReady();
   if (!enterWorldButton.disabled) {
     markStartup("enter-enabled");
-    // The static scene's seconds-long build waits until the entry art has loaded and entry is open (#855).
-    worldView.prewarmStatic();
+    // The static scene waits until the entry art has loaded and entry is open, and for the worker that derives most of
+    // it (#855).
+    void whenStaticSceneDerived().then(() => worldView.prewarmStatic());
   }
   let entryLabel = "Enter World";
   if (arenaEntry.selected) { entryLabel = practiceWorld ? "Start practice" : "Join Battle Royale"; }
