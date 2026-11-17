@@ -33,6 +33,12 @@ pub const WILD_PREFIX: &str = "greyhaven.wild.";
 pub const CLIPS: [&str; 3] = ["Idle", "Walk", "Eat"];
 /// Seconds a rest spends turning toward the next waypoint.
 const TURN_SECONDS: f64 = 0.6;
+/// The cat's `Walk` (#799): metres its body travels per cycle with its planted paws held still
+/// (the bundle descriptor's `walkStride`), and the cycle's seconds. Walked at exactly
+/// [`CAT_PACE`], its paws track the ground instead of skating.
+const CAT_STRIDE: f64 = 0.3469;
+const CAT_WALK_SECONDS: f64 = 32. / 24.;
+const CAT_PACE: f64 = CAT_STRIDE / CAT_WALK_SECONDS;
 
 /// One animal's authored loop.
 struct Beat {
@@ -123,7 +129,7 @@ const fn quarter([x, z]: [i32; 2], q: u8) -> [i32; 2] {
 #[rustfmt::skip]
 const BEATS: [Beat; 52] = [
     // East of the inn door, between the front wall and the square.
-    roam("greyhaven.ambient.cat", [[1_800, 600], [2_080, 640], [1_950, 820]], 0.45, 4.5, 0.),
+    roam("greyhaven.ambient.cat", [[1_800, 600], [2_080, 640], [1_950, 820]], CAT_PACE, 4.5, 0.),
     // Before the Millbrook farmhouse, inside the field fence.
     roam("greyhaven.ambient.dog", [[5_900, 5_200], [6_500, 5_220], [6_250, 5_420]], 0.9, 3., 2.),
     // Along the west face of the crates by the barn.
@@ -131,8 +137,8 @@ const BEATS: [Beat; 52] = [
     // The settlements (#824): a dog by Barrowdown's barn and one at the hunters' camp, cats at
     // the Ford Inn and the Westmere Lodge, a rodent by the east hamlet's barn.
     roam("greyhaven.ambient.dog", [[53_000, 68_400], [53_800, 68_600], [53_400, 69_400]], 0.9, 3.5, 1.),
-    roam("greyhaven.ambient.cat", [[105_000, 20_900], [105_400, 21_200], [104_900, 21_300]], 0.45, 5., 3.),
-    roam("greyhaven.ambient.cat", [[-65_200, 4_600], [-64_700, 4_900], [-65_300, 5_100]], 0.45, 4., 1.5),
+    roam("greyhaven.ambient.cat", [[105_000, 20_900], [105_400, 21_200], [104_900, 21_300]], CAT_PACE, 5., 3.),
+    roam("greyhaven.ambient.cat", [[-65_200, 4_600], [-64_700, 4_900], [-65_300, 5_100]], CAT_PACE, 4., 1.5),
     roam("greyhaven.ambient.dog", [[-48_600, 78_900], [-47_800, 78_700], [-48_000, 79_100]], 0.9, 3., 4.),
     roam("greyhaven.ambient.rodent", [[13_600, 41_800], [14_200, 41_900], [13_900, 42_100]], 0.35, 2.5, 2.5),
     // The farm animals (#849), by the barns.
@@ -358,6 +364,50 @@ mod tests {
                     pose.key
                 );
             }
+        }
+    }
+
+    #[test]
+    fn cats_cover_one_stride_per_walk_cycle_and_rest_in_place() {
+        // #799: while a cat walks, its ground travel tracks its Walk clip at the stride its paws
+        // plant at; resting, or under reduced motion, it holds still in Idle.
+        let scenery = greyhaven_vale_scenery();
+        let cats: Vec<_> = (0..BEATS.len())
+            .filter(|&i| BEATS[i].key == "greyhaven.ambient.cat")
+            .collect();
+        assert_eq!(cats.len(), 3);
+        let at = |pose: &Pose| [pose.model[12], pose.model[14]].map(f64::from);
+        let step = 0.25;
+        let (mut walked, mut rested) = (0, 0);
+        for n in 0..600 {
+            let seconds = f64::from(n) * step;
+            let (now, next) = (
+                poses(&scenery, seconds, true),
+                poses(&scenery, seconds + step, true),
+            );
+            for &i in &cats {
+                let (a, b) = (now[i], next[i]);
+                let [dx, dz] = [at(&b)[0] - at(&a)[0], at(&b)[1] - at(&a)[1]];
+                let moved = dx.hypot(dz);
+                if a.clip == 1 && b.clip == 1 && a.model[0] == b.model[0] {
+                    // One leg: the clip advances CAT_WALK_SECONDS per CAT_STRIDE travelled.
+                    let cycles = (b.time - a.time) / CAT_WALK_SECONDS;
+                    assert!((moved - cycles * CAT_STRIDE).abs() < 1e-3, "{moved} m");
+                    walked += 1;
+                } else if a.clip == 0 && b.clip == 0 {
+                    assert!(moved < 1e-6, "a resting cat moved {moved} m");
+                    rested += 1;
+                }
+            }
+        }
+        assert!(walked > 100 && rested > 100);
+        for &i in &cats {
+            let (early, late) = (
+                poses(&scenery, 3., false)[i],
+                poses(&scenery, 40., false)[i],
+            );
+            assert_eq!((early.clip, early.time), (0, 0.));
+            assert_eq!(early, late);
         }
     }
 
