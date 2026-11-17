@@ -340,7 +340,7 @@ describe("WASM local zone host", () => {
     // A new character has made its class choice on entry.
     expect(projection.viewer).toEqual({
       copper: 0, health: 50, maxHealth: 50, experience: 0, experienceToNextLevel: 100, level: 1, dead: false, inCombat: false, weaponDrawn: false, target: null,
-      classChoice: { classId: "arcanist", sex: "female" }, resource: { kind: "mana", value: 110, max: 110 }, cast: null, globalCooldown: 0, damage: { min: 3, max: 6 },
+      classChoice: { classId: "arcanist", sex: "female" }, resource: { kind: "mana", value: 110, max: 110 }, cast: null, globalCooldown: 0, globalCooldownTotal: 0, damage: { min: 3, max: 6 },
       guard: { raised: null, protecting: false, broken: 0 }, stance: null, combo: null, breath: wireCatalog().breathMaxTicks, waystones: [],
     });
     expect(() => zone.submit(player, 1, Uint8Array.of(1, 1, 0, 0, 0, 0))).toThrow();
@@ -442,17 +442,27 @@ describe("WASM local zone host", () => {
   test("the ambient cat, dog and rodent pace by the inn and at Millbrook Farm (#419)", () => {
     const { scenery } = createLocalWorld(wasm, testCharacters());
     const { ambient } = scenery;
-    expect(ambient.entries).toEqual(["greyhaven.ambient.cat", "greyhaven.ambient.dog", "greyhaven.ambient.rodent"]);
-    expect(ambient.clips).toEqual(["Idle", "Walk"]);
-    expect(ambient.anchors.map(([x, z]) => scenery.areaAt(x, z)?.name)).toEqual(["Greyhaven Outpost", "Millbrook Farm", "Millbrook Farm"]);
+    expect(ambient.entries.slice(0, 3)).toEqual(["greyhaven.ambient.cat", "greyhaven.ambient.dog", "greyhaven.ambient.rodent"]);
+    expect(ambient.clips).toEqual(["Idle", "Walk", "Eat"]);
+    expect(ambient.anchors.slice(0, 3).map(([x, z]) => scenery.areaAt(x, z)?.name)).toEqual(["Greyhaven Outpost", "Millbrook Farm", "Millbrook Farm"]);
+    // More pets, the farm animals (#849) and the wildlife (#857) follow the first three.
+    const counts: Record<string, number> = {};
+    for (const entry of ambient.entries) { counts[entry] = (counts[entry] ?? 0) + 1; }
+    expect(counts).toEqual({
+      "greyhaven.ambient.cat": 3, "greyhaven.ambient.dog": 3, "greyhaven.ambient.rodent": 2,
+      "greyhaven.farm.cow": 3, "greyhaven.farm.horse": 3, "greyhaven.farm.pig": 2, "greyhaven.farm.chicken": 7, "greyhaven.farm.sheep": 3, "greyhaven.farm.goat": 2, "greyhaven.farm.donkey": 2,
+      "greyhaven.wild.stag": 2, "greyhaven.wild.doe": 5, "greyhaven.wild.boar": 3, "greyhaven.wild.fox": 3, "greyhaven.wild.rabbit": 5, "greyhaven.wild.crow": 3, "greyhaven.wild.songbird": 1,
+    });
+    expect(ambient.anchors).toHaveLength(ambient.entries.length);
     const frame = ambient.frame(12, true);
-    expect(frame.length).toBe(3 * 18);
-    // Reduced motion holds each animal idle at its first waypoint, on the relief.
+    expect(frame.length).toBe(ambient.entries.length * 18);
+    // Reduced motion holds each animal idle at its first waypoint, on the surface.
     const still = ambient.frame(99, false);
     ambient.anchors.forEach(([x, z], index) => {
       expect(still[index * 18 + 12]).toBeCloseTo(x / 100, 4);
       expect(still[index * 18 + 14]).toBeCloseTo(z / 100, 4);
-      expect(still[index * 18 + 13]).toBeCloseTo(scenery.reliefAt(x, z) / 100, 4);
+      // On the drawn surface: the physical ground, raised on the rim, plus the relief above it.
+      expect(still[index * 18 + 13]).toBeCloseTo(wasm.surfaceAt(x, z) / 100, 4);
       expect(still[index * 18 + 16]).toBe(0);
     });
   });
@@ -530,6 +540,7 @@ describe("WASM local zone combat intents", () => {
     expect([...catalog.items.values()].map((item) => item.name)).toEqual([
       "Torn Fur", "Worn Dagger", "Militia Shortsword", "Apprentice Wand", "Pine Buckler", "Cloth Hood", "Padded Tunic",
       "Padded Trousers", "Worn Boots", "Wolf Pelt", "Sunken Relic", "Brute-Breaker Mace", "Greyfang Scout Jerkin", "Hollow-Delver's Cowl", "Thornreaver Blade", "Captain's Scarred Brigandine", "Redbrand Command Signet", "Marshal's Commendation Greaves",
+      "Boar Tusk", "Stolen Grain Sack", "Lurker Scale", "Redbrand Orders", "Militia Spear",
     ]);
     expect([...catalog.creatureTemplates.values()].map((template) => template.name)).toEqual([
       "Timber Wolf", "Young Boar", "Grain Rat", "Field Marauder", "Mirefin Lurker", "Redbrand Bandit", "Garrick Redbrand",
@@ -602,7 +613,16 @@ describe("WASM local zone combat intents", () => {
     run(source, 1);
     const refused = source.latestProjection();
     expect(refused?.viewer.target).toEqual(target);
-    expect(refused?.events).toEqual([{ kind: "attack-performed", source: { kind: "player", id: refused!.viewerId }, target: null }]);
+    const viewer = { kind: "player", id: refused!.viewerId } as const;
+    // The basic strike winds up first and lands on its contact tick (#885).
+    const contact = 15;
+    expect(refused?.events).toEqual([{ kind: "strike-began", source: viewer, family: "sword", variant: "first", contact }]);
+    const landed: ZoneSnapshot["events"][number][] = [];
+    for (let tick = 0; tick < contact; tick += 1) {
+      run(source, 1);
+      landed.push(...(source.latestProjection()?.events ?? []));
+    }
+    expect(landed).toEqual([{ kind: "attack-performed", source: viewer, target: null }]);
     source.sendCommand({ kind: "release-spirit" });
     source.sendCommand({ kind: "select-target", target: null });
     run(source, 1);

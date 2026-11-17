@@ -49,8 +49,8 @@ const INN_CAST = 344;
 const CASTS = [162, INN_CAST];
 const FIREBOLT = 9;
 const TICKS = 520;
-/** One debris record on the wire (`DEBRIS_RECORD_BYTES`). */
-const DEBRIS_BYTES = 19;
+/** One debris record on the wire (`DEBRIS_RECORD_BYTES`: 2 + 1 + 1 + 12 + 8 + 1). */
+const DEBRIS_BYTES = 25;
 
 function fnv(hash: bigint, bytes: Uint8Array): bigint {
   let value = hash;

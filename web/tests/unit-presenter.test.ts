@@ -20,6 +20,8 @@ async function joined() {
 }
 
 const look = { classId: "warden", sex: "female", headwear: "ironcrest-helm" } as const;
+/** The residents with an authored preset of their own; guards and villagers vary by entity. */
+const NAMED_RESIDENTS = new Set(["Marshal Elden Greywatch", "Innkeeper Bram Tolliver", "Farmer Osric Mill", "Brother Aldous", "Tanner Hilda Brook"]);
 
 describe("the shared unit presenter in the browser", () => {
   test("draws every sampled unit procedurally until its imported model is ready", async () => {
@@ -72,8 +74,9 @@ describe("the shared unit presenter in the browser", () => {
       expect(resident.resident).toMatch(/^resident\./);
       expect(resident.headwear).toBe(false);
       expect(resident.loadout).toBe(resident.resident === "resident.guard" ? "sword" : null);
-      // Each guard is his own man (asset-tooling #380); the named residents keep their presets.
-      expect(resident.variety).toBe(resident.resident === "resident.guard" ? resident.entity.id : null);
+      // Each guard and villager (#819) is their own person (asset-tooling #380); the named residents keep their presets.
+      const named = NAMED_RESIDENTS.has(world.catalog.npcs.get(resident.entity.id)?.name ?? "");
+      expect(resident.variety).toBe(named ? null : resident.entity.id);
       // Tanner Hilda Brook is drawn on the female figure (#493), everyone else on the male.
       expect(resident.figure).toBe(resident.resident === "resident.tanner" ? "humanoid.ranger.female" : "humanoid.ranger.male");
     }
