@@ -1,5 +1,6 @@
 //! Native wgpu adapter. The same submitted mesh frames drive presentation and picking.
 mod frame;
+pub(crate) use frame::EMISSIVE_NITS;
 mod particles;
 #[cfg(test)]
 mod profile;
