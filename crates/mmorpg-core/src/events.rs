@@ -204,6 +204,14 @@ pub enum ZoneEvent {
         ability: AbilityId,
         aim: crate::StrikeAim,
     },
+    /// `source` began a basic strike (#885): its `family`'s `variant`, contacting `contact`
+    /// ticks from now (a jumping strike on touchdown, never sooner).
+    StrikeBegan {
+        source: EntityRef,
+        family: crate::WeaponFamily,
+        variant: crate::StrikeVariant,
+        contact: u16,
+    },
     /// `source` began a timed swing of `ability` toward `aim` (#679): `startup` ticks of
     /// wind-up, then `active` ticks of sweep.
     SwingBegan {
@@ -302,6 +310,7 @@ impl ZoneEvent {
                 Some([Some(source), target])
             }
             Self::SwingBegan { source, .. } if source != own => Some([Some(source), None]),
+            Self::StrikeBegan { source, .. } if source != own => Some([Some(source), None]),
             Self::Clashed { source, target, .. } if source != own && target != own => {
                 Some([Some(source), Some(target)])
             }
@@ -330,6 +339,7 @@ impl ZoneEvent {
             | Self::AbilityUsed { .. }
             | Self::StrikeSwept { .. }
             | Self::SwingBegan { .. }
+            | Self::StrikeBegan { .. }
             | Self::Clashed { .. }
             | Self::Healed { .. }
             | Self::AuraApplied { .. }

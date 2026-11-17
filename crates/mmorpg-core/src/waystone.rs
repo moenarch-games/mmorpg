@@ -338,6 +338,7 @@ impl ZoneSimulation {
             player.strafe = crate::zone::Axis::Zero;
             player.target = None;
             player.swing_queued = false;
+            player.melee = crate::MeleeState::default();
             player.repairing = None;
         });
         self.place_in_interest(crate::EntityRef::Player(player_id), position.x, position.z);

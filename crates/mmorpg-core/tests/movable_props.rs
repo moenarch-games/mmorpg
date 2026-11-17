@@ -203,6 +203,16 @@ fn a_broken_crate_leaves_and_returns_at_rest_at_its_spawn() {
     state.creatures[0].health = 1;
     warden.zone = ZoneSimulation::from_snapshot(state, Arc::clone(warden.zone.content())).unwrap();
     warden.step_up();
+    // A strike one tick from its contact (#885), so the sliding crate cannot leave its reach.
+    let mut state = warden.zone.snapshot().unwrap();
+    state.players[0].facing = 0;
+    state.players[0].combat.melee.pending = Some(mmorpg_core::PendingStrike {
+        family: mmorpg_core::WeaponFamily::Sword,
+        variant: mmorpg_core::StrikeVariant::First,
+        contact: 1,
+        stance: None,
+    });
+    warden.zone = ZoneSimulation::from_snapshot(state, Arc::clone(warden.zone.content())).unwrap();
     warden.send(ZoneCommand::SelectTarget(Some(EntityRef::Creature(
         CreatureId::new(1),
     ))));

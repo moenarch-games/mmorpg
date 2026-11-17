@@ -87,7 +87,7 @@ pub const fn sell_price(item: ItemId) -> u32 {
     match item.get() {
         1 => 1,
         2 => 2,
-        3 | 4 => 6,
+        3 | 4 | 23 => 6,
         5 => 5,
         6 | 7 => 4,
         8 | 9 => 3,
@@ -117,6 +117,7 @@ pub fn starter_vendor_stock() -> VendorStock {
         offer(5, 20),
         offer(3, 25),
         offer(4, 25),
+        offer(23, 25),
     ])
     .expect("the starter vendor stock is valid")
 }
@@ -136,6 +137,7 @@ pub fn fenford_trader_stock() -> VendorStock {
         offer(7, 15),
         offer(5, 20),
         offer(3, 25),
+        offer(23, 25),
         offer(12, 45),
         offer(13, 45),
         offer(14, 45),

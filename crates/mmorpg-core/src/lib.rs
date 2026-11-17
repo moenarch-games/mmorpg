@@ -39,6 +39,7 @@ mod home;
 mod interest;
 mod inventory;
 mod loot;
+mod melee;
 mod minion;
 mod mobility;
 mod movable;
@@ -156,6 +157,7 @@ pub use loot::{
     LootOutcome, LootRewards, LootRolls, LootSettlementError, LootTable, LootTableError,
     MAX_LOOT_OUTCOMES, loot_table, settle_loot,
 };
+pub use melee::{JUMP_STRIKE_AIR_TICKS, MeleeState, PendingStrike};
 pub use minion::{
     COMPANION_HALF_EXTENTS_UNITS, CanonicalMinion, DEFEND_RADIUS_UNITS, ENGAGE_RADIUS_UNITS,
     FORMATION_RADIUS_UNITS, MAX_MINIONS, MAX_MINIONS_PER_SUMMONER, MINION_HALF_EXTENTS_UNITS,
@@ -208,6 +210,10 @@ pub use routine::{
 pub use seat::{PostureView, SEAT_REACH_UNITS, Seat, SeatId, Sitting};
 use sim_combat::class;
 pub use sim_combat::class::{ClassChoice, PlayerClass, ResourceKind, Sex};
+pub use sim_combat::melee::{
+    CHAIN_LENGTH, CHAIN_WINDOW_TICKS, FamilyMelee, MAX_CONTACT_TICKS, MAX_INTERVAL_TICKS,
+    StrikeProfile, StrikeVariant, WeaponFamily,
+};
 pub use sim_combat::unit;
 pub use sim_foundation::{
     PlayerId, TICK_HZ, ZoneError, ZoneId, long_ticks_from_ms, physics, rng, subunits_per_tick,
@@ -310,9 +316,10 @@ pub enum ZoneCommand {
     SelectTarget(Option<EntityRef>),
     /// Claim all remaining rewards from one fenced corpse death.
     Loot(LootClaim),
-    /// Swings the weapon once toward `facing` (#517): the player turns to it and every
-    /// attackable unit inside the melee arc is hit; a swing that covers nobody whiffs. A press
-    /// while the previous swing recovers waits for it.
+    /// Swings the weapon once toward `facing` (#517): the player turns to it and begins the
+    /// strike its movement picks (#885); on its contact every attackable unit inside the
+    /// strike's arc is hit, and a strike that covers nobody whiffs. A press while the previous
+    /// strike recovers waits for it.
     Swing { facing: u16 },
     /// Returns a dead player to the graveyard with half health.
     ReleaseSpirit,

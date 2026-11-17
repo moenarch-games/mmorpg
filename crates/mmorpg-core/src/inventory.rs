@@ -3,6 +3,7 @@
 
 use std::{error::Error, fmt};
 
+use crate::WeaponFamily;
 use crate::equipment::{EquipmentSlot, ItemStats};
 
 pub const INVENTORY_SLOTS: usize = 16;
@@ -30,6 +31,9 @@ pub struct ItemTemplate {
     pub max_stack: u16,
     /// The equipment slot the item fits; `None` for plain bag items.
     pub slot: Option<EquipmentSlot>,
+    /// A main-hand weapon's melee family (#885), which times and shapes its basic strikes;
+    /// `None` for everything else.
+    pub weapon: Option<WeaponFamily>,
     /// Attributes added while equipped; zero for plain bag items.
     pub stats: ItemStats,
 }
@@ -37,12 +41,13 @@ pub struct ItemTemplate {
 /// Starter catalog, in stable ID order. Equippable items stack to one;
 /// consumable effects, prices and loot tables are separate rules. Quest
 /// items are plain bag items that quest content names as collect objectives.
-pub const ITEM_CATALOG: [ItemTemplate; 22] = [
+pub const ITEM_CATALOG: [ItemTemplate; 23] = [
     ItemTemplate {
         id: ItemId::new(1),
         name: "Torn Fur",
         max_stack: 20,
         slot: None,
+        weapon: None,
         stats: ItemStats::NONE,
     },
     ItemTemplate {
@@ -50,6 +55,7 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Worn Dagger",
         max_stack: 1,
         slot: Some(EquipmentSlot::MainHand),
+        weapon: Some(WeaponFamily::Dagger),
         stats: ItemStats {
             stamina: 0,
             strength: 2,
@@ -62,6 +68,7 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Militia Shortsword",
         max_stack: 1,
         slot: Some(EquipmentSlot::MainHand),
+        weapon: Some(WeaponFamily::Sword),
         stats: ItemStats {
             stamina: 1,
             strength: 3,
@@ -74,6 +81,7 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Apprentice Wand",
         max_stack: 1,
         slot: Some(EquipmentSlot::MainHand),
+        weapon: Some(WeaponFamily::Staff),
         stats: ItemStats {
             stamina: 0,
             strength: 0,
@@ -86,6 +94,7 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Pine Buckler",
         max_stack: 1,
         slot: Some(EquipmentSlot::OffHand),
+        weapon: None,
         stats: ItemStats {
             stamina: 2,
             strength: 0,
@@ -98,6 +107,7 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Cloth Hood",
         max_stack: 1,
         slot: Some(EquipmentSlot::Head),
+        weapon: None,
         stats: ItemStats {
             stamina: 1,
             strength: 0,
@@ -110,6 +120,7 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Padded Tunic",
         max_stack: 1,
         slot: Some(EquipmentSlot::Chest),
+        weapon: None,
         stats: ItemStats {
             stamina: 2,
             strength: 0,
@@ -122,6 +133,7 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Padded Trousers",
         max_stack: 1,
         slot: Some(EquipmentSlot::Legs),
+        weapon: None,
         stats: ItemStats {
             stamina: 1,
             strength: 0,
@@ -134,6 +146,7 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Worn Boots",
         max_stack: 1,
         slot: Some(EquipmentSlot::Feet),
+        weapon: None,
         stats: ItemStats {
             stamina: 1,
             strength: 0,
@@ -146,6 +159,7 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Wolf Pelt",
         max_stack: 10,
         slot: None,
+        weapon: None,
         stats: ItemStats::NONE,
     },
     ItemTemplate {
@@ -153,6 +167,7 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Sunken Relic",
         max_stack: 1,
         slot: None,
+        weapon: None,
         stats: ItemStats::NONE,
     },
     // Level 6 rewards of *Deeper into the Hollow* (#160), one per class's primary stat.
@@ -161,6 +176,7 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Brute-Breaker Mace",
         max_stack: 1,
         slot: Some(EquipmentSlot::MainHand),
+        weapon: Some(WeaponFamily::Mace),
         stats: ItemStats {
             stamina: 2,
             strength: 5,
@@ -173,6 +189,7 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Greyfang Scout Jerkin",
         max_stack: 1,
         slot: Some(EquipmentSlot::Chest),
+        weapon: None,
         stats: ItemStats {
             stamina: 2,
             strength: 0,
@@ -185,6 +202,7 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Hollow-Delver's Cowl",
         max_stack: 1,
         slot: Some(EquipmentSlot::Head),
+        weapon: None,
         stats: ItemStats {
             stamina: 2,
             strength: 0,
@@ -199,6 +217,7 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Thornreaver Blade",
         max_stack: 1,
         slot: Some(EquipmentSlot::MainHand),
+        weapon: Some(WeaponFamily::Sword),
         stats: ItemStats {
             stamina: 3,
             strength: 6,
@@ -211,6 +230,7 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Captain's Scarred Brigandine",
         max_stack: 1,
         slot: Some(EquipmentSlot::Chest),
+        weapon: None,
         stats: ItemStats {
             stamina: 5,
             strength: 2,
@@ -224,6 +244,7 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Redbrand Command Signet",
         max_stack: 1,
         slot: Some(EquipmentSlot::OffHand),
+        weapon: None,
         stats: ItemStats {
             stamina: 3,
             strength: 0,
@@ -237,6 +258,7 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Marshal's Commendation Greaves",
         max_stack: 1,
         slot: Some(EquipmentSlot::Feet),
+        weapon: None,
         stats: ItemStats {
             stamina: 1,
             strength: 3,
@@ -250,6 +272,7 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Boar Tusk",
         max_stack: 10,
         slot: None,
+        weapon: None,
         stats: ItemStats::NONE,
     },
     ItemTemplate {
@@ -257,6 +280,7 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Stolen Grain Sack",
         max_stack: 10,
         slot: None,
+        weapon: None,
         stats: ItemStats::NONE,
     },
     ItemTemplate {
@@ -264,6 +288,7 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Lurker Scale",
         max_stack: 10,
         slot: None,
+        weapon: None,
         stats: ItemStats::NONE,
     },
     ItemTemplate {
@@ -271,7 +296,22 @@ pub const ITEM_CATALOG: [ItemTemplate; 22] = [
         name: "Redbrand Orders",
         max_stack: 5,
         slot: None,
+        weapon: None,
         stats: ItemStats::NONE,
+    },
+    // The spear family's first weapon (#885): the longest reach, sold beside the shortsword.
+    ItemTemplate {
+        id: ItemId::new(23),
+        name: "Militia Spear",
+        max_stack: 1,
+        slot: Some(EquipmentSlot::MainHand),
+        weapon: Some(WeaponFamily::Spear),
+        stats: ItemStats {
+            stamina: 1,
+            strength: 3,
+            agility: 0,
+            intellect: 0,
+        },
     },
 ];
 

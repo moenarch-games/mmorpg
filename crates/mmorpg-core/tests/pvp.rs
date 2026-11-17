@@ -203,7 +203,7 @@ fn lifted_opponents(lifts: [i32; 2]) -> ZoneSimulation {
 
 #[test]
 fn a_swing_only_covers_bodies_inside_its_height_band() {
-    use mmorpg_core::{EntityRef, ZoneCommand, ZoneEvent};
+    use mmorpg_core::{EntityRef, ZoneEvent};
     for (lifts, covered) in [
         ([0, 0], true),
         ([500, 500], true),
@@ -215,9 +215,18 @@ fn a_swing_only_covers_bodies_inside_its_height_band() {
         ([270, 0], true),
         ([300, 0], false),
     ] {
-        let mut zone = lifted_opponents(lifts);
-        zone.apply_command(1, 2, ZoneCommand::Swing { facing: 16_384 })
-            .unwrap();
+        // A sword strike one tick from its contact (#885), whatever its lift: the band is measured
+        // where the blow lands.
+        let mut state = lifted_opponents(lifts).snapshot().unwrap();
+        let striker = &mut state.players[0];
+        striker.facing = 16_384;
+        striker.combat.melee.pending = Some(mmorpg_core::PendingStrike {
+            family: mmorpg_core::WeaponFamily::Sword,
+            variant: mmorpg_core::StrikeVariant::First,
+            contact: 1,
+            stance: None,
+        });
+        let mut zone = ZoneSimulation::from_snapshot(state, flat_arena()).unwrap();
         zone.advance_tick().unwrap();
         let reached = zone
             .snapshot_for_player(1)

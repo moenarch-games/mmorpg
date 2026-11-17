@@ -324,10 +324,10 @@ fn a_lurker_drops_a_player_who_dives_and_divers_cannot_attack() {
         ZoneCommand::SelectTarget(Some(EntityRef::Creature(LURKER))),
     )
     .unwrap();
-    // A swing from under water at the lurker above whiffs (#517).
+    // A swing from under water at the lurker above whiffs (#517) on its contact tick (#885).
     zone.apply_command(1, 2, ZoneCommand::Swing { facing: 0 })
         .unwrap();
-    let events = run(&mut zone, mmorpg_core::golden::t30(2) as _);
+    let events = run(&mut zone, mmorpg_core::golden::t30(20) as _);
     assert!(
         events.contains(&ZoneEvent::AttackPerformed {
             source: EntityRef::Player(1),

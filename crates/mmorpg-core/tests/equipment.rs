@@ -320,17 +320,24 @@ fn the_primary_stat_raises_swings_and_the_projected_melee_range() {
         hits_swinging(&mut geared, mmorpg_core::golden::t30(600), true),
     );
     assert_eq!(plain.len(), geared.len());
-    let mut ordinary = 0;
+    // Each strike scales the raised range by its own share (#885), so the bonus point shows as
+    // more damage overall, never less on any strike.
+    let (mut ordinary, mut plain_total, mut geared_total) = (0, 0, 0);
     for ((tick, low, critical), (geared_tick, high, geared_critical)) in
         plain.into_iter().zip(geared)
     {
         assert_eq!((tick, critical), (geared_tick, geared_critical));
         if !critical {
-            assert_eq!(high, low + 1, "tick {tick}");
+            assert!(high >= low, "tick {tick}");
+            (plain_total, geared_total) = (plain_total + low, geared_total + high);
             ordinary += 1;
         }
     }
     assert!(ordinary >= 3, "{ordinary} ordinary swings");
+    assert!(
+        geared_total > plain_total,
+        "{geared_total} against {plain_total}"
+    );
 
     // Rangers use agility, Arcanists intellect; other stats add nothing.
     for (class, items, bonus) in [
