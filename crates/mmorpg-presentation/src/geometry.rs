@@ -15,7 +15,7 @@ pub struct Geometry {
     pub alpha: Vec<f64>,
     pub indices: Vec<u32>,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
 pub struct Affine {
     pub m: [f64; 9],
     pub t: V,

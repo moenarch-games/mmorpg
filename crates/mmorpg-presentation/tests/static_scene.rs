@@ -763,3 +763,74 @@ fn the_brook_crossing_retains_its_fallback_until_settlement_art_is_ready() {
         "culverts remain visible independently"
     );
 }
+
+/// A scene rebuilt from another instance's skeleton (#855) answers motion, visibility, group
+/// streaming, lights and the terrain as the derived one, and refuses another revision's skeleton.
+#[test]
+fn a_scene_rebuilt_from_its_skeleton_answers_as_the_derived_one() {
+    let scenery = greyhaven_vale_scenery();
+    let scene = StaticScene::new(&scenery);
+    let skeleton = scene.skeleton();
+    let rebuilt = StaticScene::from_skeleton(&skeleton, &scenery).unwrap();
+    assert_eq!(rebuilt.prefix, scene.prefix);
+    assert!(rebuilt.groups.iter().all(|group| group.draws.is_empty()));
+    assert_eq!(rebuilt.groups.len(), scene.groups.len());
+    let eye = [40., 2., -30.];
+    for (rebuilt, derived) in rebuilt.groups.iter().zip(&scene.groups) {
+        assert_eq!(
+            (
+                rebuilt.cull,
+                rebuilt.instanced,
+                rebuilt.fallback,
+                rebuilt.min,
+                rebuilt.max
+            ),
+            (
+                derived.cull,
+                derived.instanced,
+                derived.fallback,
+                derived.min,
+                derived.max
+            )
+        );
+        assert_eq!(
+            rebuilt.shown(eye, Kits::default()),
+            derived.shown(eye, Kits::default())
+        );
+    }
+    assert_eq!(rebuilt.motion(3.5, true), scene.motion(3.5, true));
+    assert_eq!(
+        rebuilt.shown(Some([1., 0., 2.]), Kits::ALL),
+        scene.shown(Some([1., 0., 2.]), Kits::ALL)
+    );
+    assert_eq!(
+        mmorpg_presentation::lights::point_lights(&rebuilt, &scenery),
+        mmorpg_presentation::lights::point_lights(&scene, &scenery)
+    );
+    assert_eq!(
+        rebuilt.surface_y(12.5, -40.25),
+        scene.surface_y(12.5, -40.25)
+    );
+    assert_eq!(rebuilt.terrain.tiles.len(), scene.terrain.tiles.len());
+    let ids = |draws: &[Draw]| {
+        draws
+            .iter()
+            .map(|draw| draw.resource_key.clone())
+            .collect::<Vec<_>>()
+    };
+    for index in [0, scene.terrain.tiles.len() / 2] {
+        assert_eq!(
+            ids(&rebuilt.terrain.tiles[index].far),
+            ids(&scene.terrain.tiles[index].far)
+        );
+        assert_eq!(
+            ids(&rebuilt.terrain.near(index)),
+            ids(&scene.terrain.near(index))
+        );
+    }
+
+    let mut other = scenery.clone();
+    other.content_revision += 1;
+    assert!(StaticScene::from_skeleton(&skeleton, &other).is_none());
+    assert!(StaticScene::from_skeleton(&skeleton[..skeleton.len() / 2], &scenery).is_none());
+}

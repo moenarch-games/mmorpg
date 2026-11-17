@@ -29,10 +29,42 @@ use crate::scenery::{PerZone, hosted_scenery};
 
 pub const STATIC_SCENE_FORMAT: &str = "mmorpg.static-scene";
 
+static SCENE: PerZone<StaticScene> = PerZone::new();
+/// A skeleton seeded by [`seed`], which the scene is rebuilt from instead of derived.
+static SKELETON: PerZone<Vec<u8>> = PerZone::new();
+static BUFFERS: PerZone<SceneBuffers> = PerZone::new();
+
 #[must_use]
 pub fn hosted_static_scene() -> &'static StaticScene {
-    static SCENE: PerZone<StaticScene> = PerZone::new();
-    SCENE.get(|_| StaticScene::new(hosted_scenery()))
+    SCENE.get(|_| {
+        let scenery = hosted_scenery();
+        SKELETON
+            .peek()
+            .and_then(|skeleton| StaticScene::from_skeleton(skeleton, scenery))
+            .unwrap_or_else(|| StaticScene::new(scenery))
+    })
+}
+
+/// Reuses the scene another instance of this module derived for the presented content (#855:
+/// the page's derivation worker): its [`StaticScene::skeleton`] and its encoded buffers, so this
+/// instance builds only the terrain tiles, on first use. False, nothing seeded, for another
+/// content revision's or once the scene was built.
+#[must_use]
+pub fn seed(skeleton: Vec<u8>, buffers: SceneBuffers) -> bool {
+    let prefix = format!(
+        "{{\"format\":\"{STATIC_SCENE_FORMAT}\",\"prefix\":\"scenery:{}:",
+        hosted_scenery().content_revision
+    );
+    if SCENE.peek().is_some() || BUFFERS.peek().is_some() || !buffers.0.starts_with(&prefix) {
+        return false;
+    }
+    SKELETON.seed(skeleton) && BUFFERS.seed(buffers)
+}
+
+/// The hosted scene's [`StaticScene::skeleton`], for [`seed`] in another instance.
+#[must_use]
+pub fn skeleton() -> Vec<u8> {
+    hosted_static_scene().skeleton()
 }
 
 /// Where the hosted scene's grass grows, built on the first cell asked for.
@@ -185,7 +217,6 @@ impl Buffers {
 pub(crate) type SceneBuffers = (String, Vec<f32>, Vec<u32>, Vec<f32>);
 
 fn buffers() -> &'static SceneBuffers {
-    static BUFFERS: PerZone<SceneBuffers> = PerZone::new();
     BUFFERS.get(|_| encode(hosted_static_scene()))
 }
 

@@ -132,6 +132,7 @@ describe("scenery provider and local world", () => {
         tick() { return 1n; }
         projection(): Uint8Array { throw new Error("unused"); }
         contentRevision() { return revision; }
+        static hostedContentRevision() { return revision; }
       },
     });
     expect(() => createLocalWorld(module(8n))).toThrow("Scenery content revision 7 does not match");

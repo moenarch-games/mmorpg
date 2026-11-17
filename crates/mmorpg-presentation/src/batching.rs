@@ -2,7 +2,9 @@
 use super::geometry::*;
 use super::{Draw, Group, Kit, Material};
 use std::{collections::BTreeMap, sync::Arc};
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize, serde::Serialize,
+)]
 /// Distance class of a static group.
 pub enum Cull {
     Always,

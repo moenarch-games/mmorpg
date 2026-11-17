@@ -6,7 +6,12 @@ import { createSceneryProvider, type SceneryContent, type SceneryProvider } from
 
 /** The initialised wasm-bindgen module surface the local world needs. */
 export type LocalZoneModule = SceneryContent & {
-  LocalZone: { new (): LocalZoneHandle & { contentRevision(): bigint }; fromCheckpoint(checkpoint: Uint8Array): LocalZoneHandle };
+  LocalZone: {
+    new (): LocalZoneHandle;
+    fromCheckpoint(checkpoint: Uint8Array): LocalZoneHandle;
+    /** The content revision a fresh zone hosts, without building one (#855). */
+    hostedContentRevision(): bigint;
+  };
   /** The versioned content catalog export. */
   catalog(): string;
   /** The rate the local host advances at (`mmorpg_core::TICK_HZ`). */
@@ -24,10 +29,9 @@ export function createLocalWorld(module: LocalZoneModule, characters: LocalChara
   if (module.tickHz() !== TICK_HZ) {
     throw new Error(`The local zone runs at ${module.tickHz()} Hz, not the browser's ${TICK_HZ} Hz.`);
   }
-  const zone = new module.LocalZone();
   const scenery = createSceneryProvider(module);
   const catalog = decodeCatalog(module.catalog());
-  const revision = zone.contentRevision();
+  const revision = module.LocalZone.hostedContentRevision();
   for (const [name, found] of [["Scenery", scenery.scenery.contentRevision], ["Catalog", catalog.contentRevision]] as const) {
     if (found !== revision) {
       throw new Error(`${name} content revision ${found} does not match zone revision ${revision}.`);
