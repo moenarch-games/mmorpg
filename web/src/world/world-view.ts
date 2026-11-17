@@ -560,6 +560,10 @@ export class WorldView {
   #lastWork: RendererWorkObservations | null = null;
   /** While `prepare` runs its frame: the renderer's pending preparations. */
   #preparing: Promise<unknown>[] | null = null;
+  /** The selection turntable's first frame (#855): `pending` while the renderer prepares its programs and textures. */
+  #previewPrepared: "no" | "pending" | "ready" = "no";
+  /** The turntable's roots changed while its first frame was prepared, so the next frame submits them again. */
+  #previewStale = false;
   #occluders: Box[] = [];
   /** The viewer's projected unit as last drawn, for debug readouts. */
   #lastSelf: { x: number; z: number; facing: number } | null = null;
@@ -1312,13 +1316,15 @@ export class WorldView {
   /**
    * The selection turntable (#362): the real Ranger in its idle clip standing at `feet`, dressed as
    * the viewer would enter (class loadout, headwear, hair), through the same imported-model path as
-   * the world. False before a world loaded, while the model loads or after it failed; the page then
+   * the world. Absent before a world loaded, while the model loads or after it failed; the page then
    * keeps its stage veiled (see `selectionPreviewStatus`). Entering the world drops it like any unit
-   * no longer projected.
+   * no longer projected. Its first frame is prepared with the `stage` nodes (#855: the programs compile in parallel
+   * instead of stalling the page for seconds on its first draw). False while that runs: the caller then draws nothing,
+   * which would evict what is being prepared.
    */
   selectionPreview(look: ViewerLook, feet: [number, number, number], yaw: number, height: number, seconds: number,
-    camera: RendererCamera): boolean {
-    if (!this.#regions || this.#models.playerStatus(look.sex) !== "ready") { return false; }
+    camera: RendererCamera, stage: RendererSceneNode[]): boolean {
+    if (!this.#regions || this.#models.playerStatus(look.sex) !== "ready") { return true; }
     const clip = this.#restClip("Ranger");
     const length = this.#models.clipLength("Ranger", clip) ?? 1;
     // Reduced motion holds the idle pose, as it does for the procedural figure.
@@ -1332,7 +1338,21 @@ export class WorldView {
       weaponDrawn: false,
     }], { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {}, physique: look.physique ?? null, sex: look.sex });
     const { roots, changed } = this.#models.roots();
-    if (changed) { this.#renderer.renderImportedRoots({ camera, roots }); }
+    if (this.#previewPrepared === "no") {
+      this.#previewPrepared = "pending";
+      void this.#renderer.prepare({ camera, nodes: stage }, { roots }).catch((error: unknown) => {
+        console.warn("Preparing the selection preview failed; it draws unprepared.", error);
+      }).finally(() => { this.#previewPrepared = "ready"; });
+      return false;
+    }
+    if (this.#previewPrepared === "pending") {
+      this.#previewStale ||= changed;
+      return false;
+    }
+    if (changed || this.#previewStale) {
+      this.#previewStale = false;
+      this.#renderer.renderImportedRoots({ camera, roots });
+    }
     return true;
   }
 
@@ -1342,7 +1362,9 @@ export class WorldView {
    */
   selectionPreviewStatus(look: ViewerLook): { model: "loading" | "ready" | "failed"; outfit: boolean } {
     if (!this.#regions) { return { model: "loading", outfit: false }; }
-    const model = this.#models.playerStatus(look.sex);
+    const status = this.#models.playerStatus(look.sex);
+    // Ready once drawn: not while its first frame is still being prepared.
+    const model = status === "ready" && this.#previewPrepared !== "ready" ? "loading" : status;
     return { model, outfit: model === "ready" && (!look.classId || this.#models.playerOutfitReady(`class.${look.classId}`, look.sex)) };
   }
 

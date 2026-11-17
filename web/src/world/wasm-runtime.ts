@@ -49,9 +49,14 @@ export async function loadLocalWorld(characters: LocalCharacters, wasmReady: () 
   const scenery = await derived.scenery;
   const seeded = reused || (scenery !== null && generated.seedTerrainGrids(scenery.grids));
   if (scenery) { generated.seedScenery(scenery.scenery); }
-  staticSceneDerived = derived.scene.then((scene) => {
-    if (scene) { generated.seedStaticScene(scene.skeleton, scene.layout, scene.vertices, scene.indices, scene.models); }
-  });
+  staticSceneDerived = Promise.all([
+    derived.scene.then((scene) => {
+      if (scene) { generated.seedStaticScene(scene.skeleton, scene.layout, scene.vertices, scene.indices, scene.models); }
+    }),
+    derived.grass.then((grass) => {
+      if (grass) { generated.seedGrass(grass); }
+    }),
+  ]).then(() => {});
   const world = createLocalWorld(generated, characters);
   markStartup("world-created");
   if (release && !reused) {
@@ -63,8 +68,8 @@ export async function loadLocalWorld(characters: LocalCharacters, wasmReady: () 
 let staticSceneDerived: Promise<void> = Promise.resolve();
 
 /**
- * Settles once the worker's static scene (#855) was seeded into this page's module, or failed, so building the scene
- * then costs only its terrain tiles and the renderer's own work; call after `loadLocalWorld`.
+ * Settles once the worker's static scene and grass (#855) were seeded into this page's module, or failed, so building
+ * the scene then costs only its terrain tiles' levels and the renderer's own work; call after `loadLocalWorld`.
  */
 export function whenStaticSceneDerived(): Promise<void> {
   return staticSceneDerived;

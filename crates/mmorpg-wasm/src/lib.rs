@@ -935,6 +935,22 @@ pub fn seed_static_scene(
     static_scene::seed(skeleton, (layout, vertices, indices, models))
 }
 
+/// The hosted grass's per-sample density and tint (#855), for [`seed_grass`] in another
+/// instance of this module; derives the grass now.
+#[wasm_bindgen(js_name = grassSeed)]
+#[must_use]
+pub fn grass_seed() -> Vec<u8> {
+    static_scene::grass_seed()
+}
+
+/// Reuses the grass another instance of this module derived (#855), so this instance only
+/// places its blocked ground on first use. False, nothing seeded, once a seed was given.
+#[wasm_bindgen(js_name = seedGrass)]
+#[must_use]
+pub fn seed_grass(seed: Vec<u8>) -> bool {
+    static_scene::seed_grass(seed)
+}
+
 /// A fresh stream of the hosted zone's static groups (#526) for one renderer.
 #[wasm_bindgen(js_name = groupStream)]
 #[must_use]

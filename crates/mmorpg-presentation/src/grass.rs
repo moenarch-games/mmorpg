@@ -39,6 +39,58 @@ const FAR_SIDE: i32 = (FAR_CELL_METRES / FAR_SPACING) as i32;
 const LUSH: u32 = 0x5a8a34;
 const DRY: u32 = 0xa49d56;
 
+/// Per grid sample of `g`, how thickly grass grows (0–1) and its colour; `cover` holds how much
+/// the terrain's overlays and worn ground cover each sample.
+fn fields(s: &Scenery, g: &TerrainGrid, cover: &[f64]) -> (Vec<f32>, Vec<u32>) {
+    let biomes = ground_biomes(g);
+    let count = g.columns * g.rows;
+    let mut density = vec![0.; count];
+    let mut tint = vec![0; count];
+    for i in 0..count {
+        let (ux, uz) = (
+            g.origin[0] + (i % g.columns) as i32 * g.step,
+            g.origin[1] + (i / g.columns) as i32 * g.step,
+        );
+        let (x, z) = (metres(ux), metres(uz));
+        let thick = match biomes[i].name() {
+            "meadow" | "foothills" => 1.,
+            "hub" | "hollow" => 0.85,
+            "highland" => 0.55,
+            "woods" => 0.4,
+            _ => 0.,
+        };
+        let bare = matches!(g.biomes[i].name(), "lake bed" | "rock" | "snow");
+        let water = s.water_distance([ux, uz]);
+        let river = if s.greyhaven() {
+            mmorpg_core::greyhaven_vale::design::river_distance(ux, uz).min(
+                if mmorpg_core::greyhaven_vale::brook::wet_ground(ux, uz) {
+                    0
+                } else {
+                    i64::MAX
+                },
+            )
+        } else {
+            i64::MAX
+        };
+        let shore = |distance: i64| {
+            if distance == i64::MAX {
+                1.
+            } else {
+                ((distance as f64 / 100. - 0.4) / 1.6).clamp(0., 1.)
+            }
+        };
+        density[i] = if bare {
+            0.
+        } else {
+            (thick * (1. - cover[i]).clamp(0., 1.) * shore(water) * shore(river)) as f32
+        };
+        let lush = mix(tone(biomes[i], x, z), LUSH, 0.4);
+        let dryness = ((noise(x, z, 18., 6101.) - 0.62) * 3.).clamp(0., 0.7);
+        tint[i] = mix(lush, DRY, dryness);
+    }
+    (density, tint)
+}
+
 /// Grass cover over the terrain grid.
 #[derive(Clone, Debug)]
 pub struct Grass {
@@ -55,57 +107,33 @@ impl Grass {
     /// from it, so a scene that draws no grass pays nothing for it.
     #[must_use]
     pub fn new(scene: &StaticScene, s: &Scenery) -> Self {
-        Self::over(s, scene.terrain.grid(), &scene.terrain.grass_cover())
+        let g = scene.terrain.grid();
+        let (density, tint) = fields(s, g, &scene.terrain.grass_cover());
+        Self::with_fields(s, g, density, tint)
     }
 
-    /// `cover` holds, per grid sample, how much the terrain's overlays and worn ground cover it.
-    fn over(s: &Scenery, g: &TerrainGrid, cover: &[f64]) -> Self {
-        let biomes = ground_biomes(g);
+    /// The per-sample density and tint, most of the cover's cost, serialized for
+    /// [`Self::from_seed`] in a client that derived `scene` elsewhere (#855).
+    #[must_use]
+    pub fn seed(&self, scene: &StaticScene) -> Vec<u8> {
+        postcard::to_allocvec(&(scene.prefix.as_str(), &self.density, &self.tint))
+            .expect("the grass seed is plain data")
+    }
+
+    /// The cover over `scene`'s terrain from a [`Self::seed`] of the same scene, which was built
+    /// from `s`: `None` for damaged bytes or another scene's.
+    #[must_use]
+    pub fn from_seed(bytes: &[u8], scene: &StaticScene, s: &Scenery) -> Option<Self> {
+        let (prefix, density, tint): (String, Vec<f32>, Vec<u32>) =
+            postcard::from_bytes(bytes).ok()?;
+        let g = scene.terrain.grid();
         let count = g.columns * g.rows;
-        let mut density = vec![0.; count];
-        let mut tint = vec![0; count];
-        for i in 0..count {
-            let (ux, uz) = (
-                g.origin[0] + (i % g.columns) as i32 * g.step,
-                g.origin[1] + (i / g.columns) as i32 * g.step,
-            );
-            let (x, z) = (metres(ux), metres(uz));
-            let thick = match biomes[i].name() {
-                "meadow" | "foothills" => 1.,
-                "hub" | "hollow" => 0.85,
-                "highland" => 0.55,
-                "woods" => 0.4,
-                _ => 0.,
-            };
-            let bare = matches!(g.biomes[i].name(), "lake bed" | "rock" | "snow");
-            let water = s.water_distance([ux, uz]);
-            let river = if s.greyhaven() {
-                mmorpg_core::greyhaven_vale::design::river_distance(ux, uz).min(
-                    if mmorpg_core::greyhaven_vale::brook::wet_ground(ux, uz) {
-                        0
-                    } else {
-                        i64::MAX
-                    },
-                )
-            } else {
-                i64::MAX
-            };
-            let shore = |distance: i64| {
-                if distance == i64::MAX {
-                    1.
-                } else {
-                    ((distance as f64 / 100. - 0.4) / 1.6).clamp(0., 1.)
-                }
-            };
-            density[i] = if bare {
-                0.
-            } else {
-                (thick * (1. - cover[i]).clamp(0., 1.) * shore(water) * shore(river)) as f32
-            };
-            let lush = mix(tone(biomes[i], x, z), LUSH, 0.4);
-            let dryness = ((noise(x, z, 18., 6101.) - 0.62) * 3.).clamp(0., 0.7);
-            tint[i] = mix(lush, DRY, dryness);
-        }
+        (prefix == scene.prefix && density.len() == count && tint.len() == count)
+            .then(|| Self::with_fields(s, g, density, tint))
+    }
+
+    /// The cover of `density` and `tint` over `g`, kept off everything standing on the ground.
+    fn with_fields(s: &Scenery, g: &TerrainGrid, density: Vec<f32>, tint: Vec<u32>) -> Self {
         let mut blocked: Vec<Rect> = s
             .props
             .iter()

@@ -1,6 +1,6 @@
 //! Behaviour of the shared static world both clients draw (#184).
 use mmorpg_core::greyhaven_vale_definition;
-use mmorpg_presentation::{Cull, Draw, Kits, StaticScene, geometry::V};
+use mmorpg_presentation::{Cull, Draw, Kits, StaticScene, geometry::V, grass::Grass};
 use mmorpg_scenery::{Prop, PropKind, RockSize, Scenery, TreeVariant, greyhaven_vale_scenery};
 
 fn only(props: Vec<Prop>) -> StaticScene {
@@ -820,10 +820,11 @@ fn a_scene_rebuilt_from_its_skeleton_answers_as_the_derived_one() {
         scene.surface_y(12.5, -40.25)
     );
     assert_eq!(rebuilt.terrain.tiles.len(), scene.terrain.tiles.len());
+    // The terrain rebuilt over the skeleton's weights draws the same ground, bit for bit.
     let ids = |draws: &[Draw]| {
         draws
             .iter()
-            .map(|draw| draw.resource_key.clone())
+            .map(|draw| (draw.resource_key.clone(), (*draw.geometry).clone()))
             .collect::<Vec<_>>()
     };
     for index in [0, scene.terrain.tiles.len() / 2] {
@@ -836,6 +837,16 @@ fn a_scene_rebuilt_from_its_skeleton_answers_as_the_derived_one() {
             ids(&scene.terrain.near(index))
         );
     }
+
+    // Grass seeded from the derived scene's grows as the rebuilt scene's own would.
+    let grass = Grass::new(&scene, &scenery);
+    let seed = grass.seed(&scene);
+    let seeded = Grass::from_seed(&seed, &rebuilt, &scenery).unwrap();
+    for (column, row) in [(0, 0), (3, -4), (-12, 9)] {
+        assert_eq!(seeded.cell(column, row), grass.cell(column, row));
+        assert_eq!(seeded.far_cell(column, row), grass.far_cell(column, row));
+    }
+    assert!(Grass::from_seed(&seed[..seed.len() / 2], &rebuilt, &scenery).is_none());
 
     let mut other = scenery.clone();
     other.content_revision += 1;

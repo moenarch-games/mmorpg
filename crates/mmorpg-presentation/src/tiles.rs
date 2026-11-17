@@ -119,12 +119,16 @@ pub struct Tiles {
 
 impl Tiles {
     pub(crate) fn new(s: &Scenery, g: &TerrainGrid) -> Self {
+        Self::with_weights(s, g, ground::weights(s, g))
+    }
+
+    /// The tiles of `g` over the overlay `weights` [`ground::weights`] derived for it.
+    pub(crate) fn with_weights(s: &Scenery, g: &TerrainGrid, weights: Weights) -> Self {
         let holes: Vec<_> = s
             .terrain_holes
             .iter()
             .map(|hole| [hole.min[0], hole.min[1], hole.max[0], hole.max[1]].map(metres))
             .collect();
-        let weights = ground::weights(s, g);
         let biomes = terrain::ground_biomes(g);
         // The road and patch overlays, cut into tiles by their triangles' centres.
         let mut extras = Layers::new();
@@ -261,6 +265,11 @@ impl Tiles {
             .map(|&side| built.merge_far(side))
             .collect();
         built
+    }
+
+    /// The overlay weights these tiles were built over.
+    pub(crate) const fn weights(&self) -> &Weights {
+        &self.weights
     }
 
     /// Per grid sample, how much the near overlays and the worn roads, plaza and fields cover

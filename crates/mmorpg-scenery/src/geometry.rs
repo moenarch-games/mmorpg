@@ -46,6 +46,11 @@ impl Rect {
 /// Distance from `point` to the segment `a–b`, rounded down to whole units.
 #[must_use]
 pub fn segment_distance(point: [i32; 2], a: [i32; 2], b: [i32; 2]) -> i64 {
+    root(segment_squared(point, a, b))
+}
+
+/// The squared distance [`segment_distance`] takes the root of, rounded down to whole units².
+fn segment_squared(point: [i32; 2], a: [i32; 2], b: [i32; 2]) -> u128 {
     let direction = [
         i64::from(b[0]) - i64::from(a[0]),
         i64::from(b[1]) - i64::from(a[1]),
@@ -57,27 +62,39 @@ pub fn segment_distance(point: [i32; 2], a: [i32; 2], b: [i32; 2]) -> i64 {
     let length_squared = direction[0] * direction[0] + direction[1] * direction[1];
     let along = offset[0] * direction[0] + offset[1] * direction[1];
     if length_squared == 0 || along <= 0 {
-        return isqrt(offset[0] * offset[0] + offset[1] * offset[1]);
+        return (offset[0] * offset[0] + offset[1] * offset[1])
+            .unsigned_abs()
+            .into();
     }
     if along >= length_squared {
         let dx = i64::from(point[0]) - i64::from(b[0]);
         let dz = i64::from(point[1]) - i64::from(b[1]);
-        return isqrt(dx * dx + dz * dz);
+        return (dx * dx + dz * dz).unsigned_abs().into();
     }
     let cross = i128::from(direction[0]) * i128::from(offset[1])
         - i128::from(direction[1]) * i128::from(offset[0]);
-    let squared = cross * cross / i128::from(length_squared);
-    i64::try_from(squared.unsigned_abs().isqrt()).unwrap_or(i64::MAX)
+    (cross * cross / i128::from(length_squared)).unsigned_abs()
 }
 
-/// Distance from `point` to a polyline.
+/// The root of a squared distance, rounded down to whole units.
+fn root(squared: u128) -> i64 {
+    match u64::try_from(squared) {
+        Ok(narrow) => i64::try_from(narrow.isqrt()),
+        Err(_) => i64::try_from(squared.isqrt()),
+    }
+    .unwrap_or(i64::MAX)
+}
+
+/// Distance from `point` to a polyline: the least of its segments' distances. The root rises
+/// with its square, so it is taken once, of the least square (#855: the roots were most of the
+/// scenery's cost in WebAssembly).
 #[must_use]
 pub fn polyline_distance(point: [i32; 2], points: &[[i32; 2]]) -> i64 {
     points
         .windows(2)
-        .map(|segment| segment_distance(point, segment[0], segment[1]))
+        .map(|segment| segment_squared(point, segment[0], segment[1]))
         .min()
-        .unwrap_or(i64::MAX)
+        .map_or(i64::MAX, root)
 }
 
 /// Axis-aligned ellipse in XZ units.
