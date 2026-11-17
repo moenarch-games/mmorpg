@@ -120,6 +120,7 @@ fn a_free_aimed_shot_flies_along_the_facing_and_hits_what_it_meets() {
     ranger.send(ZoneCommand::UseAbility {
         ability: ids::AIMED_SHOT.get(),
         target: None,
+        facing: None,
     });
     ranger.tick();
     let view = ranger.zone.snapshot_for_player(1).unwrap();
@@ -145,6 +146,7 @@ fn a_wall_stops_a_free_shot_and_holds_the_arrow() {
     ranger.send(ZoneCommand::UseAbility {
         ability: ids::AIMED_SHOT.get(),
         target: None,
+        facing: None,
     });
     for _ in 0..mmorpg_core::golden::t30(20) {
         ranger.tick();

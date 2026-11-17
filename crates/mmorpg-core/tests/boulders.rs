@@ -186,6 +186,7 @@ fn a_shield_bash_sends_it_much_faster_than_a_walk() {
     scene.send(ZoneCommand::UseAbility {
         ability: ids::SHIELD_BASH.get(),
         target: Some(EntityRef::Creature(BOULDER_ID)),
+        facing: None,
     });
     scene.ticks(2);
     let (_, velocity) = scene.boulder();
@@ -249,6 +250,7 @@ fn a_boulder_cannot_be_broken() {
     scene.send(ZoneCommand::UseAbility {
         ability: ids::SHIELD_BASH.get(),
         target: Some(EntityRef::Creature(BOULDER_ID)),
+        facing: None,
     });
     scene.ticks(30);
     let state = scene.zone.snapshot().unwrap();
@@ -281,6 +283,7 @@ fn a_restored_zone_continues_the_roll_exactly() {
     original.send(ZoneCommand::UseAbility {
         ability: ids::SHIELD_BASH.get(),
         target: Some(EntityRef::Creature(BOULDER_ID)),
+        facing: None,
     });
     original.ticks(1);
     let snapshot = original.zone.snapshot().unwrap();

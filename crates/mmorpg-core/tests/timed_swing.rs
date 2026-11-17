@@ -278,6 +278,7 @@ fn free_or_homing_firebolts_and_arrows_clash_only_in_a_timed_arena() {
                 ZoneCommand::UseAbility {
                     ability,
                     target: targeted.then_some(EntityRef::Player(3 - player)),
+                    facing: None,
                 },
             )
             .unwrap();
@@ -331,6 +332,7 @@ fn ordinary_swords_parry_arrows_but_not_free_or_homing_firebolts() {
             ZoneCommand::UseAbility {
                 ability,
                 target: targeted.then_some(EntityRef::Player(1)),
+                facing: None,
             },
         )
         .unwrap();

@@ -115,6 +115,7 @@ impl Caster {
         self.send(ZoneCommand::UseAbility {
             ability: ability.get(),
             target: Some(target),
+            facing: None,
         });
     }
 

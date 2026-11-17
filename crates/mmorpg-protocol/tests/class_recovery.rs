@@ -42,6 +42,7 @@ fn ability(ability: AbilityId) -> ZoneCommand {
     ZoneCommand::UseAbility {
         ability: ability.get(),
         target: None,
+        facing: None,
     }
 }
 

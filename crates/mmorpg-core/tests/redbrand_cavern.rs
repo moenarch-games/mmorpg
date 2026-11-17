@@ -225,6 +225,7 @@ impl Fight {
         self.send(ZoneCommand::UseAbility {
             ability: ids::AIMED_SHOT.get(),
             target: Some(BRUTE),
+            facing: None,
         });
         self.ticks(mmorpg_core::golden::t30(30) as _);
     }

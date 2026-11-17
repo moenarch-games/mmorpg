@@ -1,6 +1,6 @@
 //! Magic missiles (#289): Firebolt carries a missile that ignores gravity. It flies straight
-//! along the facing whatever is selected (#517), so it hits what stands in that line, misses
-//! what does not, and a wall in the way stops it.
+//! where the player faces (#517), at the unit it aims at in its cone (#884), so it hits what
+//! stands in that line, misses what does not or stepped aside, and a wall in the way stops it.
 mod support;
 
 /// [`t30`] as a `usize` tick count.
@@ -117,6 +117,7 @@ impl Caster {
         self.send(ZoneCommand::UseAbility {
             ability: ids::FIREBOLT.get(),
             target,
+            facing: None,
         });
     }
 
@@ -186,17 +187,24 @@ fn a_free_firebolt_flies_straight_hits_what_is_in_line_and_misses_the_rest() {
     arcanist.firebolt(None);
     arcanist.ticks(t30u(60));
     let missile = arcanist.missiles()[0];
+    // Along the facing, dipping slightly toward boar 1's body centre (#884).
     assert!(
-        missile.velocity[0] > mmorpg_core::MISSILE_SPEED_UNITS - 1.0 && missile.velocity[1] == 0.0
+        missile.velocity[0] > mmorpg_core::MISSILE_SPEED_UNITS - 1.0
+            && missile.velocity[1] < 0.0
+            && missile.velocity[1] > -1.0,
+        "{:?}",
+        missile.velocity
     );
     arcanist.ticks(t30u(40));
     assert_eq!(arcanist.hits(creature(1)).len(), 1);
     assert!(arcanist.hits(creature(2)).is_empty());
 
-    // Turned toward where boar 2 stood, but it stepped aside meanwhile: the missile misses.
+    // Released at boar 2, which steps aside while the missile flies: it misses (the aim is taken
+    // at release, #884).
     let mut arcanist = Caster::new(content(Vec::new(), &[[1_500, 1_500]]), 8_192);
     arcanist.firebolt(None);
-    arcanist.ticks(t30u(58));
+    arcanist.ticks(t30u(62));
+    assert_eq!(arcanist.missiles().len(), 1, "released");
     let mut state = arcanist.zone.snapshot().unwrap();
     state.creatures[0].position[0] += 300.0;
     state.creatures[0].position[2] -= 300.0;

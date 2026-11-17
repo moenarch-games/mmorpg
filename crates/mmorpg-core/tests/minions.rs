@@ -59,6 +59,7 @@ impl Summoner {
         self.send(ZoneCommand::UseAbility {
             ability: ids::RAISE_SKELETON.get(),
             target: None,
+            facing: None,
         });
         self.ticks(t30(150));
     }

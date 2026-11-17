@@ -220,6 +220,7 @@ impl Script {
                         self.send(ZoneCommand::UseAbility {
                             ability: ids::HEROIC_STRIKE.get(),
                             target: None,
+                            facing: None,
                         });
                     }
                 }

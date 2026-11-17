@@ -382,6 +382,7 @@ fn a_real_cast_projection_drives_the_cast_bar_and_global_cooldown() {
         ZoneCommand::UseAbility {
             ability: 9,
             target: None,
+            facing: None,
         },
     )
     .unwrap();

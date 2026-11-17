@@ -89,9 +89,10 @@ are the sums over its equipped items, with no base attributes.
 - The class damage bonus is half the primary stat, rounded down: strength for
   Wardens and players without a class, agility for Rangers, intellect for
   Arcanists. It is added to both ends of the player melee range (auto-attack
-  and the weapon roll of weapon strikes and Cleave) and to each direct Firebolt
-  and Frost Nova hit. Damage and healing over time, Blizzard pulses, shields,
-  mana and other resources ignore gear.
+  and the weapon roll of weapon strikes and Cleave), to each direct spell hit
+  (Firebolt, Frost Nova and the like), to every Blizzard, beam and Drain Life
+  pulse and to a damage-over-time opener's up-front hit (#884). The ticks of
+  damage and healing over time, shields, mana and other resources ignore gear.
 
 `EquipItem { bag_slot }` and `UnequipItem { equipment_slot }` are sequenced
 intents resolved in tick step 1 like `MoveItem`:

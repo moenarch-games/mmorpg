@@ -220,6 +220,7 @@ impl Hero {
         self.send(ZoneCommand::UseAbility {
             ability: ids::SHIELD_BASH.get(),
             target: Some(EntityRef::Creature(CreatureId::new(1))),
+            facing: None,
         });
     }
 

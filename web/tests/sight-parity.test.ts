@@ -83,7 +83,7 @@ test("the WASM build reaches the native sight session digest", () => {
       send({ kind: "select-target", target: { kind: "creature", id: prop } });
     }
     if (CASTS.includes(tick)) {
-      send({ kind: "use-ability", ability: FIREBOLT, target: null });
+      send({ kind: "use-ability", ability: FIREBOLT, target: null, facing: null });
     }
     zone.tick();
     const projection = zone.projection(player);

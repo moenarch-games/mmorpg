@@ -205,6 +205,7 @@ fn height_decides_whether_the_sweep_reaches_a_short_creature() {
     warden.send(ZoneCommand::UseAbility {
         ability: ids::HEROIC_STRIKE.get(),
         target: Some(EntityRef::Creature(CreatureId::new(1))),
+        facing: None,
     });
     assert_eq!(errors(&warden.tick()), [ErrorCode::NotReady]);
 

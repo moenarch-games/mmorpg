@@ -9,7 +9,7 @@ use crate::ticks_from_ms;
 use crate::unit::PLAYER_REACH_UNITS;
 
 /// Every player ability starts this global cooldown, the action graph's
-/// `GlobalCooldown` recovery (1.5 s); haste never shortens it.
+/// `GlobalCooldown` recovery (1.5 s); haste shortens it only for a shot (#884).
 pub const GLOBAL_COOLDOWN_TICKS: u16 =
     crate::action::recovery_ticks(crate::action::ActionId::GlobalCooldown);
 /// At most this many auras rest on one unit.
@@ -195,10 +195,11 @@ pub enum AbilityEffect {
     Haste { percent: u16, duration: u16 },
     /// Direct damage in `damage` (inclusive) + `per_level`.
     Bolt { damage: [u16; 2], per_level: u16 },
-    /// Damage to every living creature within `radius` of the caster, then a
-    /// root that damage breaks once `unbreakable_ticks` have passed.
+    /// Damage in `damage` (inclusive) + `per_level` to every living creature within `radius`
+    /// of the caster, then a root that damage breaks once `unbreakable_ticks` have passed.
     Nova {
         damage: [u16; 2],
+        per_level: u16,
         radius: i32,
         root_ticks: u16,
         unbreakable_ticks: u16,
@@ -712,11 +713,11 @@ pub const ABILITY_CATALOG: [Ability; 53] = [
         ticks_from_ms(30_000),
         AbilityRange::SelfCentred,
         AbilityEffect::Haste {
-            percent: 40,
+            percent: 50,
             duration: ticks_from_ms(10_000),
         },
     ),
-    // A magic missile (#289): it homes on its target, or flies straight along the facing.
+    // A magic missile (#289): it flies straight at the unit it aims at (#884), or along the facing.
     shot(
         ability(
             9,
@@ -744,7 +745,8 @@ pub const ABILITY_CATALOG: [Ability; 53] = [
         ticks_from_ms(20_000),
         AbilityRange::SelfCentred,
         AbilityEffect::Nova {
-            damage: [3, 5],
+            damage: [4, 6],
+            per_level: 1,
             radius: 800,
             root_ticks: ticks_from_ms(6_000),
             unbreakable_ticks: ticks_from_ms(1_000),
@@ -1258,9 +1260,9 @@ pub const ABILITY_CATALOG: [Ability; 53] = [
             duration: ticks_from_ms(20_000),
         },
     ),
-    // The Rogue's thrown weapons (#290): a knife that tracks a selected target (or flies along
-    // the facing without one), and two aimed specials lobbed along the facing: a venom flask
-    // that shatters on impact and a bomb that bounces, rolls and bursts on its fuse.
+    // The Rogue's thrown weapons (#290): a knife thrown at the unit it aims at (#884), and two
+    // aimed specials lobbed along the facing: a venom flask that shatters on impact and a bomb
+    // that bounces, rolls and bursts on its fuse.
     shot(
         ability(
             42,
@@ -1548,6 +1550,7 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
             }
             AbilityEffect::Nova {
                 damage,
+                per_level,
                 radius,
                 root_ticks,
                 unbreakable_ticks,
@@ -1555,6 +1558,7 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
                 9,
                 damage[0].into(),
                 damage[1].into(),
+                per_level.into(),
                 radius,
                 root_ticks.into(),
                 unbreakable_ticks.into(),

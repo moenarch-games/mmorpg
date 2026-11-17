@@ -241,7 +241,7 @@ describe("Action Lab experiments (#382)", () => {
     const source = new ScenarioSource(zone(charged));
     void source.join();
     for (let tick = 0; tick < 60; tick += 1) {
-      if (tick === 2) { source.sendCommand({ kind: "use-ability", ability: 2, target: null }); }
+      if (tick === 2) { source.sendCommand({ kind: "use-ability", ability: 2, target: null, facing: null }); }
       if (tick === 20) { source.sendCommand({ kind: "release-ability", ability: 2, retired: false }); }
       source.advance(TICK_SECONDS);
     }

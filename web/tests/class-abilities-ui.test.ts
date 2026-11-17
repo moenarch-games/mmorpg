@@ -34,10 +34,10 @@ function viewer(fields: Partial<ViewerState> = {}): ViewerState {
   return { ...HEALTHY_VIEWER, level: 4, classChoice: { classId: "arcanist", sex: "male" }, resource: { kind: "mana", value: 100, max: 176 }, target: wolf, ...fields };
 }
 
-function snapshot(fields: Partial<Parameters<typeof testSnapshot>[0]> = {}, self: Partial<ViewerState> = {}, wolfAt = 1_000) {
+function snapshot(fields: Partial<Parameters<typeof testSnapshot>[0]> = {}, self: Partial<ViewerState> = {}, wolfAt = 1_000, facing = 16_384) {
   return testSnapshot({
     zoneId: 1, tick: 5n, contentRevision: 6n, acknowledgedSequence: 1, viewerId: 1, viewer: viewer(self),
-    entities: [playerEntity(1, [0, 90, 0]), { ...playerEntity(108, [wolfAt, 90, 0]), kind: "creature", flags: { ...NO_FLAGS, attackable: true } }],
+    entities: [{ ...playerEntity(1, [0, 90, 0]), facing }, { ...playerEntity(108, [wolfAt, 90, 0]), kind: "creature", flags: { ...NO_FLAGS, attackable: true } }],
     ...fields,
   });
 }
@@ -52,6 +52,8 @@ describe("action bar", () => {
     expect(bar[1]?.cooldown).toEqual({ kind: "cooldown", remaining: t(300), total: t(600) });
     expect(bar[3]).toMatchObject({ learned: false, unlockLevel: 6, cooldown: { kind: "gcd" } });
     expect(actionBar(snapshot({}, {}, 3_001))[0]?.outOfRange).toBe(true);
+    // Facing away, the zone would aim elsewhere: the selection says nothing about range (#884).
+    expect(actionBar(snapshot({}, {}, 3_001, 0))[0]?.outOfRange).toBe(false);
     expect(actionBar(snapshot({}, { classChoice: null }))).toEqual([]);
   });
 });

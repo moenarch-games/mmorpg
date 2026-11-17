@@ -91,7 +91,7 @@ describe("ability input and HUD text", () => {
 
   test("slots 1–4 name the class abilities in catalog order; Escape cancels only a cast", () => {
     expect(abilitySlots(caster(), catalog).map((ability) => ability.id)).toEqual([1, 2]);
-    expect(useAbilitySlot(2, caster(), catalog)).toEqual({ kind: "use-ability", ability: 2, target: null });
+    expect(useAbilitySlot(2, caster(), catalog)).toEqual({ kind: "use-ability", ability: 2, target: null, facing: null });
     expect(useAbilitySlot(3, caster(), catalog)).toBeNull();
     expect(useAbilitySlot(1, view([]), catalog)).toBeNull();
     expect(cancelCast(caster())).toBeNull();

@@ -390,6 +390,7 @@ impl ActionGraph {
                     && input_of(&PlayerIntent::UseAbility {
                         ability: id.get(),
                         target: None,
+                        facing: None,
                     }) == Some(def.trigger.input)
             });
             if !covers {
@@ -578,6 +579,7 @@ impl Holds {
                 && input_of(&PlayerIntent::UseAbility {
                     ability: hold.ability.get(),
                     target: None,
+                    facing: None,
                 }) == Some(input)
         })
     }

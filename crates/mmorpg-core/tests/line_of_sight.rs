@@ -136,6 +136,7 @@ fn cast_firebolt_with(content: Arc<ZoneContent>) -> (ZoneSimulation, Vec<ZoneEve
         ZoneCommand::UseAbility {
             ability: ids::FIRE_BLAST.get(),
             target: None,
+            facing: None,
         },
     )
     .unwrap();

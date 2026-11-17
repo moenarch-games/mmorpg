@@ -370,6 +370,7 @@ fn intellect_adds_to_each_direct_bolt_and_nova_hit() {
             ZoneCommand::UseAbility {
                 ability: ids::FIREBOLT.get(),
                 target: None,
+                facing: None,
             },
         )
         .unwrap();
@@ -380,6 +381,7 @@ fn intellect_adds_to_each_direct_bolt_and_nova_hit() {
             ZoneCommand::UseAbility {
                 ability: ids::FROST_NOVA.get(),
                 target: None,
+                facing: None,
             },
         )
         .unwrap();
@@ -391,5 +393,39 @@ fn intellect_adds_to_each_direct_bolt_and_nova_hit() {
     for ((tick, low, _), (geared_tick, high, _)) in plain.into_iter().zip(geared) {
         assert_eq!(tick, geared_tick);
         assert_eq!(high, low + 3, "tick {tick}");
+    }
+}
+
+#[test]
+fn intellect_adds_to_every_blizzard_and_drain_life_pulse() {
+    let content = classes::arena(
+        vec![arena::wolf(5_000, [1, 1])],
+        vec![arena::spawn(1, WOLF, [-400, 0])],
+    );
+    // Six intellect: three more damage per channel pulse (#884), as for direct hits.
+    for (class, ability, ticks) in [(2, ids::BLIZZARD, 210), (3, ids::DRAIN_LIFE, 120)] {
+        let [mut plain, mut geared] = twins(&content, 6, class, &[WAND, HOOD]);
+        let mut dealt = [Vec::new(), Vec::new()];
+        for (zone, dealt) in [&mut plain, &mut geared].into_iter().zip(&mut dealt) {
+            zone.apply_command(1, 2, arena::stand(49_152)).unwrap();
+            zone.apply_command(
+                1,
+                3,
+                ZoneCommand::UseAbility {
+                    ability: ability.get(),
+                    target: None,
+                    facing: None,
+                },
+            )
+            .unwrap();
+            dealt.extend(hits(zone, mmorpg_core::golden::t30(ticks)));
+        }
+        let [plain, geared] = dealt;
+        assert!(plain.len() >= 3, "{ability:?} pulses: {plain:?}");
+        assert_eq!(plain.len(), geared.len());
+        for ((tick, low, _), (geared_tick, high, _)) in plain.into_iter().zip(geared) {
+            assert_eq!(tick, geared_tick);
+            assert_eq!(high, low + 3, "{ability:?} tick {tick}");
+        }
     }
 }

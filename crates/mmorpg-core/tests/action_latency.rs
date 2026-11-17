@@ -129,6 +129,7 @@ impl Warden {
         ZoneCommand::UseAbility {
             ability: ids::SHIELD_BASH.get(),
             target: None,
+            facing: None,
         }
     }
 

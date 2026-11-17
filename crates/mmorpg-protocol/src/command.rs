@@ -4,7 +4,9 @@
 use mmorpg_core::{NpcId, ZoneCommand};
 
 use crate::ProtocolError;
-use crate::wire::{decode_entity_ref, encode_entity_ref, take};
+use crate::wire::{
+    decode_entity_ref, decode_optional_yaw, encode_entity_ref, encode_optional_yaw, take,
+};
 
 /// Every command leads with the low byte of [`crate::PROTOCOL_ID`].
 pub(crate) const PROTOCOL_BYTE: u8 = crate::PROTOCOL_ID.to_be_bytes()[3];
@@ -74,8 +76,8 @@ const DIRECTED_STRIKE_COMMAND_BYTES: usize = 10;
 const EMOTE_COMMAND_BYTES: usize = 3;
 /// Version, tag, NPC (u32), offer or bag slot (u32), quantity (u16).
 const TRADE_COMMAND_BYTES: usize = 12;
-/// Version, tag, ability (u32), target reference.
-const USE_ABILITY_COMMAND_BYTES: usize = 11;
+/// Version, tag, ability (u32), target reference, optional facing (flag, u16; #884).
+const USE_ABILITY_COMMAND_BYTES: usize = 14;
 const CHOOSE_CLASS_COMMAND_BYTES: usize = 4;
 const MOVE_COMMAND_BYTES: usize = 6;
 const SELECT_TARGET_COMMAND_BYTES: usize = 7;
@@ -104,11 +106,16 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
         ZoneCommand::Jump => vec![PROTOCOL_BYTE, JUMP_TAG],
         ZoneCommand::Roll => vec![PROTOCOL_BYTE, ROLL_TAG],
         ZoneCommand::Rise(rise) => vec![PROTOCOL_BYTE, RISE_TAG, rise.to_be_bytes()[0]],
-        ZoneCommand::UseAbility { ability, target } => {
+        ZoneCommand::UseAbility {
+            ability,
+            target,
+            facing,
+        } => {
             let mut payload = Vec::with_capacity(USE_ABILITY_COMMAND_BYTES);
             payload.extend_from_slice(&[PROTOCOL_BYTE, USE_ABILITY_TAG]);
             payload.extend_from_slice(&ability.to_be_bytes());
             encode_entity_ref(&mut payload, target);
+            encode_optional_yaw(&mut payload, facing);
             payload
         }
         ZoneCommand::ReleaseAbility { ability, retired } => {
@@ -421,13 +428,14 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
         USE_ABILITY_TAG => {
             if payload.len() != USE_ABILITY_COMMAND_BYTES {
                 return Err(ProtocolError::new(
-                    "use ability command payload must be exactly 11 bytes",
+                    "use ability command payload must be exactly 14 bytes",
                 ));
             }
             let mut offset = BARE_COMMAND_BYTES;
             Ok(ZoneCommand::UseAbility {
                 ability: u32::from_be_bytes(take(payload, &mut offset)?),
                 target: decode_entity_ref(payload, &mut offset)?,
+                facing: decode_optional_yaw(payload, &mut offset)?,
             })
         }
         RELEASE_ABILITY_TAG => {
@@ -728,15 +736,17 @@ mod tests {
             encode_command(ZoneCommand::UseAbility {
                 ability: 9,
                 target: Some(EntityRef::Creature(CreatureId::new(0x0102_0304))),
+                facing: None,
             }),
-            [PROTOCOL_BYTE, 9, 0, 0, 0, 9, 2, 1, 2, 3, 4]
+            [PROTOCOL_BYTE, 9, 0, 0, 0, 9, 2, 1, 2, 3, 4, 0, 0, 0]
         );
         assert_eq!(
             encode_command(ZoneCommand::UseAbility {
                 ability: 3,
                 target: None,
+                facing: Some(0x1234),
             }),
-            [PROTOCOL_BYTE, 9, 0, 0, 0, 3, 0, 0, 0, 0, 0]
+            [PROTOCOL_BYTE, 9, 0, 0, 0, 3, 0, 0, 0, 0, 0, 1, 0x12, 0x34]
         );
         assert_eq!(encode_command(ZoneCommand::CancelCast), [PROTOCOL_BYTE, 10]);
         assert_eq!(
@@ -816,6 +826,7 @@ mod tests {
             ZoneCommand::UseAbility {
                 ability: u32::MAX,
                 target: Some(EntityRef::Npc(NpcId::new(u32::MAX))),
+                facing: None,
             },
             // Out-of-range class values are gameplay refusals, not wire errors.
             ZoneCommand::ChooseClass {
@@ -920,14 +931,17 @@ mod tests {
             ZoneCommand::UseAbility {
                 ability: 1,
                 target: None,
+                facing: None,
             },
             ZoneCommand::UseAbility {
                 ability: 9,
                 target: Some(EntityRef::Creature(CreatureId::new(108))),
+                facing: None,
             },
             ZoneCommand::UseAbility {
                 ability: u32::MAX,
                 target: Some(EntityRef::Player(4_000_000_000)),
+                facing: Some(u16::MAX),
             },
             ZoneCommand::CancelCast,
             ZoneCommand::DirectedStrike {
@@ -1070,6 +1084,7 @@ mod tests {
                 ZoneCommand::UseAbility {
                     ability: 3,
                     target: Some(EntityRef::Creature(CreatureId::new(108))),
+                    facing: None,
                 },
                 1_234,
             ),
@@ -1114,9 +1129,15 @@ mod tests {
                     let (kind, id) = entity_fields(target);
                     format!("select_target {kind} {id}")
                 }
-                ZoneCommand::UseAbility { ability, target } => {
+                ZoneCommand::UseAbility {
+                    ability,
+                    target,
+                    facing,
+                } => {
                     let (kind, id) = entity_fields(target);
-                    format!("use_ability {ability} {kind} {id}")
+                    let facing =
+                        facing.map_or_else(String::new, |facing| format!(" facing {facing}"));
+                    format!("use_ability {ability} {kind} {id}{facing}")
                 }
                 ZoneCommand::ReleaseAbility { ability, retired } => {
                     format!("release_ability {ability} {}", u8::from(retired))
@@ -1303,6 +1324,7 @@ mod tests {
         let ability = encode_command(ZoneCommand::UseAbility {
             ability: 5,
             target: Some(EntityRef::Creature(CreatureId::new(7))),
+            facing: None,
         });
         let directed = encode_command(ZoneCommand::DirectedStrike {
             ability: 1,
@@ -1467,10 +1489,23 @@ mod tests {
             "unknown entity kind"
         );
         assert_eq!(
-            decode_command(&[PROTOCOL_BYTE, 9, 0, 0, 0, 1, 5, 0, 0, 0, 1])
+            decode_command(&[PROTOCOL_BYTE, 9, 0, 0, 0, 1, 5, 0, 0, 0, 1, 0, 0, 0])
                 .unwrap_err()
                 .to_string(),
             "unknown entity kind"
+        );
+        // An absent facing (#884) is all zeros, and its flag a boolean.
+        assert_eq!(
+            decode_command(&[PROTOCOL_BYTE, 9, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1])
+                .unwrap_err()
+                .to_string(),
+            "an absent yaw must be 0"
+        );
+        assert_eq!(
+            decode_command(&[PROTOCOL_BYTE, 9, 0, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, 0])
+                .unwrap_err()
+                .to_string(),
+            "boolean field must be 0 or 1"
         );
         assert_eq!(
             decode_command(&[PROTOCOL_BYTE, 3, 0, 0, 0, 0, 1])

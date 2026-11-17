@@ -2003,6 +2003,8 @@ pub enum WorldCommand {
     UseAbility {
         ability: u32,
         target: Option<EntityRef>,
+        /// Turn to this yaw first (#884); `null` keeps the current facing.
+        facing: Option<u16>,
     },
     /// The held key that used `ability` went up, or `input-bindings` retired its hold (#414).
     ReleaseAbility {
@@ -2161,9 +2163,14 @@ impl TryFrom<&WorldCommand> for core::ZoneCommand {
                 destination,
                 quantity,
             },
-            C::UseAbility { ability, target } => Self::UseAbility {
+            C::UseAbility {
+                ability,
+                target,
+                facing,
+            } => Self::UseAbility {
                 ability,
                 target: core_entity(target),
+                facing,
             },
             C::ReleaseAbility { ability, retired } => Self::ReleaseAbility { ability, retired },
             C::DirectedStrike {

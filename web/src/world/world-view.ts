@@ -508,7 +508,7 @@ export class WorldView {
     prepare: (ability) => this.#units?.units.prepare(ability, this.#seconds),
     abandon: () => this.#units?.units.abandonPreparation(),
     send: (ability) => this.queueIntent(
-      () => ({ kind: "use-ability", ability, target: null }),
+      () => ({ kind: "use-ability", ability, target: null, facing: this.#aimFacing() }),
       () => this.#units?.units.preparedSent(this.#seconds),
     ),
   });
@@ -1026,10 +1026,20 @@ export class WorldView {
     this.queueIntent(() => ({ kind: "swing", facing: this.#movementFacing }));
   }
 
-  /** Uses action-bar slot `slot` (1–20); the viewer winds up at once while the zone decides. */
+  /**
+   * Uses action-bar slot `slot` (1–20); the viewer winds up at once while the zone decides. The
+   * command carries the camera's heading (#884), so a cast after orbiting the camera fires where
+   * the player looks rather than along the facing the last move left.
+   */
   useSlot(slot: number): void {
     this.#powerDraw.cancel();
-    this.#queuePrepared((projection) => (this.#catalog ? useAbilitySlot(slot, projection, this.#catalog) : null));
+    this.#queuePrepared((projection) => (this.#catalog ? useAbilitySlot(slot, projection, this.#catalog, this.#aimFacing()) : null));
+  }
+
+  /** The heading an ability fires along (#884): the camera's; the character keeps it afterwards. */
+  #aimFacing(): number {
+    this.#movementFacing = this.#orbit.facing();
+    return this.#movementFacing;
   }
 
   /**

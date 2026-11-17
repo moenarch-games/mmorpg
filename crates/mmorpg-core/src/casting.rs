@@ -101,9 +101,12 @@ impl ZoneSimulation {
         // and its precision benefits when precise, apply (#380).
         // Edges out of a landing answer Warden melee and other abilities too
         // (#413).
-        let follow_up =
-            crate::action::input_of(&crate::PlayerIntent::UseAbility { ability, target })
-                .and_then(|input| self.follow_up_of(player_id, input));
+        let follow_up = crate::action::input_of(&crate::PlayerIntent::UseAbility {
+            ability,
+            target,
+            facing: None,
+        })
+        .and_then(|input| self.follow_up_of(player_id, input));
         let keep_opening = follow_up
             .as_ref()
             .is_some_and(|follow_up| follow_up.has(crate::action::Effect::KeepOpening));
@@ -123,10 +126,14 @@ impl ZoneSimulation {
         let Some(player) = self.players.get(&player_id) else {
             return Ok(None);
         };
+        // The explicit target, else the selection: a hostile ability aims at it when it lies in
+        // the ability's aim cone (#884).
+        let selection = target.or(player.target);
         let target = if ability.needs_target() {
-            // Free aim (#517): a hostile ability fires where the player faces, whatever is
-            // selected. A shot flies along the facing; any other lands on the nearest unit in
-            // front (see `aimed_unit`). Only a combo follow-up keeps its struck unit.
+            // Free aim (#517): a hostile ability fires where the player faces. A shot flies along
+            // the facing toward the unit it aims at; any other lands on that unit (see
+            // `aimed_unit`: the selection inside the aim cone, else the nearest in front). Only a
+            // combo follow-up keeps its struck unit.
             if ability.projectile.is_some() && followed.is_none() {
                 None
             } else {
@@ -138,7 +145,7 @@ impl ZoneSimulation {
                 };
                 let entity = match followed.or(selected) {
                     Some(entity) => entity,
-                    None => match self.aimed_unit(player_id, ability, player.facing)? {
+                    None => match self.aimed_unit(player_id, ability, player.facing, selection)? {
                         Some(entity) => entity,
                         None => return Ok(Some((ErrorCode::NoTarget, None))),
                     },
@@ -246,11 +253,19 @@ impl ZoneSimulation {
             .as_ref()
             .map_or(0, crate::action::FollowUp::refund);
         let global_cooldown = recovery.unwrap_or_else(|| {
-            self.recovery_of(
+            let ticks = self.recovery_of(
                 player_id,
                 crate::action::ActionId::GlobalCooldown,
                 ability.id,
-            )
+            );
+            // Haste speeds shots (Rapid Fire, Atlas 5.2.i884-2): a shot's global cooldown
+            // shrinks like a swing interval.
+            match self.players.get(&player_id) {
+                Some(player) if ability.projectile.is_some() => {
+                    crate::aura::hasted_swing(ticks, &player.auras)
+                }
+                _ => ticks,
+            }
         });
         self.update_player(player_id, |player| {
             player.global_cooldown = global_cooldown;
@@ -262,7 +277,7 @@ impl ZoneSimulation {
             CastTime::Instant => {
                 self.pay_and_cool_down(player_id, ability);
                 self.refund(player_id, refund.min(ability.cost));
-                self.resolve_player_ability(player_id, ability, target, now)?;
+                self.resolve_player_ability(player_id, ability, target, selection, now)?;
             }
             CastTime::Cast(ticks) | CastTime::Channel(ticks) => {
                 let point = if ability.cast.is_channel() {
@@ -301,15 +316,17 @@ impl ZoneSimulation {
         Ok(None)
     }
 
-    /// The unit a facing-aimed hostile ability without a projectile lands on (#517), among the
-    /// attackable units in line of sight within its reach: for a melee ability the nearest inside
-    /// the swing arc, for a ranged one the nearest to the aim line inside the narrower aim cone
-    /// (then the nearest); ties go in `EntityRef` order.
-    fn aimed_unit(
+    /// The unit a facing-aimed hostile ability lands on, or a shot flies at (#517), among the
+    /// attackable units in line of sight (a throw's also behind cover) within its reach:
+    /// `selection` when it is one of them (#884), else for a melee ability the nearest inside the swing arc, for a ranged one the
+    /// nearest to the aim line inside the narrower aim cone (then the nearest); ties go in
+    /// `EntityRef` order.
+    pub(crate) fn aimed_unit(
         &self,
         player_id: PlayerId,
         ability: &Ability,
         facing: u16,
+        selection: Option<EntityRef>,
     ) -> Result<Option<EntityRef>, ZoneError> {
         let reach = ability.range.reach().unwrap_or(0);
         let half_width = match ability.range {
@@ -321,8 +338,17 @@ impl ZoneSimulation {
         let (dir_x, dir_z) = crate::trig::direction(facing);
         // (along the facing, XZ length, squared distance, unit) of the best so far.
         let mut best: Option<(i64, i64, i64, EntityRef)> = None;
-        // Ranged abilities need a sight line to every unit, melee ones to players (as before).
-        for entity in self.facing_coverage(player_id, facing, reach, half_width, melee)? {
+        // Ranged abilities need a sight line to every unit, melee ones to players (as before); a
+        // throw is lobbed over cover.
+        let over_cover = ability
+            .projectile
+            .is_some_and(crate::ProjectileKind::is_thrown);
+        let covered =
+            self.facing_coverage(player_id, facing, reach, half_width, melee, over_cover)?;
+        if let Some(selected) = selection.filter(|selected| covered.contains(selected)) {
+            return Ok(Some(selected));
+        }
+        for entity in covered {
             let at = self.unit_position(entity)?;
             let (dx, dz) = (i64::from(at[0] - origin[0]), i64::from(at[2] - origin[2]));
             let along = dx * i64::from(dir_x) + dz * i64::from(dir_z);
@@ -469,15 +495,21 @@ impl ZoneSimulation {
         });
     }
 
-    /// The effect of a player's instant or completed cast.
+    /// The effect of a player's instant or completed cast; a free shot aims at `selection`, or
+    /// else the player's selection, when it lies in the aim cone (#884).
     fn resolve_player_ability(
         &mut self,
         player_id: PlayerId,
         ability: &Ability,
         target: Option<EntityRef>,
+        selection: Option<EntityRef>,
         now: u64,
     ) -> Result<(), ZoneError> {
-        let Some(facing) = self.players.get(&player_id).map(|player| player.facing) else {
+        let Some((facing, selected)) = self
+            .players
+            .get(&player_id)
+            .map(|player| (player.facing, player.target))
+        else {
             return Ok(());
         };
         let source = EntityRef::Player(player_id);
@@ -493,7 +525,11 @@ impl ZoneSimulation {
         if let Some(kind) = ability.projectile {
             return match target {
                 Some(target) => self.shoot_at(source, target, kind, ability.id),
-                None => self.shoot_free(source, facing, kind, ability.id),
+                None => {
+                    let aim =
+                        self.aimed_unit(player_id, ability, facing, selection.or(selected))?;
+                    self.shoot_free(source, facing, kind, ability.id, aim)
+                }
             };
         }
         self.apply_player_effect(player_id, ability, target, now)
@@ -597,17 +633,27 @@ impl ZoneSimulation {
                             .take(usize::from(extra)),
                     );
                     for victim in victims {
+                        // Each victim's own stance answers the blow (#884).
                         let amount = self.weapon_roll(victim, melee);
-                        let amount = self.stance_damage(player_id, target, amount)?;
+                        let amount = self.stance_damage(player_id, Some(victim), amount)?;
                         self.player_melee_hits(player_id, victim, amount, false, now)?;
                     }
                 }
             }
             AbilityEffect::DamageOverTime {
-                base, per_level, ..
+                base,
+                per_level,
+                duration,
+                period,
             } => {
-                if let (Some(victim), Some(aura)) = (target, aura(scaled(base, per_level, level))) {
+                let total = scaled(base, per_level, level);
+                if let (Some(victim), Some(aura)) = (target, aura(total)) {
                     self.hostile_aura(player_id, victim, aura)?;
+                    // The opener lands at once (#884): one pulse's worth plus the stat bonus,
+                    // on top of the damage over time.
+                    let pulses = duration.checked_div(period).unwrap_or(1);
+                    let opener = u32::from(total / pulses.max(1)) + bonus;
+                    self.player_damages_unit(player_id, victim, opener, false, now)?;
                 }
             }
             AbilityEffect::Snare { percent, .. } => {
@@ -635,12 +681,18 @@ impl ZoneSimulation {
                     self.player_damages_unit(player_id, victim, amount, false, now)?;
                 }
             }
-            AbilityEffect::Nova { damage, radius, .. } => {
+            AbilityEffect::Nova {
+                damage,
+                per_level,
+                radius,
+                ..
+            } => {
                 let centre = self.player_position(player_id)?;
                 for victim in self.living_hostiles_near(player_id, [centre.x, centre.z], radius)? {
                     let amount = self
                         .stream(victim)
                         .inclusive(u32::from(damage[0]), u32::from(damage[1]))
+                        + u32::from(scaled(0, per_level, level))
                         + bonus;
                     self.player_damages_unit(player_id, victim, amount, false, now)?;
                     if let Some(root) = aura(0) {
@@ -1281,6 +1333,8 @@ impl ZoneSimulation {
             let done = cast.elapsed >= ability.cast.ticks();
             player.cast = (!done).then_some(cast);
             let level = player.level;
+            // Channels scale with the caster's primary stat like every other spell (#884).
+            let bonus = u32::from(player.damage_bonus());
             match (ability.effect, cast.point) {
                 (
                     AbilityEffect::Blizzard {
@@ -1296,7 +1350,8 @@ impl ZoneSimulation {
                             let amount = self
                                 .stream(victim)
                                 .inclusive(u32::from(damage[0]), u32::from(damage[1]))
-                                + u32::from(scaled(0, per_level, level));
+                                + u32::from(scaled(0, per_level, level))
+                                + bonus;
                             self.player_damages_unit(player_id, victim, amount, false, now)?;
                         }
                     }
@@ -1333,7 +1388,7 @@ impl ZoneSimulation {
                 ) => {
                     if period > 0 && cast.elapsed % period == 0 {
                         let roll = [damage[0], damage[1]].map(|d| scaled(d, per_level, level));
-                        self.drain_pulse(player_id, ability, cast.target, roll, now)?;
+                        self.drain_pulse(player_id, ability, cast.target, roll, bonus, now)?;
                     }
                 }
                 _ if done => self.complete_player_cast(player_id, ability, cast, now)?,
@@ -1347,14 +1402,16 @@ impl ZoneSimulation {
         Ok(())
     }
 
-    /// One Drain Life pulse (#301): damage to the channel's target, and the caster heals by the
-    /// health it lost. A target that died, left sight or range breaks the channel instead.
+    /// One Drain Life pulse (#301): `damage` plus the stat `bonus` to the channel's target, and
+    /// the caster heals by the health it lost. A target that died, left sight or range breaks the
+    /// channel instead.
     fn drain_pulse(
         &mut self,
         player_id: PlayerId,
         ability: &Ability,
         target: Option<EntityRef>,
         damage: [u16; 2],
+        bonus: u32,
         now: u64,
     ) -> Result<(), ZoneError> {
         let source = EntityRef::Player(player_id);
@@ -1381,7 +1438,8 @@ impl ZoneSimulation {
         let before = self.unit_health(target);
         let amount = self
             .stream(target)
-            .inclusive(u32::from(damage[0]), u32::from(damage[1]));
+            .inclusive(u32::from(damage[0]), u32::from(damage[1]))
+            + bonus;
         self.player_damages_unit(player_id, target, amount, false, now)?;
         let drained = before.saturating_sub(self.unit_health(target));
         if drained > 0 {
@@ -1449,7 +1507,7 @@ impl ZoneSimulation {
             return Ok(());
         }
         self.pay_and_cool_down(player_id, ability);
-        self.resolve_player_ability(player_id, ability, cast.target, now)
+        self.resolve_player_ability(player_id, ability, cast.target, None, now)
     }
 
     fn advance_creature_cast(&mut self, creature_id: CreatureId) -> Result<(), ZoneError> {

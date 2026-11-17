@@ -68,6 +68,7 @@ impl Arcanist {
         self.send(ZoneCommand::UseAbility {
             ability: ability.get(),
             target: None,
+            facing: None,
         });
         self.zone.advance_tick().unwrap();
         self.errors()

@@ -3,8 +3,8 @@
 //! Each picks its victims from the zone's spatial index in `EntityRef` order and asks the static
 //! world whether the caster (or, for a chain, the last victim) can see them: walls shield the
 //! units behind them. A cone takes every visible hostile unit within its range and angle of the
-//! caster's facing. A beam follows the caster's current facing every tick; a Rapier ray finds the
-//! first wall, a raised shield turned toward the caster stops it at that player, and every
+//! caster's facing. A beam follows the caster's current facing every tick, pitched toward the
+//! unit it aims at (#884); a Rapier ray finds the first wall, a raised shield turned toward the caster stops it at that player, and every
 //! hostile unit closer along the line is struck. A chain jumps to the nearest unhit hostile unit
 //! the last victim can see.
 //!
@@ -147,33 +147,29 @@ impl ZoneSimulation {
         Ok(found)
     }
 
-    /// One Lightning Beam evaluation along the caster's current facing, up to `length` units.
+    /// One Lightning Beam evaluation along the caster's current facing, up to `length` units. The
+    /// beam pitches up toward the body centre of the unit it aims at (#884): the selection when
+    /// it stands in the beam's line, else the nearest unit there, so rising ground before a unit
+    /// uphill does not swallow it.
     pub(crate) fn trace_beam(
         &self,
         player_id: PlayerId,
         length: i32,
     ) -> Result<BeamTrace, ZoneError> {
         let caster = EntityRef::Player(player_id);
-        let facing = self
+        let (facing, selection) = self
             .players
             .get(&player_id)
-            .ok_or_else(|| ZoneError::new("unknown player"))?
-            .facing;
+            .map(|player| (player.facing, player.target))
+            .ok_or_else(|| ZoneError::new("unknown player"))?;
         let forward = ahead(facing);
         let origin = self.unit_position(caster)?;
         #[allow(clippy::cast_precision_loss)]
         let from = [origin[0] as f32, origin[1] as f32, origin[2] as f32];
         #[allow(clippy::cast_precision_loss)]
         let length = length as f32;
-        let mut reach = self
-            .world
-            .cast_ray(
-                from,
-                [forward[0] * length, 0.0, forward[1] * length],
-                |body| body.0 < PLAYER_BODY_BASE,
-            )
-            .map_or(length, |hit| hit.fraction * length);
-        let mut met: Vec<(f32, EntityRef)> = Vec::new();
+        // (along the beam, rise per unit along it, unit) of every hostile unit in its line.
+        let mut met: Vec<(f32, f32, EntityRef)> = Vec::new();
         #[allow(clippy::cast_possible_truncation)]
         let mid = [
             (from[0] + forward[0] * length / 2.0).round() as i32,
@@ -187,17 +183,42 @@ impl ZoneSimulation {
             }
             let position = self.unit_position(unit)?;
             #[allow(clippy::cast_precision_loss)]
-            let delta = [position[0] as f32 - from[0], position[2] as f32 - from[2]];
-            let along = delta[0] * forward[0] + delta[1] * forward[1];
-            let lateral = (delta[0] * forward[1] - delta[1] * forward[0]).abs();
-            if along > 0.0 && along <= reach && lateral <= BEAM_HALF_WIDTH_UNITS {
-                met.push((along, unit));
+            let centre = self
+                .unit_centre(unit)
+                .unwrap_or(position.map(|axis| axis as f32));
+            let delta = [
+                centre[0] - from[0],
+                centre[1] - from[1],
+                centre[2] - from[2],
+            ];
+            let along = delta[0] * forward[0] + delta[2] * forward[1];
+            let lateral = (delta[0] * forward[1] - delta[2] * forward[0]).abs();
+            if along > 0.0 && along <= length && lateral <= BEAM_HALF_WIDTH_UNITS {
+                met.push((along, delta[1] / along, unit));
             }
         }
-        met.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        met.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.2.cmp(&b.2)));
+        // Only upward: a level ray from the body centre already clears flat or falling ground, and
+        // one pitched down at a short unit would meet the ground beyond it.
+        let slope = met
+            .iter()
+            .find(|&&(_, _, unit)| Some(unit) == selection)
+            .or_else(|| met.first())
+            .map_or(0.0, |&(_, slope, _)| slope.max(0.0));
+        let mut reach = self
+            .world
+            .cast_ray(
+                from,
+                [forward[0] * length, slope * length, forward[1] * length],
+                |body| body.0 < PLAYER_BODY_BASE,
+            )
+            .map_or(length, |hit| hit.fraction * length);
         let mut victims = Vec::new();
         let mut blocked_by = None;
-        for (along, unit) in met {
+        for (along, _, unit) in met {
+            if along > reach {
+                break;
+            }
             if let EntityRef::Player(id) = unit
                 && self.shield_covers(id, from)?.is_some()
             {

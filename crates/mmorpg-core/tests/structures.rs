@@ -124,6 +124,7 @@ impl Player {
         self.send(ZoneCommand::UseAbility {
             ability: ids::FIRE_BLAST.get(),
             target: Some(EntityRef::Creature(CreatureId::new(1))),
+            facing: None,
         });
         self.ticks(mmorpg_core::golden::t30(50) as _);
     }
@@ -165,7 +166,11 @@ fn a_blast_breaks_the_walls_the_deck_falls_and_rubble_stays() {
 #[test]
 fn a_shot_chips_a_piece() {
     let mut ranger = Player::new(content(9_000), RANGER);
-    // Aimed Shot without a target flies along the facing; turn toward the east wall's face.
+    // The boar between the walls would draw the shot's aim (#884): it wanders off east first.
+    let mut state = ranger.zone.snapshot().unwrap();
+    state.creatures[0].position[0] = 3_000.0;
+    ranger.zone = ZoneSimulation::from_snapshot(state, Arc::clone(ranger.zone.content())).unwrap();
+    // Aimed Shot with no unit in its cone flies along the facing; turn toward the east wall's face.
     let yaw = |x: f64, z: f64| {
         ((x.atan2(z) / std::f64::consts::TAU * 65_536.0).round() as i64).rem_euclid(65_536) as u16
     };
@@ -173,6 +178,7 @@ fn a_shot_chips_a_piece() {
     ranger.send(ZoneCommand::UseAbility {
         ability: ids::AIMED_SHOT.get(),
         target: None,
+        facing: None,
     });
     ranger.ticks(mmorpg_core::golden::t30(40) as _);
     assert_eq!(ranger.health(2), 7, "the arrow chipped the east wall");
@@ -243,6 +249,7 @@ fn a_fixed_world_blast_has_identical_piece_health_on_both_backends() {
             player.send(ZoneCommand::UseAbility {
                 ability: ids::FIRE_BLAST.get(),
                 target: None,
+                facing: None,
             });
             player.ticks(120);
             player.zone.snapshot().unwrap().pieces

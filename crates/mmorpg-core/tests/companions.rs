@@ -59,6 +59,7 @@ impl Druid {
         self.send(ZoneCommand::UseAbility {
             ability: ids::CALL_COMPANION.get(),
             target: None,
+            facing: None,
         });
         self.ticks(t30(330));
     }
@@ -157,6 +158,7 @@ fn the_companion_outlives_its_owner_recovers_and_leaves_with_it() {
     druid.send(ZoneCommand::UseAbility {
         ability: ids::WRATH.get(),
         target: Some(WOLF_UNIT),
+        facing: None,
     });
     druid.ticks(t30(300));
     let snapshot = druid.zone.snapshot().unwrap();

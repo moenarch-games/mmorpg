@@ -63,6 +63,7 @@ impl Fight {
         self.send(ZoneCommand::UseAbility {
             ability: ability.get(),
             target: None,
+            facing: None,
         });
     }
 
@@ -227,6 +228,7 @@ fn players_choose_a_class_once_and_need_one_for_abilities() {
     fight.send(ZoneCommand::UseAbility {
         ability: 0,
         target: None,
+        facing: None,
     });
     fight.use_ability(ids::FIREBOLT);
     fight.tick();
@@ -431,6 +433,7 @@ fn a_ranger_spends_focus_on_shots_stings_snares_and_haste() {
     fight.send(ZoneCommand::UseAbility {
         ability: ids::AIMED_SHOT.get(),
         target: Some(EntityRef::Creature(CreatureId::new(2))),
+        facing: None,
     });
     let fired = fight.zone.current_tick() + 1;
     fight.tick();
@@ -478,23 +481,25 @@ fn a_ranger_spends_focus_on_shots_stings_snares_and_haste() {
         "after the sting"
     );
 
-    // Serpent Sting: 30 + 4 × 5 = 50 over five pulses every 90 ticks,
-    // counted from the tick it landed.
+    // Serpent Sting: one pulse's worth at once (#884), then 30 + 4 × 5 = 50 over five pulses
+    // every 90 ticks, counted from the tick it landed.
     fight.ticks(t30(450));
     let pulses = fight.since(stung, |event| damage_dealt_to(event, TARGET).is_some());
     let pulses: Vec<_> = pulses
         .into_iter()
         .map(|(at, event)| (at - stung, damage_dealt_to(&event, TARGET).unwrap()))
         .collect();
-    assert_eq!(pulses, [90, 180, 270, 360, 450].map(|at| (t30(at) - 1, 10)));
+    let mut expected = vec![(0, 10)];
+    expected.extend([90, 180, 270, 360, 450].map(|at| (t30(at) - 1, 10)));
+    assert_eq!(pulses, expected);
 
-    // Rapid Fire hastes swings: 2 s × 100 / 140.
+    // Rapid Fire hastes swings: 2 s × 100 / 150.
     fight.use_ability(ids::RAPID_FIRE);
     fight.attacking = Some(TARGET);
     fight.until(t30(200), |fight| fight.me().combat.swing_timer > 0);
     assert_eq!(
         fight.me().combat.swing_timer,
-        t30u16(60) * 100 / 140,
+        t30u16(60) * 100 / 150,
         "hasted from 2 s"
     );
     assert_eq!(fight.view().auras[0].kind, AuraKind::Haste);
@@ -873,6 +878,7 @@ fn a_pulse_that_breaks_an_earlier_root_skips_no_later_aura() {
     let ability = |ability: AbilityId| ZoneCommand::UseAbility {
         ability: ability.get(),
         target: Some(TARGET),
+        facing: None,
     };
     send(&mut zone, 1, ZoneCommand::ChooseClass { class: 2, sex: 0 });
     send(&mut zone, 2, ZoneCommand::ChooseClass { class: 1, sex: 1 });
