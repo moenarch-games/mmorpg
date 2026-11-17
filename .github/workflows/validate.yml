@@ -202,13 +202,13 @@ jobs:
       cache_restore_keys: mmorpg-assets-
       format_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'cargo fmt --all -- --check' || '' }}
       lint_command: ${{ needs.scope.outputs.full_validation == 'true' && 'cargo clippy --workspace --all-targets --all-features --locked -- -D warnings && (cd web && bunx --no-install tsc --noEmit -p tsconfig.assets.json)' || '' }}
-      # Ordinary Rust PRs run the workspace tests too. GPU tests are #[ignore]d, and the native/Pages
-      # reference tests (they build the WASM page with Bun and wasm-bindgen) stay in full validation.
+      # Ordinary Rust PRs run the workspace tests too. GPU tests are #[ignore]d; the native/Pages
+      # reference tests install web/ with Bun and build the WASM page themselves (#896).
       # The merge-blocking physics backend A/B test (physics-engine #330) needs the test-only
       # `physics-ab` feature; full validation's --all-features run includes it, ordinary runs
       # enable it in the same invocation. Its workloads and the bot scenarios are one trial each
       # and the long journeys start first (.config/nextest.toml, #540).
-      test_command: ${{ needs.scope.outputs.full_validation == 'true' && 'python3 scripts/test-dev-native.py && cargo nextest run --workspace --all-features --locked' || (needs.scope.outputs.settings_only == 'true' && 'cargo test -p mmorpg-client --lib settings::tests --locked' || (needs.scope.outputs.rust_changed == 'true' && 'cargo nextest run --workspace --features mmorpg-core/physics-ab --locked -E "not (test(~every_world_prop_region_and_day_phase_matches_pages_submitted_content) | test(~pages_reference_inventory_covers_current_world_scope))"' || '')) }}
+      test_command: ${{ needs.scope.outputs.full_validation == 'true' && 'python3 scripts/test-dev-native.py && cargo nextest run --workspace --all-features --locked' || (needs.scope.outputs.settings_only == 'true' && 'cargo test -p mmorpg-client --lib settings::tests --locked' || (needs.scope.outputs.rust_changed == 'true' && 'cargo nextest run --workspace --features mmorpg-core/physics-ab --locked' || '')) }}
       build_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.full_validation == 'true' && 'cargo build --workspace --all-features --locked && cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked' || (needs.scope.outputs.settings_only == 'true' && 'cargo check -p mmorpg-client --locked' || 'cargo check --workspace --locked')) || '' }}
 
   clippy:
