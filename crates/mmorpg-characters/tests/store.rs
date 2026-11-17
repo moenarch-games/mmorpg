@@ -225,6 +225,7 @@ fn transfer(record: &CharacterRecord, transfer: u64) -> CharacterTransfer {
             strafe: 0,
             rise: 0,
             velocity: [3, 0, -4],
+            weapon_drawn: true,
         },
     }
 }

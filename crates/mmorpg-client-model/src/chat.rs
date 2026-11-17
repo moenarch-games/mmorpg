@@ -133,6 +133,7 @@ pub fn refusal_text(code: ErrorCode) -> String {
         ErrorCode::NoMinions => "You have no minions or companion to command.".into(),
         ErrorCode::HandoffCorridor => "Not here: you are crossing into another region.".into(),
         ErrorCode::InCombat => "You can't travel while in combat.".into(),
+        ErrorCode::WeaponDrawn => "Sheathe your weapon to interact.".into(),
         ErrorCode::InvalidWaystone => "The waystone cannot take you there.".into(),
         ErrorCode::NotWhileSwimming => "You can't do that while swimming.".into(),
         ErrorCode::VendorClosed => "The shop is closed for the night.".into(),
