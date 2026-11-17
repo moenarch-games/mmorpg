@@ -83,6 +83,8 @@ export async function loadStaticBundle(base: string, keys: readonly string[], kt
     // Lit like the rest of the world (#600).
     const root = litObject(gltf.scene);
     root.name = keys[index]!;
+    // Node clips (#891), for a kit that plays them: a mill wheel, sails, a sign.
+    root.animations = gltf.animations;
     root.matrixAutoUpdate = false;
     return root;
   });

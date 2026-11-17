@@ -664,22 +664,37 @@ impl WorldScene {
             models,
             ..
         } = &mut *nature;
-        lods.update(
+        // The pieces the settlement props' clips turn (#891): mill wheels, sails, signs, vanes;
+        // held at their first key under reduced motion.
+        let movers = crate::nature::movers();
+        let clock = if animate { seconds } else { 0. };
+        let mut draws = Vec::new();
+        for shown in lods.update(
             eye.map(f64::from),
             f64::from(fov_y_degrees).to_radians(),
             elapsed,
             1.,
             animate,
             None,
-        )
-        .iter()
-        .map(|shown| NatureDraw {
-            entry: entries[shown.placement],
-            level: shown.level,
-            fade: shown.fade,
-            model: models[shown.placement],
-        })
-        .collect()
+        ) {
+            let (entry, model) = (entries[shown.placement], models[shown.placement]);
+            draws.push(NatureDraw {
+                entry,
+                level: shown.level,
+                fade: shown.fade,
+                model,
+            });
+            for mover in movers.get(entry).into_iter().flatten() {
+                let posed = render_engine::glam::Mat4::from_cols_array(&model) * mover.pose(clock);
+                draws.push(NatureDraw {
+                    entry: mover.piece,
+                    level: 0,
+                    fade: shown.fade,
+                    model: posed.to_cols_array(),
+                });
+            }
+        }
+        draws
     }
 }
 

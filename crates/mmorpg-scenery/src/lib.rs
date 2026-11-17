@@ -928,12 +928,12 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
             }
         })
         .collect();
-    // The villages' clutter (#851) is drawn by its kit alone; its proxies level the ground and
-    // keep the scatter out like a crate's.
+    // The villages' clutter (#851, #891) is drawn by its kit alone; the proxies of what stands
+    // on the terrain level the ground and keep the scatter out like a crate's.
     let village: Vec<_> = definition
         .colliders()
         .iter()
-        .filter(|collider| greyhaven_vale::village_props::is_village_prop(collider.id))
+        .filter(|collider| greyhaven_vale::village_props::on_terrain(collider.id))
         .cloned()
         .collect();
     let relief = Relief::new(

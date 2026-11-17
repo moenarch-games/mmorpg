@@ -25,7 +25,7 @@ use mmorpg_presentation::{
     surface::{self, LayeredSurface},
 };
 use render_engine::{
-    glam::{Mat4, Vec2, Vec3, Vec4},
+    glam::{Mat4, Quat, Vec2, Vec3, Vec4},
     material::{AlphaMode, Sampler, StandardMaterial, TextureData},
     mesh::MeshData,
 };
@@ -305,19 +305,173 @@ pub fn library() -> &'static Library {
                             .find(|(name, _)| *name == key)
                             .map(|(_, path)| *path)
                             .unwrap_or_else(|| panic!("a bundle embeds {key}"));
-                        import(path, source.files, &mut textures, layered)
+                        import(path, source.files, &mut textures, layered, None)
                     })
                     .collect()
             })
             .collect::<Vec<_>>();
         levels.extend(
-            kit_entries().map(|(_, path, files)| vec![import(path, files, &mut textures, None)]),
+            kit_entries()
+                .map(|(_, path, files)| vec![import(path, files, &mut textures, None, None)]),
         );
+        // The pieces the entries' clips turn (#891), after every entry, in [`movers`] order.
+        for (entry, movers) in movers().iter().enumerate() {
+            for mover in movers {
+                debug_assert_eq!(mover.piece, levels.len());
+                let (path, files) = default_path(entry).expect("a moving entry has a glTF");
+                levels.push(vec![import(
+                    path,
+                    files,
+                    &mut textures,
+                    None,
+                    Some(mover.node),
+                )]);
+            }
+        }
         Library {
             textures: textures.data,
             levels,
         }
     })
+}
+
+/// The glTF of [`entries`] index `entry`'s default level and its bundle's files.
+fn default_path(entry: usize) -> Option<(&'static str, Files)> {
+    let mut index = 0;
+    for source in &SOURCES {
+        if let Some(key) = source.keys.get(entry - index) {
+            return source
+                .entries
+                .iter()
+                .find(|(name, _)| name == key)
+                .map(|(_, path)| (*path, source.files));
+        }
+        index += source.keys.len();
+    }
+    kit_entries()
+        .nth(entry - index)
+        .map(|(_, path, files)| (path, files))
+}
+
+/// A node one of an entry's looping clips turns (#891): a mill wheel, sails, a sign, a vane.
+/// It draws as its own library piece, posed in the entry's frame each frame. Presentation only.
+pub struct Mover {
+    /// The piece's library index, drawn at level 0.
+    pub piece: usize,
+    node: usize,
+    /// Its parent's frame in the entry, and its rest translation and scale.
+    parent: Mat4,
+    translation: Vec3,
+    scale: Vec3,
+    /// The clip's key times in seconds and rotations, interpolated linearly.
+    times: Vec<f32>,
+    rotations: Vec<Quat>,
+}
+
+impl Mover {
+    /// The piece's frame in the entry at `seconds` on the presentation clock, looping.
+    #[must_use]
+    pub fn pose(&self, seconds: f64) -> Mat4 {
+        let rotation = match (self.times.first(), self.times.last()) {
+            (Some(&first), Some(&last)) if last > first => {
+                let t = first + seconds.rem_euclid(f64::from(last - first)) as f32;
+                let next = self
+                    .times
+                    .partition_point(|&time| time <= t)
+                    .clamp(1, self.times.len() - 1);
+                let (a, b) = (self.times[next - 1], self.times[next]);
+                let s = ((t - a) / (b - a)).clamp(0., 1.);
+                self.rotations[next - 1].slerp(self.rotations[next], s)
+            }
+            _ => self.rotations.first().copied().unwrap_or(Quat::IDENTITY),
+        };
+        self.parent * Mat4::from_scale_rotation_translation(self.scale, rotation, self.translation)
+    }
+}
+
+/// Per [`entries`] index, the nodes its clips turn; their pieces follow every entry in the
+/// library, in this order. Read from the glTFs alone, without importing the library.
+pub fn movers() -> &'static [Vec<Mover>] {
+    static MOVERS: OnceLock<Vec<Vec<Mover>>> = OnceLock::new();
+    MOVERS.get_or_init(|| {
+        let count = entries().len();
+        let mut piece = count;
+        (0..count)
+            .map(|entry| {
+                let Some((path, files)) = default_path(entry) else {
+                    return Vec::new();
+                };
+                let mut movers = clips(path, files);
+                for mover in &mut movers {
+                    mover.piece = piece;
+                    piece += 1;
+                }
+                movers
+            })
+            .collect()
+    })
+}
+
+/// The rotation clips of the glTF at `path`, one [`Mover`] per node (its first clip), with
+/// [`Mover::piece`] unset.
+fn clips(path: &str, files: Files) -> Vec<Mover> {
+    let gltf = parse(path, files);
+    if gltf.animations().len() == 0 {
+        return Vec::new();
+    }
+    let buffers = buffers(&gltf, path, files);
+    let mut parents = BTreeMap::new();
+    let mut stack: Vec<(gltf::Node<'_>, Mat4)> = gltf
+        .default_scene()
+        .or_else(|| gltf.scenes().next())
+        .into_iter()
+        .flat_map(|scene| scene.nodes())
+        .map(|node| (node, Mat4::IDENTITY))
+        .collect();
+    while let Some((node, parent)) = stack.pop() {
+        parents.insert(node.index(), parent);
+        let world = parent * Mat4::from_cols_array_2d(&node.transform().matrix());
+        stack.extend(node.children().map(|child| (child, world)));
+    }
+    let mut movers: Vec<Mover> = Vec::new();
+    for channel in gltf.animations().flat_map(|animation| animation.channels()) {
+        let node = channel.target().node();
+        if channel.target().property() != gltf::animation::Property::Rotation
+            || movers.iter().any(|mover| mover.node == node.index())
+        {
+            continue;
+        }
+        let reader = channel.reader(|buffer| buffers.get(buffer.index()).copied());
+        let (Some(times), Some(gltf::animation::util::ReadOutputs::Rotations(rotations))) =
+            (reader.read_inputs(), reader.read_outputs())
+        else {
+            continue;
+        };
+        let (translation, _, scale) = node.transform().decomposed();
+        movers.push(Mover {
+            piece: 0,
+            node: node.index(),
+            parent: parents
+                .get(&node.index())
+                .copied()
+                .unwrap_or(Mat4::IDENTITY),
+            translation: Vec3::from(translation),
+            scale: Vec3::from(scale),
+            times: times.collect(),
+            rotations: rotations.into_f32().map(Quat::from_array).collect(),
+        });
+    }
+    movers
+}
+
+/// The external buffers of the bundle glTF at `path`.
+fn buffers(gltf: &gltf::Gltf, path: &str, files: Files) -> Vec<&'static [u8]> {
+    gltf.buffers()
+        .map(|buffer| match buffer.source() {
+            gltf::buffer::Source::Uri(uri) => file(files, &resolve(path, uri)),
+            gltf::buffer::Source::Bin => panic!("nature entries use external buffers"),
+        })
+        .collect()
 }
 
 /// The material a fading copy draws with at dissolve `threshold` in `(0, 1]`: a fragment of
@@ -666,20 +820,22 @@ where
 }
 
 /// Every primitive of the bundle glTF at `path`, in its scene frame; a layered kit's masked
-/// primitives as their limestone and overlays ([`Layered::parts`]).
+/// primitives as their limestone and overlays ([`Layered::parts`]). A node a clip turns is a
+/// separate piece (#891, [`Mover`]): without `node` it is left out, with `node` only that
+/// node's primitives are imported, in its own frame.
 fn import(
     path: &str,
     files: Files,
     textures: &mut TextureSet,
     layered: Option<&Layered>,
+    node: Option<usize>,
 ) -> Vec<Part> {
     let gltf = parse(path, files);
-    let buffers: Vec<&[u8]> = gltf
-        .buffers()
-        .map(|buffer| match buffer.source() {
-            gltf::buffer::Source::Uri(uri) => file(files, &resolve(path, uri)),
-            gltf::buffer::Source::Bin => panic!("nature entries use external buffers"),
-        })
+    let buffers = buffers(&gltf, path, files);
+    let moving: BTreeMap<usize, ()> = gltf
+        .animations()
+        .flat_map(|animation| animation.channels())
+        .map(|channel| (channel.target().node().index(), ()))
         .collect();
     let mut slot = |info: Option<gltf::texture::Texture<'_>>, srgb: bool| {
         slot(textures, files, path, info, srgb)
@@ -691,10 +847,16 @@ fn import(
     let mut parts = Vec::new();
     let mut stack: Vec<(gltf::Node<'_>, Mat4)> =
         scene.nodes().map(|node| (node, Mat4::IDENTITY)).collect();
-    while let Some((node, parent)) = stack.pop() {
-        let world = parent * Mat4::from_cols_array_2d(&node.transform().matrix());
-        stack.extend(node.children().map(|child| (child, world)));
-        let Some(mesh) = node.mesh() else {
+    while let Some((current, parent)) = stack.pop() {
+        let world = parent * Mat4::from_cols_array_2d(&current.transform().matrix());
+        stack.extend(current.children().map(|child| (child, world)));
+        let world = match node {
+            None if moving.contains_key(&current.index()) => continue,
+            None => world,
+            Some(index) if index == current.index() => Mat4::IDENTITY,
+            Some(_) => continue,
+        };
+        let Some(mesh) = current.mesh() else {
             continue;
         };
         let normal_matrix = world.inverse().transpose();
@@ -764,6 +926,8 @@ fn import(
             }
             let material = StandardMaterial {
                 base_color: Vec4::from(pbr.base_color_factor()),
+                // An ember's glow (#891), at the brightness the world's glowing parts draw with.
+                emissive: Vec3::from(source.emissive_factor()) * crate::graphics::EMISSIVE_NITS,
                 metallic: pbr.metallic_factor(),
                 perceptual_roughness: pbr.roughness_factor(),
                 alpha_mode: match source.alpha_mode() {
@@ -799,7 +963,8 @@ mod tests {
     fn every_entry_level_imports_with_its_textures() {
         let library = library();
         let lods = lods();
-        assert_eq!(entries().len(), library.levels.len());
+        let pieces: usize = movers().iter().map(Vec::len).sum();
+        assert_eq!(entries().len() + pieces, library.levels.len());
         for (entry, levels) in entries().iter().zip(&library.levels) {
             // The single-level kits (#753) have no levels of detail.
             let expected = lods
@@ -817,6 +982,46 @@ mod tests {
             }
         }
         assert!(library.textures.iter().all(|t| t.levels.len() > 1));
+    }
+
+    /// The settlement props' clips (#891) turn their pieces, each imported on its own: the
+    /// mills' wheels and sails, the forge's bellows, the windlass, the spit, the potter's wheel,
+    /// the signs, the vane and the scarecrow's hat and sleeves.
+    #[test]
+    fn settlement_props_clips_turn_their_pieces() {
+        let entries = entries();
+        let library = library();
+        let moving: Vec<_> = entries
+            .iter()
+            .zip(movers())
+            .filter(|(_, movers)| !movers.is_empty())
+            .map(|(entry, movers)| (*entry, movers.len()))
+            .collect();
+        for key in [
+            "watermill",
+            "water-wheel",
+            "windmill",
+            "forge",
+            "well-windlass",
+            "spit-roast",
+            "potters-wheel",
+            "shop-sign-smith",
+            "shop-sign-baker",
+            "shop-sign-tailor",
+            "weather-vane",
+        ] {
+            let entry = format!("settlement.props.{key}");
+            assert_eq!(
+                moving.iter().find(|(name, _)| *name == entry).map(|m| m.1),
+                Some(1),
+                "{entry}"
+            );
+        }
+        assert!(moving.contains(&("settlement.props.scarecrow", 3)));
+        for mover in movers().iter().flatten() {
+            assert!(!library.levels[mover.piece][0].is_empty());
+            assert_ne!(mover.pose(0.), mover.pose(0.37), "a clip moves its piece");
+        }
     }
 
     /// A layered limestone kit (#732) draws each piece as textured, normal-mapped limestone

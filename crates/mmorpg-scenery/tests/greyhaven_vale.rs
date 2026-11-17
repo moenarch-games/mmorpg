@@ -271,7 +271,11 @@ fn no_prop_intersects_a_collider_it_does_not_visualise() {
                 >= collider.position[1] + collider.half_extents[1]
                 || prop.position[1] + 2 * prop.half_extents[1]
                     <= collider.position[1] - collider.half_extents[1];
-            if prop.collider != Some(collider.id) && !roofed && !vertically_separate {
+            // The walk-in inn's clutter (#891) furnishes it.
+            let furnishing =
+                prop.collider == Some(ids::INN) && ids::SETTLEMENT_PROPS.contains(&collider.id);
+            if prop.collider != Some(collider.id) && !roofed && !vertically_separate && !furnishing
+            {
                 assert!(
                     !area.intersects(footprint(collider)),
                     "{prop:?} intersects {collider:?}, rock={:?}",

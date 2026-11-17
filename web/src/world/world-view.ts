@@ -1809,6 +1809,8 @@ export class WorldView {
     this.#outpost?.hideCottages(this.#inn?.cottagesInside([self.x, self.feetY, self.z]) ?? new Set());
     // Low world detail draws no ambient creatures.
     if (this.#worldDetail !== "low") { this.#ambient?.update(this.#seconds, animate); }
+    // The settlement props' node clips (#891): mill wheels, sails, signs, vanes and scarecrows.
+    this.#settlement?.update(this.#seconds, animate);
     this.#raidSigns.update(projection.raid, this.#raidPrep, scene.surfaceY, scenery.scenery.unitsPerMetre);
     if (this.#framePending) {
       this.#framePending = false;

@@ -242,6 +242,26 @@ by the dogs' rounds, a wheelbarrow, chopping blocks at Westmere Lodge and the hu
 inn's barrels and the lodge's crates, each on clear ground off roads, fields, shores and every
 resident's way.
 
+A second batch dresses the places with their trades (#891, `village_props::SETTLEMENT_PROPS`):
+apples, bread and cheese on the Outpost's stalls and a fish crate on the third; cloth, pottery and a
+butcher's rack by it on the brook's bank; the smithy's forge behind it and the smith's, tailor's and
+baker's swinging signs (with the tailor's loom); the tannery's hide frames west of the tanner's post;
+banners at the south gate; the Greyhaven inn's sign, cask rack, jar shelf, dresser, settle by the
+hearth, rug, candles and candelabrum and a shield on its wall; Millbrook's watermill and a water wheel
+on the village brook; a scarecrow, troughs, the barn's vane, a hen coop, skeps and a churn at
+Millbrook Farm; a post mill on Barrowdown's knoll, bunting and a market day's awning stall, scale and
+potter's wheel on its green, its barn's vane and the Barrow Rest's sign, casks, rug and candles; the
+Ford Inn's sign, bar counter and candles and a banner at Fenford; scarecrows and a plough in the
+hamlets' fields; a spit and a hide frame at the hunters' camp; and at Westmere Lodge a windlass over a
+bare curb, drying nets, a jetty and a moored rowing boat on the tarn. Each collides as its descriptor
+proxies (the windlass also as its curb; a rug, walked over, not at all). Props on a table, a counter,
+a wall bracket, an inn's floor or the water stand on an explicit floor and leave the ground's relief
+alone. Both clients loop the props' node clips (the mill wheels and sails, the forge's bellows, the
+windlass, the spit, the potter's wheel, the signs, the vanes and the scarecrows' hats and sleeves) on
+the presentation clock, holding the first pose under reduced motion, and the forge and the spit glow
+with a warm flickering light. A placement check (`settlement_props_stand_clear_of_colliders_and_residents`)
+keeps every proxy off other colliders and every resident's way.
+
 ## Not yet done
 
 - **More homes you can enter:** the Outpost's three kit houses and

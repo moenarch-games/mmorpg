@@ -97,11 +97,13 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // 6,151,648, 1,915,421, 8,176,453 and 24,553,949 bytes.
     // Movement-state strikes (#885) wind up, chain and announce each strike: fights-8 evaluates
     // 17,264 AI decisions, and fights-8 and fights-32 project 1,934,086 and 8,204,294 bytes.
+    // The second settlement props batch (#891) stands 84 proxy boxes in every step's world:
+    // 30,240 more body visits per 360 ticks, and nothing else moves.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [11_052, 5_126_040, 288_000, 6_151_648],
-        [17_264, 5_123_160, 93_060, 1_934_086],
-        [25_840, 5_131_800, 434_117, 8_204_294],
-        [13_344, 5_142_964, 2_323_474, 24_553_949],
+        [11_052, 5_137_560, 288_000, 6_151_648],
+        [17_264, 5_134_680, 93_060, 1_934_086],
+        [25_840, 5_143_320, 434_117, 8_204_294],
+        [13_344, 5_154_184, 2_323_474, 24_553_949],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();

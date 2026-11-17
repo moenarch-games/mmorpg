@@ -274,6 +274,9 @@ pub mod ids {
     /// The walk-in farmhouses' walls and furniture (#886), 24 IDs each, in
     /// [`super::cottages::cottages`] order.
     pub const FARMHOUSES: RangeInclusive<u32> = 44_200..=44_399;
+    /// The settlements' second props batch (#891), 4 IDs each, in
+    /// [`super::village_props::SETTLEMENT_PROPS`] order.
+    pub const SETTLEMENT_PROPS: RangeInclusive<u32> = 44_400..=44_799;
 }
 
 /// One region's tables (#542): its named areas, its roads and its own colliders. Each region
