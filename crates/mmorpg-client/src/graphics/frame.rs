@@ -287,10 +287,14 @@ impl GroundGpu {
             .get(&ground.layer)
             .filter(|_| !ground.far || ground.layer == Layer::Rock)
         else {
+            // As matte as the textured ground (#870): the glossier flat surface lit the
+            // distant meadows and hillsides facing the sun a pale beige beside the near turf.
             let flat = standard_material(m);
             return StandardMaterial {
                 base_color: flat.base_color.truncate().extend(alpha),
                 alpha_mode,
+                metallic: 0.,
+                perceptual_roughness: 1.,
                 ..flat
             };
         };

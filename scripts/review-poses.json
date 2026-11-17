@@ -31,6 +31,12 @@
       "target": [540, 8.3, 684]
     },
     {
+      "name": "meadow-hillside",
+      "note": "Barrowdown's meadow to the sunlit hillside beyond it, where far ground met the near turf as a pale wedge (#870)",
+      "eye": [530, 35, 640],
+      "target": [750, 0, 620]
+    },
+    {
       "name": "hamlet-cottage",
       "note": "A farmland hamlet's cottage",
       "eye": [-34, 9, 560],
