@@ -186,11 +186,13 @@ jobs:
     uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@858803b5ce092c1bc9981f215ceab43066bc1ca8
     with:
       # Bun comes from scripts/ci-install-bun.sh, which retries; the reusable job's setup step cannot.
+      # The wasm-bindgen CLI is for web/'s `@moritzbrantner/maps` prepare script, which the reference
+      # tests' `bun install` runs (#896).
       # The reusable job holds this run's github.token in NODE_AUTH_TOKEN; these commands export it
       # as GH_TOKEN so release downloads are authenticated. Only the variable name is interpolated.
       bun_version: ""
       node_version: ""
-      install_command: ${{ needs.scope.outputs.full_validation == 'true' && 'export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/ci-install-bun.sh && export PATH="$HOME/.bun/bin:$PATH" && cd web && bun install --frozen-lockfile' || (needs.scope.outputs.rust_changed == 'true' && 'export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/ci-install-bun.sh' || '') }}
+      install_command: ${{ needs.scope.outputs.full_validation == 'true' && 'export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/ci-install-bun.sh && scripts/ci-install-wasm-bindgen.sh && export PATH="$HOME/.bun/bin:$PATH" && cd web && bun install --frozen-lockfile' || (needs.scope.outputs.rust_changed == 'true' && 'export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/ci-install-bun.sh && scripts/ci-install-wasm-bindgen.sh' || '') }}
       cache_bun: false
       # Once per job: libudev headers, the asset bundles and cargo-nextest (tests run per process, in parallel).
       apt_packages: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'libudev-dev libasound2-dev' || '' }}

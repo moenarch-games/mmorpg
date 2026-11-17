@@ -40,9 +40,17 @@ fn export(cases: &[Value]) -> Value {
         .current_dir(root.join("web"))
         .env_remove("CARGO_TARGET_DIR")
         .stdout(Stdio::null())
-        .status()
+        .stderr(Stdio::piped())
+        .output()
         .expect("the Pages reference needs Bun on PATH");
-    assert!(install.success(), "bun install in web/ failed: {install}");
+    // A git dependency's prepare script needs the wasm-bindgen CLI on PATH, which CI installs
+    // (scripts/ci-install-wasm-bindgen.sh); its error is in this output.
+    assert!(
+        install.status.success(),
+        "bun install in web/ failed: {}\n{}",
+        install.status,
+        String::from_utf8_lossy(&install.stderr)
+    );
     let mut child = Command::new("bun")
         .arg("tests/support/native-world-reference.ts")
         .current_dir(root.join("web"))
