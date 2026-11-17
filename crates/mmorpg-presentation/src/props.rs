@@ -1779,14 +1779,13 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
             at(0., h + 0.005, 0., r * 0.68, 1., r * 0.68),
         );
         for part in m.parts {
-            b.put(
+            b.instance(
+                "settlement-curb",
                 part.c,
                 &part.g,
                 compose(&[f, part.a]),
-                f.t[0],
-                f.t[2],
+                [f.t[0], f.t[2]],
                 part.cull,
-                false,
             );
         }
     }

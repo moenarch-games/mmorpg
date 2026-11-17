@@ -46,6 +46,8 @@ fn scene_wide(draw: &Draw) -> bool {
         || draw.id.starts_with("fall-strand-")
         || (draw.id.starts_with("brook-") && draw.id.contains("-foam-"))
         || draw.id.starts_with("settlement-fallback-")
+        // The bare curb under a well windlass (#891) is the dressing's, whichever props are shown.
+        || draw.id.contains(":settlement-curb:")
         || matches!(draw.id.as_str(), "brook-wet-banks" | "brook-bank-shingle")
 }
 
@@ -535,8 +537,8 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
     let parts = mmorpg_presentation::settlement_props::parts(&scenery);
     assert_eq!(
         parts.len(),
-        206,
-        "market square, brook additions, the Delving Run footbridge (#828), the sixteen cottages' and six farmhouses' furniture (#843, #847, #886), and the villages' clutter and stand-ins (#851)"
+        267,
+        "market square, brook additions, the Delving Run footbridge (#828), the sixteen cottages' and six farmhouses' furniture (#843, #847, #886), the villages' clutter and stand-ins (#851) and the second batch (#891)"
     );
     for family in [
         ["stall", "cart", "crate"],
@@ -647,7 +649,13 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
         let [phx, _, phz] = collider.half_extents;
         let apart = (px - cx).abs() >= phx + hx || (pz - cz).abs() >= phz + hz;
         let own = mmorpg_core::greyhaven_vale::ids::MARKET.contains(&collider.id);
-        assert!(apart || own || collider.id == 1, "collider {}", collider.id);
+        // The stalls' goods (#891) lie on their counters.
+        let goods = mmorpg_core::greyhaven_vale::ids::SETTLEMENT_PROPS.contains(&collider.id);
+        assert!(
+            apart || own || goods || collider.id == 1,
+            "collider {}",
+            collider.id
+        );
     }
 }
 

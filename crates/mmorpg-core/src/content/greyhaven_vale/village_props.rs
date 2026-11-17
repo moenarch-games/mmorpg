@@ -113,19 +113,19 @@ pub const SETTLEMENT_PROPS: [Prop; 61] = [
     // brook west of the tanner's house.
     prop("forge", [2_700, -250], 0),
     on("shop-sign-smith", [2_550, 800], 0, SIGN),
-    prop("hide-frame", [-2_400, 2_900], 0),
-    prop("hide-frame", [-2_700, 3_000], 1),
+    prop("hide-frame", [-2_900, 2_900], 1),
+    prop("hide-frame", [-3_000, 2_700], 1),
     // The tailor's and the baker's signs over the square, and the tailor's loom by her door.
     on("shop-sign-tailor", [-900, 3_500], 2, SIGN - 30),
     on("shop-sign-baker", [1_000, 3_500], 2, SIGN - 10),
     prop("loom", [-1_300, 3_400], 2),
     // Banners by the south gate.
-    prop("banner-village", [-200, 5_400], 0),
-    prop("pennant-village", [200, 5_400], 0),
+    prop("banner-village", [-450, 5_400], 0),
+    prop("pennant-village", [450, 5_400], 0),
     // The Greyhaven inn: its sign over the square; casks, shelves, a dresser, a settle by the
     // hearth, a rug in the doorway, candles on the tables and the bar, a candelabrum in the
     // front corner and a shield on the back wall.
-    on("inn-sign", [1_680, 480], 0, INN_FLOOR + SIGN),
+    on("inn-sign", [1_680, 500], 0, INN_FLOOR + SIGN),
     on("cask-rack", [2_110, 250], 3, INN_FLOOR),
     on("jar-shelf", [1_550, -430], 0, INN_FLOOR),
     on("dresser", [1_350, -420], 0, INN_FLOOR),

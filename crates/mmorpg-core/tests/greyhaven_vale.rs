@@ -174,6 +174,12 @@ fn structures_touch_but_never_overlap() {
             if ids::MARKET.contains(&left.id) && ids::MARKET.contains(&right.id) {
                 continue;
             }
+            // A village prop's own proxies (#891: the pottery's jar on its ware) may overlap.
+            if greyhaven_vale::village_props::is_village_prop(left.id)
+                && left.id / 4 == right.id / 4
+            {
+                continue;
+            }
             let overlaps = (0..3).all(|axis| {
                 (left.position[axis] - right.position[axis]).abs()
                     < left.half_extents[axis] + right.half_extents[axis]
