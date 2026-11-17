@@ -107,7 +107,9 @@ bot = "hunter"
 action = "swing"
 entity = "creature:108"
 until = 2760
-every = 30
+# Pressing faster than any wind-up keeps a press waiting at each contact, so no follow-up
+# window opens (#928) and every strike begins as soon as its recovery allows.
+every = 10
 
 
 [[steps]]
