@@ -188,6 +188,9 @@ export function eventText(event: ZoneEvent, snapshot: ZoneSnapshot, catalog: Con
         ? `Your ${aim} ${ability} cuts only air.`
         : `Your ${aim} ${ability} strikes ${name(event.target)}.`;
     }
+    // A strike's timing reward (#928), the viewer's own; its cue also shows at the feet.
+    case "strike-rewarded":
+      return event.reward === "landing-strike" ? "Landing strike! You recover quickly." : "Follow up!";
     // A timed swing's wind-up (#679): an opponent's shows, the viewer's own does not.
     case "swing-began":
       return isViewer(event.source) ? "" : `${capitalise(name(event.source))} winds up ${abilityName(event.ability, catalog)}!`;

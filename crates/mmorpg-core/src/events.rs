@@ -212,6 +212,13 @@ pub enum ZoneEvent {
         variant: crate::StrikeVariant,
         contact: u16,
     },
+    /// The viewer's own strike earned a timing `reward` (#928), lasting `ticks`: a timed
+    /// landing strike's shortened recovery, or the open follow-up window.
+    StrikeRewarded {
+        source: EntityRef,
+        reward: crate::StrikeReward,
+        ticks: u16,
+    },
     /// A beast `source` began its `attack` (#889), biting `contact` ticks from now.
     CreatureAttackBegan {
         source: EntityRef,
@@ -347,6 +354,7 @@ impl ZoneEvent {
             | Self::StrikeSwept { .. }
             | Self::SwingBegan { .. }
             | Self::StrikeBegan { .. }
+            | Self::StrikeRewarded { .. }
             | Self::CreatureAttackBegan { .. }
             | Self::Clashed { .. }
             | Self::Healed { .. }

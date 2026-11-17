@@ -169,6 +169,14 @@ mirror!(
     }
 );
 mirror!(
+    /// A strike's timing reward (#928).
+    #[serde(rename_all = "kebab-case")]
+    StrikeReward = core::StrikeReward {
+        LandingStrike,
+        FollowUp
+    }
+);
+mirror!(
     /// A beast's attack (#889).
     #[serde(rename_all = "lowercase")]
     CreatureAttack = core::CreatureAttack { Quick, Heavy }
@@ -976,6 +984,12 @@ pub enum ZoneEvent {
         variant: StrikeVariant,
         contact: u16,
     },
+    /// The viewer's strike earned a timing `reward` (#928) lasting `ticks`.
+    StrikeRewarded {
+        source: EntityRef,
+        reward: StrikeReward,
+        ticks: u16,
+    },
     /// A beast `source` began its `attack` (#889), biting `contact` ticks from now.
     CreatureAttackBegan {
         source: EntityRef,
@@ -1168,6 +1182,15 @@ impl From<core::ZoneEvent> for ZoneEvent {
                 family: family.into(),
                 variant: variant.into(),
                 contact,
+            },
+            E::StrikeRewarded {
+                source,
+                reward,
+                ticks,
+            } => Self::StrikeRewarded {
+                source: source.into(),
+                reward: reward.into(),
+                ticks,
             },
             E::CreatureAttackBegan {
                 source,
@@ -1404,6 +1427,15 @@ impl From<ZoneEvent> for core::ZoneEvent {
                 family: family.into(),
                 variant: variant.into(),
                 contact,
+            },
+            E::StrikeRewarded {
+                source,
+                reward,
+                ticks,
+            } => Self::StrikeRewarded {
+                source: source.into(),
+                reward: reward.into(),
+                ticks,
             },
             E::CreatureAttackBegan {
                 source,

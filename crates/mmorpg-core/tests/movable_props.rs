@@ -211,6 +211,7 @@ fn a_broken_crate_leaves_and_returns_at_rest_at_its_spawn() {
         variant: mmorpg_core::StrikeVariant::First,
         contact: 1,
         stance: None,
+        grounded: 0,
     });
     warden.zone = ZoneSimulation::from_snapshot(state, Arc::clone(warden.zone.content())).unwrap();
     warden.send(ZoneCommand::SelectTarget(Some(EntityRef::Creature(

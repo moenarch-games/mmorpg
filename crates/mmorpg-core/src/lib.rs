@@ -215,8 +215,9 @@ pub use seat::{PostureView, SEAT_REACH_UNITS, Seat, SeatId, Sitting};
 use sim_combat::class;
 pub use sim_combat::class::{ClassChoice, PlayerClass, ResourceKind, Sex};
 pub use sim_combat::melee::{
-    CHAIN_LENGTH, CHAIN_WINDOW_TICKS, FamilyMelee, MAX_CONTACT_TICKS, MAX_INTERVAL_TICKS,
-    StrikeProfile, StrikeVariant, WeaponFamily,
+    CHAIN_LENGTH, CHAIN_WINDOW_TICKS, FOLLOW_UP_WINDOW_TICKS, FamilyMelee,
+    LANDING_STRIKE_RECOVERY_PERCENT, LANDING_STRIKE_TOLERANCE_TICKS, MAX_CONTACT_TICKS,
+    MAX_INTERVAL_TICKS, StrikeProfile, StrikeReward, StrikeVariant, WeaponFamily,
 };
 pub use sim_combat::unit;
 pub use sim_foundation::{

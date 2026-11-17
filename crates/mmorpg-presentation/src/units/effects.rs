@@ -57,6 +57,11 @@ enum Visual {
         lane: StrikeHeight,
         broken: bool,
     },
+    /// A strike's timing reward at the striker's feet (#928): a timed landing's dust burst, or
+    /// a pulse held while the follow-up window is open.
+    Reward {
+        follow_up: bool,
+    },
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -116,6 +121,8 @@ const MAX_EFFECTS: usize = 24;
 const ACTION_SECONDS: f64 = 0.3;
 const SWEEP_SECONDS: f64 = 0.34;
 const BLOCK_SECONDS: f64 = 0.45;
+/// A timed landing strike's dust burst (#928).
+const REWARD_BURST_SECONDS: f64 = 0.45;
 const IMPACT_SECONDS: f64 = 0.32;
 const DANGER_BURST_SECONDS: f64 = 0.35;
 const BLIZZARD: u32 = 12;
@@ -469,6 +476,26 @@ impl Effects {
                         source,
                         target,
                         Some(SWEEP_SECONDS),
+                        now,
+                    );
+                }
+                ZoneEvent::StrikeRewarded {
+                    source,
+                    reward,
+                    ticks,
+                } => {
+                    let follow_up = reward == mmorpg_core::StrikeReward::FollowUp;
+                    let seconds = if follow_up {
+                        f64::from(ticks) / f64::from(TICK_HZ)
+                    } else {
+                        REWARD_BURST_SECONDS
+                    };
+                    self.add(
+                        Visual::Reward { follow_up },
+                        0,
+                        source,
+                        None,
+                        Some(seconds),
                         now,
                     );
                 }
@@ -828,6 +855,33 @@ impl Effects {
                                 qa(1, a + PI / 2.),
                                 0.8,
                                 false,
+                            );
+                        }
+                    }
+                }
+                Visual::Reward { follow_up } => {
+                    if let Some(s) = source {
+                        // The landing's gold dust spreads and fades; the follow-up's pale ring pulses
+                        // tight around the feet until its window closes.
+                        let (radius, colour, opacity) = if follow_up {
+                            (0.75, 0xd8f0ff, (0.55 + 0.3 * (age * 24.).sin()) as f32)
+                        } else {
+                            (0.4 + 1.4 * t, 0xffd36b, 0.9 * (1. - t) as f32)
+                        };
+                        for i in 0..16 {
+                            let a = f64::from(i) / 16. * TAU;
+                            add(
+                                &format!("reward-{i}"),
+                                Primitive::Box([0.3, 0.05, 0.1]),
+                                colour,
+                                [
+                                    s.feet[0] + a.sin() * radius,
+                                    s.feet[1] + 0.08,
+                                    s.feet[2] + a.cos() * radius,
+                                ],
+                                qa(1, a + PI / 2.),
+                                opacity,
+                                true,
                             );
                         }
                     }

@@ -18,15 +18,23 @@
 //! - **Chain.** A chain strike opens [`CHAIN_WINDOW_TICKS`] after its recovery in which the
 //!   next press continues the chain; the finisher, a running and a jumping strike start it
 //!   over.
+//! - **Timing rewards (#928).** A jumping strike whose touchdown meets the end of its wind-up
+//!   within [`LANDING_STRIKE_TOLERANCE_TICKS`] is a landing strike: its landing recovery is
+//!   halved. A first or second chain strike that connects opens [`FOLLOW_UP_WINDOW_TICKS`] at
+//!   its contact in which a fresh press begins the next chain strike at once, cutting the rest
+//!   of the recovery; a press already waiting at the contact keeps the ordinary chain. The
+//!   striker sees [`ZoneEvent::StrikeRewarded`] for either.
 //!
-//! The chain, its window and a pending strike are canonical player state, so replay and
+//! The chain, its windows and a pending strike are canonical player state, so replay and
 //! recovery continue mid-chain exactly. Outcomes stay health only: no knockback or hitstun.
 
 use crate::physics::RigidBody;
 use crate::zone::PlayerState;
 use crate::{
-    CHAIN_WINDOW_TICKS, EntityRef, FamilyMelee, MAX_INTERVAL_TICKS, MeleeStance, PlayerClass,
-    PlayerId, StrikeVariant, WeaponFamily, ZoneError, ZoneEvent, ZoneSimulation,
+    CHAIN_WINDOW_TICKS, EntityRef, FOLLOW_UP_WINDOW_TICKS, FamilyMelee,
+    LANDING_STRIKE_RECOVERY_PERCENT, LANDING_STRIKE_TOLERANCE_TICKS, MAX_INTERVAL_TICKS,
+    MeleeStance, PlayerClass, PlayerId, StrikeReward, StrikeVariant, WeaponFamily, ZoneError,
+    ZoneEvent, ZoneSimulation,
 };
 use sim_combat::melee::scaled_damage;
 
@@ -51,6 +59,9 @@ pub struct PendingStrike {
     pub contact: u16,
     /// The Warden's stance when the strike began (#155), which scales its damage.
     pub stance: Option<MeleeStance>,
+    /// Ticks a jumping strike has stood on the ground since its last touchdown (saturating),
+    /// so its landing can be timed against its wind-up (#928); `0` while airborne.
+    pub grounded: u8,
 }
 
 impl PendingStrike {
@@ -75,6 +86,20 @@ impl PendingStrike {
         let flown = JUMP_STRIKE_AIR_TICKS - self.contact;
         !airborne && flown >= FamilyMelee::of(self.family).jumping.contact_ticks
     }
+
+    /// Whether a jumping strike landing now is a timed landing strike (#928): it touched down
+    /// within [`LANDING_STRIKE_TOLERANCE_TICKS`] either side of the end of its wind-up. A
+    /// touchdown before it waited `grounded - 1` ticks; one after it is late by the flight
+    /// beyond the wind-up. A strike that ran out of air never times.
+    const fn timed_landing(self) -> bool {
+        if self.grounded == 0 {
+            return false;
+        }
+        let flown = JUMP_STRIKE_AIR_TICKS - self.contact;
+        let late = flown.saturating_sub(FamilyMelee::of(self.family).jumping.contact_ticks);
+        (self.grounded as u16) <= LANDING_STRIKE_TOLERANCE_TICKS + 1
+            && late <= LANDING_STRIKE_TOLERANCE_TICKS
+    }
 }
 
 /// A player's basic-strike state, as canonical snapshots carry it.
@@ -84,14 +109,22 @@ pub struct MeleeState {
     pub chain: u8,
     /// Ticks left in which a standing press continues the chain; at zero it starts over.
     pub window: u16,
+    /// Ticks left in which a fresh press follows up a standing hit at once (#928).
+    pub follow_up: u16,
     pub pending: Option<PendingStrike>,
 }
 
 impl MeleeState {
     /// Within range: a known chain strike, a window no longer than the longest interval and
-    /// its window, and a pending strike no further from its contact than its own wind-up.
+    /// its window, a follow-up window only within a running chain and between strikes, and a
+    /// pending strike no further from its contact than its own wind-up.
     #[must_use]
     pub const fn is_valid(self) -> bool {
+        if self.follow_up > FOLLOW_UP_WINDOW_TICKS
+            || (self.follow_up > 0 && (self.chain == 0 || self.pending.is_some()))
+        {
+            return false;
+        }
         let pending_ok = match self.pending {
             None => true,
             Some(pending) => {
@@ -184,11 +217,13 @@ impl ZoneSimulation {
                 } else {
                     0
                 },
+                follow_up: 0,
                 pending: Some(PendingStrike {
                     family,
                     variant,
                     contact: PendingStrike::countdown(family, variant),
                     stance,
+                    grounded: 0,
                 }),
             };
         });
@@ -222,8 +257,10 @@ impl ZoneSimulation {
         let airborne = state.landing.airborne;
         let melee = &mut state.melee;
         melee.window = melee.window.saturating_sub(1);
+        melee.follow_up = melee.follow_up.saturating_sub(1);
         if melee.window == 0 {
             melee.chain = 0;
+            melee.follow_up = 0;
         }
         let Some(mut pending) = melee.pending else {
             return Ok(false);
@@ -233,16 +270,38 @@ impl ZoneSimulation {
             return Ok(false);
         }
         pending.contact = pending.contact.saturating_sub(1);
+        pending.grounded = if airborne {
+            0
+        } else {
+            pending.grounded.saturating_add(1)
+        };
         if !pending.lands(airborne) {
             melee.pending = Some(pending);
             return Ok(true);
         }
         melee.pending = None;
+        let mut landing_strike = None;
         if pending.variant == StrikeVariant::Jumping {
-            let recovery = FamilyMelee::of(pending.family).jumping.interval_ticks;
+            let mut recovery = FamilyMelee::of(pending.family).jumping.interval_ticks;
+            // A timed landing strike halves its landing recovery (#928).
+            if pending.timed_landing() {
+                recovery =
+                    (u32::from(recovery) * u32::from(LANDING_STRIKE_RECOVERY_PERCENT) / 100) as u16;
+            }
             state.swing_timer = crate::aura::hasted_swing(recovery, &state.auras);
+            landing_strike = pending.timed_landing().then_some(state.swing_timer);
         }
         self.strike_contact(player_id, pending, now)?;
+        if let Some(ticks) = landing_strike {
+            self.notify(
+                player_id,
+                ZoneEvent::StrikeRewarded {
+                    source: EntityRef::Player(player_id),
+                    reward: StrikeReward::LandingStrike,
+                    ticks,
+                },
+            );
+        }
         Ok(false)
     }
 
@@ -269,9 +328,28 @@ impl ZoneSimulation {
             row.band,
         )?;
         if !victims.is_empty() {
+            // A first or second chain strike that connects opens the follow-up (#928), unless
+            // a press already waits: that one continues the chain after the recovery as before.
+            let follow_up = pending.variant.is_chain()
+                && pending.variant.next_chain() > 0
+                && state.melee.chain > 0
+                && !state.swing_queued;
             self.update_player(player_id, |player| {
                 player.combat_timer = crate::unit::COMBAT_LINGER_TICKS;
+                if follow_up {
+                    player.melee.follow_up = FOLLOW_UP_WINDOW_TICKS;
+                }
             });
+            if follow_up {
+                self.notify(
+                    player_id,
+                    ZoneEvent::StrikeRewarded {
+                        source: EntityRef::Player(player_id),
+                        reward: StrikeReward::FollowUp,
+                        ticks: FOLLOW_UP_WINDOW_TICKS,
+                    },
+                );
+            }
         }
         if victims.is_empty() {
             let source = EntityRef::Player(player_id);

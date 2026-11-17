@@ -213,6 +213,7 @@ pub fn concerned_unit(event: &ZoneEvent, viewer: EntityRef) -> Option<EntityRef>
         | ZoneEvent::StrikeSwept { source, target, .. } => other(source, target),
         ZoneEvent::SwingBegan { source, .. }
         | ZoneEvent::StrikeBegan { source, .. }
+        | ZoneEvent::StrikeRewarded { source, .. }
         | ZoneEvent::CreatureAttackBegan { source, .. } => Some(source),
         ZoneEvent::Clashed { source, target, .. } => other(source, Some(target)),
         ZoneEvent::Died { entity, .. } => Some(entity),
@@ -477,6 +478,11 @@ pub fn event_token(event: &ZoneEvent, name: impl Fn(EntityRef) -> String) -> Str
             family.name(),
             variant.code()
         ),
+        ZoneEvent::StrikeRewarded {
+            source,
+            reward,
+            ticks,
+        } => format!("reward:{}:{}+{ticks}", name(source), reward.code()),
         ZoneEvent::CreatureAttackBegan {
             source,
             attack,

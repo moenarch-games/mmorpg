@@ -52,6 +52,7 @@ const SWING_BEGAN: u8 = 24;
 const CLASHED: u8 = 25;
 const STRIKE_BEGAN: u8 = 26;
 const CREATURE_ATTACK_BEGAN: u8 = 27;
+const STRIKE_REWARDED: u8 = 28;
 const CRITICAL_FLAG: u32 = 1;
 
 pub(crate) const fn entity_kind_code(kind: EntityKind) -> u8 {
@@ -450,6 +451,18 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
             None,
             contact,
         ),
+        // A strike's timing reward (#928): the reward code in the flags, its ticks in the amount.
+        ZoneEvent::StrikeRewarded {
+            source,
+            reward,
+            ticks,
+        } => (
+            STRIKE_REWARDED,
+            u32::from(reward.code()),
+            Some(source),
+            None,
+            ticks,
+        ),
         // A beast's attack (#889): the attack code in the flags, the contact countdown in the
         // amount.
         ZoneEvent::CreatureAttackBegan {
@@ -721,6 +734,16 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
                 family: mmorpg_core::WeaponFamily::from_code(family).ok_or_else(invalid)?,
                 variant: mmorpg_core::StrikeVariant::from_code(variant).ok_or_else(invalid)?,
                 contact: amount,
+            }
+        }
+        STRIKE_REWARDED => {
+            if target.is_some() {
+                return Err(invalid());
+            }
+            ZoneEvent::StrikeRewarded {
+                source: source.ok_or_else(invalid)?,
+                reward: mmorpg_core::StrikeReward::from_code(code()?).ok_or_else(invalid)?,
+                ticks: amount,
             }
         }
         CREATURE_ATTACK_BEGAN => {

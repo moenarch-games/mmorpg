@@ -1,13 +1,14 @@
 //! Movement-state melee (#885, Atlas 5.2.i885): the basic attack's standing chain, running
 //! and jumping strikes, their contact ticks, lunge and landing blow, the weapon families and
-//! recovery mid-chain.
+//! recovery mid-chain, and their timing rewards (#928): the landing strike and the follow-up.
 mod support;
 
 use std::sync::Arc;
 
 use mmorpg_core::{
-    CHAIN_WINDOW_TICKS, CreatureBehaviour, CreatureTemplate, EntityRef, FamilyMelee, StrikeVariant,
-    WeaponFamily, ZoneAreas, ZoneCommand, ZoneContent, ZoneEvent, ZoneId, ZoneSimulation,
+    CHAIN_WINDOW_TICKS, CreatureBehaviour, CreatureTemplate, EntityRef, FOLLOW_UP_WINDOW_TICKS,
+    FamilyMelee, LANDING_STRIKE_TOLERANCE_TICKS, StrikeReward, StrikeVariant, WeaponFamily,
+    ZoneAreas, ZoneCommand, ZoneContent, ZoneEvent, ZoneId, ZoneSimulation,
 };
 use support::arena::{self, GRAVEYARD, WOLF};
 
@@ -336,4 +337,147 @@ fn a_jumping_strike_in_a_long_fall_lands_in_the_air() {
     );
     let landing = warden.zone.snapshot().unwrap().players[0].combat.landing;
     assert!(landing.airborne, "still falling, the weapon is free again");
+}
+
+fn rewarded(events: &[ZoneEvent], reward: StrikeReward) -> bool {
+    events.iter().any(|event| {
+        matches!(
+            *event,
+            ZoneEvent::StrikeRewarded { source: EntityRef::Player(1), reward: r, .. } if r == reward
+        )
+    })
+}
+
+#[test]
+fn a_jumping_strike_timed_with_its_landing_halves_its_recovery() {
+    // The jump's touchdown tick, counted from the jump command.
+    let mut probe = Striker::new(0, SOUTH);
+    probe.send(ZoneCommand::Jump);
+    let mut touchdown = 0;
+    loop {
+        probe.tick();
+        touchdown += 1;
+        let landing = probe.zone.snapshot().unwrap().players[0].combat.landing;
+        if touchdown > 1 && !landing.airborne {
+            break;
+        }
+        assert!(touchdown < 240, "the jump lands");
+    }
+    let windup = u32::from(SWORD.jumping.contact_ticks);
+    let tolerance = u32::from(LANDING_STRIKE_TOLERANCE_TICKS);
+    assert!(
+        touchdown > windup + tolerance + 2,
+        "the jump outlasts the wind-up"
+    );
+    let (mut timed, mut early, mut late) = (0, 0, 0);
+    // Press on every tick of the flight: early, on time and late against the landing.
+    for delay in 1..touchdown - 1 {
+        let mut warden = Striker::new(0, SOUTH);
+        let jumped = warden.ticks;
+        warden.send(ZoneCommand::Jump);
+        for _ in 0..delay {
+            warden.tick();
+        }
+        warden.send(ZoneCommand::Swing { facing: SOUTH });
+        let (strikes, _) = warden.run(10, began);
+        assert_eq!(strikes[0].variant, StrikeVariant::Jumping);
+        let windup_end = strikes[0].tick + windup;
+        let mut events = Vec::new();
+        while !contact(&events) {
+            events = warden.tick();
+        }
+        let landed = jumped + touchdown;
+        let on_time = landed.abs_diff(windup_end) <= tolerance;
+        let swing_timer = warden.zone.snapshot().unwrap().players[0]
+            .combat
+            .swing_timer;
+        let reward = rewarded(&events, StrikeReward::LandingStrike);
+        assert_eq!(reward, on_time, "press {delay} ticks into the jump");
+        if on_time {
+            timed += 1;
+            assert_eq!(swing_timer, SWORD.jumping.interval_ticks / 2);
+        } else {
+            // A mistimed landing recovers in full, as before.
+            assert_eq!(swing_timer, SWORD.jumping.interval_ticks);
+            if landed < windup_end {
+                early += 1;
+            } else {
+                late += 1;
+            }
+        }
+    }
+    assert!(timed > 0 && early > 0 && late > 0, "{timed} {early} {late}");
+}
+
+#[test]
+fn a_press_inside_the_follow_up_window_swings_at_once() {
+    let mut warden = Striker::new(0, SOUTH);
+    warden.send(ZoneCommand::Swing { facing: SOUTH });
+    let (strikes, _) = warden.run(120, contact);
+    let first = &strikes[0];
+    let contact_tick = warden.ticks;
+    // The hit on the creature ahead opened the window, shown to the striker.
+    let melee = warden.zone.snapshot().unwrap().players[0].combat.melee;
+    assert_eq!(melee.follow_up, FOLLOW_UP_WINDOW_TICKS);
+    let quick = warden.zone.snapshot_for_player(1).unwrap().events;
+    assert!(rewarded(&quick, StrikeReward::FollowUp));
+    for _ in 0..4 {
+        warden.tick();
+    }
+    warden.send(ZoneCommand::Swing { facing: SOUTH });
+    let (next, _) = warden.run(2, began);
+    assert_eq!(next[0].variant, StrikeVariant::Second);
+    assert_eq!(next[0].tick, contact_tick + 5);
+    assert!(next[0].tick - first.tick < u32::from(SWORD.chain[0].interval_ticks));
+}
+
+#[test]
+fn a_press_after_the_follow_up_window_waits_out_the_recovery() {
+    let mut warden = Striker::new(0, SOUTH);
+    warden.send(ZoneCommand::Swing { facing: SOUTH });
+    let (strikes, _) = warden.run(120, contact);
+    let first = &strikes[0];
+    for _ in 0..FOLLOW_UP_WINDOW_TICKS {
+        warden.tick();
+    }
+    let combat = warden.zone.snapshot().unwrap().players[0].combat.clone();
+    assert_eq!(combat.melee.follow_up, 0);
+    assert!(combat.swing_timer > 0, "still recovering");
+    warden.send(ZoneCommand::Swing { facing: SOUTH });
+    let (next, _) = warden.run(120, began);
+    assert_eq!(next[0].variant, StrikeVariant::Second);
+    assert_eq!(
+        next[0].tick - first.tick,
+        u32::from(SWORD.chain[0].interval_ticks)
+    );
+}
+
+#[test]
+fn a_whiff_or_a_press_already_waiting_opens_no_follow_up() {
+    // Facing away from the creature, the strike covers nobody.
+    let mut whiff = Striker::new(0, NORTH);
+    whiff.send(ZoneCommand::Swing { facing: NORTH });
+    whiff.run(120, contact);
+    let events = whiff.zone.snapshot_for_player(1).unwrap().events;
+    assert!(!rewarded(&events, StrikeReward::FollowUp));
+    assert_eq!(
+        whiff.zone.snapshot().unwrap().players[0]
+            .combat
+            .melee
+            .follow_up,
+        0
+    );
+    // A press during the wind-up keeps the ordinary chain after the recovery.
+    let mut eager = Striker::new(0, SOUTH);
+    eager.send(ZoneCommand::Swing { facing: SOUTH });
+    eager.run(2, began);
+    eager.send(ZoneCommand::Swing { facing: SOUTH });
+    eager.run(120, contact);
+    assert_eq!(
+        eager.zone.snapshot().unwrap().players[0]
+            .combat
+            .melee
+            .follow_up,
+        0
+    );
 }
