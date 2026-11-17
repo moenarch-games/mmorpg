@@ -42,6 +42,10 @@ use player::{Hat, Look};
 const HEALTH_BAR_WIDTH: f32 = 1.0;
 const HEALTH_BAR_BACKGROUND: [f32; 3] = [0.12, 0.12, 0.14];
 const HEALTH_BAR_FILL: [f32; 3] = [0.18, 0.9, 0.25];
+/// The viewer's own bar (#873): shorter, thinner and a muted green, so it reads below the
+/// hotbar and unit frame that already carry the exact value.
+const SELF_HEALTH_BAR_SCALE: f32 = 0.6;
+const SELF_HEALTH_BAR_FILL: [f32; 3] = [0.05, 0.24, 0.08];
 /// How much a corpse's imported model darkens.
 const CORPSE_TINT: f32 = 0.6;
 /// The Druid companion's green tint (#296) on the CC0 wolf model hostile Timber Wolves also use.
@@ -2010,7 +2014,7 @@ impl UnitPresenter {
             // The viewer on the selection turntable is previewed, not in play: no bar.
             let previewed = viewer && input.viewer.preview_yaw.is_some();
             if !dead && entity.kind() != EntityKind::Npc && !previewed {
-                self.health_bar(&mut out.draws, &id, unit, half, input.bar_yaw);
+                self.health_bar(&mut out.draws, &id, unit, half, input.bar_yaw, viewer);
             }
             if entity.kind() != EntityKind::Player && snapshot.viewer.target == Some(entity) {
                 let mut ring = self.resources.primitive(
@@ -2516,22 +2520,29 @@ impl UnitPresenter {
         unit: &SampledUnit,
         half: [f32; 3],
         yaw: f32,
+        viewer: bool,
     ) {
         let position = [
             unit.centre[0],
             unit.centre[1] + half[1] + 0.3,
             unit.centre[2],
         ];
+        let (scale, fill) = if viewer {
+            (SELF_HEALTH_BAR_SCALE, SELF_HEALTH_BAR_FILL)
+        } else {
+            (1.0, HEALTH_BAR_FILL)
+        };
+        let bar_width = HEALTH_BAR_WIDTH * scale;
         let mut bars = vec![(
             position,
-            [HEALTH_BAR_WIDTH + 0.04, 0.12, 0.04],
+            [bar_width + 0.04, 0.12 * scale, 0.04],
             HEALTH_BAR_BACKGROUND,
         )];
-        let width = HEALTH_BAR_WIDTH * f32::from(unit.record.health_percent.min(100)) / 100.0;
+        let width = bar_width * f32::from(unit.record.health_percent.min(100)) / 100.0;
         if width > 0.0 {
             // Local +X is screen-left. Shift the fill toward that edge, and
             // toward the eye (-local Z) so the background cannot obscure it.
-            let left = (HEALTH_BAR_WIDTH - width) / 2.0;
+            let left = (bar_width - width) / 2.0;
             let front = -0.035;
             bars.push((
                 [
@@ -2539,8 +2550,8 @@ impl UnitPresenter {
                     position[1],
                     position[2] + front * yaw.cos() - left * yaw.sin(),
                 ],
-                [width, 0.08, 0.02],
-                HEALTH_BAR_FILL,
+                [width, 0.08 * scale, 0.02],
+                fill,
             ));
         }
         for (index, (p, size, color)) in bars.into_iter().enumerate() {
