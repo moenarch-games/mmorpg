@@ -8,8 +8,8 @@
 //! provider; this module only decides what to pose. Presentation only, never read by gameplay.
 use mmorpg_core::{
     AbilityId, CreatureFamily, CreatureTemplateId, EntityRef, EntitySnapshot, Equipment,
-    EquipmentSlot, Ledge, PlayerClass, StrikeAim, StrikeHeight, TraversalView, WaterMode,
-    ZoneContent,
+    EquipmentSlot, Ledge, PlayerClass, StrikeAim, StrikeHeight, StrikeVariant, TraversalView,
+    WaterMode, WeaponFamily, ZoneContent,
 };
 use strum::VariantArray;
 
@@ -616,6 +616,9 @@ pub struct Clips {
     pub run: &'static str,
     pub attack: &'static str,
     pub death: &'static str,
+    /// Deaths falling back, forward and spinning (asset-tooling #711), varied per death when
+    /// the bundle has them (#885); otherwise `death`.
+    pub deaths: Option<[&'static str; 3]>,
     /// A standing raised shield, for a model that carries one (#156).
     pub guard: Option<&'static str>,
     pub jump: Option<JumpClips>,
@@ -968,6 +971,49 @@ impl SwordClips {
     }
 }
 
+/// A movement-state strike's clips (#885), best first: the family's authored strike
+/// (`<Family>_Run_Strike`, `<Family>_Jump_Strike` and the chain, asset-tooling #709 and #711),
+/// then the clip already in the bundle that stands in for it.
+#[must_use]
+pub const fn melee_clips(family: WeaponFamily, variant: StrikeVariant) -> [&'static str; 2] {
+    use StrikeVariant::{Finisher, First, Jumping, Running, Second};
+    match (family, variant) {
+        (WeaponFamily::Sword, First) => ["Sword_Slash_Mid_R", "Sword_Slash_Mid_R"],
+        (WeaponFamily::Sword, Second) => ["Sword_Slash_Mid_L", "Sword_Slash_Mid_L"],
+        (WeaponFamily::Sword, Finisher) => ["Sword_Attack", "Sword_Attack"],
+        (WeaponFamily::Sword, Running) => ["Sword_Run_Strike", "Sword_Slash_Mid_R"],
+        (WeaponFamily::Sword, Jumping) => ["Sword_Jump_Strike", "Sword_Slash_High_C"],
+        (WeaponFamily::Mace, First) => ["Mace_Swing_A", "Mace_Swing_A"],
+        (WeaponFamily::Mace, Second) => ["Mace_Swing_B", "Mace_Swing_B"],
+        (WeaponFamily::Mace, Finisher) => ["Mace_Swing_C", "Mace_Swing_A"],
+        (WeaponFamily::Mace, Running) => ["Mace_Run_Strike", "Mace_Swing_B"],
+        (WeaponFamily::Mace, Jumping) => ["Mace_Jump_Strike", "Mace_Swing_A"],
+        (WeaponFamily::Dagger, First) => ["Dagger_Stab_R", "Dagger_Stab_R"],
+        (WeaponFamily::Dagger, Second) => ["Dagger_Slash_L", "Dagger_Slash_L"],
+        (WeaponFamily::Dagger, Finisher) => ["Dagger_Sinister", "Dagger_Sinister"],
+        (WeaponFamily::Dagger, Running) => ["Dagger_Run_Strike", "Dagger_Stab_R"],
+        (WeaponFamily::Dagger, Jumping) => ["Dagger_Jump_Strike", "Dagger_Sinister"],
+        (WeaponFamily::Staff, First) => ["Staff_Strike_A", "Staff_Strike_A"],
+        (WeaponFamily::Staff, Second) => ["Staff_Strike_B", "Staff_Strike_B"],
+        (WeaponFamily::Staff, Finisher) => ["Staff_Strike_C", "Staff_Strike_B"],
+        (WeaponFamily::Staff, Running) => ["Staff_Run_Strike", "Staff_Strike_A"],
+        (WeaponFamily::Staff, Jumping) => ["Staff_Jump_Strike", "Staff_Strike_B"],
+        (WeaponFamily::Spear, First | Second) => ["Spear_Thrust_A", "Staff_Strike_A"],
+        (WeaponFamily::Spear, Finisher) => ["Spear_Thrust_B", "Staff_Strike_B"],
+        (WeaponFamily::Spear, Running) => ["Spear_Run_Strike", "Staff_Strike_A"],
+        (WeaponFamily::Spear, Jumping) => ["Spear_Jump_Strike", "Staff_Strike_B"],
+        (WeaponFamily::Unarmed, First) => ["Unarmed_Jab", "Dagger_Stab_R"],
+        (WeaponFamily::Unarmed, Second) => ["Unarmed_Cross", "Dagger_Slash_L"],
+        (WeaponFamily::Unarmed, Finisher) => ["Unarmed_Hook", "Dagger_Gouge"],
+        (WeaponFamily::Unarmed, Running) => ["Unarmed_Run_Strike", "Dagger_Stab_R"],
+        (WeaponFamily::Unarmed, Jumping) => ["Unarmed_Jump_Strike", "Dagger_Gouge"],
+        (WeaponFamily::Bow, First | Second) => ["Bow_Bash_A", "Sword_Slash_Mid_R"],
+        (WeaponFamily::Bow, Finisher) => ["Bow_Bash_B", "Sword_Slash_High_C"],
+        (WeaponFamily::Bow, Running) => ["Bow_Run_Strike", "Sword_Slash_Mid_R"],
+        (WeaponFamily::Bow, Jumping) => ["Bow_Jump_Strike", "Sword_Slash_High_C"],
+    }
+}
+
 /// The authored strikes a humanoid plays instead of its sword attack.
 #[derive(Clone, Copy, Debug)]
 pub struct StrikeClips {
@@ -1173,6 +1219,10 @@ pub struct ReactionClips {
     pub shove: &'static str,
     pub block: &'static str,
     pub guard_break: &'static str,
+    /// The light hits left and right and the heavy hit from the front (asset-tooling #711),
+    /// played for an ordinary and a critical hit when the bundle has them (#885).
+    pub light: [&'static str; 2],
+    pub heavy: &'static str,
 }
 
 impl ReactionClips {
@@ -1403,6 +1453,7 @@ impl Kind {
                 run: "Jog_Fwd_Loop",
                 attack: "Sword_Attack",
                 death: "Death01",
+                deaths: Some(["Death_Back", "Death_Fwd", "Death_Spin"]),
                 guard: Some("Idle_Shield_Loop"),
                 jump: Some(JumpClips {
                     start: "Jump_Start",
@@ -1477,6 +1528,8 @@ impl Kind {
                     shove: "Hit_Shove_Spin",
                     block: "Sword_Block",
                     guard_break: "Idle_Shield_Break",
+                    light: ["Hit_Light_L", "Hit_Light_R"],
+                    heavy: "Hit_Heavy_Front",
                 }),
                 sword: Some(SwordClips {
                     slashes: [
@@ -1594,6 +1647,7 @@ impl Kind {
                 run: "Gallop",
                 attack: "Attack",
                 death: "Death",
+                deaths: None,
                 guard: None,
                 jump: None,
                 swim: None,
@@ -1616,6 +1670,7 @@ impl Kind {
                 run: "Rat_Run",
                 attack: "Rat_Attack",
                 death: "Rat_Death",
+                deaths: None,
                 guard: None,
                 jump: None,
                 swim: None,
@@ -1639,6 +1694,7 @@ impl Kind {
                 run: "Run",
                 attack: "Jump",
                 death: "Death",
+                deaths: None,
                 guard: None,
                 jump: None,
                 swim: None,
@@ -1706,6 +1762,35 @@ impl Kind {
                 .zip(aim)
                 .map_or(clips.attack, |(sword, aim)| sword.slash(aim)),
         }
+    }
+
+    /// The clip a movement-state strike (#885) of a `family` weapon plays and the body it
+    /// drives, for a model with authored strikes: the family's own strike (asset-tooling #709,
+    /// #711) when the model `has` it, otherwise the clip that stands in for it until that
+    /// release is fetched. Authored running and jumping strikes move the whole body; standing
+    /// ones, and every stand-in for a running or jumping strike, only the upper body, over the
+    /// legs' run or jump.
+    #[must_use]
+    pub fn melee_strike(
+        self,
+        family: WeaponFamily,
+        variant: StrikeVariant,
+        has: impl Fn(&str) -> bool,
+    ) -> Option<(&'static str, Region)> {
+        self.clips().strikes?;
+        let [authored, stand_in] = melee_clips(family, variant);
+        let moving = matches!(variant, StrikeVariant::Running | StrikeVariant::Jumping);
+        if has(authored) {
+            return Some((authored, if moving { Region::Whole } else { Region::Upper }));
+        }
+        Some((
+            stand_in,
+            if moving {
+                Region::Upper
+            } else {
+                self.strike_region(stand_in)
+            },
+        ))
     }
 
     /// The authored dagger clip an accepted attack or ability plays (#603), and the throwable a
@@ -2528,6 +2613,8 @@ pub struct Playback {
     dead: bool,
     /// How many auto-attacks the unit has swung: a twin-dagger holder alternates its hands (#603).
     swings: u32,
+    /// Which of the model's varied deaths the unit falls with (#885).
+    death: u8,
     /// The emote or interaction one-shot shown, on the upper body or the whole body (#619).
     gesture: Option<Gesture>,
     /// The enter, loop or exit of the pose held (#619) and how many have begun.
@@ -2566,6 +2653,11 @@ impl Playback {
     /// The unit swung an auto-attack: the next one alternates the hand (#603).
     pub fn swung(&mut self) {
         self.swings = self.swings.wrapping_add(1);
+    }
+
+    /// The unit died: it falls with the `variant`-th of its model's varied deaths (#885).
+    pub fn died(&mut self, variant: u8) {
+        self.death = variant;
     }
 
     /// The strike just begun is a throw of `item` (#603): from the clip's `drawSeconds` to its
@@ -3354,7 +3446,11 @@ impl Playback {
             .roll
             .filter(|&clip| cues.rolling && !dead && !swims && !reduced && available(clip));
         let base = if dead {
-            Want::hold(clips.death, 0)
+            let varied = clips
+                .deaths
+                .map(|deaths| deaths[usize::from(self.death) % deaths.len()])
+                .filter(|&clip| available(clip));
+            Want::hold(varied.unwrap_or(clips.death), 0)
         } else if let Some(clip) = roll {
             #[allow(clippy::cast_possible_truncation)]
             let rate = (f64::from(duration(clip)) / ROLL_SECONDS) as f32;
@@ -3842,6 +3938,41 @@ mod tests {
     use super::*;
     use mmorpg_core::{CreatureId, NpcId, greyhaven_vale};
     use strum::VariantArray;
+
+    #[test]
+    fn movement_strikes_play_the_family_clip_or_its_stand_in() {
+        // Before the asset-tooling #709/#711 release, the existing clips stand in (#885).
+        let without = |clip: &str| !clip.contains("_Run_") && !clip.contains("_Jump_");
+        assert_eq!(
+            Kind::Ranger.melee_strike(WeaponFamily::Sword, StrikeVariant::Running, without),
+            Some(("Sword_Slash_Mid_R", Region::Upper))
+        );
+        assert_eq!(
+            Kind::Ranger.melee_strike(WeaponFamily::Sword, StrikeVariant::Running, |_| true),
+            Some(("Sword_Run_Strike", Region::Whole))
+        );
+        assert_eq!(
+            Kind::Ranger.melee_strike(WeaponFamily::Spear, StrikeVariant::Finisher, |_| false),
+            Some((
+                "Staff_Strike_B",
+                Kind::Ranger.strike_region("Staff_Strike_B")
+            ))
+        );
+        assert_eq!(
+            Kind::Ranger.melee_strike(WeaponFamily::Mace, StrikeVariant::Finisher, |_| true),
+            Some(("Mace_Swing_C", Region::Upper))
+        );
+        assert_eq!(
+            Kind::Wolf.melee_strike(WeaponFamily::Unarmed, StrikeVariant::First, |_| true),
+            None
+        );
+        // The chain reads as three different blows for every family.
+        for family in WeaponFamily::ALL {
+            let [first, _] = melee_clips(family, StrikeVariant::First);
+            let [finisher, _] = melee_clips(family, StrikeVariant::Finisher);
+            assert_ne!(first, finisher, "{family:?}");
+        }
+    }
 
     #[test]
     fn named_greyhaven_residents_have_presets_and_classes_their_weapons() {
@@ -4465,7 +4596,8 @@ mod tests {
                 false
             )
             .upper,
-            ("Death01", 1.)
+            ("Death_Back", 1.),
+            "the first of the varied deaths (#885) the bundle has"
         );
         let mut frozen = Playback::default();
         advance(&mut frozen, clips, one, 0., 0., false, 0., 0.1, true, false);
@@ -4562,7 +4694,7 @@ mod tests {
             )
             .upper
             .0,
-            "Death01"
+            "Death_Back"
         );
     }
 

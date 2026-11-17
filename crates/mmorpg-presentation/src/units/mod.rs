@@ -303,6 +303,8 @@ pub struct UnitPresenter {
     timed_swings: BTreeMap<EntityRef, sword::Swing>,
     /// Swings that covered nobody, for alternating their forehand and backhand slashes (#582).
     whiffs: u32,
+    /// Ordinary hits shown, for alternating the light hits left and right (#885).
+    hits: u32,
     /// Platforms a client's kit draws instead of their procedural pillar (#591).
     kit_platforms: BTreeSet<mmorpg_core::PlatformId>,
     /// Where each caster's spell starts in the world, as its client posed it last frame
@@ -361,6 +363,7 @@ impl UnitPresenter {
             hastes: BTreeMap::new(),
             timed_swings: BTreeMap::new(),
             whiffs: 0,
+            hits: 0,
             kit_platforms: BTreeSet::new(),
             channel_origins: BTreeMap::new(),
             interaction: Interaction::default(),
@@ -645,6 +648,29 @@ impl UnitPresenter {
                         self.react(snapshot, unit, Reaction::Block, seconds);
                     }
                 }
+                // A basic strike (#885) winds up now, its clip fitted to the zone's contact.
+                ZoneEvent::StrikeBegan {
+                    source,
+                    family,
+                    variant,
+                    contact,
+                } => {
+                    self.melee_strike(snapshot, source, (family, variant), contact, seconds);
+                }
+                // Each death falls its own way (#885), where the model has several.
+                ZoneEvent::Died { entity, .. } => {
+                    let variant = match entity {
+                        EntityRef::Player(id) => id,
+                        EntityRef::Creature(id) => id.get(),
+                        EntityRef::Npc(id) => id.get(),
+                        EntityRef::Minion(id) => id.get(),
+                    };
+                    #[allow(clippy::cast_possible_truncation)]
+                    self.playbacks
+                        .entry(entity)
+                        .or_default()
+                        .died((variant % 3) as u8);
+                }
                 ZoneEvent::GuardBroken { target, .. } => {
                     self.react(snapshot, target, Reaction::GuardBreak, seconds);
                 }
@@ -735,6 +761,11 @@ impl UnitPresenter {
             // stands from the swinger (#582), derived here from the projection.
             // A supportive ability on another player touches the ally (#609).
             let (source, ability, aim, resolved, ally) = match *event {
+                // A player's basic strike showed when it began (#885); its contact adds none.
+                ZoneEvent::AttackPerformed {
+                    source: EntityRef::Player(_),
+                    ..
+                } => continue,
                 ZoneEvent::AttackPerformed { source, target } => (
                     source,
                     None,
@@ -1242,16 +1273,64 @@ impl UnitPresenter {
         let Some((kind, _, _)) = self.class_of(snapshot, entity) else {
             return;
         };
-        let Some((clip, length)) = kind
-            .reaction(reaction)
-            .and_then(|clip| self.clip(kind, clip))
-        else {
+        // An ordinary hit flinches left and right in turn and a critical one staggers back,
+        // where the model has the light and heavy hits (#885).
+        let varied = kind.clips().reactions.and_then(|clips| match reaction {
+            Reaction::Chest => {
+                self.hits = self.hits.wrapping_add(1);
+                Some(clips.light[usize::from(self.hits.is_multiple_of(2))])
+            }
+            Reaction::Head => Some(clips.heavy),
+            _ => None,
+        });
+        let Some((clip, length)) = varied.and_then(|clip| self.clip(kind, clip)).or_else(|| {
+            kind.reaction(reaction)
+                .and_then(|clip| self.clip(kind, clip))
+        }) else {
             return;
         };
         self.playbacks
             .entry(entity)
             .or_default()
             .react(reaction, clip, length, seconds);
+    }
+
+    /// `source` began a basic strike (#885): its family's clip for the strike, started so its
+    /// authored contact frame meets the zone's contact `contact` ticks from now. A stand-in
+    /// whose contact comes later starts that much into its swing; a jumping strike lands on
+    /// touchdown, which its clip shows.
+    fn melee_strike(
+        &mut self,
+        snapshot: &ZoneSnapshot,
+        source: EntityRef,
+        (family, variant): (mmorpg_core::WeaponFamily, mmorpg_core::StrikeVariant),
+        contact: u16,
+        seconds: f64,
+    ) {
+        let Some((kind, _, _)) = self.class_of(snapshot, source) else {
+            return;
+        };
+        let (clip, region) = kind
+            .melee_strike(family, variant, |clip| self.duration(kind, clip) > 0.)
+            .filter(|&(clip, _)| self.duration(kind, clip) > 0.)
+            .unwrap_or_else(|| {
+                let attack = kind.clips().attack;
+                (attack, kind.strike_region(attack))
+            });
+        let duration = self.duration(kind, clip);
+        let authored = self
+            .motions
+            .get(&kind)
+            .and_then(|motions| motions.get(clip))
+            .and_then(|motion| motion.contact);
+        let zone = f64::from(contact) / f64::from(mmorpg_core::TICK_HZ);
+        let ahead = match (variant, authored) {
+            (mmorpg_core::StrikeVariant::Jumping, _) | (_, None) => 0.,
+            (_, Some(authored)) => (authored - zone).max(0.),
+        };
+        let playback = self.playbacks.entry(source).or_default();
+        playback.strike(clip, duration, region, seconds - ahead);
+        playback.swung();
     }
 
     /// `entity` began a cast or channel of `ticks` (#538): it draws and holds its bow, aims its

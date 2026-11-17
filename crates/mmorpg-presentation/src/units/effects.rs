@@ -345,7 +345,13 @@ impl Effects {
             .retain(|e| !gone(&e.source) && e.target.is_none_or(|t| !gone(&t)));
         for event in &s.events {
             match *event {
-                ZoneEvent::AttackPerformed { source, .. } => {
+                // A player's basic strike swings from its wind-up (#885), not again on contact.
+                ZoneEvent::AttackPerformed {
+                    source: EntityRef::Player(_),
+                    ..
+                } => {}
+                ZoneEvent::AttackPerformed { source, .. }
+                | ZoneEvent::StrikeBegan { source, .. } => {
                     self.actions.insert(
                         source,
                         ActorAction {

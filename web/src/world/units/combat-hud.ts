@@ -150,7 +150,9 @@ export function eventText(event: ZoneEvent, snapshot: ZoneSnapshot, catalog: Con
   const isViewer = (entity: EntityRef) => entity.kind === "player" && entity.id === snapshot.viewerId;
   const critical = (isCritical: boolean) => (isCritical ? " (critical)" : "");
   switch (event.kind) {
+    // A basic strike's wind-up (#885) shows on the body, not in the log.
     case "attack-performed":
+    case "strike-began":
     case "damage-observed":
       return "";
     case "damage-dealt":
