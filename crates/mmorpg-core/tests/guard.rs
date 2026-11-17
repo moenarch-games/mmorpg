@@ -30,7 +30,7 @@ fn template(id: CreatureTemplateId, half_extents: [i32; 3]) -> CreatureTemplate 
         behaviour: CreatureBehaviour::Aggressive,
         swing_ticks: mmorpg_core::golden::t30(10) as _,
         half_extents,
-        ..arena::wolf(500, [2, 3])
+        ..arena::brawler(500, [2, 3])
     }
 }
 

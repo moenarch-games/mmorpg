@@ -83,6 +83,9 @@ Map north is −Z (the Redbrand cliffs); yaw 0 faces +Z. Content revision 5 (`mm
 | Redbrand Bandit | Redbrand | 3–5 | 75 (+16) | 4–7 | 66 | aggressive |
 | Garrick Redbrand | Redbrand | 5 elite | 420 | 8–14 | 72 | aggressive, shared boss (#276): 2 min respawn |
 | Hill Ogre | Ogre | 5 | 300 | 9–15 | 84 | aggressive, large (#297) |
+| Brown Bear | Bear | 3–4 | 130 (+20) | 5–9 (+1 per level) | 90 | aggressive, deep woods (#889) |
+| Cave Spider | Spider | 3–4 | 40 (+10) | 2–4 (+1 per level) | 39 | aggressive, Greyfang cave mouth (#889) |
+| Marsh Lurker | Lurker | 3 | 60 (+14) | 3–6 (+1 per level) | 72 | ambusher within 4 m, wetland trails (#889) |
 
 Creatures respawn 60 s after death unless noted and wander within 6 m of their spawn point. These numbers are a starting point for tuning.
 
@@ -116,6 +119,7 @@ Creatures **navigate around blockers** (#307): a creature chasing a target or ru
 - Unit state: level, health/max, resource kind/value/max, faction, target, cast state, auras (bounded), combat flag, death state.
 - Players: `SelectTarget(EntityRef | none)`, `Swing { facing }`, `UseAbility { ability, target }`. The server validates range, aim and resource; offensive abilities fire where the player faces and the target names only a friendly ability's recipient (#517).
 - A swing (#517) is a movement-state strike (#885): a standing three-hit chain, a running lunge or a jumping landing blow, timed and shaped by the weapon family. It winds up and hits everything in its arc and reach where the player faces on its contact tick, targeted or not; one that hits nothing whiffs. Damage is `base + level scaling`, scaled per strike, with deterministic variance from the zone RNG. Crits apply ×1.5.
+- Wolves, boars, rats, bears, cave spiders and marsh lurkers wind up each attack (#889): the quick bite two times in three, the slower heavy one dealing half again, landing on the clip's contact frame, so a player who steps away or raises a shield in time avoids it.
 - Death: creatures leave a lootable corpse. Players drop to a dead state and `ReleaseSpirit` respawns them at the graveyard with half health. Health and resource regenerate out of combat.
 
 ### Classes (level 1–10)

@@ -603,9 +603,13 @@ impl Resident {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, strum::VariantArray)]
 pub enum Kind {
     Ranger,
+    // The wildlife release's beasts (#889).
     Wolf,
     Rat,
-    Pig,
+    Boar,
+    Bear,
+    Spider,
+    Lurker,
 }
 
 /// Clip names of one model.
@@ -654,7 +658,57 @@ pub struct Clips {
     /// The emote, door, loot, talk, trade, sitting and bed clips, for a model that has them
     /// (#619, asset-tooling #421).
     pub social: Option<SocialClips>,
+    /// A beast's two attacks and its alert (#889), for a model that has them.
+    pub bites: Option<BiteClips>,
 }
+
+/// A beast's two attacks and its alert (#889), for a model that has them.
+#[derive(Clone, Copy, Debug)]
+pub struct BiteClips {
+    /// By [`mmorpg_core::CreatureAttack::code`]: `Attack_A` quick, `Attack_B` heavy.
+    pub attacks: [&'static str; 2],
+    /// Played once as it turns to fight.
+    pub alert: &'static str,
+}
+
+/// The wildlife release's clip set (asset-tooling #716, #723): every hostile beast runs, bites
+/// twice over, flinches, dies and turns alert.
+const WILD_CLIPS: Clips = Clips {
+    idle: "Idle",
+    walk: "Walk",
+    run: "Run",
+    attack: "Attack_A",
+    death: "Death",
+    deaths: None,
+    guard: None,
+    jump: None,
+    swim: None,
+    roll: None,
+    climb: None,
+    strikes: None,
+    upper_body: None,
+    gaits: None,
+    reactions: Some(ReactionClips {
+        chest: "Hit",
+        head: "Hit",
+        knockback: "Hit",
+        shove: "Hit",
+        block: "Hit",
+        guard_break: "Hit",
+        light: ["Hit", "Hit"],
+        heavy: "Hit",
+    }),
+    sword: None,
+    dagger: None,
+    bow: None,
+    crossbow: None,
+    caster: None,
+    social: None,
+    bites: Some(BiteClips {
+        attacks: ["Attack_A", "Attack_B"],
+        alert: "Alert",
+    }),
+};
 
 /// The authored ranged clips beside the full-body bow cycle (#607, asset-tooling #419), every
 /// one on the upper body only. Each one the bundle lacks falls back to what played before.
@@ -1432,7 +1486,24 @@ impl Kind {
             Self::Ranger => "Ranger",
             Self::Wolf => "Wolf",
             Self::Rat => "Rat",
-            Self::Pig => "Pig",
+            Self::Boar => "Boar",
+            Self::Bear => "Bear",
+            Self::Spider => "Spider",
+            Self::Lurker => "Lurker",
+        }
+    }
+
+    /// Its entry in the `greyhaven-wildlife` release (#889), for a beast.
+    #[must_use]
+    pub const fn wild_key(self) -> Option<&'static str> {
+        match self {
+            Self::Ranger => None,
+            Self::Wolf => Some("greyhaven.wild.wolf"),
+            Self::Rat => Some("greyhaven.wild.rat"),
+            Self::Boar => Some("greyhaven.wild.boar"),
+            Self::Bear => Some("greyhaven.wild.bear"),
+            Self::Spider => Some("greyhaven.wild.spider"),
+            Self::Lurker => Some("greyhaven.wild.marsh-lurker"),
         }
     }
 
@@ -1640,77 +1711,12 @@ impl Kind {
                     sleep_loop: "Sleep_Bed_Loop",
                     sleep_wake: "Sleep_Bed_Wake",
                 }),
+                bites: None,
             },
-            Self::Wolf => Clips {
-                idle: "Idle",
-                walk: "Walk",
-                run: "Gallop",
-                attack: "Attack",
-                death: "Death",
-                deaths: None,
-                guard: None,
-                jump: None,
-                swim: None,
-                roll: None,
-                climb: None,
-                strikes: None,
-                upper_body: None,
-                gaits: None,
-                reactions: None,
-                sword: None,
-                dagger: None,
-                bow: None,
-                crossbow: None,
-                caster: None,
-                social: None,
-            },
-            Self::Rat => Clips {
-                idle: "Rat_Idle",
-                walk: "Rat_Walk",
-                run: "Rat_Run",
-                attack: "Rat_Attack",
-                death: "Rat_Death",
-                deaths: None,
-                guard: None,
-                jump: None,
-                swim: None,
-                roll: None,
-                climb: None,
-                strikes: None,
-                upper_body: None,
-                gaits: None,
-                reactions: None,
-                sword: None,
-                dagger: None,
-                bow: None,
-                crossbow: None,
-                caster: None,
-                social: None,
-            },
-            // The farm pig has no attack clip; its jump reads as a charge.
-            Self::Pig => Clips {
-                idle: "Idle",
-                walk: "Walk",
-                run: "Run",
-                attack: "Jump",
-                death: "Death",
-                deaths: None,
-                guard: None,
-                jump: None,
-                swim: None,
-                roll: None,
-                climb: None,
-                strikes: None,
-                upper_body: None,
-                gaits: None,
-                reactions: None,
-                sword: None,
-                dagger: None,
-                bow: None,
-                crossbow: None,
-                caster: None,
-                social: None,
-            },
+            // The wildlife release's beasts (#889) share one clip set.
+            Self::Wolf | Self::Rat | Self::Boar | Self::Bear | Self::Spider | Self::Lurker => {
+                WILD_CLIPS
+            }
         }
     }
 
@@ -2042,7 +2048,10 @@ impl Kind {
         match family {
             CreatureFamily::Wolf => Some(Self::Wolf),
             CreatureFamily::Vermin => Some(Self::Rat),
-            CreatureFamily::Boar => Some(Self::Pig),
+            CreatureFamily::Boar => Some(Self::Boar),
+            CreatureFamily::Bear => Some(Self::Bear),
+            CreatureFamily::Spider => Some(Self::Spider),
+            CreatureFamily::Lurker => Some(Self::Lurker),
             CreatureFamily::Marauder
             | CreatureFamily::Mirefin
             | CreatureFamily::Redbrand
@@ -4133,7 +4142,10 @@ mod tests {
         );
         assert_eq!(creature(CreatureFamily::Wolf), Some(Kind::Wolf));
         assert_eq!(creature(CreatureFamily::Vermin), Some(Kind::Rat));
-        assert_eq!(creature(CreatureFamily::Boar), Some(Kind::Pig));
+        assert_eq!(creature(CreatureFamily::Boar), Some(Kind::Boar));
+        assert_eq!(creature(CreatureFamily::Bear), Some(Kind::Bear));
+        assert_eq!(creature(CreatureFamily::Spider), Some(Kind::Spider));
+        assert_eq!(creature(CreatureFamily::Lurker), Some(Kind::Lurker));
         assert_eq!(creature(CreatureFamily::Redbrand), None);
         assert_eq!(
             Kind::of(EntityRef::Npc(NpcId::new(1)), &content_record(), &content),
@@ -4457,9 +4469,9 @@ mod tests {
         assert_eq!(frame(&mut playback, 0., 2.1).lower.0, "Bow_Release");
         assert_eq!(frame(&mut playback, 0., 2.8).lower.0, "Bow_Recovery");
         assert_eq!(frame(&mut playback, 0., 3.8).lower.0, "Idle_Loop");
-        // A model without casts or reactions has none to start.
+        // A model without casts has none to start; a beast flinches with its one hit (#889).
         assert!(Kind::Wolf.cast(Some(PlayerClass::Ranger), None).is_none());
-        assert_eq!(Kind::Wolf.reaction(Reaction::Chest), None);
+        assert_eq!(Kind::Wolf.reaction(Reaction::Chest), Some("Hit"));
         assert_eq!(
             Kind::Ranger.cycle_of("Bow_Release").and_then(|c| c.aim),
             Some("Bow_Aim_Loop")
@@ -5171,7 +5183,7 @@ mod tests {
         assert_eq!(Kind::Ranger.strike(None, None, None), "Sword_Attack");
         assert_eq!(
             Kind::Wolf.strike(None, Some(ids::SHIELD_BASH), None),
-            "Attack"
+            "Attack_A"
         );
     }
 

@@ -11,7 +11,7 @@ const WOLF: EntityRef = EntityRef::Creature(CreatureId::new(1));
 
 fn arena() -> ZoneSimulation {
     let content = arena::arena(
-        vec![arena::wolf(10_000, [1, 1])],
+        vec![arena::brawler(10_000, [1, 1])],
         vec![arena::spawn(1, arena::WOLF, [-180, 0])],
         vec![],
     );
@@ -316,7 +316,7 @@ fn partially_visible_interaction_does_not_disclose_hidden_actor_identity() {
 }
 #[test]
 fn saturated_cosmetic_observations_do_not_displace_damage_feedback() {
-    let mut template = arena::wolf(100, [1, 1]);
+    let mut template = arena::brawler(100, [1, 1]);
     template.half_extents = [1, 1, 1];
     let spawns = (1..=32)
         .map(|id| {

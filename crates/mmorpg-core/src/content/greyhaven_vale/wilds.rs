@@ -1,7 +1,7 @@
 //! The region's new sub-regions round the first ones (#816): their named areas and their
 //! creatures on the existing templates, tougher the further they lie from the Vale. Wolf packs
-//! and boars roam Westmere Woods, Southwood and the Crown Foothills, with lurkers in Westmere
-//! Tarn; Redbrand outriders camp on the Greyfang Approach and hold the Delving Heights' old
+//! and boars roam Westmere Woods, Southwood and the Crown Foothills, Brown Bears (#889) the
+//! deep woods of the first two, with lurkers in Westmere Tarn; Redbrand outriders camp on the Greyfang Approach and hold the Delving Heights' old
 //! workings with hill ogres about them; field marauders camp by the Fenwater's ford and on the
 //! King's Road Downs among boars and rats.
 use crate::content::CreatureSpawn;
@@ -9,8 +9,8 @@ use crate::{AreaId, CreatureId, CreatureTemplateId, StaticCollider, XzBounds};
 
 use super::units::WANDER_RADIUS_UNITS;
 use super::units::templates::{
-    FIELD_MARAUDER, GRAIN_RAT, HILL_OGRE, MIREFIN_LURKER, REDBRAND_BANDIT, REDBRAND_CROSSBOWMAN,
-    TIMBER_WOLF, YOUNG_BOAR,
+    BROWN_BEAR, FIELD_MARAUDER, GRAIN_RAT, HILL_OGRE, MIREFIN_LURKER, REDBRAND_BANDIT,
+    REDBRAND_CROSSBOWMAN, TIMBER_WOLF, YOUNG_BOAR,
 };
 
 pub const WESTMERE_WOODS: AreaId = AreaId::new(21);
@@ -88,6 +88,8 @@ const MARAUDER: [u8; 2] = [3, 3];
 const OUTRIDER: [u8; 2] = [4, 5];
 const VETERAN: [u8; 2] = [5, 5];
 const OGRE: [u8; 2] = [5, 5];
+/// A Brown Bear (#889) of the deep woods.
+const BEAR: [u8; 2] = [3, 4];
 
 type Row = (u32, CreatureTemplateId, [i32; 2], u16, [u8; 2], i32);
 
@@ -113,6 +115,9 @@ const SPAWNS: &[Row] = {
         (1220, MIREFIN_LURKER, [-800, 40], WEST, LURKER, L),
         (1221, MIREFIN_LURKER, [-830, 32], EAST, LURKER, L),
         (1222, MIREFIN_LURKER, [-772, 48], WEST, LURKER, L),
+        // Brown Bears (#889) in the deep woods, apart from the packs.
+        (1208, BROWN_BEAR, [-980, -150], EAST, BEAR, W),
+        (1209, BROWN_BEAR, [-720, 260], SOUTH, BEAR, W),
         // Southwood: boars under the oaks and two wolf packs.
         (1230, YOUNG_BOAR, [-400, 620], EAST, LOW, W),
         (1231, YOUNG_BOAR, [-520, 640], SOUTH, LOW, W),
@@ -124,6 +129,7 @@ const SPAWNS: &[Row] = {
         (1241, TIMBER_WOLF, [-552, 570], WEST, TOP, W),
         (1242, TIMBER_WOLF, [-600, 760], EAST, TOP, W),
         (1243, TIMBER_WOLF, [-590, 770], NORTH, TOP, W),
+        (1244, BROWN_BEAR, [-640, 820], NORTH, BEAR, W),
         // Crown Foothills: two wolf packs and a hill ogre below the peaks.
         (1250, TIMBER_WOLF, [-850, -580], SOUTH, TOP, W),
         (1251, TIMBER_WOLF, [-842, -572], EAST, TOP, W),

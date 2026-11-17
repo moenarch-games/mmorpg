@@ -1005,42 +1005,60 @@ impl ZoneSimulation {
         }
         creature.swing_timer = creature.swing_timer.saturating_sub(1);
         creature.combat_timer = creature.combat_timer.saturating_sub(1);
-        // Casting and stunned creatures hold their ready swing.
-        if creature.ai != CreatureAi::Engaged
-            || creature.swing_timer > 0
+        // Casting and stunned creatures hold their ready swing, and drop a beast's bite
+        // winding up (#889).
+        let held = creature.ai != CreatureAi::Engaged
             || creature.cast.is_some()
-            || crate::aura::has_kind(&creature.auras, crate::AuraKind::Stun)
-        {
+            || crate::aura::has_kind(&creature.auras, crate::AuraKind::Stun);
+        if let Some(mut pending) = creature.attack.take() {
+            if held {
+                return Ok(());
+            }
+            pending.contact = pending.contact.saturating_sub(1);
+            if pending.contact > 0 {
+                creature.attack = Some(pending);
+                return Ok(());
+            }
+            return self.creature_bite(creature_id, template, pending);
+        }
+        if held || creature.swing_timer > 0 {
             return Ok(());
         }
-        let level = creature.level;
-        // Players and minions (#295) are fought; minions take the blow without guard or stance.
-        let (target, victim) = match creature.top_threat() {
-            Some(target @ EntityRef::Player(player_id))
-                if self
-                    .players
-                    .get(&player_id)
-                    .is_some_and(|player| player.is_alive()) =>
-            {
-                (target, Ok(player_id))
-            }
-            Some(target @ EntityRef::Minion(minion)) if self.minions.contains_key(&minion) => {
-                (target, Err(minion))
-            }
-            _ => return Ok(()),
+        let Some((target, victim)) = self.creature_victim(creature_id, None) else {
+            return Ok(());
         };
+        if !self.creature_reaches(creature_id, target, 0)? {
+            return Ok(());
+        }
         let source = EntityRef::Creature(creature_id);
-        let from = self
-            .world
-            .body(body_id(source))
-            .ok_or_else(|| ZoneError::new("creature physics body is missing"))?
-            .position();
-        let to = self.unit_position(target)?;
-        let to = Vec3i::new(to[0], to[1], to[2]);
-        let reach = i64::from(creature_reach(target));
-        if distance_squared([from.x, from.z], [to.x, to.z]) > reach * reach
-            || self.combat_blocked(source, target)
-        {
+        // A beast winds up one of its two attacks first (#889): the heavy one in
+        // HEAVY_ATTACK_ODDS, drawn from its own stream.
+        if crate::contact_ticks(template.family, crate::CreatureAttack::Quick).is_some() {
+            let heavy = self.stream(source).below(crate::HEAVY_ATTACK_ODDS) == 0;
+            let attack = if heavy {
+                crate::CreatureAttack::Heavy
+            } else {
+                crate::CreatureAttack::Quick
+            };
+            let contact = crate::contact_ticks(template.family, attack).unwrap_or(1);
+            if let Some(creature) = self.creatures.get_mut(&creature_id) {
+                creature.swing_timer = template.swing_ticks;
+                creature.combat_timer = COMBAT_LINGER_TICKS;
+                creature.attack = Some(crate::PendingAttack {
+                    attack,
+                    target,
+                    contact,
+                });
+            }
+            self.notify_observers(
+                &[source, target],
+                &BTreeSet::new(),
+                ZoneEvent::CreatureAttackBegan {
+                    source,
+                    attack,
+                    contact,
+                },
+            );
             return Ok(());
         }
         self.notify_observers(
@@ -1051,11 +1069,125 @@ impl ZoneSimulation {
                 target: Some(target),
             },
         );
+        if let Some(creature) = self.creatures.get_mut(&creature_id) {
+            creature.swing_timer = template.swing_ticks;
+        }
+        self.creature_blow(
+            creature_id,
+            template,
+            (target, victim),
+            crate::CreatureAttack::Quick,
+        )
+    }
+
+    /// The living player or minion (#295) a creature fights: its top threat, or `only` when
+    /// that is still its top threat or on its table.
+    fn creature_victim(
+        &self,
+        creature_id: CreatureId,
+        only: Option<EntityRef>,
+    ) -> Option<(EntityRef, Result<PlayerId, crate::MinionId>)> {
+        let creature = self.creatures.get(&creature_id)?;
+        let target = match only {
+            Some(only) => creature
+                .threat
+                .iter()
+                .any(|entry| entry.entity == only)
+                .then_some(only)?,
+            None => creature.top_threat()?,
+        };
+        match target {
+            EntityRef::Player(player_id)
+                if self
+                    .players
+                    .get(&player_id)
+                    .is_some_and(|player| player.is_alive()) =>
+            {
+                Some((target, Ok(player_id)))
+            }
+            EntityRef::Minion(minion) if self.minions.contains_key(&minion) => {
+                Some((target, Err(minion)))
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether a creature reaches `target`, `slack` units beyond its reach, and may fight it.
+    fn creature_reaches(
+        &self,
+        creature_id: CreatureId,
+        target: EntityRef,
+        slack: i32,
+    ) -> Result<bool, ZoneError> {
+        let source = EntityRef::Creature(creature_id);
+        let from = self
+            .world
+            .body(body_id(source))
+            .ok_or_else(|| ZoneError::new("creature physics body is missing"))?
+            .position();
+        let to = self.unit_position(target)?;
+        let reach = i64::from(creature_reach(target) + slack);
+        Ok(
+            distance_squared([from.x, from.z], [to[0], to[2]]) <= reach * reach
+                && !self.combat_blocked(source, target),
+        )
+    }
+
+    /// A beast's attack reaches its contact tick (#889): it bites the unit it began on if that
+    /// unit still stands within reach and a step, and misses one that got away.
+    fn creature_bite(
+        &mut self,
+        creature_id: CreatureId,
+        template: &crate::CreatureTemplate,
+        pending: crate::PendingAttack,
+    ) -> Result<(), ZoneError> {
+        let source = EntityRef::Creature(creature_id);
+        let Some((target, victim)) = self.creature_victim(creature_id, Some(pending.target)) else {
+            return Ok(());
+        };
+        if let Some(creature) = self.creatures.get_mut(&creature_id) {
+            creature.combat_timer = COMBAT_LINGER_TICKS;
+        }
+        if !self.creature_reaches(creature_id, target, crate::CREATURE_ATTACK_SLACK_UNITS)? {
+            match victim {
+                Ok(player_id) => {
+                    self.update_player(player_id, |player| {
+                        player.combat_timer = COMBAT_LINGER_TICKS;
+                    });
+                    self.notify(player_id, ZoneEvent::Miss { source, target });
+                }
+                Err(_) => {
+                    if let Some(summoner) = self.controller(target) {
+                        self.notify(summoner, ZoneEvent::Miss { source, target });
+                    }
+                }
+            }
+            return Ok(());
+        }
+        self.creature_blow(creature_id, template, (target, victim), pending.attack)
+    }
+
+    /// A creature's blow lands on `target` through the hit table: a miss, a block, or its
+    /// `attack`'s damage.
+    fn creature_blow(
+        &mut self,
+        creature_id: CreatureId,
+        template: &crate::CreatureTemplate,
+        (target, victim): (EntityRef, Result<PlayerId, crate::MinionId>),
+        attack: crate::CreatureAttack,
+    ) -> Result<(), ZoneError> {
+        let content = Arc::clone(&self.content);
+        let source = EntityRef::Creature(creature_id);
+        let level = self
+            .creatures
+            .get(&creature_id)
+            .map_or(template.min_level, |creature| creature.level);
         let swing = match roll_swing(self.stream(source), template.damage_at(level)) {
             // A boss hits harder under a larger attempt's profile (#276).
             Swing::Hit { amount, critical } => Swing::Hit {
                 amount: self.creatures.get(&creature_id).map_or(amount, |creature| {
-                    u16::try_from(creature.scale_damage(&content, template.id, u32::from(amount)))
+                    let amount = attack.damage(u32::from(amount));
+                    u16::try_from(creature.scale_damage(&content, template.id, amount))
                         .unwrap_or(u16::MAX)
                 }),
                 critical,
@@ -1063,7 +1195,6 @@ impl ZoneSimulation {
             Swing::Miss => Swing::Miss,
         };
         if let Some(creature) = self.creatures.get_mut(&creature_id) {
-            creature.swing_timer = template.swing_ticks;
             creature.combat_timer = COMBAT_LINGER_TICKS;
         }
         let player_id = match victim {

@@ -2186,6 +2186,9 @@ const fn family_code(family: super::units::CreatureFamily) -> u8 {
         CreatureFamily::Redbrand => 6,
         CreatureFamily::Prop => 7,
         CreatureFamily::Ogre => 8,
+        CreatureFamily::Bear => 9,
+        CreatureFamily::Spider => 10,
+        CreatureFamily::Lurker => 11,
     }
 }
 

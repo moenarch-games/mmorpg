@@ -211,8 +211,13 @@ impl UnitModel {
             EntityKind::Creature => match family {
                 None => Self::Placeholder,
                 Some(CreatureFamily::Wolf) => Self::Quadruped(AnimalKind::Wolf),
-                Some(CreatureFamily::Boar) => Self::Quadruped(AnimalKind::Boar),
-                Some(CreatureFamily::Vermin) => Self::Quadruped(AnimalKind::Vermin),
+                Some(CreatureFamily::Boar | CreatureFamily::Bear) => {
+                    Self::Quadruped(AnimalKind::Boar)
+                }
+                // The beasts of #889 fall back to the nearest procedural body.
+                Some(CreatureFamily::Vermin | CreatureFamily::Spider | CreatureFamily::Lurker) => {
+                    Self::Quadruped(AnimalKind::Vermin)
+                }
                 // Large creatures (#297) draw as a marauder fitted to their bigger box.
                 Some(CreatureFamily::Marauder | CreatureFamily::Ogre) => {
                     Self::Humanoid(HumanoidKind::Marauder)

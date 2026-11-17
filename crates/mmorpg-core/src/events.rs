@@ -212,6 +212,12 @@ pub enum ZoneEvent {
         variant: crate::StrikeVariant,
         contact: u16,
     },
+    /// A beast `source` began its `attack` (#889), biting `contact` ticks from now.
+    CreatureAttackBegan {
+        source: EntityRef,
+        attack: crate::CreatureAttack,
+        contact: u16,
+    },
     /// `source` began a timed swing of `ability` toward `aim` (#679): `startup` ticks of
     /// wind-up, then `active` ticks of sweep.
     SwingBegan {
@@ -311,6 +317,7 @@ impl ZoneEvent {
             }
             Self::SwingBegan { source, .. } if source != own => Some([Some(source), None]),
             Self::StrikeBegan { source, .. } if source != own => Some([Some(source), None]),
+            Self::CreatureAttackBegan { source, .. } => Some([Some(source), None]),
             Self::Clashed { source, target, .. } if source != own && target != own => {
                 Some([Some(source), Some(target)])
             }
@@ -340,6 +347,7 @@ impl ZoneEvent {
             | Self::StrikeSwept { .. }
             | Self::SwingBegan { .. }
             | Self::StrikeBegan { .. }
+            | Self::CreatureAttackBegan { .. }
             | Self::Clashed { .. }
             | Self::Healed { .. }
             | Self::AuraApplied { .. }

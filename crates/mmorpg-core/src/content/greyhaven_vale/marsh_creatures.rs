@@ -1,6 +1,7 @@
 //! The Marsh-Lake Wetlands' creatures (#506, follows #426): Mirefin Lurkers in the lake and the
 //! two swimmable pools, Young Boars on the hummocks and a Timber Wolf pack along the Marsh Trail
-//! and the Heron Path, on the existing templates, AI, leash, respawn and loot rules.
+//! and the Heron Path, on the existing templates, AI, leash, respawn and loot rules, and Marsh
+//! Lurkers (#889) in ambush beside the trails.
 //!
 //! The templates' level ranges are inherited, so the region sits beyond the Vale only at their
 //! top end: wolves and boars roll level 2, lurkers their only level, 3. Spawn IDs 1100–1199 are
@@ -17,7 +18,7 @@ use crate::content::CreatureSpawn;
 use crate::{CreatureId, CreatureTemplateId};
 
 use super::units::WANDER_RADIUS_UNITS;
-use super::units::templates::{MIREFIN_LURKER, TIMBER_WOLF, YOUNG_BOAR};
+use super::units::templates::{MARSH_LURKER, MIREFIN_LURKER, TIMBER_WOLF, YOUNG_BOAR};
 
 /// Lurkers idle within 2 m of their spawn point, staying over deep water.
 pub const LURKER_WANDER_RADIUS_UNITS: i32 = 200;
@@ -36,7 +37,7 @@ const WEST: u16 = 49_152;
 type Row = (u32, CreatureTemplateId, [i32; 2], u16, [u8; 2], i32);
 
 #[rustfmt::skip]
-const SPAWNS: [Row; 31] = {
+const SPAWNS: [Row; 34] = {
     const W: i32 = WANDER_RADIUS_UNITS;
     const L: i32 = LURKER_WANDER_RADIUS_UNITS;
     [
@@ -81,6 +82,10 @@ const SPAWNS: [Row; 31] = {
         (1165, TIMBER_WOLF, [36_700, 8_500], WEST, TOP, W),
         (1166, TIMBER_WOLF, [44_800, 9_000], EAST, TOP, W),
         (1167, TIMBER_WOLF, [45_700, 10_200], SOUTH, TOP, W),
+        // Marsh Lurkers (#889) lying still beside the trails, waiting for a passer-by.
+        (1180, MARSH_LURKER, [29_000, 1_000], EAST, [3, 3], L),
+        (1181, MARSH_LURKER, [33_000, 5_500], SOUTH, [3, 3], L),
+        (1182, MARSH_LURKER, [40_500, 9_500], NORTH, [3, 3], L),
     ]
 };
 

@@ -30,6 +30,12 @@ pub enum CreatureFamily {
     Prop,
     /// Large creatures (#297): big bodies that body-block, shove smaller units and stomp.
     Ogre,
+    /// The deep woods' bears (#889).
+    Bear,
+    /// The caves' spiders (#889).
+    Spider,
+    /// The marsh's ambushers (#889): they lie still until a player comes close.
+    Lurker,
 }
 
 impl CreatureFamily {
@@ -45,7 +51,16 @@ impl CreatureFamily {
             Self::Redbrand => "redbrand",
             Self::Prop => "prop",
             Self::Ogre => "ogre",
+            Self::Bear => "bear",
+            Self::Spider => "spider",
+            Self::Lurker => "lurker",
         }
+    }
+
+    /// Ambushers (#889) start fights only at [`crate::AMBUSH_RADIUS_UNITS`].
+    #[must_use]
+    pub const fn ambushes(self) -> bool {
+        matches!(self, Self::Lurker)
     }
 
     /// Aquatic families swim in deep water and trail submerged players (#274).

@@ -169,6 +169,11 @@ mirror!(
     }
 );
 mirror!(
+    /// A beast's attack (#889).
+    #[serde(rename_all = "lowercase")]
+    CreatureAttack = core::CreatureAttack { Quick, Heavy }
+);
+mirror!(
     /// A living Warden's movement-dependent melee stance (#155).
     #[serde(rename_all = "lowercase")]
     MeleeStance = core::MeleeStance {
@@ -971,6 +976,12 @@ pub enum ZoneEvent {
         variant: StrikeVariant,
         contact: u16,
     },
+    /// A beast `source` began its `attack` (#889), biting `contact` ticks from now.
+    CreatureAttackBegan {
+        source: EntityRef,
+        attack: CreatureAttack,
+        contact: u16,
+    },
     /// An attack of `source` met one of `target`'s (#679).
     Clashed {
         source: EntityRef,
@@ -1156,6 +1167,15 @@ impl From<core::ZoneEvent> for ZoneEvent {
                 source: source.into(),
                 family: family.into(),
                 variant: variant.into(),
+                contact,
+            },
+            E::CreatureAttackBegan {
+                source,
+                attack,
+                contact,
+            } => Self::CreatureAttackBegan {
+                source: source.into(),
+                attack: attack.into(),
                 contact,
             },
             E::Clashed {
@@ -1383,6 +1403,15 @@ impl From<ZoneEvent> for core::ZoneEvent {
                 source: source.into(),
                 family: family.into(),
                 variant: variant.into(),
+                contact,
+            },
+            E::CreatureAttackBegan {
+                source,
+                attack,
+                contact,
+            } => Self::CreatureAttackBegan {
+                source: source.into(),
+                attack: attack.into(),
                 contact,
             },
             E::Clashed {

@@ -509,7 +509,7 @@ fn a_ranger_spends_focus_on_shots_stings_snares_and_haste() {
 #[test]
 fn an_arcanist_casts_channels_roots_and_shields_by_the_five_second_rule() {
     let content = classes::arena(
-        vec![arena::wolf(300, [3, 3])],
+        vec![arena::brawler(300, [3, 3])],
         vec![arena::spawn(1, WOLF, [0, 2_500])],
     );
     let mut fight = Fight::with_class(content, 6, 2);
