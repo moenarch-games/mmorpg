@@ -15,12 +15,12 @@
 //! shared by their composition; this does not generate or mutate collision.
 //! While that kit is not drawn the collider's own surface is the visible stand-in
 //! ([`stand_in`]).
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 
 use mmorpg_core::UNITS_PER_METRE;
 use mmorpg_scenery::Scenery;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     Cull, Kit,
@@ -30,7 +30,7 @@ use crate::{
 };
 
 /// Greyhaven Vale's dressing files.
-const GREYHAVEN: [&str; 7] = [
+const GREYHAVEN: [&str; 8] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/vale.json"
@@ -61,11 +61,19 @@ const GREYHAVEN: [&str; 7] = [
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/settlements.json"
     )),
+    // The nature bundle's trees, bushes and rocks (#49), composed offline by
+    // `examples/export-nature-dressing.rs`.
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../content/greyhaven/dressing/nature.json"
+    )),
 ];
 
 /// Every kit that draws dressing, by its asset keys' prefix, with the static-scene fallback
 /// ([`Kit`]) it hides while drawn, if it has one.
-pub const KITS: [(&str, Option<Kit>); 7] = [
+pub const KITS: [(&str, Option<Kit>); 9] = [
+    ("greyhaven.nature.", Some(Kit::Nature)),
+    ("limestone-rocks.kit.", Some(Kit::Nature)),
     ("crag.kit.", Some(Kit::Crag)),
     ("settlement.props.", Some(Kit::SettlementProps)),
     ("outpost.kit.", Some(Kit::Outpost)),
@@ -89,7 +97,7 @@ pub struct Dressing {
 }
 
 /// One placed asset.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Placed {
     /// Persistent, unique across every area.
@@ -103,18 +111,37 @@ pub struct Placed {
     /// Per-axis scale in thousandths, before the turn.
     pub scale: [u16; 3],
     /// The collider generated from this placement's art, if it collides.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub collider: Option<u32>,
     /// Existing gameplay body hidden by this art, without generating or changing collision.
     /// Multiple composed modules may share one body. Presentation only.
-    #[serde(default, rename = "fallbackCollider")]
+    #[serde(
+        default,
+        rename = "fallbackCollider",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub fallback_collider: Option<u32>,
     /// Cosmetic wear in 255ths, independent from the collider identity.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_zero")]
     pub wear: u8,
     /// Recipe scatter rooted on the existing floor, drawn only within 60 m.
-    #[serde(default, rename = "groundDetail")]
+    #[serde(
+        default,
+        rename = "groundDetail",
+        skip_serializing_if = "std::ops::Not::not"
+    )]
     pub ground_detail: bool,
+    /// The distance class beyond which the placement is hidden; [`Cull::Far`] when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cull: Option<Cull>,
+}
+
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if"
+)]
+fn is_zero(wear: &u8) -> bool {
+    *wear == 0
 }
 
 impl Placed {
@@ -233,7 +260,7 @@ pub fn placements(s: &Scenery, kit: Kit) -> Vec<Placement> {
                     .into_iter()
                     .map(|permille| f64::from(permille) / 1_000.)
                     .fold(0., f64::max),
-                cull: Cull::Far,
+                cull: placed.cull.unwrap_or(Cull::Far),
             }
         })
         .collect()
@@ -289,10 +316,23 @@ pub fn assets(s: &Scenery, kit: Kit) -> Vec<&'static str> {
 /// only its stand-in while that kit is not drawn.
 #[must_use]
 pub fn stand_in(s: &Scenery, id: u32) -> Option<Kit> {
-    placed(s)
-        .iter()
-        .find(|placed| placed.collider == Some(id) || placed.fallback_collider == Some(id))
-        .and_then(Placed::kit)
+    // Indexed once: tens of thousands of placements, looked up for every collider.
+    static STAND_INS: LazyLock<BTreeMap<u32, Option<Kit>>> = LazyLock::new(|| {
+        let mut kits = BTreeMap::new();
+        for placed in committed() {
+            for collider in [placed.collider, placed.fallback_collider]
+                .into_iter()
+                .flatten()
+            {
+                kits.entry(collider).or_insert_with(|| placed.kit());
+            }
+        }
+        kits
+    });
+    if !s.greyhaven() {
+        return None;
+    }
+    STAND_INS.get(&id).copied().flatten()
 }
 
 #[cfg(test)]

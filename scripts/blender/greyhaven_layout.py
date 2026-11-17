@@ -286,9 +286,15 @@ def export_scene(args: argparse.Namespace) -> None:
     updated, ids = build_document(layout, base_houses, records)
     candidate = (json.dumps(updated, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
     fd, staging = tempfile.mkstemp(prefix=".greyhaven-layout-", suffix=".json", dir=layout_path.parent)
+    # Each dressing file and the package whose offline example exports it.
+    dressing_packages = {
+        "outpost": "mmorpg-scenery",
+        "market": "mmorpg-scenery",
+        "nature": "mmorpg-presentation",
+    }
     dressing_paths = {
         name: layout_path.parent / "dressing" / f"{name}.json"
-        for name in ("outpost", "market")
+        for name in dressing_packages
     }
     dressing_sources = {name: path.read_bytes() for name, path in dressing_paths.items()}
     dressing_stages = {}
@@ -304,7 +310,7 @@ def export_scene(args: argparse.Namespace) -> None:
         # infer kit placements from gameplay colliders (#683).
         for name, path in dressing_paths.items():
             dressing = subprocess.run(
-                ["cargo", "run", "--quiet", "--locked", "-p", "mmorpg-scenery",
+                ["cargo", "run", "--quiet", "--locked", "-p", dressing_packages[name],
                  "--example", f"export-{name}-dressing", "--", staging],
                 cwd=args.root, check=True, capture_output=True,
             ).stdout

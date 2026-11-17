@@ -202,3 +202,17 @@ The command also accepts a candidate layout path. Clients read only the committe
 result, with surface heights already applied. The existing core market proxies
 and bench interaction remain authoritative; an art edit does not change collision.
 Durable art edits belong in the authoring source rather than the generated output.
+
+## Nature dressing
+
+Blender export also regenerates `content/greyhaven/dressing/nature.json`: every
+tree, bush and loose rock the `greyhaven-nature` and `limestone-rocks` bundles
+draw, composed from the candidate layout's scenery with surface heights applied.
+A test fails while the committed file differs from a fresh export. After a
+manual layout change, regenerate it explicitly and review the diff:
+
+```sh
+cargo run --quiet --locked -p mmorpg-presentation --example export-nature-dressing > content/greyhaven/dressing/nature.json
+```
+
+The trunk and rock colliders stay core's; regenerating the art changes no collision.

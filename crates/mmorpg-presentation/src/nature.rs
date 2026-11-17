@@ -9,15 +9,20 @@
 //! (#577). While a client does not draw the bundle, the static scene draws the procedural
 //! trees, rocks and bushes ([`crate::Kit::Nature`] fallback groups).
 //!
+//! Greyhaven's placements are world dressing (#683): [`compose_all`] composes them offline
+//! (`examples/export-nature-dressing.rs`) into `content/greyhaven/dressing/nature.json`, and the
+//! clients read that committed data. The colliders stay core's, unchanged.
+//!
 //! The shared [`Lods`] ([`crate::lod`]) picks each placement's level of detail from the
 //! bundle's `lodSelection` metadata and cross-fades every switch. Presentation only.
 use mmorpg_core::{Grip, RockShape, UNITS_PER_METRE};
 use mmorpg_scenery::{Prop, PropKind, Scenery, TerrainGrid, TreeVariant};
 
 use crate::{
-    Cull,
+    Cull, Kit,
     batching::matrix,
     geometry::{compose, ry, scale, translate},
+    world_dressing,
 };
 
 pub const BROADLEAF: &str = "greyhaven.nature.tree.broadleaf";
@@ -65,10 +70,6 @@ fn metres(units: i32) -> f64 {
     f64::from(units) / f64::from(UNITS_PER_METRE)
 }
 
-fn yaw(p: &Prop) -> f64 {
-    f64::from(p.yaw) / 65_536. * std::f64::consts::TAU
-}
-
 /// Whether the bundle draws `p` (the procedural model is its fallback): every tree and bush,
 /// and every rock that is not climbing rock, whose worn handholds (#512) stay on the
 /// procedural rock.
@@ -108,15 +109,64 @@ fn bush(p: &Prop) -> usize {
     .unwrap_or(0)
 }
 
-/// `p`'s placement on `s` (drawn terrain `g`), when the bundle draws it.
-pub(crate) fn placement(s: &Scenery, g: &TerrainGrid, p: &Prop) -> Option<Placement> {
+/// One tree, bush or rock the bundle draws, as the offline export composes it (#683): its
+/// entry, foot (metres), turn, per-axis scale and distance class.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Composed {
+    /// Persistent dressing ID: `nature:<collider>`, or `nature:<x>:<z>` for a prop without one.
+    pub id: String,
+    pub entry: &'static str,
+    pub at: [f64; 3],
+    pub yaw: u16,
+    pub scale: [f64; 3],
+    pub cull: Cull,
+}
+
+impl Composed {
+    /// The placement as committed world dressing: units and thousandths.
+    #[must_use]
+    pub fn placed(&self) -> world_dressing::Placed {
+        world_dressing::Placed {
+            id: self.id.clone(),
+            asset: self.entry.to_owned(),
+            position: self
+                .at
+                .map(|metres| (metres * f64::from(UNITS_PER_METRE)).round() as i32),
+            yaw: self.yaw,
+            scale: self.scale.map(|s| (s * 1_000.).round() as u16),
+            collider: None,
+            fallback_collider: None,
+            wear: 0,
+            ground_detail: false,
+            cull: Some(self.cull),
+        }
+    }
+
+    fn placement(&self) -> Placement {
+        let [x, y, z] = self.at;
+        let [sx, sy, sz] = self.scale;
+        Placement {
+            entry: self.entry,
+            model: matrix(compose(&[
+                translate(x, y, z),
+                ry(f64::from(self.yaw) / 65_536. * std::f64::consts::TAU),
+                scale(sx, sy, sz),
+            ])),
+            scale: sx.max(sy).max(sz),
+            cull: self.cull,
+        }
+    }
+}
+
+/// `p` on `s` (drawn terrain `g`), when the bundle draws it.
+fn composed(s: &Scenery, g: &TerrainGrid, p: &Prop) -> Option<Composed> {
     if !draws(s, p) {
         return None;
     }
     let x = metres(p.position[0]);
     let z = metres(p.position[2]);
     let seed = crate::props::seed(p);
-    let (entry, frame, largest, cull) = match p.kind {
+    let (entry, y, size, cull) = match p.kind {
         PropKind::Tree(variant) => {
             let background = p.collider.is_none();
             // Fitted to the procedural tree's height: about 7.5 m in the woods.
@@ -132,13 +182,13 @@ pub(crate) fn placement(s: &Scenery, g: &TerrainGrid, p: &Prop) -> Option<Placem
             // Mature trees rise above young growth while their trunk footprint stays put.
             // The bundle's leafy crown is foliage; the existing core trunk owns collision.
             let height = size * (1.15 + seed * 0.45);
-            let at = compose(&[
-                translate(x, crate::terrain::surface(g, x, z), z),
-                ry(yaw(p)),
-                scale(size, height, size),
-            ]);
             let cull = if background { Cull::Always } else { Cull::Far };
-            (entry, at, height, cull)
+            (
+                entry,
+                crate::terrain::surface(g, x, z),
+                [size, height, size],
+                cull,
+            )
         }
         PropKind::Bush => {
             // A stable pick of the three, scaled uniformly to the procedural bush's volume (its
@@ -148,12 +198,12 @@ pub(crate) fn placement(s: &Scenery, g: &TerrainGrid, p: &Prop) -> Option<Placem
             let [hx, hy, hz] = p.half_extents.map(metres);
             let size = ((2. * hx / w) * (2. * hy / h) * (2. * hz / d)).cbrt();
             // Sunk a little, so a slope shows no gap under the rim.
-            let at = compose(&[
-                translate(x, crate::terrain::surface(g, x, z) - 0.06 * size, z),
-                ry(yaw(p)),
-                scale(size, size, size),
-            ]);
-            (BUSHES[pick], at, size, Cull::Mid)
+            (
+                BUSHES[pick],
+                crate::terrain::surface(g, x, z) - 0.06 * size,
+                [size; 3],
+                Cull::Mid,
+            )
         }
         PropKind::Rock(_) => {
             let shape = rock_shape(s, p);
@@ -162,38 +212,46 @@ pub(crate) fn placement(s: &Scenery, g: &TerrainGrid, p: &Prop) -> Option<Placem
             // Fitted to the collider's box, which the drawn rock fills; physics keeps its proxy.
             let fit = [hx / body_x, 2. * hy / body_height, hz / body_z];
             // A collider rock stands on its body's bottom, where its proxy collides.
-            let base = if p.collider.is_some() {
-                metres(p.position[1])
+            if p.collider.is_some() {
+                (entry, metres(p.position[1]), fit, Cull::Always)
             } else {
-                crate::terrain::surface(g, x, z)
-            };
-            let at = compose(&[
-                translate(x, base, z),
-                ry(yaw(p)),
-                scale(fit[0], fit[1], fit[2]),
-            ]);
-            let cull = if p.collider.is_some() {
-                Cull::Always
-            } else {
-                Cull::Mid
-            };
-            (entry, at, fit[0].max(fit[1]).max(fit[2]), cull)
+                (entry, crate::terrain::surface(g, x, z), fit, Cull::Mid)
+            }
         }
         _ => return None,
     };
-    Some(Placement {
+    let id = p.collider.map_or_else(
+        || format!("nature:{}:{}", p.position[0], p.position[2]),
+        |collider| format!("nature:{collider}"),
+    );
+    Some(Composed {
+        id,
         entry,
-        model: matrix(frame),
-        scale: largest,
+        at: [x, y, z],
+        yaw: p.yaw,
+        scale: size,
         cull,
     })
 }
 
-/// Every placed tree, bush and rock the bundle draws on `s`, in prop order.
+/// Every tree, bush and rock the bundle draws on `s`, in prop order, composed from the scenery's
+/// props. Offline only (`examples/export-nature-dressing.rs`): the clients read Greyhaven's
+/// committed result, `content/greyhaven/dressing/nature.json`, through [`placements`].
+#[must_use]
+pub fn compose_all(s: &Scenery) -> Vec<Composed> {
+    let g = s.terrain_grid(crate::TERRAIN_STEP_UNITS);
+    s.props.iter().filter_map(|p| composed(s, &g, p)).collect()
+}
+
+/// Every placed tree, bush and rock the bundle draws on `s`: Greyhaven's committed world
+/// dressing (#683), in file order. A zone without dressing still composes its props.
 #[must_use]
 pub fn placements(s: &Scenery) -> Vec<Placement> {
-    let g = s.terrain_grid(crate::TERRAIN_STEP_UNITS);
-    s.props.iter().filter_map(|p| placement(s, &g, p)).collect()
+    if s.greyhaven() {
+        world_dressing::placements(s, Kit::Nature)
+    } else {
+        compose_all(s).iter().map(Composed::placement).collect()
+    }
 }
 
 pub use crate::lod::EntryLods;
@@ -264,6 +322,30 @@ mod tests {
         for entry in BUSHES {
             let picked = bushes.iter().filter(|(_, p)| p.entry == entry).count();
             assert!(picked * 5 > bushes.len(), "{entry}: {picked}");
+        }
+    }
+
+    #[test]
+    fn the_committed_dressing_is_the_composed_nature() {
+        // Regenerate with `examples/export-nature-dressing.rs` when the scenery's props move.
+        let scenery = mmorpg_scenery::greyhaven_vale_scenery();
+        let composed = compose_all(&scenery);
+        let committed: Vec<_> = world_dressing::committed()
+            .iter()
+            .filter(|placed| placed.kit() == Some(Kit::Nature))
+            .collect();
+        assert_eq!(committed.len(), composed.len());
+        let drawn = placements(&scenery);
+        for ((placed, composed), drawn) in committed.iter().zip(&composed).zip(&drawn) {
+            assert_eq!(**placed, composed.placed());
+            // Only the data's centimetres and thousandths separate the drawn rock or tree from
+            // the composed one.
+            let exact = composed.placement();
+            assert_eq!((drawn.entry, drawn.cull), (exact.entry, exact.cull));
+            assert!((drawn.scale - exact.scale).abs() < 1e-3, "{}", placed.id);
+            for (a, b) in drawn.model.iter().zip(exact.model) {
+                assert!((a - b).abs() < 0.02, "{}", placed.id);
+            }
         }
     }
 
