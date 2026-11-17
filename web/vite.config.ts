@@ -47,8 +47,7 @@ export default defineConfig({
   // which dependency pre-bundling would move away from it; the rest of the library is pre-bundled.
   optimizeDeps: { exclude: ["@moritzbrantner/maps/wasm"] },
   server: {
-    // Quaternius unit models are served from the repository's shared `assets/quaternius`.
-    fs: { allow: [searchForWorkspaceRoot(process.cwd()), "../assets/quaternius"] },
+    fs: { allow: [searchForWorkspaceRoot(process.cwd())] },
     https: certificate && privateKey
       ? { cert: readFileSync(certificate), key: readFileSync(privateKey) }
       : undefined,

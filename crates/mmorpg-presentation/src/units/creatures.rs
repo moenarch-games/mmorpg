@@ -34,6 +34,10 @@ pub fn accent(e: &EntitySnapshot, f: CreatureFamily) -> u32 {
         CreatureFamily::Mirefin => 4,
         CreatureFamily::Redbrand => 5,
         CreatureFamily::Ogre => 6,
+        // The beasts of #889 share the nearest kin's colours.
+        CreatureFamily::Bear => 1,
+        CreatureFamily::Spider => 2,
+        CreatureFamily::Lurker => 4,
         // Props (#288) keep their own wood colours.
         CreatureFamily::Prop => return 0x8a6a45,
     };

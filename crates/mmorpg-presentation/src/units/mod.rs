@@ -305,6 +305,8 @@ pub struct UnitPresenter {
     whiffs: u32,
     /// Ordinary hits shown, for alternating the light hits left and right (#885).
     hits: u32,
+    /// Beasts last seen out of combat: each turns alert as it starts a fight (#889).
+    calm: BTreeSet<EntityRef>,
     /// Platforms a client's kit draws instead of their procedural pillar (#591).
     kit_platforms: BTreeSet<mmorpg_core::PlatformId>,
     /// Where each caster's spell starts in the world, as its client posed it last frame
@@ -364,6 +366,7 @@ impl UnitPresenter {
             timed_swings: BTreeMap::new(),
             whiffs: 0,
             hits: 0,
+            calm: BTreeSet::new(),
             kit_platforms: BTreeSet::new(),
             channel_origins: BTreeMap::new(),
             interaction: Interaction::default(),
@@ -513,6 +516,7 @@ impl UnitPresenter {
         self.deaths.clear();
         self.stuns.clear();
         self.hastes.clear();
+        self.calm.clear();
         self.bursts.clear();
         self.effects.clear();
         self.doors.clear();
@@ -558,6 +562,7 @@ impl UnitPresenter {
         // attack. Every received projection is read, so a frame spanning several ticks keeps them.
         let viewer = EntityRef::Player(snapshot.viewer_id);
         self.social(snapshot, seconds);
+        self.alert(snapshot, seconds);
         // The units that resolved a knockback this projection (#538): their hits throw the
         // target back, a large creature's stomp or smash shoves it round.
         let knockers: BTreeMap<EntityRef, Reaction> = snapshot
@@ -656,6 +661,10 @@ impl UnitPresenter {
                     contact,
                 } => {
                     self.melee_strike(snapshot, source, (family, variant), contact, seconds);
+                }
+                // A beast's attack (#889) winds up now; its authored bite is the zone's contact.
+                ZoneEvent::CreatureAttackBegan { source, attack, .. } => {
+                    self.creature_attack(snapshot, source, attack, seconds);
                 }
                 // Each death falls its own way (#885), where the model has several.
                 ZoneEvent::Died { entity, .. } => {
@@ -1293,6 +1302,63 @@ impl UnitPresenter {
             .entry(entity)
             .or_default()
             .react(reaction, clip, length, seconds);
+    }
+
+    /// A beast `source` began its `attack` (#889): its `Attack_A` or `Attack_B` from the start,
+    /// whose authored bite is the zone's contact, so the wind-up shows before the blow lands.
+    fn creature_attack(
+        &mut self,
+        snapshot: &ZoneSnapshot,
+        source: EntityRef,
+        attack: mmorpg_core::CreatureAttack,
+        seconds: f64,
+    ) {
+        let Some((kind, _, _)) = self.class_of(snapshot, source) else {
+            return;
+        };
+        let clips = kind.clips();
+        let clip = clips
+            .bites
+            .map(|bites| bites.attacks[usize::from(attack.code())])
+            .filter(|&clip| self.duration(kind, clip) > 0.)
+            .unwrap_or(clips.attack);
+        let duration = self.duration(kind, clip);
+        let playback = self.playbacks.entry(source).or_default();
+        playback.strike(clip, duration, Region::Whole, seconds);
+        playback.swung();
+    }
+
+    /// Beasts that start a fight turn alert (#889): a creature seen out of combat plays its
+    /// alert once its projection says it fights, where its model has one.
+    fn alert(&mut self, snapshot: &ZoneSnapshot, seconds: f64) {
+        for record in &snapshot.entities {
+            let entity = record.entity();
+            if entity.kind() != EntityKind::Creature || record.flags.dead {
+                self.calm.remove(&entity);
+                continue;
+            }
+            if !record.flags.in_combat {
+                self.calm.insert(entity);
+                continue;
+            }
+            if !self.calm.remove(&entity) {
+                continue;
+            }
+            let Some(kind) = self.imported_kind(entity, record) else {
+                continue;
+            };
+            let Some((clip, length)) = kind
+                .clips()
+                .bites
+                .and_then(|bites| self.clip(kind, bites.alert))
+            else {
+                continue;
+            };
+            self.playbacks
+                .entry(entity)
+                .or_default()
+                .gesture(clip, length, true, seconds);
+        }
     }
 
     /// `source` began a basic strike (#885): its family's clip for the strike, started so its
@@ -2383,8 +2449,14 @@ impl UnitPresenter {
             family.map_or(0x4f9d5d, |f| creatures::accent(&unit.record, f))
         };
         let half = half.map(f64::from);
-        if let Some(f @ (CreatureFamily::Wolf | CreatureFamily::Boar | CreatureFamily::Vermin)) =
-            family
+        if let Some(
+            f @ (CreatureFamily::Wolf
+            | CreatureFamily::Boar
+            | CreatureFamily::Vermin
+            | CreatureFamily::Bear
+            | CreatureFamily::Spider
+            | CreatureFamily::Lurker),
+        ) = family
         {
             return creatures::animal(
                 &mut self.resources,

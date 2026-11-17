@@ -146,18 +146,24 @@ export type LoadedModel = [QuaterniusKind, [string, number][], string | null];
 /**
  * Animated imported units as real three.js skinned meshes drawn through the renderer's
  * imported-roots path, all loaded with plain three.js (asset-tooling Atlas 7.1.1, #244): `GLTFLoader`
- * for the Ranger humanoid bundle's glTF entries (Atlas 6.3.7) and the Quaternius CC0 animal GLBs
- * (Atlas 6.3.6), `SkeletonUtils.clone` per unit, `AnimationMixer` for clips and ordinary parenting
+ * for the Ranger humanoid bundle's glTF entries (Atlas 6.3.7) and the wildlife release's beasts
+ * (#889), `SkeletonUtils.clone` per unit, `AnimationMixer` for clips and ordinary parenting
  * under the bundle's `humanoid-sockets` joints for carried equipment. Each model
  * loads on first use and is instantiated per unit; until it has loaded the shared presenter keeps
  * drawing the procedural model. Clip choice and clock come from the shared presenter (#184).
  * Presentation only.
  */
-const ANIMAL_URLS: Readonly<Record<Exclude<QuaterniusKind, "Ranger">, string>> = {
-  Wolf: new URL("../../../../assets/quaternius/Wolf.glb", import.meta.url).href,
-  Rat: new URL("../../../../assets/quaternius/Rat.glb", import.meta.url).href,
-  Pig: new URL("../../../../assets/quaternius/Pig.glb", import.meta.url).href,
+/** The beasts' `greyhaven-wildlife` entries (#889), which `scripts/fetch-bundles.sh` places in `web/public/scenery/`. */
+const WILD_ENTRIES: Readonly<Record<Exclude<QuaterniusKind, "Ranger">, string>> = {
+  Wolf: "greyhaven.wild.wolf",
+  Rat: "greyhaven.wild.rat",
+  Boar: "greyhaven.wild.boar",
+  Bear: "greyhaven.wild.bear",
+  Spider: "greyhaven.wild.spider",
+  Lurker: "greyhaven.wild.marsh-lurker",
 };
+const animalUrl = (kind: Exclude<QuaterniusKind, "Ranger">) =>
+  new URL(`${import.meta.env.BASE_URL}scenery/greyhaven.wildlife/scenes/${WILD_ENTRIES[kind]}/default.gltf`, window.location.href).href;
 /**
  * The Ranger figures (`imported::Figure`): male and female local player bodies, plus each
  * resident's declared base (#493, #635). Only the male catalog currently has class outfits.
@@ -389,7 +395,7 @@ function mixerPosable(model: THREE.Object3D, sources: ReadonlyMap<string, THREE.
 }
 
 async function loadAnimal(loader: GLTFLoader, kind: Exclude<QuaterniusKind, "Ranger">, rest: string): Promise<Asset> {
-  const gltf = await loader.loadAsync(ANIMAL_URLS[kind]);
+  const gltf = await loader.loadAsync(animalUrl(kind));
   const sources = new Map<string, THREE.AnimationClip>();
   for (const clip of gltf.animations) {
     // Blender prefixes clips with their armature ("AnimalArmature|Walk").

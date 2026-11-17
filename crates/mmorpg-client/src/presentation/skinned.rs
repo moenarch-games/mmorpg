@@ -1229,12 +1229,6 @@ pub(super) struct Asset {
     pub model: Model,
 }
 
-macro_rules! bundled {
-    ($file:literal) => {
-        include_bytes!(concat!("../../../../assets/quaternius/", $file)).as_slice()
-    };
-}
-
 /// The Ranger bundle's glTF and declared resources, embedded by `build.rs`.
 mod ranger_bundle {
     include!(concat!(env!("OUT_DIR"), "/ranger_bundle.rs"));
@@ -2478,15 +2472,16 @@ fn ranger_clips() -> &'static [u8] {
 }
 
 /// The model file of an imported unit kind: asset-tooling's Ranger humanoid for players
-/// (Atlas 6.3.7) and the bundled Quaternius CC0 animals (Atlas 6.3.6; see
-/// `assets/quaternius/PROVENANCE.md`).
+/// (Atlas 6.3.7) and the embedded `greyhaven-wildlife` entries for the beasts (#889).
 fn source(kind: Kind) -> std::borrow::Cow<'static, [u8]> {
-    match kind {
-        Kind::Ranger => ranger_model(ranger_bundle::CHARACTER).into(),
-        Kind::Wolf => bundled!("Wolf.glb").into(),
-        Kind::Rat => bundled!("Rat.glb").into(),
-        Kind::Pig => bundled!("Pig.glb").into(),
-    }
+    let Some(key) = kind.wild_key() else {
+        return ranger_model(ranger_bundle::CHARACTER).into();
+    };
+    let (_, path) = wild_bundle::ENTRIES
+        .iter()
+        .find(|(entry, _)| *entry == key)
+        .expect("the wildlife bundle carries every beast");
+    bundle_glb(path, wild_bundle::FILES).into()
 }
 
 /// The parsed model of `kind`, imported once per process on first use.
