@@ -493,14 +493,15 @@ fn a_ranger_spends_focus_on_shots_stings_snares_and_haste() {
     expected.extend([90, 180, 270, 360, 450].map(|at| (t30(at) - 1, 10)));
     assert_eq!(pulses, expected);
 
-    // Rapid Fire hastes swings: 2 s × 100 / 150.
+    // Rapid Fire hastes strikes (#885): the bow bash's interval × 100 / 150.
     fight.use_ability(ids::RAPID_FIRE);
     fight.attacking = Some(TARGET);
     fight.until(t30(200), |fight| fight.me().combat.swing_timer > 0);
     assert_eq!(
         fight.me().combat.swing_timer,
-        t30u16(60) * 100 / 150,
-        "hasted from 2 s"
+        mmorpg_core::FamilyMelee::of(mmorpg_core::WeaponFamily::Bow).chain[0].interval_ticks * 100
+            / 150,
+        "hasted from the bow bash's interval"
     );
     assert_eq!(fight.view().auras[0].kind, AuraKind::Haste);
 }

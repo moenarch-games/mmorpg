@@ -194,6 +194,7 @@ impl ZoneSimulation {
         };
         self.update_player(player_id, |player| {
             player.global_cooldown = global_cooldown;
+            player.global_cooldown_total = global_cooldown;
             player.facing = facing;
             // The sword gesture supersedes a held guard (Atlas 5.2.37) and
             // commits to its recovery (#156).

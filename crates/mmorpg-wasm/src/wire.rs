@@ -145,6 +145,30 @@ mirror!(
     }
 );
 mirror!(
+    /// A weapon's melee family (#885).
+    #[serde(rename_all = "lowercase")]
+    WeaponFamily = core::WeaponFamily {
+        Unarmed,
+        Sword,
+        Mace,
+        Dagger,
+        Staff,
+        Spear,
+        Bow
+    }
+);
+mirror!(
+    /// Which basic strike a press became (#885).
+    #[serde(rename_all = "lowercase")]
+    StrikeVariant = core::StrikeVariant {
+        First,
+        Second,
+        Finisher,
+        Running,
+        Jumping
+    }
+);
+mirror!(
     /// A living Warden's movement-dependent melee stance (#155).
     #[serde(rename_all = "lowercase")]
     MeleeStance = core::MeleeStance {
@@ -535,6 +559,8 @@ pub struct ViewerState {
     pub resource: Option<ResourceState>,
     pub cast: Option<CastState>,
     pub global_cooldown: u16,
+    /// The length the running global cooldown began with, haste included (#885).
+    pub global_cooldown_total: u16,
     pub damage: DamageRange,
     pub guard: GuardState,
     /// A living Warden's movement-dependent melee stance (#155); null for other players.
@@ -938,6 +964,13 @@ pub enum ZoneEvent {
         startup: u8,
         active: u8,
     },
+    /// `source` began a basic strike (#885), contacting `contact` ticks from now.
+    StrikeBegan {
+        source: EntityRef,
+        family: WeaponFamily,
+        variant: StrikeVariant,
+        contact: u16,
+    },
     /// An attack of `source` met one of `target`'s (#679).
     Clashed {
         source: EntityRef,
@@ -1113,6 +1146,17 @@ impl From<core::ZoneEvent> for ZoneEvent {
                 aim: aim.into(),
                 startup,
                 active,
+            },
+            E::StrikeBegan {
+                source,
+                family,
+                variant,
+                contact,
+            } => Self::StrikeBegan {
+                source: source.into(),
+                family: family.into(),
+                variant: variant.into(),
+                contact,
             },
             E::Clashed {
                 source,
@@ -1329,6 +1373,17 @@ impl From<ZoneEvent> for core::ZoneEvent {
                 aim: aim.into(),
                 startup,
                 active,
+            },
+            E::StrikeBegan {
+                source,
+                family,
+                variant,
+                contact,
+            } => Self::StrikeBegan {
+                source: source.into(),
+                family: family.into(),
+                variant: variant.into(),
+                contact,
             },
             E::Clashed {
                 source,
@@ -1572,6 +1627,7 @@ impl From<&core::ZoneSnapshot> for ZoneSnapshot {
                 }),
                 cast: viewer.cast.map(Into::into),
                 global_cooldown: viewer.global_cooldown,
+                global_cooldown_total: viewer.global_cooldown_total,
                 damage: DamageRange { min, max },
                 guard: GuardState {
                     raised: viewer.guard.raised.map(Into::into),
@@ -1828,6 +1884,7 @@ impl TryFrom<&ZoneSnapshot> for core::ZoneSnapshot {
                 }),
                 cast: viewer.cast.map(Into::into),
                 global_cooldown: viewer.global_cooldown,
+                global_cooldown_total: viewer.global_cooldown_total,
                 damage: [viewer.damage.min, viewer.damage.max],
                 guard: core::GuardView {
                     raised: viewer.guard.raised.map(Into::into),

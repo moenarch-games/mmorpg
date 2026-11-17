@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use mmorpg_core::ability::ids;
 use mmorpg_core::{
-    CreatureBehaviour, CreatureId, CreatureTemplate, EntityRef, ErrorCode, MeleeStance, ZoneAreas,
-    ZoneCommand, ZoneContent, ZoneEvent, ZoneId, ZoneSimulation,
+    CreatureBehaviour, CreatureId, CreatureTemplate, EntityRef, ErrorCode, MeleeStance,
+    StrikeVariant, ZoneAreas, ZoneCommand, ZoneContent, ZoneEvent, ZoneId, ZoneSimulation,
 };
 use support::arena::{self, GRAVEYARD, WOLF};
 
@@ -73,44 +73,68 @@ impl Warden {
     }
 }
 
-/// The first swing's damage and the stance shown that tick.
-fn first_swing(movement: &[ZoneCommand]) -> (u16, Option<MeleeStance>) {
+/// The first strike's damage, the stance shown as it began and the strike it became (#885).
+fn first_swing(movement: &[ZoneCommand]) -> (Option<u16>, Option<MeleeStance>, StrikeVariant) {
     let mut warden = Warden::new(content(CreatureBehaviour::Neutral, [1, 1]));
     warden.send(ZoneCommand::SelectTarget(Some(TARGET)));
     warden.send(ZoneCommand::Swing { facing: SOUTH });
     for &command in movement {
         warden.send(command);
     }
-    let events = warden.tick();
-    let dealt = events
-        .iter()
-        .find_map(|event| match *event {
-            ZoneEvent::DamageDealt { amount, .. } => Some(amount),
-            _ => None,
-        })
-        .expect("the first swing hits");
-    (dealt, warden.stance())
+    let mut began = None;
+    for _ in 0..120 {
+        let events = warden.tick();
+        for event in &events {
+            if let ZoneEvent::StrikeBegan { variant, .. } = *event {
+                began = Some((variant, warden.stance()));
+            }
+        }
+        if events
+            .iter()
+            .any(|event| matches!(event, ZoneEvent::AttackPerformed { .. }))
+        {
+            let dealt = events.iter().find_map(|event| match *event {
+                ZoneEvent::DamageDealt { amount, .. } => Some(amount),
+                _ => None,
+            });
+            let (variant, stance) = began.expect("the strike began first");
+            return (dealt, stance, variant);
+        }
+    }
+    panic!("the first strike lands");
 }
 
 #[test]
 fn the_same_swing_hits_harder_charging_or_airborne_and_softer_backing_away() {
-    let (planted, stance) = first_swing(&[]);
-    assert_eq!(stance, Some(MeleeStance::Planted));
-    let scaled = |percent: u32| u16::try_from((u32::from(planted) * percent / 100).max(1)).unwrap();
-    let (charging, stance) = first_swing(&[arena::walk(SOUTH)]);
-    assert_eq!(stance, Some(MeleeStance::Charging));
-    assert_eq!(charging, scaled(120));
-    let (airborne, stance) = first_swing(&[ZoneCommand::Jump]);
-    assert_eq!(stance, Some(MeleeStance::Airborne));
-    assert_eq!(airborne, scaled(135));
+    let (planted, stance, variant) = first_swing(&[]);
+    assert_eq!(
+        (stance, variant),
+        (Some(MeleeStance::Planted), StrikeVariant::First)
+    );
+    let (charging, stance, variant) = first_swing(&[arena::walk(SOUTH)]);
+    assert_eq!(
+        (stance, variant),
+        (Some(MeleeStance::Charging), StrikeVariant::Running)
+    );
+    let (airborne, stance, variant) = first_swing(&[ZoneCommand::Jump]);
+    assert_eq!(
+        (stance, variant),
+        (Some(MeleeStance::Airborne), StrikeVariant::Jumping)
+    );
     let backing = ZoneCommand::Move {
         forward: -1,
         strafe: 0,
         facing: SOUTH,
     };
-    let (moving, stance) = first_swing(&[backing]);
-    assert_eq!(stance, Some(MeleeStance::Moving));
-    assert_eq!(moving, scaled(85));
+    let (moving, stance, variant) = first_swing(&[backing]);
+    assert_eq!(
+        (stance, variant),
+        (Some(MeleeStance::Moving), StrikeVariant::First)
+    );
+    // The running and jumping strikes hit harder than a standing one, and the Warden's stance
+    // adds to each (#155): a charge and a leap on top, backing away below.
+    let [planted, charging, airborne, moving] =
+        [planted, charging, airborne, moving].map(|dealt| dealt.expect("the strike hits"));
     assert!(airborne > charging && charging > planted && planted > moving);
 }
 

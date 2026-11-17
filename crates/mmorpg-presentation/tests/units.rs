@@ -5,8 +5,8 @@ use std::sync::Arc;
 use mmorpg_core::{
     AbilityId, ChatLine, ChatMessage, CreatureFamily, DoorView, Emote, EntityFlags, EntityKind,
     EntityRef, EntitySnapshot, ErrorCode, LootClaim, LootRewards, LootView, NpcId, PostureView,
-    StrikeAim, StrikeHeight, StrikeSide, ZoneEvent, ZoneId, ZoneSimulation, ZoneSnapshot,
-    greyhaven_vale,
+    StrikeAim, StrikeHeight, StrikeSide, StrikeVariant, WeaponFamily, ZoneEvent, ZoneId,
+    ZoneSimulation, ZoneSnapshot, greyhaven_vale,
 };
 use mmorpg_presentation::{
     Draw,
@@ -479,8 +479,16 @@ fn a_twin_dagger_rogue_alternates_hands_once_per_swing() {
         .map(|clip| (clip.to_owned(), 0.4)),
     );
     let me = EntityRef::Player(1);
-    let swing = |scene: &mut Scene, now: f64| {
-        // One swing covering two units reports an attack on each (#517).
+    let swing = |scene: &mut Scene, variant, now: f64| {
+        // The strike shows as it begins (#885); its contact covering two units adds nothing.
+        scene.snapshot.tick += 1;
+        scene.snapshot.events = vec![ZoneEvent::StrikeBegan {
+            source: me,
+            family: WeaponFamily::Dagger,
+            variant,
+            contact: 13,
+        }];
+        scene.presenter.push(&scene.snapshot, now);
         scene.snapshot.tick += 1;
         scene.snapshot.events = vec![
             ZoneEvent::AttackPerformed {
@@ -492,13 +500,16 @@ fn a_twin_dagger_rogue_alternates_hands_once_per_swing() {
                 target: None,
             },
         ];
-        scene.presenter.push(&scene.snapshot, now);
+        scene.presenter.push(&scene.snapshot, now + 0.05);
         viewer_upper(&frame(scene, now + 0.1)).0
     };
     assert_eq!(viewer_upper(&frame(&mut scene, 0.)).0, "Dagger_Idle_Loop");
-    assert_eq!(swing(&mut scene, 1.), "Dagger_Stab_R");
-    assert_eq!(swing(&mut scene, 2.), "Dagger_Slash_L");
-    assert_eq!(swing(&mut scene, 3.), "Dagger_Stab_R");
+    assert_eq!(swing(&mut scene, StrikeVariant::First, 1.), "Dagger_Stab_R");
+    assert_eq!(
+        swing(&mut scene, StrikeVariant::Second, 2.),
+        "Dagger_Slash_L"
+    );
+    assert_eq!(swing(&mut scene, StrikeVariant::First, 3.), "Dagger_Stab_R");
 }
 
 #[test]
@@ -570,10 +581,12 @@ fn a_ranger_power_draws_aimed_shot_and_looses_rapidly_under_rapid_fire() {
     }];
     assert_eq!(shoot(&mut scene, attack, 5.), "Bow_Rapid_Release");
     assert_eq!(shoot(&mut scene, attack, 5.4), "Bow_Rapid_Release");
-    // The Q swing is a melee blow, not a bow release (#884).
-    let swing = ZoneEvent::AttackPerformed {
+    // The Q swing is a melee blow, not a bow release (#884): the bow bash or its stand-in (#885).
+    let swing = ZoneEvent::StrikeBegan {
         source: me,
-        target: Some(scene.wolf),
+        family: WeaponFamily::Bow,
+        variant: StrikeVariant::First,
+        contact: 24,
     };
     assert_eq!(shoot(&mut scene, swing, 8.), "Sword_Attack");
 }
@@ -719,10 +732,12 @@ fn an_arcanist_charges_releases_channels_and_flinches_out_of_an_interrupt() {
         play(&mut scene, vec![cast(ids::BLIZZARD, 360)], 17.),
         "Cast_Channel_Sky_Loop"
     );
-    // The staff's auto-attack alternates the jab and the sweep, both hands on the staff.
-    let swing = ZoneEvent::AttackPerformed {
+    // The staff's chain opens with the jab, both hands on the staff (#885).
+    let swing = ZoneEvent::StrikeBegan {
         source: me,
-        target: Some(scene.wolf),
+        family: WeaponFamily::Staff,
+        variant: StrikeVariant::First,
+        contact: 19,
     };
     assert_eq!(play(&mut scene, vec![swing], 30.), "Staff_Strike_A");
     for step in 0..5 {
@@ -732,7 +747,13 @@ fn an_arcanist_charges_releases_channels_and_flinches_out_of_an_interrupt() {
         viewer_grips(&frame(&mut scene, 30.3)),
         ["Grip_Staff_L", "Grip_Staff_R"]
     );
-    assert_eq!(play(&mut scene, vec![swing], 32.), "Staff_Strike_B");
+    let second = ZoneEvent::StrikeBegan {
+        source: me,
+        family: WeaponFamily::Staff,
+        variant: StrikeVariant::Second,
+        contact: 21,
+    };
+    assert_eq!(play(&mut scene, vec![second], 32.), "Staff_Strike_B");
 }
 
 #[test]
@@ -827,9 +848,11 @@ fn a_bundle_without_the_caster_clips_keeps_the_simple_spell() {
         play(&mut scene, vec![interrupted], 1.5),
         "Spell_Simple_Exit"
     );
-    let swing = ZoneEvent::AttackPerformed {
+    let swing = ZoneEvent::StrikeBegan {
         source: me,
-        target: Some(scene.wolf),
+        family: WeaponFamily::Staff,
+        variant: StrikeVariant::First,
+        contact: 19,
     };
     assert_eq!(
         play(&mut scene, vec![swing], 3.),

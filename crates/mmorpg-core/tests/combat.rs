@@ -5,7 +5,13 @@ mod support;
 
 use std::sync::Arc;
 
-use mmorpg_core::unit::{COMBAT_LINGER_TICKS, CORPSE_TICKS, PLAYER_SWING_TICKS};
+use mmorpg_core::unit::{COMBAT_LINGER_TICKS, CORPSE_TICKS};
+use mmorpg_core::{FamilyMelee, WeaponFamily};
+
+/// A classless player strikes bare-handed (#885).
+const FISTS: FamilyMelee = FamilyMelee::of(WeaponFamily::Unarmed);
+/// The longest bare-handed strike interval, which bounds any wait for the next strike.
+const LONGEST_INTERVAL: u64 = FISTS.chain[2].interval_ticks as u64;
 use mmorpg_core::{
     CREATURE_EVADE_SPEED_SUBUNITS_PER_TICK, CanonicalCreatureSnapshot, CreatureAi, CreatureId,
     CreatureLife, EntityKind, EntityRef, ErrorCode, NpcId, ThreatEntry, ZoneCommand, ZoneEvent,
@@ -175,20 +181,15 @@ fn a_player_hunts_a_wolf_from_approach_to_respawn() {
     let swings = session
         .events
         .iter()
-        .filter(|(_, event)| {
-            matches!(
-                event,
-                ZoneEvent::DamageDealt { source: PLAYER, .. }
-                    | ZoneEvent::Miss { source: PLAYER, .. }
-            )
-        })
+        .filter(|(_, event)| matches!(event, ZoneEvent::StrikeBegan { source: PLAYER, .. }))
         .map(|(tick, _)| *tick)
         .collect::<Vec<_>>();
     assert!(
-        swings
-            .windows(2)
-            .all(|pair| pair[1] - pair[0] == u64::from(PLAYER_SWING_TICKS)),
-        "swings follow the swing timer: {swings:?}"
+        swings.windows(2).all(|pair| FISTS
+            .chain
+            .iter()
+            .any(|strike| pair[1] - pair[0] == u64::from(strike.interval_ticks))),
+        "strikes follow the chain's intervals (#885): {swings:?}"
     );
     assert!(session.events.contains(&(
         died,
@@ -230,7 +231,7 @@ fn a_player_hunts_a_wolf_from_approach_to_respawn() {
     );
     // A swing at the corpse whiffs once the swing timer allows (#517).
     session.send(ZoneCommand::Swing { facing: NORTHWARD });
-    session.until(u64::from(PLAYER_SWING_TICKS), |session| {
+    session.until(LONGEST_INTERVAL, |session| {
         session.events.iter().any(|(_, event)| {
             *event
                 == ZoneEvent::AttackPerformed {
@@ -519,20 +520,35 @@ fn leashed_creatures_evade_and_ignore_damage() {
     player.velocity = [0.0; 3];
     player.forward = 0;
     player.facing = NORTHWARD;
+    // A strike one tick from its contact (#885): the evading wolf cannot outrun it.
     player.combat.swing_timer = 0;
-    player.combat.swing_queued = true;
+    player.combat.swing_queued = false;
+    player.combat.melee = mmorpg_core::MeleeState {
+        pending: Some(mmorpg_core::PendingStrike {
+            family: WeaponFamily::Unarmed,
+            variant: mmorpg_core::StrikeVariant::First,
+            contact: 1,
+            stance: None,
+        }),
+        ..mmorpg_core::MeleeState::default()
+    };
     assert_eq!(player.combat.target, Some(wolf));
     let content = Arc::clone(session.zone.content());
     session.zone = ZoneSimulation::from_snapshot(checkpoint, content).unwrap();
+    let from = session.zone.current_tick();
     session.tick();
+    let after: Vec<_> = session
+        .events
+        .iter()
+        .filter(|(tick, _)| *tick > from)
+        .collect();
     assert!(
-        session.events.last().is_some_and(|(_, event)| *event
+        after.iter().any(|(_, event)| *event
             == ZoneEvent::Evade {
                 source: PLAYER,
                 target: wolf
             }),
-        "{:?}",
-        session.events.last()
+        "{after:?}"
     );
     assert!(
         !session
@@ -670,9 +686,11 @@ fn refused_intents_are_events_not_errors() {
     );
     assert_eq!(
         view.events.last(),
-        Some(&ZoneEvent::AttackPerformed {
+        Some(&ZoneEvent::StrikeBegan {
             source: PLAYER,
-            target: None
+            family: WeaponFamily::Unarmed,
+            variant: mmorpg_core::StrikeVariant::First,
+            contact: FISTS.chain[0].contact_ticks,
         })
     );
     assert_eq!(view.events.len(), 5, "events stay in state for one tick");
@@ -751,7 +769,9 @@ fn a_swing_hits_everything_in_its_arc_and_whiffs_without_anyone() {
     let third = EntityRef::Creature(CreatureId::new(3));
     session.send(ZoneCommand::SelectTarget(Some(third)));
     session.send(ZoneCommand::Swing { facing: WEST });
-    session.tick();
+    // The strike winds up and lands on its contact tick (#885).
+    let contact = u64::from(FISTS.chain[0].contact_ticks);
+    session.ticks(contact + 1);
     let swung: Vec<_> = session
         .events
         .iter()
@@ -766,15 +786,16 @@ fn a_swing_hits_everything_in_its_arc_and_whiffs_without_anyone() {
     assert_eq!(
         swung,
         [
-            (1, Some(EntityRef::Creature(FIRST))),
-            (1, Some(EntityRef::Creature(SECOND)))
+            (1 + contact, Some(EntityRef::Creature(FIRST))),
+            (1 + contact, Some(EntityRef::Creature(SECOND)))
         ],
         "both boars in the arc, not the selected one beside it"
     );
 
-    // Pressed again at once, the swing waits out the swing timer, then whiffs to the north.
+    // Pressed again at once, the strike waits out the first one's interval, then whiffs to the
+    // north on its own contact tick.
     session.send(ZoneCommand::Swing { facing: NORTHWARD });
-    let whiffed = session.until(u64::from(PLAYER_SWING_TICKS) + 1, |session| {
+    let whiffed = session.until(LONGEST_INTERVAL * 2, |session| {
         session.events.iter().any(|(_, event)| {
             *event
                 == ZoneEvent::AttackPerformed {
@@ -783,7 +804,10 @@ fn a_swing_hits_everything_in_its_arc_and_whiffs_without_anyone() {
                 }
         })
     });
-    assert_eq!(whiffed, 1 + u64::from(PLAYER_SWING_TICKS));
+    assert_eq!(
+        whiffed,
+        1 + u64::from(FISTS.chain[0].interval_ticks + FISTS.chain[1].contact_ticks)
+    );
     assert_eq!(
         session.creature(CreatureId::new(3)).health,
         40,

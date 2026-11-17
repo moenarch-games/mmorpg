@@ -67,7 +67,8 @@ impl UnitSpec {
     }
 }
 
-/// A feedback event kind: `damage_dealt`, `damage_taken`, `miss`, `died`,
+/// A feedback event kind: `attack_performed`, `strike_began` (#885), `damage_dealt`,
+/// `damage_taken`, `miss`, `died`,
 /// `evade`, `cast_started`, `ability_used`, `healed`, `aura_applied`,
 /// `aura_removed`, `interrupted`, `absorbed`, `quest_progress`,
 /// `quest_completed` or `error:<code>`.
@@ -75,6 +76,7 @@ impl UnitSpec {
 #[serde(try_from = "String")]
 pub enum EventSpec {
     AttackPerformed,
+    StrikeBegan,
     DamageObserved,
     DamageDealt,
     DamageTaken,
@@ -97,8 +99,9 @@ pub enum EventSpec {
 }
 
 /// Event kinds without a payload, with their scenario names.
-const PLAIN_EVENTS: [(EventSpec, &str); 19] = [
+const PLAIN_EVENTS: [(EventSpec, &str); 20] = [
     (EventSpec::AttackPerformed, "attack_performed"),
+    (EventSpec::StrikeBegan, "strike_began"),
     (EventSpec::DamageObserved, "damage_observed"),
     (EventSpec::DamageDealt, "damage_dealt"),
     (EventSpec::DamageTaken, "damage_taken"),
@@ -155,6 +158,7 @@ impl EventSpec {
     pub fn matches(self, event: &ZoneEvent, viewer: EntityRef, unit: Option<EntityRef>) -> bool {
         let kind = match (self, event) {
             (Self::AttackPerformed, ZoneEvent::AttackPerformed { .. })
+            | (Self::StrikeBegan, ZoneEvent::StrikeBegan { .. })
             | (Self::DamageObserved, ZoneEvent::DamageObserved { .. })
             | (Self::DamageDealt, ZoneEvent::DamageDealt { .. })
             | (Self::DamageTaken, ZoneEvent::DamageTaken { .. })
@@ -207,7 +211,9 @@ pub fn concerned_unit(event: &ZoneEvent, viewer: EntityRef) -> Option<EntityRef>
         | ZoneEvent::CastStarted { source, target, .. }
         | ZoneEvent::AbilityUsed { source, target, .. }
         | ZoneEvent::StrikeSwept { source, target, .. } => other(source, target),
-        ZoneEvent::SwingBegan { source, .. } => Some(source),
+        ZoneEvent::SwingBegan { source, .. } | ZoneEvent::StrikeBegan { source, .. } => {
+            Some(source)
+        }
         ZoneEvent::Clashed { source, target, .. } => other(source, Some(target)),
         ZoneEvent::Died { entity, .. } => Some(entity),
         ZoneEvent::Error { target, .. } => target,
@@ -459,6 +465,17 @@ pub fn event_token(event: &ZoneEvent, name: impl Fn(EntityRef) -> String) -> Str
             ability.get(),
             aim.side.code(),
             aim.height.code(),
+        ),
+        ZoneEvent::StrikeBegan {
+            source,
+            family,
+            variant,
+            contact,
+        } => format!(
+            "strike:{}:{}:{}+{contact}",
+            name(source),
+            family.name(),
+            variant.code()
         ),
         ZoneEvent::Clashed {
             source,

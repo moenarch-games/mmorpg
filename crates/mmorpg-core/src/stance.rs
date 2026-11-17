@@ -15,9 +15,14 @@
 //! and resolve when the window ends (Atlas 5.2.70), so no input fails. The
 //! window lasts [`LANDING_RECOVERY_TICKS`], or [`OVERHEAD_LANDING_TICKS`]
 //! after a melee action made while airborne. The melee actions are
-//! auto-attack, Heroic Strike (ordinary and directed), Shield Bash and
+//! the basic strike, Heroic Strike (ordinary and directed), Shield Bash and
 //! Cleave; other classes and other abilities are unaffected. The values are
 //! the owner's modest starting point, to be tuned after playtesting.
+//!
+//! Every class now strikes by its movement (#885, `melee.rs`): running and
+//! jumping strikes are everyone's, and this stance stays the Warden's perk on
+//! top. A basic strike reads it as it begins, so a jumping strike lands as an
+//! airborne blow.
 
 use crate::physics::RigidBody;
 
@@ -276,7 +281,7 @@ impl ZoneSimulation {
         Ok(())
     }
 
-    fn player_body(&self, player_id: PlayerId) -> Result<&RigidBody, ZoneError> {
+    pub(crate) fn player_body(&self, player_id: PlayerId) -> Result<&RigidBody, ZoneError> {
         self.world
             .body(body_id(EntityRef::Player(player_id)))
             .ok_or_else(|| ZoneError::new("player physics body is missing"))

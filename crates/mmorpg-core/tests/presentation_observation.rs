@@ -174,10 +174,17 @@ fn ordinary_attempts_reach_visible_bystanders_once_without_participant_damage_cr
         creature_attempts > 0,
         "actual creature ordinary attacks are observable too"
     );
+    // One attempt per strike (#885): never closer than the quickest strike's interval.
+    let quickest = mmorpg_core::WeaponFamily::ALL
+        .iter()
+        .flat_map(|&family| mmorpg_core::FamilyMelee::of(family).chain)
+        .map(|strike| u64::from(strike.interval_ticks))
+        .min()
+        .unwrap();
     assert!(
         player_attempt_ticks
             .windows(2)
-            .all(|pair| pair[1] - pair[0] == u64::from(mmorpg_core::unit::PLAYER_SWING_TICKS))
+            .all(|pair| pair[1] - pair[0] >= quickest)
     );
 }
 #[test]
@@ -413,12 +420,24 @@ fn observation_does_not_name_actors_omitted_by_projection_entity_cap() {
     }
     zone = ZoneSimulation::from_snapshot(state, content).unwrap();
     fight(&mut zone);
-    zone.advance_tick().unwrap();
-    let own = zone.snapshot_for_player(1).unwrap();
-    assert!(own.events.contains(&ZoneEvent::AttackPerformed {
+    // The strike lands on its contact tick (#885).
+    let attack = ZoneEvent::AttackPerformed {
         source: PLAYER,
-        target: Some(WOLF)
-    }));
+        target: Some(WOLF),
+    };
+    for _ in 0..30 {
+        zone.advance_tick().unwrap();
+        if zone
+            .snapshot_for_player(1)
+            .unwrap()
+            .events
+            .contains(&attack)
+        {
+            break;
+        }
+    }
+    let own = zone.snapshot_for_player(1).unwrap();
+    assert!(own.events.contains(&attack));
     let observer = zone.snapshot_for_player(2).unwrap();
     assert_eq!(observer.entities.len(), mmorpg_core::MAX_VISIBLE_ENTITIES);
     assert!(

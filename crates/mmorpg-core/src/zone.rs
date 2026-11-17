@@ -113,6 +113,8 @@ pub(crate) struct PlayerState {
     pub(crate) strike_recovery: u16,
     /// A running timed swing (#679); canonical.
     pub(crate) swing: Option<crate::Swing>,
+    /// The basic strike's chain and pending strike (#885); canonical.
+    pub(crate) melee: crate::MeleeState,
     /// The destructible piece the player is repairing (#305).
     pub(crate) repairing: Option<crate::PieceId>,
     pub(crate) last_sequence: u32,
@@ -150,6 +152,9 @@ pub(crate) struct PlayerState {
     /// The class resource and its regeneration timers (zero without a class).
     pub(crate) resource: crate::class::ResourceClock,
     pub(crate) global_cooldown: u16,
+    /// The length the running global cooldown began with, which haste may shorten (#884);
+    /// the action bar sweeps over it (#885).
+    pub(crate) global_cooldown_total: u16,
     /// Running cooldowns ordered by ability.
     pub(crate) cooldowns: Vec<crate::Cooldown>,
     pub(crate) cast: Option<crate::CastState>,
@@ -205,6 +210,7 @@ impl PlayerState {
             target: None,
             swing_queued: false,
             swing_timer: 0,
+            melee: crate::MeleeState::default(),
             combat_timer: 0,
             weapon_drawn: false,
             calm_ticks: 0,
@@ -215,6 +221,7 @@ impl PlayerState {
             class: None,
             resource: crate::class::ResourceClock::default(),
             global_cooldown: 0,
+            global_cooldown_total: 0,
             cooldowns: Vec::new(),
             cast: None,
             auras: Vec::new(),
@@ -1096,6 +1103,10 @@ impl ZoneSimulation {
                 if let Some(movement) = crate::action::movement_of(self.action_graph, state) {
                     let last = body.velocity();
                     steered = movement.velocity(steered, [last.x, last.z]);
+                }
+                // A running strike's lunge (#885) carries the body along its facing.
+                if let Some(lunge) = self.lunge_velocity(player_id, state)? {
+                    steered = lunge;
                 }
                 // Ice (#294): a slick surface limits how fast the velocity can change.
                 if let Some(grip) = crate::surface::grip(surface) {

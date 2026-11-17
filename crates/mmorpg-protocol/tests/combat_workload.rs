@@ -95,10 +95,12 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // spawn moves no other creature's rolls, so content alone no longer shifts these counters.
     // 32-bit content IDs and the world and waystone sheets (#882) widen the projections:
     // 6,151,648, 1,915,421, 8,176,453 and 24,553,949 bytes.
+    // Movement-state strikes (#885) wind up, chain and announce each strike: fights-8 evaluates
+    // 17,264 AI decisions, and fights-8 and fights-32 project 1,934,086 and 8,204,294 bytes.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
         [11_052, 5_126_040, 288_000, 6_151_648],
-        [17_156, 5_123_160, 93_060, 1_915_421],
-        [25_840, 5_131_800, 434_117, 8_176_453],
+        [17_264, 5_123_160, 93_060, 1_934_086],
+        [25_840, 5_131_800, 434_117, 8_204_294],
         [13_344, 5_142_964, 2_323_474, 24_553_949],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {

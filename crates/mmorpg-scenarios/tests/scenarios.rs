@@ -153,7 +153,7 @@ facing = 0
 [[expect]]
 kind = "event"
 bot = "alice"
-event = "attack_performed"
+event = "strike_began"
 tick = 1
 [[expect]]
 kind = "target"
@@ -185,10 +185,10 @@ tick = 2
         text.contains("select_target -> applied seq=1 epoch=1 entity=npc:8"),
         "{text}"
     );
-    // A swing never hits the guard (#517): it whiffs.
+    // A swing never hits the guard (#517): it winds up (#885) and whiffs.
     assert!(text.contains("swing -> applied seq=2"), "{text}");
     assert!(
-        text.contains("expect alice event attack_performed ok"),
+        text.contains("expect alice event strike_began ok"),
         "{text}"
     );
     assert!(text.contains("expect alice target npc:8 ok"), "{text}");

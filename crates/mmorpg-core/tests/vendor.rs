@@ -209,7 +209,7 @@ fn every_refusal_leaves_bag_copper_and_revision_unchanged() {
             starter_bag(),
             99,
             None,
-            buy(8, 1),
+            buy(9, 1),
             ErrorCode::InvalidVendor,
             vendor,
         ),
@@ -428,12 +428,13 @@ fn vendor_stock_is_validated() {
         Err(VendorStockError::DuplicateItem)
     );
     let stock = starter_vendor_stock();
-    assert_eq!(stock.offers().len(), 8);
+    assert_eq!(stock.offers().len(), 9);
     assert_eq!(stock.offer(DAGGER_OFFER), Some(offer(2, 5)));
     assert_eq!(stock.offer(BOOTS_OFFER), Some(offer(9, 12)));
     assert_eq!(stock.offer(2), Some(offer(8, 12)));
     assert_eq!(stock.offer(SHORTSWORD_OFFER), Some(offer(3, 25)));
-    assert_eq!(stock.offer(8), None);
+    assert_eq!(stock.offer(8), Some(offer(23, 25)));
+    assert_eq!(stock.offer(9), None);
     assert_eq!(sell_price(TROUSERS), 3);
 }
 

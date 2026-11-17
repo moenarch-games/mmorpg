@@ -26,8 +26,8 @@ const BOARS: QuestId = QuestId::new(1);
 const HIDES: QuestId = QuestId::new(2);
 const ERRAND: QuestId = QuestId::new(3);
 const SURVEY: QuestId = QuestId::new(4);
-/// The first boar stands 2.5 m west of spawn slot 0, the second 2.4 m
-/// south-west; the giver 3.5 m south-east.
+/// The first boar stands 2.3 m west of spawn slot 0, within bare-handed reach (#885), the second
+/// 2.4 m south-west; the giver 3.5 m south-east.
 const FIRST_BOAR: CreatureId = CreatureId::new(1);
 const SECOND_BOAR: CreatureId = CreatureId::new(2);
 
@@ -114,7 +114,7 @@ fn base_content() -> ZoneContent {
         .unwrap(),
         vec![boar()],
         vec![
-            arena::spawn(1, BOAR, [-250, 0]),
+            arena::spawn(1, BOAR, [-230, 0]),
             // South, outside a westward swing's arc (#517).
             arena::spawn(2, BOAR, [0, -200]),
         ],

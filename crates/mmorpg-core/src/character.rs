@@ -272,6 +272,7 @@ impl ZoneSimulation {
         state.resource.ticks = record.resource_ticks;
         state.resource.delay = record.mana_delay;
         state.global_cooldown = record.global_cooldown;
+        state.global_cooldown_total = record.global_cooldown;
         state.cooldowns = record.cooldowns.clone();
         self.players.insert(player_id, state);
         Ok(())

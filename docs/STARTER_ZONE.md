@@ -115,7 +115,7 @@ Creatures **navigate around blockers** (#307): a creature chasing a target or ru
 - A unit is a player, creature or NPC. `EntityRef = Player(u32) | Creature(u32) | Npc(u32)` on the wire as `kind: u8, id: u32`. Physics body IDs occupy disjoint namespaces per kind.
 - Unit state: level, health/max, resource kind/value/max, faction, target, cast state, auras (bounded), combat flag, death state.
 - Players: `SelectTarget(EntityRef | none)`, `Swing { facing }`, `UseAbility { ability, target }`. The server validates range, aim and resource; offensive abilities fire where the player faces and the target names only a friendly ability's recipient (#517).
-- A swing (#517) hits everything in a 100° arc in melee reach where the player faces, targeted or not, and follows the weapon swing timer; one that hits nothing whiffs. Damage is `base + level scaling` with deterministic variance from the zone RNG. Crits apply ×1.5.
+- A swing (#517) is a movement-state strike (#885): a standing three-hit chain, a running lunge or a jumping landing blow, timed and shaped by the weapon family. It winds up and hits everything in its arc and reach where the player faces on its contact tick, targeted or not; one that hits nothing whiffs. Damage is `base + level scaling`, scaled per strike, with deterministic variance from the zone RNG. Crits apply ×1.5.
 - Death: creatures leave a lootable corpse. Players drop to a dead state and `ReleaseSpirit` respawns them at the graveyard with half health. Health and resource regenerate out of combat.
 
 ### Classes (level 1–10)

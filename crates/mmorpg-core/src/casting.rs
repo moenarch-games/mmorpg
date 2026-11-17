@@ -269,6 +269,7 @@ impl ZoneSimulation {
         });
         self.update_player(player_id, |player| {
             player.global_cooldown = global_cooldown;
+            player.global_cooldown_total = global_cooldown;
         });
         if let Some(follow_up) = &follow_up {
             self.spend_follow_up(player_id, follow_up);

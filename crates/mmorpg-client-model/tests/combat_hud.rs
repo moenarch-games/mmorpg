@@ -247,6 +247,7 @@ fn the_global_cooldown_covers_every_slot_unless_a_longer_cooldown_runs() {
         max: 100,
     });
     warden.viewer.global_cooldown = 30;
+    warden.viewer.global_cooldown_total = GLOBAL_COOLDOWN_TICKS;
     warden.cooldowns = vec![
         // Longer than the global cooldown: the slot shows its own cooldown.
         Cooldown {

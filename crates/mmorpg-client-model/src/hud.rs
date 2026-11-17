@@ -6,8 +6,7 @@
 //! zone answers every `UseAbility` itself.
 use mmorpg_core::{
     ABILITY_CATALOG, Ability, AbilityId, AbilityRange, AbilityUser, CastView, Cooldown, EntityRef,
-    GLOBAL_COOLDOWN_TICKS, PlayerClass, ResourceView, ViewerState, ZoneSnapshot, ability_by_id,
-    trig, unit,
+    PlayerClass, ResourceView, ViewerState, ZoneSnapshot, ability_by_id, trig, unit,
 };
 
 /// At most this many abilities sit on the action bar: two rows, the second reached with Shift
@@ -146,12 +145,13 @@ pub fn aims_at_selection(snapshot: &ZoneSnapshot, ability: &Ability) -> bool {
 
 /// The wait a slot shows: the longer of the ability's own cooldown and the
 /// global cooldown, since that is the one the player waits on; a tie shows the
-/// ability's own cooldown.
+/// ability's own cooldown. `global` is the global cooldown's ticks left and the length it began
+/// with, which haste may have shortened (#884): the sweep runs over the wait actually begun.
 #[must_use]
 pub fn slot_cooldown(
     ability: &Ability,
     cooldowns: &[Cooldown],
-    global: u16,
+    [global, global_total]: [u16; 2],
 ) -> Option<SlotCooldown> {
     let running = cooldowns
         .iter()
@@ -167,7 +167,7 @@ pub fn slot_cooldown(
         Some(SlotCooldown {
             kind: CooldownKind::Global,
             remaining: global,
-            total: GLOBAL_COOLDOWN_TICKS,
+            total: global_total.max(global),
         })
     } else {
         None
@@ -199,7 +199,11 @@ pub fn slot_state(
             .zip(distance)
             .is_some_and(|(reach, distance)| distance > f64::from(reach)),
         casting: viewer.cast.is_some_and(|cast| cast.ability == ability.id),
-        cooldown: slot_cooldown(ability, cooldowns, viewer.global_cooldown),
+        cooldown: slot_cooldown(
+            ability,
+            cooldowns,
+            [viewer.global_cooldown, viewer.global_cooldown_total],
+        ),
     }
 }
 
@@ -285,6 +289,7 @@ impl CombatHud {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mmorpg_core::GLOBAL_COOLDOWN_TICKS;
     use mmorpg_core::{EntityFlags, EntityKind, EntitySnapshot, ResourceKind};
 
     const FIREBOLT: u32 = 9;
@@ -365,7 +370,7 @@ mod tests {
             remaining: 300,
         }];
         assert_eq!(
-            slot_cooldown(nova, &running, 40),
+            slot_cooldown(nova, &running, [40, GLOBAL_COOLDOWN_TICKS]),
             Some(SlotCooldown {
                 kind: CooldownKind::Ability,
                 remaining: 300,
@@ -377,17 +382,33 @@ mod tests {
             remaining: 40,
             total: GLOBAL_COOLDOWN_TICKS,
         });
-        assert_eq!(slot_cooldown(ability(FIREBOLT), &running, 40), gcd);
+        assert_eq!(
+            slot_cooldown(ability(FIREBOLT), &running, [40, GLOBAL_COOLDOWN_TICKS]),
+            gcd
+        );
         let short = [Cooldown {
             ability: nova.id,
             remaining: 10,
         }];
-        assert_eq!(slot_cooldown(nova, &short, 40), gcd);
         assert_eq!(
-            slot_cooldown(nova, &short, 10).unwrap().kind,
+            slot_cooldown(nova, &short, [40, GLOBAL_COOLDOWN_TICKS]),
+            gcd
+        );
+        assert_eq!(
+            slot_cooldown(nova, &short, [10, GLOBAL_COOLDOWN_TICKS])
+                .unwrap()
+                .kind,
             CooldownKind::Ability
         );
-        assert_eq!(slot_cooldown(nova, &[], 0), None);
+        assert_eq!(slot_cooldown(nova, &[], [0, GLOBAL_COOLDOWN_TICKS]), None);
+    }
+
+    #[test]
+    fn a_hasted_global_cooldown_sweeps_over_its_own_length() {
+        // Rapid Fire shortens a shot's global cooldown (#884); the sweep spans that, not 1.5 s.
+        let hasted = GLOBAL_COOLDOWN_TICKS * 100 / 160;
+        let sweep = slot_cooldown(ability(FIREBOLT), &[], [hasted / 2, hasted]).unwrap();
+        assert_eq!((sweep.remaining, sweep.total), (hasted / 2, hasted));
     }
 
     #[test]

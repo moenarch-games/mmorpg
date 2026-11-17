@@ -18,9 +18,8 @@ use crate::events::push_event;
 use crate::guard::GuardOutcome;
 use crate::snapshot::{CreatureAi, PlayerIntent};
 use crate::unit::{
-    COMBAT_LINGER_TICKS, CORPSE_TICKS, PLAYER_REACH_UNITS, PLAYER_SWING_TICKS, REGEN_DELAY_TICKS,
-    REGEN_INTERVAL_TICKS, REGEN_PERCENT, RELEASE_HEALTH_PERCENT, SWING_ARC_HALF_WIDTH,
-    SWING_BAND_UNITS, Swing, percent_of, roll_swing,
+    COMBAT_LINGER_TICKS, CORPSE_TICKS, REGEN_DELAY_TICKS, REGEN_INTERVAL_TICKS, REGEN_PERCENT,
+    RELEASE_HEALTH_PERCENT, SWING_BAND_UNITS, Swing, percent_of, roll_swing,
 };
 use crate::zone::{Axis, physics_error};
 use crate::{
@@ -539,6 +538,7 @@ impl ZoneSimulation {
             player.health = percent_of(player.max_health(), RELEASE_HEALTH_PERCENT);
             player.swing_queued = false;
             player.swing_timer = 0;
+            player.melee = crate::MeleeState::default();
             player.combat_timer = 0;
             player.calm_ticks = 0;
         });
@@ -569,12 +569,16 @@ impl ZoneSimulation {
         player.swing_timer = player.swing_timer.saturating_sub(1);
         player.combat_timer = player.combat_timer.saturating_sub(1);
         player.guard.broken = player.guard.broken.saturating_sub(1);
-        if !player.is_alive() || !player.swing_queued {
+        // A strike winding up (#885) lands first; no other begins meanwhile.
+        if self.advance_strike(player_id, now)? {
             return Ok(());
         }
         let Some(player) = self.players.get(&player_id) else {
             return Ok(());
         };
+        if !player.is_alive() || !player.swing_queued {
+            return Ok(());
+        }
         // A pressed swing waits out the previous one, a stun or a landing, as
         // does one the graph refuses in water.
         let melee = crate::action::ActionInput::WardenMelee;
@@ -585,55 +589,22 @@ impl ZoneSimulation {
         {
             return Ok(());
         }
-        let (damage, facing) = (player.melee_damage(), player.facing);
-        let swing_ticks = crate::aura::hasted_swing(PLAYER_SWING_TICKS, &player.auras);
-        let victims = self.swing_coverage(player_id, facing)?;
-        self.update_player(player_id, |player| {
-            player.swing_queued = false;
-            player.swing_timer = swing_ticks;
-            if !victims.is_empty() {
-                player.combat_timer = COMBAT_LINGER_TICKS;
-            }
-        });
-        if victims.is_empty() {
-            // A whiff still swings for the player and everyone watching.
-            let source = EntityRef::Player(player_id);
-            self.notify_observers(
-                &[source],
-                &BTreeSet::new(),
-                ZoneEvent::AttackPerformed {
-                    source,
-                    target: None,
-                },
-            );
-            // A swing that covered no unit may still strike summoned terrain (#293).
-            self.swing_at_summoned(player_id, facing)?;
-            return Ok(());
-        }
-        for target in victims {
-            self.attack_unit(player_id, target, damage, now)?;
-        }
-        Ok(())
+        self.begin_strike(player_id)
     }
 
-    /// Every attackable living unit a swing toward `facing` covers (#517), in
-    /// `EntityRef` order: within [`PLAYER_REACH_UNITS`] (XZ centre distance),
-    /// inside [`SWING_ARC_HALF_WIDTH`] either side of the facing and overlapping
-    /// [`SWING_BAND_UNITS`] in height; another player only in line of sight, as
-    /// melee always required. A unit centred on the swinger is always covered.
+    /// Every attackable living unit a strike toward `facing` covers (#517, #885), in
+    /// `EntityRef` order: within `reach` (XZ centre distance), inside `half_width` either side
+    /// of the facing and overlapping `band` in height; another player only in line of sight,
+    /// as melee always required. A unit centred on the striker is always covered.
     pub(crate) fn swing_coverage(
         &self,
         player_id: PlayerId,
         facing: u16,
+        reach: i32,
+        half_width: u16,
+        band: [i32; 2],
     ) -> Result<Vec<EntityRef>, ZoneError> {
-        self.facing_coverage(
-            player_id,
-            facing,
-            PLAYER_REACH_UNITS,
-            SWING_ARC_HALF_WIDTH,
-            true,
-            false,
-        )
+        self.coverage(player_id, facing, reach, half_width, Some(band), false)
     }
 
     /// Every unit the player may attack within `reach` (XZ centre distance)
@@ -649,6 +620,20 @@ impl ZoneSimulation {
         reach: i32,
         half_width: u16,
         melee: bool,
+        over_cover: bool,
+    ) -> Result<Vec<EntityRef>, ZoneError> {
+        let band = melee.then_some(SWING_BAND_UNITS);
+        self.coverage(player_id, facing, reach, half_width, band, over_cover)
+    }
+
+    /// [`Self::facing_coverage`] with a melee attack's height `band`, `None` for any other.
+    fn coverage(
+        &self,
+        player_id: PlayerId,
+        facing: u16,
+        reach: i32,
+        half_width: u16,
+        band: Option<[i32; 2]>,
         over_cover: bool,
     ) -> Result<Vec<EntityRef>, ZoneError> {
         let origin = self.player_position(player_id)?;
@@ -667,16 +652,8 @@ impl ZoneSimulation {
                 .body(body_id(entity))
                 .ok_or_else(|| ZoneError::new("unit physics body is missing"))?;
             let (centre, half) = (body.position(), body.half_extents());
-            let covers = if melee {
-                swing::swing_covers(
-                    feet,
-                    facing,
-                    centre,
-                    half,
-                    reach,
-                    half_width,
-                    SWING_BAND_UNITS,
-                )
+            let covers = if let Some(band) = band {
+                swing::swing_covers(feet, facing, centre, half, reach, half_width, band)
             } else {
                 swing::facing_covers(
                     [origin.x, origin.z],
@@ -690,7 +667,7 @@ impl ZoneSimulation {
                 continue;
             }
             if !over_cover
-                && (!melee || matches!(entity, EntityRef::Player(_)))
+                && (band.is_none() || matches!(entity, EntityRef::Player(_)))
                 && !self.line_of_sight(EntityRef::Player(player_id), entity)?
             {
                 continue;
@@ -701,13 +678,15 @@ impl ZoneSimulation {
         Ok(covered)
     }
 
-    /// Resolves a player swing through the shared hit table and stance rules.
-    /// Creatures retain evasion/tap/threat; arena opponents use player shields and damage.
-    fn attack_unit(
+    /// Resolves a player strike through the shared hit table, scaled by the Warden's `stance`
+    /// when it began (#155, #885). Creatures retain evasion/tap/threat; arena opponents use
+    /// player shields and damage.
+    pub(crate) fn attack_unit(
         &mut self,
         player_id: PlayerId,
         target: EntityRef,
         damage: [u16; 2],
+        stance: Option<crate::MeleeStance>,
         now: u64,
     ) -> Result<(), ZoneError> {
         let source = EntityRef::Player(player_id);
@@ -731,11 +710,9 @@ impl ZoneSimulation {
         let swing = roll_swing(self.stream(target), damage);
         let swing = match swing {
             Swing::Hit { amount, critical } => Swing::Hit {
-                amount: u16::try_from(self.stance_damage(
-                    player_id,
-                    Some(target),
-                    u32::from(amount),
-                )?)
+                amount: u16::try_from(stance.map_or(u32::from(amount), |stance| {
+                    crate::stance::scale(u32::from(amount), stance.damage_percent())
+                }))
                 .unwrap_or(u16::MAX),
                 critical,
             },
@@ -1412,6 +1389,7 @@ impl ZoneSimulation {
             player.health = 0;
             player.swing_queued = false;
             player.swing_timer = 0;
+            player.melee = crate::MeleeState::default();
             player.calm_ticks = 0;
             // Death clears every aura and cast; rage and faith drain.
             player.cast = None;

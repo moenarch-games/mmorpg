@@ -12,8 +12,6 @@ pub const PLAYER_BASE_HEALTH: u32 = 50;
 pub const PLAYER_HEALTH_PER_LEVEL: u32 = 15;
 /// Player melee damage at level 1; each further level adds 1 to both ends.
 pub const PLAYER_BASE_DAMAGE: [u16; 2] = [3, 6];
-/// Ticks between two player swings (2 s).
-pub const PLAYER_SWING_TICKS: u16 = crate::ticks_from_ms(2_000);
 /// Player melee reach: XZ centre distance in units.
 pub const PLAYER_REACH_UNITS: i32 = 250;
 /// Half the horizontal arc one player swing covers (#517): 50° either side of the facing, a

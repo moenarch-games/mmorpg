@@ -234,7 +234,12 @@ fn ownership_life_and_three_dimensional_reach_are_authoritative() {
     zone.add_player(2).unwrap();
     refuse(&mut zone, 2, claim, ErrorCode::NotLootOwner);
     assert!(zone.snapshot_for_player(2).unwrap().loot.is_none());
-    restore(&mut zone, |state| state.players[0].combat.health = 0);
+    restore(&mut zone, |state| {
+        let combat = &mut state.players[0].combat;
+        combat.health = 0;
+        // The dead hold no pressed strike (#885).
+        combat.swing_queued = false;
+    });
     refuse(&mut zone, 1, claim, ErrorCode::YouAreDead);
     assert!(zone.snapshot_for_player(1).unwrap().loot.is_none());
     restore(&mut zone, |state| {

@@ -2027,6 +2027,7 @@ impl ZoneContent {
                 stats.agility,
                 stats.intellect,
             ]);
+            hash.bytes(&[item.weapon.map_or(0, |family| 1 + family.code())]);
         }
         for slot in crate::Inventory::starter().slots() {
             hash.u32(slot.map_or(0, |stack| stack.item().get()));

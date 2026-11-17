@@ -566,8 +566,8 @@ mod tests {
         let token = ReconnectToken([3; RECONNECT_TOKEN_BYTES]);
         let mut runtime = MatchRuntime::new_with_replay_capture(hosted(), 120);
         let lease = runtime.admit(token).unwrap();
-        // The marshal stands beside the plaza; a swing never hits an NPC and
-        // whiffs with an event, not a session error.
+        // The marshal stands beside the plaza; a swing never hits an NPC: the running strike
+        // begins (#885) and whiffs with events, not a session error.
         let marshal = EntityRef::Npc(NpcId::new(1));
         for (sequence, command) in [
             ZoneCommand::SelectTarget(Some(marshal)),
@@ -592,9 +592,13 @@ mod tests {
         assert_eq!(projection.viewer.target, Some(marshal));
         assert_eq!(
             projection.events,
-            [mmorpg_core::ZoneEvent::AttackPerformed {
+            [mmorpg_core::ZoneEvent::StrikeBegan {
                 source: EntityRef::Player(lease.player_id),
-                target: None
+                family: mmorpg_core::WeaponFamily::Unarmed,
+                variant: mmorpg_core::StrikeVariant::Running,
+                contact: mmorpg_core::FamilyMelee::of(mmorpg_core::WeaponFamily::Unarmed)
+                    .running
+                    .contact_ticks,
             }]
         );
         for _ in 0..90 {

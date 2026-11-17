@@ -213,6 +213,8 @@ pub struct CanonicalPlayerCombat {
     pub strike_recovery: u16,
     /// A running timed swing (#679).
     pub swing: Option<crate::Swing>,
+    /// The basic strike's chain and pending strike (#885).
+    pub melee: crate::MeleeState,
     /// The destructible piece the player is repairing (#305).
     pub repairing: Option<crate::PieceId>,
 }
@@ -228,6 +230,8 @@ pub struct CanonicalPlayerAbilities {
     /// Arcanist five-second rule: ticks left without mana regeneration.
     pub mana_delay: u16,
     pub global_cooldown: u16,
+    /// The length the running global cooldown began with (#885).
+    pub global_cooldown_total: u16,
     /// Running cooldowns in ability order.
     pub cooldowns: Vec<Cooldown>,
     pub cast: Option<CastState>,
@@ -272,6 +276,7 @@ impl Default for CanonicalPlayerCombat {
             combo: None,
             strike_recovery: 0,
             swing: None,
+            melee: crate::MeleeState::default(),
             repairing: None,
         }
     }
@@ -441,6 +446,7 @@ impl ZoneSimulation {
                             resource_ticks: state.resource.ticks,
                             mana_delay: state.resource.delay,
                             global_cooldown: state.global_cooldown,
+                            global_cooldown_total: state.global_cooldown_total,
                             cooldowns: state.cooldowns.clone(),
                             cast: state.cast,
                             auras: state.auras.clone(),
@@ -453,6 +459,7 @@ impl ZoneSimulation {
                         combo: state.combo,
                         strike_recovery: state.strike_recovery,
                         swing: state.swing,
+                        melee: state.melee,
                         repairing: state.repairing,
                     },
                     chat_ready_at: state.chat_ready_at,
@@ -763,6 +770,10 @@ impl ZoneSimulation {
         if combat.health == 0 && combat.swing_queued {
             return Err(ZoneError::new("a dead player cannot hold a queued swing"));
         }
+        // A pending strike (#885) belongs to the living, and stays within its own wind-up.
+        if !combat.melee.is_valid() || (combat.health == 0 && combat.melee.pending.is_some()) {
+            return Err(ZoneError::new("player strike state is out of range"));
+        }
         // Dead players hold no movement. Earlier builds kept it at death, so a
         // v11 checkpoint may still carry it: recovery lets go of it, exactly as
         // death now does, instead of refusing a checkpoint of the same format.
@@ -863,6 +874,7 @@ impl ZoneSimulation {
                 combo: combat.combo,
                 strike_recovery: combat.strike_recovery,
                 swing: combat.swing,
+                melee: combat.melee,
                 repairing: combat.repairing,
                 last_sequence: player.last_sequence,
                 spawn_slot: player.spawn_slot,
@@ -890,6 +902,7 @@ impl ZoneSimulation {
                     delay: combat.abilities.mana_delay,
                 },
                 global_cooldown: combat.abilities.global_cooldown,
+                global_cooldown_total: combat.abilities.global_cooldown_total,
                 cooldowns: combat.abilities.cooldowns,
                 cast: combat.abilities.cast,
                 auras: combat.abilities.auras,
@@ -1352,7 +1365,8 @@ pub(crate) fn validate_player_abilities(
             })
         });
     if !clock.is_valid(class.resource(), level)
-        || abilities.global_cooldown > GLOBAL_COOLDOWN_TICKS
+        || abilities.global_cooldown > abilities.global_cooldown_total
+        || abilities.global_cooldown_total > GLOBAL_COOLDOWN_TICKS
         || !cooldowns_valid
     {
         return Err(ZoneError::new("player ability state is out of range"));

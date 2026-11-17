@@ -136,6 +136,8 @@ pub struct ViewerState {
     pub resource: Option<ResourceView>,
     pub cast: Option<CastView>,
     pub global_cooldown: u16,
+    /// The length the running global cooldown began with, haste included (#884, #885).
+    pub global_cooldown_total: u16,
     /// Inclusive melee damage range, the equipment bonus included.
     pub damage: [u16; 2],
     pub guard: GuardView,
@@ -304,6 +306,7 @@ impl ZoneSimulation {
                     }),
                     cast: viewer.cast.and_then(cast_view),
                     global_cooldown: viewer.global_cooldown,
+                    global_cooldown_total: viewer.global_cooldown_total,
                     damage: viewer.melee_damage(),
                     guard: GuardView {
                         raised: viewer.guard.raised,
