@@ -301,13 +301,26 @@ void main() {`)
         world.y -= near * bend * 0.45 * up;
     }`);
   if (flower) {
-    // A head keeps its shape however short its clump; the stem and leaf take the clump's own green.
+    // A head keeps its shape however short its clump; the stem and leaf take the clump's own green. A plant never grows
+    // from or sinks into the ground with its share, which would raise and lower its head as the eye nears (#868): it
+    // keeps its own height and dissolves in and out in a screen-door dither instead.
+    const sink = "world.y = origin.y + (world.y - origin.y) * shown;";
+    if (!material.vertexShader.includes(sink)) { throw new Error("The grass vertex stage no longer sinks its clumps"); }
     material.vertexShader = material.vertexShader
-      .replace("in float grassRank;", "in float grassRank;\nin float flowerPart;\nin vec3 flowerHead;\nin vec3 flowerStem;")
+      .replace("in float grassRank;", "in float grassRank;\nin float flowerPart;\nin vec3 flowerHead;\nin vec3 flowerStem;\nout float flowerShown;")
+      .replace(sink, "flowerShown = shown;")
       .replace(anchor, `float flowerKeep = length(model[0].xyz) / length(model[1].xyz);
     vec4 world = model * vec4(mix(position, flowerHead + (position - flowerHead) * vec3(1.0, flowerKeep, 1.0), flowerPart), 1.0);`)
       .replace("vec3 n = normal;", "vec3 n = normal * mix(vec3(1.0), vec3(1.0, 1.0 / flowerKeep, 1.0), flowerPart);")
       .replace("gl_Position = projectionMatrix", "vColor.rgb = mix(color.rgb * flowerStem, vColor.rgb, flowerPart);\n    gl_Position = projectionMatrix");
+    const sampled = "MaterialSample m = sampleMaterial();";
+    if (!material.fragmentShader.includes(sampled)) { throw new Error("The lit fragment stage has no material sample to dither after"); }
+    material.fragmentShader = material.fragmentShader
+      .replace("void main() {", "in float flowerShown;\nvoid main() {")
+      .replace(sampled, `${sampled}
+    if (flowerShown < 1.0 && flowerShown <= fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))))) {
+        discard;
+    }`);
   }
   return { material, own };
 }

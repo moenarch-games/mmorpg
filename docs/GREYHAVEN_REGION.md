@@ -209,7 +209,9 @@ Wildflowers grow in drifts of one colour over several metres on thick turf (butt
 harebell and poppy, `grass::FLOWERS`): a flowering clump also draws four small plants rising to
 about its blade tips (#868), each a bowed stem and leaf in the clump's green under a cupped head of
 five or six rounded petals round a warm heart, every head its own size, spin and tilt and every plant
-its own turn, spread and height, thinned with the grass. Under the woods, heart and designed forests alike, the ground is
+its own turn, spread and height, thinned with the grass. Unlike a blade clump a plant never grows from or sinks into
+the ground as it thins: it keeps its height and dissolves in a screen-door dither, so heads do not rise and fall as the
+eye nears. Under the woods, heart and designed forests alike, the ground is
 the forest floor's leaf litter, its texture turned about 35° off the grid and repeating every 4.5 m
 so it does not read as stripes. The old procedural tufts draw nothing; the native client has no
 grass field yet.
