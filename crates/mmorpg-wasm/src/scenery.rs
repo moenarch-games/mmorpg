@@ -69,13 +69,27 @@ impl<T> PerZone<T> {
 
     pub(crate) fn get(&self, init: impl FnOnce(ZoneId) -> T) -> &T {
         let zone = presented_zone();
+        self.slot(zone).get_or_init(|| init(zone))
+    }
+
+    /// The presented zone's value if it was built or seeded, without building it.
+    pub(crate) fn peek(&self) -> Option<&T> {
+        self.slot(presented_zone()).get()
+    }
+
+    /// Seeds the presented zone's value; false (nothing changed) once it was built or seeded.
+    pub(crate) fn seed(&self, value: T) -> bool {
+        self.slot(presented_zone()).set(value).is_ok()
+    }
+
+    fn slot(&self, zone: ZoneId) -> &OnceLock<T> {
         let slot = match zone {
             seam_test::WEST_ZONE => 1,
             seam_test::EAST_ZONE => 2,
             depths if mmorpg_core::redbrand_depths::is_depths_zone(depths) => 3,
             _ => 0,
         };
-        self.0[slot].get_or_init(|| init(zone))
+        &self.0[slot]
     }
 }
 
@@ -323,10 +337,25 @@ pub fn hosted_export() -> SceneryExport {
 /// The serialized export. Serializing plain data cannot fail.
 #[must_use]
 pub fn hosted_scenery_json() -> &'static str {
-    static JSON: PerZone<String> = PerZone::new();
-    JSON.get(|_| {
+    SCENERY_JSON.get(|_| {
         serde_json::to_string(&hosted_export()).expect("scenery export is plain serializable data")
     })
+}
+
+static SCENERY_JSON: PerZone<String> = PerZone::new();
+
+/// Reuses the serialized export another instance of this module derived for the presented
+/// content (#855: the page's derivation worker): false, nothing seeded, for another content
+/// revision's or once the export was built.
+#[must_use]
+pub fn seed_scenery_json(json: String) -> bool {
+    let revision = format!(
+        "\"contentRevision\":\"{}\"",
+        hosted_scenery().content_revision
+    );
+    json.starts_with(&format!("{{\"format\":\"{SCENERY_FORMAT}\""))
+        && json.contains(&revision)
+        && SCENERY_JSON.seed(json)
 }
 
 pub(crate) fn export(

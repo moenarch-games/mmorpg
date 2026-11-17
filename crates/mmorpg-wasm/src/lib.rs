@@ -374,6 +374,13 @@ impl LocalZone {
         })
     }
 
+    /// The content revision a fresh zone hosts, without building one and its physics (#855).
+    #[wasm_bindgen(js_name = hostedContentRevision)]
+    #[must_use]
+    pub fn hosted_content_revision() -> u64 {
+        host::hosted_content().revision()
+    }
+
     /// The saved world of [`LocalZone::checkpoint`], resumed at its tick
     /// without players; throws for bytes of another version or content.
     #[wasm_bindgen(js_name = fromCheckpoint)]
@@ -887,6 +894,38 @@ pub fn terrain_grid_cache() -> Vec<u8> {
 #[must_use]
 pub fn seed_terrain_grids(bytes: &[u8]) -> bool {
     scenery::seed_terrain_grids(bytes)
+}
+
+/// Reuses the [`scenery`] export another instance of this module derived (#855: the page's
+/// derivation worker): false, nothing seeded, for another content revision's or once built.
+#[wasm_bindgen(js_name = seedScenery)]
+#[must_use]
+pub fn seed_scenery(json: String) -> bool {
+    scenery::seed_scenery_json(json)
+}
+
+/// The hosted static scene without its geometry (`StaticScene::skeleton`, #855), for
+/// [`seed_static_scene`] in another instance of this module.
+#[wasm_bindgen(js_name = staticSceneSkeleton)]
+#[must_use]
+pub fn static_scene_skeleton() -> Vec<u8> {
+    static_scene::skeleton()
+}
+
+/// Reuses the static scene another instance of this module derived (#855): its
+/// [`static_scene_skeleton`] and its [`static_scene`] layout and buffers, so this instance
+/// builds only the terrain tiles. False, nothing seeded, for another content revision's or
+/// once the scene was built.
+#[wasm_bindgen(js_name = seedStaticScene)]
+#[must_use]
+pub fn seed_static_scene(
+    skeleton: Vec<u8>,
+    layout: String,
+    vertices: Vec<f32>,
+    indices: Vec<u32>,
+    models: Vec<f32>,
+) -> bool {
+    static_scene::seed(skeleton, (layout, vertices, indices, models))
 }
 
 /// A fresh stream of the hosted zone's static groups (#526) for one renderer.
