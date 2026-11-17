@@ -101,12 +101,13 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // 30,240 more body visits per 360 ticks, and nothing else moves.
     // Beasts wind up their bites (#889), so their fights last a little longer: fights-8
     // evaluates 17,372 AI decisions and projects 1,934,120 bytes, and fights-32 evaluates 25,530,
-    // tests 438,211 candidates and projects 8,288,034 bytes.
+    // tests 438,211 candidates and projects 8,288,034 bytes, and crowded-fights-64 visits 5,154,372
+    // bodies.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
         [11_052, 5_137_560, 288_000, 6_151_648],
         [17_372, 5_134_680, 93_060, 1_934_120],
         [25_530, 5_143_320, 438_211, 8_288_034],
-        [13_344, 5_154_184, 2_323_474, 24_553_949],
+        [13_344, 5_154_372, 2_323_474, 24_553_949],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();
