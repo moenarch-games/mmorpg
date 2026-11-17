@@ -144,6 +144,28 @@ Held items close the hand round them (#503, asset-tooling #285). The bundle's `G
 
 Players, the guards, the Redbrands and the marauders all grip this way. Empty hands grip nothing. The Ranger's bow is the one exception: it comes to hand only through the bow clips, which curl their own fingers, so `Grip_Bow_L` never plays. The grips let go over the upper body's blend while the zone projects a climb or a mantle, and stay off until a mantle or let-go clip plays out. A bundle without a grip clip leaves that hand open. Review with `?scenario=grips`: a Warden stands 3 m from a Greyhaven guard, facing him. For the other classes, use `?scenario=action-lab&class=<class>`.
 
+The native `held_items_sit_in_their_gripping_hand_through_the_clips` test checks these holds on the bundle through idle, the jog and each loadout's strikes. The gripped fingers sit within about 3.5 cm of the handle's axis. Each item's long axis leaves the fist on the thumb side. The staff swings bring the second hand onto the shaft.
+
+Gaits keep their feet planted (#804). Each walk, jog, sprint, backpedal, side-step and wade plays at the projected ground speed divided by the clip's own `groundSpeedMetersPerSecond`, or `sourceRootSpeedMetersPerSecond` for the side-steps (`imported::gait_rate`, bounded to 0.5–5×). The authored stride is kept (Atlas 6.6.12), so the cadence follows the speed. A model whose clips record no ground speed, such as the animals, keeps the earlier fixed pacing.
+
+### Hold and gait inventory (#804)
+
+Measured on the male Ranger bundle by posing the clips in the native client (13 samples per clip):
+
+| Defect | State | Cause | Owner |
+| --- | --- | --- | --- |
+| Feet slid about 2.4× at the 6.3 m/s run and 1.7× at walking speeds. Side-steps slid a further 25%. | Any gait | The playback rates used fixed guesses (5 m/s run, 1.8 m/s walk), clamped to 1.5–1.6×. The side-steps used the forward clips' speeds. | mmorpg presentation, fixed here |
+| The 6.3 m/s run plays the jog at 3.6× and the side-steps at 4.5×, a hurried cadence. | Running and strafing | The source gaits' strides are short for the game's speed: about 0.8 m per jog step and 0.35 m per side-step. | asset-tooling: a run and side-steps authored near 6 m/s |
+| The blade passes within the torso. | `Sword_Cleave` at 0.41 s | Clip pose | asset-tooling clip |
+| The shaft passes within the torso. | `Staff_Strike_A` at 0.41 s, `Staff_Strike_B` at 0.29 s | Clip pose | asset-tooling clip |
+| The mace's grip end passes within the torso. | `Mace_Swing_B` at 0.12 s | Clip pose | asset-tooling clip |
+| The tome stays on the left hand while that hand grips the staff, so the two overlap. | Arcanist staff swing | No stowed socket for the tome | asset-tooling socket, then presentation |
+| `hand_l.carry` is not the mirror of `hand_r.carry`: its rotation's components are permuted. This affects both figures. The socket is unused. | Not shown in game | Socket data | asset-tooling sockets |
+| The female figure uses the male's ground speeds. Her jog is 10% slower at the same rate. | Female gaits | Motions are kept per model kind, not per figure | mmorpg presentation (follow-up) |
+| No two-handed weapon or tool is held in game, although the bundle has their `grip.offhand` frames and items. | — | Not wired | mmorpg content |
+
+The sword, dagger, mace, shield and staff holds measure as correct: knuckles are 2.2–2.9 cm off the handle, and the staff grip's index finger 4.8 cm. Every item points to the thumb side. Both clients place an item at its socket times the inverse of its grip frame. Every grip frame is identity, so the browser and native placements agree.
+
 - **Movement-state strikes (#885).** A player's basic strike plays its weapon family's clip when it begins (`StrikeBegan`), started so the clip's authored contact meets the zone's contact tick: `<Family>_Run_Strike` and `<Family>_Jump_Strike` (whole body, asset-tooling #709) for running and jumping strikes, and the chain's first, second and finisher (`Mace_Swing_A/B/C`, `Staff_Strike_A/B/C`, `Spear_Thrust_A` twice then `Spear_Thrust_B`, the dagger's stab, slash and `Dagger_Sinister`, the sword's mid slashes and `Sword_Attack`; `Unarmed_Jab/Cross/Hook` and `Bow_Bash_A` twice then `Bow_Bash_B` from asset-tooling #711). Until a bundle carries them, the existing clips stand in (`imported::melee_clips`), on the upper body over the legs' run or jump. A unit that is hit flinches with `Hit_Light_L`/`Hit_Light_R` in turn and `Hit_Heavy_Front` for a critical hit, and falls with one of `Death_Back`, `Death_Fwd` and `Death_Spin`, when the bundle has them; otherwise `Hit_Chest`, `Hit_Head` and `Death01` as before.
 
 ## Native

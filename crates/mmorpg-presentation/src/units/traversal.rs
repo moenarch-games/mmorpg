@@ -18,6 +18,11 @@ pub struct Motion {
     /// The speed along the face in metres per second at which a climb loop plays at its
     /// authored rate (`climbSpeedMetersPerSecond`).
     pub climb_speed: Option<f64>,
+    /// The speed in metres per second at which an in-place gait plays at its authored rate with
+    /// its planted foot still (#804): the median backward speed of its lower foot
+    /// (`groundSpeedMetersPerSecond`) or, for a side-step, the travel it stands for
+    /// (`sourceRootSpeedMetersPerSecond`).
+    pub ground_speed: Option<f64>,
     /// The ledge or edge height in metres a mantle or top-out was authored against
     /// (`ledgeHeightMeters`, `edgeHeightMeters`).
     pub ledge_height: Option<f64>,
@@ -170,6 +175,9 @@ impl Motions {
                 let travel = &clip["travelSamples"];
                 let motion = Motion {
                     climb_speed: clip["climbSpeedMetersPerSecond"].as_f64(),
+                    ground_speed: clip["groundSpeedMetersPerSecond"]
+                        .as_f64()
+                        .or_else(|| clip["sourceRootSpeedMetersPerSecond"].as_f64()),
                     ledge_height: clip["ledgeHeightMeters"]
                         .as_f64()
                         .or_else(|| clip["edgeHeightMeters"].as_f64()),
@@ -346,6 +354,8 @@ mod tests {
         "schema": "humanoid-clips-v1",
         "clips": [
             {"name": "Idle_Loop", "durationSeconds": 2.5},
+            {"name": "Jog_Fwd_Loop", "groundSpeedMetersPerSecond": 1.7637},
+            {"name": "Jog_Strafe_Left_Loop", "sourceRootSpeedMetersPerSecond": 1.4},
             {"name": "Climb_Up_Loop", "climbSpeedMetersPerSecond": 0.9,
              "secondaryPose": {"sampleRate": 30, "joints": {"skirt_f_01": [[0, 0, 0, 1], [0.1, 0, 0, 0.995]]}}},
             {"name": "Mantle_Mid", "ledgeHeightMeters": 1.3,
@@ -358,6 +368,15 @@ mod tests {
         let motions = Motions::parse(DESCRIPTOR).expect("valid descriptor");
         assert!(motions.get("Idle_Loop").is_none());
         assert_eq!(motions.get("Climb_Up_Loop").unwrap().climb_speed, Some(0.9));
+        // A gait's no-slide speed, and a side-step's authored travel in its place (#804).
+        assert_eq!(
+            motions.get("Jog_Fwd_Loop").unwrap().ground_speed,
+            Some(1.7637)
+        );
+        assert_eq!(
+            motions.get("Jog_Strafe_Left_Loop").unwrap().ground_speed,
+            Some(1.4)
+        );
         let mantle = motions.get("Mantle_Mid").unwrap();
         assert_eq!(mantle.ledge_height, Some(1.3));
         let travel = mantle.travel.as_ref().unwrap();
