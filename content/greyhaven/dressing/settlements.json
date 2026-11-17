@@ -847,7 +847,7 @@
     {"asset":"settlement.props.candelabra","id":"settlement-prop-26-candelabra","position":[2100,0,400],"scale":[1000,1000,1000],"yaw":0},
     {"asset":"settlement.props.wall-shield","id":"settlement-prop-27-wall-shield","position":[1050,150,-450],"scale":[1000,1000,1000],"yaw":0},
     {"asset":"settlement.props.watermill","id":"settlement-prop-28-watermill","position":[-1040,-25,6500],"scale":[1000,1000,1000],"yaw":0},
-    {"asset":"settlement.props.water-wheel","id":"settlement-prop-29-water-wheel","position":[-847,-40,7300],"scale":[1000,1000,1000],"yaw":0},
+    {"asset":"settlement.props.water-wheel","id":"settlement-prop-29-water-wheel","position":[-880,-40,6880],"scale":[1000,1000,1000],"yaw":0},
     {"asset":"settlement.props.scarecrow","id":"settlement-prop-30-scarecrow","position":[7300,1100,7000],"scale":[1000,1000,1000],"yaw":0},
     {"asset":"settlement.props.feed-trough","id":"settlement-prop-31-feed-trough","position":[7850,1100,3250],"scale":[1000,1000,1000],"yaw":0},
     {"asset":"settlement.props.water-trough","id":"settlement-prop-32-water-trough","position":[8150,1100,3250],"scale":[1000,1000,1000],"yaw":0},

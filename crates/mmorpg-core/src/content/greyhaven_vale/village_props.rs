@@ -140,7 +140,7 @@ pub const SETTLEMENT_PROPS: [Prop; 61] = [
     // Millbrook's watermill on the village brook, its wheel in the stream, and a water wheel
     // downstream.
     on("watermill", [-1_040, 6_500], 0, -25),
-    on("water-wheel", [-847, 7_300], 0, -40),
+    on("water-wheel", [-880, 6_880], 0, -40),
     // Millbrook Farm: a scarecrow in the field, troughs before the barn, the vane on its ridge,
     // and a coop, skeps and a churn in the farmhouse's yard.
     prop("scarecrow", [7_300, 7_000], 0),
