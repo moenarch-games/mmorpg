@@ -38,6 +38,11 @@ pub mod templates {
     /// The Greyfang cavern's heavy shield-bearers (#160): slow overhead smashes, and arrows
     /// and bolts at their front stop on their shields.
     pub const REDBRAND_BRUTE: CreatureTemplateId = CreatureTemplateId::new(15);
+    /// The beasts of #889: a bear in the deep woods, spiders in the caves and lurkers in the
+    /// marsh, biting with the wildlife release's wind-ups.
+    pub const BROWN_BEAR: CreatureTemplateId = CreatureTemplateId::new(18);
+    pub const CAVE_SPIDER: CreatureTemplateId = CreatureTemplateId::new(19);
+    pub const MARSH_LURKER: CreatureTemplateId = CreatureTemplateId::new(20);
 }
 
 /// Default respawn time: 60 s.
@@ -60,7 +65,12 @@ pub const GRAVEYARD: [i32; 2] = [-2_000, 4_150];
 
 const WOLF: [i32; 3] = [40, 45, 40];
 const BOAR: [i32; 3] = [45, 45, 45];
-const RAT: [i32; 3] = [25, 20, 25];
+/// As tall as the wildlife release's 0.3 m rat (#889), so it is drawn at its own size.
+const RAT: [i32; 3] = [25, 15, 25];
+/// The wildlife release's beasts (#889): a 1.3 m bear, a low, broad spider and a flat lurker.
+const BEAR: [i32; 3] = [50, 65, 50];
+const SPIDER: [i32; 3] = [40, 23, 40];
+const MARSH_LURKER_BOX: [i32; 3] = [38, 15, 38];
 const HUMANOID: [i32; 3] = [30, 90, 30];
 const LURKER: [i32; 3] = [35, 80, 35];
 /// A 1.4 m rolling boulder (#299).
@@ -94,9 +104,9 @@ type TemplateRow = (
 );
 
 #[rustfmt::skip]
-const TEMPLATES: [TemplateRow; 16] = {
+const TEMPLATES: [TemplateRow; 19] = {
     use CreatureBehaviour::{Aggressive, Neutral, Prop};
-    use CreatureFamily::{Boar, Marauder, Mirefin, Ogre, Redbrand, Vermin, Wolf};
+    use CreatureFamily::{Bear, Boar, Lurker, Marauder, Mirefin, Ogre, Redbrand, Spider, Vermin, Wolf};
     use crate::PropKind;
     use templates::*;
     [
@@ -122,6 +132,11 @@ const TEMPLATES: [TemplateRow; 16] = {
         // The Greyfang cavern's shield-bearer (#160): twice a level 5 bandit's health, heavier
         // and slower blows, and an Overhead Smash.
         (REDBRAND_BRUTE, "Redbrand Brute", Redbrand, Aggressive, [5, 5], false, 215, 0, [7, 12], 0, crate::ticks_from_ms(2_800), RESPAWN_TICKS, BRUTE),
+        // The beasts of #889: the bear tough and slow, the spider fast and fragile, the lurker
+        // a hard biter that waits for a player to come close.
+        (BROWN_BEAR, "Brown Bear", Bear, Aggressive, [3, 4], false, 130, 20, [5, 9], 1, crate::ticks_from_ms(3_000), RESPAWN_TICKS, BEAR),
+        (CAVE_SPIDER, "Cave Spider", Spider, Aggressive, [3, 4], false, 40, 10, [2, 4], 1, crate::ticks_from_ms(1_300), RESPAWN_TICKS, SPIDER),
+        (MARSH_LURKER, "Marsh Lurker", Lurker, Aggressive, [2, 3], false, 60, 14, [3, 6], 1, crate::ticks_from_ms(2_400), RESPAWN_TICKS, MARSH_LURKER_BOX),
     ]
 };
 
@@ -129,9 +144,9 @@ type CavernRow = (u32, CreatureTemplateId, [i32; 2], u16, [u8; 2]);
 
 /// The Greyfang cavern (#160) as `(spawn id, template, feet XZ, facing, levels)`: Redbrands
 /// at levels 4–5 hold the outer cavern and the inner chamber, a Brute in each; the inner
-/// Brute guards the sealed threshold. They wander only [`CAVERN_WANDER_RADIUS_UNITS`].
+/// Brute guards the sealed threshold, and Cave Spiders (#889) hold the mouth. They wander only [`CAVERN_WANDER_RADIUS_UNITS`].
 #[rustfmt::skip]
-const CAVERN: [CavernRow; 6] = {
+const CAVERN: [CavernRow; 9] = {
     use templates::*;
     [
         (650, REDBRAND_BRUTE, [6_100, -13_700], 0, [5, 5]),
@@ -140,6 +155,10 @@ const CAVERN: [CavernRow; 6] = {
         (653, REDBRAND_CROSSBOWMAN, [6_500, -14_100], 49_152, [4, 5]),
         (654, REDBRAND_BANDIT, [7_450, -13_450], 49_152, [4, 5]),
         (655, REDBRAND_BRUTE, [7_650, -13_800], 49_152, [5, 5]),
+        // Cave Spiders (#889) in the north mouth's passage between its rocks.
+        (656, CAVE_SPIDER, [6_280, -14_480], 32_768, [3, 4]),
+        (657, CAVE_SPIDER, [6_520, -14_650], 32_768, [3, 4]),
+        (658, CAVE_SPIDER, [6_300, -14_700], 32_768, [3, 3]),
     ]
 };
 /// Cavern Redbrands keep to their rock.

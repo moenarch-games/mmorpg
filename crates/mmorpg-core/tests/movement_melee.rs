@@ -22,7 +22,7 @@ fn content(behaviour: CreatureBehaviour, damage: [u16; 2]) -> Arc<ZoneContent> {
     let template = CreatureTemplate {
         behaviour,
         swing_ticks: mmorpg_core::golden::t30(20) as _,
-        ..arena::wolf(5_000, damage)
+        ..arena::brawler(5_000, damage)
     };
     Arc::new(
         ZoneContent::new(

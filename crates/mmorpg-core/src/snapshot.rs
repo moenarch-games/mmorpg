@@ -339,6 +339,8 @@ pub struct CanonicalCreatureSnapshot {
     /// Ordered by entity.
     pub threat: Vec<ThreatEntry>,
     pub swing_timer: u16,
+    /// A beast's attack winding up toward its bite (#889).
+    pub attack: Option<crate::PendingAttack>,
     pub combat_timer: u16,
     pub tapped_by: Option<PlayerId>,
     pub loot: Option<crate::LootRewards>,
@@ -512,6 +514,7 @@ impl ZoneSimulation {
                     ai: creature.ai,
                     threat: creature.threat.clone(),
                     swing_timer: creature.swing_timer,
+                    attack: creature.attack,
                     combat_timer: creature.combat_timer,
                     tapped_by: creature.tapped_by,
                     loot_party: creature.loot_party.clone(),
@@ -967,6 +970,12 @@ impl ZoneSimulation {
                 .threat
                 .windows(2)
                 .any(|pair| pair[0].entity >= pair[1].entity)
+            // A pending bite (#889) belongs to a living beast fighting the unit it began on.
+            || record.attack.is_some_and(|attack| {
+                !attack.is_valid(template.family)
+                    || record.life != CreatureLife::Alive
+                    || !record.threat.iter().any(|entry| entry.entity == attack.target)
+            })
         {
             return Err(ZoneError::new("creature state is out of range"));
         }
@@ -977,6 +986,7 @@ impl ZoneSimulation {
             }
             && record.threat.is_empty()
             && record.swing_timer == 0
+            && record.attack.is_none()
             && record.combat_timer == 0
             && record.velocity == [0.0; 3]
             && record.health == 0;
@@ -1106,6 +1116,7 @@ impl ZoneSimulation {
                 ai: record.ai,
                 threat: record.threat,
                 swing_timer: record.swing_timer,
+                attack: record.attack,
                 combat_timer: record.combat_timer,
                 tapped_by: record.tapped_by,
                 loot: record.loot,

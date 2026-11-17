@@ -256,7 +256,7 @@ impl ZoneSimulation {
         if idle
             && !withdrawing
             && template.behaviour == CreatureBehaviour::Aggressive
-            && let Some(player) = self.aggro_candidate(here, level)?
+            && let Some(player) = self.aggro_candidate(here, level, template.family.ambushes())?
             && !self.in_handoff_corridor(player)
         {
             self.engage(id, EntityRef::Player(player), true)?;
@@ -563,8 +563,14 @@ impl ZoneSimulation {
             .map_err(physics_error)
     }
 
-    /// The nearest living player inside its aggro radius, ties to the lowest ID.
-    fn aggro_candidate(&self, here: [i32; 2], level: u8) -> Result<Option<PlayerId>, ZoneError> {
+    /// The nearest living player inside its aggro radius, an ambusher's (#889) the fixed
+    /// [`crate::AMBUSH_RADIUS_UNITS`], ties to the lowest ID.
+    fn aggro_candidate(
+        &self,
+        here: [i32; 2],
+        level: u8,
+        ambushes: bool,
+    ) -> Result<Option<PlayerId>, ZoneError> {
         let mut best: Option<(i64, PlayerId)> = None;
         for entity in self
             .interest
@@ -583,7 +589,11 @@ impl ZoneSimulation {
             }
             let position = self.player_position(player_id)?;
             let distance = distance_squared(here, [position.x, position.z]);
-            let radius = i64::from(aggro_radius(level, player.level));
+            let radius = i64::from(if ambushes {
+                crate::AMBUSH_RADIUS_UNITS
+            } else {
+                aggro_radius(level, player.level)
+            });
             if distance <= radius * radius && best.is_none_or(|best| (distance, player_id) < best) {
                 best = Some((distance, player_id));
             }

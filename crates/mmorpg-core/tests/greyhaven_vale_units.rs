@@ -264,6 +264,43 @@ fn templates_follow_the_design_contract() {
                 2000,
                 300000
             ),
+            // The beasts of #889: the bear tough and slow, the spider fast and fragile.
+            (
+                "Brown Bear",
+                Bear,
+                Aggressive,
+                [3, 4],
+                false,
+                130,
+                20,
+                [5, 9],
+                3000,
+                60000
+            ),
+            (
+                "Cave Spider",
+                Spider,
+                Aggressive,
+                [3, 4],
+                false,
+                40,
+                10,
+                [2, 4],
+                1300,
+                60000
+            ),
+            (
+                "Marsh Lurker",
+                Lurker,
+                Aggressive,
+                [2, 3],
+                false,
+                60,
+                14,
+                [3, 6],
+                2400,
+                60000
+            ),
         ]
     );
     let wolf = content
@@ -360,6 +397,8 @@ fn spawns_populate_their_subzones() {
         // Redbrand Cave supplies inside Greyfang Ridge (#719).
         ((greyhaven_vale::vale::GREYFANG_RIDGE, "Crate"), 2),
         ((greyhaven_vale::vale::GREYFANG_RIDGE, "Barrel"), 1),
+        // Cave Spiders (#889) in the cave's north mouth.
+        ((greyhaven_vale::vale::GREYFANG_RIDGE, "Cave Spider"), 3),
         (
             (
                 greyhaven_vale::vale::REDBRAND_HOLLOW,
@@ -380,6 +419,11 @@ fn spawns_populate_their_subzones() {
         (
             (greyhaven_vale::marsh::MARSH_LAKE_WETLANDS, "Timber Wolf"),
             8,
+        ),
+        // Marsh Lurkers (#889) beside the trails.
+        (
+            (greyhaven_vale::marsh::MARSH_LAKE_WETLANDS, "Marsh Lurker"),
+            3,
         ),
         // The Bandit Highlands garrison (#502).
         (
@@ -409,6 +453,9 @@ fn spawns_populate_their_subzones() {
         ((wilds::WESTMERE_WOODS, "Mirefin Lurker"), 3),
         ((wilds::SOUTHWOOD, "Timber Wolf"), 4),
         ((wilds::SOUTHWOOD, "Young Boar"), 6),
+        // Brown Bears (#889) in the deep woods.
+        ((wilds::WESTMERE_WOODS, "Brown Bear"), 2),
+        ((wilds::SOUTHWOOD, "Brown Bear"), 1),
         ((wilds::CROWN_FOOTHILLS, "Timber Wolf"), 6),
         ((wilds::CROWN_FOOTHILLS, "Hill Ogre"), 1),
         ((wilds::GREYFANG_APPROACH, "Redbrand Bandit"), 4),

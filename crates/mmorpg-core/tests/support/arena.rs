@@ -38,6 +38,15 @@ pub fn wolf(health: u32, damage: [u16; 2]) -> CreatureTemplate {
     }
 }
 
+/// A [`wolf`] of a family that swings the moment it may, without a beast's wind-up (#889).
+pub fn brawler(health: u32, damage: [u16; 2]) -> CreatureTemplate {
+    CreatureTemplate {
+        name: "Test Brawler".into(),
+        family: CreatureFamily::Marauder,
+        ..wolf(health, damage)
+    }
+}
+
 /// A neutral level-1 boar.
 pub fn boar() -> CreatureTemplate {
     CreatureTemplate {

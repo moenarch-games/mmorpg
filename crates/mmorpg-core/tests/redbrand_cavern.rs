@@ -45,13 +45,11 @@ fn the_cavern_holds_brutes_and_level_4_to_5_redbrands_on_its_floor() {
         .creature_spawns()
         .iter()
         .filter(|spawn| GREYFANG.flattens(spawn.position[0], spawn.position[1]))
-        // The garrison's count and level rules exclude the cave supplies (#719).
+        // The garrison's count and level rules exclude the cave supplies (#719) and the
+        // mouth's spiders (#889).
         .filter(|spawn| {
-            content
-                .creature_template(spawn.template)
-                .unwrap()
-                .prop()
-                .is_none()
+            content.creature_template(spawn.template).unwrap().family
+                == mmorpg_core::CreatureFamily::Redbrand
         })
         .collect();
     let brutes = cavern

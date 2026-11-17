@@ -189,6 +189,10 @@ fn starter_tables_are_pinned_and_cover_every_hosted_template() {
         ),
         // The Redbrand Brute (#160).
         ([8, 14], vec![gear(5), gear(3), gear(7), nothing(3)]),
+        // The beasts of #889: a bear's pelt, a spider's nothing, a lurker's hide.
+        ([2, 6], vec![item(4, FUR, [2, 3]), nothing(1)]),
+        ([0, 2], vec![nothing(1)]),
+        ([1, 3], vec![item(1, FUR, [1, 1]), nothing(2)]),
     ];
     let content = greyhaven_vale::content();
     // Breakable props (#288) drop nothing and have no table.

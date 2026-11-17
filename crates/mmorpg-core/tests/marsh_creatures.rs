@@ -76,6 +76,7 @@ fn the_wetlands_hold_lurkers_boars_and_a_wolf_pack_at_the_templates_top_levels()
         (("Mirefin Lurker".to_owned(), 3), 15),
         (("Young Boar".to_owned(), 2), 8),
         (("Timber Wolf".to_owned(), 2), 8),
+        (("Marsh Lurker".to_owned(), 3), 3),
     ]);
     assert_eq!(counts, expected);
 }

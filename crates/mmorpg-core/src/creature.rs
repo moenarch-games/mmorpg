@@ -31,6 +31,8 @@ pub const AGGRO_PER_LEVEL_UNITS: i32 = 100;
 /// … and clamped to 5–20 m.
 pub const AGGRO_MIN_RADIUS_UNITS: i32 = 500;
 pub const AGGRO_MAX_RADIUS_UNITS: i32 = 2_000;
+/// An ambusher (#889) starts a fight only with a player this close (4 m), whatever their levels.
+pub const AMBUSH_RADIUS_UNITS: i32 = 400;
 /// Idle creatures of the same family this close to an engaging one assist.
 pub const ASSIST_RADIUS_UNITS: i32 = 800;
 /// Beyond this XZ distance from its spawn point a creature evades.
@@ -68,6 +70,8 @@ pub(crate) struct CreatureState {
     /// Ordered by entity; at most [`MAX_THREAT_ENTRIES`].
     pub(crate) threat: Vec<ThreatEntry>,
     pub(crate) swing_timer: u16,
+    /// A beast's attack winding up toward its bite (#889).
+    pub(crate) attack: Option<crate::PendingAttack>,
     pub(crate) combat_timer: u16,
     /// The first player who damaged it since it last reset.
     pub(crate) tapped_by: Option<crate::PlayerId>,
@@ -150,9 +154,10 @@ impl CreatureState {
         self.threat.retain(|entry| entry.entity != entity);
     }
 
-    /// Back to rest: no cast, auras or pending ability timer. Death, the
-    /// start of an evade and its end all reset this way.
+    /// Back to rest: no cast, pending attack (#889), auras or pending ability timer. Death,
+    /// the start of an evade and its end all reset this way.
     pub(crate) fn reset_abilities(&mut self) {
+        self.attack = None;
         self.cast = None;
         self.auras.clear();
         self.ability_timer = 0;
@@ -317,6 +322,7 @@ impl ZoneSimulation {
                 },
                 threat: Vec::new(),
                 swing_timer: 0,
+                attack: None,
                 combat_timer: 0,
                 tapped_by: None,
                 loot: None,
@@ -351,6 +357,7 @@ impl ZoneSimulation {
                 },
                 threat: Vec::new(),
                 swing_timer: 0,
+                attack: None,
                 combat_timer: 0,
                 tapped_by: None,
                 loot: None,
