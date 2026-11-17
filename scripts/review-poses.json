@@ -25,6 +25,12 @@
       "player": true
     },
     {
+      "name": "meadow-flowers",
+      "note": "A harebell drift east of Barrowdown at third-person height (#868)",
+      "eye": [534.5, 10.4, 678.5],
+      "target": [540, 8.3, 684]
+    },
+    {
       "name": "hamlet-cottage",
       "note": "A farmland hamlet's cottage",
       "eye": [-34, 9, 560],

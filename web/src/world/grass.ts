@@ -122,38 +122,115 @@ export function clumpGeometry(blades: number, rows: readonly number[], widen = 1
 }
 
 /**
- * Five-petalled heads just above a clump's blade tips (a clump is a metre tall before its height scales it), each
- * cupped slightly upward with a darker heart; `uv.y` is 1, so they sway with the blade tips. The near clump has five,
- * the far one `heads` fewer, larger ones (`grow` times the radius).
+ * A clump's flowering plants (#868): `heads` small flowers, each on a thin bowed stem with a leaf, rising from among the
+ * blades to about their tips (a clump is a metre tall before its height scales it). Every head differs: five or six
+ * rounded petals cupped round a raised heart, its own size, spin and tilt (some nod), so a drift reads as plants, not
+ * stamped stars. `flowerPart` is 0 on the stem and leaf (drawn in the clump's own green, `flowerStem`) and 1 on the head
+ * (in the instance's flower colour, petals paling to their tips); `flowerHead` is the head's centre, about which the
+ * vertex stage keeps the head its true shape however short the clump. `uv.y` runs up the stem, so heads sway with the
+ * blade tips. The far clump has fewer, larger heads (`grow` times the radius) on plain stems.
  */
-export function flowerGeometry(heads = 5, grow = 1): THREE.BufferGeometry {
+export function flowerGeometry(heads = 4, grow = 1, stemRows: readonly number[] = [0, 0.5, 1]): THREE.BufferGeometry {
   const positions: number[] = [];
+  const normals: number[] = [];
   const colors: number[] = [];
+  const uvs: number[] = [];
+  const parts: number[] = [];
+  const centres: number[] = [];
   const indices: number[] = [];
-  const HEADS: readonly [number, number, number, number][] = [
-    [0.05, 0.02, 1.08, 0.075], [-0.1, 0.07, 1.0, 0.065], [0.03, -0.12, 1.04, 0.07], [0.13, -0.04, 0.96, 0.06], [-0.06, -0.05, 1.12, 0.07],
-  ];
-  for (const [x, z, y, radius] of HEADS.slice(0, heads).map(([x, z, y, r]) => [x, z, y, r * grow] as const)) {
-    const heart = positions.length / 3;
-    positions.push(x, y + 0.01, z);
-    colors.push(0.55, 0.45, 0.2, 1);
-    for (let petal = 0; petal < 10; petal += 1) {
-      // Petal tips and the notches between them, alternately.
-      const angle = (petal / 10) * Math.PI * 2;
-      const reach = petal % 2 === 0 ? radius : radius * 0.45;
-      positions.push(x + Math.sin(angle) * reach, y + (petal % 2 === 0 ? 0.012 : 0), z + Math.cos(angle) * reach);
-      colors.push(1, 1, 1, 1);
+  // A fixed sequence, so every flowering clump is the same mesh.
+  let seed = 11;
+  const random = () => {
+    seed = (seed * 16_807) % 2_147_483_647;
+    return (seed - 1) / 2_147_483_646;
+  };
+  const vertex = (p: THREE.Vector3, n: THREE.Vector3, shade: readonly number[], v: number, part: number, centre: THREE.Vector3) => {
+    positions.push(p.x, p.y, p.z);
+    normals.push(n.x, n.y, n.z);
+    colors.push(shade[0]!, shade[1]!, shade[2]!, 1);
+    uvs.push(0.5, v);
+    parts.push(part);
+    centres.push(centre.x, centre.y, centre.z);
+    return positions.length / 3 - 1;
+  };
+  const up = new THREE.Vector3(0, 1, 0);
+  for (let head = 0; head < heads; head += 1) {
+    const reach = Math.sqrt((head + 0.5) / heads) * 0.16;
+    const around = head * 2.399963 + random() * 0.5;
+    const root = new THREE.Vector3(Math.sin(around) * reach, 0, Math.cos(around) * reach);
+    const leanAt = random() * Math.PI * 2;
+    const leanBy = 0.02 + random() * 0.05;
+    const centre = new THREE.Vector3(root.x + Math.sin(leanAt) * leanBy, 0.72 + random() * 0.42, root.z + Math.cos(leanAt) * leanBy);
+    // The stem: a tapered ribbon bowing towards its lean, darker at the root like a blade.
+    const across = new THREE.Vector3(Math.cos(leanAt), 0, -Math.sin(leanAt));
+    const stemNormal = new THREE.Vector3(Math.sin(leanAt) * 0.35, 1, Math.cos(leanAt) * 0.35).normalize();
+    const stemAt = (t: number) => new THREE.Vector3(
+      root.x + (centre.x - root.x) * t ** 1.8, centre.y * t, root.z + (centre.z - root.z) * t ** 1.8,
+    );
+    const stemShade = (t: number) => { const s = 0.4 + 0.45 * t; return [s, s, s * 0.9]; };
+    const first = positions.length / 3;
+    for (const t of stemRows) {
+      const width = 0.008 * (1 - 0.5 * t);
+      for (const side of [-1, 1]) {
+        vertex(stemAt(t).addScaledVector(across, width * side), stemNormal, stemShade(t), t, 0, stemAt(t));
+      }
     }
-    for (let petal = 0; petal < 10; petal += 1) {
-      indices.push(heart, heart + 1 + petal, heart + 1 + ((petal + 1) % 10));
+    for (let row = 0; row < stemRows.length - 1; row += 1) {
+      const a = first + row * 2;
+      indices.push(a, a + 1, a + 3, a, a + 3, a + 2);
     }
+    // A leaf off the lower stem, pointing away from the lean.
+    if (stemRows.length > 2) {
+      const t = 0.3 + random() * 0.15;
+      const base = stemAt(t);
+      const out = new THREE.Vector3(-Math.sin(leanAt + 0.6), 0, -Math.cos(leanAt + 0.6));
+      const leaf = [
+        vertex(base.clone().addScaledVector(across, -0.008), stemNormal, stemShade(t), t, 0, base),
+        vertex(base.clone().addScaledVector(across, 0.008), stemNormal, stemShade(t), t, 0, base),
+        vertex(base.clone().addScaledVector(out, 0.06).setY(base.y + 0.1), stemNormal, stemShade(t + 0.2), t + 0.1, 0, base),
+      ];
+      indices.push(leaf[0]!, leaf[1]!, leaf[2]!);
+    }
+    // The head, in metres about its centre: a shallow cup of rounded petals spun and tilted as a whole.
+    const radius = (0.035 + random() * 0.025) * grow;
+    const cup = 0.25 + random() * 0.45;
+    const petals = random() < 0.35 ? 6 : 5;
+    const tilt = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(Math.cos(leanAt), 0, -Math.sin(leanAt)), 0.15 + random() * 0.65,
+    ).multiply(new THREE.Quaternion().setFromAxisAngle(up, random() * Math.PI * 2));
+    const at = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyQuaternion(tilt).add(centre);
+    const facing = (radial: number, angle: number) =>
+      new THREE.Vector3(-Math.sin(angle) * radial, 1, -Math.cos(angle) * radial).normalize().applyQuaternion(tilt);
+    const half = (Math.PI / petals) * 0.82;
+    for (let petal = 0; petal < petals; petal += 1) {
+      const angle = (petal / petals) * Math.PI * 2;
+      const ring = (share: number, spread: number, rise: number, shade: number) => {
+        const a = angle + spread;
+        return vertex(
+          at(Math.sin(a) * radius * share, radius * cup * rise, Math.cos(a) * radius * share),
+          facing(cup * 0.9, angle), [shade, shade, shade], 1, 1, centre,
+        );
+      };
+      const base = ring(0.15, 0, 0, 0.72);
+      const edge = [ring(0.7, -half, 0.55, 0.92), ring(0.98, -half * 0.45, 1, 1), ring(0.98, half * 0.45, 1, 1), ring(0.7, half, 0.55, 0.92)];
+      for (let k = 0; k < 3; k += 1) { indices.push(base, edge[k]!, edge[k + 1]!); }
+    }
+    // The heart: a small raised boss over the petals' bases, warm-toned.
+    const heart = vertex(at(0, radius * 0.22, 0), facing(0, 0), [1, 0.8, 0.32], 1, 1, centre);
+    const boss: number[] = [];
+    for (let k = 0; k < 5; k += 1) {
+      const a = (k / 5) * Math.PI * 2;
+      boss.push(vertex(at(Math.sin(a) * radius * 0.28, radius * 0.1, Math.cos(a) * radius * 0.28), facing(-0.6, a), [0.85, 0.65, 0.25], 1, 1, centre));
+    }
+    for (let k = 0; k < 5; k += 1) { indices.push(heart, boss[k]!, boss[(k + 1) % 5]!); }
   }
-  const count = positions.length / 3;
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(Array.from({ length: count }, () => [0, 1, 0]).flat(), 3));
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 4));
-  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(Array.from({ length: count }, () => [0.5, 1]).flat(), 2));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setAttribute("flowerPart", new THREE.Float32BufferAttribute(parts, 1));
+  geometry.setAttribute("flowerHead", new THREE.Float32BufferAttribute(centres, 3));
   geometry.setIndex(indices);
   geometry.computeBoundingSphere();
   return geometry;
@@ -179,9 +256,9 @@ type Own = {
 /**
  * The blades' material: render-engine's lit material with its vertex stage bent by the wind, pushed aside around the
  * player's feet, spread wider with distance and grown from or sunk into the ground clump by clump by its layer's share.
- * Every clump carries its rank in its cell's random order (`grassRank`).
+ * Every clump carries its rank in its cell's random order (`grassRank`). A `flower` material draws `flowerGeometry`.
  */
-function grassMaterial(shared: Shared): { material: LitMaterial; own: Own } {
+function grassMaterial(shared: Shared, flower = false): { material: LitMaterial; own: Own } {
   const material = new LitMaterial({ perceptualRoughness: 0.82, metallic: 0, reflectance: 0.35 });
   material.side = THREE.DoubleSide;
   const own: Own = {
@@ -223,6 +300,15 @@ void main() {`)
         world.xz += normalize(away + vec2(1e-4, 0.0)) * near * bend * 0.6 * up;
         world.y -= near * bend * 0.45 * up;
     }`);
+  if (flower) {
+    // A head keeps its shape however short its clump; the stem and leaf take the clump's own green.
+    material.vertexShader = material.vertexShader
+      .replace("in float grassRank;", "in float grassRank;\nin float flowerPart;\nin vec3 flowerHead;\nin vec3 flowerStem;")
+      .replace(anchor, `float flowerKeep = length(model[0].xyz) / length(model[1].xyz);
+    vec4 world = model * vec4(mix(position, flowerHead + (position - flowerHead) * vec3(1.0, flowerKeep, 1.0), flowerPart), 1.0);`)
+      .replace("vec3 n = normal;", "vec3 n = normal * mix(vec3(1.0), vec3(1.0, 1.0 / flowerKeep, 1.0), flowerPart);")
+      .replace("gl_Position = projectionMatrix", "vColor.rgb = mix(color.rgb * flowerStem, vColor.rgb, flowerPart);\n    gl_Position = projectionMatrix");
+  }
   return { material, own };
 }
 
@@ -261,14 +347,14 @@ export class Grass {
 
   constructor(source: GrassSource, detail: WorldDetail = "medium") {
     this.root.name = "greyhaven.grass";
-    const kind = (geometry: THREE.BufferGeometry): Kind => ({ geometry, ...grassMaterial(this.#shared) });
+    const kind = (geometry: THREE.BufferGeometry, flower = false): Kind => ({ geometry, ...grassMaterial(this.#shared, flower) });
     this.#full = kind(clumpGeometry(15, [0, 0.4, 0.75]));
     // Seen from further off, its tips a little darker, so the field deepens with distance.
     this.#light = kind(clumpGeometry(7, [0, 0.5], 1.5, [0.34, 0.8]));
-    this.#flowers = kind(flowerGeometry());
+    this.#flowers = kind(flowerGeometry(), true);
     // Its blades darker at the tip than a near blade's, as a distant meadow's shade.
     this.#far = kind(clumpGeometry(6, [0], 2, [0.42, 0.74]));
-    this.#farFlowers = kind(flowerGeometry(3, 1.2));
+    this.#farFlowers = kind(flowerGeometry(3, 1.2, [0, 1]), true);
     this.#near = { size: source.cellMetres, cells: new Map(), build: (column, row) => source.cell(column, row) };
     const { farCell, farCellMetres } = source;
     this.#distant = farCell && farCellMetres ? { size: farCellMetres, cells: new Map(), build: (column, row) => farCell(column, row) } : null;
@@ -414,11 +500,24 @@ export class Grass {
     if (flowering.length > 0) {
       const kind = far ? this.#farFlowers : this.#flowers;
       const flowerRanks = new THREE.InstancedBufferAttribute(Float32Array.from(flowering, (index) => ranks[index]!), 1);
-      const mesh = new THREE.InstancedMesh(ranked(kind, flowerRanks), kind.material, flowering.length);
+      // The stems' green: the clump's own, a shade deeper.
+      const stems = new THREE.InstancedBufferAttribute(new Float32Array(flowering.length * 3), 3);
+      const mesh = new THREE.InstancedMesh(ranked(kind, flowerRanks).setAttribute("flowerStem", stems), kind.material, flowering.length);
       const color = new THREE.Color();
       flowering.forEach((index, slot) => {
-        mesh.instanceMatrix.array.set(matrices.subarray(index * 16, index * 16 + 16), slot * 16);
-        const hue = FLOWERS[Math.min(FLOWERS.length, Math.max(1, clumps[index * CLUMP_FLOATS + 8]!)) - 1]!;
+        const at = index * CLUMP_FLOATS;
+        // Each plant its own turn, spread and height round its clump's, so no two drifts repeat one stamp.
+        const vary = (salt: number) => {
+          const v = Math.sin(clumps[at]! * 12.9898 + clumps[at + 2]! * 78.233 + salt * 37.719) * 43_758.545;
+          return v - Math.floor(v);
+        };
+        const across = spread * (0.8 + 0.4 * vary(1));
+        matrix.makeScale(across, clumps[at + 4]! * (0.85 + 0.35 * vary(2)), across)
+          .premultiply(rotation.makeRotationY(clumps[at + 3]! + vary(3) * Math.PI * 2));
+        matrix.setPosition(clumps[at]!, clumps[at + 1]! - 0.03, clumps[at + 2]!);
+        matrix.toArray(mesh.instanceMatrix.array, slot * 16);
+        stems.setXYZ(slot, colors[index * 3]! * 0.8, colors[index * 3 + 1]! * 0.8, colors[index * 3 + 2]! * 0.8);
+        const hue = FLOWERS[Math.min(FLOWERS.length, Math.max(1, clumps[at + 8]!)) - 1]!;
         mesh.setColorAt(slot, color.setHex(hue, THREE.SRGBColorSpace));
       });
       meshes.push({ kind, mesh, blades: false });

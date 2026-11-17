@@ -206,8 +206,10 @@ single-triangle blades (`Grass::far_cell`, 32 m cells about a metre apart, with 
 heads) grows in as the near one thins and reaches 70 m (medium) or 100 m (high). The wind bends
 them and the player's feet push them aside in the vertex stage.
 Wildflowers grow in drifts of one colour over several metres on thick turf (buttercup, daisy,
-harebell and poppy, `grass::FLOWERS`): a flowering clump also draws five small heads just above its
-blade tips, thinned with the grass. Under the woods, heart and designed forests alike, the ground is
+harebell and poppy, `grass::FLOWERS`): a flowering clump also draws four small plants rising to
+about its blade tips (#868), each a bowed stem and leaf in the clump's green under a cupped head of
+five or six rounded petals round a warm heart, every head its own size, spin and tilt and every plant
+its own turn, spread and height, thinned with the grass. Under the woods, heart and designed forests alike, the ground is
 the forest floor's leaf litter, its texture turned about 35° off the grid and repeating every 4.5 m
 so it does not read as stripes. The old procedural tufts draw nothing; the native client has no
 grass field yet.
