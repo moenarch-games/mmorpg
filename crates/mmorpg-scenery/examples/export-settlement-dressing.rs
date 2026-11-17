@@ -118,14 +118,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }));
     }
     // The villages' clutter (#851), solid as greyhaven_vale::village_props.
-    for (index, prop) in village_props::PROPS.iter().enumerate() {
-        placements.push(json!({
-            "id": format!("village-{index}-{}", prop.name),
-            "asset": format!("settlement.props.{}", prop.name),
-            "position": [prop.position[0], prop.ground(), prop.position[1]],
-            "yaw": u16::from(prop.quarters) * YAW_QUARTER_TURN,
-            "scale": [1000, 1000, 1000]
-        }));
+    // The second batch (#891) as well, on its floors where it has one.
+    let batches = [
+        ("village", &village_props::PROPS[..]),
+        ("settlement-prop", &village_props::SETTLEMENT_PROPS[..]),
+    ];
+    for (prefix, props) in batches {
+        for (index, prop) in props.iter().enumerate() {
+            placements.push(json!({
+                "id": format!("{prefix}-{index}-{}", prop.name),
+                "asset": format!("settlement.props.{}", prop.name),
+                "position": [prop.position[0], prop.ground(), prop.position[1]],
+                "yaw": u16::from(prop.quarters) * YAW_QUARTER_TURN,
+                "scale": [1000, 1000, 1000]
+            }));
+        }
     }
     println!("{{\n  \"version\": 1,\n  \"area\": \"settlements\",\n  \"placements\": [");
     for (index, placement) in placements.iter().enumerate() {

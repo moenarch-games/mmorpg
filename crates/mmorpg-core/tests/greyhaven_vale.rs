@@ -707,3 +707,77 @@ fn players_and_residents_walk_into_the_farmhouses() {
         );
     }
 }
+
+/// The second settlement props batch (#891) stands clear: no proxy overlaps another collider
+/// (goods may rest on a counter or a table, touching it), and no resident's way crosses one.
+#[test]
+fn settlement_props_stand_clear_of_colliders_and_residents() {
+    let definition = greyhaven_vale_definition();
+    let colliders = definition.colliders();
+    let props: Vec<_> = colliders
+        .iter()
+        .filter(|c| ids::SETTLEMENT_PROPS.contains(&c.id))
+        .collect();
+    assert!(!props.is_empty());
+    let overlaps = |a: &mmorpg_core::StaticCollider, b: &mmorpg_core::StaticCollider| {
+        (0..3).all(|axis| {
+            (a.position[axis] - b.position[axis]).abs()
+                < a.half_extents[axis] + b.half_extents[axis]
+        })
+    };
+    for prop in &props {
+        for other in colliders.iter().filter(|c| c.id != ids::GROUND) {
+            // A prop's own boxes may overlap one another.
+            let same = (other.id - other.id % 4) == (prop.id - prop.id % 4);
+            assert!(
+                same || !overlaps(prop, other),
+                "settlement prop collider {} {:?} overlaps collider {} {:?}",
+                prop.id,
+                prop.position,
+                other.id,
+                other.position
+            );
+        }
+    }
+    // A hanging sign's bracket or a vane above a walker's head (1.9 m) blocks no way.
+    let terrain = definition.terrain().expect("Greyhaven has terrain");
+    let low: Vec<_> = props
+        .iter()
+        .filter(|c| {
+            c.position[1] - c.half_extents[1]
+                < terrain.height_at(c.position[0], c.position[2]) + 190
+        })
+        .collect();
+    let content = greyhaven_vale::content();
+    for routine in content.routines() {
+        let post = content
+            .npcs()
+            .iter()
+            .find(|npc| npc.id == routine.npc)
+            .map(|npc| npc.position);
+        let legs = std::iter::once(&routine.path).chain(routine.errands.iter().map(|e| &e.path));
+        for leg in legs {
+            let points: Vec<[i32; 2]> = post.into_iter().chain(leg.iter().copied()).collect();
+            for pair in points.windows(2) {
+                for prop in &low {
+                    // Sample the leg every 10 cm against the box grown by a body's radius.
+                    let [a, b] = [pair[0], pair[1]].map(|p| p.map(f64::from));
+                    let steps = ((b[0] - a[0]).hypot(b[1] - a[1]) / 10.).ceil().max(1.);
+                    let hit = (0..=steps as i32).any(|step| {
+                        let t = f64::from(step) / steps;
+                        let p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+                        [0, 2].iter().zip(p).all(|(&axis, value)| {
+                            (value - f64::from(prop.position[axis])).abs()
+                                < f64::from(prop.half_extents[axis] + 30)
+                        })
+                    });
+                    assert!(
+                        !hit,
+                        "resident {:?}'s way {pair:?} crosses settlement prop collider {} {:?}",
+                        routine.npc, prop.id, prop.position
+                    );
+                }
+            }
+        }
+    }
+}

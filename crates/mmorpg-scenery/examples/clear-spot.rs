@@ -20,7 +20,7 @@
 //! - `--count n` (default 5): how many spots, each at least two radii from the others.
 //! - `--max-distance d` (default 20000): how far from `--near` to look.
 //! - `--step s` (default 50): the candidate grid spacing.
-use mmorpg_core::greyhaven_vale::{self, cottages, ids, terrain};
+use mmorpg_core::greyhaven_vale::{self, brook, cottages, ids, terrain};
 use mmorpg_scenery::{Biome, Scenery, TERRAIN_BOUNDS, greyhaven_vale_scenery};
 use std::collections::HashMap;
 
@@ -278,7 +278,25 @@ fn build(scenery: &Scenery, indoors: bool) -> Index {
             },
         );
     }
-    // Lake beds the ellipses miss (the brook, painted water), at the terrain grid's step.
+    // The brook's channels (#891), narrower than the terrain grid's lake-bed cells below.
+    let channels = [
+        (brook::village(), brook::HALF_WIDTH),
+        (brook::inflow(), brook::UPPER_HALF_WIDTH),
+        (brook::outlet(), brook::UPPER_HALF_WIDTH),
+    ];
+    for (points, half_width) in channels {
+        for pair in points.windows(2) {
+            index.insert(
+                Layer::Water,
+                Shape::Segment {
+                    a: pair[0],
+                    b: pair[1],
+                    half_width,
+                },
+            );
+        }
+    }
+    // Lake beds the ellipses miss (painted water), at the terrain grid's step.
     let half = terrain::STEP / 2;
     for row in 0..i32::from(terrain::ROWS) {
         for column in 0..i32::from(terrain::COLUMNS) {
