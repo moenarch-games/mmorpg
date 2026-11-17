@@ -55,7 +55,14 @@ pub const LAMP: PointLight = PointLight {
 /// The settlement lantern post's lamp above its base, metres.
 const LANTERN_LAMP: [f64; 3] = [0., 2.75, 0.];
 
-/// Every light of `scenery`'s campfires (from `scene`'s flames), lamp posts and lantern posts.
+/// The settlement props that glow (#891): their embers above their feet (metres) and lumens.
+const EMBERS: [(&str, ([f64; 3], f64)); 2] = [
+    ("settlement.props.forge", ([0.525, 1.0, -0.085], 1_400.)),
+    ("settlement.props.spit-roast", ([0., 0.3, 0.], 1_200.)),
+];
+
+/// Every light of `scenery`'s campfires (from `scene`'s flames), lamp posts, lantern posts and
+/// glowing settlement props.
 #[must_use]
 pub fn point_lights(scene: &StaticScene, scenery: &Scenery) -> Vec<PointLight> {
     let fires = scene.animated.iter().filter_map(|part| match part.motion {
@@ -76,6 +83,20 @@ pub fn point_lights(scene: &StaticScene, scenery: &Scenery) -> Vec<PointLight> {
             position: point(frame, LANTERN_LAMP),
             ..LAMP
         });
+    // The forge's hearth and the spit's fire (#891): ember glow, a warm flickering light.
+    let embers = settlement_props::frames(scenery)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, (entry, frame))| {
+            let (ember, lumens) = EMBERS.iter().find(|(key, ..)| *key == entry)?.1;
+            Some(PointLight {
+                position: point(frame, ember),
+                lumens,
+                range: 10.,
+                flicker: Some(index as f64 * 0.7),
+                ..CAMPFIRE
+            })
+        });
     let torches = CAVE_TORCHES
         .into_iter()
         .enumerate()
@@ -93,6 +114,7 @@ pub fn point_lights(scene: &StaticScene, scenery: &Scenery) -> Vec<PointLight> {
     fires
         .chain(lamps)
         .chain(lanterns)
+        .chain(embers)
         .chain(torches)
         .chain(rooms)
         .collect()

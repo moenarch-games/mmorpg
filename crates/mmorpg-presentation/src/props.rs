@@ -1754,6 +1754,42 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
             },
         ));
     }
+    // A well windlass (#891) is only its frame and drum: the bare stone curb under it, which
+    // collides as `village_props::CURB`, is drawn here.
+    for (entry, f) in crate::settlement_props::frames(s) {
+        if entry != "settlement.props.well-windlass" {
+            continue;
+        }
+        let (_, [r, h, _]) = mmorpg_core::greyhaven_vale::village_props::CURB;
+        let (r, h) = (metres(r), metres(h) * 2.);
+        let mut m = Model::new(Cull::Always);
+        m.put(
+            STONE,
+            frustum(16, 1., false, true, 0.5),
+            at(0., 0., 0., r, h, r),
+        );
+        m.put(
+            STONE_DARK,
+            frustum(16, 1., false, true, 0.5),
+            at(0., h - 0.1, 0., r, 0.1, r),
+        );
+        m.put(
+            0x23384a,
+            disc(16),
+            at(0., h + 0.005, 0., r * 0.68, 1., r * 0.68),
+        );
+        for part in m.parts {
+            b.put(
+                part.c,
+                &part.g,
+                compose(&[f, part.a]),
+                f.t[0],
+                f.t[2],
+                part.cull,
+                false,
+            );
+        }
+    }
     // The market square's settlement props (#421) stand as boxes of their collision proxies
     // while the client does not draw the props.
     let square = crate::settlement_props::fallback_frames(s);

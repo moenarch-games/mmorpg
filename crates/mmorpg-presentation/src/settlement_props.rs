@@ -19,35 +19,80 @@ use crate::{
 
 /// The bundle entries the clients draw, sorted; [`entries`] derives the same list from the
 /// square's content.
-pub const ENTRIES: [&str; 28] = [
+pub const ENTRIES: [&str; 73] = [
+    "settlement.props.apple-crate",
+    "settlement.props.banner-village",
+    "settlement.props.bar-counter",
     "settlement.props.barrel",
     "settlement.props.barrel-group",
     "settlement.props.bed",
+    "settlement.props.beehive-skeps",
     "settlement.props.bench",
+    "settlement.props.bread-basket",
+    "settlement.props.bunting",
+    "settlement.props.butter-churn",
+    "settlement.props.candelabra",
+    "settlement.props.candles",
     "settlement.props.cart",
+    "settlement.props.cask-rack",
     "settlement.props.chair",
+    "settlement.props.cheese-board",
     "settlement.props.chest",
     "settlement.props.chopping-block",
+    "settlement.props.cloth-bolts",
     "settlement.props.crate",
     "settlement.props.crate-stack",
+    "settlement.props.dresser",
+    "settlement.props.feed-trough",
     "settlement.props.fence",
     "settlement.props.firewood",
+    "settlement.props.fish-crate",
+    "settlement.props.fishing-nets",
     "settlement.props.footbridge",
+    "settlement.props.forge",
     "settlement.props.grain-sacks",
+    "settlement.props.hanging-meats",
     "settlement.props.hay-bale",
     "settlement.props.haystack",
     "settlement.props.hearth",
+    "settlement.props.hen-coop",
+    "settlement.props.hide-frame",
+    "settlement.props.inn-sign",
+    "settlement.props.jar-shelf",
+    "settlement.props.jetty",
     "settlement.props.kennel",
     "settlement.props.lantern-post",
+    "settlement.props.loom",
+    "settlement.props.merchant-scale",
+    "settlement.props.pennant-village",
     "settlement.props.planter",
+    "settlement.props.plough",
+    "settlement.props.potters-wheel",
+    "settlement.props.pottery",
+    "settlement.props.rowing-boat",
+    "settlement.props.rug",
+    "settlement.props.scarecrow",
+    "settlement.props.settle",
+    "settlement.props.shop-sign-baker",
+    "settlement.props.shop-sign-smith",
+    "settlement.props.shop-sign-tailor",
     "settlement.props.signpost",
+    "settlement.props.spit-roast",
     "settlement.props.stall",
+    "settlement.props.stall-awning",
     "settlement.props.standing-stone",
     "settlement.props.table",
     "settlement.props.vegetable-bed",
+    "settlement.props.wall-shield",
     "settlement.props.washing-line",
+    "settlement.props.water-trough",
+    "settlement.props.water-wheel",
+    "settlement.props.watermill",
+    "settlement.props.weather-vane",
     "settlement.props.well",
+    "settlement.props.well-windlass",
     "settlement.props.wheelbarrow",
+    "settlement.props.windmill",
 ];
 
 /// One drawn prop.
@@ -200,9 +245,11 @@ pub(crate) fn fallback(entry: &str) -> Vec<([f64; 3], [f64; 3], u32)> {
     let village = mmorpg_core::greyhaven_vale::village_props::proxies(name);
     if !village.is_empty() {
         let colour = match name {
-            "haystack" | "hay-bale" => STRAW,
+            "haystack" | "hay-bale" | "scarecrow" | "beehive-skeps" => STRAW,
             "vegetable-bed" => SOIL,
-            "grain-sacks" | "washing-line" => CANVAS,
+            "grain-sacks" | "washing-line" | "stall-awning" | "cloth-bolts" | "bunting"
+            | "banner-village" | "pennant-village" | "fishing-nets" | "rug" => CANVAS,
+            "forge" | "well-windlass" | "weather-vane" | "candelabra" | "spit-roast" => IRON,
             _ => WOOD,
         };
         return village
@@ -247,8 +294,9 @@ mod tests {
         let keys = entries();
         // The market square's ten, the region's footbridge (#828), the cottages' furniture
         // (#843), and the villages' clutter and the wells and stones standing in over the
-        // structures (#851), which draw themselves while the props are not drawn.
-        assert_eq!(keys.len(), 28, "{keys:?}");
+        // structures (#851), which draw themselves while the props are not drawn, and the second
+        // batch (#891).
+        assert_eq!(keys.len(), 73, "{keys:?}");
         let stand_ins = ["settlement.props.well", "settlement.props.standing-stone"];
         assert!(
             keys.iter()
