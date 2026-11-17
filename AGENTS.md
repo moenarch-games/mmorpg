@@ -61,6 +61,7 @@ MMORPG_UPDATE_FIXTURES=1 cargo nextest run --workspace --locked                 
 python3 scripts/smoke-native.py      # offscreen end-to-end: host + client + GPU frame
 python3 scripts/smoke-handoff.py     # two handoff hosts on PostgreSQL 17 (Docker): the native autopilot walks and teleports between them (#145)
 ./scripts/dev-native.sh              # full local native dev environment
+./scripts/run-native.sh              # same host + client, optimised release build, no watch (for playing)
 python3 scripts/smoke-browser.py     # real Chromium against the built web/dist (needs Playwright)
 python3 scripts/smoke-browser-online.py  # two Chromium pages join one real zone host over WebTransport
 python3 scripts/profile-browser.py --out artifacts/profile/report.json --trace artifacts/profile  # opt-in Greyhaven frame phases, input latency, GPU time (#546)

@@ -117,7 +117,7 @@ Start the complete local native development environment with:
 ./scripts/dev-native.sh
 ```
 
-The launcher fetches the latest merged source and fast-forwards safely before building, then watches local Rust, shader, scenery and build-input edits and restarts the host and client. Each restart resets the disposable zone. Local edits and commits are preserved; an update that needs manual integration stops with an explanation. Use `--no-update` to work offline or intentionally run your current checkout, and `--no-watch` for a single interactive launch. Requires Python 3 in addition to Cargo, Git, curl and OpenSSL; see [native development](docs/NATIVE_CLIENT.md#interactive-play).
+The launcher fetches the latest merged source and fast-forwards safely before building, then watches local Rust, shader, scenery and build-input edits and restarts the host and client. Each restart resets the disposable zone. Local edits and commits are preserved; an update that needs manual integration stops with an explanation. Use `--no-update` to work offline or intentionally run your current checkout, and `--no-watch` for a single interactive launch. `./scripts/run-native.sh` does a single launch from an optimised release build for playing. Requires Python 3 in addition to Cargo, Git, curl and OpenSSL; see [native development](docs/NATIVE_CLIENT.md#interactive-play).
 
 ## Greyhaven world authoring (Blender)
 

@@ -80,7 +80,9 @@ On first use, or when a cached native bundle is missing, the launcher runs `scri
 
 It builds from its own checkout regardless of the calling directory, reuses a valid disposable certificate under `target/dev-tls/` (or creates one valid for 10 days), starts zone `1` at `https://localhost:4433`, waits for `/readyz`, and opens the client. It watches workspace source, shaders, embedded scenery and Ranger OBJ/manifest/material assets, Cargo manifests/lockfile, toolchain and `.cargo` configuration. An edit stops the owned host/client processes, rebuilds, then restarts them; edits during a build cause another build before launch. Failed builds remain visible and watching resumes after the next edit. Generated targets, logs and certificates do not trigger rebuilds. **Restarting resets the disposable zone and its development session.**
 
-Closing the window or pressing Ctrl-C stops the owned host and its workers. `--no-watch` keeps a single interactive launch. It owns that host process, so do not use it while another local zone host is bound to ports `4433` or `8080`.
+Closing the window or pressing Ctrl-C stops the owned host and its workers. `--no-watch` keeps a single interactive launch. To play at full speed, `./scripts/run-native.sh` makes the same launch from an optimised `--release` build without the watch (it accepts `--no-update` and `--smoke` too).
+
+Started from a shell outside the desktop session (an SSH login, a service, an agent terminal), the launcher takes `WAYLAND_DISPLAY`/`DISPLAY`, `XDG_RUNTIME_DIR` and `XAUTHORITY` from `systemctl --user show-environment`, falling back to a `wayland-*` socket in `$XDG_RUNTIME_DIR`; with no display at all it stops before building. It owns that host process, so do not use it while another local zone host is bound to ports `4433` or `8080`.
 
 To exercise the exact launcher without leaving a window open:
 

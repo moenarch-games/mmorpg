@@ -87,6 +87,40 @@ def run(arguments, timeout, *, capture=False, env=None, merge_stderr=True):
         stop(process)
 
 
+DISPLAY_VARIABLES = ("WAYLAND_DISPLAY", "WAYLAND_SOCKET", "DISPLAY")
+SESSION_VARIABLES = (*DISPLAY_VARIABLES, "XDG_RUNTIME_DIR", "XAUTHORITY")
+
+
+def ensure_display(required=True):
+    """Give the client the desktop session's display when the calling shell has none.
+
+    A shell started outside the graphical session (an SSH login, a service, an agent's
+    terminal) lacks the variables winit needs, although the user's session is running.
+    """
+    if any(os.environ.get(name) for name in DISPLAY_VARIABLES):
+        return
+    if shutil.which("systemctl"):
+        session = run(["systemctl", "--user", "show-environment"], 10, capture=True)
+        if session.returncode == 0:
+            for line in session.stdout.splitlines():
+                name, _, value = line.partition("=")
+                if name in SESSION_VARIABLES and value and not os.environ.get(name):
+                    os.environ[name] = value
+    if not any(os.environ.get(name) for name in DISPLAY_VARIABLES):
+        runtime = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
+        sockets = sorted(path.name for path in runtime.glob("wayland-*") if path.is_socket())
+        if sockets:
+            os.environ.setdefault("XDG_RUNTIME_DIR", str(runtime))
+            os.environ["WAYLAND_DISPLAY"] = sockets[0]
+    if not any(os.environ.get(name) for name in DISPLAY_VARIABLES):
+        if not required:
+            return
+        raise LaunchError("No desktop display found: set WAYLAND_DISPLAY or DISPLAY, "
+                          "or start the launcher from a graphical session.")
+    say("Using the desktop session's display "
+        f"({os.environ.get('WAYLAND_DISPLAY') or os.environ.get('DISPLAY')}).")
+
+
 def git(*arguments):
     result = run(["git", *arguments], 30, capture=True)
     if result.returncode:
@@ -169,12 +203,12 @@ def wait_for_edit(previous):
         time.sleep(POLL_SECONDS)
 
 
-def build():
-    say("Building the current native source…")
+def build(release):
+    say("Building the current native source" + (" (release)…" if release else "…"))
     result = run([
         "cargo", "build", "--locked", "-p", "mmorpg-client", "-p", "mmorpg-game-server",
-        "--bins", "--message-format=json-render-diagnostics",
-    ], 1800, capture=True, merge_stderr=False)
+        "--bins", "--message-format=json-render-diagnostics", *(["--release"] if release else []),
+    ], 3600 if release else 1800, capture=True, merge_stderr=False)
     binaries = {}
     for line in result.stdout.splitlines():
         try:
@@ -257,10 +291,13 @@ def main():
     parser.add_argument("--smoke", action="store_true", help="verify once without a persistent window")
     parser.add_argument("--no-update", action="store_true", help="use the local checkout without fetching Git")
     parser.add_argument("--no-watch", action="store_true", help="build and launch once without watching edits")
+    parser.add_argument("--release", action="store_true",
+                        help="build the optimised release profile (used by ./scripts/run-native.sh)")
     args = parser.parse_args()
     for command in ("cargo", "curl", "openssl", "bash", *([] if args.no_update else ["git"])):
         if shutil.which(command) is None:
             raise LaunchError(f"Required command not found: {command}")
+    ensure_display(required=not args.smoke)
     if not args.no_update:
         update_source()
     ensure_native_assets()
@@ -274,7 +311,7 @@ def main():
     while True:
         source = inputs()
         try:
-            binaries = build()
+            binaries = build(args.release)
         except LaunchError as error:
             if not watch:
                 raise
