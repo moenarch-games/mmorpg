@@ -40,6 +40,8 @@ export class KitModules {
   readonly #options: KitOptions;
   #loading: Promise<boolean> | null = null;
   #changed = false;
+  /** The placed modules that play their entries' looping node clips (#891), by placement index. */
+  #mixers: { mixer: THREE.AnimationMixer; index: number }[] = [];
   /** How many materials age by wear (0 without wear masks). */
   #worn = 0;
 
@@ -81,10 +83,38 @@ export class KitModules {
       root.matrixWorldNeedsUpdate = true;
       return root;
     });
+    // A module with node clips (#891) loops them all; its moving nodes stay in the batches, re-read each pose.
+    this.#mixers = roots.flatMap((root, index) => {
+      const clips = modules.get(this.#placements[index]!.key)?.animations ?? [];
+      if (clips.length === 0) { return []; }
+      const mixer = new THREE.AnimationMixer(root);
+      for (const clip of clips) { mixer.clipAction(clip).play(); }
+      mixer.setTime(0);
+      return [{ mixer, index }];
+    });
     // Static modules: a few draw calls per material instead of one per module and primitive.
     this.#roots = roots;
     this.#batched = new BatchedRoots(this.#name, roots, this.#worn > 0 ? this.#placements.map((placement) => placement.wear ?? 0) : null);
     this.#changed = true;
+  }
+
+  /**
+   * Poses the placed modules whose entries carry looping node clips (#891: mill wheels, sails, signs, vanes, the
+   * scarecrows) at presentation `seconds`; without `animate` they hold their first pose. Presentation only.
+   */
+  update(seconds: number, animate: boolean): void {
+    const batched = this.#batched;
+    if (!batched) { return; }
+    const time = animate ? seconds : 0;
+    for (const { mixer, index } of this.#mixers) {
+      mixer.setTime(time);
+      batched.sync(index);
+    }
+  }
+
+  /** How many placed modules play a node clip (#891). */
+  get animated(): number {
+    return this.#mixers.length;
   }
 
   /** Hides the roof parts of the walk-in cottages in `houses` (#843) and shows every other. */
@@ -124,12 +154,12 @@ export class KitModules {
   }
 
   /**
-   * Acceptance state: whether the modules are loaded, which entries are placed, how many materials age by wear and the
-   * GPU bytes of the textures they draw with (a compressed texture's mip levels as uploaded, an image as RGBA8 with
-   * its mip chain).
+   * Acceptance state: whether the modules are loaded, which entries are placed, how many materials age by wear, how
+   * many placements play node clips (#891) and the GPU bytes of the textures they draw with (a compressed texture's
+   * mip levels as uploaded, an image as RGBA8 with its mip chain).
    */
-  observe(): { loaded: boolean; placed: string[]; worn: number; textureBytes: number } {
-    return { loaded: this.drawn, placed: this.#placements.map((placement) => placement.key), worn: this.#worn, textureBytes: this.#textureBytes() };
+  observe(): { loaded: boolean; placed: string[]; worn: number; animated: number; textureBytes: number } {
+    return { loaded: this.drawn, placed: this.#placements.map((placement) => placement.key), worn: this.#worn, animated: this.animated, textureBytes: this.#textureBytes() };
   }
 
   #textureBytes(): number {
