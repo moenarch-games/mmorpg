@@ -14,9 +14,12 @@ const MASK_CUTOFF = 0.5;
  * the material's alpha alone) is cut away; its vertex alpha is its weight over this.
  */
 const OVERLAY_ALPHA = 0.25;
-/** The presentation materials' flat surface (`standard_material`), for far tiles and layers without textures. */
-const ROUGHNESS = 0.86;
-const METALLIC = 0.02;
+/**
+ * The flat surface of far tiles and layers without textures: as matte as the textured ground (#870). The glossier
+ * `standard_material` surface lit the distant meadows and hillsides facing the sun a pale beige beside the near turf.
+ */
+const ROUGHNESS = 1;
+const METALLIC = 0;
 /** `mmorpg_presentation::ground::Layer`, in order. */
 const LAYERS = ["grass", "forest", "gravel", "mud", "sand", "path", "rock"] as const;
 
