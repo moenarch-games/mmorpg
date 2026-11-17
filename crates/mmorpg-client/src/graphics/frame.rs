@@ -66,6 +66,11 @@ pub const SUN_SHADOWS: SunShadows = SunShadows {
 };
 /// Below this sun elevation (degrees) the sun casts no shadows; its light has faded out.
 const SHADOWLESS_BELOW: f32 = -3.0;
+/// Daylight bounce from the sunlit ground, cd/m², and its warm grass-and-earth colour (#874): the
+/// atmosphere's environment light is the sky alone, so a sun shadow on the meadow kept only that
+/// cold sky light and read as an ink-black slab. As the browser's `BOUNCE_NITS`, `BOUNCE_COLOR`.
+const BOUNCE_NITS: f32 = 6000.0;
+const BOUNCE_COLOR: Vec3 = Vec3::new(1.0, 0.96, 0.86);
 const NEAR_PLANE_METRES: f32 = 0.2;
 
 #[repr(C)]
@@ -410,9 +415,10 @@ pub fn scene(lighting: &Lighting, view: CameraView) -> Scene {
             .collect(),
         spot_lights: Vec::new(),
         shadow_maps: ShadowMapSizes::default(),
+        // The sunlit ground's bounce by day, beside the sky's environment light.
         ambient: Ambient {
-            color: Vec3::ONE,
-            brightness: 0.,
+            color: BOUNCE_COLOR,
+            brightness: BOUNCE_NITS * daylight * transmission,
         },
         environment: None,
         fog: Some(Fog {

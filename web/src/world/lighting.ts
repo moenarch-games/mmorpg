@@ -44,6 +44,14 @@ const SUN_SHADOWS: SunShadows = {
 /** Below this sun elevation (degrees) the sun casts no shadows (`SHADOWLESS_BELOW`). */
 const SHADOWLESS_BELOW = -3;
 /**
+ * Daylight bounce from the sunlit ground, cd/m², and its warm grass-and-earth colour (#874): the atmosphere's
+ * environment light is the sky alone, so a sun shadow on the meadow kept only that cold sky light and read as an
+ * ink-black slab hiding the grass in it. A uniform fill lifts shadows to about a quarter of the sunlit ground while
+ * barely brightening it (`BOUNCE_NITS`, `BOUNCE_COLOR`).
+ */
+const BOUNCE_NITS = 6000;
+const BOUNCE_COLOR: Vec3 = [1, 0.96, 0.86];
+/**
  * Aerial perspective (#526), as `mmorpg_client::environment`: atmospheric fog whose contrast falls to 5 % at
  * `FOG_VISIBILITY_METRES` (Bevy's Koschmieder threshold), red light fading and blue gathering first, so distant ranges
  * turn blue but keep their shading.
@@ -215,8 +223,8 @@ export class GreyhavenLighting {
       lighting.clearAlpha = 1;
       lighting.sun = { direction: negate(sun), color: [1, 1, 1], illuminance: RAW_SUNLIGHT * transmission, shadows };
       lighting.moon = { direction: negate(DAY_CYCLE.toMoon(hour)), color: MOON_COLOR, illuminance: MOON_LUX * transmission };
-      // The sky's environment light is the ambient light.
-      lighting.ambient = { color: [1, 1, 1], brightness: 0 };
+      // The sky's environment light is the ambient light, plus the sunlit ground's bounce by day.
+      lighting.ambient = { color: BOUNCE_COLOR, brightness: BOUNCE_NITS * daylight * transmission };
     } else {
       lighting.sky = null;
       lighting.moon = null;
