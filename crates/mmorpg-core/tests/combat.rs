@@ -752,8 +752,8 @@ fn identical_inputs_produce_identical_canonical_state() {
 }
 
 /// A swing (#517) hits every unit inside its arc where the player faces, whatever is selected,
-/// and leaves one beside the player alone; a press during the swing timer waits for it, and a
-/// swing that covers nobody whiffs.
+/// and leaves one beside the player alone; a press right after the hit follows up at once
+/// (#928), and a swing that covers nobody whiffs.
 #[test]
 fn a_swing_hits_everything_in_its_arc_and_whiffs_without_anyone() {
     let content = arena::arena(
@@ -793,8 +793,9 @@ fn a_swing_hits_everything_in_its_arc_and_whiffs_without_anyone() {
         "both boars in the arc, not the selected one beside it"
     );
 
-    // Pressed again at once, the strike waits out the first one's interval, then whiffs to the
-    // north on its own contact tick.
+    // Pressed again right after the hit, inside the follow-up window (#928), the next strike
+    // begins at once instead of waiting out the first one's interval, then whiffs to the north
+    // on its own contact tick.
     session.send(ZoneCommand::Swing { facing: NORTHWARD });
     let whiffed = session.until(LONGEST_INTERVAL * 2, |session| {
         session.events.iter().any(|(_, event)| {
@@ -807,7 +808,7 @@ fn a_swing_hits_everything_in_its_arc_and_whiffs_without_anyone() {
     });
     assert_eq!(
         whiffed,
-        1 + u64::from(FISTS.chain[0].interval_ticks + FISTS.chain[1].contact_ticks)
+        2 + contact + u64::from(FISTS.chain[1].contact_ticks)
     );
     assert_eq!(
         session.creature(CreatureId::new(3)).health,
