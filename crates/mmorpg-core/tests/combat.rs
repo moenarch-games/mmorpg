@@ -529,6 +529,7 @@ fn leashed_creatures_evade_and_ignore_damage() {
             variant: mmorpg_core::StrikeVariant::First,
             contact: 1,
             stance: None,
+            grounded: 0,
         }),
         ..mmorpg_core::MeleeState::default()
     };

@@ -22,6 +22,46 @@ pub const CHAIN_LENGTH: u8 = 3;
 /// (0.6 s); later, the chain starts over.
 pub const CHAIN_WINDOW_TICKS: u16 = ticks_from_ms(600);
 
+/// A jumping strike whose touchdown falls within this many ticks of the end of its wind-up
+/// (0.2 s either side, owner 2026-11-17) is a timed **landing strike** (#928): its landing
+/// recovery runs for [`LANDING_STRIKE_RECOVERY_PERCENT`] of the usual.
+pub const LANDING_STRIKE_TOLERANCE_TICKS: u16 = ticks_from_ms(200);
+/// A timed landing strike's recovery, in percent of its family's landing recovery (#928).
+pub const LANDING_STRIKE_RECOVERY_PERCENT: u16 = 50;
+/// After the first or second chain strike connects with a unit, a fresh press within this
+/// window from its contact (0.3 s) begins the next chain strike at once, cutting the rest of
+/// the recovery: the **follow-up** (#928). The finisher commits to its full recovery.
+pub const FOLLOW_UP_WINDOW_TICKS: u16 = ticks_from_ms(300);
+
+/// A timing reward a strike earned (#928), shown to the striker.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum StrikeReward {
+    /// A jumping strike landed with its contact: half the landing recovery.
+    LandingStrike,
+    /// A standing hit opened the follow-up window.
+    FollowUp,
+}
+
+impl StrikeReward {
+    /// Stable wire code.
+    #[must_use]
+    pub const fn code(self) -> u8 {
+        match self {
+            Self::LandingStrike => 0,
+            Self::FollowUp => 1,
+        }
+    }
+
+    #[must_use]
+    pub const fn from_code(code: u8) -> Option<Self> {
+        match code {
+            0 => Some(Self::LandingStrike),
+            1 => Some(Self::FollowUp),
+            _ => None,
+        }
+    }
+}
+
 /// A weapon's melee family: how its basic strikes time, reach and hit.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum WeaponFamily {

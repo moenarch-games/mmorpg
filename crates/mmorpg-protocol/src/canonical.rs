@@ -1498,20 +1498,23 @@ fn decode_swing(
     Ok(Some(swing))
 }
 
-/// The basic strike's state (#885): the chain (`u8`), its window (`u16`), then a pending
-/// strike's family code plus one (`0` for none), its variant code, its `u16` contact countdown
-/// and the Warden's stance code (`0` for none).
+/// The basic strike's state (#885): the chain (`u8`), its window (`u16`), the follow-up window
+/// (`u16`, #928), then a pending strike's family code plus one (`0` for none), its variant code,
+/// its `u16` contact countdown, the Warden's stance code (`0` for none) and its ticks on the
+/// ground (`u8`, #928).
 fn encode_melee(payload: &mut Vec<u8>, melee: mmorpg_core::MeleeState) {
     payload.push(melee.chain);
     payload.extend_from_slice(&melee.window.to_be_bytes());
+    payload.extend_from_slice(&melee.follow_up.to_be_bytes());
     let Some(pending) = melee.pending else {
-        payload.extend_from_slice(&[0, 0, 0, 0, 0]);
+        payload.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
         return;
     };
     payload.push(pending.family.code() + 1);
     payload.push(pending.variant.code());
     payload.extend_from_slice(&pending.contact.to_be_bytes());
     payload.push(pending.stance.map_or(0, mmorpg_core::MeleeStance::code));
+    payload.push(pending.grounded);
 }
 
 fn decode_melee(
@@ -1521,12 +1524,14 @@ fn decode_melee(
     let invalid = || ProtocolError::new("player strike state is out of range");
     let chain = read_u8(payload, offset)?;
     let window = u16::from_be_bytes(take(payload, offset)?);
+    let follow_up = u16::from_be_bytes(take(payload, offset)?);
     let family = read_u8(payload, offset)?;
     let variant = read_u8(payload, offset)?;
     let contact = u16::from_be_bytes(take(payload, offset)?);
     let stance = read_u8(payload, offset)?;
+    let grounded = read_u8(payload, offset)?;
     let pending = if family == 0 {
-        if (variant, contact, stance) != (0, 0, 0) {
+        if (variant, contact, stance, grounded) != (0, 0, 0, 0) {
             return Err(invalid());
         }
         None
@@ -1539,11 +1544,13 @@ fn decode_melee(
                 0 => None,
                 code => Some(mmorpg_core::MeleeStance::from_code(code).ok_or_else(invalid)?),
             },
+            grounded,
         })
     };
     let melee = mmorpg_core::MeleeState {
         chain,
         window,
+        follow_up,
         pending,
     };
     if !melee.is_valid() {
@@ -2419,11 +2426,13 @@ mod tests {
                         melee: mmorpg_core::MeleeState {
                             chain: 2,
                             window: 40,
+                            follow_up: 0,
                             pending: Some(mmorpg_core::PendingStrike {
                                 family: mmorpg_core::WeaponFamily::Spear,
                                 variant: mmorpg_core::StrikeVariant::Second,
                                 contact: 9,
                                 stance: Some(mmorpg_core::MeleeStance::Planted),
+                                grounded: 0,
                             }),
                         },
                         repairing: Some(mmorpg_core::PieceId::new(3)),

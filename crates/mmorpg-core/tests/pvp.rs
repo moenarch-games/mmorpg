@@ -225,6 +225,7 @@ fn a_swing_only_covers_bodies_inside_its_height_band() {
             variant: mmorpg_core::StrikeVariant::First,
             contact: 1,
             stance: None,
+            grounded: 0,
         });
         let mut zone = ZoneSimulation::from_snapshot(state, flat_arena()).unwrap();
         zone.advance_tick().unwrap();

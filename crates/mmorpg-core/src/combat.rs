@@ -580,9 +580,9 @@ impl ZoneSimulation {
             return Ok(());
         }
         // A pressed swing waits out the previous one, a stun or a landing, as
-        // does one the graph refuses in water.
+        // does one the graph refuses in water. A follow-up (#928) cuts the recovery short.
         let melee = crate::action::ActionInput::WardenMelee;
-        if player.swing_timer > 0
+        if (player.swing_timer > 0 && player.melee.follow_up == 0)
             || crate::action::holding_rule(self.action_graph, player, melee).is_some()
             || crate::action::refusing_rule(self.action_graph, player, melee).is_some()
             || crate::aura::has_kind(&player.auras, crate::AuraKind::Stun)
