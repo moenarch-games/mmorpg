@@ -264,3 +264,27 @@ In the idle workload the physics steps 21,240 moving bodies instead of 55,080.
 Admitted-body counts are unchanged; the changed wandering moves fights-32's projection
 candidates to 433,961. The AI ceilings are tightened to these counts; all four replay and
 recovery checks pass.
+
+### Static colliders out of the step count; ratchet headroom (#895)
+
+The physics-engine step already visits only its moving bodies and platforms (indexes kept on
+add and remove, #666); static colliders are reached through the engine's query tree when a
+move sweeps past them, and the tree is built once, on the first step after the static world
+changes. The physics body visit counter, however, summed every admitted body each step, so
+every new prop raised it by 360 per workload. It now sums `StepStats::visited`, the bodies
+the step itself visited (moving bodies, asleep ones included, and platforms); `bodies` keeps
+the admitted count for the A/B example. The diagnostic Rapier arm reports the same count,
+though it still copies its fixed world into each step.
+
+| Workload | Physics body visits |
+| --- | ---: |
+| vale-idle-16 | 5,137,560 → 85,680 |
+| vale-fights-8 | 5,134,680 → 82,800 |
+| vale-fights-32 | 5,143,320 → 91,440 |
+| vale-crowded-fights-64 | 5,154,372 → 102,492 |
+
+The protocol test now records measured counts and allows 5 % above each before failing, so
+ordinary content additions pass while a real regression still fails. When a reviewed change
+moves a counter past that headroom, re-record its row from the `combat_workload` example;
+re-record after a welcome decrease too, to keep the gate tight. AI, candidate and byte rows
+were re-recorded at their current counts; replay and recovery parity hold.

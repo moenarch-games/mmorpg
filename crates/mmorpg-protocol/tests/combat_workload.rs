@@ -8,9 +8,13 @@ use mmorpg_protocol::MAX_PLAYER_PROJECTION_BYTES;
 
 #[test]
 fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
-    // Reviewed ceilings in fixture order: AI, physics body visits, projection
-    // candidates and total encoded player-projection bytes. A decrease is welcome;
-    // raising a ceiling requires a deliberate workload/behavior/performance review.
+    // Recorded counts in fixture order: AI, physics body visits, projection
+    // candidates and total encoded player-projection bytes. The gate allows
+    // `HEADROOM_PERCENT` above each (#895), so ordinary content (a few creatures,
+    // props or projection bytes more) passes while a real regression still fails.
+    // Re-record a row from the `combat_workload` example when a reviewed change moves
+    // a counter past its headroom, or to tighten it after a welcome decrease.
+    // The history below explains how the counts moved.
     // Rapier physics (#271) replaced the first-party engine's pair, TOI and contact
     // counters; these ceilings were recorded on the switch. Sliding around other
     // characters (#273) moved the spread 32-player fight slightly. The outer valley
@@ -103,13 +107,19 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // evaluates 17,372 AI decisions and projects 1,934,120 bytes, and fights-32 evaluates 25,530,
     // tests 438,211 candidates and projects 8,288,034 bytes, and crowded-fights-64 visits 5,154,372
     // bodies.
-    let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [11_052, 5_137_560, 288_000, 6_151_648],
-        [17_372, 5_134_680, 93_060, 1_934_120],
-        [25_530, 5_143_320, 438_211, 8_288_034],
-        [13_344, 5_154_372, 2_323_474, 24_553_949],
+    // Static colliders leave the count (#895): counter 1 now sums the bodies each step
+    // visits (moving bodies and platforms), not every admitted body, so scenery no longer
+    // moves it; static colliders cost a step only through the engine's query tree. The
+    // rows are re-recorded at their measured counts with the headroom above.
+    const HEADROOM_PERCENT: usize = 5;
+    let recorded: [[usize; 4]; FIXTURES.len()] = [
+        [11_052, 85_680, 282_240, 6_151_648],
+        [17_372, 82_800, 81_360, 1_934_120],
+        [25_530, 91_440, 438_211, 8_288_034],
+        [13_037, 102_492, 2_314_114, 24_414_336],
     ];
-    for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
+    for (fixture, recorded) in FIXTURES.into_iter().zip(recorded) {
+        let ceiling = recorded.map(|count| count + count * HEADROOM_PERCENT / 100);
         let report = measure(fixture).unwrap();
         assert_eq!(
             report,
@@ -122,6 +132,8 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
         // Every player steps every tick; awake creatures step whether or not they decide (#814).
         assert!(report.dynamic_body_visits >= fixture.players * TICKS);
         assert_eq!(report.maintenance_inspections, report.dynamic_body_visits);
+        // A step visits its awake movers, its asleep ones and its platforms (#895).
+        assert!(report.physics_body_visits >= report.dynamic_body_visits);
         assert!(report.max_projection_bytes <= MAX_PLAYER_PROJECTION_BYTES);
         let actual = [
             report.ai_evaluations,
