@@ -441,6 +441,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::wilds::spawns())
         // The farmland hamlets' creatures (#859).
         .chain(super::hamlet_creatures::spawns())
+        // The Rimewood scouts, an Arcanist's group-control fight (#933).
+        .chain(super::rimewood::spawns())
         .collect()
 }
 
