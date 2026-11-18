@@ -1,6 +1,7 @@
 /**
- * The presented world's derived scenery, static scene and grass, built in a worker (#855) by its own instance of the
- * same `mmorpg-wasm` build, so the page's instance seeds them instead of blocking the page for seconds deriving them.
+ * The zone content's costly base parts and the presented world's derived scenery, static scene and grass, built in a
+ * worker (#855) by its own instance of the same `mmorpg-wasm` build, so the page's instance seeds them instead of
+ * blocking the page for seconds deriving them.
  * Every failure, or a browser without workers, reads as null: the page then derives as before.
  */
 
@@ -20,17 +21,20 @@ export type DerivedScene = {
 };
 
 export type DerivedWorldMessage =
+  | { kind: "content"; seed: Int32Array }
   | ({ kind: "scenery" } & DerivedScenery)
   | ({ kind: "scene" } & DerivedScene)
   | { kind: "grass"; grass: Uint8Array }
   | { kind: "failed"; message: string };
 
 /**
- * The worker's three answers, in order, each null once the worker failed or never ran. The scenery waits for
- * `supplyGrids`: the cached terrain grids, or null to derive them. `grass` is the grass's seed (`grassSeed`).
+ * The worker's four answers, in order, each null once the worker failed or never ran. `content` is the zone content's
+ * costly base parts (`LocalZone.hostedContentSeed`). The scenery waits for `supplyGrids`: the cached terrain grids, or
+ * null to derive them. `grass` is the grass's seed (`grassSeed`).
  */
 export type DerivedWorld = {
   supplyGrids(grids: Uint8Array | null): void;
+  content: Promise<Int32Array | null>;
   scenery: Promise<DerivedScenery | null>;
   scene: Promise<DerivedScene | null>;
   grass: Promise<Uint8Array | null>;
@@ -57,23 +61,28 @@ function createWorker(): DerivedWorldWorker | null {
 export function deriveWorld(module: WebAssembly.Module, create: () => DerivedWorldWorker | null = createWorker): DerivedWorld {
   const worker = create();
   if (!worker) {
-    return { supplyGrids: () => {}, scenery: Promise.resolve(null), scene: Promise.resolve(null), grass: Promise.resolve(null) };
+    return { supplyGrids: () => {}, content: Promise.resolve(null), scenery: Promise.resolve(null), scene: Promise.resolve(null), grass: Promise.resolve(null) };
   }
+  let settleContent: (value: Int32Array | null) => void = () => {};
   let settleScenery: (value: DerivedScenery | null) => void = () => {};
   let settleScene: (value: DerivedScene | null) => void = () => {};
   let settleGrass: (value: Uint8Array | null) => void = () => {};
+  const content = new Promise<Int32Array | null>((resolve) => { settleContent = resolve; });
   const scenery = new Promise<DerivedScenery | null>((resolve) => { settleScenery = resolve; });
   const scene = new Promise<DerivedScene | null>((resolve) => { settleScene = resolve; });
   const grass = new Promise<Uint8Array | null>((resolve) => { settleGrass = resolve; });
   const fail = (message: string) => {
     console.warn(`Deriving the world in a worker failed; the page derives it instead: ${message}`);
+    settleContent(null);
     settleScenery(null);
     settleScene(null);
     settleGrass(null);
     worker.terminate();
   };
   worker.onmessage = ({ data }) => {
-    if (data.kind === "scenery") {
+    if (data.kind === "content") {
+      settleContent(data.seed);
+    } else if (data.kind === "scenery") {
       settleScenery({ grids: data.grids, scenery: data.scenery });
     } else if (data.kind === "scene") {
       const { layout, vertices, indices, models, skeleton } = data;
@@ -90,5 +99,5 @@ export function deriveWorld(module: WebAssembly.Module, create: () => DerivedWor
     fail(event.message);
   };
   worker.postMessage({ kind: "module", module });
-  return { supplyGrids: (grids) => { worker.postMessage({ kind: "grids", grids }); }, scenery, scene, grass };
+  return { supplyGrids: (grids) => { worker.postMessage({ kind: "grids", grids }); }, content, scenery, scene, grass };
 }

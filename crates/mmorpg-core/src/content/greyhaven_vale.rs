@@ -16,7 +16,7 @@
 //! [`ids`]. [`content`] bundles it as the hosted [`ZoneContent`], whose revision
 //! is a hash of all of it: changing anything here changes the revision by itself.
 
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, OnceLock};
 
 use super::{SpawnGrid, StaticCollider, XzBounds, ZoneContent, ZoneDefinition};
 use crate::{Area, AreaId, Terrain, ZoneAreas};
@@ -862,7 +862,59 @@ pub fn terrain() -> Terrain {
     }
 }
 
-static TERRAIN: LazyLock<Terrain> = LazyLock::new(terrain);
+static TERRAIN: Seeded<Terrain> = Seeded::new(terrain);
+
+/// A value built on first use, unless a copy was seeded first ([`seed_base`]).
+struct Seeded<T> {
+    cell: OnceLock<T>,
+    build: fn() -> T,
+}
+
+impl<T> Seeded<T> {
+    const fn new(build: fn() -> T) -> Self {
+        Self {
+            cell: OnceLock::new(),
+            build,
+        }
+    }
+}
+
+impl<T> std::ops::Deref for Seeded<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        self.cell.get_or_init(self.build)
+    }
+}
+
+/// The two costly parts of the base definition: the zone terrain's heights ([`terrain`]) and
+/// the colliders before the static meshes' bounds join them, each built once.
+#[must_use]
+pub fn base_parts() -> (&'static [i32], &'static [StaticCollider]) {
+    (&TERRAIN.heights, &COLLIDERS)
+}
+
+/// Seeds [`base_parts`] with a copy another instance of this same build made (the browser's
+/// world-build worker, #855), so this one need not build them; the base definition is then
+/// assembled and validated from them as from built parts. Returns false, changing nothing, once
+/// either part was built or seeded, or when the parts do not form a valid definition.
+pub fn seed_base(heights: Vec<i32>, colliders: Vec<StaticCollider>) -> bool {
+    let terrain = Terrain {
+        origin: terrain::ZONE_ORIGIN,
+        step: terrain::STEP,
+        columns: terrain::ZONE_COLUMNS,
+        rows: terrain::ZONE_ROWS,
+        heights,
+    };
+    if TERRAIN.cell.get().is_some()
+        || COLLIDERS.cell.get().is_some()
+        || terrain.validate().is_err()
+        || ZoneDefinition::with_spawn_grid(GRAVITY, SPAWN_GRID, colliders.clone()).is_err()
+    {
+        return false;
+    }
+    TERRAIN.cell.set(terrain).is_ok() && COLLIDERS.cell.set(colliders).is_ok()
+}
 
 /// The zone's terrain over the authored grid alone ([`terrain::ORIGIN`], [`terrain::COLUMNS`],
 /// [`terrain::ROWS`]), the window painted cells and the authored landforms index.
@@ -1450,6 +1502,8 @@ fn segments_intersect(a: [i32; 2], b: [i32; 2], c: [i32; 2], d: [i32; 2]) -> boo
         || (o4 == 0 && on_segment(c, b, d))
 }
 
+static COLLIDERS: Seeded<Vec<StaticCollider>> = Seeded::new(colliders);
+
 /// Ground, boundary walls, authored structures and generated trees.
 fn colliders() -> Vec<StaticCollider> {
     let mut colliders = undressed_colliders();
@@ -1850,7 +1904,7 @@ static VALE_DEFINITION: LazyLock<ZoneDefinition> =
     LazyLock::new(|| layout::compile(layout::SOURCE).expect("committed Outpost layout is valid"));
 
 fn build_base_definition() -> ZoneDefinition {
-    ZoneDefinition::with_spawn_grid(GRAVITY, SPAWN_GRID, colliders())
+    ZoneDefinition::with_spawn_grid(GRAVITY, SPAWN_GRID, COLLIDERS.clone())
         .and_then(|definition| definition.with_terrain(TERRAIN.clone()))
         .and_then(|definition| {
             definition.with_static_meshes(

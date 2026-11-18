@@ -45,6 +45,50 @@ pub fn hosted_definition() -> ZoneDefinition {
     hosted_content().definition().clone()
 }
 
+/// [`hosted_content`]'s costly base parts ([`greyhaven_vale::base_parts`]) as one array, for
+/// another instance of this build to [`seed_hosted_content`] with (#855): the terrain's height
+/// count, its heights, then each collider's ID (bits), position and half extents.
+#[must_use]
+pub fn hosted_content_seed() -> Vec<i32> {
+    let (heights, colliders) = greyhaven_vale::base_parts();
+    let mut seed = Vec::with_capacity(1 + heights.len() + colliders.len() * 7);
+    seed.push(i32::try_from(heights.len()).unwrap_or(i32::MAX));
+    seed.extend_from_slice(heights);
+    for collider in colliders {
+        seed.push(collider.id.cast_signed());
+        seed.extend(collider.position.into_iter().chain(collider.half_extents));
+    }
+    seed
+}
+
+/// Seeds [`hosted_content`]'s base parts from a [`hosted_content_seed`] of this same build, so
+/// this instance need not build them; false, changing nothing, when they were built already or
+/// the seed is malformed or invalid. The content is then assembled and validated as usual.
+pub fn seed_hosted_content(seed: &[i32]) -> bool {
+    decode_seed(seed)
+        .is_some_and(|(heights, colliders)| greyhaven_vale::seed_base(heights, colliders))
+}
+
+/// The heights and colliders of a [`hosted_content_seed`]; `None` when malformed.
+fn decode_seed(seed: &[i32]) -> Option<(Vec<i32>, Vec<mmorpg_core::StaticCollider>)> {
+    let (&count, rest) = seed.split_first()?;
+    let (heights, colliders) = rest.split_at_checked(usize::try_from(count).ok()?)?;
+    let (colliders, []) = colliders.as_chunks::<7>() else {
+        return None;
+    };
+    let colliders = colliders
+        .iter()
+        .map(
+            |&[id, x, y, z, half_x, half_y, half_z]| mmorpg_core::StaticCollider {
+                id: id.cast_unsigned(),
+                position: [x, y, z],
+                half_extents: [half_x, half_y, half_z],
+            },
+        )
+        .collect();
+    Some((heights.to_vec(), colliders))
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LocalZoneError {
     /// The player never joined or has left.
@@ -1130,6 +1174,19 @@ mod tests {
         let snapshot = decode_snapshot(&host.projection(other).unwrap()).unwrap();
         assert_eq!(snapshot.viewer.class, None);
         assert_eq!(snapshot.events.len(), 1);
+    }
+
+    #[test]
+    fn the_content_seed_carries_the_built_base_parts() {
+        let seed = hosted_content_seed();
+        let (heights, colliders) = greyhaven_vale::base_parts();
+        assert_eq!(
+            decode_seed(&seed),
+            Some((heights.to_vec(), colliders.to_vec()))
+        );
+        // Built already, so a seed changes nothing; a malformed one is refused.
+        assert!(!seed_hosted_content(&seed));
+        assert_eq!(decode_seed(&seed[..seed.len() - 1]), None);
     }
 
     #[test]
