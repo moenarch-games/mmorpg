@@ -15,8 +15,8 @@ use super::{
 };
 use crate::geometry::V;
 use mmorpg_core::{
-    AbilityId, ability::ids, EntityRef, ProjectileKind, StrikeVariant, TICK_HZ, WeaponFamily, ZoneEvent,
-    ZoneSnapshot,
+    AbilityId, EntityRef, ProjectileKind, StrikeVariant, TICK_HZ, WeaponFamily, ZoneEvent,
+    ZoneSnapshot, ability::ids,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -93,7 +93,7 @@ pub struct Instance {
     /// The clip and seconds into it; a `Loop` clip's time wraps in the client.
     pub clip: Option<&'static str>,
     pub time: f32,
-    /// Linear RGB for the main material's base and emissive colour; `None` draws it as authored.
+    /// 0–1 sRGB channels for the material's base and emissive colour; `None` draws it as authored.
     pub tint: Option<[f32; 3]>,
 }
 

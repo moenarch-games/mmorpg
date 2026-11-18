@@ -30,6 +30,8 @@ mod spell_bundle {
 const MORPH_STEPS: usize = 17;
 
 type M4 = [f32; 16];
+/// A morph target's position and normal offsets.
+type Target = (Vec<[f32; 3]>, Vec<[f32; 3]>);
 
 #[derive(Clone, Copy)]
 enum Path {
@@ -153,7 +155,10 @@ impl Effect {
         let mut parts = Vec::new();
         for node in document.nodes() {
             let Some(mesh) = node.mesh() else { continue };
-            let weight = mesh.weights().and_then(|w| w.first().copied()).unwrap_or(0.);
+            let weight = mesh
+                .weights()
+                .and_then(|w| w.first().copied())
+                .unwrap_or(0.);
             for primitive in mesh.primitives() {
                 let reader = primitive.reader(|b| Some(&buffers[b.index()]));
                 let Some(positions) = reader.read_positions() else {
@@ -163,20 +168,20 @@ impl Effect {
                 let normals: Vec<[f32; 3]> = reader
                     .read_normals()
                     .map_or_else(|| vec![[0., 1., 0.]; positions.len()], Iterator::collect);
-                let rgba: Vec<[f32; 4]> = reader
-                    .read_colors(0)
-                    .map_or_else(|| vec![[1.; 4]; positions.len()], |c| c.into_rgba_f32().collect());
+                let rgba: Vec<[f32; 4]> = reader.read_colors(0).map_or_else(
+                    || vec![[1.; 4]; positions.len()],
+                    |c| c.into_rgba_f32().collect(),
+                );
                 let indices: Vec<u32> = reader.read_indices().map_or_else(
                     || (0..u32::try_from(positions.len()).unwrap_or(0)).collect(),
                     |i| i.into_u32().collect(),
                 );
-                let target: Option<(Vec<[f32; 3]>, Vec<[f32; 3]>)> =
-                    reader.read_morph_targets().next().map(|(p, n, _)| {
-                        (
-                            p.map_or_else(Vec::new, Iterator::collect),
-                            n.map_or_else(Vec::new, Iterator::collect),
-                        )
-                    });
+                let target: Option<Target> = reader.read_morph_targets().next().map(|(p, n, _)| {
+                    (
+                        p.map_or_else(Vec::new, Iterator::collect),
+                        n.map_or_else(Vec::new, Iterator::collect),
+                    )
+                });
                 let colors: Vec<Color3> = rgba
                     .iter()
                     .map(|c| Color3::new(srgb(c[0]), srgb(c[1]), srgb(c[2])))
@@ -200,9 +205,8 @@ impl Effect {
                                 moved(&normals, target.as_ref().map(|t| &t.1))
                                     .into_iter()
                                     .map(|n| {
-                                        let len = (n.x * n.x + n.y * n.y + n.z * n.z)
-                                            .sqrt()
-                                            .max(1e-6);
+                                        let len =
+                                            (n.x * n.x + n.y * n.y + n.z * n.z).sqrt().max(1e-6);
                                         Vec3::new(n.x / len, n.y / len, n.z / len)
                                     })
                                     .collect(),
@@ -420,7 +424,9 @@ mod tests {
     #[test]
     fn every_entry_the_presenter_places_is_embedded_with_its_clip() {
         for (key, clip, duration) in ENTRIES {
-            let effect = effects().get(key).unwrap_or_else(|| panic!("{key} embedded"));
+            let effect = effects()
+                .get(key)
+                .unwrap_or_else(|| panic!("{key} embedded"));
             assert!(!effect.parts.is_empty(), "{key} draws");
             if let Some(clip) = clip {
                 let authored = effect.clips.get(clip).expect(key).duration;

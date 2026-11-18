@@ -1206,7 +1206,7 @@ fn bundle_strikes_spawn_at_contact_and_go_when_their_clip_ends() {
     frame(&mut scene, 0.);
     scene.snapshot.tick += 1;
     let viewer = EntityRef::Player(1);
-    let contact = u16::try_from(mmorpg_core::TICK_HZ / 5).unwrap();
+    let contact = mmorpg_core::TICK_HZ / 5;
     scene.snapshot.events = vec![
         ZoneEvent::StrikeBegan {
             source: viewer,
