@@ -238,8 +238,9 @@ describe("combat HUD text", () => {
       "Skeleton hits Timber Wolf for 9.",
       "Timber Wolf hits Skeleton for 4.",
       "Skeleton misses Timber Wolf.",
-      "Timber Wolf is rooted by Entangling Roots.",
-      "Timber Wolf breaks free of Entangling Roots.",
+      // The test catalog names no Druid abilities.
+      "Timber Wolf is rooted by ability 39.",
+      "Timber Wolf breaks free of ability 39.",
     ]);
   });
 });
