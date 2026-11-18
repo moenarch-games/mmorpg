@@ -44,6 +44,7 @@ pub mod marshal_house;
 pub mod paint;
 pub mod quests;
 pub mod raid;
+pub mod redbrand_patrol;
 pub mod region;
 pub mod residents;
 mod roofs;
@@ -1981,6 +1982,7 @@ fn content_with_spawns(
             .with_creature_abilities(units::creature_abilities())?
             .with_bosses(units::bosses())?
             .with_shielded(units::shielded())?
+            .with_patrols(redbrand_patrol::members())?
             .with_vendors(units::vendors())?
             .with_quests(quests::quests())?
             .with_doors(vec![
