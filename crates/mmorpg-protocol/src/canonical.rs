@@ -1458,7 +1458,7 @@ fn decode_player(
 }
 
 /// A running timed swing (#679): a presence byte, then ability (`u32`), `u16` facing, aim, `u16`
-/// elapsed, `u16` startup and active ticks and the struck flag.
+/// elapsed, `u16` startup and active ticks, the units it struck (#909) and `u16` rewind.
 fn encode_swing(payload: &mut Vec<u8>, swing: Option<mmorpg_core::Swing>) {
     let Some(swing) = swing else {
         payload.push(0);
@@ -1471,7 +1471,9 @@ fn encode_swing(payload: &mut Vec<u8>, swing: Option<mmorpg_core::Swing>) {
     for ticks in [swing.elapsed, swing.startup, swing.active] {
         payload.extend_from_slice(&ticks.to_be_bytes());
     }
-    payload.push(u8::from(swing.struck));
+    for unit in swing.struck {
+        encode_entity_ref(payload, unit);
+    }
     payload.extend_from_slice(&swing.rewind.to_be_bytes());
 }
 
@@ -1482,16 +1484,20 @@ fn decode_swing(
     if !read_bool(payload, offset)? {
         return Ok(None);
     }
-    let swing = mmorpg_core::Swing {
+    let mut swing = mmorpg_core::Swing {
         ability: mmorpg_core::AbilityId::new(u32::from_be_bytes(take(payload, offset)?)),
         facing: u16::from_be_bytes(take(payload, offset)?),
         aim: crate::wire::decode_aim(take(payload, offset)?)?,
         elapsed: u16::from_be_bytes(take(payload, offset)?),
         startup: u16::from_be_bytes(take(payload, offset)?),
         active: u16::from_be_bytes(take(payload, offset)?),
-        struck: read_bool(payload, offset)?,
-        rewind: u16::from_be_bytes(take(payload, offset)?),
+        struck: [None; mmorpg_core::SWING_HITS],
+        rewind: 0,
     };
+    for unit in &mut swing.struck {
+        *unit = decode_entity_ref(payload, offset)?;
+    }
+    swing.rewind = u16::from_be_bytes(take(payload, offset)?);
     if !swing.is_valid() {
         return Err(ProtocolError::new("player timed swing is out of range"));
     }
@@ -2420,7 +2426,13 @@ mod tests {
                             elapsed: 5,
                             startup: 18,
                             active: 9,
-                            struck: false,
+                            struck: [
+                                Some(mmorpg_core::EntityRef::Creature(
+                                    mmorpg_core::CreatureId::new(4),
+                                )),
+                                None,
+                                None,
+                            ],
                             rewind: 7,
                         }),
                         melee: mmorpg_core::MeleeState {

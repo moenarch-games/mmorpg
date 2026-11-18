@@ -313,6 +313,7 @@
 .ct-block { color: #cfe3ff; font-size: 1.1rem; }
 .ct-guard-break { color: #ff6a4d; font-size: 1.2rem; font-weight: 700; }
 .ct-miss { color: #c3cbd2; font-size: 1rem; }
+.ct-cleave { color: #ffbe5a; font-size: 1.35rem; font-weight: 700; }
 
 @keyframes combat-text-rise {
   from { opacity: 1; margin-top: 0; }

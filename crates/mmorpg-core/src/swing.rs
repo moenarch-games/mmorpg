@@ -9,10 +9,13 @@
 //! - **Startup** ([`SwingTiming::startup_ms`]): the wind-up. Nothing is struck yet.
 //! - **Active** ([`SwingTiming::active_ms`]): the blade sweeps the strike's arc (the same arc,
 //!   reach and height lane as an immediate directed strike), one equal slice per active tick,
-//!   travelling toward the aimed side (a centre strike travels right to left). Each tick the
-//!   nearest eligible unit its slice covers takes the ordinary weapon strike, physical cover
-//!   still blocking; a swing strikes at most one unit (no cleave). A swing that strikes nobody
-//!   reports its whiff on its last active tick.
+//!   travelling toward the aimed side (a centre strike travels right to left). Each tick every
+//!   eligible unit its slice covers takes the ordinary weapon strike, physical cover still
+//!   blocking: a well-placed swing cleaves (#909). Each unit is struck once per swing, and a
+//!   swing strikes at most [`SWING_HITS`] units, nearest first within a slice, then in
+//!   `EntityRef` order; every struck unit takes the full strike and reports its own
+//!   [`crate::ZoneEvent::StrikeSwept`]. A swing that strikes nobody reports its whiff on its
+//!   last active tick.
 //! - **Recovery**: the action graph's `DirectedSlash` recovery, committed when the active phase
 //!   ends, exactly as after an immediate strike.
 //!
@@ -55,6 +58,9 @@ use crate::{
 pub const MAX_SWING_PHASE_TICKS: u16 = 63;
 /// The largest clash radius a projectile may have, in units.
 pub const MAX_CLASH_RADIUS_UNITS: u16 = 200;
+/// The most units one timed swing strikes (#909): enough to make positioning against two to
+/// four opponents pay, few enough that a crowd is not mown down.
+pub const SWING_HITS: usize = 3;
 /// Points sampled along a projectile's path this tick when a sweep looks for it.
 const PARRY_SAMPLES: u16 = 4;
 
@@ -241,8 +247,9 @@ pub struct Swing {
     /// Its content's wind-up and sweep, in ticks.
     pub startup: u16,
     pub active: u16,
-    /// Whether it already struck a unit; it strikes at most one.
-    pub struck: bool,
+    /// The units it already struck, in strike order, packed from the front; each unit is struck
+    /// at most once and at most [`SWING_HITS`] in all (#909).
+    pub struck: [Option<EntityRef>; SWING_HITS],
     /// Ticks its sweep looks back at bodies (#680); 0 without hit rewind.
     pub rewind: u16,
 }
@@ -257,6 +264,19 @@ impl Swing {
             && self.startup <= MAX_SWING_PHASE_TICKS
             && self.elapsed < self.startup + self.active
             && self.rewind <= crate::ticks_from_ms(crate::MAX_HIT_REWIND_MS)
+            && Self::packed(&self.struck)
+    }
+
+    /// Whether `struck` holds no unit after a gap.
+    const fn packed(struck: &[Option<EntityRef>; SWING_HITS]) -> bool {
+        let mut index = 1;
+        while index < SWING_HITS {
+            if struck[index].is_some() && struck[index - 1].is_none() {
+                return false;
+            }
+            index += 1;
+        }
+        true
     }
 
     /// The phase of its next tick.
@@ -347,7 +367,7 @@ impl ZoneSimulation {
             elapsed: 0,
             startup: timed.startup_ticks(),
             active: timed.active_ticks(),
-            struck: false,
+            struck: [None; SWING_HITS],
             // Fixed now, from the lateness the zone measured itself (#680).
             rewind: self
                 .content
@@ -436,16 +456,28 @@ impl ZoneSimulation {
                 continue;
             }
             let last = tick + 1 >= swing.active;
-            if !swing.struck {
+            let hits = swing.struck.iter().flatten().count();
+            if hits < SWING_HITS {
                 // Bodies only, rewound by the swing's own rewind (#680); clashes above stay
-                // in the present.
-                let victim = self.sweep_coverage(player_id, swing.slice(tick), swing.rewind)?;
-                if victim.is_some() {
-                    swing.struck = true;
+                // in the present. Units struck earlier in the swing are struck once (#909).
+                let victims = self.sweep_victims(
+                    player_id,
+                    swing.slice(tick),
+                    swing.rewind,
+                    &swing.struck,
+                    SWING_HITS - hits,
+                )?;
+                for (slot, &victim) in swing.struck[hits..].iter_mut().zip(&victims) {
+                    *slot = Some(victim);
+                }
+                if !victims.is_empty() {
                     self.update_player(player_id, |player| player.swing = Some(swing));
                 }
-                if victim.is_some() || last {
-                    self.strike_resolves(player_id, swing.ability, victim, swing.aim, now)?;
+                for &victim in &victims {
+                    self.strike_resolves(player_id, swing.ability, Some(victim), swing.aim, now)?;
+                }
+                if last && hits == 0 && victims.is_empty() {
+                    self.strike_resolves(player_id, swing.ability, None, swing.aim, now)?;
                 }
             }
             if last {
