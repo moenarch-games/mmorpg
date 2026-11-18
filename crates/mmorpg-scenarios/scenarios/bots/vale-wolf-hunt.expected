@@ -257,42 +257,41 @@ t=3428 hunter swing -> applied seq=65 epoch=1 entity=creature:106 facing=6512
 t=3429 hunter p1 e1 ack65 (-9645,1190,-1408) sees[] hp36/50 target=creature:106 in_combat
 t=3431 hunter p1 e1 ack65 (-9645,1190,-1408) sees[] hp36/50 target=creature:106 in_combat events[attack:hunter>creature:106,dealt:creature:106:2]
 t=3447 hunter p1 e1 ack65 (-9645,1190,-1408) sees[] hp36/50 target=creature:106 in_combat events[strike:hunter:Unarmed:2+22]
-t=3457 hunter p1 e1 ack65 (-9645,1190,-1408) sees[] hp36/50 target=creature:106 in_combat events[bite:creature:105:0+23]
 t=3458 hunter swing -> applied seq=66 epoch=1 entity=creature:106 facing=6512
 t=3459 hunter p1 e1 ack66 (-9645,1190,-1408) sees[] hp36/50 target=creature:106 in_combat
 t=3469 hunter p1 e1 ack66 (-9645,1190,-1408) sees[] hp36/50 target=creature:106 in_combat events[attack:hunter>creature:106,dealt:creature:106:2]
-t=3480 hunter p1 e1 ack66 (-9645,1190,-1408) sees[] hp33/50 target=creature:106 in_combat events[taken:creature:105:3]
-t=3483 hunter p1 e1 ack66 (-9645,1190,-1408) sees[] hp33/50 target=creature:106 in_combat events[strike:hunter:Unarmed:3+22]
+t=3483 hunter p1 e1 ack66 (-9645,1190,-1408) sees[] hp36/50 target=creature:106 in_combat events[strike:hunter:Unarmed:3+22]
 t=3488 hunter swing -> applied seq=67 epoch=1 entity=creature:106 facing=6512
-t=3489 hunter p1 e1 ack67 (-9645,1190,-1408) sees[] hp33/50 target=creature:106 in_combat
-t=3494 hunter p1 e1 ack67 (-9645,1190,-1408) sees[] hp33/50 target=creature:106 in_combat events[bite:creature:106:0+23]
-t=3505 hunter p1 e1 ack67 (-9645,1190,-1408) sees[] hp33/50 target=creature:106 in_combat events[attack:hunter>creature:106,dealt:creature:106:4]
-t=3517 hunter p1 e1 ack67 (-9645,1190,-1408) sees[] hp29/50 target=creature:106 in_combat events[taken:creature:106:4]
-t=3518 hunter p1 e1 ack67 (-9645,1190,-1408) sees[] hp29/50 target=creature:106 in_combat events[bite:creature:100:1+35]
+t=3489 hunter p1 e1 ack67 (-9645,1190,-1408) sees[] hp36/50 target=creature:106 in_combat
+t=3494 hunter p1 e1 ack67 (-9645,1190,-1408) sees[] hp36/50 target=creature:106 in_combat events[bite:creature:106:0+23]
+t=3505 hunter p1 e1 ack67 (-9645,1190,-1408) sees[] hp36/50 target=creature:106 in_combat events[attack:hunter>creature:106,dealt:creature:106:4]
+t=3517 hunter p1 e1 ack67 (-9645,1190,-1408) sees[] hp32/50 target=creature:106 in_combat events[taken:creature:106:4]
+t=3518 hunter p1 e1 ack67 (-9645,1190,-1408) sees[] hp32/50 target=creature:106 in_combat events[bite:creature:100:1+35]
 t=3518 hunter swing -> applied seq=68 epoch=1 entity=creature:106 facing=6512
-t=3519 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp29/50 target=creature:106 in_combat
-t=3531 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp29/50 target=creature:106 in_combat events[strike:hunter:Unarmed:1+14]
-t=3545 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp29/50 target=creature:106 in_combat events[reward:hunter:1+18,attack:hunter>creature:106,dealt:creature:106:2]
-t=3553 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp23/50 target=creature:106 in_combat events[taken:creature:100:6!]
-t=3577 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp23/50 target=creature:106 in_combat events[bite:creature:105:0+23]
-t=3600 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp19/50 target=creature:106 in_combat events[taken:creature:105:4]
-t=3614 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp19/50 target=creature:106 in_combat events[bite:creature:106:0+23]
-t=3637 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp16/50 target=creature:106 in_combat events[taken:creature:106:3]
-t=3638 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp16/50 target=creature:106 in_combat events[bite:creature:100:0+23]
-t=3661 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp12/50 target=creature:106 in_combat events[taken:creature:100:4]
-t=3697 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp12/50 target=creature:106 in_combat events[bite:creature:105:0+23]
-t=3720 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp9/50 target=creature:106 in_combat events[taken:creature:105:3]
-t=3734 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp9/50 target=creature:106 in_combat events[bite:creature:106:1+35]
-t=3758 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp9/50 target=creature:106 in_combat events[bite:creature:100:0+23]
-t=3769 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp2/50 target=creature:106 in_combat events[taken:creature:106:7]
-t=3781 expect hunter event died bot:hunter by t=4608 ok events[taken:creature:100:2,died:hunter]
-t=3781 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp0/50 dead target=creature:106 in_combat events[taken:creature:100:2,died:hunter]
-t=3782 expect hunter unit creature:106 evading by t=4608 ok L2 hp77% (-9502,1145,-1229) [hostile,attackable,evading]
-t=3782 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp0/50 dead target=creature:106 in_combat
-t=3800 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp0/50 dead target=creature:106 in_combat
+t=3519 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp32/50 target=creature:106 in_combat
+t=3531 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp32/50 target=creature:106 in_combat events[strike:hunter:Unarmed:1+14]
+t=3545 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp32/50 target=creature:106 in_combat events[reward:hunter:1+18,attack:hunter>creature:106,dealt:creature:106:2]
+t=3553 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp26/50 target=creature:106 in_combat events[taken:creature:100:6!]
+t=3600 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp26/50 target=creature:106 in_combat
+t=3614 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp26/50 target=creature:106 in_combat events[bite:creature:106:0+23]
+t=3637 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp23/50 target=creature:106 in_combat events[taken:creature:106:3]
+t=3638 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp23/50 target=creature:106 in_combat events[bite:creature:100:0+23]
+t=3661 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp19/50 target=creature:106 in_combat events[taken:creature:100:4]
+t=3734 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp19/50 target=creature:106 in_combat events[bite:creature:106:1+35]
+t=3758 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp19/50 target=creature:106 in_combat events[bite:creature:100:0+23]
+t=3769 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp12/50 target=creature:106 in_combat events[taken:creature:106:7]
+t=3781 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp9/50 target=creature:106 in_combat events[taken:creature:100:3]
+t=3800 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp9/50 target=creature:106 in_combat
+t=3854 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp9/50 target=creature:106 in_combat events[bite:creature:106:1+35]
+t=3878 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp9/50 target=creature:106 in_combat events[bite:creature:100:0+23]
+t=3889 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp3/50 target=creature:106 in_combat events[taken:creature:106:6!]
+t=3901 expect hunter event died bot:hunter by t=4608 ok events[taken:creature:100:3,died:hunter]
+t=3901 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp0/50 dead target=creature:106 in_combat events[taken:creature:100:3,died:hunter]
+t=3902 expect hunter unit creature:106 evading by t=4608 ok L2 hp77% (-9502,1145,-1229) [hostile,attackable,evading]
+t=3902 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp0/50 dead target=creature:106 in_combat
 t=4000 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp0/50 dead target=creature:106 in_combat
-t=4081 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp0/50 dead target=creature:106
-t=4200 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp0/50 dead target=creature:106
+t=4200 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp0/50 dead target=creature:106 in_combat
+t=4201 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp0/50 dead target=creature:106
 t=4400 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp0/50 dead target=creature:106
 t=4600 hunter p1 e1 ack68 (-9645,1190,-1408) sees[] hp0/50 dead target=creature:106
 t=4607 expect hunter health ok health=0/50

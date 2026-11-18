@@ -26,6 +26,7 @@ mod corpse_loot;
 mod corridor;
 mod creature;
 mod creature_attack;
+mod den;
 mod depths;
 mod depths_boss;
 mod door;
@@ -120,6 +121,7 @@ pub use creature::{
 pub use creature_attack::{
     CREATURE_ATTACK_SLACK_UNITS, CreatureAttack, HEAVY_ATTACK_ODDS, PendingAttack, contact_ticks,
 };
+pub use den::{DEN_LEG_TICKS, FLEE_RADIUS_UNITS, HUNT_RADIUS_UNITS, WildlifeDen};
 pub use depths::{
     DepthsChamber, DepthsRun, DepthsRunStart, DepthsSite, DepthsSpawn, DepthsThreshold,
     ThresholdRequest, WIPE_DELAY_TICKS, depths_arrival,

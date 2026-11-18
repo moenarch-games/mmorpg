@@ -26,6 +26,7 @@ pub mod brook;
 pub mod cave;
 pub mod cottages;
 pub mod crossings;
+pub mod dens;
 pub mod design;
 pub mod dressing;
 pub mod farmland;
@@ -2005,6 +2006,7 @@ fn content_with_spawns(
             .with_traps(traps::traps())?
             .with_climbing(climbing())?
             .with_raid(raid::millbrook_barn())?
+            .with_dens(dens::dens())?
             .with_waystones(vec![
                 crate::GREYHAVEN_OUTPOST,
                 crate::BARROWDOWN,

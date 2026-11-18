@@ -683,7 +683,13 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
         .iter()
         .zip(content.creature_spawns())
     {
-        if content.is_raider(spawn.id) {
+        // Raiders and den packs (#912) keep their own ranges.
+        if content.is_raider(spawn.id)
+            || content
+                .dens()
+                .iter()
+                .any(|den| den.pack.contains(&spawn.id))
+        {
             continue;
         }
         let dx =

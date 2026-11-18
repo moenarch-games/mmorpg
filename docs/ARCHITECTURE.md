@@ -229,7 +229,7 @@ A unit is a player, creature or NPC, named by `EntityRef = Player(PlayerId) | Cr
 **Tick order.** `ZoneSimulation::advance_tick` clears last tick's events, then:
 
 1. consumes pending player intents in `(player id, sequence)` order, including class choices and ability use: instant abilities resolve here, casts and channels start here;
-2. makes creature AI decisions in creature-ID order, which set creature velocities. An idle land creature with no player within 60 m sleeps (no AI and no physics step, though it still blocks others), and an awake one decides on one tick in ten, staggered by ID, keeping its velocity in between (#814); an engaged creature with a ready content-bound ability starts casting it and stands still; roots and stuns stop creatures, snares slow them;
+2. makes creature AI decisions in creature-ID order, which set creature velocities. An idle land creature with no player within 60 m sleeps (no AI and no physics step, though it still blocks others), and an awake one decides on one tick in ten, staggered by ID, keeping its velocity in between (#814); an idle pack wolf walks to its slot in its den's current leg or chases the den's prey near an outing spot, which flees, and sleeping pack wolves no player could see are placed at their next slot when the leg changes (#912); an engaged creature with a ready content-bound ability starts casting it and stands still; roots and stuns stop creatures, snares slow them;
 3. sets player movement velocities and grounded jumps (dead and stunned players stand still, roots and snares apply); a non-zero movement intent or a jump interrupts the player's cast or channel;
 4. steps physics once;
 5. maintains the interest index from the new positions;

@@ -95,6 +95,8 @@ pub struct ZoneContent {
     depths_threshold: Option<crate::DepthsThreshold>,
     /// This depths zone's encounter table (#404), if it is one.
     depths_site: Option<crate::DepthsSite>,
+    /// Wildlife dens and their packs' home ranges (#912).
+    dens: Vec<crate::WildlifeDen>,
 }
 
 /// A body as `(centre, half extents)` in units.
@@ -226,6 +228,7 @@ impl ZoneContent {
             waystones: Vec::new(),
             depths_threshold: None,
             depths_site: None,
+            dens: Vec::new(),
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -280,6 +283,7 @@ impl ZoneContent {
             waystones: Vec::new(),
             depths_threshold: None,
             depths_site: None,
+            dens: Vec::new(),
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -1389,8 +1393,62 @@ impl ZoneContent {
         self.closed_at_night.binary_search(&npc).is_ok()
     }
 
+    /// Adds wildlife dens (#912): each names a pack of known, distinct creature spawns that
+    /// belong to no other den, raid or depths site, and prey animals outside every pack; every
+    /// pack member's place at the den and each outing spot is clear of static colliders.
+    pub fn with_dens(mut self, dens: Vec<crate::WildlifeDen>) -> Result<Self, ZoneError> {
+        let mut members = Vec::new();
+        for den in &dens {
+            if den.name.is_empty() || den.name.len() > MAX_UNIT_NAME_BYTES {
+                return Err(ZoneError::new("a den needs a short name"));
+            }
+            if den.pack.is_empty() || den.outings.is_empty() {
+                return Err(ZoneError::new("a den needs a pack and an outing spot"));
+            }
+            for &member in &den.pack {
+                let spawn = self
+                    .creature_spawn(member)
+                    .ok_or_else(|| ZoneError::new("a den's pack member is not a spawn"))?;
+                if members.contains(&member)
+                    || self.is_raider(member)
+                    || self.is_depths_creature(member)
+                {
+                    return Err(ZoneError::new("a creature belongs to two groups"));
+                }
+                members.push(member);
+                let half = self
+                    .creature_template(spawn.template)
+                    .map(|template| template.half_extents)
+                    .ok_or_else(|| ZoneError::new("a den's pack member has no template"))?;
+                let slot = den.slot(member).unwrap_or([0, 0]);
+                for anchor in den.anchors() {
+                    let feet = [anchor[0] + slot[0], anchor[1] + slot[1]];
+                    validate_unit_body(&self.definition, standing_body(feet, half), &[], &[])?;
+                }
+            }
+        }
+        for den in &dens {
+            if den
+                .prey
+                .iter()
+                .any(|&prey| self.creature_spawn(prey).is_none() || members.contains(&prey))
+            {
+                return Err(ZoneError::new("a den's prey is not a free creature spawn"));
+            }
+        }
+        self.dens = dens;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Wildlife dens (#912).
+    #[must_use]
+    pub fn dens(&self) -> &[crate::WildlifeDen] {
+        &self.dens
+    }
+
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_timed_fingerprint();
+        let fingerprint = self.compute_den_fingerprint();
         let Some(rewind) = self.hit_rewind else {
             return fingerprint;
         };
@@ -1398,6 +1456,30 @@ impl ZoneContent {
         hash.bytes(b"mmorpg.zone-content/hit-rewind-v1");
         hash.u64(fingerprint);
         hash.u32(rewind.max_ms);
+        hash.finish()
+    }
+
+    fn compute_den_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_timed_fingerprint();
+        if self.dens.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/dens-v1");
+        hash.u64(fingerprint);
+        hash.len(self.dens.len());
+        for den in &self.dens {
+            hash.text(&den.name);
+            hash.i32s(&den.den);
+            for ids in [&den.pack, &den.prey] {
+                hash.len(ids.len());
+                for id in ids {
+                    hash.u32(id.get());
+                }
+            }
+            hash.len(den.outings.len());
+            hash.i32s(den.outings.as_flattened());
+        }
         hash.finish()
     }
 

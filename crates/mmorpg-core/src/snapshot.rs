@@ -938,12 +938,15 @@ impl ZoneSimulation {
         let (spawn, template) = Self::creature_content(&content, record.creature_id)?;
         self.validate_raid_member(&record)?;
         // Bodies and corpses stay inside the world limits and wander points
-        // near their spawn (a raider's near its anchor), so AI arithmetic stays in range.
+        // near their spawn (a raider's near its anchor, a pack wolf's near its range), so AI arithmetic stays in range.
         let home = record.raid.map_or(spawn.position, |member| member.anchor);
         let wanders_off = matches!(
             record.ai,
             CreatureAi::Idle { destination: Some(to), .. }
                 if !is_wander_point(home, to, spawn.wander_radius)
+                    && !crate::den::is_pack_wander_point(
+                        &content, record.creature_id, to, spawn.wander_radius
+                    )
         );
         if !record
             .position
