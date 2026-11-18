@@ -67,7 +67,10 @@ const COMMAND_LENGTHS = new Map([
   [1, 6], [2, 2], [3, 7], [4, 4], [6, 2], [7, 6], [8, 14], [9, 11], [10, 2], [11, 4], [12, 3], [13, 3],
   [14, 12], [15, 12], [17, 3], [18, 10], [19, 11], [20, 6], [21, 10], [22, 3], [23, 7], [24, 6], [25, 3],
 ]);
-/** Wraps a command with the eight `u32` sheet revisions the client holds (#544, #882). */
+/**
+ * Wraps a command with the sheet revisions the client holds (#544, #882): a `u16` held mask, then a `u32` revision per
+ * held sheet (#897).
+ */
 const ACKNOWLEDGED_TAG = 31;
 
 /** The command inside an acknowledgement, which every online command arrives in. */
@@ -75,12 +78,21 @@ function unwrapAcknowledged(payload: Uint8Array): Uint8Array {
   if (payload[1] !== ACKNOWLEDGED_TAG) {
     return payload;
   }
-  if (payload.length < 2 + 32 + 1) {
+  if (payload.length < 2 + 2) {
     throw new Error("malformed acknowledged command");
   }
-  const inner = new Uint8Array(payload.length - 32 - 1);
+  let held = (payload[2]! << 8) | payload[3]!;
+  let revisions = 0;
+  for (; held !== 0; held &= held - 1) {
+    revisions += 1;
+  }
+  const skipped = 2 + 4 * revisions;
+  if (payload.length < 2 + skipped + 1) {
+    throw new Error("malformed acknowledged command");
+  }
+  const inner = new Uint8Array(payload.length - skipped - 1);
   inner[0] = payload[0]!;
-  inner.set(payload.subarray(2 + 32), 1);
+  inner.set(payload.subarray(2 + skipped), 1);
   return inner;
 }
 
