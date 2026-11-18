@@ -9,6 +9,7 @@
 //! NPCs green-ish; corpses lie flat, and the viewer's target stands on a
 //! marker. Names come from the zone content.
 use strum::VariantArray;
+mod kit_effects;
 mod skinned;
 
 use crate::{
@@ -227,6 +228,8 @@ impl Presentation {
         units_presenter
             .set_crag_descriptor(Some(crate::nature::crag_descriptor()))
             .expect("the embedded crag descriptor is valid");
+        // It embeds the strike and spell effects (#894) too.
+        units_presenter.set_effect_kits(true);
         Ok(Self {
             shared_cat: None,
             player_id,
@@ -672,6 +675,7 @@ impl Presentation {
             .iter()
             .map(|draw| self.lowering.draw(draw))
             .collect();
+        draws.extend(kit_effects::draws(&frame.effects));
         self.picked_draws.clear();
         self.labels.clear();
         self.unit_centres = frame
