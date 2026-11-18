@@ -284,10 +284,16 @@ impl ZoneSimulation {
                     }
                 }
             }
-            PlayerIntent::EquipItem { bag_slot } => self
-                .change_equipment(player_id, |equipment, bag| {
-                    equipment.equip(bag, usize::from(bag_slot))
-                })?,
+            PlayerIntent::EquipItem { bag_slot } => {
+                let class = self
+                    .players
+                    .get(&player_id)
+                    .and_then(|player| player.class)
+                    .map(|choice| choice.class);
+                self.change_equipment(player_id, |equipment, bag| {
+                    equipment.equip(bag, usize::from(bag_slot), class)
+                })?
+            }
             PlayerIntent::UnequipItem { equipment_slot } => self
                 .change_equipment(player_id, |equipment, bag| {
                     equipment.unequip(bag, equipment_slot)

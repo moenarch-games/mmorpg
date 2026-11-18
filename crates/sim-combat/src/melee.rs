@@ -129,6 +129,31 @@ impl WeaponFamily {
             Self::Bow => "Bow",
         }
     }
+
+    /// Whether a player of `class` may equip a weapon of this family (#914). Every class
+    /// may carry a dagger; the Warden fights with sword, spear or mace, the Ranger with bow,
+    /// sword or spear, the Rogue with sword or mace beside its daggers, the Cleric with mace
+    /// or staff, the Druid with staff, mace or spear, the Arcanist and Necromancer with
+    /// staff or sword. A classless player may equip anything.
+    #[must_use]
+    pub const fn wielded_by(self, class: Option<crate::class::PlayerClass>) -> bool {
+        use crate::class::PlayerClass::{
+            Arcanist, Cleric, Druid, Necromancer, Ranger, Rogue, Warden,
+        };
+        let Some(class) = class else {
+            return true;
+        };
+        matches!(
+            (class, self),
+            (_, Self::Dagger | Self::Unarmed)
+                | (Warden, Self::Sword | Self::Spear | Self::Mace)
+                | (Ranger, Self::Bow | Self::Sword | Self::Spear)
+                | (Rogue, Self::Sword | Self::Mace)
+                | (Cleric, Self::Mace | Self::Staff)
+                | (Druid, Self::Staff | Self::Mace | Self::Spear)
+                | (Arcanist | Necromancer, Self::Staff | Self::Sword)
+        )
+    }
 }
 
 /// Which basic strike a press became.
