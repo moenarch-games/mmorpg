@@ -119,6 +119,15 @@ struct ImportedEntry {
     /// (`hand_l` or `hand_r`) glTF frame; null outside the caster clips. The page hands its
     /// posed world position back with `setChannelOrigins` (#612).
     channel: Option<ChannelEntry>,
+    /// A resident's chore item on its routine (#904): its `humanoid-equipment` key and the
+    /// figure socket it rides; null for empty hands.
+    chore: Option<ChoreEntry>,
+}
+
+#[derive(Serialize)]
+struct ChoreEntry {
+    item: &'static str,
+    socket: &'static str,
 }
 
 #[derive(Serialize)]
@@ -536,6 +545,10 @@ impl Units {
                             Hand::Right => "hand_r",
                         },
                         point: channel.point,
+                    }),
+                    chore: unit.animation.carry.chore.map(|chore| ChoreEntry {
+                        item: chore.item,
+                        socket: chore.socket,
                     }),
                 }
             })

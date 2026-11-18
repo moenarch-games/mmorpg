@@ -141,6 +141,13 @@ authored path, a while at the far end, then back to work (`mmorpg_core::Errand`)
 Where a resident is is a pure function of the zone's tick, so it needs no saved state and replays
 exactly.
 
+Residents carry what their day calls for (#904, presentation only): `content/greyhaven/chores.json`
+maps each resident's work and errands, and every walk home or back, to a `humanoid-equipment` item
+on a figure socket with its chore or carry clips (a lantern on the walks, a bucket to the well, a
+tankard at the inn, a sack or crate against the chest). `mmorpg_presentation::units::chores` picks
+the chore from the routine and the zone clock, and both clients draw the item; a missing item or
+clip leaves the hands empty.
+
 - **The Outpost's residents** live in the houses round the square. The weaver, the fisher and the
   baker fetch water at the well, Davin and the peddler call at the inn, the porter waits for loads
   at the north and east gates, the washer works at the brook below the bridge, the peddler greets

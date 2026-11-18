@@ -11,7 +11,8 @@ import { characterVisualProfile } from "../../character-visuals";
 import type { CharacterClassId } from "../../character-selection";
 import { declaredChains, figureAppearance, swordArmPose, varyPreset } from "../wasm-runtime";
 import { ChainSway, declareChains } from "./chain-sway";
-import type { BowShot, ClassOutfit, ClipLayer, CrossbowCarry, ImportedModelKind, ImportedRequest, LayerMask, Loadout as CarriedLoadout, Throwable } from "../unit-presenter";
+import choreTable from "../../../../content/greyhaven/chores.json";
+import type { BowShot, ChoreCarry, ClassOutfit, ClipLayer, CrossbowCarry, ImportedModelKind, ImportedRequest, LayerMask, Loadout as CarriedLoadout, Throwable } from "../unit-presenter";
 
 type QuaterniusKind = ImportedModelKind;
 /**
@@ -699,9 +700,25 @@ function poseCrossbow(model: THREE.Object3D, crossbow: CrossbowCarry | null): vo
   if (!bolt.holder.matrix.equals(place.matrix)) { bolt.holder.matrix.copy(place.matrix); }
 }
 
-/** `model`'s holders whose visibility poses toggle: the throwables and the crossbow's bolt. */
+/**
+ * The residents' chore items (#904, `content/greyhaven/chores.json`, `units::chores`): every
+ * resident on a figure carries each one hidden on its socket, and its routine's chore shows one.
+ */
+const CHORES: readonly { item: string; socket: string }[] = [...new Map(Object.values(choreTable.chores)
+  .map(({ item, socket }) => [`${item}@${socket}`, { item, socket }] as const)).values()];
+const choreHolders = new WeakMap<THREE.Object3D, Map<string, THREE.Group>>();
+
+/** Shows `model`'s chore item the presenter asks for (#904); a figure without it keeps empty hands. */
+function poseChore(model: THREE.Object3D, chore: ChoreCarry | null | undefined): void {
+  const held = choreHolders.get(model);
+  if (!held) { return; }
+  const shown = chore ? `${chore.item}@${chore.socket}` : null;
+  for (const [key, holder] of held) { holder.visible = key === shown; }
+}
+
+/** `model`'s holders whose visibility poses toggle: the throwables, the crossbow's bolt and the chore items. */
 function toggledHolders(model: THREE.Object3D): Set<THREE.Object3D> {
-  const holders = new Set<THREE.Object3D>();
+  const holders = new Set<THREE.Object3D>(choreHolders.get(model)?.values());
   for (const item of daggers.get(model)?.throwables.values() ?? []) { holders.add(item.holder); }
   const bolt = crossbows.get(model)?.bolt;
   if (bolt) { holders.add(bolt.holder); }
@@ -882,6 +899,8 @@ type FigureBundle = {
   /** Dresses `model`: socket items, then the hair tinted with its eyebrows. */
   wear(model: THREE.Object3D, worn: readonly { key: string; socket: string }[], hairKey: string | null,
     tint: readonly [number, number, number] | undefined): void;
+  /** Hangs every chore item (#904) the figure has hidden on its socket of `model`, for {@link poseChore}. */
+  carryChores(model: THREE.Object3D): void;
   /** Rest bounds of the default entry posed in `rest`. */
   bounds: Pick<Asset, "floor" | "height" | "centre">;
 };
@@ -1104,15 +1123,27 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
       }
     }
   };
+  const carryChores: FigureBundle["carryChores"] = (model) => {
+    const held = new Map<string, THREE.Group>();
+    for (const { item: key, socket } of CHORES) {
+      const item = items.get(key);
+      const place = sockets.get(socket);
+      if (!item || !place) { continue; }
+      const holder = attachItem(model, cloneSkinned(item.scene), item.gripInverse, place);
+      holder.visible = false;
+      held.set(`${key}@${socket}`, holder);
+    }
+    choreHolders.set(model, held);
+  };
   const probe = mixerPosable(cloneSkinned(gltf.scene), sources);
   const bounds = measure(probe, rest);
   probe.dispose();
-  return { character, gltf, sources, sockets, motions, descriptor: JSON.stringify(descriptor), appearance, look, face, options, physique: physiqueSupport(appearance, entry.variant, gltf.scene), scene, wear, bounds };
+  return { character, gltf, sources, sockets, motions, descriptor: JSON.stringify(descriptor), appearance, look, face, options, physique: physiqueSupport(appearance, entry.variant, gltf.scene), scene, wear, carryChores, bounds };
 }
 
 async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
   // The farmer's straw hat (#418) rides with the viewer's headwear choices.
-  const keys = [...new Set([...[...Object.values(LOADOUT_ITEMS), ...Object.values(HEADWEAR_ITEMS)].flat().map((item) => item.key), "equipment.hat.straw", ...Object.values(THROWABLE_ITEMS)])];
+  const keys = [...new Set([...[...Object.values(LOADOUT_ITEMS), ...Object.values(HEADWEAR_ITEMS)].flat().map((item) => item.key), "equipment.hat.straw", ...Object.values(THROWABLE_ITEMS), ...CHORES.map((chore) => chore.item)])];
   const male = await loadFigure(loader, MALE, keys, Object.values(HAIR_ENTRIES), rest);
   const { gltf, sources, sockets, motions, appearance, look, face, scene, wear } = male;
   const figures = new Map<string, FigureBundle>([[MALE, male]]);
@@ -1305,6 +1336,8 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
       }
       const worn = [...(loadout ? LOADOUT_ITEMS[loadout] : []), ...(preset.headwear ? [{ key: preset.headwear, socket: "head.armor" }] : [])];
       figure.wear(model, worn, preset.hair, preset.tint);
+      // A resident holds its routine's chore item (#904); enemies have no routines.
+      if (resident.startsWith("resident.")) { figure.carryChores(model); }
       if (preset.faction) { tintMaterials(model, preset.faction.materials, preset.faction.color); }
       if (preset.tone) { tintMaterials(model, preset.tone.materials, preset.tone.color); }
       // Age and build keys (#380) after the face: build targets are on everything worn, age
@@ -1867,6 +1900,7 @@ export class QuaterniusUnits {
     poseBow(instance.posable.model, unit.bow, unit.weaponDrawn, asset.motions);
     poseDaggers(instance.posable.model, unit.sheathed, unit.throwable, unit.belted);
     poseCrossbow(instance.posable.model, unit.crossbow);
+    poseChore(instance.posable.model, unit.chore);
     poseWeapons(instance.posable.model, unit.weaponDrawn);
     swingHanging(instance.posable.model, unit.swing);
     instance.chains?.apply(instance.posable.model, unit.chains);

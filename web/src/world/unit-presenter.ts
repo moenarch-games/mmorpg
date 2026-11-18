@@ -45,6 +45,8 @@ export type Throwable = "knife" | "flask" | "bomb";
  * hand-off, the left hand on the crank, and the bolt in `hand_r.arrow`, in the groove or gone.
  */
 export type CrossbowCarry = { leftHand: boolean; crank: boolean; bolt: "hand" | "groove" | null };
+/** A resident's chore item on its routine (`imported::Carry::chore`, #904): its `humanoid-equipment` key and socket. */
+export type ChoreCarry = { item: string; socket: string };
 /**
  * A class starter outfit (asset-tooling #379, the shared `Outfit`): the `class.<id>` appearance
  * preset and the armour sockets whose outfit pieces the viewer's equipped drops replace.
@@ -129,6 +131,8 @@ export type ImportedRequest = {
    * world position goes back through {@link SharedUnits.setChannelOrigins}, where beams start (#612).
    */
   channel: SpellChannel | null;
+  /** The chore item a resident holds on its routine (#904); null or absent for empty hands. */
+  chore?: ChoreCarry | null;
 };
 
 /** A caster clip's `cast.channelJoint` and `cast.channelPoint` (asset-tooling #420). */
@@ -169,7 +173,7 @@ type GeometryEntry = { key: string; vertexOffset: number; vertexCount: number; c
 type UnitEntry = { kind: EntityKind; entityId: number; node: string; feet: [number, number, number]; centreY: number; yaw: number; label: [number, number, number]; body: [number, number] };
 type ImportedEntry = { id: string; kind: ImportedModelKind; entityKind: EntityKind; entityId: number; feet: [number, number, number]; yaw: number; pitch: number;
   height: number; clip: string; time: number; lower: [string, number]; layers: ClipLayer[]; tint: readonly [number, number, number] | null; loadout: Loadout | null; resident: string | null; figure: string | null; variety: number | null; outfit: ClassOutfit | null; headwear: boolean;
-  swing: readonly [number, number, number, number] | null; chains: readonly number[] | null; bow: BowShot | null; sheathed: [boolean, boolean]; weaponDrawn: boolean | null; throwable: Throwable | null; belted: Throwable | null; crossbow: CrossbowCarry | null; channel: SpellChannel | null };
+  swing: readonly [number, number, number, number] | null; chains: readonly number[] | null; bow: BowShot | null; sheathed: [boolean, boolean]; weaponDrawn: boolean | null; throwable: Throwable | null; belted: Throwable | null; crossbow: CrossbowCarry | null; channel: SpellChannel | null; chore: ChoreCarry | null };
 type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[]; platforms: PlatformBase[] };
 
 const KIND_CODE: Readonly<Record<EntityKind, number>> = { player: 0, creature: 1, npc: 2, minion: 3 };
@@ -317,7 +321,7 @@ export class SharedUnits {
       imported: layout.imported.map((unit) => ({
         id: unit.id, kind: unit.kind, entity: { kind: unit.entityKind, id: unit.entityId }, feet: unit.feet, yaw: unit.yaw, pitch: unit.pitch,
         heightMetres: unit.height, clip: unit.clip, time: unit.time, lower: unit.lower, layers: unit.layers, tint: unit.tint, loadout: unit.loadout, resident: unit.resident, figure: unit.figure, variety: unit.variety, outfit: unit.outfit, headwear: unit.headwear,
-        swing: unit.swing, chains: unit.chains, bow: unit.bow, sheathed: unit.sheathed, weaponDrawn: unit.weaponDrawn, throwable: unit.throwable, belted: unit.belted, crossbow: unit.crossbow, channel: unit.channel,
+        swing: unit.swing, chains: unit.chains, bow: unit.bow, sheathed: unit.sheathed, weaponDrawn: unit.weaponDrawn, throwable: unit.throwable, belted: unit.belted, crossbow: unit.crossbow, channel: unit.channel, chore: unit.chore,
       })),
       platforms: layout.platforms,
     };

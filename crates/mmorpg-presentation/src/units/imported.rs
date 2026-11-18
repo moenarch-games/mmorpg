@@ -176,6 +176,9 @@ pub struct Carry {
     pub belted: Option<Throwable>,
     /// Where a crossbowman's crossbow and bolt ride (#607); `None` for anyone else.
     pub crossbow: Option<CrossbowCarry>,
+    /// A resident's chore item on its socket (#904), while its chore clips (or the ordinary
+    /// idle and walk) play; `None` keeps the hands empty.
+    pub chore: Option<super::chores::Chore>,
 }
 
 /// Where the crossbow rides: the right hand's [`CROSSBOW_SOCKET`] (#607).
@@ -2274,6 +2277,9 @@ pub struct Cues<'a> {
     /// (asset-tooling #285), and a dagger holder stands in the dagger stance and sheathes its
     /// daggers to throw or bandage (#603).
     pub loadout: Option<Loadout>,
+    /// The chore a resident does on its routine now (#904): its item rides its socket while the
+    /// unit stands or walks, with the chore's clips when the figure has them.
+    pub chore: Option<super::chores::Chore>,
     /// Presentation clock and the step since the previous frame, in seconds.
     pub now: f64,
     pub dt: f64,
@@ -3409,6 +3415,16 @@ impl Playback {
                 at: Some(preparation.at(now)),
                 ..Want::hold(preparation.clip, preparation.serial)
             });
+        // A resident's chore (#904) shows its item only while it stands or walks; a chore clip
+        // the figure lacks leaves the hands empty and the ordinary clips playing.
+        let chore = cues.chore.filter(|chore| {
+            !dead
+                && [chore.idle, chore.walk]
+                    .into_iter()
+                    .flatten()
+                    .all(&available)
+        });
+        let mut chored = false;
         let ground = if let Some(pose) = posture_want.or_else(|| {
             gesture_want
                 .filter(|&(whole, _)| whole)
@@ -3470,9 +3486,19 @@ impl Playback {
             Want::looped(wade, gait_rate(cues.motions, wade, speed, walk_rate(speed)))
         } else if speed > 0.25 {
             self.turning = None;
-            self.gait(clips, &available, cues.motions, speed, cues.direction)
+            chored = chore.is_some();
+            match chore.and_then(|chore| chore.walk) {
+                Some(walk) => {
+                    Want::looped(walk, gait_rate(cues.motions, walk, speed, walk_rate(speed)))
+                }
+                None => self.gait(clips, &available, cues.motions, speed, cues.direction),
+            }
         } else if let Some(turn) = self.turn(clips, &duration, cues, guarding) {
+            chored = chore.is_some();
             turn
+        } else if let Some(chore) = chore.filter(|_| !guarding) {
+            chored = true;
+            Want::looped(chore.idle.unwrap_or(clips.idle), 1.)
         } else {
             // A standing protecting guard holds the shield up with its own stance.
             Want::looped(clips.guard.filter(|_| guarding).unwrap_or(clips.idle), 1.)
@@ -3682,7 +3708,15 @@ impl Playback {
         if carry.weapon_drawn == Some(false) {
             carry.sheathed = [true; 2];
         }
-        let hands = cues.loadout.map(Loadout::hands).unwrap_or_default();
+        carry.chore = chore.filter(|_| chored);
+        let mut hands = cues.loadout.map(Loadout::hands).unwrap_or_default();
+        // A chore's hand item closes the fingers round its handle or shaft.
+        if let Some((hand, held)) = carry.chore.and_then(super::chores::Chore::grip) {
+            match hand {
+                Hand::Left => hands.left.get_or_insert(held),
+                Hand::Right => hands.right.get_or_insert(held),
+            };
+        }
         // A reload winds the crossbow's crank with the left hand, then hands the crossbow to the
         // left hand while the right draws a bolt (#607).
         let crossbow = carry.crossbow.unwrap_or_default();
