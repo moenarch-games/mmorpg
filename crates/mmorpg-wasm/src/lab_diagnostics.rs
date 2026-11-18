@@ -631,12 +631,11 @@ mod tests {
         assert_eq!(lost.trace.pending.len(), 1);
         assert!(lost.trace.arbitration.is_some());
         // The edge was eligible, so it is reachable, and the hold outranked
-        // the direct use.
-        assert!(
-            !findings
-                .iter()
-                .any(|finding| finding.kind == Kind::UnreachableTransition)
-        );
+        // the direct use. (The cleave follow-up, #910, is not exercised here.)
+        assert!(!findings.iter().any(|finding| {
+            finding.kind == Kind::UnreachableTransition
+                && finding.summary.starts_with("SlashToShieldBash")
+        }));
         assert!(
             findings
                 .iter()
@@ -750,8 +749,10 @@ mod tests {
             &run(vec![tick(1, Vec::new())], Vec::new()),
             &mmorpg_core::action::BASELINE,
         );
-        assert_eq!(findings.len(), 1);
-        assert_eq!(findings[0].kind, Kind::UnreachableTransition);
-        assert_eq!(findings[0].severity, Severity::Note);
+        // One note per baseline edge.
+        assert_eq!(findings.len(), mmorpg_core::action::BASELINE.edges.len());
+        assert!(findings.iter().all(|finding| {
+            finding.kind == Kind::UnreachableTransition && finding.severity == Severity::Note
+        }));
     }
 }

@@ -54,7 +54,10 @@ Its player combat policy remains Safe; this does not enable world PvP.
   takes the ordinary weapon strike, physical cover still blocking: a well-placed swing cleaves
   (#909). Each unit is struck once per swing and a swing strikes at most three, nearest first
   within a slice; each hit reports its own `StrikeSwept`, and a swing that strikes nobody reports
-  a whiff on its last active tick. Then the action graph's `DirectedSlash`
+  a whiff on its last active tick. A swing that damages two or more units opens the cleave
+  follow-up (#910): in the Shield Bash combo's window another Warden melee use may ignore the
+  slash's global cooldown, once; both clients show "Combo: cleave! Swing again or Shield Bash
+  now". Then the action graph's `DirectedSlash`
   recovery runs. The action graph reports the swing as `DirectedSlash` in its startup and
   active phases; a guard raised meanwhile waits like during the recovery.
 - **Clashes**, in the zone's present tick and stable ID order, before any slice strikes:

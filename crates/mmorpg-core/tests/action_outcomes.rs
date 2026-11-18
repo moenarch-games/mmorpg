@@ -278,6 +278,13 @@ fn an_incoming_stun_cancels_the_buffered_guard_and_keeps_the_opening() {
                 Consequence::Preserve,
                 true
             ),
+            // The cleave follow-up (#910) out of the same slash.
+            report(
+                Interrupted::Edge(EdgeId::CleaveToSlash),
+                ActionId::Stun,
+                Consequence::Preserve,
+                false
+            ),
             report(
                 Interrupted::Held(RuleId::SlashRecoveryHoldsGuard),
                 ActionId::Stun,
