@@ -1852,8 +1852,10 @@ export class WorldView {
     // The arena and authored indoor rooms use an adaptive boom, retaining normal orbit controls.
     const indoor = this.#inn?.camera(orbit, [self.x, self.feetY, self.z], deltaSeconds, !animate) ?? orbit;
     const view = this.#plan ? planPose(this.#plan) : this.#flyTo ?? (this.#arena ? clearSightLine(indoor, this.#occluders) : indoor);
-    this.#camera.position.set(...view.eye);
-    this.#camera.lookAt(...view.target);
+    // A blow the viewer struck or took kicks the camera a moment (#900); zero under reduced motion.
+    const kick = this.#plan || this.#flyTo ? [0, 0, 0] : presented.kick;
+    this.#camera.position.set(view.eye[0] + kick[0], view.eye[1] + kick[1], view.eye[2] + kick[2]);
+    this.#camera.lookAt(view.target[0] + kick[0], view.target[1] + kick[1], view.target[2] + kick[2]);
     this.#camera.updateMatrixWorld(true);
     if (this.#plan) { applyPlanProjection(this.#camera, this.#plan); }
     this.#showAimLanding(projection, unitsPerMetre);

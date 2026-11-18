@@ -166,6 +166,8 @@ struct FrameLayout {
     imported: Vec<ImportedEntry>,
     platforms: Vec<PlatformEntry>,
     effects: Vec<EffectEntry>,
+    /// The viewer's camera kick (#900), metres.
+    kick: [f32; 3],
 }
 
 /// A strike or spell effect the page draws from its bundle (#894): the entry under `model`
@@ -595,6 +597,7 @@ impl Units {
                     tint: effect.tint,
                 })
                 .collect(),
+            kick: frame.kick,
         })
         .map_err(|error| error.to_string())
     }
