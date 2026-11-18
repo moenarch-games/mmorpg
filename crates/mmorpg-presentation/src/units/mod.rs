@@ -9,6 +9,7 @@
 pub mod animation;
 pub mod archer;
 pub mod breakables;
+pub mod chores;
 pub mod contact;
 pub mod creatures;
 pub mod effects;
@@ -1986,6 +1987,16 @@ impl UnitPresenter {
                         talking: Some(entity) == self.interaction.npc.map(EntityRef::Npc),
                         face,
                         loadout,
+                        // What a resident holds on its routine (#904), by the zone's clock.
+                        chore: match entity {
+                            EntityRef::Npc(npc) => chores::Chores::get().resident(
+                                &self.content,
+                                npc,
+                                snapshot.tick,
+                                unit.record.velocity != [0; 3],
+                            ),
+                            _ => None,
+                        },
                         now: seconds,
                         dt: input.dt,
                         reduced,

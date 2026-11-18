@@ -736,6 +736,27 @@ impl Presentation {
                     imported.tint,
                 ));
             }
+            // A resident's chore item rides its socket on its routine (#904).
+            if let Some(chore) = imported.animation.carry.chore.filter(|_| ranger)
+                && let Some(item) = skinned::Equipment::chore(
+                    imported.resident.map_or(
+                        mmorpg_presentation::units::imported::Figure::Male,
+                        mmorpg_presentation::units::imported::Resident::figure,
+                    ),
+                    chore,
+                )
+            {
+                body.extend(item.draws_swung(
+                    &format!("{}-chore", imported.id),
+                    asset,
+                    placement,
+                    &imported.animation.layers,
+                    imported.tint,
+                    imported.swing,
+                    None,
+                    imported.animation.carry,
+                ));
+            }
             // Where the caster's spell starts: the next frames' beams leave from there (#612).
             let apply = |m: &[f32; 16], p: [f32; 3]| -> [f32; 3] {
                 std::array::from_fn(|r| m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r])
