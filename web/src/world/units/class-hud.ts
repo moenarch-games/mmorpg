@@ -6,7 +6,7 @@ import { auraLabel, auraTimer, sortAuras } from "./aura-display";
 import { castBarView } from "./cast-bar";
 import { HEROIC_STRIKE_ABILITY } from "./directed-strike";
 import { guardDisplay } from "./shield-guard";
-import { COMBAT_TEXT_MS, INTERRUPT_FLASH_MS, combatTexts, viewerInterrupted } from "./combat-text";
+import { COMBAT_TEXT_MS, INTERRUPT_FLASH_MS, cleaveCount, combatTexts, viewerInterrupted } from "./combat-text";
 import { unitName } from "./combat-hud";
 
 /** The aim and guard grids' layout, built before the WASM module loads: high row first, left column first. */
@@ -99,6 +99,8 @@ export class ClassHud {
   #lastPointerType = "";
   #interruptUntil = 0;
   #tick = -1n;
+  /** Units the viewer's running swing has struck so far (#909). */
+  #cleaved = 0;
   #catalog: ContentCatalog | null = null;
   #latest: ZoneSnapshot | null = null;
   /** Labels of the directed-strike action's working bindings; empty when unbound. */
@@ -224,6 +226,7 @@ export class ClassHud {
     this.#slotKey = "";
     this.#interruptUntil = 0;
     this.#tick = -1n;
+    this.#cleaved = 0;
     this.#latest = null;
     this.#catalog = null;
     for (const entry of this.#floating.splice(0)) {
@@ -249,6 +252,11 @@ export class ClassHud {
     for (const text of combatTexts(snapshot)) {
       this.#floatText(text.kind, text.text, now);
     }
+    const cleaved = cleaveCount(snapshot, this.#cleaved);
+    if (cleaved > this.#cleaved && cleaved > 1) {
+      this.#floatText("cleave", `Cleave \u00d7${cleaved}`, now);
+    }
+    this.#cleaved = cleaved;
   }
 
   /** Redraws the frames, bars and slots from the newest projection. */

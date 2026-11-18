@@ -906,6 +906,13 @@ impl World {
             moving: moving_count,
             moved_bodies,
             bodies: self.bodies.len(),
+            // The engine arm's count, for A/B comparison: this diagnostic arm still scans
+            // every body and copies its fixed world into each step (`rebuild`).
+            visited: self
+                .bodies
+                .values()
+                .filter(|body| body.is_moving() || body.is_platform())
+                .count(),
         })
     }
 

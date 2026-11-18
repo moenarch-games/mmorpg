@@ -16,3 +16,16 @@ priority = 50
 # (thousands of ticks, the A/B's four runs of each) start with the journeys.
 filter = "test(=vale-wolf-hunt) | test(=vale-mill-hoist) | test(=vale-climb) | test(=vale-crate-smash)"
 priority = 60
+
+# The merge queue's full validation runs the native world parity and reference checks beside the
+# physics A/B wolf hunt (~2.8 GB). Together they exhaust the hosted runner's memory and it shuts
+# down mid-run, so they take turns.
+[test-groups]
+memory-heavy = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = """
+test(~every_world_prop_region_and_day_phase_matches_pages_submitted_content)
+| test(~pages_reference_inventory_covers_current_world_scope) | test(=vale-wolf-hunt)
+"""
+test-group = "memory-heavy"

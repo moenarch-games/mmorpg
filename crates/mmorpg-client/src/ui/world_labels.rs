@@ -31,6 +31,8 @@ pub enum CombatTextKind {
     Absorb,
     Interrupt,
     Miss,
+    /// One swing struck several units (#909).
+    Cleave,
 }
 
 /// One floating text and the unit it rises from.
@@ -65,6 +67,26 @@ fn damage_is_periodic(snapshot: &ZoneSnapshot) -> bool {
             .auras
             .iter()
             .any(|aura| aura.kind == AuraKind::DamageOverTime)
+}
+
+/// How many units the viewer's current swing has struck after this projection, from `count`
+/// before it (the browser's `cleaveCount`, #909): the viewer's wind-up starts a new swing, and
+/// each of its sweeps that struck a unit counts one.
+#[must_use]
+pub fn cleave_count(snapshot: &ZoneSnapshot, count: usize) -> usize {
+    let viewer = EntityRef::Player(snapshot.viewer_id);
+    snapshot
+        .events
+        .iter()
+        .fold(count, |count, event| match *event {
+            ZoneEvent::SwingBegan { source, .. } if source == viewer => 0,
+            ZoneEvent::StrikeSwept {
+                source,
+                target: Some(_),
+                ..
+            } if source == viewer => count + 1,
+            _ => count,
+        })
 }
 
 /// The floating texts one projection's events produce, in event order.
@@ -150,6 +172,7 @@ const fn text_style(kind: CombatTextKind) -> (Color32, f32) {
         CombatTextKind::Absorb => (Color32::from_rgb(150, 205, 255), 17.0),
         CombatTextKind::Interrupt => (Color32::from_rgb(255, 160, 64), 19.0),
         CombatTextKind::Miss => (Color32::from_rgb(200, 200, 200), 17.0),
+        CombatTextKind::Cleave => (Color32::from_rgb(255, 190, 90), 22.0),
     }
 }
 
@@ -159,6 +182,8 @@ pub struct FloatingTexts {
     tick: Option<u64>,
     entries: VecDeque<(CombatText, Instant, usize)>,
     lane: usize,
+    /// Units the viewer's running swing has struck so far (#909).
+    cleaved: usize,
 }
 
 impl FloatingTexts {
@@ -172,7 +197,14 @@ impl FloatingTexts {
             return;
         }
         self.tick = Some(snapshot.tick);
-        for text in combat_texts(snapshot) {
+        let cleaved = cleave_count(snapshot, self.cleaved);
+        let cleave = (cleaved > self.cleaved && cleaved > 1).then(|| CombatText {
+            kind: CombatTextKind::Cleave,
+            text: format!("Cleave \u{d7}{cleaved}"),
+            anchor: EntityRef::Player(snapshot.viewer_id),
+        });
+        self.cleaved = cleaved;
+        for text in combat_texts(snapshot).into_iter().chain(cleave) {
             self.lane = self.lane.wrapping_add(1);
             self.entries.push_back((text, now, self.lane % 5));
         }
