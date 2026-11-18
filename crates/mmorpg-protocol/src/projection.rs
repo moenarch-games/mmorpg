@@ -68,11 +68,11 @@ pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 4 + 12 + 3 + 2 + 1 + 1 + 1;
 const SITTING_BIT: u8 = 0x80;
 /// The appearance word's high bit on a player record: the weapon is drawn (#802).
 const DRAWN_BIT: u32 = 0x8000_0000;
-/// Records that fit the budget without events or sheets: (1,077 − 112) / 29 = 33.
 /// The appearance word's bits 24–26 on a player record: 1 + its weapon family's code, 0 for
 /// none (#914).
 const WEAPON_SHIFT: u32 = 24;
 const WEAPON_MASK: u32 = 0x0700_0000;
+/// Records that fit the budget without events or sheets: (1,077 − 112) / 29 = 33.
 pub const MAX_WIRE_ENTITIES: usize =
     (MAX_PLAYER_PROJECTION_BYTES - PLAYER_SNAPSHOT_FIXED_BYTES) / ENTITY_RECORD_BYTES;
 const MAX_EVENT_SECTION_BYTES: usize = MAX_EVENTS_PER_PLAYER * EVENT_RECORD_BYTES;
