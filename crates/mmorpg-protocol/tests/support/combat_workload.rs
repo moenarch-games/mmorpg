@@ -15,7 +15,8 @@ use mmorpg_protocol::{
 pub struct Report {
     pub ai_evaluations: usize,
     pub physics_steps: usize,
-    /// Sum of admitted bodies reported at the start of each engine step.
+    /// Sum of the bodies each engine step visited: moving bodies and platforms, never the
+    /// static colliders (#895).
     pub physics_body_visits: usize,
     pub dynamic_body_visits: usize,
     pub maintenance_inspections: usize,
@@ -80,7 +81,7 @@ pub fn measure(fixture: Fixture) -> Result<Report, Box<dyn Error>> {
         let physics = work.physics.ok_or("missing completed physics step")?;
         report.ai_evaluations += work.creature_ai_evaluations;
         report.physics_steps += 1;
-        report.physics_body_visits += physics.bodies;
+        report.physics_body_visits += physics.visited;
         report.dynamic_body_visits += physics.moving;
         report.maintenance_inspections +=
             zone.interest_maintenance_stats().units_inspected - maintenance_before.units_inspected;

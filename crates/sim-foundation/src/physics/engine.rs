@@ -900,6 +900,7 @@ impl World {
             moving,
             moved_bodies,
             bodies: self.bodies.len(),
+            visited: self.moving.len() + self.platforms.len(),
         })
     }
 
