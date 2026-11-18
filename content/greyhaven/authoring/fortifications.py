@@ -671,8 +671,9 @@ manifest=dict(assets=[dict(key='greyhaven.fort.settlement',variant='default',pat
 # The basin crags (65030-65032), basin buttresses (65094-65102) and brook spurs (65128-65136)
 # are world dressing now (#683): content/greyhaven/dressing/vale.json places the crag kit's
 # outcrops and dressing_collision.py generates their collision from the art.
-# Low shoreline clusters: game collision and shared rock skins use these same coarse
-# facets. They break the water outline without new render assets or blocking the dock.
+# Low shoreline clusters: game collision only. The crag kit's talus dresses them through
+# content/greyhaven/dressing/vale.json (#683); these facets are its stand-in skin.
+# They break the water outline without blocking the dock.
 shore_preview=flat('Stillwater shore rock preview',(.29,.31,.23))
 for cluster,(x,z,turn) in enumerate([(39,-60,.4),(38,-65,1.1),(47,-70.5,.2),
     (53,-71.5,1.4),(69,-69.5,.8),(39,-41,1.2),(55,-39.5,.6),(69,-40.5,1.5)]):
