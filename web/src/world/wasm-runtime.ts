@@ -38,8 +38,11 @@ export async function loadLocalWorld(characters: LocalCharacters, wasmReady: () 
   const storage = typeof caches === "undefined" ? undefined : caches;
   const cached = release ? await readDerived(storage, location.origin, release, TERRAIN_GRIDS) : null;
   derived.supplyGrids(cached);
-  // The zone content (built once, the catalog's source) blocks the page for a while; let the art
-  // downloads `wasmReady` started issue their follow-up requests before the scenery's turn.
+  // The zone content (built once, the catalog's source): the worker builds its costly base parts, which this instance
+  // seeds before building the rest; then let the art downloads `wasmReady` started issue their follow-up requests
+  // before the scenery's turn.
+  const content = await derived.content;
+  if (content) { generated.LocalZone.seedHostedContent(content); }
   generated.catalog();
   await nextTask();
   const reused = cached !== null && generated.seedTerrainGrids(cached);

@@ -381,6 +381,21 @@ impl LocalZone {
         host::hosted_content().revision()
     }
 
+    /// The hosted content's costly base parts, for another instance of this build (#855).
+    #[wasm_bindgen(js_name = hostedContentSeed)]
+    #[must_use]
+    pub fn hosted_content_seed() -> Vec<i32> {
+        host::hosted_content_seed()
+    }
+
+    /// Seeds the hosted content's base parts from [`LocalZone::hosted_content_seed`] of this same
+    /// build, before anything built them; false when it came too late or does not fit (#855).
+    #[wasm_bindgen(js_name = seedHostedContent)]
+    #[must_use]
+    pub fn seed_hosted_content(seed: &[i32]) -> bool {
+        host::seed_hosted_content(seed)
+    }
+
     /// The saved world of [`LocalZone::checkpoint`], resumed at its tick
     /// without players; throws for bytes of another version or content.
     #[wasm_bindgen(js_name = fromCheckpoint)]
