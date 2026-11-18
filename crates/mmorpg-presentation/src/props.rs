@@ -1053,11 +1053,17 @@ fn lamp_glass(h: f64) -> V {
     [0.48, h - 0.42, 0.]
 }
 
-/// Where each lamp prop's glass hangs in the world (metres): its light (#529).
+/// Where each lamp prop's glass hangs in the world (metres): its light (#529). A lamp a
+/// settlement lantern post stands over (#683) is lit as that post instead.
 pub(crate) fn lamp_lights(s: &Scenery, g: &TerrainGrid) -> Vec<V> {
     s.props
         .iter()
         .filter(|p| p.kind == PropKind::Lamp)
+        .filter(|p| {
+            p.collider
+                .and_then(|id| crate::world_dressing::stand_in(s, id))
+                != Some(Kit::SettlementProps)
+        })
         .map(|p| {
             let f = if p.kind.graybox() {
                 compose(&[
@@ -1697,9 +1703,11 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
         }
         // An Outpost kit building (#420) keeps its blockout as the fallback while the kit is
         // not drawn.
+        let stand_in = p
+            .collider
+            .and_then(|id| crate::world_dressing::stand_in(s, id));
         if let Some(id) = p.collider.filter(|&id| {
-            mmorpg_core::greyhaven_vale::fort::dresses(id)
-                || crate::world_dressing::stand_in(s, id) == Some(Kit::Outpost)
+            mmorpg_core::greyhaven_vale::fort::dresses(id) || stand_in == Some(Kit::Outpost)
         }) {
             animations.push(animated(
                 m,
@@ -1707,6 +1715,19 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
                 Motion::Fallback {
                     frame: f,
                     kit: Kit::Outpost,
+                },
+            ));
+            continue;
+        }
+        // A settlement prop placed over this prop's collider (#851, #683) replaces its procedural
+        // model, which stays only as the stand-in while the props are not drawn.
+        if let (Some(id), Some(Kit::SettlementProps)) = (p.collider, stand_in) {
+            animations.push(animated(
+                m,
+                |part| format!("settlement-stand-in-{id}-{part}"),
+                Motion::Fallback {
+                    frame: f,
+                    kit: Kit::SettlementProps,
                 },
             ));
             continue;

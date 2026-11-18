@@ -165,6 +165,18 @@ struct FrameLayout {
     units: Vec<UnitEntry>,
     imported: Vec<ImportedEntry>,
     platforms: Vec<PlatformEntry>,
+    effects: Vec<EffectEntry>,
+}
+
+/// A strike or spell effect the page draws from its bundle (#894): the entry under `model`
+/// (column-major, metres), its clip at `time`, recoloured by `tint` (0–1 sRGB channels) when set.
+#[derive(Serialize)]
+struct EffectEntry {
+    key: &'static str,
+    model: [f32; 16],
+    clip: Option<&'static str>,
+    time: f32,
+    tint: Option<[f32; 3]>,
 }
 
 /// A platform the page's kit draws (#591): where its box's bottom centre stands, metres.
@@ -324,6 +336,11 @@ impl Units {
     pub fn set_crag_descriptor(&mut self, json: &str) -> Result<(), String> {
         self.presenter
             .set_crag_descriptor((!json.is_empty()).then_some(json))
+    }
+
+    /// Whether the page draws the strike and spell effect bundles (#894).
+    pub fn set_effect_kits(&mut self, drawn: bool) {
+        self.presenter.set_effect_kits(drawn);
     }
 
     /// The platforms the page's kit draws instead of their procedural pillar (#591).
@@ -565,6 +582,17 @@ impl Units {
                 .map(|view| PlatformEntry {
                     platform: view.platform.get(),
                     base: view.base,
+                })
+                .collect(),
+            effects: frame
+                .effects
+                .iter()
+                .map(|effect| EffectEntry {
+                    key: effect.key,
+                    model: effect.model,
+                    clip: effect.clip,
+                    time: effect.time,
+                    tint: effect.tint,
                 })
                 .collect(),
         })

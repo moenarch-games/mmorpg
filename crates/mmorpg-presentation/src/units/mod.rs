@@ -13,6 +13,7 @@ pub mod creatures;
 pub mod effects;
 pub mod imported;
 pub mod kit;
+pub mod kit_effects;
 pub mod player;
 pub mod presets;
 pub mod sway;
@@ -246,6 +247,8 @@ pub struct UnitFrame {
     pub imported: Vec<ImportedUnit>,
     /// Where each platform a client's kit draws ([`UnitPresenter::set_kit_platforms`]) stands.
     pub platforms: Vec<PlatformView>,
+    /// The strike and spell effects of the bundles the client draws (#894).
+    pub effects: Vec<kit_effects::Instance>,
 }
 
 /// A moving platform (#56) a kit piece draws (the fortress lifts, #591).
@@ -272,6 +275,8 @@ pub struct UnitPresenter {
     /// The projection tick each bursting flask or bomb (#290) was first seen bursting.
     bursts: BTreeMap<u16, u64>,
     effects: effects::Effects,
+    /// The pooled strike and spell effects (#894).
+    kit_effects: kit_effects::KitEffects,
     durations: BTreeMap<(Kind, String), f32>,
     /// Each model's `humanoid-clips` traversal data (#500), once the client has read it.
     motions: BTreeMap<Kind, traversal::Motions>,
@@ -352,6 +357,7 @@ impl UnitPresenter {
             deaths: BTreeMap::new(),
             bursts: BTreeMap::new(),
             effects: effects::Effects::default(),
+            kit_effects: kit_effects::KitEffects::default(),
             durations: BTreeMap::new(),
             motions: BTreeMap::new(),
             aligns: BTreeMap::new(),
@@ -401,6 +407,13 @@ impl UnitPresenter {
     /// pillar is not drawn, and [`UnitFrame::platforms`] says where each stands instead.
     pub fn set_kit_platforms(&mut self, platforms: BTreeSet<mmorpg_core::PlatformId>) {
         self.kit_platforms = platforms;
+    }
+
+    /// Whether the client draws the `strike-effects` and `spell-effects` bundles (#894): then
+    /// [`UnitFrame::effects`] carries the strikes, impacts, shots, beams, Frost Nova and heals,
+    /// and their primitive stand-ins are not drawn.
+    pub fn set_effect_kits(&mut self, drawn: bool) {
+        self.kit_effects.set_drawn(drawn);
     }
 
     /// The crag kit's `crag-descriptor` JSON once the client draws the kit (#668), or `None`
@@ -523,6 +536,7 @@ impl UnitPresenter {
         self.calm.clear();
         self.bursts.clear();
         self.effects.clear();
+        self.kit_effects.clear();
         self.doors.clear();
         self.copper = None;
         self.quest_log = None;
@@ -558,6 +572,11 @@ impl UnitPresenter {
             })
             .collect();
         self.effects.push(snapshot, seconds, &anchors);
+        let scenery = &self.scenery;
+        self.kit_effects
+            .push(snapshot, seconds, &anchors, |position| {
+                rendered_on(scenery, position)
+            });
         // The sheet comes only on change ticks; it holds until the next one.
         if let Some(equipment) = snapshot.equipment {
             self.equipment = Some(equipment);
@@ -1524,9 +1543,7 @@ impl UnitPresenter {
     /// Metres, lifted by the presentation relief under the unit.
     #[must_use]
     pub fn rendered(&self, position: [i32; 3]) -> [f32; 3] {
-        let relief = self.scenery.height_at(position[0], position[2]);
-        let [x, y, z] = metres(position);
-        [x, y + relief as f32 / UNITS_PER_METRE as f32, z]
+        rendered_on(&self.scenery, position)
     }
 
     fn duration(&self, kind: Kind, clip: &str) -> f32 {
@@ -2044,10 +2061,17 @@ impl UnitPresenter {
             });
         }
         if !reduced {
-            out.draws
-                .extend(self.effects.nodes(&mut self.resources, seconds, &anchors));
+            let kit = self.kit_effects.drawn().then_some(&mut out.effects);
+            out.draws.extend(
+                self.effects
+                    .nodes(&mut self.resources, seconds, &anchors, kit),
+            );
         }
-        self.projectiles(&mut out.draws, snapshot);
+        if self.kit_effects.drawn() {
+            out.effects
+                .extend(self.kit_effects.frame(seconds, &anchors, reduced));
+        }
+        self.projectiles(&mut out.draws, &mut out.effects, snapshot, seconds);
         self.platforms(&mut out, snapshot);
         let viewer = input
             .units
@@ -2163,11 +2187,17 @@ impl UnitPresenter {
     }
 
     /// Arrows and bolts where the zone says they are (#286): a shaft behind the tip along its
-    /// heading and pitch, and a dark head. Placeholder shapes until asset-tooling's bow and
-    /// arrow bundle (asset-tooling #277) lands. A magic missile (#289) is a fiery ball with a
+    /// heading and pitch, and a dark head, or the `spell-effects` meshes while the client draws
+    /// them (#894). A magic missile (#289) is a fiery ball with a
     /// short trail; a shadow missile (#301) is a violet one with a green core. A Rogue's
     /// throwing knife (#290) is a short dark grip behind a steel blade.
-    fn projectiles(&mut self, draws: &mut Vec<Draw>, snapshot: &ZoneSnapshot) {
+    fn projectiles(
+        &mut self,
+        draws: &mut Vec<Draw>,
+        effects: &mut Vec<kit_effects::Instance>,
+        snapshot: &ZoneSnapshot,
+        seconds: f64,
+    ) {
         self.bursts.retain(|id, _| {
             snapshot
                 .projectiles
@@ -2198,6 +2228,14 @@ impl UnitPresenter {
                     qa(0, -turn(f64::from(projectile.pitch))),
                 ),
             };
+            // The bundles' arrows, bolts, knives and school missiles fly instead (#894).
+            if self.kit_effects.drawn()
+                && let Some(shot) =
+                    kit_effects::KitEffects::shot(projectile.id, projectile.kind, tip, seconds)
+            {
+                effects.push(shot);
+                continue;
+            }
             let id = format!("projectile-{}", projectile.id);
             if projectile.kind.is_magic() {
                 draws.push(self.resources.primitive(
@@ -2585,6 +2623,13 @@ fn velocity_metres_per_second(units_per_tick: i8) -> f64 {
 
 fn metres(value: [i32; 3]) -> [f32; 3] {
     value.map(|component| component as f32 / UNITS_PER_METRE as f32)
+}
+
+/// Metres, lifted by `scenery`'s presentation relief at the position.
+fn rendered_on(scenery: &Scenery, position: [i32; 3]) -> [f32; 3] {
+    let relief = scenery.height_at(position[0], position[2]);
+    let [x, y, z] = metres(position);
+    [x, y + relief as f32 / UNITS_PER_METRE as f32, z]
 }
 
 /// Where `quest`'s accept line points (#619), for `Talk_Gesture_B`: the two lines that name a

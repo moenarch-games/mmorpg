@@ -1511,7 +1511,7 @@ fn zero_accessors(json: &mut serde_json::Value, append: &mut impl FnMut(&[u8]) -
 /// One GLB of an asset-tooling `gltf-resources-v1` entry or published download (#866): every
 /// external buffer and image becomes a view of a single binary chunk, so the ordinary GLB import
 /// reads it.
-fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
+pub(super) fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
     let file = |path: &str| {
         files
             .iter()
