@@ -99,8 +99,15 @@ describe("OnlineZoneSource", () => {
     await clock.until(source.join());
     let lose = true;
     host.toHost = (datagram) => {
-      // The frame header, then the jump inside its sheet acknowledgement (#544).
-      const jump = datagram.byteLength === 8 + 2 + 32 + 1 && datagram[42] === 2;
+      // The frame header, then the jump inside its sheet acknowledgement (#544): the `u16` held mask and a `u32` revision
+      // per held sheet (#897).
+      let held = ((datagram[10] ?? 0) << 8) | (datagram[11] ?? 0);
+      let revisions = 0;
+      for (; held !== 0; held &= held - 1) {
+        revisions += 1;
+      }
+      const command = 8 + 2 + 2 + 4 * revisions;
+      const jump = datagram.byteLength === command + 1 && datagram[command] === 2;
       if (jump && lose) {
         lose = false;
         return [];
