@@ -526,7 +526,7 @@ fn kills_credit_the_tapper_and_the_turn_in_grants_the_chosen_reward() {
     assert_eq!(after.inventory.count(BOOTS), 0);
     assert_eq!(after.inventory_revision, before.inventory_revision + 1);
     // Three boar kills (50 + 50 + 40 XP) reached level 2 with 40; the
-    // quest's 150 stay below level 2's 200.
+    // quest's 150 stay below level 2's 300.
     assert_eq!(
         (after.combat.level, after.combat.experience),
         (2, before.combat.experience + 150)

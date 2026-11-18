@@ -77,6 +77,8 @@ struct Script {
     sidestep_right: bool,
     deaths: u32,
     events: Vec<ZoneEvent>,
+    /// The tick each level was reached on, from level 2.
+    level_ups: Vec<u64>,
 }
 
 impl Script {
@@ -98,6 +100,7 @@ impl Script {
             sidestep_right: true,
             deaths: 0,
             events: Vec::new(),
+            level_ups: Vec::new(),
         };
         script.send(ZoneCommand::ChooseClass { class: 0, sex: 1 });
         script.tick();
@@ -121,6 +124,9 @@ impl Script {
             self.sheet = sheet.clone();
         }
         self.events.extend(self.view.events.iter().copied());
+        while self.level_ups.len() + 1 < usize::from(self.view.viewer.level) {
+            self.level_ups.push(self.ticks);
+        }
     }
 
     fn me(&self) -> [i32; 3] {
@@ -470,9 +476,26 @@ fn a_new_warden_completes_the_first_quests_of_the_greyhaven_chain() {
             .quest(MARAUDERS_IN_THE_FIELDS)
             .is_some_and(|quest| quest.giver == FARMER)
     );
-    assert!(script.view.viewer.level >= 3, "kills and quests level up");
+    // Moderate pacing (#908): the first wolves level up within two minutes
+    // and kills and quests keep levelling, but the opening chain does not
+    // race to level 5.
+    assert!(
+        script.level_ups[0] < 2 * 60 * u64::from(mmorpg_core::TICK_HZ),
+        "level 2 comes quickly: {:?}",
+        script.level_ups
+    );
+    assert!(
+        (3..5).contains(&script.view.viewer.level),
+        "the opening quests end at level 3 or 4: {:?}",
+        script.level_ups
+    );
     eprintln!(
-        "three quests in {} ticks at level {} with {} deaths",
-        script.ticks, script.view.viewer.level, script.deaths
+        "three quests in {} ticks at level {} ({}/{} XP) with {} deaths; level-up ticks {:?}",
+        script.ticks,
+        script.view.viewer.level,
+        script.view.viewer.experience,
+        script.view.viewer.experience_to_next_level,
+        script.deaths,
+        script.level_ups
     );
 }

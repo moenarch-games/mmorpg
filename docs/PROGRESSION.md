@@ -7,20 +7,20 @@ themselves never grant XP.
 Player progression supports levels 1–10. The next-level thresholds are
 current-level XP, not cumulative totals:
 
-| Current level | XP to next level |
-| --- | ---: |
-| 1 | 100 |
-| 2 | 200 |
-| 3 | 300 |
-| 4 | 400 |
-| 5 | 500 |
-| 6 | 600 |
-| 7 | 700 |
-| 8 | 800 |
-| 9 | 900 |
-| 10 | 0 (cap) |
+| Current level | XP to next level | Estimated minutes (#908) |
+| --- | ---: | ---: |
+| 1 | 100 | 1 |
+| 2 | 300 | 3 |
+| 3 | 600 | 6 |
+| 4 | 1,000 | 10 |
+| 5 | 1,600 | 16 |
+| 6 | 2,000 | 20 |
+| 7 | 2,400 | 24 |
+| 8 | 2,800 | 28 |
+| 9 | 3,200 | 32 |
+| 10 | 0 (cap) | — |
 
-The total from level 1 to level 10 is 4,500 XP. The future authority consumes
+The total from level 1 to level 10 is 14,000 XP. The future authority consumes
 each threshold on level-up and carries remaining current-level XP forward.
 At the cap, XP and its next-level threshold are zero. The existing health and
 damage growth rules remain the stat foundation; resources belong to #23.
@@ -37,6 +37,35 @@ Examples: a level-1 player gets 50 XP from a level-1 creature, so two eligible
 kills reach level 2. A level-5 player gets 70 from level 5, 52 from level 4,
 10 from level 1, or 82 from level 6. A level-6 player gets zero from level 1.
 Quest XP and other rewards are outside this kill rule.
+
+## Pacing (#908)
+
+The owner's moderate-leveling choice (2026-11-17, B) wants the first levels
+quickly and later early levels in roughly 20–40 minutes of mixed Greyhaven
+play, as an initial playtest target rather than a fixed rule. #908 tuned only
+the threshold curve above; kill rewards, quest rewards, eligibility and the
+level cap are unchanged.
+
+The measurement is the headless quest-chain journey
+(`crates/mmorpg-core/tests/quest_chain.rs`): a new Warden accepts *Trouble in
+the Woods*, hunts wolves, turns in *Pelts for the Tanner* and walks to
+Millbrook for *The Missing Farmhand*, fighting whatever attacks on the way. It
+prints its level-up ticks (60 Hz):
+
+| Curve | Level 2 | Level 3 | Level 4 | Level 5 | Three quests end |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Before (100–900, 4,500 total) | 0:50 | 1:41 | 3:08 | 5:54 | 6:23, level 5 |
+| After (above, 14,000 total) | 0:50 | 2:16 | 5:15 | — | 5:44, level 4 |
+
+The bot earns about 200 XP per game minute: it never reads, explores or
+detours. The estimated minutes in the table assume a human earns about half
+that, 100 XP per minute of mixed combat, quests and exploration; later quests
+pay more XP while lower-level creatures pay less, so the estimate holds the
+rate flat. The curve's 14,000 XP compares with 10,740 XP from all 32 Greyhaven
+quests, so the cap arrives near the end of the chain with ordinary combat
+supplying the rest rather than past its middle, as the old 4,500 did. The
+journey asserts level 2 within two minutes and level 3 or 4 after the three
+quests. The human rate and later-level minutes are not yet playtested.
 
 Both public queries return `None` for unsupported levels. The capped threshold
 is `Some(0)`, distinct from invalid input. No client command can call these
