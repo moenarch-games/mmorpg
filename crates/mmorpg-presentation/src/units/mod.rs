@@ -9,6 +9,7 @@
 pub mod animation;
 pub mod archer;
 pub mod breakables;
+pub mod contact;
 pub mod creatures;
 pub mod effects;
 pub mod imported;
@@ -249,6 +250,9 @@ pub struct UnitFrame {
     pub platforms: Vec<PlatformView>,
     /// The strike and spell effects of the bundles the client draws (#894).
     pub effects: Vec<kit_effects::Instance>,
+    /// The viewer's camera kick from a blow it struck or took (#900), in metres: clients offset
+    /// the camera's eye and target by it. Zero under reduced motion.
+    pub kick: [f32; 3],
 }
 
 /// A moving platform (#56) a kit piece draws (the fortress lifts, #591).
@@ -337,6 +341,12 @@ pub struct UnitPresenter {
     sleepers: BTreeSet<mmorpg_core::NpcId>,
     /// How far each resident has eased onto its bed, 0 to 1 (#619).
     rests: BTreeMap<EntityRef, f64>,
+    /// The last confirmed blow each unit took, for its recoil (#900).
+    recoils: BTreeMap<EntityRef, contact::Impact>,
+    /// The last confirmed blow the viewer struck or took, for the camera kick (#900).
+    kick: Option<contact::Impact>,
+    /// Each imported unit's drawn root held by a strike's planted feet (#900).
+    foot_locks: BTreeMap<EntityRef, contact::FootLock>,
 }
 
 impl UnitPresenter {
@@ -387,6 +397,9 @@ impl UnitPresenter {
             directing: BTreeMap::new(),
             sleepers: BTreeSet::new(),
             rests: BTreeMap::new(),
+            recoils: BTreeMap::new(),
+            kick: None,
+            foot_locks: BTreeMap::new(),
         }
     }
 
@@ -544,6 +557,9 @@ impl UnitPresenter {
         self.directing.clear();
         self.sleepers.clear();
         self.rests.clear();
+        self.recoils.clear();
+        self.kick = None;
+        self.foot_locks.clear();
         self.equipment = None;
         self.preparation = None;
         self.resources = Resources::default();
@@ -633,6 +649,7 @@ impl UnitPresenter {
                         Reaction::Chest
                     });
                     self.react(snapshot, target, reaction, seconds);
+                    self.impact(snapshot, viewer, [source, target], seconds);
                 }
                 // A bash knocks back without damage.
                 ZoneEvent::AbilityUsed {
@@ -1384,10 +1401,55 @@ impl UnitPresenter {
         }
     }
 
-    /// `source` began a basic strike (#885): its family's clip for the strike, started so its
-    /// authored contact frame meets the zone's contact `contact` ticks from now. A stand-in
-    /// whose contact comes later starts that much into its swing; a jumping strike lands on
-    /// touchdown, which its clip shows.
+    /// The zone confirmed a blow by `source` on `target` (#900). When `source` is swinging a
+    /// strike, both hold a hitstop scaled by the weapon's weight, the target recoils away from
+    /// the blow and a viewer that struck or took it feels a camera kick. Spells and missiles,
+    /// which no swing delivers, show none of it.
+    fn impact(
+        &mut self,
+        snapshot: &ZoneSnapshot,
+        viewer: EntityRef,
+        [source, target]: [EntityRef; 2],
+        seconds: f64,
+    ) {
+        let Some(clip) = self
+            .playbacks
+            .get(&source)
+            .and_then(|playback| playback.striking(seconds))
+        else {
+            return;
+        };
+        let at = |entity: EntityRef| {
+            snapshot
+                .entities
+                .iter()
+                .find(|record| record.entity() == entity)
+                .map(|record| self.rendered(record.position).map(f64::from))
+        };
+        let away = at(source)
+            .zip(at(target))
+            .and_then(|(from, to)| contact::away(from, to))
+            .unwrap_or_default();
+        let impact = contact::Impact {
+            started: seconds,
+            weight: contact::weight(clip),
+            away,
+        };
+        for unit in [source, target] {
+            self.playbacks
+                .entry(unit)
+                .or_default()
+                .hitstop(impact.hitstop(), seconds);
+        }
+        self.recoils.insert(target, impact);
+        if viewer == source || viewer == target {
+            self.kick = Some(impact);
+        }
+    }
+
+    /// `source` began a basic strike (#885): its family's clip for the strike, its wind-up
+    /// fitted so the authored contact frame meets the zone's contact `contact` ticks from now
+    /// (#900, [`imported::Fit`]); a jumping strike lands on touchdown, which its clip shows.
     fn melee_strike(
         &mut self,
         snapshot: &ZoneSnapshot,
@@ -1407,18 +1469,31 @@ impl UnitPresenter {
                 (attack, kind.strike_region(attack))
             });
         let duration = self.duration(kind, clip);
-        let authored = self
+        let motion = self
             .motions
             .get(&kind)
-            .and_then(|motions| motions.get(clip))
-            .and_then(|motion| motion.contact);
-        let zone = f64::from(contact) / f64::from(mmorpg_core::TICK_HZ);
-        let ahead = match (variant, authored) {
-            (mmorpg_core::StrikeVariant::Jumping, _) | (_, None) => 0.,
-            (_, Some(authored)) => (authored - zone).max(0.),
+            .and_then(|motions| motions.get(clip));
+        #[allow(clippy::cast_possible_truncation)]
+        let authored = motion.and_then(|motion| motion.contact).map(|c| c as f32);
+        #[allow(clippy::cast_possible_truncation)]
+        let land = motion
+            .and_then(|motion| motion.strike.as_ref())
+            .and_then(|marks| marks.land)
+            .map(|land| land as f32);
+        let zone = f32::from(contact) / f32::from(mmorpg_core::TICK_HZ);
+        // A jumping strike's contact is its touchdown: it holds the touchdown frame until the
+        // unit lands instead (#900). A running or jumping strike settles into the family guard.
+        let jumping = variant == mmorpg_core::StrikeVariant::Jumping;
+        let moving = jumping || variant == mmorpg_core::StrikeVariant::Running;
+        let melee = imported::Melee {
+            fit: authored
+                .filter(|_| !jumping)
+                .map(|authored| imported::Fit::new(authored, zone)),
+            land: land.filter(|_| jumping),
+            settle: imported::family_guard(family).filter(|_| moving),
         };
         let playback = self.playbacks.entry(source).or_default();
-        playback.strike(clip, duration, region, seconds - ahead);
+        playback.melee(clip, duration, region, melee, seconds);
         playback.swung();
     }
 
@@ -1657,6 +1732,9 @@ impl UnitPresenter {
         // A unit back from an interest gap swings again from rest.
         self.sways.retain(|e, _| present.contains(e));
         self.aligns.retain(|e, _| present.contains(e));
+        self.foot_locks.retain(|e, _| present.contains(e));
+        self.recoils
+            .retain(|e, impact| present.contains(e) && impact.live(seconds));
         self.rung_lifts.retain(|e, _| present.contains(e));
         self.crag_pushes.retain(|e, _| present.contains(e));
         self.deaths.retain(|e, _| present.contains(e));
@@ -1707,8 +1785,14 @@ impl UnitPresenter {
                 .filter(|swing| swing.pose(seconds).is_some())
                 .map_or(yaw, |swing| swing.yaw());
             let bar_y = unit.centre[1] + half[1] + 0.3;
+            // A confirmed blow's recoil (#900) pushes the drawn body back a moment.
+            let recoil = self
+                .recoils
+                .get(&entity)
+                .filter(|_| !reduced)
+                .map_or([0.; 3], |impact| impact.recoil(seconds));
             let root = Frame {
-                p: feet,
+                p: std::array::from_fn(|axis| feet[axis] + recoil[axis]),
                 q: qa(1, yaw),
             };
             anchors.insert(
@@ -1925,6 +2009,14 @@ impl UnitPresenter {
                     input.dt,
                     reduced,
                 );
+                // A strike's planted feet hold the drawn body still (#900), within a bound.
+                let footing = self.foot_locks.entry(entity).or_default().advance(
+                    motions,
+                    animation.lower,
+                    feet,
+                    input.dt,
+                    reduced,
+                );
                 // A bed clip eases the drawn body onto the mattress (#619); the zone's position
                 // stays beside the bed.
                 let rest = self.rests.entry(entity).or_default();
@@ -1943,6 +2035,8 @@ impl UnitPresenter {
                     p: std::array::from_fn(|axis| {
                         feet[axis]
                             + lift[axis]
+                            + footing[axis]
+                            + recoil[axis]
                             + drawn_bed[axis]
                             + match axis {
                                 0 => crag_push[0],
@@ -2103,6 +2197,13 @@ impl UnitPresenter {
                 .extend(breakables::piece(&mut self.resources, view, centre));
         }
         self.resources.retire_unused();
+        // The viewer's camera kick (#900) settles after its blow.
+        self.kick = self.kick.filter(|impact| impact.live(seconds));
+        if let Some(impact) = self.kick.filter(|_| !reduced) {
+            #[allow(clippy::cast_possible_truncation)]
+            let kick = impact.kick(seconds).map(|axis| axis as f32);
+            out.kick = kick;
+        }
         out
     }
 
