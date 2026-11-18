@@ -10,7 +10,7 @@ use crate::{CreatureId, CreatureTemplateId, PatrolMember, PatrolRole};
 use super::units::templates::{REDBRAND_BANDIT, REDBRAND_BRUTE, REDBRAND_CROSSBOWMAN};
 
 /// The patrol's creature spawn IDs.
-pub const SPAWN_IDS: std::ops::RangeInclusive<u32> = 1_190..=1_192;
+pub const SPAWN_IDS: std::ops::RangeInclusive<u32> = 1_700..=1_702;
 /// Patrol members idle within 2 m of their posts.
 pub const WANDER_RADIUS_UNITS: i32 = 200;
 /// The Greyfang Approach patrol's number.
@@ -24,9 +24,9 @@ type Row = (u32, CreatureTemplateId, PatrolRole, [i32; 2], [u8; 2]);
 
 #[rustfmt::skip]
 const MEMBERS: [Row; 3] = [
-    (1_190, REDBRAND_BRUTE, PatrolRole::Bruiser, [10_400, -12_300], [5, 5]),
-    (1_191, REDBRAND_BANDIT, PatrolRole::Skirmisher, [10_750, -12_150], [4, 5]),
-    (1_192, REDBRAND_CROSSBOWMAN, PatrolRole::Marksman, [11_000, -12_600], [4, 5]),
+    (1_700, REDBRAND_BRUTE, PatrolRole::Bruiser, [10_400, -12_300], [5, 5]),
+    (1_701, REDBRAND_BANDIT, PatrolRole::Skirmisher, [10_750, -12_150], [4, 5]),
+    (1_702, REDBRAND_CROSSBOWMAN, PatrolRole::Marksman, [11_000, -12_600], [4, 5]),
 ];
 
 /// The patrol's creature spawns.

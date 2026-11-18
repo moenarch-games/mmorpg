@@ -11,9 +11,9 @@ use mmorpg_core::{
     ZoneId, ZoneSimulation, ability::ids::CROSSBOW_BOLT, golden::t30, trig,
 };
 
-const BRUTE: CreatureId = CreatureId::new(1_190);
-const BANDIT: CreatureId = CreatureId::new(1_191);
-const CROSSBOWMAN: CreatureId = CreatureId::new(1_192);
+const BRUTE: CreatureId = CreatureId::new(1_700);
+const BANDIT: CreatureId = CreatureId::new(1_701);
+const CROSSBOWMAN: CreatureId = CreatureId::new(1_702);
 /// The player waits on the Greyfang Approach road, west of the patrol's posts.
 const ROAD: [i32; 2] = [9_700, -12_250];
 /// A creature's melee reach against a player: 2 m plus the player's half-width.
