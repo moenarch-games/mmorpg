@@ -7,6 +7,7 @@
 use super::{
     animation::{Action, Stance},
     kit::*,
+    kit_effects::{Instance, KitEffects},
 };
 use crate::{Draw, geometry::V};
 use mmorpg_core::{
@@ -125,6 +126,7 @@ const BLOCK_SECONDS: f64 = 0.45;
 const REWARD_BURST_SECONDS: f64 = 0.45;
 const IMPACT_SECONDS: f64 = 0.32;
 const DANGER_BURST_SECONDS: f64 = 0.35;
+const FROST_NOVA: u32 = 10;
 const BLIZZARD: u32 = 12;
 const LIGHTNING_BEAM: u32 = 22;
 /// The beam's reach and the cone's, metres (the zone's 20 m and 8 m).
@@ -768,12 +770,15 @@ impl Effects {
         self.action_for(EntityRef::Player(s.viewer_id), now)
     }
 
-    /// Draws of every live effect at `now`; stable IDs, only transforms change.
+    /// Draws of every live effect at `now`; stable IDs, only transforms change. With `kit`, the
+    /// client draws the strike and spell bundles (#894): beams go there as stretched segments,
+    /// and the hit flashes and Frost Nova's ring leave to their pooled effects.
     pub fn nodes(
         &mut self,
         r: &mut Resources,
         now: f64,
         anchors: &BTreeMap<EntityRef, Anchor>,
+        mut kit: Option<&mut Vec<Instance>>,
     ) -> Vec<Draw> {
         for actions in [&mut self.actions, &mut self.casts] {
             actions.retain(|_, a| a.projected.is_some() || now - a.start < a.duration);
@@ -788,6 +793,12 @@ impl Effects {
         });
         let mut out = Vec::new();
         for e in &self.effects {
+            if kit.is_some()
+                && (matches!(e.visual, Visual::Impact { .. })
+                    || (e.visual == Visual::Ring && e.ability == FROST_NOVA))
+            {
+                continue;
+            }
             let age = now - e.start;
             let t = e.duration.map_or(0., |d| (age / d).clamp(0., 1.));
             let source = anchors.get(&e.source);
@@ -987,6 +998,10 @@ impl Effects {
                             .first()
                             .and_then(|v| anchors.get(v))
                             .map_or(BEAM_METRES, |v| (v.feet[0] - o[0]).hypot(v.feet[2] - o[2]));
+                        if let Some(kit) = kit.as_deref_mut() {
+                            kit.push(KitEffects::beam(e.id, o, s.yaw, length, rgb(color), now));
+                            continue;
+                        }
                         let flicker = 0.85 + 0.15 * (age * 40.).sin();
                         for k in 0..10 {
                             let d = length * (f64::from(k) + 0.5) / 10.;

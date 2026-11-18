@@ -34,6 +34,7 @@ import {
 import { SceneryFrame, buildSceneryScene, type SceneryScene } from "./scenery-nodes";
 import type { GreyhavenLighting } from "./lighting";
 import { ImpactEffects, impactCues } from "./impact-effects";
+import { KitEffects } from "./kit-effects";
 import { RaidSmoke } from "./raid-smoke";
 import { type AidTask, reachableAidTask } from "./raid-aid";
 import { type RaidPrepSpots, reachablePrepStep } from "./raid-prep";
@@ -419,6 +420,8 @@ export class WorldView {
   #onArtProgress: (() => void) | null = null;
   /** Authored hit/block bursts (#52) on zone-confirmed events; one permanent imported root. */
   readonly #impacts = new ImpactEffects();
+  /** The strike and spell effect bundles (#894), drawn where the shared presenter places them. */
+  readonly #kitEffects = new KitEffects();
   /** Smoke over a raided barn (#530); one permanent imported root. */
   readonly #raidSmoke = new RaidSmoke();
   readonly #raidSigns = new RaidSigns();
@@ -437,7 +440,7 @@ export class WorldView {
   /** Models loaded so far with their clip lengths, replayed into each new presenter. */
   readonly #loadedModels: [ImportedModelKind, [string, number][], string | null][] = [];
   /** The shared unit presenter (#184) of the current viewer. */
-  #units: { viewerId: number; units: SharedUnits; pushed: ZoneSnapshot | null; residents: boolean; kitPlatforms: boolean; cragFaces: boolean } | null = null;
+  #units: { viewerId: number; units: SharedUnits; pushed: ZoneSnapshot | null; residents: boolean; kitPlatforms: boolean; cragFaces: boolean; effectKits: boolean } | null = null;
   /** Combat sounds (#447), once the bundle loaded; silent until then. */
   #sound: WorldSound | null = null;
   #audioPreferences: AudioPreferences | null = null;
@@ -1277,7 +1280,7 @@ export class WorldView {
     this.#models.clear();
     const { roots, changed } = this.#models.roots();
     if (changed && this.#lastCamera) {
-      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...(this.#sceneryBatches ? [this.#sceneryBatches.root] : []), ...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.drawn && this.#fortifications?.drawn ? [...this.#outpost.roots().roots, ...this.#fortifications.roots().roots] : []), ...(this.#settlement?.roots().roots ?? []), ...(this.#fortress?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#nature?.roots().roots ?? []), ...(this.#climbing?.roots().roots ?? []), ...(this.#crag?.roots().roots ?? []), ...(this.#limestone?.roots().roots ?? []), ...(this.#river?.roots().roots ?? []), ...(this.#meadow?.roots().roots ?? []),...(this.#ground?.roots().roots ?? []), ...(this.#grass?.roots().roots ?? []), this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root] });
+      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...(this.#sceneryBatches ? [this.#sceneryBatches.root] : []), ...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.drawn && this.#fortifications?.drawn ? [...this.#outpost.roots().roots, ...this.#fortifications.roots().roots] : []), ...(this.#settlement?.roots().roots ?? []), ...(this.#fortress?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#nature?.roots().roots ?? []), ...(this.#climbing?.roots().roots ?? []), ...(this.#crag?.roots().roots ?? []), ...(this.#limestone?.roots().roots ?? []), ...(this.#river?.roots().roots ?? []), ...(this.#meadow?.roots().roots ?? []),...(this.#ground?.roots().roots ?? []), ...(this.#grass?.roots().roots ?? []), this.#impacts.root, this.#kitEffects.root, this.#raidSmoke.root, this.#raidSigns.root] });
     }
   }
 
@@ -1729,13 +1732,19 @@ export class WorldView {
       for (const [kind, clips, descriptor] of this.#loadedModels) { units.modelReady(kind, clips, descriptor); }
       if (this.#blend) { units.setBlend(this.#blend); }
       if (this.#bodyOverlay) { units.setBodyOverlay(true); }
-      this.#units = { viewerId: projection.viewerId, units, pushed: null, residents: false, kitPlatforms: false, cragFaces: false };
+      this.#units = { viewerId: projection.viewerId, units, pushed: null, residents: false, kitPlatforms: false, cragFaces: false, effectKits: false };
     }
     const units = this.#units.units;
     if (!this.#units.kitPlatforms && this.#fortress?.drawn) {
       // The fortress kit's lifts (#591) replace the presenter's pillars once drawn.
       this.#units.kitPlatforms = true;
       units.setKitPlatforms(this.#fortress.platforms);
+    }
+    // The strike and spell effect bundles (#894) replace the presenter's primitive shots, beams and flashes once loaded.
+    void this.#kitEffects.load();
+    if (!this.#units.effectKits && this.#kitEffects.loaded) {
+      this.#units.effectKits = true;
+      units.setEffectKits(true);
     }
     const cragDescriptor = this.#crag?.descriptor;
     if (!this.#units.cragFaces && cragDescriptor) {
@@ -1770,6 +1779,7 @@ export class WorldView {
     units.setInteraction(this.#loot.open, this.#quests.dialogNpc ?? this.#vendor.npc);
     const presented = units.frame(sampled, { seconds: this.#seconds, dt: deltaSeconds, reducedMotion: !animate, barYaw: this.#barYaw, look });
     this.#fortress?.place(presented.platforms);
+    this.#kitEffects.update(presented.effects);
     const viewerModel = presented.imported.find((unit) => unit.entity.kind === "player" && unit.entity.id === projection.viewerId);
     this.#viewerClip = viewerModel?.clip ?? null;
     this.#viewerAnimation = viewerModel ? { upper: [viewerModel.clip, viewerModel.time], lower: viewerModel.lower, layers: viewerModel.layers } : null;
@@ -1924,7 +1934,7 @@ export class WorldView {
     const sceneryBatches = this.#sceneryBatches ? [this.#sceneryBatches.root] : [];
     const ground = this.#ground?.roots() ?? { roots: [], changed: false };
     const grass = this.#plan ? { roots: [], changed: false } : this.#grass?.roots() ?? { roots: [], changed: false };
-    const roots = [...sceneryBatches, ...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...fortifications.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, ...climbing.roots, ...crag.roots, ...limestone.roots, ...river.roots, ...meadow.roots, ...ground.roots, ...grass.roots, this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root];
+    const roots = [...sceneryBatches, ...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...fortifications.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, ...climbing.roots, ...crag.roots, ...limestone.roots, ...river.roots, ...meadow.roots, ...ground.roots, ...grass.roots, this.#impacts.root, this.#kitEffects.root, this.#raidSmoke.root, this.#raidSigns.root];
     // No scene background: `Lighting` clears its own frame, and three would clear to the background again in each of its
     // passes, wiping the sky (#600). The environment's fog still fogs the unlit sprites.
     const { background: _background, ...withoutBackground } = environment;
@@ -1949,7 +1959,7 @@ export class WorldView {
     // Submitting roots adds them to the renderer's scene, and anything later added under a submitted root is drawn without
     // it; `renderImportedRoots` also draws a whole frame, so it runs only when the set of roots changes, not each time a
     // streamed cell, tile or group joins one (a doubled frame every few metres of walking).
-    if (roots.length !== this.#submittedRoots.size || roots.some((root) => !this.#submittedRoots.has(root)) || !this.#impacts.root.parent || !this.#raidSmoke.root.parent || !this.#raidSigns.root.parent) {
+    if (roots.length !== this.#submittedRoots.size || roots.some((root) => !this.#submittedRoots.has(root)) || !this.#impacts.root.parent || !this.#kitEffects.root.parent || !this.#raidSmoke.root.parent || !this.#raidSigns.root.parent) {
       this.#renderer.renderImportedRoots({ camera, roots });
       this.#submittedRoots = new Set(roots);
     }
@@ -2500,6 +2510,8 @@ export class WorldView {
       staticStream: () => this.#sceneryBatches?.observe() ?? null,
       /** The ambient animals (#419): whether they loaded, and each one's entry, clip and feet. */
       ambient: () => this.#ambient?.observe() ?? null,
+      /** The strike and spell effect bundles (#894): whether they loaded, their entries and the effects last shown. */
+      kitEffects: () => this.#kitEffects.observe(),
       /** The units of the last projection (kind, id, creature family, position in metres). */
       projectedUnits: () => this.#lastProjectedUnits,
       /** The projected animal (wolf, boar, vermin) nearest to a point in metres, or null. */

@@ -18,6 +18,8 @@
 # crag kit (#668) into web/public/scenery/crag.kit, where the
 # browser serves them and the native client build embeds them,
 # and the Battle Royale fortress kit (#591) into web/public/scenery/fortress.kit for the browser's arena.
+# The strike and spell effects (#894) land in web/public/effects/strike.effects and
+# web/public/effects/spell.effects.
 # The directories are ignored build input, never committed.
 # With --identity it acquires nothing and prints one "<release> <identity> <path>" line per
 # release, for scripts/ci-asset-cache.sh.
@@ -260,3 +262,7 @@ fetch_rolling greyhaven-meadow greyhaven-meadow.kit scenery/greyhaven-meadow.kit
 # The Battle Royale fortress's authored art (#591, asset-tooling#458/#461, pass 2), fitted to its
 # collision.
 fetch_rolling fortress-kit fortress.kit scenery/fortress.kit
+# The strike and spell effects both clients play (#894, asset-tooling#725/#728): strike arcs,
+# impacts, ground slam and dust; school bolts and impacts, Frost Nova, beams, heal motes and shots.
+fetch_rolling strike-effects strike.effects effects/strike.effects
+fetch_rolling spell-effects spell.effects effects/spell.effects

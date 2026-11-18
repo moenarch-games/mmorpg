@@ -17,6 +17,7 @@ export type UnitPresenterHandle = {
   setBodyOverlay(shown: boolean): void;
   setInteraction(lootWindow: boolean, npc: number | undefined): void;
   setKitPlatforms(platforms: Uint32Array): void;
+  setEffectKits(drawn: boolean): void;
   setCragDescriptor(json: string): void;
   setChannelOrigins(origins: Float64Array): void;
   push(projection: Uint8Array, seconds: number): void;
@@ -151,7 +152,13 @@ export type ViewerAnimation = { upper: readonly [string, number]; lower: readonl
 /** A platform a kit piece draws (#591): its box's bottom centre this frame, metres. */
 export type PlatformBase = { platform: number; base: [number, number, number] };
 
-export type UnitFrameNodes = { nodes: RendererSceneNode[]; units: PresentedUnit[]; imported: ImportedRequest[]; platforms: PlatformBase[] };
+/**
+ * A strike or spell effect to play from its bundle (#894): the entry `key` under the column-major `model` (metres), its
+ * `clip` at `time` seconds (a `Loop` clip wraps), recoloured by `tint` (0–1 sRGB channels) when set.
+ */
+export type PresentedEffect = { key: string; model: readonly number[]; clip: string | null; time: number; tint: readonly [number, number, number] | null };
+
+export type UnitFrameNodes = { nodes: RendererSceneNode[]; units: PresentedUnit[]; imported: ImportedRequest[]; platforms: PlatformBase[]; effects: PresentedEffect[] };
 
 /** The viewer's own look: class and sex as an appearance code, and headwear. */
 export type ViewerLook = {
@@ -170,7 +177,7 @@ type UnitEntry = { kind: EntityKind; entityId: number; node: string; feet: [numb
 type ImportedEntry = { id: string; kind: ImportedModelKind; entityKind: EntityKind; entityId: number; feet: [number, number, number]; yaw: number; pitch: number;
   height: number; clip: string; time: number; lower: [string, number]; layers: ClipLayer[]; tint: readonly [number, number, number] | null; loadout: Loadout | null; resident: string | null; figure: string | null; variety: number | null; outfit: ClassOutfit | null; headwear: boolean;
   swing: readonly [number, number, number, number] | null; chains: readonly number[] | null; bow: BowShot | null; sheathed: [boolean, boolean]; weaponDrawn: boolean | null; throwable: Throwable | null; belted: Throwable | null; crossbow: CrossbowCarry | null; channel: SpellChannel | null };
-type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[]; platforms: PlatformBase[] };
+type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[]; platforms: PlatformBase[]; effects: PresentedEffect[] };
 
 const KIND_CODE: Readonly<Record<EntityKind, number>> = { player: 0, creature: 1, npc: 2, minion: 3 };
 
@@ -244,6 +251,11 @@ export class SharedUnits {
   /** The platforms a kit draws (the fortress lifts, #591): no procedural pillar; each frame's `platforms` places them. */
   setKitPlatforms(platforms: readonly number[]): void {
     this.#handle.setKitPlatforms(Uint32Array.from(platforms));
+  }
+
+  /** Whether the page draws the strike and spell effect bundles (#894): each frame's `effects` then lists what to play. */
+  setEffectKits(drawn: boolean): void {
+    this.#handle.setEffectKits(drawn);
   }
 
   /**
@@ -320,6 +332,7 @@ export class SharedUnits {
         swing: unit.swing, chains: unit.chains, bow: unit.bow, sheathed: unit.sheathed, weaponDrawn: unit.weaponDrawn, throwable: unit.throwable, belted: unit.belted, crossbow: unit.crossbow, channel: unit.channel,
       })),
       platforms: layout.platforms,
+      effects: layout.effects,
     };
   }
 
