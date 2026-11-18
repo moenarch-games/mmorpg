@@ -86,15 +86,19 @@ fn stuns(ability: AbilityId) -> bool {
 }
 
 /// What an imported unit carries: a resident or humanoid enemy its preset's weapons, a player
-/// its class's; nothing for anyone else.
+/// its class's, or a spear while its projected weapon family is one (#914); nothing for anyone
+/// else.
 fn carried(
     entity: EntityRef,
     resident: Option<Resident>,
     class: Option<ClassChoice>,
+    weapon: Option<mmorpg_core::WeaponFamily>,
 ) -> Option<Loadout> {
     match resident {
         Some(resident) => resident.loadout(),
-        None if matches!(entity, EntityRef::Player(_)) => class.map(|c| Loadout::of_class(c.class)),
+        None if matches!(entity, EntityRef::Player(_)) => {
+            class.map(|c| Loadout::of_class(c.class).holding(weapon))
+        }
         None => None,
     }
 }
@@ -1125,7 +1129,11 @@ impl UnitPresenter {
         let class = choice
             .map(|choice| choice.class)
             .or_else(|| resident.and_then(Resident::strike_class));
-        Some((kind, class, carried(entity, resident, choice)))
+        Some((
+            kind,
+            class,
+            carried(entity, resident, choice, record.flags.weapon),
+        ))
     }
 
     /// `clip` and its length, when the model has it.
@@ -1873,7 +1881,7 @@ impl UnitPresenter {
                 } else {
                     ClassChoice::from_appearance(unit.record.appearance)
                 };
-                let loadout = carried(entity, resident, class);
+                let loadout = carried(entity, resident, class, unit.record.flags.weapon);
                 if viewer {
                     let wind_up = self.preparation.map(|preparation| {
                         let class = snapshot.viewer.class.map(|choice| choice.class);

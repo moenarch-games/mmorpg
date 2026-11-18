@@ -1950,7 +1950,7 @@ impl Equipment {
 
     /// The socket items of a loadout (asset-tooling #375, #379): the sword and shield, the
     /// stowed bow and quiver, the sword, the dagger, a class staff, the crystal staff and tome,
-    /// or the mace. The bow rests in its bind pose on the back.
+    /// the mace or a spear (#914). The bow rests in its bind pose on the back.
     pub fn loadout(loadout: Loadout) -> &'static Self {
         static SWORD_AND_SHIELD: OnceLock<Equipment> = OnceLock::new();
         static BOW_AND_QUIVER: OnceLock<Equipment> = OnceLock::new();
@@ -1962,6 +1962,7 @@ impl Equipment {
         static MACE: OnceLock<Equipment> = OnceLock::new();
         static GNARLED: OnceLock<Equipment> = OnceLock::new();
         static CROSSBOW: OnceLock<Equipment> = OnceLock::new();
+        static SPEAR: OnceLock<Equipment> = OnceLock::new();
         let (cell, items): (_, &[(&str, &str)]) = match loadout {
             Loadout::SwordAndShield => (
                 &SWORD_AND_SHIELD,
@@ -1997,6 +1998,7 @@ impl Equipment {
             ),
             Loadout::FlangedMace => (&MACE, &[(ranger_bundle::MACE, "hand_r.weapon")]),
             Loadout::GnarledStaff => (&GNARLED, &[(ranger_bundle::GNARLED_STAFF, "hand_r.staff")]),
+            Loadout::Spear => (&SPEAR, &[(ranger_bundle::SPEAR, "hand_r.staff")]),
             // The crossbow and the arrow standing in for its bolt (#607).
             Loadout::Crossbow => (
                 &CROSSBOW,
