@@ -61,9 +61,11 @@ impl Sheet {
 }
 
 pub(crate) const SHEET_COUNT: usize = 8;
+// The projection's sheet mask and the acknowledgement's held mask are `u16` (#897).
+const _: () = assert!(SHEET_COUNT <= 16);
 
-/// The `u32` revisions a client echoes, one per sheet.
-pub const SHEET_REVISIONS_BYTES: usize = SHEET_COUNT * 4;
+/// The most an acknowledgement echoes: the `u16` held mask and a `u32` revision per sheet.
+pub const SHEET_REVISIONS_BYTES: usize = 2 + SHEET_COUNT * 4;
 
 /// Inventory revision (`u64`), bag, equipment and four `u16` stat totals.
 const MAX_INVENTORY_SHEET_BYTES: usize =
@@ -103,54 +105,47 @@ const _: () = assert!(crate::party::MAX_PARTY_SHEET_BYTES <= MAX_BUDGETED_SHEET_
 /// The sheet revisions a client holds, `0` for a sheet it has none of. A host sends a sheet
 /// only while the client's revision differs from the current one.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub struct SheetRevisions {
-    pub inventory: u32,
-    pub quests: u32,
-    pub loot: u32,
-    pub abilities: u32,
-    pub party: u32,
-    pub depths_loot: u32,
-    pub world: u32,
-    pub waystones: u32,
-}
+pub struct SheetRevisions([u32; SHEET_COUNT]);
 
 impl SheetRevisions {
     pub(crate) const fn get(self, sheet: Sheet) -> u32 {
-        match sheet {
-            Sheet::Inventory => self.inventory,
-            Sheet::Quests => self.quests,
-            Sheet::Loot => self.loot,
-            Sheet::Abilities => self.abilities,
-            Sheet::Party => self.party,
-            Sheet::DepthsLoot => self.depths_loot,
-            Sheet::World => self.world,
-            Sheet::Waystones => self.waystones,
-        }
+        self.0[sheet.index()]
     }
 
     pub(crate) fn set(&mut self, sheet: Sheet, revision: u32) {
-        match sheet {
-            Sheet::Inventory => self.inventory = revision,
-            Sheet::Quests => self.quests = revision,
-            Sheet::Loot => self.loot = revision,
-            Sheet::Abilities => self.abilities = revision,
-            Sheet::Party => self.party = revision,
-            Sheet::DepthsLoot => self.depths_loot = revision,
-            Sheet::World => self.world = revision,
-            Sheet::Waystones => self.waystones = revision,
-        }
+        self.0[sheet.index()] = revision;
     }
 
+    /// The held mask (`u16`, bit `index` for each sheet held), then each held sheet's
+    /// revision in sheet order.
     pub(crate) fn encode(self, payload: &mut Vec<u8>) {
+        let held = Sheet::ALL
+            .into_iter()
+            .filter(|sheet| self.get(*sheet) != 0)
+            .fold(0_u16, |mask, sheet| mask | 1 << sheet.index());
+        payload.extend_from_slice(&held.to_be_bytes());
         for sheet in Sheet::ALL {
-            payload.extend_from_slice(&self.get(sheet).to_be_bytes());
+            let revision = self.get(sheet);
+            if revision != 0 {
+                payload.extend_from_slice(&revision.to_be_bytes());
+            }
         }
     }
 
     pub(crate) fn decode(payload: &[u8], offset: &mut usize) -> Result<Self, ProtocolError> {
+        let held = u16::from_be_bytes(take(payload, offset)?);
+        if u32::from(held) >> SHEET_COUNT != 0 {
+            return Err(ProtocolError::new("unknown sheet in the acknowledgement"));
+        }
         let mut revisions = Self::default();
         for sheet in Sheet::ALL {
-            revisions.set(sheet, u32::from_be_bytes(take(payload, offset)?));
+            if held & (1 << sheet.index()) != 0 {
+                let revision = u32::from_be_bytes(take(payload, offset)?);
+                if revision == 0 {
+                    return Err(ProtocolError::new("acknowledged sheet revision is 0"));
+                }
+                revisions.set(sheet, revision);
+            }
         }
         Ok(revisions)
     }
@@ -538,7 +533,8 @@ fn read_auras(
 
 /// `command` (plain or observed bytes from [`crate::encode_command`] or
 /// [`crate::encode_observed_command`]) with the sheet revisions the client holds: the protocol
-/// byte, the acknowledgement tag, one `u32` revision per sheet, then the command's tag and fields.
+/// byte, the acknowledgement tag, the `u16` held mask and one `u32` revision per held sheet
+/// (#897), then the command's tag and fields.
 #[must_use]
 pub fn encode_acknowledged_command(revisions: SheetRevisions, command: &[u8]) -> Vec<u8> {
     let mut payload = Vec::with_capacity(2 + SHEET_REVISIONS_BYTES + command.len());
