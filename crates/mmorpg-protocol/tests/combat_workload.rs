@@ -111,12 +111,14 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // visits (moving bodies and platforms), not every admitted body, so scenery no longer
     // moves it; static colliders cost a step only through the engine's query tree. The
     // rows are re-recorded at their measured counts with the headroom above.
+    // The Greyfang Ridge Redbrand patrol (#911) adds three movers to every step and fights-8's
+    // patrol AI tests 90,240 candidates.
     const HEADROOM_PERCENT: usize = 5;
     let recorded: [[usize; 4]; FIXTURES.len()] = [
-        [11_052, 85_680, 282_240, 6_151_648],
-        [17_372, 82_800, 81_360, 1_934_120],
-        [25_530, 91_440, 438_211, 8_288_034],
-        [13_037, 102_492, 2_314_114, 24_414_336],
+        [11_052, 86_760, 282_240, 6_151_648],
+        [16_838, 83_880, 90_240, 1_816_662],
+        [25_718, 92_520, 447_865, 8_223_038],
+        [13_037, 103_572, 2_314_114, 24_414_336],
     ];
     for (fixture, recorded) in FIXTURES.into_iter().zip(recorded) {
         let ceiling = recorded.map(|count| count + count * HEADROOM_PERCENT / 100);
