@@ -28,9 +28,12 @@ pub struct Motion {
     pub ledge_height: Option<f64>,
     /// The root path the in-place clip was authored against (`travelSamples`).
     pub travel: Option<Travel>,
-    /// When a strike's weapon hand meets its target, in seconds into the clip
-    /// (`contact.seconds`, asset-tooling #447); a strike's wind-up holds before it (#582).
+    /// When a strike's weapon hand meets its target, in seconds into the clip: the strike's
+    /// `strike.contactSeconds` (asset-tooling #741), else `contact.seconds` (#447). A strike's
+    /// wind-up holds before it (#582) and its contact frame meets the zone's contact tick (#900).
     pub contact: Option<f64>,
+    /// A melee strike's marks (`strike`, asset-tooling #741, #750, #751).
+    pub strike: Option<StrikeMarks>,
     /// When a throw's hand reaches the belt and takes the throwable, and when it lets go, in
     /// seconds into the clip (`drawSeconds`, `releaseSeconds`, asset-tooling #418).
     pub draw: Option<f64>,
@@ -87,6 +90,63 @@ impl CastMarks {
             pulses: [pulse(0), pulse(1)],
             kneel: span("kneelSeconds"),
         }
+    }
+}
+
+/// A melee strike clip's `humanoid-clips` `strike` object (asset-tooling #741, #750, #751), in
+/// seconds into the clip.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StrikeMarks {
+    /// The wind-up ends and the blow begins (`windupEnd`).
+    pub windup_end: Option<f64>,
+    /// The weapon meets its target (`contactSeconds`).
+    pub contact: Option<f64>,
+    /// The follow-through ends and the recovery begins (`recoveryStart`).
+    pub recovery_start: Option<f64>,
+    /// A jumping strike's feet touch down (`landSeconds`).
+    pub land: Option<f64>,
+    /// How far in front of the root the weapon reaches at contact, in metres (`reachMeters`).
+    pub reach: Option<f64>,
+    /// Where the weapon's tip is at contact, root-relative metres (`tipAt`).
+    pub tip: Option<[f64; 3]>,
+    /// The spans each foot stays planted, left then right (`footPlants`).
+    pub plants: [Vec<[f64; 2]>; 2],
+}
+
+impl StrikeMarks {
+    fn parse(marks: &Value) -> Self {
+        let plants = |foot: &str| {
+            marks["footPlants"][foot]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|span| {
+                    let span = span.as_array().filter(|span| span.len() == 2)?;
+                    Some([span[0].as_f64()?, span[1].as_f64()?])
+                })
+                .collect()
+        };
+        Self {
+            windup_end: marks["windupEnd"].as_f64(),
+            contact: marks["contactSeconds"].as_f64(),
+            recovery_start: marks["recoveryStart"].as_f64(),
+            land: marks["landSeconds"].as_f64(),
+            reach: marks["reachMeters"].as_f64(),
+            tip: marks["tipAt"]
+                .as_array()
+                .filter(|tip| tip.len() == 3)
+                .and_then(|tip| Some([tip[0].as_f64()?, tip[1].as_f64()?, tip[2].as_f64()?])),
+            plants: [plants("l"), plants("r")],
+        }
+    }
+
+    /// Whether the clip marks both feet planted at `time` seconds into it; a clip without
+    /// `footPlants` marks none.
+    #[must_use]
+    pub fn planted(&self, time: f64) -> bool {
+        self.plants
+            .iter()
+            .all(|spans| spans.iter().any(|&[from, to]| (from..=to).contains(&time)))
     }
 }
 
@@ -195,7 +255,12 @@ impl Motions {
                             translations,
                         })
                     }),
-                    contact: clip["contact"]["seconds"].as_f64(),
+                    contact: clip["strike"]["contactSeconds"]
+                        .as_f64()
+                        .or_else(|| clip["contact"]["seconds"].as_f64()),
+                    strike: clip["strike"]
+                        .as_object()
+                        .map(|_| StrikeMarks::parse(&clip["strike"])),
                     draw: clip["drawSeconds"].as_f64(),
                     release: clip["releaseSeconds"].as_f64(),
                     crossbow: clip["crossbow"].as_object().map(|_| {

@@ -341,7 +341,7 @@ pub fn decode_command_envelope(payload: &[u8]) -> Result<CommandEnvelope, Protoc
     };
     let mut offset = 0;
     let sheets = crate::SheetRevisions::decode(rest, &mut offset)
-        .map_err(|_| ProtocolError::new("acknowledged command payload is truncated"))?;
+        .map_err(|_| ProtocolError::new("acknowledged command sheet revisions are malformed"))?;
     let mut inner = Vec::with_capacity(1 + rest.len() - offset);
     inner.push(*version);
     inner.extend_from_slice(&rest[offset..]);

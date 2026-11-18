@@ -113,6 +113,7 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // rows are re-recorded at their measured counts with the headroom above.
     // The Greyfang Ridge Redbrand patrol (#911) adds three movers to every step and fights-8's
     // patrol AI tests 90,240 candidates.
+    // The `u16` sheet mask (#897) adds one byte to every projection, inside the headroom.
     const HEADROOM_PERCENT: usize = 5;
     let recorded: [[usize; 4]; FIXTURES.len()] = [
         [11_052, 86_760, 282_240, 6_151_648],

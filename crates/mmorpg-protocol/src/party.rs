@@ -307,7 +307,7 @@ mod tests {
         let packed = crate::pack_snapshot(&snapshot).unwrap();
         let decoded = decoder.decode(&packed.payload).unwrap();
         assert_eq!(decoded.party, Some(state()));
-        assert_ne!(decoder.revisions().party, 0);
+        assert_ne!(decoder.revisions().get(crate::sheet::Sheet::Party), 0);
         // Acknowledged, it stays home yet the decoder keeps presenting it.
         let quiet = crate::pack_snapshot_acknowledged(&snapshot, decoder.revisions()).unwrap();
         assert!(quiet.payload.len() < packed.payload.len());

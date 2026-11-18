@@ -158,7 +158,11 @@ export type PlatformBase = { platform: number; base: [number, number, number] };
  */
 export type PresentedEffect = { key: string; model: readonly number[]; clip: string | null; time: number; tint: readonly [number, number, number] | null };
 
-export type UnitFrameNodes = { nodes: RendererSceneNode[]; units: PresentedUnit[]; imported: ImportedRequest[]; platforms: PlatformBase[]; effects: PresentedEffect[] };
+export type UnitFrameNodes = {
+  nodes: RendererSceneNode[]; units: PresentedUnit[]; imported: ImportedRequest[]; platforms: PlatformBase[]; effects: PresentedEffect[];
+  /** The viewer's camera kick from a blow it struck or took (#900), metres; zero under reduced motion. */
+  kick: readonly [number, number, number];
+};
 
 /** The viewer's own look: class and sex as an appearance code, and headwear. */
 export type ViewerLook = {
@@ -177,7 +181,8 @@ type UnitEntry = { kind: EntityKind; entityId: number; node: string; feet: [numb
 type ImportedEntry = { id: string; kind: ImportedModelKind; entityKind: EntityKind; entityId: number; feet: [number, number, number]; yaw: number; pitch: number;
   height: number; clip: string; time: number; lower: [string, number]; layers: ClipLayer[]; tint: readonly [number, number, number] | null; loadout: Loadout | null; resident: string | null; figure: string | null; variety: number | null; outfit: ClassOutfit | null; headwear: boolean;
   swing: readonly [number, number, number, number] | null; chains: readonly number[] | null; bow: BowShot | null; sheathed: [boolean, boolean]; weaponDrawn: boolean | null; throwable: Throwable | null; belted: Throwable | null; crossbow: CrossbowCarry | null; channel: SpellChannel | null };
-type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[]; platforms: PlatformBase[]; effects: PresentedEffect[] };
+type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[]; platforms: PlatformBase[]; effects: PresentedEffect[];
+  kick: [number, number, number] };
 
 const KIND_CODE: Readonly<Record<EntityKind, number>> = { player: 0, creature: 1, npc: 2, minion: 3 };
 
@@ -333,6 +338,7 @@ export class SharedUnits {
       })),
       platforms: layout.platforms,
       effects: layout.effects,
+      kick: layout.kick,
     };
   }
 
