@@ -6,9 +6,9 @@ mod support;
 use std::sync::Arc;
 
 use mmorpg_core::{
-    CreatureBehaviour, CreatureId, CreatureTemplate, EntityRef, ErrorCode, FamilyMelee, INVENTORY_SLOTS,
-    Inventory, ItemId, ItemStack, WeaponFamily, ZoneAreas, ZoneCommand, ZoneContent, ZoneEvent,
-    ZoneId, ZoneSimulation,
+    CreatureBehaviour, CreatureId, CreatureTemplate, EntityRef, ErrorCode, FamilyMelee,
+    INVENTORY_SLOTS, Inventory, ItemId, ItemStack, WeaponFamily, ZoneAreas, ZoneCommand,
+    ZoneContent, ZoneEvent, ZoneId, ZoneSimulation,
 };
 use support::arena::{self, GRAVEYARD, WOLF};
 
@@ -79,15 +79,15 @@ fn strike(class: u8, creature: [i32; 2], spear: bool) -> (Option<ErrorCode>, Out
             },
         );
         zone.advance_tick().unwrap();
-        refusal = zone
-            .snapshot_for_player(1)
-            .unwrap()
-            .events
-            .iter()
-            .find_map(|event| match *event {
-                ZoneEvent::Error { code, .. } => Some(code),
-                _ => None,
-            });
+        refusal =
+            zone.snapshot_for_player(1)
+                .unwrap()
+                .events
+                .iter()
+                .find_map(|event| match *event {
+                    ZoneEvent::Error { code, .. } => Some(code),
+                    _ => None,
+                });
     }
     send(&mut zone, ZoneCommand::Swing { facing: SOUTH });
     let mut began = None;
@@ -140,7 +140,10 @@ fn a_warden_swapping_sword_for_spear_changes_reach_arc_and_timing() {
     assert!(sword_aside.reached && !spear_aside.reached, "arc");
 
     // The spear's thrust winds up longer and commits to a longer recovery.
-    assert!(spear_far.contact > sword_far.contact, "{spear_far:?} {sword_far:?}");
+    assert!(
+        spear_far.contact > sword_far.contact,
+        "{spear_far:?} {sword_far:?}"
+    );
     assert!(spear_far.recovery > sword_far.recovery);
 
     // Replaying the same inputs gives the same outcomes.
