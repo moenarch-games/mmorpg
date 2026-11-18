@@ -2,7 +2,7 @@
 //! who hears a line; the logs only read what it delivered.
 use mmorpg_core::{
     ChatChannel, ChatMessage, ChatText, Emote, EntityRef, ErrorCode, QuestId, RaidNotice,
-    ZoneCommand, ZoneEvent, ZoneId, ZoneSnapshot, ability_by_id,
+    ZoneCommand, ZoneEvent, ZoneId, ZoneSnapshot, ability::ids, ability_by_id,
 };
 use std::collections::VecDeque;
 use strum::VariantArray;
@@ -256,30 +256,45 @@ impl Logs {
         let mut refusals = Vec::new();
         for event in &snapshot.events {
             let (kind, text) = match *event {
+                // A companion's or minion's blows reach its summoner too (#934).
                 ZoneEvent::DamageDealt {
+                    source,
                     target,
                     amount,
                     critical,
-                    ..
                 } => (
                     LineKind::Combat,
-                    format!(
-                        "You {} {} for {amount}.",
-                        if critical { "critically hit" } else { "hit" },
-                        who(target)
-                    ),
+                    if source == me {
+                        format!(
+                            "You {} {} for {amount}.",
+                            if critical { "critically hit" } else { "hit" },
+                            who(target)
+                        )
+                    } else {
+                        format!(
+                            "{} {} {} for {amount}.",
+                            who(source),
+                            if critical { "critically hits" } else { "hits" },
+                            who(target)
+                        )
+                    },
                 ),
                 ZoneEvent::DamageTaken {
                     source,
+                    target,
                     amount,
                     critical,
-                    ..
                 } => (
                     LineKind::Combat,
                     format!(
-                        "{} {} you for {amount}.",
+                        "{} {} {} for {amount}.",
                         who(source),
-                        if critical { "critically hits" } else { "hits" }
+                        if critical { "critically hits" } else { "hits" },
+                        if target == me {
+                            "you".into()
+                        } else {
+                            who(target)
+                        }
                     ),
                 ),
                 ZoneEvent::Miss { source, target } => (
@@ -348,6 +363,23 @@ impl Logs {
                     ability: id,
                     ..
                 } if target == me => (LineKind::Combat, format!("You gain {}.", ability(id))),
+                // The caster's root takes hold, and breaks or runs out (#934).
+                ZoneEvent::AuraApplied {
+                    target,
+                    ability: id,
+                    ..
+                } if id == ids::ENTANGLING_ROOTS => (
+                    LineKind::Combat,
+                    format!("{} is rooted by {}.", who(target), ability(id)),
+                ),
+                ZoneEvent::AuraRemoved {
+                    target,
+                    ability: id,
+                    ..
+                } if id == ids::ENTANGLING_ROOTS && target != me => (
+                    LineKind::Combat,
+                    format!("{} breaks free of {}.", who(target), ability(id)),
+                ),
                 ZoneEvent::Interrupted {
                     target,
                     ability: id,
@@ -521,6 +553,57 @@ mod tests {
         snapshot.events.clear();
         assert!(logs.receive_chat(&snapshot));
         assert_eq!(logs.chat.added(), 9);
+    }
+
+    #[test]
+    fn a_summoner_reads_its_companions_fight_and_its_root() {
+        let (me, wolf, foe) = (
+            EntityRef::Player(7),
+            EntityRef::Minion(mmorpg_core::MinionId::new(1)),
+            EntityRef::Creature(mmorpg_core::CreatureId::new(220)),
+        );
+        let mut snapshot = crate::test_support::snapshot(7, 5);
+        snapshot.events = vec![
+            ZoneEvent::DamageDealt {
+                source: wolf,
+                target: foe,
+                amount: 9,
+                critical: false,
+            },
+            ZoneEvent::DamageTaken {
+                source: foe,
+                target: wolf,
+                amount: 4,
+                critical: true,
+            },
+            ZoneEvent::AuraApplied {
+                source: me,
+                target: foe,
+                ability: ids::ENTANGLING_ROOTS,
+                ticks: 360,
+            },
+            ZoneEvent::AuraRemoved {
+                source: me,
+                target: foe,
+                ability: ids::ENTANGLING_ROOTS,
+            },
+        ];
+        let mut logs = Logs::default();
+        let name = |entity| match entity {
+            EntityRef::Minion(_) => "Wolf Companion".to_owned(),
+            _ => "Field Marauder".to_owned(),
+        };
+        logs.receive(&snapshot, name, |_| String::new());
+        let lines: Vec<_> = logs.combat.lines().map(|line| line.text.as_str()).collect();
+        assert_eq!(
+            lines,
+            [
+                "Wolf Companion hits Field Marauder for 9.",
+                "Field Marauder critically hits Wolf Companion for 4.",
+                "Field Marauder is rooted by Entangling Roots.",
+                "Field Marauder breaks free of Entangling Roots.",
+            ]
+        );
     }
 
     #[test]
