@@ -208,7 +208,11 @@ mod tests {
             .filter(|p| p.kind == mmorpg_scenery::PropKind::Lamp)
             .count();
         assert!(fires > 0 && lamps > 0, "{lights:?}");
-        assert_eq!(lights.len(), fires + lamps + 1, "one lantern post");
+        assert_eq!(
+            lights.len(),
+            fires + lamps + 1,
+            "a lamp post or its lantern post each, and the market's"
+        );
         let fire = lights.iter().find(|l| l.flicker.is_some()).unwrap();
         assert_ne!(fire.lumens_at(1.3, true), fire.lumens);
         assert_eq!(fire.lumens_at(1.3, false), fire.lumens);
