@@ -1359,6 +1359,8 @@ impl ZoneSimulation {
             });
             rewards.quest_item = Some(stack);
         }
+        // Its corruptors may spend the corpse (#935); its death clears the Corruption below.
+        let corruptors = self.corruptors(creature_id);
         let Some(creature) = self.creatures.get_mut(&creature_id) else {
             return Ok(());
         };
@@ -1395,6 +1397,7 @@ impl ZoneSimulation {
         for player_id in recipients {
             self.notify(player_id, died);
         }
+        self.mark_corpse(creature_id, corruptors);
         if pays_rewards {
             if let Some(player_id) = tapper
                 && self.kill_credit_eligible(player_id, spot)?

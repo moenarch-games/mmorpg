@@ -1209,6 +1209,17 @@ impl ZoneSimulation {
         // Every aura is reachable: a living player cast it with a learned
         // ability, on itself for self-centred auras and on a creature otherwise.
         let reachable = |unit: EntityRef, aura: &Aura| {
+            // A corpse mark (#935) names the corpse a living Necromancer who knows Raise Dead
+            // may spend.
+            if aura.kind() == Some(AuraKind::Corpse) {
+                return matches!(aura.caster, EntityRef::Creature(id)
+                    if self.creatures.get(&id).is_some_and(|corpse| matches!(corpse.life, Life::Corpse { .. })))
+                    && matches!(unit, EntityRef::Player(id) if self.players.get(&id).is_some_and(|player| {
+                        player.is_alive() && player.class.is_some_and(|choice| {
+                            learned(choice.class, player.level, aura.ability).is_some()
+                        })
+                    }));
+            }
             let EntityRef::Player(caster_id) = aura.caster else {
                 return false;
             };
@@ -1315,7 +1326,12 @@ fn validate_auras(auras: &[Aura]) -> Result<(), ZoneError> {
                 let most = crate::unit::percent_of(most_health, u32::from(percent));
                 aura.amount > 0 && u32::from(aura.amount) <= most
             }
-            _ => matches!(spec.kind, AuraKind::Root | AuraKind::Stun) && aura.amount == 0,
+            _ => {
+                matches!(
+                    spec.kind,
+                    AuraKind::Root | AuraKind::Stun | AuraKind::Corpse
+                ) && aura.amount == 0
+            }
         };
         if aura.remaining == 0 || aura.remaining > spec.duration || !valid_amount {
             return Err(ZoneError::new("aura state is out of range"));
