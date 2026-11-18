@@ -367,7 +367,7 @@ pub struct EntityFlags {
     pub in_combat: bool,
     pub weapon_drawn: bool,
     /// A player's melee weapon family (#914); absent for every other unit.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[tsify(optional)]
     pub weapon: Option<WeaponFamily>,
     /// An aggressive creature.
