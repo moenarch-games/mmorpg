@@ -441,6 +441,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::wilds::spawns())
         // The farmland hamlets' creatures (#859).
         .chain(super::hamlet_creatures::spawns())
+        // The Eastwater Fen wolf pack (#932).
+        .chain(super::fen_pack::spawns())
         .collect()
 }
 
