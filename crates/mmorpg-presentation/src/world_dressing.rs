@@ -30,7 +30,7 @@ use crate::{
 };
 
 /// Greyhaven Vale's dressing files.
-const GREYHAVEN: [&str; 8] = [
+const GREYHAVEN: [&str; 9] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/vale.json"
@@ -66,6 +66,13 @@ const GREYHAVEN: [&str; 8] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/nature.json"
+    )),
+    // The remaining procedural barrels, crates, carts, signposts, lamps, waystones and fences
+    // as settlement props over their colliders, composed offline by
+    // `examples/export-prop-dressing.rs`.
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../content/greyhaven/dressing/props.json"
     )),
 ];
 

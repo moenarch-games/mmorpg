@@ -3,7 +3,8 @@
 //! file (#866): packed glTF the client decodes itself (`presentation::skinned::packed`).
 //! The Greyhaven inn, the Sunken Shrine kit (#431), the ambient animals (#419), the
 //! Outpost building kit (#420), the settlement props (#421) and Greyhaven's trees, rocks and bushes
-//! (#49) and their ground layer materials (#525) keep the manifest/resource embedding path.
+//! (#49), their ground layer materials (#525) and the strike and spell effects (#894) keep the
+//! manifest/resource embedding path.
 #[path = "build/warden_icons.rs"]
 mod warden_icons;
 
@@ -242,6 +243,19 @@ fn main() {
     static_bundle(
         "wild_bundle.rs",
         &manifest_dir.join("../../web/public/scenery/greyhaven.wildlife"),
+        None,
+        false,
+    );
+    // The strike and spell effects (#894), every one.
+    static_bundle(
+        "strike_effects_bundle.rs",
+        &manifest_dir.join("../../web/public/effects/strike.effects"),
+        None,
+        false,
+    );
+    static_bundle(
+        "spell_effects_bundle.rs",
+        &manifest_dir.join("../../web/public/effects/spell.effects"),
         None,
         false,
     );

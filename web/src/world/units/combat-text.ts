@@ -5,7 +5,7 @@ import type { ZoneEvent, ZoneSnapshot } from "../../replication";
  * Floating combat text for the viewer's projection events. Events are cosmetic and lossy, so the
  * text only decorates what the self and target sections already show.
  */
-export type CombatTextKind = "damage" | "critical" | "periodic" | "taken" | "heal" | "absorb" | "interrupt" | "miss" | "block" | "guard-break";
+export type CombatTextKind = "damage" | "critical" | "periodic" | "taken" | "heal" | "absorb" | "interrupt" | "miss" | "block" | "guard-break" | "cleave";
 
 export type CombatText = { kind: CombatTextKind; text: string };
 
@@ -74,6 +74,20 @@ export function combatTexts(snapshot: ZoneSnapshot): readonly CombatText[] {
     const text = textFor(event, snapshot, periodic);
     return text ? [text] : [];
   });
+}
+
+/**
+ * How many units the viewer's current swing has struck after this projection, from `count` before
+ * it (#909): the viewer's wind-up starts a new swing, and each of its sweeps that struck a unit
+ * counts one. A cleaving timed swing strikes over several ticks, so the count spans projections.
+ */
+export function cleaveCount(snapshot: ZoneSnapshot, count: number): number {
+  return snapshot.events.reduce((count, event) => {
+    if (event.kind === "swing-began" && isViewer(event.source, snapshot)) {
+      return 0;
+    }
+    return event.kind === "strike-swept" && event.target !== null && isViewer(event.source, snapshot) ? count + 1 : count;
+  }, count);
 }
 
 /** How long a floating text lives, in milliseconds. */

@@ -12,6 +12,8 @@ pub const BROOK_MILL: std::ops::RangeInclusive<u32> = 65121..=65127;
 pub const TOWERS: [[i32; 2]; 4] = [[-2700, -700], [2700, -700], [-3000, 4000], [3100, 4000]];
 pub const TOWER_BODIES: std::ops::RangeInclusive<u32> = 65040..=65043;
 /// Low authored outcrops that break Stillwater's bank silhouette without closing its routes.
+/// The crag kit's talus dresses them (`content/greyhaven/dressing/vale.json`, #683); their
+/// collision is still authored here, so the art stands over it as presentation only.
 pub const SHORE_ROCKS: std::ops::RangeInclusive<u32> = 65070..=65093;
 /// The mill's walk-off gallery, outside the hoist shaft and clear of the axle housing.
 pub const MILL_GALLERY: std::ops::RangeInclusive<u32> = 65103..=65110;

@@ -1091,6 +1091,13 @@ impl UnitPresenter {
             .map_err(|error| JsError::new(&error))
     }
 
+    /// Whether the page draws the `strike-effects` and `spell-effects` bundles (#894): each
+    /// frame's `effects` then lists what to play, and their primitive stand-ins are not drawn.
+    #[wasm_bindgen(js_name = setEffectKits)]
+    pub fn set_effect_kits(&mut self, drawn: bool) {
+        self.0.set_effect_kits(drawn);
+    }
+
     /// The platforms (ids) the page's kit draws instead of their procedural pillar, the
     /// fortress kit's lifts (#591): each frame's `platforms` says where each stands.
     #[wasm_bindgen(js_name = setKitPlatforms)]

@@ -583,8 +583,12 @@ pub struct StepStats {
     pub moving: usize,
     /// Moving bodies the character controller moved.
     pub moved_bodies: usize,
-    /// Game bodies included in the backend step.
+    /// Game bodies admitted to the world, static ones included.
     pub bodies: usize,
+    /// Game bodies the step itself visited: every moving body (asleep ones are passed over) and
+    /// every platform (#895). Static colliders are reached only through the backend's query tree
+    /// when a move sweeps past them, so this does not grow with a zone's scenery.
+    pub visited: usize,
 }
 
 /// One explicitly timed world operation in the test/bench-only physics A/B seam.
@@ -1183,6 +1187,56 @@ mod tests {
         let mut world = World::new(Vec3i::new(0, -S, 0));
         world.add_body(RigidBody::floor(BodyId(1), 0)).unwrap();
         world
+    }
+
+    #[test]
+    fn static_colliders_stay_out_of_the_step() {
+        on_each_backend(static_colliders_stay_out_of_the_step_on);
+    }
+
+    /// Scenery costs a step nothing until a move sweeps past it (#895): the step visits only
+    /// the moving bodies and platforms, however many fixed boxes stand around them.
+    fn static_colliders_stay_out_of_the_step_on() {
+        let run = |scenery: u16| {
+            let mut world = world();
+            lift(&mut world);
+            for unit in 0..3 {
+                world
+                    .add_body(RigidBody::dynamic(
+                        BodyId(10 + unit),
+                        Vec3i::new(400 * i32::try_from(unit).unwrap(), 90, 400),
+                        Vec3i::new(S, 0, 0),
+                        BODY,
+                    ))
+                    .unwrap();
+            }
+            for prop in 0..scenery {
+                world
+                    .add_body(RigidBody::fixed(
+                        BodyId(100 + u64::from(prop)),
+                        Vec3i::new(
+                            5_000 + 300 * i32::from(prop % 20),
+                            50,
+                            300 * i32::from(prop / 20),
+                        ),
+                        Vec3i::new(50, 50, 50),
+                    ))
+                    .unwrap();
+            }
+            let stats: Vec<_> = (0..10).map(|_| world.step().unwrap()).collect();
+            let positions: Vec<_> = (10..13)
+                .map(|unit| world.body(BodyId(unit)).unwrap().exact_position())
+                .collect();
+            (stats, positions)
+        };
+        let (bare, bare_positions) = run(0);
+        let (dressed, dressed_positions) = run(200);
+        assert_eq!(bare_positions, dressed_positions);
+        for (bare, dressed) in bare.iter().zip(&dressed) {
+            assert_eq!(bare.visited, 4, "three units and the lift");
+            assert_eq!(dressed.visited, bare.visited);
+            assert_eq!(dressed.bodies, bare.bodies + 200);
+        }
     }
 
     #[test]
