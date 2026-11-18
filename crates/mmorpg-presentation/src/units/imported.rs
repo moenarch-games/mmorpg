@@ -1035,9 +1035,9 @@ impl SwordClips {
 pub const fn melee_clips(family: WeaponFamily, variant: StrikeVariant) -> [&'static str; 2] {
     use StrikeVariant::{Finisher, First, Jumping, Running, Second};
     match (family, variant) {
-        (WeaponFamily::Sword, First) => ["Sword_Slash_Mid_R", "Sword_Slash_Mid_R"],
-        (WeaponFamily::Sword, Second) => ["Sword_Slash_Mid_L", "Sword_Slash_Mid_L"],
-        (WeaponFamily::Sword, Finisher) => ["Sword_Attack", "Sword_Attack"],
+        (WeaponFamily::Sword, First) => ["Sword_Regular_A", "Sword_Slash_Mid_R"],
+        (WeaponFamily::Sword, Second) => ["Sword_Regular_B", "Sword_Slash_Mid_L"],
+        (WeaponFamily::Sword, Finisher) => ["Sword_Regular_C", "Sword_Attack"],
         (WeaponFamily::Sword, Running) => ["Sword_Run_Strike", "Sword_Slash_Mid_R"],
         (WeaponFamily::Sword, Jumping) => ["Sword_Jump_Strike", "Sword_Slash_High_C"],
         (WeaponFamily::Mace, First) => ["Mace_Swing_A", "Mace_Swing_A"],
@@ -1787,9 +1787,10 @@ impl Kind {
     /// The clip a movement-state strike (#885) of a `family` weapon plays and the body it
     /// drives, for a model with authored strikes: the family's own strike (asset-tooling #709,
     /// #711) when the model `has` it, otherwise the clip that stands in for it until that
-    /// release is fetched. Authored running and jumping strikes move the whole body; standing
-    /// ones, and every stand-in for a running or jumping strike, only the upper body, over the
-    /// legs' run or jump.
+    /// release is fetched. Authored running and jumping strikes move the whole body, the
+    /// full-body standing ones ([`FULL_BODY_STRIKES`], #900) the whole body while the unit stands;
+    /// other standing ones, and every stand-in for a running or jumping strike, only the upper
+    /// body, over the legs' run or jump.
     #[must_use]
     pub fn melee_strike(
         self,
@@ -1801,7 +1802,14 @@ impl Kind {
         let [authored, stand_in] = melee_clips(family, variant);
         let moving = matches!(variant, StrikeVariant::Running | StrikeVariant::Jumping);
         if has(authored) {
-            return Some((authored, if moving { Region::Whole } else { Region::Upper }));
+            let region = if moving {
+                Region::Whole
+            } else if FULL_BODY_STRIKES.contains(&authored) {
+                Region::Footwork
+            } else {
+                Region::Upper
+            };
+            return Some((authored, region));
         }
         Some((
             stand_in,
@@ -2491,6 +2499,13 @@ struct Strike {
     /// A timed swing (#679): wound up to this clip time and held until the zone's active phase
     /// begins at this time, then swung on from there.
     timed: Option<(f32, f64, f32)>,
+    /// Fitted to the zone's contact tick (#900).
+    fit: Option<Fit>,
+    /// A jumping strike's touchdown frame: it holds there while the unit is still in the air
+    /// (#900).
+    land: Option<f32>,
+    /// The family guard it settles into once it ends (#900).
+    settle: Option<&'static str>,
 }
 
 impl Strike {
@@ -2508,6 +2523,9 @@ impl Strike {
             hold: None,
             item: None,
             timed: None,
+            fit: None,
+            land: None,
+            settle: None,
         }
     }
 
@@ -2527,7 +2545,10 @@ impl Strike {
                 hold + (end - hold).max(0.) * (elapsed / active.max(1e-6)).min(1.)
                     + (elapsed - active).max(0.)
             }
-            None => (now - self.started).max(0.) as f32,
+            None => {
+                let elapsed = (now - self.started).max(0.) as f32;
+                self.fit.map_or(elapsed, |fit| fit.at(elapsed))
+            }
         };
         let at = self.hold.map_or(at, |hold| at.min(hold));
         match self.then {
@@ -2542,7 +2563,110 @@ impl Strike {
             },
         }
     }
+
+    /// Holds the strike's clock back by `seconds`: a hitstop or a jump still in the air (#900).
+    fn delay(&mut self, seconds: f64) {
+        self.started += seconds;
+        self.until += seconds;
+        if let Some((_, release, _)) = &mut self.timed {
+            *release += seconds;
+        }
+    }
 }
+
+/// The slowest and fastest a fitted wind-up plays its clip (#900).
+pub const FIT_RATES: [f32; 2] = [0.6, 1.75];
+
+/// A strike clip fitted to the zone's contact tick (#900): it winds up from clip time `from` to
+/// its authored `contact` frame in exactly `zone` seconds, at a rate within [`FIT_RATES`], and
+/// plays on at authored speed after. A contact the bounded rate would reach early holds there.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Fit {
+    from: f32,
+    contact: f32,
+    zone: f32,
+}
+
+impl Fit {
+    /// The fit of a clip whose contact frame is `contact` seconds in, to a zone contact `zone`
+    /// seconds from the strike's start.
+    #[must_use]
+    pub fn new(contact: f32, zone: f32) -> Self {
+        let (contact, zone) = (contact.max(0.), zone.max(0.));
+        Self {
+            from: (contact - zone * FIT_RATES[1]).max(0.),
+            contact,
+            zone,
+        }
+    }
+
+    /// The clip time `elapsed` seconds after the strike began.
+    #[must_use]
+    pub fn at(self, elapsed: f32) -> f32 {
+        if elapsed >= self.zone {
+            self.contact + (elapsed - self.zone)
+        } else {
+            let rate = ((self.contact - self.from) / self.zone).max(FIT_RATES[0]);
+            (self.from + elapsed * rate).min(self.contact)
+        }
+    }
+
+    /// Seconds from the strike's start until a clip `length` seconds long ends.
+    fn ends(self, length: f32) -> f32 {
+        self.zone + (length - self.contact).max(0.)
+    }
+}
+
+/// How a basic melee strike (#885) is shown (#900): fitted to the zone's contact, held on a
+/// jump's touchdown frame until the unit lands, and settling into the family guard after.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Melee {
+    pub fit: Option<Fit>,
+    pub land: Option<f32>,
+    pub settle: Option<&'static str>,
+}
+
+/// How long a strike's family guard holds after a running or jumping strike, before the body
+/// eases back to its gait or idle (#900).
+pub const SETTLE_SECONDS: f64 = 0.45;
+
+/// The grounded speed in metres per second at which a strike's footwork blends in or out at
+/// half its standing blend time (#900).
+pub const FOOT_BLEND_SPEED: f32 = 3.;
+
+/// The family guard a running or jumping strike of a `family` weapon settles into (#900); a
+/// bow has none.
+#[must_use]
+pub const fn family_guard(family: WeaponFamily) -> Option<&'static str> {
+    Some(match family {
+        WeaponFamily::Sword => "Sword_Idle",
+        WeaponFamily::Mace => "Mace_Guard_Loop",
+        WeaponFamily::Dagger => "Dagger_Guard_Loop",
+        WeaponFamily::Staff => "Staff_Guard_Loop",
+        WeaponFamily::Spear => "Spear_Guard_Loop",
+        WeaponFamily::Unarmed => "Unarmed_Guard_Loop",
+        WeaponFamily::Bow => return None,
+    })
+}
+
+/// The full-body standing strikes (asset-tooling #741): played on the whole skeleton while the
+/// unit stands, never as an upper-body layer over the idle legs (#900).
+pub const FULL_BODY_STRIKES: [&str; 14] = [
+    "Sword_Regular_A",
+    "Sword_Regular_B",
+    "Sword_Regular_C",
+    "TwoHand_Swing_A",
+    "TwoHand_Swing_B",
+    "TwoHand_Swing_C",
+    "Spear_Thrust_A",
+    "Spear_Thrust_B",
+    "Mace_Swing_A",
+    "Mace_Swing_B",
+    "Mace_Swing_C",
+    "Unarmed_Jab",
+    "Unarmed_Cross",
+    "Unarmed_Hook",
+];
 
 /// How far into its strike clip a local wind-up (Atlas 6.6.10) goes before it holds: this share
 /// of the clip, at most [`WINDUP_HOLD_SECONDS`], so it stops short of the swing's impact.
@@ -2630,6 +2754,10 @@ pub struct Playback {
     turning: Option<(bool, f64)>,
     /// The local player's wind-up, until the zone answers (Atlas 6.6.10).
     preparation: Option<Preparation>,
+    /// A confirmed blow's hitstop holds the strike and reaction clocks until this time (#900).
+    stop: Option<f64>,
+    /// The family guard a running or jumping strike settles into, until when (#900).
+    settle: Option<(&'static str, f64)>,
     guarding: bool,
     serial: u32,
     landing: u32,
@@ -2798,6 +2926,45 @@ impl Playback {
         strike.until = release + f64::from(active + (duration * 0.32).max(0.12));
         self.strike = Some(strike);
         self.cast = None;
+    }
+
+    /// Shows a basic melee strike (#885) of `clip`, `duration` seconds long, begun at `now`, as
+    /// `melee` shapes it (#900): its contact frame fitted to the zone's, a jump's touchdown
+    /// held until the unit lands, and the family guard after it.
+    pub fn melee(
+        &mut self,
+        clip: &'static str,
+        duration: f32,
+        region: Region,
+        melee: Melee,
+        now: f64,
+    ) {
+        self.strike(clip, duration, region, now);
+        self.settle = None;
+        if let Some(strike) = &mut self.strike {
+            strike.fit = melee.fit;
+            strike.land = melee.land.filter(|&land| land < duration);
+            strike.settle = melee.settle;
+            if let Some(fit) = melee.fit {
+                strike.until = strike.started + f64::from(fit.ends(duration).max(0.3));
+            }
+        }
+    }
+
+    /// A blow this unit struck or took was confirmed at `now` (#900): its strike or reaction
+    /// holds for `seconds` at [`super::contact::HITSTOP_RATE`] of its pace. The zone's timing is
+    /// unchanged; reduced motion ignores it.
+    pub fn hitstop(&mut self, seconds: f32, now: f64) {
+        let until = now + f64::from(seconds.max(0.));
+        self.stop = Some(self.stop.map_or(until, |stop| stop.max(until)));
+    }
+
+    /// The strike (not a reaction) the unit is swinging at `now`, if any.
+    #[must_use]
+    pub fn striking(&self, now: f64) -> Option<&'static str> {
+        self.strike
+            .filter(|strike| strike.reaction.is_none() && now < strike.until)
+            .map(|strike| strike.clip)
     }
 
     /// Shows a cast of `seconds` begun at `now` that resolves into a strike of `clip` (#582):
@@ -3320,8 +3487,46 @@ impl Playback {
             self.strike = None;
             self.cast = None;
             self.preparation = None;
+            self.settle = None;
         }
         self.guarding = guarding;
+        // A confirmed blow's hitstop (#900) holds the strike and reaction clocks for a moment; a
+        // jumping strike holds its touchdown frame while the unit is still in the air.
+        self.stop = self.stop.filter(|&until| now < until);
+        let stopped = !reduced && self.stop.is_some();
+        let stopping = if stopped {
+            f64::from(dt * (1. - super::contact::HITSTOP_RATE))
+        } else {
+            0.
+        };
+        let aloft = matches!(
+            self.flight,
+            Flight::Rising | Flight::Airborne | Flight::Falling
+        );
+        for strike in [&mut self.strike, &mut self.cast].into_iter().flatten() {
+            let landing = aloft
+                && strike
+                    .land
+                    .is_some_and(|land| strike.want(now).at.is_some_and(|at| at >= land));
+            let hold = if landing { f64::from(dt) } else { stopping };
+            if hold > 0. {
+                strike.delay(hold);
+            }
+        }
+        if let Some(preparation) = &mut self.preparation {
+            preparation.started += stopping;
+        }
+        // A running or jumping strike settles into its family guard (#900) before the gait or
+        // idle takes the body back.
+        if let Some(strike) = self.strike.filter(|strike| now >= strike.until) {
+            self.settle = strike
+                .settle
+                .filter(|&clip| !reduced && available(clip))
+                .map(|clip| (clip, now + SETTLE_SECONDS));
+        }
+        self.settle = self
+            .settle
+            .filter(|&(_, until)| now < until && !dead && stun.is_none());
         self.strike = self.strike.filter(|strike| now < strike.until);
         self.cast = self.cast.filter(|cast| now < cast.until);
         // A swimmer, a climber or a mantler has no footing for a strike's footwork.
@@ -3537,9 +3742,21 @@ impl Playback {
                 _ => ground,
             }
         };
+        // The settling guard (#900) takes the whole body on the ground, the upper body over a
+        // gait; on touchdown it stands in for the jump's landing.
+        let settle = self
+            .settle
+            .filter(|_| strike.is_none() && roll.is_none())
+            .map(|(clip, _)| {
+                let planted = speed <= 0.25
+                    && !swims
+                    && !traversing
+                    && matches!(self.flight, Flight::Ground | Flight::Landing);
+                (planted, Want::looped(clip, 1.))
+            });
         let lower = if dead || roll.is_some() {
             None
-        } else if let Some((true, want)) = strike {
+        } else if let Some((true, want)) = strike.or(settle) {
             Some(want)
         } else if let (Some(jump), Flight::Landing) = (clips.jump, self.flight)
             && !reduced
@@ -3553,7 +3770,7 @@ impl Playback {
         };
         let upper = if dead || !layered {
             None
-        } else if let Some((false, want)) = strike {
+        } else if let Some((false, want)) = strike.or(settle) {
             Some(want)
         } else if prepared.is_some() {
             prepared
@@ -3627,7 +3844,17 @@ impl Playback {
         };
         let seconds = if first { 0. } else { lower_seconds };
         self.base.advance(Some(base), dt, seconds, reduced);
-        self.lower.advance(lower, dt, lower_seconds, reduced);
+        // Entering or leaving a strike's footwork blends faster the faster the unit travels
+        // (#900), so a planted stance is never smeared over ground the body has already crossed.
+        #[allow(clippy::cast_possible_truncation)]
+        let over_seconds = lower_seconds / (1. + speed as f32 / FOOT_BLEND_SPEED);
+        // A hitstop (#900) slows the strike's regions with the clocks it holds.
+        let held_dt = if stopped {
+            dt * super::contact::HITSTOP_RATE
+        } else {
+            dt
+        };
+        self.lower.advance(lower, held_dt, over_seconds, reduced);
         if roll.is_some() {
             // The forward roll turns the drawn body at once toward the roll's travel (#516), and
             // eases back to the facing after it; a roll stopped by a wall keeps its heading.
@@ -3654,9 +3881,10 @@ impl Playback {
         if split {
             // The strike leaves the legs mid-swing: the upper body keeps it without a blend.
             self.upper = Track::default();
-            self.upper.advance(upper, dt, 0., reduced);
+            self.upper.advance(upper, held_dt, 0., reduced);
         } else {
-            self.upper.advance(upper, dt, blend.upper_seconds, reduced);
+            self.upper
+                .advance(upper, held_dt, blend.upper_seconds, reduced);
         }
         let mut over = Vec::new();
         self.lower
@@ -4034,7 +4262,7 @@ mod tests {
         );
         assert_eq!(
             Kind::Ranger.melee_strike(WeaponFamily::Mace, StrikeVariant::Finisher, |_| true),
-            Some(("Mace_Swing_C", Region::Upper))
+            Some(("Mace_Swing_C", Region::Footwork))
         );
         assert_eq!(
             Kind::Wolf.melee_strike(WeaponFamily::Unarmed, StrikeVariant::First, |_| true),
@@ -5287,6 +5515,56 @@ mod tests {
                 < 1e-4,
             "{swung:?}"
         );
+    }
+
+    #[test]
+    fn a_confirmed_blow_holds_the_fitted_strike_for_its_hitstop() {
+        use crate::units::contact::{HITSTOP_RATE, hitstop_seconds, weight};
+        // A fitted wind-up (#900) meets the zone's contact exactly and plays on at authored
+        // speed; a contact the bounded rate cannot reach in time starts into the clip.
+        let fit = Fit::new(0.6, 0.383);
+        assert!((fit.at(0.383) - 0.6).abs() < 1e-6);
+        assert!((fit.at(0.5) - 0.717).abs() < 1e-6);
+        assert!((Fit::new(0.4, 0.1).at(0.) - (0.4 - 0.1 * FIT_RATES[1])).abs() < 1e-6);
+        let clips = Kind::Ranger.clips();
+        let dt = 1. / 60.;
+        let zone = 28. / 60.;
+        let stop = hitstop_seconds(weight("Mace_Swing_C"));
+        let swing = |hit: bool| {
+            let mut playback = Playback::default();
+            let melee = Melee {
+                fit: Some(Fit::new(0.4667, zone)),
+                ..Melee::default()
+            };
+            playback.melee("Mace_Swing_C", 0.9, Region::Footwork, melee, 0.);
+            (1..=40)
+                .map(|frame| {
+                    let now = f64::from(frame) * f64::from(dt);
+                    if hit && frame == 28 {
+                        playback.hitstop(stop, now);
+                    }
+                    let cues = Cues {
+                        now,
+                        dt: f64::from(dt),
+                        ..Cues::default()
+                    };
+                    playback
+                        .advance(clips, |_| 0.9, cues, Blend::default())
+                        .lower
+                })
+                .collect::<Vec<_>>()
+        };
+        let (clean, struck) = (swing(false), swing(true));
+        // The contact frame shows on the zone's contact tick.
+        assert_eq!(clean[27].0, "Mace_Swing_C");
+        assert!((clean[27].1 - 0.4667).abs() < 1e-3, "{:?}", clean[27]);
+        // Through the hitstop the swing all but stops …
+        assert!(struck[30].1 - struck[28].1 < 2. * dt * HITSTOP_RATE + 1e-4);
+        // … and after it plays on, behind by the held time, which the weapon's weight sets.
+        let behind = clean[39].1 - struck[39].1;
+        let held = stop * (1. - HITSTOP_RATE);
+        assert!((behind - held).abs() <= dt, "{behind} behind, {held} held");
+        assert!(stop > hitstop_seconds(weight("Dagger_Stab_R")));
     }
 
     #[test]

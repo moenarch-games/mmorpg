@@ -139,6 +139,8 @@ pub struct Presentation {
     origin: Instant,
     last_draw: Instant,
     camera_framed: bool,
+    /// The camera kick of the last presented frame's blow (#900), in metres.
+    camera_kick: [f32; 3],
     /// The walk-in buildings' door swings and interior looks (#158).
     buildings: Vec<mmorpg_presentation::buildings::WalkIn>,
     last_buildings: Instant,
@@ -254,6 +256,7 @@ impl Presentation {
             origin: now,
             last_draw: now,
             camera_framed: false,
+            camera_kick: [0.0; 3],
             buildings,
             last_buildings: now,
             last_camera: now,
@@ -670,6 +673,7 @@ impl Presentation {
             reduced_motion: self.reduced_motion,
             bar_yaw: (view.target[0] - view.eye[0]).atan2(view.target[2] - view.eye[2]),
         });
+        self.camera_kick = frame.kick;
         let mut draws: Vec<_> = frame
             .draws
             .iter()
@@ -1214,6 +1218,11 @@ impl Presentation {
                     self.reduced_motion,
                 )
                 .map(|v| v as f32);
+        }
+        // A blow the viewer struck or took kicks the camera a moment (#900).
+        for axis in 0..3 {
+            view.eye[axis] += self.camera_kick[axis];
+            view.target[axis] += self.camera_kick[axis];
         }
         view
     }

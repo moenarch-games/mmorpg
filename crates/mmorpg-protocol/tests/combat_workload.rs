@@ -111,6 +111,7 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // visits (moving bodies and platforms), not every admitted body, so scenery no longer
     // moves it; static colliders cost a step only through the engine's query tree. The
     // rows are re-recorded at their measured counts with the headroom above.
+    // The `u16` sheet mask (#897) adds one byte to every projection, inside the headroom.
     const HEADROOM_PERCENT: usize = 5;
     let recorded: [[usize; 4]; FIXTURES.len()] = [
         [11_052, 85_680, 282_240, 6_151_648],

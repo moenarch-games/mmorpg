@@ -24,19 +24,27 @@ describe("the mmorpg-wasm wire boundary (#541)", () => {
   test("an online session keeps the sheets it received and echoes their revisions (#544)", () => {
     const sheets = new ProjectionDecoder();
     const jump = encodeCommand({ kind: "jump" });
-    // Nothing held yet: the acknowledgement wraps the command with zero revisions, one per sheet.
+    // Nothing held yet: the acknowledgement wraps the command with an empty `u16` held mask and no revisions (#897).
     const none = sheets.acknowledge(jump);
-    expect(none.length).toBe(jump.length + 1 + 32);
+    expect(none.length).toBe(jump.length + 1 + 2);
     expect(none[1]).toBe(31);
-    expect([...none.subarray(2, 34)]).toEqual(new Array(32).fill(0));
-    expect([...none.subarray(34)]).toEqual([...jump.subarray(1)]);
+    expect([...none.subarray(2, 4)]).toEqual([0, 0]);
+    expect([...none.subarray(4)]).toEqual([...jump.subarray(1)]);
     const sent = snapshot(5);
     const bytes = encodeSnapshot(sent);
     const decoded = sheets.decode(bytes);
     expect(decoded).toEqual({ ...sent, stats: null, party: null, depthsLoot: null });
     expect(projectionBytes(decoded)).toEqual(bytes);
-    // Now it holds the loot and ability sheets.
-    expect([...sheets.acknowledge(jump).subarray(10, 18)].some((byte) => byte !== 0)).toBe(true);
+    // Now it holds the sheets it received: the held mask names them and a nonzero revision follows for each.
+    const held = sheets.acknowledge(jump);
+    const mask = (held[2]! << 8) | held[3]!;
+    const count = [...Array(16).keys()].filter((bit) => (mask >> bit) & 1).length;
+    expect(count).toBeGreaterThan(0);
+    expect(held.length).toBe(jump.length + 1 + 2 + 4 * count);
+    for (let index = 0; index < count; index += 1) {
+      expect([...held.subarray(4 + 4 * index, 8 + 4 * index)].some((byte) => byte !== 0)).toBe(true);
+    }
+    expect([...held.subarray(4 + 4 * count)]).toEqual([...jump.subarray(1)]);
   });
 
   test("encodeCommand rejects intent the zone's decoder would reject", () => {

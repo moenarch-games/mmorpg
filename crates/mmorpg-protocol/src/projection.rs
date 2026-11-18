@@ -37,11 +37,11 @@ const SELF_ABILITY_BYTES: usize =
     1 + 1 + 2 + 2 + 2 + CAST_RECORD_BYTES + 2 + 2 + 1 + 1 + 2 + 1 + 1 + 2;
 /// The target's own target and the target's cast.
 const TARGET_BYTES: usize = ENTITY_REF_BYTES + CAST_RECORD_BYTES;
-/// Every section's fixed part: header, self, target, sheet mask (`u8`, #544), summoned count
-/// (`u8`), trap count (`u8`), event count (`u8`), chat count (`u8`), entity count (`u16`),
+/// Every section's fixed part: header, self, target, sheet mask (`u16`, #544, #897), summoned
+/// count (`u8`), trap count (`u8`), event count (`u8`), chat count (`u8`), entity count (`u16`),
 /// projectile count (`u8`) and debris count (`u8`).
 pub const PLAYER_SNAPSHOT_FIXED_BYTES: usize =
-    HEADER_BYTES + SELF_BYTES + SELF_ABILITY_BYTES + TARGET_BYTES + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1;
+    HEADER_BYTES + SELF_BYTES + SELF_ABILITY_BYTES + TARGET_BYTES + 2 + 1 + 1 + 1 + 1 + 2 + 1 + 1;
 /// A summoned obstacle (#293): `u32` ID, kind, `3 × i32` centre, `u16` facing, health percent.
 pub const SUMMONED_RECORD_BYTES: usize = 4 + 1 + 12 + 2 + 1;
 /// A fired trap (#300): `u32` ID and `u16` age.
@@ -68,7 +68,7 @@ pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 4 + 12 + 3 + 2 + 1 + 1 + 1;
 const SITTING_BIT: u8 = 0x80;
 /// The appearance word's high bit on a player record: the weapon is drawn (#802).
 const DRAWN_BIT: u32 = 0x8000_0000;
-/// Records that fit the budget without events or sheets: (1,077 − 111) / 29 = 33.
+/// Records that fit the budget without events or sheets: (1,077 − 112) / 29 = 33.
 pub const MAX_WIRE_ENTITIES: usize =
     (MAX_PLAYER_PROJECTION_BYTES - PLAYER_SNAPSHOT_FIXED_BYTES) / ENTITY_RECORD_BYTES;
 const MAX_EVENT_SECTION_BYTES: usize = MAX_EVENTS_PER_PLAYER * EVENT_RECORD_BYTES;
@@ -216,7 +216,7 @@ pub fn pack_snapshot_acknowledged(
     // the rest wait for a later tick (#544).
     let mut room = MAX_PLAYER_PROJECTION_BYTES.saturating_sub(
         payload.len()
-            + 1
+            + 2
             + world_payload.len()
             + 1
             + usize::from(event_count) * EVENT_RECORD_BYTES
@@ -227,8 +227,8 @@ pub fn pack_snapshot_acknowledged(
             + 1,
     );
     let mask_offset = payload.len();
-    payload.push(0);
-    let mut mask = 0_u8;
+    payload.extend_from_slice(&[0, 0]);
+    let mut mask = 0_u16;
     let mut deferred_sheets = false;
     for (sheet, bytes) in Sheet::ALL.into_iter().zip(encode_sheets(snapshot)?) {
         let Some(bytes) = bytes else {
@@ -245,7 +245,7 @@ pub fn pack_snapshot_acknowledged(
         mask |= 1 << sheet.index();
         payload.extend_from_slice(&bytes);
     }
-    payload[mask_offset] = mask;
+    payload[mask_offset..mask_offset + 2].copy_from_slice(&mask.to_be_bytes());
     payload.extend_from_slice(&world_payload);
     // Plan a conservative entity prefix once, before removing cosmetic records.
     // Freed event bytes do not grow that prefix and cannot cause a packing cycle.
@@ -735,7 +735,7 @@ fn decode_projection(
         return Err(ProtocolError::new("target detail needs a target"));
     }
 
-    let mask = read_u8(payload, &mut offset)?;
+    let mask = u16::from_be_bytes(take(payload, &mut offset)?);
     if u32::from(mask) >> SHEET_COUNT != 0 {
         return Err(ProtocolError::new("unknown sheet in the sheet mask"));
     }
@@ -1554,8 +1554,12 @@ pub(crate) mod tests {
     const TARGET_OF_TARGET: usize = BREATH + 2;
     const TARGET_CAST: usize = TARGET_OF_TARGET + ENTITY_REF_BYTES;
     const SHEET_MASK: usize = TARGET_CAST + CAST_RECORD_BYTES;
+    /// The `u16` sheet mask (#897).
+    fn sheet_mask(payload: &[u8]) -> u16 {
+        u16::from_be_bytes([payload[SHEET_MASK], payload[SHEET_MASK + 1]])
+    }
     /// The bag sheet (#544): inventory revision, bag, equipment and stat totals.
-    const INVENTORY: usize = SHEET_MASK + 1;
+    const INVENTORY: usize = SHEET_MASK + 2;
     const EVENT_COUNT: usize = 16;
     const EQUIPMENT: usize = INVENTORY + 8 + INVENTORY_RECORD_BYTES;
     const STATS: usize = EQUIPMENT + EQUIPMENT_RECORD_BYTES;
@@ -1997,7 +2001,7 @@ pub(crate) mod tests {
         let mut decoder = SnapshotDecoder::new();
         assert_eq!(decoder.revisions(), SheetRevisions::default());
         let full = pack_snapshot(&snapshot).unwrap();
-        assert_eq!(full.payload[SHEET_MASK], 0b1100_1111);
+        assert_eq!(sheet_mask(&full.payload), 0b1100_1111);
         assert_eq!(decoder.decode(&full.payload).unwrap(), snapshot);
         let held = decoder.revisions();
         assert!(
@@ -2017,7 +2021,7 @@ pub(crate) mod tests {
             aura.remaining -= 10;
         }
         let quiet = pack_snapshot_acknowledged(&later, held).unwrap();
-        assert_eq!(quiet.payload[SHEET_MASK], 0);
+        assert_eq!(sheet_mask(&quiet.payload), 0);
         assert_eq!(full.payload.len() - quiet.payload.len(), SHEET_BYTES);
         assert_eq!(decoder.decode(&quiet.payload).unwrap(), later);
         assert_eq!(decoder.revisions(), held);
@@ -2034,10 +2038,16 @@ pub(crate) mod tests {
         changed.inventory_revision += 1;
         changed.inventory.as_mut().unwrap().remove(0, 1).unwrap();
         let update = pack_snapshot_acknowledged(&changed, held).unwrap();
-        assert_eq!(update.payload[SHEET_MASK], 0b0001);
+        assert_eq!(sheet_mask(&update.payload), 0b0001);
         assert_eq!(decoder.decode(&update.payload).unwrap(), changed);
-        assert_ne!(decoder.revisions().inventory, held.inventory);
-        assert_eq!(decoder.revisions().quests, held.quests);
+        assert_ne!(
+            decoder.revisions().get(Sheet::Inventory),
+            held.get(Sheet::Inventory)
+        );
+        assert_eq!(
+            decoder.revisions().get(Sheet::Quests),
+            held.get(Sheet::Quests)
+        );
 
         // `snapshot` without any sheet, as to a client that holds all of its sheets.
         let sheetless = |snapshot: &ZoneSnapshot| {
@@ -2045,7 +2055,7 @@ pub(crate) mod tests {
             own.decode(&pack_snapshot(snapshot).unwrap().payload)
                 .unwrap();
             let packed = pack_snapshot_acknowledged(snapshot, own.revisions()).unwrap();
-            assert_eq!(packed.payload[SHEET_MASK], 0);
+            assert_eq!(sheet_mask(&packed.payload), 0);
             packed.payload
         };
 
@@ -2087,16 +2097,14 @@ pub(crate) mod tests {
 
     #[test]
     fn acknowledged_commands_carry_the_held_revisions() {
-        let revisions = SheetRevisions {
-            inventory: 1,
-            quests: 2,
-            loot: 3,
-            abilities: 0xdead_beef,
-            party: 5,
-            depths_loot: 6,
-            world: 7,
-            waystones: 8,
-        };
+        // The party sheet is not held, so its revision stays out of the held mask (#897).
+        let mut revisions = SheetRevisions::default();
+        for (sheet, revision) in Sheet::ALL
+            .into_iter()
+            .zip([1, 2, 3, 0xdead_beef, 0, 6, 7, 8])
+        {
+            revisions.set(sheet, revision);
+        }
         let command = mmorpg_core::ZoneCommand::Jump;
         for inner in [
             crate::encode_command(command),
@@ -2105,7 +2113,7 @@ pub(crate) mod tests {
             let wrapped = crate::encode_acknowledged_command(revisions, &inner);
             assert_eq!(
                 wrapped.len(),
-                inner.len() + 1 + crate::SHEET_REVISIONS_BYTES
+                inner.len() + 1 + crate::SHEET_REVISIONS_BYTES - 4
             );
             let envelope = crate::decode_command_envelope(&wrapped).unwrap();
             assert_eq!(envelope.command, command);
@@ -2118,6 +2126,9 @@ pub(crate) mod tests {
             let twice = crate::encode_acknowledged_command(revisions, &wrapped);
             assert!(crate::decode_command_envelope(&twice).is_err());
             assert!(crate::decode_command_envelope(&wrapped[..wrapped.len() - 1]).is_err());
+            let mut unknown = wrapped.clone();
+            unknown[2] |= 0x80;
+            assert!(crate::decode_command_envelope(&unknown).is_err());
         }
         assert_eq!(
             crate::decode_command_envelope(&crate::encode_command(command))
@@ -2197,7 +2208,7 @@ pub(crate) mod tests {
                 EVENT_RECORD_BYTES,
                 ENTITY_RECORD_BYTES
             ),
-            (111, 17, 29)
+            (112, 17, 29)
         );
         assert_eq!(MAX_WIRE_ENTITIES, 33);
         let viewer_id = u32::MAX;
