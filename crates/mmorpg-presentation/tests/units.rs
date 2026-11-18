@@ -1196,3 +1196,48 @@ fn a_resident_getting_up_plays_the_wake_and_a_directing_line_points() {
     scene.presenter.push(&scene.snapshot, 3.2);
     assert_eq!(lower(frame(&mut scene, 3.3)).upper.0, "Talk_Gesture_B");
 }
+
+#[test]
+fn bundle_strikes_spawn_at_contact_and_go_when_their_clip_ends() {
+    use mmorpg_presentation::units::kit_effects::{ARC_CUT, IMPACT_BURST, LUNGE_DUST};
+    let mut scene = scene();
+    scene.presenter.set_effect_kits(true);
+    scene.presenter.push(&scene.snapshot, 0.);
+    frame(&mut scene, 0.);
+    scene.snapshot.tick += 1;
+    let viewer = EntityRef::Player(1);
+    let contact = u16::try_from(mmorpg_core::TICK_HZ / 5).unwrap();
+    scene.snapshot.events = vec![
+        ZoneEvent::StrikeBegan {
+            source: viewer,
+            family: WeaponFamily::Sword,
+            variant: StrikeVariant::Running,
+            contact,
+        },
+        ZoneEvent::DamageDealt {
+            source: viewer,
+            target: scene.wolf,
+            amount: 5,
+            critical: false,
+        },
+    ];
+    scene.presenter.push(&scene.snapshot, 1.);
+    let keys = |frame: &UnitFrame| frame.effects.iter().map(|e| e.key).collect::<Vec<_>>();
+    // The running start's dust and the hit's burst play at once; the arc waits for contact.
+    let started = frame(&mut scene, 1.05);
+    assert!(keys(&started).contains(&LUNGE_DUST), "{:?}", keys(&started));
+    assert!(keys(&started).contains(&IMPACT_BURST));
+    assert!(!keys(&started).contains(&ARC_CUT));
+    let contacted = frame(&mut scene, 1.25);
+    let arc = contacted
+        .effects
+        .iter()
+        .find(|e| e.key == ARC_CUT)
+        .expect("the arc plays at contact");
+    assert_eq!(arc.clip, Some("Play"));
+    assert!(arc.time < 0.1, "{}", arc.time);
+    // Every one-shot is dropped once its clip ends; nothing of the primitive flash remains.
+    let later = frame(&mut scene, 2.);
+    assert!(later.effects.is_empty(), "{:?}", keys(&later));
+    assert!(effects(&contacted).iter().all(|id| !id.ends_with("-flash")));
+}
