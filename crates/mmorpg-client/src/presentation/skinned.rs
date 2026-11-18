@@ -1851,7 +1851,7 @@ impl Equipment {
             .map(|&(entry, socket_id)| {
                 let model =
                     Model::parse(&ranger_model(entry), "").expect("a bundle item is valid glTF");
-                let (joint, mut matrix) = socket(&descriptor, socket_id);
+                let (joint, mut matrix) = socket(descriptor, socket_id);
                 if bolt(entry, socket_id) {
                     // The arrow stands in for the crossbow's bolt at its length (#607).
                     matrix.elements = mul(
@@ -1881,7 +1881,7 @@ impl Equipment {
             })
             .map(|index| Bow {
                 index,
-                hand: socket(&descriptor, BOW_HAND_SOCKET),
+                hand: socket(descriptor, BOW_HAND_SOCKET),
                 nock: items_of[index].0.node(BOW_NOCK_JOINT),
             });
         // A dagger in either hand sheathes at that hip for a throw or a bandage (#603).
@@ -1892,7 +1892,7 @@ impl Equipment {
                     .iter()
                     .position(|&hand| hand == socket_id)
                     .filter(|_| entry == ranger_bundle::DAGGER)?;
-                Some((hand, socket_of(&descriptor, DAGGER_SHEATH_SOCKETS[hand])?))
+                Some((hand, socket_of(descriptor, DAGGER_SHEATH_SOCKETS[hand])?))
             })
             .collect();
         let throwables = sheaths
@@ -1903,8 +1903,8 @@ impl Equipment {
                     Model::parse(&ranger_model(throwable_file(throwable)), "")
                         .expect("a bundle item is valid glTF")
                 }),
-                hand: socket(&descriptor, THROWABLE_SOCKET),
-                belt: socket_of(&descriptor, THROWABLE_BELT_SOCKET),
+                hand: socket(descriptor, THROWABLE_SOCKET),
+                belt: socket_of(descriptor, THROWABLE_BELT_SOCKET),
             });
         Self {
             items: items_of,
@@ -1917,7 +1917,7 @@ impl Equipment {
                         "hand_l.shield" | "hand_r.staff" | CROSSBOW_SOCKET => "back.stowed",
                         _ => return None,
                     };
-                    socket_of(&descriptor, socket_id)
+                    socket_of(descriptor, socket_id)
                 })
                 .collect(),
             hanging: items

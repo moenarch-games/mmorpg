@@ -125,7 +125,7 @@ impl Chores {
         self.chores.get(chore).copied()
     }
 
-    /// Every chore's item and socket, each once, for a client that loads items ahead.
+    /// Every chore, for a client that loads the items ahead.
     pub fn items(&self) -> impl Iterator<Item = &Chore> {
         self.chores.values()
     }
