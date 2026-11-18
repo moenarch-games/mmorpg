@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use mmorpg_core::{
     CanonicalPlayerCombat, CanonicalPlayerSnapshot, EntityFlags, EntityKind, EntitySnapshot,
-    INTEREST_RADIUS_UNITS, MAX_PLAYERS_PER_ZONE, MAX_VISIBLE_ENTITIES, ZoneCommand, ZoneId,
-    ZoneSimulation,
+    INTEREST_RADIUS_UNITS, MAX_PLAYERS_PER_ZONE, MAX_VISIBLE_ENTITIES, WeaponFamily, ZoneCommand,
+    ZoneId, ZoneSimulation,
 };
 
 /// Interest radius; cell width equals it, so layouts below scale with it.
@@ -100,7 +100,11 @@ fn assert_matches_exhaustive(zone: &ZoneSimulation) {
                 facing: candidate.facing,
                 level: 1,
                 health_percent: 100,
-                flags: EntityFlags::default(),
+                // A player without a weapon projects as unarmed (#914).
+                flags: EntityFlags {
+                    weapon: Some(WeaponFamily::Unarmed),
+                    ..EntityFlags::default()
+                },
             })
             .collect();
         let actual = zone.snapshot_for_player(observer.player_id).unwrap();
