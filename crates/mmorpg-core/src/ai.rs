@@ -23,6 +23,9 @@
 //!   instead of wandering (`raid`). A withdrawing raider picks no fights, and one back on its
 //!   march after an evade keeps its wounds.
 //!
+//! - **Patrols** (#911): an authored patrol member in the open takes its role's step instead
+//!   of the straight chase: a skirmisher flanks, a marksman keeps its distance (`patrol`).
+//!
 //! When a creature engages from idle, idle creatures of its family within
 //! the assist radius engage the same target (one level, no chains). Steering
 //! sets body velocity only; physics resolves obstacles and contact.
@@ -358,6 +361,13 @@ impl ZoneSimulation {
             }
             _ => false,
         };
+        // A patrol member (#911) takes its role's step in the open.
+        let patrol = match chase {
+            Some(chase) if !leashed && !casting && route.is_none() => {
+                self.patrol_step(id, template.swing_ticks, here, chase)?
+            }
+            _ => None,
+        };
         let Some(creature) = self.creatures.get_mut(&id) else {
             return Ok(());
         };
@@ -438,6 +448,7 @@ impl ZoneSimulation {
                         },
                     )
                 }
+                Some(_) if patrol.is_some() => patrol.unwrap_or(([0, 0], None)),
                 Some((_, _)) if route.is_some() => {
                     let (dx, dz) = offset(here, route.unwrap_or(here));
                     (

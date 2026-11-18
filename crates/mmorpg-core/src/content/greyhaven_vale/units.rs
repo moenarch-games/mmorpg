@@ -441,6 +441,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::wilds::spawns())
         // The farmland hamlets' creatures (#859).
         .chain(super::hamlet_creatures::spawns())
+        // The Greyfang Approach's Redbrand patrol (#911).
+        .chain(super::redbrand_patrol::spawns())
         .collect()
 }
 

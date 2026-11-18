@@ -46,6 +46,7 @@ mod mobility;
 mod movable;
 mod nav;
 mod party;
+mod patrol;
 #[cfg(feature = "physics-ab")]
 pub mod physics_ab;
 mod physique;
@@ -172,6 +173,7 @@ pub use party::{
     MAX_PARTY_MEMBERS, MAX_PARTY_NAME_BYTES, PartyInvite, PartyMember, PartyRefusal, PartyRoster,
     PartyState, valid_name as valid_party_name,
 };
+pub use patrol::{PatrolMember, PatrolRole};
 pub use physique::{
     InvalidPhysique, MAX_PHYSIQUE_MODIFIER_BP, PHYSIQUE_ATTRIBUTES, PHYSIQUE_COEFFICIENTS,
     PHYSIQUE_NEUTRAL, PHYSIQUE_PARAMS, PHYSIQUE_SCALE, PHYSIQUE_STAT_PARAMS, Physique,

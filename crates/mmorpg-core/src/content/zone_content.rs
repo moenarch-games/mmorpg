@@ -62,6 +62,8 @@ pub struct ZoneContent {
     creature_abilities: Vec<(CreatureTemplateId, AbilityId)>,
     bosses: Vec<crate::BossRules>,
     shielded: Vec<CreatureTemplateId>,
+    /// Coordinated patrol members (#911), by creature ID.
+    patrols: Vec<crate::PatrolMember>,
     vendor_bound: bool,
     vendors: Vec<(NpcId, VendorStock)>,
     quest_bound: bool,
@@ -202,6 +204,7 @@ impl ZoneContent {
             creature_abilities: Vec::new(),
             bosses: Vec::new(),
             shielded: Vec::new(),
+            patrols: Vec::new(),
             vendor_bound: false,
             vendors: Vec::new(),
             quest_bound: false,
@@ -256,6 +259,7 @@ impl ZoneContent {
             creature_abilities: Vec::new(),
             bosses: Vec::new(),
             shielded: Vec::new(),
+            patrols: Vec::new(),
             vendor_bound: false,
             vendors: Vec::new(),
             quest_bound: false,
@@ -590,6 +594,55 @@ impl ZoneContent {
     #[must_use]
     pub fn is_shielded(&self, template: CreatureTemplateId) -> bool {
         self.shielded.binary_search(&template).is_ok()
+    }
+
+    /// Binds coordinated patrols (#911): every member names a creature spawn once, and every
+    /// patrol has two to four members.
+    pub fn with_patrols(
+        mut self,
+        mut members: Vec<crate::PatrolMember>,
+    ) -> Result<Self, ZoneError> {
+        members.sort_by_key(|member| member.creature);
+        if members
+            .windows(2)
+            .any(|pair| pair[0].creature == pair[1].creature)
+        {
+            return Err(ZoneError::new("duplicate patrol member"));
+        }
+        if members
+            .iter()
+            .any(|member| self.creature_spawn(member.creature).is_none())
+        {
+            return Err(ZoneError::new("patrol names an unknown creature spawn"));
+        }
+        let [fewest, most] = crate::patrol::PATROL_SIZE;
+        if members.iter().any(|member| {
+            let size = members
+                .iter()
+                .filter(|other| other.patrol == member.patrol)
+                .count();
+            !(fewest..=most).contains(&size)
+        }) {
+            return Err(ZoneError::new("a patrol has two to four members"));
+        }
+        self.patrols = members;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Creature `id`'s place in a patrol (#911), if it has one.
+    #[must_use]
+    pub fn patrol_member(&self, id: CreatureId) -> Option<crate::PatrolMember> {
+        self.patrols
+            .binary_search_by_key(&id, |member| member.creature)
+            .ok()
+            .map(|index| self.patrols[index])
+    }
+
+    /// Every patrol member (#911), by creature ID.
+    #[must_use]
+    pub fn patrols(&self) -> &[crate::PatrolMember] {
+        &self.patrols
     }
 
     /// The boss rules of `template`, if it is a boss.
@@ -2004,6 +2057,16 @@ impl ZoneContent {
             hash.len(self.shielded.len());
             for template in &self.shielded {
                 hash.u32(template.get());
+            }
+        }
+        // Patrols (#911) likewise join only where authored.
+        if !self.patrols.is_empty() {
+            hash.bytes(b"patrols");
+            hash.len(self.patrols.len());
+            for member in &self.patrols {
+                hash.u32(member.creature.get());
+                hash.u16(member.patrol);
+                hash.u8(member.role.code());
             }
         }
         hash.finish()
