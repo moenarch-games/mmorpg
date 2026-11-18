@@ -141,12 +141,12 @@ describe("Action Lab experiments (#382)", () => {
     expect(production.movement ?? []).toEqual([]);
     const sample = traversalSample(copyConfig(production, "Traversal sample"));
     expect(check(sample)).toMatchObject({ baseline: false, error: null });
-    expect(sample.edges.map((edge) => edge.id)).toEqual(["SlashToShieldBash", "LandingToMelee", "LandingToShieldBash"]);
+    expect(sample.edges.map((edge) => edge.id)).toEqual(["SlashToShieldBash", "CleaveToSlash", "LandingToMelee", "LandingToShieldBash"]);
     expect(movementRule(sample, "Airborne", "Active")).toMatchObject({ steeringPercent: 100, momentumPercent: 100, maxAccelerationCms2: 600 });
-    expect(removeEdge(sample, "LandingToMelee").edges).toHaveLength(2);
+    expect(removeEdge(sample, "LandingToMelee").edges).toHaveLength(3);
     expect(check(setMovementRule(sample, "Airborne", "Active", null)).error).toBeNull();
     const late = copyConfig(sample, "Late");
-    late.edges[1]!.openAfterMs = 600;
+    late.edges[2]!.openAfterMs = 600;
     expect(check(late).error).toContain("OutlastsSource");
     // Run east, jump, let go: production stops at once, the sample flies on its momentum.
     const source = new ScenarioSource(zone(null));
@@ -191,10 +191,10 @@ describe("Action Lab experiments (#382)", () => {
     const sample = slidingSlashSample(copyConfig(production, "Sliding slash"));
     expect(check(sample)).toMatchObject({ baseline: false, error: null });
     expect(sample.authored).toHaveLength(1);
-    expect(sample.edges.map((edge) => edge.id)).toEqual(["SlashToShieldBash", "Authored(0)"]);
+    expect(sample.edges.map((edge) => edge.id)).toEqual(["SlashToShieldBash", "CleaveToSlash", "Authored(0)"]);
     const jumping = setAuthored(sample, { ...sample.authored![0]!, input: "Jump", ability: null });
     expect(check(jumping).error).toContain("BadAuthored(0, Input)");
-    expect(removeAuthored(sample, 0).edges.map((edge) => edge.id)).toEqual(["SlashToShieldBash"]);
+    expect(removeAuthored(sample, 0).edges.map((edge) => edge.id)).toEqual(["SlashToShieldBash", "CleaveToSlash"]);
     // The authored action rides along in a saved version and its promotion request (#383).
     const storage = new Map<string, string>();
     const library = new LabLibrary({ getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value) } as unknown as Storage);
@@ -277,7 +277,7 @@ describe("Action Lab diagnostics and promotion (#383)", () => {
     expect(library.configs.map((entry) => entry.config.edges[0]!.actionableMs)).toEqual([800, 900]);
 
     const request = promotionRequest(first, check(production).identity!, scenario, "wider window");
-    expect(request).toMatchObject({ format: PROMOTION_FORMAT, version: 1, config: { edges: [{ actionableMs: 800 }] } });
+    expect(request).toMatchObject({ format: PROMOTION_FORMAT, version: 1, config: { edges: [{ actionableMs: 800 }, { id: "CleaveToSlash" }] } });
     expect(promotionFileName(first)).toBe("promote-longer-bash-window-v1.json");
     expect(JSON.parse(wasm.actionLabChanges(JSON.stringify(production), JSON.stringify(first.config))) as string[])
       .toEqual(["edges[0].actionableMs: 600 → 800"]);

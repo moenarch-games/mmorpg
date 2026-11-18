@@ -902,21 +902,27 @@ impl GameUi {
                         };
                         ui.colored_label(color, format!("Guard {lane} · {state}"));
                     }
-                    // The sword → Shield Bash follow-up (#157).
-                    match viewer.combo {
-                        Some(mmorpg_core::ComboPhase::Open) => {
-                            ui.colored_label(
-                                Color32::from_rgb(255, 210, 90),
-                                "Combo: Shield Bash now",
-                            );
-                        }
-                        Some(mmorpg_core::ComboPhase::Impact) => {
-                            ui.colored_label(
-                                Color32::from_rgb(200, 180, 120),
-                                "Combo: slash landing, Shield Bash follows",
-                            );
-                        }
-                        None => {}
+                    // The sword → Shield Bash follow-up (#157), and the cleave's extra
+                    // swing (#910); the browser HUD says the same.
+                    if let Some(combo) = viewer.combo {
+                        let text = match combo {
+                            mmorpg_core::ComboPhase::Impact => {
+                                "Combo: slash landing, Shield Bash follows"
+                            }
+                            mmorpg_core::ComboPhase::Open => "Combo: Shield Bash now",
+                            mmorpg_core::ComboPhase::CleaveImpact => {
+                                "Combo: cleave landing, swing again or Shield Bash follows"
+                            }
+                            mmorpg_core::ComboPhase::CleaveOpen => {
+                                "Combo: cleave! Swing again or Shield Bash now"
+                            }
+                        };
+                        let color = if combo.is_open() {
+                            Color32::from_rgb(255, 210, 90)
+                        } else {
+                            Color32::from_rgb(200, 180, 120)
+                        };
+                        ui.colored_label(color, text);
                     }
                     auras(ui, &snapshot.auras);
                 });
