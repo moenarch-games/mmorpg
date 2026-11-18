@@ -50,9 +50,11 @@ Its player combat policy remains Safe; this does not enable world PvP.
   `SwingBegan` with the aim and the phase lengths, so opponents see the wind-up.
 - **Timed hitbox.** After the startup (0.3 s) the blade sweeps the strike's usual arc, reach and
   height lane over the active ticks (0.15 s), one contiguous slice per tick, travelling toward
-  the aimed side (a centre strike right to left). The nearest eligible unit a tick's slice covers
-  takes the ordinary weapon strike, physical cover still blocking; one swing strikes at most one
-  unit and reports a whiff on its last active tick. Then the action graph's `DirectedSlash`
+  the aimed side (a centre strike right to left). Every eligible unit a tick's slice covers
+  takes the ordinary weapon strike, physical cover still blocking: a well-placed swing cleaves
+  (#909). Each unit is struck once per swing and a swing strikes at most three, nearest first
+  within a slice; each hit reports its own `StrikeSwept`, and a swing that strikes nobody reports
+  a whiff on its last active tick. Then the action graph's `DirectedSlash`
   recovery runs. The action graph reports the swing as `DirectedSlash` in its startup and
   active phases; a guard raised meanwhile waits like during the recovery.
 - **Clashes**, in the zone's present tick and stable ID order, before any slice strikes:

@@ -17,7 +17,9 @@
 //!   ray query that line of sight uses.
 //!
 //! The nearest covered living unit (ties in `EntityRef` order) takes the
-//! ability's weapon-strike damage; there is no cleave. A sweep that covers
+//! ability's weapon-strike damage; an immediate strike does not cleave. A timed
+//! swing (#679), as in Greyhaven, strikes every unit its slices cover, up to
+//! [`crate::SWING_HITS`] (#909). A sweep that covers
 //! nobody still swings: it pays the shared Rage cost and starts the shared
 //! global cooldown like the selected-target mode (one ability, Atlas 5.2.53),
 //! and reports a whiff.
@@ -244,8 +246,14 @@ impl ZoneSimulation {
             let amount = self.stance_damage(player_id, target, amount)?;
             let before = self.struck_health(victim);
             self.player_melee_hits_at(player_id, victim, amount, false, now, Some(aim.height))?;
-            // Only positive health damage after absorbs opens the combo (#157).
-            if ability == crate::ability::ids::HEROIC_STRIKE && self.struck_health(victim) < before
+            // Only positive health damage after absorbs opens the combo (#157), on the
+            // first unit a cleaving swing so struck (#909).
+            if ability == crate::ability::ids::HEROIC_STRIKE
+                && self.struck_health(victim) < before
+                && self
+                    .players
+                    .get(&player_id)
+                    .is_some_and(|player| player.combo.is_none())
             {
                 self.update_player(player_id, |player| {
                     player.combo = Some(crate::ComboOpening {
@@ -274,39 +282,46 @@ impl ZoneSimulation {
         facing: u16,
         aim: StrikeAim,
     ) -> Result<Option<EntityRef>, ZoneError> {
-        self.sweep_coverage(player_id, Sweep::full(facing, aim), 0)
+        Ok(self
+            .sweep_victims(player_id, Sweep::full(facing, aim), 0, &[], 1)?
+            .first()
+            .copied())
     }
 
-    /// The eligible living unit `sweep` covers: nearest first, then in
-    /// `EntityRef` order; `None` covers nobody. With `rewind` (#680) each body
-    /// is tested where it stood that many ticks ago.
-    pub(crate) fn sweep_coverage(
+    /// Up to `limit` eligible living units `sweep` covers, leaving out `excluded`:
+    /// nearest first, then in `EntityRef` order (#909); empty covers nobody. With
+    /// `rewind` (#680) each body is tested where it stood that many ticks ago.
+    pub(crate) fn sweep_victims(
         &self,
         player_id: PlayerId,
         sweep: Sweep,
         rewind: u16,
-    ) -> Result<Option<EntityRef>, ZoneError> {
+        excluded: &[Option<EntityRef>],
+        limit: usize,
+    ) -> Result<Vec<EntityRef>, ZoneError> {
         let origin = self.player_position(player_id)?;
         // A rewound body may since have run up to twice its run speed out of reach.
         let margin =
             i32::from(rewind) * 2 * crate::RUN_SPEED_UNITS_PER_SECOND / i32::from(crate::TICK_HZ);
-        let mut best: Option<(i64, EntityRef)> = None;
+        let mut covered = Vec::new();
         for entity in self
             .interest
             .near(origin.x, origin.z, PLAYER_REACH_UNITS + margin)
         {
-            if !self.attackable_by_player(player_id, entity) {
+            if excluded.contains(&Some(entity)) || !self.attackable_by_player(player_id, entity) {
                 continue;
             }
             let Some(distance) = self.sweep_distance(player_id, sweep, entity, rewind)? else {
                 continue;
             };
-            if best.is_some_and(|best| (distance, entity) >= best) {
-                continue;
-            }
-            best = Some((distance, entity));
+            covered.push((distance, entity));
         }
-        Ok(best.map(|(_, entity)| entity))
+        covered.sort_unstable();
+        Ok(covered
+            .into_iter()
+            .take(limit)
+            .map(|(_, entity)| entity)
+            .collect())
     }
 
     /// The squared XZ distance to `entity` when `sweep` from the player's body
