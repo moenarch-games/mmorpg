@@ -16,11 +16,16 @@
 //!   Shield Bash rule: unlock, Rage, its own cooldown, range, line of sight
 //!   and refusals. It consumes the opening once and starts its own global
 //!   cooldown. Any other ability use or death clears the opening.
+//! - **Cleave follow-up (#910):** a timed swing that damages two or more
+//!   units ([`ComboOpening::hits`]) also opens the `CleaveToSlash` edge in the
+//!   same window: the next Warden melee use may ignore the slash's global
+//!   cooldown, so the Warden can swing again into the group. The opening is
+//!   single-use: the Bash or the follow-up swing consumes it.
 //!
 //! The timing, conditions, effects and interruptions are the zone's
-//! [`crate::action`] graph's `SlashToShieldBash` edge; this module keeps the
-//! opening's runtime state. [`ComboOpening::is_open`] and
-//! [`ComboOpening::is_valid`] use the baseline window.
+//! [`crate::action`] graph's `SlashToShieldBash` and `CleaveToSlash` edges;
+//! this module keeps the opening's runtime state. [`ComboOpening::is_open`]
+//! and [`ComboOpening::is_valid`] use the baseline window.
 
 use crate::zone::PlayerState;
 use crate::{EntityRef, ZoneSimulation, action};
@@ -39,6 +44,8 @@ pub struct ComboOpening {
     pub target: EntityRef,
     /// Ticks since the slash, at most impact + window.
     pub elapsed: u16,
+    /// The units the slash damaged, 1 through [`crate::SWING_HITS`] (#910).
+    pub hits: u8,
 }
 
 impl ComboOpening {
@@ -52,6 +59,14 @@ impl ComboOpening {
     pub const fn is_valid(self) -> bool {
         self.elapsed
             <= COMBO_IMPACT_TICKS + COMBO_WINDOW_TICKS + action::LATE_INPUT_GRACE_TICKS as u16
+            && self.hits >= 1
+            && self.hits as usize <= crate::SWING_HITS
+    }
+
+    /// Whether the slash damaged several units (#910).
+    #[must_use]
+    pub const fn cleaved(self) -> bool {
+        self.hits >= 2
     }
 }
 
@@ -62,6 +77,12 @@ pub enum ComboPhase {
     Impact,
     /// Shield Bash now follows up on the struck opponent.
     Open,
+    /// A cleaving slash is still landing; Shield Bash or another swing waits
+    /// (#910).
+    CleaveImpact,
+    /// Shield Bash on the first struck opponent, or another swing free of the
+    /// slash's global cooldown, now follows up (#910).
+    CleaveOpen,
 }
 
 impl ComboPhase {
@@ -70,6 +91,8 @@ impl ComboPhase {
         match self {
             Self::Impact => 1,
             Self::Open => 2,
+            Self::CleaveImpact => 3,
+            Self::CleaveOpen => 4,
         }
     }
 
@@ -78,8 +101,16 @@ impl ComboPhase {
         match code {
             1 => Some(Self::Impact),
             2 => Some(Self::Open),
+            3 => Some(Self::CleaveImpact),
+            4 => Some(Self::CleaveOpen),
             _ => None,
         }
+    }
+
+    /// Whether the follow-up is open now.
+    #[must_use]
+    pub const fn is_open(self) -> bool {
+        matches!(self, Self::Open | Self::CleaveOpen)
     }
 }
 
@@ -89,17 +120,20 @@ impl ZoneSimulation {
         let graph = self.action_graph;
         let def = graph.edge(action::EdgeId::SlashToShieldBash)?;
         let window = action::effective_window(state, graph, def);
+        // The cleave follow-up shows only where the graph authors it (#910).
+        let cleave = graph.edge(action::EdgeId::CleaveToSlash).is_some();
         // An opening kept only for late inputs (#415) is over for the viewer.
         state
             .combo
             .filter(|combo| combo.elapsed <= window.closes())
-            .map(|combo| {
-                if combo.elapsed >= window.opens {
-                    ComboPhase::Open
-                } else {
-                    ComboPhase::Impact
-                }
-            })
+            .map(
+                |combo| match (combo.elapsed >= window.opens, cleave && combo.cleaved()) {
+                    (true, false) => ComboPhase::Open,
+                    (false, false) => ComboPhase::Impact,
+                    (true, true) => ComboPhase::CleaveOpen,
+                    (false, true) => ComboPhase::CleaveImpact,
+                },
+            )
     }
 
     /// Applies the reactions' cancellations (a stun discards a guard held by

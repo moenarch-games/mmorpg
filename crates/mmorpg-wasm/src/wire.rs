@@ -193,9 +193,14 @@ mirror!(
     }
 );
 mirror!(
-    /// A pending sword → Shield Bash follow-up (#157).
-    #[serde(rename_all = "lowercase")]
-    ComboPhase = core::ComboPhase { Impact, Open }
+    /// A pending sword → Shield Bash follow-up (#157), or the cleave follow-up (#910).
+    #[serde(rename_all = "kebab-case")]
+    ComboPhase = core::ComboPhase {
+        Impact,
+        Open,
+        CleaveImpact,
+        CleaveOpen
+    }
 );
 mirror!(
     #[serde(rename_all = "kebab-case")]

@@ -33,7 +33,7 @@
 //! Durations are authored in milliseconds and converted once through
 //! [`crate::ticks_from_ms`], so they keep their meaning when `TICK_HZ`
 //! changes (#379). [`BASELINE`] is the Warden's current gameplay
-//! (5.2.37–5.2.51, 5.2.69–5.2.70) expressed as data, with unchanged values:
+//! (5.2.37–5.2.51, 5.2.69–5.2.70, 5.2.i910) expressed as data, with unchanged values:
 //! it has no precision window, no window modifier and no effect beyond the
 //! combo's confirmed target and global-cooldown waiver. A zone runs another
 //! validated [`ActionGraph`] only through [`ZoneSimulation::set_action_graph`],
@@ -329,6 +329,9 @@ pub enum Condition {
     Airborne,
     /// A stun aura is active.
     Stunned,
+    /// The source strike's confirmed result damaged two or more units: a
+    /// cleaving timed swing (#910).
+    MultiHit,
 }
 
 /// A typed effect an edge, or its precision window, applies when it wins
@@ -368,6 +371,9 @@ pub const MAX_IMPULSE_UP_CMS: u16 = crate::JUMP_VELOCITY_UNITS_PER_SECOND as u16
 pub enum EdgeId {
     /// The first Warden combo, directed slash → Shield Bash (#157).
     SlashToShieldBash,
+    /// A directed slash that damaged two or more units → another Warden melee
+    /// use (#910).
+    CleaveToSlash,
     /// Out of a landing recovery into Warden melee (#413). Experimental
     /// graphs author the landing edges; the baseline has none.
     LandingToMelee,
@@ -915,9 +921,10 @@ pub enum GraphError {
     /// A duration is shorter than half a tick or too long for a tick timer.
     BadDuration(EdgeId),
     /// The zone has no runtime for this edge's source, input or anchor: a
-    /// directed slash answered by Shield Bash from its impact or confirmed
-    /// result, and a landing answered by Warden melee, Shield Bash or another
-    /// ability from the touchdown, each under its own id.
+    /// directed slash answered by Shield Bash, or by Warden melee after a
+    /// cleave (#910), from its impact or confirmed result, and a landing
+    /// answered by Warden melee, Shield Bash or another ability from the
+    /// touchdown, each under its own id.
     UnsupportedEdge(EdgeId),
     /// A landing edge's window closes after the shortest landing recovery
     /// its conditions allow, when the landing it answers is over.
@@ -1184,6 +1191,11 @@ impl ActionGraph {
             || matches!(
                 (def.id, def.from, def.input, def.anchor),
                 (
+                    EdgeId::CleaveToSlash,
+                    ActionId::DirectedSlash,
+                    ActionInput::WardenMelee,
+                    Anchor::Impact | Anchor::ConfirmedResult,
+                ) | (
                     EdgeId::SlashToShieldBash,
                     ActionId::DirectedSlash,
                     ActionInput::ShieldBash,
@@ -1634,6 +1646,7 @@ fn holds(state: &PlayerState, condition: Condition) -> bool {
         // The opening exists only after positive damage to a living target;
         // a miss, a whiff, an absorbed blow or the target's death clears it.
         Condition::PositiveHealthDamage | Condition::TargetAlive => state.combo.is_some(),
+        Condition::MultiHit => state.combo.is_some_and(crate::ComboOpening::cleaved),
         Condition::AttackedAirborne => state.landing.attacked_airborne,
         Condition::Airborne => state.landing.airborne,
         Condition::Stunned => aura::has_kind(&state.auras, AuraKind::Stun),

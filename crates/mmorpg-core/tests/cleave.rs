@@ -7,9 +7,9 @@ use std::sync::Arc;
 
 use mmorpg_core::ability::ids;
 use mmorpg_core::{
-    CreatureBehaviour, CreatureId, CreatureTemplate, CreatureTemplateId, EntityRef, StaticCollider,
-    StrikeAim, StrikeHeight, StrikeSide, TimedCombat, ZoneAreas, ZoneCommand, ZoneContent,
-    ZoneDefinition, ZoneEvent, ZoneId, ZoneSimulation,
+    ComboPhase, CreatureBehaviour, CreatureId, CreatureTemplate, CreatureTemplateId, EntityRef,
+    StaticCollider, StrikeAim, StrikeHeight, StrikeSide, TimedCombat, ZoneAreas, ZoneCommand,
+    ZoneContent, ZoneDefinition, ZoneEvent, ZoneId, ZoneSimulation,
 };
 use support::arena::{self, GRAVEYARD};
 
@@ -171,4 +171,85 @@ fn one_slash_cleaves_two_wolves_and_spares_the_excluded_units() {
     // The same input replays identically, also through a mid-sweep restore.
     assert_eq!(slash(false), (events.clone(), state.clone()));
     assert_eq!(slash(true), (events, state));
+}
+
+/// The cleave follow-up (#910): a slash facing `facing`, then, `extra` ticks after the combo cue
+/// opened or (`None`) once it expired, a second slash south; optionally restored while the cue
+/// is open. The cues the viewer saw, whether the second slash began a swing within the first
+/// slash's global cooldown, and the final canonical state.
+fn follow_up(
+    facing: u16,
+    extra: Option<u16>,
+    restore: bool,
+) -> (
+    Vec<Option<ComboPhase>>,
+    bool,
+    mmorpg_core::CanonicalZoneSnapshot,
+) {
+    let content = content();
+    let mut zone = warden(&content);
+    let aim = StrikeAim::new(StrikeSide::Centre, StrikeHeight::Middle);
+    let strike = |facing| ZoneCommand::DirectedStrike {
+        ability: ids::HEROIC_STRIKE.get(),
+        facing,
+        aim,
+    };
+    zone.apply_command(1, 2, strike(facing)).unwrap();
+    let mut cues = Vec::new();
+    let mut open_for = None;
+    // A whiff never opens the cue; it waits as long as a cleave's opening lasts.
+    for tick in 0..120 {
+        zone.advance_tick().unwrap();
+        let cue = zone.snapshot_for_player(1).unwrap().viewer.combo;
+        cues.push(cue);
+        if cue.is_some_and(ComboPhase::is_open) {
+            let ticks = open_for.get_or_insert(0);
+            if restore && *ticks == 0 {
+                zone =
+                    ZoneSimulation::from_snapshot(zone.snapshot().unwrap(), Arc::clone(&content))
+                        .unwrap();
+            }
+            if Some(*ticks) == extra {
+                break;
+            }
+            *ticks += 1;
+        } else if open_for.is_some() || (extra.is_none() && tick == 70) {
+            break;
+        }
+    }
+    let state = zone.snapshot().unwrap();
+    assert!(
+        state.players[0].combat.abilities.global_cooldown > 0,
+        "the slash's cooldown still runs"
+    );
+    zone.apply_command(1, 3, strike(SOUTH)).unwrap();
+    zone.advance_tick().unwrap();
+    let state = zone.snapshot().unwrap();
+    let swung = state.players[0].combat.swing.is_some();
+    (cues, swung, state)
+}
+
+#[test]
+fn a_cleave_opens_one_extra_swing_that_misses_and_expiry_refuse() {
+    let (cues, swung, state) = follow_up(SOUTH, Some(4), false);
+    assert!(cues.contains(&Some(ComboPhase::CleaveImpact)));
+    assert!(cues.contains(&Some(ComboPhase::CleaveOpen)));
+    assert!(
+        swung,
+        "the cleave's follow-up swing ignores the slash's global cooldown"
+    );
+    // The follow-up consumed the opening.
+    assert_eq!(state.players[0].combat.combo, None);
+    // It replays identically, also through a restore while the cue is open.
+    assert_eq!(follow_up(SOUTH, Some(4), true), (cues, swung, state));
+
+    // An expired opening grants nothing: the global cooldown refuses the swing.
+    let (cues, swung, _) = follow_up(SOUTH, None, false);
+    assert!(cues.contains(&Some(ComboPhase::CleaveOpen)));
+    assert!(!swung, "an expired cleave opening grants no swing");
+
+    // A whiff north strikes nobody and opens nothing.
+    let (cues, swung, _) = follow_up(0, None, false);
+    assert!(cues.iter().all(Option::is_none), "a whiff shows no cue");
+    assert!(!swung, "a whiff grants no follow-up swing");
 }

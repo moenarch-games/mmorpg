@@ -381,6 +381,7 @@ fn encode_player(
     payload.extend_from_slice(&crate::wire::encode_piece(combat.repairing).to_be_bytes());
     encode_entity_ref(payload, combat.combo.map(|combo| combo.target));
     payload.extend_from_slice(&combat.combo.map_or(0, |combo| combo.elapsed).to_be_bytes());
+    payload.push(combat.combo.map_or(0, |combo| combo.hits));
     encode_swing(payload, combat.swing);
     encode_melee(payload, combat.melee);
     payload.extend_from_slice(&player.chat_ready_at.to_be_bytes());
@@ -1378,12 +1379,14 @@ fn decode_player(
     let repairing = crate::wire::decode_piece(u32::from_be_bytes(take(payload, offset)?));
     let combo_target = decode_entity_ref(payload, offset)?;
     let combo_elapsed = u16::from_be_bytes(take(payload, offset)?);
+    let combo_hits = read_u8(payload, offset)?;
     let combo = if let Some(target) = combo_target {
         Some(mmorpg_core::ComboOpening {
             target,
             elapsed: combo_elapsed,
+            hits: combo_hits,
         })
-    } else if combo_elapsed != 0 {
+    } else if combo_elapsed != 0 || combo_hits != 0 {
         return Err(ProtocolError::new("absent combo has nonzero fields"));
     } else {
         None
@@ -2414,6 +2417,7 @@ mod tests {
                         combo: Some(mmorpg_core::ComboOpening {
                             target: EntityRef::Creature(CreatureId::new(1)),
                             elapsed: 3,
+                            hits: 2,
                         }),
                         strike_recovery: 4,
                         swing: Some(mmorpg_core::Swing {
@@ -3090,7 +3094,11 @@ mod tests {
             EntityRef::Creature(CreatureId::new(2)),
         ] {
             let mut state = snapshot();
-            state.players[0].combat.combo = Some(mmorpg_core::ComboOpening { target, elapsed: 3 });
+            state.players[0].combat.combo = Some(mmorpg_core::ComboOpening {
+                target,
+                elapsed: 3,
+                hits: 1,
+            });
             let decoded =
                 decode_canonical_snapshot(&encode_canonical_snapshot(&state).unwrap()).unwrap();
             assert_eq!(
