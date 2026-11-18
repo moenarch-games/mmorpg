@@ -2,12 +2,12 @@ use mmorpg_core::{MAX_PLAYER_LEVEL, experience_to_next_level, kill_experience};
 
 #[test]
 fn starter_curve_uses_current_level_xp_and_an_explicit_cap() {
-    let expected = [100, 200, 300, 400, 500, 600, 700, 800, 900, 0];
+    let expected = [100, 300, 600, 1_000, 1_600, 2_000, 2_400, 2_800, 3_200, 0];
     for (level, threshold) in (1..=10).zip(expected) {
         assert_eq!(experience_to_next_level(level), Some(threshold));
     }
     assert_eq!(MAX_PLAYER_LEVEL, 10);
-    assert_eq!(expected.iter().sum::<u32>(), 4_500);
+    assert_eq!(expected.iter().sum::<u32>(), 14_000);
     for level in [0, 11, 60, u8::MAX] {
         assert_eq!(experience_to_next_level(level), None);
     }

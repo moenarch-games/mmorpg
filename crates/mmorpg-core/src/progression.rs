@@ -5,7 +5,10 @@ use crate::unit::MAX_UNIT_LEVEL;
 
 /// Starter progression ends at level 10; creatures retain their own level bound.
 pub const MAX_PLAYER_LEVEL: u8 = 10;
-const NEXT_LEVEL_EXPERIENCE: [u32; 10] = [100, 200, 300, 400, 500, 600, 700, 800, 900, 0];
+/// Moderate early pacing (#908): two kills reach level 2, then roughly 20–40
+/// minutes of mixed Greyhaven play per level from level 6 (docs/PROGRESSION.md).
+const NEXT_LEVEL_EXPERIENCE: [u32; 10] =
+    [100, 300, 600, 1_000, 1_600, 2_000, 2_400, 2_800, 3_200, 0];
 
 /// Current-level XP needed for the next level. The cap returns zero;
 /// unsupported player levels return `None`. XP is not a lifetime total.

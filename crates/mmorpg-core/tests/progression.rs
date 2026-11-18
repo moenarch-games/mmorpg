@@ -70,7 +70,7 @@ fn kills_level_a_player_once_and_recovery_continues_mid_progression() {
             viewer.experience_to_next_level,
             viewer.max_health
         ),
-        (2, 0, 200, 65)
+        (2, 0, 300, 65)
     );
     for _ in 0..100 {
         zone.advance_tick().unwrap();
@@ -120,7 +120,7 @@ fn a_reused_player_id_cannot_inherit_an_old_tap_reward() {
 #[test]
 fn invalid_current_level_xp_and_capped_xp_fail_restore() {
     let zone = fixture();
-    for (level, experience) in [(1, 100), (2, 200), (10, 1), (11, 0)] {
+    for (level, experience) in [(1, 100), (2, 300), (10, 1), (11, 0)] {
         let mut state = zone.snapshot().unwrap();
         state.players[0].combat.level = level;
         state.players[0].combat.experience = experience;
@@ -148,7 +148,7 @@ fn final_level_discards_overflow_and_gray_kills_grant_nothing() {
     zone.add_player(1).unwrap();
     let mut state = zone.snapshot().unwrap();
     state.players[0].combat.level = 9;
-    state.players[0].combat.experience = 899;
+    state.players[0].combat.experience = 3_199;
     let mut zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
     kill(&mut zone, 1);
     let viewer = zone.snapshot_for_player(1).unwrap().viewer;
