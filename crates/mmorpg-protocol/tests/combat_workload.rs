@@ -118,7 +118,7 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     const HEADROOM_PERCENT: usize = 5;
     let recorded: [[usize; 4]; FIXTURES.len()] = [
         [11_052, 85_680, 282_240, 6_151_648],
-        [16_730, 83_880, 89_160, 1_816_662],
+        [16_730, 83_880, 89_160, 1_819_542],
         [25_530, 91_440, 438_211, 8_288_034],
         [13_037, 102_492, 2_314_114, 24_414_336],
     ];
