@@ -155,6 +155,7 @@ impl ZoneSimulation {
     /// with no player near sleeps instead, and an awake idle one decides on its staggered
     /// tick only, walking on in between (#814).
     pub(crate) fn decide_creatures(&mut self) -> Result<(), ZoneError> {
+        self.continue_dens_offscreen()?;
         let ids: Vec<_> = self.creatures.keys().copied().collect();
         for id in ids {
             let pace = self.creature_pace(id)?;
@@ -348,8 +349,12 @@ impl ZoneSimulation {
             }
             _ => None,
         };
-        // A raider on its march (#530) walks its route instead of wandering.
-        let march = self.march(id, centre, half)?;
+        // A raider on its march (#530) walks its route instead of wandering; a pack wolf or its
+        // prey (#912) roams, hunts or flees.
+        let march = match self.march(id, centre, half)? {
+            None => self.den_step(id, here, spawn.wander_radius, elapsed),
+            march => march,
+        };
         // An engaged creature that keeps fighting may cast its ability.
         // Abilities are aimed at players only; minions (#295) take swings.
         let casting = match chase {

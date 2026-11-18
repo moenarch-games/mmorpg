@@ -738,12 +738,15 @@ impl ZoneSimulation {
         self.creatures.get(&creature).and_then(|state| state.raid)
     }
 
-    /// Where a creature leashes, evades and wanders: a raider's anchor, otherwise its spawn.
+    /// Where a creature leashes, evades and wanders: a raider's anchor, a pack wolf's place in
+    /// its pack's range (#912), otherwise its spawn.
     pub(crate) fn creature_home(&self, id: CreatureId, spawn: &crate::CreatureSpawn) -> [i32; 2] {
         self.creatures
             .get(&id)
             .and_then(|creature| creature.raid)
-            .map_or(spawn.position, |member| member.anchor)
+            .map(|member| member.anchor)
+            .or_else(|| self.den_home(id))
+            .unwrap_or(spawn.position)
     }
 
     fn commit_incident(&mut self, now: u64) -> Result<(), ZoneError> {
