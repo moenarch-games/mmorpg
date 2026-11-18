@@ -191,27 +191,29 @@ Grass grows as blades, not tufts (#832). `mmorpg_presentation::grass` decides wh
 meadow and foothills, thinner on the hub, hollows and highland, sparse under woods, and nowhere the
 near terrain's overlays (forest floor, gravel, mud, sand, paths, rock) or its worn roads, plaza and
 fields cover the turf, nor in water, river beds, terrain holes or the footprint of anything that
-stands on the ground. Each clump takes the ground's tone, leaning greener, with dry straw patches
+stands on the ground. Each clump takes the ground's tone, leaning greener, with paler dry patches
 over about 18 m. It lays out 8 m cells on a jittered lattice about 0.3 m apart; a cell's clumps
 come in a random order, so any prefix is an even thinning. The browser draws the field by the
 **World detail** graphics setting (`graphics.world_detail`): **low** draws no grass (nor the ambient
 creatures, nor the light of lamps and fires); **medium**
 (the default) draws 60 % of the clumps within 6 m of the eye, thinning out to 30 m; **high** draws
-them all within 10 m, thinning out to 44 m. Each clump thins out on its own (#845): it sinks into
-the ground once its distance's share falls below its rank in its cell's random order, so no line
-shows where the field thins. Clumps within about 9 m (medium) or 13 m (high), jittered by 3 m per
+them all within 10 m, thinning out to 44 m. Each clump thins out on its own (#845): once its
+distance's share falls below its rank in its cell's random order it dissolves in a screen-door dither
+at its full height (#871), so no line shows where the field thins and nothing grows from or sinks
+into the ground as the eye moves. Every blade has its own shade and hue; with distance blades lose
+their root-to-tip shading and take their clump's flat colour, about the turf's own tone, so the
+thinning field melts into the ground rather than leaving dark tufts on it. Clumps within about 9 m (medium) or 13 m (high), jittered by 3 m per
 clump, are 15 thin, tapered, curved blades of five triangles; further ones are 7 wider blades of
-three, sharing the same instances. Beyond the near field a far field of sparse, wide clumps of six
-single-triangle blades (`Grass::far_cell`, 32 m cells about a metre apart, with larger flower
+three, sharing the same instances. Beyond the near field a far field of sparse, wide clumps of eight
+narrow single-triangle blades (`Grass::far_cell`, 32 m cells about a metre apart, with larger flower
 heads) grows in as the near one thins and reaches 70 m (medium) or 100 m (high). The wind bends
 them and the player's feet push them aside in the vertex stage.
 Wildflowers grow in drifts of one colour over several metres on thick turf (buttercup, daisy,
 harebell and poppy, `grass::FLOWERS`): a flowering clump also draws four small plants rising to
 about its blade tips (#868), each a bowed stem and leaf in the clump's green under a cupped head of
 five or six rounded petals round a warm heart, every head its own size, spin and tilt and every plant
-its own turn, spread and height, thinned with the grass. Unlike a blade clump a plant never grows from or sinks into
-the ground as it thins: it keeps its height and dissolves in a screen-door dither, so heads do not rise and fall as the
-eye nears. Under the woods, heart and designed forests alike, the ground is
+its own turn, spread and height, thinned with the grass. Like a blade clump a plant keeps its height and dissolves in a
+screen-door dither as it thins, so heads do not rise and fall as the eye nears. Under the woods, heart and designed forests alike, the ground is
 the forest floor's leaf litter, its texture turned about 35° off the grid and repeating every 4.5 m
 so it does not read as stripes. The old procedural tufts draw nothing; the native client has no
 grass field yet.

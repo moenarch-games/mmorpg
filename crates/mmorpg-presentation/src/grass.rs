@@ -37,7 +37,7 @@ pub const FAR_SPACING: f64 = 1.;
 const FAR_SIDE: i32 = (FAR_CELL_METRES / FAR_SPACING) as i32;
 /// The richer green the blades lean towards, and the straw of their dry patches.
 const LUSH: u32 = 0x5a8a34;
-const DRY: u32 = 0xa49d56;
+const DRY: u32 = 0x9c9a58;
 
 /// Per grid sample of `g`, how thickly grass grows (0–1) and its colour; `cover` holds how much
 /// the terrain's overlays and worn ground cover each sample.
@@ -85,7 +85,7 @@ fn fields(s: &Scenery, g: &TerrainGrid, cover: &[f64]) -> (Vec<f32>, Vec<u32>) {
             (thick * (1. - cover[i]).clamp(0., 1.) * shore(water) * shore(river)) as f32
         };
         let lush = mix(tone(biomes[i], x, z), LUSH, 0.4);
-        let dryness = ((noise(x, z, 18., 6101.) - 0.62) * 3.).clamp(0., 0.7);
+        let dryness = ((noise(x, z, 18., 6101.) - 0.62) * 3.).clamp(0., 0.45);
         tint[i] = mix(lush, DRY, dryness);
     }
     (density, tint)
