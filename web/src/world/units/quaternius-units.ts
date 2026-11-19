@@ -515,6 +515,8 @@ const LOADOUT_ITEMS: Readonly<Record<CarriedLoadout, readonly { key: string; soc
   ],
   "mace.flanged": [{ key: "equipment.mace.flanged", socket: "hand_r.weapon" }],
   "staff.gnarled": [{ key: "equipment.staff.gnarled", socket: "hand_r.staff" }],
+  // A player of the spear family (#914).
+  spear: [{ key: "equipment.spear.leaf", socket: "hand_r.staff" }],
   // The crossbow and the arrow standing in for its bolt (#607); `poseCrossbow` moves both.
   crossbow: [
     { key: "equipment.crossbow", socket: "hand_r.crossbow" },
