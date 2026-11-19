@@ -125,6 +125,204 @@ struct Clip {
     channels: Vec<Channel>,
 }
 
+/// A family's clips with their lengths in seconds, as its download index declares them.
+type FamilyClips = &'static [(&'static str, f32)];
+
+/// A figure's clip family (`CLIP_FAMILIES`): its name, embedded file and clips.
+pub(super) type ClipFamily = (&'static str, &'static str, FamilyClips);
+
+/// A figure's shared clips (#898, asset-tooling #733): the base family, decoded with every model
+/// that plays them, and each other family's embedded file, decoded on the first use of one of its
+/// clips. A release without families decodes its combined file up front.
+pub(super) struct ClipLibrary {
+    base: Vec<u8>,
+    families: Vec<(&'static [u8], FamilyClips)>,
+}
+
+impl ClipLibrary {
+    /// From a figure's `CLIP_FAMILIES` and `CLIPS` (the combined file), read through `file`.
+    fn new(
+        families: &'static [ClipFamily],
+        combined: &str,
+        file: impl Fn(&str) -> &'static [u8],
+    ) -> Self {
+        let Some((_, base, _)) = families.iter().find(|(family, ..)| *family == "base") else {
+            return Self {
+                base: packed_glb(file(combined)),
+                families: Vec::new(),
+            };
+        };
+        Self {
+            base: packed_glb(file(base)),
+            families: families
+                .iter()
+                .filter(|(family, ..)| *family != "base")
+                .map(|&(_, path, clips)| (file(path), clips))
+                .collect(),
+        }
+    }
+}
+
+/// A family of [`ClipLibrary`] not decoded until one of its clips is played.
+#[derive(Clone)]
+struct LazyFamily {
+    file: &'static [u8],
+    clips: FamilyClips,
+    decoded: OnceLock<BTreeMap<String, Clip>>,
+}
+
+/// A model's clips by name: the decoded ones and the [`LazyFamily`]s bound to its joints.
+#[derive(Clone, Default)]
+struct Clips {
+    loaded: BTreeMap<String, Clip>,
+    lazy: Vec<LazyFamily>,
+    /// The model's node by joint name, which a lazy family's channels bind to.
+    nodes: BTreeMap<String, usize>,
+    /// The cloth chain poses (#500) a lazy family's clips take on when decoded.
+    secondary: Option<&'static BTreeMap<String, SecondaryPose>>,
+}
+
+impl Clips {
+    /// Clip `name`, decoding its family on first use.
+    fn get(&self, name: &str) -> Option<&Clip> {
+        if let Some(clip) = self.loaded.get(name) {
+            return Some(clip);
+        }
+        let family = self
+            .lazy
+            .iter()
+            .find(|family| family.clips.iter().any(|(clip, _)| *clip == name))?;
+        family
+            .decoded
+            .get_or_init(|| {
+                let (document, buffers, _) = gltf::import_slice(packed_glb(family.file))
+                    .expect("a clip family is valid glTF");
+                let mut clips = read_clips(&document, &buffers, |node| {
+                    let name = node.name().expect("shared animation targets a named joint");
+                    *self
+                        .nodes
+                        .get(name)
+                        .expect("shared animation joint exists in the character")
+                });
+                if let Some(poses) = self.secondary {
+                    add_secondary(&mut clips, poses, |joint| self.nodes.get(joint).copied());
+                }
+                clips
+            })
+            .get(name)
+    }
+
+    #[cfg(test)]
+    fn contains_key(&self, name: &str) -> bool {
+        self.loaded.contains_key(name)
+            || self
+                .lazy
+                .iter()
+                .any(|family| family.clips.iter().any(|(clip, _)| *clip == name))
+    }
+
+    /// Every clip with its length in seconds: a lazy family's as its index declares them.
+    fn durations(&self) -> impl Iterator<Item = (String, f32)> + '_ {
+        let lazy = self.lazy.iter().flat_map(|family| family.clips.iter());
+        self.loaded
+            .iter()
+            .map(|(name, clip)| (name.clone(), clip.duration))
+            .chain(lazy.map(|&(name, duration)| (name.to_owned(), duration)))
+    }
+}
+
+impl std::ops::Index<&str> for Clips {
+    type Output = Clip;
+
+    fn index(&self, name: &str) -> &Clip {
+        self.get(name)
+            .unwrap_or_else(|| panic!("the model has clip {name}"))
+    }
+}
+
+/// Every animation of `document` as a clip, its channels bound to the model's nodes by `bind`.
+fn read_clips(
+    document: &gltf::Document,
+    buffers: &[gltf::buffer::Data],
+    bind: impl Fn(gltf::Node) -> usize,
+) -> BTreeMap<String, Clip> {
+    let mut clips = BTreeMap::new();
+    for animation in document.animations() {
+        let mut channels = Vec::new();
+        let mut duration = 0_f32;
+        for channel in animation.channels() {
+            let node = bind(channel.target().node());
+            let reader = channel.reader(|b| Some(&buffers[b.index()]));
+            let (Some(times), Some(outputs)) = (reader.read_inputs(), reader.read_outputs()) else {
+                continue;
+            };
+            let times: Vec<f32> = times.collect();
+            use gltf::animation::util::ReadOutputs as O;
+            let (path, mut values): (Path, Vec<[f32; 4]>) = match outputs {
+                O::Translations(v) => (
+                    Path::Translation,
+                    v.map(|[x, y, z]| [x, y, z, 0.]).collect(),
+                ),
+                O::Scales(v) => (Path::Scale, v.map(|[x, y, z]| [x, y, z, 0.]).collect()),
+                O::Rotations(v) => (Path::Rotation, v.into_f32().collect()),
+                O::MorphTargetWeights(_) => continue,
+            };
+            let interpolation = channel.sampler().interpolation();
+            if interpolation == gltf::animation::Interpolation::CubicSpline {
+                // Keep each key's value; tangents are dropped for linear playback.
+                values = values.as_chunks::<3>().0.iter().map(|k| k[1]).collect();
+            }
+            if times.is_empty() || values.len() < times.len() {
+                continue;
+            }
+            duration = duration.max(*times.last().unwrap_or(&0.));
+            channels.push(Channel {
+                node,
+                path,
+                step: interpolation == gltf::animation::Interpolation::Step,
+                times,
+                values,
+            });
+        }
+        let name = animation.name().unwrap_or_default();
+        // Blender prefixes clips with their armature ("AnimalArmature|Walk").
+        let name = name.rsplit('|').next().unwrap_or(name).to_owned();
+        clips.insert(name, Clip { duration, channels });
+    }
+    clips
+}
+
+/// Plays each clip's cloth chain pose (`secondaryPose`, #500) as rotation channels of the chain
+/// joints `node` finds.
+fn add_secondary(
+    clips: &mut BTreeMap<String, Clip>,
+    poses: &BTreeMap<String, SecondaryPose>,
+    node: impl Fn(&str) -> Option<usize>,
+) {
+    for (name, pose) in poses {
+        let Some(clip) = clips.get_mut(name) else {
+            continue;
+        };
+        if pose.sample_rate <= 0. {
+            continue;
+        }
+        for (joint, rotations) in &pose.joints {
+            let Some(node) = node(joint) else { continue };
+            #[allow(clippy::cast_precision_loss)]
+            let times = (0..rotations.len())
+                .map(|frame| frame as f32 / pose.sample_rate)
+                .collect();
+            clip.channels.push(Channel {
+                node,
+                path: Path::Rotation,
+                step: false,
+                times,
+                values: rotations.clone(),
+            });
+        }
+    }
+}
+
 impl Channel {
     fn sample(&self, t: f32) -> [f32; 4] {
         let last = self.times.len() - 1;
@@ -204,7 +402,7 @@ pub(super) struct Model {
     binds: OnceLock<Arc<[Option<Bind>]>>,
     /// Each primitive baked in the rest pose, for static draws, built on first draw.
     rests: OnceLock<Arc<[Option<Baked>]>>,
-    clips: Arc<BTreeMap<String, Clip>>,
+    clips: Arc<Clips>,
     /// Node names, for attaching items to joints.
     names: Vec<Option<String>>,
     /// Where each node sits for masked layers: in the upper body ([`UPPER_BODY_ROOT`]'s
@@ -316,7 +514,7 @@ impl Model {
     fn parse_with_clips(
         bytes: &[u8],
         rest_clip: &'static str,
-        library: Option<&[u8]>,
+        library: Option<&ClipLibrary>,
     ) -> Result<Self, gltf::Error> {
         let (document, buffers, images) = gltf::import_slice(bytes)?;
         let count = document.nodes().len();
@@ -455,72 +653,46 @@ impl Model {
                 });
             }
         }
-        let mut clips = BTreeMap::new();
-        let library = library.map(gltf::import_slice).transpose()?;
-        let (animation_document, animation_buffers) = library
-            .as_ref()
-            .map(|(document, buffers, _)| (document, buffers))
-            .unwrap_or((&document, &buffers));
-        for animation in animation_document.animations() {
-            let mut channels = Vec::new();
-            let mut duration = 0_f32;
-            for channel in animation.channels() {
-                let node = if library.is_some() {
-                    let name = channel
-                        .target()
-                        .node()
-                        .name()
-                        .expect("shared animation targets a named joint");
-                    document
-                        .nodes()
-                        .find(|node| node.name() == Some(name))
-                        .expect("shared animation joint exists in the character")
-                        .index()
-                } else {
-                    channel.target().node().index()
-                };
-                let reader = channel.reader(|b| Some(&animation_buffers[b.index()]));
-                let (Some(times), Some(outputs)) = (reader.read_inputs(), reader.read_outputs())
-                else {
-                    continue;
-                };
-                let times: Vec<f32> = times.collect();
-                use gltf::animation::util::ReadOutputs as O;
-                let (path, mut values): (Path, Vec<[f32; 4]>) = match outputs {
-                    O::Translations(v) => (
-                        Path::Translation,
-                        v.map(|[x, y, z]| [x, y, z, 0.]).collect(),
-                    ),
-                    O::Scales(v) => (Path::Scale, v.map(|[x, y, z]| [x, y, z, 0.]).collect()),
-                    O::Rotations(v) => (Path::Rotation, v.into_f32().collect()),
-                    O::MorphTargetWeights(_) => continue,
-                };
-                let interpolation = channel.sampler().interpolation();
-                if interpolation == gltf::animation::Interpolation::CubicSpline {
-                    // Keep each key's value; tangents are dropped for linear playback.
-                    values = values.as_chunks::<3>().0.iter().map(|k| k[1]).collect();
-                }
-                if times.is_empty() || values.len() < times.len() {
-                    continue;
-                }
-                duration = duration.max(*times.last().unwrap_or(&0.));
-                channels.push(Channel {
-                    node,
-                    path,
-                    step: interpolation == gltf::animation::Interpolation::Step,
-                    times,
-                    values,
-                });
-            }
-            let name = animation.name().unwrap_or_default();
-            // Blender prefixes clips with their armature ("AnimalArmature|Walk").
-            let name = name.rsplit('|').next().unwrap_or(name).to_owned();
-            clips.insert(name, Clip { duration, channels });
-        }
         let names: Vec<_> = document
             .nodes()
             .map(|node| node.name().map(str::to_owned))
             .collect();
+        let clips = match library {
+            Some(library) => {
+                let mut nodes = BTreeMap::new();
+                for (index, name) in names.iter().enumerate() {
+                    if let Some(name) = name {
+                        nodes.entry(name.clone()).or_insert(index);
+                    }
+                }
+                let (base, buffers, _) = gltf::import_slice(&library.base)?;
+                let loaded = read_clips(&base, &buffers, |node| {
+                    let name = node.name().expect("shared animation targets a named joint");
+                    *nodes
+                        .get(name)
+                        .expect("shared animation joint exists in the character")
+                });
+                let lazy = library
+                    .families
+                    .iter()
+                    .map(|&(file, clips)| LazyFamily {
+                        file,
+                        clips,
+                        decoded: OnceLock::new(),
+                    })
+                    .collect();
+                Clips {
+                    loaded,
+                    lazy,
+                    nodes,
+                    secondary: None,
+                }
+            }
+            None => Clips {
+                loaded: read_clips(&document, &buffers, |node| node.index()),
+                ..Clips::default()
+            },
+        };
         // Parents come first in `order`, so a child inherits its parent's region.
         let mut joints = vec![Joint::default(); count];
         for &node in &order {
@@ -571,38 +743,13 @@ impl Model {
     /// The model with each clip's cloth chain pose (`secondaryPose`, #500) played as rotation
     /// channels of the chain joints it has, like the browser's mixer tracks; the spring
     /// (`globals_swung`, #498) swings the chain around whatever the sampled pose then is.
-    fn with_secondary(mut self, poses: &BTreeMap<String, SecondaryPose>) -> Self {
-        let added: Vec<_> = poses
-            .iter()
-            .filter(|(clip, pose)| self.clips.contains_key(*clip) && pose.sample_rate > 0.)
-            .flat_map(|(clip, pose)| {
-                pose.joints.iter().filter_map(|(joint, rotations)| {
-                    let node = self.node(joint)?;
-                    #[allow(clippy::cast_precision_loss)]
-                    let times = (0..rotations.len())
-                        .map(|frame| frame as f32 / pose.sample_rate)
-                        .collect();
-                    Some((
-                        clip.clone(),
-                        Channel {
-                            node,
-                            path: Path::Rotation,
-                            step: false,
-                            times,
-                            values: rotations.clone(),
-                        },
-                    ))
-                })
-            })
-            .collect();
-        if !added.is_empty() {
-            let clips = Arc::make_mut(&mut self.clips);
-            for (clip, channel) in added {
-                if let Some(clip) = clips.get_mut(&clip) {
-                    clip.channels.push(channel);
-                }
-            }
-        }
+    fn with_secondary(mut self, poses: &'static BTreeMap<String, SecondaryPose>) -> Self {
+        let names = self.names.clone();
+        let node = |joint: &str| names.iter().position(|n| n.as_deref() == Some(joint));
+        let clips = Arc::make_mut(&mut self.clips);
+        add_secondary(&mut clips.loaded, poses, node);
+        // A family decoded later takes its poses then.
+        clips.secondary = Some(poses);
         self
     }
 
@@ -665,9 +812,7 @@ impl Model {
 
     /// Every clip with its length in seconds.
     pub fn clip_durations(&self) -> impl Iterator<Item = (String, f32)> + '_ {
-        self.clips
-            .iter()
-            .map(|(name, clip)| (name.clone(), clip.duration))
+        self.clips.durations()
     }
 
     /// Joint transforms for a layered pose (Atlas 6.6.45), the same weighting as three.js's
@@ -2500,10 +2645,16 @@ fn ranger_model(path: &str) -> Vec<u8> {
     bundle_glb(path, ranger_bundle::FILES)
 }
 
-/// The male figure's shared clip library, decoded once.
-fn ranger_clips() -> &'static [u8] {
-    static CLIPS: OnceLock<Vec<u8>> = OnceLock::new();
-    CLIPS.get_or_init(|| packed_glb(ranger_file(ranger_bundle::CLIPS)))
+/// The male figure's shared clip library (#898), its base family decoded once.
+fn ranger_clips() -> &'static ClipLibrary {
+    static CLIPS: OnceLock<ClipLibrary> = OnceLock::new();
+    CLIPS.get_or_init(|| {
+        ClipLibrary::new(
+            ranger_bundle::CLIP_FAMILIES,
+            ranger_bundle::CLIPS,
+            ranger_file,
+        )
+    })
 }
 
 /// The model file of an imported unit kind: asset-tooling's Ranger humanoid for players
