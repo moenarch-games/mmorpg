@@ -39,6 +39,8 @@ pub const LUNGE_DUST: &str = "strike.effects.lunge-dust";
 pub const FROST_NOVA: &str = "spell.effects.frost-nova";
 pub const BEAM_SEGMENT: &str = "spell.effects.beam-segment";
 pub const HEAL_MOTES: &str = "spell.effects.heal-motes";
+/// A spent corpse (#935) and its burst's hits.
+pub const CORPSE_SPENT: &str = "spell.effects.impact-shadow";
 
 /// Every entry the clients load: its key, its clip and the clip's length in seconds (the
 /// bundle descriptors'); a shot has no clip.
@@ -174,6 +176,7 @@ fn spell_impact(ability: AbilityId) -> Option<&'static str> {
     match ability {
         ids::FROST_NOVA | ids::FROST_BREATH => Some("spell.effects.impact-frost"),
         ids::FIRE_BLAST => Some("spell.effects.impact-fire"),
+        ids::CORPSE_BURST => Some(CORPSE_SPENT),
         _ => None,
     }
 }
@@ -353,6 +356,19 @@ impl KitEffects {
                 } if ability == ids::FROST_NOVA => {
                     if let Some(a) = anchors.get(&source) {
                         self.spawn(FROST_NOVA, Frame { p: a.feet, q: IQ }, now);
+                    }
+                }
+                // A spent corpse (#935) flares where it lies as it rises or bursts.
+                ZoneEvent::AbilityUsed {
+                    source,
+                    target,
+                    ability,
+                } if ability == ids::RAISE_DEAD || ability == ids::CORPSE_BURST => {
+                    if let Some(a) = target
+                        .and_then(|corpse| anchors.get(&corpse))
+                        .or_else(|| anchors.get(&source))
+                    {
+                        self.spawn(CORPSE_SPENT, Frame { p: a.feet, q: IQ }, now);
                     }
                 }
                 ZoneEvent::Healed { target, amount, .. } if amount > 0 => {

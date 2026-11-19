@@ -7,7 +7,8 @@
 //!
 //! - **Raising** (Raise Skeleton resolving, tick steps 1 or 6): a minion stands up one step
 //!   behind its summoner at the summoner's level. A summoner keeps at most
-//!   [`MAX_MINIONS_PER_SUMMONER`]; raising one more crumbles the oldest.
+//!   [`MAX_MINIONS_PER_SUMMONER`]; raising one more crumbles the oldest. Raise Dead (#935, see
+//!   `corpse.rs`) raises a helper the same way but at most [`RAISE_DEAD_LIMIT`] at once.
 //! - **Group orders** (step 1): the summoner orders all its minions at once to *attack* a
 //!   visible living creature, *defend* a point, *follow* or *retreat*. The zone checks the
 //!   summoner is alive, has minions, and that the target or point lies within

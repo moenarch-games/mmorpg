@@ -1947,7 +1947,8 @@ impl Kind {
             Some(ids::FIRE_BLAST | ids::CHAIN_LIGHTNING) => caster.overhand,
             Some(ids::FROST_NOVA | ids::STOMP) => caster.nova,
             Some(ids::FROST_BREATH) => caster.cone,
-            Some(ids::CORRUPTION) => caster.curse,
+            Some(ids::CORRUPTION | ids::CORPSE_BURST) => caster.curse,
+            Some(ids::RAISE_DEAD) => caster.summon_raise,
             Some(ids::ENTANGLING_ROOTS) => caster.ground,
             Some(ids::DIVINE_SHIELD) if ally => caster.ally,
             Some(ids::ARCANE_BARRIER | ids::BONE_SHIELD | ids::BARKSKIN | ids::DIVINE_SHIELD) => {
