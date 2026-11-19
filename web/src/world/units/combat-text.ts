@@ -8,7 +8,7 @@ export const SIGNAL_HORN_ABILITY = 57;
  * Floating combat text for the viewer's projection events. Events are cosmetic and lossy, so the
  * text only decorates what the self and target sections already show.
  */
-export type CombatTextKind = "damage" | "critical" | "periodic" | "taken" | "heal" | "absorb" | "interrupt" | "miss" | "block" | "guard-break" | "cleave";
+export type CombatTextKind = "damage" | "critical" | "periodic" | "taken" | "heal" | "absorb" | "interrupt" | "miss" | "block" | "guard-break" | "cleave" | "flank";
 
 export type CombatText = { kind: CombatTextKind; text: string };
 
@@ -66,6 +66,9 @@ function textFor(event: ZoneEvent, snapshot: ZoneSnapshot, periodic: boolean): C
     // A signaler raising its horn (#952): interrupt it or kill it before help comes.
     case "cast-started":
       return event.ability === SIGNAL_HORN_ABILITY ? { kind: "interrupt", text: "Calling for help!" } : null;
+    case "flanked":
+      // The viewer's Sinister Strike from its victim's flank (#949).
+      return { kind: "flank", text: "Flank!" };
     case "interrupted":
       return { kind: "interrupt", text: isViewer(event.target, snapshot) ? "Interrupted" : "Interrupt" };
     default:

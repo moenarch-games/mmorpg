@@ -1928,6 +1928,24 @@ impl UnitPresenter {
                             .is_some_and(|&until| seconds < until)
                     }
                 };
+                // A root holds the unit (#956) by the same projected auras, or else the roots
+                // the client saw the zone apply.
+                let rooted = {
+                    let held = |auras: &[mmorpg_core::AuraView]| {
+                        auras.iter().find_map(|aura| {
+                            effects::Condition::of(aura.ability).filter(|c| c.roots())
+                        })
+                    };
+                    if dead {
+                        None
+                    } else if viewer {
+                        held(&snapshot.auras)
+                    } else if snapshot.viewer.target == Some(entity) {
+                        held(&snapshot.target_detail.auras)
+                    } else {
+                        self.effects.rooted(entity, seconds)
+                    }
+                };
                 // Swimmers (#274) wade, tread, stroke, dive and surface with the authored swim
                 // clips and lean into the stroke (Atlas 6.6.41). The mode is the zone's, from the
                 // projected position and the content's water volumes.
@@ -2057,6 +2075,7 @@ impl UnitPresenter {
                         dead,
                         guard,
                         stunned,
+                        rooted,
                         rolling,
                         engaged: if unit.record.kind == EntityKind::Player {
                             unit.record.flags.weapon_drawn
