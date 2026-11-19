@@ -356,7 +356,8 @@ pub fn own_collider(s: &Scenery, id: u32) -> bool {
             .filter_map(|placed| placed.collider)
             .collect()
     });
-    s.greyhaven() && OWN.contains(&id)
+    // Indexed from the committed placements like [`stand_in`], not a hand-kept ID list.
+    s.greyhaven() && OWN.get(&id).is_some()
 }
 
 /// The distinct assets `kit` draws on `s`, sorted.
