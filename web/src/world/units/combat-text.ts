@@ -1,6 +1,9 @@
 import { sameEntity, type EntityRef } from "../../entity-ref";
 import { ticksFromMs, type ZoneEvent, type ZoneSnapshot } from "../../replication";
 
+/** A Redbrand signaler's horn call (#952). */
+export const SIGNAL_HORN_ABILITY = 57;
+
 /**
  * Floating combat text for the viewer's projection events. Events are cosmetic and lossy, so the
  * text only decorates what the self and target sections already show.
@@ -60,6 +63,9 @@ function textFor(event: ZoneEvent, snapshot: ZoneSnapshot, periodic: boolean): C
     case "strike-swept":
       // A hit shows its damage; a whiff of the viewer's own sweep says so.
       return event.target === null && isViewer(event.source, snapshot) ? { kind: "miss", text: "Whiff" } : null;
+    // A signaler raising its horn (#952): interrupt it or kill it before help comes.
+    case "cast-started":
+      return event.ability === SIGNAL_HORN_ABILITY ? { kind: "interrupt", text: "Calling for help!" } : null;
     case "flanked":
       // The viewer's Sinister Strike from its victim's flank (#949).
       return { kind: "flank", text: "Flank!" };

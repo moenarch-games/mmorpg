@@ -69,6 +69,7 @@ mod rewind;
 mod routine;
 mod seat;
 mod shapes;
+mod signal;
 mod snapshot;
 mod stance;
 mod strike;
@@ -233,6 +234,7 @@ pub use routine::{
     ZONE_START_TIME, is_night, time_of_day,
 };
 pub use seat::{PostureView, SEAT_REACH_UNITS, Seat, SeatId, Sitting};
+pub use signal::{SIGNAL_REACH_UNITS, SignalCall};
 use sim_combat::class;
 pub use sim_combat::class::{ClassChoice, PlayerClass, ResourceKind, Sex};
 pub use sim_combat::melee::{
