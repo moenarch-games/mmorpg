@@ -443,6 +443,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::hamlet_creatures::spawns())
         // The Greyfang Approach's Redbrand patrol (#911).
         .chain(super::redbrand_patrol::spawns())
+        // The Rimewood scouts, an Arcanist's group-control fight (#933).
+        .chain(super::rimewood::spawns())
         .collect()
 }
 

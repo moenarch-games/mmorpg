@@ -47,6 +47,7 @@ pub mod raid;
 pub mod redbrand_patrol;
 pub mod region;
 pub mod residents;
+pub mod rimewood;
 mod roofs;
 pub mod settlements;
 pub mod shrine;

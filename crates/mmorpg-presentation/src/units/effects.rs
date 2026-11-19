@@ -34,6 +34,9 @@ enum Visual {
     /// Entangling Roots (#304): vines that rise and coil around the rooted target. Its caster
     /// sees them for the zone's whole root and sink the moment it breaks (#934).
     Roots,
+    /// Frost Nova's root (#933): ice locking the victim's feet while the zone's aura holds,
+    /// gone the tick that aura expires or damage breaks it.
+    Frozen,
     /// The unit the viewer's companion or minions fight (#934): marks round its feet while
     /// their swings land on it.
     Quarry,
@@ -643,6 +646,31 @@ impl Effects {
                         now,
                     );
                 }
+                // Every unit Frost Nova roots stays visibly frozen until the zone lifts it (#933).
+                ZoneEvent::AuraApplied {
+                    source,
+                    target,
+                    ability,
+                    ticks,
+                } if ability.get() == FROST_NOVA => {
+                    self.effects
+                        .retain(|e| !(e.visual == Visual::Frozen && e.target == Some(target)));
+                    let seconds = f64::from(ticks) / f64::from(TICK_HZ);
+                    self.add(
+                        Visual::Frozen,
+                        FROST_NOVA,
+                        source,
+                        Some(target),
+                        Some(seconds),
+                        now,
+                    );
+                }
+                ZoneEvent::AuraRemoved {
+                    target, ability, ..
+                } if ability.get() == FROST_NOVA => {
+                    self.effects
+                        .retain(|e| !(e.visual == Visual::Frozen && e.target == Some(target)));
+                }
                 ZoneEvent::Died { entity, .. } => {
                     self.dead.insert(entity);
                     self.effects.retain(|e| {
@@ -1215,6 +1243,42 @@ impl Effects {
                                     false,
                                 );
                             }
+                        }
+                    }
+                }
+                Visual::Frozen => {
+                    if let Some(v) = target {
+                        // Seven ice spikes lean out of a frost disc around the victim's feet:
+                        // they snap up, glint while the root holds and thin in its last second.
+                        let left = e.duration.map_or(1., |d| d - age);
+                        let rise = (age * 8.).min(1.);
+                        let opacity = (0.75 * left.clamp(0.25, 1.)) as f32;
+                        add(
+                            "frost",
+                            Primitive::Box([0.62, 0.025, 0.62]),
+                            0xd8f4ff,
+                            [v.feet[0], v.feet[1] + 0.03, v.feet[2]],
+                            qa(1, PI / 4.),
+                            opacity * 0.8,
+                            true,
+                        );
+                        for i in 0..7 {
+                            let a = f64::from(i) / 7. * TAU;
+                            let height = 0.45 + 0.2 * f64::from(i % 3);
+                            let glint = 0.5 + 0.5 * (age * 3. + f64::from(i)).sin();
+                            add(
+                                &format!("ice-{i}"),
+                                Primitive::Box([0.08, height, 0.08]),
+                                if glint > 0.85 { 0xffffff } else { color },
+                                [
+                                    v.feet[0] + a.sin() * 0.42,
+                                    v.feet[1] + height * (rise - 0.5),
+                                    v.feet[2] + a.cos() * 0.42,
+                                ],
+                                qm(qa(1, a), qa(0, 0.3)),
+                                opacity,
+                                false,
+                            );
                         }
                     }
                 }
