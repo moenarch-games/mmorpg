@@ -48,6 +48,7 @@ pub mod raid;
 pub mod redbrand_patrol;
 pub mod region;
 pub mod residents;
+pub mod rimewood;
 mod roofs;
 pub mod settlements;
 pub mod shrine;
@@ -2016,6 +2017,15 @@ fn content_with_spawns(
                 crate::FENFORD,
                 crate::WESTMERE_LODGE,
             ])?
+            // Every named area but the Outpost, where every character starts, is a discovery (#916).
+            .with_discoveries(
+                AREAS
+                    .areas()
+                    .iter()
+                    .map(Area::id)
+                    .filter(|&id| id != vale::OUTPOST)
+                    .collect(),
+            )?
             .with_depths_threshold(cave::depths_threshold()),
     ))
 }

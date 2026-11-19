@@ -3,14 +3,15 @@
 # along trunk-grid lines, which stay clear of trunks. Timber Wolf 108 in the
 # den clearing notices it; the hunter targets it and keeps swinging at it (#517)
 # until it dies. Wounded, the hunter walks on until Timber Wolf 106 engages,
-# swings at it for a while, stops and dies. The wolf, left without
+# swings at it for a while, stops and dies (later at level 2: discovering the woods pays XP,
+# #916). The wolf, left without
 # threat, evades home, and the
 # released spirit returns to the graveyard with half health and stands there:
 # movement sent while dead holds no intent. Refused intents are gameplay
 # events; every command step is applied.
 name = "vale-wolf-hunt"
 zone = 1
-ticks = 5208
+ticks = 5323
 digest_interval = 200
 
 [[bots]]
@@ -169,13 +170,13 @@ every = 30
 # The dead can neither swing nor move: the walk is accepted but holds
 # nothing, so the released spirit stands at the graveyard.
 [[steps]]
-tick = 4608
+tick = 4723
 bot = "hunter"
 action = "swing"
 facing = 0
 
 [[steps]]
-tick = 4608
+tick = 4723
 bot = "hunter"
 action = "move"
 forward = 1
@@ -183,7 +184,7 @@ strafe = 0
 facing = 0
 
 [[steps]]
-tick = 5008
+tick = 5123
 bot = "hunter"
 action = "release_spirit"
 
@@ -261,56 +262,56 @@ kind = "event"
 bot = "hunter"
 event = "died"
 entity = "bot:hunter"
-by_tick = 4608
+by_tick = 4723
 
 [[expect]]
 kind = "health"
 bot = "hunter"
 health = 0
-tick = 4607
+tick = 4722
 
 [[expect]]
 kind = "unit"
 bot = "hunter"
 entity = "bot:hunter"
 state = "dead"
-tick = 4607
+tick = 4722
 
 [[expect]]
 kind = "unit"
 bot = "hunter"
 entity = "creature:106"
 state = "evading"
-by_tick = 4608
+by_tick = 4723
 
 [[expect]]
 kind = "event"
 bot = "hunter"
 event = "error:you_are_dead"
-tick = 4609
+tick = 4724
 
 [[expect]]
 kind = "target"
 bot = "hunter"
 entity = "creature:106"
-tick = 4609
+tick = 4724
 
 [[expect]]
 kind = "position"
 bot = "hunter"
-tick = 4808
+tick = 4923
 position = [-9645, 1190, -1408]
 
 [[expect]]
 kind = "position"
 bot = "hunter"
-tick = 5010
+tick = 5125
 position = [-2000, 90, 4150]
 
 [[expect]]
 kind = "position"
 bot = "hunter"
-tick = 5208
+tick = 5323
 position = [-2000, 90, 4150]
 
 [[expect]]
@@ -318,18 +319,18 @@ kind = "unit"
 bot = "hunter"
 entity = "bot:hunter"
 state = "alive"
-tick = 5009
+tick = 5124
 
 [[expect]]
 kind = "health"
 bot = "hunter"
-health = 25
-tick = 5009
+health = 33
+tick = 5124
 
 [[expect]]
 kind = "area"
 bot = "hunter"
-tick = 5009
+tick = 5124
 area = "Greyhaven Outpost"
 
 [[expect]]
@@ -337,9 +338,10 @@ kind = "unit"
 bot = "hunter"
 entity = "creature:106"
 state = "absent"
-tick = 5009
+tick = 5124
 
-# XP is durable self-state: death, reconnect and release cannot erase a reward.
+# XP is durable self-state: death, reconnect and release cannot erase a reward. Discovering
+# the Wolfrun Woods (75 XP, #916) and Wolf 108 (50 XP) reach level 2 with 25 XP.
 [[expect]]
 kind = "progression"
 bot = "hunter"
@@ -350,13 +352,13 @@ tick = 3
 [[expect]]
 kind = "progression"
 bot = "hunter"
-level = 1
-experience = 50
+level = 2
+experience = 25
 tick = 3287
 
 [[expect]]
 kind = "progression"
 bot = "hunter"
-level = 1
-experience = 50
-tick = 5009
+level = 2
+experience = 25
+tick = 5124

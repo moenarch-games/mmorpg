@@ -10,6 +10,7 @@ use mmorpg_core::greyhaven_vale::quests::{
     FARMER, MARAUDERS_IN_THE_FIELDS, MARSHAL, PELTS_FOR_THE_TANNER, TANNER, THE_MISSING_FARMHAND,
     TROUBLE_IN_THE_WOODS, WOLF_PELT,
 };
+use mmorpg_core::greyhaven_vale::{farmland, vale};
 use mmorpg_core::{
     EntityKind, NpcId, NpcMarker, QuestId, QuestMarker, QuestSheet, ZoneCommand, ZoneEvent, ZoneId,
     ZoneSimulation, ZoneSnapshot, greyhaven_vale,
@@ -59,6 +60,15 @@ const TO_FARMER: &[[i32; 2]] = &[
     [5_400, 2_800],
     [6_400, 3_300],
     [6_200, 3_850],
+];
+/// Back past the farmhouse to the road, east into the Eastwater Fen, then north over the
+/// Southmeadow Downs into the Farmland and Hamlets (#916).
+const TO_EXPLORE: &[[i32; 2]] = &[
+    [6_400, 3_300],
+    [10_000, 3_000],
+    [13_000, 3_000],
+    [13_000, 13_000],
+    [13_000, 21_500],
 ];
 /// Released spirits rise beside the graveyard, north of the hub.
 const FROM_GRAVEYARD: &[[i32; 2]] = &[[-1_800, 4_150], HUB];
@@ -496,6 +506,37 @@ fn a_new_warden_completes_the_first_quests_of_the_greyhaven_chain() {
         script.view.viewer.experience,
         script.view.viewer.experience_to_next_level,
         script.deaths,
+        script.level_ups
+    );
+
+    // A mixed path (#916): the opening chain already discovered the woods and the farm; an
+    // exploring detour from Millbrook discovers more of Greyhaven, each area paying once.
+    let discovered = |script: &Script| {
+        script.zone.snapshot().unwrap().players[0]
+            .discoveries
+            .clone()
+    };
+    assert_eq!(
+        discovered(&script),
+        std::collections::BTreeSet::from([vale::WOLFRUN_WOODS, vale::MILLBROOK_FARM])
+    );
+    let start = script.ticks;
+    script.walk_path(TO_EXPLORE);
+    let found = discovered(&script);
+    for area in [
+        vale::EASTWATER_FEN,
+        vale::SOUTHMEADOW_DOWNS,
+        farmland::FARMLAND_AND_HAMLETS,
+    ] {
+        assert!(found.contains(&area), "{area:?} is discovered: {found:?}");
+    }
+    eprintln!(
+        "exploring detour of {} ticks: {} areas discovered, level {} ({}/{} XP); level-up ticks {:?}",
+        script.ticks - start,
+        found.len(),
+        script.view.viewer.level,
+        script.view.viewer.experience,
+        script.view.viewer.experience_to_next_level,
         script.level_ups
     );
 }

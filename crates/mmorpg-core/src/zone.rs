@@ -168,6 +168,8 @@ pub(crate) struct PlayerState {
     pub(crate) quests: crate::QuestLog,
     /// Waystones the character unlocked by exploration (#145).
     pub(crate) waystones: crate::WaystoneSet,
+    /// Named areas the character discovered (#916): each paid its discovery experience once.
+    pub(crate) discoveries: std::collections::BTreeSet<crate::AreaId>,
     /// The durable character bound to this session (`None` for session-only players), and its
     /// depths receipts (#404).
     pub(crate) character: Option<crate::CharacterId>,
@@ -229,6 +231,7 @@ impl PlayerState {
             chat: Vec::new(),
             quests: crate::QuestLog::default(),
             waystones: crate::WaystoneSet::EMPTY,
+            discoveries: std::collections::BTreeSet::new(),
             character: None,
             depths: crate::DepthsRecord::default(),
             physique: crate::Physique::NEUTRAL,
@@ -914,6 +917,7 @@ impl ZoneSimulation {
         }
         self.update_interest()?;
         self.discover_waystones();
+        self.discover_areas()?;
         self.advance_casts(now)?;
         // Timed swings clash, parry and sweep before projectiles fly (#679).
         self.advance_swings(now)?;

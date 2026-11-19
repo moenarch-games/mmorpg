@@ -47,6 +47,9 @@
 //!   (it has threat on one of them: damage, or healing a defender) or has an aid action
 //!   accepted. Standing nearby earns nothing, and there is no ranking. The once-only grant is the
 //!   zone's `rewarded` list plus the durable [`crate::RewardKey::RaidParticipation`] receipt.
+//!   When the barn is defended, each rewarded participant still within
+//!   [`PARTICIPANT_RADIUS_UNITS`] earns [`DEFENCE_EXPERIENCE`] more (#916), once per incident
+//!   and character ([`crate::RewardKey::RaidDefence`]); a lost raid pays no bonus.
 //!
 //! - **Forewarning** (#532, 5.1.61, 5.1.62): from [`FOREWARNING_TIME`] until the nightly check,
 //!   on every raid night and on [`FALSE_ALARM_NIGHTS`] of the other nights, a scouting party's
@@ -133,6 +136,10 @@ pub const AID_RESTORE_POINTS: u32 = 360;
 /// What a defender or helper earns once per incident: a little more than one level-4 kill.
 pub const REWARD_EXPERIENCE: u32 = 120;
 pub const REWARD_COPPER: u32 = 15;
+/// What a rewarded participant still within [`PARTICIPANT_RADIUS_UNITS`] of the barn earns when
+/// the incident is defended (#916): with [`REWARD_EXPERIENCE`] about a level-5 player's 100 XP
+/// a minute over the raid's three phases, kills aside.
+pub const DEFENCE_EXPERIENCE: u32 = 240;
 /// An injured guard's projected health.
 pub const INJURED_HEALTH_PERCENT: u8 = 30;
 /// Forewarning signs lie on the approach from 19:00 until the nightly check (#532).
@@ -970,6 +977,34 @@ impl ZoneSimulation {
         self.grant_experience(player_id, REWARD_EXPERIENCE)
     }
 
+    /// The defence bonus (#916): each player already rewarded for `incident` who is still near
+    /// the barn as it is defended earns [`DEFENCE_EXPERIENCE`]. The incident resolves once, and
+    /// the durable [`crate::RewardKey::RaidDefence`] receipt keeps it once per character.
+    fn reward_defenders(&mut self, incident: u32) -> Result<(), ZoneError> {
+        let Some([x, z]) = self.content.raid().map(RaidSite::centre) else {
+            return Ok(());
+        };
+        let key = crate::RewardKey::RaidDefence { incident };
+        let radius = i64::from(PARTICIPANT_RADIUS_UNITS);
+        for player_id in self.raid.rewarded.clone() {
+            let Ok(at) = self.player_position(player_id) else {
+                continue;
+            };
+            let (dx, dz) = (
+                i64::from(at.x) - i64::from(x),
+                i64::from(at.z) - i64::from(z),
+            );
+            if dx * dx + dz * dz > radius * radius
+                || !crate::rewards::allowed(&self.rewards, player_id, key)
+            {
+                continue;
+            }
+            crate::rewards::record(&mut self.rewards, player_id, key)?;
+            self.grant_experience(player_id, DEFENCE_EXPERIENCE)?;
+        }
+        Ok(())
+    }
+
     /// Closes the aid tasks the objective's restoration has reached; a guard whose task
     /// closes returns to its post.
     fn settle_aftermath(&mut self, site: &RaidSite) -> Result<(), ZoneError> {
@@ -1166,6 +1201,9 @@ impl ZoneSimulation {
             at: now,
             outcome,
         });
+        if outcome == RaidOutcome::Defended {
+            self.reward_defenders(incident.id)?;
+        }
         // The preparations served this incident and retire with it (5.1.69); nearby players hear
         // truthfully what came of them (5.1.60).
         if self.raid.warned || !self.raid.braced.is_empty() {

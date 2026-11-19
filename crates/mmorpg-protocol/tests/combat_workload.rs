@@ -115,14 +115,16 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // patrol AI tests 90,240 candidates.
     // The `u16` sheet mask (#897) adds one byte to every projection, inside the headroom.
     // The Eastwater Fen wolf pack (#932) lengthens the Vale's spawn table, which moves the
-    // fights-8 bots' sampled spawns: they test 87,504 candidates; the rows are re-recorded as
+    // fights-8 bots' sampled spawns: they test 103,956 candidates; the rows are re-recorded as
     // measured.
+    // The Rimewood scouts (#933) lengthen the spawn table, so the fights fixtures pair players
+    // with shifted creatures: fights-8 tests 87,504 candidates. Every row is re-recorded.
     const HEADROOM_PERCENT: usize = 5;
     let recorded: [[usize; 4]; FIXTURES.len()] = [
-        [11_052, 87_840, 282_240, 6_157_408],
-        [18_951, 84_960, 87_504, 1_666_864],
-        [27_653, 93_600, 443_001, 8_423_212],
-        [13_037, 104_652, 2_314_114, 24_437_289],
+        [11_052, 88_920, 282_240, 6_157_408],
+        [19_609, 86_040, 103_956, 1_878_509],
+        [29_220, 94_680, 429_563, 8_273_603],
+        [13_037, 105_732, 2_314_114, 24_437_289],
     ];
     for (fixture, recorded) in FIXTURES.into_iter().zip(recorded) {
         let ceiling = recorded.map(|count| count + count * HEADROOM_PERCENT / 100);
