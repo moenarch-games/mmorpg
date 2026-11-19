@@ -77,6 +77,8 @@ const WEAPON_MASK: u32 = 0x0700_0000;
 /// (#918).
 const NAMED_SHIFT: u32 = 27;
 const NAMED_MASK: u32 = 0x7800_0000;
+/// The appearance word's bit 23 on a player record: the player is in wolf form (#957).
+const SHIFTED_BIT: u32 = 0x0080_0000;
 /// Records that fit the budget without events or sheets: (1,077 − 112) / 29 = 33.
 pub const MAX_WIRE_ENTITIES: usize =
     (MAX_PLAYER_PROJECTION_BYTES - PLAYER_SNAPSHOT_FIXED_BYTES) / ENTITY_RECORD_BYTES;
@@ -502,11 +504,12 @@ fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), P
     payload.push(entity_kind_code(entity.kind));
     payload.extend_from_slice(&entity.id.to_be_bytes());
     if (entity.kind == EntityKind::Player
-        && entity.appearance & (DRAWN_BIT | WEAPON_MASK | NAMED_MASK) != 0)
+        && entity.appearance & (DRAWN_BIT | WEAPON_MASK | NAMED_MASK | SHIFTED_BIT) != 0)
         || (entity.kind != EntityKind::Player
             && (entity.flags.weapon_drawn
                 || entity.flags.weapon.is_some()
-                || entity.flags.named_weapon.is_some()))
+                || entity.flags.named_weapon.is_some()
+                || entity.flags.shapeshifted))
     {
         return Err(ProtocolError::new("invalid drawn weapon appearance"));
     }
@@ -524,6 +527,11 @@ fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), P
         &(entity.appearance
             | weapon
             | named
+            | if entity.flags.shapeshifted {
+                SHIFTED_BIT
+            } else {
+                0
+            }
             | if entity.flags.weapon_drawn {
                 DRAWN_BIT
             } else {
@@ -1020,6 +1028,7 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
     let id = u32::from_be_bytes(take(payload, offset)?);
     let encoded_appearance = u32::from_be_bytes(take(payload, offset)?);
     let weapon_drawn = kind == EntityKind::Player && encoded_appearance & DRAWN_BIT != 0;
+    let shapeshifted = kind == EntityKind::Player && encoded_appearance & SHIFTED_BIT != 0;
     let weapon = match (encoded_appearance & WEAPON_MASK) >> WEAPON_SHIFT {
         _ if kind != EntityKind::Player => None,
         0 => None,
@@ -1041,7 +1050,7 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
         ),
     };
     let appearance = if kind == EntityKind::Player {
-        encoded_appearance & !(DRAWN_BIT | WEAPON_MASK | NAMED_MASK)
+        encoded_appearance & !(DRAWN_BIT | WEAPON_MASK | NAMED_MASK | SHIFTED_BIT)
     } else {
         encoded_appearance
     };
@@ -1140,6 +1149,7 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
             weapon_drawn,
             weapon,
             named_weapon,
+            shapeshifted,
             hostile,
             attackable,
             tapped_by_other,
@@ -1496,6 +1506,7 @@ pub(crate) mod tests {
                         weapon_drawn: false,
                         weapon: None,
                         named_weapon: None,
+                        shapeshifted: false,
                         hostile: true,
                         attackable: true,
                         tapped_by_other: false,
@@ -2306,6 +2317,7 @@ pub(crate) mod tests {
                         weapon_drawn: false,
                         weapon: None,
                         named_weapon: None,
+                        shapeshifted: false,
                         hostile: true,
                         attackable: true,
                         tapped_by_other: kind == EntityKind::Creature,

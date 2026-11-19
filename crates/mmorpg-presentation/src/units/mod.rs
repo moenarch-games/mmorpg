@@ -1907,13 +1907,16 @@ impl UnitPresenter {
                 } else {
                     ClassChoice::from_appearance(unit.record.appearance)
                 };
+                // A Druid in wolf form (#957) is the wolf: no weapons, outfit or headwear.
+                let shifted = matches!(entity, EntityRef::Player(_)) && kind == Kind::Wolf;
                 let loadout = carried(
                     entity,
                     resident,
                     class,
                     unit.record.flags.weapon,
                     unit.record.flags.named_weapon,
-                );
+                )
+                .filter(|_| !shifted);
                 if viewer {
                     let wind_up = self.preparation.map(|preparation| {
                         let class = snapshot.viewer.class.map(|choice| choice.class);
@@ -2105,7 +2108,12 @@ impl UnitPresenter {
                     id: id.clone(),
                     kind,
                     root: swim::lean(root, animation.attitude, f64::from(half[1]) * 2.),
-                    height: f64::from(half[1]) * 2.,
+                    // The shifted Druid stands as tall as the companion wolf, on its own feet.
+                    height: if shifted {
+                        f64::from(metres(mmorpg_core::COMPANION_HALF_EXTENTS_UNITS)[1]) * 2.
+                    } else {
+                        f64::from(half[1]) * 2.
+                    },
                     animation,
                     // Only a companion minion has an imported model (`Kind::of`).
                     tint: imported_tint(dead, entity.kind() == EntityKind::Minion),
@@ -2113,12 +2121,12 @@ impl UnitPresenter {
                     variety: resident.filter(|r| r.varied()).map(|_| entity.id()),
                     resident,
                     outfit: match entity {
-                        EntityRef::Player(_) => class.map(|c| {
+                        EntityRef::Player(_) if !shifted => class.map(|c| {
                             Outfit::new(c.class, self.equipment.as_ref().filter(|_| viewer))
                         }),
                         _ => None,
                     },
-                    headwear: (viewer && !dead).then(|| {
+                    headwear: (viewer && !dead && !shifted).then(|| {
                         Look::new(
                             input.viewer.choice.map_or(0, |c| c.class.code()),
                             input.viewer.choice.is_none_or(|c| c.sex.code() == 0),
