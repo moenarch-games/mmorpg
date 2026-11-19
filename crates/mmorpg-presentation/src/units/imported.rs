@@ -990,6 +990,11 @@ pub struct SwordClips {
     /// Garrick Redbrand's whirl and the Redbrand Brute's overhead smash, whole body and in place.
     pub whirl: &'static str,
     pub smash: &'static str,
+    /// The skirmisher's footwork (asset-tooling#757), whole body and in place, from the sword
+    /// guard back to it: a sidestep to the figure's left and right, and a hop back. The Redbrand
+    /// Bandit flanks and falls back with them (#963).
+    pub sidesteps: [&'static str; 2],
+    pub hop_back: &'static str,
 }
 
 impl SwordClips {
@@ -1647,6 +1652,8 @@ impl Kind {
                     respawn: "Respawn_Rise",
                     whirl: "Sword_Whirl",
                     smash: "Sword_Overhead_Smash",
+                    sidesteps: ["Sword_Sidestep_L", "Sword_Sidestep_R"],
+                    hop_back: "Sword_Hop_Back",
                 }),
                 dagger: Some(DaggerClips {
                     idle: "Dagger_Idle_Loop",
@@ -2288,6 +2295,10 @@ pub struct Cues<'a> {
     /// The chore a resident does on its routine now (#904): its item rides its socket while the
     /// unit stands or walks, with the chore's clips when the figure has them.
     pub chore: Option<super::chores::Chore>,
+    /// A fighting skirmisher, the Redbrand Bandit (#963): stepping aside or back from its
+    /// facing plays the sword footwork ([`SwordClips::sidesteps`]) instead of the strafe or
+    /// backpedal.
+    pub footwork: bool,
     /// Presentation clock and the step since the previous frame, in seconds.
     pub now: f64,
     pub dt: f64,
@@ -2451,6 +2462,36 @@ pub fn gait_rate(motions: Option<&Motions>, clip: &str, speed: f64, fallback: f3
             let rate = (speed / ground).clamp(GAIT_RATES[0], GAIT_RATES[1]) as f32;
             rate
         })
+}
+
+/// About how fast the sword footwork's recorded travel goes (asset-tooling#757): a 0.52 m
+/// sidestep in 0.5 s, a 0.6 m hop back in 0.6 s, in metres per second.
+const FOOTWORK_SPEED: f64 = 1.04;
+
+/// A skirmisher's footwork stepping `direction` from its facing at `speed` (#963): a sidestep
+/// toward the side it moves, or the hop back when it backs away, paced to the travel. `None`
+/// moving forward, or when the model lacks the clip: the gaits then play.
+fn footwork(
+    clips: Clips,
+    available: &impl Fn(&str) -> bool,
+    motions: Option<&Motions>,
+    speed: f64,
+    direction: f64,
+) -> Option<Want> {
+    let sword = clips.sword?;
+    let angle = direction.abs();
+    let clip = if angle <= STRAFE_ANGLE {
+        return None;
+    } else if angle >= BACKPEDAL_ANGLE {
+        sword.hop_back
+    } else if direction > 0. {
+        sword.sidesteps[0]
+    } else {
+        sword.sidesteps[1]
+    };
+    #[allow(clippy::cast_possible_truncation)]
+    let fallback = (speed / FOOTWORK_SPEED).clamp(GAIT_RATES[0], GAIT_RATES[1]) as f32;
+    available(clip).then(|| Want::looped(clip, gait_rate(motions, clip, speed, fallback)))
 }
 
 /// `clip`'s upper-body twin when it is a clip of the full-body bow cycle and the model has the
@@ -3696,7 +3737,13 @@ impl Playback {
                 Some(walk) => {
                     Want::looped(walk, gait_rate(cues.motions, walk, speed, walk_rate(speed)))
                 }
-                None => self.gait(clips, &available, cues.motions, speed, cues.direction),
+                None => cues
+                    .footwork
+                    .then(|| footwork(clips, &available, cues.motions, speed, cues.direction))
+                    .flatten()
+                    .unwrap_or_else(|| {
+                        self.gait(clips, &available, cues.motions, speed, cues.direction)
+                    }),
             }
         } else if let Some(turn) = self.turn(clips, &duration, cues, guarding) {
             chored = chore.is_some();
