@@ -1863,11 +1863,14 @@ export class QuaterniusUnits {
       object.castShadow = true;
       // Eyes and eyebrows sit inside the head's silhouette: casting them cost every NPC two draws per sun cascade.
       if (FACE_DETAIL.test(object.name)) { object.userData.notShadowCaster = true; }
-      // Culled per view (#615): a skin by its rest bounds grown by what a clip can reach beyond them; a rigid
-      // mesh rides its joint, so its own bounds follow it.
+      // Culled per view (#615): a skin by its bind-pose bounds grown by what a clip can reach beyond them; a rigid
+      // mesh rides its joint, so its own bounds follow it. In the bind pose a skinned vertex is its geometry's own,
+      // so the geometry's sphere serves: `SkinnedMesh.computeBoundingSphere` skins every vertex on the CPU, 100–500 ms
+      // in the frame a unit first appears (#869).
       if (object instanceof THREE.SkinnedMesh) {
-        object.computeBoundingSphere();
-        object.boundingSphere!.radius += SKIN_REACH_METRES;
+        if (!object.geometry.boundingSphere) { object.geometry.computeBoundingSphere(); }
+        object.boundingSphere = object.geometry.boundingSphere!.clone();
+        object.boundingSphere.radius += SKIN_REACH_METRES;
       }
       // The shadow proxy keeps its invisible shadow-only material (`mergeUnitMeshes`).
       if (object.userData.shadowOnly === true) { return; }
