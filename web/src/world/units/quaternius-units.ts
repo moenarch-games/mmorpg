@@ -524,6 +524,8 @@ const LOADOUT_ITEMS: Readonly<Record<CarriedLoadout, readonly { key: string; soc
   spear: [{ key: "equipment.spear.leaf", socket: "hand_r.staff" }],
   // Garrick Redbrand's named cleaver (#918, asset-tooling #761).
   "sword.garricks-cleaver": [{ key: "equipment.sword.garricks-cleaver", socket: "hand_r.weapon" }],
+  // The smith's Hollowpine boar-spear (#917).
+  "spear.hollowpine-hunter": [{ key: "equipment.spear.hollowpine-hunter", socket: "hand_r.staff" }],
   // The crossbow and the arrow standing in for its bolt (#607); `poseCrossbow` moves both.
   crossbow: [
     { key: "equipment.crossbow", socket: "hand_r.crossbow" },

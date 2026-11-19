@@ -110,7 +110,7 @@ pub enum PlayerIntent {
     /// Gathering an ore vein (#917): its content index.
     Gather(u32),
     /// Skinning a beast corpse (#917).
-    Skin(crate::LootClaim),
+    Skin(crate::CreatureId),
     /// A Need/Greed/Pass answer to a boss drop (#404).
     RollDepthsDrop {
         run: u64,

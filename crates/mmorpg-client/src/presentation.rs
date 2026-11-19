@@ -836,6 +836,10 @@ impl Presentation {
             .players(now)
             .get(&self.player_id)
             .map(|pose| pose.position.map(f64::from));
+        world.show_veins(
+            self.latest()
+                .map_or(&[], |snapshot| snapshot.depleted_veins.as_slice()),
+        );
         let mut frame = world.frame_viewed(
             now.saturating_duration_since(self.origin).as_secs_f64(),
             !self.reduced_motion,
@@ -1048,6 +1052,63 @@ impl Presentation {
         Some(mmorpg_core::ZoneCommand::Repair {
             piece: Some(piece.piece),
         })
+    }
+
+    /// The `Gather` of the first full ore vein (#917) the viewer can reach, if any.
+    #[must_use]
+    pub fn reachable_gather(&self) -> Option<mmorpg_core::ZoneCommand> {
+        let snapshot = self.latest()?;
+        let feet = snapshot
+            .entities
+            .iter()
+            .find(|e| e.entity() == EntityRef::Player(self.player_id))?
+            .position;
+        let reach = i64::from(mmorpg_core::GATHER_REACH_UNITS).pow(2);
+        let node = (0_u32..)
+            .zip(self.content.gather_nodes())
+            .find(|(index, node)| {
+                let (dx, dz) = (
+                    i64::from(node.at[0] - feet[0]),
+                    i64::from(node.at[1] - feet[2]),
+                );
+                !snapshot.depleted_veins.contains(index) && dx * dx + dz * dz <= reach
+            })?
+            .0;
+        Some(mmorpg_core::ZoneCommand::Gather { node })
+    }
+
+    /// The `Skin` of the viewer's selected beast corpse (#917) when it has something to skin
+    /// and lies in loot reach; the zone checks the rest.
+    #[must_use]
+    pub fn reachable_skin(&self) -> Option<mmorpg_core::ZoneCommand> {
+        let snapshot = self.latest()?;
+        let Some(EntityRef::Creature(creature)) = snapshot.viewer.target else {
+            return None;
+        };
+        let at = |entity| {
+            snapshot
+                .entities
+                .iter()
+                .find(|e| e.entity() == entity)
+                .map(|e| e.position)
+        };
+        let corpse = snapshot
+            .entities
+            .iter()
+            .find(|e| e.entity() == EntityRef::Creature(creature))?;
+        let template = self
+            .content
+            .creature_template(mmorpg_core::CreatureTemplateId::new(corpse.appearance))?;
+        let feet = at(EntityRef::Player(self.player_id))?;
+        let distance: i64 = feet
+            .iter()
+            .zip(corpse.position)
+            .map(|(a, b)| (i64::from(*a) - i64::from(b)).pow(2))
+            .sum();
+        (corpse.health_percent == 0
+            && !mmorpg_core::skin_yield(template.family).is_empty()
+            && distance <= i64::from(mmorpg_core::LOOT_REACH_UNITS).pow(2))
+        .then_some(mmorpg_core::ZoneCommand::Skin { creature })
     }
 
     /// The `RaidAid` of the first open aftermath task (#531) the viewer can reach, if any.

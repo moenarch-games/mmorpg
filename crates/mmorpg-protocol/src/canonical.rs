@@ -206,9 +206,9 @@ fn encode_player(
                 crate::loot::encode_claim(payload, claim);
                 continue;
             }
-            PlayerIntent::Skin(claim) => {
+            PlayerIntent::Skin(creature) => {
                 payload.push(SKIN_INTENT);
-                crate::loot::encode_claim(payload, claim);
+                payload.extend_from_slice(&creature.get().to_be_bytes());
                 continue;
             }
             PlayerIntent::Gather(node) => {
@@ -1182,9 +1182,9 @@ fn decode_player(
             continue;
         }
         if code == SKIN_INTENT {
-            intents.push(PlayerIntent::Skin(crate::loot::decode_claim(
-                payload, offset,
-            )?));
+            intents.push(PlayerIntent::Skin(mmorpg_core::CreatureId::new(
+                u32::from_be_bytes(take(payload, offset)?),
+            )));
             continue;
         }
         if code == GATHER_INTENT {

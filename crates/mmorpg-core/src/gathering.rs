@@ -18,8 +18,7 @@ use std::sync::Arc;
 
 use crate::creature::Life;
 use crate::{
-    CreatureFamily, CreatureId, EntityRef, ErrorCode, ItemId, LootClaim, PlayerId, ZoneError,
-    ZoneSimulation,
+    CreatureFamily, CreatureId, EntityRef, ErrorCode, ItemId, PlayerId, ZoneError, ZoneSimulation,
 };
 
 /// Inclusive horizontal (XZ) distance from a vein's centre to the gatherer (3 m).
@@ -155,26 +154,25 @@ impl ZoneSimulation {
     }
 
     /// The `Skin` intent: takes a beast corpse's [`skin_yield`] once per death, for a player
-    /// its loot belongs to, within loot reach.
+    /// its loot belongs to, within loot reach. The corpse is the creature's current one: a
+    /// respawn clears its skinned mark, and a living creature has nothing to skin.
     pub(crate) fn skin(
         &mut self,
         player_id: PlayerId,
-        claim: LootClaim,
+        id: CreatureId,
     ) -> Result<Option<(ErrorCode, Option<EntityRef>)>, ZoneError> {
-        let target = Some(EntityRef::Creature(claim.creature));
+        let target = Some(EntityRef::Creature(id));
         let content = Arc::clone(&self.content);
-        let Some(creature) = self.creatures.get(&claim.creature) else {
+        let Some(creature) = self.creatures.get(&id) else {
             return Ok(Some((ErrorCode::InvalidLoot, target)));
         };
         let Life::Corpse { died_at, position } = creature.life else {
             return Ok(Some((ErrorCode::InvalidLoot, target)));
         };
-        if died_at != claim.died_at
-            || self.tick + 1 >= died_at.saturating_add(u64::from(crate::unit::CORPSE_TICKS))
-        {
+        if self.tick + 1 >= died_at.saturating_add(u64::from(crate::unit::CORPSE_TICKS)) {
             return Ok(Some((ErrorCode::InvalidLoot, target)));
         }
-        let (_, template) = Self::creature_content(&content, claim.creature)?;
+        let (_, template) = Self::creature_content(&content, id)?;
         let materials = skin_yield(template.family);
         if materials.is_empty() {
             return Ok(Some((ErrorCode::InvalidLoot, target)));
@@ -182,7 +180,7 @@ impl ZoneSimulation {
         if creature.tapped_by != Some(player_id) && !creature.loot_party.contains(&player_id) {
             return Ok(Some((ErrorCode::NotLootOwner, target)));
         }
-        if self.gathering.skinned.contains(&claim.creature) {
+        if self.gathering.skinned.contains(&id) {
             return Ok(Some((ErrorCode::EmptyLoot, target)));
         }
         let from = self.player_position(player_id)?;
@@ -197,7 +195,7 @@ impl ZoneSimulation {
         if let Some(code) = self.settle_gathered(player_id, materials)? {
             return Ok(Some((code, target)));
         }
-        self.gathering.skinned.insert(claim.creature);
+        self.gathering.skinned.insert(id);
         for &(item, _) in materials {
             self.report_collected(player_id, item);
         }

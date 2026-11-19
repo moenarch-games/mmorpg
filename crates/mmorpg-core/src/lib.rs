@@ -452,9 +452,9 @@ pub enum ZoneCommand {
     /// Gathers ore vein `node` (#917, an index into the content's veins): the zone checks that
     /// it is full and within reach in the tick, and spends it for everyone until it regrows.
     Gather { node: u32 },
-    /// Skins one fenced beast corpse (#917) the player may loot: once per death, checked in
-    /// the tick.
-    Skin(LootClaim),
+    /// Skins beast corpse `creature` (#917), which the player may loot: once per death, checked
+    /// in the tick.
+    Skin { creature: CreatureId },
     /// Answers the roll window of drop `drop` of `run` (#404, Atlas 5.1.34): stale, repeated
     /// and ineligible answers are refused in the tick, and a settled roll never changes.
     RollDepthsDrop {

@@ -60,7 +60,7 @@ const SIT_TAG: u8 = 36;
 const SET_WEAPON_DRAWN_TAG: u8 = 37;
 /// Gather an ore vein (#917): version, tag, vein index (u32).
 const GATHER_TAG: u8 = 38;
-/// Skin a corpse (#917): version, tag, the loot claim's creature (u32) and death tick (u64).
+/// Skin a corpse (#917): version, tag, creature (u32).
 const SKIN_TAG: u8 = 39;
 /// Version, tag, ability (u32), retired (0 key up, 1 retired).
 const RELEASE_ABILITY_COMMAND_BYTES: usize = 7;
@@ -107,11 +107,7 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
             crate::loot::encode_claim(&mut payload, claim);
             payload
         }
-        ZoneCommand::Skin(claim) => {
-            let mut payload = vec![PROTOCOL_BYTE, SKIN_TAG];
-            crate::loot::encode_claim(&mut payload, claim);
-            payload
-        }
+        ZoneCommand::Skin { creature } => word_command(SKIN_TAG, creature.get()),
         ZoneCommand::Gather { node } => word_command(GATHER_TAG, node),
         ZoneCommand::Jump => vec![PROTOCOL_BYTE, JUMP_TAG],
         ZoneCommand::Roll => vec![PROTOCOL_BYTE, ROLL_TAG],
@@ -392,18 +388,9 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
                 &mut offset,
             )?))
         }
-        SKIN_TAG => {
-            if payload.len() != 14 {
-                return Err(ProtocolError::new(
-                    "skin command payload must be exactly 14 bytes",
-                ));
-            }
-            let mut offset = BARE_COMMAND_BYTES;
-            Ok(ZoneCommand::Skin(crate::loot::decode_claim(
-                payload,
-                &mut offset,
-            )?))
-        }
+        SKIN_TAG => Ok(ZoneCommand::Skin {
+            creature: mmorpg_core::CreatureId::new(decode_word_command(payload, "skin")?),
+        }),
         GATHER_TAG => Ok(ZoneCommand::Gather {
             node: decode_word_command(payload, "gather")?,
         }),
@@ -1059,10 +1046,9 @@ mod tests {
             ZoneCommand::AbandonQuest { quest: 3 },
             ZoneCommand::RaidAid { task: 4 },
             ZoneCommand::Gather { node: 2 },
-            ZoneCommand::Skin(mmorpg_core::LootClaim {
+            ZoneCommand::Skin {
                 creature: CreatureId::new(120),
-                died_at: 77,
-            }),
+            },
             ZoneCommand::RollDepthsDrop {
                 run: 5,
                 drop: 1,
@@ -1244,9 +1230,7 @@ mod tests {
                 }
                 ZoneCommand::RaidAid { task } => format!("raid_aid {task}"),
                 ZoneCommand::Gather { node } => format!("gather {node}"),
-                ZoneCommand::Skin(claim) => {
-                    format!("skin {} {}", claim.creature.get(), claim.died_at)
-                }
+                ZoneCommand::Skin { creature } => format!("skin {}", creature.get()),
                 ZoneCommand::RollDepthsDrop { run, drop, choice } => {
                     format!("roll_depths_drop {run} {drop} {choice:?}")
                 }

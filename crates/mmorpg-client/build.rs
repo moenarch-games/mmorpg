@@ -35,6 +35,8 @@ const MACE: &str = "equipment.mace.flanged";
 const SPEAR: &str = "equipment.spear.leaf";
 /// Garrick Redbrand's named cleaver (#918, asset-tooling #761).
 const GARRICKS_CLEAVER: &str = "equipment.sword.garricks-cleaver";
+/// The smith's Hollowpine boar-spear (#917, asset-tooling #761).
+const HOLLOWPINE_SPEAR: &str = "equipment.spear.hollowpine-hunter";
 /// The Redbrand Crossbowmen's crossbow and the arrow standing in for its bolt (#607).
 const CROSSBOW: &str = "equipment.crossbow";
 const ARROW: &str = "equipment.arrow";
@@ -114,6 +116,7 @@ fn main() {
         ("MACE", MACE),
         ("SPEAR", SPEAR),
         ("GARRICKS_CLEAVER", GARRICKS_CLEAVER),
+        ("HOLLOWPINE_SPEAR", HOLLOWPINE_SPEAR),
         ("CROSSBOW", CROSSBOW),
         ("ARROW", ARROW),
         ("THROWING_KNIFE", THROWING_KNIFE),
@@ -342,6 +345,14 @@ fn main() {
     let wolf_den = manifest_dir.join("../../web/public/scenery/wolf-den.kit");
     static_bundle("wolf_den_bundle.rs", &wolf_den, None, true);
     descriptor(&wolf_den, "wolf-den-descriptor", "wolf_den_descriptor.rs");
+    // The basin's ore veins and their spent look (#917, asset-tooling#763), and their descriptor.
+    let gatherables = manifest_dir.join("../../web/public/scenery/gatherables.kit");
+    static_bundle("gatherables_bundle.rs", &gatherables, None, true);
+    descriptor(
+        &gatherables,
+        "gatherables-descriptor",
+        "gatherables_descriptor.rs",
+    );
     // Greyhaven's ground layer materials (#525).
     let terrain = manifest_dir.join("../../web/public/scenery/greyhaven.terrain");
     static_bundle("terrain_bundle.rs", &terrain, None, false);

@@ -349,7 +349,7 @@ impl ZoneSimulation {
             PlayerIntent::RaidAid(task) => self.aid_raid(player_id, task)?,
             PlayerIntent::RaidPrepare(prep) => self.prepare_raid(player_id, prep)?,
             PlayerIntent::Gather(node) => self.gather(player_id, node)?,
-            PlayerIntent::Skin(claim) => self.skin(player_id, claim)?,
+            PlayerIntent::Skin(creature) => self.skin(player_id, creature)?,
             // Eligible characters may answer even dead (Atlas 5.1.35).
             PlayerIntent::RollDepthsDrop { run, drop, choice } => {
                 self.answer_roll(player_id, run, drop, choice)?

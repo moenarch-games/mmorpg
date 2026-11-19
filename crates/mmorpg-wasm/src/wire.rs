@@ -2250,8 +2250,6 @@ pub enum WorldCommand {
     /// Skins a beast corpse the player may loot (#917): once per death.
     Skin {
         creature_id: u32,
-        #[tsify(type = "bigint")]
-        died_at: u64,
     },
     /// Answers a boss drop's roll window (#404): `choice` is need, greed or pass.
     RollDepthsDrop {
@@ -2402,13 +2400,9 @@ impl TryFrom<&WorldCommand> for core::ZoneCommand {
             },
             C::RaidAid { task } => Self::RaidAid { task },
             C::Gather { node } => Self::Gather { node },
-            C::Skin {
-                creature_id,
-                died_at,
-            } => Self::Skin(core::LootClaim {
+            C::Skin { creature_id } => Self::Skin {
                 creature: core::CreatureId::new(creature_id),
-                died_at,
-            }),
+            },
             C::RollDepthsDrop { run, drop, choice } => Self::RollDepthsDrop {
                 run,
                 drop,

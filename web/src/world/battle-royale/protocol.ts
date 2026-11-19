@@ -181,6 +181,8 @@ export function canSendCharacterCommand(command: WorldCommand, phase: MatchPhase
     case "repair":
     case "raid-aid":
     case "raid-prepare":
+    case "gather":
+    case "skin":
     case "roll-depths-drop":
     case "claim-depths-drop":
       return false;

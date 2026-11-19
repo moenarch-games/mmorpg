@@ -47,8 +47,11 @@ export type ItemRecord = {
   find: string | null;
 };
 
-/** One unit of `item` costs `price` copper; the offer's array index is its wire index. */
-export type VendorOffer = { item: number; price: number };
+/**
+ * One unit of `item` costs `price` copper and, for a smith's recipe (#917), the `materials` taken
+ * from the bag; the offer's array index is its wire index.
+ */
+export type VendorOffer = { item: number; price: number; materials: readonly { item: number; quantity: number }[] };
 export type VendorRecord = { npc: number; offers: readonly VendorOffer[] };
 
 export type ClassName = "warden" | "ranger" | "arcanist" | "necromancer" | "rogue" | "cleric" | "druid";
@@ -272,12 +275,20 @@ export function decodeCatalog(json: string): ContentCatalog {
     }
     // Vendor offers have no fixed cap (Atlas 2.2.i882); the bound only rejects malformed input.
     const offers = list(record.offers, `${name} offers`, 0xffff).map((offer, slot) => {
-      const entry = object(offer, ["item", "price"], `${name} offer ${slot}`);
+      const entry = object(offer, ["item", "price", "materials"], `${name} offer ${slot}`);
       const item = int(entry.item, `${name} offer ${slot} item`, 1, 0xffff);
       if (!itemsById.has(item)) {
         fail(`${name} offer ${slot} names an unknown item`);
       }
-      return { item, price: int(entry.price, `${name} offer ${slot} price`, 1, 0xffff_ffff) };
+      const materials = list(entry.materials, `${name} offer ${slot} materials`, 16).map((pair, at) => {
+        const [material, quantity] = list(pair, `${name} offer ${slot} material ${at}`, 2);
+        const id = int(material, `${name} offer ${slot} material ${at} item`, 1, 0xffff);
+        if (!itemsById.has(id)) {
+          fail(`${name} offer ${slot} material ${at} names an unknown item`);
+        }
+        return { item: id, quantity: int(quantity, `${name} offer ${slot} material ${at} quantity`, 1, 0xffff) };
+      });
+      return { item, price: int(entry.price, `${name} offer ${slot} price`, 1, 0xffff_ffff), materials };
     });
     if (offers.length === 0) {
       fail(`${name} must offer at least one item`);

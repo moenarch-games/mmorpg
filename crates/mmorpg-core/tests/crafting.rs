@@ -7,7 +7,7 @@ use std::sync::Arc;
 use mmorpg_core::greyhaven_vale::ore::ORE_PER_VEIN;
 use mmorpg_core::{
     BOAR_HIDE, BOAR_TUSK, ClassChoice, CreatureId, CreatureLife, EquipmentSlot,
-    HOLLOWPINE_BOAR_SPEAR, IRON_ORE, ItemId, ItemQuality, ItemTrait, LootClaim, NpcId,
+    HOLLOWPINE_BOAR_SPEAR, IRON_ORE, ItemId, ItemQuality, ItemTrait, NpcId,
     PLAYER_HALF_EXTENTS_UNITS, PlayerClass, Sex, StrikeVariant, WeaponFamily, ZoneCommand,
     ZoneEvent, ZoneId, ZoneSimulation, greyhaven_vale, item_find, shaped_strike, smith_stock,
 };
@@ -100,23 +100,18 @@ fn gathered_materials_make_one_boar_spear_that_equips_and_never_duplicates() {
 
     // Skinning: each boar once, by its tapper; a second skin of the same corpse is empty.
     let mut zone = hunted();
-    let tick = zone.snapshot().unwrap().tick;
-    let claims = BOARS.map(|creature| LootClaim {
-        creature,
-        died_at: tick,
-    });
     let start = restore(&zone);
-    for claim in claims {
-        assert_eq!(act(&mut zone, ZoneCommand::Skin(claim)), []);
+    for creature in BOARS {
+        assert_eq!(act(&mut zone, ZoneCommand::Skin { creature }), []);
     }
     assert_eq!(
-        act(&mut zone, ZoneCommand::Skin(claims[0])),
+        act(&mut zone, ZoneCommand::Skin { creature: BOARS[0] }),
         [mmorpg_core::ErrorCode::EmptyLoot]
     );
     // Recovered, the skinned corpses stay skinned.
     let mut recovered = restore(&zone);
     assert_eq!(
-        act(&mut recovered, ZoneCommand::Skin(claims[1])),
+        act(&mut recovered, ZoneCommand::Skin { creature: BOARS[1] }),
         [mmorpg_core::ErrorCode::EmptyLoot]
     );
     assert_eq!((count(&zone, BOAR_HIDE), count(&zone, BOAR_TUSK)), (2, 2));
@@ -219,8 +214,8 @@ fn gathered_materials_make_one_boar_spear_that_equips_and_never_duplicates() {
 
     // The whole loop replays from the hunted start to the same skins.
     let mut replay = start;
-    for claim in claims {
-        assert_eq!(act(&mut replay, ZoneCommand::Skin(claim)), []);
+    for creature in BOARS {
+        assert_eq!(act(&mut replay, ZoneCommand::Skin { creature }), []);
     }
     assert_eq!(
         (count(&replay, BOAR_HIDE), count(&replay, BOAR_TUSK)),

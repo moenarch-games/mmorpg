@@ -46,6 +46,8 @@ pub enum Loadout {
     Spear,
     /// Garrick Redbrand's named cleaver in the right hand (#918): a player wielding it.
     GarricksCleaver,
+    /// The smith's Hollowpine boar-spear in both hands (#917): a player wielding it.
+    HollowpineSpear,
 }
 
 impl Loadout {
@@ -79,6 +81,7 @@ impl Loadout {
             Self::Crossbow => "crossbow",
             Self::Spear => "spear",
             Self::GarricksCleaver => "sword.garricks-cleaver",
+            Self::HollowpineSpear => "spear.hollowpine-hunter",
         }
     }
 
@@ -89,6 +92,7 @@ impl Loadout {
     pub const fn holding(self, weapon: Option<WeaponFamily>, named: Option<NamedWeapon>) -> Self {
         match (named, weapon) {
             (Some(NamedWeapon::GarricksCleaver), _) => Self::GarricksCleaver,
+            (Some(NamedWeapon::HollowpineHunter), _) => Self::HollowpineSpear,
             (None, Some(WeaponFamily::Spear)) => Self::Spear,
             _ => self,
         }
@@ -110,7 +114,7 @@ impl Loadout {
             Self::BoneStaff | Self::GnarledStaff => (None, Some(Held::Staff)),
             Self::CrystalStaffAndTome => (Some(Held::Book), Some(Held::Staff)),
             Self::Crossbow => (Some(Held::Crossbow), Some(Held::Crossbow)),
-            Self::Spear => (Some(Held::Staff), Some(Held::Staff)),
+            Self::Spear | Self::HollowpineSpear => (Some(Held::Staff), Some(Held::Staff)),
         };
         Hands { left, right }
     }

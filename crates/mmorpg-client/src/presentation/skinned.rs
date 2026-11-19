@@ -2144,6 +2144,7 @@ impl Equipment {
         static CROSSBOW: OnceLock<Equipment> = OnceLock::new();
         static SPEAR: OnceLock<Equipment> = OnceLock::new();
         static CLEAVER: OnceLock<Equipment> = OnceLock::new();
+        static HOLLOWPINE: OnceLock<Equipment> = OnceLock::new();
         let (cell, items): (_, &[(&str, &str)]) = match loadout {
             Loadout::SwordAndShield => (
                 &SWORD_AND_SHIELD,
@@ -2183,6 +2184,10 @@ impl Equipment {
             Loadout::GarricksCleaver => (
                 &CLEAVER,
                 &[(ranger_bundle::GARRICKS_CLEAVER, "hand_r.weapon")],
+            ),
+            Loadout::HollowpineSpear => (
+                &HOLLOWPINE,
+                &[(ranger_bundle::HOLLOWPINE_SPEAR, "hand_r.staff")],
             ),
             // The crossbow and the arrow standing in for its bolt (#607).
             Loadout::Crossbow => (

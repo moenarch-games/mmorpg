@@ -284,6 +284,10 @@ the presentation clock, holding the first pose under reduced motion, and the for
 with a warm flickering light. A placement check (`settlement_props_stand_clear_of_colliders_and_residents`)
 keeps every proxy off other colliders and every resident's way.
 
+## Gathering and the smith (#917)
+
+Three iron ore veins stand in the rock at the foot of the basin's north buttress, a short walk north of the Outpost: one gather (interact in reach) takes a vein's two ore and spends it for everyone for two minutes, its spent look swapped in place in both clients. Any boar corpse a player may loot can be skinned once (interact with it selected) for a hide and a tusk. Smith Wulfric Hale, in the yard behind the Outpost smithy by his bench, sells one recipe through his vendor window: the Hollowpine Boar-Spear for 4 ore, 2 hides, 2 tusks and 20 copper (Atlas 5.3.16.i917). Veins and bench are world dressing (`content/greyhaven/dressing/gatherables.json`, colliders 65180–65183).
+
 ## Not yet done
 
 - **More homes you can enter:** the Outpost's three kit houses and

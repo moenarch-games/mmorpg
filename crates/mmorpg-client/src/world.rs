@@ -264,6 +264,8 @@ pub struct WorldScene {
     point_lights: Vec<mmorpg_presentation::lights::PointLight>,
     particle_sites: Arc<ParticleSites>,
     nature: NatureState,
+    /// Each ore vein's full and spent nature placements, in wire order (#917).
+    veins: Vec<[usize; 2]>,
 }
 
 /// State behind a lock, so frames advance it through `&WorldScene`.
@@ -524,6 +526,16 @@ impl WorldScene {
             scenery,
             &mmorpg_presentation::world_dressing::WOLF_DEN_ENTRIES,
         ));
+        // The ore veins (#917), each standing full or spent by the projection.
+        let first_vein = placements.len();
+        placements.extend(mmorpg_presentation::world_dressing::kit_placements(
+            scenery,
+            &mmorpg_presentation::world_dressing::GATHERABLE_ENTRIES,
+        ));
+        let veins: Vec<[usize; 2]> = mmorpg_presentation::world_dressing::vein_slots(scenery)
+            .into_iter()
+            .map(|slots| slots.map(|slot| first_vein + slot))
+            .collect();
         let library = crate::nature::entries();
         let nature = Nature {
             lods: mmorpg_presentation::lod::Lods::new(
@@ -548,6 +560,7 @@ impl WorldScene {
         let particle_sites = Arc::new(ParticleSites::new(scenery, &point_lights));
         Self {
             nature: NatureState::new(nature),
+            veins,
             cave_lighting: scenery.greyhaven(),
             building_interiors: mmorpg_presentation::buildings::WalkIn::all(scenery),
             additional_draws: Vec::new(),
@@ -562,6 +575,17 @@ impl WorldScene {
             scene,
         }
     }
+    /// Shows each ore vein full, or spent when `spent` (the projection's spent veins) lists it
+    /// (#917).
+    pub fn show_veins(&self, spent: &[u32]) {
+        let mut nature = self.nature.lock();
+        for (index, [full, depleted]) in (0_u32..).zip(&self.veins) {
+            let is_spent = spent.contains(&index);
+            nature.lods.set_hidden(*full, is_spent);
+            nature.lods.set_hidden(*depleted, !is_spent);
+        }
+    }
+
     /// Height of the rendered four-metre terrain triangles, in metres.
     #[must_use]
     pub fn surface_y(&self, x: f32, z: f32) -> f32 {
