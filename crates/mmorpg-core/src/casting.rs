@@ -237,6 +237,10 @@ impl ZoneSimulation {
                     return Ok(Some((ErrorCode::NoLanding, None)));
                 }
             }
+            // Divine Reckoning (#936) needs harm stored against its target; nothing is paid.
+            AbilityEffect::Reckoning { .. } if self.harm_against(player_id, target) == 0 => {
+                return Ok(Some((ErrorCode::InvalidTarget, target)));
+            }
             _ => {}
         }
         // Summoned terrain (#293) is refused before anything is paid when it cannot rise.
@@ -840,6 +844,13 @@ impl ZoneSimulation {
             }
             AbilityEffect::Blink { distance } => {
                 self.blink(player_id, distance)?;
+            }
+            // Divine Reckoning (#936) converts and consumes only its target's stored harm.
+            AbilityEffect::Reckoning { .. } => {
+                if let Some(victim) = target {
+                    let amount = self.consume_harm(player_id, victim);
+                    self.player_damages_unit(player_id, victim, amount, false, now)?;
+                }
             }
             // Blizzard, Lightning Beam and Drain Life pulse while they channel; bandages and
             // stomps are creature-only; a flask's splash lands where it shatters.

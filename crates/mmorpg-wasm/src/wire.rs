@@ -605,6 +605,8 @@ pub struct ViewerState {
     pub combo: Option<ComboPhase>,
     /// Ticks of breath left (#274); at 0 a submerged player drowns.
     pub breath: u16,
+    /// The harm a Divine Reckoning would draw on against the target (#936).
+    pub reckoning: u16,
     /// Waystone IDs (#145) the viewer unlocked by exploration, ascending.
     pub waystones: Vec<u32>,
 }
@@ -1721,6 +1723,7 @@ impl From<&core::ZoneSnapshot> for ZoneSnapshot {
                 stance: viewer.stance.map(Into::into),
                 combo: viewer.combo.map(Into::into),
                 breath: viewer.breath,
+                reckoning: viewer.reckoning,
                 waystones: viewer.waystones.iter().map(core::WaystoneId::get).collect(),
             },
             cooldowns: snapshot
@@ -1978,6 +1981,7 @@ impl TryFrom<&ZoneSnapshot> for core::ZoneSnapshot {
                 stance: viewer.stance.map(Into::into),
                 combo: viewer.combo.map(Into::into),
                 breath: viewer.breath,
+                reckoning: viewer.reckoning,
                 waystones,
             },
             cooldowns: snapshot

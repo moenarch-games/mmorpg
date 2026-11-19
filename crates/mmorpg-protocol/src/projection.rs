@@ -32,9 +32,10 @@ const SELF_BYTES: usize = 4 + 4 + 1 + 8 + 4 + 1 + ENTITY_REF_BYTES;
 pub const CAST_RECORD_BYTES: usize = 4 + 1 + 2 + 2;
 /// Class code, resource kind/value/max, global cooldown, cast, melee damage
 /// range, the guard (lane code, protecting flag, break ticks), the melee
-/// stance and combo phase codes and breath ticks (#274).
+/// stance and combo phase codes, breath ticks (#274) and the harm stored against the target
+/// (#936).
 const SELF_ABILITY_BYTES: usize =
-    1 + 1 + 2 + 2 + 2 + CAST_RECORD_BYTES + 2 + 2 + 1 + 1 + 2 + 1 + 1 + 2;
+    1 + 1 + 2 + 2 + 2 + CAST_RECORD_BYTES + 2 + 2 + 1 + 1 + 2 + 1 + 1 + 2 + 2;
 /// The target's own target and the target's cast.
 const TARGET_BYTES: usize = ENTITY_REF_BYTES + CAST_RECORD_BYTES;
 /// Every section's fixed part: header, self, target, sheet mask (`u16`, #544, #897), summoned
@@ -205,6 +206,7 @@ pub fn pack_snapshot_acknowledged(
     payload.push(viewer.stance.map_or(0, mmorpg_core::MeleeStance::code));
     payload.push(viewer.combo.map_or(0, mmorpg_core::ComboPhase::code));
     payload.extend_from_slice(&viewer.breath.to_be_bytes());
+    payload.extend_from_slice(&viewer.reckoning.to_be_bytes());
     encode_entity_ref(&mut payload, snapshot.target_of_target);
     encode_cast(&mut payload, snapshot.target_detail.cast);
 
@@ -729,6 +731,8 @@ fn decode_projection(
     if breath > mmorpg_core::water::BREATH_MAX_TICKS {
         return Err(ProtocolError::new("viewer breath is out of range"));
     }
+    // The harm a Divine Reckoning would draw on against the target (#936).
+    let reckoning = u16::from_be_bytes(take(payload, &mut offset)?);
     let resource = match (class, resource_kind) {
         (None, 0) if resource_value == 0 && resource_max == 0 => None,
         (Some(choice), code) if code == resource_code(choice.class.resource()) => {
@@ -950,6 +954,7 @@ fn decode_projection(
             stance,
             combo,
             breath,
+            reckoning,
             waystones,
         },
         cooldowns: abilities.cooldowns,
@@ -1330,6 +1335,8 @@ pub(crate) mod tests {
                 stance: None,
                 combo: None,
                 breath: mmorpg_core::water::BREATH_MAX_TICKS,
+                // Harm stored against the target (#936).
+                reckoning: 123,
                 waystones: mmorpg_core::WaystoneSet::EMPTY,
             },
             cooldowns: vec![
@@ -1597,7 +1604,9 @@ pub(crate) mod tests {
     const STANCE: usize = GUARD + 4;
     const COMBO: usize = STANCE + 1;
     const BREATH: usize = COMBO + 1;
-    const TARGET_OF_TARGET: usize = BREATH + 2;
+    /// The harm stored against the target (#936).
+    const RECKONING: usize = BREATH + 2;
+    const TARGET_OF_TARGET: usize = RECKONING + 2;
     const TARGET_CAST: usize = TARGET_OF_TARGET + ENTITY_REF_BYTES;
     const SHEET_MASK: usize = TARGET_CAST + CAST_RECORD_BYTES;
     /// The `u16` sheet mask (#897).
@@ -1670,6 +1679,11 @@ pub(crate) mod tests {
         );
         assert_eq!(decode_snapshot(&encoded).unwrap(), snapshot);
         assert_eq!(encoded[CLASS], 5, "Arcanist, female");
+        assert_eq!(
+            encoded[RECKONING..RECKONING + 2],
+            123u16.to_be_bytes(),
+            "stored harm"
+        );
         assert_eq!(encoded[EVENTS], 16);
         assert_eq!(
             encoded[QUESTS..LOOT],
@@ -2254,7 +2268,7 @@ pub(crate) mod tests {
                 EVENT_RECORD_BYTES,
                 ENTITY_RECORD_BYTES
             ),
-            (112, 17, 29)
+            (114, 17, 29)
         );
         assert_eq!(MAX_WIRE_ENTITIES, 33);
         let viewer_id = u32::MAX;
@@ -2372,6 +2386,7 @@ pub(crate) mod tests {
                 stance: None,
                 combo: None,
                 breath: mmorpg_core::water::BREATH_MAX_TICKS,
+                reckoning: 0,
                 waystones: mmorpg_core::WaystoneSet::EMPTY,
             },
             cooldowns: Vec::new(),
@@ -2386,17 +2401,17 @@ pub(crate) mod tests {
             traps: Vec::new(),
         };
         let packed = pack_snapshot(&snapshot).unwrap();
-        // (1,077 − 111 − 9 − 73 − 2 − 16 × 17) / 29 = 21 records fit beside the empty loot and
+        // (1,077 − 114 − 9 − 73 − 2 − 16 × 17) / 29 = 20 records fit beside the empty loot and
         // ability sheets, the world sheet with nine doors and a raid signal (#882), the empty
         // waystone sheet and a full event section.
-        assert_eq!(packed.packed_entities, 21);
+        assert_eq!(packed.packed_entities, 20);
         assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
         assert!(
             packed.payload.len() + SESSION_SNAPSHOT_HEADER_BYTES + DATAGRAM_SAFETY_MARGIN_BYTES
                 <= MEASURED_MIN_DATAGRAM_BYTES
         );
         let decoded = decode_snapshot(&packed.payload).unwrap();
-        assert_eq!(decoded.entities[..], snapshot.entities[..21]);
+        assert_eq!(decoded.entities[..], snapshot.entities[..20]);
         assert_eq!(
             decoded.entities[1].entity(),
             target,
@@ -2453,9 +2468,9 @@ pub(crate) mod tests {
             assert_eq!(decoded.entities[1].entity(), target);
             assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
             // The full bag and quest sheets are 136 + 203 bytes beside the other 16:
-            // (1,077 − 111 − 355) / 29 = 21 and (1,077 − 111 − 355 − 272) / 29 = 11.
+            // (1,077 − 114 − 355) / 29 = 20 and (1,077 − 114 − 355 − 272) / 29 = 11.
             if events == 0 {
-                assert_eq!(packed.packed_entities, 21);
+                assert_eq!(packed.packed_entities, 20);
             }
             if events == 16 {
                 assert_eq!(packed.packed_entities, 11);

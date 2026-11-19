@@ -239,6 +239,8 @@ pub struct CanonicalPlayerAbilities {
     pub auras: Vec<Aura>,
     /// The held shield guard and its break recovery (#156).
     pub guard: crate::GuardState,
+    /// A Cleric's Divine Reckoning pools in ascending creature order (#936).
+    pub reckoning: Vec<crate::Harm>,
 }
 
 /// Ability state of a creature: its content-bound ability's timer, its cast
@@ -455,6 +457,7 @@ impl ZoneSimulation {
                             cast: state.cast,
                             auras: state.auras.clone(),
                             guard: state.guard,
+                            reckoning: state.reckoning.clone(),
                         },
                         landing: state.landing,
                         traversal: state.traversal,
@@ -912,6 +915,7 @@ impl ZoneSimulation {
                 cooldowns: combat.abilities.cooldowns,
                 cast: combat.abilities.cast,
                 auras: combat.abilities.auras,
+                reckoning: combat.abilities.reckoning,
                 chat_ready_at: player.chat_ready_at,
                 chat: player.chat,
                 quests: player.quests,
@@ -1412,6 +1416,19 @@ pub(crate) fn validate_player_abilities(
         validate_cast(cast)?;
     }
     validate_auras(&abilities.auras)?;
+    let (_, cap) = crate::reckoning::reckoning_rule();
+    let pools = &abilities.reckoning;
+    if pools.len() > crate::MAX_RECKONING_POOLS
+        || (!pools.is_empty() && (class != crate::PlayerClass::Cleric || !alive))
+        || pools
+            .windows(2)
+            .any(|pair| pair[0].creature >= pair[1].creature)
+        || pools
+            .iter()
+            .any(|harm| harm.amount == 0 || harm.amount > cap)
+    {
+        return Err(ZoneError::new("player reckoning pools are out of range"));
+    }
     if !alive && (abilities.cast.is_some() || !abilities.auras.is_empty()) {
         return Err(ZoneError::new("the dead neither cast nor keep auras"));
     }

@@ -18,6 +18,7 @@ export const HEALTHY_VIEWER: ViewerState = {
   stance: null,
   combo: null,
   breath: wireCatalog().breathMaxTicks,
+  reckoning: 0,
   waystones: [],
 };
 
