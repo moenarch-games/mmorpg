@@ -71,6 +71,7 @@ fn zone_at(positions: &[[i32; 3]], definition: ZoneDefinition) -> ZoneSimulation
             chat: Vec::new(),
             quests: mmorpg_core::QuestLog::default(),
             waystones: mmorpg_core::WaystoneSet::EMPTY,
+            discoveries: std::collections::BTreeSet::new(),
             character: None,
             depths: mmorpg_core::DepthsRecord::default(),
             physique: mmorpg_core::Physique::NEUTRAL,

@@ -46,8 +46,8 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use physics_engine::approximate::{
     Autostep, Body, CharacterMove, CharacterMoveResult, CharacterSettings, Config, ConvexHullDesc,
-    HeightfieldDesc, Material, Medium, Quaternion, QueryFilter, QueryHit, QueryPose, RayCast,
-    Shape, ShapeCast, TriangleMeshDesc, Vector,
+    HeightfieldDesc, Material, Medium, PreparedHeightfield, Quaternion, QueryFilter, QueryHit,
+    QueryPose, RayCast, Shape, ShapeCast, TriangleMeshDesc, Vector,
 };
 use physics_engine::{BodyId as EngineId, CollisionLayers3d};
 
@@ -126,11 +126,13 @@ fn engine_error(what: &str, failure: impl fmt::Debug) -> PhysicsError {
     error(format!("physics-engine {what} failed: {failure:?}"))
 }
 
-/// The authored ground: the content it came from, its engine body and the game ID it shares
-/// with the floor it rises from.
+/// The authored ground: the content it came from, its heightfield prepared once for the zone
+/// world and its response lane (#855), its engine body and the game ID it shares with the floor
+/// it rises from.
 #[derive(Clone)]
 struct Ground {
     terrain: crate::Terrain,
+    prepared: PreparedHeightfield,
     body: EngineId,
     floor: BodyId,
 }
@@ -650,13 +652,16 @@ impl World {
             self.games.remove(&ground.body.to_bits());
         }
         // Content validation already bounds the grid; an engine refusal is a broken invariant.
+        let prepared = PreparedHeightfield::new(&heightfield(&terrain))
+            .expect("validated content terrain is a valid heightfield");
         let body = self
             .engine
-            .add_heightfield(heightfield(&terrain), None)
-            .expect("validated content terrain is a valid heightfield");
+            .add_prepared_heightfield(&prepared, Material::default(), None)
+            .expect("a prepared heightfield is admitted");
         self.games.insert(body.to_bits(), id);
         self.ground = Some(Ground {
             terrain,
+            prepared,
             body,
             floor: id,
         });
@@ -1223,7 +1228,7 @@ impl World {
             .map_err(|failure| engine_error("response world", failure))?;
             if let Some(ground) = &self.ground {
                 engine
-                    .add_heightfield(heightfield(&ground.terrain), None)
+                    .add_prepared_heightfield(&ground.prepared, Material::default(), None)
                     .map_err(|failure| engine_error("response terrain", failure))?;
             }
             let mut fixed = BTreeMap::new();

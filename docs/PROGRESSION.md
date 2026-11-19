@@ -76,6 +76,42 @@ Exact public-API fixtures cover the curve, rounding, gray rewards, bonus cap,
 player cap and invalid inputs. Conventions sourceRevision:
 `46d8793bb3034326561f876dcc67dbaa5aa1e432`.
 
+## World activities (#916)
+
+Combat stays a worthwhile route (owner choice B, 2026-11-17), and two world
+activities pay explicit, bounded XP beside quests. Kill, tap, party and quest
+rules are unchanged; there is no multiplier and no anti-grind penalty.
+
+- **Discovery.** Greyhaven lists every named area but the Outpost, where every
+  character starts, as a discovery (`ZoneContent::with_discoveries`, 26
+  areas). The first tick a living character stands inside one it has not
+  discovered pays `discovery_experience(level)` = `(45 + 5 × level) × 3 / 2`,
+  rounded down: 75 at level 1, 97 at 4, 135 at 9, zero at the cap; about one
+  and a half equal-level kills. The discovered set is a durable character fact
+  (canonical snapshot and character record), written with the XP it paid, so
+  replay, reconnect and recovery never pay an area twice; hosts that track
+  rewards also hold a `Discovery` receipt. The whole pool is about 2,700 XP,
+  a fifth of the 14,000 curve.
+- **Night defense.** The Millbrook raid's participation reward (#531: 120 XP
+  and 15 copper once per incident) gains a defence bonus: when the barn is
+  defended, each rewarded participant still within 60 m earns 240 XP more,
+  once per incident and character (`RaidDefence` receipt). A lost raid pays no
+  bonus. With the 120 XP that is about 100 XP a minute over the raid's three
+  75 s phases, kills aside, and raids come at most once a night after a
+  one-hour cooldown.
+
+No crafting system exists yet, so crafting XP is left to #917.
+
+The quest-chain journey now also walks a mixed path. Discovering the Wolfrun
+Woods and Millbrook Farm on the way moves the opening chain's level-ups to
+0:31, 2:26 and 4:47 (from 0:50, 2:16 and 5:15) and ends the three quests at
+5:16 on level 4 with 230/1,000 XP. A 41 s detour from Millbrook through the
+Eastwater Fen and the Southmeadow Downs into the Farmland and Hamlets then
+discovers three more areas for 291 XP, reaching 521/1,000. That is faster
+than the bot's 200 XP a minute of fighting, as it should be for a walk to new
+places, but the pool is finite and the far regions take minutes to reach;
+combat remains the open-ended route. Human pace is not yet playtested.
+
 ## Authoritative awards (#75)
 
 The admitted living tapper receives the nominal reward once on the creature's
