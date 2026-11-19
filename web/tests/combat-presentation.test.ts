@@ -40,7 +40,7 @@ describe("content catalog", () => {
       objectives: [{ kind: "collect", target: 10, source: 1, count: 5 }], experience: 200, copper: 15, choices: [9, 2],
     });
     expect(catalog.quests.get(1)?.objectives).toEqual([{ kind: "kill", target: 1, count: 6 }]);
-    expect([...catalog.vendors.values()]).toEqual([{ npc: 3, offers: [{ item: 2, price: 9 }] }]);
+    expect([...catalog.vendors.values()]).toEqual([{ npc: 3, offers: [{ item: 2, price: 9, materials: [] }] }]);
     const broken = (mutate: (json: Record<string, unknown>) => void) => {
       const json = catalogJson();
       mutate(json);

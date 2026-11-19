@@ -289,7 +289,7 @@ describe("WASM local zone host", () => {
   test("the real vendor sells and buys back at the inn's counter", async () => {
     const { source, catalog } = createLocalWorld(wasm, testCharacters());
     await source.join();
-    expect(catalog.vendors.get(3)?.offers[0]).toEqual({ item: 2, price: 5 });
+    expect(catalog.vendors.get(3)?.offers[0]).toEqual({ item: 2, price: 5, materials: [] });
     expect(catalog.items.get(1)?.sellPrice).toBe(1);
     // Out of reach on the spawn plaza.
     source.sendCommand({ kind: "sell-item", npc: 3, bagSlot: 0, quantity: 3 });
@@ -541,7 +541,7 @@ describe("WASM local zone combat intents", () => {
       "Torn Fur", "Worn Dagger", "Militia Shortsword", "Apprentice Wand", "Pine Buckler", "Cloth Hood", "Padded Tunic",
       "Padded Trousers", "Worn Boots", "Wolf Pelt", "Sunken Relic", "Brute-Breaker Mace", "Greyfang Scout Jerkin", "Hollow-Delver's Cowl", "Thornreaver Blade", "Captain's Scarred Brigandine", "Redbrand Command Signet", "Marshal's Commendation Greaves",
       "Boar Tusk", "Stolen Grain Sack", "Lurker Scale", "Redbrand Orders", "Militia Spear",
-      "Fine Militia Shortsword", "Balanced Militia Shortsword", "Long-hafted Militia Spear", "Garrick's Cleaver",
+      "Fine Militia Shortsword", "Balanced Militia Shortsword", "Long-hafted Militia Spear", "Garrick's Cleaver", "Iron Ore", "Boar Hide", "Hollowpine Boar-Spear",
     ]);
     expect([...catalog.creatureTemplates.values()].map((template) => template.name)).toEqual([
       "Timber Wolf", "Young Boar", "Grain Rat", "Field Marauder", "Mirefin Lurker", "Redbrand Bandit", "Garrick Redbrand",
