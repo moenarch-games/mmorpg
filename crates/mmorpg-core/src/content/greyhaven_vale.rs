@@ -28,6 +28,7 @@ pub mod cottages;
 pub mod crossings;
 pub mod dens;
 pub mod design;
+pub mod discoveries;
 pub mod dressing;
 pub mod farmland;
 pub mod fen_pack;
@@ -1692,6 +1693,8 @@ pub fn climbing() -> crate::ClimbSurfaces {
         .chain(range(ids::CLIFFS, Rock).filter(|&(id, _)| id != SHEER_HOLLOW_WALL))
         .chain(crags)
         .chain(range(ids::LADDERS, Ladder))
+        // The Greyfang lookout's ladder (#913).
+        .chain([(discoveries::LOOKOUT_LADDER, Ladder)])
         .chain(range(ids::ROPES, Rope))
         .collect();
     let terrain = vec![
@@ -2012,6 +2015,7 @@ fn content_with_spawns(
             .with_climbing(climbing())?
             .with_raid(raid::millbrook_barn())?
             .with_dens(dens::dens())?
+            .with_caches(discoveries::caches())?
             .with_waystones(vec![
                 crate::GREYHAVEN_OUTPOST,
                 crate::BARROWDOWN,

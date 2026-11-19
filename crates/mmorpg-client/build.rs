@@ -342,6 +342,14 @@ fn main() {
     let wolf_den = manifest_dir.join("../../web/public/scenery/wolf-den.kit");
     static_bundle("wolf_den_bundle.rs", &wolf_den, None, true);
     descriptor(&wolf_den, "wolf-den-descriptor", "wolf_den_descriptor.rs");
+    // The optional discoveries' sites (#913, asset-tooling#764), and their descriptor.
+    let discoveries = manifest_dir.join("../../web/public/scenery/discoveries.kit");
+    static_bundle("discoveries_bundle.rs", &discoveries, None, true);
+    descriptor(
+        &discoveries,
+        "discoveries-descriptor",
+        "discoveries_descriptor.rs",
+    );
     // Greyhaven's ground layer materials (#525).
     let terrain = manifest_dir.join("../../web/public/scenery/greyhaven.terrain");
     static_bundle("terrain_bundle.rs", &terrain, None, false);
