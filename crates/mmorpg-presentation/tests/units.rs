@@ -1296,6 +1296,26 @@ fn a_cleaving_slash_sweeps_the_cleave_fan_and_its_open_window_glints() {
     assert!(keys(&frame(&mut scene, 2.3)).is_empty());
 }
 
+/// The scene with a second enemy five metres from the first.
+fn two_enemies() -> (Scene, EntityRef, EntityRef) {
+    let mut scene = scene();
+    let mut second = scene.snapshot.entities.last().unwrap().clone();
+    second.id += 1000;
+    second.position[2] += 500;
+    scene.snapshot.entities.push(second);
+    let second = scene.snapshot.entities.last().unwrap().entity();
+    let wolf = scene.wolf;
+    (scene, wolf, second)
+}
+
+/// The next projection carries `events`, seen at `now`.
+fn step(scene: &mut Scene, events: Vec<ZoneEvent>, now: f64) -> UnitFrame {
+    scene.snapshot.tick += 1;
+    scene.snapshot.events = events;
+    scene.presenter.push(&scene.snapshot, now);
+    frame(scene, now)
+}
+
 /// The unit nearest each effect draw whose id ends in `part`, among `units`.
 fn cue_holders(
     scene: &Scene,
@@ -1335,20 +1355,9 @@ fn cue_holders(
 #[test]
 fn corruption_poison_and_roots_show_on_their_target_only_while_the_zone_holds_them() {
     use mmorpg_core::ability::ids;
-    let mut scene = scene();
-    let mut second = scene.snapshot.entities.last().unwrap().clone();
-    second.id += 1000;
-    second.position[2] += 500;
-    scene.snapshot.entities.push(second);
-    let (wolf, second) = (scene.wolf, scene.snapshot.entities.last().unwrap().entity());
+    let (mut scene, wolf, second) = two_enemies();
     let enemies = [wolf, second];
     let viewer = EntityRef::Player(1);
-    let step = |scene: &mut Scene, events: Vec<ZoneEvent>, now: f64| {
-        scene.snapshot.tick += 1;
-        scene.snapshot.events = events;
-        scene.presenter.push(&scene.snapshot, now);
-        frame(scene, now)
-    };
     let parts = ["-wisp-", "-drip-", "-vine-", "-ice-"];
     let shown = |scene: &Scene, frame: &UnitFrame| {
         parts.map(|part| cue_holders(scene, frame, part, &enemies))
@@ -1429,4 +1438,99 @@ fn corruption_poison_and_roots_show_on_their_target_only_while_the_zone_holds_th
         4.2,
     );
     assert_eq!(shown(&scene, &died), [vec![wolf], vec![], vec![], vec![]]);
+}
+
+#[test]
+fn bundle_roots_and_freezes_hold_their_loop_and_play_their_end_when_the_zone_lifts_them() {
+    use mmorpg_core::ability::ids;
+    use mmorpg_presentation::units::kit_effects::{
+        FROST_HOLD, FROST_HOLD_END, ROOTS_HOLD, ROOTS_HOLD_END,
+    };
+    let (mut scene, wolf, second) = two_enemies();
+    scene.presenter.set_effect_kits(true);
+    let viewer = EntityRef::Player(1);
+    scene.presenter.push(&scene.snapshot, 0.);
+    frame(&mut scene, 0.);
+    // Each held unit's own art, at its own feet; the procedural vines and ice stay away.
+    let holds = |scene: &Scene, frame: &UnitFrame| {
+        let at = |unit: EntityRef| {
+            let record = scene
+                .snapshot
+                .entities
+                .iter()
+                .find(|e| e.entity() == unit)
+                .unwrap();
+            scene.presenter.rendered(record.position)
+        };
+        assert!(
+            !effects(frame)
+                .iter()
+                .any(|id| id.contains("-vine-") || id.contains("-ice-")),
+            "{:?}",
+            effects(frame)
+        );
+        frame
+            .effects
+            .iter()
+            .filter(|e| e.key.contains("-hold-"))
+            .map(|e| {
+                let reach = |unit: EntityRef| {
+                    let c = at(unit);
+                    (e.model[12] - c[0]).hypot(e.model[14] - c[2])
+                };
+                let unit = if reach(wolf) < reach(second) {
+                    wolf
+                } else {
+                    second
+                };
+                (e.key, unit, e.clip)
+            })
+            .collect::<Vec<_>>()
+    };
+    let applied = |target, ability, seconds: u16| ZoneEvent::AuraApplied {
+        source: viewer,
+        target,
+        ability,
+        ticks: seconds * mmorpg_core::TICK_HZ,
+    };
+    let held = step(
+        &mut scene,
+        vec![
+            applied(wolf, ids::ENTANGLING_ROOTS, 20),
+            applied(second, ids::FROST_NOVA, 2),
+        ],
+        1.,
+    );
+    assert_eq!(
+        holds(&scene, &held),
+        [
+            (ROOTS_HOLD, wolf, Some("Loop")),
+            (FROST_HOLD, second, Some("Loop"))
+        ]
+    );
+    // The zone breaks the roots: their end plays from now; the freeze still holds.
+    let broken = step(
+        &mut scene,
+        vec![ZoneEvent::AuraRemoved {
+            source: viewer,
+            target: wolf,
+            ability: ids::ENTANGLING_ROOTS,
+        }],
+        2.,
+    );
+    assert_eq!(
+        holds(&scene, &broken),
+        [
+            (ROOTS_HOLD_END, wolf, Some("Play")),
+            (FROST_HOLD, second, Some("Loop"))
+        ]
+    );
+    // The freeze's own ticks run out: its end plays in their last moment, then nothing.
+    let thawing = frame(&mut scene, 2.8);
+    assert_eq!(
+        holds(&scene, &thawing),
+        [(FROST_HOLD_END, second, Some("Play"))]
+    );
+    let thawed = frame(&mut scene, 3.1);
+    assert_eq!(holds(&scene, &thawed), []);
 }

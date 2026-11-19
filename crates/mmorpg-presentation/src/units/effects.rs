@@ -186,9 +186,10 @@ const HOLY_BEAM: u32 = 36;
 const DIVINE_SHIELD: u32 = 37;
 const BARKSKIN: u32 = 41;
 /// Vines rise this long (#934). Every condition plays its end this long once the zone lifts
-/// it, early or on time (#956), and wanes to this fraction of its strength over the aura's life.
+/// it, early or on time (#956), the length of the root and freeze art's end clips, and wanes to
+/// this fraction of its strength over the aura's life.
 const ROOTS_GROW_SECONDS: f64 = 0.5;
-const CONDITION_END_SECONDS: f64 = 0.4;
+const CONDITION_END_SECONDS: f64 = 0.35;
 const CONDITION_WANE: f64 = 0.45;
 /// Corruption's shadow violet and dark core; poison's green and its sickly pool.
 const CORRUPTION_COLOUR: u32 = 0x8a4dff;
@@ -971,7 +972,8 @@ impl Effects {
 
     /// Draws of every live effect at `now`; stable IDs, only transforms change. With `kit`, the
     /// client draws the strike and spell bundles (#894): beams go there as stretched segments,
-    /// and the hit flashes and Frost Nova's ring leave to their pooled effects.
+    /// roots and freezes as their hold loop and end (#956), and the hit flashes and Frost Nova's
+    /// ring leave to their pooled effects.
     pub fn nodes(
         &mut self,
         r: &mut Resources,
@@ -1268,6 +1270,24 @@ impl Effects {
                         let end = ((held - age) / CONDITION_END_SECONDS).clamp(0., 1.);
                         let wane = 1. - (1. - CONDITION_WANE) * (age / held).clamp(0., 1.);
                         let strength = wane * end;
+                        // The bundle's root or freeze holds its loop, then plays its end: a lift
+                        // leaves exactly its length, up to rounding.
+                        if condition.roots()
+                            && let Some(kit) = kit.as_deref_mut()
+                        {
+                            let left = held - age;
+                            let ended = (left - CONDITION_END_SECONDS < 1e-9)
+                                .then_some((CONDITION_END_SECONDS - left).max(0.));
+                            kit.push(KitEffects::hold(
+                                e.id,
+                                condition == Condition::Frost,
+                                v.feet,
+                                v.yaw,
+                                age,
+                                ended,
+                            ));
+                            continue;
+                        }
                         match condition {
                             Condition::Corruption => {
                                 // A dark shroud at the feet; violet and black wisps spiral up off it.
