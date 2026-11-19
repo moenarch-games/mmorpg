@@ -33,7 +33,8 @@ within reach, so movement, hits and clashes can be felt. The page's zone stays t
 authority; the trial source only delays commands to it and projections from it, sends timing-
 sensitive commands with the tick it had observed, and draws other units 67 ms behind like the
 online client. The option and delay hold for the match; **Reset practice (F9)** starts another
-with the current choice.
+with the current choice. The owner playtest guide and an automated comparison of all nine cells
+are in [reviews/netcode-trial-680](reviews/netcode-trial-680/README.md).
 
 In a **Hosted match** the same select chooses this client's movement: **1 · Baseline** (or Off)
 interpolates the own body like every other unit; **2** and **3** predict it
