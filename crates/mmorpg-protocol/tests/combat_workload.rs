@@ -119,11 +119,14 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // measured.
     // The Rimewood scouts (#933) lengthen the spawn table, so the fights fixtures pair players
     // with shifted creatures: fights-8 tests 87,504 candidates. Every row is re-recorded.
+    // The spread fights pin their creatures (#960): pairs of bots by 16 listed level 1–2 wolves,
+    // boars and rats on level ground, so new spawns elsewhere move no bot. Pairs kill their
+    // creatures, and no bot dies to a Redbrand: fights-8 and fights-32 are re-recorded as measured.
     const HEADROOM_PERCENT: usize = 5;
     let recorded: [[usize; 4]; FIXTURES.len()] = [
         [11_052, 88_920, 282_240, 6_157_408],
-        [19_609, 86_040, 103_956, 1_878_509],
-        [29_220, 94_680, 429_563, 8_273_603],
+        [14_086, 85_999, 84_240, 1_979_905],
+        [17_396, 94_557, 492_480, 8_802_353],
         [13_037, 105_732, 2_314_114, 24_437_289],
     ];
     for (fixture, recorded) in FIXTURES.into_iter().zip(recorded) {

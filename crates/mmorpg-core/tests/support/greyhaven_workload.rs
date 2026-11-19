@@ -46,6 +46,26 @@ pub const FIXTURES: [Fixture; 4] = [
     },
 ];
 
+/// The spread fights' creatures (#960), by spawn ID: level 1–2 wolves, boars and rats on the
+/// open ground of Wolfrun Woods, Millbrook Farm and Hollowpine Reach, one per pair of bots in the
+/// 32-player fight (a lone level 1 bot kills none of them within the horizon, a pair does). The
+/// 8-player fight takes every fourth: a wolf, a boar, a rat and a Hollowpine wolf. The list is
+/// pinned rather than sampled from the spawn table, so content added elsewhere moves no bot onto
+/// other creatures or terrain. It leaves out the Redbrands (levels 3–5 in the Hollow, the
+/// Greyfang cavern and the highlands, which kill a level 1 bot on whichever backend's chase
+/// lands the last shot), the lurkers' deep water, the ogre, props, the night raid's reserved
+/// spawns and every later region's creatures.
+#[rustfmt::skip]
+const FIGHT_SPAWNS: [u32; 16] = [
+    // Wolfrun Woods' timber wolves and young boars.
+    100, 104, 108, 112,
+    120, 122, 124, 102,
+    // Millbrook Farm's grain rats.
+    200, 202, 204, 205,
+    // Hollowpine Reach's timber wolves and young boars.
+    500, 502, 504, 505,
+];
+
 /// Fight slots step this far (units) from a blocked one: a player's width and a little.
 const SLOT_STEP_UNITS: i32 = 65;
 /// Most a fight slot's resting height may differ from its neighbours' one slot step away. The
@@ -53,11 +73,18 @@ const SLOT_STEP_UNITS: i32 = 65;
 /// A/B), which holds only on level ground: on a steep slope (the Wolfrun Climb, about 100 units
 /// over a step) a jump is stopped by one backend and deflected by the other (#966).
 const SLOT_LEVEL_UNITS: i32 = 40;
+/// How far north the scripted run (ticks 30 to 35) carries a bot before it lands.
+const RUN_UNITS: i32 = 53;
+/// Most the ground where a bot lands may differ from its slot's (#960). On level ground the
+/// jump's last airborne tick is about 7.75 units up, clear of the 5.25-unit support reach;
+/// landing about 2.5 units higher or 5 lower puts a tick within hundredths of a unit of it, and
+/// the backends then land a tick apart (grounded differs) or, on a hillside, apart in height.
+const LANDING_LEVEL_UNITS: i32 = 2;
 
 /// The first fight slot at or around `at` (feet XZ) where a player stands clear of every content
 /// box, prop, door leaf, creature and already `placed` player, its capsule resting on level
-/// ground (`ZoneSimulation::stand_y` and `stands_clear`, #534; [`SLOT_LEVEL_UNITS`]): the
-/// player's body centre there.
+/// ground with a level landing (`ZoneSimulation::stand_y` and `stands_clear`, #534;
+/// [`SLOT_LEVEL_UNITS`], [`LANDING_LEVEL_UNITS`]): the player's body centre there.
 /// Slots lie on square rings [`SLOT_STEP_UNITS`] apart around `at`, nearest ring first.
 fn clear_stand(zone: &ZoneSimulation, placed: &[[i32; 3]], at: [i32; 2]) -> Option<[i32; 3]> {
     let radius = PLAYER_HALF_EXTENTS_UNITS[0];
@@ -80,6 +107,8 @@ fn clear_stand(zone: &ZoneSimulation, placed: &[[i32; 3]], at: [i32; 2]) -> Opti
                 (zone.stand_y(x, z, PLAYER_HALF_EXTENTS_UNITS) - centre[1]).abs()
                     <= SLOT_LEVEL_UNITS
             });
+        let landing = zone.stand_y(x, z + RUN_UNITS, PLAYER_HALF_EXTENTS_UNITS);
+        let level = level && (landing - centre[1]).abs() <= LANDING_LEVEL_UNITS;
         if apart && level && zone.stands_clear(centre, PLAYER_HALF_EXTENTS_UNITS) {
             return Some(centre);
         }
@@ -92,31 +121,21 @@ pub fn initial_zone(fixture: Fixture) -> Result<ZoneSimulation, Box<dyn Error>> 
     let empty = ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content))?;
     let mut state = empty.snapshot()?;
     let mut placed = Vec::new();
-    // Level 1 bots spread over the Vale's spawns: the highlands' level 5 garrison (#502) would
-    // kill them within the horizon, and a spirit's release is not a physics comparison. The
-    // wetlands' lurkers (#506) float in deep water, and a bot there would drown or swim. The
-    // wild sub-regions' creatures (#816) are as tough and stand on the designed high ground, and
-    // the hamlets' (#859) keep to the farmland, outside the Vale. The beasts of #889 (bears,
-    // cave spiders, marsh lurkers) hold caves and ambushes, not the Vale's fight slots.
-    let beasts = {
-        use greyhaven_vale::units::templates::{BROWN_BEAR, CAVE_SPIDER, MARSH_LURKER};
-        [BROWN_BEAR, CAVE_SPIDER, MARSH_LURKER]
-    };
-    let vale_spawns: Vec<_> = content
-        .creature_spawns()
+    let fight_spawns = FIGHT_SPAWNS
         .iter()
-        .filter(|spawn| {
-            !beasts.contains(&spawn.template)
-                && !greyhaven_vale::wilds::SPAWN_IDS.contains(&spawn.id.get())
-                && !greyhaven_vale::hamlet_creatures::SPAWN_IDS.contains(&spawn.id.get())
-                && greyhaven_vale::area_at(spawn.position[0], spawn.position[1]).is_none_or(
-                    |area| {
-                        area.id() != greyhaven_vale::highlands::BANDIT_HIGHLANDS
-                            && area.id() != greyhaven_vale::marsh::MARSH_LAKE_WETLANDS
-                    },
-                )
+        .map(|&id| {
+            content
+                .creature_spawns()
+                .iter()
+                .find(|spawn| {
+                    spawn.id.get() == id
+                        && content
+                            .creature_template(spawn.template)
+                            .is_some_and(|template| template.prop().is_none())
+                })
+                .ok_or_else(|| format!("pinned fight spawn {id} is not a creature"))
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
     for index in 0..fixture.players {
         let position = if !fixture.fighting {
             let feet = greyhaven_vale::SPAWN_GRID
@@ -124,7 +143,7 @@ pub fn initial_zone(fixture: Fixture) -> Result<ZoneSimulation, Box<dyn Error>> 
                 .ok_or("spawn overflow")?;
             [feet[0], PLAYER_HALF_EXTENTS_UNITS[1], feet[2]]
         } else {
-            // Spread across the Vale's authored spawn table, or concentrate around
+            // Spread in pairs across the pinned fight spawns, or concentrate around
             // the six farm rats. Checkpoint placement is fixture setup only;
             // all subsequent motion and combat go through commands and physics.
             let spawn = if fixture.crowded {
@@ -136,14 +155,15 @@ pub fn initial_zone(fixture: Fixture) -> Result<ZoneSimulation, Box<dyn Error>> 
                     })
                     .ok_or("missing rat")?
             } else {
-                vale_spawns[index * vale_spawns.len() / fixture.players]
+                fight_spawns[index / 2 * fight_spawns.len() / (fixture.players / 2)]
             };
             let row = i32::try_from(index / 6)?;
             // Off the spawn's row by a few units: content is authored on round coordinates,
             // and a sight line run exactly along a box face is a tie each backend breaks its
             // own way (f32 metres on Rapier).
             let [x, z] = [spawn.position[0] + 150 + row * 65, spawn.position[1] + 7];
-            let position = clear_stand(&empty, &placed, [x, z]).ok_or("no clear fight slot")?;
+            let position = clear_stand(&empty, &placed, [x, z])
+                .ok_or_else(|| format!("no clear fight slot by spawn {}", spawn.id.get()))?;
             placed.push(position);
             position
         };
