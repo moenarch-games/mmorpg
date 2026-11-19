@@ -196,6 +196,7 @@ describe("combat HUD text", () => {
     expect(combatStatus(view([], { stance: "charging" }), catalog)).toBe("Health 50/50 · Level 1 · Charging: +20% melee damage");
     // An open sword → Shield Bash follow-up (#157) is announced.
     expect(combatStatus(view([], { combo: "open" }), catalog)).toBe("Health 50/50 · Level 1 · Combo: Shield Bash now");
+    expect(combatStatus(view([], { combo: "cleave-open" }), catalog)).toBe("Health 50/50 · Level 1 · Combo: cleave! Swing again or Shield Bash now");
     // Spent breath (#274) shows while it refills or runs down, and drowning at zero.
     expect(combatStatus(view([], { breath: 15 * TICK_HZ }), catalog)).toBe("Health 50/50 · Level 1 · Breath 15 s");
     expect(combatStatus(view([], { breath: 0 }), catalog)).toBe("Health 50/50 · Level 1 · Drowning!");

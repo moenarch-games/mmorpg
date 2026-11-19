@@ -247,18 +247,22 @@ impl ZoneSimulation {
             let before = self.struck_health(victim);
             self.player_melee_hits_at(player_id, victim, amount, false, now, Some(aim.height))?;
             // Only positive health damage after absorbs opens the combo (#157), on the
-            // first unit a cleaving swing so struck (#909).
-            if ability == crate::ability::ids::HEROIC_STRIKE
-                && self.struck_health(victim) < before
-                && self
-                    .players
-                    .get(&player_id)
-                    .is_some_and(|player| player.combo.is_none())
+            // first unit a cleaving swing so struck (#909); every further unit it so
+            // struck counts toward the cleave follow-up (#910). The swing cleared any
+            // earlier opening as it began.
+            if ability == crate::ability::ids::HEROIC_STRIKE && self.struck_health(victim) < before
             {
                 self.update_player(player_id, |player| {
-                    player.combo = Some(crate::ComboOpening {
-                        target: victim,
-                        elapsed: 0,
+                    player.combo = Some(match player.combo {
+                        Some(combo) => crate::ComboOpening {
+                            hits: combo.hits.saturating_add(1),
+                            ..combo
+                        },
+                        None => crate::ComboOpening {
+                            target: victim,
+                            elapsed: 0,
+                            hits: 1,
+                        },
                     });
                 });
             }

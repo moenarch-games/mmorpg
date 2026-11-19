@@ -358,13 +358,14 @@ fn spawns_populate_their_subzones() {
             (greyhaven_vale::vale::REDBRAND_HOLLOW, "Garrick Redbrand"),
             1,
         ),
-        // Greyfang Ridge: the outriders and the Greyfang cavern's garrison (#160).
+        // Greyfang Ridge: the outriders, the Greyfang cavern's garrison (#160) and the
+        // Greyfang Approach patrol (#911).
         (
             (greyhaven_vale::vale::GREYFANG_RIDGE, "Redbrand Crossbowman"),
-            5,
+            6,
         ),
-        ((greyhaven_vale::vale::GREYFANG_RIDGE, "Redbrand Bandit"), 2),
-        ((greyhaven_vale::vale::GREYFANG_RIDGE, "Redbrand Brute"), 2),
+        ((greyhaven_vale::vale::GREYFANG_RIDGE, "Redbrand Bandit"), 3),
+        ((greyhaven_vale::vale::GREYFANG_RIDGE, "Redbrand Brute"), 3),
         ((greyhaven_vale::vale::SOUTHMEADOW_DOWNS, "Young Boar"), 2),
         ((greyhaven_vale::vale::SOUTHMEADOW_DOWNS, "Hill Ogre"), 1),
         ((greyhaven_vale::vale::SOUTHMEADOW_DOWNS, "Grain Rat"), 1),

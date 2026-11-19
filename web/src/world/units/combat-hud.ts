@@ -1,5 +1,5 @@
 import type { EntityRef } from "../../entity-ref";
-import { findEntity, TICK_HZ, wireCatalog, type ErrorCode, type MeleeStance, type ZoneEvent, type ZoneSnapshot } from "../../replication";
+import { findEntity, TICK_HZ, wireCatalog, type ComboPhase, type ErrorCode, type MeleeStance, type ZoneEvent, type ZoneSnapshot } from "../../replication";
 import type { ContentCatalog } from "../catalog";
 import { objectiveAt } from "./quest-state";
 import { raidNoticeText } from "../raid-prep";
@@ -98,6 +98,14 @@ export const STANCE_TEXT: Readonly<Record<MeleeStance, string>> = {
   landing: "Landing: melee waits",
 };
 
+/** The pending slash follow-up (#157), and the cleave's extra swing (#910); the native HUD says the same. */
+export const COMBO_TEXT: Readonly<Record<ComboPhase, string>> = {
+  impact: "Combo: slash landing, Shield Bash follows",
+  open: "Combo: Shield Bash now",
+  "cleave-impact": "Combo: cleave landing, swing again or Shield Bash follows",
+  "cleave-open": "Combo: cleave! Swing again or Shield Bash now",
+};
+
 export function combatStatus(snapshot: ZoneSnapshot, catalog: ContentCatalog): string {
   const viewer = snapshot.viewer;
   if (viewer.dead) {
@@ -116,7 +124,7 @@ export function combatStatus(snapshot: ZoneSnapshot, catalog: ContentCatalog): s
     parts.push(STANCE_TEXT[viewer.stance]);
   }
   if (viewer.combo) {
-    parts.push(viewer.combo === "open" ? "Combo: Shield Bash now" : "Combo: slash landing, Shield Bash follows");
+    parts.push(COMBO_TEXT[viewer.combo]);
   }
   if (viewer.cast) {
     const verb = viewer.cast.channel ? "Channelling" : "Casting";

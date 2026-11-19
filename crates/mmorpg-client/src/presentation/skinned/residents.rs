@@ -78,7 +78,7 @@ fn bundle(figure: Figure) -> &'static [(&'static str, &'static [u8])] {
 }
 
 /// The embedded file `path` of `figure`'s bundle.
-fn file(figure: Figure, path: &str) -> &'static [u8] {
+pub(super) fn file(figure: Figure, path: &str) -> &'static [u8] {
     match figure {
         Figure::Male => ranger_file(path),
         Figure::Female => bundle(figure)

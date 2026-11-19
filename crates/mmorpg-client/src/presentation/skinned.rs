@@ -4,6 +4,7 @@
 //! Presentation only; the authoritative body box still comes from content.
 use crate::world::{DrawMaterial, DrawSkin, Influences, SceneDraw};
 use mmorpg_presentation::units::{
+    chores::Chore,
     imported::{
         BOLT_GROOVE, BOLT_HAND_SOCKET, BOLT_SCALE, BOW_DRAW_AXIS, BOW_HAND_SOCKET, BOW_NOCK_JOINT,
         BOW_STOWED_SOCKET, Bolt, BowShot, CROSSBOW_LEFT_JOINT, CROSSBOW_SOCKET, Carry,
@@ -17,8 +18,8 @@ use mmorpg_presentation::units::{
     traversal::{self, Motions, SecondaryPose},
 };
 use std::{
-    collections::BTreeMap,
-    sync::{Arc, OnceLock},
+    collections::{BTreeMap, HashMap},
+    sync::{Arc, Mutex, OnceLock},
 };
 use strum::VariantArray;
 use three_d_core::{Color3, Mesh, Vec3, VertexAttributes};
@@ -1808,6 +1809,40 @@ impl Equipment {
         let descriptor: serde_json::Value =
             serde_json::from_slice(ranger_file(ranger_bundle::SOCKETS))
                 .expect("the sockets descriptor is JSON");
+        Self::on(&descriptor, items)
+    }
+
+    /// A resident's chore item (#904) on its socket of `figure`, imported once; `None` when the
+    /// build has no such item or the figure no such socket, and the hands stay empty.
+    pub fn chore(figure: Figure, chore: Chore) -> Option<&'static Self> {
+        type Chores = HashMap<(Figure, &'static str, &'static str), Option<&'static Equipment>>;
+        static CHORES: OnceLock<Mutex<Chores>> = OnceLock::new();
+        *CHORES
+            .get_or_init(Mutex::default)
+            .lock()
+            .expect("the chore item cache is not poisoned")
+            .entry((figure, chore.item, chore.socket))
+            .or_insert_with(|| {
+                let sockets = match figure {
+                    Figure::Male => ranger_file(ranger_bundle::SOCKETS),
+                    Figure::Female => residents::file(figure, ranger_female_bundle::SOCKETS),
+                };
+                let descriptor: serde_json::Value =
+                    serde_json::from_slice(sockets).expect("the sockets descriptor is JSON");
+                let entry = format!("{}/default", chore.item);
+                let (_, path) = ranger_bundle::ENTRIES
+                    .iter()
+                    .find(|(key, _)| *key == entry)?;
+                socket_of(&descriptor, chore.socket)?;
+                Some(&*Box::leak(Box::new(Self::on(
+                    &descriptor,
+                    &[(path, chore.socket)],
+                ))))
+            })
+    }
+
+    /// [`Self::of`] at the sockets of `descriptor`.
+    fn on(descriptor: &serde_json::Value, items: &[(&str, &str)]) -> Self {
         let bolt = |entry: &str, socket_id: &str| {
             entry == ranger_bundle::ARROW && socket_id == BOLT_HAND_SOCKET
         };
@@ -1816,7 +1851,7 @@ impl Equipment {
             .map(|&(entry, socket_id)| {
                 let model =
                     Model::parse(&ranger_model(entry), "").expect("a bundle item is valid glTF");
-                let (joint, mut matrix) = socket(&descriptor, socket_id);
+                let (joint, mut matrix) = socket(descriptor, socket_id);
                 if bolt(entry, socket_id) {
                     // The arrow stands in for the crossbow's bolt at its length (#607).
                     matrix.elements = mul(
@@ -1846,7 +1881,7 @@ impl Equipment {
             })
             .map(|index| Bow {
                 index,
-                hand: socket(&descriptor, BOW_HAND_SOCKET),
+                hand: socket(descriptor, BOW_HAND_SOCKET),
                 nock: items_of[index].0.node(BOW_NOCK_JOINT),
             });
         // A dagger in either hand sheathes at that hip for a throw or a bandage (#603).
@@ -1857,7 +1892,7 @@ impl Equipment {
                     .iter()
                     .position(|&hand| hand == socket_id)
                     .filter(|_| entry == ranger_bundle::DAGGER)?;
-                Some((hand, socket_of(&descriptor, DAGGER_SHEATH_SOCKETS[hand])?))
+                Some((hand, socket_of(descriptor, DAGGER_SHEATH_SOCKETS[hand])?))
             })
             .collect();
         let throwables = sheaths
@@ -1868,8 +1903,8 @@ impl Equipment {
                     Model::parse(&ranger_model(throwable_file(throwable)), "")
                         .expect("a bundle item is valid glTF")
                 }),
-                hand: socket(&descriptor, THROWABLE_SOCKET),
-                belt: socket_of(&descriptor, THROWABLE_BELT_SOCKET),
+                hand: socket(descriptor, THROWABLE_SOCKET),
+                belt: socket_of(descriptor, THROWABLE_BELT_SOCKET),
             });
         Self {
             items: items_of,
@@ -1882,7 +1917,7 @@ impl Equipment {
                         "hand_l.shield" | "hand_r.staff" | CROSSBOW_SOCKET => "back.stowed",
                         _ => return None,
                     };
-                    socket_of(&descriptor, socket_id)
+                    socket_of(descriptor, socket_id)
                 })
                 .collect(),
             hanging: items
