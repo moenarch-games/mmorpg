@@ -402,6 +402,9 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
             // Stillwater Lake's lurkers keep to its narrow level rim (#423).
             wander_radius: if LAKE_LURKERS.contains(&id) {
                 LAKE_WANDER_RADIUS_UNITS
+            } else if super::powder_watch::holds_post(id) {
+                // The Redbrand powder watch keeps its posts by the powder (#954).
+                super::powder_watch::POST_WANDER_RADIUS_UNITS
             } else {
                 WANDER_RADIUS_UNITS
             },

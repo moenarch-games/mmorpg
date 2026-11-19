@@ -31,9 +31,9 @@ use std::{
 };
 
 use mmorpg_core::{
-    AbilityId, ClassChoice, CreatureFamily, CreatureTemplateId, EntityKind, EntityRef,
-    EntitySnapshot, PLAYER_HALF_EXTENTS_UNITS, ProjectileKind, StrikeAim, StrikeHeight, StrikeSide,
-    UNITS_PER_METRE, ZoneContent, ZoneEvent, ZoneSnapshot,
+    AbilityId, ClassChoice, CreatureFamily, CreatureTemplate, CreatureTemplateId, EntityKind,
+    EntityRef, EntitySnapshot, PLAYER_HALF_EXTENTS_UNITS, ProjectileKind, PropKind, StrikeAim,
+    StrikeHeight, StrikeSide, UNITS_PER_METRE, ZoneContent, ZoneEvent, ZoneSnapshot,
 };
 use mmorpg_scenery::Scenery;
 
@@ -2194,6 +2194,17 @@ impl UnitPresenter {
                 ring.material.opacity = 0.85;
                 ring.material.unlit = true;
                 out.draws.push(ring);
+                // A selected powder barrel shows its blast's reach (#954).
+                let powder = entity.kind() == EntityKind::Creature
+                    && self
+                        .content
+                        .creature_template(CreatureTemplateId::new(unit.record.appearance))
+                        .and_then(CreatureTemplate::prop)
+                        == Some(PropKind::ExplosiveBarrel);
+                if powder {
+                    out.draws
+                        .extend(breakables::blast_ring(&mut self.resources, &id, feet));
+                }
             }
             if self.bodies {
                 self.body_shapes(&mut out.draws, &id, entity, unit.centre, half);
