@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "area": "eastdown-meadow",
+  "placements": [
+    {"id": "eastdown-cairn-base", "asset": "crag.kit.outcrop-talus-2", "position": [115000, 1696, 76000], "yaw": 9000, "scale": [700, 380, 700], "collider": 65138},
+    {"id": "eastdown-cairn-cap", "asset": "crag.kit.outcrop-talus-2", "position": [115010, 1806, 76020], "yaw": 31000, "scale": [420, 330, 420], "collider": 65139},
+    {"id": "eastdown-cairn-fallen", "asset": "crag.kit.outcrop-talus-2", "position": [115170, 1710, 76140], "yaw": 50000, "scale": [450, 220, 500], "collider": 65140},
+    {"id": "eastdown-scar-crag", "asset": "crag.kit.outcrop-talus-1", "position": [126800, 2709, 86800], "yaw": 12000, "scale": [1100, 650, 1100], "collider": 65141},
+    {"id": "eastdown-scar-ledge", "asset": "crag.kit.outcrop-buttress-2", "position": [125700, 2838, 87300], "yaw": 20000, "scale": [700, 300, 700], "collider": 65142},
+    {"id": "eastdown-scar-crag-small", "asset": "crag.kit.outcrop-talus-2", "position": [128100, 2622, 86200], "yaw": 44000, "scale": [900, 600, 900], "collider": 65143},
+    {"id": "eastdown-scar-talus-1", "asset": "crag.kit.outcrop-talus-2", "position": [126200, 2462, 85700], "yaw": 62527, "scale": [500, 300, 500], "collider": 65144},
+    {"id": "eastdown-scar-talus-2", "asset": "crag.kit.outcrop-talus-2", "position": [127500, 2439, 85500], "yaw": 17375, "scale": [420, 260, 460], "collider": 65145}
+  ]
+}

@@ -41,6 +41,18 @@
       "note": "A farmland hamlet's cottage",
       "eye": [-34, 9, 560],
       "target": [-34, 5, 550]
+    },
+    {
+      "name": "eastdown",
+      "note": "The Eastdown meadow from the Downs' edge at third-person height: lone oak, hedgerow, copse, hilltop crown (#872)",
+      "eye": [985, 12, 695],
+      "target": [1180, 20, 790]
+    },
+    {
+      "name": "eastdown-landmarks",
+      "note": "The Eastdown cairn and the shoulder's rock scar from the slope (#872)",
+      "eye": [1125, 19, 742],
+      "target": [1150, 17.5, 760]
     }
   ]
 }

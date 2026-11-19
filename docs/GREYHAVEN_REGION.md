@@ -112,6 +112,15 @@ Everything round the heart comes from committed data:
   The heart's own woods and groves are rounded into clumps. Beyond the wall the mountains are
   wooded low down, with crags, rock and snow above.
 
+East of the Downs Copse, the **Eastdown** meadow (#872) is open pasture rising to the zone's
+south-eastern crest. Its design gives the slope a knoll, a damp dell and a shoulder (three
+`controls`), a hilltop crown of trees, a copse, a dell thicket, a broken hedgerow and a lone oak
+(five small `forests`, appended so earlier trunks keep their IDs). The world dressing
+(`dressing/eastdown.json`) adds a cairn on the knoll and a rock scar with talus where the
+shoulder breaks, from the crag kit, with collision generated from the art. Review pose
+`eastdown` in `scripts/review-poses.json` shows it from the Downs' edge
+([before/after](reviews/eastdown-meadow/)).
+
 ## Settlements and landmarks
 
 The roads lead to places (#818, `greyhaven_vale::settlements`). Each is a named area inside its

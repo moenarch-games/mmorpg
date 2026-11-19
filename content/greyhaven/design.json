@@ -70,6 +70,9 @@
     {"name": "Fen meadows", "at": [820, 360], "height": 2, "radius": 200},
     {"name": "Fen north", "at": [1000, 120], "height": 10, "radius": 200},
     {"name": "Fen east", "at": [1300, 560], "height": -4, "radius": 200},
+    {"name": "Eastdown knoll", "at": [1150, 760], "height": 18, "radius": 36},
+    {"name": "Eastdown dell", "at": [1060, 690], "height": 2, "radius": 32},
+    {"name": "Eastdown shoulder", "at": [1255, 845], "height": 24, "radius": 38},
     {"name": "Eastern rise", "at": [1380, -280], "height": 32, "radius": 220},
     {"name": "North-eastern rise", "at": [1560, -640], "height": 62, "radius": 220},
     {"name": "Delving Run upper", "at": [690, -820], "height": 58, "radius": 110},
@@ -182,7 +185,17 @@
     {"name": "Southmeadow West Copse", "species": "mixed", "spacing": 8, "cover": 52,
      "polygon": [[-150, 150], [-90, 140], [-55, 175], [-80, 215], [-140, 222], [-175, 190]]},
     {"name": "Southmeadow East Copse", "species": "broadleaf", "spacing": 8, "cover": 48,
-     "polygon": [[128, 132], [180, 128], [210, 168], [188, 210], [135, 206], [118, 170]]}
+     "polygon": [[128, 132], [180, 128], [210, 168], [188, 210], [135, 206], [118, 170]]},
+    {"name": "Eastdown Copse", "species": "broadleaf", "spacing": 6, "cover": 78,
+     "polygon": [[1200, 888], [1228, 878], [1248, 894], [1240, 918], [1213, 922], [1197, 906]]},
+    {"name": "Eastdown Crown", "species": "mixed", "spacing": 6, "cover": 80,
+     "polygon": [[1288, 1008], [1312, 1004], [1326, 1020], [1318, 1042], [1296, 1046], [1284, 1028]]},
+    {"name": "Eastdown Dell Thicket", "species": "broadleaf", "spacing": 7, "cover": 70,
+     "polygon": [[1072, 672], [1092, 668], [1098, 686], [1086, 700], [1070, 694]]},
+    {"name": "Eastdown Lone Oak", "species": "broadleaf", "spacing": 10, "cover": 100,
+     "polygon": [[1104, 800], [1114, 800], [1114, 810], [1104, 810]]},
+    {"name": "Eastdown Hedgerow", "species": "broadleaf", "spacing": 6, "cover": 55,
+     "polygon": [[1165, 697], [1190, 706], [1216, 717], [1214, 723], [1189, 712], [1163, 703]]}
   ],
   "rockfields": [
     {"name": "Greyfang Scree", "spacing": 14, "cover": 34,

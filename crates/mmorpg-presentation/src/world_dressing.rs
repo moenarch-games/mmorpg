@@ -30,7 +30,7 @@ use crate::{
 };
 
 /// Greyhaven Vale's dressing files.
-const GREYHAVEN: [&str; 10] = [
+const GREYHAVEN: [&str; 11] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/vale.json"
@@ -78,6 +78,11 @@ const GREYHAVEN: [&str; 10] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/wolfrun-den.json"
+    )),
+    // The Eastdown meadow's cairn and rock scar (#872).
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../content/greyhaven/dressing/eastdown.json"
     )),
 ];
 
