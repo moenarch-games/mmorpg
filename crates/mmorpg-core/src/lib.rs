@@ -22,6 +22,7 @@ mod chat;
 mod combat;
 mod combo;
 mod content;
+mod corpse;
 mod corpse_loot;
 mod corridor;
 mod creature;
@@ -80,7 +81,8 @@ mod zone;
 
 pub use ability::{
     ABILITY_CATALOG, Ability, AbilityEffect, AbilityId, AbilityRange, AbilityUser, AuraKind,
-    AuraSpec, CastTime, GLOBAL_COOLDOWN_TICKS, MAX_AURAS, MAX_COOLDOWNS, Shot, ability_by_id,
+    AuraSpec, CORPSE_WINDOW_TICKS, CastTime, GLOBAL_COOLDOWN_TICKS, MAX_AURAS, MAX_COOLDOWNS, Shot,
+    ability_by_id,
 };
 pub use areas::{Area, AreaId, MAX_AREA_NAME_BYTES, ZoneAreas};
 pub use aura::{Aura, CastState, Cooldown};
@@ -111,6 +113,7 @@ pub use content::{
     PlayerCombatPolicy, PropKind, SpawnGrid, StaticCollider, StaticMesh, Terrain, UNITS_PER_METRE,
     XzBounds, ZoneContent, ZoneDefinition,
 };
+pub use corpse::CORPSE_SPEND_REACH_UNITS;
 pub use corpse_loot::{LOOT_REACH_UNITS, LootClaim, LootView};
 pub use corridor::{CORRIDOR_TURN_BACK_UNITS, Departure, HandoffCorridor};
 pub use creature::{
@@ -169,7 +172,8 @@ pub use melee::{JUMP_STRIKE_AIR_TICKS, MeleeState, PendingStrike};
 pub use minion::{
     COMPANION_HALF_EXTENTS_UNITS, CanonicalMinion, DEFEND_RADIUS_UNITS, ENGAGE_RADIUS_UNITS,
     FORMATION_RADIUS_UNITS, MAX_MINIONS, MAX_MINIONS_PER_SUMMONER, MINION_HALF_EXTENTS_UNITS,
-    Minion, MinionOrder, ORDER_RANGE_UNITS, is_companion, minion_ability, minion_half_extents,
+    Minion, MinionOrder, ORDER_RANGE_UNITS, RAISE_DEAD_LIMIT, is_companion, minion_ability,
+    minion_half_extents,
 };
 pub use nav::NAV_CELL_UNITS;
 pub use party::{

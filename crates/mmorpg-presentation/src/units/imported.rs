@@ -42,6 +42,8 @@ pub enum Loadout {
     GnarledStaff,
     /// The Redbrand Crossbowmen's crossbow on [`CROSSBOW_SOCKET`], with a bolt (#607).
     Crossbow,
+    /// The leaf-bladed spear in both hands (#914): a player whose weapon family is the spear.
+    Spear,
 }
 
 impl Loadout {
@@ -73,6 +75,17 @@ impl Loadout {
             Self::FlangedMace => "mace.flanged",
             Self::GnarledStaff => "staff.gnarled",
             Self::Crossbow => "crossbow",
+            Self::Spear => "spear",
+        }
+    }
+
+    /// What a player carries whose projected melee family is `weapon` (#914): a spear in both
+    /// hands for the spear family, otherwise the class's own weapons.
+    #[must_use]
+    pub const fn holding(self, weapon: Option<WeaponFamily>) -> Self {
+        match weapon {
+            Some(WeaponFamily::Spear) => Self::Spear,
+            _ => self,
         }
     }
 
@@ -90,6 +103,7 @@ impl Loadout {
             Self::BoneStaff | Self::GnarledStaff => (None, Some(Held::Staff)),
             Self::CrystalStaffAndTome => (Some(Held::Book), Some(Held::Staff)),
             Self::Crossbow => (Some(Held::Crossbow), Some(Held::Crossbow)),
+            Self::Spear => (Some(Held::Staff), Some(Held::Staff)),
         };
         Hands { left, right }
     }
@@ -1947,7 +1961,8 @@ impl Kind {
             Some(ids::FIRE_BLAST | ids::CHAIN_LIGHTNING) => caster.overhand,
             Some(ids::FROST_NOVA | ids::STOMP) => caster.nova,
             Some(ids::FROST_BREATH) => caster.cone,
-            Some(ids::CORRUPTION) => caster.curse,
+            Some(ids::CORRUPTION | ids::CORPSE_BURST) => caster.curse,
+            Some(ids::RAISE_DEAD) => caster.summon_raise,
             Some(ids::ENTANGLING_ROOTS) => caster.ground,
             Some(ids::DIVINE_SHIELD) if ally => caster.ally,
             Some(ids::ARCANE_BARRIER | ids::BONE_SHIELD | ids::BARKSKIN | ids::DIVINE_SHIELD) => {

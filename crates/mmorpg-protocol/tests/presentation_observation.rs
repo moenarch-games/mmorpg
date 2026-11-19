@@ -22,6 +22,7 @@ fn observation_records_round_trip_through_the_shared_fixture() {
     view.entities.push(other);
     let mut creature = view.entities[0].clone();
     creature.kind = mmorpg_core::EntityKind::Creature;
+    creature.flags.weapon = None;
     creature.id = 101;
     creature.appearance = 1;
     creature.position = [200, 45, 0];
@@ -97,6 +98,7 @@ fn full_cosmetic_section_keeps_critical_feedback_and_required_entities_under_wir
     let prototype = view.entities[0].clone();
     let mut target_record = prototype.clone();
     target_record.kind = mmorpg_core::EntityKind::Creature;
+    target_record.flags.weapon = None;
     target_record.id = 101;
     view.entities.push(target_record.clone());
     for id in 3..=mmorpg_core::MAX_VISIBLE_ENTITIES as u32 {

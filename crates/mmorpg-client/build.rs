@@ -31,6 +31,8 @@ const CRYSTAL_STAFF: &str = "equipment.staff.crystal";
 const GNARLED_STAFF: &str = "equipment.staff.gnarled";
 const TOME: &str = "equipment.book.tome";
 const MACE: &str = "equipment.mace.flanged";
+/// The spear a player of the spear family carries (#914).
+const SPEAR: &str = "equipment.spear.leaf";
 /// The Redbrand Crossbowmen's crossbow and the arrow standing in for its bolt (#607).
 const CROSSBOW: &str = "equipment.crossbow";
 const ARROW: &str = "equipment.arrow";
@@ -108,6 +110,7 @@ fn main() {
         ("GNARLED_STAFF", GNARLED_STAFF),
         ("TOME", TOME),
         ("MACE", MACE),
+        ("SPEAR", SPEAR),
         ("CROSSBOW", CROSSBOW),
         ("ARROW", ARROW),
         ("THROWING_KNIFE", THROWING_KNIFE),
@@ -446,6 +449,8 @@ fn sound_bundle(bundle: &Path) {
 struct Downloads {
     directory: String,
     entries: Vec<serde_json::Value>,
+    /// A figure's per-family clip files (#898, asset-tooling #733); empty without them.
+    families: Vec<serde_json::Value>,
 }
 
 impl Downloads {
@@ -470,6 +475,10 @@ impl Downloads {
                 .as_array()
                 .expect("download entries")
                 .clone(),
+            families: index["clips"]["families"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default(),
         }
     }
 
@@ -502,7 +511,7 @@ impl Downloads {
         self.file(entry, ".gltf")
     }
 
-    /// Every entry's files, textures and shared clips, as published.
+    /// Every entry's files, textures and shared clips, and the clip family files, as published.
     fn files(&self) -> Vec<String> {
         self.entries
             .iter()
@@ -513,7 +522,42 @@ impl Downloads {
                     .chain(entry.get("clips"))
                     .filter_map(serde_json::Value::as_str)
             })
+            .chain(
+                self.families
+                    .iter()
+                    .filter_map(|family| family["file"].as_str()),
+            )
             .map(|name| format!("{}/{name}", self.directory))
+            .collect()
+    }
+
+    /// `CLIP_FAMILIES` lines: each family's name, file path and clips with their lengths.
+    fn clip_families(&self) -> String {
+        self.families
+            .iter()
+            .map(|family| {
+                let clips: String = family["clips"]
+                    .as_array()
+                    .expect("a family's clips")
+                    .iter()
+                    .map(|clip| {
+                        let name = clip["name"].as_str().expect("a clip name");
+                        #[allow(clippy::cast_possible_truncation, reason = "clip lengths in f32")]
+                        let duration =
+                            clip["durationSeconds"].as_f64().expect("a clip length") as f32;
+                        format!("({name:?}, {duration:?}), ")
+                    })
+                    .collect();
+                format!(
+                    "    ({:?}, {:?}, &[{clips}]),\n",
+                    family["family"].as_str().expect("a family name"),
+                    format!(
+                        "{}/{}",
+                        self.directory,
+                        family["file"].as_str().expect("a family file")
+                    )
+                )
+            })
             .collect()
     }
 
@@ -549,7 +593,8 @@ fn figure(figure: &Downloads, equipment: &Downloads) -> (String, String) {
     // The clips' `humanoid-clips` metadata: the bow clips' draw (#556).
     let motions = figure.file(entry, ".humanoid-clips.json");
     let code = format!(
-        "pub const SOCKETS: &str = {sockets:?};\npub const CLIPS: &str = {clips:?};\npub const APPEARANCE: &str = {appearance:?};\npub const MOTIONS: &str = {motions:?};\npub const ENTRIES: &[(&str, &str)] = &[\n{}{}];\n",
+        "pub const SOCKETS: &str = {sockets:?};\npub const CLIPS: &str = {clips:?};\npub const CLIP_FAMILIES: &[super::ClipFamily] = &[\n{}];\npub const APPEARANCE: &str = {appearance:?};\npub const MOTIONS: &str = {motions:?};\npub const ENTRIES: &[(&str, &str)] = &[\n{}{}];\n",
+        figure.clip_families(),
         figure.entries(),
         equipment.entries()
     );

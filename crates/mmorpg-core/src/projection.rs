@@ -29,6 +29,9 @@ pub struct EntityFlags {
     pub in_combat: bool,
     /// Explicit weapon mode for projected player posture (#802), not the combat timer.
     pub weapon_drawn: bool,
+    /// A player's melee weapon family (#914): its main-hand weapon's, else its class's own;
+    /// `None` for every other unit. Presentation only: the zone resolves every strike.
+    pub weapon: Option<crate::WeaponFamily>,
     /// An aggressive creature: it attacks players on sight.
     pub hostile: bool,
     /// The viewer may attack it (living creatures).
@@ -441,6 +444,7 @@ impl ZoneSimulation {
                         dead: !player.is_alive(),
                         in_combat: player.combat_timer > 0 || threatened.contains(&player_id),
                         weapon_drawn: player.weapon_drawn,
+                        weapon: Some(crate::melee::weapon_family(player)),
                         targets_viewer,
                         ..EntityFlags::default()
                     },
@@ -483,6 +487,7 @@ impl ZoneSimulation {
                     flags: EntityFlags {
                         dead: !alive,
                         weapon_drawn: false,
+                        weapon: None,
                         in_combat: alive
                             && (creature.ai == CreatureAi::Engaged || creature.combat_timer > 0),
                         hostile: template.behaviour == CreatureBehaviour::Aggressive,
