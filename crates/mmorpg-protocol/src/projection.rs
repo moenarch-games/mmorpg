@@ -32,9 +32,10 @@ const SELF_BYTES: usize = 4 + 4 + 1 + 8 + 4 + 1 + ENTITY_REF_BYTES;
 pub const CAST_RECORD_BYTES: usize = 4 + 1 + 2 + 2;
 /// Class code, resource kind/value/max, global cooldown, cast, melee damage
 /// range, the guard (lane code, protecting flag, break ticks), the melee
-/// stance and combo phase codes and breath ticks (#274).
+/// stance and combo phase codes, breath ticks (#274) and the harm stored against the target
+/// (#936).
 const SELF_ABILITY_BYTES: usize =
-    1 + 1 + 2 + 2 + 2 + CAST_RECORD_BYTES + 2 + 2 + 1 + 1 + 2 + 1 + 1 + 2;
+    1 + 1 + 2 + 2 + 2 + CAST_RECORD_BYTES + 2 + 2 + 1 + 1 + 2 + 1 + 1 + 2 + 2;
 /// The target's own target and the target's cast.
 const TARGET_BYTES: usize = ENTITY_REF_BYTES + CAST_RECORD_BYTES;
 /// Every section's fixed part: header, self, target, sheet mask (`u16`, #544, #897), summoned
@@ -197,6 +198,7 @@ pub fn pack_snapshot_acknowledged(
     payload.push(viewer.stance.map_or(0, mmorpg_core::MeleeStance::code));
     payload.push(viewer.combo.map_or(0, mmorpg_core::ComboPhase::code));
     payload.extend_from_slice(&viewer.breath.to_be_bytes());
+    payload.extend_from_slice(&viewer.reckoning.to_be_bytes());
     encode_entity_ref(&mut payload, snapshot.target_of_target);
     encode_cast(&mut payload, snapshot.target_detail.cast);
 
@@ -707,6 +709,8 @@ fn decode_projection(
     if breath > mmorpg_core::water::BREATH_MAX_TICKS {
         return Err(ProtocolError::new("viewer breath is out of range"));
     }
+    // The harm a Divine Reckoning would draw on against the target (#936).
+    let reckoning = u16::from_be_bytes(take(payload, &mut offset)?);
     let resource = match (class, resource_kind) {
         (None, 0) if resource_value == 0 && resource_max == 0 => None,
         (Some(choice), code) if code == resource_code(choice.class.resource()) => {
@@ -928,6 +932,7 @@ fn decode_projection(
             stance,
             combo,
             breath,
+            reckoning,
             waystones,
         },
         cooldowns: abilities.cooldowns,
@@ -1286,6 +1291,8 @@ pub(crate) mod tests {
                 stance: None,
                 combo: None,
                 breath: mmorpg_core::water::BREATH_MAX_TICKS,
+                // Harm stored against the target (#936).
+                reckoning: 123,
                 waystones: mmorpg_core::WaystoneSet::EMPTY,
             },
             cooldowns: vec![
@@ -2324,6 +2331,7 @@ pub(crate) mod tests {
                 stance: None,
                 combo: None,
                 breath: mmorpg_core::water::BREATH_MAX_TICKS,
+                reckoning: 0,
                 waystones: mmorpg_core::WaystoneSet::EMPTY,
             },
             cooldowns: Vec::new(),

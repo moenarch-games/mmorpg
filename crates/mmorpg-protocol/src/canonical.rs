@@ -363,6 +363,16 @@ fn encode_player(
     encode_auras(payload, &abilities.auras)?;
     payload.push(crate::wire::encode_lane(abilities.guard.raised));
     payload.extend_from_slice(&abilities.guard.broken.to_be_bytes());
+    // Divine Reckoning pools (#936): count, then creature ID (`u32`) and harm (`u16`) each.
+    payload.push(encode_u8_count(
+        abilities.reckoning.len(),
+        mmorpg_core::MAX_RECKONING_POOLS,
+        "player has too many reckoning pools",
+    )?);
+    for harm in &abilities.reckoning {
+        payload.extend_from_slice(&harm.creature.get().to_be_bytes());
+        payload.extend_from_slice(&harm.amount.to_be_bytes());
+    }
     let landing = combat.landing;
     payload.push(u8::from(landing.airborne));
     payload.extend_from_slice(&landing.recovery.to_be_bytes());
@@ -1357,6 +1367,22 @@ fn decode_player(
         guard: mmorpg_core::GuardState {
             raised: crate::wire::decode_lane(read_u8(payload, offset)?)?,
             broken: u16::from_be_bytes(take(payload, offset)?),
+        },
+        reckoning: {
+            let count = decode_u8_count(
+                payload,
+                offset,
+                mmorpg_core::MAX_RECKONING_POOLS,
+                "player has too many reckoning pools",
+            )?;
+            let mut pools = Vec::with_capacity(count);
+            for _ in 0..count {
+                pools.push(mmorpg_core::Harm {
+                    creature: CreatureId::new(u32::from_be_bytes(take(payload, offset)?)),
+                    amount: u16::from_be_bytes(take(payload, offset)?),
+                });
+            }
+            pools
         },
     };
     let landing = mmorpg_core::LandingState {
@@ -2736,6 +2762,17 @@ mod tests {
                 raised: Some(mmorpg_core::StrikeHeight::Low),
                 broken: 7,
             },
+            // Pools in creature order (#936); the wire does not judge the class.
+            reckoning: vec![
+                mmorpg_core::Harm {
+                    creature: CreatureId::new(4),
+                    amount: 37,
+                },
+                mmorpg_core::Harm {
+                    creature: CreatureId::new(9),
+                    amount: 200,
+                },
+            ],
             cooldowns: vec![
                 Cooldown {
                     ability: AbilityId::new(10),
