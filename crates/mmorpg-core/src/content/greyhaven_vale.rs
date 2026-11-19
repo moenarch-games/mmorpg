@@ -43,6 +43,7 @@ pub mod marsh;
 pub mod marsh_creatures;
 pub mod marshal_house;
 pub mod paint;
+pub mod powder_watch;
 pub mod quests;
 pub mod raid;
 pub mod redbrand_patrol;
