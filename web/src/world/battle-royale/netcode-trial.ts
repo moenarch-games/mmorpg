@@ -190,8 +190,9 @@ export class NetcodeTrialSource implements WorldSource {
     this.#ticks = 0;
     this.#uplink = [];
     this.#downlink = [];
-    // The joining projection arrives at once, like an online welcome.
-    this.#prediction?.receive([this.#receive(zone.projection(player))]);
+    // The joining projection arrives at once, like an online welcome, with or without prediction.
+    const welcome = this.#receive(zone.projection(player));
+    this.#prediction?.receive([welcome]);
     return player;
   }
 
