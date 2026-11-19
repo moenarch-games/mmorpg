@@ -172,6 +172,8 @@ impl LootTable {
                 let width = u32::from(quantity[1]) - u32::from(quantity[0]) + 1;
                 let amount = u16::try_from(u32::from(quantity[0]) + rolls.quantity % width)
                     .expect("validated quantity fits u16");
+                // The quantity roll's remaining range picks the find (#918): no further draw.
+                let item = crate::roll_variant(item, rolls.quantity / width);
                 Some(
                     ItemStack::new(item, amount)
                         .expect("validated loot quantity fits its catalog stack"),
@@ -210,7 +212,7 @@ impl Error for LootTableError {}
 
 /// Authored starter rewards; revision 2 adds the equipment drops of humanoids, revision 3
 /// the Redbrand crossbowmen (#286), revision 4 the hill ogre (#297), revision 5 the Redbrand Brute
-/// (#160), then the beasts of #889.
+/// (#160), then the beasts of #889; the hybrid finds of #918.
 static CATALOG: LazyLock<[(CreatureTemplateId, LootTable); 13]> = LazyLock::new(|| {
     use crate::greyhaven_vale::units::templates::*;
     let fur = |weight, quantity| LootOutcome::Item {
@@ -225,6 +227,9 @@ static CATALOG: LazyLock<[(CreatureTemplateId, LootTable); 13]> = LazyLock::new(
         quantity: [1, 1],
     };
     let (dagger, shortsword, wand, buckler) = (2, 3, 4, 5);
+    // The spear rolls its long-hafted find, the shortsword its fine and balanced ones (#918);
+    // Garrick Redbrand alone carries his named cleaver.
+    let (spear, cleaver) = (23, 27);
     let (hood, tunic, trousers, boots) = (6, 7, 8, 9);
     let nothing = |weight| LootOutcome::Nothing { weight };
     let table =
@@ -241,12 +246,7 @@ static CATALOG: LazyLock<[(CreatureTemplateId, LootTable); 13]> = LazyLock::new(
             FIELD_MARAUDER,
             table(
                 [2, 6],
-                &[
-                    gear(dagger, 1),
-                    gear(trousers, 1),
-                    gear(boots, 1),
-                    nothing(6),
-                ],
+                &[gear(dagger, 1), gear(spear, 1), gear(boots, 1), nothing(6)],
             ),
         ),
         (MIREFIN_LURKER, table([1, 4], &[nothing(1)])),
@@ -301,7 +301,7 @@ static CATALOG: LazyLock<[(CreatureTemplateId, LootTable); 13]> = LazyLock::new(
                     gear(wand, 1),
                     gear(buckler, 1),
                     gear(hood, 1),
-                    gear(shortsword, 1),
+                    gear(cleaver, 2),
                 ],
             ),
         ),

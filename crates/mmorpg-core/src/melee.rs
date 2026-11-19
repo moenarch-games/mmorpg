@@ -33,8 +33,8 @@ use crate::zone::PlayerState;
 use crate::{
     CHAIN_WINDOW_TICKS, EntityRef, FOLLOW_UP_WINDOW_TICKS, FamilyMelee,
     LANDING_STRIKE_RECOVERY_PERCENT, LANDING_STRIKE_TOLERANCE_TICKS, MAX_INTERVAL_TICKS,
-    MeleeStance, PlayerClass, PlayerId, StrikeReward, StrikeVariant, WeaponFamily, ZoneError,
-    ZoneEvent, ZoneSimulation,
+    MeleeStance, PlayerClass, PlayerId, StrikeProfile, StrikeReward, StrikeVariant, WeaponFamily,
+    ZoneError, ZoneEvent, ZoneSimulation,
 };
 use sim_combat::melee::scaled_damage;
 
@@ -141,6 +141,17 @@ impl MeleeState {
 /// The melee family a player strikes with: the main-hand weapon's, else the class's own
 /// weapon (the Warden's sword, the Ranger's bow, the Rogue's daggers, the Cleric's mace,
 /// the other casters' staves), else bare hands.
+/// A strike of `family` as the main-hand weapon shapes it: its find's trait (#918) while the
+/// weapon is of that family.
+fn strike_profile(
+    state: &PlayerState,
+    family: WeaponFamily,
+    variant: StrikeVariant,
+) -> StrikeProfile {
+    let main_hand = state.equipment.item(crate::EquipmentSlot::MainHand);
+    crate::shaped_strike(family, variant, main_hand)
+}
+
 pub(crate) fn weapon_family(state: &PlayerState) -> WeaponFamily {
     let weapon = state.equipment.slots()[usize::from(crate::EquipmentSlot::MainHand.index())]
         .and_then(crate::item_template)
@@ -193,7 +204,7 @@ impl ZoneSimulation {
         };
         let variant = StrikeVariant::select(airborne, running, chain);
         let family = weapon_family(state);
-        let profile = FamilyMelee::of(family).strike(variant);
+        let profile = strike_profile(state, family, variant);
         let interval = crate::aura::hasted_swing(profile.interval_ticks, &state.auras);
         let target = state.target;
         // The Warden's stance is read as the strike begins: a jump strike lands as an
@@ -282,7 +293,8 @@ impl ZoneSimulation {
         melee.pending = None;
         let mut landing_strike = None;
         if pending.variant == StrikeVariant::Jumping {
-            let mut recovery = FamilyMelee::of(pending.family).jumping.interval_ticks;
+            let mut recovery =
+                strike_profile(state, pending.family, StrikeVariant::Jumping).interval_ticks;
             // A timed landing strike halves its landing recovery (#928).
             if pending.timed_landing() {
                 recovery =
@@ -317,7 +329,7 @@ impl ZoneSimulation {
             return Ok(());
         };
         let row = FamilyMelee::of(pending.family);
-        let profile = row.strike(pending.variant);
+        let profile = strike_profile(state, pending.family, pending.variant);
         let (facing, weapon) = (state.facing, state.melee_damage());
         let damage = scaled_damage(weapon, profile.damage_percent);
         let victims = self.swing_coverage(

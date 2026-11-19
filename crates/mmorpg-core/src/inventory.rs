@@ -41,7 +41,7 @@ pub struct ItemTemplate {
 /// Starter catalog, in stable ID order. Equippable items stack to one;
 /// consumable effects, prices and loot tables are separate rules. Quest
 /// items are plain bag items that quest content names as collect objectives.
-pub const ITEM_CATALOG: [ItemTemplate; 23] = [
+pub const ITEM_CATALOG: [ItemTemplate; 27] = [
     ItemTemplate {
         id: ItemId::new(1),
         name: "Torn Fur",
@@ -309,6 +309,60 @@ pub const ITEM_CATALOG: [ItemTemplate; 23] = [
         stats: ItemStats {
             stamina: 1,
             strength: 3,
+            agility: 0,
+            intellect: 0,
+        },
+    },
+    // Hybrid loot (#918): rolled variants of the shortsword and the spear, and Garrick
+    // Redbrand's named cleaver; `finds` holds their quality, trait and source.
+    ItemTemplate {
+        id: ItemId::new(24),
+        name: "Fine Militia Shortsword",
+        max_stack: 1,
+        slot: Some(EquipmentSlot::MainHand),
+        weapon: Some(WeaponFamily::Sword),
+        stats: ItemStats {
+            stamina: 2,
+            strength: 4,
+            agility: 0,
+            intellect: 0,
+        },
+    },
+    ItemTemplate {
+        id: ItemId::new(25),
+        name: "Balanced Militia Shortsword",
+        max_stack: 1,
+        slot: Some(EquipmentSlot::MainHand),
+        weapon: Some(WeaponFamily::Sword),
+        stats: ItemStats {
+            stamina: 1,
+            strength: 3,
+            agility: 0,
+            intellect: 0,
+        },
+    },
+    ItemTemplate {
+        id: ItemId::new(26),
+        name: "Long-hafted Militia Spear",
+        max_stack: 1,
+        slot: Some(EquipmentSlot::MainHand),
+        weapon: Some(WeaponFamily::Spear),
+        stats: ItemStats {
+            stamina: 1,
+            strength: 3,
+            agility: 0,
+            intellect: 0,
+        },
+    },
+    ItemTemplate {
+        id: ItemId::new(27),
+        name: "Garrick's Cleaver",
+        max_stack: 1,
+        slot: Some(EquipmentSlot::MainHand),
+        weapon: Some(WeaponFamily::Sword),
+        stats: ItemStats {
+            stamina: 2,
+            strength: 5,
             agility: 0,
             intellect: 0,
         },
