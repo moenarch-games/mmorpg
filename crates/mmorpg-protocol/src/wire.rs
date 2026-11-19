@@ -53,6 +53,7 @@ const CLASHED: u8 = 25;
 const STRIKE_BEGAN: u8 = 26;
 const CREATURE_ATTACK_BEGAN: u8 = 27;
 const STRIKE_REWARDED: u8 = 28;
+const FLANKED: u8 = 29;
 const CRITICAL_FLAG: u32 = 1;
 
 pub(crate) const fn entity_kind_code(kind: EntityKind) -> u8 {
@@ -504,6 +505,8 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
             None,
             ticks,
         ),
+        // A flanking Sinister Strike (#949).
+        ZoneEvent::Flanked { source, target } => (FLANKED, 0, Some(source), Some(target), 0),
         // A beast's attack (#889): the attack code in the flags, the contact countdown in the
         // amount.
         ZoneEvent::CreatureAttackBegan {
@@ -786,6 +789,14 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
                 reward: mmorpg_core::StrikeReward::from_code(code()?).ok_or_else(invalid)?,
                 ticks: amount,
             }
+        }
+        FLANKED => {
+            damage(false)?;
+            let (source, target) = pair()?;
+            if amount != 0 {
+                return Err(invalid());
+            }
+            ZoneEvent::Flanked { source, target }
         }
         CREATURE_ATTACK_BEGAN => {
             if target.is_some() || amount == 0 {
