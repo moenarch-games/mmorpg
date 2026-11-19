@@ -321,6 +321,8 @@ pub struct CanonicalPlayerSnapshot {
     pub waystones: crate::WaystoneSet,
     /// Named areas discovered (#916).
     pub discoveries: std::collections::BTreeSet<crate::AreaId>,
+    /// Discovery caches opened (#913).
+    pub caches: std::collections::BTreeSet<u32>,
     /// The durable character this session plays and its depths receipts (#404).
     pub character: Option<crate::CharacterId>,
     pub depths: crate::DepthsRecord,
@@ -480,6 +482,7 @@ impl ZoneSimulation {
                     quests: state.quests.clone(),
                     waystones: state.waystones.clone(),
                     discoveries: state.discoveries.clone(),
+                    caches: state.caches.clone(),
                     character: state.character.clone(),
                     depths: state.depths,
                     physique: state.physique,
@@ -929,6 +932,7 @@ impl ZoneSimulation {
                 quests: player.quests,
                 waystones: player.waystones,
                 discoveries: player.discoveries,
+                caches: player.caches,
                 character: player.character,
                 depths: player.depths,
                 physique: player.physique,

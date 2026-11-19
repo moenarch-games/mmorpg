@@ -74,6 +74,7 @@ function arenaScenery(local: LocalWorld, presentation: ArenaPresentation): Scene
     den: { kit: "den", entries: [], placements: [], lods: () => { throw new Error("The arena has no den."); } },
     gather: { kit: "gather", entries: [], placements: [], lods: () => { throw new Error("The arena has no ore veins."); } },
     veins: [],
+    discoveries: { kit: "discoveries", entries: [], placements: [], lods: () => { throw new Error("The arena has no discoveries."); } },
     ambient: { entries: [], clips: [], anchors: [], frame: () => emptyMotion },
     importedRestClip: (kind) => local.scenery.importedRestClip(kind),
     areaAt: () => null,

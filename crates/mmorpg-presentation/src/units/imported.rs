@@ -726,6 +726,7 @@ const WILD_CLIPS: Clips = Clips {
         guard_break: "Hit",
         light: ["Hit", "Hit"],
         heavy: "Hit",
+        rooted: None,
     }),
     sword: None,
     dagger: None,
@@ -1314,6 +1315,9 @@ pub struct ReactionClips {
     /// played for an ordinary and a critical hit when the bundle has them (#885).
     pub light: [&'static str; 2],
     pub heavy: &'static str,
+    /// The upper body straining against a root and against ice (asset-tooling #767), looped
+    /// while the zone holds the unit (#956), for a model that has them.
+    pub rooted: Option<[&'static str; 2]>,
 }
 
 impl ReactionClips {
@@ -1646,6 +1650,7 @@ impl Kind {
                     guard_break: "Idle_Shield_Break",
                     light: ["Hit_Light_L", "Hit_Light_R"],
                     heavy: "Hit_Heavy_Front",
+                    rooted: Some(["Rooted_Struggle_Loop", "Rooted_Struggle_Frozen_Loop"]),
                 }),
                 sword: Some(SwordClips {
                     slashes: [
@@ -2301,6 +2306,8 @@ pub struct Cues<'a> {
     pub guard: Option<StrikeHeight>,
     /// Under a stun the zone applied (#582).
     pub stunned: bool,
+    /// Held by a root the zone applied (#956): Entangling Roots' vines or Frost Nova's ice.
+    pub rooted: Option<super::effects::Condition>,
     /// The zone projects a dodge roll (#516).
     pub rolling: bool,
     /// The zone projects the unit in combat: a crossbowman standing in combat aims (#607).
@@ -3861,6 +3868,20 @@ impl Playback {
             && available(guard)
         {
             Some(Want::looped(guard, 1.))
+        } else if let Some(clip) = cues
+            .rooted
+            .zip(clips.reactions.and_then(|reactions| reactions.rooted))
+            .map(|(hold, [roots, ice])| {
+                if hold == super::effects::Condition::Frost {
+                    ice
+                } else {
+                    roots
+                }
+            })
+            .filter(|&clip| stun.is_none() && available(clip))
+        {
+            // The upper body strains against the root that holds it (#956).
+            Some(Want::looped(clip, 1.))
         } else if let Some((false, want)) = gesture_want {
             Some(want)
         } else if occupied {
@@ -5514,6 +5535,24 @@ mod tests {
                 .0,
             "Idle_Loop"
         );
+        // A root holds the legs still and the upper body strains against vines or ice (#956).
+        for (hold, clip) in [
+            (
+                super::super::effects::Condition::Roots,
+                "Rooted_Struggle_Loop",
+            ),
+            (
+                super::super::effects::Condition::Frost,
+                "Rooted_Struggle_Frozen_Loop",
+            ),
+        ] {
+            let rooted = Cues {
+                rooted: Some(hold),
+                ..Cues::default()
+            };
+            let held = frame(&mut Playback::default(), &with, 0., rooted);
+            assert_eq!((held.lower.0, held.upper.0), ("Idle_Loop", clip));
+        }
         // Back from death the unit rises once.
         let mut playback = Playback::default();
         let dead = Cues {

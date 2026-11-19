@@ -16,6 +16,7 @@ mod boss;
 mod boulder;
 mod breakable;
 pub mod buoyancy;
+mod cache;
 mod casting;
 mod character;
 mod chat;
@@ -35,6 +36,7 @@ mod ephemeral;
 mod equipment;
 mod events;
 mod finds;
+mod flank;
 mod forced;
 mod gathering;
 #[doc(hidden)]
@@ -94,6 +96,7 @@ pub use breakable::{
     DEBRIS_TICKS, Debris, DebrisPiece, DebrisView, EXPLOSION_DAMAGE, EXPLOSION_KNOCKBACK_UNITS,
     EXPLOSION_RADIUS_UNITS, MAX_DEBRIS, MAX_DEBRIS_PER_TICK, MAX_VISIBLE_DEBRIS, debris_pieces,
 };
+pub use cache::{CACHE_HEIGHT_UNITS, DiscoveryCache};
 pub use character::{
     CHARACTER_RECORD_SCHEMA_VERSION, CharacterId, CharacterLocation, CharacterRecord, DepthsRecord,
     MAX_CHARACTER_ID_BYTES,
@@ -153,6 +156,7 @@ pub use finds::{
     ITEM_FINDS, ItemFind, ItemQuality, ItemTrait, NamedWeapon, STANDARD_FIND_WEIGHT, find_text,
     item_find, roll_variant, rolls_as, shaped_strike,
 };
+pub use flank::{CREATURE_TURN_PER_TICK, FLANK_DAMAGE_PERCENT, FLANK_FRONT_HALF_ARC, flanks};
 pub use forced::{
     CHARGE_MAX_TICKS, CHARGE_SPEED_SUBUNITS_PER_TICK, FORCED_IMMUNITY_TICKS, ForcedMove,
     ForcedState, KNOCKBACK_TICKS, SHOVE_UNITS,

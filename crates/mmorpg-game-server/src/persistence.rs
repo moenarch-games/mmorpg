@@ -109,6 +109,7 @@ impl GrantId {
             RewardKey::RaidParticipation { incident } => format!("raid/{incident}/participation"),
             RewardKey::RaidDefence { incident } => format!("raid/{incident}/defence"),
             RewardKey::Discovery { area } => format!("discovery/{}", area.get()),
+            RewardKey::Cache { cache } => format!("cache/{cache}"),
         };
         if key.world_owned() {
             Self::new(format!("world/{world}/zone/{}/{suffix}", zone.get()))

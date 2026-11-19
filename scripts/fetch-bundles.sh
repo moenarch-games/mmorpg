@@ -18,8 +18,9 @@
 # crag kit (#668) into web/public/scenery/crag.kit, where the
 # browser serves them and the native client build embeds them,
 # and the Battle Royale fortress kit (#591) into web/public/scenery/fortress.kit for the browser's arena.
-# The Wolfrun Den kit (#963) lands in web/public/scenery/wolf-den.kit.
 # The gatherables kit (#917) lands in web/public/scenery/gatherables.kit.
+# The Wolfrun Den kit (#963) lands in web/public/scenery/wolf-den.kit, and the discovery sites'
+# kit (#913) in web/public/scenery/discoveries.kit.
 # The strike and spell effects (#894) land in web/public/effects/strike.effects and
 # web/public/effects/spell.effects.
 # The directories are ignored build input, never committed.
@@ -257,6 +258,8 @@ fetch_rolling crag-kit crag.kit scenery/crag.kit
 fetch_rolling wolf-den wolf-den.kit scenery/wolf-den.kit
 # The ore veins and the boar and ore drops gathered for the smith's recipe (#917, asset-tooling#763).
 fetch_rolling gatherables gatherables.kit scenery/gatherables.kit
+# The optional discoveries' hunter's cache, Redbrand lookout and fen supply cache (#913, asset-tooling#764).
+fetch_rolling discoveries discoveries.kit scenery/discoveries.kit
 # The limestone blocks Greyhaven's rocks are drawn as (asset-tooling#536).
 fetch_rolling limestone-rocks limestone-rocks.kit scenery/limestone-rocks.kit
 # The stones along Greyhaven's watercourses (asset-tooling#538).

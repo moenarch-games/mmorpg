@@ -61,8 +61,8 @@ impl Walker {
 #[test]
 fn brook_bridge_ford_gate_culvert_and_recovery() {
     let content = greyhaven_vale::content();
-    // The Outpost's 21, then the region's people (#819).
-    assert_eq!(content.npcs().len(), 42);
+    // The Outpost's 21, then the region's people (#819) and the smith (#917).
+    assert_eq!(content.npcs().len(), 43);
     for id in 60000..=60002 {
         assert!(content.definition().colliders().iter().any(|c| c.id == id));
     }

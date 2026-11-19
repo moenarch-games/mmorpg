@@ -125,6 +125,12 @@ mod gatherables_bundle {
 mod gatherables_descriptor {
     include!(concat!(env!("OUT_DIR"), "/gatherables_descriptor.rs"));
 }
+mod discoveries_bundle {
+    include!(concat!(env!("OUT_DIR"), "/discoveries_bundle.rs"));
+}
+mod discoveries_descriptor {
+    include!(concat!(env!("OUT_DIR"), "/discoveries_descriptor.rs"));
+}
 
 type Files = &'static [(&'static str, &'static [u8])];
 
@@ -137,12 +143,18 @@ struct Source {
     descriptor: &'static str,
 }
 
-const SOURCES: [Source; 9] = [
+const SOURCES: [Source; 10] = [
     Source {
         keys: &mmorpg_presentation::world_dressing::GATHERABLE_ENTRIES,
         entries: gatherables_bundle::ENTRIES,
         files: gatherables_bundle::FILES,
         descriptor: gatherables_descriptor::DESCRIPTOR,
+    },
+    Source {
+        keys: &mmorpg_presentation::world_dressing::DISCOVERY_ENTRIES,
+        entries: discoveries_bundle::ENTRIES,
+        files: discoveries_bundle::FILES,
+        descriptor: discoveries_descriptor::DESCRIPTOR,
     },
     Source {
         keys: &mmorpg_presentation::world_dressing::WOLF_DEN_ENTRIES,
@@ -262,6 +274,10 @@ pub fn lods() -> Vec<EntryLods> {
     lods.extend(
         mmorpg_presentation::nature::descriptor_lods(gatherables_descriptor::DESCRIPTOR)
             .expect("the embedded gatherables descriptor is valid"),
+    );
+    lods.extend(
+        mmorpg_presentation::nature::descriptor_lods(discoveries_descriptor::DESCRIPTOR)
+            .expect("the embedded discoveries descriptor is valid"),
     );
     lods
 }

@@ -336,6 +336,11 @@ impl Logs {
                         }
                     },
                 ),
+                // A flanking Sinister Strike (#949).
+                ZoneEvent::Flanked { target, .. } => (
+                    LineKind::Combat,
+                    format!("Flank! You strike {} off guard.", who(target)),
+                ),
                 // A strike's timing reward (#928).
                 ZoneEvent::StrikeRewarded { reward, .. } => (
                     LineKind::Combat,

@@ -38,7 +38,8 @@ pub enum Scenario {
     /// (#299), facing it: walk north to roll it downhill onto the camp, or Shield Bash it.
     BoulderTrap,
     /// A level 6 Warden in the Redbrand camp, 4 m east of the spike pit (#300), facing it:
-    /// walk west into the spikes, or step north or south to go round them.
+    /// walk west into the spikes, or step north or south to go round them, or back a bandit up
+    /// to the pit and Shield Bash it in (#955).
     RedbrandTraps,
     RedbrandCavern,
     /// A level 6 Warden standing in the Redbrand Hollow threshold with the Garrick chain turned

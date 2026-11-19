@@ -210,6 +210,8 @@ export type SceneryProvider = {
   readonly gather: PlacedKitSource;
   /** The ore veins (#917) in wire order: centre in units and their full and spent `gather` placements. */
   readonly veins: readonly { x: number; z: number; full: number; spent: number }[];
+  /** The optional discoveries, from the `discoveries` bundle (#913). */
+  readonly discoveries: PlacedKitSource;
   /** Greyhaven's cosmetic ambient animals (#419). */
   readonly ambient: AmbientAnimalsSource;
   importedRestClip(kind: string): string;
@@ -551,6 +553,7 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
         x: nodes[index * 2]!, z: nodes[index * 2 + 1]!, full: slots[index * 2] ?? 0, spent: slots[index * 2 + 1] ?? 0,
       }));
     })(),
+    discoveries: placedKit(content, "discoveries"),
     ambient: (() => {
       const anchors = content.ambientAnimalAnchors();
       return {

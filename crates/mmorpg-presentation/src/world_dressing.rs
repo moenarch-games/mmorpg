@@ -30,7 +30,7 @@ use crate::{
 };
 
 /// Greyhaven Vale's dressing files.
-const GREYHAVEN: [&str; 12] = [
+const GREYHAVEN: [&str; 13] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/vale.json"
@@ -89,11 +89,16 @@ const GREYHAVEN: [&str; 12] = [
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/gatherables.json"
     )),
+    // The optional discoveries' hunter's cache, Redbrand lookout and fen supply cache (#913).
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../content/greyhaven/dressing/discoveries.json"
+    )),
 ];
 
 /// Every kit that draws dressing, by its asset keys' prefix, with the static-scene fallback
 /// ([`Kit`]) it hides while drawn, if it has one.
-pub const KITS: [(&str, Option<Kit>); 11] = [
+pub const KITS: [(&str, Option<Kit>); 12] = [
     ("greyhaven.nature.", Some(Kit::Nature)),
     ("limestone-rocks.kit.", Some(Kit::Nature)),
     ("crag.kit.", Some(Kit::Crag)),
@@ -109,6 +114,8 @@ pub const KITS: [(&str, Option<Kit>); 11] = [
     ("wolf-den.kit.", None),
     // The basin's ore veins (#917) stand on their own generated colliders.
     ("gatherables.kit.", None),
+    // The optional discoveries (#913), drawn like the den over their generated colliders.
+    ("discoveries.kit.", None),
 ];
 
 /// The wolf den kit's entries (asset-tooling#757), drawn through [`kit_placements`].
@@ -123,6 +130,24 @@ pub const WOLF_DEN_ENTRIES: [&str; 3] = [
 pub const GATHERABLE_ENTRIES: [&str; 2] = [
     "gatherables.kit.ore-vein",
     "gatherables.kit.ore-vein-depleted",
+];
+
+/// The discoveries kit's placed entries (#913, asset-tooling#764), drawn through
+/// [`kit_placements`].
+pub const DISCOVERY_ENTRIES: [&str; 13] = [
+    "discoveries.kit.hunter-lean-to",
+    "discoveries.kit.hunter-chest",
+    "discoveries.kit.skinning-rack",
+    "discoveries.kit.fire-ring",
+    "discoveries.kit.hunter-clue",
+    "discoveries.kit.lookout-platform",
+    "discoveries.kit.lookout-ladder",
+    "discoveries.kit.signal-brazier-lit",
+    "discoveries.kit.weapon-rack",
+    "discoveries.kit.lookout-banner",
+    "discoveries.kit.fen-punt",
+    "discoveries.kit.supply-crates",
+    "discoveries.kit.fen-marker",
 ];
 
 /// The dressing format's version.
@@ -342,7 +367,7 @@ pub fn ground_details(s: &Scenery, entries: &'static [&'static str]) -> Vec<Plac
 }
 
 /// The placements of the supplied bundle `entries` on `s` that stand at their authored height,
-/// not as ground detail: the Wolfrun Den's pieces (#963).
+/// not as ground detail: the Wolfrun Den's pieces (#963) and the discoveries' (#913).
 #[must_use]
 pub fn kit_placements(s: &Scenery, entries: &'static [&'static str]) -> Vec<Placement> {
     placed(s)

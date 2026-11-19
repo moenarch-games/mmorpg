@@ -122,12 +122,14 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // The spread fights pin their creatures (#960): pairs of bots by 16 listed level 1–2 wolves,
     // boars and rats on level ground, so new spawns elsewhere move no bot. Pairs kill their
     // creatures, and no bot dies to a Redbrand: fights-8 and fights-32 are re-recorded as measured.
+    // The optional discoveries (#913) add five guards: every step visits 1,800 more bodies.
+    // Every row is re-recorded as measured.
     const HEADROOM_PERCENT: usize = 5;
     let recorded: [[usize; 4]; FIXTURES.len()] = [
-        [11_052, 88_920, 282_240, 6_157_408],
-        [14_086, 85_999, 84_240, 1_979_905],
-        [17_396, 94_557, 492_480, 8_802_353],
-        [13_037, 105_732, 2_314_114, 24_437_289],
+        [11_052, 90_720, 282_240, 6_168_928],
+        [14_122, 87_799, 84_240, 1_985_665],
+        [17_504, 96_357, 496_800, 8_855_408],
+        [13_109, 107_532, 2_327_794, 24_480_055],
     ];
     for (fixture, recorded) in FIXTURES.into_iter().zip(recorded) {
         let ceiling = recorded.map(|count| count + count * HEADROOM_PERCENT / 100);

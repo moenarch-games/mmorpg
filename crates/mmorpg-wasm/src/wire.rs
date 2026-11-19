@@ -1019,6 +1019,11 @@ pub enum ZoneEvent {
         reward: StrikeReward,
         ticks: u16,
     },
+    /// The viewer's Sinister Strike caught `target` outside its frontal arc (#949).
+    Flanked {
+        source: EntityRef,
+        target: EntityRef,
+    },
     /// A beast `source` began its `attack` (#889), biting `contact` ticks from now.
     CreatureAttackBegan {
         source: EntityRef,
@@ -1220,6 +1225,10 @@ impl From<core::ZoneEvent> for ZoneEvent {
                 source: source.into(),
                 reward: reward.into(),
                 ticks,
+            },
+            E::Flanked { source, target } => Self::Flanked {
+                source: source.into(),
+                target: target.into(),
             },
             E::CreatureAttackBegan {
                 source,
@@ -1465,6 +1474,10 @@ impl From<ZoneEvent> for core::ZoneEvent {
                 source: source.into(),
                 reward: reward.into(),
                 ticks,
+            },
+            E::Flanked { source, target } => Self::Flanked {
+                source: source.into(),
+                target: target.into(),
             },
             E::CreatureAttackBegan {
                 source,
