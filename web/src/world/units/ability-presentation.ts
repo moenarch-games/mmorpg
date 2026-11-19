@@ -105,6 +105,9 @@ export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = ne
   [51, { range: "self", description: "Leap 8 m along your facing and land with an impact that hurts and hurls back every enemy within 4 m, weaker toward the edge.", glyph: FOOT, accent: "#c98a4a", visual: "ring", pose: "swing" }],
   [52, { range: { units: 2_000 }, description: "Hook your selected target and pull it to melee reach; walls stop it and a just-moved target is immune.", glyph: ARROW, accent: "#d8c27a", visual: "projectile", pose: "draw" }],
   [53, { range: "self", description: "Teleport up to 10 m along your facing, as far as the way is free; walls and summoned terrain end it short of them.", glyph: ORB, accent: "#b69cff", visual: "ring", pose: "cast" }],
+  // The Necromancer's corpse payoffs (#935): a victim dying under your Corruption leaves a fresh corpse for 10 s.
+  [54, { range: "self", description: "Spends your fresh corpse (a victim that died under your Corruption, within 30 m) to raise one undead helper for 20 s. Only one stands at a time; Y/U/I/O order it like skeletons.", glyph: SKULL, accent: "#9be08a", visual: null, pose: "cast" }],
+  [55, { range: "self", description: "Spends your fresh corpse (a victim that died under your Corruption, within 30 m): it bursts, hurting every enemy within 6 m of it.", glyph: SPLAT, accent: "#b07dff", visual: null, pose: "cast" }],
 ]);
 
 export function presentationOf(ability: number): AbilityPresentation | undefined {
@@ -113,7 +116,7 @@ export function presentationOf(ability: number): AbilityPresentation | undefined
 
 export type AuraPolarity = "buff" | "debuff";
 
-const BUFF_KINDS: ReadonlySet<AuraKind> = new Set(["heal-over-time", "absorb", "haste"]);
+const BUFF_KINDS: ReadonlySet<AuraKind> = new Set(["heal-over-time", "absorb", "haste", "corpse"]);
 
 /** Heals, shields and haste help their bearer; damage over time, roots, snares and stuns hurt it. */
 export function auraPolarity(kind: AuraKind): AuraPolarity {

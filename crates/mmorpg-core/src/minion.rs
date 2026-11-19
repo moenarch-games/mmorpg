@@ -7,7 +7,8 @@
 //!
 //! - **Raising** (Raise Skeleton resolving, tick steps 1 or 6): a minion stands up one step
 //!   behind its summoner at the summoner's level. A summoner keeps at most
-//!   [`MAX_MINIONS_PER_SUMMONER`]; raising one more crumbles the oldest.
+//!   [`MAX_MINIONS_PER_SUMMONER`]; raising one more crumbles the oldest. Raise Dead (#935, see
+//!   `corpse.rs`) raises a helper the same way but at most [`RAISE_DEAD_LIMIT`] at once.
 //! - **Group orders** (step 1): the summoner orders all its minions at once to *attack* a
 //!   visible living creature, *defend* a point, *follow* or *retreat*. The zone checks the
 //!   summoner is alive, has minions, and that the target or point lies within
@@ -44,6 +45,8 @@ use crate::{
 
 /// One summoner commands at most this many minions at once.
 pub const MAX_MINIONS_PER_SUMMONER: usize = 4;
+/// Raise Dead's helpers (#935) one summoner keeps at once; a raise past it is refused.
+pub const RAISE_DEAD_LIMIT: usize = 1;
 /// Every minion of a full zone.
 pub const MAX_MINIONS: usize = crate::MAX_PLAYERS_PER_ZONE * MAX_MINIONS_PER_SUMMONER;
 /// A skeleton's collision box: 0.5 m × 1.6 m × 0.5 m.
@@ -136,6 +139,22 @@ pub(crate) fn minion_stats(ability: AbilityId, level: u8) -> Option<MinionStats>
                 swing_ticks,
                 Some(duration),
                 MAX_MINIONS_PER_SUMMONER,
+            ),
+            AbilityEffect::RaiseDead {
+                health,
+                health_per_level,
+                damage,
+                damage_per_level,
+                swing_ticks,
+                duration,
+            } => (
+                health,
+                health_per_level,
+                damage,
+                damage_per_level,
+                swing_ticks,
+                Some(duration),
+                RAISE_DEAD_LIMIT,
             ),
             AbilityEffect::Companion {
                 health,
@@ -245,7 +264,7 @@ impl ZoneSimulation {
     }
 
     /// The minions `summoner` raised with `ability`, in ID order.
-    fn minions_by(&self, summoner: PlayerId, ability: AbilityId) -> Vec<MinionId> {
+    pub(crate) fn minions_by(&self, summoner: PlayerId, ability: AbilityId) -> Vec<MinionId> {
         self.minions
             .values()
             .filter(|minion| minion.summoner == summoner && minion.ability == ability)
@@ -269,7 +288,9 @@ impl ZoneSimulation {
         };
         let mut health = stats.max_health;
         let owned = self.minions_by(summoner, ability);
-        if owned.len() >= stats.limit
+        // A Raise Dead helper (#935) counts toward the summoner's whole band.
+        if (owned.len() >= stats.limit
+            || self.minions_of(summoner).len() >= MAX_MINIONS_PER_SUMMONER)
             && let Some(&oldest) = owned.first()
         {
             if stats.duration.is_none() {

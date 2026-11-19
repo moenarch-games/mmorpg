@@ -103,6 +103,9 @@ pub enum AuraKind {
     Snare,
     Stun,
     Haste,
+    /// A fresh corpse (#935) the bearer may spend with Raise Dead or Corpse Burst; the
+    /// aura's caster is the corpse.
+    Corpse,
 }
 
 impl AuraKind {
@@ -116,6 +119,7 @@ impl AuraKind {
             Self::Snare => 5,
             Self::Stun => 6,
             Self::Haste => 7,
+            Self::Corpse => 8,
         }
     }
 
@@ -129,6 +133,7 @@ impl AuraKind {
             5 => Some(Self::Snare),
             6 => Some(Self::Stun),
             7 => Some(Self::Haste),
+            8 => Some(Self::Corpse),
             _ => None,
         }
     }
@@ -143,6 +148,7 @@ impl AuraKind {
             Self::Snare => "snare",
             Self::Stun => "stun",
             Self::Haste => "haste",
+            Self::Corpse => "corpse",
         }
     }
 }
@@ -345,7 +351,30 @@ pub enum AbilityEffect {
         damage_per_level: u16,
         swing_ticks: u16,
     },
+    /// Raise Dead (#935): spends the caster's fresh corpse to raise one helper like
+    /// [`AbilityEffect::Summon`]. At most [`crate::RAISE_DEAD_LIMIT`] stand at once; a raise
+    /// past it is refused and keeps the corpse. Its aura is the corpse mark itself
+    /// ([`AuraKind::Corpse`]), which lasts [`CORPSE_WINDOW_TICKS`].
+    RaiseDead {
+        health: u16,
+        health_per_level: u16,
+        damage: [u16; 2],
+        damage_per_level: u16,
+        swing_ticks: u16,
+        duration: u16,
+    },
+    /// Corpse Burst (#935): spends the caster's fresh corpse, which bursts like a blast without
+    /// knockback: every hostile unit within `radius` that the corpse can see takes `damage` +
+    /// `per_level`, falling off linearly to half at the edge.
+    CorpseBurst {
+        damage: [u16; 2],
+        per_level: u16,
+        radius: i32,
+    },
 }
+
+/// How long a corrupted victim's corpse stays spendable for its Necromancer (#935): 10 s.
+pub const CORPSE_WINDOW_TICKS: u16 = ticks_from_ms(10_000);
 
 /// One catalog row.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -387,6 +416,7 @@ impl Ability {
                 (AuraKind::Root, root_ticks, 0)
             }
             AbilityEffect::Absorb { duration, .. } => (AuraKind::Absorb, duration, 0),
+            AbilityEffect::RaiseDead { .. } => (AuraKind::Corpse, CORPSE_WINDOW_TICKS, 0),
             AbilityEffect::WeaponStrike { .. }
             | AbilityEffect::Cleave { .. }
             | AbilityEffect::Bolt { .. }
@@ -404,7 +434,8 @@ impl Ability {
             | AbilityEffect::Companion { .. }
             | AbilityEffect::Leap { .. }
             | AbilityEffect::Hook { .. }
-            | AbilityEffect::Blink { .. } => return None,
+            | AbilityEffect::Blink { .. }
+            | AbilityEffect::CorpseBurst { .. } => return None,
         };
         Some(AuraSpec {
             kind,
@@ -567,6 +598,9 @@ pub mod ids {
     pub const HEROIC_LEAP: AbilityId = AbilityId::new(51);
     pub const GRAPPLING_HOOK: AbilityId = AbilityId::new(52);
     pub const BLINK: AbilityId = AbilityId::new(53);
+    /// The Necromancer's corpse payoffs (#935).
+    pub const RAISE_DEAD: AbilityId = AbilityId::new(54);
+    pub const CORPSE_BURST: AbilityId = AbilityId::new(55);
 }
 
 /// How a projectile treats what it meets (#291).
@@ -589,7 +623,7 @@ pub enum Shot {
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 53] = [
+pub const ABILITY_CATALOG: [Ability; 55] = [
     ability(
         1,
         "Heroic Strike",
@@ -1466,6 +1500,42 @@ pub const ABILITY_CATALOG: [Ability; 53] = [
         AbilityRange::SelfCentred,
         AbilityEffect::Blink { distance: 1_000 },
     ),
+    // The Necromancer's corpse payoffs (#935): a victim that dies under the caster's Corruption
+    // leaves a fresh corpse for 10 s, spent once on either a raised helper or a burst. The
+    // numbers are provisional tuning.
+    ability(
+        54,
+        "Raise Dead",
+        NECROMANCER,
+        3,
+        20,
+        CastTime::Instant,
+        0,
+        AbilityRange::SelfCentred,
+        AbilityEffect::RaiseDead {
+            health: 60,
+            health_per_level: 12,
+            damage: [6, 9],
+            damage_per_level: 2,
+            swing_ticks: ticks_from_ms(2_000),
+            duration: ticks_from_ms(20_000),
+        },
+    ),
+    ability(
+        55,
+        "Corpse Burst",
+        NECROMANCER,
+        3,
+        25,
+        CastTime::Instant,
+        0,
+        AbilityRange::SelfCentred,
+        AbilityEffect::CorpseBurst {
+            damage: [24, 30],
+            per_level: 4,
+            radius: 600,
+        },
+    ),
 ];
 
 /// The catalog row of `id`, if any.
@@ -1751,6 +1821,34 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
                 vec![27, damage[0].into(), damage[1].into(), per_level.into()]
             }
             AbilityEffect::Blink { distance } => vec![28, distance],
+            AbilityEffect::RaiseDead {
+                health,
+                health_per_level,
+                damage,
+                damage_per_level,
+                swing_ticks,
+                duration,
+            } => vec![
+                29,
+                health.into(),
+                health_per_level.into(),
+                damage[0].into(),
+                damage[1].into(),
+                damage_per_level.into(),
+                swing_ticks.into(),
+                duration.into(),
+            ],
+            AbilityEffect::CorpseBurst {
+                damage,
+                per_level,
+                radius,
+            } => vec![
+                30,
+                damage[0].into(),
+                damage[1].into(),
+                per_level.into(),
+                radius,
+            ],
         };
         bytes.extend_from_slice(&u32::try_from(fields.len()).unwrap_or(0).to_be_bytes());
         for field in fields {
@@ -1786,7 +1884,7 @@ mod tests {
             }
         }
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
-        assert_eq!(ability_by_id(AbilityId::new(54)), None);
+        assert_eq!(ability_by_id(AbilityId::new(56)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
         for &class in PlayerClass::VARIANTS {
             let cooldowns = ABILITY_CATALOG

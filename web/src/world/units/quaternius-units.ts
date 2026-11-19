@@ -11,6 +11,7 @@ import { characterVisualProfile } from "../../character-visuals";
 import type { CharacterClassId } from "../../character-selection";
 import { declaredChains, figureAppearance, swordArmPose, varyPreset } from "../wasm-runtime";
 import { ChainSway, declareChains } from "./chain-sway";
+import { BASE_FAMILY, clipFamilies, FamilyClips } from "./clip-families";
 import choreTable from "../../../../content/greyhaven/chores.json";
 import type { BowShot, ChoreCarry, ClassOutfit, ClipLayer, CrossbowCarry, ImportedModelKind, ImportedRequest, LayerMask, Loadout as CarriedLoadout, Throwable } from "../unit-presenter";
 
@@ -352,7 +353,10 @@ function variant(clip: THREE.AnimationClip, mask: LayerMask, slot: number, upper
  * per layer, its tracks masked to the layer's region and weighted, so a joint averages the layers
  * driving it and rests for the remainder, like the native client's CPU skinning.
  */
-function mixerPosable(model: THREE.Object3D, sources: ReadonlyMap<string, THREE.AnimationClip>, dispose?: () => void): Posable {
+/** Clips by name: a plain map, or a Ranger figure's families that load on first use (#898). */
+type ClipSource = { get(name: string): THREE.AnimationClip | undefined };
+
+function mixerPosable(model: THREE.Object3D, sources: ClipSource, dispose?: () => void): Posable {
   const mixer = new THREE.AnimationMixer(model);
   const upper = upperBody(model);
   const cloth = new Set([...secondaryJoints].filter((joint) => model.getObjectByName(joint)).sort());
@@ -367,8 +371,9 @@ function mixerPosable(model: THREE.Object3D, sources: ReadonlyMap<string, THREE.
         const source = sources.get(layer.clip);
         if (!source) { continue; }
         let slot = 0;
-        while (used.has(`${layer.clip}|${layer.mask}|${gripped}|${slot}`)) { slot += 1; }
-        const key = `${layer.clip}|${layer.mask}|${gripped}|${slot}`;
+        // Keyed by the clip actually played: a stand-in gives way to its clip once that family loads.
+        while (used.has(`${source.name}|${layer.mask}|${gripped}|${slot}`)) { slot += 1; }
+        const key = `${source.name}|${layer.mask}|${gripped}|${slot}`;
         used.add(key);
         let action = playing.get(key);
         if (!action) {
@@ -885,7 +890,8 @@ export function applyFace(model: THREE.Object3D, look: FaceLook, choice: FaceCho
 type FigureBundle = {
   character: string;
   gltf: GLTF;
-  sources: ReadonlyMap<string, THREE.AnimationClip>;
+  /** Its clips: the base family loaded, the others on first use (#898). */
+  sources: FamilyClips<THREE.AnimationClip>;
   sockets: ReadonlyMap<string, Socket>;
   motions: ReadonlyMap<string, ClipMotion>;
   /** The `humanoid-clips` descriptor JSON, for the shared presenter's traversal data (#500). */
@@ -965,10 +971,14 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
   const entryUrl = (key: string, variant?: string) => key.startsWith("equipment.")
     ? url(entryFile(bundleEntry(equipment, key, variant), ".gltf"), EQUIPMENT)
     : url(entryFile(bundleEntry(manifest, key, variant), ".gltf"));
-  if (!entry.clips) { throw new Error(`The ${character} download index has no shared clips.`); }
+  // The base clip family with the model, the others on first use (#898); the combined file without families.
+  const { families } = clipFamilies(manifest);
+  const base = families.find((family) => family.family === BASE_FAMILY);
+  const library = base?.file ?? entry.clips;
+  if (!library) { throw new Error(`The ${character} download index has no shared clips.`); }
   const [gltf, animationLibrary, sockets, descriptor] = await Promise.all([
     loader.loadAsync(url(entryFile(entry, ".gltf"))),
-    loader.loadAsync(url(entry.clips)),
+    loader.loadAsync(url(library)),
     json(entryFile(entry, ".humanoid-sockets.json")).then(socketsOf),
     json(entryFile(entry, ".humanoid-clips.json")),
   ]);
@@ -1030,8 +1040,14 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
       (key !== "class" || hasClassOutfits || knight) && HEADWEAR_ITEMS[key].every((item) => items.has(item.key))),
     hair: ["bald", ...(Object.keys(HAIR_ENTRIES) as (keyof typeof HAIR_ENTRIES)[]).filter((style) => items.has(HAIR_ENTRIES[style]))],
   };
-  const sources = new Map(animationLibrary.animations.map((clip) => [clip.name, clip]));
-  withSecondaryPoses(sources, descriptor);
+  const loaded = new Map(animationLibrary.animations.map((clip) => [clip.name, clip]));
+  withSecondaryPoses(loaded, descriptor);
+  const sources = new FamilyClips(loaded, new Map([...loaded].map(([name, clip]) => [name, clip.duration])), base ? families : [],
+    async (family) => {
+      const clips = new Map((await loader.loadAsync(url(family.file))).animations.map((clip) => [clip.name, clip]));
+      withSecondaryPoses(clips, descriptor);
+      return clips;
+    });
   const wear: FigureBundle["wear"] = (model, worn, hairKey, tint) => {
     const weaponSocket = sockets.get("hand_r.weapon");
     if (weaponSocket) { swordSockets.set(model, weaponSocket.matrix); }
@@ -1396,7 +1412,7 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     });
     return false;
   };
-  const clips = new Map([...sources].map(([name, clip]) => [name, clip.duration]));
+  const clips = new Map(sources.durations());
   return { clips, motions, descriptor: male.descriptor, instantiate, loadResidents, outfitReady, variedReady, face, playerReady, knightReady,
     playerFailed: (character) => failedFigures.has(character),
     playerOptions: (character) => figures.get(character)?.options,
