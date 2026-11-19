@@ -118,7 +118,8 @@ mirror!(
         Root,
         Snare,
         Stun,
-        Haste
+        Haste,
+        Corpse
     }
 );
 mirror!(
