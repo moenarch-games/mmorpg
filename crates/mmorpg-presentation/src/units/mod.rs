@@ -105,6 +105,12 @@ fn carried(
     }
 }
 
+/// Whether a unit is a shield-bearer holding its guard (#953): a living Redbrand Brute in
+/// combat, whose shield the zone turns on blows at its front.
+fn shield_guards(resident: Option<Resident>, record: &EntitySnapshot) -> bool {
+    resident == Some(Resident::RedbrandBrute) && record.flags.in_combat && !record.flags.dead
+}
+
 /// The local player's reversible attack preparation (Atlas 6.6.10, #415): an instant ability
 /// pressed or aimed but not yet answered by the zone. It only poses the viewer's upper body;
 /// commands, eligibility, windows and hits stay the zone's.
@@ -1338,6 +1344,23 @@ impl UnitPresenter {
         let Some((kind, _, _)) = self.class_of(snapshot, entity) else {
             return;
         };
+        // A shield-bearer's guard (#953) takes a blocked blow on the shield and staggers when a
+        // blow gets past it.
+        let guarding = snapshot
+            .entities
+            .iter()
+            .find(|record| record.entity() == entity)
+            .is_some_and(|record| shield_guards(self.resident(entity, record), record));
+        let shield = kind
+            .clips()
+            .sword
+            .filter(|_| guarding)
+            .and_then(|sword| match reaction {
+                Reaction::Block => Some(sword.shield_impact),
+                Reaction::Chest | Reaction::Head => Some(sword.shield_stagger),
+                _ => None,
+            })
+            .and_then(|clip| self.clip(kind, clip));
         // An ordinary hit flinches left and right in turn and a critical one staggers back,
         // where the model has the light and heavy hits (#885).
         let varied = kind.clips().reactions.and_then(|clips| match reaction {
@@ -1348,10 +1371,13 @@ impl UnitPresenter {
             Reaction::Head => Some(clips.heavy),
             _ => None,
         });
-        let Some((clip, length)) = varied.and_then(|clip| self.clip(kind, clip)).or_else(|| {
-            kind.reaction(reaction)
-                .and_then(|clip| self.clip(kind, clip))
-        }) else {
+        let Some((clip, length)) = shield
+            .or_else(|| varied.and_then(|clip| self.clip(kind, clip)))
+            .or_else(|| {
+                kind.reaction(reaction)
+                    .and_then(|clip| self.clip(kind, clip))
+            })
+        else {
             return;
         };
         self.playbacks
@@ -2040,6 +2066,7 @@ impl UnitPresenter {
                         // The Redbrand Bandit flanks and falls back on its sword footwork (#963).
                         footwork: resident == Some(Resident::RedbrandBandit)
                             && unit.record.flags.in_combat,
+                        shield_guard: shield_guards(resident, &unit.record) && !stunned,
                         now: seconds,
                         dt: input.dt,
                         reduced,

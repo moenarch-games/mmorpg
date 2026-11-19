@@ -20,6 +20,8 @@ const FEMALE: &str = "humanoid.ranger.female";
 const EQUIPMENT: &str = "humanoid.equipment";
 const SWORD: &str = "equipment.sword.arming";
 const SHIELD: &str = "equipment.shield.heater";
+/// The Redbrand Brute's round plank shield (#953, asset-tooling #774).
+const REDBRAND_SHIELD: &str = "equipment.shield.redbrand";
 /// The Ranger's longbow and quiver stowed on the back (#244).
 const BOW: &str = "equipment.bow.long";
 const QUIVER: &str = "equipment.quiver.back";
@@ -104,6 +106,7 @@ fn main() {
         ("CHARACTER", CHARACTER),
         ("SWORD", SWORD),
         ("SHIELD", SHIELD),
+        ("REDBRAND_SHIELD", REDBRAND_SHIELD),
         ("BOW", BOW),
         ("QUIVER", QUIVER),
         ("DAGGER", DAGGER),
