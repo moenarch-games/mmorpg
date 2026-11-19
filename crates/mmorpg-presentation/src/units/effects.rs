@@ -915,11 +915,21 @@ impl Effects {
                     || matches!(e.visual, Visual::Bubble | Visual::Guard { .. })
             }
         });
+        // A slash striking several units sweeps the kit's cleave fan instead (#963).
+        let mut hits = BTreeMap::<EntityRef, u8>::new();
+        for e in &self.effects {
+            if kit.is_some() && matches!(e.visual, Visual::Sweep { hit: true, .. }) {
+                let n = hits.entry(e.source).or_default();
+                *n = n.saturating_add(1);
+            }
+        }
         let mut out = Vec::new();
         for e in &self.effects {
             if kit.is_some()
                 && (matches!(e.visual, Visual::Impact { .. })
-                    || (e.visual == Visual::Ring && e.ability == FROST_NOVA))
+                    || (e.visual == Visual::Ring && e.ability == FROST_NOVA)
+                    || (matches!(e.visual, Visual::Sweep { .. })
+                        && hits.get(&e.source).is_some_and(|&n| n >= 2)))
             {
                 continue;
             }

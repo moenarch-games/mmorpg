@@ -3,7 +3,8 @@
 
 Each placement in `content/greyhaven/dressing/*.json` that names a `collider` takes its asset's
 `collisionMesh` from the kit's descriptor (a closed, outward-wound triangle mesh in metres in the
-asset's frame), scales it by the placement's `scale` (thousandths per axis), turns it by `yaw`
+asset's frame; or, for a kit that declares only `collisionProxies` boxes, the wolf den's (#963),
+its solid boxes as one such mesh), scales it by the placement's `scale` (thousandths per axis), turns it by `yaw`
 (65 536 per turn about +Y, as the Outpost layout's) and writes it in units at the placement's
 `position`. The result, `crates/mmorpg-core/content/collision/greyhaven-dressing.json`, is
 committed and reviewed like any content change: the zone reads only that file, so a new art
@@ -24,6 +25,7 @@ OUT = ROOT / 'crates/mmorpg-core/content/collision/greyhaven-dressing.json'
 # Each kit by its asset-key prefix: the fetched bundle and its descriptor attachment.
 KITS = {
     'crag.kit.': (ROOT / 'web/public/scenery/crag.kit', 'crag-descriptor'),
+    'wolf-den.kit.': (ROOT / 'web/public/scenery/wolf-den.kit', 'wolf-den-descriptor'),
 }
 UNITS_PER_METRE = 100
 
@@ -38,12 +40,33 @@ def descriptor(bundle, name):
     raise SystemExit(f'{bundle} attaches no {name}; run scripts/fetch-bundles.sh')
 
 
+def boxes_mesh(proxies):
+    """A kit's solid `collisionProxies` boxes (the wolf den's, #963) as one closed,
+    outward-wound triangle mesh in the asset's frame."""
+    vertices, triangles = [], []
+    # Each face's corners counter-clockwise seen from outside, as bit masks of (x, y, z).
+    faces = [(0, 2, 6, 4), (1, 5, 7, 3), (0, 4, 5, 1), (2, 3, 7, 6), (0, 1, 3, 2), (4, 6, 7, 5)]
+    for proxy in proxies:
+        if proxy.get('tag') != 'solid':
+            continue
+        base = len(vertices)
+        for corner in range(8):
+            vertices.append([c + (s / 2 if corner >> (2 - axis) & 1 else -s / 2)
+                             for axis, (c, s) in enumerate(zip(proxy['center'], proxy['size']))])
+        for a, b, c, d in faces:
+            triangles += [[base + a, base + b, base + c], [base + a, base + c, base + d]]
+    return {'shape': 'triangle-mesh', 'vertices': vertices, 'triangles': triangles}
+
+
 def collision_meshes(value):
-    """Every entry with a `collisionMesh`, by key, wherever the descriptor lists it."""
+    """Every entry with a `collisionMesh`, or else `collisionProxies` boxes, by key, wherever
+    the descriptor lists it."""
     found = {}
     if isinstance(value, dict):
         if isinstance(value.get('key'), str) and isinstance(value.get('collisionMesh'), dict):
             found[value['key']] = value['collisionMesh']
+        elif isinstance(value.get('key'), str) and isinstance(value.get('collisionProxies'), list):
+            found[value['key']] = boxes_mesh(value['collisionProxies'])
         for child in value.values():
             found.update(collision_meshes(child))
     elif isinstance(value, list):

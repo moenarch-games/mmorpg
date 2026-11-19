@@ -71,6 +71,7 @@ function arenaScenery(local: LocalWorld, presentation: ArenaPresentation): Scene
     limestone: { kit: "limestone", entries: [], placements: [], lods: () => { throw new Error("The arena has no rocks."); } },
     river: { kit: "river", entries: [], placements: [], lods: () => { throw new Error("The arena has no river."); } },
     meadow: { kit: "meadow", entries: [], placements: [], lods: () => { throw new Error("The arena has no meadow."); } },
+    den: { kit: "den", entries: [], placements: [], lods: () => { throw new Error("The arena has no den."); } },
     ambient: { entries: [], clips: [], anchors: [], frame: () => emptyMotion },
     importedRestClip: (kind) => local.scenery.importedRestClip(kind),
     areaAt: () => null,
