@@ -219,6 +219,12 @@ pub enum ZoneEvent {
         reward: crate::StrikeReward,
         ticks: u16,
     },
+    /// The viewer's Sinister Strike caught `target` outside its frontal arc (#949): the strike
+    /// dealt its flank bonus and `target` turned to face `source`.
+    Flanked {
+        source: EntityRef,
+        target: EntityRef,
+    },
     /// A beast `source` began its `attack` (#889), biting `contact` ticks from now.
     CreatureAttackBegan {
         source: EntityRef,
@@ -355,6 +361,7 @@ impl ZoneEvent {
             | Self::SwingBegan { .. }
             | Self::StrikeBegan { .. }
             | Self::StrikeRewarded { .. }
+            | Self::Flanked { .. }
             | Self::CreatureAttackBegan { .. }
             | Self::Clashed { .. }
             | Self::Healed { .. }

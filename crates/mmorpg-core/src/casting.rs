@@ -592,11 +592,28 @@ impl ZoneSimulation {
         match ability.effect {
             AbilityEffect::WeaponStrike { .. } => {
                 if let Some(victim) = target {
+                    // A Sinister Strike from a creature's flank (#949).
+                    let flank = if ability.id == crate::ability::ids::SINISTER_STRIKE {
+                        self.flank_bearing(player_id, victim)?
+                    } else {
+                        None
+                    };
+                    let percent = if flank.is_some() {
+                        percent * crate::FLANK_DAMAGE_PERCENT / 100
+                    } else {
+                        percent
+                    };
                     let amount = self.weapon_strike_amount(player_id, victim, ability.effect)
                         * percent
                         / 100;
                     let amount = self.stance_damage(player_id, target, amount)?;
+                    let before = self.struck_health(victim);
                     self.player_melee_hits(player_id, victim, amount, false, now)?;
+                    if let Some(bearing) = flank
+                        && self.struck_health(victim) < before
+                    {
+                        self.flank_landed(player_id, victim, bearing);
+                    }
                 }
             }
             AbilityEffect::Bash {
