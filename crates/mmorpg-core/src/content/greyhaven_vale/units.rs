@@ -447,6 +447,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::rimewood::spawns())
         // The Eastwater Fen wolf pack (#932).
         .chain(super::fen_pack::spawns())
+        // The Rimewood signal post, a target-priority fight (#952).
+        .chain(super::signal_post::spawns())
         .collect()
 }
 

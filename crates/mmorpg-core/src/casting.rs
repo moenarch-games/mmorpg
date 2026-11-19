@@ -465,6 +465,13 @@ impl ZoneSimulation {
             EntityRef::Creature(creature_id) => {
                 self.creatures.get_mut(&creature_id).and_then(|creature| {
                     let cast = creature.cast.take();
+                    // A broken horn call (#952) waits its whole cooldown, so no help comes.
+                    let lockout = match cast.and_then(|cast| ability_by_id(cast.ability)) {
+                        Some(ability) if ability.effect == AbilityEffect::SignalCall => {
+                            Some(ability.cooldown)
+                        }
+                        _ => lockout,
+                    };
                     if cast.is_some()
                         && let Some(lockout) = lockout
                     {
@@ -853,14 +860,15 @@ impl ZoneSimulation {
                 }
             }
             // Blizzard, Lightning Beam and Drain Life pulse while they channel; bandages and
-            // stomps are creature-only; a flask's splash lands where it shatters.
+            // stomps and horn calls are creature-only; a flask's splash lands where it shatters.
             AbilityEffect::Blizzard { .. }
             | AbilityEffect::Beam { .. }
             | AbilityEffect::Drain { .. }
             | AbilityEffect::Bandage { .. }
             | AbilityEffect::Stomp { .. }
             | AbilityEffect::Smash { .. }
-            | AbilityEffect::Splash { .. } => {}
+            | AbilityEffect::Splash { .. }
+            | AbilityEffect::SignalCall => {}
         }
         Ok(())
     }
@@ -1680,6 +1688,11 @@ impl ZoneSimulation {
                     },
                 )?;
             }
+            // A signaler's completed horn call (#952) brings its partner.
+            AbilityEffect::SignalCall => {
+                self.restart_creature_ability(creature_id, ability);
+                self.complete_signal_call(creature_id)?;
+            }
             // The Redbrand Brute's Overhead Smash (#160): whoever still stands in the arc ahead
             // of it when the wind-up ends takes the blow and is knocked back.
             AbilityEffect::Smash {
@@ -1772,7 +1785,10 @@ impl ZoneSimulation {
     ) -> Result<(), ZoneError> {
         let content = Arc::clone(&self.content);
         let (spawn, _) = Self::creature_content(&content, creature_id)?;
-        if content.creature_ability(spawn.template).is_none() {
+        if content
+            .creature_ability_of(creature_id, spawn.template)
+            .is_none()
+        {
             return Ok(());
         }
         let jitter = self
@@ -1798,7 +1814,7 @@ impl ZoneSimulation {
         let (spawn, template) = Self::creature_content(&content, creature_id)?;
         let Some(ability) = self
             .depths_boss_ability(creature_id)
-            .or_else(|| content.creature_ability(spawn.template))
+            .or_else(|| content.creature_ability_of(creature_id, spawn.template))
             .and_then(ability_by_id)
         else {
             return Ok(false);
@@ -1816,6 +1832,13 @@ impl ZoneSimulation {
             // A stomp (#297) lands around the creature once its leader stands within reach.
             AbilityEffect::Stomp { radius, .. } => {
                 if distance_squared(here, leader_at) > i64::from(radius).pow(2) {
+                    return Ok(false);
+                }
+                None
+            }
+            // A signaler (#952) calls only while its partner idles, so one call brings one.
+            AbilityEffect::SignalCall => {
+                if !self.signal_partner_waits(creature_id) {
                     return Ok(false);
                 }
                 None

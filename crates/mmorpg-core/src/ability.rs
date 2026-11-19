@@ -375,6 +375,10 @@ pub enum AbilityEffect {
     /// caster's reach this encounter, which the cast consumes; each enemy's stored harm is capped
     /// at `pool`. See `reckoning.rs`.
     Reckoning { percent: u16, pool: u16 },
+    /// A Redbrand signaler's horn call for help (#952): once the cast completes, the one authored
+    /// partner content binds to the caller ([`crate::ZoneContent::with_signal_calls`]) engages the
+    /// caller's threat leader. Any interruption puts the call off for its whole cooldown.
+    SignalCall,
 }
 
 /// How long a corrupted victim's corpse stays spendable for its Necromancer (#935): 10 s.
@@ -440,7 +444,8 @@ impl Ability {
             | AbilityEffect::Hook { .. }
             | AbilityEffect::Blink { .. }
             | AbilityEffect::CorpseBurst { .. }
-            | AbilityEffect::Reckoning { .. } => return None,
+            | AbilityEffect::Reckoning { .. }
+            | AbilityEffect::SignalCall => return None,
         };
         Some(AuraSpec {
             kind,
@@ -608,6 +613,8 @@ pub mod ids {
     pub const CORPSE_BURST: AbilityId = AbilityId::new(55);
     /// The Cleric's reckoning (#936).
     pub const DIVINE_RECKONING: AbilityId = AbilityId::new(56);
+    /// The Redbrand signaler's horn call for help (#952).
+    pub const SIGNAL_HORN: AbilityId = AbilityId::new(57);
 }
 
 /// How a projectile treats what it meets (#291).
@@ -630,7 +637,7 @@ pub enum Shot {
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 56] = [
+pub const ABILITY_CATALOG: [Ability; 57] = [
     ability(
         1,
         "Heroic Strike",
@@ -1560,6 +1567,20 @@ pub const ABILITY_CATALOG: [Ability; 56] = [
             pool: 200,
         },
     ),
+    // A Redbrand signaler's horn call (#952): a 2.5 s call for help the signaler stands still
+    // for. A Shield Bash, a Gouge or any other stun breaks it, and the call waits its whole
+    // 30 s cooldown; completed, one authored partner joins the fight.
+    ability(
+        57,
+        "Signal Horn",
+        AbilityUser::Creature,
+        1,
+        0,
+        CastTime::Cast(ticks_from_ms(2_500)),
+        ticks_from_ms(30_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::SignalCall,
+    ),
 ];
 
 /// The catalog row of `id`, if any.
@@ -1874,6 +1895,7 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
                 radius,
             ],
             AbilityEffect::Reckoning { percent, pool } => vec![31, percent.into(), pool.into()],
+            AbilityEffect::SignalCall => vec![32],
         };
         bytes.extend_from_slice(&u32::try_from(fields.len()).unwrap_or(0).to_be_bytes());
         for field in fields {
