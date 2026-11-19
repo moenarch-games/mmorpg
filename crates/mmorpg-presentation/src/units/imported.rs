@@ -4006,6 +4006,13 @@ impl Playback {
             carry.sheathed = [true; 2];
         }
         carry.chore = chore.filter(|_| chored);
+        // An item in the weapon hand, the signal horn (#952), sends the weapon to its stowed socket.
+        if carry
+            .chore
+            .is_some_and(|chore| chore.socket == "hand_r.weapon")
+        {
+            carry.weapon_drawn = Some(false);
+        }
         let mut hands = cues.loadout.map(Loadout::hands).unwrap_or_default();
         // A chore's hand item closes the fingers round its handle or shaft.
         if let Some((hand, held)) = carry.chore.and_then(super::chores::Chore::grip) {

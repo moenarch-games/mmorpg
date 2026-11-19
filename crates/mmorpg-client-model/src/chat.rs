@@ -380,6 +380,30 @@ impl Logs {
                     LineKind::Combat,
                     format!("{} breaks free of {}.", who(target), ability(id)),
                 ),
+                // A signaler's horn call (#952): the warning, and whether help came.
+                ZoneEvent::CastStarted {
+                    source,
+                    ability: id,
+                    ..
+                } if id == ids::SIGNAL_HORN => (
+                    LineKind::Combat,
+                    format!("{} raises a signal horn to call for help!", who(source)),
+                ),
+                ZoneEvent::AbilityUsed {
+                    source,
+                    ability: id,
+                    target,
+                } if id == ids::SIGNAL_HORN => (
+                    LineKind::Combat,
+                    match target {
+                        Some(helper) => format!(
+                            "{} sounds the horn: {} answers the call!",
+                            who(source),
+                            who(helper)
+                        ),
+                        None => format!("{} sounds the horn, but no one answers.", who(source)),
+                    },
+                ),
                 ZoneEvent::Interrupted {
                     target,
                     ability: id,
