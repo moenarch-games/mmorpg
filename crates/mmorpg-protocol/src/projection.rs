@@ -1558,7 +1558,9 @@ pub(crate) mod tests {
     const STANCE: usize = GUARD + 4;
     const COMBO: usize = STANCE + 1;
     const BREATH: usize = COMBO + 1;
-    const TARGET_OF_TARGET: usize = BREATH + 2;
+    /// The harm stored against the target (#936).
+    const RECKONING: usize = BREATH + 2;
+    const TARGET_OF_TARGET: usize = RECKONING + 2;
     const TARGET_CAST: usize = TARGET_OF_TARGET + ENTITY_REF_BYTES;
     const SHEET_MASK: usize = TARGET_CAST + CAST_RECORD_BYTES;
     /// The `u16` sheet mask (#897).
@@ -1631,6 +1633,11 @@ pub(crate) mod tests {
         );
         assert_eq!(decode_snapshot(&encoded).unwrap(), snapshot);
         assert_eq!(encoded[CLASS], 5, "Arcanist, female");
+        assert_eq!(
+            encoded[RECKONING..RECKONING + 2],
+            123u16.to_be_bytes(),
+            "stored harm"
+        );
         assert_eq!(encoded[EVENTS], 16);
         assert_eq!(
             encoded[QUESTS..LOOT],
@@ -2215,7 +2222,7 @@ pub(crate) mod tests {
                 EVENT_RECORD_BYTES,
                 ENTITY_RECORD_BYTES
             ),
-            (112, 17, 29)
+            (114, 17, 29)
         );
         assert_eq!(MAX_WIRE_ENTITIES, 33);
         let viewer_id = u32::MAX;
@@ -2346,17 +2353,17 @@ pub(crate) mod tests {
             traps: Vec::new(),
         };
         let packed = pack_snapshot(&snapshot).unwrap();
-        // (1,077 − 111 − 9 − 73 − 2 − 16 × 17) / 29 = 21 records fit beside the empty loot and
+        // (1,077 − 114 − 9 − 73 − 2 − 16 × 17) / 29 = 20 records fit beside the empty loot and
         // ability sheets, the world sheet with nine doors and a raid signal (#882), the empty
         // waystone sheet and a full event section.
-        assert_eq!(packed.packed_entities, 21);
+        assert_eq!(packed.packed_entities, 20);
         assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
         assert!(
             packed.payload.len() + SESSION_SNAPSHOT_HEADER_BYTES + DATAGRAM_SAFETY_MARGIN_BYTES
                 <= MEASURED_MIN_DATAGRAM_BYTES
         );
         let decoded = decode_snapshot(&packed.payload).unwrap();
-        assert_eq!(decoded.entities[..], snapshot.entities[..21]);
+        assert_eq!(decoded.entities[..], snapshot.entities[..20]);
         assert_eq!(
             decoded.entities[1].entity(),
             target,
@@ -2413,9 +2420,9 @@ pub(crate) mod tests {
             assert_eq!(decoded.entities[1].entity(), target);
             assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
             // The full bag and quest sheets are 136 + 203 bytes beside the other 16:
-            // (1,077 − 111 − 355) / 29 = 21 and (1,077 − 111 − 355 − 272) / 29 = 11.
+            // (1,077 − 114 − 355) / 29 = 20 and (1,077 − 114 − 355 − 272) / 29 = 11.
             if events == 0 {
-                assert_eq!(packed.packed_entities, 21);
+                assert_eq!(packed.packed_entities, 20);
             }
             if events == 16 {
                 assert_eq!(packed.packed_entities, 11);
