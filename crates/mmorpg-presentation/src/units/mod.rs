@@ -2005,6 +2005,9 @@ impl UnitPresenter {
                             ),
                             _ => None,
                         },
+                        // The Redbrand Bandit flanks and falls back on its sword footwork (#963).
+                        footwork: resident == Some(Resident::RedbrandBandit)
+                            && unit.record.flags.in_combat,
                         now: seconds,
                         dt: input.dt,
                         reduced,

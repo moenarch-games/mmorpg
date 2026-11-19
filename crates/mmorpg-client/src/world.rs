@@ -519,6 +519,11 @@ impl WorldScene {
         }
         // The market square's wooden props through their packaged PBR materials (#53).
         placements.extend(mmorpg_presentation::settlement_props::placements(scenery));
+        // The Wolfrun Den's mouth, bones and bedding (#963).
+        placements.extend(mmorpg_presentation::world_dressing::kit_placements(
+            scenery,
+            &mmorpg_presentation::world_dressing::WOLF_DEN_ENTRIES,
+        ));
         let library = crate::nature::entries();
         let nature = Nature {
             lods: mmorpg_presentation::lod::Lods::new(

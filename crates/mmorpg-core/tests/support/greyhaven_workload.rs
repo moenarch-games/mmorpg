@@ -48,10 +48,16 @@ pub const FIXTURES: [Fixture; 4] = [
 
 /// Fight slots step this far (units) from a blocked one: a player's width and a little.
 const SLOT_STEP_UNITS: i32 = 65;
+/// Most a fight slot's resting height may differ from its neighbours' one slot step away. The
+/// fights fixtures' players are scripted and their backends must agree within a unit (physics
+/// A/B), which holds only on level ground: on a steep slope (the Wolfrun Climb, about 100 units
+/// over a step) a jump is stopped by one backend and deflected by the other (#966).
+const SLOT_LEVEL_UNITS: i32 = 40;
 
 /// The first fight slot at or around `at` (feet XZ) where a player stands clear of every content
-/// box, prop, door leaf, creature and already `placed` player, its capsule resting on the
-/// ground (`ZoneSimulation::stand_y` and `stands_clear`, #534): the player's body centre there.
+/// box, prop, door leaf, creature and already `placed` player, its capsule resting on level
+/// ground (`ZoneSimulation::stand_y` and `stands_clear`, #534; [`SLOT_LEVEL_UNITS`]): the
+/// player's body centre there.
 /// Slots lie on square rings [`SLOT_STEP_UNITS`] apart around `at`, nearest ring first.
 fn clear_stand(zone: &ZoneSimulation, placed: &[[i32; 3]], at: [i32; 2]) -> Option<[i32; 3]> {
     let radius = PLAYER_HALF_EXTENTS_UNITS[0];
@@ -67,7 +73,14 @@ fn clear_stand(zone: &ZoneSimulation, placed: &[[i32; 3]], at: [i32; 2]) -> Opti
             (i64::from(other[0] - x).pow(2) + i64::from(other[2] - z).pow(2))
                 > i64::from(2 * radius + 2).pow(2)
         });
-        if apart && zone.stands_clear(centre, PLAYER_HALF_EXTENTS_UNITS) {
+        let level = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+            .into_iter()
+            .all(|(dx, dz)| {
+                let [x, z] = [x + dx * SLOT_STEP_UNITS, z + dz * SLOT_STEP_UNITS];
+                (zone.stand_y(x, z, PLAYER_HALF_EXTENTS_UNITS) - centre[1]).abs()
+                    <= SLOT_LEVEL_UNITS
+            });
+        if apart && level && zone.stands_clear(centre, PLAYER_HALF_EXTENTS_UNITS) {
             return Some(centre);
         }
     }
@@ -155,6 +168,7 @@ pub fn initial_zone(fixture: Fixture) -> Result<ZoneSimulation, Box<dyn Error>> 
             chat: Vec::new(),
             quests: mmorpg_core::QuestLog::default(),
             waystones: mmorpg_core::WaystoneSet::EMPTY,
+            discoveries: std::collections::BTreeSet::new(),
             character: None,
             depths: mmorpg_core::DepthsRecord::default(),
             physique: mmorpg_core::Physique::NEUTRAL,

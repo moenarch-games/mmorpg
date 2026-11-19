@@ -179,6 +179,8 @@ pub(crate) fn groups(scenery: &Scenery) -> Vec<Group> {
             // exterior is animated below; a second static underside would overlap the kit.
             !mmorpg_core::greyhaven_vale::fort::dresses(mesh.id)
                 && !mmorpg_core::greyhaven_vale::ids::SHRINE_CAVE_ROOF.contains(&mesh.id)
+                // The Wolfrun Den's kit always draws over its collider (#963).
+                && !crate::world_dressing::own_collider(scenery, mesh.id)
         })
         .map(|mesh| {
             let mut g = Geometry::default();

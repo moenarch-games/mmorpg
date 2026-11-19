@@ -52,6 +52,12 @@ behaviour invariants and identical-state gameplay-query parity. The WASM runner 
 separate diagnostic `cdylib` example, then executes the actual `wasm32-unknown-unknown` module
 through wasm-bindgen in Bun. It also executes the same authored Redbrand/Greyhaven geometry
 checks as native. The production browser adapter exposes no backend selection API.
+Creature route probes agree within one navigation cell (#966): a creature's straight-way
+capsule sweep that only grazes geometry (Rapier, in metres, meets a mesh 0.004 units beyond the
+radius; the backends differ on a sweep ending exactly against a whole-unit box) picks the next
+cell on the same route; whether a route exists must agree exactly. The fights fixtures place
+their scripted players on level fight slots only, since a jump on a steep slope is stopped by
+one backend and deflected by the other.
 Supported characters settle their current support gap before horizontal movement, matching
 the independent oracle. The support cast inflates the capsule by the contact offset so slopes
 measure the margin along the surface normal. The authored towpath departure regression checks
