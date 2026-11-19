@@ -68,6 +68,10 @@ pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 4 + 12 + 3 + 2 + 1 + 1 + 1;
 const SITTING_BIT: u8 = 0x80;
 /// The appearance word's high bit on a player record: the weapon is drawn (#802).
 const DRAWN_BIT: u32 = 0x8000_0000;
+/// The appearance word's bits 24–26 on a player record: 1 + its weapon family's code, 0 for
+/// none (#914).
+const WEAPON_SHIFT: u32 = 24;
+const WEAPON_MASK: u32 = 0x0700_0000;
 /// Records that fit the budget without events or sheets: (1,077 − 112) / 29 = 33.
 pub const MAX_WIRE_ENTITIES: usize =
     (MAX_PLAYER_PROJECTION_BYTES - PLAYER_SNAPSHOT_FIXED_BYTES) / ENTITY_RECORD_BYTES;
@@ -491,15 +495,21 @@ fn decode_projectile(
 fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), ProtocolError> {
     payload.push(entity_kind_code(entity.kind));
     payload.extend_from_slice(&entity.id.to_be_bytes());
-    if (entity.kind == EntityKind::Player && entity.appearance & DRAWN_BIT != 0)
-        || (entity.kind != EntityKind::Player && entity.flags.weapon_drawn)
+    if (entity.kind == EntityKind::Player && entity.appearance & (DRAWN_BIT | WEAPON_MASK) != 0)
+        || (entity.kind != EntityKind::Player
+            && (entity.flags.weapon_drawn || entity.flags.weapon.is_some()))
     {
         return Err(ProtocolError::new("invalid drawn weapon appearance"));
     }
-    // The player-only high bit is free in the appearance word. Threat remains
+    let weapon = entity
+        .flags
+        .weapon
+        .map_or(0, |family| (u32::from(family.code()) + 1) << WEAPON_SHIFT);
+    // The player-only high bits are free in the appearance word. Threat remains
     // its own flag; NPC and creature appearance IDs are untouched.
     payload.extend_from_slice(
         &(entity.appearance
+            | weapon
             | if entity.flags.weapon_drawn {
                 DRAWN_BIT
             } else {
@@ -993,8 +1003,18 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
     let id = u32::from_be_bytes(take(payload, offset)?);
     let encoded_appearance = u32::from_be_bytes(take(payload, offset)?);
     let weapon_drawn = kind == EntityKind::Player && encoded_appearance & DRAWN_BIT != 0;
+    let weapon = match (encoded_appearance & WEAPON_MASK) >> WEAPON_SHIFT {
+        _ if kind != EntityKind::Player => None,
+        0 => None,
+        code => Some(
+            u8::try_from(code - 1)
+                .ok()
+                .and_then(mmorpg_core::WeaponFamily::from_code)
+                .ok_or_else(|| ProtocolError::new("invalid weapon family"))?,
+        ),
+    };
     let appearance = if kind == EntityKind::Player {
-        encoded_appearance & !DRAWN_BIT
+        encoded_appearance & !(DRAWN_BIT | WEAPON_MASK)
     } else {
         encoded_appearance
     };
@@ -1091,6 +1111,7 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
             dead,
             in_combat,
             weapon_drawn,
+            weapon,
             hostile,
             attackable,
             tapped_by_other,
@@ -1443,6 +1464,7 @@ pub(crate) mod tests {
                         dead: false,
                         in_combat: true,
                         weapon_drawn: false,
+                        weapon: None,
                         hostile: true,
                         attackable: true,
                         tapped_by_other: false,
@@ -2244,6 +2266,7 @@ pub(crate) mod tests {
                         dead: false,
                         in_combat: true,
                         weapon_drawn: false,
+                        weapon: None,
                         hostile: true,
                         attackable: true,
                         tapped_by_other: kind == EntityKind::Creature,
@@ -2622,6 +2645,19 @@ mod posture_tests {
                 .flags
                 .weapon_drawn
         );
+    }
+
+    #[test]
+    fn a_player_weapon_family_crosses_the_wire_beside_its_class() {
+        for family in mmorpg_core::WeaponFamily::ALL {
+            let mut player = record(EntityKind::Player, PostureView::Free);
+            player.flags.weapon_drawn = true;
+            player.flags.weapon = Some(family);
+            assert_eq!(round_trip(&player).unwrap(), player);
+        }
+        let mut creature = record(EntityKind::Creature, PostureView::Free);
+        creature.flags.weapon = Some(mmorpg_core::WeaponFamily::Spear);
+        assert!(round_trip(&creature).is_err());
     }
 
     #[test]

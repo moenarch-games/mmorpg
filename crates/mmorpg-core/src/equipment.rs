@@ -193,17 +193,27 @@ impl Equipment {
 
     /// Equips the item in `bag_slot` into its catalog slot. A previously
     /// equipped item takes its place in the same bag slot, so a full bag
-    /// never blocks equipping. Refusals change neither value.
-    pub fn equip(&mut self, bag: &mut Inventory, bag_slot: usize) -> Result<(), InventoryError> {
+    /// never blocks equipping. A weapon whose family `class` may not wield
+    /// (#914) is not equippable. Refusals change neither value.
+    pub fn equip(
+        &mut self,
+        bag: &mut Inventory,
+        bag_slot: usize,
+        class: Option<PlayerClass>,
+    ) -> Result<(), InventoryError> {
         let stack = bag
             .slots()
             .get(bag_slot)
             .ok_or(InventoryError::InvalidSlot)?
             .ok_or(InventoryError::EmptySlot)?;
-        let slot = item_template(stack.item())
-            .ok_or(InventoryError::UnknownItem)?
-            .slot
-            .ok_or(InventoryError::NotEquippable)?;
+        let template = item_template(stack.item()).ok_or(InventoryError::UnknownItem)?;
+        let slot = template.slot.ok_or(InventoryError::NotEquippable)?;
+        if template
+            .weapon
+            .is_some_and(|family| !family.wielded_by(class))
+        {
+            return Err(InventoryError::NotEquippable);
+        }
         let index = usize::from(slot.index());
         let previous = match self.slots[index] {
             Some(item) => Some(ItemStack::new(item, 1)?),

@@ -133,6 +133,7 @@ pub fn exhaustive_projection(
                     dead: candidate.combat.health == 0,
                     in_combat: candidate.combat.combat_timer > 0,
                     weapon_drawn: candidate.combat.weapon_drawn,
+                    weapon: Some(weapon(candidate)),
                     targets_viewer: candidate.player_id != observer.player_id
                         && candidate.combat.target == Some(viewer),
                     ..EntityFlags::default()
@@ -151,4 +152,14 @@ pub fn exhaustive_projection(
 /// Level health plus the equipped stamina's bonus.
 fn max_health(player: &CanonicalPlayerSnapshot) -> u32 {
     player_max_health(player.combat.level) + player.equipment.totals().bonus_health()
+}
+
+/// The classless player's melee family: its main-hand weapon's, else bare hands (#914).
+fn weapon(player: &CanonicalPlayerSnapshot) -> mmorpg_core::WeaponFamily {
+    player
+        .equipment
+        .item(mmorpg_core::EquipmentSlot::MainHand)
+        .and_then(mmorpg_core::item_template)
+        .and_then(|template| template.weapon)
+        .unwrap_or(mmorpg_core::WeaponFamily::Unarmed)
 }

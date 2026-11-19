@@ -31,6 +31,8 @@ const CRYSTAL_STAFF: &str = "equipment.staff.crystal";
 const GNARLED_STAFF: &str = "equipment.staff.gnarled";
 const TOME: &str = "equipment.book.tome";
 const MACE: &str = "equipment.mace.flanged";
+/// The spear a player of the spear family carries (#914).
+const SPEAR: &str = "equipment.spear.leaf";
 /// The Redbrand Crossbowmen's crossbow and the arrow standing in for its bolt (#607).
 const CROSSBOW: &str = "equipment.crossbow";
 const ARROW: &str = "equipment.arrow";
@@ -108,6 +110,7 @@ fn main() {
         ("GNARLED_STAFF", GNARLED_STAFF),
         ("TOME", TOME),
         ("MACE", MACE),
+        ("SPEAR", SPEAR),
         ("CROSSBOW", CROSSBOW),
         ("ARROW", ARROW),
         ("THROWING_KNIFE", THROWING_KNIFE),
