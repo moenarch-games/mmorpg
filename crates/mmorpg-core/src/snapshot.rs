@@ -1400,8 +1400,12 @@ pub(crate) fn validate_player_abilities(
     let pools = &abilities.reckoning;
     if pools.len() > crate::MAX_RECKONING_POOLS
         || (!pools.is_empty() && (class != crate::PlayerClass::Cleric || !alive))
-        || pools.windows(2).any(|pair| pair[0].creature >= pair[1].creature)
-        || pools.iter().any(|harm| harm.amount == 0 || harm.amount > cap)
+        || pools
+            .windows(2)
+            .any(|pair| pair[0].creature >= pair[1].creature)
+        || pools
+            .iter()
+            .any(|harm| harm.amount == 0 || harm.amount > cap)
     {
         return Err(ZoneError::new("player reckoning pools are out of range"));
     }

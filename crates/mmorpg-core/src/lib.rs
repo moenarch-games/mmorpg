@@ -58,8 +58,8 @@ mod projectile;
 mod projection;
 mod pvp;
 mod quest;
-mod reckoning;
 pub mod raid;
+mod reckoning;
 mod rewards;
 mod rewind;
 mod routine;
@@ -208,9 +208,7 @@ pub use raid::{
     RaidPrep, RaidResolution, RaidSite, RaidState, RaidView,
 };
 pub use ramp::{MAX_RAMPS, Ramp, RampRise};
-pub use reckoning::{
-    Harm, MAX_RECKONING_POOLS, RECKONING_ALLY_RADIUS,
-};
+pub use reckoning::{Harm, MAX_RECKONING_POOLS, RECKONING_ALLY_RADIUS};
 pub use rewards::{RewardGrant, RewardHistory, RewardKey};
 pub use rewind::{CLIENT_INTERPOLATION_TICKS, HitRewind, MAX_HIT_REWIND_MS, RewindFrame};
 pub use rock::{PROXIES as ROCK_PROXIES, RockProxy, RockShape};

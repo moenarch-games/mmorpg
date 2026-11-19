@@ -108,7 +108,11 @@ impl ZoneSimulation {
 
     /// Ends the pools of dead or disengaged Clerics and of creatures that stopped fighting.
     pub(crate) fn expire_harm(&mut self) {
-        if self.players.values().all(|player| player.reckoning.is_empty()) {
+        if self
+            .players
+            .values()
+            .all(|player| player.reckoning.is_empty())
+        {
             return;
         }
         let threatened = self.threatened_players();

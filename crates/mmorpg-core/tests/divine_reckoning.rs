@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use mmorpg_core::ability::ids;
 use mmorpg_core::{
-    CanonicalZoneSnapshot, CreatureId, CreatureTemplate, CreatureTemplateId,
-    EntityRef, ZoneCommand, ZoneContent, ZoneEvent, ZoneId, ZoneSimulation,
+    CanonicalZoneSnapshot, CreatureId, CreatureTemplate, CreatureTemplateId, EntityRef,
+    ZoneCommand, ZoneContent, ZoneEvent, ZoneId, ZoneSimulation,
 };
 use support::arena::{self, WOLF};
 use support::classes;
@@ -42,7 +42,10 @@ fn content() -> Arc<ZoneContent> {
 }
 
 /// The zone restored from its canonical snapshot after `edit`, as a recovering host would.
-fn restored(zone: &ZoneSimulation, edit: impl FnOnce(&mut CanonicalZoneSnapshot)) -> ZoneSimulation {
+fn restored(
+    zone: &ZoneSimulation,
+    edit: impl FnOnce(&mut CanonicalZoneSnapshot),
+) -> ZoneSimulation {
     let mut state = zone.snapshot().unwrap();
     edit(&mut state);
     ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap()
@@ -93,7 +96,9 @@ struct Encounter {
 impl Encounter {
     fn send(&mut self, command: ZoneCommand) {
         self.sequence += 1;
-        self.zone.apply_command(CLERIC, self.sequence, command).unwrap();
+        self.zone
+            .apply_command(CLERIC, self.sequence, command)
+            .unwrap();
     }
 
     fn tick(&mut self) {
@@ -178,7 +183,9 @@ fn encounter() -> Vec<BTreeMap<CreatureId, u32>> {
     });
 
     // Endure: the brute's bites fill its pool alone.
-    fight.until(600, |fight| fight.harm.get(&BRUTE).is_some_and(|&harm| harm >= 50));
+    fight.until(600, |fight| {
+        fight.harm.get(&BRUTE).is_some_and(|&harm| harm >= 50)
+    });
     assert!(!fight.harm.contains_key(&HOUND));
 
     // Heal: Renew on the Cleric (faith granted through recovery) restores health, never harm.
@@ -194,15 +201,26 @@ fn encounter() -> Vec<BTreeMap<CreatureId, u32>> {
 
     // The ally walks into the hound's reach 10 m from the Cleric: its bites count against the
     // hound only, never the brute.
-    fight.zone = restored(&fight.zone, |state| place(state, ALLY, [-4_000.0, -5_000.0]));
+    fight.zone = restored(&fight.zone, |state| {
+        place(state, ALLY, [-4_000.0, -5_000.0])
+    });
     fight.ally_counts = true;
-    fight.until(900, |fight| fight.harm.get(&HOUND).is_some_and(|&harm| harm >= 8));
+    fight.until(900, |fight| {
+        fight.harm.get(&HOUND).is_some_and(|&harm| harm >= 8)
+    });
 
     // Endure more: past the cap, a full heal between bites leaves the pool where it is.
     while fight.harm[&BRUTE] <= CAP {
-        fight.until(1_800, |fight| fight.harm[&BRUTE] > CAP || fight.health() < 40);
+        fight.until(1_800, |fight| {
+            fight.harm[&BRUTE] > CAP || fight.health() < 40
+        });
         if fight.health() < 40 {
-            let full = fight.zone.snapshot_for_player(CLERIC).unwrap().viewer.max_health;
+            let full = fight
+                .zone
+                .snapshot_for_player(CLERIC)
+                .unwrap()
+                .viewer
+                .max_health;
             fight.zone = restored(&fight.zone, |state| state.players[0].combat.health = full);
         }
     }
@@ -245,11 +263,18 @@ fn encounter() -> Vec<BTreeMap<CreatureId, u32>> {
             break;
         }
     }
-    assert!(pools(&fight.zone).is_empty(), "the pools end with the fight");
+    assert!(
+        pools(&fight.zone).is_empty(),
+        "the pools end with the fight"
+    );
     fight.trace
 }
 
 #[test]
 fn a_cleric_reckons_only_the_harm_its_target_dealt_and_replays_it_exactly() {
-    assert_eq!(encounter(), encounter(), "the same encounter replays exactly");
+    assert_eq!(
+        encounter(),
+        encounter(),
+        "the same encounter replays exactly"
+    );
 }
