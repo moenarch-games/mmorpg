@@ -22,6 +22,10 @@ pub const MILL_GALLERY: std::ops::RangeInclusive<u32> = 65103..=65110;
 /// collision is generated from its art ([`dressing_meshes`], #683).
 pub const WESTERN_ROCKS: std::ops::RangeInclusive<u32> = 65128..=65136;
 
+/// The Eastdown meadow's cairn and rock scar (#872): world dressing whose collision is
+/// generated from its art ([`dressing_meshes`]).
+pub const EASTDOWN_ROCKS: std::ops::RangeInclusive<u32> = 65138..=65145;
+
 /// Leaning rock slabs and their smaller talus pieces at the basin cliff feet: world dressing
 /// whose collision is generated from its art ([`dressing_meshes`], #683).
 pub const BASIN_ROCKS: std::ops::RangeInclusive<u32> = 65094..=65102;
