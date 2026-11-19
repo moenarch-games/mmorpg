@@ -72,6 +72,8 @@ fn zone_at(positions: &[[i32; 3]], definition: ZoneDefinition) -> ZoneSimulation
             quests: mmorpg_core::QuestLog::default(),
             waystones: mmorpg_core::WaystoneSet::EMPTY,
             discoveries: std::collections::BTreeSet::new(),
+            mastery: mmorpg_core::WeaponMastery::default(),
+            practice: Vec::new(),
             character: None,
             depths: mmorpg_core::DepthsRecord::default(),
             physique: mmorpg_core::Physique::NEUTRAL,

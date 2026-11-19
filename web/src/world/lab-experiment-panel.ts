@@ -34,7 +34,7 @@ export type ExperimentControls = {
 };
 
 type Slot = "a" | "b";
-const CONDITIONS = ["PositiveHealthDamage", "TargetAlive", "Alive", "Warden", "AttackedAirborne", "Airborne", "Stunned", "MultiHit"];
+const CONDITIONS = ["PositiveHealthDamage", "TargetAlive", "Alive", "Warden", "AttackedAirborne", "Airborne", "Stunned", "MultiHit", "SwordMastery"];
 const FLAG_EFFECTS = ["TargetConfirmed", "IgnoreGlobalCooldown", "KeepOpening"] as const;
 /** The recoveries the zone reads per class (Atlas 5.7.6). */
 const OVERRIDABLE_RECOVERIES = ["DirectedSlash", "GlobalCooldown"];

@@ -406,6 +406,8 @@ fn encode_player(
     crate::quest::encode_log(payload, &player.quests)?;
     crate::wire::encode_waystones(payload, &player.waystones)?;
     crate::wire::encode_discoveries(payload, &player.discoveries)?;
+    crate::wire::encode_mastery(payload, player.mastery);
+    crate::wire::encode_practice(payload, &player.practice)?;
     crate::character::encode_optional_character(payload, player.character.as_ref())?;
     crate::character::encode_depths_record(payload, player.depths);
     crate::character::encode_physique(payload, &player.physique);
@@ -1434,6 +1436,8 @@ fn decode_player(
     let quests = crate::quest::decode_log(payload, offset, crate::quest::QuestIdWidth::Word)?;
     let waystones = crate::wire::decode_waystones(payload, offset)?;
     let discoveries = crate::wire::decode_discoveries(payload, offset)?;
+    let mastery = crate::wire::decode_mastery(payload, offset)?;
+    let practice = crate::wire::decode_practice(payload, offset)?;
     let character = crate::character::decode_optional_character(payload, offset)?;
     let depths = crate::character::decode_depths_record(payload, offset)?;
     let physique = crate::character::decode_physique(payload, offset)?;
@@ -1441,6 +1445,8 @@ fn decode_player(
         quests,
         waystones,
         discoveries,
+        mastery,
+        practice,
         character,
         depths,
         physique,
@@ -2485,6 +2491,17 @@ mod tests {
                     quests: mmorpg_core::QuestLog::default(),
                     waystones: mmorpg_core::WaystoneSet::EMPTY,
                     discoveries: std::collections::BTreeSet::new(),
+                    mastery: mmorpg_core::WeaponMastery {
+                        sword: mmorpg_core::Mastery {
+                            level: 1,
+                            progress: 7,
+                        },
+                    },
+                    practice: vec![mmorpg_core::Practice {
+                        creature: CreatureId::new(1),
+                        life: 2,
+                        points: 3,
+                    }],
                     character: None,
                     depths: mmorpg_core::DepthsRecord::default(),
                     physique: mmorpg_core::PhysiquePreset::Heavyset.physique(),
@@ -2511,6 +2528,8 @@ mod tests {
                     quests: mmorpg_core::QuestLog::default(),
                     waystones: mmorpg_core::WaystoneSet::EMPTY,
                     discoveries: std::collections::BTreeSet::new(),
+                    mastery: mmorpg_core::WeaponMastery::default(),
+                    practice: Vec::new(),
                     character: None,
                     depths: mmorpg_core::DepthsRecord::default(),
                     physique: mmorpg_core::Physique::NEUTRAL,

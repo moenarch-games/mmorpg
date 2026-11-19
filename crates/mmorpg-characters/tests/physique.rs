@@ -196,8 +196,9 @@ fn older_records_load_neutral_and_keep_everything_else() {
     // A shorter physique list (five sliders) leaves the rest neutral; values past 1.0 and more
     // than eleven values fail closed.
     let bytes = encode_character_record(&customized).unwrap();
-    // The discovered areas (#916) follow the physique: a u16 count and a u32 per area.
-    let discoveries = 2 + 4 * customized.discoveries.len();
+    // The discovered areas (#916) follow the physique: a u16 count and a u32 per area; then the
+    // sword mastery (#915): a u8 level and a u16 progress.
+    let discoveries = 2 + 4 * customized.discoveries.len() + 3;
     let tail = bytes.len() - discoveries - 1 - 2 * PHYSIQUE_PARAMS;
     let mut five = bytes[..tail].to_vec();
     five.push(5);

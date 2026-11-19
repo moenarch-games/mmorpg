@@ -44,6 +44,7 @@ mod home;
 mod interest;
 mod inventory;
 mod loot;
+mod mastery;
 mod melee;
 mod minion;
 mod mobility;
@@ -174,6 +175,11 @@ pub use inventory::{
 pub use loot::{
     LootOutcome, LootRewards, LootRolls, LootSettlementError, LootTable, LootTableError,
     MAX_LOOT_OUTCOMES, loot_table, settle_loot,
+};
+pub use mastery::{
+    BLOW_PRACTICE, LEAPING_SLASH_LEVEL, MAX_MASTERY_LEVEL, MAX_PRACTICE, Mastery, PRACTICE_PER_FOE,
+    Practice, TECHNIQUE_PRACTICE, TRIVIAL_LEVELS_BELOW, WeaponMastery, practice_to_next_level,
+    valid_practice,
 };
 pub use melee::{JUMP_STRIKE_AIR_TICKS, MeleeState, PendingStrike};
 pub use minion::{

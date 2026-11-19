@@ -28,7 +28,7 @@ use crate::{
 /// Identity of the [`CharacterRecord`] schema: a random token (ADR 0006), replaced with a
 /// fresh one on every change to the record's fields or their meaning; persisted records of
 /// another schema are rejected rather than reinterpreted.
-pub const CHARACTER_RECORD_SCHEMA_VERSION: u16 = 0x51ee;
+pub const CHARACTER_RECORD_SCHEMA_VERSION: u16 = 0xcfcd;
 
 /// Longest [`CharacterId`] in bytes.
 pub const MAX_CHARACTER_ID_BYTES: usize = 64;
@@ -92,6 +92,8 @@ pub struct CharacterRecord {
     pub waystones: crate::WaystoneSet,
     /// Named areas discovered (#916), each rewarded once.
     pub discoveries: std::collections::BTreeSet<crate::AreaId>,
+    /// Weapon-family mastery (#915).
+    pub mastery: crate::WeaponMastery,
     /// The Redbrand Depths' durable facts about this character (#404 part 3).
     pub depths: DepthsRecord,
     /// Zero means dead (a corpse or a released spirit).
@@ -178,6 +180,7 @@ impl ZoneSimulation {
             quests: player.quests.clone(),
             waystones: player.waystones.clone(),
             discoveries: player.discoveries.clone(),
+            mastery: player.mastery,
             depths: player.depths,
             health: player.health,
             resource: player.resource.value,
@@ -268,6 +271,7 @@ impl ZoneSimulation {
         state.quests = record.quests.clone();
         state.waystones = record.waystones.clone();
         state.discoveries = record.discoveries.clone();
+        state.mastery = record.mastery;
         state.depths = record.depths;
         state.physique = record.physique;
         state.character = Some(record.character_id.clone());
@@ -312,6 +316,9 @@ impl ZoneSimulation {
             || record.health > max_health
         {
             return Err(ZoneError::new("character unit state is out of range"));
+        }
+        if !record.mastery.is_valid() {
+            return Err(ZoneError::new("character weapon mastery is out of range"));
         }
         crate::quest::validate_log(&self.content, &record.quests)?;
         let alive = record.health > 0;
