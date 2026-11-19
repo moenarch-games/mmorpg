@@ -3,10 +3,10 @@ export function catalogJson(revision = "3"): Record<string, unknown> {
   return {
     format: "mmorpg.catalog",
     items: [
-      { id: 1, name: "Torn Fur", maxStack: 20, slot: null, stats: { stamina: 0, strength: 0, agility: 0, intellect: 0 }, sellPrice: 1 },
-      { id: 2, name: "Worn Dagger", maxStack: 1, slot: "mainHand", stats: { stamina: 0, strength: 2, agility: 2, intellect: 0 }, sellPrice: 2 },
-      { id: 9, name: "Worn Boots", maxStack: 1, slot: "feet", stats: { stamina: 1, strength: 0, agility: 2, intellect: 0 }, sellPrice: 3 },
-      { id: 10, name: "Wolf Pelt", maxStack: 10, slot: null, stats: { stamina: 0, strength: 0, agility: 0, intellect: 0 }, sellPrice: 1 },
+      { id: 1, name: "Torn Fur", maxStack: 20, slot: null, stats: { stamina: 0, strength: 0, agility: 0, intellect: 0 }, sellPrice: 1, find: null },
+      { id: 2, name: "Worn Dagger", maxStack: 1, slot: "mainHand", stats: { stamina: 0, strength: 2, agility: 2, intellect: 0 }, sellPrice: 2, find: null },
+      { id: 9, name: "Worn Boots", maxStack: 1, slot: "feet", stats: { stamina: 1, strength: 0, agility: 2, intellect: 0 }, sellPrice: 3, find: null },
+      { id: 10, name: "Wolf Pelt", maxStack: 10, slot: null, stats: { stamina: 0, strength: 0, agility: 0, intellect: 0 }, sellPrice: 1, find: null },
     ],
     contentRevision: revision,
     creatureTemplates: [

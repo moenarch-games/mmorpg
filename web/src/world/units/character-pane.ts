@@ -1,6 +1,6 @@
 import type { WorldCommand } from "../../command-wire";
 import type { StatTotals, ViewerState, ZoneSnapshot } from "../../replication";
-import type { ContentCatalog, ItemStats } from "../catalog";
+import type { ContentCatalog, ItemRecord, ItemStats } from "../catalog";
 import type { BagState } from "./bag-state";
 
 /** Equipment slot labels by wire index (0 main hand … 5 feet). */
@@ -16,6 +16,11 @@ const STAT_LABELS: readonly [keyof ItemStats, string][] = [
 /** Catalog attributes as text, for example `+2 Strength, +2 Agility`; empty when the item adds none. */
 export function itemStatsText(stats: ItemStats): string {
   return STAT_LABELS.filter(([stat]) => stats[stat] > 0).map(([stat, label]) => `+${stats[stat]} ${label}`).join(", ");
+}
+
+/** An item's attributes and, for a find (#918), its quality, trait and source; empty for a plain bag item. */
+export function itemDetailText(item: ItemRecord): string {
+  return [itemStatsText(item.stats), item.find ?? ""].filter((part) => part).join(" · ");
 }
 
 export type CharacterSlotView = {
@@ -65,7 +70,7 @@ export function characterPaneModel(
     if (!item) {
       throw new Error("Equipped item is missing from the content catalog.");
     }
-    const stats = itemStatsText(item.stats);
+    const stats = itemDetailText(item);
     return {
       slot,
       label,

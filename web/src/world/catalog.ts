@@ -43,6 +43,8 @@ export type ItemRecord = {
   stats: ItemStats;
   /** Copper a vendor pays for one unit. */
   sellPrice: number;
+  /** A find's quality, tactical trait and source (#918), or null for a standard item. */
+  find: string | null;
 };
 
 /** One unit of `item` costs `price` copper; the offer's array index is its wire index. */
@@ -157,8 +159,8 @@ function prose(value: unknown, name: string): string {
   return value;
 }
 
-function text(value: unknown, name: string): string {
-  if (typeof value !== "string" || value.trim().length === 0 || value.length > 64) {
+function text(value: unknown, name: string, limit = 64): string {
+  if (typeof value !== "string" || value.trim().length === 0 || value.length > limit) {
     fail(`${name} must be non-empty text`);
   }
   return value;
@@ -243,7 +245,7 @@ export function decodeCatalog(json: string): ContentCatalog {
   });
   const items = list(root.items, "items", 256).map((value, index): ItemRecord => {
     const name = `item ${index}`;
-    const record = object(value, ["id", "name", "maxStack", "slot", "stats", "sellPrice"], name);
+    const record = object(value, ["id", "name", "maxStack", "slot", "stats", "sellPrice", "find"], name);
     const stats = object(record.stats, ["stamina", "strength", "agility", "intellect"], `${name} stats`);
     return {
       id: int(record.id, `${name} id`, 1, 0xffff),
@@ -257,6 +259,7 @@ export function decodeCatalog(json: string): ContentCatalog {
         intellect: int(stats.intellect, `${name} intellect`, 0, 255),
       },
       sellPrice: int(record.sellPrice, `${name} sale value`, 0, 0xffff_ffff),
+      find: record.find === null ? null : text(record.find, `${name} find`, 200),
     };
   });
   const itemsById = byId(items, "item");

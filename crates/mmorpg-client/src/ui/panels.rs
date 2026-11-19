@@ -6,8 +6,8 @@ use egui::{Align2, Color32, RichText, Vec2};
 use mmorpg_client_model::party::{self as party_model, PartyChat};
 use mmorpg_client_model::quest::{self, QuestStanding};
 use mmorpg_core::{
-    EquipmentSlot, ItemId, NpcRole, Quest, ZoneCommand, ZoneContent, ZoneSnapshot, item_template,
-    sell_price,
+    EquipmentSlot, ItemId, NpcRole, Quest, ZoneCommand, ZoneContent, ZoneSnapshot, find_text,
+    item_template, sell_price,
 };
 use mmorpg_protocol::party::PartyRequest;
 use strum::VariantArray;
@@ -16,11 +16,12 @@ fn item_name(id: ItemId) -> &'static str {
     item_template(id).map_or("unknown item", |item| item.name)
 }
 
+/// An item's attributes and, for a find (#918), its quality, tactical trait and source.
 fn item_stats(id: ItemId) -> String {
     let Some(stats) = item_template(id).map(|item| item.stats) else {
         return String::new();
     };
-    [
+    let attributes = [
         (stats.stamina, "Stamina"),
         (stats.strength, "Strength"),
         (stats.agility, "Agility"),
@@ -30,7 +31,12 @@ fn item_stats(id: ItemId) -> String {
     .filter(|(value, _)| *value > 0)
     .map(|(value, name)| format!("+{value} {name}"))
     .collect::<Vec<_>>()
-    .join(", ")
+    .join(", ");
+    match find_text(id) {
+        Some(find) if attributes.is_empty() => find,
+        Some(find) => format!("{attributes} · {find}"),
+        None => attributes,
+    }
 }
 
 fn slot_title(slot: EquipmentSlot) -> &'static str {

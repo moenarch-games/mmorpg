@@ -2216,6 +2216,12 @@ impl ZoneContent {
                 stats.intellect,
             ]);
             hash.bytes(&[item.weapon.map_or(0, |family| 1 + family.code())]);
+            // A find's base, share and trait (#918).
+            if let Some(find) = crate::item_find(item.id) {
+                hash.u32(find.base.map_or(0, crate::ItemId::get));
+                hash.u16(find.weight);
+                hash.bytes(&find.trait_.map_or([0; 3], crate::ItemTrait::code));
+            }
         }
         for slot in crate::Inventory::starter().slots() {
             hash.u32(slot.map_or(0, |stack| stack.item().get()));

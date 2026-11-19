@@ -2,7 +2,7 @@ import type { WorldCommand } from "../../command-wire";
 import type { ZoneSnapshot } from "../../replication";
 import type { ContentCatalog } from "../catalog";
 import { BagState } from "./bag-state";
-import { itemStatsText } from "./character-pane";
+import { itemDetailText } from "./character-pane";
 
 export type BagsElements = {
   panel: HTMLElement;
@@ -144,12 +144,14 @@ export class BagsPanel {
       feedback.textContent = this.#state.feedback;
     }
     quantity.disabled = this.#selected === null || !this.#state.canMoveItems;
-    const hint = this.#selected === null ? "Choose an occupied slot." : `Move from slot ${this.#selected + 1}. Choose a quantity and destination.`;
+    const selectedStack = this.#selected === null ? null : this.#state.slots?.[this.#selected];
+    const selectedItem = selectedStack ? this.#catalog?.items.get(selectedStack.itemId) : null;
+    // A find names its quality, trait and source beside the move hint (#918).
+    const detail = selectedItem?.find ? ` ${selectedItem.name}: ${itemDetailText(selectedItem)}.` : "";
+    const hint = this.#selected === null ? "Choose an occupied slot." : `Move from slot ${this.#selected + 1}. Choose a quantity and destination.${detail}`;
     if (selection.textContent !== hint) {
       selection.textContent = hint;
     }
-    const selectedStack = this.#selected === null ? null : this.#state.slots?.[this.#selected];
-    const selectedItem = selectedStack ? this.#catalog?.items.get(selectedStack.itemId) : null;
     equip.hidden = !selectedItem?.slot;
     equip.disabled = !this.#state.canChangeEquipment;
     const equipText = selectedItem?.slot ? `Equip ${selectedItem.name}` : "Equip";
@@ -170,7 +172,7 @@ export class BagsPanel {
       if (button.textContent !== text) {
         button.textContent = text;
       }
-      const stats = item ? itemStatsText(item.stats) : "";
+      const stats = item ? itemDetailText(item) : "";
       if (stats) {
         button.title = stats;
       } else {
