@@ -270,7 +270,7 @@ impl ZoneSimulation {
         Ok(())
     }
 
-    fn struck_health(&self, target: EntityRef) -> u32 {
+    pub(crate) fn struck_health(&self, target: EntityRef) -> u32 {
         match target {
             EntityRef::Creature(id) => self.creatures.get(&id).map_or(0, |unit| unit.health),
             EntityRef::Player(id) => self.players.get(&id).map_or(0, |unit| unit.health),

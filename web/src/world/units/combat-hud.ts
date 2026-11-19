@@ -203,6 +203,9 @@ export function eventText(event: ZoneEvent, snapshot: ZoneSnapshot, catalog: Con
         ? `Your ${aim} ${ability} cuts only air.`
         : `Your ${aim} ${ability} strikes ${name(event.target)}.`;
     }
+    // A flanking Sinister Strike (#949), the viewer's own.
+    case "flanked":
+      return `Flank! You strike ${name(event.target)} off guard.`;
     // A strike's timing reward (#928), the viewer's own; its cue also shows at the feet.
     case "strike-rewarded":
       return event.reward === "landing-strike" ? "Landing strike! You recover quickly." : "Follow up!";

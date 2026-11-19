@@ -5,7 +5,7 @@ import { ticksFromMs, type ZoneEvent, type ZoneSnapshot } from "../../replicatio
  * Floating combat text for the viewer's projection events. Events are cosmetic and lossy, so the
  * text only decorates what the self and target sections already show.
  */
-export type CombatTextKind = "damage" | "critical" | "periodic" | "taken" | "heal" | "absorb" | "interrupt" | "miss" | "block" | "guard-break" | "cleave";
+export type CombatTextKind = "damage" | "critical" | "periodic" | "taken" | "heal" | "absorb" | "interrupt" | "miss" | "block" | "guard-break" | "cleave" | "flank";
 
 export type CombatText = { kind: CombatTextKind; text: string };
 
@@ -60,6 +60,9 @@ function textFor(event: ZoneEvent, snapshot: ZoneSnapshot, periodic: boolean): C
     case "strike-swept":
       // A hit shows its damage; a whiff of the viewer's own sweep says so.
       return event.target === null && isViewer(event.source, snapshot) ? { kind: "miss", text: "Whiff" } : null;
+    case "flanked":
+      // The viewer's Sinister Strike from its victim's flank (#949).
+      return { kind: "flank", text: "Flank!" };
     case "interrupted":
       return { kind: "interrupt", text: isViewer(event.target, snapshot) ? "Interrupted" : "Interrupt" };
     default:

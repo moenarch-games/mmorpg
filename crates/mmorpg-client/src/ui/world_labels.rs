@@ -33,6 +33,8 @@ pub enum CombatTextKind {
     Miss,
     /// One swing struck several units (#909).
     Cleave,
+    /// A Sinister Strike from the victim's flank (#949).
+    Flank,
 }
 
 /// One floating text and the unit it rises from.
@@ -187,6 +189,9 @@ pub fn combat_texts(snapshot: &ZoneSnapshot) -> Vec<CombatText> {
                 target: None,
                 ..
             } if source == viewer => text(CombatTextKind::Miss, "Whiff".into(), source),
+            ZoneEvent::Flanked { target, .. } => {
+                text(CombatTextKind::Flank, "Flank!".into(), target)
+            }
             ZoneEvent::Interrupted { target, .. } => text(
                 CombatTextKind::Interrupt,
                 if target == viewer {
@@ -213,6 +218,7 @@ const fn text_style(kind: CombatTextKind) -> (Color32, f32) {
         CombatTextKind::Interrupt => (Color32::from_rgb(255, 160, 64), 19.0),
         CombatTextKind::Miss => (Color32::from_rgb(200, 200, 200), 17.0),
         CombatTextKind::Cleave => (Color32::from_rgb(255, 190, 90), 22.0),
+        CombatTextKind::Flank => (Color32::from_rgb(255, 120, 200), 24.0),
     }
 }
 
