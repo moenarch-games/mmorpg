@@ -111,16 +111,18 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // visits (moving bodies and platforms), not every admitted body, so scenery no longer
     // moves it; static colliders cost a step only through the engine's query tree. The
     // rows are re-recorded at their measured counts with the headroom above.
+    // The Greyfang Ridge Redbrand patrol (#911) adds three movers to every step and fights-8's
+    // patrol AI tests 90,240 candidates.
     // The `u16` sheet mask (#897) adds one byte to every projection, inside the headroom.
     // The Eastwater Fen wolf pack (#932) lengthens the Vale's spawn table, which moves the
-    // fights-8 bots' sampled spawns: they test 89,160 candidates; the row is re-recorded as
+    // fights-8 bots' sampled spawns: they test 87,504 candidates; the rows are re-recorded as
     // measured.
     const HEADROOM_PERCENT: usize = 5;
     let recorded: [[usize; 4]; FIXTURES.len()] = [
-        [11_052, 85_680, 282_240, 6_151_648],
-        [16_730, 83_880, 89_160, 1_819_542],
-        [25_530, 91_440, 438_211, 8_288_034],
-        [13_037, 102_492, 2_314_114, 24_414_336],
+        [11_052, 87_840, 282_240, 6_157_408],
+        [18_951, 84_960, 87_504, 1_666_864],
+        [27_653, 93_600, 443_001, 8_423_966],
+        [13_037, 104_652, 2_314_114, 24_437_289],
     ];
     for (fixture, recorded) in FIXTURES.into_iter().zip(recorded) {
         let ceiling = recorded.map(|count| count + count * HEADROOM_PERCENT / 100);

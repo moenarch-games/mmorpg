@@ -358,19 +358,22 @@ fn spawns_populate_their_subzones() {
             (greyhaven_vale::vale::REDBRAND_HOLLOW, "Garrick Redbrand"),
             1,
         ),
-        // Greyfang Ridge: the outriders and the Greyfang cavern's garrison (#160).
+        // Greyfang Ridge: the outriders, the Greyfang cavern's garrison (#160) and the
+        // Greyfang Approach patrol (#911).
         (
             (greyhaven_vale::vale::GREYFANG_RIDGE, "Redbrand Crossbowman"),
-            5,
+            6,
         ),
-        ((greyhaven_vale::vale::GREYFANG_RIDGE, "Redbrand Bandit"), 2),
-        ((greyhaven_vale::vale::GREYFANG_RIDGE, "Redbrand Brute"), 2),
+        ((greyhaven_vale::vale::GREYFANG_RIDGE, "Redbrand Bandit"), 3),
+        ((greyhaven_vale::vale::GREYFANG_RIDGE, "Redbrand Brute"), 3),
         ((greyhaven_vale::vale::SOUTHMEADOW_DOWNS, "Young Boar"), 2),
         ((greyhaven_vale::vale::SOUTHMEADOW_DOWNS, "Hill Ogre"), 1),
         ((greyhaven_vale::vale::SOUTHMEADOW_DOWNS, "Grain Rat"), 1),
         ((greyhaven_vale::vale::HOLLOWPINE_REACH, "Timber Wolf"), 4),
         ((greyhaven_vale::vale::HOLLOWPINE_REACH, "Young Boar"), 2),
         ((greyhaven_vale::vale::EASTWATER_FEN, "Mirefin Lurker"), 3),
+        // The Eastwater Fen wolf pack, a Ranger firing-line fight (#932).
+        ((greyhaven_vale::vale::EASTWATER_FEN, "Timber Wolf"), 3),
         // The farmland hamlets' rats, boars and wolves (#859).
         (
             (greyhaven_vale::farmland::FARMLAND_AND_HAMLETS, "Grain Rat"),
