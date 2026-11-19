@@ -502,6 +502,11 @@ const LOADOUT_ITEMS: Readonly<Record<CarriedLoadout, readonly { key: string; soc
     { key: "equipment.sword.arming", socket: "hand_r.weapon" },
     { key: "equipment.shield.heater", socket: "hand_l.shield" },
   ],
+  // The Redbrand Brute's round plank shield (#953, asset-tooling #774).
+  "sword-and-shield.redbrand": [
+    { key: "equipment.sword.arming", socket: "hand_r.weapon" },
+    { key: "equipment.shield.redbrand", socket: "hand_l.shield" },
+  ],
   "bow-and-quiver": [
     { key: "equipment.bow.long", socket: "back.bow.stowed" },
     { key: "equipment.quiver.back", socket: "back.quiver" },
