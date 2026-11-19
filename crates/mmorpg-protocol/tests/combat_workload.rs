@@ -121,7 +121,7 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     let recorded: [[usize; 4]; FIXTURES.len()] = [
         [11_052, 87_840, 282_240, 6_157_408],
         [18_951, 84_960, 87_504, 1_666_864],
-        [27_653, 93_600, 443_001, 8_423_966],
+        [27_653, 93_600, 443_001, 8_423_212],
         [13_037, 104_652, 2_314_114, 24_437_289],
     ];
     for (fixture, recorded) in FIXTURES.into_iter().zip(recorded) {
