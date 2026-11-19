@@ -1621,7 +1621,9 @@ pub(crate) mod tests {
     const BREATH: usize = COMBO + 1;
     /// The harm stored against the target (#936).
     const RECKONING: usize = BREATH + 2;
-    const TARGET_OF_TARGET: usize = RECKONING + 2;
+    /// The sword mastery's level and progress (#915).
+    const MASTERY: usize = RECKONING + 2;
+    const TARGET_OF_TARGET: usize = MASTERY + 3;
     const TARGET_CAST: usize = TARGET_OF_TARGET + ENTITY_REF_BYTES;
     const SHEET_MASK: usize = TARGET_CAST + CAST_RECORD_BYTES;
     /// The `u16` sheet mask (#897).
@@ -1975,6 +1977,7 @@ pub(crate) mod tests {
             // The fixture's Arcanist has no melee stance.
             (STANCE, 2, "viewer melee stance is invalid"),
             (COMBO, 2, "viewer combo phase is invalid"),
+            (MASTERY, 9, "viewer weapon mastery is out of range"),
         ] {
             let mut invalid = encoded.clone();
             invalid[offset] = value;
@@ -2283,7 +2286,7 @@ pub(crate) mod tests {
                 EVENT_RECORD_BYTES,
                 ENTITY_RECORD_BYTES
             ),
-            (114, 17, 29)
+            (117, 17, 29)
         );
         assert_eq!(MAX_WIRE_ENTITIES, 33);
         let viewer_id = u32::MAX;
