@@ -210,8 +210,8 @@ impl Error for LootTableError {}
 
 /// Authored starter rewards; revision 2 adds the equipment drops of humanoids, revision 3
 /// the Redbrand crossbowmen (#286), revision 4 the hill ogre (#297), revision 5 the Redbrand Brute
-/// (#160), then the beasts of #889.
-static CATALOG: LazyLock<[(CreatureTemplateId, LootTable); 13]> = LazyLock::new(|| {
+/// (#160), then the beasts of #889 and Old Scarback, the hunter's cache's elite bear (#913).
+static CATALOG: LazyLock<[(CreatureTemplateId, LootTable); 14]> = LazyLock::new(|| {
     use crate::greyhaven_vale::units::templates::*;
     let fur = |weight, quantity| LootOutcome::Item {
         weight,
@@ -235,6 +235,11 @@ static CATALOG: LazyLock<[(CreatureTemplateId, LootTable); 13]> = LazyLock::new(
         (GRAIN_RAT, table([0, 1], &[fur(1, [1, 1]), nothing(3)])),
         // The beasts of #889: a bear's thick pelt, spiders and lurkers carry little.
         (BROWN_BEAR, table([2, 6], &[fur(4, [2, 3]), nothing(1)])),
+        // An elite always gives up a pelt and often a hunter's boots (#913).
+        (
+            OLD_SCARBACK,
+            table([20, 30], &[fur(3, [3, 5]), gear(boots, 2)]),
+        ),
         (CAVE_SPIDER, table([0, 2], &[nothing(1)])),
         (MARSH_LURKER, table([1, 3], &[fur(1, [1, 1]), nothing(2)])),
         (

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "area": "discoveries",
+  "placements": [
+    {"id":"wolfrun-hunter-lean-to","asset":"discoveries.kit.hunter-lean-to","position":[-11450,1100,4600],"yaw":24576,"scale":[1000,1000,1000],"collider":65150},
+    {"id":"wolfrun-hunter-chest","asset":"discoveries.kit.hunter-chest","position":[-11425,1100,4618],"yaw":25828,"scale":[1000,1000,1000],"collider":65151},
+    {"id":"wolfrun-hunter-skinning-rack","asset":"discoveries.kit.skinning-rack","position":[-11627,1100,4494],"yaw":18839,"scale":[1000,1000,1000],"collider":65152},
+    {"id":"wolfrun-hunter-fire-ring","asset":"discoveries.kit.fire-ring","position":[-11351,1100,4430],"yaw":24576,"scale":[1000,1000,1000],"cull":"Near"},
+    {"id":"wolfrun-hunter-clue-camp","asset":"discoveries.kit.hunter-clue","position":[-11224,1100,4586],"yaw":31877,"scale":[1000,1000,1000],"cull":"Near"},
+    {"id":"wolfrun-hunter-clue-trail","asset":"discoveries.kit.hunter-clue","position":[-10620,1100,3640],"yaw":47523,"scale":[1000,1000,1000],"cull":"Near"},
+    {"id":"greyfang-lookout-platform","asset":"discoveries.kit.lookout-platform","position":[11500,1107,-16600],"yaw":49152,"scale":[1000,1000,1000],"collider":65153},
+    {"id":"greyfang-lookout-ladder","asset":"discoveries.kit.lookout-ladder","position":[11338,1103,-16565],"yaw":49152,"scale":[1000,1000,1000],"collider":65154},
+    {"id":"greyfang-lookout-brazier","asset":"discoveries.kit.signal-brazier-lit","position":[11350,1106,-16760],"yaw":49152,"scale":[1000,1000,1000],"collider":65155},
+    {"id":"greyfang-lookout-weapon-rack","asset":"discoveries.kit.weapon-rack","position":[11565,1332,-16630],"yaw":49152,"scale":[1000,1000,1000],"collider":65156},
+    {"id":"greyfang-lookout-banner","asset":"discoveries.kit.lookout-banner","position":[10200,1100,-16550],"yaw":52281,"scale":[1000,1000,1000],"collider":65157},
+    {"id":"eastwater-fen-punt","asset":"discoveries.kit.fen-punt","position":[17221,686,-1452],"yaw":43651,"scale":[1000,1000,1000],"collider":65158},
+    {"id":"eastwater-fen-supply-crates","asset":"discoveries.kit.supply-crates","position":[17019,708,-1194],"yaw":37914,"scale":[1000,1000,1000],"collider":65159},
+    {"id":"eastwater-fen-marker","asset":"discoveries.kit.fen-marker","position":[16382,722,-2133],"yaw":40000,"scale":[1000,1000,1000],"collider":65160}
+  ]
+}

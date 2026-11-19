@@ -42,6 +42,7 @@ pub(crate) fn encode_key(payload: &mut Vec<u8>, key: RewardKey) -> Result<(), Pr
         RewardKey::RaidParticipation { .. } => 7,
         RewardKey::RaidDefence { .. } => 8,
         RewardKey::Discovery { .. } => 9,
+        RewardKey::Cache { .. } => 10,
     };
     payload.push(code);
     if let Some((creature, life)) = key.creature_life() {
@@ -65,6 +66,7 @@ pub(crate) fn encode_key(payload: &mut Vec<u8>, key: RewardKey) -> Result<(), Pr
             payload.extend_from_slice(&incident.to_be_bytes());
         }
         RewardKey::Discovery { area } => payload.extend_from_slice(&area.get().to_be_bytes()),
+        RewardKey::Cache { cache } => payload.extend_from_slice(&cache.to_be_bytes()),
         _ => {}
     }
     Ok(())
@@ -102,6 +104,10 @@ fn decode_key_ids(
     } else if code == 9 {
         RewardKey::Discovery {
             area: AreaId::new(u32::from_be_bytes(take(payload, offset)?)),
+        }
+    } else if code == 10 {
+        RewardKey::Cache {
+            cache: u32::from_be_bytes(take(payload, offset)?),
         }
     } else {
         if !(1..=5).contains(&code) {
@@ -279,6 +285,7 @@ mod tests {
             RewardKey::Discovery {
                 area: AreaId::new(2),
             },
+            RewardKey::Cache { cache: 2 },
         ] {
             history.record(1, key).unwrap();
         }

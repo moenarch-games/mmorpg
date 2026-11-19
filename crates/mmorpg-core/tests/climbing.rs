@@ -279,6 +279,43 @@ fn a_player_climbs_a_ladder_onto_the_lookout_tower() {
     assert!(over(&tower, feet), "on the tower: {feet:?}");
 }
 
+/// The Greyfang lookout's ladder (#913) leads onto its deck, 2.25 m up, where its cache lies.
+#[test]
+fn a_player_climbs_the_greyfang_lookouts_ladder_onto_its_deck() {
+    const EAST: u16 = 16_384;
+    let platform = collider(*greyhaven_vale::discoveries::COLLIDERS.start() + 3);
+    let ladder = collider(greyhaven_vale::discoveries::LOOKOUT_LADDER);
+    let [x, _, z] = ladder.position;
+    let mut player = Player::at([x - 200, z]);
+    player.walk_into(EAST);
+    player.jump();
+    player.ticks(1);
+    assert!(matches!(
+        player.traversal(),
+        Traversal::Climbing {
+            grip: Grip::Ladder,
+            ..
+        }
+    ));
+    let deck = greyhaven_vale::discoveries::caches()[1].at[1] as f32;
+    assert!(
+        player.until(1, EAST, 2_400, |p| p.traversal() == Traversal::Free
+            && p.feet()[1] > deck - 10.0),
+        "{:?}",
+        player.feet()
+    );
+    // A step on from the ladder's top lands on the deck.
+    player.hold(1, EAST);
+    player.ticks(8);
+    player.hold(0, EAST);
+    player.ticks(30);
+    let feet = player.feet();
+    assert!(
+        over(&platform, feet) && (feet[1] - deck).abs() < 10.0,
+        "on the deck: {feet:?}"
+    );
+}
+
 /// The rope up the sheer crag (#621) is the only way up it: held as a rope, climbed to the top.
 #[test]
 fn a_player_climbs_the_rope_up_the_sheer_crag() {

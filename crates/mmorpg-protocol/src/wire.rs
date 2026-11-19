@@ -297,6 +297,26 @@ pub(crate) fn encode_discoveries(
     Ok(())
 }
 
+/// Opened discovery caches (#913): `count u16 · count × id u32`, strictly ascending; whether
+/// content names them is core's to decide.
+pub(crate) fn encode_caches(
+    payload: &mut Vec<u8>,
+    caches: &std::collections::BTreeSet<u32>,
+) -> Result<(), ProtocolError> {
+    payload.extend_from_slice(
+        &encode_u16_count(
+            caches.len(),
+            usize::from(u16::MAX),
+            "too many opened caches",
+        )?
+        .to_be_bytes(),
+    );
+    for id in caches {
+        payload.extend_from_slice(&id.to_be_bytes());
+    }
+    Ok(())
+}
+
 pub(crate) fn decode_discoveries(
     payload: &[u8],
     offset: &mut usize,
@@ -316,6 +336,29 @@ pub(crate) fn decode_discoveries(
         areas.insert(id);
     }
     Ok(areas)
+}
+
+pub(crate) fn decode_caches(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<std::collections::BTreeSet<u32>, ProtocolError> {
+    let count = decode_u16_count(
+        payload,
+        offset,
+        usize::from(u16::MAX),
+        "too many opened caches",
+    )?;
+    let mut caches = std::collections::BTreeSet::new();
+    for _ in 0..count {
+        let id = u32::from_be_bytes(take(payload, offset)?);
+        if id == 0 || caches.last().is_some_and(|last| *last >= id) {
+            return Err(ProtocolError::new(
+                "opened caches are not ordered nonzero IDs",
+            ));
+        }
+        caches.insert(id);
+    }
+    Ok(caches)
 }
 
 /// A quest ID, never `0`; whether content defines it is the

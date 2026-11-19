@@ -16,6 +16,7 @@ mod boss;
 mod boulder;
 mod breakable;
 pub mod buoyancy;
+mod cache;
 mod casting;
 mod character;
 mod chat;
@@ -92,6 +93,7 @@ pub use breakable::{
     DEBRIS_TICKS, Debris, DebrisPiece, DebrisView, EXPLOSION_DAMAGE, EXPLOSION_KNOCKBACK_UNITS,
     EXPLOSION_RADIUS_UNITS, MAX_DEBRIS, MAX_DEBRIS_PER_TICK, MAX_VISIBLE_DEBRIS, debris_pieces,
 };
+pub use cache::{CACHE_HEIGHT_UNITS, DiscoveryCache};
 pub use character::{
     CHARACTER_RECORD_SCHEMA_VERSION, CharacterId, CharacterLocation, CharacterRecord, DepthsRecord,
     MAX_CHARACTER_ID_BYTES,
