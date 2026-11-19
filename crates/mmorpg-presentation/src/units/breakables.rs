@@ -3,7 +3,7 @@
 //! shapes match the zone's piece table (`mmorpg_core::debris_pieces`), so a broken crate's
 //! panels are the panels it was built from. Placeholder shapes until the clients load
 //! asset-tooling's `greyhaven-starter` debris pieces.
-use mmorpg_core::{DebrisView, PropKind, debris_pieces};
+use mmorpg_core::{DebrisView, EXPLOSION_RADIUS_UNITS, PropKind, debris_pieces};
 
 use super::kit::{Frame, Primitive, Resources, child, qa, qm};
 use crate::Draw;
@@ -167,4 +167,33 @@ pub fn piece(resources: &mut Resources, view: &DebrisView, centre: [f32; 3]) -> 
         draws.push(flash);
     }
     draws
+}
+
+/// A selected powder barrel's blast reach (#954): a ring of dashes on the ground at the zone's
+/// explosion radius about its feet, so a player aiming at it sees who it would catch. The zone
+/// still decides every hit, cover included.
+pub fn blast_ring(resources: &mut Resources, id: &str, feet: [f64; 3]) -> Vec<Draw> {
+    const DASHES: u32 = 32;
+    let radius = metres([EXPLOSION_RADIUS_UNITS, 0, 0])[0];
+    (0..DASHES)
+        .map(|index| {
+            let a = f64::from(index) / f64::from(DASHES) * std::f64::consts::TAU;
+            let mut dash = resources.primitive(
+                format!("{id}-blast-{index}"),
+                Primitive::Box([0.55, 0.04, 0.1]),
+                0xff7a2a,
+                Frame {
+                    p: [
+                        feet[0] + a.sin() * radius,
+                        feet[1] + 0.05,
+                        feet[2] + a.cos() * radius,
+                    ],
+                    q: qa(1, a + std::f64::consts::FRAC_PI_2),
+                },
+            );
+            dash.material.unlit = true;
+            dash.material.opacity = 0.8;
+            dash
+        })
+        .collect()
 }
