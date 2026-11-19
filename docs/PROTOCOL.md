@@ -200,7 +200,7 @@ Each entity record is 29 bytes:
 | --- | --- | --- |
 | 0 | 1 | Entity kind: 1 player, 2 creature, 3 NPC |
 | 1 | 4 | Entity ID, unique per kind |
-| 5 | 4 | Appearance (`u32`, #882): creature template ID, NPC ID, a minion's summoning ability, or for players the class code (0 without a class, otherwise `1 + class × 2 + sex`) with the drawn weapon in the top bit |
+| 5 | 4 | Appearance (`u32`, #882): creature template ID, NPC ID, a minion's summoning ability, or for players the class code (0 without a class, otherwise `1 + class × 2 + sex`) with the drawn weapon in the top bit and, in bits 24–26, 1 + its melee weapon family's code (#914; 0 none, every other unit 0) |
 | 9 | 12 | Position (`3 × i32`, absolute units) |
 | 21 | 3 | Velocity (`3 × i8`, units per tick) |
 | 24 | 2 | Facing (`u16` yaw) |
