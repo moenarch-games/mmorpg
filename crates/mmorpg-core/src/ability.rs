@@ -106,6 +106,9 @@ pub enum AuraKind {
     /// A fresh corpse (#935) the bearer may spend with Raise Dead or Corpse Burst; the
     /// aura's caster is the corpse.
     Corpse,
+    /// The Druid's wolf form (#957): `amount` is the movement speed bonus in percent, and
+    /// only the form's own abilities may be used while it rests on the bearer.
+    Shapeshift,
 }
 
 impl AuraKind {
@@ -120,6 +123,7 @@ impl AuraKind {
             Self::Stun => 6,
             Self::Haste => 7,
             Self::Corpse => 8,
+            Self::Shapeshift => 9,
         }
     }
 
@@ -134,6 +138,7 @@ impl AuraKind {
             6 => Some(Self::Stun),
             7 => Some(Self::Haste),
             8 => Some(Self::Corpse),
+            9 => Some(Self::Shapeshift),
             _ => None,
         }
     }
@@ -149,6 +154,7 @@ impl AuraKind {
             Self::Stun => "stun",
             Self::Haste => "haste",
             Self::Corpse => "corpse",
+            Self::Shapeshift => "shapeshift",
         }
     }
 }
@@ -375,6 +381,10 @@ pub enum AbilityEffect {
     /// caster's reach this encounter, which the cast consumes; each enemy's stored harm is capped
     /// at `pool`. See `reckoning.rs`.
     Reckoning { percent: u16, pool: u16 },
+    /// Wolf Form (#957): the caster takes the wolf's shape for `duration` ticks, moving
+    /// `speed` percent faster; using it again in that shape returns the caster to caster form.
+    /// See [`AuraKind::Shapeshift`] for what the shape may use.
+    Shapeshift { speed: u16, duration: u16 },
 }
 
 /// How long a corrupted victim's corpse stays spendable for its Necromancer (#935): 10 s.
@@ -421,6 +431,7 @@ impl Ability {
             }
             AbilityEffect::Absorb { duration, .. } => (AuraKind::Absorb, duration, 0),
             AbilityEffect::RaiseDead { .. } => (AuraKind::Corpse, CORPSE_WINDOW_TICKS, 0),
+            AbilityEffect::Shapeshift { duration, .. } => (AuraKind::Shapeshift, duration, 0),
             AbilityEffect::WeaponStrike { .. }
             | AbilityEffect::Cleave { .. }
             | AbilityEffect::Bolt { .. }
@@ -458,6 +469,7 @@ impl Ability {
             AbilityEffect::HealOverTime { .. }
                 | AbilityEffect::Haste { .. }
                 | AbilityEffect::Absorb { .. }
+                | AbilityEffect::Shapeshift { .. }
         )
     }
 
@@ -608,6 +620,9 @@ pub mod ids {
     pub const CORPSE_BURST: AbilityId = AbilityId::new(55);
     /// The Cleric's reckoning (#936).
     pub const DIVINE_RECKONING: AbilityId = AbilityId::new(56);
+    /// The Druid's wolf form (#957) and the bite it alone may use.
+    pub const WOLF_FORM: AbilityId = AbilityId::new(57);
+    pub const SAVAGE_BITE: AbilityId = AbilityId::new(58);
 }
 
 /// How a projectile treats what it meets (#291).
@@ -630,7 +645,7 @@ pub enum Shot {
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 56] = [
+pub const ABILITY_CATALOG: [Ability; 58] = [
     ability(
         1,
         "Heroic Strike",
@@ -1560,6 +1575,38 @@ pub const ABILITY_CATALOG: [Ability; 56] = [
             pool: 200,
         },
     ),
+    // The Druid's wolf form (#957, Atlas 5.2.i957): shift to close a gap 40% faster and land one
+    // savage bite, then shift back for Wrath and Roots; no other spell works in the shape.
+    // Tuning is provisional.
+    ability(
+        57,
+        "Wolf Form",
+        DRUID,
+        4,
+        0,
+        CastTime::Instant,
+        ticks_from_ms(1_500),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Shapeshift {
+            speed: 40,
+            duration: ticks_from_ms(600_000),
+        },
+    ),
+    ability(
+        58,
+        "Savage Bite",
+        DRUID,
+        4,
+        20,
+        CastTime::Instant,
+        ticks_from_ms(6_000),
+        AbilityRange::Melee,
+        AbilityEffect::WeaponStrike {
+            numerator: 2,
+            denominator: 1,
+            bonus: 12,
+        },
+    ),
 ];
 
 /// The catalog row of `id`, if any.
@@ -1874,6 +1921,9 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
                 radius,
             ],
             AbilityEffect::Reckoning { percent, pool } => vec![31, percent.into(), pool.into()],
+            AbilityEffect::Shapeshift { speed, duration } => {
+                vec![32, speed.into(), duration.into()]
+            }
         };
         bytes.extend_from_slice(&u32::try_from(fields.len()).unwrap_or(0).to_be_bytes());
         for field in fields {
@@ -1909,7 +1959,7 @@ mod tests {
             }
         }
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
-        assert_eq!(ability_by_id(AbilityId::new(57)), None);
+        assert_eq!(ability_by_id(AbilityId::new(59)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
         for &class in PlayerClass::VARIANTS {
             let cooldowns = ABILITY_CATALOG

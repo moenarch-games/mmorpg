@@ -34,6 +34,8 @@ pub struct EntityFlags {
     pub weapon: Option<crate::WeaponFamily>,
     /// A player's named main-hand weapon (#918), drawn with its own model; `None` otherwise.
     pub named_weapon: Option<crate::NamedWeapon>,
+    /// A player in wolf form (#957), whom clients draw as the wolf. Presentation only.
+    pub shapeshifted: bool,
     /// An aggressive creature: it attacks players on sight.
     pub hostile: bool,
     /// The viewer may attack it (living creatures).
@@ -452,6 +454,10 @@ impl ZoneSimulation {
                             .item(crate::EquipmentSlot::MainHand)
                             .and_then(crate::item_find)
                             .and_then(|find| find.named),
+                        shapeshifted: crate::aura::has_kind(
+                            &player.auras,
+                            crate::AuraKind::Shapeshift,
+                        ),
                         targets_viewer,
                         ..EntityFlags::default()
                     },
@@ -496,6 +502,7 @@ impl ZoneSimulation {
                         weapon_drawn: false,
                         weapon: None,
                         named_weapon: None,
+                        shapeshifted: false,
                         in_combat: alive
                             && (creature.ai == CreatureAi::Engaged || creature.combat_timer > 0),
                         hostile: template.behaviour == CreatureBehaviour::Aggressive,

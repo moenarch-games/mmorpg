@@ -1316,7 +1316,8 @@ fn validate_auras(auras: &[Aura]) -> Result<(), ZoneError> {
         let valid_amount = match ability_by_id(aura.ability).map(|ability| ability.effect) {
             Some(
                 crate::AbilityEffect::Snare { percent, .. }
-                | crate::AbilityEffect::Haste { percent, .. },
+                | crate::AbilityEffect::Haste { percent, .. }
+                | crate::AbilityEffect::Shapeshift { speed: percent, .. },
             ) => aura.amount == percent,
             Some(
                 crate::AbilityEffect::DamageOverTime {
