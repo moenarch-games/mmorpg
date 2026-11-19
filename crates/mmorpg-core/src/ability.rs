@@ -371,6 +371,10 @@ pub enum AbilityEffect {
         per_level: u16,
         radius: i32,
     },
+    /// Divine Reckoning (#936): a holy strike of `percent` of the harm the target dealt within the
+    /// caster's reach this encounter, which the cast consumes; each enemy's stored harm is capped
+    /// at `pool`. See `reckoning.rs`.
+    Reckoning { percent: u16, pool: u16 },
 }
 
 /// How long a corrupted victim's corpse stays spendable for its Necromancer (#935): 10 s.
@@ -435,7 +439,8 @@ impl Ability {
             | AbilityEffect::Leap { .. }
             | AbilityEffect::Hook { .. }
             | AbilityEffect::Blink { .. }
-            | AbilityEffect::CorpseBurst { .. } => return None,
+            | AbilityEffect::CorpseBurst { .. }
+            | AbilityEffect::Reckoning { .. } => return None,
         };
         Some(AuraSpec {
             kind,
@@ -601,6 +606,8 @@ pub mod ids {
     /// The Necromancer's corpse payoffs (#935).
     pub const RAISE_DEAD: AbilityId = AbilityId::new(54);
     pub const CORPSE_BURST: AbilityId = AbilityId::new(55);
+    /// The Cleric's reckoning (#936).
+    pub const DIVINE_RECKONING: AbilityId = AbilityId::new(56);
 }
 
 /// How a projectile treats what it meets (#291).
@@ -623,7 +630,7 @@ pub enum Shot {
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 55] = [
+pub const ABILITY_CATALOG: [Ability; 56] = [
     ability(
         1,
         "Heroic Strike",
@@ -1536,6 +1543,23 @@ pub const ABILITY_CATALOG: [Ability; 55] = [
             radius: 600,
         },
     ),
+    // The Cleric's reckoning (#936, Atlas 5.2.i936): endure an enemy's blows, heal, then return
+    // 70% of the harm it dealt you and nearby allies this encounter, at most 200 stored. The
+    // rate and cap are provisional tuning.
+    ability(
+        56,
+        "Divine Reckoning",
+        CLERIC,
+        3,
+        30,
+        CastTime::Instant,
+        ticks_from_ms(12_000),
+        RANGED,
+        AbilityEffect::Reckoning {
+            percent: 70,
+            pool: 200,
+        },
+    ),
 ];
 
 /// The catalog row of `id`, if any.
@@ -1849,6 +1873,7 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
                 per_level.into(),
                 radius,
             ],
+            AbilityEffect::Reckoning { percent, pool } => vec![31, percent.into(), pool.into()],
         };
         bytes.extend_from_slice(&u32::try_from(fields.len()).unwrap_or(0).to_be_bytes());
         for field in fields {
@@ -1884,7 +1909,7 @@ mod tests {
             }
         }
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
-        assert_eq!(ability_by_id(AbilityId::new(56)), None);
+        assert_eq!(ability_by_id(AbilityId::new(57)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
         for &class in PlayerClass::VARIANTS {
             let cooldowns = ABILITY_CATALOG

@@ -152,6 +152,9 @@ pub struct ViewerState {
     pub breath: u16,
     /// Waystones the viewer unlocked (#145).
     pub waystones: crate::WaystoneSet,
+    /// The harm a Divine Reckoning would draw on against the viewer's target (#936): 0 without
+    /// a creature target or stored harm.
+    pub reckoning: u16,
 }
 
 /// A projection addressed to `viewer_id`. Entities are in priority order: the
@@ -320,6 +323,7 @@ impl ZoneSimulation {
                     combo: self.combo_phase(viewer),
                     breath: viewer.breath.remaining,
                     waystones: viewer.waystones.clone(),
+                    reckoning: self.harm_against(player_id, viewer.target),
                 },
                 cooldowns: viewer.cooldowns.clone(),
                 auras: aura_views(&viewer.auras),

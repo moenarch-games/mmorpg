@@ -143,7 +143,9 @@ export function combatStatus(snapshot: ZoneSnapshot, catalog: ContentCatalog): s
       : record.flags.dead ? `level ${record.level}, dead` : `level ${record.level}, ${record.healthPercent}%`;
     const cast = snapshot.targetDetail.cast;
     const casting = cast ? `, casting ${abilityName(cast.ability, catalog)} ${cast.elapsed}/${cast.total}` : "";
-    parts.push(`Target: ${name} (${detail}${casting})`);
+    // Divine Reckoning (#936): the harm this enemy dealt you and nearby allies, ready to return.
+    const reckoning = viewer.reckoning > 0 ? `, reckoning ${viewer.reckoning} stored` : "";
+    parts.push(`Target: ${name} (${detail}${casting}${reckoning})`);
   }
   return parts.join(" · ");
 }

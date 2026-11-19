@@ -108,6 +108,8 @@ export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = ne
   // The Necromancer's corpse payoffs (#935): a victim dying under your Corruption leaves a fresh corpse for 10 s.
   [54, { range: "self", description: "Spends your fresh corpse (a victim that died under your Corruption, within 30 m) to raise one undead helper for 20 s. Only one stands at a time; Y/U/I/O order it like skeletons.", glyph: SKULL, accent: "#9be08a", visual: null, pose: "cast" }],
   [55, { range: "self", description: "Spends your fresh corpse (a victim that died under your Corruption, within 30 m): it bursts, hurting every enemy within 6 m of it.", glyph: SPLAT, accent: "#b07dff", visual: null, pose: "cast" }],
+  // The Cleric's reckoning (#936): it returns the harm only this enemy dealt you and nearby allies this encounter.
+  [56, { range: RANGED, description: "Return 70% of the harm your target dealt you and nearby allies this fight as a holy strike, consuming only its stored harm. Heals never lower it; it ends when the fight does.", glyph: BOLT, accent: "#ffcf4a", visual: null, pose: "cast" }],
 ]);
 
 export function presentationOf(ability: number): AbilityPresentation | undefined {

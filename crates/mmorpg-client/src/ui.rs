@@ -967,6 +967,14 @@ impl GameUi {
                     if let Some(cast) = snapshot.target_detail.cast {
                         cast_bar(ui, cast);
                     }
+                    // Divine Reckoning (#936): the harm this enemy dealt the viewer and nearby
+                    // allies, ready to return; the browser HUD says the same.
+                    if viewer.reckoning > 0 {
+                        ui.colored_label(
+                            Color32::from_rgb(255, 214, 90),
+                            format!("Reckoning {} stored", viewer.reckoning),
+                        );
+                    }
                     auras(ui, &snapshot.target_detail.auras);
                     if let Some(tot) = snapshot.target_of_target {
                         ui.small(format!("Target: {}", (frame.names)(tot)));

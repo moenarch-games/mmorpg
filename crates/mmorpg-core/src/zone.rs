@@ -160,6 +160,8 @@ pub(crate) struct PlayerState {
     pub(crate) cast: Option<crate::CastState>,
     /// Auras in slot order.
     pub(crate) auras: Vec<crate::Aura>,
+    /// Divine Reckoning pools (#936) in creature order; canonical.
+    pub(crate) reckoning: Vec<crate::Harm>,
     /// The first tick the player may speak again.
     pub(crate) chat_ready_at: u64,
     /// Chat lines heard this tick.
@@ -227,6 +229,7 @@ impl PlayerState {
             cooldowns: Vec::new(),
             cast: None,
             auras: Vec::new(),
+            reckoning: Vec::new(),
             chat_ready_at: 0,
             chat: Vec::new(),
             quests: crate::QuestLog::default(),
