@@ -4,7 +4,9 @@
 //! A basic strike (#885) shows its arc or thrust at the zone's contact, a jumping strike's
 //! landing slams the ground and a running strike kicks up dust as it starts. Every hit on a body
 //! bursts, a spell missile's end plays its school's impact, Frost Nova rings out, heals rise in
-//! motes, and the shots and missiles the zone projects fly as the bundle's meshes. One-shot
+//! motes, and the shots and missiles the zone projects fly as the bundle's meshes. A directed
+//! slash that strikes a second unit sweeps the wide cleave fan instead of its arc (#963), and
+//! while the viewer's cleave follow-up window is open its sword glints. One-shot
 //! effects are pooled here and dropped once their `Play` clip ends; reduced motion skips them.
 //! Clients draw each [`Instance`]: the entry `key` under `model`, its `clip` at `time` (a `Loop`
 //! clip wraps), recoloured through its material's base and emissive colour by `tint`. Nothing
@@ -15,8 +17,8 @@ use super::{
 };
 use crate::geometry::V;
 use mmorpg_core::{
-    AbilityId, EntityRef, ProjectileKind, StrikeVariant, TICK_HZ, WeaponFamily, ZoneEvent,
-    ZoneSnapshot, ability::ids,
+    AbilityId, ComboPhase, EntityRef, ProjectileKind, StrikeSide, StrikeVariant, TICK_HZ,
+    WeaponFamily, ZoneEvent, ZoneSnapshot, ability::ids,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -32,6 +34,8 @@ pub const SPELL_BUNDLE: &str = "effects/spell.effects";
 
 pub const ARC_CUT: &str = "strike.effects.strike-arc-cut";
 pub const ARC_HEAVY: &str = "strike.effects.strike-arc-heavy";
+pub const CLEAVE_SWEEP: &str = "strike.effects.cleave-sweep";
+pub const COMBO_GLINT: &str = "strike.effects.combo-glint";
 pub const THRUST: &str = "strike.effects.strike-thrust";
 pub const IMPACT_BURST: &str = "strike.effects.impact-burst";
 pub const GROUND_SLAM: &str = "strike.effects.ground-slam";
@@ -39,12 +43,16 @@ pub const LUNGE_DUST: &str = "strike.effects.lunge-dust";
 pub const FROST_NOVA: &str = "spell.effects.frost-nova";
 pub const BEAM_SEGMENT: &str = "spell.effects.beam-segment";
 pub const HEAL_MOTES: &str = "spell.effects.heal-motes";
+/// A spent corpse (#935) and its burst's hits.
+pub const CORPSE_SPENT: &str = "spell.effects.impact-shadow";
 
 /// Every entry the clients load: its key, its clip and the clip's length in seconds (the
 /// bundle descriptors'); a shot has no clip.
-pub const ENTRIES: [(&str, Option<&str>, f64); 21] = [
+pub const ENTRIES: [(&str, Option<&str>, f64); 23] = [
     (ARC_CUT, Some("Play"), 0.18),
     (ARC_HEAVY, Some("Play"), 0.25),
+    (CLEAVE_SWEEP, Some("Play"), 0.3),
+    (COMBO_GLINT, Some("Play"), 0.3),
     (THRUST, Some("Play"), 0.15),
     (IMPACT_BURST, Some("Play"), 0.2),
     (GROUND_SLAM, Some("Play"), 0.4),
@@ -70,6 +78,11 @@ pub const ENTRIES: [(&str, Option<&str>, f64); 21] = [
 /// the striker's chest, so the arc curves back round its body.
 const CUT_RADIUS: f64 = 1.15;
 const HEAVY_RADIUS: f64 = 1.55;
+const CLEAVE_RADIUS: f64 = 1.6;
+/// A directed slash's side turns its sweep this far off the facing (the primitive sweep's).
+const SIDE_TURN: f64 = std::f64::consts::FRAC_PI_4;
+/// Where the sword held in its guard glints, from the body centre: ahead, to the right and up.
+const GUARD_BLADE: [f64; 3] = [0.45, 0.3, 0.35];
 /// How far ahead of the chest a thrust's point meets its target.
 const THRUST_REACH: f64 = 1.1;
 /// The chest above the body centre, where strikes contact.
@@ -132,6 +145,10 @@ pub struct KitEffects {
     spawned: Vec<Spawned>,
     pending: Vec<Pending>,
     flights: BTreeMap<u16, Flight>,
+    /// The units each running directed slash has struck so far (#909).
+    struck: BTreeMap<EntityRef, u8>,
+    /// The viewer whose cleave follow-up window (#910) is open, and when its glint next plays.
+    glint: Option<(EntityRef, f64)>,
     next: u64,
     last_tick: Option<u64>,
 }
@@ -174,6 +191,7 @@ fn spell_impact(ability: AbilityId) -> Option<&'static str> {
     match ability {
         ids::FROST_NOVA | ids::FROST_BREATH => Some("spell.effects.impact-frost"),
         ids::FIRE_BLAST => Some("spell.effects.impact-fire"),
+        ids::CORPSE_BURST => Some(CORPSE_SPENT),
         _ => None,
     }
 }
@@ -243,6 +261,13 @@ impl KitEffects {
             return;
         }
         self.last_tick = Some(s.tick);
+        // The viewer's sword glints while its cleave follow-up window is open (#910).
+        self.glint = (s.viewer.combo == Some(ComboPhase::CleaveOpen)).then(|| {
+            (
+                EntityRef::Player(s.viewer_id),
+                self.glint.map_or(now, |(_, next)| next),
+            )
+        });
         // Missiles gone since the last projection ended: each plays its school's impact where it
         // was last seen, and its hit shows no plain burst.
         let mut landed = BTreeSet::new();
@@ -348,11 +373,60 @@ impl KitEffects {
                         now,
                     );
                 }
+                // A directed slash (#909) counts the units it strikes; the second turns its
+                // sweep into the cleave's wide fan.
+                ZoneEvent::SwingBegan { source, .. } => {
+                    self.struck.insert(source, 0);
+                }
+                ZoneEvent::StrikeSwept {
+                    source,
+                    target: Some(_),
+                    aim,
+                    ..
+                } => {
+                    let struck = self.struck.entry(source).or_default();
+                    *struck = struck.saturating_add(1);
+                    if *struck != 2 {
+                        continue;
+                    }
+                    let Some(a) = anchors.get(&source) else {
+                        continue;
+                    };
+                    let yaw = a.yaw
+                        + match aim.side {
+                            StrikeSide::Left => SIDE_TURN,
+                            StrikeSide::Centre => 0.,
+                            StrikeSide::Right => -SIDE_TURN,
+                        };
+                    // Like an arc: local −X back at the striker, +Z across the body.
+                    let frame = Frame {
+                        p: [
+                            a.feet[0] + yaw.sin() * CLEAVE_RADIUS,
+                            a.centre + CHEST,
+                            a.feet[2] + yaw.cos() * CLEAVE_RADIUS,
+                        ],
+                        q: heading(yaw - FRAC_PI_2),
+                    };
+                    self.spawn(CLEAVE_SWEEP, frame, now);
+                }
                 ZoneEvent::AbilityUsed {
                     source, ability, ..
                 } if ability == ids::FROST_NOVA => {
                     if let Some(a) = anchors.get(&source) {
                         self.spawn(FROST_NOVA, Frame { p: a.feet, q: IQ }, now);
+                    }
+                }
+                // A spent corpse (#935) flares where it lies as it rises or bursts.
+                ZoneEvent::AbilityUsed {
+                    source,
+                    target,
+                    ability,
+                } if ability == ids::RAISE_DEAD || ability == ids::CORPSE_BURST => {
+                    if let Some(a) = target
+                        .and_then(|corpse| anchors.get(&corpse))
+                        .or_else(|| anchors.get(&source))
+                    {
+                        self.spawn(CORPSE_SPENT, Frame { p: a.feet, q: IQ }, now);
                     }
                 }
                 ZoneEvent::Healed { target, amount, .. } if amount > 0 => {
@@ -422,6 +496,29 @@ impl KitEffects {
                     strike.at,
                 );
             }
+        }
+        // The follow-up window's glint plays again each time the last one ends, at the sword
+        // held in the guard.
+        if let Some((viewer, next)) = self.glint
+            && now >= next
+            && let Some(a) = anchors.get(&viewer)
+        {
+            let [ahead, right, up] = GUARD_BLADE;
+            let (sin, cos) = a.yaw.sin_cos();
+            let p = [
+                a.feet[0] + sin * ahead - cos * right,
+                a.centre + up,
+                a.feet[2] + cos * ahead + sin * right,
+            ];
+            self.spawn(
+                COMBO_GLINT,
+                Frame {
+                    p,
+                    q: heading(a.yaw),
+                },
+                now,
+            );
+            self.glint = Some((viewer, now + entry(COMBO_GLINT).1));
         }
         self.spawned.retain(|e| now - e.start < e.duration);
         self.spawned

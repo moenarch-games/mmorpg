@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "area": "wolfrun-den",
+  "placements": [
+    {"id":"wolfrun-den-mouth","asset":"wolf-den.kit.den-mouth","position":[-10400,1094,-80],"yaw":53248,"scale":[1000,1000,1000],"collider":65137},
+    {"id":"wolfrun-den-bedding","asset":"wolf-den.kit.bedding-patch","position":[-10800,1099,300],"yaw":9000,"scale":[1000,1000,1000],"cull":"Near"},
+    {"id":"wolfrun-den-bones-1","asset":"wolf-den.kit.bone-scatter","position":[-10678,1095,-73],"yaw":40000,"scale":[1000,1000,1000],"cull":"Near"},
+    {"id":"wolfrun-den-bones-2","asset":"wolf-den.kit.bone-scatter","position":[-10720,1097,180],"yaw":21000,"scale":[1000,1000,1000],"cull":"Near"}
+  ]
+}

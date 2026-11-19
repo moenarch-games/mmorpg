@@ -245,6 +245,16 @@ impl ZoneSimulation {
         {
             return Ok(Some((code, None)));
         }
+        // A corpse payoff (#935) lands on the caster's fresh corpse, or is refused unpaid.
+        let target = match ability.effect {
+            AbilityEffect::RaiseDead { .. } | AbilityEffect::CorpseBurst { .. } => {
+                match self.corpse_to_spend(player_id, ability)? {
+                    Ok(corpse) => Some(corpse),
+                    Err(code) => return Ok(Some((code, None))),
+                }
+            }
+            _ => target,
+        };
         let source = EntityRef::Player(player_id);
         let recovery = follow_up
             .as_ref()
@@ -779,6 +789,36 @@ impl ZoneSimulation {
             }
             AbilityEffect::Summon { .. } | AbilityEffect::Companion { .. } => {
                 self.raise_minion(player_id, ability.id)?;
+            }
+            AbilityEffect::RaiseDead { .. } => {
+                if let Some(EntityRef::Creature(corpse)) = target
+                    && self.spend_corpse(corpse).is_some()
+                {
+                    self.raise_minion(player_id, ability.id)?;
+                }
+            }
+            AbilityEffect::CorpseBurst {
+                damage,
+                per_level,
+                radius,
+            } => {
+                if let Some(EntityRef::Creature(corpse)) = target
+                    && let Some(centre) = self.spend_corpse(corpse)
+                {
+                    self.detonate(
+                        Detonation {
+                            attacker: player_id,
+                            source: None,
+                            centre,
+                            radius,
+                            damage,
+                            bonus: u32::from(scaled(0, per_level, level)) + bonus,
+                            knockback: 0,
+                            fallback,
+                        },
+                        now,
+                    )?;
+                }
             }
             AbilityEffect::SummonTerrain { kind } => {
                 self.raise_summoned_terrain(player_id, kind, now)?;

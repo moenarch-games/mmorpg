@@ -683,6 +683,7 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
                 // The mill and the world dressing's rocks (#683) stand on the bank.
                 mmorpg_core::greyhaven_vale::fort::BROOK_MILL.contains(&mesh.id)
                     || crate::world_dressing::stand_in(s, mesh.id).is_some()
+                    || crate::world_dressing::own_collider(s, mesh.id)
             })
             .map(|mesh| mmorpg_scenery::Rect {
                 min: [0, 2].map(|axis| {

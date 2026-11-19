@@ -6,6 +6,8 @@ import { raidNoticeText } from "../raid-prep";
 
 /** The Druid's Call Companion (#296): a minion of this appearance is the wolf companion. */
 const CALL_COMPANION = 46;
+/** The Druid's Entangling Roots (#304): its caster hears when it takes hold and when it breaks (#934). */
+const ENTANGLING_ROOTS = 39;
 
 /**
  * Plain-text combat HUD lines beside the class HUD's frames, cast bars and
@@ -164,14 +166,17 @@ export function eventText(event: ZoneEvent, snapshot: ZoneSnapshot, catalog: Con
     case "creature-attack-began":
     case "damage-observed":
       return "";
+    // A companion's or minion's blows and wounds reach its summoner too (#934).
     case "damage-dealt":
-      return `You hit ${name(event.target)} for ${event.amount}${critical(event.critical)}.`;
+      return isViewer(event.source)
+        ? `You hit ${name(event.target)} for ${event.amount}${critical(event.critical)}.`
+        : `${capitalise(name(event.source))} hits ${name(event.target)} for ${event.amount}${critical(event.critical)}.`;
     case "damage-taken":
-      return `${capitalise(name(event.source))} hits you for ${event.amount}${critical(event.critical)}.`;
+      return `${capitalise(name(event.source))} hits ${isViewer(event.target) ? "you" : name(event.target)} for ${event.amount}${critical(event.critical)}.`;
     case "miss":
       return event.source.kind === "player" && event.source.id === snapshot.viewerId
         ? `You miss ${name(event.target)}.`
-        : `${capitalise(name(event.source))} misses you.`;
+        : `${capitalise(name(event.source))} misses ${isViewer(event.target) ? "you" : name(event.target)}.`;
     case "trap-hit":
       return isViewer(event.target) ? `A trap hits you for ${event.amount}.` : `A trap hits ${name(event.target)} for ${event.amount}.`;
     case "evade":
@@ -215,8 +220,14 @@ export function eventText(event: ZoneEvent, snapshot: ZoneSnapshot, catalog: Con
     case "healed":
       return `${abilityName(event.ability, catalog)} heals ${name(event.target)} for ${event.amount}.`;
     case "aura-applied":
+      if (event.ability === ENTANGLING_ROOTS) {
+        return `${capitalise(name(event.target))} ${isViewer(event.target) ? "are" : "is"} rooted by ${abilityName(event.ability, catalog)}.`;
+      }
       return `${capitalise(name(event.target))} ${isViewer(event.target) ? "gain" : "gains"} ${abilityName(event.ability, catalog)}.`;
     case "aura-removed":
+      if (event.ability === ENTANGLING_ROOTS) {
+        return `${capitalise(name(event.target))} ${isViewer(event.target) ? "break" : "breaks"} free of ${abilityName(event.ability, catalog)}.`;
+      }
       return `${abilityName(event.ability, catalog)} fades from ${name(event.target)}.`;
     case "interrupted":
       return `${capitalise(name(event.target))} ${isViewer(event.target) ? "are" : "is"} interrupted (${abilityName(event.ability, catalog)}).`;

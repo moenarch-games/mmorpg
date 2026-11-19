@@ -200,6 +200,8 @@ export type SceneryProvider = {
   /** The stones along Greyhaven's watercourses, from the `river-stones` bundle. */
   readonly river: PlacedKitSource;
   readonly meadow: PlacedKitSource;
+  /** The Wolfrun Den, from the `wolf-den` bundle (#963). */
+  readonly den: PlacedKitSource;
   /** Greyhaven's cosmetic ambient animals (#419). */
   readonly ambient: AmbientAnimalsSource;
   importedRestClip(kind: string): string;
@@ -532,6 +534,7 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
     limestone: placedKit(content, "limestone"),
     river: placedKit(content, "river"),
     meadow: placedKit(content, "meadow"),
+    den: placedKit(content, "den"),
     ambient: (() => {
       const anchors = content.ambientAnimalAnchors();
       return {

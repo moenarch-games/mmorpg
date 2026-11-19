@@ -207,6 +207,7 @@ describe("combat HUD text", () => {
   test("describes every event from the viewer's side", () => {
     const snapshot = view([creature(108, 300, 400)]);
     const self = { kind: "player", id: 7 } as const;
+    const MINION = { kind: "minion", id: 1 } as const;
     const lines = ([
       { kind: "damage-dealt", source: self, target: WOLF, amount: 7, critical: true },
       { kind: "damage-taken", source: WOLF, target: self, amount: 3, critical: false },
@@ -217,6 +218,12 @@ describe("combat HUD text", () => {
       { kind: "died", entity: self, killer: WOLF },
       { kind: "error", code: "out-of-range", target: WOLF },
       { kind: "error", code: "too-many-intents", target: null },
+      // A summoner hears of its minion's blows and wounds, and of its root (#934).
+      { kind: "damage-dealt", source: MINION, target: WOLF, amount: 9, critical: false },
+      { kind: "damage-taken", source: WOLF, target: MINION, amount: 4, critical: false },
+      { kind: "miss", source: MINION, target: WOLF },
+      { kind: "aura-applied", source: self, target: WOLF, ability: 39, ticks: 360 },
+      { kind: "aura-removed", source: self, target: WOLF, ability: 39 },
     ] satisfies ZoneEvent[]).map((event) => eventText(event, snapshot, catalog));
     expect(lines).toEqual([
       "You hit Timber Wolf for 7 (critical).",
@@ -228,6 +235,12 @@ describe("combat HUD text", () => {
       "You die.",
       "Out of range.",
       "Too many actions at once.",
+      "Skeleton hits Timber Wolf for 9.",
+      "Timber Wolf hits Skeleton for 4.",
+      "Skeleton misses Timber Wolf.",
+      // The test catalog names no Druid abilities.
+      "Timber Wolf is rooted by ability 39.",
+      "Timber Wolf breaks free of ability 39.",
     ]);
   });
 });

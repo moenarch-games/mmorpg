@@ -118,7 +118,8 @@ mirror!(
         Root,
         Snare,
         Stun,
-        Haste
+        Haste,
+        Corpse
     }
 );
 mirror!(
@@ -366,6 +367,10 @@ pub struct EntityFlags {
     pub dead: bool,
     pub in_combat: bool,
     pub weapon_drawn: bool,
+    /// A player's melee weapon family (#914); absent for every other unit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[tsify(optional)]
+    pub weapon: Option<WeaponFamily>,
     /// An aggressive creature.
     pub hostile: bool,
     /// The viewer may attack it (living creatures).
@@ -417,6 +422,7 @@ impl From<&core::EntitySnapshot> for EntityState {
                 dead: flags.dead,
                 in_combat: flags.in_combat,
                 weapon_drawn: flags.weapon_drawn,
+                weapon: flags.weapon.map(Into::into),
                 hostile: flags.hostile,
                 attackable: flags.attackable,
                 tapped_by_other: flags.tapped_by_other,
@@ -446,6 +452,7 @@ impl From<&EntityState> for core::EntitySnapshot {
                 dead: flags.dead,
                 in_combat: flags.in_combat,
                 weapon_drawn: flags.weapon_drawn,
+                weapon: flags.weapon.map(Into::into),
                 hostile: flags.hostile,
                 attackable: flags.attackable,
                 tapped_by_other: flags.tapped_by_other,

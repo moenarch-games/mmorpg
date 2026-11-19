@@ -4,7 +4,7 @@ import { applyLayeredSurface, layeredSurfaceMaterial, type LayeredSurface } from
 import { drawnResources, generateMissingTangents, loadBundleGltfs, shareMaterials } from "./static-bundle";
 
 /** A bundle the shared Rust presentation places at fixed placements. */
-export type PlacedKitName = "nature" | "climbing" | "crag" | "limestone" | "river" | "meadow";
+export type PlacedKitName = "nature" | "climbing" | "crag" | "limestone" | "river" | "meadow" | "den";
 
 /** Where `scripts/fetch-bundles.sh` puts each bundle in `web/public`, and its descriptor attachment. */
 const KITS: Record<PlacedKitName, { bundle: string; descriptor: string; label: string }> = {
@@ -19,6 +19,8 @@ const KITS: Record<PlacedKitName, { bundle: string; descriptor: string; label: s
   limestone: { bundle: `${import.meta.env.BASE_URL}scenery/limestone-rocks.kit/`, descriptor: "limestone-rocks-descriptor", label: "limestone-rocks.kit" },
   /** The rolling `river-stones` bundle: the stones along Greyhaven's watercourses (asset-tooling#538). */
   river: { bundle: `${import.meta.env.BASE_URL}scenery/river-stones.kit/`, descriptor: "river-stones-descriptor", label: "river-stones.kit" },
+  /** The rolling `wolf-den` bundle: the Wolfrun Den's mouth, bones and bedding (#963, asset-tooling#757). */
+  den: { bundle: `${import.meta.env.BASE_URL}scenery/wolf-den.kit/`, descriptor: "wolf-den-descriptor", label: "wolf-den.kit" },
 };
 
 /** The shared level-of-detail selection (`mmorpg_presentation::lod::Lods`, through `mmorpg-wasm`'s `KitLods`). */

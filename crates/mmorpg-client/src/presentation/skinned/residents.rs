@@ -8,7 +8,7 @@
 //! own clips, sockets and appearance; options a figure's bundle lacks (the female's beards, head
 //! skins and headwear) are simply absent. Presentation only.
 use super::{
-    Equipment, Model, Plates, SecondaryPose, appearance, bundle_glb, packed_glb, ranger_bundle,
+    ClipLibrary, Equipment, Model, Plates, SecondaryPose, appearance, bundle_glb, ranger_bundle,
     ranger_clips, ranger_female_bundle, ranger_file, secondary_of, socket, strings,
 };
 use crate::world::SceneDraw;
@@ -223,14 +223,18 @@ fn hood(figure: Figure) -> &'static [String] {
     })
 }
 
-/// The clip library shared by `figure`'s outfit variants, decoded once.
-fn clips(figure: Figure) -> &'static [u8] {
-    static FEMALE: OnceLock<Vec<u8>> = OnceLock::new();
+/// The clip library shared by `figure`'s outfit variants, its base family decoded once (#898).
+fn clips(figure: Figure) -> &'static ClipLibrary {
+    static FEMALE: OnceLock<ClipLibrary> = OnceLock::new();
     match figure {
         Figure::Male => ranger_clips(),
-        Figure::Female => FEMALE
-            .get_or_init(|| packed_glb(file(figure, ranger_female_bundle::CLIPS)))
-            .as_slice(),
+        Figure::Female => FEMALE.get_or_init(|| {
+            ClipLibrary::new(
+                ranger_female_bundle::CLIP_FAMILIES,
+                ranger_female_bundle::CLIPS,
+                |path| file(figure, path),
+            )
+        }),
     }
 }
 

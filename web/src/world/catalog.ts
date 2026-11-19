@@ -306,7 +306,7 @@ export function decodeCatalog(json: string): ContentCatalog {
       castTicks: int(record.castTicks, `${name} cast ticks`, 0, 0xffff),
       channel: record.channel,
       cooldown: int(record.cooldown, `${name} cooldown`, 0, 0xffff),
-      aura: record.aura === null ? null : int(record.aura, `${name} aura`, 1, 7),
+      aura: record.aura === null ? null : int(record.aura, `${name} aura`, 1, 8),
     };
   });
   const npcsById = byId(npcs, "npc");

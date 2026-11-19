@@ -284,10 +284,16 @@ impl ZoneSimulation {
                     }
                 }
             }
-            PlayerIntent::EquipItem { bag_slot } => self
-                .change_equipment(player_id, |equipment, bag| {
-                    equipment.equip(bag, usize::from(bag_slot))
-                })?,
+            PlayerIntent::EquipItem { bag_slot } => {
+                let class = self
+                    .players
+                    .get(&player_id)
+                    .and_then(|player| player.class)
+                    .map(|choice| choice.class);
+                self.change_equipment(player_id, |equipment, bag| {
+                    equipment.equip(bag, usize::from(bag_slot), class)
+                })?
+            }
             PlayerIntent::UnequipItem { equipment_slot } => self
                 .change_equipment(player_id, |equipment, bag| {
                     equipment.unequip(bag, equipment_slot)
@@ -1359,6 +1365,8 @@ impl ZoneSimulation {
             });
             rewards.quest_item = Some(stack);
         }
+        // Its corruptors may spend the corpse (#935); its death clears the Corruption below.
+        let corruptors = self.corruptors(creature_id);
         let Some(creature) = self.creatures.get_mut(&creature_id) else {
             return Ok(());
         };
@@ -1395,6 +1403,7 @@ impl ZoneSimulation {
         for player_id in recipients {
             self.notify(player_id, died);
         }
+        self.mark_corpse(creature_id, corruptors);
         if pays_rewards {
             if let Some(player_id) = tapper
                 && self.kill_credit_eligible(player_id, spot)?

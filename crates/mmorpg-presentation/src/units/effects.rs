@@ -31,8 +31,14 @@ enum Visual {
     Beam,
     /// Chain Lightning (#292): arcs from the caster through each victim in turn.
     Chain,
-    /// Entangling Roots (#304): vines that rise and coil around the rooted target.
+    /// Entangling Roots (#304): vines that rise and coil around the rooted target. Its caster
+    /// sees them for the zone's whole root and sink the moment it breaks (#934).
     Roots,
+    /// The unit the viewer's companion or minions fight (#934): marks round its feet while
+    /// their swings land on it.
+    Quarry,
+    /// The viewer's companion or minion is being hit (#934): a red pulse at its feet.
+    Threatened,
     /// Drain Life (#301): a tether from the target back to the caster while it channels.
     Drain,
     /// A creature special's danger footprint (#276, Atlas 6.6.29–6.6.31): the true ring it will
@@ -139,6 +145,17 @@ const BONE_SHIELD: u32 = 29;
 const HOLY_BEAM: u32 = 36;
 const DIVINE_SHIELD: u32 = 37;
 const BARKSKIN: u32 = 41;
+const ENTANGLING_ROOTS: u32 = 39;
+/// Vines rise this long and sink this long, also when a root breaks early (#934).
+const ROOTS_GROW_SECONDS: f64 = 0.5;
+const ROOTS_SINK_SECONDS: f64 = 0.4;
+/// A quarry mark outlasts the minions' last swing at it by this long; a minion's threat
+/// pulse its last hit (#934).
+const QUARRY_SECONDS: f64 = 3.;
+const THREATENED_SECONDS: f64 = 1.;
+/// Call Companion's leaf green marks the quarry; a hit minion pulses red.
+const QUARRY_COLOUR: u32 = 0x7fc46a;
+const THREATENED_COLOUR: u32 = 0xe0483a;
 /// The zone's guard coverage is centred 30° toward the shield (left) side of the facing.
 const GUARD_SIDE: f64 = PI / 6.;
 const SWEEP_HALF_WIDTH: f64 = PI / 6.;
@@ -325,6 +342,68 @@ impl Effects {
     }
 
     /// Consumes one received projection; identities never share animation state.
+    /// Entangling Roots on `target`: a cast seen this tick starts its vines once, and the
+    /// zone's aura, which only the caster hears of, holds them for `seconds`.
+    fn roots(
+        &mut self,
+        source: EntityRef,
+        target: Option<EntityRef>,
+        seconds: Option<f64>,
+        now: f64,
+    ) {
+        let started = self
+            .effects
+            .iter_mut()
+            .find(|e| e.visual == Visual::Roots && e.target == target && e.start == now);
+        match (started, seconds) {
+            (Some(effect), Some(seconds)) => effect.duration = Some(seconds),
+            (Some(_), None) => {}
+            (None, seconds) => {
+                let seconds = seconds.or_else(|| timed(Visual::Roots));
+                self.add(
+                    Visual::Roots,
+                    ENTANGLING_ROOTS,
+                    source,
+                    target,
+                    seconds,
+                    now,
+                );
+            }
+        }
+    }
+
+    /// A root on `target` broke or ran out: its vines sink now.
+    fn end_roots(&mut self, target: EntityRef, now: f64) {
+        for effect in &mut self.effects {
+            if effect.visual == Visual::Roots && effect.target == Some(target) {
+                let end = now - effect.start + ROOTS_SINK_SECONDS;
+                effect.duration = Some(effect.duration.map_or(end, |d| d.min(end)));
+            }
+        }
+    }
+
+    /// Holds `visual` of `source` for `seconds` more, on `target`: a minion marks one quarry at
+    /// a time.
+    fn mark(
+        &mut self,
+        visual: Visual,
+        source: EntityRef,
+        target: Option<EntityRef>,
+        seconds: f64,
+        now: f64,
+    ) {
+        self.effects
+            .retain(|e| e.visual != visual || e.source != source || e.target == target);
+        match self
+            .effects
+            .iter_mut()
+            .find(|e| e.visual == visual && e.source == source)
+        {
+            Some(effect) => effect.duration = Some(now - effect.start + seconds),
+            None => self.add(visual, 0, source, target, Some(seconds), now),
+        }
+    }
+
     pub fn push(&mut self, s: &ZoneSnapshot, now: f64, anchors: &BTreeMap<EntityRef, Anchor>) {
         let session = (s.zone_id.get(), s.viewer_id, s.content_revision);
         if self.session != Some(session) || self.last_tick.is_some_and(|tick| s.tick < tick) {
@@ -437,7 +516,9 @@ impl Effects {
                             },
                         );
                     }
-                    if let Some(visual) = visual
+                    if visual == Some(Visual::Roots) {
+                        self.roots(source, target, None, now);
+                    } else if let Some(visual) = visual
                         && let Some(duration) = timed(visual)
                     {
                         self.add(visual, id, source, target, Some(duration), now);
@@ -564,6 +645,49 @@ impl Effects {
                 }
                 ZoneEvent::Died { entity, .. } => {
                     self.dead.insert(entity);
+                    self.effects.retain(|e| {
+                        !matches!(e.visual, Visual::Quarry | Visual::Threatened)
+                            || (e.source != entity && e.target != Some(entity))
+                    });
+                    self.end_roots(entity, now);
+                }
+                // The zone tells a root's caster how long it holds and when it ends (#934).
+                ZoneEvent::AuraApplied {
+                    source,
+                    target,
+                    ability,
+                    ticks,
+                } if ability.get() == ENTANGLING_ROOTS => {
+                    let seconds = f64::from(ticks) / f64::from(TICK_HZ);
+                    self.roots(source, Some(target), Some(seconds), now);
+                }
+                ZoneEvent::AuraRemoved {
+                    target, ability, ..
+                } if ability.get() == ENTANGLING_ROOTS => {
+                    self.end_roots(target, now);
+                }
+                _ => {}
+            }
+            // Only a summoner hears of its own minions' swings and wounds (#934): the unit they
+            // fight is marked, and a hit minion pulses.
+            match *event {
+                ZoneEvent::DamageDealt {
+                    source: source @ EntityRef::Minion(_),
+                    target,
+                    ..
+                }
+                | ZoneEvent::Miss {
+                    source: source @ EntityRef::Minion(_),
+                    target,
+                } => {
+                    self.mark(Visual::Quarry, source, Some(target), QUARRY_SECONDS, now);
+                }
+                ZoneEvent::DamageTaken {
+                    target: minion @ EntityRef::Minion(_),
+                    amount,
+                    ..
+                } if amount > 0 => {
+                    self.mark(Visual::Threatened, minion, None, THREATENED_SECONDS, now);
                 }
                 _ => {}
             }
@@ -791,11 +915,21 @@ impl Effects {
                     || matches!(e.visual, Visual::Bubble | Visual::Guard { .. })
             }
         });
+        // A slash striking several units sweeps the kit's cleave fan instead (#963).
+        let mut hits = BTreeMap::<EntityRef, u8>::new();
+        for e in &self.effects {
+            if kit.is_some() && matches!(e.visual, Visual::Sweep { hit: true, .. }) {
+                let n = hits.entry(e.source).or_default();
+                *n = n.saturating_add(1);
+            }
+        }
         let mut out = Vec::new();
         for e in &self.effects {
             if kit.is_some()
                 && (matches!(e.visual, Visual::Impact { .. })
-                    || (e.visual == Visual::Ring && e.ability == FROST_NOVA))
+                    || (e.visual == Visual::Ring && e.ability == FROST_NOVA)
+                    || (matches!(e.visual, Visual::Sweep { .. })
+                        && hits.get(&e.source).is_some_and(|&n| n >= 2)))
             {
                 continue;
             }
@@ -1054,10 +1188,12 @@ impl Effects {
                 Visual::Roots => {
                     if let Some(v) = target {
                         // Six vines grow out of the ground around the victim's feet and coil
-                        // inward, then sink back as the burst ends.
-                        let grow = (t * 4.).min(1.) * (1. - ((t - 0.8) * 5.).max(0.));
+                        // inward, hold while the root lasts, then sink back as it ends.
+                        let left = e.duration.unwrap_or(age) - age;
+                        let grow = (age / ROOTS_GROW_SECONDS).min(1.)
+                            * (left / ROOTS_SINK_SECONDS).clamp(0., 1.);
                         for i in 0..6 {
-                            let a = f64::from(i) / 6. * TAU + t * 1.5;
+                            let a = f64::from(i) / 6. * TAU + age * 0.75;
                             for k in 0..4 {
                                 let h = f64::from(k) / 4.;
                                 if h > grow {
@@ -1079,6 +1215,52 @@ impl Effects {
                                     false,
                                 );
                             }
+                        }
+                    }
+                }
+                Visual::Quarry => {
+                    if let Some(v) = target {
+                        // Four leaf-green fangs round the quarry's feet point in at it and turn
+                        // slowly, fading once the minions' swings stop.
+                        let left = e.duration.unwrap_or(age) - age;
+                        let opacity = (0.85 * (left / 0.5).clamp(0., 1.)) as f32;
+                        for i in 0..4 {
+                            let a = f64::from(i) / 4. * TAU + age * 0.6;
+                            add(
+                                &format!("quarry-{i}"),
+                                Primitive::Box([0.12, 0.05, 0.34]),
+                                QUARRY_COLOUR,
+                                [
+                                    v.feet[0] + a.sin() * 0.85,
+                                    v.feet[1] + 0.07,
+                                    v.feet[2] + a.cos() * 0.85,
+                                ],
+                                qa(1, a),
+                                opacity,
+                                true,
+                            );
+                        }
+                    }
+                }
+                Visual::Threatened => {
+                    if let Some(s) = source {
+                        // A red ring flares tight round the hit minion and fades.
+                        let radius = 0.5 + 0.25 * t;
+                        for i in 0..12 {
+                            let a = f64::from(i) / 12. * TAU;
+                            add(
+                                &format!("threat-{i}"),
+                                Primitive::Box([0.26, 0.05, 0.08]),
+                                THREATENED_COLOUR,
+                                [
+                                    s.feet[0] + a.sin() * radius,
+                                    s.feet[1] + 0.07,
+                                    s.feet[2] + a.cos() * radius,
+                                ],
+                                qa(1, a + PI / 2.),
+                                (0.9 * (1. - t)) as f32,
+                                true,
+                            );
                         }
                     }
                 }
