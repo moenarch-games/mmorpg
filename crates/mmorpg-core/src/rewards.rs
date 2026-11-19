@@ -1,7 +1,7 @@
 //! Deterministic entitlement receipts. The core decides whether a reward may be
 //! applied; storage later commits the emitted IDs with the resulting character
 //! facts. Durable character/world identity prefixes belong to the host adapter.
-use crate::{CreatureId, ItemId, PlayerId, QuestId, ZoneError};
+use crate::{AreaId, CreatureId, ItemId, PlayerId, QuestId, ZoneError};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -36,6 +36,14 @@ pub enum RewardKey {
     RaidParticipation {
         incident: u32,
     },
+    /// A defended night raid's bonus (#916): once per incident and character.
+    RaidDefence {
+        incident: u32,
+    },
+    /// The first visit to a discovery area (#916): once per area and character.
+    Discovery {
+        area: AreaId,
+    },
 }
 impl RewardKey {
     #[must_use]
@@ -53,7 +61,10 @@ impl RewardKey {
             | Self::LootMoney { creature, life }
             | Self::LootItem { creature, life }
             | Self::LootQuestItem { creature, life, .. } => Some((creature, life)),
-            Self::QuestCompletion { .. } | Self::RaidParticipation { .. } => None,
+            Self::QuestCompletion { .. }
+            | Self::RaidParticipation { .. }
+            | Self::RaidDefence { .. }
+            | Self::Discovery { .. } => None,
         }
     }
     pub fn validate(self) -> Result<(), ZoneError> {
@@ -69,7 +80,7 @@ impl RewardKey {
             Self::QuestCompletion { quest } if quest.get() == 0 => {
                 Err(ZoneError::new("invalid reward quest"))
             }
-            Self::RaidParticipation { incident: 0 } => {
+            Self::RaidParticipation { incident: 0 } | Self::RaidDefence { incident: 0 } => {
                 Err(ZoneError::new("invalid reward raid incident"))
             }
             _ => Ok(()),

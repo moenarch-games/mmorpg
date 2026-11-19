@@ -66,6 +66,8 @@ fn zone_at(tick: u64, feet: &[[i32; 2]]) -> ZoneSimulation {
     state.tick = tick;
     for (player, at) in state.players.iter_mut().zip(feet) {
         player.position = mmorpg_core::physics::from_units([at[0], 1_190, at[1]]);
+        // The farm was discovered before (#916): only raid rewards count here.
+        player.discoveries = zone.content().discoveries().iter().copied().collect();
     }
     ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap()
 }

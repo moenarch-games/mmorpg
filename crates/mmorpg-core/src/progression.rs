@@ -131,3 +131,58 @@ impl crate::ZoneSimulation {
         Ok(())
     }
 }
+
+/// Experience for discovering a named area (#916): one and a half times the base of an
+/// equal-level kill, `(45 + 5 × level) × 3 / 2` rounded down, so a detour to a new place pays
+/// about what the fights on the way do. Capped players get zero; unsupported levels `None`.
+#[must_use]
+pub fn discovery_experience(player_level: u8) -> Option<u32> {
+    experience_to_next_level(player_level)?;
+    if player_level == MAX_PLAYER_LEVEL {
+        return Some(0);
+    }
+    Some((45 + 5 * u32::from(player_level)) * 3 / 2)
+}
+
+impl crate::ZoneSimulation {
+    /// Tick step after movement (#916): a living player inside one of the content's discovery
+    /// areas it has not yet discovered discovers it and earns [`discovery_experience`] once.
+    /// The discovered set is a durable character fact, so neither a replay, a reconnect nor a
+    /// recovery pays an area twice; the receipt guards hosts that track rewards.
+    pub(crate) fn discover_areas(&mut self) -> Result<(), crate::ZoneError> {
+        let content = std::sync::Arc::clone(&self.content);
+        if content.discoveries().is_empty() {
+            return Ok(());
+        }
+        let ids: Vec<_> = self
+            .players
+            .iter()
+            .filter(|(_, player)| player.is_alive())
+            .map(|(&id, _)| id)
+            .collect();
+        for player_id in ids {
+            let at = self.player_position(player_id)?;
+            for area in content.areas().areas() {
+                if !area.contains(at.x, at.z)
+                    || content.discoveries().binary_search(&area.id()).is_err()
+                {
+                    continue;
+                }
+                let key = crate::RewardKey::Discovery { area: area.id() };
+                let Some(player) = self.players.get_mut(&player_id) else {
+                    continue;
+                };
+                if !crate::rewards::allowed(&self.rewards, player_id, key)
+                    || !player.discoveries.insert(area.id())
+                {
+                    continue;
+                }
+                crate::rewards::record(&mut self.rewards, player_id, key)?;
+                let reward = discovery_experience(player.level)
+                    .ok_or_else(|| crate::ZoneError::new("invalid progression level"))?;
+                self.grant_experience(player_id, reward)?;
+            }
+        }
+        Ok(())
+    }
+}
