@@ -44,6 +44,10 @@ pub enum RewardKey {
     Discovery {
         area: AreaId,
     },
+    /// An opened discovery cache (#913): once per cache and character.
+    Cache {
+        cache: u32,
+    },
 }
 impl RewardKey {
     #[must_use]
@@ -64,7 +68,8 @@ impl RewardKey {
             Self::QuestCompletion { .. }
             | Self::RaidParticipation { .. }
             | Self::RaidDefence { .. }
-            | Self::Discovery { .. } => None,
+            | Self::Discovery { .. }
+            | Self::Cache { .. } => None,
         }
     }
     pub fn validate(self) -> Result<(), ZoneError> {
@@ -83,6 +88,7 @@ impl RewardKey {
             Self::RaidParticipation { incident: 0 } | Self::RaidDefence { incident: 0 } => {
                 Err(ZoneError::new("invalid reward raid incident"))
             }
+            Self::Cache { cache: 0 } => Err(ZoneError::new("invalid reward cache")),
             _ => Ok(()),
         }
     }

@@ -38,6 +38,8 @@
 //! slows horizontal movement to [`GUARD_SPEED_PERCENT`] (5.2.61). Guarding
 //! costs no resource (5.2.66) and a block grants none.
 
+use std::collections::BTreeSet;
+
 use crate::trig::{self, YAW_QUARTER_TURN};
 use crate::{EntityRef, PLAYER_HALF_EXTENTS_UNITS, PlayerId, StrikeHeight, ZoneError};
 
@@ -223,6 +225,65 @@ impl crate::ZoneSimulation {
         } else {
             GuardOutcome::Blocked(lane)
         })
+    }
+
+    /// Whether shield-bearing creature `creature_id` (the Redbrand Brute, #160) turns its shield
+    /// on player `attacker`'s melee blow (#953): a living, unstunned shield-bearer whose
+    /// authoritative facing holds the attacker inside its front arc
+    /// ([`crate::FLANK_FRONT_HALF_ARC`], #949), the cone its shield already stops arrows in. A
+    /// side or rear blow gets past it; the creature turns toward a circling attacker only at
+    /// [`crate::CREATURE_TURN_PER_TICK`].
+    pub(crate) fn creature_guards_against(
+        &self,
+        creature_id: crate::CreatureId,
+        attacker: PlayerId,
+    ) -> Result<bool, ZoneError> {
+        let Some(creature) = self.creatures.get(&creature_id) else {
+            return Ok(false);
+        };
+        let (spawn, _) = Self::creature_content(&self.content, creature_id)?;
+        if !self.content.is_shielded(spawn.template)
+            || !creature.is_alive()
+            || crate::aura::has_kind(&creature.auras, crate::AuraKind::Stun)
+        {
+            return Ok(false);
+        }
+        let at = self.player_position(attacker)?;
+        let here = self.unit_position(EntityRef::Creature(creature_id))?;
+        Ok(trig::yaw_from_vector(at.x - here[0], at.z - here[2])
+            .is_some_and(|bearing| !crate::flanks(creature.facing, bearing)))
+    }
+
+    /// A shield-bearing creature's guard stopped `attacker`'s melee blow of `amount` (#953): no
+    /// damage, but the creature fights the attacker, and the attacker and everyone who sees
+    /// both units see the block.
+    pub(crate) fn creature_blocks(
+        &mut self,
+        attacker: PlayerId,
+        creature_id: crate::CreatureId,
+        amount: u32,
+        strike_lane: Option<StrikeHeight>,
+    ) -> Result<(), ZoneError> {
+        let (source, target) = (
+            EntityRef::Player(attacker),
+            EntityRef::Creature(creature_id),
+        );
+        self.update_player(attacker, |player| {
+            player.combat_timer = crate::unit::COMBAT_LINGER_TICKS;
+        });
+        if let Some(creature) = self.creatures.get_mut(&creature_id) {
+            creature.combat_timer = crate::unit::COMBAT_LINGER_TICKS;
+            creature.add_threat(source, 0);
+        }
+        let event = crate::ZoneEvent::Blocked {
+            source,
+            target,
+            lane: strike_lane.unwrap_or(StrikeHeight::Middle),
+            amount: u16::try_from(amount).unwrap_or(u16::MAX),
+        };
+        self.notify(attacker, event);
+        self.notify_observers(&[source, target], &BTreeSet::from([attacker]), event);
+        self.engage(creature_id, source, true)
     }
 }
 

@@ -60,6 +60,11 @@ impl ZoneSimulation {
                 return Ok(());
             }
             self.stance_exposure(victim, amount)?
+        } else if let EntityRef::Creature(creature) = target
+            && self.creature_guards_against(creature, attacker)?
+        {
+            // A shield-bearer's front stops the blow (#953).
+            return self.creature_blocks(attacker, creature, amount, strike_lane);
         } else {
             amount
         };

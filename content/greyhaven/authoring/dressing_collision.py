@@ -26,6 +26,7 @@ OUT = ROOT / 'crates/mmorpg-core/content/collision/greyhaven-dressing.json'
 KITS = {
     'crag.kit.': (ROOT / 'web/public/scenery/crag.kit', 'crag-descriptor'),
     'wolf-den.kit.': (ROOT / 'web/public/scenery/wolf-den.kit', 'wolf-den-descriptor'),
+    'discoveries.kit.': (ROOT / 'web/public/scenery/discoveries.kit', 'discoveries-descriptor'),
 }
 UNITS_PER_METRE = 100
 
@@ -41,13 +42,14 @@ def descriptor(bundle, name):
 
 
 def boxes_mesh(proxies):
-    """A kit's solid `collisionProxies` boxes (the wolf den's, #963) as one closed,
-    outward-wound triangle mesh in the asset's frame."""
+    """A kit's solid `collisionProxies` boxes (the wolf den's, #963), with the walkable decks and
+    ladders of the discoveries kit (#913), as one closed, outward-wound triangle mesh in the
+    asset's frame."""
     vertices, triangles = [], []
     # Each face's corners counter-clockwise seen from outside, as bit masks of (x, y, z).
     faces = [(0, 2, 6, 4), (1, 5, 7, 3), (0, 4, 5, 1), (2, 3, 7, 6), (0, 1, 3, 2), (4, 6, 7, 5)]
     for proxy in proxies:
-        if proxy.get('tag') != 'solid':
+        if proxy.get('tag') not in ('solid', 'walkable', 'ladder'):
             continue
         base = len(vertices)
         for corner in range(8):

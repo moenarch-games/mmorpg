@@ -524,6 +524,11 @@ impl WorldScene {
             scenery,
             &mmorpg_presentation::world_dressing::WOLF_DEN_ENTRIES,
         ));
+        // The optional discoveries' hunter's cache, lookout and fen supply cache (#913).
+        placements.extend(mmorpg_presentation::world_dressing::kit_placements(
+            scenery,
+            &mmorpg_presentation::world_dressing::DISCOVERY_ENTRIES,
+        ));
         let library = crate::nature::entries();
         let nature = Nature {
             lods: mmorpg_presentation::lod::Lods::new(

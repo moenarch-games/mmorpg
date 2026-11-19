@@ -103,6 +103,8 @@ pub struct ZoneContent {
     depths_site: Option<crate::DepthsSite>,
     /// Wildlife dens and their packs' home ranges (#912).
     dens: Vec<crate::WildlifeDen>,
+    /// Optional discovery caches (#913), in ID order.
+    caches: Vec<crate::DiscoveryCache>,
 }
 
 /// A body as `(centre, half extents)` in units.
@@ -238,6 +240,7 @@ impl ZoneContent {
             depths_threshold: None,
             depths_site: None,
             dens: Vec::new(),
+            caches: Vec::new(),
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -296,6 +299,7 @@ impl ZoneContent {
             depths_threshold: None,
             depths_site: None,
             dens: Vec::new(),
+            caches: Vec::new(),
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -587,7 +591,7 @@ impl ZoneContent {
     }
 
     /// Marks creature templates that carry a raised shield (#160): arrows and bolts flying at
-    /// their front stop on it.
+    /// their front stop on it, and so do players' melee blows (#953).
     pub fn with_shielded(
         mut self,
         mut templates: Vec<CreatureTemplateId>,
@@ -1606,7 +1610,7 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_discovery_fingerprint();
+        let fingerprint = self.compute_cache_fingerprint();
         let Some(rewind) = self.hit_rewind else {
             return fingerprint;
         };
@@ -1628,6 +1632,66 @@ impl ZoneContent {
         hash.len(self.discoveries.len());
         for area in &self.discoveries {
             hash.u32(area.get());
+        }
+        hash.finish()
+    }
+
+    /// Adds optional discovery caches (#913): each has a unique nonzero ID, a short name, a
+    /// positive reach, a known item and guards that are distinct known creature spawns.
+    pub fn with_caches(
+        mut self,
+        mut caches: Vec<crate::DiscoveryCache>,
+    ) -> Result<Self, ZoneError> {
+        caches.sort_by_key(|cache| cache.id);
+        if caches.first().is_some_and(|cache| cache.id == 0)
+            || caches.windows(2).any(|pair| pair[0].id == pair[1].id)
+        {
+            return Err(ZoneError::new("cache IDs must be unique and nonzero"));
+        }
+        for cache in &caches {
+            if cache.name.is_empty() || cache.name.len() > MAX_UNIT_NAME_BYTES || cache.reach <= 0 {
+                return Err(ZoneError::new("a cache needs a short name and a reach"));
+            }
+            if crate::item_template(cache.item).is_none() {
+                return Err(ZoneError::new("a cache's item is unknown"));
+            }
+            for (index, &guard) in cache.guards.iter().enumerate() {
+                if self.creature_spawn(guard).is_none() || cache.guards[..index].contains(&guard) {
+                    return Err(ZoneError::new("a cache's guard is not a distinct spawn"));
+                }
+            }
+        }
+        self.caches = caches;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Optional discovery caches (#913), in ID order.
+    #[must_use]
+    pub fn caches(&self) -> &[crate::DiscoveryCache] {
+        &self.caches
+    }
+
+    fn compute_cache_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_discovery_fingerprint();
+        if self.caches.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/caches-v1");
+        hash.u64(fingerprint);
+        hash.len(self.caches.len());
+        for cache in &self.caches {
+            hash.u32(cache.id);
+            hash.text(&cache.name);
+            hash.i32s(&cache.at);
+            hash.i32s(&[cache.reach]);
+            hash.len(cache.guards.len());
+            for guard in &cache.guards {
+                hash.u32(guard.get());
+            }
+            hash.u32(cache.item.get());
+            hash.u32(cache.copper);
         }
         hash.finish()
     }
