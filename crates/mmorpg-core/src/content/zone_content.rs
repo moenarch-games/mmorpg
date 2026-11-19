@@ -580,7 +580,7 @@ impl ZoneContent {
     }
 
     /// Marks creature templates that carry a raised shield (#160): arrows and bolts flying at
-    /// their front stop on it.
+    /// their front stop on it, and so do players' melee blows (#953).
     pub fn with_shielded(
         mut self,
         mut templates: Vec<CreatureTemplateId>,
