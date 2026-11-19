@@ -530,7 +530,8 @@ impl Resident {
             | "Huntsman Edric Vale"
             | "Ploughman Garr"
             | "Old Bertil"
-            | "Farmhand Jory" => Some(Self::Villager),
+            | "Farmhand Jory"
+            | "Smith Wulfric Hale" => Some(Self::Villager),
             _ => None,
         }
     }
@@ -4407,6 +4408,8 @@ mod tests {
                 Some("resident.farmer"),
                 // Trader Maren (#826).
                 Some("resident.tanner"),
+                // Smith Wulfric Hale (#917).
+                Some("resident.farmer"),
             ])
             .collect::<Vec<_>>()
         );

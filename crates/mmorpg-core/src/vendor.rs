@@ -330,7 +330,9 @@ impl ZoneSimulation {
         };
         let code = match settled {
             Err(VendorTradeError::NotEnoughMoney) => Some(ErrorCode::NotEnoughMoney),
-            Err(VendorTradeError::Inventory(InventoryError::InsufficientItems)) => {
+            Err(VendorTradeError::Inventory(InventoryError::InsufficientItems))
+                if matches!(trade, Trade::Buy { .. }) =>
+            {
                 Some(ErrorCode::MissingMaterials)
             }
             Err(VendorTradeError::MoneyOverflow) => Some(ErrorCode::MoneyOverflow),
