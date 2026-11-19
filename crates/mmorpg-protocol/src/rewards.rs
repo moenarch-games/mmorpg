@@ -4,7 +4,8 @@ use crate::{
     wire::{read_bool, read_u8, take},
 };
 use mmorpg_core::{
-    CreatureId, ItemId, MAX_PLAYERS_PER_ZONE, QuestId, RewardGrant, RewardHistory, RewardKey,
+    AreaId, CreatureId, ItemId, MAX_PLAYERS_PER_ZONE, QuestId, RewardGrant, RewardHistory,
+    RewardKey,
 };
 use std::collections::BTreeSet;
 
@@ -39,6 +40,8 @@ pub(crate) fn encode_key(payload: &mut Vec<u8>, key: RewardKey) -> Result<(), Pr
         RewardKey::LootQuestItem { .. } => 5,
         RewardKey::QuestCompletion { .. } => 6,
         RewardKey::RaidParticipation { .. } => 7,
+        RewardKey::RaidDefence { .. } => 8,
+        RewardKey::Discovery { .. } => 9,
     };
     payload.push(code);
     if let Some((creature, life)) = key.creature_life() {
@@ -58,9 +61,10 @@ pub(crate) fn encode_key(payload: &mut Vec<u8>, key: RewardKey) -> Result<(), Pr
         RewardKey::QuestCompletion { quest } => {
             payload.extend_from_slice(&quest.get().to_be_bytes())
         }
-        RewardKey::RaidParticipation { incident } => {
+        RewardKey::RaidParticipation { incident } | RewardKey::RaidDefence { incident } => {
             payload.extend_from_slice(&incident.to_be_bytes());
         }
+        RewardKey::Discovery { area } => payload.extend_from_slice(&area.get().to_be_bytes()),
         _ => {}
     }
     Ok(())
@@ -90,6 +94,14 @@ fn decode_key_ids(
     } else if code == 7 {
         RewardKey::RaidParticipation {
             incident: u32::from_be_bytes(take(payload, offset)?),
+        }
+    } else if code == 8 {
+        RewardKey::RaidDefence {
+            incident: u32::from_be_bytes(take(payload, offset)?),
+        }
+    } else if code == 9 {
+        RewardKey::Discovery {
+            area: AreaId::new(u32::from_be_bytes(take(payload, offset)?)),
         }
     } else {
         if !(1..=5).contains(&code) {
@@ -263,6 +275,10 @@ mod tests {
             },
             RewardKey::QuestCompletion { quest },
             RewardKey::RaidParticipation { incident: 3 },
+            RewardKey::RaidDefence { incident: 3 },
+            RewardKey::Discovery {
+                area: AreaId::new(2),
+            },
         ] {
             history.record(1, key).unwrap();
         }
