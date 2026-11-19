@@ -81,6 +81,14 @@ const CLIMBS: [(&str, usize); 1] = [("vale-wolf-hunt", 1_492)];
 /// Shot contact fractions on identical states: both backends solve the same ray against the
 /// same boxes, capsules and triangles in `f32`.
 const SHOT_FRACTION_TOLERANCE: f32 = 1.0e-4;
+/// Route waypoints on identical states, in units per axis: one navigation cell (#966). A
+/// creature steers at the farthest lookahead cell its knee-raised capsule sweeps to straight,
+/// and a sweep that only grazes geometry decides that cell differently on the two backends:
+/// Rapier, in metres, reports a hit on an authored mesh 0.004 units beyond the capsule's
+/// radius, and the backends disagree whether a sweep ending exactly against a whole-unit box
+/// meets it. The waypoints then lie one cell apart on the same route; whether a route exists
+/// still agrees exactly.
+const ROUTE_CELL_TOLERANCE: i32 = 100;
 /// Terrain heights on identical states, in units: both backends cast the same ray at the same
 /// heightfield, so only `f32` noise separates them. Compared unrounded, because a height on a
 /// half unit rounds either way on that noise. The noise grows with the probe's coordinates, not
@@ -928,7 +936,7 @@ fn decisions(zone: &mut ZoneSimulation) -> Result<Decisions> {
 }
 
 /// Differences between the backends' decisions on one state, shots compared within
-/// [`SHOT_FRACTION_TOLERANCE`].
+/// [`SHOT_FRACTION_TOLERANCE`] and routes within [`ROUTE_CELL_TOLERANCE`].
 fn decision_differences(rapier: &Decisions, engine: &Decisions) -> Vec<String> {
     fn exact<T: PartialEq + std::fmt::Debug>(
         what: &str,
@@ -955,7 +963,20 @@ fn decision_differences(rapier: &Decisions, engine: &Decisions) -> Vec<String> {
         }
     }
     exact("charge path", &rapier.charges, &engine.charges, &mut out);
-    exact("route", &rapier.routes, &engine.routes, &mut out);
+    for (key, left) in &rapier.routes {
+        let right = engine.routes.get(key).copied();
+        let same = match (left, right.flatten()) {
+            (None, None) => right.is_some(),
+            (Some(a), Some(b)) => {
+                (a[0] - b[0]).abs() <= ROUTE_CELL_TOLERANCE
+                    && (a[1] - b[1]).abs() <= ROUTE_CELL_TOLERANCE
+            }
+            _ => false,
+        };
+        if !same {
+            out.push(format!("route {key}: rapier {left:?}, engine {right:?}"));
+        }
+    }
     for (key, left) in &rapier.shots {
         let right = engine.shots.get(key).copied().flatten();
         let same = match (left, right) {
