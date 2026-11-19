@@ -93,6 +93,8 @@ pub struct ZoneContent {
     raid: Option<crate::RaidSite>,
     /// Network stones standing in this zone, in ID order (#145).
     waystones: Vec<crate::WaystoneId>,
+    /// Named areas whose first visit pays discovery experience (#916), in ID order.
+    discoveries: Vec<crate::AreaId>,
     /// This public zone's threshold into the depths (#404), if any.
     depths_threshold: Option<crate::DepthsThreshold>,
     /// This depths zone's encounter table (#404), if it is one.
@@ -229,6 +231,7 @@ impl ZoneContent {
             handoff_corridors: Vec::new(),
             raid: None,
             waystones: Vec::new(),
+            discoveries: Vec::new(),
             depths_threshold: None,
             depths_site: None,
             dens: Vec::new(),
@@ -285,6 +288,7 @@ impl ZoneContent {
             handoff_corridors: Vec::new(),
             raid: None,
             waystones: Vec::new(),
+            discoveries: Vec::new(),
             depths_threshold: None,
             depths_site: None,
             dens: Vec::new(),
@@ -1426,6 +1430,30 @@ impl ZoneContent {
         &self.waystones
     }
 
+    /// Marks the named areas whose first visit pays discovery experience (#916): each one of
+    /// this content's areas, at most once.
+    pub fn with_discoveries(mut self, mut areas: Vec<crate::AreaId>) -> Result<Self, ZoneError> {
+        areas.sort_unstable();
+        if areas.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(ZoneError::new("a discovery area is listed twice"));
+        }
+        if areas
+            .iter()
+            .any(|id| !self.areas.areas().iter().any(|area| area.id() == *id))
+        {
+            return Err(ZoneError::new("a discovery names an unknown area"));
+        }
+        self.discoveries = areas;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Named areas whose first visit pays discovery experience (#916), in ID order.
+    #[must_use]
+    pub fn discoveries(&self) -> &[crate::AreaId] {
+        &self.discoveries
+    }
+
     /// Ordered by NPC ID.
     #[must_use]
     pub fn routines(&self) -> &[crate::NpcRoutine] {
@@ -1501,7 +1529,7 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_den_fingerprint();
+        let fingerprint = self.compute_discovery_fingerprint();
         let Some(rewind) = self.hit_rewind else {
             return fingerprint;
         };
@@ -1509,6 +1537,21 @@ impl ZoneContent {
         hash.bytes(b"mmorpg.zone-content/hit-rewind-v1");
         hash.u64(fingerprint);
         hash.u32(rewind.max_ms);
+        hash.finish()
+    }
+
+    fn compute_discovery_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_den_fingerprint();
+        if self.discoveries.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/discoveries-v1");
+        hash.u64(fingerprint);
+        hash.len(self.discoveries.len());
+        for area in &self.discoveries {
+            hash.u32(area.get());
+        }
         hash.finish()
     }
 

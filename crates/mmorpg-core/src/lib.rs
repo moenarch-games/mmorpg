@@ -183,7 +183,9 @@ pub use physique::{
 };
 pub use platform::{Platform, PlatformId, PlatformPhase};
 pub use prediction::MovementPredictor;
-pub use progression::{MAX_PLAYER_LEVEL, experience_to_next_level, kill_experience};
+pub use progression::{
+    MAX_PLAYER_LEVEL, discovery_experience, experience_to_next_level, kill_experience,
+};
 pub use projectile::{
     AIM_ASSIST_COS, ARROW_SPEED_UNITS, BOLT_SPEED_UNITS, BOMB_FUSE_TICKS, BOMB_RESTITUTION,
     BURST_TICKS, Flight, KNIFE_SPEED_UNITS, LAUNCH_HEIGHT_UNITS, MAX_PROJECTILES,

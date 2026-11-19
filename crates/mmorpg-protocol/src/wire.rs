@@ -277,6 +277,47 @@ pub(crate) fn decode_waystones(
         .ok_or_else(|| ProtocolError::new("unlocked waystones name an unknown stone"))
 }
 
+/// Discovered areas (#916): `count u16 · count × id u32`, strictly ascending; whether content
+/// names them is core's to decide.
+pub(crate) fn encode_discoveries(
+    payload: &mut Vec<u8>,
+    areas: &std::collections::BTreeSet<mmorpg_core::AreaId>,
+) -> Result<(), ProtocolError> {
+    payload.extend_from_slice(
+        &encode_u16_count(
+            areas.len(),
+            usize::from(u16::MAX),
+            "too many discovered areas",
+        )?
+        .to_be_bytes(),
+    );
+    for id in areas {
+        payload.extend_from_slice(&id.get().to_be_bytes());
+    }
+    Ok(())
+}
+
+pub(crate) fn decode_discoveries(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<std::collections::BTreeSet<mmorpg_core::AreaId>, ProtocolError> {
+    let count = decode_u16_count(
+        payload,
+        offset,
+        usize::from(u16::MAX),
+        "too many discovered areas",
+    )?;
+    let mut areas = std::collections::BTreeSet::new();
+    for _ in 0..count {
+        let id = mmorpg_core::AreaId::new(u32::from_be_bytes(take(payload, offset)?));
+        if areas.last().is_some_and(|last| *last >= id) {
+            return Err(ProtocolError::new("discovered areas are not ordered"));
+        }
+        areas.insert(id);
+    }
+    Ok(areas)
+}
+
 /// A quest ID, never `0`; whether content defines it is the
 /// client's concern.
 pub(crate) fn decode_quest(code: u32) -> Result<QuestId, ProtocolError> {
