@@ -8,8 +8,8 @@
 //! provider; this module only decides what to pose. Presentation only, never read by gameplay.
 use mmorpg_core::{
     AbilityId, CreatureFamily, CreatureTemplateId, EntityRef, EntitySnapshot, Equipment,
-    EquipmentSlot, Ledge, PlayerClass, StrikeAim, StrikeHeight, StrikeVariant, TraversalView,
-    WaterMode, WeaponFamily, ZoneContent,
+    EquipmentSlot, Ledge, NamedWeapon, PlayerClass, StrikeAim, StrikeHeight, StrikeVariant,
+    TraversalView, WaterMode, WeaponFamily, ZoneContent,
 };
 use strum::VariantArray;
 
@@ -44,6 +44,8 @@ pub enum Loadout {
     Crossbow,
     /// The leaf-bladed spear in both hands (#914): a player whose weapon family is the spear.
     Spear,
+    /// Garrick Redbrand's named cleaver in the right hand (#918): a player wielding it.
+    GarricksCleaver,
 }
 
 impl Loadout {
@@ -76,15 +78,18 @@ impl Loadout {
             Self::GnarledStaff => "staff.gnarled",
             Self::Crossbow => "crossbow",
             Self::Spear => "spear",
+            Self::GarricksCleaver => "sword.garricks-cleaver",
         }
     }
 
     /// What a player carries whose projected melee family is `weapon` (#914): a spear in both
-    /// hands for the spear family, otherwise the class's own weapons.
+    /// hands for the spear family, a named weapon's own model (#918), otherwise the class's own
+    /// weapons.
     #[must_use]
-    pub const fn holding(self, weapon: Option<WeaponFamily>) -> Self {
-        match weapon {
-            Some(WeaponFamily::Spear) => Self::Spear,
+    pub const fn holding(self, weapon: Option<WeaponFamily>, named: Option<NamedWeapon>) -> Self {
+        match (named, weapon) {
+            (Some(NamedWeapon::GarricksCleaver), _) => Self::GarricksCleaver,
+            (None, Some(WeaponFamily::Spear)) => Self::Spear,
             _ => self,
         }
     }
@@ -98,7 +103,9 @@ impl Loadout {
         let (left, right) = match self {
             Self::SwordAndShield => (Some(Held::Shield), Some(Held::Weapon)),
             Self::BowAndQuiver => (None, None),
-            Self::Sword | Self::Dagger | Self::FlangedMace => (None, Some(Held::Weapon)),
+            Self::Sword | Self::Dagger | Self::FlangedMace | Self::GarricksCleaver => {
+                (None, Some(Held::Weapon))
+            }
             Self::TwinDaggers => (Some(Held::Weapon), Some(Held::Weapon)),
             Self::BoneStaff | Self::GnarledStaff => (None, Some(Held::Staff)),
             Self::CrystalStaffAndTome => (Some(Held::Book), Some(Held::Staff)),

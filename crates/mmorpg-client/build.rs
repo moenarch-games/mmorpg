@@ -33,6 +33,8 @@ const TOME: &str = "equipment.book.tome";
 const MACE: &str = "equipment.mace.flanged";
 /// The spear a player of the spear family carries (#914).
 const SPEAR: &str = "equipment.spear.leaf";
+/// Garrick Redbrand's named cleaver (#918, asset-tooling #761).
+const GARRICKS_CLEAVER: &str = "equipment.sword.garricks-cleaver";
 /// The Redbrand Crossbowmen's crossbow and the arrow standing in for its bolt (#607).
 const CROSSBOW: &str = "equipment.crossbow";
 const ARROW: &str = "equipment.arrow";
@@ -111,6 +113,7 @@ fn main() {
         ("TOME", TOME),
         ("MACE", MACE),
         ("SPEAR", SPEAR),
+        ("GARRICKS_CLEAVER", GARRICKS_CLEAVER),
         ("CROSSBOW", CROSSBOW),
         ("ARROW", ARROW),
         ("THROWING_KNIFE", THROWING_KNIFE),

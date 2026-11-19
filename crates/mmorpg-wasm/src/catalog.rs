@@ -175,6 +175,8 @@ pub struct ItemExport {
     pub stats: StatsExport,
     /// Copper a vendor pays for one unit.
     pub sell_price: u32,
+    /// A find's quality, tactical trait and source (#918), `null` for a standard item.
+    pub find: Option<String>,
 }
 
 /// The attributes an item adds while equipped.
@@ -206,6 +208,7 @@ pub fn catalog(content: &ZoneContent) -> CatalogExport {
                     intellect: item.stats.intellect,
                 },
                 sell_price: mmorpg_core::sell_price(item.id),
+                find: mmorpg_core::find_text(item.id),
             })
             .collect(),
         vendors: content
@@ -347,7 +350,7 @@ mod tests {
                 _ => 1,
             };
             let sell_price = mmorpg_core::sell_price(mmorpg_core::ItemId::new(id));
-            json!({"id": id, "name": name, "maxStack": max_stack, "slot": slot, "stats": stats, "sellPrice": sell_price})
+            json!({"id": id, "name": name, "maxStack": max_stack, "slot": slot, "stats": stats, "sellPrice": sell_price, "find": mmorpg_core::find_text(mmorpg_core::ItemId::new(id))})
         };
         assert_eq!(
             value["items"],
@@ -411,6 +414,30 @@ mod tests {
                 item(21, "Lurker Scale", Value::Null, stats(0, 0, 0, 0)),
                 item(22, "Redbrand Orders", Value::Null, stats(0, 0, 0, 0)),
                 item(23, "Militia Spear", json!("mainHand"), stats(1, 3, 0, 0)),
+                item(
+                    24,
+                    "Fine Militia Shortsword",
+                    json!("mainHand"),
+                    stats(2, 4, 0, 0)
+                ),
+                item(
+                    25,
+                    "Balanced Militia Shortsword",
+                    json!("mainHand"),
+                    stats(1, 3, 0, 0)
+                ),
+                item(
+                    26,
+                    "Long-hafted Militia Spear",
+                    json!("mainHand"),
+                    stats(1, 3, 0, 0)
+                ),
+                item(
+                    27,
+                    "Garrick's Cleaver",
+                    json!("mainHand"),
+                    stats(2, 5, 0, 0)
+                ),
             ])
         );
         let quests = value["quests"].as_array().unwrap();

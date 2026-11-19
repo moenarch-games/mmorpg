@@ -32,6 +32,8 @@ pub struct EntityFlags {
     /// A player's melee weapon family (#914): its main-hand weapon's, else its class's own;
     /// `None` for every other unit. Presentation only: the zone resolves every strike.
     pub weapon: Option<crate::WeaponFamily>,
+    /// A player's named main-hand weapon (#918), drawn with its own model; `None` otherwise.
+    pub named_weapon: Option<crate::NamedWeapon>,
     /// An aggressive creature: it attacks players on sight.
     pub hostile: bool,
     /// The viewer may attack it (living creatures).
@@ -445,6 +447,11 @@ impl ZoneSimulation {
                         in_combat: player.combat_timer > 0 || threatened.contains(&player_id),
                         weapon_drawn: player.weapon_drawn,
                         weapon: Some(crate::melee::weapon_family(player)),
+                        named_weapon: player
+                            .equipment
+                            .item(crate::EquipmentSlot::MainHand)
+                            .and_then(crate::item_find)
+                            .and_then(|find| find.named),
                         targets_viewer,
                         ..EntityFlags::default()
                     },
@@ -488,6 +495,7 @@ impl ZoneSimulation {
                         dead: !alive,
                         weapon_drawn: false,
                         weapon: None,
+                        named_weapon: None,
                         in_combat: alive
                             && (creature.ai == CreatureAi::Engaged || creature.combat_timer > 0),
                         hostile: template.behaviour == CreatureBehaviour::Aggressive,

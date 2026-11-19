@@ -36,6 +36,8 @@ describe("arena netcode trial (#680)", () => {
     for (const option of ["baseline", "predicted"] as const) {
       const source = trial(option, 100);
       const viewer = await source.join();
+      // Every option has the welcome projection at once; the page enters the world from it.
+      expect(source.latestProjection()?.viewerId).toBe(viewer);
       for (let tick = 0; tick < 10; tick += 1) { source.advance(TICK); }
       const start = ownZ(source, viewer);
       const sequence = source.sendCommand({ kind: "move", forward: 1, strafe: 0, facing: 0 })!;

@@ -1067,7 +1067,7 @@ impl ZoneSimulation {
                             .any(|outcome| match (outcome, rewards.item) {
                                 (crate::LootOutcome::Nothing { .. }, None) => true,
                                 (crate::LootOutcome::Item { item, quantity, .. }, Some(stack)) => {
-                                    stack.item() == *item
+                                    crate::rolls_as(*item, stack.item())
                                         && (quantity[0]..=quantity[1]).contains(&stack.quantity())
                                 }
                                 _ => false,

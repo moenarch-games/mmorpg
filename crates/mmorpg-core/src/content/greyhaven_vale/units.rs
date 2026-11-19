@@ -452,6 +452,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::redbrand_patrol::spawns())
         // The Rimewood scouts, an Arcanist's group-control fight (#933).
         .chain(super::rimewood::spawns())
+        // The Eastwater Fen wolf pack (#932).
+        .chain(super::fen_pack::spawns())
         // The optional discoveries' guards (#913).
         .chain(super::discoveries::spawns())
         .collect()

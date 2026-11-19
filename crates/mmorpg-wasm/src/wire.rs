@@ -159,6 +159,11 @@ mirror!(
     }
 );
 mirror!(
+    /// A named weapon's own model (#918).
+    #[serde(rename_all = "kebab-case")]
+    NamedWeapon = core::NamedWeapon { GarricksCleaver }
+);
+mirror!(
     /// Which basic strike a press became (#885).
     #[serde(rename_all = "lowercase")]
     StrikeVariant = core::StrikeVariant {
@@ -371,6 +376,10 @@ pub struct EntityFlags {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[tsify(optional)]
     pub weapon: Option<WeaponFamily>,
+    /// A player's named main-hand weapon (#918); absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[tsify(optional)]
+    pub named_weapon: Option<NamedWeapon>,
     /// An aggressive creature.
     pub hostile: bool,
     /// The viewer may attack it (living creatures).
@@ -423,6 +432,7 @@ impl From<&core::EntitySnapshot> for EntityState {
                 in_combat: flags.in_combat,
                 weapon_drawn: flags.weapon_drawn,
                 weapon: flags.weapon.map(Into::into),
+                named_weapon: flags.named_weapon.map(Into::into),
                 hostile: flags.hostile,
                 attackable: flags.attackable,
                 tapped_by_other: flags.tapped_by_other,
@@ -453,6 +463,7 @@ impl From<&EntityState> for core::EntitySnapshot {
                 in_combat: flags.in_combat,
                 weapon_drawn: flags.weapon_drawn,
                 weapon: flags.weapon.map(Into::into),
+                named_weapon: flags.named_weapon.map(Into::into),
                 hostile: flags.hostile,
                 attackable: flags.attackable,
                 tapped_by_other: flags.tapped_by_other,

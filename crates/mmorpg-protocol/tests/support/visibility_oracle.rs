@@ -136,6 +136,11 @@ pub fn exhaustive_projection(
                     in_combat: candidate.combat.combat_timer > 0,
                     weapon_drawn: candidate.combat.weapon_drawn,
                     weapon: Some(weapon(candidate)),
+                    named_weapon: candidate
+                        .equipment
+                        .item(mmorpg_core::EquipmentSlot::MainHand)
+                        .and_then(mmorpg_core::item_find)
+                        .and_then(|find| find.named),
                     targets_viewer: candidate.player_id != observer.player_id
                         && candidate.combat.target == Some(viewer),
                     ..EntityFlags::default()

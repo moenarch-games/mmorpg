@@ -385,6 +385,8 @@ fn spawns_populate_their_subzones() {
         ((greyhaven_vale::vale::HOLLOWPINE_REACH, "Timber Wolf"), 4),
         ((greyhaven_vale::vale::HOLLOWPINE_REACH, "Young Boar"), 2),
         ((greyhaven_vale::vale::EASTWATER_FEN, "Mirefin Lurker"), 3),
+        // The Eastwater Fen wolf pack, a Ranger firing-line fight (#932).
+        ((greyhaven_vale::vale::EASTWATER_FEN, "Timber Wolf"), 3),
         // The optional discoveries' guards (#913): the hunter's cache's elite bear and the fen
         // cache's ambushers.
         ((greyhaven_vale::vale::WOLFRUN_WOODS, "Old Scarback"), 1),

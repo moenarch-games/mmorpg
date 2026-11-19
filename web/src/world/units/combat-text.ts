@@ -1,5 +1,5 @@
 import { sameEntity, type EntityRef } from "../../entity-ref";
-import type { ZoneEvent, ZoneSnapshot } from "../../replication";
+import { ticksFromMs, type ZoneEvent, type ZoneSnapshot } from "../../replication";
 
 /**
  * Floating combat text for the viewer's projection events. Events are cosmetic and lossy, so the
@@ -88,6 +88,40 @@ export function cleaveCount(snapshot: ZoneSnapshot, count: number): number {
     }
     return event.kind === "strike-swept" && event.target !== null && isViewer(event.source, snapshot) ? count + 1 : count;
   }, count);
+}
+
+/** The Ranger's Piercing Shot (#291). */
+export const PIERCING_SHOT_ABILITY = 19;
+/** A piercing arrow strikes everything it reaches within this many ticks of its release. */
+const PIERCE_WINDOW_TICKS = BigInt(ticksFromMs(1_000));
+
+/** The viewer's latest Piercing Shot: the tick it was loosed and how many units it struck. */
+export type PierceShot = { loosed: bigint; struck: number };
+
+/**
+ * The viewer's latest Piercing Shot after this projection, from `shot` before it (#932): loosing
+ * one starts a count, the viewer's next ability or attack ends it, and each of the viewer's hits
+ * within a second of the release counts one. Damage events carry no provenance, so like
+ * `damageIsPeriodic` this reads the viewer's own events around the hits.
+ */
+export function pierceShot(snapshot: ZoneSnapshot, shot: PierceShot | null): PierceShot | null {
+  return snapshot.events.reduce<PierceShot | null>((shot, event) => {
+    switch (event.kind) {
+      case "ability-used":
+        if (!isViewer(event.source, snapshot)) {
+          return shot;
+        }
+        return event.ability === PIERCING_SHOT_ABILITY ? { loosed: snapshot.tick, struck: 0 } : null;
+      case "attack-performed":
+        return isViewer(event.source, snapshot) ? null : shot;
+      case "damage-dealt":
+        return shot !== null && isViewer(event.source, snapshot) && snapshot.tick - shot.loosed <= PIERCE_WINDOW_TICKS
+          ? { ...shot, struck: shot.struck + 1 }
+          : shot;
+      default:
+        return shot;
+    }
+  }, shot);
 }
 
 /** How long a floating text lives, in milliseconds. */

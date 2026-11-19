@@ -6,7 +6,7 @@ import { auraLabel, auraTimer, sortAuras } from "./aura-display";
 import { castBarView } from "./cast-bar";
 import { HEROIC_STRIKE_ABILITY } from "./directed-strike";
 import { guardDisplay } from "./shield-guard";
-import { COMBAT_TEXT_MS, INTERRUPT_FLASH_MS, cleaveCount, combatTexts, viewerInterrupted } from "./combat-text";
+import { COMBAT_TEXT_MS, INTERRUPT_FLASH_MS, cleaveCount, combatTexts, pierceShot, viewerInterrupted, type PierceShot } from "./combat-text";
 import { unitName } from "./combat-hud";
 
 /** The aim and guard grids' layout, built before the WASM module loads: high row first, left column first. */
@@ -101,6 +101,8 @@ export class ClassHud {
   #tick = -1n;
   /** Units the viewer's running swing has struck so far (#909). */
   #cleaved = 0;
+  /** The viewer's latest Piercing Shot and the units it struck (#932). */
+  #pierce: PierceShot | null = null;
   #catalog: ContentCatalog | null = null;
   #latest: ZoneSnapshot | null = null;
   /** Labels of the directed-strike action's working bindings; empty when unbound. */
@@ -227,6 +229,7 @@ export class ClassHud {
     this.#interruptUntil = 0;
     this.#tick = -1n;
     this.#cleaved = 0;
+    this.#pierce = null;
     this.#latest = null;
     this.#catalog = null;
     for (const entry of this.#floating.splice(0)) {
@@ -257,6 +260,13 @@ export class ClassHud {
       this.#floatText("cleave", `Cleave \u00d7${cleaved}`, now);
     }
     this.#cleaved = cleaved;
+    // A Piercing Shot through several units floats the cleave's "×N" (#932).
+    const pierce = pierceShot(snapshot, this.#pierce);
+    const before = this.#pierce?.loosed === pierce?.loosed ? (this.#pierce?.struck ?? 0) : 0;
+    if (pierce !== null && pierce.struck > 1 && pierce.struck > before) {
+      this.#floatText("cleave", `Pierce \u00d7${pierce.struck}`, now);
+    }
+    this.#pierce = pierce;
   }
 
   /** Redraws the frames, bars and slots from the newest projection. */

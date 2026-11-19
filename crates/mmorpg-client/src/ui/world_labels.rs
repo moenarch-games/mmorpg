@@ -89,6 +89,46 @@ pub fn cleave_count(snapshot: &ZoneSnapshot, count: usize) -> usize {
         })
 }
 
+/// The viewer's latest Piercing Shot (#932): the tick it was loosed and how many units it struck.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PierceShot {
+    pub loosed: u64,
+    pub struck: usize,
+}
+
+/// The viewer's latest Piercing Shot after this projection, from `shot` before it (the
+/// browser's `pierceShot`, #932): loosing one starts a count, the viewer's next ability or
+/// attack ends it, and each of the viewer's hits within a second of the release counts one.
+#[must_use]
+pub fn pierce_shot(snapshot: &ZoneSnapshot, shot: Option<PierceShot>) -> Option<PierceShot> {
+    let viewer = EntityRef::Player(snapshot.viewer_id);
+    let window = u64::from(mmorpg_core::ticks_from_ms(1_000));
+    snapshot
+        .events
+        .iter()
+        .fold(shot, |shot, event| match *event {
+            ZoneEvent::AbilityUsed {
+                source, ability, ..
+            } if source == viewer => (ability == mmorpg_core::ability::ids::PIERCING_SHOT)
+                .then_some(PierceShot {
+                    loosed: snapshot.tick,
+                    struck: 0,
+                }),
+            ZoneEvent::AttackPerformed { source, .. } if source == viewer => None,
+            ZoneEvent::DamageDealt { source, .. } if source == viewer => shot.map(|shot| {
+                if snapshot.tick.saturating_sub(shot.loosed) <= window {
+                    PierceShot {
+                        struck: shot.struck + 1,
+                        ..shot
+                    }
+                } else {
+                    shot
+                }
+            }),
+            _ => shot,
+        })
+}
+
 /// The floating texts one projection's events produce, in event order.
 #[must_use]
 pub fn combat_texts(snapshot: &ZoneSnapshot) -> Vec<CombatText> {
@@ -184,6 +224,8 @@ pub struct FloatingTexts {
     lane: usize,
     /// Units the viewer's running swing has struck so far (#909).
     cleaved: usize,
+    /// The viewer's latest Piercing Shot and the units it struck (#932).
+    pierce: Option<PierceShot>,
 }
 
 impl FloatingTexts {
@@ -204,7 +246,25 @@ impl FloatingTexts {
             anchor: EntityRef::Player(snapshot.viewer_id),
         });
         self.cleaved = cleaved;
-        for text in combat_texts(snapshot).into_iter().chain(cleave) {
+        // A Piercing Shot through several units floats the cleave's "×N" (#932).
+        let pierce = pierce_shot(snapshot, self.pierce);
+        let before = self
+            .pierce
+            .filter(|before| pierce.is_some_and(|shot| shot.loosed == before.loosed))
+            .map_or(0, |before| before.struck);
+        let pierced = pierce
+            .filter(|shot| shot.struck > 1 && shot.struck > before)
+            .map(|shot| CombatText {
+                kind: CombatTextKind::Cleave,
+                text: format!("Pierce \u{d7}{}", shot.struck),
+                anchor: EntityRef::Player(snapshot.viewer_id),
+            });
+        self.pierce = pierce;
+        for text in combat_texts(snapshot)
+            .into_iter()
+            .chain(cleave)
+            .chain(pierced)
+        {
             self.lane = self.lane.wrapping_add(1);
             self.entries.push_back((text, now, self.lane % 5));
         }
@@ -416,5 +476,54 @@ mod tests {
         floating.observe(&snapshot, now);
         assert_eq!(floating.alive(now).count(), 3, "a tick is taken once");
         assert_eq!(floating.alive(now + COMBAT_TEXT_LIFETIME).count(), 0);
+    }
+
+    #[test]
+    fn a_piercing_shot_through_two_units_floats_pierce_x2_once() {
+        let content = greyhaven_vale::content();
+        let mut zone = ZoneSimulation::with_content(ZoneId::new(1), content).unwrap();
+        zone.add_player(1).unwrap();
+        zone.advance_tick().unwrap();
+        let mut snapshot = zone.snapshot_for_player(1).unwrap();
+        let you = EntityRef::Player(1);
+        let hit = |id| ZoneEvent::DamageDealt {
+            source: you,
+            target: EntityRef::Creature(CreatureId::new(id)),
+            amount: 10,
+            critical: false,
+        };
+        let mut floating = FloatingTexts::default();
+        let now = Instant::now();
+        let pierces = |floating: &mut FloatingTexts| {
+            floating
+                .alive(now)
+                .filter(|(text, ..)| text.text.starts_with("Pierce"))
+                .map(|(text, ..)| text.text.clone())
+                .collect::<Vec<_>>()
+        };
+        snapshot.events = vec![ZoneEvent::AbilityUsed {
+            source: you,
+            target: None,
+            ability: mmorpg_core::ability::ids::PIERCING_SHOT,
+        }];
+        floating.observe(&snapshot, now);
+        // The arrow passes the first wolf, then the second a few ticks later.
+        for events in [vec![hit(1)], vec![], vec![hit(2)]] {
+            snapshot.tick += 3;
+            snapshot.events = events;
+            floating.observe(&snapshot, now);
+        }
+        assert_eq!(pierces(&mut floating), ["Pierce \u{d7}2"]);
+        // A later ordinary attack ends the count: its hits are not the arrow's.
+        snapshot.tick += 3;
+        snapshot.events = vec![
+            ZoneEvent::AttackPerformed {
+                source: you,
+                target: None,
+            },
+            hit(3),
+        ];
+        floating.observe(&snapshot, now);
+        assert_eq!(pierces(&mut floating), ["Pierce \u{d7}2"]);
     }
 }

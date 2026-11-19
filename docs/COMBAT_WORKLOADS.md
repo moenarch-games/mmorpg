@@ -19,8 +19,13 @@ Every fixture runs Greyhaven's 137 living creatures, nine NPCs and static collid
 360 completed ticks (6 seconds of simulation at 60 Hz). Initialization is outside
 the counts. `vale-idle-16` admits 16 stationary players on the plaza; creature AI
 and wandering remain active, so this is an idle-player control rather than an idle
-physics world. The 8/32-player fighting fixtures distribute players across the
-authored creature spawn table. The 64-player control concentrates them beside the
+physics world. The 8/32-player fighting fixtures distribute players in pairs across a
+pinned list of 16 fight spawns (`FIGHT_SPAWNS` in `greyhaven_workload.rs`, #960): level 1–2
+wolves, boars and rats of Wolfrun Woods, Millbrook Farm and Hollowpine Reach, which a pair of
+level 1 bots kills within the horizon (a lone bot does not). Bots are not
+sampled from the whole spawn table, so content added elsewhere moves no bot and no counter;
+a change to one of those spawns, or to the ground around its slot, still does. The
+64-player control concentrates them beside the
 six farm rats to exercise crowded discovery and budget packing. Initial player
 positions come from a validated canonical fixture, not a new gameplay teleport.
 

@@ -114,17 +114,22 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // The Greyfang Ridge Redbrand patrol (#911) adds three movers to every step and fights-8's
     // patrol AI tests 90,240 candidates.
     // The `u16` sheet mask (#897) adds one byte to every projection, inside the headroom.
+    // The Eastwater Fen wolf pack (#932) lengthens the Vale's spawn table, which moves the
+    // fights-8 bots' sampled spawns: they test 103,956 candidates; the rows are re-recorded as
+    // measured.
     // The Rimewood scouts (#933) lengthen the spawn table, so the fights fixtures pair players
     // with shifted creatures: fights-8 tests 87,504 candidates. Every row is re-recorded.
-    // The optional discoveries (#913) add five guards: every step visits 1,800 more bodies and
-    // the fights fixtures shift again (fights-8 tests 104,676 candidates). Every row is
-    // re-recorded.
+    // The spread fights pin their creatures (#960): pairs of bots by 16 listed level 1–2 wolves,
+    // boars and rats on level ground, so new spawns elsewhere move no bot. Pairs kill their
+    // creatures, and no bot dies to a Redbrand: fights-8 and fights-32 are re-recorded as measured.
+    // The optional discoveries (#913) add five guards: every step visits 1,800 more bodies.
+    // Every row is re-recorded as measured.
     const HEADROOM_PERCENT: usize = 5;
     let recorded: [[usize; 4]; FIXTURES.len()] = [
-        [11_052, 89_640, 282_240, 6_157_408],
-        [19_717, 86_760, 104_676, 1_878_509],
-        [29_010, 95_400, 436_259, 8_356_863],
-        [13_109, 106_452, 2_327_794, 24_437_289],
+        [11_052, 90_720, 282_240, 6_168_928],
+        [14_122, 87_799, 84_240, 1_985_665],
+        [17_504, 96_357, 496_800, 8_855_408],
+        [13_109, 107_532, 2_327_794, 24_480_055],
     ];
     for (fixture, recorded) in FIXTURES.into_iter().zip(recorded) {
         let ceiling = recorded.map(|count| count + count * HEADROOM_PERCENT / 100);

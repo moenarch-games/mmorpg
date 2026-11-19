@@ -57,7 +57,14 @@ capsule sweep that only grazes geometry (Rapier, in metres, meets a mesh 0.004 u
 radius; the backends differ on a sweep ending exactly against a whole-unit box) picks the next
 cell on the same route; whether a route exists must agree exactly. The fights fixtures place
 their scripted players on level fight slots only, since a jump on a steep slope is stopped by
-one backend and deflected by the other.
+one backend and deflected by the other. Each slot's scripted landing must also lie within two units
+of its height: landing about 2.5 units higher puts the last airborne tick within hundredths of a
+unit of the support reach, and the backends then land a tick apart. Their fight spawns are a
+pinned list of established level 1–2 open-ground creatures, a pair of bots by each (#960), not a
+sample of the whole spawn table: with sampling,
+every new spawn moved the bots, and one landed a level 1 bot in the Greyfang cavern, where its
+level 4–5 Redbrands' chase paths (creatures may part between backends) decided on which
+backend it died.
 Supported characters settle their current support gap before horizontal movement, matching
 the independent oracle. The support cast inflates the capsule by the contact offset so slopes
 measure the margin along the surface normal. The authored towpath departure regression checks

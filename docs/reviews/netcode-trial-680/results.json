@@ -1,0 +1,533 @@
+[
+ {
+  "option": "baseline",
+  "roundTripMs": 50,
+  "movement": {
+   "directionChanges": 77,
+   "inputToMotionMs": {
+    "median": 117,
+    "p90": 317
+   },
+   "ownOffsetFromZoneCm": {
+    "mean": 54.1,
+    "p95": 63.6
+   },
+   "corrections": {
+    "reconciles": 0,
+    "over1cm": 0,
+    "over10cm": 0,
+    "p95Cm": 0,
+    "maxCm": 0
+   }
+  },
+  "hits": {
+   "basic": {
+    "pressed": 30,
+    "began": 30,
+    "lookedLikeHit": 25,
+    "confirmed": 24,
+    "lookedButMissed": 2,
+    "hitButLookedMissed": 1,
+    "confirmedOutsidePresent": 1
+   },
+   "timed": {
+    "pressed": 11,
+    "began": 9,
+    "lookedLikeHit": 1,
+    "confirmed": 0,
+    "lookedButMissed": 1,
+    "hitButLookedMissed": 0,
+    "confirmedOutsidePresent": 0
+   }
+  },
+  "clashes": {
+   "trades": [
+    "no-partner-swing",
+    "no-partner-swing",
+    "no-partner-swing",
+    "both-miss",
+    "both-miss"
+   ],
+   "clashEvents": 0,
+   "partnerSwings": 5,
+   "partnerHitsOnViewer": 1
+  },
+  "refusals": {
+   "not-enough-resource": 2
+  },
+  "viewerDead": false,
+  "repeatable": true
+ },
+ {
+  "option": "baseline",
+  "roundTripMs": 100,
+  "movement": {
+   "directionChanges": 84,
+   "inputToMotionMs": {
+    "median": 167,
+    "p90": 267
+   },
+   "ownOffsetFromZoneCm": {
+    "mean": 66.2,
+    "p95": 74
+   },
+   "corrections": {
+    "reconciles": 0,
+    "over1cm": 0,
+    "over10cm": 0,
+    "p95Cm": 0,
+    "maxCm": 0
+   }
+  },
+  "hits": {
+   "basic": {
+    "pressed": 30,
+    "began": 30,
+    "lookedLikeHit": 23,
+    "confirmed": 21,
+    "lookedButMissed": 4,
+    "hitButLookedMissed": 2,
+    "confirmedOutsidePresent": 1
+   },
+   "timed": {
+    "pressed": 12,
+    "began": 6,
+    "lookedLikeHit": 3,
+    "confirmed": 1,
+    "lookedButMissed": 2,
+    "hitButLookedMissed": 0,
+    "confirmedOutsidePresent": 0
+   }
+  },
+  "clashes": {
+   "trades": [
+    "both-miss",
+    "no-partner-swing",
+    "refused",
+    "both-miss",
+    "both-miss"
+   ],
+   "clashEvents": 0,
+   "partnerSwings": 4,
+   "partnerHitsOnViewer": 1
+  },
+  "refusals": {
+   "not-enough-resource": 6
+  },
+  "viewerDead": false,
+  "repeatable": true
+ },
+ {
+  "option": "baseline",
+  "roundTripMs": 150,
+  "movement": {
+   "directionChanges": 81,
+   "inputToMotionMs": {
+    "median": 217,
+    "p90": 317
+   },
+   "ownOffsetFromZoneCm": {
+    "mean": 81.1,
+    "p95": 95
+   },
+   "corrections": {
+    "reconciles": 0,
+    "over1cm": 0,
+    "over10cm": 0,
+    "p95Cm": 0,
+    "maxCm": 0
+   }
+  },
+  "hits": {
+   "basic": {
+    "pressed": 30,
+    "began": 30,
+    "lookedLikeHit": 15,
+    "confirmed": 14,
+    "lookedButMissed": 1,
+    "hitButLookedMissed": 0,
+    "confirmedOutsidePresent": 1
+   },
+   "timed": {
+    "pressed": 11,
+    "began": 4,
+    "lookedLikeHit": 2,
+    "confirmed": 0,
+    "lookedButMissed": 2,
+    "hitButLookedMissed": 0,
+    "confirmedOutsidePresent": 0
+   }
+  },
+  "clashes": {
+   "trades": [
+    "refused",
+    "no-partner-swing",
+    "no-partner-swing",
+    "no-partner-swing",
+    "both-miss"
+   ],
+   "clashEvents": 0,
+   "partnerSwings": 2,
+   "partnerHitsOnViewer": 0
+  },
+  "refusals": {
+   "not-enough-resource": 7
+  },
+  "viewerDead": false,
+  "repeatable": true
+ },
+ {
+  "option": "predicted",
+  "roundTripMs": 50,
+  "movement": {
+   "directionChanges": 94,
+   "inputToMotionMs": {
+    "median": 17,
+    "p90": 217
+   },
+   "ownOffsetFromZoneCm": {
+    "mean": 9.8,
+    "p95": 33.3
+   },
+   "corrections": {
+    "reconciles": 2999,
+    "over1cm": 671,
+    "over10cm": 236,
+    "p95Cm": 10.9,
+    "maxCm": 16
+   }
+  },
+  "hits": {
+   "basic": {
+    "pressed": 30,
+    "began": 30,
+    "lookedLikeHit": 26,
+    "confirmed": 17,
+    "lookedButMissed": 11,
+    "hitButLookedMissed": 2,
+    "confirmedOutsidePresent": 1
+   },
+   "timed": {
+    "pressed": 13,
+    "began": 6,
+    "lookedLikeHit": 1,
+    "confirmed": 1,
+    "lookedButMissed": 1,
+    "hitButLookedMissed": 1,
+    "confirmedOutsidePresent": 0
+   }
+  },
+  "clashes": {
+   "trades": [
+    "no-partner-swing",
+    "refused",
+    "both-miss",
+    "both-miss",
+    "no-partner-swing"
+   ],
+   "clashEvents": 0,
+   "partnerSwings": 3,
+   "partnerHitsOnViewer": 0
+  },
+  "refusals": {
+   "not-enough-resource": 7
+  },
+  "viewerDead": false,
+  "repeatable": true
+ },
+ {
+  "option": "predicted",
+  "roundTripMs": 100,
+  "movement": {
+   "directionChanges": 101,
+   "inputToMotionMs": {
+    "median": 17,
+    "p90": 217
+   },
+   "ownOffsetFromZoneCm": {
+    "mean": 27.1,
+    "p95": 62.6
+   },
+   "corrections": {
+    "reconciles": 2998,
+    "over1cm": 557,
+    "over10cm": 196,
+    "p95Cm": 10.5,
+    "maxCm": 16.4
+   }
+  },
+  "hits": {
+   "basic": {
+    "pressed": 30,
+    "began": 30,
+    "lookedLikeHit": 29,
+    "confirmed": 21,
+    "lookedButMissed": 9,
+    "hitButLookedMissed": 1,
+    "confirmedOutsidePresent": 2
+   },
+   "timed": {
+    "pressed": 11,
+    "began": 10,
+    "lookedLikeHit": 3,
+    "confirmed": 0,
+    "lookedButMissed": 3,
+    "hitButLookedMissed": 0,
+    "confirmedOutsidePresent": 0
+   }
+  },
+  "clashes": {
+   "trades": [
+    "both-miss",
+    "both-miss",
+    "both-miss",
+    "both-miss",
+    "both-miss"
+   ],
+   "clashEvents": 0,
+   "partnerSwings": 5,
+   "partnerHitsOnViewer": 0
+  },
+  "refusals": {
+   "not-enough-resource": 1
+  },
+  "viewerDead": false,
+  "repeatable": true
+ },
+ {
+  "option": "predicted",
+  "roundTripMs": 150,
+  "movement": {
+   "directionChanges": 104,
+   "inputToMotionMs": {
+    "median": 17,
+    "p90": 117
+   },
+   "ownOffsetFromZoneCm": {
+    "mean": 34.1,
+    "p95": 62.2
+   },
+   "corrections": {
+    "reconciles": 2996,
+    "over1cm": 323,
+    "over10cm": 90,
+    "p95Cm": 6.2,
+    "maxCm": 15.9
+   }
+  },
+  "hits": {
+   "basic": {
+    "pressed": 30,
+    "began": 30,
+    "lookedLikeHit": 22,
+    "confirmed": 17,
+    "lookedButMissed": 10,
+    "hitButLookedMissed": 5,
+    "confirmedOutsidePresent": 2
+   },
+   "timed": {
+    "pressed": 15,
+    "began": 5,
+    "lookedLikeHit": 2,
+    "confirmed": 0,
+    "lookedButMissed": 2,
+    "hitButLookedMissed": 0,
+    "confirmedOutsidePresent": 0
+   }
+  },
+  "clashes": {
+   "trades": [
+    "no-partner-swing",
+    "both-miss",
+    "both-miss",
+    "no-partner-swing",
+    "no-partner-swing"
+   ],
+   "clashEvents": 0,
+   "partnerSwings": 3,
+   "partnerHitsOnViewer": 0
+  },
+  "refusals": {
+   "not-enough-resource": 10
+  },
+  "viewerDead": false,
+  "repeatable": true
+ },
+ {
+  "option": "rewind",
+  "roundTripMs": 50,
+  "movement": {
+   "directionChanges": 94,
+   "inputToMotionMs": {
+    "median": 17,
+    "p90": 217
+   },
+   "ownOffsetFromZoneCm": {
+    "mean": 9.8,
+    "p95": 33.3
+   },
+   "corrections": {
+    "reconciles": 2999,
+    "over1cm": 671,
+    "over10cm": 236,
+    "p95Cm": 10.9,
+    "maxCm": 16
+   }
+  },
+  "hits": {
+   "basic": {
+    "pressed": 30,
+    "began": 30,
+    "lookedLikeHit": 26,
+    "confirmed": 17,
+    "lookedButMissed": 11,
+    "hitButLookedMissed": 2,
+    "confirmedOutsidePresent": 1
+   },
+   "timed": {
+    "pressed": 13,
+    "began": 6,
+    "lookedLikeHit": 1,
+    "confirmed": 0,
+    "lookedButMissed": 1,
+    "hitButLookedMissed": 0,
+    "confirmedOutsidePresent": 0
+   }
+  },
+  "clashes": {
+   "trades": [
+    "no-partner-swing",
+    "refused",
+    "both-miss",
+    "both-miss",
+    "no-partner-swing"
+   ],
+   "clashEvents": 0,
+   "partnerSwings": 3,
+   "partnerHitsOnViewer": 0
+  },
+  "refusals": {
+   "not-enough-resource": 7
+  },
+  "viewerDead": false,
+  "repeatable": true
+ },
+ {
+  "option": "rewind",
+  "roundTripMs": 100,
+  "movement": {
+   "directionChanges": 101,
+   "inputToMotionMs": {
+    "median": 17,
+    "p90": 217
+   },
+   "ownOffsetFromZoneCm": {
+    "mean": 27.1,
+    "p95": 62.6
+   },
+   "corrections": {
+    "reconciles": 2998,
+    "over1cm": 557,
+    "over10cm": 196,
+    "p95Cm": 10.5,
+    "maxCm": 16.4
+   }
+  },
+  "hits": {
+   "basic": {
+    "pressed": 30,
+    "began": 30,
+    "lookedLikeHit": 29,
+    "confirmed": 21,
+    "lookedButMissed": 9,
+    "hitButLookedMissed": 1,
+    "confirmedOutsidePresent": 2
+   },
+   "timed": {
+    "pressed": 11,
+    "began": 10,
+    "lookedLikeHit": 3,
+    "confirmed": 2,
+    "lookedButMissed": 1,
+    "hitButLookedMissed": 0,
+    "confirmedOutsidePresent": 2
+   }
+  },
+  "clashes": {
+   "trades": [
+    "both-miss",
+    "own-hit",
+    "no-partner-swing",
+    "both-miss",
+    "own-hit"
+   ],
+   "clashEvents": 0,
+   "partnerSwings": 5,
+   "partnerHitsOnViewer": 0
+  },
+  "refusals": {
+   "not-enough-resource": 1
+  },
+  "viewerDead": false,
+  "repeatable": true
+ },
+ {
+  "option": "rewind",
+  "roundTripMs": 150,
+  "movement": {
+   "directionChanges": 104,
+   "inputToMotionMs": {
+    "median": 17,
+    "p90": 117
+   },
+   "ownOffsetFromZoneCm": {
+    "mean": 34.1,
+    "p95": 62.2
+   },
+   "corrections": {
+    "reconciles": 2996,
+    "over1cm": 320,
+    "over10cm": 90,
+    "p95Cm": 6.1,
+    "maxCm": 15.9
+   }
+  },
+  "hits": {
+   "basic": {
+    "pressed": 30,
+    "began": 30,
+    "lookedLikeHit": 22,
+    "confirmed": 17,
+    "lookedButMissed": 10,
+    "hitButLookedMissed": 5,
+    "confirmedOutsidePresent": 2
+   },
+   "timed": {
+    "pressed": 15,
+    "began": 6,
+    "lookedLikeHit": 2,
+    "confirmed": 2,
+    "lookedButMissed": 0,
+    "hitButLookedMissed": 0,
+    "confirmedOutsidePresent": 2
+   }
+  },
+  "clashes": {
+   "trades": [
+    "no-partner-swing",
+    "own-hit",
+    "no-partner-swing",
+    "both-miss",
+    "own-hit"
+   ],
+   "clashEvents": 0,
+   "partnerSwings": 4,
+   "partnerHitsOnViewer": 1
+  },
+  "refusals": {
+   "not-enough-resource": 9
+  },
+  "viewerDead": false,
+  "repeatable": true
+ }
+]
