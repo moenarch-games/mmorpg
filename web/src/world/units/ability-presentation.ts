@@ -105,6 +105,8 @@ export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = ne
   [51, { range: "self", description: "Leap 8 m along your facing and land with an impact that hurts and hurls back every enemy within 4 m, weaker toward the edge.", glyph: FOOT, accent: "#c98a4a", visual: "ring", pose: "swing" }],
   [52, { range: { units: 2_000 }, description: "Hook your selected target and pull it to melee reach; walls stop it and a just-moved target is immune.", glyph: ARROW, accent: "#d8c27a", visual: "projectile", pose: "draw" }],
   [53, { range: "self", description: "Teleport up to 10 m along your facing, as far as the way is free; walls and summoned terrain end it short of them.", glyph: ORB, accent: "#b69cff", visual: "ring", pose: "cast" }],
+  // The Cleric's reckoning (#936): it returns the harm only this enemy dealt you and nearby allies this encounter.
+  [54, { range: RANGED, description: "Return 70% of the harm your target dealt you and nearby allies this fight as a holy strike, consuming only its stored harm. Heals never lower it; it ends when the fight does.", glyph: BOLT, accent: "#ffcf4a", visual: null, pose: "cast" }],
 ]);
 
 export function presentationOf(ability: number): AbilityPresentation | undefined {
