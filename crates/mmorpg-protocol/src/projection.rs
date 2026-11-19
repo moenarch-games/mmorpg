@@ -887,7 +887,7 @@ fn decode_projection(
         && (!abilities.cooldowns.is_empty() || !abilities.auras.is_empty()))
         || (dead && !abilities.auras.is_empty())
         || abilities.target != target;
-    let (doors, pieces, raid) = sheet_bytes(Sheet::World)
+    let (doors, pieces, raid, depleted_veins) = sheet_bytes(Sheet::World)
         .map(|received| crate::sheet::decode_world_sheet(&received.bytes))
         .transpose()?
         .unwrap_or_default();
@@ -975,6 +975,7 @@ fn decode_projection(
         projectiles,
         debris,
         pieces,
+        depleted_veins,
         summoned,
         traps,
         raid,
@@ -1216,6 +1217,7 @@ pub(crate) mod tests {
                     stage: mmorpg_core::PieceStage::Destroyed,
                 },
             ],
+            depleted_veins: vec![1],
             traps: vec![mmorpg_core::TrapView {
                 id: mmorpg_core::TrapId::new(1),
                 age: 30,
@@ -2397,6 +2399,7 @@ pub(crate) mod tests {
             entities,
             quests: None,
             pieces: Vec::new(),
+            depleted_veins: Vec::new(),
             summoned: Vec::new(),
             traps: Vec::new(),
         };

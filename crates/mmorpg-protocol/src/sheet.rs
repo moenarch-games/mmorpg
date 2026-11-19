@@ -217,6 +217,11 @@ pub(crate) fn encode_sheets(
     crate::wire::encode_doors(&mut world, &snapshot.doors)?;
     crate::wire::encode_piece_views(&mut world, &snapshot.pieces)?;
     crate::raid::encode_view(&mut world, snapshot.raid.as_ref())?;
+    crate::wire::encode_u32_set(
+        &mut world,
+        &snapshot.depleted_veins.iter().copied().collect(),
+        "too many spent veins",
+    )?;
     let mut waystones = Vec::new();
     crate::wire::encode_waystones(&mut waystones, &snapshot.viewer.waystones)?;
     if world.len().max(waystones.len()) > MAX_BUDGETED_SHEET_BYTES {
@@ -350,11 +355,13 @@ fn read_inventory_sheet(
     Ok((revision, inventory, equipment))
 }
 
-/// The world sheet: doors, pieces that are not intact and the raid signal.
+/// The world sheet: doors, pieces that are not intact, the raid signal and the spent ore veins
+/// (#917).
 pub(crate) type WorldSheet = (
     Vec<mmorpg_core::DoorView>,
     Vec<mmorpg_core::PieceView>,
     Option<mmorpg_core::RaidView>,
+    Vec<u32>,
 );
 
 pub(crate) fn decode_world_sheet(bytes: &[u8]) -> Result<WorldSheet, ProtocolError> {
@@ -369,6 +376,9 @@ fn read_world_sheet(payload: &[u8], offset: &mut usize) -> Result<WorldSheet, Pr
         crate::wire::decode_doors(payload, offset)?,
         crate::wire::decode_piece_views(payload, offset)?,
         crate::raid::decode_view(payload, offset)?,
+        crate::wire::decode_u32_set(payload, offset, "spent veins are malformed")?
+            .into_iter()
+            .collect(),
     ))
 }
 

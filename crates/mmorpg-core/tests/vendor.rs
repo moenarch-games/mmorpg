@@ -398,6 +398,7 @@ fn content_without_vendors_refuses_every_trade_and_binding_is_validated() {
     let cheaper = VendorStock::new(&[VendorOffer {
         item: BOOTS,
         price: 11,
+        materials: &[],
     }])
     .unwrap();
     let other = base.with_vendors(vec![(VENDOR, cheaper)]).unwrap();
@@ -409,6 +410,7 @@ fn vendor_stock_is_validated() {
     let offer = |item, price| VendorOffer {
         item: ItemId::new(item),
         price,
+        materials: &[],
     };
     assert_eq!(VendorStock::new(&[]), Err(VendorStockError::OfferCount));
     assert_eq!(

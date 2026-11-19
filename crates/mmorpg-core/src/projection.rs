@@ -204,6 +204,8 @@ pub struct ZoneSnapshot {
     pub debris: Vec<crate::DebrisView>,
     /// Destructible pieces that are not intact, in ID order (#305).
     pub pieces: Vec<crate::PieceView>,
+    /// The content ore veins spent at this tick, in content order (#917).
+    pub depleted_veins: Vec<u32>,
     /// Summoned terrain near the viewer, nearest first (#293).
     pub summoned: Vec<crate::SummonedView>,
     /// Fired pressure traps near the viewer, nearest first (#300); blades and spikes come from
@@ -357,6 +359,7 @@ impl ZoneSimulation {
                 projectiles: self.projectile_views([center.x, center.y, center.z]),
                 debris: self.debris_views([center.x, center.y, center.z]),
                 pieces: self.piece_views(),
+                depleted_veins: self.depleted_veins(),
                 summoned: self.summoned_views([center.x, center.y, center.z]),
                 traps: self.trap_views([center.x, center.y, center.z]),
                 raid: self.raid_view(player_id, [center.x, center.z]),

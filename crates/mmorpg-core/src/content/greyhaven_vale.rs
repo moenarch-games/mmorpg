@@ -42,6 +42,7 @@ pub mod market;
 pub mod marsh;
 pub mod marsh_creatures;
 pub mod marshal_house;
+pub mod ore;
 pub mod paint;
 pub mod quests;
 pub mod raid;
@@ -2026,7 +2027,8 @@ fn content_with_spawns(
                     .filter(|&id| id != vale::OUTPOST)
                     .collect(),
             )?
-            .with_depths_threshold(cave::depths_threshold()),
+            .with_depths_threshold(cave::depths_threshold())
+            .with_gather_nodes(ore::veins())?,
     ))
 }
 

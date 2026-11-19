@@ -107,6 +107,10 @@ pub enum PlayerIntent {
     RaidAid(u32),
     /// Night raid preparation (#532).
     RaidPrepare(crate::RaidPrep),
+    /// Gathering an ore vein (#917): its content index.
+    Gather(u32),
+    /// Skinning a beast corpse (#917).
+    Skin(crate::LootClaim),
     /// A Need/Greed/Pass answer to a boss drop (#404).
     RollDepthsDrop {
         run: u64,
@@ -397,6 +401,8 @@ pub struct CanonicalZoneSnapshot {
     pub next_minion: u32,
     /// The night raid (#530).
     pub raid: crate::RaidState,
+    /// When each ore vein is full again and which corpses were skinned (#917).
+    pub gathering: crate::GatheringState,
     /// Private-home residents a knock woke, in NPC-ID order (#158).
     pub wakes: Vec<crate::NpcWake>,
     /// The private run bound to a depths zone (#404).
@@ -563,6 +569,7 @@ impl ZoneSimulation {
             minions: self.canonical_minions()?,
             next_minion: self.next_minion,
             raid: self.raid.clone(),
+            gathering: self.gathering.clone(),
             wakes: self.canonical_wakes(),
             depths: self.depths.clone(),
             rewind_history: self.canonical_rewind_history(),
@@ -605,6 +612,7 @@ impl ZoneSimulation {
         for record in snapshot.creatures {
             zone.restore_creature(record)?;
         }
+        zone.restore_gathering(snapshot.gathering, snapshot.tick)?;
         for (player, state) in snapshot.parties {
             state.validate()?;
             if !zone.players.contains_key(&player) || zone.parties.insert(player, state).is_some() {

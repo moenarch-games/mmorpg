@@ -755,6 +755,29 @@ pub fn raid_aid() -> Vec<i32> {
         .unwrap_or_default()
 }
 
+/// The hosted zone's ore veins (#917) as `[x, z]` centres in units, in wire order.
+#[wasm_bindgen(js_name = gatherNodes)]
+#[must_use]
+pub fn gather_nodes() -> Vec<i32> {
+    host::hosted_content()
+        .gather_nodes()
+        .iter()
+        .flat_map(|node| node.at)
+        .collect()
+}
+
+/// For each ore vein (#917) in wire order, the `gather` kit's placement index of its full and
+/// of its spent look, as `[full, spent]` pairs.
+#[wasm_bindgen(js_name = veinSlots)]
+#[must_use]
+pub fn vein_slots() -> Vec<u32> {
+    mmorpg_presentation::world_dressing::vein_slots(scenery::hosted_scenery())
+        .into_iter()
+        .flatten()
+        .filter_map(|index| u32::try_from(index).ok())
+        .collect()
+}
+
 /// The night raid target's forewarning spots (#532) in units: the tracks' `[x, z]`, the lookout
 /// guard's NPC ID, then each brace spot's `[x, z]`; empty without a raid target.
 #[wasm_bindgen(js_name = raidPrep)]
@@ -1501,6 +1524,7 @@ fn placed_kit(
     static RIVER: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     static MEADOW: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     static WOLF_DEN: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
+    static GATHER: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     // The placement lists mix bundles, so each kit takes the placements of its own entries.
     let all = || {
         let scenery = scenery::hosted_scenery();
@@ -1540,6 +1564,19 @@ fn placed_kit(
         "den" => {
             let entries = &mmorpg_presentation::world_dressing::WOLF_DEN_ENTRIES;
             Ok((entries, WOLF_DEN.get(|_| of(entries))))
+        }
+        // The ore veins (#917), in the order [`vein_slots`] indexes.
+        "gather" => {
+            let entries = &mmorpg_presentation::world_dressing::GATHERABLE_ENTRIES;
+            Ok((
+                entries,
+                GATHER.get(|_| {
+                    mmorpg_presentation::world_dressing::kit_placements(
+                        scenery::hosted_scenery(),
+                        entries,
+                    )
+                }),
+            ))
         }
         "climbing" => Ok((
             &climbing::ENTRIES,
@@ -1655,6 +1692,12 @@ impl KitLods {
                 .iter()
                 .map(mmorpg_presentation::lod::Placement::placed),
         )))
+    }
+
+    /// Hides placement `index`, or shows it again (#917: a vein's full or spent look).
+    #[wasm_bindgen(js_name = setHidden)]
+    pub fn set_hidden(&mut self, index: usize, hidden: bool) {
+        self.0.set_hidden(index, hidden);
     }
 
     /// Each entry's variants from the finest level to the coarsest, as `entry/variant`.

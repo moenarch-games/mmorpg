@@ -13,11 +13,14 @@ use crate::{
 /// Inclusive horizontal (XZ) distance from a vendor's feet to the player (5 m).
 pub const VENDOR_REACH_UNITS: i32 = 500;
 
-/// One item a vendor sells, at `price` copper per unit.
+/// One item a vendor sells, at `price` copper per unit. A smith's recipe (#917) also takes
+/// `materials` from the bag for each unit it makes; a plain offer takes none.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct VendorOffer {
     pub item: ItemId,
     pub price: u32,
+    /// `(item, quantity)` consumed per unit, in authored order; empty for a plain offer.
+    pub materials: &'static [(ItemId, u16)],
 }
 
 /// One or more offers of distinct catalog items with
@@ -42,6 +45,19 @@ impl VendorStock {
             if offers[..index].iter().any(|other| other.item == offer.item) {
                 return Err(VendorStockError::DuplicateItem);
             }
+            if offer
+                .materials
+                .iter()
+                .enumerate()
+                .any(|(at, &(item, quantity))| {
+                    quantity == 0
+                        || item == offer.item
+                        || item_template(item).is_none_or(|template| template.max_stack < quantity)
+                        || offer.materials[..at].iter().any(|other| other.0 == item)
+                })
+            {
+                return Err(VendorStockError::InvalidMaterials);
+            }
         }
         Ok(Self {
             offers: offers.to_vec(),
@@ -65,6 +81,7 @@ pub enum VendorStockError {
     UnknownItem,
     FreeOffer,
     DuplicateItem,
+    InvalidMaterials,
 }
 
 impl fmt::Display for VendorStockError {
@@ -74,6 +91,7 @@ impl fmt::Display for VendorStockError {
             Self::UnknownItem => "a vendor offer names an unknown item",
             Self::FreeOffer => "a vendor offer has no price",
             Self::DuplicateItem => "a vendor offers an item twice",
+            Self::InvalidMaterials => "a recipe's materials are invalid",
         })
     }
 }
@@ -97,6 +115,9 @@ pub const fn sell_price(item: ItemId) -> u32 {
         12..=14 => 9,
         15..=18 => 18,
         19..=22 => 1,
+        // Gathered materials and the smith's boar-spear (#917).
+        28 | 29 => 2,
+        30 => 10,
         _ => 0,
     }
 }
@@ -109,6 +130,7 @@ pub fn starter_vendor_stock() -> VendorStock {
     let offer = |item, price| VendorOffer {
         item: ItemId::new(item),
         price,
+        materials: &[],
     };
     VendorStock::new(&[
         offer(2, 5),
@@ -132,6 +154,7 @@ pub fn fenford_trader_stock() -> VendorStock {
     let offer = |item, price| VendorOffer {
         item: ItemId::new(item),
         price,
+        materials: &[],
     };
     VendorStock::new(&[
         offer(9, 12),
@@ -145,6 +168,26 @@ pub fn fenford_trader_stock() -> VendorStock {
         offer(14, 45),
     ])
     .expect("the Fenford trader's stock is valid")
+}
+
+/// What the smith's boar-spear takes per spear (#917): two veins' ore and two boars' hides and
+/// tusks.
+pub const BOAR_SPEAR_MATERIALS: [(ItemId, u16); 3] = [
+    (crate::IRON_ORE, 4),
+    (crate::BOAR_HIDE, 2),
+    (crate::BOAR_TUSK, 2),
+];
+
+/// The Outpost smith's stock (#917): the Hollowpine boar-spear, made from gathered materials
+/// for a small fee.
+#[must_use]
+pub fn smith_stock() -> VendorStock {
+    VendorStock::new(&[VendorOffer {
+        item: crate::HOLLOWPINE_BOAR_SPEAR,
+        price: 20,
+        materials: &BOAR_SPEAR_MATERIALS,
+    }])
+    .expect("the smith's stock is valid")
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -168,8 +211,8 @@ impl fmt::Display for VendorTradeError {
 
 impl Error for VendorTradeError {}
 
-/// Buys `quantity` units of one offer: the full price must be covered and
-/// the full quantity must fit, or bag and copper stay unchanged.
+/// Buys `quantity` units of one offer: the full price and every material must be covered and
+/// the full quantity must fit once the materials are taken, or bag and copper stay unchanged.
 pub fn settle_purchase(
     inventory: &mut Inventory,
     copper: &mut u32,
@@ -184,6 +227,13 @@ pub fn settle_purchase(
         .checked_sub(cost)
         .ok_or(VendorTradeError::NotEnoughMoney)?;
     let mut bag = inventory.clone();
+    for &(item, each) in offer.materials {
+        let needed = each
+            .checked_mul(quantity)
+            .ok_or(VendorTradeError::Inventory(InventoryError::InvalidQuantity))?;
+        bag.remove_item(item, needed)
+            .map_err(VendorTradeError::Inventory)?;
+    }
     bag.insert(offer.item, quantity)
         .map_err(VendorTradeError::Inventory)?;
     *inventory = bag;
@@ -280,6 +330,9 @@ impl ZoneSimulation {
         };
         let code = match settled {
             Err(VendorTradeError::NotEnoughMoney) => Some(ErrorCode::NotEnoughMoney),
+            Err(VendorTradeError::Inventory(InventoryError::InsufficientItems)) => {
+                Some(ErrorCode::MissingMaterials)
+            }
             Err(VendorTradeError::MoneyOverflow) => Some(ErrorCode::MoneyOverflow),
             Err(VendorTradeError::Inventory(InventoryError::NoCapacity)) => {
                 Some(ErrorCode::InventoryFull)

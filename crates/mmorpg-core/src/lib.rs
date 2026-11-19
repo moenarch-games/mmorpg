@@ -36,6 +36,7 @@ mod equipment;
 mod events;
 mod finds;
 mod forced;
+mod gathering;
 #[doc(hidden)]
 pub mod golden;
 mod guard;
@@ -155,6 +156,10 @@ pub use finds::{
 pub use forced::{
     CHARGE_MAX_TICKS, CHARGE_SPEED_SUBUNITS_PER_TICK, FORCED_IMMUNITY_TICKS, ForcedMove,
     ForcedState, KNOCKBACK_TICKS, SHOVE_UNITS,
+};
+pub use gathering::{
+    BOAR_HIDE, BOAR_TUSK, GATHER_REACH_UNITS, GatherNode, GatheringState, HOLLOWPINE_BOAR_SPEAR,
+    IRON_ORE, skin_yield,
 };
 pub use guard::{
     GUARD_ARC_HALF_WIDTH, GUARD_ARC_OFFSET, GUARD_BREAK_IMPACT, GUARD_BREAK_TICKS,
@@ -278,7 +283,8 @@ pub use trap::{
 };
 pub use vendor::{
     VENDOR_REACH_UNITS, VendorOffer, VendorStock, VendorStockError, VendorTradeError,
-    fenford_trader_stock, sell_price, settle_purchase, settle_sale, starter_vendor_stock,
+    fenford_trader_stock, sell_price, settle_purchase, settle_sale, smith_stock,
+    starter_vendor_stock,
 };
 pub use water::{AirPocket, Breath, WaterChannel, WaterMode, WaterVolume};
 pub use waystone::{
@@ -443,6 +449,12 @@ pub enum ZoneCommand {
     /// One preparation step before a forewarned night raid (#532, Atlas 5.1.59–5.1.62); the zone
     /// checks the evening, reach and order in the tick.
     RaidPrepare { prep: RaidPrep },
+    /// Gathers ore vein `node` (#917, an index into the content's veins): the zone checks that
+    /// it is full and within reach in the tick, and spends it for everyone until it regrows.
+    Gather { node: u32 },
+    /// Skins one fenced beast corpse (#917) the player may loot: once per death, checked in
+    /// the tick.
+    Skin(LootClaim),
     /// Answers the roll window of drop `drop` of `run` (#404, Atlas 5.1.34): stale, repeated
     /// and ineligible answers are refused in the tick, and a settled roll never changes.
     RollDepthsDrop {

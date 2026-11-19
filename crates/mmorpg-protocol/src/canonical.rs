@@ -51,6 +51,8 @@ const ROLL_DEPTHS_DROP_INTENT: u8 = 27;
 const CLAIM_DEPTHS_DROP_INTENT: u8 = 28;
 const SIT_INTENT: u8 = 29;
 const SET_WEAPON_DRAWN_INTENT: u8 = 30;
+const GATHER_INTENT: u8 = 31;
+const SKIN_INTENT: u8 = 32;
 const ALIVE: u8 = 1;
 const CORPSE: u8 = 2;
 const DESPAWNED: u8 = 3;
@@ -114,7 +116,43 @@ pub fn encode_canonical_snapshot(
     encode_wakes(&mut payload, &snapshot.wakes)?;
     crate::rewards::encode_history(&mut payload, snapshot.rewards.as_ref())?;
     encode_rewind_history(&mut payload, &snapshot.rewind_history)?;
+    encode_gathering(&mut payload, &snapshot.gathering)?;
     Ok(payload)
+}
+
+/// Canonical gathering (#917): `count u16 · count × ready tick u64`, one per content vein, then
+/// the skinned corpses' creature IDs as an ascending set.
+fn encode_gathering(
+    payload: &mut Vec<u8>,
+    gathering: &mmorpg_core::GatheringState,
+) -> Result<(), ProtocolError> {
+    let message = "snapshot gathering exceeds its limits";
+    payload.extend_from_slice(
+        &crate::wire::encode_u16_count(gathering.veins.len(), usize::from(u16::MAX), message)?
+            .to_be_bytes(),
+    );
+    for ready in &gathering.veins {
+        payload.extend_from_slice(&ready.to_be_bytes());
+    }
+    let skinned = gathering.skinned.iter().map(|id| id.get()).collect();
+    crate::wire::encode_u32_set(payload, &skinned, message)
+}
+
+fn decode_gathering(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<mmorpg_core::GatheringState, ProtocolError> {
+    let message = "snapshot gathering is malformed";
+    let count = decode_u16_count(payload, offset, usize::from(u16::MAX), message)?;
+    let mut veins = Vec::with_capacity(count);
+    for _ in 0..count {
+        veins.push(u64::from_be_bytes(take(payload, offset)?));
+    }
+    let skinned = crate::wire::decode_u32_set(payload, offset, message)?
+        .into_iter()
+        .map(mmorpg_core::CreatureId::new)
+        .collect();
+    Ok(mmorpg_core::GatheringState { veins, skinned })
 }
 
 fn encode_player(
@@ -166,6 +204,16 @@ fn encode_player(
             PlayerIntent::Loot(claim) => {
                 payload.push(LOOT_INTENT);
                 crate::loot::encode_claim(payload, claim);
+                continue;
+            }
+            PlayerIntent::Skin(claim) => {
+                payload.push(SKIN_INTENT);
+                crate::loot::encode_claim(payload, claim);
+                continue;
+            }
+            PlayerIntent::Gather(node) => {
+                payload.push(GATHER_INTENT);
+                payload.extend_from_slice(&node.to_be_bytes());
                 continue;
             }
             PlayerIntent::ReleaseSpirit => (RELEASE_SPIRIT_INTENT, None),
@@ -716,6 +764,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let wakes = decode_wakes(payload, &mut offset)?;
     let rewards = crate::rewards::decode_history(payload, &mut offset)?;
     let rewind_history = decode_rewind_history(payload, &mut offset)?;
+    let gathering = decode_gathering(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
         rewards,
@@ -744,6 +793,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         wakes,
         depths,
         rewind_history,
+        gathering,
     })
 }
 
@@ -1129,6 +1179,18 @@ fn decode_player(
             intents.push(PlayerIntent::Loot(crate::loot::decode_claim(
                 payload, offset,
             )?));
+            continue;
+        }
+        if code == SKIN_INTENT {
+            intents.push(PlayerIntent::Skin(crate::loot::decode_claim(
+                payload, offset,
+            )?));
+            continue;
+        }
+        if code == GATHER_INTENT {
+            intents.push(PlayerIntent::Gather(u32::from_be_bytes(take(
+                payload, offset,
+            )?)));
             continue;
         }
         if code == USE_ABILITY_INTENT {
@@ -2684,6 +2746,10 @@ mod tests {
                     ),
                 ],
             }],
+            gathering: mmorpg_core::GatheringState {
+                veins: vec![0, 7_300],
+                skinned: [mmorpg_core::CreatureId::new(3)].into(),
+            },
         }
     }
 

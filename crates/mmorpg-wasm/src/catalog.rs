@@ -95,11 +95,13 @@ pub struct VendorExport {
     pub offers: Vec<VendorOfferExport>,
 }
 
-/// One unit of `item` costs `price` copper.
-#[derive(Clone, Copy, Debug, Serialize)]
+/// One unit of `item` costs `price` copper and, for a smith's recipe (#917), `materials`.
+#[derive(Clone, Debug, Serialize)]
 pub struct VendorOfferExport {
     pub item: u32,
     pub price: u32,
+    /// `[item, quantity]` pairs taken per unit; empty for a plain offer.
+    pub materials: Vec<[u32; 2]>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -222,6 +224,11 @@ pub fn catalog(content: &ZoneContent) -> CatalogExport {
                     .map(|offer| VendorOfferExport {
                         item: offer.item.get(),
                         price: offer.price,
+                        materials: offer
+                            .materials
+                            .iter()
+                            .map(|&(item, quantity)| [item.get(), u32::from(quantity)])
+                            .collect(),
                     })
                     .collect(),
             })

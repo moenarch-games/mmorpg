@@ -26,6 +26,8 @@ OUT = ROOT / 'crates/mmorpg-core/content/collision/greyhaven-dressing.json'
 KITS = {
     'crag.kit.': (ROOT / 'web/public/scenery/crag.kit', 'crag-descriptor'),
     'wolf-den.kit.': (ROOT / 'web/public/scenery/wolf-den.kit', 'wolf-den-descriptor'),
+    'gatherables.kit.': (ROOT / 'web/public/scenery/gatherables.kit', 'gatherables-descriptor'),
+    'settlement.props.': (ROOT / 'web/public/scenery/settlement.props', 'settlement-descriptor'),
 }
 UNITS_PER_METRE = 100
 

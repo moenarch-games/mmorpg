@@ -95,6 +95,8 @@ pub struct ZoneContent {
     waystones: Vec<crate::WaystoneId>,
     /// Named areas whose first visit pays discovery experience (#916), in ID order.
     discoveries: Vec<crate::AreaId>,
+    /// Ore veins anyone may gather (#917), in authored order: the order is their wire index.
+    gather_nodes: Vec<crate::GatherNode>,
     /// This public zone's threshold into the depths (#404), if any.
     depths_threshold: Option<crate::DepthsThreshold>,
     /// This depths zone's encounter table (#404), if it is one.
@@ -232,6 +234,7 @@ impl ZoneContent {
             raid: None,
             waystones: Vec::new(),
             discoveries: Vec::new(),
+            gather_nodes: Vec::new(),
             depths_threshold: None,
             depths_site: None,
             dens: Vec::new(),
@@ -289,6 +292,7 @@ impl ZoneContent {
             raid: None,
             waystones: Vec::new(),
             discoveries: Vec::new(),
+            gather_nodes: Vec::new(),
             depths_threshold: None,
             depths_site: None,
             dens: Vec::new(),
@@ -1454,6 +1458,30 @@ impl ZoneContent {
         &self.discoveries
     }
 
+    /// Places the ore veins anyone may gather (#917), in their wire order: each yields a
+    /// stackable catalog item and regrows.
+    pub fn with_gather_nodes(mut self, nodes: Vec<crate::GatherNode>) -> Result<Self, ZoneError> {
+        if u32::try_from(nodes.len()).is_err()
+            || nodes.iter().any(|node| {
+                node.quantity == 0
+                    || node.respawn_ticks == 0
+                    || crate::item_template(node.item)
+                        .is_none_or(|item| item.max_stack < node.quantity)
+            })
+        {
+            return Err(ZoneError::new("an ore vein's yield or regrowth is invalid"));
+        }
+        self.gather_nodes = nodes;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Ore veins anyone may gather (#917), in their wire order.
+    #[must_use]
+    pub fn gather_nodes(&self) -> &[crate::GatherNode] {
+        &self.gather_nodes
+    }
+
     /// Ordered by NPC ID.
     #[must_use]
     pub fn routines(&self) -> &[crate::NpcRoutine] {
@@ -1529,7 +1557,7 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_discovery_fingerprint();
+        let fingerprint = self.compute_gather_fingerprint();
         let Some(rewind) = self.hit_rewind else {
             return fingerprint;
         };
@@ -1537,6 +1565,24 @@ impl ZoneContent {
         hash.bytes(b"mmorpg.zone-content/hit-rewind-v1");
         hash.u64(fingerprint);
         hash.u32(rewind.max_ms);
+        hash.finish()
+    }
+
+    fn compute_gather_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_discovery_fingerprint();
+        if self.gather_nodes.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/gather-nodes-v1");
+        hash.u64(fingerprint);
+        hash.len(self.gather_nodes.len());
+        for node in &self.gather_nodes {
+            hash.i32s(&node.at);
+            hash.u32(node.item.get());
+            hash.u16(node.quantity);
+            hash.u32(node.respawn_ticks);
+        }
         hash.finish()
     }
 
@@ -2142,6 +2188,14 @@ impl ZoneContent {
             for offer in stock.offers() {
                 hash.u32(offer.item.get());
                 hash.u32(offer.price);
+                // A recipe (#917) hashes its materials; a plain offer hashes as before.
+                if !offer.materials.is_empty() {
+                    hash.len(offer.materials.len());
+                    for &(item, quantity) in offer.materials {
+                        hash.u32(item.get());
+                        hash.u16(quantity);
+                    }
+                }
             }
         }
         hash.finish()
