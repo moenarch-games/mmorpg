@@ -539,7 +539,14 @@ impl ZoneSimulation {
         if let Some(facing) = facing
             && !stunned
         {
-            creature.facing = facing;
+            // Standing its ground in a fight, it turns at a bounded rate (#949), so a player who
+            // circles inside its reach can reach its flank.
+            let pivots = creature.ai == CreatureAi::Engaged && !casting && velocity == [0, 0];
+            creature.facing = if pivots {
+                crate::flank::turn_toward(creature.facing, facing, crate::CREATURE_TURN_PER_TICK)
+            } else {
+                facing
+            };
         }
         if let Some(player) = lost_interest {
             self.notify(

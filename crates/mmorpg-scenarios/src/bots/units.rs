@@ -215,7 +215,9 @@ pub fn concerned_unit(event: &ZoneEvent, viewer: EntityRef) -> Option<EntityRef>
         | ZoneEvent::StrikeBegan { source, .. }
         | ZoneEvent::StrikeRewarded { source, .. }
         | ZoneEvent::CreatureAttackBegan { source, .. } => Some(source),
-        ZoneEvent::Clashed { source, target, .. } => other(source, Some(target)),
+        ZoneEvent::Clashed { source, target, .. } | ZoneEvent::Flanked { source, target } => {
+            other(source, Some(target))
+        }
         ZoneEvent::Died { entity, .. } => Some(entity),
         ZoneEvent::Error { target, .. } => target,
         ZoneEvent::AuraApplied { target, .. }
@@ -483,6 +485,9 @@ pub fn event_token(event: &ZoneEvent, name: impl Fn(EntityRef) -> String) -> Str
             reward,
             ticks,
         } => format!("reward:{}:{}+{ticks}", name(source), reward.code()),
+        ZoneEvent::Flanked { source, target } => {
+            format!("flank:{}>{}", name(source), name(target))
+        }
         ZoneEvent::CreatureAttackBegan {
             source,
             attack,
