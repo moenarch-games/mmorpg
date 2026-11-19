@@ -34,10 +34,15 @@ function layout(geometry: THREE.BufferGeometry): string {
  * draw list and re-uploads its indirect texture in each sun cascade and the main pass, and each upload into a texture
  * the GPU still reads stalls it: in Greyhaven that cost about 2.5 ms of GPU time a frame, more than the instances it
  * culls. The list (and the upload) then changes only when an instance is shown or hidden.
+ *
+ * Its own sphere is fixed empty: nothing culls the whole batch, and three only reads the sphere's centre to order
+ * draws, but computing it walks every vertex of every geometry on the batch's first draw, a 100–500 ms frame each
+ * time a streamed batch is built mid-walk (#869).
  */
 export function drawWhole(mesh: THREE.BatchedMesh): void {
   mesh.perObjectFrustumCulled = false;
   mesh.sortObjects = false;
+  mesh.boundingSphere = new THREE.Sphere();
 }
 
 /** One instance in a [`GrowingBatch`]. */

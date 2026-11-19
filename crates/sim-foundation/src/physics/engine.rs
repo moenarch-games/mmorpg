@@ -651,9 +651,7 @@ impl World {
             self.engine.remove_body(ground.body);
             self.games.remove(&ground.body.to_bits());
         }
-        // Content validation already bounds the grid; an engine refusal is a broken invariant.
-        let prepared = PreparedHeightfield::new(&heightfield(&terrain))
-            .expect("validated content terrain is a valid heightfield");
+        let prepared = prepared_heightfield(&terrain);
         let body = self
             .engine
             .add_prepared_heightfield(&prepared, Material::default(), None)
@@ -666,6 +664,34 @@ impl World {
             floor: id,
         });
     }
+}
+
+/// How many distinct terrains [`prepared_heightfield`] keeps prepared.
+const PREPARED_TERRAINS: usize = 4;
+
+/// Terrains this process prepared most recently, newest last.
+static PREPARED: Mutex<Vec<(crate::Terrain, PreparedHeightfield)>> = Mutex::new(Vec::new());
+
+/// `terrain` prepared as an engine heightfield, shared with every earlier world on the same
+/// terrain (#869). Preparing the zone grid takes about 160 ms, and the browser's local host
+/// rebuilds a world from its snapshot for each world save every 5 s; the prepared terrain is
+/// immutable and a pure function of `terrain`, so sharing it changes no result.
+fn prepared_heightfield(terrain: &crate::Terrain) -> PreparedHeightfield {
+    let mut prepared = PREPARED.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(index) = prepared.iter().position(|(known, _)| known == terrain) {
+        let entry = prepared.remove(index);
+        let shared = entry.1.clone();
+        prepared.push(entry);
+        return shared;
+    }
+    // Content validation already bounds the grid; an engine refusal is a broken invariant.
+    let shared = PreparedHeightfield::new(&heightfield(terrain))
+        .expect("validated content terrain is a valid heightfield");
+    if prepared.len() == PREPARED_TERRAINS {
+        prepared.remove(0);
+    }
+    prepared.push((terrain.clone(), shared.clone()));
+    shared
 }
 
 /// `terrain` as an engine heightfield (see [`World::set_terrain`]).
