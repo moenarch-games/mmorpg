@@ -113,6 +113,12 @@ mod meadow_bundle {
 mod meadow_descriptor {
     include!(concat!(env!("OUT_DIR"), "/meadow_descriptor.rs"));
 }
+mod wolf_den_bundle {
+    include!(concat!(env!("OUT_DIR"), "/wolf_den_bundle.rs"));
+}
+mod wolf_den_descriptor {
+    include!(concat!(env!("OUT_DIR"), "/wolf_den_descriptor.rs"));
+}
 
 type Files = &'static [(&'static str, &'static [u8])];
 
@@ -125,7 +131,13 @@ struct Source {
     descriptor: &'static str,
 }
 
-const SOURCES: [Source; 7] = [
+const SOURCES: [Source; 8] = [
+    Source {
+        keys: &mmorpg_presentation::world_dressing::WOLF_DEN_ENTRIES,
+        entries: wolf_den_bundle::ENTRIES,
+        files: wolf_den_bundle::FILES,
+        descriptor: wolf_den_descriptor::DESCRIPTOR,
+    },
     Source {
         keys: &mmorpg_presentation::terrain_patch::MEADOW_ENTRIES,
         entries: meadow_bundle::ENTRIES,
@@ -230,6 +242,10 @@ pub fn lods() -> Vec<EntryLods> {
     lods.extend(
         mmorpg_presentation::nature::descriptor_lods(meadow_descriptor::DESCRIPTOR)
             .expect("the meadow descriptor is valid"),
+    );
+    lods.extend(
+        mmorpg_presentation::nature::descriptor_lods(wolf_den_descriptor::DESCRIPTOR)
+            .expect("the embedded wolf den descriptor is valid"),
     );
     lods
 }

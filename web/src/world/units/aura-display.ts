@@ -23,6 +23,7 @@ const KIND_TEXT: Record<AuraKind, (amount: number) => string> = {
   snare: (amount) => `Slowed by ${amount}%`,
   stun: () => "Stunned",
   haste: (amount) => `Attacks ${amount}% faster`,
+  corpse: () => "A fresh corpse to raise or burst",
 };
 
 /** What an aura does, from its kind and amount. */

@@ -1241,3 +1241,57 @@ fn bundle_strikes_spawn_at_contact_and_go_when_their_clip_ends() {
     assert!(later.effects.is_empty(), "{:?}", keys(&later));
     assert!(effects(&contacted).iter().all(|id| !id.ends_with("-flash")));
 }
+
+#[test]
+fn a_cleaving_slash_sweeps_the_cleave_fan_and_its_open_window_glints() {
+    use mmorpg_presentation::units::kit_effects::{CLEAVE_SWEEP, COMBO_GLINT};
+    let mut scene = scene();
+    scene.presenter.set_effect_kits(true);
+    scene.presenter.push(&scene.snapshot, 0.);
+    frame(&mut scene, 0.);
+    let viewer = EntityRef::Player(1);
+    let aim = StrikeAim::new(StrikeSide::Centre, StrikeHeight::Middle);
+    let swept = |target| ZoneEvent::StrikeSwept {
+        source: viewer,
+        target: Some(target),
+        ability: AbilityId::new(1),
+        aim,
+    };
+    let keys = |frame: &UnitFrame| frame.effects.iter().map(|e| e.key).collect::<Vec<_>>();
+    // The slash strikes its first unit: the ordinary sweep, no fan.
+    scene.snapshot.tick += 1;
+    scene.snapshot.events = vec![
+        ZoneEvent::SwingBegan {
+            source: viewer,
+            ability: AbilityId::new(1),
+            facing: 0,
+            aim,
+            startup: 6,
+            active: 6,
+        },
+        swept(scene.wolf),
+    ];
+    scene.presenter.push(&scene.snapshot, 1.);
+    let one = frame(&mut scene, 1.05);
+    assert!(!keys(&one).contains(&CLEAVE_SWEEP));
+    assert!(effects(&one).iter().any(|id| id.ends_with("-sweep-0")));
+    // Its second unit makes it a cleave: the fan replaces the sweep, and the follow-up window
+    // the zone opens glints on the sword.
+    scene.snapshot.tick += 1;
+    scene.snapshot.events = vec![swept(EntityRef::Player(2))];
+    scene.snapshot.viewer.combo = Some(mmorpg_core::ComboPhase::CleaveOpen);
+    scene.presenter.push(&scene.snapshot, 1.1);
+    let cleave = frame(&mut scene, 1.15);
+    assert!(keys(&cleave).contains(&CLEAVE_SWEEP), "{:?}", keys(&cleave));
+    assert!(keys(&cleave).contains(&COMBO_GLINT), "{:?}", keys(&cleave));
+    assert!(effects(&cleave).iter().all(|id| !id.contains("-sweep-")));
+    // The glint keeps playing while the window stays open, and stops once it closes.
+    scene.snapshot.tick += 1;
+    scene.snapshot.events.clear();
+    scene.presenter.push(&scene.snapshot, 1.5);
+    assert!(keys(&frame(&mut scene, 1.55)).contains(&COMBO_GLINT));
+    scene.snapshot.tick += 1;
+    scene.snapshot.viewer.combo = None;
+    scene.presenter.push(&scene.snapshot, 1.9);
+    assert!(keys(&frame(&mut scene, 2.3)).is_empty());
+}
