@@ -116,12 +116,15 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // The `u16` sheet mask (#897) adds one byte to every projection, inside the headroom.
     // The Rimewood scouts (#933) lengthen the spawn table, so the fights fixtures pair players
     // with shifted creatures: fights-8 tests 87,504 candidates. Every row is re-recorded.
+    // The optional discoveries (#913) add five guards: every step visits 1,800 more bodies and
+    // the fights fixtures shift again (fights-8 tests 104,676 candidates). Every row is
+    // re-recorded.
     const HEADROOM_PERCENT: usize = 5;
     let recorded: [[usize; 4]; FIXTURES.len()] = [
-        [11_052, 87_840, 282_240, 6_157_408],
-        [18_951, 84_960, 87_504, 1_666_864],
-        [27_545, 93_600, 444_777, 8_464_504],
-        [13_037, 104_652, 2_314_114, 24_437_289],
+        [11_052, 89_640, 282_240, 6_157_408],
+        [19_717, 86_760, 104_676, 1_878_509],
+        [29_010, 95_400, 436_259, 8_356_863],
+        [13_109, 106_452, 2_327_794, 24_437_289],
     ];
     for (fixture, recorded) in FIXTURES.into_iter().zip(recorded) {
         let ceiling = recorded.map(|count| count + count * HEADROOM_PERCENT / 100);

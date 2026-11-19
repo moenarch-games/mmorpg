@@ -193,6 +193,11 @@ fn starter_tables_are_pinned_and_cover_every_hosted_template() {
         ([2, 6], vec![item(4, FUR, [2, 3]), nothing(1)]),
         ([0, 2], vec![nothing(1)]),
         ([1, 3], vec![item(1, FUR, [1, 1]), nothing(2)]),
+        // Old Scarback (#913): always a pelt, often boots.
+        (
+            [20, 30],
+            vec![item(3, FUR, [3, 5]), item(2, ItemId::new(9), [1, 1])],
+        ),
     ];
     let content = greyhaven_vale::content();
     // Breakable props (#288) drop nothing and have no table.

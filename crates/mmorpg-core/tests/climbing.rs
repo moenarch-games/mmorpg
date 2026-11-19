@@ -1,5 +1,5 @@
 //! Climbing and free ledge mantling (#490, Atlas 5.1.40) on Greyhaven's own physics: a player
-//! climbs a highland crag, a tower's ladder and the rope up a sheer crag (#621), mantles the mill's loading dock and jumps up to
+//! climbs a highland crag, a tower's ladder, the Greyfang lookout's ladder (#913) and the rope up a sheer crag (#621), mantles the mill's loading dock and jumps up to
 //! grab the stronghold's palisade, takes the climbing route up the highlands' escarpment, and is
 //! refused by a sheer crag, a too-high wall and an obstructed ledge.
 
