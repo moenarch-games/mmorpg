@@ -986,6 +986,10 @@ impl ZoneSimulation {
             );
             self.gain_faith(attacker, dealt);
         }
+        // A creature's own hit feeds the Divine Reckoning pools it concerns (#936).
+        if let EntityRef::Creature(creature_id) = source {
+            self.remember_harm(creature_id, player_id, dealt)?;
+        }
         self.observe_damage(source, target, dealt, critical);
         if dead {
             return self.player_dies(player_id, Some(source));
@@ -1520,6 +1524,7 @@ impl ZoneSimulation {
             player.health = 0;
             player.swing_queued = false;
             player.swing_timer = 0;
+            player.reckoning.clear();
             player.melee = crate::MeleeState::default();
             player.calm_ticks = 0;
             // Death clears every aura and cast; rage and faith drain.
@@ -1560,6 +1565,7 @@ impl ZoneSimulation {
     /// creature-ID order.
     pub(crate) fn update_timers(&mut self, now: u64) -> Result<(), ZoneError> {
         self.age_minions()?;
+        self.expire_harm();
         let threatened = self.threatened_players();
         for (player_id, player) in &mut self.players {
             if !player.is_alive() {

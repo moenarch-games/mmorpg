@@ -345,6 +345,10 @@ pub enum AbilityEffect {
         damage_per_level: u16,
         swing_ticks: u16,
     },
+    /// Divine Reckoning (#936): a holy strike of `percent` of the harm the target dealt within the
+    /// caster's reach this encounter, which the cast consumes; each enemy's stored harm is capped
+    /// at `pool`. See `reckoning.rs`.
+    Reckoning { percent: u16, pool: u16 },
 }
 
 /// One catalog row.
@@ -404,7 +408,8 @@ impl Ability {
             | AbilityEffect::Companion { .. }
             | AbilityEffect::Leap { .. }
             | AbilityEffect::Hook { .. }
-            | AbilityEffect::Blink { .. } => return None,
+            | AbilityEffect::Blink { .. }
+            | AbilityEffect::Reckoning { .. } => return None,
         };
         Some(AuraSpec {
             kind,
@@ -567,6 +572,8 @@ pub mod ids {
     pub const HEROIC_LEAP: AbilityId = AbilityId::new(51);
     pub const GRAPPLING_HOOK: AbilityId = AbilityId::new(52);
     pub const BLINK: AbilityId = AbilityId::new(53);
+    /// The Cleric's reckoning (#936).
+    pub const DIVINE_RECKONING: AbilityId = AbilityId::new(54);
 }
 
 /// How a projectile treats what it meets (#291).
@@ -589,7 +596,7 @@ pub enum Shot {
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 53] = [
+pub const ABILITY_CATALOG: [Ability; 54] = [
     ability(
         1,
         "Heroic Strike",
@@ -1466,6 +1473,23 @@ pub const ABILITY_CATALOG: [Ability; 53] = [
         AbilityRange::SelfCentred,
         AbilityEffect::Blink { distance: 1_000 },
     ),
+    // The Cleric's reckoning (#936, Atlas 5.2.i936): endure an enemy's blows, heal, then return
+    // 70% of the harm it dealt you and nearby allies this encounter, at most 200 stored. The
+    // rate and cap are provisional tuning.
+    ability(
+        54,
+        "Divine Reckoning",
+        CLERIC,
+        3,
+        30,
+        CastTime::Instant,
+        ticks_from_ms(12_000),
+        RANGED,
+        AbilityEffect::Reckoning {
+            percent: 70,
+            pool: 200,
+        },
+    ),
 ];
 
 /// The catalog row of `id`, if any.
@@ -1751,6 +1775,7 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
                 vec![27, damage[0].into(), damage[1].into(), per_level.into()]
             }
             AbilityEffect::Blink { distance } => vec![28, distance],
+            AbilityEffect::Reckoning { percent, pool } => vec![29, percent.into(), pool.into()],
         };
         bytes.extend_from_slice(&u32::try_from(fields.len()).unwrap_or(0).to_be_bytes());
         for field in fields {
