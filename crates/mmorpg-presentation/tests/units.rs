@@ -1295,3 +1295,138 @@ fn a_cleaving_slash_sweeps_the_cleave_fan_and_its_open_window_glints() {
     scene.presenter.push(&scene.snapshot, 1.9);
     assert!(keys(&frame(&mut scene, 2.3)).is_empty());
 }
+
+/// The unit nearest each effect draw whose id ends in `part`, among `units`.
+fn cue_holders(
+    scene: &Scene,
+    frame: &UnitFrame,
+    part: &str,
+    units: &[EntityRef],
+) -> Vec<EntityRef> {
+    let at = |unit: EntityRef| {
+        let record = scene
+            .snapshot
+            .entities
+            .iter()
+            .find(|e| e.entity() == unit)
+            .unwrap();
+        scene.presenter.rendered(record.position)
+    };
+    let mut holders: Vec<_> = frame
+        .draws
+        .iter()
+        .filter(|d| d.id.starts_with("fx-") && d.id.contains(part))
+        .map(|d| {
+            let reach = |unit: EntityRef| {
+                let c = at(unit);
+                (d.model[12] - c[0]).hypot(d.model[14] - c[2])
+            };
+            *units
+                .iter()
+                .min_by(|a, b| reach(**a).total_cmp(&reach(**b)))
+                .unwrap()
+        })
+        .collect();
+    holders.sort();
+    holders.dedup();
+    holders
+}
+
+#[test]
+fn corruption_poison_and_roots_show_on_their_target_only_while_the_zone_holds_them() {
+    use mmorpg_core::ability::ids;
+    let mut scene = scene();
+    let mut second = scene.snapshot.entities.last().unwrap().clone();
+    second.id += 1000;
+    second.position[2] += 500;
+    scene.snapshot.entities.push(second);
+    let (wolf, second) = (scene.wolf, scene.snapshot.entities.last().unwrap().entity());
+    let enemies = [wolf, second];
+    let viewer = EntityRef::Player(1);
+    let step = |scene: &mut Scene, events: Vec<ZoneEvent>, now: f64| {
+        scene.snapshot.tick += 1;
+        scene.snapshot.events = events;
+        scene.presenter.push(&scene.snapshot, now);
+        frame(scene, now)
+    };
+    let parts = ["-wisp-", "-drip-", "-vine-", "-ice-"];
+    let shown = |scene: &Scene, frame: &UnitFrame| {
+        parts.map(|part| cue_holders(scene, frame, part, &enemies))
+    };
+    scene.presenter.push(&scene.snapshot, 0.);
+    frame(&mut scene, 0.);
+    // A root cast that missed or was evaded, and a poisoned blade that whiffed, show nothing.
+    let missed = step(
+        &mut scene,
+        vec![
+            ZoneEvent::AbilityUsed {
+                source: viewer,
+                target: Some(wolf),
+                ability: ids::ENTANGLING_ROOTS,
+            },
+            ZoneEvent::Evade {
+                source: viewer,
+                target: wolf,
+            },
+            ZoneEvent::AbilityUsed {
+                source: viewer,
+                target: Some(second),
+                ability: ids::POISONED_BLADE,
+            },
+            ZoneEvent::Miss {
+                source: viewer,
+                target: second,
+            },
+        ],
+        1.,
+    );
+    assert_eq!(shown(&scene, &missed), [vec![], vec![], vec![], vec![]]);
+    // Each applied aura holds on the unit the zone named.
+    let seconds = |s: u16| s * mmorpg_core::TICK_HZ;
+    let applied = |target, ability, ticks| ZoneEvent::AuraApplied {
+        source: viewer,
+        target,
+        ability,
+        ticks,
+    };
+    let held = step(
+        &mut scene,
+        vec![
+            applied(wolf, ids::CORRUPTION, seconds(15)),
+            applied(wolf, ids::ENTANGLING_ROOTS, seconds(20)),
+            applied(second, ids::POISONED_BLADE, seconds(15)),
+            applied(second, ids::FROST_NOVA, seconds(2)),
+        ],
+        2.,
+    );
+    assert_eq!(
+        shown(&scene, &held),
+        [vec![wolf], vec![second], vec![wolf], vec![second]]
+    );
+    // The zone breaks the roots early; the frost runs out with its aura's own ticks.
+    let ended = step(
+        &mut scene,
+        vec![ZoneEvent::AuraRemoved {
+            source: viewer,
+            target: wolf,
+            ability: ids::ENTANGLING_ROOTS,
+        }],
+        3.,
+    );
+    assert_eq!(shown(&scene, &ended)[2], vec![wolf], "the vines sink first");
+    let later = frame(&mut scene, 4.1);
+    assert_eq!(
+        shown(&scene, &later),
+        [vec![wolf], vec![second], vec![], vec![]]
+    );
+    // A dead unit sheds its conditions at once.
+    let died = step(
+        &mut scene,
+        vec![ZoneEvent::Died {
+            entity: second,
+            killer: Some(viewer),
+        }],
+        4.2,
+    );
+    assert_eq!(shown(&scene, &died), [vec![wolf], vec![], vec![], vec![]]);
+}

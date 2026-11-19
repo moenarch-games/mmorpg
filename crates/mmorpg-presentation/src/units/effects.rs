@@ -11,7 +11,8 @@ use super::{
 };
 use crate::{Draw, geometry::V};
 use mmorpg_core::{
-    AuraKind, EntityRef, StrikeAim, StrikeHeight, StrikeSide, TICK_HZ, ZoneEvent, ZoneSnapshot,
+    AbilityEffect, AbilityId, AbilityUser, AuraKind, EntityRef, PlayerClass, StrikeAim,
+    StrikeHeight, StrikeSide, TICK_HZ, ZoneEvent, ZoneSnapshot,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -31,12 +32,9 @@ enum Visual {
     Beam,
     /// Chain Lightning (#292): arcs from the caster through each victim in turn.
     Chain,
-    /// Entangling Roots (#304): vines that rise and coil around the rooted target. Its caster
-    /// sees them for the zone's whole root and sink the moment it breaks (#934).
-    Roots,
-    /// Frost Nova's root (#933): ice locking the victim's feet while the zone's aura holds,
-    /// gone the tick that aura expires or damage breaks it.
-    Frozen,
+    /// A lasting condition the zone put on the target (#956), held exactly while its aura
+    /// does: it wanes over the aura's life and plays its end once the zone lifts it.
+    Condition(Condition),
     /// The unit the viewer's companion or minions fight (#934): marks round its feet while
     /// their swings land on it.
     Quarry,
@@ -72,6 +70,45 @@ enum Visual {
     Reward {
         follow_up: bool,
     },
+}
+
+/// A lasting hostile condition drawn on the unit it holds (#956). Only an aura the zone
+/// reports applied starts one, so a miss, evade or resist shows nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Condition {
+    /// The Necromancer's damage over time: a dark wisp rising off the victim.
+    Corruption,
+    /// The Rogue's damage over time: green droplets falling into a sickly pool.
+    Poison,
+    /// A root that binds (Entangling Roots, #304): vines coil round the feet.
+    Roots,
+    /// A nova's root (Frost Nova, #933): ice locks the feet.
+    Frost,
+}
+
+impl Condition {
+    /// The condition the aura of `ability` shows, from its catalog effect and class, not its ID.
+    #[must_use]
+    pub fn of(ability: AbilityId) -> Option<Self> {
+        let ability = mmorpg_core::ability_by_id(ability)?;
+        let class = match ability.user {
+            AbilityUser::Class(class) => Some(class),
+            AbilityUser::Creature => None,
+        };
+        match (ability.aura()?.kind, ability.effect, class) {
+            (AuraKind::DamageOverTime, _, Some(PlayerClass::Necromancer)) => Some(Self::Corruption),
+            (AuraKind::DamageOverTime, _, Some(PlayerClass::Rogue)) => Some(Self::Poison),
+            (AuraKind::Root, AbilityEffect::Nova { .. }, _) => Some(Self::Frost),
+            (AuraKind::Root, _, _) => Some(Self::Roots),
+            _ => None,
+        }
+    }
+
+    /// Whether it holds the unit's feet: a held humanoid struggles against it.
+    #[must_use]
+    pub const fn roots(self) -> bool {
+        matches!(self, Self::Roots | Self::Frost)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -148,10 +185,18 @@ const BONE_SHIELD: u32 = 29;
 const HOLY_BEAM: u32 = 36;
 const DIVINE_SHIELD: u32 = 37;
 const BARKSKIN: u32 = 41;
-const ENTANGLING_ROOTS: u32 = 39;
-/// Vines rise this long and sink this long, also when a root breaks early (#934).
+/// Vines rise this long (#934). Every condition plays its end this long once the zone lifts
+/// it, early or on time (#956), and wanes to this fraction of its strength over the aura's life.
 const ROOTS_GROW_SECONDS: f64 = 0.5;
-const ROOTS_SINK_SECONDS: f64 = 0.4;
+const CONDITION_END_SECONDS: f64 = 0.4;
+const CONDITION_WANE: f64 = 0.45;
+/// Corruption's shadow violet and dark core; poison's green and its sickly pool.
+const CORRUPTION_COLOUR: u32 = 0x8a4dff;
+const CORRUPTION_CORE: u32 = 0x2a1238;
+const POISON_COLOUR: u32 = 0x8fe05a;
+const POISON_POOL: u32 = 0x5f8a2a;
+const ROOTS_COLOUR: u32 = 0x6b8a3a;
+const FROST_COLOUR: u32 = 0x8fd8ff;
 /// A quarry mark outlasts the minions' last swing at it by this long; a minion's threat
 /// pulse its last hit (#934).
 const QUARRY_SECONDS: f64 = 3.;
@@ -215,7 +260,8 @@ fn presentation(id: u32) -> (Option<Stance>, Option<Visual>, u32) {
         37 => (Some(Stance::Staff), Some(Visual::Bubble), 0xfff3c8),
         // The Druid (#304): a green wrath, brown-green roots, a leafy rejuvenation, a bark ward.
         38 => (Some(Stance::Staff), Some(Visual::Projectile), 0x7fd65a),
-        39 => (Some(Stance::Staff), Some(Visual::Roots), 0x6b8a3a),
+        // Its vines follow the zone's aura (#956), not the cast.
+        39 => (Some(Stance::Staff), None, 0x6b8a3a),
         40 => (Some(Stance::Staff), None, 0x9ee07a),
         41 => (Some(Stance::Staff), Some(Visual::Bubble), 0xa07a4a),
         // The Rogue's throws (#290): the zone's own knives, flasks and bombs fly.
@@ -252,7 +298,6 @@ fn timed(visual: Visual) -> Option<f64> {
         Visual::Swing => Some(0.28),
         Visual::Cone => Some(0.45),
         Visual::Chain => Some(0.5),
-        Visual::Roots => Some(2.),
         _ => None,
     }
 }
@@ -295,8 +340,14 @@ impl Effects {
             start: now,
             duration,
         });
+        // A full list drops its oldest passing effect before any lasting condition (#956).
         if self.effects.len() > MAX_EFFECTS {
-            self.effects.remove(0);
+            let oldest = self
+                .effects
+                .iter()
+                .position(|e| !matches!(e.visual, Visual::Condition(_)))
+                .unwrap_or(0);
+            self.effects.remove(oldest);
         }
     }
 
@@ -344,45 +395,56 @@ impl Effects {
         }
     }
 
-    /// Consumes one received projection; identities never share animation state.
-    /// Entangling Roots on `target`: a cast seen this tick starts its vines once, and the
-    /// zone's aura, which only the caster hears of, holds them for `seconds`.
-    fn roots(
+    /// The zone put `condition` on `target` for `seconds` (#956): it starts, or a refresh holds
+    /// the one already shown that long from now without starting it over.
+    fn afflict(
         &mut self,
+        condition: Condition,
+        ability: u32,
         source: EntityRef,
-        target: Option<EntityRef>,
-        seconds: Option<f64>,
+        target: EntityRef,
+        seconds: f64,
         now: f64,
     ) {
-        let started = self
+        let visual = Visual::Condition(condition);
+        match self
             .effects
             .iter_mut()
-            .find(|e| e.visual == Visual::Roots && e.target == target && e.start == now);
-        match (started, seconds) {
-            (Some(effect), Some(seconds)) => effect.duration = Some(seconds),
-            (Some(_), None) => {}
-            (None, seconds) => {
-                let seconds = seconds.or_else(|| timed(Visual::Roots));
-                self.add(
-                    Visual::Roots,
-                    ENTANGLING_ROOTS,
-                    source,
-                    target,
-                    seconds,
-                    now,
-                );
+            .find(|e| e.visual == visual && e.target == Some(target))
+        {
+            Some(effect) => {
+                effect.source = source;
+                effect.ability = ability;
+                effect.duration = Some(now - effect.start + seconds);
+            }
+            None => self.add(visual, ability, source, Some(target), Some(seconds), now),
+        }
+    }
+
+    /// Each condition `lifted` picks plays its end now: the zone lifted it.
+    fn lift(&mut self, lifted: impl Fn(&Effect) -> bool, now: f64) {
+        for effect in &mut self.effects {
+            if matches!(effect.visual, Visual::Condition(_)) && lifted(effect) {
+                let end = now - effect.start + CONDITION_END_SECONDS;
+                effect.duration = Some(effect.duration.map_or(end, |d| d.min(end)));
             }
         }
     }
 
-    /// A root on `target` broke or ran out: its vines sink now.
-    fn end_roots(&mut self, target: EntityRef, now: f64) {
-        for effect in &mut self.effects {
-            if effect.visual == Visual::Roots && effect.target == Some(target) {
-                let end = now - effect.start + ROOTS_SINK_SECONDS;
-                effect.duration = Some(effect.duration.map_or(end, |d| d.min(end)));
+    /// The root `entity` is held by now, if any: the one shown on it longest.
+    #[must_use]
+    pub fn rooted(&self, entity: EntityRef, now: f64) -> Option<Condition> {
+        self.effects.iter().find_map(|e| match e.visual {
+            Visual::Condition(condition)
+                if condition.roots()
+                    && e.target == Some(entity)
+                    && e.duration
+                        .is_some_and(|d| now - e.start < d - CONDITION_END_SECONDS) =>
+            {
+                Some(condition)
             }
-        }
+            _ => None,
+        })
     }
 
     /// Holds `visual` of `source` for `seconds` more, on `target`: a minion marks one quarry at
@@ -407,6 +469,7 @@ impl Effects {
         }
     }
 
+    /// Consumes one received projection; identities never share animation state.
     pub fn push(&mut self, s: &ZoneSnapshot, now: f64, anchors: &BTreeMap<EntityRef, Anchor>) {
         let session = (s.zone_id.get(), s.viewer_id, s.content_revision);
         if self.session != Some(session) || self.last_tick.is_some_and(|tick| s.tick < tick) {
@@ -519,9 +582,7 @@ impl Effects {
                             },
                         );
                     }
-                    if visual == Some(Visual::Roots) {
-                        self.roots(source, target, None, now);
-                    } else if let Some(visual) = visual
+                    if let Some(visual) = visual
                         && let Some(duration) = timed(visual)
                     {
                         self.add(visual, id, source, target, Some(duration), now);
@@ -646,53 +707,39 @@ impl Effects {
                         now,
                     );
                 }
-                // Every unit Frost Nova roots stays visibly frozen until the zone lifts it (#933).
+                // Corruption, poison and roots (#956) hold on the unit the zone reports them
+                // applied to, as long as it says, and end when it lifts them (#933, #934).
                 ZoneEvent::AuraApplied {
                     source,
                     target,
                     ability,
                     ticks,
-                } if ability.get() == FROST_NOVA => {
-                    self.effects
-                        .retain(|e| !(e.visual == Visual::Frozen && e.target == Some(target)));
-                    let seconds = f64::from(ticks) / f64::from(TICK_HZ);
-                    self.add(
-                        Visual::Frozen,
-                        FROST_NOVA,
-                        source,
-                        Some(target),
-                        Some(seconds),
-                        now,
-                    );
+                } => {
+                    if let Some(condition) = Condition::of(ability) {
+                        let seconds = f64::from(ticks) / f64::from(TICK_HZ);
+                        self.afflict(condition, ability.get(), source, target, seconds, now);
+                    }
                 }
                 ZoneEvent::AuraRemoved {
                     target, ability, ..
-                } if ability.get() == FROST_NOVA => {
-                    self.effects
-                        .retain(|e| !(e.visual == Visual::Frozen && e.target == Some(target)));
+                } => {
+                    if let Some(condition) = Condition::of(ability) {
+                        let visual = Visual::Condition(condition);
+                        self.lift(|e| e.visual == visual && e.target == Some(target), now);
+                    }
                 }
+                // A dead unit sheds its conditions at once; the zone forgets those a dead caster
+                // put on others without a word, so they end too.
                 ZoneEvent::Died { entity, .. } => {
                     self.dead.insert(entity);
                     self.effects.retain(|e| {
                         !matches!(e.visual, Visual::Quarry | Visual::Threatened)
                             || (e.source != entity && e.target != Some(entity))
                     });
-                    self.end_roots(entity, now);
-                }
-                // The zone tells a root's caster how long it holds and when it ends (#934).
-                ZoneEvent::AuraApplied {
-                    source,
-                    target,
-                    ability,
-                    ticks,
-                } if ability.get() == ENTANGLING_ROOTS => {
-                    let seconds = f64::from(ticks) / f64::from(TICK_HZ);
-                    self.roots(source, Some(target), Some(seconds), now);
-                }
-                ZoneEvent::AuraRemoved {
-                    target, ability, ..
-                } if ability.get() == ENTANGLING_ROOTS => {
-                    self.end_roots(target, now);
+                    self.effects.retain(|e| {
+                        !matches!(e.visual, Visual::Condition(_)) || e.target != Some(entity)
+                    });
+                    self.lift(|e| e.source == entity, now);
                 }
                 _ => {}
             }
@@ -1213,72 +1260,144 @@ impl Effects {
                         }
                     }
                 }
-                Visual::Roots => {
+                Visual::Condition(condition) => {
                     if let Some(v) = target {
-                        // Six vines grow out of the ground around the victim's feet and coil
-                        // inward, hold while the root lasts, then sink back as it ends.
-                        let left = e.duration.unwrap_or(age) - age;
-                        let grow = (age / ROOTS_GROW_SECONDS).min(1.)
-                            * (left / ROOTS_SINK_SECONDS).clamp(0., 1.);
-                        for i in 0..6 {
-                            let a = f64::from(i) / 6. * TAU + age * 0.75;
-                            for k in 0..4 {
-                                let h = f64::from(k) / 4.;
-                                if h > grow {
-                                    break;
-                                }
-                                let radius = 0.55 - 0.25 * h;
-                                let turn = a + h * 1.6;
+                        // Full when applied, it wanes toward the aura's end (#956); its end fades
+                        // or sinks once the zone lifts it.
+                        let held = e.duration.unwrap_or(age).max(0.001);
+                        let end = ((held - age) / CONDITION_END_SECONDS).clamp(0., 1.);
+                        let wane = 1. - (1. - CONDITION_WANE) * (age / held).clamp(0., 1.);
+                        let strength = wane * end;
+                        match condition {
+                            Condition::Corruption => {
+                                // A dark shroud at the feet; violet and black wisps spiral up off it.
                                 add(
-                                    &format!("vine-{i}-{k}"),
-                                    Primitive::Box([0.09, 0.32, 0.09]),
-                                    if k == 3 { 0x7fd65a } else { color },
-                                    [
-                                        v.feet[0] + turn.sin() * radius,
-                                        v.feet[1] + 0.16 + h * 1.1,
-                                        v.feet[2] + turn.cos() * radius,
-                                    ],
-                                    qa(1, turn),
-                                    1.,
-                                    false,
+                                    "shroud",
+                                    Primitive::Box([0.7, 0.02, 0.7]),
+                                    CORRUPTION_CORE,
+                                    [v.feet[0], v.feet[1] + 0.03, v.feet[2]],
+                                    qa(1, PI / 4. + age * 0.4),
+                                    (0.5 * strength) as f32,
+                                    true,
                                 );
+                                for i in 0..4 {
+                                    let j = f64::from(i);
+                                    let rise = (age * 0.6 + j / 4.) % 1.;
+                                    let a = j / 4. * TAU + age * 1.2 + rise * 2.;
+                                    let radius = 0.38 * (1. - 0.5 * rise);
+                                    add(
+                                        &format!("wisp-{i}"),
+                                        Primitive::Ball(0.16 * (1. - 0.6 * rise)),
+                                        if i % 2 == 0 {
+                                            CORRUPTION_COLOUR
+                                        } else {
+                                            CORRUPTION_CORE
+                                        },
+                                        [
+                                            v.feet[0] + a.sin() * radius,
+                                            v.feet[1] + 0.3 + rise * 2.,
+                                            v.feet[2] + a.cos() * radius,
+                                        ],
+                                        IQ,
+                                        (0.85 * strength * (1. - 0.7 * rise)) as f32,
+                                        true,
+                                    );
+                                }
                             }
-                        }
-                    }
-                }
-                Visual::Frozen => {
-                    if let Some(v) = target {
-                        // Seven ice spikes lean out of a frost disc around the victim's feet:
-                        // they snap up, glint while the root holds and thin in its last second.
-                        let left = e.duration.map_or(1., |d| d - age);
-                        let rise = (age * 8.).min(1.);
-                        let opacity = (0.75 * left.clamp(0.25, 1.)) as f32;
-                        add(
-                            "frost",
-                            Primitive::Box([0.62, 0.025, 0.62]),
-                            0xd8f4ff,
-                            [v.feet[0], v.feet[1] + 0.03, v.feet[2]],
-                            qa(1, PI / 4.),
-                            opacity * 0.8,
-                            true,
-                        );
-                        for i in 0..7 {
-                            let a = f64::from(i) / 7. * TAU;
-                            let height = 0.45 + 0.2 * f64::from(i % 3);
-                            let glint = 0.5 + 0.5 * (age * 3. + f64::from(i)).sin();
-                            add(
-                                &format!("ice-{i}"),
-                                Primitive::Box([0.08, height, 0.08]),
-                                if glint > 0.85 { 0xffffff } else { color },
-                                [
-                                    v.feet[0] + a.sin() * 0.42,
-                                    v.feet[1] + height * (rise - 0.5),
-                                    v.feet[2] + a.cos() * 0.42,
-                                ],
-                                qm(qa(1, a), qa(0, 0.3)),
-                                opacity,
-                                false,
-                            );
+                            Condition::Poison => {
+                                // Green droplets run off the body into a sickly pool at its feet.
+                                add(
+                                    "pool",
+                                    Primitive::Box([0.55, 0.02, 0.55]),
+                                    POISON_POOL,
+                                    [v.feet[0], v.feet[1] + 0.03, v.feet[2]],
+                                    qa(1, PI / 4.),
+                                    (0.6 * strength) as f32,
+                                    true,
+                                );
+                                let top = v.centre + 0.35;
+                                for i in 0..5 {
+                                    let j = f64::from(i);
+                                    let fall = (age * 1.4 + j * 0.37) % 1.;
+                                    let a = j / 5. * TAU + 0.6;
+                                    add(
+                                        &format!("drip-{i}"),
+                                        Primitive::Ball(0.075),
+                                        POISON_COLOUR,
+                                        [
+                                            v.feet[0] + a.sin() * 0.3,
+                                            top - fall * (top - v.feet[1]),
+                                            v.feet[2] + a.cos() * 0.3,
+                                        ],
+                                        IQ,
+                                        (0.9 * strength) as f32,
+                                        true,
+                                    );
+                                }
+                            }
+                            Condition::Roots => {
+                                // Six vines grow out of the ground around the victim's feet and
+                                // coil inward, hold while the root lasts, then sink back as it ends.
+                                let grow = (age / ROOTS_GROW_SECONDS).min(1.) * end;
+                                for i in 0..6 {
+                                    let a = f64::from(i) / 6. * TAU + age * 0.75;
+                                    for k in 0..4 {
+                                        let h = f64::from(k) / 4.;
+                                        if h > grow {
+                                            break;
+                                        }
+                                        let radius = 0.55 - 0.25 * h;
+                                        let turn = a + h * 1.6;
+                                        add(
+                                            &format!("vine-{i}-{k}"),
+                                            Primitive::Box([0.09, 0.32, 0.09]),
+                                            if k == 3 { 0x7fd65a } else { ROOTS_COLOUR },
+                                            [
+                                                v.feet[0] + turn.sin() * radius,
+                                                v.feet[1] + 0.16 + h * 1.1,
+                                                v.feet[2] + turn.cos() * radius,
+                                            ],
+                                            qa(1, turn),
+                                            (0.55 + 0.45 * wane) as f32,
+                                            false,
+                                        );
+                                    }
+                                }
+                            }
+                            Condition::Frost => {
+                                // Seven ice spikes lean out of a frost disc around the victim's
+                                // feet: they snap up, glint while the root holds, thin toward its
+                                // end and sink once it breaks.
+                                let rise = (age * 8.).min(1.) * end;
+                                let opacity = (0.8 * strength.max(0.25 * end)) as f32;
+                                add(
+                                    "frost",
+                                    Primitive::Box([0.62, 0.025, 0.62]),
+                                    0xd8f4ff,
+                                    [v.feet[0], v.feet[1] + 0.03, v.feet[2]],
+                                    qa(1, PI / 4.),
+                                    opacity * 0.8,
+                                    true,
+                                );
+                                for i in 0..7 {
+                                    let a = f64::from(i) / 7. * TAU;
+                                    let height = 0.45 + 0.2 * f64::from(i % 3);
+                                    let glint = 0.5 + 0.5 * (age * 3. + f64::from(i)).sin();
+                                    add(
+                                        &format!("ice-{i}"),
+                                        Primitive::Box([0.08, height, 0.08]),
+                                        if glint > 0.85 { 0xffffff } else { FROST_COLOUR },
+                                        [
+                                            v.feet[0] + a.sin() * 0.42,
+                                            v.feet[1] + height * (rise - 0.5),
+                                            v.feet[2] + a.cos() * 0.42,
+                                        ],
+                                        qm(qa(1, a), qa(0, 0.3)),
+                                        opacity,
+                                        false,
+                                    );
+                                }
+                            }
                         }
                     }
                 }
