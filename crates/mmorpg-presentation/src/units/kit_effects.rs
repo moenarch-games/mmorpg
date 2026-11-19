@@ -45,10 +45,16 @@ pub const BEAM_SEGMENT: &str = "spell.effects.beam-segment";
 pub const HEAL_MOTES: &str = "spell.effects.heal-motes";
 /// A spent corpse (#935) and its burst's hits.
 pub const CORPSE_SPENT: &str = "spell.effects.impact-shadow";
+/// A root and a freeze at the held unit's feet (#956, asset-tooling #772): each loop holds
+/// while the zone's aura does, and its end plays from the loop's resting pose once it breaks.
+pub const ROOTS_HOLD: &str = "spell.effects.roots-hold-loop";
+pub const ROOTS_HOLD_END: &str = "spell.effects.roots-hold-end";
+pub const FROST_HOLD: &str = "spell.effects.frost-hold-loop";
+pub const FROST_HOLD_END: &str = "spell.effects.frost-hold-end";
 
 /// Every entry the clients load: its key, its clip and the clip's length in seconds (the
 /// bundle descriptors'); a shot has no clip.
-pub const ENTRIES: [(&str, Option<&str>, f64); 23] = [
+pub const ENTRIES: [(&str, Option<&str>, f64); 27] = [
     (ARC_CUT, Some("Play"), 0.18),
     (ARC_HEAVY, Some("Play"), 0.25),
     (CLEAVE_SWEEP, Some("Play"), 0.3),
@@ -72,6 +78,10 @@ pub const ENTRIES: [(&str, Option<&str>, f64); 23] = [
     (FROST_NOVA, Some("Play"), 0.5),
     (BEAM_SEGMENT, Some("Loop"), 0.24),
     (HEAL_MOTES, Some("Play"), 0.8),
+    (ROOTS_HOLD, Some("Loop"), 1.2),
+    (ROOTS_HOLD_END, Some("Play"), 0.35),
+    (FROST_HOLD, Some("Loop"), 1.),
+    (FROST_HOLD_END, Some("Play"), 0.35),
 ];
 
 /// The arcs' swing radii (the descriptor's `swingRadius`): the contact lies this far ahead of
@@ -94,6 +104,7 @@ const LATE: f64 = 1.;
 /// Offsets that keep the ids of shots and beams apart from the pooled effects'.
 const SHOT_IDS: u64 = 1 << 48;
 const BEAM_IDS: u64 = 2 << 48;
+const HOLD_IDS: u64 = 3 << 48;
 
 /// One effect to draw this frame.
 #[derive(Clone, Debug, PartialEq)]
@@ -582,6 +593,33 @@ impl KitEffects {
             clip: Some("Loop"),
             time: now as f32,
             tint: Some(tint),
+        }
+    }
+
+    /// Effect `id`'s root or freeze (#956) at `feet`, facing `yaw`: its hold loop `age`
+    /// seconds in while the zone holds the unit, or its end `ended` seconds in once it broke.
+    #[must_use]
+    pub fn hold(id: u64, frost: bool, feet: V, yaw: f64, age: f64, ended: Option<f64>) -> Instance {
+        let (key, time) = match (frost, ended) {
+            (false, None) => (ROOTS_HOLD, age),
+            (true, None) => (FROST_HOLD, age),
+            (false, Some(ended)) => (ROOTS_HOLD_END, ended),
+            (true, Some(ended)) => (FROST_HOLD_END, ended),
+        };
+        #[allow(clippy::cast_possible_truncation)]
+        Instance {
+            id: HOLD_IDS + id * 2 + u64::from(ended.is_some()),
+            key,
+            model: model(
+                Frame {
+                    p: feet,
+                    q: heading(yaw),
+                },
+                [1.; 3],
+            ),
+            clip: entry(key).0,
+            time: time as f32,
+            tint: None,
         }
     }
 }
