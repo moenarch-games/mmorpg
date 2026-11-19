@@ -94,11 +94,12 @@ fn carried(
     resident: Option<Resident>,
     class: Option<ClassChoice>,
     weapon: Option<mmorpg_core::WeaponFamily>,
+    named: Option<mmorpg_core::NamedWeapon>,
 ) -> Option<Loadout> {
     match resident {
         Some(resident) => resident.loadout(),
         None if matches!(entity, EntityRef::Player(_)) => {
-            class.map(|c| Loadout::of_class(c.class).holding(weapon))
+            class.map(|c| Loadout::of_class(c.class).holding(weapon, named))
         }
         None => None,
     }
@@ -1133,7 +1134,13 @@ impl UnitPresenter {
         Some((
             kind,
             class,
-            carried(entity, resident, choice, record.flags.weapon),
+            carried(
+                entity,
+                resident,
+                choice,
+                record.flags.weapon,
+                record.flags.named_weapon,
+            ),
         ))
     }
 
@@ -1882,7 +1889,13 @@ impl UnitPresenter {
                 } else {
                     ClassChoice::from_appearance(unit.record.appearance)
                 };
-                let loadout = carried(entity, resident, class, unit.record.flags.weapon);
+                let loadout = carried(
+                    entity,
+                    resident,
+                    class,
+                    unit.record.flags.weapon,
+                    unit.record.flags.named_weapon,
+                );
                 if viewer {
                     let wind_up = self.preparation.map(|preparation| {
                         let class = snapshot.viewer.class.map(|choice| choice.class);

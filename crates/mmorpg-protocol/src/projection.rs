@@ -72,6 +72,10 @@ const DRAWN_BIT: u32 = 0x8000_0000;
 /// none (#914).
 const WEAPON_SHIFT: u32 = 24;
 const WEAPON_MASK: u32 = 0x0700_0000;
+/// The appearance word's bits 27–30 on a player record: 1 + its named weapon's code, 0 for none
+/// (#918).
+const NAMED_SHIFT: u32 = 27;
+const NAMED_MASK: u32 = 0x7800_0000;
 /// Records that fit the budget without events or sheets: (1,077 − 112) / 29 = 33.
 pub const MAX_WIRE_ENTITIES: usize =
     (MAX_PLAYER_PROJECTION_BYTES - PLAYER_SNAPSHOT_FIXED_BYTES) / ENTITY_RECORD_BYTES;
@@ -495,9 +499,12 @@ fn decode_projectile(
 fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), ProtocolError> {
     payload.push(entity_kind_code(entity.kind));
     payload.extend_from_slice(&entity.id.to_be_bytes());
-    if (entity.kind == EntityKind::Player && entity.appearance & (DRAWN_BIT | WEAPON_MASK) != 0)
+    if (entity.kind == EntityKind::Player
+        && entity.appearance & (DRAWN_BIT | WEAPON_MASK | NAMED_MASK) != 0)
         || (entity.kind != EntityKind::Player
-            && (entity.flags.weapon_drawn || entity.flags.weapon.is_some()))
+            && (entity.flags.weapon_drawn
+                || entity.flags.weapon.is_some()
+                || entity.flags.named_weapon.is_some()))
     {
         return Err(ProtocolError::new("invalid drawn weapon appearance"));
     }
@@ -505,11 +512,16 @@ fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), P
         .flags
         .weapon
         .map_or(0, |family| (u32::from(family.code()) + 1) << WEAPON_SHIFT);
+    let named = entity
+        .flags
+        .named_weapon
+        .map_or(0, |named| (u32::from(named.code()) + 1) << NAMED_SHIFT);
     // The player-only high bits are free in the appearance word. Threat remains
     // its own flag; NPC and creature appearance IDs are untouched.
     payload.extend_from_slice(
         &(entity.appearance
             | weapon
+            | named
             | if entity.flags.weapon_drawn {
                 DRAWN_BIT
             } else {
@@ -1013,8 +1025,18 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
                 .ok_or_else(|| ProtocolError::new("invalid weapon family"))?,
         ),
     };
+    let named_weapon = match (encoded_appearance & NAMED_MASK) >> NAMED_SHIFT {
+        _ if kind != EntityKind::Player => None,
+        0 => None,
+        code => Some(
+            u8::try_from(code - 1)
+                .ok()
+                .and_then(mmorpg_core::NamedWeapon::from_code)
+                .ok_or_else(|| ProtocolError::new("invalid named weapon"))?,
+        ),
+    };
     let appearance = if kind == EntityKind::Player {
-        encoded_appearance & !(DRAWN_BIT | WEAPON_MASK)
+        encoded_appearance & !(DRAWN_BIT | WEAPON_MASK | NAMED_MASK)
     } else {
         encoded_appearance
     };
@@ -1112,6 +1134,7 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
             in_combat,
             weapon_drawn,
             weapon,
+            named_weapon,
             hostile,
             attackable,
             tapped_by_other,
@@ -1465,6 +1488,7 @@ pub(crate) mod tests {
                         in_combat: true,
                         weapon_drawn: false,
                         weapon: None,
+                        named_weapon: None,
                         hostile: true,
                         attackable: true,
                         tapped_by_other: false,
@@ -2267,6 +2291,7 @@ pub(crate) mod tests {
                         in_combat: true,
                         weapon_drawn: false,
                         weapon: None,
+                        named_weapon: None,
                         hostile: true,
                         attackable: true,
                         tapped_by_other: kind == EntityKind::Creature,
@@ -2653,6 +2678,7 @@ mod posture_tests {
             let mut player = record(EntityKind::Player, PostureView::Free);
             player.flags.weapon_drawn = true;
             player.flags.weapon = Some(family);
+            player.flags.named_weapon = Some(mmorpg_core::NamedWeapon::GarricksCleaver);
             assert_eq!(round_trip(&player).unwrap(), player);
         }
         let mut creature = record(EntityKind::Creature, PostureView::Free);

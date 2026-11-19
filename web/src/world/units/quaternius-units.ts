@@ -522,6 +522,8 @@ const LOADOUT_ITEMS: Readonly<Record<CarriedLoadout, readonly { key: string; soc
   "staff.gnarled": [{ key: "equipment.staff.gnarled", socket: "hand_r.staff" }],
   // A player of the spear family (#914).
   spear: [{ key: "equipment.spear.leaf", socket: "hand_r.staff" }],
+  // Garrick Redbrand's named cleaver (#918, asset-tooling #761).
+  "sword.garricks-cleaver": [{ key: "equipment.sword.garricks-cleaver", socket: "hand_r.weapon" }],
   // The crossbow and the arrow standing in for its bolt (#607); `poseCrossbow` moves both.
   crossbow: [
     { key: "equipment.crossbow", socket: "hand_r.crossbow" },
