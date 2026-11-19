@@ -372,6 +372,8 @@ fn spawns_populate_their_subzones() {
         ((greyhaven_vale::vale::HOLLOWPINE_REACH, "Timber Wolf"), 4),
         ((greyhaven_vale::vale::HOLLOWPINE_REACH, "Young Boar"), 2),
         ((greyhaven_vale::vale::EASTWATER_FEN, "Mirefin Lurker"), 3),
+        // The Eastwater Fen wolf pack, a Ranger firing-line fight (#932).
+        ((greyhaven_vale::vale::EASTWATER_FEN, "Timber Wolf"), 3),
         // The farmland hamlets' rats, boars and wolves (#859).
         (
             (greyhaven_vale::farmland::FARMLAND_AND_HAMLETS, "Grain Rat"),

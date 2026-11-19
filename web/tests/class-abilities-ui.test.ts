@@ -6,7 +6,7 @@ import { actionBar, cooldownSeconds, formatRemaining, sweepDegrees, tooltipText 
 import { auraLabel, auraTimer, sortAuras } from "../src/world/units/aura-display";
 import { errorText } from "../src/world/units/combat-hud";
 import { castBarView } from "../src/world/units/cast-bar";
-import { combatTexts, damageIsPeriodic, viewerInterrupted } from "../src/world/units/combat-text";
+import { PIERCING_SHOT_ABILITY, combatTexts, damageIsPeriodic, pierceShot, viewerInterrupted } from "../src/world/units/combat-text";
 import { HEALTHY_VIEWER, NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots";
 
 /** Ticks of the 30 Hz rate these cases were written against, at `TICK_HZ`. */
@@ -192,6 +192,18 @@ describe("combat text", () => {
       { kind: "miss", source: wolf, target: me },
     ];
     expect(combatTexts(snapshot({ events }))).toEqual([{ kind: "taken", text: "-6" }, { kind: "miss", text: "Miss" }]);
+  });
+
+  test("a Piercing Shot counts the units it strikes until the viewer's next attack (#932)", () => {
+    const loosed: ZoneEvent = { kind: "ability-used", source: me, target: null, ability: PIERCING_SHOT_ABILITY };
+    let shot = pierceShot(snapshot({ tick: 10n, events: [loosed] }), null);
+    expect(shot).toEqual({ loosed: 10n, struck: 0 });
+    shot = pierceShot(snapshot({ tick: 13n, events: [dealt(20)] }), shot);
+    shot = pierceShot(snapshot({ tick: 16n, events: [dealt(14)] }), shot);
+    expect(shot?.struck).toBe(2);
+    // The viewer's next swing or ability ends the count; others' damage never counts.
+    expect(pierceShot(snapshot({ tick: 19n, events: [{ kind: "attack-performed", source: me, target: wolf }, dealt(5)] }), shot)).toBeNull();
+    expect(pierceShot(snapshot({ tick: 19n, events: [{ kind: "damage-dealt", source: wolf, target: me, amount: 3, critical: false }] }), shot)).toEqual(shot);
   });
 });
 

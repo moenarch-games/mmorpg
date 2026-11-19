@@ -30,6 +30,7 @@ pub mod dens;
 pub mod design;
 pub mod dressing;
 pub mod farmland;
+pub mod fen_pack;
 pub mod fort;
 pub mod hamlet_creatures;
 pub mod highland_bandits;
