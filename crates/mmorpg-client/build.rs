@@ -332,6 +332,10 @@ fn main() {
         "greyhaven-meadow-descriptor",
         "meadow_descriptor.rs",
     );
+    // The Wolfrun Den's mouth, bones and bedding (#963, asset-tooling#757), and their descriptor.
+    let wolf_den = manifest_dir.join("../../web/public/scenery/wolf-den.kit");
+    static_bundle("wolf_den_bundle.rs", &wolf_den, None, true);
+    descriptor(&wolf_den, "wolf-den-descriptor", "wolf_den_descriptor.rs");
     // Greyhaven's ground layer materials (#525).
     let terrain = manifest_dir.join("../../web/public/scenery/greyhaven.terrain");
     static_bundle("terrain_bundle.rs", &terrain, None, false);

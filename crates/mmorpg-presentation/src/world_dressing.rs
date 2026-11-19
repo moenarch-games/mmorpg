@@ -30,7 +30,7 @@ use crate::{
 };
 
 /// Greyhaven Vale's dressing files.
-const GREYHAVEN: [&str; 9] = [
+const GREYHAVEN: [&str; 10] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/vale.json"
@@ -74,11 +74,16 @@ const GREYHAVEN: [&str; 9] = [
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/props.json"
     )),
+    // The Wolfrun Den's mouth, bedding and bones (#963).
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../content/greyhaven/dressing/wolfrun-den.json"
+    )),
 ];
 
 /// Every kit that draws dressing, by its asset keys' prefix, with the static-scene fallback
 /// ([`Kit`]) it hides while drawn, if it has one.
-pub const KITS: [(&str, Option<Kit>); 9] = [
+pub const KITS: [(&str, Option<Kit>); 10] = [
     ("greyhaven.nature.", Some(Kit::Nature)),
     ("limestone-rocks.kit.", Some(Kit::Nature)),
     ("crag.kit.", Some(Kit::Crag)),
@@ -89,6 +94,16 @@ pub const KITS: [(&str, Option<Kit>); 9] = [
     ("shrine.kit.", None),
     ("greyhaven-meadow.kit.", None),
     ("river-stones.kit.", None),
+    // The Wolfrun Den (#963): its kit is drawn wherever the den is, so its generated collider
+    // shows no stand-in ([`own_collider`]).
+    ("wolf-den.kit.", None),
+];
+
+/// The wolf den kit's entries (asset-tooling#757), drawn through [`kit_placements`].
+pub const WOLF_DEN_ENTRIES: [&str; 3] = [
+    "wolf-den.kit.den-mouth",
+    "wolf-den.kit.bone-scatter",
+    "wolf-den.kit.bedding-patch",
 ];
 
 /// The dressing format's version.
@@ -305,6 +320,43 @@ pub fn ground_details(s: &Scenery, entries: &'static [&'static str]) -> Vec<Plac
             }
         })
         .collect()
+}
+
+/// The placements of the supplied bundle `entries` on `s` that stand at their authored height,
+/// not as ground detail: the Wolfrun Den's pieces (#963).
+#[must_use]
+pub fn kit_placements(s: &Scenery, entries: &'static [&'static str]) -> Vec<Placement> {
+    placed(s)
+        .iter()
+        .filter(|p| !p.ground_detail)
+        .filter_map(|p| {
+            let entry = entries.iter().copied().find(|entry| *entry == p.asset)?;
+            Some(Placement {
+                entry,
+                model: matrix(p.frame()),
+                scale: p
+                    .scale
+                    .into_iter()
+                    .map(|permille| f64::from(permille) / 1_000.)
+                    .fold(0., f64::max),
+                cull: p.cull.unwrap_or(Cull::Far),
+            })
+        })
+        .collect()
+}
+
+/// Whether collider `id` on `s` is generated from a placement whose kit has no stand-in
+/// ([`KITS`]): its art is always what shows, so the collider's own surface is never drawn.
+#[must_use]
+pub fn own_collider(s: &Scenery, id: u32) -> bool {
+    static OWN: LazyLock<BTreeSet<u32>> = LazyLock::new(|| {
+        committed()
+            .iter()
+            .filter(|placed| placed.kit().is_none())
+            .filter_map(|placed| placed.collider)
+            .collect()
+    });
+    s.greyhaven() && OWN.contains(&id)
 }
 
 /// The distinct assets `kit` draws on `s`, sorted.
