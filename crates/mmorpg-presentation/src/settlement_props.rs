@@ -19,7 +19,7 @@ use crate::{
 
 /// The bundle entries the clients draw, sorted; [`entries`] derives the same list from the
 /// square's content.
-pub const ENTRIES: [&str; 73] = [
+pub const ENTRIES: [&str; 74] = [
     "settlement.props.apple-crate",
     "settlement.props.banner-village",
     "settlement.props.bar-counter",
@@ -77,6 +77,7 @@ pub const ENTRIES: [&str; 73] = [
     "settlement.props.shop-sign-smith",
     "settlement.props.shop-sign-tailor",
     "settlement.props.signpost",
+    "settlement.props.smith-bench",
     "settlement.props.spit-roast",
     "settlement.props.stall",
     "settlement.props.stall-awning",
@@ -235,6 +236,12 @@ pub(crate) fn fallback(entry: &str) -> Vec<([f64; 3], [f64; 3], u32)> {
             ([0., 0.565, -0.175], [0.9, 0.565, 0.425], IRON),
             ([0., 1.865, -0.34], [0.7, 0.735, 0.26], IRON),
         ]),
+        // The smith's bench (#917): its anvil, quench bucket and tool rack.
+        "settlement.props.smith-bench" => Some(vec![
+            ([0.075, 0.4, 0.], [0.345, 0.4, 0.27], IRON),
+            ([0.58, 0.2, 0.1], [0.21, 0.2, 0.21], WOOD),
+            ([-0.87, 0.555, -0.12], [0.43, 0.555, 0.22], WOOD),
+        ]),
         _ => None,
     };
     if let Some(boxes) = furniture {
@@ -295,8 +302,8 @@ mod tests {
         // The market square's ten, the region's footbridge (#828), the cottages' furniture
         // (#843), and the villages' clutter and the wells and stones standing in over the
         // structures (#851), which draw themselves while the props are not drawn, and the second
-        // batch (#891).
-        assert_eq!(keys.len(), 73, "{keys:?}");
+        // batch (#891), and the smith's bench (#917).
+        assert_eq!(keys.len(), 74, "{keys:?}");
         let stand_ins = ["settlement.props.well", "settlement.props.standing-stone"];
         assert!(
             keys.iter()

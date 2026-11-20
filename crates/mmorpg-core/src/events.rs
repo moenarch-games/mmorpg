@@ -125,6 +125,8 @@ pub enum ErrorCode {
     NoLanding,
     /// The unit is being moved or is immune to forced movement (#294).
     MovementImmune,
+    /// The bag lacks a recipe's materials (#917).
+    MissingMaterials,
 }
 
 /// One feedback event addressed to a player.

@@ -657,6 +657,10 @@ impl App {
                     // or braces the barn in reach (#532), even with the lookout selected.
                     self.send_interaction(command);
                     return true;
+                } else if let Some(command) = self.presentation.reachable_skin() {
+                    // Skins the selected boar corpse in reach (#917).
+                    self.send_interaction(command);
+                    return true;
                 } else if let Some(EntityRef::Npc(npc)) =
                     self.presentation.latest().and_then(|s| s.viewer.target)
                 {
@@ -679,6 +683,10 @@ impl App {
                     return true;
                 } else if let Some(command) = self.presentation.reachable_raid_aid() {
                     // Or helps the night raid's aftermath in reach (#531).
+                    self.send_interaction(command);
+                    return true;
+                } else if let Some(command) = self.presentation.reachable_gather() {
+                    // Or mines the full ore vein in reach (#917).
                     self.send_interaction(command);
                     return true;
                 }

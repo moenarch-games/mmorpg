@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "area": "gatherables",
+  "placements": [
+    {"id":"basin-ore-vein-1","asset":"gatherables.kit.ore-vein","position":[-3150,0,-4300],"yaw":12000,"scale":[1000,1000,1000],"collider":65180},
+    {"id":"basin-ore-vein-1-spent","asset":"gatherables.kit.ore-vein-depleted","position":[-3150,0,-4300],"yaw":12000,"scale":[1000,1000,1000]},
+    {"id":"basin-ore-vein-2","asset":"gatherables.kit.ore-vein","position":[-3900,0,-4650],"yaw":40000,"scale":[1000,1000,1000],"collider":65181},
+    {"id":"basin-ore-vein-2-spent","asset":"gatherables.kit.ore-vein-depleted","position":[-3900,0,-4650],"yaw":40000,"scale":[1000,1000,1000]},
+    {"id":"basin-ore-vein-3","asset":"gatherables.kit.ore-vein","position":[-4450,0,-3500],"yaw":56000,"scale":[1000,1000,1000],"collider":65182},
+    {"id":"basin-ore-vein-3-spent","asset":"gatherables.kit.ore-vein-depleted","position":[-4450,0,-3500],"yaw":56000,"scale":[1000,1000,1000]},
+    {"id":"outpost-smith-bench","asset":"settlement.props.smith-bench","position":[2450,0,-380],"yaw":0,"scale":[1000,1000,1000],"collider":65183}
+  ]
+}

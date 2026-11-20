@@ -26,7 +26,7 @@ export function catalogJson(revision = "3"): Record<string, unknown> {
       { id: 1, name: "ranger", resource: "focus" },
       { id: 2, name: "arcanist", resource: "mana" },
     ],
-    vendors: [{ npc: 3, offers: [{ item: 2, price: 9 }] }],
+    vendors: [{ npc: 3, offers: [{ item: 2, price: 9, materials: [] }] }],
     quests: [
       {
         id: 1, name: "Trouble in the Woods", text: "Slay six wolves.", giver: 1, ender: 1, prerequisite: null,
