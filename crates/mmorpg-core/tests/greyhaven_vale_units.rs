@@ -328,7 +328,8 @@ fn spawns_populate_their_subzones() {
     let mut counts: BTreeMap<(AreaId, &str), usize> = BTreeMap::new();
     for spawn in content.creature_spawns() {
         // Night raiders (#530) stand on the farm's outskirts only for a committed incident and
-        // march rather than wander; `night_raid` covers them.
+        // march rather than wander; `night_raid` covers them, and `hunt_outing` the hunt's bear
+        // (#991).
         if content.is_raider(spawn.id) || content.is_hunt_beast(spawn.id) {
             continue;
         }
@@ -475,8 +476,7 @@ fn spawns_populate_their_subzones() {
         ((wilds::SOUTHWOOD, "Young Boar"), 6),
         // Brown Bears (#889) in the deep woods.
         ((wilds::WESTMERE_WOODS, "Brown Bear"), 2),
-        // The deep woods' bear and Trapper Sela's hunting bear (#991).
-        ((wilds::SOUTHWOOD, "Brown Bear"), 2),
+        ((wilds::SOUTHWOOD, "Brown Bear"), 1),
         ((wilds::CROWN_FOOTHILLS, "Timber Wolf"), 6),
         ((wilds::CROWN_FOOTHILLS, "Hill Ogre"), 1),
         // The Rimewood scouts (#933), an Arcanist's group-control fight,
@@ -711,8 +711,9 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
         .iter()
         .zip(content.creature_spawns())
     {
-        // Raiders and den packs (#912) keep their own ranges.
+        // Raiders, the hunt's bear (#991) and den packs (#912) keep their own ranges.
         if content.is_raider(spawn.id)
+            || content.is_hunt_beast(spawn.id)
             || content
                 .dens()
                 .iter()
