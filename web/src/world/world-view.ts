@@ -16,6 +16,7 @@ import { DebugOverlay, FrameRate } from "./debug-overlay";
 import { ENVIRONMENT, DAY_SECONDS, ZONE_DAY_TICKS, ZONE_START_TIME, environmentAt, zoneSkySeconds } from "./environment";
 import { Minimap, dispositionOf, type MinimapElements, type MinimapUnit } from "./minimap";
 import { MinimapPresenter } from "./minimap-presenter";
+import { Exploration, minimapExploration } from "./exploration";
 import type { MapSelf, WorldMap } from "./world-map";
 import { MovementOutbox, type MovementInput } from "./movement-outbox";
 import {
@@ -497,6 +498,8 @@ export class WorldView {
   #presentationFingerprint: string | null = null;
   #reliefAt: ((x: number, z: number) => number) | null = null;
   readonly #minimap: MinimapPresenter;
+  /** The exploration map (#983) both maps draw, from the viewer's discovered areas and quest sheet. */
+  readonly #exploration = new Exploration();
   readonly #worldMapHost: HTMLElement;
   /** The world map, loaded with the Maps library on the first M so the game starts without it. */
   #worldMap: WorldMap | null = null;
@@ -1237,6 +1240,7 @@ export class WorldView {
     this.#loot.reset(projection);
     this.#vendor.reset(projection);
     this.#quests.reset(projection);
+    this.#exploration.reset();
     this.#chat.reset();
     this.#party.reset();
     this.#depthsLoot.reset();
@@ -1664,7 +1668,7 @@ export class WorldView {
     this.#worldMapLoading = true;
     const self = (): MapSelf | null => this.#lastSelf && { x: this.#lastSelf.x, z: this.#lastSelf.z, yaw: this.#lastSelf.facing };
     void import("./world-map").then(({ WorldMap }) => {
-      this.#worldMap = new WorldMap(this.#worldMapHost, self);
+      this.#worldMap = new WorldMap(this.#worldMapHost, self, () => (this.#arena ? null : this.#exploration.map));
       this.#worldMap.open();
     }).finally(() => { this.#worldMapLoading = false; });
   }
@@ -2043,7 +2047,9 @@ export class WorldView {
     const disturbance = area && (projection.raid?.phase ?? 0) > 0
       ? { x: area.x / unitsPerMetre, z: area.z / unitsPerMetre, radius: area.radius / unitsPerMetre }
       : null;
-    this.#minimap.draw({ x: self.x, z: self.z }, this.#orbit.heading, self.facing, others, disturbance);
+    // Discovered landmarks and approximate quest areas (#983); the arena has neither.
+    const exploration = this.#arena ? null : minimapExploration(this.#exploration.update(projection), self);
+    this.#minimap.draw({ x: self.x, z: self.z }, this.#orbit.heading, self.facing, others, disturbance, exploration);
     this.#frameRate.sample(now);
     this.#overlay.update({
       fps: this.#frameRate.fps,
