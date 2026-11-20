@@ -62,8 +62,8 @@ pub const EVENT_RECORD_BYTES: usize = 1 + 4 + 2 * ENTITY_REF_BYTES + 2;
 /// facing, level, health percent and flags. Only creatures are tapped, evade or are lootable,
 /// so on a player record those three flag bits carry its [`mmorpg_core::TraversalView`] code
 /// instead (#490, #516, #500): tapped is bit 0, evading bit 1 and lootable bit 2.
-/// On an NPC record the tapped and evading bits carry its posture code instead, and on a
-/// player record the health byte's high bit says it sits (#619).
+/// On an NPC record the tapped, evading and lootable bits carry its posture code instead (#619,
+/// #991), and on a player record the health byte's high bit says it sits (#619).
 pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 4 + 12 + 3 + 2 + 1 + 1 + 1;
 /// The health byte's high bit on a player record: the player sits (#619).
 const SITTING_BIT: u8 = 0x80;
@@ -570,7 +570,7 @@ fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), P
             ));
         }
         let code = posture.code();
-        (code & 1 != 0, code & 2 != 0, false)
+        (code & 1 != 0, code & 2 != 0, code & 4 != 0)
     } else if entity.kind == EntityKind::Player {
         if flags.tapped_by_other || flags.evading || flags.lootable {
             return Err(ProtocolError::new(
@@ -1079,9 +1079,12 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
         targets_viewer,
         lootable,
     ] = read_flags(read_u8(payload, offset)?)?;
-    // An NPC is never tapped or evading: those bits carry its posture code (#619).
+    // An NPC is never tapped, evading or lootable: those bits carry its posture code (#619,
+    // #991).
     let npc_posture = (kind == EntityKind::Npc).then(|| {
-        mmorpg_core::PostureView::from_code(u8::from(tapped_by_other) | u8::from(evading) << 1)
+        mmorpg_core::PostureView::from_code(
+            u8::from(tapped_by_other) | u8::from(evading) << 1 | u8::from(lootable) << 2,
+        )
     });
     let posture = match npc_posture {
         Some(Some(posture)) => posture,
@@ -1092,10 +1095,10 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
     if dead && posture != mmorpg_core::PostureView::Free {
         return Err(ProtocolError::new("a dead unit does not sit"));
     }
-    let (tapped_by_other, evading) = if kind == EntityKind::Npc {
-        (false, false)
+    let (tapped_by_other, evading, lootable) = if kind == EntityKind::Npc {
+        (false, false, false)
     } else {
-        (tapped_by_other, evading)
+        (tapped_by_other, evading, lootable)
     };
     // On a player record the tapped, evading and lootable bits carry its traversal code
     // (#490, #516, #500).
@@ -2714,6 +2717,9 @@ mod posture_tests {
             PostureView::Sitting,
             PostureView::Asleep,
             PostureView::Waking,
+            PostureView::Hunting,
+            PostureView::Carrying,
+            PostureView::Hurt,
         ] {
             let npc = record(EntityKind::Npc, posture);
             assert_eq!(round_trip(&npc).unwrap(), npc);
