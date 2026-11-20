@@ -891,7 +891,7 @@ fn decode_projection(
         .map(|received| crate::sheet::decode_world_sheet(&received.bytes))
         .transpose()?
         .unwrap_or_default();
-    let waystones = sheet_bytes(Sheet::Waystones)
+    let (waystones, discoveries) = sheet_bytes(Sheet::Waystones)
         .map(|received| crate::sheet::decode_waystone_sheet(&received.bytes))
         .transpose()?
         .unwrap_or_default();
@@ -956,6 +956,7 @@ fn decode_projection(
             breath,
             reckoning,
             waystones,
+            discoveries,
         },
         cooldowns: abilities.cooldowns,
         auras: abilities.auras,
@@ -1340,6 +1341,7 @@ pub(crate) mod tests {
                 // Harm stored against the target (#936).
                 reckoning: 123,
                 waystones: mmorpg_core::WaystoneSet::EMPTY,
+                discoveries: std::collections::BTreeSet::new(),
             },
             cooldowns: vec![
                 Cooldown {
@@ -1634,9 +1636,9 @@ pub(crate) mod tests {
     /// one spent vein (#917).
     const WORLD: usize = TARGET_AURAS + 1 + 9;
     const WORLD_BYTES: usize = (2 + 2 * 5) + (2 + 2 * 5) + (4 + 2 + 2 + 4) + (2 + 4);
-    /// The waystone sheet (#882): none unlocked.
+    /// The waystone sheet (#882): none unlocked and no area discovered (#983).
     const WAYSTONES: usize = WORLD + WORLD_BYTES;
-    const SHEETS_END: usize = WAYSTONES + 2;
+    const SHEETS_END: usize = WAYSTONES + 2 + 2;
     const SUMMONED: usize = 1 + 2 * SUMMONED_RECORD_BYTES;
     const TRAPS: usize = 1 + TRAP_RECORD_BYTES;
     const EVENTS: usize = SHEETS_END + SUMMONED + TRAPS;
@@ -1658,6 +1660,7 @@ pub(crate) mod tests {
         + 2 * 6
         + 2 * (1 + 9)
         + WORLD_BYTES
+        + 2
         + 2;
 
     #[test]
@@ -2391,6 +2394,7 @@ pub(crate) mod tests {
                 breath: mmorpg_core::water::BREATH_MAX_TICKS,
                 reckoning: 0,
                 waystones: mmorpg_core::WaystoneSet::EMPTY,
+                discoveries: std::collections::BTreeSet::new(),
             },
             cooldowns: Vec::new(),
             auras: Vec::new(),
@@ -2439,7 +2443,7 @@ pub(crate) mod tests {
         assert_eq!(packed.packed_entities, 32);
         assert_eq!(
             packed.payload.len(),
-            PLAYER_SNAPSHOT_FIXED_BYTES + 18 + 32 * ENTITY_RECORD_BYTES
+            PLAYER_SNAPSHOT_FIXED_BYTES + 20 + 32 * ENTITY_RECORD_BYTES
         );
         let mut holder = SnapshotDecoder::new();
         holder.decode(&packed.payload).unwrap();

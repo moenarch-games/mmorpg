@@ -111,6 +111,7 @@ pub fn exhaustive_projection(
             // Only Clerics store harm (#936).
             reckoning: 0,
             waystones: observer.waystones.clone(),
+            discoveries: observer.discoveries.clone(),
         },
         cooldowns: Vec::new(),
         auras: Vec::new(),

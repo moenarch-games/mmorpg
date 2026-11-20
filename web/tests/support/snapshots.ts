@@ -20,6 +20,7 @@ export const HEALTHY_VIEWER: ViewerState = {
   breath: wireCatalog().breathMaxTicks,
   reckoning: 0,
   waystones: [],
+  discoveries: [],
 };
 
 /** Nothing equipped. */

@@ -154,6 +154,8 @@ pub struct ViewerState {
     pub breath: u16,
     /// Waystones the viewer unlocked (#145).
     pub waystones: crate::WaystoneSet,
+    /// Named areas the viewer discovered (#916), for the exploration map (#983).
+    pub discoveries: std::collections::BTreeSet<crate::AreaId>,
     /// The harm a Divine Reckoning would draw on against the viewer's target (#936): 0 without
     /// a creature target or stored harm.
     pub reckoning: u16,
@@ -327,6 +329,7 @@ impl ZoneSimulation {
                     combo: self.combo_phase(viewer),
                     breath: viewer.breath.remaining,
                     waystones: viewer.waystones.clone(),
+                    discoveries: viewer.discoveries.clone(),
                     reckoning: self.harm_against(player_id, viewer.target),
                 },
                 cooldowns: viewer.cooldowns.clone(),
