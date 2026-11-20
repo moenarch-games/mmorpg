@@ -1037,14 +1037,17 @@ impl ZoneSimulation {
         let Some((target, victim)) = self.creature_victim(creature_id, None) else {
             return Ok(());
         };
-        if !self.creature_reaches(creature_id, target, 0)? {
+        // A pouncer (#989) begins from a leap beyond its reach.
+        let pounces = template.family.pounces();
+        let leap = if pounces { crate::POUNCE_LEAP_UNITS } else { 0 };
+        if !self.creature_reaches(creature_id, target, leap)? {
             return Ok(());
         }
         let source = EntityRef::Creature(creature_id);
         // A beast winds up one of its two attacks first (#889): the heavy one in
-        // HEAVY_ATTACK_ODDS, drawn from its own stream.
+        // HEAVY_ATTACK_ODDS, drawn from its own stream. A pouncer has only its pounce.
         if crate::contact_ticks(template.family, crate::CreatureAttack::Quick).is_some() {
-            let heavy = self.stream(source).below(crate::HEAVY_ATTACK_ODDS) == 0;
+            let heavy = !pounces && self.stream(source).below(crate::HEAVY_ATTACK_ODDS) == 0;
             let attack = if heavy {
                 crate::CreatureAttack::Heavy
             } else {

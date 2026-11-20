@@ -129,7 +129,9 @@ pub use creature::{
     MAX_THREAT_ENTRIES, WANDER_WAIT_TICKS, WANDER_WALK_TIMEOUT_TICKS,
 };
 pub use creature_attack::{
-    CREATURE_ATTACK_SLACK_UNITS, CreatureAttack, HEAVY_ATTACK_ODDS, PendingAttack, contact_ticks,
+    CREATURE_ATTACK_SLACK_UNITS, CreatureAttack, HEAVY_ATTACK_ODDS,
+    POUNCE_LEAP_SPEED_SUBUNITS_PER_TICK, POUNCE_LEAP_TICKS, POUNCE_LEAP_UNITS,
+    POUNCE_RECOVER_TICKS, PendingAttack, contact_ticks,
 };
 pub use den::{DEN_LEG_TICKS, FLEE_RADIUS_UNITS, HUNT_RADIUS_UNITS, WildlifeDen};
 pub use depths::{
