@@ -172,7 +172,8 @@ pub const fn error_code(code: ErrorCode) -> u16 {
         ErrorCode::SeatTaken => 48,
         ErrorCode::CannotSitHere => 49,
         ErrorCode::WeaponDrawn => 50,
-        ErrorCode::WrongForm => 51,
+        ErrorCode::MissingMaterials => 51,
+        ErrorCode::WrongForm => 52,
     }
 }
 
@@ -228,7 +229,8 @@ pub fn decode_error_code(code: u16) -> Result<ErrorCode, ProtocolError> {
         48 => ErrorCode::SeatTaken,
         49 => ErrorCode::CannotSitHere,
         50 => ErrorCode::WeaponDrawn,
-        51 => ErrorCode::WrongForm,
+        51 => ErrorCode::MissingMaterials,
+        52 => ErrorCode::WrongForm,
         _ => return Err(ProtocolError::new("unknown error code")),
     })
 }
@@ -1535,9 +1537,10 @@ mod tests {
             assert_eq!(decode_error_code(wire).unwrap(), code);
         }
         assert_eq!(error_code(ErrorCode::WeaponDrawn), 50);
-        assert_eq!(error_code(ErrorCode::WrongForm), 51);
-        assert_eq!(decode_error_code(51).unwrap(), ErrorCode::WrongForm);
-        for unknown in [0, 52, u16::MAX] {
+        assert_eq!(error_code(ErrorCode::MissingMaterials), 51);
+        assert_eq!(error_code(ErrorCode::WrongForm), 52);
+        assert_eq!(decode_error_code(52).unwrap(), ErrorCode::WrongForm);
+        for unknown in [0, 53, u16::MAX] {
             assert_eq!(
                 decode_error_code(unknown).unwrap_err().to_string(),
                 "unknown error code"

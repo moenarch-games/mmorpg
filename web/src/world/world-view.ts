@@ -80,7 +80,7 @@ import type { ContentCatalog } from "./catalog";
 import type { Area } from "./scenery";
 import type { WorldSource, ZoneWorld } from "./world-source";
 import type { AudioPreferences, WorldSound } from "./world-sound";
-import { touchContext, type TouchContext } from "../input/touch-layout";
+import { LOOT_REACH_UNITS, touchContext, type TouchContext } from "../input/touch-layout";
 import { profileFacts, profilePhase, profiling } from "./frame-profile";
 
 /**
@@ -137,6 +137,8 @@ export type Intent = (projection: ZoneSnapshot) => WorldCommand | null;
 
 /** Outside every named area the HUD names the zone itself. */
 const ZONE_NAME = "Greyhaven Vale";
+/** Inclusive horizontal distance from an ore vein's centre to the gatherer (`mmorpg_core::GATHER_REACH_UNITS`, #917). */
+const GATHER_REACH_UNITS = 300;
 /**
  * The selection turntable's class weapons, as the shared presenter's `Loadout::of_class`; the
  * Rogue's follows `imported::ROGUE_LOADOUT` (two daggers, #603).
@@ -407,6 +409,9 @@ export class WorldView {
   #limestone: PlacedKit | null = null;
   #meadow: PlacedKit | null = null;
   #den: PlacedKit | null = null;
+  #gather: PlacedKit | null = null;
+  /** The ore veins (#917): centre in units and their full and spent `gather` placements. */
+  #veins: readonly { x: number; z: number; full: number; spent: number }[] = [];
   #discoveries: PlacedKit | null = null;
   #river: PlacedKit | null = null;
   /** Bundles are fetched only once some authored placement is near the selected area/player. */
@@ -741,6 +746,9 @@ export class WorldView {
     this.#river = new PlacedKit(world.scenery.river);
     this.#meadow = new PlacedKit(world.scenery.meadow);
     this.#den = new PlacedKit(world.scenery.den);
+    this.#gather = new PlacedKit(world.scenery.gather);
+    this.#veins = world.scenery.veins;
+    this.#showVeins([]);
     this.#discoveries = new PlacedKit(world.scenery.discoveries);
     this.#placedKits = [
       { kit: this.#nature, source: world.scenery.nature, requested: false },
@@ -750,6 +758,7 @@ export class WorldView {
       { kit: this.#river, source: world.scenery.river, requested: false },
       { kit: this.#meadow, source: world.scenery.meadow, requested: false },
       { kit: this.#den, source: world.scenery.den, requested: false },
+      { kit: this.#gather, source: world.scenery.gather, requested: false },
       { kit: this.#discoveries, source: world.scenery.discoveries, requested: false },
     ];
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
@@ -1286,7 +1295,7 @@ export class WorldView {
     this.#models.clear();
     const { roots, changed } = this.#models.roots();
     if (changed && this.#lastCamera) {
-      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...(this.#sceneryBatches ? [this.#sceneryBatches.root] : []), ...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.drawn && this.#fortifications?.drawn ? [...this.#outpost.roots().roots, ...this.#fortifications.roots().roots] : []), ...(this.#settlement?.roots().roots ?? []), ...(this.#fortress?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#nature?.roots().roots ?? []), ...(this.#climbing?.roots().roots ?? []), ...(this.#crag?.roots().roots ?? []), ...(this.#limestone?.roots().roots ?? []), ...(this.#river?.roots().roots ?? []), ...(this.#meadow?.roots().roots ?? []),...(this.#den?.roots().roots ?? []),...(this.#discoveries?.roots().roots ?? []),...(this.#ground?.roots().roots ?? []), ...(this.#grass?.roots().roots ?? []), this.#impacts.root, this.#kitEffects.root, this.#raidSmoke.root, this.#raidSigns.root] });
+      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...(this.#sceneryBatches ? [this.#sceneryBatches.root] : []), ...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.drawn && this.#fortifications?.drawn ? [...this.#outpost.roots().roots, ...this.#fortifications.roots().roots] : []), ...(this.#settlement?.roots().roots ?? []), ...(this.#fortress?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#nature?.roots().roots ?? []), ...(this.#climbing?.roots().roots ?? []), ...(this.#crag?.roots().roots ?? []), ...(this.#limestone?.roots().roots ?? []), ...(this.#river?.roots().roots ?? []), ...(this.#meadow?.roots().roots ?? []),...(this.#den?.roots().roots ?? []),...(this.#gather?.roots().roots ?? []),...(this.#discoveries?.roots().roots ?? []),...(this.#ground?.roots().roots ?? []), ...(this.#grass?.roots().roots ?? []), this.#impacts.root, this.#kitEffects.root, this.#raidSmoke.root, this.#raidSigns.root] });
     }
   }
 
@@ -1504,7 +1513,43 @@ export class WorldView {
       this.queueIntent(() => ({ kind: "raid-aid", task }));
       return;
     }
+    // Or skin the selected boar corpse, or mine the full ore vein in reach (#917).
+    const corpse = at ? this.#skinnableCorpse(projection, at) : null;
+    if (corpse !== null) {
+      this.queueIntent(() => ({ kind: "skin", creatureId: corpse }));
+      return;
+    }
+    const node = at && !talking ? this.#reachableVein(projection, at) : null;
+    if (node !== null) {
+      this.queueIntent(() => ({ kind: "gather", node }));
+      return;
+    }
     this.toggleQuestDialog();
+  }
+
+  /** Draws each ore vein full, or spent when the projection lists it (#917). */
+  #showVeins(spent: readonly number[]): void {
+    this.#veins.forEach((vein, index) => {
+      const isSpent = spent.includes(index);
+      this.#gather?.setHidden(vein.full, isSpent);
+      this.#gather?.setHidden(vein.spent, !isSpent);
+    });
+  }
+
+  /** The full ore vein (#917) feet at `at` units can mine, or null. */
+  #reachableVein(projection: ZoneSnapshot | null, at: readonly number[]): number | null {
+    const index = this.#veins.findIndex((vein, node) => !projection?.depletedVeins.includes(node) && (vein.x - at[0]!) ** 2 + (vein.z - at[2]!) ** 2 <= GATHER_REACH_UNITS ** 2);
+    return index < 0 ? null : index;
+  }
+
+  /** The selected boar corpse (#917) feet at `at` units can skin, or null; the zone checks the rest. */
+  #skinnableCorpse(projection: ZoneSnapshot | null, at: readonly number[]): number | null {
+    const target = projection?.viewer.target;
+    if (target?.kind !== "creature") { return null; }
+    const corpse = projection?.entities.find((entity) => entity.kind === "creature" && entity.entityId === target.id);
+    if (!corpse?.flags.dead || this.#catalog?.creatureTemplates.get(corpse.appearance)?.family !== "boar") { return null; }
+    const distance = corpse.position.reduce((sum, axis, index) => sum + (axis - at[index]!) ** 2, 0);
+    return distance <= LOOT_REACH_UNITS ** 2 ? target.id : null;
   }
 
   /** The night raid preparation step (#532) feet at `at` units can take now, or null. */
@@ -1705,6 +1750,7 @@ export class WorldView {
       throw new Error("The world source has no projection for the joined player.");
     }
     this.#lastProjection = projection;
+    this.#showVeins(projection.depletedVeins);
     this.#powerDraw.observe(projection, this.panelOpen);
     this.#syncCameraMode(projection);
     this.#mouse.setFocus(this.#cameraMode.kind === "focused");
@@ -1889,6 +1935,7 @@ export class WorldView {
     this.#river?.update(this.#camera, deltaSeconds, animate);
     this.#meadow?.update(this.#camera, deltaSeconds, animate);
     this.#den?.update(this.#camera, deltaSeconds, animate);
+    this.#gather?.update(this.#camera, deltaSeconds, animate);
     this.#discoveries?.update(this.#camera, deltaSeconds, animate);
     this.#fortress?.update(this.#camera, deltaSeconds, animate);
     this.#lastSceneryNodes = frame.nodes;
@@ -1942,11 +1989,12 @@ export class WorldView {
     const river = this.#river?.roots() ?? { roots: [], changed: false };
     const meadow = this.#meadow?.roots() ?? { roots: [], changed: false };
     const den = this.#den?.roots() ?? { roots: [], changed: false };
+    const gather = this.#gather?.roots() ?? { roots: [], changed: false };
     const discoveries = this.#discoveries?.roots() ?? { roots: [], changed: false };
     const sceneryBatches = this.#sceneryBatches ? [this.#sceneryBatches.root] : [];
     const ground = this.#ground?.roots() ?? { roots: [], changed: false };
     const grass = this.#plan ? { roots: [], changed: false } : this.#grass?.roots() ?? { roots: [], changed: false };
-    const roots = [...sceneryBatches, ...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...fortifications.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, ...climbing.roots, ...crag.roots, ...limestone.roots, ...river.roots, ...meadow.roots, ...den.roots, ...discoveries.roots, ...ground.roots, ...grass.roots, this.#impacts.root, this.#kitEffects.root, this.#raidSmoke.root, this.#raidSigns.root];
+    const roots = [...sceneryBatches, ...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...fortifications.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, ...climbing.roots, ...crag.roots, ...limestone.roots, ...river.roots, ...meadow.roots, ...den.roots, ...gather.roots, ...discoveries.roots, ...ground.roots, ...grass.roots, this.#impacts.root, this.#kitEffects.root, this.#raidSmoke.root, this.#raidSigns.root];
     // No scene background: `Lighting` clears its own frame, and three would clear to the background again in each of its
     // passes, wiping the sky (#600). The environment's fog still fogs the unlit sprites.
     const { background: _background, ...withoutBackground } = environment;

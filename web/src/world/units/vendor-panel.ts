@@ -182,9 +182,11 @@ export class VendorPanel {
         throw new Error("Vendor offer item is missing from the content catalog.");
       }
       const stats = statsText(item.stats);
+      // A smith's recipe (#917) names what it takes from the bag.
+      const materials = offer.materials.map((material) => `${material.quantity} ${catalog?.items.get(material.item)?.name ?? "?"}`).join(", ");
       return {
         key: index,
-        text: `${item.name} · ${offer.price} copper${stats ? ` (${stats})` : ""}`,
+        text: `${item.name} · ${offer.price} copper${materials ? ` + ${materials}` : ""}${stats ? ` (${stats})` : ""}`,
         action: "Buy",
         label: `Buy ${item.name} for ${offer.price} copper`,
         enabled: canTrade && offer.price <= this.#state.copper,

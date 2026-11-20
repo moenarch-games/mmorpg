@@ -20,6 +20,8 @@ pub enum ItemQuality {
     Fine,
     /// A one-of-a-kind item with its own name and look.
     Named,
+    /// Made by a smith from gathered materials (#917): its own name, look and trait.
+    Crafted,
 }
 
 impl ItemQuality {
@@ -29,6 +31,7 @@ impl ItemQuality {
             Self::Standard => "Standard",
             Self::Fine => "Fine",
             Self::Named => "Named",
+            Self::Crafted => "Smith-made",
         }
     }
 }
@@ -96,6 +99,8 @@ impl ItemTrait {
 pub enum NamedWeapon {
     /// `equipment.sword.garricks-cleaver`.
     GarricksCleaver,
+    /// `equipment.spear.hollowpine-hunter` (#917), the smith's boar-spear.
+    HollowpineHunter,
 }
 
 impl NamedWeapon {
@@ -104,6 +109,7 @@ impl NamedWeapon {
     pub const fn code(self) -> u8 {
         match self {
             Self::GarricksCleaver => 0,
+            Self::HollowpineHunter => 1,
         }
     }
 
@@ -111,6 +117,7 @@ impl NamedWeapon {
     pub const fn from_code(code: u8) -> Option<Self> {
         match code {
             0 => Some(Self::GarricksCleaver),
+            1 => Some(Self::HollowpineHunter),
             _ => None,
         }
     }
@@ -137,7 +144,7 @@ const SHORTSWORD: ItemId = ItemId::new(3);
 const SPEAR: ItemId = ItemId::new(23);
 
 /// Every variant and named item, in stable item order.
-pub const ITEM_FINDS: [ItemFind; 4] = [
+pub const ITEM_FINDS: [ItemFind; 5] = [
     ItemFind {
         item: ItemId::new(24),
         base: Some(SHORTSWORD),
@@ -173,6 +180,17 @@ pub const ITEM_FINDS: [ItemFind; 4] = [
         trait_: Some(ItemTrait::Sweep { degrees: 10 }),
         named: Some(NamedWeapon::GarricksCleaver),
         source: "Garrick Redbrand's own cleaver, notched on Millbrook's fences",
+    },
+    // The smith's recipe (#917): no drop rolls it. Quicker thrusts than the long-hafted find's
+    // reach, for closing on a charging boar.
+    ItemFind {
+        item: ItemId::new(30),
+        base: None,
+        weight: 0,
+        quality: ItemQuality::Crafted,
+        trait_: Some(ItemTrait::Recovery { percent: 15 }),
+        named: Some(NamedWeapon::HollowpineHunter),
+        source: "Forged at the Outpost smithy from ridge iron, with a boar-hide grip and tusk lugs",
     },
 ];
 
@@ -260,7 +278,10 @@ mod tests {
                 assert_eq!((template.slot, template.weapon), (base.slot, base.weapon));
                 assert!(find.weight > 0 && find.named.is_none());
             } else {
-                assert_eq!(find.quality, ItemQuality::Named);
+                assert!(matches!(
+                    find.quality,
+                    ItemQuality::Named | ItemQuality::Crafted
+                ));
                 assert!(find.named.is_some());
             }
         }

@@ -121,6 +121,7 @@ fn projection(content: &ZoneContent, zone_id: ZoneId) -> ZoneSnapshot {
         projectiles: Vec::new(),
         debris: Vec::new(),
         pieces: Vec::new(),
+        depleted_veins: Vec::new(),
         summoned: Vec::new(),
         traps: Vec::new(),
         raid: None,
