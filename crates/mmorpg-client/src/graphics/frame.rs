@@ -10,7 +10,7 @@ use crate::{
     camera::CameraView,
     environment::Lighting,
     hud::{HudRect, MAX_HUD_RECTS},
-    world::{DrawBatch, DrawMaterial, DrawSkin, SceneDraw, WorldFrame},
+    world::{DrawBatch, DrawMaterial, DrawSkin, DrawTexture, SceneDraw, WorldFrame},
 };
 use bytemuck::{Pod, Zeroable};
 use mmorpg_presentation::ground::{Ground, Layer, MASK_CUTOFF, OVERLAY_ALPHA};
@@ -106,7 +106,7 @@ struct CachedMaterial {
 }
 
 /// A material's exact field bits.
-type MaterialKey = [u32; 10];
+type MaterialKey = [u32; 12];
 
 /// A [`DrawBatch`] resolved into instances once (#588). It stays valid while the batch lives,
 /// drawn or culled, and is dropped with it; its meshes and materials stay resident until then.
@@ -240,6 +240,8 @@ fn material_key(m: &DrawMaterial) -> MaterialKey {
                 + 2 * u32::from(g.ground.far)
                 + u32::from(g.ground.overlay)
         }),
+        m.texture.as_ref().map_or(0, |t| t.id + 1),
+        m.texture.as_ref().map_or(0, |t| t.roughness.to_bits()),
     ]
 }
 
@@ -318,6 +320,17 @@ impl GroundGpu {
             alpha_mode,
             ..StandardMaterial::default()
         }
+    }
+}
+
+/// An imported animal's material (#1001): its base-colour texture sampled per fragment over the
+/// vertex colours' factor, with its authored roughness and no metal.
+fn textured_material(m: &DrawMaterial, texture: &DrawTexture, id: TextureId) -> StandardMaterial {
+    StandardMaterial {
+        base_color_texture: Some(id),
+        perceptual_roughness: texture.roughness,
+        metallic: 0.,
+        ..standard_material(m)
     }
 }
 
@@ -591,6 +604,8 @@ pub(super) struct FrameRenderer {
     nature: NatureGpu,
     /// The ground layer textures (#525), uploaded with the first ground material.
     ground: Option<GroundGpu>,
+    /// Imported animals' base-colour textures (#1001) by `DrawTexture::id`, uploaded once.
+    textures: HashMap<u32, TextureId>,
     viewport: Viewport,
     meshes: HashMap<String, CachedMesh>,
     materials: HashMap<MaterialKey, CachedMaterial>,
@@ -681,6 +696,7 @@ impl FrameRenderer {
             effects: Effects::default(),
             nature: NatureGpu::default(),
             ground: None,
+            textures: HashMap::new(),
             viewport,
             meshes: HashMap::new(),
             materials: HashMap::new(),
@@ -893,6 +909,7 @@ impl FrameRenderer {
         let Self {
             world,
             ground,
+            textures,
             materials,
             ..
         } = self;
@@ -901,7 +918,15 @@ impl FrameRenderer {
                 Some(draw) => ground
                     .get_or_insert_with(|| GroundGpu::upload(world))
                     .material(material, draw.ground),
-                None => standard_material(material),
+                None => match &material.texture {
+                    Some(texture) => {
+                        let id = *textures
+                            .entry(texture.id)
+                            .or_insert_with(|| world.add_texture(&texture.data));
+                        textured_material(material, texture, id)
+                    }
+                    None => standard_material(material),
+                },
             };
             CachedMaterial {
                 id: world.add_material(&standard),
@@ -1333,6 +1358,7 @@ mod tests {
                 unlit: false,
                 double_sided: false,
                 ground: None,
+                texture: None,
             },
             skin: Some(crate::world::DrawSkin {
                 figure: "unit".into(),

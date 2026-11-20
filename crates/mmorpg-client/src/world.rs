@@ -17,6 +17,26 @@ pub struct DrawMaterial {
     pub double_sided: bool,
     /// A terrain ground layer's draw (#525): textured from the `greyhaven-terrain` bundle.
     pub ground: Option<GroundMaterial>,
+    /// An imported animal's glTF base-colour texture (#1001), sampled per fragment at the
+    /// mesh's UVs; its vertex colours then hold only the material's colour factor.
+    pub texture: Option<DrawTexture>,
+}
+
+/// An imported model's base-colour texture and its material's authored roughness, uploaded
+/// once by `id`.
+#[derive(Clone, Debug)]
+pub struct DrawTexture {
+    /// Unique per imported image; draws sharing it share the upload.
+    pub id: u32,
+    pub data: Arc<render_engine::material::TextureData>,
+    /// The glTF material's `roughnessFactor`; the surface is dielectric.
+    pub roughness: f32,
+}
+
+impl PartialEq for DrawTexture {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.roughness.to_bits() == other.roughness.to_bits()
+    }
 }
 
 /// A ground layer draw's material: the layer, and an overlay's vertex colour alpha, which the
@@ -478,6 +498,7 @@ fn material(
             ground,
             alpha: geometry.alpha.iter().map(|&a| a as f32).collect(),
         }),
+        texture: None,
     }
 }
 

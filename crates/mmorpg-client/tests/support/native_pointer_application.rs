@@ -909,6 +909,7 @@ fn native_pointer_application_contract() {
                 unlit: false,
                 double_sided: false,
                 ground: None,
+                texture: None,
             },
             skin: None,
         });
