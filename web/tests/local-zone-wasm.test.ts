@@ -541,7 +541,7 @@ describe("WASM local zone combat intents", () => {
       "Torn Fur", "Worn Dagger", "Militia Shortsword", "Apprentice Wand", "Pine Buckler", "Cloth Hood", "Padded Tunic",
       "Padded Trousers", "Worn Boots", "Wolf Pelt", "Sunken Relic", "Brute-Breaker Mace", "Greyfang Scout Jerkin", "Hollow-Delver's Cowl", "Thornreaver Blade", "Captain's Scarred Brigandine", "Redbrand Command Signet", "Marshal's Commendation Greaves",
       "Boar Tusk", "Stolen Grain Sack", "Lurker Scale", "Redbrand Orders", "Militia Spear",
-      "Fine Militia Shortsword", "Balanced Militia Shortsword", "Long-hafted Militia Spear", "Garrick's Cleaver",
+      "Fine Militia Shortsword", "Balanced Militia Shortsword", "Long-hafted Militia Spear", "Garrick's Cleaver", "Supply Sack",
     ]);
     expect([...catalog.creatureTemplates.values()].map((template) => template.name)).toEqual([
       "Timber Wolf", "Young Boar", "Grain Rat", "Field Marauder", "Mirefin Lurker", "Redbrand Bandit", "Garrick Redbrand",
@@ -638,7 +638,7 @@ describe("WASM local zone combat intents", () => {
     quests.update(source.latestProjection()!, catalog);
     expect(quests.marker(1)).toBe("available");
     expect([...catalog.quests.values()].map((quest) => quest.name)).toEqual([
-      "Trouble in the Woods", "Pelts for the Tanner", "The Missing Farmhand", "Marauders in the Fields", "Scout the Lake",
+      "The Wolfrun Cart", "Pelts for the Tanner", "The Missing Farmhand", "Marauders in the Fields", "Scout the Lake",
       "Mirefin Menace", "Into Redbrand Hollow", "Garrick Redbrand", "Return to Greyhaven", "The Sunken Shrine", "Deeper into the Hollow",
     ]);
     // From spawn slot 0, run west along the plaza to 3.5 m from the Marshal.
@@ -654,18 +654,20 @@ describe("WASM local zone combat intents", () => {
     run(source, 1);
     quests.update(source.latestProjection()!, catalog);
     expect(quests.sheet?.entries).toEqual([{ quest: 1, progress: [0, 0, 0] }]);
-    expect(quests.marker(1)).toBe("in-progress");
-    expect(quests.feedback).toBe("Accepted: Trouble in the Woods.");
-    expect(trackerRows(quests.sheet!).map((row) => row.text)).toEqual(["Trouble in the Woods", "  · Timber Wolf slain: 0/6"]);
+    // The Tanner, not the Marshal, takes the cart's sacks (#984).
+    expect(quests.marker(1)).toBeNull();
+    expect(quests.marker(2)).toBe("in-progress");
+    expect(quests.feedback).toBe("Accepted: The Wolfrun Cart.");
+    expect(trackerRows(quests.sheet!).map((row) => row.text)).toEqual(["The Wolfrun Cart", "  · Explore Wolfrun Woods", "  · Supply Sack: 0/3"]);
     source.sendCommand({ kind: "complete-quest", npc: 1, quest: 1, choice: 0 });
     run(source, 1);
-    expect(source.latestProjection()?.events).toEqual([{ kind: "error", code: "quest-incomplete", target: { kind: "npc", id: 1 } }]);
+    expect(source.latestProjection()?.events).toEqual([{ kind: "error", code: "invalid-quest", target: { kind: "npc", id: 1 } }]);
     source.sendCommand(quests.abandon(1)!);
     run(source, 1);
     quests.update(source.latestProjection()!, catalog);
     expect(quests.sheet?.entries).toEqual([]);
     expect(quests.marker(1)).toBe("available");
-    expect(quests.feedback).toBe("Abandoned: Trouble in the Woods.");
+    expect(quests.feedback).toBe("Abandoned: The Wolfrun Cart.");
   });
 
   test("intents beyond the per-tick bound are reported, never a session error", async () => {

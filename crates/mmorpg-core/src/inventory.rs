@@ -41,7 +41,7 @@ pub struct ItemTemplate {
 /// Starter catalog, in stable ID order. Equippable items stack to one;
 /// consumable effects, prices and loot tables are separate rules. Quest
 /// items are plain bag items that quest content names as collect objectives.
-pub const ITEM_CATALOG: [ItemTemplate; 27] = [
+pub const ITEM_CATALOG: [ItemTemplate; 28] = [
     ItemTemplate {
         id: ItemId::new(1),
         name: "Torn Fur",
@@ -366,6 +366,15 @@ pub const ITEM_CATALOG: [ItemTemplate; 27] = [
             agility: 0,
             intellect: 0,
         },
+    },
+    // The sacks the Wolfrun pack dragged off the abandoned cart, for *The Wolfrun Cart* (#984).
+    ItemTemplate {
+        id: ItemId::new(28),
+        name: "Supply Sack",
+        max_stack: 5,
+        slot: None,
+        weapon: None,
+        stats: ItemStats::NONE,
     },
 ];
 

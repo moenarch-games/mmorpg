@@ -3,12 +3,12 @@
   "quests": [
     {
       "id": 1,
-      "name": "Trouble in the Woods",
-      "text": "Timber wolves prowl the Wolfrun Trail west of the gate. Thin the pack: slay six of them.",
+      "name": "The Wolfrun Cart",
+      "text": "Hilda's supply cart never came down the Wolfrun Trail, and wolves prowl the road. Find the cart above the Wolfrun Climb, see what drew the pack, and bring Hilda the three sacks they dragged off.",
       "giver": 1,
-      "ender": 1,
-      "objectives": [{"kill": {"template": 1, "count": 6}}],
-      "rewards": {"experience": 150, "copper": 10, "choices": []}
+      "ender": 2,
+      "objectives": [{"explore": {"area": 2}}, {"collect": {"item": 28, "count": 3, "source": 1}}],
+      "rewards": {"experience": 250, "copper": 15, "choices": [9, 6]}
     },
     {
       "id": 2,
@@ -23,10 +23,10 @@
     {
       "id": 3,
       "name": "The Missing Farmhand",
-      "text": "My farmhand never came back from Millbrook. Follow the Millbrook Road east and ask Farmer Osric Mill.",
+      "text": "Those sacks were cut, and that bait was laid on purpose: Redbrand work, I wager. And my farmhand never came back from Millbrook. Follow the Millbrook Road east and ask Farmer Osric Mill.",
       "giver": 2,
       "ender": 4,
-      "prerequisite": 2,
+      "prerequisite": 1,
       "objectives": [{"talk": {"npc": 4}}],
       "rewards": {"experience": 100, "copper": 5, "choices": []}
     },

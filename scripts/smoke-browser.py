@@ -523,7 +523,7 @@ class BrowserAcceptance(unittest.TestCase):
                     expect(dialog.get_by_role("heading", name=name, exact=True)).to_be_visible()
                     if identity == 1:
                         expect(self.page.locator("#quest-dialog-status")).to_contain_text("Move within 5 m")
-                        expect(self.page.get_by_role("button", name="Accept: Trouble in the Woods")).to_be_disabled()
+                        expect(self.page.get_by_role("button", name="Accept: The Wolfrun Cart")).to_be_disabled()
                     self.assertEqual(self.page.evaluate("window.__clickQuestEntries"), [], "Selecting or talking must not accept a quest")
                 elif context == "vendor":
                     panel = self.page.get_by_role("complementary", name="Vendor", exact=True)
@@ -1603,7 +1603,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.screenshot(path=str(ARTIFACTS / "inn-closed-again.png"))
 
     def test_quest_dialog_log_tracker_and_marker_at_the_marshal(self):
-        """Walk the quest-resume scenario's route to the Marshal, accept, track and abandon Trouble in the Woods."""
+        """Walk the quest-resume scenario's route to the Marshal, accept, track and abandon The Wolfrun Cart."""
         self.open("?debug")
         self.page.evaluate("""() => {
           const source = window.__valeDebug.worldSource();
@@ -1616,7 +1616,7 @@ class BrowserAcceptance(unittest.TestCase):
         dialog = self.page.get_by_role("complementary", name="Quest dialog", exact=True)
         expect(dialog).to_be_visible()
         expect(self.page.locator("#quest-dialog-status")).to_contain_text("Move within 5 m of Marshal Elden Greywatch")
-        expect(self.page.get_by_role("button", name="Accept: Trouble in the Woods")).to_be_disabled()
+        expect(self.page.get_by_role("button", name="Accept: The Wolfrun Cart")).to_be_disabled()
         self.page.evaluate("""() => {
           const source = window.__valeDebug.worldSource();
           const moves = new Map([[0,[1,40960]],[60,[0,40960]]]);
@@ -1643,14 +1643,14 @@ class BrowserAcceptance(unittest.TestCase):
         expect(markers.first).to_have_text("!")
         card = self.page.locator("#quest-dialog-quests .quest-card")
         expect(card).to_have_count(1)
-        expect(card.first).to_contain_text("Timber Wolf slain: 0/6")
-        expect(card.first).to_contain_text("Rewards: 150 XP · 10 copper")
+        expect(card.first).to_contain_text("Supply Sack: 0/3")
+        expect(card.first).to_contain_text("Rewards: 250 XP · 15 copper")
         self.page.screenshot(path=str(ARTIFACTS / "quest-dialog.png"))
-        self.page.get_by_role("button", name="Accept: Trouble in the Woods").click()
+        self.page.get_by_role("button", name="Accept: The Wolfrun Cart").click()
         step()
-        expect(self.page.locator("#quest-dialog-feedback")).to_have_text("Accepted: Trouble in the Woods.")
-        expect(self.page.locator("#objective")).to_contain_text("Timber Wolf slain: 0/6")
-        expect(markers.first).to_have_attribute("data-marker", "in-progress")
+        expect(self.page.locator("#quest-dialog-feedback")).to_have_text("Accepted: The Wolfrun Cart.")
+        expect(self.page.locator("#objective")).to_contain_text("Supply Sack: 0/3")
+        # The Tanner, not the Marshal, takes the cart's sacks (#984): his marker clears.
         expect(card.first).to_have_attribute("data-state", "in-progress")
         self.page.keyboard.press("Escape")
         expect(dialog).to_be_hidden()
@@ -1659,7 +1659,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.keyboard.press("l")
         log = self.page.get_by_role("complementary", name="Quest log", exact=True)
         expect(log).to_be_visible()
-        expect(self.page.locator("#quest-log-quests .quest-card")).to_contain_text("Trouble in the Woods")
+        expect(self.page.locator("#quest-log-quests .quest-card")).to_contain_text("The Wolfrun Cart")
         self.page.screenshot(path=str(ARTIFACTS / "quest-log.png"))
         for width, height in [(390, 844), (640, 360)]:
             self.page.set_viewport_size({"width": width, "height": height})
@@ -1670,9 +1670,9 @@ class BrowserAcceptance(unittest.TestCase):
             self.assertFalse(log.evaluate("p => p.scrollWidth > p.clientWidth"))
             self.page.screenshot(path=str(ARTIFACTS / f"quest-log-{width}x{height}.png"))
         self.page.set_viewport_size({"width": 1280, "height": 800})
-        self.page.get_by_role("button", name="Abandon: Trouble in the Woods").click()
+        self.page.get_by_role("button", name="Abandon: The Wolfrun Cart").click()
         step()
-        expect(self.page.locator("#quest-log-feedback")).to_have_text("Abandoned: Trouble in the Woods.")
+        expect(self.page.locator("#quest-log-feedback")).to_have_text("Abandoned: The Wolfrun Cart.")
         expect(self.page.locator("#quest-log-quests")).to_contain_text("Your quest log is empty.")
         expect(self.page.locator("#objective")).to_contain_text("No active quests")
         expect(markers.first).to_have_attribute("data-marker", "available")

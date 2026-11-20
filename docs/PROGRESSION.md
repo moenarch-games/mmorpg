@@ -47,10 +47,11 @@ the threshold curve above; kill rewards, quest rewards, eligibility and the
 level cap are unchanged.
 
 The measurement is the headless quest-chain journey
-(`crates/mmorpg-core/tests/quest_chain.rs`): a new Warden accepts *Trouble in
-the Woods*, hunts wolves, turns in *Pelts for the Tanner* and walks to
-Millbrook for *The Missing Farmhand*, fighting whatever attacks on the way. It
-prints its level-up ticks (60 Hz):
+(`crates/mmorpg-core/tests/quest_chain.rs`): a new Warden plays the opening
+quests to Millbrook's *The Missing Farmhand*, fighting whatever attacks on the
+way, and prints its level-up ticks (60 Hz). For #908 the opening was *Trouble in
+the Woods* (six wolves) and *Pelts for the Tanner* (five pelts); #984 replaced
+it, see below:
 
 | Curve | Level 2 | Level 3 | Level 4 | Level 5 | Three quests end |
 | --- | ---: | ---: | ---: | ---: | --- |
@@ -61,10 +62,10 @@ The bot earns about 200 XP per game minute: it never reads, explores or
 detours. The estimated minutes in the table assume a human earns about half
 that, 100 XP per minute of mixed combat, quests and exploration; later quests
 pay more XP while lower-level creatures pay less, so the estimate holds the
-rate flat. The curve's 14,000 XP compares with 10,740 XP from all 32 Greyhaven
+rate flat. The curve's 14,000 XP compares with 10,840 XP from all 32 Greyhaven
 quests, so the cap arrives near the end of the chain with ordinary combat
 supplying the rest rather than past its middle, as the old 4,500 did. The
-journey asserts level 2 within two minutes and level 3 or 4 after the three
+journey asserts level 2 within two minutes and level 3 or 4 after the opening
 quests. The human rate and later-level minutes are not yet playtested.
 
 Both public queries return `None` for unsupported levels. The capped threshold
@@ -111,6 +112,25 @@ discovers three more areas for 291 XP, reaching 521/1,000. That is faster
 than the bot's 200 XP a minute of fighting, as it should be for a walk to new
 places, but the pool is finite and the far regions take minutes to reach;
 combat remains the open-ended route. Human pace is not yet playtested.
+
+### The Wolfrun Cart opening (#984)
+
+The opening is now one investigation instead of two wolf quotas: *The
+Wolfrun Cart* (explore the Wolfrun Woods, take back three Supply Sacks from
+wolves, turn in to the Tanner for 250 XP), then *The Missing Farmhand*. Its
+journey, re-measured:
+
+| Opening | Level 2 | Level 3 | Level 4 | First quest turned in | Millbrook lead done |
+| --- | ---: | ---: | ---: | --- | --- |
+| Wolf quotas (#916) | 0:31 | 2:26 | 4:47 | not printed | 5:16, level 4 (230/1,000) |
+| The Wolfrun Cart (#984) | 0:31 | 1:53 | — | 1:53 | 2:21, level 3 (315/600) |
+
+The bot now fights three wolves instead of eleven, so it spends 2:21 instead of
+5:16, and the exploring detour still reaches 585/600. At the human rate above
+(about half the bot's), the opening takes about 5 minutes of play before
+reading the quest text, finding the cart without a waypoint and looting by
+hand. For a first-time player that is plausibly the 8–12 minutes #984 aims
+for, but live play has not measured it yet.
 
 ## Authoritative awards (#75)
 

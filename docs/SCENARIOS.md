@@ -235,7 +235,7 @@ only on change and quest expectations read the latest sheet the bot received: `q
 `quest_completed` events carry no unit; digests show them as
 `quest:<id>:<slot>=<count>` and `quest_done:<id>`. `quest-resume` is refused
 out of reach of Marshal Elden Greywatch, walks to him, is refused the locked
-second quest, accepts *Trouble in the Woods*, cannot turn it in incomplete,
+second quest, accepts *The Wolfrun Cart*, cannot turn it in at the Marshal (the Tanner takes it),
 abandons and re-accepts it, and keeps it across a connection resume while the
 Marshal's marker follows the log. The full chain is covered by
 `crates/mmorpg-core/tests/quest_chain.rs`.

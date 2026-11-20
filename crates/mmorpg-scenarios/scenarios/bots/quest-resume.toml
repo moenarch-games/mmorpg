@@ -1,4 +1,4 @@
-# Accepting, refusing, abandoning and re-accepting Trouble in the Woods at
+# Accepting, refusing, abandoning and re-accepting The Wolfrun Cart at
 # Marshal Elden Greywatch (NPC 1) pass through real sessions: quests need
 # the giver within 5 m and an unlocked quest, the Marshal's marker follows
 # the log, and the log survives a connection resume.
@@ -41,7 +41,7 @@ forward = 0
 strafe = 0
 facing = 40960
 
-# Pelts for the Tanner needs Trouble in the Woods turned in, and the
+# Pelts for the Tanner needs The Wolfrun Cart turned in, and the
 # Tanner gives it, not the Marshal.
 [[steps]]
 tick = 68
@@ -57,7 +57,7 @@ action = "accept_quest"
 npc = 1
 quest = 1
 
-# No wolf has died yet.
+# The Tanner, not the Marshal, takes the cart's sacks (#984).
 [[steps]]
 tick = 72
 bot = "alice"
@@ -135,13 +135,20 @@ kind = "marker"
 bot = "alice"
 tick = 71
 npc = 1
+marker = "none"
+
+[[expect]]
+kind = "marker"
+bot = "alice"
+tick = 71
+npc = 2
 marker = "in_progress"
 
 [[expect]]
 kind = "event"
 bot = "alice"
 tick = 73
-event = "error:quest_incomplete"
+event = "error:invalid_quest"
 
 [[expect]]
 kind = "quest"

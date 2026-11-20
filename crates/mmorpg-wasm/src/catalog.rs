@@ -346,7 +346,7 @@ mod tests {
             let max_stack = match id {
                 1 => 20,
                 10 | 19..=21 => 10,
-                22 => 5,
+                22 | 28 => 5,
                 _ => 1,
             };
             let sell_price = mmorpg_core::sell_price(mmorpg_core::ItemId::new(id));
@@ -438,6 +438,7 @@ mod tests {
                     json!("mainHand"),
                     stats(2, 5, 0, 0)
                 ),
+                item(28, "Supply Sack", Value::Null, stats(0, 0, 0, 0)),
             ])
         );
         let quests = value["quests"].as_array().unwrap();
