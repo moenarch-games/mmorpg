@@ -255,6 +255,12 @@ fn main() {
         None,
         false,
     );
+    // Its descriptor, which names each animal's rest clip (#989).
+    descriptor(
+        &manifest_dir.join("../../web/public/scenery/greyhaven.wildlife"),
+        "wildlife-descriptor",
+        "wild_descriptor.rs",
+    );
     // The strike and spell effects (#894), every one.
     static_bundle(
         "strike_effects_bundle.rs",

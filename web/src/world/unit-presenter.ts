@@ -35,7 +35,7 @@ export type UnitPresenterHandle = {
   indices(): Uint32Array;
 };
 
-export type ImportedModelKind = "Ranger" | "Wolf" | "Rat" | "Boar" | "Bear" | "Spider" | "Lurker";
+export type ImportedModelKind = "Ranger" | "Wolf" | "Rat" | "Boar" | "Bear" | "Spider" | "Lurker" | "Lynx";
 /** The shared presenter's `Loadout::name`s. */
 export type Loadout = "sword-and-shield" | "sword-and-shield.redbrand" | "bow-and-quiver" | "sword" | "dagger" | "dagger.twin" | "staff.bone"
   | "staff.crystal-and-tome" | "mace.flanged" | "staff.gnarled" | "crossbow" | "spear" | "sword.garricks-cleaver";
