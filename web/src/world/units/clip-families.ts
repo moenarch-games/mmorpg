@@ -25,7 +25,7 @@ export function clipFamilies(index: unknown): { combined: string | null; familie
 }
 
 /** Families whose clips are weapon work: they stand in with the base sword stance. */
-const ARMED = new Set(["strike", "combat", "sword", "dagger", "ready", "defend", "hit"]);
+const ARMED = new Set(["strike", "combat", "sword", "dagger", "ready", "defend", "hit", "guard"]);
 
 /** The base clip a clip of `family` plays while its family loads. */
 export function standIn(family: string): string {

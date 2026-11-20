@@ -8,6 +8,8 @@ import { raidNoticeText } from "../raid-prep";
 const CALL_COMPANION = 46;
 /** The Druid's Entangling Roots (#304): its caster hears when it takes hold and when it breaks (#934). */
 const ENTANGLING_ROOTS = 39;
+/** A Redbrand signaler's horn call (#952). */
+const SIGNAL_HORN = 57;
 
 /**
  * Plain-text combat HUD lines beside the class HUD's frames, cast bars and
@@ -191,8 +193,16 @@ export function eventText(event: ZoneEvent, snapshot: ZoneSnapshot, catalog: Con
     case "error":
       return errorText(event.code, snapshot);
     case "cast-started":
+      if (event.ability === SIGNAL_HORN) {
+        return `${capitalise(name(event.source))} raises a signal horn to call for help!`;
+      }
       return `${capitalise(name(event.source))} ${isViewer(event.source) ? "begin" : "begins"} ${abilityName(event.ability, catalog)}.`;
     case "ability-used":
+      if (event.ability === SIGNAL_HORN) {
+        return event.target === null
+          ? `${capitalise(name(event.source))} sounds the horn, but no one answers.`
+          : `${capitalise(name(event.source))} sounds the horn: ${name(event.target)} answers the call!`;
+      }
       return `${capitalise(name(event.source))} ${isViewer(event.source) ? "use" : "uses"} ${abilityName(event.ability, catalog)}.`;
     case "strike-swept": {
       const aim = `${event.aim.height}-${event.aim.side}`;

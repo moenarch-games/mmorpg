@@ -1501,6 +1501,7 @@ fn placed_kit(
     static RIVER: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     static MEADOW: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     static WOLF_DEN: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
+    static DISCOVERIES: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     // The placement lists mix bundles, so each kit takes the placements of its own entries.
     let all = || {
         let scenery = scenery::hosted_scenery();
@@ -1517,6 +1518,10 @@ fn placed_kit(
         placements.extend(mmorpg_presentation::world_dressing::kit_placements(
             scenery,
             &mmorpg_presentation::world_dressing::WOLF_DEN_ENTRIES,
+        ));
+        placements.extend(mmorpg_presentation::world_dressing::kit_placements(
+            scenery,
+            &mmorpg_presentation::world_dressing::DISCOVERY_ENTRIES,
         ));
         placements
     };
@@ -1540,6 +1545,10 @@ fn placed_kit(
         "den" => {
             let entries = &mmorpg_presentation::world_dressing::WOLF_DEN_ENTRIES;
             Ok((entries, WOLF_DEN.get(|_| of(entries))))
+        }
+        "discoveries" => {
+            let entries = &mmorpg_presentation::world_dressing::DISCOVERY_ENTRIES;
+            Ok((entries, DISCOVERIES.get(|_| of(entries))))
         }
         "climbing" => Ok((
             &climbing::ENTRIES,

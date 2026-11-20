@@ -64,6 +64,8 @@ pub struct ZoneContent {
     shielded: Vec<CreatureTemplateId>,
     /// Coordinated patrol members (#911), by creature ID.
     patrols: Vec<crate::PatrolMember>,
+    /// Signalers and the partner each call brings (#952), by caller.
+    signal_calls: Vec<crate::SignalCall>,
     vendor_bound: bool,
     vendors: Vec<(NpcId, VendorStock)>,
     quest_bound: bool,
@@ -101,6 +103,8 @@ pub struct ZoneContent {
     depths_site: Option<crate::DepthsSite>,
     /// Wildlife dens and their packs' home ranges (#912).
     dens: Vec<crate::WildlifeDen>,
+    /// Optional discovery caches (#913), in ID order.
+    caches: Vec<crate::DiscoveryCache>,
 }
 
 /// A body as `(centre, half extents)` in units.
@@ -209,6 +213,7 @@ impl ZoneContent {
             bosses: Vec::new(),
             shielded: Vec::new(),
             patrols: Vec::new(),
+            signal_calls: Vec::new(),
             vendor_bound: false,
             vendors: Vec::new(),
             quest_bound: false,
@@ -235,6 +240,7 @@ impl ZoneContent {
             depths_threshold: None,
             depths_site: None,
             dens: Vec::new(),
+            caches: Vec::new(),
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -266,6 +272,7 @@ impl ZoneContent {
             bosses: Vec::new(),
             shielded: Vec::new(),
             patrols: Vec::new(),
+            signal_calls: Vec::new(),
             vendor_bound: false,
             vendors: Vec::new(),
             quest_bound: false,
@@ -292,6 +299,7 @@ impl ZoneContent {
             depths_threshold: None,
             depths_site: None,
             dens: Vec::new(),
+            caches: Vec::new(),
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -546,7 +554,10 @@ impl ZoneContent {
         creature: CreatureId,
         template: CreatureTemplateId,
     ) -> Vec<AbilityId> {
-        let mut casts: Vec<AbilityId> = self.creature_ability(template).into_iter().collect();
+        let mut casts: Vec<AbilityId> = self
+            .creature_ability_of(creature, template)
+            .into_iter()
+            .collect();
         if let Some(boss) = self.depths_site().and_then(|site| site.boss.as_ref())
             && boss.creature == creature
         {
@@ -580,7 +591,7 @@ impl ZoneContent {
     }
 
     /// Marks creature templates that carry a raised shield (#160): arrows and bolts flying at
-    /// their front stop on it.
+    /// their front stop on it, and so do players' melee blows (#953).
     pub fn with_shielded(
         mut self,
         mut templates: Vec<CreatureTemplateId>,
@@ -651,6 +662,76 @@ impl ZoneContent {
     #[must_use]
     pub fn patrols(&self) -> &[crate::PatrolMember] {
         &self.patrols
+    }
+
+    /// Binds signalers (#952): each caller names one partner of its own family, another spawn
+    /// within [`crate::SIGNAL_REACH_UNITS`] of it, and calls for nobody else.
+    pub fn with_signal_calls(
+        mut self,
+        mut calls: Vec<crate::SignalCall>,
+    ) -> Result<Self, ZoneError> {
+        calls.sort_by_key(|call| call.caller);
+        if calls
+            .windows(2)
+            .any(|pair| pair[0].caller == pair[1].caller)
+        {
+            return Err(ZoneError::new("duplicate signal caller"));
+        }
+        for call in &calls {
+            let (Some(caller), Some(partner)) = (
+                self.creature_spawn(call.caller),
+                self.creature_spawn(call.partner),
+            ) else {
+                return Err(ZoneError::new(
+                    "signal call names an unknown creature spawn",
+                ));
+            };
+            let family = |spawn: &CreatureSpawn| {
+                self.creature_template(spawn.template)
+                    .map(|template| template.family)
+            };
+            let [dx, dz] = [0, 1]
+                .map(|axis| i64::from(partner.position[axis]) - i64::from(caller.position[axis]));
+            if call.caller == call.partner
+                || family(caller) != family(partner)
+                || dx * dx + dz * dz > i64::from(crate::SIGNAL_REACH_UNITS).pow(2)
+            {
+                return Err(ZoneError::new(
+                    "a signal partner is another nearby creature of the caller's family",
+                ));
+            }
+        }
+        self.signal_calls = calls;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Creature `id`'s signal call (#952), if it is a signaler.
+    #[must_use]
+    pub fn signal_call(&self, id: CreatureId) -> Option<crate::SignalCall> {
+        self.signal_calls
+            .binary_search_by_key(&id, |call| call.caller)
+            .ok()
+            .map(|index| self.signal_calls[index])
+    }
+
+    /// Every signal call (#952), by caller.
+    #[must_use]
+    pub fn signal_calls(&self) -> &[crate::SignalCall] {
+        &self.signal_calls
+    }
+
+    /// The ability creature `id` of `template` uses: a signaler's horn call (#952), otherwise its
+    /// template's.
+    #[must_use]
+    pub fn creature_ability_of(
+        &self,
+        id: CreatureId,
+        template: CreatureTemplateId,
+    ) -> Option<AbilityId> {
+        self.signal_call(id)
+            .map(|_| crate::ability::ids::SIGNAL_HORN)
+            .or_else(|| self.creature_ability(template))
     }
 
     /// The boss rules of `template`, if it is a boss.
@@ -1529,7 +1610,7 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_discovery_fingerprint();
+        let fingerprint = self.compute_cache_fingerprint();
         let Some(rewind) = self.hit_rewind else {
             return fingerprint;
         };
@@ -1551,6 +1632,66 @@ impl ZoneContent {
         hash.len(self.discoveries.len());
         for area in &self.discoveries {
             hash.u32(area.get());
+        }
+        hash.finish()
+    }
+
+    /// Adds optional discovery caches (#913): each has a unique nonzero ID, a short name, a
+    /// positive reach, a known item and guards that are distinct known creature spawns.
+    pub fn with_caches(
+        mut self,
+        mut caches: Vec<crate::DiscoveryCache>,
+    ) -> Result<Self, ZoneError> {
+        caches.sort_by_key(|cache| cache.id);
+        if caches.first().is_some_and(|cache| cache.id == 0)
+            || caches.windows(2).any(|pair| pair[0].id == pair[1].id)
+        {
+            return Err(ZoneError::new("cache IDs must be unique and nonzero"));
+        }
+        for cache in &caches {
+            if cache.name.is_empty() || cache.name.len() > MAX_UNIT_NAME_BYTES || cache.reach <= 0 {
+                return Err(ZoneError::new("a cache needs a short name and a reach"));
+            }
+            if crate::item_template(cache.item).is_none() {
+                return Err(ZoneError::new("a cache's item is unknown"));
+            }
+            for (index, &guard) in cache.guards.iter().enumerate() {
+                if self.creature_spawn(guard).is_none() || cache.guards[..index].contains(&guard) {
+                    return Err(ZoneError::new("a cache's guard is not a distinct spawn"));
+                }
+            }
+        }
+        self.caches = caches;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Optional discovery caches (#913), in ID order.
+    #[must_use]
+    pub fn caches(&self) -> &[crate::DiscoveryCache] {
+        &self.caches
+    }
+
+    fn compute_cache_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_discovery_fingerprint();
+        if self.caches.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/caches-v1");
+        hash.u64(fingerprint);
+        hash.len(self.caches.len());
+        for cache in &self.caches {
+            hash.u32(cache.id);
+            hash.text(&cache.name);
+            hash.i32s(&cache.at);
+            hash.i32s(&[cache.reach]);
+            hash.len(cache.guards.len());
+            for guard in &cache.guards {
+                hash.u32(guard.get());
+            }
+            hash.u32(cache.item.get());
+            hash.u32(cache.copper);
         }
         hash.finish()
     }
@@ -2192,6 +2333,15 @@ impl ZoneContent {
                 hash.u32(member.creature.get());
                 hash.u16(member.patrol);
                 hash.u8(member.role.code());
+            }
+        }
+        // Signal calls (#952) likewise join only where authored.
+        if !self.signal_calls.is_empty() {
+            hash.bytes(b"signal-calls");
+            hash.len(self.signal_calls.len());
+            for call in &self.signal_calls {
+                hash.u32(call.caller.get());
+                hash.u32(call.partner.get());
             }
         }
         hash.finish()

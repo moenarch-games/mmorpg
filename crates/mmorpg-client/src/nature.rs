@@ -119,6 +119,12 @@ mod wolf_den_bundle {
 mod wolf_den_descriptor {
     include!(concat!(env!("OUT_DIR"), "/wolf_den_descriptor.rs"));
 }
+mod discoveries_bundle {
+    include!(concat!(env!("OUT_DIR"), "/discoveries_bundle.rs"));
+}
+mod discoveries_descriptor {
+    include!(concat!(env!("OUT_DIR"), "/discoveries_descriptor.rs"));
+}
 
 type Files = &'static [(&'static str, &'static [u8])];
 
@@ -131,7 +137,13 @@ struct Source {
     descriptor: &'static str,
 }
 
-const SOURCES: [Source; 8] = [
+const SOURCES: [Source; 9] = [
+    Source {
+        keys: &mmorpg_presentation::world_dressing::DISCOVERY_ENTRIES,
+        entries: discoveries_bundle::ENTRIES,
+        files: discoveries_bundle::FILES,
+        descriptor: discoveries_descriptor::DESCRIPTOR,
+    },
     Source {
         keys: &mmorpg_presentation::world_dressing::WOLF_DEN_ENTRIES,
         entries: wolf_den_bundle::ENTRIES,
@@ -246,6 +258,10 @@ pub fn lods() -> Vec<EntryLods> {
     lods.extend(
         mmorpg_presentation::nature::descriptor_lods(wolf_den_descriptor::DESCRIPTOR)
             .expect("the embedded wolf den descriptor is valid"),
+    );
+    lods.extend(
+        mmorpg_presentation::nature::descriptor_lods(discoveries_descriptor::DESCRIPTOR)
+            .expect("the embedded discoveries descriptor is valid"),
     );
     lods
 }

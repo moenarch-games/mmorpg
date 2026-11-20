@@ -383,7 +383,8 @@ pub struct EntityFlags {
     #[tsify(optional)]
     pub named_weapon: Option<NamedWeapon>,
     /// A player in wolf form (#957), drawn as the wolf.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[tsify(optional)]
     pub shapeshifted: bool,
     /// An aggressive creature.
     pub hostile: bool,
