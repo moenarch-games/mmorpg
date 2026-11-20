@@ -461,6 +461,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::fen_pack::spawns())
         // The optional discoveries' guards (#913).
         .chain(super::discoveries::spawns())
+        // The Rimewood signal post, a target-priority fight (#952).
+        .chain(super::signal_post::spawns())
         .collect()
 }
 

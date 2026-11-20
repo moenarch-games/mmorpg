@@ -502,6 +502,11 @@ const LOADOUT_ITEMS: Readonly<Record<CarriedLoadout, readonly { key: string; soc
     { key: "equipment.sword.arming", socket: "hand_r.weapon" },
     { key: "equipment.shield.heater", socket: "hand_l.shield" },
   ],
+  // The Redbrand Brute's round plank shield (#953, asset-tooling #774).
+  "sword-and-shield.redbrand": [
+    { key: "equipment.sword.arming", socket: "hand_r.weapon" },
+    { key: "equipment.shield.redbrand", socket: "hand_l.shield" },
+  ],
   "bow-and-quiver": [
     { key: "equipment.bow.long", socket: "back.bow.stowed" },
     { key: "equipment.quiver.back", socket: "back.quiver" },
@@ -717,6 +722,8 @@ function poseCrossbow(model: THREE.Object3D, crossbow: CrossbowCarry | null): vo
  */
 const CHORES: readonly { item: string; socket: string }[] = [...new Map(Object.values(choreTable.chores)
   .map(({ item, socket }) => [`${item}@${socket}`, { item, socket }] as const)).values()];
+/** The Redbrand signaler's horn (#952, `units::signal::HORN`): every Redbrand figure carries it hidden, shown through a call. */
+const SIGNAL_HORN: { item: string; socket: string } = { item: "equipment.tool.signal-horn", socket: "hand_r.weapon" };
 const choreHolders = new WeakMap<THREE.Object3D, Map<string, THREE.Group>>();
 
 /** Shows `model`'s chore item the presenter asks for (#904); a figure without it keeps empty hands. */
@@ -912,7 +919,7 @@ type FigureBundle = {
   wear(model: THREE.Object3D, worn: readonly { key: string; socket: string }[], hairKey: string | null,
     tint: readonly [number, number, number] | undefined): void;
   /** Hangs every chore item (#904) the figure has hidden on its socket of `model`, for {@link poseChore}. */
-  carryChores(model: THREE.Object3D): void;
+  carryChores(model: THREE.Object3D, chores?: readonly { item: string; socket: string }[]): void;
   /** Rest bounds of the default entry posed in `rest`. */
   bounds: Pick<Asset, "floor" | "height" | "centre">;
 };
@@ -1145,9 +1152,9 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
       }
     }
   };
-  const carryChores: FigureBundle["carryChores"] = (model) => {
+  const carryChores: FigureBundle["carryChores"] = (model, chores = CHORES) => {
     const held = new Map<string, THREE.Group>();
-    for (const { item: key, socket } of CHORES) {
+    for (const { item: key, socket } of chores) {
       const item = items.get(key);
       const place = sockets.get(socket);
       if (!item || !place) { continue; }
@@ -1165,7 +1172,7 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
 
 async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
   // The farmer's straw hat (#418) rides with the viewer's headwear choices.
-  const keys = [...new Set([...[...Object.values(LOADOUT_ITEMS), ...Object.values(HEADWEAR_ITEMS)].flat().map((item) => item.key), "equipment.hat.straw", ...Object.values(THROWABLE_ITEMS), ...CHORES.map((chore) => chore.item)])];
+  const keys = [...new Set([...[...Object.values(LOADOUT_ITEMS), ...Object.values(HEADWEAR_ITEMS)].flat().map((item) => item.key), "equipment.hat.straw", ...Object.values(THROWABLE_ITEMS), ...CHORES.map((chore) => chore.item), SIGNAL_HORN.item])];
   const male = await loadFigure(loader, MALE, keys, Object.values(HAIR_ENTRIES), rest);
   const { gltf, sources, sockets, motions, appearance, look, face, scene, wear } = male;
   const figures = new Map<string, FigureBundle>([[MALE, male]]);
@@ -1358,8 +1365,10 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
       }
       const worn = [...(loadout ? LOADOUT_ITEMS[loadout] : []), ...(preset.headwear ? [{ key: preset.headwear, socket: "head.armor" }] : [])];
       figure.wear(model, worn, preset.hair, preset.tint);
-      // A resident holds its routine's chore item (#904); enemies have no routines.
+      // A resident holds its routine's chore item (#904); enemies have no routines, but a Redbrand
+      // may sound the signal horn (#952).
       if (resident.startsWith("resident.")) { figure.carryChores(model); }
+      if (resident.startsWith("enemy.redbrand.")) { figure.carryChores(model, [SIGNAL_HORN]); }
       if (preset.faction) { tintMaterials(model, preset.faction.materials, preset.faction.color); }
       if (preset.tone) { tintMaterials(model, preset.tone.materials, preset.tone.color); }
       // Age and build keys (#380) after the face: build targets are on everything worn, age

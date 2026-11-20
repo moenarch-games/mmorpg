@@ -478,8 +478,10 @@ fn spawns_populate_their_subzones() {
         ((wilds::SOUTHWOOD, "Brown Bear"), 1),
         ((wilds::CROWN_FOOTHILLS, "Timber Wolf"), 6),
         ((wilds::CROWN_FOOTHILLS, "Hill Ogre"), 1),
-        // The Rimewood scouts (#933), an Arcanist's group-control fight.
-        ((wilds::CROWN_FOOTHILLS, "Redbrand Bandit"), 3),
+        // The Rimewood scouts (#933), an Arcanist's group-control fight,
+        // and the Rimewood signal post (#952), a target-priority fight.
+        ((wilds::CROWN_FOOTHILLS, "Redbrand Bandit"), 5),
+        ((wilds::CROWN_FOOTHILLS, "Redbrand Crossbowman"), 1),
         ((wilds::GREYFANG_APPROACH, "Redbrand Bandit"), 4),
         ((wilds::GREYFANG_APPROACH, "Redbrand Crossbowman"), 3),
         // The Redbrands hold the Delving Workings (#818).

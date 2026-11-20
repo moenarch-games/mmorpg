@@ -24,6 +24,9 @@ use super::traversal::Motions;
 pub enum Loadout {
     /// The Warden's arming sword and heater shield (#156).
     SwordAndShield,
+    /// The arming sword and the Redbrand round shield (#953, asset-tooling #774): the Redbrand
+    /// Brute.
+    SwordAndRedbrandShield,
     /// The Ranger's longbow and quiver on its back (#244).
     BowAndQuiver,
     /// The arming sword alone: the Greyhaven guards.
@@ -70,6 +73,7 @@ impl Loadout {
     pub const fn name(self) -> &'static str {
         match self {
             Self::SwordAndShield => "sword-and-shield",
+            Self::SwordAndRedbrandShield => "sword-and-shield.redbrand",
             Self::BowAndQuiver => "bow-and-quiver",
             Self::Sword => "sword",
             Self::Dagger => "dagger",
@@ -105,7 +109,9 @@ impl Loadout {
     #[must_use]
     pub const fn hands(self) -> Hands {
         let (left, right) = match self {
-            Self::SwordAndShield => (Some(Held::Shield), Some(Held::Weapon)),
+            Self::SwordAndShield | Self::SwordAndRedbrandShield => {
+                (Some(Held::Shield), Some(Held::Weapon))
+            }
             Self::BowAndQuiver => (None, None),
             Self::Sword | Self::Dagger | Self::FlangedMace | Self::GarricksCleaver => {
                 (None, Some(Held::Weapon))
@@ -597,7 +603,7 @@ impl Resident {
             }
             Self::Marauder => Some(Loadout::Dagger),
             Self::RedbrandCrossbowman => Some(Loadout::Crossbow),
-            Self::RedbrandBrute => Some(Loadout::SwordAndShield),
+            Self::RedbrandBrute => Some(Loadout::SwordAndRedbrandShield),
             Self::Marshal
             | Self::Innkeeper
             | Self::Farmer
@@ -1022,6 +1028,13 @@ pub struct SwordClips {
     /// Bandit flanks and falls back with them (#963).
     pub sidesteps: [&'static str; 2],
     pub hop_back: &'static str,
+    /// The Redbrand shield-bearer's guard (#953, asset-tooling #774), whole body: the round
+    /// shield held up while it fights, its planted 45° pivots to the figure's left and right,
+    /// the shield taking a blocked blow, and the stagger when a blow gets past it.
+    pub shield_guard: &'static str,
+    pub shield_turns: [&'static str; 2],
+    pub shield_impact: &'static str,
+    pub shield_stagger: &'static str,
 }
 
 impl SwordClips {
@@ -1514,6 +1527,8 @@ pub const TURN_CLIP_RATE: f64 = 1.5;
 pub const TURN_HOLD_SECONDS: f64 = 0.2;
 /// The turn clips' authored quarter turn plays at its rate at this many radians per clip.
 const TURN_CLIP_RADIANS: f64 = FRAC_PI_2;
+/// The shield guard's planted pivots (#953, asset-tooling #774) turn 45° each.
+const SHIELD_TURN_CLIP_RADIANS: f64 = std::f64::consts::FRAC_PI_4;
 /// The longest a reaction plays, in seconds: a long shove spin stops here and blends out.
 pub const REACTION_SECONDS: f32 = 1.5;
 /// A cast's held strike wind-up (#582) waits this long past the cast for the zone's strike.
@@ -1685,6 +1700,10 @@ impl Kind {
                     smash: "Sword_Overhead_Smash",
                     sidesteps: ["Sword_Sidestep_L", "Sword_Sidestep_R"],
                     hop_back: "Sword_Hop_Back",
+                    shield_guard: "Shield_Guard_Loop",
+                    shield_turns: ["Shield_Guard_Turn_L", "Shield_Guard_Turn_R"],
+                    shield_impact: "Shield_Block_Impact",
+                    shield_stagger: "Guard_Broken_Stagger",
                 }),
                 dagger: Some(DaggerClips {
                     idle: "Dagger_Idle_Loop",
@@ -2333,6 +2352,10 @@ pub struct Cues<'a> {
     /// facing plays the sword footwork ([`SwordClips::sidesteps`]) instead of the strafe or
     /// backpedal.
     pub footwork: bool,
+    /// A shield-bearer fighting, the Redbrand Brute (#953): it stands in its round-shield guard,
+    /// pivots with the guard turns, takes a blocked blow on the shield and staggers when one
+    /// gets past it.
+    pub shield_guard: bool,
     /// Presentation clock and the step since the previous frame, in seconds.
     pub now: f64,
     pub dt: f64,
@@ -3373,10 +3396,16 @@ impl Playback {
             self.turning = Some((cues.turn > 0., cues.now + TURN_HOLD_SECONDS));
         }
         let (left, _) = self.turning.filter(|&(_, until)| cues.now < until)?;
-        let clip = if left {
-            gaits.turn_left
-        } else {
-            gaits.turn_right
+        // A shield-bearer pivots in its guard (#953): its planted turns are an eighth turn each.
+        let pivot = clips
+            .sword
+            .filter(|_| cues.shield_guard)
+            .map(|sword| sword.shield_turns[usize::from(!left)])
+            .filter(|&clip| duration(clip) > 0.);
+        let (clip, radians) = match pivot {
+            Some(clip) => (clip, SHIELD_TURN_CLIP_RADIANS),
+            None if left => (gaits.turn_left, TURN_CLIP_RADIANS),
+            None => (gaits.turn_right, TURN_CLIP_RADIANS),
         };
         let length = f64::from(duration(clip));
         if length <= 0. {
@@ -3384,8 +3413,7 @@ impl Playback {
         }
         // Through the hold the step keeps at least the threshold's pace.
         #[allow(clippy::cast_possible_truncation)]
-        let rate = (cues.turn.abs().max(TURN_CLIP_RATE) * length / TURN_CLIP_RADIANS)
-            .clamp(0.7, 1.6) as f32;
+        let rate = (cues.turn.abs().max(TURN_CLIP_RATE) * length / radians).clamp(0.7, 1.6) as f32;
         Some(Want::looped(clip, rate))
     }
 
@@ -3786,8 +3814,12 @@ impl Playback {
             chored = true;
             Want::looped(chore.idle.unwrap_or(clips.idle), 1.)
         } else {
-            // A standing protecting guard holds the shield up with its own stance.
-            Want::looped(clips.guard.filter(|_| guarding).unwrap_or(clips.idle), 1.)
+            // A standing protecting guard holds the shield up with its own stance; a fighting
+            // shield-bearer stands in its whole-body guard (#953).
+            let idle = sword(|sword| sword.shield_guard)
+                .filter(|_| cues.shield_guard)
+                .unwrap_or(clips.idle);
+            Want::looped(clips.guard.filter(|_| guarding).unwrap_or(idle), 1.)
         };
         // A dodge roll (#516) plays its clip once over the roll's length, whatever the legs did.
         if cues.rolling && !self.rolling {
@@ -4032,6 +4064,13 @@ impl Playback {
             carry.sheathed = [true; 2];
         }
         carry.chore = chore.filter(|_| chored);
+        // An item in the weapon hand, the signal horn (#952), sends the weapon to its stowed socket.
+        if carry
+            .chore
+            .is_some_and(|chore| chore.socket == "hand_r.weapon")
+        {
+            carry.weapon_drawn = Some(false);
+        }
         let mut hands = cues.loadout.map(Loadout::hands).unwrap_or_default();
         // A chore's hand item closes the fingers round its handle or shaft.
         if let Some((hand, held)) = carry.chore.and_then(super::chores::Chore::grip) {
