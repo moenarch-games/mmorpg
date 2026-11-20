@@ -570,13 +570,14 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
         .unwrap();
     let [cx, cz] = market::centre([house.position[0], house.position[2]]);
     let [hx, hz] = market::HALF_EXTENTS;
-    // The square's own props, not the villages' clutter and stand-ins (#851) or the walk-in
-    // houses' furniture (#843, #886) elsewhere.
+    // The square's own props, not the villages' clutter and stand-ins (#851), the Wolfrun cart
+    // scene (#984) or the walk-in houses' furniture (#843, #886) elsewhere.
     let elsewhere: Vec<[i32; 2]> = mmorpg_presentation::world_dressing::placed(&scenery)
         .iter()
         .filter(|placed| {
             placed.id.starts_with("village-")
                 || placed.id.starts_with("settlement-")
+                || placed.id.starts_with("wolfrun-cart-")
                 || placed.fallback_collider.is_some()
         })
         .map(|placed| [placed.position[0], placed.position[2]])
