@@ -1779,7 +1779,11 @@ impl UnitPresenter {
                 }
                 return (None, None, None);
             }
-            mmorpg_core::PostureView::Free => {}
+            // A hunter on its outing (#991) stands and walks as ever; its chore shows how it went.
+            mmorpg_core::PostureView::Free
+            | mmorpg_core::PostureView::Hunting
+            | mmorpg_core::PostureView::Carrying
+            | mmorpg_core::PostureView::Hurt => {}
         }
         if entity == EntityRef::Player(self.player_id) {
             let corpse = snapshot
@@ -2115,14 +2119,22 @@ impl UnitPresenter {
                         face,
                         loadout,
                         // What a resident holds on its routine (#904), by the zone's clock, and
-                        // a signaler's horn through its call (#952).
+                        // a signaler's horn through its call (#952), and a hunter's spear, catch
+                        // or stick on its outing (#991).
                         chore: match entity {
-                            EntityRef::Npc(npc) => chores::Chores::get().resident(
-                                &self.content,
-                                npc,
-                                snapshot.tick,
-                                unit.record.velocity != [0; 3],
-                            ),
+                            EntityRef::Npc(npc) => {
+                                let chores = chores::Chores::get();
+                                chores
+                                    .hunting(unit.record.flags.posture)
+                                    .unwrap_or_else(|| {
+                                        chores.resident(
+                                            &self.content,
+                                            npc,
+                                            snapshot.tick,
+                                            unit.record.velocity != [0; 3],
+                                        )
+                                    })
+                            }
                             _ => self
                                 .horns
                                 .get(&entity)
