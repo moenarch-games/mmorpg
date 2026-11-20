@@ -940,7 +940,7 @@ fn native_pointer_application_contract() {
     ready.players[0].quests.entries[0].progress[0] = 1;
     ready.players[0]
         .inventory
-        .insert(mmorpg_core::ItemId::new(28), 3)
+        .insert(mmorpg_core::ItemId::new(31), 3)
         .unwrap();
     ready.players[0].inventory_revision += 1;
     app.restore(ready);

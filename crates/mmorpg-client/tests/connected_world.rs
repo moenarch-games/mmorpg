@@ -747,7 +747,7 @@ async fn a_budget_packed_crowded_projection_reaches_a_client() {
             }) + 1
                 + 8;
             // The world sheet carries the content doors, the pieces that are not intact and the
-            // raid signal, and the waystone sheet the unlocked stones (#158, #882).
+            // raid signal and the spent veins (#917), and the waystone sheet the unlocked stones (#158, #882).
             let raid_bytes = snapshot.raid.as_ref().map_or(1, |raid| {
                 1 + 3 + 2 + 4 * raid.aid.len() + 2 + 4 * raid.braced.len()
             });
@@ -756,6 +756,8 @@ async fn a_budget_packed_crowded_projection_reaches_a_client() {
                 + 2
                 + 5 * snapshot.pieces.len()
                 + raid_bytes
+                + 2
+                + 4 * snapshot.depleted_veins.len()
                 + 2
                 + 4 * snapshot.viewer.waystones.len();
             let expected_entities = (MAX_PLAYER_PROJECTION_BYTES
@@ -808,6 +810,7 @@ async fn fragmented_projection_reaches_the_native_client() {
         projectiles: Vec::new(),
         debris: Vec::new(),
         pieces: Vec::new(),
+        depleted_veins: Vec::new(),
         summoned: Vec::new(),
         traps: Vec::new(),
         raid: None,

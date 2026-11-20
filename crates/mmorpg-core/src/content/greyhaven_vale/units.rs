@@ -322,7 +322,7 @@ const GUARD: &str = "Greyhaven Guard";
 type NpcRow = (u32, &'static str, NpcRole, u8, [i32; 2], u16);
 
 #[rustfmt::skip]
-const NPCS: [NpcRow; 21] = [
+const NPCS: [NpcRow; 22] = [
     (1, "Marshal Elden Greywatch", NpcRole::QuestGiver, 10, [-2_200, 900], 0),
     (2, "Tanner Hilda Brook", NpcRole::QuestGiver, 5, [-2_400, 3_150], 32_768),
     // Inside the inn, behind its bar, facing the room (#158).
@@ -350,6 +350,8 @@ const NPCS: [NpcRow; 21] = [
     (20,"Washer Elin",NpcRole::Resident,2,[1400,3100],49152),
     // On the market bench by day (#619): the stand spot of seat 1.
     (21,"Apprentice Finn",NpcRole::Resident,2,[2410,2520],0),
+    // In the smithy's back yard by his bench, facing the alley from the square (#917).
+    (43, "Smith Wulfric Hale", NpcRole::Vendor, 6, [2_300, -250], 0),
 ];
 
 pub(crate) fn creature_templates() -> Vec<CreatureTemplate> {
@@ -530,6 +532,8 @@ pub(crate) fn vendors() -> Vec<(NpcId, crate::VendorStock)> {
         (NpcId::new(3), crate::starter_vendor_stock()),
         // Trader Maren at Fenford (#826).
         (NpcId::new(42), crate::fenford_trader_stock()),
+        // Smith Wulfric Hale at the Outpost smithy makes the boar-spear (#917).
+        (NpcId::new(43), crate::smith_stock()),
     ]
 }
 

@@ -398,6 +398,7 @@ fn content_without_vendors_refuses_every_trade_and_binding_is_validated() {
     let cheaper = VendorStock::new(&[VendorOffer {
         item: BOOTS,
         price: 11,
+        materials: &[],
     }])
     .unwrap();
     let other = base.with_vendors(vec![(VENDOR, cheaper)]).unwrap();
@@ -409,6 +410,7 @@ fn vendor_stock_is_validated() {
     let offer = |item, price| VendorOffer {
         item: ItemId::new(item),
         price,
+        materials: &[],
     };
     assert_eq!(VendorStock::new(&[]), Err(VendorStockError::OfferCount));
     assert_eq!(
@@ -439,10 +441,10 @@ fn vendor_stock_is_validated() {
 }
 
 #[test]
-fn greyhaven_binds_bram_tolliver_and_trader_maren_as_its_vendors() {
+fn greyhaven_binds_bram_tolliver_trader_maren_and_the_smith_as_its_vendors() {
     let content = greyhaven_vale::content();
-    let [(npc, stock), (trader, trader_stock)] = content.vendors() else {
-        panic!("two vendors");
+    let [(npc, stock), (trader, trader_stock), (smith, smith_stock)] = content.vendors() else {
+        panic!("three vendors");
     };
     assert_eq!(*npc, VENDOR);
     assert_eq!(content.npc(VENDOR).unwrap().role, NpcRole::Vendor);
@@ -451,6 +453,9 @@ fn greyhaven_binds_bram_tolliver_and_trader_maren_as_its_vendors() {
     assert_eq!(content.npc(*trader).unwrap().name, "Trader Maren");
     assert_eq!(content.npc(*trader).unwrap().role, NpcRole::Vendor);
     assert_eq!(trader_stock, &mmorpg_core::fenford_trader_stock());
+    // The Outpost smith's recipe (#917).
+    assert_eq!(content.npc(*smith).unwrap().name, "Smith Wulfric Hale");
+    assert_eq!(smith_stock, &mmorpg_core::smith_stock());
 }
 
 #[test]

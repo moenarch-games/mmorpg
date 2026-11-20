@@ -585,6 +585,8 @@ fn npcs_stand_at_their_posts() {
         ]
         .into_iter()
         .chain(region_residents())
+        // The smith (#917), the newest NPC.
+        .chain([("Smith Wulfric Hale", NpcRole::Vendor, outpost)])
         .collect::<Vec<_>>()
     );
     let graveyard = content.graveyard();

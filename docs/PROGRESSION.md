@@ -101,7 +101,7 @@ rules are unchanged; there is no multiplier and no anti-grind penalty.
   75 s phases, kills aside, and raids come at most once a night after a
   one-hour cooldown.
 
-No crafting system exists yet, so crafting XP is left to #917.
+The first crafting loop (#917) pays no XP yet: a once-per-character crafting grant needs a durable crafted fact in the character record (Atlas 5.3.16.i917).
 
 The quest-chain journey now also walks a mixed path. Discovering the Wolfrun
 Woods and Millbrook Farm on the way moves the opening chain's level-ups to

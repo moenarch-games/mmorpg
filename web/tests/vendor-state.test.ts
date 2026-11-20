@@ -32,7 +32,7 @@ function error(code: ErrorCode, target: EntityRef | null) {
 
 test("the nearest projected catalog vendor is offered, with reach measured in XZ like the zone", () => {
   const near = nearestVendor(projection(0), catalog);
-  expect(near).toEqual({ npc: 3, name: "Innkeeper Bram Tolliver", inReach: true, offers: [{ item: 2, price: 9 }] });
+  expect(near).toEqual({ npc: 3, name: "Innkeeper Bram Tolliver", inReach: true, offers: [{ item: 2, price: 9, materials: [] }] });
   expect(nearestVendor(projection(0, {}, [VENDOR_REACH_UNITS, 0, 0]), catalog)?.inReach).toBe(true);
   expect(nearestVendor(projection(0, {}, [VENDOR_REACH_UNITS + 1, 0, 0]), catalog)?.inReach).toBe(false);
   // The guard is nearer but sells nothing.

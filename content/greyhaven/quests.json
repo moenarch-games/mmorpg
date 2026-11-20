@@ -7,7 +7,7 @@
       "text": "Hilda's supply cart never came down the Wolfrun Trail, and wolves prowl the road. Find the cart above the Wolfrun Climb, see what drew the pack, and bring Hilda the three sacks they dragged off.",
       "giver": 1,
       "ender": 2,
-      "objectives": [{"explore": {"area": 2}}, {"collect": {"item": 28, "count": 3, "source": 1}}],
+      "objectives": [{"explore": {"area": 2}}, {"collect": {"item": 31, "count": 3, "source": 1}}],
       "rewards": {"experience": 250, "copper": 15, "choices": [9, 6]}
     },
     {

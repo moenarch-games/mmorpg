@@ -38,7 +38,7 @@ pub const FARMER: NpcId = NpcId::new(4);
 pub const WOLF_PELT: ItemId = ItemId::new(10);
 
 /// The quest item Timber Wolves drop for *The Wolfrun Cart* (#984).
-pub const SUPPLY_SACK: ItemId = ItemId::new(28);
+pub const SUPPLY_SACK: ItemId = ItemId::new(31);
 
 /// The opening (#984): find the abandoned cart in the Wolfrun Woods and take back the sacks the
 /// pack dragged off for the Tanner, who then gives the lead to Millbrook.
