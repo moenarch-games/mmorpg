@@ -93,6 +93,8 @@ pub struct ZoneContent {
     handoff_corridors: Vec<crate::HandoffCorridor>,
     /// The night raid target (#530), if the zone has one.
     raid: Option<crate::RaidSite>,
+    /// A hunter's daily outing (#991), if the zone has one.
+    hunt: Option<crate::HuntOuting>,
     /// Network stones standing in this zone, in ID order (#145).
     waystones: Vec<crate::WaystoneId>,
     /// Named areas whose first visit pays discovery experience (#916), in ID order.
@@ -237,6 +239,7 @@ impl ZoneContent {
             climbing: crate::ClimbSurfaces::default(),
             handoff_corridors: Vec::new(),
             raid: None,
+            hunt: None,
             waystones: Vec::new(),
             discoveries: Vec::new(),
             gather_nodes: Vec::new(),
@@ -297,6 +300,7 @@ impl ZoneContent {
             climbing: crate::ClimbSurfaces::default(),
             handoff_corridors: Vec::new(),
             raid: None,
+            hunt: None,
             waystones: Vec::new(),
             discoveries: Vec::new(),
             gather_nodes: Vec::new(),
@@ -1439,6 +1443,37 @@ impl ZoneContent {
         Ok(self)
     }
 
+    /// Adds a hunter's daily outing (#991). Its beast is a content spawn reserved for the
+    /// outing's confrontations, in no den, raid or depths site.
+    pub fn with_hunt(mut self, hunt: crate::HuntOuting) -> Result<Self, ZoneError> {
+        hunt.validate(&self)?;
+        if self
+            .dens
+            .iter()
+            .any(|den| den.pack.contains(&hunt.beast) || den.prey.contains(&hunt.beast))
+        {
+            return Err(ZoneError::new("a creature belongs to two groups"));
+        }
+        self.hunt = Some(hunt);
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// The hunter's outing, if any.
+    #[must_use]
+    pub const fn hunt(&self) -> Option<&crate::HuntOuting> {
+        self.hunt.as_ref()
+    }
+
+    /// Whether `creature` is the hunt's reserved beast: it stands only on a confrontation day's
+    /// stalk and never respawns on its own.
+    #[must_use]
+    pub fn is_hunt_beast(&self, creature: CreatureId) -> bool {
+        self.hunt
+            .as_ref()
+            .is_some_and(|hunt| hunt.beast == creature)
+    }
+
     /// Binds the network stones that stand in this zone (#145, [`crate::WAYSTONES`]): each
     /// known, at most once, with its reach and arrival clear of every handoff corridor.
     pub fn with_waystones(
@@ -1638,7 +1673,7 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_gather_fingerprint();
+        let fingerprint = self.compute_hunt_fingerprint();
         let Some(rewind) = self.hit_rewind else {
             return fingerprint;
         };
@@ -1716,6 +1751,25 @@ impl ZoneContent {
     #[must_use]
     pub fn caches(&self) -> &[crate::DiscoveryCache] {
         &self.caches
+    }
+
+    /// A hunter's outing (#991) enters the identity only when a zone has one.
+    fn compute_hunt_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_gather_fingerprint();
+        let Some(hunt) = &self.hunt else {
+            return fingerprint;
+        };
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/hunt-v1");
+        hash.u64(fingerprint);
+        hash.u32(hunt.hunter.get());
+        hash.u32(hunt.leave);
+        hash.len(hunt.path.len());
+        hash.i32s(hunt.path.as_flattened());
+        hash.u32(u32::from(hunt.facing));
+        hash.u32(hunt.stalk);
+        hash.u32(hunt.beast.get());
+        hash.finish()
     }
 
     fn compute_cache_fingerprint(&self) -> u64 {

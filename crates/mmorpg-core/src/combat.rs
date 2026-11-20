@@ -1657,6 +1657,7 @@ impl ZoneSimulation {
             if let Life::Despawned { died_at } = creature.life
                 && !content.is_raider(creature_id)
                 && !content.is_depths_creature(creature_id)
+                && !content.is_hunt_beast(creature_id)
                 && now >= died_at.saturating_add(u64::from(template.respawn_ticks))
                 && (template.prop().is_none() || !self.prop_spot_taken(creature_id)?)
             {

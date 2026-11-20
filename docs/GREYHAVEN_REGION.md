@@ -171,7 +171,14 @@ clip leaves the hands empty.
   jerkin and cowl.
 - **Westmere Lodge:** Fisher Brann fishes the tarn and eats at the fire at noon.
 - **The hunters' camp:** Huntsman Edric Vale keeps the fire; Trapper Sela walks her lines in
-  Southwood each morning.
+  Southwood each morning. At 14:00 she goes back out with her spear to hunt at the far end of
+  her line (#991). On a quiet day she comes home with her catch in a game bag. On a
+  confrontation day (one in two, a hash of the content seed and the day), a Brown Bear stands in
+  the clearing beyond her. If nobody kills it while she holds her ground, she limps home and
+  rests at the camp leaning on a stick until dusk. A player who kills the bear turns that day
+  into a catch. The outing runs on the zone's clock whether or not anyone watches. Her
+  placement follows from the tick and the bear's canonical life, so the outing keeps no state
+  of its own (`mmorpg_core::hunt`).
 - **Greyfang Watch:** Watchman Garth holds the tower, Watchman Pell walks the road north twice a
   day.
 - **The farmland's hamlets:** Goodwife Ena, Ploughman Garr, Old Bertil, Shepherd Lise, Miller

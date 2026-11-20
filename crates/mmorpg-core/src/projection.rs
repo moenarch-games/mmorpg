@@ -525,6 +525,8 @@ impl ZoneSimulation {
                 let placement = self
                     .npc_placement(npc_id)
                     .ok_or_else(|| ZoneError::new("unknown npc"))?;
+                // A hunter on its outing (#991) shows how it went.
+                let hunting = self.hunt_placement(npc_id).map(|(_, posture)| posture);
                 EntitySnapshot {
                     kind: EntityKind::Npc,
                     id: npc_id.get(),
@@ -548,11 +550,13 @@ impl ZoneSimulation {
                         .is_some()
                     {
                         crate::raid::INJURED_HEALTH_PERCENT
+                    } else if hunting == Some(crate::PostureView::Hurt) {
+                        crate::hunt::INJURED_HEALTH_PERCENT
                     } else {
                         100
                     },
                     flags: EntityFlags {
-                        posture: self.npc_posture(npc_id),
+                        posture: hunting.unwrap_or_else(|| self.npc_posture(npc_id)),
                         ..EntityFlags::default()
                     },
                 }

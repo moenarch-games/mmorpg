@@ -36,6 +36,7 @@ pub mod fort;
 pub mod hamlet_creatures;
 pub mod highland_bandits;
 pub mod highlands;
+pub mod hunt;
 pub mod inn;
 pub mod landscape;
 pub mod layout;
@@ -2018,6 +2019,7 @@ fn content_with_spawns(
             .with_climbing(climbing())?
             .with_raid(raid::millbrook_barn())?
             .with_dens(dens::dens())?
+            .with_hunt(hunt::outing())?
             .with_caches(discoveries::caches())?
             .with_waystones(vec![
                 crate::GREYHAVEN_OUTPOST,

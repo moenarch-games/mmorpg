@@ -329,7 +329,7 @@ fn spawns_populate_their_subzones() {
     for spawn in content.creature_spawns() {
         // Night raiders (#530) stand on the farm's outskirts only for a committed incident and
         // march rather than wander; `night_raid` covers them.
-        if content.is_raider(spawn.id) {
+        if content.is_raider(spawn.id) || content.is_hunt_beast(spawn.id) {
             continue;
         }
         let template = content.creature_template(spawn.template).unwrap();
@@ -475,7 +475,8 @@ fn spawns_populate_their_subzones() {
         ((wilds::SOUTHWOOD, "Young Boar"), 6),
         // Brown Bears (#889) in the deep woods.
         ((wilds::WESTMERE_WOODS, "Brown Bear"), 2),
-        ((wilds::SOUTHWOOD, "Brown Bear"), 1),
+        // The deep woods' bear and Trapper Sela's hunting bear (#991).
+        ((wilds::SOUTHWOOD, "Brown Bear"), 2),
         ((wilds::CROWN_FOOTHILLS, "Timber Wolf"), 6),
         ((wilds::CROWN_FOOTHILLS, "Hill Ogre"), 1),
         // The Rimewood scouts (#933), an Arcanist's group-control fight,
@@ -611,8 +612,9 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
     for (creature, spawn) in start.creatures.iter().zip(content.creature_spawns()) {
         let template = content.creature_template(spawn.template).unwrap();
         assert_eq!(creature.creature_id, spawn.id);
-        // The 18 night raiders (#530) wait, without a body, for an incident.
-        if content.is_raider(spawn.id) {
+        // The 18 night raiders (#530) wait, without a body, for an incident, and the hunt's bear
+        // (#991) for a confrontation day.
+        if content.is_raider(spawn.id) || content.is_hunt_beast(spawn.id) {
             assert!(matches!(
                 creature.life,
                 mmorpg_core::CreatureLife::Despawned { .. }
