@@ -127,6 +127,9 @@ pub enum ErrorCode {
     MovementImmune,
     /// The bag lacks a recipe's materials (#917).
     MissingMaterials,
+    /// The ability does not fit the user's shape (#957): a spell in wolf form, or the wolf's
+    /// bite outside it.
+    WrongForm,
 }
 
 /// One feedback event addressed to a player.

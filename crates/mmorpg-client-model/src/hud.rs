@@ -331,7 +331,7 @@ mod tests {
         );
         assert_eq!(class_kit(PlayerClass::Rogue), [30, 31, 32, 33, 42, 43, 44]);
         assert_eq!(class_kit(PlayerClass::Cleric), [34, 35, 36, 37, 56]);
-        assert_eq!(class_kit(PlayerClass::Druid), [38, 39, 40, 41, 46]);
+        assert_eq!(class_kit(PlayerClass::Druid), [38, 39, 40, 41, 46, 58, 59]);
     }
 
     #[test]
