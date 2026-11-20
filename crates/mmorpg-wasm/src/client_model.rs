@@ -7,6 +7,7 @@
 //! content, the content every browser world presents quests from.
 use mmorpg_client_model::{
     chat::{self, LineKind, Logs},
+    exploration,
     hud::{self, CooldownKind},
     manual_aim, mouse_owner,
     outbox::{self, MovementCommands},
@@ -962,4 +963,69 @@ mod tests {
         );
         assert!(movement_commands(MovementCommands::default()).is_empty());
     }
+}
+
+/// A named area on the exploration map (#983), in metres (x east, z south).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Tsify)]
+pub struct MapArea {
+    pub id: u32,
+    pub name: String,
+    pub min: [f32; 2],
+    pub max: [f32; 2],
+    /// Discovered by the viewer, or the starting area.
+    pub discovered: bool,
+}
+
+/// An approximate area for one open quest objective (#983, Atlas 5.1.13), a circle in metres.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Tsify)]
+pub struct QuestHint {
+    pub quest: u32,
+    pub label: String,
+    pub area: u32,
+    pub center: [f32; 2],
+    pub radius: f32,
+}
+
+/// The viewer's exploration map (#983): every named area, the discovered count of the
+/// content's discoverable areas and the active quests' approximate areas.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Tsify)]
+pub struct ExplorationMap {
+    pub areas: Vec<MapArea>,
+    pub discovered: u32,
+    pub total: u32,
+    pub hints: Vec<QuestHint>,
+}
+
+/// The exploration map for the viewer's discovered area IDs and received quest sheet.
+#[wasm_bindgen(js_name = explorationMap, unchecked_return_type = "ExplorationMap")]
+pub fn exploration_map(discoveries: &[u32], sheet: Ts<QuestSheet>) -> Result<JsValue, JsError> {
+    let sheet = core::QuestSheet::from(&sheet.to_rust()?);
+    let discoveries = discoveries.iter().copied().map(core::AreaId::new).collect();
+    let map = exploration::exploration_map(&hosted_content(), &discoveries, Some(&sheet));
+    to_js(&ExplorationMap {
+        areas: map
+            .areas
+            .into_iter()
+            .map(|area| MapArea {
+                id: area.id.get(),
+                name: area.name,
+                min: area.min,
+                max: area.max,
+                discovered: area.discovered,
+            })
+            .collect(),
+        discovered: u32::try_from(map.discovered).unwrap_or(u32::MAX),
+        total: u32::try_from(map.total).unwrap_or(u32::MAX),
+        hints: map
+            .hints
+            .into_iter()
+            .map(|hint| QuestHint {
+                quest: hint.quest,
+                label: hint.label,
+                area: hint.area.get(),
+                center: hint.center,
+                radius: hint.radius,
+            })
+            .collect(),
+    })
 }
