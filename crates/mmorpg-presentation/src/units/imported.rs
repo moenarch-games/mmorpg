@@ -1806,6 +1806,12 @@ impl Kind {
     ) -> &'static str {
         use mmorpg_core::ability::ids;
         let clips = self.clips();
+        // A Druid in wolf form (#957) savages with the wolf's second bite.
+        if ability == Some(ids::SAVAGE_BITE)
+            && let Some(bites) = clips.bites
+        {
+            return bites.attacks[1];
+        }
         let Some(strikes) = clips.strikes else {
             return clips.attack;
         };
@@ -2106,6 +2112,8 @@ impl Kind {
     #[must_use]
     pub fn of(entity: EntityRef, record: &EntitySnapshot, content: &ZoneContent) -> Option<Self> {
         match entity {
+            // A Druid in wolf form (#957) is drawn as the wildlife release's wolf.
+            EntityRef::Player(_) if record.flags.shapeshifted => Some(Self::Wolf),
             EntityRef::Player(_) => Some(Self::Ranger),
             EntityRef::Creature(_) => Self::of_family(
                 content
@@ -4568,6 +4576,13 @@ mod tests {
         assert_eq!(
             Kind::of(EntityRef::Player(1), &content_record(), &content),
             Some(Kind::Ranger)
+        );
+        // A Druid in wolf form (#957) is the wolf, with its run and bites.
+        let mut shifted = content_record();
+        shifted.flags.shapeshifted = true;
+        assert_eq!(
+            Kind::of(EntityRef::Player(1), &shifted, &content),
+            Some(Kind::Wolf)
         );
         assert_eq!(creature(CreatureFamily::Wolf), Some(Kind::Wolf));
         assert_eq!(creature(CreatureFamily::Vermin), Some(Kind::Rat));

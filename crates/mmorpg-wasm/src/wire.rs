@@ -122,7 +122,8 @@ mirror!(
         Snare,
         Stun,
         Haste,
-        Corpse
+        Corpse,
+        Shapeshift
     }
 );
 mirror!(
@@ -264,6 +265,7 @@ mirror!(
         NoRoom,
         NoLanding,
         MovementImmune,
+        WrongForm,
         SeatTaken,
         CannotSitHere,
         WeaponDrawn,
@@ -387,6 +389,10 @@ pub struct EntityFlags {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[tsify(optional)]
     pub named_weapon: Option<NamedWeapon>,
+    /// A player in wolf form (#957), drawn as the wolf.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[tsify(optional)]
+    pub shapeshifted: bool,
     /// An aggressive creature.
     pub hostile: bool,
     /// The viewer may attack it (living creatures).
@@ -440,6 +446,7 @@ impl From<&core::EntitySnapshot> for EntityState {
                 weapon_drawn: flags.weapon_drawn,
                 weapon: flags.weapon.map(Into::into),
                 named_weapon: flags.named_weapon.map(Into::into),
+                shapeshifted: flags.shapeshifted,
                 hostile: flags.hostile,
                 attackable: flags.attackable,
                 tapped_by_other: flags.tapped_by_other,
@@ -471,6 +478,7 @@ impl From<&EntityState> for core::EntitySnapshot {
                 weapon_drawn: flags.weapon_drawn,
                 weapon: flags.weapon.map(Into::into),
                 named_weapon: flags.named_weapon.map(Into::into),
+                shapeshifted: flags.shapeshifted,
                 hostile: flags.hostile,
                 attackable: flags.attackable,
                 tapped_by_other: flags.tapped_by_other,
