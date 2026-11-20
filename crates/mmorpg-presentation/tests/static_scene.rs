@@ -537,8 +537,8 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
     let parts = mmorpg_presentation::settlement_props::parts(&scenery);
     assert_eq!(
         parts.len(),
-        1229,
-        "market square, brook additions, the Delving Run footbridge (#828), the sixteen cottages' and six farmhouses' furniture (#843, #847, #886), the villages' clutter and stand-ins (#851), the second batch (#891) and the procedural props and fences they replace (#683)"
+        1233,
+        "market square, brook additions, the Delving Run footbridge (#828), the sixteen cottages' and six farmhouses' furniture (#843, #847, #886), the villages' clutter and stand-ins (#851), the second batch (#891), the Wolfrun cart scene (#984) and the procedural props and fences they replace (#683)"
     );
     for family in [
         ["stall", "cart", "crate"],
