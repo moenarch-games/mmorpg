@@ -284,7 +284,9 @@ mod tests {
             })
             .await
             .unwrap();
-        assert_eq!(cold.files_requested, 2);
+        // The cat's model and clips, plus its hair and skin textures since asset-tooling #799.
+        let files = catalogue.manifest.files.len();
+        assert_eq!(cold.files_requested, files);
         assert!(cold.bytes_received > 146_384);
         let (_, warm) = cache
             .retrieve(catalogue.manifest.clone(), 73, |_| async {
@@ -292,7 +294,7 @@ mod tests {
             })
             .await
             .unwrap();
-        assert_eq!((warm.cache_hits, warm.bytes_received), (2, 0));
+        assert_eq!((warm.cache_hits, warm.bytes_received), (files, 0));
         let file = &catalogue.manifest.files[1];
         fs::write(directory.path().join(&file.sha256), b"corrupt cache").unwrap();
         let (_, repaired) = cache
@@ -301,7 +303,10 @@ mod tests {
             })
             .await
             .unwrap();
-        assert_eq!((repaired.cache_hits, repaired.files_requested), (1, 1));
+        assert_eq!(
+            (repaired.cache_hits, repaired.files_requested),
+            (files - 1, 1)
+        );
         fs::remove_file(directory.path().join(&file.sha256)).unwrap();
         let refused = cache
             .retrieve(catalogue.manifest.clone(), 73, |request| {
