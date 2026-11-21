@@ -21,9 +21,10 @@
 //!   after the contact, holds still for [`POUNCE_RECOVER_TICKS`]. Stepping aside during the
 //!   wind-up dodges it; its recovery is the opening to hit back.
 //! - **Coiled strike.** The marsh adder (#990) has one attack too: from its reach it holds
-//!   still, coiled and hissing, through [`ADDER_WARN_TICKS`] turning toward its target, strikes
-//!   on its `Strike` clip's contact and holds still through the rest of the strike and its
-//!   `Strike_Recover`, [`ADDER_RECOVER_TICKS`]. Backing off during the hiss dodges it.
+//!   still, coiled and hissing, through [`ADDER_WARN_TICKS`] (one `Warn_Hiss_Loop`), turning
+//!   toward its target, strikes on its `Strike` clip's contact and holds still through the
+//!   rest of the strike and its `Strike_Recover`, [`ADDER_RECOVER_TICKS`]. Backing off during
+//!   the hiss dodges it.
 //!
 //! A pending attack is canonical creature state, so replay and recovery continue mid-bite.
 //! Outcomes stay health only: no knockback or hitstun.
@@ -54,9 +55,9 @@ pub const POUNCE_LEAP_SPEED_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(69
 pub const POUNCE_RECOVER_TICKS: u16 = crate::ticks_from_ms(833);
 
 /// The marsh adder's coiled strike (#990), from the wildlife descriptor's
-/// `greyhaven.wild.marsh-adder` clips: it hisses in `Warn_Hiss_Loop` for 1 s, then its `Strike`
-/// (0.417 s) makes contact 0.208 s in; `Strike_Recover` lasts 0.833 s.
-const ADDER_WARN_MS: u32 = 1_000;
+/// `greyhaven.wild.marsh-adder` clips: it hisses through one 1.333 s `Warn_Hiss_Loop`, then
+/// its `Strike` (0.417 s) makes contact 0.208 s in; `Strike_Recover` lasts 0.833 s.
+const ADDER_WARN_MS: u32 = 1_333;
 const ADDER_CONTACT_MS: u32 = ADDER_WARN_MS + 208;
 /// The adder's warning: the ticks it holds still, coiled and hissing, before it strikes.
 pub const ADDER_WARN_TICKS: u16 = crate::ticks_from_ms(ADDER_WARN_MS);

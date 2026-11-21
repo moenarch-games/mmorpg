@@ -1,10 +1,10 @@
 //! The Eastwater Fen adders (#990): three Marsh Adders lie coiled in the fen's low, wet western
 //! edge, Adder Hollow, 70 m and more south of the Fen Road. Each keeps to a metre or two of
 //! its own, some 10 m apart, so a player meets them one at a time. A player who comes within
-//! 4 m is warned: the adder coils and hisses for a second, then strikes close and quick on its
-//! clip's contact and lies open in its recovery (`creature_attack`). Backing off through the
-//! hiss dodges the strike; it slithers after slowly enough to walk away from. They are
-//! ordinary spawns that respawn in place. Spawn IDs 3120–3139 are theirs.
+//! 4 m is warned: the adder coils and hisses for over a second, then strikes close and quick
+//! on its clip's contact and lies open in its recovery (`creature_attack`). Backing off
+//! through the hiss dodges the strike; it slithers after slowly enough to walk away from.
+//! They are ordinary spawns that respawn in place. Spawn IDs 3120–3139 are theirs.
 
 use crate::CreatureId;
 use crate::content::CreatureSpawn;

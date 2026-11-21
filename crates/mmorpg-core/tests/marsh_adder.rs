@@ -146,8 +146,8 @@ fn marsh_adders_lie_coiled_in_the_fen_off_its_road() {
 #[test]
 fn the_adder_hisses_strikes_on_contact_and_recovers() {
     let contact = contact_ticks(CreatureFamily::Adder, CreatureAttack::Quick).unwrap();
-    // A second's hiss, then `Strike`'s contact 0.208 s in.
-    assert_eq!(contact, mmorpg_core::ticks_from_ms(1_208));
+    // One `Warn_Hiss_Loop`, then `Strike`'s contact 0.208 s in.
+    assert_eq!(contact, mmorpg_core::ticks_from_ms(1_541));
     assert!(ADDER_WARN_TICKS < contact);
     let [low, high] = content()
         .creature_template(units::templates::MARSH_ADDER)
