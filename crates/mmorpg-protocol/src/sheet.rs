@@ -220,12 +220,15 @@ impl SheetEncodingCache {
     }
 }
 
+/// A sheet's bytes and their revision.
+pub(crate) type EncodedSheet<'c> = (Cow<'c, [u8]>, u32);
+
 /// Each sheet's bytes at `snapshot.tick`; the bag and quest sheets are absent when the
 /// projection has none to send. A budgeted sheet that outgrows its budget fails.
 pub(crate) fn encode_sheets<'c>(
     snapshot: &ZoneSnapshot,
     cache: &'c mut SheetEncodingCache,
-) -> Result<[Option<(Cow<'c, [u8]>, u32)>; SHEET_COUNT], ProtocolError> {
+) -> Result<[Option<EncodedSheet<'c>>; SHEET_COUNT], ProtocolError> {
     let bag = match (&snapshot.inventory, &snapshot.equipment) {
         (Some(inventory), Some(equipment)) => Some((inventory, equipment)),
         (None, None) => None,
