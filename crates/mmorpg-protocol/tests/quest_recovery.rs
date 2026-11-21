@@ -5,7 +5,7 @@ mod arena;
 
 use std::sync::Arc;
 
-use mmorpg_core::greyhaven_vale::quests::{MARSHAL, TANNER, TROUBLE_IN_THE_WOODS, WOLF_PELT};
+use mmorpg_core::greyhaven_vale::quests::{MARSHAL, TANNER, THE_WOLFRUN_CART, WOLF_PELT};
 use mmorpg_core::{
     CreatureId, CreatureLife, EntityRef, ZoneCommand, ZoneId, ZoneSimulation, greyhaven_vale,
 };
@@ -60,7 +60,7 @@ fn an_active_quest_and_its_pending_intents_continue_through_canonical_bytes() {
     for (sequence, command) in [
         ZoneCommand::AcceptQuest {
             npc: MARSHAL,
-            quest: TROUBLE_IN_THE_WOODS.get(),
+            quest: THE_WOLFRUN_CART.get(),
         },
         ZoneCommand::AcceptQuest {
             npc: TANNER,
@@ -78,7 +78,7 @@ fn an_active_quest_and_its_pending_intents_continue_through_canonical_bytes() {
     let player = zone.snapshot().unwrap().players.remove(0);
     assert_eq!(player.quests.entries.len(), 1, "only the Marshal's quest");
 
-    // With Trouble in the Woods turned in (setup), Pelts for the Tanner is
+    // With The Wolfrun Cart turned in (setup), Pelts for the Tanner is
     // accepted beside the Tanner; a den wolf kill then leaves its quest-only
     // pelt on the corpse, and the corpse continues across recovery.
     let mut state = zone.snapshot().unwrap();

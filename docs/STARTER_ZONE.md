@@ -173,15 +173,15 @@ Step 8a implemented the kit in core (abilities 1–12 of the catalog; lurkers ca
 - Objective kinds: kill N of template, collect N items (drops), talk to NPC, explore area, retrieve an item by swimming into an area (#274), have beaten Captain Ulric Thorn (the character's durable victory evidence, so an earlier victory counts, Atlas 5.1.37).
 - The quest log holds at most 10 entries. Accept and turn-in happen at NPCs, and prerequisites form chains. Rewards: XP, money, one item choice.
 - NPC markers are per-player: `!` available, `?` complete, grey `?` in progress.
-- Chain: *Trouble in the Woods* (kill 6 wolves) → *Pelts for the Tanner* (collect 5 wolf pelts) → *The Missing Farmhand* (talk at Millbrook) → *Marauders in the Fields* (kill 8 marauders) → *Scout the Lake* (explore) → *Mirefin Menace* (kill 6 lurkers) → *Into Redbrand Hollow* (kill 10 bandits) → *Garrick Redbrand* (named boss) → *Return to Greyhaven*.
+- Chain: *The Wolfrun Cart* (find the abandoned cart in the Wolfrun Woods, take back 3 supply sacks from wolves) → *The Missing Farmhand* (talk at Millbrook), with *Pelts for the Tanner* (collect 5 wolf pelts) on the side → *Marauders in the Fields* (kill 8 marauders) → *Scout the Lake* (explore) → *Mirefin Menace* (kill 6 lurkers) → *Into Redbrand Hollow* (kill 10 bandits) → *Garrick Redbrand* (named boss) → *Return to Greyhaven*.
 
 *Quests landed* (#25): `mmorpg_core::quest` holds the rules and `greyhaven_vale::quests` the chain (quest catalog 1, content revision 9; since #862 its definitions are content in `content/greyhaven/quests.json`). Each quest names a giver and an ender among the hub's quest givers (Marshal Elden Greywatch, Tanner Hilda Brook, Farmer Osric Mill), at most one prerequisite (an earlier quest), one to three objectives, XP, copper and up to four reward items to choose one from. `AcceptQuest`, `CompleteQuest` and `AbandonQuest` (command v9) resolve in tick step 1; tick step 8 completes talk and explore objectives; kills credit the corpse's tapper on the same terms as kill XP. The log, the turned-in quests (a mask until #862, now an ordered set of IDs) and the markers travel in the self sheet (snapshot v14, see [PROTOCOL.md](PROTOCOL.md#quests-snapshot-v14-and-command-v9)), and the canonical snapshot carries each log so recovery continues it exactly. Recorded decisions:
 
 | Quest | Giver → ender | Objectives | Rewards |
 | --- | --- | --- | --- |
-| 1 Trouble in the Woods | Marshal → Marshal | 6 Timber Wolves | 150 XP, 10 copper |
-| 2 Pelts for the Tanner | Tanner → Tanner | 5 Wolf Pelts from Timber Wolves | 200 XP, 15 copper, Worn Boots or Cloth Hood |
-| 3 The Missing Farmhand | Tanner → Farmer | talk to Farmer Osric Mill | 100 XP, 5 copper |
+| 1 The Wolfrun Cart (was *Trouble in the Woods*, 6 Timber Wolves, until #984) | Marshal → Tanner | explore Wolfrun Woods, 3 Supply Sacks from Timber Wolves | 250 XP, 15 copper, Worn Boots or Cloth Hood |
+| 2 Pelts for the Tanner (optional since #984) | Tanner → Tanner | 5 Wolf Pelts from Timber Wolves | 200 XP, 15 copper, Worn Boots or Cloth Hood |
+| 3 The Missing Farmhand | Tanner → Farmer (after *The Wolfrun Cart* since #984) | talk to Farmer Osric Mill | 100 XP, 5 copper |
 | 4 Marauders in the Fields | Farmer → Farmer | 8 Field Marauders | 300 XP, 25 copper, Padded Trousers or Pine Buckler |
 | 5 Scout the Lake | Farmer → Marshal | explore Stillwater Lake | 150 XP, 10 copper |
 | 6 Mirefin Menace | Marshal → Marshal | 6 Mirefin Lurkers | 350 XP, 30 copper |
@@ -191,6 +191,10 @@ Step 8a implemented the kit in core (abilities 1–12 of the catalog; lurkers ca
 | 10 The Sunken Shrine | Marshal → Marshal | retrieve the Sunken Relic from the shrine's altar (after *Scout the Lake*, beside *Mirefin Menace*) | 300 XP, 25 copper |
 | 11 Deeper into the Hollow | Marshal → Marshal | 2 Redbrand Brutes in the Greyfang cavern (after *Return to Greyhaven*, #160) | 700 XP, 70 copper, Brute-Breaker Mace, Greyfang Scout Jerkin or Hollow-Delver's Cowl |
 | 12 The Captain Below | Marshal → Marshal | have beaten Captain Ulric Thorn in the Redbrand Depths (after *Garrick Redbrand*, #160) | 900 XP, 120 copper, Marshal's Commendation Greaves |
+
+**The opening (#984).** A new character's first quest is an investigation instead of two wolf quotas. The Marshal's short in-character text sends them up the Wolfrun Trail after the Tanner's abandoned supply cart. Its explore objective is the whole Wolfrun Woods, the approximate area the map shows (#983); climbing the Wolfrun Climb completes it and also discovers the woods (#916). Beside the trail at the top of the climb, `content/greyhaven/dressing/wolfrun-cart.json` dresses the scene, presentation only: the cart, cut grain sacks, a crate and a meat rack left as bait (settlement props), and the discoveries kit's red-ragged marker pole as the Redbrand sign. While the quest needs them, each Timber Wolf the character taps drops one quest-only Supply Sack (item 31); three are needed. The existing wolves around the trail end make the small group, and no creatures were added. The Tanner takes the sacks, pays a choice of early gear and gives the existing Millbrook lead (*The Missing Farmhand* now follows quest 1). Her quest text names the Redbrand bait. *Pelts for the Tanner* stays as an optional side quest.
+
+The first quest keeps its stable ID, so characters who turned in *Trouble in the Woods* still have it done, and the downstream prerequisites are unchanged. A saved log is fitted on admission (`quest::fit_log`): progress stored past a revised objective's count counts as that objective done. A character saved mid-hunt (up to 6 wolves) therefore loads with the woods explored and the sacks still to fetch.
 
 - Accepting and turning in need a living player within 5 m (XZ) of the NPC's feet, like the vendor; abandoning works anywhere, also while dead, and loses the quest's progress.
 - A talk objective completes when the player stands within that same 5 m of the NPC; an explore objective when the player stands inside the named area. Both are checked for living players after movement each tick.

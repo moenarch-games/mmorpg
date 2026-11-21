@@ -59,8 +59,8 @@ describe("quest state", () => {
     state.update(projection(4, { inventory: bag, quests: sheet() }), catalog);
     state.update(projection(5, { inventory: bag, quests: sheet({ entries: [{ quest: 1, progress: [0, 0, 0] }] }) }), catalog);
     expect(state.feedback).toBe("Accepted: Trouble in the Woods.");
-    state.update(refusal(6, { kind: "quest-progress", quest: 1, objective: 0, count: 2 }), catalog);
-    expect(state.feedback).toBe("Timber Wolf slain: 2/6");
+    state.update(refusal(6, { kind: "quest-progress", quest: 1, objective: 1, count: 2 }), catalog);
+    expect(state.feedback).toBe("Supply Sack: 2/3");
     expect(state.abandon(1)).toEqual({ kind: "abandon-quest", quest: 1 });
     state.update(projection(7, { inventory: bag, quests: sheet() }), catalog);
     expect(state.feedback).toBe("Abandoned: Trouble in the Woods.");
@@ -124,9 +124,9 @@ describe("quest state", () => {
   test("a confirmed completion shows a short notice and freshens the right turn-in marker", () => {
     const state = new QuestState();
     const bag = Array(16).fill(null);
-    state.update(projection(1, { inventory: bag, quests: sheet({ entries: [{ quest: 1, progress: [5, 0, 0] }], markers: [{ npc: MARSHAL, marker: "in-progress" }] }) }), catalog);
+    state.update(projection(1, { inventory: bag, quests: sheet({ entries: [{ quest: 1, progress: [1, 2, 0] }], markers: [{ npc: MARSHAL, marker: "in-progress" }] }) }), catalog);
     expect(state.freshlyReady(MARSHAL)).toBe(false);
-    state.update(projection(2, { inventory: bag, quests: sheet({ entries: [{ quest: 1, progress: [6, 0, 0] }], markers: [{ npc: MARSHAL, marker: "complete" }] }) }), catalog);
+    state.update(projection(2, { inventory: bag, quests: sheet({ entries: [{ quest: 1, progress: [1, 3, 0] }], markers: [{ npc: MARSHAL, marker: "complete" }] }) }), catalog);
     expect(state.notice).toBe("Trouble in the Woods ready — return to Marshal Elden Greywatch");
     expect(state.freshlyReady(MARSHAL)).toBe(true);
     expect(state.freshlyReady(TANNER)).toBe(false);

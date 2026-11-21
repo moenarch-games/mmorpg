@@ -467,14 +467,14 @@ impl Scenario {
             };
         }
         if self == Self::GreyhavenDowns {
-            use mmorpg_core::greyhaven_vale::quests::{TROUBLE_IN_THE_WOODS, WORD_FROM_THE_DOWNS};
-            // *Trouble in the Woods* turned in; the errand to Barrowdown accepted.
+            use mmorpg_core::greyhaven_vale::quests::{THE_WOLFRUN_CART, WORD_FROM_THE_DOWNS};
+            // *The Wolfrun Cart* turned in; the errand to Barrowdown accepted.
             record.quests = mmorpg_core::QuestLog {
                 entries: vec![mmorpg_core::QuestEntry {
                     quest: WORD_FROM_THE_DOWNS,
                     progress: [0; mmorpg_core::MAX_QUEST_OBJECTIVES],
                 }],
-                completed: [TROUBLE_IN_THE_WOODS].into(),
+                completed: [THE_WOLFRUN_CART].into(),
             };
         }
         if self.class().class == PlayerClass::Warden && self.level() >= 6 {
