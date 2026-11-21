@@ -189,6 +189,8 @@ pub fn initial_zone(fixture: Fixture) -> Result<ZoneSimulation, Box<dyn Error>> 
             quests: mmorpg_core::QuestLog::default(),
             waystones: mmorpg_core::WaystoneSet::EMPTY,
             discoveries: std::collections::BTreeSet::new(),
+            mastery: mmorpg_core::WeaponMastery::default(),
+            practice: Vec::new(),
             caches: std::collections::BTreeSet::new(),
             character: None,
             depths: mmorpg_core::DepthsRecord::default(),

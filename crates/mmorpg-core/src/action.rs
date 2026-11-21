@@ -57,8 +57,9 @@
 //!   ([`EdgeId::LandingToMelee`] and its siblings, anchored at touchdown)
 //!   win over the landing's hold, end its recovery and may carry an
 //!   [`Effect::Impulse`]: run → jump → aerial attack → landing → follow-up
-//!   composes from ordinary actions. The baseline authors none of it, so
-//!   today's movement is unchanged.
+//!   composes from ordinary actions. The baseline authors no movement, so
+//!   today's movement is unchanged; its one landing edge is the sword
+//!   master's [`EdgeId::LeapingSlash`] (#915).
 //! - **Swimming** (#413, Atlas 5.1.41–5.1.43). [`ActionId::Swim`] runs in
 //!   the movement region while a living player swims (at the surface or
 //!   under it), ahead of being airborne. Its phase can author movement like
@@ -332,6 +333,9 @@ pub enum Condition {
     /// The source strike's confirmed result damaged two or more units: a
     /// cleaving timed swing (#910).
     MultiHit,
+    /// The acting player wields a sword and has reached the sword mastery that unlocks
+    /// the Leaping Slash (#915).
+    SwordMastery,
 }
 
 /// A typed effect an edge, or its precision window, applies when it wins
@@ -374,6 +378,9 @@ pub enum EdgeId {
     /// A directed slash that damaged two or more units → another Warden melee
     /// use (#910).
     CleaveToSlash,
+    /// A sword master's jumping strike lands into an immediate Warden melee use: the
+    /// Leaping Slash (#915), out of the landing recovery.
+    LeapingSlash,
     /// Out of a landing recovery into Warden melee (#413). Experimental
     /// graphs author the landing edges; the baseline has none.
     LandingToMelee,
@@ -1201,6 +1208,11 @@ impl ActionGraph {
                     ActionInput::ShieldBash,
                     Anchor::Impact | Anchor::ConfirmedResult,
                 ) | (
+                    EdgeId::LeapingSlash,
+                    ActionId::Landing,
+                    ActionInput::WardenMelee,
+                    Anchor::Landing,
+                ) | (
                     EdgeId::LandingToMelee,
                     ActionId::Landing,
                     ActionInput::WardenMelee,
@@ -1647,6 +1659,10 @@ fn holds(state: &PlayerState, condition: Condition) -> bool {
         // a miss, a whiff, an absorbed blow or the target's death clears it.
         Condition::PositiveHealthDamage | Condition::TargetAlive => state.combo.is_some(),
         Condition::MultiHit => state.combo.is_some_and(crate::ComboOpening::cleaved),
+        Condition::SwordMastery => {
+            crate::melee::weapon_family(state) == crate::WeaponFamily::Sword
+                && state.mastery.sword.level >= crate::LEAPING_SLASH_LEVEL
+        }
         Condition::AttackedAirborne => state.landing.attacked_airborne,
         Condition::Airborne => state.landing.airborne,
         Condition::Stunned => aura::has_kind(&state.auras, AuraKind::Stun),

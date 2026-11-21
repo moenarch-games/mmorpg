@@ -343,6 +343,71 @@ pub(crate) fn decode_discoveries(
     Ok(areas)
 }
 
+/// Weapon-family mastery (#915): the sword's `level u8 · progress u16`.
+pub(crate) fn encode_mastery(payload: &mut Vec<u8>, mastery: mmorpg_core::WeaponMastery) {
+    payload.push(mastery.sword.level);
+    payload.extend_from_slice(&mastery.sword.progress.to_be_bytes());
+}
+
+pub(crate) fn decode_mastery(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<mmorpg_core::WeaponMastery, ProtocolError> {
+    let mastery = mmorpg_core::WeaponMastery {
+        sword: mmorpg_core::Mastery {
+            level: read_u8(payload, offset)?,
+            progress: u16::from_be_bytes(take(payload, offset)?),
+        },
+    };
+    if !mastery.is_valid() {
+        return Err(ProtocolError::new("weapon mastery is out of range"));
+    }
+    Ok(mastery)
+}
+
+/// Practice banked against living foes (#915): `count u8 · count × (creature u32 · life u64 ·
+/// points u8)`.
+pub(crate) fn encode_practice(
+    payload: &mut Vec<u8>,
+    practice: &[mmorpg_core::Practice],
+) -> Result<(), ProtocolError> {
+    payload.push(encode_u8_count(
+        practice.len(),
+        mmorpg_core::MAX_PRACTICE,
+        "too much banked practice",
+    )?);
+    for entry in practice {
+        payload.extend_from_slice(&entry.creature.get().to_be_bytes());
+        payload.extend_from_slice(&entry.life.to_be_bytes());
+        payload.push(entry.points);
+    }
+    Ok(())
+}
+
+pub(crate) fn decode_practice(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::Practice>, ProtocolError> {
+    let count = decode_u8_count(
+        payload,
+        offset,
+        mmorpg_core::MAX_PRACTICE,
+        "too much banked practice",
+    )?;
+    let mut practice = Vec::with_capacity(count);
+    for _ in 0..count {
+        practice.push(mmorpg_core::Practice {
+            creature: mmorpg_core::CreatureId::new(u32::from_be_bytes(take(payload, offset)?)),
+            life: u64::from_be_bytes(take(payload, offset)?),
+            points: read_u8(payload, offset)?,
+        });
+    }
+    if !mmorpg_core::valid_practice(&practice) {
+        return Err(ProtocolError::new("banked practice is invalid"));
+    }
+    Ok(practice)
+}
+
 pub(crate) fn decode_caches(
     payload: &[u8],
     offset: &mut usize,

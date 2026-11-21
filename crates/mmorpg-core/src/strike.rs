@@ -246,6 +246,14 @@ impl ZoneSimulation {
             let amount = self.stance_damage(player_id, target, amount)?;
             let before = self.struck_health(victim);
             self.player_melee_hits_at(player_id, victim, amount, false, now, Some(aim.height))?;
+            // The landed technique banks practice for the wielded family (#915).
+            if let Some(family) = self
+                .players
+                .get(&player_id)
+                .map(crate::melee::weapon_family)
+            {
+                self.practise(player_id, family, victim, before, crate::TECHNIQUE_PRACTICE);
+            }
             // Only positive health damage after absorbs opens the combo (#157), on the
             // first unit a cleaving swing so struck (#909); every further unit it so
             // struck counts toward the cleave follow-up (#910). The swing cleared any

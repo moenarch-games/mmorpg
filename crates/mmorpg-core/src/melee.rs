@@ -377,7 +377,16 @@ impl ZoneSimulation {
             return self.swing_at_summoned(player_id, facing);
         }
         for target in victims {
+            let before = self.struck_health(target);
             self.attack_unit(player_id, target, damage, pending.stance, now)?;
+            // A landed sword blow banks practice against a real foe (#915).
+            self.practise(
+                player_id,
+                pending.family,
+                target,
+                before,
+                crate::BLOW_PRACTICE,
+            );
         }
         Ok(())
     }

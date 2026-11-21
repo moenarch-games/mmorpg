@@ -5,9 +5,10 @@
 //! depths record (`thorn_defeated` u8, receipt run u64, credited u8, drops u8) ·
 //! health u32 · resource u16 · resource ticks u16 · mana delay u16 · global
 //! cooldown u16 · cooldown count u8 · (ability u32 · remaining u16)* · zone
-//! u32 · position 3 × i32 · facing u16 · physique · discovered areas · opened caches`,
-//! big-endian (physique: see [`encode_physique`]; quest log: turned-in quest count u16 and IDs,
-//! then entries; waystones, discovered areas and opened caches: count u16 and IDs). Every content ID is a `u32` (#882). The decoder is strict:
+//! u32 · position 3 × i32 · facing u16 · physique · discovered areas · opened caches · sword
+//! mastery (level u8, progress u16)`, big-endian (physique: see [`encode_physique`]; quest log:
+//! turned-in quest count u16 and IDs, then entries; waystones, discovered areas and opened
+//! caches: count u16 and IDs). Every content ID is a `u32` (#882). The decoder is strict:
 //! another version or schema, a truncated or over-long payload or an invalid
 //! field fails closed. Gameplay validity against content is checked when a
 //! zone admits the record.
@@ -78,6 +79,7 @@ pub fn encode_character_record(record: &CharacterRecord) -> Result<Vec<u8>, Prot
     encode_physique(&mut payload, &record.physique);
     crate::wire::encode_discoveries(&mut payload, &record.discoveries)?;
     crate::wire::encode_caches(&mut payload, &record.caches)?;
+    crate::wire::encode_mastery(&mut payload, record.mastery);
     Ok(payload)
 }
 
@@ -89,13 +91,15 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
         ));
     }
     let schema = u16::from_be_bytes(take(payload, offset)?);
-    let (has_physique, quest_set, wide_ids, has_discoveries, has_caches) = match schema {
-        CHARACTER_RECORD_SCHEMA_VERSION => (true, true, true, true, true),
-        PRE_CACHE_SCHEMA_VERSION => (true, true, true, true, false),
-        PRE_DISCOVERY_SCHEMA_VERSION => (true, true, true, false, false),
-        PRE_WIDE_ID_SCHEMA_VERSION => (true, true, false, false, false),
-        PRE_QUEST_SET_SCHEMA_VERSION => (true, false, false, false, false),
-        PRE_PHYSIQUE_SCHEMA_VERSION => (false, false, false, false, false),
+    let (has_physique, quest_set, wide_ids, has_discoveries, has_caches, has_mastery) = match schema
+    {
+        CHARACTER_RECORD_SCHEMA_VERSION => (true, true, true, true, true, true),
+        PRE_MASTERY_SCHEMA_VERSION => (true, true, true, true, true, false),
+        PRE_CACHE_SCHEMA_VERSION => (true, true, true, true, false, false),
+        PRE_DISCOVERY_SCHEMA_VERSION => (true, true, true, false, false, false),
+        PRE_WIDE_ID_SCHEMA_VERSION => (true, true, false, false, false, false),
+        PRE_QUEST_SET_SCHEMA_VERSION => (true, false, false, false, false, false),
+        PRE_PHYSIQUE_SCHEMA_VERSION => (false, false, false, false, false, false),
         _ => {
             return Err(ProtocolError::new(
                 "unsupported character record schema version",
@@ -185,6 +189,11 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
     } else {
         std::collections::BTreeSet::new()
     };
+    let mastery = if has_mastery {
+        crate::wire::decode_mastery(payload, offset)?
+    } else {
+        mmorpg_core::WeaponMastery::default()
+    };
     if *offset != payload.len() {
         return Err(ProtocolError::new(
             "character record contains trailing bytes",
@@ -202,6 +211,7 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
         waystones,
         discoveries,
         caches,
+        mastery,
         depths,
         health,
         resource,
@@ -217,6 +227,10 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
         physique,
     })
 }
+
+/// The record schema before weapon mastery (#915). Such records still load untrained; they are
+/// written again in the current schema.
+const PRE_MASTERY_SCHEMA_VERSION: u16 = 0x55e2;
 
 /// The record schema before discovered areas (#916). Such records still load with none
 /// discovered; they are written again in the current schema.

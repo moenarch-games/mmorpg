@@ -7,7 +7,7 @@ import { castBarView } from "./cast-bar";
 import { HEROIC_STRIKE_ABILITY } from "./directed-strike";
 import { guardDisplay } from "./shield-guard";
 import { COMBAT_TEXT_MS, INTERRUPT_FLASH_MS, cleaveCount, combatTexts, pierceShot, viewerInterrupted, type PierceShot } from "./combat-text";
-import { unitName } from "./combat-hud";
+import { masteryUnlockText, unitName } from "./combat-hud";
 
 /** The aim and guard grids' layout, built before the WASM module loads: high row first, left column first. */
 const AIM_ROWS: readonly StrikeHeight[] = ["high", "middle", "low"];
@@ -101,6 +101,8 @@ export class ClassHud {
   #tick = -1n;
   /** Units the viewer's running swing has struck so far (#909). */
   #cleaved = 0;
+  /** The sword mastery level last seen (#915); null before the first projection. */
+  #mastery: number | null = null;
   /** The viewer's latest Piercing Shot and the units it struck (#932). */
   #pierce: PierceShot | null = null;
   #catalog: ContentCatalog | null = null;
@@ -229,6 +231,7 @@ export class ClassHud {
     this.#interruptUntil = 0;
     this.#tick = -1n;
     this.#cleaved = 0;
+    this.#mastery = null;
     this.#pierce = null;
     this.#latest = null;
     this.#catalog = null;
@@ -267,6 +270,12 @@ export class ClassHud {
       this.#floatText("cleave", `Pierce \u00d7${pierce.struck}`, now);
     }
     this.#pierce = pierce;
+    // A mastery level gained in play floats its unlock (#915).
+    const mastery = snapshot.viewer.swordMastery;
+    if (this.#mastery !== null && mastery > this.#mastery) {
+      this.#floatText("mastery", masteryUnlockText(mastery), now);
+    }
+    this.#mastery = mastery;
   }
 
   /** Redraws the frames, bars and slots from the newest projection. */
