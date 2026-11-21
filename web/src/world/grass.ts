@@ -19,6 +19,8 @@ const FLOWERS = [0xf2cf3a, 0xf3efe2, 0x8f7ad6, 0xd9493a] as const;
 const BUILDS_PER_FRAME = 3;
 /** How far either side of a profile's `swap` distance a clump changes from the full to the light clump. */
 const SWAP_JITTER = 3;
+/** Half-width of the dithered full/light cross-fade, in metres; both LODs contribute in this band. */
+const SWAP_BLEND = 4;
 /** The share of the rank range over which a clump dissolves in as its distance's share passes its rank. */
 const GROW = 0.08;
 /** How much wider than a near clump a far clump spreads, which stands for about ten of them. */
@@ -37,8 +39,8 @@ const FLAT_SHADE = 0.72;
  * one thins, at most a `farDensity` share of them, and thin out again to none at `farTo`.
  */
 const PROFILES = {
-  medium: { full: 6, fade: 30, swap: 9, falloff: 2.2, density: 0.6, farFrom: 18, farTo: 70, farDensity: 0.45 },
-  high: { full: 10, fade: 44, swap: 13, falloff: 2, density: 1, farFrom: 26, farTo: 100, farDensity: 0.6 },
+  medium: { full: 8, fade: 36, swap: 12, falloff: 1.1, density: 0.6, farFrom: 14, farTo: 92, farDensity: 0.52 },
+  high: { full: 12, fade: 50, swap: 17, falloff: 1.2, density: 1, farFrom: 20, farTo: 120, farDensity: 0.62 },
 } as const;
 type Profile = (typeof PROFILES)[keyof typeof PROFILES];
 
@@ -295,7 +297,11 @@ void main() {
         float rise = grassRamp.y > grassRamp.x ? clamp((d - grassRamp.x) / (grassRamp.y - grassRamp.x), 0.0, 1.0) : 1.0;
         float share = grassMix.x * rise * pow(1.0 - clamp((d - grassRamp.z) / (grassRamp.w - grassRamp.z), 0.0, 1.0), grassMix.y);
         float jittered = d + (fract(grassRank * 61.7) * 2.0 - 1.0) * ${SWAP_JITTER.toFixed(1)};
-        float shown = clamp((share - grassRank) / ${GROW.toFixed(2)}, 0.0, 1.0) * step(grassMix.z, jittered) * step(jittered, grassMix.w);
+        // The full and light clumps overlap smoothly across the jittered LOD boundary.
+        // An open bound (-/+1e4) keeps flowers and the independent far layer fully in-band.
+        float band = smoothstep(grassMix.z - ${SWAP_BLEND.toFixed(1)}, grassMix.z + ${SWAP_BLEND.toFixed(1)}, jittered)
+            * (1.0 - smoothstep(grassMix.w - ${SWAP_BLEND.toFixed(1)}, grassMix.w + ${SWAP_BLEND.toFixed(1)}, jittered));
+        float shown = clamp((share - grassRank) / ${GROW.toFixed(2)}, 0.0, 1.0) * band;
         float spread = 1.0 + grassSpread.z * clamp((d - grassSpread.x) / (grassSpread.y - grassSpread.x), 0.0, 1.0);
         world.xz = origin.xz + (world.xz - origin.xz) * spread;
         grassShown = shown;
@@ -377,11 +383,11 @@ export class Grass {
     this.root.name = "greyhaven.grass";
     const kind = (geometry: THREE.BufferGeometry, flower = false): Kind => ({ geometry, ...grassMaterial(this.#shared, flower) });
     this.#full = kind(clumpGeometry(15, [0, 0.4, 0.75], 1, [0.4, 1]));
-    // Seen from further off, its tips a little darker, so the field deepens with distance.
-    this.#light = kind(clumpGeometry(7, [0, 0.5], 1.5, [0.45, 0.9]));
+    // The simplified blades retain the same per-clump colour gradient as the full blades during LOD overlap.
+    this.#light = kind(clumpGeometry(7, [0, 0.5], 1.5, [0.4, 1]));
     this.#flowers = kind(flowerGeometry(), true);
-    // Narrow blades in the turf's own shade, so a far clump reads as texture on the ground, not a spike over it.
-    this.#far = kind(clumpGeometry(8, [0], 1.4, [0.6, 0.85]));
+    // The far layer samples the same terrain tint and blade shade as the near layer; distance flattening fades it into turf.
+    this.#far = kind(clumpGeometry(8, [0], 1.4, [0.4, 1]));
     this.#farFlowers = kind(flowerGeometry(3, 1.2, [0, 1]), true);
     this.#near = { size: source.cellMetres, cells: new Map(), build: (column, row) => source.cell(column, row) };
     const { farCell, farCellMetres } = source;
@@ -480,8 +486,8 @@ export class Grass {
       const flowers = cell.flowering.findIndex((index) => index >= count);
       const flowering = flowers < 0 ? cell.flowering.length : flowers;
       for (const { kind, mesh, blades } of cell.meshes) {
-        const swapped = kind === this.#full ? nearest < this.#profile!.swap + SWAP_JITTER
-          : kind === this.#light ? furthest > this.#profile!.swap - SWAP_JITTER : true;
+        const swapped = kind === this.#full ? nearest < this.#profile!.swap + SWAP_JITTER + SWAP_BLEND
+          : kind === this.#light ? furthest > this.#profile!.swap - SWAP_JITTER - SWAP_BLEND : true;
         const drawn = blades ? count : flowering;
         const visible = swapped && drawn > 0;
         if (mesh.visible !== visible) { mesh.visible = visible; }
