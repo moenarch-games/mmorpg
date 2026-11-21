@@ -1,6 +1,59 @@
 {
   "kits": [
     {
+      "name": "limestone",
+      "bundle": "scenery/limestone-rocks.kit",
+      "descriptor": "limestone-rocks-descriptor",
+      "about": "The blocks Greyhaven's rocks are drawn as and the brook sink's larger pieces (asset-tooling#536); the procedural rocks stand in until it draws (#1011).",
+      "placement": "mixed",
+      "standIn": "Limestone",
+      "entries": [
+        "limestone-rocks.kit.block-1",
+        "limestone-rocks.kit.block-2",
+        "limestone-rocks.kit.block-3",
+        "limestone-rocks.kit.outcrop-1",
+        "limestone-rocks.kit.outcrop-2",
+        "limestone-rocks.kit.ledge"
+      ]
+    },
+    {
+      "name": "river",
+      "bundle": "scenery/river-stones.kit",
+      "descriptor": "river-stones-descriptor",
+      "about": "The stones along Greyhaven's watercourses and their ground details (asset-tooling#538).",
+      "placement": "mixed",
+      "entries": [
+        "river-stones.kit.bank-1",
+        "river-stones.kit.bank-2",
+        "river-stones.kit.bar-1",
+        "river-stones.kit.bar-2",
+        "river-stones.kit.bed-1",
+        "river-stones.kit.bed-2",
+        "river-stones.kit.boulder-1",
+        "river-stones.kit.boulder-2",
+        "river-stones.kit.boulder-3",
+        "river-stones.kit.step-1",
+        "river-stones.kit.step-2"
+      ]
+    },
+    {
+      "name": "meadow",
+      "bundle": "scenery/greyhaven-meadow.kit",
+      "descriptor": "greyhaven-meadow-descriptor",
+      "about": "The meadow's grass and flower ground details.",
+      "placement": "mixed",
+      "entries": [
+        "greyhaven-meadow.kit.grass-short",
+        "greyhaven-meadow.kit.grass-tall",
+        "greyhaven-meadow.kit.grass-clump",
+        "greyhaven-meadow.kit.grass-dry",
+        "greyhaven-meadow.kit.flowers-yellow",
+        "greyhaven-meadow.kit.flowers-white",
+        "greyhaven-meadow.kit.flowers-red",
+        "greyhaven-meadow.kit.flowers-mixed"
+      ]
+    },
+    {
       "name": "den",
       "bundle": "scenery/wolf-den.kit",
       "descriptor": "wolf-den-descriptor",

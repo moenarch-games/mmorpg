@@ -634,14 +634,21 @@ impl ZoneSimulation {
             && !stunned
         {
             // Standing its ground in a fight, it turns at a bounded rate (#949), so a player who
-            // circles inside its reach can reach its flank.
+            // circles inside its reach can reach its flank; faster while it guards a flank just
+            // struck.
             let pivots = creature.ai == CreatureAi::Engaged && !casting && velocity == [0, 0];
+            let turn = if creature.wary_ticks > 0 {
+                crate::WARY_TURN_PER_TICK
+            } else {
+                crate::CREATURE_TURN_PER_TICK
+            };
             creature.facing = if pivots {
-                crate::flank::turn_toward(creature.facing, facing, crate::CREATURE_TURN_PER_TICK)
+                crate::flank::turn_toward(creature.facing, facing, turn)
             } else {
                 facing
             };
         }
+        creature.wary_ticks = creature.wary_ticks.saturating_sub(1);
         if let Some(player) = lost_interest {
             self.notify(
                 player,

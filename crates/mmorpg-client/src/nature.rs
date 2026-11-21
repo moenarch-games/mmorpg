@@ -55,22 +55,6 @@ mod crag_descriptor {
     include!(concat!(env!("OUT_DIR"), "/crag_descriptor.rs"));
 }
 
-mod limestone_bundle {
-    include!(concat!(env!("OUT_DIR"), "/limestone_bundle.rs"));
-}
-
-mod limestone_descriptor {
-    include!(concat!(env!("OUT_DIR"), "/limestone_descriptor.rs"));
-}
-
-mod river_bundle {
-    include!(concat!(env!("OUT_DIR"), "/river_bundle.rs"));
-}
-
-mod river_descriptor {
-    include!(concat!(env!("OUT_DIR"), "/river_descriptor.rs"));
-}
-
 mod settlement_bundle {
     include!(concat!(env!("OUT_DIR"), "/settlement_bundle.rs"));
 }
@@ -107,12 +91,6 @@ fn kit_entries() -> impl Iterator<Item = (&'static str, &'static str, Files)> {
     outpost.chain(fort)
 }
 
-mod meadow_bundle {
-    include!(concat!(env!("OUT_DIR"), "/meadow_bundle.rs"));
-}
-mod meadow_descriptor {
-    include!(concat!(env!("OUT_DIR"), "/meadow_descriptor.rs"));
-}
 mod gatherables_bundle {
     include!(concat!(env!("OUT_DIR"), "/gatherables_bundle.rs"));
 }
@@ -143,18 +121,12 @@ struct Source {
 }
 
 /// The bundles with entries of their own, then every ordinary placed kit ([`sources`]).
-const SOURCES: [Source; 8] = [
+const SOURCES: [Source; 5] = [
     Source {
         keys: &mmorpg_presentation::world_dressing::GATHERABLE_ENTRIES,
         entries: gatherables_bundle::ENTRIES,
         files: gatherables_bundle::FILES,
         descriptor: gatherables_descriptor::DESCRIPTOR,
-    },
-    Source {
-        keys: &mmorpg_presentation::terrain_patch::MEADOW_ENTRIES,
-        entries: meadow_bundle::ENTRIES,
-        files: meadow_bundle::FILES,
-        descriptor: meadow_descriptor::DESCRIPTOR,
     },
     Source {
         keys: &mmorpg_presentation::nature::ENTRIES,
@@ -173,18 +145,6 @@ const SOURCES: [Source; 8] = [
         entries: crag_bundle::ENTRIES,
         files: crag_bundle::FILES,
         descriptor: crag_descriptor::DESCRIPTOR,
-    },
-    Source {
-        keys: &mmorpg_presentation::nature::LIMESTONE_ENTRIES,
-        entries: limestone_bundle::ENTRIES,
-        files: limestone_bundle::FILES,
-        descriptor: limestone_descriptor::DESCRIPTOR,
-    },
-    Source {
-        keys: &mmorpg_presentation::river::ENTRIES,
-        entries: river_bundle::ENTRIES,
-        files: river_bundle::FILES,
-        descriptor: river_descriptor::DESCRIPTOR,
     },
     Source {
         keys: &mmorpg_presentation::settlement_props::ENTRIES,
@@ -225,8 +185,8 @@ pub const FADE_STEPS: usize = 8;
 
 /// The library's entries: the nature bundle's (`mmorpg_presentation::nature::ENTRIES`), the
 /// climbing kit's (`mmorpg_presentation::climbing::ENTRIES`), the crag kit's modules and outcrops
-/// (`mmorpg_presentation::crag::KIT_ENTRIES`), the limestone blocks', the river
-/// stones' and the settlement props', then the single-level kits' (`<key>` and
+/// (`mmorpg_presentation::crag::KIT_ENTRIES`), the settlement props' and every ordinary placed
+/// kit's (the limestone blocks, river stones, meadow, …), then the single-level kits' (`<key>` and
 /// `<key>/<variant>`, [`kit_entries`]), which have no [`lods`].
 #[must_use]
 pub fn entries() -> Vec<&'static str> {
@@ -266,20 +226,8 @@ pub fn lods() -> Vec<EntryLods> {
             .expect("the embedded crag descriptor is valid"),
     );
     lods.extend(
-        mmorpg_presentation::nature::descriptor_lods(limestone_descriptor::DESCRIPTOR)
-            .expect("the embedded limestone descriptor is valid"),
-    );
-    lods.extend(
-        mmorpg_presentation::nature::descriptor_lods(river_descriptor::DESCRIPTOR)
-            .expect("the embedded river stones descriptor is valid"),
-    );
-    lods.extend(
         mmorpg_presentation::settlement_props::descriptor_lods(settlement_descriptor::DESCRIPTOR)
             .expect("the embedded settlement descriptor is valid"),
-    );
-    lods.extend(
-        mmorpg_presentation::nature::descriptor_lods(meadow_descriptor::DESCRIPTOR)
-            .expect("the meadow descriptor is valid"),
     );
     lods.extend(
         mmorpg_presentation::nature::descriptor_lods(gatherables_descriptor::DESCRIPTOR)
@@ -1102,7 +1050,11 @@ mod tests {
     /// first, then its blended overlays; a baked kit has none.
     #[test]
     fn a_layered_kit_draws_limestone_under_its_overlays() {
-        let layered = LayeredSurface::from_descriptor(limestone_descriptor::DESCRIPTOR)
+        let index = mmorpg_presentation::world_dressing::placed_kits()
+            .iter()
+            .position(|kit| kit.name == "limestone")
+            .expect("the inventory registers the limestone kit");
+        let layered = LayeredSurface::from_descriptor(placed_kits::KITS[index].descriptor)
             .unwrap()
             .is_some();
         let library = library();

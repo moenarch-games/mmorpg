@@ -528,13 +528,12 @@ impl WorldScene {
             .collect();
         // The trees, rocks and bushes (#49), then the climbing kit's parts (#621): one library.
         // The mixed inventory comes from the shared derivation the browser uses (#1010).
+        // The nature kit and the inventory's mixed kits each take their own entries' share.
         let mixed = mmorpg_presentation::world_dressing::MixedPlacements::new(scenery);
-        let mut placements = mixed.nature;
+        let mut placements = mixed.of(&mmorpg_presentation::nature::ENTRIES);
         placements.extend(mmorpg_presentation::climbing::placements(scenery));
         // The crag kit's rock modules over the highland crags (#668).
         placements.extend(mmorpg_presentation::crag::placements(scenery));
-        placements.extend(mixed.river);
-        placements.extend(mixed.ground_details);
         // The market square's wooden props through their packaged PBR materials (#53).
         placements.extend(mmorpg_presentation::settlement_props::placements(scenery));
         // The ore veins (#917), each standing full or spent by the projection.
@@ -547,10 +546,10 @@ impl WorldScene {
             .into_iter()
             .map(|slots| slots.map(|slot| first_vein + slot))
             .collect();
-        // Every ordinary placed kit of the shared inventory (#683): the Wolfrun Den, the
-        // optional discoveries and any kit registered after them.
+        // Every ordinary placed kit of the shared inventory (#683): the limestone blocks, river
+        // stones, meadow, Wolfrun Den, optional discoveries and any kit registered after them.
         for kit in mmorpg_presentation::world_dressing::placed_kits() {
-            placements.extend(kit.placements(scenery));
+            placements.extend(kit.placements(scenery, &mixed));
         }
         let library = crate::nature::entries();
         let nature = Nature {

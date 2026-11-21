@@ -21,6 +21,10 @@ pub struct RunningWorld {
     control: SocketAddr,
     token: String,
     pub certificate: PathBuf,
+    /// The host process holding the save lock, so an unresponsive holder can be named
+    /// (#1050). Older hosts did not record it.
+    #[serde(default)]
+    pid: Option<u32>,
 }
 
 impl RunningWorld {
@@ -130,8 +134,28 @@ pub fn running(directory: &Path) -> Result<Option<RunningWorld>> {
         return Ok(None);
     }
     let world = read_running(directory)?;
-    world.ready()?;
+    world.ready().map_err(|error| unresponsive(&world, error))?;
     Ok(Some(world))
+}
+
+/// A held lock whose holder does not answer is a hung or foreign host, not a disk or
+/// network fault: a timed-out read would otherwise surface as a bare EAGAIN (#1050).
+fn unresponsive(
+    world: &RunningWorld,
+    error: Box<dyn std::error::Error + Send + Sync>,
+) -> Box<dyn std::error::Error + Send + Sync> {
+    if error.downcast_ref::<std::io::Error>().is_none() {
+        return error;
+    }
+    let holder = world.pid.map_or("its zone host".to_owned(), |pid| {
+        format!("zone host process {pid}")
+    });
+    format!(
+        "This world is held by {holder}, which is not responding ({error}). Stop that \
+         process (it may be an older build that is still running), then choose Host World \
+         again; saved data is kept"
+    )
+    .into()
 }
 
 /// Starts the sibling zone-host binary, or reuses the holder of this save's lock.
@@ -202,11 +226,17 @@ pub fn start(directory: &Path, executable: &Path) -> Result<RunningWorld> {
     }
     let deadline = Instant::now() + TIMEOUT;
     loop {
-        if let Ok(Some(world)) = running(directory) {
-            return Ok(world);
-        }
+        let last = match running(directory) {
+            Ok(Some(world)) => return Ok(world),
+            Ok(None) => None,
+            Err(error) => Some(error),
+        };
         if Instant::now() >= deadline {
-            return Err(format!("World did not become ready. See {}. Retry Host World after correcting the error; saved data was retained.", directory.join("host.log").display()).into());
+            return Err(match last {
+                // The lock is held by a host that never answered: name it (#1050).
+                Some(error) if error.to_string().contains("not responding") => error,
+                _ => format!("World did not become ready. See {}. Retry Host World after correcting the error; saved data was retained.", directory.join("host.log").display()).into(),
+            });
         }
         std::thread::sleep(Duration::from_millis(100));
     }
@@ -271,6 +301,7 @@ impl LocalWorldHost {
             control: listener.local_addr()?,
             token,
             certificate,
+            pid: Some(std::process::id()),
         };
         let managed = crate::hosted_access::ManagedWorld::open(&directory, world.token.as_bytes())?;
         fs::write(directory.join("running.json"), serde_json::to_vec(&world)?)?;
@@ -357,5 +388,41 @@ impl Drop for LocalWorldHost {
         let _ = fs::remove_file(self.directory.join("running.json"));
         let _ = fs::remove_file(&self.private_key);
         let _ = fs::remove_file(&self.world.certificate);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_held_lock_whose_host_never_answers_is_named_not_reported_as_eagain() {
+        let directory = tempfile::tempdir().unwrap();
+        // A hung host: it holds the save lock and its control socket accepts but never replies.
+        let lock = lock_file(directory.path()).unwrap();
+        lock.try_lock().unwrap();
+        let silent = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let world = RunningWorld {
+            port: 1,
+            status_port: 1,
+            control: silent.local_addr().unwrap(),
+            token: "t".into(),
+            certificate: directory.path().join("certificate.pem"),
+            pid: Some(4242),
+        };
+        fs::write(
+            directory.path().join("running.json"),
+            serde_json::to_vec(&world).unwrap(),
+        )
+        .unwrap();
+        let error = running(directory.path()).err().unwrap().to_string();
+        assert!(error.contains("zone host process 4242"), "{error}");
+        assert!(error.contains("not responding"), "{error}");
+        // Discovery files written by older hosts, without a PID, still load.
+        let mut old = serde_json::to_value(&world).unwrap();
+        old.as_object_mut().unwrap().remove("pid");
+        fs::write(directory.path().join("running.json"), old.to_string()).unwrap();
+        let error = running(directory.path()).err().unwrap().to_string();
+        assert!(error.contains("held by its zone host"), "{error}");
     }
 }

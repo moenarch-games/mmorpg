@@ -28,6 +28,7 @@ pub mod brook;
 pub mod cart;
 pub mod cave;
 pub mod cottages;
+pub mod crayfish;
 pub mod crossings;
 pub mod dens;
 pub mod design;
@@ -1995,7 +1996,7 @@ fn content_with_spawns(
             .with_loot_tables(tables)?
             .with_creature_abilities(units::creature_abilities())?
             .with_bosses(units::bosses())?
-            .with_shielded(units::shielded())?
+            .with_shielded(units::greyhaven_shielded())?
             .with_patrols(redbrand_patrol::members())?
             .with_signal_calls(signal_post::signal_calls())?
             .with_vendors(units::vendors())?

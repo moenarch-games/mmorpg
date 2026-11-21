@@ -166,6 +166,7 @@ const WILD_ENTRIES: Readonly<Record<Exclude<QuaterniusKind, "Ranger">, string>> 
   Lynx: "greyhaven.wild.lynx",
   Adder: "greyhaven.wild.marsh-adder",
   Bat: "greyhaven.wild.cave-bat",
+  Crayfish: "greyhaven.wild.river-crayfish",
   Stag: "greyhaven.wild.stag",
 };
 const animalUrl = (kind: Exclude<QuaterniusKind, "Ranger">) =>

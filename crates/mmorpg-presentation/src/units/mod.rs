@@ -2828,6 +2828,7 @@ impl UnitPresenter {
             | CreatureFamily::Lynx
             | CreatureFamily::Adder
             | CreatureFamily::Bat
+            | CreatureFamily::Crayfish
             | CreatureFamily::Stag),
         ) = family
         {

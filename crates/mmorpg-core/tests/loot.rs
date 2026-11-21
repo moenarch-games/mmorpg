@@ -209,6 +209,8 @@ fn starter_tables_are_pinned_and_cover_every_hosted_template() {
         ([1, 4], vec![nothing(1)]),
         // The Cave Bat (#995): a little coin.
         ([1, 4], vec![nothing(1)]),
+        // The River Crayfish (#996): a little more coin.
+        ([2, 6], vec![nothing(1)]),
         // The Southwood Stag (#997): usually its hide.
         ([1, 4], vec![item(3, FUR, [1, 2]), nothing(1)]),
     ];

@@ -1528,9 +1528,9 @@ pub fn settlement_prop_models() -> Vec<f32> {
 
 /// A bundle drawn at fixed placements through the shared level selection: `"nature"`, the
 /// `greyhaven-nature` trees and bushes (#49), `"climbing"`, the climbing kit's ladders, ropes
-/// and ivy (#621), `"limestone"`, the rocks' blocks and the brook's sink (asset-tooling#536),
-/// `"river"`, the stones along the watercourses (asset-tooling#538), or any ordinary placed kit of
-/// the shared inventory ([`placed_kits`]).
+/// and ivy (#621), `"crag"`, the crag kit's rock modules (#668), `"gather"`, the ore veins
+/// (#917), or any ordinary placed kit of the shared inventory ([`placed_kits`]): the limestone
+/// blocks, river stones, meadow, Wolfrun Den, discoveries and any kit registered after them.
 fn placed_kit(
     kit: &str,
 ) -> Result<
@@ -1540,30 +1540,20 @@ fn placed_kit(
     ),
     JsError,
 > {
-    use mmorpg_presentation::{climbing, crag, lod::Placement, nature, river};
+    use mmorpg_presentation::{climbing, crag, lod::Placement, nature};
     static NATURE: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     static CLIMBING: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     static CRAG: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
-    static LIMESTONE: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
-    static RIVER: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
-    static MEADOW: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     static GATHER: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     // Every ordinary placed kit's placements, in inventory order (#683).
     static ORDINARY: scenery::PerZone<Vec<Vec<Placement>>> = scenery::PerZone::new();
-    // The placement lists mix bundles, so each kit takes the placements of its own entries
-    // from the zone's one derivation (#1010).
-    let of = |entries: &[&str]| mixed_placements().of(entries);
     match kit {
-        "nature" => Ok((&nature::ENTRIES, NATURE.get(|_| of(&nature::ENTRIES)))),
-        "limestone" => Ok((
-            &nature::LIMESTONE_ENTRIES,
-            LIMESTONE.get(|_| of(&nature::LIMESTONE_ENTRIES)),
+        // The placement lists mix bundles, so the nature kit and the inventory's mixed kits
+        // take the placements of their own entries from the zone's one derivation (#1010).
+        "nature" => Ok((
+            &nature::ENTRIES,
+            NATURE.get(|_| mixed_placements().of(&nature::ENTRIES)),
         )),
-        "river" => Ok((&river::ENTRIES, RIVER.get(|_| of(&river::ENTRIES)))),
-        "meadow" => {
-            let entries = &mmorpg_presentation::terrain_patch::MEADOW_ENTRIES;
-            Ok((entries, MEADOW.get(|_| of(entries))))
-        }
         // The ore veins (#917), in the order [`vein_slots`] indexes.
         "gather" => {
             let entries = &mmorpg_presentation::world_dressing::GATHERABLE_ENTRIES;
@@ -1594,7 +1584,7 @@ fn placed_kit(
                 .ok_or_else(|| JsError::new(&format!("no placed kit {other:?}")))?;
             let placements = ORDINARY.get(|_| {
                 kits.iter()
-                    .map(|placed| placed.placements(scenery::hosted_scenery()))
+                    .map(|placed| placed.placements(scenery::hosted_scenery(), mixed_placements()))
                     .collect()
             });
             Ok((&kits[index].entries, &placements[index]))
@@ -1604,8 +1594,9 @@ fn placed_kit(
 
 /// The ordinary placed kits (#683), in inventory order, as JSON: each kit's `name` (for
 /// [`kit_entries`], [`kit_keys`], [`kit_models`] and [`KitLods`]), its `bundle` directory under
-/// the site root, its `descriptor` attachment and its `label`. The browser registers every
-/// one generically.
+/// the site root, its `descriptor` attachment, its `label` and, for a kit that replaces a
+/// static-scene stand-in (#1011), that fallback's `standIn` name as the static scene's groups
+/// name it. The browser registers every one generically.
 #[wasm_bindgen(js_name = placedKits)]
 #[must_use]
 pub fn placed_kits() -> String {
@@ -1618,6 +1609,7 @@ pub fn placed_kits() -> String {
                     "bundle": kit.bundle,
                     "descriptor": kit.descriptor,
                     "label": kit.label(),
+                    "standIn": kit.stand_in.map(static_scene::fallback_name),
                 })
             })
             .collect(),
@@ -1991,9 +1983,9 @@ pub fn cottage_roofs() -> Vec<u32> {
 mod placed_kit_tests {
     use super::*;
 
-    /// The nature, limestone, river and meadow kits share one derivation of the presented
-    /// zone's mixed inventory whatever order they are first asked in (#1010), and each keeps
-    /// its former placements.
+    /// The nature kit and the inventory's limestone, river and meadow kits share one derivation
+    /// of the presented zone's mixed inventory whatever order they are first asked in (#1010),
+    /// and each keeps its former placements.
     #[test]
     fn mixed_kits_share_one_derivation_per_zone() {
         use mmorpg_presentation::{nature, river, terrain_patch::MEADOW_ENTRIES, world_dressing};

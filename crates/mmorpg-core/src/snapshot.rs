@@ -355,6 +355,8 @@ pub struct CanonicalCreatureSnapshot {
     /// A beast's attack winding up toward its bite (#889).
     pub attack: Option<crate::PendingAttack>,
     pub combat_timer: u16,
+    /// Ticks it still guards its flank after one was struck (#949).
+    pub wary_ticks: u16,
     pub tapped_by: Option<PlayerId>,
     pub loot: Option<crate::LootRewards>,
     /// The tapper's party members who share the corpse (#404), ascending.
@@ -653,6 +655,7 @@ impl ZoneSimulation {
                     swing_timer: creature.swing_timer,
                     attack: creature.attack,
                     combat_timer: creature.combat_timer,
+                    wary_ticks: creature.wary_ticks,
                     tapped_by: creature.tapped_by,
                     loot_party: creature.loot_party.clone(),
                     loot: creature.loot,
@@ -1114,6 +1117,7 @@ impl ZoneSimulation {
             ));
         }
         if !(template.min_level..=template.max_level).contains(&record.level)
+            || record.wary_ticks > crate::FLANK_WARY_TICKS
             || record.health > scaled_max_health(&content, template, &record)
             || record.threat.len() > MAX_THREAT_ENTRIES
             || record
@@ -1268,6 +1272,7 @@ impl ZoneSimulation {
                 swing_timer: record.swing_timer,
                 attack: record.attack,
                 combat_timer: record.combat_timer,
+                wary_ticks: record.wary_ticks,
                 tapped_by: record.tapped_by,
                 loot: record.loot,
                 loot_party: record.loot_party,
