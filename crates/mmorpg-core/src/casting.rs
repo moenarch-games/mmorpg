@@ -2,7 +2,7 @@
 //! aura pulses.
 //!
 //! - **Use** (tick step 1): validation runs in a fixed order (class,
-//!   learned, alive, stunned, casting, global cooldown, cooldown, resource,
+//!   learned, alive, stunned, casting, form, global cooldown, cooldown, resource,
 //!   target, range) and every refusal is an `Error` event. Instants pay and
 //!   resolve at once, casts pay when they complete, channels pay at the start.
 //! - **Casts** (step 6): global cooldowns, cooldowns and casts advance for
@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use crate::ability::{
     Ability, AbilityEffect, AbilityId, AbilityRange, AuraKind, CREATURE_ABILITY_JITTER_TICKS,
-    CastTime, ability_by_id, learned, scaled,
+    CastTime, ability_by_id, ids, learned, scaled,
 };
 use crate::ai::distance_squared;
 use crate::aura::{apply_aura, has_kind, pulse_amount};
@@ -34,6 +34,11 @@ use crate::{
 
 /// A Shield Bash on a casting creature locks the interrupted ability this long.
 pub(crate) const SHIELD_BASH_LOCKOUT_TICKS: u16 = crate::ticks_from_ms(4_000);
+
+/// The abilities a wolf form (#957) may use: Wolf Form itself, to return, and its bite.
+fn form_ability(id: AbilityId) -> bool {
+    id == ids::WOLF_FORM || id == ids::SAVAGE_BITE
+}
 
 /// A refusal: the error code and the unit it concerned.
 pub(crate) type Refusal = Option<(ErrorCode, Option<EntityRef>)>;
@@ -430,6 +435,11 @@ impl ZoneSimulation {
         if player.cast.is_some() {
             return Some(Err(ErrorCode::AlreadyCasting));
         }
+        // A wolf form (#957) uses only its own abilities, and its bite needs the shape.
+        let shifted = has_kind(&player.auras, AuraKind::Shapeshift);
+        if (shifted && !form_ability(ability.id)) || (!shifted && ability.id == ids::SAVAGE_BITE) {
+            return Some(Err(ErrorCode::WrongForm));
+        }
         if (player.global_cooldown > 0 && !waive_global_cooldown)
             || player
                 .cooldowns
@@ -707,6 +717,28 @@ impl ZoneSimulation {
             }
             AbilityEffect::Haste { percent, .. } => {
                 if let Some(aura) = aura(percent) {
+                    self.put_aura(source, aura);
+                }
+            }
+            // Wolf Form (#957) takes the shape, or in the shape returns to caster form.
+            AbilityEffect::Shapeshift { speed, .. } => {
+                let shape = self.players.get_mut(&player_id).and_then(|player| {
+                    let slot = player
+                        .auras
+                        .iter()
+                        .position(|aura| aura.kind() == Some(AuraKind::Shapeshift))?;
+                    Some(player.auras.remove(slot))
+                });
+                if let Some(shape) = shape {
+                    self.notify_units(
+                        [Some(source), None],
+                        ZoneEvent::AuraRemoved {
+                            source,
+                            target: source,
+                            ability: shape.ability,
+                        },
+                    );
+                } else if let Some(aura) = aura(speed) {
                     self.put_aura(source, aura);
                 }
             }
