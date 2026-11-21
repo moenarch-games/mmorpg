@@ -429,12 +429,15 @@ export class Grass {
     const profile = this.#profile;
     if (!profile) { return; }
     this.#shared.grassTime.value = seconds;
-    this.#shared.grassEye.value.set(eye[0], eye[1], eye[2]);
+    // Orbiting the camera must not move the vegetation-density field across the player's feet.
+    // Use the character as the stable reference, falling back to the eye for views without one.
+    const anchor = feet ?? eye;
+    this.#shared.grassEye.value.set(anchor[0], anchor[1], anchor[2]);
     if (feet) { this.#shared.grassPush.value.set(feet[0], feet[1], feet[2]); }
     const { near, far } = Grass.#shares(profile);
     let builds = BUILDS_PER_FRAME;
-    builds -= this.#stream(this.#near, eye, profile.fade + 6, near, builds, false);
-    if (this.#distant) { this.#stream(this.#distant, eye, profile.farTo + 8, far, Math.max(builds, 1), true); }
+    builds -= this.#stream(this.#near, anchor, profile.fade + 6, near, builds, false);
+    if (this.#distant) { this.#stream(this.#distant, anchor, profile.farTo + 8, far, Math.max(builds, 1), true); }
   }
 
   /** Keeps `layer`'s cells within `keep` metres of `eye`, builds up to `builds` missing ones, nearest first; how many it built. */
