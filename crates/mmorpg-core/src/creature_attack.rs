@@ -32,6 +32,12 @@
 //!   within a sword's reach, before it climbs back out of it. Its bite lands only on a target
 //!   still within reach and a step and within [`crate::flight::BITE_HEIGHT_UNITS`] of its
 //!   height, so stepping away through the wind-up dodges it.
+//! - **Claw pinch.** The river crayfish (#996) has one attack too: from its reach it holds
+//!   still, turning toward its target, through its `Attack_A` claw raise to the pinch at
+//!   [`CRAYFISH_CONTACT_TICKS`], then holds the committed pinch through the clip's rest,
+//!   [`CRAYFISH_RECOVER_TICKS`]. Its shell and claws turn blows at its front (a shielded
+//!   template, like the Redbrand Brute's guard, #953), so the pinch's recovery and its
+//!   flanks are the openings.
 //!
 //! A pending attack is canonical creature state, so replay and recovery continue mid-bite.
 //! Outcomes stay health only: no knockback or hitstun.
@@ -94,6 +100,17 @@ pub const BAT_RECOVER_TICKS: u16 = crate::ticks_from_ms(500 - 333 + 833);
 /// The bat flies after a target at 4.2 m/s: a running player outpaces it.
 pub const BAT_FLIGHT_SPEED_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(420);
 
+/// The river crayfish's claw pinch (#996), from the wildlife descriptor's
+/// `greyhaven.wild.river-crayfish` clips: `Attack_A` (1.25 s) raises a claw and pinches on its
+/// contact 0.75 s in.
+const CRAYFISH_CONTACT_MS: u32 = 750;
+/// The crayfish's warning: ticks from the start of its claw raise to the pinch.
+pub const CRAYFISH_CONTACT_TICKS: u16 = crate::ticks_from_ms(CRAYFISH_CONTACT_MS);
+/// Ticks after its contact the crayfish holds its pinch still, the rest of `Attack_A`.
+pub const CRAYFISH_RECOVER_TICKS: u16 = crate::ticks_from_ms(1_250 - CRAYFISH_CONTACT_MS);
+/// The crayfish scuttles after a target at 1.5 m/s: a player who walks away leaves it behind.
+pub const CRAYFISH_SCUTTLE_SPEED_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(150);
+
 /// A set-piece attack (#989, #990): one attack, begun from [`Self::leap_units`] beyond the
 /// creature's reach, wound up standing still and turning toward its target, closed with a leap
 /// over the wind-up's last [`Self::leap_ticks`], then a still recovery of
@@ -109,7 +126,8 @@ pub struct Lunge {
 }
 
 /// The set-piece attack of `family`, if it has one: the lynx's pounce (#989), the marsh
-/// adder's coiled strike (#990) and the cave bat's dive (#995).
+/// adder's coiled strike (#990), the cave bat's dive (#995) and the
+/// river crayfish's claw pinch (#996).
 #[must_use]
 pub const fn lunge(family: CreatureFamily) -> Option<Lunge> {
     match family {
@@ -133,6 +151,13 @@ pub const fn lunge(family: CreatureFamily) -> Option<Lunge> {
             leap_speed: BAT_DIVE_SPEED_SUBUNITS_PER_TICK,
             recover_ticks: BAT_RECOVER_TICKS,
             approach_speed: BAT_FLIGHT_SPEED_SUBUNITS_PER_TICK,
+        }),
+        CreatureFamily::Crayfish => Some(Lunge {
+            leap_units: 0,
+            leap_ticks: 0,
+            leap_speed: 0,
+            recover_ticks: CRAYFISH_RECOVER_TICKS,
+            approach_speed: CRAYFISH_SCUTTLE_SPEED_SUBUNITS_PER_TICK,
         }),
         _ => None,
     }
@@ -193,6 +218,8 @@ pub const fn contact_ticks(family: CreatureFamily, attack: CreatureAttack) -> Op
         CreatureFamily::Adder => [ADDER_CONTACT_MS, ADDER_CONTACT_MS],
         // The bat (#995) dives only: `Dive_Windup`'s 0.5 s, then `Dive_Contact`'s contact.
         CreatureFamily::Bat => [BAT_CONTACT_MS, BAT_CONTACT_MS],
+        // The crayfish (#996) pinches only: `Attack_A`'s claw raise, then its contact.
+        CreatureFamily::Crayfish => [CRAYFISH_CONTACT_MS, CRAYFISH_CONTACT_MS],
         CreatureFamily::Marauder
         | CreatureFamily::Mirefin
         | CreatureFamily::Redbrand

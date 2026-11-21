@@ -774,6 +774,8 @@ pub enum Kind {
     Adder,
     /// The cave bat (#995).
     Bat,
+    /// The river crayfish (#996).
+    Crayfish,
 }
 
 /// Clip names of one model.
@@ -1740,6 +1742,7 @@ impl Kind {
             Self::Lynx => "Lynx",
             Self::Adder => "Adder",
             Self::Bat => "Bat",
+            Self::Crayfish => "Crayfish",
         }
     }
 
@@ -1757,6 +1760,7 @@ impl Kind {
             Self::Lynx => Some("greyhaven.wild.lynx"),
             Self::Adder => Some("greyhaven.wild.marsh-adder"),
             Self::Bat => Some("greyhaven.wild.cave-bat"),
+            Self::Crayfish => Some("greyhaven.wild.river-crayfish"),
         }
     }
 
@@ -1994,6 +1998,9 @@ impl Kind {
             Self::Lynx => LYNX_CLIPS,
             Self::Adder => ADDER_CLIPS,
             Self::Bat => BAT_CLIPS,
+            // The river crayfish (#996) has the beasts' clip set too; its `Attack_A` claw raise
+            // and pinch is its one attack.
+            Self::Crayfish => WILD_CLIPS,
         }
     }
 
@@ -2349,6 +2356,7 @@ impl Kind {
             CreatureFamily::Lynx => Some(Self::Lynx),
             CreatureFamily::Adder => Some(Self::Adder),
             CreatureFamily::Bat => Some(Self::Bat),
+            CreatureFamily::Crayfish => Some(Self::Crayfish),
             CreatureFamily::Marauder
             | CreatureFamily::Mirefin
             | CreatureFamily::Redbrand
@@ -4912,6 +4920,7 @@ mod tests {
         assert_eq!(creature(CreatureFamily::Lynx), Some(Kind::Lynx));
         assert_eq!(creature(CreatureFamily::Adder), Some(Kind::Adder));
         assert_eq!(creature(CreatureFamily::Bat), Some(Kind::Bat));
+        assert_eq!(creature(CreatureFamily::Crayfish), Some(Kind::Crayfish));
         assert_eq!(creature(CreatureFamily::Redbrand), None);
         assert_eq!(
             Kind::of(EntityRef::Npc(NpcId::new(1)), &content_record(), &content),
