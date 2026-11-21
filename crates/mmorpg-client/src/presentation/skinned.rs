@@ -94,8 +94,10 @@ fn texture_data(image: &gltf::image::Data) -> Option<render_engine::material::Te
         F::R8G8B8A8 => image.pixels.clone(),
         F::R8G8B8 => image
             .pixels
-            .chunks_exact(3)
-            .flat_map(|c| [c[0], c[1], c[2], 255])
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .flat_map(|&[r, g, b]| [r, g, b, 255])
             .collect(),
         F::R8 => image.pixels.iter().flat_map(|&c| [c, c, c, 255]).collect(),
         _ => return None,
