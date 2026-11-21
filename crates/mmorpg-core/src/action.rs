@@ -936,6 +936,13 @@ pub enum GraphError {
     /// A landing edge's window closes after the shortest landing recovery
     /// its conditions allow, when the landing it answers is over.
     OutlastsSource(EdgeId),
+    /// The directed slash's outgoing edges disagree on when their shared
+    /// opening is live (#1014): `SlashToShieldBash` and `CleaveToSlash` read
+    /// one slash opening, whose phase, expiry, late-input grace and
+    /// interruption the Shield Bash edge times, so their effective windows
+    /// (baseline, modifiers and every scoped override) must open and close
+    /// together, and the cleave follow-up needs the Shield Bash edge.
+    DivergentSlashWindow(EdgeId),
     /// A movement rule covers a reaction or a phase its action never runs
     /// in, or its values are out of range.
     BadMovement(ActionId, Phase),
@@ -1155,6 +1162,50 @@ impl ActionGraph {
             {
                 return Err(GraphError::ConflictingOverride(entry.scope, key));
             }
+        }
+        self.validate_slash_opening()
+    }
+
+    /// The slash's outgoing edges share one opening whose lifetime the
+    /// Shield Bash edge times (phase, expiry, late-input grace,
+    /// interruptions), so each must be live for exactly that lifetime
+    /// (#1014): the same effective window in every context.
+    fn validate_slash_opening(&self) -> Result<(), GraphError> {
+        let Some(cleave) = self.edge(EdgeId::CleaveToSlash) else {
+            return Ok(());
+        };
+        let Some(bash) = self.edge(EdgeId::SlashToShieldBash) else {
+            return Err(GraphError::DivergentSlashWindow(cleave.id));
+        };
+        let timing = |window: Window| {
+            let ticks = window.ticks();
+            (ticks.opens, ticks.closes())
+        };
+        let modifiers = |id: EdgeId| {
+            self.window_modifiers
+                .iter()
+                .filter(move |modifier| modifier.edge == id)
+                .map(|modifier| (modifier.conditions, modifier.actionable_delta_ms))
+        };
+        let windows = |id: EdgeId| {
+            self.overrides
+                .iter()
+                .filter_map(move |entry| match entry.setting {
+                    Setting::Window { edge, window } if edge == id => {
+                        Some((entry.scope, timing(window)))
+                    }
+                    _ => None,
+                })
+        };
+        let same_overrides = |from: EdgeId, to: EdgeId| {
+            windows(from).all(|entry| windows(to).any(|other| other == entry))
+        };
+        if timing(bash.window) != timing(cleave.window)
+            || !modifiers(bash.id).eq(modifiers(cleave.id))
+            || !same_overrides(bash.id, cleave.id)
+            || !same_overrides(cleave.id, bash.id)
+        {
+            return Err(GraphError::DivergentSlashWindow(cleave.id));
         }
         Ok(())
     }
