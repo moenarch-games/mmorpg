@@ -33,7 +33,7 @@ use std::sync::Arc;
 
 use mmorpg_core::{MAX_PLAYERS_PER_ZONE, TICK_HZ, ZoneContent, ZoneId, ZoneSimulation};
 use mmorpg_protocol::{
-    SheetRevisions, decode_command_envelope, encode_canonical_snapshot, pack_snapshot_acknowledged,
+    SheetRevisions, decode_command_envelope, encode_canonical_snapshot, pack_snapshot_cached,
 };
 
 pub const PINNED_GAME_SERVER_REVISION: &str = "0817c9da548eeb44914a403f7515ab3bffdfbe47";
@@ -93,6 +93,11 @@ pub struct ZoneGameServerAdapter {
     /// The sheet revisions each session last acknowledged (#544): a projection carries a
     /// sheet only while it differs. Transport state, rebuilt from replayed commands.
     sheet_acks: std::collections::BTreeMap<game_server::PlayerId, SheetRevisions>,
+    /// Each session's last inventory sheet encoding, reused while unchanged (#1007). A
+    /// publication cache only: dropped with the player and on restore, never replayed.
+    sheet_encodings: std::sync::Mutex<
+        std::collections::BTreeMap<game_server::PlayerId, mmorpg_protocol::SheetEncodingCache>,
+    >,
     handoffs: Option<departures::HandoffChannel>,
     parties: Option<party::PartyChannel>,
     instances: Option<instance::InstanceChannel>,
@@ -125,11 +130,20 @@ impl ZoneGameServerAdapter {
         }
         Ok(())
     }
+    fn sheet_encodings_mut(
+        &mut self,
+    ) -> &mut std::collections::BTreeMap<game_server::PlayerId, mmorpg_protocol::SheetEncodingCache>
+    {
+        self.sheet_encodings
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
     fn remove_bound_player(&mut self, player_id: game_server::PlayerId) -> bool {
         self.characters.remove(&player_id);
         self.held_back.remove(&player_id);
         self.threshold_held.remove(&player_id);
         self.sheet_acks.remove(&player_id);
+        self.sheet_encodings_mut().remove(&player_id);
         self.departing.remove(&player_id).is_some()
             || self.parked_characters.remove(&player_id).is_some()
             || self.zone.remove_player(player_id)
@@ -147,6 +161,7 @@ impl ZoneGameServerAdapter {
             departing: Default::default(),
             held_back: Default::default(),
             sheet_acks: Default::default(),
+            sheet_encodings: Default::default(),
             handoffs: None,
             parties: None,
             instances: None,
@@ -170,6 +185,7 @@ impl ZoneGameServerAdapter {
             departing: Default::default(),
             held_back: Default::default(),
             sheet_acks: Default::default(),
+            sheet_encodings: Default::default(),
             handoffs: None,
             parties: None,
             instances: None,
@@ -346,6 +362,7 @@ impl GameSimulation for ZoneGameServerAdapter {
         checkpoint: &SimulationSnapshot,
     ) -> Result<(), SimulationError> {
         self.ensure_authority()?;
+        self.sheet_encodings_mut().clear();
         self.restore_character_checkpoint(checkpoint)
     }
 
@@ -379,7 +396,12 @@ impl GameSimulation for ZoneGameServerAdapter {
         // Budget-driven packing: entities beyond one datagram are omitted by
         // relevance priority, never truncated by transport.
         let acknowledged = self.sheet_acks.get(&player_id).copied().unwrap_or_default();
-        let payload = pack_snapshot_acknowledged(&snapshot, acknowledged)
+        let mut caches = self
+            .sheet_encodings
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let cache = caches.entry(player_id).or_default();
+        let payload = pack_snapshot_cached(&snapshot, acknowledged, cache)
             .map_err(map_protocol_error)?
             .payload;
         Ok(SimulationSnapshot::new(snapshot.tick, payload))
