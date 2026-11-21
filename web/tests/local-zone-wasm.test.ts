@@ -6,6 +6,7 @@ import { encodeCommand } from "../src/command-wire";
 import { TICK_HZ, decodeSnapshot, ticksFromMs, wireCatalog, type EntityState, type ZoneSnapshot } from "../src/replication";
 import { abilitySlots, useAbilitySlot } from "../src/world/units/abilities";
 import { undescribedAbilities } from "../src/world/units/ability-presentation";
+import { tooltipText } from "../src/world/units/ability-state";
 import { combatStatus } from "../src/world/units/combat-hud";
 import { BagState } from "../src/world/units/bag-state";
 import { LootState } from "../src/world/units/loot-state";
@@ -559,6 +560,11 @@ describe("WASM local zone combat intents", () => {
     expect(undescribedAbilities(catalog)).toEqual([]);
     expect([5, 9, 10, 11, 12].map((id) => catalog.abilities.get(id)?.name)).toEqual(["Aimed Shot", "Firebolt", "Frost Nova", "Arcane Barrier", "Blizzard"]);
     expect(catalog.abilities.get(12)?.channel).toBe(true);
+    // Range lines come from the core catalog (#1013): Renew, Divine Shield and Rejuvenation land
+    // on a selected friend within 30 m, or on the caster without one.
+    const rangeLine = (id: number) => tooltipText(catalog.abilities.get(id)!, catalog, 60).lines[1];
+    expect([35, 37, 40].map(rangeLine)).toEqual(Array(3).fill("30 m range, friendly or self"));
+    expect([1, 9, 10, 15].map(rangeLine)).toEqual(["Melee range", "30 m range", "Self", "20 m range"]);
   });
 
   test("the chosen class reaches the zone and ability slots are refused or validated there", async () => {
