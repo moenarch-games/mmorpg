@@ -6,7 +6,7 @@
  * classes by wire value, abilities by ability ID and quests by quest ID.
  * Combat numbers stay on the server.
  */
-export type CreatureFamily = "wolf" | "boar" | "vermin" | "marauder" | "mirefin" | "redbrand" | "prop" | "ogre" | "bear" | "spider" | "lurker";
+export type CreatureFamily = "wolf" | "boar" | "vermin" | "marauder" | "mirefin" | "redbrand" | "prop" | "ogre" | "bear" | "spider" | "lurker" | "lynx";
 export type CreatureBehaviour = "aggressive" | "neutral" | "prop";
 /** A breakable prop (#288). */
 export type PropKind = "crate" | "barrel" | "explosive_barrel" | "fence" | "heavy_crate" | "boulder";
@@ -118,7 +118,7 @@ const OBJECTIVE_KINDS = ["kill", "collect", "talk", "explore", "retrieve", "vict
 const CLASS_NAMES: readonly ClassName[] = ["warden", "ranger", "arcanist", "necromancer", "rogue", "cleric", "druid"];
 const RESOURCES = ["rage", "focus", "mana", "faith"] as const;
 const USERS: readonly (ClassName | "creature")[] = [...CLASS_NAMES, "creature"];
-const FAMILIES: readonly CreatureFamily[] = ["wolf", "boar", "vermin", "marauder", "mirefin", "redbrand", "prop", "ogre", "bear", "spider", "lurker"];
+const FAMILIES: readonly CreatureFamily[] = ["wolf", "boar", "vermin", "marauder", "mirefin", "redbrand", "prop", "ogre", "bear", "spider", "lurker", "lynx"];
 const BEHAVIOURS: readonly CreatureBehaviour[] = ["aggressive", "neutral", "prop"];
 const PROPS: readonly PropKind[] = ["crate", "barrel", "explosive_barrel", "fence", "heavy_crate", "boulder"];
 const ROLES: readonly NpcRole[] = ["quest_giver", "vendor", "spirit_healer", "guard", "resident"];

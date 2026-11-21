@@ -1583,6 +1583,33 @@ mod wild_bundle {
     include!(concat!(env!("OUT_DIR"), "/wild_bundle.rs"));
 }
 
+mod wild_descriptor {
+    include!(concat!(env!("OUT_DIR"), "/wild_descriptor.rs"));
+}
+
+/// The rest clip the wildlife descriptor names for entry `key` (#989): `Idle` for most animals,
+/// the marsh adder's coil for it; `None` for an entry it does not list.
+fn wild_rest_clip(key: &str) -> Option<&'static str> {
+    static RESTS: OnceLock<BTreeMap<String, &'static str>> = OnceLock::new();
+    RESTS
+        .get_or_init(|| {
+            let descriptor: serde_json::Value = serde_json::from_str(wild_descriptor::DESCRIPTOR)
+                .expect("the wildlife descriptor is JSON");
+            descriptor["assets"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|entry| {
+                    let key = entry["key"].as_str()?;
+                    let rest = entry["restClip"].as_str()?;
+                    Some((key.to_owned(), &*rest.to_owned().leak()))
+                })
+                .collect()
+        })
+        .get(key)
+        .copied()
+}
+
 /// A skinned ambient model and its clip lengths by clip name.
 pub(super) type AmbientModel = (Model, BTreeMap<String, f32>);
 
@@ -1604,7 +1631,8 @@ pub(super) fn ambient_model(key: &str) -> Option<&'static AmbientModel> {
                 .chain(farm)
                 .chain(wild)
                 .map(|(&(key, path), files)| {
-                    let model = Model::parse_textured(&bundle_glb(path, files), "Idle")
+                    let rest = wild_rest_clip(key).unwrap_or("Idle");
+                    let model = Model::parse_textured(&bundle_glb(path, files), rest)
                         .expect("an ambient animal is valid glTF");
                     let clips = model.clip_durations().collect();
                     (key, (model, clips))
@@ -2771,7 +2799,9 @@ pub(super) fn asset(kind: Kind) -> &'static Asset {
     slots[index].get_or_init(|| Asset {
         model: Model::parse_with_clips(
             &source(kind),
-            kind.clips().idle,
+            kind.wild_key()
+                .and_then(wild_rest_clip)
+                .unwrap_or(kind.clips().idle),
             matches!(kind, Kind::Ranger).then(ranger_clips),
             // The beasts sample their fur per fragment like the ambient animals (#1001).
             kind.wild_key().is_some(),
