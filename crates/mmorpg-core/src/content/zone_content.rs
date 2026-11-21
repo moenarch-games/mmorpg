@@ -2725,6 +2725,7 @@ const fn family_code(family: super::units::CreatureFamily) -> u8 {
         CreatureFamily::Lynx => 12,
         CreatureFamily::Adder => 13,
         CreatureFamily::Bat => 14,
+        CreatureFamily::Stag => 16,
     }
 }
 

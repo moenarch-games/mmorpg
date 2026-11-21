@@ -33,6 +33,9 @@ pub const AGGRO_MIN_RADIUS_UNITS: i32 = 500;
 pub const AGGRO_MAX_RADIUS_UNITS: i32 = 2_000;
 /// An ambusher (#889) starts a fight only with a player this close (4 m), whatever their levels.
 pub const AMBUSH_RADIUS_UNITS: i32 = 400;
+/// A territorial neutral (#997) takes a player this close (7 m) for a threat, whatever their
+/// levels: far enough out for its charge to have room, near enough to watch it from.
+pub const TERRITORY_RADIUS_UNITS: i32 = 700;
 /// Idle creatures of the same family this close to an engaging one assist.
 pub const ASSIST_RADIUS_UNITS: i32 = 800;
 /// Beyond this XZ distance from its spawn point a creature evades.

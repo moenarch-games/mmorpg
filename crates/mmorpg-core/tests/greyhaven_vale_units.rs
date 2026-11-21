@@ -353,6 +353,19 @@ fn templates_follow_the_design_contract() {
                 2600,
                 60000
             ),
+            // The Southwood stag (#997): a neutral, territorial body with a slow, warned charge.
+            (
+                "Southwood Stag",
+                Stag,
+                Neutral,
+                [3, 4],
+                false,
+                80,
+                16,
+                [5, 9],
+                3000,
+                60000
+            ),
         ]
     );
     let wolf = content
@@ -523,6 +536,8 @@ fn spawns_populate_their_subzones() {
         ((wilds::SOUTHWOOD, "Brown Bear"), 1),
         // The Forest Lynxes (#989) on the wood's edge.
         ((wilds::SOUTHWOOD, "Forest Lynx"), 3),
+        // The Southwood Stags (#997) in the western meadow.
+        ((wilds::SOUTHWOOD, "Southwood Stag"), 2),
         // The Marsh Adders (#990) in Adder Hollow.
         ((greyhaven_vale::vale::EASTWATER_FEN, "Marsh Adder"), 3),
         ((wilds::CROWN_FOOTHILLS, "Timber Wolf"), 6),

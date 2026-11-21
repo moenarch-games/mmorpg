@@ -51,6 +51,8 @@ pub mod templates {
     pub const MARSH_ADDER: CreatureTemplateId = CreatureTemplateId::new(23);
     /// The Greyfang cave bat (#995): a flier that roosts on the cave roof and dives.
     pub const CAVE_BAT: CreatureTemplateId = CreatureTemplateId::new(24);
+    /// The Southwood stag (#997): neutral but territorial; it charges a player who comes close.
+    pub const SOUTHWOOD_STAG: CreatureTemplateId = CreatureTemplateId::new(26);
 }
 
 /// Default respawn time: 60 s.
@@ -87,6 +89,9 @@ const LYNX: [i32; 3] = [30, 40, 30];
 const ADDER: [i32; 3] = [22, 10, 22];
 /// The wildlife release's cave bat (#995) hovering: 0.38 m tall, its body a little wider.
 const BAT: [i32; 3] = [30, 19, 30];
+/// The wildlife release's 2 m stag (#997) to its antler tips, on a square footprint between its
+/// width and length.
+const STAG: [i32; 3] = [45, 100, 45];
 const HUMANOID: [i32; 3] = [30, 90, 30];
 const LURKER: [i32; 3] = [35, 80, 35];
 /// A 1.4 m rolling boulder (#299).
@@ -120,9 +125,9 @@ type TemplateRow = (
 );
 
 #[rustfmt::skip]
-const TEMPLATES: [TemplateRow; 23] = {
+const TEMPLATES: [TemplateRow; 24] = {
     use CreatureBehaviour::{Aggressive, Neutral, Prop};
-    use CreatureFamily::{Adder, Bat, Bear, Boar, Lurker, Lynx, Marauder, Mirefin, Ogre, Redbrand, Spider, Vermin, Wolf};
+    use CreatureFamily::{Adder, Bat, Bear, Boar, Lurker, Lynx, Marauder, Mirefin, Ogre, Redbrand, Spider, Stag, Vermin, Wolf};
     use crate::PropKind;
     use templates::*;
     [
@@ -162,6 +167,8 @@ const TEMPLATES: [TemplateRow; 23] = {
         (MARSH_ADDER, "Marsh Adder", Adder, Aggressive, [2, 3], false, 34, 10, [4, 7], 1, crate::ticks_from_ms(2_600), RESPAWN_TICKS, ADDER),
         // The Greyfang cave bat (#995): the cave mouth's level, a frail body and a warned dive.
         (CAVE_BAT, "Cave Bat", Bat, Aggressive, [3, 4], false, 36, 10, [3, 6], 1, crate::ticks_from_ms(2_600), RESPAWN_TICKS, BAT),
+        // The Southwood stag (#997): Southwood's upper level, a strong body and a slow, warned charge.
+        (SOUTHWOOD_STAG, "Southwood Stag", Stag, Neutral, [3, 4], false, 80, 16, [5, 9], 1, crate::ticks_from_ms(3_000), RESPAWN_TICKS, STAG),
     ]
 };
 
@@ -491,6 +498,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::adder::spawns())
         // The Greyfang cave bats (#995).
         .chain(super::bat::spawns())
+        // The Southwood stags (#997).
+        .chain(super::stag::spawns())
         .collect()
 }
 
