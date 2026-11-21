@@ -20,6 +20,11 @@
 //!   target at a bounded rate, leaps along its facing for the last [`POUNCE_LEAP_TICKS`] and,
 //!   after the contact, holds still for [`POUNCE_RECOVER_TICKS`]. Stepping aside during the
 //!   wind-up dodges it; its recovery is the opening to hit back.
+//! - **Coiled strike.** The marsh adder (#990) has one attack too: from its reach it holds
+//!   still, coiled and hissing, through [`ADDER_WARN_TICKS`] (one `Warn_Hiss_Loop`), turning
+//!   toward its target, strikes on its `Strike` clip's contact and holds still through the
+//!   rest of the strike and its `Strike_Recover`, [`ADDER_RECOVER_TICKS`]. Backing off during
+//!   the hiss dodges it.
 //!
 //! A pending attack is canonical creature state, so replay and recovery continue mid-bite.
 //! Outcomes stay health only: no knockback or hitstun.
@@ -48,6 +53,56 @@ pub const POUNCE_LEAP_TICKS: u16 =
 pub const POUNCE_LEAP_SPEED_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(690);
 /// Ticks after its contact a pouncer holds still in its `Pounce_Recover`, open to a counter.
 pub const POUNCE_RECOVER_TICKS: u16 = crate::ticks_from_ms(833);
+
+/// The marsh adder's coiled strike (#990), from the wildlife descriptor's
+/// `greyhaven.wild.marsh-adder` clips: it hisses through one 1.333 s `Warn_Hiss_Loop`, then
+/// its `Strike` (0.417 s) makes contact 0.208 s in; `Strike_Recover` lasts 0.833 s.
+const ADDER_WARN_MS: u32 = 1_333;
+const ADDER_CONTACT_MS: u32 = ADDER_WARN_MS + 208;
+/// The adder's warning: the ticks it holds still, coiled and hissing, before it strikes.
+pub const ADDER_WARN_TICKS: u16 = crate::ticks_from_ms(ADDER_WARN_MS);
+/// Ticks after its contact the adder holds still, the rest of its `Strike` and its
+/// `Strike_Recover`, open to a counter.
+pub const ADDER_RECOVER_TICKS: u16 = crate::ticks_from_ms(417 - 208 + 833);
+/// The adder slithers after a target at 1.2 m/s: a player who walks away leaves it behind.
+pub const ADDER_SLITHER_SPEED_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(120);
+
+/// A set-piece attack (#989, #990): one attack, begun from [`Self::leap_units`] beyond the
+/// creature's reach, wound up standing still and turning toward its target, closed with a leap
+/// over the wind-up's last [`Self::leap_ticks`], then a still recovery of
+/// [`Self::recover_ticks`] after its contact. Between attacks it closes in at
+/// [`Self::approach_speed`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Lunge {
+    pub leap_units: i32,
+    pub leap_ticks: u16,
+    pub leap_speed: i32,
+    pub recover_ticks: u16,
+    pub approach_speed: i32,
+}
+
+/// The set-piece attack of `family`, if it has one: the lynx's pounce (#989) and the marsh
+/// adder's coiled strike (#990).
+#[must_use]
+pub const fn lunge(family: CreatureFamily) -> Option<Lunge> {
+    match family {
+        CreatureFamily::Lynx => Some(Lunge {
+            leap_units: POUNCE_LEAP_UNITS,
+            leap_ticks: POUNCE_LEAP_TICKS,
+            leap_speed: POUNCE_LEAP_SPEED_SUBUNITS_PER_TICK,
+            recover_ticks: POUNCE_RECOVER_TICKS,
+            approach_speed: crate::CREATURE_WALK_SPEED_SUBUNITS_PER_TICK,
+        }),
+        CreatureFamily::Adder => Some(Lunge {
+            leap_units: 0,
+            leap_ticks: 0,
+            leap_speed: 0,
+            recover_ticks: ADDER_RECOVER_TICKS,
+            approach_speed: ADDER_SLITHER_SPEED_SUBUNITS_PER_TICK,
+        }),
+        _ => None,
+    }
+}
 
 /// One of a beast's two attacks, its `Attack_A` and `Attack_B` clips.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
@@ -100,6 +155,8 @@ pub const fn contact_ticks(family: CreatureFamily, attack: CreatureAttack) -> Op
         CreatureFamily::Lurker => [333, 583],
         // The lynx (#989) pounces only: `Pounce_Windup`'s 0.5 s, then `Pounce_Lunge`'s contact.
         CreatureFamily::Lynx => [POUNCE_CONTACT_MS, POUNCE_CONTACT_MS],
+        // The adder (#990) strikes only: its hiss, then `Strike`'s contact.
+        CreatureFamily::Adder => [ADDER_CONTACT_MS, ADDER_CONTACT_MS],
         CreatureFamily::Marauder
         | CreatureFamily::Mirefin
         | CreatureFamily::Redbrand
@@ -123,11 +180,14 @@ pub struct PendingAttack {
 }
 
 impl PendingAttack {
-    /// Whether a pouncer holding it is in its leap (#989): the wind-up's last
-    /// [`POUNCE_LEAP_TICKS`].
+    /// Whether a `family` creature holding it is in its leap (#989): its [`Lunge`]'s last
+    /// [`Lunge::leap_ticks`] of the wind-up.
     #[must_use]
-    pub const fn leaping(self) -> bool {
-        self.contact <= POUNCE_LEAP_TICKS
+    pub const fn leaping(self, family: CreatureFamily) -> bool {
+        match lunge(family) {
+            Some(lunge) => self.contact <= lunge.leap_ticks,
+            None => false,
+        }
     }
 
     /// Whether a `family` creature may hold it: a family that winds up, no further from its

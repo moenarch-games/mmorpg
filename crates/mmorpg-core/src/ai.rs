@@ -141,28 +141,29 @@ fn chase_velocity(dx: i32, dz: i32, reach: i32, speed: i32) -> [i32; 2] {
     steer(dx, dz, i32::try_from(step).unwrap_or(0))
 }
 
-/// A pouncer's step through its pounce (#989), or `None` between pounces: it crouches still
-/// through the wind-up, turning toward its target `(dx, dz)` away, leaps along its facing for
-/// the wind-up's last [`crate::POUNCE_LEAP_TICKS`], and holds still through the recovery after
-/// its contact. The leap closes only the gap to `reach`, like a chase's last step, never
-/// carrying it into its target. Its swing timer, set as the pounce began, dates the recovery.
-fn pounce_step(
+/// A set-piece attacker's step through its [`crate::Lunge`] (#989, #990), or `None` between
+/// attacks: it holds still through the wind-up (a lynx's crouch, an adder's hiss), turning toward
+/// its target `(dx, dz)` away, leaps along its facing for the wind-up's last
+/// [`crate::Lunge::leap_ticks`], and holds still through the recovery after its contact. The
+/// leap closes only the gap to `reach`, like a chase's last step, never carrying it into its
+/// target. Its swing timer, set as the attack began, dates the recovery.
+fn lunge_step(
     creature: &crate::creature::CreatureState,
     template: &crate::CreatureTemplate,
+    lunge: crate::Lunge,
     (dx, dz): (i32, i32),
     reach: i32,
 ) -> Option<([i32; 2], Option<u16>)> {
     let turn = yaw_from_vector(dx, dz);
     match creature.attack {
-        Some(pending) if pending.leaping() => {
+        Some(pending) if pending.leaping(template.family) => {
             let (x, z) = trig::direction(creature.facing);
             let gap = i64::try_from(xz_length(dx, dz))
                 .unwrap_or(i64::MAX)
                 .saturating_sub(i64::from(reach))
                 .saturating_add(CHASE_CLOSE_IN_UNITS)
                 .max(0);
-            let speed = i64::from(crate::POUNCE_LEAP_SPEED_SUBUNITS_PER_TICK)
-                .min(gap.saturating_mul(SUBUNITS));
+            let speed = i64::from(lunge.leap_speed).min(gap.saturating_mul(SUBUNITS));
             let speed = i32::try_from(speed).unwrap_or(0);
             let leap = |unit| trig::checked_scale(speed, unit).unwrap_or(0);
             Some(([leap(x), leap(z)], None))
@@ -172,7 +173,7 @@ fn pounce_step(
             let since = template.swing_ticks.saturating_sub(creature.swing_timer);
             let contact =
                 crate::contact_ticks(template.family, crate::CreatureAttack::Quick).unwrap_or(0);
-            (since < contact + crate::POUNCE_RECOVER_TICKS).then_some(([0, 0], turn))
+            (since < contact + lunge.recover_ticks).then_some(([0, 0], turn))
         }
     }
 }
@@ -426,10 +427,11 @@ impl ZoneSimulation {
         }
         let speed = crate::aura::speed_percent(&creature.auras);
         let stunned = crate::aura::has_kind(&creature.auras, crate::AuraKind::Stun);
-        let pounce = match chase {
-            Some((target, to)) if template.family.pounces() && !leashed && !casting => {
+        let lunge = crate::lunge(template.family);
+        let pounce = match (chase, lunge) {
+            (Some((target, to)), Some(lunge)) if !leashed && !casting => {
                 let reach = creature_reach(target);
-                pounce_step(creature, template, offset(here, to), reach)
+                lunge_step(creature, template, lunge, offset(here, to), reach)
             }
             _ => None,
         };
@@ -505,16 +507,16 @@ impl ZoneSimulation {
                     )
                 }
                 Some(_) if pounce.is_some() => pounce.unwrap_or(([0, 0], None)),
-                // A pouncer (#989) stalks in at a walk to its leap's range; the rest run to reach.
+                // A set-piece attacker (#989, #990) closes in at its approach (a lynx's stalk, an
+                // adder's slither) to its leap's range; the rest run to reach.
                 Some((target, to)) => {
                     let (dx, dz) = offset(here, to);
-                    let (reach, speed) = if template.family.pounces() {
-                        (
-                            creature_reach(target) + crate::POUNCE_LEAP_UNITS,
-                            CREATURE_WALK_SPEED_SUBUNITS_PER_TICK,
-                        )
-                    } else {
-                        (creature_reach(target), CREATURE_RUN_SPEED_SUBUNITS_PER_TICK)
+                    let (reach, speed) = match lunge {
+                        Some(lunge) => (
+                            creature_reach(target) + lunge.leap_units,
+                            lunge.approach_speed,
+                        ),
+                        None => (creature_reach(target), CREATURE_RUN_SPEED_SUBUNITS_PER_TICK),
                     };
                     (
                         chase_velocity(dx, dz, reach, speed),

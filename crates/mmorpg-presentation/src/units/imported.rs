@@ -647,6 +647,8 @@ pub enum Kind {
     Lurker,
     /// The forest lynx (#989).
     Lynx,
+    /// The marsh adder (#990).
+    Adder,
 }
 
 /// Clip names of one model.
@@ -761,6 +763,23 @@ const LYNX_CLIPS: Clips = Clips {
         attacks: ["Pounce_Windup", "Pounce_Windup"],
         alert: "Crouch_Stalk_Loop",
         follow: Some(["Pounce_Lunge", "Pounce_Recover"]),
+    }),
+    ..WILD_CLIPS
+};
+
+/// The wildlife release's marsh adder (#990, asset-tooling #778): it rests coiled and
+/// slithers, hisses as its fight starts, and strikes in three clips: `Warn_Hiss_Loop` once
+/// through (the zone's warning), `Strike` (whose contact the zone's strike lands on) and
+/// `Strike_Recover`.
+const ADDER_CLIPS: Clips = Clips {
+    idle: "Idle_Coil_Loop",
+    walk: "Slither_Loop",
+    run: "Slither_Loop",
+    attack: "Strike",
+    bites: Some(BiteClips {
+        attacks: ["Warn_Hiss_Loop", "Warn_Hiss_Loop"],
+        alert: "Warn_Hiss_Loop",
+        follow: Some(["Strike", "Strike_Recover"]),
     }),
     ..WILD_CLIPS
 };
@@ -1573,6 +1592,7 @@ impl Kind {
             Self::Spider => "Spider",
             Self::Lurker => "Lurker",
             Self::Lynx => "Lynx",
+            Self::Adder => "Adder",
         }
     }
 
@@ -1588,6 +1608,7 @@ impl Kind {
             Self::Spider => Some("greyhaven.wild.spider"),
             Self::Lurker => Some("greyhaven.wild.marsh-lurker"),
             Self::Lynx => Some("greyhaven.wild.lynx"),
+            Self::Adder => Some("greyhaven.wild.marsh-adder"),
         }
     }
 
@@ -1810,6 +1831,7 @@ impl Kind {
                 WILD_CLIPS
             }
             Self::Lynx => LYNX_CLIPS,
+            Self::Adder => ADDER_CLIPS,
         }
     }
 
@@ -2163,6 +2185,7 @@ impl Kind {
             CreatureFamily::Spider => Some(Self::Spider),
             CreatureFamily::Lurker => Some(Self::Lurker),
             CreatureFamily::Lynx => Some(Self::Lynx),
+            CreatureFamily::Adder => Some(Self::Adder),
             CreatureFamily::Marauder
             | CreatureFamily::Mirefin
             | CreatureFamily::Redbrand
@@ -4636,6 +4659,7 @@ mod tests {
         assert_eq!(creature(CreatureFamily::Spider), Some(Kind::Spider));
         assert_eq!(creature(CreatureFamily::Lurker), Some(Kind::Lurker));
         assert_eq!(creature(CreatureFamily::Lynx), Some(Kind::Lynx));
+        assert_eq!(creature(CreatureFamily::Adder), Some(Kind::Adder));
         assert_eq!(creature(CreatureFamily::Redbrand), None);
         assert_eq!(
             Kind::of(EntityRef::Npc(NpcId::new(1)), &content_record(), &content),
@@ -5079,6 +5103,31 @@ mod tests {
         assert_eq!(frame(&mut playback, 0.7).lower.0, "Pounce_Lunge");
         assert_eq!(frame(&mut playback, 1.4).lower.0, "Pounce_Recover");
         assert_eq!(frame(&mut playback, 2.2).lower.0, "Idle");
+    }
+
+    /// An adder's strike (#990) hisses through its warning, strikes and recovers, then coils.
+    #[test]
+    fn an_adder_strike_hisses_strikes_and_recovers() {
+        let clips = Kind::Adder.clips();
+        let frame = |playback: &mut Playback, now: f64| {
+            playback.advance(
+                clips,
+                |_| 1.,
+                Cues {
+                    now,
+                    dt: 0.05,
+                    ..Cues::default()
+                },
+                Blend::default(),
+            )
+        };
+        let mut playback = Playback::default();
+        playback.strike("Warn_Hiss_Loop", 1.333, Region::Whole, 0.);
+        playback.recover_through(("Strike", 0.417), ("Strike_Recover", 0.833));
+        assert_eq!(frame(&mut playback, 0.6).lower.0, "Warn_Hiss_Loop");
+        assert_eq!(frame(&mut playback, 1.5).lower.0, "Strike");
+        assert_eq!(frame(&mut playback, 2.0).lower.0, "Strike_Recover");
+        assert_eq!(frame(&mut playback, 3.0).lower.0, "Idle_Coil_Loop");
     }
 
     #[test]

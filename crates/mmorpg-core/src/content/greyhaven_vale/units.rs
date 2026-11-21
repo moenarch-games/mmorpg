@@ -47,6 +47,8 @@ pub mod templates {
     pub const OLD_SCARBACK: CreatureTemplateId = CreatureTemplateId::new(21);
     /// The Southwood lynx (#989): an ambusher that stalks in and pounces.
     pub const FOREST_LYNX: CreatureTemplateId = CreatureTemplateId::new(22);
+    /// The Eastwater Fen adder (#990): an ambusher that coils, hisses and strikes close.
+    pub const MARSH_ADDER: CreatureTemplateId = CreatureTemplateId::new(23);
 }
 
 /// Default respawn time: 60 s.
@@ -79,6 +81,8 @@ const SCARBACK: [i32; 3] = [60, 78, 60];
 const MARSH_LURKER_BOX: [i32; 3] = [38, 15, 38];
 /// The wildlife release's 0.8 m lynx (#989) on a square footprint between its width and length.
 const LYNX: [i32; 3] = [30, 40, 30];
+/// The wildlife release's marsh adder (#990) in its coil: 0.42 m across, 0.19 m tall.
+const ADDER: [i32; 3] = [22, 10, 22];
 const HUMANOID: [i32; 3] = [30, 90, 30];
 const LURKER: [i32; 3] = [35, 80, 35];
 /// A 1.4 m rolling boulder (#299).
@@ -112,9 +116,9 @@ type TemplateRow = (
 );
 
 #[rustfmt::skip]
-const TEMPLATES: [TemplateRow; 21] = {
+const TEMPLATES: [TemplateRow; 22] = {
     use CreatureBehaviour::{Aggressive, Neutral, Prop};
-    use CreatureFamily::{Bear, Boar, Lurker, Lynx, Marauder, Mirefin, Ogre, Redbrand, Spider, Vermin, Wolf};
+    use CreatureFamily::{Adder, Bear, Boar, Lurker, Lynx, Marauder, Mirefin, Ogre, Redbrand, Spider, Vermin, Wolf};
     use crate::PropKind;
     use templates::*;
     [
@@ -150,6 +154,8 @@ const TEMPLATES: [TemplateRow; 21] = {
         (OLD_SCARBACK, "Old Scarback", Bear, Aggressive, [5, 5], true, 360, 0, [8, 13], 0, crate::ticks_from_ms(3_000), GARRICK_RESPAWN_TICKS, SCARBACK),
         // The Southwood lynx (#989): Southwood's level, a light body and a hard, slow pounce.
         (FOREST_LYNX, "Forest Lynx", Lynx, Aggressive, [2, 3], false, 50, 12, [4, 7], 1, crate::ticks_from_ms(2_600), RESPAWN_TICKS, LYNX),
+        // The Eastwater Fen adder (#990): the fen's level, a frail body and a quick, warned strike.
+        (MARSH_ADDER, "Marsh Adder", Adder, Aggressive, [2, 3], false, 34, 10, [4, 7], 1, crate::ticks_from_ms(2_600), RESPAWN_TICKS, ADDER),
     ]
 };
 
@@ -471,6 +477,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::signal_post::spawns())
         // The Southwood lynxes (#989).
         .chain(super::lynx::spawns())
+        // The Eastwater Fen adders (#990).
+        .chain(super::adder::spawns())
         .collect()
 }
 

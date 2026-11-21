@@ -213,8 +213,8 @@ impl Error for LootTableError {}
 /// Authored starter rewards; revision 2 adds the equipment drops of humanoids, revision 3
 /// the Redbrand crossbowmen (#286), revision 4 the hill ogre (#297), revision 5 the Redbrand Brute
 /// (#160), then the beasts of #889; the hybrid finds of #918; Old Scarback, the hunter's cache's
-/// elite bear (#913); the Forest Lynx (#989).
-static CATALOG: LazyLock<[(CreatureTemplateId, LootTable); 15]> = LazyLock::new(|| {
+/// elite bear (#913); the Forest Lynx (#989); the Marsh Adder (#990).
+static CATALOG: LazyLock<[(CreatureTemplateId, LootTable); 16]> = LazyLock::new(|| {
     use crate::greyhaven_vale::units::templates::*;
     let fur = |weight, quantity| LootOutcome::Item {
         weight,
@@ -250,6 +250,8 @@ static CATALOG: LazyLock<[(CreatureTemplateId, LootTable); 15]> = LazyLock::new(
         (MARSH_LURKER, table([1, 3], &[fur(1, [1, 1]), nothing(2)])),
         // A lynx's pelt is prized: usually one, a little coin.
         (FOREST_LYNX, table([1, 4], &[fur(3, [1, 1]), nothing(1)])),
+        // An adder carries no pelt, only a little coin, like a spider.
+        (MARSH_ADDER, table([1, 4], &[nothing(1)])),
         (
             FIELD_MARAUDER,
             table(

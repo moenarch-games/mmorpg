@@ -21,6 +21,7 @@ use std::sync::{Arc, LazyLock, OnceLock};
 use super::{SpawnGrid, StaticCollider, XzBounds, ZoneContent, ZoneDefinition};
 use crate::{Area, AreaId, Terrain, ZoneAreas};
 
+pub mod adder;
 pub mod basin;
 pub mod brook;
 pub mod cave;
