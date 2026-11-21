@@ -83,3 +83,11 @@ opt-level = 1
 inherits = "release"
 lto = "fat"
 codegen-units = 1
+
+# The packaged native game (`scripts/run-native.sh`, #1032): whole-program optimised and
+# stripped. Slower to build than `release`, which development and tests keep using.
+[profile.dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+strip = true
