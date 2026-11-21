@@ -33,4 +33,34 @@ describe("grass visibility during third-person camera movement", () => {
       grass.dispose();
     }
   });
+  test("the full, simplified and distant blades share the same terrain-tinted color gradient", () => {
+    const clump = new Float32Array([6, 0, 6, 0, 0.75, 0.25, 0.6, 0.2, 0]);
+    const grass = new Grass({
+      cellMetres: 8,
+      cell: (column, row) => column === 0 && row === 0 ? clump : new Float32Array(),
+      farCellMetres: 32,
+      farCell: (column, row) => column === 0 && row === 0 ? clump : new Float32Array(),
+    }, "high");
+    try {
+      grass.update([4, 4, 12], [4, 0, 4], 0);
+      const meshes = grass.root.children.filter((child): child is THREE.InstancedMesh => child instanceof THREE.InstancedMesh);
+      const near = meshes.filter((mesh) => mesh.name === "grass:0,0");
+      const far = meshes.find((mesh) => mesh.name === "grass:far:0,0");
+      expect(near).toHaveLength(2);
+      expect(far).toBeDefined();
+      const baseColor = (mesh: THREE.InstancedMesh) => {
+        const attribute = mesh.geometry.getAttribute("color");
+        return [attribute.getX(0), attribute.getY(0), attribute.getZ(0)];
+      };
+      expect(baseColor(near[0]!)).toEqual(baseColor(near[1]!));
+      expect(baseColor(near[0]!)).toEqual(baseColor(far!));
+      const shader = (near[0]!.material as THREE.ShaderMaterial).vertexShader;
+      expect(shader).toContain("smoothstep(grassMix.z");
+      expect(shader).toContain("smoothstep(grassMix.w");
+      expect(shader).not.toContain("step(grassMix.z, jittered)");
+    } finally {
+      grass.dispose();
+    }
+  });
+
 });
