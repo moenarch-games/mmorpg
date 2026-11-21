@@ -24,6 +24,7 @@ use crate::{Area, AreaId, Terrain, ZoneAreas};
 pub mod adder;
 pub mod basin;
 pub mod brook;
+pub mod cart;
 pub mod cave;
 pub mod cottages;
 pub mod crossings;
@@ -2022,6 +2023,7 @@ fn content_with_spawns(
             .with_raid(raid::millbrook_barn())?
             .with_dens(dens::dens())?
             .with_hunt(hunt::outing())?
+            .with_cart(cart::journey())?
             .with_caches(discoveries::caches())?
             .with_waystones(vec![
                 crate::GREYHAVEN_OUTPOST,

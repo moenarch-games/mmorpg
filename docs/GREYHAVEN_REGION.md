@@ -162,6 +162,17 @@ clip leaves the hands empty.
   at the north and east gates, the washer works at the brook below the bridge, the peddler greets
   travellers at the south gate, the herbalist gathers along the South Road each morning and the
   miller spends his working day at Millbrook Farm's windmill.
+  At 17:00 the peddler pushes a handcart of wares out of the east gate, up the Millbrook Climb to
+  Millbrook's farmyard, trades there half an hour and pushes it home (#992). On an ambush day (one
+  in two, a hash of the content seed and the day), two Redbrand bandits and a crossbowman off the
+  Eastern Rim Trail stand in the climb's cutting as the cart reaches it, and Rowan halts there
+  under threat for two minutes, yelling for help. If they all die in that time the cart is saved
+  and he travels on; otherwise they take it: he limps home without it and rests hurt until dusk,
+  and the robbers linger over the spoils for a minute before slipping away. A character who
+  fights the robbers during the hold earns 120 XP and 15 copper once per incident; onlookers earn
+  nothing. The journey runs on the zone's clock whether or not anyone watches; Rowan's placement
+  follows from the tick and the robbers' canonical lives (`mmorpg_core::cart`), and the clients
+  draw his cart and his cries from the projection alone.
 - **Barrowdown:** Gwen Barrow keeps the Barrow Rest, Shepherd Corin and Farmer Tobin Hale take
   their midday ale there, Old Maud keeps watch at the barrow ring, and Pip runs to the stones in
   the morning and to the alehouse in the afternoon.

@@ -355,8 +355,11 @@ fn spawns_populate_their_subzones() {
     for spawn in content.creature_spawns() {
         // Night raiders (#530) stand on the farm's outskirts only for a committed incident and
         // march rather than wander; `night_raid` covers them, and `hunt_outing` the hunt's bear
-        // (#991).
-        if content.is_raider(spawn.id) || content.is_hunt_beast(spawn.id) {
+        // (#991), and `merchant_cart` the cart's robbers (#992).
+        if content.is_raider(spawn.id)
+            || content.is_hunt_beast(spawn.id)
+            || content.is_cart_bandit(spawn.id)
+        {
             continue;
         }
         let template = content.creature_template(spawn.template).unwrap();
@@ -551,8 +554,10 @@ fn creatures_stay_out_of_sight_of_the_spawn_plaza() {
         if content
             .creature_template(spawn.template)
             .is_some_and(|template| template.prop().is_some())
-            // Night raiders (#530) stand only during an incident, on the farm's outskirts.
+            // Night raiders (#530) stand only during an incident, on the farm's outskirts, and
+            // the cart's robbers (#992) only during an ambush, in the Millbrook Climb's cutting.
             || content.is_raider(spawn.id)
+            || content.is_cart_bandit(spawn.id)
         {
             continue;
         }
@@ -643,8 +648,11 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
         let template = content.creature_template(spawn.template).unwrap();
         assert_eq!(creature.creature_id, spawn.id);
         // The 18 night raiders (#530) wait, without a body, for an incident, and the hunt's bear
-        // (#991) for a confrontation day.
-        if content.is_raider(spawn.id) || content.is_hunt_beast(spawn.id) {
+        // (#991) for a confrontation day, and the cart's robbers (#992) for an ambush.
+        if content.is_raider(spawn.id)
+            || content.is_hunt_beast(spawn.id)
+            || content.is_cart_bandit(spawn.id)
+        {
             assert!(matches!(
                 creature.life,
                 mmorpg_core::CreatureLife::Despawned { .. }
@@ -741,9 +749,11 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
         .iter()
         .zip(content.creature_spawns())
     {
-        // Raiders, the hunt's bear (#991) and den packs (#912) keep their own ranges.
+        // Raiders, the hunt's bear (#991), the cart's robbers (#992) and den packs (#912) keep
+        // their own ranges.
         if content.is_raider(spawn.id)
             || content.is_hunt_beast(spawn.id)
+            || content.is_cart_bandit(spawn.id)
             || content
                 .dens()
                 .iter()

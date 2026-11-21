@@ -69,7 +69,8 @@ mirror!(
         Waking,
         Hunting,
         Carrying,
-        Hurt
+        Hurt,
+        Hauling
     }
 );
 mirror!(

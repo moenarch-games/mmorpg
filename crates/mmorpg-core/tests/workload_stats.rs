@@ -23,9 +23,11 @@ fn tick_work_counts_real_ai_and_engine_work_without_entering_recovery() {
                 .is_some_and(|template| template.prop().is_some())
         })
         .count();
-    // The hunt's bear (#991) waits the same way for a confrontation day.
+    // The hunt's bear (#991) waits the same way for a confrontation day, and the cart's robbers
+    // (#992) for an ambush.
     let raiders = content.raid().map_or(0, |site| site.raiders().count())
-        + usize::from(content.hunt().is_some());
+        + usize::from(content.hunt().is_some())
+        + content.cart().map_or(0, |cart| cart.bandits.len());
     // Far-away idle creatures sleep and near ones decide on their staggered tick (#814).
     let thinking = content.creature_spawns().len() - props - raiders;
     assert!(0 < work.creature_ai_evaluations && work.creature_ai_evaluations < thinking);

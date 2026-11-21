@@ -515,6 +515,9 @@ pub struct RaidState {
     /// The brace spots braced for the coming or running incident, by index (#532, #882); only
     /// once warned.
     pub braced: BTreeSet<u32>,
+    /// Players already rewarded for defending the day's merchant cart (#992), by ID: the zone's
+    /// one public incident state also carries the cart's ambush.
+    pub cart_rewarded: Vec<PlayerId>,
 }
 
 impl RaidState {
@@ -553,7 +556,9 @@ impl RaidState {
         let rewarded_ok = self.rewarded.len() <= crate::MAX_PLAYERS_PER_ZONE
             && self.rewarded.windows(2).all(|pair| pair[0] < pair[1])
             && (self.rewarded.is_empty() || self.current_incident().is_some());
-        if !aftermath_ok || !rewarded_ok {
+        let cart_ok = self.cart_rewarded.len() <= crate::MAX_PLAYERS_PER_ZONE
+            && self.cart_rewarded.windows(2).all(|pair| pair[0] < pair[1]);
+        if !aftermath_ok || !rewarded_ok || !cart_ok {
             return Err(ZoneError::new("raid aftermath is out of range"));
         }
         let active_ok = self.active.as_ref().is_none_or(|incident| {

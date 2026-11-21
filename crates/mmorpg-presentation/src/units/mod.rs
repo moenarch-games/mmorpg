@@ -9,6 +9,7 @@
 pub mod animation;
 pub mod archer;
 pub mod breakables;
+pub mod cart;
 pub mod chores;
 pub mod contact;
 pub mod creatures;
@@ -1792,7 +1793,8 @@ impl UnitPresenter {
             mmorpg_core::PostureView::Free
             | mmorpg_core::PostureView::Hunting
             | mmorpg_core::PostureView::Carrying
-            | mmorpg_core::PostureView::Hurt => {}
+            | mmorpg_core::PostureView::Hurt
+            | mmorpg_core::PostureView::Hauling => {}
         }
         if entity == EntityRef::Player(self.player_id) {
             let corpse = snapshot
@@ -2382,6 +2384,32 @@ impl UnitPresenter {
             let centre = self.rendered(view.position);
             out.draws
                 .extend(breakables::piece(&mut self.resources, view, centre));
+        }
+        // A merchant on its cart journey (#992) pushes its handcart.
+        for unit in input.units {
+            if unit.record.kind != mmorpg_core::EntityKind::Npc
+                || unit.record.flags.posture != mmorpg_core::PostureView::Hauling
+            {
+                continue;
+            }
+            let entity = unit.record.entity();
+            let half = self.half(entity, &unit.record);
+            let feet = [
+                f64::from(unit.centre[0]),
+                f64::from(unit.centre[1] - half[1]),
+                f64::from(unit.centre[2]),
+            ];
+            let yaw = f64::from(unit.yaw);
+            // The wheels roll with the ground covered along the heading.
+            let travelled = feet[0] * yaw.sin() + feet[2] * yaw.cos();
+            let id = format!("npc-{}", unit.record.id);
+            out.draws.extend(cart::handcart(
+                &mut self.resources,
+                &id,
+                feet,
+                yaw,
+                travelled,
+            ));
         }
         self.resources.retire_unused();
         // The viewer's camera kick (#900) settles after its blow.

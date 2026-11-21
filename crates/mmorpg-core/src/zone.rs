@@ -378,10 +378,11 @@ impl ZoneSimulation {
             .collect();
         for id in spawns {
             // Night raiders (#530) stand only once an incident commits them, and the hunt's beast
-            // (#991) only on a confrontation day.
+            // (#991) only on a confrontation day, and the cart's bandits (#992) on an ambush.
             if zone.content.is_raider(id)
                 || zone.content.is_depths_creature(id)
                 || zone.content.is_hunt_beast(id)
+                || zone.content.is_cart_bandit(id)
             {
                 zone.reserve_raider(id)?;
             } else {
@@ -883,8 +884,9 @@ impl ZoneSimulation {
     /// 7. minions whose time ran out crumble, then health and class-resource regeneration,
     ///    corpse despawns and respawns in ID order, structure regrowth, then the night raid
     ///    (#530: barn hits, phases, outcome, marches and the nightly trigger), the hunt's beast
-    ///    standing or withdrawing (#991), and a depths run's reinforcements, cleared chambers
-    ///    and wipe (#404);
+    ///    standing or withdrawing (#991), the cart's bandits standing, rewarding defenders or
+    ///    withdrawing (#992), and a depths run's reinforcements, cleared chambers and wipe
+    ///    (#404);
     /// 8. talk and explore quest objectives of living players in player-ID
     ///    order;
     /// 9. the tick counter.
@@ -942,6 +944,7 @@ impl ZoneSimulation {
         self.advance_summoned(now);
         self.advance_raid(now)?;
         self.advance_hunt(now)?;
+        self.advance_cart(now)?;
         self.advance_depths(now)?;
         self.advance_combos();
         self.advance_authored();

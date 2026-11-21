@@ -540,6 +540,10 @@ impl ZoneSimulation {
                     .ok_or_else(|| ZoneError::new("unknown npc"))?;
                 // A hunter on its outing (#991) shows how it went.
                 let hunting = self.hunt_placement(npc_id).map(|(_, posture)| posture);
+                // A merchant on its cart journey (#992) shows its cart, its fright or its wounds.
+                let cart = self
+                    .cart_placement(npc_id)
+                    .map(|(_, posture, health)| (posture, health));
                 EntitySnapshot {
                     kind: EntityKind::Npc,
                     id: npc_id.get(),
@@ -563,13 +567,17 @@ impl ZoneSimulation {
                         .is_some()
                     {
                         crate::raid::INJURED_HEALTH_PERCENT
+                    } else if let Some((_, health)) = cart {
+                        health
                     } else if hunting == Some(crate::PostureView::Hurt) {
                         crate::hunt::INJURED_HEALTH_PERCENT
                     } else {
                         100
                     },
                     flags: EntityFlags {
-                        posture: hunting.unwrap_or_else(|| self.npc_posture(npc_id)),
+                        posture: hunting
+                            .or(cart.map(|(posture, _)| posture))
+                            .unwrap_or_else(|| self.npc_posture(npc_id)),
                         ..EntityFlags::default()
                     },
                 }

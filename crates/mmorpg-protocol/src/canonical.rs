@@ -2750,6 +2750,7 @@ mod tests {
                 }),
                 aftermath: std::collections::BTreeSet::new(),
                 rewarded: vec![1, 2],
+                cart_rewarded: vec![2],
                 scouted: vec![2],
                 warned: true,
                 braced: std::collections::BTreeSet::from([0, 70_000]),
