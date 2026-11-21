@@ -297,7 +297,7 @@ pub struct ZoneSimulation {
     pub(crate) rng: ZoneRng,
     pub(crate) loot_rng: ZoneRng,
     pub(crate) players: BTreeMap<PlayerId, PlayerState>,
-    pub(crate) creatures: BTreeMap<CreatureId, CreatureState>,
+    pub(crate) creatures: crate::threat_cache::Revisioned<BTreeMap<CreatureId, CreatureState>>,
     pub(crate) interest: InterestIndex,
     pub(crate) interest_work: InterestMaintenanceStats,
     pub(crate) tick_work: ZoneTickWork,
@@ -330,7 +330,9 @@ pub struct ZoneSimulation {
     /// outside it, so never present between ticks and not canonical.
     pub(crate) resolving_late: u8,
     /// Summoned minions by ID (#295), and the next minion ID.
-    pub(crate) minions: BTreeMap<crate::MinionId, crate::Minion>,
+    pub(crate) minions: crate::threat_cache::Revisioned<BTreeMap<crate::MinionId, crate::Minion>>,
+    /// The threatened-player set shared by recipient projections (#1006); derived, never canonical.
+    pub(crate) threat_cache: crate::threat_cache::ThreatCache,
     pub(crate) next_minion: u32,
     /// Frozen, staged and activated character transfers (#145); host-phase
     /// state the handoff record reconciles, not canonical.
@@ -494,7 +496,7 @@ impl ZoneSimulation {
             gathering: crate::GatheringState::full(content.gather_nodes()),
             content,
             players: BTreeMap::new(),
-            creatures: BTreeMap::new(),
+            creatures: crate::threat_cache::Revisioned::default(),
             interest,
             interest_work: InterestMaintenanceStats::default(),
             tick_work: ZoneTickWork::default(),
@@ -511,7 +513,8 @@ impl ZoneSimulation {
             prop_motion: BTreeMap::new(),
             action_graph: &crate::action::BASELINE,
             resolving_late: 0,
-            minions: BTreeMap::new(),
+            minions: crate::threat_cache::Revisioned::default(),
+            threat_cache: crate::threat_cache::ThreatCache::default(),
             next_minion: 1,
             raid: crate::RaidState::default(),
             wakes: BTreeMap::new(),

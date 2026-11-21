@@ -1567,20 +1567,6 @@ impl ZoneSimulation {
         self.release_minions(player_id, false)
     }
 
-    /// Players on any living creature's threat table, themselves or through a minion (#295).
-    pub(crate) fn threatened_players(&self) -> BTreeSet<PlayerId> {
-        self.creatures
-            .values()
-            .filter(|creature| creature.is_alive())
-            .flat_map(|creature| &creature.threat)
-            .filter_map(|entry| match entry.entity {
-                EntityRef::Player(player_id) => Some(player_id),
-                unit @ EntityRef::Minion(_) => self.controller(unit),
-                EntityRef::Creature(_) | EntityRef::Npc(_) => None,
-            })
-            .collect()
-    }
-
     /// Step 7: player regeneration, minions' time (#295), then corpse despawns and respawns in
     /// creature-ID order.
     pub(crate) fn update_timers(&mut self, now: u64) -> Result<(), ZoneError> {
