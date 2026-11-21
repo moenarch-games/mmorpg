@@ -1154,6 +1154,26 @@ impl ZoneSimulation {
         )
     }
 
+    /// Whether a flier's (#995) bite reaches `target`'s height: its centre within
+    /// [`crate::flight::BITE_HEIGHT_UNITS`] of the target's. Every other creature's does.
+    fn bite_height_reaches(
+        &self,
+        creature_id: CreatureId,
+        template: &crate::CreatureTemplate,
+        target: EntityRef,
+    ) -> Result<bool, ZoneError> {
+        if !template.family.flies() {
+            return Ok(true);
+        }
+        let from = self
+            .world
+            .body(body_id(EntityRef::Creature(creature_id)))
+            .ok_or_else(|| ZoneError::new("creature physics body is missing"))?
+            .position();
+        let to = self.unit_position(target)?;
+        Ok((from.y - to[1]).abs() <= crate::flight::BITE_HEIGHT_UNITS)
+    }
+
     /// A beast's attack reaches its contact tick (#889): it bites the unit it began on if that
     /// unit still stands within reach and a step, and misses one that got away.
     fn creature_bite(
@@ -1169,7 +1189,9 @@ impl ZoneSimulation {
         if let Some(creature) = self.creatures.get_mut(&creature_id) {
             creature.combat_timer = COMBAT_LINGER_TICKS;
         }
-        if !self.creature_reaches(creature_id, target, crate::CREATURE_ATTACK_SLACK_UNITS)? {
+        if !self.creature_reaches(creature_id, target, crate::CREATURE_ATTACK_SLACK_UNITS)?
+            || !self.bite_height_reaches(creature_id, template, target)?
+        {
             match victim {
                 Ok(player_id) => {
                     self.update_player(player_id, |player| {
@@ -1326,7 +1348,11 @@ impl ZoneSimulation {
             .world
             .remove_body(body_id(entity))
             .ok_or_else(|| ZoneError::new("creature physics body is missing"))?;
-        let position = body.position();
+        let mut position = body.position();
+        // A flier (#995) falls: its corpse lies on the ground under it.
+        if template.family.flies() {
+            position.y = self.stand_y(position.x, position.z, template.half_extents);
+        }
         let (spawn, _) = Self::creature_content(&self.content, creature_id)?;
         let template = spawn.template;
         // The depths boss pays through its committed outcome; his adds pay nothing (#404).

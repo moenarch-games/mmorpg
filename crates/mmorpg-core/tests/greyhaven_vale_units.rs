@@ -340,6 +340,19 @@ fn templates_follow_the_design_contract() {
                 2600,
                 60000
             ),
+            // The Greyfang cave bat (#995): a frail flier with a warned dive.
+            (
+                "Cave Bat",
+                Bat,
+                Aggressive,
+                [3, 4],
+                false,
+                36,
+                10,
+                [3, 6],
+                2600,
+                60000
+            ),
         ]
     );
     let wolf = content
@@ -446,6 +459,8 @@ fn spawns_populate_their_subzones() {
         ((greyhaven_vale::vale::GREYFANG_RIDGE, "Barrel"), 1),
         // Cave Spiders (#889) in the cave's north mouth.
         ((greyhaven_vale::vale::GREYFANG_RIDGE, "Cave Spider"), 3),
+        // Cave Bats (#995) on the outer cavern's stalactite.
+        ((greyhaven_vale::vale::GREYFANG_RIDGE, "Cave Bat"), 2),
         (
             (
                 greyhaven_vale::vale::REDBRAND_HOLLOW,
@@ -672,6 +687,12 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
             })
             .expect("terrain supports each spawn");
         let supported_y = origin[1] - 2_000. * hit.fraction;
+        // A flier (#995) roosts its rise over that support.
+        let supported_y = if template.family.flies() {
+            supported_y - hy as f32 + mmorpg_core::flight::ROOST_RISE_UNITS as f32
+        } else {
+            supported_y
+        };
         assert!(
             (y as f32 - supported_y).abs() <= 15.,
             "{:?} at {y}, capsule support at {supported_y}",

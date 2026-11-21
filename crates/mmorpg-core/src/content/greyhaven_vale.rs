@@ -23,6 +23,7 @@ use crate::{Area, AreaId, Terrain, ZoneAreas};
 
 pub mod adder;
 pub mod basin;
+pub mod bat;
 pub mod brook;
 pub mod cave;
 pub mod cottages;

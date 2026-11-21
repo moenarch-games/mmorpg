@@ -169,13 +169,20 @@ fn lunge_step(
             Some(([leap(x), leap(z)], None))
         }
         Some(_) => Some(([0, 0], turn)),
-        None => {
-            let since = template.swing_ticks.saturating_sub(creature.swing_timer);
-            let contact =
-                crate::contact_ticks(template.family, crate::CreatureAttack::Quick).unwrap_or(0);
-            (since < contact + lunge.recover_ticks).then_some(([0, 0], turn))
-        }
+        None => recovering(creature, template, lunge).then_some(([0, 0], turn)),
     }
+}
+
+/// Whether a set-piece attacker is still in its [`crate::Lunge::recover_ticks`] after its last
+/// contact (#989, #995): its swing timer, set as the attack began, dates it.
+fn recovering(
+    creature: &crate::creature::CreatureState,
+    template: &crate::CreatureTemplate,
+    lunge: crate::Lunge,
+) -> bool {
+    let since = template.swing_ticks.saturating_sub(creature.swing_timer);
+    let contact = crate::contact_ticks(template.family, crate::CreatureAttack::Quick).unwrap_or(0);
+    since < contact + lunge.recover_ticks
 }
 
 /// How close a creature must get to hit `target`: its reach plus the
@@ -218,8 +225,9 @@ impl ZoneSimulation {
 
     /// Whether creature `id` sleeps, holds its course or decides this tick (#814). Only a
     /// living idle land creature on the ground, outside any raid, ever rests: a swimmer's
-    /// swimming sets its height every tick, so it decides every tick. The pace is derived from
-    /// canonical state each tick, so replay and recovery need nothing stored.
+    /// swimming and a flier's flight (#995) set its height every tick, so it decides every
+    /// tick. The pace is derived from canonical state each tick, so replay and recovery need
+    /// nothing stored.
     fn creature_pace(&self, id: CreatureId) -> Result<Pace, ZoneError> {
         let body = body_id(EntityRef::Creature(id));
         let current = self.world.body(body).filter(|body| body.is_moving());
@@ -237,6 +245,7 @@ impl ZoneSimulation {
         if creature.life != Life::Alive
             || template.prop().is_some()
             || template.family.swims()
+            || template.family.flies()
             || creature.raid.is_some()
             || !matches!(creature.ai, CreatureAi::Idle { .. })
             || current.velocity().y != 0
@@ -374,7 +383,20 @@ impl ZoneSimulation {
 
         // Creatures also turn back before a cross-zone handoff corridor and
         // never fight a target standing in one (#145).
-        let leashed = distance_squared(home, here) > i64::from(LEASH_RADIUS_UNITS).pow(2)
+        // A flier (#995) sets its own height: its roost's, or in a fight its target's and its
+        // dive's; it keeps a shorter leash.
+        let flies = template.family.flies();
+        let roost = flies.then(|| self.rest_y(home, template));
+        let target_y = match chase {
+            Some((target, _)) if flies => Some(self.unit_position(target)?[1]),
+            _ => None,
+        };
+        let leash = if flies {
+            crate::flight::LEASH_UNITS
+        } else {
+            LEASH_RADIUS_UNITS
+        };
+        let leashed = distance_squared(home, here) > i64::from(leash).pow(2)
             || chase.is_some_and(|(_, to)| self.handoff_corridor_at(to[0], to[1]).is_some())
             || self.near_handoff_corridor(here, [half.x, half.z]);
         // Walls, pieces and rubble in the way (#307): a route around them.
@@ -435,6 +457,17 @@ impl ZoneSimulation {
             }
             _ => None,
         };
+        // A flier's phase (#995): stooping through its dive's last ticks, low through its
+        // recovery, else cruising over its target; out of a fight, at its roost.
+        let phase = match (creature.ai, target_y, lunge) {
+            (CreatureAi::Engaged, Some(_), Some(lunge)) if !leashed => match creature.attack {
+                Some(pending) if pending.leaping(template.family) => crate::flight::Phase::Stoop,
+                Some(_) => crate::flight::Phase::Cruise,
+                None if recovering(creature, template, lunge) => crate::flight::Phase::Recover,
+                None => crate::flight::Phase::Cruise,
+            },
+            _ => crate::flight::Phase::Roost,
+        };
 
         let mut teleport_home = false;
         let mut lost_interest = None;
@@ -470,6 +503,8 @@ impl ZoneSimulation {
             // draw nothing from their stream until a fight.
             CreatureAi::Idle { .. } if march.is_some() => march.unwrap_or(([0, 0], None)),
             CreatureAi::Idle { .. } if template.is_large() => ([0, 0], None),
+            // A flier (#995) hangs still at its roost.
+            CreatureAi::Idle { .. } if flies => ([0, 0], None),
             CreatureAi::Idle { .. } => wander(
                 &mut creature.rng,
                 &mut creature.ai,
@@ -612,8 +647,20 @@ impl ZoneSimulation {
             );
         }
         // Land creatures do not swim (#274): they stop where the water gets too deep to wade.
-        // Aquatic ones swim with no gravity, at the surface or down to a trailed player.
-        let (velocity, vertical) = if aquatic {
+        // Aquatic ones swim with no gravity, at the surface or down to a trailed player. A flier
+        // (#995) flies with no gravity toward its phase's height; stunned, it hangs where it is.
+        let (velocity, vertical) = if let Some(roost) = roost {
+            self.world
+                .set_weightless(body, true)
+                .map_err(physics_error)?;
+            let (goal, rate) = phase.goal(target_y.unwrap_or(roost), roost);
+            let rise = if stunned {
+                0
+            } else {
+                crate::flight::vertical_velocity(position.y, goal, rate)
+            };
+            (velocity, rise)
+        } else if aquatic {
             let feet = [position.x, position.y - half.y, position.z];
             let goal = trail.map(|at| at.y - PLAYER_HALF_EXTENTS_UNITS[1]);
             let swim = self.creature_swim(feet, 2 * half.y, goal);
@@ -628,11 +675,7 @@ impl ZoneSimulation {
             self.world
                 .set_position(
                     body,
-                    Vec3i::new(
-                        home[0],
-                        self.stand_y(home[0], home[1], template.half_extents),
-                        home[1],
-                    ),
+                    Vec3i::new(home[0], self.rest_y(home, template), home[1]),
                 )
                 .map_err(physics_error)?;
         }
