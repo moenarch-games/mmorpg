@@ -67,6 +67,7 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "no-landing": "There is no clear place to land there.",
   "movement-immune": "It cannot be moved right now.",
   "missing-materials": "You lack the materials for that.",
+  "wrong-form": "You cannot do that in this form.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;

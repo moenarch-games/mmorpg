@@ -7,7 +7,7 @@
 //! - On a full unit, the aura with the least remaining time is replaced in
 //!   its slot; ties replace the lower ability ID.
 //! - Root and stun zero movement; snares scale it; haste scales the swing
-//!   timer. Death clears every aura.
+//!   timer. A wolf form (#957) speeds movement. Death clears every aura.
 
 use crate::EntityRef;
 use crate::ability::{AbilityId, AuraKind, AuraSpec, MAX_AURAS, ability_by_id};
@@ -85,7 +85,7 @@ pub(crate) fn has_kind(auras: &[Aura], kind: AuraKind) -> bool {
 }
 
 /// Movement speed in percent: 0 while rooted or stunned, otherwise reduced
-/// by the strongest snare.
+/// by the strongest snare and raised by a wolf form (#957).
 pub(crate) fn speed_percent(auras: &[Aura]) -> i32 {
     if has_kind(auras, AuraKind::Root) || has_kind(auras, AuraKind::Stun) {
         return 0;
@@ -96,7 +96,13 @@ pub(crate) fn speed_percent(auras: &[Aura]) -> i32 {
         .map(|aura| i32::from(aura.amount))
         .max()
         .unwrap_or(0);
-    (100 - snare).max(0)
+    let shape = auras
+        .iter()
+        .filter(|aura| aura.kind() == Some(AuraKind::Shapeshift))
+        .map(|aura| i32::from(aura.amount))
+        .max()
+        .unwrap_or(0);
+    (100 - snare).max(0) * (100 + shape) / 100
 }
 
 pub(crate) use sim_movement::scale_velocity;
