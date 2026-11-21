@@ -1528,6 +1528,8 @@ mod tests {
         let mut config = Config::baseline();
         config.name = "longer window".to_owned();
         config.edges[0].actionable_ms += 300;
+        // The slash's follow-ups share one window (#1014).
+        config.edges[1].actionable_ms += 300;
         let graph = config.graph().unwrap();
         assert_ne!(*graph, action::BASELINE);
         assert_ne!(config.identity(), Config::baseline().identity());

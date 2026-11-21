@@ -21,6 +21,9 @@
 //!   same window: the next Warden melee use may ignore the slash's global
 //!   cooldown, so the Warden can swing again into the group. The opening is
 //!   single-use: the Bash or the follow-up swing consumes it.
+//!   Both edges share that one window: graph validation refuses a
+//!   configuration (baseline, modifier or override) that times them apart
+//!   (#1014), since the Shield Bash edge times the shared opening.
 //!
 //! The timing, conditions, effects and interruptions are the zone's
 //! [`crate::action`] graph's `SlashToShieldBash` and `CleaveToSlash` edges;

@@ -514,6 +514,11 @@ export class ExperimentPanel {
     const set = (patch: Partial<LabConfigEdge>) => this.#setConfig(slot, {
       ...config, edges: config.edges.map((entry, at) => at === index ? { ...entry, ...patch } : entry),
     });
+    // The slash's follow-ups share one opening, so core requires one window
+    // for them (#1014): a timing edit to one applies to both.
+    const timing = (patch: Partial<LabConfigEdge>) => edge.from === "DirectedSlash"
+      ? this.#setConfig(slot, { ...config, edges: config.edges.map((entry) => entry.from === "DirectedSlash" ? { ...entry, ...patch } : entry) })
+      : set(patch);
     const conditions = CONDITIONS.map((condition) => {
       const box = element("input", { type: "checkbox", checked: edge.conditions.includes(condition) });
       box.addEventListener("change", () => set({ conditions: box.checked ? [...edge.conditions, condition] : edge.conditions.filter((entry) => entry !== condition) }));
@@ -530,8 +535,8 @@ export class ExperimentPanel {
     return element("fieldset", { className: "lab-edge-editor" },
       element("legend", {}, `${edge.id}: ${edge.from} —${edge.input}→ (anchor ${edge.anchor})`),
       ...remove,
-      this.#numberField("Opens after ms", edge.openAfterMs, (value) => set({ openAfterMs: value }), 0, true),
-      this.#numberField("Actionable ms", edge.actionableMs, (value) => set({ actionableMs: value }), 0, true),
+      this.#numberField("Opens after ms", edge.openAfterMs, (value) => timing({ openAfterMs: value }), 0, true),
+      this.#numberField("Actionable ms", edge.actionableMs, (value) => timing({ actionableMs: value }), 0, true),
       this.#numberField("Buffer ms", edge.bufferMs, (value) => set({ bufferMs: value }), 0, true),
       this.#numberField("Priority", edge.priority, (value) => set({ priority: value })),
       element("div", { className: "lab-flags" }, element("span", {}, "Conditions:"), ...conditions),
