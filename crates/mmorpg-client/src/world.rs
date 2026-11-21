@@ -527,19 +527,14 @@ impl WorldScene {
             .map(|part| part.draws.iter().map(|draw| lowering.draw(draw)).collect())
             .collect();
         // The trees, rocks and bushes (#49), then the climbing kit's parts (#621): one library.
-        let mut placements = mmorpg_presentation::nature::placements(scenery);
+        // The mixed inventory comes from the shared derivation the browser uses (#1010).
+        let mixed = mmorpg_presentation::world_dressing::MixedPlacements::new(scenery);
+        let mut placements = mixed.nature;
         placements.extend(mmorpg_presentation::climbing::placements(scenery));
         // The crag kit's rock modules over the highland crags (#668).
         placements.extend(mmorpg_presentation::crag::placements(scenery));
-        placements.extend(mmorpg_presentation::river::placements(scenery));
-        for entries in [
-            &mmorpg_presentation::terrain_patch::MEADOW_ENTRIES[..],
-            &mmorpg_presentation::river::ENTRIES[..],
-        ] {
-            placements.extend(mmorpg_presentation::world_dressing::ground_details(
-                scenery, entries,
-            ));
-        }
+        placements.extend(mixed.river);
+        placements.extend(mixed.ground_details);
         // The market square's wooden props through their packaged PBR materials (#53).
         placements.extend(mmorpg_presentation::settlement_props::placements(scenery));
         // The ore veins (#917), each standing full or spent by the projection.
