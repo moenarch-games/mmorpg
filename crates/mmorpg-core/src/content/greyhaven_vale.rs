@@ -28,6 +28,7 @@ pub mod cottages;
 pub mod crossings;
 pub mod dens;
 pub mod design;
+pub mod discoveries;
 pub mod dressing;
 pub mod farmland;
 pub mod fen_pack;
@@ -42,6 +43,7 @@ pub mod market;
 pub mod marsh;
 pub mod marsh_creatures;
 pub mod marshal_house;
+pub mod ore;
 pub mod paint;
 pub mod powder_watch;
 pub mod quests;
@@ -53,6 +55,7 @@ pub mod rimewood;
 mod roofs;
 pub mod settlements;
 pub mod shrine;
+pub mod signal_post;
 pub mod traps;
 pub mod units;
 pub mod vale;
@@ -1692,6 +1695,8 @@ pub fn climbing() -> crate::ClimbSurfaces {
         .chain(range(ids::CLIFFS, Rock).filter(|&(id, _)| id != SHEER_HOLLOW_WALL))
         .chain(crags)
         .chain(range(ids::LADDERS, Ladder))
+        // The Greyfang lookout's ladder (#913).
+        .chain([(discoveries::LOOKOUT_LADDER, Ladder)])
         .chain(range(ids::ROPES, Rope))
         .collect();
     let terrain = vec![
@@ -1986,6 +1991,7 @@ fn content_with_spawns(
             .with_bosses(units::bosses())?
             .with_shielded(units::shielded())?
             .with_patrols(redbrand_patrol::members())?
+            .with_signal_calls(signal_post::signal_calls())?
             .with_vendors(units::vendors())?
             .with_quests(quests::quests())?
             .with_doors(vec![
@@ -2012,6 +2018,7 @@ fn content_with_spawns(
             .with_climbing(climbing())?
             .with_raid(raid::millbrook_barn())?
             .with_dens(dens::dens())?
+            .with_caches(discoveries::caches())?
             .with_waystones(vec![
                 crate::GREYHAVEN_OUTPOST,
                 crate::BARROWDOWN,
@@ -2027,7 +2034,8 @@ fn content_with_spawns(
                     .filter(|&id| id != vale::OUTPOST)
                     .collect(),
             )?
-            .with_depths_threshold(cave::depths_threshold()),
+            .with_depths_threshold(cave::depths_threshold())
+            .with_gather_nodes(ore::veins())?,
     ))
 }
 

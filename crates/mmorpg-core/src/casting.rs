@@ -2,7 +2,7 @@
 //! aura pulses.
 //!
 //! - **Use** (tick step 1): validation runs in a fixed order (class,
-//!   learned, alive, stunned, casting, global cooldown, cooldown, resource,
+//!   learned, alive, stunned, casting, form, global cooldown, cooldown, resource,
 //!   target, range) and every refusal is an `Error` event. Instants pay and
 //!   resolve at once, casts pay when they complete, channels pay at the start.
 //! - **Casts** (step 6): global cooldowns, cooldowns and casts advance for
@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use crate::ability::{
     Ability, AbilityEffect, AbilityId, AbilityRange, AuraKind, CREATURE_ABILITY_JITTER_TICKS,
-    CastTime, ability_by_id, learned, scaled,
+    CastTime, ability_by_id, ids, learned, scaled,
 };
 use crate::ai::distance_squared;
 use crate::aura::{apply_aura, has_kind, pulse_amount};
@@ -34,6 +34,11 @@ use crate::{
 
 /// A Shield Bash on a casting creature locks the interrupted ability this long.
 pub(crate) const SHIELD_BASH_LOCKOUT_TICKS: u16 = crate::ticks_from_ms(4_000);
+
+/// The abilities a wolf form (#957) may use: Wolf Form itself, to return, and its bite.
+fn form_ability(id: AbilityId) -> bool {
+    id == ids::WOLF_FORM || id == ids::SAVAGE_BITE
+}
 
 /// A refusal: the error code and the unit it concerned.
 pub(crate) type Refusal = Option<(ErrorCode, Option<EntityRef>)>;
@@ -430,6 +435,11 @@ impl ZoneSimulation {
         if player.cast.is_some() {
             return Some(Err(ErrorCode::AlreadyCasting));
         }
+        // A wolf form (#957) uses only its own abilities, and its bite needs the shape.
+        let shifted = has_kind(&player.auras, AuraKind::Shapeshift);
+        if (shifted && !form_ability(ability.id)) || (!shifted && ability.id == ids::SAVAGE_BITE) {
+            return Some(Err(ErrorCode::WrongForm));
+        }
         if (player.global_cooldown > 0 && !waive_global_cooldown)
             || player
                 .cooldowns
@@ -465,6 +475,13 @@ impl ZoneSimulation {
             EntityRef::Creature(creature_id) => {
                 self.creatures.get_mut(&creature_id).and_then(|creature| {
                     let cast = creature.cast.take();
+                    // A broken horn call (#952) waits its whole cooldown, so no help comes.
+                    let lockout = match cast.and_then(|cast| ability_by_id(cast.ability)) {
+                        Some(ability) if ability.effect == AbilityEffect::SignalCall => {
+                            Some(ability.cooldown)
+                        }
+                        _ => lockout,
+                    };
                     if cast.is_some()
                         && let Some(lockout) = lockout
                     {
@@ -703,6 +720,28 @@ impl ZoneSimulation {
                     self.put_aura(source, aura);
                 }
             }
+            // Wolf Form (#957) takes the shape, or in the shape returns to caster form.
+            AbilityEffect::Shapeshift { speed, .. } => {
+                let shape = self.players.get_mut(&player_id).and_then(|player| {
+                    let slot = player
+                        .auras
+                        .iter()
+                        .position(|aura| aura.kind() == Some(AuraKind::Shapeshift))?;
+                    Some(player.auras.remove(slot))
+                });
+                if let Some(shape) = shape {
+                    self.notify_units(
+                        [Some(source), None],
+                        ZoneEvent::AuraRemoved {
+                            source,
+                            target: source,
+                            ability: shape.ability,
+                        },
+                    );
+                } else if let Some(aura) = aura(speed) {
+                    self.put_aura(source, aura);
+                }
+            }
             AbilityEffect::Bolt { damage, per_level } => {
                 if let Some(victim) = target {
                     let amount = self
@@ -870,14 +909,15 @@ impl ZoneSimulation {
                 }
             }
             // Blizzard, Lightning Beam and Drain Life pulse while they channel; bandages and
-            // stomps are creature-only; a flask's splash lands where it shatters.
+            // stomps and horn calls are creature-only; a flask's splash lands where it shatters.
             AbilityEffect::Blizzard { .. }
             | AbilityEffect::Beam { .. }
             | AbilityEffect::Drain { .. }
             | AbilityEffect::Bandage { .. }
             | AbilityEffect::Stomp { .. }
             | AbilityEffect::Smash { .. }
-            | AbilityEffect::Splash { .. } => {}
+            | AbilityEffect::Splash { .. }
+            | AbilityEffect::SignalCall => {}
         }
         Ok(())
     }
@@ -1697,6 +1737,11 @@ impl ZoneSimulation {
                     },
                 )?;
             }
+            // A signaler's completed horn call (#952) brings its partner.
+            AbilityEffect::SignalCall => {
+                self.restart_creature_ability(creature_id, ability);
+                self.complete_signal_call(creature_id)?;
+            }
             // The Redbrand Brute's Overhead Smash (#160): whoever still stands in the arc ahead
             // of it when the wind-up ends takes the blow and is knocked back.
             AbilityEffect::Smash {
@@ -1789,7 +1834,10 @@ impl ZoneSimulation {
     ) -> Result<(), ZoneError> {
         let content = Arc::clone(&self.content);
         let (spawn, _) = Self::creature_content(&content, creature_id)?;
-        if content.creature_ability(spawn.template).is_none() {
+        if content
+            .creature_ability_of(creature_id, spawn.template)
+            .is_none()
+        {
             return Ok(());
         }
         let jitter = self
@@ -1815,7 +1863,7 @@ impl ZoneSimulation {
         let (spawn, template) = Self::creature_content(&content, creature_id)?;
         let Some(ability) = self
             .depths_boss_ability(creature_id)
-            .or_else(|| content.creature_ability(spawn.template))
+            .or_else(|| content.creature_ability_of(creature_id, spawn.template))
             .and_then(ability_by_id)
         else {
             return Ok(false);
@@ -1833,6 +1881,13 @@ impl ZoneSimulation {
             // A stomp (#297) lands around the creature once its leader stands within reach.
             AbilityEffect::Stomp { radius, .. } => {
                 if distance_squared(here, leader_at) > i64::from(radius).pow(2) {
+                    return Ok(false);
+                }
+                None
+            }
+            // A signaler (#952) calls only while its partner idles, so one call brings one.
+            AbilityEffect::SignalCall => {
+                if !self.signal_partner_waits(creature_id) {
                     return Ok(false);
                 }
                 None

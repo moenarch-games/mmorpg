@@ -301,6 +301,19 @@ fn templates_follow_the_design_contract() {
                 2400,
                 60000
             ),
+            // Old Scarback (#913), the hunter's cache's elite bear, returns like Garrick.
+            (
+                "Old Scarback",
+                Bear,
+                Aggressive,
+                [5, 5],
+                true,
+                360,
+                0,
+                [8, 13],
+                3000,
+                120000
+            ),
         ]
     );
     let wolf = content
@@ -358,13 +371,13 @@ fn spawns_populate_their_subzones() {
             (greyhaven_vale::vale::REDBRAND_HOLLOW, "Garrick Redbrand"),
             1,
         ),
-        // Greyfang Ridge: the outriders, the Greyfang cavern's garrison (#160) and the
-        // Greyfang Approach patrol (#911).
+        // Greyfang Ridge: the outriders, the Greyfang cavern's garrison (#160), the
+        // Greyfang Approach patrol (#911) and the lookout's guards (#913).
         (
             (greyhaven_vale::vale::GREYFANG_RIDGE, "Redbrand Crossbowman"),
-            6,
+            7,
         ),
-        ((greyhaven_vale::vale::GREYFANG_RIDGE, "Redbrand Bandit"), 3),
+        ((greyhaven_vale::vale::GREYFANG_RIDGE, "Redbrand Bandit"), 4),
         ((greyhaven_vale::vale::GREYFANG_RIDGE, "Redbrand Brute"), 3),
         ((greyhaven_vale::vale::SOUTHMEADOW_DOWNS, "Young Boar"), 2),
         ((greyhaven_vale::vale::SOUTHMEADOW_DOWNS, "Hill Ogre"), 1),
@@ -374,6 +387,10 @@ fn spawns_populate_their_subzones() {
         ((greyhaven_vale::vale::EASTWATER_FEN, "Mirefin Lurker"), 3),
         // The Eastwater Fen wolf pack, a Ranger firing-line fight (#932).
         ((greyhaven_vale::vale::EASTWATER_FEN, "Timber Wolf"), 3),
+        // The optional discoveries' guards (#913): the hunter's cache's elite bear and the fen
+        // cache's ambushers.
+        ((greyhaven_vale::vale::WOLFRUN_WOODS, "Old Scarback"), 1),
+        ((greyhaven_vale::vale::EASTWATER_FEN, "Marsh Lurker"), 2),
         // The farmland hamlets' rats, boars and wolves (#859).
         (
             (greyhaven_vale::farmland::FARMLAND_AND_HAMLETS, "Grain Rat"),
@@ -461,8 +478,10 @@ fn spawns_populate_their_subzones() {
         ((wilds::SOUTHWOOD, "Brown Bear"), 1),
         ((wilds::CROWN_FOOTHILLS, "Timber Wolf"), 6),
         ((wilds::CROWN_FOOTHILLS, "Hill Ogre"), 1),
-        // The Rimewood scouts (#933), an Arcanist's group-control fight.
-        ((wilds::CROWN_FOOTHILLS, "Redbrand Bandit"), 3),
+        // The Rimewood scouts (#933), an Arcanist's group-control fight,
+        // and the Rimewood signal post (#952), a target-priority fight.
+        ((wilds::CROWN_FOOTHILLS, "Redbrand Bandit"), 5),
+        ((wilds::CROWN_FOOTHILLS, "Redbrand Crossbowman"), 1),
         ((wilds::GREYFANG_APPROACH, "Redbrand Bandit"), 4),
         ((wilds::GREYFANG_APPROACH, "Redbrand Crossbowman"), 3),
         // The Redbrands hold the Delving Workings (#818).
@@ -566,6 +585,8 @@ fn npcs_stand_at_their_posts() {
         ]
         .into_iter()
         .chain(region_residents())
+        // The smith (#917), the newest NPC.
+        .chain([("Smith Wulfric Hale", NpcRole::Vendor, outpost)])
         .collect::<Vec<_>>()
     );
     let graveyard = content.graveyard();

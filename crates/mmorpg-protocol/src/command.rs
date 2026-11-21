@@ -58,6 +58,10 @@ const CLAIM_DEPTHS_DROP_TAG: u8 = 35;
 const SIT_TAG: u8 = 36;
 /// Explicit weapon mode (#802): version, tag, drawn (0 or 1).
 const SET_WEAPON_DRAWN_TAG: u8 = 37;
+/// Gather an ore vein (#917): version, tag, vein index (u32).
+const GATHER_TAG: u8 = 38;
+/// Skin a corpse (#917): version, tag, creature (u32).
+const SKIN_TAG: u8 = 39;
 /// Version, tag, ability (u32), retired (0 key up, 1 retired).
 const RELEASE_ABILITY_COMMAND_BYTES: usize = 7;
 /// Version, tag, observed tick (u64), before the inner command's tag.
@@ -103,6 +107,8 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
             crate::loot::encode_claim(&mut payload, claim);
             payload
         }
+        ZoneCommand::Skin { creature } => word_command(SKIN_TAG, creature.get()),
+        ZoneCommand::Gather { node } => word_command(GATHER_TAG, node),
         ZoneCommand::Jump => vec![PROTOCOL_BYTE, JUMP_TAG],
         ZoneCommand::Roll => vec![PROTOCOL_BYTE, ROLL_TAG],
         ZoneCommand::Rise(rise) => vec![PROTOCOL_BYTE, RISE_TAG, rise.to_be_bytes()[0]],
@@ -382,6 +388,12 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
                 &mut offset,
             )?))
         }
+        SKIN_TAG => Ok(ZoneCommand::Skin {
+            creature: mmorpg_core::CreatureId::new(decode_word_command(payload, "skin")?),
+        }),
+        GATHER_TAG => Ok(ZoneCommand::Gather {
+            node: decode_word_command(payload, "gather")?,
+        }),
         MOVE_ITEM_TAG => {
             let [_, _, source, destination, high, low] = payload else {
                 return Err(ProtocolError::new(
@@ -1033,6 +1045,10 @@ mod tests {
             },
             ZoneCommand::AbandonQuest { quest: 3 },
             ZoneCommand::RaidAid { task: 4 },
+            ZoneCommand::Gather { node: 2 },
+            ZoneCommand::Skin {
+                creature: CreatureId::new(120),
+            },
             ZoneCommand::RollDepthsDrop {
                 run: 5,
                 drop: 1,
@@ -1213,6 +1229,8 @@ mod tests {
                     format!("use_waystone {}", waystone.get())
                 }
                 ZoneCommand::RaidAid { task } => format!("raid_aid {task}"),
+                ZoneCommand::Gather { node } => format!("gather {node}"),
+                ZoneCommand::Skin { creature } => format!("skin {}", creature.get()),
                 ZoneCommand::RollDepthsDrop { run, drop, choice } => {
                     format!("roll_depths_drop {run} {drop} {choice:?}")
                 }

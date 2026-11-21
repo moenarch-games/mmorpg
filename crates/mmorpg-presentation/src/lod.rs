@@ -236,6 +236,8 @@ impl Instance {
 pub struct Lods {
     entries: Vec<EntryLods>,
     instances: Vec<Instance>,
+    /// Placements a client switched off (#917: a gathered vein's full or spent look).
+    hidden: Vec<bool>,
     states: Vec<State>,
     shown: Vec<Shown>,
     /// The previous update's result, kept to tell whether this one changed anything.
@@ -275,9 +277,11 @@ impl Lods {
             };
             instances.len()
         ];
+        let hidden = vec![false; instances.len()];
         Self {
             entries,
             instances,
+            hidden,
             states,
             shown: Vec::new(),
             before: Vec::new(),
@@ -301,6 +305,17 @@ impl Lods {
         };
         *instance = Instance::new(&self.entries, &placed);
         self.view = None;
+    }
+
+    /// Hides placement `index` (#917), or shows it again; the next [`Self::update`] evaluates
+    /// every placement again.
+    pub fn set_hidden(&mut self, index: usize, hidden: bool) {
+        if let Some(slot) = self.hidden.get_mut(index)
+            && *slot != hidden
+        {
+            *slot = hidden;
+            self.view = None;
+        }
     }
 
     /// Advances every placement by `seconds` for a camera at `eye` (metres) with vertical
@@ -352,33 +367,34 @@ impl Lods {
                 let (ox, oz) = (instance.origin[0] - eye[0], instance.origin[2] - eye[2]);
                 (ox * ox + oz * oz).sqrt() > limit
             });
-            let target = if flat - instance.radius > instance.reach || beyond_max {
-                None
-            } else {
-                let distance = (flat * flat + dy * dy).sqrt().max(1e-3);
-                let size = instance.radius / (distance * tan);
-                let first = |margin: f64| {
-                    entry
-                        .levels
-                        .iter()
-                        .position(|(_, min)| min * bias * margin <= size)
-                        .unwrap_or(entry.levels.len() - 1)
-                };
-                Some(match state.level {
-                    None => first(1.),
-                    Some(level) => {
-                        let finer = first(1. + HYSTERESIS);
-                        let coarser = first(1. - HYSTERESIS);
-                        if finer < level {
-                            finer
-                        } else if coarser > level {
-                            coarser
-                        } else {
-                            level
+            let target =
+                if self.hidden[index] || flat - instance.radius > instance.reach || beyond_max {
+                    None
+                } else {
+                    let distance = (flat * flat + dy * dy).sqrt().max(1e-3);
+                    let size = instance.radius / (distance * tan);
+                    let first = |margin: f64| {
+                        entry
+                            .levels
+                            .iter()
+                            .position(|(_, min)| min * bias * margin <= size)
+                            .unwrap_or(entry.levels.len() - 1)
+                    };
+                    Some(match state.level {
+                        None => first(1.),
+                        Some(level) => {
+                            let finer = first(1. + HYSTERESIS);
+                            let coarser = first(1. - HYSTERESIS);
+                            if finer < level {
+                                finer
+                            } else if coarser > level {
+                                coarser
+                            } else {
+                                level
+                            }
                         }
-                    }
-                })
-            };
+                    })
+                };
             if target != state.level {
                 // Hidden beyond reach, or shown from hiding, the placement pops like the
                 // procedural prop did; between two levels it cross-fades.

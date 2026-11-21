@@ -201,6 +201,25 @@ quest needs them. Rewards are experience, copper and the Vale's existing gear.
 Review the Downs chain with `?scenario=greyhaven-downs`: a level 4 Warden on Barrowdown Lane with
 *Trouble in the Woods* turned in and *Word from the Downs* accepted, a few steps from Gwen Barrow.
 
+## Optional discoveries
+
+Three danger pockets lie off the safe roads (#913, owner choice B: risk/reward exploration;
+`greyhaven_vale::discoveries`, spawns 2200–2239). Each has a clue a player reads from the path, a
+fight, and a cache that opens once its guards are down for a living player standing at it:
+
+| Site | Clue | Fight | Reward |
+| --- | --- | --- | --- |
+| Wolfrun hunter's cache, the woods' south-west corner | A snapped bow and spilled arrows on the way in | Old Scarback, a level 5 elite bear (2200), with the bear's wound-up bites; the woods back to the trail are the retreat, and it leashes | Militia Spear, 30 copper |
+| Greyfang lookout, beside the Greyfang Approach | A tattered Redbrand banner by the road and a lit signal brazier | A Redbrand Bandit and a Crossbowman at its foot (2210, 2211); the cache is on the deck, up the ladder | Greyfang Scout Jerkin, 40 copper |
+| Eastwater Fen supply cache, the fen's low ground | A red-ragged marker pole, then a swamped punt | Two Marsh Lurkers in ambush by the crates (2220, 2221) | Pine Buckler, 45 copper |
+
+A cache pays once per character: the opened set is part of the character record and the
+canonical player, with a `Cache` reward receipt, so replay, reconnect and recovery never pay it
+twice. A full bag leaves it shut until there is room. The art is asset-tooling's `discoveries` kit
+placed as world dressing (`content/greyhaven/dressing/discoveries.json`) over generated colliders
+65150–65160; the lookout's ladder climbs. The chest, crates and brazier draw one state for every
+player.
+
 ## Grass and houses
 
 Grass grows as blades, not tufts (#832). `mmorpg_presentation::grass` decides where: thickly on
@@ -283,6 +302,10 @@ windlass, the spit, the potter's wheel, the signs, the vanes and the scarecrows'
 the presentation clock, holding the first pose under reduced motion, and the forge and the spit glow
 with a warm flickering light. A placement check (`settlement_props_stand_clear_of_colliders_and_residents`)
 keeps every proxy off other colliders and every resident's way.
+
+## Gathering and the smith (#917)
+
+Three iron ore veins stand in the rock at the foot of the basin's north buttress, a short walk north of the Outpost: one gather (interact in reach) takes a vein's two ore and spends it for everyone for two minutes, its spent look swapped in place in both clients. Any boar corpse a player may loot can be skinned once (interact with it selected) for a hide and a tusk. Smith Wulfric Hale, in the yard behind the Outpost smithy by his bench, sells one recipe through his vendor window: the Hollowpine Boar-Spear for 4 ore, 2 hides, 2 tusks and 20 copper (Atlas 5.3.16.i917). Veins and bench are world dressing (`content/greyhaven/dressing/gatherables.json`, colliders 65180–65183).
 
 ## Not yet done
 

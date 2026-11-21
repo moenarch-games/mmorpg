@@ -492,8 +492,21 @@ impl GameUi {
                         if let Some(stock) = content.vendor_stock(npc.id) {
                             for (index, offer) in stock.offers().iter().enumerate() {
                                 ui.horizontal(|ui| {
+                                    // A smith's recipe (#917) names what it takes from the bag.
+                                    let materials: Vec<String> = offer
+                                        .materials
+                                        .iter()
+                                        .map(|&(item, quantity)| {
+                                            format!("{quantity} {}", item_name(item))
+                                        })
+                                        .collect();
+                                    let fee = if materials.is_empty() {
+                                        String::new()
+                                    } else {
+                                        format!(" + {}", materials.join(", "))
+                                    };
                                     ui.label(format!(
-                                        "{} {} — {} copper",
+                                        "{} {} — {} copper{fee}",
                                         item_name(offer.item),
                                         item_stats(offer.item),
                                         offer.price

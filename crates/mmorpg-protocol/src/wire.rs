@@ -172,6 +172,8 @@ pub const fn error_code(code: ErrorCode) -> u16 {
         ErrorCode::SeatTaken => 48,
         ErrorCode::CannotSitHere => 49,
         ErrorCode::WeaponDrawn => 50,
+        ErrorCode::MissingMaterials => 51,
+        ErrorCode::WrongForm => 52,
     }
 }
 
@@ -227,6 +229,8 @@ pub fn decode_error_code(code: u16) -> Result<ErrorCode, ProtocolError> {
         48 => ErrorCode::SeatTaken,
         49 => ErrorCode::CannotSitHere,
         50 => ErrorCode::WeaponDrawn,
+        51 => ErrorCode::MissingMaterials,
+        52 => ErrorCode::WrongForm,
         _ => return Err(ProtocolError::new("unknown error code")),
     })
 }
@@ -294,6 +298,26 @@ pub(crate) fn encode_discoveries(
     );
     for id in areas {
         payload.extend_from_slice(&id.get().to_be_bytes());
+    }
+    Ok(())
+}
+
+/// Opened discovery caches (#913): `count u16 · count × id u32`, strictly ascending; whether
+/// content names them is core's to decide.
+pub(crate) fn encode_caches(
+    payload: &mut Vec<u8>,
+    caches: &std::collections::BTreeSet<u32>,
+) -> Result<(), ProtocolError> {
+    payload.extend_from_slice(
+        &encode_u16_count(
+            caches.len(),
+            usize::from(u16::MAX),
+            "too many opened caches",
+        )?
+        .to_be_bytes(),
+    );
+    for id in caches {
+        payload.extend_from_slice(&id.to_be_bytes());
     }
     Ok(())
 }
@@ -382,6 +406,29 @@ pub(crate) fn decode_practice(
         return Err(ProtocolError::new("banked practice is invalid"));
     }
     Ok(practice)
+}
+
+pub(crate) fn decode_caches(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<std::collections::BTreeSet<u32>, ProtocolError> {
+    let count = decode_u16_count(
+        payload,
+        offset,
+        usize::from(u16::MAX),
+        "too many opened caches",
+    )?;
+    let mut caches = std::collections::BTreeSet::new();
+    for _ in 0..count {
+        let id = u32::from_be_bytes(take(payload, offset)?);
+        if id == 0 || caches.last().is_some_and(|last| *last >= id) {
+            return Err(ProtocolError::new(
+                "opened caches are not ordered nonzero IDs",
+            ));
+        }
+        caches.insert(id);
+    }
+    Ok(caches)
 }
 
 /// A quest ID, never `0`; whether content defines it is the
@@ -1555,7 +1602,10 @@ mod tests {
             assert_eq!(decode_error_code(wire).unwrap(), code);
         }
         assert_eq!(error_code(ErrorCode::WeaponDrawn), 50);
-        for unknown in [0, 51, u16::MAX] {
+        assert_eq!(error_code(ErrorCode::MissingMaterials), 51);
+        assert_eq!(error_code(ErrorCode::WrongForm), 52);
+        assert_eq!(decode_error_code(52).unwrap(), ErrorCode::WrongForm);
+        for unknown in [0, 53, u16::MAX] {
             assert_eq!(
                 decode_error_code(unknown).unwrap_err().to_string(),
                 "unknown error code"

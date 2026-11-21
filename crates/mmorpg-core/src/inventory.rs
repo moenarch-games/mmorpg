@@ -41,7 +41,7 @@ pub struct ItemTemplate {
 /// Starter catalog, in stable ID order. Equippable items stack to one;
 /// consumable effects, prices and loot tables are separate rules. Quest
 /// items are plain bag items that quest content names as collect objectives.
-pub const ITEM_CATALOG: [ItemTemplate; 27] = [
+pub const ITEM_CATALOG: [ItemTemplate; 30] = [
     ItemTemplate {
         id: ItemId::new(1),
         name: "Torn Fur",
@@ -363,6 +363,37 @@ pub const ITEM_CATALOG: [ItemTemplate; 27] = [
         stats: ItemStats {
             stamina: 2,
             strength: 5,
+            agility: 0,
+            intellect: 0,
+        },
+    },
+    // Gathering and the smith's recipe (#917): ridge ore, a boar's hide, and the boar-spear
+    // the Outpost smith makes from them; `finds` holds the spear's trait and source.
+    ItemTemplate {
+        id: ItemId::new(28),
+        name: "Iron Ore",
+        max_stack: 20,
+        slot: None,
+        weapon: None,
+        stats: ItemStats::NONE,
+    },
+    ItemTemplate {
+        id: ItemId::new(29),
+        name: "Boar Hide",
+        max_stack: 10,
+        slot: None,
+        weapon: None,
+        stats: ItemStats::NONE,
+    },
+    ItemTemplate {
+        id: ItemId::new(30),
+        name: "Hollowpine Boar-Spear",
+        max_stack: 1,
+        slot: Some(EquipmentSlot::MainHand),
+        weapon: Some(WeaponFamily::Spear),
+        stats: ItemStats {
+            stamina: 1,
+            strength: 4,
             agility: 0,
             intellect: 0,
         },

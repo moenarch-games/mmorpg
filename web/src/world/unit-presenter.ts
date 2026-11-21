@@ -37,8 +37,8 @@ export type UnitPresenterHandle = {
 
 export type ImportedModelKind = "Ranger" | "Wolf" | "Rat" | "Boar" | "Bear" | "Spider" | "Lurker";
 /** The shared presenter's `Loadout::name`s. */
-export type Loadout = "sword-and-shield" | "bow-and-quiver" | "sword" | "dagger" | "dagger.twin" | "staff.bone"
-  | "staff.crystal-and-tome" | "mace.flanged" | "staff.gnarled" | "crossbow" | "spear" | "sword.garricks-cleaver";
+export type Loadout = "sword-and-shield" | "sword-and-shield.redbrand" | "bow-and-quiver" | "sword" | "dagger" | "dagger.twin" | "staff.bone"
+  | "staff.crystal-and-tome" | "mace.flanged" | "staff.gnarled" | "crossbow" | "spear" | "sword.garricks-cleaver" | "spear.hollowpine-hunter";
 /** A drawn throwable in the right hand (`imported::Throwable`, #603). */
 export type Throwable = "knife" | "flask" | "bomb";
 /**

@@ -16,6 +16,7 @@ mod boss;
 mod boulder;
 mod breakable;
 pub mod buoyancy;
+mod cache;
 mod casting;
 mod character;
 mod chat;
@@ -37,6 +38,7 @@ mod events;
 mod finds;
 mod flank;
 mod forced;
+mod gathering;
 #[doc(hidden)]
 pub mod golden;
 mod guard;
@@ -69,6 +71,7 @@ mod rewind;
 mod routine;
 mod seat;
 mod shapes;
+mod signal;
 mod snapshot;
 mod stance;
 mod strike;
@@ -95,6 +98,7 @@ pub use breakable::{
     DEBRIS_TICKS, Debris, DebrisPiece, DebrisView, EXPLOSION_DAMAGE, EXPLOSION_KNOCKBACK_UNITS,
     EXPLOSION_RADIUS_UNITS, MAX_DEBRIS, MAX_DEBRIS_PER_TICK, MAX_VISIBLE_DEBRIS, debris_pieces,
 };
+pub use cache::{CACHE_HEIGHT_UNITS, DiscoveryCache};
 pub use character::{
     CHARACTER_RECORD_SCHEMA_VERSION, CharacterId, CharacterLocation, CharacterRecord, DepthsRecord,
     MAX_CHARACTER_ID_BYTES,
@@ -158,6 +162,10 @@ pub use flank::{CREATURE_TURN_PER_TICK, FLANK_DAMAGE_PERCENT, FLANK_FRONT_HALF_A
 pub use forced::{
     CHARGE_MAX_TICKS, CHARGE_SPEED_SUBUNITS_PER_TICK, FORCED_IMMUNITY_TICKS, ForcedMove,
     ForcedState, KNOCKBACK_TICKS, SHOVE_UNITS,
+};
+pub use gathering::{
+    BOAR_HIDE, BOAR_TUSK, GATHER_REACH_UNITS, GatherNode, GatheringState, HOLLOWPINE_BOAR_SPEAR,
+    IRON_ORE, skin_yield,
 };
 pub use guard::{
     GUARD_ARC_HALF_WIDTH, GUARD_ARC_OFFSET, GUARD_BREAK_IMPACT, GUARD_BREAK_TICKS,
@@ -237,6 +245,7 @@ pub use routine::{
     ZONE_START_TIME, is_night, time_of_day,
 };
 pub use seat::{PostureView, SEAT_REACH_UNITS, Seat, SeatId, Sitting};
+pub use signal::{SIGNAL_REACH_UNITS, SignalCall};
 use sim_combat::class;
 pub use sim_combat::class::{ClassChoice, PlayerClass, ResourceKind, Sex};
 pub use sim_combat::melee::{
@@ -286,7 +295,8 @@ pub use trap::{
 };
 pub use vendor::{
     VENDOR_REACH_UNITS, VendorOffer, VendorStock, VendorStockError, VendorTradeError,
-    fenford_trader_stock, sell_price, settle_purchase, settle_sale, starter_vendor_stock,
+    fenford_trader_stock, sell_price, settle_purchase, settle_sale, smith_stock,
+    starter_vendor_stock,
 };
 pub use water::{AirPocket, Breath, WaterChannel, WaterMode, WaterVolume};
 pub use waystone::{
@@ -451,6 +461,12 @@ pub enum ZoneCommand {
     /// One preparation step before a forewarned night raid (#532, Atlas 5.1.59–5.1.62); the zone
     /// checks the evening, reach and order in the tick.
     RaidPrepare { prep: RaidPrep },
+    /// Gathers ore vein `node` (#917, an index into the content's veins): the zone checks that
+    /// it is full and within reach in the tick, and spends it for everyone until it regrows.
+    Gather { node: u32 },
+    /// Skins beast corpse `creature` (#917), which the player may loot: once per death, checked
+    /// in the tick.
+    Skin { creature: CreatureId },
     /// Answers the roll window of drop `drop` of `run` (#404, Atlas 5.1.34): stale, repeated
     /// and ineligible answers are refused in the tick, and a settled roll never changes.
     RollDepthsDrop {

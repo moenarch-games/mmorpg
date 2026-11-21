@@ -18,6 +18,7 @@ pub mod kit;
 pub mod kit_effects;
 pub mod player;
 pub mod presets;
+pub mod signal;
 pub mod sway;
 pub mod swim;
 pub mod sword;
@@ -103,6 +104,12 @@ fn carried(
         }
         None => None,
     }
+}
+
+/// Whether a unit is a shield-bearer holding its guard (#953): a living Redbrand Brute in
+/// combat, whose shield the zone turns on blows at its front.
+fn shield_guards(resident: Option<Resident>, record: &EntitySnapshot) -> bool {
+    resident == Some(Resident::RedbrandBrute) && record.flags.in_combat && !record.flags.dead
 }
 
 /// The local player's reversible attack preparation (Atlas 6.6.10, #415): an instant ability
@@ -317,6 +324,8 @@ pub struct UnitPresenter {
     stuns: BTreeMap<EntityRef, f64>,
     /// Each unit under Rapid Fire's haste the client saw the zone apply, until when (#607).
     hastes: BTreeMap<EntityRef, f64>,
+    /// Each signaler holding its horn (#952), while its call runs or until it is put away.
+    horns: BTreeMap<EntityRef, signal::Horn>,
     /// Each unit showing a timed swing (#679), until its sweep ends: its sweep report adds no
     /// second swing.
     timed_swings: BTreeMap<EntityRef, sword::Swing>,
@@ -389,6 +398,7 @@ impl UnitPresenter {
             bodies: false,
             stuns: BTreeMap::new(),
             hastes: BTreeMap::new(),
+            horns: BTreeMap::new(),
             timed_swings: BTreeMap::new(),
             whiffs: 0,
             hits: 0,
@@ -608,6 +618,7 @@ impl UnitPresenter {
         let viewer = EntityRef::Player(snapshot.viewer_id);
         self.social(snapshot, seconds);
         self.alert(snapshot, seconds);
+        self.horns.retain(|_, horn| horn.held(seconds));
         // The units that resolved a knockback this projection (#538): their hits throw the
         // target back, a large creature's stomp or smash shoves it round.
         let knockers: BTreeMap<EntityRef, Reaction> = snapshot
@@ -662,7 +673,7 @@ impl UnitPresenter {
                     ability,
                     target: Some(target),
                     ..
-                } => {
+                } if ability != mmorpg_core::ability::ids::SIGNAL_HORN => {
                     if let Some(reaction) = knockback(ability) {
                         self.react(snapshot, target, reaction, seconds);
                     }
@@ -725,6 +736,42 @@ impl UnitPresenter {
                         .entry(entity)
                         .or_default()
                         .died((variant % 3) as u8);
+                    self.horns.remove(&entity);
+                }
+                // A signaler's completed call (#952) lowers the horn and puts it away.
+                ZoneEvent::AbilityUsed {
+                    source,
+                    ability: mmorpg_core::ability::ids::SIGNAL_HORN,
+                    ..
+                } => {
+                    let end = self
+                        .class_of(snapshot, source)
+                        .and_then(|(kind, ..)| self.clip(kind, signal::END));
+                    let until = end.map_or(seconds, |(clip, duration)| {
+                        self.playbacks.entry(source).or_default().strike(
+                            clip,
+                            duration,
+                            Region::Whole,
+                            seconds,
+                        );
+                        seconds + f64::from(duration)
+                    });
+                    self.horns.insert(source, signal::Horn::Until(until));
+                }
+                // A broken call (#952) knocks the horn loose.
+                ZoneEvent::Interrupted {
+                    target,
+                    ability: mmorpg_core::ability::ids::SIGNAL_HORN,
+                    ..
+                } => {
+                    let interrupted = self
+                        .class_of(snapshot, target)
+                        .and_then(|(kind, ..)| self.clip(kind, signal::INTERRUPTED));
+                    if let Some(playback) = self.playbacks.get_mut(&target) {
+                        playback.cancel(interrupted, false, seconds);
+                    }
+                    self.horns
+                        .insert(target, signal::Horn::Until(seconds + signal::DROP_SECONDS));
                 }
                 ZoneEvent::GuardBroken { target, .. } => {
                     self.react(snapshot, target, Reaction::GuardBreak, seconds);
@@ -840,6 +887,11 @@ impl UnitPresenter {
                 {
                     (source, Some(ability), Some(aim), Some(ability), false)
                 }
+                // A horn call's end showed above (#952).
+                ZoneEvent::AbilityUsed {
+                    ability: mmorpg_core::ability::ids::SIGNAL_HORN,
+                    ..
+                } => continue,
                 ZoneEvent::AbilityUsed {
                     source,
                     ability,
@@ -1338,6 +1390,23 @@ impl UnitPresenter {
         let Some((kind, _, _)) = self.class_of(snapshot, entity) else {
             return;
         };
+        // A shield-bearer's guard (#953) takes a blocked blow on the shield and staggers when a
+        // blow gets past it.
+        let guarding = snapshot
+            .entities
+            .iter()
+            .find(|record| record.entity() == entity)
+            .is_some_and(|record| shield_guards(self.resident(entity, record), record));
+        let shield = kind
+            .clips()
+            .sword
+            .filter(|_| guarding)
+            .and_then(|sword| match reaction {
+                Reaction::Block => Some(sword.shield_impact),
+                Reaction::Chest | Reaction::Head => Some(sword.shield_stagger),
+                _ => None,
+            })
+            .and_then(|clip| self.clip(kind, clip));
         // An ordinary hit flinches left and right in turn and a critical one staggers back,
         // where the model has the light and heavy hits (#885).
         let varied = kind.clips().reactions.and_then(|clips| match reaction {
@@ -1348,10 +1417,13 @@ impl UnitPresenter {
             Reaction::Head => Some(clips.heavy),
             _ => None,
         });
-        let Some((clip, length)) = varied.and_then(|clip| self.clip(kind, clip)).or_else(|| {
-            kind.reaction(reaction)
-                .and_then(|clip| self.clip(kind, clip))
-        }) else {
+        let Some((clip, length)) = shield
+            .or_else(|| varied.and_then(|clip| self.clip(kind, clip)))
+            .or_else(|| {
+                kind.reaction(reaction)
+                    .and_then(|clip| self.clip(kind, clip))
+            })
+        else {
             return;
         };
         self.playbacks
@@ -1529,6 +1601,21 @@ impl UnitPresenter {
         };
         #[allow(clippy::cast_possible_truncation)]
         let length = (f64::from(ticks) / f64::from(mmorpg_core::TICK_HZ)) as f32;
+        // A signaler (#952) puts the horn to its lips, then calls until the cast resolves.
+        if ability == mmorpg_core::ability::ids::SIGNAL_HORN {
+            if let Some((call, _)) = self.clip(kind, signal::CALL) {
+                let start = self.clip(kind, signal::START);
+                self.playbacks.entry(entity).or_default().cast(
+                    start,
+                    (call, true),
+                    Region::Whole,
+                    length,
+                    seconds,
+                );
+            }
+            self.horns.insert(entity, signal::Horn::Calling);
+            return;
+        }
         if ability == mmorpg_core::ability::ids::CRUDE_BANDAGE
             && let Some((bandage, _)) = kind
                 .clips()
@@ -1907,13 +1994,16 @@ impl UnitPresenter {
                 } else {
                     ClassChoice::from_appearance(unit.record.appearance)
                 };
+                // A Druid in wolf form (#957) is the wolf: no weapons, outfit or headwear.
+                let shifted = matches!(entity, EntityRef::Player(_)) && kind == Kind::Wolf;
                 let loadout = carried(
                     entity,
                     resident,
                     class,
                     unit.record.flags.weapon,
                     unit.record.flags.named_weapon,
-                );
+                )
+                .filter(|_| !shifted);
                 if viewer {
                     let wind_up = self.preparation.map(|preparation| {
                         let class = snapshot.viewer.class.map(|choice| choice.class);
@@ -2027,7 +2117,8 @@ impl UnitPresenter {
                         talking: Some(entity) == self.interaction.npc.map(EntityRef::Npc),
                         face,
                         loadout,
-                        // What a resident holds on its routine (#904), by the zone's clock.
+                        // What a resident holds on its routine (#904), by the zone's clock, and
+                        // a signaler's horn through its call (#952).
                         chore: match entity {
                             EntityRef::Npc(npc) => chores::Chores::get().resident(
                                 &self.content,
@@ -2035,11 +2126,16 @@ impl UnitPresenter {
                                 snapshot.tick,
                                 unit.record.velocity != [0; 3],
                             ),
-                            _ => None,
+                            _ => self
+                                .horns
+                                .get(&entity)
+                                .filter(|horn| horn.held(seconds))
+                                .map(|_| signal::HORN),
                         },
                         // The Redbrand Bandit flanks and falls back on its sword footwork (#963).
                         footwork: resident == Some(Resident::RedbrandBandit)
                             && unit.record.flags.in_combat,
+                        shield_guard: shield_guards(resident, &unit.record) && !stunned,
                         now: seconds,
                         dt: input.dt,
                         reduced,
@@ -2105,7 +2201,12 @@ impl UnitPresenter {
                     id: id.clone(),
                     kind,
                     root: swim::lean(root, animation.attitude, f64::from(half[1]) * 2.),
-                    height: f64::from(half[1]) * 2.,
+                    // The shifted Druid stands as tall as the companion wolf, on its own feet.
+                    height: if shifted {
+                        f64::from(metres(mmorpg_core::COMPANION_HALF_EXTENTS_UNITS)[1]) * 2.
+                    } else {
+                        f64::from(half[1]) * 2.
+                    },
                     animation,
                     // Only a companion minion has an imported model (`Kind::of`).
                     tint: imported_tint(dead, entity.kind() == EntityKind::Minion),
@@ -2113,12 +2214,12 @@ impl UnitPresenter {
                     variety: resident.filter(|r| r.varied()).map(|_| entity.id()),
                     resident,
                     outfit: match entity {
-                        EntityRef::Player(_) => class.map(|c| {
+                        EntityRef::Player(_) if !shifted => class.map(|c| {
                             Outfit::new(c.class, self.equipment.as_ref().filter(|_| viewer))
                         }),
                         _ => None,
                     },
-                    headwear: (viewer && !dead).then(|| {
+                    headwear: (viewer && !dead && !shifted).then(|| {
                         Look::new(
                             input.viewer.choice.map_or(0, |c| c.class.code()),
                             input.viewer.choice.is_none_or(|c| c.sex.code() == 0),

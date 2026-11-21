@@ -30,7 +30,7 @@ use crate::{
 };
 
 /// Greyhaven Vale's dressing files.
-const GREYHAVEN: [&str; 11] = [
+const GREYHAVEN: [&str; 13] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/vale.json"
@@ -84,11 +84,21 @@ const GREYHAVEN: [&str; 11] = [
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/eastdown.json"
     )),
+    // The basin's ore veins and the smith's bench (#917).
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../content/greyhaven/dressing/gatherables.json"
+    )),
+    // The optional discoveries' hunter's cache, Redbrand lookout and fen supply cache (#913).
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../content/greyhaven/dressing/discoveries.json"
+    )),
 ];
 
 /// Every kit that draws dressing, by its asset keys' prefix, with the static-scene fallback
 /// ([`Kit`]) it hides while drawn, if it has one.
-pub const KITS: [(&str, Option<Kit>); 10] = [
+pub const KITS: [(&str, Option<Kit>); 12] = [
     ("greyhaven.nature.", Some(Kit::Nature)),
     ("limestone-rocks.kit.", Some(Kit::Nature)),
     ("crag.kit.", Some(Kit::Crag)),
@@ -102,6 +112,10 @@ pub const KITS: [(&str, Option<Kit>); 10] = [
     // The Wolfrun Den (#963): its kit is drawn wherever the den is, so its generated collider
     // shows no stand-in ([`own_collider`]).
     ("wolf-den.kit.", None),
+    // The basin's ore veins (#917) stand on their own generated colliders.
+    ("gatherables.kit.", None),
+    // The optional discoveries (#913), drawn like the den over their generated colliders.
+    ("discoveries.kit.", None),
 ];
 
 /// The wolf den kit's entries (asset-tooling#757), drawn through [`kit_placements`].
@@ -109,6 +123,31 @@ pub const WOLF_DEN_ENTRIES: [&str; 3] = [
     "wolf-den.kit.den-mouth",
     "wolf-den.kit.bone-scatter",
     "wolf-den.kit.bedding-patch",
+];
+
+/// The gatherables kit's placed entries (asset-tooling#763): an ore vein and its spent look,
+/// drawn through [`kit_placements`] and swapped by [`vein_slots`].
+pub const GATHERABLE_ENTRIES: [&str; 2] = [
+    "gatherables.kit.ore-vein",
+    "gatherables.kit.ore-vein-depleted",
+];
+
+/// The discoveries kit's placed entries (#913, asset-tooling#764), drawn through
+/// [`kit_placements`].
+pub const DISCOVERY_ENTRIES: [&str; 13] = [
+    "discoveries.kit.hunter-lean-to",
+    "discoveries.kit.hunter-chest",
+    "discoveries.kit.skinning-rack",
+    "discoveries.kit.fire-ring",
+    "discoveries.kit.hunter-clue",
+    "discoveries.kit.lookout-platform",
+    "discoveries.kit.lookout-ladder",
+    "discoveries.kit.signal-brazier-lit",
+    "discoveries.kit.weapon-rack",
+    "discoveries.kit.lookout-banner",
+    "discoveries.kit.fen-punt",
+    "discoveries.kit.supply-crates",
+    "discoveries.kit.fen-marker",
 ];
 
 /// The dressing format's version.
@@ -328,7 +367,7 @@ pub fn ground_details(s: &Scenery, entries: &'static [&'static str]) -> Vec<Plac
 }
 
 /// The placements of the supplied bundle `entries` on `s` that stand at their authored height,
-/// not as ground detail: the Wolfrun Den's pieces (#963).
+/// not as ground detail: the Wolfrun Den's pieces (#963) and the discoveries' (#913).
 #[must_use]
 pub fn kit_placements(s: &Scenery, entries: &'static [&'static str]) -> Vec<Placement> {
     placed(s)
@@ -346,6 +385,36 @@ pub fn kit_placements(s: &Scenery, entries: &'static [&'static str]) -> Vec<Plac
                     .fold(0., f64::max),
                 cull: p.cull.unwrap_or(Cull::Far),
             })
+        })
+        .collect()
+}
+
+/// For each of the zone's ore veins (#917) in wire order, the indices of its full and its spent
+/// look in [`kit_placements`] of [`GATHERABLE_ENTRIES`] on `s`: the placements standing at the
+/// vein's centre. A client hides one of the two by the projection's spent veins. Empty off
+/// Greyhaven.
+#[must_use]
+pub fn vein_slots(s: &Scenery) -> Vec<[usize; 2]> {
+    if !s.greyhaven() {
+        return Vec::new();
+    }
+    let drawn: Vec<&Placed> = placed(s)
+        .iter()
+        .filter(|p| !p.ground_detail && GATHERABLE_ENTRIES.contains(&p.asset.as_str()))
+        .collect();
+    let slot = |at: [i32; 2], entry: &str| {
+        drawn
+            .iter()
+            .position(|p| p.asset == entry && [p.position[0], p.position[2]] == at)
+            .expect("every ore vein has its full and spent placements")
+    };
+    mmorpg_core::greyhaven_vale::ore::VEINS
+        .iter()
+        .map(|&at| {
+            [
+                slot(at, GATHERABLE_ENTRIES[0]),
+                slot(at, GATHERABLE_ENTRIES[1]),
+            ]
         })
         .collect()
 }

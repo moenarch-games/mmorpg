@@ -175,6 +175,8 @@ pub(crate) struct PlayerState {
     /// Weapon-family mastery (#915), durable, and the practice banked against living foes.
     pub(crate) mastery: crate::WeaponMastery,
     pub(crate) practice: Vec<crate::Practice>,
+    /// Discovery caches the character opened (#913), each rewarded once.
+    pub(crate) caches: std::collections::BTreeSet<u32>,
     /// The durable character bound to this session (`None` for session-only players), and its
     /// depths receipts (#404).
     pub(crate) character: Option<crate::CharacterId>,
@@ -240,6 +242,7 @@ impl PlayerState {
             discoveries: std::collections::BTreeSet::new(),
             mastery: crate::WeaponMastery::default(),
             practice: Vec::new(),
+            caches: std::collections::BTreeSet::new(),
             character: None,
             depths: crate::DepthsRecord::default(),
             physique: crate::Physique::NEUTRAL,
@@ -343,6 +346,8 @@ pub struct ZoneSimulation {
     /// Where bodies stood over the last ticks, for capped hit rewind (#680); canonical,
     /// empty without it.
     pub(crate) rewind_history: crate::rewind::RewindHistory,
+    /// When each ore vein is full again and which corpses were skinned (#917); canonical.
+    pub(crate) gathering: crate::GatheringState,
 }
 
 impl ZoneSimulation {
@@ -486,6 +491,7 @@ impl ZoneSimulation {
             rng: ZoneRng::seeded(content.rng_seed(), zone_id),
             loot_rng: ZoneRng::seeded(content.rng_seed() ^ LOOT_STREAM_SALT, zone_id),
             traps: Self::fresh_traps(&content),
+            gathering: crate::GatheringState::full(content.gather_nodes()),
             content,
             players: BTreeMap::new(),
             creatures: BTreeMap::new(),
@@ -833,6 +839,8 @@ impl ZoneSimulation {
             ZoneCommand::UseWaystone { waystone } => Some(PlayerIntent::UseWaystone(waystone)),
             ZoneCommand::RaidAid { task } => Some(PlayerIntent::RaidAid(task)),
             ZoneCommand::RaidPrepare { prep } => Some(PlayerIntent::RaidPrepare(prep)),
+            ZoneCommand::Gather { node } => Some(PlayerIntent::Gather(node)),
+            ZoneCommand::Skin { creature } => Some(PlayerIntent::Skin(creature)),
             ZoneCommand::RollDepthsDrop { run, drop, choice } => {
                 Some(PlayerIntent::RollDepthsDrop { run, drop, choice })
             }
@@ -926,6 +934,7 @@ impl ZoneSimulation {
         self.update_interest()?;
         self.discover_waystones();
         self.discover_areas()?;
+        self.open_caches()?;
         self.advance_casts(now)?;
         // Timed swings clash, parry and sweep before projectiles fly (#679).
         self.advance_swings(now)?;

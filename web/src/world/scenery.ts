@@ -132,6 +132,10 @@ export type SceneryContent = StaticSceneContent & {
   raidArea(): Int32Array;
   /** The night raid target's aftermath aid tasks (#531): `[x, z, npc]` units per task, npc 0 for a breach. */
   raidAid(): Int32Array;
+  /** The ore veins (#917) as `[x, z]` units each, in wire order. */
+  gatherNodes(): Int32Array;
+  /** Each ore vein's `gather` kit placements, `[full, spent]` per vein in wire order (#917). */
+  veinSlots(): Uint32Array;
   /** The night raid target's forewarning spots (#532): tracks `[x, z]`, lookout NPC, then `[x, z]` per brace; empty without one. */
   raidPrep(): Int32Array;
   /** The waystone (#145) within reach of `(x, z)` units, 0 for none. */
@@ -202,6 +206,12 @@ export type SceneryProvider = {
   readonly meadow: PlacedKitSource;
   /** The Wolfrun Den, from the `wolf-den` bundle (#963). */
   readonly den: PlacedKitSource;
+  /** The basin's ore veins, from the `gatherables` bundle (#917). */
+  readonly gather: PlacedKitSource;
+  /** The ore veins (#917) in wire order: centre in units and their full and spent `gather` placements. */
+  readonly veins: readonly { x: number; z: number; full: number; spent: number }[];
+  /** The optional discoveries, from the `discoveries` bundle (#913). */
+  readonly discoveries: PlacedKitSource;
   /** Greyhaven's cosmetic ambient animals (#419). */
   readonly ambient: AmbientAnimalsSource;
   importedRestClip(kind: string): string;
@@ -535,6 +545,15 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
     river: placedKit(content, "river"),
     meadow: placedKit(content, "meadow"),
     den: placedKit(content, "den"),
+    gather: placedKit(content, "gather"),
+    veins: (() => {
+      const nodes = content.gatherNodes();
+      const slots = content.veinSlots();
+      return Array.from({ length: Math.floor(nodes.length / 2) }, (_, index) => ({
+        x: nodes[index * 2]!, z: nodes[index * 2 + 1]!, full: slots[index * 2] ?? 0, spent: slots[index * 2 + 1] ?? 0,
+      }));
+    })(),
+    discoveries: placedKit(content, "discoveries"),
     ambient: (() => {
       const anchors = content.ambientAnimalAnchors();
       return {

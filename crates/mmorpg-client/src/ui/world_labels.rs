@@ -189,6 +189,16 @@ pub fn combat_texts(snapshot: &ZoneSnapshot) -> Vec<CombatText> {
                 target: None,
                 ..
             } if source == viewer => text(CombatTextKind::Miss, "Whiff".into(), source),
+            // A signaler raising its horn (#952): interrupt it or kill it before help comes.
+            ZoneEvent::CastStarted {
+                source,
+                ability: mmorpg_core::ability::ids::SIGNAL_HORN,
+                ..
+            } => text(
+                CombatTextKind::Interrupt,
+                "Calling for help!".into(),
+                source,
+            ),
             ZoneEvent::Flanked { target, .. } => {
                 text(CombatTextKind::Flank, "Flank!".into(), target)
             }

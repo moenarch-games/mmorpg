@@ -2133,6 +2133,7 @@ impl Equipment {
     /// the mace, a spear (#914) or Garrick's cleaver (#918). The bow rests in its bind pose on the back.
     pub fn loadout(loadout: Loadout) -> &'static Self {
         static SWORD_AND_SHIELD: OnceLock<Equipment> = OnceLock::new();
+        static SWORD_AND_REDBRAND_SHIELD: OnceLock<Equipment> = OnceLock::new();
         static BOW_AND_QUIVER: OnceLock<Equipment> = OnceLock::new();
         static SWORD: OnceLock<Equipment> = OnceLock::new();
         static DAGGER: OnceLock<Equipment> = OnceLock::new();
@@ -2144,12 +2145,20 @@ impl Equipment {
         static CROSSBOW: OnceLock<Equipment> = OnceLock::new();
         static SPEAR: OnceLock<Equipment> = OnceLock::new();
         static CLEAVER: OnceLock<Equipment> = OnceLock::new();
+        static HOLLOWPINE: OnceLock<Equipment> = OnceLock::new();
         let (cell, items): (_, &[(&str, &str)]) = match loadout {
             Loadout::SwordAndShield => (
                 &SWORD_AND_SHIELD,
                 &[
                     (ranger_bundle::SWORD, "hand_r.weapon"),
                     (ranger_bundle::SHIELD, "hand_l.shield"),
+                ],
+            ),
+            Loadout::SwordAndRedbrandShield => (
+                &SWORD_AND_REDBRAND_SHIELD,
+                &[
+                    (ranger_bundle::SWORD, "hand_r.weapon"),
+                    (ranger_bundle::REDBRAND_SHIELD, "hand_l.shield"),
                 ],
             ),
             Loadout::BowAndQuiver => (
@@ -2183,6 +2192,10 @@ impl Equipment {
             Loadout::GarricksCleaver => (
                 &CLEAVER,
                 &[(ranger_bundle::GARRICKS_CLEAVER, "hand_r.weapon")],
+            ),
+            Loadout::HollowpineSpear => (
+                &HOLLOWPINE,
+                &[(ranger_bundle::HOLLOWPINE_SPEAR, "hand_r.staff")],
             ),
             // The crossbow and the arrow standing in for its bolt (#607).
             Loadout::Crossbow => (

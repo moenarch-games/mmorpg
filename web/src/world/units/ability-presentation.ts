@@ -110,6 +110,10 @@ export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = ne
   [55, { range: "self", description: "Spends your fresh corpse (a victim that died under your Corruption, within 30 m): it bursts, hurting every enemy within 6 m of it.", glyph: SPLAT, accent: "#b07dff", visual: null, pose: "cast" }],
   // The Cleric's reckoning (#936): it returns the harm only this enemy dealt you and nearby allies this encounter.
   [56, { range: RANGED, description: "Return 70% of the harm your target dealt you and nearby allies this fight as a holy strike, consuming only its stored harm. Heals never lower it; it ends when the fight does.", glyph: BOLT, accent: "#ffcf4a", visual: null, pose: "cast" }],
+  // The Redbrand signaler's call for help (#952): a creature ability; interrupt it or kill the caller first.
+  [57, { range: "self", description: "A Redbrand raises a signal horn and calls a nearby ally into the fight; interrupt the call or bring the caller down first.", glyph: ORB, accent: "#c94a3a", visual: null, pose: "cast" }],
+  [58, { range: "self", description: "Take the wolf's shape: you run 40% faster and can Savage Bite, but cast no spells until you use Wolf Form again to return.", glyph: PAW, accent: "#9a8a6a", visual: null, pose: null }],
+  [59, { range: "melee", description: "Wolf form only: a savage bite at the enemy in front of you for twice your weapon damage.", glyph: PAW, accent: "#c9563a", visual: "swing", pose: "swing" }],
 ]);
 
 export function presentationOf(ability: number): AbilityPresentation | undefined {
@@ -118,7 +122,7 @@ export function presentationOf(ability: number): AbilityPresentation | undefined
 
 export type AuraPolarity = "buff" | "debuff";
 
-const BUFF_KINDS: ReadonlySet<AuraKind> = new Set(["heal-over-time", "absorb", "haste", "corpse"]);
+const BUFF_KINDS: ReadonlySet<AuraKind> = new Set(["heal-over-time", "absorb", "haste", "corpse", "shapeshift"]);
 
 /** Heals, shields and haste help their bearer; damage over time, roots, snares and stuns hurt it. */
 export function auraPolarity(kind: AuraKind): AuraPolarity {

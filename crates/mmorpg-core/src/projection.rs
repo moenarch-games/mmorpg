@@ -34,6 +34,8 @@ pub struct EntityFlags {
     pub weapon: Option<crate::WeaponFamily>,
     /// A player's named main-hand weapon (#918), drawn with its own model; `None` otherwise.
     pub named_weapon: Option<crate::NamedWeapon>,
+    /// A player in wolf form (#957), whom clients draw as the wolf. Presentation only.
+    pub shapeshifted: bool,
     /// An aggressive creature: it attacks players on sight.
     pub hostile: bool,
     /// The viewer may attack it (living creatures).
@@ -206,6 +208,8 @@ pub struct ZoneSnapshot {
     pub debris: Vec<crate::DebrisView>,
     /// Destructible pieces that are not intact, in ID order (#305).
     pub pieces: Vec<crate::PieceView>,
+    /// The content ore veins spent at this tick, in content order (#917).
+    pub depleted_veins: Vec<u32>,
     /// Summoned terrain near the viewer, nearest first (#293).
     pub summoned: Vec<crate::SummonedView>,
     /// Fired pressure traps near the viewer, nearest first (#300); blades and spikes come from
@@ -360,6 +364,7 @@ impl ZoneSimulation {
                 projectiles: self.projectile_views([center.x, center.y, center.z]),
                 debris: self.debris_views([center.x, center.y, center.z]),
                 pieces: self.piece_views(),
+                depleted_veins: self.depleted_veins(),
                 summoned: self.summoned_views([center.x, center.y, center.z]),
                 traps: self.trap_views([center.x, center.y, center.z]),
                 raid: self.raid_view(player_id, [center.x, center.z]),
@@ -455,6 +460,10 @@ impl ZoneSimulation {
                             .item(crate::EquipmentSlot::MainHand)
                             .and_then(crate::item_find)
                             .and_then(|find| find.named),
+                        shapeshifted: crate::aura::has_kind(
+                            &player.auras,
+                            crate::AuraKind::Shapeshift,
+                        ),
                         targets_viewer,
                         ..EntityFlags::default()
                     },
@@ -499,6 +508,7 @@ impl ZoneSimulation {
                         weapon_drawn: false,
                         weapon: None,
                         named_weapon: None,
+                        shapeshifted: false,
                         in_combat: alive
                             && (creature.ai == CreatureAi::Engaged || creature.combat_timer > 0),
                         hostile: template.behaviour == CreatureBehaviour::Aggressive,

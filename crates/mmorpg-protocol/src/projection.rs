@@ -77,6 +77,8 @@ const WEAPON_MASK: u32 = 0x0700_0000;
 /// (#918).
 const NAMED_SHIFT: u32 = 27;
 const NAMED_MASK: u32 = 0x7800_0000;
+/// The appearance word's bit 23 on a player record: the player is in wolf form (#957).
+const SHIFTED_BIT: u32 = 0x0080_0000;
 /// Records that fit the budget without events or sheets: (1,077 − 112) / 29 = 33.
 pub const MAX_WIRE_ENTITIES: usize =
     (MAX_PLAYER_PROJECTION_BYTES - PLAYER_SNAPSHOT_FIXED_BYTES) / ENTITY_RECORD_BYTES;
@@ -504,11 +506,12 @@ fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), P
     payload.push(entity_kind_code(entity.kind));
     payload.extend_from_slice(&entity.id.to_be_bytes());
     if (entity.kind == EntityKind::Player
-        && entity.appearance & (DRAWN_BIT | WEAPON_MASK | NAMED_MASK) != 0)
+        && entity.appearance & (DRAWN_BIT | WEAPON_MASK | NAMED_MASK | SHIFTED_BIT) != 0)
         || (entity.kind != EntityKind::Player
             && (entity.flags.weapon_drawn
                 || entity.flags.weapon.is_some()
-                || entity.flags.named_weapon.is_some()))
+                || entity.flags.named_weapon.is_some()
+                || entity.flags.shapeshifted))
     {
         return Err(ProtocolError::new("invalid drawn weapon appearance"));
     }
@@ -526,6 +529,11 @@ fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), P
         &(entity.appearance
             | weapon
             | named
+            | if entity.flags.shapeshifted {
+                SHIFTED_BIT
+            } else {
+                0
+            }
             | if entity.flags.weapon_drawn {
                 DRAWN_BIT
             } else {
@@ -897,7 +905,7 @@ fn decode_projection(
         && (!abilities.cooldowns.is_empty() || !abilities.auras.is_empty()))
         || (dead && !abilities.auras.is_empty())
         || abilities.target != target;
-    let (doors, pieces, raid) = sheet_bytes(Sheet::World)
+    let (doors, pieces, raid, depleted_veins) = sheet_bytes(Sheet::World)
         .map(|received| crate::sheet::decode_world_sheet(&received.bytes))
         .transpose()?
         .unwrap_or_default();
@@ -986,6 +994,7 @@ fn decode_projection(
         projectiles,
         debris,
         pieces,
+        depleted_veins,
         summoned,
         traps,
         raid,
@@ -1031,6 +1040,7 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
     let id = u32::from_be_bytes(take(payload, offset)?);
     let encoded_appearance = u32::from_be_bytes(take(payload, offset)?);
     let weapon_drawn = kind == EntityKind::Player && encoded_appearance & DRAWN_BIT != 0;
+    let shapeshifted = kind == EntityKind::Player && encoded_appearance & SHIFTED_BIT != 0;
     let weapon = match (encoded_appearance & WEAPON_MASK) >> WEAPON_SHIFT {
         _ if kind != EntityKind::Player => None,
         0 => None,
@@ -1052,7 +1062,7 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
         ),
     };
     let appearance = if kind == EntityKind::Player {
-        encoded_appearance & !(DRAWN_BIT | WEAPON_MASK | NAMED_MASK)
+        encoded_appearance & !(DRAWN_BIT | WEAPON_MASK | NAMED_MASK | SHIFTED_BIT)
     } else {
         encoded_appearance
     };
@@ -1151,6 +1161,7 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
             weapon_drawn,
             weapon,
             named_weapon,
+            shapeshifted,
             hostile,
             attackable,
             tapped_by_other,
@@ -1227,6 +1238,7 @@ pub(crate) mod tests {
                     stage: mmorpg_core::PieceStage::Destroyed,
                 },
             ],
+            depleted_veins: vec![1],
             traps: vec![mmorpg_core::TrapView {
                 id: mmorpg_core::TrapId::new(1),
                 age: 30,
@@ -1511,6 +1523,7 @@ pub(crate) mod tests {
                         weapon_drawn: false,
                         weapon: None,
                         named_weapon: None,
+                        shapeshifted: false,
                         hostile: true,
                         attackable: true,
                         tapped_by_other: false,
@@ -1645,9 +1658,10 @@ pub(crate) mod tests {
     const COOLDOWNS: usize = ABILITIES + ENTITY_REF_BYTES;
     const AURAS: usize = COOLDOWNS + 1 + 2 * 6;
     const TARGET_AURAS: usize = AURAS + 1 + 9;
-    /// The world sheet (#882): two doors, two pieces and the raid signal with one braced spot.
+    /// The world sheet (#882): two doors, two pieces, the raid signal with one braced spot and
+    /// one spent vein (#917).
     const WORLD: usize = TARGET_AURAS + 1 + 9;
-    const WORLD_BYTES: usize = (2 + 2 * 5) + (2 + 2 * 5) + (4 + 2 + 2 + 4);
+    const WORLD_BYTES: usize = (2 + 2 * 5) + (2 + 2 * 5) + (4 + 2 + 2 + 4) + (2 + 4);
     /// The waystone sheet (#882): none unlocked.
     const WAYSTONES: usize = WORLD + WORLD_BYTES;
     const SHEETS_END: usize = WAYSTONES + 2;
@@ -2324,6 +2338,7 @@ pub(crate) mod tests {
                         weapon_drawn: false,
                         weapon: None,
                         named_weapon: None,
+                        shapeshifted: false,
                         hostile: true,
                         attackable: true,
                         tapped_by_other: kind == EntityKind::Creature,
@@ -2416,6 +2431,7 @@ pub(crate) mod tests {
             entities,
             quests: None,
             pieces: Vec::new(),
+            depleted_veins: Vec::new(),
             summoned: Vec::new(),
             traps: Vec::new(),
         };
@@ -2442,7 +2458,7 @@ pub(crate) mod tests {
             "player projection exceeds the byte budget"
         );
         // Without events, doors, a raid signal or a bag sheet the budget holds 32 records beside
-        // the empty loot (1 byte), ability (8), world (5) and waystone (2) sheets, and all 33
+        // the empty loot (1 byte), ability (8), world (7) and waystone (2) sheets, and all 33
         // once the client holds those sheets.
         let quiet = ZoneSnapshot {
             events: Vec::new(),
@@ -2454,7 +2470,7 @@ pub(crate) mod tests {
         assert_eq!(packed.packed_entities, 32);
         assert_eq!(
             packed.payload.len(),
-            PLAYER_SNAPSHOT_FIXED_BYTES + 16 + 32 * ENTITY_RECORD_BYTES
+            PLAYER_SNAPSHOT_FIXED_BYTES + 18 + 32 * ENTITY_RECORD_BYTES
         );
         let mut holder = SnapshotDecoder::new();
         holder.decode(&packed.payload).unwrap();

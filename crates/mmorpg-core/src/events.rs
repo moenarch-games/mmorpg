@@ -125,6 +125,11 @@ pub enum ErrorCode {
     NoLanding,
     /// The unit is being moved or is immune to forced movement (#294).
     MovementImmune,
+    /// The bag lacks a recipe's materials (#917).
+    MissingMaterials,
+    /// The ability does not fit the user's shape (#957): a spell in wolf form, or the wolf's
+    /// bite outside it.
+    WrongForm,
 }
 
 /// One feedback event addressed to a player.

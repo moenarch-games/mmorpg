@@ -95,11 +95,13 @@ pub struct VendorExport {
     pub offers: Vec<VendorOfferExport>,
 }
 
-/// One unit of `item` costs `price` copper.
-#[derive(Clone, Copy, Debug, Serialize)]
+/// One unit of `item` costs `price` copper and, for a smith's recipe (#917), `materials`.
+#[derive(Clone, Debug, Serialize)]
 pub struct VendorOfferExport {
     pub item: u32,
     pub price: u32,
+    /// `[item, quantity]` pairs taken per unit; empty for a plain offer.
+    pub materials: Vec<[u32; 2]>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -222,6 +224,11 @@ pub fn catalog(content: &ZoneContent) -> CatalogExport {
                     .map(|offer| VendorOfferExport {
                         item: offer.item.get(),
                         price: offer.price,
+                        materials: offer
+                            .materials
+                            .iter()
+                            .map(|&(item, quantity)| [item.get(), u32::from(quantity)])
+                            .collect(),
                     })
                     .collect(),
             })
@@ -345,7 +352,8 @@ mod tests {
         let item = |id, name, slot, stats| {
             let max_stack = match id {
                 1 => 20,
-                10 | 19..=21 => 10,
+                10 | 19..=21 | 29 => 10,
+                28 => 20,
                 22 => 5,
                 _ => 1,
             };
@@ -438,6 +446,14 @@ mod tests {
                     json!("mainHand"),
                     stats(2, 5, 0, 0)
                 ),
+                item(28, "Iron Ore", Value::Null, stats(0, 0, 0, 0)),
+                item(29, "Boar Hide", Value::Null, stats(0, 0, 0, 0)),
+                item(
+                    30,
+                    "Hollowpine Boar-Spear",
+                    json!("mainHand"),
+                    stats(1, 4, 0, 0)
+                ),
             ])
         );
         let quests = value["quests"].as_array().unwrap();
@@ -477,7 +493,7 @@ mod tests {
             json!([{"kind": "victory", "target": 0, "source": null, "count": 1}])
         );
         assert_eq!(quests[11]["choices"], json!([18]));
-        let offer = |item, price| json!({"item": item, "price": price});
+        let offer = |item, price| json!({"item": item, "price": price, "materials": []});
         assert_eq!(
             value["vendors"],
             json!([
@@ -490,6 +506,10 @@ mod tests {
                 {"npc": 42, "offers": [
                     offer(9, 12), offer(8, 12), offer(7, 15), offer(5, 20),
                     offer(3, 25), offer(23, 25), offer(12, 45), offer(13, 45), offer(14, 45),
+                ]},
+                // The Outpost smith's boar-spear recipe (#917).
+                {"npc": 43, "offers": [
+                    {"item": 30, "price": 20, "materials": [[28, 4], [29, 2], [19, 2]]},
                 ]},
             ])
         );

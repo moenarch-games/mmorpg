@@ -74,6 +74,7 @@ fn zone_at(positions: &[[i32; 3]], definition: ZoneDefinition) -> ZoneSimulation
             discoveries: std::collections::BTreeSet::new(),
             mastery: mmorpg_core::WeaponMastery::default(),
             practice: Vec::new(),
+            caches: std::collections::BTreeSet::new(),
             character: None,
             depths: mmorpg_core::DepthsRecord::default(),
             physique: mmorpg_core::Physique::NEUTRAL,

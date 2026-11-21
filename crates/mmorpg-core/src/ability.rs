@@ -106,6 +106,9 @@ pub enum AuraKind {
     /// A fresh corpse (#935) the bearer may spend with Raise Dead or Corpse Burst; the
     /// aura's caster is the corpse.
     Corpse,
+    /// The Druid's wolf form (#957): `amount` is the movement speed bonus in percent, and
+    /// only the form's own abilities may be used while it rests on the bearer.
+    Shapeshift,
 }
 
 impl AuraKind {
@@ -120,6 +123,7 @@ impl AuraKind {
             Self::Stun => 6,
             Self::Haste => 7,
             Self::Corpse => 8,
+            Self::Shapeshift => 9,
         }
     }
 
@@ -134,6 +138,7 @@ impl AuraKind {
             6 => Some(Self::Stun),
             7 => Some(Self::Haste),
             8 => Some(Self::Corpse),
+            9 => Some(Self::Shapeshift),
             _ => None,
         }
     }
@@ -149,6 +154,7 @@ impl AuraKind {
             Self::Stun => "stun",
             Self::Haste => "haste",
             Self::Corpse => "corpse",
+            Self::Shapeshift => "shapeshift",
         }
     }
 }
@@ -375,6 +381,14 @@ pub enum AbilityEffect {
     /// caster's reach this encounter, which the cast consumes; each enemy's stored harm is capped
     /// at `pool`. See `reckoning.rs`.
     Reckoning { percent: u16, pool: u16 },
+    /// Wolf Form (#957): the caster takes the wolf's shape for `duration` ticks, moving
+    /// `speed` percent faster; using it again in that shape returns the caster to caster form.
+    /// See [`AuraKind::Shapeshift`] for what the shape may use.
+    Shapeshift { speed: u16, duration: u16 },
+    /// A Redbrand signaler's horn call for help (#952): once the cast completes, the one authored
+    /// partner content binds to the caller ([`crate::ZoneContent::with_signal_calls`]) engages the
+    /// caller's threat leader. Any interruption puts the call off for its whole cooldown.
+    SignalCall,
 }
 
 /// How long a corrupted victim's corpse stays spendable for its Necromancer (#935): 10 s.
@@ -421,6 +435,7 @@ impl Ability {
             }
             AbilityEffect::Absorb { duration, .. } => (AuraKind::Absorb, duration, 0),
             AbilityEffect::RaiseDead { .. } => (AuraKind::Corpse, CORPSE_WINDOW_TICKS, 0),
+            AbilityEffect::Shapeshift { duration, .. } => (AuraKind::Shapeshift, duration, 0),
             AbilityEffect::WeaponStrike { .. }
             | AbilityEffect::Cleave { .. }
             | AbilityEffect::Bolt { .. }
@@ -440,7 +455,8 @@ impl Ability {
             | AbilityEffect::Hook { .. }
             | AbilityEffect::Blink { .. }
             | AbilityEffect::CorpseBurst { .. }
-            | AbilityEffect::Reckoning { .. } => return None,
+            | AbilityEffect::Reckoning { .. }
+            | AbilityEffect::SignalCall => return None,
         };
         Some(AuraSpec {
             kind,
@@ -458,6 +474,7 @@ impl Ability {
             AbilityEffect::HealOverTime { .. }
                 | AbilityEffect::Haste { .. }
                 | AbilityEffect::Absorb { .. }
+                | AbilityEffect::Shapeshift { .. }
         )
     }
 
@@ -608,6 +625,11 @@ pub mod ids {
     pub const CORPSE_BURST: AbilityId = AbilityId::new(55);
     /// The Cleric's reckoning (#936).
     pub const DIVINE_RECKONING: AbilityId = AbilityId::new(56);
+    /// The Redbrand signaler's horn call for help (#952).
+    pub const SIGNAL_HORN: AbilityId = AbilityId::new(57);
+    /// The Druid's wolf form (#957) and the bite it alone may use.
+    pub const WOLF_FORM: AbilityId = AbilityId::new(58);
+    pub const SAVAGE_BITE: AbilityId = AbilityId::new(59);
 }
 
 /// How a projectile treats what it meets (#291).
@@ -630,7 +652,7 @@ pub enum Shot {
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 56] = [
+pub const ABILITY_CATALOG: [Ability; 59] = [
     ability(
         1,
         "Heroic Strike",
@@ -1560,6 +1582,52 @@ pub const ABILITY_CATALOG: [Ability; 56] = [
             pool: 200,
         },
     ),
+    // A Redbrand signaler's horn call (#952): a 2.5 s call for help the signaler stands still
+    // for. A Shield Bash, a Gouge or any other stun breaks it, and the call waits its whole
+    // 30 s cooldown; completed, one authored partner joins the fight.
+    ability(
+        57,
+        "Signal Horn",
+        AbilityUser::Creature,
+        1,
+        0,
+        CastTime::Cast(ticks_from_ms(2_500)),
+        ticks_from_ms(30_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::SignalCall,
+    ),
+    // The Druid's wolf form (#957, Atlas 5.2.i957): shift to close a gap 40% faster and land one
+    // savage bite, then shift back for Wrath and Roots; no other spell works in the shape.
+    // Tuning is provisional.
+    ability(
+        58,
+        "Wolf Form",
+        DRUID,
+        4,
+        0,
+        CastTime::Instant,
+        ticks_from_ms(1_500),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Shapeshift {
+            speed: 40,
+            duration: ticks_from_ms(600_000),
+        },
+    ),
+    ability(
+        59,
+        "Savage Bite",
+        DRUID,
+        4,
+        20,
+        CastTime::Instant,
+        ticks_from_ms(6_000),
+        AbilityRange::Melee,
+        AbilityEffect::WeaponStrike {
+            numerator: 2,
+            denominator: 1,
+            bonus: 12,
+        },
+    ),
 ];
 
 /// The catalog row of `id`, if any.
@@ -1874,6 +1942,10 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
                 radius,
             ],
             AbilityEffect::Reckoning { percent, pool } => vec![31, percent.into(), pool.into()],
+            AbilityEffect::SignalCall => vec![32],
+            AbilityEffect::Shapeshift { speed, duration } => {
+                vec![33, speed.into(), duration.into()]
+            }
         };
         bytes.extend_from_slice(&u32::try_from(fields.len()).unwrap_or(0).to_be_bytes());
         for field in fields {
@@ -1909,7 +1981,7 @@ mod tests {
             }
         }
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
-        assert_eq!(ability_by_id(AbilityId::new(57)), None);
+        assert_eq!(ability_by_id(AbilityId::new(60)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
         for &class in PlayerClass::VARIANTS {
             let cooldowns = ABILITY_CATALOG

@@ -134,6 +134,7 @@ pub fn refusal_text(code: ErrorCode) -> String {
         ErrorCode::HandoffCorridor => "Not here: you are crossing into another region.".into(),
         ErrorCode::InCombat => "You can't travel while in combat.".into(),
         ErrorCode::WeaponDrawn => "Sheathe your weapon to interact.".into(),
+        ErrorCode::MissingMaterials => "You lack the materials for that.".into(),
         ErrorCode::InvalidWaystone => "The waystone cannot take you there.".into(),
         ErrorCode::NotWhileSwimming => "You can't do that while swimming.".into(),
         ErrorCode::VendorClosed => "The shop is closed for the night.".into(),
@@ -151,6 +152,7 @@ pub fn refusal_text(code: ErrorCode) -> String {
         ErrorCode::NoRoom => "There is no room for it to rise there.".into(),
         ErrorCode::NoLanding => "There is no clear place to land there.".into(),
         ErrorCode::MovementImmune => "It cannot be moved right now.".into(),
+        ErrorCode::WrongForm => "You cannot do that in this form.".into(),
         _ => humanize(&format!("{code:?}")),
     }
 }
@@ -384,6 +386,30 @@ impl Logs {
                 } if id == ids::ENTANGLING_ROOTS && target != me => (
                     LineKind::Combat,
                     format!("{} breaks free of {}.", who(target), ability(id)),
+                ),
+                // A signaler's horn call (#952): the warning, and whether help came.
+                ZoneEvent::CastStarted {
+                    source,
+                    ability: id,
+                    ..
+                } if id == ids::SIGNAL_HORN => (
+                    LineKind::Combat,
+                    format!("{} raises a signal horn to call for help!", who(source)),
+                ),
+                ZoneEvent::AbilityUsed {
+                    source,
+                    ability: id,
+                    target,
+                } if id == ids::SIGNAL_HORN => (
+                    LineKind::Combat,
+                    match target {
+                        Some(helper) => format!(
+                            "{} sounds the horn: {} answers the call!",
+                            who(source),
+                            who(helper)
+                        ),
+                        None => format!("{} sounds the horn, but no one answers.", who(source)),
+                    },
                 ),
                 ZoneEvent::Interrupted {
                     target,

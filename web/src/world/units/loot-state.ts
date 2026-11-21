@@ -194,4 +194,6 @@ const REFUSALS: Record<ErrorCode, string | null> = {
   "no-room": null,
   "no-landing": null,
   "movement-immune": null,
+  "missing-materials": null,
+  "wrong-form": null,
 };

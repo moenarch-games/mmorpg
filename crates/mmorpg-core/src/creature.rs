@@ -307,6 +307,7 @@ impl ZoneSimulation {
         if let Some(rewards) = &mut self.rewards {
             rewards.spawned(id, generation);
         }
+        self.gathering.skinned.remove(&id);
         self.creatures.insert(
             id,
             CreatureState {

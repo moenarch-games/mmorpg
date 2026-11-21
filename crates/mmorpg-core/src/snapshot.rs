@@ -107,6 +107,10 @@ pub enum PlayerIntent {
     RaidAid(u32),
     /// Night raid preparation (#532).
     RaidPrepare(crate::RaidPrep),
+    /// Gathering an ore vein (#917): its content index.
+    Gather(u32),
+    /// Skinning a beast corpse (#917).
+    Skin(crate::CreatureId),
     /// A Need/Greed/Pass answer to a boss drop (#404).
     RollDepthsDrop {
         run: u64,
@@ -320,6 +324,8 @@ pub struct CanonicalPlayerSnapshot {
     /// Weapon-family mastery (#915) and the practice banked against living foes.
     pub mastery: crate::WeaponMastery,
     pub practice: Vec<crate::Practice>,
+    /// Discovery caches opened (#913).
+    pub caches: std::collections::BTreeSet<u32>,
     /// The durable character this session plays and its depths receipts (#404).
     pub character: Option<crate::CharacterId>,
     pub depths: crate::DepthsRecord,
@@ -400,6 +406,8 @@ pub struct CanonicalZoneSnapshot {
     pub next_minion: u32,
     /// The night raid (#530).
     pub raid: crate::RaidState,
+    /// When each ore vein is full again and which corpses were skinned (#917).
+    pub gathering: crate::GatheringState,
     /// Private-home residents a knock woke, in NPC-ID order (#158).
     pub wakes: Vec<crate::NpcWake>,
     /// The private run bound to a depths zone (#404).
@@ -479,6 +487,7 @@ impl ZoneSimulation {
                     discoveries: state.discoveries.clone(),
                     mastery: state.mastery,
                     practice: state.practice.clone(),
+                    caches: state.caches.clone(),
                     character: state.character.clone(),
                     depths: state.depths,
                     physique: state.physique,
@@ -568,6 +577,7 @@ impl ZoneSimulation {
             minions: self.canonical_minions()?,
             next_minion: self.next_minion,
             raid: self.raid.clone(),
+            gathering: self.gathering.clone(),
             wakes: self.canonical_wakes(),
             depths: self.depths.clone(),
             rewind_history: self.canonical_rewind_history(),
@@ -610,6 +620,7 @@ impl ZoneSimulation {
         for record in snapshot.creatures {
             zone.restore_creature(record)?;
         }
+        zone.restore_gathering(snapshot.gathering, snapshot.tick)?;
         for (player, state) in snapshot.parties {
             state.validate()?;
             if !zone.players.contains_key(&player) || zone.parties.insert(player, state).is_some() {
@@ -931,6 +942,7 @@ impl ZoneSimulation {
                 discoveries: player.discoveries,
                 mastery: player.mastery,
                 practice: player.practice,
+                caches: player.caches,
                 character: player.character,
                 depths: player.depths,
                 physique: player.physique,
@@ -1326,7 +1338,8 @@ fn validate_auras(auras: &[Aura]) -> Result<(), ZoneError> {
         let valid_amount = match ability_by_id(aura.ability).map(|ability| ability.effect) {
             Some(
                 crate::AbilityEffect::Snare { percent, .. }
-                | crate::AbilityEffect::Haste { percent, .. },
+                | crate::AbilityEffect::Haste { percent, .. }
+                | crate::AbilityEffect::Shapeshift { speed: percent, .. },
             ) => aura.amount == percent,
             Some(
                 crate::AbilityEffect::DamageOverTime {

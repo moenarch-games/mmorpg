@@ -28,7 +28,7 @@ use crate::{
 /// Identity of the [`CharacterRecord`] schema: a random token (ADR 0006), replaced with a
 /// fresh one on every change to the record's fields or their meaning; persisted records of
 /// another schema are rejected rather than reinterpreted.
-pub const CHARACTER_RECORD_SCHEMA_VERSION: u16 = 0xcfcd;
+pub const CHARACTER_RECORD_SCHEMA_VERSION: u16 = 0x47e2;
 
 /// Longest [`CharacterId`] in bytes.
 pub const MAX_CHARACTER_ID_BYTES: usize = 64;
@@ -92,6 +92,8 @@ pub struct CharacterRecord {
     pub waystones: crate::WaystoneSet,
     /// Named areas discovered (#916), each rewarded once.
     pub discoveries: std::collections::BTreeSet<crate::AreaId>,
+    /// Discovery caches opened (#913), each rewarded once.
+    pub caches: std::collections::BTreeSet<u32>,
     /// Weapon-family mastery (#915).
     pub mastery: crate::WeaponMastery,
     /// The Redbrand Depths' durable facts about this character (#404 part 3).
@@ -180,6 +182,7 @@ impl ZoneSimulation {
             quests: player.quests.clone(),
             waystones: player.waystones.clone(),
             discoveries: player.discoveries.clone(),
+            caches: player.caches.clone(),
             mastery: player.mastery,
             depths: player.depths,
             health: player.health,
@@ -271,6 +274,7 @@ impl ZoneSimulation {
         state.quests = record.quests.clone();
         state.waystones = record.waystones.clone();
         state.discoveries = record.discoveries.clone();
+        state.caches = record.caches.clone();
         state.mastery = record.mastery;
         state.depths = record.depths;
         state.physique = record.physique;

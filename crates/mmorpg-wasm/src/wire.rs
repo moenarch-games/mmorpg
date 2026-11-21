@@ -119,7 +119,8 @@ mirror!(
         Snare,
         Stun,
         Haste,
-        Corpse
+        Corpse,
+        Shapeshift
     }
 );
 mirror!(
@@ -161,7 +162,10 @@ mirror!(
 mirror!(
     /// A named weapon's own model (#918).
     #[serde(rename_all = "kebab-case")]
-    NamedWeapon = core::NamedWeapon { GarricksCleaver }
+    NamedWeapon = core::NamedWeapon {
+        GarricksCleaver,
+        HollowpineHunter
+    }
 );
 mirror!(
     /// Which basic strike a press became (#885).
@@ -258,9 +262,11 @@ mirror!(
         NoRoom,
         NoLanding,
         MovementImmune,
+        WrongForm,
         SeatTaken,
         CannotSitHere,
         WeaponDrawn,
+        MissingMaterials,
     }
 );
 mirror!(
@@ -380,6 +386,10 @@ pub struct EntityFlags {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[tsify(optional)]
     pub named_weapon: Option<NamedWeapon>,
+    /// A player in wolf form (#957), drawn as the wolf.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[tsify(optional)]
+    pub shapeshifted: bool,
     /// An aggressive creature.
     pub hostile: bool,
     /// The viewer may attack it (living creatures).
@@ -433,6 +443,7 @@ impl From<&core::EntitySnapshot> for EntityState {
                 weapon_drawn: flags.weapon_drawn,
                 weapon: flags.weapon.map(Into::into),
                 named_weapon: flags.named_weapon.map(Into::into),
+                shapeshifted: flags.shapeshifted,
                 hostile: flags.hostile,
                 attackable: flags.attackable,
                 tapped_by_other: flags.tapped_by_other,
@@ -464,6 +475,7 @@ impl From<&EntityState> for core::EntitySnapshot {
                 weapon_drawn: flags.weapon_drawn,
                 weapon: flags.weapon.map(Into::into),
                 named_weapon: flags.named_weapon.map(Into::into),
+                shapeshifted: flags.shapeshifted,
                 hostile: flags.hostile,
                 attackable: flags.attackable,
                 tapped_by_other: flags.tapped_by_other,
@@ -1678,6 +1690,8 @@ pub struct ZoneSnapshot {
     pub doors: Vec<DoorState>,
     /// Destructible pieces that are not intact, in ID order (#305).
     pub pieces: Vec<PieceState>,
+    /// The ore veins spent at this tick, by their index in `veinSlots()` order (#917).
+    pub depleted_veins: Vec<u32>,
     /// Summoned terrain near the viewer, nearest first (#293).
     pub summoned: Vec<SummonedState>,
     /// Fired pressure traps near the viewer, nearest first (#300).
@@ -1832,6 +1846,7 @@ impl From<&core::ZoneSnapshot> for ZoneSnapshot {
                     stage: piece.stage.into(),
                 })
                 .collect(),
+            depleted_veins: snapshot.depleted_veins.clone(),
             summoned: snapshot
                 .summoned
                 .iter()
@@ -2082,6 +2097,7 @@ impl TryFrom<&ZoneSnapshot> for core::ZoneSnapshot {
                     stage: piece.stage.into(),
                 })
                 .collect(),
+            depleted_veins: snapshot.depleted_veins.clone(),
             summoned: snapshot
                 .summoned
                 .iter()
@@ -2261,6 +2277,14 @@ pub enum WorldCommand {
     RaidAid {
         task: u32,
     },
+    /// Gathers ore vein `node` (#917, its index in `veinSlots()` order) when it is full and in reach.
+    Gather {
+        node: u32,
+    },
+    /// Skins a beast corpse the player may loot (#917): once per death.
+    Skin {
+        creature_id: u32,
+    },
     /// Answers a boss drop's roll window (#404): `choice` is need, greed or pass.
     RollDepthsDrop {
         #[tsify(type = "bigint")]
@@ -2409,6 +2433,10 @@ impl TryFrom<&WorldCommand> for core::ZoneCommand {
                     .ok_or_else(|| format!("unknown waystone {waystone}"))?,
             },
             C::RaidAid { task } => Self::RaidAid { task },
+            C::Gather { node } => Self::Gather { node },
+            C::Skin { creature_id } => Self::Skin {
+                creature: core::CreatureId::new(creature_id),
+            },
             C::RollDepthsDrop { run, drop, choice } => Self::RollDepthsDrop {
                 run,
                 drop,
