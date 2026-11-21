@@ -166,6 +166,7 @@ const WILD_ENTRIES: Readonly<Record<Exclude<QuaterniusKind, "Ranger">, string>> 
   Lynx: "greyhaven.wild.lynx",
   Adder: "greyhaven.wild.marsh-adder",
   Bat: "greyhaven.wild.cave-bat",
+  Stag: "greyhaven.wild.stag",
 };
 const animalUrl = (kind: Exclude<QuaterniusKind, "Ranger">) =>
   new URL(`${import.meta.env.BASE_URL}scenery/greyhaven.wildlife/scenes/${WILD_ENTRIES[kind]}/default.gltf`, window.location.href).href;

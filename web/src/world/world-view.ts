@@ -307,7 +307,7 @@ class RegionArt {
   /** The pieces area `id` needs (every piece for `null`). */
   #pieces(id: number | null): string[] {
     if (id === null) {
-      return ["Ranger", "Wolf", "Rat", "Boar", "Bear", "Spider", "Lurker", "Lynx", "Adder", "Bat", "residents", "inn", "shrine", "outpost", "settlement", "ambient"];
+      return ["Ranger", "Wolf", "Rat", "Boar", "Bear", "Spider", "Lurker", "Lynx", "Adder", "Bat", "Stag", "residents", "inn", "shrine", "outpost", "settlement", "ambient"];
     }
     return [
       "Ranger",

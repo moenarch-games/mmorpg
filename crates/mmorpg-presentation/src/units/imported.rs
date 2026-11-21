@@ -774,6 +774,8 @@ pub enum Kind {
     Adder,
     /// The cave bat (#995).
     Bat,
+    /// The Southwood stag (#997).
+    Stag,
 }
 
 /// Clip names of one model.
@@ -823,7 +825,8 @@ pub struct Clips {
     /// (#619, asset-tooling #421).
     pub social: Option<SocialClips>,
     /// What a creature holds still and out of a fight instead of `idle`, for a model that has
-    /// it: the cave bat's `Perch` at its roost (#995), where it hovers in `idle` in a fight.
+    /// it: the cave bat's `Perch` at its roost (#995), where it hovers in `idle` in a fight, and
+    /// the stag's `Eat` (#997).
     pub rest: Option<&'static str>,
     /// A beast's two attacks and its alert (#889), for a model that has them.
     pub bites: Option<BiteClips>,
@@ -837,8 +840,9 @@ pub struct BiteClips {
     /// Played once as it turns to fight.
     pub alert: &'static str,
     /// What follows an attack, in order, for a model whose attack is a wind-up clip (#989): the
-    /// lynx's `Pounce_Lunge`, whose contact is the zone's, then its `Pounce_Recover`.
-    pub follow: Option<[&'static str; 2]>,
+    /// lynx's `Pounce_Lunge`, whose contact is the zone's, then its `Pounce_Recover`; a
+    /// strike clip that holds its own recovery, like the stag's `Attack_A` (#997), has none.
+    pub follow: Option<(&'static str, Option<&'static str>)>,
 }
 
 /// The wildlife release's clip set (asset-tooling #716, #723): every hostile beast runs, bites
@@ -891,7 +895,7 @@ const LYNX_CLIPS: Clips = Clips {
     bites: Some(BiteClips {
         attacks: ["Pounce_Windup", "Pounce_Windup"],
         alert: "Crouch_Stalk_Loop",
-        follow: Some(["Pounce_Lunge", "Pounce_Recover"]),
+        follow: Some(("Pounce_Lunge", Some("Pounce_Recover"))),
     }),
     ..WILD_CLIPS
 };
@@ -908,7 +912,7 @@ const ADDER_CLIPS: Clips = Clips {
     bites: Some(BiteClips {
         attacks: ["Warn_Hiss_Loop", "Warn_Hiss_Loop"],
         alert: "Warn_Hiss_Loop",
-        follow: Some(["Strike", "Strike_Recover"]),
+        follow: Some(("Strike", Some("Strike_Recover"))),
     }),
     ..WILD_CLIPS
 };
@@ -925,7 +929,22 @@ const BAT_CLIPS: Clips = Clips {
     bites: Some(BiteClips {
         attacks: ["Dive_Windup", "Dive_Windup"],
         alert: "Launch",
-        follow: Some(["Dive_Contact", "Dive_Recover"]),
+        follow: Some(("Dive_Contact", Some("Dive_Recover"))),
+    }),
+    ..WILD_CLIPS
+};
+
+/// The wildlife release's stag (#997, asset-tooling #804): it grazes in `Eat` while it stands out of a
+/// fight and walks like the ambient stag, throws its head up in `Alert` as its fight starts, and charges in two clips:
+/// `Alert` once through (the zone's warning), then `Attack_A`, the lowered-antler charge whose
+/// contact the zone's lands on and whose tail is its blown recovery. The rearing `Attack_B`
+/// goes unused.
+const STAG_CLIPS: Clips = Clips {
+    rest: Some("Eat"),
+    bites: Some(BiteClips {
+        attacks: ["Alert", "Alert"],
+        alert: "Alert",
+        follow: Some(("Attack_A", None)),
     }),
     ..WILD_CLIPS
 };
@@ -1740,6 +1759,7 @@ impl Kind {
             Self::Lynx => "Lynx",
             Self::Adder => "Adder",
             Self::Bat => "Bat",
+            Self::Stag => "Stag",
         }
     }
 
@@ -1757,6 +1777,7 @@ impl Kind {
             Self::Lynx => Some("greyhaven.wild.lynx"),
             Self::Adder => Some("greyhaven.wild.marsh-adder"),
             Self::Bat => Some("greyhaven.wild.cave-bat"),
+            Self::Stag => Some("greyhaven.wild.stag"),
         }
     }
 
@@ -1994,6 +2015,7 @@ impl Kind {
             Self::Lynx => LYNX_CLIPS,
             Self::Adder => ADDER_CLIPS,
             Self::Bat => BAT_CLIPS,
+            Self::Stag => STAG_CLIPS,
         }
     }
 
@@ -2349,6 +2371,7 @@ impl Kind {
             CreatureFamily::Lynx => Some(Self::Lynx),
             CreatureFamily::Adder => Some(Self::Adder),
             CreatureFamily::Bat => Some(Self::Bat),
+            CreatureFamily::Stag => Some(Self::Stag),
             CreatureFamily::Marauder
             | CreatureFamily::Mirefin
             | CreatureFamily::Redbrand
@@ -4055,7 +4078,8 @@ impl Playback {
         } else {
             // A standing protecting guard holds the shield up with its own stance; a fighting
             // shield-bearer stands in its whole-body guard (#953).
-            // A creature at rest out of a fight holds its rest pose: the bat its roost (#995).
+            // A creature at rest out of a fight holds its rest pose: the bat its roost (#995), the
+            // stag grazes (#997).
             let rest = clips
                 .rest
                 .filter(|&clip| !cues.engaged && available(clip))
@@ -4912,6 +4936,7 @@ mod tests {
         assert_eq!(creature(CreatureFamily::Lynx), Some(Kind::Lynx));
         assert_eq!(creature(CreatureFamily::Adder), Some(Kind::Adder));
         assert_eq!(creature(CreatureFamily::Bat), Some(Kind::Bat));
+        assert_eq!(creature(CreatureFamily::Stag), Some(Kind::Stag));
         assert_eq!(creature(CreatureFamily::Redbrand), None);
         assert_eq!(
             Kind::of(EntityRef::Npc(NpcId::new(1)), &content_record(), &content),
@@ -5322,11 +5347,12 @@ mod tests {
             assert_eq!(entry["restClip"], clips.idle, "{key} rests");
             assert_eq!(entry["moveClip"], clips.walk, "{key} walks");
             let bites = clips.bites.unwrap();
-            for clip in bites
-                .attacks
-                .into_iter()
-                .chain(bites.follow.into_iter().flatten())
-            {
+            for clip in bites.attacks.into_iter().chain(
+                bites
+                    .follow
+                    .into_iter()
+                    .flat_map(|(then, last)| std::iter::once(then).chain(last)),
+            ) {
                 assert!(entry["clips"][clip].is_object(), "{key} has {clip}");
             }
         }
@@ -5410,6 +5436,34 @@ mod tests {
         assert_eq!(frame(&mut playback, 1.5, true).lower.0, "Dive_Recover");
         assert_eq!(frame(&mut playback, 2.5, true).lower.0, "Idle");
         assert!(Kind::Bat.corpse_drop() > 0. && Kind::Adder.corpse_drop() == 0.);
+    }
+
+    /// A stag (#997) grazes out of a fight, stands alert through its charge's warning, charges
+    /// in `Attack_A` (its contact the zone's, 1.625 s in) and stands in a fight once it is done.
+    #[test]
+    fn a_stag_grazes_alerts_and_charges() {
+        let clips = Kind::Stag.clips();
+        let frame = |playback: &mut Playback, now: f64, engaged: bool| {
+            playback.advance(
+                clips,
+                |_| 1.,
+                Cues {
+                    now,
+                    dt: 0.05,
+                    engaged,
+                    ..Cues::default()
+                },
+                Blend::default(),
+            )
+        };
+        let mut playback = Playback::default();
+        assert_eq!(frame(&mut playback, 0., false).lower.0, "Eat");
+        playback.strike("Alert", 1., Region::Whole, 0.1);
+        playback.recover_through(("Attack_A", 1.333), ("", 0.));
+        assert_eq!(frame(&mut playback, 0.6, true).lower.0, "Alert");
+        assert_eq!(frame(&mut playback, 1.5, true).lower.0, "Attack_A");
+        assert_eq!(frame(&mut playback, 2.3, true).lower.0, "Attack_A");
+        assert_eq!(frame(&mut playback, 2.6, true).lower.0, "Idle");
     }
 
     #[test]
