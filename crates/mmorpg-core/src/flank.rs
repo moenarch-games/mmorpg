@@ -10,6 +10,11 @@
 //! - **The answer.** A flank that dealt damage turns a creature that is not stunned to face its
 //!   striker at once, so the next strike from the same spot is an ordinary hit: the Rogue must
 //!   reposition again, or strike a creature a Gouge holds, whose stun freezes its facing.
+//! - **Wariness.** A flanked creature then guards its flank for [`FLANK_WARY_TICKS`] (3 s): while
+//!   it stands its ground it turns [`WARY_TURN_PER_TICK`] a tick (480°/s), faster than a player
+//!   circling inside its reach can sweep round it, so circling the same creature again does not
+//!   buy the next flank every global cooldown. Flanks stay open through a Gouge, whose stun
+//!   freezes its facing, through another creature that is not wary, and once the wariness ends.
 //!
 //! Everything derives from canonical facing and positions at resolution, so replay and recovery
 //! need no new state; animations and the client camera play no part.
@@ -23,6 +28,10 @@ pub const FLANK_FRONT_HALF_ARC: u16 = 2 * (YAW_QUARTER_TURN / 3);
 pub const FLANK_DAMAGE_PERCENT: u32 = 150;
 /// How far an engaged creature standing its ground turns a tick: 2°, 120° a second at 60 Hz.
 pub const CREATURE_TURN_PER_TICK: u16 = YAW_QUARTER_TURN / 45;
+/// How long a flanked creature guards its flank: 3 s.
+pub const FLANK_WARY_TICKS: u16 = crate::ticks_from_ms(3_000);
+/// How far a wary creature standing its ground turns a tick: 8°, 480° a second at 60 Hz.
+pub const WARY_TURN_PER_TICK: u16 = 4 * CREATURE_TURN_PER_TICK;
 
 /// The signed turn from `from` to `to`, the short way round.
 #[allow(clippy::cast_possible_wrap)]
@@ -71,13 +80,15 @@ impl ZoneSimulation {
     }
 
     /// A flank at `bearing` dealt damage: the striker sees it, and the victim turns to face it
-    /// unless a stun holds it.
+    /// unless a stun holds it, and guards its flank for a while (#949).
     pub(crate) fn flank_landed(&mut self, player_id: PlayerId, victim: EntityRef, bearing: u16) {
         if let EntityRef::Creature(id) = victim
             && let Some(creature) = self.creatures.get_mut(&id)
-            && !crate::aura::has_kind(&creature.auras, crate::AuraKind::Stun)
         {
-            creature.facing = bearing;
+            if !crate::aura::has_kind(&creature.auras, crate::AuraKind::Stun) {
+                creature.facing = bearing;
+            }
+            creature.wary_ticks = FLANK_WARY_TICKS;
         }
         self.notify(
             player_id,

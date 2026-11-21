@@ -167,7 +167,10 @@ pub use finds::{
     ITEM_FINDS, ItemFind, ItemQuality, ItemTrait, NamedWeapon, STANDARD_FIND_WEIGHT, find_text,
     item_find, roll_variant, rolls_as, shaped_strike,
 };
-pub use flank::{CREATURE_TURN_PER_TICK, FLANK_DAMAGE_PERCENT, FLANK_FRONT_HALF_ARC, flanks};
+pub use flank::{
+    CREATURE_TURN_PER_TICK, FLANK_DAMAGE_PERCENT, FLANK_FRONT_HALF_ARC, FLANK_WARY_TICKS,
+    WARY_TURN_PER_TICK, flanks,
+};
 pub use forced::{
     CHARGE_MAX_TICKS, CHARGE_SPEED_SUBUNITS_PER_TICK, FORCED_IMMUNITY_TICKS, ForcedMove,
     ForcedState, KNOCKBACK_TICKS, SHOVE_UNITS,
