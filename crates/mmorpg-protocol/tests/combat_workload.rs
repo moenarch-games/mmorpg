@@ -124,12 +124,14 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // creatures, and no bot dies to a Redbrand: fights-8 and fights-32 are re-recorded as measured.
     // The optional discoveries (#913) add five guards: every step visits 1,800 more bodies.
     // Every row is re-recorded as measured.
+    // The two Greyfang cave bats (#995) hold their flight height every tick, so they never sleep:
+    // each fixture gains their 720 AI evaluations and 3,960 body visits. Re-recorded as measured.
     const HEADROOM_PERCENT: usize = 5;
     let recorded: [[usize; 4]; FIXTURES.len()] = [
-        [11_052, 90_720, 282_240, 6_168_928],
-        [14_122, 87_799, 84_240, 1_985_665],
-        [17_504, 96_357, 496_800, 8_855_408],
-        [13_109, 107_532, 2_327_794, 24_480_055],
+        [11_772, 94_680, 288_000, 6_186_240],
+        [14_842, 91_759, 84_960, 1_994_321],
+        [18_224, 100_317, 498_240, 8_885_798],
+        [13_829, 111_492, 2_337_188, 24_520_435],
     ];
     for (fixture, recorded) in FIXTURES.into_iter().zip(recorded) {
         let ceiling = recorded.map(|count| count + count * HEADROOM_PERCENT / 100);

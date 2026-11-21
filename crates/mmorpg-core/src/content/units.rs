@@ -40,6 +40,8 @@ pub enum CreatureFamily {
     Lynx,
     /// The marsh adder (#990): an ambusher that coils, hisses and strikes at close range.
     Adder,
+    /// The Greyfang cave bat (#995): it hangs at its roost and flies, diving at its target.
+    Bat,
 }
 
 impl CreatureFamily {
@@ -60,13 +62,14 @@ impl CreatureFamily {
             Self::Lurker => "lurker",
             Self::Lynx => "lynx",
             Self::Adder => "adder",
+            Self::Bat => "bat",
         }
     }
 
     /// Ambushers (#889) start fights only at [`crate::AMBUSH_RADIUS_UNITS`].
     #[must_use]
     pub const fn ambushes(self) -> bool {
-        matches!(self, Self::Lurker | Self::Lynx | Self::Adder)
+        matches!(self, Self::Lurker | Self::Lynx | Self::Adder | Self::Bat)
     }
 
     /// Pouncers (#989) begin their attack from [`crate::POUNCE_LEAP_UNITS`] beyond their reach,
@@ -74,6 +77,13 @@ impl CreatureFamily {
     #[must_use]
     pub const fn pounces(self) -> bool {
         matches!(self, Self::Lynx)
+    }
+
+    /// Fliers (#995) are weightless: they hold their own height, roost above the ground and
+    /// dive at their target ([`crate::flight`]).
+    #[must_use]
+    pub const fn flies(self) -> bool {
+        matches!(self, Self::Bat)
     }
 
     /// Aquatic families swim in deep water and trail submerged players (#274).

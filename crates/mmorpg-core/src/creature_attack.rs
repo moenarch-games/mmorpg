@@ -25,6 +25,13 @@
 //!   toward its target, strikes on its `Strike` clip's contact and holds still through the
 //!   rest of the strike and its `Strike_Recover`, [`ADDER_RECOVER_TICKS`]. Backing off during
 //!   the hiss dodges it.
+//! - **Dive.** The cave bat (#995) flies ([`crate::flight`]) and has one attack, a dive: from
+//!   [`BAT_DIVE_UNITS`] beyond its reach it flares and hisses, hovering through its
+//!   `Dive_Windup`, then stoops along its facing and down to its target over [`BAT_DIVE_TICKS`]
+//!   to `Dive_Contact`'s contact, and hangs low and labouring through [`BAT_RECOVER_TICKS`],
+//!   within a sword's reach, before it climbs back out of it. Its bite lands only on a target
+//!   still within reach and a step and within [`crate::flight::BITE_HEIGHT_UNITS`] of its
+//!   height, so stepping away through the wind-up dodges it.
 //!
 //! A pending attack is canonical creature state, so replay and recovery continue mid-bite.
 //! Outcomes stay health only: no knockback or hitstun.
@@ -67,6 +74,26 @@ pub const ADDER_RECOVER_TICKS: u16 = crate::ticks_from_ms(417 - 208 + 833);
 /// The adder slithers after a target at 1.2 m/s: a player who walks away leaves it behind.
 pub const ADDER_SLITHER_SPEED_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(120);
 
+/// The cave bat's dive (#995), from the wildlife descriptor's `greyhaven.wild.cave-bat` clips:
+/// its `Dive_Windup` lasts 0.5 s and its `Dive_Contact` makes contact 0.333 s in, its root
+/// travelling 2.4 m along the dive line from the start to that contact, about 35° down;
+/// `Dive_Contact` lasts 0.5 s and `Dive_Recover` 0.833 s.
+const BAT_WINDUP_MS: u32 = 500;
+const BAT_CONTACT_MS: u32 = BAT_WINDUP_MS + 333;
+/// How far beyond its reach (units) the bat begins its dive: the dive line's 2 m across.
+pub const BAT_DIVE_UNITS: i32 = 200;
+/// The last ticks of the dive's wind-up, `Dive_Contact` up to its contact, in which the bat
+/// stoops along its facing and down.
+pub const BAT_DIVE_TICKS: u16 =
+    crate::ticks_from_ms(BAT_CONTACT_MS) - crate::ticks_from_ms(BAT_WINDUP_MS);
+/// The stoop's speed across, covering [`BAT_DIVE_UNITS`] in [`BAT_DIVE_TICKS`] (6 m/s).
+pub const BAT_DIVE_SPEED_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(600);
+/// Ticks after its contact the bat hangs low, the rest of `Dive_Contact` and its
+/// `Dive_Recover`, open to a counter.
+pub const BAT_RECOVER_TICKS: u16 = crate::ticks_from_ms(500 - 333 + 833);
+/// The bat flies after a target at 4.2 m/s: a running player outpaces it.
+pub const BAT_FLIGHT_SPEED_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(420);
+
 /// A set-piece attack (#989, #990): one attack, begun from [`Self::leap_units`] beyond the
 /// creature's reach, wound up standing still and turning toward its target, closed with a leap
 /// over the wind-up's last [`Self::leap_ticks`], then a still recovery of
@@ -81,8 +108,8 @@ pub struct Lunge {
     pub approach_speed: i32,
 }
 
-/// The set-piece attack of `family`, if it has one: the lynx's pounce (#989) and the marsh
-/// adder's coiled strike (#990).
+/// The set-piece attack of `family`, if it has one: the lynx's pounce (#989), the marsh
+/// adder's coiled strike (#990) and the cave bat's dive (#995).
 #[must_use]
 pub const fn lunge(family: CreatureFamily) -> Option<Lunge> {
     match family {
@@ -99,6 +126,13 @@ pub const fn lunge(family: CreatureFamily) -> Option<Lunge> {
             leap_speed: 0,
             recover_ticks: ADDER_RECOVER_TICKS,
             approach_speed: ADDER_SLITHER_SPEED_SUBUNITS_PER_TICK,
+        }),
+        CreatureFamily::Bat => Some(Lunge {
+            leap_units: BAT_DIVE_UNITS,
+            leap_ticks: BAT_DIVE_TICKS,
+            leap_speed: BAT_DIVE_SPEED_SUBUNITS_PER_TICK,
+            recover_ticks: BAT_RECOVER_TICKS,
+            approach_speed: BAT_FLIGHT_SPEED_SUBUNITS_PER_TICK,
         }),
         _ => None,
     }
@@ -157,6 +191,8 @@ pub const fn contact_ticks(family: CreatureFamily, attack: CreatureAttack) -> Op
         CreatureFamily::Lynx => [POUNCE_CONTACT_MS, POUNCE_CONTACT_MS],
         // The adder (#990) strikes only: its hiss, then `Strike`'s contact.
         CreatureFamily::Adder => [ADDER_CONTACT_MS, ADDER_CONTACT_MS],
+        // The bat (#995) dives only: `Dive_Windup`'s 0.5 s, then `Dive_Contact`'s contact.
+        CreatureFamily::Bat => [BAT_CONTACT_MS, BAT_CONTACT_MS],
         CreatureFamily::Marauder
         | CreatureFamily::Mirefin
         | CreatureFamily::Redbrand
