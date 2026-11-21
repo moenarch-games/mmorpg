@@ -1393,6 +1393,7 @@ impl ZoneSimulation {
         creature.threat.clear();
         creature.swing_timer = 0;
         creature.combat_timer = 0;
+        creature.wary_ticks = 0;
         // A fallen raider (#530) stays gone: its slot stands again only for a later incident.
         creature.raid = None;
         creature.reset_abilities();

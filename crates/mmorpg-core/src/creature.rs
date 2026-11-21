@@ -73,6 +73,8 @@ pub(crate) struct CreatureState {
     /// A beast's attack winding up toward its bite (#889).
     pub(crate) attack: Option<crate::PendingAttack>,
     pub(crate) combat_timer: u16,
+    /// Ticks it still guards its flank after one was struck (#949): it turns fast while standing.
+    pub(crate) wary_ticks: u16,
     /// The first player who damaged it since it last reset.
     pub(crate) tapped_by: Option<crate::PlayerId>,
     pub(crate) loot: Option<crate::LootRewards>,
@@ -325,6 +327,7 @@ impl ZoneSimulation {
                 swing_timer: 0,
                 attack: None,
                 combat_timer: 0,
+                wary_ticks: 0,
                 tapped_by: None,
                 loot: None,
                 loot_party: Vec::new(),
@@ -360,6 +363,7 @@ impl ZoneSimulation {
                 swing_timer: 0,
                 attack: None,
                 combat_timer: 0,
+                wary_ticks: 0,
                 tapped_by: None,
                 loot: None,
                 loot_party: Vec::new(),

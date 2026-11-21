@@ -869,6 +869,8 @@ Strike timing rewards (#928, Atlas 5.2.i928): event kind 28 (strike rewarded) go
 
 Flanks (#949, Atlas 5.2.i949): event kind 29 (flanked) goes to the striker alone, with the player as source, the struck creature as target, and zero flags and amount. The canonical layout is unchanged; the new event kind changed the protocol ID.
 
+Flank wariness (#949, Atlas 5.2.i949-2): each canonical creature record carries its wary ticks (`u16`) right after its combat timer: how long it still guards its flank after one was struck, at most 180 (3 s), zero once dead. Projections and commands keep their layout; the protocol ID changes and the fixtures are re-recorded.
+
 Cleaving swings (#909, Atlas 5.2.i909): a timed swing strikes every eligible unit its slices cover, each once and at most three (`SWING_HITS`) per swing, each hit with its own strike-sweep event. The canonical running swing's struck flag becomes the struck units: three optional [entity references](#entity-references), filled from the front, before the rewind. Restoring a swing with a gap among them fails closed. The canonical layout changes, so the protocol ID changed; commands and projections are unchanged.
 
 Cleave follow-up (#910, Atlas 5.2.i910): a timed swing that damages two or more units also opens the action graph's `CleaveToSlash` edge, so one further Warden melee use in the Shield Bash combo's window may ignore the slash's global cooldown. Each canonical combo opening ends with the units its slash damaged (`u8`, 1 to 3; 0 when absent), and the viewer's combo phase gains codes 3 (cleave impact) and 4 (cleave open). The protocol ID changes and all fixtures are re-recorded; commands keep their layout.

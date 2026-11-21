@@ -689,6 +689,7 @@ fn encode_creature(
     payload.extend_from_slice(&creature.swing_timer.to_be_bytes());
     encode_creature_attack(payload, creature.attack);
     payload.extend_from_slice(&creature.combat_timer.to_be_bytes());
+    payload.extend_from_slice(&creature.wary_ticks.to_be_bytes());
     payload.push(u8::from(creature.tapped_by.is_some()));
     payload.extend_from_slice(&creature.tapped_by.unwrap_or(0).to_be_bytes());
     payload.push(u8::from(creature.loot.is_some()));
@@ -1726,6 +1727,7 @@ fn decode_creature(
     let swing_timer = u16::from_be_bytes(take(payload, offset)?);
     let attack = decode_creature_attack(payload, offset)?;
     let combat_timer = u16::from_be_bytes(take(payload, offset)?);
+    let wary_ticks = u16::from_be_bytes(take(payload, offset)?);
     let tapped = read_bool(payload, offset)?;
     let tapper = u32::from_be_bytes(take(payload, offset)?);
     let tapped_by = match (tapped, tapper) {
@@ -1790,6 +1792,7 @@ fn decode_creature(
         swing_timer,
         attack,
         combat_timer,
+        wary_ticks,
         tapped_by,
         loot,
         loot_party,
@@ -2603,6 +2606,7 @@ mod tests {
                     swing_timer: 5,
                     attack: None,
                     combat_timer: 150,
+                    wary_ticks: 0,
                     tapped_by: Some(7),
                     loot_party: Vec::new(),
                     abilities: CanonicalCreatureAbilities::default(),
@@ -2631,6 +2635,7 @@ mod tests {
                     swing_timer: 0,
                     attack: None,
                     combat_timer: 0,
+                    wary_ticks: 0,
                     tapped_by: Some(8),
                     loot_party: Vec::new(),
                     abilities: CanonicalCreatureAbilities::default(),
@@ -2662,6 +2667,7 @@ mod tests {
                     swing_timer: 0,
                     attack: None,
                     combat_timer: 0,
+                    wary_ticks: 0,
                     tapped_by: None,
                     loot_party: Vec::new(),
                     abilities: CanonicalCreatureAbilities::default(),
@@ -2684,6 +2690,7 @@ mod tests {
                     swing_timer: 0,
                     attack: None,
                     combat_timer: 0,
+                    wary_ticks: 0,
                     tapped_by: None,
                     loot_party: Vec::new(),
                     abilities: CanonicalCreatureAbilities::default(),
@@ -3141,8 +3148,9 @@ mod tests {
             (ai + 13, 0, "an absent entity must have ID 0"),
             // A pending bite (#889) follows the swing timer: `0` for none.
             (ai + 12 + 1 + 9 + 2, 3, "malformed creature attack"),
-            (ai + 12 + 1 + 9 + 5, 2, "boolean field must be 0 or 1"),
-            (ai + 12 + 1 + 9 + 5, 0, "malformed creature tap"),
+            // The tap follows the combat timer and the wary ticks (#949).
+            (ai + 12 + 1 + 9 + 7, 2, "boolean field must be 0 or 1"),
+            (ai + 12 + 1 + 9 + 7, 0, "malformed creature tap"),
             (42, 5, "snapshot exceeds the creature spawn capacity"),
         ] {
             let mut invalid = encoded.clone();
