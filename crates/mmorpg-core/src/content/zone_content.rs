@@ -1303,6 +1303,7 @@ impl ZoneContent {
             }
         }
         self.private_homes = homes;
+        self.fingerprint = self.compute_fingerprint();
         Ok(self)
     }
 
@@ -1638,7 +1639,7 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_gather_fingerprint();
+        let fingerprint = self.compute_private_home_fingerprint();
         let Some(rewind) = self.hit_rewind else {
             return fingerprint;
         };
@@ -1646,6 +1647,28 @@ impl ZoneContent {
         hash.bytes(b"mmorpg.zone-content/hit-rewind-v1");
         hash.u64(fingerprint);
         hash.u32(rewind.max_ms);
+        hash.finish()
+    }
+
+    fn compute_private_home_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_gather_fingerprint();
+        if self.private_homes.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/private-homes-v1");
+        hash.u64(fingerprint);
+        hash.len(self.private_homes.len());
+        for home in &self.private_homes {
+            hash.u32(home.npc.get());
+            hash.u32(home.door.get());
+            hash.len(home.wake_path.len());
+            for value in home.wake_path.iter().flatten() {
+                hash.i32(*value);
+            }
+            hash.u16(home.doorway_facing);
+            hash.text(&home.woken_line);
+        }
         hash.finish()
     }
 
@@ -2192,7 +2215,7 @@ impl ZoneContent {
 
     fn compute_routine_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_door_fingerprint();
-        if self.routines.is_empty() && self.closed_at_night.is_empty() {
+        if self.routines.is_empty() && self.closed_at_night.is_empty() && self.seats.is_empty() {
             return fingerprint;
         }
         let mut hash = Fnv1a::new();
