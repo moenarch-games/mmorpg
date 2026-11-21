@@ -1075,6 +1075,35 @@ kbd {
 
 .world-map-swatch { width: 0.8rem; height: 0.8rem; border-radius: 2px; }
 
+/* The exploration overlay (#983): the discovered count, then quest areas and discovered areas by name. */
+.world-map-explored { font-size: 0.82rem; color: var(--gold-bright); }
+
+.world-map-discoveries {
+  position: absolute;
+  top: 0.8rem;
+  right: 0.8rem;
+  max-height: calc(100% - 4rem);
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  list-style: none;
+  font-size: 0.78rem;
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.world-map-discoveries li { display: flex; align-items: center; gap: 0.45rem; }
+
+.world-map-hint-entry { color: #ffd34d; }
+
+.world-map-swatch-area { background: #f3e6b8; transform: rotate(45deg) scale(0.7); }
+
+.world-map-swatch-hint { border: 2px dashed #ffd34d; border-radius: 50%; }
+
+@media (max-width: 640px), (pointer: coarse) and (max-height: 520px) {
+  .world-map-discoveries { display: none; }
+}
+
 .world-map-recentre {
   position: absolute;
   right: 0.8rem;

@@ -6,6 +6,8 @@
 //! revision differs from the current one; the client echoes the revisions it holds in its
 //! command datagrams ([`encode_acknowledged_command`]).
 
+use std::borrow::Cow;
+
 use mmorpg_core::{
     AbilityId, AuraKind, AuraView, Cooldown, EntityRef, Equipment, Inventory, LootView, MAX_AURAS,
     MAX_COOLDOWNS, QuestSheet, ZoneSnapshot, ability_by_id,
@@ -39,7 +41,7 @@ pub(crate) enum Sheet {
     /// The zone's doors, its pieces that are not intact and the night raid's signal, if near
     /// (#158, #305, #530, #882).
     World,
-    /// The viewer's unlocked waystones (#145, #882).
+    /// The viewer's unlocked waystones (#145, #882) and discovered areas (#916, #983).
     Waystones,
 }
 
@@ -92,7 +94,7 @@ pub(crate) const MAX_OTHER_SHEETS_BYTES: usize = MAX_INVENTORY_SHEET_BYTES
 /// each fits what a tick without events or chat leaves, so it goes out once no other sheet is
 /// waiting beside it. Content whose fullest such sheet (every quest turned in, a full log and
 /// every quest NPC marked; every door and piece listed beside the raid signal; every waystone
-/// unlocked) outgrows it fails to encode.
+/// unlocked and area discovered) outgrows it fails to encode.
 pub(crate) const MAX_BUDGETED_SHEET_BYTES: usize =
     crate::MAX_PLAYER_PROJECTION_BYTES - crate::projection::MAX_QUIET_TICK_BYTES;
 // The quest sheet always holds a full log beside its three counts.
@@ -159,17 +161,76 @@ pub(crate) fn revision(bytes: &[u8]) -> u32 {
     hash.max(1)
 }
 
+/// One player's last inventory sheet encoding and its revision (#1007), held by whoever publishes
+/// that player's projections and dropped with the player. A publication reuses the bytes while
+/// the viewer, its inventory revision and its bag and equipment all match the cached ones, so a
+/// revision reused for different state (a replaced or restored character) still re-encodes; a
+/// cold cache encodes exactly as the stateless [`crate::pack_snapshot_acknowledged`] does.
+#[derive(Debug, Default)]
+pub struct SheetEncodingCache {
+    inventory: Option<CachedInventorySheet>,
+    /// Inventory sheet encodings this cache performed.
+    #[cfg(test)]
+    pub(crate) inventory_encodes: usize,
+}
+
+#[derive(Debug)]
+struct CachedInventorySheet {
+    viewer: mmorpg_core::PlayerId,
+    inventory_revision: u64,
+    inventory: Inventory,
+    equipment: Equipment,
+    bytes: Vec<u8>,
+    revision: u32,
+}
+
+impl SheetEncodingCache {
+    fn inventory_sheet(
+        &mut self,
+        viewer: mmorpg_core::PlayerId,
+        inventory_revision: u64,
+        inventory: &Inventory,
+        equipment: &Equipment,
+    ) -> (Cow<'_, [u8]>, u32) {
+        let fresh = self.inventory.as_ref().is_some_and(|cached| {
+            cached.viewer == viewer
+                && cached.inventory_revision == inventory_revision
+                && cached.equipment == *equipment
+                && cached.inventory == *inventory
+        });
+        if !fresh {
+            self.inventory = None;
+        }
+        let cached = self.inventory.get_or_insert_with(|| {
+            #[cfg(test)]
+            {
+                self.inventory_encodes += 1;
+            }
+            let bytes = encode_inventory_sheet(inventory_revision, inventory, equipment);
+            CachedInventorySheet {
+                viewer,
+                inventory_revision,
+                inventory: inventory.clone(),
+                equipment: *equipment,
+                revision: revision(&bytes),
+                bytes,
+            }
+        });
+        (Cow::Borrowed(&cached.bytes), cached.revision)
+    }
+}
+
+/// A sheet's bytes and their revision.
+pub(crate) type EncodedSheet<'c> = (Cow<'c, [u8]>, u32);
+
 /// Each sheet's bytes at `snapshot.tick`; the bag and quest sheets are absent when the
 /// projection has none to send. A budgeted sheet that outgrows its budget fails.
-pub(crate) fn encode_sheets(
+pub(crate) fn encode_sheets<'c>(
     snapshot: &ZoneSnapshot,
-) -> Result<[Option<Vec<u8>>; SHEET_COUNT], ProtocolError> {
-    let inventory = match (&snapshot.inventory, &snapshot.equipment) {
-        (Some(inventory), Some(equipment)) => Some(encode_inventory_sheet(
-            snapshot.inventory_revision,
-            inventory,
-            equipment,
-        )),
+    cache: &'c mut SheetEncodingCache,
+) -> Result<[Option<EncodedSheet<'c>>; SHEET_COUNT], ProtocolError> {
+    let bag = match (&snapshot.inventory, &snapshot.equipment) {
+        (Some(inventory), Some(equipment)) => Some((inventory, equipment)),
         (None, None) => None,
         _ => {
             return Err(ProtocolError::new(
@@ -224,20 +285,33 @@ pub(crate) fn encode_sheets(
     )?;
     let mut waystones = Vec::new();
     crate::wire::encode_waystones(&mut waystones, &snapshot.viewer.waystones)?;
+    crate::wire::encode_discoveries(&mut waystones, &snapshot.viewer.discoveries)?;
     if world.len().max(waystones.len()) > MAX_BUDGETED_SHEET_BYTES {
         return Err(ProtocolError::new(
             "a world or waystone sheet exceeds its packet budget",
         ));
     }
+    let inventory = bag.map(|(inventory, equipment)| {
+        cache.inventory_sheet(
+            snapshot.viewer_id,
+            snapshot.inventory_revision,
+            inventory,
+            equipment,
+        )
+    });
+    let hashed = |bytes: Vec<u8>| {
+        let hash = revision(&bytes);
+        (Cow::Owned(bytes), hash)
+    };
     Ok([
         inventory,
-        quests,
-        Some(loot),
-        Some(abilities),
-        party,
-        depths_loot,
-        Some(world),
-        Some(waystones),
+        quests.map(hashed),
+        Some(hashed(loot)),
+        Some(hashed(abilities)),
+        party.map(hashed),
+        depths_loot.map(hashed),
+        Some(hashed(world)),
+        Some(hashed(waystones)),
     ])
 }
 
@@ -312,6 +386,7 @@ pub(crate) fn read_sheet<'a>(
         }
         Sheet::Waystones => {
             crate::wire::decode_waystones(payload, offset)?;
+            crate::wire::decode_discoveries(payload, offset)?;
         }
     }
     Ok(&payload[start..*offset])
@@ -382,11 +457,18 @@ fn read_world_sheet(payload: &[u8], offset: &mut usize) -> Result<WorldSheet, Pr
     ))
 }
 
-pub(crate) fn decode_waystone_sheet(
-    bytes: &[u8],
-) -> Result<mmorpg_core::WaystoneSet, ProtocolError> {
+/// The waystone sheet: unlocked waystones, then discovered areas (#983).
+pub(crate) type WaystoneSheet = (
+    mmorpg_core::WaystoneSet,
+    std::collections::BTreeSet<mmorpg_core::AreaId>,
+);
+
+pub(crate) fn decode_waystone_sheet(bytes: &[u8]) -> Result<WaystoneSheet, ProtocolError> {
     let mut offset = 0;
-    let sheet = crate::wire::decode_waystones(bytes, &mut offset)?;
+    let sheet = (
+        crate::wire::decode_waystones(bytes, &mut offset)?,
+        crate::wire::decode_discoveries(bytes, &mut offset)?,
+    );
     ensure_fully_consumed(bytes, offset)?;
     Ok(sheet)
 }

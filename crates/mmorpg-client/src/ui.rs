@@ -472,8 +472,15 @@ impl GameUi {
         self.unit_frames(ctx, frame, snapshot, &mut intents);
         self.action_bar(ctx, frame, snapshot, &mut intents);
         self.minimap_and_tracker(ctx, frame, snapshot);
+        let exploration = self.world_map.is_some().then(|| {
+            mmorpg_client_model::exploration::exploration_map(
+                frame.content,
+                &snapshot.viewer.discoveries,
+                self.sheets.quests.as_ref(),
+            )
+        });
         if let Some(map) = &mut self.world_map
-            && !map.show(ctx, Some(snapshot))
+            && !map.show(ctx, Some(snapshot), exploration.as_ref())
         {
             self.world_map = None;
         }

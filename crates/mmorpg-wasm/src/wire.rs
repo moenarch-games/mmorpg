@@ -630,6 +630,8 @@ pub struct ViewerState {
     pub sword_practice_to_next: u16,
     /// Waystone IDs (#145) the viewer unlocked by exploration, ascending.
     pub waystones: Vec<u32>,
+    /// Area IDs the viewer discovered (#916), ascending; the exploration map draws them (#983).
+    pub discoveries: Vec<u32>,
 }
 
 /// The viewer's target's cast and auras; empty without a living visible target.
@@ -1765,6 +1767,7 @@ impl From<&core::ZoneSnapshot> for ZoneSnapshot {
                     .unwrap_or(0),
                 reckoning: viewer.reckoning,
                 waystones: viewer.waystones.iter().map(core::WaystoneId::get).collect(),
+                discoveries: viewer.discoveries.iter().map(|area| area.get()).collect(),
             },
             cooldowns: snapshot
                 .cooldowns
@@ -2028,6 +2031,12 @@ impl TryFrom<&ZoneSnapshot> for core::ZoneSnapshot {
                     progress: viewer.sword_practice,
                 },
                 waystones,
+                discoveries: viewer
+                    .discoveries
+                    .iter()
+                    .copied()
+                    .map(core::AreaId::new)
+                    .collect(),
             },
             cooldowns: snapshot
                 .cooldowns

@@ -292,7 +292,7 @@ def main():
     parser.add_argument("--no-update", action="store_true", help="use the local checkout without fetching Git")
     parser.add_argument("--no-watch", action="store_true", help="build and launch once without watching edits")
     parser.add_argument("--release", action="store_true",
-                        help="build the optimised release profile (used by ./scripts/run-native.sh)")
+                        help="build the optimised release profile")
     args = parser.parse_args()
     for command in ("cargo", "curl", "openssl", "bash", *([] if args.no_update else ["git"])):
         if shutil.which(command) is None:
