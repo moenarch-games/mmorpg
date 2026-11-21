@@ -314,6 +314,19 @@ fn templates_follow_the_design_contract() {
                 3000,
                 120000
             ),
+            // The Southwood lynx (#989): a hard, slow pounce.
+            (
+                "Forest Lynx",
+                Lynx,
+                Aggressive,
+                [2, 3],
+                false,
+                50,
+                12,
+                [4, 7],
+                2600,
+                60000
+            ),
         ]
     );
     let wolf = content
@@ -476,6 +489,8 @@ fn spawns_populate_their_subzones() {
         // Brown Bears (#889) in the deep woods.
         ((wilds::WESTMERE_WOODS, "Brown Bear"), 2),
         ((wilds::SOUTHWOOD, "Brown Bear"), 1),
+        // The Forest Lynxes (#989) on the wood's edge.
+        ((wilds::SOUTHWOOD, "Forest Lynx"), 3),
         ((wilds::CROWN_FOOTHILLS, "Timber Wolf"), 6),
         ((wilds::CROWN_FOOTHILLS, "Hill Ogre"), 1),
         // The Rimewood scouts (#933), an Arcanist's group-control fight,

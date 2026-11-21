@@ -38,6 +38,7 @@ pub fn accent(e: &EntitySnapshot, f: CreatureFamily) -> u32 {
         CreatureFamily::Bear => 1,
         CreatureFamily::Spider => 2,
         CreatureFamily::Lurker => 4,
+        CreatureFamily::Lynx => 0,
         // Props (#288) keep their own wood colours.
         CreatureFamily::Prop => return 0x8a6a45,
     };

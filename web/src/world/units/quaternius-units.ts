@@ -163,6 +163,7 @@ const WILD_ENTRIES: Readonly<Record<Exclude<QuaterniusKind, "Ranger">, string>> 
   Bear: "greyhaven.wild.bear",
   Spider: "greyhaven.wild.spider",
   Lurker: "greyhaven.wild.marsh-lurker",
+  Lynx: "greyhaven.wild.lynx",
 };
 const animalUrl = (kind: Exclude<QuaterniusKind, "Ranger">) =>
   new URL(`${import.meta.env.BASE_URL}scenery/greyhaven.wildlife/scenes/${WILD_ENTRIES[kind]}/default.gltf`, window.location.href).href;
