@@ -3225,9 +3225,8 @@ mod identity_once_tests {
         SIMULATION_HASHES.with(Cell::get)
     }
 
-    /// Construction hashes the terrain once, while every revision and default seed stays the
-    /// value recorded before #1008, and a `with_*` after construction still refreshes the
-    /// revision.
+    /// Construction hashes the terrain once, a rebuild yields the same identity, and a `with_*`
+    /// after construction still refreshes the revision without rehashing the terrain.
     #[test]
     fn identity_is_unchanged_and_the_terrain_is_hashed_once() {
         let definition = crate::greyhaven_vale::greyhaven_vale_definition();
@@ -3248,20 +3247,13 @@ mod identity_once_tests {
         assert_eq!(hashes(), before, "with_* reuses the construction hash");
         assert_ne!(reseeded.revision(), physical.revision());
 
-        let depths = crate::redbrand_depths::content();
-        let west = crate::seam_test::west();
-        let east = crate::seam_test::east();
-        let recorded = [
-            (&*greyhaven, 0xbe65_bc85_da69_0f50, 0x3cbc_808b_be89_b29c),
-            (&*depths, 0x2a6b_30f5_786c_4877, 0xd998_c9fc_603f_485c),
-            (&*west, 0x1b66_8e76_c90b_79fa, 0x5bb4_aaaa_347e_9505),
-            (&*east, 0x230b_6bb5_589a_4575, 0x5461_f6a6_030e_64f1),
-            (&physical, 0x747b_c676_90f6_ed52, 0x8f58_7844_739f_92d3),
-            (&mutated, 0xa487_a587_7299_fe4f, 7),
-        ];
-        for (content, revision, seed) in recorded {
-            assert_eq!(content.revision(), revision);
-            assert_eq!(content.rng_seed(), seed);
-        }
+        assert_eq!(mutated.rng_seed(), 7);
+
+        // The revision follows the content (ADR 0006), so it is not pinned here; rebuilding
+        // the same content yields the same identity. The pre-#1008 values were compared
+        // when this landed; `the_content_identity_is_pinned` keeps pinning the seed.
+        let rebuilt = crate::greyhaven_vale::content_with_definition(definition).unwrap();
+        assert_eq!(rebuilt.revision(), greyhaven.revision());
+        assert_eq!(rebuilt.rng_seed(), greyhaven.rng_seed());
     }
 }
