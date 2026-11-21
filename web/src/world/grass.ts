@@ -353,7 +353,7 @@ type Cell = { meshes: { kind: Kind; mesh: THREE.InstancedMesh; blades: boolean }
 type Layer = { size: number; cells: Map<string, Cell | null>; build: (column: number, row: number) => Float32Array };
 
 /**
- * Grass blades over the ground around the camera (presentation only): clumps of thin blades on the cells the shared
+ * Grass blades around the character (or camera without one), presentation only: clumps on the cells the shared
  * owner grows them in, every clump drawn near the eye and fewer, wider, lighter ones further out, then the far field's
  * sparse wide clumps as far as the world detail setting reaches. At `low` it draws nothing and keeps no cells.
  */
@@ -424,7 +424,7 @@ export class Grass {
     this.#changed = true;
   }
 
-  /** Grows and drops cells around `eye`, thins them by distance and moves the wind; `feet` push the blades aside. */
+  /** Grows and drops cells around the player (or eye without one), thins them and moves the wind; `feet` push blades aside. */
   update(eye: readonly [number, number, number], feet: readonly [number, number, number] | null, seconds: number): void {
     const profile = this.#profile;
     if (!profile) { return; }
