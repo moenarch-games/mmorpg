@@ -127,8 +127,8 @@ pub const GATHERABLE_ENTRIES: [&str; 2] = [
 ];
 
 /// The ordinary placed kits (#683): every kit with no specialization of its own, whose entries
-/// stand at their authored placements ([`kit_placements`]) and whose own colliders show no
-/// stand-in. `placed-kits.json` registers them once; the native client's build, the WASM host
+/// stand at their authored placements ([`kit_placements`]) or take their share of the zone's
+/// mixed inventory ([`MixedPlacements`]), optionally hiding a static-scene stand-in once drawn. `placed-kits.json` registers them once; the native client's build, the WASM host
 /// and the browser all read this one inventory, so adding such a kit is a data change plus
 /// fetching its bundle.
 const PLACED_KITS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/placed-kits.json"));
@@ -146,8 +146,27 @@ pub struct PlacedKit {
     pub descriptor: &'static str,
     /// What the kit draws, for readers of the inventory.
     pub about: &'static str,
+    /// Where the kit's placements come from.
+    #[serde(default)]
+    pub placement: KitPlacement,
+    /// The static-scene fallback the kit hides once drawn (#1011), if it has one; the same
+    /// [`Kit`] its entries' prefix names in [`KITS`].
+    #[serde(default, rename = "standIn")]
+    pub stand_in: Option<Kit>,
     /// The kit's placed entries.
     pub entries: Vec<&'static str>,
+}
+
+/// Where an ordinary placed kit's placements come from.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum KitPlacement {
+    /// Its entries' authored dressing placements ([`kit_placements`]).
+    #[default]
+    Authored,
+    /// Its entries' share of the zone's mixed inventory ([`MixedPlacements::of`]), which is
+    /// derived once for every kit that draws from it (#1010).
+    Mixed,
 }
 
 impl PlacedKit {
@@ -165,10 +184,13 @@ impl PlacedKit {
             .is_some_and(|rest| rest.starts_with('.'))
     }
 
-    /// The kit's placements on `s`.
+    /// The kit's placements on `s`, whose mixed inventory is `mixed` ([`MixedPlacements::new`]).
     #[must_use]
-    pub fn placements(&'static self, s: &Scenery) -> Vec<Placement> {
-        kit_placements(s, &self.entries)
+    pub fn placements(&'static self, s: &Scenery, mixed: &MixedPlacements) -> Vec<Placement> {
+        match self.placement {
+            KitPlacement::Authored => kit_placements(s, &self.entries),
+            KitPlacement::Mixed => mixed.of(&self.entries),
+        }
     }
 }
 
@@ -627,11 +649,13 @@ mod tests {
 
     #[test]
     fn ordinary_placed_kits_own_their_entries_and_are_placed() {
+        use crate::{nature, river, terrain_patch::MEADOW_ENTRIES};
         let s = mmorpg_scenery::greyhaven_vale_scenery();
+        let mixed = MixedPlacements::new(&s);
         let kits = placed_kits();
         assert_eq!(
             kits.iter().map(|kit| kit.name).collect::<Vec<_>>(),
-            ["den", "discoveries"]
+            ["limestone", "river", "meadow", "den", "discoveries"]
         );
         for kit in kits {
             assert!(
@@ -642,10 +666,31 @@ mod tests {
             assert!(
                 kit.entries
                     .iter()
-                    .all(|entry| drawn(entry) && self::kit(entry).is_none())
+                    .all(|entry| drawn(entry) && self::kit(entry) == kit.stand_in),
+                "{}",
+                kit.name
             );
-            assert!(!kit.placements(&s).is_empty(), "{} is placed", kit.name);
+            assert!(
+                !kit.placements(&s, &mixed).is_empty(),
+                "{} is placed",
+                kit.name
+            );
         }
+        // The mixed kits draw exactly the entries their derivation places, and with the nature
+        // kit they draw the whole mixed inventory.
+        let entries = |name| &placed_kit(name).unwrap().entries[..];
+        assert_eq!(entries("limestone"), nature::LIMESTONE_ENTRIES);
+        assert_eq!(entries("river"), river::ENTRIES);
+        assert_eq!(entries("meadow"), MEADOW_ENTRIES);
+        let drawn: usize = kits
+            .iter()
+            .filter(|kit| kit.placement == KitPlacement::Mixed)
+            .map(|kit| kit.placements(&s, &mixed).len())
+            .sum();
+        assert_eq!(
+            drawn + mixed.of(&nature::ENTRIES).len(),
+            mixed.iter().count()
+        );
     }
 
     #[test]
