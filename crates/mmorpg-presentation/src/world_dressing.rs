@@ -434,6 +434,51 @@ pub fn kit_placements(s: &Scenery, entries: &'static [&'static str]) -> Vec<Plac
         .collect()
 }
 
+/// A zone's mixed placement inventory (#1010): the nature bundle's trees, bushes and limestone
+/// rocks, the stones along the watercourses, then the meadow's and the river's ground details,
+/// derived once. The nature, limestone, river and meadow kits each draw the placements of
+/// their own entries from it ([`Self::of`]); the native client draws the parts in its own
+/// library order.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MixedPlacements {
+    /// [`crate::nature::placements`].
+    pub nature: Vec<Placement>,
+    /// [`crate::river::placements`].
+    pub river: Vec<Placement>,
+    /// [`ground_details`] of the meadow's, then the river's entries.
+    pub ground_details: Vec<Placement>,
+}
+
+impl MixedPlacements {
+    /// Derives `s`'s mixed inventory.
+    #[must_use]
+    pub fn new(s: &Scenery) -> Self {
+        let mut ground = ground_details(s, &crate::terrain_patch::MEADOW_ENTRIES);
+        ground.extend(ground_details(s, &crate::river::ENTRIES));
+        Self {
+            nature: crate::nature::placements(s),
+            river: crate::river::placements(s),
+            ground_details: ground,
+        }
+    }
+
+    /// Every placement, in inventory order.
+    pub fn iter(&self) -> impl Iterator<Item = &Placement> {
+        self.nature
+            .iter()
+            .chain(&self.river)
+            .chain(&self.ground_details)
+    }
+
+    /// The placements of `entries`, in inventory order.
+    #[must_use]
+    pub fn of(&self, entries: &[&str]) -> Vec<Placement> {
+        self.iter()
+            .filter(|placement| entries.contains(&placement.entry))
+            .copied()
+            .collect()
+    }
+}
 /// For each of the zone's ore veins (#917) in wire order, the indices of its full and its spent
 /// look in [`kit_placements`] of [`GATHERABLE_ENTRIES`] on `s`: the placements standing at the
 /// vein's centre. A client hides one of the two by the projection's spent veins. Empty off
@@ -517,6 +562,45 @@ pub fn stand_in(s: &Scenery, id: u32) -> Option<Kit> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Each kit's share of the shared mixed inventory (#1010) is exactly what deriving the whole
+    /// inventory per kit gave: membership, order, transforms and culling, on Greyhaven and on a
+    /// zone without dressing.
+    #[test]
+    fn mixed_placements_give_each_kit_its_former_placements() {
+        use crate::{nature, river, terrain_patch::MEADOW_ENTRIES};
+        for s in [
+            mmorpg_scenery::greyhaven_vale_scenery(),
+            mmorpg_scenery::scenery_for_zone(mmorpg_core::seam_test::WEST_ZONE),
+        ] {
+            // The former per-kit derivation.
+            let mut all = nature::placements(&s);
+            all.extend(river::placements(&s));
+            all.extend(ground_details(&s, &MEADOW_ENTRIES));
+            all.extend(ground_details(&s, &river::ENTRIES));
+            let mixed = MixedPlacements::new(&s);
+            assert_eq!(mixed.iter().copied().collect::<Vec<_>>(), all);
+            for entries in [
+                &nature::ENTRIES[..],
+                &nature::LIMESTONE_ENTRIES[..],
+                &river::ENTRIES[..],
+                &MEADOW_ENTRIES[..],
+            ] {
+                let before: Vec<Placement> = all
+                    .iter()
+                    .filter(|placement| entries.contains(&placement.entry))
+                    .copied()
+                    .collect();
+                assert_eq!(mixed.of(entries), before, "{entries:?}");
+            }
+            if s.greyhaven() {
+                assert!(!mixed.nature.is_empty() && !mixed.ground_details.is_empty());
+                assert!(!mixed.of(&MEADOW_ENTRIES).is_empty());
+            } else {
+                assert!(mixed.ground_details.is_empty());
+            }
+        }
+    }
 
     #[test]
     fn greyhaven_dressing_stands_over_its_generated_collision() {
