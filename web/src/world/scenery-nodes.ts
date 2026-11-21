@@ -58,7 +58,7 @@ export type StaticSceneContent = {
  */
 export type GroupStreamSource = {
   /** `[built count, built…, evicted count, evicted…]` for the camera eye and drawn kits; `dressed`: the graybox props a drawn composition kit covers, sorted. */
-  update(x: number, y: number, z: number, outpost: boolean, settlementProps: boolean, nature: boolean, climbing: boolean, crag: boolean, dressed: Uint32Array): Uint32Array;
+  update(x: number, y: number, z: number, outpost: boolean, settlementProps: boolean, nature: boolean, limestone: boolean, climbing: boolean, crag: boolean, dressed: Uint32Array): Uint32Array;
 };
 
 /**
@@ -76,11 +76,12 @@ export type TerrainStreamSource = {
 
 /**
  * Which asset-tooling kits the client draws: the Outpost kit buildings (#420), the market square's settlement props
- * (#421), the `greyhaven-nature` trees, rocks and bushes (#49), the climbing kit's ladders and ropes (#621) and the Battle
+ * (#421), the `greyhaven-nature` trees and bushes (#49), the `limestone-rocks` blocks Greyhaven's rocks are drawn as (their own
+ * bundle, so their stand-ins wait for it, #1011), the climbing kit's ladders and ropes (#621) and the Battle
  * Royale fortress kit (#591).
  */
-export type DrawnKits = { outpost: boolean; settlementProps: boolean; nature: boolean; climbing: boolean; crag: boolean; fortress: boolean };
-const NO_KITS: DrawnKits = { outpost: false, settlementProps: false, nature: false, climbing: false, crag: false, fortress: false };
+export type DrawnKits = { outpost: boolean; settlementProps: boolean; nature: boolean; limestone: boolean; climbing: boolean; crag: boolean; fortress: boolean };
+const NO_KITS: DrawnKits = { outpost: false, settlementProps: false, nature: false, limestone: false, climbing: false, crag: false, fortress: false };
 type FallbackKit = keyof DrawnKits;
 
 /** `fallback`: the kit whose procedural stand-in the group is, hidden while the client draws that kit. */

@@ -128,7 +128,8 @@ struct GeometryEntry {
 struct GroupEntry {
     cull: &'static str,
     instanced: bool,
-    /// `"nature"` for the procedural trees, rocks and bushes the nature bundle replaces (#49).
+    /// `"nature"` for the procedural trees and bushes the nature bundle replaces (#49),
+    /// `"limestone"` for the rocks the limestone bundle replaces (#1011).
     fallback: Option<&'static str>,
     min: [f64; 2],
     max: [f64; 2],
@@ -261,6 +262,7 @@ pub(crate) fn encode(scene: &StaticScene) -> SceneBuffers {
                 mmorpg_presentation::Kit::Outpost => "outpost",
                 mmorpg_presentation::Kit::SettlementProps => "settlementProps",
                 mmorpg_presentation::Kit::Nature => "nature",
+                mmorpg_presentation::Kit::Limestone => "limestone",
                 mmorpg_presentation::Kit::Climbing => "climbing",
                 mmorpg_presentation::Kit::Crag => "crag",
                 // Graybox fallbacks are animated parts per body, never batched groups.
@@ -474,6 +476,7 @@ impl GroupStream {
         outpost: bool,
         settlement_props: bool,
         nature: bool,
+        limestone: bool,
         climbing: bool,
         crag: bool,
         dressed: &[usize],
@@ -489,6 +492,7 @@ impl GroupStream {
             settlement_props,
             dressed,
             nature,
+            limestone,
             climbing,
             crag,
         };
