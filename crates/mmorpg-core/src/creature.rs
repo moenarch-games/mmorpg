@@ -258,6 +258,18 @@ impl ZoneSimulation {
         }
     }
 
+    /// The body centre height (units) at which a creature with `template` rests at `at`: on
+    /// the ground ([`Self::stand_y`]), or a flier (#995) at its roost,
+    /// [`crate::flight::ROOST_RISE_UNITS`] above it.
+    pub(crate) fn rest_y(&self, at: [i32; 2], template: &CreatureTemplate) -> i32 {
+        let stand = self.stand_y(at[0], at[1], template.half_extents);
+        if template.family.flies() {
+            stand - template.half_extents[1] + crate::flight::ROOST_RISE_UNITS
+        } else {
+            stand
+        }
+    }
+
     /// (Re)spawns a creature at its spawn point: a new level roll and first
     /// wander delay from its own life's stream, full health, no threat or tap.
     pub(crate) fn spawn_creature(&mut self, id: CreatureId) -> Result<(), ZoneError> {
@@ -285,7 +297,7 @@ impl ZoneSimulation {
         let entity = EntityRef::Creature(id);
         let position = Vec3i::new(
             spawn.position[0],
-            self.stand_y(spawn.position[0], spawn.position[1], template.half_extents),
+            self.rest_y(spawn.position, template),
             spawn.position[1],
         );
         self.world
@@ -297,6 +309,12 @@ impl ZoneSimulation {
                 [0.0; 3],
             ))
             .map_err(physics_error)?;
+        // A flier (#995) hangs weightless at its roost from its first step.
+        if template.family.flies() {
+            self.world
+                .set_weightless(body_id(entity), true)
+                .map_err(physics_error)?;
+        }
         self.place_in_interest(entity, position.x, position.z);
         if template.prop().is_some_and(crate::PropKind::movable) {
             self.place_movable_prop(

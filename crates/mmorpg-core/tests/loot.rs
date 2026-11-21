@@ -207,6 +207,8 @@ fn starter_tables_are_pinned_and_cover_every_hosted_template() {
         ([1, 4], vec![item(3, FUR, [1, 1]), nothing(1)]),
         // The Marsh Adder (#990): a little coin.
         ([1, 4], vec![nothing(1)]),
+        // The Cave Bat (#995): a little coin.
+        ([1, 4], vec![nothing(1)]),
     ];
     let content = greyhaven_vale::content();
     // Breakable props (#288) drop nothing and have no table.

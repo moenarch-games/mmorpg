@@ -49,6 +49,8 @@ pub mod templates {
     pub const FOREST_LYNX: CreatureTemplateId = CreatureTemplateId::new(22);
     /// The Eastwater Fen adder (#990): an ambusher that coils, hisses and strikes close.
     pub const MARSH_ADDER: CreatureTemplateId = CreatureTemplateId::new(23);
+    /// The Greyfang cave bat (#995): a flier that roosts on the cave roof and dives.
+    pub const CAVE_BAT: CreatureTemplateId = CreatureTemplateId::new(24);
 }
 
 /// Default respawn time: 60 s.
@@ -83,6 +85,8 @@ const MARSH_LURKER_BOX: [i32; 3] = [38, 15, 38];
 const LYNX: [i32; 3] = [30, 40, 30];
 /// The wildlife release's marsh adder (#990) in its coil: 0.42 m across, 0.19 m tall.
 const ADDER: [i32; 3] = [22, 10, 22];
+/// The wildlife release's cave bat (#995) hovering: 0.38 m tall, its body a little wider.
+const BAT: [i32; 3] = [30, 19, 30];
 const HUMANOID: [i32; 3] = [30, 90, 30];
 const LURKER: [i32; 3] = [35, 80, 35];
 /// A 1.4 m rolling boulder (#299).
@@ -116,9 +120,9 @@ type TemplateRow = (
 );
 
 #[rustfmt::skip]
-const TEMPLATES: [TemplateRow; 22] = {
+const TEMPLATES: [TemplateRow; 23] = {
     use CreatureBehaviour::{Aggressive, Neutral, Prop};
-    use CreatureFamily::{Adder, Bear, Boar, Lurker, Lynx, Marauder, Mirefin, Ogre, Redbrand, Spider, Vermin, Wolf};
+    use CreatureFamily::{Adder, Bat, Bear, Boar, Lurker, Lynx, Marauder, Mirefin, Ogre, Redbrand, Spider, Vermin, Wolf};
     use crate::PropKind;
     use templates::*;
     [
@@ -156,6 +160,8 @@ const TEMPLATES: [TemplateRow; 22] = {
         (FOREST_LYNX, "Forest Lynx", Lynx, Aggressive, [2, 3], false, 50, 12, [4, 7], 1, crate::ticks_from_ms(2_600), RESPAWN_TICKS, LYNX),
         // The Eastwater Fen adder (#990): the fen's level, a frail body and a quick, warned strike.
         (MARSH_ADDER, "Marsh Adder", Adder, Aggressive, [2, 3], false, 34, 10, [4, 7], 1, crate::ticks_from_ms(2_600), RESPAWN_TICKS, ADDER),
+        // The Greyfang cave bat (#995): the cave mouth's level, a frail body and a warned dive.
+        (CAVE_BAT, "Cave Bat", Bat, Aggressive, [3, 4], false, 36, 10, [3, 6], 1, crate::ticks_from_ms(2_600), RESPAWN_TICKS, BAT),
     ]
 };
 
@@ -483,6 +489,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::lynx::spawns())
         // The Eastwater Fen adders (#990).
         .chain(super::adder::spawns())
+        // The Greyfang cave bats (#995).
+        .chain(super::bat::spawns())
         .collect()
 }
 

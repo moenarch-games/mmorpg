@@ -36,7 +36,7 @@ export type UnitPresenterHandle = {
   indices(): Uint32Array;
 };
 
-export type ImportedModelKind = "Ranger" | "Wolf" | "Rat" | "Boar" | "Bear" | "Spider" | "Lurker" | "Lynx" | "Adder";
+export type ImportedModelKind = "Ranger" | "Wolf" | "Rat" | "Boar" | "Bear" | "Spider" | "Lurker" | "Lynx" | "Adder" | "Bat";
 /** A shared presenter's `Loadout::name`; its socket items are `Loadout::attachments` (#1012). */
 export type Loadout = string;
 /** A drawn throwable in the right hand (`imported::Throwable`, #603). */
