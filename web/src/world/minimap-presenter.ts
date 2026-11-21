@@ -1,7 +1,7 @@
 import type { EnvironmentStyle } from "./environment";
 import {
   COARSE_MARGIN_METRES, buildMinimapLayers, buildMinimapVectors, coarseMinimapFrame, fullMinimapFrame, minimapTerrainSource, paintMinimapImage,
-  vectorsWithin, type MinimapDisturbance, type MinimapImage, type MinimapUnit,
+  vectorsWithin, type MinimapDisturbance, type MinimapExploration, type MinimapImage, type MinimapUnit,
 } from "./minimap";
 import { rasterizeMinimapTerrain, type MinimapLayers, type MinimapRasterRequest, type MinimapRasterResult, type MinimapVectors } from "./minimap-raster";
 import type { Scenery } from "./scenery";
@@ -40,7 +40,7 @@ const BROWSER_PLATFORM: MinimapPresenterPlatform = { createWorker: createMinimap
 /** What the presenter shows the image on. */
 export type MinimapDisplay = {
   show(image: MinimapImage | null): void;
-  draw(self: { x: number; z: number }, heading: number, facing: number, units: readonly MinimapUnit[], disturbance: MinimapDisturbance | null): void;
+  draw(self: { x: number; z: number }, heading: number, facing: number, units: readonly MinimapUnit[], disturbance: MinimapDisturbance | null, exploration?: MinimapExploration | null): void;
 };
 
 /** Full maps kept for re-entering a world: the Vale and an arena, so entering a third drops the oldest. */
@@ -104,8 +104,8 @@ export class MinimapPresenter {
     if (center && Math.hypot(self.x - center.x, self.z - center.z) > COARSE_MARGIN_METRES) { this.#showCoarse(scenery, self); }
   }
 
-  draw(self: { x: number; z: number }, heading: number, facing: number, units: readonly MinimapUnit[], disturbance: MinimapDisturbance | null): void {
-    this.#display.draw(self, heading, facing, units, disturbance);
+  draw(self: { x: number; z: number }, heading: number, facing: number, units: readonly MinimapUnit[], disturbance: MinimapDisturbance | null, exploration: MinimapExploration | null = null): void {
+    this.#display.draw(self, heading, facing, units, disturbance, exploration);
   }
 
   #showCoarse(scenery: Scenery, self: { x: number; z: number }): void {

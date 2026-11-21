@@ -146,7 +146,7 @@ Sections follow in fixed order: header, self (including class, resource, cast, m
 | … | 1 or 19 to 31 if sent | Loot sheet: present (`u8`), then creature ID (`u32`), death tick (`u64`), copper reward (`u32`), item present (`u8`), optional item ID (`u32`) and quantity (`u16`), quest item present (`u8`), optional quest item ID (`u32`) and quantity (`u16`) |
 | … | 8 or more if sent | Ability sheet: the viewer's target the target auras belong to (entity reference), cooldown count (at most 20) and cooldowns in ability order (ability ID `u32`, end tick `u16`), aura count (at most 8) and aura records in slot order, target aura count (at most 8) and target aura records |
 | … | 5 or more if sent | World sheet (#882): door count `u16` and doors in ascending ID order (door ID `u32`, state `u8`: 0 closed, 1 open), piece count `u16` and the pieces that are not intact in ascending ID order (piece ID `u32`, stage `u8`), then the night raid signal (presence `u8`, then phase, integrity and flags `u8` each, the open aid tasks and the braced spots as `u32` sets), then the spent ore veins' content indices as a `u32` set (#917) |
-| … | 2 or more if sent | Waystone sheet (#882): count `u16` and the unlocked waystones (`u32`) in ascending order, only stones of the network |
+| … | 4 or more if sent | Waystone sheet (#882): count `u16` and the unlocked waystones (`u32`) in ascending order, only stones of the network; then count `u16` and the viewer's discovered areas (`u32`, #916) in ascending order, which the exploration map draws (#983) |
 | … | 1 | Event count, at most 16 |
 | … | 14 × events | Event records |
 | … | 1 | Chat line count, at most 4, then the [lines](#chat) |

@@ -41,7 +41,7 @@ pub(crate) enum Sheet {
     /// The zone's doors, its pieces that are not intact and the night raid's signal, if near
     /// (#158, #305, #530, #882).
     World,
-    /// The viewer's unlocked waystones (#145, #882).
+    /// The viewer's unlocked waystones (#145, #882) and discovered areas (#916, #983).
     Waystones,
 }
 
@@ -94,7 +94,7 @@ pub(crate) const MAX_OTHER_SHEETS_BYTES: usize = MAX_INVENTORY_SHEET_BYTES
 /// each fits what a tick without events or chat leaves, so it goes out once no other sheet is
 /// waiting beside it. Content whose fullest such sheet (every quest turned in, a full log and
 /// every quest NPC marked; every door and piece listed beside the raid signal; every waystone
-/// unlocked) outgrows it fails to encode.
+/// unlocked and area discovered) outgrows it fails to encode.
 pub(crate) const MAX_BUDGETED_SHEET_BYTES: usize =
     crate::MAX_PLAYER_PROJECTION_BYTES - crate::projection::MAX_QUIET_TICK_BYTES;
 // The quest sheet always holds a full log beside its three counts.
@@ -285,6 +285,7 @@ pub(crate) fn encode_sheets<'c>(
     )?;
     let mut waystones = Vec::new();
     crate::wire::encode_waystones(&mut waystones, &snapshot.viewer.waystones)?;
+    crate::wire::encode_discoveries(&mut waystones, &snapshot.viewer.discoveries)?;
     if world.len().max(waystones.len()) > MAX_BUDGETED_SHEET_BYTES {
         return Err(ProtocolError::new(
             "a world or waystone sheet exceeds its packet budget",
@@ -385,6 +386,7 @@ pub(crate) fn read_sheet<'a>(
         }
         Sheet::Waystones => {
             crate::wire::decode_waystones(payload, offset)?;
+            crate::wire::decode_discoveries(payload, offset)?;
         }
     }
     Ok(&payload[start..*offset])
@@ -455,11 +457,18 @@ fn read_world_sheet(payload: &[u8], offset: &mut usize) -> Result<WorldSheet, Pr
     ))
 }
 
-pub(crate) fn decode_waystone_sheet(
-    bytes: &[u8],
-) -> Result<mmorpg_core::WaystoneSet, ProtocolError> {
+/// The waystone sheet: unlocked waystones, then discovered areas (#983).
+pub(crate) type WaystoneSheet = (
+    mmorpg_core::WaystoneSet,
+    std::collections::BTreeSet<mmorpg_core::AreaId>,
+);
+
+pub(crate) fn decode_waystone_sheet(bytes: &[u8]) -> Result<WaystoneSheet, ProtocolError> {
     let mut offset = 0;
-    let sheet = crate::wire::decode_waystones(bytes, &mut offset)?;
+    let sheet = (
+        crate::wire::decode_waystones(bytes, &mut offset)?,
+        crate::wire::decode_discoveries(bytes, &mut offset)?,
+    );
     ensure_fully_consumed(bytes, offset)?;
     Ok(sheet)
 }

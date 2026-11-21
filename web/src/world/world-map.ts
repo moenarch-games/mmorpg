@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { GeoJsonLayer, MapView, type MapViewState } from "@moritzbrantner/maps";
 import "@moritzbrantner/maps/styles.css";
 import { wasm } from "../wasm";
+import type { ExplorationMap } from "./exploration";
 
 /**
  * The world map (M): the continent atlas drawn by the Maps library's own flat runtime
@@ -49,6 +50,37 @@ function headingTriangle([lon, lat]: [number, number], bearing: number, size: nu
   return { type: "Feature", id: "self-heading", geometry: { type: "Polygon", coordinates: [ring] }, properties: {} };
 }
 
+/** A zone rectangle in metres (min and max corners) as a map polygon. */
+function rectangle(id: string, min: readonly number[], max: readonly number[], properties: Record<string, unknown>): Feature {
+  const [x0 = 0, z0 = 0] = min;
+  const [x1 = 0, z1 = 0] = max;
+  const ring = [mapPoint(x0, z0), mapPoint(x1, z0), mapPoint(x1, z1), mapPoint(x0, z1), mapPoint(x0, z0)];
+  return { type: "Feature", id, geometry: { type: "Polygon", coordinates: [ring] }, properties };
+}
+
+/** An approximate circle of `radius` metres around a zone point, as a map polygon. */
+function circle(id: string, x: number, z: number, radius: number, properties: Record<string, unknown>): Feature {
+  const ring = Array.from({ length: 33 }, (_, i) => {
+    const angle = (i / 32) * 2 * Math.PI;
+    return mapPoint(x + radius * Math.cos(angle), z + radius * Math.sin(angle));
+  });
+  return { type: "Feature", id, geometry: { type: "Polygon", coordinates: [ring] }, properties };
+}
+
+/**
+ * The exploration overlay (#983): discovered named areas warm and named, undiscovered ones a faint dashed outline so
+ * the geography stays readable, and the active quests' approximate areas as gold circles (Atlas 5.1.13).
+ */
+function explorationLayers(map: ExplorationMap) {
+  const areas = map.areas.map((area) => rectangle(`area-${area.id}`, area.min, area.max, { name: area.name, discovered: area.discovered }));
+  const hints = map.hints.map((hint, i) => circle(`hint-${i}`, hint.center[0], hint.center[1], hint.radius, { label: hint.label }));
+  const labels = map.areas.filter((area) => area.discovered).map((area) => {
+    const at = mapPoint((area.min[0] + area.max[0]) / 2, (area.min[1] + area.max[1]) / 2);
+    return { type: "Feature", id: `label-${area.id}`, geometry: { type: "Point", coordinates: at }, properties: { name: area.name } } as Feature;
+  });
+  return { areas: collection(areas, "area"), hints: collection(hints, "hint"), labels: collection(labels, "label") };
+}
+
 function regionTooltip(id: unknown) {
   const region = typeof id === "string" ? wasm.worldMapRegion(id) : null;
   if (!region) return null;
@@ -59,7 +91,7 @@ function regionTooltip(id: unknown) {
     region.zone ? h("span", { className: "world-map-zone-note" }, `${region.zone}: playable zone`) : null);
 }
 
-function WorldMapPanel({ self, onClose }: { self: () => MapSelf | null; onClose: () => void }) {
+function WorldMapPanel({ self, exploration, onClose }: { self: () => MapSelf | null; exploration: () => ExplorationMap | null; onClose: () => void }) {
   const bundle = useMemo(() => JSON.parse(wasm.worldMapBundle()) as Bundle, []);
   const colours = useMemo(() => new Map(bundle.kingdoms.map((k) => [k.id, k.color])), [bundle]);
   const layers = useMemo(() => {
@@ -72,10 +104,13 @@ function WorldMapPanel({ self, onClose }: { self: () => MapSelf | null; onClose:
     const at: [number, number] = me ? mapPoint(me.x, me.z) : [0, 0];
     return { center: [at[0], at[1]], zoom: OPEN_ZOOM };
   });
+  const [explored, setExplored] = useState<ExplorationMap | null>(() => exploration());
+  const overlay = useMemo(() => (explored ? explorationLayers(explored) : null), [explored]);
   useEffect(() => {
     const timer = window.setInterval(() => setMe(self()), 200);
-    return () => window.clearInterval(timer);
-  }, [self]);
+    const discoveries = window.setInterval(() => setExplored((last) => { const next = exploration(); return next === last ? last : next; }), 500);
+    return () => { window.clearInterval(timer); window.clearInterval(discoveries); };
+  }, [self, exploration]);
 
   const marker = useMemo(() => {
     if (!me) return null;
@@ -91,6 +126,7 @@ function WorldMapPanel({ self, onClose }: { self: () => MapSelf | null; onClose:
   return h("section", { className: "world-map-panel", role: "dialog", "aria-label": "World map" },
     h("header", { className: "world-map-header" },
       h("h1", null, "World map"),
+      explored ? h("span", { className: "world-map-explored", "aria-label": `${explored.discovered} of ${explored.total} areas discovered` }, `Discovered ${explored.discovered} / ${explored.total}`) : null,
       h("span", { className: "world-map-hint" }, "M or Esc to close · drag to pan · wheel to zoom"),
       h("button", { type: "button", className: "world-map-close", onClick: onClose, "aria-label": "Close the world map" }, "×")),
     h("div", { className: "world-map-surface", style: { background: SEA } },
@@ -129,9 +165,23 @@ function WorldMapPanel({ self, onClose }: { self: () => MapSelf | null; onClose:
         renderFeatureTooltip: (f: Hit) => h("div", { className: "world-map-tooltip" }, h("strong", null, String(f.properties.name)), h("span", null, String(f.properties.kind))) }),
       h(GeoJsonLayer, { layerId: "world-map-gates", featureCollection: layers.gates, pointColor: "#3c3232", pointRadius: 4,
         renderFeatureTooltip: (f: Hit) => h("div", { className: "world-map-tooltip" }, h("strong", null, String(f.properties.name)), h("span", null, "Gate of the Shattered Crown")) }),
+      overlay ? h(GeoJsonLayer, { layerId: "world-map-areas", featureCollection: overlay.areas,
+        getFeatureStyle: (f: Hit) => f.properties.discovered
+          ? { polygonFillColor: "#ffe9a8", polygonFillOpacity: 0.12, polygonStrokeColor: "#f5d27a", polygonStrokeWidth: 1.6 }
+          : { polygonFillColor: "#1d1a14", polygonFillOpacity: 0.22, polygonStrokeColor: "#5b5446", polygonStrokeWidth: 0.8 },
+        renderFeatureTooltip: (f: Hit) => h("div", { className: "world-map-tooltip" },
+          h("strong", null, f.properties.discovered ? String(f.properties.name) : "Unexplored"),
+          h("span", null, f.properties.discovered ? "Discovered" : "Not yet discovered")) }) : null,
+      overlay ? h(GeoJsonLayer, { layerId: "world-map-quest-hints", featureCollection: overlay.hints, polygonFillColor: "#ffd34d", polygonFillOpacity: 0.16, polygonStrokeColor: "#ffd34d", polygonStrokeWidth: 2,
+        renderFeatureTooltip: (f: Hit) => h("div", { className: "world-map-tooltip" }, h("strong", null, String(f.properties.label)), h("span", null, "Somewhere around here")) }) : null,
+      overlay ? h(GeoJsonLayer, { layerId: "world-map-area-labels", featureCollection: overlay.labels, pointColor: "#f3e6b8", pointRadius: 3.5,
+        renderFeatureTooltip: (f: Hit) => h("div", { className: "world-map-tooltip" }, h("strong", null, String(f.properties.name))) }) : null,
       marker ? h(GeoJsonLayer, { layerId: "world-map-self-heading", featureCollection: marker.heading, polygonFillColor: "#ffd34d", polygonFillOpacity: 1, polygonStrokeColor: "#1d1a14", polygonStrokeWidth: 1.5, isFeatureInteractive: () => false }) : null,
       marker ? h(GeoJsonLayer, { layerId: "world-map-self", featureCollection: marker.point, pointColor: "#ffd34d", pointRadius: 5,
         renderFeatureTooltip: () => h("div", { className: "world-map-tooltip" }, h("strong", null, "You")) }) : null),
+      explored ? h("ol", { className: "world-map-discoveries", "aria-label": "Discovered areas" },
+        explored.hints.map((hint, i) => h("li", { key: `hint-${i}`, className: "world-map-hint-entry" }, h("span", { className: "world-map-swatch world-map-swatch-hint" }), hint.label)),
+        explored.areas.filter((area) => area.discovered).map((area) => h("li", { key: area.id }, h("span", { className: "world-map-swatch world-map-swatch-area" }), area.name))) : null,
       h("ol", { className: "world-map-legend", "aria-label": "Kingdoms" },
         bundle.kingdoms.map((k) => h("li", { key: k.id }, h("span", { className: "world-map-swatch", style: { background: k.color } }), k.name))),
       h("button", { type: "button", className: "world-map-recentre", disabled: !me,
@@ -142,11 +192,13 @@ function WorldMapPanel({ self, onClose }: { self: () => MapSelf | null; onClose:
 export class WorldMap {
   readonly #host: HTMLElement;
   readonly #self: () => MapSelf | null;
+  readonly #exploration: () => ExplorationMap | null;
   #root: Root | null = null;
 
-  constructor(host: HTMLElement, self: () => MapSelf | null) {
+  constructor(host: HTMLElement, self: () => MapSelf | null, exploration: () => ExplorationMap | null = () => null) {
     this.#host = host;
     this.#self = self;
+    this.#exploration = exploration;
     this.#host.hidden = true;
   }
 
@@ -163,7 +215,7 @@ export class WorldMap {
     if (this.#root) return;
     this.#host.hidden = false;
     this.#root = createRoot(this.#host);
-    this.#root.render(h(WorldMapPanel, { self: this.#self, onClose: () => this.close() }));
+    this.#root.render(h(WorldMapPanel, { self: this.#self, exploration: this.#exploration, onClose: () => this.close() }));
   }
 
   close(): void {

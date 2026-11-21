@@ -112,6 +112,7 @@ pub fn exhaustive_projection(
             reckoning: 0,
             mastery: observer.mastery.sword,
             waystones: observer.waystones.clone(),
+            discoveries: observer.discoveries.clone(),
         },
         cooldowns: Vec::new(),
         auras: Vec::new(),
