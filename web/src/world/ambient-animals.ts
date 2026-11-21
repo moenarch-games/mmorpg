@@ -4,6 +4,7 @@ import type { GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { loadBundleGltfs } from "./static-bundle";
 import { litObject } from "./lighting";
 import type { AmbientAnimalsSource } from "./scenery";
+import { releaseMixer, retainedBundle } from "./zone-lifecycle";
 
 /** The rolling `greyhaven-ambient-animals` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
 const AMBIENT_BUNDLE = `${import.meta.env.BASE_URL}scenery/greyhaven.ambient-animals/`;
@@ -28,6 +29,7 @@ export class AmbientAnimals {
   #animals: Animal[] = [];
   #loading: Promise<boolean> | null = null;
   #changed = false;
+  #disposed = false;
   #last: { seconds: number; animate: boolean } | null = null;
 
   constructor(source: AmbientAnimalsSource) {
@@ -36,6 +38,7 @@ export class AmbientAnimals {
 
   /** Loads the bundle once; settles drawable (true) or failed (false), never fatal to the world. */
   load(): Promise<boolean> {
+    if (this.#disposed) { return Promise.resolve(false); }
     this.#loading ??= this.#load().then(() => true, (error: unknown) => {
       console.error(`The ambient animals bundle did not load: ${error instanceof Error ? error.message : String(error)}`);
       this.#animals = [];
@@ -55,13 +58,16 @@ export class AmbientAnimals {
       [WILD_BUNDLE, species.filter((key) => key.startsWith(WILD_PREFIX))],
     ] as const) {
       if (keys.length === 0) { continue; }
-      (await loadBundleGltfs(bundle, keys)).forEach((gltf, index) => loaded.set(keys[index]!, gltf));
+      // The species are the bundle's, retained for every zone that draws them (#1005).
+      (await retainedBundle(`ambient:${bundle}:${keys.join(",")}`, () => loadBundleGltfs(bundle, keys)))
+        .forEach((gltf, index) => loaded.set(keys[index]!, gltf));
     }
-    const shared = entries.filter((key, index) => entries.indexOf(key) !== index);
+    // A zone replaced while the bundles loaded keeps nothing (#1005).
+    if (this.#disposed) { return; }
     this.#animals = entries.map((key, index) => {
       const gltf = loaded.get(key)!;
-      // A species with more than one animal gives each a skinned clone of its untouched scene.
-      const scene = shared.includes(key) ? cloneSkinned(gltf.scene) : gltf.scene;
+      // Each animal is a skinned clone of its species' untouched, retained scene: its own skeleton, shared geometry.
+      const scene = cloneSkinned(gltf.scene);
       // Lit like the rest of the world (#600).
       const root = litObject(scene);
       root.name = entries[index]!;
@@ -75,6 +81,21 @@ export class AmbientAnimals {
     });
     this.#changed = true;
     if (this.#last) { this.update(this.#last.seconds, this.#last.animate); }
+  }
+
+  /**
+   * Releases what the animals own for their zone (#1005): their mixers and their clones' skeletons. The retained species
+   * scenes stay for a revisit; a load in flight attaches nothing. Later calls do nothing.
+   */
+  dispose(): void {
+    if (this.#disposed) { return; }
+    this.#disposed = true;
+    for (const animal of this.#animals) {
+      releaseMixer(animal.mixer);
+      animal.root.traverse((object) => { if ((object as THREE.SkinnedMesh).isSkinnedMesh) { (object as THREE.SkinnedMesh).skeleton.dispose(); } });
+    }
+    this.#animals = [];
+    this.#changed = true;
   }
 
   /** Poses every animal at presentation `seconds`; without `animate` they hold still. */

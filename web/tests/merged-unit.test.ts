@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
-import { mergeUnitMeshes } from "../src/world/units/merged-unit";
+import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
+import { mergeUnitMeshes, releaseUnit } from "../src/world/units/merged-unit";
 
 // A unit's meshes merge per material class (#615) and still follow its joints, holders and colours.
 describe("mergeUnitMeshes", () => {
@@ -165,5 +166,66 @@ describe("mergeUnitMeshes", () => {
       return [Math.min(...us), Math.max(...us), Math.min(...vs), Math.max(...vs)];
     });
     expect(ranges).toEqual([[0, 0.5, 0, 0.5], [0.5, 1, 0, 0.5], [0, 0.5, 0.5, 1]]);
+  });
+});
+
+// Leaving a zone drops its units (#1005): each frees what it cloned for itself exactly once, never the bundle's.
+describe("releaseUnit", () => {
+  /** A bundle scene of two joints and skins: two merge, an eye stays its own draw. */
+  const skin = (bones: THREE.Bone[], name: string, color: number) => {
+    const geometry = new THREE.BoxGeometry(0.2, 1, 0.2);
+    const count = geometry.getAttribute("position").count;
+    geometry.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(new Array(count * 4).fill(0).map((_, i) => (i % 4 === 0 ? 1 : 0)), 4));
+    geometry.setAttribute("skinWeight", new THREE.Float32BufferAttribute(new Array(count * 4).fill(0).map((_, i) => (i % 4 === 0 ? 1 : 0)), 4));
+    const mesh = new THREE.SkinnedMesh(geometry, new THREE.MeshStandardMaterial({ color }));
+    mesh.name = name;
+    mesh.bind(new THREE.Skeleton(bones), new THREE.Matrix4());
+    return mesh;
+  };
+  const scene = () => {
+    const root = new THREE.Bone();
+    root.name = "root";
+    const elbow = new THREE.Bone();
+    elbow.name = "elbow";
+    root.add(elbow);
+    const group = new THREE.Group();
+    group.add(root, skin([root, elbow], "body", 0xff0000), skin([root, elbow], "legs", 0x00ff00), skin([root, elbow], "eye", 0xffffff));
+    return group;
+  };
+
+  test("frees the unit's own geometry and bone textures once, and keeps a shared skin's", () => {
+    const bundle = scene();
+    const shared = skin([bundle.getObjectByName("root") as THREE.Bone], "plate", 0x0000ff);
+    bundle.add(shared);
+    const model = cloneSkinned(bundle);
+    model.remove(model.getObjectByName("plate")!);
+    // A plain clone shares the bundle's skeleton, as a resident's armour plate does.
+    const plate = shared.clone();
+    model.add(plate);
+    const eye = model.getObjectByName("eye") as THREE.SkinnedMesh;
+    const merged = mergeUnitMeshes(model, new Set([eye, plate]));
+    expect(merged.meshes.length).toBe(1);
+
+    const skeletons = new Set<THREE.Skeleton>();
+    model.traverse((object) => { if (object instanceof THREE.SkinnedMesh) { skeletons.add(object.skeleton); } });
+    const owned = [merged.skeleton, eye.skeleton];
+    expect(eye.skeleton).not.toBe(merged.skeleton);
+    expect(skeletons.has(shared.skeleton)).toBe(true);
+    // The renderer computes each drawn skeleton's palette texture.
+    const count = (target: THREE.EventDispatcher<{ dispose: object }>) => {
+      let n = 0;
+      target.addEventListener("dispose", () => { n += 1; });
+      return () => n;
+    };
+    const ownTextures = owned.map((skeleton) => count(skeleton.computeBoneTexture().boneTexture!));
+    const sharedTexture = count(shared.skeleton.computeBoneTexture().boneTexture!);
+    const geometries = [...merged.meshes, ...merged.shadows].map((mesh) => count(mesh.geometry));
+    const bundleGeometry = count(shared.geometry);
+
+    releaseUnit(model, merged);
+    expect(ownTextures.map((n) => n())).toEqual([1, 1]);
+    expect(geometries.map((n) => n())).toEqual(geometries.map(() => 1));
+    expect(sharedTexture()).toBe(0);
+    expect(bundleGeometry()).toBe(0);
   });
 });
