@@ -1791,7 +1791,7 @@ dependencies = [
 [[package]]
 name = "game-server"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/game-server.git?rev=d5f3c6ef54a73b70e442247f415d331e51f6a505#d5f3c6ef54a73b70e442247f415d331e51f6a505"
+source = "git+https://github.com/moritzbrantner/game-server.git?rev=6fbe7e98d00dffe1236cfdd4596ba9ce88daa1e0#6fbe7e98d00dffe1236cfdd4596ba9ce88daa1e0"
 dependencies = [
  "async-trait",
  "bytes",
