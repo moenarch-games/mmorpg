@@ -6,6 +6,8 @@
 //! revision differs from the current one; the client echoes the revisions it holds in its
 //! command datagrams ([`encode_acknowledged_command`]).
 
+use std::borrow::Cow;
+
 use mmorpg_core::{
     AbilityId, AuraKind, AuraView, Cooldown, EntityRef, Equipment, Inventory, LootView, MAX_AURAS,
     MAX_COOLDOWNS, QuestSheet, ZoneSnapshot, ability_by_id,
@@ -159,17 +161,73 @@ pub(crate) fn revision(bytes: &[u8]) -> u32 {
     hash.max(1)
 }
 
+/// One player's last inventory sheet encoding and its revision (#1007), held by whoever publishes
+/// that player's projections and dropped with the player. A publication reuses the bytes while
+/// the viewer, its inventory revision and its bag and equipment all match the cached ones, so a
+/// revision reused for different state (a replaced or restored character) still re-encodes; a
+/// cold cache encodes exactly as the stateless [`crate::pack_snapshot_acknowledged`] does.
+#[derive(Debug, Default)]
+pub struct SheetEncodingCache {
+    inventory: Option<CachedInventorySheet>,
+    /// Inventory sheet encodings this cache performed.
+    #[cfg(test)]
+    pub(crate) inventory_encodes: usize,
+}
+
+#[derive(Debug)]
+struct CachedInventorySheet {
+    viewer: mmorpg_core::PlayerId,
+    inventory_revision: u64,
+    inventory: Inventory,
+    equipment: Equipment,
+    bytes: Vec<u8>,
+    revision: u32,
+}
+
+impl SheetEncodingCache {
+    fn inventory_sheet(
+        &mut self,
+        viewer: mmorpg_core::PlayerId,
+        inventory_revision: u64,
+        inventory: &Inventory,
+        equipment: &Equipment,
+    ) -> (Cow<'_, [u8]>, u32) {
+        let fresh = self.inventory.as_ref().is_some_and(|cached| {
+            cached.viewer == viewer
+                && cached.inventory_revision == inventory_revision
+                && cached.equipment == *equipment
+                && cached.inventory == *inventory
+        });
+        if !fresh {
+            self.inventory = None;
+        }
+        let cached = self.inventory.get_or_insert_with(|| {
+            #[cfg(test)]
+            {
+                self.inventory_encodes += 1;
+            }
+            let bytes = encode_inventory_sheet(inventory_revision, inventory, equipment);
+            CachedInventorySheet {
+                viewer,
+                inventory_revision,
+                inventory: inventory.clone(),
+                equipment: *equipment,
+                revision: revision(&bytes),
+                bytes,
+            }
+        });
+        (Cow::Borrowed(&cached.bytes), cached.revision)
+    }
+}
+
 /// Each sheet's bytes at `snapshot.tick`; the bag and quest sheets are absent when the
 /// projection has none to send. A budgeted sheet that outgrows its budget fails.
-pub(crate) fn encode_sheets(
+pub(crate) fn encode_sheets<'c>(
     snapshot: &ZoneSnapshot,
-) -> Result<[Option<Vec<u8>>; SHEET_COUNT], ProtocolError> {
-    let inventory = match (&snapshot.inventory, &snapshot.equipment) {
-        (Some(inventory), Some(equipment)) => Some(encode_inventory_sheet(
-            snapshot.inventory_revision,
-            inventory,
-            equipment,
-        )),
+    cache: &'c mut SheetEncodingCache,
+) -> Result<[Option<(Cow<'c, [u8]>, u32)>; SHEET_COUNT], ProtocolError> {
+    let bag = match (&snapshot.inventory, &snapshot.equipment) {
+        (Some(inventory), Some(equipment)) => Some((inventory, equipment)),
         (None, None) => None,
         _ => {
             return Err(ProtocolError::new(
@@ -229,15 +287,27 @@ pub(crate) fn encode_sheets(
             "a world or waystone sheet exceeds its packet budget",
         ));
     }
+    let inventory = bag.map(|(inventory, equipment)| {
+        cache.inventory_sheet(
+            snapshot.viewer_id,
+            snapshot.inventory_revision,
+            inventory,
+            equipment,
+        )
+    });
+    let hashed = |bytes: Vec<u8>| {
+        let hash = revision(&bytes);
+        (Cow::Owned(bytes), hash)
+    };
     Ok([
         inventory,
-        quests,
-        Some(loot),
-        Some(abilities),
-        party,
-        depths_loot,
-        Some(world),
-        Some(waystones),
+        quests.map(hashed),
+        Some(hashed(loot)),
+        Some(hashed(abilities)),
+        party.map(hashed),
+        depths_loot.map(hashed),
+        Some(hashed(world)),
+        Some(hashed(waystones)),
     ])
 }
 

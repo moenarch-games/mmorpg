@@ -14,7 +14,9 @@ use mmorpg_core::{
     ability_by_id,
 };
 
-use crate::sheet::{Abilities, SHEET_COUNT, Sheet, SheetRevisions, encode_sheets, revision};
+use crate::sheet::{
+    Abilities, SHEET_COUNT, Sheet, SheetEncodingCache, SheetRevisions, encode_sheets, revision,
+};
 use crate::wire::{
     COMMON_HEADER_BYTES, ENTITY_REF_BYTES, PLAYER_SNAPSHOT_SCOPE, decode_common_header,
     decode_entity_kind, decode_entity_ref, decode_event, decode_u8_count, decode_u16_count,
@@ -140,6 +142,16 @@ pub fn pack_snapshot_acknowledged(
     snapshot: &ZoneSnapshot,
     acknowledged: SheetRevisions,
 ) -> Result<PackedSnapshot, ProtocolError> {
+    pack_snapshot_cached(snapshot, acknowledged, &mut SheetEncodingCache::default())
+}
+
+/// [`pack_snapshot_acknowledged`] reusing the viewer's unchanged inventory sheet encoding from
+/// `cache` (#1007); the bytes are identical to a cold pack's.
+pub fn pack_snapshot_cached(
+    snapshot: &ZoneSnapshot,
+    acknowledged: SheetRevisions,
+    cache: &mut SheetEncodingCache,
+) -> Result<PackedSnapshot, ProtocolError> {
     if snapshot
         .entities
         .first()
@@ -244,11 +256,11 @@ pub fn pack_snapshot_acknowledged(
     payload.extend_from_slice(&[0, 0]);
     let mut mask = 0_u16;
     let mut deferred_sheets = false;
-    for (sheet, bytes) in Sheet::ALL.into_iter().zip(encode_sheets(snapshot)?) {
-        let Some(bytes) = bytes else {
+    for (sheet, encoded) in Sheet::ALL.into_iter().zip(encode_sheets(snapshot, cache)?) {
+        let Some((bytes, hash)) = encoded else {
             continue;
         };
-        if acknowledged.get(sheet) == revision(&bytes) {
+        if acknowledged.get(sheet) == hash {
             continue;
         }
         if bytes.len() > room {
@@ -1205,6 +1217,48 @@ pub(crate) mod tests {
         }
     }
 
+    #[test]
+    fn unchanged_inventory_sheets_reuse_their_encoding_byte_for_byte() {
+        let mut snapshot = fixture_snapshot();
+        let mut cache = SheetEncodingCache::default();
+        let mut decoder = SnapshotDecoder::new();
+        // Each publication matches the stateless reference, held sheets or not.
+        let mut publish = |snapshot: &ZoneSnapshot, cache: &mut SheetEncodingCache| {
+            let acknowledged = decoder.revisions();
+            let packed = pack_snapshot_cached(snapshot, acknowledged, cache).unwrap();
+            assert_eq!(
+                packed,
+                pack_snapshot_acknowledged(snapshot, acknowledged).unwrap()
+            );
+            decoder.decode(&packed.payload).unwrap();
+            packed.payload
+        };
+        let first = publish(&snapshot, &mut cache);
+        publish(&snapshot, &mut cache);
+        let acknowledged = publish(&snapshot, &mut cache);
+        assert!(acknowledged.len() < first.len());
+        assert_eq!(cache.inventory_encodes, 1);
+        assert_eq!(publish(&snapshot, &mut cache), acknowledged);
+        assert_eq!(cache.inventory_encodes, 1);
+
+        // A revision bump re-encodes once, then reuses again.
+        snapshot.inventory_revision += 1;
+        publish(&snapshot, &mut cache);
+        publish(&snapshot, &mut cache);
+        assert_eq!(cache.inventory_encodes, 2);
+
+        // A replaced or restored character may reuse the revision for another bag.
+        snapshot.inventory = Some(mmorpg_core::Inventory::default());
+        publish(&snapshot, &mut cache);
+        assert_eq!(cache.inventory_encodes, 3);
+
+        // A cold cache packs the same bytes.
+        let mut cold = SheetEncodingCache::default();
+        assert_eq!(
+            pack_snapshot_cached(&snapshot, SheetRevisions::default(), &mut cold).unwrap(),
+            pack_snapshot(&snapshot).unwrap()
+        );
+    }
     /// The shared Rust/browser golden projection: a level-4 Arcanist casting
     /// Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that
     /// casts Muck Bolt, next to an NPC and a corpse tapped by another player,
