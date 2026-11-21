@@ -132,6 +132,27 @@ reading the quest text, finding the cart without a waypoint and looting by
 hand. For a first-time player that is plausibly the 8–12 minutes #984 aims
 for, but live play has not measured it yet.
 
+## Weapon mastery (#915)
+
+Weapon-family mastery (Atlas 5.2.i915) runs beside level and XP: it unlocks techniques, never
+damage. The sword is the first family (`crates/mmorpg-core/src/mastery.rs`).
+
+| Rule | Value |
+| --- | --- |
+| Landed basic sword strike | 1 practice |
+| Landed Heroic Strike | 2 practice |
+| Most practice per foe life | 6, paid only when that foe dies with the striker in kill-credit range |
+| Trivial foe (earns nothing) | 5 or more levels below the striker |
+| Foes banked at once | 4 (oldest dropped) |
+| Practice to mastery 1 / 2 / 3 | 30 / 80 / 150 (top level 3) |
+| Mastery 1 unlocks | the Leaping Slash (`LeapingSlash` edge) |
+
+A level-1 Warden strikes for 3–6 against a level-1 Timber Wolf's 42 health (56 at level 2), so
+each Greyhaven wolf fight reaches the per-foe cap of 6: mastery 1 arrives with the fifth wolf,
+beyond the three wolves of *The Wolfrun Cart* (the headless arena check, `tests/weapon_mastery.rs`, takes
+five 42-health wolves). Mastery 2 needs about 14 more fights and mastery 3 about 25 more,
+spread over the rest of the starter chain. These are first-slice numbers, not yet playtested.
+
 ## Authoritative awards (#75)
 
 The admitted living tapper receives the nominal reward once on the creature's

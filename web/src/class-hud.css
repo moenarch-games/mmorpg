@@ -315,6 +315,7 @@
 .ct-miss { color: #c3cbd2; font-size: 1rem; }
 .ct-cleave { color: #ffbe5a; font-size: 1.35rem; font-weight: 700; }
 .ct-flank { color: #ff78c8; font-size: 1.45rem; font-weight: 700; }
+.ct-mastery { color: #f4d98a; font-size: 1.2rem; font-weight: 700; }
 
 @keyframes combat-text-rise {
   from { opacity: 1; margin-top: 0; }

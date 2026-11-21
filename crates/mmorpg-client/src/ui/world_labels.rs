@@ -242,6 +242,8 @@ pub struct FloatingTexts {
     cleaved: usize,
     /// The viewer's latest Piercing Shot and the units it struck (#932).
     pierce: Option<PierceShot>,
+    /// The sword mastery level last seen (#915).
+    mastery: Option<u8>,
 }
 
 impl FloatingTexts {
@@ -276,10 +278,26 @@ impl FloatingTexts {
                 anchor: EntityRef::Player(snapshot.viewer_id),
             });
         self.pierce = pierce;
+        // A mastery level gained in play floats its unlock (#915); the browser says the same.
+        let level = snapshot.viewer.mastery.level;
+        let mastered = self
+            .mastery
+            .filter(|&before| level > before)
+            .map(|_| CombatText {
+                kind: CombatTextKind::Cleave,
+                text: if level == mmorpg_core::LEAPING_SLASH_LEVEL {
+                    format!("Sword mastery {level}: Leaping Slash unlocked")
+                } else {
+                    format!("Sword mastery {level}")
+                },
+                anchor: EntityRef::Player(snapshot.viewer_id),
+            });
+        self.mastery = Some(level);
         for text in combat_texts(snapshot)
             .into_iter()
             .chain(cleave)
             .chain(pierced)
+            .chain(mastered)
         {
             self.lane = self.lane.wrapping_add(1);
             self.entries.push_back((text, now, self.lane % 5));

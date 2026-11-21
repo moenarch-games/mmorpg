@@ -203,6 +203,8 @@ fn starter_tables_are_pinned_and_cover_every_hosted_template() {
             [20, 30],
             vec![item(3, FUR, [3, 5]), item(2, ItemId::new(9), [1, 1])],
         ),
+        // The Forest Lynx (#989): usually its pelt.
+        ([1, 4], vec![item(3, FUR, [1, 1]), nothing(1)]),
     ];
     let content = greyhaven_vale::content();
     // Breakable props (#288) drop nothing and have no table.

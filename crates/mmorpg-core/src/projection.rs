@@ -159,6 +159,8 @@ pub struct ViewerState {
     /// The harm a Divine Reckoning would draw on against the viewer's target (#936): 0 without
     /// a creature target or stored harm.
     pub reckoning: u16,
+    /// The viewer's sword mastery (#915): level and practice toward the next.
+    pub mastery: crate::Mastery,
 }
 
 /// A projection addressed to `viewer_id`. Entities are in priority order: the
@@ -330,6 +332,7 @@ impl ZoneSimulation {
                     breath: viewer.breath.remaining,
                     waystones: viewer.waystones.clone(),
                     reckoning: self.harm_against(player_id, viewer.target),
+                    mastery: viewer.mastery.sword,
                 },
                 cooldowns: viewer.cooldowns.clone(),
                 auras: aura_views(&viewer.auras),

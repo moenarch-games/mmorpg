@@ -1433,7 +1433,9 @@ impl UnitPresenter {
     }
 
     /// A beast `source` began its `attack` (#889): its `Attack_A` or `Attack_B` from the start,
-    /// whose authored bite is the zone's contact, so the wind-up shows before the blow lands.
+    /// whose authored bite is the zone's contact, so the wind-up shows before the blow lands. A
+    /// lynx's pounce (#989) goes on from its wind-up through its lunge, landing on the zone's
+    /// contact, and its recovery.
     fn creature_attack(
         &mut self,
         snapshot: &ZoneSnapshot,
@@ -1451,8 +1453,15 @@ impl UnitPresenter {
             .filter(|&clip| self.duration(kind, clip) > 0.)
             .unwrap_or(clips.attack);
         let duration = self.duration(kind, clip);
+        let follow = clips
+            .bites
+            .and_then(|bites| bites.follow)
+            .map(|clips| clips.map(|clip| (clip, self.duration(kind, clip))));
         let playback = self.playbacks.entry(source).or_default();
         playback.strike(clip, duration, Region::Whole, seconds);
+        if let Some([then, last]) = follow {
+            playback.recover_through(then, last);
+        }
         playback.swung();
     }
 
@@ -2764,7 +2773,8 @@ impl UnitPresenter {
             | CreatureFamily::Vermin
             | CreatureFamily::Bear
             | CreatureFamily::Spider
-            | CreatureFamily::Lurker),
+            | CreatureFamily::Lurker
+            | CreatureFamily::Lynx),
         ) = family
         {
             return creatures::animal(

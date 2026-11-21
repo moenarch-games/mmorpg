@@ -197,8 +197,8 @@ fn older_records_load_neutral_and_keep_everything_else() {
     // than eleven values fail closed.
     let bytes = encode_character_record(&customized).unwrap();
     // The discovered areas (#916) and opened caches (#913) follow the physique: a u16 count and
-    // a u32 per entry each.
-    let after = 4 + 4 * (customized.discoveries.len() + customized.caches.len());
+    // a u32 per entry each; then the sword mastery (#915): a u8 level and a u16 progress.
+    let after = 4 + 4 * (customized.discoveries.len() + customized.caches.len()) + 3;
     let tail = bytes.len() - after - 1 - 2 * PHYSIQUE_PARAMS;
     let mut five = bytes[..tail].to_vec();
     five.push(5);

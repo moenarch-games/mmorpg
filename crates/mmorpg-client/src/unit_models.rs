@@ -210,7 +210,10 @@ impl UnitModel {
             }),
             EntityKind::Creature => match family {
                 None => Self::Placeholder,
-                Some(CreatureFamily::Wolf) => Self::Quadruped(AnimalKind::Wolf),
+                // The lynx (#989) falls back to the wolf's procedural body.
+                Some(CreatureFamily::Wolf | CreatureFamily::Lynx) => {
+                    Self::Quadruped(AnimalKind::Wolf)
+                }
                 Some(CreatureFamily::Boar | CreatureFamily::Bear) => {
                     Self::Quadruped(AnimalKind::Boar)
                 }
