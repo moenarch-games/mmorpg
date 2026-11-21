@@ -304,25 +304,6 @@ fn main() {
     let crag = manifest_dir.join("../../web/public/scenery/crag.kit");
     static_bundle("crag_bundle.rs", &crag, Some(&CRAG), true);
     descriptor(&crag, "crag-descriptor", "crag_descriptor.rs");
-    // Greyhaven's limestone rocks (asset-tooling#536) with every level of detail, and their descriptor.
-    let limestone = manifest_dir.join("../../web/public/scenery/limestone-rocks.kit");
-    static_bundle("limestone_bundle.rs", &limestone, None, true);
-    descriptor(
-        &limestone,
-        "limestone-rocks-descriptor",
-        "limestone_descriptor.rs",
-    );
-    // The stones along Greyhaven's brook (asset-tooling#538), and their descriptor.
-    let river = manifest_dir.join("../../web/public/scenery/river-stones.kit");
-    static_bundle("river_bundle.rs", &river, None, true);
-    descriptor(&river, "river-stones-descriptor", "river_descriptor.rs");
-    let meadow = manifest_dir.join("../../web/public/scenery/greyhaven-meadow.kit");
-    static_bundle("meadow_bundle.rs", &meadow, None, true);
-    descriptor(
-        &meadow,
-        "greyhaven-meadow-descriptor",
-        "meadow_descriptor.rs",
-    );
     // The basin's ore veins and their spent look (#917, asset-tooling#763), and their descriptor.
     let gatherables = manifest_dir.join("../../web/public/scenery/gatherables.kit");
     static_bundle("gatherables_bundle.rs", &gatherables, None, true);
@@ -331,7 +312,9 @@ fn main() {
         "gatherables-descriptor",
         "gatherables_descriptor.rs",
     );
-    // Every ordinary placed kit of the shared inventory (#683), and their descriptors.
+    // Every ordinary placed kit of the shared inventory (#683), and their descriptors: the
+    // limestone rocks (asset-tooling#536), river stones (asset-tooling#538), meadow, Wolfrun
+    // Den, discoveries and any kit registered after them.
     placed_kits(&manifest_dir);
     // Greyhaven's ground layer materials (#525).
     let terrain = manifest_dir.join("../../web/public/scenery/greyhaven.terrain");

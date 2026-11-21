@@ -1,7 +1,7 @@
 import type { CompositionKitSource } from "./composition-kit";
 import type { KitBundle, KitLodsHandle, PlacedKitSource } from "./placed-kit";
 import type { LayeredSurface } from "./layered-surface";
-import type { StaticSceneContent } from "./scenery-nodes";
+import type { DrawnKits, StaticSceneContent } from "./scenery-nodes";
 import type { UnitPresenterHandle } from "./unit-presenter";
 import type { WaystoneSite } from "./units/waystone-panel";
 import { prepSpots, type RaidPrepSpots } from "./raid-prep";
@@ -201,18 +201,14 @@ export type SceneryProvider = {
   readonly climbing: PlacedKitSource;
   /** Greyhaven's highland crags dressed with the `crag-kit` rock modules (#668). */
   readonly crag: PlacedKitSource;
-  /** The limestone blocks Greyhaven's rocks are drawn as, from the `limestone-rocks` bundle. */
-  readonly limestone: PlacedKitSource;
-  /** The stones along Greyhaven's watercourses, from the `river-stones` bundle. */
-  readonly river: PlacedKitSource;
-  readonly meadow: PlacedKitSource;
   /** The basin's ore veins, from the `gatherables` bundle (#917). */
   readonly gather: PlacedKitSource;
   /** The ore veins (#917) in wire order: centre in units and their full and spent `gather` placements. */
   readonly veins: readonly { x: number; z: number; full: number; spent: number }[];
   /**
-   * Every ordinary placed kit of the shared inventory (#683): the Wolfrun Den (#963), the optional discoveries (#913)
-   * and any kit registered after them, drawn alike.
+   * Every ordinary placed kit of the shared inventory (#683): the limestone blocks Greyhaven's rocks are drawn as
+   * (their `standIn` the procedural rocks, #1011), the stones along its watercourses, the meadow's ground details, the
+   * Wolfrun Den (#963), the optional discoveries (#913) and any kit registered after them, drawn alike.
    */
   readonly kits: readonly PlacedKitSource[];
   /** Greyhaven's cosmetic ambient animals (#419). */
@@ -545,9 +541,6 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
     nature: placedKit(content, "nature"),
     climbing: placedKit(content, "climbing"),
     crag: placedKit(content, "crag"),
-    limestone: placedKit(content, "limestone"),
-    river: placedKit(content, "river"),
-    meadow: placedKit(content, "meadow"),
     gather: placedKit(content, "gather"),
     veins: (() => {
       const nodes = content.gatherNodes();
@@ -556,8 +549,11 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
         x: nodes[index * 2]!, z: nodes[index * 2 + 1]!, full: slots[index * 2] ?? 0, spent: slots[index * 2 + 1] ?? 0,
       }));
     })(),
-    kits: (JSON.parse(content.placedKits()) as (KitBundle & { name: string })[])
-      .map(({ name, bundle, descriptor, label }) => placedKit(content, name, { bundle, descriptor, label })),
+    kits: (JSON.parse(content.placedKits()) as (KitBundle & { name: string; standIn: keyof DrawnKits | null })[])
+      .map(({ name, bundle, descriptor, label, standIn }) => ({
+        ...placedKit(content, name, { bundle, descriptor, label }),
+        ...(standIn ? { standIn } : {}),
+      })),
     ambient: (() => {
       const anchors = content.ambientAnimalAnchors();
       return {

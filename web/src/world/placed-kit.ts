@@ -1,11 +1,12 @@
 import * as THREE from "three";
 import { InstancedLevels } from "./instanced-levels";
+import type { DrawnKits } from "./scenery-nodes";
 import { applyLayeredSurface, layeredSurfaceMaterial, type LayeredSurface } from "./layered-surface";
 import { drawnResources, generateMissingTangents, loadBundleGltfs, shareMaterials } from "./static-bundle";
 import { freeHandle, retainedBundle } from "./zone-lifecycle";
 
 /** A bundle the shared Rust presentation places at fixed placements. */
-export type PlacedKitName = "nature" | "climbing" | "crag" | "limestone" | "river" | "meadow" | "gather";
+export type PlacedKitName = "nature" | "climbing" | "crag" | "gather";
 
 /** A placed kit's bundle: its URL, its descriptor attachment and its name in messages. */
 export type KitBundle = { bundle: string; descriptor: string; label: string };
@@ -21,17 +22,12 @@ function inventoryKitBundle(kit: KitBundle): KitBundle {
 
 /** Where `scripts/fetch-bundles.sh` puts each named kit's bundle in `web/public`, and its descriptor attachment. */
 const KITS: Record<PlacedKitName, KitBundle> = {
-  meadow: { bundle: `${import.meta.env.BASE_URL}scenery/greyhaven-meadow.kit/`, descriptor: "greyhaven-meadow-descriptor", label: "greyhaven-meadow.kit" },
   /** The pinned `greyhaven-nature` bundle: Greyhaven's trees, rocks and bushes (#49). */
   nature: { bundle: `${import.meta.env.BASE_URL}scenery/greyhaven.nature/`, descriptor: "nature-descriptor", label: "greyhaven.nature" },
   /** The rolling `climbing-kit` bundle: Greyhaven's ladders, ropes and ivy (#621). */
   climbing: { bundle: `${import.meta.env.BASE_URL}scenery/climbing.kit/`, descriptor: "climbing-descriptor", label: "climbing.kit" },
   /** The rolling `crag-kit` bundle: the rock modules over Greyhaven's highland crags (#668), KTX2 textures. */
   crag: { bundle: `${import.meta.env.BASE_URL}scenery/crag.kit/`, descriptor: "crag-descriptor", label: "crag.kit" },
-  /** The rolling `limestone-rocks` bundle: the blocks Greyhaven's rocks are drawn as (asset-tooling#536). */
-  limestone: { bundle: `${import.meta.env.BASE_URL}scenery/limestone-rocks.kit/`, descriptor: "limestone-rocks-descriptor", label: "limestone-rocks.kit" },
-  /** The rolling `river-stones` bundle: the stones along Greyhaven's watercourses (asset-tooling#538). */
-  river: { bundle: `${import.meta.env.BASE_URL}scenery/river-stones.kit/`, descriptor: "river-stones-descriptor", label: "river-stones.kit" },
   /** The rolling `gatherables` bundle: the basin's ore veins, full and spent (#917, asset-tooling#763). */
   gather: { bundle: `${import.meta.env.BASE_URL}scenery/gatherables.kit/`, descriptor: "gatherables-descriptor", label: "gatherables.kit" },
 };
@@ -54,6 +50,8 @@ export type PlacedKitSource = {
   kit: string;
   /** An ordinary inventory kit's bundle, its directory under the site root ([`inventoryKitBundle`]); a named kit's comes from its name. */
   bundle?: KitBundle;
+  /** The static-scene stand-in an inventory kit hides once drawn (#1011), if it has one. */
+  standIn?: keyof DrawnKits;
   entries: readonly string[];
   /** Every placement: its entry and 16 column-major model floats (metres). */
   placements: readonly { key: string; matrix: Float32Array }[];

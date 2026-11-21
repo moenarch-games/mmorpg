@@ -34,6 +34,22 @@ static SCENE: PerZone<StaticScene> = PerZone::new();
 static SKELETON: PerZone<Vec<u8>> = PerZone::new();
 static BUFFERS: PerZone<SceneBuffers> = PerZone::new();
 
+/// `kit`'s name in the browser's drawn kits, as a group's `fallback` and a placed kit's
+/// `standIn` give it.
+#[must_use]
+pub fn fallback_name(kit: mmorpg_presentation::Kit) -> &'static str {
+    match kit {
+        mmorpg_presentation::Kit::Outpost => "outpost",
+        mmorpg_presentation::Kit::SettlementProps => "settlementProps",
+        mmorpg_presentation::Kit::Nature => "nature",
+        mmorpg_presentation::Kit::Limestone => "limestone",
+        mmorpg_presentation::Kit::Climbing => "climbing",
+        mmorpg_presentation::Kit::Crag => "crag",
+        // Graybox fallbacks are animated parts per body, never batched groups.
+        mmorpg_presentation::Kit::Graybox(_) => "fortress",
+    }
+}
+
 #[must_use]
 pub fn hosted_static_scene() -> &'static StaticScene {
     SCENE.get(|_| {
@@ -258,16 +274,7 @@ pub(crate) fn encode(scene: &StaticScene) -> SceneBuffers {
         .map(|group| GroupEntry {
             cull: group.cull.name(),
             instanced: group.instanced,
-            fallback: group.fallback.map(|kit| match kit {
-                mmorpg_presentation::Kit::Outpost => "outpost",
-                mmorpg_presentation::Kit::SettlementProps => "settlementProps",
-                mmorpg_presentation::Kit::Nature => "nature",
-                mmorpg_presentation::Kit::Limestone => "limestone",
-                mmorpg_presentation::Kit::Climbing => "climbing",
-                mmorpg_presentation::Kit::Crag => "crag",
-                // Graybox fallbacks are animated parts per body, never batched groups.
-                mmorpg_presentation::Kit::Graybox(_) => "fortress",
-            }),
+            fallback: group.fallback.map(fallback_name),
             min: group.min,
             max: group.max,
             draws: group.draws.iter().map(|draw| buffers.draw(draw)).collect(),
