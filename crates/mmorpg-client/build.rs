@@ -350,10 +350,6 @@ fn main() {
         "greyhaven-meadow-descriptor",
         "meadow_descriptor.rs",
     );
-    // The Wolfrun Den's mouth, bones and bedding (#963, asset-tooling#757), and their descriptor.
-    let wolf_den = manifest_dir.join("../../web/public/scenery/wolf-den.kit");
-    static_bundle("wolf_den_bundle.rs", &wolf_den, None, true);
-    descriptor(&wolf_den, "wolf-den-descriptor", "wolf_den_descriptor.rs");
     // The basin's ore veins and their spent look (#917, asset-tooling#763), and their descriptor.
     let gatherables = manifest_dir.join("../../web/public/scenery/gatherables.kit");
     static_bundle("gatherables_bundle.rs", &gatherables, None, true);
@@ -362,17 +358,60 @@ fn main() {
         "gatherables-descriptor",
         "gatherables_descriptor.rs",
     );
-    // The optional discoveries' sites (#913, asset-tooling#764), and their descriptor.
-    let discoveries = manifest_dir.join("../../web/public/scenery/discoveries.kit");
-    static_bundle("discoveries_bundle.rs", &discoveries, None, true);
-    descriptor(
-        &discoveries,
-        "discoveries-descriptor",
-        "discoveries_descriptor.rs",
-    );
+    // Every ordinary placed kit of the shared inventory (#683), and their descriptors.
+    placed_kits(&manifest_dir);
     // Greyhaven's ground layer materials (#525).
     let terrain = manifest_dir.join("../../web/public/scenery/greyhaven.terrain");
     static_bundle("terrain_bundle.rs", &terrain, None, false);
+}
+
+/// Every ordinary placed kit of `mmorpg-presentation`'s `placed-kits.json` (#683), embedded as
+/// `placed_kit_<n>_bundle.rs` and `placed_kit_<n>_descriptor.rs`, and `placed_kits.rs`: their
+/// `KITS` in inventory order, each a kit's glTF entries, files and descriptor JSON.
+fn placed_kits(manifest_dir: &Path) {
+    let inventory = manifest_dir.join("../mmorpg-presentation/placed-kits.json");
+    println!("cargo:rerun-if-changed={}", inventory.display());
+    let inventory: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(&inventory).expect("the placed-kit inventory is readable"),
+    )
+    .expect("the placed-kit inventory is JSON");
+    let mut code = String::new();
+    let mut kits = String::from("pub const KITS: &[Kit] = &[\n");
+    let kit_list = inventory["kits"]
+        .as_array()
+        .expect("the inventory lists kits");
+    for (index, kit) in kit_list.iter().enumerate() {
+        let bundle = kit["bundle"].as_str().expect("a kit names its bundle");
+        let name = kit["descriptor"]
+            .as_str()
+            .expect("a kit names its descriptor");
+        let directory = manifest_dir.join("../../web/public").join(bundle);
+        static_bundle(
+            &format!("placed_kit_{index}_bundle.rs"),
+            &directory,
+            None,
+            true,
+        );
+        descriptor(
+            &directory,
+            name,
+            &format!("placed_kit_{index}_descriptor.rs"),
+        );
+        code.push_str(&format!(
+            "mod bundle_{index} {{ include!(concat!(env!(\"OUT_DIR\"), \"/placed_kit_{index}_bundle.rs\")); }}\n\
+             mod descriptor_{index} {{ include!(concat!(env!(\"OUT_DIR\"), \"/placed_kit_{index}_descriptor.rs\")); }}\n"
+        ));
+        kits.push_str(&format!(
+            "    Kit {{ entries: bundle_{index}::ENTRIES, files: bundle_{index}::FILES, descriptor: descriptor_{index}::DESCRIPTOR }},\n"
+        ));
+    }
+    kits.push_str("];\n");
+    code.push_str(&kits);
+    fs::write(
+        PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR")).join("placed_kits.rs"),
+        code,
+    )
+    .expect("OUT_DIR is writable");
 }
 
 /// The optional kit `directory` beside the figures, as `<module>_bundle.rs` and

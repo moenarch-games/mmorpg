@@ -98,7 +98,7 @@ const GREYHAVEN: [&str; 13] = [
 
 /// Every kit that draws dressing, by its asset keys' prefix, with the static-scene fallback
 /// ([`Kit`]) it hides while drawn, if it has one.
-pub const KITS: [(&str, Option<Kit>); 12] = [
+pub const KITS: [(&str, Option<Kit>); 10] = [
     ("greyhaven.nature.", Some(Kit::Nature)),
     ("limestone-rocks.kit.", Some(Kit::Nature)),
     ("crag.kit.", Some(Kit::Crag)),
@@ -109,20 +109,8 @@ pub const KITS: [(&str, Option<Kit>); 12] = [
     ("shrine.kit.", None),
     ("greyhaven-meadow.kit.", None),
     ("river-stones.kit.", None),
-    // The Wolfrun Den (#963): its kit is drawn wherever the den is, so its generated collider
-    // shows no stand-in ([`own_collider`]).
-    ("wolf-den.kit.", None),
     // The basin's ore veins (#917) stand on their own generated colliders.
     ("gatherables.kit.", None),
-    // The optional discoveries (#913), drawn like the den over their generated colliders.
-    ("discoveries.kit.", None),
-];
-
-/// The wolf den kit's entries (asset-tooling#757), drawn through [`kit_placements`].
-pub const WOLF_DEN_ENTRIES: [&str; 3] = [
-    "wolf-den.kit.den-mouth",
-    "wolf-den.kit.bone-scatter",
-    "wolf-den.kit.bedding-patch",
 ];
 
 /// The gatherables kit's placed entries (asset-tooling#763): an ore vein and its spent look,
@@ -132,23 +120,73 @@ pub const GATHERABLE_ENTRIES: [&str; 2] = [
     "gatherables.kit.ore-vein-depleted",
 ];
 
-/// The discoveries kit's placed entries (#913, asset-tooling#764), drawn through
-/// [`kit_placements`].
-pub const DISCOVERY_ENTRIES: [&str; 13] = [
-    "discoveries.kit.hunter-lean-to",
-    "discoveries.kit.hunter-chest",
-    "discoveries.kit.skinning-rack",
-    "discoveries.kit.fire-ring",
-    "discoveries.kit.hunter-clue",
-    "discoveries.kit.lookout-platform",
-    "discoveries.kit.lookout-ladder",
-    "discoveries.kit.signal-brazier-lit",
-    "discoveries.kit.weapon-rack",
-    "discoveries.kit.lookout-banner",
-    "discoveries.kit.fen-punt",
-    "discoveries.kit.supply-crates",
-    "discoveries.kit.fen-marker",
-];
+/// The ordinary placed kits (#683): every kit with no specialization of its own, whose entries
+/// stand at their authored placements ([`kit_placements`]) and whose own colliders show no
+/// stand-in. `placed-kits.json` registers them once; the native client's build, the WASM host
+/// and the browser all read this one inventory, so adding such a kit is a data change plus
+/// fetching its bundle.
+const PLACED_KITS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/placed-kits.json"));
+
+/// One ordinary placed kit from `placed-kits.json`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlacedKit {
+    /// The kit's name, as the clients ask for it (`"den"`).
+    pub name: &'static str,
+    /// The bundle's directory under `web/public` (`scenery/wolf-den.kit`); its last component,
+    /// followed by `.`, prefixes the kit's asset keys.
+    pub bundle: &'static str,
+    /// The bundle's descriptor attachment, which declares the levels of detail.
+    pub descriptor: &'static str,
+    /// What the kit draws, for readers of the inventory.
+    pub about: &'static str,
+    /// The kit's placed entries.
+    pub entries: Vec<&'static str>,
+}
+
+impl PlacedKit {
+    /// The bundle's directory name (`wolf-den.kit`), its asset keys' prefix before the `.`.
+    #[must_use]
+    pub fn label(&self) -> &'static str {
+        self.bundle.rsplit('/').next().unwrap_or(self.bundle)
+    }
+
+    /// Whether `asset` is one of this kit's keys.
+    #[must_use]
+    pub fn owns(&self, asset: &str) -> bool {
+        asset
+            .strip_prefix(self.label())
+            .is_some_and(|rest| rest.starts_with('.'))
+    }
+
+    /// The kit's placements on `s`.
+    #[must_use]
+    pub fn placements(&'static self, s: &Scenery) -> Vec<Placement> {
+        kit_placements(s, &self.entries)
+    }
+}
+
+/// Every ordinary placed kit, in inventory order.
+#[must_use]
+pub fn placed_kits() -> &'static [PlacedKit] {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields, bound(deserialize = "'de: 'static"))]
+    struct Inventory {
+        kits: Vec<PlacedKit>,
+    }
+    static INVENTORY: LazyLock<Vec<PlacedKit>> = LazyLock::new(|| {
+        serde_json::from_str::<Inventory>(PLACED_KITS)
+            .expect("the placed-kit inventory is valid")
+            .kits
+    });
+    &INVENTORY
+}
+
+/// The ordinary placed kit called `name`.
+#[must_use]
+pub fn placed_kit(name: &str) -> Option<&'static PlacedKit> {
+    placed_kits().iter().find(|kit| kit.name == name)
+}
 
 /// The dressing format's version.
 pub const VERSION: u32 = 1;
@@ -240,10 +278,11 @@ pub fn kit(asset: &str) -> Option<Kit> {
         .and_then(|(_, kit)| *kit)
 }
 
-/// Whether a kit in [`KITS`] draws `asset`.
+/// Whether a kit in [`KITS`] or an ordinary placed kit ([`placed_kits`]) draws `asset`.
 #[must_use]
 pub fn drawn(asset: &str) -> bool {
     KITS.iter().any(|(prefix, _)| asset.starts_with(prefix))
+        || placed_kits().iter().any(|kit| kit.owns(asset))
 }
 
 /// Parses and validates dressing files: the known version, unique IDs and colliders, a known
@@ -367,7 +406,7 @@ pub fn ground_details(s: &Scenery, entries: &'static [&'static str]) -> Vec<Plac
 }
 
 /// The placements of the supplied bundle `entries` on `s` that stand at their authored height,
-/// not as ground detail: the Wolfrun Den's pieces (#963) and the discoveries' (#913).
+/// not as ground detail: every ordinary placed kit's ([`PlacedKit::placements`]) and the ore veins'.
 #[must_use]
 pub fn kit_placements(s: &Scenery, entries: &'static [&'static str]) -> Vec<Placement> {
     placed(s)
@@ -420,7 +459,7 @@ pub fn vein_slots(s: &Scenery) -> Vec<[usize; 2]> {
 }
 
 /// Whether collider `id` on `s` is generated from a placement whose kit has no stand-in
-/// ([`KITS`]): its art is always what shows, so the collider's own surface is never drawn.
+/// ([`KITS`] or [`placed_kits`]): its art is always what shows, so the collider's own surface is never drawn.
 #[must_use]
 pub fn own_collider(s: &Scenery, id: u32) -> bool {
     static OWN: LazyLock<BTreeSet<u32>> = LazyLock::new(|| {
@@ -487,6 +526,29 @@ mod tests {
                 .unwrap_or_else(|| panic!("{} has no collider {id}", p.id));
             // The generated mesh sits at the placement.
             assert_eq!(mesh.position, p.position, "{}", p.id);
+        }
+    }
+
+    #[test]
+    fn ordinary_placed_kits_own_their_entries_and_are_placed() {
+        let s = mmorpg_scenery::greyhaven_vale_scenery();
+        let kits = placed_kits();
+        assert_eq!(
+            kits.iter().map(|kit| kit.name).collect::<Vec<_>>(),
+            ["den", "discoveries"]
+        );
+        for kit in kits {
+            assert!(
+                kit.entries.iter().all(|entry| kit.owns(entry)),
+                "{}",
+                kit.name
+            );
+            assert!(
+                kit.entries
+                    .iter()
+                    .all(|entry| drawn(entry) && self::kit(entry).is_none())
+            );
+            assert!(!kit.placements(&s).is_empty(), "{} is placed", kit.name);
         }
     }
 

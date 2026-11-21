@@ -1505,8 +1505,9 @@ pub fn settlement_prop_models() -> Vec<f32> {
 
 /// A bundle drawn at fixed placements through the shared level selection: `"nature"`, the
 /// `greyhaven-nature` trees and bushes (#49), `"climbing"`, the climbing kit's ladders, ropes
-/// and ivy (#621), `"limestone"`, the rocks' blocks and the brook's sink (asset-tooling#536), or
-/// `"river"`, the stones along the watercourses (asset-tooling#538).
+/// and ivy (#621), `"limestone"`, the rocks' blocks and the brook's sink (asset-tooling#536),
+/// `"river"`, the stones along the watercourses (asset-tooling#538), or any ordinary placed kit of
+/// the shared inventory ([`placed_kits`]).
 fn placed_kit(
     kit: &str,
 ) -> Result<
@@ -1523,9 +1524,9 @@ fn placed_kit(
     static LIMESTONE: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     static RIVER: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     static MEADOW: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
-    static WOLF_DEN: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     static GATHER: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
-    static DISCOVERIES: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
+    // Every ordinary placed kit's placements, in inventory order (#683).
+    static ORDINARY: scenery::PerZone<Vec<Vec<Placement>>> = scenery::PerZone::new();
     // The placement lists mix bundles, so each kit takes the placements of its own entries.
     let all = || {
         let scenery = scenery::hosted_scenery();
@@ -1539,14 +1540,6 @@ fn placed_kit(
                 scenery, entries,
             ));
         }
-        placements.extend(mmorpg_presentation::world_dressing::kit_placements(
-            scenery,
-            &mmorpg_presentation::world_dressing::WOLF_DEN_ENTRIES,
-        ));
-        placements.extend(mmorpg_presentation::world_dressing::kit_placements(
-            scenery,
-            &mmorpg_presentation::world_dressing::DISCOVERY_ENTRIES,
-        ));
         placements
     };
     let of = |entries: &[&str]| {
@@ -1566,10 +1559,6 @@ fn placed_kit(
             let entries = &mmorpg_presentation::terrain_patch::MEADOW_ENTRIES;
             Ok((entries, MEADOW.get(|_| of(entries))))
         }
-        "den" => {
-            let entries = &mmorpg_presentation::world_dressing::WOLF_DEN_ENTRIES;
-            Ok((entries, WOLF_DEN.get(|_| of(entries))))
-        }
         // The ore veins (#917), in the order [`vein_slots`] indexes.
         "gather" => {
             let entries = &mmorpg_presentation::world_dressing::GATHERABLE_ENTRIES;
@@ -1583,10 +1572,6 @@ fn placed_kit(
                 }),
             ))
         }
-        "discoveries" => {
-            let entries = &mmorpg_presentation::world_dressing::DISCOVERY_ENTRIES;
-            Ok((entries, DISCOVERIES.get(|_| of(entries))))
-        }
         "climbing" => Ok((
             &climbing::ENTRIES,
             CLIMBING.get(|_| climbing::placements(scenery::hosted_scenery())),
@@ -1595,8 +1580,44 @@ fn placed_kit(
             &crag::KIT_ENTRIES,
             CRAG.get(|_| crag::placements(scenery::hosted_scenery())),
         )),
-        other => Err(JsError::new(&format!("no placed kit {other:?}"))),
+        other => {
+            // An ordinary placed kit from the shared inventory (#683).
+            let kits = mmorpg_presentation::world_dressing::placed_kits();
+            let index = kits
+                .iter()
+                .position(|placed| placed.name == other)
+                .ok_or_else(|| JsError::new(&format!("no placed kit {other:?}")))?;
+            let placements = ORDINARY.get(|_| {
+                kits.iter()
+                    .map(|placed| placed.placements(scenery::hosted_scenery()))
+                    .collect()
+            });
+            Ok((&kits[index].entries, &placements[index]))
+        }
     }
+}
+
+/// The ordinary placed kits (#683), in inventory order, as JSON: each kit's `name` (for
+/// [`kit_entries`], [`kit_keys`], [`kit_models`] and [`KitLods`]), its `bundle` directory under
+/// the site root, its `descriptor` attachment and its `label`. The browser registers every
+/// one generically.
+#[wasm_bindgen(js_name = placedKits)]
+#[must_use]
+pub fn placed_kits() -> String {
+    serde_json::Value::Array(
+        mmorpg_presentation::world_dressing::placed_kits()
+            .iter()
+            .map(|kit| {
+                serde_json::json!({
+                    "name": kit.name,
+                    "bundle": kit.bundle,
+                    "descriptor": kit.descriptor,
+                    "label": kit.label(),
+                })
+            })
+            .collect(),
+    )
+    .to_string()
 }
 
 /// The bundle entries `kit` (`"nature"` or `"climbing"`) is drawn from (#49, #621).
