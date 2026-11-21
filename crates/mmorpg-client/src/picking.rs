@@ -311,6 +311,7 @@ mod tests {
                 unlit: false,
                 double_sided: true,
                 ground: None,
+                texture: None,
             },
             skin: None,
         }

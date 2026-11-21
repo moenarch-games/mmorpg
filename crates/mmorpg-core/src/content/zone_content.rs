@@ -93,6 +93,10 @@ pub struct ZoneContent {
     handoff_corridors: Vec<crate::HandoffCorridor>,
     /// The night raid target (#530), if the zone has one.
     raid: Option<crate::RaidSite>,
+    /// A hunter's daily outing (#991), if the zone has one.
+    hunt: Option<crate::HuntOuting>,
+    /// A merchant's daily cart journey (#992), if the zone has one.
+    cart: Option<crate::CartRun>,
     /// Network stones standing in this zone, in ID order (#145).
     waystones: Vec<crate::WaystoneId>,
     /// Named areas whose first visit pays discovery experience (#916), in ID order.
@@ -237,6 +241,8 @@ impl ZoneContent {
             climbing: crate::ClimbSurfaces::default(),
             handoff_corridors: Vec::new(),
             raid: None,
+            hunt: None,
+            cart: None,
             waystones: Vec::new(),
             discoveries: Vec::new(),
             gather_nodes: Vec::new(),
@@ -297,6 +303,8 @@ impl ZoneContent {
             climbing: crate::ClimbSurfaces::default(),
             handoff_corridors: Vec::new(),
             raid: None,
+            hunt: None,
+            cart: None,
             waystones: Vec::new(),
             discoveries: Vec::new(),
             gather_nodes: Vec::new(),
@@ -1303,6 +1311,7 @@ impl ZoneContent {
             }
         }
         self.private_homes = homes;
+        self.fingerprint = self.compute_fingerprint();
         Ok(self)
     }
 
@@ -1437,6 +1446,68 @@ impl ZoneContent {
         self.raid = Some(site);
         self.fingerprint = self.compute_fingerprint();
         Ok(self)
+    }
+
+    /// Adds a hunter's daily outing (#991). Its beast is a content spawn reserved for the
+    /// outing's confrontations, in no den, raid or depths site.
+    pub fn with_hunt(mut self, hunt: crate::HuntOuting) -> Result<Self, ZoneError> {
+        hunt.validate(&self)?;
+        if self
+            .dens
+            .iter()
+            .any(|den| den.pack.contains(&hunt.beast) || den.prey.contains(&hunt.beast))
+        {
+            return Err(ZoneError::new("a creature belongs to two groups"));
+        }
+        self.hunt = Some(hunt);
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// The hunter's outing, if any.
+    #[must_use]
+    pub const fn hunt(&self) -> Option<&crate::HuntOuting> {
+        self.hunt.as_ref()
+    }
+
+    /// Whether `creature` is the hunt's reserved beast: it stands only on a confrontation day's
+    /// stalk and never respawns on its own.
+    #[must_use]
+    pub fn is_hunt_beast(&self, creature: CreatureId) -> bool {
+        self.hunt
+            .as_ref()
+            .is_some_and(|hunt| hunt.beast == creature)
+    }
+
+    /// Adds a merchant's daily cart journey (#992). Its bandits are content spawns reserved for
+    /// the journey's ambushes, in no den, raid, depths site or hunt.
+    pub fn with_cart(mut self, cart: crate::CartRun) -> Result<Self, ZoneError> {
+        cart.validate(&self)?;
+        if self.dens.iter().any(|den| {
+            cart.bandits
+                .iter()
+                .any(|bandit| den.pack.contains(bandit) || den.prey.contains(bandit))
+        }) {
+            return Err(ZoneError::new("a creature belongs to two groups"));
+        }
+        self.cart = Some(cart);
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// The merchant's cart journey, if any.
+    #[must_use]
+    pub const fn cart(&self) -> Option<&crate::CartRun> {
+        self.cart.as_ref()
+    }
+
+    /// Whether `creature` is one of the cart's reserved bandits: it stands only on an ambush
+    /// day's hold and never respawns on its own.
+    #[must_use]
+    pub fn is_cart_bandit(&self, creature: CreatureId) -> bool {
+        self.cart
+            .as_ref()
+            .is_some_and(|cart| cart.bandits.contains(&creature))
     }
 
     /// Binds the network stones that stand in this zone (#145, [`crate::WAYSTONES`]): each
@@ -1638,7 +1709,7 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_gather_fingerprint();
+        let fingerprint = self.compute_cart_fingerprint();
         let Some(rewind) = self.hit_rewind else {
             return fingerprint;
         };
@@ -1646,6 +1717,28 @@ impl ZoneContent {
         hash.bytes(b"mmorpg.zone-content/hit-rewind-v1");
         hash.u64(fingerprint);
         hash.u32(rewind.max_ms);
+        hash.finish()
+    }
+
+    fn compute_private_home_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_gather_fingerprint();
+        if self.private_homes.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/private-homes-v1");
+        hash.u64(fingerprint);
+        hash.len(self.private_homes.len());
+        for home in &self.private_homes {
+            hash.u32(home.npc.get());
+            hash.u32(home.door.get());
+            hash.len(home.wake_path.len());
+            for value in home.wake_path.iter().flatten() {
+                hash.i32(*value);
+            }
+            hash.u16(home.doorway_facing);
+            hash.text(&home.woken_line);
+        }
         hash.finish()
     }
 
@@ -1716,6 +1809,48 @@ impl ZoneContent {
     #[must_use]
     pub fn caches(&self) -> &[crate::DiscoveryCache] {
         &self.caches
+    }
+
+    /// A merchant's cart journey (#992) enters the identity only when a zone has one.
+    fn compute_cart_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_hunt_fingerprint();
+        let Some(cart) = &self.cart else {
+            return fingerprint;
+        };
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/cart-v1");
+        hash.u64(fingerprint);
+        hash.u32(cart.merchant.get());
+        hash.u32(cart.leave);
+        hash.len(cart.path.len());
+        hash.i32s(cart.path.as_flattened());
+        hash.len(cart.ambush);
+        hash.u32(u32::from(cart.facing));
+        hash.u32(cart.trade);
+        hash.len(cart.bandits.len());
+        for bandit in &cart.bandits {
+            hash.u32(bandit.get());
+        }
+        hash.finish()
+    }
+
+    /// A hunter's outing (#991) enters the identity only when a zone has one.
+    fn compute_hunt_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_private_home_fingerprint();
+        let Some(hunt) = &self.hunt else {
+            return fingerprint;
+        };
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/hunt-v1");
+        hash.u64(fingerprint);
+        hash.u32(hunt.hunter.get());
+        hash.u32(hunt.leave);
+        hash.len(hunt.path.len());
+        hash.i32s(hunt.path.as_flattened());
+        hash.u32(u32::from(hunt.facing));
+        hash.u32(hunt.stalk);
+        hash.u32(hunt.beast.get());
+        hash.finish()
     }
 
     fn compute_cache_fingerprint(&self) -> u64 {
@@ -2192,7 +2327,7 @@ impl ZoneContent {
 
     fn compute_routine_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_door_fingerprint();
-        if self.routines.is_empty() && self.closed_at_night.is_empty() {
+        if self.routines.is_empty() && self.closed_at_night.is_empty() && self.seats.is_empty() {
             return fingerprint;
         }
         let mut hash = Fnv1a::new();
@@ -2587,6 +2722,8 @@ const fn family_code(family: super::units::CreatureFamily) -> u8 {
         CreatureFamily::Bear => 9,
         CreatureFamily::Spider => 10,
         CreatureFamily::Lurker => 11,
+        CreatureFamily::Lynx => 12,
+        CreatureFamily::Adder => 13,
     }
 }
 

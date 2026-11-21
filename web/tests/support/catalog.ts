@@ -43,10 +43,10 @@ export function catalogJson(revision = "3"): Record<string, unknown> {
       },
     ],
     abilities: [
-      { id: 1, name: "Heroic Strike", user: "warden", level: 1, cost: 15, castTicks: 0, channel: false, cooldown: 0, aura: null },
-      { id: 2, name: "Shield Bash", user: "warden", level: 2, cost: 10, castTicks: 0, channel: false, cooldown: 360, aura: 6 },
-      { id: 9, name: "Firebolt", user: "arcanist", level: 1, cost: 25, castTicks: 60, channel: false, cooldown: 0, aura: null },
-      { id: 13, name: "Muck Bolt", user: "creature", level: 1, cost: 0, castTicks: 45, channel: false, cooldown: 240, aura: null },
+      { id: 1, name: "Heroic Strike", user: "warden", level: 1, cost: 15, castTicks: 0, channel: false, cooldown: 0, rangeLabel: "Melee range", aura: null },
+      { id: 2, name: "Shield Bash", user: "warden", level: 2, cost: 10, castTicks: 0, channel: false, cooldown: 360, rangeLabel: "Melee range", aura: 6 },
+      { id: 9, name: "Firebolt", user: "arcanist", level: 1, cost: 25, castTicks: 60, channel: false, cooldown: 0, rangeLabel: "30 m range", aura: null },
+      { id: 13, name: "Muck Bolt", user: "creature", level: 1, cost: 0, castTicks: 45, channel: false, cooldown: 240, rangeLabel: "20 m range", aura: null },
     ],
   };
 }

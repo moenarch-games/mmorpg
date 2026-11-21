@@ -2,6 +2,7 @@ import { onlineCharacterId, hasOnlineCharacterId } from "./world/online-characte
 import { enableFrameProfile, profileBegin, profileEnd } from "./world/frame-profile";
 import * as THREE from "three";
 import { GreyhavenLighting, presentationMaterial } from "./world/lighting";
+import { retainedBundleCount } from "./world/zone-lifecycle";
 import {
   createThreeSceneRenderer,
   type Matrix4Values,
@@ -184,12 +185,17 @@ const worldUi = [...document.querySelectorAll<HTMLElement>("[data-world-ui]")];
 // A transparent canvas: the CSS sky shows through behind the world. Everything is lit and drawn through
 // render-engine's three.js lighting (#600), which multisamples its own HDR pass.
 const lighting = new GreyhavenLighting(import.meta.env.BASE_URL);
+/** The three renderer the last frame drew with, for `?debug`'s live resource counts (#1005). */
+let drawTarget: THREE.WebGLRenderer | null = null;
 const renderer = createThreeSceneRenderer(canvas, {
   alpha: true,
   antialias: false,
   pixelRatioLimit: 2,
   material: presentationMaterial,
-  draw: (target, scene, view) => lighting.draw(target, scene, view),
+  draw: (target, scene, view) => {
+    drawTarget = target;
+    lighting.draw(target, scene, view);
+  },
 });
 
 
@@ -715,7 +721,16 @@ for (const button of [requireElement<HTMLButtonElement>("#world-settings"), requ
 // Debug-only camera and public-source hooks for deterministic acceptance; `?debug` enables them.
 if (new URLSearchParams(window.location.search).has("debug")) {
   Object.assign(window, { __valeDebug: { ...worldView.debugApi(), worldSource: () => (activeWorld ?? chosenWorld())?.source ?? null,
-    loadingReport: () => ({ ...loading, marks: startupMarks(), startArea: startArea(), art: worldView.artProgress(startArea()), allArt: worldView.artProgress(null) }) } });
+    loadingReport: () => ({ ...loading, marks: startupMarks(), startArea: startArea(), art: worldView.artProgress(startArea()), allArt: worldView.artProgress(null) }),
+    // Zone presentation lifecycle (#1005): live three resource counts, and presenting another zone's scenery (the
+    // Depths are 20000) while the local host stays where it is; `null` follows the host's zone again.
+    rendererMemory: () => (drawTarget ? { ...drawTarget.info.memory, programs: drawTarget.info.programs?.length ?? 0, retainedBundles: retainedBundleCount() } : null),
+    presentZone: (zoneId: number | null) => {
+      debugPresentedZone = zoneId;
+      const world = activeWorld ?? chosenWorld();
+      if (world && zoneId !== null) { presentWorldZone(world, zoneId); }
+      return presentedZone;
+    } } });
 }
 // Opt-in per-frame phase timings for scripts/profile-browser.py (#546).
 if (new URLSearchParams(window.location.search).has("profile")) {
@@ -1028,6 +1043,8 @@ function createOnlineWorld(local: LocalWorld, server: ZoneServer): ZoneWorld {
 
 /** The zone the view draws: Greyhaven Vale (1) unless an online session went elsewhere (#145). */
 let presentedZone = 1;
+/** A zone `?debug`'s `presentZone` shows regardless of the local host's (#1005), or null. */
+let debugPresentedZone: number | null = null;
 
 /**
  * A local or scenario character that crossed into the Redbrand Depths or back (#404): the local
@@ -1035,7 +1052,7 @@ let presentedZone = 1;
  * follow a redirect instead and arenas have no local zone change.
  */
 function followLocalZone(): void {
-  if (!activeWorld || activeWorld === onlineWorld || arenaWorld?.world === activeWorld || practiceWorld?.world === activeWorld) {
+  if (debugPresentedZone !== null || !activeWorld || activeWorld === onlineWorld || arenaWorld?.world === activeWorld || practiceWorld?.world === activeWorld) {
     return;
   }
   const zone = activeWorld.source.latestProjection()?.zoneId;
@@ -1075,6 +1092,9 @@ function refreshSelectionPresentation(): void {
   characterSelect.dataset.characterClass = character.classId;
   renderCharacterDetails(character, characterAppearance);
   syncAppearanceButtons();
+  // A new selection's figure and look load first (#979), even before the world has.
+  const look = prefetchLook();
+  if (look) { worldView.selectPlayer(look); }
 }
 
 function selectCharacter(characterId: string): void {
@@ -2152,11 +2172,20 @@ window.addEventListener("pagehide", () => {
     }
   }
 });
+/** The selected character's look, so its figure and items lead the download (#979); none if it cannot be read yet. */
+function prefetchLook(): ViewerLook | undefined {
+  try {
+    return viewerLook(true);
+  } catch (error) {
+    console.info("The selected look is not known yet; the default figure loads first.", error);
+    return undefined;
+  }
+}
 function loadPageWorld(): Promise<LocalWorld> {
   // Without browser storage the characters still follow the record and lease rules, for this visit only.
   const characters = new LocalCharacters(browserStorage() ?? new VisitStorage(), navigator.locks);
   // The player figure downloads beside the world build (#855).
-  return loadLocalWorld(characters, () => worldView.prefetchPlayer(importedRestClip)).then((loaded) => {
+  return loadLocalWorld(characters, () => worldView.prefetchPlayer(importedRestClip, prefetchLook())).then((loaded) => {
     localCharacters = characters;
     return loaded;
   });

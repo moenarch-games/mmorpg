@@ -244,12 +244,14 @@ impl<B: EntryBackend> DevCharacterService<B> {
         &self,
         id: &MatchId,
     ) -> Result<Vec<crate::character_admission::StoredCharacter>, String> {
-        let snapshot = self
-            .runtime
-            .block_on(self.host.inspect(id, |runtime| runtime.snapshot()))
+        // Captured straight from the live zone under the runtime lock (#1004);
+        // the caller holds the storage owner, so logout and handoff stay ordered.
+        self.runtime
+            .block_on(self.host.inspect(id, |runtime| {
+                runtime.simulation().capture_stored_characters()
+            }))
             .map_err(message)?
-            .map_err(message)?;
-        stored_characters(id, &snapshot.payload)
+            .map_err(message)
     }
 
     /// Called from a blocking worker, never the simulation tick or async executor.

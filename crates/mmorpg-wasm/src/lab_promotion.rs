@@ -716,6 +716,8 @@ mod tests {
         let mut config = Config::baseline();
         config.name = "Longer bash window".to_owned();
         config.edges[0].actionable_ms = 800;
+        // The slash's follow-ups share one window (#1014).
+        config.edges[1].actionable_ms = 800;
         let request = Request {
             format: REQUEST_FORMAT.to_owned(),
             version: 2,

@@ -17,6 +17,7 @@ mod boulder;
 mod breakable;
 pub mod buoyancy;
 mod cache;
+pub mod cart;
 mod casting;
 mod character;
 mod chat;
@@ -43,9 +44,11 @@ mod gathering;
 pub mod golden;
 mod guard;
 mod home;
+pub mod hunt;
 mod interest;
 mod inventory;
 mod loot;
+mod mastery;
 mod melee;
 mod minion;
 mod mobility;
@@ -77,6 +80,7 @@ mod strike;
 mod structure;
 mod summoned;
 mod swing;
+mod threat_cache;
 mod transfer;
 pub mod trap;
 mod vendor;
@@ -98,6 +102,7 @@ pub use breakable::{
     EXPLOSION_RADIUS_UNITS, MAX_DEBRIS, MAX_DEBRIS_PER_TICK, MAX_VISIBLE_DEBRIS, debris_pieces,
 };
 pub use cache::{CACHE_HEIGHT_UNITS, DiscoveryCache};
+pub use cart::{CartOutcome, CartRun};
 pub use character::{
     CHARACTER_RECORD_SCHEMA_VERSION, CharacterId, CharacterLocation, CharacterRecord, DepthsRecord,
     MAX_CHARACTER_ID_BYTES,
@@ -130,7 +135,10 @@ pub use creature::{
     MAX_THREAT_ENTRIES, WANDER_WAIT_TICKS, WANDER_WALK_TIMEOUT_TICKS,
 };
 pub use creature_attack::{
-    CREATURE_ATTACK_SLACK_UNITS, CreatureAttack, HEAVY_ATTACK_ODDS, PendingAttack, contact_ticks,
+    ADDER_RECOVER_TICKS, ADDER_SLITHER_SPEED_SUBUNITS_PER_TICK, ADDER_WARN_TICKS,
+    CREATURE_ATTACK_SLACK_UNITS, CreatureAttack, HEAVY_ATTACK_ODDS, Lunge,
+    POUNCE_LEAP_SPEED_SUBUNITS_PER_TICK, POUNCE_LEAP_TICKS, POUNCE_LEAP_UNITS,
+    POUNCE_RECOVER_TICKS, PendingAttack, contact_ticks, lunge,
 };
 pub use den::{DEN_LEG_TICKS, FLEE_RADIUS_UNITS, HUNT_RADIUS_UNITS, WildlifeDen};
 pub use depths::{
@@ -177,6 +185,7 @@ pub use home::{
     MAX_WAKE_WAYPOINTS, NpcWake, PRIVATE_DOOR_CLOSE_TICKS, PrivateHome, WAKE_IDLE_TICKS,
     WAKE_RISE_TICKS,
 };
+pub use hunt::{HuntOutcome, HuntOuting};
 pub use interest::{InterestMaintenanceStats, InterestQueryStats, PlayerProjection};
 pub use inventory::{
     INVENTORY_SLOTS, ITEM_CATALOG, Inventory, InventoryError, ItemId, ItemStack, ItemTemplate,
@@ -185,6 +194,11 @@ pub use inventory::{
 pub use loot::{
     LootOutcome, LootRewards, LootRolls, LootSettlementError, LootTable, LootTableError,
     MAX_LOOT_OUTCOMES, loot_table, settle_loot,
+};
+pub use mastery::{
+    BLOW_PRACTICE, LEAPING_SLASH_LEVEL, MAX_MASTERY_LEVEL, MAX_PRACTICE, Mastery, PRACTICE_PER_FOE,
+    Practice, TECHNIQUE_PRACTICE, TRIVIAL_LEVELS_BELOW, WeaponMastery, practice_to_next_level,
+    valid_practice,
 };
 pub use melee::{JUMP_STRIKE_AIR_TICKS, MeleeState, PendingStrike};
 pub use minion::{

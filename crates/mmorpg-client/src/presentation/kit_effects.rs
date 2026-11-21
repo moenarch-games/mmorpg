@@ -377,6 +377,7 @@ impl Effect {
                     unlit: false,
                     double_sided: part.double_sided,
                     ground: None,
+                    texture: None,
                 },
                 skin: None,
             });

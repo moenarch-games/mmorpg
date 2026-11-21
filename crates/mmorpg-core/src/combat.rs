@@ -1045,14 +1045,17 @@ impl ZoneSimulation {
         let Some((target, victim)) = self.creature_victim(creature_id, None) else {
             return Ok(());
         };
-        if !self.creature_reaches(creature_id, target, 0)? {
+        // A set-piece attacker (#989, #990) begins from its leap beyond its reach.
+        let lunge = crate::lunge(template.family);
+        let leap = lunge.map_or(0, |lunge| lunge.leap_units);
+        if !self.creature_reaches(creature_id, target, leap)? {
             return Ok(());
         }
         let source = EntityRef::Creature(creature_id);
         // A beast winds up one of its two attacks first (#889): the heavy one in
-        // HEAVY_ATTACK_ODDS, drawn from its own stream.
+        // HEAVY_ATTACK_ODDS, drawn from its own stream. A set-piece attacker has only its one attack.
         if crate::contact_ticks(template.family, crate::CreatureAttack::Quick).is_some() {
-            let heavy = self.stream(source).below(crate::HEAVY_ATTACK_ODDS) == 0;
+            let heavy = lunge.is_none() && self.stream(source).below(crate::HEAVY_ATTACK_ODDS) == 0;
             let attack = if heavy {
                 crate::CreatureAttack::Heavy
             } else {
@@ -1565,20 +1568,6 @@ impl ZoneSimulation {
         self.release_minions(player_id, false)
     }
 
-    /// Players on any living creature's threat table, themselves or through a minion (#295).
-    pub(crate) fn threatened_players(&self) -> BTreeSet<PlayerId> {
-        self.creatures
-            .values()
-            .filter(|creature| creature.is_alive())
-            .flat_map(|creature| &creature.threat)
-            .filter_map(|entry| match entry.entity {
-                EntityRef::Player(player_id) => Some(player_id),
-                unit @ EntityRef::Minion(_) => self.controller(unit),
-                EntityRef::Creature(_) | EntityRef::Npc(_) => None,
-            })
-            .collect()
-    }
-
     /// Step 7: player regeneration, minions' time (#295), then corpse despawns and respawns in
     /// creature-ID order.
     pub(crate) fn update_timers(&mut self, now: u64) -> Result<(), ZoneError> {
@@ -1658,6 +1647,8 @@ impl ZoneSimulation {
             if let Life::Despawned { died_at } = creature.life
                 && !content.is_raider(creature_id)
                 && !content.is_depths_creature(creature_id)
+                && !content.is_hunt_beast(creature_id)
+                && !content.is_cart_bandit(creature_id)
                 && now >= died_at.saturating_add(u64::from(template.respawn_ticks))
                 && (template.prop().is_none() || !self.prop_spot_taken(creature_id)?)
             {

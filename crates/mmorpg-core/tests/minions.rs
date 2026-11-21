@@ -244,6 +244,13 @@ fn orders_are_checked_points_are_held_and_skeletons_leave_with_their_summoner() 
         restored.snapshot().unwrap()
     );
 
+    // A playerless checkpoint (#1003) dismisses the minions as removal does.
+    let mut departed = restored;
+    assert!(departed.remove_player(1));
+    let playerless = summoner.zone.playerless_snapshot().unwrap();
+    assert!(playerless.minions.is_empty());
+    assert_eq!(playerless, departed.snapshot().unwrap());
+
     assert!(summoner.zone.remove_player(1));
     assert!(summoner.zone.snapshot().unwrap().minions.is_empty());
 }

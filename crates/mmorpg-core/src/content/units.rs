@@ -36,6 +36,10 @@ pub enum CreatureFamily {
     Spider,
     /// The marsh's ambushers (#889): they lie still until a player comes close.
     Lurker,
+    /// The forest lynx (#989): an ambusher that stalks in and pounces from a few metres out.
+    Lynx,
+    /// The marsh adder (#990): an ambusher that coils, hisses and strikes at close range.
+    Adder,
 }
 
 impl CreatureFamily {
@@ -54,13 +58,22 @@ impl CreatureFamily {
             Self::Bear => "bear",
             Self::Spider => "spider",
             Self::Lurker => "lurker",
+            Self::Lynx => "lynx",
+            Self::Adder => "adder",
         }
     }
 
     /// Ambushers (#889) start fights only at [`crate::AMBUSH_RADIUS_UNITS`].
     #[must_use]
     pub const fn ambushes(self) -> bool {
-        matches!(self, Self::Lurker)
+        matches!(self, Self::Lurker | Self::Lynx | Self::Adder)
+    }
+
+    /// Pouncers (#989) begin their attack from [`crate::POUNCE_LEAP_UNITS`] beyond their reach,
+    /// close in at a stalk, and leap the gap on the attack's lunge.
+    #[must_use]
+    pub const fn pounces(self) -> bool {
+        matches!(self, Self::Lynx)
     }
 
     /// Aquatic families swim in deep water and trail submerged players (#274).

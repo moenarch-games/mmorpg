@@ -1,0 +1,36 @@
+{
+  "kits": [
+    {
+      "name": "den",
+      "bundle": "scenery/wolf-den.kit",
+      "descriptor": "wolf-den-descriptor",
+      "about": "The Wolfrun Den's mouth, bones and bedding (#963, asset-tooling#757).",
+      "entries": [
+        "wolf-den.kit.den-mouth",
+        "wolf-den.kit.bone-scatter",
+        "wolf-den.kit.bedding-patch"
+      ]
+    },
+    {
+      "name": "discoveries",
+      "bundle": "scenery/discoveries.kit",
+      "descriptor": "discoveries-descriptor",
+      "about": "The optional discoveries' hunter's cache, Redbrand lookout and fen supply cache (#913, asset-tooling#764).",
+      "entries": [
+        "discoveries.kit.hunter-lean-to",
+        "discoveries.kit.hunter-chest",
+        "discoveries.kit.skinning-rack",
+        "discoveries.kit.fire-ring",
+        "discoveries.kit.hunter-clue",
+        "discoveries.kit.lookout-platform",
+        "discoveries.kit.lookout-ladder",
+        "discoveries.kit.signal-brazier-lit",
+        "discoveries.kit.weapon-rack",
+        "discoveries.kit.lookout-banner",
+        "discoveries.kit.fen-punt",
+        "discoveries.kit.supply-crates",
+        "discoveries.kit.fen-marker"
+      ]
+    }
+  ]
+}

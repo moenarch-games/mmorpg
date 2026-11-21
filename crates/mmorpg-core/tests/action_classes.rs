@@ -703,3 +703,73 @@ fn conflicting_and_unsupported_overrides_are_refused() {
     );
     assert_eq!(zone.action_graph(), &action::BASELINE);
 }
+
+/// The slash's follow-ups share one opening whose lifetime the Shield Bash
+/// edge times, so a configuration giving them different windows is refused
+/// instead of cutting the cleave follow-up short (#1014).
+#[test]
+fn divergent_slash_follow_up_windows_are_refused() {
+    use mmorpg_core::action::{Condition, EdgeId, Window, WindowModifier};
+    let warden = Scope::Class(PlayerClass::Warden);
+    let window = |edge| Override {
+        scope: warden,
+        setting: Setting::Window {
+            edge,
+            window: Window {
+                open_after_ms: 200,
+                actionable_ms: 200,
+                buffer_ms: 150,
+            },
+        },
+    };
+    let graph = |overrides: Vec<Override>, modifiers: Vec<WindowModifier>| ActionGraph {
+        overrides: Box::leak(overrides.into_boxed_slice()),
+        window_modifiers: Box::leak(modifiers.into_boxed_slice()),
+        ..action::BASELINE
+    };
+    let divergent = Err(GraphError::DivergentSlashWindow(EdgeId::CleaveToSlash));
+    // The issue's counterexample: only the Bash window shortened to 400 ms
+    // while the Cleave window stays open until 800 ms.
+    assert_eq!(
+        graph(vec![window(EdgeId::SlashToShieldBash)], Vec::new()).validate(),
+        divergent
+    );
+    assert_eq!(
+        graph(vec![window(EdgeId::CleaveToSlash)], Vec::new()).validate(),
+        divergent
+    );
+    // The same window for both follow-ups is accepted.
+    graph(
+        vec![
+            window(EdgeId::SlashToShieldBash),
+            window(EdgeId::CleaveToSlash),
+        ],
+        Vec::new(),
+    )
+    .validate()
+    .unwrap();
+    // A conditional modifier must cover both edges alike.
+    let modifier = |edge| WindowModifier {
+        edge,
+        conditions: &[Condition::Warden],
+        actionable_delta_ms: -100,
+    };
+    assert_eq!(
+        graph(Vec::new(), vec![modifier(EdgeId::CleaveToSlash)]).validate(),
+        divergent
+    );
+    graph(
+        Vec::new(),
+        vec![
+            modifier(EdgeId::SlashToShieldBash),
+            modifier(EdgeId::CleaveToSlash),
+        ],
+    )
+    .validate()
+    .unwrap();
+    // The zone refuses the divergent graph and keeps the production rules.
+    let mut zone = ZoneSimulation::new(ZoneId::new(1));
+    let refused = graph(vec![window(EdgeId::SlashToShieldBash)], Vec::new());
+    assert!(zone.set_action_graph(Box::leak(Box::new(refused))).is_err());
+    assert_eq!(zone.action_graph(), &action::BASELINE);
+}

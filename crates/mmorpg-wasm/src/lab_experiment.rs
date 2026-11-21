@@ -49,7 +49,7 @@ const ANCHORS: [Anchor; 5] = [
     Anchor::PhaseStart,
     Anchor::PhaseEnd,
 ];
-const CONDITIONS: [Condition; 8] = [
+const CONDITIONS: [Condition; 9] = [
     Condition::PositiveHealthDamage,
     Condition::TargetAlive,
     Condition::Alive,
@@ -58,12 +58,14 @@ const CONDITIONS: [Condition; 8] = [
     Condition::Airborne,
     Condition::Stunned,
     Condition::MultiHit,
+    Condition::SwordMastery,
 ];
 /// Every edge id: the named ones, then `Authored(0)`… (#414).
 fn edge_ids() -> impl Iterator<Item = EdgeId> + Clone {
     [
         EdgeId::SlashToShieldBash,
         EdgeId::CleaveToSlash,
+        EdgeId::LeapingSlash,
         EdgeId::LandingToMelee,
         EdgeId::LandingToShieldBash,
         EdgeId::LandingToAbility,
@@ -1526,6 +1528,8 @@ mod tests {
         let mut config = Config::baseline();
         config.name = "longer window".to_owned();
         config.edges[0].actionable_ms += 300;
+        // The slash's follow-ups share one window (#1014).
+        config.edges[1].actionable_ms += 300;
         let graph = config.graph().unwrap();
         assert_ne!(*graph, action::BASELINE);
         assert_ne!(config.identity(), Config::baseline().identity());

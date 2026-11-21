@@ -6,7 +6,7 @@
  * classes by wire value, abilities by ability ID and quests by quest ID.
  * Combat numbers stay on the server.
  */
-export type CreatureFamily = "wolf" | "boar" | "vermin" | "marauder" | "mirefin" | "redbrand" | "prop" | "ogre" | "bear" | "spider" | "lurker";
+export type CreatureFamily = "wolf" | "boar" | "vermin" | "marauder" | "mirefin" | "redbrand" | "prop" | "ogre" | "bear" | "spider" | "lurker" | "lynx" | "adder";
 export type CreatureBehaviour = "aggressive" | "neutral" | "prop";
 /** A breakable prop (#288). */
 export type PropKind = "crate" | "barrel" | "explosive_barrel" | "fence" | "heavy_crate" | "boulder";
@@ -69,6 +69,8 @@ export type AbilityRecord = {
   castTicks: number;
   channel: boolean;
   cooldown: number;
+  /** The tooltip range line from the authoritative range (#1013), e.g. `30 m range, friendly or self`. */
+  rangeLabel: string;
   /** Aura kind wire code (1 damage over time … 7 haste), or null. */
   aura: number | null;
 };
@@ -118,7 +120,7 @@ const OBJECTIVE_KINDS = ["kill", "collect", "talk", "explore", "retrieve", "vict
 const CLASS_NAMES: readonly ClassName[] = ["warden", "ranger", "arcanist", "necromancer", "rogue", "cleric", "druid"];
 const RESOURCES = ["rage", "focus", "mana", "faith"] as const;
 const USERS: readonly (ClassName | "creature")[] = [...CLASS_NAMES, "creature"];
-const FAMILIES: readonly CreatureFamily[] = ["wolf", "boar", "vermin", "marauder", "mirefin", "redbrand", "prop", "ogre", "bear", "spider", "lurker"];
+const FAMILIES: readonly CreatureFamily[] = ["wolf", "boar", "vermin", "marauder", "mirefin", "redbrand", "prop", "ogre", "bear", "spider", "lurker", "lynx", "adder"];
 const BEHAVIOURS: readonly CreatureBehaviour[] = ["aggressive", "neutral", "prop"];
 const PROPS: readonly PropKind[] = ["crate", "barrel", "explosive_barrel", "fence", "heavy_crate", "boulder"];
 const ROLES: readonly NpcRole[] = ["quest_giver", "vendor", "spirit_healer", "guard", "resident"];
@@ -306,7 +308,7 @@ export function decodeCatalog(json: string): ContentCatalog {
   const abilities = list(root.abilities, "abilities", 255).map((value, index) => {
     const name = `ability ${index}`;
     const record = object(value, [
-      "id", "name", "user", "level", "cost", "castTicks", "channel", "cooldown", "aura",
+      "id", "name", "user", "level", "cost", "castTicks", "channel", "cooldown", "rangeLabel", "aura",
     ], name);
     if (typeof record.channel !== "boolean") {
       fail(`${name} channel must be a flag`);
@@ -320,6 +322,7 @@ export function decodeCatalog(json: string): ContentCatalog {
       castTicks: int(record.castTicks, `${name} cast ticks`, 0, 0xffff),
       channel: record.channel,
       cooldown: int(record.cooldown, `${name} cooldown`, 0, 0xffff),
+      rangeLabel: text(record.rangeLabel, `${name} range label`),
       aura: record.aura === null ? null : int(record.aura, `${name} aura`, 1, 9),
     };
   });

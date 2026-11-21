@@ -57,8 +57,9 @@
 //!   ([`EdgeId::LandingToMelee`] and its siblings, anchored at touchdown)
 //!   win over the landing's hold, end its recovery and may carry an
 //!   [`Effect::Impulse`]: run → jump → aerial attack → landing → follow-up
-//!   composes from ordinary actions. The baseline authors none of it, so
-//!   today's movement is unchanged.
+//!   composes from ordinary actions. The baseline authors no movement, so
+//!   today's movement is unchanged; its one landing edge is the sword
+//!   master's [`EdgeId::LeapingSlash`] (#915).
 //! - **Swimming** (#413, Atlas 5.1.41–5.1.43). [`ActionId::Swim`] runs in
 //!   the movement region while a living player swims (at the surface or
 //!   under it), ahead of being airborne. Its phase can author movement like
@@ -332,6 +333,9 @@ pub enum Condition {
     /// The source strike's confirmed result damaged two or more units: a
     /// cleaving timed swing (#910).
     MultiHit,
+    /// The acting player wields a sword and has reached the sword mastery that unlocks
+    /// the Leaping Slash (#915).
+    SwordMastery,
 }
 
 /// A typed effect an edge, or its precision window, applies when it wins
@@ -374,6 +378,9 @@ pub enum EdgeId {
     /// A directed slash that damaged two or more units → another Warden melee
     /// use (#910).
     CleaveToSlash,
+    /// A sword master's jumping strike lands into an immediate Warden melee use: the
+    /// Leaping Slash (#915), out of the landing recovery.
+    LeapingSlash,
     /// Out of a landing recovery into Warden melee (#413). Experimental
     /// graphs author the landing edges; the baseline has none.
     LandingToMelee,
@@ -929,6 +936,13 @@ pub enum GraphError {
     /// A landing edge's window closes after the shortest landing recovery
     /// its conditions allow, when the landing it answers is over.
     OutlastsSource(EdgeId),
+    /// The directed slash's outgoing edges disagree on when their shared
+    /// opening is live (#1014): `SlashToShieldBash` and `CleaveToSlash` read
+    /// one slash opening, whose phase, expiry, late-input grace and
+    /// interruption the Shield Bash edge times, so their effective windows
+    /// (baseline, modifiers and every scoped override) must open and close
+    /// together, and the cleave follow-up needs the Shield Bash edge.
+    DivergentSlashWindow(EdgeId),
     /// A movement rule covers a reaction or a phase its action never runs
     /// in, or its values are out of range.
     BadMovement(ActionId, Phase),
@@ -1149,6 +1163,50 @@ impl ActionGraph {
                 return Err(GraphError::ConflictingOverride(entry.scope, key));
             }
         }
+        self.validate_slash_opening()
+    }
+
+    /// The slash's outgoing edges share one opening whose lifetime the
+    /// Shield Bash edge times (phase, expiry, late-input grace,
+    /// interruptions), so each must be live for exactly that lifetime
+    /// (#1014): the same effective window in every context.
+    fn validate_slash_opening(&self) -> Result<(), GraphError> {
+        let Some(cleave) = self.edge(EdgeId::CleaveToSlash) else {
+            return Ok(());
+        };
+        let Some(bash) = self.edge(EdgeId::SlashToShieldBash) else {
+            return Err(GraphError::DivergentSlashWindow(cleave.id));
+        };
+        let timing = |window: Window| {
+            let ticks = window.ticks();
+            (ticks.opens, ticks.closes())
+        };
+        let modifiers = |id: EdgeId| {
+            self.window_modifiers
+                .iter()
+                .filter(move |modifier| modifier.edge == id)
+                .map(|modifier| (modifier.conditions, modifier.actionable_delta_ms))
+        };
+        let windows = |id: EdgeId| {
+            self.overrides
+                .iter()
+                .filter_map(move |entry| match entry.setting {
+                    Setting::Window { edge, window } if edge == id => {
+                        Some((entry.scope, timing(window)))
+                    }
+                    _ => None,
+                })
+        };
+        let same_overrides = |from: EdgeId, to: EdgeId| {
+            windows(from).all(|entry| windows(to).any(|other| other == entry))
+        };
+        if timing(bash.window) != timing(cleave.window)
+            || !modifiers(bash.id).eq(modifiers(cleave.id))
+            || !same_overrides(bash.id, cleave.id)
+            || !same_overrides(cleave.id, bash.id)
+        {
+            return Err(GraphError::DivergentSlashWindow(cleave.id));
+        }
         Ok(())
     }
 
@@ -1200,6 +1258,11 @@ impl ActionGraph {
                     ActionId::DirectedSlash,
                     ActionInput::ShieldBash,
                     Anchor::Impact | Anchor::ConfirmedResult,
+                ) | (
+                    EdgeId::LeapingSlash,
+                    ActionId::Landing,
+                    ActionInput::WardenMelee,
+                    Anchor::Landing,
                 ) | (
                     EdgeId::LandingToMelee,
                     ActionId::Landing,
@@ -1647,6 +1710,10 @@ fn holds(state: &PlayerState, condition: Condition) -> bool {
         // a miss, a whiff, an absorbed blow or the target's death clears it.
         Condition::PositiveHealthDamage | Condition::TargetAlive => state.combo.is_some(),
         Condition::MultiHit => state.combo.is_some_and(crate::ComboOpening::cleaved),
+        Condition::SwordMastery => {
+            crate::melee::weapon_family(state) == crate::WeaponFamily::Sword
+                && state.mastery.sword.level >= crate::LEAPING_SLASH_LEVEL
+        }
         Condition::AttackedAirborne => state.landing.attacked_airborne,
         Condition::Airborne => state.landing.airborne,
         Condition::Stunned => aura::has_kind(&state.auras, AuraKind::Stun),

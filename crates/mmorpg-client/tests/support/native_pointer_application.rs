@@ -909,6 +909,7 @@ fn native_pointer_application_contract() {
                 unlit: false,
                 double_sided: false,
                 ground: None,
+                texture: None,
             },
             skin: None,
         });
@@ -922,7 +923,7 @@ fn native_pointer_application_contract() {
     // Actual Greyhaven content identities and role availability, never nearest.
     app.role(1, 250);
     assert!(
-        app.driver.app.title.contains("Trouble in the Woods"),
+        app.driver.app.title.contains("The Wolfrun Cart"),
         "Marshal must expose his supported quest context"
     );
     app.key("1");
@@ -933,19 +934,26 @@ fn native_pointer_application_contract() {
             .iter()
             .any(|entry| entry.quest.get() == 1)
     });
-    // Fixture only supplies earned objective progress; the native action
-    // must still request completion and the real core settles the reward.
+    // Fixture only supplies earned objective progress and the cart's sacks; the
+    // native action must still request completion from the Tanner, who takes
+    // the Marshal's first quest (#984), and the real core settles the reward.
     let mut ready = app.snapshot();
-    ready.players[0].quests.entries[0].progress[0] = 6;
+    ready.players[0].quests.entries[0].progress[0] = 1;
+    ready.players[0]
+        .inventory
+        .insert(mmorpg_core::ItemId::new(31), 3)
+        .unwrap();
+    ready.players[0].inventory_revision += 1;
     app.restore(ready);
+    app.role(2, 250);
     let before = app.snapshot().players[0].clone();
     app.key("1");
     app.until(
-        "Marshal native completion credits his actual reward",
+        "Tanner native completion credits the cart's actual reward",
         |app| {
             let after = &app.snapshot().players[0];
             after.quests.is_completed(mmorpg_core::QuestId::new(1))
-                && after.copper == before.copper + 10
+                && after.copper == before.copper + 15
         },
     );
     app.role(2, 250);

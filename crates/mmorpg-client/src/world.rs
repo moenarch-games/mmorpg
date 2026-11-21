@@ -17,6 +17,26 @@ pub struct DrawMaterial {
     pub double_sided: bool,
     /// A terrain ground layer's draw (#525): textured from the `greyhaven-terrain` bundle.
     pub ground: Option<GroundMaterial>,
+    /// An imported animal's glTF base-colour texture (#1001), sampled per fragment at the
+    /// mesh's UVs; its vertex colours then hold only the material's colour factor.
+    pub texture: Option<DrawTexture>,
+}
+
+/// An imported model's base-colour texture and its material's authored roughness, uploaded
+/// once by `id`.
+#[derive(Clone, Debug)]
+pub struct DrawTexture {
+    /// Unique per imported image; draws sharing it share the upload.
+    pub id: u32,
+    pub data: Arc<render_engine::material::TextureData>,
+    /// The glTF material's `roughnessFactor`; the surface is dielectric.
+    pub roughness: f32,
+}
+
+impl PartialEq for DrawTexture {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.roughness.to_bits() == other.roughness.to_bits()
+    }
 }
 
 /// A ground layer draw's material: the layer, and an overlay's vertex colour alpha, which the
@@ -478,6 +498,7 @@ fn material(
             ground,
             alpha: geometry.alpha.iter().map(|&a| a as f32).collect(),
         }),
+        texture: None,
     }
 }
 
@@ -506,26 +527,16 @@ impl WorldScene {
             .map(|part| part.draws.iter().map(|draw| lowering.draw(draw)).collect())
             .collect();
         // The trees, rocks and bushes (#49), then the climbing kit's parts (#621): one library.
-        let mut placements = mmorpg_presentation::nature::placements(scenery);
+        // The mixed inventory comes from the shared derivation the browser uses (#1010).
+        let mixed = mmorpg_presentation::world_dressing::MixedPlacements::new(scenery);
+        let mut placements = mixed.nature;
         placements.extend(mmorpg_presentation::climbing::placements(scenery));
         // The crag kit's rock modules over the highland crags (#668).
         placements.extend(mmorpg_presentation::crag::placements(scenery));
-        placements.extend(mmorpg_presentation::river::placements(scenery));
-        for entries in [
-            &mmorpg_presentation::terrain_patch::MEADOW_ENTRIES[..],
-            &mmorpg_presentation::river::ENTRIES[..],
-        ] {
-            placements.extend(mmorpg_presentation::world_dressing::ground_details(
-                scenery, entries,
-            ));
-        }
+        placements.extend(mixed.river);
+        placements.extend(mixed.ground_details);
         // The market square's wooden props through their packaged PBR materials (#53).
         placements.extend(mmorpg_presentation::settlement_props::placements(scenery));
-        // The Wolfrun Den's mouth, bones and bedding (#963).
-        placements.extend(mmorpg_presentation::world_dressing::kit_placements(
-            scenery,
-            &mmorpg_presentation::world_dressing::WOLF_DEN_ENTRIES,
-        ));
         // The ore veins (#917), each standing full or spent by the projection.
         let first_vein = placements.len();
         placements.extend(mmorpg_presentation::world_dressing::kit_placements(
@@ -536,11 +547,11 @@ impl WorldScene {
             .into_iter()
             .map(|slots| slots.map(|slot| first_vein + slot))
             .collect();
-        // The optional discoveries' hunter's cache, lookout and fen supply cache (#913).
-        placements.extend(mmorpg_presentation::world_dressing::kit_placements(
-            scenery,
-            &mmorpg_presentation::world_dressing::DISCOVERY_ENTRIES,
-        ));
+        // Every ordinary placed kit of the shared inventory (#683): the Wolfrun Den, the
+        // optional discoveries and any kit registered after them.
+        for kit in mmorpg_presentation::world_dressing::placed_kits() {
+            placements.extend(kit.placements(scenery));
+        }
         let library = crate::nature::entries();
         let nature = Nature {
             lods: mmorpg_presentation::lod::Lods::new(

@@ -6,7 +6,7 @@
 //! held item ([`super::imported::Carry::chore`]); a missing item or clip leaves the hands empty.
 
 use super::imported::{Hand, Held};
-use mmorpg_core::{NpcId, NpcRoutine, ZoneContent, is_night, time_of_day};
+use mmorpg_core::{NpcId, NpcRoutine, PostureView, ZoneContent, is_night, time_of_day};
 use serde::Deserialize;
 use std::{collections::BTreeMap, sync::OnceLock};
 
@@ -84,6 +84,14 @@ impl Activity {
     }
 }
 
+/// A hunter's chores on its outing (#991): stalking, carrying its catch home and hurt.
+#[derive(Debug, Default, Deserialize)]
+struct Hunt {
+    hunting: Option<&'static str>,
+    carrying: Option<&'static str>,
+    hurt: Option<&'static str>,
+}
+
 /// One resident's day: its chore at work and on each errand, by chore name.
 #[derive(Debug, Deserialize)]
 struct Day {
@@ -96,6 +104,9 @@ struct Day {
 pub struct Chores {
     chores: BTreeMap<&'static str, Chore>,
     night: Option<&'static str>,
+    /// What a hunter holds on its outing (#991), by its projected posture.
+    #[serde(default)]
+    hunt: Hunt,
     residents: BTreeMap<&'static str, Day>,
 }
 
@@ -123,6 +134,24 @@ impl Chores {
             Activity::Home => None,
         }?;
         self.chores.get(chore).copied()
+    }
+
+    /// What a hunter in `posture` holds on its outing (#991), or `None` off it: the posture
+    /// then leaves the routine's chore in place.
+    #[must_use]
+    pub fn hunting(&self, posture: PostureView) -> Option<Option<Chore>> {
+        let chore = match posture {
+            PostureView::Hunting => self.hunt.hunting,
+            PostureView::Carrying => self.hunt.carrying,
+            PostureView::Hurt => self.hunt.hurt,
+            // A merchant pushing its handcart (#992) keeps both hands on the shafts.
+            PostureView::Hauling => return Some(None),
+            PostureView::Free
+            | PostureView::Sitting
+            | PostureView::Asleep
+            | PostureView::Waking => return None,
+        };
+        Some(chore.and_then(|chore| self.chores.get(chore).copied()))
     }
 
     /// Every chore, for a client that loads the items ahead.

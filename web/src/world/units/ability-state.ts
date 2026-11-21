@@ -1,8 +1,8 @@
-import { TICK_HZ, UNITS_PER_METRE, type ResourceKind, type ZoneSnapshot } from "../../replication";
+import { TICK_HZ, type ResourceKind, type ZoneSnapshot } from "../../replication";
 import type { SlotState } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
 import { wasm } from "../../wasm";
 import type { AbilityRecord, ContentCatalog } from "../catalog";
-import { presentationOf, type AbilityRange } from "./ability-presentation";
+import { presentationOf } from "./ability-presentation";
 
 export type { SlotCooldown, SlotState } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
 
@@ -45,13 +45,6 @@ export function resourceName(kind: ResourceKind): string {
   return RESOURCE_NAMES[kind];
 }
 
-export function rangeText(range: AbilityRange): string {
-  if (range === "self") {
-    return "Self";
-  }
-  return range === "melee" ? "Melee range" : `${range.units / UNITS_PER_METRE} m range`;
-}
-
 export type Tooltip = { title: string; lines: readonly string[]; description: string; note: string | null };
 
 /** The tooltip for an ability: name, cost, range, cast time, cooldown and description. */
@@ -60,7 +53,7 @@ export function tooltipText(ability: AbilityRecord, catalog: ContentCatalog, vie
   const resource = [...catalog.classes.values()].find((record) => record.name === ability.user)?.resource;
   const lines: string[] = [];
   lines.push(ability.cost > 0 && resource ? `${ability.cost} ${RESOURCE_NAMES[resource]}` : "No cost");
-  lines.push(rangeText(presentation?.range ?? "self"));
+  lines.push(ability.rangeLabel);
   lines.push(
     ability.castTicks === 0
       ? "Instant"

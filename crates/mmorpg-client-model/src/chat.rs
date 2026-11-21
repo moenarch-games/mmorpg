@@ -1,10 +1,10 @@
 //! Chat input parsing and the received chat and combat logs. The zone decides
 //! who hears a line; the logs only read what it delivered.
 use mmorpg_core::{
-    ChatChannel, ChatMessage, ChatText, Emote, EntityRef, ErrorCode, QuestId, RaidNotice,
-    ZoneCommand, ZoneEvent, ZoneId, ZoneSnapshot, ability::ids, ability_by_id,
+    ChatChannel, ChatMessage, ChatText, Emote, EntityKind, EntityRef, ErrorCode, PostureView,
+    QuestId, RaidNotice, ZoneCommand, ZoneEvent, ZoneId, ZoneSnapshot, ability::ids, ability_by_id,
 };
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use strum::VariantArray;
 
 /// Each log keeps the newest lines only.
@@ -194,6 +194,8 @@ pub struct Logs {
     pub combat: Log,
     stream: Option<(ZoneId, u64, u32)>,
     tick: Option<u64>,
+    /// The merchants on a cart journey (#992) in the last projection, by NPC ID.
+    merchants: BTreeMap<u32, MerchantState>,
 }
 
 impl Logs {
@@ -490,7 +492,55 @@ impl Logs {
                 );
             }
         }
+        self.merchant_cries(snapshot);
     }
+
+    /// A merchant on its cart journey (#992) cries out as the viewer sees it held up, robbed or
+    /// saved: each line follows the projected posture and health alone, once per change.
+    fn merchant_cries(&mut self, snapshot: &ZoneSnapshot) {
+        let mut seen = BTreeMap::new();
+        for entity in &snapshot.entities {
+            if entity.kind != EntityKind::Npc {
+                continue;
+            }
+            let state = match entity.flags.posture {
+                PostureView::Hauling if entity.health_percent < 100 => MerchantState::Held,
+                PostureView::Hauling => MerchantState::Travelling,
+                PostureView::Hurt => MerchantState::Hurt,
+                _ => continue,
+            };
+            let before = self.merchants.get(&entity.id).copied();
+            let line = match (before, state) {
+                (Some(MerchantState::Held), MerchantState::Held) => None,
+                (_, MerchantState::Held) => Some((
+                    LineKind::Yell,
+                    "A merchant yells: Redbrands! Help, someone, they're after my cart!",
+                )),
+                (Some(MerchantState::Held), MerchantState::Hurt) => Some((
+                    LineKind::Yell,
+                    "A merchant cries: They've taken the cart, everything!",
+                )),
+                (Some(MerchantState::Held), MerchantState::Travelling) => Some((
+                    LineKind::Say,
+                    "A merchant says: Bless you, friend! On to Millbrook, then.",
+                )),
+                _ => None,
+            };
+            if let Some((kind, text)) = line {
+                self.chat.push(kind, text.to_owned());
+            }
+            seen.insert(entity.id, state);
+        }
+        self.merchants = seen;
+    }
+}
+
+/// What a viewer last saw of a merchant on its cart journey (#992).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MerchantState {
+    Travelling,
+    Held,
+    Hurt,
 }
 
 #[cfg(test)]
@@ -646,5 +696,53 @@ mod tests {
         assert_eq!(logs.chat.lines().count(), MAX_LOG_LINES);
         assert_eq!(logs.chat.lines().next().unwrap().text, "5");
         assert_eq!(logs.chat.added(), (MAX_LOG_LINES + 5) as u64);
+    }
+}
+
+#[cfg(test)]
+mod merchant_tests {
+    use super::*;
+    use mmorpg_core::{EntityFlags, EntitySnapshot};
+
+    fn merchant(posture: PostureView, health_percent: u8) -> EntitySnapshot {
+        EntitySnapshot {
+            kind: EntityKind::Npc,
+            id: 17,
+            appearance: 17,
+            position: [0; 3],
+            velocity: [0; 3],
+            facing: 0,
+            level: 3,
+            health_percent,
+            flags: EntityFlags {
+                posture,
+                ..EntityFlags::default()
+            },
+        }
+    }
+
+    #[test]
+    fn a_held_up_merchant_cries_once_and_then_by_its_outcome() {
+        let mut logs = Logs::default();
+        let mut tick = 0;
+        let mut see = |logs: &mut Logs, entities: Vec<EntitySnapshot>| {
+            tick += 1;
+            let mut snapshot = crate::test_support::snapshot(1, tick);
+            snapshot.entities = entities;
+            logs.receive_chat(&snapshot);
+            logs.chat.lines().map(|line| line.kind).collect::<Vec<_>>()
+        };
+        assert!(see(&mut logs, vec![merchant(PostureView::Hauling, 100)]).is_empty());
+        let held = vec![merchant(PostureView::Hauling, 60)];
+        assert_eq!(see(&mut logs, held.clone()), [LineKind::Yell]);
+        assert_eq!(see(&mut logs, held.clone()), [LineKind::Yell]);
+        let saved = see(&mut logs, vec![merchant(PostureView::Hauling, 100)]);
+        assert_eq!(saved, [LineKind::Yell, LineKind::Say]);
+        see(&mut logs, held);
+        let robbed = see(&mut logs, vec![merchant(PostureView::Hurt, 35)]);
+        assert_eq!(robbed.len(), 4);
+        // A merchant already hurt when it comes into view says nothing.
+        let mut fresh = Logs::default();
+        assert!(see(&mut fresh, vec![merchant(PostureView::Hurt, 35)]).is_empty());
     }
 }

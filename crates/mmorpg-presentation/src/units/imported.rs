@@ -20,7 +20,7 @@ use super::traversal::Motions;
 
 /// What an imported humanoid carries in its sockets: the class weapons and props (#156, #244,
 /// #302, asset-tooling #375 and #379) and the guards' sword.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, strum::VariantArray)]
 pub enum Loadout {
     /// The Warden's arming sword and heater shield (#156).
     SwordAndShield,
@@ -130,7 +130,130 @@ impl Loadout {
     pub const fn daggers(self) -> bool {
         matches!(self, Self::Dagger | Self::TwinDaggers)
     }
+
+    /// The bundle items the loadout wears and the sockets they ride (#1012), as both clients
+    /// attach them: the one place a loadout's asset/socket pairs are authored. The stowed bow
+    /// rests on the back; the crossbow carries the arrow that stands in for its bolt (#607).
+    #[must_use]
+    pub const fn attachments(self) -> &'static [Attachment] {
+        const SWORD: &str = "equipment.sword.arming";
+        const DAGGER: &str = "equipment.dagger.blackened";
+        match self {
+            Self::SwordAndShield => &[
+                Attachment {
+                    item: SWORD,
+                    socket: "hand_r.weapon",
+                },
+                Attachment {
+                    item: "equipment.shield.heater",
+                    socket: "hand_l.shield",
+                },
+            ],
+            // The Redbrand Brute's round plank shield (#953, asset-tooling #774).
+            Self::SwordAndRedbrandShield => &[
+                Attachment {
+                    item: SWORD,
+                    socket: "hand_r.weapon",
+                },
+                Attachment {
+                    item: "equipment.shield.redbrand",
+                    socket: "hand_l.shield",
+                },
+            ],
+            Self::BowAndQuiver => &[
+                Attachment {
+                    item: "equipment.bow.long",
+                    socket: "back.bow.stowed",
+                },
+                Attachment {
+                    item: "equipment.quiver.back",
+                    socket: "back.quiver",
+                },
+            ],
+            Self::Sword => &[Attachment {
+                item: SWORD,
+                socket: "hand_r.weapon",
+            }],
+            Self::Dagger => &[Attachment {
+                item: DAGGER,
+                socket: "hand_r.weapon",
+            }],
+            Self::TwinDaggers => &[
+                Attachment {
+                    item: DAGGER,
+                    socket: "hand_r.weapon",
+                },
+                Attachment {
+                    item: DAGGER,
+                    socket: "hand_l.weapon",
+                },
+            ],
+            Self::BoneStaff => &[Attachment {
+                item: "equipment.staff.bone",
+                socket: "hand_r.staff",
+            }],
+            // The tome is held like a shield (asset-tooling #379): spine along the forearm.
+            Self::CrystalStaffAndTome => &[
+                Attachment {
+                    item: "equipment.staff.crystal",
+                    socket: "hand_r.staff",
+                },
+                Attachment {
+                    item: "equipment.book.tome",
+                    socket: "hand_l.shield",
+                },
+            ],
+            Self::FlangedMace => &[Attachment {
+                item: "equipment.mace.flanged",
+                socket: "hand_r.weapon",
+            }],
+            Self::GnarledStaff => &[Attachment {
+                item: "equipment.staff.gnarled",
+                socket: "hand_r.staff",
+            }],
+            // A player of the spear family (#914).
+            Self::Spear => &[Attachment {
+                item: "equipment.spear.leaf",
+                socket: "hand_r.staff",
+            }],
+            // Garrick Redbrand's named cleaver (#918, asset-tooling #761).
+            Self::GarricksCleaver => &[Attachment {
+                item: "equipment.sword.garricks-cleaver",
+                socket: "hand_r.weapon",
+            }],
+            // The smith's Hollowpine boar-spear (#917).
+            Self::HollowpineSpear => &[Attachment {
+                item: "equipment.spear.hollowpine-hunter",
+                socket: "hand_r.staff",
+            }],
+            // The crossbow and the arrow standing in for its bolt (#607).
+            Self::Crossbow => &[
+                Attachment {
+                    item: "equipment.crossbow",
+                    socket: CROSSBOW_SOCKET,
+                },
+                Attachment {
+                    item: BOLT_ITEM,
+                    socket: BOLT_HAND_SOCKET,
+                },
+            ],
+        }
+    }
 }
+
+/// One bundle item a [`Loadout`] wears (#1012): its `humanoid-equipment` entry key and the
+/// figure's `humanoid-sockets` socket it rides.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Attachment {
+    /// The `humanoid-equipment` entry key, e.g. `equipment.sword.arming`.
+    pub item: &'static str,
+    /// The socket, e.g. `hand_r.weapon`.
+    pub socket: &'static str,
+}
+
+/// The item standing in for the crossbow's bolt on [`BOLT_HAND_SOCKET`] (#607), scaled by
+/// [`BOLT_SCALE`].
+pub const BOLT_ITEM: &str = "equipment.arrow";
 
 /// The Rogue's weapons (#603): a dagger in each hand, as asset-tooling #418 authored the
 /// Rogue's clips. Dual-wielding awaits the owner's confirmation (question on #603); set this to
@@ -645,6 +768,10 @@ pub enum Kind {
     Bear,
     Spider,
     Lurker,
+    /// The forest lynx (#989).
+    Lynx,
+    /// The marsh adder (#990).
+    Adder,
 }
 
 /// Clip names of one model.
@@ -704,6 +831,9 @@ pub struct BiteClips {
     pub attacks: [&'static str; 2],
     /// Played once as it turns to fight.
     pub alert: &'static str,
+    /// What follows an attack, in order, for a model whose attack is a wind-up clip (#989): the
+    /// lynx's `Pounce_Lunge`, whose contact is the zone's, then its `Pounce_Recover`.
+    pub follow: Option<[&'static str; 2]>,
 }
 
 /// The wildlife release's clip set (asset-tooling #716, #723): every hostile beast runs, bites
@@ -743,7 +873,38 @@ const WILD_CLIPS: Clips = Clips {
     bites: Some(BiteClips {
         attacks: ["Attack_A", "Attack_B"],
         alert: "Alert",
+        follow: None,
     }),
+};
+
+/// The wildlife release's lynx (#989, asset-tooling #778): it rests and walks like the other
+/// beasts, crouches to stalk as its fight starts, and pounces in three clips, `Pounce_Windup`,
+/// `Pounce_Lunge` (whose contact the zone's pounce lands on) and `Pounce_Recover`.
+const LYNX_CLIPS: Clips = Clips {
+    attack: "Pounce_Lunge",
+    bites: Some(BiteClips {
+        attacks: ["Pounce_Windup", "Pounce_Windup"],
+        alert: "Crouch_Stalk_Loop",
+        follow: Some(["Pounce_Lunge", "Pounce_Recover"]),
+    }),
+    ..WILD_CLIPS
+};
+
+/// The wildlife release's marsh adder (#990, asset-tooling #778): it rests coiled and
+/// slithers, hisses as its fight starts, and strikes in three clips: `Warn_Hiss_Loop` once
+/// through (the zone's warning), `Strike` (whose contact the zone's strike lands on) and
+/// `Strike_Recover`.
+const ADDER_CLIPS: Clips = Clips {
+    idle: "Idle_Coil_Loop",
+    walk: "Slither_Loop",
+    run: "Slither_Loop",
+    attack: "Strike",
+    bites: Some(BiteClips {
+        attacks: ["Warn_Hiss_Loop", "Warn_Hiss_Loop"],
+        alert: "Warn_Hiss_Loop",
+        follow: Some(["Strike", "Strike_Recover"]),
+    }),
+    ..WILD_CLIPS
 };
 
 /// The authored ranged clips beside the full-body bow cycle (#607, asset-tooling #419), every
@@ -1553,6 +1714,8 @@ impl Kind {
             Self::Bear => "Bear",
             Self::Spider => "Spider",
             Self::Lurker => "Lurker",
+            Self::Lynx => "Lynx",
+            Self::Adder => "Adder",
         }
     }
 
@@ -1567,6 +1730,8 @@ impl Kind {
             Self::Bear => Some("greyhaven.wild.bear"),
             Self::Spider => Some("greyhaven.wild.spider"),
             Self::Lurker => Some("greyhaven.wild.marsh-lurker"),
+            Self::Lynx => Some("greyhaven.wild.lynx"),
+            Self::Adder => Some("greyhaven.wild.marsh-adder"),
         }
     }
 
@@ -1788,6 +1953,8 @@ impl Kind {
             Self::Wolf | Self::Rat | Self::Boar | Self::Bear | Self::Spider | Self::Lurker => {
                 WILD_CLIPS
             }
+            Self::Lynx => LYNX_CLIPS,
+            Self::Adder => ADDER_CLIPS,
         }
     }
 
@@ -2140,6 +2307,8 @@ impl Kind {
             CreatureFamily::Bear => Some(Self::Bear),
             CreatureFamily::Spider => Some(Self::Spider),
             CreatureFamily::Lurker => Some(Self::Lurker),
+            CreatureFamily::Lynx => Some(Self::Lynx),
+            CreatureFamily::Adder => Some(Self::Adder),
             CreatureFamily::Marauder
             | CreatureFamily::Mirefin
             | CreatureFamily::Redbrand
@@ -2589,6 +2758,9 @@ struct Strike {
     length: f32,
     /// What plays after `clip`: a recovery once, or a cast's hold looped.
     then: Option<(&'static str, bool)>,
+    /// What plays once after a once-played `then` this many seconds long (#989): the lynx's
+    /// recovery after its lunge.
+    last: Option<(f32, &'static str)>,
     serial: u32,
     started: f64,
     until: f64,
@@ -2620,6 +2792,7 @@ impl Strike {
             clip,
             length,
             then: None,
+            last: None,
             serial,
             started,
             until: started + f64::from(length.max(0.3)),
@@ -2657,8 +2830,13 @@ impl Strike {
             }
         };
         let at = self.hold.map_or(at, |hold| at.min(hold));
-        match self.then {
-            Some((next, looped)) if at >= self.length => Want {
+        match (self.then, self.last) {
+            (Some((_, false)), Some((span, last))) if at >= self.length + span => Want {
+                once: true,
+                at: Some(at - self.length - span),
+                ..Want::hold(last, self.serial)
+            },
+            (Some((next, looped)), _) if at >= self.length => Want {
                 once: !looped,
                 at: Some(at - self.length),
                 ..Want::hold(next, self.serial)
@@ -3113,6 +3291,19 @@ impl Playback {
         {
             strike.then = Some((clip, false));
             strike.until = strike.started + f64::from(strike.length.max(0.3) + duration);
+        }
+    }
+
+    /// The strike just begun goes on through `then` and then `last`, each a clip and its
+    /// seconds (#989): the lynx's wind-up into its lunge and its recovery.
+    pub fn recover_through(&mut self, then: (&'static str, f32), last: (&'static str, f32)) {
+        self.recover(then.0, then.1);
+        if let Some(strike) = &mut self.strike
+            && strike.then.is_some()
+            && last.1 > 0.
+        {
+            strike.last = Some((then.1, last.0));
+            strike.until += f64::from(last.1);
         }
     }
 
@@ -4384,6 +4575,89 @@ mod tests {
     use strum::VariantArray;
 
     #[test]
+    fn loadout_attachments_keep_the_pairs_both_clients_drew() {
+        // The browser's former `LOADOUT_ITEMS` and the native `Equipment::loadout` match, which
+        // agreed item for item (#1012).
+        let before: &[(&str, &[(&str, &str)])] = &[
+            (
+                "sword-and-shield",
+                &[
+                    ("equipment.sword.arming", "hand_r.weapon"),
+                    ("equipment.shield.heater", "hand_l.shield"),
+                ],
+            ),
+            (
+                "sword-and-shield.redbrand",
+                &[
+                    ("equipment.sword.arming", "hand_r.weapon"),
+                    ("equipment.shield.redbrand", "hand_l.shield"),
+                ],
+            ),
+            (
+                "bow-and-quiver",
+                &[
+                    ("equipment.bow.long", "back.bow.stowed"),
+                    ("equipment.quiver.back", "back.quiver"),
+                ],
+            ),
+            ("sword", &[("equipment.sword.arming", "hand_r.weapon")]),
+            ("dagger", &[("equipment.dagger.blackened", "hand_r.weapon")]),
+            (
+                "dagger.twin",
+                &[
+                    ("equipment.dagger.blackened", "hand_r.weapon"),
+                    ("equipment.dagger.blackened", "hand_l.weapon"),
+                ],
+            ),
+            ("staff.bone", &[("equipment.staff.bone", "hand_r.staff")]),
+            (
+                "staff.crystal-and-tome",
+                &[
+                    ("equipment.staff.crystal", "hand_r.staff"),
+                    ("equipment.book.tome", "hand_l.shield"),
+                ],
+            ),
+            (
+                "mace.flanged",
+                &[("equipment.mace.flanged", "hand_r.weapon")],
+            ),
+            (
+                "staff.gnarled",
+                &[("equipment.staff.gnarled", "hand_r.staff")],
+            ),
+            ("spear", &[("equipment.spear.leaf", "hand_r.staff")]),
+            (
+                "sword.garricks-cleaver",
+                &[("equipment.sword.garricks-cleaver", "hand_r.weapon")],
+            ),
+            (
+                "spear.hollowpine-hunter",
+                &[("equipment.spear.hollowpine-hunter", "hand_r.staff")],
+            ),
+            (
+                "crossbow",
+                &[
+                    ("equipment.crossbow", "hand_r.crossbow"),
+                    ("equipment.arrow", "hand_r.arrow"),
+                ],
+            ),
+        ];
+        assert_eq!(Loadout::VARIANTS.len(), before.len());
+        for loadout in Loadout::VARIANTS {
+            let (_, items) = before
+                .iter()
+                .find(|(name, _)| *name == loadout.name())
+                .unwrap_or_else(|| panic!("{} drew no items before", loadout.name()));
+            let now: Vec<_> = loadout
+                .attachments()
+                .iter()
+                .map(|at| (at.item, at.socket))
+                .collect();
+            assert_eq!(now, *items, "{}", loadout.name());
+        }
+    }
+
+    #[test]
     fn movement_strikes_play_the_family_clip_or_its_stand_in() {
         // Before the asset-tooling #709/#711 release, the existing clips stand in (#885).
         let without = |clip: &str| !clip.contains("_Run_") && !clip.contains("_Jump_");
@@ -4590,6 +4864,8 @@ mod tests {
         assert_eq!(creature(CreatureFamily::Bear), Some(Kind::Bear));
         assert_eq!(creature(CreatureFamily::Spider), Some(Kind::Spider));
         assert_eq!(creature(CreatureFamily::Lurker), Some(Kind::Lurker));
+        assert_eq!(creature(CreatureFamily::Lynx), Some(Kind::Lynx));
+        assert_eq!(creature(CreatureFamily::Adder), Some(Kind::Adder));
         assert_eq!(creature(CreatureFamily::Redbrand), None);
         assert_eq!(
             Kind::of(EntityRef::Npc(NpcId::new(1)), &content_record(), &content),
@@ -4960,6 +5236,104 @@ mod tests {
         assert!(Mask::Fingers(Hand::Right).drives(joint("thumb_03_r"), only_right));
         assert!(!Mask::Fingers(Hand::Right).drives(joint("thumb_03_l"), only_right));
         assert!(!Mask::Fingers(Hand::Right).drives(joint("hand_r"), only_right));
+    }
+
+    /// Each beast rests and walks in the clips the fetched wildlife descriptor names
+    /// (`restClip`, `moveClip`), and every attack clip its table plays is in the descriptor.
+    #[test]
+    fn the_beasts_clip_tables_follow_the_fetched_wildlife_descriptor() {
+        let bundle = format!(
+            "{}/../../web/public/scenery/greyhaven.wildlife",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let Ok(manifest) = std::fs::read_to_string(format!("{bundle}/manifest.json")) else {
+            eprintln!("the wildlife release is not fetched; skipping");
+            return;
+        };
+        let manifest: serde_json::Value = serde_json::from_str(&manifest).unwrap();
+        let path = manifest["assets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|asset| asset["attachments"].as_array().unwrap())
+            .find(|attachment| attachment["name"] == "wildlife-descriptor")
+            .and_then(|attachment| attachment["path"].as_str())
+            .unwrap();
+        let descriptor: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(format!("{bundle}/{path}")).unwrap())
+                .unwrap();
+        for &kind in Kind::VARIANTS {
+            let Some(key) = kind.wild_key() else {
+                continue;
+            };
+            let entry = descriptor["assets"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|entry| entry["key"] == key)
+                .unwrap_or_else(|| panic!("the descriptor lists {key}"));
+            let clips = kind.clips();
+            assert_eq!(entry["restClip"], clips.idle, "{key} rests");
+            assert_eq!(entry["moveClip"], clips.walk, "{key} walks");
+            let bites = clips.bites.unwrap();
+            for clip in bites
+                .attacks
+                .into_iter()
+                .chain(bites.follow.into_iter().flatten())
+            {
+                assert!(entry["clips"][clip].is_object(), "{key} has {clip}");
+            }
+        }
+    }
+
+    /// A lynx's pounce (#989) plays its wind-up, its lunge and its recovery in turn.
+    #[test]
+    fn a_pounce_plays_its_wind_up_lunge_and_recovery() {
+        let clips = Kind::Lynx.clips();
+        let frame = |playback: &mut Playback, now: f64| {
+            playback.advance(
+                clips,
+                |_| 1.,
+                Cues {
+                    now,
+                    dt: 0.05,
+                    ..Cues::default()
+                },
+                Blend::default(),
+            )
+        };
+        let mut playback = Playback::default();
+        playback.strike("Pounce_Windup", 0.5, Region::Whole, 0.);
+        playback.recover_through(("Pounce_Lunge", 0.5), ("Pounce_Recover", 0.83));
+        assert_eq!(frame(&mut playback, 0.2).lower.0, "Pounce_Windup");
+        assert_eq!(frame(&mut playback, 0.7).lower.0, "Pounce_Lunge");
+        assert_eq!(frame(&mut playback, 1.4).lower.0, "Pounce_Recover");
+        assert_eq!(frame(&mut playback, 2.2).lower.0, "Idle");
+    }
+
+    /// An adder's strike (#990) hisses through its warning, strikes and recovers, then coils.
+    #[test]
+    fn an_adder_strike_hisses_strikes_and_recovers() {
+        let clips = Kind::Adder.clips();
+        let frame = |playback: &mut Playback, now: f64| {
+            playback.advance(
+                clips,
+                |_| 1.,
+                Cues {
+                    now,
+                    dt: 0.05,
+                    ..Cues::default()
+                },
+                Blend::default(),
+            )
+        };
+        let mut playback = Playback::default();
+        playback.strike("Warn_Hiss_Loop", 1.333, Region::Whole, 0.);
+        playback.recover_through(("Strike", 0.417), ("Strike_Recover", 0.833));
+        assert_eq!(frame(&mut playback, 0.6).lower.0, "Warn_Hiss_Loop");
+        assert_eq!(frame(&mut playback, 1.5).lower.0, "Strike");
+        assert_eq!(frame(&mut playback, 2.0).lower.0, "Strike_Recover");
+        assert_eq!(frame(&mut playback, 3.0).lower.0, "Idle_Coil_Loop");
     }
 
     #[test]

@@ -1,6 +1,7 @@
 import type { IndexedMeshGeometry, Matrix4Values, RendererSceneNode } from "@moritzbrantner/three-d-renderer";
 import type { EntityKind, EntityRef, EntityState, StrikeAim } from "../replication";
 import type { Color } from "./scenery";
+import { freeHandle } from "./zone-lifecycle";
 
 /**
  * The shared unit presentation (#184): `mmorpg-presentation` draws procedural players,
@@ -35,10 +36,9 @@ export type UnitPresenterHandle = {
   indices(): Uint32Array;
 };
 
-export type ImportedModelKind = "Ranger" | "Wolf" | "Rat" | "Boar" | "Bear" | "Spider" | "Lurker";
-/** The shared presenter's `Loadout::name`s. */
-export type Loadout = "sword-and-shield" | "sword-and-shield.redbrand" | "bow-and-quiver" | "sword" | "dagger" | "dagger.twin" | "staff.bone"
-  | "staff.crystal-and-tome" | "mace.flanged" | "staff.gnarled" | "crossbow" | "spear" | "sword.garricks-cleaver" | "spear.hollowpine-hunter";
+export type ImportedModelKind = "Ranger" | "Wolf" | "Rat" | "Boar" | "Bear" | "Spider" | "Lurker" | "Lynx" | "Adder";
+/** A shared presenter's `Loadout::name`; its socket items are `Loadout::attachments` (#1012). */
+export type Loadout = string;
 /** A drawn throwable in the right hand (`imported::Throwable`, #603). */
 export type Throwable = "knife" | "flask" | "bomb";
 /**
@@ -221,6 +221,11 @@ export class SharedUnits {
 
   constructor(handle: UnitPresenterHandle) {
     this.#handle = handle;
+  }
+
+  /** Frees the presenter's WASM handle (#1005); the presenter is not used afterwards. */
+  dispose(): void {
+    freeHandle(this.#handle);
   }
 
   /**

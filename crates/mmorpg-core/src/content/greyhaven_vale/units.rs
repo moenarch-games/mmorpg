@@ -45,6 +45,10 @@ pub mod templates {
     pub const MARSH_LURKER: CreatureTemplateId = CreatureTemplateId::new(20);
     /// Old Scarback, the elite bear that holds the Wolfrun hunter's cache (#913).
     pub const OLD_SCARBACK: CreatureTemplateId = CreatureTemplateId::new(21);
+    /// The Southwood lynx (#989): an ambusher that stalks in and pounces.
+    pub const FOREST_LYNX: CreatureTemplateId = CreatureTemplateId::new(22);
+    /// The Eastwater Fen adder (#990): an ambusher that coils, hisses and strikes close.
+    pub const MARSH_ADDER: CreatureTemplateId = CreatureTemplateId::new(23);
 }
 
 /// Default respawn time: 60 s.
@@ -75,6 +79,10 @@ const SPIDER: [i32; 3] = [40, 23, 40];
 /// Old Scarback (#913): a broader, taller bear, still short of a large creature.
 const SCARBACK: [i32; 3] = [60, 78, 60];
 const MARSH_LURKER_BOX: [i32; 3] = [38, 15, 38];
+/// The wildlife release's 0.8 m lynx (#989) on a square footprint between its width and length.
+const LYNX: [i32; 3] = [30, 40, 30];
+/// The wildlife release's marsh adder (#990) in its coil: 0.42 m across, 0.19 m tall.
+const ADDER: [i32; 3] = [22, 10, 22];
 const HUMANOID: [i32; 3] = [30, 90, 30];
 const LURKER: [i32; 3] = [35, 80, 35];
 /// A 1.4 m rolling boulder (#299).
@@ -108,9 +116,9 @@ type TemplateRow = (
 );
 
 #[rustfmt::skip]
-const TEMPLATES: [TemplateRow; 20] = {
+const TEMPLATES: [TemplateRow; 22] = {
     use CreatureBehaviour::{Aggressive, Neutral, Prop};
-    use CreatureFamily::{Bear, Boar, Lurker, Marauder, Mirefin, Ogre, Redbrand, Spider, Vermin, Wolf};
+    use CreatureFamily::{Adder, Bear, Boar, Lurker, Lynx, Marauder, Mirefin, Ogre, Redbrand, Spider, Vermin, Wolf};
     use crate::PropKind;
     use templates::*;
     [
@@ -144,6 +152,10 @@ const TEMPLATES: [TemplateRow; 20] = {
         // The hunter's cache's elite bear (#913): a level 5 elite in the starter woods, a risk for
         // a hunter not yet that strong, with the bear's slow, wound-up bites and Garrick's respawn.
         (OLD_SCARBACK, "Old Scarback", Bear, Aggressive, [5, 5], true, 360, 0, [8, 13], 0, crate::ticks_from_ms(3_000), GARRICK_RESPAWN_TICKS, SCARBACK),
+        // The Southwood lynx (#989): Southwood's level, a light body and a hard, slow pounce.
+        (FOREST_LYNX, "Forest Lynx", Lynx, Aggressive, [2, 3], false, 50, 12, [4, 7], 1, crate::ticks_from_ms(2_600), RESPAWN_TICKS, LYNX),
+        // The Eastwater Fen adder (#990): the fen's level, a frail body and a quick, warned strike.
+        (MARSH_ADDER, "Marsh Adder", Adder, Aggressive, [2, 3], false, 34, 10, [4, 7], 1, crate::ticks_from_ms(2_600), RESPAWN_TICKS, ADDER),
     ]
 };
 
@@ -463,6 +475,14 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::discoveries::spawns())
         // The Rimewood signal post, a target-priority fight (#952).
         .chain(super::signal_post::spawns())
+        // Trapper Sela's hunt's bear (#991).
+        .chain(super::hunt::spawns())
+        // Peddler Rowan's cart robbers (#992).
+        .chain(super::cart::spawns())
+        // The Southwood lynxes (#989).
+        .chain(super::lynx::spawns())
+        // The Eastwater Fen adders (#990).
+        .chain(super::adder::spawns())
         .collect()
 }
 

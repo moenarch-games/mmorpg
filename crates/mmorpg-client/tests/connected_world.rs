@@ -759,7 +759,9 @@ async fn a_budget_packed_crowded_projection_reaches_a_client() {
                 + 2
                 + 4 * snapshot.depleted_veins.len()
                 + 2
-                + 4 * snapshot.viewer.waystones.len();
+                + 4 * snapshot.viewer.waystones.len()
+                + 2
+                + 4 * snapshot.viewer.discoveries.len();
             let expected_entities = (MAX_PLAYER_PROJECTION_BYTES
                 - PLAYER_SNAPSHOT_FIXED_BYTES
                 - sheet_bytes

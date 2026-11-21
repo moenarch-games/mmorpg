@@ -125,20 +125,57 @@ struct Pace {
 /// Subunits per unit, for steering in subunits per tick over unit offsets.
 const SUBUNITS: i64 = crate::physics::SUBUNITS_PER_UNIT as i64;
 
-/// Chase velocity toward a target `(dx, dz)` away: run speed while beyond
+/// Chase velocity toward a target `(dx, dz)` away: `speed` while beyond
 /// `reach`, then a last step that ends inside it, and zero once inside.
-fn chase_velocity(dx: i32, dz: i32, reach: i32) -> [i32; 2] {
+fn chase_velocity(dx: i32, dz: i32, reach: i32, speed: i32) -> [i32; 2] {
     if distance_squared([0, 0], [dx, dz]) <= i64::from(reach).pow(2) {
         return [0, 0];
     }
     let gap = i64::try_from(xz_length(dx, dz))
         .unwrap_or(i64::MAX)
         .saturating_sub(i64::from(reach));
-    let step = i64::from(CREATURE_RUN_SPEED_SUBUNITS_PER_TICK).min(
+    let step = i64::from(speed).min(
         gap.saturating_add(CHASE_CLOSE_IN_UNITS)
             .saturating_mul(SUBUNITS),
     );
     steer(dx, dz, i32::try_from(step).unwrap_or(0))
+}
+
+/// A set-piece attacker's step through its [`crate::Lunge`] (#989, #990), or `None` between
+/// attacks: it holds still through the wind-up (a lynx's crouch, an adder's hiss), turning toward
+/// its target `(dx, dz)` away, leaps along its facing for the wind-up's last
+/// [`crate::Lunge::leap_ticks`], and holds still through the recovery after its contact. The
+/// leap closes only the gap to `reach`, like a chase's last step, never carrying it into its
+/// target. Its swing timer, set as the attack began, dates the recovery.
+fn lunge_step(
+    creature: &crate::creature::CreatureState,
+    template: &crate::CreatureTemplate,
+    lunge: crate::Lunge,
+    (dx, dz): (i32, i32),
+    reach: i32,
+) -> Option<([i32; 2], Option<u16>)> {
+    let turn = yaw_from_vector(dx, dz);
+    match creature.attack {
+        Some(pending) if pending.leaping(template.family) => {
+            let (x, z) = trig::direction(creature.facing);
+            let gap = i64::try_from(xz_length(dx, dz))
+                .unwrap_or(i64::MAX)
+                .saturating_sub(i64::from(reach))
+                .saturating_add(CHASE_CLOSE_IN_UNITS)
+                .max(0);
+            let speed = i64::from(lunge.leap_speed).min(gap.saturating_mul(SUBUNITS));
+            let speed = i32::try_from(speed).unwrap_or(0);
+            let leap = |unit| trig::checked_scale(speed, unit).unwrap_or(0);
+            Some(([leap(x), leap(z)], None))
+        }
+        Some(_) => Some(([0, 0], turn)),
+        None => {
+            let since = template.swing_ticks.saturating_sub(creature.swing_timer);
+            let contact =
+                crate::contact_ticks(template.family, crate::CreatureAttack::Quick).unwrap_or(0);
+            (since < contact + lunge.recover_ticks).then_some(([0, 0], turn))
+        }
+    }
 }
 
 /// How close a creature must get to hit `target`: its reach plus the
@@ -390,6 +427,14 @@ impl ZoneSimulation {
         }
         let speed = crate::aura::speed_percent(&creature.auras);
         let stunned = crate::aura::has_kind(&creature.auras, crate::AuraKind::Stun);
+        let lunge = crate::lunge(template.family);
+        let pounce = match (chase, lunge) {
+            (Some((target, to)), Some(lunge)) if !leashed && !casting => {
+                let reach = creature_reach(target);
+                lunge_step(creature, template, lunge, offset(here, to), reach)
+            }
+            _ => None,
+        };
 
         let mut teleport_home = false;
         let mut lost_interest = None;
@@ -461,10 +506,20 @@ impl ZoneSimulation {
                         yaw_from_vector(dx, dz),
                     )
                 }
+                Some(_) if pounce.is_some() => pounce.unwrap_or(([0, 0], None)),
+                // A set-piece attacker (#989, #990) closes in at its approach (a lynx's stalk, an
+                // adder's slither) to its leap's range; the rest run to reach.
                 Some((target, to)) => {
                     let (dx, dz) = offset(here, to);
+                    let (reach, speed) = match lunge {
+                        Some(lunge) => (
+                            creature_reach(target) + lunge.leap_units,
+                            lunge.approach_speed,
+                        ),
+                        None => (creature_reach(target), CREATURE_RUN_SPEED_SUBUNITS_PER_TICK),
+                    };
                     (
-                        chase_velocity(dx, dz, creature_reach(target)),
+                        chase_velocity(dx, dz, reach, speed),
                         yaw_from_vector(dx, dz),
                     )
                 }
@@ -886,7 +941,7 @@ mod tests {
         let reach = creature_reach(EntityRef::Player(1));
         let reach_squared = i64::from(reach).pow(2);
         assert_ne!(
-            chase_velocity(203, -109, reach),
+            chase_velocity(203, -109, reach, CREATURE_RUN_SPEED_SUBUNITS_PER_TICK),
             [0, 0],
             "no stall at 230.4"
         );
@@ -895,7 +950,7 @@ mod tests {
         for dx in (-300..=300).step_by(3) {
             for dz in (-300..=300).step_by(3) {
                 let before = distance_squared([0, 0], [dx, dz]);
-                let [vx, vz] = chase_velocity(dx, dz, reach);
+                let [vx, vz] = chase_velocity(dx, dz, reach, CREATURE_RUN_SPEED_SUBUNITS_PER_TICK);
                 if before <= reach_squared {
                     assert_eq!([vx, vz], [0, 0], "({dx}, {dz}) is inside reach");
                     continue;

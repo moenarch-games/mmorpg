@@ -6,6 +6,7 @@ import { encodeCommand } from "../src/command-wire";
 import { TICK_HZ, decodeSnapshot, ticksFromMs, wireCatalog, type EntityState, type ZoneSnapshot } from "../src/replication";
 import { abilitySlots, useAbilitySlot } from "../src/world/units/abilities";
 import { undescribedAbilities } from "../src/world/units/ability-presentation";
+import { tooltipText } from "../src/world/units/ability-state";
 import { combatStatus } from "../src/world/units/combat-hud";
 import { BagState } from "../src/world/units/bag-state";
 import { LootState } from "../src/world/units/loot-state";
@@ -341,7 +342,7 @@ describe("WASM local zone host", () => {
     expect(projection.viewer).toEqual({
       copper: 0, health: 50, maxHealth: 50, experience: 0, experienceToNextLevel: 100, level: 1, dead: false, inCombat: false, weaponDrawn: false, target: null,
       classChoice: { classId: "arcanist", sex: "female" }, resource: { kind: "mana", value: 110, max: 110 }, cast: null, globalCooldown: 0, globalCooldownTotal: 0, damage: { min: 3, max: 6 },
-      guard: { raised: null, protecting: false, broken: 0 }, stance: null, combo: null, breath: wireCatalog().breathMaxTicks, reckoning: 0, waystones: [],
+      guard: { raised: null, protecting: false, broken: 0 }, stance: null, combo: null, breath: wireCatalog().breathMaxTicks, reckoning: 0, swordMastery: 0, swordPractice: 0, swordPracticeToNext: 30, waystones: [], discoveries: [],
     });
     expect(() => zone.submit(player, 1, Uint8Array.of(1, 1, 0, 0, 0, 0))).toThrow();
     expect(zone.submit(player, 1, encodeCommand({ kind: "jump" }))).toBe(true);
@@ -541,12 +542,12 @@ describe("WASM local zone combat intents", () => {
       "Torn Fur", "Worn Dagger", "Militia Shortsword", "Apprentice Wand", "Pine Buckler", "Cloth Hood", "Padded Tunic",
       "Padded Trousers", "Worn Boots", "Wolf Pelt", "Sunken Relic", "Brute-Breaker Mace", "Greyfang Scout Jerkin", "Hollow-Delver's Cowl", "Thornreaver Blade", "Captain's Scarred Brigandine", "Redbrand Command Signet", "Marshal's Commendation Greaves",
       "Boar Tusk", "Stolen Grain Sack", "Lurker Scale", "Redbrand Orders", "Militia Spear",
-      "Fine Militia Shortsword", "Balanced Militia Shortsword", "Long-hafted Militia Spear", "Garrick's Cleaver", "Iron Ore", "Boar Hide", "Hollowpine Boar-Spear",
+      "Fine Militia Shortsword", "Balanced Militia Shortsword", "Long-hafted Militia Spear", "Garrick's Cleaver", "Iron Ore", "Boar Hide", "Hollowpine Boar-Spear", "Supply Sack",
     ]);
     expect([...catalog.creatureTemplates.values()].map((template) => template.name)).toEqual([
       "Timber Wolf", "Young Boar", "Grain Rat", "Field Marauder", "Mirefin Lurker", "Redbrand Bandit", "Garrick Redbrand",
       "Redbrand Crossbowman", "Crate", "Barrel", "Blasting Powder Barrel", "Fence", "Hill Ogre", "Heavy Crate", "Redbrand Brute", "Loose Boulder",
-      "Brown Bear", "Cave Spider", "Marsh Lurker", "Old Scarback", "Captain Ulric Thorn",
+      "Brown Bear", "Cave Spider", "Marsh Lurker", "Old Scarback", "Forest Lynx", "Marsh Adder", "Captain Ulric Thorn",
     ]);
     expect(catalog.creatureTemplates.get(11)?.prop).toBe("explosive_barrel");
     expect(catalog.creatureTemplates.get(13)?.family).toBe("ogre");
@@ -559,6 +560,11 @@ describe("WASM local zone combat intents", () => {
     expect(undescribedAbilities(catalog)).toEqual([]);
     expect([5, 9, 10, 11, 12].map((id) => catalog.abilities.get(id)?.name)).toEqual(["Aimed Shot", "Firebolt", "Frost Nova", "Arcane Barrier", "Blizzard"]);
     expect(catalog.abilities.get(12)?.channel).toBe(true);
+    // Range lines come from the core catalog (#1013): Renew, Divine Shield and Rejuvenation land
+    // on a selected friend within 30 m, or on the caster without one.
+    const rangeLine = (id: number) => tooltipText(catalog.abilities.get(id)!, catalog, 60).lines[1];
+    expect([35, 37, 40].map(rangeLine)).toEqual(Array(3).fill("30 m range, friendly or self"));
+    expect([1, 9, 10, 15].map(rangeLine)).toEqual(["Melee range", "30 m range", "Self", "20 m range"]);
   });
 
   test("the chosen class reaches the zone and ability slots are refused or validated there", async () => {
@@ -638,7 +644,7 @@ describe("WASM local zone combat intents", () => {
     quests.update(source.latestProjection()!, catalog);
     expect(quests.marker(1)).toBe("available");
     expect([...catalog.quests.values()].map((quest) => quest.name)).toEqual([
-      "Trouble in the Woods", "Pelts for the Tanner", "The Missing Farmhand", "Marauders in the Fields", "Scout the Lake",
+      "The Wolfrun Cart", "Pelts for the Tanner", "The Missing Farmhand", "Marauders in the Fields", "Scout the Lake",
       "Mirefin Menace", "Into Redbrand Hollow", "Garrick Redbrand", "Return to Greyhaven", "The Sunken Shrine", "Deeper into the Hollow",
     ]);
     // From spawn slot 0, run west along the plaza to 3.5 m from the Marshal.
@@ -654,18 +660,20 @@ describe("WASM local zone combat intents", () => {
     run(source, 1);
     quests.update(source.latestProjection()!, catalog);
     expect(quests.sheet?.entries).toEqual([{ quest: 1, progress: [0, 0, 0] }]);
-    expect(quests.marker(1)).toBe("in-progress");
-    expect(quests.feedback).toBe("Accepted: Trouble in the Woods.");
-    expect(trackerRows(quests.sheet!).map((row) => row.text)).toEqual(["Trouble in the Woods", "  · Timber Wolf slain: 0/6"]);
+    // The Tanner, not the Marshal, takes the cart's sacks (#984).
+    expect(quests.marker(1)).toBeNull();
+    expect(quests.marker(2)).toBe("in-progress");
+    expect(quests.feedback).toBe("Accepted: The Wolfrun Cart.");
+    expect(trackerRows(quests.sheet!).map((row) => row.text)).toEqual(["The Wolfrun Cart", "  · Explore Wolfrun Woods", "  · Supply Sack: 0/3"]);
     source.sendCommand({ kind: "complete-quest", npc: 1, quest: 1, choice: 0 });
     run(source, 1);
-    expect(source.latestProjection()?.events).toEqual([{ kind: "error", code: "quest-incomplete", target: { kind: "npc", id: 1 } }]);
+    expect(source.latestProjection()?.events).toEqual([{ kind: "error", code: "invalid-quest", target: { kind: "npc", id: 1 } }]);
     source.sendCommand(quests.abandon(1)!);
     run(source, 1);
     quests.update(source.latestProjection()!, catalog);
     expect(quests.sheet?.entries).toEqual([]);
     expect(quests.marker(1)).toBe("available");
-    expect(quests.feedback).toBe("Abandoned: Trouble in the Woods.");
+    expect(quests.feedback).toBe("Abandoned: The Wolfrun Cart.");
   });
 
   test("intents beyond the per-tick bound are reported, never a session error", async () => {

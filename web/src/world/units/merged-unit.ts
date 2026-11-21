@@ -430,3 +430,23 @@ function bindGeometry(mesh: THREE.Mesh, bind: THREE.Matrix4, joints: number[] | 
   geometry.setIndex(order);
   return geometry;
 }
+
+/**
+ * Frees what a dropped unit's skins own (#1005): the merged meshes' and shadow proxies' geometry, and once each the
+ * joint palette (bone texture) of every skeleton the unit cloned for itself: the merged one, and those of skins left
+ * unmerged (eyes, toggled holders), which `SkeletonUtils.clone` gave their own. A skin cloned plainly
+ * (`Object3D.clone`) shares its bundle's skeleton, whose joints lie outside `model`; that skeleton is not the unit's
+ * and stays.
+ */
+export function releaseUnit(model: THREE.Object3D, merged: MergedUnit): void {
+  for (const mesh of [...merged.meshes, ...merged.shadows]) { mesh.geometry.dispose(); }
+  const inside = new Set<THREE.Object3D>();
+  const skeletons = new Set<THREE.Skeleton>([merged.skeleton]);
+  model.traverse((object) => {
+    inside.add(object);
+    if (object instanceof THREE.SkinnedMesh) { skeletons.add(object.skeleton); }
+  });
+  for (const skeleton of skeletons) {
+    if (skeleton.bones.every((bone) => inside.has(bone))) { skeleton.dispose(); }
+  }
+}

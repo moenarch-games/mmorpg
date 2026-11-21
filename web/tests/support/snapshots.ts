@@ -19,7 +19,11 @@ export const HEALTHY_VIEWER: ViewerState = {
   combo: null,
   breath: wireCatalog().breathMaxTicks,
   reckoning: 0,
+  swordMastery: 0,
+  swordPractice: 0,
+  swordPracticeToNext: 30,
   waystones: [],
+  discoveries: [],
 };
 
 /** Nothing equipped. */

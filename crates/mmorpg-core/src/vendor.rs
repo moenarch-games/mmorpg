@@ -114,7 +114,7 @@ pub const fn sell_price(item: ItemId) -> u32 {
         10 | 11 => 1,
         12..=14 => 9,
         15..=18 => 18,
-        19..=22 => 1,
+        19..=22 | 31 => 1,
         // Gathered materials and the smith's boar-spear (#917).
         28 | 29 => 2,
         30 => 10,

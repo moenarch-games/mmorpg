@@ -8,6 +8,7 @@ use egui::{Align2, Color32, FontId, Mesh, Pos2, Rect, Sense, Shape, Stroke, Vec2
 use maps_core::{
     LineLayout, LineMesh, MapCamera, ScreenCoordinate, ViewportSize, project_web_mercator,
 };
+use mmorpg_client_model::exploration::ExplorationMap;
 use mmorpg_client_model::world_map::{self as model, LonLat, WorldMap};
 use mmorpg_core::{EntityKind, ZoneSnapshot};
 
@@ -108,7 +109,12 @@ impl WorldMapWindow {
     }
 
     /// Draws the map window; returns `false` once the player closes it.
-    pub fn show(&mut self, ctx: &egui::Context, snapshot: Option<&ZoneSnapshot>) -> bool {
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        snapshot: Option<&ZoneSnapshot>,
+        exploration: Option<&ExplorationMap>,
+    ) -> bool {
         let mut open = true;
         if !self.centred {
             if let Some(at) = viewer_point(snapshot) {
@@ -127,6 +133,15 @@ impl WorldMapWindow {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.small("M or Esc to close · drag to pan · wheel to zoom");
+                    if let Some(map) = exploration {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "Discovered {} / {}",
+                                map.discovered, map.total
+                            ))
+                            .color(Color32::from_rgb(255, 211, 77)),
+                        );
+                    }
                     if ui.button("Centre on me").clicked()
                         && let Some(at) = viewer(snapshot).map(|(at, _)| at)
                     {
@@ -135,7 +150,7 @@ impl WorldMapWindow {
                 });
                 let (response, painter) =
                     ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
-                self.paint(ui, &response, &painter, snapshot);
+                self.paint(ui, &response, &painter, snapshot, exploration);
             });
         open
     }
@@ -146,6 +161,7 @@ impl WorldMapWindow {
         response: &egui::Response,
         painter: &egui::Painter,
         snapshot: Option<&ZoneSnapshot>,
+        exploration: Option<&ExplorationMap>,
     ) {
         let rect = response.rect;
         let Some(camera) = self.camera(rect) else {
@@ -321,6 +337,10 @@ impl WorldMapWindow {
             }
         }
 
+        if let Some(map) = exploration {
+            explored(&painter, &project, map, self.zoom >= 13.0);
+        }
+
         // you: a dot and an arrow along your facing (bearing clockwise from north; screen y points south)
         if let Some((at, bearing)) = viewer(snapshot)
             && let Some(p) = project(at)
@@ -385,6 +405,83 @@ impl WorldMapWindow {
 
 /// A line through screen points, tessellated by the Maps library's MapLibre line bucket with
 /// round joins and caps, `width` px wide.
+/// The exploration overlay (#983), as in the browser: discovered named areas outlined in gold
+/// and named, undiscovered ones dimmed so the geography stays readable, and the active quests'
+/// approximate areas as dashed gold circles (Atlas 5.1.13).
+fn explored(
+    painter: &egui::Painter,
+    project: &impl Fn(LonLat) -> Option<Pos2>,
+    map: &ExplorationMap,
+    labels: bool,
+) {
+    let zone = |[x, z]: [f32; 2]| project(model::zone_to_map(f64::from(x), f64::from(z)));
+    for area in &map.areas {
+        let corners = [
+            [area.min[0], area.min[1]],
+            [area.max[0], area.min[1]],
+            [area.max[0], area.max[1]],
+            [area.min[0], area.max[1]],
+        ];
+        let Some(points) = corners.into_iter().map(zone).collect::<Option<Vec<_>>>() else {
+            continue;
+        };
+        let (fill, line) = if area.discovered {
+            (
+                Color32::from_rgba_unmultiplied(255, 233, 168, 28),
+                Stroke::new(1.6, Color32::from_rgb(245, 210, 122)),
+            )
+        } else {
+            (
+                Color32::from_rgba_unmultiplied(29, 26, 20, 64),
+                Stroke::new(0.8, Color32::from_rgb(91, 84, 70)),
+            )
+        };
+        painter.add(Shape::convex_polygon(points, fill, line));
+    }
+    let gold = Color32::from_rgb(255, 211, 77);
+    for hint in &map.hints {
+        let ring: Option<Vec<Pos2>> = (0..=48)
+            .map(|i| {
+                let a = i as f32 / 48.0 * std::f32::consts::TAU;
+                zone([
+                    hint.center[0] + hint.radius * a.cos(),
+                    hint.center[1] + hint.radius * a.sin(),
+                ])
+            })
+            .collect();
+        if let Some(ring) = ring {
+            painter.add(Shape::convex_polygon(
+                ring.clone(),
+                Color32::from_rgba_unmultiplied(255, 211, 77, 40),
+                Stroke::NONE,
+            ));
+            painter.extend(Shape::dashed_line(&ring, Stroke::new(2.0, gold), 6.0, 4.0));
+        }
+        if let Some(at) = zone(hint.center) {
+            painter.text(
+                at + Vec2::new(0.0, 14.0),
+                Align2::CENTER_CENTER,
+                &hint.label,
+                FontId::proportional(12.0),
+                gold,
+            );
+        }
+    }
+    if labels {
+        for area in map.areas.iter().filter(|area| area.discovered) {
+            if let Some(at) = zone(area.center()) {
+                painter.text(
+                    at,
+                    Align2::CENTER_CENTER,
+                    &area.name,
+                    FontId::proportional(12.0),
+                    Color32::from_rgb(243, 230, 184),
+                );
+            }
+        }
+    }
+}
+
 fn stroke(mesh: &mut Mesh, points: &[Pos2], width: f32, color: Color32, closed: bool) {
     if points.len() < 2 {
         return;

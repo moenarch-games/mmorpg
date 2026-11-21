@@ -14,7 +14,9 @@ use mmorpg_core::{
     ability_by_id,
 };
 
-use crate::sheet::{Abilities, SHEET_COUNT, Sheet, SheetRevisions, encode_sheets, revision};
+use crate::sheet::{
+    Abilities, SHEET_COUNT, Sheet, SheetEncodingCache, SheetRevisions, encode_sheets, revision,
+};
 use crate::wire::{
     COMMON_HEADER_BYTES, ENTITY_REF_BYTES, PLAYER_SNAPSHOT_SCOPE, decode_common_header,
     decode_entity_kind, decode_entity_ref, decode_event, decode_u8_count, decode_u16_count,
@@ -32,10 +34,10 @@ const SELF_BYTES: usize = 4 + 4 + 1 + 8 + 4 + 1 + ENTITY_REF_BYTES;
 pub const CAST_RECORD_BYTES: usize = 4 + 1 + 2 + 2;
 /// Class code, resource kind/value/max, global cooldown, cast, melee damage
 /// range, the guard (lane code, protecting flag, break ticks), the melee
-/// stance and combo phase codes, breath ticks (#274) and the harm stored against the target
-/// (#936).
+/// stance and combo phase codes, breath ticks (#274), the harm stored against the target
+/// (#936) and the sword mastery's level and progress (#915).
 const SELF_ABILITY_BYTES: usize =
-    1 + 1 + 2 + 2 + 2 + CAST_RECORD_BYTES + 2 + 2 + 1 + 1 + 2 + 1 + 1 + 2 + 2;
+    1 + 1 + 2 + 2 + 2 + CAST_RECORD_BYTES + 2 + 2 + 1 + 1 + 2 + 1 + 1 + 2 + 2 + 1 + 2;
 /// The target's own target and the target's cast.
 const TARGET_BYTES: usize = ENTITY_REF_BYTES + CAST_RECORD_BYTES;
 /// Every section's fixed part: header, self, target, sheet mask (`u16`, #544, #897), summoned
@@ -62,8 +64,8 @@ pub const EVENT_RECORD_BYTES: usize = 1 + 4 + 2 * ENTITY_REF_BYTES + 2;
 /// facing, level, health percent and flags. Only creatures are tapped, evade or are lootable,
 /// so on a player record those three flag bits carry its [`mmorpg_core::TraversalView`] code
 /// instead (#490, #516, #500): tapped is bit 0, evading bit 1 and lootable bit 2.
-/// On an NPC record the tapped and evading bits carry its posture code instead, and on a
-/// player record the health byte's high bit says it sits (#619).
+/// On an NPC record the tapped, evading and lootable bits carry its posture code instead (#619,
+/// #991), and on a player record the health byte's high bit says it sits (#619).
 pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 4 + 12 + 3 + 2 + 1 + 1 + 1;
 /// The health byte's high bit on a player record: the player sits (#619).
 const SITTING_BIT: u8 = 0x80;
@@ -140,6 +142,16 @@ pub fn pack_snapshot_acknowledged(
     snapshot: &ZoneSnapshot,
     acknowledged: SheetRevisions,
 ) -> Result<PackedSnapshot, ProtocolError> {
+    pack_snapshot_cached(snapshot, acknowledged, &mut SheetEncodingCache::default())
+}
+
+/// [`pack_snapshot_acknowledged`] reusing the viewer's unchanged inventory sheet encoding from
+/// `cache` (#1007); the bytes are identical to a cold pack's.
+pub fn pack_snapshot_cached(
+    snapshot: &ZoneSnapshot,
+    acknowledged: SheetRevisions,
+    cache: &mut SheetEncodingCache,
+) -> Result<PackedSnapshot, ProtocolError> {
     if snapshot
         .entities
         .first()
@@ -209,6 +221,8 @@ pub fn pack_snapshot_acknowledged(
     payload.push(viewer.combo.map_or(0, mmorpg_core::ComboPhase::code));
     payload.extend_from_slice(&viewer.breath.to_be_bytes());
     payload.extend_from_slice(&viewer.reckoning.to_be_bytes());
+    payload.push(viewer.mastery.level);
+    payload.extend_from_slice(&viewer.mastery.progress.to_be_bytes());
     encode_entity_ref(&mut payload, snapshot.target_of_target);
     encode_cast(&mut payload, snapshot.target_detail.cast);
 
@@ -242,11 +256,11 @@ pub fn pack_snapshot_acknowledged(
     payload.extend_from_slice(&[0, 0]);
     let mut mask = 0_u16;
     let mut deferred_sheets = false;
-    for (sheet, bytes) in Sheet::ALL.into_iter().zip(encode_sheets(snapshot)?) {
-        let Some(bytes) = bytes else {
+    for (sheet, encoded) in Sheet::ALL.into_iter().zip(encode_sheets(snapshot, cache)?) {
+        let Some((bytes, hash)) = encoded else {
             continue;
         };
-        if acknowledged.get(sheet) == revision(&bytes) {
+        if acknowledged.get(sheet) == hash {
             continue;
         }
         if bytes.len() > room {
@@ -578,7 +592,7 @@ fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), P
             ));
         }
         let code = posture.code();
-        (code & 1 != 0, code & 2 != 0, false)
+        (code & 1 != 0, code & 2 != 0, code & 4 != 0)
     } else if entity.kind == EntityKind::Player {
         if flags.tapped_by_other || flags.evading || flags.lootable {
             return Err(ProtocolError::new(
@@ -741,6 +755,14 @@ fn decode_projection(
     }
     // The harm a Divine Reckoning would draw on against the target (#936).
     let reckoning = u16::from_be_bytes(take(payload, &mut offset)?);
+    // The viewer's sword mastery (#915).
+    let mastery = mmorpg_core::Mastery {
+        level: read_u8(payload, &mut offset)?,
+        progress: u16::from_be_bytes(take(payload, &mut offset)?),
+    };
+    if !mastery.is_valid() {
+        return Err(ProtocolError::new("viewer weapon mastery is out of range"));
+    }
     let resource = match (class, resource_kind) {
         (None, 0) if resource_value == 0 && resource_max == 0 => None,
         (Some(choice), code) if code == resource_code(choice.class.resource()) => {
@@ -899,7 +921,7 @@ fn decode_projection(
         .map(|received| crate::sheet::decode_world_sheet(&received.bytes))
         .transpose()?
         .unwrap_or_default();
-    let waystones = sheet_bytes(Sheet::Waystones)
+    let (waystones, discoveries) = sheet_bytes(Sheet::Waystones)
         .map(|received| crate::sheet::decode_waystone_sheet(&received.bytes))
         .transpose()?
         .unwrap_or_default();
@@ -963,7 +985,9 @@ fn decode_projection(
             combo,
             breath,
             reckoning,
+            mastery,
             waystones,
+            discoveries,
         },
         cooldowns: abilities.cooldowns,
         auras: abilities.auras,
@@ -1088,9 +1112,12 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
         targets_viewer,
         lootable,
     ] = read_flags(read_u8(payload, offset)?)?;
-    // An NPC is never tapped or evading: those bits carry its posture code (#619).
+    // An NPC is never tapped, evading or lootable: those bits carry its posture code (#619,
+    // #991).
     let npc_posture = (kind == EntityKind::Npc).then(|| {
-        mmorpg_core::PostureView::from_code(u8::from(tapped_by_other) | u8::from(evading) << 1)
+        mmorpg_core::PostureView::from_code(
+            u8::from(tapped_by_other) | u8::from(evading) << 1 | u8::from(lootable) << 2,
+        )
     });
     let posture = match npc_posture {
         Some(Some(posture)) => posture,
@@ -1101,10 +1128,10 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
     if dead && posture != mmorpg_core::PostureView::Free {
         return Err(ProtocolError::new("a dead unit does not sit"));
     }
-    let (tapped_by_other, evading) = if kind == EntityKind::Npc {
-        (false, false)
+    let (tapped_by_other, evading, lootable) = if kind == EntityKind::Npc {
+        (false, false, false)
     } else {
-        (tapped_by_other, evading)
+        (tapped_by_other, evading, lootable)
     };
     // On a player record the tapped, evading and lootable bits carry its traversal code
     // (#490, #516, #500).
@@ -1194,6 +1221,48 @@ pub(crate) mod tests {
         }
     }
 
+    #[test]
+    fn unchanged_inventory_sheets_reuse_their_encoding_byte_for_byte() {
+        let mut snapshot = fixture_snapshot();
+        let mut cache = SheetEncodingCache::default();
+        let mut decoder = SnapshotDecoder::new();
+        // Each publication matches the stateless reference, held sheets or not.
+        let mut publish = |snapshot: &ZoneSnapshot, cache: &mut SheetEncodingCache| {
+            let acknowledged = decoder.revisions();
+            let packed = pack_snapshot_cached(snapshot, acknowledged, cache).unwrap();
+            assert_eq!(
+                packed,
+                pack_snapshot_acknowledged(snapshot, acknowledged).unwrap()
+            );
+            decoder.decode(&packed.payload).unwrap();
+            packed.payload
+        };
+        let first = publish(&snapshot, &mut cache);
+        publish(&snapshot, &mut cache);
+        let acknowledged = publish(&snapshot, &mut cache);
+        assert!(acknowledged.len() < first.len());
+        assert_eq!(cache.inventory_encodes, 1);
+        assert_eq!(publish(&snapshot, &mut cache), acknowledged);
+        assert_eq!(cache.inventory_encodes, 1);
+
+        // A revision bump re-encodes once, then reuses again.
+        snapshot.inventory_revision += 1;
+        publish(&snapshot, &mut cache);
+        publish(&snapshot, &mut cache);
+        assert_eq!(cache.inventory_encodes, 2);
+
+        // A replaced or restored character may reuse the revision for another bag.
+        snapshot.inventory = Some(mmorpg_core::Inventory::default());
+        publish(&snapshot, &mut cache);
+        assert_eq!(cache.inventory_encodes, 3);
+
+        // A cold cache packs the same bytes.
+        let mut cold = SheetEncodingCache::default();
+        assert_eq!(
+            pack_snapshot_cached(&snapshot, SheetRevisions::default(), &mut cold).unwrap(),
+            pack_snapshot(&snapshot).unwrap()
+        );
+    }
     /// The shared Rust/browser golden projection: a level-4 Arcanist casting
     /// Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that
     /// casts Muck Bolt, next to an NPC and a corpse tapped by another player,
@@ -1349,7 +1418,12 @@ pub(crate) mod tests {
                 breath: mmorpg_core::water::BREATH_MAX_TICKS,
                 // Harm stored against the target (#936).
                 reckoning: 123,
+                mastery: mmorpg_core::Mastery {
+                    level: 1,
+                    progress: 42,
+                },
                 waystones: mmorpg_core::WaystoneSet::EMPTY,
+                discoveries: std::collections::BTreeSet::new(),
             },
             cooldowns: vec![
                 Cooldown {
@@ -1619,7 +1693,9 @@ pub(crate) mod tests {
     const BREATH: usize = COMBO + 1;
     /// The harm stored against the target (#936).
     const RECKONING: usize = BREATH + 2;
-    const TARGET_OF_TARGET: usize = RECKONING + 2;
+    /// The sword mastery's level and progress (#915).
+    const MASTERY: usize = RECKONING + 2;
+    const TARGET_OF_TARGET: usize = MASTERY + 3;
     const TARGET_CAST: usize = TARGET_OF_TARGET + ENTITY_REF_BYTES;
     const SHEET_MASK: usize = TARGET_CAST + CAST_RECORD_BYTES;
     /// The `u16` sheet mask (#897).
@@ -1645,9 +1721,9 @@ pub(crate) mod tests {
     /// one spent vein (#917).
     const WORLD: usize = TARGET_AURAS + 1 + 9;
     const WORLD_BYTES: usize = (2 + 2 * 5) + (2 + 2 * 5) + (4 + 2 + 2 + 4) + (2 + 4);
-    /// The waystone sheet (#882): none unlocked.
+    /// The waystone sheet (#882): none unlocked and no area discovered (#983).
     const WAYSTONES: usize = WORLD + WORLD_BYTES;
-    const SHEETS_END: usize = WAYSTONES + 2;
+    const SHEETS_END: usize = WAYSTONES + 2 + 2;
     const SUMMONED: usize = 1 + 2 * SUMMONED_RECORD_BYTES;
     const TRAPS: usize = 1 + TRAP_RECORD_BYTES;
     const EVENTS: usize = SHEETS_END + SUMMONED + TRAPS;
@@ -1669,6 +1745,7 @@ pub(crate) mod tests {
         + 2 * 6
         + 2 * (1 + 9)
         + WORLD_BYTES
+        + 2
         + 2;
 
     #[test]
@@ -1974,6 +2051,7 @@ pub(crate) mod tests {
             // The fixture's Arcanist has no melee stance.
             (STANCE, 2, "viewer melee stance is invalid"),
             (COMBO, 2, "viewer combo phase is invalid"),
+            (MASTERY, 9, "viewer weapon mastery is out of range"),
         ] {
             let mut invalid = encoded.clone();
             invalid[offset] = value;
@@ -2282,7 +2360,7 @@ pub(crate) mod tests {
                 EVENT_RECORD_BYTES,
                 ENTITY_RECORD_BYTES
             ),
-            (114, 17, 29)
+            (117, 17, 29)
         );
         assert_eq!(MAX_WIRE_ENTITIES, 33);
         let viewer_id = u32::MAX;
@@ -2402,7 +2480,9 @@ pub(crate) mod tests {
                 combo: None,
                 breath: mmorpg_core::water::BREATH_MAX_TICKS,
                 reckoning: 0,
+                mastery: mmorpg_core::Mastery::default(),
                 waystones: mmorpg_core::WaystoneSet::EMPTY,
+                discoveries: std::collections::BTreeSet::new(),
             },
             cooldowns: Vec::new(),
             auras: Vec::new(),
@@ -2451,7 +2531,7 @@ pub(crate) mod tests {
         assert_eq!(packed.packed_entities, 32);
         assert_eq!(
             packed.payload.len(),
-            PLAYER_SNAPSHOT_FIXED_BYTES + 18 + 32 * ENTITY_RECORD_BYTES
+            PLAYER_SNAPSHOT_FIXED_BYTES + 20 + 32 * ENTITY_RECORD_BYTES
         );
         let mut holder = SnapshotDecoder::new();
         holder.decode(&packed.payload).unwrap();
@@ -2726,6 +2806,9 @@ mod posture_tests {
             PostureView::Sitting,
             PostureView::Asleep,
             PostureView::Waking,
+            PostureView::Hunting,
+            PostureView::Carrying,
+            PostureView::Hurt,
         ] {
             let npc = record(EntityKind::Npc, posture);
             assert_eq!(round_trip(&npc).unwrap(), npc);

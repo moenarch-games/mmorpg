@@ -30,7 +30,7 @@ use crate::{
 };
 
 /// Greyhaven Vale's dressing files.
-const GREYHAVEN: [&str; 13] = [
+const GREYHAVEN: [&str; 14] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/vale.json"
@@ -79,6 +79,12 @@ const GREYHAVEN: [&str; 13] = [
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/wolfrun-den.json"
     )),
+    // The abandoned supply cart on the Wolfrun Trail, its cut sacks, the bait that drew the pack
+    // and a red-ragged Redbrand marker pole (#984).
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../content/greyhaven/dressing/wolfrun-cart.json"
+    )),
     // The Eastdown meadow's cairn and rock scar (#872).
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -98,9 +104,9 @@ const GREYHAVEN: [&str; 13] = [
 
 /// Every kit that draws dressing, by its asset keys' prefix, with the static-scene fallback
 /// ([`Kit`]) it hides while drawn, if it has one.
-pub const KITS: [(&str, Option<Kit>); 12] = [
+pub const KITS: [(&str, Option<Kit>); 10] = [
     ("greyhaven.nature.", Some(Kit::Nature)),
-    ("limestone-rocks.kit.", Some(Kit::Nature)),
+    ("limestone-rocks.kit.", Some(Kit::Limestone)),
     ("crag.kit.", Some(Kit::Crag)),
     ("settlement.props.", Some(Kit::SettlementProps)),
     ("outpost.kit.", Some(Kit::Outpost)),
@@ -109,20 +115,8 @@ pub const KITS: [(&str, Option<Kit>); 12] = [
     ("shrine.kit.", None),
     ("greyhaven-meadow.kit.", None),
     ("river-stones.kit.", None),
-    // The Wolfrun Den (#963): its kit is drawn wherever the den is, so its generated collider
-    // shows no stand-in ([`own_collider`]).
-    ("wolf-den.kit.", None),
     // The basin's ore veins (#917) stand on their own generated colliders.
     ("gatherables.kit.", None),
-    // The optional discoveries (#913), drawn like the den over their generated colliders.
-    ("discoveries.kit.", None),
-];
-
-/// The wolf den kit's entries (asset-tooling#757), drawn through [`kit_placements`].
-pub const WOLF_DEN_ENTRIES: [&str; 3] = [
-    "wolf-den.kit.den-mouth",
-    "wolf-den.kit.bone-scatter",
-    "wolf-den.kit.bedding-patch",
 ];
 
 /// The gatherables kit's placed entries (asset-tooling#763): an ore vein and its spent look,
@@ -132,23 +126,73 @@ pub const GATHERABLE_ENTRIES: [&str; 2] = [
     "gatherables.kit.ore-vein-depleted",
 ];
 
-/// The discoveries kit's placed entries (#913, asset-tooling#764), drawn through
-/// [`kit_placements`].
-pub const DISCOVERY_ENTRIES: [&str; 13] = [
-    "discoveries.kit.hunter-lean-to",
-    "discoveries.kit.hunter-chest",
-    "discoveries.kit.skinning-rack",
-    "discoveries.kit.fire-ring",
-    "discoveries.kit.hunter-clue",
-    "discoveries.kit.lookout-platform",
-    "discoveries.kit.lookout-ladder",
-    "discoveries.kit.signal-brazier-lit",
-    "discoveries.kit.weapon-rack",
-    "discoveries.kit.lookout-banner",
-    "discoveries.kit.fen-punt",
-    "discoveries.kit.supply-crates",
-    "discoveries.kit.fen-marker",
-];
+/// The ordinary placed kits (#683): every kit with no specialization of its own, whose entries
+/// stand at their authored placements ([`kit_placements`]) and whose own colliders show no
+/// stand-in. `placed-kits.json` registers them once; the native client's build, the WASM host
+/// and the browser all read this one inventory, so adding such a kit is a data change plus
+/// fetching its bundle.
+const PLACED_KITS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/placed-kits.json"));
+
+/// One ordinary placed kit from `placed-kits.json`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlacedKit {
+    /// The kit's name, as the clients ask for it (`"den"`).
+    pub name: &'static str,
+    /// The bundle's directory under `web/public` (`scenery/wolf-den.kit`); its last component,
+    /// followed by `.`, prefixes the kit's asset keys.
+    pub bundle: &'static str,
+    /// The bundle's descriptor attachment, which declares the levels of detail.
+    pub descriptor: &'static str,
+    /// What the kit draws, for readers of the inventory.
+    pub about: &'static str,
+    /// The kit's placed entries.
+    pub entries: Vec<&'static str>,
+}
+
+impl PlacedKit {
+    /// The bundle's directory name (`wolf-den.kit`), its asset keys' prefix before the `.`.
+    #[must_use]
+    pub fn label(&self) -> &'static str {
+        self.bundle.rsplit('/').next().unwrap_or(self.bundle)
+    }
+
+    /// Whether `asset` is one of this kit's keys.
+    #[must_use]
+    pub fn owns(&self, asset: &str) -> bool {
+        asset
+            .strip_prefix(self.label())
+            .is_some_and(|rest| rest.starts_with('.'))
+    }
+
+    /// The kit's placements on `s`.
+    #[must_use]
+    pub fn placements(&'static self, s: &Scenery) -> Vec<Placement> {
+        kit_placements(s, &self.entries)
+    }
+}
+
+/// Every ordinary placed kit, in inventory order.
+#[must_use]
+pub fn placed_kits() -> &'static [PlacedKit] {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields, bound(deserialize = "'de: 'static"))]
+    struct Inventory {
+        kits: Vec<PlacedKit>,
+    }
+    static INVENTORY: LazyLock<Vec<PlacedKit>> = LazyLock::new(|| {
+        serde_json::from_str::<Inventory>(PLACED_KITS)
+            .expect("the placed-kit inventory is valid")
+            .kits
+    });
+    &INVENTORY
+}
+
+/// The ordinary placed kit called `name`.
+#[must_use]
+pub fn placed_kit(name: &str) -> Option<&'static PlacedKit> {
+    placed_kits().iter().find(|kit| kit.name == name)
+}
 
 /// The dressing format's version.
 pub const VERSION: u32 = 1;
@@ -240,10 +284,11 @@ pub fn kit(asset: &str) -> Option<Kit> {
         .and_then(|(_, kit)| *kit)
 }
 
-/// Whether a kit in [`KITS`] draws `asset`.
+/// Whether a kit in [`KITS`] or an ordinary placed kit ([`placed_kits`]) draws `asset`.
 #[must_use]
 pub fn drawn(asset: &str) -> bool {
     KITS.iter().any(|(prefix, _)| asset.starts_with(prefix))
+        || placed_kits().iter().any(|kit| kit.owns(asset))
 }
 
 /// Parses and validates dressing files: the known version, unique IDs and colliders, a known
@@ -313,9 +358,15 @@ pub fn placed(s: &Scenery) -> &'static [Placed] {
 /// The placements `kit` draws on `s`, in file order.
 #[must_use]
 pub fn placements(s: &Scenery, kit: Kit) -> Vec<Placement> {
+    placements_of(s, &[kit])
+}
+
+/// The placements any of `kits` draws on `s`, in file order.
+#[must_use]
+pub fn placements_of(s: &Scenery, kits: &[Kit]) -> Vec<Placement> {
     placed(s)
         .iter()
-        .filter(|placed| placed.kit() == Some(kit))
+        .filter(|placed| placed.kit().is_some_and(|kit| kits.contains(&kit)))
         .map(|placed| {
             let frame = placed.frame();
             Placement {
@@ -367,7 +418,7 @@ pub fn ground_details(s: &Scenery, entries: &'static [&'static str]) -> Vec<Plac
 }
 
 /// The placements of the supplied bundle `entries` on `s` that stand at their authored height,
-/// not as ground detail: the Wolfrun Den's pieces (#963) and the discoveries' (#913).
+/// not as ground detail: every ordinary placed kit's ([`PlacedKit::placements`]) and the ore veins'.
 #[must_use]
 pub fn kit_placements(s: &Scenery, entries: &'static [&'static str]) -> Vec<Placement> {
     placed(s)
@@ -389,6 +440,51 @@ pub fn kit_placements(s: &Scenery, entries: &'static [&'static str]) -> Vec<Plac
         .collect()
 }
 
+/// A zone's mixed placement inventory (#1010): the nature bundle's trees, bushes and limestone
+/// rocks, the stones along the watercourses, then the meadow's and the river's ground details,
+/// derived once. The nature, limestone, river and meadow kits each draw the placements of
+/// their own entries from it ([`Self::of`]); the native client draws the parts in its own
+/// library order.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MixedPlacements {
+    /// [`crate::nature::placements`].
+    pub nature: Vec<Placement>,
+    /// [`crate::river::placements`].
+    pub river: Vec<Placement>,
+    /// [`ground_details`] of the meadow's, then the river's entries.
+    pub ground_details: Vec<Placement>,
+}
+
+impl MixedPlacements {
+    /// Derives `s`'s mixed inventory.
+    #[must_use]
+    pub fn new(s: &Scenery) -> Self {
+        let mut ground = ground_details(s, &crate::terrain_patch::MEADOW_ENTRIES);
+        ground.extend(ground_details(s, &crate::river::ENTRIES));
+        Self {
+            nature: crate::nature::placements(s),
+            river: crate::river::placements(s),
+            ground_details: ground,
+        }
+    }
+
+    /// Every placement, in inventory order.
+    pub fn iter(&self) -> impl Iterator<Item = &Placement> {
+        self.nature
+            .iter()
+            .chain(&self.river)
+            .chain(&self.ground_details)
+    }
+
+    /// The placements of `entries`, in inventory order.
+    #[must_use]
+    pub fn of(&self, entries: &[&str]) -> Vec<Placement> {
+        self.iter()
+            .filter(|placement| entries.contains(&placement.entry))
+            .copied()
+            .collect()
+    }
+}
 /// For each of the zone's ore veins (#917) in wire order, the indices of its full and its spent
 /// look in [`kit_placements`] of [`GATHERABLE_ENTRIES`] on `s`: the placements standing at the
 /// vein's centre. A client hides one of the two by the projection's spent veins. Empty off
@@ -420,7 +516,7 @@ pub fn vein_slots(s: &Scenery) -> Vec<[usize; 2]> {
 }
 
 /// Whether collider `id` on `s` is generated from a placement whose kit has no stand-in
-/// ([`KITS`]): its art is always what shows, so the collider's own surface is never drawn.
+/// ([`KITS`] or [`placed_kits`]): its art is always what shows, so the collider's own surface is never drawn.
 #[must_use]
 pub fn own_collider(s: &Scenery, id: u32) -> bool {
     static OWN: LazyLock<BTreeSet<u32>> = LazyLock::new(|| {
@@ -473,6 +569,45 @@ pub fn stand_in(s: &Scenery, id: u32) -> Option<Kit> {
 mod tests {
     use super::*;
 
+    /// Each kit's share of the shared mixed inventory (#1010) is exactly what deriving the whole
+    /// inventory per kit gave: membership, order, transforms and culling, on Greyhaven and on a
+    /// zone without dressing.
+    #[test]
+    fn mixed_placements_give_each_kit_its_former_placements() {
+        use crate::{nature, river, terrain_patch::MEADOW_ENTRIES};
+        for s in [
+            mmorpg_scenery::greyhaven_vale_scenery(),
+            mmorpg_scenery::scenery_for_zone(mmorpg_core::seam_test::WEST_ZONE),
+        ] {
+            // The former per-kit derivation.
+            let mut all = nature::placements(&s);
+            all.extend(river::placements(&s));
+            all.extend(ground_details(&s, &MEADOW_ENTRIES));
+            all.extend(ground_details(&s, &river::ENTRIES));
+            let mixed = MixedPlacements::new(&s);
+            assert_eq!(mixed.iter().copied().collect::<Vec<_>>(), all);
+            for entries in [
+                &nature::ENTRIES[..],
+                &nature::LIMESTONE_ENTRIES[..],
+                &river::ENTRIES[..],
+                &MEADOW_ENTRIES[..],
+            ] {
+                let before: Vec<Placement> = all
+                    .iter()
+                    .filter(|placement| entries.contains(&placement.entry))
+                    .copied()
+                    .collect();
+                assert_eq!(mixed.of(entries), before, "{entries:?}");
+            }
+            if s.greyhaven() {
+                assert!(!mixed.nature.is_empty() && !mixed.ground_details.is_empty());
+                assert!(!mixed.of(&MEADOW_ENTRIES).is_empty());
+            } else {
+                assert!(mixed.ground_details.is_empty());
+            }
+        }
+    }
+
     #[test]
     fn greyhaven_dressing_stands_over_its_generated_collision() {
         let s = mmorpg_scenery::greyhaven_vale_scenery();
@@ -487,6 +622,29 @@ mod tests {
                 .unwrap_or_else(|| panic!("{} has no collider {id}", p.id));
             // The generated mesh sits at the placement.
             assert_eq!(mesh.position, p.position, "{}", p.id);
+        }
+    }
+
+    #[test]
+    fn ordinary_placed_kits_own_their_entries_and_are_placed() {
+        let s = mmorpg_scenery::greyhaven_vale_scenery();
+        let kits = placed_kits();
+        assert_eq!(
+            kits.iter().map(|kit| kit.name).collect::<Vec<_>>(),
+            ["den", "discoveries"]
+        );
+        for kit in kits {
+            assert!(
+                kit.entries.iter().all(|entry| kit.owns(entry)),
+                "{}",
+                kit.name
+            );
+            assert!(
+                kit.entries
+                    .iter()
+                    .all(|entry| drawn(entry) && self::kit(entry).is_none())
+            );
+            assert!(!kit.placements(&s).is_empty(), "{} is placed", kit.name);
         }
     }
 

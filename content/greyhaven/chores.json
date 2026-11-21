@@ -1,6 +1,6 @@
 {
   "schema": "resident-chores-v1",
-  "about": "What Greyhaven's residents hold on their routines (#904). Presentation only: each chore names a humanoid-equipment item, the figure socket it rides and the clips played while it is held (`idle` standing, `walk` walking; null keeps the ordinary clip). `night` is the chore of every routine resident walking home at dusk or back at dawn. A resident's `work` chore applies at its post by day, and `errands` lists one chore (or null) per authored errand, in the routine's order. A missing item or clip leaves the hands empty.",
+  "about": "What Greyhaven's residents hold on their routines (#904). Presentation only: each chore names a humanoid-equipment item, the figure socket it rides and the clips played while it is held (`idle` standing, `walk` walking; null keeps the ordinary clip). `night` is the chore of every routine resident walking home at dusk or back at dawn. A resident's `work` chore applies at its post by day, and `errands` lists one chore (or null) per authored errand, in the routine's order. `hunt` is what a hunter holds on its outing (#991) by its projected posture: its spear stalking, its catch in a game bag coming home, and a stick to lean on when hurt. A missing item or clip leaves the hands empty.",
   "chores": {
     "lantern": { "item": "equipment.tool.lantern", "socket": "hand_r.carry", "idle": "Carry_Hang_Idle_Loop", "walk": "Carry_Hang_Walk_Loop" },
     "bucket": { "item": "equipment.tool.bucket", "socket": "hand_r.carry", "idle": "Carry_Hang_Idle_Loop", "walk": "Carry_Hang_Walk_Loop" },
@@ -18,9 +18,11 @@
     "firewood": { "item": "equipment.load.firewood", "socket": "chest.carry", "idle": "Carry_Idle_Loop", "walk": "Carry_Walk_Loop" },
     "hay": { "item": "equipment.load.hay", "socket": "chest.carry", "idle": "Carry_Idle_Loop", "walk": "Carry_Walk_Loop" },
     "washing": { "item": "equipment.load.basket-large", "socket": "chest.carry", "idle": "Carry_Idle_Loop", "walk": "Carry_Walk_Loop" },
-    "water-jug": { "item": "equipment.load.water-jug", "socket": "chest.carry", "idle": "Carry_Idle_Loop", "walk": "Carry_Walk_Loop" }
+    "water-jug": { "item": "equipment.load.water-jug", "socket": "chest.carry", "idle": "Carry_Idle_Loop", "walk": "Carry_Walk_Loop" },
+    "hunting-spear": { "item": "equipment.spear.hollowpine-hunter", "socket": "hand_r.staff", "idle": null, "walk": null }
   },
   "night": "lantern",
+  "hunt": { "hunting": "hunting-spear", "carrying": "sack", "hurt": "walking-stick" },
   "residents": {
     "Farmer Osric Mill": { "work": "pitchfork", "errands": [] },
     "Weaver Lysa Reed": { "work": null, "errands": ["bucket"] },

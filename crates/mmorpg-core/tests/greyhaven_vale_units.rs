@@ -314,6 +314,32 @@ fn templates_follow_the_design_contract() {
                 3000,
                 120000
             ),
+            // The Southwood lynx (#989): a hard, slow pounce.
+            (
+                "Forest Lynx",
+                Lynx,
+                Aggressive,
+                [2, 3],
+                false,
+                50,
+                12,
+                [4, 7],
+                2600,
+                60000
+            ),
+            // The Eastwater Fen adder (#990): a frail body, a quick, warned strike.
+            (
+                "Marsh Adder",
+                Adder,
+                Aggressive,
+                [2, 3],
+                false,
+                34,
+                10,
+                [4, 7],
+                2600,
+                60000
+            ),
         ]
     );
     let wolf = content
@@ -328,8 +354,12 @@ fn spawns_populate_their_subzones() {
     let mut counts: BTreeMap<(AreaId, &str), usize> = BTreeMap::new();
     for spawn in content.creature_spawns() {
         // Night raiders (#530) stand on the farm's outskirts only for a committed incident and
-        // march rather than wander; `night_raid` covers them.
-        if content.is_raider(spawn.id) {
+        // march rather than wander; `night_raid` covers them, and `hunt_outing` the hunt's bear
+        // (#991), and `merchant_cart` the cart's robbers (#992).
+        if content.is_raider(spawn.id)
+            || content.is_hunt_beast(spawn.id)
+            || content.is_cart_bandit(spawn.id)
+        {
             continue;
         }
         let template = content.creature_template(spawn.template).unwrap();
@@ -476,6 +506,10 @@ fn spawns_populate_their_subzones() {
         // Brown Bears (#889) in the deep woods.
         ((wilds::WESTMERE_WOODS, "Brown Bear"), 2),
         ((wilds::SOUTHWOOD, "Brown Bear"), 1),
+        // The Forest Lynxes (#989) on the wood's edge.
+        ((wilds::SOUTHWOOD, "Forest Lynx"), 3),
+        // The Marsh Adders (#990) in Adder Hollow.
+        ((greyhaven_vale::vale::EASTWATER_FEN, "Marsh Adder"), 3),
         ((wilds::CROWN_FOOTHILLS, "Timber Wolf"), 6),
         ((wilds::CROWN_FOOTHILLS, "Hill Ogre"), 1),
         // The Rimewood scouts (#933), an Arcanist's group-control fight,
@@ -520,8 +554,10 @@ fn creatures_stay_out_of_sight_of_the_spawn_plaza() {
         if content
             .creature_template(spawn.template)
             .is_some_and(|template| template.prop().is_some())
-            // Night raiders (#530) stand only during an incident, on the farm's outskirts.
+            // Night raiders (#530) stand only during an incident, on the farm's outskirts, and
+            // the cart's robbers (#992) only during an ambush, in the Millbrook Climb's cutting.
             || content.is_raider(spawn.id)
+            || content.is_cart_bandit(spawn.id)
         {
             continue;
         }
@@ -611,8 +647,12 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
     for (creature, spawn) in start.creatures.iter().zip(content.creature_spawns()) {
         let template = content.creature_template(spawn.template).unwrap();
         assert_eq!(creature.creature_id, spawn.id);
-        // The 18 night raiders (#530) wait, without a body, for an incident.
-        if content.is_raider(spawn.id) {
+        // The 18 night raiders (#530) wait, without a body, for an incident, and the hunt's bear
+        // (#991) for a confrontation day, and the cart's robbers (#992) for an ambush.
+        if content.is_raider(spawn.id)
+            || content.is_hunt_beast(spawn.id)
+            || content.is_cart_bandit(spawn.id)
+        {
             assert!(matches!(
                 creature.life,
                 mmorpg_core::CreatureLife::Despawned { .. }
@@ -709,8 +749,11 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
         .iter()
         .zip(content.creature_spawns())
     {
-        // Raiders and den packs (#912) keep their own ranges.
+        // Raiders, the hunt's bear (#991), the cart's robbers (#992) and den packs (#912) keep
+        // their own ranges.
         if content.is_raider(spawn.id)
+            || content.is_hunt_beast(spawn.id)
+            || content.is_cart_bandit(spawn.id)
             || content
                 .dens()
                 .iter()

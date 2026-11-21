@@ -156,9 +156,13 @@ pub struct ViewerState {
     pub breath: u16,
     /// Waystones the viewer unlocked (#145).
     pub waystones: crate::WaystoneSet,
+    /// Named areas the viewer discovered (#916), for the exploration map (#983).
+    pub discoveries: std::collections::BTreeSet<crate::AreaId>,
     /// The harm a Divine Reckoning would draw on against the viewer's target (#936): 0 without
     /// a creature target or stored harm.
     pub reckoning: u16,
+    /// The viewer's sword mastery (#915): level and practice toward the next.
+    pub mastery: crate::Mastery,
 }
 
 /// A projection addressed to `viewer_id`. Entities are in priority order: the
@@ -329,7 +333,9 @@ impl ZoneSimulation {
                     combo: self.combo_phase(viewer),
                     breath: viewer.breath.remaining,
                     waystones: viewer.waystones.clone(),
+                    discoveries: viewer.discoveries.clone(),
                     reckoning: self.harm_against(player_id, viewer.target),
+                    mastery: viewer.mastery.sword,
                 },
                 cooldowns: viewer.cooldowns.clone(),
                 auras: aura_views(&viewer.auras),
@@ -532,6 +538,12 @@ impl ZoneSimulation {
                 let placement = self
                     .npc_placement(npc_id)
                     .ok_or_else(|| ZoneError::new("unknown npc"))?;
+                // A hunter on its outing (#991) shows how it went.
+                let hunting = self.hunt_placement(npc_id).map(|(_, posture)| posture);
+                // A merchant on its cart journey (#992) shows its cart, its fright or its wounds.
+                let cart = self
+                    .cart_placement(npc_id)
+                    .map(|(_, posture, health)| (posture, health));
                 EntitySnapshot {
                     kind: EntityKind::Npc,
                     id: npc_id.get(),
@@ -555,11 +567,17 @@ impl ZoneSimulation {
                         .is_some()
                     {
                         crate::raid::INJURED_HEALTH_PERCENT
+                    } else if let Some((_, health)) = cart {
+                        health
+                    } else if hunting == Some(crate::PostureView::Hurt) {
+                        crate::hunt::INJURED_HEALTH_PERCENT
                     } else {
                         100
                     },
                     flags: EntityFlags {
-                        posture: self.npc_posture(npc_id),
+                        posture: hunting
+                            .or(cart.map(|(posture, _)| posture))
+                            .unwrap_or_else(|| self.npc_posture(npc_id)),
                         ..EntityFlags::default()
                     },
                 }

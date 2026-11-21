@@ -42,7 +42,7 @@ Mountain streams feed both basins:
 | Delving Heights | Rugged high ground round the Delving Run's ravine | Redbrand veterans (5), hill ogres |
 | Fenwater Crossing | Meadows and alders along the river, the ford | field marauders (3), boars |
 | King's Road Downs | Open downs with copses and a spinney by the Greywater | marauders (3), boars, rats |
-| Southwood | Mixed oak, birch and pine wood | boars (1–2), wolves (2) |
+| Southwood | Mixed oak, birch and pine wood | boars (1–2), wolves (2), bear (3–4), forest lynxes on its eastern and southern edge (2–3) |
 | Westmere Woods | Dense pine wood round the tarn | wolf packs (2), boars, tarn lurkers (3) |
 | Crown Foothills | Pine and boulder slopes in the north-west | wolf packs (2), a hill ogre |
 
@@ -162,6 +162,17 @@ clip leaves the hands empty.
   at the north and east gates, the washer works at the brook below the bridge, the peddler greets
   travellers at the south gate, the herbalist gathers along the South Road each morning and the
   miller spends his working day at Millbrook Farm's windmill.
+  At 17:00 the peddler pushes a handcart of wares out of the east gate, up the Millbrook Climb to
+  Millbrook's farmyard, trades there half an hour and pushes it home (#992). On an ambush day (one
+  in two, a hash of the content seed and the day), two Redbrand bandits and a crossbowman off the
+  Eastern Rim Trail stand in the climb's cutting as the cart reaches it, and Rowan halts there
+  under threat for two minutes, yelling for help. If they all die in that time the cart is saved
+  and he travels on; otherwise they take it: he limps home without it and rests hurt until dusk,
+  and the robbers linger over the spoils for a minute before slipping away. A character who
+  fights the robbers during the hold earns 120 XP and 15 copper once per incident; onlookers earn
+  nothing. The journey runs on the zone's clock whether or not anyone watches; Rowan's placement
+  follows from the tick and the robbers' canonical lives (`mmorpg_core::cart`), and the clients
+  draw his cart and his cries from the projection alone.
 - **Barrowdown:** Gwen Barrow keeps the Barrow Rest, Shepherd Corin and Farmer Tobin Hale take
   their midday ale there, Old Maud keeps watch at the barrow ring, and Pip runs to the stones in
   the morning and to the alehouse in the afternoon.
@@ -171,7 +182,14 @@ clip leaves the hands empty.
   jerkin and cowl.
 - **Westmere Lodge:** Fisher Brann fishes the tarn and eats at the fire at noon.
 - **The hunters' camp:** Huntsman Edric Vale keeps the fire; Trapper Sela walks her lines in
-  Southwood each morning.
+  Southwood each morning. At 14:00 she goes back out with her spear to hunt at the far end of
+  her line (#991). On a quiet day she comes home with her catch in a game bag. On a
+  confrontation day (one in two, a hash of the content seed and the day), a Brown Bear stands in
+  the clearing beyond her. If nobody kills it while she holds her ground, she limps home and
+  rests at the camp leaning on a stick until dusk. A player who kills the bear turns that day
+  into a catch. The outing runs on the zone's clock whether or not anyone watches. Her
+  placement follows from the tick and the bear's canonical life, so the outing keeps no state
+  of its own (`mmorpg_core::hunt`).
 - **Greyfang Watch:** Watchman Garth holds the tower, Watchman Pell walks the road north twice a
   day.
 - **The farmland's hamlets:** Goodwife Ena, Ploughman Garr, Old Bertil, Shepherd Lise, Miller
@@ -185,7 +203,7 @@ settlements, and Farmer Osric Mill a fourth through the farmland's hamlets:
 
 | Chain | Starts | Giver | Quests |
 | --- | --- | --- | --- |
-| The Downs and the ford | After *Trouble in the Woods* | Gwen Barrow at Barrowdown, then Hob Ferris at Fenford | *Word from the Downs*, *Raiders on the Downs*, *Grain for the Barrow Rest* (stolen grain sacks from marauders), *The Barrow Ring* (hear out Old Maud), *Down to the Ford*, *Tusks and Tallow* (boar tusks), *The Fenwater Raiders* |
+| The Downs and the ford | After *The Wolfrun Cart* | Gwen Barrow at Barrowdown, then Hob Ferris at Fenford | *Word from the Downs*, *Raiders on the Downs*, *Grain for the Barrow Rest* (stolen grain sacks from marauders), *The Barrow Ring* (hear out Old Maud), *Down to the Ford*, *Tusks and Tallow* (boar tusks), *The Fenwater Raiders* |
 | The tarn and Southwood | After *Scout the Lake* | Brann at Westmere Lodge, then Edric Vale at the hunters' camp | *The Lodge on the Tarn*, *Scales of Westmere* (lurker scales), *Wolves at the Water*, *The Hunters' Camp*, *Southwood Hunt* |
 | The Greyfang Road | After *Garrick Redbrand* | Watchman Garth at Greyfang Watch | *The Greyfang Watch*, *Orders on the Road* (crossbowmen's orders), *The Delving Workings* (retake the mine camp), *Ogres of the Heights* |
 | The hamlets | After *Marauders in the Fields* | Farmer Osric Mill, then Goodwife Ena, Miller Hanne and Shepherd Lise | *The Hamlets*, *Rats in the Granary* (grain rats about the western barn), *Boars in the Barley* (boars west of the southern hamlet), *The Shepherd's Wolves* (a pack east of the eastern pastures) |
@@ -199,7 +217,7 @@ The four quest items (boar tusks, grain sacks, lurker scales and Redbrand orders
 quest needs them. Rewards are experience, copper and the Vale's existing gear.
 
 Review the Downs chain with `?scenario=greyhaven-downs`: a level 4 Warden on Barrowdown Lane with
-*Trouble in the Woods* turned in and *Word from the Downs* accepted, a few steps from Gwen Barrow.
+*The Wolfrun Cart* turned in and *Word from the Downs* accepted, a few steps from Gwen Barrow.
 
 ## Optional discoveries
 

@@ -379,8 +379,9 @@ impl LocalZoneHost {
 
     /// The world without its players, as canonical snapshot bytes (#40,
     /// Atlas 3.3.7): characters persist in their own records, the world in
-    /// this checkpoint. Players leave the copy exactly as a departing player
-    /// leaves the zone, so creatures drop them from threat and loot rights.
+    /// this checkpoint. Players depart the snapshot exactly as a departing player
+    /// leaves the zone, so creatures drop them from threat and loot rights, without
+    /// restoring a second simulation (#1003).
     pub fn world_checkpoint(&self) -> Result<Vec<u8>, LocalZoneError> {
         // The checkpoint is the home zone even while the character plays in the depths (#404).
         let home = self
@@ -388,14 +389,7 @@ impl LocalZoneHost {
             .as_ref()
             .filter(|_| is_depths_zone(self.zone.zone_id()))
             .unwrap_or(&self.zone);
-        let snapshot = home.snapshot().map_err(LocalZoneError::Zone)?;
-        let players: Vec<PlayerId> = snapshot.players.iter().map(|p| p.player_id).collect();
-        let mut world = ZoneSimulation::from_snapshot(snapshot, Arc::clone(home.content()))
-            .map_err(LocalZoneError::Zone)?;
-        for player_id in players {
-            world.remove_player(player_id);
-        }
-        let snapshot = world.snapshot().map_err(LocalZoneError::Zone)?;
+        let snapshot = home.playerless_snapshot().map_err(LocalZoneError::Zone)?;
         encode_canonical_snapshot(&snapshot).map_err(LocalZoneError::Command)
     }
 
@@ -1139,6 +1133,17 @@ mod tests {
             host.tick().unwrap();
         }
         let bytes = host.world_checkpoint().unwrap();
+        // Byte for byte the checkpoint of restoring the zone and removing its players (#1003).
+        let mut copy = ZoneSimulation::from_snapshot(
+            host.zone.snapshot().unwrap(),
+            Arc::clone(host.zone.content()),
+        )
+        .unwrap();
+        assert!(copy.remove_player(player));
+        assert_eq!(
+            bytes,
+            encode_canonical_snapshot(&copy.snapshot().unwrap()).unwrap()
+        );
         let restored = LocalZoneHost::from_world_checkpoint(&bytes).unwrap();
         assert_eq!(restored.current_tick(), host.current_tick());
         let world = restored.zone.snapshot().unwrap();

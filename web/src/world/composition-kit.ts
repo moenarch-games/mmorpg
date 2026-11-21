@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { InstancedLevels } from "./instanced-levels";
 import { loadBundleGltfs, readBundleAttachment, shareMaterials } from "./static-bundle";
+import { retainedBundle } from "./zone-lifecycle";
 
 /** The rolling `fortress-kit` bundle `scripts/fetch-bundles.sh` places in `web/public` (#591). */
 export const FORTRESS_BUNDLE = `${import.meta.env.BASE_URL}scenery/fortress.kit/`;
@@ -50,6 +51,7 @@ export class CompositionKit {
   #lifts = new Map<number, number>();
   #loading: Promise<boolean> | null = null;
   #changed = false;
+  #disposed = false;
   #dressing: CompositionDressing | null = null;
   readonly #clip = new THREE.Matrix4();
   readonly #clipFloats = new Float32Array(16);
@@ -60,6 +62,7 @@ export class CompositionKit {
 
   /** Loads the bundle once; settles drawable (true) or failed (false), never fatal to the world. */
   load(): Promise<boolean> {
+    if (this.#disposed) { return Promise.resolve(false); }
     this.#loading ??= this.#load().then(() => true, (error: unknown) => {
       console.error(`The ${this.#source.name} bundle did not load: ${error instanceof Error ? error.message : String(error)}`);
       this.#levels = null;
@@ -76,13 +79,29 @@ export class CompositionKit {
     const variants = new Map(dressing.lods.map((entry) => [entry.key, entry.variants]));
     const levels = dressing.entries.map((key) => variants.get(key) ?? ["default"]);
     const files = dressing.entries.flatMap((key, entry) => levels[entry]!.map((variant) => variant === "default" ? key : `${key}/${variant}`));
-    const gltfs = await loadBundleGltfs(bundle, files, 4);
-    shareMaterials(gltfs);
+    // The pieces are the bundle's, prepared once and retained for every visit (#1005).
+    const pieces = await retainedBundle(`composition-kit:${bundle}:${files.join(",")}`, async () => {
+      const gltfs = await loadBundleGltfs(bundle, files, 4);
+      shareMaterials(gltfs);
+      return gltfs.map((gltf) => gltf.scene);
+    });
+    // A world replaced while the bundle loaded keeps nothing (#1005).
+    if (this.#disposed) { return; }
     let next = 0;
-    const scenes = levels.map((entryLevels) => entryLevels.map(() => gltfs[next++]!.scene));
+    const scenes = levels.map((entryLevels) => entryLevels.map(() => pieces[next++]!));
     this.#levels = new InstancedLevels(this.#source.name, dressing.entries, scenes, dressing.placements);
     this.#lifts = new Map(dressing.lifts.map(({ platform, placement }) => [platform, placement]));
     this.#dressing = dressing;
+    this.#changed = true;
+  }
+
+  /** Releases the instanced levels this world owns (#1005); the retained pieces stay. Later calls do nothing. */
+  dispose(): void {
+    if (this.#disposed) { return; }
+    this.#disposed = true;
+    this.#levels?.dispose();
+    this.#levels = null;
+    this.#lifts.clear();
     this.#changed = true;
   }
 

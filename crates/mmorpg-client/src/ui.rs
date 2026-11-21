@@ -472,8 +472,15 @@ impl GameUi {
         self.unit_frames(ctx, frame, snapshot, &mut intents);
         self.action_bar(ctx, frame, snapshot, &mut intents);
         self.minimap_and_tracker(ctx, frame, snapshot);
+        let exploration = self.world_map.is_some().then(|| {
+            mmorpg_client_model::exploration::exploration_map(
+                frame.content,
+                &snapshot.viewer.discoveries,
+                self.sheets.quests.as_ref(),
+            )
+        });
         if let Some(map) = &mut self.world_map
-            && !map.show(ctx, Some(snapshot))
+            && !map.show(ctx, Some(snapshot), exploration.as_ref())
         {
             self.world_map = None;
         }
@@ -923,6 +930,20 @@ impl GameUi {
                             Color32::from_rgb(200, 180, 120)
                         };
                         ui.colored_label(color, text);
+                    }
+                    // Sword mastery (#915) once practised; the browser HUD says the same.
+                    let mastery = viewer.mastery;
+                    if mastery != mmorpg_core::Mastery::default() {
+                        let next = mmorpg_core::practice_to_next_level(mastery.level).unwrap_or(0);
+                        let progress = if next == 0 {
+                            "mastered".to_owned()
+                        } else {
+                            format!("{}/{next}", mastery.progress)
+                        };
+                        ui.colored_label(
+                            Color32::from_rgb(244, 217, 138),
+                            format!("Sword mastery {} ({progress})", mastery.level),
+                        );
                     }
                     auras(ui, &snapshot.auras);
                 });

@@ -529,6 +529,27 @@ pub(crate) fn validate_log(content: &ZoneContent, log: &QuestLog) -> Result<(), 
     Ok(())
 }
 
+/// A saved log fitted to the content admitting it (#984): content may revise an active
+/// quest's objectives, so progress a character stored past an objective's count is that
+/// objective done, and progress where the objective stores none is dropped. Everything else
+/// still answers to [`validate_log`].
+pub(crate) fn fit_log(content: &ZoneContent, log: &QuestLog) -> QuestLog {
+    let mut log = log.clone();
+    for entry in &mut log.entries {
+        let Some(quest) = content.log_quest(entry.quest) else {
+            continue;
+        };
+        for (index, stored) in entry.progress.iter_mut().enumerate() {
+            let limit = match quest.objectives.get(index) {
+                Some(objective) if objective.stores_progress() => objective.required(),
+                _ => 0,
+            };
+            *stored = (*stored).min(limit);
+        }
+    }
+    log
+}
+
 /// The quest a creature of `template` drops for a log, if one still needs it.
 pub(crate) fn quest_drop(
     content: &ZoneContent,

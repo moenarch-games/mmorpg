@@ -127,7 +127,7 @@ fn bram_closes_his_shop_at_night_but_hildas_quests_follow_her_home() {
     // At night, a player beside Hilda in the inn accepts her quest.
     let mut zone = zone_at(at(23 * HOUR_TICKS), [HOME[0] + 100, HOME[1]]);
     let mut state = zone.snapshot().unwrap();
-    state.players[0].quests.completed = [mmorpg_core::QuestId::new(1)].into(); // Trouble in the Woods turned in.
+    state.players[0].quests.completed = [mmorpg_core::QuestId::new(1)].into(); // The Wolfrun Cart turned in.
     zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
     let pelts = QuestId::new(2);
     zone.apply_command(

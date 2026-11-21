@@ -12,12 +12,12 @@ import { HEALTHY_VIEWER, NO_FLAGS, playerEntity, testSnapshot } from "./support/
 /** Ticks of the 30 Hz rate these cases were written against, at `TICK_HZ`. */
 const t = (ticks: number) => (ticks * TICK_HZ) / 30;
 const ABILITIES: AbilityRecord[] = [
-  { id: 1, name: "Heroic Strike", user: "warden", level: 1, cost: 15, castTicks: t(0), channel: false, cooldown: t(0), aura: null },
-  { id: 2, name: "Shield Bash", user: "warden", level: 2, cost: 10, castTicks: t(0), channel: false, cooldown: t(360), aura: 6 },
-  { id: 9, name: "Firebolt", user: "arcanist", level: 1, cost: 25, castTicks: t(60), channel: false, cooldown: t(0), aura: null },
-  { id: 10, name: "Frost Nova", user: "arcanist", level: 2, cost: 30, castTicks: t(0), channel: false, cooldown: t(600), aura: 4 },
-  { id: 11, name: "Arcane Barrier", user: "arcanist", level: 4, cost: 40, castTicks: t(0), channel: false, cooldown: t(900), aura: 3 },
-  { id: 12, name: "Blizzard", user: "arcanist", level: 6, cost: 80, castTicks: t(180), channel: true, cooldown: t(0), aura: null },
+  { id: 1, name: "Heroic Strike", user: "warden", level: 1, cost: 15, castTicks: t(0), channel: false, cooldown: t(0), rangeLabel: "Melee range", aura: null },
+  { id: 2, name: "Shield Bash", user: "warden", level: 2, cost: 10, castTicks: t(0), channel: false, cooldown: t(360), rangeLabel: "Melee range", aura: 6 },
+  { id: 9, name: "Firebolt", user: "arcanist", level: 1, cost: 25, castTicks: t(60), channel: false, cooldown: t(0), rangeLabel: "30 m range", aura: null },
+  { id: 10, name: "Frost Nova", user: "arcanist", level: 2, cost: 30, castTicks: t(0), channel: false, cooldown: t(600), rangeLabel: "Self", aura: 4 },
+  { id: 11, name: "Arcane Barrier", user: "arcanist", level: 4, cost: 40, castTicks: t(0), channel: false, cooldown: t(900), rangeLabel: "Self", aura: 3 },
+  { id: 12, name: "Blizzard", user: "arcanist", level: 6, cost: 80, castTicks: t(180), channel: true, cooldown: t(0), rangeLabel: "30 m range", aura: null },
 ];
 const catalog: ContentCatalog = {
   items: new Map(), contentRevision: 6n,

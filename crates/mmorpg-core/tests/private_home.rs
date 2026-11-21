@@ -7,38 +7,55 @@ use std::sync::Arc;
 
 use mmorpg_core::{
     DAY_TICKS, DUSK, ErrorCode, HOUR_TICKS, NpcId, PRIVATE_DOOR_CLOSE_TICKS, QuestEntry, QuestId,
-    WAKE_IDLE_TICKS, WAKE_RISE_TICKS, ZONE_START_TIME, ZoneCommand, ZoneEvent, ZoneId,
+    QuestLog, WAKE_IDLE_TICKS, WAKE_RISE_TICKS, ZONE_START_TIME, ZoneCommand, ZoneEvent, ZoneId,
     ZoneSimulation,
     greyhaven_vale::{self, marshal_house},
 };
 
 const ELDEN: NpcId = marshal_house::RESIDENT;
 const DOOR: mmorpg_core::DoorId = marshal_house::DOOR;
-const TROUBLE: QuestId = greyhaven_vale::quests::TROUBLE_IN_THE_WOODS;
+const CART: QuestId = greyhaven_vale::quests::THE_WOLFRUN_CART;
+/// Ends with Elden: *Scout the Lake* (#984 moved the first quest's turn-in to the Tanner).
+const SCOUT: QuestId = greyhaven_vale::quests::SCOUT_THE_LAKE;
 
 fn at(time: u32) -> u64 {
     u64::from((time + DAY_TICKS - ZONE_START_TIME) % DAY_TICKS)
 }
 
 /// A zone at `tick` with one player on Elden's doorstep holding `quests`.
-fn zone_at(tick: u64, quests: Vec<QuestEntry>) -> ZoneSimulation {
+fn zone_at(tick: u64, quests: QuestLog) -> ZoneSimulation {
     let mut zone = ZoneSimulation::with_content(ZoneId::new(1), greyhaven_vale::content()).unwrap();
     zone.add_player(1).unwrap();
     let mut state = zone.snapshot().unwrap();
     state.tick = tick;
     let [x, z] = marshal_house::DOORSTEP;
     state.players[0].position = mmorpg_core::physics::from_units([x, 90, z]);
-    state.players[0].quests.entries = quests;
+    state.players[0].quests = quests;
     ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap()
 }
 
-fn trouble(kills: u8) -> Vec<QuestEntry> {
+/// Elden's first quest, just taken.
+fn cart() -> QuestLog {
+    QuestLog {
+        entries: vec![QuestEntry {
+            quest: CART,
+            progress: [0; mmorpg_core::MAX_QUEST_OBJECTIVES],
+        }],
+        completed: Default::default(),
+    }
+}
+
+/// *Scout the Lake* explored and ready to turn in to Elden.
+fn lake_scouted() -> QuestLog {
     let mut progress = [0; mmorpg_core::MAX_QUEST_OBJECTIVES];
-    progress[0] = kills;
-    vec![QuestEntry {
-        quest: TROUBLE,
-        progress,
-    }]
+    progress[0] = 1;
+    QuestLog {
+        entries: vec![QuestEntry {
+            quest: SCOUT,
+            progress,
+        }],
+        completed: [1, 3, 4].into_iter().map(QuestId::new).collect(),
+    }
 }
 
 fn errors(zone: &ZoneSimulation) -> Vec<ErrorCode> {
@@ -76,11 +93,11 @@ const OPEN: ZoneCommand = ZoneCommand::UseDoor {
 
 #[test]
 fn only_characters_with_eldens_quests_may_open_his_door_and_it_closes_itself() {
-    let mut stranger = zone_at(at(12 * HOUR_TICKS), Vec::new());
+    let mut stranger = zone_at(at(12 * HOUR_TICKS), QuestLog::default());
     assert_eq!(command(&mut stranger, 1, OPEN), [ErrorCode::PrivateHome]);
     assert!(!door_open(&stranger));
 
-    let mut invited = zone_at(at(12 * HOUR_TICKS), trouble(0));
+    let mut invited = zone_at(at(12 * HOUR_TICKS), cart());
     assert_eq!(command(&mut invited, 1, OPEN), []);
     assert!(door_open(&invited));
     for _ in 0..PRIVATE_DOOR_CLOSE_TICKS {
@@ -91,7 +108,7 @@ fn only_characters_with_eldens_quests_may_open_his_door_and_it_closes_itself() {
 
 #[test]
 fn elden_walks_home_at_dusk_and_sleeps_by_his_bed() {
-    let mut zone = zone_at(at(DUSK) - 1, Vec::new());
+    let mut zone = zone_at(at(DUSK) - 1, QuestLog::default());
     for _ in 0..2_000 {
         zone.advance_tick().unwrap();
     }
@@ -103,7 +120,7 @@ fn elden_walks_home_at_dusk_and_sleeps_by_his_bed() {
 fn a_night_knock_wakes_elden_for_a_doorstep_turn_in_and_he_returns_to_bed() {
     let night = at(23 * HOUR_TICKS);
     // Nothing urgent: no one answers, and he offers no new quests at night.
-    let mut idle = zone_at(night, Vec::new());
+    let mut idle = zone_at(night, QuestLog::default());
     assert_eq!(command(&mut idle, 1, OPEN), [ErrorCode::NoAnswer]);
     assert_eq!(
         command(
@@ -111,13 +128,13 @@ fn a_night_knock_wakes_elden_for_a_doorstep_turn_in_and_he_returns_to_bed() {
             2,
             ZoneCommand::AcceptQuest {
                 npc: ELDEN,
-                quest: TROUBLE.get()
+                quest: CART.get()
             }
         ),
         [ErrorCode::NotAtNight]
     );
     // The door is no way in at night, invited or not.
-    let mut urgent = zone_at(night, trouble(6));
+    let mut urgent = zone_at(night, lake_scouted());
     assert_eq!(elden(&urgent), marshal_house::BEDSIDE);
     assert_eq!(command(&mut urgent, 1, OPEN), []);
     // He gets up first (#619): still at the bedside, projected as waking, for the whole rise.
@@ -159,12 +176,12 @@ fn a_night_knock_wakes_elden_for_a_doorstep_turn_in_and_he_returns_to_bed() {
     assert!(door_open(&urgent), "he opened the door to answer");
     let turn_in = ZoneCommand::CompleteQuest {
         npc: ELDEN,
-        quest: TROUBLE.get(),
+        quest: SCOUT.get(),
         choice: 0,
     };
     assert_eq!(command(&mut urgent, 2, turn_in), []);
     let state = urgent.snapshot().unwrap();
-    assert!(state.players[0].quests.is_completed(TROUBLE));
+    assert!(state.players[0].quests.is_completed(SCOUT));
     // A minute later he closes the door and goes back to bed.
     for _ in 0..WAKE_IDLE_TICKS + 200 {
         urgent.advance_tick().unwrap();
