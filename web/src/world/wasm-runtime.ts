@@ -228,3 +228,11 @@ export function createScenarioWorld(local: LocalWorld, choice: ScenarioChoice): 
   const source = new ScenarioSource(() => generated.LocalZone.forScenario(choice.name, choice.seed));
   return { world: { ...local, source }, source, area: area ?? null };
 }
+
+/**
+ * Per shared loadout name, the bundle items it wears and the sockets they ride (`Loadout::attachments`, #1012): the
+ * table the native client attaches from too; call after the module loaded.
+ */
+export function loadoutAttachments(): Record<string, { key: string; socket: string }[]> {
+  return JSON.parse(generated.loadoutAttachments()) as Record<string, { key: string; socket: string }[]>;
+}

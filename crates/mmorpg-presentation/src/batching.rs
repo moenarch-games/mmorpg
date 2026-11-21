@@ -243,6 +243,7 @@ fn fallback_name(kit: Option<Kit>) -> &'static str {
         Some(Kit::Outpost) => ":fallback-outpost",
         Some(Kit::SettlementProps) => ":fallback-settlement",
         Some(Kit::Nature) => ":fallback-nature",
+        Some(Kit::Limestone) => ":fallback-limestone",
         Some(Kit::Climbing) => ":fallback-climbing",
         Some(Kit::Crag) => ":fallback-crag",
         // Graybox fallbacks are animated parts (`Motion::Fallback`), never batched.

@@ -187,9 +187,13 @@ pub enum Kit {
     /// Graybox level geometry (#552), by its index in the scenery's props: the fallback for a
     /// composition kit's piece over that body (the Battle Royale fortress kit, #591).
     Graybox(usize),
-    /// The `greyhaven-nature` trees, rocks and bushes (#49, [`nature`]); the procedural trees and
-    /// rocks are the fallback.
+    /// The `greyhaven-nature` trees and bushes (#49, [`nature`]); the procedural trees and bushes
+    /// are the fallback.
     Nature,
+    /// The `limestone-rocks` blocks the nature-drawn rocks are (asset-tooling#536,
+    /// [`nature::LIMESTONE_ROCKS`]), a bundle of its own: the procedural rocks are the fallback,
+    /// hidden only once that bundle is drawn (#1011).
+    Limestone,
     /// The climbing kit's ladders and ropes (#621, [`climbing`]); the procedural ladders and
     /// ropes are the fallback.
     Climbing,
@@ -208,6 +212,7 @@ pub struct Kits<'a> {
     /// ([`composition::Dressing::props`]); empty while no such kit is drawn.
     pub dressed: &'a [usize],
     pub nature: bool,
+    pub limestone: bool,
     pub climbing: bool,
     pub crag: bool,
 }
@@ -219,6 +224,7 @@ impl Kits<'_> {
         settlement_props: true,
         dressed: &[],
         nature: true,
+        limestone: true,
         climbing: true,
         crag: true,
     };
@@ -230,6 +236,7 @@ impl Kits<'_> {
             Kit::SettlementProps => self.settlement_props,
             Kit::Graybox(prop) => self.dressed.binary_search(&prop).is_ok(),
             Kit::Nature => self.nature,
+            Kit::Limestone => self.limestone,
             Kit::Climbing => self.climbing,
             Kit::Crag => self.crag,
         }

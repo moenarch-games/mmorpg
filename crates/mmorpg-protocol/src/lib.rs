@@ -38,14 +38,16 @@ pub use depths::{
 pub use projection::{
     DEBRIS_RECORD_BYTES, ENTITY_RECORD_BYTES, EVENT_RECORD_BYTES, MAX_WIRE_ENTITIES,
     PLAYER_SNAPSHOT_FIXED_BYTES, PackedSnapshot, SnapshotDecoder, decode_snapshot, encode_snapshot,
-    pack_snapshot, pack_snapshot_acknowledged,
+    pack_snapshot, pack_snapshot_acknowledged, pack_snapshot_cached,
 };
 pub use redirect::{
     MAX_REDIRECT_ROUTE_BYTES, RedirectNotice, decode_redirect_notice, encode_redirect_notice,
     is_redirect_notice,
 };
 pub use rewards::{MAX_REWARD_RECEIPT_BYTES, decode_reward_receipt, encode_reward_receipt};
-pub use sheet::{SHEET_REVISIONS_BYTES, SheetRevisions, encode_acknowledged_command};
+pub use sheet::{
+    SHEET_REVISIONS_BYTES, SheetEncodingCache, SheetRevisions, encode_acknowledged_command,
+};
 pub use transfer::{
     CHARACTER_TRANSFER_WIRE_VERSION, decode_character_transfer, encode_character_transfer,
 };
@@ -63,7 +65,7 @@ use std::fmt;
 /// differently and git refuses to merge them silently; decoders accept only this exact value
 /// (docs/adr/0006-merge-safe-format-identities.md). Snapshots lead with its three bytes and
 /// commands with its low byte.
-pub const PROTOCOL_ID: u32 = 0x001e_bda3;
+pub const PROTOCOL_ID: u32 = 0x0099_49bb;
 
 /// Smallest WebTransport datagram payload measured over the pinned stack:
 /// QUIC's 1,200-byte initial MTU before path MTU discovery, observed as 1,161

@@ -305,6 +305,28 @@ pub fn vary_preset(appearance: &str, id: &str, seed: u32) -> Result<String, JsEr
         .ok_or_else(|| JsError::new(&format!("the Ranger bundle has no preset {id}")))
 }
 
+/// Per shared loadout name, the bundle items it wears and their sockets (`Loadout::attachments`,
+/// #1012), as JSON `{"sword-and-shield": [{"key": "equipment.sword.arming", "socket":
+/// "hand_r.weapon"}, …], …}`: the one table both clients attach from.
+#[wasm_bindgen(js_name = loadoutAttachments)]
+#[must_use]
+pub fn loadout_attachments() -> String {
+    use mmorpg_presentation::units::imported::Loadout;
+    use strum::VariantArray;
+    let table: serde_json::Map<_, _> = Loadout::VARIANTS
+        .iter()
+        .map(|loadout| {
+            let items = loadout
+                .attachments()
+                .iter()
+                .map(|at| serde_json::json!({ "key": at.item, "socket": at.socket }))
+                .collect();
+            (loadout.name().to_owned(), serde_json::Value::Array(items))
+        })
+        .collect();
+    serde_json::Value::Object(table).to_string()
+}
+
 /// Per area, the imported unit models its creature spawns use, and `"residents"` where a named
 /// resident (#418) or a humanoid enemy (#39) with an appearance preset stands, as JSON
 /// `[{"area": id, "models": ["Wolf", …]}]` in area order (#240).
@@ -895,6 +917,7 @@ pub fn static_scene_shown(viewer: &[f64], outpost_kit: bool, settlement_props: b
             // Nature and climbing fallbacks are whole static groups (#49, #621), which the browser
             // hides itself.
             nature: false,
+            limestone: false,
             climbing: false,
             crag: false,
             dressed: &[],
@@ -1527,27 +1550,9 @@ fn placed_kit(
     static GATHER: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
     // Every ordinary placed kit's placements, in inventory order (#683).
     static ORDINARY: scenery::PerZone<Vec<Vec<Placement>>> = scenery::PerZone::new();
-    // The placement lists mix bundles, so each kit takes the placements of its own entries.
-    let all = || {
-        let scenery = scenery::hosted_scenery();
-        let mut placements = nature::placements(scenery);
-        placements.extend(river::placements(scenery));
-        for entries in [
-            &mmorpg_presentation::terrain_patch::MEADOW_ENTRIES[..],
-            &river::ENTRIES[..],
-        ] {
-            placements.extend(mmorpg_presentation::world_dressing::ground_details(
-                scenery, entries,
-            ));
-        }
-        placements
-    };
-    let of = |entries: &[&str]| {
-        all()
-            .into_iter()
-            .filter(|placement| entries.contains(&placement.entry))
-            .collect::<Vec<_>>()
-    };
+    // The placement lists mix bundles, so each kit takes the placements of its own entries
+    // from the zone's one derivation (#1010).
+    let of = |entries: &[&str]| mixed_placements().of(entries);
     match kit {
         "nature" => Ok((&nature::ENTRIES, NATURE.get(|_| of(&nature::ENTRIES)))),
         "limestone" => Ok((
@@ -1618,6 +1623,38 @@ pub fn placed_kits() -> String {
             .collect(),
     )
     .to_string()
+}
+
+/// The presented zone's mixed placement inventory, derived once per zone and shared by the
+/// nature, limestone, river and meadow kits (#1010).
+fn mixed_placements() -> &'static mmorpg_presentation::world_dressing::MixedPlacements {
+    static MIXED: scenery::PerZone<mmorpg_presentation::world_dressing::MixedPlacements> =
+        scenery::PerZone::new();
+    MIXED.get(|_| {
+        #[cfg(test)]
+        mixed_derivations::count();
+        mmorpg_presentation::world_dressing::MixedPlacements::new(scenery::hosted_scenery())
+    })
+}
+
+/// How often each zone's mixed inventory was derived, for the test that it is derived once.
+#[cfg(test)]
+mod mixed_derivations {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static DERIVED: crate::scenery::PerZone<AtomicUsize> = crate::scenery::PerZone::new();
+
+    pub(crate) fn count() {
+        DERIVED
+            .get(|_| AtomicUsize::new(0))
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn of_presented_zone() -> usize {
+        DERIVED
+            .peek()
+            .map_or(0, |derived| derived.load(Ordering::Relaxed))
+    }
 }
 
 /// The bundle entries `kit` (`"nature"` or `"climbing"`) is drawn from (#49, #621).
@@ -1948,4 +1985,37 @@ pub fn cottage_roofs() -> Vec<u32> {
         .into_iter()
         .flat_map(|(index, house)| [u32::try_from(index).unwrap_or(u32::MAX), house])
         .collect()
+}
+
+#[cfg(test)]
+mod placed_kit_tests {
+    use super::*;
+
+    /// The nature, limestone, river and meadow kits share one derivation of the presented
+    /// zone's mixed inventory whatever order they are first asked in (#1010), and each keeps
+    /// its former placements.
+    #[test]
+    fn mixed_kits_share_one_derivation_per_zone() {
+        use mmorpg_presentation::{nature, river, terrain_patch::MEADOW_ENTRIES, world_dressing};
+        let kits = ["river", "nature", "meadow", "limestone"];
+        for kit in kits.iter().chain(kits.iter().rev()) {
+            placed_kit(kit).unwrap();
+        }
+        assert_eq!(mixed_derivations::of_presented_zone(), 1);
+        let scenery = scenery::hosted_scenery();
+        let mut all = nature::placements(scenery);
+        all.extend(river::placements(scenery));
+        all.extend(world_dressing::ground_details(scenery, &MEADOW_ENTRIES));
+        all.extend(world_dressing::ground_details(scenery, &river::ENTRIES));
+        for kit in kits {
+            let (entries, placements) = placed_kit(kit).unwrap();
+            let before: Vec<_> = all
+                .iter()
+                .filter(|placement| entries.contains(&placement.entry))
+                .copied()
+                .collect();
+            assert_eq!(placements, &before[..], "{kit}");
+        }
+        assert_eq!(mixed_derivations::of_presented_zone(), 1);
+    }
 }

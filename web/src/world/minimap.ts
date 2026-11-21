@@ -201,6 +201,14 @@ export type MinimapDisturbance = { x: number; z: number; radius: number };
 
 const DISTURBANCE_COLOR = "#ff7a3d";
 
+/** What the exploration map adds to the minimap (#983), in metres: approximate quest areas and discovered landmarks. */
+export type MinimapExploration = {
+  hints: readonly { x: number; z: number; radius: number }[];
+  landmarks: readonly { x: number; z: number; name: string }[];
+};
+
+const HINT_COLOR = "#ffd34d";
+
 /** A map image ready to draw and the world rectangle it covers. */
 export type MinimapImage = { source: HTMLCanvasElement | ImageBitmap; frame: MinimapFrame };
 
@@ -263,6 +271,7 @@ export class Minimap {
     facing: number,
     units: readonly MinimapUnit[],
     disturbance: MinimapDisturbance | null = null,
+    exploration: MinimapExploration | null = null,
   ): void {
     const { canvas } = this.#elements;
     const context = canvas.getContext("2d");
@@ -301,6 +310,9 @@ export class Minimap {
     if (disturbance) {
       this.#drawDisturbance(context, disturbance, self, heading, pixelsPerMetre, radius, ratio);
     }
+    if (exploration) {
+      this.#drawExploration(context, exploration, self, heading, pixelsPerMetre, radius, ratio, cssSize >= 150);
+    }
     // Units as dots, the player's arrow on top.
     for (const unit of units) {
       const [dx, dy] = clampToRim(minimapOffset(unit.x - self.x, unit.z - self.z, heading, this.#headingUp, pixelsPerMetre), radius - 5 * ratio);
@@ -336,6 +348,77 @@ export class Minimap {
     context.textAlign = "center";
     context.textBaseline = "middle";
     context.fillText("N", radius + nx, radius + ny);
+  }
+
+  /**
+   * Approximate quest areas as dashed circles (a rim pip while off the map, never a spawn pin or an arrow, Atlas 5.1.13),
+   * then nearby discovered landmarks as small diamonds, named where the minimap is large enough.
+   */
+  #drawExploration(
+    context: CanvasRenderingContext2D,
+    exploration: MinimapExploration,
+    self: { x: number; z: number },
+    heading: number,
+    pixelsPerMetre: number,
+    radius: number,
+    ratio: number,
+    labels: boolean,
+  ): void {
+    context.save();
+    context.beginPath();
+    context.arc(radius, radius, radius, 0, 2 * Math.PI);
+    context.clip();
+    for (const hint of exploration.hints) {
+      const [dx, dy] = minimapOffset(hint.x - self.x, hint.z - self.z, heading, this.#headingUp, pixelsPerMetre);
+      const size = hint.radius * pixelsPerMetre;
+      if (Math.hypot(dx, dy) - size < radius) {
+        context.fillStyle = "rgb(255 211 77 / 14%)";
+        context.strokeStyle = HINT_COLOR;
+        context.lineWidth = 1.5 * ratio;
+        context.setLineDash([5 * ratio, 4 * ratio]);
+        context.beginPath();
+        context.arc(radius + dx, radius + dy, size, 0, 2 * Math.PI);
+        context.fill();
+        context.stroke();
+        context.setLineDash([]);
+      } else {
+        const [px, py] = clampToRim([dx, dy], radius - 7 * ratio);
+        context.fillStyle = HINT_COLOR;
+        context.strokeStyle = "rgb(0 0 0 / 60%)";
+        context.lineWidth = ratio;
+        context.beginPath();
+        context.arc(radius + px, radius + py, 4 * ratio, 0, 2 * Math.PI);
+        context.fill();
+        context.stroke();
+      }
+    }
+    context.font = `600 ${9 * ratio}px Georgia, serif`;
+    context.textAlign = "center";
+    context.textBaseline = "top";
+    for (const landmark of exploration.landmarks) {
+      const [dx, dy] = minimapOffset(landmark.x - self.x, landmark.z - self.z, heading, this.#headingUp, pixelsPerMetre);
+      if (Math.hypot(dx, dy) > radius - 6 * ratio) { continue; }
+      const [x, y] = [radius + dx, radius + dy];
+      const s = 3.5 * ratio;
+      context.fillStyle = "#f3e6b8";
+      context.strokeStyle = "#3a2a14";
+      context.lineWidth = ratio;
+      context.beginPath();
+      context.moveTo(x, y - s);
+      context.lineTo(x + s, y);
+      context.lineTo(x, y + s);
+      context.lineTo(x - s, y);
+      context.closePath();
+      context.fill();
+      context.stroke();
+      if (labels) {
+        context.lineWidth = 2.5 * ratio;
+        context.strokeStyle = "rgb(20 16 10 / 85%)";
+        context.strokeText(landmark.name, x, y + s + ratio);
+        context.fillText(landmark.name, x, y + s + ratio);
+      }
+    }
+    context.restore();
   }
 
   /** A soft circle over the area, or a pip on the rim pointing at it while it is off the map. */

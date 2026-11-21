@@ -182,6 +182,62 @@ impl MinimapLayers {
                 painter.circle(pip, 4.5, colour, Stroke::new(1.0, Color32::BLACK));
             }
         }
+        // The exploration map (#983): the active quests' approximate areas as dashed circles,
+        // or a rim pip while off the map (Atlas 5.1.13), then nearby discovered landmarks.
+        let exploration = mmorpg_client_model::exploration::exploration_map(
+            content,
+            &snapshot.viewer.discoveries,
+            quests,
+        );
+        let gold = Color32::from_rgb(255, 211, 77);
+        for hint in &exploration.hints {
+            let at = to_screen(hint.center);
+            let size = hint.radius * scale;
+            if (at - centre).length() - size < radius {
+                painter.add(CircleShape {
+                    center: at,
+                    radius: size,
+                    fill: Color32::from_rgba_unmultiplied(255, 211, 77, 36),
+                    stroke: Stroke::NONE,
+                });
+                let ring: Vec<Pos2> = (0..=48)
+                    .map(|i| {
+                        let a = i as f32 / 48.0 * std::f32::consts::TAU;
+                        at + Vec2::new(a.cos(), a.sin()) * size
+                    })
+                    .collect();
+                painter.extend(Shape::dashed_line(&ring, Stroke::new(1.5, gold), 5.0, 4.0));
+            } else {
+                let pip = centre + (at - centre).normalized() * (radius - 7.0);
+                painter.circle(pip, 4.0, gold, Stroke::new(1.0, Color32::BLACK));
+            }
+        }
+        for area in exploration.areas.iter().filter(|area| area.discovered) {
+            let at = to_screen(area.center());
+            if (at - centre).length() > radius - 6.0 {
+                continue;
+            }
+            let s = 3.5;
+            painter.add(Shape::convex_polygon(
+                vec![
+                    at + Vec2::new(0.0, -s),
+                    at + Vec2::new(s, 0.0),
+                    at + Vec2::new(0.0, s),
+                    at + Vec2::new(-s, 0.0),
+                ],
+                Color32::from_rgb(243, 230, 184),
+                Stroke::new(1.0, Color32::from_rgb(58, 42, 20)),
+            ));
+            if diameter >= 150.0 {
+                painter.text(
+                    at + Vec2::new(0.0, s + 1.0),
+                    egui::Align2::CENTER_TOP,
+                    &area.name,
+                    egui::FontId::proportional(10.0),
+                    Color32::from_rgb(243, 230, 184),
+                );
+            }
+        }
         for entity in &snapshot.entities {
             if entity.kind == EntityKind::Player && entity.id == snapshot.viewer_id {
                 continue;

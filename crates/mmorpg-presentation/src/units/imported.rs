@@ -20,7 +20,7 @@ use super::traversal::Motions;
 
 /// What an imported humanoid carries in its sockets: the class weapons and props (#156, #244,
 /// #302, asset-tooling #375 and #379) and the guards' sword.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, strum::VariantArray)]
 pub enum Loadout {
     /// The Warden's arming sword and heater shield (#156).
     SwordAndShield,
@@ -130,7 +130,130 @@ impl Loadout {
     pub const fn daggers(self) -> bool {
         matches!(self, Self::Dagger | Self::TwinDaggers)
     }
+
+    /// The bundle items the loadout wears and the sockets they ride (#1012), as both clients
+    /// attach them: the one place a loadout's asset/socket pairs are authored. The stowed bow
+    /// rests on the back; the crossbow carries the arrow that stands in for its bolt (#607).
+    #[must_use]
+    pub const fn attachments(self) -> &'static [Attachment] {
+        const SWORD: &str = "equipment.sword.arming";
+        const DAGGER: &str = "equipment.dagger.blackened";
+        match self {
+            Self::SwordAndShield => &[
+                Attachment {
+                    item: SWORD,
+                    socket: "hand_r.weapon",
+                },
+                Attachment {
+                    item: "equipment.shield.heater",
+                    socket: "hand_l.shield",
+                },
+            ],
+            // The Redbrand Brute's round plank shield (#953, asset-tooling #774).
+            Self::SwordAndRedbrandShield => &[
+                Attachment {
+                    item: SWORD,
+                    socket: "hand_r.weapon",
+                },
+                Attachment {
+                    item: "equipment.shield.redbrand",
+                    socket: "hand_l.shield",
+                },
+            ],
+            Self::BowAndQuiver => &[
+                Attachment {
+                    item: "equipment.bow.long",
+                    socket: "back.bow.stowed",
+                },
+                Attachment {
+                    item: "equipment.quiver.back",
+                    socket: "back.quiver",
+                },
+            ],
+            Self::Sword => &[Attachment {
+                item: SWORD,
+                socket: "hand_r.weapon",
+            }],
+            Self::Dagger => &[Attachment {
+                item: DAGGER,
+                socket: "hand_r.weapon",
+            }],
+            Self::TwinDaggers => &[
+                Attachment {
+                    item: DAGGER,
+                    socket: "hand_r.weapon",
+                },
+                Attachment {
+                    item: DAGGER,
+                    socket: "hand_l.weapon",
+                },
+            ],
+            Self::BoneStaff => &[Attachment {
+                item: "equipment.staff.bone",
+                socket: "hand_r.staff",
+            }],
+            // The tome is held like a shield (asset-tooling #379): spine along the forearm.
+            Self::CrystalStaffAndTome => &[
+                Attachment {
+                    item: "equipment.staff.crystal",
+                    socket: "hand_r.staff",
+                },
+                Attachment {
+                    item: "equipment.book.tome",
+                    socket: "hand_l.shield",
+                },
+            ],
+            Self::FlangedMace => &[Attachment {
+                item: "equipment.mace.flanged",
+                socket: "hand_r.weapon",
+            }],
+            Self::GnarledStaff => &[Attachment {
+                item: "equipment.staff.gnarled",
+                socket: "hand_r.staff",
+            }],
+            // A player of the spear family (#914).
+            Self::Spear => &[Attachment {
+                item: "equipment.spear.leaf",
+                socket: "hand_r.staff",
+            }],
+            // Garrick Redbrand's named cleaver (#918, asset-tooling #761).
+            Self::GarricksCleaver => &[Attachment {
+                item: "equipment.sword.garricks-cleaver",
+                socket: "hand_r.weapon",
+            }],
+            // The smith's Hollowpine boar-spear (#917).
+            Self::HollowpineSpear => &[Attachment {
+                item: "equipment.spear.hollowpine-hunter",
+                socket: "hand_r.staff",
+            }],
+            // The crossbow and the arrow standing in for its bolt (#607).
+            Self::Crossbow => &[
+                Attachment {
+                    item: "equipment.crossbow",
+                    socket: CROSSBOW_SOCKET,
+                },
+                Attachment {
+                    item: BOLT_ITEM,
+                    socket: BOLT_HAND_SOCKET,
+                },
+            ],
+        }
+    }
 }
+
+/// One bundle item a [`Loadout`] wears (#1012): its `humanoid-equipment` entry key and the
+/// figure's `humanoid-sockets` socket it rides.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Attachment {
+    /// The `humanoid-equipment` entry key, e.g. `equipment.sword.arming`.
+    pub item: &'static str,
+    /// The socket, e.g. `hand_r.weapon`.
+    pub socket: &'static str,
+}
+
+/// The item standing in for the crossbow's bolt on [`BOLT_HAND_SOCKET`] (#607), scaled by
+/// [`BOLT_SCALE`].
+pub const BOLT_ITEM: &str = "equipment.arrow";
 
 /// The Rogue's weapons (#603): a dagger in each hand, as asset-tooling #418 authored the
 /// Rogue's clips. Dual-wielding awaits the owner's confirmation (question on #603); set this to
@@ -4495,6 +4618,89 @@ mod tests {
     use super::*;
     use mmorpg_core::{CreatureId, NpcId, greyhaven_vale};
     use strum::VariantArray;
+
+    #[test]
+    fn loadout_attachments_keep_the_pairs_both_clients_drew() {
+        // The browser's former `LOADOUT_ITEMS` and the native `Equipment::loadout` match, which
+        // agreed item for item (#1012).
+        let before: &[(&str, &[(&str, &str)])] = &[
+            (
+                "sword-and-shield",
+                &[
+                    ("equipment.sword.arming", "hand_r.weapon"),
+                    ("equipment.shield.heater", "hand_l.shield"),
+                ],
+            ),
+            (
+                "sword-and-shield.redbrand",
+                &[
+                    ("equipment.sword.arming", "hand_r.weapon"),
+                    ("equipment.shield.redbrand", "hand_l.shield"),
+                ],
+            ),
+            (
+                "bow-and-quiver",
+                &[
+                    ("equipment.bow.long", "back.bow.stowed"),
+                    ("equipment.quiver.back", "back.quiver"),
+                ],
+            ),
+            ("sword", &[("equipment.sword.arming", "hand_r.weapon")]),
+            ("dagger", &[("equipment.dagger.blackened", "hand_r.weapon")]),
+            (
+                "dagger.twin",
+                &[
+                    ("equipment.dagger.blackened", "hand_r.weapon"),
+                    ("equipment.dagger.blackened", "hand_l.weapon"),
+                ],
+            ),
+            ("staff.bone", &[("equipment.staff.bone", "hand_r.staff")]),
+            (
+                "staff.crystal-and-tome",
+                &[
+                    ("equipment.staff.crystal", "hand_r.staff"),
+                    ("equipment.book.tome", "hand_l.shield"),
+                ],
+            ),
+            (
+                "mace.flanged",
+                &[("equipment.mace.flanged", "hand_r.weapon")],
+            ),
+            (
+                "staff.gnarled",
+                &[("equipment.staff.gnarled", "hand_r.staff")],
+            ),
+            ("spear", &[("equipment.spear.leaf", "hand_r.staff")]),
+            (
+                "sword.garricks-cleaver",
+                &[("equipment.sword.garricks-cleaver", "hand_r.weapon")],
+            ),
+            (
+                "spear.hollowpine-hunter",
+                &[("equipment.spear.hollowpine-hunter", "hand_r.staff")],
+            ),
+            (
+                "crossbow",
+                &[
+                    ("equipment.crossbow", "hand_r.crossbow"),
+                    ("equipment.arrow", "hand_r.arrow"),
+                ],
+            ),
+        ];
+        assert_eq!(Loadout::VARIANTS.len(), before.len());
+        for loadout in Loadout::VARIANTS {
+            let (_, items) = before
+                .iter()
+                .find(|(name, _)| *name == loadout.name())
+                .unwrap_or_else(|| panic!("{} drew no items before", loadout.name()));
+            let now: Vec<_> = loadout
+                .attachments()
+                .iter()
+                .map(|at| (at.item, at.socket))
+                .collect();
+            assert_eq!(now, *items, "{}", loadout.name());
+        }
+    }
 
     #[test]
     fn movement_strikes_play_the_family_clip_or_its_stand_in() {

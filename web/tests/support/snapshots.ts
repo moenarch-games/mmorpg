@@ -23,6 +23,7 @@ export const HEALTHY_VIEWER: ViewerState = {
   swordPractice: 0,
   swordPracticeToNext: 30,
   waystones: [],
+  discoveries: [],
 };
 
 /** Nothing equipped. */

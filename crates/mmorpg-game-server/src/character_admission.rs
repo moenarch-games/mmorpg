@@ -169,6 +169,42 @@ impl ZoneGameServerAdapter {
         Ok(bytes)
     }
 
+    /// Durable records captured straight from the live zone between ticks, for
+    /// routine off-tick saves (#1004). Same records as
+    /// [`Self::decode_stored_zone`] over this state's character checkpoint,
+    /// without encoding, decoding or restoring the zone. Canonical checkpoints
+    /// stay the recovery path.
+    pub(crate) fn capture_stored_characters(
+        &self,
+    ) -> Result<Vec<StoredCharacter>, SimulationError> {
+        let mut active = std::collections::BTreeSet::new();
+        self.characters
+            .iter()
+            .map(|(player, id)| {
+                let (parked, record) = match self.parked_characters.get(player) {
+                    Some(parked) => (true, parked.record.clone()),
+                    None => {
+                        if !active.insert(id) {
+                            return Err(SimulationError::new(
+                                "character is bound to multiple live sessions",
+                            ));
+                        }
+                        let record = self
+                            .zone
+                            .capture_character(*player, id.clone())
+                            .map_err(map_zone_error)?;
+                        (false, record)
+                    }
+                };
+                Ok(StoredCharacter {
+                    player: *player,
+                    parked,
+                    record,
+                })
+            })
+            .collect()
+    }
+
     /// Private tick-boundary records for off-tick persistence, never a player
     /// projection. `content` is the zone's own ([`mmorpg_core::content_for_zone`]).
     pub(crate) fn stored_characters(
@@ -525,5 +561,108 @@ mod tests {
         let mut other_zone =
             ZoneGameServerAdapter::with_content(ZoneId::new(2), greyhaven_vale::content()).unwrap();
         assert!(other_zone.restore_checkpoint(&snapshot).is_err());
+    }
+}
+
+#[cfg(test)]
+mod direct_capture_tests {
+    use super::*;
+    use game_server::GameSimulation;
+    use mmorpg_core::{
+        ClassChoice, SEAM_TEST_EAST, SEAM_TEST_WEST, TransferId, WaystoneSet, ZoneCommand,
+        seam_test, waystone,
+    };
+
+    fn durable(player: u32, id: &str, at: Option<(f32, f32)>) -> CharacterRecord {
+        let content = seam_test::west();
+        let mut zone =
+            ZoneSimulation::with_content(seam_test::WEST_ZONE, std::sync::Arc::clone(&content))
+                .unwrap();
+        zone.create_character(player, ClassChoice::from_appearance(4).unwrap())
+            .unwrap();
+        if let Some((x, z)) = at {
+            let mut state = zone.snapshot().unwrap();
+            let body = state
+                .players
+                .iter_mut()
+                .find(|body| body.player_id == player)
+                .unwrap();
+            body.position = [x, 90.0, z];
+            zone = ZoneSimulation::from_snapshot(state, content).unwrap();
+        }
+        let mut record = zone
+            .capture_character(player, CharacterId::new(id).unwrap())
+            .unwrap();
+        record.waystones = WaystoneSet::from_ids([SEAM_TEST_WEST, SEAM_TEST_EAST]).unwrap();
+        record
+    }
+
+    fn admit(adapter: &mut ZoneGameServerAdapter, player: u32, record: &CharacterRecord) {
+        adapter.add_player(player).unwrap();
+        let input = ZoneGameServerAdapter::character_admission_input(record).unwrap();
+        adapter.apply_host_input(player, &input).unwrap();
+    }
+
+    fn view(stored: Vec<StoredCharacter>) -> Vec<(u32, bool, CharacterRecord)> {
+        stored
+            .into_iter()
+            .map(|stored| (stored.player, stored.parked, stored.record))
+            .collect()
+    }
+
+    /// #1004: routine saves read the live zone directly and must yield exactly
+    /// the records the checkpoint restore path derives, for an active
+    /// character, a parked logout and a character frozen for a handoff.
+    #[test]
+    fn direct_capture_matches_checkpoint_records_for_active_parked_and_departed() {
+        let mut adapter =
+            ZoneGameServerAdapter::with_content(seam_test::WEST_ZONE, seam_test::west()).unwrap();
+        let stone = waystone(SEAM_TEST_WEST).unwrap().stone;
+        let (x, z) = (stone[0] as f32, stone[1] as f32 + 300.0);
+        admit(&mut adapter, 1, &durable(1, "active-hero", None));
+        admit(&mut adapter, 2, &durable(2, "parked-hero", None));
+        admit(&mut adapter, 3, &durable(3, "traveller", Some((x, z))));
+        adapter.zone.enable_waystone_departures();
+        let movement = mmorpg_protocol::encode_command(ZoneCommand::Move {
+            forward: 1,
+            strafe: 0,
+            facing: 0,
+        });
+        adapter.apply_command(1, 1, &movement).unwrap();
+        let travel = mmorpg_protocol::encode_command(ZoneCommand::UseWaystone {
+            waystone: SEAM_TEST_EAST,
+        });
+        adapter.apply_command(3, 1, &travel).unwrap();
+        for _ in 0..3 {
+            adapter.advance_tick().unwrap();
+        }
+        assert!(adapter.zone.departure(3).is_some(), "the traveller departs");
+        adapter.apply_host_input(2, &[1, 2]).unwrap();
+        adapter
+            .apply_host_input(
+                3,
+                &crate::departures::freeze_input(TransferId::new(7).unwrap()),
+            )
+            .unwrap();
+        adapter.advance_tick().unwrap();
+
+        let direct = view(adapter.capture_stored_characters().unwrap());
+        let restored = view(
+            ZoneGameServerAdapter::stored_characters(
+                &adapter.snapshot().unwrap().payload,
+                seam_test::west(),
+            )
+            .unwrap(),
+        );
+        assert_eq!(direct, restored);
+        let summary: Vec<_> = direct
+            .iter()
+            .map(|(player, parked, record)| (*player, *parked, record.character_id.as_str()))
+            .collect();
+        assert_eq!(
+            summary,
+            [(1, false, "active-hero"), (2, true, "parked-hero")],
+            "the frozen traveller belongs to its handoff, not to routine saves"
+        );
     }
 }
