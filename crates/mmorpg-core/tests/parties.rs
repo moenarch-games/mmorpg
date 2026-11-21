@@ -335,3 +335,58 @@ fn removing_a_player_drops_its_party_view_and_passes_a_corpse_to_the_party() {
         "the loot stays with the party"
     );
 }
+
+/// The old checkpoint path (#40): restore a second simulation, remove every player, snapshot.
+fn restored_without_players(zone: &ZoneSimulation) -> CanonicalZoneSnapshot {
+    let state = zone.snapshot().unwrap();
+    let players: Vec<u32> = state
+        .players
+        .iter()
+        .map(|record| record.player_id)
+        .collect();
+    let mut world = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
+    for player in players {
+        assert!(world.remove_player(player));
+    }
+    world.snapshot().unwrap()
+}
+
+#[test]
+fn a_playerless_snapshot_equals_restoring_and_removing_every_player() {
+    let mut zone = zone();
+    for player in [LEADER, MATE] {
+        assert!(
+            zone.apply_party_state(player, party(5, LEADER, MATE))
+                .unwrap()
+        );
+    }
+    kill(&mut zone);
+    // Players select each other, so departures clear selections too.
+    command(
+        &mut zone,
+        MATE,
+        ZoneCommand::SelectTarget(Some(EntityRef::Player(STRANGER))),
+    );
+    command(
+        &mut zone,
+        STRANGER,
+        ZoneCommand::SelectTarget(Some(EntityRef::Player(LEADER))),
+    );
+    zone.advance_tick().unwrap();
+    let before = zone.snapshot().unwrap();
+    assert_eq!(before.creatures[0].tapped_by, Some(LEADER));
+    assert_eq!(before.creatures[0].loot_party, vec![MATE]);
+    assert!(before.creatures[0].loot.is_some());
+    assert_eq!(before.parties.len(), 2);
+
+    let playerless = zone.playerless_snapshot().unwrap();
+    let expected = restored_without_players(&zone);
+    assert_eq!(playerless, expected);
+    // Debug spells every float exactly (signed zeros included), as the canonical bytes do.
+    assert_eq!(format!("{playerless:?}"), format!("{expected:?}"));
+    assert!(playerless.players.is_empty() && playerless.parties.is_empty());
+    assert_eq!(playerless.creatures[0].tapped_by, None);
+    assert!(playerless.creatures[0].loot.is_none());
+    // The live zone keeps its players.
+    assert_eq!(zone.snapshot().unwrap(), before);
+}

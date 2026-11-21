@@ -617,28 +617,13 @@ impl ZoneSimulation {
             self.dismiss_minion(minion);
         }
         for creature in self.creatures.values_mut() {
-            creature.forget(entity);
-            // A cast at a departed player resolves against nobody.
-            if creature
-                .cast
-                .is_some_and(|cast| cast.target == Some(entity))
-            {
-                creature.cast = None;
-            }
-            creature.loot_party.retain(|mate| *mate != player_id);
-            if creature.tapped_by == Some(player_id) {
-                // A party that shares the corpse keeps it (Atlas 5.3.6); the departed
-                // tapper's quest item is nobody else's to claim.
-                if creature.loot_party.is_empty() {
-                    creature.tapped_by = None;
-                    creature.loot = None;
-                } else {
-                    creature.tapped_by = Some(creature.loot_party.remove(0));
-                    if let Some(rewards) = &mut creature.loot {
-                        rewards.quest_item = None;
-                    }
-                }
-            }
+            crate::creature::forget_departed(&mut creature.threat, &mut creature.cast, entity);
+            crate::creature::release_departed_loot(
+                &mut creature.tapped_by,
+                &mut creature.loot_party,
+                &mut creature.loot,
+                player_id,
+            );
         }
         for player in self.players.values_mut() {
             if player.cast.is_some_and(|cast| cast.target == Some(entity)) {
