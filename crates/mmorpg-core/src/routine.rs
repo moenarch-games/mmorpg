@@ -216,6 +216,10 @@ impl ZoneSimulation {
                 velocity: [0, 0],
             });
         }
+        // A hunter on its outing (#991).
+        if let Some((placement, _)) = self.hunt_placement(npc) {
+            return Some(placement);
+        }
         Some(match self.content.routine(npc) {
             // A knock woke it (#158): it walks to its door and back to bed.
             Some(routine)

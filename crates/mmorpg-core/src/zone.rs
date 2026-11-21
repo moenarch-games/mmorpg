@@ -375,8 +375,12 @@ impl ZoneSimulation {
             .map(|spawn| spawn.id)
             .collect();
         for id in spawns {
-            // Night raiders (#530) stand only once an incident commits them.
-            if zone.content.is_raider(id) || zone.content.is_depths_creature(id) {
+            // Night raiders (#530) stand only once an incident commits them, and the hunt's beast
+            // (#991) only on a confrontation day.
+            if zone.content.is_raider(id)
+                || zone.content.is_depths_creature(id)
+                || zone.content.is_hunt_beast(id)
+            {
                 zone.reserve_raider(id)?;
             } else {
                 zone.spawn_creature(id)?;
@@ -875,8 +879,9 @@ impl ZoneSimulation {
     ///    world traps (#300) in ID order, which may kill;
     /// 7. minions whose time ran out crumble, then health and class-resource regeneration,
     ///    corpse despawns and respawns in ID order, structure regrowth, then the night raid
-    ///    (#530: barn hits, phases, outcome, marches and the nightly trigger), and a depths
-    ///    run's reinforcements, cleared chambers and wipe (#404);
+    ///    (#530: barn hits, phases, outcome, marches and the nightly trigger), the hunt's beast
+    ///    standing or withdrawing (#991), and a depths run's reinforcements, cleared chambers
+    ///    and wipe (#404);
     /// 8. talk and explore quest objectives of living players in player-ID
     ///    order;
     /// 9. the tick counter.
@@ -933,6 +938,7 @@ impl ZoneSimulation {
         self.regrow_pieces(now)?;
         self.advance_summoned(now);
         self.advance_raid(now)?;
+        self.advance_hunt(now)?;
         self.advance_depths(now)?;
         self.advance_combos();
         self.advance_authored();

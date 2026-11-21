@@ -475,6 +475,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::discoveries::spawns())
         // The Rimewood signal post, a target-priority fight (#952).
         .chain(super::signal_post::spawns())
+        // Trapper Sela's hunt's bear (#991).
+        .chain(super::hunt::spawns())
         // The Southwood lynxes (#989).
         .chain(super::lynx::spawns())
         // The Eastwater Fen adders (#990).

@@ -66,7 +66,10 @@ mirror!(
         Free,
         Sitting,
         Asleep,
-        Waking
+        Waking,
+        Hunting,
+        Carrying,
+        Hurt
     }
 );
 mirror!(

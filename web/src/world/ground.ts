@@ -4,6 +4,7 @@ import type { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import type { TerrainStreamSource } from "./scenery-nodes";
 import { loadBundleGltfs, readBundleAttachment } from "./static-bundle";
 import { GrowingBatch, type GrowingPlaced } from "./static-batches";
+import { freeHandle, retainedBundle } from "./zone-lifecycle";
 
 /** The `greyhaven-terrain` bundle `scripts/fetch-bundles.sh` places in `web/public` (#525). */
 export const TERRAIN_BUNDLE = `${import.meta.env.BASE_URL}scenery/greyhaven.terrain/`;
@@ -117,6 +118,7 @@ export class Ground {
   readonly #cutaways: { part: number; placed: Placed; visible: boolean }[];
   #loading: Promise<boolean> | null = null;
   #changed = true;
+  #disposed = false;
   #textured = new Set<string>();
 
   constructor(stream: TerrainStreamSource, surfaces: readonly TileDraw[] = [], cutaways: readonly CutawaySurface[] = []) {
@@ -201,6 +203,7 @@ export class Ground {
    * when every layer is textured, never fatal to the world.
    */
   load(ktx2: KTX2Loader): Promise<boolean> {
+    if (this.#disposed) { return Promise.resolve(false); }
     this.#loading ??= this.#load(ktx2).catch((error: unknown) => {
       console.error(`The Greyhaven terrain bundle did not load: ${error instanceof Error ? error.message : String(error)}`);
       return false;
@@ -209,8 +212,13 @@ export class Ground {
   }
 
   async #load(ktx2: KTX2Loader): Promise<boolean> {
-    const descriptor = JSON.parse(await readBundleAttachment(TERRAIN_BUNDLE, "greyhaven.terrain.grass", "default", "terrain-descriptor")) as Descriptor;
-    const loaded = await Promise.allSettled(LAYERS.map((layer) => loadBundleGltfs(TERRAIN_BUNDLE, [`greyhaven.terrain.${layer}`], Infinity, ktx2)));
+    // The descriptor and the layers' glTFs are the bundle's, retained for every zone that draws the terrain (#1005).
+    const descriptor = JSON.parse(await retainedBundle(`terrain:${TERRAIN_BUNDLE}:descriptor`,
+      () => readBundleAttachment(TERRAIN_BUNDLE, "greyhaven.terrain.grass", "default", "terrain-descriptor"))) as Descriptor;
+    const loaded = await Promise.allSettled(LAYERS.map((layer) => retainedBundle(`terrain:${TERRAIN_BUNDLE}:${layer}`,
+      () => loadBundleGltfs(TERRAIN_BUNDLE, [`greyhaven.terrain.${layer}`], Infinity, ktx2))));
+    // A zone replaced while the bundle loaded keeps nothing (#1005).
+    if (this.#disposed) { return false; }
     loaded.forEach((result, index) => {
       const layer = LAYERS[index]!;
       if (result.status === "rejected") {
@@ -251,6 +259,23 @@ export class Ground {
     });
     this.#changed = true;
     return LAYERS.every((layer) => this.#textured.has(layer));
+  }
+
+  /**
+   * Releases what the ground owns for its zone (#1005): its batches, its flat and textured materials and the terrain
+   * stream's WASM handle. The retained terrain textures stay for a revisit. Later calls do nothing.
+   */
+  dispose(): void {
+    if (this.#disposed) { return; }
+    this.#disposed = true;
+    for (const batch of this.#batches.values()) { batch.mesh.dispose(); }
+    this.#batches.clear();
+    for (const material of this.#materials.values()) { material.dispose(); }
+    this.#materials.clear();
+    this.#near.clear();
+    freeHandle(this.#stream);
+    this.root.clear();
+    this.#changed = true;
   }
 
   /** The drawn root, and whether it changed since the last call. */

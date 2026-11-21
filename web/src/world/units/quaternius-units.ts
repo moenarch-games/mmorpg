@@ -5,7 +5,7 @@ import type { ThreeSceneRenderer } from "@moritzbrantner/three-d-renderer";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { LitMaterial } from "@moritzbrantner/three-lighting";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
-import { mergeUnitMeshes, type MergedUnit } from "./merged-unit";
+import { mergeUnitMeshes, releaseUnit, type MergedUnit } from "./merged-unit";
 import type { EntityRef } from "../../entity-ref";
 import { characterVisualProfile } from "../../character-visuals";
 import type { CharacterClassId } from "../../character-selection";
@@ -2130,8 +2130,7 @@ export class QuaterniusUnits {
   #drop(id: string, instance: Instance): void {
     instance.posable.dispose();
     for (const { material } of instance.materials) { material.dispose(); }
-    for (const mesh of [...instance.merged.meshes, ...instance.merged.shadows]) { mesh.geometry.dispose(); }
-    instance.merged.skeleton.dispose();
+    releaseUnit(instance.posable.model, instance.merged);
     this.#instances.delete(id);
     this.#rootsChanged = true;
   }

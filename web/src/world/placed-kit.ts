@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { InstancedLevels } from "./instanced-levels";
 import { applyLayeredSurface, layeredSurfaceMaterial, type LayeredSurface } from "./layered-surface";
 import { drawnResources, generateMissingTangents, loadBundleGltfs, shareMaterials } from "./static-bundle";
+import { freeHandle, retainedBundle } from "./zone-lifecycle";
 
 /** A bundle the shared Rust presentation places at fixed placements. */
 export type PlacedKitName = "nature" | "climbing" | "crag" | "limestone" | "river" | "meadow" | "gather";
@@ -62,6 +63,38 @@ export type PlacedKitSource = {
   surface?(descriptor: string): LayeredSurface | null;
 };
 
+/** The descriptor JSON of `kit`, from its manifest's attachment. */
+async function kitDescriptor(kit: KitBundle): Promise<string> {
+  const base = new URL(kit.bundle, window.location.href);
+  const response = await fetch(new URL("manifest.json", base));
+  if (!response.ok) { throw new Error(`manifest ${response.status}`); }
+  const manifest = await response.json() as { assets?: { attachments?: { name: string; path: string }[] }[] };
+  const attachment = manifest.assets?.flatMap((asset) => asset.attachments ?? []).find((entry) => entry.name === kit.descriptor);
+  if (!attachment) { throw new Error(`the bundle has no ${kit.descriptor}`); }
+  const descriptor = await fetch(new URL(attachment.path, base));
+  if (!descriptor.ok) { throw new Error(`${kit.descriptor} ${descriptor.status}`); }
+  return descriptor.text();
+}
+
+/**
+ * The scenes of `keys` in `kit`'s bundle, prepared once for every zone (#1005): one texture per image and one material
+ * per name across every entry and level (#53), a layered kit's surface (#732) and the tangents normal maps need.
+ */
+async function preparedKitScenes(kit: KitBundle, keys: readonly string[], surface: LayeredSurface | null): Promise<THREE.Object3D[]> {
+  // A layered kit (#732) loads its shared surface library too, last.
+  const gltfs = await loadBundleGltfs(kit.bundle, surface ? [...keys, surface.library] : keys);
+  const library = surface ? gltfs.pop()!.scene : null;
+  shareMaterials(gltfs);
+  if (surface && library) {
+    applyLayeredSurface(gltfs.map((gltf) => gltf.scene), surface, layeredSurfaceMaterial(surface, library));
+  }
+  // Without tangents the normal maps are not applied, but the bundle's art still draws.
+  await generateMissingTangents(gltfs).catch((error: unknown) => {
+    console.warn(`${kit.label}: drawing without generated tangents: ${error instanceof Error ? error.message : String(error)}`);
+  });
+  return gltfs.map((gltf) => gltf.scene);
+}
+
 /**
  * An asset-tooling bundle drawn at the placements the shared Rust presentation gives, as the native client does:
  * Greyhaven's trees, rocks and bushes from `greyhaven-nature` (#49) and its ladders, ropes and ivy from the
@@ -77,6 +110,7 @@ export class PlacedKit {
   #descriptor: string | null = null;
   #loading: Promise<boolean> | null = null;
   #changed = false;
+  #disposed = false;
   /** Placements switched off (#917), applied once the selection exists. */
   readonly #hidden = new Map<number, boolean>();
   readonly #clip = new THREE.Matrix4();
@@ -92,6 +126,7 @@ export class PlacedKit {
 
   /** Loads the bundle once; settles drawable (true) or failed (false), never fatal to the world. */
   load(): Promise<boolean> {
+    if (this.#disposed) { return Promise.resolve(false); }
     this.#loading ??= this.#load().then(() => true, (error: unknown) => {
       console.error(`The ${this.#bundle.label} bundle did not load: ${error instanceof Error ? error.message : String(error)}`);
       return false;
@@ -103,37 +138,42 @@ export class PlacedKit {
     const placements = this.#source.placements;
     if (placements.length === 0) { return; }
     const kit = this.#bundle;
-    const base = new URL(kit.bundle, window.location.href);
-    const response = await fetch(new URL("manifest.json", base));
-    if (!response.ok) { throw new Error(`manifest ${response.status}`); }
-    const manifest = await response.json() as { assets?: { attachments?: { name: string; path: string }[] }[] };
-    const attachment = manifest.assets?.flatMap((asset) => asset.attachments ?? []).find((entry) => entry.name === kit.descriptor);
-    if (!attachment) { throw new Error(`the bundle has no ${kit.descriptor}`); }
-    const descriptor = await fetch(new URL(attachment.path, base));
-    if (!descriptor.ok) { throw new Error(`${kit.descriptor} ${descriptor.status}`); }
-    const text = await descriptor.text();
+    // The descriptor and the prepared scenes are the bundle's, retained for every zone that draws it (#1005).
+    const text = await retainedBundle(`placed-kit:descriptor:${kit.bundle}:${kit.descriptor}`, () => kitDescriptor(kit));
+    if (this.#disposed) { return; }
     const lods = this.#source.lods(text);
-    const entries = this.#source.entries;
-    const variants = entries.map((entry) => lods.variants(entry));
-    // A layered kit (#732) loads its shared surface library too, last.
-    const surface = this.#source.surface?.(text) ?? null;
-    const gltfs = await loadBundleGltfs(kit.bundle, surface ? [...variants.flat(), surface.library] : variants.flat());
-    const library = surface ? gltfs.pop()!.scene : null;
-    // One texture per image and one material per name, across every entry and level (#53).
-    shareMaterials(gltfs);
-    if (surface && library) {
-      applyLayeredSurface(gltfs.map((gltf) => gltf.scene), surface, layeredSurfaceMaterial(surface, library));
+    try {
+      const entries = this.#source.entries;
+      const variants = entries.map((entry) => lods.variants(entry));
+      const keys = variants.flat();
+      const scenes = await retainedBundle(`placed-kit:scenes:${kit.bundle}:${keys.join(",")}`,
+        () => preparedKitScenes(kit, keys, this.#source.surface?.(text) ?? null));
+      // A zone replaced while the bundle loaded keeps nothing (#1005).
+      if (this.#disposed) { freeHandle(lods); return; }
+      let next = 0;
+      const levels = variants.map((entryLevels) => entryLevels.map(() => scenes[next++]!));
+      this.#levels = new InstancedLevels(kit.label, entries, levels, placements);
+    } catch (error) {
+      freeHandle(lods);
+      throw error;
     }
-    // Without tangents the normal maps are not applied, but the bundle's art still draws.
-    await generateMissingTangents(gltfs).catch((error: unknown) => {
-      console.warn(`${kit.label}: drawing without generated tangents: ${error instanceof Error ? error.message : String(error)}`);
-    });
-    let next = 0;
-    const levels = variants.map((entryLevels) => entryLevels.map(() => gltfs[next++]!.scene));
-    this.#levels = new InstancedLevels(kit.label, entries, levels, placements);
     this.#descriptor = text;
     this.#lods = lods;
     for (const [index, hidden] of this.#hidden) { lods.setHidden?.(index, hidden); }
+    this.#changed = true;
+  }
+
+  /**
+   * Releases what this kit owns for its zone (#1005): the instanced levels and the shared selection's WASM handle. The
+   * retained bundle scenes stay for a revisit; a load still in flight attaches nothing. Later calls do nothing.
+   */
+  dispose(): void {
+    if (this.#disposed) { return; }
+    this.#disposed = true;
+    this.#levels?.dispose();
+    this.#levels = null;
+    freeHandle(this.#lods);
+    this.#lods = null;
     this.#changed = true;
   }
 

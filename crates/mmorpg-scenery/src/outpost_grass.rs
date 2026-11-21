@@ -53,8 +53,8 @@ mod tests {
         // surface hazards (#294), the Highlands' landforms (#528), the whole region (#810) and its
         // redesign and its heart (#816), its walk-in cottages (#843, #847), its village props (#851), the hamlets' creatures (#859),
         // its walk-in farmhouses (#886), its second settlement props batch (#891), the beasts
-        // of #889, the Eastdown meadow (#872) and the forest lynxes (#989).
-        assert_eq!(before.stable_hash(), 0xb1a1_bf21_68dd_f6d8);
+        // of #889, the Eastdown meadow (#872), Trapper Sela's hunting bear (#991) and the forest lynxes (#989).
+        assert_eq!(before.stable_hash(), 0xb21d_1745_20e9_1ce8);
         let original: Vec<_> = before
             .props
             .iter()

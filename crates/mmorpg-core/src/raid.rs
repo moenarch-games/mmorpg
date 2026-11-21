@@ -599,7 +599,7 @@ pub struct RaidView {
 }
 
 /// `splitmix64`: a well-mixed hash of the night's number and the content seed.
-const fn mix(mut value: u64) -> u64 {
+pub(crate) const fn mix(mut value: u64) -> u64 {
     value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
     value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
     value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
@@ -1296,7 +1296,7 @@ impl ZoneSimulation {
 
     /// A raider leaves the world without a corpse and stays gone until a later incident
     /// commits its slot again.
-    fn retire_raider(&mut self, id: CreatureId, now: u64) -> Result<(), ZoneError> {
+    pub(crate) fn retire_raider(&mut self, id: CreatureId, now: u64) -> Result<(), ZoneError> {
         let entity = EntityRef::Creature(id);
         self.world.remove_body(body_id(entity));
         if self.interest.remove(entity) {

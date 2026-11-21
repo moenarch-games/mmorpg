@@ -43,6 +43,7 @@ mod gathering;
 pub mod golden;
 mod guard;
 mod home;
+pub mod hunt;
 mod interest;
 mod inventory;
 mod loot;
@@ -178,6 +179,7 @@ pub use home::{
     MAX_WAKE_WAYPOINTS, NpcWake, PRIVATE_DOOR_CLOSE_TICKS, PrivateHome, WAKE_IDLE_TICKS,
     WAKE_RISE_TICKS,
 };
+pub use hunt::{HuntOutcome, HuntOuting};
 pub use interest::{InterestMaintenanceStats, InterestQueryStats, PlayerProjection};
 pub use inventory::{
     INVENTORY_SLOTS, ITEM_CATALOG, Inventory, InventoryError, ItemId, ItemStack, ItemTemplate,

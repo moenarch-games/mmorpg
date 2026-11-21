@@ -3,6 +3,7 @@ import { LitMaterial } from "@moritzbrantner/three-lighting";
 import type { RendererMaterialRequest, RendererSceneNode } from "@moritzbrantner/three-d-renderer";
 import { presentationMaterial } from "./lighting";
 import type { GroupBuffers, GroupStreamSource, SceneryScene, StaticBatch } from "./scenery-nodes";
+import { freeHandle } from "./zone-lifecycle";
 
 /**
  * One batched mesh: the `BatchedMesh` that draws it and its instance there, or the plain mesh drawing it alone; and
@@ -243,6 +244,18 @@ export class StaticBatches {
     draw.caster?.setMatrixAt(draw.shadow, matrix);
   }
 
+  /**
+   * Releases the batches' buffers (#1005), and the geometries of single-draw meshes when `ownGeometry` (the caller made
+   * them for these batches; shared glTF geometry stays). Materials are the caller's.
+   */
+  dispose(ownGeometry: boolean): void {
+    for (const object of this.root.children) {
+      if (object instanceof THREE.BatchedMesh) { object.dispose(); }
+      else if (ownGeometry && object instanceof THREE.Mesh) { (object.geometry as THREE.BufferGeometry).dispose(); }
+    }
+    this.root.clear();
+  }
+
   /** Shows or hides `draw`. */
   setVisible(draw: BatchedDraw, visible: boolean): void {
     const mesh = draw.mesh;
@@ -343,6 +356,11 @@ export class BatchedRoots {
     return this.#batches.root;
   }
 
+  /** Releases the batches (#1005); the sources' geometries and materials, and the copies sharing them, stay. */
+  dispose(): void {
+    this.#batches.dispose(false);
+  }
+
   /** Re-reads source root `index`: its meshes' world matrices and whether each (and every ancestor) is visible. */
   sync(index: number): void {
     const source = this.#sources[index];
@@ -432,6 +450,7 @@ export class BatchedScenery {
   /** Per animated node the model matrix it was last drawn at. */
   readonly #placed: Float32Array;
   readonly #matrix = new THREE.Matrix4();
+  #disposed = false;
 
   constructor(scene: Pick<SceneryScene, "batches" | "instanceBatches" | "water" | "animated">, stream: GroupStreamSource) {
     this.#scene = scene;
@@ -572,10 +591,20 @@ export class BatchedScenery {
     };
   }
 
-  /** Releases the batches' GPU buffers. */
+  /**
+   * Releases everything the static scene's batches own (#1005): their GPU buffers, the animated parts' batches and
+   * geometries, the white materials and the group stream's WASM handle. Later calls do nothing.
+   */
   dispose(): void {
+    if (this.#disposed) { return; }
+    this.#disposed = true;
     for (const batch of this.#batches.values()) { batch.mesh.dispose(); }
-    for (const mesh of this.#animated.root.children) { if (mesh instanceof THREE.BatchedMesh) { mesh.dispose(); } }
+    this.#batches.clear();
+    this.#animated.dispose(true);
+    for (const material of this.#materials.values()) { material.dispose(); }
+    this.#materials.clear();
+    freeHandle(this.#stream);
+    this.root.clear();
   }
 }
 
