@@ -10,7 +10,11 @@ fn private_homes_change_the_revision() {
     let revision = content.revision();
 
     let same = content.clone().with_private_homes(homes.clone()).unwrap();
-    assert_eq!(same.revision(), revision, "identical content, identical identity");
+    assert_eq!(
+        same.revision(),
+        revision,
+        "identical content, identical identity"
+    );
 
     let removed = content.clone().with_private_homes(Vec::new()).unwrap();
     assert_ne!(removed.revision(), revision, "removing the homes");
