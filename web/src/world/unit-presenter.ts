@@ -1,6 +1,7 @@
 import type { IndexedMeshGeometry, Matrix4Values, RendererSceneNode } from "@moritzbrantner/three-d-renderer";
 import type { EntityKind, EntityRef, EntityState, StrikeAim } from "../replication";
 import type { Color } from "./scenery";
+import { freeHandle } from "./zone-lifecycle";
 
 /**
  * The shared unit presentation (#184): `mmorpg-presentation` draws procedural players,
@@ -221,6 +222,11 @@ export class SharedUnits {
 
   constructor(handle: UnitPresenterHandle) {
     this.#handle = handle;
+  }
+
+  /** Frees the presenter's WASM handle (#1005); the presenter is not used afterwards. */
+  dispose(): void {
+    freeHandle(this.#handle);
   }
 
   /**

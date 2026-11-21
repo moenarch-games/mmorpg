@@ -3,6 +3,7 @@ import type { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import { applyOutpostWear, OUTPOST_WEAR_MASKS, wearMasks } from "./outpost-wear";
 import { BatchedRoots } from "./static-batches";
 import { drawnResources, loadBundleGltfs, loadStaticBundle } from "./static-bundle";
+import { releaseMixer, retainedBundle } from "./zone-lifecycle";
 
 /** The rolling `shrine-kit` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
 export const SHRINE_BUNDLE = `${import.meta.env.BASE_URL}scenery/shrine.kit/`;
@@ -44,6 +45,7 @@ export class KitModules {
   #mixers: { mixer: THREE.AnimationMixer; index: number }[] = [];
   /** How many materials age by wear (0 without wear masks). */
   #worn = 0;
+  #disposed = false;
 
   constructor(bundle: string, name: string, entries: readonly string[], placements: readonly KitPlacement[], options: KitOptions = {}) {
     this.#bundle = bundle;
@@ -55,6 +57,7 @@ export class KitModules {
 
   /** Loads the bundle once; settles drawable (true) or failed (false), never fatal to the world. */
   load(): Promise<boolean> {
+    if (this.#disposed) { return Promise.resolve(false); }
     this.#loading ??= this.#load().then(() => true, (error: unknown) => {
       console.error(`The ${this.#name} bundle did not load: ${error instanceof Error ? error.message : String(error)}`);
       return false;
@@ -65,13 +68,20 @@ export class KitModules {
   async #load(): Promise<void> {
     if (this.#placements.length === 0) { return; }
     const { ktx2, wear } = this.#options;
-    const modules = new Map((await loadStaticBundle(this.#bundle, this.#entries, ktx2)).map((root) => [root.name, root]));
-    // Wear masks: every wear level then draws with the pristine materials, so in their batches. A bundle without them
-    // (before asset-tooling#511) draws every building pristine.
-    const masks = wear
-      ? await loadBundleGltfs(this.#bundle, [OUTPOST_WEAR_MASKS], 1, ktx2).then(([gltf]) => wearMasks(gltf!), () => null)
-      : null;
-    if (masks) { this.#worn = applyOutpostWear([...modules.values()], masks); }
+    // The modules are the bundle's, prepared once and retained for every zone that places them (#1005).
+    const prepared = await retainedBundle(`kit-modules:${this.#bundle}:${wear ? "worn" : "pristine"}:${this.#entries.join(",")}`, async () => {
+      const modules = new Map((await loadStaticBundle(this.#bundle, this.#entries, ktx2)).map((root) => [root.name, root]));
+      // Wear masks: every wear level then draws with the pristine materials, so in their batches. A bundle without them
+      // (before asset-tooling#511) draws every building pristine.
+      const masks = wear
+        ? await loadBundleGltfs(this.#bundle, [OUTPOST_WEAR_MASKS], 1, ktx2).then(([gltf]) => wearMasks(gltf!), () => null)
+        : null;
+      return { modules, worn: masks ? applyOutpostWear([...modules.values()], masks) : 0 };
+    });
+    // A zone replaced while the bundle loaded keeps nothing (#1005).
+    if (this.#disposed) { return; }
+    const modules = prepared.modules;
+    this.#worn = prepared.worn;
     const roots = this.#placements.map(({ key, matrix }, index) => {
       const module = modules.get(key);
       if (!module) { throw new Error(`The ${this.#name} has no ${key}.`); }
@@ -95,6 +105,22 @@ export class KitModules {
     // Static modules: a few draw calls per material instead of one per module and primitive.
     this.#roots = roots;
     this.#batched = new BatchedRoots(this.#name, roots, this.#worn > 0 ? this.#placements.map((placement) => placement.wear ?? 0) : null);
+    this.#changed = true;
+  }
+
+  /**
+   * Releases what these placements own for their zone (#1005): the batches and the clip mixers. The clones share the
+   * retained modules' geometry and materials, which stay for a revisit; a load in flight attaches nothing. Later calls
+   * do nothing.
+   */
+  dispose(): void {
+    if (this.#disposed) { return; }
+    this.#disposed = true;
+    for (const { mixer } of this.#mixers) { releaseMixer(mixer); }
+    this.#mixers = [];
+    this.#batched?.dispose();
+    this.#batched = null;
+    this.#roots = [];
     this.#changed = true;
   }
 

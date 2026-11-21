@@ -64,6 +64,9 @@ export class InstancedLevels {
   readonly root = new THREE.Group();
   /** Per entry, per level its parts. */
   readonly #levels: Part[][][];
+  /** The cross-fade copies this instance made (#1005: owned, unlike the shared glTF materials). */
+  readonly #fadeMaterials = new Set<THREE.Material>();
+  #disposed = false;
   /** Per placement its entry index and current model matrix. */
   readonly #entryOf: number[];
   readonly #matrices: Float32Array[];
@@ -104,6 +107,7 @@ export class InstancedLevels {
         if (!material) {
           material = crossFaded(source);
           materials.set(source, material);
+          this.#fadeMaterials.add(material);
         }
         const size = Math.max(capacity[entry]!, 1);
         // The fading copy shares the geometry's buffers and adds the per-instance fade.
@@ -184,6 +188,27 @@ export class InstancedLevels {
         attribute.needsUpdate = true;
       }
     }
+  }
+
+  /**
+   * Releases what this instance owns (#1005): each part's baked geometry copy, its fading geometry and instance
+   * buffers, and the cross-fade materials. The glTF scenes it was built from, their materials and textures stay
+   * untouched for the next zone that draws the bundle. Later calls do nothing.
+   */
+  dispose(): void {
+    if (this.#disposed) { return; }
+    this.#disposed = true;
+    for (const parts of this.#levels.flat()) {
+      for (const { settled, fading } of parts) {
+        settled.geometry.dispose();
+        settled.dispose();
+        fading.geometry.dispose();
+        fading.dispose();
+      }
+    }
+    for (const material of this.#fadeMaterials) { material.dispose(); }
+    this.#fadeMaterials.clear();
+    this.root.clear();
   }
 
   /** Per entry, per level how many placements the last selection draws. */

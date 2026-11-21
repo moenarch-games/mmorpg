@@ -40,6 +40,7 @@ import { type AidTask, reachableAidTask } from "./raid-aid";
 import { type RaidPrepSpots, reachablePrepStep } from "./raid-prep";
 import { RaidSigns } from "./raid-signs";
 import { WalkInBuildings } from "./walk-in-buildings";
+import { ZoneLifecycle } from "./zone-lifecycle";
 import { KitModules, OUTPOST_BUNDLE, SETTLEMENT_BUNDLE, SHRINE_BUNDLE, type KitPlacement } from "./kit-modules";
 import { useBundleKtx2Loader } from "./static-bundle";
 import { BatchedScenery } from "./static-batches";
@@ -481,6 +482,8 @@ export class WorldView {
   readonly #picking = new WorldPicking();
   #lastSceneryNodes: readonly RendererSceneNode[] = [];
   #pendingNpc: { target: EntityRef; sequence: number } | null = null;
+  /** The presented zone's resource owner (#1005), retired when the next zone loads. */
+  #zone = new ZoneLifecycle();
   #scene: SceneryScene | null = null;
   readonly #lighting: GreyhavenLighting;
   #catalog: ContentCatalog | null = null;
@@ -711,6 +714,11 @@ export class WorldView {
     if (this.#loadedScenery === world.scenery && this.#loadedArena === arena) {
       return; // Re-selecting the same world (`refreshArenaWorld`) must not rebuild it.
     }
+    // The previous zone's presentation releases everything it owns, once (#1005); its loads still in flight attach
+    // nothing. Retained bundle resources stay, so a revisit reuses them.
+    this.#zone.retire();
+    const zone = this.#zone = new ZoneLifecycle();
+    this.#units?.units.dispose();
     this.#loadedScenery = world.scenery;
     this.#loadedArena = arena;
     this.#loadedWorld = world;
@@ -734,21 +742,19 @@ export class WorldView {
     this.#scene = null;
     this.#sceneryFrame = null;
     this.#ground = null;
-    this.#grass?.dispose();
     this.#grass = null;
-    this.#sceneryBatches?.dispose();
     this.#sceneryBatches = null;
     this.#minimap.reset();
-    this.#nature = new PlacedKit(world.scenery.nature);
-    this.#climbing = new PlacedKit(world.scenery.climbing);
-    this.#crag = new PlacedKit(world.scenery.crag);
-    this.#limestone = new PlacedKit(world.scenery.limestone);
-    this.#river = new PlacedKit(world.scenery.river);
-    this.#meadow = new PlacedKit(world.scenery.meadow);
-    this.#gather = new PlacedKit(world.scenery.gather);
+    this.#nature = zone.own(new PlacedKit(world.scenery.nature));
+    this.#climbing = zone.own(new PlacedKit(world.scenery.climbing));
+    this.#crag = zone.own(new PlacedKit(world.scenery.crag));
+    this.#limestone = zone.own(new PlacedKit(world.scenery.limestone));
+    this.#river = zone.own(new PlacedKit(world.scenery.river));
+    this.#meadow = zone.own(new PlacedKit(world.scenery.meadow));
+    this.#gather = zone.own(new PlacedKit(world.scenery.gather));
     this.#veins = world.scenery.veins;
     this.#showVeins([]);
-    this.#kits = world.scenery.kits.map((source) => new PlacedKit(source));
+    this.#kits = world.scenery.kits.map((source) => zone.own(new PlacedKit(source)));
     this.#placedKits = [
       { kit: this.#nature, source: world.scenery.nature, requested: false },
       { kit: this.#climbing, source: world.scenery.climbing, requested: false },
@@ -760,17 +766,17 @@ export class WorldView {
       ...this.#kits.map((kit, index) => ({ kit, source: world.scenery.kits[index]!, requested: false })),
     ];
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
-    this.#inn = new WalkInBuildings(world.scenery.buildings.presenters());
-    this.#shrine = new KitModules(SHRINE_BUNDLE, "shrine kit", world.scenery.shrine.entries, world.scenery.shrine.placements);
+    this.#inn = zone.own(new WalkInBuildings(world.scenery.buildings.presenters()));
+    this.#shrine = zone.own(new KitModules(SHRINE_BUNDLE, "shrine kit", world.scenery.shrine.entries, world.scenery.shrine.placements));
     const fortEntry = (key: string) => key.startsWith("greyhaven.fort.");
-    this.#outpost = new KitModules(OUTPOST_BUNDLE, "Outpost kit", world.scenery.outpost.entries.filter((key) => !fortEntry(key)), world.scenery.outpost.placements.filter(({ key }) => !fortEntry(key)), { wear: true });
-    this.#fortifications = new KitModules(`${import.meta.env.BASE_URL}authored/greyhaven-fort/`, "Greyhaven fortifications", world.scenery.outpost.entries.filter(fortEntry), world.scenery.outpost.placements.filter(({ key }) => fortEntry(key)));
-    this.#settlement = new KitModules(SETTLEMENT_BUNDLE, "settlement props", world.scenery.settlement.entries, world.scenery.settlement.placements);
+    this.#outpost = zone.own(new KitModules(OUTPOST_BUNDLE, "Outpost kit", world.scenery.outpost.entries.filter((key) => !fortEntry(key)), world.scenery.outpost.placements.filter(({ key }) => !fortEntry(key)), { wear: true }));
+    this.#fortifications = zone.own(new KitModules(`${import.meta.env.BASE_URL}authored/greyhaven-fort/`, "Greyhaven fortifications", world.scenery.outpost.entries.filter(fortEntry), world.scenery.outpost.placements.filter(({ key }) => fortEntry(key))));
+    this.#settlement = zone.own(new KitModules(SETTLEMENT_BUNDLE, "settlement props", world.scenery.settlement.entries, world.scenery.settlement.placements));
     // The arena's fortress kit (#591) loads at once: the whole fortress is in view from the courtyard.
-    this.#fortress = world.scenery.fortress ? new CompositionKit(world.scenery.fortress) : null;
+    this.#fortress = world.scenery.fortress ? zone.own(new CompositionKit(world.scenery.fortress)) : null;
     // Greyhaven's art streams in region by region (#240): the selection screen fetches the
     // starting area's pieces, and play fetches each area the player approaches.
-    this.#ambient = new AmbientAnimals(world.scenery.ambient);
+    this.#ambient = zone.own(new AmbientAnimals(world.scenery.ambient));
     this.#regions = new RegionArt(world, this.#models, this.#inn, this.#shrine, this.#outpost, this.#settlement, this.#ambient, () => this.#onArtProgress?.());
     this.#reachableDoor = world.scenery.buildings.reachableDoor;
     this.#reachableSeat = world.scenery.buildings.reachableSeat;
@@ -847,12 +853,10 @@ export class WorldView {
     const scene = buildSceneryScene(world.scenery.scenery, world.scenery.staticScene);
     this.#scene = scene;
     this.#sceneryFrame = new SceneryFrame(scene);
-    this.#sceneryBatches?.dispose();
-    this.#sceneryBatches = new BatchedScenery(scene, world.scenery.staticScene.groupStream());
-    this.#ground = new Ground(world.scenery.staticScene.terrainStream(), scene.surfaces, scene.cutaways);
+    this.#sceneryBatches = this.#zone.own(new BatchedScenery(scene, world.scenery.staticScene.groupStream()));
+    this.#ground = this.#zone.own(new Ground(world.scenery.staticScene.terrainStream(), scene.surfaces, scene.cutaways));
     void this.#ground.load(this.#models.ktx2Loader);
     const content = world.scenery.staticScene;
-    this.#grass?.dispose();
     this.#grass = content.grassCell && content.grassCellMetres
       ? new Grass({
         cell: (column, row) => content.grassCell!(column, row), cellMetres: content.grassCellMetres(),
@@ -861,6 +865,7 @@ export class WorldView {
           : {}),
       }, this.#worldDetail)
       : null;
+    if (this.#grass) { this.#zone.own(this.#grass); }
   }
 
   /** The directed-strike action's working binding labels, for the Heroic Strike slot hint. */
@@ -1778,6 +1783,7 @@ export class WorldView {
     const animate = this.#animate;
     this.#seconds += deltaSeconds;
     if (this.#units?.viewerId !== projection.viewerId) {
+      this.#units?.units.dispose();
       const units = new SharedUnits(world.scenery.unitPresenter(projection.viewerId));
       for (const [kind, clips, descriptor] of this.#loadedModels) { units.modelReady(kind, clips, descriptor); }
       if (this.#blend) { units.setBlend(this.#blend); }
