@@ -2774,7 +2774,8 @@ impl UnitPresenter {
             | CreatureFamily::Bear
             | CreatureFamily::Spider
             | CreatureFamily::Lurker
-            | CreatureFamily::Lynx),
+            | CreatureFamily::Lynx
+            | CreatureFamily::Adder),
         ) = family
         {
             return creatures::animal(

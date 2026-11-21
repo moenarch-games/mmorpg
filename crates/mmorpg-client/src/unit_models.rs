@@ -217,10 +217,13 @@ impl UnitModel {
                 Some(CreatureFamily::Boar | CreatureFamily::Bear) => {
                     Self::Quadruped(AnimalKind::Boar)
                 }
-                // The beasts of #889 fall back to the nearest procedural body.
-                Some(CreatureFamily::Vermin | CreatureFamily::Spider | CreatureFamily::Lurker) => {
-                    Self::Quadruped(AnimalKind::Vermin)
-                }
+                // The beasts of #889 and the adder (#990) fall back to the nearest procedural body.
+                Some(
+                    CreatureFamily::Vermin
+                    | CreatureFamily::Spider
+                    | CreatureFamily::Lurker
+                    | CreatureFamily::Adder,
+                ) => Self::Quadruped(AnimalKind::Vermin),
                 // Large creatures (#297) draw as a marauder fitted to their bigger box.
                 Some(CreatureFamily::Marauder | CreatureFamily::Ogre) => {
                     Self::Humanoid(HumanoidKind::Marauder)
