@@ -48,6 +48,10 @@ pub enum RewardKey {
     Cache {
         cache: u32,
     },
+    /// Defending a merchant's cart from its ambush (#992): once per incident and character.
+    CartDefence {
+        incident: u32,
+    },
 }
 impl RewardKey {
     #[must_use]
@@ -69,7 +73,8 @@ impl RewardKey {
             | Self::RaidParticipation { .. }
             | Self::RaidDefence { .. }
             | Self::Discovery { .. }
-            | Self::Cache { .. } => None,
+            | Self::Cache { .. }
+            | Self::CartDefence { .. } => None,
         }
     }
     pub fn validate(self) -> Result<(), ZoneError> {
@@ -85,7 +90,9 @@ impl RewardKey {
             Self::QuestCompletion { quest } if quest.get() == 0 => {
                 Err(ZoneError::new("invalid reward quest"))
             }
-            Self::RaidParticipation { incident: 0 } | Self::RaidDefence { incident: 0 } => {
+            Self::RaidParticipation { incident: 0 }
+            | Self::RaidDefence { incident: 0 }
+            | Self::CartDefence { incident: 0 } => {
                 Err(ZoneError::new("invalid reward raid incident"))
             }
             Self::Cache { cache: 0 } => Err(ZoneError::new("invalid reward cache")),

@@ -220,6 +220,10 @@ impl ZoneSimulation {
         if let Some((placement, _)) = self.hunt_placement(npc) {
             return Some(placement);
         }
+        // A merchant on its cart journey (#992).
+        if let Some((placement, ..)) = self.cart_placement(npc) {
+            return Some(placement);
+        }
         Some(match self.content.routine(npc) {
             // A knock woke it (#158): it walks to its door and back to bed.
             Some(routine)

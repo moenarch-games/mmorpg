@@ -477,6 +477,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::signal_post::spawns())
         // Trapper Sela's hunt's bear (#991).
         .chain(super::hunt::spawns())
+        // Peddler Rowan's cart robbers (#992).
+        .chain(super::cart::spawns())
         // The Southwood lynxes (#989).
         .chain(super::lynx::spawns())
         // The Eastwater Fen adders (#990).

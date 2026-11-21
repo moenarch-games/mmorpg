@@ -95,6 +95,8 @@ pub struct ZoneContent {
     raid: Option<crate::RaidSite>,
     /// A hunter's daily outing (#991), if the zone has one.
     hunt: Option<crate::HuntOuting>,
+    /// A merchant's daily cart journey (#992), if the zone has one.
+    cart: Option<crate::CartRun>,
     /// Network stones standing in this zone, in ID order (#145).
     waystones: Vec<crate::WaystoneId>,
     /// Named areas whose first visit pays discovery experience (#916), in ID order.
@@ -240,6 +242,7 @@ impl ZoneContent {
             handoff_corridors: Vec::new(),
             raid: None,
             hunt: None,
+            cart: None,
             waystones: Vec::new(),
             discoveries: Vec::new(),
             gather_nodes: Vec::new(),
@@ -301,6 +304,7 @@ impl ZoneContent {
             handoff_corridors: Vec::new(),
             raid: None,
             hunt: None,
+            cart: None,
             waystones: Vec::new(),
             discoveries: Vec::new(),
             gather_nodes: Vec::new(),
@@ -1475,6 +1479,37 @@ impl ZoneContent {
             .is_some_and(|hunt| hunt.beast == creature)
     }
 
+    /// Adds a merchant's daily cart journey (#992). Its bandits are content spawns reserved for
+    /// the journey's ambushes, in no den, raid, depths site or hunt.
+    pub fn with_cart(mut self, cart: crate::CartRun) -> Result<Self, ZoneError> {
+        cart.validate(&self)?;
+        if self.dens.iter().any(|den| {
+            cart.bandits
+                .iter()
+                .any(|bandit| den.pack.contains(bandit) || den.prey.contains(bandit))
+        }) {
+            return Err(ZoneError::new("a creature belongs to two groups"));
+        }
+        self.cart = Some(cart);
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// The merchant's cart journey, if any.
+    #[must_use]
+    pub const fn cart(&self) -> Option<&crate::CartRun> {
+        self.cart.as_ref()
+    }
+
+    /// Whether `creature` is one of the cart's reserved bandits: it stands only on an ambush
+    /// day's hold and never respawns on its own.
+    #[must_use]
+    pub fn is_cart_bandit(&self, creature: CreatureId) -> bool {
+        self.cart
+            .as_ref()
+            .is_some_and(|cart| cart.bandits.contains(&creature))
+    }
+
     /// Binds the network stones that stand in this zone (#145, [`crate::WAYSTONES`]): each
     /// known, at most once, with its reach and arrival clear of every handoff corridor.
     pub fn with_waystones(
@@ -1674,7 +1709,7 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_hunt_fingerprint();
+        let fingerprint = self.compute_cart_fingerprint();
         let Some(rewind) = self.hit_rewind else {
             return fingerprint;
         };
@@ -1774,6 +1809,29 @@ impl ZoneContent {
     #[must_use]
     pub fn caches(&self) -> &[crate::DiscoveryCache] {
         &self.caches
+    }
+
+    /// A merchant's cart journey (#992) enters the identity only when a zone has one.
+    fn compute_cart_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_hunt_fingerprint();
+        let Some(cart) = &self.cart else {
+            return fingerprint;
+        };
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/cart-v1");
+        hash.u64(fingerprint);
+        hash.u32(cart.merchant.get());
+        hash.u32(cart.leave);
+        hash.len(cart.path.len());
+        hash.i32s(cart.path.as_flattened());
+        hash.len(cart.ambush);
+        hash.u32(u32::from(cart.facing));
+        hash.u32(cart.trade);
+        hash.len(cart.bandits.len());
+        for bandit in &cart.bandits {
+            hash.u32(bandit.get());
+        }
+        hash.finish()
     }
 
     /// A hunter's outing (#991) enters the identity only when a zone has one.

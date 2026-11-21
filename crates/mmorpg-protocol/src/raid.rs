@@ -68,7 +68,8 @@ pub(crate) fn decode_member(
 /// (`u64`) and outcome (`u8`, 0 defended, 1 lost); the open aid tasks (a `u32` set, #531, #882);
 /// the rewarded players (count `u16`, each `u32`, #531); the players who read the evening's
 /// tracks (count `u16`, each `u32`, #532), whether the guards are warned (`u8`) and the braced
-/// spots (a `u32` set, #532, #882).
+/// spots (a `u32` set, #532, #882) and the players rewarded for defending the day's merchant cart
+/// (count `u16`, each `u32`, #992).
 pub(crate) fn encode_state(payload: &mut Vec<u8>, state: &RaidState) -> Result<(), ProtocolError> {
     payload.extend_from_slice(&state.incidents.to_be_bytes());
     payload.extend_from_slice(&state.damage.to_be_bytes());
@@ -124,6 +125,11 @@ pub(crate) fn encode_state(payload: &mut Vec<u8>, state: &RaidState) -> Result<(
     }
     payload.push(u8::from(state.warned));
     encode_u32_set(payload, &state.braced, "raid braces exceed their count")?;
+    encode_players(
+        payload,
+        &state.cart_rewarded,
+        "cart rewards exceed the zone capacity",
+    )?;
     Ok(())
 }
 
@@ -195,6 +201,7 @@ pub(crate) fn decode_state(payload: &[u8], offset: &mut usize) -> Result<RaidSta
         .collect::<Result<_, _>>()?;
     let warned = read_bool(payload, offset)?;
     let braced = decode_u32_set(payload, offset, "raid braces are invalid")?;
+    let cart_rewarded = decode_players(payload, offset, "cart rewards exceed the zone capacity")?;
     Ok(RaidState {
         incidents,
         active,
@@ -205,7 +212,39 @@ pub(crate) fn decode_state(payload: &[u8], offset: &mut usize) -> Result<RaidSta
         scouted,
         warned,
         braced,
+        cart_rewarded,
     })
+}
+
+/// A player list: count (`u16`), each `u32`.
+fn encode_players(
+    payload: &mut Vec<u8>,
+    players: &[u32],
+    error: &str,
+) -> Result<(), ProtocolError> {
+    let count = u16::try_from(players.len())
+        .ok()
+        .filter(|&count| usize::from(count) <= MAX_PLAYERS_PER_ZONE)
+        .ok_or_else(|| ProtocolError::new(error))?;
+    payload.extend_from_slice(&count.to_be_bytes());
+    for player in players {
+        payload.extend_from_slice(&player.to_be_bytes());
+    }
+    Ok(())
+}
+
+fn decode_players(
+    payload: &[u8],
+    offset: &mut usize,
+    error: &str,
+) -> Result<Vec<u32>, ProtocolError> {
+    let count = usize::from(u16::from_be_bytes(take(payload, offset)?));
+    if count > MAX_PLAYERS_PER_ZONE {
+        return Err(ProtocolError::new(error));
+    }
+    (0..count)
+        .map(|_| take(payload, offset).map(u32::from_be_bytes))
+        .collect()
 }
 
 /// The view's flag bits: the evening's signs, the warned guards and the viewer's scouting.
