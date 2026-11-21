@@ -395,6 +395,43 @@ impl ZoneSimulation {
     }
 }
 
+/// A departing player's claim on a creature's corpse (Atlas 5.3.6): it leaves the sharing
+/// party, and a departed tapper hands the corpse to the party's first mate, or to nobody, with
+/// its quest item, which is nobody else's to claim. The one rule [`crate::ZoneSimulation`]
+/// and a playerless checkpoint apply.
+pub(crate) fn release_departed_loot(
+    tapped_by: &mut Option<crate::PlayerId>,
+    loot_party: &mut Vec<crate::PlayerId>,
+    loot: &mut Option<crate::LootRewards>,
+    departed: crate::PlayerId,
+) {
+    loot_party.retain(|mate| *mate != departed);
+    if *tapped_by == Some(departed) {
+        if loot_party.is_empty() {
+            *tapped_by = None;
+            *loot = None;
+        } else {
+            *tapped_by = Some(loot_party.remove(0));
+            if let Some(rewards) = loot {
+                rewards.quest_item = None;
+            }
+        }
+    }
+}
+
+/// A departed unit leaves a creature: off its threat table, and a cast at it resolves
+/// against nobody.
+pub(crate) fn forget_departed(
+    threat: &mut Vec<ThreatEntry>,
+    cast: &mut Option<crate::CastState>,
+    departed: EntityRef,
+) {
+    threat.retain(|entry| entry.entity != departed);
+    if cast.is_some_and(|cast| cast.target == Some(departed)) {
+        *cast = None;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

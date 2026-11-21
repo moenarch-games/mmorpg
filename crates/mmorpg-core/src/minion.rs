@@ -813,13 +813,7 @@ impl ZoneSimulation {
         }
         self.forget_forced_unit(entity);
         for creature in self.creatures.values_mut() {
-            creature.forget(entity);
-            if creature
-                .cast
-                .is_some_and(|cast| cast.target == Some(entity))
-            {
-                creature.cast = None;
-            }
+            crate::creature::forget_departed(&mut creature.threat, &mut creature.cast, entity);
         }
         for player in self.players.values_mut() {
             if player.target == Some(entity) {
