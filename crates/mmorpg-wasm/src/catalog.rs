@@ -126,6 +126,9 @@ pub struct AbilityExport {
     pub cast_ticks: u16,
     pub channel: bool,
     pub cooldown: u16,
+    /// The tooltip range line, derived from the authoritative range by the shared client
+    /// model (#1013): `Self`, `Melee range`, `30 m range` or `30 m range, friendly or self`.
+    pub range_label: String,
     /// The wire code of the aura kind it applies (1 damage over time …
     /// 7 haste, as in snapshot aura records), if any.
     pub aura: Option<u8>,
@@ -276,6 +279,7 @@ pub fn catalog(content: &ZoneContent) -> CatalogExport {
                 cast_ticks: ability.cast.ticks(),
                 channel: ability.cast.is_channel(),
                 cooldown: ability.cooldown,
+                range_label: mmorpg_client_model::hud::range_label(ability.range),
                 aura: ability.aura().map(|aura| aura.kind.code()),
             })
             .collect(),
@@ -554,10 +558,17 @@ mod tests {
             value["abilities"][8],
             json!({
                 "id": 9, "name": "Firebolt", "user": "arcanist", "level": 1, "cost": 25,
-                "castTicks": mmorpg_core::ticks_from_ms(2_000), "channel": false, "cooldown": 0, "aura": null
+                "castTicks": mmorpg_core::ticks_from_ms(2_000), "channel": false, "cooldown": 0, "rangeLabel": "30 m range", "aura": null
             })
         );
         assert_eq!(value["abilities"][12]["user"], "creature");
+        let renew = value["abilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|ability| ability["id"] == 35)
+            .unwrap();
+        assert_eq!(renew["rangeLabel"], "30 m range, friendly or self");
         assert_eq!(value["abilities"][9]["aura"], 4, "Frost Nova roots");
         let names: Vec<_> = value["areas"]
             .as_array()

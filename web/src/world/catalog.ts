@@ -69,6 +69,8 @@ export type AbilityRecord = {
   castTicks: number;
   channel: boolean;
   cooldown: number;
+  /** The tooltip range line from the authoritative range (#1013), e.g. `30 m range, friendly or self`. */
+  rangeLabel: string;
   /** Aura kind wire code (1 damage over time … 7 haste), or null. */
   aura: number | null;
 };
@@ -306,7 +308,7 @@ export function decodeCatalog(json: string): ContentCatalog {
   const abilities = list(root.abilities, "abilities", 255).map((value, index) => {
     const name = `ability ${index}`;
     const record = object(value, [
-      "id", "name", "user", "level", "cost", "castTicks", "channel", "cooldown", "aura",
+      "id", "name", "user", "level", "cost", "castTicks", "channel", "cooldown", "rangeLabel", "aura",
     ], name);
     if (typeof record.channel !== "boolean") {
       fail(`${name} channel must be a flag`);
@@ -320,6 +322,7 @@ export function decodeCatalog(json: string): ContentCatalog {
       castTicks: int(record.castTicks, `${name} cast ticks`, 0, 0xffff),
       channel: record.channel,
       cooldown: int(record.cooldown, `${name} cooldown`, 0, 0xffff),
+      rangeLabel: text(record.rangeLabel, `${name} range label`),
       aura: record.aura === null ? null : int(record.aura, `${name} aura`, 1, 9),
     };
   });

@@ -79,6 +79,23 @@ pub struct SlotState {
     pub cooldown: Option<SlotCooldown>,
 }
 
+/// The tooltip range line for an ability, from its authoritative catalog range (#1013): `Self`,
+/// `Melee range`, `30 m range`, or for a supportive ability that lands on a selected friendly
+/// player (otherwise on the caster) `30 m range, friendly or self`.
+#[must_use]
+pub fn range_label(range: AbilityRange) -> String {
+    let metres = |units: i32| {
+        let metres = f64::from(units) / f64::from(mmorpg_core::UNITS_PER_METRE);
+        format!("{metres} m range")
+    };
+    match range {
+        AbilityRange::SelfCentred => "Self".to_owned(),
+        AbilityRange::Melee => "Melee range".to_owned(),
+        AbilityRange::Units(units) => metres(units),
+        AbilityRange::Friendly(units) => format!("{}, friendly or self", metres(units)),
+    }
+}
+
 /// The class abilities in catalog id order: action-bar slots 1–20, the first ten on the first
 /// row and the rest on the Shift row.
 #[must_use]
@@ -299,6 +316,33 @@ mod tests {
 
     fn ability(id: u32) -> &'static Ability {
         ability_by_id(AbilityId::new(id)).unwrap()
+    }
+
+    #[test]
+    fn range_labels_follow_the_catalog_ranges() {
+        // Renew, Divine Shield and Rejuvenation land on a selected friend within 30 m (#1013).
+        for id in [35, 37, 40] {
+            assert_eq!(
+                range_label(ability(id).range),
+                "30 m range, friendly or self",
+                "ability {id}"
+            );
+        }
+        assert_eq!(range_label(ability(FIREBOLT).range), "30 m range");
+        assert_eq!(range_label(ability(STRIKE).range), "Melee range");
+        assert_eq!(range_label(ability(FROST_NOVA).range), "Self");
+        for ability in ABILITY_CATALOG {
+            let label = range_label(ability.range);
+            match ability.range.reach() {
+                Some(_) if ability.range == AbilityRange::Melee => assert_eq!(label, "Melee range"),
+                Some(units) => assert!(
+                    label.starts_with(&format!("{} m range", f64::from(units) / 100.)),
+                    "{}: {label}",
+                    ability.name
+                ),
+                None => assert_eq!(label, "Self", "{}", ability.name),
+            }
+        }
     }
 
     fn viewer() -> ViewerState {
