@@ -9,7 +9,7 @@ import { mergeUnitMeshes, releaseUnit, type MergedUnit } from "./merged-unit";
 import type { EntityRef } from "../../entity-ref";
 import { characterVisualProfile } from "../../character-visuals";
 import type { CharacterClassId } from "../../character-selection";
-import { declaredChains, figureAppearance, swordArmPose, varyPreset } from "../wasm-runtime";
+import { declaredChains, figureAppearance, loadoutAttachments, swordArmPose, varyPreset } from "../wasm-runtime";
 import { ChainSway, declareChains } from "./chain-sway";
 import { BASE_FAMILY, clipFamilies, FamilyClips } from "./clip-families";
 import choreTable from "../../../../content/greyhaven/chores.json";
@@ -508,47 +508,27 @@ export function drawMeters(draw: { sampleRate: number; meters: readonly number[]
   return draw.meters[below]! + (draw.meters[above]! - draw.meters[below]!) * (frame - below);
 }
 
-/** Which bundle item goes to which socket, per loadout. */
-const LOADOUT_ITEMS: Readonly<Record<CarriedLoadout, readonly { key: string; socket: string }[]>> = {
-  "sword-and-shield": [
-    { key: "equipment.sword.arming", socket: "hand_r.weapon" },
-    { key: "equipment.shield.heater", socket: "hand_l.shield" },
-  ],
-  // The Redbrand Brute's round plank shield (#953, asset-tooling #774).
-  "sword-and-shield.redbrand": [
-    { key: "equipment.sword.arming", socket: "hand_r.weapon" },
-    { key: "equipment.shield.redbrand", socket: "hand_l.shield" },
-  ],
-  "bow-and-quiver": [
-    { key: "equipment.bow.long", socket: "back.bow.stowed" },
-    { key: "equipment.quiver.back", socket: "back.quiver" },
-  ],
-  sword: [{ key: "equipment.sword.arming", socket: "hand_r.weapon" }],
-  dagger: [{ key: "equipment.dagger.blackened", socket: "hand_r.weapon" }],
-  "dagger.twin": [
-    { key: "equipment.dagger.blackened", socket: "hand_r.weapon" },
-    { key: "equipment.dagger.blackened", socket: "hand_l.weapon" },
-  ],
-  "staff.bone": [{ key: "equipment.staff.bone", socket: "hand_r.staff" }],
-  // The tome is held like a shield (asset-tooling #379): spine along the forearm.
-  "staff.crystal-and-tome": [
-    { key: "equipment.staff.crystal", socket: "hand_r.staff" },
-    { key: "equipment.book.tome", socket: "hand_l.shield" },
-  ],
-  "mace.flanged": [{ key: "equipment.mace.flanged", socket: "hand_r.weapon" }],
-  "staff.gnarled": [{ key: "equipment.staff.gnarled", socket: "hand_r.staff" }],
-  // A player of the spear family (#914).
-  spear: [{ key: "equipment.spear.leaf", socket: "hand_r.staff" }],
-  // Garrick Redbrand's named cleaver (#918, asset-tooling #761).
-  "sword.garricks-cleaver": [{ key: "equipment.sword.garricks-cleaver", socket: "hand_r.weapon" }],
-  // The smith's Hollowpine boar-spear (#917).
-  "spear.hollowpine-hunter": [{ key: "equipment.spear.hollowpine-hunter", socket: "hand_r.staff" }],
-  // The crossbow and the arrow standing in for its bolt (#607); `poseCrossbow` moves both.
-  crossbow: [
-    { key: "equipment.crossbow", socket: "hand_r.crossbow" },
-    { key: "equipment.arrow", socket: "hand_r.arrow" },
-  ],
-};
+/** A bundle item on a figure socket. */
+type SocketItem = { key: string; socket: string };
+
+let loadoutTable: Readonly<Record<string, readonly SocketItem[]>> | null = null;
+
+/**
+ * Which bundle items go to which sockets, per shared loadout name: `Loadout::attachments` (#1012),
+ * the native client's table too, read from the module once; needs the module loaded.
+ */
+function loadoutTableOf(): Readonly<Record<string, readonly SocketItem[]>> {
+  loadoutTable ??= loadoutAttachments();
+  return loadoutTable;
+}
+
+/** The socket items `loadout` wears ([`loadoutTableOf`]); nothing for no loadout. */
+function loadoutItems(loadout: Loadout): readonly SocketItem[] {
+  if (!loadout) { return []; }
+  const items = loadoutTableOf()[loadout];
+  if (!items) { throw new Error(`The shared presentation has no loadout ${loadout}.`); }
+  return items;
+}
 
 /** Approved humanoid carry sockets; missing sockets retain the equipped pose (#802). */
 const WEAPON_STOW_SOCKETS: Readonly<Record<string, string>> = {
@@ -1226,14 +1206,14 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
  * The figure and worn items the player's look needs first (#979): the character picker's
  * selection, or the male with nothing chosen yet.
  */
-type PlayerSelection = { figure: string; keys: readonly string[] };
+type PlayerSelection = { figure: string; keys: () => readonly string[] };
 
 /**
  * The items a look wears: its loadout's, its headwear's and its hairstyle (the tintable variant),
  * and with the dagger the throwables it draws from the belt (#611).
  */
 export function lookItems(loadout: Loadout, headwear: Headwear | null, hair: Hair | null): string[] {
-  const carried = loadout ? LOADOUT_ITEMS[loadout] : [];
+  const carried = loadoutItems(loadout);
   return [...new Set([
     ...carried.map((item) => item.key),
     ...(headwear ? HEADWEAR_ITEMS[headwear].map((item) => item.key) : []),
@@ -1259,7 +1239,7 @@ type RangerFigures = {
 
 function rangerFigures(loader: GLTFLoader, rest: () => string): RangerFigures {
   // The farmer's straw hat (#418) rides with the viewer's headwear choices.
-  const keys = [...new Set([...[...Object.values(LOADOUT_ITEMS), ...Object.values(HEADWEAR_ITEMS)].flat().map((item) => item.key), "equipment.hat.straw", ...Object.values(THROWABLE_ITEMS), ...CHORES.map((chore) => chore.item), SIGNAL_HORN.item])];
+  const keys = [...new Set([...[...Object.values(loadoutTableOf()), ...Object.values(HEADWEAR_ITEMS)].flat().map((item) => item.key), "equipment.hat.straw", ...Object.values(THROWABLE_ITEMS), ...CHORES.map((chore) => chore.item), SIGNAL_HORN.item])];
   const figures = new Map<string, FigureBundle>();
   const loadingFigures = new Map<string, Promise<FigureBundle>>();
   const failed = new Set<string>();
@@ -1315,7 +1295,7 @@ async function loadRanger(set: RangerFigures, selection: () => PlayerSelection):
   };
   const worldReady = (async () => {
     const chosen = selection();
-    await figure(chosen.figure).then((selected) => selected.loadItems(chosen.keys)).catch(() => {});
+    await figure(chosen.figure).then((selected) => selected.loadItems(chosen.keys())).catch(() => {});
     const male = await figure(MALE);
     await male.loadItems();
     return male.descriptor;
@@ -1390,7 +1370,7 @@ async function loadRanger(set: RangerFigures, selection: () => PlayerSelection):
       const node = drops?.get(socket);
       if (node) { plate(model, node, socket); }
     }
-    const worn = [...(loadout ? LOADOUT_ITEMS[loadout] : []), ...items];
+    const worn = [...loadoutItems(loadout), ...items];
     const hooded = ownHood || baseHood;
     if (viewer) {
       const hairHidden = hooded || worn.some(({ key }) => look.hides.get(key)?.includes("hair"));
@@ -1455,7 +1435,7 @@ async function loadRanger(set: RangerFigures, selection: () => PlayerSelection):
         if (node) { node.visible = hooded; }
       }
       const headItems = headwear && female.options.headwear.includes(headwear) ? HEADWEAR_ITEMS[headwear] : [];
-      const worn = [...(loadout ? LOADOUT_ITEMS[loadout] : []), ...headItems];
+      const worn = [...loadoutItems(loadout), ...headItems];
       // This base authors long hair and buns only. Unsupported saved styles remain saved.
       const hairKey = !hooded && !armoredHead && headItems.length === 0 && hair?.style === "long" ? "hair.long" : null;
       female.wear(model, worn, hairKey, hair ? female.look.tints.get(`tint.${hair.color}`) : undefined);
@@ -1486,7 +1466,7 @@ async function loadRanger(set: RangerFigures, selection: () => PlayerSelection):
         // Plates and beards are authored in rest model space: their origin is the socket's.
         attachItem(model, clone, new THREE.Matrix4(), place);
       }
-      const worn = [...(loadout ? LOADOUT_ITEMS[loadout] : []), ...(preset.headwear ? [{ key: preset.headwear, socket: "head.armor" }] : [])];
+      const worn = [...loadoutItems(loadout), ...(preset.headwear ? [{ key: preset.headwear, socket: "head.armor" }] : [])];
       figure.wear(model, worn, preset.hair, preset.tint);
       // A resident holds its routine's chore item (#904); enemies have no routines, but a Redbrand
       // may sound the signal horn (#952).
@@ -1512,7 +1492,7 @@ async function loadRanger(set: RangerFigures, selection: () => PlayerSelection):
     const hoods = look.hood.flatMap((name) => model.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name)) ?? []);
     if (hoods.length === 0) { throw new Error("The Ranger has none of its outfit.hood nodes."); }
     for (const node of hoods) { node.visible = hooded; }
-    const worn = [...(loadout ? LOADOUT_ITEMS[loadout] : []), ...(headwear ? HEADWEAR_ITEMS[headwear] : [])];
+    const worn = [...loadoutItems(loadout), ...(headwear ? HEADWEAR_ITEMS[headwear] : [])];
     const hairHidden = hooded || worn.some(({ key }) => look.hides.get(key)?.includes("hair"));
     const hairKey = hair && hair.style !== "bald" && !hairHidden ? HAIR_ENTRIES[hair.style] : null;
     wear(model, worn, hairKey, hair ? look.tints.get(`tint.${hair.color}`) : undefined);
@@ -1817,7 +1797,7 @@ export class QuaterniusUnits {
   #residents: Promise<boolean> | null = null;
   #residentsLoaded = false;
   /** The picker's selection (#979): its figure and look load before any optional art. */
-  #player: PlayerSelection = { figure: MALE, keys: [] };
+  #player: PlayerSelection = { figure: MALE, keys: () => [] };
   #figures: RangerFigures | null = null;
 
   constructor(rest: RestClip) {
@@ -1947,11 +1927,11 @@ export class QuaterniusUnits {
    * already started finish and stay loaded.
    */
   selectPlayer(sex: "male" | "female", loadout: Loadout = null, headwear: Headwear | null = null, hair: Hair | null = null): void {
-    this.#player = { figure: sex === "female" ? FEMALE : MALE, keys: lookItems(loadout, headwear, hair) };
+    this.#player = { figure: sex === "female" ? FEMALE : MALE, keys: () => lookItems(loadout, headwear, hair) };
     if (!this.#assets.has("Ranger")) { return; }
     this.#rangerFigures().playerReady(this.#player.figure);
     const asset = this.#assets.get("Ranger");
-    if (typeof asset === "object") { asset.itemsReady?.(this.#player.figure, this.#player.keys); }
+    if (typeof asset === "object") { asset.itemsReady?.(this.#player.figure, this.#player.keys()); }
   }
 
   /** Whether the selected player look can be drawn (#979): its figure and what it wears; starts loading them. */
@@ -1959,7 +1939,7 @@ export class QuaterniusUnits {
     this.selectPlayer(sex, loadout, headwear, hair);
     if (this.playerStatus(sex) !== "ready") { return false; }
     const asset = this.#assets.get("Ranger");
-    return typeof asset === "object" && (asset.itemsReady?.(this.#player.figure, this.#player.keys) ?? true);
+    return typeof asset === "object" && (asset.itemsReady?.(this.#player.figure, this.#player.keys()) ?? true);
   }
 
   /** Player-base loading shares the resident figure loader, including its real failure. */

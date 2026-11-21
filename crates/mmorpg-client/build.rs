@@ -18,27 +18,12 @@ const CHARACTER: &str = "humanoid.ranger.male";
 const FEMALE: &str = "humanoid.ranger.female";
 /// The figures' weapons, throwables and headwear (asset-tooling #517).
 const EQUIPMENT: &str = "humanoid.equipment";
-const SWORD: &str = "equipment.sword.arming";
-const SHIELD: &str = "equipment.shield.heater";
-/// The Redbrand Brute's round plank shield (#953, asset-tooling #774).
-const REDBRAND_SHIELD: &str = "equipment.shield.redbrand";
-/// The Ranger's longbow and quiver stowed on the back (#244).
+/// The loadout items whose sockets the native client poses specially: the Ranger's longbow
+/// stowed on the back (#244) and the Rogue's dagger with its belt throwables (#603). Every
+/// loadout's items and sockets are the shared `imported::Loadout::attachments` (#1012), found
+/// in `ENTRIES`.
 const BOW: &str = "equipment.bow.long";
-const QUIVER: &str = "equipment.quiver.back";
-/// The class weapons and props (asset-tooling #375, #379): the Rogue's dagger, the casters'
-/// staffs, the Arcanist's tome and the Cleric's mace.
 const DAGGER: &str = "equipment.dagger.blackened";
-const BONE_STAFF: &str = "equipment.staff.bone";
-const CRYSTAL_STAFF: &str = "equipment.staff.crystal";
-const GNARLED_STAFF: &str = "equipment.staff.gnarled";
-const TOME: &str = "equipment.book.tome";
-const MACE: &str = "equipment.mace.flanged";
-/// The spear a player of the spear family carries (#914).
-const SPEAR: &str = "equipment.spear.leaf";
-/// Garrick Redbrand's named cleaver (#918, asset-tooling #761).
-const GARRICKS_CLEAVER: &str = "equipment.sword.garricks-cleaver";
-/// The smith's Hollowpine boar-spear (#917, asset-tooling #761).
-const HOLLOWPINE_SPEAR: &str = "equipment.spear.hollowpine-hunter";
 /// The Redbrand Crossbowmen's crossbow and the arrow standing in for its bolt (#607).
 const CROSSBOW: &str = "equipment.crossbow";
 const ARROW: &str = "equipment.arrow";
@@ -106,20 +91,8 @@ fn main() {
     let (mut code, appearance) = figure(&male, &equipment);
     for (name, key) in [
         ("CHARACTER", CHARACTER),
-        ("SWORD", SWORD),
-        ("SHIELD", SHIELD),
-        ("REDBRAND_SHIELD", REDBRAND_SHIELD),
         ("BOW", BOW),
-        ("QUIVER", QUIVER),
         ("DAGGER", DAGGER),
-        ("BONE_STAFF", BONE_STAFF),
-        ("CRYSTAL_STAFF", CRYSTAL_STAFF),
-        ("GNARLED_STAFF", GNARLED_STAFF),
-        ("TOME", TOME),
-        ("MACE", MACE),
-        ("SPEAR", SPEAR),
-        ("GARRICKS_CLEAVER", GARRICKS_CLEAVER),
-        ("HOLLOWPINE_SPEAR", HOLLOWPINE_SPEAR),
         ("CROSSBOW", CROSSBOW),
         ("ARROW", ARROW),
         ("THROWING_KNIFE", THROWING_KNIFE),
