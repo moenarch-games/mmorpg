@@ -327,6 +327,19 @@ fn templates_follow_the_design_contract() {
                 2600,
                 60000
             ),
+            // The Eastwater Fen adder (#990): a frail body, a quick, warned strike.
+            (
+                "Marsh Adder",
+                Adder,
+                Aggressive,
+                [2, 3],
+                false,
+                34,
+                10,
+                [4, 7],
+                2600,
+                60000
+            ),
         ]
     );
     let wolf = content
@@ -491,6 +504,8 @@ fn spawns_populate_their_subzones() {
         ((wilds::SOUTHWOOD, "Brown Bear"), 1),
         // The Forest Lynxes (#989) on the wood's edge.
         ((wilds::SOUTHWOOD, "Forest Lynx"), 3),
+        // The Marsh Adders (#990) in Adder Hollow.
+        ((greyhaven_vale::vale::EASTWATER_FEN, "Marsh Adder"), 3),
         ((wilds::CROWN_FOOTHILLS, "Timber Wolf"), 6),
         ((wilds::CROWN_FOOTHILLS, "Hill Ogre"), 1),
         // The Rimewood scouts (#933), an Arcanist's group-control fight,
