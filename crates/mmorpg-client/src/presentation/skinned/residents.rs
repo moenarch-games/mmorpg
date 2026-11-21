@@ -771,3 +771,33 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod fit_tests {
+    use super::*;
+
+    /// Hilda's belt sits on her skirt and apron through rest, idle and walk (#1053).
+    #[test]
+    fn hildas_belt_sits_on_her_waist() {
+        let hilda = resident_look(Resident::Tanner, Some(2));
+        let clips = Kind::Ranger.clips();
+        for pose in [
+            vec![],
+            vec![Layer::single(clips.idle, 0.)],
+            vec![Layer::single(clips.walk, 0.4)],
+        ] {
+            for (socket, closest, median) in
+                super::super::fit::plate_gaps(&hilda.model, &hilda.plates, &pose, &[])
+            {
+                assert!(
+                    closest < 0.03,
+                    "{socket} clears her by {closest} m in {pose:?}"
+                );
+                assert!(
+                    median < 0.06,
+                    "{socket} stands {median} m off her in {pose:?}"
+                );
+            }
+        }
+    }
+}

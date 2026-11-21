@@ -1352,6 +1352,102 @@ mod tests {
         });
     }
 
+    /// Close-up garment evidence (#1053): the viewer's male Warden in its class outfit and
+    /// plates and Tanner Hilda Brook in her skirt and belt, from the front and the side, as
+    /// `<unit>-<side>.png` in `MMORPG_GARMENT_SHOTS`.
+    #[test]
+    #[ignore = "requires a GPU; manual garment-fit evidence"]
+    fn garment_fit_shots() {
+        use mmorpg_core::{EntityKind, ZoneCommand};
+        let Some(directory) = std::env::var_os("MMORPG_GARMENT_SHOTS") else {
+            return;
+        };
+        let directory = std::path::PathBuf::from(directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let content = greyhaven_vale::content();
+            let mut zone =
+                ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content)).unwrap();
+            zone.add_player(1).unwrap();
+            zone.apply_command(1, 1, ZoneCommand::ChooseClass { class: 0, sex: 1 })
+                .unwrap();
+            zone.advance_tick().unwrap();
+            let projection = zone.snapshot_for_player(1).unwrap();
+            let units: Vec<(&str, [f32; 3])> = projection
+                .entities
+                .iter()
+                .filter_map(|unit| {
+                    let name = match (unit.kind, unit.id) {
+                        (EntityKind::Player, 1) => "warden",
+                        (EntityKind::Npc, 2) => "hilda",
+                        _ => return None,
+                    };
+                    Some((name, unit.position.map(|v| v as f32 / 100.0)))
+                })
+                .collect();
+            let scenery = greyhaven_vale_scenery();
+            let world = WorldScene::new(&scenery);
+            let now = Instant::now();
+            let mut presentation =
+                Presentation::new(1, scenery.clone(), Arc::clone(&content), now).unwrap();
+            presentation.set_reduced_motion(true);
+            presentation.push(projection, now).unwrap();
+            let size = [960, 960];
+            let mut index = 0;
+            let mut manifest = Vec::new();
+            for (name, at) in units {
+                for (side, offset) in [("front", [0.3, 0.0, 1.7]), ("side", [1.7, 0.0, 0.3])] {
+                    for (sign, label) in [(1.0f32, ""), (-1.0, "-back")] {
+                        let view = CameraView {
+                            field_of_view_degrees: 60.0,
+                            eye: [
+                                at[0] + sign * offset[0],
+                                at[1] + 1.3,
+                                at[2] + sign * offset[2],
+                            ],
+                            target: [at[0], at[1] + 0.85, at[2]],
+                        };
+                        index += 1;
+                        let now = now + Duration::from_secs(2 * index);
+                        for step in 0..4 {
+                            let _ = presentation.frame(
+                                &world,
+                                now - Duration::from_millis(250 * (4 - step)),
+                                view,
+                            );
+                        }
+                        let frame = presentation.frame(&world, now, view);
+                        let pixels = readback(&frame, &[], view, size, None).await.unwrap();
+                        let path = directory.join(format!("{name}-{side}{label}.png"));
+                        image::save_buffer(
+                            &path,
+                            &pixels,
+                            size[0],
+                            size[1],
+                            image::ExtendedColorType::Rgba8,
+                        )
+                        .unwrap();
+                        println!("saved {}", path.display());
+                        manifest.push(serde_json::json!({
+                            "name": format!("{name}-{side}{label}"),
+                            "hour": frame.lighting.hour,
+                            "fieldOfViewDegrees": view.field_of_view_degrees,
+                            "eye": view.eye,
+                            "target": view.target,
+                        }));
+                    }
+                }
+            }
+            let manifest = serde_json::json!({ "size": size, "shots": manifest });
+            std::fs::write(
+                directory.join("views.json"),
+                serde_json::to_string_pretty(&manifest).unwrap() + "\n",
+            )
+            .unwrap();
+        });
+    }
+
     /// Reviewable ground evidence (#525): the woods, vale, lake and hub debug viewpoints and a
     /// walking-height view of the Outpost road at noon, and the climbing kit (#621), as PNGs in
     /// `MMORPG_GROUND_SHOTS`.
