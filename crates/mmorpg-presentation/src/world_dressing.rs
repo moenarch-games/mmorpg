@@ -30,7 +30,7 @@ use crate::{
 };
 
 /// Greyhaven Vale's dressing files.
-const GREYHAVEN: [&str; 13] = [
+const GREYHAVEN: [&str; 14] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/vale.json"
@@ -78,6 +78,12 @@ const GREYHAVEN: [&str; 13] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/wolfrun-den.json"
+    )),
+    // The abandoned supply cart on the Wolfrun Trail, its cut sacks, the bait that drew the pack
+    // and a red-ragged Redbrand marker pole (#984).
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../content/greyhaven/dressing/wolfrun-cart.json"
     )),
     // The Eastdown meadow's cairn and rock scar (#872).
     include_str!(concat!(

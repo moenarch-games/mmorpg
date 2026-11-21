@@ -1092,6 +1092,9 @@ function refreshSelectionPresentation(): void {
   characterSelect.dataset.characterClass = character.classId;
   renderCharacterDetails(character, characterAppearance);
   syncAppearanceButtons();
+  // A new selection's figure and look load first (#979), even before the world has.
+  const look = prefetchLook();
+  if (look) { worldView.selectPlayer(look); }
 }
 
 function selectCharacter(characterId: string): void {
@@ -2169,11 +2172,20 @@ window.addEventListener("pagehide", () => {
     }
   }
 });
+/** The selected character's look, so its figure and items lead the download (#979); none if it cannot be read yet. */
+function prefetchLook(): ViewerLook | undefined {
+  try {
+    return viewerLook(true);
+  } catch (error) {
+    console.info("The selected look is not known yet; the default figure loads first.", error);
+    return undefined;
+  }
+}
 function loadPageWorld(): Promise<LocalWorld> {
   // Without browser storage the characters still follow the record and lease rules, for this visit only.
   const characters = new LocalCharacters(browserStorage() ?? new VisitStorage(), navigator.locks);
   // The player figure downloads beside the world build (#855).
-  return loadLocalWorld(characters, () => worldView.prefetchPlayer(importedRestClip)).then((loaded) => {
+  return loadLocalWorld(characters, () => worldView.prefetchPlayer(importedRestClip, prefetchLook())).then((loaded) => {
     localCharacters = characters;
     return loaded;
   });

@@ -27,16 +27,15 @@ function matrix(matrix: THREE.Matrix4): Matrix4Values {
   return [e[0]!, e[1]!, e[2]!, e[3]!, e[4]!, e[5]!, e[6]!, e[7]!, e[8]!, e[9]!, e[10]!, e[11]!, e[12]!, e[13]!, e[14]!, e[15]!];
 }
 if (await models.preload("Ranger")) {
-  const clips = models.drainLoaded().flatMap(([, clips]) => clips);
   // `?clip=Bow_Hold_Loop&time=0.4&yaw=1.57` poses one clip at a fixed time; a `Bow_` clip holds the
   // bow in hand with its nock drawn (#556).
   const query = new URLSearchParams(location.search);
   const clip = query.get("clip") ?? "Walk_Loop";
   const fixed = query.has("time") ? Number(query.get("time")) : null;
   const yaw = Number(query.get("yaw") ?? 0);
-  const duration = clips.find(([name]) => name === clip)?.[1];
+  const duration = models.clipLength("Ranger", clip);
   if (!duration) throw new Error(`Shared ${clip} clip missing`);
-  status.textContent = `Default Ranger: ${clips.length} shared clips. ${clip} with bow and quiver.`;
+  status.textContent = `Default Ranger: ${clip} with bow and quiver.`;
   const start = performance.now();
   function frame(now: number): void {
     renderer.setSize(innerWidth, innerHeight * 0.9, devicePixelRatio);

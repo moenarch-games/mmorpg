@@ -271,7 +271,7 @@ impl ZoneSimulation {
         state.copper = record.copper;
         state.inventory = record.inventory.clone();
         state.equipment = record.equipment;
-        state.quests = record.quests.clone();
+        state.quests = crate::quest::fit_log(&self.content, &record.quests);
         state.waystones = record.waystones.clone();
         state.discoveries = record.discoveries.clone();
         state.caches = record.caches.clone();
@@ -324,7 +324,10 @@ impl ZoneSimulation {
         if !record.mastery.is_valid() {
             return Err(ZoneError::new("character weapon mastery is out of range"));
         }
-        crate::quest::validate_log(&self.content, &record.quests)?;
+        crate::quest::validate_log(
+            &self.content,
+            &crate::quest::fit_log(&self.content, &record.quests),
+        )?;
         let alive = record.health > 0;
         validate_player_abilities(
             &CanonicalPlayerAbilities {

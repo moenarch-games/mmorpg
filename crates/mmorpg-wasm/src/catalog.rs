@@ -354,7 +354,7 @@ mod tests {
                 1 => 20,
                 10 | 19..=21 | 29 => 10,
                 28 => 20,
-                22 => 5,
+                22 | 31 => 5,
                 _ => 1,
             };
             let sell_price = mmorpg_core::sell_price(mmorpg_core::ItemId::new(id));
@@ -454,6 +454,7 @@ mod tests {
                     json!("mainHand"),
                     stats(1, 4, 0, 0)
                 ),
+                item(31, "Supply Sack", Value::Null, stats(0, 0, 0, 0)),
             ])
         );
         let quests = value["quests"].as_array().unwrap();
