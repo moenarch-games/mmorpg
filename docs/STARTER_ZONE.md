@@ -1,4 +1,3 @@
-| Forest Lynx | Lynx | 2–3 | 50 (+12) | 4–7 (+1 per level) | 78 | ambusher within 4 m that stalks and pounces, Southwood edge (#989) |
 # Greyhaven Vale starter zone
 
 
@@ -90,6 +89,8 @@ Map north is −Z (the Redbrand cliffs); yaw 0 faces +Z. Content revision 5 (`mm
 | Brown Bear | Bear | 3–4 | 130 (+20) | 5–9 (+1 per level) | 90 | aggressive, deep woods (#889) |
 | Cave Spider | Spider | 3–4 | 40 (+10) | 2–4 (+1 per level) | 39 | aggressive, Greyfang cave mouth (#889) |
 | Marsh Lurker | Lurker | 3 | 60 (+14) | 3–6 (+1 per level) | 72 | ambusher within 4 m, wetland trails (#889) |
+| Forest Lynx | Lynx | 2–3 | 50 (+12) | 4–7 (+1 per level) | 78 | ambusher within 4 m that stalks and pounces, Southwood edge (#989) |
+| Marsh Adder | Adder | 2–3 | 34 (+10) | 4–7 (+1 per level) | 78 | ambusher within 4 m that hisses and strikes close, Eastwater Fen's Adder Hollow (#990) |
 
 Creatures respawn 60 s after death unless noted and wander within 6 m of their spawn point. These numbers are a starting point for tuning.
 
@@ -125,6 +126,7 @@ Creatures **navigate around blockers** (#307): a creature chasing a target or ru
 - A swing (#517) is a movement-state strike (#885): a standing three-hit chain, a running lunge or a jumping landing blow, timed and shaped by the weapon family. It winds up and hits everything in its arc and reach where the player faces on its contact tick, targeted or not; one that hits nothing whiffs. Damage is `base + level scaling`, scaled per strike, with deterministic variance from the zone RNG. Crits apply ×1.5.
 - Wolves, boars, rats, bears, cave spiders and marsh lurkers wind up each attack (#889): the quick bite two times in three, the slower heavy one dealing half again, landing on the clip's contact frame, so a player who steps away or raises a shield in time avoids it.
 - The Forest Lynx (#989) pounces instead: it engages a player within 4 m, stalks in at a walk to 1.37 m beyond its reach, crouches still through its 0.5 s wind-up while turning toward its target, leaps the gap to its reach along its facing on the lunge's take-off and lands on the lunge's contact (0.833 s after the start), then holds still for its 0.833 s recovery. Stepping aside during the wind-up dodges it; the recovery is the opening to hit back. Three lie up on Southwood's eastern and southern edge (spawns 3100–3102), off the Southwood Trail.
+- The Marsh Adder (#990) warns instead: it engages a player within 4 m, slithers after them at 1.2 m/s (slower than a walk), and once in reach coils still through one 1.333 s `Warn_Hiss_Loop` while turning toward its target, then strikes on `Strike`'s contact (1.541 s after the start) and holds still for the rest of the strike and its 0.833 s `Strike_Recover` (1.042 s). Backing off during the hiss dodges it; the recovery is the opening to hit back. It has no poison. Three lie coiled in Adder Hollow, Eastwater Fen's low western edge 70 m and more south of the Fen Road (spawns 3120–3122), and drop a little coin.
 - Death: creatures leave a lootable corpse. Players drop to a dead state and `ReleaseSpirit` respawns them at the graveyard with half health. Health and resource regenerate out of combat.
 
 ### Classes (level 1–10)

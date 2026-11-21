@@ -546,7 +546,7 @@ describe("WASM local zone combat intents", () => {
     expect([...catalog.creatureTemplates.values()].map((template) => template.name)).toEqual([
       "Timber Wolf", "Young Boar", "Grain Rat", "Field Marauder", "Mirefin Lurker", "Redbrand Bandit", "Garrick Redbrand",
       "Redbrand Crossbowman", "Crate", "Barrel", "Blasting Powder Barrel", "Fence", "Hill Ogre", "Heavy Crate", "Redbrand Brute", "Loose Boulder",
-      "Brown Bear", "Cave Spider", "Marsh Lurker", "Old Scarback", "Forest Lynx", "Captain Ulric Thorn",
+      "Brown Bear", "Cave Spider", "Marsh Lurker", "Old Scarback", "Forest Lynx", "Marsh Adder", "Captain Ulric Thorn",
     ]);
     expect(catalog.creatureTemplates.get(11)?.prop).toBe("explosive_barrel");
     expect(catalog.creatureTemplates.get(13)?.family).toBe("ogre");
