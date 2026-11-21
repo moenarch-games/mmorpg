@@ -161,6 +161,8 @@ pub struct ViewerState {
     /// The harm a Divine Reckoning would draw on against the viewer's target (#936): 0 without
     /// a creature target or stored harm.
     pub reckoning: u16,
+    /// The viewer's sword mastery (#915): level and practice toward the next.
+    pub mastery: crate::Mastery,
 }
 
 /// A projection addressed to `viewer_id`. Entities are in priority order: the
@@ -333,6 +335,7 @@ impl ZoneSimulation {
                     waystones: viewer.waystones.clone(),
                     discoveries: viewer.discoveries.clone(),
                     reckoning: self.harm_against(player_id, viewer.target),
+                    mastery: viewer.mastery.sword,
                 },
                 cooldowns: viewer.cooldowns.clone(),
                 auras: aura_views(&viewer.auras),
@@ -535,6 +538,8 @@ impl ZoneSimulation {
                 let placement = self
                     .npc_placement(npc_id)
                     .ok_or_else(|| ZoneError::new("unknown npc"))?;
+                // A hunter on its outing (#991) shows how it went.
+                let hunting = self.hunt_placement(npc_id).map(|(_, posture)| posture);
                 EntitySnapshot {
                     kind: EntityKind::Npc,
                     id: npc_id.get(),
@@ -558,11 +563,13 @@ impl ZoneSimulation {
                         .is_some()
                     {
                         crate::raid::INJURED_HEALTH_PERCENT
+                    } else if hunting == Some(crate::PostureView::Hurt) {
+                        crate::hunt::INJURED_HEALTH_PERCENT
                     } else {
                         100
                     },
                     flags: EntityFlags {
-                        posture: self.npc_posture(npc_id),
+                        posture: hunting.unwrap_or_else(|| self.npc_posture(npc_id)),
                         ..EntityFlags::default()
                     },
                 }

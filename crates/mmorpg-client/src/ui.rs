@@ -931,6 +931,20 @@ impl GameUi {
                         };
                         ui.colored_label(color, text);
                     }
+                    // Sword mastery (#915) once practised; the browser HUD says the same.
+                    let mastery = viewer.mastery;
+                    if mastery != mmorpg_core::Mastery::default() {
+                        let next = mmorpg_core::practice_to_next_level(mastery.level).unwrap_or(0);
+                        let progress = if next == 0 {
+                            "mastered".to_owned()
+                        } else {
+                            format!("{}/{next}", mastery.progress)
+                        };
+                        ui.colored_label(
+                            Color32::from_rgb(244, 217, 138),
+                            format!("Sword mastery {} ({progress})", mastery.level),
+                        );
+                    }
                     auras(ui, &snapshot.auras);
                 });
             });

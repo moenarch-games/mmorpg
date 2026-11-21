@@ -49,7 +49,7 @@ const ANCHORS: [Anchor; 5] = [
     Anchor::PhaseStart,
     Anchor::PhaseEnd,
 ];
-const CONDITIONS: [Condition; 8] = [
+const CONDITIONS: [Condition; 9] = [
     Condition::PositiveHealthDamage,
     Condition::TargetAlive,
     Condition::Alive,
@@ -58,12 +58,14 @@ const CONDITIONS: [Condition; 8] = [
     Condition::Airborne,
     Condition::Stunned,
     Condition::MultiHit,
+    Condition::SwordMastery,
 ];
 /// Every edge id: the named ones, then `Authored(0)`… (#414).
 fn edge_ids() -> impl Iterator<Item = EdgeId> + Clone {
     [
         EdgeId::SlashToShieldBash,
         EdgeId::CleaveToSlash,
+        EdgeId::LeapingSlash,
         EdgeId::LandingToMelee,
         EdgeId::LandingToShieldBash,
         EdgeId::LandingToAbility,

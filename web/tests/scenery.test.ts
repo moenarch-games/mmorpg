@@ -96,6 +96,7 @@ describe("scenery provider and local world", () => {
     kitModels: () => new Float32Array(),
     KitLods: class { variants() { return []; } update() { return new Float32Array(); } },
     kitSurface: () => undefined,
+    placedKits: () => JSON.stringify([{ name: "den", bundle: "scenery/wolf-den.kit", descriptor: "wolf-den-descriptor", label: "wolf-den.kit" }]),
     ambientAnimalEntries: () => ["greyhaven.ambient.cat"],
     ambientAnimalClips: () => ["Idle", "Walk"],
     ambientAnimalAnchors: () => Int32Array.from([1_800, 600]),
@@ -107,6 +108,13 @@ describe("scenery provider and local world", () => {
     raidPrep: () => new Int32Array(),
     waystoneAt: () => 0,
     waystoneNames: () => [],
+  });
+
+  test("registers every ordinary placed kit of the shared inventory alike (#683)", () => {
+    const kits = createSceneryProvider(content(1)).kits;
+    expect(kits.map(({ kit, bundle }) => ({ kit, bundle }))).toEqual([
+      { kit: "den", bundle: { bundle: "scenery/wolf-den.kit", descriptor: "wolf-den-descriptor", label: "wolf-den.kit" } },
+    ]);
   });
 
   test("decodes the ambient animals' anchors (#419)", () => {

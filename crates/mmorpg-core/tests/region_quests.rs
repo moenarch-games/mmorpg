@@ -46,8 +46,16 @@ impl Player {
     }
 }
 
-/// A level 3 character who has finished *Trouble in the Woods*, beside the Marshal.
+/// A level 3 character who has finished *The Wolfrun Cart*, beside the Marshal.
 fn walker() -> Player {
+    walker_with(QuestLog {
+        entries: Vec::new(),
+        completed: [quests::THE_WOLFRUN_CART].into(),
+    })
+}
+
+/// A level 3 character with the saved quest `log`, beside the Marshal.
+fn walker_with(log: QuestLog) -> Player {
     let mut donor = ZoneSimulation::with_content(GREYHAVEN, greyhaven_vale::content()).unwrap();
     donor.add_player(1).unwrap();
     let mut donor = classes::at_level(donor, 1, 3);
@@ -58,10 +66,7 @@ fn walker() -> Player {
     let mut record = donor
         .capture_character(1, CharacterId::new("walker").unwrap())
         .unwrap();
-    record.quests = QuestLog {
-        entries: Vec::new(),
-        completed: [quests::TROUBLE_IN_THE_WOODS].into(),
-    };
+    record.quests = log;
     let content = greyhaven_vale::content();
     let [x, z] = content.npc(quests::MARSHAL).unwrap().position;
     record.location = CharacterLocation {
@@ -140,4 +145,45 @@ fn every_region_quest_has_its_givers_items_and_creatures_in_the_region() {
             );
         }
     }
+}
+
+/// A character saved part-way through *Trouble in the Woods*, the first quest before #984, with
+/// five of its six wolves slain, still loads: the admitting zone fits that progress to *The
+/// Wolfrun Cart*, whose woods it plainly reached, while the cart's sacks still need fetching. One
+/// who turned in both old wolf quests keeps them done and is still offered the Millbrook lead.
+#[test]
+fn characters_saved_under_the_old_wolf_quests_still_load() {
+    let mut progress = [0; mmorpg_core::MAX_QUEST_OBJECTIVES];
+    progress[0] = 5;
+    let player = walker_with(QuestLog {
+        entries: vec![QuestEntry {
+            quest: quests::THE_WOLFRUN_CART,
+            progress,
+        }],
+        completed: Default::default(),
+    });
+    assert_eq!(
+        player.log().entries,
+        [QuestEntry {
+            quest: quests::THE_WOLFRUN_CART,
+            progress: [1, 0, 0],
+        }]
+    );
+
+    let mut player = walker_with(QuestLog {
+        entries: Vec::new(),
+        completed: [quests::THE_WOLFRUN_CART, quests::PELTS_FOR_THE_TANNER].into(),
+    });
+    player.beside(quests::TANNER);
+    let events = player.send(ZoneCommand::AcceptQuest {
+        npc: quests::TANNER,
+        quest: quests::THE_MISSING_FARMHAND.get(),
+    });
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, ZoneEvent::Error { .. })),
+        "{events:?}"
+    );
+    assert!(player.log().entry(quests::THE_MISSING_FARMHAND).is_some());
 }

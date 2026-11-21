@@ -41,6 +41,7 @@ import { type AidTask, reachableAidTask } from "./raid-aid";
 import { type RaidPrepSpots, reachablePrepStep } from "./raid-prep";
 import { RaidSigns } from "./raid-signs";
 import { WalkInBuildings } from "./walk-in-buildings";
+import { ZoneLifecycle } from "./zone-lifecycle";
 import { KitModules, OUTPOST_BUNDLE, SETTLEMENT_BUNDLE, SHRINE_BUNDLE, type KitPlacement } from "./kit-modules";
 import { useBundleKtx2Loader } from "./static-bundle";
 import { BatchedScenery } from "./static-batches";
@@ -295,7 +296,7 @@ class RegionArt {
     THREE.Cache.enabled = true;
     this.#prefetch = new ArtPrefetch(
       (piece) => (piece === "inn" ? inn.load() : piece === "shrine" ? shrine.load() : piece === "outpost" ? outpost.load() : piece === "settlement" ? settlement.load()
-        : piece === "ambient" ? ambient.load() : piece === "residents" ? models.preloadResidents() : models.preload(piece as ImportedModelKind)),
+        : piece === "ambient" ? ambient.load() : piece === "residents" ? models.preloadResidents() : models.preloadWorld(piece as ImportedModelKind)),
       (idle) => {
         if (idle) { THREE.Cache.clear(); }
         onProgress();
@@ -306,7 +307,7 @@ class RegionArt {
   /** The pieces area `id` needs (every piece for `null`). */
   #pieces(id: number | null): string[] {
     if (id === null) {
-      return ["Ranger", "Wolf", "Rat", "Boar", "Bear", "Spider", "Lurker", "residents", "inn", "shrine", "outpost", "settlement", "ambient"];
+      return ["Ranger", "Wolf", "Rat", "Boar", "Bear", "Spider", "Lurker", "Lynx", "Adder", "residents", "inn", "shrine", "outpost", "settlement", "ambient"];
     }
     return [
       "Ranger",
@@ -409,11 +410,11 @@ export class WorldView {
   #crag: PlacedKit | null = null;
   #limestone: PlacedKit | null = null;
   #meadow: PlacedKit | null = null;
-  #den: PlacedKit | null = null;
   #gather: PlacedKit | null = null;
   /** The ore veins (#917): centre in units and their full and spent `gather` placements. */
   #veins: readonly { x: number; z: number; full: number; spent: number }[] = [];
-  #discoveries: PlacedKit | null = null;
+  /** Every ordinary placed kit of the shared inventory (#683), drawn alike: no field or branch per kit. */
+  #kits: readonly PlacedKit[] = [];
   #river: PlacedKit | null = null;
   /** Bundles are fetched only once some authored placement is near the selected area/player. */
   #placedKits: { kit: PlacedKit; source: PlacedKitSource; requested: boolean }[] = [];
@@ -482,6 +483,8 @@ export class WorldView {
   readonly #picking = new WorldPicking();
   #lastSceneryNodes: readonly RendererSceneNode[] = [];
   #pendingNpc: { target: EntityRef; sequence: number } | null = null;
+  /** The presented zone's resource owner (#1005), retired when the next zone loads. */
+  #zone = new ZoneLifecycle();
   #scene: SceneryScene | null = null;
   readonly #lighting: GreyhavenLighting;
   #catalog: ContentCatalog | null = null;
@@ -700,9 +703,21 @@ export class WorldView {
    * Starts loading the player figure before any world is loaded (#855): the page calls this as soon as the module
    * can name the figure's rest clip, so the download runs beside the world build.
    */
-  prefetchPlayer(restClip: (kind: ImportedModelKind) => string): void {
+  prefetchPlayer(restClip: (kind: ImportedModelKind) => string, look?: ViewerLook): void {
     if (!this.#loadedScenery) { this.#restClip = restClip; }
+    // The selected figure and its look lead the download (#979).
+    if (look) { this.#selectPlayer(look); }
     void this.#models.preload("Ranger");
+  }
+
+  /** Names `look` the player look the Ranger loads first (#979), starting its figure once the Ranger has started. */
+  selectPlayer(look: ViewerLook): void {
+    this.#models.selectPlayer(look.sex, look.classId ? CLASS_LOADOUTS[look.classId] : null, viewerHeadwear(look), viewerHair(look));
+  }
+
+  /** Names `look` the player look the Ranger loads first (#979); true once it can be drawn. */
+  #selectPlayer(look: ViewerLook): boolean {
+    return this.#models.playerLookReady(look.sex, look.classId ? CLASS_LOADOUTS[look.classId] : null, viewerHeadwear(look), viewerHair(look));
   }
 
   /**
@@ -714,6 +729,11 @@ export class WorldView {
     if (this.#loadedScenery === world.scenery && this.#loadedArena === arena) {
       return; // Re-selecting the same world (`refreshArenaWorld`) must not rebuild it.
     }
+    // The previous zone's presentation releases everything it owns, once (#1005); its loads still in flight attach
+    // nothing. Retained bundle resources stay, so a revisit reuses them.
+    this.#zone.retire();
+    const zone = this.#zone = new ZoneLifecycle();
+    this.#units?.units.dispose();
     this.#loadedScenery = world.scenery;
     this.#loadedArena = arena;
     this.#loadedWorld = world;
@@ -737,22 +757,19 @@ export class WorldView {
     this.#scene = null;
     this.#sceneryFrame = null;
     this.#ground = null;
-    this.#grass?.dispose();
     this.#grass = null;
-    this.#sceneryBatches?.dispose();
     this.#sceneryBatches = null;
     this.#minimap.reset();
-    this.#nature = new PlacedKit(world.scenery.nature);
-    this.#climbing = new PlacedKit(world.scenery.climbing);
-    this.#crag = new PlacedKit(world.scenery.crag);
-    this.#limestone = new PlacedKit(world.scenery.limestone);
-    this.#river = new PlacedKit(world.scenery.river);
-    this.#meadow = new PlacedKit(world.scenery.meadow);
-    this.#den = new PlacedKit(world.scenery.den);
-    this.#gather = new PlacedKit(world.scenery.gather);
+    this.#nature = zone.own(new PlacedKit(world.scenery.nature));
+    this.#climbing = zone.own(new PlacedKit(world.scenery.climbing));
+    this.#crag = zone.own(new PlacedKit(world.scenery.crag));
+    this.#limestone = zone.own(new PlacedKit(world.scenery.limestone));
+    this.#river = zone.own(new PlacedKit(world.scenery.river));
+    this.#meadow = zone.own(new PlacedKit(world.scenery.meadow));
+    this.#gather = zone.own(new PlacedKit(world.scenery.gather));
     this.#veins = world.scenery.veins;
     this.#showVeins([]);
-    this.#discoveries = new PlacedKit(world.scenery.discoveries);
+    this.#kits = world.scenery.kits.map((source) => zone.own(new PlacedKit(source)));
     this.#placedKits = [
       { kit: this.#nature, source: world.scenery.nature, requested: false },
       { kit: this.#climbing, source: world.scenery.climbing, requested: false },
@@ -760,22 +777,21 @@ export class WorldView {
       { kit: this.#limestone, source: world.scenery.limestone, requested: false },
       { kit: this.#river, source: world.scenery.river, requested: false },
       { kit: this.#meadow, source: world.scenery.meadow, requested: false },
-      { kit: this.#den, source: world.scenery.den, requested: false },
       { kit: this.#gather, source: world.scenery.gather, requested: false },
-      { kit: this.#discoveries, source: world.scenery.discoveries, requested: false },
+      ...this.#kits.map((kit, index) => ({ kit, source: world.scenery.kits[index]!, requested: false })),
     ];
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
-    this.#inn = new WalkInBuildings(world.scenery.buildings.presenters());
-    this.#shrine = new KitModules(SHRINE_BUNDLE, "shrine kit", world.scenery.shrine.entries, world.scenery.shrine.placements);
+    this.#inn = zone.own(new WalkInBuildings(world.scenery.buildings.presenters()));
+    this.#shrine = zone.own(new KitModules(SHRINE_BUNDLE, "shrine kit", world.scenery.shrine.entries, world.scenery.shrine.placements));
     const fortEntry = (key: string) => key.startsWith("greyhaven.fort.");
-    this.#outpost = new KitModules(OUTPOST_BUNDLE, "Outpost kit", world.scenery.outpost.entries.filter((key) => !fortEntry(key)), world.scenery.outpost.placements.filter(({ key }) => !fortEntry(key)), { wear: true });
-    this.#fortifications = new KitModules(`${import.meta.env.BASE_URL}authored/greyhaven-fort/`, "Greyhaven fortifications", world.scenery.outpost.entries.filter(fortEntry), world.scenery.outpost.placements.filter(({ key }) => fortEntry(key)));
-    this.#settlement = new KitModules(SETTLEMENT_BUNDLE, "settlement props", world.scenery.settlement.entries, world.scenery.settlement.placements);
+    this.#outpost = zone.own(new KitModules(OUTPOST_BUNDLE, "Outpost kit", world.scenery.outpost.entries.filter((key) => !fortEntry(key)), world.scenery.outpost.placements.filter(({ key }) => !fortEntry(key)), { wear: true }));
+    this.#fortifications = zone.own(new KitModules(`${import.meta.env.BASE_URL}authored/greyhaven-fort/`, "Greyhaven fortifications", world.scenery.outpost.entries.filter(fortEntry), world.scenery.outpost.placements.filter(({ key }) => fortEntry(key))));
+    this.#settlement = zone.own(new KitModules(SETTLEMENT_BUNDLE, "settlement props", world.scenery.settlement.entries, world.scenery.settlement.placements));
     // The arena's fortress kit (#591) loads at once: the whole fortress is in view from the courtyard.
-    this.#fortress = world.scenery.fortress ? new CompositionKit(world.scenery.fortress) : null;
+    this.#fortress = world.scenery.fortress ? zone.own(new CompositionKit(world.scenery.fortress)) : null;
     // Greyhaven's art streams in region by region (#240): the selection screen fetches the
     // starting area's pieces, and play fetches each area the player approaches.
-    this.#ambient = new AmbientAnimals(world.scenery.ambient);
+    this.#ambient = zone.own(new AmbientAnimals(world.scenery.ambient));
     this.#regions = new RegionArt(world, this.#models, this.#inn, this.#shrine, this.#outpost, this.#settlement, this.#ambient, () => this.#onArtProgress?.());
     this.#reachableDoor = world.scenery.buildings.reachableDoor;
     this.#reachableSeat = world.scenery.buildings.reachableSeat;
@@ -794,7 +810,8 @@ export class WorldView {
     const prewarmed = world.scenery;
     const fortifications = this.#fortifications;
     const fortress = this.#fortress;
-    void this.#models.preload("Ranger").then(() => {
+    // The selected look leads (#979); the kits wait for the world's Rangers as they waited for the whole Ranger before.
+    void this.#models.preloadWorld("Ranger").then(() => {
       if (this.#loadedScenery !== prewarmed || this.#loadedArena !== arena) { return; }
       this.#avatarPrepared = true;
       if (this.#pendingKitArea) { this.#loadKitsForArea(this.#pendingKitArea); }
@@ -852,12 +869,10 @@ export class WorldView {
     const scene = buildSceneryScene(world.scenery.scenery, world.scenery.staticScene);
     this.#scene = scene;
     this.#sceneryFrame = new SceneryFrame(scene);
-    this.#sceneryBatches?.dispose();
-    this.#sceneryBatches = new BatchedScenery(scene, world.scenery.staticScene.groupStream());
-    this.#ground = new Ground(world.scenery.staticScene.terrainStream(), scene.surfaces, scene.cutaways);
+    this.#sceneryBatches = this.#zone.own(new BatchedScenery(scene, world.scenery.staticScene.groupStream()));
+    this.#ground = this.#zone.own(new Ground(world.scenery.staticScene.terrainStream(), scene.surfaces, scene.cutaways));
     void this.#ground.load(this.#models.ktx2Loader);
     const content = world.scenery.staticScene;
-    this.#grass?.dispose();
     this.#grass = content.grassCell && content.grassCellMetres
       ? new Grass({
         cell: (column, row) => content.grassCell!(column, row), cellMetres: content.grassCellMetres(),
@@ -866,6 +881,7 @@ export class WorldView {
           : {}),
       }, this.#worldDetail)
       : null;
+    if (this.#grass) { this.#zone.own(this.#grass); }
   }
 
   /** The directed-strike action's working binding labels, for the Heroic Strike slot hint. */
@@ -1299,7 +1315,7 @@ export class WorldView {
     this.#models.clear();
     const { roots, changed } = this.#models.roots();
     if (changed && this.#lastCamera) {
-      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...(this.#sceneryBatches ? [this.#sceneryBatches.root] : []), ...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.drawn && this.#fortifications?.drawn ? [...this.#outpost.roots().roots, ...this.#fortifications.roots().roots] : []), ...(this.#settlement?.roots().roots ?? []), ...(this.#fortress?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#nature?.roots().roots ?? []), ...(this.#climbing?.roots().roots ?? []), ...(this.#crag?.roots().roots ?? []), ...(this.#limestone?.roots().roots ?? []), ...(this.#river?.roots().roots ?? []), ...(this.#meadow?.roots().roots ?? []),...(this.#den?.roots().roots ?? []),...(this.#gather?.roots().roots ?? []),...(this.#discoveries?.roots().roots ?? []),...(this.#ground?.roots().roots ?? []), ...(this.#grass?.roots().roots ?? []), this.#impacts.root, this.#kitEffects.root, this.#raidSmoke.root, this.#raidSigns.root] });
+      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...(this.#sceneryBatches ? [this.#sceneryBatches.root] : []), ...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.drawn && this.#fortifications?.drawn ? [...this.#outpost.roots().roots, ...this.#fortifications.roots().roots] : []), ...(this.#settlement?.roots().roots ?? []), ...(this.#fortress?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#nature?.roots().roots ?? []), ...(this.#climbing?.roots().roots ?? []), ...(this.#crag?.roots().roots ?? []), ...(this.#limestone?.roots().roots ?? []), ...(this.#river?.roots().roots ?? []), ...(this.#meadow?.roots().roots ?? []),...(this.#gather?.roots().roots ?? []),...this.#kits.flatMap((kit) => kit.roots().roots),...(this.#ground?.roots().roots ?? []), ...(this.#grass?.roots().roots ?? []), this.#impacts.root, this.#kitEffects.root, this.#raidSmoke.root, this.#raidSigns.root] });
     }
   }
 
@@ -1346,7 +1362,7 @@ export class WorldView {
    */
   selectionPreview(look: ViewerLook, feet: [number, number, number], yaw: number, height: number, seconds: number,
     camera: RendererCamera, stage: RendererSceneNode[]): boolean {
-    if (!this.#regions || this.#models.playerStatus(look.sex) !== "ready") { return true; }
+    if (!this.#regions || !this.#selectPlayer(look)) { return true; }
     const clip = this.#restClip("Ranger");
     const length = this.#models.clipLength("Ranger", clip) ?? 1;
     // Reduced motion holds the idle pose, as it does for the procedural figure.
@@ -1784,6 +1800,7 @@ export class WorldView {
     const animate = this.#animate;
     this.#seconds += deltaSeconds;
     if (this.#units?.viewerId !== projection.viewerId) {
+      this.#units?.units.dispose();
       const units = new SharedUnits(world.scenery.unitPresenter(projection.viewerId));
       for (const [kind, clips, descriptor] of this.#loadedModels) { units.modelReady(kind, clips, descriptor); }
       if (this.#blend) { units.setBlend(this.#blend); }
@@ -1938,9 +1955,8 @@ export class WorldView {
     this.#limestone?.update(this.#camera, deltaSeconds, animate);
     this.#river?.update(this.#camera, deltaSeconds, animate);
     this.#meadow?.update(this.#camera, deltaSeconds, animate);
-    this.#den?.update(this.#camera, deltaSeconds, animate);
     this.#gather?.update(this.#camera, deltaSeconds, animate);
-    this.#discoveries?.update(this.#camera, deltaSeconds, animate);
+    for (const kit of this.#kits) { kit.update(this.#camera, deltaSeconds, animate); }
     this.#fortress?.update(this.#camera, deltaSeconds, animate);
     this.#lastSceneryNodes = frame.nodes;
     this.#barYaw = Math.atan2(view.target[0] - view.eye[0], view.target[2] - view.eye[2]);
@@ -1992,13 +2008,12 @@ export class WorldView {
     const limestone = this.#limestone?.roots() ?? { roots: [], changed: false };
     const river = this.#river?.roots() ?? { roots: [], changed: false };
     const meadow = this.#meadow?.roots() ?? { roots: [], changed: false };
-    const den = this.#den?.roots() ?? { roots: [], changed: false };
     const gather = this.#gather?.roots() ?? { roots: [], changed: false };
-    const discoveries = this.#discoveries?.roots() ?? { roots: [], changed: false };
+    const placedKits = this.#kits.flatMap((kit) => kit.roots().roots);
     const sceneryBatches = this.#sceneryBatches ? [this.#sceneryBatches.root] : [];
     const ground = this.#ground?.roots() ?? { roots: [], changed: false };
     const grass = this.#plan ? { roots: [], changed: false } : this.#grass?.roots() ?? { roots: [], changed: false };
-    const roots = [...sceneryBatches, ...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...fortifications.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, ...climbing.roots, ...crag.roots, ...limestone.roots, ...river.roots, ...meadow.roots, ...den.roots, ...gather.roots, ...discoveries.roots, ...ground.roots, ...grass.roots, this.#impacts.root, this.#kitEffects.root, this.#raidSmoke.root, this.#raidSigns.root];
+    const roots = [...sceneryBatches, ...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...fortifications.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, ...climbing.roots, ...crag.roots, ...limestone.roots, ...river.roots, ...meadow.roots, ...gather.roots, ...placedKits, ...ground.roots, ...grass.roots, this.#impacts.root, this.#kitEffects.root, this.#raidSmoke.root, this.#raidSigns.root];
     // No scene background: `Lighting` clears its own frame, and three would clear to the background again in each of its
     // passes, wiping the sky (#600). The environment's fog still fogs the unlit sprites.
     const { background: _background, ...withoutBackground } = environment;

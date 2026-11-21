@@ -1,6 +1,7 @@
 import type { IndexedMeshGeometry, Matrix4Values, RendererSceneNode } from "@moritzbrantner/three-d-renderer";
 import type { EntityKind, EntityRef, EntityState, StrikeAim } from "../replication";
 import type { Color } from "./scenery";
+import { freeHandle } from "./zone-lifecycle";
 
 /**
  * The shared unit presentation (#184): `mmorpg-presentation` draws procedural players,
@@ -35,7 +36,7 @@ export type UnitPresenterHandle = {
   indices(): Uint32Array;
 };
 
-export type ImportedModelKind = "Ranger" | "Wolf" | "Rat" | "Boar" | "Bear" | "Spider" | "Lurker";
+export type ImportedModelKind = "Ranger" | "Wolf" | "Rat" | "Boar" | "Bear" | "Spider" | "Lurker" | "Lynx" | "Adder";
 /** The shared presenter's `Loadout::name`s. */
 export type Loadout = "sword-and-shield" | "sword-and-shield.redbrand" | "bow-and-quiver" | "sword" | "dagger" | "dagger.twin" | "staff.bone"
   | "staff.crystal-and-tome" | "mace.flanged" | "staff.gnarled" | "crossbow" | "spear" | "sword.garricks-cleaver" | "spear.hollowpine-hunter";
@@ -221,6 +222,11 @@ export class SharedUnits {
 
   constructor(handle: UnitPresenterHandle) {
     this.#handle = handle;
+  }
+
+  /** Frees the presenter's WASM handle (#1005); the presenter is not used afterwards. */
+  dispose(): void {
+    freeHandle(this.#handle);
   }
 
   /**

@@ -172,6 +172,9 @@ pub(crate) struct PlayerState {
     pub(crate) waystones: crate::WaystoneSet,
     /// Named areas the character discovered (#916): each paid its discovery experience once.
     pub(crate) discoveries: std::collections::BTreeSet<crate::AreaId>,
+    /// Weapon-family mastery (#915), durable, and the practice banked against living foes.
+    pub(crate) mastery: crate::WeaponMastery,
+    pub(crate) practice: Vec<crate::Practice>,
     /// Discovery caches the character opened (#913), each rewarded once.
     pub(crate) caches: std::collections::BTreeSet<u32>,
     /// The durable character bound to this session (`None` for session-only players), and its
@@ -237,6 +240,8 @@ impl PlayerState {
             quests: crate::QuestLog::default(),
             waystones: crate::WaystoneSet::EMPTY,
             discoveries: std::collections::BTreeSet::new(),
+            mastery: crate::WeaponMastery::default(),
+            practice: Vec::new(),
             caches: std::collections::BTreeSet::new(),
             character: None,
             depths: crate::DepthsRecord::default(),
@@ -370,8 +375,12 @@ impl ZoneSimulation {
             .map(|spawn| spawn.id)
             .collect();
         for id in spawns {
-            // Night raiders (#530) stand only once an incident commits them.
-            if zone.content.is_raider(id) || zone.content.is_depths_creature(id) {
+            // Night raiders (#530) stand only once an incident commits them, and the hunt's beast
+            // (#991) only on a confrontation day.
+            if zone.content.is_raider(id)
+                || zone.content.is_depths_creature(id)
+                || zone.content.is_hunt_beast(id)
+            {
                 zone.reserve_raider(id)?;
             } else {
                 zone.spawn_creature(id)?;
@@ -612,28 +621,13 @@ impl ZoneSimulation {
             self.dismiss_minion(minion);
         }
         for creature in self.creatures.values_mut() {
-            creature.forget(entity);
-            // A cast at a departed player resolves against nobody.
-            if creature
-                .cast
-                .is_some_and(|cast| cast.target == Some(entity))
-            {
-                creature.cast = None;
-            }
-            creature.loot_party.retain(|mate| *mate != player_id);
-            if creature.tapped_by == Some(player_id) {
-                // A party that shares the corpse keeps it (Atlas 5.3.6); the departed
-                // tapper's quest item is nobody else's to claim.
-                if creature.loot_party.is_empty() {
-                    creature.tapped_by = None;
-                    creature.loot = None;
-                } else {
-                    creature.tapped_by = Some(creature.loot_party.remove(0));
-                    if let Some(rewards) = &mut creature.loot {
-                        rewards.quest_item = None;
-                    }
-                }
-            }
+            crate::creature::forget_departed(&mut creature.threat, &mut creature.cast, entity);
+            crate::creature::release_departed_loot(
+                &mut creature.tapped_by,
+                &mut creature.loot_party,
+                &mut creature.loot,
+                player_id,
+            );
         }
         for player in self.players.values_mut() {
             if player.cast.is_some_and(|cast| cast.target == Some(entity)) {
@@ -885,8 +879,9 @@ impl ZoneSimulation {
     ///    world traps (#300) in ID order, which may kill;
     /// 7. minions whose time ran out crumble, then health and class-resource regeneration,
     ///    corpse despawns and respawns in ID order, structure regrowth, then the night raid
-    ///    (#530: barn hits, phases, outcome, marches and the nightly trigger), and a depths
-    ///    run's reinforcements, cleared chambers and wipe (#404);
+    ///    (#530: barn hits, phases, outcome, marches and the nightly trigger), the hunt's beast
+    ///    standing or withdrawing (#991), and a depths run's reinforcements, cleared chambers
+    ///    and wipe (#404);
     /// 8. talk and explore quest objectives of living players in player-ID
     ///    order;
     /// 9. the tick counter.
@@ -943,10 +938,13 @@ impl ZoneSimulation {
         self.regrow_pieces(now)?;
         self.advance_summoned(now);
         self.advance_raid(now)?;
+        self.advance_hunt(now)?;
         self.advance_depths(now)?;
         self.advance_combos();
         self.advance_authored();
         self.advance_quest_objectives()?;
+        // Practice against a foe that died this tick becomes mastery (#915).
+        self.settle_practice()?;
         self.tick = now;
         // Routine NPCs stand where the new tick's time of day puts them (#158).
         self.place_npcs(true)?;

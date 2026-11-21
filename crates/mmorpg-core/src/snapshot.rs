@@ -321,6 +321,9 @@ pub struct CanonicalPlayerSnapshot {
     pub waystones: crate::WaystoneSet,
     /// Named areas discovered (#916).
     pub discoveries: std::collections::BTreeSet<crate::AreaId>,
+    /// Weapon-family mastery (#915) and the practice banked against living foes.
+    pub mastery: crate::WeaponMastery,
+    pub practice: Vec<crate::Practice>,
     /// Discovery caches opened (#913).
     pub caches: std::collections::BTreeSet<u32>,
     /// The durable character this session plays and its depths receipts (#404).
@@ -414,7 +417,124 @@ pub struct CanonicalZoneSnapshot {
     pub rewind_history: Vec<crate::RewindFrame>,
 }
 
+impl CanonicalZoneSnapshot {
+    /// The snapshot as if `player_id` left the zone at this tick boundary: exactly the
+    /// canonical effect of [`ZoneSimulation::remove_player`], applied to the record instead of
+    /// a restored simulation (#1003). Its unit, party view and reward receipts go, its minions
+    /// vanish with it, and every creature, forced move and remaining player drops it from
+    /// threat, casts, charges, selection and corpse claims. An absent player changes nothing.
+    pub fn depart_player(&mut self, player_id: PlayerId) -> bool {
+        let Some(index) = self
+            .players
+            .iter()
+            .position(|player| player.player_id == player_id)
+        else {
+            return false;
+        };
+        self.players.remove(index);
+        self.parties.retain(|(player, _)| *player != player_id);
+        if let Some(rewards) = &mut self.rewards {
+            rewards.remove_player(player_id);
+        }
+        let entity = EntityRef::Player(player_id);
+        // `forget_caster`: its auras end on every unit.
+        for player in &mut self.players {
+            player
+                .combat
+                .abilities
+                .auras
+                .retain(|aura| aura.caster != entity);
+        }
+        for creature in &mut self.creatures {
+            creature
+                .abilities
+                .auras
+                .retain(|aura| aura.caster != entity);
+        }
+        self.forget_forced_unit(entity);
+        let minions: Vec<EntityRef> = self
+            .minions
+            .iter()
+            .filter(|record| record.minion.summoner == player_id)
+            .map(|record| EntityRef::Minion(record.minion.id))
+            .collect();
+        self.minions
+            .retain(|record| record.minion.summoner != player_id);
+        for &minion in &minions {
+            self.forget_forced_unit(minion);
+        }
+        for creature in &mut self.creatures {
+            for &minion in &minions {
+                crate::creature::forget_departed(
+                    &mut creature.threat,
+                    &mut creature.abilities.cast,
+                    minion,
+                );
+            }
+            crate::creature::forget_departed(
+                &mut creature.threat,
+                &mut creature.abilities.cast,
+                entity,
+            );
+            crate::creature::release_departed_loot(
+                &mut creature.tapped_by,
+                &mut creature.loot_party,
+                &mut creature.loot,
+                player_id,
+            );
+        }
+        for player in &mut self.players {
+            let combat = &mut player.combat;
+            if combat
+                .target
+                .is_some_and(|target| target == entity || minions.contains(&target))
+            {
+                combat.target = None;
+            }
+            if combat
+                .abilities
+                .cast
+                .is_some_and(|cast| cast.target == Some(entity))
+            {
+                combat.abilities.cast = None;
+            }
+            if combat.combo.is_some_and(|combo| combo.target == entity) {
+                combat.combo = None;
+            }
+        }
+        true
+    }
+
+    /// `ZoneSimulation::forget_forced_unit` on the record: the unit's own move goes and
+    /// charges aimed at it end with the usual immunity.
+    fn forget_forced_unit(&mut self, departed: EntityRef) {
+        self.forced.retain(|(unit, _)| *unit != departed);
+        for (_, state) in &mut self.forced {
+            if state
+                .moving
+                .and_then(|moving| moving.charge)
+                .is_some_and(|(target, _)| target == departed)
+            {
+                state.moving = None;
+                state.immune = crate::forced::FORCED_IMMUNITY_TICKS;
+            }
+        }
+    }
+}
+
 impl ZoneSimulation {
+    /// The canonical snapshot of this zone with every player departed, as if each left in
+    /// player-ID order (#40, #1003): the world a checkpoint saves while characters persist in
+    /// their own records. It restores no second simulation or physics world.
+    pub fn playerless_snapshot(&self) -> Result<CanonicalZoneSnapshot, ZoneError> {
+        let mut snapshot = self.snapshot()?;
+        let players: Vec<PlayerId> = self.players.keys().copied().collect();
+        for player_id in players {
+            snapshot.depart_player(player_id);
+        }
+        Ok(snapshot)
+    }
+
     pub fn snapshot(&self) -> Result<CanonicalZoneSnapshot, ZoneError> {
         let players = self
             .players
@@ -482,6 +602,8 @@ impl ZoneSimulation {
                     quests: state.quests.clone(),
                     waystones: state.waystones.clone(),
                     discoveries: state.discoveries.clone(),
+                    mastery: state.mastery,
+                    practice: state.practice.clone(),
                     caches: state.caches.clone(),
                     character: state.character.clone(),
                     depths: state.depths,
@@ -776,6 +898,9 @@ impl ZoneSimulation {
             return Err(ZoneError::new("player chat state is out of range"));
         }
         crate::quest::validate_log(&self.content, &player.quests)?;
+        if !player.mastery.is_valid() || !crate::valid_practice(&player.practice) {
+            return Err(ZoneError::new("player weapon mastery is out of range"));
+        }
         if combat.intents_dropped && combat.intents.len() != MAX_PENDING_INTENTS {
             return Err(ZoneError::new("only a full intent queue drops intents"));
         }
@@ -932,6 +1057,8 @@ impl ZoneSimulation {
                 quests: player.quests,
                 waystones: player.waystones,
                 discoveries: player.discoveries,
+                mastery: player.mastery,
+                practice: player.practice,
                 caches: player.caches,
                 character: player.character,
                 depths: player.depths,

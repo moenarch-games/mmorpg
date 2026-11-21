@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { CameraView, Vec3 } from "./orbit-camera";
 import { BatchedRoots } from "./static-batches";
 import { loadStaticBundle } from "./static-bundle";
+import { freeHandle, retainedBundle } from "./zone-lifecycle";
 import type { BuildingPresenterHandle } from "./scenery";
 
 /** Where `scripts/fetch-bundles.sh` places the walk-in buildings' bundles in `web/public`. */
@@ -33,6 +34,7 @@ export class WalkInBuildings {
   readonly #buildings: Building[];
   #loading: Promise<boolean> | null = null;
   #changed = false;
+  #disposed = false;
 
   constructor(presenters: readonly BuildingPresenterHandle[]) {
     this.#buildings = presenters.map((presenter) => ({
@@ -46,6 +48,7 @@ export class WalkInBuildings {
    * missing bundle is reported, never fatal to the world.
    */
   load(): Promise<boolean> {
+    if (this.#disposed) { return Promise.resolve(false); }
     this.#loading ??= Promise.all(this.#buildings.map((building) => this.#load(building).then(() => true, (error: unknown) => {
       console.error(`The ${building.bundle} bundle did not load: ${error instanceof Error ? error.message : String(error)}`);
       return false;
@@ -56,10 +59,32 @@ export class WalkInBuildings {
   async #load(building: Building): Promise<void> {
     // A walk-in cottage (#843) has no bundle: the Outpost kit and the settlement props draw it.
     if (building.entries.length === 0) { return; }
-    building.roots = await loadStaticBundle(`${BUILDINGS}${building.bundle}/`, building.entries);
+    // The entries are the bundle's, retained for every zone that draws it (#1005); this zone places its own clones,
+    // which share their geometry and materials.
+    const base = `${BUILDINGS}${building.bundle}/`;
+    const entries = await retainedBundle(`walk-in:${base}:${building.entries.join(",")}`, () => loadStaticBundle(base, building.entries));
+    // A zone replaced while the bundle loaded keeps nothing (#1005).
+    if (this.#disposed) { return; }
+    building.roots = entries.map((root) => root.clone());
     building.batched = new BatchedRoots(building.bundle, building.roots);
     this.#changed = true;
     place(building);
+  }
+
+  /**
+   * Releases what the buildings own for their zone (#1005): their batches and the shared presenters' WASM handles. The
+   * retained entries stay for a revisit; a load in flight attaches nothing. Later calls do nothing.
+   */
+  dispose(): void {
+    if (this.#disposed) { return; }
+    this.#disposed = true;
+    for (const building of this.#buildings) {
+      building.batched?.dispose();
+      building.batched = null;
+      building.roots = [];
+      freeHandle(building.presenter);
+    }
+    this.#changed = true;
   }
 
   /** Eases each door toward its state in `doors` and hides roofs and ceilings while `viewer` (feet, metres) is inside. */

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "area": "wolfrun-cart",
+  "placements": [
+    {"id":"wolfrun-cart-cart","asset":"settlement.props.cart","position":[-6210,1049,1030],"yaw":46000,"scale":[900,1000,900]},
+    {"id":"wolfrun-cart-cut-sacks","asset":"settlement.props.grain-sacks","position":[-6050,1036,1150],"yaw":12000,"scale":[1000,1000,1000],"cull":"Mid"},
+    {"id":"wolfrun-cart-crate","asset":"settlement.props.crate","position":[-6380,1052,960],"yaw":30000,"scale":[1000,1000,1000],"cull":"Mid"},
+    {"id":"wolfrun-cart-bait","asset":"settlement.props.hanging-meats","position":[-6420,1064,1230],"yaw":20000,"scale":[1000,1000,1000]},
+    {"id":"wolfrun-cart-redbrand-marker","asset":"discoveries.kit.fen-marker","position":[-6130,1042,1180],"yaw":52000,"scale":[1000,1000,1000]}
+  ]
+}

@@ -2,10 +2,15 @@
 //! three quest givers, from the Wolfrun Woods to Garrick Redbrand and back, and sixteen more
 //! through the region (#820).
 //!
-//! Marshal Elden Greywatch (NPC 1) sends new characters against the wolves
-//! and later the lake and the hollow; Tanner Hilda Brook (NPC 2) wants
-//! pelts and worries about her missing farmhand; Farmer Osric Mill (NPC 4)
+//! Marshal Elden Greywatch (NPC 1) sends new characters up the Wolfrun Trail
+//! after an abandoned supply cart (#984) and later to the lake and the hollow;
+//! Tanner Hilda Brook (NPC 2) takes back her cart's sacks, worries about her
+//! missing farmhand and, on the side, wants pelts; Farmer Osric Mill (NPC 4)
 //! asks for help against the marauders. Each quest unlocks the next.
+//!
+//! *The Wolfrun Cart* keeps the first quest's stable ID: characters who
+//! turned in the old *Trouble in the Woods* still have it done, and saved
+//! progress past its new counts is fitted on admission.
 //!
 //! The Marshal also sends players out into the region: to Gwen Barrow at Barrowdown, whose
 //! chain leads on to Hob Ferris at Fenford; to Brann at Westmere Lodge, whose leads on to Edric
@@ -32,7 +37,13 @@ pub const FARMER: NpcId = NpcId::new(4);
 /// The quest item Timber Wolves drop for *Pelts for the Tanner*.
 pub const WOLF_PELT: ItemId = ItemId::new(10);
 
-pub const TROUBLE_IN_THE_WOODS: QuestId = QuestId::new(1);
+/// The quest item Timber Wolves drop for *The Wolfrun Cart* (#984).
+pub const SUPPLY_SACK: ItemId = ItemId::new(31);
+
+/// The opening (#984): find the abandoned cart in the Wolfrun Woods and take back the sacks the
+/// pack dragged off for the Tanner, who then gives the lead to Millbrook.
+pub const THE_WOLFRUN_CART: QuestId = QuestId::new(1);
+/// An optional side quest of the Tanner's since #984.
 pub const PELTS_FOR_THE_TANNER: QuestId = QuestId::new(2);
 pub const THE_MISSING_FARMHAND: QuestId = QuestId::new(3);
 pub const MARAUDERS_IN_THE_FIELDS: QuestId = QuestId::new(4);

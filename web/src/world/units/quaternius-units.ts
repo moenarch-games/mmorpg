@@ -5,7 +5,7 @@ import type { ThreeSceneRenderer } from "@moritzbrantner/three-d-renderer";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { LitMaterial } from "@moritzbrantner/three-lighting";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
-import { mergeUnitMeshes, type MergedUnit } from "./merged-unit";
+import { mergeUnitMeshes, releaseUnit, type MergedUnit } from "./merged-unit";
 import type { EntityRef } from "../../entity-ref";
 import { characterVisualProfile } from "../../character-visuals";
 import type { CharacterClassId } from "../../character-selection";
@@ -163,6 +163,8 @@ const WILD_ENTRIES: Readonly<Record<Exclude<QuaterniusKind, "Ranger">, string>> 
   Bear: "greyhaven.wild.bear",
   Spider: "greyhaven.wild.spider",
   Lurker: "greyhaven.wild.marsh-lurker",
+  Lynx: "greyhaven.wild.lynx",
+  Adder: "greyhaven.wild.marsh-adder",
 };
 const animalUrl = (kind: Exclude<QuaterniusKind, "Ranger">) =>
   new URL(`${import.meta.env.BASE_URL}scenery/greyhaven.wildlife/scenes/${WILD_ENTRIES[kind]}/default.gltf`, window.location.href).href;
@@ -217,6 +219,16 @@ type Asset = {
   playerFailed?: (figure: string) => boolean;
   playerFace?: (figure: string) => FaceLook | null | undefined;
   physiqueSupport?: (figure: string) => readonly string[];
+  /**
+   * Whether `figure` and the worn `keys` have loaded (#979), Ranger only; the first ask starts
+   * loading them. A look draws once they have, keeping any previous look until then.
+   */
+  itemsReady?: (figure: string, keys: readonly string[]) => boolean;
+  /**
+   * Ranger only: settles with the male's `humanoid-clips` descriptor once he and everything the
+   * world's Rangers may wear have loaded (#979); the presenter draws imported Rangers from then on.
+   */
+  worldReady?: Promise<string>;
   /** Rest (idle at 0) bounds: lowest point, height and horizontal centre, model space. */
   floor: number;
   height: number;
@@ -920,6 +932,13 @@ type FigureBundle = {
     tint: readonly [number, number, number] | undefined): void;
   /** Hangs every chore item (#904) the figure has hidden on its socket of `model`, for {@link poseChore}. */
   carryChores(model: THREE.Object3D, chores?: readonly { item: string; socket: string }[]): void;
+  /**
+   * Worn items load on demand (#979): true once each of `keys` the figure offers has settled
+   * (loaded or failed), starting the others. Keys the figure does not offer count as settled.
+   */
+  itemsReady(keys: readonly string[]): boolean;
+  /** Loads `keys` (every item the figure offers without), settling once each has settled. */
+  loadItems(keys?: readonly string[]): Promise<void>;
   /** Rest bounds of the default entry posed in `rest`. */
   bounds: Pick<Asset, "floor" | "height" | "centre">;
 };
@@ -958,9 +977,10 @@ async function loadKit(directory: string, attachmentName: string, absent: string
 }
 
 /**
- * Loads the figure `character` from `characters/<character>/`: its default entry and clips, the
- * `keys` items (socketed by their grip) and every hairstyle in the tintable variant, `hair`
- * among them.
+ * Loads the figure `character` from `characters/<character>/`: its default entry, base clips,
+ * sockets and appearance (#979: what drawing it needs). Its worn items, the `keys` it may carry
+ * (socketed by their grip) and every hairstyle in the tintable variant (`hair` among them), load
+ * on demand through `itemsReady`/`loadItems`.
  */
 async function loadFigure(loader: GLTFLoader, character: string, keys: readonly string[], hair: readonly string[],
   rest: string): Promise<FigureBundle> {
@@ -973,6 +993,12 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
     }
     return response.json();
   };
+  // The Redbrand faction kit's figures and armour (#675) and the hair kit's pieces, fitted to the
+  // male head (#677), ride with the male's entries; their metadata loads beside his own.
+  const kits = Promise.all([
+    character === MALE ? loadKit(REDBRAND_KIT, "redbrand-descriptor", "the bandits keep the soldier's outfit.") : null,
+    character === MALE ? loadKit(HAIR_KIT, "hair-descriptor", "the figure has only the hair and beards the Ranger bundle still offers.") : null,
+  ]);
   const [manifest, equipment] = await Promise.all([
     json(`${character.replaceAll(".", "-")}.index.json`),
     json(`${EQUIPMENT.replaceAll(".", "-")}.index.json`, EQUIPMENT),
@@ -987,19 +1013,17 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
   const base = families.find((family) => family.family === BASE_FAMILY);
   const library = base?.file ?? entry.clips;
   if (!library) { throw new Error(`The ${character} download index has no shared clips.`); }
-  const [gltf, animationLibrary, sockets, descriptor] = await Promise.all([
+  const [gltf, animationLibrary, sockets, descriptor, ownAppearance, [kit, hairKit]] = await Promise.all([
     loader.loadAsync(url(entryFile(entry, ".gltf"))),
     loader.loadAsync(url(library)),
     json(entryFile(entry, ".humanoid-sockets.json")).then(socketsOf),
     json(entryFile(entry, ".humanoid-clips.json")),
+    json(entryFile(entry, ".humanoid-appearance.json")),
+    kits,
   ]);
   const motions = clipMotionsOf(descriptor);
-  // The Redbrand faction kit's figures and armour (#675) ride with the male's entries.
-  const kit = character === MALE ? await loadKit(REDBRAND_KIT, "redbrand-descriptor", "the bandits keep the soldier's outfit.") : null;
-  // The hair kit's pieces are fitted to the male head (#677).
-  const hairKit = character === MALE ? await loadKit(HAIR_KIT, "hair-descriptor", "the figure has only the hair and beards the Ranger bundle still offers.") : null;
   const kitScene = (id: string) => kit?.scenes.get(id) ?? hairKit?.scenes.get(id);
-  const appearance = figureAppearance(character, await json(entryFile(entry, ".humanoid-appearance.json")), kit?.descriptor ?? null, hairKit?.descriptor ?? null);
+  const appearance = figureAppearance(character, ownAppearance, kit?.descriptor ?? null, hairKit?.descriptor ?? null);
   declareChains(declaredChains(appearance));
   const look = headLook(appearance);
   const face = faceLookOf(appearance, entry.variant, gltf.scene);
@@ -1038,18 +1062,45 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
   const hairKeys = [...new Set([...hair, ...tintableHair(appearance)])];
   const available = new Set([manifest, equipment].flatMap((index) => (index as { entries: DownloadEntry[] }).entries)
     .filter((entry) => entry.variant === "default").map((entry) => entry.key));
-  const selectedKeys = keys.filter((key) => available.has(key));
-  const items = new Map(await Promise.all([
-    ...selectedKeys.map((key) => load(key)),
-    ...hairKeys.map((key) => load(key, HAIR_VARIANT)),
-  ]));
+  /** What the figure may wear: each offered item, in its default variant, and each hairstyle, in the tintable one. */
+  const offered = new Map<string, string | undefined>([
+    ...keys.filter((key) => available.has(key)).map((key) => [key, undefined] as const),
+    ...hairKeys.map((key) => [key, HAIR_VARIANT] as const),
+  ]);
+  const items = new Map<string, { scene: THREE.Object3D; gripInverse: THREE.Matrix4 }>();
+  const itemLoads = new Map<string, Promise<void>>();
+  /** Items that failed to load: a look then goes without them (#979) instead of failing the figure. */
+  const failedItems = new Set<string>();
+  const loadItem = (key: string): Promise<void> | null => {
+    if (!offered.has(key)) { return null; }
+    let pending = itemLoads.get(key);
+    if (!pending) {
+      pending = load(key, offered.get(key)).then(([, item]) => { items.set(key, item); }, (error: unknown) => {
+        failedItems.add(key);
+        console.warn(`The ${character} item ${key} failed to load; looks go without it.`, error);
+      });
+      itemLoads.set(key, pending);
+    }
+    return pending;
+  };
+  const itemsReady: FigureBundle["itemsReady"] = (wanted) => {
+    let ready = true;
+    for (const key of wanted) {
+      if (loadItem(key) !== null && !items.has(key) && !failedItems.has(key)) { ready = false; }
+    }
+    return ready;
+  };
+  const loadItems: FigureBundle["loadItems"] = async (wanted = [...offered.keys()]) => {
+    await Promise.all(wanted.map(loadItem));
+  };
   const knight = (appearance as { outfits?: { id?: string }[] }).outfits?.some((outfit) => outfit.id === "outfit.knight") ?? false;
   const hasClassOutfits = (appearance as { presets?: { id?: string }[] }).presets?.some((preset) => preset.id?.startsWith("class.")) ?? false;
+  // The choices come from what the figure's indexes offer, so they show before the items load.
   const options: PlayerAppearanceOptions = {
     knight,
     headwear: (Object.keys(HEADWEAR_ITEMS) as Headwear[]).filter((key) =>
-      (key !== "class" || hasClassOutfits || knight) && HEADWEAR_ITEMS[key].every((item) => items.has(item.key))),
-    hair: ["bald", ...(Object.keys(HAIR_ENTRIES) as (keyof typeof HAIR_ENTRIES)[]).filter((style) => items.has(HAIR_ENTRIES[style]))],
+      (key !== "class" || hasClassOutfits || knight) && HEADWEAR_ITEMS[key].every((item) => offered.has(item.key))),
+    hair: ["bald", ...(Object.keys(HAIR_ENTRIES) as (keyof typeof HAIR_ENTRIES)[]).filter((style) => offered.has(HAIR_ENTRIES[style]))],
   };
   const loaded = new Map(animationLibrary.animations.map((clip) => [clip.name, clip]));
   withSecondaryPoses(loaded, descriptor);
@@ -1065,6 +1116,7 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
     for (const { key, socket } of [...worn, ...(hairKey ? [{ key: hairKey, socket: "head.hair" }] : [])]) {
       const item = items.get(key);
       const place = sockets.get(socket);
+      if (failedItems.has(key)) { continue; }
       if (!item || !place) {
         throw new Error(`The ${character} bundle has no ${key} for socket ${socket}.`);
       }
@@ -1167,42 +1219,107 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
   const probe = mixerPosable(cloneSkinned(gltf.scene), sources);
   const bounds = measure(probe, rest);
   probe.dispose();
-  return { character, gltf, sources, sockets, motions, descriptor: JSON.stringify(descriptor), appearance, look, face, options, physique: physiqueSupport(appearance, entry.variant, gltf.scene), scene, wear, carryChores, bounds };
+  return { character, gltf, sources, sockets, motions, descriptor: JSON.stringify(descriptor), appearance, look, face, options, physique: physiqueSupport(appearance, entry.variant, gltf.scene), scene, wear, carryChores, itemsReady, loadItems, bounds };
 }
 
-async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
+/**
+ * The figure and worn items the player's look needs first (#979): the character picker's
+ * selection, or the male with nothing chosen yet.
+ */
+type PlayerSelection = { figure: string; keys: readonly string[] };
+
+/**
+ * The items a look wears: its loadout's, its headwear's and its hairstyle (the tintable variant),
+ * and with the dagger the throwables it draws from the belt (#611).
+ */
+export function lookItems(loadout: Loadout, headwear: Headwear | null, hair: Hair | null): string[] {
+  const carried = loadout ? LOADOUT_ITEMS[loadout] : [];
+  return [...new Set([
+    ...carried.map((item) => item.key),
+    ...(headwear ? HEADWEAR_ITEMS[headwear].map((item) => item.key) : []),
+    ...(hair && hair.style !== "bald" ? [HAIR_ENTRIES[hair.style]] : []),
+    ...(carried.some((item) => item.key === DAGGER_ITEM) ? Object.values(THROWABLE_ITEMS) : []),
+  ])];
+}
+
+/**
+ * The Ranger figures (#493), each loaded once on first ask; concurrent asks share the load (#979).
+ * `first` settles with the first figure to load: whichever selection asked first, so the
+ * picker's female shows without waiting for the male. A failed figure other than the male asks
+ * for the male in its place; `first` fails only with him.
+ */
+type RangerFigures = {
+  figures: ReadonlyMap<string, FigureBundle>;
+  failed: ReadonlySet<string>;
+  figure(character: string): Promise<FigureBundle>;
+  /** Whether `character` has loaded; the first ask starts it. */
+  playerReady(character: string): boolean;
+  first: Promise<FigureBundle>;
+};
+
+function rangerFigures(loader: GLTFLoader, rest: () => string): RangerFigures {
   // The farmer's straw hat (#418) rides with the viewer's headwear choices.
   const keys = [...new Set([...[...Object.values(LOADOUT_ITEMS), ...Object.values(HEADWEAR_ITEMS)].flat().map((item) => item.key), "equipment.hat.straw", ...Object.values(THROWABLE_ITEMS), ...CHORES.map((chore) => chore.item), SIGNAL_HORN.item])];
-  const male = await loadFigure(loader, MALE, keys, Object.values(HAIR_ENTRIES), rest);
-  const { gltf, sources, sockets, motions, appearance, look, face, scene, wear } = male;
-  const figures = new Map<string, FigureBundle>([[MALE, male]]);
+  const figures = new Map<string, FigureBundle>();
   const loadingFigures = new Map<string, Promise<FigureBundle>>();
+  const failed = new Set<string>();
+  let settleFirst!: (figure: FigureBundle) => void;
+  let failFirst!: (error: unknown) => void;
+  const first = new Promise<FigureBundle>((resolve, reject) => { settleFirst = resolve; failFirst = reject; });
+  first.catch(() => {});
   const figure = (character: string): Promise<FigureBundle> => {
     const ready = figures.get(character);
     if (ready) { return Promise.resolve(ready); }
     let pending = loadingFigures.get(character);
     if (!pending) {
       // The headwear is fitted to the male head; the other figures carry the rest.
-      const carried = keys.filter((key) => !MALE_HEADWEAR.has(key));
-      pending = loadFigure(loader, character, carried, [], rest).then((loaded) => {
+      const carried = character === MALE ? keys : keys.filter((key) => !MALE_HEADWEAR.has(key));
+      pending = loadFigure(loader, character, carried, character === MALE ? Object.values(HAIR_ENTRIES) : [], rest()).then((loaded) => {
         figures.set(character, loaded);
+        settleFirst(loaded);
         return loaded;
+      }, (error: unknown) => {
+        failed.add(character);
+        console.warn(`The Ranger figure ${character} failed to load.`, error);
+        if (character === MALE) { failFirst(error); } else { figure(MALE).catch(() => {}); }
+        throw error;
       });
       loadingFigures.set(character, pending);
     }
     return pending;
   };
-  const failedFigures = new Set<string>();
   const playerReady = (character: string): boolean => {
     if (figures.has(character)) { return true; }
-    if (!loadingFigures.has(character) && !failedFigures.has(character)) {
-      void figure(character).catch((error: unknown) => {
-        failedFigures.add(character);
-        console.warn(`The player figure ${character} failed to load.`, error);
-      });
-    }
+    if (!failed.has(character)) { figure(character).catch(() => {}); }
     return false;
   };
+  return { figures, failed, figure, playerReady, first };
+}
+
+/**
+ * The Ranger asset (#493), drawable once the first selected figure has loaded (#979); no figure
+ * waits for items it does not wear. Then the selected look's items load, then the male and
+ * everything the world's Rangers may wear; `worldReady` settles with his clip descriptor once
+ * they have.
+ */
+async function loadRanger(set: RangerFigures, selection: () => PlayerSelection): Promise<Asset> {
+  const { figures, figure, playerReady } = set;
+  const failedFigures = set.failed;
+  set.playerReady(selection().figure);
+  const lead = await set.first;
+  /** The male figure, which the world's Rangers, residents and class outfits are drawn on. */
+  const maleFigure = (): FigureBundle => {
+    const male = figures.get(MALE);
+    if (!male) { throw new Error("The male Ranger figure has not loaded."); }
+    return male;
+  };
+  const worldReady = (async () => {
+    const chosen = selection();
+    await figure(chosen.figure).then((selected) => selected.loadItems(chosen.keys)).catch(() => {});
+    const male = await figure(MALE);
+    await male.loadItems();
+    return male.descriptor;
+  })();
   let femaleKnight: ResidentLook | null = null;
   let loadingKnight: Promise<void> | null = null;
   const knightReady = (): boolean => {
@@ -1224,7 +1341,7 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
   let drops: Map<string, THREE.Object3D> | null = null;
   /** Puts an outfit's or a drop's armour plate on its socket. */
   const plate = (model: THREE.Object3D, node: THREE.Object3D, socket: string) => {
-    const place = sockets.get(socket);
+    const place = maleFigure().sockets.get(socket);
     if (!place) { throw new Error(`The Ranger bundle has no socket ${socket}.`); }
     // Plates and beards are authored in rest model space: their origin is the socket's.
     attachItem(model, node.clone(), new THREE.Matrix4(), place);
@@ -1237,6 +1354,7 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
    * the sockets they cover; the class colour stays on the `classTrim` garments.
    */
   const dressOutfit = (outfit: ClassOutfit, { loadout, headwear, hair, face: chosen }: Dress): THREE.Object3D => {
+    const { look, wear, sockets } = maleFigure();
     const preset = outfits.get(outfit.preset);
     if (!preset) { throw new Error(`The Ranger bundle's class outfit ${outfit.preset} has not loaded.`); }
     const viewer = headwear !== null;
@@ -1286,6 +1404,9 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
   };
   const outfitReady = (preset: string): boolean => {
     if (outfits.has(preset)) { return outfits.get(preset) !== null; }
+    // The class outfits are the male's: they wait for him without blocking another selected figure.
+    if (!playerReady(MALE)) { return false; }
+    const { appearance, look, scene } = maleFigure();
     outfits.set(preset, null);
     void Promise.all([
       residentLooks(appearance, look, scene, (id) => id === preset),
@@ -1304,9 +1425,11 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     const { loadout, headwear, hair, face: chosen, resident } = dress;
     // A player's physique (#635) shapes the dressed model, so outfit, plates and hair follow it.
     const shaped = (model: THREE.Object3D): Posable => {
+      const male = maleFigure();
       const scale = dress.physique ? applyPhysique(model, dress.physique, male.physique) : 1;
-      const posable = mixerPosable(model, sources);
+      const posable = mixerPosable(model, male.sources);
       if (scale !== 1) { posable.scale = scale; }
+      posable.bounds = male.bounds;
       return posable;
     };
     if (resident === null && dress.figure === FEMALE) {
@@ -1376,10 +1499,11 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
       if (Object.keys(preset.morphs).length > 0) { setMorphs(model, preset.morphs); }
       const posable = mixerPosable(model, figure.sources);
       posable.scale = preset.height;
-      // Another figure stands on its own rest bounds, scaled to the collision height like the male.
-      if (figure !== male) { posable.bounds = figure.bounds; }
+      // Each figure stands on its own rest bounds, scaled to the collision height.
+      posable.bounds = figure.bounds;
       return posable;
     }
+    const { gltf, face, look, wear } = maleFigure();
     const model = cloneSkinned(gltf.scene);
     if (face && chosen) { applyFace(model, face, chosen); }
     // The bundle's hood is on by default; any other chosen headwear replaces it.
@@ -1395,13 +1519,13 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     return shaped(model);
   };
   let pending: Promise<void> | null = null;
-  /** Every figure's residents (and the male's enemies), all or none (#418, #39, #493). */
+  /** Every figure's residents (and the male's enemies) with everything they may wear, all or none (#418, #39, #493). */
   const loadResidents = () => {
     pending ??= (async () => {
-      const others = await Promise.all(FIGURES.filter((character) => character !== MALE).map(figure));
-      for (const figure of others) { figures.set(figure.character, figure); }
-      const looks = await Promise.all([...figures.values()].map((figure) =>
-        residentLooks(figure.appearance, figure.look, figure.scene, (id) => id.startsWith("resident.") || id.startsWith("enemy."))));
+      const all = await Promise.all(FIGURES.map(figure));
+      await Promise.all(all.map((each) => each.loadItems()));
+      const looks = await Promise.all(all.map((each) =>
+        residentLooks(each.appearance, each.look, each.scene, (id) => id.startsWith("resident.") || id.startsWith("enemy."))));
       residents = new Map(looks.flatMap((map) => [...map]));
     })();
     return pending;
@@ -1425,12 +1549,16 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     });
     return false;
   };
-  const clips = new Map(sources.durations());
-  return { clips, motions, descriptor: male.descriptor, instantiate, loadResidents, outfitReady, variedReady, face, playerReady, knightReady,
+  // The figures share their clips' names and lengths; the male's strike timings once he has loaded.
+  const clips = new Map(lead.sources.durations());
+  const itemsReady = (character: string, wanted: readonly string[]): boolean =>
+    playerReady(character) && (figures.get(character)?.itemsReady(wanted) ?? false);
+  return { clips, get motions() { return figures.get(MALE)?.motions ?? lead.motions; }, worldReady, itemsReady,
+    instantiate, loadResidents, outfitReady, variedReady, face: lead.face, playerReady, knightReady,
     playerFailed: (character) => failedFigures.has(character),
     playerOptions: (character) => figures.get(character)?.options,
     playerFace: (character) => figures.get(character)?.face,
-    physiqueSupport: (character) => figures.get(character)?.physique.supported ?? [], ...male.bounds };
+    physiqueSupport: (character) => figures.get(character)?.physique.supported ?? [], ...lead.bounds };
 }
 
 /** The drop armour outfit's plates by socket (#379), from the bundle's `DROP_ARMOR_OUTFIT`. */
@@ -1688,9 +1816,18 @@ export class QuaterniusUnits {
   #rootsChanged = false;
   #residents: Promise<boolean> | null = null;
   #residentsLoaded = false;
+  /** The picker's selection (#979): its figure and look load before any optional art. */
+  #player: PlayerSelection = { figure: MALE, keys: [] };
+  #figures: RangerFigures | null = null;
 
   constructor(rest: RestClip) {
     this.#rest = rest;
+  }
+
+  /** The Ranger figures, started on first ask: a selection starts its figure at once (#979). */
+  #rangerFigures(): RangerFigures {
+    this.#figures ??= rangerFigures(this.#loader, () => this.#rest("Ranger"));
+    return this.#figures;
   }
 
   configureRenderer(renderer: ThreeSceneRenderer): void {
@@ -1708,10 +1845,17 @@ export class QuaterniusUnits {
     const state = this.#assets.get(kind);
     if (state === undefined) {
       this.#assets.set(kind, "loading");
-      this.#settled.set(kind, (kind === "Ranger" ? loadRanger(this.#loader, this.#rest(kind)) : loadAnimal(this.#loader, kind, this.#rest(kind))).then(
+      this.#settled.set(kind, (kind === "Ranger" ? loadRanger(this.#rangerFigures(), () => this.#player) : loadAnimal(this.#loader, kind, this.#rest(kind))).then(
         (asset) => {
           this.#assets.set(kind, asset);
-          this.#loaded.push([kind, [...asset.clips], asset.descriptor ?? null]);
+          if (asset.worldReady) {
+            // The world's Rangers switch to imported models once the male and their items have loaded (#979).
+            void asset.worldReady.then((descriptor) => { this.#loaded.push([kind, [...asset.clips], descriptor]); }, (error: unknown) => {
+              console.warn("The male Ranger figure failed to load; the world's Rangers keep their procedural models.", error);
+            });
+          } else {
+            this.#loaded.push([kind, [...asset.clips], asset.descriptor ?? null]);
+          }
           return true;
         },
         (error: unknown) => {
@@ -1744,6 +1888,18 @@ export class QuaterniusUnits {
   }
 
   /**
+   * Settles once the world's Rangers can be drawn (#979): for the Ranger, the male and everything
+   * they may wear, after the selected look; any other kind as {@link preload}. True once drawable.
+   */
+  preloadWorld(kind: QuaterniusKind): Promise<boolean> {
+    return this.preload(kind).then(async (ready) => {
+      const asset = this.#assets.get(kind);
+      if (!ready || typeof asset !== "object" || !asset.worldReady) { return ready; }
+      return asset.worldReady.then(() => true, () => false);
+    });
+  }
+
+  /**
    * Loads the residents' appearance presets (#418) after the Ranger; settles true once they can
    * be drawn, false when they failed (the residents then keep their procedural models).
    */
@@ -1752,6 +1908,7 @@ export class QuaterniusUnits {
       const asset = this.#assets.get("Ranger");
       if (!ready || typeof asset !== "object" || !asset.loadResidents) { return false; }
       await asset.loadResidents();
+      await asset.worldReady;
       this.#residentsLoaded = true;
       return true;
     }).catch((error: unknown) => {
@@ -1784,12 +1941,36 @@ export class QuaterniusUnits {
     return face === undefined ? undefined : face?.features ?? null;
   }
 
+  /**
+   * The character picker's selection (#979): the figure of `sex` and the items its look wears load
+   * first, before the other figure and optional art. A later selection takes over at once; loads
+   * already started finish and stay loaded.
+   */
+  selectPlayer(sex: "male" | "female", loadout: Loadout = null, headwear: Headwear | null = null, hair: Hair | null = null): void {
+    this.#player = { figure: sex === "female" ? FEMALE : MALE, keys: lookItems(loadout, headwear, hair) };
+    if (!this.#assets.has("Ranger")) { return; }
+    this.#rangerFigures().playerReady(this.#player.figure);
+    const asset = this.#assets.get("Ranger");
+    if (typeof asset === "object") { asset.itemsReady?.(this.#player.figure, this.#player.keys); }
+  }
+
+  /** Whether the selected player look can be drawn (#979): its figure and what it wears; starts loading them. */
+  playerLookReady(sex: "male" | "female", loadout: Loadout, headwear: Headwear | null, hair: Hair | null): boolean {
+    this.selectPlayer(sex, loadout, headwear, hair);
+    if (this.playerStatus(sex) !== "ready") { return false; }
+    const asset = this.#assets.get("Ranger");
+    return typeof asset === "object" && (asset.itemsReady?.(this.#player.figure, this.#player.keys) ?? true);
+  }
+
   /** Player-base loading shares the resident figure loader, including its real failure. */
   playerStatus(sex: "male" | "female"): "loading" | "ready" | "failed" {
+    const figure = sex === "female" ? FEMALE : MALE;
+    // Before the Ranger starts, the asked figure leads it; while it loads, the asked figure starts too (#979).
+    if (!this.#assets.has("Ranger")) { this.#player = { ...this.#player, figure }; }
     const status = this.status("Ranger");
+    if (status === "loading") { this.#rangerFigures().playerReady(figure); }
     const asset = this.#assets.get("Ranger");
     if (status !== "ready" || typeof asset !== "object") { return status; }
-    const figure = sex === "female" ? FEMALE : MALE;
     if (asset.playerFailed?.(figure)) { return "failed"; }
     return asset.playerReady?.(figure) ? "ready" : "loading";
   }
@@ -1846,7 +2027,13 @@ export class QuaterniusUnits {
         // Until a guard's own look has built, he wears the plain preset.
         variety: resident !== null && unit.variety !== null && asset.variedReady?.(resident, unit.variety, unit.figure ?? MALE) ? unit.variety : null,
       };
-      if (instance && (instance.kind !== unit.kind || instance.dress !== dressKey(dress))) {
+      const changed = !instance || instance.kind !== unit.kind || instance.dress !== dressKey(dress);
+      if (changed && unit.kind === "Ranger" && asset.itemsReady && !asset.itemsReady(dress.figure ?? MALE, lookItems(dress.loadout, dress.headwear, dress.hair))) {
+        // Its figure or worn items still load (#979): the previous look stays until they have.
+        if (instance && instance.kind === unit.kind) { this.#pose(instance, asset, unit); }
+        continue;
+      }
+      if (instance && changed) {
         this.#drop(unit.id, instance);
         instance = undefined;
       }
@@ -1943,8 +2130,7 @@ export class QuaterniusUnits {
   #drop(id: string, instance: Instance): void {
     instance.posable.dispose();
     for (const { material } of instance.materials) { material.dispose(); }
-    for (const mesh of [...instance.merged.meshes, ...instance.merged.shadows]) { mesh.geometry.dispose(); }
-    instance.merged.skeleton.dispose();
+    releaseUnit(instance.posable.model, instance.merged);
     this.#instances.delete(id);
     this.#rootsChanged = true;
   }

@@ -76,10 +76,16 @@ pub enum PostureView {
     Asleep,
     /// A knocked-awake resident getting up (#619).
     Waking,
+    /// A hunter out on its outing, stalking game (#991).
+    Hunting,
+    /// A hunter back from a successful outing with its catch (#991).
+    Carrying,
+    /// A hunter hurt by the game it hunted, limping home and resting bandaged (#991).
+    Hurt,
 }
 
 impl PostureView {
-    /// Wire code, 0–3.
+    /// Wire code, 0–6.
     #[must_use]
     pub const fn code(self) -> u8 {
         match self {
@@ -87,6 +93,9 @@ impl PostureView {
             Self::Sitting => 1,
             Self::Asleep => 2,
             Self::Waking => 3,
+            Self::Hunting => 4,
+            Self::Carrying => 5,
+            Self::Hurt => 6,
         }
     }
 
@@ -97,6 +106,9 @@ impl PostureView {
             1 => Some(Self::Sitting),
             2 => Some(Self::Asleep),
             3 => Some(Self::Waking),
+            4 => Some(Self::Hunting),
+            5 => Some(Self::Carrying),
+            6 => Some(Self::Hurt),
             _ => None,
         }
     }

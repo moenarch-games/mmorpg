@@ -1,5 +1,5 @@
 import type { CompositionKitSource } from "./composition-kit";
-import type { KitLodsHandle, PlacedKitName, PlacedKitSource } from "./placed-kit";
+import type { KitBundle, KitLodsHandle, PlacedKitSource } from "./placed-kit";
 import type { LayeredSurface } from "./layered-surface";
 import type { StaticSceneContent } from "./scenery-nodes";
 import type { UnitPresenterHandle } from "./unit-presenter";
@@ -112,10 +112,12 @@ export type SceneryContent = StaticSceneContent & {
    * Greyhaven's trees, rocks and bushes (#49) and its ladders, ropes and ivy (#621): a placed kit's bundle entries, per
    * placement its entry and 16 model floats, and the shared level selection.
    */
-  kitEntries(kit: PlacedKitName): string[];
-  kitKeys(kit: PlacedKitName): string[];
-  kitModels(kit: PlacedKitName): Float32Array;
-  KitLods: new (kit: PlacedKitName, descriptor: string) => KitLodsHandle;
+  kitEntries(kit: string): string[];
+  kitKeys(kit: string): string[];
+  kitModels(kit: string): Float32Array;
+  KitLods: new (kit: string, descriptor: string) => KitLodsHandle;
+  /** The ordinary placed kits of the shared inventory (#683) as JSON: per kit its name, bundle directory, descriptor and label. */
+  placedKits(): string;
   /** A placed kit descriptor's layered surface (#732) as JSON at Greyhaven's weathering, or undefined for a baked kit. */
   kitSurface(descriptor: string): string | undefined;
   /** Greyhaven's ambient animals (#419): entries, clip names, first-waypoint anchors (x, z units) and per animal 16 model floats, clip index and clip time. */
@@ -204,14 +206,15 @@ export type SceneryProvider = {
   /** The stones along Greyhaven's watercourses, from the `river-stones` bundle. */
   readonly river: PlacedKitSource;
   readonly meadow: PlacedKitSource;
-  /** The Wolfrun Den, from the `wolf-den` bundle (#963). */
-  readonly den: PlacedKitSource;
   /** The basin's ore veins, from the `gatherables` bundle (#917). */
   readonly gather: PlacedKitSource;
   /** The ore veins (#917) in wire order: centre in units and their full and spent `gather` placements. */
   readonly veins: readonly { x: number; z: number; full: number; spent: number }[];
-  /** The optional discoveries, from the `discoveries` bundle (#913). */
-  readonly discoveries: PlacedKitSource;
+  /**
+   * Every ordinary placed kit of the shared inventory (#683): the Wolfrun Den (#963), the optional discoveries (#913)
+   * and any kit registered after them, drawn alike.
+   */
+  readonly kits: readonly PlacedKitSource[];
   /** Greyhaven's cosmetic ambient animals (#419). */
   readonly ambient: AmbientAnimalsSource;
   importedRestClip(kind: string): string;
@@ -481,10 +484,11 @@ export function decodeScenery(json: string): Scenery {
 }
 
 /** A bundle the shared presentation places (#49, #621): its entries, placements and level selection. */
-function placedKit(content: SceneryContent, kit: PlacedKitName): PlacedKitSource {
+function placedKit(content: SceneryContent, kit: string, bundle?: KitBundle): PlacedKitSource {
   const models = content.kitModels(kit);
   return {
     kit,
+    ...(bundle ? { bundle } : {}),
     entries: content.kitEntries(kit),
     placements: content.kitKeys(kit).map((key, index) => ({ key, matrix: models.slice(index * 16, index * 16 + 16) })),
     lods: (descriptor: string) => new content.KitLods(kit, descriptor),
@@ -544,7 +548,6 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
     limestone: placedKit(content, "limestone"),
     river: placedKit(content, "river"),
     meadow: placedKit(content, "meadow"),
-    den: placedKit(content, "den"),
     gather: placedKit(content, "gather"),
     veins: (() => {
       const nodes = content.gatherNodes();
@@ -553,7 +556,8 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
         x: nodes[index * 2]!, z: nodes[index * 2 + 1]!, full: slots[index * 2] ?? 0, spent: slots[index * 2 + 1] ?? 0,
       }));
     })(),
-    discoveries: placedKit(content, "discoveries"),
+    kits: (JSON.parse(content.placedKits()) as (KitBundle & { name: string })[])
+      .map(({ name, bundle, descriptor, label }) => placedKit(content, name, { bundle, descriptor, label })),
     ambient: (() => {
       const anchors = content.ambientAnimalAnchors();
       return {

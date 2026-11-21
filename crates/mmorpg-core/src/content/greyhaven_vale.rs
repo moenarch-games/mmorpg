@@ -21,6 +21,7 @@ use std::sync::{Arc, LazyLock, OnceLock};
 use super::{SpawnGrid, StaticCollider, XzBounds, ZoneContent, ZoneDefinition};
 use crate::{Area, AreaId, Terrain, ZoneAreas};
 
+pub mod adder;
 pub mod basin;
 pub mod brook;
 pub mod cave;
@@ -36,9 +37,11 @@ pub mod fort;
 pub mod hamlet_creatures;
 pub mod highland_bandits;
 pub mod highlands;
+pub mod hunt;
 pub mod inn;
 pub mod landscape;
 pub mod layout;
+pub mod lynx;
 pub mod market;
 pub mod marsh;
 pub mod marsh_creatures;
@@ -2018,6 +2021,7 @@ fn content_with_spawns(
             .with_climbing(climbing())?
             .with_raid(raid::millbrook_barn())?
             .with_dens(dens::dens())?
+            .with_hunt(hunt::outing())?
             .with_caches(discoveries::caches())?
             .with_waystones(vec![
                 crate::GREYHAVEN_OUTPOST,
