@@ -144,6 +144,8 @@ impl Chores {
             PostureView::Hunting => self.hunt.hunting,
             PostureView::Carrying => self.hunt.carrying,
             PostureView::Hurt => self.hunt.hurt,
+            // A merchant pushing its handcart (#992) keeps both hands on the shafts.
+            PostureView::Hauling => return Some(None),
             PostureView::Free
             | PostureView::Sitting
             | PostureView::Asleep
