@@ -2251,6 +2251,10 @@ impl UnitPresenter {
                     swing: sway::Swing::default(),
                     bow: None,
                 };
+                // A dead bat (#995) lies on the ground under its hovering pose's floor.
+                if dead {
+                    imported.root.p[1] -= kind.corpse_drop();
+                }
                 if imported.loadout == Some(Loadout::BowAndQuiver) {
                     imported.bow = kind.bow_shot(&imported.animation);
                 }
@@ -2787,7 +2791,8 @@ impl UnitPresenter {
             | CreatureFamily::Spider
             | CreatureFamily::Lurker
             | CreatureFamily::Lynx
-            | CreatureFamily::Adder),
+            | CreatureFamily::Adder
+            | CreatureFamily::Bat),
         ) = family
         {
             return creatures::animal(

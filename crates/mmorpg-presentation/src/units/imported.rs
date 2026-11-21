@@ -649,6 +649,8 @@ pub enum Kind {
     Lynx,
     /// The marsh adder (#990).
     Adder,
+    /// The cave bat (#995).
+    Bat,
 }
 
 /// Clip names of one model.
@@ -697,6 +699,9 @@ pub struct Clips {
     /// The emote, door, loot, talk, trade, sitting and bed clips, for a model that has them
     /// (#619, asset-tooling #421).
     pub social: Option<SocialClips>,
+    /// What a creature holds still and out of a fight instead of `idle`, for a model that has
+    /// it: the cave bat's `Perch` at its roost (#995), where it hovers in `idle` in a fight.
+    pub rest: Option<&'static str>,
     /// A beast's two attacks and its alert (#889), for a model that has them.
     pub bites: Option<BiteClips>,
 }
@@ -747,6 +752,7 @@ const WILD_CLIPS: Clips = Clips {
     crossbow: None,
     caster: None,
     social: None,
+    rest: None,
     bites: Some(BiteClips {
         attacks: ["Attack_A", "Attack_B"],
         alert: "Alert",
@@ -780,6 +786,23 @@ const ADDER_CLIPS: Clips = Clips {
         attacks: ["Warn_Hiss_Loop", "Warn_Hiss_Loop"],
         alert: "Warn_Hiss_Loop",
         follow: Some(["Strike", "Strike_Recover"]),
+    }),
+    ..WILD_CLIPS
+};
+
+/// The wildlife release's cave bat (#995, asset-tooling #784): it hangs in its `Perch` at the
+/// roost, drops off in `Launch` as its fight starts, hovers in `Idle` and flies in `Fly`, and
+/// dives in three clips: `Dive_Windup` (the zone's wind-up), `Dive_Contact` (whose contact the
+/// zone's dive lands on) and `Dive_Recover`.
+const BAT_CLIPS: Clips = Clips {
+    run: "Fly",
+    walk: "Fly",
+    attack: "Dive_Contact",
+    rest: Some("Perch"),
+    bites: Some(BiteClips {
+        attacks: ["Dive_Windup", "Dive_Windup"],
+        alert: "Launch",
+        follow: Some(["Dive_Contact", "Dive_Recover"]),
     }),
     ..WILD_CLIPS
 };
@@ -1593,6 +1616,7 @@ impl Kind {
             Self::Lurker => "Lurker",
             Self::Lynx => "Lynx",
             Self::Adder => "Adder",
+            Self::Bat => "Bat",
         }
     }
 
@@ -1609,6 +1633,19 @@ impl Kind {
             Self::Lurker => Some("greyhaven.wild.marsh-lurker"),
             Self::Lynx => Some("greyhaven.wild.lynx"),
             Self::Adder => Some("greyhaven.wild.marsh-adder"),
+            Self::Bat => Some("greyhaven.wild.cave-bat"),
+        }
+    }
+
+    /// How far a dead one is drawn below its feet, in metres (#995): the cave bat's model is
+    /// posed around its body centre, its rest pose's lowest point 0.153 m below it, and lies
+    /// dead with that centre 0.062 m over the ground (the descriptor's `flight.groundHeight`).
+    /// Every other model lies on its feet.
+    #[must_use]
+    pub const fn corpse_drop(self) -> f64 {
+        match self {
+            Self::Bat => 0.153 - 0.062,
+            _ => 0.,
         }
     }
 
@@ -1824,6 +1861,7 @@ impl Kind {
                     sleep_loop: "Sleep_Bed_Loop",
                     sleep_wake: "Sleep_Bed_Wake",
                 }),
+                rest: None,
                 bites: None,
             },
             // The wildlife release's beasts (#889) share one clip set.
@@ -1832,6 +1870,7 @@ impl Kind {
             }
             Self::Lynx => LYNX_CLIPS,
             Self::Adder => ADDER_CLIPS,
+            Self::Bat => BAT_CLIPS,
         }
     }
 
@@ -2186,6 +2225,7 @@ impl Kind {
             CreatureFamily::Lurker => Some(Self::Lurker),
             CreatureFamily::Lynx => Some(Self::Lynx),
             CreatureFamily::Adder => Some(Self::Adder),
+            CreatureFamily::Bat => Some(Self::Bat),
             CreatureFamily::Marauder
             | CreatureFamily::Mirefin
             | CreatureFamily::Redbrand
@@ -3892,9 +3932,14 @@ impl Playback {
         } else {
             // A standing protecting guard holds the shield up with its own stance; a fighting
             // shield-bearer stands in its whole-body guard (#953).
+            // A creature at rest out of a fight holds its rest pose: the bat its roost (#995).
+            let rest = clips
+                .rest
+                .filter(|&clip| !cues.engaged && available(clip))
+                .unwrap_or(clips.idle);
             let idle = sword(|sword| sword.shield_guard)
                 .filter(|_| cues.shield_guard)
-                .unwrap_or(clips.idle);
+                .unwrap_or(rest);
             Want::looped(clips.guard.filter(|_| guarding).unwrap_or(idle), 1.)
         };
         // A dodge roll (#516) plays its clip once over the roll's length, whatever the legs did.
@@ -4660,6 +4705,7 @@ mod tests {
         assert_eq!(creature(CreatureFamily::Lurker), Some(Kind::Lurker));
         assert_eq!(creature(CreatureFamily::Lynx), Some(Kind::Lynx));
         assert_eq!(creature(CreatureFamily::Adder), Some(Kind::Adder));
+        assert_eq!(creature(CreatureFamily::Bat), Some(Kind::Bat));
         assert_eq!(creature(CreatureFamily::Redbrand), None);
         assert_eq!(
             Kind::of(EntityRef::Npc(NpcId::new(1)), &content_record(), &content),
@@ -5128,6 +5174,36 @@ mod tests {
         assert_eq!(frame(&mut playback, 1.5).lower.0, "Strike");
         assert_eq!(frame(&mut playback, 2.0).lower.0, "Strike_Recover");
         assert_eq!(frame(&mut playback, 3.0).lower.0, "Idle_Coil_Loop");
+    }
+
+    /// A bat (#995) hangs in its perch out of a fight, hovers in one, and dives through its
+    /// wind-up, contact and recovery back to its hover.
+    #[test]
+    fn a_bat_perches_hovers_and_dives() {
+        let clips = Kind::Bat.clips();
+        let frame = |playback: &mut Playback, now: f64, engaged: bool| {
+            playback.advance(
+                clips,
+                |_| 1.,
+                Cues {
+                    now,
+                    dt: 0.05,
+                    engaged,
+                    ..Cues::default()
+                },
+                Blend::default(),
+            )
+        };
+        let mut playback = Playback::default();
+        assert_eq!(frame(&mut playback, 0., false).lower.0, "Perch");
+        assert_eq!(frame(&mut playback, 0.1, true).lower.0, "Idle");
+        playback.strike("Dive_Windup", 0.5, Region::Whole, 0.2);
+        playback.recover_through(("Dive_Contact", 0.5), ("Dive_Recover", 0.833));
+        assert_eq!(frame(&mut playback, 0.5, true).lower.0, "Dive_Windup");
+        assert_eq!(frame(&mut playback, 0.9, true).lower.0, "Dive_Contact");
+        assert_eq!(frame(&mut playback, 1.5, true).lower.0, "Dive_Recover");
+        assert_eq!(frame(&mut playback, 2.5, true).lower.0, "Idle");
+        assert!(Kind::Bat.corpse_drop() > 0. && Kind::Adder.corpse_drop() == 0.);
     }
 
     #[test]
