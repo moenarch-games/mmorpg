@@ -80,9 +80,18 @@ On first use, or when a cached native bundle is missing, the launcher runs `scri
 
 It builds from its own checkout regardless of the calling directory, reuses a valid disposable certificate under `target/dev-tls/` (or creates one valid for 10 days), starts zone `1` at `https://localhost:4433`, waits for `/readyz`, and opens the client. It watches workspace source, shaders, embedded scenery and Ranger OBJ/manifest/material assets, Cargo manifests/lockfile, toolchain and `.cargo` configuration. An edit stops the owned host/client processes, rebuilds, then restarts them; edits during a build cause another build before launch. Failed builds remain visible and watching resumes after the next edit. Generated targets, logs and certificates do not trigger rebuilds. **Restarting resets the disposable zone and its development session.**
 
-Closing the window or pressing Ctrl-C stops the owned host and its workers. `--no-watch` keeps a single interactive launch. To play at full speed, `./scripts/run-native.sh` makes the same launch from an optimised `--release` build without the watch (it accepts `--no-update` and `--smoke` too).
+Closing the window or pressing Ctrl-C stops the owned host and its workers. `--no-watch` keeps a single interactive launch. To play at full speed, use `./scripts/run-native.sh` ([below](#optimised-standalone-build)).
 
 Started from a shell outside the desktop session (an SSH login, a service, an agent terminal), the launcher takes `WAYLAND_DISPLAY`/`DISPLAY`, `XDG_RUNTIME_DIR` and `XAUTHORITY` from `systemctl --user show-environment`, falling back to a `wayland-*` socket in `$XDG_RUNTIME_DIR`; with no display at all it stops before building. It owns that host process, so do not use it while another local zone host is bound to ports `4433` or `8080`.
+
+### Optimised standalone build
+
+```sh
+./scripts/run-native.sh                # fetch bundles, build, package into dist/mmorpg-native, launch
+./scripts/run-native.sh --build-only   # only build and package
+```
+
+`run-native.sh` builds the current checkout once with the `dist` Cargo profile (release with fat LTO, one codegen unit, stripped; #1032), without Git updates, source watching or the disposable development host. `scripts/package-native.py` installs `mmorpg-client` and `mmorpg-zone-host` side by side with the host's optional art in `dist/mmorpg-native/` (`--out DIR` chooses another folder; each run replaces it), and the script starts the client from there. Choose a character and **Host World**: the client starts its sibling zone host itself and keeps the world in the configuration directory ([Host World](#host-world)). The folder is a complete game that runs without the repository; start `dist/mmorpg-native/mmorpg-client` directly next time. `--no-fetch` embeds the bundles already on disk, and arguments after `--` go to the client.
 
 To exercise the exact launcher without leaving a window open:
 
