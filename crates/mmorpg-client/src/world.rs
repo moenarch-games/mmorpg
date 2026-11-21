@@ -521,11 +521,6 @@ impl WorldScene {
         }
         // The market square's wooden props through their packaged PBR materials (#53).
         placements.extend(mmorpg_presentation::settlement_props::placements(scenery));
-        // The Wolfrun Den's mouth, bones and bedding (#963).
-        placements.extend(mmorpg_presentation::world_dressing::kit_placements(
-            scenery,
-            &mmorpg_presentation::world_dressing::WOLF_DEN_ENTRIES,
-        ));
         // The ore veins (#917), each standing full or spent by the projection.
         let first_vein = placements.len();
         placements.extend(mmorpg_presentation::world_dressing::kit_placements(
@@ -536,11 +531,11 @@ impl WorldScene {
             .into_iter()
             .map(|slots| slots.map(|slot| first_vein + slot))
             .collect();
-        // The optional discoveries' hunter's cache, lookout and fen supply cache (#913).
-        placements.extend(mmorpg_presentation::world_dressing::kit_placements(
-            scenery,
-            &mmorpg_presentation::world_dressing::DISCOVERY_ENTRIES,
-        ));
+        // Every ordinary placed kit of the shared inventory (#683): the Wolfrun Den, the
+        // optional discoveries and any kit registered after them.
+        for kit in mmorpg_presentation::world_dressing::placed_kits() {
+            placements.extend(kit.placements(scenery));
+        }
         let library = crate::nature::entries();
         let nature = Nature {
             lods: mmorpg_presentation::lod::Lods::new(
