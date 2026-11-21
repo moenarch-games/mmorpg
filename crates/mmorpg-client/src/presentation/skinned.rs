@@ -2,7 +2,7 @@
 //! into joint palettes on the CPU. Each figure draws its model's shared bind-pose meshes with its
 //! palette, which the renderer skins on the GPU (#595); picking poses a clicked body itself.
 //! Presentation only; the authoritative body box still comes from content.
-use crate::world::{DrawMaterial, DrawSkin, Influences, SceneDraw};
+use crate::world::{DrawMaterial, DrawSkin, DrawTexture, Influences, SceneDraw};
 use mmorpg_presentation::units::{
     chores::Chore,
     imported::{
@@ -22,7 +22,7 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 use strum::VariantArray;
-use three_d_core::{Color3, Mesh, Vec3, VertexAttributes};
+use three_d_core::{Color3, Mesh, Vec2, Vec3, VertexAttributes};
 
 mod packed;
 mod residents;
@@ -85,6 +85,35 @@ fn sample(image: &gltf::image::Data, [u, v]: [f32; 2]) -> [f32; 3] {
     } else {
         [channel(0), channel(1), channel(2)]
     }
+}
+
+/// `image` as an sRGB RGBA8 texture with its mip chain, for per-fragment sampling (#1001).
+fn texture_data(image: &gltf::image::Data) -> Option<render_engine::material::TextureData> {
+    use gltf::image::Format as F;
+    let rgba = match image.format {
+        F::R8G8B8A8 => image.pixels.clone(),
+        F::R8G8B8 => image
+            .pixels
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .flat_map(|&[r, g, b]| [r, g, b, 255])
+            .collect(),
+        F::R8 => image.pixels.iter().flat_map(|&c| [c, c, c, 255]).collect(),
+        _ => return None,
+    };
+    Some(crate::nature::mipmapped(
+        image.width,
+        image.height,
+        rgba,
+        render_engine::wgpu::TextureFormat::Rgba8UnormSrgb,
+    ))
+}
+
+/// A fresh [`DrawTexture::id`]: every imported image is its own upload.
+fn next_texture_id() -> u32 {
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 /// glTF base colours are linear; the native mesh path expects sRGB vertex colours.
@@ -376,6 +405,9 @@ struct Primitive {
     uvs: Arc<[[f32; 2]]>,
     /// Named morph targets (the face, age and build keys), shared between clones.
     targets: Arc<[Target]>,
+    /// Its base-colour texture when sampled per fragment (an animal, #1001); `colors` then hold
+    /// only the colour factor.
+    texture: Option<DrawTexture>,
 }
 
 /// One named morph target of a primitive: per-vertex position and normal offsets.
@@ -508,15 +540,25 @@ fn mesh_key(kind: &str, mesh: &Arc<Mesh>) -> String {
 
 impl Model {
     pub fn parse(bytes: &[u8], rest_clip: &'static str) -> Result<Self, gltf::Error> {
-        Self::parse_with_clips(bytes, rest_clip, None)
+        Self::parse_with_clips(bytes, rest_clip, None, false)
+    }
+
+    /// [`Self::parse`] keeping each base-colour texture for per-fragment sampling at the mesh's
+    /// UVs (#1001) instead of baking its texels into the vertex colours: the animals, whose
+    /// fur, hide and feather detail lies between their vertices.
+    pub fn parse_textured(bytes: &[u8], rest_clip: &'static str) -> Result<Self, gltf::Error> {
+        Self::parse_with_clips(bytes, rest_clip, None, true)
     }
 
     fn parse_with_clips(
         bytes: &[u8],
         rest_clip: &'static str,
         library: Option<&ClipLibrary>,
+        textured: bool,
     ) -> Result<Self, gltf::Error> {
         let (document, buffers, images) = gltf::import_slice(bytes)?;
+        // Each image uploads once however many materials sample it.
+        let mut uploads = BTreeMap::new();
         let count = document.nodes().len();
         let mut rest = Vec::with_capacity(count);
         let mut parents = vec![None; count];
@@ -594,6 +636,26 @@ impl Model {
                 let uvs: Arc<[[f32; 2]]> = reader
                     .read_tex_coords(0)
                     .map_or_else(|| Arc::from([]), |uvs| uvs.into_f32().collect());
+                // Or keeps it for the renderer to sample per fragment.
+                let sampled = texture
+                    .filter(|_| textured && uvs.len() == positions.len())
+                    .and_then(|image| {
+                        let index = pbr.base_color_texture()?.texture().source().index();
+                        let (id, data) = match uploads.get(&index) {
+                            Some((id, data)) => (*id, Arc::clone(data)),
+                            None => {
+                                let upload = (next_texture_id(), Arc::new(texture_data(image)?));
+                                uploads.insert(index, upload.clone());
+                                upload
+                            }
+                        };
+                        Some(DrawTexture {
+                            id,
+                            data,
+                            roughness: pbr.roughness_factor(),
+                        })
+                    });
+                let texture = texture.filter(|_| sampled.is_none());
                 let colors = match texture {
                     Some(image) if uvs.len() == positions.len() => uvs
                         .iter()
@@ -650,6 +712,7 @@ impl Model {
                     influences,
                     uvs,
                     targets,
+                    texture: sampled,
                 });
             }
         }
@@ -1015,6 +1078,10 @@ impl Model {
                         VertexAttributes {
                             normals: Some(p.normals.iter().map(to_vec3).collect()),
                             colors: Some(p.colors.clone()),
+                            uvs: p
+                                .texture
+                                .as_ref()
+                                .map(|_| p.uvs.iter().map(|uv| Vec2::new(uv[0], uv[1])).collect()),
                             ..Default::default()
                         },
                     )
@@ -1161,6 +1228,7 @@ impl Model {
             if p.material.as_deref() != Some(material) || p.uvs.len() != p.positions.len() {
                 continue;
             }
+            p.texture = None;
             let factor = p.factor.map(srgb);
             p.colors = p
                 .uvs
@@ -1309,6 +1377,7 @@ impl Model {
             unlit: false,
             double_sided: p.double_sided,
             ground: None,
+            texture: p.texture.clone(),
         }
     }
 
@@ -1563,7 +1632,7 @@ pub(super) fn ambient_model(key: &str) -> Option<&'static AmbientModel> {
                 .chain(wild)
                 .map(|(&(key, path), files)| {
                     let rest = wild_rest_clip(key).unwrap_or("Idle");
-                    let model = Model::parse(&bundle_glb(path, files), rest)
+                    let model = Model::parse_textured(&bundle_glb(path, files), rest)
                         .expect("an ambient animal is valid glTF");
                     let clips = model.clip_durations().collect();
                     (key, (model, clips))
@@ -1591,7 +1660,7 @@ pub(super) fn shared_cat(
         .first()
         .ok_or("Missing cat entry")?
         .path;
-    let model = Model::parse(&bundle_glb(entry, &files), "Idle")
+    let model = Model::parse_textured(&bundle_glb(entry, &files), "Idle")
         .map_err(|e| format!("World detail import failed: {e}"))?;
     let clips = model.clip_durations().collect();
     Ok((model, clips))
@@ -2466,6 +2535,7 @@ pub(super) fn class_outfit(outfit: Outfit) -> &'static ClassOutfit {
             &ranger_model(path),
             Kind::Ranger.clips().idle,
             Some(ranger_clips()),
+            false,
         )
         .expect("a class outfit is valid glTF")
         .with_secondary(ranger_secondary());
@@ -2733,6 +2803,8 @@ pub(super) fn asset(kind: Kind) -> &'static Asset {
                 .and_then(wild_rest_clip)
                 .unwrap_or(kind.clips().idle),
             matches!(kind, Kind::Ranger).then(ranger_clips),
+            // The beasts sample their fur per fragment like the ambient animals (#1001).
+            kind.wild_key().is_some(),
         )
         .expect("an imported unit model is valid glTF")
         .with_secondary(if matches!(kind, Kind::Ranger) {

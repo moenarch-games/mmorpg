@@ -416,8 +416,13 @@ fn entry(figure: Figure, key: &str, variant: &str) -> &'static Model {
             );
             let bytes = bytes.as_slice();
             let model = if is_figure(figure, key) {
-                Model::parse_with_clips(bytes, Kind::Ranger.clips().idle, Some(clips(figure)))
-                    .map(|model| model.with_secondary(secondary(figure)))
+                Model::parse_with_clips(
+                    bytes,
+                    Kind::Ranger.clips().idle,
+                    Some(clips(figure)),
+                    false,
+                )
+                .map(|model| model.with_secondary(secondary(figure)))
             } else {
                 Model::parse(bytes, "")
             };

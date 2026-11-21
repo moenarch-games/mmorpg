@@ -611,7 +611,17 @@ pub(crate) fn texture(bytes: &[u8], srgb: bool) -> TextureData {
         .expect("bundle textures are PNG, JPEG or KTX2")
         .to_rgba8();
     let (width, height) = image.dimensions();
-    let mut levels = vec![image.into_raw()];
+    mipmapped(width, height, image.into_raw(), format)
+}
+
+/// RGBA8 texels `rgba` of a `width` × `height` image with a box-filtered mip chain.
+pub(crate) fn mipmapped(
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+    format: render_engine::wgpu::TextureFormat,
+) -> TextureData {
+    let mut levels = vec![rgba];
     let (mut w, mut h) = (width as usize, height as usize);
     while w > 1 || h > 1 {
         let (nw, nh) = ((w / 2).max(1), (h / 2).max(1));
