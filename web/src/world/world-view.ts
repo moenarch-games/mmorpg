@@ -294,7 +294,7 @@ class RegionArt {
     THREE.Cache.enabled = true;
     this.#prefetch = new ArtPrefetch(
       (piece) => (piece === "inn" ? inn.load() : piece === "shrine" ? shrine.load() : piece === "outpost" ? outpost.load() : piece === "settlement" ? settlement.load()
-        : piece === "ambient" ? ambient.load() : piece === "residents" ? models.preloadResidents() : models.preload(piece as ImportedModelKind)),
+        : piece === "ambient" ? ambient.load() : piece === "residents" ? models.preloadResidents() : models.preloadWorld(piece as ImportedModelKind)),
       (idle) => {
         if (idle) { THREE.Cache.clear(); }
         onProgress();
@@ -697,9 +697,21 @@ export class WorldView {
    * Starts loading the player figure before any world is loaded (#855): the page calls this as soon as the module
    * can name the figure's rest clip, so the download runs beside the world build.
    */
-  prefetchPlayer(restClip: (kind: ImportedModelKind) => string): void {
+  prefetchPlayer(restClip: (kind: ImportedModelKind) => string, look?: ViewerLook): void {
     if (!this.#loadedScenery) { this.#restClip = restClip; }
+    // The selected figure and its look lead the download (#979).
+    if (look) { this.#selectPlayer(look); }
     void this.#models.preload("Ranger");
+  }
+
+  /** Names `look` the player look the Ranger loads first (#979), starting its figure once the Ranger has started. */
+  selectPlayer(look: ViewerLook): void {
+    this.#models.selectPlayer(look.sex, look.classId ? CLASS_LOADOUTS[look.classId] : null, viewerHeadwear(look), viewerHair(look));
+  }
+
+  /** Names `look` the player look the Ranger loads first (#979); true once it can be drawn. */
+  #selectPlayer(look: ViewerLook): boolean {
+    return this.#models.playerLookReady(look.sex, look.classId ? CLASS_LOADOUTS[look.classId] : null, viewerHeadwear(look), viewerHair(look));
   }
 
   /**
@@ -789,7 +801,8 @@ export class WorldView {
     const prewarmed = world.scenery;
     const fortifications = this.#fortifications;
     const fortress = this.#fortress;
-    void this.#models.preload("Ranger").then(() => {
+    // The selected look leads (#979); the kits wait for the world's Rangers as they waited for the whole Ranger before.
+    void this.#models.preloadWorld("Ranger").then(() => {
       if (this.#loadedScenery !== prewarmed || this.#loadedArena !== arena) { return; }
       this.#avatarPrepared = true;
       if (this.#pendingKitArea) { this.#loadKitsForArea(this.#pendingKitArea); }
@@ -1340,7 +1353,7 @@ export class WorldView {
    */
   selectionPreview(look: ViewerLook, feet: [number, number, number], yaw: number, height: number, seconds: number,
     camera: RendererCamera, stage: RendererSceneNode[]): boolean {
-    if (!this.#regions || this.#models.playerStatus(look.sex) !== "ready") { return true; }
+    if (!this.#regions || !this.#selectPlayer(look)) { return true; }
     const clip = this.#restClip("Ranger");
     const length = this.#models.clipLength("Ranger", clip) ?? 1;
     // Reduced motion holds the idle pose, as it does for the procedural figure.

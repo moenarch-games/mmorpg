@@ -1,14 +1,14 @@
 //! Quest acceptance (#25): on the hosted Greyhaven Vale content, a new
 //! Warden completes the first quests of the Greyhaven chain through
 //! ordinary commands only. It walks from the spawn plaza to Marshal Elden
-//! Greywatch, hunts Timber Wolves in the Wolfrun Woods for *Trouble in the
-//! Woods*, collects their quest-only pelts for Tanner Hilda Brook, then
-//! follows the Millbrook Road to Farmer Osric Mill for *The Missing
+//! Greywatch, climbs the Wolfrun Trail past the abandoned cart for *The
+//! Wolfrun Cart* (#984), takes the supply sacks back from Timber Wolves to
+//! Tanner Hilda Brook, then follows the Millbrook Road to Farmer Osric Mill for *The Missing
 //! Farmhand*. Every outcome comes from the real content, AI and zone RNG.
 use mmorpg_core::ability::ids;
 use mmorpg_core::greyhaven_vale::quests::{
-    FARMER, MARAUDERS_IN_THE_FIELDS, MARSHAL, PELTS_FOR_THE_TANNER, TANNER, THE_MISSING_FARMHAND,
-    TROUBLE_IN_THE_WOODS, WOLF_PELT,
+    FARMER, MARAUDERS_IN_THE_FIELDS, MARSHAL, PELTS_FOR_THE_TANNER, SUPPLY_SACK, TANNER,
+    THE_MISSING_FARMHAND, THE_WOLFRUN_CART, WOLF_PELT,
 };
 use mmorpg_core::greyhaven_vale::{farmland, vale};
 use mmorpg_core::{
@@ -394,57 +394,54 @@ fn a_new_warden_completes_the_first_quests_of_the_greyhaven_chain() {
         [marker(MARSHAL, QuestMarker::Available)]
     );
 
-    // Trouble in the Woods: six Timber Wolves for the Marshal.
+    // The Wolfrun Cart (#984): the Marshal sends the Warden up the Wolfrun Trail after the
+    // Tanner's abandoned cart. The woods it stands in are discovered on the way; the wolves the
+    // bait drew carry off three supply sacks, and the Tanner takes them back.
     script.walk_path(TO_MARSHAL);
     script.quest_command(ZoneCommand::AcceptQuest {
         npc: MARSHAL,
-        quest: TROUBLE_IN_THE_WOODS.get(),
+        quest: THE_WOLFRUN_CART.get(),
     });
-    assert_eq!(script.marker(MARSHAL), Some(QuestMarker::InProgress));
+    assert_eq!(script.marker(MARSHAL), None);
+    assert_eq!(script.marker(TANNER), Some(QuestMarker::InProgress));
     script.walk_path(&[HUB]);
     script.walk_path(TO_WOODS);
-    script.hunt(|script| script.progress(TROUBLE_IN_THE_WOODS) == Some([6, 0, 0]));
-    assert_eq!(script.marker(MARSHAL), Some(QuestMarker::Complete));
+    assert_eq!(
+        script
+            .progress(THE_WOLFRUN_CART)
+            .map(|progress| progress[0]),
+        Some(1),
+        "the trail past the cart explores the Wolfrun Woods"
+    );
+    script.hunt(|script| script.progress(THE_WOLFRUN_CART) == Some([1, 3, 0]));
+    let bag = script.zone.snapshot().unwrap().players[0].inventory.clone();
+    assert_eq!(bag.count(SUPPLY_SACK), 3, "sacks drop only while needed");
+    assert_eq!(
+        bag.count(WOLF_PELT),
+        0,
+        "no pelts without the Tanner's quest"
+    );
+    assert_eq!(script.marker(TANNER), Some(QuestMarker::Complete));
     script.walk_path(FROM_WOODS);
-    script.walk_path(TO_MARSHAL);
+    script.walk_path(TO_TANNER);
     let copper = script.view.viewer.copper;
     script.quest_command(ZoneCommand::CompleteQuest {
-        npc: MARSHAL,
-        quest: TROUBLE_IN_THE_WOODS.get(),
+        npc: TANNER,
+        quest: THE_WOLFRUN_CART.get(),
         choice: 0,
     });
     assert!(script.events.contains(&ZoneEvent::QuestCompleted {
-        quest: TROUBLE_IN_THE_WOODS
+        quest: THE_WOLFRUN_CART
     }));
-    assert_eq!(script.view.viewer.copper, copper + 10);
+    let opening = script.ticks;
+    assert_eq!(script.view.viewer.copper, copper + 15);
     assert_eq!(
         script.sheet.completed,
-        std::collections::BTreeSet::from([mmorpg_core::QuestId::new(1)])
+        std::collections::BTreeSet::from([THE_WOLFRUN_CART])
     );
-    assert_eq!(script.marker(TANNER), Some(QuestMarker::Available));
-
-    // Pelts for the Tanner: five quest-only pelts from Timber Wolves.
-    script.walk_path(&[HUB]);
-    script.walk_path(TO_TANNER);
-    script.quest_command(ZoneCommand::AcceptQuest {
-        npc: TANNER,
-        quest: PELTS_FOR_THE_TANNER.get(),
-    });
-    script.walk_path(&[HUB]);
-    script.walk_path(TO_WOODS);
-    script.hunt(|script| script.progress(PELTS_FOR_THE_TANNER) == Some([5, 0, 0]));
-    let bag = script.zone.snapshot().unwrap().players[0].inventory.clone();
-    assert_eq!(bag.count(WOLF_PELT), 5, "pelts drop only while needed");
-    script.walk_path(FROM_WOODS);
-    script.walk_path(TO_TANNER);
-    script.quest_command(ZoneCommand::CompleteQuest {
-        npc: TANNER,
-        quest: PELTS_FOR_THE_TANNER.get(),
-        choice: 0,
-    });
     let player = script.zone.snapshot().unwrap().players.remove(0);
     assert_eq!(
-        player.inventory.count(WOLF_PELT),
+        player.inventory.count(SUPPLY_SACK),
         0,
         "the turn-in takes them"
     );
@@ -452,6 +449,15 @@ fn a_new_warden_completes_the_first_quests_of_the_greyhaven_chain() {
         player.inventory.count(mmorpg_core::ItemId::new(9)),
         1,
         "the Worn Boots were chosen"
+    );
+    // The Tanner gives the lead to Millbrook and, on the side, still wants pelts.
+    assert_eq!(script.marker(TANNER), Some(QuestMarker::Available));
+    assert!(
+        script
+            .zone
+            .content()
+            .quest(PELTS_FOR_THE_TANNER)
+            .is_some_and(|quest| quest.prerequisite == Some(THE_WOLFRUN_CART))
     );
 
     // The Missing Farmhand: talk to Farmer Osric Mill at Millbrook.
@@ -474,7 +480,7 @@ fn a_new_warden_completes_the_first_quests_of_the_greyhaven_chain() {
     });
     assert_eq!(
         script.sheet.completed,
-        (1..=3).map(mmorpg_core::QuestId::new).collect()
+        std::collections::BTreeSet::from([THE_WOLFRUN_CART, THE_MISSING_FARMHAND])
     );
     assert!(script.sheet.entries.is_empty());
     // Osric now offers Marauders in the Fields.
@@ -500,7 +506,7 @@ fn a_new_warden_completes_the_first_quests_of_the_greyhaven_chain() {
         script.level_ups
     );
     eprintln!(
-        "three quests in {} ticks at level {} ({}/{} XP) with {} deaths; level-up ticks {:?}",
+        "the cart turned in at tick {opening}; two quests in {} ticks at level {} ({}/{} XP) with {} deaths; level-up ticks {:?}",
         script.ticks,
         script.view.viewer.level,
         script.view.viewer.experience,

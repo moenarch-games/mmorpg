@@ -19,11 +19,12 @@ t=69 expect alice event error:invalid_quest ok events[error:invalid_quest]
 t=69 alice p1 e1 ack4 (-1769,90,1031) sees[] events[error:invalid_quest]
 t=70 alice accept_quest -> applied seq=5 epoch=1 npc=1 quest=1
 t=71 expect alice quest 1 ok quest=1 active progress=[0, 0, 0]
-t=71 expect alice marker npc:1 ok npc=1 marker=in_progress
+t=71 expect alice marker npc:1 ok npc=1 marker=none
+t=71 expect alice marker npc:2 ok npc=2 marker=in_progress
 t=71 alice p1 e1 ack5 (-1769,90,1031) sees[]
 t=72 alice complete_quest -> applied seq=6 epoch=1 npc=1 quest=1 choice=0
-t=73 expect alice event error:quest_incomplete ok events[error:quest_incomplete]
-t=73 alice p1 e1 ack6 (-1769,90,1031) sees[] events[error:quest_incomplete]
+t=73 expect alice event error:invalid_quest ok events[error:invalid_quest]
+t=73 alice p1 e1 ack6 (-1769,90,1031) sees[] events[error:invalid_quest]
 t=74 alice abandon_quest -> applied seq=7 epoch=1 quest=1
 t=75 expect alice quest 1 ok quest=1 absent
 t=75 expect alice marker npc:1 ok npc=1 marker=available
@@ -40,4 +41,4 @@ t=85 alice p1 e2 ack8 (-1769,90,1031) sees[]
 t=99 expect alice quest 1 ok quest=1 active progress=[0, 0, 0]
 t=99 alice p1 e2 ack8 (-1769,90,1031) sees[]
 t=120 alice p1 e2 ack8 (-1769,90,1031) sees[]
-PASS quest-resume ticks=120 steps=11 expectations=13 failures=0
+PASS quest-resume ticks=120 steps=11 expectations=14 failures=0
