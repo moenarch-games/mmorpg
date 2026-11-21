@@ -76,12 +76,13 @@ fn discoveries_and_quest_hints_follow_the_received_sheets() {
     assert!(hint.radius > 0.0);
     assert_eq!(hint.quest, quest.get());
 
+    // Its other open objectives (the Wolfrun Cart's sacks share the area) keep their hints.
     entry.progress[index] = 1;
     let done = exploration_map(&content, &BTreeSet::new(), Some(&sheet(entry)));
     assert!(
         done.hints
             .iter()
-            .all(|hint| hint.area != area || hint.quest != quest.get())
+            .all(|other| other.quest != quest.get() || other.label != hint.label)
     );
 
     // A kill objective points at the area its creatures roam, never at a spawn.
