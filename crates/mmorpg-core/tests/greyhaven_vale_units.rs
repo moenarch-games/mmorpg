@@ -353,6 +353,19 @@ fn templates_follow_the_design_contract() {
                 2600,
                 60000
             ),
+            // The Fenwater river crayfish (#996): a shelled bank ambusher with a slow pinch.
+            (
+                "River Crayfish",
+                Crayfish,
+                Aggressive,
+                [3, 4],
+                false,
+                70,
+                14,
+                [5, 9],
+                3000,
+                60000
+            ),
         ]
     );
     let wolf = content
@@ -550,6 +563,8 @@ fn spawns_populate_their_subzones() {
         ),
         ((wilds::DELVING_HEIGHTS, "Hill Ogre"), 2),
         ((wilds::FENWATER_CROSSING, "Field Marauder"), 4),
+        // River Crayfish (#996) on the Fenwater's bank.
+        ((wilds::FENWATER_CROSSING, "River Crayfish"), 3),
         ((wilds::KINGS_ROAD_DOWNS, "Field Marauder"), 4),
         ((wilds::KINGS_ROAD_DOWNS, "Young Boar"), 6),
         ((wilds::KINGS_ROAD_DOWNS, "Grain Rat"), 3),
