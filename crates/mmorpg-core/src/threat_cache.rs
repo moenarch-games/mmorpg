@@ -173,9 +173,10 @@ mod tests {
         let distant = zone
             .creatures
             .iter()
+            .rev()
             .filter(|(_, creature)| creature.is_alive())
             .map(|(&id, _)| id)
-            .last()
+            .next()
             .expect("the zone has a living creature");
         zone.creatures
             .get_mut(&distant)
