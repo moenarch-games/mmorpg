@@ -343,11 +343,12 @@ impl ZoneSimulation {
     pub(crate) fn reserve_raider(&mut self, id: CreatureId) -> Result<(), ZoneError> {
         let content = Arc::clone(&self.content);
         let (_, template) = Self::creature_content(&content, id)?;
+        let rng = self.creature_stream(id, 1);
         self.creatures.insert(
             id,
             CreatureState {
                 generation: 1,
-                rng: self.creature_stream(id, 1),
+                rng,
                 level: template.min_level,
                 health: 0,
                 facing: 0,
