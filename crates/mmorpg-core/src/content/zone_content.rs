@@ -49,6 +49,10 @@ pub struct ZoneContent {
     npcs: Vec<Npc>,
     graveyard: [i32; 2],
     fingerprint: u64,
+    /// The hash of the physical and unit tables (colliders, meshes, terrain heights, areas,
+    /// creatures, NPCs, graveyard), computed once at construction: none of them changes
+    /// afterwards, so every `with_*` refreshes the revision without rehashing the terrain (#1008).
+    simulation_fingerprint: u64,
     character_persistence: CharacterPersistence,
     player_combat: PlayerCombatPolicy,
     /// Timed swings and clashes (#679); `None` resolves strikes at once.
@@ -207,6 +211,7 @@ impl ZoneContent {
             npcs,
             graveyard,
             fingerprint: 0,
+            simulation_fingerprint: 0,
             character_persistence: CharacterPersistence::Durable,
             player_combat: PlayerCombatPolicy::Safe,
             timed_combat: None,
@@ -251,7 +256,8 @@ impl ZoneContent {
             dens: Vec::new(),
             caches: Vec::new(),
         };
-        content.rng_seed = content.compute_simulation_fingerprint();
+        content.simulation_fingerprint = content.compute_simulation_fingerprint();
+        content.rng_seed = content.simulation_fingerprint;
         content.fingerprint = content.compute_fingerprint();
         Ok(content)
     }
@@ -269,6 +275,7 @@ impl ZoneContent {
             npcs: Vec::new(),
             graveyard: [feet[0], feet[2]],
             fingerprint: 0,
+            simulation_fingerprint: 0,
             character_persistence: CharacterPersistence::Durable,
             player_combat: PlayerCombatPolicy::Safe,
             timed_combat: None,
@@ -313,7 +320,8 @@ impl ZoneContent {
             dens: Vec::new(),
             caches: Vec::new(),
         };
-        content.rng_seed = content.compute_simulation_fingerprint();
+        content.simulation_fingerprint = content.compute_simulation_fingerprint();
+        content.rng_seed = content.simulation_fingerprint;
         content.fingerprint = content.compute_fingerprint();
         content
     }
@@ -2539,7 +2547,7 @@ impl ZoneContent {
     fn compute_loot_fingerprint(&self) -> u64 {
         let mut hash = Fnv1a::new();
         hash.bytes(b"mmorpg.zone-content/v2");
-        hash.u64(self.compute_simulation_fingerprint());
+        hash.u64(self.simulation_fingerprint);
         hash.u64(self.rng_seed);
         hash.len(crate::ITEM_CATALOG.len());
         for item in crate::ITEM_CATALOG {
@@ -2605,6 +2613,8 @@ impl ZoneContent {
 
     // Preserve the pre-inventory default seed for unchanged physical/unit content.
     fn compute_simulation_fingerprint(&self) -> u64 {
+        #[cfg(test)]
+        identity_once_tests::SIMULATION_HASHES.with(|count| count.set(count.get() + 1));
         let mut hash = Fnv1a::new();
         hash.bytes(b"mmorpg.zone-content/v1");
         let definition = &self.definition;
@@ -3197,5 +3207,53 @@ mod tests {
         let physical = ZoneContent::from_definition(ground());
         assert_ne!(colliders_differ.revision(), physical.revision());
         assert_eq!(physical.graveyard(), [0, 0]);
+    }
+}
+
+#[cfg(test)]
+mod identity_once_tests {
+    use std::cell::Cell;
+
+    use super::*;
+
+    thread_local! {
+        /// Full simulation hashes (colliders, meshes, terrain heights) on this thread.
+        pub(super) static SIMULATION_HASHES: Cell<u32> = const { Cell::new(0) };
+    }
+
+    fn hashes() -> u32 {
+        SIMULATION_HASHES.with(Cell::get)
+    }
+
+    /// Construction hashes the terrain once, a rebuild yields the same identity, and a `with_*`
+    /// after construction still refreshes the revision without rehashing the terrain.
+    #[test]
+    fn identity_is_unchanged_and_the_terrain_is_hashed_once() {
+        let definition = crate::greyhaven_vale::greyhaven_vale_definition();
+        let before = hashes();
+        let greyhaven = crate::greyhaven_vale::content_with_definition(definition.clone()).unwrap();
+        assert_eq!(
+            hashes() - before,
+            1,
+            "one full hash per Greyhaven construction"
+        );
+
+        let physical = ZoneContent::from_definition(definition.clone());
+        let before = hashes();
+        let reseeded = physical.clone().with_rng_seed(7);
+        let mutated = reseeded
+            .clone()
+            .with_player_combat(PlayerCombatPolicy::Safe);
+        assert_eq!(hashes(), before, "with_* reuses the construction hash");
+        assert_ne!(reseeded.revision(), physical.revision());
+
+        assert_eq!(mutated.rng_seed(), 7);
+
+        // The revision follows the content (ADR 0006), so it is not pinned here; rebuilding
+        // the same content yields the same identity. The pre-#1008 values were compared
+        // when this landed; `the_content_identity_is_pinned` keeps pinning the seed.
+        let rebuilt = crate::greyhaven_vale::content_with_definition(definition).unwrap();
+        assert_eq!(rebuilt.revision(), greyhaven.revision());
+        assert_eq!(rebuilt.rng_seed(), greyhaven.rng_seed());
     }
 }
