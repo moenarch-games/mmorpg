@@ -110,9 +110,9 @@ describe("the shared static scene in the browser", () => {
     const ground = new Ground(empty, [], [roof]);
     const batch = ground.root.children.find((child) => child instanceof BatchedMesh);
     if (!(batch instanceof BatchedMesh)) { throw new Error("roof did not enter the material batch"); }
-    ground.update([64, 30, -138], scene.shown([64, 11, -138], { outpost: false, settlementProps: false, nature: false, climbing: false, crag: false, fortress: false }));
+    ground.update([64, 30, -138], scene.shown([64, 11, -138], { outpost: false, settlementProps: false, nature: false, limestone: false, climbing: false, crag: false, fortress: false }));
     expect(batch.getVisibleAt(0)).toBe(false);
-    ground.update([64, 30, -138], scene.shown(null, { outpost: false, settlementProps: false, nature: false, climbing: false, crag: false, fortress: false }));
+    ground.update([64, 30, -138], scene.shown(null, { outpost: false, settlementProps: false, nature: false, limestone: false, climbing: false, crag: false, fortress: false }));
     expect(batch.getVisibleAt(0)).toBe(true);
     batch.dispose();
   });
@@ -139,8 +139,31 @@ test("the arena's static groups stream from the arena scene", () => {
   const presentation = new wasm.ArenaPresentation();
   const layout = JSON.parse(presentation.staticScene()) as { groups: { min: [number, number] }[] };
   const stream = presentation.groupStream();
-  const update = stream.update(0, 2, 0, false, false, false, false, false, Uint32Array.from(presentation.dressedProps()));
+  const update = stream.update(0, 2, 0, false, false, false, false, false, false, Uint32Array.from(presentation.dressedProps()));
   const built = Array.from(update.subarray(1, 1 + update[0]!));
   expect(built.length).toBeGreaterThan(0);
   expect(built.every((group) => group < layout.groups.length)).toBe(true);
+});
+
+// #1011: the nature and limestone bundles load independently, so each keeps its own stand-ins until it is drawn.
+test("nature and limestone stand-ins each wait for their own bundle", () => {
+  const frame = new SceneryFrame(scene);
+  const groups = [...scene.batches, ...scene.instanceBatches];
+  const none = { outpost: false, settlementProps: false, nature: false, limestone: false, climbing: false, crag: false, fortress: false };
+  // Each group's visibility from `eye` while the bundles in `drawn` are loaded.
+  const visible = (eye: readonly [number, number, number], drawn: { nature: boolean; limestone: boolean }) => {
+    const shown = frame.nodes(eye, { seconds: 0, animate: false, kits: { ...none, ...drawn } });
+    return [...shown.nodes.slice(0, scene.batches.length), ...shown.instanceBatches].map((node) => node.visible !== false);
+  };
+  for (const [ready, pending] of [["nature", "limestone"], ["limestone", "nature"]] as const) {
+    const at = groups.find((group) => group.fallback === pending)!;
+    const eye = [at.center[0], 5, at.center[1]] as const;
+    const before = visible(eye, { nature: false, limestone: false });
+    const after = visible(eye, { nature: ready === "nature", limestone: ready === "limestone" });
+    const stand = (kit: string, shown: boolean[]) => groups.flatMap((group, index) => group.fallback === kit && before[index] ? [shown[index]] : []);
+    // The pending bundle's stand-ins near the eye stay; the ready bundle's go.
+    expect(stand(pending, after).length).toBeGreaterThan(0);
+    expect(stand(pending, after).every(Boolean)).toBe(true);
+    expect(stand(ready, after).some(Boolean)).toBe(false);
+  }
 });

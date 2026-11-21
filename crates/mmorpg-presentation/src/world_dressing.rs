@@ -106,7 +106,7 @@ const GREYHAVEN: [&str; 14] = [
 /// ([`Kit`]) it hides while drawn, if it has one.
 pub const KITS: [(&str, Option<Kit>); 10] = [
     ("greyhaven.nature.", Some(Kit::Nature)),
-    ("limestone-rocks.kit.", Some(Kit::Nature)),
+    ("limestone-rocks.kit.", Some(Kit::Limestone)),
     ("crag.kit.", Some(Kit::Crag)),
     ("settlement.props.", Some(Kit::SettlementProps)),
     ("outpost.kit.", Some(Kit::Outpost)),
@@ -358,9 +358,15 @@ pub fn placed(s: &Scenery) -> &'static [Placed] {
 /// The placements `kit` draws on `s`, in file order.
 #[must_use]
 pub fn placements(s: &Scenery, kit: Kit) -> Vec<Placement> {
+    placements_of(s, &[kit])
+}
+
+/// The placements any of `kits` draws on `s`, in file order.
+#[must_use]
+pub fn placements_of(s: &Scenery, kits: &[Kit]) -> Vec<Placement> {
     placed(s)
         .iter()
-        .filter(|placed| placed.kit() == Some(kit))
+        .filter(|placed| placed.kit().is_some_and(|kit| kits.contains(&kit)))
         .map(|placed| {
             let frame = placed.frame();
             Placement {

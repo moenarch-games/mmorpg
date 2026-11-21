@@ -895,6 +895,7 @@ pub fn static_scene_shown(viewer: &[f64], outpost_kit: bool, settlement_props: b
             // Nature and climbing fallbacks are whole static groups (#49, #621), which the browser
             // hides itself.
             nature: false,
+            limestone: false,
             climbing: false,
             crag: false,
             dressed: &[],

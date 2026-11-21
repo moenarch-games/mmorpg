@@ -1093,8 +1093,13 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
         // Trees and rocks are the nature bundle's (#49), ladders and ropes the climbing kit's
         // (#621), the box crags and cliffs (with their worn handholds) the crag kit's (#668);
         // these are their fallback.
+        // The nature-drawn rocks are the limestone bundle's blocks, a bundle of their own (#1011).
         b.fallback = if crate::nature::draws(s, p) {
-            Some(Kit::Nature)
+            Some(if matches!(p.kind, PropKind::Rock(_)) {
+                Kit::Limestone
+            } else {
+                Kit::Nature
+            })
         } else if crate::crag::dresses(s, p) {
             Some(Kit::Crag)
         } else {

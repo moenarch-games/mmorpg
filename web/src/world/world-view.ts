@@ -1938,7 +1938,7 @@ export class WorldView {
       this.#sound.pump();
     }
     const outpostReady = (this.#outpost?.drawn ?? false) && (this.#fortifications?.drawn ?? false);
-    const kits = { outpost: outpostReady, settlementProps: this.#settlement?.drawn ?? false, nature: this.#nature?.drawn ?? false, climbing: this.#climbing?.drawn ?? false, crag: this.#crag?.drawn ?? false, fortress: this.#fortress?.drawn ?? false };
+    const kits = { outpost: outpostReady, settlementProps: this.#settlement?.drawn ?? false, nature: this.#nature?.drawn ?? false, limestone: this.#limestone?.drawn ?? false, climbing: this.#climbing?.drawn ?? false, crag: this.#crag?.drawn ?? false, fortress: this.#fortress?.drawn ?? false };
     const batches = this.#sceneryBatches;
     if (batches) { batches.stream(view.eye, { ...kits, dressed: this.#fortress?.drawn ? world.scenery.dressedProps?.() ?? NO_DRESSED : NO_DRESSED }); }
     const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits, resident: batches ? (group) => batches.resident(group) : () => true });

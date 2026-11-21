@@ -7,7 +7,7 @@
 //! collider collides as ([`mmorpg_core::RockShape`]), fitted into the collider's box exactly
 //! like the proxy, so the drawn rock and its collision agree. Bushes stay walk-through foliage
 //! (#577). While a client does not draw the bundle, the static scene draws the procedural
-//! trees, rocks and bushes ([`crate::Kit::Nature`] fallback groups).
+//! trees and bushes ([`crate::Kit::Nature`] fallback groups) and rocks ([`crate::Kit::Limestone`]).
 //!
 //! Greyhaven's placements are world dressing (#683): [`compose_all`] composes them offline
 //! (`examples/export-nature-dressing.rs`) into `content/greyhaven/dressing/nature.json`, and the
@@ -248,7 +248,7 @@ pub fn compose_all(s: &Scenery) -> Vec<Composed> {
 #[must_use]
 pub fn placements(s: &Scenery) -> Vec<Placement> {
     if s.greyhaven() {
-        world_dressing::placements(s, Kit::Nature)
+        world_dressing::placements_of(s, &[Kit::Nature, Kit::Limestone])
     } else {
         compose_all(s).iter().map(Composed::placement).collect()
     }
@@ -332,7 +332,7 @@ mod tests {
         let composed = compose_all(&scenery);
         let committed: Vec<_> = world_dressing::committed()
             .iter()
-            .filter(|placed| placed.kit() == Some(Kit::Nature))
+            .filter(|placed| matches!(placed.kit(), Some(Kit::Nature | Kit::Limestone)))
             .collect();
         assert_eq!(committed.len(), composed.len());
         let drawn = placements(&scenery);

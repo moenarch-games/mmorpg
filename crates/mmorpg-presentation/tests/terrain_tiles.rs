@@ -310,6 +310,7 @@ fn groups_stream_to_their_class_reach_and_a_drawn_kits_fallback_is_dropped() {
         .expect("a nature fallback group");
     let drawn = Kits {
         nature: true,
+        limestone: true,
         ..Kits::default()
     };
     assert!(fallback.site(eye, Kits::default()).evict.is_finite());
