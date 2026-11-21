@@ -172,6 +172,9 @@ pub(crate) struct PlayerState {
     pub(crate) waystones: crate::WaystoneSet,
     /// Named areas the character discovered (#916): each paid its discovery experience once.
     pub(crate) discoveries: std::collections::BTreeSet<crate::AreaId>,
+    /// Weapon-family mastery (#915), durable, and the practice banked against living foes.
+    pub(crate) mastery: crate::WeaponMastery,
+    pub(crate) practice: Vec<crate::Practice>,
     /// Discovery caches the character opened (#913), each rewarded once.
     pub(crate) caches: std::collections::BTreeSet<u32>,
     /// The durable character bound to this session (`None` for session-only players), and its
@@ -237,6 +240,8 @@ impl PlayerState {
             quests: crate::QuestLog::default(),
             waystones: crate::WaystoneSet::EMPTY,
             discoveries: std::collections::BTreeSet::new(),
+            mastery: crate::WeaponMastery::default(),
+            practice: Vec::new(),
             caches: std::collections::BTreeSet::new(),
             character: None,
             depths: crate::DepthsRecord::default(),
@@ -953,6 +958,8 @@ impl ZoneSimulation {
         self.advance_combos();
         self.advance_authored();
         self.advance_quest_objectives()?;
+        // Practice against a foe that died this tick becomes mastery (#915).
+        self.settle_practice()?;
         self.tick = now;
         // Routine NPCs stand where the new tick's time of day puts them (#158).
         self.place_npcs(true)?;

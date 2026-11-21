@@ -110,6 +110,7 @@ pub fn exhaustive_projection(
             breath: mmorpg_core::water::BREATH_MAX_TICKS,
             // Only Clerics store harm (#936).
             reckoning: 0,
+            mastery: observer.mastery.sword,
             waystones: observer.waystones.clone(),
         },
         cooldowns: Vec::new(),

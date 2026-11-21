@@ -185,6 +185,9 @@ jobs:
       packages: read
     uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@858803b5ce092c1bc9981f215ceab43066bc1ca8
     with:
+      # Tests plus `cargo check` exceed the reusable job's 45-minute default when several PRs
+      # validate at once (2026-11-21: five queue/PR runs cancelled at exactly 45 minutes).
+      timeout_minutes: 75
       # Bun comes from scripts/ci-install-bun.sh, which retries; the reusable job's setup step cannot.
       # The wasm-bindgen CLI is for web/'s `@moritzbrantner/maps` prepare script, which the reference
       # tests' `bun install` runs (#896).

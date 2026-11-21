@@ -15,6 +15,11 @@
 //!   blocks it as any creature blow. The heavy attack deals half again.
 //! - **Interruption.** Death, a stun, a cast, an evade or the loss of its fight drops a
 //!   pending attack.
+//! - **Pounce.** The lynx (#989) has one attack, a pounce: it begins it from
+//!   [`POUNCE_LEAP_UNITS`] beyond its reach, crouches through the wind-up turning toward its
+//!   target at a bounded rate, leaps along its facing for the last [`POUNCE_LEAP_TICKS`] and,
+//!   after the contact, holds still for [`POUNCE_RECOVER_TICKS`]. Stepping aside during the
+//!   wind-up dodges it; its recovery is the opening to hit back.
 //!
 //! A pending attack is canonical creature state, so replay and recovery continue mid-bite.
 //! Outcomes stay health only: no knockback or hitstun.
@@ -26,6 +31,23 @@ use crate::{CreatureFamily, EntityRef};
 pub const CREATURE_ATTACK_SLACK_UNITS: i32 = 50;
 /// One attack in this many is the heavy one.
 pub const HEAVY_ATTACK_ODDS: u32 = 3;
+
+/// The lynx's pounce (#989), from the wildlife descriptor's `greyhaven.wild.lynx` clips: its
+/// `Pounce_Windup` lasts 0.5 s and its `Pounce_Lunge` makes contact 0.333 s in, its root
+/// travelling 1.37 m between 0.125 s and that contact; `Pounce_Recover` lasts 0.833 s.
+const POUNCE_WINDUP_MS: u32 = 500;
+const POUNCE_CONTACT_MS: u32 = POUNCE_WINDUP_MS + 333;
+const POUNCE_LEAP_START_MS: u32 = POUNCE_WINDUP_MS + 125;
+/// How far beyond its reach (units) a pouncer begins its pounce: the lunge's 1.37 m.
+pub const POUNCE_LEAP_UNITS: i32 = 137;
+/// The last ticks of a pounce's wind-up, from the lunge's take-off to its contact, in which
+/// the pouncer leaps along its facing.
+pub const POUNCE_LEAP_TICKS: u16 =
+    crate::ticks_from_ms(POUNCE_CONTACT_MS) - crate::ticks_from_ms(POUNCE_LEAP_START_MS);
+/// The leap's speed, covering [`POUNCE_LEAP_UNITS`] in [`POUNCE_LEAP_TICKS`] (6.9 m/s).
+pub const POUNCE_LEAP_SPEED_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(690);
+/// Ticks after its contact a pouncer holds still in its `Pounce_Recover`, open to a counter.
+pub const POUNCE_RECOVER_TICKS: u16 = crate::ticks_from_ms(833);
 
 /// One of a beast's two attacks, its `Attack_A` and `Attack_B` clips.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
@@ -76,6 +98,8 @@ pub const fn contact_ticks(family: CreatureFamily, attack: CreatureAttack) -> Op
         CreatureFamily::Bear => [458, 833],
         CreatureFamily::Spider => [375, 583],
         CreatureFamily::Lurker => [333, 583],
+        // The lynx (#989) pounces only: `Pounce_Windup`'s 0.5 s, then `Pounce_Lunge`'s contact.
+        CreatureFamily::Lynx => [POUNCE_CONTACT_MS, POUNCE_CONTACT_MS],
         CreatureFamily::Marauder
         | CreatureFamily::Mirefin
         | CreatureFamily::Redbrand
@@ -99,6 +123,13 @@ pub struct PendingAttack {
 }
 
 impl PendingAttack {
+    /// Whether a pouncer holding it is in its leap (#989): the wind-up's last
+    /// [`POUNCE_LEAP_TICKS`].
+    #[must_use]
+    pub const fn leaping(self) -> bool {
+        self.contact <= POUNCE_LEAP_TICKS
+    }
+
     /// Whether a `family` creature may hold it: a family that winds up, no further from its
     /// bite than the attack's whole wind-up.
     #[must_use]

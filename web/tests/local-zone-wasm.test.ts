@@ -341,7 +341,7 @@ describe("WASM local zone host", () => {
     expect(projection.viewer).toEqual({
       copper: 0, health: 50, maxHealth: 50, experience: 0, experienceToNextLevel: 100, level: 1, dead: false, inCombat: false, weaponDrawn: false, target: null,
       classChoice: { classId: "arcanist", sex: "female" }, resource: { kind: "mana", value: 110, max: 110 }, cast: null, globalCooldown: 0, globalCooldownTotal: 0, damage: { min: 3, max: 6 },
-      guard: { raised: null, protecting: false, broken: 0 }, stance: null, combo: null, breath: wireCatalog().breathMaxTicks, reckoning: 0, waystones: [],
+      guard: { raised: null, protecting: false, broken: 0 }, stance: null, combo: null, breath: wireCatalog().breathMaxTicks, reckoning: 0, swordMastery: 0, swordPractice: 0, swordPracticeToNext: 30, waystones: [],
     });
     expect(() => zone.submit(player, 1, Uint8Array.of(1, 1, 0, 0, 0, 0))).toThrow();
     expect(zone.submit(player, 1, encodeCommand({ kind: "jump" }))).toBe(true);
@@ -546,7 +546,7 @@ describe("WASM local zone combat intents", () => {
     expect([...catalog.creatureTemplates.values()].map((template) => template.name)).toEqual([
       "Timber Wolf", "Young Boar", "Grain Rat", "Field Marauder", "Mirefin Lurker", "Redbrand Bandit", "Garrick Redbrand",
       "Redbrand Crossbowman", "Crate", "Barrel", "Blasting Powder Barrel", "Fence", "Hill Ogre", "Heavy Crate", "Redbrand Brute", "Loose Boulder",
-      "Brown Bear", "Cave Spider", "Marsh Lurker", "Old Scarback", "Captain Ulric Thorn",
+      "Brown Bear", "Cave Spider", "Marsh Lurker", "Old Scarback", "Forest Lynx", "Captain Ulric Thorn",
     ]);
     expect(catalog.creatureTemplates.get(11)?.prop).toBe("explosive_barrel");
     expect(catalog.creatureTemplates.get(13)?.family).toBe("ogre");

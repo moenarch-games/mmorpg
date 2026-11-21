@@ -560,6 +560,7 @@ async fn offscreen_pixels(
                 emissive: [0.; 3],
                 double_sided: false,
                 ground: None,
+                texture: None,
             },
             skin: None,
         });
@@ -600,6 +601,7 @@ mod tests {
                             unlit: false,
                             double_sided: false,
                             ground: None,
+                            texture: None,
                         },
                         skin: None,
                     })

@@ -1,3 +1,4 @@
+| Forest Lynx | Lynx | 2–3 | 50 (+12) | 4–7 (+1 per level) | 78 | ambusher within 4 m that stalks and pounces, Southwood edge (#989) |
 # Greyhaven Vale starter zone
 
 
@@ -123,6 +124,7 @@ Creatures **navigate around blockers** (#307): a creature chasing a target or ru
 - Players: `SelectTarget(EntityRef | none)`, `Swing { facing }`, `UseAbility { ability, target }`. The server validates range, aim and resource; offensive abilities fire where the player faces and the target names only a friendly ability's recipient (#517).
 - A swing (#517) is a movement-state strike (#885): a standing three-hit chain, a running lunge or a jumping landing blow, timed and shaped by the weapon family. It winds up and hits everything in its arc and reach where the player faces on its contact tick, targeted or not; one that hits nothing whiffs. Damage is `base + level scaling`, scaled per strike, with deterministic variance from the zone RNG. Crits apply ×1.5.
 - Wolves, boars, rats, bears, cave spiders and marsh lurkers wind up each attack (#889): the quick bite two times in three, the slower heavy one dealing half again, landing on the clip's contact frame, so a player who steps away or raises a shield in time avoids it.
+- The Forest Lynx (#989) pounces instead: it engages a player within 4 m, stalks in at a walk to 1.37 m beyond its reach, crouches still through its 0.5 s wind-up while turning toward its target, leaps the gap to its reach along its facing on the lunge's take-off and lands on the lunge's contact (0.833 s after the start), then holds still for its 0.833 s recovery. Stepping aside during the wind-up dodges it; the recovery is the opening to hit back. Three lie up on Southwood's eastern and southern edge (spawns 3100–3102), off the Southwood Trail.
 - Death: creatures leave a lootable corpse. Players drop to a dead state and `ReleaseSpirit` respawns them at the graveyard with half health. Health and resource regenerate out of combat.
 
 ### Classes (level 1–10)

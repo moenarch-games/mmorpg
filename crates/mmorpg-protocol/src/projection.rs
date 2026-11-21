@@ -32,10 +32,10 @@ const SELF_BYTES: usize = 4 + 4 + 1 + 8 + 4 + 1 + ENTITY_REF_BYTES;
 pub const CAST_RECORD_BYTES: usize = 4 + 1 + 2 + 2;
 /// Class code, resource kind/value/max, global cooldown, cast, melee damage
 /// range, the guard (lane code, protecting flag, break ticks), the melee
-/// stance and combo phase codes, breath ticks (#274) and the harm stored against the target
-/// (#936).
+/// stance and combo phase codes, breath ticks (#274), the harm stored against the target
+/// (#936) and the sword mastery's level and progress (#915).
 const SELF_ABILITY_BYTES: usize =
-    1 + 1 + 2 + 2 + 2 + CAST_RECORD_BYTES + 2 + 2 + 1 + 1 + 2 + 1 + 1 + 2 + 2;
+    1 + 1 + 2 + 2 + 2 + CAST_RECORD_BYTES + 2 + 2 + 1 + 1 + 2 + 1 + 1 + 2 + 2 + 1 + 2;
 /// The target's own target and the target's cast.
 const TARGET_BYTES: usize = ENTITY_REF_BYTES + CAST_RECORD_BYTES;
 /// Every section's fixed part: header, self, target, sheet mask (`u16`, #544, #897), summoned
@@ -209,6 +209,8 @@ pub fn pack_snapshot_acknowledged(
     payload.push(viewer.combo.map_or(0, mmorpg_core::ComboPhase::code));
     payload.extend_from_slice(&viewer.breath.to_be_bytes());
     payload.extend_from_slice(&viewer.reckoning.to_be_bytes());
+    payload.push(viewer.mastery.level);
+    payload.extend_from_slice(&viewer.mastery.progress.to_be_bytes());
     encode_entity_ref(&mut payload, snapshot.target_of_target);
     encode_cast(&mut payload, snapshot.target_detail.cast);
 
@@ -741,6 +743,14 @@ fn decode_projection(
     }
     // The harm a Divine Reckoning would draw on against the target (#936).
     let reckoning = u16::from_be_bytes(take(payload, &mut offset)?);
+    // The viewer's sword mastery (#915).
+    let mastery = mmorpg_core::Mastery {
+        level: read_u8(payload, &mut offset)?,
+        progress: u16::from_be_bytes(take(payload, &mut offset)?),
+    };
+    if !mastery.is_valid() {
+        return Err(ProtocolError::new("viewer weapon mastery is out of range"));
+    }
     let resource = match (class, resource_kind) {
         (None, 0) if resource_value == 0 && resource_max == 0 => None,
         (Some(choice), code) if code == resource_code(choice.class.resource()) => {
@@ -963,6 +973,7 @@ fn decode_projection(
             combo,
             breath,
             reckoning,
+            mastery,
             waystones,
         },
         cooldowns: abilities.cooldowns,
@@ -1352,6 +1363,10 @@ pub(crate) mod tests {
                 breath: mmorpg_core::water::BREATH_MAX_TICKS,
                 // Harm stored against the target (#936).
                 reckoning: 123,
+                mastery: mmorpg_core::Mastery {
+                    level: 1,
+                    progress: 42,
+                },
                 waystones: mmorpg_core::WaystoneSet::EMPTY,
             },
             cooldowns: vec![
@@ -1622,7 +1637,9 @@ pub(crate) mod tests {
     const BREATH: usize = COMBO + 1;
     /// The harm stored against the target (#936).
     const RECKONING: usize = BREATH + 2;
-    const TARGET_OF_TARGET: usize = RECKONING + 2;
+    /// The sword mastery's level and progress (#915).
+    const MASTERY: usize = RECKONING + 2;
+    const TARGET_OF_TARGET: usize = MASTERY + 3;
     const TARGET_CAST: usize = TARGET_OF_TARGET + ENTITY_REF_BYTES;
     const SHEET_MASK: usize = TARGET_CAST + CAST_RECORD_BYTES;
     /// The `u16` sheet mask (#897).
@@ -1977,6 +1994,7 @@ pub(crate) mod tests {
             // The fixture's Arcanist has no melee stance.
             (STANCE, 2, "viewer melee stance is invalid"),
             (COMBO, 2, "viewer combo phase is invalid"),
+            (MASTERY, 9, "viewer weapon mastery is out of range"),
         ] {
             let mut invalid = encoded.clone();
             invalid[offset] = value;
@@ -2285,7 +2303,7 @@ pub(crate) mod tests {
                 EVENT_RECORD_BYTES,
                 ENTITY_RECORD_BYTES
             ),
-            (114, 17, 29)
+            (117, 17, 29)
         );
         assert_eq!(MAX_WIRE_ENTITIES, 33);
         let viewer_id = u32::MAX;
@@ -2405,6 +2423,7 @@ pub(crate) mod tests {
                 combo: None,
                 breath: mmorpg_core::water::BREATH_MAX_TICKS,
                 reckoning: 0,
+                mastery: mmorpg_core::Mastery::default(),
                 waystones: mmorpg_core::WaystoneSet::EMPTY,
             },
             cooldowns: Vec::new(),

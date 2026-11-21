@@ -40,6 +40,7 @@ pub mod hunt;
 pub mod inn;
 pub mod landscape;
 pub mod layout;
+pub mod lynx;
 pub mod market;
 pub mod marsh;
 pub mod marsh_creatures;

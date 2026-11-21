@@ -113,23 +113,22 @@ mod meadow_bundle {
 mod meadow_descriptor {
     include!(concat!(env!("OUT_DIR"), "/meadow_descriptor.rs"));
 }
-mod wolf_den_bundle {
-    include!(concat!(env!("OUT_DIR"), "/wolf_den_bundle.rs"));
-}
-mod wolf_den_descriptor {
-    include!(concat!(env!("OUT_DIR"), "/wolf_den_descriptor.rs"));
-}
 mod gatherables_bundle {
     include!(concat!(env!("OUT_DIR"), "/gatherables_bundle.rs"));
 }
 mod gatherables_descriptor {
     include!(concat!(env!("OUT_DIR"), "/gatherables_descriptor.rs"));
 }
-mod discoveries_bundle {
-    include!(concat!(env!("OUT_DIR"), "/discoveries_bundle.rs"));
-}
-mod discoveries_descriptor {
-    include!(concat!(env!("OUT_DIR"), "/discoveries_descriptor.rs"));
+/// Every ordinary placed kit of the shared inventory (#683), embedded by `build.rs` in
+/// `mmorpg_presentation::world_dressing::placed_kits` order.
+mod placed_kits {
+    /// One embedded ordinary kit: its glTF entries, files and descriptor JSON.
+    pub struct Kit {
+        pub entries: &'static [(&'static str, &'static str)],
+        pub files: super::Files,
+        pub descriptor: &'static str,
+    }
+    include!(concat!(env!("OUT_DIR"), "/placed_kits.rs"));
 }
 
 type Files = &'static [(&'static str, &'static [u8])];
@@ -143,24 +142,13 @@ struct Source {
     descriptor: &'static str,
 }
 
-const SOURCES: [Source; 10] = [
+/// The bundles with entries of their own, then every ordinary placed kit ([`sources`]).
+const SOURCES: [Source; 8] = [
     Source {
         keys: &mmorpg_presentation::world_dressing::GATHERABLE_ENTRIES,
         entries: gatherables_bundle::ENTRIES,
         files: gatherables_bundle::FILES,
         descriptor: gatherables_descriptor::DESCRIPTOR,
-    },
-    Source {
-        keys: &mmorpg_presentation::world_dressing::DISCOVERY_ENTRIES,
-        entries: discoveries_bundle::ENTRIES,
-        files: discoveries_bundle::FILES,
-        descriptor: discoveries_descriptor::DESCRIPTOR,
-    },
-    Source {
-        keys: &mmorpg_presentation::world_dressing::WOLF_DEN_ENTRIES,
-        entries: wolf_den_bundle::ENTRIES,
-        files: wolf_den_bundle::FILES,
-        descriptor: wolf_den_descriptor::DESCRIPTOR,
     },
     Source {
         keys: &mmorpg_presentation::terrain_patch::MEADOW_ENTRIES,
@@ -206,6 +194,32 @@ const SOURCES: [Source; 10] = [
     },
 ];
 
+/// Every embedded bundle: [`SOURCES`], then each ordinary placed kit of the shared inventory.
+fn sources() -> &'static [Source] {
+    static ALL: OnceLock<Vec<Source>> = OnceLock::new();
+    ALL.get_or_init(|| {
+        let kits = mmorpg_presentation::world_dressing::placed_kits();
+        assert_eq!(
+            kits.len(),
+            placed_kits::KITS.len(),
+            "build.rs embeds every placed kit"
+        );
+        SOURCES
+            .into_iter()
+            .chain(
+                kits.iter()
+                    .zip(placed_kits::KITS)
+                    .map(|(kit, embedded)| Source {
+                        keys: &kit.entries,
+                        entries: embedded.entries,
+                        files: embedded.files,
+                        descriptor: embedded.descriptor,
+                    }),
+            )
+            .collect()
+    })
+}
+
 /// Fade materials per primitive: a fade quantizes to one of these dissolve thresholds.
 pub const FADE_STEPS: usize = 8;
 
@@ -216,7 +230,7 @@ pub const FADE_STEPS: usize = 8;
 /// `<key>/<variant>`, [`kit_entries`]), which have no [`lods`].
 #[must_use]
 pub fn entries() -> Vec<&'static str> {
-    SOURCES
+    sources()
         .iter()
         .flat_map(|source| source.keys.iter().copied())
         .chain(kit_entries().map(|(key, _, _)| key))
@@ -226,7 +240,7 @@ pub fn entries() -> Vec<&'static str> {
 /// The library index of single-level kit entry `key`, drawn at level 0.
 #[must_use]
 pub fn kit_entry(key: &str) -> Option<usize> {
-    let bundled: usize = SOURCES.iter().map(|source| source.keys.len()).sum();
+    let bundled: usize = sources().iter().map(|source| source.keys.len()).sum();
     kit_entries()
         .position(|(entry, _, _)| entry == key)
         .map(|index| bundled + index)
@@ -268,17 +282,19 @@ pub fn lods() -> Vec<EntryLods> {
             .expect("the meadow descriptor is valid"),
     );
     lods.extend(
-        mmorpg_presentation::nature::descriptor_lods(wolf_den_descriptor::DESCRIPTOR)
-            .expect("the embedded wolf den descriptor is valid"),
-    );
-    lods.extend(
         mmorpg_presentation::nature::descriptor_lods(gatherables_descriptor::DESCRIPTOR)
             .expect("the embedded gatherables descriptor is valid"),
     );
-    lods.extend(
-        mmorpg_presentation::nature::descriptor_lods(discoveries_descriptor::DESCRIPTOR)
-            .expect("the embedded discoveries descriptor is valid"),
-    );
+    for (kit, embedded) in mmorpg_presentation::world_dressing::placed_kits()
+        .iter()
+        .zip(placed_kits::KITS)
+    {
+        lods.extend(
+            mmorpg_presentation::nature::descriptor_lods(embedded.descriptor).unwrap_or_else(
+                |error| panic!("the embedded {} descriptor is valid: {error}", kit.name),
+            ),
+        );
+    }
     lods
 }
 
@@ -317,7 +333,7 @@ pub fn library() -> &'static Library {
     LIBRARY.get_or_init(|| {
         let lods = lods();
         let mut textures = TextureSet::default();
-        let layered: Vec<Option<Layered>> = SOURCES
+        let layered: Vec<Option<Layered>> = sources()
             .iter()
             .map(|source| {
                 LayeredSurface::from_descriptor(source.descriptor)
@@ -325,7 +341,7 @@ pub fn library() -> &'static Library {
                     .map(|surface| Layered::import(surface, source, &mut textures))
             })
             .collect();
-        let mut levels = SOURCES
+        let mut levels = sources()
             .iter()
             .zip(&layered)
             .flat_map(|(source, layered)| {
@@ -386,7 +402,7 @@ pub fn library() -> &'static Library {
 /// The glTF of [`entries`] index `entry`'s default level and its bundle's files.
 fn default_path(entry: usize) -> Option<(&'static str, Files)> {
     let mut index = 0;
-    for source in &SOURCES {
+    for source in sources() {
         if let Some(key) = source.keys.get(entry - index) {
             return source
                 .entries
@@ -595,7 +611,17 @@ pub(crate) fn texture(bytes: &[u8], srgb: bool) -> TextureData {
         .expect("bundle textures are PNG, JPEG or KTX2")
         .to_rgba8();
     let (width, height) = image.dimensions();
-    let mut levels = vec![image.into_raw()];
+    mipmapped(width, height, image.into_raw(), format)
+}
+
+/// RGBA8 texels `rgba` of a `width` × `height` image with a box-filtered mip chain.
+pub(crate) fn mipmapped(
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+    format: render_engine::wgpu::TextureFormat,
+) -> TextureData {
+    let mut levels = vec![rgba];
     let (mut w, mut h) = (width as usize, height as usize);
     while w > 1 || h > 1 {
         let (nw, nh) = ((w / 2).max(1), (h / 2).max(1));

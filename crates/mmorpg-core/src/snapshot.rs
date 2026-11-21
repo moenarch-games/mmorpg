@@ -321,6 +321,9 @@ pub struct CanonicalPlayerSnapshot {
     pub waystones: crate::WaystoneSet,
     /// Named areas discovered (#916).
     pub discoveries: std::collections::BTreeSet<crate::AreaId>,
+    /// Weapon-family mastery (#915) and the practice banked against living foes.
+    pub mastery: crate::WeaponMastery,
+    pub practice: Vec<crate::Practice>,
     /// Discovery caches opened (#913).
     pub caches: std::collections::BTreeSet<u32>,
     /// The durable character this session plays and its depths receipts (#404).
@@ -482,6 +485,8 @@ impl ZoneSimulation {
                     quests: state.quests.clone(),
                     waystones: state.waystones.clone(),
                     discoveries: state.discoveries.clone(),
+                    mastery: state.mastery,
+                    practice: state.practice.clone(),
                     caches: state.caches.clone(),
                     character: state.character.clone(),
                     depths: state.depths,
@@ -776,6 +781,9 @@ impl ZoneSimulation {
             return Err(ZoneError::new("player chat state is out of range"));
         }
         crate::quest::validate_log(&self.content, &player.quests)?;
+        if !player.mastery.is_valid() || !crate::valid_practice(&player.practice) {
+            return Err(ZoneError::new("player weapon mastery is out of range"));
+        }
         if combat.intents_dropped && combat.intents.len() != MAX_PENDING_INTENTS {
             return Err(ZoneError::new("only a full intent queue drops intents"));
         }
@@ -932,6 +940,8 @@ impl ZoneSimulation {
                 quests: player.quests,
                 waystones: player.waystones,
                 discoveries: player.discoveries,
+                mastery: player.mastery,
+                practice: player.practice,
                 caches: player.caches,
                 character: player.character,
                 depths: player.depths,

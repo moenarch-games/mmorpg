@@ -622,6 +622,11 @@ pub struct ViewerState {
     pub breath: u16,
     /// The harm a Divine Reckoning would draw on against the target (#936).
     pub reckoning: u16,
+    /// Sword mastery (#915): its level, the practice toward the next level and how much that
+    /// level needs (0 at the top).
+    pub sword_mastery: u8,
+    pub sword_practice: u16,
+    pub sword_practice_to_next: u16,
     /// Waystone IDs (#145) the viewer unlocked by exploration, ascending.
     pub waystones: Vec<u32>,
 }
@@ -1753,6 +1758,10 @@ impl From<&core::ZoneSnapshot> for ZoneSnapshot {
                 stance: viewer.stance.map(Into::into),
                 combo: viewer.combo.map(Into::into),
                 breath: viewer.breath,
+                sword_mastery: viewer.mastery.level,
+                sword_practice: viewer.mastery.progress,
+                sword_practice_to_next: core::practice_to_next_level(viewer.mastery.level)
+                    .unwrap_or(0),
                 reckoning: viewer.reckoning,
                 waystones: viewer.waystones.iter().map(core::WaystoneId::get).collect(),
             },
@@ -2013,6 +2022,10 @@ impl TryFrom<&ZoneSnapshot> for core::ZoneSnapshot {
                 combo: viewer.combo.map(Into::into),
                 breath: viewer.breath,
                 reckoning: viewer.reckoning,
+                mastery: core::Mastery {
+                    level: viewer.sword_mastery,
+                    progress: viewer.sword_practice,
+                },
                 waystones,
             },
             cooldowns: snapshot

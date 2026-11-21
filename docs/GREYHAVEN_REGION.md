@@ -42,7 +42,7 @@ Mountain streams feed both basins:
 | Delving Heights | Rugged high ground round the Delving Run's ravine | Redbrand veterans (5), hill ogres |
 | Fenwater Crossing | Meadows and alders along the river, the ford | field marauders (3), boars |
 | King's Road Downs | Open downs with copses and a spinney by the Greywater | marauders (3), boars, rats |
-| Southwood | Mixed oak, birch and pine wood | boars (1–2), wolves (2) |
+| Southwood | Mixed oak, birch and pine wood | boars (1–2), wolves (2), bear (3–4), forest lynxes on its eastern and southern edge (2–3) |
 | Westmere Woods | Dense pine wood round the tarn | wolf packs (2), boars, tarn lurkers (3) |
 | Crown Foothills | Pine and boulder slopes in the north-west | wolf packs (2), a hill ogre |
 
