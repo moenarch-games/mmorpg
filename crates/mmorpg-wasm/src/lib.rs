@@ -305,6 +305,28 @@ pub fn vary_preset(appearance: &str, id: &str, seed: u32) -> Result<String, JsEr
         .ok_or_else(|| JsError::new(&format!("the Ranger bundle has no preset {id}")))
 }
 
+/// Per shared loadout name, the bundle items it wears and their sockets (`Loadout::attachments`,
+/// #1012), as JSON `{"sword-and-shield": [{"key": "equipment.sword.arming", "socket":
+/// "hand_r.weapon"}, …], …}`: the one table both clients attach from.
+#[wasm_bindgen(js_name = loadoutAttachments)]
+#[must_use]
+pub fn loadout_attachments() -> String {
+    use mmorpg_presentation::units::imported::Loadout;
+    use strum::VariantArray;
+    let table: serde_json::Map<_, _> = Loadout::VARIANTS
+        .iter()
+        .map(|loadout| {
+            let items = loadout
+                .attachments()
+                .iter()
+                .map(|at| serde_json::json!({ "key": at.item, "socket": at.socket }))
+                .collect();
+            (loadout.name().to_owned(), serde_json::Value::Array(items))
+        })
+        .collect();
+    serde_json::Value::Object(table).to_string()
+}
+
 /// Per area, the imported unit models its creature spawns use, and `"residents"` where a named
 /// resident (#418) or a humanoid enemy (#39) with an appearance preset stands, as JSON
 /// `[{"area": id, "models": ["Wolf", …]}]` in area order (#240).

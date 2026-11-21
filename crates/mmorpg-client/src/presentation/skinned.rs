@@ -2225,85 +2225,24 @@ impl Equipment {
         throwables.models[index].draws_placed(&format!("{id}-{}", item.name()), held, &[], tint)
     }
 
-    /// The socket items of a loadout (asset-tooling #375, #379): the sword and shield, the
-    /// stowed bow and quiver, the sword, the dagger, a class staff, the crystal staff and tome,
-    /// the mace, a spear (#914) or Garrick's cleaver (#918). The bow rests in its bind pose on the back.
+    /// The socket items of a loadout (asset-tooling #375, #379), as the shared presentation
+    /// attaches them ([`Loadout::attachments`], #1012), imported once per loadout. The bow rests
+    /// in its bind pose on the back.
     pub fn loadout(loadout: Loadout) -> &'static Self {
-        static SWORD_AND_SHIELD: OnceLock<Equipment> = OnceLock::new();
-        static SWORD_AND_REDBRAND_SHIELD: OnceLock<Equipment> = OnceLock::new();
-        static BOW_AND_QUIVER: OnceLock<Equipment> = OnceLock::new();
-        static SWORD: OnceLock<Equipment> = OnceLock::new();
-        static DAGGER: OnceLock<Equipment> = OnceLock::new();
-        static TWIN_DAGGERS: OnceLock<Equipment> = OnceLock::new();
-        static BONE: OnceLock<Equipment> = OnceLock::new();
-        static CRYSTAL_AND_TOME: OnceLock<Equipment> = OnceLock::new();
-        static MACE: OnceLock<Equipment> = OnceLock::new();
-        static GNARLED: OnceLock<Equipment> = OnceLock::new();
-        static CROSSBOW: OnceLock<Equipment> = OnceLock::new();
-        static SPEAR: OnceLock<Equipment> = OnceLock::new();
-        static CLEAVER: OnceLock<Equipment> = OnceLock::new();
-        static HOLLOWPINE: OnceLock<Equipment> = OnceLock::new();
-        let (cell, items): (_, &[(&str, &str)]) = match loadout {
-            Loadout::SwordAndShield => (
-                &SWORD_AND_SHIELD,
-                &[
-                    (ranger_bundle::SWORD, "hand_r.weapon"),
-                    (ranger_bundle::SHIELD, "hand_l.shield"),
-                ],
-            ),
-            Loadout::SwordAndRedbrandShield => (
-                &SWORD_AND_REDBRAND_SHIELD,
-                &[
-                    (ranger_bundle::SWORD, "hand_r.weapon"),
-                    (ranger_bundle::REDBRAND_SHIELD, "hand_l.shield"),
-                ],
-            ),
-            Loadout::BowAndQuiver => (
-                &BOW_AND_QUIVER,
-                &[
-                    (ranger_bundle::BOW, "back.bow.stowed"),
-                    (ranger_bundle::QUIVER, "back.quiver"),
-                ],
-            ),
-            Loadout::Sword => (&SWORD, &[(ranger_bundle::SWORD, "hand_r.weapon")]),
-            Loadout::Dagger => (&DAGGER, &[(ranger_bundle::DAGGER, "hand_r.weapon")]),
-            Loadout::TwinDaggers => (
-                &TWIN_DAGGERS,
-                &[
-                    (ranger_bundle::DAGGER, "hand_r.weapon"),
-                    (ranger_bundle::DAGGER, "hand_l.weapon"),
-                ],
-            ),
-            Loadout::BoneStaff => (&BONE, &[(ranger_bundle::BONE_STAFF, "hand_r.staff")]),
-            // The tome is held like a shield: spine along the forearm.
-            Loadout::CrystalStaffAndTome => (
-                &CRYSTAL_AND_TOME,
-                &[
-                    (ranger_bundle::CRYSTAL_STAFF, "hand_r.staff"),
-                    (ranger_bundle::TOME, "hand_l.shield"),
-                ],
-            ),
-            Loadout::FlangedMace => (&MACE, &[(ranger_bundle::MACE, "hand_r.weapon")]),
-            Loadout::GnarledStaff => (&GNARLED, &[(ranger_bundle::GNARLED_STAFF, "hand_r.staff")]),
-            Loadout::Spear => (&SPEAR, &[(ranger_bundle::SPEAR, "hand_r.staff")]),
-            Loadout::GarricksCleaver => (
-                &CLEAVER,
-                &[(ranger_bundle::GARRICKS_CLEAVER, "hand_r.weapon")],
-            ),
-            Loadout::HollowpineSpear => (
-                &HOLLOWPINE,
-                &[(ranger_bundle::HOLLOWPINE_SPEAR, "hand_r.staff")],
-            ),
-            // The crossbow and the arrow standing in for its bolt (#607).
-            Loadout::Crossbow => (
-                &CROSSBOW,
-                &[
-                    (ranger_bundle::CROSSBOW, CROSSBOW_SOCKET),
-                    (ranger_bundle::ARROW, BOLT_HAND_SOCKET),
-                ],
-            ),
-        };
-        cell.get_or_init(|| Self::of(items))
+        static LOADOUTS: [OnceLock<Equipment>; Loadout::VARIANTS.len()] =
+            [const { OnceLock::new() }; Loadout::VARIANTS.len()];
+        let index = Loadout::VARIANTS
+            .iter()
+            .position(|&each| each == loadout)
+            .expect("every loadout is listed");
+        LOADOUTS[index].get_or_init(|| {
+            let items: Vec<_> = loadout
+                .attachments()
+                .iter()
+                .map(|at| (equipment_path(at.item), at.socket))
+                .collect();
+            Self::of(&items)
+        })
     }
 
     /// The authored headwear item worn on the head (#374); the hood is the character's own part
@@ -2319,6 +2258,15 @@ impl Equipment {
             }
         }
     }
+}
+
+/// The embedded glTF of the `humanoid-equipment` entry `item` (its default variant).
+fn equipment_path(item: &str) -> &'static str {
+    ranger_bundle::ENTRIES
+        .iter()
+        .find(|(entry, _)| entry.strip_suffix("/default") == Some(item))
+        .map(|&(_, path)| path)
+        .unwrap_or_else(|| panic!("the equipment bundle has no {item}"))
 }
 
 /// The Ranger's `humanoid-appearance` descriptor.
@@ -2818,6 +2766,22 @@ pub(super) fn asset(kind: Kind) -> &'static Asset {
 #[cfg(test)]
 mod rolling_ranger_tests {
     use super::*;
+
+    /// Every loadout imports each shared attachment (#1012) on its socket, in the shared order.
+    #[test]
+    fn loadouts_wear_the_shared_attachments() {
+        let descriptor: serde_json::Value =
+            serde_json::from_slice(ranger_file(ranger_bundle::SOCKETS)).expect("sockets JSON");
+        for &loadout in Loadout::VARIANTS {
+            let attachments = loadout.attachments();
+            let equipment = Equipment::loadout(loadout);
+            assert_eq!(equipment.items.len(), attachments.len(), "{loadout:?}");
+            for ((_, joint, _), at) in equipment.items.iter().zip(attachments) {
+                let (socket_joint, _) = socket(&descriptor, at.socket);
+                assert_eq!(*joint, socket_joint, "{loadout:?} {}", at.item);
+            }
+        }
+    }
 
     /// The run and side-runs the player's 6.3 m/s run plays at their authored pace (#804,
     /// asset-tooling #746) ship in the clips both clients load.
