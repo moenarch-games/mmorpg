@@ -42,6 +42,9 @@ pub enum CreatureFamily {
     Adder,
     /// The Greyfang cave bat (#995): it hangs at its roost and flies, diving at its target.
     Bat,
+    /// The Fenwater river crayfish (#996): an armoured bank ambusher whose shell and claws
+    /// turn blows at its front; it raises a claw slowly and pinches.
+    Crayfish,
 }
 
 impl CreatureFamily {
@@ -63,13 +66,17 @@ impl CreatureFamily {
             Self::Lynx => "lynx",
             Self::Adder => "adder",
             Self::Bat => "bat",
+            Self::Crayfish => "crayfish",
         }
     }
 
     /// Ambushers (#889) start fights only at [`crate::AMBUSH_RADIUS_UNITS`].
     #[must_use]
     pub const fn ambushes(self) -> bool {
-        matches!(self, Self::Lurker | Self::Lynx | Self::Adder | Self::Bat)
+        matches!(
+            self,
+            Self::Lurker | Self::Lynx | Self::Adder | Self::Bat | Self::Crayfish
+        )
     }
 
     /// Pouncers (#989) begin their attack from [`crate::POUNCE_LEAP_UNITS`] beyond their reach,

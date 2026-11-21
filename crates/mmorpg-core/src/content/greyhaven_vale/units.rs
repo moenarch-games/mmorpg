@@ -51,6 +51,8 @@ pub mod templates {
     pub const MARSH_ADDER: CreatureTemplateId = CreatureTemplateId::new(23);
     /// The Greyfang cave bat (#995): a flier that roosts on the cave roof and dives.
     pub const CAVE_BAT: CreatureTemplateId = CreatureTemplateId::new(24);
+    /// The Fenwater river crayfish (#996): an armoured bank ambusher whose front turns blows.
+    pub const RIVER_CRAYFISH: CreatureTemplateId = CreatureTemplateId::new(25);
 }
 
 /// Default respawn time: 60 s.
@@ -87,6 +89,9 @@ const LYNX: [i32; 3] = [30, 40, 30];
 const ADDER: [i32; 3] = [22, 10, 22];
 /// The wildlife release's cave bat (#995) hovering: 0.38 m tall, its body a little wider.
 const BAT: [i32; 3] = [30, 19, 30];
+/// The wildlife release's river crayfish (#996), 0.67 m wide, 1.38 m long and 0.32 m tall, on a
+/// square footprint between its width and length.
+const CRAYFISH: [i32; 3] = [50, 16, 50];
 const HUMANOID: [i32; 3] = [30, 90, 30];
 const LURKER: [i32; 3] = [35, 80, 35];
 /// A 1.4 m rolling boulder (#299).
@@ -120,9 +125,9 @@ type TemplateRow = (
 );
 
 #[rustfmt::skip]
-const TEMPLATES: [TemplateRow; 23] = {
+const TEMPLATES: [TemplateRow; 24] = {
     use CreatureBehaviour::{Aggressive, Neutral, Prop};
-    use CreatureFamily::{Adder, Bat, Bear, Boar, Lurker, Lynx, Marauder, Mirefin, Ogre, Redbrand, Spider, Vermin, Wolf};
+    use CreatureFamily::{Adder, Bat, Bear, Boar, Crayfish, Lurker, Lynx, Marauder, Mirefin, Ogre, Redbrand, Spider, Vermin, Wolf};
     use crate::PropKind;
     use templates::*;
     [
@@ -162,6 +167,8 @@ const TEMPLATES: [TemplateRow; 23] = {
         (MARSH_ADDER, "Marsh Adder", Adder, Aggressive, [2, 3], false, 34, 10, [4, 7], 1, crate::ticks_from_ms(2_600), RESPAWN_TICKS, ADDER),
         // The Greyfang cave bat (#995): the cave mouth's level, a frail body and a warned dive.
         (CAVE_BAT, "Cave Bat", Bat, Aggressive, [3, 4], false, 36, 10, [3, 6], 1, crate::ticks_from_ms(2_600), RESPAWN_TICKS, BAT),
+        // The Fenwater crayfish (#996): the crossing's level, a hard shell and a slow, heavy pinch.
+        (RIVER_CRAYFISH, "River Crayfish", Crayfish, Aggressive, [3, 4], false, 70, 14, [5, 9], 1, crate::ticks_from_ms(3_000), RESPAWN_TICKS, CRAYFISH),
     ]
 };
 
@@ -491,6 +498,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::adder::spawns())
         // The Greyfang cave bats (#995).
         .chain(super::bat::spawns())
+        // The Fenwater river crayfish (#996).
+        .chain(super::crayfish::spawns())
         .collect()
 }
 
@@ -533,10 +542,19 @@ pub fn creature_abilities() -> Vec<(CreatureTemplateId, crate::AbilityId)> {
     ]
 }
 
-/// The Redbrand Brute's shield stops arrows and bolts at its front (#160).
+/// The Redbrand Brute's shield stops arrows, bolts and melee blows at its front (#160, #953).
 #[must_use]
 pub fn shielded() -> Vec<CreatureTemplateId> {
     vec![templates::REDBRAND_BRUTE]
+}
+
+/// Greyhaven's shielded templates: the Brute ([`shielded`]) and the River Crayfish, whose
+/// shell and claws turn blows at its front the same way (#996).
+#[must_use]
+pub fn greyhaven_shielded() -> Vec<CreatureTemplateId> {
+    let mut shields = shielded();
+    shields.push(templates::RIVER_CRAYFISH);
+    shields
 }
 
 /// Garrick Redbrand is the shared outdoor boss (#276): +60% health and +10% damage per extra
