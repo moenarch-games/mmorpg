@@ -58,7 +58,9 @@ sim-combat = { path = "crates/sim-combat" }
 mmorpg-core = { path = "crates/mmorpg-core" }
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# Libraries forbid unsafe code themselves (`#![forbid(unsafe_code)]`); only the counting
+# allocators of the complexity-budget tests (Atlas 7.1.i1055) opt in.
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

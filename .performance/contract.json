@@ -238,6 +238,28 @@
           "signal": "operation-count",
           "notes": "New unit geometries over 64 frames after a warm-up frame; breathing animal torsos still add one per family and frame (advisory).",
           "growth": [{ "dimension": "characters", "bound": "constant" }]
+        },
+        {
+          "name": "layout_entity_lookups",
+          "unit": "lookups",
+          "signal": "operation-count",
+          "notes": "The browser layout (#1057, mmorpg-wasm unit_layout): one indexed snapshot record per sampled unit and one view per imported unit; a linear find per unit fails it.",
+          "growth": [{ "dimension": "characters", "bound": "linear" }]
+        },
+        {
+          "name": "layout_bytes",
+          "unit": "bytes",
+          "signal": "size",
+          "notes": "Typed-array words, numbers, model matrices and newly interned strings of the last frame; no JSON.",
+          "growth": [{ "dimension": "characters", "bound": "linear" }]
+        },
+        {
+          "name": "warm_frame_allocations",
+          "unit": "allocations",
+          "signal": "operation-count",
+          "notes": "Counting allocator around the adapter's sampling and layout of one warm frame (the shared presenter's own frame excluded); only the breathing torsos' new keys intern a string.",
+          "budget": { "max": 8 },
+          "growth": [{ "dimension": "characters", "bound": "constant" }]
         }
       ]
     },

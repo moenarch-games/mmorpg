@@ -38,16 +38,16 @@ Units include the viewer and the NPCs and creatures its projection already shows
 
 ## Contracts
 
-`.performance/contract.json` declares four presentation operations beside the zone's; `scripts/operation-work.py` merges the `presentation_work` and `projection_ingest` examples' samples into the same evidence:
+`.performance/contract.json` declares four presentation operations beside the zone's; `scripts/operation-work.py` merges the `presentation_work`, `projection_ingest` and `unit_layout` examples' samples into the same evidence (`unit-frame` combines `presentation_work`'s and `unit_layout`'s metrics by equal dimensions):
 
 | Operation | Dimensions | Bound |
 | --- | --- | --- |
 | `camera-only-frames` | measured frames, orbit radius | no static builds, evictions or uploaded bytes; largest frame draws constant in frames |
 | `region-walk` | metres walked | at most `BUILDS_PER_FRAME + GROUP_BUILDS_PER_FRAME` (10) builds a frame |
-| `unit-frame` | animated characters | unit draws linear; geometry uploads constant |
+| `unit-frame` | animated characters | unit draws linear; geometry uploads constant; browser layout entity lookups and bytes linear; warm-frame layout allocations constant (at most 8) |
 | `projection-ingest` | projections ingested (local and online) | at most 1 decode a projection; no unchanged sheet views; no bytes beyond the network payload; sheet views constant |
 
-The camera-only and projection-ingest bounds are blocking, through the `presentation_work` and `mmorpg-wasm` `projection_ingest` tests that `cargo test` runs: an incremental-update regression that rebuilds, re-uploads or re-evicts static scenery on a camera-only frame (or never settles) fails the first, and a second decode, a re-sent unchanged sheet or an extra byte copy fails the second. Legitimate streaming, LOD and visibility changes stay allowed and the other counts are advisory. Frame pacing on real hardware stays with the existing wall-clock profilers, `scripts/profile-browser.py` (#546) and the native `outpost_frame_time` (#692); they are compared separately and never gate correctness.
+The camera-only, projection-ingest and browser unit layout bounds are blocking, through the `presentation_work` and `mmorpg-wasm` `projection_ingest` and `unit_layout` tests that `cargo test` runs: an incremental-update regression that rebuilds, re-uploads or re-evicts static scenery on a camera-only frame (or never settles) fails the first, a second decode, a re-sent unchanged sheet or an extra byte copy fails the second, and a lookup per pair of units, faster-growing layout bytes or a per-character allocation fails the third. Legitimate streaming, LOD and visibility changes stay allowed and the other counts are advisory. Frame pacing on real hardware stays with the existing wall-clock profilers, `scripts/profile-browser.py` (#546) and the native `outpost_frame_time` (#692); they are compared separately and never gate correctness.
 
 ## Projection ingest (#1009)
 
@@ -63,3 +63,21 @@ cargo run --release -p mmorpg-wasm --example projection_ingest --locked      # s
 | 16, 32, 64 | 1 | 0 | 0 | 4 |
 
 Before #1009 each projection was decoded twice (into a complete page object, then again by the presenter), both sheets were materialised for the page every tick, and its bytes crossed the boundary once more for the presenter (and twice for a local projection).
+
+## Browser unit layout (#1057)
+
+`mmorpg-wasm`'s `Units` lays each unit frame out as typed-array records in WASM memory (`crates/mmorpg-wasm/src/unit_layout.rs`): `u32` words, `f64` numbers and the draws' `f32` model matrices, which `web/src/world/unit-presenter.ts` reads through views it rebuilds only when memory grows or a buffer moves. Draw ids, resource keys, clip names and every other string cross once, when first interned; the page keeps its renderer nodes by draw id and updates them in place, without parsing, matrix copies or new node objects. Each push indexes the projection's records by entity, so sampling is one lookup a unit. Imported model requests stay fresh objects each frame, because the model kit keeps their tint and layers by reference.
+
+```sh
+cargo test -p mmorpg-wasm --test unit_layout --locked                 # blocking sentinel
+cargo run --release -p mmorpg-wasm --example unit_layout --locked      # samples for the contract
+```
+
+| Characters | Entity lookups | Layout bytes | Warm-frame allocations |
+| ---: | ---: | ---: | ---: |
+| 8 | 33 | 48 480 | 3 |
+| 16 | 41 | 60 192 | 3 |
+| 32 | 57 | 83 616 | 3 |
+| 64 | 89 | 130 464 | 3 |
+
+The allocator counts the adapter's own sampling and layout, not the shared presenter's frame, whose draws still own their strings. The three allocations of a warm frame intern the breathing torsos' new geometry keys (above). Before #1057 the frame crossed as one JSON string, every sampled and imported unit searched the projection's records linearly, and the page parsed it and copied every matrix into a new node.

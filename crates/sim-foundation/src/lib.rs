@@ -1,6 +1,7 @@
 //! The lowest layer of the game simulation: fixed-point maths, seeded randomness, tick timing,
 //! unit identity, collision geometry and the physics world. It knows nothing of combat, zones,
 //! quests or authored content, so every game built on the simulation can share it.
+#![forbid(unsafe_code)]
 
 pub mod collision;
 pub mod entity;

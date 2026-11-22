@@ -2,215 +2,41 @@
 //!
 //! The page pushes every projection it receives (by its id in the session's projection store,
 //! decoded once, #1009) and, per frame, the interpolated units it samples. This adapter runs the presenter the native client runs
-//! and returns the frame as JSON plus typed arrays: draws with their model matrices, the
-//! geometry of every resource the page did not receive in the previous frame, where each unit
-//! stands, and the imported models (with chosen clip and time) the page skins itself.
+//! and lays the frame out as typed-array records the page reads in place (#1057,
+//! [`crate::unit_layout`]): draws with their model matrices, the geometry of every resource the
+//! page did not receive in the previous frame, where each unit stands, and the imported models
+//! (with chosen clip and time) the page skins itself.
 //! Presentation only: the local zone host never reads it.
 
-use std::{collections::BTreeSet, rc::Rc, sync::Arc};
+use std::{collections::HashMap, rc::Rc, sync::Arc};
 
-use mmorpg_core::{ClassChoice, CreatureId, EntityKind, EntityRef, NpcId, ZoneSnapshot};
+use mmorpg_core::{ClassChoice, CreatureId, EntityRef, NpcId, ZoneSnapshot};
 use mmorpg_presentation::{
-    Draw,
     audio::{AudioCues, AudioOp},
     units::{
-        FrameInput, SampledUnit, UnitPresenter, Viewer,
-        imported::{Bolt, Hand, Kind, Loadout, Resident, Throwable},
-        player::Hat,
+        FrameInput, SampledUnit, UnitFrame, UnitPresenter, Viewer, imported::Kind, player::Hat,
     },
 };
 use serde::Serialize;
 
-use crate::scenery::{hosted_scenery, presented_content};
+use crate::{
+    scenery::{hosted_scenery, presented_content},
+    unit_layout::{LayoutWork, UnitLayout},
+};
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct DrawEntry {
-    id: String,
-    key: String,
-    model: usize,
-    color: String,
-    emissive: Option<String>,
-    opacity: f32,
-    unlit: bool,
-    double_sided: bool,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct GeometryEntry {
-    key: String,
-    vertex_offset: usize,
-    vertex_count: usize,
-    colored: bool,
-    index_offset: usize,
-    index_count: usize,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct UnitEntry {
-    kind: &'static str,
-    entity_id: u32,
-    node: String,
-    feet: [f64; 3],
-    centre_y: f32,
-    yaw: f64,
-    label: [f32; 3],
-    body: [usize; 2],
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ImportedEntry {
-    id: String,
-    kind: &'static str,
-    entity_kind: &'static str,
-    entity_id: u32,
-    feet: [f64; 3],
-    /// The drawn body's heading: the unit's yaw turned by its swim attitude (Atlas 6.6.41).
-    yaw: f64,
-    /// The swim attitude's forward lean in radians about the turned model's X axis
-    /// the yaw (Euler order `YXZ`); `feet` already holds the chest pivot.
-    pitch: f64,
-    height: f64,
-    /// The upper body's target clip and time: what the unit is seen doing.
-    clip: &'static str,
-    time: f32,
-    /// The legs' target clip and time.
-    lower: (&'static str, f32),
-    /// The layered clips to pose (Atlas 6.6.45).
-    layers: Vec<LayerEntry>,
-    tint: Option<[f32; 3]>,
-    /// The carried weapons by `Loadout::name`, or null.
-    loadout: Option<&'static str>,
-    /// A resident's or humanoid enemy's `humanoid-appearance` preset id (#418, #39), or null.
-    resident: Option<&'static str>,
-    /// The Ranger figure a resident is drawn on, by its character key (`imported::Figure`, #493),
-    /// or null.
-    figure: Option<&'static str>,
-    /// A varied resident's look seed, its NPC or creature id (asset-tooling #380), or null.
-    variety: Option<u32>,
-    /// A player's class starter outfit (asset-tooling #379), or null.
-    outfit: Option<OutfitEntry>,
-    headwear: bool,
-    /// The loose gear's swing (Atlas 6.6.39) as a model-frame quaternion `[x, y, z, w]`, or
-    /// null at rest.
-    swing: Option<[f32; 4]>,
-    /// The sway chains' drive (Atlas 6.6.39): `[pitch, roll]` by depth from the chain's root,
-    /// flattened, or null when every chain hangs as authored.
-    chains: Option<[f32; 6]>,
-    /// A bow carrier's shot (#556): the bow cycle clip and time whose draw the nock follows,
-    /// with the bow in the left hand; null keeps the bow stowed.
-    bow: Option<BowEntry>,
-    /// A dagger holder's sheathed daggers, left then right (`hip_l.stowed`, `hip_r.stowed`),
-    /// and the throwable in `hand_r.weapon`, `knife`, `flask`, `bomb` or null (#603).
-    sheathed: [bool; 2],
-    /// Player's explicit weapon mode, null for creatures and residents.
-    weapon_drawn: Option<bool>,
-    throwable: Option<&'static str>,
-    /// A throw's item on `belt.throwable` before the clip's draw, named like `throwable` (#611).
-    belted: Option<&'static str>,
-    /// A crossbowman's crossbow (#607): in the left hand through the reload's hand-off, the
-    /// left hand on the crank, and the bolt in `hand_r.arrow` (`hand`), the groove (`groove`) or
-    /// gone (null); null for anyone else.
-    crossbow: Option<CrossbowEntry>,
-    /// Where the spell of the caster clip shown starts (#609): `point` metres in the `joint`
-    /// (`hand_l` or `hand_r`) glTF frame; null outside the caster clips. The page hands its
-    /// posed world position back with `setChannelOrigins` (#612).
-    channel: Option<ChannelEntry>,
-    /// A resident's chore item on its routine (#904): its `humanoid-equipment` key and the
-    /// figure socket it rides; null for empty hands.
-    chore: Option<ChoreEntry>,
-}
-
-#[derive(Serialize)]
-struct ChoreEntry {
-    item: &'static str,
-    socket: &'static str,
-}
-
-#[derive(Serialize)]
-struct ChannelEntry {
-    joint: &'static str,
-    point: [f64; 3],
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CrossbowEntry {
-    left_hand: bool,
-    crank: bool,
-    bolt: Option<&'static str>,
-}
-
-#[derive(Serialize)]
-struct BowEntry {
-    clip: &'static str,
-    time: f32,
-}
-
-/// A class starter outfit: its `humanoid-appearance` preset id and the armour sockets whose
-/// outfit pieces equipped drops replace.
-#[derive(Serialize)]
-struct OutfitEntry {
-    preset: &'static str,
-    replaced: Vec<&'static str>,
-}
-
-#[derive(Serialize)]
-struct LayerEntry {
-    clip: &'static str,
-    time: f32,
-    weight: f32,
-    /// `all`, `upper`, `lower`, `fingers_l` or `fingers_r`.
-    mask: &'static str,
-}
-
-#[derive(Serialize)]
-struct FrameLayout {
-    draws: Vec<DrawEntry>,
-    geometries: Vec<GeometryEntry>,
-    units: Vec<UnitEntry>,
-    imported: Vec<ImportedEntry>,
-    platforms: Vec<PlatformEntry>,
-    effects: Vec<EffectEntry>,
-    /// The viewer's camera kick (#900), metres.
-    kick: [f32; 3],
-}
-
-/// A strike or spell effect the page draws from its bundle (#894): the entry under `model`
-/// (column-major, metres), its clip at `time`, recoloured by `tint` (0–1 sRGB channels) when set.
-#[derive(Serialize)]
-struct EffectEntry {
-    key: &'static str,
-    model: [f32; 16],
-    clip: Option<&'static str>,
-    time: f32,
-    tint: Option<[f32; 3]>,
-}
-
-/// A platform the page's kit draws (#591): where its box's bottom centre stands, metres.
-#[derive(Serialize)]
-struct PlatformEntry {
-    platform: u32,
-    base: [f32; 3],
-}
-
-/// Bulk numbers of the last call, read by the page right after it.
-#[derive(Default)]
-pub struct Buffers {
-    pub models: Vec<f32>,
-    pub vertices: Vec<f32>,
-    pub indices: Vec<u32>,
-}
+/// Where the page finds the last layout's buffers in WASM memory: `[pointer, capacity, length]`
+/// of `words`, `numbers`, `models`, `vertices` and `indices`, in that order (#1057).
+pub type Directory = [usize; 15];
 
 pub struct Units {
     presenter: UnitPresenter,
     latest: Option<Rc<ZoneSnapshot>>,
-    /// Resources the page holds: those drawn in the previous frame.
-    sent: BTreeSet<String>,
-    pub buffers: Buffers,
+    /// The latest projection's records by entity, indexed once per push (#1057).
+    records: HashMap<EntityRef, usize>,
+    /// This frame's sampled units, reused across frames.
+    sampled: Vec<SampledUnit>,
+    layout: UnitLayout,
+    directory: Box<Directory>,
     /// Sound cues of the projections pushed since the page last took them (#447).
     audio: AudioCues,
     audio_ops: Vec<AudioOp>,
@@ -244,25 +70,6 @@ fn entity_of(kind: f64, id: f64) -> Result<EntityRef, String> {
     })
 }
 
-fn kind_name(kind: EntityKind) -> &'static str {
-    match kind {
-        EntityKind::Player => "player",
-        EntityKind::Creature => "creature",
-        EntityKind::Npc => "npc",
-        EntityKind::Minion => "minion",
-    }
-}
-
-fn hex(color: [f32; 3]) -> String {
-    let byte = |channel: f32| (channel.clamp(0., 1.) * 255.).round() as u8;
-    format!(
-        "#{:02x}{:02x}{:02x}",
-        byte(color[0]),
-        byte(color[1]),
-        byte(color[2])
-    )
-}
-
 impl Units {
     #[must_use]
     pub fn new(player_id: u32) -> Self {
@@ -281,8 +88,10 @@ impl Units {
         Self {
             presenter: UnitPresenter::new(player_id, content, scenery),
             latest: None,
-            sent: BTreeSet::new(),
-            buffers: Buffers::default(),
+            records: HashMap::new(),
+            sampled: Vec::new(),
+            layout: UnitLayout::default(),
+            directory: Box::new([0; 15]),
             audio: AudioCues::default(),
             audio_ops: Vec::new(),
         }
@@ -393,6 +202,14 @@ impl Units {
             self.audio
                 .push(&snapshot, |unit| presenter.rendered(unit.position)),
         );
+        self.records.clear();
+        self.records.extend(
+            snapshot
+                .entities
+                .iter()
+                .enumerate()
+                .map(|(position, record)| (record.entity(), position)),
+        );
         self.latest = Some(snapshot);
     }
 
@@ -400,7 +217,8 @@ impl Units {
         self.presenter.reset();
         self.audio_ops.extend(self.audio.reset());
         self.latest = None;
-        self.sent.clear();
+        self.records.clear();
+        self.layout.reset();
     }
 
     /// Takes the sound operations since the last call as a JSON array of
@@ -423,10 +241,10 @@ impl Units {
         self.audio_ops.clear();
         json
     }
-
-    /// One frame. `units` holds `[kind (0 player, 1 creature, 2 npc), id, x, y, z, facing]`
-    /// per sampled unit in units and yaw steps; `choice` is the viewer's appearance code
-    /// (0 for none), `headwear` a headwear style or empty, `preview_yaw` NaN without preview.
+    /// One frame, laid out for the page (#1057, [`crate::unit_layout`]). `units` holds
+    /// `[kind (0 player, 1 creature, 2 npc, 3 minion), id, x, y, z, facing]` per sampled unit in
+    /// units and yaw steps; `choice` is the viewer's appearance code (0 for none), `headwear` a
+    /// headwear style or empty, `preview_yaw` NaN without preview.
     ///
     /// # Errors
     ///
@@ -441,212 +259,148 @@ impl Units {
         choice: u32,
         headwear: &str,
         preview_yaw: f32,
-    ) -> Result<String, String> {
+    ) -> Result<(), String> {
+        let viewer = viewer(choice, headwear, preview_yaw)?;
+        self.sample(units)?;
+        let frame = self.present(viewer, seconds, dt, reduced_motion, bar_yaw)?;
+        self.write(&frame);
+        Ok(())
+    }
+
+    /// Samples the page's units against the latest projection's records, one indexed lookup
+    /// each.
+    ///
+    /// # Errors
+    ///
+    /// Before the first projection, or for a malformed unit list.
+    pub fn sample(&mut self, units: &[f64]) -> Result<(), String> {
         let snapshot = self.latest.as_ref().ok_or("no projection yet")?;
         if !units.len().is_multiple_of(6) {
             return Err("units must be six numbers each".into());
         }
-        let headwear = match headwear {
-            "" => None,
-            "ironcrest-helm" => Some(Hat::Helm),
-            "ranger-cap" => Some(Hat::Cap),
-            "wayfarer-hood" => Some(Hat::Hood),
-            "class" => Some(Hat::Class),
-            other => return Err(format!("unknown headwear style {other}")),
-        };
-        let mut sampled = Vec::with_capacity(units.len() / 6);
+        self.sampled.clear();
+        self.layout.count_lookups(units.len() / 6);
         for unit in units.as_chunks::<6>().0 {
             let entity = entity_of(unit[0], unit[1])?;
-            let Some(record) = snapshot.entities.iter().find(|e| e.entity() == entity) else {
+            let Some(&position) = self.records.get(&entity) else {
                 continue;
             };
-            let position = [unit[2], unit[3], unit[4]];
-            let relief =
-                hosted_scenery().height_at(position[0].round() as i32, position[2].round() as i32);
+            let position_units = [unit[2], unit[3], unit[4]];
+            let relief = hosted_scenery().height_at(
+                position_units[0].round() as i32,
+                position_units[2].round() as i32,
+            );
             let metres = |value: f64| (value / f64::from(mmorpg_core::UNITS_PER_METRE)) as f32;
-            sampled.push(SampledUnit {
-                record: record.clone(),
+            self.sampled.push(SampledUnit {
+                record: snapshot.entities[position].clone(),
                 centre: [
-                    metres(position[0]),
-                    metres(position[1] + f64::from(relief)),
-                    metres(position[2]),
+                    metres(position_units[0]),
+                    metres(position_units[1] + f64::from(relief)),
+                    metres(position_units[2]),
                 ],
                 yaw: ((unit[5] / 65_536.).rem_euclid(1.) * std::f64::consts::TAU) as f32,
             });
         }
-        let frame = self.presenter.frame(&FrameInput {
+        Ok(())
+    }
+
+    /// The shared presenter's frame of the last [`Self::sample`].
+    ///
+    /// # Errors
+    ///
+    /// Before the first projection.
+    pub fn present(
+        &mut self,
+        viewer: Viewer,
+        seconds: f64,
+        dt: f64,
+        reduced_motion: bool,
+        bar_yaw: f32,
+    ) -> Result<UnitFrame, String> {
+        let snapshot = self.latest.as_ref().ok_or("no projection yet")?;
+        Ok(self.presenter.frame(&FrameInput {
             snapshot,
-            units: &sampled,
-            viewer: Viewer {
-                choice: ClassChoice::from_appearance(choice),
-                headwear,
-                preview_yaw: preview_yaw.is_finite().then_some(preview_yaw),
-            },
+            units: &self.sampled,
+            viewer,
             seconds,
             dt,
             reduced_motion,
             bar_yaw,
-        });
-        self.buffers = Buffers::default();
-        let previous = std::mem::take(&mut self.sent);
-        let mut geometries = Vec::new();
-        let draws = frame
-            .draws
-            .iter()
-            .map(|draw| self.entry(draw, &previous, &mut geometries))
-            .collect();
-        let imported = frame
-            .imported
-            .iter()
-            .map(|unit| {
-                let yaw = frame
-                    .units
-                    .iter()
-                    .find(|view| view.entity == unit.entity)
-                    .map_or(0., |view| view.yaw);
-                ImportedEntry {
-                    id: unit.id.clone(),
-                    kind: unit.kind.name(),
-                    entity_kind: kind_name(unit.entity.kind()),
-                    entity_id: unit.entity.id(),
-                    feet: unit.root.p,
-                    yaw: yaw + unit.animation.attitude.heading,
-                    pitch: unit.animation.attitude.pitch,
-                    height: unit.height,
-                    clip: unit.animation.upper.0,
-                    time: unit.animation.upper.1,
-                    lower: unit.animation.lower,
-                    layers: unit
-                        .animation
-                        .layers
-                        .iter()
-                        .map(|layer| LayerEntry {
-                            clip: layer.clip,
-                            time: layer.time,
-                            weight: layer.weight,
-                            mask: layer.mask.name(),
-                        })
-                        .collect(),
-                    tint: unit.tint,
-                    loadout: unit.loadout.map(Loadout::name),
-                    resident: unit.resident.map(Resident::preset),
-                    figure: unit.resident.map(|resident| resident.figure().character()),
-                    variety: unit.variety,
-                    outfit: unit.outfit.map(|outfit| OutfitEntry {
-                        preset: outfit.preset(),
-                        replaced: outfit.replaced(),
-                    }),
-                    headwear: unit.headwear.is_some(),
-                    swing: (!unit.swing.is_rest()).then(|| unit.swing.quaternion()),
-                    chains: unit.swing.chain_drive(),
-                    bow: unit.bow.map(|shot| BowEntry {
-                        clip: shot.clip,
-                        time: shot.time,
-                    }),
-                    sheathed: unit.animation.carry.sheathed,
-                    weapon_drawn: unit.animation.carry.weapon_drawn,
-                    throwable: unit.animation.carry.throwable.map(Throwable::name),
-                    belted: unit.animation.carry.belted.map(Throwable::name),
-                    crossbow: unit.animation.carry.crossbow.map(|crossbow| CrossbowEntry {
-                        left_hand: crossbow.left_hand,
-                        crank: crossbow.crank,
-                        bolt: crossbow.bolt.map(Bolt::name),
-                    }),
-                    channel: unit.animation.channel.map(|channel| ChannelEntry {
-                        joint: match channel.hand {
-                            Hand::Left => "hand_l",
-                            Hand::Right => "hand_r",
-                        },
-                        point: channel.point,
-                    }),
-                    chore: unit.animation.carry.chore.map(|chore| ChoreEntry {
-                        item: chore.item,
-                        socket: chore.socket,
-                    }),
-                }
-            })
-            .collect();
-        let units = frame
-            .units
-            .iter()
-            .map(|view| UnitEntry {
-                kind: kind_name(view.entity.kind()),
-                entity_id: view.entity.id(),
-                node: view.id.clone(),
-                feet: view.feet,
-                centre_y: view.centre_y,
-                yaw: view.yaw,
-                label: view.label,
-                body: [view.body.start, view.body.end],
-            })
-            .collect();
-        serde_json::to_string(&FrameLayout {
-            draws,
-            geometries,
-            units,
-            imported,
-            platforms: frame
-                .platforms
-                .iter()
-                .map(|view| PlatformEntry {
-                    platform: view.platform.get(),
-                    base: view.base,
-                })
-                .collect(),
-            effects: frame
-                .effects
-                .iter()
-                .map(|effect| EffectEntry {
-                    key: effect.key,
-                    model: effect.model,
-                    clip: effect.clip,
-                    time: effect.time,
-                    tint: effect.tint,
-                })
-                .collect(),
-            kick: frame.kick,
-        })
-        .map_err(|error| error.to_string())
+        }))
     }
 
-    fn entry(
-        &mut self,
-        draw: &Draw,
-        previous: &BTreeSet<String>,
-        geometries: &mut Vec<GeometryEntry>,
-    ) -> DrawEntry {
-        if !previous.contains(&draw.resource_key) && !self.sent.contains(&draw.resource_key) {
-            let g = &draw.geometry;
-            let vertex_offset = self.buffers.vertices.len();
-            for values in [&g.p, &g.n, &g.colors] {
-                self.buffers
-                    .vertices
-                    .extend(values.iter().flatten().map(|value| *value as f32));
-            }
-            let index_offset = self.buffers.indices.len();
-            self.buffers.indices.extend(&g.indices);
-            geometries.push(GeometryEntry {
-                key: draw.resource_key.clone(),
-                vertex_offset,
-                vertex_count: g.p.len(),
-                colored: !g.colors.is_empty(),
-                index_offset,
-                index_count: g.indices.len(),
-            });
-        }
-        self.sent.insert(draw.resource_key.clone());
-        let model = self.buffers.models.len() / 16;
-        self.buffers.models.extend(draw.model);
-        let material = &draw.material;
-        DrawEntry {
-            id: draw.id.clone(),
-            key: draw.resource_key.clone(),
-            model,
-            color: hex(material.color),
-            emissive: (material.emissive != [0.; 3]).then(|| hex(material.emissive)),
-            opacity: material.opacity,
-            unlit: material.unlit,
-            double_sided: material.double_sided,
+    /// Lays `frame` out for the page and points the directory at its buffers.
+    pub fn write(&mut self, frame: &UnitFrame) {
+        self.layout.write(frame);
+        let layout = &self.layout;
+        let parts = [
+            (
+                layout.words.as_ptr() as usize,
+                layout.words.capacity(),
+                layout.words.len(),
+            ),
+            (
+                layout.numbers.as_ptr() as usize,
+                layout.numbers.capacity(),
+                layout.numbers.len(),
+            ),
+            (
+                layout.models.as_ptr() as usize,
+                layout.models.capacity(),
+                layout.models.len(),
+            ),
+            (
+                layout.vertices.as_ptr() as usize,
+                layout.vertices.capacity(),
+                layout.vertices.len(),
+            ),
+            (
+                layout.indices.as_ptr() as usize,
+                layout.indices.capacity(),
+                layout.indices.len(),
+            ),
+        ];
+        for (slot, (pointer, capacity, length)) in parts.into_iter().enumerate() {
+            self.directory[slot * 3..slot * 3 + 3].copy_from_slice(&[pointer, capacity, length]);
         }
     }
+
+    /// The last layout's buffers, for views over WASM memory.
+    #[must_use]
+    pub fn directory(&self) -> &Directory {
+        &self.directory
+    }
+
+    /// The last layout, read in place by native tests.
+    #[must_use]
+    pub fn layout(&self) -> &UnitLayout {
+        &self.layout
+    }
+
+    /// The layout's deterministic work so far.
+    #[must_use]
+    pub fn layout_work(&self) -> LayoutWork {
+        self.layout.work()
+    }
+}
+
+/// The viewer's look from the page's appearance code, headwear style and preview yaw.
+///
+/// # Errors
+///
+/// For an unknown headwear style.
+pub fn viewer(choice: u32, headwear: &str, preview_yaw: f32) -> Result<Viewer, String> {
+    let headwear = match headwear {
+        "" => None,
+        "ironcrest-helm" => Some(Hat::Helm),
+        "ranger-cap" => Some(Hat::Cap),
+        "wayfarer-hood" => Some(Hat::Hood),
+        "class" => Some(Hat::Class),
+        other => return Err(format!("unknown headwear style {other}")),
+    };
+    Ok(Viewer {
+        choice: ClassChoice::from_appearance(choice),
+        headwear,
+        preview_yaw: preview_yaw.is_finite().then_some(preview_yaw),
+    })
 }

@@ -1,6 +1,7 @@
 //! Greyhaven World Studio: pick a place on the game's map, paint it in Krita, bring the paint back
 //! and hand the consequences to an agent (`docs/WORLD_STUDIO.md`). One program: the web app, and
 //! the same capture and import as commands.
+#![forbid(unsafe_code)]
 mod brief;
 mod capture;
 mod grid;
