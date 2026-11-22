@@ -118,6 +118,8 @@ fn two_classes_on(content: Arc<ZoneContent>, classes: [u8; 2]) -> ZoneSimulation
     for (index, player) in state.players.iter_mut().enumerate() {
         player.position = mmorpg_core::physics::from_units([index as i32 * 100, 90, -2000]);
         player.combat.abilities.resource = 40;
+        // North of the Outpost lies a discoverable area (#1063); its experience is no PvP reward.
+        player.discoveries = content.discoveries().iter().copied().collect();
         // The two face each other (+X and -X), so aimed abilities find the opponent (#517).
         player.facing = if index == 0 { 16_384 } else { 49_152 };
     }

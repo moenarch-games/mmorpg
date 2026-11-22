@@ -427,11 +427,15 @@ fn spawns_populate_their_subzones() {
             .or_default() += 1;
     }
     let expected = BTreeMap::from([
-        ((greyhaven_vale::vale::WOLFRUN_WOODS, "Timber Wolf"), 14),
-        ((greyhaven_vale::vale::WOLFRUN_WOODS, "Young Boar"), 6),
+        ((greyhaven_vale::vale::WOLFRUN_WOODS, "Timber Wolf"), 8),
+        ((greyhaven_vale::vale::WOLFRUN_WOODS, "Young Boar"), 5),
         ((greyhaven_vale::vale::MILLBROOK_FARM, "Grain Rat"), 6),
         ((greyhaven_vale::vale::MILLBROOK_FARM, "Field Marauder"), 10),
         ((greyhaven_vale::vale::STILLWATER_LAKE, "Mirefin Lurker"), 8),
+        // The traced areas (#1063) give the Wolfrun pack's lakeside and southern dens to the
+        // lake and the downs, and the fen's southern wolves to the downs.
+        ((greyhaven_vale::vale::STILLWATER_LAKE, "Timber Wolf"), 6),
+        ((greyhaven_vale::vale::STILLWATER_LAKE, "Young Boar"), 1),
         (
             (greyhaven_vale::vale::REDBRAND_HOLLOW, "Redbrand Bandit"),
             14,
@@ -449,13 +453,14 @@ fn spawns_populate_their_subzones() {
         ((greyhaven_vale::vale::GREYFANG_RIDGE, "Redbrand Bandit"), 4),
         ((greyhaven_vale::vale::GREYFANG_RIDGE, "Redbrand Brute"), 3),
         ((greyhaven_vale::vale::SOUTHMEADOW_DOWNS, "Young Boar"), 2),
+        ((greyhaven_vale::vale::SOUTHMEADOW_DOWNS, "Timber Wolf"), 2),
         ((greyhaven_vale::vale::SOUTHMEADOW_DOWNS, "Hill Ogre"), 1),
         ((greyhaven_vale::vale::SOUTHMEADOW_DOWNS, "Grain Rat"), 1),
         ((greyhaven_vale::vale::HOLLOWPINE_REACH, "Timber Wolf"), 4),
         ((greyhaven_vale::vale::HOLLOWPINE_REACH, "Young Boar"), 2),
         ((greyhaven_vale::vale::EASTWATER_FEN, "Mirefin Lurker"), 3),
         // The Eastwater Fen wolf pack, a Ranger firing-line fight (#932).
-        ((greyhaven_vale::vale::EASTWATER_FEN, "Timber Wolf"), 3),
+        ((greyhaven_vale::vale::EASTWATER_FEN, "Timber Wolf"), 1),
         // The optional discoveries' guards (#913): the hunter's cache's elite bear and the fen
         // cache's ambushers.
         ((greyhaven_vale::vale::WOLFRUN_WOODS, "Old Scarback"), 1),
@@ -579,7 +584,9 @@ fn spawns_populate_their_subzones() {
         ((wilds::DELVING_HEIGHTS, "Hill Ogre"), 2),
         ((wilds::FENWATER_CROSSING, "Field Marauder"), 4),
         // River Crayfish (#996) on the Fenwater's bank.
-        ((wilds::FENWATER_CROSSING, "River Crayfish"), 3),
+        ((wilds::FENWATER_CROSSING, "River Crayfish"), 2),
+        // One crayfish keeps to the ford itself, inside Fenford's traced area (#1063).
+        ((greyhaven_vale::settlements::FENFORD, "River Crayfish"), 1),
         ((wilds::KINGS_ROAD_DOWNS, "Field Marauder"), 4),
         ((wilds::KINGS_ROAD_DOWNS, "Young Boar"), 6),
         ((wilds::KINGS_ROAD_DOWNS, "Grain Rat"), 3),
@@ -836,7 +843,7 @@ fn region_residents() -> Vec<(&'static str, NpcRole, Option<mmorpg_core::AreaId>
     vec![
         giver("Alewife Gwen Barrow", settlements::BARROWDOWN),
         resident("Shepherd Corin", settlements::BARROWDOWN),
-        resident("Old Maud", wilds::KINGS_ROAD_DOWNS),
+        resident("Old Maud", greyhaven_vale::settlements::BARROWDOWN),
         resident("Farmer Tobin Hale", settlements::BARROWDOWN),
         resident("Pip", settlements::BARROWDOWN),
         giver("Innkeeper Hob Ferris", settlements::FENFORD),

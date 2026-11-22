@@ -2659,8 +2659,15 @@ impl ZoneContent {
         for area in self.areas.areas() {
             hash.u32(area.id().get());
             hash.text(area.name());
-            hash.i32s(&area.min_xz());
-            hash.i32s(&area.max_xz());
+            hash.len(area.rings().len());
+            for ring in area.rings() {
+                hash.len(ring.len());
+                for point in ring {
+                    hash.i32s(point);
+                }
+            }
+            hash.i32s(&area.centre());
+            hash.i32(area.radius());
         }
         hash.len(self.templates.len());
         for template in &self.templates {

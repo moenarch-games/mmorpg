@@ -928,10 +928,8 @@ impl ZoneSimulation {
                         let at = self.player_position(player_id)?;
                         let inside = content
                             .areas()
-                            .areas()
-                            .iter()
-                            .find(|candidate| candidate.id() == area)
-                            .is_some_and(|candidate| candidate.contains(at.x, at.z));
+                            .area_at(at.x, at.z)
+                            .is_some_and(|candidate| candidate.id() == area);
                         if inside
                             && player.inventory.count(item) == 0
                             && !retrieved.iter().any(|&(_, _, other)| other == item)

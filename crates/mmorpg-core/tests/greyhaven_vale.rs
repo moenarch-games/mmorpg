@@ -8,13 +8,15 @@ use mmorpg_core::greyhaven_vale::{
 };
 use mmorpg_core::{
     Area, AreaId, MAX_CONTENT_COORDINATE_UNITS, MAX_PLAYERS_PER_ZONE, MAX_STATIC_COLLIDERS,
-    PLAYER_HALF_EXTENTS_UNITS, StaticCollider, XzBounds, ZoneCommand, ZoneId, ZoneSimulation,
+    PLAYER_HALF_EXTENTS_UNITS, StaticCollider, ZoneCommand, ZoneId, ZoneSimulation,
     greyhaven_vale_definition,
 };
 
 /// Map north is −Z (the Redbrand cliffs); yaw 0 faces +Z.
 const FACE_NORTH: u16 = 32_768;
 const FACE_SOUTH: u16 = 0;
+/// Most polygon edges one indexed area lookup tests (#1063).
+const AREA_LOOKUP_EDGE_TESTS: usize = 128;
 
 fn is_terrain(collider: &StaticCollider) -> bool {
     collider.id == ids::GROUND || ids::BOUNDARY_WALLS.contains(&collider.id)
@@ -495,8 +497,9 @@ fn wolfrun_woods_trunks_always_leave_a_walkable_gap() {
 }
 
 #[test]
-fn named_areas_are_ordered_disjoint_and_contain_their_landmarks() {
-    let areas = areas().areas();
+fn named_areas_are_ordered_tile_the_zone_and_contain_their_landmarks() {
+    let areas_table = areas();
+    let areas = areas_table.areas();
     let names: Vec<_> = areas.iter().map(Area::name).collect();
     assert_eq!(
         names,
@@ -532,48 +535,73 @@ fn named_areas_are_ordered_disjoint_and_contain_their_landmarks() {
             "King's Road Downs"
         ]
     );
-    // Area bounds are inclusive; as half-open rectangles they compare with
-    // the rest of the content.
-    let bounds = |area: &Area| XzBounds {
-        min: area.min_xz(),
-        max: area.max_xz().map(|value| value + 1),
-    };
     for (index, area) in areas.iter().enumerate() {
         assert_eq!(area.id(), AreaId::new(u32::try_from(index + 1).unwrap()));
         assert!(PLAYABLE_BOUNDS.contains(area.min_xz()[0], area.min_xz()[1]));
-        assert!(PLAYABLE_BOUNDS.contains(area.max_xz()[0], area.max_xz()[1]));
-        for other in &areas[index + 1..] {
-            // A settlement (#818) lies inside its sub-region, which it names where it stands.
-            let nested = greyhaven_vale::settlements::AREAS
-                .iter()
-                .any(|(id, ..)| *id == area.id())
-                && greyhaven_vale::wilds::AREAS
+        assert!((0..2).all(|axis| area.max_xz()[axis] <= PLAYABLE_BOUNDS.max[axis]));
+        assert_eq!(
+            area_at(area.centre()[0], area.centre()[1]).map(Area::id),
+            Some(area.id())
+        );
+        // Each traced area (#1063) keeps the heart of the ground it was designed round, unless
+        // a settlement (#818) stands there inside it.
+        let footprint = greyhaven_vale::footprint(area.id()).unwrap();
+        let heart = [0, 1].map(|axis| (footprint.min[axis] + footprint.max[axis]) / 2);
+        let designed = greyhaven_vale::footprint_at(heart[0], heart[1]);
+        assert_eq!(
+            area_at(heart[0], heart[1]).map(Area::id),
+            designed,
+            "{}",
+            area.name()
+        );
+        assert!(
+            designed == Some(area.id())
+                || greyhaven_vale::settlements::AREAS
                     .iter()
-                    .any(|(id, ..)| *id == other.id());
-            assert!(
-                nested || !bounds(area).overlaps(bounds(other)),
-                "{} / {}",
-                area.name(),
-                other.name()
-            );
+                    .any(|(id, ..)| Some(*id) == designed)
+        );
+    }
+    // The traced areas tile the zone's outline: every point inside it lies in exactly one,
+    // and the indexed lookup agrees with testing every polygon.
+    let outline = greyhaven_vale::region::data();
+    let (mut points, mut work) = (0, 0);
+    for z in (PLAYABLE_BOUNDS.min[1] + 13..PLAYABLE_BOUNDS.max[1]).step_by(797) {
+        for x in (PLAYABLE_BOUNDS.min[0] + 29..PLAYABLE_BOUNDS.max[0]).step_by(811) {
+            let holding: Vec<_> = areas.iter().filter(|area| area.contains(x, z)).collect();
+            if outline.contains(x, z) {
+                assert_eq!(
+                    holding.len(),
+                    1,
+                    "({x}, {z}) lies in {} areas",
+                    holding.len()
+                );
+                points += 1;
+            } else {
+                assert!(holding.is_empty(), "({x}, {z}) outside the zone is named");
+            }
+            let (found, tests) = areas_table.area_at_counted(x, z);
+            assert_eq!(found.map(Area::id), holding.first().map(|area| area.id()));
+            work = work.max(tests);
         }
     }
-    for (id, name, _) in greyhaven_vale::settlements::AREAS {
-        let area = areas.iter().find(|area| area.id() == *id).unwrap();
-        let [x, z] = [0, 1].map(|axis| (area.min_xz()[axis] + area.max_xz()[axis]) / 2);
-        assert_eq!(area_at(x, z).map(Area::name), Some(*name));
-    }
-    // The authored half-open outpost rectangle [-3 500, 3 500) × [-1 300, 5 300).
+    assert!(points > 10_000);
+    // The per-tick lookup's bound (`area-lookup` in .performance/contract.json, Atlas 7.1.i1055).
+    let bound = areas_table.lookup_work_bound();
+    assert!(work <= bound);
+    assert!(
+        bound <= AREA_LOOKUP_EDGE_TESTS,
+        "a lookup may test {bound} edges"
+    );
+    // The Outpost's square and the rings round it.
     assert_eq!(
-        area_at(3_499, 5_299).map(Area::id),
+        area_at(3_000, 4_000).map(Area::id),
         Some(greyhaven_vale::vale::OUTPOST)
     );
     assert_eq!(
-        area_at(-3_500, -1_300).map(Area::id),
-        Some(greyhaven_vale::vale::OUTPOST)
+        area_at(0, 11_000).map(Area::id),
+        Some(greyhaven_vale::vale::SOUTHMEADOW_DOWNS),
+        "the south road leaves the Vale through the downs"
     );
-    assert_eq!(area_at(3_500, 0), None);
-    assert_eq!(area_at(0, 5_300), None);
     // Representative authored subzone centres, in centimetres.
     for (point, area) in [
         ([0, 2_000], greyhaven_vale::vale::OUTPOST),
@@ -584,7 +612,6 @@ fn named_areas_are_ordered_disjoint_and_contain_their_landmarks() {
     ] {
         assert_eq!(area_at(point[0], point[1]).map(Area::id), Some(area));
     }
-    assert_eq!(area_at(0, 11_000), None, "the south road is open country");
     let definition = greyhaven_vale_definition();
     for (id, area) in [
         (ids::KEEP, greyhaven_vale::vale::OUTPOST),
@@ -785,5 +812,31 @@ fn settlement_props_stand_clear_of_colliders_and_residents() {
                 }
             }
         }
+    }
+}
+
+/// The area generator's footprints (`content/greyhaven/authoring/area-seeds.json`, metres) are
+/// the region modules' area tables, which the dressing and scenery still follow (#1063).
+#[test]
+fn the_traced_areas_grow_from_the_designed_footprints() {
+    let seeds: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../content/greyhaven/authoring/area-seeds.json"
+    ))
+    .unwrap();
+    let seeds = seeds["areas"].as_array().unwrap();
+    assert_eq!(seeds.len(), areas().areas().len());
+    for (seed, area) in seeds.iter().zip(areas().areas()) {
+        assert_eq!(seed["id"].as_u64(), Some(u64::from(area.id().get())));
+        assert_eq!(seed["name"].as_str(), Some(area.name()));
+        let metres = |corner: usize, axis: usize| {
+            i32::try_from(seed["footprint"][corner][axis].as_i64().unwrap() * 100).unwrap()
+        };
+        let footprint = greyhaven_vale::footprint(area.id()).unwrap();
+        assert_eq!(
+            (footprint.min, footprint.max),
+            ([metres(0, 0), metres(0, 1)], [metres(1, 0), metres(1, 1)]),
+            "{}",
+            area.name()
+        );
     }
 }

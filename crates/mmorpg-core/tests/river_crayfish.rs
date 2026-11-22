@@ -70,7 +70,9 @@ fn river_crayfish_lie_on_the_fenwater_bank_and_stay_there() {
         let [x, z] = spawn.position;
         let id = spawn.id.get();
         assert!(crayfish::SPAWN_IDS.contains(&id));
-        assert_eq!(area_at(x, z).unwrap().id(), wilds::FENWATER_CROSSING);
+        // The Fenwater Crossing's bank, or Fenford's by the ford (#1063).
+        let area = area_at(x, z).unwrap().id();
+        assert!(area == wilds::FENWATER_CROSSING || area == greyhaven_vale::settlements::FENFORD);
         assert_eq!(road_distance(x, z), i64::MAX, "spawn {id} is off the road");
         // On the bank's low margin, out of the channel and within 2 m of its edge.
         let margin = design::river_distance(x, z);
