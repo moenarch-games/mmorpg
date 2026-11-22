@@ -3,7 +3,8 @@
 //! `coding-tooling/work-evidence/v1`; `scripts/operation-work.py` adds the
 //! envelope. Counters come from `mmorpg-core`; nothing here is timed. Every
 //! projection is also checked against the exhaustive visibility oracle, so a
-//! cheaper count can never come from a wrong answer.
+//! cheaper count can never come from a wrong answer. Publication counters (#1056) come from a
+//! warm publication, checked byte for byte against a cold pack of the complete projection.
 use std::error::Error;
 use std::sync::Arc;
 
@@ -11,7 +12,10 @@ use mmorpg_core::{
     CanonicalPlayerCombat, CanonicalPlayerSnapshot, INTEREST_RADIUS_UNITS,
     PLAYER_HALF_EXTENTS_UNITS, ZoneDefinition, ZoneId, ZoneSimulation,
 };
-use mmorpg_protocol::pack_snapshot;
+use mmorpg_protocol::{
+    SheetEncodingCache, SnapshotDecoder, pack_projection_cached, pack_snapshot,
+    pack_snapshot_acknowledged,
+};
 #[path = "../tests/support/visibility_oracle.rs"]
 mod visibility_oracle;
 use visibility_oracle::exhaustive_projection;
@@ -106,6 +110,56 @@ fn project(zone: &ZoneSimulation, viewer: u32) -> Result<(usize, usize)> {
     Ok((projection.stats.candidates_tested, packed.packed_entities))
 }
 
+/// Work of one warm publication to `viewers` (#1056): every viewer was published to on the
+/// previous tick and acknowledged it, then the zone advanced one tick.
+struct Publication {
+    /// Entity records each viewer's projection built, in viewer order.
+    records: Vec<usize>,
+    zone_views_built: usize,
+    sheets_built: usize,
+}
+
+/// Publishes to `viewers` cold, advances one tick and publishes warm, the way the zone host
+/// does: each viewer's sheet stamps and encodings are held between ticks. Every packed
+/// projection must equal a cold pack of the complete projection.
+fn publish(zone: &mut ZoneSimulation, viewers: &[u32]) -> Result<Publication> {
+    let mut caches: Vec<_> = viewers
+        .iter()
+        .map(|_| SheetEncodingCache::default())
+        .collect();
+    let mut decoders: Vec<_> = viewers.iter().map(|_| SnapshotDecoder::new()).collect();
+    let mut run = |zone: &ZoneSimulation| -> Result<Publication> {
+        let views = zone.zone_view_builds();
+        let mut publication = Publication {
+            records: Vec::with_capacity(viewers.len()),
+            zone_views_built: 0,
+            sheets_built: 0,
+        };
+        for (index, &viewer) in viewers.iter().enumerate() {
+            let (cache, decoder) = (&mut caches[index], &mut decoders[index]);
+            let acknowledged = decoder.revisions();
+            let projection = zone.project_for_publish(viewer, &cache.held())?;
+            let packed = pack_projection_cached(&projection, acknowledged, cache)?;
+            let complete = zone.snapshot_for_player(viewer)?;
+            if packed != pack_snapshot_acknowledged(&complete, acknowledged)? {
+                return Err(
+                    format!("the publication for {viewer} differs from a cold pack").into(),
+                );
+            }
+            decoder.decode(&packed.payload)?;
+            publication
+                .records
+                .push(projection.work.entity_records_built);
+            publication.sheets_built += projection.work.sheets_built;
+        }
+        publication.zone_views_built = usize::try_from(zone.zone_view_builds() - views)?;
+        Ok(publication)
+    };
+    run(zone)?;
+    zone.advance_tick()?;
+    run(zone)
+}
+
 fn sample(dimensions: &[(&str, usize)], metrics: &[(&str, usize)]) -> String {
     let pairs = |values: &[(&str, usize)]| {
         values
@@ -131,13 +185,17 @@ fn project_one_viewer(population: usize, local: usize) -> Result<String> {
     for point in far_points().into_iter().take(population - 1 - local) {
         players.push(player(players.len(), point, 0, 0)?);
     }
-    let zone = zone(players)?;
+    let mut zone = zone(players)?;
     let (tests, visible) = project(&zone, 1)?;
+    let published = publish(&mut zone, &[1])?;
     Ok(sample(
         &[("population", population), ("local", local)],
         &[
             ("exact_distance_tests", tests),
             ("visible_records", visible),
+            ("entity_records_built", published.records[0]),
+            ("zone_views_built", published.zone_views_built),
+            ("sheets_built", published.sheets_built),
         ],
     ))
 }
@@ -157,14 +215,21 @@ fn publish_sparse(recipients: usize) -> Result<String> {
             }
         }
     }
-    let zone = zone(players)?;
+    let mut zone = zone(players)?;
     let mut tests = 0;
     for viewer in 1..=u32::try_from(recipients)? {
         tests += project(&zone, viewer)?.0;
     }
+    let viewers: Vec<u32> = (1..=u32::try_from(recipients)?).collect();
+    let published = publish(&mut zone, &viewers)?;
     Ok(sample(
         &[("recipients", recipients)],
-        &[("exact_distance_tests", tests)],
+        &[
+            ("exact_distance_tests", tests),
+            ("entity_records_built", published.records.iter().sum()),
+            ("zone_views_built", published.zone_views_built),
+            ("sheets_built", published.sheets_built),
+        ],
     ))
 }
 
@@ -181,18 +246,26 @@ fn publish_dense_hub(recipients: usize) -> Result<String> {
             )
         })
         .collect::<Result<Vec<_>>>()?;
-    let zone = zone(players)?;
+    let mut zone = zone(players)?;
     let (mut largest, mut visible) = (0, 0);
     for viewer in 1..=u32::try_from(recipients)? {
         let (tests, records) = project(&zone, viewer)?;
         largest = largest.max(tests);
         visible = visible.max(records);
     }
+    let viewers: Vec<u32> = (1..=u32::try_from(recipients)?).collect();
+    let published = publish(&mut zone, &viewers)?;
     Ok(sample(
         &[("recipients", recipients)],
         &[
             ("largest_recipient_tests", largest),
             ("visible_records_per_recipient", visible),
+            (
+                "largest_recipient_records",
+                published.records.iter().copied().max().unwrap_or(0),
+            ),
+            ("zone_views_built", published.zone_views_built),
+            ("sheets_built", published.sheets_built),
         ],
     ))
 }
