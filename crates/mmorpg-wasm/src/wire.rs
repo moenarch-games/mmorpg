@@ -1721,6 +1721,16 @@ pub struct ZoneSnapshot {
 
 impl From<&core::ZoneSnapshot> for ZoneSnapshot {
     fn from(snapshot: &core::ZoneSnapshot) -> Self {
+        Self::view(snapshot, true, true)
+    }
+}
+
+impl ZoneSnapshot {
+    /// The page's view of `snapshot` (#1009): without the bag sheet (inventory, equipment and
+    /// stats null) unless `bag`, and without the quest sheet unless `quests`, so a sheet the
+    /// page already holds is not converted again.
+    #[must_use]
+    pub fn view(snapshot: &core::ZoneSnapshot, bag: bool, quests: bool) -> Self {
         let viewer = &snapshot.viewer;
         let [min, max] = viewer.damage;
         Self {
@@ -1789,20 +1799,25 @@ impl From<&core::ZoneSnapshot> for ZoneSnapshot {
                     .collect(),
             },
             inventory_revision: snapshot.inventory_revision,
-            inventory: snapshot.inventory.as_ref().map(|bag| {
-                bag.slots()
-                    .iter()
-                    .map(|slot| slot.map(Into::into))
-                    .collect()
-            }),
-            equipment: snapshot.equipment.map(|equipment| {
+            inventory: snapshot
+                .inventory
+                .as_ref()
+                .filter(|_| bag)
+                .map(|inventory| {
+                    inventory
+                        .slots()
+                        .iter()
+                        .map(|slot| slot.map(Into::into))
+                        .collect()
+                }),
+            equipment: snapshot.equipment.filter(|_| bag).map(|equipment| {
                 equipment
                     .slots()
                     .iter()
                     .map(|slot| slot.map(core::ItemId::get))
                     .collect()
             }),
-            stats: snapshot.equipment.map(|equipment| {
+            stats: snapshot.equipment.filter(|_| bag).map(|equipment| {
                 let totals = equipment.totals();
                 StatTotals {
                     stamina: totals.stamina,
@@ -1811,25 +1826,29 @@ impl From<&core::ZoneSnapshot> for ZoneSnapshot {
                     intellect: totals.intellect,
                 }
             }),
-            quests: snapshot.quests.as_ref().map(|sheet| QuestSheet {
-                completed: sheet.completed.iter().map(|quest| quest.get()).collect(),
-                entries: sheet
-                    .entries
-                    .iter()
-                    .map(|entry| QuestEntry {
-                        quest: entry.quest.get(),
-                        progress: entry.progress,
-                    })
-                    .collect(),
-                markers: sheet
-                    .markers
-                    .iter()
-                    .map(|marker| QuestMarker {
-                        npc: marker.npc.get(),
-                        marker: marker.marker.into(),
-                    })
-                    .collect(),
-            }),
+            quests: snapshot
+                .quests
+                .as_ref()
+                .filter(|_| quests)
+                .map(|sheet| QuestSheet {
+                    completed: sheet.completed.iter().map(|quest| quest.get()).collect(),
+                    entries: sheet
+                        .entries
+                        .iter()
+                        .map(|entry| QuestEntry {
+                            quest: entry.quest.get(),
+                            progress: entry.progress,
+                        })
+                        .collect(),
+                    markers: sheet
+                        .markers
+                        .iter()
+                        .map(|marker| QuestMarker {
+                            npc: marker.npc.get(),
+                            marker: marker.marker.into(),
+                        })
+                        .collect(),
+                }),
             loot: snapshot.loot.map(|loot| LootView {
                 creature_id: loot.claim.creature.get(),
                 died_at: loot.claim.died_at,
@@ -2603,37 +2622,29 @@ pub fn decode_snapshot_js(payload: &[u8]) -> Result<Ts<ZoneSnapshot>, JsError> {
     Ok(decode_snapshot(payload).map_err(js_error)?.into_ts()?)
 }
 
-/// One online session's projection decoder (#544): hosts send the bag, quest, loot and
-/// ability sheets only until the client acknowledges them, so it keeps the newest copy of each
-/// and every decoded projection is complete. Every command the session sends goes through
-/// [`SnapshotDecoder::acknowledge`], which echoes the revisions it holds.
-#[wasm_bindgen]
-#[derive(Default)]
-pub struct SnapshotDecoder {
-    decoder: mmorpg_protocol::SnapshotDecoder,
+/// A projection a session's `ProjectionStore` ingested (#1009): the id the unit presenter
+/// reads it by, and the page's view, whose bag and quest sheets are left null when unchanged.
+#[derive(Clone, Debug, Serialize, Deserialize, Tsify)]
+#[serde(rename_all = "camelCase")]
+#[tsify(missing_as_null, large_number_types_as_bigints)]
+pub struct IngestedProjection {
+    pub id: u32,
+    /// Whether `snapshot` carries the bag sheet (inventory, equipment, stats); otherwise the
+    /// page keeps the copy it received last.
+    pub bag: bool,
+    /// Whether `snapshot` carries the quest sheet; otherwise the page keeps its last copy.
+    pub quests: bool,
+    pub snapshot: ZoneSnapshot,
 }
 
-#[wasm_bindgen]
-impl SnapshotDecoder {
-    #[wasm_bindgen(constructor)]
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Decodes a projection strictly; a malformed one leaves the held sheets as they were.
-    pub fn decode(&mut self, payload: &[u8]) -> Result<Ts<ZoneSnapshot>, JsError> {
-        let snapshot = self
-            .decoder
-            .decode(payload)
-            .map_err(|error| js_error(error.to_string()))?;
-        Ok(ZoneSnapshot::from(&snapshot).into_ts()?)
-    }
-
-    /// Encoded command bytes wrapped with the sheet revisions held.
-    #[must_use]
-    pub fn acknowledge(&self, command: &[u8]) -> Vec<u8> {
-        mmorpg_protocol::encode_acknowledged_command(self.decoder.revisions(), command)
+impl From<crate::projections::Ingested> for IngestedProjection {
+    fn from(ingested: crate::projections::Ingested) -> Self {
+        Self {
+            id: ingested.id,
+            bag: ingested.bag,
+            quests: ingested.quests,
+            snapshot: ingested.view,
+        }
     }
 }
 
