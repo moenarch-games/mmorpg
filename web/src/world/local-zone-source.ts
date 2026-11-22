@@ -1,6 +1,6 @@
 import { encodeCommand, type WorldCommand } from "../command-wire";
 import { FixedTickClock } from "../demo-clock";
-import { decodeSnapshot, SnapshotBuffer, ticksFromMs, type EntityState, type ZoneSnapshot } from "../replication";
+import { ProjectionDecoder, SnapshotBuffer, ticksFromMs, type EntityState, type ZoneSnapshot } from "../replication";
 import type { CharacterEntries, LocalCharacters } from "./local-characters";
 import { classChoiceCodes, DEFAULT_JOIN_CHARACTER, type JoinCharacter, type LinkState, type WorldSource } from "./world-source";
 
@@ -58,6 +58,8 @@ export class LocalZoneSource implements WorldSource {
   #sequence = 0;
   #ticksSinceSave = 0;
   #latest: ZoneSnapshot | null = null;
+  /** The joined session's projections, decoded once in WASM (#1009). */
+  #projections: ProjectionDecoder | null = null;
 
   constructor(createZone: LocalZoneFactory, characters: LocalCharacters) {
     this.#createZone = createZone;
@@ -125,6 +127,7 @@ export class LocalZoneSource implements WorldSource {
       this.#clock.reset();
       this.#history.reset();
       this.#latest = null;
+      this.#projections = new ProjectionDecoder();
       try {
         this.#publish(player);
       } catch (error) {
@@ -251,7 +254,8 @@ export class LocalZoneSource implements WorldSource {
   }
 
   #publish(player: number): ZoneSnapshot {
-    const snapshot = decodeSnapshot(this.#requireZone().projection(player));
+    this.#projections ??= new ProjectionDecoder();
+    const snapshot = this.#projections.local(this.#requireZone(), player);
     if (snapshot.viewerId !== player) {
       throw new Error("The local zone addressed a projection to another player.");
     }

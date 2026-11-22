@@ -1,5 +1,5 @@
 import type { IndexedMeshGeometry, Matrix4Values, RendererSceneNode } from "@moritzbrantner/three-d-renderer";
-import type { EntityKind, EntityRef, EntityState, StrikeAim } from "../replication";
+import type { EntityKind, EntityRef, EntityState, IngestedProjection, StrikeAim } from "../replication";
 import type { Color } from "./scenery";
 import { freeHandle } from "./zone-lifecycle";
 
@@ -21,7 +21,8 @@ export type UnitPresenterHandle = {
   setEffectKits(drawn: boolean): void;
   setCragDescriptor(json: string): void;
   setChannelOrigins(origins: Float64Array): void;
-  push(projection: Uint8Array, seconds: number): void;
+  /** Observes the session's projection `id` from its store (#1009); false once the store no longer retains it. */
+  push(store: IngestedProjection["store"], id: number, seconds: number): boolean;
   reset(): void;
   prepare(ability: number, seconds: number): void;
   aimPreparation(aim: StrikeAim): void;
@@ -282,8 +283,9 @@ export class SharedUnits {
     this.#handle.setChannelOrigins(flat);
   }
 
-  push(projection: Uint8Array, seconds: number): void {
-    this.#handle.push(projection, seconds);
+  /** Observes a projection a session ingested (#1009), decoded once in its store. */
+  push(projection: IngestedProjection, seconds: number): boolean {
+    return this.#handle.push(projection.store, projection.id, seconds);
   }
 
   reset(): void {

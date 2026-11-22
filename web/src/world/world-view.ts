@@ -11,7 +11,7 @@ import type {
 import type { WorldCommand } from "../command-wire";
 import { entityKey, sameEntity } from "../entity-ref";
 import type { EntityRef } from "../entity-ref";
-import { projectionBytes, type EntityState, type StrikeHeight, type ZoneSnapshot } from "../replication";
+import { ingestedProjection, type EntityState, type StrikeHeight, type ZoneSnapshot } from "../replication";
 import { DebugOverlay, FrameRate } from "./debug-overlay";
 import { ENVIRONMENT, DAY_SECONDS, ZONE_DAY_TICKS, ZONE_START_TIME, environmentAt, zoneSkySeconds } from "./environment";
 import { Minimap, dispositionOf, type MinimapElements, type MinimapUnit } from "./minimap";
@@ -2084,9 +2084,9 @@ export class WorldView {
   }
 
   #pushProjection(units: SharedUnits, projection: ZoneSnapshot): void {
-    const bytes = projectionBytes(projection);
-    if (bytes && this.#units) {
-      units.push(bytes, this.#seconds);
+    const ingested = ingestedProjection(projection);
+    if (ingested && this.#units) {
+      units.push(ingested, this.#seconds);
       this.#units.pushed = projection;
     }
   }
