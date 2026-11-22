@@ -317,9 +317,9 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
         } else {
             water as f64 / 100.
         };
-        let marsh = mmorpg_core::greyhaven_vale::area_at(ux, uz).is_some_and(|area| {
-            area.id() == mmorpg_core::greyhaven_vale::marsh::MARSH_LAKE_WETLANDS
-        });
+        // The wetlands' designed ground, not the wider area traced round it (#1063).
+        let marsh = mmorpg_core::greyhaven_vale::footprint_at(ux, uz)
+            == Some(mmorpg_core::greyhaven_vale::marsh::MARSH_LAKE_WETLANDS);
         let rock = smoothstep(0.17, 0.29, slope[i] + 0.06 * breakup).max(bare[i]);
         let gravel = smoothstep(0.07, 0.15, slope[i] + 0.05 * breakup).max(smoothstep(
             0.35,

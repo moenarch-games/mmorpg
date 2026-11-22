@@ -13,6 +13,9 @@ impl Walker {
         let mut state = zone.snapshot().unwrap();
         let y = content.definition().ground_at(x, z) + 95;
         state.players[0].position = mmorpg_core::physics::from_units([x, y, z]);
+        // The walk is about the ground: no discovery experience levels the walker on the way
+        // (#1063), which would change how the creatures beside the route react.
+        state.players[0].discoveries = content.discoveries().iter().copied().collect();
         let zone = ZoneSimulation::from_snapshot(state, content).unwrap();
         let mut w = Self { zone, sequence: 0 };
         w.ticks(20);

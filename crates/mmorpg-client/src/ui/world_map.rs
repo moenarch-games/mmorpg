@@ -8,7 +8,7 @@ use egui::{Align2, Color32, FontId, Mesh, Pos2, Rect, Sense, Shape, Stroke, Vec2
 use maps_core::{
     LineLayout, LineMesh, MapCamera, ScreenCoordinate, ViewportSize, project_web_mercator,
 };
-use mmorpg_client_model::exploration::ExplorationMap;
+use mmorpg_client_model::exploration::{ExplorationMap, PointKind};
 use mmorpg_client_model::world_map::{self as model, LonLat, WorldMap};
 use mmorpg_core::{EntityKind, ZoneSnapshot};
 
@@ -337,9 +337,15 @@ impl WorldMapWindow {
             }
         }
 
-        if let Some(map) = exploration {
-            explored(&painter, &project, map, self.zoom >= 13.0);
-        }
+        let point_tip = exploration.and_then(|map| {
+            explored(
+                &painter,
+                &project,
+                map,
+                self.zoom >= 13.0,
+                response.hover_pos(),
+            )
+        });
 
         // you: a dot and an arrow along your facing (bearing clockwise from north; screen y points south)
         if let Some((at, bearing)) = viewer(snapshot)
@@ -362,14 +368,30 @@ impl WorldMapWindow {
             ));
         }
 
-        // the region under the pointer, from the same rule the browser uses
+        // what lies under the pointer, as in the browser: a point of interest, else a named
+        // area of the zone (#1063), else the continent's region
         if let Some(pointer) = response.hover_pos() {
             let local = pointer - rect.min;
-            if let Some(at) = camera.unproject_screen(ScreenCoordinate {
+            let at = camera.unproject_screen(ScreenCoordinate {
                 x: f64::from(local.x),
                 y: f64::from(local.y),
-            }) && let Some(region) = map.region_at([at.longitude, at.latitude])
-            {
+            });
+            let area_tip = || {
+                let at = at.as_ref()?;
+                let (x, z) = model::map_to_zone([at.longitude, at.latitude]);
+                let area = exploration?
+                    .areas
+                    .iter()
+                    .find(|area| area_contains(&area.rings, [x as f32, z as f32]))?;
+                Some(if area.discovered {
+                    format!("{}\nDiscovered", area.name)
+                } else {
+                    "Unexplored\nNot yet discovered".to_owned()
+                })
+            };
+            let region_tip = || {
+                let at = at.as_ref()?;
+                let region = map.region_at([at.longitude, at.latitude])?;
                 let mut text = format!(
                     "{}\n{}\n{}",
                     region
@@ -382,6 +404,9 @@ impl WorldMapWindow {
                 if let Some(zone) = &region.zone {
                     text.push_str(&format!("\n{zone}: playable zone"));
                 }
+                Some(text)
+            };
+            if let Some(text) = point_tip.or_else(area_tip).or_else(region_tip) {
                 let galley = painter.layout_no_wrap(
                     text,
                     FontId::proportional(13.0),
@@ -403,41 +428,127 @@ impl WorldMapWindow {
     }
 }
 
-/// A line through screen points, tessellated by the Maps library's MapLibre line bucket with
-/// round joins and caps, `width` px wide.
-/// The exploration overlay (#983), as in the browser: discovered named areas outlined in gold
-/// and named, undiscovered ones dimmed so the geography stays readable, and the active quests'
-/// approximate areas as dashed gold circles (Atlas 5.1.13).
+/// Even-odd containment of a zone point (metres) in an area's rings.
+fn area_contains(rings: &[Vec<[f32; 2]>], [x, z]: [f32; 2]) -> bool {
+    let mut inside = false;
+    for ring in rings {
+        for (k, a) in ring.iter().enumerate() {
+            let b = ring[(k + 1) % ring.len()];
+            if (a[1] > z) != (b[1] > z) && x < a[0] + (z - a[1]) / (b[1] - a[1]) * (b[0] - a[0]) {
+                inside = !inside;
+            }
+        }
+    }
+    inside
+}
+
+/// A point of interest's marker (#1063): each kind its own shape and colour.
+fn marker(painter: &egui::Painter, at: Pos2, kind: PointKind, detail: &str) {
+    let ink = Stroke::new(1.4, Color32::from_rgb(29, 26, 20));
+    match kind {
+        PointKind::Waystone => {
+            painter.add(Shape::convex_polygon(
+                vec![
+                    at + Vec2::new(0.0, -7.0),
+                    at + Vec2::new(5.0, 0.0),
+                    at + Vec2::new(0.0, 7.0),
+                    at + Vec2::new(-5.0, 0.0),
+                ],
+                Color32::from_rgb(110, 200, 230),
+                ink,
+            ));
+        }
+        PointKind::Dungeon => {
+            painter.add(Shape::convex_polygon(
+                vec![
+                    at + Vec2::new(0.0, -6.0),
+                    at + Vec2::new(6.5, 5.0),
+                    at + Vec2::new(-6.5, 5.0),
+                ],
+                Color32::from_rgb(92, 70, 58),
+                Stroke::new(1.4, Color32::from_rgb(240, 225, 200)),
+            ));
+        }
+        PointKind::Landmark => {
+            let square = Rect::from_center_size(at, Vec2::splat(9.0));
+            painter.rect_filled(square, 1.5, Color32::from_rgb(200, 196, 186));
+            painter.rect_stroke(square, 1.5, ink, egui::StrokeKind::Outside);
+        }
+        PointKind::Service => {
+            painter.circle(at, 5.0, Color32::from_rgb(232, 178, 64), ink);
+        }
+        PointKind::QuestGiver => {
+            let mark = if detail == "Quest ready" { "?" } else { "!" };
+            painter.circle(at, 7.0, Color32::from_rgb(29, 26, 20), Stroke::NONE);
+            painter.text(
+                at,
+                Align2::CENTER_CENTER,
+                mark,
+                FontId::proportional(13.0),
+                Color32::from_rgb(255, 211, 77),
+            );
+        }
+    };
+}
+
+/// The exploration overlay (#983), as in the browser: the zone's named areas as their traced
+/// outlines (#1063), discovered ones outlined in gold and named and undiscovered ones dimmed so
+/// the geography stays readable, the active quests' approximate areas as dashed gold circles
+/// (Atlas 5.1.13), and the discovered areas' points of interest. Returns the hovered point's
+/// tooltip.
 fn explored(
     painter: &egui::Painter,
     project: &impl Fn(LonLat) -> Option<Pos2>,
     map: &ExplorationMap,
     labels: bool,
-) {
+    pointer: Option<Pos2>,
+) -> Option<String> {
     let zone = |[x, z]: [f32; 2]| project(model::zone_to_map(f64::from(x), f64::from(z)));
+    let mut fills = Mesh::default();
+    let mut lines = Mesh::default();
     for area in &map.areas {
-        let corners = [
-            [area.min[0], area.min[1]],
-            [area.max[0], area.min[1]],
-            [area.max[0], area.max[1]],
-            [area.min[0], area.max[1]],
-        ];
-        let Some(points) = corners.into_iter().map(zone).collect::<Option<Vec<_>>>() else {
+        let Some(rings) = area
+            .rings
+            .iter()
+            .map(|ring| ring.iter().map(|&p| zone(p)).collect::<Option<Vec<_>>>())
+            .collect::<Option<Vec<_>>>()
+        else {
             continue;
         };
-        let (fill, line) = if area.discovered {
+        let (fill, line, width) = if area.discovered {
             (
                 Color32::from_rgba_unmultiplied(255, 233, 168, 28),
-                Stroke::new(1.6, Color32::from_rgb(245, 210, 122)),
+                Color32::from_rgb(245, 210, 122),
+                1.6,
             )
         } else {
             (
                 Color32::from_rgba_unmultiplied(29, 26, 20, 64),
-                Stroke::new(0.8, Color32::from_rgb(91, 84, 70)),
+                Color32::from_rgb(91, 84, 70),
+                0.8,
             )
         };
-        painter.add(Shape::convex_polygon(points, fill, line));
+        let mut holes = Vec::new();
+        let mut flat = Vec::new();
+        for (n, ring) in rings.iter().enumerate() {
+            if n > 0 {
+                holes.push(flat.len() as u32);
+            }
+            flat.extend(ring.iter().map(|p| [f64::from(p.x), f64::from(p.y)]));
+            stroke(&mut lines, ring, width, line, true);
+        }
+        let mut triangles: Vec<u32> = Vec::new();
+        Earcut::new().earcut(flat.iter().copied(), &holes, &mut triangles);
+        let base = fills.vertices.len() as u32;
+        fills.vertices.extend(flat.iter().map(|p| Vertex {
+            pos: Pos2::new(p[0] as f32, p[1] as f32),
+            uv: egui::epaint::WHITE_UV,
+            color: fill,
+        }));
+        fills.indices.extend(triangles.iter().map(|i| base + i));
     }
+    painter.add(Shape::mesh(fills));
+    painter.add(Shape::mesh(lines));
     let gold = Color32::from_rgb(255, 211, 77);
     for hint in &map.hints {
         let ring: Option<Vec<Pos2>> = (0..=48)
@@ -480,8 +591,21 @@ fn explored(
             }
         }
     }
+    let mut hovered = None;
+    for point in &map.points {
+        let Some(at) = zone(point.at) else {
+            continue;
+        };
+        marker(painter, at, point.kind, &point.detail);
+        if pointer.is_some_and(|p| p.distance(at) <= 8.0) {
+            hovered = Some(format!("{}\n{}", point.name, point.detail));
+        }
+    }
+    hovered
 }
 
+/// A line through screen points, tessellated by the Maps library's MapLibre line bucket with
+/// round joins and caps, `width` px wide.
 fn stroke(mesh: &mut Mesh, points: &[Pos2], width: f32, color: Color32, closed: bool) {
     if points.len() < 2 {
         return;

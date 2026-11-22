@@ -47,7 +47,7 @@ use strum::{IntoEnumIterator, VariantArray};
 pub use geometry::Rect;
 use geometry::{Ellipse, Rng, polyline_distance, splitmix64, value_noise};
 use mmorpg_core::greyhaven_vale::{self, PLAYABLE_BOUNDS, SPAWN_PLAZA, dressing, ids};
-use mmorpg_core::{Area, AreaId, StaticCollider, XzBounds, trig};
+use mmorpg_core::{AreaId, StaticCollider, XzBounds, trig};
 pub use outpost_grass::outpost_grass_placements;
 pub use redbrand_depths::redbrand_depths_scenery;
 pub use seam_test::seam_test_scenery;
@@ -751,16 +751,9 @@ const fn kind_code(kind: PropKind) -> [u8; 2] {
     }
 }
 
-/// An area as a half-open rectangle; core area bounds are inclusive.
+/// The ground an area was designed round, as a half-open rectangle (#1063).
 fn area_bounds(id: AreaId) -> XzBounds {
-    greyhaven_vale::areas()
-        .areas()
-        .iter()
-        .find(|area| area.id() == id)
-        .map_or(PLAYABLE_BOUNDS, |area| XzBounds {
-            min: area.min_xz(),
-            max: area.max_xz().map(|value| value + 1),
-        })
+    greyhaven_vale::footprint(id).unwrap_or(PLAYABLE_BOUNDS)
 }
 
 fn tree_variant(hash: u64) -> TreeVariant {
@@ -1432,7 +1425,7 @@ impl Scenery {
         if greyhaven_vale::cave::GREYFANG.flattens(x, z) {
             return Biome::Rock;
         }
-        match greyhaven_vale::area_at(x, z).map(Area::id) {
+        match greyhaven_vale::footprint_at(x, z) {
             Some(greyhaven_vale::vale::WOLFRUN_WOODS) => Biome::Woods,
             Some(greyhaven_vale::vale::REDBRAND_HOLLOW) => Biome::Hollow,
             Some(greyhaven_vale::vale::OUTPOST) => Biome::Hub,
@@ -1804,7 +1797,7 @@ impl Placer<'_> {
         self.scatter(&mut rng, 700, 6_000, |rng| {
             let at = within(rng, playable);
             let meadow = !matches!(
-                greyhaven_vale::area_at(at[0], at[1]).map(Area::id),
+                greyhaven_vale::footprint_at(at[0], at[1]),
                 Some(greyhaven_vale::vale::WOLFRUN_WOODS | greyhaven_vale::vale::REDBRAND_HOLLOW)
             );
             (meadow && FARMLAND.distance(at) > 0).then_some((PropKind::Flowers, at))

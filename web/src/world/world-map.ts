@@ -4,6 +4,7 @@ import { GeoJsonLayer, MapView, type MapViewState } from "@moritzbrantner/maps";
 import "@moritzbrantner/maps/styles.css";
 import { wasm } from "../wasm";
 import type { ExplorationMap } from "./exploration";
+import { areaPolygon, metresPerPixel, pointMarker, POINT_STYLES, type PointKind } from "./map-features";
 
 /**
  * The world map (M): the continent atlas drawn by the Maps library's own flat runtime
@@ -50,14 +51,6 @@ function headingTriangle([lon, lat]: [number, number], bearing: number, size: nu
   return { type: "Feature", id: "self-heading", geometry: { type: "Polygon", coordinates: [ring] }, properties: {} };
 }
 
-/** A zone rectangle in metres (min and max corners) as a map polygon. */
-function rectangle(id: string, min: readonly number[], max: readonly number[], properties: Record<string, unknown>): Feature {
-  const [x0 = 0, z0 = 0] = min;
-  const [x1 = 0, z1 = 0] = max;
-  const ring = [mapPoint(x0, z0), mapPoint(x1, z0), mapPoint(x1, z1), mapPoint(x0, z1), mapPoint(x0, z0)];
-  return { type: "Feature", id, geometry: { type: "Polygon", coordinates: [ring] }, properties };
-}
-
 /** An approximate circle of `radius` metres around a zone point, as a map polygon. */
 function circle(id: string, x: number, z: number, radius: number, properties: Record<string, unknown>): Feature {
   const ring = Array.from({ length: 33 }, (_, i) => {
@@ -68,17 +61,25 @@ function circle(id: string, x: number, z: number, radius: number, properties: Re
 }
 
 /**
- * The exploration overlay (#983): discovered named areas warm and named, undiscovered ones a faint dashed outline so
- * the geography stays readable, and the active quests' approximate areas as gold circles (Atlas 5.1.13).
+ * The exploration overlay (#983): the named areas as their traced outlines (#1063), discovered ones warm and named,
+ * undiscovered ones dim so the geography stays readable, and the active quests' approximate areas as gold circles
+ * (Atlas 5.1.13).
  */
 function explorationLayers(map: ExplorationMap) {
-  const areas = map.areas.map((area) => rectangle(`area-${area.id}`, area.min, area.max, { name: area.name, discovered: area.discovered }));
+  const areas = map.areas.map((area) => areaPolygon(`area-${area.id}`, area.rings, mapPoint, { name: area.name, discovered: area.discovered }));
   const hints = map.hints.map((hint, i) => circle(`hint-${i}`, hint.center[0], hint.center[1], hint.radius, { label: hint.label }));
   const labels = map.areas.filter((area) => area.discovered).map((area) => {
-    const at = mapPoint((area.min[0] + area.max[0]) / 2, (area.min[1] + area.max[1]) / 2);
+    const at = mapPoint(area.centre[0], area.centre[1]);
     return { type: "Feature", id: `label-${area.id}`, geometry: { type: "Point", coordinates: at }, properties: { name: area.name } } as Feature;
   });
   return { areas: collection(areas, "area"), hints: collection(hints, "hint"), labels: collection(labels, "label") };
+}
+
+/** The discovered areas' points of interest (#1063), each kind its own shape about 14 px across at `zoom`. */
+function pointLayer(map: ExplorationMap, zoom: number): Collection {
+  const size = 14 * metresPerPixel(zoom);
+  return collection(map.points.map((point, i) =>
+    pointMarker(`point-${i}`, point.kind as PointKind, mapPoint(point.at[0], point.at[1]), size, { name: point.name, detail: point.detail })), "point");
 }
 
 function regionTooltip(id: unknown) {
@@ -106,6 +107,7 @@ function WorldMapPanel({ self, exploration, onClose }: { self: () => MapSelf | n
   });
   const [explored, setExplored] = useState<ExplorationMap | null>(() => exploration());
   const overlay = useMemo(() => (explored ? explorationLayers(explored) : null), [explored]);
+  const points = useMemo(() => (explored ? pointLayer(explored, view.zoom) : null), [explored, view.zoom]);
   useEffect(() => {
     const timer = window.setInterval(() => setMe(self()), 200);
     const discoveries = window.setInterval(() => setExplored((last) => { const next = exploration(); return next === last ? last : next; }), 500);
@@ -176,14 +178,22 @@ function WorldMapPanel({ self, exploration, onClose }: { self: () => MapSelf | n
         renderFeatureTooltip: (f: Hit) => h("div", { className: "world-map-tooltip" }, h("strong", null, String(f.properties.label)), h("span", null, "Somewhere around here")) }) : null,
       overlay ? h(GeoJsonLayer, { layerId: "world-map-area-labels", featureCollection: overlay.labels, pointColor: "#f3e6b8", pointRadius: 3.5,
         renderFeatureTooltip: (f: Hit) => h("div", { className: "world-map-tooltip" }, h("strong", null, String(f.properties.name))) }) : null,
+      points ? h(GeoJsonLayer, { layerId: "world-map-points", featureCollection: points,
+        getFeatureStyle: (f: Hit) => {
+          const style = POINT_STYLES[f.properties.kind as PointKind] ?? POINT_STYLES.landmark;
+          return { polygonFillColor: style.fill, polygonFillOpacity: 1, polygonStrokeColor: style.stroke, polygonStrokeWidth: 1.2 };
+        },
+        renderFeatureTooltip: (f: Hit) => h("div", { className: "world-map-tooltip" }, h("strong", null, String(f.properties.name)), h("span", null, String(f.properties.detail))) }) : null,
       marker ? h(GeoJsonLayer, { layerId: "world-map-self-heading", featureCollection: marker.heading, polygonFillColor: "#ffd34d", polygonFillOpacity: 1, polygonStrokeColor: "#1d1a14", polygonStrokeWidth: 1.5, isFeatureInteractive: () => false }) : null,
       marker ? h(GeoJsonLayer, { layerId: "world-map-self", featureCollection: marker.point, pointColor: "#ffd34d", pointRadius: 5,
         renderFeatureTooltip: () => h("div", { className: "world-map-tooltip" }, h("strong", null, "You")) }) : null),
       explored ? h("ol", { className: "world-map-discoveries", "aria-label": "Discovered areas" },
         explored.hints.map((hint, i) => h("li", { key: `hint-${i}`, className: "world-map-hint-entry" }, h("span", { className: "world-map-swatch world-map-swatch-hint" }), hint.label)),
         explored.areas.filter((area) => area.discovered).map((area) => h("li", { key: area.id }, h("span", { className: "world-map-swatch world-map-swatch-area" }), area.name))) : null,
-      h("ol", { className: "world-map-legend", "aria-label": "Kingdoms" },
-        bundle.kingdoms.map((k) => h("li", { key: k.id }, h("span", { className: "world-map-swatch", style: { background: k.color } }), k.name))),
+      h("ol", { className: "world-map-legend", "aria-label": "Kingdoms and places" },
+        bundle.kingdoms.map((k) => h("li", { key: k.id }, h("span", { className: "world-map-swatch", style: { background: k.color } }), k.name)),
+        (Object.keys(POINT_STYLES) as PointKind[]).map((kind) => h("li", { key: `point-${kind}` },
+          h("span", { className: `world-map-swatch world-map-swatch-${kind}`, style: { background: POINT_STYLES[kind].fill } }), POINT_STYLES[kind].label))),
       h("button", { type: "button", className: "world-map-recentre", disabled: !me,
         onClick: () => { if (me) { const at = mapPoint(me.x, me.z); setView({ ...view, center: [at[0], at[1]] }); } } }, "Centre on me")));
 }

@@ -408,6 +408,30 @@ Both clients open the continent with **M** and close it with M or Esc:
   - its MapLibre line tessellation (`LineMesh`) for rivers, roads and borders;
   - earcut, which Maps also uses, for the region fills.
 
+**Greyhaven's named areas and points of interest (#1063).** Over the continent, both maps draw
+the zone's named areas and the discovered areas' points of interest from the shared exploration
+model (`mmorpg-client-model::exploration`):
+- Each area is a polygon traced from the zone's geography, the same way this atlas draws its
+  regions. `uv run content/greyhaven/authoring/areas.py` grows every area over a 4 m raster of
+  the zone outline (`region.json`):
+  - from the designed footprint in `authoring/area-seeds.json`: a settlement, the Outpost or
+    the Sunken Shrine claims all of it and a few metres round it, and open country its middle;
+  - and from the design features it owns (`design.json` forests, rockfields and lakes).
+  Climbing (`terrain.json`) and crossing a river, brook, road, forest edge or rockfield edge
+  cost extra, so those become borders. The shared borders are traced, simplified and smoothed
+  once with `atlas_regions`' helpers, so the areas tile the outline with no gaps or overlaps.
+  The script writes `content/greyhaven/areas.json` (`--check` fails when it is stale) and a
+  preview in `artifacts/greyhaven-areas/`.
+- Core reads `areas.json`: `area_at`, discovery and explore objectives use the polygons through
+  a grid index (the `area-lookup` budget in `.performance/contract.json`). Scenery biomes and
+  dressing keep following the footprints.
+- Points of interest have four kinds, each with its own marker and its name on hover:
+  - waystones;
+  - caves and dungeons: content landmarks and wildlife dens;
+  - landmarks and ruins: content landmarks and discovery caches;
+  - services (vendors, spirit healer) and quest givers, whom the viewer's quest sheet marks.
+  A point shows once its area is discovered.
+
 A GPU evidence frame of the native map comes from the native interface test:
 
 ```sh

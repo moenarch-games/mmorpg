@@ -42,6 +42,7 @@ pub mod highland_bandits;
 pub mod highlands;
 pub mod hunt;
 pub mod inn;
+pub mod landmarks;
 pub mod landscape;
 pub mod layout;
 pub mod lynx;
@@ -50,6 +51,7 @@ pub mod marsh;
 pub mod marsh_creatures;
 pub mod marshal_house;
 pub mod ore;
+mod outlines;
 pub mod paint;
 pub mod powder_watch;
 pub mod quests;
@@ -294,11 +296,13 @@ pub mod ids {
     pub const SETTLEMENT_PROPS: RangeInclusive<u32> = 44_400..=44_799;
 }
 
-/// One region's tables (#542): its named areas, its roads and its own colliders. Each region
-/// module defines its `REGION`; [`REGIONS`] lists them once, and the zone concatenates their
-/// tables in that order. A new region adds its module and one line there.
+/// One region's tables (#542): its named areas' footprints, its roads and its own colliders.
+/// Each region module defines its `REGION`; [`REGIONS`] lists them once, and the zone
+/// concatenates their tables in that order. A new region adds its module and one line there.
 struct Region {
-    /// `(id, name, half-open bounds)`, like every other rectangle in this module.
+    /// `(id, name, half-open bounds)`, like every other rectangle in this module: the ground
+    /// each named area was designed round, which dressing and scenery biomes still follow.
+    /// The areas themselves are traced from the geography ([`outlines`], #1063).
     areas: &'static [(AreaId, &'static str, XzBounds)],
     roads: &'static [Road],
     /// The region's colliders, beside the frame's ground, walls, trees and ladders.
@@ -318,20 +322,12 @@ const REGIONS: &[Region] = &[
 ];
 
 static AREAS: LazyLock<ZoneAreas> = LazyLock::new(|| {
-    let areas = REGIONS
-        .iter()
-        .flat_map(|region| region.areas)
-        .map(|(id, name, bounds)| {
-            // `ZoneAreas` bounds are inclusive: a half-open `[min, max)`
-            // rectangle covers `[min, max - 1]` in integer units.
-            Area::new(*id, *name, bounds.min, bounds.max.map(|value| value - 1))
-                .expect("built-in vale area is valid")
-        })
-        .collect();
+    let areas = outlines::areas().expect("content/greyhaven/areas.json is valid");
     ZoneAreas::new(areas).expect("built-in vale areas are valid")
 });
 
-/// The named areas of this content revision, ordered by ID.
+/// The named areas of this content revision, ordered by ID: polygons traced from the zone's
+/// geography that tile its outline (#1063).
 #[must_use]
 pub fn areas() -> &'static ZoneAreas {
     &AREAS
@@ -341,6 +337,30 @@ pub fn areas() -> &'static ZoneAreas {
 #[must_use]
 pub fn area_at(x: i32, z: i32) -> Option<&'static Area> {
     AREAS.area_at(x, z)
+}
+
+/// The ground area `id` was designed round (half-open), which the Vale's dressing and the
+/// scenery's biomes follow; not where the area lies, which [`areas`] says.
+#[must_use]
+pub fn footprint(id: AreaId) -> Option<XzBounds> {
+    REGIONS
+        .iter()
+        .flat_map(|region| region.areas)
+        .find(|(area, ..)| *area == id)
+        .map(|&(.., bounds)| bounds)
+}
+
+/// The lowest-ID area whose [`footprint`] holds an XZ point.
+#[must_use]
+pub fn footprint_at(x: i32, z: i32) -> Option<AreaId> {
+    REGIONS
+        .iter()
+        .flat_map(|region| region.areas)
+        .filter(|(_, _, bounds)| {
+            x >= bounds.min[0] && x < bounds.max[0] && z >= bounds.min[1] && z < bounds.max[1]
+        })
+        .map(|&(id, ..)| id)
+        .min()
 }
 
 /// A road centre line. Roads are open corridors: no collider comes within
@@ -2028,6 +2048,7 @@ fn content_with_spawns(
             .with_hunt(hunt::outing())?
             .with_cart(cart::journey())?
             .with_caches(discoveries::caches())?
+            .with_landmarks(landmarks::landmarks())?
             .with_waystones(vec![
                 crate::GREYHAVEN_OUTPOST,
                 crate::BARROWDOWN,

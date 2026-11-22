@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "note": "Greyhaven's named areas (#1063), in metres in the zone frame (x east, z south). `footprint` is the half-open rectangle [[min x, min z], [max x, max z]] each area was designed round (the region modules' area tables; core's tests keep the two equal). A `place` (the Outpost, the settlements, the Sunken Shrine) claims its whole footprint and the ground within `reach` metres of travel before the open country grows round it; the open country grows from the middle of its footprint, any extra `seeds` and the design.json forests, rockfields and lakes it owns (`features`). IDs are stable: saved discoveries name them. content/greyhaven/authoring/areas.py grows and traces content/greyhaven/areas.json from these.",
+  "areas": [
+    { "id": 1, "name": "Greyhaven Outpost", "footprint": [[-35, -13], [35, 53]], "place": true, "reach": 8 },
+    { "id": 2, "name": "Wolfrun Woods", "footprint": [[-119, -32], [-40, 50]] },
+    { "id": 3, "name": "Millbrook Farm", "footprint": [[40, 13], [105, 90]] },
+    { "id": 4, "name": "Stillwater Lake", "footprint": [[-118, -76], [-64, -32]] },
+    { "id": 5, "name": "Redbrand Hollow", "footprint": [[-35, -119], [35, -70]] },
+    { "id": 6, "name": "Greyfang Ridge", "footprint": [[-208, -208], [208, -120]], "features": ["Greyfang Ridge Pines", "Greyfang Ridge East Pines", "Greyfang Ridge Rocks", "Greyfang Ridge East Rocks"] },
+    { "id": 7, "name": "Southmeadow Downs", "footprint": [[-208, 120], [208, 208]], "features": ["Southmeadow West Copse", "Southmeadow East Copse"] },
+    { "id": 8, "name": "Hollowpine Reach", "footprint": [[-208, -120], [-156, 120]], "features": ["Hollowpine Reach"] },
+    { "id": 9, "name": "Eastwater Fen", "footprint": [[120, -120], [208, 120]], "features": ["Eastwater Alders"] },
+    { "id": 10, "name": "Sunken Shrine", "footprint": [[-152, -56], [-148, -52]], "place": true, "reach": 0 },
+    { "id": 11, "name": "Farmland and Hamlets", "footprint": [[-208, 208], [208, 640]], "features": ["Hamlet Hedgerows"] },
+    { "id": 12, "name": "Bandit Highlands", "footprint": [[-208, -632], [208, -208]], "features": ["Highland Pines", "Highland Stones"] },
+    { "id": 13, "name": "Marsh-Lake Wetlands", "footprint": [[208, -208], [632, 208]], "features": ["Marsh Alders"] },
+    { "id": 14, "name": "Barrowdown", "footprint": [[490, 610], [590, 710]], "place": true, "reach": 14 },
+    { "id": 15, "name": "Fenford", "footprint": [[980, 170], [1080, 254]], "place": true, "reach": 14 },
+    { "id": 16, "name": "Westmere Lodge", "footprint": [[-700, 14], [-620, 100]], "place": true, "reach": 14 },
+    { "id": 17, "name": "Hunters' Camp", "footprint": [[-514, 762], [-444, 826]], "place": true, "reach": 14 },
+    { "id": 18, "name": "Delving Workings", "footprint": [[1026, -790], [1130, -626]], "place": true, "reach": 14 },
+    { "id": 19, "name": "Greyfang Watch", "footprint": [[102, -894], [146, -850]], "place": true, "reach": 14 },
+    { "id": 20, "name": "Crown Stones", "footprint": [[-924, -489], [-876, -441]], "place": true, "reach": 14 },
+    { "id": 21, "name": "Westmere Woods", "footprint": [[-1000, -200], [-420, 300]], "features": ["Westmere Woods", "Westmere Tarn"] },
+    { "id": 22, "name": "Southwood", "footprint": [[-760, 420], [-230, 960]], "features": ["Southwood", "Southwood Stones"] },
+    { "id": 23, "name": "Crown Foothills", "footprint": [[-1400, -900], [-560, -300]], "seeds": [[-575, -335]], "features": ["Crown Pines", "Crown Boulders"] },
+    { "id": 24, "name": "Greyfang Approach", "footprint": [[-350, -1100], [400, -640]], "features": ["Greyfang Pines", "Greyfang Scree"] },
+    { "id": 25, "name": "Delving Heights", "footprint": [[560, -1150], [1500, -420]], "features": ["Delving Woods", "Delving Boulders"] },
+    { "id": 26, "name": "Fenwater Crossing", "footprint": [[640, -200], [1250, 420]], "features": ["Fenwater Alders"] },
+    { "id": 27, "name": "King's Road Downs", "footprint": [[220, 420], [1050, 1000]], "features": ["Downs Copse", "Downs North Copse", "Downs South Copse", "Downs Trees", "Downs Stones"] }
+  ]
+}

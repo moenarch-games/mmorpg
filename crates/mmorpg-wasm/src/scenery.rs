@@ -194,6 +194,31 @@ pub struct AreaExport {
     pub max_xz: [i32; 2],
 }
 
+/// Each area's rectangle for the scene (inclusive): in Greyhaven the ground it was designed
+/// round, which the Outpost's shelter and the region art follow, not its traced outline
+/// (#1063); elsewhere its bounding box.
+fn area_exports(areas: &ZoneAreas) -> Vec<AreaExport> {
+    let greyhaven = areas == mmorpg_core::greyhaven_vale::areas();
+    areas
+        .areas()
+        .iter()
+        .map(|area| {
+            let footprint = greyhaven
+                .then(|| mmorpg_core::greyhaven_vale::footprint(area.id()))
+                .flatten();
+            let (min_xz, max_xz) = footprint.map_or((area.min_xz(), area.max_xz()), |bounds| {
+                (bounds.min, bounds.max.map(|value| value - 1))
+            });
+            AreaExport {
+                id: area.id().get(),
+                name: area.name().to_owned(),
+                min_xz,
+                max_xz,
+            }
+        })
+        .collect()
+}
+
 /// The areas of the presented content.
 pub fn hosted_areas() -> &'static ZoneAreas {
     static AREAS: PerZone<ZoneAreas> = PerZone::new();
@@ -420,16 +445,7 @@ pub(crate) fn export(
                 surface_y: water.surface,
             })
             .collect(),
-        areas: areas
-            .areas()
-            .iter()
-            .map(|area| AreaExport {
-                id: area.id().get(),
-                name: area.name().to_owned(),
-                min_xz: area.min_xz(),
-                max_xz: area.max_xz(),
-            })
-            .collect(),
+        areas: area_exports(areas),
     };
     refresh_presentation_fingerprint(&mut export);
     export

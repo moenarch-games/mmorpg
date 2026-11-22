@@ -10,7 +10,7 @@ use mmorpg_core::greyhaven_vale::quests::{
     FARMER, MARAUDERS_IN_THE_FIELDS, MARSHAL, PELTS_FOR_THE_TANNER, SUPPLY_SACK, TANNER,
     THE_MISSING_FARMHAND, THE_WOLFRUN_CART, WOLF_PELT,
 };
-use mmorpg_core::greyhaven_vale::{farmland, vale};
+use mmorpg_core::greyhaven_vale::vale;
 use mmorpg_core::{
     EntityKind, NpcId, NpcMarker, QuestId, QuestMarker, QuestSheet, ZoneCommand, ZoneEvent, ZoneId,
     ZoneSimulation, ZoneSnapshot, greyhaven_vale,
@@ -516,7 +516,8 @@ fn a_new_warden_completes_the_first_quests_of_the_greyhaven_chain() {
     );
 
     // A mixed path (#916): the opening chain already discovered the woods and the farm; an
-    // exploring detour from Millbrook discovers more of Greyhaven, each area paying once.
+    // exploring detour from Millbrook discovers more of Greyhaven, each area paying once. Its
+    // last stretch south stays inside the downs' traced outline (#1063).
     let discovered = |script: &Script| {
         script.zone.snapshot().unwrap().players[0]
             .discoveries
@@ -529,11 +530,7 @@ fn a_new_warden_completes_the_first_quests_of_the_greyhaven_chain() {
     let start = script.ticks;
     script.walk_path(TO_EXPLORE);
     let found = discovered(&script);
-    for area in [
-        vale::EASTWATER_FEN,
-        vale::SOUTHMEADOW_DOWNS,
-        farmland::FARMLAND_AND_HAMLETS,
-    ] {
+    for area in [vale::EASTWATER_FEN, vale::SOUTHMEADOW_DOWNS] {
         assert!(found.contains(&area), "{area:?} is discovered: {found:?}");
     }
     eprintln!(

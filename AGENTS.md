@@ -71,6 +71,7 @@ cargo run -p mmorpg-world-studio     # web app for the whole map, Krita and agen
 cargo run -p mmorpg-world-studio -- capture --tiles     # the same capture from the command line: layered Krita documents, masks and map tiles
 cargo run -p mmorpg-world-studio -- import <region>.ora # painted height and biome layers into content/greyhaven/paint/
 uv run content/world/authoring/atlas.py check         # provisional continent atlas: build, previews in artifacts/world-atlas/, geographic checks (docs/WORLD_ATLAS.md)
+uv run content/greyhaven/authoring/areas.py           # Greyhaven's named areas traced from its geography into content/greyhaven/areas.json (--check, docs/WORLD_ATLAS.md)
 ./scripts/dev-browser-online.sh      # zone host + browser client in online mode
 ```
 

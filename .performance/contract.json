@@ -145,6 +145,23 @@
       ]
     },
     {
+      "id": "area-lookup",
+      "description": "One indexed named-area lookup (#1063): discovery and explore objectives run it for every player every tick, and its polygon edge tests stay under a fixed bound however densely Greyhaven's traced areas are sampled.",
+      "dimensions": {
+        "samples": { "description": "lookups on an even grid over the playable bounds" }
+      },
+      "scalePoints": [{ "samples": 1024 }, { "samples": 4096 }, { "samples": 16384 }],
+      "metrics": [
+        {
+          "name": "largest_lookup_edge_tests",
+          "unit": "tests",
+          "signal": "operation-count",
+          "notes": "ZoneAreas::lookup_work_bound is the exact worst case over the index; core's Greyhaven tests hold it under the same budget.",
+          "budget": { "max": 128 }
+        }
+      ]
+    },
+    {
       "id": "camera-only-frames",
       "description": "Greyhaven client presentation (#645): camera-only frames around a standing viewer over settled static residency build, upload and evict no static scenery, whatever the authored scenery.",
       "dimensions": {

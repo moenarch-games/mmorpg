@@ -162,10 +162,9 @@ impl crate::ZoneSimulation {
             .collect();
         for player_id in ids {
             let at = self.player_position(player_id)?;
-            for area in content.areas().areas() {
-                if !area.contains(at.x, at.z)
-                    || content.discoveries().binary_search(&area.id()).is_err()
-                {
+            // The indexed lookup (#1063): areas tile the zone, so a player stands in one.
+            if let Some(area) = content.areas().area_at(at.x, at.z) {
+                if content.discoveries().binary_search(&area.id()).is_err() {
                     continue;
                 }
                 let key = crate::RewardKey::Discovery { area: area.id() };

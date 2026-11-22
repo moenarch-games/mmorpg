@@ -155,15 +155,8 @@ const SEED_ROCKS: u64 = 0x524f_434b_5343_4154;
 /// The loose rocks' scatters: `(bounds, target, attempts, every nth rock medium)`; zero keeps
 /// them all small.
 fn rock_fields() -> [(XzBounds, usize, usize, u64); 3] {
-    let hollow = super::areas()
-        .areas()
-        .iter()
-        .find(|area| area.id() == vale::REDBRAND_HOLLOW)
-        .map(|area| XzBounds {
-            min: area.min_xz(),
-            max: area.max_xz().map(|value| value + 1),
-        })
-        .expect("the vale names the Redbrand Hollow");
+    let hollow =
+        super::footprint(vale::REDBRAND_HOLLOW).expect("the vale names the Redbrand Hollow");
     let highlands = highlands::BOUNDS;
     let wetlands = marsh::BOUNDS;
     [
