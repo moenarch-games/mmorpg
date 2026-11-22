@@ -26,6 +26,7 @@
 
 pub mod action_lab;
 pub mod arena_presentation;
+pub mod camera;
 pub mod catalog;
 pub mod client_model;
 pub mod front_end;
@@ -1290,10 +1291,49 @@ impl UnitPresenter {
         self.0.take_audio()
     }
 
-    /// One frame, laid out in WASM memory (#1057, [`unit_layout`]): read it through
-    /// [`Self::directory`] and [`Self::memory`], with [`Self::fresh_strings`] when its header
-    /// counts new strings.
+    /// The confirmed impacts of the projections pushed since the last call (#52, #1058):
+    /// `[kind (0 hit, 1 block), unit kind code, unit id]` per struck unit, in event order.
+    #[wasm_bindgen(js_name = takeImpacts)]
+    pub fn take_impacts(&mut self) -> Vec<u32> {
+        self.0.take_impacts()
+    }
+
+    /// One frame, laid out in WASM memory (#1057, [`unit_layout`]): the units sampled from the
+    /// pushed projections 2 ticks behind the newest, `elapsedTicks` past it (#1058), with the
+    /// viewer at `ownBody` (`[x, y, z, facing, vx, vy, vz]`) while the page predicts it. Read it
+    /// through [`Self::directory`] and [`Self::memory`], with [`Self::fresh_strings`] when its
+    /// header counts new strings.
     pub fn frame(
+        &mut self,
+        #[wasm_bindgen(js_name = elapsedTicks)] elapsed_ticks: f64,
+        #[wasm_bindgen(js_name = ownBody)] own_body: &[f64],
+        seconds: f64,
+        dt: f64,
+        #[wasm_bindgen(js_name = reducedMotion)] reduced_motion: bool,
+        #[wasm_bindgen(js_name = barYaw)] bar_yaw: f32,
+        choice: u32,
+        headwear: &str,
+        #[wasm_bindgen(js_name = previewYaw)] preview_yaw: f32,
+    ) -> Result<(), JsError> {
+        self.0
+            .frame(
+                elapsed_ticks,
+                own_body,
+                seconds,
+                dt,
+                reduced_motion,
+                bar_yaw,
+                choice,
+                headwear,
+                preview_yaw,
+            )
+            .map_err(|error| JsError::new(&error))
+    }
+
+    /// A frame of exactly `units` (`[kind, id, x, y, z, facing]` each), a scrubbed recording's,
+    /// laid out like [`Self::frame`].
+    #[wasm_bindgen(js_name = frameAt)]
+    pub fn frame_at(
         &mut self,
         units: &[f64],
         seconds: f64,
@@ -1305,7 +1345,7 @@ impl UnitPresenter {
         #[wasm_bindgen(js_name = previewYaw)] preview_yaw: f32,
     ) -> Result<(), JsError> {
         self.0
-            .frame(
+            .frame_at(
                 units,
                 seconds,
                 dt,

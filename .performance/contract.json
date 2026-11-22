@@ -333,6 +333,29 @@
       ]
     },
     {
+      "id": "client-interpolate",
+      "description": "Snapshot interpolation both clients draw units with (#1058, mmorpg-client-model's SnapshotHistory, measured through the browser's mmorpg-wasm adapter): one frame sampled 2 ticks behind the newest projection walks the two bracketing projections once.",
+      "dimensions": { "entities": { "description": "projected units, the viewer included" } },
+      "scalePoints": [{ "entities": 9 }, { "entities": 17 }, { "entities": 33 }, { "entities": 64 }],
+      "metrics": [
+        {
+          "name": "samples_visited",
+          "unit": "records",
+          "signal": "operation-count",
+          "notes": "Entity records of the two bracketing projections visited by one frame's sample (a merge walk over orders indexed once per push); a find per unit fails it.",
+          "growth": [{ "dimension": "entities", "bound": "linear" }]
+        },
+        {
+          "name": "warm_frame_allocations",
+          "unit": "allocations",
+          "signal": "operation-count",
+          "notes": "Counting allocator around one warm frame's interpolation, the sampled records included; the history and poses reuse their buffers.",
+          "budget": { "max": 0 },
+          "growth": [{ "dimension": "entities", "bound": "constant" }]
+        }
+      ]
+    },
+    {
       "id": "projection-ingest",
       "description": "Browser projection ingest (#1009): a running Greyhaven player's projections, local and online, each decoded once into the session's WASM projection store, read by the unit presenter by id; sheets reach the page only when they change.",
       "dimensions": { "ticks": { "description": "projections ingested per path (local and online)" } },

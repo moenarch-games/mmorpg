@@ -1,16 +1,27 @@
 //! The shared unit presentation (`mmorpg-presentation::units`, #184) for the browser.
 //!
 //! The page pushes every projection it receives (by its id in the session's projection store,
-//! decoded once, #1009) and, per frame, the interpolated units it samples. This adapter runs the presenter the native client runs
-//! and lays the frame out as typed-array records the page reads in place (#1057,
-//! [`crate::unit_layout`]): draws with their model matrices, the geometry of every resource the
-//! page did not receive in the previous frame, where each unit stands, and the imported models
-//! (with chosen clip and time) the page skins itself.
+//! decoded once, #1009). The adapter keeps them in the shared snapshot history
+//! (`mmorpg-client-model`, #1058) and samples it itself, 2 ticks behind the newest, so the page
+//! only says how far the frame lags the newest projection and, while it predicts, where its own
+//! body stands. It runs the presenter the native client runs and lays the frame out as
+//! typed-array records the page reads in place (#1057, [`crate::unit_layout`]): draws with their
+//! model matrices, the geometry of every resource the page did not receive in the previous
+//! frame, where each unit stands, and the imported models (with chosen clip and time) the page
+//! skins itself. It also queues the confirmed impacts of each new projection for the page.
 //! Presentation only: the local zone host never reads it.
 
-use std::{collections::HashMap, rc::Rc, sync::Arc};
+use std::{
+    collections::{HashMap, VecDeque},
+    rc::Rc,
+    sync::Arc,
+};
 
-use mmorpg_core::{ClassChoice, CreatureId, EntityRef, NpcId, ZoneSnapshot};
+use mmorpg_client_model::{
+    impact::{ImpactKind, impact_cues},
+    interpolation::{Pose, SnapshotHistory},
+};
+use mmorpg_core::{ClassChoice, CreatureId, EntityKind, EntityRef, EntitySnapshot, NpcId, ZoneSnapshot};
 use mmorpg_presentation::{
     audio::{AudioCues, AudioOp},
     units::{
@@ -21,18 +32,28 @@ use serde::Serialize;
 
 use crate::{
     scenery::{hosted_scenery, presented_content},
-    unit_layout::{LayoutWork, UnitLayout},
+    unit_layout::{LayoutWork, UnitLayout, kind_code},
 };
 
 /// Where the page finds the last layout's buffers in WASM memory: `[pointer, capacity, length]`
 /// of `words`, `numbers`, `models`, `vertices` and `indices`, in that order (#1057).
 pub type Directory = [usize; 15];
 
+/// Bound on confirmed impacts awaiting the page; the oldest are dropped first.
+const MAX_PENDING_IMPACTS: usize = 32;
+
 pub struct Units {
     presenter: UnitPresenter,
+    player_id: u32,
     latest: Option<Rc<ZoneSnapshot>>,
     /// The latest projection's records by entity, indexed once per push (#1057).
     records: HashMap<EntityRef, usize>,
+    /// The received projections the frame samples (#1058).
+    history: SnapshotHistory<Rc<ZoneSnapshot>>,
+    /// The last sample's poses, reused across frames.
+    poses: Vec<Pose>,
+    /// Entity records the interpolation visited so far.
+    samples_visited: usize,
     /// This frame's sampled units, reused across frames.
     sampled: Vec<SampledUnit>,
     layout: UnitLayout,
@@ -40,6 +61,8 @@ pub struct Units {
     /// Sound cues of the projections pushed since the page last took them (#447).
     audio: AudioCues,
     audio_ops: Vec<AudioOp>,
+    /// Confirmed impacts of the projections pushed since the page last took them.
+    impacts: VecDeque<[u32; 3]>,
 }
 
 /// One sound operation for the page's `game-audio` handle.
@@ -87,13 +110,18 @@ impl Units {
     ) -> Self {
         Self {
             presenter: UnitPresenter::new(player_id, content, scenery),
+            player_id,
             latest: None,
             records: HashMap::new(),
+            history: SnapshotHistory::default(),
+            poses: Vec::new(),
+            samples_visited: 0,
             sampled: Vec::new(),
             layout: UnitLayout::default(),
             directory: Box::new([0; 15]),
             audio: AudioCues::default(),
             audio_ops: Vec::new(),
+            impacts: VecDeque::new(),
         }
     }
 
@@ -194,7 +222,8 @@ impl Units {
     }
 
     /// Observes one received projection, decoded once by the session's projection store
-    /// (#1009) and shared with it.
+    /// (#1009) and shared with it. A projection newer than the history's newest joins it and
+    /// queues its confirmed impacts.
     pub fn push(&mut self, snapshot: Rc<ZoneSnapshot>, seconds: f64) {
         self.presenter.push(&snapshot, seconds);
         let presenter = &self.presenter;
@@ -210,6 +239,17 @@ impl Units {
                 .enumerate()
                 .map(|(position, record)| (record.entity(), position)),
         );
+        if self.history.push(Rc::clone(&snapshot)) {
+            self.impacts.extend(impact_cues(&snapshot).map(|cue| {
+                let kind = match cue.kind {
+                    ImpactKind::Hit => 0,
+                    ImpactKind::Block => 1,
+                };
+                [kind, kind_code(cue.target.kind()), cue.target.id()]
+            }));
+            let excess = self.impacts.len().saturating_sub(MAX_PENDING_IMPACTS);
+            self.impacts.drain(..excess);
+        }
         self.latest = Some(snapshot);
     }
 
@@ -218,6 +258,8 @@ impl Units {
         self.audio_ops.extend(self.audio.reset());
         self.latest = None;
         self.records.clear();
+        self.history.reset();
+        self.impacts.clear();
         self.layout.reset();
     }
 
@@ -241,15 +283,50 @@ impl Units {
         self.audio_ops.clear();
         json
     }
-    /// One frame, laid out for the page (#1057, [`crate::unit_layout`]). `units` holds
-    /// `[kind (0 player, 1 creature, 2 npc, 3 minion), id, x, y, z, facing]` per sampled unit in
-    /// units and yaw steps; `choice` is the viewer's appearance code (0 for none), `headwear` a
-    /// headwear style or empty, `preview_yaw` NaN without preview.
+
+    /// Takes the confirmed impacts queued since the last call: `[kind (0 hit, 1 block), unit
+    /// kind code, unit id]` of each struck unit, in event order.
+    pub fn take_impacts(&mut self) -> Vec<u32> {
+        self.impacts.drain(..).flatten().collect()
+    }
+
+    /// One interpolated frame, laid out for the page (#1057, #1058, [`crate::unit_layout`]):
+    /// `elapsed_ticks` is how far past the newest projection the frame is (see
+    /// [`SnapshotHistory::sample`]); `own_body` is empty or the predicted viewer's
+    /// `[x, y, z, facing, vx, vy, vz]` in units, yaw steps and units per tick. `choice` is the
+    /// viewer's appearance code (0 for none), `headwear` a headwear style or empty,
+    /// `preview_yaw` NaN without preview.
+    ///
+    /// # Errors
+    ///
+    /// Before the first projection, or for a malformed own body or headwear style.
+    pub fn frame(
+        &mut self,
+        elapsed_ticks: f64,
+        own_body: &[f64],
+        seconds: f64,
+        dt: f64,
+        reduced_motion: bool,
+        bar_yaw: f32,
+        choice: u32,
+        headwear: &str,
+        preview_yaw: f32,
+    ) -> Result<(), String> {
+        let viewer = viewer(choice, headwear, preview_yaw)?;
+        self.interpolate(elapsed_ticks, own_body)?;
+        let frame = self.present(viewer, seconds, dt, reduced_motion, bar_yaw)?;
+        self.write(&frame);
+        Ok(())
+    }
+
+    /// One frame of exactly the page's units (a scrubbed recording), laid out like
+    /// [`Self::frame`]. `units` holds `[kind (0 player, 1 creature, 2 npc, 3 minion), id, x, y,
+    /// z, facing]` per unit in units and yaw steps.
     ///
     /// # Errors
     ///
     /// Before the first projection, or for a malformed unit list or headwear style.
-    pub fn frame(
+    pub fn frame_at(
         &mut self,
         units: &[f64],
         seconds: f64,
@@ -267,8 +344,41 @@ impl Units {
         Ok(())
     }
 
-    /// Samples the page's units against the latest projection's records, one indexed lookup
-    /// each.
+    /// Samples the history for this frame (see [`Self::frame`]): one merge walk over the two
+    /// bracketing projections, without allocating once warm.
+    ///
+    /// # Errors
+    ///
+    /// Before the first projection, or for a malformed own body.
+    pub fn interpolate(&mut self, elapsed_ticks: f64, own_body: &[f64]) -> Result<(), String> {
+        let own = match own_body.len() {
+            0 => None,
+            7 => Some(own_body),
+            _ => return Err("the own body must be seven numbers".into()),
+        };
+        let sample = self
+            .history
+            .sample(elapsed_ticks, &mut self.poses)
+            .ok_or("no projection yet")?;
+        self.samples_visited += sample.visited;
+        self.sampled.clear();
+        for (record, pose) in sample.snapshot.entities.iter().zip(&self.poses) {
+            let mut record = record.clone();
+            let (position, facing) = match own {
+                Some(own) if record.kind == EntityKind::Player && record.id == self.player_id => {
+                    record.velocity = [own[4], own[5], own[6]]
+                        .map(|value| value.round().clamp(-128., 127.) as i8);
+                    ([own[0], own[1], own[2]], own[3])
+                }
+                _ => (pose.position, pose.facing),
+            };
+            self.sampled.push(sampled_unit(record, position, facing));
+        }
+        Ok(())
+    }
+
+    /// Samples exactly the page's units against the latest projection's records, one indexed
+    /// lookup each.
     ///
     /// # Errors
     ///
@@ -285,23 +395,19 @@ impl Units {
             let Some(&position) = self.records.get(&entity) else {
                 continue;
             };
-            let position_units = [unit[2], unit[3], unit[4]];
-            let relief = hosted_scenery().height_at(
-                position_units[0].round() as i32,
-                position_units[2].round() as i32,
-            );
-            let metres = |value: f64| (value / f64::from(mmorpg_core::UNITS_PER_METRE)) as f32;
-            self.sampled.push(SampledUnit {
-                record: snapshot.entities[position].clone(),
-                centre: [
-                    metres(position_units[0]),
-                    metres(position_units[1] + f64::from(relief)),
-                    metres(position_units[2]),
-                ],
-                yaw: ((unit[5] / 65_536.).rem_euclid(1.) * std::f64::consts::TAU) as f32,
-            });
+            self.sampled.push(sampled_unit(
+                snapshot.entities[position].clone(),
+                [unit[2], unit[3], unit[4]],
+                unit[5],
+            ));
         }
         Ok(())
+    }
+
+    /// Entity records the interpolation visited so far (`client-interpolate`, #1058).
+    #[must_use]
+    pub const fn samples_visited(&self) -> usize {
+        self.samples_visited
     }
 
     /// The shared presenter's frame of the last [`Self::sample`].
@@ -403,4 +509,24 @@ pub fn viewer(choice: u32, headwear: &str, preview_yaw: f32) -> Result<Viewer, S
         headwear,
         preview_yaw: preview_yaw.is_finite().then_some(preview_yaw),
     })
+}
+
+/// A unit drawn at `position` (units) facing `facing` (yaw steps), on the relief under it.
+#[allow(clippy::cast_possible_truncation)]
+fn sampled_unit(record: EntitySnapshot, position: [f64; 3], facing: f64) -> SampledUnit {
+    let relief = hosted_scenery().height_at(position[0].round() as i32, position[2].round() as i32);
+    let metres = |value: f64| (value / f64::from(mmorpg_core::UNITS_PER_METRE)) as f32;
+    SampledUnit {
+        record,
+        centre: [
+            metres(position[0]),
+            metres(position[1] + f64::from(relief)),
+            metres(position[2]),
+        ],
+        yaw: Pose {
+            position,
+            facing,
+        }
+        .yaw_radians() as f32,
+    }
 }

@@ -42,3 +42,15 @@ fn layout_work_is_linear_and_warm_frames_allocate_a_constant_amount() {
         assert!(larger.layout_bytes <= 2 * smaller.layout_bytes, "{runs:?}");
     }
 }
+
+/// The browser's snapshot interpolation (#1058, `client-interpolate`): each frame walks the two
+/// bracketing projections once, so the records it visits grow with the projected units, never
+/// with their pairs, and a warm frame allocates nothing.
+#[test]
+fn interpolation_visits_each_bracketing_record_once_and_warm_frames_never_allocate() {
+    for entities in [8, 16, 32, 63] {
+        let run = unit_layout::interpolation(entities, 16);
+        assert_eq!(run.samples_visited, 2 * run.units, "{entities}: {run:?}");
+        assert_eq!(run.warm_frame_allocations, 0, "{entities}: {run:?}");
+    }
+}
