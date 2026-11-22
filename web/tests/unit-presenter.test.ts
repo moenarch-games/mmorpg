@@ -46,6 +46,28 @@ describe("the shared unit presenter in the browser", () => {
     }
   });
 
+  test("keeps each draw's renderer node and updates it in place from the typed layout (#1057)", async () => {
+    const { world, projection, units } = await joined();
+    const sampled = world.source.sample();
+    const options = { dt: 0.1, reducedMotion: false, barYaw: 0, look } as const;
+    const first = units.frame(sampled, { ...options, seconds: 0 });
+    const nodes = new Map(first.nodes.map((node) => [node.id, node]));
+    const next = units.frame(sampled, { ...options, seconds: 0.5 });
+    expect(next.nodes.length).toBeGreaterThan(0);
+    for (const node of next.nodes) {
+      if (nodes.has(node.id)) { expect(node).toBe(nodes.get(node.id)!); }
+      // The renderer requires a plain 16-number array.
+      expect(Array.isArray(node.modelMatrix) && node.modelMatrix.length === 16).toBe(true);
+      expect(node.id.startsWith("fx-")).toBe(false);
+    }
+    // Each presented unit carries the sampled state it shows, and is found by entity without a search.
+    for (const unit of next.units) {
+      expect(unit.state).not.toBeNull();
+      expect(units.unitOf(unit.entity)).toBe(unit);
+    }
+    expect(units.unitOf({ kind: "player", id: projection.viewerId })?.state?.entityId).toBe(projection.viewerId);
+  });
+
   test("a ready model is requested with its chosen clip, sword and shield and headwear", async () => {
     const { world, projection, units } = await joined();
     units.modelReady("Ranger", [["Idle_Loop", 2], ["Walk_Loop", 1], ["Jog_Fwd_Loop", 1], ["Sword_Attack", 1], ["Death01", 1], ["Idle_Shield_Loop", 1]]);

@@ -1862,9 +1862,8 @@ export class WorldView {
     const others: MinimapUnit[] = [];
     const anchors = new Map<string, { x: number; feetY: number; z: number }>();
     let self: { focus: Vec3; x: number; feetY: number; z: number; facing: number } | null = null;
-    const entities = new Map(sampled.map((entity) => [entityKey({ kind: entity.kind, id: entity.entityId }), entity]));
     for (const unit of presented.units) {
-      const entity = entities.get(entityKey(unit.entity));
+      const entity = unit.state;
       if (!entity) { continue; }
       const placement = { x: unit.feet[0], feetY: unit.feet[1], z: unit.feet[2], yawRadians: unit.yaw };
       anchors.set(entityKey(unit.entity), placement);
@@ -1882,14 +1881,14 @@ export class WorldView {
     this.#impacts.preload(intensity);
     for (const received of receivedProjections) {
       for (const cue of impactCues(received)) {
-        const unit = presented.units.find((candidate) => sameEntity(candidate.entity, cue.target));
+        const unit = units.unitOf(cue.target);
         if (unit) { this.#impacts.spawn(cue.family, intensity, [unit.feet[0], unit.centreY, unit.feet[2]], now); }
       }
     }
     this.#impacts.update(now);
     const roof = this.#roofOf(projection.raid ? this.#raidArea : null, scenery.scenery);
     this.#raidSmoke.update(projection.raid, roof?.top ?? null, roof?.span ?? [0, 0], now);
-    const unitNodes = this.#plan ? [] : presented.nodes.filter((node) => !node.id.startsWith("fx-"));
+    const unitNodes = this.#plan ? [] : presented.nodes;
     profilePhase("units");
     if (!self) {
       throw new Error("The projection is missing the viewer's own unit.");
@@ -1963,7 +1962,7 @@ export class WorldView {
     const rendered = this.#sceneryBatches?.undrawn(frame.nodes) ?? frame.nodes;
     const batchedNodes = frame.nodes.length - rendered.length;
     nodes.push(...(this.#plan?.groundOnly ? [] : rendered), ...unitNodes);
-    this.#lastEffectNodes = presented.nodes.filter((node) => node.id.startsWith("fx-"));
+    this.#lastEffectNodes = presented.effectNodes;
     nodes.push(...this.#lastEffectNodes);
     this.#lastUnitNodes = unitNodes;
     this.#lastProjectedUnits = projected;
