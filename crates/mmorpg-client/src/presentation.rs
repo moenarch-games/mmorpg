@@ -24,6 +24,10 @@ use mmorpg_core::{
 use mmorpg_presentation::units::{
     FrameInput, SampledUnit, UnitPresenter, Viewer, imported::Kind, player,
 };
+use mmorpg_client_model::{
+    impact::impact_cues,
+    interpolation::{Pose, SnapshotHistory},
+};
 use mmorpg_scenery::Scenery;
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -51,30 +55,6 @@ const HEALTH_BAR_FILL: [f32; 3] = [0.18, 0.9, 0.25];
 
 /// Bound on confirmed impacts awaiting a frame; the oldest are dropped first.
 const MAX_PENDING_IMPACTS: usize = 32;
-
-/// The particle impacts one projection's confirmed events produce, in event order: hits puff
-/// and blocks ring on the struck unit (the browser's `impactCues`, #52). Only events the
-/// zone already delivered to this viewer; never a predicted or inferred outcome.
-#[must_use]
-pub fn impact_cues(
-    snapshot: &ZoneSnapshot,
-) -> Vec<(crate::world::ImpactKind, EntityRef, EntityRef)> {
-    use crate::world::ImpactKind;
-    use mmorpg_core::ZoneEvent;
-    snapshot
-        .events
-        .iter()
-        .filter_map(|event| match *event {
-            ZoneEvent::DamageDealt { source, target, .. }
-            | ZoneEvent::DamageTaken { source, target, .. }
-            | ZoneEvent::DamageObserved { source, target, .. } => {
-                Some((ImpactKind::Hit, source, target))
-            }
-            ZoneEvent::Blocked { source, target, .. } => Some((ImpactKind::Block, source, target)),
-            _ => None,
-        })
-        .collect()
-}
 
 /// One model (at most [`MODEL_BOX_BUDGET`] boxes) and two health-bar boxes per
 /// projected unit, plus one target marker.
@@ -110,7 +90,8 @@ pub struct Presentation {
     shared_cat: Option<skinned::AmbientModel>,
     scenery: Scenery,
     content: Arc<ZoneContent>,
-    history: VecDeque<ZoneSnapshot>,
+    /// Received projections, sampled 2 ticks behind the newest (`mmorpg-client-model`, #1058).
+    history: SnapshotHistory<ZoneSnapshot>,
     latest_received: Instant,
     /// Walk-cycle phase and eased swing per visible unit.
     gaits: BTreeMap<EntityRef, Gait>,
@@ -237,7 +218,7 @@ impl Presentation {
             player_id,
             scenery,
             content,
-            history: VecDeque::new(),
+            history: SnapshotHistory::default(),
             latest_received: now,
             gaits: BTreeMap::new(),
             last_scene: now,
@@ -329,7 +310,7 @@ impl Presentation {
         self.lowering = crate::world::Lowering::default();
         self.last_draw = now;
         self.last_scene = now;
-        self.history.clear();
+        self.history.reset();
         self.latest_received = now;
     }
 
@@ -351,15 +332,12 @@ impl Presentation {
         {
             return Err("duplicate entity in snapshot".into());
         }
-        if let Some(latest) = self.history.back() {
+        if let Some(latest) = self.history.latest() {
             if snapshot.zone_id != latest.zone_id {
                 return Err("zone changed without resetting presentation".into());
             }
             if snapshot.tick <= latest.tick {
                 return Ok(false);
-            }
-            if snapshot.tick - latest.tick > u64::from(TICK_HZ) * 30 {
-                self.history.clear();
             }
         }
         self.units_presenter.push(
@@ -372,15 +350,13 @@ impl Presentation {
                 .push(&snapshot, |unit| presenter.rendered(unit.position)),
         );
         // Each accepted (strictly newer) projection admits its impacts exactly once.
-        self.impacts.extend(impact_cues(&snapshot));
+        self.impacts.extend(impact_cues(&snapshot).map(|cue| (cue.kind, cue.source, cue.target)));
         while self.impacts.len() > MAX_PENDING_IMPACTS {
             self.impacts.pop_front();
         }
         self.latest_received = now;
-        self.history.push_back(snapshot);
-        if self.history.len() > 32 {
-            self.history.pop_front();
-        }
+        // The history restarts itself after a stall of more than 30 s.
+        self.history.push(snapshot);
         Ok(true)
     }
 
@@ -392,76 +368,48 @@ impl Presentation {
     /// The newest projection, for input decisions and status text.
     #[must_use]
     pub fn latest(&self) -> Option<&ZoneSnapshot> {
-        self.history.back()
+        self.history.latest()
     }
 
-    /// Two ticks of interpolation delay; packet loss holds the latest pose.
-    /// Facing interpolates along the shorter arc. Units appear and vanish at
-    /// sample ticks.
+    /// The units drawn now, sampled 2 ticks behind the newest projection and closing the gap
+    /// while it stalls (`mmorpg-client-model`'s [`SnapshotHistory::sample`], #1058); packet
+    /// loss holds the latest pose.
     #[must_use]
     pub fn units(&self, now: Instant) -> BTreeMap<EntityRef, UnitPose> {
-        let Some(latest) = self.history.back() else {
-            return BTreeMap::new();
-        };
         let elapsed = now
             .saturating_duration_since(self.latest_received)
             .as_secs_f64()
             * f64::from(TICK_HZ);
-        let delay = (2.0 - elapsed).max(0.0);
-        let mut before = &self.history[0];
-        for after in self.history.iter().skip(1) {
-            // Subtract integer ticks before conversion, preserving precision at u64::MAX.
-            let after_age = (latest.tick - after.tick) as f64;
-            if after_age < delay {
-                let before_age = (latest.tick - before.tick) as f64;
-                let alpha =
-                    ((before_age - delay) / (before_age - after_age)).clamp(0.0, 1.0) as f32;
-                return before
-                    .entities
-                    .iter()
-                    .map(|unit| {
-                        let pose = self.pose(unit);
-                        let next = after
-                            .entities
-                            .iter()
-                            .find(|next| (next.kind, next.id) == (unit.kind, unit.id));
-                        let pose = next.map_or(pose, |next| {
-                            let target = self.rendered(next.position);
-                            // Wrapping u16 difference, read as signed, is the shorter arc.
-                            let arc = f32::from(next.facing.wrapping_sub(unit.facing) as i16);
-                            PlayerPose {
-                                position: std::array::from_fn(|axis| {
-                                    pose.position[axis]
-                                        + (target[axis] - pose.position[axis]) * alpha
-                                }),
-                                yaw: yaw_radians(f32::from(unit.facing) + arc * alpha),
-                            }
-                        });
-                        (
-                            unit.entity(),
-                            UnitPose {
-                                pose,
-                                record: unit.clone(),
-                            },
-                        )
-                    })
-                    .collect();
-            }
-            before = after;
-        }
-        before
+        let mut poses = Vec::new();
+        let Some(sample) = self.history.sample(elapsed, &mut poses) else {
+            return BTreeMap::new();
+        };
+        sample
+            .snapshot
             .entities
             .iter()
-            .map(|unit| {
+            .zip(&poses)
+            .map(|(record, pose)| {
                 (
-                    unit.entity(),
+                    record.entity(),
                     UnitPose {
-                        pose: self.pose(unit),
-                        record: unit.clone(),
+                        pose: self.placed(pose),
+                        record: record.clone(),
                     },
                 )
             })
             .collect()
+    }
+
+    /// A sampled pose in metres, lifted by the relief under it.
+    fn placed(&self, pose: &Pose) -> PlayerPose {
+        let [x, y, z] = pose.position;
+        let relief = self.scenery.height_at(x.round() as i32, z.round() as i32);
+        let metres = |value: f64| (value / f64::from(UNITS_PER_METRE)) as f32;
+        PlayerPose {
+            position: [metres(x), metres(y + f64::from(relief)), metres(z)],
+            yaw: pose.yaw_radians() as f32,
+        }
     }
 
     /// Interpolated poses of the visible players.
@@ -1264,11 +1212,13 @@ impl Presentation {
                 camera.look_along(viewer.yaw);
             }
         }
-        let mut view = camera.view_above_ground(focus, ground);
         let dt = now
             .saturating_duration_since(self.last_camera)
             .as_secs_f64();
         self.last_camera = self.last_camera.max(now);
+        // Wheel zoom eases toward its target (the shared camera, #1058).
+        camera.update(dt, self.reduced_motion);
+        let mut view = camera.view_above_ground(focus, ground);
         for building in &mut self.buildings {
             view.eye = building
                 .camera(
@@ -1456,13 +1406,6 @@ impl Presentation {
         }
     }
 
-    fn pose(&self, unit: &EntitySnapshot) -> PlayerPose {
-        PlayerPose {
-            position: self.rendered(unit.position),
-            yaw: yaw_radians(f32::from(unit.facing)),
-        }
-    }
-
     /// Metres, lifted by the presentation relief under the unit.
     pub fn rendered(&self, position: [i32; 3]) -> [f32; 3] {
         let relief = self.scenery.height_at(position[0], position[2]);
@@ -1522,20 +1465,6 @@ fn creature_color(family: CreatureFamily, hostile: bool) -> [f32; 3] {
     } else {
         [0.8 - shade * 0.5, 0.68 - shade, 0.2]
     }
-}
-
-/// Converts a presentation angle (radians, 0 facing +Z, turning toward +X)
-/// into the nearest `u16` yaw intent.
-#[must_use]
-pub fn yaw_from_radians(radians: f32) -> u16 {
-    let turns = (radians / std::f32::consts::TAU).rem_euclid(1.0);
-    // A full turn rounds to 65 536, which wraps to yaw 0.
-    ((turns * 65_536.0).round() as u32 % 65_536) as u16
-}
-
-/// Converts yaw steps (possibly fractional or outside one turn) to radians within one turn.
-fn yaw_radians(steps: f32) -> f32 {
-    (steps / 65_536.0).rem_euclid(1.0) * std::f32::consts::TAU
 }
 
 fn metres(value: [i32; 3]) -> [f32; 3] {
