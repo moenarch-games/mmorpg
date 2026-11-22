@@ -53,7 +53,7 @@ ROCKS = 20.0
 BAND = 5.0  # the half width (m) of a river or road band: wide enough that no diagonal step skips it
 SIMPLIFY = 2.5  # Douglas-Peucker tolerance, metres
 SMOOTH = 1  # Chaikin rounds
-CORE = 0.4  # the middle of its footprint an open area always holds, per axis
+CORE = 0.8  # the middle of its footprint an open area always holds, per axis
 
 
 def load(name: str):

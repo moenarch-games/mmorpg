@@ -515,9 +515,9 @@ fn a_new_warden_completes_the_first_quests_of_the_greyhaven_chain() {
         script.level_ups
     );
 
-    // A mixed path (#916): the opening chain already discovered the woods, the farm and the
-    // lakeshore it passes (#1063); an
-    // exploring detour from Millbrook discovers more of Greyhaven, each area paying once.
+    // A mixed path (#916): the opening chain already discovered the woods and the farm; an
+    // exploring detour from Millbrook discovers more of Greyhaven, each area paying once. Its
+    // last stretch south stays inside the downs' traced outline (#1063).
     let discovered = |script: &Script| {
         script.zone.snapshot().unwrap().players[0]
             .discoveries
@@ -525,11 +525,7 @@ fn a_new_warden_completes_the_first_quests_of_the_greyhaven_chain() {
     };
     assert_eq!(
         discovered(&script),
-        std::collections::BTreeSet::from([
-            vale::WOLFRUN_WOODS,
-            vale::MILLBROOK_FARM,
-            vale::STILLWATER_LAKE
-        ])
+        std::collections::BTreeSet::from([vale::WOLFRUN_WOODS, vale::MILLBROOK_FARM])
     );
     let start = script.ticks;
     script.walk_path(TO_EXPLORE);
