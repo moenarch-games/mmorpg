@@ -7,6 +7,7 @@ use super::*;
 
 use std::f64::consts::FRAC_PI_2;
 
+use crate::units::chores::Chore;
 use crate::units::swim::Attitude;
 use crate::units::traversal::Motions;
 
@@ -1247,6 +1248,10 @@ impl Playback {
 
     /// Advances the clocks and returns the layers to pose this frame; `duration` gives a clip's
     /// length in seconds (zero when the model lacks it).
+    ///
+    /// The steps run in a fixed order, each settling what the later ones read: the rise and the
+    /// charge, the traversal and flight, the strike clocks, the poses and gestures, then the
+    /// clips each region wants, the tracks' blends and the carried items' grips.
     pub fn advance(
         &mut self,
         clips: Clips,
@@ -1254,27 +1259,85 @@ impl Playback {
         cues: Cues<'_>,
         blend: Blend,
     ) -> Animation {
+        #[allow(clippy::cast_possible_truncation)]
+        let dt = cues.dt as f32;
+        let frame = Frame {
+            clips,
+            duration: &duration,
+            cues,
+            blend: blend.clamped(),
+            dt,
+            guarding: cues.guard.is_some(),
+        };
+        let (charge_run, stun) = self.step_rise_and_charge(&frame);
+        let (swims, held, traversing) = self.step_traversal(&frame);
+        let stopped = self.step_strike(&frame, stun);
+        let footing = Footing {
+            charge_run,
+            stun,
+            swims,
+            held,
+            traversing,
+            stopped,
+            // A swimmer, a climber or a mantler has no footing for a strike's footwork.
+            standing: matches!(self.flight, Flight::Ground)
+                && cues.speed <= 0.25
+                && !swims
+                && !traversing,
+            moving: cues.speed > 0.25,
+            layered: clips.upper_body.is_some(),
+        };
+        let poses = self.step_poses(&frame, &footing);
+        let shown = self.strike_wants(&frame, &footing);
+        let (ground, chore) = self.ground_want(&frame, &footing, &poses);
+        let (roll, base) = self.base_want(&frame, &footing, ground);
+        let (lower, upper) = self.region_wants(&frame, &footing, &poses, &shown, roll, base);
+        let (first, held_dt) = self.step_legs(&frame, &footing, base, lower);
+        self.step_attitude(&frame, roll.is_some(), poses.turned, first);
+        self.step_upper(&frame, upper, shown.split, held_dt);
+        let mut layers = self.compose_layers(&frame);
+        let carry = self.step_carry(&frame, chore);
+        let lower = self
+            .lower
+            .target(&duration)
+            .or_else(|| self.base.target(&duration))
+            .unwrap_or((clips.idle, 0.));
+        let upper = self.upper.target(&duration).unwrap_or(lower);
+        self.step_grips(&frame, &carry, upper.0, first, &mut layers);
+        let channel = cues
+            .motions
+            .and_then(|motions| motions.get(upper.0))
+            .and_then(|motion| motion.cast)
+            .and_then(|cast| cast.channel);
+        Animation {
+            layers,
+            lower,
+            upper,
+            attitude: self.attitude,
+            carry,
+            channel,
+        }
+    }
+
+    /// The frame's first step: back from death the unit rises, and a charge ends where the zone
+    /// stops carrying it. Returns the charge loop still running and the stun held.
+    fn step_rise_and_charge<D: Fn(&str) -> f32>(
+        &mut self,
+        frame: &Frame<'_, D>,
+    ) -> (Option<&'static str>, Option<&'static str>) {
         let Cues {
             speed,
-            vertical_speed,
             dead,
             now,
             reduced,
             ..
-        } = cues;
-        let guarding = cues.guard.is_some();
-        let blend = blend.clamped();
-        #[allow(clippy::cast_possible_truncation)]
-        let dt = cues.dt as f32;
-        let available = |clip: &str| duration(clip) > 0.;
-        let sword = |pick: fn(SwordClips) -> &'static str| {
-            clips.sword.map(pick).filter(|clip| available(clip))
-        };
+        } = frame.cues;
+        let duration = frame.duration;
         // Back from death (#582): the unit rises from a kneel.
         if self.dead
             && !dead
             && !reduced
-            && let Some(rise) = sword(|sword| sword.respawn)
+            && let Some(rise) = frame.sword(|sword| sword.respawn)
         {
             self.serial = self.serial.wrapping_add(1);
             self.strike = Some(Strike::new(
@@ -1296,7 +1359,10 @@ impl Playback {
                 || elapsed >= CHARGE_ARRIVAL_SECONDS && speed < CHARGE_ARRIVAL_SPEED
             {
                 self.charging = None;
-                if let Some(impact) = sword(|sword| sword.charge_impact).filter(|_| !reduced) {
+                if let Some(impact) = frame
+                    .sword(|sword| sword.charge_impact)
+                    .filter(|_| !reduced)
+                {
                     self.serial = self.serial.wrapping_add(1);
                     self.strike = Some(Strike::new(
                         impact,
@@ -1308,8 +1374,35 @@ impl Playback {
                 }
             }
         }
-        let charge_run = sword(|sword| sword.charge_run).filter(|_| self.charging.is_some());
-        let stun = sword(|sword| sword.stun).filter(|_| cues.stunned && !dead);
+        let charge_run = frame
+            .sword(|sword| sword.charge_run)
+            .filter(|_| self.charging.is_some());
+        let stun = frame
+            .sword(|sword| sword.stun)
+            .filter(|_| frame.cues.stunned && !dead);
+        (charge_run, stun)
+    }
+
+    /// The water crossing, the zone's climb or mantle and the flight phase. Returns whether the
+    /// unit swims, the traversal it holds and whether it is traversing.
+    fn step_traversal<D: Fn(&str) -> f32>(
+        &mut self,
+        frame: &Frame<'_, D>,
+    ) -> (bool, TraversalView, bool) {
+        let Frame {
+            clips,
+            duration,
+            cues,
+            ..
+        } = *frame;
+        let Cues {
+            speed,
+            vertical_speed,
+            dead,
+            now,
+            reduced,
+            ..
+        } = cues;
         let landed = clips.jump.is_none_or(|jump| {
             self.lower
                 .playing(jump.land)
@@ -1317,9 +1410,6 @@ impl Playback {
         });
         // The zone's water mode, never the rendered water, decides the swim clips (Atlas 6.6.41).
         let swims = cues.water.swims() && !dead;
-        let swim = |pick: fn(SwimClips) -> &'static str| {
-            clips.swim.map(pick).filter(|clip| available(clip))
-        };
         if let Some(clip) = self.crossing
             && self
                 .lower
@@ -1334,9 +1424,9 @@ impl Playback {
             self.crossing = if reduced || self.base.current.is_none() {
                 None
             } else if swims {
-                swim(|clips| clips.enter)
+                frame.swim(|clips| clips.enter)
             } else {
-                swim(|clips| clips.exit)
+                frame.swim(|clips| clips.exit)
             };
         }
         self.swimming = swims;
@@ -1351,14 +1441,14 @@ impl Playback {
             && self.held.mantling().is_none()
         {
             self.pulls = self.pulls.wrapping_add(1);
-            self.mantle = self.begin_mantle(clips, &duration, cues, ledge);
+            self.mantle = self.begin_mantle(clips, duration, cues, ledge);
         }
         if self.held.climbing() && !held.holds() {
             self.pulls = self.pulls.wrapping_add(1);
             self.letting_go = clips
                 .climb
                 .map(|climb| (climb.let_go, now))
-                .filter(|&(clip, _)| !reduced && available(clip));
+                .filter(|&(clip, _)| !reduced && frame.available(clip));
         }
         self.held = held;
         // A mantle plays out after the zone's ends, until the unit moves on.
@@ -1412,6 +1502,20 @@ impl Playback {
         {
             self.flight = Flight::Airborne;
         }
+        (swims, held, traversing)
+    }
+
+    /// The strike and cast clocks: a guard ends them, a hitstop holds them, and a finished
+    /// running or jumping strike settles into its family guard. Returns whether a hitstop holds.
+    fn step_strike<D: Fn(&str) -> f32>(
+        &mut self,
+        frame: &Frame<'_, D>,
+        stun: Option<&'static str>,
+    ) -> bool {
+        let Frame { dt, guarding, .. } = *frame;
+        let Cues {
+            dead, now, reduced, ..
+        } = frame.cues;
         // A guard the zone starts protecting ends the strike shown before it; a strike accepted
         // while it protects still plays over it.
         if dead || guarding && !self.guarding {
@@ -1452,7 +1556,7 @@ impl Playback {
         if let Some(strike) = self.strike.filter(|strike| now >= strike.until) {
             self.settle = strike
                 .settle
-                .filter(|&clip| !reduced && available(clip))
+                .filter(|&clip| !reduced && frame.available(clip))
                 .map(|clip| (clip, now + SETTLE_SECONDS));
         }
         self.settle = self
@@ -1460,15 +1564,32 @@ impl Playback {
             .filter(|&(_, until)| now < until && !dead && stun.is_none());
         self.strike = self.strike.filter(|strike| now < strike.until);
         self.cast = self.cast.filter(|cast| now < cast.until);
-        // A swimmer, a climber or a mantler has no footing for a strike's footwork.
-        let standing =
-            matches!(self.flight, Flight::Ground) && speed <= 0.25 && !swims && !traversing;
-        let layered = clips.upper_body.is_some();
-        // Emotes and interactions (#619): the zone's own actions and blows end them at once.
+        stopped
+    }
+
+    /// Emotes, interactions and held poses (#619), and the talking idle: the zone's own actions
+    /// and blows end them at once.
+    fn step_poses<D: Fn(&str) -> f32>(&mut self, frame: &Frame<'_, D>, footing: &Footing) -> Poses {
+        let Frame {
+            clips,
+            cues,
+            guarding,
+            ..
+        } = *frame;
+        let Cues {
+            dead, now, reduced, ..
+        } = cues;
+        let Footing {
+            charge_run,
+            stun,
+            standing,
+            moving,
+            layered,
+            ..
+        } = *footing;
         // A whole-body one (the bow) takes the legs only while the unit stands; on the move it
         // plays on the upper body over the gait (Atlas 6.6.i745), so it never holds the legs
         // still against the zone's projected motion.
-        let moving = speed > 0.25;
         let acting = self.strike.is_some() || self.cast.is_some();
         if self.gesture.is_some_and(|gesture| {
             now >= gesture.until || dead || acting || guarding || stun.is_some()
@@ -1499,14 +1620,14 @@ impl Playback {
             cues.posture,
             blocked,
             moving,
-            &duration,
+            frame.duration,
             (now, reduced),
         );
         let occupied = posture_want.is_some() || gesture_want.is_some_and(|(whole, _)| whole);
         let talk_want = clips
             .social
             .map(|social| social.talk_idle)
-            .filter(|&clip| cues.talking && !dead && layered && available(clip))
+            .filter(|&clip| cues.talking && !dead && layered && frame.available(clip))
             .map(|clip| Want::looped(clip, 1.));
         let turned = self.posture.is_some()
             || self.gesture.is_some_and(|gesture| {
@@ -1514,6 +1635,26 @@ impl Playback {
                     gesture.clip == social.point || gesture.clip == social.talk_direct
                 })
             });
+        Poses {
+            gesture: gesture_want,
+            posture: posture_want,
+            occupied,
+            talk: talk_want,
+            turned,
+        }
+    }
+
+    /// The strike or cast shown and the local wind-up under it; a strike that leaves the legs
+    /// mid-swing splits onto the upper body.
+    fn strike_wants<D: Fn(&str) -> f32>(
+        &mut self,
+        frame: &Frame<'_, D>,
+        footing: &Footing,
+    ) -> Shown {
+        let Cues { now, reduced, .. } = frame.cues;
+        let Footing {
+            standing, layered, ..
+        } = *footing;
         let mut splits = [false; 2];
         for (strike, split) in [&mut self.strike, &mut self.cast]
             .into_iter()
@@ -1542,7 +1683,7 @@ impl Playback {
         let prepared = self
             .preparation
             .filter(|preparation| {
-                strike.is_none() && !reduced && layered && available(preparation.clip)
+                strike.is_none() && !reduced && layered && frame.available(preparation.clip)
             })
             .map(|preparation| Want {
                 // The pinned time is the wind-up's clock; a still rate keeps an abandoned wind-up
@@ -1551,6 +1692,42 @@ impl Playback {
                 at: Some(preparation.at(now)),
                 ..Want::hold(preparation.clip, preparation.serial)
             });
+        Shown {
+            strike,
+            prepared,
+            split,
+        }
+    }
+
+    /// The legs' clip on the ground: a pose, the traversal, the charge, a stun, the water, the
+    /// gait, a standing turn, a chore or the idle. Returns it with the chore shown, if any.
+    fn ground_want<D: Fn(&str) -> f32>(
+        &mut self,
+        frame: &Frame<'_, D>,
+        footing: &Footing,
+        poses: &Poses,
+    ) -> (Want, Option<Chore>) {
+        let Frame {
+            clips,
+            duration,
+            cues,
+            guarding,
+            ..
+        } = *frame;
+        let Cues {
+            speed,
+            vertical_speed,
+            dead,
+            ..
+        } = cues;
+        let Footing {
+            charge_run,
+            stun,
+            swims,
+            held,
+            ..
+        } = *footing;
+        let available = |clip: &str| frame.available(clip);
         // A resident's chore (#904) shows its item only while it stands or walks; a chore clip
         // the figure lacks leaves the hands empty and the ordinary clips playing.
         let chore = cues.chore.filter(|chore| {
@@ -1561,8 +1738,9 @@ impl Playback {
                     .all(&available)
         });
         let mut chored = false;
-        let ground = if let Some(pose) = posture_want.or_else(|| {
-            gesture_want
+        let ground = if let Some(pose) = poses.posture.or_else(|| {
+            poses
+                .gesture
                 .filter(|&(whole, _)| whole)
                 .map(|(_, want)| want)
         }) {
@@ -1575,7 +1753,7 @@ impl Playback {
             }
         } else if held.climbing() {
             self.turning = None;
-            Self::climb(clips, &duration, cues)
+            Self::climb(clips, duration, cues)
         } else if held.mantling().is_some() {
             // No mantle clip: the earlier in-place fallback, the walk at the mantle's pace.
             let travel = speed.hypot(vertical_speed);
@@ -1599,23 +1777,23 @@ impl Playback {
             #[allow(clippy::cast_possible_truncation)]
             let stroke_rate = (travel / STROKE_SPEED).clamp(0.6, 1.5) as f32;
             let vertical = if vertical_speed < -DIVE_SPEED {
-                swim(|clips| clips.descend)
+                frame.swim(|clips| clips.descend)
             } else if vertical_speed > DIVE_SPEED {
-                swim(|clips| clips.ascend)
+                frame.swim(|clips| clips.ascend)
             } else {
                 None
             };
             if let Some(clip) = vertical {
                 Want::looped(clip, stroke_rate)
             } else if travel > 0.25 {
-                match swim(|clips| clips.stroke) {
+                match frame.swim(|clips| clips.stroke) {
                     Some(stroke) => Want::looped(stroke, stroke_rate),
                     None => Want::looped(clips.walk, walk_rate(travel)),
                 }
             } else {
-                Want::looped(swim(|clips| clips.tread).unwrap_or(clips.idle), 1.)
+                Want::looped(frame.swim(|clips| clips.tread).unwrap_or(clips.idle), 1.)
             }
-        } else if let Some(wade) = swim(|clips| clips.wade)
+        } else if let Some(wade) = frame.swim(|clips| clips.wade)
             && cues.water == WaterMode::Wading
             && speed > 0.25
         {
@@ -1635,7 +1813,7 @@ impl Playback {
                         self.gait(clips, &available, cues.motions, speed, cues.direction)
                     }),
             }
-        } else if let Some(turn) = self.turn(clips, &duration, cues, guarding) {
+        } else if let Some(turn) = self.turn(clips, duration, cues, guarding) {
             chored = chore.is_some();
             turn
         } else if let Some(chore) = chore.filter(|_| !guarding) {
@@ -1650,24 +1828,45 @@ impl Playback {
                 .rest
                 .filter(|&clip| !cues.engaged && available(clip))
                 .unwrap_or(clips.idle);
-            let idle = sword(|sword| sword.shield_guard)
+            let idle = frame
+                .sword(|sword| sword.shield_guard)
                 .filter(|_| cues.shield_guard)
                 .unwrap_or(rest);
             Want::looped(clips.guard.filter(|_| guarding).unwrap_or(idle), 1.)
         };
+        (ground, chore.filter(|_| chored))
+    }
+
+    /// The pelvis and legs' clip: the death, a dodge roll, the jump or the ground's clip.
+    /// Returns it with the roll clip shown, if any.
+    fn base_want<D: Fn(&str) -> f32>(
+        &mut self,
+        frame: &Frame<'_, D>,
+        footing: &Footing,
+        ground: Want,
+    ) -> (Option<&'static str>, Want) {
+        let Frame {
+            clips, duration, ..
+        } = *frame;
+        let Cues {
+            dead,
+            reduced,
+            rolling,
+            ..
+        } = frame.cues;
         // A dodge roll (#516) plays its clip once over the roll's length, whatever the legs did.
-        if cues.rolling && !self.rolling {
+        if rolling && !self.rolling {
             self.rolls = self.rolls.wrapping_add(1);
         }
-        self.rolling = cues.rolling;
-        let roll = clips
-            .roll
-            .filter(|&clip| cues.rolling && !dead && !swims && !reduced && available(clip));
+        self.rolling = rolling;
+        let roll = clips.roll.filter(|&clip| {
+            rolling && !dead && !footing.swims && !reduced && frame.available(clip)
+        });
         let base = if dead {
             let varied = clips
                 .deaths
                 .map(|deaths| deaths[usize::from(self.death) % deaths.len()])
-                .filter(|&clip| available(clip));
+                .filter(|&clip| frame.available(clip));
             Want::hold(varied.unwrap_or(clips.death), 0)
         } else if let Some(clip) = roll {
             #[allow(clippy::cast_possible_truncation)]
@@ -1678,17 +1877,57 @@ impl Playback {
             }
         } else {
             match (clips.jump, self.flight) {
-                (Some(jump), Flight::Rising) if !reduced && available(jump.start) => {
+                (Some(jump), Flight::Rising) if !reduced && frame.available(jump.start) => {
                     Want::hold(jump.start, self.landing)
                 }
                 (Some(jump), Flight::Rising | Flight::Airborne | Flight::Falling)
-                    if available(jump.airborne) =>
+                    if frame.available(jump.airborne) =>
                 {
                     Want::looped(jump.airborne, 1.)
                 }
                 _ => ground,
             }
         };
+        (roll, base)
+    }
+
+    /// What plays over the legs' clip on the lower body (a whole-body strike, the settling
+    /// guard, a landing, a let-go or a water crossing) and on the upper body (a strike, the
+    /// wind-up, a guard, a gesture, the talk idle or the weapon's stance).
+    fn region_wants<D: Fn(&str) -> f32>(
+        &self,
+        frame: &Frame<'_, D>,
+        footing: &Footing,
+        poses: &Poses,
+        shown: &Shown,
+        roll: Option<&'static str>,
+        base: Want,
+    ) -> (Option<Want>, Option<Want>) {
+        let Frame {
+            clips,
+            cues,
+            guarding,
+            ..
+        } = *frame;
+        let Cues {
+            speed,
+            dead,
+            reduced,
+            ..
+        } = cues;
+        let Footing {
+            charge_run,
+            stun,
+            swims,
+            traversing,
+            standing,
+            layered,
+            ..
+        } = *footing;
+        let Shown {
+            strike, prepared, ..
+        } = *shown;
+        let available = |clip: &str| frame.available(clip);
         // The settling guard (#900) takes the whole body on the ground, the upper body over a
         // gait; on touchdown it stands in for the jump's landing.
         let settle = self
@@ -1748,11 +1987,11 @@ impl Playback {
         {
             // The upper body strains against the root that holds it (#956).
             Some(Want::looped(clip, 1.))
-        } else if let Some((false, want)) = gesture_want {
+        } else if let Some((false, want)) = poses.gesture {
             Some(want)
-        } else if occupied {
+        } else if poses.occupied {
             None
-        } else if let Some(want) = talk_want {
+        } else if let Some(want) = poses.talk {
             Some(want)
         } else if let Some(crossbow) = clips.crossbow.filter(|_| {
             cues.loadout == Some(Loadout::Crossbow)
@@ -1792,6 +2031,25 @@ impl Playback {
             clip: upper_twin(clips, &available, want.clip),
             ..want
         });
+        (lower, upper)
+    }
+
+    /// Steps the legs' tracks toward `base` and the `lower` clip over it. Returns whether this
+    /// is the unit's first frame and the strike regions' step, slowed by a hitstop.
+    fn step_legs<D: Fn(&str) -> f32>(
+        &mut self,
+        frame: &Frame<'_, D>,
+        footing: &Footing,
+        base: Want,
+        lower: Option<Want>,
+    ) -> (bool, f32) {
+        let Frame { blend, dt, .. } = *frame;
+        let Cues {
+            speed,
+            now,
+            reduced,
+            ..
+        } = frame.cues;
         // The first clip a unit shows has nothing to blend from. Going into or out of swimming
         // depth blends a little longer, so the body eases between land and water.
         let first = self.base.current.is_none();
@@ -1810,13 +2068,32 @@ impl Playback {
         #[allow(clippy::cast_possible_truncation)]
         let over_seconds = lower_seconds / (1. + speed as f32 / FOOT_BLEND_SPEED);
         // A hitstop (#900) slows the strike's regions with the clocks it holds.
-        let held_dt = if stopped {
+        let held_dt = if footing.stopped {
             dt * crate::units::contact::HITSTOP_RATE
         } else {
             dt
         };
         self.lower.advance(lower, held_dt, over_seconds, reduced);
-        if roll.is_some() {
+        (first, held_dt)
+    }
+
+    /// Settles the body's swim lean and turn, or turns it with a roll.
+    fn step_attitude<D: Fn(&str) -> f32>(
+        &mut self,
+        frame: &Frame<'_, D>,
+        rolling: bool,
+        turned: bool,
+        first: bool,
+    ) {
+        let cues = frame.cues;
+        let Cues {
+            speed,
+            vertical_speed,
+            dead,
+            reduced,
+            ..
+        } = cues;
+        if rolling {
             // The forward roll turns the drawn body at once toward the roll's travel (#516), and
             // eases back to the facing after it; a roll stopped by a wall keeps its heading.
             let heading = if speed > 1. {
@@ -1839,27 +2116,45 @@ impl Playback {
             };
             self.attitude = self.attitude.settle(attitude, cues.dt, reduced || first);
         }
+    }
+
+    /// Steps the upper body's track toward `upper`.
+    fn step_upper<D: Fn(&str) -> f32>(
+        &mut self,
+        frame: &Frame<'_, D>,
+        upper: Option<Want>,
+        split: bool,
+        held_dt: f32,
+    ) {
+        let reduced = frame.cues.reduced;
         if split {
             // The strike leaves the legs mid-swing: the upper body keeps it without a blend.
             self.upper = Track::default();
             self.upper.advance(upper, held_dt, 0., reduced);
         } else {
             self.upper
-                .advance(upper, held_dt, blend.upper_seconds, reduced);
+                .advance(upper, held_dt, frame.blend.upper_seconds, reduced);
         }
+    }
+
+    /// The body's layers: the legs' clips, and the upper body's over them or following them.
+    fn compose_layers<D: Fn(&str) -> f32>(&self, frame: &Frame<'_, D>) -> Vec<Layer> {
+        let Frame {
+            duration, blend, ..
+        } = *frame;
         let mut over = Vec::new();
         self.lower
-            .layers(&duration, blend.lower_weight, Mask::Lower, &mut over);
+            .layers(duration, blend.lower_weight, Mask::Lower, &mut over);
         let over_weight: f32 = over.iter().map(|layer| layer.weight).sum();
         let mut legs = Vec::new();
         self.base
-            .layers(&duration, 1. - over_weight, Mask::Lower, &mut legs);
+            .layers(duration, 1. - over_weight, Mask::Lower, &mut legs);
         legs.extend(over);
         let mut arms = Vec::new();
         self.upper
-            .layers(&duration, blend.upper_weight, Mask::Upper, &mut arms);
+            .layers(duration, blend.upper_weight, Mask::Upper, &mut arms);
         let arms_weight: f32 = arms.iter().map(|layer| layer.weight).sum();
-        let layers = if arms_weight <= 1e-3 {
+        if arms_weight <= 1e-3 {
             // The upper body follows the legs: one whole-body set of layers.
             legs.into_iter()
                 .map(|layer| Layer {
@@ -1878,14 +2173,15 @@ impl Playback {
                 })
                 .collect();
             legs.into_iter().chain(follow).chain(arms).collect()
-        };
-        let mut layers: Vec<Layer> = layers;
-        // A held item's grip closes that hand's fingers over every body clip (asset-tooling
-        // #285), but not while the hands hold a face, a ladder, a rope or a ledge (#500).
-        let climbing = self.held.holds() || self.mantle.is_some() || self.letting_go.is_some();
+        }
+    }
+
+    /// Where the weapons, the throwable and a chore's item ride this frame.
+    fn step_carry<D: Fn(&str) -> f32>(&self, frame: &Frame<'_, D>, chore: Option<Chore>) -> Carry {
+        let cues = frame.cues;
         // A throw or a bandage moves the daggers (#603): a sheathed dagger's hand opens, a
         // drawn throwable's closes round it.
-        let mut carry = self.carry(clips, cues, &duration);
+        let mut carry = self.carry(frame.clips, cues, frame.duration);
         // Never let sheathing retime a previously accepted strike/cast. Clips, not the next
         // input mode, own that action until completion (#802).
         carry.weapon_drawn =
@@ -1897,7 +2193,7 @@ impl Playback {
         if carry.weapon_drawn == Some(false) {
             carry.sheathed = [true; 2];
         }
-        carry.chore = chore.filter(|_| chored);
+        carry.chore = chore;
         // An item in the weapon hand, the signal horn (#952), sends the weapon to its stowed socket.
         if carry
             .chore
@@ -1905,9 +2201,32 @@ impl Playback {
         {
             carry.weapon_drawn = Some(false);
         }
+        carry
+    }
+
+    /// Steps each hand's grip over its fingers and appends its layers: a held item's grip
+    /// closes that hand's fingers over every body clip (asset-tooling #285), but not while the
+    /// hands hold a face, a ladder, a rope or a ledge (#500). `upper` is the upper body's clip.
+    fn step_grips<D: Fn(&str) -> f32>(
+        &mut self,
+        frame: &Frame<'_, D>,
+        carry: &Carry,
+        upper: &'static str,
+        first: bool,
+        layers: &mut Vec<Layer>,
+    ) {
+        let Frame {
+            clips,
+            duration,
+            cues,
+            blend,
+            dt,
+            ..
+        } = *frame;
+        let climbing = self.held.holds() || self.mantle.is_some() || self.letting_go.is_some();
         let mut hands = cues.loadout.map(Loadout::hands).unwrap_or_default();
         // A chore's hand item closes the fingers round its handle or shaft.
-        if let Some((hand, held)) = carry.chore.and_then(crate::units::chores::Chore::grip) {
+        if let Some((hand, held)) = carry.chore.and_then(Chore::grip) {
             match hand {
                 Hand::Left => hands.left.get_or_insert(held),
                 Hand::Right => hands.right.get_or_insert(held),
@@ -1916,17 +2235,11 @@ impl Playback {
         // A reload winds the crossbow's crank with the left hand, then hands the crossbow to the
         // left hand while the right draws a bolt (#607).
         let crossbow = carry.crossbow.unwrap_or_default();
-        let lower = self
-            .lower
-            .target(&duration)
-            .or_else(|| self.base.target(&duration))
-            .unwrap_or((clips.idle, 0.));
-        let upper = self.upper.target(&duration).unwrap_or(lower);
         // The caster clips key the left hand's fingers (#609): no left-hand grip over them,
         // except a shield's, which stays in hand, and the staff's second hand over a staff
         // swing. The tome rides the back of the hand, so it needs none.
-        let casting = clips.caster.filter(|caster| caster.contains(upper.0));
-        let staff_swing = casting.is_some_and(|caster| caster.staff.contains(&upper.0));
+        let casting = clips.caster.filter(|caster| caster.contains(upper));
+        let staff_swing = casting.is_some_and(|caster| caster.staff.contains(&upper));
         let left_open = casting.is_some() && hands.left != Some(Held::Shield);
         for hand in Hand::BOTH {
             let throwable = carry.throwable.filter(|_| hand == Hand::Right);
@@ -1947,26 +2260,13 @@ impl Playback {
                         })
                         .map(|held| held.grip(hand))
                 })
-                .filter(|&clip| !climbing && available(clip))
+                .filter(|&clip| !climbing && frame.available(clip))
                 .map(|clip| Want::looped(clip, 0.));
             let track = &mut self.grips[hand.index()];
             // A unit's first frame grips at once, like its first clip.
             let seconds = if first { 0. } else { blend.upper_seconds };
-            track.advance(grip, dt, seconds, reduced);
-            track.layers(&duration, 1., Mask::Fingers(hand), &mut layers);
-        }
-        let channel = cues
-            .motions
-            .and_then(|motions| motions.get(upper.0))
-            .and_then(|motion| motion.cast)
-            .and_then(|cast| cast.channel);
-        Animation {
-            layers,
-            lower,
-            upper,
-            attitude: self.attitude,
-            carry,
-            channel,
+            track.advance(grip, dt, seconds, cues.reduced);
+            track.layers(duration, 1., Mask::Fingers(hand), layers);
         }
     }
 
@@ -2201,6 +2501,82 @@ impl Playback {
             loaded
         }
     }
+}
+
+/// One frame's inputs to [`Playback::advance`]: the clip table, the clip lengths, the cues, the
+/// clamped blend, the frame step in seconds and whether the zone's guard protects.
+struct Frame<'a, D> {
+    clips: Clips,
+    duration: &'a D,
+    cues: Cues<'a>,
+    blend: Blend,
+    dt: f32,
+    guarding: bool,
+}
+
+impl<D: Fn(&str) -> f32> Frame<'_, D> {
+    /// The model has `clip`.
+    fn available(&self, clip: &str) -> bool {
+        (self.duration)(clip) > 0.
+    }
+
+    /// The sword clip `pick` names, when the model has it.
+    fn sword(&self, pick: fn(SwordClips) -> &'static str) -> Option<&'static str> {
+        self.clips
+            .sword
+            .map(pick)
+            .filter(|clip| self.available(clip))
+    }
+
+    /// The swim clip `pick` names, when the model has it.
+    fn swim(&self, pick: fn(SwimClips) -> &'static str) -> Option<&'static str> {
+        self.clips
+            .swim
+            .map(pick)
+            .filter(|clip| self.available(clip))
+    }
+}
+
+/// What a frame's first steps settled, for the clip choice after them.
+#[derive(Clone, Copy)]
+struct Footing {
+    /// The charge loop still running (#582).
+    charge_run: Option<&'static str>,
+    /// The stun clip held (#582).
+    stun: Option<&'static str>,
+    /// In swimming depth (Atlas 6.6.41).
+    swims: bool,
+    /// The zone's climb or mantle, free once dead (#500).
+    held: TraversalView,
+    /// Holding a face or playing out a mantle.
+    traversing: bool,
+    /// A confirmed blow's hitstop holds the strike clocks (#900).
+    stopped: bool,
+    /// Still on the ground, out of the water and off the wall.
+    standing: bool,
+    moving: bool,
+    /// The model layers its upper body over its legs.
+    layered: bool,
+}
+
+/// The emote, interaction, held pose and talk idle a frame shows (#619).
+struct Poses {
+    /// The gesture, and whether it takes the whole body.
+    gesture: Option<(bool, Want)>,
+    posture: Option<Want>,
+    /// A held pose or a whole-body gesture keeps the upper body's idle stances off.
+    occupied: bool,
+    talk: Option<Want>,
+    /// The pose or gesture faces the cue's `face`.
+    turned: bool,
+}
+
+/// The strike or cast shown, whether it takes the whole body, and the local wind-up under it.
+struct Shown {
+    strike: Option<(bool, Want)>,
+    prepared: Option<Want>,
+    /// The strike shown leaves the legs mid-swing.
+    split: bool,
 }
 
 #[cfg(test)]
