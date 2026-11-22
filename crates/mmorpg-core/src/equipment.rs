@@ -257,7 +257,7 @@ impl crate::ZoneSimulation {
             .players
             .get_mut(&player_id)
             .ok_or_else(|| crate::ZoneError::new("equipment owner is absent"))?;
-        let (mut equipment, mut bag) = (player.equipment, player.inventory.clone());
+        let (mut equipment, mut bag) = (*player.equipment, (*player.inventory).clone());
         let refusal = match change(&mut equipment, &mut bag) {
             Err(InventoryError::NoCapacity) => Some(crate::ErrorCode::InventoryFull),
             Err(InventoryError::NotEquippable) => Some(crate::ErrorCode::NotEquippable),
@@ -266,8 +266,8 @@ impl crate::ZoneSimulation {
                 None => Some(crate::ErrorCode::InvalidInventoryMove),
                 Some(revision) => {
                     let old_max = player.max_health();
-                    player.equipment = equipment;
-                    player.inventory = bag;
+                    *player.equipment = equipment;
+                    *player.inventory = bag;
                     player.inventory_revision = revision;
                     player.health = follow_max_health(player.health, old_max, player.max_health());
                     None

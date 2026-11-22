@@ -10,12 +10,13 @@ use std::collections::BTreeSet;
 use mmorpg_core::{
     AbilityId, CastView, ClassChoice, EntityFlags, EntityKind, EntitySnapshot,
     GLOBAL_COOLDOWN_TICKS, GuardView, MAX_CHAT_PER_TICK, MAX_EVENTS_PER_PLAYER,
-    MAX_VISIBLE_ENTITIES, ResourceKind, ResourceView, TargetDetail, ViewerState, ZoneSnapshot,
-    ability_by_id,
+    MAX_VISIBLE_ENTITIES, PlayerProjection, ResourceKind, ResourceView, TargetDetail, ViewerState,
+    ZoneSnapshot, ability_by_id,
 };
 
 use crate::sheet::{
-    Abilities, SHEET_COUNT, Sheet, SheetEncodingCache, SheetRevisions, encode_sheets, revision,
+    Abilities, PublishStamps, SHEET_COUNT, Sheet, SheetEncodingCache, SheetRevisions,
+    encode_sheets, revision,
 };
 use crate::wire::{
     COMMON_HEADER_BYTES, ENTITY_REF_BYTES, PLAYER_SNAPSHOT_SCOPE, decode_common_header,
@@ -152,6 +153,31 @@ pub fn pack_snapshot_cached(
     acknowledged: SheetRevisions,
     cache: &mut SheetEncodingCache,
 ) -> Result<PackedSnapshot, ProtocolError> {
+    pack(snapshot, None, acknowledged, cache)
+}
+
+/// Publishes a projection from [`mmorpg_core::ZoneSimulation::project_for_publish`], asked with
+/// `cache`'s [`SheetEncodingCache::held`] stamps (#1056): a stamped sheet the core left out or
+/// that did not change is sent from `cache` without encoding or hashing it again. The bytes are
+/// identical to a cold [`pack_snapshot_acknowledged`] of the complete projection.
+pub fn pack_projection_cached(
+    projection: &PlayerProjection,
+    acknowledged: SheetRevisions,
+    cache: &mut SheetEncodingCache,
+) -> Result<PackedSnapshot, ProtocolError> {
+    let stamps = PublishStamps {
+        current: &projection.sheets,
+        held: &projection.held,
+    };
+    pack(&projection.snapshot, Some(stamps), acknowledged, cache)
+}
+
+fn pack(
+    snapshot: &ZoneSnapshot,
+    stamps: Option<PublishStamps<'_>>,
+    acknowledged: SheetRevisions,
+    cache: &mut SheetEncodingCache,
+) -> Result<PackedSnapshot, ProtocolError> {
     if snapshot
         .entities
         .first()
@@ -256,7 +282,10 @@ pub fn pack_snapshot_cached(
     payload.extend_from_slice(&[0, 0]);
     let mut mask = 0_u16;
     let mut deferred_sheets = false;
-    for (sheet, encoded) in Sheet::ALL.into_iter().zip(encode_sheets(snapshot, cache)?) {
+    for (sheet, encoded) in Sheet::ALL
+        .into_iter()
+        .zip(encode_sheets(snapshot, stamps, cache)?)
+    {
         let Some((bytes, hash)) = encoded else {
             continue;
         };
@@ -1198,7 +1227,9 @@ pub(crate) mod tests {
         DATAGRAM_SAFETY_MARGIN_BYTES, MEASURED_MIN_DATAGRAM_BYTES, SESSION_SNAPSHOT_HEADER_BYTES,
     };
     use mmorpg_core::{AuraKind, AuraView, Cooldown, MAX_COOLDOWNS};
-    use mmorpg_core::{CreatureId, EntityRef, ErrorCode, NpcId, ZoneEvent, ZoneId};
+    use mmorpg_core::{
+        CreatureId, EntityRef, ErrorCode, NpcId, PlayerId, ZoneCommand, ZoneEvent, ZoneId,
+    };
 
     const VIEWER: EntityRef = EntityRef::Player(7);
     const WOLF: EntityRef = EntityRef::Creature(CreatureId::new(108));
@@ -1262,6 +1293,74 @@ pub(crate) mod tests {
             pack_snapshot_cached(&snapshot, SheetRevisions::default(), &mut cold).unwrap(),
             pack_snapshot(&snapshot).unwrap()
         );
+    }
+
+    /// Publishing through `project_for_publish` (#1056) leaves unchanged sheets unbuilt and
+    /// unencoded, builds the zone-wide views once per tick, and still packs exactly the bytes
+    /// of a cold pack of the complete projection.
+    #[test]
+    fn published_projections_skip_unchanged_sheets_byte_for_byte() {
+        let content = mmorpg_core::greyhaven_vale::content();
+        let mut zone = mmorpg_core::ZoneSimulation::with_content(ZoneId::new(1), content).unwrap();
+        let players: Vec<PlayerId> = (1..=4).collect();
+        for &player in &players {
+            zone.add_player(player).unwrap();
+        }
+        let mut caches: Vec<SheetEncodingCache> = players
+            .iter()
+            .map(|_| SheetEncodingCache::default())
+            .collect();
+        let mut decoders: Vec<SnapshotDecoder> =
+            players.iter().map(|_| SnapshotDecoder::new()).collect();
+        // One publication of every player: (sheets built, stamped sheets encoded) in total.
+        let mut publish = |zone: &mmorpg_core::ZoneSimulation| {
+            let views = zone.zone_view_builds();
+            let mut work = (0, 0);
+            for (index, &player) in players.iter().enumerate() {
+                let (cache, decoder) = (&mut caches[index], &mut decoders[index]);
+                let acknowledged = decoder.revisions();
+                let encodes = cache.stamped_encodes;
+                let projection = zone.project_for_publish(player, &cache.held()).unwrap();
+                let packed = pack_projection_cached(&projection, acknowledged, cache).unwrap();
+                let complete = zone.snapshot_for_player(player).unwrap();
+                assert_eq!(
+                    packed,
+                    pack_snapshot_acknowledged(&complete, acknowledged).unwrap()
+                );
+                assert!(
+                    projection.work.entity_records_built
+                        <= projection.stats.relevant.min(MAX_VISIBLE_ENTITIES)
+                );
+                decoder.decode(&packed.payload).unwrap();
+                work.0 += projection.work.sheets_built;
+                work.1 += cache.stamped_encodes - encodes;
+            }
+            assert!(zone.zone_view_builds() - views <= 1, "one build per tick");
+            work
+        };
+
+        // A cold publication builds and encodes every stamped sheet of every viewer.
+        assert_eq!(publish(&zone), (16, 16));
+        // Warm, idle viewers build and encode none, tick after tick.
+        for _ in 0..3 {
+            zone.advance_tick().unwrap();
+            assert_eq!(publish(&zone), (0, 0));
+        }
+        // A bag change rebuilds the mover's bag and quest sheets only.
+        zone.apply_command(
+            1,
+            1,
+            ZoneCommand::MoveItem {
+                source: 0,
+                destination: 5,
+                quantity: 1,
+            },
+        )
+        .unwrap();
+        zone.advance_tick().unwrap();
+        assert_eq!(publish(&zone), (2, 2));
+        zone.advance_tick().unwrap();
+        assert_eq!(publish(&zone), (0, 0));
     }
     /// The shared Rust/browser golden projection: a level-4 Arcanist casting
     /// Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that

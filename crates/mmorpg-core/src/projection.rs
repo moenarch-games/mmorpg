@@ -165,6 +165,37 @@ pub struct ViewerState {
     pub mastery: crate::Mastery,
 }
 
+/// What a sheet's content was built from (#1056): two equal stamps mean equal sheet bytes.
+/// Built from revision stamps, which are unique per value, so a stamp
+/// never repeats for different content, whichever character or zone it came from.
+pub type SheetStamp = [u64; 4];
+
+/// The stamps of the sheets a publisher may hold on to between ticks (#1056): the bag, the
+/// quest sheet, the world sheet and the waystone sheet. `None` marks a sheet built every
+/// time (the world sheet while the raid signal shows). The loot, ability, party and boss
+/// loot sheets follow per-tick combat state and are always built.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SheetStamps {
+    /// Bag, equipment and inventory revision.
+    pub bag: Option<SheetStamp>,
+    /// Quest log, the bag it counts and the depths record, and whether it is night.
+    pub quests: Option<SheetStamp>,
+    /// The zone-wide doors, pieces and spent veins of [`crate::ZoneSimulation`]'s tick.
+    pub world: Option<SheetStamp>,
+    /// Unlocked waystones and discovered areas.
+    pub waystones: Option<SheetStamp>,
+}
+
+/// Deterministic work one projection did beyond its interest query (#1056).
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ProjectionWork {
+    /// Entity records built: the relevant units within the priority cap, never every
+    /// candidate.
+    pub entity_records_built: usize,
+    /// Stamped sheets (bag, quests, world, waystones) built because the held stamp differed.
+    pub sheets_built: usize,
+}
+
 /// A projection addressed to `viewer_id`. Entities are in priority order: the
 /// viewer first, its target next when visible, then ascending
 /// `(squared XZ distance, kind, id)`, at most [`MAX_VISIBLE_ENTITIES`] records.
@@ -233,6 +264,20 @@ impl ZoneSimulation {
     /// Queries the same authoritative projection as `snapshot_for_player`, with
     /// operation counts for workload analysis. Does not mutate canonical state.
     pub fn project_for_player(&self, player_id: PlayerId) -> Result<PlayerProjection, ZoneError> {
+        self.project_for_publish(player_id, &SheetStamps::default())
+    }
+
+    /// The projection a publisher sends (#1056): [`Self::project_for_player`], except that a
+    /// sheet whose current stamp equals the one in `held` is left out (an empty bag, quest,
+    /// world or waystone field) because the publisher still holds its encoding. The returned
+    /// [`PlayerProjection::sheets`] names what each sheet was built from, and
+    /// [`PlayerProjection::held`] echoes `held`, so the encoder can tell a left-out sheet from
+    /// an empty one. Does not mutate canonical state.
+    pub fn project_for_publish(
+        &self,
+        player_id: PlayerId,
+        held: &SheetStamps,
+    ) -> Result<PlayerProjection, ZoneError> {
         let viewer = self
             .players
             .get(&player_id)
@@ -244,13 +289,15 @@ impl ZoneSimulation {
         let radius_squared = radius * radius;
         let (candidates, mut stats) = self.interest.candidates(center.x, center.z);
         let self_entity = EntityRef::Player(player_id);
-        let mut relevant = Vec::new();
+        // The cheap position test runs first; records are built only for the units that
+        // survive the radius and the priority cap (#1056).
+        let mut relevant = Vec::with_capacity(candidates.len());
         for candidate in candidates {
-            let Some(entity) = self.entity_snapshot(candidate, player_id, &threatened)? else {
+            let Some([x, z]) = self.entity_xz(candidate)? else {
                 continue;
             };
-            let dx = i128::from(entity.position[0]) - i128::from(center.x);
-            let dz = i128::from(entity.position[2]) - i128::from(center.z);
+            let dx = i128::from(x) - i128::from(center.x);
+            let dz = i128::from(z) - i128::from(center.z);
             let distance_squared = (dx * dx) + (dz * dz);
             if distance_squared <= radius_squared {
                 let class = if candidate == self_entity {
@@ -263,31 +310,75 @@ impl ZoneSimulation {
                 } else {
                     2
                 };
-                relevant.push((class, distance_squared, candidate, entity));
+                relevant.push((class, distance_squared, candidate));
             }
         }
         stats.relevant = relevant.len();
         // Relevance policy: the viewer, its target, then the nearest units.
         // Kind and ID are unique together, so this is a total order.
-        relevant.sort_unstable_by(|left, right| {
-            (left.0, left.1, left.2).cmp(&(right.0, right.1, right.2))
-        });
+        relevant.sort_unstable();
         relevant.truncate(MAX_VISIBLE_ENTITIES);
-        let entities: Vec<EntitySnapshot> = relevant
-            .into_iter()
-            .map(|(_, _, _, entity)| entity)
-            .collect();
+        let mut entities = Vec::with_capacity(relevant.len());
+        for (_, _, candidate) in relevant {
+            if let Some(entity) = self.entity_snapshot(candidate, player_id, &threatened)? {
+                entities.push(entity);
+            }
+        }
+        let mut work = ProjectionWork {
+            entity_records_built: entities.len(),
+            sheets_built: 0,
+        };
 
-        let projected: BTreeSet<_> = entities.iter().map(EntitySnapshot::entity).collect();
+        // Sheets (#1056): each is built only when its stamp differs from the held one.
+        let (views, views_stamp) = self.zone_views();
+        let raid = self.raid_view(player_id, [center.x, center.z]);
+        let night = crate::is_night(crate::time_of_day(self.tick));
+        let sheets = SheetStamps {
+            bag: Some([
+                viewer.inventory.revision(),
+                viewer.equipment.revision(),
+                viewer.inventory_revision,
+                0,
+            ]),
+            quests: Some([
+                viewer.quests.revision(),
+                viewer.inventory.revision(),
+                viewer.depths.revision(),
+                u64::from(night),
+            ]),
+            // The raid signal is per viewer and rare; a world sheet carrying it is always built.
+            world: raid.is_none().then_some([views_stamp, 0, 0, 0]),
+            waystones: Some([
+                viewer.waystones.revision(),
+                viewer.discoveries.revision(),
+                0,
+                0,
+            ]),
+        };
+        let mut build = |current: Option<SheetStamp>, held: Option<SheetStamp>| {
+            let build = current.is_none() || current != held;
+            work.sheets_built += usize::from(build);
+            build
+        };
+        let (build_bag, build_quests, build_world, build_waystones) = (
+            build(sheets.bag, held.bag),
+            build(sheets.quests, held.quests),
+            build(sheets.world, held.world),
+            build(sheets.waystones, held.waystones),
+        );
+
+        // Events naming a unit the viewer cannot see stay hidden; most ticks carry none.
         let events = viewer
             .events
             .iter()
             .copied()
             .filter(|event| {
                 event.observation_refs(player_id).is_none_or(|refs| {
-                    refs.into_iter()
-                        .flatten()
-                        .all(|entity| projected.contains(&entity))
+                    refs.into_iter().flatten().all(|entity| {
+                        entities
+                            .iter()
+                            .any(|projected| projected.entity() == entity)
+                    })
                 })
             })
             .collect();
@@ -332,8 +423,16 @@ impl ZoneSimulation {
                     stance: self.melee_stance(player_id, viewer.target)?,
                     combo: self.combo_phase(viewer),
                     breath: viewer.breath.remaining,
-                    waystones: viewer.waystones.clone(),
-                    discoveries: viewer.discoveries.clone(),
+                    waystones: if build_waystones {
+                        (*viewer.waystones).clone()
+                    } else {
+                        crate::WaystoneSet::EMPTY
+                    },
+                    discoveries: if build_waystones {
+                        (*viewer.discoveries).clone()
+                    } else {
+                        BTreeSet::new()
+                    },
                     reckoning: self.harm_against(player_id, viewer.target),
                     mastery: viewer.mastery.sword,
                 },
@@ -347,15 +446,17 @@ impl ZoneSimulation {
                     _ => TargetDetail::default(),
                 },
                 inventory_revision: viewer.inventory_revision,
-                inventory: Some(viewer.inventory.clone()),
-                equipment: Some(viewer.equipment),
-                quests: Some(crate::quest::quest_sheet(
-                    &self.content,
-                    &viewer.quests,
-                    &viewer.inventory,
-                    viewer.depths,
-                    crate::is_night(crate::time_of_day(self.tick)),
-                )),
+                inventory: build_bag.then(|| (*viewer.inventory).clone()),
+                equipment: build_bag.then_some(*viewer.equipment),
+                quests: build_quests.then(|| {
+                    crate::quest::quest_sheet(
+                        &self.content,
+                        &viewer.quests,
+                        &viewer.inventory,
+                        *viewer.depths,
+                        night,
+                    )
+                }),
                 loot: match viewer.target {
                     Some(EntityRef::Creature(id)) => self.loot_view_for(player_id, id)?,
                     _ => None,
@@ -363,18 +464,67 @@ impl ZoneSimulation {
                 events,
                 chat: viewer.chat.clone(),
                 entities,
-                doors: self.door_views(),
+                doors: if build_world {
+                    views.doors.clone()
+                } else {
+                    Vec::new()
+                },
                 projectiles: self.projectile_views([center.x, center.y, center.z]),
                 debris: self.debris_views([center.x, center.y, center.z]),
-                pieces: self.piece_views(),
-                depleted_veins: self.depleted_veins(),
+                pieces: if build_world {
+                    views.pieces.clone()
+                } else {
+                    Vec::new()
+                },
+                depleted_veins: if build_world {
+                    views.depleted_veins.clone()
+                } else {
+                    Vec::new()
+                },
                 summoned: self.summoned_views([center.x, center.y, center.z]),
                 traps: self.trap_views([center.x, center.y, center.z]),
-                raid: self.raid_view(player_id, [center.x, center.z]),
+                raid,
                 party: self.parties.get(&player_id).cloned(),
                 depths_loot: self.depths_loot_view(player_id),
             },
             stats,
+            work,
+            sheets,
+            held: *held,
+        })
+    }
+
+    /// A unit's projected XZ position, or `None` when it is not visible: the same values
+    /// [`Self::entity_snapshot`] projects, read without building the record (#1056).
+    fn entity_xz(&self, entity: EntityRef) -> Result<Option<[i32; 2]>, ZoneError> {
+        Ok(match entity {
+            EntityRef::Player(player_id) => {
+                if !self.players.contains_key(&player_id) {
+                    return Err(ZoneError::new("unknown player"));
+                }
+                let position = self.player_position(player_id)?;
+                Some([position.x, position.z])
+            }
+            EntityRef::Creature(creature_id) => {
+                let creature = self
+                    .creatures
+                    .get(&creature_id)
+                    .ok_or_else(|| ZoneError::new("unknown creature"))?;
+                self.creature_position(creature_id, creature)?
+                    .map(|[x, _, z]| [x, z])
+            }
+            EntityRef::Npc(npc_id) => Some(
+                self.npc_feet(npc_id)
+                    .ok_or_else(|| ZoneError::new("unknown npc"))?,
+            ),
+            EntityRef::Minion(_) => {
+                let position = self
+                    .world
+                    .body(body_id(entity))
+                    .ok_or_else(|| ZoneError::new("minion physics body is missing"))?
+                    .position();
+                Some([position.x, position.z])
+            }
         })
     }
 

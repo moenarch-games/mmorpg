@@ -33,7 +33,7 @@ use std::sync::Arc;
 
 use mmorpg_core::{MAX_PLAYERS_PER_ZONE, TICK_HZ, ZoneContent, ZoneId, ZoneSimulation};
 use mmorpg_protocol::{
-    SheetRevisions, decode_command_envelope, encode_canonical_snapshot, pack_snapshot_cached,
+    SheetRevisions, decode_command_envelope, encode_canonical_snapshot, pack_projection_cached,
 };
 
 pub const PINNED_GAME_SERVER_REVISION: &str = "0817c9da548eeb44914a403f7515ab3bffdfbe47";
@@ -389,22 +389,23 @@ impl GameSimulation for ZoneGameServerAdapter {
         if let Some(departing) = self.departing.get(&player_id) {
             return self.departing_projection(departing);
         }
-        let snapshot = self
-            .zone
-            .snapshot_for_player(player_id)
-            .map_err(map_zone_error)?;
-        // Budget-driven packing: entities beyond one datagram are omitted by
-        // relevance priority, never truncated by transport.
         let acknowledged = self.sheet_acks.get(&player_id).copied().unwrap_or_default();
         let mut caches = self
             .sheet_encodings
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let cache = caches.entry(player_id).or_default();
-        let payload = pack_snapshot_cached(&snapshot, acknowledged, cache)
+        // Sheets whose stamps the cache holds are neither built nor encoded again (#1056).
+        let projection = self
+            .zone
+            .project_for_publish(player_id, &cache.held())
+            .map_err(map_zone_error)?;
+        // Budget-driven packing: entities beyond one datagram are omitted by
+        // relevance priority, never truncated by transport.
+        let payload = pack_projection_cached(&projection, acknowledged, cache)
             .map_err(map_protocol_error)?
             .payload;
-        Ok(SimulationSnapshot::new(snapshot.tick, payload))
+        Ok(SimulationSnapshot::new(projection.snapshot.tick, payload))
     }
 }
 

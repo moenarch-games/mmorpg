@@ -10,7 +10,7 @@ use std::borrow::Cow;
 
 use mmorpg_core::{
     AbilityId, AuraKind, AuraView, Cooldown, EntityRef, Equipment, Inventory, LootView, MAX_AURAS,
-    MAX_COOLDOWNS, QuestSheet, ZoneSnapshot, ability_by_id,
+    MAX_COOLDOWNS, QuestSheet, SheetStamp, SheetStamps, ZoneSnapshot, ability_by_id,
 };
 
 use crate::ProtocolError;
@@ -56,6 +56,17 @@ impl Sheet {
         Self::World,
         Self::Waystones,
     ];
+
+    /// The slot of a sheet the core stamps (#1056), in [`SheetStamps`] field order.
+    pub(crate) const fn stamp_slot(self) -> Option<usize> {
+        match self {
+            Self::Inventory => Some(0),
+            Self::Quests => Some(1),
+            Self::World => Some(2),
+            Self::Waystones => Some(3),
+            Self::Loot | Self::Abilities | Self::Party | Self::DepthsLoot => None,
+        }
+    }
 
     pub(crate) const fn index(self) -> usize {
         self as usize
@@ -161,17 +172,38 @@ pub(crate) fn revision(bytes: &[u8]) -> u32 {
     hash.max(1)
 }
 
-/// One player's last inventory sheet encoding and its revision (#1007), held by whoever publishes
-/// that player's projections and dropped with the player. A publication reuses the bytes while
-/// the viewer, its inventory revision and its bag and equipment all match the cached ones, so a
-/// revision reused for different state (a replaced or restored character) still re-encodes; a
-/// cold cache encodes exactly as the stateless [`crate::pack_snapshot_acknowledged`] does.
+/// One player's last sheet encodings and their revisions, held by whoever publishes that
+/// player's projections and dropped with the player; a cold cache encodes exactly as the
+/// stateless [`crate::pack_snapshot_acknowledged`] does.
+///
+/// A publisher that projects with [`mmorpg_core::ZoneSimulation::project_for_publish`] and
+/// [`Self::held`] keeps the bag, quest, world and waystone sheets by the core's stamps (#1056):
+/// the core builds and this cache encodes one only when its stamp changed. Packing a plain
+/// snapshot ([`crate::pack_snapshot_cached`]) reuses the bag sheet while the viewer, its
+/// inventory revision and its bag and equipment all match the cached ones (#1007), so a
+/// revision reused for different state (a replaced or restored character) still re-encodes.
 #[derive(Debug, Default)]
 pub struct SheetEncodingCache {
     inventory: Option<CachedInventorySheet>,
+    /// The bag, quest, world and waystone sheets by [`Sheet::stamp_slot`].
+    stamped: [Option<StampedSheet>; STAMPED_SHEETS],
     /// Inventory sheet encodings this cache performed.
     #[cfg(test)]
     pub(crate) inventory_encodes: usize,
+    /// Stamped sheet encodings this cache performed.
+    #[cfg(test)]
+    pub(crate) stamped_encodes: usize,
+}
+
+/// The sheets the core stamps: the bag, quests, world and waystones.
+const STAMPED_SHEETS: usize = 4;
+
+/// A stamped sheet's encoding and the core stamp it was built from (#1056).
+#[derive(Debug)]
+struct StampedSheet {
+    stamp: SheetStamp,
+    bytes: Vec<u8>,
+    revision: u32,
 }
 
 #[derive(Debug)]
@@ -185,6 +217,19 @@ struct CachedInventorySheet {
 }
 
 impl SheetEncodingCache {
+    /// The stamps of the sheet encodings held, to pass to
+    /// [`mmorpg_core::ZoneSimulation::project_for_publish`].
+    #[must_use]
+    pub fn held(&self) -> SheetStamps {
+        let held = |slot: usize| self.stamped[slot].as_ref().map(|entry| entry.stamp);
+        SheetStamps {
+            bag: held(0),
+            quests: held(1),
+            world: held(2),
+            waystones: held(3),
+        }
+    }
+
     fn inventory_sheet(
         &mut self,
         viewer: mmorpg_core::PlayerId,
@@ -223,96 +268,197 @@ impl SheetEncodingCache {
 /// A sheet's bytes and their revision.
 pub(crate) type EncodedSheet<'c> = (Cow<'c, [u8]>, u32);
 
+/// The core's sheet stamps for one publication (#1056): what each stamped sheet was built
+/// from, and what the publisher held when it asked for the projection.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct PublishStamps<'a> {
+    pub(crate) current: &'a SheetStamps,
+    pub(crate) held: &'a SheetStamps,
+}
+
 /// Each sheet's bytes at `snapshot.tick`; the bag and quest sheets are absent when the
 /// projection has none to send. A budgeted sheet that outgrows its budget fails.
+///
+/// With `stamps`, a stamped sheet whose stamp matches the cached encoding's reuses it without
+/// encoding or hashing, and a freshly encoded one replaces it (#1056); a sheet the core left
+/// out must have its encoding cached. Without them only the bag reuses an equal encoding.
 pub(crate) fn encode_sheets<'c>(
     snapshot: &ZoneSnapshot,
+    stamps: Option<PublishStamps<'_>>,
     cache: &'c mut SheetEncodingCache,
 ) -> Result<[Option<EncodedSheet<'c>>; SHEET_COUNT], ProtocolError> {
-    let bag = match (&snapshot.inventory, &snapshot.equipment) {
-        (Some(inventory), Some(equipment)) => Some((inventory, equipment)),
-        (None, None) => None,
-        _ => {
-            return Err(ProtocolError::new(
-                "the bag sheet needs both the bag and the equipment",
-            ));
-        }
-    };
-    let quests = match &snapshot.quests {
-        Some(quests) => {
-            let mut bytes = Vec::new();
-            crate::quest::encode_sheet(&mut bytes, quests)?;
-            Some(bytes)
-        }
-        None => None,
-    };
-    let mut loot = vec![u8::from(snapshot.loot.is_some())];
-    if let Some(view) = snapshot.loot {
-        crate::loot::encode_claim(&mut loot, view.claim);
-        crate::loot::encode_rewards(&mut loot, view.rewards);
-    }
-    let mut abilities = Vec::new();
-    encode_entity_ref(&mut abilities, snapshot.viewer.target);
-    abilities.push(encode_u8_count(
-        snapshot.cooldowns.len(),
-        MAX_COOLDOWNS,
-        "player projection has too many cooldowns",
-    )?);
-    let now = tick_bits(snapshot.tick);
-    for cooldown in &snapshot.cooldowns {
-        abilities.extend_from_slice(&cooldown.ability.get().to_be_bytes());
-        abilities.extend_from_slice(&now.wrapping_add(cooldown.remaining).to_be_bytes());
-    }
-    encode_auras(&mut abilities, now, &snapshot.auras)?;
-    encode_auras(&mut abilities, now, &snapshot.target_detail.auras)?;
-    let party = match &snapshot.party {
-        Some(state) => Some(crate::party::encode_party_state(state)?),
-        None => None,
-    };
-    let depths_loot = snapshot
-        .depths_loot
-        .as_ref()
-        .map(crate::depths::encode_loot_sheet)
-        .transpose()?;
-    let mut world = Vec::new();
-    crate::wire::encode_doors(&mut world, &snapshot.doors)?;
-    crate::wire::encode_piece_views(&mut world, &snapshot.pieces)?;
-    crate::raid::encode_view(&mut world, snapshot.raid.as_ref())?;
-    crate::wire::encode_u32_set(
-        &mut world,
-        &snapshot.depleted_veins.iter().copied().collect(),
-        "too many spent veins",
-    )?;
-    let mut waystones = Vec::new();
-    crate::wire::encode_waystones(&mut waystones, &snapshot.viewer.waystones)?;
-    crate::wire::encode_discoveries(&mut waystones, &snapshot.viewer.discoveries)?;
-    if world.len().max(waystones.len()) > MAX_BUDGETED_SHEET_BYTES {
-        return Err(ProtocolError::new(
-            "a world or waystone sheet exceeds its packet budget",
-        ));
-    }
-    let inventory = bag.map(|(inventory, equipment)| {
-        cache.inventory_sheet(
-            snapshot.viewer_id,
-            snapshot.inventory_revision,
-            inventory,
-            equipment,
-        )
-    });
     let hashed = |bytes: Vec<u8>| {
         let hash = revision(&bytes);
         (Cow::Owned(bytes), hash)
     };
-    Ok([
-        inventory,
-        quests.map(hashed),
-        Some(hashed(loot)),
-        Some(hashed(abilities)),
-        party.map(hashed),
-        depths_loot.map(hashed),
-        Some(hashed(world)),
-        Some(hashed(waystones)),
-    ])
+    let Some(stamps) = stamps else {
+        let mut sheets = [const { None }; SHEET_COUNT];
+        for sheet in Sheet::ALL {
+            if sheet != Sheet::Inventory {
+                sheets[sheet.index()] = encode_sheet(sheet, snapshot)?.map(hashed);
+            }
+        }
+        // Checked like `encode_sheet` does, before the cache is touched.
+        let bag = bag(snapshot)?;
+        sheets[Sheet::Inventory.index()] = bag.map(|(inventory, equipment)| {
+            cache.inventory_sheet(
+                snapshot.viewer_id,
+                snapshot.inventory_revision,
+                inventory,
+                equipment,
+            )
+        });
+        return Ok(sheets);
+    };
+    let mut fresh: [Option<Vec<u8>>; SHEET_COUNT] = [const { None }; SHEET_COUNT];
+    for sheet in Sheet::ALL {
+        let Some(slot) = sheet.stamp_slot() else {
+            fresh[sheet.index()] = encode_sheet(sheet, snapshot)?;
+            continue;
+        };
+        let current = stamp(stamps.current, slot);
+        let cached = cache.stamped[slot]
+            .as_ref()
+            .is_some_and(|entry| Some(entry.stamp) == current);
+        if cached {
+            continue;
+        }
+        if current.is_some() && current == stamp(stamps.held, slot) {
+            return Err(ProtocolError::new(
+                "the projection left out a sheet whose encoding is not cached",
+            ));
+        }
+        let bytes = encode_sheet(sheet, snapshot)?;
+        match (current, bytes) {
+            (Some(stamp), Some(bytes)) => {
+                #[cfg(test)]
+                {
+                    cache.stamped_encodes += 1;
+                }
+                cache.stamped[slot] = Some(StampedSheet {
+                    stamp,
+                    revision: revision(&bytes),
+                    bytes,
+                });
+            }
+            (_, bytes) => {
+                cache.stamped[slot] = None;
+                fresh[sheet.index()] = bytes;
+            }
+        }
+    }
+    let cache: &'c SheetEncodingCache = cache;
+    let mut sheets = [const { None }; SHEET_COUNT];
+    for (sheet, bytes) in Sheet::ALL.into_iter().zip(fresh) {
+        sheets[sheet.index()] = match (bytes, sheet.stamp_slot()) {
+            (Some(bytes), _) => Some(hashed(bytes)),
+            (None, Some(slot)) => cache.stamped[slot]
+                .as_ref()
+                .map(|entry| (Cow::Borrowed(entry.bytes.as_slice()), entry.revision)),
+            (None, None) => None,
+        };
+    }
+    Ok(sheets)
+}
+
+/// The projection's bag and equipment, present together or not at all.
+fn bag(snapshot: &ZoneSnapshot) -> Result<Option<(&Inventory, &Equipment)>, ProtocolError> {
+    match (&snapshot.inventory, &snapshot.equipment) {
+        (Some(inventory), Some(equipment)) => Ok(Some((inventory, equipment))),
+        (None, None) => Ok(None),
+        _ => Err(ProtocolError::new(
+            "the bag sheet needs both the bag and the equipment",
+        )),
+    }
+}
+
+/// One sheet's freshly encoded bytes; `None` for a bag, quest, party or boss loot sheet the
+/// projection has none of.
+fn encode_sheet(sheet: Sheet, snapshot: &ZoneSnapshot) -> Result<Option<Vec<u8>>, ProtocolError> {
+    let budgeted = |bytes: Vec<u8>| {
+        if bytes.len() > MAX_BUDGETED_SHEET_BYTES {
+            return Err(ProtocolError::new(
+                "a world or waystone sheet exceeds its packet budget",
+            ));
+        }
+        Ok(Some(bytes))
+    };
+    match sheet {
+        Sheet::Inventory => Ok(bag(snapshot)?.map(|(inventory, equipment)| {
+            encode_inventory_sheet(snapshot.inventory_revision, inventory, equipment)
+        })),
+        Sheet::Quests => match &snapshot.quests {
+            Some(quests) => {
+                let mut bytes = Vec::new();
+                crate::quest::encode_sheet(&mut bytes, quests)?;
+                Ok(Some(bytes))
+            }
+            None => Ok(None),
+        },
+        Sheet::Loot => {
+            let mut loot = vec![u8::from(snapshot.loot.is_some())];
+            if let Some(view) = snapshot.loot {
+                crate::loot::encode_claim(&mut loot, view.claim);
+                crate::loot::encode_rewards(&mut loot, view.rewards);
+            }
+            Ok(Some(loot))
+        }
+        Sheet::Abilities => {
+            let mut abilities = Vec::new();
+            encode_entity_ref(&mut abilities, snapshot.viewer.target);
+            abilities.push(encode_u8_count(
+                snapshot.cooldowns.len(),
+                MAX_COOLDOWNS,
+                "player projection has too many cooldowns",
+            )?);
+            let now = tick_bits(snapshot.tick);
+            for cooldown in &snapshot.cooldowns {
+                abilities.extend_from_slice(&cooldown.ability.get().to_be_bytes());
+                abilities.extend_from_slice(&now.wrapping_add(cooldown.remaining).to_be_bytes());
+            }
+            encode_auras(&mut abilities, now, &snapshot.auras)?;
+            encode_auras(&mut abilities, now, &snapshot.target_detail.auras)?;
+            Ok(Some(abilities))
+        }
+        Sheet::Party => snapshot
+            .party
+            .as_ref()
+            .map(crate::party::encode_party_state)
+            .transpose(),
+        Sheet::DepthsLoot => snapshot
+            .depths_loot
+            .as_ref()
+            .map(crate::depths::encode_loot_sheet)
+            .transpose(),
+        Sheet::World => {
+            let mut world = Vec::new();
+            crate::wire::encode_doors(&mut world, &snapshot.doors)?;
+            crate::wire::encode_piece_views(&mut world, &snapshot.pieces)?;
+            crate::raid::encode_view(&mut world, snapshot.raid.as_ref())?;
+            crate::wire::encode_u32_set(
+                &mut world,
+                &snapshot.depleted_veins.iter().copied().collect(),
+                "too many spent veins",
+            )?;
+            budgeted(world)
+        }
+        Sheet::Waystones => {
+            let mut waystones = Vec::new();
+            crate::wire::encode_waystones(&mut waystones, &snapshot.viewer.waystones)?;
+            crate::wire::encode_discoveries(&mut waystones, &snapshot.viewer.discoveries)?;
+            budgeted(waystones)
+        }
+    }
+}
+
+/// A stamped sheet's stamp by [`Sheet::stamp_slot`].
+const fn stamp(stamps: &SheetStamps, slot: usize) -> Option<SheetStamp> {
+    match slot {
+        0 => stamps.bag,
+        1 => stamps.quests,
+        2 => stamps.world,
+        _ => stamps.waystones,
+    }
 }
 
 fn encode_inventory_sheet(revision: u64, inventory: &Inventory, equipment: &Equipment) -> Vec<u8> {

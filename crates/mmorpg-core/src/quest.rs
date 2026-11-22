@@ -731,7 +731,7 @@ impl ZoneSimulation {
             .players
             .get_mut(&player_id)
             .ok_or_else(|| ZoneError::new("quest player is absent"))?;
-        if !objectives_done(definition, &entry, &player.inventory, player.depths) {
+        if !objectives_done(definition, &entry, &player.inventory, *player.depths) {
             return Ok(Some((ErrorCode::QuestIncomplete, target)));
         }
         let grant = crate::RewardKey::QuestCompletion {

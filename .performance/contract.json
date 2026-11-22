@@ -65,6 +65,30 @@
           "signal": "operation-count",
           "budget": { "max": 64 },
           "growth": [{ "dimension": "population", "bound": "constant" }]
+        },
+        {
+          "name": "entity_records_built",
+          "unit": "records",
+          "signal": "operation-count",
+          "notes": "Built after the radius test and the priority cap (#1056), so at most the visible records.",
+          "budget": { "max": 64 },
+          "growth": [
+            { "dimension": "population", "bound": "constant" },
+            { "dimension": "local", "bound": "linear" }
+          ]
+        },
+        {
+          "name": "zone_views_built",
+          "unit": "builds",
+          "signal": "operation-count",
+          "budget": { "max": 1 }
+        },
+        {
+          "name": "sheets_built",
+          "unit": "sheets",
+          "signal": "operation-count",
+          "notes": "Bag, quest, world and waystone sheets built in a warm publication to an unchanged viewer (#1056).",
+          "budget": { "max": 0 }
         }
       ]
     },
@@ -79,6 +103,28 @@
           "unit": "tests",
           "signal": "operation-count",
           "growth": [{ "dimension": "recipients", "bound": "linear" }]
+        },
+        {
+          "name": "entity_records_built",
+          "unit": "records",
+          "signal": "operation-count",
+          "notes": "Built after the radius test (#1056): the relevant units, never every candidate.",
+          "growth": [{ "dimension": "recipients", "bound": "linear" }]
+        },
+        {
+          "name": "zone_views_built",
+          "unit": "builds",
+          "signal": "operation-count",
+          "notes": "Doors, pieces and spent veins, built once per tick for every recipient (#1056).",
+          "budget": { "max": 1 },
+          "growth": [{ "dimension": "recipients", "bound": "constant" }]
+        },
+        {
+          "name": "sheets_built",
+          "unit": "sheets",
+          "signal": "operation-count",
+          "notes": "Bag, quest, world and waystone sheets built in a warm publication to unchanged viewers (#1056).",
+          "budget": { "max": 0 }
         }
       ]
     },
@@ -99,6 +145,29 @@
           "unit": "records",
           "signal": "operation-count",
           "budget": { "max": 64 }
+        },
+        {
+          "name": "largest_recipient_records",
+          "unit": "records",
+          "signal": "operation-count",
+          "notes": "Entity records the largest recipient's projection built (#1056): the priority cap, never the crowd.",
+          "budget": { "max": 64 },
+          "growth": [{ "dimension": "recipients", "bound": "constant" }]
+        },
+        {
+          "name": "zone_views_built",
+          "unit": "builds",
+          "signal": "operation-count",
+          "notes": "Doors, pieces and spent veins, built once per tick for every recipient (#1056).",
+          "budget": { "max": 1 },
+          "growth": [{ "dimension": "recipients", "bound": "constant" }]
+        },
+        {
+          "name": "sheets_built",
+          "unit": "sheets",
+          "signal": "operation-count",
+          "notes": "Bag, quest, world and waystone sheets built in a warm publication to unchanged viewers (#1056).",
+          "budget": { "max": 0 }
         }
       ]
     },

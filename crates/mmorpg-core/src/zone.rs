@@ -122,10 +122,10 @@ pub(crate) struct PlayerState {
     pub(crate) level: u8,
     pub(crate) experience: u32,
     pub(crate) copper: u32,
-    pub(crate) inventory: crate::Inventory,
+    pub(crate) inventory: crate::revisioned::Revisioned<crate::Inventory>,
     pub(crate) inventory_revision: u64,
     /// Equipped items; they share the bag's revision and sheet.
-    pub(crate) equipment: crate::Equipment,
+    pub(crate) equipment: crate::revisioned::Revisioned<crate::Equipment>,
     /// Zero means dead.
     pub(crate) health: u32,
     pub(crate) target: Option<EntityRef>,
@@ -167,11 +167,12 @@ pub(crate) struct PlayerState {
     /// Chat lines heard this tick.
     pub(crate) chat: Vec<crate::ChatLine>,
     /// Active and turned-in quests.
-    pub(crate) quests: crate::QuestLog,
+    pub(crate) quests: crate::revisioned::Revisioned<crate::QuestLog>,
     /// Waystones the character unlocked by exploration (#145).
-    pub(crate) waystones: crate::WaystoneSet,
+    pub(crate) waystones: crate::revisioned::Revisioned<crate::WaystoneSet>,
     /// Named areas the character discovered (#916): each paid its discovery experience once.
-    pub(crate) discoveries: std::collections::BTreeSet<crate::AreaId>,
+    pub(crate) discoveries:
+        crate::revisioned::Revisioned<std::collections::BTreeSet<crate::AreaId>>,
     /// Weapon-family mastery (#915), durable, and the practice banked against living foes.
     pub(crate) mastery: crate::WeaponMastery,
     pub(crate) practice: Vec<crate::Practice>,
@@ -180,7 +181,7 @@ pub(crate) struct PlayerState {
     /// The durable character bound to this session (`None` for session-only players), and its
     /// depths receipts (#404).
     pub(crate) character: Option<crate::CharacterId>,
-    pub(crate) depths: crate::DepthsRecord,
+    pub(crate) depths: crate::revisioned::Revisioned<crate::DepthsRecord>,
     /// Physique sliders (#633); their stat effect is derived, never stored.
     pub(crate) physique: crate::Physique,
 }
@@ -212,9 +213,9 @@ impl PlayerState {
             level: PLAYER_START_LEVEL,
             experience: 0,
             copper: 0,
-            inventory: crate::Inventory::starter(),
+            inventory: crate::Inventory::starter().into(),
             inventory_revision: 1,
-            equipment: crate::Equipment::default(),
+            equipment: crate::Equipment::default().into(),
             health: player_max_health(PLAYER_START_LEVEL),
             target: None,
             swing_queued: false,
@@ -237,14 +238,14 @@ impl PlayerState {
             reckoning: Vec::new(),
             chat_ready_at: 0,
             chat: Vec::new(),
-            quests: crate::QuestLog::default(),
-            waystones: crate::WaystoneSet::EMPTY,
-            discoveries: std::collections::BTreeSet::new(),
+            quests: crate::QuestLog::default().into(),
+            waystones: crate::WaystoneSet::EMPTY.into(),
+            discoveries: std::collections::BTreeSet::new().into(),
             mastery: crate::WeaponMastery::default(),
             practice: Vec::new(),
             caches: std::collections::BTreeSet::new(),
             character: None,
-            depths: crate::DepthsRecord::default(),
+            depths: crate::DepthsRecord::default().into(),
             physique: crate::Physique::NEUTRAL,
         }
     }
@@ -297,12 +298,13 @@ pub struct ZoneSimulation {
     pub(crate) rng: ZoneRng,
     pub(crate) loot_rng: ZoneRng,
     pub(crate) players: BTreeMap<PlayerId, PlayerState>,
-    pub(crate) creatures: crate::threat_cache::Revisioned<BTreeMap<CreatureId, CreatureState>>,
+    pub(crate) creatures: crate::revisioned::Revisioned<BTreeMap<CreatureId, CreatureState>>,
     pub(crate) interest: InterestIndex,
     pub(crate) interest_work: InterestMaintenanceStats,
     pub(crate) tick_work: ZoneTickWork,
     /// Door states by ID; absent means closed and never moved (#158).
-    pub(crate) doors: BTreeMap<crate::DoorId, crate::door::DoorState>,
+    pub(crate) doors:
+        crate::revisioned::Revisioned<BTreeMap<crate::DoorId, crate::door::DoorState>>,
     /// Flying and stuck projectiles by ID (#286).
     pub(crate) projectiles: BTreeMap<u32, crate::Projectile>,
     pub(crate) next_projectile: u32,
@@ -312,7 +314,8 @@ pub struct ZoneSimulation {
     pub(crate) debris: BTreeMap<u32, crate::Debris>,
     pub(crate) next_debris: u32,
     /// Destructible pieces' health and last change (#305).
-    pub(crate) pieces: BTreeMap<crate::PieceId, crate::structure::PieceState>,
+    pub(crate) pieces:
+        crate::revisioned::Revisioned<BTreeMap<crate::PieceId, crate::structure::PieceState>>,
     /// Standing summoned terrain by ID (#293), and the next ID.
     pub(crate) summoned_terrain: BTreeMap<u32, crate::SummonedTerrain>,
     pub(crate) next_summoned_terrain: u32,
@@ -330,9 +333,11 @@ pub struct ZoneSimulation {
     /// outside it, so never present between ticks and not canonical.
     pub(crate) resolving_late: u8,
     /// Summoned minions by ID (#295), and the next minion ID.
-    pub(crate) minions: crate::threat_cache::Revisioned<BTreeMap<crate::MinionId, crate::Minion>>,
+    pub(crate) minions: crate::revisioned::Revisioned<BTreeMap<crate::MinionId, crate::Minion>>,
     /// The threatened-player set shared by recipient projections (#1006); derived, never canonical.
     pub(crate) threat_cache: crate::threat_cache::ThreatCache,
+    /// The zone-wide projection views of the current tick (#1056); derived, never canonical.
+    pub(crate) zone_view_cache: crate::zone_views::ZoneViewCache,
     pub(crate) next_minion: u32,
     /// Frozen, staged and activated character transfers (#145); host-phase
     /// state the handoff record reconciles, not canonical.
@@ -349,7 +354,7 @@ pub struct ZoneSimulation {
     /// empty without it.
     pub(crate) rewind_history: crate::rewind::RewindHistory,
     /// When each ore vein is full again and which corpses were skinned (#917); canonical.
-    pub(crate) gathering: crate::GatheringState,
+    pub(crate) gathering: crate::revisioned::Revisioned<crate::GatheringState>,
 }
 
 impl ZoneSimulation {
@@ -498,14 +503,14 @@ impl ZoneSimulation {
             rng: ZoneRng::seeded(content.rng_seed(), zone_id),
             loot_rng: ZoneRng::seeded(content.rng_seed() ^ LOOT_STREAM_SALT, zone_id),
             traps: Self::fresh_traps(&content),
-            gathering: crate::GatheringState::full(content.gather_nodes()),
+            gathering: crate::GatheringState::full(content.gather_nodes()).into(),
             content,
             players: BTreeMap::new(),
-            creatures: crate::threat_cache::Revisioned::default(),
+            creatures: crate::revisioned::Revisioned::default(),
             interest,
             interest_work: InterestMaintenanceStats::default(),
             tick_work: ZoneTickWork::default(),
-            doors: BTreeMap::new(),
+            doors: crate::revisioned::Revisioned::default(),
             projectiles: BTreeMap::new(),
             next_projectile: 1,
             forced: BTreeMap::new(),
@@ -513,13 +518,14 @@ impl ZoneSimulation {
             next_debris: 1,
             summoned_terrain: BTreeMap::new(),
             next_summoned_terrain: 1,
-            pieces,
+            pieces: pieces.into(),
             nav_cache: BTreeMap::new(),
             prop_motion: BTreeMap::new(),
             action_graph: &crate::action::BASELINE,
             resolving_late: 0,
-            minions: crate::threat_cache::Revisioned::default(),
+            minions: crate::revisioned::Revisioned::default(),
             threat_cache: crate::threat_cache::ThreatCache::default(),
+            zone_view_cache: crate::zone_views::ZoneViewCache::default(),
             next_minion: 1,
             raid: crate::RaidState::default(),
             wakes: BTreeMap::new(),

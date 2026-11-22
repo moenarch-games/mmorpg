@@ -31,6 +31,13 @@ pub struct InterestMaintenanceStats {
 pub struct PlayerProjection {
     pub snapshot: ZoneSnapshot,
     pub stats: InterestQueryStats,
+    /// Records and sheets the projection built (#1056).
+    pub work: crate::ProjectionWork,
+    /// What each stamped sheet was built from at this tick.
+    pub sheets: crate::SheetStamps,
+    /// The stamps the publisher said it held: a sheet whose stamp equals its held one was left
+    /// out of the snapshot, for the publisher to send from its own encoding.
+    pub held: crate::SheetStamps,
 }
 
 /// Every visible unit (players, living creatures, corpses and NPCs) in cells

@@ -38,7 +38,7 @@ pub use depths::{
 pub use projection::{
     DEBRIS_RECORD_BYTES, ENTITY_RECORD_BYTES, EVENT_RECORD_BYTES, MAX_WIRE_ENTITIES,
     PLAYER_SNAPSHOT_FIXED_BYTES, PackedSnapshot, SnapshotDecoder, decode_snapshot, encode_snapshot,
-    pack_snapshot, pack_snapshot_acknowledged, pack_snapshot_cached,
+    pack_projection_cached, pack_snapshot, pack_snapshot_acknowledged, pack_snapshot_cached,
 };
 pub use redirect::{
     MAX_REDIRECT_ROUTE_BYTES, RedirectNotice, decode_redirect_notice, encode_redirect_notice,
