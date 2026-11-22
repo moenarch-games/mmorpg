@@ -43,7 +43,7 @@ describe("Action Lab (#381)", () => {
 
     source.scrubTo(4n);
     expect(source.shownFrame()?.tick).toBe(4n);
-    expect(source.sample()).toBe(source.shownFrame()!.snapshot.entities);
+    expect(source.shown()).toEqual({ kind: "exact", units: source.shownFrame()!.snapshot.entities });
     source.setPaused(false);
     expect(source.scrubTick).toBeNull();
     expect(() => wasm.LocalZone.forActionLab("warden", 0, "standard", 0, undefined, 0n)).toThrow();

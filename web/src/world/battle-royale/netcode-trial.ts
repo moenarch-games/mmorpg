@@ -1,14 +1,13 @@
 import { encodeCommand, encodeObservedCommand, isTimingSensitive, type WorldCommand } from "../../command-wire";
 import { FixedTickClock } from "../../demo-clock";
-import { decodeSnapshot, ProjectionDecoder, SnapshotBuffer, ticksFromMs, type EntityState, type ZoneSnapshot } from "../../replication";
-import { INTERPOLATION_DELAY_TICKS } from "../online-zone-source";
+import { decodeSnapshot, ProjectionDecoder, ticksFromMs, type EntityState, type ZoneSnapshot } from "../../replication";
 import type { ScenarioZoneHandle } from "../scenario-source";
-import type { LinkState, WorldSource } from "../world-source";
+import { interpolated, type LinkState, type ShownUnits, type WorldSource } from "../world-source";
 
 /**
  * The arena netcode options a tester compares (#680, Atlas 5.9.i680); nothing is assumed to win.
- * `baseline` is today's online path: zone authority, every unit drawn 67 ms behind the newest
- * projection, the own body included. `predicted` moves the own body at once with the zone's own
+ * `baseline` is today's online path: zone authority, every unit drawn 2 ticks behind the newest
+ * projection (the shared interpolation, #1058), the own body included. `predicted` moves the own body at once with the zone's own
  * movement rules and reconciles it against `acknowledged_sequence`. `rewind` adds the match's
  * capped server rewind of timed swings' hits on bodies; clashes stay in the zone's present.
  */
@@ -68,7 +67,7 @@ export type PredictionHandle = {
 /**
  * The predicted own body (#680) a source drives: commands as it sends them, `step()` and
  * `record()` once per local tick, and every projection it receives, the newest restarting the
- * prediction from the zone's own answer. `draw` puts the own body where the prediction stands,
+ * prediction from the zone's own answer. `ownBody` puts the own body where the prediction stands,
  * between its last two recorded ticks.
  */
 export class OwnBodyPrediction {
@@ -76,6 +75,7 @@ export class OwnBodyPrediction {
   #reconciled = false;
   /** The predicted own body after the previous and the latest local tick: `[x, y, z, facing]`. */
   #predicted: [Float32Array | null, Float32Array | null] = [null, null];
+  readonly #body = new Float64Array(7);
 
   constructor(handle: PredictionHandle) { this.#handle = handle; }
 
@@ -104,16 +104,19 @@ export class OwnBodyPrediction {
     this.#predicted = [this.#predicted[1], position.length === 4 ? position : null];
   }
 
-  /** `entities` with the viewer's own body where the prediction puts it, `alpha` into the tick. */
-  draw(entities: readonly EntityState[], viewerId: number, alpha: number): readonly EntityState[] {
+  /**
+   * The viewer's own body where the prediction puts it, `alpha` into the tick, as the unit
+   * presenter takes it (`[x, y, z, facing, vx, vy, vz]`, #1058); null before it reconciled.
+   */
+  ownBody(alpha: number): Float64Array | null {
     const [previous, current] = this.#predicted;
-    if (!current) { return entities; }
+    if (!current) { return null; }
     const from = previous ?? current;
     const at = (axis: number) => from[axis]! + (current[axis]! - from[axis]!) * alpha;
-    const velocity = (axis: number) => Math.max(-128, Math.min(127, Math.round(current[axis]! - from[axis]!)));
-    return entities.map((entity) => entity.kind === "player" && entity.entityId === viewerId
-      ? { ...entity, position: [at(0), at(1), at(2)], velocity: [velocity(0), velocity(1), velocity(2)], facing: current[3]! }
-      : entity);
+    const body = this.#body;
+    body[0] = at(0); body[1] = at(1); body[2] = at(2); body[3] = current[3]!;
+    for (let axis = 0; axis < 3; axis += 1) { body[4 + axis] = current[axis]! - from[axis]!; }
+    return body;
   }
 
   free(): void { this.#handle.free(); }
@@ -149,7 +152,6 @@ export class NetcodeTrialSource implements WorldSource {
   readonly #up: number;
   readonly #down: number;
   readonly #clock = new FixedTickClock();
-  readonly #history = new SnapshotBuffer();
   #zone: TrialZoneHandle | null = null;
   #prediction: OwnBodyPrediction | null = null;
   #player: number | null = null;
@@ -186,7 +188,6 @@ export class NetcodeTrialSource implements WorldSource {
     this.#prediction = this.#trial.option === "baseline" ? null : new OwnBodyPrediction(this.#createPrediction());
     this.#player = player;
     this.#clock.reset();
-    this.#history.reset();
     this.#projections = new ProjectionDecoder();
     this.#sequence = 0;
     this.#partnerSequence = 0;
@@ -212,7 +213,6 @@ export class NetcodeTrialSource implements WorldSource {
     this.#player = null;
     this.#partner = null;
     this.#latest = null;
-    this.#history.reset();
   }
 
   sendCommand(command: WorldCommand): number | null {
@@ -261,7 +261,6 @@ export class NetcodeTrialSource implements WorldSource {
     this.#projections ??= new ProjectionDecoder();
     const snapshot = this.#projections.decode(bytes);
     this.#latest = snapshot;
-    this.#history.push(snapshot);
     return snapshot;
   }
 
@@ -299,12 +298,9 @@ export class NetcodeTrialSource implements WorldSource {
     return "connected";
   }
 
-  sample(): readonly EntityState[] {
-    const latest = this.#latest;
-    if (!latest) { return []; }
-    const tick = latest.tick - BigInt(INTERPOLATION_DELAY_TICKS);
-    const entities = tick < 0n ? this.#history.sample(0n) : this.#history.sample(tick, this.#clock.fraction);
+  shown(): ShownUnits {
     // The own body is drawn where the prediction puts it, between its last two ticks.
-    return this.#prediction ? this.#prediction.draw(entities, latest.viewerId, this.#clock.fraction) : entities;
+    const fraction = this.#clock.fraction;
+    return interpolated(fraction, this.#prediction?.ownBody(fraction) ?? null);
   }
 }

@@ -428,16 +428,14 @@ describe("WASM local zone host", () => {
     expect(self(source).position[1]).toBe(ground);
   });
 
-  test("interpolated samples stay between authoritative ticks", async () => {
+  test("frames between ticks are drawn from the clock's fraction of a tick (#1058)", async () => {
     const { source } = createLocalWorld(wasm, testCharacters());
     await source.join();
     source.sendCommand({ kind: "move", forward: 1, strafe: 0, facing: EAST });
     run(source, 2);
-    const before = self(source).position[0];
     source.advance(TICK_SECONDS / 2);
-    const sampled = source.sample().find((entity) => entity.kind === "player" && entity.entityId === source.latestProjection()?.viewerId);
-    expect(sampled?.position[0]).toBeGreaterThan(before - RUN_UNITS_PER_TICK);
-    expect(sampled?.position[0]).toBeLessThan(before);
+    const shown = source.shown();
+    expect(shown.kind === "interpolated" ? shown.elapsedTicks : null).toBeCloseTo(0.5, 6);
   });
 
   test("the ambient cat, dog and rodent pace by the inn and at Millbrook Farm (#419)", () => {

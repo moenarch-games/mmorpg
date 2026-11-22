@@ -4,7 +4,6 @@ import { encodeCommand } from "../src/command-wire";
 import { parseSessionRoute } from "../src/session/route";
 import {
   CONNECT_TIMEOUT_MS,
-  INTERPOLATION_DELAY_TICKS,
   RECONNECT_SETTLE_MS,
   SNAPSHOT_TIMEOUT_MS,
   OnlineZoneSource,
@@ -196,7 +195,7 @@ describe("OnlineZoneSource", () => {
     let dropClassChoice = true;
     host.toHost = (datagram) => (dropClassChoice && datagram.byteLength === 12 && datagram[9] === 11 ? [] : [datagram]);
     const player = await clock.until(source.join());
-    await frame(clock, source, INTERPOLATION_DELAY_TICKS * TICK_MS);
+    await frame(clock, source, 2 * TICK_MS);
     expect(host.applied).toEqual([]);
     dropClassChoice = false;
     host.lose(player);
@@ -225,7 +224,7 @@ describe("OnlineZoneSource", () => {
   test("a clean close by the host is an interruption that resumes the same player", async () => {
     const { clock, host, source } = online({ graceTicks: 300n });
     const player = await clock.until(source.join());
-    await frame(clock, source, INTERPOLATION_DELAY_TICKS * TICK_MS);
+    await frame(clock, source, 2 * TICK_MS);
     host.closeSession(player);
     await clock.advance(0);
     expect(source.linkState()).toBe("reconnecting");
@@ -240,14 +239,13 @@ describe("OnlineZoneSource", () => {
     const { clock, host, source } = online({ graceTicks: 300n });
     const player = await clock.until(source.join());
     source.sendCommand(MOVE_EAST);
-    await frame(clock, source, INTERPOLATION_DELAY_TICKS * TICK_MS);
+    await frame(clock, source, 2 * TICK_MS);
     const before = source.latestProjection();
     host.lose(player);
     await clock.advance(0);
     expect(source.linkState()).toBe("reconnecting");
     // The last known scene stays visible; intent during the interruption is dropped.
     expect(source.latestProjection()).toBe(before);
-    expect(source.sample().length).toBe(1);
     source.sendCommand({ kind: "jump" });
     const sequencesBefore = host.applied.length;
     await frame(clock, source, RECONNECT_SETTLE_MS - 1);
@@ -262,8 +260,8 @@ describe("OnlineZoneSource", () => {
     // The resumed connection starts with a stopped move at the last facing, sequenced after everything sent.
     expect(host.applied.slice(sequencesBefore)).toEqual([{ playerId: player, sequence: 3, payload: `${P}0100004000` }]);
     expect(host.unit(player)?.forward).toBe(0);
-    // Presentation restarted from the new connection's projections.
-    expect(source.sample()).toEqual(source.latestProjection()!.entities);
+    // The new connection's projections are presented.
+    expect(source.latestProjection()).not.toBe(before);
     source.sendCommand({ kind: "jump" });
     expect(host.applied.at(-1)).toEqual({ playerId: player, sequence: 4, payload: JUMP });
   });
@@ -361,23 +359,26 @@ describe("OnlineZoneSource", () => {
     await expect(clock.until(source.join())).rejects.toThrow("Could not join the zone host: Opening handshake failed.");
   });
 
-  test("samples run the interpolation delay behind the newest projection and hold it when projections stall", async () => {
-    // The fake host moves a running unit this many whole units per tick.
-    const step = Math.round(630 / TICK_HZ);
+  test("frames lag the newest projection by the time since it arrived, for the shared interpolation (#1058)", async () => {
     const { clock, host, source } = online();
-    const player = await clock.until(source.join());
+    await clock.until(source.join());
     source.sendCommand(MOVE_EAST);
-    for (let ticks = 0; ticks < INTERPOLATION_DELAY_TICKS + 4; ticks += 1) {
+    for (let ticks = 0; ticks < 6; ticks += 1) {
       await frame(clock, source);
     }
-    const newest = self(source).position[0];
-    const sampled = source.sample().find((entity) => entity.entityId === player)!.position[0];
-    expect(sampled).toBeCloseTo(newest - INTERPOLATION_DELAY_TICKS * step, 6);
+    const elapsed = () => {
+      const shown = source.shown();
+      return shown.kind === "interpolated" && shown.ownBody === null ? shown.elapsedTicks : Number.NaN;
+    };
+    const arrived = elapsed();
+    expect(arrived).toBeGreaterThanOrEqual(0);
+    expect(arrived).toBeLessThan(1);
+    // While projections stall the lag keeps growing; the presenter closes the gap and holds the newest.
     host.toClient = () => [];
     await frame(clock, source, TICK_MS / 2);
-    expect(source.sample().find((entity) => entity.entityId === player)!.position[0]).toBeCloseTo(newest - (INTERPOLATION_DELAY_TICKS - 0.5) * step, 6);
-    await frame(clock, source, INTERPOLATION_DELAY_TICKS * TICK_MS);
-    expect(source.sample().find((entity) => entity.entityId === player)!.position[0]).toBe(newest);
+    expect(elapsed()).toBeCloseTo(arrived + 0.5, 6);
+    await frame(clock, source, 2 * TICK_MS);
+    expect(elapsed()).toBeCloseTo(arrived + 2.5, 6);
   });
 
   test("another player's unit moves in this player's projections and leaves after the host's grace", async () => {

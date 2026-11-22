@@ -31,8 +31,6 @@ export function ticksFromMs(ms: number): number {
 }
 
 export const UNITS_PER_METRE = 100;
-const YAW_STEPS = 65_536;
-const BUFFER_CAPACITY = 32;
 
 let catalog: WireCatalog | null = null;
 
@@ -127,89 +125,4 @@ export function ingestedProjection(snapshot: ZoneSnapshot): IngestedProjection |
 /** The projection's record of `entity`, if it is visible. */
 export function findEntity(snapshot: ZoneSnapshot, entity: EntityRef | null): EntityState | undefined {
   return snapshot.entities.find((candidate) => sameEntity({ kind: candidate.kind, id: candidate.entityId }, entity));
-}
-
-/** Nearest u16 yaw for a presentation angle in radians (0 faces +Z, turning toward +X). */
-export function yawFromRadians(radians: number): number {
-  const turns = radians / (2 * Math.PI);
-  return Math.round((turns - Math.floor(turns)) * YAW_STEPS) % YAW_STEPS;
-}
-
-/** Interpolates yaw along the shorter arc; the result stays in [0, 65 536). */
-function interpolateFacing(from: number, to: number, alpha: number): number {
-  const half = YAW_STEPS / 2;
-  const delta = ((to - from + YAW_STEPS + half) % YAW_STEPS) - half;
-  const facing = (from + delta * alpha) % YAW_STEPS;
-  return facing < 0 ? facing + YAW_STEPS : facing;
-}
-
-/** Bounded presentation history. It never extrapolates gameplay or runs physics. */
-export class SnapshotBuffer {
-  #snapshots: ZoneSnapshot[] = [];
-
-  /** Call on reconnect, handoff, or an authority-epoch change before accepting a new stream. */
-  reset(): void {
-    this.#snapshots = [];
-  }
-
-  push(snapshot: ZoneSnapshot): boolean {
-    const latest = this.#snapshots.at(-1);
-    if (latest) {
-      if (
-        snapshot.zoneId !== latest.zoneId ||
-        snapshot.contentRevision !== latest.contentRevision ||
-        snapshot.viewerId !== latest.viewerId
-      ) {
-        throw new Error("Snapshot stream changed without reset");
-      }
-      if (snapshot.tick <= latest.tick) {
-        return false;
-      }
-      // After a long stall, snap to current state instead of interpolating a stale journey.
-      if (snapshot.tick - latest.tick > BigInt(TICK_HZ * 30)) {
-        this.reset();
-      }
-    }
-    this.#snapshots.push(snapshot);
-    if (this.#snapshots.length > BUFFER_CAPACITY) {
-      this.#snapshots.shift();
-    }
-    return true;
-  }
-
-  sample(tick: bigint, fraction = 0): readonly EntityState[] {
-    if (!Number.isFinite(fraction) || fraction < 0 || fraction >= 1) {
-      throw new Error("Render tick fraction must be in [0, 1)");
-    }
-    let before = this.#snapshots[0];
-    if (!before) {
-      return [];
-    }
-    if (tick < before.tick) {
-      return before.entities;
-    }
-    for (const after of this.#snapshots.slice(1)) {
-      if (tick < after.tick) {
-        const alpha = (Number(tick - before.tick) + fraction) / Number(after.tick - before.tick);
-        const identity = (entity: EntityState) => `${entity.kind}:${entity.entityId}`;
-        const nextEntities = new Map(after.entities.map((entity) => [identity(entity), entity]));
-        return before.entities.map((entity) => {
-          const next = nextEntities.get(identity(entity));
-          // Appearance/disappearance happens at the authoritative sample tick.
-          if (!next) {
-            return entity;
-          }
-          const interpolate = (axis: 0 | 1 | 2) =>
-            entity.position[axis] + (next.position[axis] - entity.position[axis]) * alpha;
-          return {
-            ...entity,
-            position: [interpolate(0), interpolate(1), interpolate(2)],
-            facing: interpolateFacing(entity.facing, next.facing, alpha),
-          };
-        });
-      }
-      before = after;
-    }
-    return before.entities;
-  }
 }

@@ -1,7 +1,7 @@
 import { encodeCommand, type WorldCommand } from "../command-wire";
 import { FixedTickClock } from "../demo-clock";
-import { ProjectionDecoder, SnapshotBuffer, ticksFromMs, type EntityState, type ZoneSnapshot } from "../replication";
-import type { LinkState, WorldSource } from "./world-source";
+import { ProjectionDecoder, ticksFromMs, type ZoneSnapshot } from "../replication";
+import { interpolated, type LinkState, type ShownUnits, type WorldSource } from "./world-source";
 import { LAB_SCENARIO, labSetupFromQuery, type LabSetup } from "./action-lab";
 import { hex, type LabCommand } from "./lab-experiment";
 
@@ -66,7 +66,6 @@ export class ScenarioSource implements WorldSource {
   #zone: ScenarioZoneHandle | null = null;
   #player: number | null = null;
   readonly #clock = new FixedTickClock();
-  readonly #history = new SnapshotBuffer();
   #sequence = 0;
   #latest: ZoneSnapshot | null = null;
   /** The joined session's projections, decoded once in WASM (#1009). */
@@ -191,7 +190,6 @@ export class ScenarioSource implements WorldSource {
     }
     this.#zone = zone;
     this.#clock.reset();
-    this.#history.reset();
     this.#projections = new ProjectionDecoder();
     this.#frames = [];
     this.#scrub = null;
@@ -215,7 +213,6 @@ export class ScenarioSource implements WorldSource {
     this.#zone = null;
     this.#player = null;
     this.#latest = null;
-    this.#history.reset();
     this.#clock.reset();
   }
 
@@ -279,20 +276,13 @@ export class ScenarioSource implements WorldSource {
     return "connected";
   }
 
-  sample(): readonly EntityState[] {
+  shown(): ShownUnits {
     const latest = this.#latest;
-    if (!latest) {
-      return [];
+    if (latest && this.#scrub !== null) {
+      return { kind: "exact", units: this.shownFrame()?.snapshot.entities ?? latest.entities };
     }
-    if (this.#scrub !== null) {
-      return this.shownFrame()?.snapshot.entities ?? latest.entities;
-    }
-    if (this.#paused) {
-      // A paused or stepped world shows exactly its last tick.
-      return latest.entities;
-    }
-    const renderTick = latest.tick > 0n ? latest.tick - 1n : 0n;
-    return this.#history.sample(renderTick, this.#clock.fraction);
+    // A paused or stepped world shows exactly its last tick.
+    return interpolated(this.#paused ? Number.POSITIVE_INFINITY : this.#clock.fraction);
   }
 
   #requireZone(): ScenarioZoneHandle {
@@ -315,12 +305,7 @@ export class ScenarioSource implements WorldSource {
     if (snapshot.viewerId !== player) {
       throw new Error("The scenario zone addressed a projection to another player.");
     }
-    if (this.#latest && this.#latest.zoneId !== snapshot.zoneId) {
-      // The character changed zone (#404): the new zone's ticks are its own.
-      this.#history.reset();
-    }
     this.#latest = snapshot;
-    this.#history.push(snapshot);
     const inspection = this.#requireZone().actionInspection?.(player) ?? null;
     this.#frames.push({ tick: snapshot.tick, snapshot, inspection });
     if (this.#frames.length > SCENARIO_HISTORY_TICKS) {

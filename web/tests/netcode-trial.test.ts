@@ -16,9 +16,14 @@ function trial(option: NetcodeOption, roundTripMs: number): NetcodeTrialSource {
   );
 }
 
-/** The sampled own body's Z, the way the view draws it. */
+/**
+ * The own body's Z as the view draws it: where the prediction puts it, else at the newest projection (the unit
+ * presenter's interpolation draws it 2 ticks later still, #1058).
+ */
 function ownZ(source: NetcodeTrialSource, viewer: number): number {
-  return source.sample().find((entity) => entity.kind === "player" && entity.entityId === viewer)!.position[2];
+  const shown = source.shown();
+  if (shown.kind === "interpolated" && shown.ownBody) { return shown.ownBody[2]!; }
+  return source.latestProjection()!.entities.find((entity) => entity.kind === "player" && entity.entityId === viewer)!.position[2];
 }
 
 describe("arena netcode trial (#680)", () => {
@@ -63,7 +68,7 @@ describe("arena netcode trial (#680)", () => {
     expect(results.predicted!.acknowledgedAt).toBe(7);
     // Only the prediction moves the own body before the zone's answer arrives.
     expect(results.predicted!.firstMove).toBeLessThan(3);
-    expect(results.baseline!.firstMove).toBeGreaterThan(7);
+    expect(results.baseline!.firstMove).toBeGreaterThanOrEqual(results.baseline!.acknowledgedAt);
   });
 
   test("a match with rewind admits a sparring partner that closes in", async () => {

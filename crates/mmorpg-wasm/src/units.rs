@@ -239,6 +239,15 @@ impl Units {
                 .enumerate()
                 .map(|(position, record)| (record.entity(), position)),
         );
+        // The page pushes projections in order (its sources drop stale ones), so an older tick
+        // is a restarted world, such as a scenario started again: never held as stale.
+        if self
+            .history
+            .latest()
+            .is_some_and(|newest| snapshot.tick < newest.tick)
+        {
+            self.history.reset();
+        }
         if self.history.push(Rc::clone(&snapshot)) {
             self.impacts.extend(impact_cues(&snapshot).map(|cue| {
                 let kind = match cue.kind {

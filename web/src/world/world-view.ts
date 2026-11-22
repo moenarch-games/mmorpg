@@ -34,7 +34,7 @@ import {
 } from "./orbit-camera";
 import { SceneryFrame, buildSceneryScene, type DrawnKits, type SceneryScene } from "./scenery-nodes";
 import type { GreyhavenLighting } from "./lighting";
-import { ImpactEffects, impactCues } from "./impact-effects";
+import { ImpactEffects } from "./impact-effects";
 import { KitEffects } from "./kit-effects";
 import { RaidSmoke } from "./raid-smoke";
 import { type AidTask, reachableAidTask } from "./raid-aid";
@@ -1238,6 +1238,7 @@ export class WorldView {
   enter(input: WorldInput, projection: ZoneSnapshot | null): void {
     this.interruptGesture();
     this.#guardHold.end();
+    this.#orbit.dispose();
     this.#orbit = new OrbitCamera();
     this.#cameraMode = { kind: "free-look" };
     this.#updatePointerOwner();
@@ -1849,9 +1850,9 @@ export class WorldView {
     this.#orbit.update(deltaSeconds, !animate);
     profilePhase("projection");
     const { unitsPerMetre } = scenery.scenery;
-    const sampled = source.sample();
+    const shown = source.shown();
     units.setInteraction(this.#loot.open, this.#quests.dialogNpc ?? this.#vendor.npc);
-    const presented = units.frame(sampled, { seconds: this.#seconds, dt: deltaSeconds, reducedMotion: !animate, barYaw: this.#barYaw, look });
+    const presented = units.frame(shown, projection, { seconds: this.#seconds, dt: deltaSeconds, reducedMotion: !animate, barYaw: this.#barYaw, look });
     this.#fortress?.place(presented.platforms);
     this.#kitEffects.update(presented.effects);
     const viewerModel = presented.imported.find((unit) => unit.entity.kind === "player" && unit.entity.id === projection.viewerId);
@@ -1879,11 +1880,9 @@ export class WorldView {
     units.setChannelOrigins(this.#models.update(presented.imported, { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {}, physique: look.physique ?? null, sex: look.sex }));
     const intensity = animate ? "strong" : "subtle";
     this.#impacts.preload(intensity);
-    for (const received of receivedProjections) {
-      for (const cue of impactCues(received)) {
-        const unit = units.unitOf(cue.target);
-        if (unit) { this.#impacts.spawn(cue.family, intensity, [unit.feet[0], unit.centreY, unit.feet[2]], now); }
-      }
+    for (const cue of units.takeImpacts()) {
+      const unit = units.unitOf(cue.target);
+      if (unit) { this.#impacts.spawn(cue.family, intensity, [unit.feet[0], unit.centreY, unit.feet[2]], now); }
     }
     this.#impacts.update(now);
     const roof = this.#roofOf(projection.raid ? this.#raidArea : null, scenery.scenery);

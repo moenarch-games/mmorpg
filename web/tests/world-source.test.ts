@@ -5,10 +5,6 @@ import { TICK_HZ } from "../src/replication";
 import { LocalZoneSource, type LocalZoneHandle } from "../src/world/local-zone-source";
 import { MovementOutbox } from "../src/world/movement-outbox";
 import {
-  GROUND_CLEARANCE_METRES,
-  MAX_DISTANCE_METRES,
-  MIN_DISTANCE_METRES,
-  ORBIT_RADIANS_PER_PIXEL,
   IDLE_INTENT,
   OrbitCamera,
   movementInput,
@@ -130,17 +126,6 @@ describe("LocalZoneSource", () => {
     expect(source.latestProjection()?.tick).toBe(BigInt(1 + MAX_CATCH_UP_TICKS));
   });
 
-  test("samples interpolate one tick behind the latest projection", async () => {
-    const zone = new RecordingZone();
-    const source = new LocalZoneSource(() => zone, testCharacters());
-    await source.join();
-    source.advance(2 / TICK_HZ + 1e-9);
-    expect(zone.ticks).toBe(2);
-    expect(source.sample()[0]?.position[0]).toBeCloseTo(21, 3);
-    source.advance(0.5 / TICK_HZ);
-    expect(source.sample()[0]?.position[0]).toBeCloseTo(31.5, 3);
-  });
-
   test("a projection addressed to another player is rejected", async () => {
     const zone = new RecordingZone();
     zone.viewerOverride = 99;
@@ -172,7 +157,7 @@ function held(forward: HeldIntent["forward"], strafe: HeldIntent["strafe"]): Hel
 describe("camera-relative input", () => {
   test("while movement is held the character adopts the camera heading", () => {
     const camera = new OrbitCamera();
-    camera.orbit(Math.PI / 2 / ORBIT_RADIANS_PER_PIXEL, 0);
+    camera.lookAlong(3 * Math.PI / 2);
     const heading = camera.facing();
     expect(heading).not.toBe(0);
     expect(movementInput(held(1, 0), heading, 0, 2)).toEqual({ forward: 1, strafe: 0, facing: heading, jumps: 2 });
@@ -193,7 +178,7 @@ describe("camera-relative input", () => {
     expect(outbox.update(movementInput(IDLE_INTENT, camera.facing(), 0, 0), 0)).toEqual([
       { kind: "move", forward: 0, strafe: 0, facing: 0 },
     ]);
-    camera.orbit(-Math.PI / 2 / ORBIT_RADIANS_PER_PIXEL, 0);
+    camera.lookAlong(Math.PI / 2);
     const heading = camera.facing();
     expect(outbox.update(movementInput(IDLE_INTENT, heading, 0, 0), RESEND_INTERVAL_MS)).toEqual([
       { kind: "move", forward: 0, strafe: 0, facing: 0 },
@@ -204,75 +189,26 @@ describe("camera-relative input", () => {
     expect(movementInput(IDLE_INTENT, 0, running.facing, 0).facing).toBe(heading);
   });
 
-  test("the default orbit view looks over the shoulder toward +Z", () => {
+  test("the browser camera forwards to the shared rules and reads their view (#1058)", () => {
     const camera = new OrbitCamera();
-    const view = camera.view([1, 0.9, -2]);
-    expect(view.target).toEqual([0.35, 1.5, -2]);
-    expect(view.eye[2]).toBeLessThan(view.target[2]);
-    expect(view.eye[1]).toBeGreaterThan(view.target[1]);
-    expect(view.eye[0]).toBeLessThan(1);
-    expect(view.eye[0]).toBeCloseTo(view.target[0], 9);
-    expect(Math.hypot(...view.eye.map((value, axis) => value - view.target[axis]!))).toBeCloseTo(camera.distance, 9);
+    expect(camera.view([1, 0.9, -2]).target).toEqual([0.35, 1.5, -2]);
     expect(camera.facing()).toBe(0);
-  });
-
-  test("dragging right turns the heading toward the character's right", () => {
-    const camera = new OrbitCamera();
-    camera.orbit(Math.PI / 2 / ORBIT_RADIANS_PER_PIXEL, 0);
-    expect(Math.abs(camera.facing() - 49_152)).toBeLessThanOrEqual(2);
-    camera.orbit(-Math.PI / ORBIT_RADIANS_PER_PIXEL, 0);
-    expect(Math.abs(camera.facing() - 16_384)).toBeLessThanOrEqual(2);
-  });
-
-  test("pitch and zoom are clamped and ignore non-finite input", () => {
-    const camera = new OrbitCamera();
-    camera.orbit(0, -1e9);
-    const low = camera.view([0, 0, 0]);
-    expect(low.eye[1]).toBeLessThan(low.target[1]);
-    camera.zoom(1e3);
-    expect(camera.targetDistance).toBe(MIN_DISTANCE_METRES);
-    camera.update(0, true);
-    expect(camera.distance).toBe(MIN_DISTANCE_METRES);
-    camera.zoom(-1e3);
-    camera.update(0, true);
-    expect(camera.distance).toBe(MAX_DISTANCE_METRES);
-    camera.zoom(Number.NaN);
-    camera.orbit(Number.NaN, 0);
-    camera.update(Number.NaN);
-    expect(camera.distance).toBe(MAX_DISTANCE_METRES);
-    expect(Number.isFinite(camera.facing())).toBe(true);
-  });
-
-  test("zoom eases toward its target and settles exactly", () => {
-    const camera = new OrbitCamera();
-    const start = camera.distance;
-    camera.zoom(3);
-    const target = camera.targetDistance;
-    expect(target).toBeLessThan(start);
-    expect(camera.distance).toBe(start);
-    camera.update(1 / 60);
-    expect(camera.distance).toBeLessThan(start);
-    expect(camera.distance).toBeGreaterThan(target);
-    for (let frame = 0; frame < 120; frame += 1) {
-      camera.update(1 / 60);
-    }
-    expect(camera.distance).toBe(target);
-  });
-
-  test("the eye never sinks below the ground under it; nothing else collides", () => {
-    const camera = new OrbitCamera();
-    const flat = camera.view([0, 1, 0], () => 0);
-    expect(flat).toEqual(camera.view([0, 1, 0]));
+    const flat = camera.view([0, 1, 0]);
     const hill = camera.view([0, 1, 0], () => 12);
-    expect(hill.eye[1]).toBeCloseTo(12 + GROUND_CLEARANCE_METRES, 9);
-    expect(hill.eye[0]).toBe(flat.eye[0]);
-    expect(hill.eye[2]).toBe(flat.eye[2]);
+    expect(hill.eye[1]).toBeCloseTo(12.35, 9);
     expect(hill.target).toEqual(flat.target);
+    camera.zoom(1);
+    expect(camera.targetDistance).toBeLessThan(camera.distance);
+    camera.update(0, true);
+    expect(camera.distance).toBe(camera.targetDistance);
+    camera.zoomBy(0.5);
+    expect(camera.targetDistance).toBeCloseTo(2 * camera.distance, 9);
+    camera.dispose();
   });
 
   test("left drag looks around freely; right drag turns the character with the view", () => {
     const camera = new OrbitCamera();
-    camera.orbit(Math.PI / 2 / ORBIT_RADIANS_PER_PIXEL, 0);
+    camera.lookAlong(3 * Math.PI / 2);
     const heading = camera.facing();
     // Right drag: the character adopts the view even while standing.
     expect(movementInput(IDLE_INTENT, heading, 16_384, 0, "turn").facing).toBe(heading);

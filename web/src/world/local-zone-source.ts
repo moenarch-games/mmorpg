@@ -1,8 +1,8 @@
 import { encodeCommand, type WorldCommand } from "../command-wire";
 import { FixedTickClock } from "../demo-clock";
-import { ProjectionDecoder, SnapshotBuffer, ticksFromMs, type EntityState, type ZoneSnapshot } from "../replication";
+import { ProjectionDecoder, ticksFromMs, type ZoneSnapshot } from "../replication";
 import type { CharacterEntries, LocalCharacters } from "./local-characters";
-import { classChoiceCodes, DEFAULT_JOIN_CHARACTER, type JoinCharacter, type LinkState, type WorldSource } from "./world-source";
+import { classChoiceCodes, DEFAULT_JOIN_CHARACTER, interpolated, type JoinCharacter, type LinkState, type ShownUnits, type WorldSource } from "./world-source";
 
 /** The subset of the wasm-bindgen `LocalZone` this source drives. */
 export type LocalZoneHandle = {
@@ -30,7 +30,8 @@ export const SAVE_INTERVAL_TICKS = ticksFromMs(5_000);
  * A single-player world hosted in this page: the shared Rust zone simulation
  * compiled to WASM, advanced in fixed `TICK_HZ` ticks from a bounded accumulator.
  * Every tick's encoded player-scoped projection goes through the same decoder
- * and history a network source uses; canonical state never reaches here.
+ * a network source uses, and the unit presenter interpolates it like theirs;
+ * canonical state never reaches here.
  *
  * The played character is durable: entry holds it for this tab and leases it
  * from the page's character storage, progress is committed every few seconds
@@ -47,7 +48,6 @@ export class LocalZoneSource implements WorldSource {
   /** Why the saved world was replaced at the last entry, if it was. */
   worldNotice: string | null = null;
   readonly #clock = new FixedTickClock();
-  readonly #history = new SnapshotBuffer();
   #player: number | null = null;
   #release: (() => void) | null = null;
   #releaseWorld: (() => void) | null = null;
@@ -125,7 +125,6 @@ export class LocalZoneSource implements WorldSource {
       }
       this.#zone = zone;
       this.#clock.reset();
-      this.#history.reset();
       this.#latest = null;
       this.#projections = new ProjectionDecoder();
       try {
@@ -175,7 +174,6 @@ export class LocalZoneSource implements WorldSource {
     this.#releaseWorld = null;
     this.#zone = null;
     this.#latest = null;
-    this.#history.reset();
     this.#clock.reset();
     try {
       if (zone) {
@@ -229,14 +227,9 @@ export class LocalZoneSource implements WorldSource {
     return "connected";
   }
 
-  sample(): readonly EntityState[] {
-    const latest = this.#latest;
-    if (!latest) {
-      return [];
-    }
-    // One tick of interpolation delay: blend from the previous tick toward the latest.
-    const renderTick = latest.tick > 0n ? latest.tick - 1n : 0n;
-    return this.#history.sample(renderTick, this.#clock.fraction);
+  shown(): ShownUnits {
+    // The fraction of a tick the clock accumulated since the latest local tick.
+    return interpolated(this.#clock.fraction);
   }
 
   #requireZone(): LocalZoneHandle {
@@ -259,12 +252,7 @@ export class LocalZoneSource implements WorldSource {
     if (snapshot.viewerId !== player) {
       throw new Error("The local zone addressed a projection to another player.");
     }
-    if (this.#latest && this.#latest.zoneId !== snapshot.zoneId) {
-      // The character changed zone (#404): the new zone's ticks are its own.
-      this.#history.reset();
-    }
     this.#latest = snapshot;
-    this.#history.push(snapshot);
     return snapshot;
   }
 }
