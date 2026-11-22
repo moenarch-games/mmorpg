@@ -19,6 +19,8 @@ const FLOWERS = [0xf2cf3a, 0xf3efe2, 0x8f7ad6, 0xd9493a] as const;
 const BUILDS_PER_FRAME = 3;
 /** How far either side of a profile's `swap` distance a clump changes from the full to the light clump. */
 const SWAP_JITTER = 3;
+/** Half-width of the dithered full/light cross-fade, in metres; both LODs contribute in this band. */
+const SWAP_BLEND = 4;
 /** The share of the rank range over which a clump dissolves in as its distance's share passes its rank. */
 const GROW = 0.08;
 /** How much wider than a near clump a far clump spreads, which stands for about ten of them. */
@@ -31,7 +33,7 @@ const FLAT_SHADE = 0.72;
 
 /**
  * The field at each world detail (`graphics.world_detail`; `low` draws none). A `density` share of the near clumps is
- * drawn within `full` metres of the eye; beyond, they thin out to none at `fade`, each clump dissolving on
+ * drawn within `full` metres of the character (the eye without one); beyond, they thin out to none at `fade`, each clump dissolving on
  * its own as its distance's share passes its rank, so no line shows where the field ends. Within `swap` metres a clump
  * has all its blades; beyond, the light clump. The far field's sparse wide clumps grow in from `farFrom` as the near
  * one thins, at most a `farDensity` share of them, and thin out again to none at `farTo`.
@@ -295,7 +297,11 @@ void main() {
         float rise = grassRamp.y > grassRamp.x ? clamp((d - grassRamp.x) / (grassRamp.y - grassRamp.x), 0.0, 1.0) : 1.0;
         float share = grassMix.x * rise * pow(1.0 - clamp((d - grassRamp.z) / (grassRamp.w - grassRamp.z), 0.0, 1.0), grassMix.y);
         float jittered = d + (fract(grassRank * 61.7) * 2.0 - 1.0) * ${SWAP_JITTER.toFixed(1)};
-        float shown = clamp((share - grassRank) / ${GROW.toFixed(2)}, 0.0, 1.0) * step(grassMix.z, jittered) * step(jittered, grassMix.w);
+        // The full and light clumps overlap smoothly across the jittered LOD boundary.
+        // An open bound (-/+1e4) keeps flowers and the independent far layer fully in-band.
+        float band = smoothstep(grassMix.z - ${SWAP_BLEND.toFixed(1)}, grassMix.z + ${SWAP_BLEND.toFixed(1)}, jittered)
+            * (1.0 - smoothstep(grassMix.w - ${SWAP_BLEND.toFixed(1)}, grassMix.w + ${SWAP_BLEND.toFixed(1)}, jittered));
+        float shown = clamp((share - grassRank) / ${GROW.toFixed(2)}, 0.0, 1.0) * band;
         float spread = 1.0 + grassSpread.z * clamp((d - grassSpread.x) / (grassSpread.y - grassSpread.x), 0.0, 1.0);
         world.xz = origin.xz + (world.xz - origin.xz) * spread;
         grassShown = shown;
@@ -353,7 +359,7 @@ type Cell = { meshes: { kind: Kind; mesh: THREE.InstancedMesh; blades: boolean }
 type Layer = { size: number; cells: Map<string, Cell | null>; build: (column: number, row: number) => Float32Array };
 
 /**
- * Grass blades over the ground around the camera (presentation only): clumps of thin blades on the cells the shared
+ * Grass blades around the character (or camera without one), presentation only: clumps on the cells the shared
  * owner grows them in, every clump drawn near the eye and fewer, wider, lighter ones further out, then the far field's
  * sparse wide clumps as far as the world detail setting reaches. At `low` it draws nothing and keeps no cells.
  */
@@ -377,11 +383,11 @@ export class Grass {
     this.root.name = "greyhaven.grass";
     const kind = (geometry: THREE.BufferGeometry, flower = false): Kind => ({ geometry, ...grassMaterial(this.#shared, flower) });
     this.#full = kind(clumpGeometry(15, [0, 0.4, 0.75], 1, [0.4, 1]));
-    // Seen from further off, its tips a little darker, so the field deepens with distance.
-    this.#light = kind(clumpGeometry(7, [0, 0.5], 1.5, [0.45, 0.9]));
+    // The simplified blades retain the same per-clump colour gradient as the full blades during LOD overlap.
+    this.#light = kind(clumpGeometry(7, [0, 0.5], 1.5, [0.4, 1]));
     this.#flowers = kind(flowerGeometry(), true);
-    // Narrow blades in the turf's own shade, so a far clump reads as texture on the ground, not a spike over it.
-    this.#far = kind(clumpGeometry(8, [0], 1.4, [0.6, 0.85]));
+    // The far layer samples the same terrain tint and blade shade as the near layer; distance flattening fades it into turf.
+    this.#far = kind(clumpGeometry(8, [0], 1.4, [0.4, 1]));
     this.#farFlowers = kind(flowerGeometry(3, 1.2, [0, 1]), true);
     this.#near = { size: source.cellMetres, cells: new Map(), build: (column, row) => source.cell(column, row) };
     const { farCell, farCellMetres } = source;
@@ -424,17 +430,20 @@ export class Grass {
     this.#changed = true;
   }
 
-  /** Grows and drops cells around `eye`, thins them by distance and moves the wind; `feet` push the blades aside. */
+  /** Grows and drops cells around the player (or eye without one), thins them and moves the wind; `feet` push blades aside. */
   update(eye: readonly [number, number, number], feet: readonly [number, number, number] | null, seconds: number): void {
     const profile = this.#profile;
     if (!profile) { return; }
     this.#shared.grassTime.value = seconds;
-    this.#shared.grassEye.value.set(eye[0], eye[1], eye[2]);
+    // Orbiting the camera must not move the vegetation-density field across the player's feet.
+    // Use the character as the stable reference, falling back to the eye for views without one.
+    const anchor = feet ?? eye;
+    this.#shared.grassEye.value.set(anchor[0], anchor[1], anchor[2]);
     if (feet) { this.#shared.grassPush.value.set(feet[0], feet[1], feet[2]); }
     const { near, far } = Grass.#shares(profile);
     let builds = BUILDS_PER_FRAME;
-    builds -= this.#stream(this.#near, eye, profile.fade + 6, near, builds, false);
-    if (this.#distant) { this.#stream(this.#distant, eye, profile.farTo + 8, far, Math.max(builds, 1), true); }
+    builds -= this.#stream(this.#near, anchor, profile.fade + 6, near, builds, false);
+    if (this.#distant) { this.#stream(this.#distant, anchor, profile.farTo + 8, far, Math.max(builds, 1), true); }
   }
 
   /** Keeps `layer`'s cells within `keep` metres of `eye`, builds up to `builds` missing ones, nearest first; how many it built. */
@@ -477,8 +486,8 @@ export class Grass {
       const flowers = cell.flowering.findIndex((index) => index >= count);
       const flowering = flowers < 0 ? cell.flowering.length : flowers;
       for (const { kind, mesh, blades } of cell.meshes) {
-        const swapped = kind === this.#full ? nearest < this.#profile!.swap + SWAP_JITTER
-          : kind === this.#light ? furthest > this.#profile!.swap - SWAP_JITTER : true;
+        const swapped = kind === this.#full ? nearest < this.#profile!.swap + SWAP_JITTER + SWAP_BLEND
+          : kind === this.#light ? furthest > this.#profile!.swap - SWAP_JITTER - SWAP_BLEND : true;
         const drawn = blades ? count : flowering;
         const visible = swapped && drawn > 0;
         if (mesh.visible !== visible) { mesh.visible = visible; }
