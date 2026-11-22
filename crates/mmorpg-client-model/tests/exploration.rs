@@ -34,7 +34,7 @@ fn discoveries_and_quest_hints_follow_the_received_sheets() {
             "{}",
             area.name
         );
-        assert!(area.min[0] < area.max[0] && area.min[1] < area.max[1]);
+        assert!(area.rings.first().is_some_and(|ring| ring.len() >= 3) && area.radius > 0.0);
     }
 
     // An active explore objective hints at its whole area until the zone confirms it.
@@ -105,4 +105,66 @@ fn discoveries_and_quest_hints_follow_the_received_sheets() {
         })),
     );
     assert!(hunting.hints.iter().any(|hint| hint.quest == kill.id.get()));
+}
+
+/// Points of interest (#1063) show only in discovered areas, each kind with its own marker, and
+/// a quest giver shows only while the received sheet marks them.
+#[test]
+fn points_of_interest_follow_discovery_and_the_quest_sheet() {
+    use mmorpg_client_model::exploration::PointKind;
+    use mmorpg_core::{NpcMarker, QuestMarker};
+    let content = greyhaven_vale::content();
+    let fresh = exploration_map(&content, &BTreeSet::new(), None);
+    // Only the Outpost is known: its waystone and its vendors and healer.
+    let outpost = greyhaven_vale::vale::OUTPOST;
+    for point in &fresh.points {
+        let at = [point.at[0] * 100.0, point.at[1] * 100.0].map(|v| v.round() as i32);
+        assert_eq!(
+            greyhaven_vale::area_at(at[0], at[1]).map(|a| a.id()),
+            Some(outpost),
+            "{}",
+            point.name
+        );
+    }
+    let kinds: BTreeSet<_> = fresh.points.iter().map(|point| point.kind).collect();
+    assert!(kinds.contains(&PointKind::Waystone) && kinds.contains(&PointKind::Service));
+
+    // Everything discovered: every kind shows.
+    let all: BTreeSet<_> = content.discoveries().iter().copied().collect();
+    let marshal = content.npcs()[0].id;
+    let sheet = QuestSheet {
+        completed: BTreeSet::new(),
+        entries: Vec::new(),
+        markers: vec![NpcMarker {
+            npc: marshal,
+            marker: QuestMarker::Available,
+        }],
+    };
+    let map = exploration_map(&content, &all, Some(&sheet));
+    let kinds: BTreeSet<_> = map.points.iter().map(|point| point.kind).collect();
+    assert_eq!(
+        kinds,
+        BTreeSet::from([
+            PointKind::Waystone,
+            PointKind::Dungeon,
+            PointKind::Landmark,
+            PointKind::Service,
+            PointKind::QuestGiver
+        ])
+    );
+    let givers: Vec<_> = map
+        .points
+        .iter()
+        .filter(|point| point.kind == PointKind::QuestGiver)
+        .map(|point| point.name.as_str())
+        .collect();
+    assert_eq!(givers, [content.npcs()[0].name.as_str()]);
+    for name in [
+        "Greyfang Cave",
+        "Redbrand Mine",
+        "Drowned Watchtower",
+        "Wolfrun Den",
+    ] {
+        assert!(map.points.iter().any(|point| point.name == name), "{name}");
+    }
 }

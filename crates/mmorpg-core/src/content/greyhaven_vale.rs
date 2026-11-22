@@ -42,6 +42,7 @@ pub mod highland_bandits;
 pub mod highlands;
 pub mod hunt;
 pub mod inn;
+pub mod landmarks;
 pub mod landscape;
 pub mod layout;
 pub mod lynx;
@@ -2047,6 +2048,7 @@ fn content_with_spawns(
             .with_hunt(hunt::outing())?
             .with_cart(cart::journey())?
             .with_caches(discoveries::caches())?
+            .with_landmarks(landmarks::landmarks())?
             .with_waystones(vec![
                 crate::GREYHAVEN_OUTPOST,
                 crate::BARROWDOWN,

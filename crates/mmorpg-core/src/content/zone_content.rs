@@ -115,6 +115,8 @@ pub struct ZoneContent {
     dens: Vec<crate::WildlifeDen>,
     /// Optional discovery caches (#913), in ID order.
     caches: Vec<crate::DiscoveryCache>,
+    /// Named places clients mark on their maps (#1063).
+    landmarks: Vec<crate::Landmark>,
 }
 
 /// A body as `(centre, half extents)` in units.
@@ -255,6 +257,7 @@ impl ZoneContent {
             depths_site: None,
             dens: Vec::new(),
             caches: Vec::new(),
+            landmarks: Vec::new(),
         };
         content.simulation_fingerprint = content.compute_simulation_fingerprint();
         content.rng_seed = content.simulation_fingerprint;
@@ -319,6 +322,7 @@ impl ZoneContent {
             depths_site: None,
             dens: Vec::new(),
             caches: Vec::new(),
+            landmarks: Vec::new(),
         };
         content.simulation_fingerprint = content.compute_simulation_fingerprint();
         content.rng_seed = content.simulation_fingerprint;
@@ -1717,7 +1721,7 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_cart_fingerprint();
+        let fingerprint = self.compute_landmark_fingerprint();
         let Some(rewind) = self.hit_rewind else {
             return fingerprint;
         };
@@ -1817,6 +1821,45 @@ impl ZoneContent {
     #[must_use]
     pub fn caches(&self) -> &[crate::DiscoveryCache] {
         &self.caches
+    }
+
+    /// Adds the named places clients mark on their maps (#1063): each a short name.
+    pub fn with_landmarks(mut self, landmarks: Vec<crate::Landmark>) -> Result<Self, ZoneError> {
+        if landmarks.iter().any(|landmark| {
+            landmark.name.trim().is_empty() || landmark.name.len() > MAX_UNIT_NAME_BYTES
+        }) {
+            return Err(ZoneError::new("a landmark needs a short name"));
+        }
+        self.landmarks = landmarks;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// The named places clients mark on their maps (#1063), in content order.
+    #[must_use]
+    pub fn landmarks(&self) -> &[crate::Landmark] {
+        &self.landmarks
+    }
+
+    /// Landmarks (#1063) enter the identity only when a zone has some.
+    fn compute_landmark_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_cart_fingerprint();
+        if self.landmarks.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/landmarks-v1");
+        hash.u64(fingerprint);
+        hash.len(self.landmarks.len());
+        for landmark in &self.landmarks {
+            hash.text(&landmark.name);
+            hash.u8(match landmark.kind {
+                crate::LandmarkKind::Dungeon => 1,
+                crate::LandmarkKind::Sight => 2,
+            });
+            hash.i32s(&landmark.at);
+        }
+        hash.finish()
     }
 
     /// A merchant's cart journey (#992) enters the identity only when a zone has one.

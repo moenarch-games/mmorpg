@@ -48,6 +48,7 @@ mod home;
 pub mod hunt;
 mod interest;
 mod inventory;
+mod landmark;
 mod loot;
 mod mastery;
 mod melee;
@@ -195,6 +196,7 @@ pub use inventory::{
     INVENTORY_SLOTS, ITEM_CATALOG, Inventory, InventoryError, ItemId, ItemStack, ItemTemplate,
     item_template,
 };
+pub use landmark::{Landmark, LandmarkKind};
 pub use loot::{
     LootOutcome, LootRewards, LootRolls, LootSettlementError, LootTable, LootTableError,
     MAX_LOOT_OUTCOMES, loot_table, settle_loot,
