@@ -45,6 +45,9 @@ pub enum CreatureFamily {
     /// The Fenwater river crayfish (#996): an armoured bank ambusher whose shell and claws
     /// turn blows at its front; it raises a claw slowly and pinches.
     Crayfish,
+    /// The Southwood stag (#997): neutral but territorial, it grazes until a player comes too
+    /// close, then lowers its antlers and charges.
+    Stag,
 }
 
 impl CreatureFamily {
@@ -67,6 +70,7 @@ impl CreatureFamily {
             Self::Adder => "adder",
             Self::Bat => "bat",
             Self::Crayfish => "crayfish",
+            Self::Stag => "stag",
         }
     }
 
@@ -84,6 +88,13 @@ impl CreatureFamily {
     #[must_use]
     pub const fn pounces(self) -> bool {
         matches!(self, Self::Lynx)
+    }
+
+    /// Territorial families (#997) are neutral, but a living player who comes within
+    /// [`crate::TERRITORY_RADIUS_UNITS`] of an idle one is a threat it engages.
+    #[must_use]
+    pub const fn territorial(self) -> bool {
+        matches!(self, Self::Stag)
     }
 
     /// Fliers (#995) are weightless: they hold their own height, roost above the ground and

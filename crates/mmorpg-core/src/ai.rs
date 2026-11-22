@@ -1,7 +1,8 @@
 //! Deterministic creature AI (tick step 2), in creature-ID order.
 //!
 //! - **Idle**: aggressive creatures engage the nearest living player within
-//!   their aggro radius, found through the zone's spatial index. Otherwise
+//!   their aggro radius, found through the zone's spatial index, and a territorial
+//!   neutral (#997) one within its territory. Otherwise
 //!   they wait 5–15 s (zone RNG), then walk to a random point within their
 //!   wander radius at walking speed. Large creatures (#297) hold their
 //!   ground instead.
@@ -303,10 +304,13 @@ impl ZoneSimulation {
             .raid
             .is_some_and(|member| member.leg == crate::RaidLeg::Retreat);
         let home = self.creature_home(id, spawn);
+        // A territorial neutral (#997) engages a player who comes within its territory.
+        let territorial =
+            template.behaviour == CreatureBehaviour::Neutral && template.family.territorial();
         if idle
             && !withdrawing
-            && template.behaviour == CreatureBehaviour::Aggressive
-            && let Some(player) = self.aggro_candidate(here, level, template.family.ambushes())?
+            && (template.behaviour == CreatureBehaviour::Aggressive || territorial)
+            && let Some(player) = self.aggro_candidate(here, level, template.family, territorial)?
             && !self.in_handoff_corridor(player)
         {
             self.engage(id, EntityRef::Player(player), true)?;
@@ -692,12 +696,14 @@ impl ZoneSimulation {
     }
 
     /// The nearest living player inside its aggro radius, an ambusher's (#889) the fixed
-    /// [`crate::AMBUSH_RADIUS_UNITS`], ties to the lowest ID.
+    /// [`crate::AMBUSH_RADIUS_UNITS`] and a territorial neutral's (#997)
+    /// [`crate::TERRITORY_RADIUS_UNITS`], ties to the lowest ID.
     fn aggro_candidate(
         &self,
         here: [i32; 2],
         level: u8,
-        ambushes: bool,
+        family: crate::CreatureFamily,
+        territorial: bool,
     ) -> Result<Option<PlayerId>, ZoneError> {
         let mut best: Option<(i64, PlayerId)> = None;
         for entity in self
@@ -717,7 +723,9 @@ impl ZoneSimulation {
             }
             let position = self.player_position(player_id)?;
             let distance = distance_squared(here, [position.x, position.z]);
-            let radius = i64::from(if ambushes {
+            let radius = i64::from(if territorial {
+                crate::TERRITORY_RADIUS_UNITS
+            } else if family.ambushes() {
                 crate::AMBUSH_RADIUS_UNITS
             } else {
                 aggro_radius(level, player.level)

@@ -1457,10 +1457,17 @@ impl UnitPresenter {
         let follow = clips
             .bites
             .and_then(|bites| bites.follow)
-            .map(|clips| clips.map(|clip| (clip, self.duration(kind, clip))));
+            .map(|(then, last)| {
+                (
+                    (then, self.duration(kind, then)),
+                    last.map_or(("", 0.), |last| (last, self.duration(kind, last))),
+                )
+            });
         let playback = self.playbacks.entry(source).or_default();
         playback.strike(clip, duration, Region::Whole, seconds);
-        if let Some([then, last]) = follow {
+        // A stag's charge (#997) follows its alert with `Attack_A` alone, which holds its own
+        // recovery: a zero-length last clip adds none.
+        if let Some((then, last)) = follow {
             playback.recover_through(then, last);
         }
         playback.swung();
@@ -2821,7 +2828,8 @@ impl UnitPresenter {
             | CreatureFamily::Lynx
             | CreatureFamily::Adder
             | CreatureFamily::Bat
-            | CreatureFamily::Crayfish),
+            | CreatureFamily::Crayfish
+            | CreatureFamily::Stag),
         ) = family
         {
             return creatures::animal(

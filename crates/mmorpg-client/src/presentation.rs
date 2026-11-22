@@ -1515,6 +1515,7 @@ fn creature_color(family: CreatureFamily, hostile: bool) -> [f32; 3] {
         CreatureFamily::Adder => 0.12,
         CreatureFamily::Bat => 0.08,
         CreatureFamily::Crayfish => 0.06,
+        CreatureFamily::Stag => 0.06,
     };
     if hostile {
         [0.78 - shade, 0.24 + shade * 0.5, 0.18]

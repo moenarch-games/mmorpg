@@ -214,7 +214,8 @@ impl UnitModel {
                 Some(CreatureFamily::Wolf | CreatureFamily::Lynx) => {
                     Self::Quadruped(AnimalKind::Wolf)
                 }
-                Some(CreatureFamily::Boar | CreatureFamily::Bear) => {
+                // The stag (#997) falls back to the boar's.
+                Some(CreatureFamily::Boar | CreatureFamily::Bear | CreatureFamily::Stag) => {
                     Self::Quadruped(AnimalKind::Boar)
                 }
                 // The beasts of #889, the adder (#990), the bat (#995) and the crayfish (#996) fall

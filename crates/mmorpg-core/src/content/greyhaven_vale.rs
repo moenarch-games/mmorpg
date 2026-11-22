@@ -62,6 +62,7 @@ mod roofs;
 pub mod settlements;
 pub mod shrine;
 pub mod signal_post;
+pub mod stag;
 pub mod traps;
 pub mod units;
 pub mod vale;

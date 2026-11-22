@@ -38,6 +38,12 @@
 //!   [`CRAYFISH_RECOVER_TICKS`]. Its shell and claws turn blows at its front (a shielded
 //!   template, like the Redbrand Brute's guard, #953), so the pinch's recovery and its
 //!   flanks are the openings.
+//! - **Charge.** The stag (#997) is neutral but territorial and has one attack, an antler charge:
+//!   from [`STAG_CHARGE_UNITS`] beyond its reach it stands head up through its `Alert`
+//!   ([`STAG_ALERT_TICKS`]), turning toward its target, then lowers its antlers and charges
+//!   along its facing over [`STAG_CHARGE_TICKS`] to `Attack_A`'s contact, and stands blown
+//!   through the rest of the clip, [`STAG_RECOVER_TICKS`]. Stepping aside as it charges dodges
+//!   it; its recovery is the opening to hit back.
 //!
 //! A pending attack is canonical creature state, so replay and recovery continue mid-bite.
 //! Outcomes stay health only: no knockback or hitstun.
@@ -111,6 +117,26 @@ pub const CRAYFISH_RECOVER_TICKS: u16 = crate::ticks_from_ms(1_250 - CRAYFISH_CO
 /// The crayfish scuttles after a target at 1.5 m/s: a player who walks away leaves it behind.
 pub const CRAYFISH_SCUTTLE_SPEED_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(150);
 
+/// The stag's antler charge (#997), from the wildlife descriptor's `greyhaven.wild.stag` clips
+/// (asset-tooling #804): it warns through one 1 s `Alert`, then its `Attack_A` (1.333 s) makes
+/// contact 0.625 s in, its root travelling 2 m between 0.333 s and that contact. The release's
+/// `Attack_B` is a rearing swipe the zone does not use.
+const STAG_ALERT_MS: u32 = 1_000;
+const STAG_CONTACT_MS: u32 = STAG_ALERT_MS + 625;
+const STAG_CHARGE_START_MS: u32 = STAG_ALERT_MS + 333;
+/// The stag's warning: the ticks it stands head up before it lowers its antlers.
+pub const STAG_ALERT_TICKS: u16 = crate::ticks_from_ms(STAG_ALERT_MS);
+/// How far beyond its reach (units) the stag begins its charge: `Attack_A`'s 2 m.
+pub const STAG_CHARGE_UNITS: i32 = 200;
+/// The last ticks of the charge's wind-up, from its take-off to its contact, in which the
+/// stag charges along its facing.
+pub const STAG_CHARGE_TICKS: u16 =
+    crate::ticks_from_ms(STAG_CONTACT_MS) - crate::ticks_from_ms(STAG_CHARGE_START_MS);
+/// The charge's speed, covering [`STAG_CHARGE_UNITS`] in [`STAG_CHARGE_TICKS`] (6.9 m/s).
+pub const STAG_CHARGE_SPEED_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(690);
+/// Ticks after its contact the stag stands still, the rest of `Attack_A`, open to a counter.
+pub const STAG_RECOVER_TICKS: u16 = crate::ticks_from_ms(1_333 - 625);
+
 /// A set-piece attack (#989, #990): one attack, begun from [`Self::leap_units`] beyond the
 /// creature's reach, wound up standing still and turning toward its target, closed with a leap
 /// over the wind-up's last [`Self::leap_ticks`], then a still recovery of
@@ -126,8 +152,8 @@ pub struct Lunge {
 }
 
 /// The set-piece attack of `family`, if it has one: the lynx's pounce (#989), the marsh
-/// adder's coiled strike (#990), the cave bat's dive (#995) and the
-/// river crayfish's claw pinch (#996).
+/// adder's coiled strike (#990), the cave bat's dive (#995), the river crayfish's claw pinch
+/// (#996) and the stag's antler charge (#997).
 #[must_use]
 pub const fn lunge(family: CreatureFamily) -> Option<Lunge> {
     match family {
@@ -158,6 +184,13 @@ pub const fn lunge(family: CreatureFamily) -> Option<Lunge> {
             leap_speed: 0,
             recover_ticks: CRAYFISH_RECOVER_TICKS,
             approach_speed: CRAYFISH_SCUTTLE_SPEED_SUBUNITS_PER_TICK,
+        }),
+        CreatureFamily::Stag => Some(Lunge {
+            leap_units: STAG_CHARGE_UNITS,
+            leap_ticks: STAG_CHARGE_TICKS,
+            leap_speed: STAG_CHARGE_SPEED_SUBUNITS_PER_TICK,
+            recover_ticks: STAG_RECOVER_TICKS,
+            approach_speed: crate::CREATURE_WALK_SPEED_SUBUNITS_PER_TICK,
         }),
         _ => None,
     }
@@ -220,6 +253,8 @@ pub const fn contact_ticks(family: CreatureFamily, attack: CreatureAttack) -> Op
         CreatureFamily::Bat => [BAT_CONTACT_MS, BAT_CONTACT_MS],
         // The crayfish (#996) pinches only: `Attack_A`'s claw raise, then its contact.
         CreatureFamily::Crayfish => [CRAYFISH_CONTACT_MS, CRAYFISH_CONTACT_MS],
+        // The stag (#997) charges only: its `Alert`, then `Attack_A`'s contact.
+        CreatureFamily::Stag => [STAG_CONTACT_MS, STAG_CONTACT_MS],
         CreatureFamily::Marauder
         | CreatureFamily::Mirefin
         | CreatureFamily::Redbrand

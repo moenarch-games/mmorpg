@@ -53,6 +53,8 @@ pub mod templates {
     pub const CAVE_BAT: CreatureTemplateId = CreatureTemplateId::new(24);
     /// The Fenwater river crayfish (#996): an armoured bank ambusher whose front turns blows.
     pub const RIVER_CRAYFISH: CreatureTemplateId = CreatureTemplateId::new(25);
+    /// The Southwood stag (#997): neutral but territorial; it charges a player who comes close.
+    pub const SOUTHWOOD_STAG: CreatureTemplateId = CreatureTemplateId::new(26);
 }
 
 /// Default respawn time: 60 s.
@@ -92,6 +94,9 @@ const BAT: [i32; 3] = [30, 19, 30];
 /// The wildlife release's river crayfish (#996), 0.67 m wide, 1.38 m long and 0.32 m tall, on a
 /// square footprint between its width and length.
 const CRAYFISH: [i32; 3] = [50, 16, 50];
+/// The wildlife release's 2 m stag (#997) to its antler tips, on a square footprint between its
+/// width and length.
+const STAG: [i32; 3] = [45, 100, 45];
 const HUMANOID: [i32; 3] = [30, 90, 30];
 const LURKER: [i32; 3] = [35, 80, 35];
 /// A 1.4 m rolling boulder (#299).
@@ -125,9 +130,9 @@ type TemplateRow = (
 );
 
 #[rustfmt::skip]
-const TEMPLATES: [TemplateRow; 24] = {
+const TEMPLATES: [TemplateRow; 25] = {
     use CreatureBehaviour::{Aggressive, Neutral, Prop};
-    use CreatureFamily::{Adder, Bat, Bear, Boar, Crayfish, Lurker, Lynx, Marauder, Mirefin, Ogre, Redbrand, Spider, Vermin, Wolf};
+    use CreatureFamily::{Adder, Bat, Bear, Boar, Crayfish, Lurker, Lynx, Marauder, Mirefin, Ogre, Redbrand, Spider, Stag, Vermin, Wolf};
     use crate::PropKind;
     use templates::*;
     [
@@ -169,6 +174,8 @@ const TEMPLATES: [TemplateRow; 24] = {
         (CAVE_BAT, "Cave Bat", Bat, Aggressive, [3, 4], false, 36, 10, [3, 6], 1, crate::ticks_from_ms(2_600), RESPAWN_TICKS, BAT),
         // The Fenwater crayfish (#996): the crossing's level, a hard shell and a slow, heavy pinch.
         (RIVER_CRAYFISH, "River Crayfish", Crayfish, Aggressive, [3, 4], false, 70, 14, [5, 9], 1, crate::ticks_from_ms(3_000), RESPAWN_TICKS, CRAYFISH),
+        // The Southwood stag (#997): Southwood's upper level, a strong body and a slow, warned charge.
+        (SOUTHWOOD_STAG, "Southwood Stag", Stag, Neutral, [3, 4], false, 80, 16, [5, 9], 1, crate::ticks_from_ms(3_000), RESPAWN_TICKS, STAG),
     ]
 };
 
@@ -500,6 +507,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::bat::spawns())
         // The Fenwater river crayfish (#996).
         .chain(super::crayfish::spawns())
+        // The Southwood stags (#997).
+        .chain(super::stag::spawns())
         .collect()
 }
 
