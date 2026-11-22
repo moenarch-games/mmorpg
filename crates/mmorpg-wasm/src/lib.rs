@@ -38,6 +38,7 @@ pub mod projections;
 pub mod scenario;
 pub mod scenery;
 pub mod static_scene;
+pub mod unit_layout;
 pub mod units;
 pub mod wire;
 pub mod world_map;
@@ -1289,6 +1290,9 @@ impl UnitPresenter {
         self.0.take_audio()
     }
 
+    /// One frame, laid out in WASM memory (#1057, [`unit_layout`]): read it through
+    /// [`Self::directory`] and [`Self::memory`], with [`Self::fresh_strings`] when its header
+    /// counts new strings.
     pub fn frame(
         &mut self,
         units: &[f64],
@@ -1299,7 +1303,7 @@ impl UnitPresenter {
         choice: u32,
         headwear: &str,
         #[wasm_bindgen(js_name = previewYaw)] preview_yaw: f32,
-    ) -> Result<String, JsError> {
+    ) -> Result<(), JsError> {
         self.0
             .frame(
                 units,
@@ -1314,18 +1318,21 @@ impl UnitPresenter {
             .map_err(|error| JsError::new(&error))
     }
 
-    /// Model matrices of the last call's draws, 16 floats each.
-    pub fn models(&self) -> Vec<f32> {
-        self.0.buffers.models.clone()
+    /// The address of the last layout's buffer directory, [`units::Directory`]: pointer,
+    /// capacity and length of its words, numbers, models, vertices and indices.
+    pub fn directory(&self) -> usize {
+        std::ptr::from_ref(self.0.directory()) as usize
     }
 
-    /// Positions, normals and colours of the last call's new geometries.
-    pub fn vertices(&self) -> Vec<f32> {
-        self.0.buffers.vertices.clone()
+    /// The module's memory, which the directory's pointers address.
+    pub fn memory(&self) -> JsValue {
+        wasm_bindgen::memory()
     }
 
-    pub fn indices(&self) -> Vec<u32> {
-        self.0.buffers.indices.clone()
+    /// The last layout's new strings, each followed by a newline, in interning order.
+    #[wasm_bindgen(js_name = freshStrings)]
+    pub fn fresh_strings(&self) -> String {
+        self.0.layout().fresh_strings().to_owned()
     }
 }
 
