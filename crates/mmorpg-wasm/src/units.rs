@@ -21,7 +21,9 @@ use mmorpg_client_model::{
     impact::{ImpactKind, impact_cues},
     interpolation::{Pose, SnapshotHistory},
 };
-use mmorpg_core::{ClassChoice, CreatureId, EntityKind, EntityRef, EntitySnapshot, NpcId, ZoneSnapshot};
+use mmorpg_core::{
+    ClassChoice, CreatureId, EntityKind, EntityRef, EntitySnapshot, NpcId, ZoneSnapshot,
+};
 use mmorpg_presentation::{
     audio::{AudioCues, AudioOp},
     units::{
@@ -532,10 +534,6 @@ fn sampled_unit(record: EntitySnapshot, position: [f64; 3], facing: f64) -> Samp
             metres(position[1] + f64::from(relief)),
             metres(position[2]),
         ],
-        yaw: Pose {
-            position,
-            facing,
-        }
-        .yaw_radians() as f32,
+        yaw: Pose { position, facing }.yaw_radians() as f32,
     }
 }

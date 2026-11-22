@@ -169,7 +169,10 @@ fn interpolate<S: Borrow<ZoneSnapshot>>(
     alpha: f64,
     poses: &mut [Pose],
 ) -> usize {
-    let (earlier, later) = (&from.snapshot.borrow().entities, &to.snapshot.borrow().entities);
+    let (earlier, later) = (
+        &from.snapshot.borrow().entities,
+        &to.snapshot.borrow().entities,
+    );
     let key = |records: &[mmorpg_core::EntitySnapshot], index: u16| -> EntityRef {
         records[usize::from(index)].entity()
     };
@@ -183,7 +186,9 @@ fn interpolate<S: Borrow<ZoneSnapshot>>(
         {
             visited += 1;
         }
-        let Some(&&matched) = next.peek().filter(|&&&candidate| key(later, candidate) == entity)
+        let Some(&&matched) = next
+            .peek()
+            .filter(|&&&candidate| key(later, candidate) == entity)
         else {
             continue;
         };
@@ -300,12 +305,22 @@ mod tests {
         history.push(projection(2, vec![player(3, 20, 0), player(1, 12, 0)]));
         let mut poses = Vec::new();
         let sample = history.sample_behind(0.5, &mut poses).unwrap();
-        let ids: Vec<_> = sample.snapshot.entities.iter().map(|unit| unit.id).collect();
+        let ids: Vec<_> = sample
+            .snapshot
+            .entities
+            .iter()
+            .map(|unit| unit.id)
+            .collect();
         assert_eq!(ids, [2, 1]);
         assert_eq!(poses[0].position[0], 10., "the vanishing unit holds");
         assert_eq!(poses[1].position[0], 6., "the shared unit moves");
         let sample = history.sample_behind(0., &mut poses).unwrap();
-        let ids: Vec<_> = sample.snapshot.entities.iter().map(|unit| unit.id).collect();
+        let ids: Vec<_> = sample
+            .snapshot
+            .entities
+            .iter()
+            .map(|unit| unit.id)
+            .collect();
         assert_eq!(ids, [3, 1]);
     }
 

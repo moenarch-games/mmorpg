@@ -17,16 +17,16 @@ use crate::{
     camera::CameraView,
     unit_models::{Gait, MODEL_BOX_BUDGET, Placement, UnitModel, append_unit},
 };
+use mmorpg_client_model::{
+    impact::impact_cues,
+    interpolation::{Pose, SnapshotHistory},
+};
 use mmorpg_core::{
     CreatureFamily, CreatureTemplateId, EntityKind, EntityRef, EntitySnapshot, NpcRole,
     PLAYER_HALF_EXTENTS_UNITS, TICK_HZ, UNITS_PER_METRE, ZoneContent, ZoneSnapshot,
 };
 use mmorpg_presentation::units::{
     FrameInput, SampledUnit, UnitPresenter, Viewer, imported::Kind, player,
-};
-use mmorpg_client_model::{
-    impact::impact_cues,
-    interpolation::{Pose, SnapshotHistory},
 };
 use mmorpg_scenery::Scenery;
 use std::{
@@ -350,7 +350,8 @@ impl Presentation {
                 .push(&snapshot, |unit| presenter.rendered(unit.position)),
         );
         // Each accepted (strictly newer) projection admits its impacts exactly once.
-        self.impacts.extend(impact_cues(&snapshot).map(|cue| (cue.kind, cue.source, cue.target)));
+        self.impacts
+            .extend(impact_cues(&snapshot).map(|cue| (cue.kind, cue.source, cue.target)));
         while self.impacts.len() > MAX_PENDING_IMPACTS {
             self.impacts.pop_front();
         }

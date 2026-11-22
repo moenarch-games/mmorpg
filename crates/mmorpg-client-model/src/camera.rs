@@ -286,7 +286,10 @@ mod tests {
         let camera = OrbitCamera::default();
         let view = camera.view([1., 0.9, -2.]);
         assert!(close(view.target, [0.35, 1.5, -2.]));
-        assert!(view.eye[2] < view.target[2], "the eye is behind the character");
+        assert!(
+            view.eye[2] < view.target[2],
+            "the eye is behind the character"
+        );
         assert!(view.eye[1] > view.target[1], "and above it");
         assert!(view.eye[0] < 1. && (view.eye[0] - view.target[0]).abs() < 1e-9);
         let offset: [f64; 3] = std::array::from_fn(|axis| view.eye[axis] - view.target[axis]);
@@ -301,7 +304,10 @@ mod tests {
         // A quarter turn to the right: facing +Z turns to face -X.
         camera.orbit(FRAC_PI_2 / ORBIT_RADIANS_PER_PIXEL, 0.);
         assert!(camera.facing().abs_diff(49_152) <= 2, "{}", camera.facing());
-        assert!(camera.view([0.; 3]).eye[0] > 0.5, "the eye moved behind a -X heading");
+        assert!(
+            camera.view([0.; 3]).eye[0] > 0.5,
+            "the eye moved behind a -X heading"
+        );
         camera.orbit(-PI / ORBIT_RADIANS_PER_PIXEL, 0.);
         assert!(camera.facing().abs_diff(16_384) <= 2, "{}", camera.facing());
         camera.look_along(PI);
@@ -332,7 +338,10 @@ mod tests {
         assert!(top.eye[1] < top.target[1] + camera.distance());
         camera.orbit(0., -1e9);
         let low = camera.view([0.; 3]);
-        assert!(low.eye[1] < low.target[1], "looking up places the eye below the pivot");
+        assert!(
+            low.eye[1] < low.target[1],
+            "looking up places the eye below the pivot"
+        );
         camera.zoom(1e3);
         assert_eq!(camera.target_distance(), MIN_DISTANCE_METRES);
         camera.update(0., true);
