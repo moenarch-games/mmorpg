@@ -17,7 +17,7 @@
 
 use std::fmt;
 
-use crate::{ErrorCode, PlayerId, ZoneError, ZoneEvent, ZoneSimulation};
+use crate::{EntityRef, ErrorCode, PlayerId, ZoneError, ZoneEvent, ZoneSimulation};
 
 /// The longest chat line in UTF-8 bytes.
 pub const MAX_CHAT_BYTES: usize = 80;
@@ -219,9 +219,13 @@ impl ZoneSimulation {
         }
         let from = self.player_position(speaker)?;
         let range = i128::from(message.range_units());
-        let ids: Vec<PlayerId> = self.players.keys().copied().collect();
         let mut hearers = Vec::new();
-        for id in ids {
+        // The interest index narrows the hearers to the cells in range (#1056); `near` lists
+        // units in `EntityRef` order, so players come in ascending ID order.
+        for unit in self.interest.near(from.x, from.z, message.range_units()) {
+            let EntityRef::Player(id) = unit else {
+                continue;
+            };
             let at = self.player_position(id)?;
             let [dx, dz] = [
                 i128::from(at.x) - i128::from(from.x),
