@@ -31,8 +31,8 @@ URL can preset both: `?activity=battle-royale&netcode=rewind&delay=150`. A trial
 the page drives inside the zone without delay: it closes to 2 m, circles and swings every 2.5 s
 within reach, so movement, hits and clashes can be felt. The page's zone stays the one
 authority; the trial source only delays commands to it and projections from it, sends timing-
-sensitive commands with the tick it had observed, and draws other units 67 ms behind like the
-online client. The option and delay hold for the match; **Reset practice (F9)** starts another
+sensitive commands with the tick it had observed, and draws other units 2 ticks (33 ms) behind like
+every client (#1058). The option and delay hold for the match; **Reset practice (F9)** starts another
 with the current choice. The owner playtest guide and an automated comparison of all nine cells
 are in [reviews/netcode-trial-680](reviews/netcode-trial-680/README.md).
 
