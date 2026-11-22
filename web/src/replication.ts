@@ -61,44 +61,67 @@ export function decodeRedirectNotice(payload: Uint8Array): RedirectNotice {
 }
 
 /**
- * Decodes a player projection with the Rust decoder, without sheets received earlier; throws on
- * any malformed payload. A local host sends every sheet each tick; an online session decodes with
- * a `ProjectionDecoder`.
+ * Decodes one player projection with the Rust decoder, without sheets received earlier; throws on
+ * any malformed payload. A one-off read: a session's projections go through its
+ * `ProjectionDecoder`, which the unit presenter reads from.
  */
 export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
-  const snapshot = wasm.decodeSnapshot(payload);
-  PROJECTION_BYTES.set(snapshot, payload.slice());
-  return snapshot;
+  return wasm.decodeSnapshot(payload);
 }
 
+/** A local zone whose projections a session ingests: the WASM `LocalZone`, or a stand-in that only encodes them. */
+export type ProjectingZone = { projection(player: number): Uint8Array };
+
+/** Where a session's projection is kept decoded, for the shared unit presenter (#184, #1009). */
+export type IngestedProjection = { readonly store: wasm.ProjectionStore; readonly id: number };
+
+type BagSheet = Pick<ZoneSnapshot, "inventory" | "equipment" | "stats">;
+
 /**
- * One online session's projection decoder (#544). A zone host sends the bag, quest, loot and
- * ability sheets only until the client acknowledges them, so this keeps the newest copy of each
- * (in Rust) and every projection it decodes is complete. Every command the session sends goes
- * through `acknowledge`, which echoes the sheet revisions it holds.
+ * One session's projections (#544, #1009), decoded once into a WASM `ProjectionStore` that the
+ * unit presenter reads by id. A zone host sends the bag, quest, loot and ability sheets only until
+ * the client acknowledges them, so the store keeps the newest copy of each and every projection it
+ * decodes is complete. The page's view carries the bag and quest sheets only when they changed;
+ * this keeps the copy received last and shares it with the following views. Every command the
+ * session sends goes through `acknowledge`, which echoes the sheet revisions held.
  */
 export class ProjectionDecoder {
-  readonly #decoder = new wasm.SnapshotDecoder();
+  readonly #store = new wasm.ProjectionStore();
+  #bag: BagSheet = { inventory: null, equipment: null, stats: null };
+  #quests: ZoneSnapshot["quests"] = null;
 
-  /** Decodes a projection strictly; a malformed one leaves the held sheets as they were. */
+  /** Decodes a received projection strictly; a malformed one leaves the held sheets as they were. */
   decode(payload: Uint8Array): ZoneSnapshot {
-    const snapshot = this.#decoder.decode(payload);
-    PROJECTION_BYTES.set(snapshot, payload.slice());
-    return snapshot;
+    return this.#view(this.#store.ingest(payload));
+  }
+
+  /** The local zone's projection for `player`; a WASM zone's bytes never reach the page. */
+  local(zone: ProjectingZone, player: number): ZoneSnapshot {
+    return this.#view(zone instanceof wasm.LocalZone ? this.#store.ingestLocal(zone, player) : this.#store.ingest(zone.projection(player)));
   }
 
   /** Encoded command bytes wrapped with the sheet revisions held. */
   acknowledge(command: Uint8Array): Uint8Array {
-    return this.#decoder.acknowledge(command);
+    return this.#store.acknowledge(command);
+  }
+
+  #view({ id, bag, quests, snapshot }: wasm.IngestedProjection): ZoneSnapshot {
+    if (bag) {
+      this.#bag = { inventory: snapshot.inventory, equipment: snapshot.equipment, stats: snapshot.stats };
+    } else {
+      Object.assign(snapshot, this.#bag);
+    }
+    if (quests) { this.#quests = snapshot.quests; } else { snapshot.quests = this.#quests; }
+    INGESTED.set(snapshot, { store: this.#store, id });
+    return snapshot;
   }
 }
 
-/** The wire bytes each decoded projection came from, for the shared unit presenter (#184). */
-const PROJECTION_BYTES = new WeakMap<ZoneSnapshot, Uint8Array>();
+const INGESTED = new WeakMap<ZoneSnapshot, IngestedProjection>();
 
-/** The bytes `snapshot` was decoded from; undefined for a projection not decoded here. */
-export function projectionBytes(snapshot: ZoneSnapshot): Uint8Array | undefined {
-  return PROJECTION_BYTES.get(snapshot);
+/** Where `snapshot` is kept decoded; undefined for a projection no session ingested. */
+export function ingestedProjection(snapshot: ZoneSnapshot): IngestedProjection | undefined {
+  return INGESTED.get(snapshot);
 }
 
 /** The projection's record of `entity`, if it is visible. */

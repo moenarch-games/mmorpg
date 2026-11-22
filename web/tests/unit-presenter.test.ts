@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { projectionBytes } from "../src/replication";
+import { ingestedProjection } from "../src/replication";
 import { createLocalWorld } from "../src/world/local-world";
 import { SharedUnits, appearanceCode } from "../src/world/unit-presenter";
 import { expectValidMesh } from "./support/geometry";
@@ -15,7 +15,7 @@ async function joined() {
   await world.source.join();
   const projection = world.source.latestProjection()!;
   const units = new SharedUnits(world.scenery.unitPresenter(projection.viewerId));
-  units.push(projectionBytes(projection)!, 0);
+  expect(units.push(ingestedProjection(projection)!, 0)).toBe(true);
   return { world, projection, units };
 }
 

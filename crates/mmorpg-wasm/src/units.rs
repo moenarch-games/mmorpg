@@ -1,13 +1,13 @@
 //! The shared unit presentation (`mmorpg-presentation::units`, #184) for the browser.
 //!
-//! The page pushes every projection it receives (the same bytes it decodes) and, per frame,
-//! the interpolated units it samples. This adapter runs the presenter the native client runs
+//! The page pushes every projection it receives (by its id in the session's projection store,
+//! decoded once, #1009) and, per frame, the interpolated units it samples. This adapter runs the presenter the native client runs
 //! and returns the frame as JSON plus typed arrays: draws with their model matrices, the
 //! geometry of every resource the page did not receive in the previous frame, where each unit
 //! stands, and the imported models (with chosen clip and time) the page skins itself.
 //! Presentation only: the local zone host never reads it.
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::{collections::BTreeSet, rc::Rc, sync::Arc};
 
 use mmorpg_core::{ClassChoice, CreatureId, EntityKind, EntityRef, NpcId, ZoneSnapshot};
 use mmorpg_presentation::{
@@ -207,7 +207,7 @@ pub struct Buffers {
 
 pub struct Units {
     presenter: UnitPresenter,
-    latest: Option<ZoneSnapshot>,
+    latest: Option<Rc<ZoneSnapshot>>,
     /// Resources the page holds: those drawn in the previous frame.
     sent: BTreeSet<String>,
     pub buffers: Buffers,
@@ -384,14 +384,9 @@ impl Units {
         Ok(())
     }
 
-    /// Decodes and observes one received projection.
-    ///
-    /// # Errors
-    ///
-    /// When the bytes are not a projection.
-    pub fn push(&mut self, bytes: &[u8], seconds: f64) -> Result<(), String> {
-        let snapshot =
-            mmorpg_protocol::decode_snapshot(bytes).map_err(|error| error.to_string())?;
+    /// Observes one received projection, decoded once by the session's projection store
+    /// (#1009) and shared with it.
+    pub fn push(&mut self, snapshot: Rc<ZoneSnapshot>, seconds: f64) {
         self.presenter.push(&snapshot, seconds);
         let presenter = &self.presenter;
         self.audio_ops.extend(
@@ -399,7 +394,6 @@ impl Units {
                 .push(&snapshot, |unit| presenter.rendered(unit.position)),
         );
         self.latest = Some(snapshot);
-        Ok(())
     }
 
     pub fn reset(&mut self) {

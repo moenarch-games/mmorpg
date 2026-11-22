@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Emits `coding-tooling/work-evidence/v1` for `.performance/contract.json` (#138, #645).
+"""Emits `coding-tooling/work-evidence/v1` for `.performance/contract.json` (#138, #645, #1009).
 
 Runs the deterministic zone (`mmorpg-protocol`) and client presentation
-(`mmorpg-presentation`) work examples and wraps their samples with the
+(`mmorpg-presentation`, `mmorpg-wasm`) work examples and wraps their samples with the
 contract's suite and SHA-256. Counters only; nothing is timed.
 """
 import hashlib
@@ -12,7 +12,11 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-EXAMPLES = [("mmorpg-protocol", "operation_work"), ("mmorpg-presentation", "presentation_work")]
+EXAMPLES = [
+    ("mmorpg-protocol", "operation_work"),
+    ("mmorpg-presentation", "presentation_work"),
+    ("mmorpg-wasm", "projection_ingest"),
+]
 
 
 def main() -> int:

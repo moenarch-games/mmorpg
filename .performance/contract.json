@@ -223,6 +223,41 @@
           "growth": [{ "dimension": "characters", "bound": "constant" }]
         }
       ]
+    },
+    {
+      "id": "projection-ingest",
+      "description": "Browser projection ingest (#1009): a running Greyhaven player's projections, local and online, each decoded once into the session's WASM projection store, read by the unit presenter by id; sheets reach the page only when they change.",
+      "dimensions": { "ticks": { "description": "projections ingested per path (local and online)" } },
+      "scalePoints": [{ "ticks": 16 }, { "ticks": 32 }, { "ticks": 64 }],
+      "metrics": [
+        {
+          "name": "largest_decodes_per_projection",
+          "unit": "decodes",
+          "signal": "operation-count",
+          "notes": "From receipt to the unit presenter and its sound cues.",
+          "budget": { "max": 1 }
+        },
+        {
+          "name": "unchanged_sheet_views",
+          "unit": "sheets",
+          "signal": "operation-count",
+          "notes": "Bag and quest sheet objects materialised for the page although equal to the copy it holds.",
+          "budget": { "max": 0 }
+        },
+        {
+          "name": "extra_boundary_bytes",
+          "unit": "bytes",
+          "signal": "size",
+          "notes": "Projection bytes copied into WASM beyond the online network payload; a local projection never crosses.",
+          "budget": { "max": 0 }
+        },
+        {
+          "name": "sheet_views",
+          "unit": "sheets",
+          "signal": "operation-count",
+          "growth": [{ "dimension": "ticks", "bound": "constant" }]
+        }
+      ]
     }
   ]
 }

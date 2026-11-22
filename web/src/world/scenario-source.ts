@@ -1,6 +1,6 @@
 import { encodeCommand, type WorldCommand } from "../command-wire";
 import { FixedTickClock } from "../demo-clock";
-import { decodeSnapshot, SnapshotBuffer, ticksFromMs, type EntityState, type ZoneSnapshot } from "../replication";
+import { ProjectionDecoder, SnapshotBuffer, ticksFromMs, type EntityState, type ZoneSnapshot } from "../replication";
 import type { LinkState, WorldSource } from "./world-source";
 import { LAB_SCENARIO, labSetupFromQuery, type LabSetup } from "./action-lab";
 import { hex, type LabCommand } from "./lab-experiment";
@@ -69,6 +69,8 @@ export class ScenarioSource implements WorldSource {
   readonly #history = new SnapshotBuffer();
   #sequence = 0;
   #latest: ZoneSnapshot | null = null;
+  /** The joined session's projections, decoded once in WASM (#1009). */
+  #projections: ProjectionDecoder | null = null;
   #frames: ScenarioFrame[] = [];
   #paused = false;
   #pendingSteps = 0;
@@ -190,6 +192,7 @@ export class ScenarioSource implements WorldSource {
     this.#zone = zone;
     this.#clock.reset();
     this.#history.reset();
+    this.#projections = new ProjectionDecoder();
     this.#frames = [];
     this.#scrub = null;
     this.#pendingSteps = 0;
@@ -307,7 +310,8 @@ export class ScenarioSource implements WorldSource {
   }
 
   #publish(player: number): ZoneSnapshot {
-    const snapshot = decodeSnapshot(this.#requireZone().projection(player));
+    this.#projections ??= new ProjectionDecoder();
+    const snapshot = this.#projections.local(this.#requireZone(), player);
     if (snapshot.viewerId !== player) {
       throw new Error("The scenario zone addressed a projection to another player.");
     }

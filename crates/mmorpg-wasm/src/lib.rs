@@ -34,6 +34,7 @@ pub mod lab_diagnostics;
 pub mod lab_experiment;
 pub mod lab_promotion;
 pub mod party;
+pub mod projections;
 pub mod scenario;
 pub mod scenery;
 pub mod static_scene;
@@ -43,6 +44,7 @@ pub mod world_map;
 
 use mmorpg_characters::{CharacterStore, EntryBackend, EntryChange, LeaseHolder, StoreError};
 use mmorpg_core::{CharacterId, ClassChoice, PlayerClass, Sex};
+use tsify::Tsify as _;
 use wasm_bindgen::prelude::{JsError, JsValue, wasm_bindgen};
 
 use crate::host::{LOCAL_ZONE_ID, LocalZoneHost, SubmitOutcome};
@@ -1060,6 +1062,71 @@ pub fn imported_rest_clip(kind: &str) -> Option<String> {
         .map(|kind| kind.clips().idle.to_owned())
 }
 
+/// One session's decoded projections (#1009); see [`projections`]. Every projection the page
+/// receives is ingested here once: the page gets a view whose unchanged sheets are left out,
+/// and the unit presenter reads the decoded projection by id. Every command the session sends
+/// goes through [`ProjectionStore::acknowledge`], which echoes the sheet revisions held (#544).
+#[wasm_bindgen]
+#[derive(Default)]
+pub struct ProjectionStore(projections::ProjectionStore);
+
+#[wasm_bindgen]
+impl ProjectionStore {
+    #[wasm_bindgen(constructor)]
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Ingests a received projection payload strictly; a malformed one changes nothing.
+    pub fn ingest(
+        &mut self,
+        payload: &[u8],
+    ) -> Result<tsify::Ts<wire::IngestedProjection>, JsError> {
+        let ingested = self
+            .0
+            .ingest(payload)
+            .map_err(|error| JsError::new(&error))?;
+        Ok(wire::IngestedProjection::from(ingested).into_ts()?)
+    }
+
+    /// Ingests the local zone's projection for `player` without its bytes crossing to the page.
+    #[wasm_bindgen(js_name = ingestLocal)]
+    pub fn ingest_local(
+        &mut self,
+        zone: &LocalZone,
+        player: u32,
+    ) -> Result<tsify::Ts<wire::IngestedProjection>, JsError> {
+        let payload = zone.host.projection(player).map_err(js_error)?;
+        let ingested = self
+            .0
+            .ingest_local(&payload)
+            .map_err(|error| JsError::new(&error))?;
+        Ok(wire::IngestedProjection::from(ingested).into_ts()?)
+    }
+
+    /// Encoded command bytes wrapped with the sheet revisions held.
+    #[must_use]
+    pub fn acknowledge(&self, command: &[u8]) -> Vec<u8> {
+        mmorpg_protocol::encode_acknowledged_command(self.0.revisions(), command)
+    }
+
+    /// The store's work so far: `[projections, decodes, boundary bytes, sheet views]`.
+    #[must_use]
+    pub fn work(&self) -> Vec<f64> {
+        let work = self.0.work();
+        #[allow(clippy::cast_precision_loss)]
+        [
+            work.projections,
+            work.decodes,
+            work.boundary_bytes,
+            work.sheet_views,
+        ]
+        .map(|count| count as f64)
+        .to_vec()
+    }
+}
+
 /// The shared unit presentation of one joined player (#184): push received projections,
 /// then ask for each frame's unit draws; see [`units`].
 #[wasm_bindgen]
@@ -1173,10 +1240,14 @@ impl UnitPresenter {
         self.0.set_interaction(loot_window, npc);
     }
 
-    pub fn push(&mut self, projection: &[u8], seconds: f64) -> Result<(), JsError> {
-        self.0
-            .push(projection, seconds)
-            .map_err(|error| JsError::new(&error))
+    /// Observes the session's projection `id` from `store` (#1009), decoded once when it was
+    /// ingested; `false`, changing nothing, once the store no longer retains it.
+    pub fn push(&mut self, store: &ProjectionStore, id: u32, seconds: f64) -> bool {
+        store
+            .0
+            .get(id)
+            .map(|snapshot| self.0.push(snapshot, seconds))
+            .is_some()
     }
 
     pub fn reset(&mut self) {

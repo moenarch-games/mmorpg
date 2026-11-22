@@ -1,6 +1,6 @@
 import { encodeCommand, encodeObservedCommand, isTimingSensitive, type WorldCommand } from "../../command-wire";
 import { FixedTickClock } from "../../demo-clock";
-import { decodeSnapshot, SnapshotBuffer, ticksFromMs, type EntityState, type ZoneSnapshot } from "../../replication";
+import { decodeSnapshot, ProjectionDecoder, SnapshotBuffer, ticksFromMs, type EntityState, type ZoneSnapshot } from "../../replication";
 import { INTERPOLATION_DELAY_TICKS } from "../online-zone-source";
 import type { ScenarioZoneHandle } from "../scenario-source";
 import type { LinkState, WorldSource } from "../world-source";
@@ -161,6 +161,8 @@ export class NetcodeTrialSource implements WorldSource {
   #uplink: { due: number; sequence: number; bytes: Uint8Array }[] = [];
   #downlink: { due: number; bytes: Uint8Array }[] = [];
   #latest: ZoneSnapshot | null = null;
+  /** The joined session's projections as its delayed downlink delivers them, decoded once in WASM (#1009). */
+  #projections: ProjectionDecoder | null = null;
 
   constructor(createZone: () => TrialZoneHandle, createPrediction: () => PredictionHandle, trial: NetcodeTrial) {
     this.#createZone = createZone;
@@ -185,6 +187,7 @@ export class NetcodeTrialSource implements WorldSource {
     this.#player = player;
     this.#clock.reset();
     this.#history.reset();
+    this.#projections = new ProjectionDecoder();
     this.#sequence = 0;
     this.#partnerSequence = 0;
     this.#ticks = 0;
@@ -255,7 +258,8 @@ export class NetcodeTrialSource implements WorldSource {
   }
 
   #receive(bytes: Uint8Array): ZoneSnapshot {
-    const snapshot = decodeSnapshot(bytes);
+    this.#projections ??= new ProjectionDecoder();
+    const snapshot = this.#projections.decode(bytes);
     this.#latest = snapshot;
     this.#history.push(snapshot);
     return snapshot;
