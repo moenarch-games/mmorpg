@@ -238,6 +238,26 @@ fn tick_maintenance(population: usize, moved: usize) -> Result<String> {
     ))
 }
 
+/// Indexed area lookups (#1063) on a `side` × `side` grid over Greyhaven's playable bounds:
+/// the most polygon edges one lookup tests stays fixed however densely the zone is sampled.
+fn area_lookup(side: usize) -> Result<String> {
+    let bounds = mmorpg_core::greyhaven_vale::PLAYABLE_BOUNDS;
+    let areas = mmorpg_core::greyhaven_vale::areas();
+    let steps = i32::try_from(side)?;
+    let mut largest = 0;
+    for row in 0..steps {
+        for column in 0..steps {
+            let x = bounds.min[0] + (bounds.max[0] - bounds.min[0]) * column / steps + 7;
+            let z = bounds.min[1] + (bounds.max[1] - bounds.min[1]) * row / steps + 7;
+            largest = largest.max(areas.area_at_counted(x, z).1);
+        }
+    }
+    Ok(sample(
+        &[("samples", side * side)],
+        &[("largest_lookup_edge_tests", largest)],
+    ))
+}
+
 fn main() -> Result<()> {
     let operations = [
         (
@@ -266,6 +286,13 @@ fn main() -> Result<()> {
             [(128, 8), (256, 8), (448, 8), (448, 16), (448, 32)]
                 .into_iter()
                 .map(|(population, moved)| tick_maintenance(population, moved))
+                .collect::<Result<Vec<_>>>()?,
+        ),
+        (
+            "area-lookup",
+            [32, 64, 128]
+                .into_iter()
+                .map(area_lookup)
                 .collect::<Result<Vec<_>>>()?,
         ),
     ];
