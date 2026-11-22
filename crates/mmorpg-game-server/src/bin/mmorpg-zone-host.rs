@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use game_server::{
     BrowserRoutePrefix, DEFAULT_HOST_STATUS_PORT, MatchHostStatusConfig,
     MatchHostWebTransportConfig,
