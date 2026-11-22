@@ -739,22 +739,29 @@ class BrowserAcceptance(unittest.TestCase):
         self.assertEqual(self.legacy_checkpoints(), [])
 
     def test_rejected_projections_fail_closed_without_freezing_the_page(self):
-        # Bytes 0-2 of a snapshot header are its protocol ID. While the flag is set the strict
-        # decoder (`mmorpg_protocol`, in WASM since #541) receives another ID in byte 2, as after
-        # a WASM/decoder skew: the copy of a snapshot into WASM memory changes it.
-        protocol = re.search(r"PROTOCOL_ID: u32 = 0x([0-9a-f_]+);", (ROOT / "crates/mmorpg-protocol/src/lib.rs").read_text())
-        identity = list(int(protocol[1].replace("_", ""), 16).to_bytes(4, "big")[1:])
-        self.context.add_init_script("""(identity => {
+        # While the flag is set the session's projection store (`mmorpg-wasm`, #1009) refuses every
+        # projection the way the strict decoder refuses another protocol ID after a WASM/decoder
+        # skew. A local projection never leaves WASM, so the refusal is raised where the page
+        # ingests it: each store registers itself for finalization, which hands this script its
+        # class (found by its methods, whatever the bundle calls it).
+        self.context.add_init_script("""(() => {
           window.__rejectSnapshots = false;
-          const original = Uint8Array.prototype.set;
-          Uint8Array.prototype.set = function(source, ...rest) {
-            if (window.__rejectSnapshots && identity.every((byte, index) => source[index] === byte)) {
-              source = Uint8Array.from(source);
-              source[2] ^= 0xff;
+          const register = FinalizationRegistry.prototype.register;
+          FinalizationRegistry.prototype.register = function(target, ...rest) {
+            const store = Object.getPrototypeOf(target);
+            if (store && typeof store.ingestLocal === "function" && typeof store.acknowledge === "function" && !store.__refusing) {
+              store.__refusing = true;
+              for (const name of ["ingest", "ingestLocal"]) {
+                const ingest = store[name];
+                store[name] = function(...args) {
+                  if (window.__rejectSnapshots) { throw new Error("unsupported snapshot protocol id"); }
+                  return ingest.apply(this, args);
+                };
+              }
             }
-            return original.call(this, source, ...rest);
+            return register.call(this, target, ...rest);
           };
-        })(%s);""" % json.dumps(identity))
+        })();""")
         self.open()
         note = self.page.locator("#enter-world-note")
 
