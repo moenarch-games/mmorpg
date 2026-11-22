@@ -33,14 +33,14 @@ const FLAT_SHADE = 0.72;
 
 /**
  * The field at each world detail (`graphics.world_detail`; `low` draws none). A `density` share of the near clumps is
- * drawn within `full` metres of the eye; beyond, they thin out to none at `fade`, each clump dissolving on
+ * drawn within `full` metres of the character (the eye without one); beyond, they thin out to none at `fade`, each clump dissolving on
  * its own as its distance's share passes its rank, so no line shows where the field ends. Within `swap` metres a clump
  * has all its blades; beyond, the light clump. The far field's sparse wide clumps grow in from `farFrom` as the near
  * one thins, at most a `farDensity` share of them, and thin out again to none at `farTo`.
  */
 const PROFILES = {
-  medium: { full: 8, fade: 36, swap: 12, falloff: 1.1, density: 0.6, farFrom: 14, farTo: 92, farDensity: 0.52 },
-  high: { full: 12, fade: 50, swap: 17, falloff: 1.2, density: 1, farFrom: 20, farTo: 120, farDensity: 0.62 },
+  medium: { full: 6, fade: 30, swap: 9, falloff: 2.2, density: 0.6, farFrom: 18, farTo: 70, farDensity: 0.45 },
+  high: { full: 10, fade: 44, swap: 13, falloff: 2, density: 1, farFrom: 26, farTo: 100, farDensity: 0.6 },
 } as const;
 type Profile = (typeof PROFILES)[keyof typeof PROFILES];
 
