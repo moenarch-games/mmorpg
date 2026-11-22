@@ -46,7 +46,7 @@ export function minimapExploration(map: ExplorationMap, self: { x: number; z: nu
     hints: map.hints.map((hint) => ({ x: hint.center[0], z: hint.center[1], radius: hint.radius })),
     landmarks: map.areas
       .filter((area) => area.discovered)
-      .map((area) => ({ x: (area.min[0] + area.max[0]) / 2, z: (area.min[1] + area.max[1]) / 2, name: area.name }))
+      .map((area) => ({ x: area.centre[0], z: area.centre[1], name: area.name }))
       .filter((landmark) => Math.hypot(landmark.x - self.x, landmark.z - self.z) <= LANDMARK_RANGE_METRES),
   };
 }
