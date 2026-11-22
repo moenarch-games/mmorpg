@@ -114,12 +114,13 @@ export class OrbitCamera {
 
   /** The view's heading in radians: 0 toward +Z, increasing toward +X. */
   get heading(): number {
-    return this.#rules.heading;
+    // Before its first input (and before WASM loads) the camera looks along its starting heading.
+    return this.#camera?.heading ?? 0;
   }
 
   /** The heading a character takes while moving under this camera. */
   facing(): number {
-    return this.#rules.facing();
+    return this.#camera?.facing() ?? 0;
   }
 
   /**
