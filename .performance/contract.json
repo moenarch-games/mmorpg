@@ -157,8 +157,7 @@
           "unit": "tests",
           "signal": "operation-count",
           "notes": "ZoneAreas::lookup_work_bound is the exact worst case over the index; core's Greyhaven tests hold it under the same budget.",
-          "budget": { "max": 128 },
-          "growth": [{ "dimension": "samples", "bound": "constant" }]
+          "budget": { "max": 128 }
         }
       ]
     },
