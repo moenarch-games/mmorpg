@@ -413,13 +413,15 @@ export class SharedUnits {
       appearanceCode(options.look), options.look.headwear ?? "", options.previewYaw ?? Number.NaN);
     this.#frameNumber += 1;
     this.#view();
-    const words = this.#words;
-    const numbers = this.#numbers;
-    if (words[HEADER.stringsReset] === 1) { this.#forget(); }
-    if (words[HEADER.freshStrings]! > 0) {
+    if (this.#words[HEADER.stringsReset] === 1) { this.#forget(); }
+    if (this.#words[HEADER.freshStrings]! > 0) {
       const fresh = this.#handle.freshStrings().split("\n");
       for (let index = 0; index < fresh.length - 1; index += 1) { this.#strings.push(fresh[index]!); }
+      // Returning the strings may have grown WASM memory, detaching the views.
+      this.#view();
     }
+    const words = this.#words;
+    const numbers = this.#numbers;
     const frame = this.#frame;
     const cursor = { word: HEADER.words, number: 3 };
     frame.kick[0] = numbers[0]!; frame.kick[1] = numbers[1]!; frame.kick[2] = numbers[2]!;
