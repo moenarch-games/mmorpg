@@ -965,13 +965,17 @@ mod tests {
     }
 }
 
-/// A named area on the exploration map (#983), in metres (x east, z south).
+/// A named area on the exploration map (#983), in metres (x east, z south): its traced
+/// outline (#1063), outer ring first, then any holes, each open.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Tsify)]
 pub struct MapArea {
     pub id: u32,
     pub name: String,
-    pub min: [f32; 2],
-    pub max: [f32; 2],
+    pub rings: Vec<Vec<[f32; 2]>>,
+    /// Where the area's name goes.
+    pub centre: [f32; 2],
+    /// How far `centre` lies from the area's edge.
+    pub radius: f32,
     /// Discovered by the viewer, or the starting area.
     pub discovered: bool,
 }
@@ -986,14 +990,26 @@ pub struct QuestHint {
     pub radius: f32,
 }
 
+/// A point of interest in a discovered area (#1063), in metres. `kind` is `waystone`,
+/// `dungeon`, `landmark`, `service` or `quest`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Tsify)]
+pub struct MapPoint {
+    pub kind: String,
+    pub name: String,
+    pub detail: String,
+    pub at: [f32; 2],
+}
+
 /// The viewer's exploration map (#983): every named area, the discovered count of the
-/// content's discoverable areas and the active quests' approximate areas.
+/// content's discoverable areas, the active quests' approximate areas and the points of
+/// interest in the discovered areas (#1063).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Tsify)]
 pub struct ExplorationMap {
     pub areas: Vec<MapArea>,
     pub discovered: u32,
     pub total: u32,
     pub hints: Vec<QuestHint>,
+    pub points: Vec<MapPoint>,
 }
 
 /// The exploration map for the viewer's discovered area IDs and received quest sheet.
@@ -1009,8 +1025,9 @@ pub fn exploration_map(discoveries: &[u32], sheet: Ts<QuestSheet>) -> Result<JsV
             .map(|area| MapArea {
                 id: area.id.get(),
                 name: area.name,
-                min: area.min,
-                max: area.max,
+                rings: area.rings,
+                centre: area.centre,
+                radius: area.radius,
                 discovered: area.discovered,
             })
             .collect(),
@@ -1025,6 +1042,16 @@ pub fn exploration_map(discoveries: &[u32], sheet: Ts<QuestSheet>) -> Result<JsV
                 area: hint.area.get(),
                 center: hint.center,
                 radius: hint.radius,
+            })
+            .collect(),
+        points: map
+            .points
+            .into_iter()
+            .map(|point| MapPoint {
+                kind: point.kind.name().to_owned(),
+                name: point.name,
+                detail: point.detail,
+                at: point.at,
             })
             .collect(),
     })
