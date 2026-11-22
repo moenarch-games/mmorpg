@@ -38,12 +38,28 @@ Units include the viewer and the NPCs and creatures its projection already shows
 
 ## Contracts
 
-`.performance/contract.json` declares three presentation operations beside the zone's; `scripts/operation-work.py` merges the `presentation_work` example's samples into the same evidence:
+`.performance/contract.json` declares four presentation operations beside the zone's; `scripts/operation-work.py` merges the `presentation_work` and `projection_ingest` examples' samples into the same evidence:
 
 | Operation | Dimensions | Bound |
 | --- | --- | --- |
 | `camera-only-frames` | measured frames, orbit radius | no static builds, evictions or uploaded bytes; largest frame draws constant in frames |
 | `region-walk` | metres walked | at most `BUILDS_PER_FRAME + GROUP_BUILDS_PER_FRAME` (10) builds a frame |
 | `unit-frame` | animated characters | unit draws linear; geometry uploads constant |
+| `projection-ingest` | projections ingested (local and online) | at most 1 decode a projection; no unchanged sheet views; no bytes beyond the network payload; sheet views constant |
 
-Only the camera-only bound is blocking, through the `presentation_work` test that `cargo test` runs: an incremental-update regression that rebuilds, re-uploads or re-evicts static scenery on a camera-only frame (or never settles) fails it. Legitimate streaming, LOD and visibility changes stay allowed and the other counts are advisory. Frame pacing on real hardware stays with the existing wall-clock profilers, `scripts/profile-browser.py` (#546) and the native `outpost_frame_time` (#692); they are compared separately and never gate correctness.
+The camera-only and projection-ingest bounds are blocking, through the `presentation_work` and `mmorpg-wasm` `projection_ingest` tests that `cargo test` runs: an incremental-update regression that rebuilds, re-uploads or re-evicts static scenery on a camera-only frame (or never settles) fails the first, and a second decode, a re-sent unchanged sheet or an extra byte copy fails the second. Legitimate streaming, LOD and visibility changes stay allowed and the other counts are advisory. Frame pacing on real hardware stays with the existing wall-clock profilers, `scripts/profile-browser.py` (#546) and the native `outpost_frame_time` (#692); they are compared separately and never gate correctness.
+
+## Projection ingest (#1009)
+
+Each session owns one `mmorpg-wasm` `ProjectionStore`. A projection is decoded once, into the store: the local host's is encoded and decoded inside WASM, so its bytes never reach the page, and an online one crosses once, as the network payload. The page gets a view whose bag (inventory, equipment, stats) and quest sheets are null unless they changed since the previous view; `replication.ts` keeps the earlier copy. The unit presenter and its sound cues read the decoded projection from the store by id; it retains two seconds of projections.
+
+```sh
+cargo test -p mmorpg-wasm --test projection_ingest --locked                 # blocking sentinel
+cargo run --release -p mmorpg-wasm --example projection_ingest --locked      # samples for the contract
+```
+
+| Ticks per path | Decodes per projection | Unchanged sheet views | Extra boundary bytes | Sheet views |
+| ---: | ---: | ---: | ---: | ---: |
+| 16, 32, 64 | 1 | 0 | 0 | 4 |
+
+Before #1009 each projection was decoded twice (into a complete page object, then again by the presenter), both sheets were materialised for the page every tick, and its bytes crossed the boundary once more for the presenter (and twice for a local projection).
