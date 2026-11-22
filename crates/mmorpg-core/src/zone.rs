@@ -336,6 +336,8 @@ pub struct ZoneSimulation {
     pub(crate) minions: crate::revisioned::Revisioned<BTreeMap<crate::MinionId, crate::Minion>>,
     /// The threatened-player set shared by recipient projections (#1006); derived, never canonical.
     pub(crate) threat_cache: crate::threat_cache::ThreatCache,
+    /// The zone-wide projection views of the current tick (#1056); derived, never canonical.
+    pub(crate) zone_view_cache: crate::zone_views::ZoneViewCache,
     pub(crate) next_minion: u32,
     /// Frozen, staged and activated character transfers (#145); host-phase
     /// state the handoff record reconciles, not canonical.
@@ -523,6 +525,7 @@ impl ZoneSimulation {
             resolving_late: 0,
             minions: crate::revisioned::Revisioned::default(),
             threat_cache: crate::threat_cache::ThreatCache::default(),
+            zone_view_cache: crate::zone_views::ZoneViewCache::default(),
             next_minion: 1,
             raid: crate::RaidState::default(),
             wakes: BTreeMap::new(),

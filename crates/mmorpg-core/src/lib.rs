@@ -89,6 +89,7 @@ mod vendor;
 pub mod water;
 mod waystone;
 mod zone;
+mod zone_views;
 
 pub use ability::{
     ABILITY_CATALOG, Ability, AbilityEffect, AbilityId, AbilityRange, AbilityUser, AuraKind,
@@ -237,8 +238,8 @@ pub use projectile::{
     THROW_SPEED_UNITS, THROWN_FLIGHT_TICKS,
 };
 pub use projection::{
-    AuraView, CastView, EntityFlags, EntitySnapshot, GuardView, ResourceView, TargetDetail,
-    ViewerState, ZoneSnapshot,
+    AuraView, CastView, EntityFlags, EntitySnapshot, GuardView, ProjectionWork, ResourceView,
+    SheetStamp, SheetStamps, TargetDetail, ViewerState, ZoneSnapshot,
 };
 pub use quest::{
     MAX_QUEST_EXPERIENCE, MAX_QUEST_LOG, MAX_QUEST_NAME_BYTES, MAX_QUEST_OBJECTIVES,
