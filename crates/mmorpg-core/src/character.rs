@@ -177,14 +177,14 @@ impl ZoneSimulation {
             level: player.level,
             experience: player.experience,
             copper: player.copper,
-            inventory: player.inventory.clone(),
-            equipment: player.equipment,
-            quests: player.quests.clone(),
-            waystones: player.waystones.clone(),
-            discoveries: player.discoveries.clone(),
+            inventory: (*player.inventory).clone(),
+            equipment: *player.equipment,
+            quests: (*player.quests).clone(),
+            waystones: (*player.waystones).clone(),
+            discoveries: (*player.discoveries).clone(),
             caches: player.caches.clone(),
             mastery: player.mastery,
-            depths: player.depths,
+            depths: *player.depths,
             health: player.health,
             resource: player.resource.value,
             resource_ticks: player.resource.ticks,
@@ -269,14 +269,14 @@ impl ZoneSimulation {
         state.level = record.level;
         state.experience = record.experience;
         state.copper = record.copper;
-        state.inventory = record.inventory.clone();
-        state.equipment = record.equipment;
-        state.quests = crate::quest::fit_log(&self.content, &record.quests);
-        state.waystones = record.waystones.clone();
-        state.discoveries = record.discoveries.clone();
+        state.inventory = record.inventory.clone().into();
+        state.equipment = record.equipment.into();
+        state.quests = crate::quest::fit_log(&self.content, &record.quests).into();
+        state.waystones = record.waystones.clone().into();
+        state.discoveries = record.discoveries.clone().into();
         state.caches = record.caches.clone();
         state.mastery = record.mastery;
-        state.depths = record.depths;
+        state.depths = record.depths.into();
         state.physique = record.physique;
         state.character = Some(record.character_id.clone());
         state.health = record.health;

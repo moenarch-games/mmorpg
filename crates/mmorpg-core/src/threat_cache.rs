@@ -5,46 +5,17 @@
 //! once and reused until a contributing collection changes.
 //!
 //! Invalidation is structural, not tick-based: the set reads only `creatures` (life and threat
-//! tables) and `minions` (summoners), and both live in a [`Revisioned`] wrapper whose every
-//! mutable access bumps its revision. A cached set is reused only while both revisions match
-//! the ones it was derived from, so any phase, admission, removal or in-place recovery that can
-//! change a contributor refreshes it; a zone built from a checkpoint starts with an empty cache.
-//! The cache is never canonical state and never feeds back into gameplay.
+//! tables) and `minions` (summoners), and both live in a [`crate::revisioned::Revisioned`]
+//! wrapper whose every mutable access takes a fresh revision stamp. A cached set is reused only
+//! while both revisions match the ones it was derived from, so any phase, admission, removal or
+//! in-place recovery that can change a contributor refreshes it; a zone built from a checkpoint
+//! starts with an empty cache. The cache is never canonical state and never feeds back into
+//! gameplay.
 
 use std::collections::BTreeSet;
-use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex};
 
 use crate::{EntityRef, PlayerId, ZoneSimulation};
-
-/// A collection whose every mutable access bumps a revision, so derived caches can tell
-/// whether it may have changed. Reads go through [`Deref`] without touching the revision.
-#[derive(Debug, Default)]
-pub(crate) struct Revisioned<T> {
-    value: T,
-    revision: u64,
-}
-
-impl<T> Revisioned<T> {
-    pub(crate) fn revision(&self) -> u64 {
-        self.revision
-    }
-}
-
-impl<T> Deref for Revisioned<T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        &self.value
-    }
-}
-
-impl<T> DerefMut for Revisioned<T> {
-    fn deref_mut(&mut self) -> &mut T {
-        self.revision = self.revision.wrapping_add(1);
-        &mut self.value
-    }
-}
 
 /// The derived set and the contributor revisions it was derived from.
 #[derive(Debug, Default)]
@@ -110,30 +81,6 @@ impl ZoneSimulation {
                 EntityRef::Creature(_) | EntityRef::Npc(_) => None,
             })
             .collect()
-    }
-}
-
-impl<'a, T> IntoIterator for &'a Revisioned<T>
-where
-    &'a T: IntoIterator,
-{
-    type Item = <&'a T as IntoIterator>::Item;
-    type IntoIter = <&'a T as IntoIterator>::IntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.value.into_iter()
-    }
-}
-
-impl<'a, T> IntoIterator for &'a mut Revisioned<T>
-where
-    &'a mut T: IntoIterator,
-{
-    type Item = <&'a mut T as IntoIterator>::Item;
-    type IntoIter = <&'a mut T as IntoIterator>::IntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.deref_mut().into_iter()
     }
 }
 

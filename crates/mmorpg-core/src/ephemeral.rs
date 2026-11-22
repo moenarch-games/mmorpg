@@ -72,8 +72,8 @@ impl ZoneSimulation {
         self.update_player(player, |state| {
             state.class = Some(build.class);
             state.level = MAX_PLAYER_LEVEL;
-            state.inventory = Inventory::default();
-            state.equipment = build.equipment;
+            state.inventory = Inventory::default().into();
+            state.equipment = build.equipment.into();
             state.health = state.max_health();
             state.resource.value = build.class.class.resource().start(MAX_PLAYER_LEVEL);
         });

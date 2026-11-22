@@ -69,6 +69,7 @@ mod pvp;
 mod quest;
 pub mod raid;
 mod reckoning;
+mod revisioned;
 mod rewards;
 mod rewind;
 mod routine;

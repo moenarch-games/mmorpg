@@ -121,7 +121,7 @@ impl ZoneSimulation {
         }) {
             return Err(ZoneError::new("a skinned creature is alive"));
         }
-        self.gathering = state;
+        self.gathering = state.into();
         Ok(())
     }
 

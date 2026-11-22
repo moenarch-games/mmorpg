@@ -217,7 +217,7 @@ impl ZoneSimulation {
     pub fn unlocked_waystones(&self, player_id: PlayerId) -> Result<WaystoneSet, ZoneError> {
         self.players
             .get(&player_id)
-            .map(|player| player.waystones.clone())
+            .map(|player| (*player.waystones).clone())
             .ok_or_else(|| ZoneError::new("unknown player"))
     }
 
