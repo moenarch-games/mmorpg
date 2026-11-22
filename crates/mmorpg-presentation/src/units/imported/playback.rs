@@ -1,1674 +1,15 @@
-//! Which imported model presents a unit, its clip names and the per-unit clip clock.
-//!
-//! Players use asset-tooling's Ranger humanoid (Atlas 6.3.7); wolves, vermin and boars use the
-//! bundled Quaternius CC0 animals (Atlas 6.3.6); the named Greyhaven residents wear the Ranger in
-//! their appearance presets (#418) and the humanoid enemies (marauders, Redbrands) game-authored
-//! presets (#39, `presets`) where the client draws them; other humanoid creatures and NPCs keep their
-//! procedural models. Each client imports and skins the models with its own
-//! provider; this module only decides what to pose. Presentation only, never read by gameplay.
-use mmorpg_core::{
-    AbilityId, CreatureFamily, CreatureTemplateId, EntityRef, EntitySnapshot, Equipment,
-    EquipmentSlot, Ledge, NamedWeapon, PlayerClass, StrikeAim, StrikeHeight, StrikeVariant,
-    TraversalView, WaterMode, WeaponFamily, ZoneContent,
-};
-use strum::VariantArray;
+//! The per-unit clip state machine: which clip each body region plays, its clocks and the gait
+//! and traversal speeds it keeps pace with.
+
+use mmorpg_core::{Ledge, StrikeHeight, TraversalView, WaterMode, WeaponFamily};
+
+use super::*;
 
 use std::f64::consts::FRAC_PI_2;
 
-use super::swim::Attitude;
-use super::traversal::Motions;
-
-/// What an imported humanoid carries in its sockets: the class weapons and props (#156, #244,
-/// #302, asset-tooling #375 and #379) and the guards' sword.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, strum::VariantArray)]
-pub enum Loadout {
-    /// The Warden's arming sword and heater shield (#156).
-    SwordAndShield,
-    /// The arming sword and the Redbrand round shield (#953, asset-tooling #774): the Redbrand
-    /// Brute.
-    SwordAndRedbrandShield,
-    /// The Ranger's longbow and quiver on its back (#244).
-    BowAndQuiver,
-    /// The arming sword alone: the Greyhaven guards.
-    Sword,
-    /// One blackened dagger in the right hand: the field marauders.
-    Dagger,
-    /// A blackened dagger in each hand: the Rogue ([`ROGUE_LOADOUT`], #603).
-    TwinDaggers,
-    /// The Necromancer's bone staff.
-    BoneStaff,
-    /// The Arcanist's crystal staff in the right hand and tome in the left (asset-tooling #379).
-    CrystalStaffAndTome,
-    /// The Cleric's flanged mace (asset-tooling #379).
-    FlangedMace,
-    /// The Druid's gnarled staff.
-    GnarledStaff,
-    /// The Redbrand Crossbowmen's crossbow on [`CROSSBOW_SOCKET`], with a bolt (#607).
-    Crossbow,
-    /// The leaf-bladed spear in both hands (#914): a player whose weapon family is the spear.
-    Spear,
-    /// Garrick Redbrand's named cleaver in the right hand (#918): a player wielding it.
-    GarricksCleaver,
-    /// The smith's Hollowpine boar-spear in both hands (#917): a player wielding it.
-    HollowpineSpear,
-}
-
-impl Loadout {
-    /// The weapons and props a class carries.
-    #[must_use]
-    pub const fn of_class(class: PlayerClass) -> Self {
-        match class {
-            PlayerClass::Warden => Self::SwordAndShield,
-            PlayerClass::Ranger => Self::BowAndQuiver,
-            PlayerClass::Arcanist => Self::CrystalStaffAndTome,
-            PlayerClass::Rogue => ROGUE_LOADOUT,
-            PlayerClass::Necromancer => Self::BoneStaff,
-            PlayerClass::Cleric => Self::FlangedMace,
-            PlayerClass::Druid => Self::GnarledStaff,
-        }
-    }
-
-    /// The name both clients key their socket items by.
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::SwordAndShield => "sword-and-shield",
-            Self::SwordAndRedbrandShield => "sword-and-shield.redbrand",
-            Self::BowAndQuiver => "bow-and-quiver",
-            Self::Sword => "sword",
-            Self::Dagger => "dagger",
-            Self::TwinDaggers => "dagger.twin",
-            Self::BoneStaff => "staff.bone",
-            Self::CrystalStaffAndTome => "staff.crystal-and-tome",
-            Self::FlangedMace => "mace.flanged",
-            Self::GnarledStaff => "staff.gnarled",
-            Self::Crossbow => "crossbow",
-            Self::Spear => "spear",
-            Self::GarricksCleaver => "sword.garricks-cleaver",
-            Self::HollowpineSpear => "spear.hollowpine-hunter",
-        }
-    }
-
-    /// What a player carries whose projected melee family is `weapon` (#914): a spear in both
-    /// hands for the spear family, a named weapon's own model (#918), otherwise the class's own
-    /// weapons.
-    #[must_use]
-    pub const fn holding(self, weapon: Option<WeaponFamily>, named: Option<NamedWeapon>) -> Self {
-        match (named, weapon) {
-            (Some(NamedWeapon::GarricksCleaver), _) => Self::GarricksCleaver,
-            (Some(NamedWeapon::HollowpineHunter), _) => Self::HollowpineSpear,
-            (None, Some(WeaponFamily::Spear)) => Self::Spear,
-            _ => self,
-        }
-    }
-
-    /// What each hand holds, by grip role (asset-tooling #285). The Ranger's bow rests on its
-    /// back and comes to hand only through the bow clips, which curl their own fingers (#556),
-    /// so its hands hold nothing here. The crossbow is held in both hands, the right on the
-    /// stock's wrist and the left on the fore-stock (#607).
-    #[must_use]
-    pub const fn hands(self) -> Hands {
-        let (left, right) = match self {
-            Self::SwordAndShield | Self::SwordAndRedbrandShield => {
-                (Some(Held::Shield), Some(Held::Weapon))
-            }
-            Self::BowAndQuiver => (None, None),
-            Self::Sword | Self::Dagger | Self::FlangedMace | Self::GarricksCleaver => {
-                (None, Some(Held::Weapon))
-            }
-            Self::TwinDaggers => (Some(Held::Weapon), Some(Held::Weapon)),
-            Self::BoneStaff | Self::GnarledStaff => (None, Some(Held::Staff)),
-            Self::CrystalStaffAndTome => (Some(Held::Book), Some(Held::Staff)),
-            Self::Crossbow => (Some(Held::Crossbow), Some(Held::Crossbow)),
-            Self::Spear | Self::HollowpineSpear => (Some(Held::Staff), Some(Held::Staff)),
-        };
-        Hands { left, right }
-    }
-
-    /// Whether the loadout fights with daggers and so plays the dagger clips (#603).
-    #[must_use]
-    pub const fn daggers(self) -> bool {
-        matches!(self, Self::Dagger | Self::TwinDaggers)
-    }
-
-    /// The bundle items the loadout wears and the sockets they ride (#1012), as both clients
-    /// attach them: the one place a loadout's asset/socket pairs are authored. The stowed bow
-    /// rests on the back; the crossbow carries the arrow that stands in for its bolt (#607).
-    #[must_use]
-    pub const fn attachments(self) -> &'static [Attachment] {
-        const SWORD: &str = "equipment.sword.arming";
-        const DAGGER: &str = "equipment.dagger.blackened";
-        match self {
-            Self::SwordAndShield => &[
-                Attachment {
-                    item: SWORD,
-                    socket: "hand_r.weapon",
-                },
-                Attachment {
-                    item: "equipment.shield.heater",
-                    socket: "hand_l.shield",
-                },
-            ],
-            // The Redbrand Brute's round plank shield (#953, asset-tooling #774).
-            Self::SwordAndRedbrandShield => &[
-                Attachment {
-                    item: SWORD,
-                    socket: "hand_r.weapon",
-                },
-                Attachment {
-                    item: "equipment.shield.redbrand",
-                    socket: "hand_l.shield",
-                },
-            ],
-            Self::BowAndQuiver => &[
-                Attachment {
-                    item: "equipment.bow.long",
-                    socket: "back.bow.stowed",
-                },
-                Attachment {
-                    item: "equipment.quiver.back",
-                    socket: "back.quiver",
-                },
-            ],
-            Self::Sword => &[Attachment {
-                item: SWORD,
-                socket: "hand_r.weapon",
-            }],
-            Self::Dagger => &[Attachment {
-                item: DAGGER,
-                socket: "hand_r.weapon",
-            }],
-            Self::TwinDaggers => &[
-                Attachment {
-                    item: DAGGER,
-                    socket: "hand_r.weapon",
-                },
-                Attachment {
-                    item: DAGGER,
-                    socket: "hand_l.weapon",
-                },
-            ],
-            Self::BoneStaff => &[Attachment {
-                item: "equipment.staff.bone",
-                socket: "hand_r.staff",
-            }],
-            // The tome is held like a shield (asset-tooling #379): spine along the forearm.
-            Self::CrystalStaffAndTome => &[
-                Attachment {
-                    item: "equipment.staff.crystal",
-                    socket: "hand_r.staff",
-                },
-                Attachment {
-                    item: "equipment.book.tome",
-                    socket: "hand_l.shield",
-                },
-            ],
-            Self::FlangedMace => &[Attachment {
-                item: "equipment.mace.flanged",
-                socket: "hand_r.weapon",
-            }],
-            Self::GnarledStaff => &[Attachment {
-                item: "equipment.staff.gnarled",
-                socket: "hand_r.staff",
-            }],
-            // A player of the spear family (#914).
-            Self::Spear => &[Attachment {
-                item: "equipment.spear.leaf",
-                socket: "hand_r.staff",
-            }],
-            // Garrick Redbrand's named cleaver (#918, asset-tooling #761).
-            Self::GarricksCleaver => &[Attachment {
-                item: "equipment.sword.garricks-cleaver",
-                socket: "hand_r.weapon",
-            }],
-            // The smith's Hollowpine boar-spear (#917).
-            Self::HollowpineSpear => &[Attachment {
-                item: "equipment.spear.hollowpine-hunter",
-                socket: "hand_r.staff",
-            }],
-            // The crossbow and the arrow standing in for its bolt (#607).
-            Self::Crossbow => &[
-                Attachment {
-                    item: "equipment.crossbow",
-                    socket: CROSSBOW_SOCKET,
-                },
-                Attachment {
-                    item: BOLT_ITEM,
-                    socket: BOLT_HAND_SOCKET,
-                },
-            ],
-        }
-    }
-}
-
-/// One bundle item a [`Loadout`] wears (#1012): its `humanoid-equipment` entry key and the
-/// figure's `humanoid-sockets` socket it rides.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Attachment {
-    /// The `humanoid-equipment` entry key, e.g. `equipment.sword.arming`.
-    pub item: &'static str,
-    /// The socket, e.g. `hand_r.weapon`.
-    pub socket: &'static str,
-}
-
-/// The item standing in for the crossbow's bolt on [`BOLT_HAND_SOCKET`] (#607), scaled by
-/// [`BOLT_SCALE`].
-pub const BOLT_ITEM: &str = "equipment.arrow";
-
-/// The Rogue's weapons (#603): a dagger in each hand, as asset-tooling #418 authored the
-/// Rogue's clips. Dual-wielding awaits the owner's confirmation (question on #603); set this to
-/// [`Loadout::Dagger`] for a single-dagger Rogue, whose auto-attack then only stabs.
-pub const ROGUE_LOADOUT: Loadout = Loadout::TwinDaggers;
-
-/// Where a sheathed dagger rides (asset-tooling #418), left hand then right: through a throw
-/// the right one, through a bandage both ([`Carry`]).
-pub const DAGGER_SHEATH_SOCKETS: [&str; 2] = ["hip_l.stowed", "hip_r.stowed"];
-/// The socket a drawn throwable rides in (asset-tooling #418).
-pub const THROWABLE_SOCKET: &str = "hand_r.weapon";
-/// The socket a throw's item waits on until the clip's draw (asset-tooling #418): the right
-/// hand's grip frame at `drawSeconds`, so the hand takes it where it hangs.
-pub const THROWABLE_BELT_SOCKET: &str = "belt.throwable";
-
-/// A thrown weapon in the right hand (#603), drawn from the belt for a throw.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Throwable {
-    /// The Throwing Knife.
-    Knife,
-    /// The Venom Flask.
-    Flask,
-    /// The Blasting Bomb.
-    Bomb,
-}
-
-impl Throwable {
-    /// The name both clients key the throwable by.
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Knife => "knife",
-            Self::Flask => "flask",
-            Self::Bomb => "bomb",
-        }
-    }
-
-    /// The right hand's grip pose round it (asset-tooling #418).
-    #[must_use]
-    pub const fn grip(self) -> &'static str {
-        match self {
-            Self::Knife => "Grip_Knife_Pinch_R",
-            Self::Flask | Self::Bomb => "Grip_Flask_R",
-        }
-    }
-
-    /// Its bundle item (asset-tooling #467), whose origin is its grip frame.
-    #[must_use]
-    pub const fn item(self) -> &'static str {
-        match self {
-            Self::Knife => "equipment.throwing-knife",
-            Self::Flask => "equipment.venom-flask",
-            Self::Bomb => "equipment.blasting-bomb",
-        }
-    }
-
-    /// Every throwable.
-    pub const ALL: [Self; 3] = [Self::Knife, Self::Flask, Self::Bomb];
-}
-
-/// Where a dagger holder's daggers ride and what its right hand throws this frame (#603): a
-/// throw shows its item on the belt until the draw, sheathes the right dagger from its draw to
-/// the clip's end and holds the item from the draw to the release; a bandage sheathes both.
-/// Everything else keeps the daggers in hand.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Carry {
-    /// Explicit player weapon mode; `None` preserves non-player clip-authored carry (#802).
-    pub weapon_drawn: Option<bool>,
-    /// Each hand's dagger sheathed on [`DAGGER_SHEATH_SOCKETS`], left then right.
-    pub sheathed: [bool; 2],
-    /// The throwable in [`THROWABLE_SOCKET`].
-    pub throwable: Option<Throwable>,
-    /// A throw's item on [`THROWABLE_BELT_SOCKET`] before the clip's draw (#611).
-    pub belted: Option<Throwable>,
-    /// Where a crossbowman's crossbow and bolt ride (#607); `None` for anyone else.
-    pub crossbow: Option<CrossbowCarry>,
-    /// A resident's chore item on its socket (#904), while its chore clips (or the ordinary
-    /// idle and walk) play; `None` keeps the hands empty.
-    pub chore: Option<super::chores::Chore>,
-}
-
-/// Where the crossbow rides: the right hand's [`CROSSBOW_SOCKET`] (#607).
-pub const CROSSBOW_SOCKET: &str = "hand_r.crossbow";
-/// The joint the crossbow rides through the reload's `leftHandSeconds`, kept where it was in the
-/// world when the hand-off began (asset-tooling #419).
-pub const CROSSBOW_LEFT_JOINT: &str = "hand_l";
-/// The socket the bolt rides from the reload's `boltDrawnSeconds` to its `reloadedSeconds`.
-pub const BOLT_HAND_SOCKET: &str = "hand_r.arrow";
-/// The bundle has no bolt item: the arrow (`equipment.arrow`, 0.76 m from its nock at the origin
-/// along +Z) scaled by this stands in for one (#607) …
-pub const BOLT_SCALE: f32 = 0.46;
-/// … and lies in the groove at this rigid transform in the crossbow's grip frame (translation
-/// in metres, rotation `[x, y, z, w]`): where the reload's right hand lays it down at
-/// `reloadedSeconds` on the male figure, lifted 1.5 cm out of the stock onto it (the native
-/// client's `a_reload_hands_the_crossbow_off_where_it_was_and_lays_the_bolt_in_the_groove`
-/// checks it).
-pub const BOLT_GROOVE: ([f32; 3], [f32; 4]) = ([0.006, 0.028, 0.054], [0., 0.0118, 0.0275, 0.9996]);
-/// The left hand's grip on the crank while the reload winds it (`crankSeconds`).
-pub const CRANK_GRIP: &str = "Grip_Crank_L";
-
-/// A crossbowman's crossbow this frame (#607): through the reload's `leftHandSeconds` it rides
-/// the left hand, the right drawing the next bolt.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct CrossbowCarry {
-    /// The crossbow rides [`CROSSBOW_LEFT_JOINT`] instead of [`CROSSBOW_SOCKET`].
-    pub left_hand: bool,
-    /// The left hand winds the crank ([`CRANK_GRIP`]).
-    pub crank: bool,
-    /// Where the bolt is; `None` between the shot and the draw of the next.
-    pub bolt: Option<Bolt>,
-}
-
-/// Where a crossbowman's bolt is (#607).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Bolt {
-    /// In the right hand's [`BOLT_HAND_SOCKET`], drawn from over the shoulder.
-    Hand,
-    /// Laid in the crossbow's groove ([`BOLT_GROOVE`]), loaded.
-    Groove,
-}
-
-impl Bolt {
-    /// The name both clients key it by.
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Hand => "hand",
-            Self::Groove => "groove",
-        }
-    }
-}
-
-/// A hand, for its finger joints and grip pose (asset-tooling #285).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Hand {
-    Left,
-    Right,
-}
-
-impl Hand {
-    pub const BOTH: [Self; 2] = [Self::Left, Self::Right];
-
-    const fn index(self) -> usize {
-        match self {
-            Self::Left => 0,
-            Self::Right => 1,
-        }
-    }
-
-    /// The hand whose finger or thumb `joint` is (`thumb_01_l` … `pinky_04_leaf_r`).
-    #[must_use]
-    pub fn of_finger(joint: &str) -> Option<Self> {
-        const FINGERS: [&str; 5] = ["thumb_", "index_", "middle_", "ring_", "pinky_"];
-        if !FINGERS.iter().any(|finger| joint.starts_with(finger)) {
-            return None;
-        }
-        if joint.ends_with("_l") {
-            Some(Self::Left)
-        } else if joint.ends_with("_r") {
-            Some(Self::Right)
-        } else {
-            None
-        }
-    }
-}
-
-/// The grip role of an item in hand: which `Grip_*` pose closes the fingers round it
-/// (asset-tooling #285, `grip.role`).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Held {
-    /// A one-hand weapon's grip: sword, dagger or mace.
-    Weapon,
-    /// The heater shield's hand handle.
-    Shield,
-    /// The tome, resting on the back of a relaxed hand.
-    Book,
-    /// A staff's shaft.
-    Staff,
-    /// The crossbow's stock: the wrist in the right hand, the fore-stock in the left (#607).
-    Crossbow,
-}
-
-impl Held {
-    /// The bundle's grip pose for this item in `hand`.
-    #[must_use]
-    pub const fn grip(self, hand: Hand) -> &'static str {
-        match (self, hand) {
-            (Self::Weapon, Hand::Left) => "Grip_Weapon_L",
-            (Self::Weapon, Hand::Right) => "Grip_Weapon_R",
-            (Self::Shield, Hand::Left) => "Grip_Shield_L",
-            (Self::Shield, Hand::Right) => "Grip_Shield_R",
-            (Self::Book, Hand::Left) => "Grip_Book_L",
-            (Self::Book, Hand::Right) => "Grip_Book_R",
-            (Self::Staff, Hand::Left) => "Grip_Staff_L",
-            (Self::Staff, Hand::Right) => "Grip_Staff_R",
-            (Self::Crossbow, Hand::Left) => "Grip_Crossbow_L",
-            (Self::Crossbow, Hand::Right) => "Grip_Crossbow_R",
-        }
-    }
-}
-
-/// What a unit holds in each hand.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Hands {
-    pub left: Option<Held>,
-    pub right: Option<Held>,
-}
-
-impl Hands {
-    #[must_use]
-    pub const fn get(self, hand: Hand) -> Option<Held> {
-        match hand {
-            Hand::Left => self.left,
-            Hand::Right => self.right,
-        }
-    }
-}
-
-/// The armour slots an equipped drop covers, and the `humanoid-sockets` armour sockets whose
-/// class outfit pieces it replaces. Hands, forearms and the belt belong to no slot and stay.
-pub const ARMOR_SOCKETS: [(EquipmentSlot, &[&str]); 4] = [
-    (EquipmentSlot::Head, &["head.armor"]),
-    (
-        EquipmentSlot::Chest,
-        &[
-            "spine_03.armor",
-            "clavicle_l.armor",
-            "clavicle_r.armor",
-            "upperarm_l.armor",
-            "upperarm_r.armor",
-        ],
-    ),
-    (
-        EquipmentSlot::Legs,
-        &[
-            "thigh_l.armor",
-            "thigh_r.armor",
-            "calf_l.armor",
-            "calf_r.armor",
-        ],
-    ),
-    (EquipmentSlot::Feet, &["foot_l.armor", "foot_r.armor"]),
-];
-
-/// The bundle outfit whose armour pieces draw an equipped drop. Catalog items carry no art of
-/// their own, so every drop wears the knight's plate on the sockets its slot covers.
-pub const DROP_ARMOR_OUTFIT: &str = "outfit.knight";
-
-/// A player's class starter outfit (asset-tooling #379): the Ranger bundle's `class.<id>`
-/// preset, its `classTrim` in the class colour, and the armour slots an equipped drop covers.
-/// Drops replace the outfit's pieces on their sockets; the trimmed tabard, sash or robe stays,
-/// so the class still reads.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Outfit {
-    pub class: PlayerClass,
-    /// Which of [`ARMOR_SOCKETS`] hold an equipped item. Only the viewer's equipment is
-    /// projected, so everyone else wears the starter outfit whole.
-    pub worn: [bool; 4],
-}
-
-impl Outfit {
-    /// The class's starter outfit, `equipment` (the viewer's) covering its slots.
-    #[must_use]
-    pub fn new(class: PlayerClass, equipment: Option<&Equipment>) -> Self {
-        Self {
-            class,
-            worn: ARMOR_SOCKETS
-                .map(|(slot, _)| equipment.is_some_and(|equipment| equipment.item(slot).is_some())),
-        }
-    }
-
-    /// The bundle's `humanoid-appearance.presets` id.
-    #[must_use]
-    pub const fn preset(self) -> &'static str {
-        match self.class {
-            PlayerClass::Warden => "class.warden",
-            PlayerClass::Ranger => "class.ranger",
-            PlayerClass::Arcanist => "class.arcanist",
-            PlayerClass::Necromancer => "class.necromancer",
-            PlayerClass::Rogue => "class.rogue",
-            PlayerClass::Cleric => "class.cleric",
-            PlayerClass::Druid => "class.druid",
-        }
-    }
-
-    /// The armour sockets whose outfit pieces the equipped drops replace.
-    #[must_use]
-    pub fn replaced(self) -> Vec<&'static str> {
-        ARMOR_SOCKETS
-            .iter()
-            .zip(self.worn)
-            .filter(|(_, worn)| *worn)
-            .flat_map(|((_, sockets), _)| sockets.iter().copied())
-            .collect()
-    }
-
-    /// The class colour on the outfit's `classTrim` materials as a linear base colour: the
-    /// class accent ([`super::player::Look::shoulder`], `shoulderColor` in the browser's
-    /// `character-visuals.ts`).
-    #[must_use]
-    pub fn trim(self) -> [f32; 3] {
-        let hex = super::player::Look::new(self.class.code(), false, None, false).shoulder;
-        let linear = |byte: u32| {
-            let c = (byte & 0xff) as f32 / 255.;
-            if c <= 0.040_45 {
-                c / 12.92
-            } else {
-                ((c + 0.055) / 1.055).powf(2.4)
-            }
-        };
-        [linear(hex >> 16), linear(hex >> 8), linear(hex)]
-    }
-}
-
-/// The Ranger figure a character is drawn on. Each is its own asset-tooling bundle with its own
-/// skeleton, clips, sockets and `humanoid-appearance`: the male carries the players, the class
-/// outfits and the male residents and enemies; the female (asset-tooling #378) carries only her
-/// own presets, with no headwear, beards, head skins or variety options.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
-pub enum Figure {
-    Male,
-    Female,
-}
-
-impl Figure {
-    /// The bundle's character key, also its acquisition directory under `characters/`.
-    #[must_use]
-    pub const fn character(self) -> &'static str {
-        match self {
-            Self::Male => "humanoid.ranger.male",
-            Self::Female => "humanoid.ranger.female",
-        }
-    }
-
-    /// The figure whose character key is `character`.
-    #[must_use]
-    pub fn of_character(character: &str) -> Option<Self> {
-        Self::VARIANTS
-            .iter()
-            .copied()
-            .find(|figure| figure.character() == character)
-    }
-}
-
-/// A character drawn on a Ranger figure in a `humanoid-appearance` preset: a named Greyhaven
-/// resident in the bundle's own preset (#418, #493), or a humanoid enemy in a game-authored
-/// preset over the male bundle's outfits (#39; [`super::presets::enemy_presets`]).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, strum::VariantArray)]
-pub enum Resident {
-    Villager,
-    VillagerWoman,
-    Marshal,
-    Guard,
-    Innkeeper,
-    Farmer,
-    Healer,
-    /// Tanner Hilda Brook (#493), on the female figure.
-    Tanner,
-    /// The Millbrook field marauders: ragged farmhands turned raiders.
-    Marauder,
-    /// The Redbrand rank and file in the band's red.
-    RedbrandBandit,
-    /// The Greyfang outriders (#286), with crossbows (#607).
-    RedbrandCrossbowman,
-    /// The Greyfang cavern's shield-bearers (#160): plate, helm, sword and shield.
-    RedbrandBrute,
-    /// Captain Ulric Thorn (#404), a recoloured Garrick: the depths' veteran in dark plate.
-    Thorn,
-    /// Garrick Redbrand (#276), the band's bareheaded leader in plate.
-    Garrick,
-}
-
-impl Resident {
-    /// The resident an NPC of this canonical name is, if it has a preset.
-    #[must_use]
-    pub fn of_name(name: &str) -> Option<Self> {
-        match name {
-            "Marshal Elden Greywatch" => Some(Self::Marshal),
-            "Greyhaven Guard" | "Watchman Garth" | "Watchman Pell" => Some(Self::Guard),
-            "Innkeeper Bram Tolliver" => Some(Self::Innkeeper),
-            "Farmer Osric Mill" => Some(Self::Farmer),
-            "Brother Aldous" => Some(Self::Healer),
-            "Tanner Hilda Brook" => Some(Self::Tanner),
-            "Weaver Lysa Reed" | "Mara Wells" | "Baker Anwen" | "Herbalist Nessa"
-            | "Fisher Ada" | "Washer Elin"
-            // The region's people (#819).
-            | "Alewife Gwen Barrow" | "Old Maud" | "Pip" | "Netter Ilsa" | "Trapper Sela"
-            | "Goodwife Ena" | "Shepherd Lise" | "Miller Hanne" | "Trader Maren" => {
-                Some(Self::VillagerWoman)
-            }
-            "Carpenter Owen Alder"
-            | "Davin Moss"
-            | "Miller Tomas"
-            | "Peddler Rowan"
-            | "Porter Ben"
-            | "Apprentice Finn"
-            | "Shepherd Corin"
-            | "Farmer Tobin Hale"
-            | "Innkeeper Hob Ferris"
-            | "Miller Wynne"
-            | "Ferryman Osk"
-            | "Fisher Brann"
-            | "Huntsman Edric Vale"
-            | "Ploughman Garr"
-            | "Old Bertil"
-            | "Farmhand Jory"
-            | "Smith Wulfric Hale" => Some(Self::Villager),
-            _ => None,
-        }
-    }
-
-    /// The humanoid enemy a creature template of this name is, if it has a preset.
-    #[must_use]
-    pub fn of_creature(name: &str) -> Option<Self> {
-        match name {
-            "Field Marauder" => Some(Self::Marauder),
-            "Redbrand Bandit" => Some(Self::RedbrandBandit),
-            "Redbrand Crossbowman" => Some(Self::RedbrandCrossbowman),
-            "Redbrand Brute" => Some(Self::RedbrandBrute),
-            "Garrick Redbrand" => Some(Self::Garrick),
-            "Captain Ulric Thorn" => Some(Self::Thorn),
-            _ => None,
-        }
-    }
-
-    /// The `humanoid-appearance.presets` id: the bundle's for a resident, the game's for an
-    /// enemy.
-    #[must_use]
-    pub const fn preset(self) -> &'static str {
-        match self {
-            Self::Marshal => "resident.marshal",
-            Self::Guard => "resident.guard",
-            Self::Innkeeper => "resident.innkeeper",
-            Self::Farmer | Self::Villager => "resident.farmer",
-            Self::Healer => "resident.healer",
-            Self::Tanner | Self::VillagerWoman => "resident.tanner",
-            Self::Marauder => "enemy.marauder",
-            Self::RedbrandBandit => "enemy.redbrand.bandit",
-            Self::RedbrandCrossbowman => "enemy.redbrand.crossbowman",
-            Self::RedbrandBrute => "enemy.redbrand.brute",
-            Self::Garrick => "enemy.redbrand.garrick",
-            Self::Thorn => "enemy.redbrand.thorn",
-        }
-    }
-
-    /// Whether the units sharing this preset each wear their own fixed variation of it
-    /// (asset-tooling #380): the guards and the rank-and-file enemies are different men in the
-    /// same gear, while the named residents and Garrick keep their authored looks.
-    #[must_use]
-    pub const fn varied(self) -> bool {
-        matches!(
-            self,
-            Self::Guard
-                | Self::Villager
-                | Self::VillagerWoman
-                | Self::Marauder
-                | Self::RedbrandBandit
-                | Self::RedbrandCrossbowman
-                | Self::RedbrandBrute
-        )
-    }
-
-    /// What the character carries: the guards, bandits and Garrick a sword, the brute a sword
-    /// and shield, a crossbowman a crossbow (#607), a marauder a dagger.
-    #[must_use]
-    pub const fn loadout(self) -> Option<Loadout> {
-        match self {
-            Self::Guard | Self::RedbrandBandit | Self::Garrick | Self::Thorn => {
-                Some(Loadout::Sword)
-            }
-            Self::Marauder => Some(Loadout::Dagger),
-            Self::RedbrandCrossbowman => Some(Loadout::Crossbow),
-            Self::RedbrandBrute => Some(Loadout::SwordAndRedbrandShield),
-            Self::Marshal
-            | Self::Innkeeper
-            | Self::Farmer
-            | Self::Healer
-            | Self::Tanner
-            | Self::Villager
-            | Self::VillagerWoman => None,
-        }
-    }
-
-    /// The figure the character is drawn on: Hilda on the female, everyone else on the male.
-    #[must_use]
-    pub const fn figure(self) -> Figure {
-        match self {
-            Self::Tanner | Self::VillagerWoman => Figure::Female,
-            _ => Figure::Male,
-        }
-    }
-
-    /// The class whose authored strike the character plays ([`Kind::strike`]): a crossbowman
-    /// shoots like a Ranger, with the crossbow clips where the bundle has them (#607) and the
-    /// bow release otherwise; everyone else swings.
-    #[must_use]
-    pub const fn strike_class(self) -> Option<PlayerClass> {
-        match self {
-            Self::RedbrandCrossbowman => Some(PlayerClass::Ranger),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, strum::VariantArray)]
-pub enum Kind {
-    Ranger,
-    // The wildlife release's beasts (#889).
-    Wolf,
-    Rat,
-    Boar,
-    Bear,
-    Spider,
-    Lurker,
-    /// The forest lynx (#989).
-    Lynx,
-    /// The marsh adder (#990).
-    Adder,
-    /// The cave bat (#995).
-    Bat,
-    /// The river crayfish (#996).
-    Crayfish,
-    /// The Southwood stag (#997).
-    Stag,
-}
-
-/// Clip names of one model.
-#[derive(Clone, Copy, Debug)]
-pub struct Clips {
-    pub idle: &'static str,
-    pub walk: &'static str,
-    pub run: &'static str,
-    pub attack: &'static str,
-    pub death: &'static str,
-    /// Deaths falling back, forward and spinning (asset-tooling #711), varied per death when
-    /// the bundle has them (#885); otherwise `death`.
-    pub deaths: Option<[&'static str; 3]>,
-    /// A standing raised shield, for a model that carries one (#156).
-    pub guard: Option<&'static str>,
-    pub jump: Option<JumpClips>,
-    /// The authored water locomotion, for a model that swims (Atlas 6.6.41).
-    pub swim: Option<SwimClips>,
-    /// The in-place dodge roll, for a model that rolls (#516).
-    pub roll: Option<&'static str>,
-    /// Authored climbing, ladder, rope and mantle clips, for a model that climbs (#500).
-    pub climb: Option<ClimbClips>,
-    /// Class- and ability-specific strikes, for a model that has them (#384).
-    pub strikes: Option<StrikeClips>,
-    /// The joint whose subtree is the upper body, for a model that layers its upper body over
-    /// its legs (Atlas 6.6.45); every other joint (root, pelvis, legs) is the lower body.
-    pub upper_body: Option<&'static str>,
-    /// Directional, sprint and turning gaits, for a model that has them (#538).
-    pub gaits: Option<GaitClips>,
-    /// Hit, block and guard-break reactions, for a model that has them (#538).
-    pub reactions: Option<ReactionClips>,
-    /// The Warden's sword-and-shield clips and the Redbrand specials, for a model that has them
-    /// (#582, asset-tooling #447).
-    pub sword: Option<SwordClips>,
-    /// The Rogue's dagger, throw, flourish and bandage clips, for a model that has them (#603,
-    /// asset-tooling #418).
-    pub dagger: Option<DaggerClips>,
-    /// The upper-body bow cycle, the rapid release and the power draw, for a model that has
-    /// them (#607, asset-tooling #419).
-    pub bow: Option<BowClips>,
-    /// The crossbow clips, for a model that has them (#607, asset-tooling #419).
-    pub crossbow: Option<CrossbowClips>,
-    /// The casters' cast styles, staff and mace swings, war cry and interrupt, for a model that
-    /// has them (#609, asset-tooling #420).
-    pub caster: Option<CasterClips>,
-    /// The emote, door, loot, talk, trade, sitting and bed clips, for a model that has them
-    /// (#619, asset-tooling #421).
-    pub social: Option<SocialClips>,
-    /// What a creature holds still and out of a fight instead of `idle`, for a model that has
-    /// it: the cave bat's `Perch` at its roost (#995), where it hovers in `idle` in a fight, and
-    /// the stag's `Eat` (#997).
-    pub rest: Option<&'static str>,
-    /// A beast's two attacks and its alert (#889), for a model that has them.
-    pub bites: Option<BiteClips>,
-}
-
-/// A beast's two attacks and its alert (#889), for a model that has them.
-#[derive(Clone, Copy, Debug)]
-pub struct BiteClips {
-    /// By [`mmorpg_core::CreatureAttack::code`]: `Attack_A` quick, `Attack_B` heavy.
-    pub attacks: [&'static str; 2],
-    /// Played once as it turns to fight.
-    pub alert: &'static str,
-    /// What follows an attack, in order, for a model whose attack is a wind-up clip (#989): the
-    /// lynx's `Pounce_Lunge`, whose contact is the zone's, then its `Pounce_Recover`; a
-    /// strike clip that holds its own recovery, like the stag's `Attack_A` (#997), has none.
-    pub follow: Option<(&'static str, Option<&'static str>)>,
-}
-
-/// The wildlife release's clip set (asset-tooling #716, #723): every hostile beast runs, bites
-/// twice over, flinches, dies and turns alert.
-const WILD_CLIPS: Clips = Clips {
-    idle: "Idle",
-    walk: "Walk",
-    run: "Run",
-    attack: "Attack_A",
-    death: "Death",
-    deaths: None,
-    guard: None,
-    jump: None,
-    swim: None,
-    roll: None,
-    climb: None,
-    strikes: None,
-    upper_body: None,
-    gaits: None,
-    reactions: Some(ReactionClips {
-        chest: "Hit",
-        head: "Hit",
-        knockback: "Hit",
-        shove: "Hit",
-        block: "Hit",
-        guard_break: "Hit",
-        light: ["Hit", "Hit"],
-        heavy: "Hit",
-        rooted: None,
-    }),
-    sword: None,
-    dagger: None,
-    bow: None,
-    crossbow: None,
-    caster: None,
-    social: None,
-    rest: None,
-    bites: Some(BiteClips {
-        attacks: ["Attack_A", "Attack_B"],
-        alert: "Alert",
-        follow: None,
-    }),
-};
-
-/// The wildlife release's lynx (#989, asset-tooling #778): it rests and walks like the other
-/// beasts, crouches to stalk as its fight starts, and pounces in three clips, `Pounce_Windup`,
-/// `Pounce_Lunge` (whose contact the zone's pounce lands on) and `Pounce_Recover`.
-const LYNX_CLIPS: Clips = Clips {
-    attack: "Pounce_Lunge",
-    bites: Some(BiteClips {
-        attacks: ["Pounce_Windup", "Pounce_Windup"],
-        alert: "Crouch_Stalk_Loop",
-        follow: Some(("Pounce_Lunge", Some("Pounce_Recover"))),
-    }),
-    ..WILD_CLIPS
-};
-
-/// The wildlife release's marsh adder (#990, asset-tooling #778): it rests coiled and
-/// slithers, hisses as its fight starts, and strikes in three clips: `Warn_Hiss_Loop` once
-/// through (the zone's warning), `Strike` (whose contact the zone's strike lands on) and
-/// `Strike_Recover`.
-const ADDER_CLIPS: Clips = Clips {
-    idle: "Idle_Coil_Loop",
-    walk: "Slither_Loop",
-    run: "Slither_Loop",
-    attack: "Strike",
-    bites: Some(BiteClips {
-        attacks: ["Warn_Hiss_Loop", "Warn_Hiss_Loop"],
-        alert: "Warn_Hiss_Loop",
-        follow: Some(("Strike", Some("Strike_Recover"))),
-    }),
-    ..WILD_CLIPS
-};
-
-/// The wildlife release's cave bat (#995, asset-tooling #784): it hangs in its `Perch` at the
-/// roost, drops off in `Launch` as its fight starts, hovers in `Idle` and flies in `Fly`, and
-/// dives in three clips: `Dive_Windup` (the zone's wind-up), `Dive_Contact` (whose contact the
-/// zone's dive lands on) and `Dive_Recover`.
-const BAT_CLIPS: Clips = Clips {
-    run: "Fly",
-    walk: "Fly",
-    attack: "Dive_Contact",
-    rest: Some("Perch"),
-    bites: Some(BiteClips {
-        attacks: ["Dive_Windup", "Dive_Windup"],
-        alert: "Launch",
-        follow: Some(("Dive_Contact", Some("Dive_Recover"))),
-    }),
-    ..WILD_CLIPS
-};
-
-/// The wildlife release's stag (#997, asset-tooling #804): it grazes in `Eat` while it stands out of a
-/// fight and walks like the ambient stag, throws its head up in `Alert` as its fight starts, and charges in two clips:
-/// `Alert` once through (the zone's warning), then `Attack_A`, the lowered-antler charge whose
-/// contact the zone's lands on and whose tail is its blown recovery. The rearing `Attack_B`
-/// goes unused.
-const STAG_CLIPS: Clips = Clips {
-    rest: Some("Eat"),
-    bites: Some(BiteClips {
-        attacks: ["Alert", "Alert"],
-        alert: "Alert",
-        follow: Some(("Attack_A", None)),
-    }),
-    ..WILD_CLIPS
-};
-
-/// The authored ranged clips beside the full-body bow cycle (#607, asset-tooling #419), every
-/// one on the upper body only. Each one the bundle lacks falls back to what played before.
-#[derive(Clone, Copy, Debug)]
-pub struct BowClips {
-    /// The bow cycle re-authored with the hips square: it replaces the full-body cycle
-    /// whenever the cycle plays on the upper body alone, over a gait or the idle legs.
-    pub upper: CastClips,
-    /// The upper body's release ([`StrikeClips::bow`]'s twin).
-    pub release: &'static str,
-    /// One shot from the set string and back under Rapid Fire's haste: draw, loose, nock.
-    pub rapid: &'static str,
-    /// Aimed Shot's and Piercing Shot's slow draw past full draw, held at its end; it looses
-    /// with [`Self::release`].
-    pub power_draw: &'static str,
-}
-
-impl BowClips {
-    /// Whether `clip` is one of them.
-    #[must_use]
-    pub fn contains(self, clip: &str) -> bool {
-        self.upper.contains(clip) || [self.release, self.rapid, self.power_draw].contains(&clip)
-    }
-
-    /// The upper-body twin of a clip of the full-body cycle `full` or its `release`.
-    #[must_use]
-    pub fn upper_of(self, full: CastClips, release: &str, clip: &str) -> Option<&'static str> {
-        let upper = self.upper;
-        if clip == release {
-            Some(self.release)
-        } else if Some(clip) == full.aim {
-            upper.aim
-        } else if clip == full.enter {
-            Some(upper.enter)
-        } else if clip == full.hold {
-            Some(upper.hold)
-        } else if Some(clip) == full.recovery {
-            upper.recovery
-        } else if clip == full.cancel {
-            Some(upper.cancel)
-        } else {
-            None
-        }
-    }
-}
-
-/// The Redbrand Crossbowman's crossbow clips (#607, asset-tooling #419), every one on the upper
-/// body only.
-#[derive(Clone, Copy, Debug)]
-pub struct CrossbowClips {
-    /// Carried low in both hands: out of combat and on the move.
-    pub idle: &'static str,
-    /// The butt at the shoulder, loaded: standing in combat, and through Crossbow Bolt's cast.
-    pub aim: &'static str,
-    /// The shot, looses at the clip's `crossbow.releaseSeconds` …
-    pub fire: &'static str,
-    /// … and the reload after it, back to the aim.
-    pub reload: &'static str,
-}
-
-impl CrossbowClips {
-    /// Whether `clip` is one of them.
-    #[must_use]
-    pub fn contains(self, clip: &str) -> bool {
-        [self.idle, self.aim, self.fire, self.reload].contains(&clip)
-    }
-
-    /// The cycle a crossbowman's cast holds (#607): the aim through the cast, the reload after
-    /// the shot. It has no let-down of its own; a cancel holds the aim a moment.
-    #[must_use]
-    pub const fn cycle(self) -> CastClips {
-        CastClips {
-            aim: None,
-            enter: self.aim,
-            hold: self.aim,
-            recovery: Some(self.reload),
-            cancel: self.aim,
-            footwork: false,
-        }
-    }
-}
-
-/// The casters' shared cast styles, staff and mace swings, war cry and interrupt (#609,
-/// asset-tooling #420). The school (fire, frost, shadow, holy, nature) shows through VFX, not
-/// the clip. All but [`Self::nova`] and [`Self::summon_raise`] play on the upper body only.
-/// Each one the bundle lacks falls back to what played before (the `Spell_Simple_*` hold and
-/// release).
-#[derive(Clone, Copy, Debug)]
-pub struct CasterClips {
-    /// Held through a cast bar, looped.
-    pub charge: &'static str,
-    /// A cast's release from the charge: the palm push of a bolt …
-    pub push: &'static str,
-    /// … or the overhand throw of a blast.
-    pub overhand: &'static str,
-    /// Channel loops: the staff's beam, the palm's drain, the staff raised to the sky.
-    pub beam: &'static str,
-    pub drain: &'static str,
-    pub sky: &'static str,
-    /// The staff's foot stamped for a burst round the caster, whole body.
-    pub nova: &'static str,
-    /// The instants: a cone swept ahead, a pointed curse, a sweep over the ground, a ward on
-    /// oneself, a touch for an ally, and the Warden's war cry.
-    pub cone: &'static str,
-    pub curse: &'static str,
-    pub ground: &'static str,
-    pub ward: &'static str,
-    pub ally: &'static str,
-    pub warcry: &'static str,
-    /// Raise Skeleton's kneel, whole body: the clip is the cast, from its start.
-    pub summon_raise: &'static str,
-    /// Call Companion's whistle: it ends with the cast, after the charge.
-    pub summon_call: &'static str,
-    /// The staff classes' alternating auto-attack: a jab and a sweep, two-handed.
-    pub staff: [&'static str; 2],
-    /// The Cleric's alternating auto-attack: an overhand and a backhand blow.
-    pub mace: [&'static str; 2],
-    /// Raising summoned terrain (#293); no ability raises any yet.
-    pub wall: &'static str,
-    /// A cast or channel broken off, from the charge.
-    pub interrupted: &'static str,
-}
-
-impl CasterClips {
-    /// Whether `clip` is one of them.
-    #[must_use]
-    pub fn contains(self, clip: &str) -> bool {
-        [
-            self.charge,
-            self.push,
-            self.overhand,
-            self.beam,
-            self.drain,
-            self.sky,
-            self.nova,
-            self.cone,
-            self.curse,
-            self.ground,
-            self.ward,
-            self.ally,
-            self.warcry,
-            self.summon_raise,
-            self.summon_call,
-            self.staff[0],
-            self.staff[1],
-            self.mace[0],
-            self.mace[1],
-            self.wall,
-            self.interrupted,
-        ]
-        .contains(&clip)
-    }
-
-    /// Which body `clip` drives: the nova and the summoning kneel the whole body standing,
-    /// every other one only the upper body; `None` for a clip not among these.
-    #[must_use]
-    pub fn region(self, clip: &str) -> Option<Region> {
-        if clip == self.nova || clip == self.summon_raise {
-            Some(Region::Footwork)
-        } else {
-            self.contains(clip).then_some(Region::Upper)
-        }
-    }
-}
-
-/// How a caster shows a cast or channel of an ability (#609).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CastStyle {
-    /// The charge, looped through the cast bar; the release plays when the cast completes.
-    Charge(&'static str),
-    /// A channel loop, looped while channelling.
-    Channel(&'static str),
-    /// A one-shot that is the whole cast, played from its start (Raise Skeleton).
-    Whole(&'static str),
-    /// The charge, then a one-shot timed to end with the cast (Call Companion): `(charge,
-    /// finish)`.
-    Finish(&'static str, &'static str),
-}
-
-impl CastStyle {
-    /// The clip the cast shows first.
-    #[must_use]
-    pub const fn first(self) -> &'static str {
-        match self {
-            Self::Charge(clip)
-            | Self::Channel(clip)
-            | Self::Whole(clip)
-            | Self::Finish(clip, _) => clip,
-        }
-    }
-
-    /// The clip a style that plays its own release shows it with: then the zone's resolution
-    /// plays nothing more.
-    #[must_use]
-    pub const fn released(self) -> Option<&'static str> {
-        match self {
-            Self::Whole(clip) | Self::Finish(_, clip) => Some(clip),
-            Self::Charge(_) | Self::Channel(_) => None,
-        }
-    }
-}
-
-/// Where a spell's effect starts in a caster clip (`cast.channelJoint`, `cast.channelPoint`,
-/// asset-tooling #420): `point` metres in `hand`'s glTF frame, the palm's middle or the staff's
-/// head (on the nova, its foot). Spawn a bolt or anchor a beam or drain here.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Channel {
-    pub hand: Hand,
-    pub point: [f64; 3],
-}
-
-/// The authored dagger, throw, flourish and bandage clips (#603, asset-tooling #418), every one
-/// on the upper body only. Each one the bundle lacks falls back to what played before.
-#[derive(Clone, Copy, Debug)]
-pub struct DaggerClips {
-    /// The low twin-dagger stance, looped while a dagger holder stands.
-    pub idle: &'static str,
-    /// The auto-attack: the right dagger's stab, alternating with the left dagger's slash when
-    /// both hands hold one.
-    pub stab: &'static str,
-    pub slash: &'static str,
-    /// Sinister Strike's double stab, Poisoned Blade's coat and slash, Gouge's pommel jab.
-    pub sinister: &'static str,
-    pub poison: &'static str,
-    pub gouge: &'static str,
-    /// The haste flourish: Adrenaline Rush and the Ranger's Rapid Fire.
-    pub flourish: &'static str,
-    /// The sidearm knife throw and the underarm flask or bomb lob, drawn from the belt.
-    pub throw_knife: &'static str,
-    pub throw_lob: &'static str,
-    /// Wrapping a bandage round the forearm: Crude Bandage.
-    pub bandage: &'static str,
-}
-
-impl DaggerClips {
-    /// Whether `clip` is one of them; each plays on the upper body.
-    #[must_use]
-    pub fn contains(self, clip: &str) -> bool {
-        [
-            self.idle,
-            self.stab,
-            self.slash,
-            self.sinister,
-            self.poison,
-            self.gouge,
-            self.flourish,
-            self.throw_knife,
-            self.throw_lob,
-            self.bandage,
-        ]
-        .contains(&clip)
-    }
-}
-
-/// The authored sword-and-shield clips (#582, asset-tooling #447). Each one the bundle lacks
-/// falls back to what played before: the sword attack, the shield idle, the idle or nothing.
-#[derive(Clone, Copy, Debug)]
-pub struct SwordClips {
-    /// `Sword_Slash_{Low,Mid,High}_{L,C,R}` by [`StrikeHeight::code`] and [`mmorpg_core::StrikeSide::code`]:
-    /// the upper body's slash toward an aim, to the figure's own left, centre or right.
-    pub slashes: [[&'static str; 3]; 3],
-    /// The undirected Heroic Strike, on the upper body.
-    pub heroic: &'static str,
-    /// Cleave's turning sweep, with footwork.
-    pub cleave: &'static str,
-    /// Charge's rush, looped while the zone carries the charger, and its shield impact on arrival.
-    pub charge_run: &'static str,
-    pub charge_impact: &'static str,
-    /// The raised shield in the low, middle and high guard lane by [`StrikeHeight::code`], on
-    /// the upper body.
-    pub guards: [&'static str; 3],
-    /// Reeling, looped while stunned.
-    pub stun: &'static str,
-    /// Rising from a kneel, once, back from death.
-    pub respawn: &'static str,
-    /// Garrick Redbrand's whirl and the Redbrand Brute's overhead smash, whole body and in place.
-    pub whirl: &'static str,
-    pub smash: &'static str,
-    /// The skirmisher's footwork (asset-tooling#757), whole body and in place, from the sword
-    /// guard back to it: a sidestep to the figure's left and right, and a hop back. The Redbrand
-    /// Bandit flanks and falls back with them (#963).
-    pub sidesteps: [&'static str; 2],
-    pub hop_back: &'static str,
-    /// The Redbrand shield-bearer's guard (#953, asset-tooling #774), whole body: the round
-    /// shield held up while it fights, its planted 45° pivots to the figure's left and right,
-    /// the shield taking a blocked blow, and the stagger when a blow gets past it.
-    pub shield_guard: &'static str,
-    pub shield_turns: [&'static str; 2],
-    pub shield_impact: &'static str,
-    pub shield_stagger: &'static str,
-}
-
-impl SwordClips {
-    /// The slash toward `aim`.
-    #[must_use]
-    pub const fn slash(self, aim: StrikeAim) -> &'static str {
-        self.slashes[aim.height.code() as usize][aim.side.code() as usize]
-    }
-
-    /// The raised shield in `lane`.
-    #[must_use]
-    pub const fn guard(self, lane: StrikeHeight) -> &'static str {
-        self.guards[lane.code() as usize]
-    }
-
-    /// Whether `clip` is one of the slashes.
-    #[must_use]
-    pub fn is_slash(self, clip: &str) -> bool {
-        self.slashes.iter().flatten().any(|&slash| slash == clip)
-    }
-
-    /// Which body `clip` drives as a strike: the slashes and the heroic strike only the upper
-    /// body, the whirl, the smash and the charge impact always the whole body, the cleave and
-    /// the rise with footwork; `None` for a clip not among these.
-    #[must_use]
-    pub fn region(self, clip: &str) -> Option<Region> {
-        if self.is_slash(clip) || clip == self.heroic {
-            Some(Region::Upper)
-        } else if clip == self.whirl || clip == self.smash || clip == self.charge_impact {
-            Some(Region::Whole)
-        } else if clip == self.cleave || clip == self.respawn {
-            Some(Region::Footwork)
-        } else {
-            None
-        }
-    }
-}
-
-/// A movement-state strike's clips (#885), best first: the family's authored strike
-/// (`<Family>_Run_Strike`, `<Family>_Jump_Strike` and the chain, asset-tooling #709 and #711),
-/// then the clip already in the bundle that stands in for it.
-#[must_use]
-pub const fn melee_clips(family: WeaponFamily, variant: StrikeVariant) -> [&'static str; 2] {
-    use StrikeVariant::{Finisher, First, Jumping, Running, Second};
-    match (family, variant) {
-        (WeaponFamily::Sword, First) => ["Sword_Regular_A", "Sword_Slash_Mid_R"],
-        (WeaponFamily::Sword, Second) => ["Sword_Regular_B", "Sword_Slash_Mid_L"],
-        (WeaponFamily::Sword, Finisher) => ["Sword_Regular_C", "Sword_Attack"],
-        (WeaponFamily::Sword, Running) => ["Sword_Run_Strike", "Sword_Slash_Mid_R"],
-        (WeaponFamily::Sword, Jumping) => ["Sword_Jump_Strike", "Sword_Slash_High_C"],
-        (WeaponFamily::Mace, First) => ["Mace_Swing_A", "Mace_Swing_A"],
-        (WeaponFamily::Mace, Second) => ["Mace_Swing_B", "Mace_Swing_B"],
-        (WeaponFamily::Mace, Finisher) => ["Mace_Swing_C", "Mace_Swing_A"],
-        (WeaponFamily::Mace, Running) => ["Mace_Run_Strike", "Mace_Swing_B"],
-        (WeaponFamily::Mace, Jumping) => ["Mace_Jump_Strike", "Mace_Swing_A"],
-        (WeaponFamily::Dagger, First) => ["Dagger_Stab_R", "Dagger_Stab_R"],
-        (WeaponFamily::Dagger, Second) => ["Dagger_Slash_L", "Dagger_Slash_L"],
-        (WeaponFamily::Dagger, Finisher) => ["Dagger_Sinister", "Dagger_Sinister"],
-        (WeaponFamily::Dagger, Running) => ["Dagger_Run_Strike", "Dagger_Stab_R"],
-        (WeaponFamily::Dagger, Jumping) => ["Dagger_Jump_Strike", "Dagger_Sinister"],
-        (WeaponFamily::Staff, First) => ["Staff_Strike_A", "Staff_Strike_A"],
-        (WeaponFamily::Staff, Second) => ["Staff_Strike_B", "Staff_Strike_B"],
-        (WeaponFamily::Staff, Finisher) => ["Staff_Strike_C", "Staff_Strike_B"],
-        (WeaponFamily::Staff, Running) => ["Staff_Run_Strike", "Staff_Strike_A"],
-        (WeaponFamily::Staff, Jumping) => ["Staff_Jump_Strike", "Staff_Strike_B"],
-        (WeaponFamily::Spear, First | Second) => ["Spear_Thrust_A", "Staff_Strike_A"],
-        (WeaponFamily::Spear, Finisher) => ["Spear_Thrust_B", "Staff_Strike_B"],
-        (WeaponFamily::Spear, Running) => ["Spear_Run_Strike", "Staff_Strike_A"],
-        (WeaponFamily::Spear, Jumping) => ["Spear_Jump_Strike", "Staff_Strike_B"],
-        (WeaponFamily::Unarmed, First) => ["Unarmed_Jab", "Dagger_Stab_R"],
-        (WeaponFamily::Unarmed, Second) => ["Unarmed_Cross", "Dagger_Slash_L"],
-        (WeaponFamily::Unarmed, Finisher) => ["Unarmed_Hook", "Dagger_Gouge"],
-        (WeaponFamily::Unarmed, Running) => ["Unarmed_Run_Strike", "Dagger_Stab_R"],
-        (WeaponFamily::Unarmed, Jumping) => ["Unarmed_Jump_Strike", "Dagger_Gouge"],
-        (WeaponFamily::Bow, First | Second) => ["Bow_Bash_A", "Sword_Slash_Mid_R"],
-        (WeaponFamily::Bow, Finisher) => ["Bow_Bash_B", "Sword_Slash_High_C"],
-        (WeaponFamily::Bow, Running) => ["Bow_Run_Strike", "Sword_Slash_Mid_R"],
-        (WeaponFamily::Bow, Jumping) => ["Bow_Jump_Strike", "Sword_Slash_High_C"],
-    }
-}
-
-/// The authored strikes a humanoid plays instead of its sword attack.
-#[derive(Clone, Copy, Debug)]
-pub struct StrikeClips {
-    /// The Warden's Shield Bash, the shield-arm follow-up of the slash combo.
-    pub shield_bash: &'static str,
-    /// A bow shot's release.
-    pub bow: &'static str,
-    /// A spell's release, for the staff and spell classes.
-    pub spell: &'static str,
-    /// The bow cycle around the release (#538): aimed while the shot winds up, drawn and held
-    /// through a cast, recovered after the release and let down on a cancel.
-    pub bow_cycle: CastClips,
-    /// The spell hold (#538): raised, held through a cast or channel and lowered on a cancel.
-    pub spell_cycle: CastClips,
-}
-
-/// A cast's clips (#538): `enter` once, then `hold` looped until the cast resolves or stops;
-/// `recovery` after its release, `cancel` when it stops early. `aim` is the local wind-up of an
-/// instant release.
-#[derive(Clone, Copy, Debug)]
-pub struct CastClips {
-    pub aim: Option<&'static str>,
-    pub enter: &'static str,
-    pub hold: &'static str,
-    pub recovery: Option<&'static str>,
-    pub cancel: &'static str,
-    /// The cycle turns the pelvis: the whole body plays it while standing, the upper body
-    /// while moving. Otherwise only the upper body plays it.
-    pub footwork: bool,
-}
-
-impl CastClips {
-    /// Whether `clip` is one of the cycle's clips.
-    #[must_use]
-    pub fn contains(self, clip: &str) -> bool {
-        [
-            Some(self.enter),
-            Some(self.hold),
-            Some(self.cancel),
-            self.aim,
-            self.recovery,
-        ]
-        .contains(&Some(clip))
-    }
-}
-
-/// The social and interaction clips (#619, asset-tooling #421): all 30 fps and by name.
-#[derive(Clone, Copy, Debug)]
-pub struct SocialClips {
-    pub wave: &'static str,
-    pub point: &'static str,
-    pub bow: &'static str,
-    pub cheer: &'static str,
-    pub laugh: &'static str,
-    pub door_push: &'static str,
-    pub door_pull: &'static str,
-    pub door_knock: &'static str,
-    pub loot_enter: &'static str,
-    pub loot_loop: &'static str,
-    pub loot_exit: &'static str,
-    pub talk_idle: &'static str,
-    pub talk_explain: &'static str,
-    /// A line that points at an objective: the NPC's left faces it (#619).
-    pub talk_direct: &'static str,
-    pub talk_shrug: &'static str,
-    pub trade: &'static str,
-    pub sit_chair_enter: &'static str,
-    pub sit_chair_loop: &'static str,
-    pub sit_chair_exit: &'static str,
-    pub sit_ground: &'static str,
-    pub sleep_enter: &'static str,
-    pub sleep_loop: &'static str,
-    /// A knocked-awake resident getting up, over the zone's 1.5 s rise (#619).
-    pub sleep_wake: &'static str,
-}
-
-impl SocialClips {
-    /// The emote's clip and whether it takes the whole body (the bow; the others are
-    /// upper-body and play over any gait).
-    #[must_use]
-    pub const fn emote(self, emote: mmorpg_core::Emote) -> (&'static str, bool) {
-        match emote {
-            mmorpg_core::Emote::Wave => (self.wave, false),
-            mmorpg_core::Emote::Point => (self.point, false),
-            mmorpg_core::Emote::Bow => (self.bow, true),
-            mmorpg_core::Emote::Cheer => (self.cheer, false),
-            mmorpg_core::Emote::Laugh => (self.laugh, false),
-        }
-    }
-
-    /// A posture's chain: `enter` if it has one, the loop, and `exit` if it has one.
-    #[must_use]
-    pub const fn chain(
-        self,
-        posture: Posture,
-    ) -> (Option<&'static str>, &'static str, Option<&'static str>) {
-        match posture {
-            Posture::Loot => (Some(self.loot_enter), self.loot_loop, Some(self.loot_exit)),
-            Posture::SitChair => (
-                Some(self.sit_chair_enter),
-                self.sit_chair_loop,
-                Some(self.sit_chair_exit),
-            ),
-            Posture::SitGround => (None, self.sit_ground, None),
-            Posture::Sleep => (Some(self.sleep_enter), self.sleep_loop, None),
-            // The rise plays once and holds its last frame until the zone moves the resident.
-            Posture::Waking => (Some(self.sleep_wake), self.sleep_wake, None),
-        }
-    }
-
-    /// Whether `clip` is a bed or chair clip, for which the drawn root moves off the body's spot
-    /// onto the furniture.
-    #[must_use]
-    pub fn on_furniture(self, clip: &str) -> bool {
-        clip == self.sleep_enter
-            || clip == self.sleep_loop
-            || clip == self.sleep_wake
-            || clip == self.sit_chair_enter
-            || clip == self.sit_chair_loop
-            || clip == self.sit_chair_exit
-    }
-}
-
-/// A whole-body pose a unit holds while it is still (#619): kneeling at a corpse, a seat or a
-/// bed. It enters, loops and leaves by its clips ([`SocialClips::chain`]). Movement, damage, a
-/// strike or death breaks it at once, and it stays broken until the cue goes away, so a looping
-/// sit or sleep never pins a unit that walks.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Posture {
-    Loot,
-    SitChair,
-    SitGround,
-    Sleep,
-    Waking,
-}
-
-impl Posture {
-    /// How long into the exit moving input may cut it (the clip's `standSeconds`).
-    const fn stand_seconds(self) -> f32 {
-        match self {
-            Self::Loot => 0.075,
-            Self::SitChair => 0.12,
-            Self::SitGround | Self::Sleep | Self::Waking => 0.,
-        }
-    }
-}
-
-/// Where the Ranger's longbow rides (#556): stowed on the back, and in the left hand through the
-/// bow cycle.
-pub const BOW_STOWED_SOCKET: &str = "back.bow.stowed";
-pub const BOW_HAND_SOCKET: &str = "hand_l.bow";
-/// The longbow's draw contract (asset-tooling `BOW_DRAW_CONTRACT`): its `nock` joint moves
-/// along the bow's `-Z` by the clip's `humanoid-clips` `bow.drawMeters`.
-pub const BOW_NOCK_JOINT: &str = "nock";
-pub const BOW_DRAW_AXIS: [f32; 3] = [0., 0., -1.];
-
-/// The bow cycle clip a unit's upper body shows (#556): while it plays, the bow is in hand and
-/// its nock follows the clip's `bow.drawMeters` at `time`.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct BowShot {
-    pub clip: &'static str,
-    pub time: f32,
-}
-
-/// The draw in metres at `time` seconds of a clip's `bow.drawMeters` (one value per frame at
-/// `sample_rate`), linear between frames and held at either end; 0 for an empty table.
-#[must_use]
-pub fn draw_meters(table: &[f32], sample_rate: f32, time: f32) -> f32 {
-    let Some(last) = table.len().checked_sub(1) else {
-        return 0.;
-    };
-    #[allow(clippy::cast_precision_loss)]
-    let frame = (time * sample_rate).clamp(0., last as f32);
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let below = (frame.floor() as usize).min(last);
-    let above = (below + 1).min(last);
-    #[allow(clippy::cast_precision_loss)]
-    let share = frame - below as f32;
-    table[below] + (table[above] - table[below]) * share
-}
-
-/// In-place directional, sprint and turning locomotion (#538). A gait the bundle lacks falls
-/// back to the forward walk or run.
-#[derive(Clone, Copy, Debug)]
-pub struct GaitClips {
-    /// The forward run authored at the player's run speed (asset-tooling #746); without it the
-    /// model's jog ([`Clips::run`]) runs.
-    pub run: &'static str,
-    pub walk_back: &'static str,
-    pub walk_left: &'static str,
-    pub walk_right: &'static str,
-    pub run_back: &'static str,
-    pub run_left: &'static str,
-    pub run_right: &'static str,
-    pub sprint: &'static str,
-    pub turn_left: &'static str,
-    pub turn_right: &'static str,
-}
-
-/// The reactions to blows (#538), by [`Reaction`].
-#[derive(Clone, Copy, Debug)]
-pub struct ReactionClips {
-    pub chest: &'static str,
-    pub head: &'static str,
-    pub knockback: &'static str,
-    pub shove: &'static str,
-    pub block: &'static str,
-    pub guard_break: &'static str,
-    /// The light hits left and right and the heavy hit from the front (asset-tooling #711),
-    /// played for an ordinary and a critical hit when the bundle has them (#885).
-    pub light: [&'static str; 2],
-    pub heavy: &'static str,
-    /// The upper body straining against a root and against ice (asset-tooling #767), looped
-    /// while the zone holds the unit (#956), for a model that has them.
-    pub rooted: Option<[&'static str; 2]>,
-}
-
-impl ReactionClips {
-    #[must_use]
-    pub const fn clip(self, reaction: Reaction) -> &'static str {
-        match reaction {
-            Reaction::Chest => self.chest,
-            Reaction::Head => self.head,
-            Reaction::Knockback => self.knockback,
-            Reaction::Shove => self.shove,
-            Reaction::Block => self.block,
-            Reaction::GuardBreak => self.guard_break,
-        }
-    }
-}
-
-/// How a unit reacts to a blow the zone resolved against it (#538). Presentation only.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Reaction {
-    /// An ordinary hit.
-    Chest,
-    /// A critical hit.
-    Head,
-    /// A forced-move knockback (#287): a bash, blast or charge.
-    Knockback,
-    /// A large creature's stomp or smash (#297, #160).
-    Shove,
-    /// A blow its held guard blocked (#156).
-    Block,
-    /// A blow that broke its guard (#156).
-    GuardBreak,
-}
-
-impl Reaction {
-    /// Which body the reaction drives: a hit flinches the whole body standing and the upper
-    /// body on the move; a knockback or shove always throws the whole body; a block or guard
-    /// break is the shield arm's.
-    const fn region(self) -> Region {
-        match self {
-            Self::Chest | Self::Head => Region::Footwork,
-            Self::Knockback | Self::Shove => Region::Whole,
-            Self::Block | Self::GuardBreak => Region::Upper,
-        }
-    }
-
-    /// An ordinary hit never cuts the unit's own strike short.
-    const fn interrupts(self) -> bool {
-        !matches!(self, Self::Chest | Self::Head)
-    }
-}
-
-/// Which body regions a one-shot drives.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Region {
-    /// The whole body while standing on the ground, the upper body once it moves (Atlas 6.6.2).
-    Footwork,
-    /// Always the whole body.
-    Whole,
-    /// Only the upper body.
-    Upper,
-}
-
-/// The Ranger skeleton's upper-body root: spine, arms and head move under it.
-pub const UPPER_BODY_ROOT: &str = "spine_01";
-
-/// In-place authored traversal; these clips never move the presentation root.
-#[derive(Clone, Copy, Debug)]
-pub struct JumpClips {
-    pub start: &'static str,
-    pub airborne: &'static str,
-    pub land: &'static str,
-}
-
-/// In-place authored water locomotion (Atlas 6.6.41), shown in the zone's water mode. A clip the
-/// bundle lacks falls back to the authored land clip nearest to it: the walk for wading and
-/// strokes (leaned into the stroke by [`Attitude`]), the idle for treading, and no transition at
-/// all for entry and exit.
-#[derive(Clone, Copy, Debug)]
-pub struct SwimClips {
-    /// Walking through water up to the waist.
-    pub wade: &'static str,
-    /// Treading water in place, head above the surface or holding depth.
-    pub tread: &'static str,
-    /// Horizontal swimming, at the surface or submerged.
-    pub stroke: &'static str,
-    /// Swimming downward, a dive.
-    pub descend: &'static str,
-    /// Swimming upward, toward the surface.
-    pub ascend: &'static str,
-    /// Wading or falling into swimming depth.
-    pub enter: &'static str,
-    /// Leaving swimming depth for wading depth or the shore.
-    pub exit: &'static str,
-}
-
-/// In-place authored traversal on climbable surfaces (#500, Atlas 6.6.43, asset-tooling #416),
-/// shown in the zone's projected climb or mantle. A clip the bundle lacks falls back in place to
-/// the land clips, as before the clips existed: the idle holding on and the walk climbing.
-#[derive(Clone, Copy, Debug)]
-pub struct ClimbClips {
-    /// Holding a rock or timber face still, and climbing it up, down, left and right.
-    pub idle: &'static str,
-    pub up: &'static str,
-    pub down: &'static str,
-    pub left: &'static str,
-    pub right: &'static str,
-    /// Pulling up over the top of a face being climbed.
-    pub top_out: &'static str,
-    /// Letting go of a face, or dropping off it.
-    pub let_go: &'static str,
-    pub ladder_idle: &'static str,
-    pub ladder_up: &'static str,
-    pub ladder_down: &'static str,
-    pub rope_idle: &'static str,
-    pub rope_up: &'static str,
-    pub rope_down: &'static str,
-    /// Mantling a low (0.2–1 m), mid (1–1.6 m) and high (1.6–2.2 m) ledge from the ground.
-    pub mantle_low: &'static str,
-    pub mantle_mid: &'static str,
-    pub mantle_high: &'static str,
-}
-
-impl ClimbClips {
-    /// The mantle of a `ledge` from the ground.
-    #[must_use]
-    pub const fn mantle(self, ledge: Ledge) -> &'static str {
-        match ledge {
-            Ledge::Low => self.mantle_low,
-            Ledge::Mid => self.mantle_mid,
-            Ledge::High => self.mantle_high,
-        }
-    }
-}
+use crate::units::chores::Chore;
+use crate::units::swim::Attitude;
+use crate::units::traversal::Motions;
 
 /// Climbing travel along the face below this speed in metres per second holds on still.
 pub const CLIMB_MOVING_SPEED: f64 = 0.15;
@@ -1747,788 +88,6 @@ pub const CHARGE_ARRIVAL_SPEED: f64 = 4.;
 /// The speed in metres per second at which the charge loop plays at its authored rate.
 pub const CHARGE_CLIP_SPEED: f64 = 9.;
 
-impl Kind {
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Ranger => "Ranger",
-            Self::Wolf => "Wolf",
-            Self::Rat => "Rat",
-            Self::Boar => "Boar",
-            Self::Bear => "Bear",
-            Self::Spider => "Spider",
-            Self::Lurker => "Lurker",
-            Self::Lynx => "Lynx",
-            Self::Adder => "Adder",
-            Self::Bat => "Bat",
-            Self::Crayfish => "Crayfish",
-            Self::Stag => "Stag",
-        }
-    }
-
-    /// Its entry in the `greyhaven-wildlife` release (#889), for a beast.
-    #[must_use]
-    pub const fn wild_key(self) -> Option<&'static str> {
-        match self {
-            Self::Ranger => None,
-            Self::Wolf => Some("greyhaven.wild.wolf"),
-            Self::Rat => Some("greyhaven.wild.rat"),
-            Self::Boar => Some("greyhaven.wild.boar"),
-            Self::Bear => Some("greyhaven.wild.bear"),
-            Self::Spider => Some("greyhaven.wild.spider"),
-            Self::Lurker => Some("greyhaven.wild.marsh-lurker"),
-            Self::Lynx => Some("greyhaven.wild.lynx"),
-            Self::Adder => Some("greyhaven.wild.marsh-adder"),
-            Self::Bat => Some("greyhaven.wild.cave-bat"),
-            Self::Crayfish => Some("greyhaven.wild.river-crayfish"),
-            Self::Stag => Some("greyhaven.wild.stag"),
-        }
-    }
-
-    /// How far a dead one is drawn below its feet, in metres (#995): the cave bat's model is
-    /// posed around its body centre, its rest pose's lowest point 0.153 m below it, and lies
-    /// dead with that centre 0.062 m over the ground (the descriptor's `flight.groundHeight`).
-    /// Every other model lies on its feet.
-    #[must_use]
-    pub const fn corpse_drop(self) -> f64 {
-        match self {
-            Self::Bat => 0.153 - 0.062,
-            _ => 0.,
-        }
-    }
-
-    #[must_use]
-    pub fn from_name(name: &str) -> Option<Self> {
-        Self::VARIANTS
-            .iter()
-            .copied()
-            .find(|kind| kind.name() == name)
-    }
-
-    #[must_use]
-    pub const fn clips(self) -> Clips {
-        match self {
-            Self::Ranger => Clips {
-                idle: "Idle_Loop",
-                walk: "Walk_Loop",
-                run: "Jog_Fwd_Loop",
-                attack: "Sword_Attack",
-                death: "Death01",
-                deaths: Some(["Death_Back", "Death_Fwd", "Death_Spin"]),
-                guard: Some("Idle_Shield_Loop"),
-                jump: Some(JumpClips {
-                    start: "Jump_Start",
-                    airborne: "Jump_Loop",
-                    land: "Jump_Land",
-                }),
-                swim: Some(SwimClips {
-                    wade: "Wade_Fwd_Loop",
-                    tread: "Swim_Idle_Loop",
-                    stroke: "Swim_Fwd_Loop",
-                    descend: "Swim_Down_Loop",
-                    ascend: "Swim_Up_Loop",
-                    enter: "Swim_Enter",
-                    exit: "Swim_Exit",
-                }),
-                roll: Some("Roll"),
-                climb: Some(ClimbClips {
-                    idle: "Climb_Idle_Loop",
-                    up: "Climb_Up_Loop",
-                    down: "Climb_Down_Loop",
-                    left: "Climb_Left_Loop",
-                    right: "Climb_Right_Loop",
-                    top_out: "Climb_TopOut",
-                    let_go: "Climb_LetGo",
-                    ladder_idle: "Ladder_Idle_Loop",
-                    ladder_up: "Ladder_Up_Loop",
-                    ladder_down: "Ladder_Down_Loop",
-                    rope_idle: "Rope_Idle_Loop",
-                    rope_up: "Rope_Up_Loop",
-                    rope_down: "Rope_Down_Loop",
-                    mantle_low: "Mantle_Low",
-                    mantle_mid: "Mantle_Mid",
-                    mantle_high: "Mantle_High",
-                }),
-                strikes: Some(StrikeClips {
-                    shield_bash: "Shield_OneShot",
-                    bow: "Bow_Release",
-                    spell: "Spell_Simple_Shoot",
-                    bow_cycle: CastClips {
-                        aim: Some("Bow_Aim_Loop"),
-                        enter: "Bow_Draw",
-                        hold: "Bow_Hold_Loop",
-                        recovery: Some("Bow_Recovery"),
-                        cancel: "Bow_Cancel",
-                        footwork: true,
-                    },
-                    spell_cycle: CastClips {
-                        aim: None,
-                        enter: "Spell_Simple_Enter",
-                        hold: "Spell_Simple_Idle_Loop",
-                        recovery: None,
-                        cancel: "Spell_Simple_Exit",
-                        footwork: false,
-                    },
-                }),
-                upper_body: Some(UPPER_BODY_ROOT),
-                gaits: Some(GaitClips {
-                    run: "Run_Fwd_Loop",
-                    walk_back: "Walk_Bwd_Loop",
-                    walk_left: "Walk_Strafe_Left_Loop",
-                    walk_right: "Walk_Strafe_Right_Loop",
-                    run_back: "Jog_Bwd_Loop",
-                    run_left: "Run_Strafe_Left_Loop",
-                    run_right: "Run_Strafe_Right_Loop",
-                    sprint: "Sprint_Loop",
-                    turn_left: "Turn_Left",
-                    turn_right: "Turn_Right",
-                }),
-                reactions: Some(ReactionClips {
-                    chest: "Hit_Chest",
-                    head: "Hit_Head",
-                    knockback: "Hit_Knockback",
-                    shove: "Hit_Shove_Spin",
-                    block: "Sword_Block",
-                    guard_break: "Idle_Shield_Break",
-                    light: ["Hit_Light_L", "Hit_Light_R"],
-                    heavy: "Hit_Heavy_Front",
-                    rooted: Some(["Rooted_Struggle_Loop", "Rooted_Struggle_Frozen_Loop"]),
-                }),
-                sword: Some(SwordClips {
-                    slashes: [
-                        [
-                            "Sword_Slash_Low_L",
-                            "Sword_Slash_Low_C",
-                            "Sword_Slash_Low_R",
-                        ],
-                        [
-                            "Sword_Slash_Mid_L",
-                            "Sword_Slash_Mid_C",
-                            "Sword_Slash_Mid_R",
-                        ],
-                        [
-                            "Sword_Slash_High_L",
-                            "Sword_Slash_High_C",
-                            "Sword_Slash_High_R",
-                        ],
-                    ],
-                    heroic: "Sword_Heroic",
-                    cleave: "Sword_Cleave",
-                    charge_run: "Charge_Run_Loop",
-                    charge_impact: "Charge_Impact",
-                    guards: [
-                        "Shield_Guard_Low_Loop",
-                        "Shield_Guard_Mid_Loop",
-                        "Shield_Guard_High_Loop",
-                    ],
-                    stun: "Stun_Loop",
-                    respawn: "Respawn_Rise",
-                    whirl: "Sword_Whirl",
-                    smash: "Sword_Overhead_Smash",
-                    sidesteps: ["Sword_Sidestep_L", "Sword_Sidestep_R"],
-                    hop_back: "Sword_Hop_Back",
-                    shield_guard: "Shield_Guard_Loop",
-                    shield_turns: ["Shield_Guard_Turn_L", "Shield_Guard_Turn_R"],
-                    shield_impact: "Shield_Block_Impact",
-                    shield_stagger: "Guard_Broken_Stagger",
-                }),
-                dagger: Some(DaggerClips {
-                    idle: "Dagger_Idle_Loop",
-                    stab: "Dagger_Stab_R",
-                    slash: "Dagger_Slash_L",
-                    sinister: "Dagger_Sinister",
-                    poison: "Dagger_Poison",
-                    gouge: "Dagger_Gouge",
-                    flourish: "Flourish_Haste",
-                    throw_knife: "Throw_Knife",
-                    throw_lob: "Throw_Lob",
-                    bandage: "Bandage_Self",
-                }),
-                bow: Some(BowClips {
-                    upper: CastClips {
-                        aim: Some("Bow_Aim_Upper_Loop"),
-                        enter: "Bow_Draw_Upper",
-                        hold: "Bow_Hold_Upper_Loop",
-                        recovery: Some("Bow_Recovery_Upper"),
-                        cancel: "Bow_Cancel_Upper",
-                        footwork: false,
-                    },
-                    release: "Bow_Release_Upper",
-                    rapid: "Bow_Rapid_Release",
-                    power_draw: "Bow_Power_Draw",
-                }),
-                crossbow: Some(CrossbowClips {
-                    idle: "Crossbow_Idle_Loop",
-                    aim: "Crossbow_Aim_Loop",
-                    fire: "Crossbow_Fire",
-                    reload: "Crossbow_Reload",
-                }),
-                caster: Some(CasterClips {
-                    charge: "Cast_Charge_Loop",
-                    push: "Cast_Release_Push",
-                    overhand: "Cast_Release_Overhand",
-                    beam: "Cast_Channel_Beam_Loop",
-                    drain: "Cast_Channel_Drain_Loop",
-                    sky: "Cast_Channel_Sky_Loop",
-                    nova: "Cast_Nova",
-                    cone: "Cast_Cone",
-                    curse: "Cast_Curse_Point",
-                    ground: "Cast_Ground_Sweep",
-                    ward: "Cast_Self_Ward",
-                    ally: "Cast_Ally",
-                    warcry: "Warcry",
-                    summon_raise: "Cast_Summon_Raise",
-                    summon_call: "Cast_Summon_Call",
-                    staff: ["Staff_Strike_A", "Staff_Strike_B"],
-                    mace: ["Mace_Swing_A", "Mace_Swing_B"],
-                    wall: "Cast_Raise_Wall",
-                    interrupted: "Cast_Interrupted",
-                }),
-                social: Some(SocialClips {
-                    wave: "Emote_Wave",
-                    point: "Emote_Point",
-                    bow: "Emote_Bow",
-                    cheer: "Emote_Cheer",
-                    laugh: "Emote_Laugh",
-                    door_push: "Door_Push",
-                    door_pull: "Door_Pull",
-                    door_knock: "Door_Knock",
-                    loot_enter: "Loot_Kneel_Enter",
-                    loot_loop: "Loot_Kneel_Loop",
-                    loot_exit: "Loot_Kneel_Exit",
-                    talk_idle: "Talk_Idle_Loop",
-                    talk_explain: "Talk_Gesture_A",
-                    talk_direct: "Talk_Gesture_B",
-                    talk_shrug: "Talk_Gesture_C",
-                    trade: "Trade_Handover",
-                    sit_chair_enter: "Sit_Chair_Enter",
-                    sit_chair_loop: "Sit_Chair_Loop",
-                    sit_chair_exit: "Sit_Chair_Exit",
-                    sit_ground: "Sit_Ground_Loop",
-                    sleep_enter: "Sleep_Bed_Enter",
-                    sleep_loop: "Sleep_Bed_Loop",
-                    sleep_wake: "Sleep_Bed_Wake",
-                }),
-                rest: None,
-                bites: None,
-            },
-            // The wildlife release's beasts (#889) share one clip set.
-            Self::Wolf | Self::Rat | Self::Boar | Self::Bear | Self::Spider | Self::Lurker => {
-                WILD_CLIPS
-            }
-            Self::Lynx => LYNX_CLIPS,
-            Self::Adder => ADDER_CLIPS,
-            Self::Bat => BAT_CLIPS,
-            // The river crayfish (#996) has the beasts' clip set too; its `Attack_A` claw raise
-            // and pinch is its one attack.
-            Self::Crayfish => WILD_CLIPS,
-            Self::Stag => STAG_CLIPS,
-        }
-    }
-
-    /// The authored strike an accepted attack or ability of a `class` user plays: the Warden's
-    /// Shield Bash its shield-arm clip, Heroic Strike the slash toward its `aim` or, undirected,
-    /// the heroic strike, Cleave its sweep, the Redbrand whirl and smash their own (#582); a bow
-    /// class's ability its bow release, a staff or spell class's ability its spell release; a
-    /// basic swing (no ability) of any class, and everything else, the slash toward the swing's
-    /// `aim`, or its attack (#884). A model without them plays its attack.
-    #[must_use]
-    pub fn strike(
-        self,
-        class: Option<PlayerClass>,
-        ability: Option<AbilityId>,
-        aim: Option<StrikeAim>,
-    ) -> &'static str {
-        use mmorpg_core::ability::ids;
-        let clips = self.clips();
-        // A Druid in wolf form (#957) savages with the wolf's second bite.
-        if ability == Some(ids::SAVAGE_BITE)
-            && let Some(bites) = clips.bites
-        {
-            return bites.attacks[1];
-        }
-        let Some(strikes) = clips.strikes else {
-            return clips.attack;
-        };
-        if ability == Some(ids::SHIELD_BASH) {
-            return strikes.shield_bash;
-        }
-        if let Some(sword) = clips.sword
-            && let Some(ability) = ability
-        {
-            match (ability, aim) {
-                (ids::HEROIC_STRIKE, Some(aim)) => return sword.slash(aim),
-                (ids::HEROIC_STRIKE, None) => return sword.heroic,
-                (ids::CLEAVE, _) => return sword.cleave,
-                (ids::REDBRAND_WHIRL | ids::REAVERS_SWEEP | ids::LAST_COMMAND, _) => {
-                    return sword.whirl;
-                }
-                (ids::OVERHEAD_SMASH, _) => return sword.smash,
-                _ => {}
-            }
-        }
-        match class.filter(|_| ability.is_some()) {
-            Some(PlayerClass::Ranger) => strikes.bow,
-            Some(
-                PlayerClass::Arcanist
-                | PlayerClass::Necromancer
-                | PlayerClass::Cleric
-                | PlayerClass::Druid,
-            ) => strikes.spell,
-            Some(PlayerClass::Warden | PlayerClass::Rogue) | None => clips
-                .sword
-                .zip(aim)
-                .map_or(clips.attack, |(sword, aim)| sword.slash(aim)),
-        }
-    }
-
-    /// The clip a movement-state strike (#885) of a `family` weapon plays and the body it
-    /// drives, for a model with authored strikes: the family's own strike (asset-tooling #709,
-    /// #711) when the model `has` it, otherwise the clip that stands in for it until that
-    /// release is fetched. Authored running and jumping strikes move the whole body, the
-    /// full-body standing ones ([`FULL_BODY_STRIKES`], #900) the whole body while the unit stands;
-    /// other standing ones, and every stand-in for a running or jumping strike, only the upper
-    /// body, over the legs' run or jump.
-    #[must_use]
-    pub fn melee_strike(
-        self,
-        family: WeaponFamily,
-        variant: StrikeVariant,
-        has: impl Fn(&str) -> bool,
-    ) -> Option<(&'static str, Region)> {
-        self.clips().strikes?;
-        let [authored, stand_in] = melee_clips(family, variant);
-        let moving = matches!(variant, StrikeVariant::Running | StrikeVariant::Jumping);
-        if has(authored) {
-            let region = if moving {
-                Region::Whole
-            } else if FULL_BODY_STRIKES.contains(&authored) {
-                Region::Footwork
-            } else {
-                Region::Upper
-            };
-            return Some((authored, region));
-        }
-        Some((
-            stand_in,
-            if moving {
-                Region::Upper
-            } else {
-                self.strike_region(stand_in)
-            },
-        ))
-    }
-
-    /// The authored dagger clip an accepted attack or ability plays (#603), and the throwable a
-    /// throw draws: a dagger holder's auto-attack stabs, and with a dagger in each hand
-    /// alternates the stab (even `swing`s, counting from 0) with the left dagger's slash; the
-    /// Rogue's abilities, and the Ranger's Rapid Fire, play their own. `None` for anything else
-    /// or a model without them; [`Self::strike`] then decides.
-    #[must_use]
-    pub fn dagger_strike(
-        self,
-        loadout: Option<Loadout>,
-        ability: Option<AbilityId>,
-        swing: u32,
-    ) -> Option<(&'static str, Option<Throwable>)> {
-        use mmorpg_core::ability::ids;
-        let dagger = self.clips().dagger?;
-        let clip = match ability {
-            None if loadout.is_some_and(Loadout::daggers) => {
-                if loadout == Some(Loadout::TwinDaggers) && swing % 2 == 1 {
-                    dagger.slash
-                } else {
-                    dagger.stab
-                }
-            }
-            Some(ids::SINISTER_STRIKE) => dagger.sinister,
-            Some(ids::POISONED_BLADE) => dagger.poison,
-            Some(ids::GOUGE) => dagger.gouge,
-            Some(ids::ADRENALINE_RUSH | ids::RAPID_FIRE) => dagger.flourish,
-            Some(ids::THROWING_KNIFE) => return Some((dagger.throw_knife, Some(Throwable::Knife))),
-            Some(ids::VENOM_FLASK) => return Some((dagger.throw_lob, Some(Throwable::Flask))),
-            Some(ids::BLASTING_BOMB) => return Some((dagger.throw_lob, Some(Throwable::Bomb))),
-            _ => return None,
-        };
-        Some((clip, None))
-    }
-
-    /// The authored ranged clip an accepted shot plays instead of the bow release (#607): a
-    /// crossbowman's every shot fires the crossbow; under Rapid Fire's haste every bow shot is
-    /// the rapid release; Aimed Shot and Piercing Shot loose with the upper-body release after
-    /// their power draw. `None` for any other shot or a model without them; the bow release
-    /// then plays.
-    #[must_use]
-    pub fn ranged_strike(
-        self,
-        loadout: Option<Loadout>,
-        ability: Option<AbilityId>,
-        hasted: bool,
-    ) -> Option<&'static str> {
-        use mmorpg_core::ability::ids;
-        let clips = self.clips();
-        if loadout == Some(Loadout::Crossbow) {
-            return clips.crossbow.map(|crossbow| crossbow.fire);
-        }
-        let bow = clips.bow?;
-        if hasted {
-            return Some(bow.rapid);
-        }
-        matches!(ability, Some(ids::AIMED_SHOT | ids::PIERCING_SHOT)).then_some(bow.release)
-    }
-
-    /// The draw the local player's wind-up of `ability` shows instead of the aim (#607): Aimed
-    /// Shot's and Piercing Shot's power draw, held at its end until the key's release sends the
-    /// shot and the zone answers.
-    #[must_use]
-    pub fn power_draw(self, ability: AbilityId) -> Option<&'static str> {
-        use mmorpg_core::ability::ids;
-        self.clips()
-            .bow
-            .filter(|_| matches!(ability, ids::AIMED_SHOT | ids::PIERCING_SHOT))
-            .map(|bow| bow.power_draw)
-    }
-
-    /// How a caster shows its cast or channel of `ability` (#609): the bolts and blasts hold the
-    /// charge (Call Companion the charge and then its whistle), the beams, the drain and
-    /// Blizzard their channel loops, Raise Skeleton its kneel from the cast's start. `None` for
-    /// any other ability or a model without them.
-    #[must_use]
-    pub fn cast_style(self, ability: AbilityId) -> Option<CastStyle> {
-        use mmorpg_core::ability::ids;
-        let caster = self.clips().caster?;
-        Some(match ability {
-            ids::FIREBOLT
-            | ids::FIRE_BLAST
-            | ids::CHAIN_LIGHTNING
-            | ids::SHADOW_BOLT
-            | ids::SMITE
-            | ids::WRATH
-            | ids::MUCK_BOLT => CastStyle::Charge(caster.charge),
-            ids::LIGHTNING_BEAM | ids::HOLY_BEAM => CastStyle::Channel(caster.beam),
-            ids::DRAIN_LIFE => CastStyle::Channel(caster.drain),
-            ids::BLIZZARD => CastStyle::Channel(caster.sky),
-            ids::RAISE_SKELETON => CastStyle::Whole(caster.summon_raise),
-            ids::CALL_COMPANION => CastStyle::Finish(caster.charge, caster.summon_call),
-            _ => return None,
-        })
-    }
-
-    /// The caster clip an accepted attack or ability plays (#609): a staff holder's auto-attack
-    /// alternates the jab (even `swing`s, counting from 0) and the sweep, a mace holder's the
-    /// overhand and the backhand; a completed bolt pushes from the charge, a blast throws
-    /// overhand; the instants play their style, Divine Shield the ward on oneself and the touch
-    /// on an `ally`; Rallying Cry the war cry. `None` for anything else or a model without them;
-    /// [`Self::strike`] then decides.
-    #[must_use]
-    pub fn caster_strike(
-        self,
-        loadout: Option<Loadout>,
-        ability: Option<AbilityId>,
-        ally: bool,
-        swing: u32,
-    ) -> Option<&'static str> {
-        use mmorpg_core::ability::ids;
-        let caster = self.clips().caster?;
-        let alternate = |pair: [&'static str; 2]| pair[(swing % 2) as usize];
-        Some(match ability {
-            None => match loadout? {
-                Loadout::BoneStaff | Loadout::CrystalStaffAndTome | Loadout::GnarledStaff => {
-                    alternate(caster.staff)
-                }
-                Loadout::FlangedMace => alternate(caster.mace),
-                _ => return None,
-            },
-            Some(ids::FIREBOLT | ids::SHADOW_BOLT | ids::SMITE | ids::WRATH | ids::MUCK_BOLT) => {
-                caster.push
-            }
-            Some(ids::FIRE_BLAST | ids::CHAIN_LIGHTNING) => caster.overhand,
-            Some(ids::FROST_NOVA | ids::STOMP) => caster.nova,
-            Some(ids::FROST_BREATH) => caster.cone,
-            Some(ids::CORRUPTION | ids::CORPSE_BURST) => caster.curse,
-            Some(ids::RAISE_DEAD) => caster.summon_raise,
-            Some(ids::ENTANGLING_ROOTS) => caster.ground,
-            Some(ids::DIVINE_SHIELD) if ally => caster.ally,
-            Some(ids::ARCANE_BARRIER | ids::BONE_SHIELD | ids::BARKSKIN | ids::DIVINE_SHIELD) => {
-                caster.ward
-            }
-            Some(ids::RENEW | ids::REJUVENATION) => caster.ally,
-            Some(ids::RALLYING_CRY) => caster.warcry,
-            _ => return None,
-        })
-    }
-
-    /// Which body a strike of `clip` drives (#582): an authored sword clip its own region, a
-    /// dagger, upper-body bow or crossbow clip (#603, #607) the upper body, a caster clip its
-    /// own (#609), every other strike the whole body standing and the upper body on the move.
-    #[must_use]
-    pub fn strike_region(self, clip: &str) -> Region {
-        let clips = self.clips();
-        if let Some(region) = clips.caster.and_then(|caster| caster.region(clip)) {
-            return region;
-        }
-        if clips.dagger.is_some_and(|dagger| dagger.contains(clip))
-            || clips.bow.is_some_and(|bow| bow.contains(clip))
-            || clips
-                .crossbow
-                .is_some_and(|crossbow| crossbow.contains(clip))
-        {
-            return Region::Upper;
-        }
-        clips
-            .sword
-            .and_then(|sword| sword.region(clip))
-            .unwrap_or(Region::Footwork)
-    }
-
-    /// The cast cycle a `class` user carrying `loadout` shows while casting or channelling
-    /// (#538): a crossbowman holds its aim (#607), a bow class draws and holds the bow,
-    /// everyone else holds a spell.
-    #[must_use]
-    pub fn cast(self, class: Option<PlayerClass>, loadout: Option<Loadout>) -> Option<CastClips> {
-        let clips = self.clips();
-        if let Some(crossbow) = clips
-            .crossbow
-            .filter(|_| loadout == Some(Loadout::Crossbow))
-        {
-            return Some(crossbow.cycle());
-        }
-        let strikes = clips.strikes?;
-        Some(if class == Some(PlayerClass::Ranger) {
-            strikes.bow_cycle
-        } else {
-            strikes.spell_cycle
-        })
-    }
-
-    /// The cast cycle whose release `strike` is, for its wind-up and recovery (#538): the
-    /// upper-body release's the upper-body cycle, the crossbow's shot the reload (#607).
-    #[must_use]
-    pub fn cycle_of(self, strike: &str) -> Option<CastClips> {
-        let clips = self.clips();
-        let strikes = clips.strikes?;
-        if strike == strikes.bow {
-            Some(strikes.bow_cycle)
-        } else if strike == strikes.spell {
-            Some(strikes.spell_cycle)
-        } else if let Some(bow) = clips.bow.filter(|bow| bow.release == strike) {
-            Some(bow.upper)
-        } else {
-            clips
-                .crossbow
-                .filter(|crossbow| crossbow.fire == strike)
-                .map(CrossbowClips::cycle)
-        }
-    }
-
-    /// The bow shot `animation` shows (#556): its upper-body target is the bow release, a clip
-    /// of the bow cycle or one of the upper-body bow clips (#607), whose `bow.drawMeters` the
-    /// nock follows alike.
-    #[must_use]
-    pub fn bow_shot(self, animation: &Animation) -> Option<BowShot> {
-        let clips = self.clips();
-        let strikes = clips.strikes?;
-        let (clip, time) = animation.upper;
-        (clip == strikes.bow
-            || strikes.bow_cycle.contains(clip)
-            || clips.bow.is_some_and(|bow| bow.contains(clip)))
-        .then_some(BowShot { clip, time })
-    }
-
-    /// The clip of a `reaction`, for a model that has reactions.
-    #[must_use]
-    pub fn reaction(self, reaction: Reaction) -> Option<&'static str> {
-        self.clips()
-            .reactions
-            .map(|reactions| reactions.clip(reaction))
-    }
-
-    /// The model presenting `entity`, if it has one.
-    #[must_use]
-    pub fn of(entity: EntityRef, record: &EntitySnapshot, content: &ZoneContent) -> Option<Self> {
-        match entity {
-            // A Druid in wolf form (#957) is drawn as the wildlife release's wolf.
-            EntityRef::Player(_) if record.flags.shapeshifted => Some(Self::Wolf),
-            EntityRef::Player(_) => Some(Self::Ranger),
-            EntityRef::Creature(_) => Self::of_family(
-                content
-                    .creature_template(CreatureTemplateId::new(record.appearance))?
-                    .family,
-            ),
-            // A Druid's companion (#296) borrows the CC0 Quaternius wolf as its placeholder;
-            // skeletons (#295) are procedural placeholders until their art exists.
-            EntityRef::Minion(_) => {
-                mmorpg_core::is_companion(mmorpg_core::minion_ability(record.appearance))
-                    .then_some(Self::Wolf)
-            }
-            EntityRef::Npc(_) => None,
-        }
-    }
-
-    /// The model creatures of `family` use, if any.
-    #[must_use]
-    pub const fn of_family(family: CreatureFamily) -> Option<Self> {
-        match family {
-            CreatureFamily::Wolf => Some(Self::Wolf),
-            CreatureFamily::Vermin => Some(Self::Rat),
-            CreatureFamily::Boar => Some(Self::Boar),
-            CreatureFamily::Bear => Some(Self::Bear),
-            CreatureFamily::Spider => Some(Self::Spider),
-            CreatureFamily::Lurker => Some(Self::Lurker),
-            CreatureFamily::Lynx => Some(Self::Lynx),
-            CreatureFamily::Adder => Some(Self::Adder),
-            CreatureFamily::Bat => Some(Self::Bat),
-            CreatureFamily::Crayfish => Some(Self::Crayfish),
-            CreatureFamily::Stag => Some(Self::Stag),
-            CreatureFamily::Marauder
-            | CreatureFamily::Mirefin
-            | CreatureFamily::Redbrand
-            | CreatureFamily::Ogre
-            | CreatureFamily::Prop => None,
-        }
-    }
-}
-
-/// Which joints a clip layer drives (Atlas 6.6.45).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Mask {
-    /// Every joint.
-    All,
-    /// The [`Clips::upper_body`] subtree: spine, arms and head.
-    Upper,
-    /// Every other joint: root, pelvis and legs.
-    Lower,
-    /// One hand's finger and thumb joints: a grip pose (asset-tooling #285). While a pose has
-    /// such a layer, it alone drives that hand's fingers.
-    Fingers(Hand),
-}
-
-/// Where a joint sits for the masks: in the upper body or not, and on which hand's fingers.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Joint {
-    pub upper: bool,
-    pub fingers: Option<Hand>,
-}
-
-impl Joint {
-    /// The joint named `name`, in the upper body or not.
-    #[must_use]
-    pub fn new(name: &str, upper: bool) -> Self {
-        Self {
-            upper,
-            fingers: Hand::of_finger(name),
-        }
-    }
-}
-
-/// The hands a pose grips: each has a [`Mask::Fingers`] layer that owns its fingers.
-#[must_use]
-pub fn gripped(pose: &[Layer]) -> [bool; 2] {
-    let mut gripped = [false; 2];
-    for layer in pose {
-        if let Mask::Fingers(hand) = layer.mask {
-            gripped[hand.index()] = true;
-        }
-    }
-    gripped
-}
-
-impl Mask {
-    /// The name both clients and the Action Lab read.
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::All => "all",
-            Self::Upper => "upper",
-            Self::Lower => "lower",
-            Self::Fingers(Hand::Left) => "fingers_l",
-            Self::Fingers(Hand::Right) => "fingers_r",
-        }
-    }
-
-    /// Whether a layer with this mask drives `joint` in a pose gripping the [`gripped`] hands:
-    /// a gripped hand's fingers follow only its grip.
-    #[must_use]
-    pub fn drives(self, joint: Joint, gripped: [bool; 2]) -> bool {
-        match (self, joint.fingers) {
-            (Self::Fingers(hand), fingers) => fingers == Some(hand),
-            (_, Some(hand)) if gripped[hand.index()] => false,
-            (Self::All, _) => true,
-            (Self::Upper, _) => joint.upper,
-            (Self::Lower, _) => !joint.upper,
-        }
-    }
-}
-
-/// One weighted clip sample. A joint takes the weighted average of the layers that drive and
-/// animate it; when their weights sum below 1 the remainder stays at the rest pose.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Layer {
-    pub clip: &'static str,
-    pub time: f32,
-    pub weight: f32,
-    pub mask: Mask,
-}
-
-impl Layer {
-    /// One clip on the whole body.
-    #[must_use]
-    pub const fn single(clip: &'static str, time: f32) -> Self {
-        Self {
-            clip,
-            time,
-            weight: 1.,
-            mask: Mask::All,
-        }
-    }
-}
-
-/// How the body regions blend (Atlas 6.6.45). The Action Lab tunes it (#384); every other view
-/// uses the default. Presentation only: no value here changes what the zone accepts.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Blend {
-    /// Seconds a lower-body (pelvis and legs) change crossfades over.
-    pub lower_seconds: f32,
-    /// Seconds an upper-body strike or guard blends in or out over.
-    pub upper_seconds: f32,
-    /// How strongly a landing or a grounded whole-body strike drives the legs over locomotion.
-    pub lower_weight: f32,
-    /// How strongly a strike or guard drives the upper body over the legs' clip.
-    pub upper_weight: f32,
-}
-
-impl Default for Blend {
-    fn default() -> Self {
-        Self {
-            lower_seconds: 0.15,
-            upper_seconds: 0.1,
-            lower_weight: 1.,
-            upper_weight: 1.,
-        }
-    }
-}
-
-impl Blend {
-    /// Durations within 0–1 s and weights within 0–1; a non-finite value takes the default.
-    #[must_use]
-    pub fn clamped(self) -> Self {
-        let fallback = Self::default();
-        let clamp = |value: f32, fallback: f32| {
-            if value.is_finite() {
-                value.clamp(0., 1.)
-            } else {
-                fallback
-            }
-        };
-        Self {
-            lower_seconds: clamp(self.lower_seconds, fallback.lower_seconds),
-            upper_seconds: clamp(self.upper_seconds, fallback.upper_seconds),
-            lower_weight: clamp(self.lower_weight, fallback.lower_weight),
-            upper_weight: clamp(self.upper_weight, fallback.upper_weight),
-        }
-    }
-}
-
 /// What one unit shows this frame: the layers to pose and the clip each region blends toward.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Animation {
@@ -2574,7 +133,7 @@ pub struct Cues<'a> {
     /// Under a stun the zone applied (#582).
     pub stunned: bool,
     /// Held by a root the zone applied (#956): Entangling Roots' vines or Frost Nova's ice.
-    pub rooted: Option<super::effects::Condition>,
+    pub rooted: Option<crate::units::effects::Condition>,
     /// The zone projects a dodge roll (#516).
     pub rolling: bool,
     /// The zone projects the unit in combat: a crossbowman standing in combat aims (#607).
@@ -2595,7 +154,7 @@ pub struct Cues<'a> {
     pub loadout: Option<Loadout>,
     /// The chore a resident does on its routine now (#904): its item rides its socket while the
     /// unit stands or walks, with the chore's clips when the figure has them.
-    pub chore: Option<super::chores::Chore>,
+    pub chore: Option<crate::units::chores::Chore>,
     /// A fighting skirmisher, the Redbrand Bandit (#963): stepping aside or back from its
     /// facing plays the sword footwork ([`SwordClips::sidesteps`]) instead of the strafe or
     /// backpedal.
@@ -2753,7 +312,7 @@ fn walk_rate(speed: f64) -> f32 {
 }
 
 /// The rate at which the in-place gait `clip` keeps its planted foot still at `speed` metres
-/// per second (#804): the speed over the clip's authored ground speed ([`super::traversal::Motion::ground_speed`]),
+/// per second (#804): the speed over the clip's authored ground speed ([`crate::units::traversal::Motion::ground_speed`]),
 /// within [`GAIT_RATES`], at the authored stride (Atlas 6.6.12). A clip without one keeps
 /// `fallback`.
 #[must_use]
@@ -3307,7 +866,7 @@ impl Playback {
     }
 
     /// A blow this unit struck or took was confirmed at `now` (#900): its strike or reaction
-    /// holds for `seconds` at [`super::contact::HITSTOP_RATE`] of its pace. The zone's timing is
+    /// holds for `seconds` at [`crate::units::contact::HITSTOP_RATE`] of its pace. The zone's timing is
     /// unchanged; reduced motion ignores it.
     pub fn hitstop(&mut self, seconds: f32, now: f64) {
         let until = now + f64::from(seconds.max(0.));
@@ -3689,6 +1248,10 @@ impl Playback {
 
     /// Advances the clocks and returns the layers to pose this frame; `duration` gives a clip's
     /// length in seconds (zero when the model lacks it).
+    ///
+    /// The steps run in a fixed order, each settling what the later ones read: the rise and the
+    /// charge, the traversal and flight, the strike clocks, the poses and gestures, then the
+    /// clips each region wants, the tracks' blends and the carried items' grips.
     pub fn advance(
         &mut self,
         clips: Clips,
@@ -3696,27 +1259,85 @@ impl Playback {
         cues: Cues<'_>,
         blend: Blend,
     ) -> Animation {
+        #[allow(clippy::cast_possible_truncation)]
+        let dt = cues.dt as f32;
+        let frame = Frame {
+            clips,
+            duration: &duration,
+            cues,
+            blend: blend.clamped(),
+            dt,
+            guarding: cues.guard.is_some(),
+        };
+        let (charge_run, stun) = self.step_rise_and_charge(&frame);
+        let (swims, held, traversing) = self.step_traversal(&frame);
+        let stopped = self.step_strike(&frame, stun);
+        let footing = Footing {
+            charge_run,
+            stun,
+            swims,
+            held,
+            traversing,
+            stopped,
+            // A swimmer, a climber or a mantler has no footing for a strike's footwork.
+            standing: matches!(self.flight, Flight::Ground)
+                && cues.speed <= 0.25
+                && !swims
+                && !traversing,
+            moving: cues.speed > 0.25,
+            layered: clips.upper_body.is_some(),
+        };
+        let poses = self.step_poses(&frame, &footing);
+        let shown = self.strike_wants(&frame, &footing);
+        let (ground, chore) = self.ground_want(&frame, &footing, &poses);
+        let (roll, base) = self.base_want(&frame, &footing, ground);
+        let (lower, upper) = self.region_wants(&frame, &footing, &poses, &shown, roll, base);
+        let (first, held_dt) = self.step_legs(&frame, &footing, base, lower);
+        self.step_attitude(&frame, roll.is_some(), poses.turned, first);
+        self.step_upper(&frame, upper, shown.split, held_dt);
+        let mut layers = self.compose_layers(&frame);
+        let carry = self.step_carry(&frame, chore);
+        let lower = self
+            .lower
+            .target(&duration)
+            .or_else(|| self.base.target(&duration))
+            .unwrap_or((clips.idle, 0.));
+        let upper = self.upper.target(&duration).unwrap_or(lower);
+        self.step_grips(&frame, &carry, upper.0, first, &mut layers);
+        let channel = cues
+            .motions
+            .and_then(|motions| motions.get(upper.0))
+            .and_then(|motion| motion.cast)
+            .and_then(|cast| cast.channel);
+        Animation {
+            layers,
+            lower,
+            upper,
+            attitude: self.attitude,
+            carry,
+            channel,
+        }
+    }
+
+    /// The frame's first step: back from death the unit rises, and a charge ends where the zone
+    /// stops carrying it. Returns the charge loop still running and the stun held.
+    fn step_rise_and_charge<D: Fn(&str) -> f32>(
+        &mut self,
+        frame: &Frame<'_, D>,
+    ) -> (Option<&'static str>, Option<&'static str>) {
         let Cues {
             speed,
-            vertical_speed,
             dead,
             now,
             reduced,
             ..
-        } = cues;
-        let guarding = cues.guard.is_some();
-        let blend = blend.clamped();
-        #[allow(clippy::cast_possible_truncation)]
-        let dt = cues.dt as f32;
-        let available = |clip: &str| duration(clip) > 0.;
-        let sword = |pick: fn(SwordClips) -> &'static str| {
-            clips.sword.map(pick).filter(|clip| available(clip))
-        };
+        } = frame.cues;
+        let duration = frame.duration;
         // Back from death (#582): the unit rises from a kneel.
         if self.dead
             && !dead
             && !reduced
-            && let Some(rise) = sword(|sword| sword.respawn)
+            && let Some(rise) = frame.sword(|sword| sword.respawn)
         {
             self.serial = self.serial.wrapping_add(1);
             self.strike = Some(Strike::new(
@@ -3738,7 +1359,10 @@ impl Playback {
                 || elapsed >= CHARGE_ARRIVAL_SECONDS && speed < CHARGE_ARRIVAL_SPEED
             {
                 self.charging = None;
-                if let Some(impact) = sword(|sword| sword.charge_impact).filter(|_| !reduced) {
+                if let Some(impact) = frame
+                    .sword(|sword| sword.charge_impact)
+                    .filter(|_| !reduced)
+                {
                     self.serial = self.serial.wrapping_add(1);
                     self.strike = Some(Strike::new(
                         impact,
@@ -3750,8 +1374,35 @@ impl Playback {
                 }
             }
         }
-        let charge_run = sword(|sword| sword.charge_run).filter(|_| self.charging.is_some());
-        let stun = sword(|sword| sword.stun).filter(|_| cues.stunned && !dead);
+        let charge_run = frame
+            .sword(|sword| sword.charge_run)
+            .filter(|_| self.charging.is_some());
+        let stun = frame
+            .sword(|sword| sword.stun)
+            .filter(|_| frame.cues.stunned && !dead);
+        (charge_run, stun)
+    }
+
+    /// The water crossing, the zone's climb or mantle and the flight phase. Returns whether the
+    /// unit swims, the traversal it holds and whether it is traversing.
+    fn step_traversal<D: Fn(&str) -> f32>(
+        &mut self,
+        frame: &Frame<'_, D>,
+    ) -> (bool, TraversalView, bool) {
+        let Frame {
+            clips,
+            duration,
+            cues,
+            ..
+        } = *frame;
+        let Cues {
+            speed,
+            vertical_speed,
+            dead,
+            now,
+            reduced,
+            ..
+        } = cues;
         let landed = clips.jump.is_none_or(|jump| {
             self.lower
                 .playing(jump.land)
@@ -3759,9 +1410,6 @@ impl Playback {
         });
         // The zone's water mode, never the rendered water, decides the swim clips (Atlas 6.6.41).
         let swims = cues.water.swims() && !dead;
-        let swim = |pick: fn(SwimClips) -> &'static str| {
-            clips.swim.map(pick).filter(|clip| available(clip))
-        };
         if let Some(clip) = self.crossing
             && self
                 .lower
@@ -3776,9 +1424,9 @@ impl Playback {
             self.crossing = if reduced || self.base.current.is_none() {
                 None
             } else if swims {
-                swim(|clips| clips.enter)
+                frame.swim(|clips| clips.enter)
             } else {
-                swim(|clips| clips.exit)
+                frame.swim(|clips| clips.exit)
             };
         }
         self.swimming = swims;
@@ -3793,14 +1441,14 @@ impl Playback {
             && self.held.mantling().is_none()
         {
             self.pulls = self.pulls.wrapping_add(1);
-            self.mantle = self.begin_mantle(clips, &duration, cues, ledge);
+            self.mantle = self.begin_mantle(clips, duration, cues, ledge);
         }
         if self.held.climbing() && !held.holds() {
             self.pulls = self.pulls.wrapping_add(1);
             self.letting_go = clips
                 .climb
                 .map(|climb| (climb.let_go, now))
-                .filter(|&(clip, _)| !reduced && available(clip));
+                .filter(|&(clip, _)| !reduced && frame.available(clip));
         }
         self.held = held;
         // A mantle plays out after the zone's ends, until the unit moves on.
@@ -3854,6 +1502,20 @@ impl Playback {
         {
             self.flight = Flight::Airborne;
         }
+        (swims, held, traversing)
+    }
+
+    /// The strike and cast clocks: a guard ends them, a hitstop holds them, and a finished
+    /// running or jumping strike settles into its family guard. Returns whether a hitstop holds.
+    fn step_strike<D: Fn(&str) -> f32>(
+        &mut self,
+        frame: &Frame<'_, D>,
+        stun: Option<&'static str>,
+    ) -> bool {
+        let Frame { dt, guarding, .. } = *frame;
+        let Cues {
+            dead, now, reduced, ..
+        } = frame.cues;
         // A guard the zone starts protecting ends the strike shown before it; a strike accepted
         // while it protects still plays over it.
         if dead || guarding && !self.guarding {
@@ -3868,7 +1530,7 @@ impl Playback {
         self.stop = self.stop.filter(|&until| now < until);
         let stopped = !reduced && self.stop.is_some();
         let stopping = if stopped {
-            f64::from(dt * (1. - super::contact::HITSTOP_RATE))
+            f64::from(dt * (1. - crate::units::contact::HITSTOP_RATE))
         } else {
             0.
         };
@@ -3894,7 +1556,7 @@ impl Playback {
         if let Some(strike) = self.strike.filter(|strike| now >= strike.until) {
             self.settle = strike
                 .settle
-                .filter(|&clip| !reduced && available(clip))
+                .filter(|&clip| !reduced && frame.available(clip))
                 .map(|clip| (clip, now + SETTLE_SECONDS));
         }
         self.settle = self
@@ -3902,15 +1564,32 @@ impl Playback {
             .filter(|&(_, until)| now < until && !dead && stun.is_none());
         self.strike = self.strike.filter(|strike| now < strike.until);
         self.cast = self.cast.filter(|cast| now < cast.until);
-        // A swimmer, a climber or a mantler has no footing for a strike's footwork.
-        let standing =
-            matches!(self.flight, Flight::Ground) && speed <= 0.25 && !swims && !traversing;
-        let layered = clips.upper_body.is_some();
-        // Emotes and interactions (#619): the zone's own actions and blows end them at once.
+        stopped
+    }
+
+    /// Emotes, interactions and held poses (#619), and the talking idle: the zone's own actions
+    /// and blows end them at once.
+    fn step_poses<D: Fn(&str) -> f32>(&mut self, frame: &Frame<'_, D>, footing: &Footing) -> Poses {
+        let Frame {
+            clips,
+            cues,
+            guarding,
+            ..
+        } = *frame;
+        let Cues {
+            dead, now, reduced, ..
+        } = cues;
+        let Footing {
+            charge_run,
+            stun,
+            standing,
+            moving,
+            layered,
+            ..
+        } = *footing;
         // A whole-body one (the bow) takes the legs only while the unit stands; on the move it
         // plays on the upper body over the gait (Atlas 6.6.i745), so it never holds the legs
         // still against the zone's projected motion.
-        let moving = speed > 0.25;
         let acting = self.strike.is_some() || self.cast.is_some();
         if self.gesture.is_some_and(|gesture| {
             now >= gesture.until || dead || acting || guarding || stun.is_some()
@@ -3941,14 +1620,14 @@ impl Playback {
             cues.posture,
             blocked,
             moving,
-            &duration,
+            frame.duration,
             (now, reduced),
         );
         let occupied = posture_want.is_some() || gesture_want.is_some_and(|(whole, _)| whole);
         let talk_want = clips
             .social
             .map(|social| social.talk_idle)
-            .filter(|&clip| cues.talking && !dead && layered && available(clip))
+            .filter(|&clip| cues.talking && !dead && layered && frame.available(clip))
             .map(|clip| Want::looped(clip, 1.));
         let turned = self.posture.is_some()
             || self.gesture.is_some_and(|gesture| {
@@ -3956,6 +1635,26 @@ impl Playback {
                     gesture.clip == social.point || gesture.clip == social.talk_direct
                 })
             });
+        Poses {
+            gesture: gesture_want,
+            posture: posture_want,
+            occupied,
+            talk: talk_want,
+            turned,
+        }
+    }
+
+    /// The strike or cast shown and the local wind-up under it; a strike that leaves the legs
+    /// mid-swing splits onto the upper body.
+    fn strike_wants<D: Fn(&str) -> f32>(
+        &mut self,
+        frame: &Frame<'_, D>,
+        footing: &Footing,
+    ) -> Shown {
+        let Cues { now, reduced, .. } = frame.cues;
+        let Footing {
+            standing, layered, ..
+        } = *footing;
         let mut splits = [false; 2];
         for (strike, split) in [&mut self.strike, &mut self.cast]
             .into_iter()
@@ -3984,7 +1683,7 @@ impl Playback {
         let prepared = self
             .preparation
             .filter(|preparation| {
-                strike.is_none() && !reduced && layered && available(preparation.clip)
+                strike.is_none() && !reduced && layered && frame.available(preparation.clip)
             })
             .map(|preparation| Want {
                 // The pinned time is the wind-up's clock; a still rate keeps an abandoned wind-up
@@ -3993,6 +1692,42 @@ impl Playback {
                 at: Some(preparation.at(now)),
                 ..Want::hold(preparation.clip, preparation.serial)
             });
+        Shown {
+            strike,
+            prepared,
+            split,
+        }
+    }
+
+    /// The legs' clip on the ground: a pose, the traversal, the charge, a stun, the water, the
+    /// gait, a standing turn, a chore or the idle. Returns it with the chore shown, if any.
+    fn ground_want<D: Fn(&str) -> f32>(
+        &mut self,
+        frame: &Frame<'_, D>,
+        footing: &Footing,
+        poses: &Poses,
+    ) -> (Want, Option<Chore>) {
+        let Frame {
+            clips,
+            duration,
+            cues,
+            guarding,
+            ..
+        } = *frame;
+        let Cues {
+            speed,
+            vertical_speed,
+            dead,
+            ..
+        } = cues;
+        let Footing {
+            charge_run,
+            stun,
+            swims,
+            held,
+            ..
+        } = *footing;
+        let available = |clip: &str| frame.available(clip);
         // A resident's chore (#904) shows its item only while it stands or walks; a chore clip
         // the figure lacks leaves the hands empty and the ordinary clips playing.
         let chore = cues.chore.filter(|chore| {
@@ -4003,8 +1738,9 @@ impl Playback {
                     .all(&available)
         });
         let mut chored = false;
-        let ground = if let Some(pose) = posture_want.or_else(|| {
-            gesture_want
+        let ground = if let Some(pose) = poses.posture.or_else(|| {
+            poses
+                .gesture
                 .filter(|&(whole, _)| whole)
                 .map(|(_, want)| want)
         }) {
@@ -4017,7 +1753,7 @@ impl Playback {
             }
         } else if held.climbing() {
             self.turning = None;
-            Self::climb(clips, &duration, cues)
+            Self::climb(clips, duration, cues)
         } else if held.mantling().is_some() {
             // No mantle clip: the earlier in-place fallback, the walk at the mantle's pace.
             let travel = speed.hypot(vertical_speed);
@@ -4041,23 +1777,23 @@ impl Playback {
             #[allow(clippy::cast_possible_truncation)]
             let stroke_rate = (travel / STROKE_SPEED).clamp(0.6, 1.5) as f32;
             let vertical = if vertical_speed < -DIVE_SPEED {
-                swim(|clips| clips.descend)
+                frame.swim(|clips| clips.descend)
             } else if vertical_speed > DIVE_SPEED {
-                swim(|clips| clips.ascend)
+                frame.swim(|clips| clips.ascend)
             } else {
                 None
             };
             if let Some(clip) = vertical {
                 Want::looped(clip, stroke_rate)
             } else if travel > 0.25 {
-                match swim(|clips| clips.stroke) {
+                match frame.swim(|clips| clips.stroke) {
                     Some(stroke) => Want::looped(stroke, stroke_rate),
                     None => Want::looped(clips.walk, walk_rate(travel)),
                 }
             } else {
-                Want::looped(swim(|clips| clips.tread).unwrap_or(clips.idle), 1.)
+                Want::looped(frame.swim(|clips| clips.tread).unwrap_or(clips.idle), 1.)
             }
-        } else if let Some(wade) = swim(|clips| clips.wade)
+        } else if let Some(wade) = frame.swim(|clips| clips.wade)
             && cues.water == WaterMode::Wading
             && speed > 0.25
         {
@@ -4077,7 +1813,7 @@ impl Playback {
                         self.gait(clips, &available, cues.motions, speed, cues.direction)
                     }),
             }
-        } else if let Some(turn) = self.turn(clips, &duration, cues, guarding) {
+        } else if let Some(turn) = self.turn(clips, duration, cues, guarding) {
             chored = chore.is_some();
             turn
         } else if let Some(chore) = chore.filter(|_| !guarding) {
@@ -4092,24 +1828,45 @@ impl Playback {
                 .rest
                 .filter(|&clip| !cues.engaged && available(clip))
                 .unwrap_or(clips.idle);
-            let idle = sword(|sword| sword.shield_guard)
+            let idle = frame
+                .sword(|sword| sword.shield_guard)
                 .filter(|_| cues.shield_guard)
                 .unwrap_or(rest);
             Want::looped(clips.guard.filter(|_| guarding).unwrap_or(idle), 1.)
         };
+        (ground, chore.filter(|_| chored))
+    }
+
+    /// The pelvis and legs' clip: the death, a dodge roll, the jump or the ground's clip.
+    /// Returns it with the roll clip shown, if any.
+    fn base_want<D: Fn(&str) -> f32>(
+        &mut self,
+        frame: &Frame<'_, D>,
+        footing: &Footing,
+        ground: Want,
+    ) -> (Option<&'static str>, Want) {
+        let Frame {
+            clips, duration, ..
+        } = *frame;
+        let Cues {
+            dead,
+            reduced,
+            rolling,
+            ..
+        } = frame.cues;
         // A dodge roll (#516) plays its clip once over the roll's length, whatever the legs did.
-        if cues.rolling && !self.rolling {
+        if rolling && !self.rolling {
             self.rolls = self.rolls.wrapping_add(1);
         }
-        self.rolling = cues.rolling;
-        let roll = clips
-            .roll
-            .filter(|&clip| cues.rolling && !dead && !swims && !reduced && available(clip));
+        self.rolling = rolling;
+        let roll = clips.roll.filter(|&clip| {
+            rolling && !dead && !footing.swims && !reduced && frame.available(clip)
+        });
         let base = if dead {
             let varied = clips
                 .deaths
                 .map(|deaths| deaths[usize::from(self.death) % deaths.len()])
-                .filter(|&clip| available(clip));
+                .filter(|&clip| frame.available(clip));
             Want::hold(varied.unwrap_or(clips.death), 0)
         } else if let Some(clip) = roll {
             #[allow(clippy::cast_possible_truncation)]
@@ -4120,17 +1877,57 @@ impl Playback {
             }
         } else {
             match (clips.jump, self.flight) {
-                (Some(jump), Flight::Rising) if !reduced && available(jump.start) => {
+                (Some(jump), Flight::Rising) if !reduced && frame.available(jump.start) => {
                     Want::hold(jump.start, self.landing)
                 }
                 (Some(jump), Flight::Rising | Flight::Airborne | Flight::Falling)
-                    if available(jump.airborne) =>
+                    if frame.available(jump.airborne) =>
                 {
                     Want::looped(jump.airborne, 1.)
                 }
                 _ => ground,
             }
         };
+        (roll, base)
+    }
+
+    /// What plays over the legs' clip on the lower body (a whole-body strike, the settling
+    /// guard, a landing, a let-go or a water crossing) and on the upper body (a strike, the
+    /// wind-up, a guard, a gesture, the talk idle or the weapon's stance).
+    fn region_wants<D: Fn(&str) -> f32>(
+        &self,
+        frame: &Frame<'_, D>,
+        footing: &Footing,
+        poses: &Poses,
+        shown: &Shown,
+        roll: Option<&'static str>,
+        base: Want,
+    ) -> (Option<Want>, Option<Want>) {
+        let Frame {
+            clips,
+            cues,
+            guarding,
+            ..
+        } = *frame;
+        let Cues {
+            speed,
+            dead,
+            reduced,
+            ..
+        } = cues;
+        let Footing {
+            charge_run,
+            stun,
+            swims,
+            traversing,
+            standing,
+            layered,
+            ..
+        } = *footing;
+        let Shown {
+            strike, prepared, ..
+        } = *shown;
+        let available = |clip: &str| frame.available(clip);
         // The settling guard (#900) takes the whole body on the ground, the upper body over a
         // gait; on touchdown it stands in for the jump's landing.
         let settle = self
@@ -4180,7 +1977,7 @@ impl Playback {
             .rooted
             .zip(clips.reactions.and_then(|reactions| reactions.rooted))
             .map(|(hold, [roots, ice])| {
-                if hold == super::effects::Condition::Frost {
+                if hold == crate::units::effects::Condition::Frost {
                     ice
                 } else {
                     roots
@@ -4190,11 +1987,11 @@ impl Playback {
         {
             // The upper body strains against the root that holds it (#956).
             Some(Want::looped(clip, 1.))
-        } else if let Some((false, want)) = gesture_want {
+        } else if let Some((false, want)) = poses.gesture {
             Some(want)
-        } else if occupied {
+        } else if poses.occupied {
             None
-        } else if let Some(want) = talk_want {
+        } else if let Some(want) = poses.talk {
             Some(want)
         } else if let Some(crossbow) = clips.crossbow.filter(|_| {
             cues.loadout == Some(Loadout::Crossbow)
@@ -4234,6 +2031,25 @@ impl Playback {
             clip: upper_twin(clips, &available, want.clip),
             ..want
         });
+        (lower, upper)
+    }
+
+    /// Steps the legs' tracks toward `base` and the `lower` clip over it. Returns whether this
+    /// is the unit's first frame and the strike regions' step, slowed by a hitstop.
+    fn step_legs<D: Fn(&str) -> f32>(
+        &mut self,
+        frame: &Frame<'_, D>,
+        footing: &Footing,
+        base: Want,
+        lower: Option<Want>,
+    ) -> (bool, f32) {
+        let Frame { blend, dt, .. } = *frame;
+        let Cues {
+            speed,
+            now,
+            reduced,
+            ..
+        } = frame.cues;
         // The first clip a unit shows has nothing to blend from. Going into or out of swimming
         // depth blends a little longer, so the body eases between land and water.
         let first = self.base.current.is_none();
@@ -4252,13 +2068,32 @@ impl Playback {
         #[allow(clippy::cast_possible_truncation)]
         let over_seconds = lower_seconds / (1. + speed as f32 / FOOT_BLEND_SPEED);
         // A hitstop (#900) slows the strike's regions with the clocks it holds.
-        let held_dt = if stopped {
-            dt * super::contact::HITSTOP_RATE
+        let held_dt = if footing.stopped {
+            dt * crate::units::contact::HITSTOP_RATE
         } else {
             dt
         };
         self.lower.advance(lower, held_dt, over_seconds, reduced);
-        if roll.is_some() {
+        (first, held_dt)
+    }
+
+    /// Settles the body's swim lean and turn, or turns it with a roll.
+    fn step_attitude<D: Fn(&str) -> f32>(
+        &mut self,
+        frame: &Frame<'_, D>,
+        rolling: bool,
+        turned: bool,
+        first: bool,
+    ) {
+        let cues = frame.cues;
+        let Cues {
+            speed,
+            vertical_speed,
+            dead,
+            reduced,
+            ..
+        } = cues;
+        if rolling {
             // The forward roll turns the drawn body at once toward the roll's travel (#516), and
             // eases back to the facing after it; a roll stopped by a wall keeps its heading.
             let heading = if speed > 1. {
@@ -4281,27 +2116,45 @@ impl Playback {
             };
             self.attitude = self.attitude.settle(attitude, cues.dt, reduced || first);
         }
+    }
+
+    /// Steps the upper body's track toward `upper`.
+    fn step_upper<D: Fn(&str) -> f32>(
+        &mut self,
+        frame: &Frame<'_, D>,
+        upper: Option<Want>,
+        split: bool,
+        held_dt: f32,
+    ) {
+        let reduced = frame.cues.reduced;
         if split {
             // The strike leaves the legs mid-swing: the upper body keeps it without a blend.
             self.upper = Track::default();
             self.upper.advance(upper, held_dt, 0., reduced);
         } else {
             self.upper
-                .advance(upper, held_dt, blend.upper_seconds, reduced);
+                .advance(upper, held_dt, frame.blend.upper_seconds, reduced);
         }
+    }
+
+    /// The body's layers: the legs' clips, and the upper body's over them or following them.
+    fn compose_layers<D: Fn(&str) -> f32>(&self, frame: &Frame<'_, D>) -> Vec<Layer> {
+        let Frame {
+            duration, blend, ..
+        } = *frame;
         let mut over = Vec::new();
         self.lower
-            .layers(&duration, blend.lower_weight, Mask::Lower, &mut over);
+            .layers(duration, blend.lower_weight, Mask::Lower, &mut over);
         let over_weight: f32 = over.iter().map(|layer| layer.weight).sum();
         let mut legs = Vec::new();
         self.base
-            .layers(&duration, 1. - over_weight, Mask::Lower, &mut legs);
+            .layers(duration, 1. - over_weight, Mask::Lower, &mut legs);
         legs.extend(over);
         let mut arms = Vec::new();
         self.upper
-            .layers(&duration, blend.upper_weight, Mask::Upper, &mut arms);
+            .layers(duration, blend.upper_weight, Mask::Upper, &mut arms);
         let arms_weight: f32 = arms.iter().map(|layer| layer.weight).sum();
-        let layers = if arms_weight <= 1e-3 {
+        if arms_weight <= 1e-3 {
             // The upper body follows the legs: one whole-body set of layers.
             legs.into_iter()
                 .map(|layer| Layer {
@@ -4320,14 +2173,15 @@ impl Playback {
                 })
                 .collect();
             legs.into_iter().chain(follow).chain(arms).collect()
-        };
-        let mut layers: Vec<Layer> = layers;
-        // A held item's grip closes that hand's fingers over every body clip (asset-tooling
-        // #285), but not while the hands hold a face, a ladder, a rope or a ledge (#500).
-        let climbing = self.held.holds() || self.mantle.is_some() || self.letting_go.is_some();
+        }
+    }
+
+    /// Where the weapons, the throwable and a chore's item ride this frame.
+    fn step_carry<D: Fn(&str) -> f32>(&self, frame: &Frame<'_, D>, chore: Option<Chore>) -> Carry {
+        let cues = frame.cues;
         // A throw or a bandage moves the daggers (#603): a sheathed dagger's hand opens, a
         // drawn throwable's closes round it.
-        let mut carry = self.carry(clips, cues, &duration);
+        let mut carry = self.carry(frame.clips, cues, frame.duration);
         // Never let sheathing retime a previously accepted strike/cast. Clips, not the next
         // input mode, own that action until completion (#802).
         carry.weapon_drawn =
@@ -4339,7 +2193,7 @@ impl Playback {
         if carry.weapon_drawn == Some(false) {
             carry.sheathed = [true; 2];
         }
-        carry.chore = chore.filter(|_| chored);
+        carry.chore = chore;
         // An item in the weapon hand, the signal horn (#952), sends the weapon to its stowed socket.
         if carry
             .chore
@@ -4347,9 +2201,32 @@ impl Playback {
         {
             carry.weapon_drawn = Some(false);
         }
+        carry
+    }
+
+    /// Steps each hand's grip over its fingers and appends its layers: a held item's grip
+    /// closes that hand's fingers over every body clip (asset-tooling #285), but not while the
+    /// hands hold a face, a ladder, a rope or a ledge (#500). `upper` is the upper body's clip.
+    fn step_grips<D: Fn(&str) -> f32>(
+        &mut self,
+        frame: &Frame<'_, D>,
+        carry: &Carry,
+        upper: &'static str,
+        first: bool,
+        layers: &mut Vec<Layer>,
+    ) {
+        let Frame {
+            clips,
+            duration,
+            cues,
+            blend,
+            dt,
+            ..
+        } = *frame;
+        let climbing = self.held.holds() || self.mantle.is_some() || self.letting_go.is_some();
         let mut hands = cues.loadout.map(Loadout::hands).unwrap_or_default();
         // A chore's hand item closes the fingers round its handle or shaft.
-        if let Some((hand, held)) = carry.chore.and_then(super::chores::Chore::grip) {
+        if let Some((hand, held)) = carry.chore.and_then(Chore::grip) {
             match hand {
                 Hand::Left => hands.left.get_or_insert(held),
                 Hand::Right => hands.right.get_or_insert(held),
@@ -4358,17 +2235,11 @@ impl Playback {
         // A reload winds the crossbow's crank with the left hand, then hands the crossbow to the
         // left hand while the right draws a bolt (#607).
         let crossbow = carry.crossbow.unwrap_or_default();
-        let lower = self
-            .lower
-            .target(&duration)
-            .or_else(|| self.base.target(&duration))
-            .unwrap_or((clips.idle, 0.));
-        let upper = self.upper.target(&duration).unwrap_or(lower);
         // The caster clips key the left hand's fingers (#609): no left-hand grip over them,
         // except a shield's, which stays in hand, and the staff's second hand over a staff
         // swing. The tome rides the back of the hand, so it needs none.
-        let casting = clips.caster.filter(|caster| caster.contains(upper.0));
-        let staff_swing = casting.is_some_and(|caster| caster.staff.contains(&upper.0));
+        let casting = clips.caster.filter(|caster| caster.contains(upper));
+        let staff_swing = casting.is_some_and(|caster| caster.staff.contains(&upper));
         let left_open = casting.is_some() && hands.left != Some(Held::Shield);
         for hand in Hand::BOTH {
             let throwable = carry.throwable.filter(|_| hand == Hand::Right);
@@ -4389,26 +2260,13 @@ impl Playback {
                         })
                         .map(|held| held.grip(hand))
                 })
-                .filter(|&clip| !climbing && available(clip))
+                .filter(|&clip| !climbing && frame.available(clip))
                 .map(|clip| Want::looped(clip, 0.));
             let track = &mut self.grips[hand.index()];
             // A unit's first frame grips at once, like its first clip.
             let seconds = if first { 0. } else { blend.upper_seconds };
-            track.advance(grip, dt, seconds, reduced);
-            track.layers(&duration, 1., Mask::Fingers(hand), &mut layers);
-        }
-        let channel = cues
-            .motions
-            .and_then(|motions| motions.get(upper.0))
-            .and_then(|motion| motion.cast)
-            .and_then(|cast| cast.channel);
-        Animation {
-            layers,
-            lower,
-            upper,
-            attitude: self.attitude,
-            carry,
-            channel,
+            track.advance(grip, dt, seconds, cues.reduced);
+            track.layers(duration, 1., Mask::Fingers(hand), layers);
         }
     }
 
@@ -4645,327 +2503,86 @@ impl Playback {
     }
 }
 
+/// One frame's inputs to [`Playback::advance`]: the clip table, the clip lengths, the cues, the
+/// clamped blend, the frame step in seconds and whether the zone's guard protects.
+struct Frame<'a, D> {
+    clips: Clips,
+    duration: &'a D,
+    cues: Cues<'a>,
+    blend: Blend,
+    dt: f32,
+    guarding: bool,
+}
+
+impl<D: Fn(&str) -> f32> Frame<'_, D> {
+    /// The model has `clip`.
+    fn available(&self, clip: &str) -> bool {
+        (self.duration)(clip) > 0.
+    }
+
+    /// The sword clip `pick` names, when the model has it.
+    fn sword(&self, pick: fn(SwordClips) -> &'static str) -> Option<&'static str> {
+        self.clips
+            .sword
+            .map(pick)
+            .filter(|clip| self.available(clip))
+    }
+
+    /// The swim clip `pick` names, when the model has it.
+    fn swim(&self, pick: fn(SwimClips) -> &'static str) -> Option<&'static str> {
+        self.clips
+            .swim
+            .map(pick)
+            .filter(|clip| self.available(clip))
+    }
+}
+
+/// What a frame's first steps settled, for the clip choice after them.
+#[derive(Clone, Copy)]
+struct Footing {
+    /// The charge loop still running (#582).
+    charge_run: Option<&'static str>,
+    /// The stun clip held (#582).
+    stun: Option<&'static str>,
+    /// In swimming depth (Atlas 6.6.41).
+    swims: bool,
+    /// The zone's climb or mantle, free once dead (#500).
+    held: TraversalView,
+    /// Holding a face or playing out a mantle.
+    traversing: bool,
+    /// A confirmed blow's hitstop holds the strike clocks (#900).
+    stopped: bool,
+    /// Still on the ground, out of the water and off the wall.
+    standing: bool,
+    moving: bool,
+    /// The model layers its upper body over its legs.
+    layered: bool,
+}
+
+/// The emote, interaction, held pose and talk idle a frame shows (#619).
+struct Poses {
+    /// The gesture, and whether it takes the whole body.
+    gesture: Option<(bool, Want)>,
+    posture: Option<Want>,
+    /// A held pose or a whole-body gesture keeps the upper body's idle stances off.
+    occupied: bool,
+    talk: Option<Want>,
+    /// The pose or gesture faces the cue's `face`.
+    turned: bool,
+}
+
+/// The strike or cast shown, whether it takes the whole body, and the local wind-up under it.
+struct Shown {
+    strike: Option<(bool, Want)>,
+    prepared: Option<Want>,
+    /// The strike shown leaves the legs mid-swing.
+    split: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mmorpg_core::{CreatureId, NpcId, greyhaven_vale};
-    use strum::VariantArray;
-
-    #[test]
-    fn loadout_attachments_keep_the_pairs_both_clients_drew() {
-        // The browser's former `LOADOUT_ITEMS` and the native `Equipment::loadout` match, which
-        // agreed item for item (#1012).
-        let before: &[(&str, &[(&str, &str)])] = &[
-            (
-                "sword-and-shield",
-                &[
-                    ("equipment.sword.arming", "hand_r.weapon"),
-                    ("equipment.shield.heater", "hand_l.shield"),
-                ],
-            ),
-            (
-                "sword-and-shield.redbrand",
-                &[
-                    ("equipment.sword.arming", "hand_r.weapon"),
-                    ("equipment.shield.redbrand", "hand_l.shield"),
-                ],
-            ),
-            (
-                "bow-and-quiver",
-                &[
-                    ("equipment.bow.long", "back.bow.stowed"),
-                    ("equipment.quiver.back", "back.quiver"),
-                ],
-            ),
-            ("sword", &[("equipment.sword.arming", "hand_r.weapon")]),
-            ("dagger", &[("equipment.dagger.blackened", "hand_r.weapon")]),
-            (
-                "dagger.twin",
-                &[
-                    ("equipment.dagger.blackened", "hand_r.weapon"),
-                    ("equipment.dagger.blackened", "hand_l.weapon"),
-                ],
-            ),
-            ("staff.bone", &[("equipment.staff.bone", "hand_r.staff")]),
-            (
-                "staff.crystal-and-tome",
-                &[
-                    ("equipment.staff.crystal", "hand_r.staff"),
-                    ("equipment.book.tome", "hand_l.shield"),
-                ],
-            ),
-            (
-                "mace.flanged",
-                &[("equipment.mace.flanged", "hand_r.weapon")],
-            ),
-            (
-                "staff.gnarled",
-                &[("equipment.staff.gnarled", "hand_r.staff")],
-            ),
-            ("spear", &[("equipment.spear.leaf", "hand_r.staff")]),
-            (
-                "sword.garricks-cleaver",
-                &[("equipment.sword.garricks-cleaver", "hand_r.weapon")],
-            ),
-            (
-                "spear.hollowpine-hunter",
-                &[("equipment.spear.hollowpine-hunter", "hand_r.staff")],
-            ),
-            (
-                "crossbow",
-                &[
-                    ("equipment.crossbow", "hand_r.crossbow"),
-                    ("equipment.arrow", "hand_r.arrow"),
-                ],
-            ),
-        ];
-        assert_eq!(Loadout::VARIANTS.len(), before.len());
-        for loadout in Loadout::VARIANTS {
-            let (_, items) = before
-                .iter()
-                .find(|(name, _)| *name == loadout.name())
-                .unwrap_or_else(|| panic!("{} drew no items before", loadout.name()));
-            let now: Vec<_> = loadout
-                .attachments()
-                .iter()
-                .map(|at| (at.item, at.socket))
-                .collect();
-            assert_eq!(now, *items, "{}", loadout.name());
-        }
-    }
-
-    #[test]
-    fn movement_strikes_play_the_family_clip_or_its_stand_in() {
-        // Before the asset-tooling #709/#711 release, the existing clips stand in (#885).
-        let without = |clip: &str| !clip.contains("_Run_") && !clip.contains("_Jump_");
-        assert_eq!(
-            Kind::Ranger.melee_strike(WeaponFamily::Sword, StrikeVariant::Running, without),
-            Some(("Sword_Slash_Mid_R", Region::Upper))
-        );
-        assert_eq!(
-            Kind::Ranger.melee_strike(WeaponFamily::Sword, StrikeVariant::Running, |_| true),
-            Some(("Sword_Run_Strike", Region::Whole))
-        );
-        assert_eq!(
-            Kind::Ranger.melee_strike(WeaponFamily::Spear, StrikeVariant::Finisher, |_| false),
-            Some((
-                "Staff_Strike_B",
-                Kind::Ranger.strike_region("Staff_Strike_B")
-            ))
-        );
-        assert_eq!(
-            Kind::Ranger.melee_strike(WeaponFamily::Mace, StrikeVariant::Finisher, |_| true),
-            Some(("Mace_Swing_C", Region::Footwork))
-        );
-        assert_eq!(
-            Kind::Wolf.melee_strike(WeaponFamily::Unarmed, StrikeVariant::First, |_| true),
-            None
-        );
-        // The chain reads as three different blows for every family.
-        for family in WeaponFamily::ALL {
-            let [first, _] = melee_clips(family, StrikeVariant::First);
-            let [finisher, _] = melee_clips(family, StrikeVariant::Finisher);
-            assert_ne!(first, finisher, "{family:?}");
-        }
-    }
-
-    #[test]
-    fn named_greyhaven_residents_have_presets_and_classes_their_weapons() {
-        let content = greyhaven_vale::content();
-        let presets: Vec<_> = content
-            .npcs()
-            .iter()
-            .map(|npc| Resident::of_name(&npc.name).map(Resident::preset))
-            .collect();
-        assert_eq!(
-            presets,
-            [
-                Some("resident.marshal"),
-                Some("resident.tanner"),
-                Some("resident.innkeeper"),
-                Some("resident.farmer"),
-                Some("resident.healer"),
-                Some("resident.guard"),
-                Some("resident.guard"),
-                Some("resident.guard"),
-                Some("resident.guard"),
-                Some("resident.tanner"),
-                Some("resident.farmer"),
-                Some("resident.tanner"),
-                Some("resident.farmer"),
-                Some("resident.tanner"),
-                Some("resident.farmer"),
-                Some("resident.tanner"),
-                Some("resident.farmer"),
-                Some("resident.tanner"),
-                Some("resident.farmer"),
-                Some("resident.tanner"),
-                Some("resident.farmer"),
-            ]
-            .into_iter()
-            .chain([
-                // The region's people (#819), NPCs 22–41 …
-                Some("resident.tanner"),
-                Some("resident.farmer"),
-                Some("resident.tanner"),
-                Some("resident.farmer"),
-                Some("resident.tanner"),
-                Some("resident.farmer"),
-                Some("resident.farmer"),
-                Some("resident.farmer"),
-                Some("resident.tanner"),
-                Some("resident.farmer"),
-                Some("resident.farmer"),
-                Some("resident.tanner"),
-                Some("resident.guard"),
-                Some("resident.guard"),
-                Some("resident.tanner"),
-                Some("resident.farmer"),
-                Some("resident.farmer"),
-                Some("resident.tanner"),
-                Some("resident.tanner"),
-                Some("resident.farmer"),
-                // Trader Maren (#826).
-                Some("resident.tanner"),
-                // Smith Wulfric Hale (#917).
-                Some("resident.farmer"),
-            ])
-            .collect::<Vec<_>>()
-        );
-        let names: Vec<_> = PlayerClass::VARIANTS
-            .iter()
-            .copied()
-            .map(|class| Loadout::of_class(class).name())
-            .collect();
-        assert_eq!(
-            names,
-            [
-                "sword-and-shield",
-                "bow-and-quiver",
-                "staff.crystal-and-tome",
-                "staff.bone",
-                ROGUE_LOADOUT.name(),
-                "mace.flanged",
-                "staff.gnarled",
-            ]
-        );
-    }
-
-    #[test]
-    fn humanoid_enemies_have_presets() {
-        let content = greyhaven_vale::content();
-        let presets: Vec<_> = content
-            .creature_templates()
-            .iter()
-            .filter_map(|template| Resident::of_creature(&template.name).map(Resident::preset))
-            .collect();
-        assert_eq!(
-            presets,
-            [
-                "enemy.marauder",
-                "enemy.redbrand.bandit",
-                "enemy.redbrand.garrick",
-                "enemy.redbrand.crossbowman",
-                "enemy.redbrand.brute",
-            ]
-        );
-        // Each is authored in the shared presets both clients draw.
-        assert!(
-            presets
-                .iter()
-                .all(|id| super::super::presets::ENEMY_PRESET_IDS.contains(id))
-        );
-    }
-
-    #[test]
-    fn classes_wear_their_starter_outfit_and_drops_replace_its_slot_pieces() {
-        let presets: Vec<_> = PlayerClass::VARIANTS
-            .iter()
-            .copied()
-            .map(|class| Outfit::new(class, None).preset())
-            .collect();
-        assert_eq!(
-            presets,
-            [
-                "class.warden",
-                "class.ranger",
-                "class.arcanist",
-                "class.necromancer",
-                "class.rogue",
-                "class.cleric",
-                "class.druid",
-            ]
-        );
-        assert!(Outfit::new(PlayerClass::Warden, None).replaced().is_empty());
-        // The Cloth Hood (6) and Worn Boots (9) cover the head and feet sockets only.
-        let mut slots = [None; mmorpg_core::EQUIPMENT_SLOTS];
-        slots[EquipmentSlot::Head.index() as usize] = Some(mmorpg_core::ItemId::new(6));
-        slots[EquipmentSlot::Feet.index() as usize] = Some(mmorpg_core::ItemId::new(9));
-        let equipment = Equipment::from_slots(slots).unwrap();
-        assert_eq!(
-            Outfit::new(PlayerClass::Warden, Some(&equipment)).replaced(),
-            ["head.armor", "foot_l.armor", "foot_r.armor"]
-        );
-        // The Cleric's gold accent (#d9b44a), linear.
-        let [r, g, b] = Outfit::new(PlayerClass::Cleric, None).trim();
-        assert!(r > g && g > b && (r - 0.693).abs() < 0.01);
-    }
-
-    #[test]
-    fn players_are_the_ranger_and_only_animal_families_import() {
-        let content = greyhaven_vale::content();
-        let creature = |family: CreatureFamily| {
-            let spawn = content
-                .creature_spawns()
-                .iter()
-                .find(|spawn| content.creature_template(spawn.template).unwrap().family == family)
-                .unwrap();
-            let mut record = content_record();
-            record.appearance = spawn.template.get();
-            Kind::of(EntityRef::Creature(CreatureId::new(1)), &record, &content)
-        };
-        assert_eq!(
-            Kind::of(EntityRef::Player(1), &content_record(), &content),
-            Some(Kind::Ranger)
-        );
-        // A Druid in wolf form (#957) is the wolf, with its run and bites.
-        let mut shifted = content_record();
-        shifted.flags.shapeshifted = true;
-        assert_eq!(
-            Kind::of(EntityRef::Player(1), &shifted, &content),
-            Some(Kind::Wolf)
-        );
-        assert_eq!(creature(CreatureFamily::Wolf), Some(Kind::Wolf));
-        assert_eq!(creature(CreatureFamily::Vermin), Some(Kind::Rat));
-        assert_eq!(creature(CreatureFamily::Boar), Some(Kind::Boar));
-        assert_eq!(creature(CreatureFamily::Bear), Some(Kind::Bear));
-        assert_eq!(creature(CreatureFamily::Spider), Some(Kind::Spider));
-        assert_eq!(creature(CreatureFamily::Lurker), Some(Kind::Lurker));
-        assert_eq!(creature(CreatureFamily::Lynx), Some(Kind::Lynx));
-        assert_eq!(creature(CreatureFamily::Adder), Some(Kind::Adder));
-        assert_eq!(creature(CreatureFamily::Bat), Some(Kind::Bat));
-        assert_eq!(creature(CreatureFamily::Crayfish), Some(Kind::Crayfish));
-        assert_eq!(creature(CreatureFamily::Stag), Some(Kind::Stag));
-        assert_eq!(creature(CreatureFamily::Redbrand), None);
-        assert_eq!(
-            Kind::of(EntityRef::Npc(NpcId::new(1)), &content_record(), &content),
-            None
-        );
-    }
-
-    fn content_record() -> EntitySnapshot {
-        EntitySnapshot {
-            kind: mmorpg_core::EntityKind::Player,
-            id: 1,
-            appearance: 0,
-            position: [0; 3],
-            velocity: [0; 3],
-            facing: 0,
-            level: 1,
-            health_percent: 100,
-            flags: mmorpg_core::EntityFlags::default(),
-        }
-    }
+    use mmorpg_core::PlayerClass;
 
     #[allow(clippy::too_many_arguments)]
     fn advance(
@@ -5024,7 +2641,7 @@ mod tests {
     /// are the male Ranger's `humanoid-clips` values.
     #[test]
     fn gaits_keep_their_planted_foot_at_the_travel_speed() {
-        let motions = super::super::traversal::Motions::parse(
+        let motions = crate::units::traversal::Motions::parse(
             r#"{"schema": "humanoid-clips-v1", "clips": [
                 {"name": "Walk_Loop", "groundSpeedMetersPerSecond": 1.0434},
                 {"name": "Jog_Fwd_Loop", "groundSpeedMetersPerSecond": 1.7637},
@@ -5208,40 +2825,6 @@ mod tests {
     }
 
     #[test]
-    fn the_bow_cycle_holds_the_bow_and_its_draw_samples_between_frames() {
-        let shows = |clip: &'static str| Animation {
-            layers: vec![Layer::single(clip, 0.2)],
-            lower: (clip, 0.2),
-            upper: (clip, 0.2),
-            attitude: Attitude::default(),
-            carry: Carry::default(),
-            channel: None,
-        };
-        for clip in [
-            "Bow_Aim_Loop",
-            "Bow_Draw",
-            "Bow_Hold_Loop",
-            "Bow_Release",
-            "Bow_Recovery",
-            "Bow_Cancel",
-        ] {
-            assert_eq!(
-                Kind::Ranger.bow_shot(&shows(clip)),
-                Some(BowShot { clip, time: 0.2 })
-            );
-        }
-        for clip in ["Idle_Loop", "Spell_Simple_Enter", "Sword_Attack"] {
-            assert_eq!(Kind::Ranger.bow_shot(&shows(clip)), None, "{clip}");
-        }
-        assert_eq!(Kind::Wolf.bow_shot(&shows("Bow_Draw")), None);
-        let table = [0.2, 0.4, 0.5];
-        assert!((draw_meters(&table, 10., 0.05) - 0.3).abs() < 1e-6);
-        assert!((draw_meters(&table, 10., 9.) - 0.5).abs() < 1e-6);
-        assert!((draw_meters(&table, 10., -1.) - 0.2).abs() < 1e-6);
-        assert!(draw_meters(&[], 30., 0.5).abs() < f32::EPSILON);
-    }
-
-    #[test]
     fn held_items_grip_their_hands_fingers_except_while_climbing() {
         let clips = Kind::Ranger.clips();
         let frame = |playback: &mut Playback, loadout: Loadout, traversal, now: f64| {
@@ -5316,55 +2899,6 @@ mod tests {
         assert!(Mask::Fingers(Hand::Right).drives(joint("thumb_03_r"), only_right));
         assert!(!Mask::Fingers(Hand::Right).drives(joint("thumb_03_l"), only_right));
         assert!(!Mask::Fingers(Hand::Right).drives(joint("hand_r"), only_right));
-    }
-
-    /// Each beast rests and walks in the clips the fetched wildlife descriptor names
-    /// (`restClip`, `moveClip`), and every attack clip its table plays is in the descriptor.
-    #[test]
-    fn the_beasts_clip_tables_follow_the_fetched_wildlife_descriptor() {
-        let bundle = format!(
-            "{}/../../web/public/scenery/greyhaven.wildlife",
-            env!("CARGO_MANIFEST_DIR")
-        );
-        let Ok(manifest) = std::fs::read_to_string(format!("{bundle}/manifest.json")) else {
-            eprintln!("the wildlife release is not fetched; skipping");
-            return;
-        };
-        let manifest: serde_json::Value = serde_json::from_str(&manifest).unwrap();
-        let path = manifest["assets"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .flat_map(|asset| asset["attachments"].as_array().unwrap())
-            .find(|attachment| attachment["name"] == "wildlife-descriptor")
-            .and_then(|attachment| attachment["path"].as_str())
-            .unwrap();
-        let descriptor: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(format!("{bundle}/{path}")).unwrap())
-                .unwrap();
-        for &kind in Kind::VARIANTS {
-            let Some(key) = kind.wild_key() else {
-                continue;
-            };
-            let entry = descriptor["assets"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|entry| entry["key"] == key)
-                .unwrap_or_else(|| panic!("the descriptor lists {key}"));
-            let clips = kind.clips();
-            assert_eq!(entry["restClip"], clips.idle, "{key} rests");
-            assert_eq!(entry["moveClip"], clips.walk, "{key} walks");
-            let bites = clips.bites.unwrap();
-            for clip in bites.attacks.into_iter().chain(
-                bites
-                    .follow
-                    .into_iter()
-                    .flat_map(|(then, last)| std::iter::once(then).chain(last)),
-            ) {
-                assert!(entry["clips"][clip].is_object(), "{key} has {clip}");
-            }
-        }
     }
 
     /// A lynx's pounce (#989) plays its wind-up, its lunge and its recovery in turn.
@@ -6105,11 +3639,11 @@ mod tests {
         // A root holds the legs still and the upper body strains against vines or ice (#956).
         for (hold, clip) in [
             (
-                super::super::effects::Condition::Roots,
+                crate::units::effects::Condition::Roots,
                 "Rooted_Struggle_Loop",
             ),
             (
-                super::super::effects::Condition::Frost,
+                crate::units::effects::Condition::Frost,
                 "Rooted_Struggle_Frozen_Loop",
             ),
         ] {
@@ -6249,87 +3783,6 @@ mod tests {
         assert!(stop > hitstop_seconds(weight("Dagger_Stab_R")));
     }
 
-    #[test]
-    fn strikes_use_the_class_and_ability_clips_the_bundle_has() {
-        use mmorpg_core::ability::ids;
-        let warden = Some(PlayerClass::Warden);
-        let aim = |side, height| Some(StrikeAim::new(side, height));
-        assert_eq!(
-            Kind::Ranger.strike(warden, Some(ids::HEROIC_STRIKE), None),
-            "Sword_Heroic"
-        );
-        // A directed Heroic Strike and an ordinary swing slash toward their aim (#582).
-        assert_eq!(
-            Kind::Ranger.strike(
-                warden,
-                Some(ids::HEROIC_STRIKE),
-                aim(mmorpg_core::StrikeSide::Left, StrikeHeight::High)
-            ),
-            "Sword_Slash_High_L"
-        );
-        assert_eq!(
-            Kind::Ranger.strike(
-                warden,
-                None,
-                aim(mmorpg_core::StrikeSide::Right, StrikeHeight::Low)
-            ),
-            "Sword_Slash_Low_R"
-        );
-        assert_eq!(
-            Kind::Ranger.strike(warden, Some(ids::CLEAVE), None),
-            "Sword_Cleave"
-        );
-        assert_eq!(
-            Kind::Ranger.strike(None, Some(ids::REDBRAND_WHIRL), None),
-            "Sword_Whirl"
-        );
-        assert_eq!(
-            Kind::Ranger.strike(None, Some(ids::OVERHEAD_SMASH), None),
-            "Sword_Overhead_Smash"
-        );
-        // A bow class's basic swing is a melee slash like everyone else's (#884); its shots keep
-        // the release.
-        assert_eq!(
-            Kind::Ranger.strike(
-                Some(PlayerClass::Ranger),
-                None,
-                aim(mmorpg_core::StrikeSide::Centre, StrikeHeight::Middle)
-            ),
-            "Sword_Slash_Mid_C"
-        );
-        assert_eq!(
-            Kind::Ranger.strike(Some(PlayerClass::Ranger), Some(ids::SERPENT_STING), None),
-            "Bow_Release"
-        );
-        assert_eq!(
-            Kind::Ranger.strike_region("Sword_Slash_Mid_C"),
-            Region::Upper
-        );
-        assert_eq!(Kind::Ranger.strike_region("Sword_Whirl"), Region::Whole);
-        assert_eq!(Kind::Ranger.strike_region("Sword_Attack"), Region::Footwork);
-        assert_eq!(
-            Kind::Ranger.strike(Some(PlayerClass::Warden), Some(ids::SHIELD_BASH), None),
-            "Shield_OneShot"
-        );
-        assert_eq!(
-            Kind::Ranger.strike(Some(PlayerClass::Ranger), None, None),
-            "Sword_Attack"
-        );
-        assert_eq!(
-            Kind::Ranger.strike(Some(PlayerClass::Arcanist), None, None),
-            "Sword_Attack"
-        );
-        assert_eq!(
-            Kind::Ranger.strike(Some(PlayerClass::Arcanist), Some(ids::FIREBOLT), None),
-            "Spell_Simple_Shoot"
-        );
-        assert_eq!(Kind::Ranger.strike(None, None, None), "Sword_Attack");
-        assert_eq!(
-            Kind::Wolf.strike(None, Some(ids::SHIELD_BASH), None),
-            "Attack_A"
-        );
-    }
-
     /// One frame of a unit in `water`, travelling at `speed` m/s straight ahead and `vertical`.
     fn swim_frame(
         playback: &mut Playback,
@@ -6433,7 +3886,7 @@ mod tests {
             assert!(animation.attitude.pitch >= pitch);
             pitch = animation.attitude.pitch;
         }
-        assert!((pitch - super::super::swim::SURFACE_PITCH).abs() < 0.01);
+        assert!((pitch - crate::units::swim::SURFACE_PITCH).abs() < 0.01);
         // Climbing out eases back upright rather than snapping.
         now += 0.1;
         let out = swim_frame(&mut playback, one, WaterMode::Dry, 2., 0., now);
@@ -6576,7 +4029,7 @@ mod tests {
 
     #[test]
     fn climb_loops_keep_pace_with_the_zone_over_their_authored_speed() {
-        let motions = super::super::traversal::Motions::parse(
+        let motions = crate::units::traversal::Motions::parse(
             r#"{"schema": "humanoid-clips-v1", "clips": [
                 {"name": "Climb_Up_Loop", "climbSpeedMetersPerSecond": 0.45}
             ]}"#,
@@ -6634,51 +4087,8 @@ mod tests {
     }
 
     #[test]
-    fn dagger_holders_alternate_hands_and_play_the_rogue_ability_clips() {
-        use mmorpg_core::ability::ids;
-        let twin = Some(Loadout::TwinDaggers);
-        let strike = |loadout, ability, swing| {
-            Kind::Ranger
-                .dagger_strike(loadout, ability, swing)
-                .map(|(clip, _)| clip)
-        };
-        assert_eq!(Loadout::of_class(PlayerClass::Rogue), ROGUE_LOADOUT);
-        assert_eq!(strike(twin, None, 0), Some("Dagger_Stab_R"));
-        assert_eq!(strike(twin, None, 1), Some("Dagger_Slash_L"));
-        assert_eq!(strike(twin, None, 2), Some("Dagger_Stab_R"));
-        // One dagger only stabs; a sword holder keeps its slashes.
-        assert_eq!(
-            strike(Some(Loadout::Dagger), None, 1),
-            Some("Dagger_Stab_R")
-        );
-        assert_eq!(strike(Some(Loadout::Sword), None, 1), None);
-        for (ability, clip) in [
-            (ids::SINISTER_STRIKE, "Dagger_Sinister"),
-            (ids::POISONED_BLADE, "Dagger_Poison"),
-            (ids::GOUGE, "Dagger_Gouge"),
-            (ids::ADRENALINE_RUSH, "Flourish_Haste"),
-            (ids::THROWING_KNIFE, "Throw_Knife"),
-            (ids::VENOM_FLASK, "Throw_Lob"),
-            (ids::BLASTING_BOMB, "Throw_Lob"),
-        ] {
-            assert_eq!(strike(twin, Some(ability), 0), Some(clip));
-            assert_eq!(Kind::Ranger.strike_region(clip), Region::Upper);
-        }
-        // The Ranger's Rapid Fire flourishes empty-handed.
-        assert_eq!(
-            strike(Some(Loadout::BowAndQuiver), Some(ids::RAPID_FIRE), 0),
-            Some("Flourish_Haste")
-        );
-        assert_eq!(
-            Kind::Ranger.dagger_strike(twin, Some(ids::BLASTING_BOMB), 0),
-            Some(("Throw_Lob", Some(Throwable::Bomb)))
-        );
-        assert_eq!(Kind::Wolf.dagger_strike(twin, None, 0), None);
-    }
-
-    #[test]
     fn a_throw_sheathes_the_dagger_and_holds_its_item_from_draw_to_release() {
-        let motions = super::super::traversal::Motions::parse(
+        let motions = crate::units::traversal::Motions::parse(
             r#"{"schema": "humanoid-clips-v1", "clips": [
                 {"name": "Throw_Knife", "drawSeconds": 0.09, "releaseSeconds": 0.28,
                  "contact": {"seconds": 0.28}}
@@ -6875,72 +4285,8 @@ mod tests {
     }
 
     #[test]
-    fn rapid_fire_power_shots_and_crossbows_pick_their_ranged_clips() {
-        use mmorpg_core::ability::ids;
-        let ranger = Kind::Ranger;
-        let bow = Some(Loadout::BowAndQuiver);
-        assert_eq!(ranger.ranged_strike(bow, None, false), None);
-        assert_eq!(
-            ranger.ranged_strike(bow, Some(ids::SERPENT_STING), false),
-            None
-        );
-        // Under Rapid Fire every shot is the rapid release, power shots too.
-        assert_eq!(
-            ranger.ranged_strike(bow, None, true),
-            Some("Bow_Rapid_Release")
-        );
-        assert_eq!(
-            ranger.ranged_strike(bow, Some(ids::AIMED_SHOT), true),
-            Some("Bow_Rapid_Release")
-        );
-        for power in [ids::AIMED_SHOT, ids::PIERCING_SHOT] {
-            assert_eq!(
-                ranger.ranged_strike(bow, Some(power), false),
-                Some("Bow_Release_Upper")
-            );
-            assert_eq!(ranger.power_draw(power), Some("Bow_Power_Draw"));
-        }
-        assert_eq!(ranger.power_draw(ids::RICOCHET_SHOT), None);
-        assert_eq!(
-            ranger
-                .cycle_of("Bow_Release_Upper")
-                .and_then(|cycle| cycle.recovery),
-            Some("Bow_Recovery_Upper")
-        );
-        assert!(ranger.cycle_of("Bow_Rapid_Release").is_none());
-        // A crossbowman fires and reloads, and holds its aim through Crossbow Bolt's cast.
-        let crossbow = Some(Loadout::Crossbow);
-        assert_eq!(
-            Resident::RedbrandCrossbowman.loadout(),
-            Some(Loadout::Crossbow)
-        );
-        assert_eq!(
-            ranger.ranged_strike(crossbow, Some(ids::CROSSBOW_BOLT), false),
-            Some("Crossbow_Fire")
-        );
-        assert_eq!(
-            ranger
-                .cycle_of("Crossbow_Fire")
-                .and_then(|cycle| cycle.recovery),
-            Some("Crossbow_Reload")
-        );
-        let cast = ranger
-            .cast(Some(PlayerClass::Ranger), crossbow)
-            .expect("a crossbow cast");
-        assert_eq!(cast.hold, "Crossbow_Aim_Loop");
-        for clip in ["Crossbow_Fire", "Bow_Rapid_Release", "Bow_Release_Upper"] {
-            assert_eq!(ranger.strike_region(clip), Region::Upper, "{clip}");
-        }
-        assert_eq!(
-            Loadout::Crossbow.hands().get(Hand::Left),
-            Some(Held::Crossbow)
-        );
-        assert_eq!(Held::Crossbow.grip(Hand::Right), "Grip_Crossbow_R");
-    }
-
-    #[test]
     fn a_crossbowman_aims_fires_and_reloads_handing_the_crossbow_to_the_left_hand() {
-        let motions = super::super::traversal::Motions::parse(
+        let motions = crate::units::traversal::Motions::parse(
             r#"{"schema": "humanoid-clips-v1", "clips": [
                 {"name": "Crossbow_Fire", "crossbow": {"releaseSeconds": 0.067},
                  "contact": {"seconds": 0.083}},
