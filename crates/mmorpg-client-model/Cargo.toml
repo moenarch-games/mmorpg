@@ -1,6 +1,6 @@
 [package]
 name = "mmorpg-client-model"
-description = "Client rules both clients share: action-bar and cast-bar state, chat parsing and logs, the movement outbox, quest views and the world map"
+description = "Client rules both clients share: action-bar and cast-bar state, chat parsing and logs, the movement outbox, quest views, the world map, snapshot interpolation, the orbit camera and impact cues"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
