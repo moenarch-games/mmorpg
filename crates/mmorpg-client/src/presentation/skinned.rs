@@ -3430,3 +3430,128 @@ mod rolling_ranger_tests {
         }
     }
 }
+
+/// How far worn plates stand off the posed body (#1053), for the fit tests of both figures.
+#[cfg(test)]
+mod fit {
+    use super::*;
+
+    /// The distance from `p` to triangle `abc` (Ericson, Real-Time Collision Detection 5.1.5).
+    fn to_triangle(p: [f32; 3], [a, b, c]: [[f32; 3]; 3]) -> f32 {
+        let sub = |x: [f32; 3], y: [f32; 3]| [x[0] - y[0], x[1] - y[1], x[2] - y[2]];
+        let dot = |x: [f32; 3], y: [f32; 3]| x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
+        let along =
+            |o: [f32; 3], d: [f32; 3], k: f32| [o[0] + d[0] * k, o[1] + d[1] * k, o[2] + d[2] * k];
+        let (ab, ac, ap) = (sub(b, a), sub(c, a), sub(p, a));
+        let (d1, d2) = (dot(ab, ap), dot(ac, ap));
+        let bp = sub(p, b);
+        let (d3, d4) = (dot(ab, bp), dot(ac, bp));
+        let cp = sub(p, c);
+        let (d5, d6) = (dot(ab, cp), dot(ac, cp));
+        let (va, vb, vc) = (d3 * d6 - d5 * d4, d5 * d2 - d1 * d6, d1 * d4 - d3 * d2);
+        let closest = if d1 <= 0. && d2 <= 0. {
+            a
+        } else if d3 >= 0. && d4 <= d3 {
+            b
+        } else if d6 >= 0. && d5 <= d6 {
+            c
+        } else if vc <= 0. && d1 >= 0. && d3 <= 0. {
+            along(a, ab, d1 / (d1 - d3))
+        } else if vb <= 0. && d2 >= 0. && d6 <= 0. {
+            along(a, ac, d2 / (d2 - d6))
+        } else if va <= 0. && d4 - d3 >= 0. && d5 - d6 >= 0. {
+            along(b, sub(c, b), (d4 - d3) / ((d4 - d3) + (d5 - d6)))
+        } else {
+            let total = va + vb + vc;
+            along(along(a, ab, vb / total), ac, vc / total)
+        };
+        let d = sub(p, closest);
+        dot(d, d).sqrt()
+    }
+
+    /// Per plate of `plates` on `model` posed in `pose`: its socket and its vertices' closest
+    /// and median distance in metres to the body's surface, the `skip` glTF nodes left out.
+    pub(super) fn plate_gaps(
+        model: &Model,
+        plates: &Plates,
+        pose: &[Layer],
+        skip: &[String],
+    ) -> Vec<(String, f32, f32)> {
+        let globals = model.globals(pose);
+        let mut triangles = Vec::new();
+        for (mesh, p) in model.posed(&globals).iter().zip(&model.primitives) {
+            let Some(mesh) = mesh else { continue };
+            if p.node.as_ref().is_some_and(|node| skip.contains(node)) {
+                continue;
+            }
+            let at = |i: u32| {
+                let v = mesh.vertices()[i as usize];
+                [v.x, v.y, v.z]
+            };
+            triangles.extend(
+                p.indices
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
+                    .map(|&[a, b, c]| [at(a), at(b), at(c)]),
+            );
+        }
+        plates
+            .items
+            .iter()
+            .filter_map(|(socket, plate, joint, matrix)| {
+                let at = mul(&globals[model.node(joint)?], &matrix.elements);
+                let vertices: Vec<_> = plate
+                    .posed(&plate.globals_of(&plate.rest))
+                    .into_iter()
+                    .flatten()
+                    .flat_map(|mesh| mesh.vertices().to_vec())
+                    .collect();
+                // A couple of dozen vertices a plate keep the debug build quick.
+                let step = (vertices.len() / 24).max(1);
+                let mut gaps: Vec<f32> = vertices
+                    .iter()
+                    .step_by(step)
+                    .map(|v| {
+                        let p = std::array::from_fn(|r| {
+                            at[r] * v.x + at[4 + r] * v.y + at[8 + r] * v.z + at[12 + r]
+                        });
+                        triangles
+                            .iter()
+                            .map(|&t| to_triangle(p, t))
+                            .fold(f32::MAX, f32::min)
+                    })
+                    .collect();
+                gaps.sort_by(f32::total_cmp);
+                Some((socket.clone(), gaps[0], gaps[gaps.len() / 2]))
+            })
+            .collect()
+    }
+
+    /// The Warden's plates sit on the body at their authored clearance (#1053): asset-tooling
+    /// fits each plate 0.8–2.2 cm off the clothed body, so a plate drawn on the wrong joint or
+    /// frame stands decimetres off. Through rest, idle and walk none clears it by over 3 cm.
+    #[test]
+    fn the_wardens_plates_sit_on_the_body() {
+        let worn = class_outfit(Outfit::new(mmorpg_core::PlayerClass::Warden, None));
+        let clips = Kind::Ranger.clips();
+        for pose in [
+            vec![],
+            vec![Layer::single(clips.idle, 0.)],
+            vec![Layer::single(clips.walk, 0.4)],
+        ] {
+            let gaps = plate_gaps(&worn.model, &worn.plates, &pose, &worn.hood);
+            assert_eq!(gaps.len(), worn.plates.items.len());
+            for (socket, closest, median) in gaps {
+                assert!(
+                    closest < 0.03,
+                    "{socket} clears the body by {closest} m in {pose:?}"
+                );
+                assert!(
+                    median < 0.06,
+                    "{socket} stands {median} m off the body in {pose:?}"
+                );
+            }
+        }
+    }
+}
