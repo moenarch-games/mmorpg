@@ -417,6 +417,29 @@
           "signal": "operation-count",
           "notes": "Render-root list rebuilds over the warm frames; the registry rebuilds only when a root owner's revision moves or the view marks it dirty.",
           "budget": { "max": 0 }
+        },
+        {
+          "name": "action_bar_decodes",
+          "unit": "decodes",
+          "signal": "operation-count",
+          "notes": "Action-bar projection decodes (#1091) over warm hud frames showing one projection: the class HUD hands the module each projection once (ActionBarCache).",
+          "budget": { "max": 1 },
+          "growth": [{ "dimension": "frames", "bound": "constant" }]
+        }
+      ]
+    },
+    {
+      "id": "scenery-frame",
+      "description": "Browser scenery frame (#1091): SceneryFrame.nodes() selects each resident instance batch's kept shown or hidden renderer batch; a warm frame copies none of the world's instance batches. Measured by web/tests/scene-building.test.ts (bun test).",
+      "dimensions": { "frames": { "description": "warm frames from one eye after a first frame that drew every resident batch" } },
+      "scalePoints": [{ "frames": 16 }, { "frames": 64 }, { "frames": 256 }],
+      "metrics": [
+        {
+          "name": "instance_batch_views_built",
+          "unit": "views",
+          "signal": "operation-count",
+          "notes": "Instance-batch views built over the warm frames; each batch builds at most one shown and one hidden view in its lifetime (5,699 batches in Greyhaven, which every frame used to copy).",
+          "budget": { "max": 0 }
         }
       ]
     },
