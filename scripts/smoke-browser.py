@@ -583,6 +583,8 @@ class BrowserAcceptance(unittest.TestCase):
         """Real WASM/browser: focus keeps the UI cursor, turning, strafing and attacks independent."""
         self.click_world_setup()
         self.click_world_walk_to_woods()
+        # The swings and the ability below need the drawn weapon (#802).
+        self.draw_weapon(self.click_world_step)
         wolves = self.page.evaluate("window.__valeDebug.projectedUnits().filter(u => u.kind === 'creature' && u.family === 'wolf')")
         self.assertGreaterEqual(len(wolves), 1)
         x, y, _ = self.aim_at_world_unit("creature", wolves[0]["id"])
@@ -2037,6 +2039,15 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.evaluate("ticks => window.__classStep(ticks)", ticks)
         self.frames(3)
 
+    def draw_weapon(self, step=None):
+        """Characters enter with their weapons sheathed, and Q, G, Z and the action bar act only once
+        H has drawn them (#802, Atlas 6.6.i802); the zone switches the mode on the ticks `step` runs
+        (`self.step` by default)."""
+        self.page.locator("#world").focus()
+        self.page.keyboard.press("h")
+        (step or self.step)(2)
+        expect(self.page.locator(".weapon-mode")).to_have_attribute("data-mode", "combat")
+
     def create_and_select(self, name, class_label):
         """Creation's three steps (#772): class, then sex and appearance, then name."""
         self.page.get_by_role("button", name="Create character", exact=True).click()
@@ -2142,6 +2153,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.enter_beside_wolf()
         guard = self.page.locator("[data-part=shield-guard]")
         expect(guard).to_be_hidden()
+        self.draw_weapon()
         box = self.page.locator("#world").bounding_box()
         x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
         self.page.mouse.move(x, y)
@@ -2199,6 +2211,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.emulate_media(reduced_motion="no-preference")
         self.create_and_select("ActionMage", "Arcanist")
         self.enter_beside_wolf()
+        self.draw_weapon()
         self.aim_action_unit("creature", 108)
         rest = self.capture_action_frame()
         self.assertTrue(rest["viewer"] and rest["target"])
@@ -2489,6 +2502,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.enter_beside_wolf()
         self.assert_action_bar(["Lv 2", "Lv 4", "Lv 6", "Lv 3", "Lv 5", "Lv 8", "Lv 7", "Lv 3", "Lv 5", "Lv 4"])
         expect(self.page.locator("[data-part=player-resource-text]")).to_contain_text("Mana 110 / 110")
+        self.draw_weapon()
         self.page.keyboard.press("Digit1")
         self.step(3)
         cast = self.page.locator("[data-part=cast]")
@@ -2579,10 +2593,13 @@ class BrowserAcceptance(unittest.TestCase):
             session.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
 
         def entered():
-            # #551: the arena offers target and attack from the first moment, and no essential
-            # control, frame, status line or the hotbar overlaps another at phone size.
-            expect(self.page.get_by_role("button", name="Attack", exact=True)).to_be_visible()
+            # #551: the arena offers target from the first moment and attack once the weapon is
+            # drawn (#802: the character enters sheathed), and no essential control, frame, status
+            # line or the hotbar overlaps another at phone size.
             expect(self.page.get_by_role("button", name="Target", exact=True)).to_be_visible()
+            expect(self.page.get_by_role("button", name="Attack", exact=True)).to_be_hidden()
+            self.page.get_by_role("button", name="Draw weapon", exact=True).tap()
+            expect(self.page.get_by_role("button", name="Attack", exact=True)).to_be_visible()
             overlaps = self.page.evaluate("""() => {
               const selectors = ['.unit-frames', '.hud', '.minimap', '.touch-top', '.action-dock', '.touch-context',
                 '.touch-jump', '.touch-faces'];
@@ -2649,6 +2666,7 @@ class BrowserAcceptance(unittest.TestCase):
             if (command) source.sendCommand(command);
             window.__fortressQueue.push(...advance.call(source, 1 / 30));
           };
+          window.__fortressTick = tick;
           // Walks toward (x, z) metres, or until `until(feet)`; throws when it gets stuck.
           window.__fortressWalk = (x, z, ticks = 900, until = null) => {
             for (let i = 0; i < ticks; i++) {
@@ -2701,7 +2719,12 @@ class BrowserAcceptance(unittest.TestCase):
         self.page = self.watch(self.context.new_page())
         stops = self.fortress_walkthrough(touch=True)
         self.assert_fortress_route(stops)
-        # The touch controls stay usable over the fortress.
+        # The touch controls stay usable over the fortress: drawing the weapon (#802: the
+        # character enters sheathed) brings up Attack.
+        self.page.get_by_role("button", name="Draw weapon", exact=True).tap()
+        self.frames(2)
+        self.page.evaluate("() => { for (let i = 0; i < 3; i++) window.__fortressTick(null); }")
+        self.frames(3)
         expect(self.page.get_by_role("button", name="Attack", exact=True)).to_be_visible()
 
 
