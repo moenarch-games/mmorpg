@@ -376,6 +376,27 @@ describe("WASM local zone host", () => {
     reloaded.leave();
   });
 
+  test("entryPreview names where and when a local character's next entry starts (#855)", async () => {
+    const storage = new MemoryStorage();
+    const characters = testCharacters(storage);
+    // Never stored, and no saved world: the first spawn slot of a fresh zone, facing +Z.
+    const [x, feetY, z, centreY, facing, tick] = wasm.entryPreview(characters.entries, "local-1", characters.loadWorld());
+    expect([x, feetY, z, facing, tick]).toEqual([-1_550, 0, 1_250, 0, 0]);
+    expect(centreY).toBeGreaterThan(feetY!);
+    const source = createLocalWorld(wasm, characters).source;
+    await source.join({ id: "local-1", classId: "warden", sex: "female" });
+    source.sendCommand({ kind: "move", forward: 1, strafe: 0, facing: EAST });
+    run(source, 20);
+    source.persist();
+    const saved = self(source).position;
+    const savedTick = source.latestProjection()!.tick;
+    source.leave();
+    // Stored: its committed place, and the saved world's tick.
+    const stored = wasm.entryPreview(characters.entries, "local-1", characters.loadWorld());
+    expect([stored[0], stored[2]]).toEqual([saved[0], saved[2]]);
+    expect(BigInt(stored[5]!)).toBeGreaterThanOrEqual(savedTick);
+  });
+
   test("an unusable saved world is replaced by a fresh one, and the source says so", async () => {
     const storage = new MemoryStorage();
     storage.setItem("mmorpg.local-world.v1", btoa("not a checkpoint"));
