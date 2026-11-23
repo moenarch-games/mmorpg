@@ -178,6 +178,58 @@ pub fn committed_area(entries: &CharacterEntries, character: &str) -> Result<Opt
     }))
 }
 
+/// Where and when the selected character's next local entry is expected to start (#855), so the
+/// selection screen can prepare that view before Enter World: `[x, feetY, z, centreY]` in core
+/// units, the facing in radians and the zone tick of its first projection. A character stored in
+/// the local zone enters at its committed location, any other at the first spawn slot; the tick
+/// is the saved world's (`checkpoint`), or a fresh zone's (0) without a usable one. Presentation
+/// only: the zone decides where the character enters.
+#[wasm_bindgen(js_name = entryPreview)]
+pub fn entry_preview(
+    entries: &CharacterEntries,
+    character: &str,
+    checkpoint: Option<Vec<u8>>,
+) -> Result<Vec<f64>, JsError> {
+    let id = character_id(character)?;
+    let committed = store(entries)
+        .committed(&id)
+        .map_err(|error| JsError::new(&error.to_string()))?;
+    let stored = committed
+        .map(|committed| committed.record.location)
+        .filter(|location| location.zone_id == LOCAL_ZONE_ID);
+    let (feet, facing) = match stored {
+        Some(location) => {
+            let [x, y, z] = location.position;
+            (
+                [x, y - mmorpg_core::PLAYER_HALF_EXTENTS_UNITS[1], z],
+                location.facing,
+            )
+        }
+        None => (
+            mmorpg_core::greyhaven_vale::SPAWN_GRID
+                .feet(0)
+                .unwrap_or([0, 0, 0]),
+            0,
+        ),
+    };
+    let tick = checkpoint
+        .and_then(|bytes| mmorpg_protocol::decode_canonical_snapshot(&bytes).ok())
+        .map_or(0, |snapshot| snapshot.tick);
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a zone tick stays far below 2^53"
+    )]
+    let tick = tick as f64;
+    Ok(vec![
+        f64::from(feet[0]),
+        f64::from(feet[1]),
+        f64::from(feet[2]),
+        f64::from(feet[1] + mmorpg_core::PLAYER_HALF_EXTENTS_UNITS[1]),
+        f64::from(facing) / 65_536.0 * std::f64::consts::TAU,
+        tick,
+    ])
+}
+
 /// Physique V1 (#633, #634) for the picker, as JSON: the fixed-point scale and neutral value, the
 /// ±modifier bound in basis points, the eleven sliders in canonical order (`key`, `affectsStats`),
 /// the attributes the modifier scales and the six presets' exact fixed-point vectors. All of it
