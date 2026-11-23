@@ -10,7 +10,9 @@ Prerequisites: build web/ (bun run build) and `mise run setup:browser` (Playwrig
 repository's .venv plus Chromium; on a fresh host also `playwright install-deps chromium`).
 Run from the repository root: python scripts/smoke-browser.py [BrowserAcceptance.test_name ...]
 The default renders in SwiftShader, as CI does. MMORPG_SMOKE_BROWSER_CHANNEL=chrome (run it under
-xvfb-run) launches that installed browser on the host GPU instead.
+xvfb-run) launches that installed browser on the host GPU instead. MMORPG_SMOKE_BROWSER_ANGLE=vulkan
+keeps the bundled Chromium but renders through the host GPU's Vulkan driver: on a workstation where
+SwiftShader's Greyhaven frames are too slow for screenshots to finish in time, use that (#1079).
 """
 from __future__ import annotations
 
@@ -23,6 +25,7 @@ import os
 import re
 from pathlib import Path
 import threading
+import time
 import unittest
 
 from playwright.sync_api import expect, sync_playwright
@@ -42,6 +45,10 @@ ROSTER_KEY = "mmorpg.offline-roster.v1"
 CHARACTER_ENTRY_PREFIX = "mmorpg.character.v1."
 LEGACY_CHECKPOINT_PREFIX = "mmorpg.offline-demo.v1."
 CHANNEL = os.environ.get("MMORPG_SMOKE_BROWSER_CHANNEL")
+ANGLE = os.environ.get("MMORPG_SMOKE_BROWSER_ANGLE", "swiftshader")
+# Greyhaven's character stage streams its whole figure set before it reveals; a slow renderer or
+# a cold asset cache can take minutes, and the wait is not a performance gate.
+STAGE_LOAD_MS = 300_000
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -68,8 +75,10 @@ class BrowserAcceptance(unittest.TestCase):
         cls.playwright = sync_playwright().start()
         if CHANNEL:
             cls.browser = cls.playwright.chromium.launch(channel=CHANNEL, args=["--enable-gpu", "--use-angle=gl", "--ignore-gpu-blocklist"])
-        else:
+        elif ANGLE == "swiftshader":
             cls.browser = cls.playwright.chromium.launch(args=["--use-angle=swiftshader", "--enable-unsafe-swiftshader"])
+        else:
+            cls.browser = cls.playwright.chromium.launch(args=[f"--use-angle={ANGLE}", "--enable-gpu", "--ignore-gpu-blocklist"])
         cls.evidence = []
 
     @classmethod
@@ -146,7 +155,7 @@ class BrowserAcceptance(unittest.TestCase):
     def open(self, query=""):
         self.page.goto(self.url + query)
         self.page.wait_for_function("window.__calls.draws > 0")
-        expect(self.page.locator("#character-stage-loader")).to_be_hidden(timeout=60_000)
+        expect(self.page.locator("#character-stage-loader")).to_be_hidden(timeout=STAGE_LOAD_MS)
         expect(self.page.get_by_role("slider", name="Character rotation")).to_be_visible()
         self.wait_for_zone()
         self.frames()
@@ -159,8 +168,9 @@ class BrowserAcceptance(unittest.TestCase):
     def enter_button(self):
         return self.page.get_by_role("button", name=re.compile("^Enter World"))
 
-    def leave_world(self):
-        """Characters lives in the game menu since #636: Escape (or a lost pointer lock) opens it."""
+    def leave_world(self, name="Characters"):
+        """Characters (Change loadout in practice) lives in the game menu since #636: Escape (or a
+        lost pointer lock) opens it."""
         menu = self.page.locator("#game-menu")
         for _ in range(3):
             if menu.evaluate("dialog => dialog.open"):
@@ -168,7 +178,7 @@ class BrowserAcceptance(unittest.TestCase):
             self.page.locator("#world").focus()
             self.page.keyboard.press("Escape")
         expect(menu).to_be_visible()
-        menu.get_by_role("button", name="Characters", exact=True).click()
+        menu.get_by_role("button", name=name, exact=True).click()
 
     def enter_world(self, ticking=True, fresh=True):
         """Enters the world. A fresh character starts at level 1 without XP; a
@@ -201,14 +211,20 @@ class BrowserAcceptance(unittest.TestCase):
         """The world canvas between the HUD panels; the camera follows the character."""
         return self.page.screenshot(clip={"x": 200, "y": 120, "width": 1040, "height": 560})
 
-    def settled(self, shot, attempts=80, required=5):
-        """`shot()` once several frames in a row match: streamed art and the idle-time world build (#526) land over frames."""
-        previous, same = shot(), 0
+    def settled(self, shot, attempts=80, required=5, quiet_seconds=5.0):
+        """`shot()` once several frames in a row match: streamed art and the idle-time world build (#526) land over frames.
+        Art also lands in wall-clock time: a varied resident's own look (asset-tooling #380) swaps in seconds after
+        entry. A fast GPU draws `required` matching shots well before that, so the match must also hold for
+        `quiet_seconds`; SwiftShader's slow frames already spanned it (#1079)."""
+        previous, same, since = shot(), 0, time.monotonic()
         for _ in range(attempts):
             self.frames(6)
             current = shot()
-            same = same + 1 if current == previous else 0
-            if same >= required:
+            if current == previous:
+                same += 1
+            else:
+                same, since = 0, time.monotonic()
+            if same >= required and time.monotonic() - since >= quiet_seconds:
                 return current
             previous = current
         self.fail("The rendered view never settled")
@@ -1201,7 +1217,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.page = self.context.new_page()
         self.page.on("pageerror", lambda error: self.errors.append(str(error)))
         self.page.goto(self.url)
-        expect(self.page.locator("#character-stage-loader")).to_be_hidden(timeout=60_000)
+        expect(self.page.locator("#character-stage-loader")).to_be_hidden(timeout=STAGE_LOAD_MS)
         surface = self.page.locator("#preview-surface")
         surface.scroll_into_view_if_needed()
         self.frames(10)
@@ -1281,7 +1297,8 @@ class BrowserAcceptance(unittest.TestCase):
         claim = self.page.get_by_role("button", name="Claim rewards", exact=True)
         expect(panel).to_be_visible()
         expect(self.page.locator("#loot-title")).to_have_text("Timber Wolf")
-        expect(rewards).to_have_text("2 copper · Torn Fur × 2")
+        # Wolf 108 rolls from its own stream since #861, as corpse-loot-resume.expected records.
+        expect(rewards).to_have_text("1 copper · Torn Fur × 2")
         expect(self.page.locator("#copper-status")).to_have_text("Copper: 0")
         self.page.screenshot(path=str(ARTIFACTS / "loot-before-claim.png"))
         claim.click()
@@ -1291,7 +1308,7 @@ class BrowserAcceptance(unittest.TestCase):
         # authoritative ticks reaches the frame. Copper/loot absence still recover.
         self.page.evaluate("window.__lootStep(4)")
         expect(rewards).to_have_text("No rewards remain on this corpse.")
-        expect(self.page.locator("#copper-status")).to_have_text("Copper: 2")
+        expect(self.page.locator("#copper-status")).to_have_text("Copper: 1")
         sent = self.page.evaluate("window.__lootSent.filter(c => c.kind === 'loot').length")
         claim.evaluate("button => button.click()")
         self.frames(2)
@@ -1307,11 +1324,11 @@ class BrowserAcceptance(unittest.TestCase):
           window.__lootStep(1);
         }""")
         self.assertEqual(self.page.evaluate("window.__lootLatest().events.some(e => e.kind === 'error' && e.code === 'empty-loot')"), True)
-        self.assertEqual(self.page.evaluate("window.__lootLatest().viewer.copper"), 2)
+        self.assertEqual(self.page.evaluate("window.__lootLatest().viewer.copper"), 1)
         self.leave_world()
         # The stored character returns with its looted copper and a closed, empty loot window.
         self.enter_world(ticking=False, fresh=False)
-        expect(self.page.locator("#copper-status")).to_have_text("Copper: 2")
+        expect(self.page.locator("#copper-status")).to_have_text("Copper: 1")
         expect(panel).to_be_hidden()
         expect(self.page.locator("#loot-feedback")).to_have_text("")
 
@@ -1328,13 +1345,13 @@ class BrowserAcceptance(unittest.TestCase):
           window.__lootSource.latestProjection = () => window.__lootFixture;
         }""")
         self.page.get_by_role("button", name="Loot", exact=True).click()
-        expect(rewards).to_have_text("2 copper · Torn Fur × 2")
+        expect(rewards).to_have_text("1 copper · Torn Fur × 2")
         claim.click()
         expect(self.page.locator("#loot-feedback")).to_contain_text("bags are full")
-        expect(rewards).to_have_text("2 copper · Torn Fur × 2")
+        expect(rewards).to_have_text("1 copper · Torn Fur × 2")
         expect(self.page.locator("#copper-status")).to_have_text("Copper: 0")
         expect(claim).to_be_enabled()
-        self.assertEqual(self.page.evaluate("window.__lootLatest().viewer.copper"), 2)
+        self.assertEqual(self.page.evaluate("window.__lootLatest().viewer.copper"), 1)
         for width, height in [(390,844),(640,360)]:
             self.page.set_viewport_size({"width":width,"height":height})
             box = panel.bounding_box()
@@ -1344,7 +1361,8 @@ class BrowserAcceptance(unittest.TestCase):
             self.assertLessEqual(box["y"]+box["height"],height)
             self.assertFalse(panel.evaluate("p => p.scrollWidth > p.clientWidth"))
             self.assertTrue(claim.evaluate("b => {const r=b.getBoundingClientRect();return b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}"))
-            self.assertTrue(self.page.get_by_role("button", name="Characters", exact=True).evaluate(
+            # The way out is the game menu's toggle since #636; Characters waits inside the menu.
+            self.assertTrue(self.page.get_by_role("button", name="Menu (Esc)", exact=True).evaluate(
                 "b => {const r=b.getBoundingClientRect();return b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}"))
             self.page.screenshot(path=str(ARTIFACTS / f"loot-full-bag-{width}x{height}.png"))
         self.page.get_by_role("button", name="Close loot").focus()
@@ -1358,7 +1376,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.leave_world()
         # The third entry also resumes the stored character, never the fixture.
         self.enter_world(ticking=False, fresh=False)
-        expect(self.page.locator("#copper-status")).to_have_text("Copper: 2")
+        expect(self.page.locator("#copper-status")).to_have_text("Copper: 1")
         expect(rewards).not_to_contain_text("Torn Fur")
         expect(self.page.locator("#loot-feedback")).to_have_text("")
 
@@ -1556,7 +1574,8 @@ class BrowserAcceptance(unittest.TestCase):
         expect(self.page.get_by_role("heading", name="Innkeeper Bram Tolliver")).to_be_visible()
         expect(self.page.locator("#vendor-status")).to_have_text("Copper: 0")
         offers = self.page.locator("#vendor-offers li")
-        self.assertEqual(offers.count(), 8)
+        # Eight starter offers plus the Militia Spear that #885 added to Bram's stock.
+        self.assertEqual(offers.count(), 9)
         expect(offers.nth(0)).to_contain_text("Worn Dagger · 5 copper (+2 Strength, +2 Agility)")
         expect(self.page.get_by_role("button", name="Buy Worn Dagger for 5 copper")).to_be_disabled()
         sales = self.page.locator("#vendor-sales li")
@@ -1602,7 +1621,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.evaluate("([y]) => window.__valeDebug.flyToPose([16.4, y + 1.3, 7.5], [14.4, y + 1.1, 3.9])", [relief])
         self.frames(6)
         box = self.page.locator("#world").bounding_box()
-        self.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, button="right")
+        self.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
         step()
         self.assertFalse(door_open(), "Clicking the leaf closed the inn door")
         self.page.evaluate("window.__valeDebug.follow()")
@@ -1657,8 +1676,10 @@ class BrowserAcceptance(unittest.TestCase):
         step()
         expect(self.page.locator("#quest-dialog-feedback")).to_have_text("Accepted: The Wolfrun Cart.")
         expect(self.page.locator("#objective")).to_contain_text("Supply Sack: 0/3")
-        # The Tanner, not the Marshal, takes the cart's sacks (#984): his marker clears.
-        expect(card.first).to_have_attribute("data-state", "in-progress")
+        # The Tanner, not the Marshal, takes the cart's sacks (#984): his marker clears, and his
+        # dialog lists only quests that end with him (#543), so the accepted card leaves it.
+        expect(card).to_have_count(0)
+        expect(self.page.locator("#quest-dialog-status")).to_have_text("Marshal Elden Greywatch has nothing for you right now.")
         self.page.keyboard.press("Escape")
         expect(dialog).to_be_hidden()
         self.page.evaluate("window.__valeDebug.follow()")
@@ -1682,6 +1703,10 @@ class BrowserAcceptance(unittest.TestCase):
         expect(self.page.locator("#quest-log-feedback")).to_have_text("Abandoned: The Wolfrun Cart.")
         expect(self.page.locator("#quest-log-quests")).to_contain_text("Your quest log is empty.")
         expect(self.page.locator("#objective")).to_contain_text("No active quests")
+        # Markers float over on-screen NPCs only: look at the Marshal again, as above, rather than
+        # the follow camera's view of the wall behind the character.
+        self.page.evaluate("window.__valeDebug.flyToPose([-21.8, 3.5, 17], [-22, 1.5, 9])")
+        step()
         expect(markers.first).to_have_attribute("data-marker", "available")
         self.page.get_by_role("button", name="Close quest log").focus()
         self.page.keyboard.press("Escape")
@@ -2368,7 +2393,6 @@ class BrowserAcceptance(unittest.TestCase):
 
     def test_battle_royale_practice_desktop(self):
         def entered():
-            expect(self.page.get_by_role("button", name="Change build")).to_be_visible()
             self.page.locator("#world").focus()
 
         def walk():
@@ -2376,12 +2400,19 @@ class BrowserAcceptance(unittest.TestCase):
             self.page.wait_for_timeout(5_000)
             self.page.keyboard.up("KeyW")
 
+        def select():
+            self.page.keyboard.press("Tab")
+            # Swinging is a combat-mode key (#802): H draws the weapon first.
+            self.page.keyboard.press("h")
+            expect(self.page.locator(".weapon-mode")).to_have_attribute("data-mode", "combat")
+
         self.practice_fight(
-            entered, walk, lambda: self.page.keyboard.press("Tab"),
-            # A left click on open ground swings where the character faces (a click on a unit selects it).
-            lambda: self.page.mouse.click(720, 200),
+            entered, walk, select,
+            # Q swings where the character faces; the left mouse button selects (#636).
+            lambda: self.page.keyboard.press("q"),
             lambda: self.page.keyboard.press("F9"),
-            lambda: self.page.get_by_role("button", name="Change build").click())
+            # The way back is in the game menu behind Escape (#636), labelled by the shared front end (#752).
+            lambda: self.leave_world("Change loadout"))
 
     def test_battle_royale_practice_touch(self):
         self.context.close()
