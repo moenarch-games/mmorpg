@@ -69,13 +69,16 @@ export type ProfiledFrame = FrameFacts & {
 /** One timer query of a frame: its label, and the main-thread time it was open. */
 type Span = { label: string; query: WebGLQuery; cpu: number };
 
+/** The GPU label of the time between passes: target switches and clears, and the GPU waiting for the next pass. */
+const BETWEEN_PASSES = "between-passes";
+
 /**
  * GPU time per render pass (#1106), from `EXT_disjoint_timer_query_webgl2`. Timer queries cannot nest, so a frame's
- * passes are one chain of back-to-back spans, each one query: a span starts unlabelled at a render-target change (a
- * pass boundary) and takes the label of the first draw after it, so a pass's target switch (and clear) count towards
- * it; a draw with a different label ends the span and starts the next. The labels' sum is the GPU time of
- * `Lighting.render`, including any time the GPU waited for the main thread to issue the commands (`gpuIssue`).
- * Results arrive a few frames later; until then the frame's `gpu` is `"pending"`.
+ * passes are one chain of back-to-back spans, each one query: a draw with a different label than the open span ends
+ * it and starts the next, and the time between two passes (from the end of one `renderer.render` to the first draw of
+ * the next) is a span of its own (`BETWEEN_PASSES`). The labels' sum is the GPU time of `Lighting.render`, including
+ * any time the GPU waited for the main thread to issue the commands (`gpuIssue`). Results arrive a few frames later;
+ * until then the frame's `gpu` is `"pending"`.
  */
 class GpuPassTimer {
   readonly #gl: WebGL2RenderingContext;
@@ -84,7 +87,7 @@ class GpuPassTimer {
   readonly #free: WebGLQuery[] = [];
   readonly #pending: { frame: ProfiledFrame; spans: Span[] }[] = [];
   #spans: Span[] = [];
-  #open: { label: string | null; query: WebGLQuery; start: number } | null = null;
+  #open: { label: string; query: WebGLQuery; start: number } | null = null;
 
   constructor(gl: WebGL2RenderingContext, ext: { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number }) {
     this.#gl = gl;
@@ -92,24 +95,23 @@ class GpuPassTimer {
     this.#disjoint = ext.GPU_DISJOINT_EXT;
   }
 
-  /** Starts a frame's chain. */
+  /** Starts a frame's chain, between passes. */
   start(): void {
     this.#spans = [];
-    this.#open = this.#begin(null);
-  }
-
-  /** A pass boundary: a labelled span ends, and the next span takes the next draw's label. */
-  boundary(): void {
-    if (this.#open?.label) { this.#end(); this.#open = this.#begin(null); }
+    this.#open = this.#begin(BETWEEN_PASSES);
   }
 
   /** The GPU work from here on is `label`'s. */
   enter(label: string): void {
     const open = this.#open;
     if (!open || open.label === label) { return; }
-    if (open.label === null) { open.label = label; return; }
     this.#end();
     this.#open = this.#begin(label);
+  }
+
+  /** A pass ended: the GPU work until the next pass draws is between passes. */
+  between(): void {
+    this.enter(BETWEEN_PASSES);
   }
 
   /** Ends the chain; `frame.gpu` is filled once every span's result is available. */
@@ -144,7 +146,7 @@ class GpuPassTimer {
     }
   }
 
-  #begin(label: string | null): { label: string | null; query: WebGLQuery; start: number } {
+  #begin(label: string): { label: string; query: WebGLQuery; start: number } {
     const query = this.#free.pop() ?? this.#gl.createQuery();
     this.#gl.beginQuery(this.#timeElapsed, query);
     return { label, query, start: performance.now() };
@@ -154,8 +156,7 @@ class GpuPassTimer {
     const open = this.#open;
     if (!open) { return; }
     this.#gl.endQuery(this.#timeElapsed);
-    // Work after the last labelled draw (state restored after the output pass) is `other`.
-    this.#spans.push({ label: open.label ?? "other", query: open.query, cpu: performance.now() - open.start });
+    this.#spans.push({ label: open.label, query: open.query, cpu: performance.now() - open.start });
     this.#open = null;
   }
 }
@@ -324,7 +325,6 @@ export function profileRenderPasses(renderer: THREE.WebGLRenderer, scene: THREE.
   const frame = profile.current();
   const passes: PassDraws[] = [];
   const contributors = { main: new Map<string, DrawContributor>(), shadow: new Map<string, DrawContributor>() };
-  let cascade = 0;
   let mains = 0;
   const mainsInFrame = split ? 2 : 1;
   let grouped: Map<string, DrawContributor> | null = null;
@@ -333,13 +333,12 @@ export function profileRenderPasses(renderer: THREE.WebGLRenderer, scene: THREE.
   let drawing = "";
   const render = renderer.render;
   const direct = renderer.renderBufferDirect;
-  const setRenderTarget = renderer.setRenderTarget;
   const gl = renderer.getContext() as WebGL2RenderingContext;
   const blit = gl.blitFramebuffer;
   renderer.render = function profiledRender(this: THREE.WebGLRenderer, drawn: THREE.Object3D, view: THREE.Camera): void {
     const isMain = drawn === scene && view === camera;
     const pass = drawn !== scene ? quadPass(drawn, mains >= mainsInFrame, mains > 0)
-      : (view as THREE.OrthographicCamera).isOrthographicCamera ? `sun-cascade-${cascade++}`
+      : (view as THREE.OrthographicCamera).isOrthographicCamera ? `sun-cascade-${sunCascade(scene, this.getRenderTarget())}`
         : isMain ? (split ? (mains === 0 ? "main-opaque" : "main-transparent") : "main")
           : "local-shadows";
     if (isMain) { mains++; }
@@ -348,13 +347,14 @@ export function profileRenderPasses(renderer: THREE.WebGLRenderer, scene: THREE.
     grouped = drawn !== scene ? null : isMain ? contributors.main : contributors.shadow;
     mainPass = isMain ? pass : null;
     drawing = pass;
-    // A main pass's clear has its own label; its draws label themselves (`renderBufferDirect`).
-    timer?.enter(isMain ? `${pass}:clear` : pass);
+    // A main pass's draws label themselves (`renderBufferDirect`).
+    if (!isMain) { timer?.enter(pass); }
     try {
       render.call(this, drawn, view);
     } finally {
       grouped = null;
       mainPass = null;
+      timer?.between();
     }
     const counted = { pass, calls: info.render.calls - calls, triangles: info.render.triangles - triangles };
     const last = passes[passes.length - 1];
@@ -374,11 +374,6 @@ export function profileRenderPasses(renderer: THREE.WebGLRenderer, scene: THREE.
     into.set(key, entry);
   };
   if (timer) {
-    // Every pass binds its target first: the GPU span ends there, so the next pass's clear counts towards it.
-    renderer.setRenderTarget = function profiledTarget(this: THREE.WebGLRenderer, ...target: Parameters<THREE.WebGLRenderer["setRenderTarget"]>): void {
-      timer.boundary();
-      setRenderTarget.apply(this, target);
-    };
     // three resolves a multisampled target (the HDR frame) with a blit at the end of the render that drew into it.
     gl.blitFramebuffer = function profiledBlit(this: WebGL2RenderingContext, ...args: Parameters<WebGL2RenderingContext["blitFramebuffer"]>): void {
       timer.enter(`${drawing}:resolve`);
@@ -391,9 +386,33 @@ export function profileRenderPasses(renderer: THREE.WebGLRenderer, scene: THREE.
   } finally {
     renderer.render = render;
     renderer.renderBufferDirect = direct;
-    renderer.setRenderTarget = setRenderTarget;
     if (timer) { delete (gl as Partial<WebGL2RenderingContext>).blitFramebuffer; }
     if (timer && frame) { timer.finish(frame); }
   }
   profile.draws(passes, [...contributors.main.values()], [...contributors.shadow.values()]);
+}
+
+/**
+ * Each scene's sun cascade shadow maps, numbered in the order first drawn (its lighting draws them all, nearest first,
+ * at first).
+ */
+const cascadeTargets = new WeakMap<THREE.Scene, { indices: WeakMap<object, number>; count: number }>();
+
+/**
+ * A sun cascade's index by its shadow map, so a cascade keeps its name when staggered cascades (#1083) skip the
+ * others in a frame.
+ */
+function sunCascade(scene: THREE.Scene, target: THREE.WebGLRenderTarget | null): number | string {
+  if (!target) { return "?"; }
+  let numbered = cascadeTargets.get(scene);
+  if (!numbered) {
+    numbered = { indices: new WeakMap(), count: 0 };
+    cascadeTargets.set(scene, numbered);
+  }
+  let index = numbered.indices.get(target);
+  if (index === undefined) {
+    index = numbered.count++;
+    numbered.indices.set(target, index);
+  }
+  return index;
 }
