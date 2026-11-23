@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use mmorpg_core::{
     CreatureBehaviour, CreatureId, CreatureTemplate, EntityRef, ErrorCode, FamilyMelee,
-    INVENTORY_SLOTS, Inventory, ItemId, ItemStack, WeaponFamily, ZoneAreas, ZoneCommand,
-    ZoneContent, ZoneEvent, ZoneId, ZoneSimulation,
+    GreatWeapon, INVENTORY_SLOTS, Inventory, ItemId, ItemStack, WeaponFamily, ZoneAreas,
+    ZoneCommand, ZoneContent, ZoneEvent, ZoneId, ZoneSimulation,
 };
 use support::arena::{self, GRAVEYARD, WOLF};
 
@@ -52,6 +52,15 @@ struct Outcome {
 /// A player of `class` facing south with the Militia Spear in its bag, equipping it first when
 /// `spear`; the refusal the equip met, if any, and one standing strike's outcome.
 fn strike(class: u8, creature: [i32; 2], spear: bool) -> (Option<ErrorCode>, Outcome) {
+    strike_with(class, creature, spear.then_some(MILITIA_SPEAR))
+}
+
+/// [`strike`] with `weapon` put in the bag and equipped first, if any.
+fn strike_with(
+    class: u8,
+    creature: [i32; 2],
+    weapon: Option<ItemId>,
+) -> (Option<ErrorCode>, Outcome) {
     let content = content(creature);
     let mut zone = ZoneSimulation::with_content(ZoneId::new(9), Arc::clone(&content)).unwrap();
     zone.add_player(1).unwrap();
@@ -66,12 +75,13 @@ fn strike(class: u8, creature: [i32; 2], spear: bool) -> (Option<ErrorCode>, Out
     let mut state = zone.snapshot().unwrap();
     let mut slots = *state.players[0].inventory.slots();
     assert_eq!(slots[usize::from(SPEAR_SLOT)], None);
-    slots[usize::from(SPEAR_SLOT)] = Some(ItemStack::new(MILITIA_SPEAR, 1).unwrap());
+    slots[usize::from(SPEAR_SLOT)] =
+        Some(ItemStack::new(weapon.unwrap_or(MILITIA_SPEAR), 1).unwrap());
     assert_eq!(slots.len(), INVENTORY_SLOTS);
     state.players[0].inventory = Inventory::from_slots(slots);
     let mut zone = ZoneSimulation::from_snapshot(state, content).unwrap();
     let mut refusal = None;
-    if spear {
+    if weapon.is_some() {
         send(
             &mut zone,
             ZoneCommand::EquipItem {
@@ -161,4 +171,24 @@ fn a_class_may_only_equip_the_weapon_families_it_wields() {
     let (refusal, outcome) = strike(1, [0, -300], true);
     assert_eq!(refusal, None);
     assert_eq!(outcome.family, WeaponFamily::Spear);
+}
+
+#[test]
+fn a_warden_with_a_great_weapon_strikes_later_and_further_than_with_a_mace() {
+    // 2.7 m straight ahead: beyond the mace's 2.45 m, inside the great weapon's 2.75 m.
+    let ahead = [0, -270];
+    let brute_breaker = Some(ItemId::new(12));
+    for great in <GreatWeapon as strum::VariantArray>::VARIANTS {
+        let (refusal, heavy) = strike_with(0, ahead, Some(great.item()));
+        assert_eq!(refusal, None, "the Warden wields {great:?}");
+        assert_eq!(heavy.family, WeaponFamily::TwoHanded);
+        let (_, mace) = strike_with(0, ahead, brute_breaker);
+        assert_eq!(mace.family, WeaponFamily::Mace);
+        assert!(heavy.reached && !mace.reached, "reach");
+        assert!(heavy.contact > mace.contact && heavy.recovery > mace.recovery);
+    }
+    // No other class wields one: the Cleric (5) keeps its mace strikes.
+    let (refusal, outcome) = strike_with(5, ahead, Some(GreatWeapon::Maul.item()));
+    assert_eq!(refusal, Some(ErrorCode::NotEquippable));
+    assert_eq!(outcome.family, WeaponFamily::Mace);
 }

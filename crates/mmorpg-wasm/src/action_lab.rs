@@ -128,6 +128,10 @@ impl LabSetup {
         };
         if let Some(item) = self.main_hand {
             slots[0] = Some(item);
+            // A great weapon takes both hands (#1073).
+            if mmorpg_core::GreatWeapon::of_item(item).is_some() {
+                slots[1] = None;
+            }
         }
         record.equipment = Equipment::from_slots(slots)
             .map_err(|_| invalid("that item is not a main-hand catalog item"))?;

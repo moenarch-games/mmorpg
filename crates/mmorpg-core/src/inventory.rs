@@ -41,7 +41,7 @@ pub struct ItemTemplate {
 /// Starter catalog, in stable ID order. Equippable items stack to one;
 /// consumable effects, prices and loot tables are separate rules. Quest
 /// items are plain bag items that quest content names as collect objectives.
-pub const ITEM_CATALOG: [ItemTemplate; 31] = [
+pub const ITEM_CATALOG: [ItemTemplate; 35] = [
     ItemTemplate {
         id: ItemId::new(1),
         name: "Torn Fur",
@@ -407,7 +407,84 @@ pub const ITEM_CATALOG: [ItemTemplate; 31] = [
         weapon: None,
         stats: ItemStats::NONE,
     },
+    // The great weapons (#1073), forged at the Outpost smithy: one two-handed row, four looks
+    // ([`GreatWeapon`]). Equipping one empties the off hand.
+    great_weapon(GreatWeapon::Maul, "Ironbound Maul"),
+    great_weapon(GreatWeapon::GreatHammer, "Smith's Great Hammer"),
+    great_weapon(GreatWeapon::GreatAxe, "Woodsman's Great Axe"),
+    great_weapon(GreatWeapon::Greatsword, "Outpost Greatsword"),
 ];
+
+/// A great weapon's catalog row (#1073): a two-handed main-hand weapon, the strength of the
+/// level 6 Brute-Breaker Mace.
+const fn great_weapon(look: GreatWeapon, name: &'static str) -> ItemTemplate {
+    ItemTemplate {
+        id: look.item(),
+        name,
+        max_stack: 1,
+        slot: Some(EquipmentSlot::MainHand),
+        weapon: Some(WeaponFamily::TwoHanded),
+        stats: ItemStats {
+            stamina: 2,
+            strength: 5,
+            agility: 0,
+            intellect: 0,
+        },
+    }
+}
+
+/// Which great weapon a two-handed item is (#1073): they share one
+/// [`WeaponFamily::TwoHanded`] row and differ only in the model and strike clip clients show.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
+pub enum GreatWeapon {
+    /// `equipment.warhammer.maul`.
+    Maul,
+    /// `equipment.hammer.great`.
+    GreatHammer,
+    /// `equipment.axe.great`.
+    GreatAxe,
+    /// `equipment.sword.great`.
+    Greatsword,
+}
+
+impl GreatWeapon {
+    /// Stable wire code.
+    #[must_use]
+    pub const fn code(self) -> u8 {
+        match self {
+            Self::Maul => 0,
+            Self::GreatHammer => 1,
+            Self::GreatAxe => 2,
+            Self::Greatsword => 3,
+        }
+    }
+
+    #[must_use]
+    pub const fn from_code(code: u8) -> Option<Self> {
+        match code {
+            0 => Some(Self::Maul),
+            1 => Some(Self::GreatHammer),
+            2 => Some(Self::GreatAxe),
+            3 => Some(Self::Greatsword),
+            _ => None,
+        }
+    }
+
+    /// Its catalog item.
+    #[must_use]
+    pub const fn item(self) -> ItemId {
+        ItemId::new(32 + self.code() as u32)
+    }
+
+    /// The great weapon `item` is, if any.
+    #[must_use]
+    pub const fn of_item(item: ItemId) -> Option<Self> {
+        match item.get().checked_sub(32) {
+            Some(code) if code <= u8::MAX as u32 => Self::from_code(code as u8),
+            _ => None,
+        }
+    }
+}
 
 #[must_use]
 pub fn item_template(id: ItemId) -> Option<&'static ItemTemplate> {

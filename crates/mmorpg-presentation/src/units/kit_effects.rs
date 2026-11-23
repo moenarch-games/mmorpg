@@ -165,13 +165,13 @@ pub struct KitEffects {
 }
 
 /// The arc or thrust of `family`'s `variant`: the thrust for spears and daggers, the heavy arc
-/// for finishers, jumping strikes, maces and staves, the cut arc for the other chain hits.
+/// for finishers, jumping strikes, maces, staves and great weapons, the cut arc for the other chain hits.
 #[must_use]
 pub fn strike_key(family: WeaponFamily, variant: StrikeVariant) -> &'static str {
     match (family, variant) {
         (WeaponFamily::Spear | WeaponFamily::Dagger, _) => THRUST,
         (_, StrikeVariant::Finisher | StrikeVariant::Jumping)
-        | (WeaponFamily::Mace | WeaponFamily::Staff, _) => ARC_HEAVY,
+        | (WeaponFamily::Mace | WeaponFamily::Staff | WeaponFamily::TwoHanded, _) => ARC_HEAVY,
         _ => ARC_CUT,
     }
 }

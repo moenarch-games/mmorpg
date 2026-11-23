@@ -559,6 +559,7 @@ pub const fn family_guard(family: WeaponFamily) -> Option<&'static str> {
         WeaponFamily::Staff => "Staff_Guard_Loop",
         WeaponFamily::Spear => "Spear_Guard_Loop",
         WeaponFamily::Unarmed => "Unarmed_Guard_Loop",
+        WeaponFamily::TwoHanded => "TwoHand_Guard_Loop",
         WeaponFamily::Bow => return None,
     })
 }
@@ -672,6 +673,12 @@ pub struct Playback {
     stop: Option<f64>,
     /// The family guard a running or jumping strike settles into, until when (#900).
     settle: Option<(&'static str, f64)>,
+    /// A great weapon's draw or sheathe being shown (#1073): its clip, whether it ends drawn,
+    /// and its time; and how many have begun.
+    readying: Option<(&'static str, bool, f32)>,
+    readies: u32,
+    /// The weapon mode the last frame showed.
+    shown_drawn: Option<bool>,
     guarding: bool,
     serial: u32,
     landing: u32,
@@ -1277,6 +1284,7 @@ impl Playback {
         let (charge_run, stun) = self.step_rise_and_charge(&frame);
         let (swims, held, traversing) = self.step_traversal(&frame);
         let stopped = self.step_strike(&frame, stun);
+        self.step_readying(&frame);
         let footing = Footing {
             charge_run,
             stun,
@@ -1985,6 +1993,9 @@ impl Playback {
             Some(want)
         } else if prepared.is_some() {
             prepared
+        } else if let Some((clip, ..)) = self.readying {
+            // A great weapon drawn from or put across the back (#1073).
+            Some(Want::hold(clip, self.readies))
         } else if let Some(lane) = cues
             .guard
             .and_then(|lane| clips.sword.map(|sword| sword.guard(lane)))
@@ -2051,13 +2062,20 @@ impl Playback {
                 .filter(|&clip| available(clip))
                 .map(|stance| Want::looped(stance, 1.))
         } else {
-            // A dagger holder stands in the low dagger stance (#603) over the idle legs.
+            // A dagger holder stands in the low dagger stance (#603) over the idle legs, a great
+            // weapon's holder with it drawn in both hands (#1073).
+            let great = cues
+                .loadout
+                .and_then(Loadout::great_weapon)
+                .filter(|_| cues.weapon_drawn != Some(false))
+                .map(|_| GREAT_WEAPON_IDLE);
             clips
                 .dagger
                 .map(|dagger| dagger.idle)
+                .filter(|_| cues.loadout.is_some_and(Loadout::daggers))
+                .or(great)
                 .filter(|&clip| {
-                    cues.loadout.is_some_and(Loadout::daggers)
-                        && standing
+                    standing
                         && stun.is_none()
                         && charge_run.is_none()
                         && roll.is_none()
@@ -2216,6 +2234,43 @@ impl Playback {
         }
     }
 
+    /// Starts and steps a great weapon's draw or sheathe (#1073): when a great weapon's holder
+    /// changes its weapon mode, the upper body takes the weapon from or puts it across the back.
+    /// A strike, a cast, death or reduced motion cuts it short, and the weapon moves at once.
+    fn step_readying<D: Fn(&str) -> f32>(&mut self, frame: &Frame<'_, D>) {
+        let cues = frame.cues;
+        let before = std::mem::replace(&mut self.shown_drawn, cues.weapon_drawn);
+        if let Some((clip, _, time)) = &mut self.readying {
+            *time += frame.dt;
+            if *time >= (frame.duration)(clip)
+                || self.strike.is_some()
+                || self.cast.is_some()
+                || cues.dead
+                || cues.reduced
+            {
+                self.readying = None;
+            }
+        }
+        let great = cues.loadout.and_then(Loadout::great_weapon).is_some();
+        if let (true, Some(before), Some(drawn)) = (great, before, cues.weapon_drawn)
+            && before != drawn
+            && !cues.dead
+            && !cues.reduced
+            && self.strike.is_none()
+            && self.cast.is_none()
+        {
+            let clip = if drawn {
+                GREAT_WEAPON_DRAW
+            } else {
+                GREAT_WEAPON_SHEATHE
+            };
+            self.readying = frame.available(clip).then(|| {
+                self.readies = self.readies.wrapping_add(1);
+                (clip, drawn, 0.)
+            });
+        }
+    }
+
     /// Where the weapons, the throwable and a chore's item ride this frame.
     fn step_carry<D: Fn(&str) -> f32>(&self, frame: &Frame<'_, D>, chore: Option<Chore>) -> Carry {
         let cues = frame.cues;
@@ -2230,6 +2285,16 @@ impl Playback {
             } else {
                 cues.weapon_drawn
             };
+        // Through a great weapon's draw or sheathe it stays where it was until the clip's swap.
+        if let Some((clip, drawn, time)) = self.readying {
+            #[allow(clippy::cast_possible_truncation)]
+            let swap = cues
+                .motions
+                .and_then(|motions| motions.get(clip))
+                .and_then(|motion| motion.swap)
+                .map_or((frame.duration)(clip) / 2., |swap| swap as f32);
+            carry.weapon_drawn = Some(if time < swap { !drawn } else { drawn });
+        }
         if carry.weapon_drawn == Some(false) {
             carry.sheathed = [true; 2];
         }
@@ -4449,6 +4514,62 @@ mod tests {
     /// carrying run, a `load.*` item at run speed runs on the heavy legs with the loaded upper
     /// body over them in the stride's phase, and light weapons keep the light run.
     #[test]
+    fn a_great_weapon_is_drawn_from_and_sheathed_across_the_back() {
+        // Without motions the weapon swaps sockets halfway through the 0.8 s clips.
+        let step = |playback: &mut Playback, drawn| {
+            playback.advance(
+                Kind::Ranger.clips(),
+                |clip| {
+                    if clip.starts_with("TwoHand_") {
+                        0.8
+                    } else {
+                        1.
+                    }
+                },
+                Cues {
+                    dt: 0.1,
+                    loadout: Some(Loadout::Maul),
+                    weapon_drawn: Some(drawn),
+                    ..Cues::default()
+                },
+                Blend::default(),
+            )
+        };
+        let mut playback = Playback::default();
+        let sheathed = step(&mut playback, false);
+        assert_eq!(sheathed.carry.weapon_drawn, Some(false));
+        assert_ne!(sheathed.upper.0, GREAT_WEAPON_IDLE);
+        // Drawing it plays the draw, the weapon staying on the back until the swap.
+        let drawing = step(&mut playback, true);
+        assert_eq!(drawing.upper.0, GREAT_WEAPON_DRAW);
+        assert_eq!(drawing.carry.weapon_drawn, Some(false));
+        let frames: Vec<_> = (0..10).map(|_| step(&mut playback, true)).collect();
+        assert_eq!(frames[3].upper.0, GREAT_WEAPON_DRAW);
+        assert_eq!(frames[3].carry.weapon_drawn, Some(true));
+        // Then it stands in the great weapon's stance.
+        assert_eq!(frames[9].upper.0, GREAT_WEAPON_IDLE);
+        // Sheathing plays the sheathe; another loadout changes modes without one.
+        assert_eq!(step(&mut playback, false).upper.0, GREAT_WEAPON_SHEATHE);
+        let mut sword = Playback::default();
+        let cues = |drawn| Cues {
+            dt: 0.1,
+            loadout: Some(Loadout::Sword),
+            weapon_drawn: Some(drawn),
+            ..Cues::default()
+        };
+        let duration = |_: &str| 1.;
+        sword.advance(
+            Kind::Ranger.clips(),
+            duration,
+            cues(false),
+            Blend::default(),
+        );
+        let drawn = sword.advance(Kind::Ranger.clips(), duration, cues(true), Blend::default());
+        assert_ne!(drawn.upper.0, GREAT_WEAPON_DRAW);
+        assert_eq!(drawn.carry.weapon_drawn, Some(true));
+    }
+
+    #[test]
     fn great_weapons_and_loads_run_heavy() {
         let run = f64::from(mmorpg_core::RUN_SPEED_UNITS_PER_SECOND) / 100.;
         let step = |playback: &mut Playback, cues: Cues<'_>| {
@@ -4554,9 +4675,33 @@ mod tests {
             let clips = great
                 .iter()
                 .flat_map(|great| [great.run(), great.run_strike()])
-                .chain([HEAVY_RUN, CARRY_RUN, GREAT_WEAPON_GUARD]);
+                .chain([HEAVY_RUN, CARRY_RUN, GREAT_WEAPON_GUARD, GREAT_WEAPON_IDLE]);
             for clip in clips {
                 assert!(names.contains(&clip), "the {sex} Ranger lacks {clip}");
+            }
+            // The two-handed family's authored strikes contact within 50 ms of the zone's
+            // contact tick (#1073), so the fit barely stretches them; a jumping strike lands on
+            // touchdown instead.
+            let row = mmorpg_core::FamilyMelee::of(WeaponFamily::TwoHanded);
+            for variant in mmorpg_core::StrikeVariant::ALL {
+                let [authored, _] = melee_clips(WeaponFamily::TwoHanded, variant);
+                assert!(
+                    names.contains(&authored),
+                    "the {sex} Ranger lacks {authored}"
+                );
+                if variant == mmorpg_core::StrikeVariant::Jumping {
+                    continue;
+                }
+                let contact = motions
+                    .get(authored)
+                    .and_then(|m| m.contact)
+                    .expect("contact");
+                let zone =
+                    f64::from(row.strike(variant).contact_ticks) / f64::from(mmorpg_core::TICK_HZ);
+                assert!(
+                    (contact - zone).abs() < 0.05,
+                    "{authored}: {contact} vs {zone}"
+                );
             }
             for great in great {
                 let strike = motions.get(great.run_strike()).expect("strike");

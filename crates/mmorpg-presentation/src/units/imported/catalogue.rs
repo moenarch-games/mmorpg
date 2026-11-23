@@ -39,7 +39,7 @@ pub enum Loadout {
     /// The smith's Hollowpine boar-spear in both hands (#917): a player wielding it.
     HollowpineSpear,
     /// The great weapons in both hands (#1073, asset-tooling #823): maul, great hammer, great
-    /// axe and greatsword ([`GreatWeapon`]). No gameplay item or weapon family selects one yet.
+    /// axe and greatsword ([`GreatWeapon`]), held by a player whose projected great weapon is one.
     Maul,
     GreatHammer,
     GreatAxe,
@@ -86,15 +86,25 @@ impl Loadout {
         }
     }
 
-    /// What a player carries whose projected melee family is `weapon` (#914): a spear in both
-    /// hands for the spear family, a named weapon's own model (#918), otherwise the class's own
-    /// weapons.
+    /// What a player carries whose projected melee family is `weapon` (#914): its great weapon
+    /// in both hands (#1073), a named weapon's own model (#918), a spear in both hands for the
+    /// spear family, otherwise the class's own weapons.
     #[must_use]
-    pub const fn holding(self, weapon: Option<WeaponFamily>, named: Option<NamedWeapon>) -> Self {
-        match (named, weapon) {
-            (Some(NamedWeapon::GarricksCleaver), _) => Self::GarricksCleaver,
-            (Some(NamedWeapon::HollowpineHunter), _) => Self::HollowpineSpear,
-            (None, Some(WeaponFamily::Spear)) => Self::Spear,
+    pub const fn holding(
+        self,
+        weapon: Option<WeaponFamily>,
+        named: Option<NamedWeapon>,
+        great: Option<mmorpg_core::GreatWeapon>,
+    ) -> Self {
+        use mmorpg_core::GreatWeapon as Great;
+        match (great, named, weapon) {
+            (Some(Great::Maul), ..) => Self::Maul,
+            (Some(Great::GreatHammer), ..) => Self::GreatHammer,
+            (Some(Great::GreatAxe), ..) => Self::GreatAxe,
+            (Some(Great::Greatsword), ..) => Self::Greatsword,
+            (None, Some(NamedWeapon::GarricksCleaver), _) => Self::GarricksCleaver,
+            (None, Some(NamedWeapon::HollowpineHunter), _) => Self::HollowpineSpear,
+            (None, None, Some(WeaponFamily::Spear)) => Self::Spear,
             _ => self,
         }
     }
@@ -291,6 +301,29 @@ pub const BOLT_ITEM: &str = "equipment.arrow";
 /// Rogue's clips. Dual-wielding awaits the owner's confirmation (question on #603); set this to
 /// [`Loadout::Dagger`] for a single-dagger Rogue, whose auto-attack then only stabs.
 pub const ROGUE_LOADOUT: Loadout = Loadout::TwinDaggers;
+
+/// Where a great weapon rides while sheathed (#1073): across the back, as `TwoHand_Draw` and
+/// `TwoHand_Sheathe` author its `stowSocket`.
+pub const GREAT_WEAPON_STOW_SOCKET: &str = "back.stowed";
+
+/// Where `item`, held on the `hand` socket, rides while its holder's weapon is sheathed (#802):
+/// a great weapon across the back (#1073), another hand weapon at that side's hip, a shield,
+/// staff or crossbow on the back; `None` keeps it where it is. Both clients stow by it.
+#[must_use]
+pub fn stow_socket(item: &str, hand: &str) -> Option<&'static str> {
+    if GreatWeapon::VARIANTS
+        .iter()
+        .any(|great| great.item() == item)
+    {
+        return Some(GREAT_WEAPON_STOW_SOCKET);
+    }
+    match hand {
+        "hand_r.weapon" => Some("hip_r.stowed"),
+        "hand_l.weapon" => Some("hip_l.stowed"),
+        "hand_l.shield" | "hand_r.staff" | CROSSBOW_SOCKET => Some("back.stowed"),
+        _ => None,
+    }
+}
 
 /// Where a sheathed dagger rides (asset-tooling #418), left hand then right: through a throw
 /// the right one, through a bandage both ([`Carry`]).
@@ -797,6 +830,36 @@ mod tests {
     use super::*;
     use mmorpg_core::greyhaven_vale;
     use strum::VariantArray;
+
+    /// A projected great weapon (#1073) picks its own loadout, which carries that weapon in both
+    /// hands and stows it across the back; other weapons keep their hand sockets' stow.
+    #[test]
+    fn a_projected_great_weapon_is_held_in_both_hands_and_stowed_on_the_back() {
+        use mmorpg_core::GreatWeapon as Core;
+        let warden = Loadout::of_class(PlayerClass::Warden);
+        for (&core, great) in Core::VARIANTS.iter().zip(GreatWeapon::VARIANTS) {
+            let held = warden.holding(Some(WeaponFamily::TwoHanded), None, Some(core));
+            assert_eq!(held.great_weapon(), Some(*great), "{core:?}");
+            assert_eq!(held.attachments()[0].item, great.item());
+            assert_eq!(held.hands().left, held.hands().right);
+            assert_eq!(
+                stow_socket(great.item(), held.attachments()[0].socket),
+                Some(GREAT_WEAPON_STOW_SOCKET)
+            );
+        }
+        assert_eq!(
+            warden.holding(Some(WeaponFamily::Sword), None, None),
+            warden
+        );
+        assert_eq!(
+            stow_socket("equipment.sword.arming", "hand_r.weapon"),
+            Some("hip_r.stowed")
+        );
+        assert_eq!(
+            stow_socket("equipment.shield.heater", "hand_l.shield"),
+            Some("back.stowed")
+        );
+    }
 
     #[test]
     fn loadout_attachments_keep_the_pairs_both_clients_drew() {

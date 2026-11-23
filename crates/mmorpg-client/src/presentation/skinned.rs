@@ -10,7 +10,7 @@ use mmorpg_presentation::units::{
         BOW_STOWED_SOCKET, Bolt, BowShot, CROSSBOW_LEFT_JOINT, CROSSBOW_SOCKET, Carry,
         CrossbowCarry, DAGGER_SHEATH_SOCKETS, DROP_ARMOR_OUTFIT, Figure, HAIR_SOCKET, HAIR_VARIANT,
         Joint, Kind, Layer, Loadout, Mask, Outfit, STARTER_HAIR, THROWABLE_BELT_SOCKET,
-        THROWABLE_SOCKET, Throwable, UPPER_BODY_ROOT, draw_meters, gripped,
+        THROWABLE_SOCKET, Throwable, UPPER_BODY_ROOT, draw_meters, gripped, stow_socket,
     },
     kit::{Frame, model},
     player::Hat,
@@ -2241,7 +2241,18 @@ impl Equipment {
                 .iter()
                 .map(|at| (equipment_path(at.item), at.socket))
                 .collect();
-            Self::of(&items)
+            let mut equipment = Self::of(&items);
+            // Each item stows where the shared presentation says (#802): a great weapon across
+            // the back (#1073).
+            let descriptor: serde_json::Value =
+                serde_json::from_slice(ranger_file(ranger_bundle::SOCKETS))
+                    .expect("the sockets descriptor is JSON");
+            equipment.stowed = loadout
+                .attachments()
+                .iter()
+                .map(|at| stow_socket(at.item, at.socket).and_then(|id| socket_of(&descriptor, id)))
+                .collect();
+            equipment
         })
     }
 
