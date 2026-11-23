@@ -214,7 +214,11 @@ jobs:
       # enable it in the same invocation. Its workloads and the bot scenarios are one trial each
       # and the long journeys start first (.config/nextest.toml, #540).
       test_command: ${{ needs.scope.outputs.full_validation == 'true' && 'python3 scripts/test-dev-native.py && cargo nextest run --workspace --all-features --locked' || (needs.scope.outputs.settings_only == 'true' && 'cargo test -p mmorpg-client --lib settings::tests --locked' || (needs.scope.outputs.rust_changed == 'true' && 'cargo nextest run --workspace --features mmorpg-core/physics-ab --locked' || '')) }}
-      build_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.full_validation == 'true' && 'cargo build --workspace --all-features --locked && cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked' || (needs.scope.outputs.settings_only == 'true' && 'cargo check -p mmorpg-client --locked' || 'cargo check --workspace --locked')) || '' }}
+      # Full validation builds only the WASM target here: Clippy (--all-targets --all-features) and
+      # nextest (--all-features) already compile and link every native target, and a separate dev
+      # `cargo build --workspace --all-features` shared no artifacts with either (#1087). Ordinary
+      # runs keep `cargo check`, the one compile of the workspace without the physics-ab feature.
+      build_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.full_validation == 'true' && 'cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked' || (needs.scope.outputs.settings_only == 'true' && 'cargo check -p mmorpg-client --locked' || 'cargo check --workspace --locked')) || '' }}
 
   clippy:
     # Runs beside `rust` in the merge queue only and shares its Cargo cache (same reusable job).
