@@ -15,6 +15,7 @@ const lighting = new GreyhavenLighting(import.meta.env.BASE_URL);
 lighting.apply({ hour: 15, sky: false, interior: 0, fog: null, pointLights: null });
 const renderer = createThreeSceneRenderer(canvas, {
   antialias: false, material: presentationMaterial, draw: (target, scene, view) => lighting.draw(target, scene, view),
+  prepare: (target, scene, view) => lighting.prepare(target, scene, view),
 });
 const models = new QuaterniusUnits(() => "Idle_Loop");
 models.configureRenderer(renderer);
