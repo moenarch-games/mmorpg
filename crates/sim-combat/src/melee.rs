@@ -154,7 +154,10 @@ impl WeaponFamily {
         matches!(
             (class, self),
             (_, Self::Dagger | Self::Unarmed)
-                | (Warden, Self::Sword | Self::Spear | Self::Mace | Self::TwoHanded)
+                | (
+                    Warden,
+                    Self::Sword | Self::Spear | Self::Mace | Self::TwoHanded
+                )
                 | (Ranger, Self::Bow | Self::Sword | Self::Spear)
                 | (Rogue, Self::Sword | Self::Mace)
                 | (Cleric, Self::Mace | Self::Staff)
