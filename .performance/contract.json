@@ -389,6 +389,36 @@
           "growth": [{ "dimension": "ticks", "bound": "constant" }]
         }
       ]
+    },
+    {
+      "id": "world-frame",
+      "description": "Browser world frame (#1060): WorldView.frame() runs ordered presenter stages over one reused context; a warm frame with nothing changed redraws no panel and rebuilds no render-root list. Measured by web/tests/frame-stages.test.ts (bun test).",
+      "dimensions": { "frames": { "description": "warm frames after a first frame that received a projection and drew every root" } },
+      "scalePoints": [{ "frames": 16 }, { "frames": 64 }, { "frames": 256 }],
+      "metrics": [
+        {
+          "name": "largest_frame_stage_calls",
+          "unit": "calls",
+          "signal": "operation-count",
+          "notes": "Presenter stage calls of one frame: input, replication, units, camera, scenery, render, hud and panels (WORLD_FRAME_STAGES).",
+          "budget": { "max": 8 },
+          "growth": [{ "dimension": "frames", "bound": "constant" }]
+        },
+        {
+          "name": "panel_renders",
+          "unit": "renders",
+          "signal": "operation-count",
+          "notes": "Panel updates over the warm frames; panels redraw only for a received projection, a changed latest projection or a changed bag revision.",
+          "budget": { "max": 0 }
+        },
+        {
+          "name": "root_rebuilds",
+          "unit": "rebuilds",
+          "signal": "operation-count",
+          "notes": "Render-root list rebuilds over the warm frames; the registry rebuilds only when a root owner's revision moves or the view marks it dirty.",
+          "budget": { "max": 0 }
+        }
+      ]
     }
   ]
 }

@@ -38,7 +38,7 @@ Units include the viewer and the NPCs and creatures its projection already shows
 
 ## Contracts
 
-`.performance/contract.json` declares five presentation operations beside the zone's; `scripts/operation-work.py` merges the `presentation_work`, `projection_ingest` and `unit_layout` examples' samples into the same evidence (`unit-frame` combines `presentation_work`'s and `unit_layout`'s metrics by equal dimensions):
+`.performance/contract.json` declares six presentation operations beside the zone's; `scripts/operation-work.py` merges the `presentation_work`, `projection_ingest` and `unit_layout` examples' samples into the same evidence (`unit-frame` combines `presentation_work`'s and `unit_layout`'s metrics by equal dimensions):
 
 | Operation | Dimensions | Bound |
 | --- | --- | --- |
@@ -47,8 +47,9 @@ Units include the viewer and the NPCs and creatures its projection already shows
 | `unit-frame` | animated characters | unit draws linear; geometry uploads constant; browser layout entity lookups and bytes linear; warm-frame layout allocations constant (at most 8) |
 | `client-interpolate` | projected units (viewer included) | entity records visited by one frame's interpolation linear; warm-frame allocations none |
 | `projection-ingest` | projections ingested (local and online) | at most 1 decode a projection; no unchanged sheet views; no bytes beyond the network payload; sheet views constant |
+| `world-frame` | warm frames | at most 8 presenter stage calls a frame; no panel redraws or render-root list rebuilds while nothing changed |
 
-The camera-only, projection-ingest and browser unit layout bounds are blocking, through the `presentation_work` and `mmorpg-wasm` `projection_ingest` and `unit_layout` tests that `cargo test` runs: an incremental-update regression that rebuilds, re-uploads or re-evicts static scenery on a camera-only frame (or never settles) fails the first, a second decode, a re-sent unchanged sheet or an extra byte copy fails the second, and a lookup per pair of units, faster-growing layout bytes or a per-character allocation fails the third, and a find per interpolated unit or an allocating warm interpolation fails `unit_layout`'s interpolation test. Legitimate streaming, LOD and visibility changes stay allowed and the other counts are advisory. Frame pacing on real hardware stays with the existing wall-clock profilers, `scripts/profile-browser.py` (#546) and the native `outpost_frame_time` (#692); they are compared separately and never gate correctness.
+The camera-only, projection-ingest and browser unit layout bounds are blocking, through the `presentation_work` and `mmorpg-wasm` `projection_ingest` and `unit_layout` tests that `cargo test` runs: an incremental-update regression that rebuilds, re-uploads or re-evicts static scenery on a camera-only frame (or never settles) fails the first, a second decode, a re-sent unchanged sheet or an extra byte copy fails the second, and a lookup per pair of units, faster-growing layout bytes or a per-character allocation fails the third, and a find per interpolated unit or an allocating warm interpolation fails `unit_layout`'s interpolation test. Legitimate streaming, LOD and visibility changes stay allowed and the other counts are advisory. The `world-frame` bounds are blocking through `web/tests/frame-stages.test.ts` (`bun test`), which runs the staged frame's stage runner, panel gate and root registry; `scripts/operation-work.py` runs no browser code, so its evidence leaves this operation out. Frame pacing on real hardware stays with the existing wall-clock profilers, `scripts/profile-browser.py` (#546) and the native `outpost_frame_time` (#692); they are compared separately and never gate correctness.
 
 ## Projection ingest (#1009)
 
