@@ -75,10 +75,13 @@ pub enum WeaponFamily {
     Spear,
     /// A bow swung in melee.
     Bow,
+    /// The great weapons swung in both hands (#1073): maul, great hammer, great axe and
+    /// greatsword share one row and differ only in look and strike clip.
+    TwoHanded,
 }
 
 impl WeaponFamily {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Unarmed,
         Self::Sword,
         Self::Mace,
@@ -86,6 +89,7 @@ impl WeaponFamily {
         Self::Staff,
         Self::Spear,
         Self::Bow,
+        Self::TwoHanded,
     ];
 
     /// Wire code.
@@ -99,6 +103,7 @@ impl WeaponFamily {
             Self::Staff => 4,
             Self::Spear => 5,
             Self::Bow => 6,
+            Self::TwoHanded => 7,
         }
     }
 
@@ -112,6 +117,7 @@ impl WeaponFamily {
             4 => Some(Self::Staff),
             5 => Some(Self::Spear),
             6 => Some(Self::Bow),
+            7 => Some(Self::TwoHanded),
             _ => None,
         }
     }
@@ -127,6 +133,7 @@ impl WeaponFamily {
             Self::Staff => "Staff",
             Self::Spear => "Spear",
             Self::Bow => "Bow",
+            Self::TwoHanded => "TwoHand",
         }
     }
 
@@ -134,7 +141,8 @@ impl WeaponFamily {
     /// may carry a dagger; the Warden fights with sword, spear or mace, the Ranger with bow,
     /// sword or spear, the Rogue with sword or mace beside its daggers, the Cleric with mace
     /// or staff, the Druid with staff, mace or spear, the Arcanist and Necromancer with
-    /// staff or sword. A classless player may equip anything.
+    /// staff or sword. Only the knight-type heavy melee class, the Warden, wields a two-handed
+    /// great weapon (#1073). A classless player may equip anything.
     #[must_use]
     pub const fn wielded_by(self, class: Option<crate::class::PlayerClass>) -> bool {
         use crate::class::PlayerClass::{
@@ -146,7 +154,7 @@ impl WeaponFamily {
         matches!(
             (class, self),
             (_, Self::Dagger | Self::Unarmed)
-                | (Warden, Self::Sword | Self::Spear | Self::Mace)
+                | (Warden, Self::Sword | Self::Spear | Self::Mace | Self::TwoHanded)
                 | (Ranger, Self::Bow | Self::Sword | Self::Spear)
                 | (Rogue, Self::Sword | Self::Mace)
                 | (Cleric, Self::Mace | Self::Staff)
@@ -319,6 +327,20 @@ impl FamilyMelee {
                 running: P::new(500, 1_000, 130, 285, 55),
                 lunge_units: 275,
                 jumping: P::new(350, 600, 170, 270, 90),
+                band: [-100, 200],
+            },
+            // Later, heavier and wider than the mace, reaching further (#1073): a diagonal cut,
+            // a backhand and an overhead, each contacting on its clip's authored frame
+            // (`TwoHand_Swing_A/B/C`, `TwoHand_Run_Strike`), with a long recovery.
+            WeaponFamily::TwoHanded => Self {
+                chain: [
+                    P::new(667, 1_250, 115, 275, 70),
+                    P::new(667, 1_250, 115, 275, 70),
+                    P::new(767, 1_600, 200, 290, 80),
+                ],
+                running: P::new(600, 1_200, 175, 310, 70),
+                lunge_units: 300,
+                jumping: P::new(350, 800, 220, 290, 100),
                 band: [-100, 200],
             },
             // Fast and short.
@@ -535,8 +557,9 @@ mod tests {
                 );
             }
         }
-        assert_eq!(MAX_CONTACT_TICKS, ticks_from_ms(500));
-        assert_eq!(MAX_INTERVAL_TICKS, ticks_from_ms(1_100));
+        // The great weapons wind up and recover longest (#1073).
+        assert_eq!(MAX_CONTACT_TICKS, ticks_from_ms(767));
+        assert_eq!(MAX_INTERVAL_TICKS, ticks_from_ms(1_600));
     }
 
     #[test]
@@ -555,6 +578,18 @@ mod tests {
         assert!(spear.chain[0].reach_units > staff.chain[0].reach_units);
         assert!(spear.chain[0].half_width < sword.chain[0].half_width);
         assert!(spear.lunge_units > mace.lunge_units);
+        // A great weapon contacts later, recovers longer, reaches further and sweeps wider than
+        // the mace in every strike (#1073).
+        let great = FamilyMelee::of(WeaponFamily::TwoHanded);
+        for variant in StrikeVariant::ALL {
+            let (heavy, mace) = (great.strike(variant), mace.strike(variant));
+            if variant != StrikeVariant::Jumping {
+                assert!(heavy.contact_ticks > mace.contact_ticks, "{variant:?}");
+            }
+            assert!(heavy.interval_ticks > mace.interval_ticks, "{variant:?}");
+            assert!(heavy.reach_units > mace.reach_units, "{variant:?}");
+            assert!(heavy.half_width > mace.half_width, "{variant:?}");
+        }
     }
 
     #[test]
@@ -566,10 +601,25 @@ mod tests {
             WeaponFamily::Dagger,
             WeaponFamily::Staff,
             WeaponFamily::Spear,
+            WeaponFamily::TwoHanded,
         ] {
             let seconds = 42. / chain_dps(family, crate::unit::player_damage(1));
             assert!((7.5..=10.5).contains(&seconds), "{family:?}: {seconds}");
         }
+    }
+
+    #[test]
+    fn only_the_warden_wields_a_great_weapon() {
+        use crate::class::PlayerClass;
+        use strum::VariantArray;
+        for &class in PlayerClass::VARIANTS {
+            assert_eq!(
+                WeaponFamily::TwoHanded.wielded_by(Some(class)),
+                class == PlayerClass::Warden,
+                "{class:?}"
+            );
+        }
+        assert!(WeaponFamily::TwoHanded.wielded_by(None));
     }
 
     #[test]
