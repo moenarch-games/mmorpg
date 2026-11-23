@@ -24,7 +24,7 @@ Sources, all opt-in and read-only:
 - GPU execution time per render pass (#1106) from the page's `EXT_disjoint_timer_query_webgl2` queries, only when
   the browser exposes it (reported as unsupported otherwise): `gpuByPass` (sky, sun cascades, local shadows, main
   opaque, sky composite, main transparent, tone mapping, output, and the time between passes) and `gpuByLabel`
-  (the main passes split by what draws: grass, terrain, static scene, water, units, vegetation, kits, other, and
+  (the main passes split by what draws: grass, terrain, static scene, water, units, nature, ground detail, kits, other, and
   their MSAA resolves), p50/p95 per frame; `gpuMs` is their sum per frame. A timer query also counts the time the GPU waits for the main thread to issue the commands it spans,
   so each pass carries `issueP50`, the main-thread time it was open: GPU time near it marks a pass bound by issuing,
   not by the GPU;

@@ -279,7 +279,7 @@ function contributor(object: THREE.Object3D, geometry: THREE.BufferGeometry, mat
 
 /**
  * What a main-pass draw is, for its GPU time (#1106), from the scene child it hangs under: grass, terrain, the batched
- * static scene, water (rivers and lakes), units, vegetation (nature kits, ground detail), other kits, or other.
+ * static scene, water (rivers and lakes), units, nature (trees and bushes), ground detail, other kits, or other.
  */
 function drawKind(object: THREE.Object3D): string {
   let root = object;
@@ -289,11 +289,11 @@ function drawKind(object: THREE.Object3D): string {
     case "greyhaven.grass": return "grass";
     case "greyhaven.terrain": return "terrain";
     case "static-scene": return "static-scene";
-    case "greyhaven.nature": return "vegetation";
+    case "greyhaven.nature": return "nature";
   }
   if (/^river-|water|lake/i.test(name)) { return "water"; }
   if (name.startsWith("unit-")) { return "units"; }
-  if (/^scenery\..*\.detail$/.test(name)) { return "vegetation"; }
+  if (/^scenery\..*\.detail$/.test(name)) { return "ground-detail"; }
   if (name.endsWith(".kit") || name.startsWith("greyhaven.")) { return "kits"; }
   return "other";
 }
@@ -307,6 +307,19 @@ function quadPass(drawn: THREE.Object3D, mainDone: boolean, mainStarted: boolean
   if (!mainDone) { return "sky-composite"; }
   const uniforms = ((drawn as THREE.Mesh).material as THREE.ShaderMaterial | undefined)?.uniforms ?? {};
   return "hdrTexture" in uniforms ? "tone-mapping" : "postTexture" in uniforms ? "output" : "post";
+}
+
+/**
+ * Which of the sky's passes a quad draws, for its GPU label: the aerial-perspective march and store (32 slices each),
+ * the environment cube and its filters, or otherwise its target's size (256x128 transmittance, 32x32 multiple
+ * scattering, 400x200 sky view in three-lighting's atmosphere).
+ */
+function skyLut(drawn: THREE.Object3D, target: THREE.WebGLRenderTarget | null): string {
+  const uniforms = ((drawn as THREE.Mesh).material as THREE.ShaderMaterial | undefined)?.uniforms ?? {};
+  if ("throughputIn" in uniforms) { return "aerial-march"; }
+  if ("totalIn" in uniforms) { return "aerial-store"; }
+  if ("face" in uniforms) { return "environment"; }
+  return target ? `${target.width}x${target.height}` : "canvas";
 }
 
 /**
@@ -348,7 +361,7 @@ export function profileRenderPasses(renderer: THREE.WebGLRenderer, scene: THREE.
     mainPass = isMain ? pass : null;
     drawing = pass;
     // A main pass's draws label themselves (`renderBufferDirect`).
-    if (!isMain) { timer?.enter(pass); }
+    if (!isMain) { timer?.enter(pass === "sky" ? `sky:${skyLut(drawn, this.getRenderTarget())}` : pass); }
     try {
       render.call(this, drawn, view);
     } finally {
