@@ -105,11 +105,13 @@ fn piece_shape(piece: &DebrisBody) -> (Shape, f32) {
     match piece.shape {
         PieceShape::Cuboid => (
             Shape::Box(Vector(hx, hy, hz)),
-            DEBRIS_DENSITY * 8. * hx * hy * hz / UNITS_PER_METRE.powi(3),
+            DEBRIS_DENSITY * 8. * hx * hy * hz
+                / (UNITS_PER_METRE * UNITS_PER_METRE * UNITS_PER_METRE),
         ),
         PieceShape::Sphere => (
             Shape::Sphere(hx),
-            BOULDER_DENSITY * 4. / 3. * std::f32::consts::PI * hx.powi(3) / UNITS_PER_METRE.powi(3),
+            BOULDER_DENSITY * 4. / 3. * std::f32::consts::PI * hx * hx * hx
+                / (UNITS_PER_METRE * UNITS_PER_METRE * UNITS_PER_METRE),
         ),
     }
 }
@@ -445,7 +447,7 @@ fn engine_body(body: &RigidBody) -> Body {
                 crate::RampRise::NegZ => (Vector(hz, hy, hx), -std::f32::consts::FRAC_PI_2),
             };
             let mut wedge = Body::keyed(key, Shape::Wedge(half), vector(body.position), 0.0);
-            let (sin, cos) = (turn / 2.0).sin_cos();
+            let (sin, cos) = libm::sincosf(turn / 2.0);
             wedge.orientation = Quaternion(0.0, sin, 0.0, cos);
             wedge
         }
@@ -596,7 +598,7 @@ impl World {
         self.engine
             .cast_shape(cast, filter, &mut hits)
             .expect("physics-engine platform support cast failed");
-        let min_up = self.settings.max_slope.cos();
+        let min_up = libm::cosf(self.settings.max_slope);
         hits.iter().any(|hit| {
             hit.body == target
                 && (hit.starts_overlapping || hit.normal.1 >= min_up)
@@ -1025,7 +1027,7 @@ impl World {
         self.engine
             .cast_shape(cast, filter, hits)
             .expect("physics-engine grounded cast failed");
-        let min_up = self.settings.max_slope.cos();
+        let min_up = libm::cosf(self.settings.max_slope);
         let open = self.open_floor(body);
         hits.iter()
             .find(|hit| {
@@ -1378,7 +1380,7 @@ fn engine_medium(piece: &DebrisBody, medium: PieceMedium) -> Medium {
     let [hx, hy, hz] = exact(piece.half_extents);
     let volume = match piece.shape {
         PieceShape::Cuboid => 8. * hx * hy * hz,
-        PieceShape::Sphere => 4. / 3. * std::f32::consts::PI * hx.powi(3),
+        PieceShape::Sphere => 4. / 3. * std::f32::consts::PI * hx * hx * hx,
     };
     Medium {
         surface_point: Vector(0., medium.surface, 0.),

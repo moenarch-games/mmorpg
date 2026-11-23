@@ -571,7 +571,7 @@ impl ZoneSimulation {
                 let [px, py, pz] = projectile.position;
                 let (dx, dz) = (px + vx * t - x, pz + vz * t - z);
                 let height = py + vy * t - feet;
-                let distance = dx.hypot(dz);
+                let distance = libm::hypotf(dx, dz);
                 distance <= reach + radius
                     && (distance == 0.0 || dx * dir_x + dz * dir_z >= distance * min_cos)
                     && height >= low - radius

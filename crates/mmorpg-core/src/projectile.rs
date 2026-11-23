@@ -326,8 +326,8 @@ fn turns(radians: f32) -> i32 {
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 pub fn orientation(velocity: [f32; 3]) -> (u16, i16) {
     let [x, y, z] = velocity;
-    let yaw = turns(x.atan2(z)).rem_euclid(65_536) as u16;
-    let pitch = turns(y.atan2(x.hypot(z))).clamp(-16_384, 16_384) as i16;
+    let yaw = turns(libm::atan2f(x, z)).rem_euclid(65_536) as u16;
+    let pitch = turns(libm::atan2f(y, libm::hypotf(x, z))).clamp(-16_384, 16_384) as i16;
     (yaw, pitch)
 }
 
@@ -344,7 +344,7 @@ fn ballistic(delta: [f32; 3], ticks: u16, gravity: f32) -> [f32; 3] {
 /// A missile's step toward a target `delta` away: straight at it at `speed`, or onto it when
 /// closer than one step.
 fn homing(delta: [f32; 3], speed: f32) -> [f32; 3] {
-    let distance = delta[0].hypot(delta[1]).hypot(delta[2]);
+    let distance = libm::hypotf(libm::hypotf(delta[0], delta[1]), delta[2]);
     if distance <= speed {
         // The centre lies inside the body, so the sweep meets its surface on the way.
         return delta;
@@ -391,7 +391,7 @@ impl ZoneSimulation {
             .unit_centre(target)
             .ok_or_else(|| ZoneError::new("target physics body is missing"))?;
         let delta = sub(to, from);
-        let distance = delta[0].hypot(delta[1]).hypot(delta[2]);
+        let distance = libm::hypotf(libm::hypotf(delta[0], delta[1]), delta[2]);
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let remaining = (distance / kind.speed())
             .ceil()
@@ -775,8 +775,9 @@ impl ZoneSimulation {
         let forward = [x as f32, z as f32];
         let delta = [from[0] - centre[0], from[2] - centre[2]];
         let along = delta[0] * forward[0] + delta[1] * forward[1];
-        let length = delta[0].hypot(delta[1]) * forward[0].hypot(forward[1]);
-        Ok(length > 0.0 && along >= length * CREATURE_SHIELD_HALF_ANGLE_DEGREES.to_radians().cos())
+        let length = libm::hypotf(delta[0], delta[1]) * libm::hypotf(forward[0], forward[1]);
+        Ok(length > 0.0
+            && along >= length * libm::cosf(CREATURE_SHIELD_HALF_ANGLE_DEGREES.to_radians()))
     }
 
     /// `projectile` reached `unit`: a raised shield turned toward it blocks it; otherwise its
@@ -862,7 +863,7 @@ impl ZoneSimulation {
             .values()
             .filter_map(|projectile| {
                 let [x, y, z] = crate::physics::to_units(projectile.position);
-                let distance = (f64::from(x - centre[0])).hypot(f64::from(z - centre[2]));
+                let distance = libm::hypot(f64::from(x - centre[0]), f64::from(z - centre[2]));
                 (distance <= radius).then(|| {
                     let (yaw, pitch) = orientation(projectile.velocity);
                     (

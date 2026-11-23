@@ -2,6 +2,8 @@
 //! band with the coverage test that applies them, the movement-state strikes by weapon family (#885), and the player classes with their resources. Built on `sim-foundation`; it knows
 //! nothing of zones, quests or authored content.
 #![forbid(unsafe_code)]
+// No platform-libm float functions in authoritative code (clippy.toml, #1109).
+#![cfg_attr(not(test), warn(clippy::disallowed_methods))]
 
 pub mod class;
 pub mod melee;

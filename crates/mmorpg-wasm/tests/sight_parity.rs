@@ -5,14 +5,14 @@
 //! Natively, two runs must reach the same digest. `web/tests/sight-parity.test.ts` runs this
 //! test with [`DIGEST_OUT`] set, plays the same script on the WASM build in the same run and
 //! must reach the digest written there, so the authoritative sight decisions (and everything
-//! else the session projects but broken props' debris) agree across targets. No digest is
+//! else the session projects, broken props' debris included, #1109) agree across targets. No digest is
 //! committed: it would move with every content or wire change (#487).
 
 use std::collections::BTreeMap;
 
 use mmorpg_characters::{EntryBackend, EntryChange, LeaseHolder, StoreError};
 use mmorpg_core::{CharacterId, ClassChoice, PlayerClass, Sex, ZoneCommand, ZoneEvent};
-use mmorpg_protocol::{DEBRIS_RECORD_BYTES, decode_snapshot, encode_command};
+use mmorpg_protocol::{decode_snapshot, encode_command};
 use mmorpg_wasm::host::{LOCAL_ZONE_ID, LocalZoneHost};
 
 /// The script: the arcanist targets a crate by the smithy (prop 901) and walks south-east
@@ -132,11 +132,8 @@ fn sight_session() -> u64 {
         host.tick().unwrap();
         let projection = host.projection(player).unwrap();
         let snapshot = decode_snapshot(&projection).unwrap();
-        // Broken props' debris (the trailing section) is left out: Rapier's dynamic pieces are
-        // not bit-identical between wasm32 and native builds (a rotation component can round
-        // one step apart), and they decide nothing.
-        let kept = projection.len() - snapshot.debris.len() * DEBRIS_RECORD_BYTES;
-        digest = fnv(digest, &projection[..kept]);
+        // The whole projection, broken props' debris included (#1109).
+        digest = fnv(digest, &projection);
         for event in snapshot.events {
             match event {
                 ZoneEvent::CastStarted { .. } => started += 1,

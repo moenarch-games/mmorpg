@@ -49,8 +49,6 @@ const INN_CAST = 344;
 const CASTS = [162, INN_CAST];
 const FIREBOLT = 9;
 const TICKS = 520;
-/** One debris record on the wire (`DEBRIS_RECORD_BYTES`: 2 + 1 + 1 + 12 + 8 + 1). */
-const DEBRIS_BYTES = 25;
 
 function fnv(hash: bigint, bytes: Uint8Array): bigint {
   let value = hash;
@@ -88,9 +86,8 @@ test("the WASM build reaches the native sight session digest", () => {
     zone.tick();
     const projection = zone.projection(player);
     const snapshot = decodeSnapshot(projection);
-    // Broken props' debris (the trailing records) is left out, as natively: Rapier's dynamic
-    // pieces are not bit-identical across targets and decide nothing.
-    digest = fnv(digest, projection.subarray(0, projection.length - snapshot.debris.length * DEBRIS_BYTES));
+    // The whole projection, broken props' debris included, as natively (#1109).
+    digest = fnv(digest, projection);
     // Only the crates can take the missiles' damage: the first strikes one, the inn stops the second.
     const hits = snapshot.events.filter((event) => event.kind === "damage-dealt").length;
     if (tick < INN_CAST) {

@@ -84,7 +84,7 @@ impl ZoneSimulation {
     ) -> bool {
         #[allow(clippy::cast_precision_loss)]
         let delta = [to[0] as f32 - centre[0], to[1] as f32 - centre[2]];
-        let distance = delta[0].hypot(delta[1]);
+        let distance = libm::hypotf(delta[0], delta[1]);
         #[allow(clippy::cast_precision_loss)]
         let travel = distance - short as f32;
         if travel <= 0.0 {

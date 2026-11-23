@@ -2,6 +2,8 @@
 //! ([`walk`]), the dodge roll, climbing and surface hazards. Built on `sim-foundation`; it knows
 //! nothing of combat, zones or authored content.
 #![forbid(unsafe_code)]
+// No platform-libm float functions in authoritative code (clippy.toml, #1109).
+#![cfg_attr(not(test), warn(clippy::disallowed_methods))]
 
 pub mod climb;
 pub mod roll;

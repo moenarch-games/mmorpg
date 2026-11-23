@@ -117,7 +117,7 @@ impl ZoneSimulation {
         wanted: impl Fn(EntityRef) -> bool,
     ) -> Result<Vec<EntityRef>, ZoneError> {
         let forward = ahead(facing);
-        let min_cos = f32::from(half_angle).to_radians().cos();
+        let min_cos = libm::cosf(f32::from(half_angle).to_radians());
         let centre = self.unit_position(caster)?;
         let mut found = Vec::new();
         for unit in self.interest.near(centre[0], centre[2], range) {
@@ -135,7 +135,7 @@ impl ZoneSimulation {
                 (position[0] - centre[0]) as f32,
                 (position[2] - centre[2]) as f32,
             ];
-            let distance = delta[0].hypot(delta[1]);
+            let distance = libm::hypotf(delta[0], delta[1]);
             let along = delta[0] * forward[0] + delta[1] * forward[1];
             // A unit standing on the caster is in front of it.
             if (distance == 0.0 || along >= min_cos * distance)

@@ -58,7 +58,7 @@ pub(super) fn slide_around<'a>(
     desired: [f32; 3],
 ) -> [f32; 3] {
     let [mut vx, vy, mut vz] = desired;
-    let speed = vx.hypot(vz);
+    let speed = libm::hypotf(vx, vz);
     if speed == 0.0 {
         return desired;
     }
@@ -81,7 +81,7 @@ pub(super) fn slide_around<'a>(
             body.position[0] - other.position[0],
             body.position[2] - other.position[2],
         );
-        let distance = dx.hypot(dz);
+        let distance = libm::hypotf(dx, dz);
         let reach =
             radius(body.half_extents) + radius(other.half_extents) + CONTACT_OFFSET_UNITS + 1.0;
         if distance == 0.0 || distance > reach {

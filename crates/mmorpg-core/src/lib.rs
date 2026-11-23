@@ -1,4 +1,6 @@
 #![forbid(unsafe_code)]
+// No platform-libm float functions in authoritative code (clippy.toml, #1109).
+#![cfg_attr(not(test), warn(clippy::disallowed_methods))]
 
 //! Deterministic zone-local gameplay: movement, units, combat, creature AI
 //! and the interest/visibility policy of player projections.
