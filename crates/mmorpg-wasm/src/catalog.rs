@@ -459,6 +459,10 @@ mod tests {
                     stats(1, 4, 0, 0)
                 ),
                 item(31, "Supply Sack", Value::Null, stats(0, 0, 0, 0)),
+                item(32, "Ironbound Maul", json!("mainHand"), stats(2, 5, 0, 0)),
+                item(33, "Smith's Great Hammer", json!("mainHand"), stats(2, 5, 0, 0)),
+                item(34, "Woodsman's Great Axe", json!("mainHand"), stats(2, 5, 0, 0)),
+                item(35, "Outpost Greatsword", json!("mainHand"), stats(2, 5, 0, 0)),
             ])
         );
         let quests = value["quests"].as_array().unwrap();
@@ -512,9 +516,10 @@ mod tests {
                     offer(9, 12), offer(8, 12), offer(7, 15), offer(5, 20),
                     offer(3, 25), offer(23, 25), offer(12, 45), offer(13, 45), offer(14, 45),
                 ]},
-                // The Outpost smith's boar-spear recipe (#917).
+                // The Outpost smith's boar-spear recipe (#917) and great weapons (#1073).
                 {"npc": 43, "offers": [
                     {"item": 30, "price": 20, "materials": [[28, 4], [29, 2], [19, 2]]},
+                    offer(32, 60), offer(33, 60), offer(34, 60), offer(35, 60),
                 ]},
             ])
         );
