@@ -1,53 +1,17 @@
 import { expect, test } from "bun:test";
-import { EntryPrebuild, MAX_COMPOSE_ROUNDS, MAX_PREPARES_PER_ENTRY, type PrebuildTarget } from "../src/world/entry-prebuild";
+import { MAX_COMPOSE_ROUNDS, MAX_PREPARES_PER_ENTRY } from "../src/world/entry-prebuild";
+import { STATIC_PARTS, harness, prebuildThenEnter } from "./support/work/entry-prebuild";
 
 // The `entry-prebuild` budget (#855, `.performance/contract.json`): the selection screen builds the static scene once,
 // one part per idle slice, composes and prepares the selected character's entry view, and a world frame after that
 // builds no static scene. Switching characters composes and prepares again without rebuilding the static scene. The
-// target below counts what `WorldView`'s prebuild target does: parts built, compose rounds and prepares, and the static
-// builds a first world frame would run (`#inputStage` builds the remaining parts).
+// measurement lives in `support/work/entry-prebuild.ts`, which `scripts/work-evidence.ts` emits as work evidence (#1120).
 
-const STATIC_PARTS = 4;
-
-type Entry = { at: number };
-
-function harness(composeRoundsToSettle = 2) {
-  const slices: (() => void)[] = [];
-  const counts = { parts: 0, composes: 0, prepares: 0, frameStaticBuilds: 0, preparedAt: [] as number[] };
-  let built = 0;
-  let roots = 0;
-  let streamed = 0;
-  const target: PrebuildTarget<Entry> = {
-    staticBuilt: () => built >= STATIC_PARTS,
-    buildStaticPart: () => { built += 1; counts.parts += 1; },
-    compose: () => { counts.composes += 1; streamed += 1; return streamed % composeRoundsToSettle === 0; },
-    prepareKey: () => String(roots),
-    prepare: (entry) => { counts.prepares += 1; counts.preparedAt.push(entry.at); return Promise.resolve(); },
-  };
-  const prebuild = new EntryPrebuild(target, (slice) => slices.push(slice));
-  /** Runs idle slices (and the prepares' settling) until nothing is scheduled. */
-  const idle = async (limit = 100): Promise<number> => {
-    let ran = 0;
-    for (;;) {
-      await Promise.resolve();
-      await Promise.resolve();
-      const slice = slices.shift();
-      if (!slice) {
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        if (slices.length === 0) { return ran; }
-        continue;
-      }
-      slice();
-      ran += 1;
-      if (ran > limit) { throw new Error("the prebuild did not settle"); }
-    }
-  };
-  /** A world frame: it builds whatever static parts remain (`WorldView.#inputStage`). */
-  const frame = () => {
-    if (built < STATIC_PARTS) { counts.frameStaticBuilds += 1; built = STATIC_PARTS; }
-  };
-  return { prebuild, idle, frame, counts, slices, addRoot: () => { roots += 1; } };
-}
+test("the contract's scale points: static parts stay constant and prepares follow the entries selected", async () => {
+  for (const entries of [1, 2, 3]) {
+    expect(await prebuildThenEnter(entries)).toEqual({ staticParts: STATIC_PARTS, prepares: entries, frameStaticBuilds: 0 });
+  }
+});
 
 test("the prebuild builds the static scene in slices, then composes and prepares the entry view", async () => {
   const { prebuild, idle, frame, counts } = harness();
