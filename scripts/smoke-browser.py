@@ -195,11 +195,12 @@ class BrowserAcceptance(unittest.TestCase):
           // Every fresh browser world draws a secret world seed (#1111, Atlas 2.1.i1111), so its
           // wolves, fights and drops would differ from run to run. Acceptance pins one, as scenarios
           // pin theirs: the page's only 64-bit draw is `freshWorldSeed`; every other draw stays random.
-          // A journey may pin another with `pin_world_seed`.
+          // In world 3, as in the content seed's, Timber Wolf 108 meets the hunt route's hunter in
+          // melee and drops copper and items (world 1111's waits 10 m off, out of combat).
           const randomValues = Crypto.prototype.getRandomValues;
           Crypto.prototype.getRandomValues = function(array) {
             if (array instanceof BigUint64Array && array.length === 1) {
-              array[0] = window.__acceptanceWorldSeed ?? 1111n;
+              array[0] = 3n;
               return array;
             }
             return randomValues.call(this, array);
@@ -250,10 +251,6 @@ class BrowserAcceptance(unittest.TestCase):
             }
           }
         })();""")
-
-    def pin_world_seed(self, seed):
-        """The world seed this context's fresh worlds draw (#1111) instead of the default 1111."""
-        self.context.add_init_script(f"window.__acceptanceWorldSeed = {int(seed)}n;")
 
     def evidence_ms(self, wanted_ms):
         """`wanted_ms`, cut to what is left of the evidence time before the runner's kill."""
@@ -1413,9 +1410,6 @@ class BrowserAcceptance(unittest.TestCase):
 
     def test_projected_corpse_loot_claim_recovery_refusal_and_reset(self):
         """Actual WASM hunt/claim/loss recovery, then an isolated full-bag presentation fixture."""
-        # Drops roll from the world's secret seed (#1111): in world 3 the hunted wolf leaves both
-        # copper and items, so the claim below moves each (1111's wolf leaves no copper).
-        self.pin_world_seed(3)
         self.open("?debug")
         # Pause publication and held-input resends through the public source. Explicit
         # commands/ticks still drive the same WASM authority and production decoder.
@@ -1474,7 +1468,7 @@ class BrowserAcceptance(unittest.TestCase):
         claim = self.page.get_by_role("button", name="Claim rewards", exact=True)
         expect(panel).to_be_visible()
         expect(self.page.locator("#loot-title")).to_have_text("Timber Wolf")
-        # Wolf 108 rolls from its own stream (#861), seeded by world 3 (#1111).
+        # Wolf 108 rolls from its own stream (#861), seeded by the pinned world (#1111).
         expect(rewards).to_have_text("1 copper · Torn Fur × 2")
         expect(self.page.locator("#copper-status")).to_have_text("Copper: 0")
         self.page.screenshot(path=str(ARTIFACTS / "loot-before-claim.png"))
@@ -2567,8 +2561,8 @@ class BrowserAcceptance(unittest.TestCase):
         self.assertEqual(self.page.locator("#class-hud .action-slot").first.get_attribute("data-state"), "casting")
         expect(self.page.locator("#class-hud .action-slot").first).to_have_attribute("data-gcd", "true")
         self.page.screenshot(path=str(ARTIFACTS / "class-kit-arcanist-cast.png"))
-        # The two-second cast completes: mana is spent, the bolt flies to the wolf (a few metres off,
-        # where the hunt route stops) and lands, and the cast bar clears.
+        # The two-second cast completes: mana is spent, the bolt flies to the wolf and lands (a few
+        # steps more where the wolf stands off), and the cast bar clears.
         self.step(60)
         self.assertLess(self.hud_number("[data-part=player-resource-text]", r"Mana (\d+)"), 110)
         for _ in range(20):
