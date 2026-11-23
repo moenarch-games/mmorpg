@@ -64,7 +64,9 @@ The smoke helper additionally needs Python 3 and OpenSSL. Rust integration tests
 python3 scripts/smoke-native.py --window
 ```
 
-The helper builds locked sources, creates a disposable certificate/key, starts a real host on OS-selected ports, waits for readiness, connects the client, resumes the same player on a new connection epoch, and reads back a rendered GPU frame of the vale, which must contain several colours with no single colour (such as the sky) covering three quarters of it. It also runs the explicit GPU health-bar test: restore two authoritative fixtures differing only in one creature's health, project them through core, and require visible pixel changes. With `--window`, it then opens a native game window for 120 frames. It stops its processes and removes temporary credentials on success or failure.
+The helper builds locked sources, creates a disposable certificate/key, starts a real host on OS-selected ports, waits for readiness, connects the client, resumes the same player on a new connection epoch, and reads back a rendered GPU frame of the vale, which must contain several colours with no single colour (such as the sky) covering three quarters of it. It also runs the explicit GPU health-bar test: restore two authoritative fixtures differing only in one creature's health, project them through core, and require visible pixel changes. With `--window`, it then opens a native game window for 120 frames. It stops its processes and removes temporary credentials on success or failure. Each native client run is limited to `--client-timeout` seconds (default 300: a cold client on a loaded machine took 71–124 s), and a timeout names the step.
+
+The `#[ignore]`d GPU tests never run in CI (hosted runners have no GPU). So that a stale one is found (#1161), run this helper on a machine with a GPU once a week, and in any PR that changes the native renderer, its HUD, or a projection the HUD reads.
 
 ## Interactive play
 

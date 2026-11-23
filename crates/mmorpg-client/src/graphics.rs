@@ -1798,8 +1798,8 @@ mod tests {
     #[test]
     #[ignore = "requires a GPU; scripts/smoke-native.py runs this explicitly"]
     fn the_projected_combat_hud_changes_gpu_pixels() {
-        use mmorpg_client_model::hud::CombatHud;
-        use mmorpg_core::ZoneCommand;
+        use mmorpg_client_model::hud::{CombatHud, class_kit};
+        use mmorpg_core::{PlayerClass, ZoneCommand};
         let runtime = tokio::runtime::Runtime::new().unwrap();
         runtime.block_on(async {
             let content = greyhaven_vale::content();
@@ -1816,7 +1816,8 @@ mod tests {
                     .iter()
                     .map(|slot| slot.ability)
                     .collect::<Vec<_>>(),
-                [9, 10, 11, 12, 16],
+                // The kit's own list, which `class_kits_hold_the_catalog_order` pins (#1161).
+                class_kit(PlayerClass::Arcanist),
                 "the complete Arcanist kit fills the bar"
             );
             let mut drained = hud.clone();
