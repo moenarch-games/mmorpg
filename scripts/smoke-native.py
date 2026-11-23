@@ -24,6 +24,15 @@ def free_port(kind):
         return reservation.getsockname()[1]
 
 
+def client_step(root, command, step, timeout):
+    """Run one native client step; a timeout names the step and the limit (#1161)."""
+    try:
+        subprocess.run(command, cwd=root, check=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise TimeoutError(f"{step} did not finish within {timeout:g} s; "
+                           "raise --client-timeout on a cold or loaded machine") from None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--window", action="store_true")
@@ -31,6 +40,9 @@ def main():
                         help="only save native frames at the review poses into DIR")
     parser.add_argument("--review-poses", type=Path, metavar="FILE",
                         help="poses for --review-shots (default scripts/review-poses.json)")
+    # A cold client on a loaded machine took 71-124 s for --smoke (#1161).
+    parser.add_argument("--client-timeout", type=float, default=300, metavar="SECONDS",
+                        help="limit for each native client run (default 300)")
     args = parser.parse_args()
     root = Path(__file__).resolve().parent.parent
     # The client build embeds the asset-tooling Ranger and inn bundles; fetching is idempotent.
@@ -82,7 +94,7 @@ def main():
                         raise TimeoutError("zone host never became ready")
                     time.sleep(0.05)
                 command = [str(binaries / f"mmorpg-client{suffix}"), "--url", f"https://localhost:{port}/game/matches/zone-1", "--certificate", str(certificate)]
-                subprocess.run([*command, "--smoke"], cwd=root, check=True, timeout=30)
+                client_step(root, [*command, "--smoke"], "native client --smoke", args.client_timeout)
                 subprocess.run([
                     "cargo", "test", "--locked", "-p", "mmorpg-client", "--lib",
                     "projected_health_bars_change_gpu_pixels", "--", "--ignored", "--nocapture",
@@ -105,7 +117,7 @@ def main():
                     "the_inn_journey", "--", "--nocapture",
                 ], cwd=root, check=True, timeout=300)
                 if args.window:
-                    subprocess.run([*command, "--frames", "120"], cwd=root, check=True, timeout=30)
+                    client_step(root, [*command, "--frames", "120"], "native client --frames 120", args.client_timeout)
             except BaseException:
                 log.flush()
                 log.seek(0)
