@@ -119,6 +119,23 @@ jobs:
           fi
           printf 'settings_only=%s\n' "$settings_only" >> "$GITHUB_OUTPUT"
 
+      - name: Validate the work-complexity contract's structure
+        # A change to .performance/ must leave the contract valid (#1132): an invalid entry makes
+        # the whole contract unverifiable, and the full check runs only under full validation.
+        # Structure only, no builds. Without a known change list the check runs.
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ -f "$RUNNER_TEMP/changed-files" ]] && ! grep -qz '^\.performance/' "$RUNNER_TEMP/changed-files"; then
+            echo "The work-complexity contract did not change."
+            exit 0
+          fi
+          scripts/ci-install-bun.sh
+          export PATH="$HOME/.bun/bin:$PATH"
+          scripts/ci-work-contract.sh structure
+
       - name: Resolve the asset cache identity
         id: assets
         if: github.event_name == 'push' || steps.detect.outputs.rust_changed == 'true' || steps.detect.outputs.full_validation == 'true'
