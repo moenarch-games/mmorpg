@@ -354,11 +354,11 @@ impl ZoneSimulation {
             return Ok(());
         }
         self.raid.cart_rewarded.insert(at, player_id);
-        crate::rewards::record(&mut self.rewards, player_id, key)?;
-        if let Some(player) = self.players.get_mut(&player_id) {
-            player.copper = player.copper.saturating_add(REWARD_COPPER);
-        }
-        self.grant_experience(player_id, REWARD_EXPERIENCE)
+        let payout = crate::rewards::RewardPayout {
+            experience: REWARD_EXPERIENCE,
+            copper: REWARD_COPPER,
+        };
+        self.pay_zone_reward(player_id, key, payout)
     }
 }
 

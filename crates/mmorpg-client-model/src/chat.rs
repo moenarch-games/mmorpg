@@ -153,6 +153,7 @@ pub fn refusal_text(code: ErrorCode) -> String {
         ErrorCode::NoLanding => "There is no clear place to land there.".into(),
         ErrorCode::MovementImmune => "It cannot be moved right now.".into(),
         ErrorCode::WrongForm => "You cannot do that in this form.".into(),
+        ErrorCode::RewardsBusy => "The realm cannot record that reward right now. Try again in a moment.".into(),
         _ => humanize(&format!("{code:?}")),
     }
 }

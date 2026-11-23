@@ -443,6 +443,40 @@ mod tests {
     }
 
     #[test]
+    fn stored_receipts_beyond_the_zone_bound_refuse_admission_before_activation() {
+        // #1112: the zone holds one receipt; the character's second is refused with a reason,
+        // the claim is cleared and the zone keeps ticking.
+        let mut adapter =
+            ZoneGameServerAdapter::with_content(ZoneId::new(1), greyhaven_vale::content()).unwrap();
+        adapter.zone_mut().enable_reward_tracking(1, 16).unwrap();
+        let mut runtime = MatchRuntime::new_with_replay_capture(adapter, 30);
+        let lease = runtime.admit(ReconnectToken([41; 16])).unwrap();
+        let receipt = |cache| {
+            ZoneGameServerAdapter::reward_receipt_input(mmorpg_core::RewardKey::Cache { cache })
+                .unwrap()
+        };
+        runtime
+            .submit_host_input(lease.player_id, &receipt(1))
+            .unwrap();
+        let refused = runtime
+            .submit_host_input(lease.player_id, &receipt(2))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            refused.contains("cannot hold this character's stored receipts"),
+            "{refused}"
+        );
+        runtime.submit_host_input(lease.player_id, &[1, 4]).unwrap();
+        runtime.advance_tick().unwrap();
+        let snapshot = runtime.advance_tick().unwrap();
+        let (zone, stored) =
+            ZoneGameServerAdapter::decode_stored_zone(&snapshot.payload, greyhaven_vale::content())
+                .unwrap();
+        assert!(stored.is_empty(), "no character was activated");
+        assert_eq!(zone.reward_history().unwrap().known_count(), 0);
+    }
+
+    #[test]
     fn invalid_or_duplicate_admission_preserves_existing_live_state() {
         let mut adapter =
             ZoneGameServerAdapter::with_content(ZoneId::new(1), greyhaven_vale::content()).unwrap();

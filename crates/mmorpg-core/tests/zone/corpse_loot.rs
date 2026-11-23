@@ -524,3 +524,27 @@ fn durable_receipts_block_rewards_after_weaker_world_reset() {
         durable.copper + 2
     );
 }
+
+#[test]
+fn a_claim_without_receipt_room_is_refused_and_the_corpse_keeps_it_for_a_retry() {
+    // #1112: the kill's experience receipt leaves room for one more, the claim needs two.
+    let mut zone = fixture(Some(rule(2, true)));
+    zone.enable_reward_tracking(2, 16).unwrap();
+    let claim = kill(&mut zone);
+    assert_eq!(zone.reward_history().unwrap().known_count(), 1);
+    let loot = zone.snapshot().unwrap().creatures[0].loot;
+    for _ in 0..3 {
+        refuse(&mut zone, 1, claim, ErrorCode::RewardsBusy);
+        assert_eq!(zone.snapshot().unwrap().creatures[0].loot, loot);
+    }
+    // With room again the same claim pays once.
+    restore(&mut zone, |state| {
+        state.rewards.as_mut().unwrap().max_known_ids = 3;
+    });
+    command(&mut zone, 1, ZoneCommand::Loot(claim));
+    zone.advance_tick().unwrap();
+    let after = zone.snapshot().unwrap();
+    assert_eq!(after.players[0].copper, 2);
+    assert_eq!(after.creatures[0].loot, None);
+    assert_eq!(zone.reward_history().unwrap().known_count(), 3);
+}

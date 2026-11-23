@@ -346,7 +346,7 @@ struct State {
     match_id: MatchId,
     position: u64,
     reward_lives: BTreeMap<mmorpg_core::CreatureId, u64>,
-    receipt_limit: Option<u16>,
+    receipt_limit: Option<u32>,
     last_image: RecoveryImage,
     checkpoint_interval: u64,
     last_attempt_tick: u64,

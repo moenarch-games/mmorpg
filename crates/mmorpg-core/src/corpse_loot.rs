@@ -143,6 +143,13 @@ impl ZoneSimulation {
             Eligibility::Available(view) => view,
             Eligibility::Refused(code) => return Ok(Some((code, target))),
         };
+        // A claim the tick cannot record leaves the corpse intact for a retry (#1112).
+        let receipts = usize::from(view.rewards.money != 0)
+            + usize::from(view.rewards.item.is_some())
+            + usize::from(view.rewards.quest_item.is_some());
+        if !crate::rewards::fits(&self.rewards, receipts) {
+            return Ok(Some((ErrorCode::RewardsBusy, target)));
+        }
         let player = self
             .players
             .get_mut(&player_id)

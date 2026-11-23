@@ -4,8 +4,8 @@ use crate::{
     wire::{read_bool, read_u8, take},
 };
 use mmorpg_core::{
-    AreaId, CreatureId, ItemId, MAX_PLAYERS_PER_ZONE, QuestId, RewardGrant, RewardHistory,
-    RewardKey,
+    AreaId, CreatureId, DeferredReward, ItemId, MAX_DEFERRED_REWARDS, MAX_PLAYERS_PER_ZONE,
+    QuestId, RewardGrant, RewardHistory, RewardKey, RewardPayout,
 };
 use std::collections::BTreeSet;
 
@@ -19,16 +19,20 @@ const REWARD_RECEIPT_VERSION: u8 = 2;
 fn error(cause: impl std::fmt::Display) -> ProtocolError {
     ProtocolError::new(cause.to_string())
 }
+/// Counts are `u32` (#1112): the default receipt bound exceeds `u16`.
 fn count(payload: &mut Vec<u8>, value: usize) -> Result<(), ProtocolError> {
-    payload.extend_from_slice(&u16::try_from(value).map_err(error)?.to_be_bytes());
+    payload.extend_from_slice(&u32::try_from(value).map_err(error)?.to_be_bytes());
     Ok(())
 }
 fn read_count(payload: &[u8], offset: &mut usize, maximum: usize) -> Result<usize, ProtocolError> {
-    let value = usize::from(u16::from_be_bytes(take(payload, offset)?));
+    let value = usize::try_from(u32::from_be_bytes(take(payload, offset)?)).map_err(error)?;
     if value > maximum {
         return Err(error("reward receipt count exceeds limit"));
     }
     Ok(value)
+}
+fn known_limit(history: &RewardHistory) -> Result<usize, ProtocolError> {
+    usize::try_from(history.max_known_ids).map_err(error)
 }
 pub(crate) fn encode_key(payload: &mut Vec<u8>, key: RewardKey) -> Result<(), ProtocolError> {
     key.validate().map_err(error)?;
@@ -181,6 +185,16 @@ pub(crate) fn encode_history(
     history.validate().map_err(error)?;
     payload.extend_from_slice(&history.max_known_ids.to_be_bytes());
     payload.extend_from_slice(&history.max_tick_grants.to_be_bytes());
+    // Deferred zone payouts (#1112), oldest first: since u64 · player u32 · key ·
+    // experience u32 · copper u32.
+    count(payload, history.deferred.len())?;
+    for entry in &history.deferred {
+        payload.extend_from_slice(&entry.since.to_be_bytes());
+        payload.extend_from_slice(&entry.grant.player.to_be_bytes());
+        encode_key(payload, entry.grant.key)?;
+        payload.extend_from_slice(&entry.payout.experience.to_be_bytes());
+        payload.extend_from_slice(&entry.payout.copper.to_be_bytes());
+    }
     encode_keys(payload, &history.world)?;
     count(payload, history.players.len())?;
     for (player, keys) in &history.players {
@@ -202,11 +216,33 @@ pub(crate) fn decode_history(
         return Ok(None);
     }
     let mut history = RewardHistory::new(
-        u16::from_be_bytes(take(payload, offset)?),
+        u32::from_be_bytes(take(payload, offset)?),
         u16::from_be_bytes(take(payload, offset)?),
     )
     .map_err(error)?;
-    history.world = decode_keys(payload, offset, usize::from(history.max_known_ids))?;
+    let deferred = read_count(payload, offset, MAX_DEFERRED_REWARDS)?;
+    for _ in 0..deferred {
+        let entry = DeferredReward {
+            since: u64::from_be_bytes(take(payload, offset)?),
+            grant: RewardGrant {
+                player: u32::from_be_bytes(take(payload, offset)?),
+                key: decode_key(payload, offset)?,
+            },
+            payout: RewardPayout {
+                experience: u32::from_be_bytes(take(payload, offset)?),
+                copper: u32::from_be_bytes(take(payload, offset)?),
+            },
+        };
+        if history
+            .deferred
+            .last()
+            .is_some_and(|previous| *previous >= entry)
+        {
+            return Err(error("deferred rewards must be strictly ordered"));
+        }
+        history.deferred.insert(entry);
+    }
+    history.world = decode_keys(payload, offset, known_limit(&history)?)?;
     let players = read_count(payload, offset, MAX_PLAYERS_PER_ZONE)?;
     for _ in 0..players {
         let player = u32::from_be_bytes(take(payload, offset)?);
@@ -221,7 +257,7 @@ pub(crate) fn decode_history(
         let keys = decode_keys(
             payload,
             offset,
-            usize::from(history.max_known_ids).saturating_sub(history.known_count()),
+            known_limit(&history)?.saturating_sub(history.known_count()),
         )?;
         history.players.insert(player, keys);
     }
@@ -297,6 +333,23 @@ mod tests {
         ] {
             history.record(1, key).unwrap();
         }
+        // Deferred zone payouts (#1112) round-trip in their canonical order.
+        let payout = RewardPayout {
+            experience: 120,
+            copper: 15,
+        };
+        history.defer(9, 2, RewardKey::RaidParticipation { incident: 4 }, payout);
+        history.defer(
+            8,
+            3,
+            RewardKey::KillObjective {
+                creature,
+                life,
+                quest,
+                objective: 1,
+            },
+            RewardPayout::default(),
+        );
         let mut bytes = Vec::new();
         encode_history(&mut bytes, Some(&history)).unwrap();
         let mut offset = 0;

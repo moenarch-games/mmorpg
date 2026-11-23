@@ -979,11 +979,11 @@ impl ZoneSimulation {
             return Ok(());
         }
         self.raid.rewarded.insert(at, player_id);
-        crate::rewards::record(&mut self.rewards, player_id, key)?;
-        if let Some(player) = self.players.get_mut(&player_id) {
-            player.copper = player.copper.saturating_add(REWARD_COPPER);
-        }
-        self.grant_experience(player_id, REWARD_EXPERIENCE)
+        let payout = crate::rewards::RewardPayout {
+            experience: REWARD_EXPERIENCE,
+            copper: REWARD_COPPER,
+        };
+        self.pay_zone_reward(player_id, key, payout)
     }
 
     /// The defence bonus (#916): each player already rewarded for `incident` who is still near
@@ -1008,8 +1008,11 @@ impl ZoneSimulation {
             {
                 continue;
             }
-            crate::rewards::record(&mut self.rewards, player_id, key)?;
-            self.grant_experience(player_id, DEFENCE_EXPERIENCE)?;
+            let payout = crate::rewards::RewardPayout {
+                experience: DEFENCE_EXPERIENCE,
+                copper: 0,
+            };
+            self.pay_zone_reward(player_id, key, payout)?;
         }
         Ok(())
     }

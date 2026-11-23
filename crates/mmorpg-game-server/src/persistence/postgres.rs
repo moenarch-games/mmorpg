@@ -729,7 +729,7 @@ impl PostgresJournal {
         &mut self,
         character: &CharacterId,
         lives: &std::collections::BTreeMap<mmorpg_core::CreatureId, u64>,
-        maximum: u16,
+        maximum: u32,
     ) -> Result<Vec<mmorpg_core::RewardKey>, StoreError> {
         if maximum == 0 {
             return Err(failure("reward receipt limit must be positive"));
@@ -746,7 +746,7 @@ impl PostgresJournal {
                 "SELECT grant_id,character_id,world_id::text,zone_id,source_creature,source_life,world_owned,CASE WHEN octet_length(reward_key)::bigint<=$7 THEN reward_key ELSE NULL END AS key FROM mmorpg_persistence.grants WHERE reward_key IS NOT NULL AND ((world_id=$1::text::uuid AND zone_id=$2 AND (world_owned OR character_id=$3) AND EXISTS (SELECT 1 FROM unnest($4::bigint[],$5::bigint[]) AS lives(creature,life) WHERE source_creature=lives.creature AND source_life>=lives.life)) OR (character_id=$3 AND source_creature IS NULL)) ORDER BY grant_id LIMIT $6",
                 &[&self.fence.world_id, &i64::from(self.fence.lease.zone_id.get()), &character.as_str(), &creatures, &generations, &(i64::from(maximum)+1), &integer(mmorpg_protocol::MAX_REWARD_RECEIPT_BYTES as u64)?],
             ).map_err(sql)?;
-            if rows.len() > usize::from(maximum) { return Err(failure("reward receipt admission limit reached")); }
+            if rows.len() as u64 > u64::from(maximum) { return Err(failure("the character's stored reward receipts exceed the zone's receipt bound; admission refused")); }
             let mut keys = std::collections::BTreeSet::new();
             for row in rows {
                 let bytes: Option<Vec<u8>> = row.get("key");
