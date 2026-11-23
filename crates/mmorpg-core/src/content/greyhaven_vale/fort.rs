@@ -26,6 +26,11 @@ pub const WESTERN_ROCKS: std::ops::RangeInclusive<u32> = 65128..=65136;
 /// generated from its art ([`dressing_meshes`]).
 pub const EASTDOWN_ROCKS: std::ops::RangeInclusive<u32> = 65138..=65145;
 
+/// The sandstone steading in the Highland Stones (#683.Q1): one collider per placed module of its
+/// sandstone cottage and workshop, then its crag-kit rock scar; world dressing whose collision is
+/// generated from its art ([`dressing_meshes`]).
+pub const SANDSTONE_STEADING: std::ops::RangeInclusive<u32> = 65200..=65258;
+
 /// Leaning rock slabs and their smaller talus pieces at the basin cliff feet: world dressing
 /// whose collision is generated from its art ([`dressing_meshes`], #683).
 pub const BASIN_ROCKS: std::ops::RangeInclusive<u32> = 65094..=65102;

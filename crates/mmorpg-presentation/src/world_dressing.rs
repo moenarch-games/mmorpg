@@ -30,7 +30,7 @@ use crate::{
 };
 
 /// Greyhaven Vale's dressing files.
-const GREYHAVEN: [&str; 14] = [
+const GREYHAVEN: [&str; 15] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/vale.json"
@@ -99,6 +99,12 @@ const GREYHAVEN: [&str; 14] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/discoveries.json"
+    )),
+    // The sandstone steading in the Highland Stones (#683.Q1), composed by
+    // `content/greyhaven/authoring/sandstone.py`.
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../content/greyhaven/dressing/sandstone.json"
     )),
 ];
 
@@ -655,7 +661,14 @@ mod tests {
         let kits = placed_kits();
         assert_eq!(
             kits.iter().map(|kit| kit.name).collect::<Vec<_>>(),
-            ["limestone", "river", "meadow", "den", "discoveries"]
+            [
+                "limestone",
+                "river",
+                "meadow",
+                "den",
+                "discoveries",
+                "sandstone"
+            ]
         );
         for kit in kits {
             assert!(

@@ -121,6 +121,17 @@ shoulder breaks, from the crag kit, with collision generated from the art. Revie
 `eastdown` in `scripts/review-poses.json` shows it from the Downs' edge
 ([before/after](reviews/eastdown-meadow/)).
 
+In a hollow of the **Highland Stones** rock field in the Bandit Highlands, about 160 m from the
+nearest road, a quarrymen's **sandstone steading** (#683.Q1) is Greyhaven's one place built in
+asset-tooling's red sandstone kit: its `cottage` and `workshop` compositions face each other
+across a small yard, under a low crag-kit rock scar and talus on the bank to the south. It is
+world dressing (`dressing/sandstone.json`, colliders 65200–65258) authored by
+`authoring/sandstone.py` in Blender on the ground that `export-site-context` exports: every
+module is a placement standing on the lowest ground under its building, and each collides as
+generated from its art (the closed doors and roofs included). It lies 430 m from any NPC and 145 m
+beyond any creature's wander radius. Expand it only with compositions that keep its stone and
+scale.
+
 ## Settlements and landmarks
 
 The roads lead to places (#818, `greyhaven_vale::settlements`). Each is a named area inside its

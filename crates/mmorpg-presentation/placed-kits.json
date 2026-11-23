@@ -84,6 +84,27 @@
         "discoveries.kit.supply-crates",
         "discoveries.kit.fen-marker"
       ]
+    },
+    {
+      "name": "sandstone",
+      "bundle": "buildings/sandstone.kit",
+      "descriptor": "sandstone-descriptor",
+      "about": "The red sandstone building kit's modules: the steading's cottage and workshop in the Highland Stones (#683.Q1).",
+      "entries": [
+        "sandstone.kit.wall",
+        "sandstone.kit.wall-half",
+        "sandstone.kit.wall-window",
+        "sandstone.kit.wall-door",
+        "sandstone.kit.door",
+        "sandstone.kit.corner",
+        "sandstone.kit.gable-6",
+        "sandstone.kit.gable-8",
+        "sandstone.kit.roof-6",
+        "sandstone.kit.roof-6-half",
+        "sandstone.kit.roof-8",
+        "sandstone.kit.roof-8-half",
+        "sandstone.kit.chimney"
+      ]
     }
   ]
 }

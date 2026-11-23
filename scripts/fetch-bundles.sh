@@ -20,7 +20,8 @@
 # and the Battle Royale fortress kit (#591) into web/public/scenery/fortress.kit for the browser's arena.
 # The gatherables kit (#917) lands in web/public/scenery/gatherables.kit.
 # The Wolfrun Den kit (#963) lands in web/public/scenery/wolf-den.kit, and the discovery sites'
-# kit (#913) in web/public/scenery/discoveries.kit.
+# kit (#913) in web/public/scenery/discoveries.kit, and the red sandstone building kit in
+# web/public/buildings/sandstone.kit.
 # The strike and spell effects (#894) land in web/public/effects/strike.effects and
 # web/public/effects/spell.effects.
 # The directories are ignored build input, never committed.
@@ -242,6 +243,9 @@ fetch_rolling greyhaven-farm-animals greyhaven.farm-animals scenery/greyhaven.fa
 fetch_rolling greyhaven-wildlife greyhaven.wildlife scenery/greyhaven.wildlife
 # The Outpost building kit (#420): the smithy and one house.
 fetch_rolling outpost-kit outpost.kit buildings/outpost.kit
+# The red sandstone building kit (asset-tooling docs/sandstone-kit.md): the masonry houses of
+# Greyhaven's sandstone hamlet (#683.Q1).
+fetch_rolling sandstone-kit sandstone.kit buildings/sandstone.kit
 # Greyhaven's reusable settlement props (#421): the market square before house 106.
 fetch_rolling settlement-props settlement.props scenery/settlement.props
 # Marshal Elden Greywatch's furnished private home on house 103 (#158, asset-tooling#413).
