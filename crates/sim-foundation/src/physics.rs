@@ -703,6 +703,9 @@ enum Worlds {
 /// The zone's physical world; production compiles only Physics Engine.
 pub struct World {
     worlds: Worlds,
+    /// Asleep bodies (#814) something changed since the zone last took them (#1086): a zone
+    /// that skips its resting units reads them back to look at those again.
+    disturbed: Vec<BodyId>,
     /// Nanoseconds spent in this world's calls (`physics-ab` timing).
     #[cfg(feature = "physics-ab")]
     spent: std::sync::atomic::AtomicU64,
@@ -724,6 +727,7 @@ impl Clone for World {
     fn clone(&self) -> Self {
         Self {
             worlds: self.worlds.clone(),
+            disturbed: self.disturbed.clone(),
             #[cfg(feature = "physics-ab")]
             spent: std::sync::atomic::AtomicU64::new(
                 self.spent.load(std::sync::atomic::Ordering::Relaxed),
@@ -779,6 +783,7 @@ impl World {
     fn from_worlds(worlds: Worlds) -> Self {
         Self {
             worlds,
+            disturbed: Vec::new(),
             #[cfg(feature = "physics-ab")]
             spent: std::sync::atomic::AtomicU64::new(0),
             #[cfg(feature = "physics-ab")]
@@ -830,6 +835,7 @@ impl World {
     pub fn replace_body(&mut self, body: RigidBody) -> Result<(), PhysicsError> {
         #[cfg(feature = "physics-ab")]
         let start = web_time::Instant::now();
+        self.disturb(body.id, |_| true);
         let outcome = dispatch!(self, &mut self.worlds, world => world.replace_body(body));
         #[cfg(feature = "physics-ab")]
         if outcome.is_ok() {
@@ -841,6 +847,7 @@ impl World {
     pub fn remove_body(&mut self, id: BodyId) -> Option<RigidBody> {
         #[cfg(feature = "physics-ab")]
         let start = web_time::Instant::now();
+        self.disturb(id, |_| true);
         let outcome = dispatch!(self, &mut self.worlds, world => world.remove_body(id));
         #[cfg(feature = "physics-ab")]
         if outcome.is_some() {
@@ -863,6 +870,7 @@ impl World {
     pub fn set_position(&mut self, id: BodyId, position: Vec3i) -> Result<(), PhysicsError> {
         #[cfg(feature = "physics-ab")]
         let start = web_time::Instant::now();
+        self.disturb(id, |_| true);
         let outcome = dispatch!(self, &mut self.worlds, world => world.set_position(id, position));
         #[cfg(feature = "physics-ab")]
         if outcome.is_ok() {
@@ -873,6 +881,7 @@ impl World {
 
     /// Sets a moving body's velocity, in subunits per tick ([`SUBUNITS_PER_UNIT`]).
     pub fn set_velocity(&mut self, id: BodyId, velocity: Vec3i) -> Result<(), PhysicsError> {
+        self.disturb(id, |body| body.velocity != from_subunits(velocity));
         dispatch!(self, &mut self.worlds, world => world.set_velocity(id, velocity))
     }
 
@@ -880,13 +889,33 @@ impl World {
     /// gravity or ground
     /// settling, its vertical velocity as set.
     pub fn set_weightless(&mut self, id: BodyId, weightless: bool) -> Result<(), PhysicsError> {
+        self.disturb(id, |body| body.weightless != weightless);
         dispatch!(self, &mut self.worlds, world => world.set_weightless(id, weightless))
     }
 
     /// Puts moving body `id` to sleep for the next step (#814): it neither moves nor falls,
     /// and other bodies still meet it. Waking it lets it step again.
     pub fn set_asleep(&mut self, id: BodyId, asleep: bool) -> Result<(), PhysicsError> {
+        self.disturb(id, |_| !asleep);
         dispatch!(self, &mut self.worlds, world => world.set_asleep(id, asleep))
+    }
+
+    /// Records `id` as disturbed when it is asleep and `changes` says the call changes it.
+    fn disturb(&mut self, id: BodyId, changes: impl FnOnce(&RigidBody) -> bool) {
+        if self
+            .body(id)
+            .is_some_and(|body| body.asleep && changes(body))
+        {
+            self.disturbed.push(id);
+        }
+    }
+
+    /// Moves every asleep body (#814) that a placement, velocity, weight, wake, replacement or
+    /// removal changed since the last call into `into`, in call order (#1086). Putting a body to
+    /// sleep and setting an asleep body's velocity or weight to what it already is change
+    /// nothing, so a zone that skips its resting units looks again at exactly those that changed.
+    pub fn take_disturbed_sleepers(&mut self, into: &mut Vec<BodyId>) {
+        into.append(&mut self.disturbed);
     }
 
     /// Lets every moving body step up small ledges from the next [`World::step`] on (#750), or
