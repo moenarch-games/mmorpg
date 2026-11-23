@@ -1,0 +1,842 @@
+//! Greyhaven Vale content invariants: bounds, clear spawn plaza, open road
+//! corridors, walkable woods, disjoint named areas and blocking structures.
+use std::sync::Arc;
+
+use mmorpg_core::greyhaven_vale::{
+    self, PLAYABLE_BOUNDS, ROAD_CLEARANCE_UNITS, SPAWN_GRID, SPAWN_PLAZA, area_at, areas,
+    clear_of_roads, ids, roads,
+};
+use mmorpg_core::{
+    Area, AreaId, MAX_CONTENT_COORDINATE_UNITS, MAX_PLAYERS_PER_ZONE, MAX_STATIC_COLLIDERS,
+    PLAYER_HALF_EXTENTS_UNITS, StaticCollider, ZoneCommand, ZoneId, ZoneSimulation,
+    greyhaven_vale_definition,
+};
+
+/// Map north is −Z (the Redbrand cliffs); yaw 0 faces +Z.
+const FACE_NORTH: u16 = 32_768;
+const FACE_SOUTH: u16 = 0;
+/// Most polygon edges one indexed area lookup tests (#1063).
+const AREA_LOOKUP_EDGE_TESTS: usize = 128;
+
+fn is_terrain(collider: &StaticCollider) -> bool {
+    collider.id == ids::GROUND || ids::BOUNDARY_WALLS.contains(&collider.id)
+}
+
+fn footprint(collider: &StaticCollider) -> ([i32; 2], [i32; 2]) {
+    (
+        [
+            collider.position[0] - collider.half_extents[0],
+            collider.position[2] - collider.half_extents[2],
+        ],
+        [
+            collider.position[0] + collider.half_extents[0],
+            collider.position[2] + collider.half_extents[2],
+        ],
+    )
+}
+
+fn run(facing: u16) -> ZoneCommand {
+    ZoneCommand::Move {
+        forward: 1,
+        strafe: 0,
+        facing,
+    }
+}
+
+#[test]
+fn content_is_a_bounded_deterministic_revision() {
+    let definition = greyhaven_vale_definition();
+    assert_eq!(definition, greyhaven_vale_definition());
+    assert_eq!(definition.gravity(), greyhaven_vale::GRAVITY);
+    assert_eq!(definition.spawn_grid(), SPAWN_GRID);
+    assert!(definition.colliders().len() <= MAX_STATIC_COLLIDERS);
+    let trees = definition
+        .colliders()
+        .iter()
+        .filter(|collider| ids::TREES.contains(&collider.id))
+        .count();
+    // The heart keeps its own woods and groves, rounded into clumps; round it, the
+    // region's designed forests grow (#816).
+    assert!((300..=1_500).contains(&trees), "{trees} trees");
+    let region_trees = definition
+        .colliders()
+        .iter()
+        .filter(|collider| ids::REGION_TREES.contains(&collider.id))
+        .count();
+    assert!(
+        (8_000..=14_000).contains(&region_trees),
+        "{region_trees} region trees"
+    );
+    for collider in definition.colliders() {
+        let (min, max) = footprint(collider);
+        let within = |point: [i32; 2]| {
+            (0..2).all(|axis| {
+                PLAYABLE_BOUNDS.min[axis] - 200 <= point[axis]
+                    && point[axis] <= PLAYABLE_BOUNDS.max[axis] + 200
+            })
+        };
+        assert!(
+            within(min) && within(max),
+            "collider {} lies beyond the boundary walls",
+            collider.id
+        );
+        assert!(
+            collider
+                .position
+                .iter()
+                .zip(collider.half_extents)
+                .all(
+                    |(position, half)| (position + half).abs() <= MAX_CONTENT_COORDINATE_UNITS
+                        && (position - half).abs() <= MAX_CONTENT_COORDINATE_UNITS
+                )
+        );
+        if !is_terrain(collider) {
+            // Structures stand on the ground (the inn's and Elden's lintels span their doorways) and stay
+            // inside the playable square.
+            // Out on the hills they stand on the terrain, sunk 0.3 m below their lowest corner (#159).
+            // The cave's roof rests on its walls.
+            // The Sunken Shrine (#274) stands on its flattened floor 9 m down.
+            // The market square's stacked crate and stall awnings and the dock's deck (#577)
+            // stand above it.
+            // Authored mesh bounds are conservative placement metadata. Their real triangles
+            // may form roofs, overhangs and walls; only standing boxes obey this footing rule.
+            let authored_mesh = definition
+                .static_meshes()
+                .iter()
+                .any(|mesh| mesh.id == collider.id);
+            if !authored_mesh
+                && !ids::INN_PARTS.contains(&collider.id)
+                && !ids::MARSHAL_HOUSE_PARTS.contains(&collider.id)
+                && collider.id != ids::CAVE_ROOF
+                && !(550..=596).contains(&collider.id)
+                && !ids::MARKET.contains(&collider.id)
+                && collider.id != greyhaven_vale::dressing::dock().id
+                // Bridge rails and culvert headers stand above a carved stream bed.
+                && !(greyhaven_vale::brook::BRIDGE..=greyhaven_vale::brook::BRIDGE + 7)
+                    .contains(&collider.id)
+                // The footbridges (#828) span carved stream banks from ends set between them.
+                && !greyhaven_vale::crossings::is_crossing(collider.id)
+                // A walk-in cottage's lintel and flue (#843) stand on its walls and hearth.
+                && !greyhaven_vale::cottages::is_cottage(collider.id)
+                // A village prop's boxes (#851) share its lowest corner, as one piece.
+                && !greyhaven_vale::village_props::is_village_prop(collider.id)
+                // Layout cottages have explicit authored foundation depths (their prefab
+                // plinth is sunk below the grass), rather than procedural terrain footing.
+                && !(60_000..65_000).contains(&collider.id)
+            {
+                let ground = definition.terrain().map_or(0, |terrain| {
+                    [min, [max[0], min[1]], max, [min[0], max[1]]]
+                        .iter()
+                        .map(|corner| terrain.height_at(corner[0], corner[1]))
+                        .min()
+                        .unwrap_or(0)
+                });
+                let base = collider.position[1] - collider.half_extents[1];
+                assert!(
+                    // On level ground, such as Millbrook Farm's terrace (#423), they stand on it.
+                    base == 0 || base == ground || base == ground - 30,
+                    "collider {} stands at {base} on {ground}",
+                    collider.id
+                );
+            }
+            assert!(
+                greyhaven_vale::inside_walls(min[0], min[1]),
+                "{}",
+                collider.id
+            );
+            assert!(
+                greyhaven_vale::inside_walls(max[0] - 1, max[1] - 1),
+                "{}",
+                collider.id
+            );
+        }
+    }
+}
+
+#[test]
+fn structures_touch_but_never_overlap() {
+    let definition = greyhaven_vale_definition();
+    // A mesh's broad-phase bounds may overlap its neighbouring walls or roof.
+    // Only actual boxes obey this pairwise box invariant.
+    let structures: Vec<_> = definition
+        .colliders()
+        .iter()
+        .filter(|collider| {
+            !is_terrain(collider)
+                && !definition
+                    .static_meshes()
+                    .iter()
+                    .any(|mesh| mesh.id == collider.id)
+        })
+        .collect();
+    for (index, left) in structures.iter().enumerate() {
+        for right in &structures[index + 1..] {
+            // The market square's props (#577) stand as the kit composes them, their turned
+            // proxies' boxes touching.
+            if ids::MARKET.contains(&left.id) && ids::MARKET.contains(&right.id) {
+                continue;
+            }
+            // A village prop's own proxies (#891: the pottery's jar on its ware) may overlap.
+            if greyhaven_vale::village_props::is_village_prop(left.id)
+                && left.id / 4 == right.id / 4
+            {
+                continue;
+            }
+            let overlaps = (0..3).all(|axis| {
+                (left.position[axis] - right.position[axis]).abs()
+                    < left.half_extents[axis] + right.half_extents[axis]
+            });
+            assert!(!overlaps, "colliders {} and {} overlap", left.id, right.id);
+        }
+    }
+}
+
+#[test]
+fn every_spawn_slot_stands_clear_inside_the_hub_plaza() {
+    let definition = greyhaven_vale_definition();
+    for collider in definition.colliders() {
+        if collider.id == ids::GROUND {
+            continue;
+        }
+        let (min, max) = footprint(collider);
+        let plaza = mmorpg_core::XzBounds { min, max };
+        assert!(
+            !plaza.overlaps(SPAWN_PLAZA),
+            "collider {} is in the plaza",
+            collider.id
+        );
+    }
+    let body = PLAYER_HALF_EXTENTS_UNITS;
+    let mut zone = ZoneSimulation::with_definition(ZoneId::new(1), definition).unwrap();
+    for player_id in 1..=MAX_PLAYERS_PER_ZONE {
+        zone.add_player(u32::try_from(player_id).unwrap()).unwrap();
+    }
+    let players = zone.snapshot().unwrap().players;
+    let mut positions = std::collections::BTreeSet::new();
+    for player in &players {
+        let [x, y, z] = mmorpg_core::physics::to_units(player.position);
+        assert_eq!(y, body[1], "feet rest on y = 0");
+        assert!(SPAWN_PLAZA.contains(x - body[0], z - body[2]));
+        assert!(SPAWN_PLAZA.contains(x + body[0] - 1, z + body[2] - 1));
+        assert!(positions.insert((x, z)));
+        assert_eq!(
+            area_at(x, z).map(Area::id),
+            Some(greyhaven_vale::vale::OUTPOST)
+        );
+    }
+    zone.advance_tick().unwrap();
+    assert_eq!(
+        zone.snapshot().unwrap().players,
+        players,
+        "a full plaza rests"
+    );
+}
+
+#[test]
+fn roads_are_open_corridors() {
+    let definition = greyhaven_vale_definition();
+    for road in roads() {
+        assert!(road.points.len() >= 2, "{}", road.name);
+        for point in road.points {
+            // Road ends keep clear of the boundary walls too.
+            let margin = ROAD_CLEARANCE_UNITS;
+            assert!(PLAYABLE_BOUNDS.contains(point[0] - margin, point[1] - margin));
+            assert!(PLAYABLE_BOUNDS.contains(point[0] + margin, point[1] + margin));
+        }
+    }
+    // The ridge route must go around Stillwater, including between its control points.
+    let ridge = roads()
+        .iter()
+        .find(|road| road.name == "Wolfrun Ridge Path")
+        .unwrap();
+    for segment in ridge.points.windows(2) {
+        let [a, b] = [segment[0], segment[1]];
+        let steps = (b[0] - a[0]).abs().max((b[1] - a[1]).abs()) / 100 + 1;
+        for step in 0..=steps {
+            let point: [i32; 2] =
+                std::array::from_fn(|axis| a[axis] + (b[axis] - a[axis]) * step / steps);
+            assert!(
+                !greyhaven_vale::lake::near_shore(point[0], point[1], PLAYER_HALF_EXTENTS_UNITS[0]),
+                "ridge path enters Stillwater at {point:?}"
+            );
+        }
+    }
+    for collider in definition.colliders() {
+        // The Lakeshore Path ends on the dock (#577), up its plank step.
+        if !is_terrain(collider)
+            && collider.id != greyhaven_vale::dressing::dock().id
+            // The brook's deck and rails deliberately frame a narrower road crossing.
+            && collider.id != greyhaven_vale::brook::BRIDGE
+            && !greyhaven_vale::brook::RAILS.contains(&collider.id)
+            // The footbridges (#828) carry their roads between their rails.
+            && !greyhaven_vale::crossings::is_crossing(collider.id)
+            // The mill's narrower bank passage is checked with real capsules on both backends.
+            && ![124, 125].contains(&collider.id)
+            && !definition
+                .static_meshes()
+                .iter()
+                .any(|mesh| mesh.id == collider.id)
+            // The Sunken Shrine's boxes occupy a lower layer beneath the shore roads.
+            && !((ids::SHRINE_RUINS.contains(&collider.id) || ids::SHRINE_CAVE_WALLS.contains(&collider.id))
+                && collider.position[1] + collider.half_extents[1] < greyhaven_vale::shrine::SHORE_Y)
+        {
+            assert!(
+                clear_of_roads(collider),
+                "collider {} blocks a road",
+                collider.id
+            );
+        }
+    }
+}
+
+#[test]
+fn road_clearance_is_exact_at_the_boundary() {
+    let post = |x: i32, z: i32| StaticCollider {
+        id: 99,
+        position: [x, 50, z],
+        half_extents: [10, 50, 10],
+    };
+    // Beside the Hollow Road (x = 0) and beyond its northern end (z = −8 600).
+    assert!(clear_of_roads(&post(210, -5_000)));
+    assert!(!clear_of_roads(&post(209, -5_000)));
+    assert!(!clear_of_roads(&post(0, -5_000)), "standing on the road");
+    assert!(clear_of_roads(&post(0, -8_810)));
+    assert!(!clear_of_roads(&post(0, -8_809)));
+    // A long box straddling the road without an endpoint near it.
+    let wall = StaticCollider {
+        id: 99,
+        position: [0, 50, -6_000],
+        half_extents: [2_000, 50, 10],
+    };
+    assert!(!clear_of_roads(&wall));
+}
+
+#[test]
+fn brook_mill_keeps_its_water_channel_and_bank_crossing_clear() {
+    use mmorpg_core::physics::{Backend, BodyId, RigidBody, Vec3i, World};
+    let definition = greyhaven_vale_definition();
+    greyhaven_vale::content_with_definition(definition.clone()).unwrap();
+    for &backend in <Backend as strum::VariantArray>::VARIANTS {
+        #[cfg(feature = "physics-ab")]
+        let mut world = World::with_backend(Vec3i::ZERO, backend);
+        #[cfg(not(feature = "physics-ab"))]
+        let mut world = World::new(Vec3i::ZERO);
+        for collider in definition
+            .colliders()
+            .iter()
+            .filter(|c| [124, 125].contains(&c.id))
+        {
+            world
+                .add_body(RigidBody::fixed(
+                    BodyId(u64::from(collider.id)),
+                    Vec3i::new(
+                        collider.position[0],
+                        collider.position[1],
+                        collider.position[2],
+                    ),
+                    Vec3i::new(
+                        collider.half_extents[0],
+                        collider.half_extents[1],
+                        collider.half_extents[2],
+                    ),
+                ))
+                .unwrap();
+        }
+        for mesh in definition.static_meshes() {
+            world
+                .add_body(RigidBody::static_mesh(mesh).unwrap())
+                .unwrap();
+        }
+        // The water passes below the wheel, rather than through a closed foundation.
+        assert!(
+            world
+                .cast_ray([-3_600., -25., 2_000.], [800., 0., 0.], |_| true)
+                .is_none()
+        );
+        // A supported dry-bank passage replaces the road gate. The wheel is north of it.
+        assert!(
+            world
+                .cast_shape(
+                    [-3_600., 100.25, 2_135.],
+                    Vec3i::new(30, 90, 30),
+                    [800., 0., 0.],
+                    |_| true
+                )
+                .is_none(),
+            "mill towpath on {backend:?}"
+        );
+        let support = world
+            .cast_ray([-3_200., 100., 2_135.], [0., -150., 0.], |_| true)
+            .unwrap();
+        assert_eq!(support.body.0, 65125);
+    }
+}
+
+#[test]
+fn palisade_gates_are_clear_openings_centred_on_their_roads() {
+    let definition = greyhaven_vale_definition();
+    use mmorpg_core::physics::{Backend, BodyId, RigidBody, Vec3i, World};
+    // The authored perimeter has several mesh pieces per side. Test its real surfaces,
+    // including every piece and lintel, rather than treating one piece's bounds as a wall.
+    for &backend in <Backend as strum::VariantArray>::VARIANTS {
+        #[cfg(feature = "physics-ab")]
+        let mut world = World::with_backend(Vec3i::ZERO, backend);
+        #[cfg(not(feature = "physics-ab"))]
+        let mut world = World::new(Vec3i::ZERO);
+        for collider in definition.colliders().iter().filter(|collider| {
+            (ids::GATE_POSTS.contains(&collider.id) || ids::PALISADE.contains(&collider.id))
+                && !definition
+                    .static_meshes()
+                    .iter()
+                    .any(|mesh| mesh.id == collider.id)
+        }) {
+            world
+                .add_body(RigidBody::fixed(
+                    BodyId(u64::from(collider.id)),
+                    Vec3i::new(
+                        collider.position[0],
+                        collider.position[1],
+                        collider.position[2],
+                    ),
+                    Vec3i::new(
+                        collider.half_extents[0],
+                        collider.half_extents[1],
+                        collider.half_extents[2],
+                    ),
+                ))
+                .unwrap();
+        }
+        for mesh in definition.static_meshes() {
+            world
+                .add_body(RigidBody::static_mesh(mesh).unwrap())
+                .unwrap();
+        }
+        for (posts, centre, axis) in [
+            ([120, 121], [0., -1_000.], 0),
+            ([122, 123], [0., 5_000.], 0),
+            ([126, 127], [3_200., 2_000.], 1),
+        ] {
+            // The inner post faces leave exactly 4.4 m, centred on each road.
+            for (side, post) in [-1., 1.].into_iter().zip(posts) {
+                let mut ray = [0.; 3];
+                ray[axis * 2] = side * 500.;
+                let hit = world
+                    .cast_ray([centre[0], 150., centre[1]], ray, |_| true)
+                    .unwrap();
+                assert_eq!(hit.body, BodyId(post), "gate {posts:?} on {backend:?}");
+                assert!((hit.fraction * 500. - 220.).abs() < 0.1, "{hit:?}");
+            }
+            // A complete player capsule fits through the centre and beside both posts.
+            for across in [-180., 0., 180.] {
+                let mut origin = [centre[0], 90.25, centre[1]];
+                origin[axis * 2] += across;
+                origin[(1 - axis) * 2] -= 400.;
+                let mut through = [0.; 3];
+                through[(1 - axis) * 2] = 800.;
+                assert!(
+                    world
+                        .cast_shape(origin, Vec3i::new(30, 90, 30), through, |_| true)
+                        .is_none(),
+                    "gate {posts:?} at offset {across} on {backend:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn wolfrun_woods_trunks_always_leave_a_walkable_gap() {
+    let definition = greyhaven_vale_definition();
+    let trees: Vec<_> = definition
+        .colliders()
+        .iter()
+        .filter(|collider| ids::TREES.contains(&collider.id))
+        .collect();
+    let first_id = *ids::TREES.start();
+    // Rejected wet/shore placements retain holes, preserving all remaining body IDs.
+    assert!(trees.windows(2).all(|pair| pair[0].id < pair[1].id));
+    for tree in &trees {
+        assert!(tree.id >= first_id && ids::TREES.contains(&tree.id));
+        assert!((30..=45).contains(&tree.half_extents[0]));
+        assert_eq!(tree.half_extents[0], tree.half_extents[2]);
+        // The named subzones no longer bound the broader planted woodland. Keep the
+        // actual walking requirements: dry ground, clear spawn space and gaps below.
+        let [x, _, z] = tree.position;
+        assert!(
+            greyhaven_vale::inside_walls(x, z),
+            "tree {} outside the zone",
+            tree.id
+        );
+        assert!(
+            !SPAWN_PLAZA.contains(x, z),
+            "tree {} on the spawn plaza",
+            tree.id
+        );
+        assert!(
+            !greyhaven_vale::lake::near_shore(x, z, 0),
+            "tree {} in the lake",
+            tree.id
+        );
+    }
+    let body_width = 2 * PLAYER_HALF_EXTENTS_UNITS[0];
+    for (index, left) in trees.iter().enumerate() {
+        let (left_min, left_max) = footprint(left);
+        for right in &trees[index + 1..] {
+            let (right_min, right_max) = footprint(right);
+            let gap = |axis: usize| {
+                (right_min[axis] - left_max[axis]).max(left_min[axis] - right_max[axis])
+            };
+            assert!(
+                gap(0).max(gap(1)) >= 150 && gap(0).max(gap(1)) > body_width,
+                "trunks {} and {} are too close",
+                left.id,
+                right.id
+            );
+        }
+    }
+}
+
+#[test]
+fn named_areas_are_ordered_tile_the_zone_and_contain_their_landmarks() {
+    let areas_table = areas();
+    let areas = areas_table.areas();
+    let names: Vec<_> = areas.iter().map(Area::name).collect();
+    assert_eq!(
+        names,
+        [
+            "Greyhaven Outpost",
+            "Wolfrun Woods",
+            "Millbrook Farm",
+            "Stillwater Lake",
+            "Redbrand Hollow",
+            "Greyfang Ridge",
+            "Southmeadow Downs",
+            "Hollowpine Reach",
+            "Eastwater Fen",
+            "Sunken Shrine",
+            "Farmland and Hamlets",
+            "Bandit Highlands",
+            "Marsh-Lake Wetlands",
+            // The settlements and landmarks (#818), inside the sub-regions …
+            "Barrowdown",
+            "Fenford",
+            "Westmere Lodge",
+            "Hunters' Camp",
+            "Delving Workings",
+            "Greyfang Watch",
+            "Crown Stones",
+            // … and the new sub-regions (#816).
+            "Westmere Woods",
+            "Southwood",
+            "Crown Foothills",
+            "Greyfang Approach",
+            "Delving Heights",
+            "Fenwater Crossing",
+            "King's Road Downs"
+        ]
+    );
+    for (index, area) in areas.iter().enumerate() {
+        assert_eq!(area.id(), AreaId::new(u32::try_from(index + 1).unwrap()));
+        assert!(PLAYABLE_BOUNDS.contains(area.min_xz()[0], area.min_xz()[1]));
+        assert!((0..2).all(|axis| area.max_xz()[axis] <= PLAYABLE_BOUNDS.max[axis]));
+        assert_eq!(
+            area_at(area.centre()[0], area.centre()[1]).map(Area::id),
+            Some(area.id())
+        );
+        // Each traced area (#1063) keeps the heart of the ground it was designed round, unless
+        // a settlement (#818) stands there inside it.
+        let footprint = greyhaven_vale::footprint(area.id()).unwrap();
+        let heart = [0, 1].map(|axis| (footprint.min[axis] + footprint.max[axis]) / 2);
+        let designed = greyhaven_vale::footprint_at(heart[0], heart[1]);
+        assert_eq!(
+            area_at(heart[0], heart[1]).map(Area::id),
+            designed,
+            "{}",
+            area.name()
+        );
+        assert!(
+            designed == Some(area.id())
+                || greyhaven_vale::settlements::AREAS
+                    .iter()
+                    .any(|(id, ..)| Some(*id) == designed)
+        );
+    }
+    // The traced areas tile the zone's outline: every point inside it lies in exactly one,
+    // and the indexed lookup agrees with testing every polygon.
+    let outline = greyhaven_vale::region::data();
+    let (mut points, mut work) = (0, 0);
+    for z in (PLAYABLE_BOUNDS.min[1] + 13..PLAYABLE_BOUNDS.max[1]).step_by(797) {
+        for x in (PLAYABLE_BOUNDS.min[0] + 29..PLAYABLE_BOUNDS.max[0]).step_by(811) {
+            let holding: Vec<_> = areas.iter().filter(|area| area.contains(x, z)).collect();
+            if outline.contains(x, z) {
+                assert_eq!(
+                    holding.len(),
+                    1,
+                    "({x}, {z}) lies in {} areas",
+                    holding.len()
+                );
+                points += 1;
+            } else {
+                assert!(holding.is_empty(), "({x}, {z}) outside the zone is named");
+            }
+            let (found, tests) = areas_table.area_at_counted(x, z);
+            assert_eq!(found.map(Area::id), holding.first().map(|area| area.id()));
+            work = work.max(tests);
+        }
+    }
+    assert!(points > 10_000);
+    // The per-tick lookup's bound (`area-lookup` in .performance/contract.json, Atlas 7.1.i1055).
+    let bound = areas_table.lookup_work_bound();
+    assert!(work <= bound);
+    assert!(
+        bound <= AREA_LOOKUP_EDGE_TESTS,
+        "a lookup may test {bound} edges"
+    );
+    // The Outpost's square and the rings round it.
+    assert_eq!(
+        area_at(3_000, 4_000).map(Area::id),
+        Some(greyhaven_vale::vale::OUTPOST)
+    );
+    assert_eq!(
+        area_at(0, 11_000).map(Area::id),
+        Some(greyhaven_vale::vale::SOUTHMEADOW_DOWNS),
+        "the south road leaves the Vale through the downs"
+    );
+    // Representative authored subzone centres, in centimetres.
+    for (point, area) in [
+        ([0, 2_000], greyhaven_vale::vale::OUTPOST),
+        ([-7_500, 0], greyhaven_vale::vale::WOLFRUN_WOODS),
+        ([7_000, 3_500], greyhaven_vale::vale::MILLBROOK_FARM),
+        ([-8_700, -5_300], greyhaven_vale::vale::STILLWATER_LAKE),
+        ([0, -9_000], greyhaven_vale::vale::REDBRAND_HOLLOW),
+    ] {
+        assert_eq!(area_at(point[0], point[1]).map(Area::id), Some(area));
+    }
+    let definition = greyhaven_vale_definition();
+    for (id, area) in [
+        (ids::KEEP, greyhaven_vale::vale::OUTPOST),
+        (ids::BARN, greyhaven_vale::vale::MILLBROOK_FARM),
+        (ids::MINE_ENTRANCE, greyhaven_vale::vale::REDBRAND_HOLLOW),
+        (
+            *ids::SHORE_ROCKS.start(),
+            greyhaven_vale::vale::STILLWATER_LAKE,
+        ),
+    ] {
+        let collider = definition
+            .colliders()
+            .iter()
+            .find(|collider| collider.id == id)
+            .unwrap();
+        assert_eq!(
+            area_at(collider.position[0], collider.position[2]).map(Area::id),
+            Some(area),
+            "collider {id}"
+        );
+    }
+}
+
+#[test]
+fn structures_and_boundary_walls_block_movement() {
+    let mut zone =
+        ZoneSimulation::with_definition(ZoneId::new(1), greyhaven_vale_definition()).unwrap();
+    // Slot 0 stands at (−15.5 m, 12.5 m); the keep's south face is at z = 7 m.
+    zone.add_player(1).unwrap();
+    zone.apply_command(1, 1, run(FACE_NORTH)).unwrap();
+    for _ in 0..mmorpg_core::golden::t30(40) {
+        zone.advance_tick().unwrap();
+    }
+    let player = &zone.snapshot().unwrap().players[0];
+    assert_eq!(
+        mmorpg_core::physics::to_units(player.position),
+        [-1_550, 90, 730]
+    );
+    assert_eq!(mmorpg_core::physics::to_units(player.velocity), [0, 0, 0]);
+
+    // South across the region's base terrain beyond the farmland (#810), then jumping against
+    // the boundary wall, whose outline crosses x = 28 m at z ≈ 1044.2 m.
+    const WALL_Z: i32 = 104_419;
+    let definition = greyhaven_vale_definition();
+    let mut zone = ZoneSimulation::with_definition(ZoneId::new(1), definition.clone()).unwrap();
+    zone.add_player(1).unwrap();
+    let mut snapshot = zone.snapshot().unwrap();
+    let start = WALL_Z - 3_000;
+    let ground = definition.ground_at(2_800, start);
+    snapshot.players[0].position = mmorpg_core::physics::from_units([2_800, ground + 92, start]);
+    let mut zone = ZoneSimulation::from_snapshot(snapshot, Arc::clone(zone.content())).unwrap();
+    zone.apply_command(1, 1, run(FACE_SOUTH)).unwrap();
+    let mut sequence = 1;
+    for tick in 0..mmorpg_core::golden::t30(240) {
+        if tick % mmorpg_core::golden::t30(20) == 0 {
+            sequence += 1;
+            zone.apply_command(1, sequence, ZoneCommand::Jump).unwrap();
+        }
+        zone.advance_tick().unwrap();
+        let z = mmorpg_core::physics::to_units(zone.snapshot().unwrap().players[0].position)[2];
+        assert!(z < WALL_Z, "z {z}");
+    }
+    let player = &zone.snapshot().unwrap().players[0];
+    let [x, _, z] = mmorpg_core::physics::to_units(player.position);
+    assert!(z >= WALL_Z - 200, "the player stops at the wall, z {z}");
+    assert!(greyhaven_vale::inside_walls(x, z));
+}
+
+/// A player walks into each walk-in farmhouse (#886) through its open front doorway, down the
+/// hall, through the partition's doorway and up beside the bed; each farmhouse resident's walk
+/// home ends inside.
+#[test]
+fn players_and_residents_walk_into_the_farmhouses() {
+    use greyhaven_vale::cottages::{self, Plan};
+    let definition = greyhaven_vale_definition();
+    let farmhouses: Vec<_> = cottages::cottages()
+        .into_iter()
+        .filter(|cottage| cottage.plan == Plan::Farmhouse)
+        .collect();
+    assert_eq!(farmhouses.len(), 6);
+    let zone = ZoneSimulation::with_definition(ZoneId::new(1), definition.clone()).unwrap();
+    for farmhouse in &farmhouses {
+        let route: Vec<[i32; 2]> = [cottages::FARMHOUSE_DOORSTEP, [0, 170]]
+            .into_iter()
+            .chain(cottages::FARMHOUSE_TO_BED)
+            .map(|point| farmhouse.spot(point))
+            .collect();
+        let mut start =
+            ZoneSimulation::with_definition(ZoneId::new(1), definition.clone()).unwrap();
+        start.add_player(1).unwrap();
+        let mut snapshot = start.snapshot().unwrap();
+        let [x, z] = route[0];
+        snapshot.players[0].position =
+            mmorpg_core::physics::from_units([x, definition.ground_at(x, z) + 92, z]);
+        let mut walker =
+            ZoneSimulation::from_snapshot(snapshot, Arc::clone(zone.content())).unwrap();
+        let mut sequence = 0;
+        for &target in &route[1..] {
+            let reached = (0..mmorpg_core::golden::t30(150)).any(|_| {
+                let [px, _, pz] =
+                    mmorpg_core::physics::to_units(walker.snapshot().unwrap().players[0].position);
+                let (dx, dz) = (target[0] - px, target[1] - pz);
+                if dx.abs().max(dz.abs()) <= 30 {
+                    return true;
+                }
+                sequence += 1;
+                let facing = mmorpg_core::trig::yaw_from_vector(dx, dz).unwrap();
+                walker.apply_command(1, sequence, run(facing)).unwrap();
+                walker.advance_tick().unwrap();
+                false
+            });
+            assert!(reached, "farmhouse {}: toward {target:?}", farmhouse.house);
+        }
+    }
+    // The farmer, the Barrow Rest's alewife, the Ford Inn's innkeeper and three hamlet folk.
+    let content = greyhaven_vale::content();
+    for npc in [4, 22, 27, 36, 38, 41] {
+        let routine = content.routine(mmorpg_core::NpcId::new(npc)).unwrap();
+        let [x, z] = *routine.path.last().unwrap();
+        assert!(
+            farmhouses.iter().any(|farmhouse| {
+                let [hx, hz] = cottages::FARMHOUSE_HALF;
+                (x - farmhouse.centre[0]).abs() < hx && (z - farmhouse.centre[1]).abs() < hz
+            }),
+            "NPC {npc} sleeps at {x}, {z}"
+        );
+    }
+}
+
+/// The second settlement props batch (#891) stands clear: no proxy overlaps another collider
+/// (goods may rest on a counter or a table, touching it), and no resident's way crosses one.
+#[test]
+fn settlement_props_stand_clear_of_colliders_and_residents() {
+    let definition = greyhaven_vale_definition();
+    let colliders = definition.colliders();
+    let props: Vec<_> = colliders
+        .iter()
+        .filter(|c| ids::SETTLEMENT_PROPS.contains(&c.id))
+        .collect();
+    assert!(!props.is_empty());
+    let overlaps = |a: &mmorpg_core::StaticCollider, b: &mmorpg_core::StaticCollider| {
+        (0..3).all(|axis| {
+            (a.position[axis] - b.position[axis]).abs()
+                < a.half_extents[axis] + b.half_extents[axis]
+        })
+    };
+    for prop in &props {
+        for other in colliders.iter().filter(|c| c.id != ids::GROUND) {
+            // A prop's own boxes may overlap one another.
+            let same = (other.id - other.id % 4) == (prop.id - prop.id % 4);
+            assert!(
+                same || !overlaps(prop, other),
+                "settlement prop collider {} {:?} overlaps collider {} {:?}",
+                prop.id,
+                prop.position,
+                other.id,
+                other.position
+            );
+        }
+    }
+    // A hanging sign's bracket or a vane above a walker's head (1.9 m) blocks no way.
+    let terrain = definition.terrain().expect("Greyhaven has terrain");
+    let low: Vec<_> = props
+        .iter()
+        .filter(|c| {
+            c.position[1] - c.half_extents[1]
+                < terrain.height_at(c.position[0], c.position[2]) + 190
+        })
+        .collect();
+    let content = greyhaven_vale::content();
+    for routine in content.routines() {
+        let post = content
+            .npcs()
+            .iter()
+            .find(|npc| npc.id == routine.npc)
+            .map(|npc| npc.position);
+        let legs = std::iter::once(&routine.path).chain(routine.errands.iter().map(|e| &e.path));
+        for leg in legs {
+            let points: Vec<[i32; 2]> = post.into_iter().chain(leg.iter().copied()).collect();
+            for pair in points.windows(2) {
+                for prop in &low {
+                    // Sample the leg every 10 cm against the box grown by a body's radius.
+                    let [a, b] = [pair[0], pair[1]].map(|p| p.map(f64::from));
+                    let steps = ((b[0] - a[0]).hypot(b[1] - a[1]) / 10.).ceil().max(1.);
+                    let hit = (0..=steps as i32).any(|step| {
+                        let t = f64::from(step) / steps;
+                        let p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+                        [0, 2].iter().zip(p).all(|(&axis, value)| {
+                            (value - f64::from(prop.position[axis])).abs()
+                                < f64::from(prop.half_extents[axis] + 30)
+                        })
+                    });
+                    assert!(
+                        !hit,
+                        "resident {:?}'s way {pair:?} crosses settlement prop collider {} {:?}",
+                        routine.npc, prop.id, prop.position
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// The area generator's footprints (`content/greyhaven/authoring/area-seeds.json`, metres) are
+/// the region modules' area tables, which the dressing and scenery still follow (#1063).
+#[test]
+fn the_traced_areas_grow_from_the_designed_footprints() {
+    let seeds: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../content/greyhaven/authoring/area-seeds.json"
+    ))
+    .unwrap();
+    let seeds = seeds["areas"].as_array().unwrap();
+    assert_eq!(seeds.len(), areas().areas().len());
+    for (seed, area) in seeds.iter().zip(areas().areas()) {
+        assert_eq!(seed["id"].as_u64(), Some(u64::from(area.id().get())));
+        assert_eq!(seed["name"].as_str(), Some(area.name()));
+        let metres = |corner: usize, axis: usize| {
+            i32::try_from(seed["footprint"][corner][axis].as_i64().unwrap() * 100).unwrap()
+        };
+        let footprint = greyhaven_vale::footprint(area.id()).unwrap();
+        assert_eq!(
+            (footprint.min, footprint.max),
+            ([metres(0, 0), metres(0, 1)], [metres(1, 0), metres(1, 1)]),
+            "{}",
+            area.name()
+        );
+    }
+}
