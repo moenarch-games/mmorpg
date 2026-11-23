@@ -772,7 +772,7 @@ fn a_turn_in_without_receipt_room_is_refused_and_the_quest_waits_for_a_retry() {
     let before = run.player();
     for _ in 0..2 {
         assert_eq!(
-            run.act(turn_in.clone()),
+            run.act(turn_in),
             [error(ErrorCode::RewardsBusy, Some(FARAWAY))]
         );
         let after = run.player();
