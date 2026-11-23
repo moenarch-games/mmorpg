@@ -63,4 +63,27 @@ describe("grass visibility during third-person camera movement", () => {
     }
   });
 
+  test("reduced motion holds the wind still (#1079)", () => {
+    const grass = new Grass({
+      cellMetres: 12,
+      cell: (column, row) => column === 0 && row === 0
+        ? new Float32Array([6, 0, 6, 0, 0.75, 0.25, 0.6, 0.2, 0])
+        : new Float32Array(),
+    }, "medium");
+    try {
+      // The bounded per-frame streamer builds the cell over a few frames.
+      for (let frame = 0; frame < 40; frame += 1) {
+        grass.update([0, 4, 8], [0, 0, 0], 1);
+      }
+      const mesh = grass.root.children.find((object): object is THREE.InstancedMesh => object instanceof THREE.InstancedMesh);
+      const time = (mesh!.material as THREE.ShaderMaterial).uniforms.grassTime as { value: number };
+      expect(time.value).toBe(1);
+      grass.update([0, 4, 8], [0, 0, 0], 2, false);
+      expect(time.value).toBe(1);
+      grass.update([0, 4, 8], [0, 0, 0], 3);
+      expect(time.value).toBe(3);
+    } finally {
+      grass.dispose();
+    }
+  });
 });

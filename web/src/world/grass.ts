@@ -430,11 +430,12 @@ export class Grass {
     this.#changed = true;
   }
 
-  /** Grows and drops cells around the player (or eye without one), thins them and moves the wind; `feet` push blades aside. */
-  update(eye: readonly [number, number, number], feet: readonly [number, number, number] | null, seconds: number): void {
+  /** Grows and drops cells around the player (or eye without one), thins them and moves the wind; `feet` push blades aside.
+   * Without `animate` (reduced motion) the wind holds still, like every other ambient layer (#1079). */
+  update(eye: readonly [number, number, number], feet: readonly [number, number, number] | null, seconds: number, animate = true): void {
     const profile = this.#profile;
     if (!profile) { return; }
-    this.#shared.grassTime.value = seconds;
+    if (animate) { this.#shared.grassTime.value = seconds; }
     // Orbiting the camera must not move the vegetation-density field across the player's feet.
     // Use the character as the stable reference, falling back to the eye for views without one.
     const anchor = feet ?? eye;

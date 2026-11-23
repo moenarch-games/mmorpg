@@ -1948,7 +1948,7 @@ export class WorldView {
     const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits, resident: batches ? (group) => batches.resident(group) : () => true });
     // A map view's eye is high only to clear the terrain: its ground streams as if standing on it.
     this.#ground?.update(this.#plan ? [view.eye[0], 0, view.eye[2]] : view.eye, frame.shown);
-    if (!this.#plan) { this.#grass?.update(view.eye, [self.x, self.feetY, self.z], this.#seconds); }
+    if (!this.#plan) { this.#grass?.update(view.eye, [self.x, self.feetY, self.z], this.#seconds, animate); }
     this.#nature?.update(this.#camera, deltaSeconds, animate);
     this.#climbing?.update(this.#camera, deltaSeconds, animate);
     this.#crag?.update(this.#camera, deltaSeconds, animate);

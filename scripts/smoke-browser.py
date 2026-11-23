@@ -25,6 +25,7 @@ import os
 import re
 from pathlib import Path
 import threading
+import time
 import unittest
 
 from playwright.sync_api import expect, sync_playwright
@@ -209,14 +210,20 @@ class BrowserAcceptance(unittest.TestCase):
         """The world canvas between the HUD panels; the camera follows the character."""
         return self.page.screenshot(clip={"x": 200, "y": 120, "width": 1040, "height": 560})
 
-    def settled(self, shot, attempts=80, required=5):
-        """`shot()` once several frames in a row match: streamed art and the idle-time world build (#526) land over frames."""
-        previous, same = shot(), 0
+    def settled(self, shot, attempts=80, required=5, quiet_seconds=5.0):
+        """`shot()` once several frames in a row match: streamed art and the idle-time world build (#526) land over frames.
+        Art also lands in wall-clock time: a varied resident's own look (asset-tooling #380) swaps in seconds after
+        entry. A fast GPU draws `required` matching shots well before that, so the match must also hold for
+        `quiet_seconds`; SwiftShader's slow frames already spanned it (#1079)."""
+        previous, same, since = shot(), 0, time.monotonic()
         for _ in range(attempts):
             self.frames(6)
             current = shot()
-            same = same + 1 if current == previous else 0
-            if same >= required:
+            if current == previous:
+                same += 1
+            else:
+                same, since = 0, time.monotonic()
+            if same >= required and time.monotonic() - since >= quiet_seconds:
                 return current
             previous = current
         self.fail("The rendered view never settled")
