@@ -387,6 +387,21 @@ describe("WASM local zone host", () => {
     expect(storage.getItem("mmorpg.local-world.v1")).not.toBe(btoa("not a checkpoint"));
   });
 
+  test("a new world rolls from its own seed, and its saved world keeps it (#1111)", () => {
+    type Zone = { checkpoint(): Uint8Array; free(): void };
+    const zones = wasm.LocalZone as unknown as {
+      new (): Zone;
+      withWorldSeed(seed: bigint): Zone;
+      fromCheckpoint(bytes: Uint8Array): Zone;
+    };
+    const saved = (zone: Zone) => { const bytes = zone.checkpoint(); zone.free(); return bytes; };
+    const seeded = saved(zones.withWorldSeed(0x5eed_1111n));
+    // The creatures' first levels and wander delays already differ from the public seed's.
+    expect(seeded).not.toEqual(saved(new zones()));
+    expect(saved(zones.withWorldSeed(0x5eed_1111n))).toEqual(seeded);
+    expect(saved(zones.fromCheckpoint(seeded))).toEqual(seeded);
+  });
+
   test("camera-relative movement moves the decoded viewer in the expected direction", async () => {
     const { source } = createLocalWorld(wasm, testCharacters());
     await source.join();
