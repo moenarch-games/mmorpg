@@ -269,7 +269,8 @@ impl<B: EntryBackend> DevCharacterService<B> {
         // Abruptly lost sessions keep their last periodic commit. Stronger reward
         // acknowledgement/crash journaling belongs to #40, not this dev adapter.
         // A character leaving through a transfer is never live here, and its
-        // handoff removes its lease before this storage owner is free again.
+        // handoff takes its lease out of this set before this storage owner is
+        // free again (also while it offers the transfer to another host, #1098).
         let departed: Vec<_> = storage
             .leases
             .keys()
