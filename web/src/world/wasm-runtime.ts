@@ -236,3 +236,12 @@ export function createScenarioWorld(local: LocalWorld, choice: ScenarioChoice): 
 export function loadoutAttachments(): Record<string, { key: string; socket: string }[]> {
   return JSON.parse(generated.loadoutAttachments()) as Record<string, { key: string; socket: string }[]>;
 }
+
+/**
+ * What a figure wears besides its loadout (`imported::dress`, #1059) as JSON: headwear and hair per choice, the
+ * crossbow's bolt, the chore items and the signal horn; the table the native client dresses from too. Call after the
+ * module loaded.
+ */
+export function equipmentTables(): string {
+  return generated.equipmentTables();
+}

@@ -9,7 +9,7 @@ const { ENVIRONMENT, DAY_SECONDS, environmentAt, skyAt } = await import("../../s
 const { decodeScenery } = await import("../../src/world/scenery");
 const { SceneryFrame, buildSceneryScene } = await import("../../src/world/scenery-nodes");
 const { localZoneModule } = await import("./local-zone-module");
-const { FOG_VISIBILITY_METRES } = await import("../../src/world/lighting");
+const { lightingTables } = await import("../../src/world/lighting");
 
 const input = JSON.parse(await Bun.stdin.text());
 const scenery = decodeScenery(JSON.stringify(input.scenery));
@@ -93,7 +93,7 @@ for (const request of input.requests) {
     }
     const phase = request.animate ? request.seconds / DAY_SECONDS : 0;
     const environment = environmentAt(ENVIRONMENT, phase);
-    scenes.push({ name: request.name, draws, environment, sky_stops: skyAt(ENVIRONMENT, phase), fog_visibility: FOG_VISIBILITY_METRES });
+    scenes.push({ name: request.name, draws, environment, sky_stops: skyAt(ENVIRONMENT, phase), fog_visibility: lightingTables().fogVisibilityMetres });
   }
 }
 console.log(JSON.stringify({ resources, scenes }));
