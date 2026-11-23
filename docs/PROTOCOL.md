@@ -564,7 +564,8 @@ new grant. Personal receipts survive the staged placeholder-body replacement.
 Host-input family version 1, tag 4 clears only an unbound session's personal
 receipt cache before cancelling or switching a pending character claim; it
 rejects an active character and preserves globally consumed world receipts.
-Queries retain only current/future creature lives, plus character-global quest
+Queries retain only current/future creature lives and (#1128) this zone's raid and cart
+incidents still able to pay or still to come, plus character-global quest
 completion, and fail closed if the configured receipt bound is exceeded.
 
 An explicit weaker-world reset requires confirmed retirement of the expected
@@ -594,6 +595,30 @@ Host defaults derive from the 512-player zone: 256 receipts per character (131,0
 zone payouts per player per tick (2,048). A trusted receipt input that does not fit the
 zone's bound is rejected before the character activates (`the zone's reward receipt bound
 cannot hold this character's stored receipts`), and the claim is cleared.
+
+## Incident receipts expire (#1128)
+
+No layout changes and the protocol ID stays. A raid or cart incident's receipt
+(`RaidParticipation`, `RaidDefence`, `CartDefence`) expires once the incident can no
+longer pay (Atlas 3.2.i1128). Incident numbers are the zone's own: its raid counter and
+its cart day (from 1), so they mean something only in one zone of one world; the grant
+IDs already carry both. The zone's incident floors, a pure function of canonical state,
+name the oldest incident of each kind still able to pay: the running raid, or the last
+lost one while an aid task is open, otherwise the next raid; the coming tick's cart day
+until its ambush hold ends, otherwise the next day. With reward tracking, a tick that
+raises a floor drops every receipt below it except those it granted itself, which drop
+as the next tick begins; replay and recovery drop exactly the same. A trusted receipt
+input below the floors is accepted and not loaded, and an aborted transfer restores
+only receipts still above them. A payout waiting in the deferred backlog needs no
+receipt: the waiting entry is its once-only guard, and the receipt it records when paid
+expires with its incident.
+
+Storage keeps every grant row. Admission loads a stored incident receipt only from the
+zone's own world and zone and only at or above the zone's current floors, reading the
+incident from the stored receipt bytes (version, tag, big-endian `u32`), so existing
+characters shed their expired receipts on their next load without a migration. A weaker
+world restore that rewinds a zone's counters loads the rewound incidents' receipts again
+as still to come and never pays them twice.
 
 ## Arena combo continuation: snapshot v30 (#339)
 
