@@ -1573,7 +1573,8 @@ class BrowserAcceptance(unittest.TestCase):
         expect(self.page.get_by_role("heading", name="Innkeeper Bram Tolliver")).to_be_visible()
         expect(self.page.locator("#vendor-status")).to_have_text("Copper: 0")
         offers = self.page.locator("#vendor-offers li")
-        self.assertEqual(offers.count(), 8)
+        # Eight starter offers plus the Militia Spear that #885 added to Bram's stock.
+        self.assertEqual(offers.count(), 9)
         expect(offers.nth(0)).to_contain_text("Worn Dagger · 5 copper (+2 Strength, +2 Agility)")
         expect(self.page.get_by_role("button", name="Buy Worn Dagger for 5 copper")).to_be_disabled()
         sales = self.page.locator("#vendor-sales li")
@@ -1619,7 +1620,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.evaluate("([y]) => window.__valeDebug.flyToPose([16.4, y + 1.3, 7.5], [14.4, y + 1.1, 3.9])", [relief])
         self.frames(6)
         box = self.page.locator("#world").bounding_box()
-        self.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, button="right")
+        self.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
         step()
         self.assertFalse(door_open(), "Clicking the leaf closed the inn door")
         self.page.evaluate("window.__valeDebug.follow()")
