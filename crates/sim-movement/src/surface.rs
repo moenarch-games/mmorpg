@@ -1,4 +1,4 @@
-//! Surface hazards (#294, Atlas 5.2.i294): patches of ground that change how a unit standing on
+//! Surface hazards (#294, Atlas 5.2.i294-4): patches of ground that change how a unit standing on
 //! them moves: slippery ice and slowing tar.
 //!
 //! The effect contract is [`SurfaceKind::effect`] and the single lookup [`under_feet`]. Today a
