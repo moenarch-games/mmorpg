@@ -2242,6 +2242,8 @@ class BrowserAcceptance(unittest.TestCase):
             viewer: window.__acceptanceNodes(`unit-player-${p.viewerId}`),
             target: p.viewer.target ? window.__acceptanceNodes(`unit-${p.viewer.target.kind}-${p.viewer.target.id}`) : [],
             effects: d.presentationFrame().effectNodes,
+            // Since #894 the effects kit draws impacts and spell visuals as instances, not nodes.
+            kitEffects: d.kitEffects().shown,
             events: p.events.map(e => e.kind),
           };
         }""")
@@ -2261,15 +2263,22 @@ class BrowserAcceptance(unittest.TestCase):
         cast = self.capture_action_frame()
         self.assertNotEqual(cast["viewer"], rest["viewer"], "The real Arcanist model raises into its cast")
         expect(self.page.locator("[data-part=cast]")).to_be_visible()
-        # Preserve each actual received outcome, advancing the authoritative WASM one tick at a time.
-        self.assertTrue(self.advance_action_until("damage-dealt", 65, 1), "Firebolt resolves with authoritative damage")
+        # Preserve each actual received outcome, advancing the authoritative WASM one step at a time:
+        # the two-second cast, then the bolt's flight to a wolf that may stand a few metres off.
+        self.assertTrue(self.advance_action_until("damage-dealt", 90, 1), "Firebolt resolves with authoritative damage")
         landed = self.capture_action_frame()
-        self.assertGreater(len(landed["effects"]), 2, "Confirmed target impact adds richer feedback to the baseline bolt")
+        # Effects are procedural nodes, or kit instances once the effects kit loaded (#894).
+        feedback = lambda frame: len(frame["effects"]) + frame["kitEffects"]
+        self.assertGreaterEqual(feedback(landed), feedback(cast) + 2, "Confirmed target impact adds richer feedback to the cast")
         self.page.screenshot(path=str(ARTIFACTS / "procedural-actions-impact.png"))
-        self.page.wait_for_function("window.__valeDebug.presentationFrame().effectNodes.length === 0", timeout=5_000)
+        self.page.wait_for_function("""landed => {
+          const d = window.__valeDebug;
+          return d.presentationFrame().effectNodes.length === 0 && d.kitEffects().shown < landed;
+        }""", arg=feedback(landed), timeout=5_000)
         settled = self.capture_action_frame()
         self.assertEqual(settled["tick"], landed["tick"], "Expiry uses presentation time, without advancing gameplay")
         self.assertEqual(settled["effects"], [], "Transient effects expire without another simulation tick")
+        self.assertLess(feedback(settled), feedback(landed), "Transient effects expire without another simulation tick")
         (ARTIFACTS / "procedural-actions-local.json").write_text(json.dumps({"rest": rest, "cast": cast, "landed": landed, "settled": settled}, indent=2))
 
     def test_ordinary_actions_creature_death_and_player_death_through_real_wasm(self):
@@ -2320,7 +2329,9 @@ class BrowserAcceptance(unittest.TestCase):
         self.assertTrue(dead, "Ordinary combat kills the actual selected wolf")
         events = self.page.evaluate("window.__actualCombatEvents")
         self.assertTrue(any(e["kind"] == "attack-performed" and e["source"]["kind"] == "player" for e in events))
-        self.assertTrue(any(e["kind"] == "attack-performed" and e["source"]["kind"] == "creature" for e in events))
+        # A beast winds up every blow since #889: a wolf's ordinary attack begins with
+        # `creature-attack-began` and lands at its contact tick, without `attack-performed`.
+        self.assertTrue(any(e["kind"] == "creature-attack-began" and e["source"]["kind"] == "creature" for e in events))
         self.wait_for_settled_corpse("target", "targetDead")
         frames = self.page.evaluate("window.__lifeFrames")
         corpses = [frame["target"] for frame in frames if frame["targetDead"]]
@@ -2362,18 +2373,22 @@ class BrowserAcceptance(unittest.TestCase):
         reached = self.page.evaluate("""({outcome,limit,groupTicks}) => {
           const s = window.__valeDebug.worldSource();
           for (let group = 0; group < limit; group++) {
+            // Each step runs two 60 Hz zone ticks and a projection carries only its own tick's
+            // events, so events are read from every projection the group produced.
+            const queued = window.__classQueue.length;
             window.__classStep(groupTicks);
             const p = s.latestProjection();
+            const events = window.__classQueue.slice(queued).flatMap(projection => projection.events);
             let done = false;
             if (outcome === 'target-dead') done = p.entities.some(e => e.kind === 'creature' && e.entityId === 108 && e.flags.dead);
             else if (outcome === 'player-dead') done = p.viewer.dead;
             else if (outcome === 'target-below-half') done = p.entities.some(e => e.kind === 'creature' && e.entityId === 401 && e.healthPercent < 50);
             else if (outcome === 'ordinary-attempt') done = window.__actualCombatEvents.some(e => e.kind === 'attack-performed' && e.source.kind === 'player');
-            else if (outcome === 'damage-dealt') done = p.events.some(e => e.kind === 'damage-dealt');
+            else if (outcome === 'damage-dealt') done = events.some(e => e.kind === 'damage-dealt');
             else {
               // "ability" or "ability@creature": the ability's use, optionally by one creature.
               const [ability, caster] = outcome.split('@').map(Number);
-              done = p.events.some(e => e.kind === 'ability-used' && e.ability === ability
+              done = events.some(e => e.kind === 'ability-used' && e.ability === ability
                 && (!caster || (e.source?.kind === 'creature' && e.source.id === caster)));
             }
             if (done) return true;
@@ -2552,9 +2567,14 @@ class BrowserAcceptance(unittest.TestCase):
         self.assertEqual(self.page.locator("#class-hud .action-slot").first.get_attribute("data-state"), "casting")
         expect(self.page.locator("#class-hud .action-slot").first).to_have_attribute("data-gcd", "true")
         self.page.screenshot(path=str(ARTIFACTS / "class-kit-arcanist-cast.png"))
-        # The two-second cast completes: mana is spent, the bolt lands and the cast bar clears.
+        # The two-second cast completes: mana is spent, the bolt flies to the wolf (a few metres off,
+        # where the hunt route stops) and lands, and the cast bar clears.
         self.step(60)
         self.assertLess(self.hud_number("[data-part=player-resource-text]", r"Mana (\d+)"), 110)
+        for _ in range(20):
+            if self.page.evaluate("window.__combatTexts.length"):
+                break
+            self.step(2)
         self.assertTrue(self.page.evaluate("window.__combatTexts.length"), "Combat text floated up")
         self.page.screenshot(path=str(ARTIFACTS / "class-kit-arcanist-hit.png"))
         expect(cast).to_be_hidden()
