@@ -885,6 +885,15 @@ pub fn static_scene() -> String {
     static_scene::layout().to_owned()
 }
 
+/// [`static_scene`] as UTF-8 bytes, for [`seed_static_scene`] in another instance of this module
+/// (#855): the worker transfers them and the page copies them in, with no 20 MB string to decode
+/// and encode again.
+#[wasm_bindgen(js_name = staticSceneLayout)]
+#[must_use]
+pub fn static_scene_layout() -> Vec<u8> {
+    static_scene::layout().as_bytes().to_vec()
+}
+
 /// Positions, normals and optional colours of every static-scene geometry.
 #[wasm_bindgen(js_name = staticSceneVertices)]
 pub fn static_scene_vertices() -> Vec<f32> {
@@ -985,19 +994,20 @@ pub fn static_scene_skeleton() -> Vec<u8> {
 }
 
 /// Reuses the static scene another instance of this module derived (#855): its
-/// [`static_scene_skeleton`] and its [`static_scene`] layout and buffers, so this instance
-/// builds only the terrain tiles. False, nothing seeded, for another content revision's or
-/// once the scene was built.
+/// [`static_scene_skeleton`], its [`static_scene_layout`] and its buffers, so this instance
+/// builds only the terrain tiles. False, nothing seeded, for another content revision's, a
+/// layout that is not UTF-8, or once the scene was built.
 #[wasm_bindgen(js_name = seedStaticScene)]
 #[must_use]
 pub fn seed_static_scene(
     skeleton: Vec<u8>,
-    layout: String,
+    layout: Vec<u8>,
     vertices: Vec<f32>,
     indices: Vec<u32>,
     models: Vec<f32>,
 ) -> bool {
-    static_scene::seed(skeleton, (layout, vertices, indices, models))
+    String::from_utf8(layout)
+        .is_ok_and(|layout| static_scene::seed(skeleton, (layout, vertices, indices, models)))
 }
 
 /// The hosted grass's per-sample density and tint (#855), for [`seed_grass`] in another
