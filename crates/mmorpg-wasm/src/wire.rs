@@ -152,7 +152,7 @@ mirror!(
 );
 mirror!(
     /// A weapon's melee family (#885).
-    #[serde(rename_all = "lowercase")]
+    #[serde(rename_all = "kebab-case")]
     WeaponFamily = core::WeaponFamily {
         Unarmed,
         Sword,
@@ -160,7 +160,8 @@ mirror!(
         Dagger,
         Staff,
         Spear,
-        Bow
+        Bow,
+        TwoHanded
     }
 );
 mirror!(
@@ -169,6 +170,16 @@ mirror!(
     NamedWeapon = core::NamedWeapon {
         GarricksCleaver,
         HollowpineHunter
+    }
+);
+mirror!(
+    /// Which great weapon a player holds in both hands (#1073).
+    #[serde(rename_all = "kebab-case")]
+    GreatWeapon = core::GreatWeapon {
+        Maul,
+        GreatHammer,
+        GreatAxe,
+        Greatsword
     }
 );
 mirror!(
@@ -390,6 +401,10 @@ pub struct EntityFlags {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[tsify(optional)]
     pub named_weapon: Option<NamedWeapon>,
+    /// A player's two-handed great weapon (#1073); absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[tsify(optional)]
+    pub great_weapon: Option<GreatWeapon>,
     /// A player in wolf form (#957), drawn as the wolf.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[tsify(optional)]
@@ -447,6 +462,7 @@ impl From<&core::EntitySnapshot> for EntityState {
                 weapon_drawn: flags.weapon_drawn,
                 weapon: flags.weapon.map(Into::into),
                 named_weapon: flags.named_weapon.map(Into::into),
+                great_weapon: flags.great_weapon.map(Into::into),
                 shapeshifted: flags.shapeshifted,
                 hostile: flags.hostile,
                 attackable: flags.attackable,
@@ -479,6 +495,7 @@ impl From<&EntityState> for core::EntitySnapshot {
                 weapon_drawn: flags.weapon_drawn,
                 weapon: flags.weapon.map(Into::into),
                 named_weapon: flags.named_weapon.map(Into::into),
+                great_weapon: flags.great_weapon.map(Into::into),
                 shapeshifted: flags.shapeshifted,
                 hostile: flags.hostile,
                 attackable: flags.attackable,
