@@ -41,6 +41,7 @@ export class KitModules {
   readonly #options: KitOptions;
   #loading: Promise<boolean> | null = null;
   #changed = false;
+  #rootsRevision = 0;
   /** The placed modules that play their entries' looping node clips (#891), by placement index. */
   #mixers: { mixer: THREE.AnimationMixer; index: number }[] = [];
   /** How many materials age by wear (0 without wear masks). */
@@ -106,6 +107,7 @@ export class KitModules {
     this.#roots = roots;
     this.#batched = new BatchedRoots(this.#name, roots, this.#worn > 0 ? this.#placements.map((placement) => placement.wear ?? 0) : null);
     this.#changed = true;
+    this.#rootsRevision += 1;
   }
 
   /**
@@ -122,6 +124,7 @@ export class KitModules {
     this.#batched = null;
     this.#roots = [];
     this.#changed = true;
+    this.#rootsRevision += 1;
   }
 
   /**
@@ -177,6 +180,14 @@ export class KitModules {
     const changed = this.#changed;
     this.#changed = false;
     return { roots: this.#batched ? [this.#batched.root] : [], changed };
+  }
+
+  /** Moves whenever the drawn roots may change (the world frame's root registry, #1060). */
+  get rootsRevision(): number { return this.#rootsRevision; }
+
+  /** Appends the drawn roots without consuming `roots()`'s change flag. */
+  collectRoots(into: THREE.Object3D[]): void {
+    if (this.#batched) { into.push(this.#batched.root); }
   }
 
   /**

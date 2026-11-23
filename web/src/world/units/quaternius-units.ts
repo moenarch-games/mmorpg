@@ -1810,6 +1810,7 @@ export class QuaterniusUnits {
   readonly #instances = new Map<string, Instance>();
   readonly #loaded: LoadedModel[] = [];
   #rootsChanged = false;
+  #rootsRevision = 0;
   #residents: Promise<boolean> | null = null;
   #residentsLoaded = false;
   /** The picker's selection (#979): its figure and look load before any optional art. */
@@ -2091,6 +2092,7 @@ export class QuaterniusUnits {
     };
     this.#instances.set(unit.id, instance);
     this.#rootsChanged = true;
+    this.#rootsRevision += 1;
     return instance;
   }
 
@@ -2129,6 +2131,7 @@ export class QuaterniusUnits {
     releaseUnit(instance.posable.model, instance.merged);
     this.#instances.delete(id);
     this.#rootsChanged = true;
+    this.#rootsRevision += 1;
   }
 
   /** The length in seconds of a loaded model's clip, or null before it loaded. */
@@ -2181,6 +2184,14 @@ export class QuaterniusUnits {
     const changed = this.#rootsChanged;
     this.#rootsChanged = false;
     return { roots: [...this.#instances.values()].map((instance) => instance.root), changed };
+  }
+
+  /** Moves whenever the drawn roots may change (the world frame's root registry, #1060). */
+  get rootsRevision(): number { return this.#rootsRevision; }
+
+  /** Appends the drawn roots without consuming `roots()`'s change flag. */
+  collectRoots(into: THREE.Object3D[]): void {
+    for (const instance of this.#instances.values()) { into.push(instance.root); }
   }
 
   /** The drawn models, for picking against their skinned meshes. */

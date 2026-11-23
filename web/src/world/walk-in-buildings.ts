@@ -34,6 +34,7 @@ export class WalkInBuildings {
   readonly #buildings: Building[];
   #loading: Promise<boolean> | null = null;
   #changed = false;
+  #rootsRevision = 0;
   #disposed = false;
 
   constructor(presenters: readonly BuildingPresenterHandle[]) {
@@ -68,6 +69,7 @@ export class WalkInBuildings {
     building.roots = entries.map((root) => root.clone());
     building.batched = new BatchedRoots(building.bundle, building.roots);
     this.#changed = true;
+    this.#rootsRevision += 1;
     place(building);
   }
 
@@ -85,6 +87,7 @@ export class WalkInBuildings {
       freeHandle(building.presenter);
     }
     this.#changed = true;
+    this.#rootsRevision += 1;
   }
 
   /** Eases each door toward its state in `doors` and hides roofs and ceilings while `viewer` (feet, metres) is inside. */
@@ -128,6 +131,16 @@ export class WalkInBuildings {
     const changed = this.#changed;
     this.#changed = false;
     return { roots: this.#buildings.flatMap((building) => building.batched ? [building.batched.root] : []), changed };
+  }
+
+  /** Moves whenever the drawn roots may change (the world frame's root registry, #1060). */
+  get rootsRevision(): number { return this.#rootsRevision; }
+
+  /** Appends the drawn roots without consuming `roots()`'s change flag. */
+  collectRoots(into: THREE.Object3D[]): void {
+    for (const building of this.#buildings) {
+      if (building.batched) { into.push(building.batched.root); }
+    }
   }
 
   /** Shown roots for picking (occluders), with each door leaf's door ID. */

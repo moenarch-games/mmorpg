@@ -108,6 +108,7 @@ export class PlacedKit {
   #descriptor: string | null = null;
   #loading: Promise<boolean> | null = null;
   #changed = false;
+  #rootsRevision = 0;
   #disposed = false;
   /** Placements switched off (#917), applied once the selection exists. */
   readonly #hidden = new Map<number, boolean>();
@@ -159,6 +160,7 @@ export class PlacedKit {
     this.#lods = lods;
     for (const [index, hidden] of this.#hidden) { lods.setHidden?.(index, hidden); }
     this.#changed = true;
+    this.#rootsRevision += 1;
   }
 
   /**
@@ -173,6 +175,7 @@ export class PlacedKit {
     freeHandle(this.#lods);
     this.#lods = null;
     this.#changed = true;
+    this.#rootsRevision += 1;
   }
 
   /** Hides placement `index` (in the source's placement order), or shows it again (#917). */
@@ -209,6 +212,14 @@ export class PlacedKit {
     const changed = this.#changed;
     this.#changed = false;
     return { roots: this.drawn && this.#levels ? [this.#levels.root] : [], changed };
+  }
+
+  /** Moves whenever the drawn roots may change (the world frame's root registry, #1060). */
+  get rootsRevision(): number { return this.#rootsRevision; }
+
+  /** Appends the drawn roots without consuming `roots()`'s change flag. */
+  collectRoots(into: THREE.Object3D[]): void {
+    if (this.drawn && this.#levels) { into.push(this.#levels.root); }
   }
 
   /**
