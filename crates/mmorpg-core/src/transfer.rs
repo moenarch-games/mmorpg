@@ -269,7 +269,10 @@ impl ZoneSimulation {
         self.interest.insert(entity, position.x, position.z);
         self.interest_work.bucket_inserts += 1;
         self.players.insert(player_id, state);
-        if let (Some(history), Some(receipts)) = (&mut self.rewards, frozen.receipts) {
+        // Incidents that ended while the player was frozen no longer need its receipts (#1128).
+        let floors = self.incident_floors();
+        if let (Some(history), Some(mut receipts)) = (&mut self.rewards, frozen.receipts) {
+            receipts.retain(|key| floors.can_pay(*key));
             history.players.insert(player_id, receipts);
         }
         Ok(player_id)

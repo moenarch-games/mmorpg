@@ -531,6 +531,19 @@ impl RaidState {
             .or(self.last.map(|last| last.incident))
     }
 
+    /// The oldest incident that can still pay (#1128). The running incident pays participation
+    /// and, as it resolves defended, the defence bonus; a lost one pays participation for aid
+    /// while its aid tasks are open. A resolved incident with no open task pays nothing more,
+    /// and a new one commits only once the tasks have closed, so every earlier incident is over.
+    #[must_use]
+    pub fn floor(&self) -> u32 {
+        if self.active.is_some() || !self.aftermath.is_empty() {
+            self.incidents
+        } else {
+            self.incidents.saturating_add(1)
+        }
+    }
+
     pub(crate) fn validate(&self, now: u64, site: Option<&RaidSite>) -> Result<(), ZoneError> {
         let forewarning_ok = self.scouted.len() <= crate::MAX_PLAYERS_PER_ZONE
             && self.scouted.windows(2).all(|pair| pair[0] < pair[1])
@@ -694,7 +707,10 @@ impl ZoneSimulation {
         if !self.raid_eligible(now) {
             return Ok(false);
         }
+        // Committed between ticks, so the earlier incident's receipts expire here (#1128).
+        let before = self.rewards.is_some().then(|| self.incident_floors());
         self.commit_incident(now)?;
+        self.expire_incident_receipts(before);
         Ok(true)
     }
 

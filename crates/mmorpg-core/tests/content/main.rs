@@ -17,6 +17,7 @@ mod greyhaven_vale_units;
 mod highland_bandits;
 mod highlands;
 mod hunt_outing;
+mod incident_receipts;
 mod loot_content;
 mod marsh;
 mod marsh_adder;
