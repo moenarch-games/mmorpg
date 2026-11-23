@@ -419,6 +419,21 @@
           "budget": { "max": 0 }
         }
       ]
+    },
+    {
+      "id": "seeded-content-entry",
+      "description": "Browser world build (#855): a page whose zone content is seeded, from its world-build worker or the release-keyed derived cache, rebuilds none of the content's costly base parts (terrain heights, colliders, solid dressing) while it builds the content, catalog, presentation scenery and local zone it enters.",
+      "dimensions": { "seeds": { "description": "content seeds a fresh page applies" } },
+      "scalePoints": [{ "seeds": 1 }],
+      "metrics": [
+        {
+          "name": "base_part_builds",
+          "unit": "builds",
+          "signal": "operation-count",
+          "notes": "Seeded base parts the page built again; an unseeded page builds all three.",
+          "budget": { "max": 0 }
+        }
+      ]
     }
   ]
 }

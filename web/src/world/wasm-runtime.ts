@@ -14,10 +14,18 @@ import type { PhysiqueModel } from "../physique";
 
 /** The derived-cache name of the presented scenery's terrain grids. */
 const TERRAIN_GRIDS = "terrain-grids";
+/** The derived-cache name of the zone content's base parts (`LocalZone.hostedContentSeed`, #855). */
+const CONTENT_SEED = "content-seed";
 
 /** Settles after the page has run its queued tasks, such as starting the next request of a chained download. */
 function nextTask(): Promise<void> {
   return new Promise((resolve) => { setTimeout(resolve, 0); });
+}
+
+/** Cached bytes as the content seed's 32-bit numbers, or null when they cannot be one. */
+function contentSeed(bytes: Uint8Array | null): Int32Array | null {
+  if (!bytes || bytes.byteLength === 0 || bytes.byteLength % 4 !== 0 || bytes.byteOffset % 4 !== 0) { return null; }
+  return new Int32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
 }
 
 /**
@@ -27,22 +35,32 @@ function nextTask(): Promise<void> {
  */
 export async function loadLocalWorld(characters: LocalCharacters, wasmReady: () => void = () => {}): Promise<LocalWorld> {
   markStartup("wasm-fetch");
+  // The terrain grids and the zone content's base parts are the slowest pure derivations; a later visit reuses them per
+  // release (#526, #855), here and in the worker. Read beside the module's download, so neither waits for the other.
+  // Without a manifest or storage, or on a stale or damaged entry, they are derived as on a first visit.
+  const storage = typeof caches === "undefined" ? undefined : caches;
+  const reuse = fetchRelease(import.meta.env.BASE_URL).then(async (release) => {
+    const [grids, content] = release
+      ? await Promise.all([readDerived(storage, location.origin, release, TERRAIN_GRIDS), readDerived(storage, location.origin, release, CONTENT_SEED)])
+      : [null, null];
+    return { release, grids, content: contentSeed(content) };
+  });
   const module = await loadWasm();
   markStartup("wasm-ready");
   wasmReady();
   // A worker derives the scenery export and the static scene meanwhile (#855); this instance seeds them.
   const derived = deriveWorld(module);
-  // The terrain grids are the slowest pure derivation of the presented scenery; a later visit reuses them per release
-  // (#526). Without a manifest or storage, or on a stale or damaged entry, the module derives them.
-  const release = await fetchRelease(import.meta.env.BASE_URL);
-  const storage = typeof caches === "undefined" ? undefined : caches;
-  const cached = release ? await readDerived(storage, location.origin, release, TERRAIN_GRIDS) : null;
-  derived.supplyGrids(cached);
-  // The zone content (built once, the catalog's source): the worker builds its costly base parts, which this instance
-  // seeds before building the rest; then let the art downloads `wasmReady` started issue their follow-up requests
+  const { release, grids: cached, content: cachedSeed } = await reuse;
+  derived.supplyCached(cached, cachedSeed);
+  // The zone content (built once, the catalog's source): its costly base parts are seeded, from the cache or from the
+  // worker, before the rest is built; then let the art downloads `wasmReady` started issue their follow-up requests
   // before the scenery's turn.
-  const content = await derived.content;
-  if (content) { generated.LocalZone.seedHostedContent(content); }
+  if (!(cachedSeed && generated.LocalZone.seedHostedContent(cachedSeed))) {
+    const content = await derived.content;
+    if (content && generated.LocalZone.seedHostedContent(content) && release) {
+      void writeDerived(storage, location.origin, release, CONTENT_SEED, new Uint8Array(content.buffer, content.byteOffset, content.byteLength));
+    }
+  }
   generated.catalog();
   await nextTask();
   const reused = cached !== null && generated.seedTerrainGrids(cached);
@@ -235,6 +253,20 @@ export function createScenarioWorld(local: LocalWorld, choice: ScenarioChoice): 
  */
 export function loadoutAttachments(): Record<string, { key: string; socket: string }[]> {
   return JSON.parse(generated.loadoutAttachments()) as Record<string, { key: string; socket: string }[]>;
+}
+
+let physicsPrewarmed = false;
+
+/**
+ * Prepares the local zone's terrain physics once, in an idle moment before entry (#855), so joining the local world
+ * reuses it instead of preparing it on the way in; call after `loadLocalWorld`.
+ */
+export function prewarmLocalZone(): void {
+  if (physicsPrewarmed) { return; }
+  physicsPrewarmed = true;
+  const prepare = () => { generated.LocalZone.prepareHostedPhysics(); };
+  if (typeof requestIdleCallback === "function") { requestIdleCallback(prepare, { timeout: 2_000 }); }
+  else { setTimeout(prepare, 0); }
 }
 
 /**

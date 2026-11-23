@@ -1154,13 +1154,14 @@ impl Playback {
     /// backpedalling at walk or run speed, sprinting beyond [`SPRINT_CLIP_SPEED`]. A gait the
     /// model lacks keeps the earlier choice: the forward run for strafes at run speed, the walk
     /// otherwise. Each plays at [`gait_rate`], so its planted foot keeps pace with the ground.
+    /// A `great` weapon's carrying run (#1073) takes the forward run and sprint.
     fn gait(
         &self,
         clips: Clips,
         available: &impl Fn(&str) -> bool,
         motions: Option<&Motions>,
-        speed: f64,
-        direction: f64,
+        (speed, direction): (f64, f64),
+        great: Option<GreatWeapon>,
     ) -> Want {
         let gait = |pick: fn(GaitClips) -> &'static str| {
             clips.gaits.map(pick).filter(|clip| available(clip))
@@ -1169,10 +1170,14 @@ impl Playback {
         let left = direction > 0.;
         #[allow(clippy::cast_possible_truncation)]
         let run_rate = (speed / RUN_CLIP_GROUND).clamp(0.7, 1.5) as f32;
-        let run = gait(|gaits| gaits.run).unwrap_or(clips.run);
+        let great = great.map(GreatWeapon::run).filter(|clip| available(clip));
+        let run = great
+            .or_else(|| gait(|gaits| gaits.run))
+            .unwrap_or(clips.run);
         let (clip, fallback) = if speed > RUN_CLIP_SPEED {
             let directed = if angle <= STRAFE_ANGLE {
                 if speed > SPRINT_CLIP_SPEED
+                    && great.is_none()
                     && let Some(sprint) = gait(|gaits| gaits.sprint)
                 {
                     #[allow(clippy::cast_possible_truncation)]
@@ -1801,7 +1806,20 @@ impl Playback {
         } else if speed > 0.25 {
             self.turning = None;
             chored = chore.is_some();
+            // A load carried at run speed (#1073) runs on the heavy legs; the upper body hugs
+            // the load over them ([`Self::region_wants`]).
+            let loaded_run = chore.is_some_and(Chore::load)
+                && speed > RUN_CLIP_SPEED
+                && footing.layered
+                && available(HEAVY_RUN)
+                && available(CARRY_RUN);
+            #[allow(clippy::cast_possible_truncation)]
+            let run_rate = (speed / RUN_CLIP_GROUND).clamp(0.7, 1.5) as f32;
             match chore.and_then(|chore| chore.walk) {
+                _ if loaded_run => Want::looped(
+                    HEAVY_RUN,
+                    gait_rate(cues.motions, HEAVY_RUN, speed, run_rate),
+                ),
                 Some(walk) => {
                     Want::looped(walk, gait_rate(cues.motions, walk, speed, walk_rate(speed)))
                 }
@@ -1810,7 +1828,14 @@ impl Playback {
                     .then(|| footwork(clips, &available, cues.motions, speed, cues.direction))
                     .flatten()
                     .unwrap_or_else(|| {
-                        self.gait(clips, &available, cues.motions, speed, cues.direction)
+                        let great = cues.loadout.and_then(Loadout::great_weapon);
+                        self.gait(
+                            clips,
+                            &available,
+                            cues.motions,
+                            (speed, cues.direction),
+                            great,
+                        )
                     }),
             }
         } else if let Some(turn) = self.turn(clips, duration, cues, guarding) {
@@ -1993,6 +2018,21 @@ impl Playback {
             None
         } else if let Some(want) = poses.talk {
             Some(want)
+        } else if base.clip == HEAVY_RUN && available(CARRY_RUN) {
+            // A load carried at run speed (#1073): the upper body hugs it over the heavy legs,
+            // in the stride's phase.
+            let stride = (frame.duration)(HEAVY_RUN);
+            let phase = self
+                .base
+                .playing(HEAVY_RUN)
+                .filter(|_| stride > 0.)
+                .map_or(0., |play| {
+                    ((play.time + frame.dt * play.rate) / stride).rem_euclid(1.)
+                });
+            Some(Want {
+                at: Some(phase * (frame.duration)(CARRY_RUN)),
+                ..Want::looped(CARRY_RUN, base.rate)
+            })
         } else if let Some(crossbow) = clips.crossbow.filter(|_| {
             cues.loadout == Some(Loadout::Crossbow)
                 && stun.is_none()
@@ -2658,7 +2698,13 @@ mod tests {
         .expect("valid descriptor");
         let one = |_: &str| true;
         let gait = |motions, speed, direction| {
-            Playback::default().gait(Kind::Ranger.clips(), &one, motions, speed, direction)
+            Playback::default().gait(
+                Kind::Ranger.clips(),
+                &one,
+                motions,
+                (speed, direction),
+                None,
+            )
         };
         let run = f64::from(mmorpg_core::RUN_SPEED_UNITS_PER_SECOND) / 100.;
         let backpedal = f64::from(mmorpg_core::BACKPEDAL_SPEED_UNITS_PER_SECOND) / 100.;
@@ -2736,8 +2782,8 @@ mod tests {
                     Kind::Ranger.clips(),
                     &available,
                     Some(&motions),
-                    speed,
-                    direction,
+                    (speed, direction),
+                    None,
                 );
                 assert!(
                     (0.5..=1.5).contains(&want.rate),
@@ -4397,5 +4443,132 @@ mod tests {
         let back = at(&playback, 0.4 + 1.5);
         assert_eq!(back.carry.crossbow, loaded);
         assert_eq!(grip(&back, Hand::Right), Some("Grip_Crossbow_R"));
+    }
+
+    /// The heavy running set (#1073, asset-tooling #823): a great weapon runs in its own
+    /// carrying run, a `load.*` item at run speed runs on the heavy legs with the loaded upper
+    /// body over them in the stride's phase, and light weapons keep the light run.
+    #[test]
+    fn great_weapons_and_loads_run_heavy() {
+        let run = f64::from(mmorpg_core::RUN_SPEED_UNITS_PER_SECOND) / 100.;
+        let step = |playback: &mut Playback, cues: Cues<'_>| {
+            playback.advance(
+                Kind::Ranger.clips(),
+                |clip| if clip == HEAVY_RUN { 0.5 } else { 1. },
+                Cues { dt: 0.1, ..cues },
+                Blend::default(),
+            )
+        };
+        let running = |loadout| {
+            step(
+                &mut Playback::default(),
+                Cues {
+                    speed: run,
+                    loadout: Some(loadout),
+                    ..Cues::default()
+                },
+            )
+            .lower
+            .0
+        };
+        assert_eq!(running(Loadout::Maul), "TwoHand_Run_Loop");
+        assert_eq!(running(Loadout::GreatHammer), "TwoHand_Run_Loop");
+        assert_eq!(running(Loadout::GreatAxe), "TwoHand_Run_Loop");
+        assert_eq!(running(Loadout::Greatsword), "TwoHand_Sword_Run_Loop");
+        assert_eq!(running(Loadout::Sword), "Run_Fwd_Loop");
+        assert_eq!(running(Loadout::FlangedMace), "Run_Fwd_Loop");
+        for &loadout in <Loadout as strum::VariantArray>::VARIANTS {
+            if let Some(great) = loadout.great_weapon() {
+                assert_eq!(loadout.attachments()[0].item, great.item(), "{loadout:?}");
+            }
+        }
+
+        let sack = Chore {
+            item: "equipment.load.sack",
+            socket: "chest.carry",
+            idle: Some("Carry_Idle_Loop"),
+            walk: Some("Carry_Walk_Loop"),
+        };
+        let loaded = |speed| Cues {
+            speed,
+            chore: Some(sack),
+            ..Cues::default()
+        };
+        let mut playback = Playback::default();
+        let walking = step(&mut playback, loaded(1.5));
+        assert_eq!(walking.lower.0, "Carry_Walk_Loop");
+        assert_eq!(walking.carry.chore, Some(sack));
+        let mut playback = Playback::default();
+        let first = step(&mut playback, loaded(run));
+        assert_eq!((first.lower.0, first.upper.0), (HEAVY_RUN, CARRY_RUN));
+        assert_eq!(first.carry.chore, Some(sack));
+        // The 1 s upper body keeps the 0.5 s stride's phase.
+        for _ in 0..3 {
+            let frame = step(&mut playback, loaded(run));
+            assert_eq!((frame.lower.0, frame.upper.0), (HEAVY_RUN, CARRY_RUN));
+            assert!(
+                (frame.upper.1 - 2. * frame.lower.1).abs() < 1e-4,
+                "{:?} against {:?}",
+                frame.upper,
+                frame.lower
+            );
+        }
+        // A hand-carried item keeps its walk whatever the speed.
+        let lantern = Chore {
+            item: "equipment.tool.lantern",
+            socket: "hand_r.carry",
+            ..sack
+        };
+        let hand = step(
+            &mut Playback::default(),
+            Cues {
+                speed: run,
+                chore: Some(lantern),
+                ..Cues::default()
+            },
+        );
+        assert_eq!(hand.lower.0, "Carry_Walk_Loop");
+    }
+
+    /// Both fetched Rangers carry the whole heavy running set the clip choice names (#1073).
+    #[test]
+    fn the_fetched_rangers_carry_the_heavy_running_set() {
+        for sex in ["male", "female"] {
+            let path = format!(
+                "{}/../../web/public/characters/humanoid.ranger.{sex}/humanoid.ranger.{sex}.default.humanoid-clips.json",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let Ok(json) = std::fs::read_to_string(&path) else {
+                eprintln!("the {sex} Ranger is not fetched; skipping");
+                continue;
+            };
+            let motions = Motions::parse(&json).expect("valid descriptor");
+            let descriptor: serde_json::Value = serde_json::from_str(&json).expect("JSON");
+            let names: Vec<_> = descriptor["clips"]
+                .as_array()
+                .expect("clips")
+                .iter()
+                .filter_map(|clip| clip["name"].as_str())
+                .collect();
+            let great = <GreatWeapon as strum::VariantArray>::VARIANTS;
+            let clips = great
+                .iter()
+                .flat_map(|great| [great.run(), great.run_strike()])
+                .chain([HEAVY_RUN, CARRY_RUN, GREAT_WEAPON_GUARD]);
+            for clip in clips {
+                assert!(names.contains(&clip), "the {sex} Ranger lacks {clip}");
+            }
+            for great in great {
+                let strike = motions.get(great.run_strike()).expect("strike");
+                let contact = strike
+                    .contact
+                    .expect("a running strike records its contact");
+                assert!(
+                    (0.55..0.65).contains(&contact),
+                    "{} at {contact}",
+                    great.run_strike()
+                );
+            }
+        }
     }
 }

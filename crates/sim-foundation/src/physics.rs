@@ -26,6 +26,14 @@ mod queries;
 mod rapier;
 mod shared;
 
+/// Prepares `terrain` as the production backend's heightfield ahead of the first world laid on it
+/// ([`World::set_terrain`]), so that world reuses it instead of preparing it then: the browser
+/// does this in an idle moment before entering the world (#855). A shared, immutable cache fill
+/// only; no world or result changes.
+pub fn prepare_terrain(terrain: &crate::Terrain) {
+    engine::prepare_terrain(terrain);
+}
+
 /// The gap (in units) the character controller keeps between a body and what it touches:
 /// well above `f32` resolution across the zone and below the half unit projections round
 /// away. A moving body's backend position is its game centre raised by this offset, so a body

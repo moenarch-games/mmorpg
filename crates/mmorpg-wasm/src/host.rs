@@ -46,34 +46,65 @@ pub fn hosted_definition() -> ZoneDefinition {
 }
 
 /// [`hosted_content`]'s costly base parts ([`greyhaven_vale::base_parts`]) as one array, for
-/// another instance of this build to [`seed_hosted_content`] with (#855): the terrain's height
-/// count, its heights, then each collider's ID (bits), position and half extents.
+/// another instance of this build to [`seed_hosted_content`] with (#855), whether straight from
+/// the browser's world-build worker or from the page's release-keyed cache of it: the terrain's
+/// height count and heights, the collider count and each collider's ID (bits), position and half
+/// extents, then each dressing piece's ID (bits), kind, feet, quarter turns and scale.
 #[must_use]
 pub fn hosted_content_seed() -> Vec<i32> {
-    let (heights, colliders) = greyhaven_vale::base_parts();
-    let mut seed = Vec::with_capacity(1 + heights.len() + colliders.len() * 7);
+    let (heights, colliders, pieces) = greyhaven_vale::base_parts();
+    let mut seed =
+        Vec::with_capacity(2 + heights.len() + colliders.len() * 7 + pieces.len() * PIECE_LEN);
     seed.push(i32::try_from(heights.len()).unwrap_or(i32::MAX));
     seed.extend_from_slice(heights);
+    seed.push(i32::try_from(colliders.len()).unwrap_or(i32::MAX));
     for collider in colliders {
         seed.push(collider.id.cast_signed());
         seed.extend(collider.position.into_iter().chain(collider.half_extents));
     }
+    for piece in pieces {
+        seed.extend([
+            piece.id.cast_signed(),
+            i32::from(piece.kind.index()),
+            piece.at[0],
+            piece.at[1],
+            i32::from(piece.quarters),
+            i32::from(piece.scale_permille),
+        ]);
+    }
     seed
 }
+
+/// The numbers one dressing piece takes in a [`hosted_content_seed`].
+const PIECE_LEN: usize = 6;
 
 /// Seeds [`hosted_content`]'s base parts from a [`hosted_content_seed`] of this same build, so
 /// this instance need not build them; false, changing nothing, when they were built already or
 /// the seed is malformed or invalid. The content is then assembled and validated as usual.
 pub fn seed_hosted_content(seed: &[i32]) -> bool {
-    decode_seed(seed)
-        .is_some_and(|(heights, colliders)| greyhaven_vale::seed_base(heights, colliders))
+    decode_seed(seed).is_some_and(|(heights, colliders, pieces)| {
+        greyhaven_vale::seed_base(heights, colliders, pieces)
+    })
 }
 
-/// The heights and colliders of a [`hosted_content_seed`]; `None` when malformed.
-fn decode_seed(seed: &[i32]) -> Option<(Vec<i32>, Vec<mmorpg_core::StaticCollider>)> {
+/// The parts of a [`hosted_content_seed`].
+type SeedParts = (
+    Vec<i32>,
+    Vec<mmorpg_core::StaticCollider>,
+    Vec<greyhaven_vale::dressing::Piece>,
+);
+
+/// The heights, colliders and dressing of a [`hosted_content_seed`]; `None` when malformed.
+fn decode_seed(seed: &[i32]) -> Option<SeedParts> {
     let (&count, rest) = seed.split_first()?;
-    let (heights, colliders) = rest.split_at_checked(usize::try_from(count).ok()?)?;
+    let (heights, rest) = rest.split_at_checked(usize::try_from(count).ok()?)?;
+    let (&count, rest) = rest.split_first()?;
+    let (colliders, pieces) =
+        rest.split_at_checked(usize::try_from(count).ok()?.checked_mul(7)?)?;
     let (colliders, []) = colliders.as_chunks::<7>() else {
+        return None;
+    };
+    let (pieces, []) = pieces.as_chunks::<PIECE_LEN>() else {
         return None;
     };
     let colliders = colliders
@@ -86,7 +117,19 @@ fn decode_seed(seed: &[i32]) -> Option<(Vec<i32>, Vec<mmorpg_core::StaticCollide
             },
         )
         .collect();
-    Some((heights.to_vec(), colliders))
+    let pieces = pieces
+        .iter()
+        .map(|&[id, kind, x, z, quarters, scale]| {
+            Some(greyhaven_vale::dressing::Piece {
+                id: id.cast_unsigned(),
+                kind: *greyhaven_vale::dressing::Kind::ALL.get(usize::try_from(kind).ok()?)?,
+                at: [x, z],
+                quarters: u8::try_from(quarters).ok()?,
+                scale_permille: u16::try_from(scale).ok()?,
+            })
+        })
+        .collect::<Option<_>>()?;
+    Some((heights.to_vec(), colliders, pieces))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1184,10 +1227,11 @@ mod tests {
     #[test]
     fn the_content_seed_carries_the_built_base_parts() {
         let seed = hosted_content_seed();
-        let (heights, colliders) = greyhaven_vale::base_parts();
+        let (heights, colliders, pieces) = greyhaven_vale::base_parts();
+        assert!(!pieces.is_empty());
         assert_eq!(
             decode_seed(&seed),
-            Some((heights.to_vec(), colliders.to_vec()))
+            Some((heights.to_vec(), colliders.to_vec(), pieces.to_vec()))
         );
         // Built already, so a seed changes nothing; a malformed one is refused.
         assert!(!seed_hosted_content(&seed));

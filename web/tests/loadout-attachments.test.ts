@@ -35,6 +35,11 @@ const BEFORE: Record<string, { key: string; socket: string }[]> = {
     { key: "equipment.crossbow", socket: "hand_r.crossbow" },
     { key: "equipment.arrow", socket: "hand_r.arrow" },
   ],
+  // The great weapons the heavy running set carries in the right hand (#1073, #1076).
+  "warhammer.maul": [{ key: "equipment.warhammer.maul", socket: "hand_r.weapon" }],
+  "hammer.great": [{ key: "equipment.hammer.great", socket: "hand_r.weapon" }],
+  "axe.great": [{ key: "equipment.axe.great", socket: "hand_r.weapon" }],
+  "sword.great": [{ key: "equipment.sword.great", socket: "hand_r.weapon" }],
 };
 
 describe("loadout attachments", () => {
