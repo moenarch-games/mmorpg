@@ -378,12 +378,25 @@ export class SceneryFrame {
   readonly #scene: SceneryScene;
   readonly #visible: RendererSceneNode[];
   readonly #hidden: RendererSceneNode[];
+  /**
+   * Each instance batch's shown and hidden renderer batch, built the first frame it is resident and reused after (#1091):
+   * a frame selects them instead of copying all of the world's instance batches again. They are plain copies, not
+   * prototype views, because frame consumers spread a batch (`native-world-reference.ts`).
+   */
+  readonly #instanceViews: ([RendererInstanceBatch | null, RendererInstanceBatch | null])[];
+  #viewsBuilt = 0;
 
   constructor(scene: SceneryScene) {
     this.#scene = scene;
     this.#visible = scene.batches.map((batch) => batch.node);
     // A hidden node inherits from its visible one, so hiding a group does not decode its geometry (#526).
     this.#hidden = scene.batches.map((batch) => Object.create(batch.node, { visible: { value: false, enumerable: true } }) as RendererSceneNode);
+    this.#instanceViews = scene.instanceBatches.map(() => [null, null]);
+  }
+
+  /** Instance-batch views built so far (the `scenery-frame` budget, #1091): none in a frame whose resident batches were all drawn before. */
+  get viewsBuilt(): number {
+    return this.#viewsBuilt;
   }
 
   nodes(eye: readonly [number, number, number], motion: SceneryMotion): { nodes: RendererSceneNode[]; instanceBatches: RendererInstanceBatch[]; visibleBatches: number; shown: Uint8Array } {
@@ -407,11 +420,20 @@ export class SceneryFrame {
     });
     const resident = motion.resident ?? (() => true);
     const instanceBatches: RendererInstanceBatch[] = [];
-    for (const batch of this.#scene.instanceBatches) {
+    this.#scene.instanceBatches.forEach((batch, index) => {
       const visible = batchShown(batch, eye[0], eye[2], kits);
       visibleBatches += visible ? 1 : 0;
-      if (resident(batch.group)) { instanceBatches.push({ ...batch.batch, visible }); }
-    }
+      if (!resident(batch.group)) { return; }
+      const views = this.#instanceViews[index]!;
+      const slot = visible ? 1 : 0;
+      let view = views[slot];
+      if (!view) {
+        view = { ...batch.batch, visible };
+        views[slot] = view;
+        this.#viewsBuilt += 1;
+      }
+      instanceBatches.push(view);
+    });
     return { nodes, instanceBatches, visibleBatches, shown };
   }
 }
