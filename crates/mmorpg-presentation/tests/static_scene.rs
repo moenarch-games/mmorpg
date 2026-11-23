@@ -117,7 +117,7 @@ fn every_prop_kind_draws_valid_geometry_and_the_same_scenery_builds_the_same_sce
         assert_valid(draw);
     }
     // The inn and the Sunken Shrine are drawn from their asset-tooling bundles
-    // (`mmorpg_presentation::buildings`, `mmorpg_presentation::shrine`).
+    // (`mmorpg_presentation::buildings`, the shrine kit through `world_dressing::placed_kits`).
     for &kind in PropKind::all()
         .iter()
         // Grass tufts draw nothing: the clients' grass fields grow the turf (`mmorpg_presentation::grass`).

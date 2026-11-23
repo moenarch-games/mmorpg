@@ -9,8 +9,8 @@
 //! generates it from the asset's `collisionMesh` and the placement, and the zone reads only the
 //! committed output. Gameplay never reads this file.
 //!
-//! Adding a placed asset is a data change: the kit that owns its key ([`KITS`]: the crag kit for
-//! `crag.kit.*`, the shrine kit for `shrine.kit.*`) draws it with its levels of detail.
+//! Adding a placed asset is a data change: the kit that owns its key ([`KITS`] or [`placed_kits`]:
+//! the crag kit for `crag.kit.*`, the shrine kit for `shrine.kit.*`) draws it with its levels of detail.
 //! Outpost modules also carry cosmetic wear and may name an existing `fallbackCollider`
 //! shared by their composition; this does not generate or mutate collision.
 //! While that kit is not drawn the collider's own surface is the visible stand-in
@@ -110,15 +110,13 @@ const GREYHAVEN: [&str; 15] = [
 
 /// Every kit that draws dressing, by its asset keys' prefix, with the static-scene fallback
 /// ([`Kit`]) it hides while drawn, if it has one.
-pub const KITS: [(&str, Option<Kit>); 10] = [
+pub const KITS: [(&str, Option<Kit>); 9] = [
     ("greyhaven.nature.", Some(Kit::Nature)),
     ("limestone-rocks.kit.", Some(Kit::Limestone)),
     ("crag.kit.", Some(Kit::Crag)),
     ("settlement.props.", Some(Kit::SettlementProps)),
     ("outpost.kit.", Some(Kit::Outpost)),
     ("greyhaven.fort.", Some(Kit::Outpost)),
-    // The Sunken Shrine's modules (#431) stand on their own colliders and need no stand-in.
-    ("shrine.kit.", None),
     ("greyhaven-meadow.kit.", None),
     ("river-stones.kit.", None),
     // The basin's ore veins (#917) stand on their own generated colliders.
@@ -667,9 +665,14 @@ mod tests {
                 "meadow",
                 "den",
                 "discoveries",
+                "shrine",
                 "sandstone"
             ]
         );
+        // The Sunken Shrine (#431): every one of the kit's 14 modules, 41 placed.
+        let shrine = placed_kit("shrine").unwrap();
+        assert_eq!(shrine.entries.len(), 14);
+        assert_eq!(shrine.placements(&s, &mixed).len(), 41);
         for kit in kits {
             assert!(
                 kit.entries.iter().all(|entry| kit.owns(entry)),

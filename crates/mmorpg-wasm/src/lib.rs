@@ -1622,37 +1622,6 @@ impl BuildingPresenter {
     }
 }
 
-/// The Sunken Shrine's asset-tooling kit modules (#431), placed by the presentation the native
-/// client shares.
-#[wasm_bindgen(js_name = shrineKitEntries)]
-#[must_use]
-pub fn shrine_kit_entries() -> Vec<String> {
-    mmorpg_presentation::shrine::entries()
-        .into_iter()
-        .map(str::to_owned)
-        .collect()
-}
-
-/// The kit entry of each placed shrine module, in [`shrine_kit_models`] order.
-#[wasm_bindgen(js_name = shrineKitKeys)]
-#[must_use]
-pub fn shrine_kit_keys() -> Vec<String> {
-    mmorpg_presentation::shrine::parts(scenery::hosted_scenery())
-        .iter()
-        .map(|part| part.key.to_owned())
-        .collect()
-}
-
-/// 16 column-major model floats per placed shrine module.
-#[wasm_bindgen(js_name = shrineKitModels)]
-#[must_use]
-pub fn shrine_kit_models() -> Vec<f32> {
-    mmorpg_presentation::shrine::parts(scenery::hosted_scenery())
-        .iter()
-        .flat_map(|part| part.model)
-        .collect()
-}
-
 /// The Outpost kit buildings' asset-tooling entries (#420), `outpost.kit.<part>` with
 /// `/<variant>` unless it is `default`, placed by the presentation the native client shares.
 #[wasm_bindgen(js_name = outpostKitEntries)]
@@ -1730,7 +1699,8 @@ pub fn settlement_prop_models() -> Vec<f32> {
 /// `greyhaven-nature` trees and bushes (#49), `"climbing"`, the climbing kit's ladders, ropes
 /// and ivy (#621), `"crag"`, the crag kit's rock modules (#668), `"gather"`, the ore veins
 /// (#917), or any ordinary placed kit of the shared inventory ([`placed_kits`]): the limestone
-/// blocks, river stones, meadow, Wolfrun Den, discoveries and any kit registered after them.
+/// blocks, river stones, meadow, Wolfrun Den, discoveries, Sunken Shrine and any kit registered
+/// after them.
 fn placed_kit(
     kit: &str,
 ) -> Result<

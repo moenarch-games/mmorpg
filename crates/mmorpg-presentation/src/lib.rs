@@ -34,7 +34,6 @@ pub mod outpost_kit;
 mod props;
 pub mod river;
 pub mod settlement_props;
-pub mod shrine;
 pub mod structures;
 pub mod summoned;
 pub mod surface;

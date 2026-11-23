@@ -92,10 +92,6 @@ export type SceneryContent = StaticSceneContent & {
     reachableDoor(x: number, z: number): number;
     reachableSeat(x: number, z: number): number;
   };
-  /** The Sunken Shrine's kit (#431): its entries, and per placed module its entry and 16 model floats. */
-  shrineKitEntries(): string[];
-  shrineKitKeys(): string[];
-  shrineKitModels(): Float32Array;
   /** The Outpost kit buildings (#420): their entries (`<key>` or `<key>/<variant>`), and per placed module its entry and 16 model floats. */
   outpostKitEntries(): string[];
   outpostKitKeys(): string[];
@@ -187,8 +183,6 @@ export type SceneryProvider = {
   unitPresenter(player: number): UnitPresenterHandle;
   /** The walk-in buildings' presenters, and the door feet at `(x, z)` units reach (0 none). */
   readonly buildings: { presenters(): BuildingPresenterHandle[]; reachableDoor(x: number, z: number): number; reachableSeat(x: number, z: number): number };
-  /** The Sunken Shrine's kit entries and placed modules (#431), column-major matrices in metres. */
-  readonly shrine: { entries: readonly string[]; placements: readonly { key: string; matrix: Float32Array }[] };
   /** The Outpost kit buildings' entries and placed modules (#420), column-major matrices in metres. */
   readonly outpost: { entries: readonly string[]; placements: readonly { key: string; matrix: Float32Array; wear?: number; cottage?: number }[] };
   /** The market square's settlement-prop entries and placed props (#421), column-major matrices in metres. */
@@ -511,13 +505,6 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
       reachableDoor: (x, z) => content.BuildingPresenter.reachableDoor(Math.round(x), Math.round(z)),
       reachableSeat: (x, z) => content.BuildingPresenter.reachableSeat(Math.round(x), Math.round(z)),
     },
-    shrine: (() => {
-      const models = content.shrineKitModels();
-      return {
-        entries: content.shrineKitEntries(),
-        placements: content.shrineKitKeys().map((key, index) => ({ key, matrix: models.slice(index * 16, index * 16 + 16) })),
-      };
-    })(),
     outpost: (() => {
       const models = content.outpostKitModels();
       const wear = content.outpostKitWear();

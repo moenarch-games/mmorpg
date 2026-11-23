@@ -5,7 +5,8 @@
 //! `content/greyhaven/dressing/sunken-shrine.json` places the arch and broken walls on the plaza, the pillars, the fallen blocks, the altar and
 //! the cave's mouth, tunnels, air-pocket room and closed end over the boxes
 //! [`mmorpg_core::greyhaven_vale::shrine`] lays out; weed, silt drifts and shells only render.
-//! `mmorpg_presentation::shrine` draws them. Presentation only: the colliders decide.
+//! Both clients draw them as an ordinary placed kit (`mmorpg-presentation`'s `placed-kits.json`).
+//! Presentation only: the colliders decide.
 
 /// The shrine kit's rolling release the clients draw.
 pub const RELEASE: &str = "shrine-kit";

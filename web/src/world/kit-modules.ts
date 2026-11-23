@@ -6,8 +6,6 @@ import { drawnResources, loadBundleGltfs, loadStaticBundle } from "./static-bund
 import { releaseMixer, retainedBundle } from "./zone-lifecycle";
 import { ClipDetail, type ClipWork } from "./clip-detail";
 
-/** The rolling `shrine-kit` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
-export const SHRINE_BUNDLE = `${import.meta.env.BASE_URL}scenery/shrine.kit/`;
 /** The rolling `outpost-kit` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
 export const OUTPOST_BUNDLE = `${import.meta.env.BASE_URL}buildings/outpost.kit/`;
 /** The rolling `settlement-props` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
@@ -25,9 +23,8 @@ export type KitOptions = { ktx2?: KTX2Loader; wear?: boolean };
 
 /**
  * An asset-tooling kit's static modules drawn where the shared Rust presentation places them, as
- * the native client does: the Sunken Shrine (#431), the Outpost kit buildings (#420) and the
- * market square's settlement props (#421). Until
- * the bundle loads (or when it fails) no module is drawn; the Outpost's static scene keeps its
+ * the native client does: the Outpost kit buildings (#420) and the market square's settlement
+ * props (#421). Until the bundle loads (or when it fails) no module is drawn; the Outpost's static scene keeps its
  * blockouts and the square its prop boxes meanwhile. Presentation only.
  */
 export class KitModules {

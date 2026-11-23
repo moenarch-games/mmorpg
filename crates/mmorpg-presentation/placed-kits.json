@@ -86,6 +86,28 @@
       ]
     },
     {
+      "name": "shrine",
+      "bundle": "scenery/shrine.kit",
+      "descriptor": "shrine-descriptor",
+      "about": "The Sunken Shrine's cave and temple modules (#431), standing over the zone's shrine colliders.",
+      "entries": [
+        "shrine.kit.air-pocket",
+        "shrine.kit.altar",
+        "shrine.kit.arch",
+        "shrine.kit.cave-end",
+        "shrine.kit.cave-mouth",
+        "shrine.kit.cave-tunnel",
+        "shrine.kit.fallen-blocks",
+        "shrine.kit.floor",
+        "shrine.kit.hanging-weed",
+        "shrine.kit.pillar",
+        "shrine.kit.pillar-broken",
+        "shrine.kit.shells",
+        "shrine.kit.silt-drift",
+        "shrine.kit.wall"
+      ]
+    },
+    {
       "name": "sandstone",
       "bundle": "buildings/sandstone.kit",
       "descriptor": "sandstone-descriptor",

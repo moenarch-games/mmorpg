@@ -1106,7 +1106,7 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
             crate::climbing::draws(p).then_some(Kit::Climbing)
         };
         // The inn is asset-tooling's walk-in bundle (`crate::buildings`), not a procedural block.
-        // The shrine (#431) is asset-tooling's kit (`crate::shrine`).
+        // The shrine (#431) is asset-tooling's kit, an ordinary placed kit (`crate::world_dressing`).
         // Elden's house (#158) is its walk-in bundle too.
         if matches!(p.kind, PropKind::Inn | PropKind::ShrineKit)
             || p.collider == Some(mmorpg_core::greyhaven_vale::ids::MARSHAL_HOUSE)

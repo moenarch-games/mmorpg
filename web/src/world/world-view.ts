@@ -47,7 +47,7 @@ import { type RaidPrepSpots, reachablePrepStep } from "./raid-prep";
 import { RaidSigns } from "./raid-signs";
 import { WalkInBuildings } from "./walk-in-buildings";
 import { ZoneLifecycle } from "./zone-lifecycle";
-import { KitModules, OUTPOST_BUNDLE, SETTLEMENT_BUNDLE, SHRINE_BUNDLE, type KitPlacement } from "./kit-modules";
+import { KitModules, OUTPOST_BUNDLE, SETTLEMENT_BUNDLE, type KitPlacement } from "./kit-modules";
 import { useBundleKtx2Loader } from "./static-bundle";
 import { BatchedScenery } from "./static-batches";
 import { CompositionKit } from "./composition-kit";
@@ -270,8 +270,6 @@ function boxGapSquared(a: Bounds, b: Bounds): number {
 class RegionArt {
   readonly #world: ZoneWorld;
   readonly #innArea: number | null;
-  /** The areas the Sunken Shrine's kit modules (#431) stand in. */
-  readonly #shrineAreas: Set<number>;
   /** The areas the Outpost kit buildings (#420) stand in. */
   readonly #outpostAreas: Set<number>;
   /** The areas the market square's settlement props (#421) stand in. */
@@ -280,7 +278,7 @@ class RegionArt {
   readonly #ambientAreas: Set<number>;
   readonly #prefetch: ArtPrefetch;
 
-  constructor(world: ZoneWorld, models: QuaterniusUnits, inn: WalkInBuildings, shrine: KitModules, outpost: KitModules, settlement: KitModules, ambient: AmbientAnimals, onProgress: () => void) {
+  constructor(world: ZoneWorld, models: QuaterniusUnits, inn: WalkInBuildings, outpost: KitModules, settlement: KitModules, ambient: AmbientAnimals, onProgress: () => void) {
     this.#world = world;
     const innProp = world.scenery.scenery.props.find((prop) => prop.kind === "inn");
     this.#innArea = innProp ? world.scenery.areaAt(innProp.position[0], innProp.position[2])?.id ?? null : null;
@@ -289,7 +287,6 @@ class RegionArt {
       const area = world.scenery.areaAt(matrix[12]! * unit, matrix[14]! * unit);
       return area ? [area.id] : [];
     }));
-    this.#shrineAreas = areas(world.scenery.shrine.placements);
     this.#outpostAreas = areas(world.scenery.outpost.placements);
     this.#settlementAreas = areas(world.scenery.settlement.placements);
     this.#ambientAreas = new Set(world.scenery.ambient.anchors.flatMap(([x, z]) => {
@@ -300,7 +297,7 @@ class RegionArt {
     // of downloading it again, and is emptied whenever no piece is loading.
     THREE.Cache.enabled = true;
     this.#prefetch = new ArtPrefetch(
-      (piece) => (piece === "inn" ? inn.load() : piece === "shrine" ? shrine.load() : piece === "outpost" ? outpost.load() : piece === "settlement" ? settlement.load()
+      (piece) => (piece === "inn" ? inn.load() : piece === "outpost" ? outpost.load() : piece === "settlement" ? settlement.load()
         : piece === "ambient" ? ambient.load() : piece === "residents" ? models.preloadResidents() : models.preloadWorld(piece as ImportedModelKind)),
       (idle) => {
         if (idle) { THREE.Cache.clear(); }
@@ -312,13 +309,12 @@ class RegionArt {
   /** The pieces area `id` needs (every piece for `null`). */
   #pieces(id: number | null): string[] {
     if (id === null) {
-      return ["Ranger", "Wolf", "Rat", "Boar", "Bear", "Spider", "Lurker", "Lynx", "Adder", "Bat", "Crayfish", "Stag", "residents", "inn", "shrine", "outpost", "settlement", "ambient"];
+      return ["Ranger", "Wolf", "Rat", "Boar", "Bear", "Spider", "Lurker", "Lynx", "Adder", "Bat", "Crayfish", "Stag", "residents", "inn", "outpost", "settlement", "ambient"];
     }
     return [
       "Ranger",
       ...this.#world.scenery.regionModels(id),
       ...(id === this.#innArea ? ["inn"] : []),
-      ...(this.#shrineAreas.has(id) ? ["shrine"] : []),
       ...(this.#outpostAreas.has(id) ? ["outpost"] : []),
       ...(this.#settlementAreas.has(id) ? ["settlement"] : []),
       ...(this.#ambientAreas.has(id) ? ["ambient"] : []),
@@ -454,8 +450,6 @@ export class WorldView {
   readonly #models = new QuaterniusUnits((kind) => this.#restClip(kind));
   /** The walk-in inn and Elden's house (#158), drawn from their asset-tooling bundles once loaded. */
   #inn: WalkInBuildings | null = null;
-  /** The Sunken Shrine (#431), drawn from asset-tooling's shrine kit once loaded. */
-  #shrine: KitModules | null = null;
   /** The Outpost kit buildings (#420), drawn from asset-tooling's Outpost kit once loaded; their blockouts until then. */
   #outpost: KitModules | null = null;
   #fortifications: KitModules | null = null;
@@ -754,7 +748,6 @@ export class WorldView {
       fixedRootEntry("world", () => this.#sceneryBatches),
       rootEntry("inhabitant", () => this.#models),
       rootEntry("world", () => this.#inn),
-      rootEntry("world", () => this.#shrine),
       // This combined Outpost kit replaces one shared fallback only when both bundles draw.
       rootEntry("world", () => this.#outpost, outpostReady),
       rootEntry("world", () => this.#fortifications, outpostReady),
@@ -908,7 +901,6 @@ export class WorldView {
     ];
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
     this.#inn = zone.own(new WalkInBuildings(world.scenery.buildings.presenters()));
-    this.#shrine = zone.own(new KitModules(SHRINE_BUNDLE, "shrine kit", world.scenery.shrine.entries, world.scenery.shrine.placements));
     const fortEntry = (key: string) => key.startsWith("greyhaven.fort.");
     this.#outpost = zone.own(new KitModules(OUTPOST_BUNDLE, "Outpost kit", world.scenery.outpost.entries.filter((key) => !fortEntry(key)), world.scenery.outpost.placements.filter(({ key }) => !fortEntry(key)), { wear: true }));
     this.#fortifications = zone.own(new KitModules(`${import.meta.env.BASE_URL}authored/greyhaven-fort/`, "Greyhaven fortifications", world.scenery.outpost.entries.filter(fortEntry), world.scenery.outpost.placements.filter(({ key }) => fortEntry(key))));
@@ -918,7 +910,7 @@ export class WorldView {
     // Greyhaven's art streams in region by region (#240): the selection screen fetches the
     // starting area's pieces, and play fetches each area the player approaches.
     this.#ambient = zone.own(new AmbientAnimals(world.scenery.ambient));
-    this.#regions = new RegionArt(world, this.#models, this.#inn, this.#shrine, this.#outpost, this.#settlement, this.#ambient, () => this.#onArtProgress?.());
+    this.#regions = new RegionArt(world, this.#models, this.#inn, this.#outpost, this.#settlement, this.#ambient, () => this.#onArtProgress?.());
     this.#reachableDoor = world.scenery.buildings.reachableDoor;
     this.#reachableSeat = world.scenery.buildings.reachableSeat;
     this.#reachablePieces = world.scenery.reachablePieces;
@@ -2766,7 +2758,7 @@ export class WorldView {
     const selectablePlayers = new Set(this.#lastProjection?.entities
       .filter((entity) => entity.kind === "player" && entity.entityId !== viewerId && !entity.flags.dead)
       .map((entity) => entity.entityId) ?? []);
-    const picked = this.#picking.pick(point, this.#camera, this.#lastSceneryNodes, this.#lastUnitNodes, this.#lastInstanceBatches, this.#models.pickables(), [...(this.#inn?.pickables() ?? []), ...[this.#shrine, this.#outpost, this.#fortifications, this.#settlement].flatMap((kit) => kit?.pickables() ?? [])], selectablePlayers, { width: rect.width, height: rect.height, pointerType: event.pointerType });
+    const picked = this.#picking.pick(point, this.#camera, this.#lastSceneryNodes, this.#lastUnitNodes, this.#lastInstanceBatches, this.#models.pickables(), [...(this.#inn?.pickables() ?? []), ...[this.#outpost, this.#fortifications, this.#settlement].flatMap((kit) => kit?.pickables() ?? [])], selectablePlayers, { width: rect.width, height: rect.height, pointerType: event.pointerType });
     this.#pendingNpc = null;
     // A click on the door leaf asks the zone to swing it; the zone checks reach (#158).
     if (picked?.kind === "door") {
@@ -2917,8 +2909,6 @@ export class WorldView {
       inn: () => this.#inn?.observe("greyhaven.inn") ?? null,
       /** Elden's private home (#158), likewise. */
       marshalHouse: () => this.#inn?.observe("greyhaven.marshal-house") ?? null,
-      /** The Sunken Shrine kit (#431): whether its modules loaded and which are placed. */
-      shrine: () => this.#shrine?.observe() ?? null,
       /** The Outpost kit buildings (#420): whether their modules loaded and which are placed. */
       outpost: () => this.#outpost?.observe() ?? null,
       fortifications: () => this.#fortifications?.observe() ?? null,
