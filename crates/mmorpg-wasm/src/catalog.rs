@@ -460,9 +460,24 @@ mod tests {
                 ),
                 item(31, "Supply Sack", Value::Null, stats(0, 0, 0, 0)),
                 item(32, "Ironbound Maul", json!("mainHand"), stats(2, 5, 0, 0)),
-                item(33, "Smith's Great Hammer", json!("mainHand"), stats(2, 5, 0, 0)),
-                item(34, "Woodsman's Great Axe", json!("mainHand"), stats(2, 5, 0, 0)),
-                item(35, "Outpost Greatsword", json!("mainHand"), stats(2, 5, 0, 0)),
+                item(
+                    33,
+                    "Smith's Great Hammer",
+                    json!("mainHand"),
+                    stats(2, 5, 0, 0)
+                ),
+                item(
+                    34,
+                    "Woodsman's Great Axe",
+                    json!("mainHand"),
+                    stats(2, 5, 0, 0)
+                ),
+                item(
+                    35,
+                    "Outpost Greatsword",
+                    json!("mainHand"),
+                    stats(2, 5, 0, 0)
+                ),
             ])
         );
         let quests = value["quests"].as_array().unwrap();

@@ -38,6 +38,9 @@ pub struct Motion {
     /// seconds into the clip (`drawSeconds`, `releaseSeconds`, asset-tooling #418).
     pub draw: Option<f64>,
     pub release: Option<f64>,
+    /// When a draw or sheathe clip moves its weapon between the stowed socket and the hand, in
+    /// seconds into the clip (`ready.swapSeconds`, asset-tooling #823).
+    pub swap: Option<f64>,
     /// A crossbow clip's marks (`crossbow`, asset-tooling #419).
     pub crossbow: Option<CrossbowMarks>,
     /// A caster, staff or mace clip's marks (`cast`, asset-tooling #420).
@@ -263,6 +266,7 @@ impl Motions {
                         .map(|_| StrikeMarks::parse(&clip["strike"])),
                     draw: clip["drawSeconds"].as_f64(),
                     release: clip["releaseSeconds"].as_f64(),
+                    swap: clip["ready"]["swapSeconds"].as_f64(),
                     crossbow: clip["crossbow"].as_object().map(|_| {
                         let marks = &clip["crossbow"];
                         let span = |key: &str| {

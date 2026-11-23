@@ -580,6 +580,10 @@ impl GreatWeapon {
 
 /// The guard a great weapon's running strike settles into (#1073, #900).
 pub const GREAT_WEAPON_GUARD: &str = "TwoHand_Guard_Loop";
+/// A great weapon's draw from and sheathe across the back (#1073), on the upper body; the
+/// weapon changes sockets at each clip's `ready.swapSeconds`.
+pub const GREAT_WEAPON_DRAW: &str = "TwoHand_Draw";
+pub const GREAT_WEAPON_SHEATHE: &str = "TwoHand_Sheathe";
 /// The stance a great weapon's holder stands in with it drawn (#1073), over the idle legs.
 pub const GREAT_WEAPON_IDLE: &str = "TwoHand_Idle_Loop";
 
