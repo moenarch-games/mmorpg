@@ -17,11 +17,11 @@ tempfile = "=3.27.0"
 serde_json = "=1.0.154"
 sha2 = "=0.11.1"
 serde = { version = "=1.0.229", features = ["derive"] }
-settings-presentation = { git = "https://github.com/moritzbrantner/settings.git", rev = "01e8ea5dc682adadb395e46966b4e43dc4edef67" }
-settings-core = { git = "https://github.com/moritzbrantner/settings.git", rev = "01e8ea5dc682adadb395e46966b4e43dc4edef67" }
-settings-adapters = { git = "https://github.com/moritzbrantner/settings.git", rev = "01e8ea5dc682adadb395e46966b4e43dc4edef67" }
+settings-presentation = { git = "https://github.com/moritzbrantner/settings.git", branch = "main" }
+settings-core = { git = "https://github.com/moritzbrantner/settings.git", branch = "main" }
+settings-adapters = { git = "https://github.com/moritzbrantner/settings.git", branch = "main" }
 # The shared audio director on kira (#447); Linux builds need ALSA headers (libasound2-dev).
-game-audio = { git = "https://github.com/moritzbrantner/game-audio.git", rev = "2643e342a7d071445186e421082acb553141811d", features = ["kira"] }
+game-audio = { git = "https://github.com/moritzbrantner/game-audio.git", branch = "main", features = ["kira"] }
 # Decodes the EXT_meshopt_compression views of the Ranger downloads (#866): meshoptimizer's own decoder.
 meshopt = "=0.7.0"
 gltf = { version = "=1.4.1", default-features = false, features = ["import", "utils", "names", "extras"] }
@@ -44,16 +44,16 @@ bytemuck = { version = "=1.25.2", features = ["derive"] }
 tobj = { version = "=4.0.5", default-features = false, features = ["use_f64"] }
 # Lighting and rendering (#529): sun/moon, sky, cascaded shadows, sky ambient light, fog and
 # point lights, measured against Bevy in its own repository.
-render-engine = { git = "https://github.com/moritzbrantner/render-engine.git", rev = "3d0acc6830b5b4b18309062237f0fd9fd994d531" }
-three-d-core = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "db9a53a4aaaad28d5bd0d3fad131fc151953e989" }
-three-d-camera = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "db9a53a4aaaad28d5bd0d3fad131fc151953e989" }
-three-d-animation = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "db9a53a4aaaad28d5bd0d3fad131fc151953e989" }
-three-d-projective = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "db9a53a4aaaad28d5bd0d3fad131fc151953e989" }
+render-engine = { git = "https://github.com/moritzbrantner/render-engine.git", branch = "main" }
+three-d-core = { git = "https://github.com/moritzbrantner/3d-lab.git", branch = "main" }
+three-d-camera = { git = "https://github.com/moritzbrantner/3d-lab.git", branch = "main" }
+three-d-animation = { git = "https://github.com/moritzbrantner/3d-lab.git", branch = "main" }
+three-d-projective = { git = "https://github.com/moritzbrantner/3d-lab.git", branch = "main" }
 gilrs = "=0.11.2"
-input-bindings-core = { git = "https://github.com/moritzbrantner/input-bindings.git", rev = "9884cf8c857779d399bc901323d95d42a54022cd" }
+input-bindings-core = { git = "https://github.com/moritzbrantner/input-bindings.git", branch = "main" }
 # The world map (M) is drawn with the Maps library's Rust core: its Web Mercator camera and
-# MapLibre line tessellation, and earcut for fills as Maps does (same pin as the browser's maps).
-maps-core = { git = "https://github.com/moritzbrantner/maps.git", rev = "2aa1a6fb05e486ce438afb7a2707f468f4317276" }
+# MapLibre line tessellation, and earcut for fills as Maps does (Maps' main, as the browser's maps).
+maps-core = { git = "https://github.com/moritzbrantner/maps.git", branch = "main" }
 earcut = "=0.4.11"
 
 [build-dependencies]

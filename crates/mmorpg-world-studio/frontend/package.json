@@ -8,8 +8,8 @@
   },
   "dependencies": {
     "@fontsource/alegreya-sans": "^5.3.0",
-    "@moritzbrantner/maps": "git+https://github.com/moritzbrantner/maps.git#867efcfcad1be5416b97b1e23e54bc34fcf63311",
-    "@moritzbrantner/ui": "git+https://github.com/moritzbrantner/ui.git#9892e374bfd760541b25c4480b5af03e87ee7e9d",
+    "@moritzbrantner/maps": "github:moritzbrantner/maps#main",
+    "@moritzbrantner/ui": "github:moritzbrantner/ui#main",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
