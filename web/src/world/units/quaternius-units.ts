@@ -9,10 +9,9 @@ import { mergeUnitMeshes, releaseUnit, type MergedUnit } from "./merged-unit";
 import type { EntityRef } from "../../entity-ref";
 import { characterVisualProfile } from "../../character-visuals";
 import type { CharacterClassId } from "../../character-selection";
-import { declaredChains, figureAppearance, loadoutAttachments, swordArmPose, varyPreset } from "../wasm-runtime";
+import { declaredChains, equipmentTables, figureAppearance, loadoutAttachments, swordArmPose, varyPreset } from "../wasm-runtime";
 import { ChainSway, declareChains } from "./chain-sway";
 import { BASE_FAMILY, clipFamilies, FamilyClips } from "./clip-families";
-import choreTable from "../../../../content/greyhaven/chores.json";
 import type { BowShot, ChoreCarry, ClassOutfit, ClipLayer, CrossbowCarry, ImportedModelKind, ImportedRequest, LayerMask, Loadout as CarriedLoadout, Throwable } from "../unit-presenter";
 
 type QuaterniusKind = ImportedModelKind;
@@ -28,20 +27,44 @@ type Loadout = CarriedLoadout | null;
  * bundle's default look.
  */
 export type Headwear = "class" | "wayfarer-hood" | "ranger-cap" | "ironcrest-helm" | "none";
-const HEADWEAR_ITEMS: Readonly<Record<Headwear, readonly { key: string; socket: string }[]>> = {
-  class: [],
-  "wayfarer-hood": [],
-  "ranger-cap": [{ key: "equipment.cap.ranger", socket: "head.armor" }],
-  "ironcrest-helm": [{ key: "equipment.helm.ironcrest", socket: "head.armor" }],
-  none: [],
-};
 /** The viewer's hair (#376): a bundle hairstyle (or bald) in one of its tints. */
 export type Hair = { style: "buzzed" | "parted" | "long" | "bald"; color: "black" | "brown" | "blond" };
-const HAIR_ENTRIES: Readonly<Record<Exclude<Hair["style"], "bald">, string>> = {
-  buzzed: "hair.buzzed", parted: "hair.simple-parted", long: "hair.long",
+/**
+ * What a figure wears besides its loadout, as the shared presentation dresses it (`imported::dress`,
+ * `Hat::attachments`, `HairStyle`, the crossbow's bolt, the chores and the signal horn, #1059): the
+ * table the native client dresses from too.
+ */
+type EquipmentTables = {
+  /** Per headwear choice but `none`, its items on their sockets. */
+  headwear: Readonly<Record<Exclude<Headwear, "none">, readonly { key: string; socket: string }[]>>;
+  /** Headwear residents wear through their presets: the farmer's straw hat (#418). */
+  residentHeadwear: readonly { key: string; socket: string }[];
+  /** The figure the headwear is fitted to; the others go without it. */
+  headwearFigure: string;
+  /** Per hairstyle but bald, its `humanoid-appearance` entry, fetched in the tintable `hairVariant`. */
+  hair: Readonly<Record<Exclude<Hair["style"], "bald">, string>>;
+  hairVariant: string;
+  crossbow: { key: string; leftJoint: string };
+  /** The arrow standing in for the crossbow's bolt, scaled by `scale`, and its rest in the groove (#607). */
+  bolt: { key: string; handSocket: string; scale: number; groove: { translation: [number, number, number]; rotation: [number, number, number, number] } };
+  /** Every chore item on its socket (#904, `units::chores`). */
+  chores: readonly ChoreCarry[];
+  /** The Redbrand signaler's horn (#952, `units::signal::HORN`). */
+  signalHorn: ChoreCarry;
 };
-/** The tintable texture variant every hairstyle is fetched in. */
-const HAIR_VARIANT = "hair-1";
+
+let equipment: EquipmentTables | null = null;
+
+/** The shared equipment tables, read from the module once; needs the module loaded. */
+function equipmentOf(): EquipmentTables {
+  equipment ??= JSON.parse(equipmentTables()) as EquipmentTables;
+  return equipment;
+}
+
+/** The authored items `headwear` wears; `none` wears nothing. */
+function headwearItems(headwear: Headwear): readonly { key: string; socket: string }[] {
+  return headwear === "none" ? [] : equipmentOf().headwear[headwear];
+}
 /**
  * How the viewer's Ranger is dressed: carried items, headwear and hair. Units without a viewer
  * look (`headwear` and `hair` null) keep the bundle's default: the hood up, no hair.
@@ -181,8 +204,6 @@ const FEMALE = "humanoid.ranger.female";
 const FIGURES = [MALE, FEMALE] as const;
 /** The figures' equipment release (asset-tooling #517), fetched beside them (#866). */
 const EQUIPMENT = "humanoid.equipment";
-/** The equipment only the male figure wears: his cap, helm and straw hat. */
-const MALE_HEADWEAR = new Set(["equipment.cap.ranger", "equipment.helm.ironcrest", "equipment.hat.straw"]);
 
 /** One drawn model of an asset, posed by weighted, masked clip layers (Atlas 6.6.45). */
 type Posable = {
@@ -667,16 +688,9 @@ function poseDaggers(model: THREE.Object3D, sheathed: readonly [boolean, boolean
 }
 
 /**
- * The crossbow and the arrow standing in for its bolt (`imported::CROSSBOW_SOCKET`, `BOLT_HAND_SOCKET`,
- * `BOLT_SCALE`, `BOLT_GROOVE`, #607).
+ * A crossbowman's crossbow: in the right hand or, through the reload's hand-off, the left; and the arrow standing in
+ * for its bolt, placed by the shared `crossbow` and `bolt` tables (`imported::BOLT_SCALE`, `BOLT_GROOVE`, #607).
  */
-const CROSSBOW_ITEM = "equipment.crossbow";
-const CROSSBOW_LEFT_JOINT = "hand_l";
-const BOLT_ITEM = "equipment.arrow";
-const BOLT_HAND_SOCKET = "hand_r.arrow";
-const BOLT_SCALE = 0.46;
-const BOLT_GROOVE = { translation: [0.006, 0.028, 0.054] as const, rotation: [0, 0.0118, 0.0275, 0.9996] as const };
-/** A crossbowman's crossbow: in the right hand or, through the reload's hand-off, the left; and its bolt. */
 type CarriedCrossbow = {
   holder: THREE.Group;
   hand: Place;
@@ -710,15 +724,10 @@ function poseCrossbow(model: THREE.Object3D, crossbow: CrossbowCarry | null): vo
   if (bolt.holder.parent !== place.joint) { place.joint.add(bolt.holder); }
   if (!bolt.holder.matrix.equals(place.matrix)) { bolt.holder.matrix.copy(place.matrix); }
 }
-
 /**
- * The residents' chore items (#904, `content/greyhaven/chores.json`, `units::chores`): every
- * resident on a figure carries each one hidden on its socket, and its routine's chore shows one.
+ * Each figure's held items by `item@socket`: every resident carries each chore item hidden (the shared `chores`, #904)
+ * and every Redbrand the signal horn (#952); its routine's chore or the call shows one.
  */
-const CHORES: readonly { item: string; socket: string }[] = [...new Map(Object.values(choreTable.chores)
-  .map(({ item, socket }) => [`${item}@${socket}`, { item, socket }] as const)).values()];
-/** The Redbrand signaler's horn (#952, `units::signal::HORN`): every Redbrand figure carries it hidden, shown through a call. */
-const SIGNAL_HORN: { item: string; socket: string } = { item: "equipment.tool.signal-horn", socket: "hand_r.weapon" };
 const choreHolders = new WeakMap<THREE.Object3D, Map<string, THREE.Group>>();
 
 /** Shows `model`'s chore item the presenter asks for (#904); a figure without it keeps empty hands. */
@@ -1048,7 +1057,7 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
   /** What the figure may wear: each offered item, in its default variant, and each hairstyle, in the tintable one. */
   const offered = new Map<string, string | undefined>([
     ...keys.filter((key) => available.has(key)).map((key) => [key, undefined] as const),
-    ...hairKeys.map((key) => [key, HAIR_VARIANT] as const),
+    ...hairKeys.map((key) => [key, equipmentOf().hairVariant] as const),
   ]);
   const items = new Map<string, { scene: THREE.Object3D; gripInverse: THREE.Matrix4 }>();
   const itemLoads = new Map<string, Promise<void>>();
@@ -1081,9 +1090,9 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
   // The choices come from what the figure's indexes offer, so they show before the items load.
   const options: PlayerAppearanceOptions = {
     knight,
-    headwear: (Object.keys(HEADWEAR_ITEMS) as Headwear[]).filter((key) =>
-      (key !== "class" || hasClassOutfits || knight) && HEADWEAR_ITEMS[key].every((item) => offered.has(item.key))),
-    hair: ["bald", ...(Object.keys(HAIR_ENTRIES) as (keyof typeof HAIR_ENTRIES)[]).filter((style) => offered.has(HAIR_ENTRIES[style]))],
+    headwear: ([...Object.keys(equipmentOf().headwear), "none"] as Headwear[]).filter((key) =>
+      (key !== "class" || hasClassOutfits || knight) && headwearItems(key).every((item) => offered.has(item.key))),
+    hair: ["bald", ...(Object.entries(equipmentOf().hair) as [Exclude<Hair["style"], "bald">, string][]).filter(([, entry]) => offered.has(entry)).map(([style]) => style)],
   };
   const loaded = new Map(animationLibrary.animations.map((clip) => [clip.name, clip]));
   withSecondaryPoses(loaded, descriptor);
@@ -1159,20 +1168,21 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
           }
         }
       }
-      const left = key === CROSSBOW_ITEM ? model.getObjectByName(CROSSBOW_LEFT_JOINT) : undefined;
+      const { crossbow: crossbowItem, bolt: boltItem } = equipmentOf();
+      const left = key === crossbowItem.key ? model.getObjectByName(crossbowItem.leftJoint) : undefined;
       if (left) {
         // The reload hands the crossbow to the left hand and back (#607).
         crossbows.set(model, {
           holder, hand: { joint: holder.parent!, matrix: holder.matrix.clone() }, left, grip: item.gripInverse.clone().invert(), bolt: null,
         });
       }
-      const crossbow = key === BOLT_ITEM && socket === BOLT_HAND_SOCKET ? crossbows.get(model) : undefined;
+      const crossbow = key === boltItem.key && socket === boltItem.handSocket ? crossbows.get(model) : undefined;
       if (crossbow) {
         // The arrow stands in for the bolt, scaled to its length (#607).
-        const scale = new THREE.Matrix4().makeScale(BOLT_SCALE, BOLT_SCALE, BOLT_SCALE);
+        const scale = new THREE.Matrix4().makeScale(boltItem.scale, boltItem.scale, boltItem.scale);
         holder.matrix.multiplyMatrices(place.matrix, scale).multiply(item.gripInverse);
-        const [x, y, z] = BOLT_GROOVE.translation;
-        const groove = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion(...BOLT_GROOVE.rotation), new THREE.Vector3(1, 1, 1));
+        const [x, y, z] = boltItem.groove.translation;
+        const groove = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion(...boltItem.groove.rotation), new THREE.Vector3(1, 1, 1));
         // The groove is in the crossbow's grip frame; the crossbow's holder is its item origin.
         crossbow.bolt = {
           holder, hand: { joint: holder.parent!, matrix: holder.matrix.clone() },
@@ -1187,7 +1197,7 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
       }
     }
   };
-  const carryChores: FigureBundle["carryChores"] = (model, chores = CHORES) => {
+  const carryChores: FigureBundle["carryChores"] = (model, chores = equipmentOf().chores) => {
     const held = new Map<string, THREE.Group>();
     for (const { item: key, socket } of chores) {
       const item = items.get(key);
@@ -1219,8 +1229,8 @@ export function lookItems(loadout: Loadout, headwear: Headwear | null, hair: Hai
   const carried = loadoutItems(loadout);
   return [...new Set([
     ...carried.map((item) => item.key),
-    ...(headwear ? HEADWEAR_ITEMS[headwear].map((item) => item.key) : []),
-    ...(hair && hair.style !== "bald" ? [HAIR_ENTRIES[hair.style]] : []),
+    ...(headwear ? headwearItems(headwear).map((item) => item.key) : []),
+    ...(hair && hair.style !== "bald" ? [equipmentOf().hair[hair.style]] : []),
     ...(carried.some((item) => item.key === DAGGER_ITEM) ? Object.values(THROWABLE_ITEMS) : []),
   ])];
 }
@@ -1241,8 +1251,10 @@ type RangerFigures = {
 };
 
 function rangerFigures(loader: GLTFLoader, rest: () => string): RangerFigures {
-  // The farmer's straw hat (#418) rides with the viewer's headwear choices.
-  const keys = [...new Set([...[...Object.values(loadoutTableOf()), ...Object.values(HEADWEAR_ITEMS)].flat().map((item) => item.key), "equipment.hat.straw", ...Object.values(THROWABLE_ITEMS), ...CHORES.map((chore) => chore.item), SIGNAL_HORN.item])];
+  // The residents' headwear, the farmer's straw hat (#418), rides with the viewer's headwear choices.
+  const tables = equipmentOf();
+  const headwear = [...Object.values(tables.headwear), tables.residentHeadwear].flat().map((item) => item.key);
+  const keys = [...new Set([...Object.values(loadoutTableOf()).flat().map((item) => item.key), ...headwear, ...Object.values(THROWABLE_ITEMS), ...tables.chores.map((chore) => chore.item), tables.signalHorn.item])];
   const figures = new Map<string, FigureBundle>();
   const loadingFigures = new Map<string, Promise<FigureBundle>>();
   const failed = new Set<string>();
@@ -1255,9 +1267,9 @@ function rangerFigures(loader: GLTFLoader, rest: () => string): RangerFigures {
     if (ready) { return Promise.resolve(ready); }
     let pending = loadingFigures.get(character);
     if (!pending) {
-      // The headwear is fitted to the male head; the other figures carry the rest.
-      const carried = character === MALE ? keys : keys.filter((key) => !MALE_HEADWEAR.has(key));
-      pending = loadFigure(loader, character, carried, character === MALE ? Object.values(HAIR_ENTRIES) : [], rest()).then((loaded) => {
+      // The headwear is fitted to one figure's head (`HEADWEAR_FIGURE`); the other figures carry the rest.
+      const carried = character === tables.headwearFigure ? keys : keys.filter((key) => !headwear.includes(key));
+      pending = loadFigure(loader, character, carried, character === MALE ? Object.values(tables.hair) : [], rest()).then((loaded) => {
         figures.set(character, loaded);
         settleFirst(loaded);
         return loaded;
@@ -1355,7 +1367,7 @@ async function loadRanger(set: RangerFigures, selection: () => PlayerSelection):
       const node = model.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name));
       if (node) { node.visible = ownHood; }
     }
-    const items = HEADWEAR_ITEMS[head];
+    const items = headwearItems(head);
     for (const piece of preset.pieces) {
       if (piece.beard) {
         if (viewer) { continue; }
@@ -1377,7 +1389,7 @@ async function loadRanger(set: RangerFigures, selection: () => PlayerSelection):
     const hooded = ownHood || baseHood;
     if (viewer) {
       const hairHidden = hooded || worn.some(({ key }) => look.hides.get(key)?.includes("hair"));
-      const hairKey = hair && hair.style !== "bald" && !hairHidden ? HAIR_ENTRIES[hair.style] : null;
+      const hairKey = hair && hair.style !== "bald" && !hairHidden ? equipmentOf().hair[hair.style] : null;
       wear(model, worn, hairKey, hair ? look.tints.get(`tint.${hair.color}`) : undefined);
     } else {
       wear(model, worn, hooded ? null : preset.hair, preset.tint);
@@ -1437,10 +1449,10 @@ async function loadRanger(set: RangerFigures, selection: () => PlayerSelection):
         const node = model.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name));
         if (node) { node.visible = hooded; }
       }
-      const headItems = headwear && female.options.headwear.includes(headwear) ? HEADWEAR_ITEMS[headwear] : [];
+      const headItems = headwear && female.options.headwear.includes(headwear) ? headwearItems(headwear) : [];
       const worn = [...loadoutItems(loadout), ...headItems];
       // This base authors long hair and buns only. Unsupported saved styles remain saved.
-      const hairKey = !hooded && !armoredHead && headItems.length === 0 && hair?.style === "long" ? "hair.long" : null;
+      const hairKey = !hooded && !armoredHead && headItems.length === 0 && hair?.style === "long" ? equipmentOf().hair.long : null;
       female.wear(model, worn, hairKey, hair ? female.look.tints.get(`tint.${hair.color}`) : undefined);
       const scale = dress.physique ? applyPhysique(model, dress.physique, female.physique) : 1;
       const posable = mixerPosable(model, female.sources);
@@ -1474,7 +1486,7 @@ async function loadRanger(set: RangerFigures, selection: () => PlayerSelection):
       // A resident holds its routine's chore item (#904); enemies have no routines, but a Redbrand
       // may sound the signal horn (#952).
       if (resident.startsWith("resident.")) { figure.carryChores(model); }
-      if (resident.startsWith("enemy.redbrand.")) { figure.carryChores(model, [SIGNAL_HORN]); }
+      if (resident.startsWith("enemy.redbrand.")) { figure.carryChores(model, [equipmentOf().signalHorn]); }
       if (preset.faction) { tintMaterials(model, preset.faction.materials, preset.faction.color); }
       if (preset.tone) { tintMaterials(model, preset.tone.materials, preset.tone.color); }
       // Age and build keys (#380) after the face: build targets are on everything worn, age
@@ -1495,9 +1507,9 @@ async function loadRanger(set: RangerFigures, selection: () => PlayerSelection):
     const hoods = look.hood.flatMap((name) => model.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name)) ?? []);
     if (hoods.length === 0) { throw new Error("The Ranger has none of its outfit.hood nodes."); }
     for (const node of hoods) { node.visible = hooded; }
-    const worn = [...loadoutItems(loadout), ...(headwear ? HEADWEAR_ITEMS[headwear] : [])];
+    const worn = [...loadoutItems(loadout), ...(headwear ? headwearItems(headwear) : [])];
     const hairHidden = hooded || worn.some(({ key }) => look.hides.get(key)?.includes("hair"));
-    const hairKey = hair && hair.style !== "bald" && !hairHidden ? HAIR_ENTRIES[hair.style] : null;
+    const hairKey = hair && hair.style !== "bald" && !hairHidden ? equipmentOf().hair[hair.style] : null;
     wear(model, worn, hairKey, hair ? look.tints.get(`tint.${hair.color}`) : undefined);
     return shaped(model);
   };
@@ -1664,10 +1676,11 @@ function applyHeadSkin(model: THREE.Object3D, { material, skin }: HeadSkin): voi
   });
 }
 
-/** The hair entries the appearance offers in the tintable `HAIR_VARIANT`: the bundle's records list `textures`, the hair kit's `variants`. */
+/** The hair entries the appearance offers in the shared tintable hair variant: the bundle's records list `textures`, the hair kit's `variants`. */
 function tintableHair(appearance: unknown): string[] {
+  const variant = equipmentOf().hairVariant;
   const hair = (appearance as { hair?: { entry?: unknown; textures?: { variant?: unknown }[]; variants?: unknown[] }[] }).hair ?? [];
-  return hair.flatMap((style) => (typeof style.entry === "string" && (style.textures?.some((texture) => texture.variant === HAIR_VARIANT) || style.variants?.includes(HAIR_VARIANT)) ? [style.entry] : []));
+  return hair.flatMap((style) => (typeof style.entry === "string" && (style.textures?.some((texture) => texture.variant === variant) || style.variants?.includes(variant)) ? [style.entry] : []));
 }
 
 /** Sets the `morphs` weights on every mesh of `model` (and its attached items) carrying the target. */

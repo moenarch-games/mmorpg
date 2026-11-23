@@ -1,4 +1,4 @@
-import { DAY_SECONDS, skyAt, type EnvironmentStyle } from "./environment";
+import { skyAt, type EnvironmentStyle } from "./environment";
 
 /**
  * The CSS sky behind the transparent world canvas: a gradient from the
@@ -22,10 +22,10 @@ export class SkyLayer {
 
   /**
    * `horizon` is the horizon's height on screen as a fraction from the top;
-   * `seconds` drives the day cycle unless `animate` is false.
+   * `dayFraction` is the day's fraction since noon (the shared `clock::day_fraction`).
    */
-  update(horizon: number, seconds: number, animate: boolean): void {
-    const stops = skyAt(this.#style, animate ? seconds / DAY_SECONDS : 0);
+  update(horizon: number, dayFraction: number): void {
+    const stops = skyAt(this.#style, dayFraction);
     const clamped = Math.min(1.5, Math.max(-0.5, Number.isFinite(horizon) ? horizon : 0.5));
     this.#set("--sky-zenith", stops.zenith);
     this.#set("--sky-upper", stops.upper);

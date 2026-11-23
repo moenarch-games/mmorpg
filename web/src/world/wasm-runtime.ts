@@ -268,3 +268,12 @@ export function prewarmLocalZone(): void {
   if (typeof requestIdleCallback === "function") { requestIdleCallback(prepare, { timeout: 2_000 }); }
   else { setTimeout(prepare, 0); }
 }
+
+/**
+ * What a figure wears besides its loadout (`imported::dress`, #1059) as JSON: headwear and hair per choice, the
+ * crossbow's bolt, the chore items and the signal horn; the table the native client dresses from too. Call after the
+ * module loaded.
+ */
+export function equipmentTables(): string {
+  return generated.equipmentTables();
+}

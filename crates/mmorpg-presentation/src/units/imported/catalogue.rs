@@ -215,7 +215,7 @@ impl Loadout {
             // The crossbow and the arrow standing in for its bolt (#607).
             Self::Crossbow => &[
                 Attachment {
-                    item: "equipment.crossbow",
+                    item: CROSSBOW_ITEM,
                     socket: CROSSBOW_SOCKET,
                 },
                 Attachment {
@@ -321,6 +321,8 @@ pub struct Carry {
     pub chore: Option<crate::units::chores::Chore>,
 }
 
+/// The crossbowman's crossbow (#607).
+pub const CROSSBOW_ITEM: &str = "equipment.crossbow";
 /// Where the crossbow rides: the right hand's [`CROSSBOW_SOCKET`] (#607).
 pub const CROSSBOW_SOCKET: &str = "hand_r.crossbow";
 /// The joint the crossbow rides through the reload's `leftHandSeconds`, kept where it was in the

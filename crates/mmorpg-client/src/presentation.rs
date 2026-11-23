@@ -507,11 +507,7 @@ impl Presentation {
     pub fn set_headwear(&mut self, headwear: Option<&str>) -> Result<(), ClientError> {
         self.headwear = match headwear {
             None => None,
-            Some("ironcrest-helm") => Some(player::Hat::Helm),
-            Some("ranger-cap") => Some(player::Hat::Cap),
-            Some("wayfarer-hood") => Some(player::Hat::Hood),
-            Some("class") => Some(player::Hat::Class),
-            Some(_) => return Err("unknown headwear style".into()),
+            Some(name) => Some(player::Hat::of_name(name).ok_or("unknown headwear style")?),
         };
         Ok(())
     }
@@ -806,7 +802,8 @@ impl Presentation {
             }
             let interior = frame.lighting.interior;
             let lights = std::mem::take(&mut frame.lighting.point_lights);
-            frame.lighting = crate::world::Lighting::at(crate::environment::zone_hour(tick));
+            frame.lighting =
+                crate::world::Lighting::at(mmorpg_presentation::clock::zone_hour(tick));
             frame.lighting.point_lights = lights;
             frame.lighting.interior = interior;
         }

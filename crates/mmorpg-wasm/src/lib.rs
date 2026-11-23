@@ -38,6 +38,7 @@ pub mod party;
 pub mod projections;
 pub mod scenario;
 pub mod scenery;
+pub mod shared_presentation;
 pub mod static_scene;
 pub mod unit_layout;
 pub mod units;

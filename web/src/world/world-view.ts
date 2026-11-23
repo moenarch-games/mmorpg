@@ -13,7 +13,8 @@ import { entityKey, sameEntity } from "../entity-ref";
 import type { EntityRef } from "../entity-ref";
 import { ingestedProjection, type EntityState, type StrikeHeight, type ZoneSnapshot } from "../replication";
 import { DebugOverlay, FrameRate } from "./debug-overlay";
-import { ENVIRONMENT, DAY_SECONDS, ZONE_DAY_TICKS, ZONE_START_TIME, environmentAt, zoneSkySeconds } from "./environment";
+import { ENVIRONMENT, environmentAt } from "./environment";
+import { wasm } from "../wasm";
 import { Minimap, dispositionOf, type MinimapElements, type MinimapUnit } from "./minimap";
 import { MinimapPresenter } from "./minimap-presenter";
 import { Exploration, minimapExploration } from "./exploration";
@@ -1970,15 +1971,14 @@ export class WorldView {
       projectionMatrix: webGpuProjection(this.#camera),
     };
     // The sky follows the zone's clock (#158); a debug presentation time overrides it.
-    // Reduced motion steps the sky once per zone hour instead of drifting continuously.
-    const hour = BigInt(ZONE_DAY_TICKS / 24);
-    const skyTick = animate ? projection.tick : projection.tick - ((projection.tick + BigInt(ZONE_START_TIME)) % hour);
-    const seconds = this.#presentationTime ?? zoneSkySeconds(skyTick);
-    const environment = environmentAt(ENVIRONMENT, seconds / DAY_SECONDS);
+    // Reduced motion steps the sky once per zone hour instead of drifting continuously (the shared `clock`).
+    const hour = this.#presentationTime === null ? wasm.zoneSkyHour(projection.tick, animate) : wasm.pagesHour(this.#presentationTime, true);
+    const dayFraction = wasm.dayFraction(hour);
+    const environment = environmentAt(ENVIRONMENT, dayFraction);
     this.#lastEnvironment = environment;
     // The native client's lights at the same hour (#600): sun or moon, sky light, fog and the scenery's lamps.
     this.#lighting.apply({
-      hour: (12 + seconds / DAY_SECONDS * 24) % 24,
+      hour,
       sky: true,
       interior: Math.max(this.#scene?.interior([self.x, self.feetY, self.z]) ?? 0, this.#inn?.interior([self.x, self.feetY, self.z]) ?? 0),
       fog: environment.fog && !this.#plan ? String(environment.fog.color) : null,
@@ -2049,7 +2049,7 @@ export class WorldView {
     // The atmosphere draws the sky (#600); the CSS sky remains only where the browser cannot draw it.
     const cssSky = !this.#lighting.drawsSky;
     if (this.#elements.sky.hidden === cssSky) { this.#sky.show(cssSky); }
-    if (cssSky) { this.#sky.update(this.#horizon(view.eye, view.target), seconds, true); }
+    if (cssSky) { this.#sky.update(this.#horizon(view.eye, view.target), dayFraction); }
     // A night raid's approximate disturbance area while its assault runs (#530).
     const area = this.#raidArea;
     const disturbance = area && (projection.raid?.phase ?? 0) > 0

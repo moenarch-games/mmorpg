@@ -160,7 +160,7 @@ mod tests {
         let presentation = presentation(scenery, content, ZoneId::new(1), Instant::now()).unwrap();
         let latest = presentation.latest().unwrap();
         assert_eq!(latest.entities.len(), 1);
-        let hour = crate::environment::zone_hour(latest.tick);
+        let hour = mmorpg_presentation::clock::zone_hour(latest.tick);
         assert!((hour - 15.0).abs() < 0.01, "{hour}");
     }
 }

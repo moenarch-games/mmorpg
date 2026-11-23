@@ -13,22 +13,32 @@ import {
 } from "@moritzbrantner/three-lighting";
 import type { RendererMaterialRequest } from "@moritzbrantner/three-d-renderer";
 import { profileRenderPasses } from "./frame-profile";
+import { loadWasm, wasm } from "../wasm";
 
 /**
- * Greyhaven's lighting on the web (#600): render-engine's `@moritzbrantner/three-lighting`, driven with the values
- * the native client gives render-engine (`crates/mmorpg-client/src/graphics/frame.rs`), so both clients light alike:
+ * Greyhaven's lighting on the web (#600): render-engine's `@moritzbrantner/three-lighting`, driven by the shared
+ * `mmorpg_presentation::lighting` (#1059) like the native client's render-engine scene
+ * (`crates/mmorpg-client/src/graphics/frame.rs`), so both clients light alike:
  * the zone hour places the sun and moon (`DayCycle`), Bevy's atmosphere draws the sky, filters them and lights the
  * scene, and the frame is exposed by sun elevation and tone mapped. Every lit mesh draws with a `LitMaterial`;
  * anything else (sprites, effects) is drawn as three draws it.
  */
 
-/** Greyhaven's sun path (`DAY_CYCLE`): 60° above the southern horizon at noon, the moon 12 h behind. */
-const DAY_CYCLE = new DayCycle({ noonElevation: THREE.MathUtils.degToRad(60), moonLagHours: 12 });
-/** Moonlight, brighter than a real full moon so night stays playable (`MOON_LUX`, `MOON_COLOR`). */
-const MOON_LUX = 2;
-const MOON_COLOR: Vec3 = [0.75, 0.85, 1];
-/** EV100 by sun elevation in degrees (`EXPOSURE`). */
-const EXPOSURE: readonly (readonly [number, number])[] = [[-12, 2], [-4, 6], [2, 11], [15, 13.8], [60, 15]];
+/** The shared lighting constants (`mmorpg_presentation::lighting`), read from the module once it loaded. */
+export type LightingTables = {
+  noonElevationDegrees: number; moonLagHours: number; moonLux: number; moonColor: Vec3; bounceColor: Vec3;
+  /** Aerial perspective (#526): contrast falls to 5 % here; the per-metre coefficients below redden distance least. */
+  fogVisibilityMetres: number; fogExtinction: Vec3; fogInscattering: Vec3;
+};
+
+let tables: LightingTables | null = null;
+
+/** The shared lighting constants; needs the module loaded. */
+export function lightingTables(): LightingTables {
+  tables ??= JSON.parse(wasm.lightingTables()) as LightingTables;
+  return tables;
+}
+
 /** Emissive presentation colours glow at this luminance, cd/m² (`EMISSIVE_NITS`). */
 export const EMISSIVE_NITS = 80;
 /**
@@ -41,67 +51,27 @@ export const EMISSIVE_NITS = 80;
 const SUN_SHADOWS: SunShadows = {
   numCascades: 3, minDistance: 0.2, firstCascadeFarBound: 12, maxDistance: 160, overlapProportion: 0.2, depthBias: 0.02, normalBias: 1.8,
 };
-/** Below this sun elevation (degrees) the sun casts no shadows (`SHADOWLESS_BELOW`). */
-const SHADOWLESS_BELOW = -3;
-/**
- * Daylight bounce from the sunlit ground, cd/m², and its warm grass-and-earth colour (#874): the atmosphere's
- * environment light is the sky alone, so a sun shadow on the meadow kept only that cold sky light and read as an
- * ink-black slab hiding the grass in it. A uniform fill lifts shadows to about a quarter of the sunlit ground while
- * barely brightening it (`BOUNCE_NITS`, `BOUNCE_COLOR`).
- */
-const BOUNCE_NITS = 6000;
-const BOUNCE_COLOR: Vec3 = [1, 0.96, 0.86];
-/**
- * Aerial perspective (#526), as `mmorpg_client::environment`: atmospheric fog whose contrast falls to 5 % at
- * `FOG_VISIBILITY_METRES` (Bevy's Koschmieder threshold), red light fading and blue gathering first, so distant ranges
- * turn blue but keep their shading.
- */
-export const FOG_VISIBILITY_METRES = 6000;
-const FOG_DENSITY = -Math.log(0.05) / FOG_VISIBILITY_METRES;
-const FOG_EXTINCTION: Vec3 = [1.1 * FOG_DENSITY, FOG_DENSITY, 0.9 * FOG_DENSITY];
-const FOG_INSCATTERING: Vec3 = [0.9 * FOG_DENSITY, FOG_DENSITY, 1.1 * FOG_DENSITY];
 /** The presentation materials' surface (`standard_material`). */
 const ROUGHNESS = 0.86;
 const METALLIC = 0.02;
 
 /**
- * Without the atmosphere (the character-selection stage, which keeps its page backdrop, or a browser lacking
- * `OES_texture_float_linear`/`EXT_color_buffer_float`) the sun is filtered by an analytic Earth atmosphere (Bevy's
- * Rayleigh, Mie and ozone optical depths over the Kasten–Young air mass), the moon replaces it once it outshines it,
- * and the sky's light is an ambient term by sun elevation, tuned against the native frames; the canvas is transparent
- * where nothing is drawn, so the CSS sky shows.
+ * One frame's shared `SceneLight` (`wasm.sceneLight`'s layout): everything but the sun's and moon's directions. Without
+ * the atmosphere (the character-selection stage, which keeps its page backdrop, or a browser lacking
+ * `OES_texture_float_linear`/`EXT_color_buffer_float`) its analytic sunlight and sky ambient light the scene; the
+ * canvas is then transparent where nothing is drawn, so the CSS sky shows.
  */
-const ZENITH_OPTICAL_DEPTH: Vec3 = [0.0663, 0.1468, 0.2762];
-/** Sky ambient light, cd/m², by sun elevation in degrees, and its colour. */
-const SKY_AMBIENT: readonly (readonly [number, number])[] = [[-12, 0.35], [-4, 3], [0, 900], [3, 2000], [8, 3500], [15, 6000], [60, 11000]];
-const SKY_COLOR: Vec3 = [0.8, 0.88, 1];
-const TWILIGHT_COLOR: Vec3 = [0.86, 0.84, 0.88];
+type SceneLight = {
+  elevation: number; ev100: number; transmission: number; environmentIntensity: number; bounceNits: number; sunShadows: boolean;
+  sunlight: Vec3; ambientColor: Vec3; ambientNits: number;
+};
 
-function interpolate(table: readonly (readonly [number, number])[], x: number): number {
-  const first = table[0]!;
-  const last = table[table.length - 1]!;
-  if (x <= first[0]) { return first[1]; }
-  for (let index = 1; index < table.length; index += 1) {
-    const [x1, y1] = table[index]!;
-    const [x0, y0] = table[index - 1]!;
-    if (x <= x1) { return y0 + (y1 - y0) * (x - x0) / (x1 - x0); }
-  }
-  return last[1];
-}
-
-/** EV100 at a sun elevation in degrees, like the native client's `ev100`. */
-export function ev100(elevation: number): number {
-  return interpolate(EXPOSURE, elevation);
-}
-
-/** Sunlight reaching the ground at an elevation in degrees, linear RGB lux (zero below the horizon). */
-export function sunlight(elevation: number): Vec3 {
-  if (elevation <= -0.5) { return [0, 0, 0]; }
-  const e = Math.max(elevation, 0);
-  const airMass = 1 / (Math.sin(THREE.MathUtils.degToRad(e)) + 0.50572 * (e + 6.07995) ** -1.6364);
-  // Fades out over the last half degree as the disc sets.
-  const setting = Math.min(1, (elevation + 0.5) / 0.5);
-  return ZENITH_OPTICAL_DEPTH.map((depth) => RAW_SUNLIGHT * setting * Math.exp(-depth * airMass)) as unknown as Vec3;
+function sceneLight(toSunUp: number, interior: number, sky: boolean): SceneLight {
+  const v = wasm.sceneLight(toSunUp, interior, sky, RAW_SUNLIGHT);
+  return {
+    elevation: v[0]!, ev100: v[1]!, transmission: v[2]!, environmentIntensity: v[3]!, bounceNits: v[4]!, sunShadows: v[5] === 1,
+    sunlight: [v[6]!, v[7]!, v[8]!], ambientColor: [v[9]!, v[10]!, v[11]!], ambientNits: v[12]!,
+  };
 }
 
 /** Linear 0–1 channels of an sRGB `#rrggbb` colour or 0xrrggbb number. */
@@ -178,16 +148,23 @@ export class GreyhavenLighting {
   #frame: LightingFrame | null = null;
   /** Whether the browser can draw the atmosphere; known at the first draw. */
   #skySupported: boolean | null = null;
+  /** Greyhaven's sun path (`mmorpg_presentation::lighting`), once the module loaded. */
+  #dayCycle: DayCycle | null = null;
 
-  /** Loads the tone-mapping LUTs from `base`, where `vite.config.ts` copies them (`luts/`); nothing draws before. */
+  /**
+   * Loads the tone-mapping LUTs from `base`, where `vite.config.ts` copies them (`luts/`), and the module that owns the
+   * lighting curves; nothing draws before.
+   */
   constructor(base: string) {
-    void loadToneMappingLuts({
+    void Promise.all([loadToneMappingLuts({
       tonyMcMapface: `${base}luts/tony_mc_mapface.ktx2`,
       agx: `${base}luts/AgX-default_contrast.ktx2`,
-    }).then((luts) => {
+    }), loadWasm()]).then(([luts]) => {
       const lighting = new Lighting(luts);
       lighting.tonemapping = "tonyMcMapface";
       lighting.shadowFilter = "gaussian";
+      const shared = lightingTables();
+      this.#dayCycle = new DayCycle({ noonElevation: THREE.MathUtils.degToRad(shared.noonElevationDegrees), moonLagHours: shared.moonLagHours });
       this.#lighting = lighting;
     });
   }
@@ -202,51 +179,40 @@ export class GreyhavenLighting {
     this.#frame = frame;
   }
 
-  /** The native client's `frame::scene` for `frame`. */
-  #configure(lighting: Lighting, frame: LightingFrame): void {
+  /** The native client's `frame::scene` for `frame`: the shared `SceneLight` bound to three. */
+  #configure(lighting: Lighting, dayCycle: DayCycle, frame: LightingFrame): void {
     const { hour, fog, pointLights } = frame;
-    const sun = DAY_CYCLE.toSun(hour);
-    const elevation = THREE.MathUtils.radToDeg(Math.asin(Math.min(1, Math.max(-1, sun[1]))));
-    const interior = Math.min(1, Math.max(0, frame.interior));
-    const exposure = ev100(elevation);
-    const transmission = 10 ** (-3 * interior);
-    // Keep the night/cave fill while allowing daylight relief and cast shadows to read.
-    // The character-selection stage retains its existing studio fill.
-    const daylight = Math.min(1, Math.max(0, elevation / 15));
-    const skyFill = frame.sky ? 0.9 - 0.25 * daylight : 0.9;
-    const environmentIntensity = (skyFill + (1 - skyFill) * interior) * 10 ** (-interior);
-    lighting.ev100 = exposure + (Math.min(exposure, 7.5) - exposure) * interior;
-    const shadows = elevation > SHADOWLESS_BELOW ? SUN_SHADOWS : null;
+    const shared = lightingTables();
+    const sun = dayCycle.toSun(hour);
+    const light = sceneLight(sun[1], frame.interior, frame.sky);
+    const { transmission } = light;
+    lighting.ev100 = light.ev100;
+    const shadows = light.sunShadows ? SUN_SHADOWS : null;
     if (this.drawsSky) {
-      lighting.sky = { ...DEFAULT_SKY, environmentIntensity };
+      lighting.sky = { ...DEFAULT_SKY, environmentIntensity: light.environmentIntensity };
       lighting.clearColor = [0, 0, 0];
       lighting.clearAlpha = 1;
       lighting.sun = { direction: negate(sun), color: [1, 1, 1], illuminance: RAW_SUNLIGHT * transmission, shadows };
-      lighting.moon = { direction: negate(DAY_CYCLE.toMoon(hour)), color: MOON_COLOR, illuminance: MOON_LUX * transmission };
+      lighting.moon = { direction: negate(dayCycle.toMoon(hour)), color: shared.moonColor, illuminance: shared.moonLux * transmission };
       // The sky's environment light is the ambient light, plus the sunlit ground's bounce by day.
-      lighting.ambient = { color: BOUNCE_COLOR, brightness: BOUNCE_NITS * daylight * transmission };
+      lighting.ambient = { color: shared.bounceColor, brightness: light.bounceNits };
     } else {
       lighting.sky = null;
       lighting.moon = null;
       lighting.clearAlpha = 0;
-      const light = sunlight(elevation);
-      const lux = Math.max(...light);
+      const lux = Math.max(...light.sunlight);
       // One directional light: the sun while it outshines the moon, then the moon.
-      if (lux > MOON_LUX) {
-        lighting.sun = { direction: negate(sun), color: light.map((channel) => channel / lux) as unknown as Vec3, illuminance: lux * transmission, shadows };
+      if (lux > shared.moonLux) {
+        lighting.sun = { direction: negate(sun), color: light.sunlight.map((channel) => channel / lux) as unknown as Vec3, illuminance: lux * transmission, shadows };
       } else {
-        const moon = DAY_CYCLE.toMoon(hour);
-        lighting.sun = moon[1] > 0 ? { direction: negate(moon), color: MOON_COLOR, illuminance: MOON_LUX * transmission, shadows: null } : null;
+        const moon = dayCycle.toMoon(hour);
+        lighting.sun = moon[1] > 0 ? { direction: negate(moon), color: shared.moonColor, illuminance: shared.moonLux * transmission, shadows: null } : null;
       }
-      const twilight = Math.max(0, 1 - Math.abs(elevation) / 8);
-      lighting.ambient = {
-        color: SKY_COLOR.map((channel, index) => channel + (TWILIGHT_COLOR[index]! - channel) * twilight) as unknown as Vec3,
-        brightness: interpolate(SKY_AMBIENT, elevation) * transmission * environmentIntensity,
-      };
+      lighting.ambient = { color: light.ambientColor, brightness: light.ambientNits };
     }
     lighting.fog = fog === null ? null : {
       color: [...linearRgb(fog), 1],
-      falloff: FogFalloff.atmospheric(FOG_EXTINCTION, FOG_INSCATTERING),
+      falloff: FogFalloff.atmospheric(shared.fogExtinction, shared.fogInscattering),
     };
     const lights: PointLight[] = [];
     if (pointLights) {
@@ -267,12 +233,13 @@ export class GreyhavenLighting {
   /** The renderer's `draw` hook: the whole frame through `Lighting.render`, or nothing until it loaded. */
   draw(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera): void {
     const lighting = this.#lighting;
-    if (!lighting || !this.#frame) {
+    const dayCycle = this.#dayCycle;
+    if (!lighting || !dayCycle || !this.#frame) {
       renderer.clear();
       return;
     }
     this.#skySupported ??= renderer.extensions.has("OES_texture_float_linear") && renderer.extensions.has("EXT_color_buffer_float");
-    this.#configure(lighting, this.#frame);
+    this.#configure(lighting, dayCycle, this.#frame);
     onceAcrossPasses(scene, () => profileRenderPasses(renderer, scene, camera, lighting.sky !== null, () => lighting.render(renderer, scene, camera)));
   }
 }
