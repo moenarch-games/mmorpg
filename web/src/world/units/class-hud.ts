@@ -1,7 +1,7 @@
 import { findEntity, TICK_HZ, type AuraState, type ResourceKind, type StrikeAim, type StrikeHeight, type StrikeSide, type ZoneSnapshot } from "../../replication";
 import type { ContentCatalog } from "../catalog";
 import { artworkOf, auraPolarity, glyphOf } from "./ability-presentation";
-import { actionBar, cooldownSeconds, resourceName, sweepDegrees, tooltipText, type SlotState } from "./ability-state";
+import { ActionBarCache, cooldownSeconds, resourceName, sweepDegrees, tooltipText, type SlotState } from "./ability-state";
 import { auraLabel, auraTimer, sortAuras } from "./aura-display";
 import { castBarView } from "./cast-bar";
 import { HEROIC_STRIKE_ABILITY } from "./directed-strike";
@@ -94,6 +94,9 @@ export class ClassHud {
   readonly #auraSignatures = new Map<HTMLElement, string>();
   #slots: SlotElements[] = [];
   #slotKey = "";
+  /** The action bar of the projection and catalog the slots show (#1091). */
+  readonly #barStates = new ActionBarCache();
+  #barCatalog: ContentCatalog | null = null;
   #longPress: { slot: number; timer: ReturnType<typeof setTimeout> } | null = null;
   #suppressClick = false;
   #lastPointerType = "";
@@ -228,6 +231,8 @@ export class ClassHud {
     this.#bar.replaceChildren();
     this.#slots = [];
     this.#slotKey = "";
+    this.#barStates.reset();
+    this.#barCatalog = null;
     this.#interruptUntil = 0;
     this.#tick = -1n;
     this.#cleaved = 0;
@@ -305,7 +310,15 @@ export class ClassHud {
   }
 
   #updateBar(snapshot: ZoneSnapshot, catalog: ContentCatalog): void {
-    const states = actionBar(snapshot);
+    if (catalog !== this.#barCatalog) {
+      this.#barCatalog = catalog;
+      this.#barStates.reset();
+    }
+    // The slots already show this projection: nothing on the bar can differ (#1091).
+    const states = this.#barStates.changed(snapshot);
+    if (!states) {
+      return;
+    }
     const key = states.map((state) => state.ability).join(",");
     if (key !== this.#slotKey) {
       this.#slotKey = key;
