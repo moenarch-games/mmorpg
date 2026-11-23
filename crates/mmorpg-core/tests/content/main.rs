@@ -32,6 +32,7 @@ mod redbrand_depths_thorn;
 mod redbrand_patrol;
 mod redbrand_story;
 mod region_quests;
+mod reward_capacity;
 mod river_crayfish;
 mod southwood_stag;
 mod starter_acceptance;

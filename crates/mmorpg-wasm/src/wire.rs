@@ -282,6 +282,7 @@ mirror!(
         CannotSitHere,
         WeaponDrawn,
         MissingMaterials,
+        RewardsBusy,
     }
 );
 mirror!(

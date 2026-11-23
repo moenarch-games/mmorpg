@@ -258,7 +258,11 @@ pub use raid::{
 };
 pub use ramp::{MAX_RAMPS, Ramp, RampRise};
 pub use reckoning::{Harm, MAX_RECKONING_POOLS, RECKONING_ALLY_RADIUS};
-pub use rewards::{RewardGrant, RewardHistory, RewardKey};
+pub use rewards::{
+    DEFAULT_MAX_KNOWN_RECEIPTS, DEFAULT_MAX_TICK_GRANTS, DeferredReward, MAX_DEFERRED_REWARDS,
+    RECEIPTS_PER_CHARACTER, RewardGrant, RewardHistory, RewardKey, RewardPayout,
+    ZONE_PAYOUTS_PER_PLAYER,
+};
 pub use rewind::{CLIENT_INTERPOLATION_TICKS, HitRewind, MAX_HIT_REWIND_MS, RewindFrame};
 pub use rock::{PROXIES as ROCK_PROXIES, RockProxy, RockShape};
 pub use roll::Roll;

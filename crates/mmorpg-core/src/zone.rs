@@ -291,6 +291,9 @@ pub struct ZoneTickWork {
     /// Interest query results that outgrew their buffer during the tick, so allocated
     /// (#1086): the creature tick's own queries reuse warm buffers.
     pub interest_query_allocations: usize,
+    /// Deferred zone payouts the tick visited, paid or dropped (#1112); at most the tick's
+    /// grant bound plus the dropped ones, and none while the backlog is empty.
+    pub deferred_rewards_visited: usize,
     /// The engine's own report, present only after a successful physics step.
     pub physics: Option<crate::physics::StepStats>,
 }
@@ -932,6 +935,8 @@ impl ZoneSimulation {
 
     /// Advances one tick in a fixed order:
     ///
+    /// 0. with reward tracking, zone payouts deferred by earlier ticks, oldest first, while
+    ///    the tick has room (#1112);
     /// 1. every player's pending intents, in `(player id, sequence)` order,
     ///    including class choices and ability use (instant abilities resolve
     ///    here, casts and channels start here);
@@ -977,6 +982,8 @@ impl ZoneSimulation {
             player.events.clear();
             player.chat.clear();
         }
+        // Zone payouts that did not fit an earlier tick come first (#1112).
+        self.pay_deferred_rewards()?;
         self.consume_intents()?;
         self.decide_creatures()?;
         self.decide_minions()?;

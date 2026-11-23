@@ -273,6 +273,31 @@
       ]
     },
     {
+      "id": "deferred-reward-drain",
+      "description": "One tick over a deferred zone-payout backlog (#1112): the drain pays oldest first and visits only what the tick's grant bound (16 in these samples) pays, however long the backlog; an empty backlog costs nothing.",
+      "dimensions": {
+        "backlog": { "description": "deferred raid payouts waiting, spread over 64 players" }
+      },
+      "scalePoints": [{ "backlog": 64 }, { "backlog": 256 }, { "backlog": 1024 }],
+      "metrics": [
+        {
+          "name": "deferred_rewards_visited",
+          "unit": "entries",
+          "signal": "operation-count",
+          "notes": "ZoneTickWork::deferred_rewards_visited; entries for departed players or closed objectives are visited and dropped, none in these samples.",
+          "budget": { "max": 16 },
+          "growth": [{ "dimension": "backlog", "bound": "constant" }]
+        },
+        {
+          "name": "deferred_rewards_paid",
+          "unit": "entries",
+          "signal": "operation-count",
+          "budget": { "max": 16 },
+          "growth": [{ "dimension": "backlog", "bound": "constant" }]
+        }
+      ]
+    },
+    {
       "id": "camera-only-frames",
       "description": "Greyhaven client presentation (#645): camera-only frames around a standing viewer over settled static residency build, upload and evict no static scenery, whatever the authored scenery.",
       "dimensions": {

@@ -130,6 +130,9 @@ pub enum ErrorCode {
     /// The ability does not fit the user's shape (#957): a spell in wolf form, or the wolf's
     /// bite outside it.
     WrongForm,
+    /// The zone cannot record another reward receipt this tick (#1112): a corpse keeps its
+    /// loot and a quest stays in the log, so the player can try again.
+    RewardsBusy,
 }
 
 /// One feedback event addressed to a player.

@@ -171,11 +171,15 @@ impl crate::ZoneSimulation {
                 let Some(player) = self.players.get_mut(&player_id) else {
                     continue;
                 };
-                if !crate::rewards::allowed(&self.rewards, player_id, key)
-                    || !player.discoveries.insert(area.id())
+                // A tick without room for the receipt leaves the area undiscovered; the
+                // player discovers it in a later tick it still stands there (#1112).
+                if player.discoveries.contains(&area.id())
+                    || !crate::rewards::allowed(&self.rewards, player_id, key)
+                    || !crate::rewards::fits(&self.rewards, 1)
                 {
                     continue;
                 }
+                player.discoveries.insert(area.id());
                 crate::rewards::record(&mut self.rewards, player_id, key)?;
                 let reward = discovery_experience(player.level)
                     .ok_or_else(|| crate::ZoneError::new("invalid progression level"))?;

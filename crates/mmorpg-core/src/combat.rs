@@ -1503,9 +1503,16 @@ impl ZoneSimulation {
             creature: creature_id,
             life: generation,
         };
-        if crate::rewards::allowed(&self.rewards, player_id, key) {
-            self.reward_kill_experience(player_id, level)?;
-            crate::rewards::record(&mut self.rewards, player_id, key)?;
+        if crate::rewards::allowed(&self.rewards, player_id, key)
+            && let Some(player) = self.players.get(&player_id)
+        {
+            let experience = crate::progression::kill_experience(player.level, level)
+                .ok_or_else(|| ZoneError::new("invalid progression level"))?;
+            let payout = crate::rewards::RewardPayout {
+                experience,
+                copper: 0,
+            };
+            self.pay_zone_reward(player_id, key, payout)?;
         }
         self.credit_kill(player_id, template, creature_id, generation)
     }

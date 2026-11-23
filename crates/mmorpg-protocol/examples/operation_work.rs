@@ -331,6 +331,52 @@ fn area_lookup(side: usize) -> Result<String> {
     ))
 }
 
+/// The tick grant bound of the deferred-drain samples.
+const DRAIN_TICK_GRANTS: u16 = 16;
+
+/// One tick over a deferred reward backlog of `backlog` raid payouts spread over 64 players
+/// (#1112): the drain visits what the tick's grant bound pays, never the whole backlog.
+fn deferred_reward_drain(backlog: usize) -> Result<String> {
+    const PLAYERS: usize = 64;
+    let points = far_points();
+    let players = (0..PLAYERS)
+        .map(|index| player(index, points[index], 0, 0))
+        .collect::<Result<Vec<_>>>()?;
+    let base = zone(players)?;
+    let mut canonical = base.snapshot()?;
+    let mut history = mmorpg_core::RewardHistory::new(65_536, DRAIN_TICK_GRANTS)?;
+    for entry in 0..backlog {
+        history.defer(
+            0,
+            u32::try_from(entry % PLAYERS)? + 1,
+            mmorpg_core::RewardKey::RaidParticipation {
+                incident: u32::try_from(entry / PLAYERS)? + 1,
+            },
+            mmorpg_core::RewardPayout {
+                experience: 120,
+                copper: 15,
+            },
+        );
+    }
+    canonical.rewards = Some(history);
+    let mut zone = ZoneSimulation::from_snapshot(canonical, Arc::clone(base.content()))?;
+    zone.advance_tick()?;
+    let paid = zone.reward_history().ok_or("reward tracking")?.grants.len();
+    if paid != usize::from(DRAIN_TICK_GRANTS).min(backlog) {
+        return Err("the drain must fill the tick's grant bound".into());
+    }
+    Ok(sample(
+        &[("backlog", backlog)],
+        &[
+            (
+                "deferred_rewards_visited",
+                zone.tick_work().deferred_rewards_visited,
+            ),
+            ("deferred_rewards_paid", paid),
+        ],
+    ))
+}
+
 fn main() -> Result<()> {
     let operations = [
         (
@@ -366,6 +412,13 @@ fn main() -> Result<()> {
             [32, 64, 128]
                 .into_iter()
                 .map(area_lookup)
+                .collect::<Result<Vec<_>>>()?,
+        ),
+        (
+            "deferred-reward-drain",
+            [64, 256, 1_024]
+                .into_iter()
+                .map(deferred_reward_drain)
                 .collect::<Result<Vec<_>>>()?,
         ),
     ];

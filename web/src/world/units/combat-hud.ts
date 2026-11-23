@@ -68,6 +68,7 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "movement-immune": "It cannot be moved right now.",
   "missing-materials": "You lack the materials for that.",
   "wrong-form": "You cannot do that in this form.",
+  "rewards-busy": "The realm cannot record that reward right now. Try again in a moment.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;

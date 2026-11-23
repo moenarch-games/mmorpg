@@ -103,6 +103,11 @@ Refusals use existing `YouAreDead`, `OutOfRange`, `InventoryFull` and
 `EmptyLoot` and `MoneyOverflow`. Feedback is cosmetic; money, bag revision and
 complete loot presence/state are durable projection facts.
 
+A zone that tracks reward receipts (the PostgreSQL host) refuses a claim it cannot
+record this tick, because the tick's grant bound or the zone's receipt bound is
+reached, with `RewardsBusy` (#1112, Atlas 3.2.i1112): like a full bag, player and
+corpse stay unchanged and the claim can be retried. Capacity never fails the tick.
+
 Canonical recovery retains copper, both RNG states, remaining rewards, tapper,
 death tick and pending claims. It validates rewards against the bound table and
 requires an existing owner and unexpired corpse. Raw wire continuation tests

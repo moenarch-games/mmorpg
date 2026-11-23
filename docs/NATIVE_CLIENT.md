@@ -302,7 +302,7 @@ Operational limits are configurable, not performance ratchets:
 | `MMORPG_JOURNAL_MAX_BATCH_BYTES` / `MMORPG_JOURNAL_MAX_RETAINED_BYTES` | 16777216 / 67108864 |
 | `MMORPG_JOURNAL_MAX_BATCHES` / `MMORPG_JOURNAL_MAX_REPLAY_TICKS` | 900 / 900 |
 | `MMORPG_CHECKPOINT_MAX_COMPRESSED_BYTES` / `MMORPG_CHECKPOINT_MAX_DECODED_BYTES` | 16777216 / 67108864 |
-| `MMORPG_MAX_REWARD_RECEIPTS` / `MMORPG_MAX_TICK_GRANTS` | 1024 / 128 |
+| `MMORPG_MAX_REWARD_RECEIPTS` / `MMORPG_MAX_TICK_GRANTS` (#1112: 256 receipts and 4 zone payouts per player of the 512-player zone; lower values slow payouts or refuse admission, never stop the zone) | 131072 / 2048 |
 
 Lease/commit failures fence the host. Object-store failures retain the last verified checkpoint and bounded PostgreSQL journal; exceeding its configured bounds stops progression.
 Acknowledged economy depends on the designated standby's durable receipt and replay. Promotion must preserve that confirmed history and fence the former primary; automatic database failover is not implemented here.

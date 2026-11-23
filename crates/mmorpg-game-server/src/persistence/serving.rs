@@ -81,7 +81,7 @@ fn checkpoint_limits() -> Result<CheckpointLimits> {
 fn genesis(
     zone: ZoneId,
     grace: u64,
-    known: u16,
+    known: u32,
     grants: u16,
 ) -> Result<game_server::RecoveryImage> {
     // A new world draws its secret seed (#1111) here; its canonical baseline and every later
@@ -368,8 +368,15 @@ pub async fn serve_postgres_character_host(
                 .into(),
         );
     }
-    let known = number("MMORPG_MAX_REWARD_RECEIPTS", 1024_u16)?;
-    let tick_grants = number("MMORPG_MAX_TICK_GRANTS", 128_u16)?;
+    // Defaults derive from the zone's player capacity (#1112): a full zone fits.
+    let known = number(
+        "MMORPG_MAX_REWARD_RECEIPTS",
+        mmorpg_core::DEFAULT_MAX_KNOWN_RECEIPTS,
+    )?;
+    let tick_grants = number(
+        "MMORPG_MAX_TICK_GRANTS",
+        mmorpg_core::DEFAULT_MAX_TICK_GRANTS,
+    )?;
     let object_limits = checkpoint_limits()?;
     if mode == "reset" {
         if env::var("MMORPG_CONFIRM_SOURCE_STOPPED").ok().as_deref() != Some("1") {

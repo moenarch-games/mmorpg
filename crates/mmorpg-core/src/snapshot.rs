@@ -838,6 +838,7 @@ impl ZoneSimulation {
                 || rewards
                     .grants
                     .iter()
+                    .chain(rewards.deferred.iter().map(|entry| &entry.grant))
                     .any(|grant| !zone.players.contains_key(&grant.player))
             {
                 return Err(ZoneError::new("reward history references an absent player"));
@@ -846,6 +847,7 @@ impl ZoneSimulation {
                 .world
                 .iter()
                 .chain(rewards.players.values().flatten())
+                .chain(rewards.deferred.iter().map(|entry| &entry.grant.key))
             {
                 if key
                     .creature_life()

@@ -72,7 +72,12 @@ impl ZoneSimulation {
                 let centre = self.player_position(player_id)?;
                 let feet = [centre.x, centre.y - PLAYER_HALF_EXTENTS_UNITS[1], centre.z];
                 let key = crate::RewardKey::Cache { cache: cache.id };
-                if !cache.within(feet) || !crate::rewards::allowed(&self.rewards, player_id, key) {
+                // Like a full bag, a tick without room for its receipt leaves the cache
+                // closed until a later tick (#1112).
+                if !cache.within(feet)
+                    || !crate::rewards::allowed(&self.rewards, player_id, key)
+                    || !crate::rewards::fits(&self.rewards, 1)
+                {
                     continue;
                 }
                 let player = self

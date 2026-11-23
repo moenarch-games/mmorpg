@@ -740,6 +740,10 @@ impl ZoneSimulation {
         if !crate::rewards::allowed(&self.rewards, player_id, grant) {
             return Ok(Some((ErrorCode::InvalidQuest, target)));
         }
+        // A turn-in the tick cannot record waits for the player's retry (#1112).
+        if !crate::rewards::fits(&self.rewards, 1) {
+            return Ok(Some((ErrorCode::RewardsBusy, target)));
+        }
         // Stage bag and copper; any refusal leaves both and the log intact.
         let mut bag = player.inventory.clone();
         for objective in &definition.objectives {
@@ -802,10 +806,11 @@ impl ZoneSimulation {
         life: u64,
     ) -> Result<(), ZoneError> {
         let content = std::sync::Arc::clone(&self.content);
-        let Some(player) = self.players.get_mut(&player_id) else {
+        let Some(player) = self.players.get(&player_id) else {
             return Ok(());
         };
-        for entry in &mut player.quests.entries {
+        let mut due = Vec::new();
+        for entry in &player.quests.entries {
             let Some(quest) = content.quest(entry.quest) else {
                 continue;
             };
@@ -824,23 +829,58 @@ impl ZoneSimulation {
                         objective: u8::try_from(index)
                             .map_err(|_| ZoneError::new("quest objective index overflow"))?,
                     };
-                    if !crate::rewards::allowed(&self.rewards, player_id, key) {
-                        continue;
+                    if crate::rewards::allowed(&self.rewards, player_id, key) {
+                        due.push(key);
                     }
-                    crate::rewards::record(&mut self.rewards, player_id, key)?;
-                    entry.progress[index] += 1;
-                    push_event(
-                        &mut player.events,
-                        ZoneEvent::QuestProgress {
-                            quest: quest.id,
-                            objective: u8::try_from(index).unwrap_or(u8::MAX),
-                            count: entry.progress[index],
-                        },
-                    );
                 }
             }
         }
+        for key in due {
+            self.pay_zone_reward(player_id, key, crate::rewards::RewardPayout::default())?;
+        }
         Ok(())
+    }
+
+    /// Advances one open kill objective by one (#1112: also a deferred kill credit's
+    /// payout); `false` when the quest left the log or the objective is already complete.
+    pub(crate) fn advance_kill_objective(
+        &mut self,
+        player_id: PlayerId,
+        quest: QuestId,
+        objective: u8,
+    ) -> bool {
+        let content = std::sync::Arc::clone(&self.content);
+        let index = usize::from(objective);
+        let Some(QuestObjective::Kill { count, .. }) = content
+            .quest(quest)
+            .and_then(|definition| definition.objectives.get(index).copied())
+        else {
+            return false;
+        };
+        let Some(player) = self.players.get_mut(&player_id) else {
+            return false;
+        };
+        let Some(entry) = player
+            .quests
+            .entries
+            .iter_mut()
+            .find(|entry| entry.quest == quest)
+        else {
+            return false;
+        };
+        if entry.progress[index] >= count {
+            return false;
+        }
+        entry.progress[index] += 1;
+        push_event(
+            &mut player.events,
+            ZoneEvent::QuestProgress {
+                quest,
+                objective,
+                count: entry.progress[index],
+            },
+        );
+        true
     }
 
     /// Progress events for collect objectives of `item` after the bag

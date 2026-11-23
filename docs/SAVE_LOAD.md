@@ -27,7 +27,10 @@ and entering resumes it, so creatures, corpses, respawn timers, the RNG and the 
 continue across reloads. There is one saved world per browser (Atlas 3.3.7), held by one
 tab at a time through a Web Lock; a second tab is told the world is open elsewhere. A
 saved world this build cannot resume (another version or content, or corrupt bytes) is
-replaced by a fresh one and the world label says so. The world and the character records
+replaced by a fresh one and the world label says so; worlds saved before the reward
+backlog layout (#1112) are such a case. The local world tracks no reward receipts; hosted
+zones that do never stop a tick on reward capacity: refused claims and turn-ins wait for
+a retry and zone payouts wait in the canonical backlog. The world and the character records
 are separate saves, not one atomic bundle; production journals and checkpoints follow
 after #30 and game-server#54.
 Earlier builds offered **Save game**, **Load game**, **Export save** and **Import save**

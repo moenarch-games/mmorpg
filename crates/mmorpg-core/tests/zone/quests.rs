@@ -752,3 +752,41 @@ fn the_hosted_chain_starts_at_the_marshal() {
     );
     assert!(sheet.entries.is_empty() && sheet.completed.is_empty());
 }
+
+#[test]
+fn a_turn_in_without_receipt_room_is_refused_and_the_quest_waits_for_a_retry() {
+    // #1112: the zone's one receipt is already held, so the turn-in cannot be recorded.
+    let mut run = Run::new();
+    run.zone.enable_reward_tracking(1, 16).unwrap();
+    run.zone
+        .load_reward_receipt(1, mmorpg_core::RewardKey::Cache { cache: 1 })
+        .unwrap();
+    assert!(run.accept(ERRAND).is_empty());
+    run.teleport([-1_500, -2_550]);
+    run.tick();
+    let turn_in = ZoneCommand::CompleteQuest {
+        npc: FARAWAY,
+        quest: ERRAND.get(),
+        choice: 0,
+    };
+    let before = run.player();
+    for _ in 0..2 {
+        assert_eq!(
+            run.act(turn_in),
+            [error(ErrorCode::RewardsBusy, Some(FARAWAY))]
+        );
+        let after = run.player();
+        assert_eq!(
+            (&after.quests, after.copper, after.combat.experience),
+            (&before.quests, before.copper, before.combat.experience),
+            "the quest stays in the log, unpaid"
+        );
+    }
+    let mut state = run.zone.snapshot().unwrap();
+    state.rewards.as_mut().unwrap().max_known_ids = 2;
+    run.zone = ZoneSimulation::from_snapshot(state, Arc::clone(run.zone.content())).unwrap();
+    assert!(
+        run.act(turn_in)
+            .contains(&ZoneEvent::QuestCompleted { quest: ERRAND })
+    );
+}
