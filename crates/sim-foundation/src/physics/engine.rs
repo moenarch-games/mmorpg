@@ -179,11 +179,23 @@ struct Support {
     grounded: bool,
 }
 
-/// The ground casts' reused hit buffer and [`World::grounded`]'s cached answers (#666).
+/// The ground casts' reused hit buffer, [`World::grounded`]'s cached answers (#666) and the
+/// first engine query failure since the zone last took it (#1151).
 #[derive(Clone, Default)]
 struct Probes {
     hits: Vec<QueryHit>,
     support: BTreeMap<BodyId, Support>,
+    failure: Option<PhysicsError>,
+}
+
+impl Probes {
+    /// Keeps the first failed engine query (#1151): the query answers as if it hit nothing,
+    /// and the zone reports the failure from its tick ([`World::take_query_failure`]) instead
+    /// of the host panicking. A successful query never reaches here, so results are unchanged.
+    fn fail(&mut self, what: &str, failure: impl fmt::Debug) {
+        self.failure
+            .get_or_insert_with(|| engine_error(what, failure));
+    }
 }
 
 /// [`Probes`] behind a mutex, because the casts are reached through `&self` and the world stays
@@ -579,9 +591,9 @@ impl World {
 
     /// Whether moving `body` stands on platform `platform`: walkable top within the ground
     /// prediction below it.
-    fn stands_on(&self, body: &RigidBody, platform: BodyId) -> bool {
+    fn stands_on(&self, body: &RigidBody, platform: BodyId) -> Result<bool, PhysicsError> {
         let Some(&target) = self.handles.get(&platform) else {
-            return false;
+            return Ok(false);
         };
         let offset = self.settings.offset;
         let predict = offset + GROUND_PREDICTION_UNITS;
@@ -597,13 +609,13 @@ impl World {
         let mut hits = Vec::new();
         self.engine
             .cast_shape(cast, filter, &mut hits)
-            .expect("physics-engine platform support cast failed");
+            .map_err(|failure| engine_error("platform support cast", failure))?;
         let min_up = libm::cosf(self.settings.max_slope);
-        hits.iter().any(|hit| {
+        Ok(hits.iter().any(|hit| {
             hit.body == target
                 && (hit.starts_overlapping || hit.normal.1 >= min_up)
                 && hit.fraction * reach <= predict
-        })
+        }))
     }
 
     pub fn set_velocity(&mut self, id: BodyId, velocity: Vec3i) -> Result<(), PhysicsError> {
@@ -756,9 +768,10 @@ impl World {
             Vector(0.0, -distance, 0.0),
         );
         let mut hits = Vec::new();
-        self.engine
-            .cast_ray(ray, QueryFilter::default(), &mut hits)
-            .expect("physics-engine terrain ray failed");
+        if let Err(failure) = self.engine.cast_ray(ray, QueryFilter::default(), &mut hits) {
+            self.probes.lock().fail("terrain ray", failure);
+            return None;
+        }
         hits.iter()
             .find(|hit| hit.body == terrain)
             .map(|hit| top - hit.fraction * distance)
@@ -813,7 +826,7 @@ impl World {
             for body in self.moving.iter().map(|id| &self.bodies[id]) {
                 if body.velocity[1] <= 0.0
                     && !carried.contains_key(&body.id)
-                    && self.stands_on(body, platform)
+                    && self.stands_on(body, platform)?
                 {
                     carried.insert(body.id, displacement);
                 }
@@ -862,7 +875,7 @@ impl World {
                         cached.gap
                     }
                     _ => {
-                        let gap = self.probe_ground_gap(body);
+                        let gap = self.probe_ground_gap(body)?;
                         ground_gaps.insert(
                             body.id,
                             GroundGap {
@@ -986,9 +999,14 @@ impl World {
         // offset the capsule keeps, so any walkable hit within the cast's reach supports.
         let offset = self.settings.offset;
         let reach = offset + GROUND_PREDICTION_UNITS + offset;
-        let grounded = self
-            .support_fraction(body, capsule(body.half_extents), reach)
-            .is_some();
+        let grounded = match self.support_fraction(body, capsule(body.half_extents), reach) {
+            Ok(fraction) => fraction.is_some(),
+            Err(failure) => {
+                let mut probes = self.probes.lock();
+                probes.failure.get_or_insert(failure);
+                return false;
+            }
+        };
         self.probes.lock().support.insert(
             id,
             Support {
@@ -1000,19 +1018,25 @@ impl World {
         grounded
     }
 
-    fn probe_ground_gap(&self, body: &RigidBody) -> Option<f32> {
+    fn probe_ground_gap(&self, body: &RigidBody) -> Result<Option<f32>, PhysicsError> {
         let offset = self.settings.offset;
         let reach = offset + GROUND_PREDICTION_UNITS;
         let (half_segment, radius) = super::capsule_dimensions(body.half_extents);
-        self.support_fraction(body, Shape::capsule(half_segment, radius + offset), reach)
-            .map(|fraction| fraction * reach)
+        Ok(self
+            .support_fraction(body, Shape::capsule(half_segment, radius + offset), reach)?
+            .map(|fraction| fraction * reach))
     }
 
     /// The fraction of `reach` at which `shape`, cast down from `body`, first meets walkable
     /// static support, in the reused hit buffer: a too-steep face met first (a ramp's chute end)
     /// is passed over, as physics-engine's own support test does (physics-engine #395). Over
     /// the lake basin the floor is open, as in the body's moves.
-    fn support_fraction(&self, body: &RigidBody, shape: Shape, reach: f32) -> Option<f32> {
+    fn support_fraction(
+        &self,
+        body: &RigidBody,
+        shape: Shape,
+        reach: f32,
+    ) -> Result<Option<f32>, PhysicsError> {
         let cast = ShapeCast::new(
             QueryPose::new(shape, lifted(body.position)),
             Vector(0.0, -reach, 0.0),
@@ -1026,10 +1050,11 @@ impl World {
         hits.clear();
         self.engine
             .cast_shape(cast, filter, hits)
-            .expect("physics-engine grounded cast failed");
+            .map_err(|failure| engine_error("grounded cast", failure))?;
         let min_up = libm::cosf(self.settings.max_slope);
         let open = self.open_floor(body);
-        hits.iter()
+        Ok(hits
+            .iter()
             .find(|hit| {
                 Some(hit.body) != open
                     && (hit.starts_overlapping || hit.normal.1 > 0.0)
@@ -1040,7 +1065,7 @@ impl World {
                         .and_then(|game| self.bodies.get(game))
                         .is_none_or(|body| !body.is_moving())
             })
-            .map(|hit| hit.fraction)
+            .map(|hit| hit.fraction))
     }
 
     pub fn overlap_query(&self, aabb: Aabb) -> Result<Vec<BodyId>, PhysicsError> {
@@ -1093,17 +1118,21 @@ impl World {
         let game = |hit: &physics_engine::approximate::RayHit| {
             self.games.get(&hit.body.to_bits()).copied()
         };
-        let first = self
-            .engine
-            .cast_ray_first(ray, QueryFilter::default())
-            .expect("physics-engine ray query failed")?;
+        let first = match self.engine.cast_ray_first(ray, QueryFilter::default()) {
+            Ok(first) => first?,
+            Err(failure) => {
+                self.probes.lock().fail("ray query", failure);
+                return None;
+            }
+        };
         if let Some(id) = game(&first).filter(|&id| accept(id)) {
             return Some((id, first));
         }
         let mut hits = Vec::new();
-        self.engine
-            .cast_ray(ray, QueryFilter::default(), &mut hits)
-            .expect("physics-engine ray query failed");
+        if let Err(failure) = self.engine.cast_ray(ray, QueryFilter::default(), &mut hits) {
+            self.probes.lock().fail("ray query", failure);
+            return None;
+        }
         hits.into_iter()
             .find_map(|hit| game(&hit).filter(|&id| accept(id)).map(|id| (id, hit)))
     }
@@ -1154,9 +1183,13 @@ impl World {
             vector(translation),
         );
         let mut hits = Vec::new();
-        self.engine
+        if let Err(failure) = self
+            .engine
             .cast_shape(cast, QueryFilter::default(), &mut hits)
-            .expect("physics-engine shape cast failed");
+        {
+            self.probes.lock().fail("shape cast", failure);
+            return None;
+        }
         // Hits come ordered by fraction, then body order (game ID).
         hits.iter().find_map(|hit| {
             let id = self.games.get(&hit.body.to_bits()).copied()?;
@@ -1181,7 +1214,7 @@ impl World {
             ..Dynamic::default()
         };
         self.step_pieces(debris, Some(ids), settle, &options)
-            .expect("physics-engine debris step failed")
+            .unwrap_or_else(|failure| self.piece_failure(failure))
     }
 
     /// Movable props are upright boxes stopped by units' capsules.
@@ -1199,7 +1232,7 @@ impl World {
             media,
         };
         self.step_pieces(props, None, &settle, &options)
-            .expect("physics-engine props step failed")
+            .unwrap_or_else(|failure| self.piece_failure(failure))
     }
 
     /// Rolling boulders (#299): free spheres; only slow ones stop at units.
@@ -1218,7 +1251,19 @@ impl World {
             media,
         };
         self.step_pieces(boulders, None, &settle, &options)
-            .expect("physics-engine boulder step failed")
+            .unwrap_or_else(|failure| self.piece_failure(failure))
+    }
+
+    /// A failed piece step (#1151): none moved, and the zone reports it from its tick.
+    fn piece_failure(&mut self, failure: PhysicsError) -> usize {
+        self.probes.get_mut().failure.get_or_insert(failure);
+        0
+    }
+
+    /// The first engine query or piece-step failure since the last call (#1151), cleared:
+    /// the zone checks it once per tick and fails the tick with it.
+    pub fn take_query_failure(&mut self) -> Result<(), PhysicsError> {
+        self.probes.get_mut().failure.take().map_or(Ok(()), Err)
     }
 
     fn has_authored_geometry(&self) -> bool {

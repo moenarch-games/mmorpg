@@ -983,6 +983,22 @@ impl World {
         outcome
     }
 
+    /// The first failed backend query or piece step since the last call, cleared (#1151).
+    /// Queries reached through `&self` (grounded, rays, casts, terrain height) and the piece
+    /// steps answer as if they met nothing when the engine refuses them; the zone takes the
+    /// failure once per tick and fails the tick with it, so the host never panics on one.
+    ///
+    /// # Errors
+    ///
+    /// The first failure the backend kept.
+    pub fn take_query_failure(&mut self) -> Result<(), PhysicsError> {
+        match &mut self.worlds {
+            #[cfg(feature = "physics-ab")]
+            Worlds::Rapier(_) => Ok(()),
+            Worlds::Engine(world) => world.take_query_failure(),
+        }
+    }
+
     /// Whether a moving body stands on static ground.
     #[must_use]
     pub fn grounded(&self, id: BodyId) -> bool {
@@ -1118,6 +1134,21 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_refused_query_answers_nothing_and_is_kept_until_taken() {
+        let mut world = World::new(Vec3i::new(0, -SUBUNITS_PER_UNIT, 0));
+        world.take_query_failure().unwrap();
+        // The engine refuses a non-finite ray (#1151): no hit, no panic, and the failure is
+        // kept for the zone's tick.
+        assert_eq!(
+            world.cast_ray([f32::NAN, 0.0, 0.0], [1.0, 0.0, 0.0], |_| true),
+            None
+        );
+        let failure = world.take_query_failure().unwrap_err();
+        assert!(failure.to_string().contains("ray query"), "{failure}");
+        world.take_query_failure().unwrap();
+    }
 
     #[test]
     fn a_turned_box_collides_as_the_oriented_box_not_its_bound() {
