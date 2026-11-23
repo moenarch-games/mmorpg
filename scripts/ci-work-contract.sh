@@ -7,13 +7,13 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-# moritzbrantner/coding-tooling main, pinned by commit; bump it intentionally.
-CODING_TOOLING_REV=aba13db56c5e612fa82b1fbc6a2577ba5fb72dcd
+# moritzbrantner/coding-tooling at the head of main (owner decision 2026-11-23, #1126: follow main).
+CODING_TOOLING_REF=main
 
 work="$(mktemp -d)"
 trap 'rm -rf -- "${work}"' EXIT
 git -C "${work}" init -q
-git -C "${work}" fetch -q --depth 1 https://github.com/moritzbrantner/coding-tooling.git "${CODING_TOOLING_REV}"
+git -C "${work}" fetch -q --depth 1 https://github.com/moritzbrantner/coding-tooling.git "${CODING_TOOLING_REF}"
 git -C "${work}" checkout -q FETCH_HEAD
 (cd "${work}" && bun install --frozen-lockfile)
 
