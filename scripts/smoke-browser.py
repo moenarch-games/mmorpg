@@ -363,6 +363,20 @@ class BrowserAcceptance(unittest.TestCase):
             previous = current
         self.fail("The rendered view never settled")
 
+    def locked_look(self, dx, dy=0, steps=5):
+        """Mouse motion while the world holds the pointer lock, which the page reads only as
+        `movementX/Y`. Playwright's moves under the lock reach the page as a jump and an equal jump
+        back (`movementX` +760 then -760 in Chromium 159), so they turn nothing; this sends the
+        pointer events a locked mouse produces, with the motion split over `steps`."""
+        self.page.evaluate("""([dx, dy, steps]) => {
+          const canvas = document.querySelector('#world');
+          if (document.pointerLockElement !== canvas) throw Error('The world does not hold the pointer lock');
+          for (let i = 0; i < steps; i++) {
+            canvas.dispatchEvent(new PointerEvent('pointermove', {bubbles: true, pointerId: 1, pointerType: 'mouse', isPrimary: true,
+              movementX: dx / steps, movementY: dy / steps}));
+          }
+        }""", [dx, dy, steps])
+
     def wait_for_view(self, expected, timeout_frames=240):
         for _ in range(timeout_frames):
             self.frames(2)
@@ -642,7 +656,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.assertTrue(self.page.evaluate("window.__focusSwings.length"), "a free-look sword swing needs no selection")
         self.assertIsNone(self.click_world_target())
         before = self.page.evaluate("window.__valeDebug.controls().heading")
-        self.page.mouse.move(x + 80, y + 30)
+        self.locked_look(80, 30, steps=1)
         self.frames(3)
         self.assertNotEqual(self.page.evaluate("window.__valeDebug.controls().heading"), before)
         self.page.evaluate("window.dispatchEvent(new Event('blur'))")
@@ -664,7 +678,8 @@ class BrowserAcceptance(unittest.TestCase):
                     if close.is_visible():
                         close.click()
                 x, y, _ = self.aim_at_world_unit("npc", identity)
-                self.page.mouse.click(x, y, button="right")
+                # The left button selects since #636; the right one only cancels.
+                self.page.mouse.click(x, y)
                 self.click_world_step()
                 self.assertEqual(self.click_world_target(), {"kind": "npc", "id": identity})
                 expect(self.page.locator("[data-part=target-name]")).to_contain_text(name)
@@ -1059,10 +1074,17 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.mouse.up()
         self.page.wait_for_function("document.pointerLockElement === document.querySelector('#world')")
         self.page.wait_for_function("window.__valeDebug.controls().pointer === 'camera'")
-        self.page.mouse.move(x + 200, y, steps=5)
+        self.locked_look(200)
         self.assertTrue(self.wait_for_facing_change(ran["facing"]), "Captured mouse-look turns the character")
         self.page.evaluate("document.exitPointerLock()")
         self.page.wait_for_function("window.__valeDebug.controls().pointer === 'interface'")
+        # A lost pointer lock opens the game menu (#636). Escape closes it and leaves the cursor
+        # free (Resume would capture mouse-look again).
+        menu = self.page.locator("#game-menu")
+        expect(menu).to_be_visible()
+        self.page.keyboard.press("Escape")
+        expect(menu).to_be_hidden()
+        self.assertEqual(self.page.evaluate("window.__valeDebug.controls().pointer"), "interface")
         turned = self.debug_stats()["self"]["facing"]
         self.page.mouse.move(x, y)
         self.page.mouse.down(button="right")
