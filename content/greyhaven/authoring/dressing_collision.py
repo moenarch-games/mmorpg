@@ -29,6 +29,7 @@ KITS = {
     'gatherables.kit.': (ROOT / 'web/public/scenery/gatherables.kit', 'gatherables-descriptor'),
     'settlement.props.': (ROOT / 'web/public/scenery/settlement.props', 'settlement-descriptor'),
     'discoveries.kit.': (ROOT / 'web/public/scenery/discoveries.kit', 'discoveries-descriptor'),
+    'sandstone.kit.': (ROOT / 'web/public/buildings/sandstone.kit', 'sandstone-descriptor'),
 }
 UNITS_PER_METRE = 100
 
@@ -46,12 +47,23 @@ def descriptor(bundle, name):
 def boxes_mesh(proxies):
     """A kit's solid `collisionProxies` boxes (the wolf den's, #963), with the walkable decks and
     ladders of the discoveries kit (#913), as one closed, outward-wound triangle mesh in the
-    asset's frame."""
+    asset's frame. A placed door never opens, so its `dynamic-door` leaf is solid; a `roof` box
+    (the sandstone kit's) is the gable prism inside it, its ridge along X at the box's top."""
     vertices, triangles = [], []
     # Each face's corners counter-clockwise seen from outside, as bit masks of (x, y, z).
     faces = [(0, 2, 6, 4), (1, 5, 7, 3), (0, 4, 5, 1), (2, 3, 7, 6), (0, 1, 3, 2), (4, 6, 7, 5)]
+    # The prism's eaves (-Z, +Z) and ridge at each end, -X then +X, and its outward faces.
+    prism = [(0, 1, 2), (3, 5, 4), (0, 3, 4), (0, 4, 1), (1, 4, 5), (1, 5, 2), (2, 5, 3), (2, 3, 0)]
     for proxy in proxies:
-        if proxy.get('tag') not in ('solid', 'walkable', 'ladder'):
+        if proxy.get('tag') == 'roof':
+            base = len(vertices)
+            (cx, cy, cz), (sx, sy, sz) = proxy['center'], proxy['size']
+            for x in (cx - sx / 2, cx + sx / 2):
+                vertices += [[x, cy - sy / 2, cz - sz / 2], [x, cy - sy / 2, cz + sz / 2],
+                             [x, cy + sy / 2, cz]]
+            triangles += [[base + a, base + b, base + c] for a, b, c in prism]
+            continue
+        if proxy.get('tag') not in ('solid', 'walkable', 'ladder', 'dynamic-door'):
             continue
         base = len(vertices)
         for corner in range(8):

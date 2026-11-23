@@ -623,3 +623,36 @@ fn a_player_walks_onto_a_dressed_buttress_apron() {
         "stopped {gap} units short of the rock's foot: {feet:?}"
     );
 }
+
+/// The sandstone steading's cottage (#683.Q1) collides as its art: a player walking from the
+/// yard at its closed door stops at the door's outer face, and its 4 m wall offers no climb or
+/// mantle.
+#[test]
+fn a_player_stops_at_the_sandstone_cottage_door_and_cannot_climb_it() {
+    let definition = greyhaven_vale::content().definition().clone();
+    let door = definition
+        .static_meshes()
+        .iter()
+        .find(|mesh| mesh.id == greyhaven_vale::fort::SANDSTONE_STEADING.start() + 3)
+        .expect("the cottage's door leaf collides");
+    // The cottage stands at (-23900, -37050) turned 135°, its door 3 m out along (1, -1)/√2.
+    let out = [
+        std::f32::consts::FRAC_1_SQRT_2,
+        -std::f32::consts::FRAC_1_SQRT_2,
+    ];
+    let centre = [-23_900.0_f32, -37_050.0];
+    let along = |feet: [f32; 3]| (feet[0] - centre[0]) * out[0] + (feet[2] - centre[1]) * out[1];
+    let start = [centre[0] + out[0] * 700.0, centre[1] + out[1] * 700.0];
+    let mut player = Player::at([start[0] as i32, start[1] as i32]);
+    // Facing back along the door's axis: toward −X and +Z.
+    let inward = 57_344;
+    player.walk_into(inward);
+    let feet = player.feet();
+    assert!(
+        (300.0..420.0).contains(&along(feet)),
+        "stopped {} units out from the cottage centre (door leaf at {:?}): {feet:?}",
+        along(feet),
+        door.position
+    );
+    player.refused(inward);
+}
