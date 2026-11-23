@@ -418,7 +418,7 @@ impl GameUi {
                         };
                         let rows: Vec<&Quest> = context.quest_rows(content, npc.id);
                         // At night a private-home resident answers woken, turn-ins only (#158).
-                        let night = mmorpg_core::is_night(mmorpg_core::time_of_day(snapshot.tick));
+                        let night = mmorpg_presentation::clock::zone_night(snapshot.tick);
                         let woken = content.private_home(npc.id).filter(|_| night);
                         if let Some(home) = woken {
                             ui.label(RichText::new(home.woken_line.as_str()).italics());

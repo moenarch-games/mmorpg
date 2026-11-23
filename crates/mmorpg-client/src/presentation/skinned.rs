@@ -8,9 +8,9 @@ use mmorpg_presentation::units::{
     imported::{
         BOLT_GROOVE, BOLT_HAND_SOCKET, BOLT_SCALE, BOW_DRAW_AXIS, BOW_HAND_SOCKET, BOW_NOCK_JOINT,
         BOW_STOWED_SOCKET, Bolt, BowShot, CROSSBOW_LEFT_JOINT, CROSSBOW_SOCKET, Carry,
-        CrossbowCarry, DAGGER_SHEATH_SOCKETS, DROP_ARMOR_OUTFIT, Figure, Joint, Kind, Layer,
-        Loadout, Mask, Outfit, THROWABLE_BELT_SOCKET, THROWABLE_SOCKET, Throwable, UPPER_BODY_ROOT,
-        draw_meters, gripped,
+        CrossbowCarry, DAGGER_SHEATH_SOCKETS, DROP_ARMOR_OUTFIT, Figure, HAIR_SOCKET, HAIR_VARIANT,
+        Joint, Kind, Layer, Loadout, Mask, Outfit, STARTER_HAIR, THROWABLE_BELT_SOCKET,
+        THROWABLE_SOCKET, Throwable, UPPER_BODY_ROOT, draw_meters, gripped,
     },
     kit::{Frame, model},
     player::Hat,
@@ -2245,18 +2245,27 @@ impl Equipment {
         })
     }
 
-    /// The authored headwear item worn on the head (#374); the hood is the character's own part
-    /// and the class headwear the outfit's (#379).
+    /// The authored headwear item worn on the head (#374), as the shared presentation dresses it
+    /// ([`Hat::attachments`], #1059); the hood is the character's own part and the class
+    /// headwear the outfit's (#379).
     pub fn headwear(hat: Hat) -> Option<&'static Self> {
-        static CAP: OnceLock<Equipment> = OnceLock::new();
-        static HELM: OnceLock<Equipment> = OnceLock::new();
-        match hat {
-            Hat::Hood | Hat::Class => None,
-            Hat::Cap => Some(CAP.get_or_init(|| Self::of(&[(ranger_bundle::CAP, "head.armor")]))),
-            Hat::Helm => {
-                Some(HELM.get_or_init(|| Self::of(&[(ranger_bundle::HELM, "head.armor")])))
-            }
+        static HEADWEAR: [OnceLock<Equipment>; Hat::ALL.len()] =
+            [const { OnceLock::new() }; Hat::ALL.len()];
+        let attachments = hat.attachments();
+        if attachments.is_empty() {
+            return None;
         }
+        let index = Hat::ALL
+            .iter()
+            .position(|&each| each == hat)
+            .expect("every headwear is listed");
+        Some(HEADWEAR[index].get_or_init(|| {
+            let items: Vec<_> = attachments
+                .iter()
+                .map(|at| (equipment_path(at.item), at.socket))
+                .collect();
+            Self::of(&items)
+        }))
     }
 }
 
@@ -2291,16 +2300,18 @@ fn strings(value: &serde_json::Value) -> Vec<String> {
 /// `humanoid-appearance` headwear entry lists `hair`. The class headwear hides it only under
 /// the outfit's own hood ([`ClassOutfit::hood`]).
 pub fn hides_hair(hat: Option<Hat>) -> bool {
-    let entry = match hat {
+    match hat {
         None | Some(Hat::Class) => return false,
         Some(Hat::Hood) => return true,
-        Some(Hat::Cap) => ranger_bundle::CAP_KEY,
-        Some(Hat::Helm) => ranger_bundle::HELM_KEY,
-    };
+        Some(_) => {}
+    }
+    let worn = hat.map_or(&[][..], Hat::attachments);
     appearance()["headwear"]
         .as_array()
-        .and_then(|items| items.iter().find(|item| item["entry"] == entry))
-        .is_some_and(|item| {
+        .into_iter()
+        .flatten()
+        .filter(|item| worn.iter().any(|at| item["entry"] == at.item))
+        .any(|item| {
             strings(&item["hides"])
                 .iter()
                 .any(|hidden| hidden == "hair")
@@ -2313,7 +2324,7 @@ impl Equipment {
         let descriptor: serde_json::Value =
             serde_json::from_slice(ranger_file(ranger_bundle::SOCKETS))
                 .expect("the sockets descriptor is JSON");
-        let (joint, matrix) = socket(&descriptor, "head.hair");
+        let (joint, matrix) = socket(&descriptor, HAIR_SOCKET);
         Self {
             items: vec![(model, joint, matrix)],
             stowed: vec![None],
@@ -2325,20 +2336,22 @@ impl Equipment {
         }
     }
 
-    /// The starter hair (#376: Parted, Brown) on `head.hair`; native has no hair picker.
+    /// The starter hair (#376: [`STARTER_HAIR`], Brown) on [`HAIR_SOCKET`]; native has no hair
+    /// picker.
     pub fn hair() -> &'static Self {
         static HAIR: OnceLock<Equipment> = OnceLock::new();
         HAIR.get_or_init(|| {
-            let mut hair = residents::kit_hair(ranger_bundle::HAIR_KEY).map_or_else(
+            let key = STARTER_HAIR.entry();
+            let mut hair = residents::kit_hair(key).map_or_else(
                 || {
-                    if ranger_bundle::FILES
+                    // The legacy Ranger hair, in its tintable variant, where the bundle has it.
+                    let id = format!("{key}/{HAIR_VARIANT}");
+                    let legacy = ranger_bundle::ENTRIES
                         .iter()
-                        .any(|(path, _)| *path == ranger_bundle::HAIR)
-                    {
-                        Self::of(&[(ranger_bundle::HAIR, "head.hair")])
-                    } else {
-                        Self::of(&[])
-                    }
+                        .find(|(entry, _)| *entry == id)
+                        .map(|&(_, path)| path)
+                        .filter(|&path| ranger_bundle::FILES.iter().any(|(file, _)| *file == path));
+                    legacy.map_or_else(|| Self::of(&[]), |path| Self::of(&[(path, HAIR_SOCKET)]))
                 },
                 Self::on_head_hair,
             );
@@ -2348,11 +2361,7 @@ impl Equipment {
             let look = residents::look(Figure::Male);
             let materials = look["hair"]
                 .as_array()
-                .and_then(|styles| {
-                    styles
-                        .iter()
-                        .find(|style| style["entry"] == ranger_bundle::HAIR_KEY)
-                })
+                .and_then(|styles| styles.iter().find(|style| style["entry"] == key))
                 .map(|style| strings(&style["tintMaterials"]))
                 .unwrap_or_default();
             let tint = look["tints"]

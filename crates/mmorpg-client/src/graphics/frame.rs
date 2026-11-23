@@ -13,7 +13,10 @@ use crate::{
     world::{DrawBatch, DrawMaterial, DrawSkin, DrawTexture, SceneDraw, WorldFrame},
 };
 use bytemuck::{Pod, Zeroable};
-use mmorpg_presentation::ground::{Ground, Layer, MASK_CUTOFF, OVERLAY_ALPHA};
+use mmorpg_presentation::{
+    ground::{Ground, Layer, MASK_CUTOFF, OVERLAY_ALPHA},
+    lighting::{self, SceneLight},
+};
 use render_engine::{
     glam::{Mat4, Vec2, Vec3, Vec4},
     material::{AlphaMode, StandardMaterial},
@@ -32,25 +35,11 @@ use std::{
 };
 use three_d_core::Mesh;
 
-/// Greyhaven's sun path: 60° above the southern horizon at noon, the moon opposite.
+/// Greyhaven's sun path (`mmorpg_presentation::lighting`) on render-engine.
 pub const DAY_CYCLE: DayCycle = DayCycle {
-    noon_elevation: 60f32.to_radians(),
-    moon_lag_hours: 12.0,
+    noon_elevation: lighting::NOON_ELEVATION_DEGREES.to_radians(),
+    moon_lag_hours: lighting::MOON_LAG_HOURS,
 };
-/// Moonlight in lux: brighter than a real full moon (0.25 lx) so night stays playable.
-pub const MOON_LUX: f32 = 2.0;
-/// Cool, slightly blue moonlight.
-pub const MOON_COLOR: Vec3 = Vec3::new(0.75, 0.85, 1.0);
-/// EV100 by sun elevation in degrees, interpolated linearly: render-engine's `sky_day_cycle`
-/// oracle curve with a half-stop darker noon for Greyhaven's earth/stone palette, and a
-/// brighter-than-physical night for play.
-pub const EXPOSURE: [(f32, f32); 5] = [
-    (-12.0, 2.0),
-    (-4.0, 6.0),
-    (2.0, 11.0),
-    (15.0, 13.8),
-    (60.0, 15.0),
-];
 /// Emissive presentation colours are scaled to this luminance in cd/m²: flames, lamp glass and
 /// lit windows glow in their own colour at night; by day the sun outshines them.
 pub const EMISSIVE_NITS: f32 = 80.0;
@@ -64,13 +53,6 @@ pub const SUN_SHADOWS: SunShadows = SunShadows {
     depth_bias: 0.02,
     normal_bias: 1.8,
 };
-/// Below this sun elevation (degrees) the sun casts no shadows; its light has faded out.
-const SHADOWLESS_BELOW: f32 = -3.0;
-/// Daylight bounce from the sunlit ground, cd/m², and its warm grass-and-earth colour (#874): the
-/// atmosphere's environment light is the sky alone, so a sun shadow on the meadow kept only that
-/// cold sky light and read as an ink-black slab. As the browser's `BOUNCE_NITS`, `BOUNCE_COLOR`.
-const BOUNCE_NITS: f32 = 6000.0;
-const BOUNCE_COLOR: Vec3 = Vec3::new(1.0, 0.96, 0.86);
 const NEAR_PLANE_METRES: f32 = 0.2;
 
 #[repr(C)]
@@ -355,43 +337,20 @@ fn standard_material(m: &DrawMaterial) -> StandardMaterial {
     }
 }
 
-/// EV100 for a sun `elevation` in degrees, from [`EXPOSURE`].
-#[must_use]
-pub fn ev100(elevation: f32) -> f32 {
-    let first = EXPOSURE[0];
-    let last = EXPOSURE[EXPOSURE.len() - 1];
-    if elevation <= first.0 {
-        return first.1;
-    }
-    for pair in EXPOSURE.windows(2) {
-        let [(e0, v0), (e1, v1)] = [pair[0], pair[1]];
-        if elevation <= e1 {
-            return v0 + (v1 - v0) * (elevation - e0) / (e1 - e0);
-        }
-    }
-    last.1
-}
-
-/// render-engine's scene for one frame's lighting seen from `view`.
+/// render-engine's scene for one frame's lighting seen from `view`: the shared presentation's
+/// [`SceneLight`] by the sun's height, the sun and moon placed by [`DAY_CYCLE`].
 #[must_use]
 pub fn scene(lighting: &Lighting, view: CameraView) -> Scene {
     let to_sun = DAY_CYCLE.to_sun(lighting.hour);
-    let elevation = to_sun.y.clamp(-1., 1.).asin().to_degrees();
+    let light = SceneLight::new(to_sun.y, lighting.interior, true, RAW_SUNLIGHT);
     let fog = &lighting.fog;
-    let interior = lighting.interior.clamp(0., 1.);
-    let exposure = ev100(elevation);
-    let transmission = 10_f32.powf(-3. * interior);
-    // Match the browser: retain night/cave fill, with less diffuse fill in daylight so
-    // the enclosing relief and the settlement's cast shadows retain their contrast.
-    let daylight = (elevation / 15.).clamp(0., 1.);
-    let sky_fill = 0.9 - 0.25 * daylight;
     Scene {
         camera: Camera {
             eye: Vec3::from(view.eye),
             target: Vec3::from(view.target),
             fov_y: view.field_of_view_degrees.to_radians(),
             near: NEAR_PLANE_METRES,
-            ev100: exposure + (exposure.min(7.5) - exposure) * interior,
+            ev100: light.ev100,
             shadow_filter: ShadowFilter::Gaussian,
             tonemapping: Tonemapping::TonyMcMapface,
         },
@@ -399,19 +358,17 @@ pub fn scene(lighting: &Lighting, view: CameraView) -> Scene {
         sun: Some(Sun {
             direction: -to_sun,
             color: Vec3::ONE,
-            illuminance: RAW_SUNLIGHT * transmission,
-            shadows: (elevation > SHADOWLESS_BELOW).then_some(SUN_SHADOWS),
+            illuminance: RAW_SUNLIGHT * light.transmission,
+            shadows: light.sun_shadows.then_some(SUN_SHADOWS),
         }),
         moon: Some(Moon {
             direction: -DAY_CYCLE.to_moon(lighting.hour),
-            color: MOON_COLOR,
-            illuminance: MOON_LUX * transmission,
+            color: Vec3::from(lighting::MOON_COLOR),
+            illuminance: lighting::MOON_LUX * light.transmission,
         }),
         // The sky's environment light is the ambient light.
         sky: Some(Sky {
-            environment_intensity: Some(
-                (sky_fill + (1. - sky_fill) * interior) * 10_f32.powf(-interior),
-            ),
+            environment_intensity: Some(light.environment_intensity),
             ..Sky::default()
         }),
         point_lights: lighting
@@ -430,20 +387,17 @@ pub fn scene(lighting: &Lighting, view: CameraView) -> Scene {
         shadow_maps: ShadowMapSizes::default(),
         // The sunlit ground's bounce by day, beside the sky's environment light.
         ambient: Ambient {
-            color: BOUNCE_COLOR,
-            brightness: BOUNCE_NITS * daylight * transmission,
+            color: Vec3::from(lighting::BOUNCE_COLOR),
+            brightness: light.bounce_nits,
         },
         environment: None,
         fog: Some(Fog {
             color: linear3(fog.color).extend(1.),
             falloff: {
-                let k = FogFalloff::koschmieder(
-                    fog.visibility,
-                    FogFalloff::REVISED_KOSCHMIEDER_CONTRAST_THRESHOLD,
-                );
+                let (extinction, inscattering) = lighting::fog_coefficients(fog.visibility);
                 FogFalloff::Atmospheric {
-                    extinction: Vec3::from(crate::environment::FOG_EXTINCTION) * k,
-                    inscattering: Vec3::from(crate::environment::FOG_INSCATTERING) * k,
+                    extinction: Vec3::from(extinction),
+                    inscattering: Vec3::from(inscattering),
                 }
             },
             ..Fog::default()
@@ -1301,16 +1255,6 @@ impl FrameRenderer {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn exposure_keeps_daylight_contrast_and_brightens_night() {
-        assert_eq!(ev100(60.0), 15.0);
-        assert_eq!(ev100(90.0), 15.0);
-        assert_eq!(ev100(15.0), 13.8);
-        assert_eq!(ev100(2.0), 11.0);
-        assert_eq!(ev100(-40.0), 2.0);
-        assert!(ev100(-8.0) > 2.0 && ev100(-8.0) < 6.0);
-    }
 
     #[test]
     fn the_zone_clock_moves_the_sun_and_moon() {

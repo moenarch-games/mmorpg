@@ -509,11 +509,7 @@ impl Units {
 pub fn viewer(choice: u32, headwear: &str, preview_yaw: f32) -> Result<Viewer, String> {
     let headwear = match headwear {
         "" => None,
-        "ironcrest-helm" => Some(Hat::Helm),
-        "ranger-cap" => Some(Hat::Cap),
-        "wayfarer-hood" => Some(Hat::Hood),
-        "class" => Some(Hat::Class),
-        other => return Err(format!("unknown headwear style {other}")),
+        name => Some(Hat::of_name(name).ok_or_else(|| format!("unknown headwear style {name}"))?),
     };
     Ok(Viewer {
         choice: ClassChoice::from_appearance(choice),

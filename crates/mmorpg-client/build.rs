@@ -33,12 +33,6 @@ const VENOM_FLASK: &str = "equipment.venom-flask";
 const BLASTING_BOMB: &str = "equipment.blasting-bomb";
 /// The bundle outfit whose plates equipped drops wear (`imported::DROP_ARMOR_OUTFIT`).
 const DROP_ARMOR_OUTFIT: &str = "outfit.knight";
-/// The authored headwear on `head.armor` (#374).
-const CAP: &str = "equipment.cap.ranger";
-const HELM: &str = "equipment.helm.ironcrest";
-/// The starter hair (#376) in its tintable texture variant.
-const HAIR: &str = "hair.simple-parted";
-const HAIR_VARIANT: &str = "hair-1";
 /// The inn entries the clients draw (`mmorpg_presentation::buildings::INN`).
 const INN: [&str; 5] = [
     "greyhaven.inn.shell",
@@ -98,8 +92,6 @@ fn main() {
         ("THROWING_KNIFE", THROWING_KNIFE),
         ("VENOM_FLASK", VENOM_FLASK),
         ("BLASTING_BOMB", BLASTING_BOMB),
-        ("CAP", CAP),
-        ("HELM", HELM),
     ] {
         let source = if key == CHARACTER { &male } else { &equipment };
         let path = source.gltf(key, "default");
@@ -149,13 +141,6 @@ fn main() {
         code.push_str(&format!("    ({id:?}, {model:?}, {plates:?}),\n"));
     }
     code.push_str("];\n");
-    // The legacy Ranger hair is optional after asset-tooling #517: an empty path names no file.
-    let hair = male
-        .entry(HAIR, HAIR_VARIANT)
-        .map_or_else(String::new, |entry| male.file(entry, ".gltf"));
-    code.push_str(&format!(
-        "pub const HAIR: &str = {hair:?};\npub const HAIR_KEY: &str = {HAIR:?};\npub const CAP_KEY: &str = {CAP:?};\npub const HELM_KEY: &str = {HELM:?};\n"
-    ));
     let files = [male.files(), equipment.files()].concat();
     write("ranger_bundle.rs", &characters, code, files);
     // The female figure (#493): Tanner Hilda Brook's outfit, armour and hair.

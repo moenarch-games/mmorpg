@@ -9,10 +9,12 @@
 
 mod catalogue;
 mod clips;
+mod dress;
 mod layers;
 mod playback;
 
 pub use catalogue::*;
 pub use clips::*;
+pub use dress::*;
 pub use layers::*;
 pub use playback::*;

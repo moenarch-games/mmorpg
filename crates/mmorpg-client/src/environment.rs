@@ -1,6 +1,7 @@
 //! Cosmetic Greyhaven lighting inputs: the hour the sun and moon follow, distance fog and the
 //! content's point lights. The renderer (render-engine) turns them into its physical scene.
-//! No simulation clock is read here.
+//! No simulation clock is read here; the hour comes from `mmorpg_presentation::clock` and the
+//! curves from `mmorpg_presentation::lighting`.
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Lighting {
@@ -22,15 +23,6 @@ pub struct Fog {
     pub color: [f32; 3],
     pub visibility: f32,
 }
-
-/// How far Greyhaven's air hides the scene (#526): about 5 % haze at 100 m, 26 % at 600 m,
-/// so the distant ranges stay shaded silhouettes. `FOG_VISIBILITY_METRES` in
-/// `web/src/world/lighting.ts`.
-pub const FOG_VISIBILITY_METRES: f32 = 6000.0;
-/// Per-channel weights of the fog's extinction and inscattering: red fades and blue gathers
-/// first. `FOG_EXTINCTION` and `FOG_INSCATTERING` in `web/src/world/lighting.ts`.
-pub const FOG_EXTINCTION: [f32; 3] = [1.1, 1.0, 0.9];
-pub const FOG_INSCATTERING: [f32; 3] = [0.9, 1.0, 1.1];
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PointLight {
@@ -56,24 +48,6 @@ pub(crate) fn rgb(color: u32) -> [f32; 3] {
     [16, 8, 0].map(|shift| ((color >> shift) & 255) as f32 / 255.0)
 }
 
-/// The zone's hour at `tick` (#158): the sky follows the zone's clock rather than the client's.
-#[must_use]
-pub fn zone_hour(tick: u64) -> f32 {
-    (f64::from(mmorpg_core::time_of_day(tick)) / f64::from(mmorpg_core::DAY_TICKS) * 24.0) as f32
-}
-
-/// The Pages twenty-minute cycle's hour at `seconds`, whose zero is noon; reduced motion holds
-/// noon.
-#[must_use]
-pub fn pages_hour(seconds: f64, animate: bool) -> f32 {
-    let phase = if animate && seconds.is_finite() {
-        (seconds / 1200.0).rem_euclid(1.0)
-    } else {
-        0.0
-    };
-    ((12.0 + phase * 24.0) % 24.0) as f32
-}
-
 impl Lighting {
     /// Lighting at `hour` without point lights.
     #[must_use]
@@ -90,22 +64,9 @@ impl Lighting {
             interior: 0.,
             fog: Fog {
                 color: rgb(mix(horizon, 0x9faeb3, daylight)),
-                visibility: FOG_VISIBILITY_METRES,
+                visibility: mmorpg_presentation::lighting::FOG_VISIBILITY_METRES,
             },
             point_lights: Vec::new(),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_pages_cycle_starts_at_noon_and_the_zone_at_eight() {
-        assert_eq!(pages_hour(0.0, true), 12.0);
-        assert_eq!(pages_hour(600.0, true), 0.0);
-        assert_eq!(pages_hour(600.0, false), 12.0);
-        assert!((zone_hour(0) - 8.0).abs() < 1e-4);
     }
 }
