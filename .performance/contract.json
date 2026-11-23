@@ -344,7 +344,7 @@
           "name": "static_builds",
           "unit": "builds",
           "signal": "operation-count",
-          "notes": "Static groups and near terrain tiles built (the complete static world is 4,169 groups and 96 tiles).",
+          "notes": "Static groups and near terrain tiles built (the complete static world's totals: the scene line of `cargo run --release -p mmorpg-presentation --example presentation_work --locked -- --report`).",
           "budget": { "max": 0 }
         },
         {
