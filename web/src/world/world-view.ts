@@ -610,7 +610,8 @@ export class WorldView {
     this.#weaponMode.className = "weapon-mode";
     this.#weaponMode.textContent = "Exploration · Draw weapon [H]";
     this.#weaponMode.addEventListener("click", () => this.toggleWeapon());
-    elements.classHud.append(this.#weaponMode);
+    // Above the action bar, in the dock's flow: the toolbar's corner holds Loot and Bags (#1079).
+    (elements.classHud.querySelector(".action-dock") ?? elements.classHud).prepend(this.#weaponMode);
     this.#progressionHud = new ProgressionHud(elements.experienceBar, elements.experienceStatus, elements.progressionFeedback);
     this.#bags = new BagsPanel(elements.bags, (command, onSent) => this.queueIntent(() => command, onSent));
     // The pane and the vendor share the bags' received sheet: one revision covers bag and equipment.
