@@ -54,11 +54,16 @@ ARTIFACTS = ROOT / "artifacts" / "browser"
 # Advisory tripwire (PRINCIPLE-015), not a draw-call bound: the static scene's groups, including
 # kit fallbacks hidden while their kit draws, all drawn through per-material BatchedMeshes (#615).
 # 3,586 after the three outer regions (#495, #497, #505), nature fallbacks and terrain tiles (#620);
-# 4,187 when re-measured for #622, after the later scenery additions.
-STATIC_GROUPS_TRIPWIRE = 4_400
-# Advisory too: the authored brook pass stores about 527,000 static vertices;
-# match the existing Rust export ceiling documented in GREYHAVEN_BROOK.md.
-STATIC_VERTICES_TRIPWIRE = 530_000
+# 4,187 when re-measured for #622, after the later scenery additions. 10,164 when re-measured for
+# #1137: since #816 made the region one landscape and later work dressed it, the world covers 660
+# terrain tiles instead of 96, and the shared scene's groups grew with its area (4,169 to 10,146 in `presentation_work --report`), while the most
+# static draws one hub frame selects fell from 15,724 to 13,433: a larger world, not more work a frame.
+STATIC_GROUPS_TRIPWIRE = 10_700
+# Advisory too: the authored brook pass stored about 527,000 static vertices. 1,236,513 when
+# re-measured for #1137, grown with the same larger world: 564,444 of them are the nature kit's
+# procedural fallbacks for #816's forests (2,130 mid groups, hidden once the kit draws), 196,144
+# the near props' merged batches (1,873 groups).
+STATIC_VERTICES_TRIPWIRE = 1_300_000
 ROSTER_KEY = "mmorpg.offline-roster.v1"
 # The retired offline checkpoint key; nothing may write it any more.
 CHARACTER_ENTRY_PREFIX = "mmorpg.character.v1."
@@ -1325,7 +1330,9 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.screenshot(path=str(ARTIFACTS / "outpost-grass-clearing.png"))
         stats = self.debug_stats()
         self.assertEqual(stats["self"], before)
-        self.assertEqual(stats["scene"]["props"]["grass-tuft"], 6597, "The Vale and its three outer regions (#495, #497, #505)")
+        # #816 redesigned the region as one landscape whose grass grows from the land itself
+        # (`greyhaven_vale.rs` keeps it within 2,200–3,200); measured 2,630 for #1137.
+        self.assertEqual(stats["scene"]["props"]["grass-tuft"], 2630, "Greyhaven's grass tufts (#816)")
         self.assertLessEqual(stats["scene"]["staticNodes"], STATIC_GROUPS_TRIPWIRE)
         self.assertLessEqual(stats["scene"]["staticVertices"], STATIC_VERTICES_TRIPWIRE)
         colours = self.canvas_colours()
