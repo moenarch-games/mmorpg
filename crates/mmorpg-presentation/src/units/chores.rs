@@ -49,6 +49,13 @@ impl Chore {
         };
         Some((hand, held))
     }
+
+    /// Whether the item is a `load.*` hugged to the chest (#1073): at run speed it plays the
+    /// heavy run under the loaded upper body.
+    #[must_use]
+    pub fn load(self) -> bool {
+        self.item.starts_with("equipment.load.")
+    }
 }
 
 /// What a routine resident is doing now.

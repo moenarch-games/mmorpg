@@ -528,6 +528,59 @@ impl SwordClips {
     }
 }
 
+/// The heavy run's legs (#1073, asset-tooling #823): a shorter, braced stride at the run's
+/// 6.3 m/s, played under [`CARRY_RUN`] while a load is carried at run speed.
+pub const HEAVY_RUN: &str = "Heavy_Run_Fwd_Loop";
+/// The upper body hugging a `load.*` item over [`HEAVY_RUN`] (#1073); it has no legs of its own.
+pub const CARRY_RUN: &str = "Carry_Run_Loop";
+
+/// A two-handed great weapon (#1073, asset-tooling #823): its item, the full-body run that
+/// carries it and its running strike. Each strike starts and ends on its run's first frame and
+/// records its contact, which [`super::Fit`] meets with the zone's.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, strum::VariantArray)]
+pub enum GreatWeapon {
+    Maul,
+    GreatHammer,
+    GreatAxe,
+    Greatsword,
+}
+
+impl GreatWeapon {
+    /// The `humanoid-equipment` item.
+    #[must_use]
+    pub const fn item(self) -> &'static str {
+        match self {
+            Self::Maul => "equipment.warhammer.maul",
+            Self::GreatHammer => "equipment.hammer.great",
+            Self::GreatAxe => "equipment.axe.great",
+            Self::Greatsword => "equipment.sword.great",
+        }
+    }
+
+    /// The full-body run carrying it, in place of the light run.
+    #[must_use]
+    pub const fn run(self) -> &'static str {
+        match self {
+            Self::Greatsword => "TwoHand_Sword_Run_Loop",
+            Self::Maul | Self::GreatHammer | Self::GreatAxe => "TwoHand_Run_Loop",
+        }
+    }
+
+    /// Its running strike: the overhead slam of the maul and great hammer, the great axe's
+    /// diagonal chop and the greatsword's flat sweep.
+    #[must_use]
+    pub const fn run_strike(self) -> &'static str {
+        match self {
+            Self::Maul | Self::GreatHammer => "TwoHand_Run_Strike",
+            Self::GreatAxe => "TwoHand_Axe_Run_Strike",
+            Self::Greatsword => "TwoHand_Sword_Run_Strike",
+        }
+    }
+}
+
+/// The guard a great weapon's running strike settles into (#1073, #900).
+pub const GREAT_WEAPON_GUARD: &str = "TwoHand_Guard_Loop";
+
 /// A movement-state strike's clips (#885), best first: the family's authored strike
 /// (`<Family>_Run_Strike`, `<Family>_Jump_Strike` and the chain, asset-tooling #709 and #711),
 /// then the clip already in the bundle that stands in for it.

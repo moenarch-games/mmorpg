@@ -1563,11 +1563,17 @@ impl UnitPresenter {
         contact: u16,
         seconds: f64,
     ) {
-        let Some((kind, _, _)) = self.class_of(snapshot, source) else {
+        let Some((kind, _, loadout)) = self.class_of(snapshot, source) else {
             return;
         };
-        let (clip, region) = kind
-            .melee_strike(family, variant, |clip| self.duration(kind, clip) > 0.)
+        // A great weapon's running strike (#1073) moves the whole body from its carrying run.
+        let great = loadout
+            .and_then(Loadout::great_weapon)
+            .filter(|_| variant == mmorpg_core::StrikeVariant::Running)
+            .filter(|great| self.duration(kind, great.run_strike()) > 0.);
+        let (clip, region) = great
+            .map(|great| (great.run_strike(), Region::Whole))
+            .or_else(|| kind.melee_strike(family, variant, |clip| self.duration(kind, clip) > 0.))
             .filter(|&(clip, _)| self.duration(kind, clip) > 0.)
             .unwrap_or_else(|| {
                 let attack = kind.clips().attack;
@@ -1595,7 +1601,11 @@ impl UnitPresenter {
                 .filter(|_| !jumping)
                 .map(|authored| imported::Fit::new(authored, zone)),
             land: land.filter(|_| jumping),
-            settle: imported::family_guard(family).filter(|_| moving),
+            settle: great
+                .map(|_| imported::GREAT_WEAPON_GUARD)
+                .filter(|&guard| self.duration(kind, guard) > 0.)
+                .or_else(|| imported::family_guard(family))
+                .filter(|_| moving),
         };
         let playback = self.playbacks.entry(source).or_default();
         playback.melee(clip, duration, region, melee, seconds);

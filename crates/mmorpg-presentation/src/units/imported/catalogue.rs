@@ -1,6 +1,7 @@
 //! The catalogue: what an imported unit wears, carries and holds, and which resident or figure
 //! it is.
 
+use super::GreatWeapon;
 use mmorpg_core::{Equipment, EquipmentSlot, NamedWeapon, PlayerClass, WeaponFamily};
 use strum::VariantArray;
 
@@ -37,6 +38,12 @@ pub enum Loadout {
     GarricksCleaver,
     /// The smith's Hollowpine boar-spear in both hands (#917): a player wielding it.
     HollowpineSpear,
+    /// The great weapons in both hands (#1073, asset-tooling #823): maul, great hammer, great
+    /// axe and greatsword ([`GreatWeapon`]). No gameplay item or weapon family selects one yet.
+    Maul,
+    GreatHammer,
+    GreatAxe,
+    Greatsword,
 }
 
 impl Loadout {
@@ -72,6 +79,10 @@ impl Loadout {
             Self::Spear => "spear",
             Self::GarricksCleaver => "sword.garricks-cleaver",
             Self::HollowpineSpear => "spear.hollowpine-hunter",
+            Self::Maul => "warhammer.maul",
+            Self::GreatHammer => "hammer.great",
+            Self::GreatAxe => "axe.great",
+            Self::Greatsword => "sword.great",
         }
     }
 
@@ -106,7 +117,12 @@ impl Loadout {
             Self::BoneStaff | Self::GnarledStaff => (None, Some(Held::Staff)),
             Self::CrystalStaffAndTome => (Some(Held::Book), Some(Held::Staff)),
             Self::Crossbow => (Some(Held::Crossbow), Some(Held::Crossbow)),
-            Self::Spear | Self::HollowpineSpear => (Some(Held::Staff), Some(Held::Staff)),
+            Self::Spear
+            | Self::HollowpineSpear
+            | Self::Maul
+            | Self::GreatHammer
+            | Self::GreatAxe
+            | Self::Greatsword => (Some(Held::Staff), Some(Held::Staff)),
         };
         Hands { left, right }
     }
@@ -115,6 +131,18 @@ impl Loadout {
     #[must_use]
     pub const fn daggers(self) -> bool {
         matches!(self, Self::Dagger | Self::TwinDaggers)
+    }
+
+    /// The great weapon the loadout carries in both hands, if any (#1073).
+    #[must_use]
+    pub const fn great_weapon(self) -> Option<GreatWeapon> {
+        match self {
+            Self::Maul => Some(GreatWeapon::Maul),
+            Self::GreatHammer => Some(GreatWeapon::GreatHammer),
+            Self::GreatAxe => Some(GreatWeapon::GreatAxe),
+            Self::Greatsword => Some(GreatWeapon::Greatsword),
+            _ => None,
+        }
     }
 
     /// The bundle items the loadout wears and the sockets they ride (#1012), as both clients
@@ -211,6 +239,24 @@ impl Loadout {
             Self::HollowpineSpear => &[Attachment {
                 item: "equipment.spear.hollowpine-hunter",
                 socket: "hand_r.staff",
+            }],
+            // A great weapon rides the right hand's weapon socket, as its run clips carry it
+            // (asset-tooling #823); the clip brings the left hand to the haft.
+            Self::Maul => &[Attachment {
+                item: "equipment.warhammer.maul",
+                socket: "hand_r.weapon",
+            }],
+            Self::GreatHammer => &[Attachment {
+                item: "equipment.hammer.great",
+                socket: "hand_r.weapon",
+            }],
+            Self::GreatAxe => &[Attachment {
+                item: "equipment.axe.great",
+                socket: "hand_r.weapon",
+            }],
+            Self::Greatsword => &[Attachment {
+                item: "equipment.sword.great",
+                socket: "hand_r.weapon",
             }],
             // The crossbow and the arrow standing in for its bolt (#607).
             Self::Crossbow => &[
@@ -812,6 +858,17 @@ mod tests {
                 "spear.hollowpine-hunter",
                 &[("equipment.spear.hollowpine-hunter", "hand_r.staff")],
             ),
+            // The great weapons (#1073) are new: their items on the run clips' socket.
+            (
+                "warhammer.maul",
+                &[("equipment.warhammer.maul", "hand_r.weapon")],
+            ),
+            (
+                "hammer.great",
+                &[("equipment.hammer.great", "hand_r.weapon")],
+            ),
+            ("axe.great", &[("equipment.axe.great", "hand_r.weapon")]),
+            ("sword.great", &[("equipment.sword.great", "hand_r.weapon")]),
             (
                 "crossbow",
                 &[
