@@ -1675,8 +1675,10 @@ class BrowserAcceptance(unittest.TestCase):
         step()
         expect(self.page.locator("#quest-dialog-feedback")).to_have_text("Accepted: The Wolfrun Cart.")
         expect(self.page.locator("#objective")).to_contain_text("Supply Sack: 0/3")
-        # The Tanner, not the Marshal, takes the cart's sacks (#984): his marker clears.
-        expect(card.first).to_have_attribute("data-state", "in-progress")
+        # The Tanner, not the Marshal, takes the cart's sacks (#984): his marker clears, and his
+        # dialog lists only quests that end with him (#543), so the accepted card leaves it.
+        expect(card).to_have_count(0)
+        expect(self.page.locator("#quest-dialog-status")).to_have_text("Marshal Elden Greywatch has nothing for you right now.")
         self.page.keyboard.press("Escape")
         expect(dialog).to_be_hidden()
         self.page.evaluate("window.__valeDebug.follow()")
@@ -1700,6 +1702,10 @@ class BrowserAcceptance(unittest.TestCase):
         expect(self.page.locator("#quest-log-feedback")).to_have_text("Abandoned: The Wolfrun Cart.")
         expect(self.page.locator("#quest-log-quests")).to_contain_text("Your quest log is empty.")
         expect(self.page.locator("#objective")).to_contain_text("No active quests")
+        # Markers float over on-screen NPCs only: look at the Marshal again, as above, rather than
+        # the follow camera's view of the wall behind the character.
+        self.page.evaluate("window.__valeDebug.flyToPose([-21.8, 3.5, 17], [-22, 1.5, 9])")
+        step()
         expect(markers.first).to_have_attribute("data-marker", "available")
         self.page.get_by_role("button", name="Close quest log").focus()
         self.page.keyboard.press("Escape")
