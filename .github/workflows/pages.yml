@@ -46,8 +46,10 @@ jobs:
   build:
     if: (github.event.action != 'labeled' && github.event.action != 'unlabeled') || github.event.label.name == 'browser-evidence' || github.event.label.name == 'full-validation'
     runs-on: ubuntu-latest
-    # Browser acceptance on the software renderer outlasts the normal cap; only a run that asks for it gets more.
-    timeout-minutes: ${{ (inputs.full_validation == true || inputs.browser_evidence == true) && 90 || 30 }}
+    # Browser acceptance runs only when `browser-evidence` asks for it, not under full validation (owner
+    # decision 2026-11-23, #1130): hosted runners have no GPU, and on the software renderer the suite does not
+    # finish. A run that asks for it gets a longer cap.
+    timeout-minutes: ${{ inputs.browser_evidence == true && 90 || (inputs.full_validation == true && 60 || 30) }}
     env:
       FULL_VALIDATION: ${{ inputs.full_validation == true }}
     steps:
@@ -132,18 +134,18 @@ jobs:
         working-directory: web
         run: bun run build
       - name: Install browser acceptance tooling
-        if: env.FULL_VALIDATION == 'true' || inputs.browser_evidence == true
+        if: inputs.browser_evidence == true
         run: |
           python3 -m pip install playwright
           python3 -m playwright install --with-deps chromium
       # The script bounds itself (60 minutes, 12 per test) and reports which tests ran out of time
       # (#1130); this only backstops it, so the evidence upload below always runs inside the job.
       - name: Run explicitly requested browser acceptance
-        if: env.FULL_VALIDATION == 'true' || inputs.browser_evidence == true
+        if: inputs.browser_evidence == true
         timeout-minutes: 68
         run: python3 scripts/smoke-browser.py
       - name: Retain browser screenshots and evidence
-        if: always() && (env.FULL_VALIDATION == 'true' || inputs.browser_evidence == true)
+        if: always() && inputs.browser_evidence == true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: browser-evidence
