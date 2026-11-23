@@ -365,7 +365,13 @@ pub async fn serve_open_zone_host(
     status: game_server::MatchHostStatusConfig,
     shutdown: tokio::sync::mpsc::Receiver<()>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let validated = crate::build_zone_matches(zone_ids.iter().copied())?;
+    // One secret seed for this host's world (#1111): kept beside the recovery bundle when the
+    // world is recovered by replay, else drawn for this run.
+    let world_seed = match &recovery_directory {
+        Some(directory) => crate::world_seed::for_recovery(directory)?,
+        None => crate::world_seed::fresh()?,
+    };
+    let validated = crate::build_zone_matches_in_world(zone_ids.iter().copied(), world_seed)?;
     let mut zones = BTreeMap::new();
     for zone_id in &zone_ids {
         zones.insert(
@@ -389,9 +395,10 @@ pub async fn serve_open_zone_host(
             ids,
             move |id: &MatchId| -> Result<_, String> {
                 let zone = attached.get(id).ok_or("unknown zone")?;
-                let mut adapter = ZoneGameServerAdapter::with_content(
+                let mut adapter = ZoneGameServerAdapter::with_world_seed(
                     zone.zone,
                     mmorpg_core::content_for_zone(zone.zone),
+                    world_seed,
                 )
                 .map_err(|error| error.to_string())?;
                 adapter.attach_parties(zone.channel.clone());

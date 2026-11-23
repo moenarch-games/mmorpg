@@ -183,6 +183,11 @@ export class GreyhavenLighting {
     });
   }
 
+  /** Whether the lighting has loaded, so `prepare` compiles its own passes' programs (#855). */
+  get ready(): boolean {
+    return this.#lighting !== null && this.#dayCycle !== null;
+  }
+
   /** Whether the last frame's sky is the atmosphere's; otherwise the page (the CSS sky) shows through. */
   get drawsSky(): boolean {
     return this.#frame?.sky === true && this.#skySupported !== false;

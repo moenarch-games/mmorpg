@@ -229,7 +229,7 @@ impl ZoneSimulation {
     /// The initial random stream of creature `id`'s life `generation` (#861).
     pub(crate) fn creature_stream(&self, id: CreatureId, generation: u64) -> ZoneRng {
         ZoneRng::seeded_for(
-            self.content.rng_seed(),
+            self.rng_seed(),
             self.zone_id,
             u64::from(id.get()),
             generation,
@@ -240,7 +240,7 @@ impl ZoneSimulation {
     /// life, apart from its fight and from every other creature.
     pub(crate) fn creature_loot_stream(&self, id: CreatureId, generation: u64) -> ZoneRng {
         ZoneRng::seeded_for(
-            self.content.rng_seed() ^ LOOT_STREAM_SALT,
+            self.rng_seed() ^ LOOT_STREAM_SALT,
             self.zone_id,
             u64::from(id.get()),
             generation,

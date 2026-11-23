@@ -61,6 +61,7 @@ async fn prepare(
     instance_channels: BTreeMap<MatchId, InstanceChannel>,
     directory: PathBuf,
     grace: u64,
+    world_seed: u64,
 ) -> HostResult<PreparedLiveMatchHost<ZoneGameServerAdapter>> {
     let expected: BTreeSet<_> = ids.iter().cloned().collect();
     if ids.is_empty() || expected.len() != ids.len() {
@@ -70,9 +71,12 @@ async fn prepare(
         ids,
         move |id: &MatchId| -> Result<_, String> {
             let zone = crate::dev_characters::zone_of(id)?;
-            let mut adapter =
-                ZoneGameServerAdapter::with_content(zone, mmorpg_core::content_for_zone(zone))
-                    .map_err(|error| error.to_string())?;
+            let mut adapter = ZoneGameServerAdapter::with_world_seed(
+                zone,
+                mmorpg_core::content_for_zone(zone),
+                world_seed,
+            )
+            .map_err(|error| error.to_string())?;
             match &ownership {
                 Some(ownership) => adapter.require_character_claims(Arc::clone(ownership)),
                 None => adapter.require_durable_character_claims(),
@@ -228,6 +232,12 @@ pub(crate) async fn serve_characters_managed<B: EntryBackend + Send + 'static>(
         .iter()
         .map(|id| (id.clone(), PartyChannel::default()))
         .collect();
+    // The world replays from genesis on the next start, so its secret seed (#1111) is kept
+    // beside the recovery bundle.
+    let world_seed = {
+        let recovery = recovery.clone();
+        tokio::task::spawn_blocking(move || crate::world_seed::for_recovery(&recovery)).await??
+    };
     let prepared = prepare(
         ids.clone(),
         ownership.clone(),
@@ -236,6 +246,7 @@ pub(crate) async fn serve_characters_managed<B: EntryBackend + Send + 'static>(
         instance_channels,
         recovery.clone(),
         grace,
+        world_seed,
     )
     .await?;
     let host = prepared.host();

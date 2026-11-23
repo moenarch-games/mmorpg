@@ -31,7 +31,8 @@ impl MovementPredictor {
     /// # Errors
     /// Fails when the content cannot host a player.
     pub fn new(zone_id: ZoneId, content: Arc<ZoneContent>) -> Result<Self, ZoneError> {
-        let mut zone = ZoneSimulation::without_creatures(zone_id, content)?;
+        // Movement prediction draws nothing, so it needs no world seed (#1111).
+        let mut zone = ZoneSimulation::without_creatures(zone_id, content, 0)?;
         zone.add_player(PLAYER)?;
         Ok(Self { zone, sequence: 0 })
     }

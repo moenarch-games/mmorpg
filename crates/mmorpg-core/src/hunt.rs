@@ -175,7 +175,7 @@ impl ZoneSimulation {
     /// How the outing whose stalk has ended by `now` turned out: a quiet day's catch, or on a
     /// confrontation day a catch only when the beast died during the stalk.
     fn hunt_outcome(&self, hunt: &HuntOuting, work: [i32; 2], now: u64) -> HuntOutcome {
-        if !confrontation_day(self.content.rng_seed(), now) {
+        if !confrontation_day(self.rng_seed(), now) {
             return HuntOutcome::Catch;
         }
         let arrival = hunt.arrival(work);
@@ -234,7 +234,7 @@ impl ZoneSimulation {
         };
         if time == arrival
             && matches!(state.life, Life::Despawned { .. })
-            && confrontation_day(content.rng_seed(), now)
+            && confrontation_day(self.rng_seed(), now)
         {
             self.spawn_creature(hunt.beast)?;
         } else if state.is_alive()

@@ -683,7 +683,7 @@ impl ZoneSimulation {
     pub fn forewarned(&self, now: u64) -> bool {
         (FOREWARNING_TIME..TRIGGER_TIME).contains(&time_of_day(now))
             && self.raid_eligible(now)
-            && signs_night(self.content.rng_seed(), now)
+            && signs_night(self.rng_seed(), now)
     }
 
     /// Commits a new incident at the current tick when the target is eligible, whatever the
@@ -912,7 +912,7 @@ impl ZoneSimulation {
         }
         self.advance_marches(site, now)?;
         if time_of_day(now) == TRIGGER_TIME {
-            if self.raid_eligible(now) && raid_night(self.content.rng_seed(), now) {
+            if self.raid_eligible(now) && raid_night(self.rng_seed(), now) {
                 self.commit_incident(now)?;
             }
             // Without a raid, the evening's tracks and preparations expire (5.1.69).

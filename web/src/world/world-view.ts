@@ -35,6 +35,8 @@ import {
   type Vec3,
 } from "./orbit-camera";
 import { SceneryFrame, buildSceneryScene, type DrawnKits, type SceneryScene } from "./scenery-nodes";
+import { markStartup } from "../startup-marks";
+import { EntryPrebuild, type EntryPreview, type PrebuildWork } from "./entry-prebuild";
 import { FrameStages, PanelGate, RootRegistry, emptyFrameWork, fixedRootEntry, rootEntry, type FrameWork } from "./frame-stages";
 import type { GreyhavenLighting } from "./lighting";
 import { ImpactEffects } from "./impact-effects";
@@ -396,6 +398,8 @@ class WorldFrame {
   received: readonly ZoneSnapshot[] = [];
   connected = false;
   projection!: ZoneSnapshot;
+  /** The zone tick whose hour lights the frame. */
+  tick = 0n;
   animate = false;
   units!: SharedUnits;
   presented!: ReturnType<SharedUnits["frame"]>;
@@ -404,6 +408,7 @@ class WorldFrame {
   others: MinimapUnit[] = [];
   self!: FrameSelf;
   unitNodes: readonly RendererSceneNode[] = [];
+  effectNodes: readonly RendererSceneNode[] = [];
   view!: CameraView;
   sceneFrame!: ReturnType<SceneryFrame["nodes"]>;
   nodes: RendererSceneNode[] = [];
@@ -418,6 +423,8 @@ const RECEIVED_PANELS = 9;
 const LATEST_PANELS = 3;
 const NO_NODES: readonly RendererSceneNode[] = [];
 const NO_KICK = [0, 0, 0] as const;
+/** The static scene's parts (`#buildStaticPart`): the decoded scene, its batches, the ground and the grass. */
+const STATIC_PARTS = 4;
 
 function appendAll<T>(into: T[], from: readonly T[]): void {
   for (let index = 0; index < from.length; index += 1) { into.push(from[index]!); }
@@ -561,10 +568,22 @@ export class WorldView {
   /** The world `load` last readied, so re-selecting it (`refreshArenaWorld`) rebuilds nothing. */
   #loadedScenery: ZoneWorld["scenery"] | null = null;
   #loadedArena = false;
-  /** The world `load` last readied, whose static scene `prewarmStatic` prepares. */
+  /** The world `load` last readied, whose static scene and entry view `prebuild` prepares. */
   #loadedWorld: ZoneWorld | null = null;
-  /** The world whose static scene prewarm is already queued. */
-  #prewarmQueued: ZoneWorld | null = null;
+  /** How many of the static scene's parts (`STATIC_PARTS`) are built for the loaded world. */
+  #staticParts = 0;
+  /** Static scene builds a world frame had to run itself: none once the selection screen prebuilt it (#855). */
+  #frameStaticBuilds = 0;
+  /** The selection screen's prebuild of the entry view (#855). */
+  readonly #prebuild: EntryPrebuild<EntryPreview>;
+  /** The prebuild's placeholder frame: the entry view without units. */
+  readonly #prebuildFrame = new WorldFrame();
+  /** Hidden copies of the selection stage's nodes, kept through a prebuild's prepare so it evicts none of them. */
+  #selectionStage: RendererSceneNode[] = [];
+  /** Moves whenever the render-root list was rebuilt outside a world frame, so a prebuilt view prepares again. */
+  #rootsVersion = 0;
+  /** The prebuilt view's renderer nodes and instance batches, hidden, which the turntable's frames keep (#855). */
+  #selectionKeep: { nodes: RendererSceneNode[]; instanceBatches: RendererInstanceBatch[] } | null = null;
   #buildMs = 0;
   #orbit = new OrbitCamera();
   #cameraMode: CameraMode = { kind: "free-look" };
@@ -762,6 +781,13 @@ export class WorldView {
       fixedRootEntry("world", () => this.#raidSmoke),
       fixedRootEntry("world", () => this.#raidSigns),
     ]);
+    this.#prebuild = new EntryPrebuild<EntryPreview>({
+      staticBuilt: () => this.#staticParts >= STATIC_PARTS,
+      buildStaticPart: () => { if (this.#loadedWorld) { this.#buildStaticPart(this.#loadedWorld); } },
+      compose: (entry) => this.#composeEntry(entry),
+      prepareKey: () => this.#entryPrepareKey(),
+      prepare: (entry) => this.#prepareEntry(entry),
+    });
   }
 
   get #animate(): boolean {
@@ -825,8 +851,8 @@ export class WorldView {
   }
 
   /**
-   * Readies the loaded world's panels and region art. Its static scene (#526) is built by [`buildStatic`], from idle
-   * time once the page asks (`prewarmStatic`) or the first frame, so entering a world never waits for the whole scene.
+   * Readies the loaded world's panels and region art. Its static scene (#526) is built part by part in idle time while
+   * the selection screen shows (`prebuild`), or by the first frame if entry comes first.
    */
   load(world: ZoneWorld): void {
     const arena = world.arena ?? false;
@@ -842,7 +868,8 @@ export class WorldView {
     this.#loadedArena = arena;
     this.#loadedWorld = world;
     this.#rootRegistry.markDirty();
-    this.#prewarmQueued = null;
+    this.#staticParts = 0;
+    this.#prebuild.reset();
     this.#avatarPrepared = false;
     this.#pendingKitArea = null;
     this.#picking.reset();
@@ -920,19 +947,132 @@ export class WorldView {
   }
 
   /**
-   * Builds the loaded world's static scene in the next idle moment (#855). The build blocks the page for seconds, so
-   * the page asks only once the entry art has loaded and entry is possible, never on the way there; the first world frame
-   * builds it if entry comes first.
+   * Prebuilds `world`'s entry while the selection screen shows (#855, owner decision 2026-11-23), one idle slice at a
+   * time so the turntable and keys stay smooth: the static scene part by part, then the view at `entry` (the selected
+   * character's expected entry; null builds only the static scene) composed as its first frame would compose it without
+   * units, and once `prepare` allows it (the entry art is in) that view's programs and textures through the lighting's
+   * passes. Enter World then joins into the built scene, and its `prepare` adds what the joined projection changes: the
+   * units. A different character or slot composes and prepares again; the static scene stays. Cheap to call again with
+   * the same arguments; nothing joins.
    */
-  prewarmStatic(): void {
-    const world = this.#loadedWorld;
-    if (!world || this.#scene || this.#prewarmQueued === world) { return; }
-    this.#prewarmQueued = world;
-    const prewarm = () => {
-      if (this.#loadedWorld === world && !this.#scene) { this.#buildStatic(world); }
+  prebuild(world: ZoneWorld, entry: EntryPreview | null, prepare: boolean): void {
+    if (world.scenery !== this.#loadedScenery || !this.#loadedWorld) { return; }
+    const key = entry && `${entry.feet.join(",")}|${entry.facing}|${wasm.zoneSkyHour(entry.tick, this.#animate)}`;
+    // The turntable's first frame prepares its own programs first; a prebuild prepare meanwhile would swap the scene.
+    this.#prebuild.request(entry, key, prepare && this.#previewPrepared !== "pending");
+  }
+
+  /**
+   * What the turntable's frames draw besides the selection stage, hidden (#855): the prebuilt entry view's renderer
+   * nodes and instance batches, so a selection frame evicts nothing Enter World would build and upload again. Null
+   * before a prebuild prepared a view.
+   */
+  selectionKept(): { nodes: readonly RendererSceneNode[]; instanceBatches: readonly RendererInstanceBatch[] } | null {
+    return this.#selectionKeep;
+  }
+
+  /** The prebuild's deterministic work, whether it settled, and static builds a world frame still ran (#855). */
+  prebuildReport(): PrebuildWork & { settled: boolean; prepared: boolean; frameStaticBuilds: number; keptNodes: number; keptBatches: number } {
+    return {
+      ...this.#prebuild.work, settled: this.#prebuild.settled, prepared: this.#prebuild.prepared, frameStaticBuilds: this.#frameStaticBuilds,
+      keptNodes: this.#selectionKeep?.nodes.length ?? 0, keptBatches: this.#selectionKeep?.instanceBatches.length ?? 0,
     };
-    if (typeof requestIdleCallback === "function") { requestIdleCallback(prewarm, { timeout: 2_000 }); }
-    else { setTimeout(prewarm, 0); }
+  }
+
+  /**
+   * The placeholder frame of the view at `entry` (#855): the camera a session's first frame picks behind the character
+   * standing there, and no units.
+   */
+  #entryFrame(world: ZoneWorld, scene: SceneryScene, sceneryFrame: SceneryFrame, entry: EntryPreview): WorldFrame {
+    const { unitsPerMetre } = world.scenery.scenery;
+    const [x, feetY, z] = entry.feet.map((value) => value / unitsPerMetre) as [number, number, number];
+    const self: FrameSelf = { focus: [x, entry.centreY / unitsPerMetre, z], x, feetY, z, facing: entry.facing };
+    const orbit = new OrbitCamera();
+    let view: CameraView;
+    try {
+      this.#lookFirst(orbit, self.focus, self.facing, scene.surfaceY);
+      view = orbit.view(self.focus, scene.surfaceY);
+    } finally {
+      orbit.dispose();
+    }
+    this.#camera.position.set(...view.eye);
+    this.#camera.lookAt(...view.target);
+    this.#camera.updateMatrixWorld(true);
+    const frame = this.#prebuildFrame;
+    frame.world = world;
+    frame.scene = scene;
+    frame.sceneryFrame = sceneryFrame;
+    frame.deltaSeconds = 0;
+    frame.animate = this.#animate;
+    frame.tick = entry.tick;
+    frame.self = self;
+    frame.view = view;
+    frame.unitNodes = NO_NODES;
+    frame.effectNodes = NO_NODES;
+    return frame;
+  }
+
+  /** Runs the scenery stage over the placeholder frame at `entry`, leaving the page's last drawn camera as it was. */
+  #composeEntryFrame(entry: EntryPreview): WorldFrame | null {
+    const world = this.#loadedWorld;
+    const scene = this.#scene;
+    const sceneryFrame = this.#sceneryFrame;
+    if (!world || !scene || !sceneryFrame) { return null; }
+    const frame = this.#entryFrame(world, scene, sceneryFrame, entry);
+    const lastCamera = this.#lastCamera;
+    this.#loadKitsNearPoint([entry.feet[0], entry.feet[2]]);
+    this.#sceneryStage(frame);
+    // `enter` redraws the roots with the last drawn camera; the placeholder's must not count as drawn.
+    this.#lastCamera = lastCamera;
+    return frame;
+  }
+
+  /** One prebuild compose round at `entry`: static groups, ground tiles and grass stream in; true once none did. */
+  #composeEntry(entry: EntryPreview): boolean {
+    const before = this.#streamed();
+    if (!this.#composeEntryFrame(entry)) { return true; }
+    return this.#streamed() === before;
+  }
+
+  /** How much of the static scene has streamed in around the eye: resident groups, near ground tiles and grass cells. */
+  #streamed(): string {
+    return `${this.#sceneryBatches?.observe().resident ?? 0}|${this.#ground?.observe().resident ?? 0}|${this.#grass?.observe().cells ?? 0}`;
+  }
+
+  /** What a prebuild prepare covers besides its entry: whether the lighting has loaded, and the render roots. */
+  #entryPrepareKey(): string {
+    if (this.#rootRegistry.refresh()) {
+      this.#rootsStale = true;
+      this.#rootsVersion += 1;
+    }
+    return `${this.#lighting.ready}|${this.#rootsVersion}`;
+  }
+
+  /**
+   * Prepares the placeholder frame at `entry` like Enter World's `prepare` (#547): its programs through the lighting's
+   * passes, with the lighting the first frame will have, and its textures, drawing nothing.
+   */
+  async #prepareEntry(entry: EntryPreview): Promise<void> {
+    const frame = this.#composeEntryFrame(entry);
+    if (!frame) { return; }
+    // The renderer evicts whatever a frame leaves out. The prepare keeps the selection stage's nodes, hidden, and the
+    // turntable's frames keep the prepared view's nodes and instance batches, hidden, until Enter World draws them.
+    this.#selectionKeep = {
+      nodes: frame.nodes.map((node) => ({ ...node, visible: false })),
+      instanceBatches: frame.sceneFrame.instanceBatches.map((batch) => ({ ...batch, visible: false })),
+    };
+    appendAll(frame.nodes, this.#selectionStage);
+    const pending: Promise<unknown>[] = [];
+    this.#preparing = pending;
+    try {
+      this.#renderStage(frame);
+    } finally {
+      this.#preparing = null;
+    }
+    // The prepare put the world's roots in the renderer's scene; the turntable submits its own again before it draws.
+    this.#previewStale = true;
+    await Promise.all(pending);
+    markStartup("prebuild-prepared");
   }
 
   /** Prepare only the authored kits around the selected area, including the Outpost cliff rim. */
@@ -975,23 +1115,39 @@ export class WorldView {
    * the groups stream into. Nothing far is decoded or uploaded here; [`BatchedScenery`] streams groups from the first frame.
    */
   #buildStatic(world: ZoneWorld): void {
-    const scene = buildSceneryScene(world.scenery.scenery, world.scenery.staticScene);
-    this.#scene = scene;
-    this.#sceneryFrame = new SceneryFrame(scene);
-    this.#sceneryBatches = this.#zone.own(new BatchedScenery(scene, world.scenery.staticScene.groupStream()));
-    this.#rootRegistry.markDirty();
-    this.#ground = this.#zone.own(new Ground(world.scenery.staticScene.terrainStream(), scene.surfaces, scene.cutaways));
-    void this.#ground.load(this.#models.ktx2Loader);
+    while (this.#staticParts < STATIC_PARTS) { this.#buildStaticPart(world); }
+  }
+
+  /**
+   * Builds the static scene's next part (`STATIC_PARTS` in all): the decoded scene, the batches its groups stream into,
+   * the ground, the grass. The selection screen's prebuild builds one per idle slice (#855).
+   */
+  #buildStaticPart(world: ZoneWorld): void {
+    const part = this.#staticParts;
+    this.#staticParts += 1;
     const content = world.scenery.staticScene;
-    this.#grass = content.grassCell && content.grassCellMetres
-      ? new Grass({
-        cell: (column, row) => content.grassCell!(column, row), cellMetres: content.grassCellMetres(),
-        ...(content.grassFarCell && content.grassFarCellMetres
-          ? { farCell: (column: number, row: number) => content.grassFarCell!(column, row), farCellMetres: content.grassFarCellMetres() }
-          : {}),
-      }, this.#worldDetail)
-      : null;
-    if (this.#grass) { this.#zone.own(this.#grass); }
+    if (part === 0) {
+      const scene = buildSceneryScene(world.scenery.scenery, content);
+      this.#scene = scene;
+      this.#sceneryFrame = new SceneryFrame(scene);
+    } else if (part === 1) {
+      this.#sceneryBatches = this.#zone.own(new BatchedScenery(this.#scene!, content.groupStream()));
+      this.#rootRegistry.markDirty();
+    } else if (part === 2) {
+      this.#ground = this.#zone.own(new Ground(content.terrainStream(), this.#scene!.surfaces, this.#scene!.cutaways));
+      void this.#ground.load(this.#models.ktx2Loader);
+    } else if (part === 3) {
+      this.#grass = content.grassCell && content.grassCellMetres
+        ? new Grass({
+          cell: (column, row) => content.grassCell!(column, row), cellMetres: content.grassCellMetres(),
+          ...(content.grassFarCell && content.grassFarCellMetres
+            ? { farCell: (column: number, row: number) => content.grassFarCell!(column, row), farCellMetres: content.grassFarCellMetres() }
+            : {}),
+        }, this.#worldDetail)
+        : null;
+      if (this.#grass) { this.#zone.own(this.#grass); }
+      markStartup("static-built");
+    }
   }
 
   /** The directed-strike action's working binding labels, for the Heroic Strike slot hint. */
@@ -1345,6 +1501,9 @@ export class WorldView {
 
   /** Starts a session: fresh camera, intent and animation state. */
   enter(input: WorldInput, projection: ZoneSnapshot | null): void {
+    // Whatever the selection screen prebuilt stays (#855); nothing more is built for it in the world.
+    this.#prebuild.pause();
+    this.#selectionKeep = null;
     this.interruptGesture();
     this.#guardHold.end();
     this.#orbit.dispose();
@@ -1410,15 +1569,15 @@ export class WorldView {
    * line clears every structure. The camera itself never collides; this only
    * frames the first view of a session, deterministically.
    */
-  #frameFirstView(focus: Vec3, facing: number, groundAt: (x: number, z: number) => number): void {
+  #lookFirst(orbit: OrbitCamera, focus: Vec3, facing: number, groundAt: (x: number, z: number) => number): void {
     for (const step of [0, 2, -2, 1, -1, 3, -3, 4]) {
-      this.#orbit.lookAlong(facing + (step * Math.PI) / 4);
-      const view = this.#orbit.view(focus, groundAt);
+      orbit.lookAlong(facing + (step * Math.PI) / 4);
+      const view = orbit.view(focus, groundAt);
       if (!obstructed(this.#occluders, view.target, view.eye)) {
         return;
       }
     }
-    this.#orbit.lookAlong(facing);
+    orbit.lookAlong(facing);
   }
 
   /** Drops every imported unit model and takes them out of the shared renderer scene. */
@@ -1476,6 +1635,7 @@ export class WorldView {
    */
   selectionPreview(look: ViewerLook, feet: [number, number, number], yaw: number, height: number, seconds: number,
     camera: RendererCamera, stage: RendererSceneNode[]): boolean {
+    if (this.#selectionStage.length !== stage.length) { this.#selectionStage = stage.map((node) => ({ ...node, visible: false })); }
     if (!this.#regions || !this.#selectPlayer(look)) { return true; }
     const clip = this.#restClip("Ranger");
     const length = this.#models.clipLength("Ranger", clip) ?? 1;
@@ -1858,7 +2018,11 @@ export class WorldView {
   /** Input: the static scene once, then queued intents, the guard lane and movement out to the source. */
   #inputStage(frame: WorldFrame): void {
     const { world, input, now } = frame;
-    if (!this.#scene) { this.#buildStatic(world); }
+    if (this.#staticParts < STATIC_PARTS) {
+      // Built here only when entry came before the selection screen's prebuild finished (#855).
+      this.#frameStaticBuilds += 1;
+      this.#buildStatic(world);
+    }
     const scene = this.#scene;
     const sceneryFrame = this.#sceneryFrame;
     if (!scene || !sceneryFrame) {
@@ -1916,6 +2080,7 @@ export class WorldView {
       throw new Error("The world source has no projection for the joined player.");
     }
     frame.projection = projection;
+    frame.tick = projection.tick;
     this.#lastProjection = projection;
     this.#showVeins(projection.depletedVeins);
     this.#powerDraw.observe(projection, this.panelOpen);
@@ -2007,6 +2172,7 @@ export class WorldView {
     units.setInteraction(this.#loot.open, this.#quests.dialogNpc ?? this.#vendor.npc);
     const presented = units.frame(shown, projection, { seconds: this.#seconds, dt: deltaSeconds, reducedMotion: !animate, barYaw: this.#barYaw, look });
     frame.presented = presented;
+    frame.effectNodes = presented.effectNodes;
     this.#fortress?.place(presented.platforms);
     this.#kitEffects.update(presented.effects);
     const viewerModel = presented.imported.find((unit) => unit.entity.kind === "player" && unit.entity.id === projection.viewerId);
@@ -2066,7 +2232,7 @@ export class WorldView {
     this.#raidSigns.update(projection.raid, this.#raidPrep, scene.surfaceY, unitsPerMetre);
     if (this.#framePending) {
       this.#framePending = false;
-      this.#frameFirstView(self.focus, self.facing, scene.surfaceY);
+      this.#lookFirst(this.#orbit, self.focus, self.facing, scene.surfaceY);
     }
     const orbit = this.#orbit.view(self.focus, scene.surfaceY);
     // The arena and authored indoor rooms use an adaptive boom, retaining normal orbit controls.
@@ -2097,7 +2263,7 @@ export class WorldView {
 
   /** Scenery: static groups, ground, grass and kits stream around the eye, and the hour lights the scene. */
   #sceneryStage(frame: WorldFrame): void {
-    const { world, view, self, deltaSeconds, animate, projection, presented } = frame;
+    const { world, view, self, deltaSeconds, animate, tick } = frame;
     const outpostReady = (this.#outpost?.drawn ?? false) && (this.#fortifications?.drawn ?? false);
     const kits = { outpost: outpostReady, settlementProps: this.#settlement?.drawn ?? false, nature: this.#nature?.drawn ?? false, limestone: this.#standInDrawn("limestone"), climbing: this.#climbing?.drawn ?? false, crag: this.#crag?.drawn ?? false, fortress: this.#fortress?.drawn ?? false };
     const batches = this.#sceneryBatches;
@@ -2122,7 +2288,7 @@ export class WorldView {
     const nodes: RendererSceneNode[] = [];
     if (!this.#plan?.groundOnly) { appendAll(nodes, rendered); }
     appendAll(nodes, frame.unitNodes);
-    this.#lastEffectNodes = presented.effectNodes;
+    this.#lastEffectNodes = frame.effectNodes;
     appendAll(nodes, this.#lastEffectNodes);
     frame.nodes = nodes;
     this.#lastUnitNodes = frame.unitNodes;
@@ -2133,7 +2299,7 @@ export class WorldView {
     frame.camera = camera;
     // The sky follows the zone's clock (#158); a debug presentation time overrides it.
     // Reduced motion steps the sky once per zone hour instead of drifting continuously (the shared `clock`).
-    const hour = this.#presentationTime === null ? wasm.zoneSkyHour(projection.tick, animate) : wasm.pagesHour(this.#presentationTime, true);
+    const hour = this.#presentationTime === null ? wasm.zoneSkyHour(tick, animate) : wasm.pagesHour(this.#presentationTime, true);
     const dayFraction = wasm.dayFraction(hour);
     frame.dayFraction = dayFraction;
     const environment = environmentAt(ENVIRONMENT, dayFraction);
@@ -2170,6 +2336,10 @@ export class WorldView {
     if (this.#preparing) {
       // `prepare` (#547): the first world frame's programs and textures, without drawing it.
       this.#preparing.push(this.#renderer.prepare(rendererFrame, { roots: roots.slice() }));
+      // The prepare submitted these roots: the first drawn frame need not submit them again, which draws a whole extra
+      // frame (#855). A selection frame drawn since detaches them, which the next world frame notices.
+      this.#submittedRoots = new Set(roots);
+      this.#rootsStale = false;
       frame.stopped = true;
       return;
     }

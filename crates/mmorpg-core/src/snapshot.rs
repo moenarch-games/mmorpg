@@ -378,6 +378,9 @@ pub struct CanonicalZoneSnapshot {
     pub content_revision: u64,
     pub rng_state: u64,
     pub loot_rng_state: u64,
+    /// The host's secret world seed (#1111) that creature lives and event days derive from
+    /// with the content seed; 0 for none. Canonical only: no projection carries it.
+    pub world_seed: u64,
     /// Ordered by player ID.
     pub players: Vec<CanonicalPlayerSnapshot>,
     /// One record per content spawn, in creature-ID order.
@@ -676,6 +679,7 @@ impl ZoneSimulation {
             content_revision: self.content.revision(),
             rng_state: self.rng.state(),
             loot_rng_state: self.loot_rng.state(),
+            world_seed: self.world_seed,
             players,
             creatures,
             doors: self.canonical_doors(),
@@ -719,7 +723,7 @@ impl ZoneSimulation {
         if snapshot.players.len() > MAX_PLAYERS_PER_ZONE {
             return Err(ZoneError::new("zone player capacity reached"));
         }
-        let mut zone = Self::without_creatures(snapshot.zone_id, content)?;
+        let mut zone = Self::without_creatures(snapshot.zone_id, content, snapshot.world_seed)?;
         zone.tick = snapshot.tick;
         zone.rng = ZoneRng::from_state(snapshot.rng_state);
         zone.loot_rng = ZoneRng::from_state(snapshot.loot_rng_state);
