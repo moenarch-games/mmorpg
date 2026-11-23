@@ -26,9 +26,10 @@ use crate::{EntityRef, ZoneError, ZoneSimulation};
 /// plus the interpolation can ask for.
 pub const MAX_HIT_REWIND_MS: u32 = 200;
 
-/// How far behind the newest projection clients draw other units: the 67 ms interpolation
-/// delay of the browser and native clients, in ticks.
-pub const CLIENT_INTERPOLATION_TICKS: u16 = crate::ticks_from_ms(67);
+/// How far behind the newest projection clients draw other units, in ticks: both the browser
+/// and native clients interpolate 2 ticks behind (owner, 2026-11-22; Atlas 6.1.i1058), through
+/// `mmorpg-client-model`'s snapshot interpolation.
+pub const CLIENT_INTERPOLATION_TICKS: u16 = 2;
 
 /// Rewind of attack-against-body hits for one match's content (#680).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -39,8 +40,8 @@ pub struct HitRewind {
 
 impl HitRewind {
     /// The arena trial's cap (#680): 150 ms, as long as the #415 late-input grace. Tuning,
-    /// not a decision: at 50 ms round trip a hit is rewound fully (3 + 4 ticks), from about
-    /// 85 ms on the cap is reached.
+    /// not a decision: at 50 ms round trip a hit is rewound fully (3 + 2 ticks), from about
+    /// 120 ms on the cap is reached.
     pub const ARENA_TRIAL: Self = Self { max_ms: 150 };
 
     /// The cap in ticks.

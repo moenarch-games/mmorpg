@@ -3,7 +3,7 @@ import { FixedTickClock } from "../../demo-clock";
 import type { SessionConnector } from "../../session/connection";
 import type { SessionRoute } from "../../session/route";
 import { OnlineZoneSource } from "../online-zone-source";
-import { DEFAULT_JOIN_CHARACTER, type JoinCharacter, type WorldSource } from "../world-source";
+import { DEFAULT_JOIN_CHARACTER, interpolated, type JoinCharacter, type ShownUnits, type WorldSource } from "../world-source";
 import { OwnBodyPrediction, type PredictionHandle } from "./netcode-trial";
 import {
   canSendCharacterCommand, decodeMatchProjection, encodeBuild,
@@ -116,13 +116,12 @@ export class BattleRoyaleSource implements WorldSource {
 
   latestProjection() { return this.#session.latestProjection(); }
 
-  sample() {
-    const entities = this.#session.sample();
-    const viewerId = this.#session.latestProjection()?.viewerId;
+  shown(): ShownUnits {
+    const shown = this.#session.shown();
     const prediction = this.#prediction;
     // The own body is drawn where the prediction puts it while alive in the match.
-    if (!prediction || viewerId === undefined || this.#session.latestProjection()?.viewer.dead) { return entities; }
-    return prediction.draw(entities, viewerId, this.#clock.fraction);
+    if (!prediction || shown.kind !== "interpolated" || this.#session.latestProjection()?.viewer.dead !== false) { return shown; }
+    return interpolated(shown.elapsedTicks, prediction.ownBody(this.#clock.fraction));
   }
 
   linkState() { return this.#session.linkState(); }

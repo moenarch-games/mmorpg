@@ -37,7 +37,9 @@ pick an option. The numbers come from a scripted bot, not from how anything feel
 - [`measure.ts`](measure.ts) (`cd web && bun ../docs/reviews/netcode-trial-680/measure.ts`)
   drives the Practice route's own `NetcodeTrialSource` over the real `mmorpg-wasm` arena zone
   (`LocalZone.forArenaTrial`, Warden with standard gear, with its page-driven sparring
-  partner). It needs no GPU.
+  partner). It needs no GPU. It reads the source's sampled units (`WorldSource.sample`), which
+  #1058 moved into the WASM unit presenter (now 2 ticks behind instead of 67 ms): run it at the
+  commit these results were recorded at.
 - Every cell gets the same fixed scripted input for 3,000 ticks (50 s), in five 10 s cycles:
   - running strafes that change direction every 0.75 s;
   - closing in while strafing;

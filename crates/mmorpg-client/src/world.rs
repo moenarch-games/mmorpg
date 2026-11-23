@@ -139,12 +139,8 @@ pub struct MistPatch {
     pub half: [f32; 2],
 }
 
-/// Which authored impact a confirmed event plays: hits puff, blocks ring (as the browser, #52).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ImpactKind {
-    Hit,
-    Block,
-}
+/// Which authored impact a confirmed event plays: hits puff, blocks ring (shared, #1058).
+pub use mmorpg_client_model::impact::ImpactKind;
 
 /// One zone-confirmed impact on a presented unit, in world metres.
 #[derive(Clone, Copy, Debug, PartialEq)]

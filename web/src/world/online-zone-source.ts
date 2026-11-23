@@ -1,5 +1,5 @@
 import { encodeCommand, encodeObservedCommand, isTimingSensitive, type WorldCommand } from "../command-wire";
-import { ProjectionDecoder, SnapshotBuffer, TICK_HZ, decodeRedirectNotice, isRedirectNotice, ticksFromMs, type EntityState, type ZoneSnapshot } from "../replication";
+import { ProjectionDecoder, TICK_HZ, decodeRedirectNotice, isRedirectNotice, type ZoneSnapshot } from "../replication";
 import { browserClock, type SessionClock, type SessionConnection, type SessionConnector, type SessionEnd } from "../session/connection";
 import { decodeWelcome, type SnapshotFrame, type Welcome } from "../session/frames";
 import { parseSessionRoute, reconnectUrl, type SessionRoute } from "../session/route";
@@ -7,7 +7,7 @@ import { SequencedOutbox, type Delivery } from "../session/sequenced-outbox";
 import { SnapshotReassembler } from "../session/snapshot-reassembler";
 import { loadWasm, wasm } from "../wasm";
 import type { PartyRequestInput } from "../generated/mmorpg-wasm/mmorpg_wasm.js";
-import { classChoiceCodes, DEFAULT_JOIN_CHARACTER, type JoinCharacter, type LinkState, type WorldSource } from "./world-source";
+import { classChoiceCodes, DEFAULT_JOIN_CHARACTER, interpolated, type JoinCharacter, type LinkState, type ShownUnits, type WorldSource } from "./world-source";
 
 /** A join (welcome and first projection) must finish within this bound, like the native client's connect. */
 export const CONNECT_TIMEOUT_MS = 10_000;
@@ -23,8 +23,6 @@ export const RECONNECT_SETTLE_MS = 250;
 export const FOLLOW_TIMEOUT_MS = 20_000;
 /** A destination refuses the claim until the source retired the character; the claim is retried this often. */
 export const CLAIM_RETRY_MS = 100;
-/** Presentation runs this many ticks (4 at 60 Hz) behind the newest projection and holds it when projections stall. */
-export const INTERPOLATION_DELAY_TICKS = ticksFromMs(67);
 /**
  * At most this many projections (one second) wait for the next `advance`; a backgrounded page that
  * stops rendering keeps only the newest, like lost datagrams; every projection is complete, its sheets held (#544).
@@ -118,8 +116,8 @@ function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
  *   carry the page's zone, content revision and player;
  * - a lost connection or five seconds without projections triggers one
  *   bounded resume with the in-memory reconnect token. It keeps the player
- *   and sequencing, starts stopped, drops intents made meanwhile and resets
- *   presentation history for the new connection epoch. It never admits a new
+ *   and sequencing, starts stopped, drops intents made meanwhile and starts a
+ *   new projection stream for the new connection epoch. It never admits a new
  *   player instead. `leave` cancels it.
  *
  * Tokens stay in memory: they never appear in errors, logs or page URLs.
@@ -147,14 +145,13 @@ export class OnlineZoneSource implements WorldSource {
   #outbox = new SequencedOutbox();
   /** The zone's sheets as last received (#544); every command echoes their revisions. */
   #sheets = new ProjectionDecoder();
-  readonly #history = new SnapshotBuffer();
   #latest: ZoneSnapshot | null = null;
   #latestAt = 0;
   /** The facing of the last move sent; a resume starts stopped with it. */
   #facing = 0;
   /** One resume per interruption; a completed resume makes the next one available again. */
   #resumeAvailable = true;
-  /** The first projection of a resumed connection replaces the presentation history. */
+  /** The first projection of a resumed connection starts a new stream, whatever its tick. */
   #resetHistory = false;
   /** The class and sex the joining player chooses with its first command. */
   #character: JoinCharacter = DEFAULT_JOIN_CHARACTER;
@@ -282,17 +279,9 @@ export class OnlineZoneSource implements WorldSource {
     return this.#latest;
   }
 
-  sample(): readonly EntityState[] {
-    const latest = this.#latest;
-    if (!latest) {
-      return [];
-    }
-    // Like the native client: two ticks behind the newest projection, closing the gap while it stalls.
-    const elapsedTicks = ((this.#clock.now() - this.#latestAt) * TICK_HZ) / 1_000;
-    const delay = Math.max(0, INTERPOLATION_DELAY_TICKS - elapsedTicks);
-    const whole = Math.ceil(delay);
-    const tick = latest.tick - BigInt(whole);
-    return tick < 0n ? this.#history.sample(0n) : this.#history.sample(tick, whole - delay);
+  shown(): ShownUnits {
+    // Like the native client: the shared interpolation closes the gap while projections stall.
+    return interpolated(((this.#clock.now() - this.#latestAt) * TICK_HZ) / 1_000);
   }
 
   linkState(): LinkState {
@@ -467,7 +456,6 @@ export class OnlineZoneSource implements WorldSource {
     this.#welcome = null;
     this.#route = route;
     this.#contentRevision = this.#enterZone(notice.destination);
-    this.#history.reset();
     // Another zone sends its own sheets.
     this.#sheets = new ProjectionDecoder();
     this.#latest = null;
@@ -500,11 +488,9 @@ export class OnlineZoneSource implements WorldSource {
       throw new Error("The zone host addressed a projection to another player.");
     }
     if (this.#resetHistory) {
-      // A new connection epoch: never blend with the lost connection's samples.
+      // A new connection epoch: never compared with the lost connection's ticks.
       this.#resetHistory = false;
-      this.#history.reset();
-    }
-    if (!this.#history.push(snapshot)) {
+    } else if (this.#latest && snapshot.tick <= this.#latest.tick) {
       return;
     }
     this.#finished = activity?.finished ?? false;
@@ -660,7 +646,6 @@ export class OnlineZoneSource implements WorldSource {
     this.#welcome = null;
     this.#outbox = new SequencedOutbox();
     this.#sheets = new ProjectionDecoder();
-    this.#history.reset();
     this.#latest = null;
     this.#latestAt = 0;
     this.#facing = 0;

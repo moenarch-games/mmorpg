@@ -199,3 +199,69 @@ fn page_geometry(units: &Units, held: &BTreeSet<u32>) -> BTreeSet<u32> {
         })
         .collect()
 }
+
+/// What sampling the units of the measured frames cost (`client-interpolate`, #1058).
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct InterpolationRun {
+    /// Units sampled in the last frame, the viewer included.
+    pub units: usize,
+    /// The most entity records one measured frame's interpolation visited.
+    pub samples_visited: usize,
+    /// The most allocations one measured frame's interpolation made.
+    pub warm_frame_allocations: usize,
+}
+
+/// `entities` wolves walking around the viewer at the hub, a projection a frame (the local
+/// zone's pace), each frame sampled 2 ticks behind the newest at half a tick; 40 warm-up frames
+/// fill the history, then `frames` measured frames.
+#[must_use]
+pub fn interpolation(entities: usize, frames: usize) -> InterpolationRun {
+    let content = presented_content();
+    let mut zone = ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content))
+        .expect("the vale admits a zone");
+    zone.add_player(1).expect("the viewer joins");
+    let mut snapshot: ZoneSnapshot = zone.snapshot_for_player(1).expect("the viewer projects");
+    snapshot.entities.truncate(1);
+    let viewer = snapshot.entities[0].clone();
+    for index in 0..entities {
+        let id = u32::try_from(index).expect("a small crowd");
+        snapshot.entities.push(EntitySnapshot {
+            kind: EntityKind::Creature,
+            id: 1 + id,
+            appearance: 1,
+            position: [
+                viewer.position[0] + 300 + (id % 8) as i32 * 250,
+                viewer.position[1],
+                viewer.position[2] + (id / 8) as i32 * 250,
+            ],
+            velocity: [10, 0, 0],
+            facing: 0,
+            level: 2,
+            health_percent: 100,
+            flags: EntityFlags::default(),
+        });
+    }
+    // Projections list units in no particular order.
+    snapshot.entities.reverse();
+    let mut units = Units::new(1);
+    let mut run = InterpolationRun::default();
+    let warm_up = 40;
+    for frame in 0..warm_up + frames {
+        for record in &mut snapshot.entities {
+            record.position[0] += 10;
+            record.facing = record.facing.wrapping_add(300);
+        }
+        snapshot.tick += 1;
+        units.push(Rc::new(snapshot.clone()), frame as f64 / 60.);
+        let visited = units.samples_visited();
+        let before = allocations();
+        units.interpolate(0.5, &[]).expect("interpolated");
+        let allocated = allocations() - before;
+        if frame >= warm_up {
+            run.units = entities + 1;
+            run.samples_visited = run.samples_visited.max(units.samples_visited() - visited);
+            run.warm_frame_allocations = run.warm_frame_allocations.max(allocated);
+        }
+    }
+    run
+}

@@ -1,5 +1,7 @@
 import type { IndexedMeshGeometry, Matrix4Values, RendererSceneNode } from "@moritzbrantner/three-d-renderer";
-import type { EntityKind, EntityRef, EntityState, IngestedProjection, StrikeAim } from "../replication";
+import type { EntityKind, EntityRef, EntityState, IngestedProjection, StrikeAim, ZoneSnapshot } from "../replication";
+import type { ImpactFamily } from "./impact-effects";
+import type { ShownUnits } from "./world-source";
 import type { Color } from "./scenery";
 import { freeHandle } from "./zone-lifecycle";
 
@@ -7,8 +9,9 @@ import { freeHandle } from "./zone-lifecycle";
  * The shared unit presentation (#184): `mmorpg-presentation` draws procedural players,
  * creatures and NPCs, their locomotion and action poses, spell visuals, health bars and
  * target rings, and picks each imported model's clip, exactly as the native client does.
- * This adapter feeds it the received projections and the sampled units, turns its draws into
- * renderer nodes and keeps the geometry of resources still in use.
+ * This adapter feeds it the received projections and says how far each frame lags the newest (the
+ * presenter interpolates them itself, #1058), turns its draws into renderer nodes and keeps the
+ * geometry of resources still in use.
  */
 export type UnitPresenterHandle = {
   modelReady(kind: string, clips: string): void;
@@ -30,9 +33,17 @@ export type UnitPresenterHandle = {
   abandonPreparation(): void;
   /** Sound cues and fades of the projections pushed since the last call (#447), as JSON. */
   takeAudio(): string;
-  /** Lays one frame out in WASM memory (#1057): read through {@link directory} and {@link memory}. */
-  frame(units: Float64Array, seconds: number, dt: number, reducedMotion: boolean, barYaw: number,
+  /**
+   * Lays one frame out in WASM memory (#1057): read through {@link directory} and {@link memory}. The units are
+   * sampled from the pushed projections `elapsedTicks` past the newest (#1058), the viewer at `ownBody` if not empty.
+   */
+  frame(elapsedTicks: number, ownBody: Float64Array, seconds: number, dt: number, reducedMotion: boolean, barYaw: number,
     choice: number, headwear: string, previewYaw: number): void;
+  /** Lays out a frame of exactly `units` (`[kind, id, x, y, z, facing]` each), a scrubbed recording's. */
+  frameAt(units: Float64Array, seconds: number, dt: number, reducedMotion: boolean, barYaw: number,
+    choice: number, headwear: string, previewYaw: number): void;
+  /** Confirmed impacts of the projections pushed since the last call (#1058): `[kind (0 hit, 1 block), unit kind, id]` each. */
+  takeImpacts(): Uint32Array;
   /** The address of the layout's directory: pointer, capacity and length of its words, numbers, models, vertices and indices. */
   directory(): number;
   memory(): WebAssembly.Memory;
@@ -218,6 +229,8 @@ type MutableUnit = Omit<PresentedUnit, "feet" | "label" | "body"> & { feet: [num
 
 const KIND_CODE: Readonly<Record<EntityKind, number>> = { player: 0, creature: 1, npc: 2, minion: 3 };
 const KINDS: readonly EntityKind[] = ["player", "creature", "npc", "minion"];
+/** No predicted own body. */
+const NO_BODY = new Float64Array(0);
 /** A unit's number key: its kind code above its 32-bit id. */
 function entityNumber(kindCode: number, id: number): number {
   return kindCode * 0x1_0000_0000 + id;
@@ -262,8 +275,9 @@ export class SharedUnits {
   /** Renderer nodes and presented units by draw-id and node index, kept and updated in place with the frame each was last seen in. */
   #nodes = new Map<number, { node: UnitNode; frame: number }>();
   #units = new Map<number, { unit: MutableUnit; frame: number }>();
-  /** This frame's sampled states and presented units by {@link entityNumber}. */
+  /** The records presented units take their state from, by {@link entityNumber}, and the projection they index. */
   #sampled = new Map<number, EntityState>();
+  #indexed: ZoneSnapshot | null = null;
   #byEntity = new Map<number, PresentedUnit>();
   #frameNumber = 0;
   #input = new Float64Array(0);
@@ -285,6 +299,14 @@ export class SharedUnits {
 
   constructor(handle: UnitPresenterHandle) {
     this.#handle = handle;
+  }
+
+  /** Indexes `records` by entity, once per projection; a scrubbed frame's exact units (`projection` null) every frame. */
+  #index(records: readonly EntityState[], projection: ZoneSnapshot | null): void {
+    if (projection !== null && projection === this.#indexed) { return; }
+    this.#indexed = projection;
+    this.#sampled.clear();
+    for (const record of records) { this.#sampled.set(entityNumber(KIND_CODE[record.kind], record.entityId), record); }
   }
 
   /** Frees the presenter's WASM handle (#1005); the presenter is not used afterwards. */
@@ -392,25 +414,46 @@ export class SharedUnits {
   }
 
   /**
-   * One frame of the shared presenter (#1057): it lays the frame out in WASM memory and this reads it in place, keeping
-   * its renderer nodes and units by draw id and updating them without parsing, matrix copies or new node objects.
+   * The confirmed impacts of the projections pushed since the last call (#52, #1058): hits puff and blocks ring, on the
+   * struck unit, in event order.
    */
-  frame(units: readonly EntityState[], options: { seconds: number; dt: number; reducedMotion: boolean; barYaw: number;
-    look: ViewerLook; previewYaw?: number }): UnitFrameNodes {
-    if (this.#input.length < units.length * 6) { this.#input = new Float64Array(units.length * 12); }
-    const input = this.#input;
-    this.#sampled.clear();
-    for (let index = 0; index < units.length; index += 1) {
-      const entity = units[index]!;
-      const at = index * 6;
-      const kind = KIND_CODE[entity.kind];
-      input[at] = kind; input[at + 1] = entity.entityId;
-      input[at + 2] = entity.position[0]; input[at + 3] = entity.position[1]; input[at + 4] = entity.position[2];
-      input[at + 5] = entity.facing;
-      this.#sampled.set(entityNumber(kind, entity.entityId), entity);
+  takeImpacts(): { family: ImpactFamily; target: EntityRef }[] {
+    const flat = this.#handle.takeImpacts();
+    const cues: { family: ImpactFamily; target: EntityRef }[] = [];
+    for (let at = 0; at + 2 < flat.length; at += 3) {
+      cues.push({ family: flat[at] === 0 ? "puff" : "ring", target: { kind: KINDS[flat[at + 1]!]!, id: flat[at + 2]! } });
     }
-    this.#handle.frame(input.subarray(0, units.length * 6), options.seconds, options.dt, options.reducedMotion, options.barYaw,
-      appearanceCode(options.look), options.look.headwear ?? "", options.previewYaw ?? Number.NaN);
+    return cues;
+  }
+
+  /**
+   * One frame of the shared presenter (#1057, #1058): it samples the pushed projections as `shown` says (or takes a
+   * scrubbed frame's exact units), lays the frame out in WASM memory and this reads it in place, keeping its renderer
+   * nodes and units by draw id and updating them without parsing, matrix copies or new node objects. Each interpolated
+   * unit's `state` is its record in `projection`, the newest the page holds.
+   */
+  frame(shown: ShownUnits, projection: ZoneSnapshot, options: { seconds: number; dt: number; reducedMotion: boolean; barYaw: number;
+    look: ViewerLook; previewYaw?: number }): UnitFrameNodes {
+    const { seconds, dt, reducedMotion, barYaw, look } = options;
+    const previewYaw = options.previewYaw ?? Number.NaN;
+    if (shown.kind === "exact") {
+      const units = shown.units;
+      if (this.#input.length < units.length * 6) { this.#input = new Float64Array(units.length * 12); }
+      const input = this.#input;
+      this.#index(units, null);
+      for (let index = 0; index < units.length; index += 1) {
+        const entity = units[index]!;
+        const at = index * 6;
+        input[at] = KIND_CODE[entity.kind]; input[at + 1] = entity.entityId;
+        input[at + 2] = entity.position[0]; input[at + 3] = entity.position[1]; input[at + 4] = entity.position[2];
+        input[at + 5] = entity.facing;
+      }
+      this.#handle.frameAt(input.subarray(0, units.length * 6), seconds, dt, reducedMotion, barYaw, appearanceCode(look), look.headwear ?? "", previewYaw);
+    } else {
+      this.#index(projection.entities, projection);
+      this.#handle.frame(shown.elapsedTicks, shown.ownBody ?? NO_BODY, seconds, dt, reducedMotion, barYaw, appearanceCode(look),
+        look.headwear ?? "", previewYaw);
+    }
     this.#frameNumber += 1;
     this.#view();
     if (this.#words[HEADER.stringsReset] === 1) { this.#forget(); }

@@ -43,12 +43,11 @@ export function worldSourceContract(
     const subject = create();
     const { source } = subject;
     expect(source.latestProjection()).toBeNull();
-    expect(source.sample()).toEqual([]);
     const player = await subject.settle(source.join());
     const projection = source.latestProjection();
     expect(projection?.viewerId).toBe(player);
     expect(ownUnit(projection?.entities ?? [], player)).toBeDefined();
-    expect(ownUnit(source.sample(), player)).toBeDefined();
+    expect(source.shown().kind).toBe("interpolated");
     expect(source.linkState()).toBe("connected");
     source.leave();
   });
@@ -90,7 +89,6 @@ export function worldSourceContract(
     const { source } = subject;
     await expect(subject.settle(source.join())).rejects.toThrow();
     expect(source.latestProjection()).toBeNull();
-    expect(source.sample()).toEqual([]);
     expect(() => source.sendCommand({ kind: "jump" })).toThrow();
     await pass(subject, 0.1);
     expect(source.latestProjection()).toBeNull();
@@ -113,7 +111,6 @@ export function worldSourceContract(
     await pass(subject, 0.1);
     source.leave();
     expect(source.latestProjection()).toBeNull();
-    expect(source.sample()).toEqual([]);
     await pass(subject, 0.1);
     expect(source.latestProjection()).toBeNull();
     const second = await subject.settle(source.join());

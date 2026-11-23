@@ -1,11 +1,10 @@
 import * as THREE from "three";
-import type { EntityRef } from "../entity-ref";
-import type { ZoneSnapshot } from "../replication";
 
 /**
  * Authored combat impact effects (#52): asset-tooling's one-shot puff/ring frame sequences
  * (`web/public/effects`, see its SOURCE) drawn as three.js sprites on zone-confirmed events.
- * Purely cosmetic: an effect starts only from a projection's events and never feeds back.
+ * Purely cosmetic: an effect starts only from a projection's confirmed events (the shared impact cues of
+ * `mmorpg-client-model`, which the unit presenter queues, #1058) and never feeds back.
  */
 export type ImpactFamily = "puff" | "ring";
 export type ImpactIntensity = "strong" | "subtle";
@@ -46,22 +45,6 @@ export function impactFrameAt(atlas: ImpactAtlas, ageMs: number): number {
     return -1;
   }
   return atlas.frames.findIndex((frame) => ageMs < frame.timeMs + frame.durationMs);
-}
-
-/** The impacts one projection's confirmed events produce: hits puff, blocks ring, on the struck unit. */
-export function impactCues(snapshot: ZoneSnapshot): { family: ImpactFamily; target: EntityRef }[] {
-  return snapshot.events.flatMap((event): { family: ImpactFamily; target: EntityRef }[] => {
-    switch (event.kind) {
-      case "damage-dealt":
-      case "damage-taken":
-      case "damage-observed":
-        return [{ family: "puff", target: event.target }];
-      case "blocked":
-        return [{ family: "ring", target: event.target }];
-      default:
-        return [];
-    }
-  });
 }
 
 const EFFECTS = `${import.meta.env.BASE_URL}effects/`;

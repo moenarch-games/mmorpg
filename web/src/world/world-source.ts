@@ -11,6 +11,23 @@ import type { SceneryProvider } from "./scenery";
  */
 export type LinkState = "connected" | "reconnecting" | "travelling";
 
+/**
+ * Which units a frame draws (#1058). Usually the shared snapshot interpolation in the unit
+ * presenter, which keeps the pushed projections and draws units 2 ticks behind the newest:
+ * `elapsedTicks` is how far past the newest projection the frame is (time since it arrived, or the
+ * local clock's fraction of a tick; `Infinity` shows the newest exactly), and `ownBody` the viewer's
+ * predicted body over it, `[x, y, z, facing, vx, vy, vz]`, while the source predicts it. A scrubbed
+ * recording shows exactly its `units` instead.
+ */
+export type ShownUnits =
+  | { kind: "interpolated"; elapsedTicks: number; ownBody: Float64Array | null }
+  | { kind: "exact"; units: readonly EntityState[] };
+
+/** The interpolated frame `elapsedTicks` past the newest projection, without prediction. */
+export function interpolated(elapsedTicks: number, ownBody: Float64Array | null = null): ShownUnits {
+  return { kind: "interpolated", elapsedTicks, ownBody };
+}
+
 /** The class and sex a new player chooses on entry; the zone takes the choice once. */
 /**
  * The character to enter as. `id` names the durable character; a local zone
@@ -70,8 +87,8 @@ export type WorldSource = {
   advance(deltaSeconds: number): readonly ZoneSnapshot[];
   /** The newest decoded projection addressed to the joined player, if any. */
   latestProjection(): ZoneSnapshot | null;
-  /** Interpolated entities to draw now; empty before the first projection. */
-  sample(): readonly EntityState[];
+  /** Which units the frame draws now (#1058). */
+  shown(): ShownUnits;
   /** `reconnecting` while the source restores its connection; always `connected` for a local zone. */
   linkState(): LinkState;
   /**

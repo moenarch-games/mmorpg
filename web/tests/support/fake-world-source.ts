@@ -1,6 +1,6 @@
 import type { WorldCommand } from "../../src/command-wire";
-import type { EntityState, ZoneSnapshot } from "../../src/replication";
-import { DEFAULT_JOIN_CHARACTER, type JoinCharacter, type LinkState, type WorldSource } from "../../src/world/world-source";
+import type { ZoneSnapshot } from "../../src/replication";
+import { DEFAULT_JOIN_CHARACTER, interpolated, type JoinCharacter, type LinkState, type ShownUnits, type WorldSource } from "../../src/world/world-source";
 import { playerEntity, testSnapshot } from "./snapshots";
 
 /** An in-memory world that honours the `WorldSource` contract without any rules. */
@@ -52,8 +52,8 @@ export class FakeWorldSource implements WorldSource {
     return "connected";
   }
 
-  sample(): readonly EntityState[] {
-    return this.#latest?.entities ?? [];
+  shown(): ShownUnits {
+    return interpolated(Number.POSITIVE_INFINITY);
   }
 
   #publish(): void {

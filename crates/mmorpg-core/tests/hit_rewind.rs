@@ -124,9 +124,9 @@ fn chase(content: &Arc<ZoneContent>, gap: i32, flee: u16, late: u64) -> (bool, u
 fn the_rewind_is_the_measured_lateness_plus_interpolation_within_the_cap() {
     let cap = HitRewind::ARENA_TRIAL.max_ticks();
     assert_eq!(cap, 9);
-    assert_eq!(CLIENT_INTERPOLATION_TICKS, 4);
+    assert_eq!(CLIENT_INTERPOLATION_TICKS, 2);
     let content = arena(true);
-    for (late, expected) in [(0, 4), (3, 7), (5, cap), (20, cap)] {
+    for (late, expected) in [(0, 2), (3, 5), (5, 7), (7, cap), (20, cap)] {
         let (_, rewind) = chase(&content, 100, u16::MAX, late);
         assert_eq!(rewind, expected, "late {late}");
     }
@@ -140,22 +140,22 @@ fn a_rewound_sweep_strikes_a_body_that_ran_out_of_reach_within_the_cap() {
     // the present but was in reach a few ticks before.
     let flee = 12;
     assert_eq!(chase(&arena(false), 200, flee, 5), (false, 0));
-    assert_eq!(chase(&arena(true), 200, flee, 5), (true, 9));
-    // On time (rewind 4, the interpolation alone) is not far enough back.
-    assert_eq!(chase(&arena(true), 200, flee, 0), (false, 4));
+    assert_eq!(chase(&arena(true), 200, flee, 7), (true, 9));
+    // On time (rewind 2, the interpolation alone) is not far enough back.
+    assert_eq!(chase(&arena(true), 200, flee, 0), (false, 2));
 }
 
 #[test]
 fn a_body_out_of_reach_further_back_than_the_cap_is_not_struck() {
     // Running from early in the wind-up, player 2 was last in reach more than the cap ago:
     // however late the strike claims to be, the rewind stops at the cap.
-    let flee = 7;
+    let flee = 8;
     assert_eq!(chase(&arena(true), 200, flee, 20), (false, 9));
     // A match allowing the longest rewind would have struck it.
     let longest = arena_with(Some(HitRewind {
         max_ms: mmorpg_core::MAX_HIT_REWIND_MS,
     }));
-    assert_eq!(chase(&longest, 200, flee, 20), (true, 12));
+    assert_eq!(chase(&longest, 200, flee, 20), (true, 11));
     // No match may allow more.
     let content = ZoneContent::new(
         support::arena::ground(),
@@ -245,7 +245,7 @@ fn a_zone_restored_mid_swing_rewinds_exactly_like_the_original() {
     let content = arena(true);
     let mut zone = duel(&content, 200);
     let before = health(&zone, 2);
-    strike(&mut zone, 1, 2, EAST, 5);
+    strike(&mut zone, 1, 2, EAST, 7);
     let total = swing_ticks(&zone) + 2;
     for tick in 0..14 {
         if tick == 12 {

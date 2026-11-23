@@ -1,6 +1,7 @@
-//! Deterministic work samples of the browser's unit frame layout (#1057), printed as the
-//! `unit-frame` operation of `coding-tooling/work-evidence/v1` for `.performance/contract.json`
-//! (`scripts/operation-work.py` merges them with `presentation_work`'s). Nothing here is timed.
+//! Deterministic work samples of the browser's unit frame layout (#1057) and snapshot
+//! interpolation (#1058), printed as the `unit-frame` and `client-interpolate` operations of
+//! `coding-tooling/work-evidence/v1` for `.performance/contract.json` (`scripts/operation-work.py`
+//! merges them with `presentation_work`'s). Nothing here is timed.
 #[path = "../tests/support/unit_layout.rs"]
 mod unit_layout;
 
@@ -15,8 +16,20 @@ fn main() {
             )
         })
         .collect();
+    // The viewer and up to 63 others: a full projection at the largest point.
+    let interpolated: Vec<_> = [8, 16, 32, 63]
+        .into_iter()
+        .map(|others| {
+            let run = unit_layout::interpolation(others, 64);
+            format!(
+                "{{\"dimensions\":{{\"entities\":{}}},\"metrics\":{{\"samples_visited\":{},\"warm_frame_allocations\":{}}}}}",
+                run.units, run.samples_visited, run.warm_frame_allocations,
+            )
+        })
+        .collect();
     println!(
-        "{{\"operations\":[{{\"id\":\"unit-frame\",\"samples\":[{}]}}]}}",
-        samples.join(",")
+        "{{\"operations\":[{{\"id\":\"unit-frame\",\"samples\":[{}]}},{{\"id\":\"client-interpolate\",\"samples\":[{}]}}]}}",
+        samples.join(","),
+        interpolated.join(","),
     );
 }

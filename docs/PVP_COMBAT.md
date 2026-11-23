@@ -104,8 +104,8 @@ The native/browser producers must agree on the new protocol ID.
 Three options a tester compares in an arena match; nothing is assumed to win and the owner picks
 what stays.
 
-1. **Baseline:** zone authority, every unit drawn 67 ms behind the newest projection, the own
-   body included (today's online path).
+1. **Baseline:** zone authority, every unit drawn 2 ticks (33 ms) behind the newest projection,
+   the own body included (today's online path; 67 ms before #1058).
 2. **Predicted movement** (per client): `mmorpg_client_model::prediction::PredictedMovement`
    moves the own body at once with `mmorpg_core::MovementPredictor`, a private zone over the same
    content holding only that body, so it is the zone's own movement and physics. It keeps every
@@ -119,7 +119,7 @@ what stays.
    `ZoneContent::with_hit_rewind(HitRewind::ARENA_TRIAL)` (needs timed swings; bound into the
    content revision). When a swing begins the zone fixes its rewind from its own knowledge: the
    ticks since the tick the strike's client had observed (the #415 lateness, which the zone
-   validates and caps at 150 ms) plus the clients' 67 ms interpolation (4 ticks), capped at the
+   validates and caps at 150 ms) plus the clients' 2-tick interpolation (#1058; 4 ticks before), capped at the
    match's **150 ms** (9 ticks; at most 200 ms for any match). The sweep then tests each body
    where it stood that many ticks earlier, from the swinger's present position, through present
    cover; eligibility, damage and deaths stay in the present. **Clashes are never rewound**: a

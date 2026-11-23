@@ -38,16 +38,17 @@ Units include the viewer and the NPCs and creatures its projection already shows
 
 ## Contracts
 
-`.performance/contract.json` declares four presentation operations beside the zone's; `scripts/operation-work.py` merges the `presentation_work`, `projection_ingest` and `unit_layout` examples' samples into the same evidence (`unit-frame` combines `presentation_work`'s and `unit_layout`'s metrics by equal dimensions):
+`.performance/contract.json` declares five presentation operations beside the zone's; `scripts/operation-work.py` merges the `presentation_work`, `projection_ingest` and `unit_layout` examples' samples into the same evidence (`unit-frame` combines `presentation_work`'s and `unit_layout`'s metrics by equal dimensions):
 
 | Operation | Dimensions | Bound |
 | --- | --- | --- |
 | `camera-only-frames` | measured frames, orbit radius | no static builds, evictions or uploaded bytes; largest frame draws constant in frames |
 | `region-walk` | metres walked | at most `BUILDS_PER_FRAME + GROUP_BUILDS_PER_FRAME` (10) builds a frame |
 | `unit-frame` | animated characters | unit draws linear; geometry uploads constant; browser layout entity lookups and bytes linear; warm-frame layout allocations constant (at most 8) |
+| `client-interpolate` | projected units (viewer included) | entity records visited by one frame's interpolation linear; warm-frame allocations none |
 | `projection-ingest` | projections ingested (local and online) | at most 1 decode a projection; no unchanged sheet views; no bytes beyond the network payload; sheet views constant |
 
-The camera-only, projection-ingest and browser unit layout bounds are blocking, through the `presentation_work` and `mmorpg-wasm` `projection_ingest` and `unit_layout` tests that `cargo test` runs: an incremental-update regression that rebuilds, re-uploads or re-evicts static scenery on a camera-only frame (or never settles) fails the first, a second decode, a re-sent unchanged sheet or an extra byte copy fails the second, and a lookup per pair of units, faster-growing layout bytes or a per-character allocation fails the third. Legitimate streaming, LOD and visibility changes stay allowed and the other counts are advisory. Frame pacing on real hardware stays with the existing wall-clock profilers, `scripts/profile-browser.py` (#546) and the native `outpost_frame_time` (#692); they are compared separately and never gate correctness.
+The camera-only, projection-ingest and browser unit layout bounds are blocking, through the `presentation_work` and `mmorpg-wasm` `projection_ingest` and `unit_layout` tests that `cargo test` runs: an incremental-update regression that rebuilds, re-uploads or re-evicts static scenery on a camera-only frame (or never settles) fails the first, a second decode, a re-sent unchanged sheet or an extra byte copy fails the second, and a lookup per pair of units, faster-growing layout bytes or a per-character allocation fails the third, and a find per interpolated unit or an allocating warm interpolation fails `unit_layout`'s interpolation test. Legitimate streaming, LOD and visibility changes stay allowed and the other counts are advisory. Frame pacing on real hardware stays with the existing wall-clock profilers, `scripts/profile-browser.py` (#546) and the native `outpost_frame_time` (#692); they are compared separately and never gate correctness.
 
 ## Projection ingest (#1009)
 
@@ -81,3 +82,13 @@ cargo run --release -p mmorpg-wasm --example unit_layout --locked      # samples
 | 64 | 89 | 130 464 | 3 |
 
 The allocator counts the adapter's own sampling and layout, not the shared presenter's frame, whose draws still own their strings. The three allocations of a warm frame intern the breathing torsos' new geometry keys (above). Before #1057 the frame crossed as one JSON string, every sampled and imported unit searched the projection's records linearly, and the page parsed it and copied every matrix into a new node.
+
+## Snapshot interpolation (#1058)
+
+Both clients draw units with `mmorpg-client-model`'s `SnapshotHistory`, 2 ticks behind the newest projection (Atlas 6.1.i1058). Each push sorts the projection's record indices by entity once (into a buffer reused from a dropped projection), so a frame's sample walks the two bracketing projections side by side: it visits each of their records once, and it writes the poses into a buffer the caller keeps. The browser's `Units` samples it inside WASM from the projections it was pushed; the page only sends how far the frame lags the newest projection and, while it predicts, its own body. `unit_layout`'s `interpolation` workload measures that adapter step at 9 to 64 projected units:
+
+| Projected units | Records visited a frame | Warm-frame allocations |
+| ---: | ---: | ---: |
+| 9, 17, 33, 64 | 2 × units | 0 |
+
+Before #1058 the native client found each unit's next record with a linear search (quadratic in projected units) and the browser built a map and new unit objects every frame in TypeScript, then sent the sampled units back across the boundary.
