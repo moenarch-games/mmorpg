@@ -84,8 +84,13 @@ fn genesis(
     known: u16,
     grants: u16,
 ) -> Result<game_server::RecoveryImage> {
-    let mut adapter =
-        ZoneGameServerAdapter::with_content(zone, mmorpg_core::content_for_zone(zone))?;
+    // A new world draws its secret seed (#1111) here; its canonical baseline and every later
+    // checkpoint carry it, so recovery onto a fresh adapter takes it from there.
+    let mut adapter = ZoneGameServerAdapter::with_world_seed(
+        zone,
+        mmorpg_core::content_for_zone(zone),
+        crate::world_seed::fresh()?,
+    )?;
     adapter.zone_mut().enable_reward_tracking(known, grants)?;
     Ok(MatchRuntime::new_with_replay_capture(adapter, grace).checkpoint_replay()?)
 }
