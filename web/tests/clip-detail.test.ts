@@ -1,48 +1,17 @@
 import { expect, test } from "bun:test";
-import * as THREE from "three";
 import { CLIP_DETAIL, ClipDetail } from "../src/world/clip-detail";
+import { RADIUS, WARM_CLIP_FRAMES, camera, clipFrames, largestClipsSampledPerFrame, placements } from "./support/work/ambient-clips";
 
 // The `ambient-clips` budget (#1095, `.performance/contract.json`): ambient creatures and settlement prop clips sample
 // only in view and within `farMetres`, every frame near the eye and every `every`th frame further out, so the clips
-// sampled per frame follow what is visible and near, not how many are placed.
-
-const RADIUS = 1;
-
-/** A camera at the origin looking down -z. */
-function camera(): THREE.PerspectiveCamera {
-  const view = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 2000);
-  view.position.set(0, 0, 0);
-  view.lookAt(0, 0, -1);
-  view.updateMatrixWorld(true);
-  return view;
-}
-
-/**
- * `near` clips 10 m ahead, `middle` ones 100 m ahead, then the rest placed behind the camera (off-screen) and far ahead
- * (beyond `farMetres`), `placed` in all.
- */
-function placements(placed: number, near: number, middle: number): [number, number, number][] {
-  return Array.from({ length: placed }, (_, index): [number, number, number] => {
-    if (index < near) { return [index * 0.1 - near * 0.05, 0, -10]; }
-    if (index < near + middle) { return [(index - near) * 0.5 - middle * 0.25, 0, -100]; }
-    return index % 2 === 0 ? [index, 0, 50] : [0, 0, -(CLIP_DETAIL.farMetres + 50 + index)];
-  });
-}
+// sampled per frame follow what is visible and near, not how many are placed. `support/work/ambient-clips.ts` measures
+// it; `scripts/work-evidence.ts` emits the same measurement (#1120).
 
 /** Runs `frames` frames and returns each frame's sampled count, and which clips sampled at all. */
 function run(placed: number, near: number, middle: number, frames: number, animate = true) {
-  const at = placements(placed, near, middle);
-  const detail = new ClipDetail(placed);
-  const view = camera();
-  const sampled: number[] = [];
-  const ever = new Set<number>();
-  for (let frame = 0; frame < frames; frame += 1) {
-    detail.begin(view, animate);
-    at.forEach(([x, y, z], index) => { if (detail.sample(index, x, y, z, RADIUS)) { ever.add(index); } });
-    expect(detail.work.visibleNear).toBe(near);
-    expect(detail.work.visibleMiddle).toBe(middle);
-    sampled.push(detail.work.sampled);
-  }
+  const { sampled, visibleNear, visibleMiddle, ever, detail } = clipFrames(placed, near, middle, frames, animate);
+  expect(visibleNear.every((count) => count === near)).toBe(true);
+  expect(visibleMiddle.every((count) => count === middle)).toBe(true);
   return { sampled, ever, detail };
 }
 
@@ -57,9 +26,17 @@ test("off-screen and far clips never sample; near ones every frame, middle ones 
 
 test("the clips sampled per frame follow the visible-near count, not the placed count", () => {
   // Scale points of `ambient-clips`: the placed count grows, the visible ones stay.
-  const largest = [64, 256, 1024].map((placed) => Math.max(...run(placed, 4, 12, 64).sampled.slice(1)));
+  expect(WARM_CLIP_FRAMES).toBe(64);
+  const largest = [64, 256, 1024].map((placed) => largestClipsSampledPerFrame(placed, 4, 12));
   expect(new Set(largest).size).toBe(1);
   expect(largest[0]!).toBeLessThanOrEqual(4 + Math.ceil(12 / CLIP_DETAIL.every));
+});
+
+test("the clips sampled per frame grow by one for each visible near clip", () => {
+  // Scale points of `ambient-clips` that vary `visible_near` at 256 placed and 12 in the middle distance (#1120).
+  const largest = [1, 2, 4].map((near) => largestClipsSampledPerFrame(256, near, 12));
+  const middleTurn = Math.ceil(12 / CLIP_DETAIL.every);
+  expect(largest).toEqual([1 + middleTurn, 2 + middleTurn, 4 + middleTurn]);
 });
 
 test("a clip coming back into view samples at once", () => {
