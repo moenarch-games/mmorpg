@@ -331,7 +331,7 @@ pub use waystone::{
     WAYSTONE_DISCOVERY_UNITS, WAYSTONES, WESTMERE_LODGE, WaystoneId, WaystoneSet, WaystoneSite,
     waystone, waystone_within_reach,
 };
-pub use zone::{MAX_PENDING_INTENTS, ZoneSimulation, ZoneTickWork};
+pub use zone::{MAX_PENDING_INTENTS, MAX_SEQUENCE_GAP, ZoneSimulation, ZoneTickWork};
 
 /// Gravity of the authored zones and the test arenas: 9 m/s² down, in subunits per tick².
 pub const STANDARD_GRAVITY: [i32; 3] = [0, subunits_per_tick_squared(-900), 0];
