@@ -87,9 +87,9 @@ describe("mergeUnitMeshes", () => {
     after.model.traverse((object) => { if (object instanceof THREE.Mesh && object.userData.shadowOnly !== true) { meshes.push(object); } });
     // The merged mesh, the two-sided skin and the glass, which blends: the latter two stay apart.
     expect(meshes).toHaveLength(3);
-    // The opaque class and the two-sided skin cast through one shadow proxy per sidedness, from the same palette; the
-    // glass casts by itself.
-    expect(shadows.map((proxy) => proxy.name)).toEqual(["shadow:single", "shadow:double"]);
+    // The opaque class and the two-sided skin cast through one shadow proxy, from the same palette: the skin is a closed
+    // box, so its front faces cast alone (#1083). The glass casts by itself.
+    expect(shadows.map((proxy) => proxy.name)).toEqual(["shadow:single"]);
     expect(shadows.every((proxy) => proxy.skeleton === skeleton && !proxy.material.visible)).toBe(true);
     expect(meshes.filter((mesh) => mesh.userData.notShadowCaster === true).map((mesh) => mesh.name).sort()).toEqual([merged[0]!.name, after.shiny.name].sort());
     // Both skinned draws pose from one joint palette.
