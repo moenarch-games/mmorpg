@@ -8,7 +8,7 @@
 //!
 //! Spawn points are set so no highland tree or rock moves, with the whole wander disc clear of
 //! every collider. A viewer anywhere in the yard must stay well inside the protocol's
-//! 35-entity packet budget with room for other players (`tests/highland_bandits.rs`).
+//! 35-entity packet budget with room for other players (`tests/content/highland_bandits.rs`).
 
 use crate::content::CreatureSpawn;
 use crate::{CreatureId, CreatureTemplateId};

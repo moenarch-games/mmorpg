@@ -66,7 +66,7 @@ elimination/winner and real hosted play remain battle-royale #13 / MMORPG #341.
 
 ## Focused checks
 
-`cargo test -p mmorpg-core --locked --test ephemeral_builds` covers all three supported
+`cargo test -p mmorpg-core --locked --test zone ephemeral_builds::` covers all three supported
 classes, legal max-level gear/health/resources, exact continuation, retirement/re-admission,
 refusal to edit an existing life, input validation, unchanged durable records and the
 capture/import boundary. No command, projection or canonical layout change is needed;

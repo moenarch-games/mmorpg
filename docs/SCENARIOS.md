@@ -238,17 +238,17 @@ out of reach of Marshal Elden Greywatch, walks to him, is refused the locked
 second quest, accepts *The Wolfrun Cart*, cannot turn it in at the Marshal (the Tanner takes it),
 abandons and re-accepts it, and keeps it across a connection resume while the
 Marshal's marker follows the log. The full chain is covered by
-`crates/mmorpg-core/tests/quest_chain.rs`.
+`crates/mmorpg-core/tests/content/quest_chain.rs`.
 
 The `strike_swept` event (a directed Heroic Strike, #154) concerns the struck
 creature, or the striker for a whiff; digests show it as
 `swept:<striker>:<ability>:<side><height>><struck or ->`. Bot steps do not send
-directed strikes yet; `crates/mmorpg-core/tests/directed_strike.rs` covers the
+directed strikes yet; `crates/mmorpg-core/tests/combat/directed_strike.rs` covers the
 coverage rules.
 
 The `blocked` and `guard_broken` events (the Warden's shield guard, #156)
 concern the attacker for the defender and digest as
 `blocked:<attacker>><defender>:<lane>:<amount>` and
 `guard_broken:<attacker>><defender>:<lane>:<ticks>`. Bots do not guard yet;
-`crates/mmorpg-core/tests/guard.rs` covers lanes, coverage, breaks, re-guard,
+`crates/mmorpg-core/tests/combat/guard.rs` covers lanes, coverage, breaks, re-guard,
 slowed movement and replay.

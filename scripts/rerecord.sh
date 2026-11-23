@@ -17,7 +17,7 @@ run -p mmorpg-protocol
 # Pinned game-server session frames.
 run -p mmorpg-game-server --test session_frames
 # Presentation gameplay trace (determinism oracle).
-run -p mmorpg-core --test presentation_gameplay
+run -p mmorpg-core --test zone presentation_gameplay::
 # Bot and control-plane scenario outputs.
 run -p mmorpg-scenarios
 # Scenery stable hash, export fingerprint and the generated Action Lab baseline.
