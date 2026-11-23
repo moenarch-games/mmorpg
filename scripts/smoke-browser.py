@@ -632,8 +632,15 @@ class BrowserAcceptance(unittest.TestCase):
             self.assertEqual(self.page.evaluate("window.__valeDebug.controls().mode.kind"), "focused")
         # Escape is the game menu (#636): a focused click on empty sky clears the focus, and a
         # click on nothing in released free look recaptures mouse-look.
-        box = self.page.locator("#world").bounding_box()
-        sky = (box["x"] + 20, box["y"] + 20)
+        # The empty point is one the canvas itself receives, high in the view above every unit: the
+        # world's top-left corner lies under the HUD toolbar, where a click never reaches the world.
+        sky = self.page.evaluate("""() => {
+          const canvas = document.querySelector('#world'), box = canvas.getBoundingClientRect();
+          for (let y = box.top + 20; y < box.top + box.height / 4; y += 10)
+            for (let x = box.left + box.width / 2; x < box.right - 20; x += 20)
+              if (document.elementFromPoint(x, y) === canvas) return [x, y];
+          throw Error('No uncovered world point near the top of the view');
+        }""")
         self.page.mouse.click(*sky)
         self.click_world_step()
         self.assertIsNone(self.click_world_target())
