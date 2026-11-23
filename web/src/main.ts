@@ -48,7 +48,7 @@ import {
 } from "./character-roster";
 import type { LocalWorld } from "./world/local-world";
 import { LocalCharacters, VisitStorage } from "./world/local-characters";
-import { actionLabDefinitions, committedArea, committedLevel, committedPhysique, createScenarioWorld, customizePhysique, importedRestClip, labExperiments, loadLocalWorld, physiqueModel, physiqueModifiers, prewarmLocalZone, presentZone, soundManifest, whenStaticSceneDerived } from "./world/wasm-runtime";
+import { actionLabDefinitions, committedArea, committedLevel, committedPhysique, createScenarioWorld, customizePhysique, entryPreview, importedRestClip, labExperiments, loadLocalWorld, physiqueModel, physiqueModifiers, prewarmLocalZone, presentZone, soundManifest, whenStaticSceneDerived } from "./world/wasm-runtime";
 import { loadPendingPhysique, neutralPhysique, PhysiqueEditor, physiqueLook, savePendingPhysique, type PhysiqueModel } from "./physique";
 import { WorldSound } from "./world/world-sound";
 import { ActionLabPanel, labQuery } from "./world/action-lab";
@@ -66,6 +66,7 @@ import type { NetcodeTrialSource } from "./world/battle-royale/netcode-trial";
 import "./world/battle-royale/style.css";
 import type { LinkState, ZoneWorld } from "./world/world-source";
 import { WorldView, webGpuProjection } from "./world/world-view";
+import type { EntryPreview } from "./world/entry-prebuild";
 import type { FaceFeature } from "./world/units/quaternius-units";
 import { nextTabTarget } from "./world/units/targeting";
 import { GAME_ACTIONS, GameControls, type GameAction, type HeldAction, type HoldPhase, type ReleasedAction } from "./input/game-controls";
@@ -726,7 +727,7 @@ for (const button of [requireElement<HTMLButtonElement>("#world-settings"), requ
 // Debug-only camera and public-source hooks for deterministic acceptance; `?debug` enables them.
 if (new URLSearchParams(window.location.search).has("debug")) {
   Object.assign(window, { __valeDebug: { ...worldView.debugApi(), worldSource: () => (activeWorld ?? chosenWorld())?.source ?? null,
-    loadingReport: () => ({ ...loading, marks: startupMarks(), startArea: startArea(), art: worldView.artProgress(startArea()), allArt: worldView.artProgress(null) }),
+    loadingReport: () => ({ ...loading, marks: startupMarks(), startArea: startArea(), art: worldView.artProgress(startArea()), allArt: worldView.artProgress(null), prebuild: worldView.prebuildReport() }),
     // Zone presentation lifecycle (#1005): live three resource counts, and presenting another zone's scenery (the
     // Depths are 20000) while the local host stays where it is; `null` follows the host's zone again.
     rendererMemory: () => (drawTarget ? { ...drawTarget.info.memory, programs: drawTarget.info.programs?.length ?? 0, retainedBundles: retainedBundleCount() } : null),
@@ -1004,12 +1005,10 @@ function updateEntryButton(): void {
   enterWorldButton.disabled = chosenWorld() === null || joining !== null || !entryArtReady();
   if (!enterWorldButton.disabled) {
     markStartup("enter-enabled");
-    // The static scene waits until the entry art has loaded and entry is open, and for the worker that derives most of
-    // it (#855).
-    void whenStaticSceneDerived().then(() => worldView.prewarmStatic());
-    // The local zone's terrain physics too, so joining it does not prepare that on the way in.
+    // The local zone's terrain physics, so joining it does not prepare that on the way in (#855).
     if (world && chosenWorld() === world) { prewarmLocalZone(); }
   }
+  prebuildEntry();
   let entryLabel = "Enter World";
   if (arenaEntry.selected) { entryLabel = practiceWorld ? "Start practice" : "Join Battle Royale"; }
   if (joining) { entryLabel = "Entering…"; }
@@ -1029,6 +1028,40 @@ function updateEntryButton(): void {
   selectionNote.textContent = server
     ? `Online: the zone host at ${server.label} runs this world for every page that joins it. Hosts with character storage save your character progress.`
     : "Single-player demo: the shared Rust zone simulation runs in this browser. Character progress and the world are saved in this browser.";
+}
+
+/** Whether the world-build worker's static scene has reached the page (#855), so the prebuild can start. */
+let staticSceneDerived = false;
+/** Where each local character is expected to enter, read once per visit to the selection screen (#855). */
+const entryPreviews = new Map<string, EntryPreview>();
+
+/**
+ * Prebuilds the chosen world's entry while selection shows (#855, owner decision 2026-11-23): its static scene as soon
+ * as the worker derived it, the view at the selected local character's expected entry, and that view's programs and
+ * textures once the entry art is in. Online, arena and scenario entries build only the static scene: where they start
+ * is not known here. Nothing joins.
+ */
+function prebuildEntry(): void {
+  const target = chosenWorld();
+  if (!target || !staticSceneDerived || entryState.phase === "world" || joining || preparingWorld) { return; }
+  worldView.prebuild(target, target === world ? selectedEntry() : null, entryArtReady());
+}
+
+/** The selected local character's expected entry (`entryPreview`), or null when it cannot be known. */
+function selectedEntry(): EntryPreview | null {
+  if (!localCharacters || creationDraft || scenarioWorld) { return null; }
+  const id = selectedCharacter().id;
+  let entry = entryPreviews.get(id);
+  if (!entry) {
+    try {
+      entry = entryPreview(localCharacters, id);
+    } catch (error) {
+      console.info("The selected character's entry is not known; only the static scene is prebuilt.", error);
+      return null;
+    }
+    entryPreviews.set(id, entry);
+  }
+  return entry;
 }
 
 /** A zone host world over WebTransport, drawn with the scenery the page loaded. */
@@ -1370,9 +1403,28 @@ function renderSelection() {
   physique?.editor.setCapabilities(worldView.physiqueControls(look.sex), look.sex === "female", worldView.appearanceOptions(look.sex)?.knight ?? false);
   const features = worldView.faceFeatures(look.sex);
   if (faceFeatures !== features && features !== undefined) { showFaceFeatures(features, look.sex === "female"); }
-  if (drawable) { renderer.render({ camera, nodes: selectionStageNodes }); }
+  if (drawable) {
+    // Hidden, the prebuilt entry view's nodes and batches stay with the renderer instead of being evicted (#855).
+    const kept = worldView.selectionKept();
+    if (kept !== keptView) {
+      keptView = kept;
+      selectionNodes = kept ? [...selectionStageNodes, ...kept.nodes] : selectionStageNodes;
+    }
+    renderer.render({ camera, nodes: selectionNodes, ...(kept ? { instanceBatches: kept.instanceBatches } : {}) });
+  }
   revealStage(look);
+  // The prebuild also waits on the lighting and the turntable's own prepare, which no page event announces (#855).
+  if (performance.now() - prebuildAskedAt > 500) {
+    prebuildAskedAt = performance.now();
+    prebuildEntry();
+  }
 }
+
+/** When the selection frame last asked the prebuild to go on. */
+let prebuildAskedAt = 0;
+/** The prebuilt view the selection frame keeps (`selectionKept`), and the stage's nodes with its nodes. */
+let keptView: ReturnType<WorldView["selectionKept"]> = null;
+let selectionNodes: RendererSceneNode[] = selectionStageNodes;
 
 /** When the real character first became drawable, while its class outfit may still be loading. */
 let stageModelReadyAt: number | null = null;
@@ -1478,8 +1530,8 @@ function frame(now: number) {
  * Progressive loading (#240): what the page fetched before Enter World and how long entry took
  * until the first world frame. Greyhaven's code, scenery and art load during character selection.
  */
-const loading: { entry: number | null; bytesBeforeEntry: number; playableMs: number | null; firstFramePrograms: number | null } = {
-  entry: null, bytesBeforeEntry: 0, playableMs: null, firstFramePrograms: null,
+const loading: { entry: number | null; bytesBeforeEntry: number; playableMs: number | null; firstFramePrograms: number | null; entryPrograms: number | null } = {
+  entry: null, bytesBeforeEntry: 0, playableMs: null, firstFramePrograms: null, entryPrograms: null,
 };
 
 /**
@@ -1589,6 +1641,7 @@ async function enterWorld(): Promise<void> {
   loading.bytesBeforeEntry = fetchedBytes();
   loading.playableMs = null;
   loading.firstFramePrograms = null;
+  loading.entryPrograms = null;
   const server = chosenServer();
   if (target === world) {
     // The local world plays Greyhaven Vale, even after an online session went elsewhere (#145).
@@ -1638,7 +1691,12 @@ async function enterWorld(): Promise<void> {
   // shows (#547); the canvas keeps its last selection frame meanwhile.
   preparingWorld = true;
   try {
+    // A click before the worker derived the static scene waits for it rather than building it on the page (#855).
+    await whenStaticSceneDerived();
+    const programsBefore = programCount();
     await worldView.prepare(target, worldInput(), viewerLook(), performance.now());
+    // What the selection screen's prebuild left for the joined projection: the units' programs, ideally (#855).
+    loading.entryPrograms = programCount() - programsBefore;
     markStartup("world-prepared");
   } catch (error) {
     // The first drawn frame compiles instead, and fails visibly there if the world is broken.
@@ -1763,6 +1821,8 @@ function returnToCharacters(failure: string | null = null) {
     failure ??= `Could not leave the world cleanly: ${errorMessage(error)}`;
   }
   activeWorld = null;
+  // The world moved on while it was played: where each character enters is read again (#855).
+  entryPreviews.clear();
   arenaStatus.hidden = true;
   arenaEntry.setLocked(false);
   showLinkState("connected");
@@ -2215,6 +2275,12 @@ void loadPageWorld().then((loaded) => {
   void WorldSound.open(soundManifest).then((sound) => { if (sound) { worldView.attachSound(sound); } });
   markStartup("view-loaded");
   world = loaded;
+  // The prebuild starts once the worker's static scene reached the page (#855).
+  void whenStaticSceneDerived().then(() => {
+    staticSceneDerived = true;
+    markStartup("static-derived");
+    prebuildEntry();
+  });
   refreshSelectionPresentation();
   installPhysiqueEditor();
   renderRoster();
