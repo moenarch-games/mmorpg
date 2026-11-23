@@ -136,8 +136,11 @@ jobs:
         run: |
           python3 -m pip install playwright
           python3 -m playwright install --with-deps chromium
+      # The script bounds itself (60 minutes, 12 per test) and reports which tests ran out of time
+      # (#1130); this only backstops it, so the evidence upload below always runs inside the job.
       - name: Run explicitly requested browser acceptance
         if: env.FULL_VALIDATION == 'true' || inputs.browser_evidence == true
+        timeout-minutes: 68
         run: python3 scripts/smoke-browser.py
       - name: Retain browser screenshots and evidence
         if: always() && (env.FULL_VALIDATION == 'true' || inputs.browser_evidence == true)
