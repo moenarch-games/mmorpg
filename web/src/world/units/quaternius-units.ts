@@ -563,6 +563,13 @@ const WEAPON_STOW_SOCKETS: Readonly<Record<string, string>> = {
   "hand_r.crossbow": "back.stowed",
 };
 
+/** The great weapons ride across the back while sheathed (#1073), whatever hand socket holds them: `stow_socket` in the shared presentation. */
+const GREAT_WEAPON_ITEMS: ReadonlySet<string> = new Set(["equipment.warhammer.maul", "equipment.hammer.great", "equipment.axe.great", "equipment.sword.great"]);
+
+function stowSocket(key: string, socket: string): string {
+  return GREAT_WEAPON_ITEMS.has(key) ? "back.stowed" : WEAPON_STOW_SOCKETS[socket] ?? "";
+}
+
 type DownloadEntry = { key: string; variant: string; files: string[]; clips?: string };
 
 /** Select the existing Dark archer default from the rolling download index. */
@@ -1116,7 +1123,7 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
       const clone = cloneSkinned(item.scene);
       if (key === hairKey && tint) { tintMaterials(clone, look.hairMaterials.get(key) ?? [], tint); }
       const holder = attachItem(model, clone, item.gripInverse, place);
-      const stowedSocket = key !== DAGGER_ITEM && key !== BOW_ITEM ? sockets.get(WEAPON_STOW_SOCKETS[socket] ?? "") : undefined;
+      const stowedSocket = key !== DAGGER_ITEM && key !== BOW_ITEM ? sockets.get(stowSocket(key, socket)) : undefined;
       const stowedJoint = stowedSocket && model.getObjectByName(stowedSocket.joint);
       if (stowedSocket && stowedJoint) {
         const carried = stowedWeapons.get(model) ?? [];

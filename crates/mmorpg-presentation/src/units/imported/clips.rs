@@ -580,6 +580,8 @@ impl GreatWeapon {
 
 /// The guard a great weapon's running strike settles into (#1073, #900).
 pub const GREAT_WEAPON_GUARD: &str = "TwoHand_Guard_Loop";
+/// The stance a great weapon's holder stands in with it drawn (#1073), over the idle legs.
+pub const GREAT_WEAPON_IDLE: &str = "TwoHand_Idle_Loop";
 
 /// A movement-state strike's clips (#885), best first: the family's authored strike
 /// (`<Family>_Run_Strike`, `<Family>_Jump_Strike` and the chain, asset-tooling #709 and #711),
@@ -621,6 +623,11 @@ pub const fn melee_clips(family: WeaponFamily, variant: StrikeVariant) -> [&'sta
         (WeaponFamily::Bow, Finisher) => ["Bow_Bash_B", "Sword_Slash_High_C"],
         (WeaponFamily::Bow, Running) => ["Bow_Run_Strike", "Sword_Slash_Mid_R"],
         (WeaponFamily::Bow, Jumping) => ["Bow_Jump_Strike", "Sword_Slash_High_C"],
+        (WeaponFamily::TwoHanded, First) => ["TwoHand_Swing_A", "Mace_Swing_A"],
+        (WeaponFamily::TwoHanded, Second) => ["TwoHand_Swing_B", "Mace_Swing_B"],
+        (WeaponFamily::TwoHanded, Finisher) => ["TwoHand_Swing_C", "Mace_Swing_C"],
+        (WeaponFamily::TwoHanded, Running) => ["TwoHand_Run_Strike", "Mace_Run_Strike"],
+        (WeaponFamily::TwoHanded, Jumping) => ["TwoHand_Jump_Strike", "Mace_Jump_Strike"],
     }
 }
 

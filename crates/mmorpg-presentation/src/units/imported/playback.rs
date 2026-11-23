@@ -559,6 +559,7 @@ pub const fn family_guard(family: WeaponFamily) -> Option<&'static str> {
         WeaponFamily::Staff => "Staff_Guard_Loop",
         WeaponFamily::Spear => "Spear_Guard_Loop",
         WeaponFamily::Unarmed => "Unarmed_Guard_Loop",
+        WeaponFamily::TwoHanded => "TwoHand_Guard_Loop",
         WeaponFamily::Bow => return None,
     })
 }
@@ -2051,13 +2052,20 @@ impl Playback {
                 .filter(|&clip| available(clip))
                 .map(|stance| Want::looped(stance, 1.))
         } else {
-            // A dagger holder stands in the low dagger stance (#603) over the idle legs.
+            // A dagger holder stands in the low dagger stance (#603) over the idle legs, a great
+            // weapon's holder with it drawn in both hands (#1073).
+            let great = cues
+                .loadout
+                .and_then(Loadout::great_weapon)
+                .filter(|_| cues.weapon_drawn != Some(false))
+                .map(|_| GREAT_WEAPON_IDLE);
             clips
                 .dagger
                 .map(|dagger| dagger.idle)
+                .filter(|_| cues.loadout.is_some_and(Loadout::daggers))
+                .or(great)
                 .filter(|&clip| {
-                    cues.loadout.is_some_and(Loadout::daggers)
-                        && standing
+                    standing
                         && stun.is_none()
                         && charge_run.is_none()
                         && roll.is_none()
@@ -4554,9 +4562,33 @@ mod tests {
             let clips = great
                 .iter()
                 .flat_map(|great| [great.run(), great.run_strike()])
-                .chain([HEAVY_RUN, CARRY_RUN, GREAT_WEAPON_GUARD]);
+                .chain([HEAVY_RUN, CARRY_RUN, GREAT_WEAPON_GUARD, GREAT_WEAPON_IDLE]);
             for clip in clips {
                 assert!(names.contains(&clip), "the {sex} Ranger lacks {clip}");
+            }
+            // The two-handed family's authored strikes contact within 50 ms of the zone's
+            // contact tick (#1073), so the fit barely stretches them; a jumping strike lands on
+            // touchdown instead.
+            let row = mmorpg_core::FamilyMelee::of(WeaponFamily::TwoHanded);
+            for variant in mmorpg_core::StrikeVariant::ALL {
+                let [authored, _] = melee_clips(WeaponFamily::TwoHanded, variant);
+                assert!(
+                    names.contains(&authored),
+                    "the {sex} Ranger lacks {authored}"
+                );
+                if variant == mmorpg_core::StrikeVariant::Jumping {
+                    continue;
+                }
+                let contact = motions
+                    .get(authored)
+                    .and_then(|m| m.contact)
+                    .expect("contact");
+                let zone =
+                    f64::from(row.strike(variant).contact_ticks) / f64::from(mmorpg_core::TICK_HZ);
+                assert!(
+                    (contact - zone).abs() < 0.05,
+                    "{authored}: {contact} vs {zone}"
+                );
             }
             for great in great {
                 let strike = motions.get(great.run_strike()).expect("strike");

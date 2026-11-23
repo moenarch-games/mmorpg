@@ -89,20 +89,19 @@ fn stuns(ability: AbilityId) -> bool {
 }
 
 /// What an imported unit carries: a resident or humanoid enemy its preset's weapons, a player
-/// its class's, or a spear while its projected weapon family is one (#914); nothing for anyone
-/// else.
+/// its class's, or what its projected weapon family, named or great weapon shows (#914, #918,
+/// #1073); nothing for anyone else.
 fn carried(
     entity: EntityRef,
     resident: Option<Resident>,
     class: Option<ClassChoice>,
-    weapon: Option<mmorpg_core::WeaponFamily>,
-    named: Option<mmorpg_core::NamedWeapon>,
+    flags: &mmorpg_core::EntityFlags,
 ) -> Option<Loadout> {
     match resident {
         Some(resident) => resident.loadout(),
-        None if matches!(entity, EntityRef::Player(_)) => {
-            class.map(|c| Loadout::of_class(c.class).holding(weapon, named))
-        }
+        None if matches!(entity, EntityRef::Player(_)) => class.map(|c| {
+            Loadout::of_class(c.class).holding(flags.weapon, flags.named_weapon, flags.great_weapon)
+        }),
         None => None,
     }
 }
@@ -1187,13 +1186,7 @@ impl UnitPresenter {
         Some((
             kind,
             class,
-            carried(
-                entity,
-                resident,
-                choice,
-                record.flags.weapon,
-                record.flags.named_weapon,
-            ),
+            carried(entity, resident, choice, &record.flags),
         ))
     }
 
@@ -2028,14 +2021,8 @@ impl UnitPresenter {
                 };
                 // A Druid in wolf form (#957) is the wolf: no weapons, outfit or headwear.
                 let shifted = matches!(entity, EntityRef::Player(_)) && kind == Kind::Wolf;
-                let loadout = carried(
-                    entity,
-                    resident,
-                    class,
-                    unit.record.flags.weapon,
-                    unit.record.flags.named_weapon,
-                )
-                .filter(|_| !shifted);
+                let loadout =
+                    carried(entity, resident, class, &unit.record.flags).filter(|_| !shifted);
                 if viewer {
                     let wind_up = self.preparation.map(|preparation| {
                         let class = snapshot.viewer.class.map(|choice| choice.class);
