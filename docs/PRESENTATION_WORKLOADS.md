@@ -12,7 +12,7 @@ coding-tooling performance work --root .                                        
 
 | Dimension | Greyhaven value | Where it is counted |
 | --- | --- | --- |
-| Authored static scenery N | 4,169 static groups (51,132 draws), 96 terrain tiles | `StaticScene` |
+| Authored static scenery N | static groups, their draws and the terrain tiles: the `scene` line of `presentation_work --report` (above) | `StaticScene` |
 | Visible/loaded tiles V | near tiles resident around the camera | `tiles::Streamer::resident_count` |
 | Animated characters A | presented units | `UnitFrame::units` |
 | Changed presentation entities Δ | units whose projection moved this frame | the scenario's moving wolves |
