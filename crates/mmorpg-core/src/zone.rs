@@ -303,6 +303,9 @@ pub struct ZoneSimulation {
     pub(crate) content: Arc<ZoneContent>,
     pub(crate) rng: ZoneRng,
     pub(crate) loot_rng: ZoneRng,
+    /// The host's secret world seed (#1111), mixed into every seed the content declares; 0
+    /// keeps the content seed alone. Canonical, never projected, not part of the content.
+    pub(crate) world_seed: u64,
     pub(crate) players: BTreeMap<PlayerId, PlayerState>,
     pub(crate) creatures: crate::creature_store::CreatureStore,
     pub(crate) interest: InterestIndex,
@@ -382,7 +385,19 @@ impl ZoneSimulation {
     /// spawn point. Creature levels and first wander delays are drawn from
     /// the zone RNG in creature-ID order.
     pub fn with_content(zone_id: ZoneId, content: Arc<ZoneContent>) -> Result<Self, ZoneError> {
-        let mut zone = Self::without_creatures(zone_id, content)?;
+        Self::with_world_seed(zone_id, content, 0)
+    }
+
+    /// [`Self::with_content`] for a world whose host drew `world_seed` (#1111): every random
+    /// draw derives from the content seed mixed with it, so the public content alone does not
+    /// tell what a creature drops or which night the raid comes. 0 is the content seed alone.
+    /// The seed is fixed at creation and kept by canonical snapshots.
+    pub fn with_world_seed(
+        zone_id: ZoneId,
+        content: Arc<ZoneContent>,
+        world_seed: u64,
+    ) -> Result<Self, ZoneError> {
+        let mut zone = Self::without_creatures(zone_id, content, world_seed)?;
         let spawns: Vec<_> = zone
             .content
             .creature_spawns()
@@ -410,6 +425,7 @@ impl ZoneSimulation {
     pub(crate) fn without_creatures(
         zone_id: ZoneId,
         content: Arc<ZoneContent>,
+        world_seed: u64,
     ) -> Result<Self, ZoneError> {
         let definition = content.definition();
         let gravity = definition.gravity();
@@ -508,8 +524,9 @@ impl ZoneSimulation {
             zone_id,
             tick: 0,
             world,
-            rng: ZoneRng::seeded(content.rng_seed(), zone_id),
-            loot_rng: ZoneRng::seeded(content.rng_seed() ^ LOOT_STREAM_SALT, zone_id),
+            rng: ZoneRng::seeded(content.rng_seed() ^ world_seed, zone_id),
+            loot_rng: ZoneRng::seeded(content.rng_seed() ^ world_seed ^ LOOT_STREAM_SALT, zone_id),
+            world_seed,
             traps: Self::fresh_traps(&content),
             gathering: crate::GatheringState::full(content.gather_nodes()).into(),
             content,
@@ -556,6 +573,12 @@ impl ZoneSimulation {
     #[must_use]
     pub fn physics_backend(&self) -> crate::physics::Backend {
         self.world.backend()
+    }
+
+    /// The seed every runtime draw derives from (#1111): the content's declared seed mixed
+    /// with the world seed. Never projected.
+    pub(crate) fn rng_seed(&self) -> u64 {
+        self.content.rng_seed() ^ self.world_seed
     }
 
     #[must_use]

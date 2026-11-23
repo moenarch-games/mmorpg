@@ -201,11 +201,19 @@ pub struct LocalZoneHost {
     weaken_thorn: bool,
     /// The netcode trial's sparring partner (#680), whom the page drives like any player.
     sparring_partner: Option<PlayerId>,
+    /// The world's seed (#1111), which the depths it opens share; its saved world keeps it.
+    world_seed: u64,
 }
 
 impl LocalZoneHost {
     pub fn new() -> Result<Self, LocalZoneError> {
-        let mut zone = ZoneSimulation::with_content(LOCAL_ZONE_ID, hosted_content())
+        Self::with_world_seed(0)
+    }
+
+    /// A fresh world whose rolls derive from `world_seed` (#1111) as well as the content's
+    /// seed; the page draws one per new world. 0 is the content seed alone, as [`Self::new`].
+    pub fn with_world_seed(world_seed: u64) -> Result<Self, LocalZoneError> {
+        let mut zone = ZoneSimulation::with_world_seed(LOCAL_ZONE_ID, hosted_content(), world_seed)
             .map_err(LocalZoneError::Zone)?;
         zone.enable_depths_entry();
         Ok(Self {
@@ -220,6 +228,7 @@ impl LocalZoneHost {
             depths_cleared: BTreeSet::new(),
             weaken_thorn: false,
             sparring_partner: None,
+            world_seed,
         })
     }
 
@@ -359,6 +368,7 @@ impl LocalZoneHost {
             depths_cleared: BTreeSet::new(),
             weaken_thorn: false,
             sparring_partner: None,
+            world_seed: 0,
         })
     }
 
@@ -402,6 +412,7 @@ impl LocalZoneHost {
                 "a world checkpoint is the local zone without players",
             )));
         }
+        let world_seed = snapshot.world_seed;
         let mut zone = ZoneSimulation::from_snapshot(snapshot, hosted_content())
             .map_err(LocalZoneError::Zone)?;
         zone.enable_depths_entry();
@@ -417,6 +428,7 @@ impl LocalZoneHost {
             depths_cleared: BTreeSet::new(),
             weaken_thorn: false,
             sparring_partner: None,
+            world_seed,
         })
     }
 
@@ -693,12 +705,15 @@ impl LocalZoneHost {
         let slot = ZoneId::new(redbrand_depths::ZONE_IDS.start);
         let mut depths = match self.away.take() {
             Some(zone) if zone.zone_id() == slot => zone,
-            _ => ZoneSimulation::with_content(slot, redbrand_depths::content())?,
+            _ => {
+                ZoneSimulation::with_world_seed(slot, redbrand_depths::content(), self.world_seed)?
+            }
         };
         // The local run belongs to this one character for as long as this host lives; it is
         // not a multiplayer run and nothing else can join it.
         if !depths.depths_admits(&character) {
-            depths = ZoneSimulation::with_content(slot, redbrand_depths::content())?;
+            depths =
+                ZoneSimulation::with_world_seed(slot, redbrand_depths::content(), self.world_seed)?;
         }
         // A run stays the character's until Thorn falls; then re-entering starts a fresh one at
         // once, with a new identity for its rewards (Atlas 5.1.31).

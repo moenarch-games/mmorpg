@@ -7,7 +7,8 @@ import { createSceneryProvider, type SceneryContent, type SceneryProvider } from
 /** The initialised wasm-bindgen module surface the local world needs. */
 export type LocalZoneModule = SceneryContent & {
   LocalZone: {
-    new (): LocalZoneHandle;
+    /** A fresh world whose rolls also derive from the page's secret `worldSeed` (#1111). */
+    withWorldSeed(worldSeed: bigint): LocalZoneHandle;
     fromCheckpoint(checkpoint: Uint8Array): LocalZoneHandle;
     /** The content revision a fresh zone hosts, without building one (#855). */
     hostedContentRevision(): bigint;
@@ -38,6 +39,17 @@ export function createLocalWorld(module: LocalZoneModule, characters: LocalChara
     }
   }
   const createZone = (checkpoint: Uint8Array | undefined) =>
-    checkpoint ? module.LocalZone.fromCheckpoint(checkpoint) : new module.LocalZone();
+    checkpoint ? module.LocalZone.fromCheckpoint(checkpoint) : module.LocalZone.withWorldSeed(freshWorldSeed());
   return { source: new LocalZoneSource(createZone, characters), scenery, catalog };
+}
+
+/**
+ * A new world's own seed from the browser's randomness (#1111); the saved world keeps it.
+ * Never 0, which would mean the content's public seed alone.
+ */
+export function freshWorldSeed(): bigint {
+  for (;;) {
+    const seed = crypto.getRandomValues(new BigUint64Array(1))[0] ?? 0n;
+    if (seed !== 0n) { return seed; }
+  }
 }

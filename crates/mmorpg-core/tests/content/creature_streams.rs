@@ -74,7 +74,13 @@ type Trace = Vec<(
 
 /// A player walks to the wolf, swings at it until it dies, and the corpse lies a while.
 fn hunt(dummy: bool) -> (Trace, ZoneSimulation) {
-    let mut zone = ZoneSimulation::with_content(ZoneId::new(5), content(dummy)).unwrap();
+    hunt_in(dummy, 0)
+}
+
+/// [`hunt`] in a world with the host's `world_seed` (#1111).
+fn hunt_in(dummy: bool, world_seed: u64) -> (Trace, ZoneSimulation) {
+    let mut zone =
+        ZoneSimulation::with_world_seed(ZoneId::new(5), content(dummy), world_seed).unwrap();
     zone.add_player(1).unwrap();
     let wolf = EntityRef::Creature(HUNTED);
     let mut sequence = 0;
@@ -137,5 +143,66 @@ fn another_spawn_changes_no_existing_creature_roll() {
     assert_eq!(
         creature(&base, HUNTED).loot,
         creature(&extended, HUNTED).loot
+    );
+}
+
+const WORLD: u64 = 0x5eed_0000_1111_0001;
+const OTHER_WORLD: u64 = 0x5eed_0000_1111_0002;
+
+#[test]
+fn a_world_seed_rerolls_the_same_creature_life() {
+    let loot = |world_seed| {
+        let (_, zone) = hunt_in(false, world_seed);
+        let wolf = creature(&zone, HUNTED);
+        assert!(wolf.loot.is_some(), "the wolf drops loot");
+        (wolf.generation, wolf.loot)
+    };
+    let (public, world, other) = (loot(0), loot(WORLD), loot(OTHER_WORLD));
+    // The same life of the same creature, so only the world seed differs.
+    assert_eq!(public.0, world.0);
+    assert_eq!(world.0, other.0);
+    assert_ne!(world.1, other.1, "two worlds roll different loot");
+    assert_ne!(
+        world.1, public.1,
+        "the public seed alone does not tell the drop"
+    );
+    assert_eq!(loot(WORLD), world, "one world rolls the same loot again");
+}
+
+#[test]
+fn a_restored_world_keeps_its_seed_and_its_next_draws() {
+    let (_, mut live) = hunt_in(false, WORLD);
+    let checkpoint = live.snapshot().unwrap();
+    assert_eq!(checkpoint.world_seed, WORLD);
+    let content = Arc::clone(live.content());
+    let mut restored =
+        ZoneSimulation::from_snapshot(checkpoint.clone(), Arc::clone(&content)).unwrap();
+    assert_eq!(restored.snapshot().unwrap(), checkpoint);
+    // The same state under another seed: its next life draws differently.
+    let mut reseeded = ZoneSimulation::from_snapshot(
+        mmorpg_core::CanonicalZoneSnapshot {
+            world_seed: OTHER_WORLD,
+            ..checkpoint.clone()
+        },
+        content,
+    )
+    .unwrap();
+    let generation = creature(&live, HUNTED).generation;
+    while creature(&live, HUNTED).generation == generation
+        || !matches!(creature(&live, HUNTED).life, CreatureLife::Alive)
+    {
+        assert!(
+            live.current_tick() < checkpoint.tick + mmorpg_core::golden::t30(4_000),
+            "the wolf never came back"
+        );
+        live.advance_tick().unwrap();
+        restored.advance_tick().unwrap();
+        reseeded.advance_tick().unwrap();
+    }
+    assert_eq!(restored.snapshot().unwrap(), live.snapshot().unwrap());
+    assert_ne!(
+        creature(&reseeded, HUNTED).rng_state,
+        creature(&live, HUNTED).rng_state,
+        "the respawned life draws from the restored world seed"
     );
 }

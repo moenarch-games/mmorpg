@@ -886,7 +886,10 @@ mod postgres_host {
             std::process::id(),
             leases.first().map_or(0, |lease| lease.epoch)
         ));
+        // Its secret world seed (#1111) is drawn afresh each run too, beside the empty bundle.
+        let seed = crate::world_seed::path_for(&recovery);
         let _ = std::fs::remove_dir_all(&recovery);
+        let _ = std::fs::remove_file(&seed);
         let served = serve_characters(
             storage,
             ids,
@@ -901,6 +904,7 @@ mod postgres_host {
         renewal.abort();
         forward.abort();
         let _ = std::fs::remove_dir_all(&recovery);
+        let _ = std::fs::remove_file(&seed);
         tokio::task::spawn_blocking(move || -> Result<(), String> {
             let mut guard = directory.lock().map_err(message)?;
             let (directory, grants) = &mut *guard;

@@ -401,6 +401,16 @@ impl LocalZone {
         })
     }
 
+    /// A fresh world like [`LocalZone::new`] whose rolls also derive from `world_seed`
+    /// (#1111), which the page draws for each new world; its checkpoints keep it.
+    #[wasm_bindgen(js_name = withWorldSeed)]
+    pub fn with_world_seed(world_seed: u64) -> Result<LocalZone, JsError> {
+        Ok(Self {
+            host: LocalZoneHost::with_world_seed(world_seed).map_err(js_error)?,
+            scenario_player: None,
+        })
+    }
+
     /// The content revision a fresh zone hosts, without building one and its physics (#855).
     #[wasm_bindgen(js_name = hostedContentRevision)]
     #[must_use]

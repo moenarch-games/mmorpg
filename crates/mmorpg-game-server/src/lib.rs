@@ -23,6 +23,7 @@ pub mod handoff_host;
 pub mod instance;
 pub mod party;
 pub mod transfer_link;
+pub mod world_seed;
 pub use fenced_runtime::{FencedRuntimeError, FencedZoneRuntime};
 
 use game_server::{
@@ -169,14 +170,25 @@ impl ZoneGameServerAdapter {
         }
     }
 
-    /// A zone of the given content. Recovery replays onto a fresh adapter
-    /// built with the same content.
+    /// A zone of the given content without a world seed (the content seed alone). Recovery
+    /// replays onto a fresh adapter built with the same content.
     pub fn with_content(
         zone_id: ZoneId,
         content: Arc<ZoneContent>,
     ) -> Result<Self, mmorpg_core::ZoneError> {
+        Self::with_world_seed(zone_id, content, 0)
+    }
+
+    /// A zone of the given content in a world with the host's secret `world_seed` (#1111;
+    /// see [`crate::world_seed`]). Recovery that replays from genesis builds its fresh adapter with
+    /// the same seed; recovery from a canonical baseline takes the seed from the baseline.
+    pub fn with_world_seed(
+        zone_id: ZoneId,
+        content: Arc<ZoneContent>,
+        world_seed: u64,
+    ) -> Result<Self, mmorpg_core::ZoneError> {
         Ok(Self {
-            zone: ZoneSimulation::with_content(zone_id, content)?,
+            zone: ZoneSimulation::with_world_seed(zone_id, content, world_seed)?,
             characters: Default::default(),
             parked_characters: Default::default(),
             character_ownership: None,
@@ -231,6 +243,14 @@ pub fn build_zone_host(
 pub fn build_zone_matches(
     zone_ids: impl IntoIterator<Item = ZoneId>,
 ) -> Result<Vec<(MatchId, ZoneGameServerAdapter)>, ZoneHostBuildError> {
+    build_zone_matches_in_world(zone_ids, 0)
+}
+
+/// [`build_zone_matches`] in a world with the host's secret `world_seed` (#1111).
+pub fn build_zone_matches_in_world(
+    zone_ids: impl IntoIterator<Item = ZoneId>,
+    world_seed: u64,
+) -> Result<Vec<(MatchId, ZoneGameServerAdapter)>, ZoneHostBuildError> {
     let zone_ids = zone_ids.into_iter().collect::<Vec<_>>();
     if zone_ids.is_empty() {
         return Err(ZoneHostBuildError::Empty);
@@ -251,9 +271,10 @@ pub fn build_zone_matches(
         .into_iter()
         .map(|zone_id| {
             let match_id = zone_match_id(zone_id).map_err(ZoneHostBuildError::MatchId)?;
-            let simulation = ZoneGameServerAdapter::with_content(
+            let simulation = ZoneGameServerAdapter::with_world_seed(
                 zone_id,
                 mmorpg_core::content_for_zone(zone_id),
+                world_seed,
             )
             .map_err(ZoneHostBuildError::Content)?;
             Ok((match_id, simulation))
@@ -753,5 +774,42 @@ mod tests {
             // One tick at the run speed (10.5 units), rounded on the wire.
             [spawn_x, 90, spawn_z - 10]
         );
+    }
+
+    #[test]
+    fn a_world_seed_stays_out_of_projections_and_replays_only_onto_its_world() {
+        const SEED: u64 = 0x5eed_c0de_1111_f00d;
+        let zone_id = ZoneId::new(1);
+        let hosted = |seed| {
+            ZoneGameServerAdapter::with_world_seed(
+                zone_id,
+                mmorpg_core::greyhaven_vale::content(),
+                seed,
+            )
+            .unwrap()
+        };
+        let mut runtime = MatchRuntime::new_with_replay_capture(hosted(SEED), 120);
+        let lease = runtime
+            .admit(ReconnectToken([5; RECONNECT_TOKEN_BYTES]))
+            .unwrap();
+        for _ in 0..30 {
+            runtime.advance_tick().unwrap();
+        }
+        let canonical = runtime.snapshot().unwrap().payload;
+        assert_eq!(
+            decode_canonical_snapshot(&canonical).unwrap().world_seed,
+            SEED
+        );
+        // The player's projection, with its observations, never carries the seed.
+        let projection = runtime.snapshot_for(lease.player_id).unwrap().payload;
+        for bytes in [SEED.to_be_bytes(), SEED.to_le_bytes()] {
+            assert!(!projection.windows(8).any(|window| window == bytes));
+        }
+        // Replay from genesis reproduces the world only on an adapter of the same seed.
+        runtime.freeze_for_recovery();
+        let image = runtime.recovery_image().unwrap();
+        assert!(MatchRuntime::restore_from_recovery(hosted(0), image.clone()).is_err());
+        let restored = MatchRuntime::restore_from_recovery(hosted(SEED), image).unwrap();
+        assert_eq!(restored.snapshot().unwrap().payload, canonical);
     }
 }
