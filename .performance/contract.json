@@ -214,6 +214,48 @@
       ]
     },
     {
+      "id": "creature-tick",
+      "description": "Advance one warm tick (#1086): the creature systems visit only active creatures (engaged, casting, holding a timer or awake), an idle population asleep beyond every player's wake radius costs nothing, the tick's interest queries reuse warm buffers and its heap allocations do not grow with the sleepers. Measured by mmorpg-core's creature_tick_work example and test.",
+      "dimensions": {
+        "idle": { "description": "aggressive wolves asleep far from the only player" },
+        "active": { "description": "aggressive wolves fighting the player" }
+      },
+      "scalePoints": [
+        { "idle": 64, "active": 4 },
+        { "idle": 128, "active": 4 },
+        { "idle": 256, "active": 4 },
+        { "idle": 256, "active": 8 },
+        { "idle": 256, "active": 16 }
+      ],
+      "metrics": [
+        {
+          "name": "creatures_visited",
+          "unit": "visits",
+          "signal": "operation-count",
+          "notes": "Visits by decisions, swings, casts, auras and corpse timers in the largest measured tick; a fighter is visited by each at most once. Before #1086 every system visited every creature (5 × (idle + active)).",
+          "growth": [
+            { "dimension": "idle", "bound": "constant" },
+            { "dimension": "active", "bound": "linear" }
+          ]
+        },
+        {
+          "name": "interest_query_allocations",
+          "unit": "allocations",
+          "signal": "operation-count",
+          "notes": "Interest query results that outgrew their buffer in the largest measured tick (the wake sweep, pace, aggro and assist queries reuse the zone's buffers).",
+          "budget": { "max": 0 }
+        },
+        {
+          "name": "warm_tick_allocations",
+          "unit": "allocations",
+          "signal": "operation-count",
+          "notes": "Counting allocator around advance_tick, the largest measured tick; 282, 617 and 1,265 at 64, 128 and 256 sleepers before #1086.",
+          "budget": { "max": 64 },
+          "growth": [{ "dimension": "idle", "bound": "constant" }]
+        }
+      ]
+    },
+    {
       "id": "area-lookup",
       "description": "One indexed named-area lookup (#1063): discovery and explore objectives run it for every player every tick, and its polygon edge tests stay under a fixed bound however densely Greyhaven's traced areas are sampled.",
       "dimensions": {

@@ -46,6 +46,8 @@ pub struct ZoneContent {
     areas: ZoneAreas,
     templates: Vec<CreatureTemplate>,
     spawns: Vec<CreatureSpawn>,
+    /// Each spawn's template, by index into `templates` (#1086): one lookup finds both.
+    spawn_templates: Vec<usize>,
     npcs: Vec<Npc>,
     graveyard: [i32; 2],
     fingerprint: u64,
@@ -205,11 +207,20 @@ impl ZoneContent {
         let npc_boxes = &unit_boxes[spawns.len()..];
         validate_unit_body(&definition, graveyard_body, npc_boxes, &[])?;
 
+        let spawn_templates = spawns
+            .iter()
+            .map(|spawn| {
+                templates
+                    .binary_search_by_key(&spawn.template, |template| template.id)
+                    .map_err(|_| ZoneError::new("creature spawn names an unknown template"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let mut content = Self {
             definition,
             areas,
             templates,
             spawns,
+            spawn_templates,
             npcs,
             graveyard,
             fingerprint: 0,
@@ -275,6 +286,7 @@ impl ZoneContent {
             areas: ZoneAreas::default(),
             templates: Vec::new(),
             spawns: Vec::new(),
+            spawn_templates: Vec::new(),
             npcs: Vec::new(),
             graveyard: [feet[0], feet[2]],
             fingerprint: 0,
@@ -441,6 +453,24 @@ impl ZoneContent {
             .binary_search_by_key(&id, |spawn| spawn.id)
             .ok()
             .map(|index| &self.spawns[index])
+    }
+
+    /// The spawn at `index` of [`Self::creature_spawns`] and its template, without a search
+    /// (#1086).
+    #[must_use]
+    pub fn creature_at(&self, index: usize) -> Option<(&CreatureSpawn, &CreatureTemplate)> {
+        let spawn = self.spawns.get(index)?;
+        Some((spawn, &self.templates[*self.spawn_templates.get(index)?]))
+    }
+
+    /// The spawn of creature `id` and its template, found with one search (#1086).
+    #[must_use]
+    pub fn creature_entry(&self, id: CreatureId) -> Option<(&CreatureSpawn, &CreatureTemplate)> {
+        let index = self
+            .spawns
+            .binary_search_by_key(&id, |spawn| spawn.id)
+            .ok()?;
+        self.creature_at(index)
     }
 
     /// Ordered by ID.

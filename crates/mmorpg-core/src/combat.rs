@@ -13,6 +13,7 @@ use sim_combat::swing;
 use crate::action::authored::Step;
 use crate::ai::{creature_reach, distance_squared};
 use crate::creature::Life;
+use crate::creature_store::Activity;
 use crate::entity::body_id;
 use crate::events::push_event;
 use crate::guard::GuardOutcome;
@@ -26,6 +27,16 @@ use crate::{
     CreatureId, EntityRef, ErrorCode, INTEREST_RADIUS_UNITS, PLAYER_HALF_EXTENTS_UNITS, PlayerId,
     ZoneError, ZoneEvent, ZoneSimulation,
 };
+
+/// Whether a creature's swing step would change nothing (#1086): dead, or out of a fight with
+/// no timer running and no attack winding up.
+fn swing_quiet(creature: &crate::creature::CreatureState) -> bool {
+    !creature.is_alive()
+        || (creature.swing_timer == 0
+            && creature.combat_timer == 0
+            && creature.attack.is_none()
+            && creature.ai != CreatureAi::Engaged)
+}
 
 impl ZoneSimulation {
     /// Step 1: every player's queued intents in `(player id, sequence)` order.
@@ -568,9 +579,15 @@ impl ZoneSimulation {
         for player_id in players {
             self.player_swing(player_id, now)?;
         }
-        let creatures: Vec<_> = self.creatures.keys().copied().collect();
-        for creature_id in creatures {
+        // Only creatures whose swing bit is set (#1086): a quiet one would change nothing.
+        let mut after = None;
+        while let Some(creature_id) = self.creatures.next_active(Activity::Swing, after) {
+            after = Some(creature_id);
+            self.tick_work.creatures_visited += 1;
             self.creature_swing(creature_id)?;
+            if self.creatures.get(&creature_id).is_none_or(swing_quiet) {
+                self.creatures.settle(Activity::Swing, creature_id);
+            }
         }
         self.minion_swings(now)
     }
@@ -1015,12 +1032,13 @@ impl ZoneSimulation {
     fn creature_swing(&mut self, creature_id: CreatureId) -> Result<(), ZoneError> {
         let content = Arc::clone(&self.content);
         let (_, template) = Self::creature_content(&content, creature_id)?;
+        // Read first: a quiet creature's swing changes nothing, so it keeps its stamp (#1086).
+        if self.creatures.get(&creature_id).is_none_or(swing_quiet) {
+            return Ok(());
+        }
         let Some(creature) = self.creatures.get_mut(&creature_id) else {
             return Ok(());
         };
-        if !creature.is_alive() {
-            return Ok(());
-        }
         creature.swing_timer = creature.swing_timer.saturating_sub(1);
         creature.combat_timer = creature.combat_timer.saturating_sub(1);
         // Casting and stunned creatures hold their ready swing, and drop a beast's bite
@@ -1556,16 +1574,25 @@ impl ZoneSimulation {
         self.world
             .set_velocity(body, Vec3i::new(0, vertical, 0))
             .map_err(physics_error)?;
-        for creature in self.creatures.values_mut() {
-            creature.forget(entity);
-            // A cast at the fallen player fizzles; a released spirit is safe.
-            if creature
-                .cast
-                .is_some_and(|cast| cast.target == Some(entity))
-            {
-                creature.cast = None;
-            }
-        }
+        // Only the creatures it concerns change (#1086).
+        self.creatures.update_where(
+            |creature| {
+                creature.threat.iter().any(|entry| entry.entity == entity)
+                    || creature
+                        .cast
+                        .is_some_and(|cast| cast.target == Some(entity))
+            },
+            |creature| {
+                creature.forget(entity);
+                // A cast at the fallen player fizzles; a released spirit is safe.
+                if creature
+                    .cast
+                    .is_some_and(|cast| cast.target == Some(entity))
+                {
+                    creature.cast = None;
+                }
+            },
+        );
         self.forget_caster(entity);
         self.update_player(player_id, |player| {
             player.health = 0;
@@ -1632,9 +1659,17 @@ impl ZoneSimulation {
         }
 
         let content = Arc::clone(&self.content);
-        let ids: Vec<_> = self.creatures.keys().copied().collect();
-        for creature_id in ids {
-            let Some(creature) = self.creatures.get_mut(&creature_id) else {
+        // Only creatures whose timer bit is set (#1086): a living creature, or one that never
+        // respawns on its own, waits for nothing here.
+        let mut after = None;
+        while let Some(creature_id) = self.creatures.next_active(Activity::Timers, after) {
+            after = Some(creature_id);
+            self.tick_work.creatures_visited += 1;
+            let Some((life, looted)) = self
+                .creatures
+                .get(&creature_id)
+                .map(|creature| (creature.life, creature.loot.is_some()))
+            else {
                 continue;
             };
             let entity = EntityRef::Creature(creature_id);
@@ -1645,13 +1680,16 @@ impl ZoneSimulation {
                 content.boss(spawn.template).is_some()
                     && now < died_at.saturating_add(u64::from(template.respawn_ticks))
             };
-            if let Life::Corpse { died_at, .. } = creature.life
+            if let Life::Corpse { died_at, .. } = life
                 && now >= died_at.saturating_add(u64::from(CORPSE_TICKS))
                 && lingers(died_at)
             {
-                creature.loot = None;
-            } else if let Life::Corpse { died_at, .. } = creature.life
+                if looted && let Some(creature) = self.creatures.get_mut(&creature_id) {
+                    creature.loot = None;
+                }
+            } else if let Life::Corpse { died_at, .. } = life
                 && now >= died_at.saturating_add(u64::from(CORPSE_TICKS))
+                && let Some(creature) = self.creatures.get_mut(&creature_id)
             {
                 creature.life = Life::Despawned { died_at };
                 creature.loot = None;
@@ -1667,18 +1705,24 @@ impl ZoneSimulation {
             let Some(creature) = self.creatures.get(&creature_id) else {
                 continue;
             };
-            let (_, template) = Self::creature_content(&content, creature_id)?;
             // A prop (#288) stands again only once no unit stands on its spot; night raiders
             // (#530) only when an incident commits them.
+            let waits_for_incident = content.is_raider(creature_id)
+                || content.is_depths_creature(creature_id)
+                || content.is_hunt_beast(creature_id)
+                || content.is_cart_bandit(creature_id);
             if let Life::Despawned { died_at } = creature.life
-                && !content.is_raider(creature_id)
-                && !content.is_depths_creature(creature_id)
-                && !content.is_hunt_beast(creature_id)
-                && !content.is_cart_bandit(creature_id)
+                && !waits_for_incident
                 && now >= died_at.saturating_add(u64::from(template.respawn_ticks))
                 && (template.prop().is_none() || !self.prop_spot_taken(creature_id)?)
             {
                 self.spawn_creature(creature_id)?;
+            }
+            if self.creatures.get(&creature_id).is_none_or(|creature| {
+                creature.is_alive()
+                    || (matches!(creature.life, Life::Despawned { .. }) && waits_for_incident)
+            }) {
+                self.creatures.settle(Activity::Timers, creature_id);
             }
         }
         Ok(())

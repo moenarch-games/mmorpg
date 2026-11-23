@@ -322,11 +322,22 @@ impl ZoneSimulation {
     /// smaller living unit its step this tick would run into aside (in `EntityRef` order).
     pub(crate) fn shove_with_large_creatures(&mut self) -> Result<(), ZoneError> {
         let content = std::sync::Arc::clone(&self.content);
+        // A body that moves is awake, or asleep and changed since the decisions (#1086): both
+        // hold the decision bit once the disturbed sleepers are read back.
+        let mut disturbed = std::mem::take(&mut self.creature_scratch.bodies);
+        self.world.take_disturbed_sleepers(&mut disturbed);
+        for body in disturbed.drain(..) {
+            if let Some(EntityRef::Creature(id)) = crate::entity::entity_of(body) {
+                self.creatures
+                    .wake(crate::creature_store::Activity::Decide, id);
+            }
+        }
+        self.creature_scratch.bodies = disturbed;
         let large: Vec<_> = self
             .creatures
-            .iter()
-            .filter(|(_, creature)| creature.is_alive())
-            .filter_map(|(&id, _)| {
+            .active(crate::creature_store::Activity::Decide)
+            .filter(|id| self.creatures.get(id).is_some_and(|c| c.is_alive()))
+            .filter_map(|id| {
                 let (_, template) = Self::creature_content(&content, id).ok()?;
                 template.is_large().then_some((id, template))
             })
