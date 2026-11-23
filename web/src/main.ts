@@ -1034,6 +1034,19 @@ function updateEntryButton(): void {
 let staticSceneDerived = false;
 /** Where each local character is expected to enter, read once per visit to the selection screen (#855). */
 const entryPreviews = new Map<string, EntryPreview>();
+/**
+ * Each local character's committed area, read once per visit like its entry: the prebuild asks for the start area
+ * twice a second while the selection screen idles, which must not read storage each time (#1137).
+ */
+const committedAreas = new Map<string, number | null>();
+
+/** `committedArea` through `committedAreas`; a read that throws is not kept. */
+function storedArea(characters: LocalCharacters, characterId: string): number | null {
+  if (!committedAreas.has(characterId)) {
+    committedAreas.set(characterId, committedArea(characters, characterId));
+  }
+  return committedAreas.get(characterId) ?? null;
+}
 
 /**
  * Prebuilds the chosen world's entry while selection shows (#855, owner decision 2026-11-23): its static scene as soon
@@ -1566,7 +1579,7 @@ function continuationLabel(): { area: string; copy: string } {
   if (chosenServer() || !world || !localCharacters) { return neutral; }
   let committed: number | null = null;
   try {
-    committed = creationDraft ? null : committedArea(localCharacters, selectedCharacter().id);
+    committed = creationDraft ? null : storedArea(localCharacters, selectedCharacter().id);
   } catch {
     return neutral;
   }
@@ -1584,7 +1597,7 @@ function startArea(): number {
     return OUTPOST_AREA;
   }
   try {
-    return committedArea(localCharacters, selectedCharacter().id) ?? OUTPOST_AREA;
+    return storedArea(localCharacters, selectedCharacter().id) ?? OUTPOST_AREA;
   } catch {
     return OUTPOST_AREA;
   }
@@ -1600,7 +1613,7 @@ function prefetchSelection(area: number): void {
     for (const character of characters) {
       if (!creationDraft && character.id === selectedCharacterId()) { continue; }
       try {
-        others.push(committedArea(localCharacters, character.id) ?? OUTPOST_AREA);
+        others.push(storedArea(localCharacters, character.id) ?? OUTPOST_AREA);
       } catch {
         // An unreadable save enters at the outpost, which is already planned.
       }
@@ -1823,6 +1836,7 @@ function returnToCharacters(failure: string | null = null) {
   activeWorld = null;
   // The world moved on while it was played: where each character enters is read again (#855).
   entryPreviews.clear();
+  committedAreas.clear();
   arenaStatus.hidden = true;
   arenaEntry.setLocked(false);
   showLinkState("connected");

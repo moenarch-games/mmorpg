@@ -54,11 +54,16 @@ ARTIFACTS = ROOT / "artifacts" / "browser"
 # Advisory tripwire (PRINCIPLE-015), not a draw-call bound: the static scene's groups, including
 # kit fallbacks hidden while their kit draws, all drawn through per-material BatchedMeshes (#615).
 # 3,586 after the three outer regions (#495, #497, #505), nature fallbacks and terrain tiles (#620);
-# 4,187 when re-measured for #622, after the later scenery additions.
-STATIC_GROUPS_TRIPWIRE = 4_400
-# Advisory too: the authored brook pass stores about 527,000 static vertices;
-# match the existing Rust export ceiling documented in GREYHAVEN_BROOK.md.
-STATIC_VERTICES_TRIPWIRE = 530_000
+# 4,187 when re-measured for #622, after the later scenery additions. 10,164 when re-measured for
+# #1137: since #816 made the region one landscape and later work dressed it, the world covers 660
+# terrain tiles instead of 96, and the shared scene's groups grew with its area (4,169 to 10,146 in `presentation_work --report`), while the most
+# static draws one hub frame selects fell from 15,724 to 13,433: a larger world, not more work a frame.
+STATIC_GROUPS_TRIPWIRE = 10_700
+# Advisory too: the authored brook pass stored about 527,000 static vertices. 1,236,513 when
+# re-measured for #1137, grown with the same larger world: 564,444 of them are the nature kit's
+# procedural fallbacks for #816's forests (2,130 mid groups, hidden once the kit draws), 196,144
+# the near props' merged batches (1,873 groups).
+STATIC_VERTICES_TRIPWIRE = 1_300_000
 ROSTER_KEY = "mmorpg.offline-roster.v1"
 # The retired offline checkpoint key; nothing may write it any more.
 CHARACTER_ENTRY_PREFIX = "mmorpg.character.v1."
@@ -187,6 +192,19 @@ class BrowserAcceptance(unittest.TestCase):
         self.page = self.watch(self.context.new_page())
         self.context.add_init_script("""(() => {
           window.__calls = {reads: 0, writes: 0, draws: 0};
+          // Every fresh browser world draws a secret world seed (#1111, Atlas 2.1.i1111), so its
+          // wolves, fights and drops would differ from run to run. Acceptance pins one, as scenarios
+          // pin theirs: the page's only 64-bit draw is `freshWorldSeed`; every other draw stays random.
+          // In world 3, as in the content seed's, Timber Wolf 108 meets the hunt route's hunter in
+          // melee and drops copper and items (world 1111's waits 10 m off, out of combat).
+          const randomValues = Crypto.prototype.getRandomValues;
+          Crypto.prototype.getRandomValues = function(array) {
+            if (array instanceof BigUint64Array && array.length === 1) {
+              array[0] = 3n;
+              return array;
+            }
+            return randomValues.call(this, array);
+          };
           // Pose evidence needs actual submitted identities/transforms, not repeated immutable mesh buffers.
           // An imported Quaternius model contributes its actual clip, clip time, root and bone world positions.
           window.__acceptanceNodes = identity => {
@@ -346,6 +364,20 @@ class BrowserAcceptance(unittest.TestCase):
                 return current
             previous = current
         self.fail("The rendered view never settled")
+
+    def locked_look(self, dx, dy=0, steps=5):
+        """Mouse motion while the world holds the pointer lock, which the page reads only as
+        `movementX/Y`. Playwright's moves under the lock reach the page as a jump and an equal jump
+        back (`movementX` +760 then -760 in Chromium 159), so they turn nothing; this sends the
+        pointer events a locked mouse produces, with the motion split over `steps`."""
+        self.page.evaluate("""([dx, dy, steps]) => {
+          const canvas = document.querySelector('#world');
+          if (document.pointerLockElement !== canvas) throw Error('The world does not hold the pointer lock');
+          for (let i = 0; i < steps; i++) {
+            canvas.dispatchEvent(new PointerEvent('pointermove', {bubbles: true, pointerId: 1, pointerType: 'mouse', isPrimary: true,
+              movementX: dx / steps, movementY: dy / steps}));
+          }
+        }""", [dx, dy, steps])
 
     def wait_for_view(self, expected, timeout_frames=240):
         for _ in range(timeout_frames):
@@ -567,6 +599,8 @@ class BrowserAcceptance(unittest.TestCase):
         """Real WASM/browser: focus keeps the UI cursor, turning, strafing and attacks independent."""
         self.click_world_setup()
         self.click_world_walk_to_woods()
+        # The swings and the ability below need the drawn weapon (#802).
+        self.draw_weapon(self.click_world_step)
         wolves = self.page.evaluate("window.__valeDebug.projectedUnits().filter(u => u.kind === 'creature' && u.family === 'wolf')")
         self.assertGreaterEqual(len(wolves), 1)
         x, y, _ = self.aim_at_world_unit("creature", wolves[0]["id"])
@@ -600,8 +634,18 @@ class BrowserAcceptance(unittest.TestCase):
             self.assertEqual(self.page.evaluate("window.__valeDebug.controls().mode.kind"), "focused")
         # Escape is the game menu (#636): a focused click on empty sky clears the focus, and a
         # click on nothing in released free look recaptures mouse-look.
-        box = self.page.locator("#world").bounding_box()
-        sky = (box["x"] + 20, box["y"] + 20)
+        # The world's top-left corner lies under the HUD toolbar, where a click never reaches the
+        # world, and the wolves fight right beside the focused camera, where any fixed point may
+        # cover one: the camera looks at empty sky, as the creature world-click journey's does, and
+        # the click lands on the canvas centre.
+        self.page.evaluate("window.__valeDebug.flyToPose([0, 40, 0], [0, 80, -5])")
+        self.frames(3)
+        sky = self.page.evaluate("""() => {
+          const canvas = document.querySelector('#world'), box = canvas.getBoundingClientRect();
+          const point = [box.left + box.width / 2, box.top + box.height / 2];
+          if (document.elementFromPoint(...point) !== canvas) throw Error('The view centre is covered');
+          return point;
+        }""")
         self.page.mouse.click(*sky)
         self.click_world_step()
         self.assertIsNone(self.click_world_target())
@@ -624,7 +668,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.assertTrue(self.page.evaluate("window.__focusSwings.length"), "a free-look sword swing needs no selection")
         self.assertIsNone(self.click_world_target())
         before = self.page.evaluate("window.__valeDebug.controls().heading")
-        self.page.mouse.move(x + 80, y + 30)
+        self.locked_look(80, 30, steps=1)
         self.frames(3)
         self.assertNotEqual(self.page.evaluate("window.__valeDebug.controls().heading"), before)
         self.page.evaluate("window.dispatchEvent(new Event('blur'))")
@@ -646,7 +690,8 @@ class BrowserAcceptance(unittest.TestCase):
                     if close.is_visible():
                         close.click()
                 x, y, _ = self.aim_at_world_unit("npc", identity)
-                self.page.mouse.click(x, y, button="right")
+                # The left button selects since #636; the right one only cancels.
+                self.page.mouse.click(x, y)
                 self.click_world_step()
                 self.assertEqual(self.click_world_target(), {"kind": "npc", "id": identity})
                 expect(self.page.locator("[data-part=target-name]")).to_contain_text(name)
@@ -1041,10 +1086,17 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.mouse.up()
         self.page.wait_for_function("document.pointerLockElement === document.querySelector('#world')")
         self.page.wait_for_function("window.__valeDebug.controls().pointer === 'camera'")
-        self.page.mouse.move(x + 200, y, steps=5)
+        self.locked_look(200)
         self.assertTrue(self.wait_for_facing_change(ran["facing"]), "Captured mouse-look turns the character")
         self.page.evaluate("document.exitPointerLock()")
         self.page.wait_for_function("window.__valeDebug.controls().pointer === 'interface'")
+        # A lost pointer lock opens the game menu (#636). Escape closes it and leaves the cursor
+        # free (Resume would capture mouse-look again).
+        menu = self.page.locator("#game-menu")
+        expect(menu).to_be_visible()
+        self.page.keyboard.press("Escape")
+        expect(menu).to_be_hidden()
+        self.assertEqual(self.page.evaluate("window.__valeDebug.controls().pointer"), "interface")
         turned = self.debug_stats()["self"]["facing"]
         self.page.mouse.move(x, y)
         self.page.mouse.down(button="right")
@@ -1278,7 +1330,9 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.screenshot(path=str(ARTIFACTS / "outpost-grass-clearing.png"))
         stats = self.debug_stats()
         self.assertEqual(stats["self"], before)
-        self.assertEqual(stats["scene"]["props"]["grass-tuft"], 6597, "The Vale and its three outer regions (#495, #497, #505)")
+        # #816 redesigned the region as one landscape whose grass grows from the land itself
+        # (`greyhaven_vale.rs` keeps it within 2,200–3,200); measured 2,630 for #1137.
+        self.assertEqual(stats["scene"]["props"]["grass-tuft"], 2630, "Greyhaven's grass tufts (#816)")
         self.assertLessEqual(stats["scene"]["staticNodes"], STATIC_GROUPS_TRIPWIRE)
         self.assertLessEqual(stats["scene"]["staticVertices"], STATIC_VERTICES_TRIPWIRE)
         colours = self.canvas_colours()
@@ -1374,11 +1428,11 @@ class BrowserAcceptance(unittest.TestCase):
             if (command.kind === 'move' || command.kind === 'jump') return;
             window.__lootSent.push(command);
             if (window.__lootFixture) {
+              // Each answer is a new projection, as a source publishes: the panels redraw only
+              // when the latest projection changed (#1060).
               const fixture = window.__lootFixture;
-              fixture.tick++;
-              fixture.acknowledgedSequence++;
-              fixture.events = command.kind === 'loot'
-                ? [{kind: 'error', code: 'inventory-full', target: {kind: 'creature', id: 108}}] : [];
+              window.__lootFixture = {...fixture, tick: fixture.tick + 1n, acknowledgedSequence: fixture.acknowledgedSequence + 1,
+                events: command.kind === 'loot' ? [{kind: 'error', code: 'inventory-full', target: {kind: 'creature', id: 108}}] : []};
               return;
             }
             window.__lootSend(command);
@@ -1417,7 +1471,7 @@ class BrowserAcceptance(unittest.TestCase):
         claim = self.page.get_by_role("button", name="Claim rewards", exact=True)
         expect(panel).to_be_visible()
         expect(self.page.locator("#loot-title")).to_have_text("Timber Wolf")
-        # Wolf 108 rolls from its own stream since #861, as corpse-loot-resume.expected records.
+        # Wolf 108 rolls from its own stream (#861), seeded by the pinned world (#1111).
         expect(rewards).to_have_text("1 copper · Torn Fur × 2")
         expect(self.page.locator("#copper-status")).to_have_text("Copper: 0")
         self.page.screenshot(path=str(ARTIFACTS / "loot-before-claim.png"))
@@ -2018,6 +2072,15 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.evaluate("ticks => window.__classStep(ticks)", ticks)
         self.frames(3)
 
+    def draw_weapon(self, step=None):
+        """Characters enter with their weapons sheathed, and Q, G, Z and the action bar act only once
+        H has drawn them (#802, Atlas 6.6.i802); the zone switches the mode on the ticks `step` runs
+        (`self.step` by default)."""
+        self.page.locator("#world").focus()
+        self.page.keyboard.press("h")
+        (step or self.step)(2)
+        expect(self.page.locator(".weapon-mode")).to_have_attribute("data-mode", "combat")
+
     def create_and_select(self, name, class_label):
         """Creation's three steps (#772): class, then sex and appearance, then name."""
         self.page.get_by_role("button", name="Create character", exact=True).click()
@@ -2111,6 +2174,11 @@ class BrowserAcceptance(unittest.TestCase):
             axes: [0, 0, 0, stickY],
           }];
           Object.defineProperty(navigator, 'getGamepads', {configurable: true, value: () => pads});
+          // A browser announces a pad as it connects or leaves; `input-bindings` polls pads only
+          // after one connected, so the fake pad announces itself too.
+          const event = new Event(pads.length ? 'gamepadconnected' : 'gamepaddisconnected');
+          Object.defineProperty(event, 'gamepad', {value: pads[0] ?? {index: 0, connected: false}});
+          window.dispatchEvent(event);
         }""", [trigger, stick_y])
 
     def guard_label(self):
@@ -2123,6 +2191,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.enter_beside_wolf()
         guard = self.page.locator("[data-part=shield-guard]")
         expect(guard).to_be_hidden()
+        self.draw_weapon()
         box = self.page.locator("#world").bounding_box()
         x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
         self.page.mouse.move(x, y)
@@ -2170,6 +2239,8 @@ class BrowserAcceptance(unittest.TestCase):
             viewer: window.__acceptanceNodes(`unit-player-${p.viewerId}`),
             target: p.viewer.target ? window.__acceptanceNodes(`unit-${p.viewer.target.kind}-${p.viewer.target.id}`) : [],
             effects: d.presentationFrame().effectNodes,
+            // Since #894 the effects kit draws impacts and spell visuals as instances, not nodes.
+            kitEffects: d.kitEffects().shown,
             events: p.events.map(e => e.kind),
           };
         }""")
@@ -2180,6 +2251,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.emulate_media(reduced_motion="no-preference")
         self.create_and_select("ActionMage", "Arcanist")
         self.enter_beside_wolf()
+        self.draw_weapon()
         self.aim_action_unit("creature", 108)
         rest = self.capture_action_frame()
         self.assertTrue(rest["viewer"] and rest["target"])
@@ -2188,15 +2260,22 @@ class BrowserAcceptance(unittest.TestCase):
         cast = self.capture_action_frame()
         self.assertNotEqual(cast["viewer"], rest["viewer"], "The real Arcanist model raises into its cast")
         expect(self.page.locator("[data-part=cast]")).to_be_visible()
-        # Preserve each actual received outcome, advancing the authoritative WASM one tick at a time.
-        self.assertTrue(self.advance_action_until("damage-dealt", 65, 1), "Firebolt resolves with authoritative damage")
+        # Preserve each actual received outcome, advancing the authoritative WASM one step at a time:
+        # the two-second cast, then the bolt's flight to a wolf that may stand a few metres off.
+        self.assertTrue(self.advance_action_until("damage-dealt", 90, 1), "Firebolt resolves with authoritative damage")
         landed = self.capture_action_frame()
-        self.assertGreater(len(landed["effects"]), 2, "Confirmed target impact adds richer feedback to the baseline bolt")
+        # Effects are procedural nodes, or kit instances once the effects kit loaded (#894).
+        feedback = lambda frame: len(frame["effects"]) + frame["kitEffects"]
+        self.assertGreaterEqual(feedback(landed), feedback(cast) + 2, "Confirmed target impact adds richer feedback to the cast")
         self.page.screenshot(path=str(ARTIFACTS / "procedural-actions-impact.png"))
-        self.page.wait_for_function("window.__valeDebug.presentationFrame().effectNodes.length === 0", timeout=5_000)
+        self.page.wait_for_function("""landed => {
+          const d = window.__valeDebug;
+          return d.presentationFrame().effectNodes.length === 0 && d.kitEffects().shown < landed;
+        }""", arg=feedback(landed), timeout=5_000)
         settled = self.capture_action_frame()
         self.assertEqual(settled["tick"], landed["tick"], "Expiry uses presentation time, without advancing gameplay")
         self.assertEqual(settled["effects"], [], "Transient effects expire without another simulation tick")
+        self.assertLess(feedback(settled), feedback(landed), "Transient effects expire without another simulation tick")
         (ARTIFACTS / "procedural-actions-local.json").write_text(json.dumps({"rest": rest, "cast": cast, "landed": landed, "settled": settled}, indent=2))
 
     def test_ordinary_actions_creature_death_and_player_death_through_real_wasm(self):
@@ -2247,7 +2326,9 @@ class BrowserAcceptance(unittest.TestCase):
         self.assertTrue(dead, "Ordinary combat kills the actual selected wolf")
         events = self.page.evaluate("window.__actualCombatEvents")
         self.assertTrue(any(e["kind"] == "attack-performed" and e["source"]["kind"] == "player" for e in events))
-        self.assertTrue(any(e["kind"] == "attack-performed" and e["source"]["kind"] == "creature" for e in events))
+        # A beast winds up every blow since #889: a wolf's ordinary attack begins with
+        # `creature-attack-began` and lands at its contact tick, without `attack-performed`.
+        self.assertTrue(any(e["kind"] == "creature-attack-began" and e["source"]["kind"] == "creature" for e in events))
         self.wait_for_settled_corpse("target", "targetDead")
         frames = self.page.evaluate("window.__lifeFrames")
         corpses = [frame["target"] for frame in frames if frame["targetDead"]]
@@ -2289,18 +2370,22 @@ class BrowserAcceptance(unittest.TestCase):
         reached = self.page.evaluate("""({outcome,limit,groupTicks}) => {
           const s = window.__valeDebug.worldSource();
           for (let group = 0; group < limit; group++) {
+            // Each step runs two 60 Hz zone ticks and a projection carries only its own tick's
+            // events, so events are read from every projection the group produced.
+            const queued = window.__classQueue.length;
             window.__classStep(groupTicks);
             const p = s.latestProjection();
+            const events = window.__classQueue.slice(queued).flatMap(projection => projection.events);
             let done = false;
             if (outcome === 'target-dead') done = p.entities.some(e => e.kind === 'creature' && e.entityId === 108 && e.flags.dead);
             else if (outcome === 'player-dead') done = p.viewer.dead;
             else if (outcome === 'target-below-half') done = p.entities.some(e => e.kind === 'creature' && e.entityId === 401 && e.healthPercent < 50);
             else if (outcome === 'ordinary-attempt') done = window.__actualCombatEvents.some(e => e.kind === 'attack-performed' && e.source.kind === 'player');
-            else if (outcome === 'damage-dealt') done = p.events.some(e => e.kind === 'damage-dealt');
+            else if (outcome === 'damage-dealt') done = events.some(e => e.kind === 'damage-dealt');
             else {
               // "ability" or "ability@creature": the ability's use, optionally by one creature.
               const [ability, caster] = outcome.split('@').map(Number);
-              done = p.events.some(e => e.kind === 'ability-used' && e.ability === ability
+              done = events.some(e => e.kind === 'ability-used' && e.ability === ability
                 && (!caster || (e.source?.kind === 'creature' && e.source.id === caster)));
             }
             if (done) return true;
@@ -2470,6 +2555,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.enter_beside_wolf()
         self.assert_action_bar(["Lv 2", "Lv 4", "Lv 6", "Lv 3", "Lv 5", "Lv 8", "Lv 7", "Lv 3", "Lv 5", "Lv 4"])
         expect(self.page.locator("[data-part=player-resource-text]")).to_contain_text("Mana 110 / 110")
+        self.draw_weapon()
         self.page.keyboard.press("Digit1")
         self.step(3)
         cast = self.page.locator("[data-part=cast]")
@@ -2478,9 +2564,14 @@ class BrowserAcceptance(unittest.TestCase):
         self.assertEqual(self.page.locator("#class-hud .action-slot").first.get_attribute("data-state"), "casting")
         expect(self.page.locator("#class-hud .action-slot").first).to_have_attribute("data-gcd", "true")
         self.page.screenshot(path=str(ARTIFACTS / "class-kit-arcanist-cast.png"))
-        # The two-second cast completes: mana is spent, the bolt lands and the cast bar clears.
+        # The two-second cast completes: mana is spent, the bolt flies to the wolf and lands (a few
+        # steps more where the wolf stands off), and the cast bar clears.
         self.step(60)
         self.assertLess(self.hud_number("[data-part=player-resource-text]", r"Mana (\d+)"), 110)
+        for _ in range(20):
+            if self.page.evaluate("window.__combatTexts.length"):
+                break
+            self.step(2)
         self.assertTrue(self.page.evaluate("window.__combatTexts.length"), "Combat text floated up")
         self.page.screenshot(path=str(ARTIFACTS / "class-kit-arcanist-hit.png"))
         expect(cast).to_be_hidden()
@@ -2560,10 +2651,13 @@ class BrowserAcceptance(unittest.TestCase):
             session.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
 
         def entered():
-            # #551: the arena offers target and attack from the first moment, and no essential
-            # control, frame, status line or the hotbar overlaps another at phone size.
-            expect(self.page.get_by_role("button", name="Attack", exact=True)).to_be_visible()
+            # #551: the arena offers target from the first moment and attack once the weapon is
+            # drawn (#802: the character enters sheathed), and no essential control, frame, status
+            # line or the hotbar overlaps another at phone size.
             expect(self.page.get_by_role("button", name="Target", exact=True)).to_be_visible()
+            expect(self.page.get_by_role("button", name="Attack", exact=True)).to_be_hidden()
+            self.page.get_by_role("button", name="Draw weapon", exact=True).tap()
+            expect(self.page.get_by_role("button", name="Attack", exact=True)).to_be_visible()
             overlaps = self.page.evaluate("""() => {
               const selectors = ['.unit-frames', '.hud', '.minimap', '.touch-top', '.action-dock', '.touch-context',
                 '.touch-jump', '.touch-faces'];
@@ -2630,6 +2724,7 @@ class BrowserAcceptance(unittest.TestCase):
             if (command) source.sendCommand(command);
             window.__fortressQueue.push(...advance.call(source, 1 / 30));
           };
+          window.__fortressTick = tick;
           // Walks toward (x, z) metres, or until `until(feet)`; throws when it gets stuck.
           window.__fortressWalk = (x, z, ticks = 900, until = null) => {
             for (let i = 0; i < ticks; i++) {
@@ -2682,7 +2777,12 @@ class BrowserAcceptance(unittest.TestCase):
         self.page = self.watch(self.context.new_page())
         stops = self.fortress_walkthrough(touch=True)
         self.assert_fortress_route(stops)
-        # The touch controls stay usable over the fortress.
+        # The touch controls stay usable over the fortress: drawing the weapon (#802: the
+        # character enters sheathed) brings up Attack.
+        self.page.get_by_role("button", name="Draw weapon", exact=True).tap()
+        self.frames(2)
+        self.page.evaluate("() => { for (let i = 0; i < 3; i++) window.__fortressTick(null); }")
+        self.frames(3)
         expect(self.page.get_by_role("button", name="Attack", exact=True)).to_be_visible()
 
 
