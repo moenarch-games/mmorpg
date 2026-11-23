@@ -73,7 +73,7 @@ Its player combat policy remains Safe; this does not enable world PvP.
   other unsupported shots stay out; no new shield or magical-defense ability is introduced.
   `Clashed` names both sides. A stun or death ends a running swing.
 - **Recovery.** The running swing is canonical player state, so a zone restored mid-swing
-  continues it exactly (`cargo test -p mmorpg-core --test timed_swing`).
+  continues it exactly (`cargo test -p mmorpg-core --test combat timed_swing::`).
 
 Health alone decides fights: no clash moves anyone (Atlas 5.2.i679-2). The owner approved the 0.3 s wind-up, 0.15 s sweep and 2 s
 basic swing timer on 2026-11-14; that approval is not a claim of a human playtest.
@@ -162,7 +162,7 @@ and fail closed in this one. The player projection payload layout is unchanged.
 
 ## Focused evidence and remaining delivery
 
-`cargo test -p mmorpg-core --locked --test pvp` covers thirteen deterministic two-player
+`cargo test -p mmorpg-core --locked --test combat pvp::` covers thirteen deterministic two-player
 checks: explicit policy and safe refusal, projection eligibility, weapon hit/guard,
 auto-attacks, a real Firebolt projectile/guard, area root isolation, death attribution,
 physical wall coverage, and exact recovery of a cast, poison, directed-strike combo and

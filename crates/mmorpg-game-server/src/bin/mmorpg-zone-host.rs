@@ -142,6 +142,7 @@ async fn serve_configured_host() -> Result<(), Box<dyn Error>> {
                 "MMORPG_DEPTHS_GRACE_MS",
                 mmorpg_control_plane::instance::DEFAULT_RUN_GRACE_MS,
             )?),
+            confirmed_stopped: read_string("MMORPG_CONFIRM_SOURCE_STOPPED", "")? == "1",
         };
         mmorpg_game_server::handoff_host::serve_handoff_character_host(
             config,

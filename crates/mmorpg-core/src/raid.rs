@@ -75,6 +75,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use crate::creature::Life;
+use crate::creature_store::Activity;
 use crate::entity::body_id;
 use crate::routine::{HOUR_TICKS, time_of_day};
 use crate::snapshot::CreatureAi;
@@ -888,11 +889,14 @@ impl ZoneSimulation {
         let Some(site) = content.raid() else {
             return Ok(());
         };
+        // A living raider never rests, so it holds its decision bit (#1086).
         let members: Vec<(CreatureId, RaidMember)> = self
             .creatures
-            .iter()
-            .filter(|(_, state)| state.is_alive())
-            .filter_map(|(&id, state)| state.raid.map(|member| (id, member)))
+            .active(Activity::Decide)
+            .filter_map(|id| {
+                let state = self.creatures.get(&id).filter(|state| state.is_alive())?;
+                state.raid.map(|member| (id, member))
+            })
             .collect();
         if self.raid.active.is_some() {
             self.record_participants(&members)?;
@@ -1233,26 +1237,35 @@ impl ZoneSimulation {
                 }
             }
         }
-        for state in self.creatures.values_mut() {
-            if let Some(member) = state.raid.as_mut()
-                && member.incident == incident.id
-                && member.leg == RaidLeg::Assault
-            {
-                member.leg = RaidLeg::Retreat;
-                member.waypoint = 0;
-                member.since = now;
-            }
-        }
+        // Only the raiders it concerns change (#1086).
+        self.creatures.update_where(
+            |state| {
+                state.raid.is_some_and(|member| {
+                    member.incident == incident.id && member.leg == RaidLeg::Assault
+                })
+            },
+            |state| {
+                if let Some(member) = state.raid.as_mut() {
+                    member.leg = RaidLeg::Retreat;
+                    member.waypoint = 0;
+                    member.since = now;
+                }
+            },
+        );
         Ok(())
     }
 
     /// Arrivals at the camp, the end of a camp stay and stuck retreats.
     fn advance_marches(&mut self, site: &RaidSite, now: u64) -> Result<(), ZoneError> {
+        // A living raider never rests, so it holds its decision bit (#1086).
         let ids: Vec<CreatureId> = self
             .creatures
-            .iter()
-            .filter(|(_, state)| state.is_alive() && state.raid.is_some())
-            .map(|(&id, _)| id)
+            .active(Activity::Decide)
+            .filter(|id| {
+                self.creatures
+                    .get(id)
+                    .is_some_and(|state| state.is_alive() && state.raid.is_some())
+            })
             .collect();
         for id in ids {
             let Some(state) = self.creatures.get(&id) else {

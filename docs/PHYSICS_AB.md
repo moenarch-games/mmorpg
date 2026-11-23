@@ -73,7 +73,8 @@ Native/browser GPU acceptance remains separate from these physics checks.
 
 ```sh
 cargo test -p mmorpg-core --features physics-ab --test physics_ab --locked
-cargo test -p mmorpg-core --features physics-ab --test authored_backend --test authored_collision --locked
+cargo test -p mmorpg-core --features physics-ab --test authored_backend --locked
+cargo test -p mmorpg-core --features physics-ab --test world --locked authored_collision::
 bun scripts/physics-ab-wasm.ts
 cargo run --release -p mmorpg-core --example physics_ab --features physics-ab --locked
 ```

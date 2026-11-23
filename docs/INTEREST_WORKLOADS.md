@@ -9,7 +9,7 @@ The derived index stores unit references (players, living creatures, corpses and
 ## Reproduce
 
 ```sh
-cargo test -p mmorpg-core --test interest --locked
+cargo test -p mmorpg-core --test zone --locked interest::
 cargo run -p mmorpg-protocol --example interest_workload --locked
 ```
 
@@ -35,7 +35,7 @@ Recorded measurement environment: Rust 1.98.1, `Cargo.lock` SHA-256 `36adf21ccc4
 
 ## Operation scaling contracts (#138)
 
-`.performance/contract.json` (schema 2) declares the zone's natural operations, the dimensions they scale with and deterministic growth bounds; `coding-tooling performance work --root . --json` checks them against counters that `scripts/operation-work.py` collects from the `operation_work` example of `mmorpg-protocol` (the `performance:work` capability). Every sampled projection is also compared with the exhaustive visibility oracle, so a smaller count can never come from a wrong answer. Wall-clock time plays no part.
+`.performance/contract.json` (schema 2) declares the zone's natural operations, the dimensions they scale with and deterministic growth bounds; `coding-tooling performance work --root . --json` checks them against counters that `scripts/operation-work.py` collects from the `operation_work` example of `mmorpg-protocol` and the `creature_tick_work` example of `mmorpg-core` (the `performance:work` capability). Every sampled projection is also compared with the exhaustive visibility oracle, so a smaller count can never come from a wrong answer. Wall-clock time plays no part.
 
 | Operation | Dimensions | Bound |
 | --- | --- | --- |
@@ -43,6 +43,7 @@ Recorded measurement environment: Rust 1.98.1, `Cargo.lock` SHA-256 `36adf21ccc4
 | `publish-sparse` | recipients at a fixed density (21-player clusters three cells apart) | total exact distance tests and built entity records linear in recipients; one zone-view build per tick for every recipient; no sheet built for unchanged viewers |
 | `publish-dense-hub` | recipients in one interest radius | the largest recipient's tests linear in recipients (total work is honestly quadratic); at most 64 visible and 64 built entity records per recipient; one zone-view build per tick; no sheet built for unchanged viewers |
 | `tick-maintenance` | stationary population, players crossing a cell boundary | no full index rebuild; bucket writes constant in population and linear in movers; position re-reads linear |
+| `creature-tick` | creatures asleep far from the player, creatures fighting it | creature visits constant in sleepers and linear in fighters; no interest query allocates; warm-tick heap allocations constant in sleepers (#1086, from `mmorpg-core`'s `creature_tick_work` example; see [combat workloads](COMBAT_WORKLOADS.md)) |
 
 Publication work (#1056) is sampled the way the zone host publishes: every recipient is published to, acknowledges, and after one tick is published to again with its sheet encodings held. A projection tests candidates by position first and builds entity records only for the relevant units inside the priority cap. The doors, damaged pieces and spent veins every viewer sees are built once per tick and shared. The bag, quest, world and waystone sheets carry stamps of the core state they come from (`Revisioned` values take a fresh process-unique stamp on every mutable access), so `project_for_publish` leaves out a sheet whose stamp the publisher's `SheetEncodingCache` already holds and the encoder sends its cached bytes without encoding or hashing them again. The loot, ability, party and boss loot sheets follow per-tick combat state and are still built every tick. Each warm publication is compared byte for byte with a cold pack of the complete projection. Heap allocations per publication are not counted yet: a counting allocator needs the workspace's `unsafe_code` lint relaxed for one test binary (#1068).
 

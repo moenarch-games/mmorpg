@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { SHADOW_ONLY } from "../static-batches";
+import { closedSurface, shadowLevels, UNIT_SHADOW_LEVELS } from "../shadow-lod";
 
 /**
  * Merges a unit model's meshes into one `SkinnedMesh` per material class (#615): a Quaternius or Ranger unit is 10–23
@@ -124,17 +125,27 @@ export function mergeUnitMeshes(model: THREE.Object3D, keep: ReadonlySet<THREE.O
     mesh.bind(skeleton, new THREE.Matrix4());
     model.add(mesh);
   }
+  // Closed double-sided shapes cast the same shadow from their front faces alone: when all of them are, the unit casts
+  // through one single-sided proxy (#1083), no extra draw.
+  if (shadows.double.length > 0 && shadows.double.every(closedSurface)) {
+    shadows.single.push(...shadows.double);
+    shadows.double = [];
+  }
   const proxies: THREE.SkinnedMesh[] = [];
   for (const side of ["single", "double"] as const) {
     const shapes = shadows[side];
     if (shapes.length === 0) { continue; }
-    const geometry = mergeGeometries(shapes);
+    const full = mergeGeometries(shapes);
     for (const shape of shapes) { shape.dispose(); }
-    if (!geometry) { throw new Error("A unit's shadow casters failed to merge."); }
+    if (!full) { throw new Error("A unit's shadow casters failed to merge."); }
+    // Per sun cascade a simplified proxy (#1083): the near one about a third of the triangles, the far ones a tenth.
+    const levels = shadowLevels(full, UNIT_SHADOW_LEVELS);
+    const geometry = levels[0] ?? full;
     // Drawn only by the shadow views: the main pass skips its invisible material (see `SHADOW_ONLY`).
     const proxy = new THREE.SkinnedMesh(geometry, SHADOW_ONLY[side]);
     proxy.name = `shadow:${side}`;
     proxy.userData.shadowOnly = true;
+    if (levels.some((level) => level !== geometry)) { proxy.userData.shadowGeometry = levels; }
     proxy.bind(skeleton, new THREE.Matrix4());
     model.add(proxy);
     proxies.push(proxy);
@@ -439,7 +450,12 @@ function bindGeometry(mesh: THREE.Mesh, bind: THREE.Matrix4, joints: number[] | 
  * and stays.
  */
 export function releaseUnit(model: THREE.Object3D, merged: MergedUnit): void {
-  for (const mesh of [...merged.meshes, ...merged.shadows]) { mesh.geometry.dispose(); }
+  // With the shadow proxies' simplified levels (#1083), each once.
+  const geometries = new Set([...merged.meshes, ...merged.shadows].map((mesh) => mesh.geometry));
+  for (const proxy of merged.shadows) {
+    for (const level of (proxy.userData.shadowGeometry as THREE.BufferGeometry[] | undefined) ?? []) { geometries.add(level); }
+  }
+  for (const geometry of geometries) { geometry.dispose(); }
   const inside = new Set<THREE.Object3D>();
   const skeletons = new Set<THREE.Skeleton>([merged.skeleton]);
   model.traverse((object) => {

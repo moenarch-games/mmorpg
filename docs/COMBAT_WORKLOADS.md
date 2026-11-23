@@ -6,7 +6,7 @@ combat rules, capacity claim or wall-clock correctness gate.
 
 ```sh
 cargo run -p mmorpg-protocol --example combat_workload --locked
-cargo test -p mmorpg-core --test workload_stats --locked
+cargo test -p mmorpg-core --test zone --locked workload_stats::
 cargo test -p mmorpg-protocol --test combat_workload --locked
 ```
 
@@ -293,3 +293,30 @@ ordinary content additions pass while a real regression still fails. When a revi
 moves a counter past that headroom, re-record its row from the `combat_workload` example;
 re-record after a welcome decrease too, to keep the gate tight. AI, candidate and byte rows
 were re-recorded at their current counts; replay and recovery parity hold.
+
+### Active creatures only (#1086)
+
+Creatures live in one `Vec` in ID order (`creature_store`). Each per-tick creature system
+(decisions, swings, casts, auras, corpse timers) holds one bit per creature and visits only
+the creatures whose bit is set. Every mutable access to a creature sets all of its bits; a
+system clears a bit only after a visit that left the creature quiet by that system's own rule,
+so skipping it changes nothing. A sleeping creature keeps its decision bit clear until it
+changes, a player comes into its wake cells (the pace's own test, run from each player's cell
+over a grid of resting creatures) or something changes its asleep body (the physics world
+logs those, `World::take_disturbed_sleepers`). Systems read before they write, so a tick that
+changes no creature keeps the store's stamp and the threatened-player cache. Interest queries
+on the tick's hot paths fill reused buffers (`InterestIndex::near_into` over a flat cell grid).
+`ZoneSimulation::visit_every_creature` restores the old every-creature visits; the
+`creature_activity` test runs Greyhaven's fights and players walking across the vale against
+it tick for tick, canonical state and projections alike. No workload output, trace or fixture
+changed. The `creature-tick` operation in `.performance/contract.json` holds the bounds:
+
+| Sleepers / fighters | Creature visits | Warm tick allocations |
+| --- | ---: | ---: |
+| 64 / 4 | 340 → 20 | 282 → 18 |
+| 128 / 4 | 660 → 20 | 617 → 18 |
+| 256 / 4 | 1,300 → 20 | 1,265 → 18 |
+| 256 / 16 | 1,360 → 80 | 1,280 → 30 |
+
+Visits before #1086 are five systems times every creature; allocations come from a counting
+allocator around `advance_tick` (`crates/mmorpg-core/tests/support/creature_tick.rs`).

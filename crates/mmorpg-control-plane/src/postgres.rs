@@ -13,7 +13,7 @@ use crate::instance::{InstanceAuthority, InstanceDirectory, InstanceStoreError};
 use crate::party::{PartyAuthority, PartyDirectory, PartyStoreError};
 use crate::{
     ControlPlaneError, EntityId, HandoffAuthority, HandoffPhase, HandoffRecord, HandoffTicket,
-    HostId, TransferId, ZoneLease, speaks_for,
+    HostId, TransferId, ZoneLease, settles_arrival, speaks_for,
 };
 use mmorpg_core::ZoneId;
 use postgres::{CancelToken, Client, Config, GenericClient, NoTls, Row, Transaction};
@@ -109,6 +109,9 @@ impl PostgresZoneDirectory {
         }
         let mut config: Config = url.parse().map_err(backend)?;
         config.connect_timeout(timeout);
+        // The server-side statement timeout cannot end a request to a peer that
+        // stopped answering; without this a renewal blocks for good (#1097).
+        config.tcp_user_timeout(timeout);
         let mut client = config.connect(NoTls).map_err(backend)?;
         let millis = timeout.as_millis().max(1);
         client
@@ -127,6 +130,22 @@ impl PostgresZoneDirectory {
             return Err(backend("unsupported directory schema"));
         }
         Ok(Self { client })
+    }
+    /// Records the retirement of `expected` only once it has expired by the
+    /// database clock; `false` while it is still valid (#1097). Expiry proves
+    /// nothing about a foreign holder, so this is only for a holder that
+    /// provably stops serving before its grant's deadline by its own clock:
+    /// a restarted host taking back the grant of its own previous process.
+    pub fn retire_expired(&mut self, expected: &ZoneLease) -> Result<bool, DirectoryStoreError> {
+        let mut transaction = self.client.transaction().map_err(backend)?;
+        transaction
+            .batch_execute("SET LOCAL synchronous_commit=on")
+            .map_err(backend)?;
+        let changed = transaction.execute("UPDATE mmorpg_coordination.zones SET retired=true WHERE zone_id=$1 AND epoch=$2 AND host_id=$3 AND NOT retired AND expires_at<=clock_timestamp()", &[
+            &i64::from(expected.zone_id.get()), &integer(expected.epoch)?, &expected.host_id.as_str(),
+        ]).map_err(backend)?;
+        transaction.commit().map_err(backend)?;
+        Ok(changed == 1)
     }
     #[must_use]
     pub fn cancel_token(&self) -> CancelToken {
@@ -609,14 +628,21 @@ impl HandoffAuthority for PostgresHandoffs {
             }
             let busy = transaction
                 .query_opt(
-                    "SELECT 1 FROM mmorpg_coordination.handoffs WHERE entity_id=$1 AND phase IN (0,1)",
+                    "SELECT transfer_id FROM mmorpg_coordination.handoffs WHERE entity_id=$1 AND phase IN (0,1)",
                     &[&signed(ticket.entity_id.get())],
                 )
                 .map_err(unavailable)?;
-            if busy.is_some() {
-                return Err(ControlPlaneError::EntityTransferInProgress(
-                    ticket.entity_id,
-                ));
+            if let Some(row) = busy {
+                let active = TransferId::new(unsigned(row.get("transfer_id")));
+                let settles = record_in(transaction, active)?
+                    .is_some_and(|arrival| settles_arrival(&arrival, &ticket.source));
+                if !settles {
+                    return Err(ControlPlaneError::EntityTransferInProgress(
+                        ticket.entity_id,
+                    ));
+                }
+                // The accepted destination sends the entity onward (#1096).
+                set_phase(transaction, active, HandoffPhase::Committed)?;
             }
             let (source, destination) = (&ticket.source, &ticket.destination);
             transaction

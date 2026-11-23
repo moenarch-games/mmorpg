@@ -84,6 +84,9 @@ pub struct HandoffHost<B: EntryBackend> {
     /// The connection epoch of each claimed session, for its host inputs.
     sessions: Mutex<BTreeMap<(MatchId, PlayerId), u32>>,
     inbound: Mutex<BTreeMap<TransferId, Inbound>>,
+    /// Accepted departures whose retirement this host could not confirm yet
+    /// (#1096): the zone and the redirect their frozen sessions still wait for.
+    unretired: Mutex<BTreeMap<TransferId, (ZoneId, Redirect)>>,
     link_timeout: Duration,
     next_transfer: AtomicU64,
     /// Resolves threshold entries and binds private runs (#404).
@@ -116,6 +119,7 @@ impl<B: EntryBackend> HandoffHost<B> {
             routes,
             sessions: Mutex::default(),
             inbound: Mutex::default(),
+            unretired: Mutex::default(),
             link_timeout,
             // Transfer IDs only need to be unique; start at a random point.
             next_transfer: AtomicU64::new(RandomState::new().hash_one(std::process::id())),
@@ -227,6 +231,7 @@ impl<B: EntryBackend> HandoffHost<B> {
         if !self.host.is_serving() {
             return;
         }
+        self.retry_retirements();
         for zone in self.zones.values() {
             for due in zone.channel.departures() {
                 if let Err(error) = self.depart(zone, due) {
@@ -236,6 +241,31 @@ impl<B: EntryBackend> HandoffHost<B> {
                         due.player
                     );
                 }
+            }
+        }
+    }
+
+    /// Source: confirms the retirements that failed after their destination
+    /// accepted (#1096). The destination owns those characters whatever
+    /// happens here; this releases their frozen sessions to it.
+    fn retry_retirements(&self) {
+        let Ok(pending) = lock(&self.unretired).map(|unretired| unretired.clone()) else {
+            return;
+        };
+        for (transfer_id, (zone_id, redirect)) in pending {
+            let Some(zone) = self.zones.get(&zone_id) else {
+                continue;
+            };
+            let mut live = self.live(zone, None);
+            live.redirect = Some(redirect);
+            let retired = lock(&self.authority).and_then(|mut authority| {
+                retire_outbound(&mut live, &mut **authority, &zone.lease, transfer_id)
+                    .map_err(message)
+            });
+            if retired.is_ok()
+                && let Ok(mut unretired) = lock(&self.unretired)
+            {
+                unretired.remove(&transfer_id);
             }
         }
     }
@@ -314,6 +344,13 @@ impl<B: EntryBackend> HandoffHost<B> {
             // The destination holds the character's lease now.
             storage.leases.remove(&key);
             lock(&self.sessions)?.remove(&key);
+        }
+        if offered.is_ok()
+            && outcome.is_err()
+            && let Some(redirect) = live.redirect.clone()
+        {
+            // Accepted, but the retirement is unconfirmed: confirm it on a later poll.
+            lock(&self.unretired)?.insert(transfer_id, (zone.lease.zone_id, redirect));
         }
         drop(authority);
         drop(storage);
@@ -544,15 +581,15 @@ mod postgres_host {
     use std::collections::BTreeMap;
     use std::error::Error;
     use std::sync::{Arc, Mutex};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use mmorpg_characters::CharacterStore;
     use mmorpg_characters::postgres::PostgresEntries;
-    use mmorpg_control_plane::HostId;
     use mmorpg_control_plane::postgres::{
         PostgresHandoffs, PostgresInstances, PostgresParties, PostgresZoneDirectory,
         UnconfirmedZoneGrant,
     };
+    use mmorpg_control_plane::{HostId, ZoneLease};
     use mmorpg_core::ZoneId;
     use tokio::sync::mpsc;
 
@@ -581,22 +618,85 @@ mod postgres_host {
         pub timeout: Duration,
         /// How long an emptied Redbrand Depths run stays resumable (#404).
         pub depths_grace: Duration,
+        /// The operator vouches that this host ID's previous process is stopped, so its
+        /// unexpired grants are taken back at once (`MMORPG_CONFIRM_SOURCE_STOPPED=1`).
+        pub confirmed_stopped: bool,
+    }
+
+    /// How often a starting host looks whether its previous grant has expired.
+    const OWN_GRANT_POLL: Duration = Duration::from_millis(250);
+
+    /// Retires the unretired grant `previous` that this host ID's earlier
+    /// process left behind (#1097). The matching ID alone proves nothing: that
+    /// process may be hung, not stopped, and would keep simulating the zone.
+    /// So unless the operator vouches that it stopped, the grant must first
+    /// expire unrenewed. A running host stops serving before its grant's
+    /// deadline by its own clock (the renewal watchdog below), so an expired
+    /// grant has no writer left; a grant that is renewed meanwhile has one.
+    fn retire_own(
+        directory: &mut PostgresZoneDirectory,
+        previous: &ZoneLease,
+        ttl: Duration,
+        confirmed_stopped: bool,
+    ) -> Result<(), String> {
+        if confirmed_stopped {
+            return directory.retire(previous).map_err(message);
+        }
+        let zone = previous.zone_id;
+        let started = Instant::now();
+        let mut announced = false;
+        loop {
+            if directory.retire_expired(previous).map_err(message)? {
+                return Ok(());
+            }
+            match directory.assignment(zone).map_err(message)? {
+                // Its previous process retired it on its way out.
+                Some(current) if current.retired && current.lease.epoch == previous.epoch => {
+                    return Ok(());
+                }
+                Some(current) if !current.retired && current.lease == *previous => {}
+                _ => {
+                    return Err(format!(
+                        "zone {} is being served by another process with host ID {}; stop it first",
+                        zone.get(),
+                        previous.host_id.as_str()
+                    ));
+                }
+            }
+            if started.elapsed() > ttl + Duration::from_secs(1) {
+                return Err(format!(
+                    "zone {}: the previous grant of host ID {} did not expire",
+                    zone.get(),
+                    previous.host_id.as_str()
+                ));
+            }
+            if !announced {
+                announced = true;
+                eprintln!(
+                    "zone {}: waiting for this host ID's previous grant to expire (at most {} s); \
+                     set MMORPG_CONFIRM_SOURCE_STOPPED=1 if its process is known to be stopped",
+                    zone.get(),
+                    ttl.as_secs()
+                );
+            }
+            std::thread::sleep(OWN_GRANT_POLL);
+        }
     }
 
     /// Takes over `zone`'s grant: a first grant, one after a retired owner,
-    /// or this host's own grant from before a restart (its previous process
-    /// has stopped, so the trusted-LAN host retires it itself).
+    /// or this host's own grant from before a restart ([`retire_own`]).
     fn acquire(
         directory: &mut PostgresZoneDirectory,
         zone: ZoneId,
         host: &HostId,
         ttl: Duration,
+        confirmed_stopped: bool,
     ) -> Result<UnconfirmedZoneGrant, String> {
         let expected = match directory.assignment(zone).map_err(message)? {
             None => 0,
             Some(assignment) if assignment.retired => assignment.lease.epoch,
             Some(assignment) if assignment.lease.host_id == *host => {
-                directory.retire(&assignment.lease).map_err(message)?;
+                retire_own(directory, &assignment.lease, ttl, confirmed_stopped)?;
                 assignment.lease.epoch
             }
             Some(assignment) => {
@@ -628,6 +728,7 @@ mod postgres_host {
             grant_ttl,
             timeout,
             depths_grace,
+            confirmed_stopped,
         } = config;
         let zones = zone_ids.clone();
         let (directory, grants, entries, handoffs, parties, instances) =
@@ -640,7 +741,9 @@ mod postgres_host {
                     PostgresZoneDirectory::connect(&url, timeout).map_err(message)?;
                 let grants = zones
                     .iter()
-                    .map(|&zone| acquire(&mut directory, zone, &host_id, grant_ttl))
+                    .map(|&zone| {
+                        acquire(&mut directory, zone, &host_id, grant_ttl, confirmed_stopped)
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
                 let entries = PostgresEntries::connect(&url, timeout).map_err(message)?;
                 let handoffs = PostgresHandoffs::connect(&url, timeout).map_err(message)?;
@@ -730,17 +833,22 @@ mod postgres_host {
             loop {
                 interval.tick().await;
                 let renewals = Arc::clone(&renewals);
-                let renewed = tokio::task::spawn_blocking(move || -> Result<(), String> {
+                let renewal = tokio::task::spawn_blocking(move || -> Result<(), String> {
                     let mut guard = renewals.lock().map_err(message)?;
                     let (directory, grants) = &mut *guard;
                     for grant in grants.iter_mut() {
                         *grant = directory.renew(grant, grant_ttl).map_err(message)?;
                     }
                     Ok(())
-                })
-                .await
-                .map_err(message)
-                .and_then(|result| result);
+                });
+                // The host fences itself by its own clock (#1097): a renewal that began a
+                // third of the lifetime after the last one and has not answered within
+                // another third stops the host, a third before the grant can expire. A
+                // successor may take an expired grant over without asking this process.
+                let renewed = match tokio::time::timeout(grant_ttl / 3, renewal).await {
+                    Ok(joined) => joined.map_err(message).and_then(|result| result),
+                    Err(_) => Err("the directory did not answer in time".into()),
+                };
                 if let Err(error) = renewed {
                     eprintln!("zone grant renewal failed, stopping: {error}");
                     let _ = renew_stop.send(()).await;
@@ -787,5 +895,70 @@ mod postgres_host {
         })
         .await??;
         served
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// #1097: a restarted host takes its own grant back only when the
+        /// previous process is provably gone. Needs PostgreSQL
+        /// (`MMORPG_CHARACTERS_POSTGRES_URL`); skipped without it.
+        #[test]
+        fn a_restart_takes_its_own_grant_back_only_once_it_expired_unrenewed() {
+            let Ok(url) = std::env::var("MMORPG_CHARACTERS_POSTGRES_URL") else {
+                return;
+            };
+            let mut client = ::postgres::Client::connect(&url, ::postgres::NoTls).unwrap();
+            mmorpg_control_plane::postgres::migrate(&mut client).unwrap();
+            client
+                .execute("SELECT pg_advisory_lock($1)", &[&0x4d4d_5a44_5445_5354_i64])
+                .unwrap();
+            let first: i64 = client
+                .query_one(
+                    "SELECT coalesce(max(zone_id),1000)+1 FROM mmorpg_coordination.zones",
+                    &[],
+                )
+                .unwrap()
+                .get(0);
+            let zone = |offset: i64| ZoneId::new(u32::try_from(first + offset).unwrap());
+            let timeout = Duration::from_secs(5);
+            let host = HostId::new("restarting-host").unwrap();
+            let short = Duration::from_millis(600);
+            let mut directory = PostgresZoneDirectory::connect(&url, timeout).unwrap();
+
+            // Crashed: the grant expires unrenewed, and the restart waits for that.
+            let crashed = acquire(&mut directory, zone(0), &host, short, false).unwrap();
+            let started = Instant::now();
+            let next = acquire(&mut directory, zone(0), &host, short, false).unwrap();
+            assert_eq!(next.lease().epoch, crashed.lease().epoch + 1);
+            assert!(started.elapsed() >= Duration::from_millis(300));
+
+            // Hung, not stopped: the grant is renewed meanwhile, so the restart refuses.
+            let live = acquire(&mut directory, zone(1), &host, short, false).unwrap();
+            let renewing = std::thread::spawn({
+                let url = url.clone();
+                move || {
+                    let mut directory = PostgresZoneDirectory::connect(&url, timeout).unwrap();
+                    std::thread::sleep(Duration::from_millis(200));
+                    directory.renew(&live, Duration::from_secs(30)).unwrap()
+                }
+            });
+            let refused = acquire(&mut directory, zone(1), &host, short, false)
+                .err()
+                .expect("a renewed grant has a live holder");
+            assert!(refused.contains("another process"), "{refused}");
+            let live = renewing.join().unwrap();
+
+            // The operator vouches that it is stopped: taken back at once.
+            let started = Instant::now();
+            let vouched = acquire(&mut directory, zone(1), &host, short, true).unwrap();
+            assert_eq!(vouched.lease().epoch, live.lease().epoch + 1);
+            assert!(started.elapsed() < Duration::from_millis(300));
+
+            // Another host's grant is never taken, expired or not.
+            let other = HostId::new("other-host").unwrap();
+            assert!(acquire(&mut directory, zone(1), &other, short, true).is_err());
+        }
     }
 }

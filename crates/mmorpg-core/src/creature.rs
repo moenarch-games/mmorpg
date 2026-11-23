@@ -221,13 +221,9 @@ impl ZoneSimulation {
         content: &Arc<crate::ZoneContent>,
         id: CreatureId,
     ) -> Result<(&CreatureSpawn, &CreatureTemplate), ZoneError> {
-        let spawn = content
-            .creature_spawn(id)
-            .ok_or_else(|| ZoneError::new("creature has no spawn in content"))?;
-        let template = content
-            .creature_template(spawn.template)
-            .ok_or_else(|| ZoneError::new("creature spawn names an unknown template"))?;
-        Ok((spawn, template))
+        content
+            .creature_entry(id)
+            .ok_or_else(|| ZoneError::new("creature has no spawn in content"))
     }
 
     /// The initial random stream of creature `id`'s life `generation` (#861).

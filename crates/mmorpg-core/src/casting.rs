@@ -25,6 +25,7 @@ use crate::ability::{
 };
 use crate::ai::distance_squared;
 use crate::aura::{apply_aura, has_kind, pulse_amount};
+use crate::creature_store::Activity;
 use crate::snapshot::CreatureAi;
 use crate::unit::{COMBAT_LINGER_TICKS, percent_of};
 use crate::{
@@ -66,6 +67,12 @@ struct Stomp {
     bonus: u32,
     radius: i32,
     knockback: i32,
+}
+
+/// Whether a creature's cast step would change nothing (#1086): dead, or neither casting nor
+/// waiting for its ability.
+fn cast_quiet(creature: &crate::creature::CreatureState) -> bool {
+    !creature.is_alive() || (creature.cast.is_none() && creature.ability_timer == 0)
 }
 
 impl ZoneSimulation {
@@ -1325,9 +1332,12 @@ impl ZoneSimulation {
         for player in self.players.values_mut() {
             player.auras.retain(|aura| aura.caster != caster);
         }
-        for creature in self.creatures.values_mut() {
-            creature.auras.retain(|aura| aura.caster != caster);
-        }
+        // A creature with any aura holds its aura bit (#1086), so only those are read.
+        self.creatures.update_active_where(
+            Activity::Auras,
+            |creature| creature.auras.iter().any(|aura| aura.caster == caster),
+            |creature| creature.auras.retain(|aura| aura.caster != caster),
+        );
     }
 
     /// Reports `event` to the players among `units`; when there are none,
@@ -1504,9 +1514,16 @@ impl ZoneSimulation {
                 _ => {}
             }
         }
-        let creatures: Vec<_> = self.creatures.keys().copied().collect();
-        for creature_id in creatures {
+        // Only creatures whose cast bit is set (#1086): one neither casting nor waiting on its
+        // ability would change nothing.
+        let mut after = None;
+        while let Some(creature_id) = self.creatures.next_active(Activity::Cast, after) {
+            after = Some(creature_id);
+            self.tick_work.creatures_visited += 1;
             self.advance_creature_cast(creature_id)?;
+            if self.creatures.get(&creature_id).is_none_or(cast_quiet) {
+                self.creatures.settle(Activity::Cast, creature_id);
+            }
         }
         Ok(())
     }
@@ -1620,12 +1637,13 @@ impl ZoneSimulation {
     }
 
     fn advance_creature_cast(&mut self, creature_id: CreatureId) -> Result<(), ZoneError> {
+        // Read first: a quiet creature keeps its stamp (#1086).
+        if self.creatures.get(&creature_id).is_none_or(cast_quiet) {
+            return Ok(());
+        }
         let Some(creature) = self.creatures.get_mut(&creature_id) else {
             return Ok(());
         };
-        if !creature.is_alive() {
-            return Ok(());
-        }
         let Some(mut cast) = creature.cast else {
             creature.ability_timer = creature.ability_timer.saturating_sub(1);
             return Ok(());
@@ -1935,18 +1953,27 @@ impl ZoneSimulation {
     /// order; damage and heal over time pulse every period, and expired auras
     /// are removed.
     pub(crate) fn advance_auras(&mut self, now: u64) -> Result<(), ZoneError> {
-        let units: Vec<EntityRef> = self
+        let mut units: Vec<EntityRef> = self
             .players
             .iter()
             .filter(|(_, player)| !player.auras.is_empty())
             .map(|(&id, _)| EntityRef::Player(id))
-            .chain(
-                self.creatures
-                    .iter()
-                    .filter(|(_, creature)| !creature.auras.is_empty())
-                    .map(|(&id, _)| EntityRef::Creature(id)),
-            )
             .collect();
+        // Only creatures whose aura bit is set (#1086); one without auras settles.
+        let mut after = None;
+        while let Some(id) = self.creatures.next_active(Activity::Auras, after) {
+            after = Some(id);
+            self.tick_work.creatures_visited += 1;
+            if self
+                .creatures
+                .get(&id)
+                .is_some_and(|creature| !creature.auras.is_empty())
+            {
+                units.push(EntityRef::Creature(id));
+            } else {
+                self.creatures.settle(Activity::Auras, id);
+            }
+        }
         for unit in units {
             // Each aura present at the start of the pass counts down once, in
             // slot order, even when a pulse removes others (a broken root, an
@@ -2071,14 +2098,18 @@ impl ZoneSimulation {
         }
         player.health += healed;
         let healed_unit = EntityRef::Player(player_id);
-        for creature in self.creatures.values_mut() {
-            if creature.is_alive()
-                && creature.ai == CreatureAi::Engaged
-                && creature
-                    .threat
-                    .iter()
-                    .any(|entry| entry.entity == healed_unit)
-            {
+        // An engaged creature always holds its swing bit (#1086), so only those are read.
+        self.creatures.update_active_where(
+            Activity::Swing,
+            |creature| {
+                creature.is_alive()
+                    && creature.ai == CreatureAi::Engaged
+                    && creature
+                        .threat
+                        .iter()
+                        .any(|entry| entry.entity == healed_unit)
+            },
+            |creature| {
                 creature.add_threat(healer, healed / 2);
                 // Healing a player a boss fights is meaningful contribution (#276, 5.1.74).
                 if let (EntityRef::Player(healer), Some(encounter)) =
@@ -2086,8 +2117,8 @@ impl ZoneSimulation {
                 {
                     encounter.contribute(healer);
                 }
-            }
-        }
+            },
+        );
         if let EntityRef::Player(healer) = healer {
             self.gain_faith(healer, healed);
         }

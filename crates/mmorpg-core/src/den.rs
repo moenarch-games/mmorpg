@@ -210,9 +210,7 @@ impl ZoneSimulation {
                 let to = at(anchor, slot);
                 let seen = [here, to].into_iter().any(|point| {
                     self.interest
-                        .near(point[0], point[1], crate::CREATURE_WAKE_RADIUS_UNITS)
-                        .into_iter()
-                        .any(|entity| matches!(entity, EntityRef::Player(_)))
+                        .player_near(point[0], point[1], crate::CREATURE_WAKE_RADIUS_UNITS)
                 });
                 if seen {
                     continue;

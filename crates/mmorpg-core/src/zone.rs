@@ -285,6 +285,12 @@ impl PlayerState {
 pub struct ZoneTickWork {
     /// Living creatures whose AI decision was evaluated, including idle units.
     pub creature_ai_evaluations: usize,
+    /// Creature visits of the tick's creature systems (decisions, casts, auras, swings and
+    /// corpse timers, #1086): each system visits only the creatures its activity bit holds.
+    pub creatures_visited: usize,
+    /// Interest query results that outgrew their buffer during the tick, so allocated
+    /// (#1086): the creature tick's own queries reuse warm buffers.
+    pub interest_query_allocations: usize,
     /// The engine's own report, present only after a successful physics step.
     pub physics: Option<crate::physics::StepStats>,
 }
@@ -298,10 +304,12 @@ pub struct ZoneSimulation {
     pub(crate) rng: ZoneRng,
     pub(crate) loot_rng: ZoneRng,
     pub(crate) players: BTreeMap<PlayerId, PlayerState>,
-    pub(crate) creatures: crate::revisioned::Revisioned<BTreeMap<CreatureId, CreatureState>>,
+    pub(crate) creatures: crate::creature_store::CreatureStore,
     pub(crate) interest: InterestIndex,
     pub(crate) interest_work: InterestMaintenanceStats,
     pub(crate) tick_work: ZoneTickWork,
+    /// Reused buffers of the creature tick (#1086); never canonical state.
+    pub(crate) creature_scratch: crate::creature_store::CreatureScratch,
     /// Door states by ID; absent means closed and never moved (#158).
     pub(crate) doors:
         crate::revisioned::Revisioned<BTreeMap<crate::DoorId, crate::door::DoorState>>,
@@ -506,10 +514,11 @@ impl ZoneSimulation {
             gathering: crate::GatheringState::full(content.gather_nodes()).into(),
             content,
             players: BTreeMap::new(),
-            creatures: crate::revisioned::Revisioned::default(),
+            creatures: crate::creature_store::CreatureStore::default(),
             interest,
             interest_work: InterestMaintenanceStats::default(),
             tick_work: ZoneTickWork::default(),
+            creature_scratch: crate::creature_store::CreatureScratch::default(),
             doors: crate::revisioned::Revisioned::default(),
             projectiles: BTreeMap::new(),
             next_projectile: 1,
@@ -580,6 +589,27 @@ impl ZoneSimulation {
         self.tick_work
     }
 
+    /// With `on`, every creature system visits every creature each tick, as before #1086:
+    /// the simple reference that tests compare the activity-driven tick against. Never
+    /// changes an outcome, only the work.
+    #[doc(hidden)]
+    pub fn visit_every_creature(&mut self, on: bool) {
+        self.creatures.set_exhaustive(on);
+    }
+
+    /// Interest query results of this zone's indexes that outgrew their buffer.
+    fn interest_query_allocations(&self) -> usize {
+        self.interest.allocations() + self.creatures.resting_allocations()
+    }
+
+    /// How many creatures the decision step would visit now (#1086); workload evidence only.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn awake_creatures(&self) -> usize {
+        self.creatures
+            .active_count(crate::creature_store::Activity::Decide)
+    }
+
     pub fn add_player(&mut self, player_id: PlayerId) -> Result<(), ZoneError> {
         if self.players.contains_key(&player_id) {
             return Err(ZoneError::new("player already exists in zone"));
@@ -630,15 +660,26 @@ impl ZoneSimulation {
         for minion in self.minions_of(player_id) {
             self.dismiss_minion(minion);
         }
-        for creature in self.creatures.values_mut() {
-            crate::creature::forget_departed(&mut creature.threat, &mut creature.cast, entity);
-            crate::creature::release_departed_loot(
-                &mut creature.tapped_by,
-                &mut creature.loot_party,
-                &mut creature.loot,
-                player_id,
-            );
-        }
+        // Only the creatures it concerns change (#1086).
+        self.creatures.update_where(
+            |creature| {
+                creature.threat.iter().any(|entry| entry.entity == entity)
+                    || creature
+                        .cast
+                        .is_some_and(|cast| cast.target == Some(entity))
+                    || creature.tapped_by == Some(player_id)
+                    || creature.loot_party.contains(&player_id)
+            },
+            |creature| {
+                crate::creature::forget_departed(&mut creature.threat, &mut creature.cast, entity);
+                crate::creature::release_departed_loot(
+                    &mut creature.tapped_by,
+                    &mut creature.loot_party,
+                    &mut creature.loot,
+                    player_id,
+                );
+            },
+        );
         for player in self.players.values_mut() {
             if player.cast.is_some_and(|cast| cast.target == Some(entity)) {
                 player.cast = None;
@@ -908,6 +949,7 @@ impl ZoneSimulation {
             rewards.begin_tick();
         }
         self.tick_work = ZoneTickWork::default();
+        let queries = self.interest_query_allocations();
         for player in self.players.values_mut() {
             player.events.clear();
             player.chat.clear();
@@ -963,6 +1005,8 @@ impl ZoneSimulation {
         self.advance_private_homes()?;
         // Where bodies ended this tick, for a match with hit rewind (#680).
         self.record_rewind_frame(now)?;
+        self.tick_work.interest_query_allocations =
+            self.interest_query_allocations().saturating_sub(queries);
         Ok(())
     }
 
@@ -1199,18 +1243,23 @@ impl ZoneSimulation {
     /// only when a cell changes. Corpses, NPCs and standing props (#288) do not move.
     fn update_interest(&mut self) -> Result<(), ZoneError> {
         let content = &self.content;
-        let bodies = self.players.keys().map(|&id| EntityRef::Player(id)).chain(
-            self.creatures
-                .iter()
-                .filter(|&(&id, creature)| {
-                    creature.is_alive()
-                        && content
-                            .creature_spawn(id)
-                            .and_then(|spawn| content.creature_template(spawn.template))
-                            .is_some_and(|template| template.prop().is_none())
-                })
-                .map(|(&id, _)| EntityRef::Creature(id)),
-        );
+        let creatures = &self.creatures;
+        // An awake creature's body holds its decision bit (#1086); the asleep ones are
+        // skipped below anyway, so only those creatures are read.
+        let awake = creatures
+            .active(crate::creature_store::Activity::Decide)
+            .filter(|&id| {
+                creatures.get(&id).is_some_and(CreatureState::is_alive)
+                    && content
+                        .creature_entry(id)
+                        .is_some_and(|(_, template)| template.prop().is_none())
+            })
+            .map(EntityRef::Creature);
+        let bodies = self
+            .players
+            .keys()
+            .map(|&id| EntityRef::Player(id))
+            .chain(awake);
         let minions = self.minions.keys().map(|&id| EntityRef::Minion(id));
         for entity in bodies.chain(minions) {
             let body = self

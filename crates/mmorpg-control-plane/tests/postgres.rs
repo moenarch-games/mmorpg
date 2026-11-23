@@ -155,14 +155,48 @@ fn postgres_handoffs_are_fenced_idempotent_and_decided_at_acceptance() {
         handoffs.accept(again.transfer_id, &east_lease),
         Err(ControlPlaneError::TransferAborted(again.transfer_id))
     );
+    let third = TransferId::new(transfer.get() - 2);
     assert_eq!(
         handoffs
             .prepare(HandoffTicket {
-                transfer_id: TransferId::new(transfer.get() - 2),
-                ..again
+                transfer_id: third,
+                ..again.clone()
             })
             .unwrap(),
         HandoffPhase::Prepared
+    );
+
+    // #1096: the source never confirms the accepted transfer, yet the
+    // destination zone sends the entity onward, which settles the arrival.
+    let back = HandoffTicket {
+        transfer_id: TransferId::new(transfer.get() - 3),
+        entity_id: entity,
+        source: east_lease.clone(),
+        destination: successor.lease().clone(),
+    };
+    assert_eq!(
+        handoffs.prepare(back.clone()),
+        Err(ControlPlaneError::EntityTransferInProgress(entity))
+    );
+    assert_eq!(
+        handoffs.accept(third, &east_lease).unwrap(),
+        HandoffPhase::Accepted
+    );
+    assert_eq!(
+        handoffs.prepare(HandoffTicket {
+            transfer_id: TransferId::new(transfer.get() - 4),
+            ..again
+        }),
+        Err(ControlPlaneError::EntityTransferInProgress(entity))
+    );
+    assert_eq!(handoffs.prepare(back).unwrap(), HandoffPhase::Prepared);
+    assert_eq!(
+        handoffs.record(third).unwrap().unwrap().phase,
+        HandoffPhase::Committed
+    );
+    assert_eq!(
+        handoffs.commit(third, successor.lease()).unwrap(),
+        HandoffPhase::Committed
     );
 }
 
@@ -372,4 +406,29 @@ fn postgres_directory_persists_owner_expiry_and_epoch_without_resurrecting_write
             .is_err()
     );
     transaction.rollback().unwrap();
+
+    // #1097: a holder's own previous grant is retired on expiry only, never while valid.
+    let own = ZoneId::new(zone.get() + 1);
+    let host = HostId::new("restarting").unwrap();
+    let mut directory = PostgresZoneDirectory::connect(&url, timeout).unwrap();
+    let short = directory
+        .acquire(own, host.clone(), 0, Duration::from_millis(300))
+        .unwrap();
+    assert!(!directory.retire_expired(short.lease()).unwrap());
+    directory
+        .acquire(
+            own,
+            host.clone(),
+            short.lease().epoch,
+            Duration::from_secs(30),
+        )
+        .err()
+        .expect("an unexpired, unretired grant cannot be replaced");
+    std::thread::sleep(Duration::from_millis(400));
+    assert!(directory.retire_expired(short.lease()).unwrap());
+    assert!(!directory.retire_expired(short.lease()).unwrap());
+    let next = directory
+        .acquire(own, host, short.lease().epoch, Duration::from_secs(30))
+        .unwrap();
+    assert_eq!(next.lease().epoch, short.lease().epoch + 1);
 }

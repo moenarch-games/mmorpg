@@ -812,9 +812,18 @@ impl ZoneSimulation {
             self.interest_work.bucket_removes += 1;
         }
         self.forget_forced_unit(entity);
-        for creature in self.creatures.values_mut() {
-            crate::creature::forget_departed(&mut creature.threat, &mut creature.cast, entity);
-        }
+        // Only the creatures it concerns change (#1086).
+        self.creatures.update_where(
+            |creature| {
+                creature.threat.iter().any(|entry| entry.entity == entity)
+                    || creature
+                        .cast
+                        .is_some_and(|cast| cast.target == Some(entity))
+            },
+            |creature| {
+                crate::creature::forget_departed(&mut creature.threat, &mut creature.cast, entity);
+            },
+        );
         for player in self.players.values_mut() {
             if player.target == Some(entity) {
                 player.target = None;
@@ -858,6 +867,15 @@ impl ZoneSimulation {
 
     /// Step 7: minions whose time ran out crumble, in ID order; companions (#296) are not timed.
     pub(crate) fn age_minions(&mut self) -> Result<(), ZoneError> {
+        // Read first: with no timed minion nothing changes, and the minions keep their stamp
+        // (#1086).
+        if self
+            .minions
+            .values()
+            .all(|minion| is_companion(minion.ability))
+        {
+            return Ok(());
+        }
         let mut expired = Vec::new();
         for minion in self.minions.values_mut() {
             if is_companion(minion.ability) {

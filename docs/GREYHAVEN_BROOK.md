@@ -70,14 +70,14 @@ shallow village brook is unaffected; a swimmer in a 1.5 m/s current drifts 3 m i
 thresholds and current speeds are tuning, not approved numbers. Splash and ripple presentation
 for floating props is not part of this slice.
 
-`cargo test -p mmorpg-core --test water_current --locked` checks a lid floating, drifting and
+`cargo test -p mmorpg-core --test world --locked water_current::` checks a lid floating, drifting and
 beaching in the real brook, a crate settling afloat and a boulder sinking in Stillwater, and the
 character rule, each with exact twin replay and midpoint recovery; the `vale-brook-float` physics
 A/B workload ([PHYSICS_AB.md](PHYSICS_AB.md)) does the same on both backends.
 
 ## Focused validation
 
-- `cargo test -p mmorpg-core --test vale_basin --test village_brook --locked`: all six climbs, rim trails, cave approach, bridge, shallow water exit, gate, resident alley, low culvert and checkpoint continuation.
+- `cargo test -p mmorpg-core --test world --locked -- vale_basin:: village_brook::`: all six climbs, rim trails, cave approach, bridge, shallow water exit, gate, resident alley, low culvert and checkpoint continuation.
 - `cargo check -p mmorpg-client --locked`: native integration compiled.
 - `cd web && bun run build`: WASM and browser production build.
 - `cd web && bun test tests/scene-building.test.ts`: shared scene integration (before the final basin silhouette adjustment).

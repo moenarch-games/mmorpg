@@ -9,5 +9,5 @@ mod acceptance;
 mod authored_backend;
 
 #[cfg(target_arch = "wasm32")]
-#[path = "../tests/authored_collision.rs"]
+#[path = "../tests/world/authored_collision.rs"]
 mod authored_collision;

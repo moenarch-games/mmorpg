@@ -13,6 +13,7 @@ import {
 } from "@moritzbrantner/three-lighting";
 import type { RendererMaterialRequest } from "@moritzbrantner/three-d-renderer";
 import { profileRenderPasses } from "./frame-profile";
+import { shadowLodReady } from "./shadow-lod";
 import { loadWasm, wasm } from "../wasm";
 
 /**
@@ -48,9 +49,20 @@ export const EMISSIVE_NITS = 80;
  * draw calls a frame instead of 2 700), but a fourth cascade still costs about a tenth of the frame rate (45 instead of
  * 50 fps in Chrome on an RTX 3060 Ti), so three cascades remain.
  */
-const SUN_SHADOWS: SunShadows = {
+export const SUN_SHADOWS: SunShadows = {
   numCascades: 3, minDistance: 0.2, firstCascadeFarBound: 12, maxDistance: 160, overlapProportion: 0.2, depthBias: 0.02, normalBias: 1.8,
 };
+/**
+ * The far cascades take turns (#1083): the near one is redrawn every frame, the two far ones every other frame each,
+ * so a frame draws two cascades. A kept cascade holds its map and matrices (no swimming) and is redrawn early when
+ * the view leaves it (three-lighting `cascadeUpdateIntervals`).
+ */
+export const CASCADE_UPDATE_INTERVALS: readonly number[] = [1, 2, 2];
+/**
+ * A caster (or instance) whose bounding radius is under this many texels of a cascade casts nothing there (#1083):
+ * under the Gaussian filter it would leave a faint smudge of a few texels (three-lighting `minCasterTexels`).
+ */
+export const MIN_CASTER_TEXELS = 2;
 /** The presentation materials' surface (`standard_material`). */
 const ROUGHNESS = 0.86;
 const METALLIC = 0.02;
@@ -159,10 +171,12 @@ export class GreyhavenLighting {
     void Promise.all([loadToneMappingLuts({
       tonyMcMapface: `${base}luts/tony_mc_mapface.ktx2`,
       agx: `${base}luts/AgX-default_contrast.ktx2`,
-    }), loadWasm()]).then(([luts]) => {
+    }), loadWasm(), shadowLodReady]).then(([luts]) => {
       const lighting = new Lighting(luts);
       lighting.tonemapping = "tonyMcMapface";
       lighting.shadowFilter = "gaussian";
+      lighting.cascadeUpdateIntervals = [...CASCADE_UPDATE_INTERVALS];
+      lighting.minCasterTexels = MIN_CASTER_TEXELS;
       const shared = lightingTables();
       this.#dayCycle = new DayCycle({ noonElevation: THREE.MathUtils.degToRad(shared.noonElevationDegrees), moonLagHours: shared.moonLagHours });
       this.#lighting = lighting;

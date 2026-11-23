@@ -4,10 +4,12 @@
 # beside the many short tests instead of after them. Higher priority starts earlier (default 0).
 
 [[profile.default.overrides]]
-# Whole-journey runs of minutes each.
+# Whole-journey runs of minutes each. mmorpg-core's integration tests are grouped by theme
+# (#1087), so a former test file is a module of its theme's binary.
 filter = """
-binary(quest_chain) | binary(night_raid) | binary(highlands) | binary(starter_acceptance)
-| binary(marsh) | binary(farmland) | binary(combat_workload)
+(binary_id(mmorpg-core::content)
+  & test(/^(quest_chain|night_raid|highlands|starter_acceptance|marsh|farmland)::/))
+| binary(combat_workload)
 """
 priority = 50
 

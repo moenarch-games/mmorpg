@@ -12,7 +12,7 @@
 //! touch the bed. Three float beside the Causeway, clear of its raised way, and the approach and
 //! the island hold nothing else: the drowned watchtower looks dangerous without the walk being
 //! blocked. A viewer anywhere in the region keeps room for other players inside the protocol's
-//! 35-entity packet budget (`tests/marsh_creatures.rs`).
+//! 35-entity packet budget (`tests/content/marsh_creatures.rs`).
 
 use crate::content::CreatureSpawn;
 use crate::{CreatureId, CreatureTemplateId};

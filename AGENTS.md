@@ -42,6 +42,8 @@ Lookup is read-only and does not replace the full completion gate or required na
 | `mmorpg-world-studio` | Local web app over the capture, paint-import and agent reconciliation workflow (tooling; reads no game crate, loopback only; `docs/WORLD_STUDIO.md`) |
 | `web/` | GitHub Pages single-player tech demo over the WASM local host; no MMO authority |
 
+`mmorpg-core`'s integration tests are four themed binaries, `tests/{combat,world,zone,content}/main.rs` (#1087). Add a new test file as a `mod` of its theme, not as a new top-level `tests/*.rs` binary, and select a former file's tests by module (`cargo test -p mmorpg-core --test zone interest::`).
+
 ## Commands
 
 ```sh
