@@ -195,8 +195,8 @@ pub use home::{
 pub use hunt::{HuntOutcome, HuntOuting};
 pub use interest::{InterestMaintenanceStats, InterestQueryStats, PlayerProjection};
 pub use inventory::{
-    INVENTORY_SLOTS, ITEM_CATALOG, Inventory, InventoryError, ItemId, ItemStack, ItemTemplate,
-    item_template,
+    GreatWeapon, INVENTORY_SLOTS, ITEM_CATALOG, Inventory, InventoryError, ItemId, ItemStack,
+    ItemTemplate, item_template,
 };
 pub use landmark::{Landmark, LandmarkKind};
 pub use loot::{

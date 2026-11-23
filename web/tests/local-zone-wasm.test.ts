@@ -541,6 +541,7 @@ describe("WASM local zone combat intents", () => {
       "Padded Trousers", "Worn Boots", "Wolf Pelt", "Sunken Relic", "Brute-Breaker Mace", "Greyfang Scout Jerkin", "Hollow-Delver's Cowl", "Thornreaver Blade", "Captain's Scarred Brigandine", "Redbrand Command Signet", "Marshal's Commendation Greaves",
       "Boar Tusk", "Stolen Grain Sack", "Lurker Scale", "Redbrand Orders", "Militia Spear",
       "Fine Militia Shortsword", "Balanced Militia Shortsword", "Long-hafted Militia Spear", "Garrick's Cleaver", "Iron Ore", "Boar Hide", "Hollowpine Boar-Spear", "Supply Sack",
+      "Ironbound Maul", "Smith's Great Hammer", "Woodsman's Great Axe", "Outpost Greatsword",
     ]);
     expect([...catalog.creatureTemplates.values()].map((template) => template.name)).toEqual([
       "Timber Wolf", "Young Boar", "Grain Rat", "Field Marauder", "Mirefin Lurker", "Redbrand Bandit", "Garrick Redbrand",

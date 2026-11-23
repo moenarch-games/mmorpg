@@ -72,10 +72,14 @@ pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 4 + 12 + 3 + 2 + 1 + 1 + 1;
 const SITTING_BIT: u8 = 0x80;
 /// The appearance word's high bit on a player record: the weapon is drawn (#802).
 const DRAWN_BIT: u32 = 0x8000_0000;
-/// The appearance word's bits 24–26 on a player record: 1 + its weapon family's code, 0 for
-/// none (#914).
-const WEAPON_SHIFT: u32 = 24;
-const WEAPON_MASK: u32 = 0x0700_0000;
+/// The appearance word's bits 19–22 on a player record: 1 + its weapon family's code, 0 for
+/// none (#914; four bits since the two-handed family, #1073).
+const WEAPON_SHIFT: u32 = 19;
+const WEAPON_MASK: u32 = 0x0078_0000;
+/// The appearance word's bits 24–26 on a player record: 1 + its great weapon's code, 0 for
+/// none (#1073).
+const GREAT_SHIFT: u32 = 24;
+const GREAT_MASK: u32 = 0x0700_0000;
 /// The appearance word's bits 27–30 on a player record: 1 + its named weapon's code, 0 for none
 /// (#918).
 const NAMED_SHIFT: u32 = 27;
@@ -547,11 +551,13 @@ fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), P
     payload.push(entity_kind_code(entity.kind));
     payload.extend_from_slice(&entity.id.to_be_bytes());
     if (entity.kind == EntityKind::Player
-        && entity.appearance & (DRAWN_BIT | WEAPON_MASK | NAMED_MASK | SHIFTED_BIT) != 0)
+        && entity.appearance & (DRAWN_BIT | WEAPON_MASK | GREAT_MASK | NAMED_MASK | SHIFTED_BIT)
+            != 0)
         || (entity.kind != EntityKind::Player
             && (entity.flags.weapon_drawn
                 || entity.flags.weapon.is_some()
                 || entity.flags.named_weapon.is_some()
+                || entity.flags.great_weapon.is_some()
                 || entity.flags.shapeshifted))
     {
         return Err(ProtocolError::new("invalid drawn weapon appearance"));
@@ -564,11 +570,16 @@ fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), P
         .flags
         .named_weapon
         .map_or(0, |named| (u32::from(named.code()) + 1) << NAMED_SHIFT);
+    let great = entity
+        .flags
+        .great_weapon
+        .map_or(0, |great| (u32::from(great.code()) + 1) << GREAT_SHIFT);
     // The player-only high bits are free in the appearance word. Threat remains
     // its own flag; NPC and creature appearance IDs are untouched.
     payload.extend_from_slice(
         &(entity.appearance
             | weapon
+            | great
             | named
             | if entity.flags.shapeshifted {
                 SHIFTED_BIT
@@ -1103,8 +1114,18 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
                 .ok_or_else(|| ProtocolError::new("invalid named weapon"))?,
         ),
     };
+    let great_weapon = match (encoded_appearance & GREAT_MASK) >> GREAT_SHIFT {
+        _ if kind != EntityKind::Player => None,
+        0 => None,
+        code => Some(
+            u8::try_from(code - 1)
+                .ok()
+                .and_then(mmorpg_core::GreatWeapon::from_code)
+                .ok_or_else(|| ProtocolError::new("invalid great weapon"))?,
+        ),
+    };
     let appearance = if kind == EntityKind::Player {
-        encoded_appearance & !(DRAWN_BIT | WEAPON_MASK | NAMED_MASK | SHIFTED_BIT)
+        encoded_appearance & !(DRAWN_BIT | WEAPON_MASK | GREAT_MASK | NAMED_MASK | SHIFTED_BIT)
     } else {
         encoded_appearance
     };
@@ -1206,6 +1227,7 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
             weapon_drawn,
             weapon,
             named_weapon,
+            great_weapon,
             shapeshifted,
             hostile,
             attackable,
@@ -1681,6 +1703,7 @@ pub(crate) mod tests {
                         weapon_drawn: false,
                         weapon: None,
                         named_weapon: None,
+                        great_weapon: None,
                         shapeshifted: false,
                         hostile: true,
                         attackable: true,
@@ -2497,6 +2520,7 @@ pub(crate) mod tests {
                         weapon_drawn: false,
                         weapon: None,
                         named_weapon: None,
+                        great_weapon: None,
                         shapeshifted: false,
                         hostile: true,
                         attackable: true,
@@ -2890,6 +2914,11 @@ mod posture_tests {
             player.flags.weapon = Some(family);
             player.flags.named_weapon = Some(mmorpg_core::NamedWeapon::GarricksCleaver);
             assert_eq!(round_trip(&player).unwrap(), player);
+            player.flags.named_weapon = None;
+            for great in (0..4).map(mmorpg_core::GreatWeapon::from_code) {
+                player.flags.great_weapon = Some(great.unwrap());
+                assert_eq!(round_trip(&player).unwrap(), player);
+            }
         }
         let mut creature = record(EntityKind::Creature, PostureView::Free);
         creature.flags.weapon = Some(mmorpg_core::WeaponFamily::Spear);
