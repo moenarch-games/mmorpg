@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emits `coding-tooling/work-evidence/v1` for `.performance/contract.json` (#138, #645, #1009, #1057, #1058).
+"""Emits `coding-tooling/work-evidence/v1` for `.performance/contract.json` (#138, #645, #855, #1009, #1057, #1058).
 
 Runs the deterministic zone (`mmorpg-protocol`) and client presentation
 (`mmorpg-presentation`, `mmorpg-wasm`) work examples and wraps their samples with the
@@ -17,6 +17,7 @@ EXAMPLES = [
     ("mmorpg-presentation", "presentation_work"),
     ("mmorpg-wasm", "projection_ingest"),
     ("mmorpg-wasm", "unit_layout"),
+    ("mmorpg-wasm", "seeded_content"),
 ]
 
 
