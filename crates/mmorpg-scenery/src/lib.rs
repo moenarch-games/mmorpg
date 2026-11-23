@@ -15,7 +15,7 @@
 //! # Presentation-only relief
 //!
 //! The original valley's walkable ground is physically flat at y = 0; the outer valley's
-//! hills (#159) are physical too, a core-authored terrain the zone's Rapier physics walks
+//! hills (#159) are physical too, a core-authored terrain the zone's physics walks
 //! units on ([`Scenery::ground_at`]). [`Scenery::height_at`] adds, on top of that ground, at
 //! most ±0.6 m of relief inside the playable square, flattened to exactly 0
 //! under and around structures, roads, the spawn plaza and water, and rises to

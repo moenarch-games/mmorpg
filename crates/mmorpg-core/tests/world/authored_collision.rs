@@ -1,4 +1,4 @@
-//! Authored surfaces on production Rapier: Redbrand's cave and Millbrook's round windmill.
+//! Authored surfaces on production physics: Redbrand's cave and Millbrook's round windmill.
 use mmorpg_core::{ZoneCommand, ZoneContent, ZoneId, ZoneSimulation, greyhaven_vale};
 use std::sync::Arc;
 

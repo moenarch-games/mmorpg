@@ -1,4 +1,4 @@
-//! Greyhaven's inhabited brook crossing on authoritative Rapier terrain.
+//! Greyhaven's inhabited brook crossing on authoritative physics terrain.
 use mmorpg_core::{WaterMode, ZoneCommand, ZoneId, ZoneSimulation, greyhaven_vale};
 use std::sync::Arc;
 struct Walker {

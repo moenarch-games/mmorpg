@@ -285,8 +285,8 @@ impl RigidBody {
             round(from_units(bounds.position)),
             round(from_units(bounds.half_extents)),
         );
-        // Bounds used by nearby queries must be centred on the actual bounds. The Rapier mesh
-        // stays relative to the authored origin instead (see insert).
+        // Bounds used by nearby queries must be centred on the actual bounds. The backend's
+        // mesh stays relative to the authored origin instead (see insert).
         body.mesh = Some(std::sync::Arc::new(mesh.clone()));
         Ok(body)
     }
@@ -515,7 +515,7 @@ pub enum PieceShape {
     Sphere,
 }
 
-/// A short-lived dynamic rigid body (#288): one piece of a broken prop. Rapier integrates it
+/// A short-lived dynamic rigid body (#288): one piece of a broken prop. The backend integrates it
 /// under gravity against the fixed world (content, terrain, doors, NPCs and standing props);
 /// units neither push it nor feel it. Like every body here its state is the game's, so a
 /// restored zone continues it exactly.

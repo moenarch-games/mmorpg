@@ -3,7 +3,7 @@
 //! The `greyhaven-nature` bundle's three rocks each carry a `collisionProxy` convex hull in the
 //! rock's own glTF frame (metres, +Y up, footprint-base-centre origin). [`PROXIES`]
 //! transcribes those hulls and the rocks' bounds in units. A rock collider keeps its box (the
-//! zone's footprint, interest and placement rules read boxes) and Rapier collides with the
+//! zone's footprint, interest and placement rules read boxes) and physics collides with the
 //! proxy fitted into it: the rock's bounds map onto the box, turned by whole quarter turns.
 //! Clients draw the same rock with the same fit, so the drawn rock and its collision agree.
 

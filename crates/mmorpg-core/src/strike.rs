@@ -13,7 +13,7 @@
 //! - the band is a height range above the Warden's feet ([`StrikeHeight`]);
 //!   a unit is covered when its physics body's vertical extent overlaps
 //!   it, so a high slash passes over a wolf and a low one under nothing;
-//! - static content colliders block the sweep through the Rapier physics world
+//! - static content colliders block the sweep through the physics world
 //!   ray query that line of sight uses.
 //!
 //! The nearest covered living unit (ties in `EntityRef` order) takes the

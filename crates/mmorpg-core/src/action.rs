@@ -52,7 +52,7 @@
 //!   every class: airborne, then a landing recovery. [`MovementRule`]s give
 //!   an action phase bounded [`Movement`] (steering, kept momentum, an
 //!   acceleration limit) that the zone turns into the controller's desired
-//!   velocity, so Rapier still resolves every contact; running phases
+//!   velocity, so physics still resolves every contact; running phases
 //!   combine to the most restrictive values. Edges out of a landing
 //!   ([`EdgeId::LandingToMelee`] and its siblings, anchored at touchdown)
 //!   win over the landing's hold, end its recovery and may carry an
@@ -359,7 +359,7 @@ pub enum Effect {
     /// The follow-up launches the player (Atlas 5.9.2): `forward_cms` cm/s
     /// along its facing (negative: backward) is added to its horizontal
     /// velocity, and its vertical velocity becomes at least `up_cms` cm/s,
-    /// for the physics step of the tick it resolves in. Rapier still resolves
+    /// for the physics step of the tick it resolves in. Physics still resolves
     /// every contact. At most [`MAX_IMPULSE_FORWARD_CMS`] and
     /// [`MAX_IMPULSE_UP_CMS`].
     Impulse { forward_cms: i16, up_cms: u16 },
@@ -418,7 +418,7 @@ pub struct WindowModifier {
 }
 
 /// Bounded movement behavior of an action phase (Atlas 5.9.2). The zone
-/// hands the result to Rapier's character controller as the desired
+/// hands the result to the physics character controller as the desired
 /// horizontal velocity, so collision, support and clearance stay
 /// authoritative; nothing here moves a body by itself.
 ///

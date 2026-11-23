@@ -2,19 +2,20 @@
 //!
 //! A movable prop is a breakable prop (#288) whose body the zone moves: Shield Bash, Charge,
 //! blasts, stomps and shoves give it a horizontal velocity instead of a forced move, and each
-//! tick Rapier slides it upright (it never tips) under gravity with friction, stopped by walls,
+//! tick physics slides it upright (it never tips) under gravity with friction, stopped by walls,
 //! other props and units, until it comes to rest. Units meet it as a fixed box where it stands.
 //! Its exact `f32` position and velocity are the creature record's in canonical snapshots, so a
-//! restored zone continues a slide exactly. The dynamics run on Rapier in both physics arms
-//! (physics-engine parks dynamic bodies), like debris.
+//! restored zone continues a slide exactly. Like debris, the dynamics run in Physics Engine's
+//! isolated response world in production (Atlas 2.1.i647); the `physics-ab` Rapier oracle
+//! runs its own.
 
 use crate::entity::body_id;
 use crate::physics::{BodyId, DebrisBody, RigidBody, Vec3i};
 use crate::zone::physics_error;
 use crate::{CreatureId, EntityRef, ZoneError, ZoneSimulation};
 
-/// Effective sliding friction of a prop on the ground (Rapier averages the prop's 0.8 with the
-/// fixed world's 0.5), so a push of `d` units slides it about `d`.
+/// Effective sliding friction of a prop on the ground (the physics averages the prop's 0.8 with
+/// the fixed world's 0.5, as Rapier does), so a push of `d` units slides it about `d`.
 const SLIDE_FRICTION: f32 = 0.65;
 
 /// A movable prop's exact state while it stands.
@@ -98,7 +99,7 @@ impl ZoneSimulation {
         true
     }
 
-    /// After the physics step: every moving prop slides one tick (Rapier, upright), then its
+    /// After the physics step: every moving prop slides one tick (physics, upright), then its
     /// fixed box follows to its rounded centre. Returns how many moved.
     pub(crate) fn advance_movable_props(&mut self) -> Result<usize, ZoneError> {
         let moving: Vec<_> = self

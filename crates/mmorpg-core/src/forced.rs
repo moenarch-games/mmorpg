@@ -5,7 +5,7 @@
 //! with the same immunity. While the unit is immune the creature's body simply blocks it.
 //!
 //! A forced move overrides a unit's horizontal motion for a few ticks: the zone sets the body's
-//! velocity right before the physics step, so Rapier's character controller still resolves it
+//! velocity right before the physics step, so the character controller still resolves it
 //! against the world — a wall stops it, and a move the world stopped ends early. Every forced
 //! move is followed by [`FORCED_IMMUNITY_TICKS`] of immunity, so nobody is chain-juggled; a unit
 //! already being moved or still immune ignores further forced moves. Players (including PvP

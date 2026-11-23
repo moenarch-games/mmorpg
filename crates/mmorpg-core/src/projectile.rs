@@ -9,7 +9,7 @@
 //! combo follow-up's, or a creature's) re-plans every tick the ballistic arc that lands on its
 //! target's body centre after the remaining flight ticks, so it follows a moving target but
 //! still flies a visible arc. Each tick a projectile sweeps the segment it travels with a
-//! Rapier ray, so it never tunnels: walls, props, terrain and units in the way stop it, and a
+//! physics ray, so it never tunnels: walls, props, terrain and units in the way stop it, and a
 //! Warden's raised shield turned toward it blocks it. The ability's effect lands only when the
 //! shot reaches a valid victim. Spent projectiles stay stuck where they hit — in a wall for
 //! [`STUCK_TICKS`], riding a unit for [`STUCK_IN_UNIT_TICKS`] — then vanish.
