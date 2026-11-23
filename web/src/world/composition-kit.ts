@@ -51,6 +51,7 @@ export class CompositionKit {
   #lifts = new Map<number, number>();
   #loading: Promise<boolean> | null = null;
   #changed = false;
+  #rootsRevision = 0;
   #disposed = false;
   #dressing: CompositionDressing | null = null;
   readonly #clip = new THREE.Matrix4();
@@ -93,6 +94,7 @@ export class CompositionKit {
     this.#lifts = new Map(dressing.lifts.map(({ platform, placement }) => [platform, placement]));
     this.#dressing = dressing;
     this.#changed = true;
+    this.#rootsRevision += 1;
   }
 
   /** Releases the instanced levels this world owns (#1005); the retained pieces stay. Later calls do nothing. */
@@ -103,6 +105,7 @@ export class CompositionKit {
     this.#levels = null;
     this.#lifts.clear();
     this.#changed = true;
+    this.#rootsRevision += 1;
   }
 
   /** Whether the kit is drawn (loaded); the static scene hides the graybox of the bodies it dresses then. */
@@ -144,6 +147,14 @@ export class CompositionKit {
     const changed = this.#changed;
     this.#changed = false;
     return { roots: this.#levels ? [this.#levels.root] : [], changed };
+  }
+
+  /** Moves whenever the drawn roots may change (the world frame's root registry, #1060). */
+  get rootsRevision(): number { return this.#rootsRevision; }
+
+  /** Appends the drawn roots without consuming `roots()`'s change flag. */
+  collectRoots(into: THREE.Object3D[]): void {
+    if (this.#levels) { into.push(this.#levels.root); }
   }
 
   /** Acceptance state: whether the kit is drawn, its entries, how many static and lift pieces and instances per level. */

@@ -28,12 +28,14 @@ import {
   movementInput,
   pointerOwner,
   type CameraMode,
+  type CameraView,
   type DragMode,
   type HeldIntent,
   type PointerOwner,
   type Vec3,
 } from "./orbit-camera";
 import { SceneryFrame, buildSceneryScene, type DrawnKits, type SceneryScene } from "./scenery-nodes";
+import { FrameStages, PanelGate, RootRegistry, emptyFrameWork, fixedRootEntry, rootEntry, type FrameWork } from "./frame-stages";
 import type { GreyhavenLighting } from "./lighting";
 import { ImpactEffects } from "./impact-effects";
 import { KitEffects } from "./kit-effects";
@@ -378,6 +380,57 @@ class RegionArt {
   }
 }
 
+/** The viewer's presented unit this frame: the camera's focus and its feet, metres. */
+type FrameSelf = { focus: Vec3; x: number; feetY: number; z: number; facing: number };
+
+/** One world frame's shared state (#1060): one object reused every frame; each stage fills what later stages read. */
+class WorldFrame {
+  stopped = false;
+  world!: ZoneWorld;
+  input!: WorldInput;
+  look!: ViewerLook;
+  deltaSeconds = 0;
+  now = 0;
+  scene!: SceneryScene;
+  sceneryFrame!: SceneryFrame;
+  received: readonly ZoneSnapshot[] = [];
+  connected = false;
+  projection!: ZoneSnapshot;
+  animate = false;
+  units!: SharedUnits;
+  presented!: ReturnType<SharedUnits["frame"]>;
+  /** Each presented unit's feet by entity key; cleared and refilled every frame. */
+  readonly anchors = new Map<string, { x: number; feetY: number; z: number }>();
+  others: MinimapUnit[] = [];
+  self!: FrameSelf;
+  unitNodes: readonly RendererSceneNode[] = [];
+  view!: CameraView;
+  sceneFrame!: ReturnType<SceneryFrame["nodes"]>;
+  nodes: RendererSceneNode[] = [];
+  batchedNodes = 0;
+  camera!: RendererCamera;
+  environment!: RendererEnvironment;
+  dayFraction = 0;
+}
+
+/** Panels each received projection reaches, and panels the latest projection redraws when it changes. */
+const RECEIVED_PANELS = 9;
+const LATEST_PANELS = 3;
+const NO_NODES: readonly RendererSceneNode[] = [];
+const NO_KICK = [0, 0, 0] as const;
+
+function appendAll<T>(into: T[], from: readonly T[]): void {
+  for (let index = 0; index < from.length; index += 1) { into.push(from[index]!); }
+}
+
+function sameRoots(roots: readonly THREE.Object3D[], submitted: ReadonlySet<THREE.Object3D>): boolean {
+  if (roots.length !== submitted.size) { return false; }
+  for (const root of roots) {
+    if (!submitted.has(root)) { return false; }
+  }
+  return true;
+}
+
 export class WorldView {
   readonly #renderer: ThreeSceneRenderer;
   readonly #camera: THREE.PerspectiveCamera;
@@ -585,6 +638,23 @@ export class WorldView {
   #lastProjection: ZoneSnapshot | null = null;
   /** The first frame of a session picks a heading whose view is not inside a building. */
   #framePending = false;
+  /** The staged frame (#1060): its work counters, render-root registry, panel gate and reused context. */
+  readonly #frameWork = emptyFrameWork();
+  readonly #rootRegistry = new RootRegistry(this.#frameWork);
+  /** The registry rebuilt since its roots were last compared with the submitted set. */
+  #rootsStale = true;
+  readonly #panelGate = new PanelGate<ZoneSnapshot>();
+  readonly #frame = new WorldFrame();
+  readonly #stages = new FrameStages<WorldFrame>([
+    { stage: "input", update: (frame) => this.#inputStage(frame) },
+    { stage: "replication", update: (frame) => this.#replicationStage(frame) },
+    { stage: "units", update: (frame) => this.#unitStage(frame) },
+    { stage: "camera", update: (frame) => this.#cameraStage(frame) },
+    { stage: "scenery", update: (frame) => this.#sceneryStage(frame) },
+    { stage: "render", update: (frame) => this.#renderStage(frame) },
+    { stage: "hud", update: (frame) => this.#hudStage(frame) },
+    { stage: "panels", update: (frame) => this.#panelStage(frame) },
+  ], this.#frameWork);
 
   constructor(renderer: ThreeSceneRenderer, camera: THREE.PerspectiveCamera, lighting: GreyhavenLighting, elements: WorldViewElements) {
     this.#renderer = renderer;
@@ -658,6 +728,40 @@ export class WorldView {
       this.#closeQuests();
     });
     this.#outbox = new MovementOutbox(this.#input({ held: IDLE_INTENT, jumps: 0 }));
+    // The render roots in drawing order; `load`, `#buildStatic`, the detail level and a map view mark the registry dirty
+    // when an owner is replaced or a condition below changes.
+    const outpostReady = () => (this.#outpost?.drawn ?? false) && (this.#fortifications?.drawn ?? false);
+    this.#rootRegistry.register([
+      fixedRootEntry("world", () => this.#sceneryBatches),
+      rootEntry("inhabitant", () => this.#models),
+      rootEntry("world", () => this.#inn),
+      rootEntry("world", () => this.#shrine),
+      // This combined Outpost kit replaces one shared fallback only when both bundles draw.
+      rootEntry("world", () => this.#outpost, outpostReady),
+      rootEntry("world", () => this.#fortifications, outpostReady),
+      rootEntry("world", () => this.#settlement),
+      rootEntry("world", () => this.#fortress),
+      rootEntry("inhabitant", () => this.#ambient, () => this.#worldDetail !== "low"),
+      rootEntry("world", () => this.#nature),
+      rootEntry("world", () => this.#climbing),
+      rootEntry("world", () => this.#crag),
+      rootEntry("world", () => this.#gather),
+      {
+        role: "world",
+        revision: () => {
+          let revision = 0;
+          for (const kit of this.#kits) { revision += kit.rootsRevision + 1; }
+          return revision;
+        },
+        collect: (into) => { for (const kit of this.#kits) { kit.collectRoots(into); } },
+      },
+      fixedRootEntry("ground", () => this.#ground),
+      fixedRootEntry("world", () => this.#grass, () => !this.#plan),
+      fixedRootEntry("world", () => this.#impacts),
+      fixedRootEntry("world", () => this.#kitEffects),
+      fixedRootEntry("world", () => this.#raidSmoke),
+      fixedRootEntry("world", () => this.#raidSigns),
+    ]);
   }
 
   get #animate(): boolean {
@@ -680,6 +784,7 @@ export class WorldView {
   setWorldDetail(detail: WorldDetail): void {
     this.#worldDetail = detail;
     this.#grass?.setDetail(detail);
+    this.#rootRegistry.markDirty();
   }
 
   setAudioPreferences(preferences: AudioPreferences): void {
@@ -736,6 +841,7 @@ export class WorldView {
     this.#loadedScenery = world.scenery;
     this.#loadedArena = arena;
     this.#loadedWorld = world;
+    this.#rootRegistry.markDirty();
     this.#prewarmQueued = null;
     this.#avatarPrepared = false;
     this.#pendingKitArea = null;
@@ -873,6 +979,7 @@ export class WorldView {
     this.#scene = scene;
     this.#sceneryFrame = new SceneryFrame(scene);
     this.#sceneryBatches = this.#zone.own(new BatchedScenery(scene, world.scenery.staticScene.groupStream()));
+    this.#rootRegistry.markDirty();
     this.#ground = this.#zone.own(new Ground(world.scenery.staticScene.terrainStream(), scene.surfaces, scene.cutaways));
     void this.#ground.load(this.#models.ktx2Loader);
     const content = world.scenery.staticScene;
@@ -1317,9 +1424,11 @@ export class WorldView {
   /** Drops every imported unit model and takes them out of the shared renderer scene. */
   #clearModels(): void {
     this.#models.clear();
-    const { roots, changed } = this.#models.roots();
-    if (changed && this.#lastCamera) {
-      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...(this.#sceneryBatches ? [this.#sceneryBatches.root] : []), ...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.drawn && this.#fortifications?.drawn ? [...this.#outpost.roots().roots, ...this.#fortifications.roots().roots] : []), ...(this.#settlement?.roots().roots ?? []), ...(this.#fortress?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#nature?.roots().roots ?? []), ...(this.#climbing?.roots().roots ?? []), ...(this.#crag?.roots().roots ?? []), ...(this.#gather?.roots().roots ?? []),...this.#kits.flatMap((kit) => kit.roots().roots),...(this.#ground?.roots().roots ?? []), ...(this.#grass?.roots().roots ?? []), this.#impacts.root, this.#kitEffects.root, this.#raidSmoke.root, this.#raidSigns.root] });
+    if (this.#lastCamera && this.#rootRegistry.refresh()) {
+      const roots = this.#rootRegistry.roots;
+      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: roots.slice() });
+      this.#submittedRoots = new Set(roots);
+      this.#rootsStale = false;
     }
   }
 
@@ -1350,6 +1459,7 @@ export class WorldView {
     this.#chat.reset();
     this.#party.reset();
     this.#depthsLoot.reset();
+    this.#panelGate.reset();
     this.#endDrag();
     this.#sky.show(false);
     this.#overlay.hide();
@@ -1724,15 +1834,39 @@ export class WorldView {
     this.#elements.areaName.textContent = name;
   }
 
-  /** One frame: intent out, ticks, projection in, scene drawn. Throws when the projection lacks the viewer. */
+  /**
+   * One frame: intent out, ticks, projection in, scene drawn. Throws when the projection lacks the viewer. The frame runs
+   * as ordered stages over one reused context (#1060, `WORLD_FRAME_STAGES`).
+   */
   frame(world: ZoneWorld, input: WorldInput, look: ViewerLook, deltaSeconds: number, now: number): void {
+    const frame = this.#frame;
+    frame.world = world;
+    frame.input = input;
+    frame.look = look;
+    frame.deltaSeconds = deltaSeconds;
+    frame.now = now;
+    this.#stages.run(frame);
+  }
+
+  /** Deterministic work since the last call (the `world-frame` budget, #1060); the counters restart from zero. */
+  takeFrameWork(): FrameWork {
+    const work = { ...this.#frameWork };
+    Object.assign(this.#frameWork, emptyFrameWork());
+    return work;
+  }
+
+  /** Input: the static scene once, then queued intents, the guard lane and movement out to the source. */
+  #inputStage(frame: WorldFrame): void {
+    const { world, input, now } = frame;
     if (!this.#scene) { this.#buildStatic(world); }
     const scene = this.#scene;
     const sceneryFrame = this.#sceneryFrame;
     if (!scene || !sceneryFrame) {
       throw new Error("The world view has no scenery loaded.");
     }
-    const { source, scenery, catalog } = world;
+    frame.scene = scene;
+    frame.sceneryFrame = sceneryFrame;
+    const { source } = world;
     this.#partySource = source;
     const latest = source.latestProjection();
     for (const { intent, onSent } of this.#intents.splice(0)) {
@@ -1751,9 +1885,16 @@ export class WorldView {
       source.sendCommand(command);
     }
     profilePhase("input");
-    const receivedProjections = source.advance(this.#holdWorld ? 0 : deltaSeconds);
+  }
+
+  /** Replication: the source advances, received projections fan out to the panels, and the latest one steers input. */
+  #replicationStage(frame: WorldFrame): void {
+    const { source, catalog } = frame.world;
+    const receivedProjections = source.advance(this.#holdWorld ? 0 : frame.deltaSeconds);
+    frame.received = receivedProjections;
     profilePhase("simulation");
     const connected = source.linkState() === "connected";
+    frame.connected = connected;
     if (connected !== this.#lastLinkConnected) {
       this.#resetUnits();
       this.#lastLinkConnected = connected;
@@ -1768,11 +1909,13 @@ export class WorldView {
       this.#chat.update(received);
       this.#party.update(received);
       this.#depthsLoot.update(received);
+      this.#frameWork.panelRenders += RECEIVED_PANELS;
     }
     const projection = source.latestProjection();
     if (!projection) {
       throw new Error("The world source has no projection for the joined player.");
     }
+    frame.projection = projection;
     this.#lastProjection = projection;
     this.#showVeins(projection.depletedVeins);
     this.#powerDraw.observe(projection, this.panelOpen);
@@ -1801,7 +1944,14 @@ export class WorldView {
     }
     // An open panel ends a held gesture without firing (#636).
     if (this.panelOpen) { this.#releasePointerLock(); if (this.#mouse.gesture) { this.interruptGesture(); } }
+  }
+
+  /** Units: the shared unit presenter samples the projections, and imported models, impacts and sound follow it. */
+  #unitStage(frame: WorldFrame): void {
+    const { world, projection, deltaSeconds, now, look } = frame;
+    const { source, scenery, catalog } = world;
     const animate = this.#animate;
+    frame.animate = animate;
     this.#seconds += deltaSeconds;
     if (this.#units?.viewerId !== projection.viewerId) {
       this.#units?.units.dispose();
@@ -1812,6 +1962,7 @@ export class WorldView {
       this.#units = { viewerId: projection.viewerId, units, pushed: null, residents: false, kitPlatforms: false, cragFaces: false, effectKits: false };
     }
     const units = this.#units.units;
+    frame.units = units;
     if (!this.#units.kitPlatforms && this.#fortress?.drawn) {
       // The fortress kit's lifts (#591) replace the presenter's pillars once drawn.
       this.#units.kitPlatforms = true;
@@ -1840,9 +1991,9 @@ export class WorldView {
       this.#units.residents = true;
       units.residentsReady();
     }
-    for (const received of receivedProjections) {
+    for (const received of frame.received) {
       this.#classHud.receive(received, now);
-      if (connected) { this.#pushProjection(units, received); }
+      if (frame.connected) { this.#pushProjection(units, received); }
     }
     // The join projection (and a paused source's) reaches the presenter without an advance.
     if (this.#units.pushed !== projection) { this.#pushProjection(units, projection); }
@@ -1855,16 +2006,17 @@ export class WorldView {
     const shown = source.shown();
     units.setInteraction(this.#loot.open, this.#quests.dialogNpc ?? this.#vendor.npc);
     const presented = units.frame(shown, projection, { seconds: this.#seconds, dt: deltaSeconds, reducedMotion: !animate, barYaw: this.#barYaw, look });
+    frame.presented = presented;
     this.#fortress?.place(presented.platforms);
     this.#kitEffects.update(presented.effects);
     const viewerModel = presented.imported.find((unit) => unit.entity.kind === "player" && unit.entity.id === projection.viewerId);
     this.#viewerClip = viewerModel?.clip ?? null;
     this.#viewerAnimation = viewerModel ? { upper: [viewerModel.clip, viewerModel.time], lower: viewerModel.lower, layers: viewerModel.layers } : null;
-    const nodes: RendererSceneNode[] = [];
     const projected: ProjectedUnit[] = [];
     const others: MinimapUnit[] = [];
-    const anchors = new Map<string, { x: number; feetY: number; z: number }>();
-    let self: { focus: Vec3; x: number; feetY: number; z: number; facing: number } | null = null;
+    const anchors = frame.anchors;
+    anchors.clear();
+    let self: FrameSelf | null = null;
     for (const unit of presented.units) {
       const entity = unit.state;
       if (!entity) { continue; }
@@ -1878,6 +2030,8 @@ export class WorldView {
         others.push(this.#minimapUnit(entity, unitsPerMetre));
       }
     }
+    frame.others = others;
+    this.#lastProjectedUnits = projected;
     // The posed casters' spell origins: the next frames' beams leave the staff's head from there (#612).
     units.setChannelOrigins(this.#models.update(presented.imported, { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {}, physique: look.physique ?? null, sex: look.sex }));
     const intensity = animate ? "strong" : "subtle";
@@ -1889,26 +2043,22 @@ export class WorldView {
     this.#impacts.update(now);
     const roof = this.#roofOf(projection.raid ? this.#raidArea : null, scenery.scenery);
     this.#raidSmoke.update(projection.raid, roof?.top ?? null, roof?.span ?? [0, 0], now);
-    const unitNodes = this.#plan ? [] : presented.nodes;
+    frame.unitNodes = this.#plan ? NO_NODES : presented.nodes;
     profilePhase("units");
     if (!self) {
       throw new Error("The projection is missing the viewer's own unit.");
     }
+    frame.self = self;
+  }
+
+  /** Camera: the orbit follows the viewer (or a focused opponent), rooms adapt the boom, and the listener follows the eye. */
+  #cameraStage(frame: WorldFrame): void {
+    const { self, projection, deltaSeconds, now, animate, scene, presented } = frame;
+    const { unitsPerMetre } = frame.world.scenery.scenery;
     // A manual aim (#649) hands the camera to the mouse; it turns back to the kept focus after.
     const opponent = this.#cameraMode.kind === "focused" && this.#mouse.owner() !== "aim"
-      ? anchors.get(entityKey(this.#cameraMode.target)) : undefined;
+      ? frame.anchors.get(entityKey(this.#cameraMode.target)) : undefined;
     this.#orbit.track(self.focus, opponent ? [opponent.x, opponent.feetY + 1, opponent.z] : null, deltaSeconds);
-    this.#combatHud.update(projection, catalog, now);
-    this.#classHud.update(projection, catalog, now);
-    this.#weaponMode.textContent = projection.viewer.weaponDrawn
-      ? "Combat · Sheathe weapon [H]"
-      : "Exploration · Draw weapon [H]";
-    this.#weaponMode.dataset.mode = projection.viewer.weaponDrawn ? "combat" : "exploration";
-    this.#weaponMode.disabled = projection.viewer.dead;
-    this.#progressionHud.update(projection, now);
-    this.#bags.update(projection);
-    this.#character.update(projection);
-    this.#loot.update(projection);
     this.#lastSelf = { x: self.x, z: self.z, facing: self.facing };
     this.#inn?.update(projection.doors, [self.x, self.feetY, self.z], deltaSeconds, !animate);
     // A walk-in cottage's roof lifts away while the viewer is inside it (#843).
@@ -1917,7 +2067,7 @@ export class WorldView {
     if (this.#worldDetail !== "low") { this.#ambient?.update(this.#seconds, animate); }
     // The settlement props' node clips (#891): mill wheels, sails, signs, vanes and scarecrows.
     this.#settlement?.update(this.#seconds, animate);
-    this.#raidSigns.update(projection.raid, this.#raidPrep, scene.surfaceY, scenery.scenery.unitsPerMetre);
+    this.#raidSigns.update(projection.raid, this.#raidPrep, scene.surfaceY, unitsPerMetre);
     if (this.#framePending) {
       this.#framePending = false;
       this.#frameFirstView(self.focus, self.facing, scene.surfaceY);
@@ -1926,8 +2076,9 @@ export class WorldView {
     // The arena and authored indoor rooms use an adaptive boom, retaining normal orbit controls.
     const indoor = this.#inn?.camera(orbit, [self.x, self.feetY, self.z], deltaSeconds, !animate) ?? orbit;
     const view = this.#plan ? planPose(this.#plan) : this.#flyTo ?? (this.#arena ? clearSightLine(indoor, this.#occluders) : indoor);
+    frame.view = view;
     // A blow the viewer struck or took kicks the camera a moment (#900); zero under reduced motion.
-    const kick = this.#plan || this.#flyTo ? [0, 0, 0] : presented.kick;
+    const kick = this.#plan || this.#flyTo ? NO_KICK : presented.kick;
     this.#camera.position.set(view.eye[0] + kick[0], view.eye[1] + kick[1], view.eye[2] + kick[2]);
     this.#camera.lookAt(view.target[0] + kick[0], view.target[1] + kick[1], view.target[2] + kick[2]);
     this.#camera.updateMatrixWorld(true);
@@ -1942,13 +2093,19 @@ export class WorldView {
       this.#sound.listen(view.eye, [right.x, right.y, right.z]);
       this.#sound.pump();
     }
+  }
+
+  /** Scenery: static groups, ground, grass and kits stream around the eye, and the hour lights the scene. */
+  #sceneryStage(frame: WorldFrame): void {
+    const { world, view, self, deltaSeconds, animate, projection, presented } = frame;
     const outpostReady = (this.#outpost?.drawn ?? false) && (this.#fortifications?.drawn ?? false);
     const kits = { outpost: outpostReady, settlementProps: this.#settlement?.drawn ?? false, nature: this.#nature?.drawn ?? false, limestone: this.#standInDrawn("limestone"), climbing: this.#climbing?.drawn ?? false, crag: this.#crag?.drawn ?? false, fortress: this.#fortress?.drawn ?? false };
     const batches = this.#sceneryBatches;
     if (batches) { batches.stream(view.eye, { ...kits, dressed: this.#fortress?.drawn ? world.scenery.dressedProps?.() ?? NO_DRESSED : NO_DRESSED }); }
-    const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits, resident: batches ? (group) => batches.resident(group) : () => true });
+    const sceneFrame = frame.sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits, resident: batches ? (group) => batches.resident(group) : () => true });
+    frame.sceneFrame = sceneFrame;
     // A map view's eye is high only to clear the terrain: its ground streams as if standing on it.
-    this.#ground?.update(this.#plan ? [view.eye[0], 0, view.eye[2]] : view.eye, frame.shown);
+    this.#ground?.update(this.#plan ? [view.eye[0], 0, view.eye[2]] : view.eye, sceneFrame.shown);
     if (!this.#plan) { this.#grass?.update(view.eye, [self.x, self.feetY, self.z], this.#seconds, animate); }
     this.#nature?.update(this.#camera, deltaSeconds, animate);
     this.#climbing?.update(this.#camera, deltaSeconds, animate);
@@ -1956,26 +2113,31 @@ export class WorldView {
     this.#gather?.update(this.#camera, deltaSeconds, animate);
     for (const kit of this.#kits) { kit.update(this.#camera, deltaSeconds, animate); }
     this.#fortress?.update(this.#camera, deltaSeconds, animate);
-    this.#lastSceneryNodes = frame.nodes;
+    this.#lastSceneryNodes = sceneFrame.nodes;
     this.#barYaw = Math.atan2(view.target[0] - view.eye[0], view.target[2] - view.eye[2]);
     // The batches draw the static groups and animated parts; the renderer only the water.
-    this.#sceneryBatches?.show(frame.nodes);
-    const rendered = this.#sceneryBatches?.undrawn(frame.nodes) ?? frame.nodes;
-    const batchedNodes = frame.nodes.length - rendered.length;
-    nodes.push(...(this.#plan?.groundOnly ? [] : rendered), ...unitNodes);
+    this.#sceneryBatches?.show(sceneFrame.nodes);
+    const rendered = this.#sceneryBatches?.undrawn(sceneFrame.nodes) ?? sceneFrame.nodes;
+    frame.batchedNodes = sceneFrame.nodes.length - rendered.length;
+    const nodes: RendererSceneNode[] = [];
+    if (!this.#plan?.groundOnly) { appendAll(nodes, rendered); }
+    appendAll(nodes, frame.unitNodes);
     this.#lastEffectNodes = presented.effectNodes;
-    nodes.push(...this.#lastEffectNodes);
-    this.#lastUnitNodes = unitNodes;
-    this.#lastProjectedUnits = projected;
+    appendAll(nodes, this.#lastEffectNodes);
+    frame.nodes = nodes;
+    this.#lastUnitNodes = frame.unitNodes;
     const camera: RendererCamera = {
       viewMatrix: [...this.#camera.matrixWorldInverse.elements] as Matrix4Values,
       projectionMatrix: webGpuProjection(this.#camera),
     };
+    frame.camera = camera;
     // The sky follows the zone's clock (#158); a debug presentation time overrides it.
     // Reduced motion steps the sky once per zone hour instead of drifting continuously (the shared `clock`).
     const hour = this.#presentationTime === null ? wasm.zoneSkyHour(projection.tick, animate) : wasm.pagesHour(this.#presentationTime, true);
     const dayFraction = wasm.dayFraction(hour);
+    frame.dayFraction = dayFraction;
     const environment = environmentAt(ENVIRONMENT, dayFraction);
+    frame.environment = environment;
     this.#lastEnvironment = environment;
     // The native client's lights at the same hour (#600): sun or moon, sky light, fog and the scenery's lamps.
     this.#lighting.apply({
@@ -1986,71 +2148,70 @@ export class WorldView {
       // Low world detail lights no lamps or fires: each local light is shaded on every lit pixel near it.
       pointLights: this.#worldDetail === "low" ? null : this.#inn?.pointLights(this.#scene?.pointLights(this.#seconds, animate) ?? new Float32Array()) ?? this.#scene?.pointLights(this.#seconds, animate) ?? null,
     });
-    this.#lastInstanceBatches = frame.instanceBatches;
+    this.#lastInstanceBatches = sceneFrame.instanceBatches;
     this.#lastCamera = camera;
     profilePhase("scene");
-    const models = this.#models.roots();
-    const inn = this.#inn?.roots() ?? { roots: [], changed: false };
-    const shrine = this.#shrine?.roots() ?? { roots: [], changed: false };
-    const outpost = this.#outpost?.roots() ?? { roots: [], changed: false };
-    const settlement = this.#settlement?.roots() ?? { roots: [], changed: false };
-    const fortifications = this.#fortifications?.roots() ?? { roots: [], changed: false };
-    // This combined Outpost kit replaces one shared fallback only when both bundles draw.
-    if (!outpostReady) { outpost.roots = []; fortifications.roots = []; }
-    const fortress = this.#fortress?.roots() ?? { roots: [], changed: false };
-    const ambient = this.#worldDetail === "low" ? { roots: [], changed: false } : this.#ambient?.roots() ?? { roots: [], changed: false };
-    const nature = this.#nature?.roots() ?? { roots: [], changed: false };
-    const climbing = this.#climbing?.roots() ?? { roots: [], changed: false };
-    const crag = this.#crag?.roots() ?? { roots: [], changed: false };
-    const gather = this.#gather?.roots() ?? { roots: [], changed: false };
-    const placedKits = this.#kits.flatMap((kit) => kit.roots().roots);
-    const sceneryBatches = this.#sceneryBatches ? [this.#sceneryBatches.root] : [];
-    const ground = this.#ground?.roots() ?? { roots: [], changed: false };
-    const grass = this.#plan ? { roots: [], changed: false } : this.#grass?.roots() ?? { roots: [], changed: false };
-    const roots = [...sceneryBatches, ...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...fortifications.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, ...climbing.roots, ...crag.roots, ...gather.roots, ...placedKits, ...ground.roots, ...grass.roots, this.#impacts.root, this.#kitEffects.root, this.#raidSmoke.root, this.#raidSigns.root];
+  }
+
+  /** Render: the root registry (rebuilt only on a change) and the frame go to the renderer. */
+  #renderStage(frame: WorldFrame): void {
+    const { camera, nodes, sceneFrame, environment } = frame;
+    if (this.#rootRegistry.refresh()) {
+      this.#rootsStale = true;
+      // A map shows the world without its inhabitants; a ground map only the terrain. The registry rebuilds when a map
+      // view starts, changes or ends, and whenever a root joins.
+      if (this.#plan) { this.#hideForPlan(this.#plan); }
+    }
+    const roots = this.#rootRegistry.roots;
     // No scene background: `Lighting` clears its own frame, and three would clear to the background again in each of its
     // passes, wiping the sky (#600). The environment's fog still fogs the unlit sprites.
     const { background: _background, ...withoutBackground } = environment;
-    if (this.#plan) {
-      // A map shows the world without its inhabitants; a ground map only the terrain.
-      for (const root of roots) {
-        const inhabitant = models.roots.includes(root) || ambient.roots.includes(root);
-        if (inhabitant || (this.#plan.groundOnly && !ground.roots.includes(root))) {
-          root.visible = false;
-          this.#planHidden.add(root);
-        } else if (this.#planHidden.delete(root)) {
-          root.visible = true;
-        }
-      }
-    }
-    const rendererFrame = { camera, nodes, instanceBatches: this.#plan?.groundOnly ? [] : frame.instanceBatches, environment: withoutBackground };
+    const rendererFrame = { camera, nodes, instanceBatches: this.#plan?.groundOnly ? [] : sceneFrame.instanceBatches, environment: withoutBackground };
     if (this.#preparing) {
       // `prepare` (#547): the first world frame's programs and textures, without drawing it.
-      this.#preparing.push(this.#renderer.prepare(rendererFrame, { roots }));
+      this.#preparing.push(this.#renderer.prepare(rendererFrame, { roots: roots.slice() }));
+      frame.stopped = true;
       return;
     }
     // Submitting roots adds them to the renderer's scene, and anything later added under a submitted root is drawn without
     // it; `renderImportedRoots` also draws a whole frame, so it runs only when the set of roots changes, not each time a
     // streamed cell, tile or group joins one (a doubled frame every few metres of walking).
-    if (roots.length !== this.#submittedRoots.size || roots.some((root) => !this.#submittedRoots.has(root)) || !this.#impacts.root.parent || !this.#kitEffects.root.parent || !this.#raidSmoke.root.parent || !this.#raidSigns.root.parent) {
-      this.#renderer.renderImportedRoots({ camera, roots });
+    const detached = !this.#impacts.root.parent || !this.#kitEffects.root.parent || !this.#raidSmoke.root.parent || !this.#raidSigns.root.parent;
+    if (detached || (this.#rootsStale && !sameRoots(roots, this.#submittedRoots))) {
+      this.#renderer.renderImportedRoots({ camera, roots: roots.slice() });
       this.#submittedRoots = new Set(roots);
     }
+    this.#rootsStale = false;
     const work = this.#renderer.render(rendererFrame);
     this.#lastWork = work;
     profilePhase("render");
     if (profiling()) {
       profileFacts({
-        ticks: receivedProjections.length, viewer: [self.x, self.z], heading: this.#orbit.heading, nodes: nodes.length, instanceBatches: frame.instanceBatches.length,
+        ticks: frame.received.length, viewer: [frame.self.x, frame.self.z], heading: this.#orbit.heading, nodes: nodes.length, instanceBatches: sceneFrame.instanceBatches.length,
         created: { objects: work.objectCreateCount, geometries: work.geometryCreateCount, materials: work.materialCreateCount, instanceUploads: work.instanceUploadCount },
       });
     }
+  }
+
+  /** HUD: combat, class and progression bars, quest markers, the sky fallback, the minimap and the overlay. */
+  #hudStage(frame: WorldFrame): void {
+    const { projection, now, self, view } = frame;
+    const { scenery, catalog } = frame.world;
+    const { unitsPerMetre } = scenery.scenery;
+    this.#combatHud.update(projection, catalog, now);
+    this.#classHud.update(projection, catalog, now);
+    this.#weaponMode.textContent = projection.viewer.weaponDrawn
+      ? "Combat · Sheathe weapon [H]"
+      : "Exploration · Draw weapon [H]";
+    this.#weaponMode.dataset.mode = projection.viewer.weaponDrawn ? "combat" : "exploration";
+    this.#weaponMode.disabled = projection.viewer.dead;
+    this.#progressionHud.update(projection, now);
     this.#minimap.update(scenery.scenery, { x: self.x, z: self.z });
-    this.#quests.placeMarkers(this.#markerPoints(anchors, projection));
+    this.#quests.placeMarkers(this.#markerPoints(frame.anchors, projection));
     // The atmosphere draws the sky (#600); the CSS sky remains only where the browser cannot draw it.
     const cssSky = !this.#lighting.drawsSky;
     if (this.#elements.sky.hidden === cssSky) { this.#sky.show(cssSky); }
-    if (cssSky) { this.#sky.update(this.#horizon(view.eye, view.target), dayFraction); }
+    if (cssSky) { this.#sky.update(this.#horizon(view.eye, view.target), frame.dayFraction); }
     // A night raid's approximate disturbance area while its assault runs (#530).
     const area = this.#raidArea;
     const disturbance = area && (projection.raid?.phase ?? 0) > 0
@@ -2058,18 +2219,46 @@ export class WorldView {
       : null;
     // Discovered landmarks and approximate quest areas (#983); the arena has neither.
     const exploration = this.#arena ? null : minimapExploration(this.#exploration.update(projection), self);
-    this.#minimap.draw({ x: self.x, z: self.z }, this.#orbit.heading, self.facing, others, disturbance, exploration);
+    this.#minimap.draw({ x: self.x, z: self.z }, this.#orbit.heading, self.facing, frame.others, disturbance, exploration);
     this.#frameRate.sample(now);
     this.#overlay.update({
       fps: this.#frameRate.fps,
       frameMs: this.#frameRate.frameMs,
-      nodes: nodes.length + batchedNodes + frame.instanceBatches.length,
-      staticNodes: scene.stats.staticNodes,
-      visibleStaticNodes: frame.visibleBatches,
-      staticVertices: scene.stats.staticVertices,
-      units: presented.units.length,
+      nodes: frame.nodes.length + frame.batchedNodes + frame.sceneFrame.instanceBatches.length,
+      staticNodes: frame.scene.stats.staticNodes,
+      visibleStaticNodes: frame.sceneFrame.visibleBatches,
+      staticVertices: frame.scene.stats.staticVertices,
+      units: frame.presented.units.length,
       work: this.#lastWork,
     }, now);
+  }
+
+  /**
+   * Panels: bags, the character pane and loot redraw from the latest projection only when it or the shared bag state
+   * changed (#1060); every received projection already reached all panels in the replication stage.
+   */
+  #panelStage(frame: WorldFrame): void {
+    const { projection } = frame;
+    if (!this.#panelGate.changed(projection, this.#bags.state.changes)) { return; }
+    this.#bags.update(projection);
+    this.#character.update(projection);
+    this.#loot.update(projection);
+    this.#frameWork.panelRenders += LATEST_PANELS;
+  }
+
+  /** Hides a map view's inhabitants (and on a ground map everything but the ground), and shows what it no longer hides. */
+  #hideForPlan(plan: PlanView): void {
+    const roots = this.#rootRegistry.roots;
+    for (let index = 0; index < roots.length; index += 1) {
+      const root = roots[index]!;
+      const role = this.#rootRegistry.role(index);
+      if (role === "inhabitant" || (plan.groundOnly && role !== "ground")) {
+        root.visible = false;
+        this.#planHidden.add(root);
+      } else if (this.#planHidden.delete(root)) {
+        root.visible = true;
+      }
+    }
   }
 
   /** Drops every per-unit and visual state; the next frame pushes the latest projection again. */
@@ -2487,6 +2676,8 @@ export class WorldView {
   /** Debug-only hooks for screenshots and measurements; the simulation never sees them. */
   debugApi() {
     return {
+      /** The staged frame's work since the last call (#1060): stage calls, panel redraws and root-list rebuilds. */
+      takeFrameWork: () => this.takeFrameWork(),
       setPresentationTime: (seconds: number | null) => {
         if (seconds !== null && !Number.isFinite(seconds)) {
           throw new Error("Presentation time must be finite");
@@ -2526,6 +2717,7 @@ export class WorldView {
       /** An orthographic map of the world alone (no units or fog) over an XZ rectangle in metres; `null` leaves it. */
       planView: (plan: PlanView | null) => {
         this.#plan = plan;
+        this.#rootRegistry.markDirty();
         if (!plan) {
           this.#camera.fov = this.#perspectiveFov;
           this.#camera.updateProjectionMatrix();

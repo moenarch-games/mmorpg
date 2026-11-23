@@ -29,6 +29,7 @@ export class AmbientAnimals {
   #animals: Animal[] = [];
   #loading: Promise<boolean> | null = null;
   #changed = false;
+  #rootsRevision = 0;
   #disposed = false;
   #last: { seconds: number; animate: boolean } | null = null;
 
@@ -80,6 +81,7 @@ export class AmbientAnimals {
       return { root, mixer, actions, clip: -1 };
     });
     this.#changed = true;
+    this.#rootsRevision += 1;
     if (this.#last) { this.update(this.#last.seconds, this.#last.animate); }
   }
 
@@ -96,6 +98,7 @@ export class AmbientAnimals {
     }
     this.#animals = [];
     this.#changed = true;
+    this.#rootsRevision += 1;
   }
 
   /** Poses every animal at presentation `seconds`; without `animate` they hold still. */
@@ -127,6 +130,14 @@ export class AmbientAnimals {
     const changed = this.#changed;
     this.#changed = false;
     return { roots: this.#animals.map((animal) => animal.root), changed };
+  }
+
+  /** Moves whenever the drawn roots may change (the world frame's root registry, #1060). */
+  get rootsRevision(): number { return this.#rootsRevision; }
+
+  /** Appends the drawn roots without consuming `roots()`'s change flag. */
+  collectRoots(into: THREE.Object3D[]): void {
+    for (const animal of this.#animals) { into.push(animal.root); }
   }
 
   /** Acceptance state: whether the animals loaded, and each one's entry, clip and feet in metres. */

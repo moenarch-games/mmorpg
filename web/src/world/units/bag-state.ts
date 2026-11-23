@@ -44,6 +44,8 @@ export class BagState {
   #pending: PendingItemIntent | null = null;
   /** The sequence the pending intent was sent under, once the source assigned it. */
   #sentSequence: number | null = null;
+  /** Counts every change the panels draw from (#1060): a reset, an accepted sheet, a sent or answered intent. */
+  #changes = 0;
 
   get slots(): readonly InventorySlot[] | null { return this.#slots; }
   /** Item IDs by equipment slot, received with the bag under the same revision. */
@@ -53,6 +55,8 @@ export class BagState {
   get canMove(): boolean { return this.ready && !this.#dead; }
   get feedback(): string { return this.#feedback; }
   get revision(): bigint { return this.#revision; }
+  /** Moves on every change a panel may draw; equal means nothing a panel shows changed. */
+  get changes(): number { return this.#changes; }
   /** Whether an item intent was sent and its sheet or refusal has not arrived yet. */
   get pending(): boolean { return this.#pending !== null; }
   /**
@@ -85,6 +89,7 @@ export class BagState {
     this.#sentRevision = null;
     this.#pending = null;
     this.#sentSequence = null;
+    this.#changes += 1;
   }
 
   update(snapshot: ZoneSnapshot): boolean {
@@ -93,6 +98,7 @@ export class BagState {
         snapshot.inventoryRevision < this.#revision) {
       return false;
     }
+    this.#changes += 1;
     this.#identity = identity;
     this.#tick = snapshot.tick;
     this.#revision = snapshot.inventoryRevision;
@@ -140,6 +146,7 @@ export class BagState {
     if (this.#pending === null) {
       return;
     }
+    this.#changes += 1;
     if (sequence === null) {
       this.#feedback = "That item action was not sent. Your items are unchanged.";
       this.#sentRevision = null;
@@ -183,6 +190,7 @@ export class BagState {
   }
 
   #send(kind: PendingItemIntent, feedback: string): void {
+    this.#changes += 1;
     this.#feedback = feedback;
     this.#sentRevision = this.#revision;
     this.#pending = kind;
