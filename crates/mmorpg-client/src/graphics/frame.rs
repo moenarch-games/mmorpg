@@ -402,6 +402,8 @@ pub fn scene(lighting: &Lighting, view: CameraView) -> Scene {
             },
             ..Fog::default()
         }),
+        // The HUD is drawn by egui over the frame, not as render-engine overlay quads.
+        overlay: Vec::new(),
     }
 }
 
@@ -737,8 +739,8 @@ impl FrameRenderer {
 
     /// Every live emitter and its particles alive after the last step (a GPU readback).
     #[cfg(test)]
-    pub(super) fn alive_particles(&self) -> Vec<(render_engine::world::EmitterId, u32)> {
-        self.world.read_alive_particles()
+    pub(super) async fn alive_particles(&self) -> Vec<(render_engine::world::EmitterId, u32)> {
+        self.world.read_alive_particles().await
     }
 
     /// Screenshot-only fast-forward: warm the *real GPU simulation* without redrawing all
