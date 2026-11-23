@@ -21,8 +21,16 @@ Sources, all opt-in and read-only:
 - WebGL draw calls and triangles from wrapped draw entry points (including the `WEBGL_multi_draw`
   entry points `BatchedMesh` uses, each counting its `drawcount` draws), and three's own counts per render
   pass (sun cascades, local shadows, main, post) with the main pass's top contributors;
-- GPU execution time of each frame's WebGL commands via `EXT_disjoint_timer_query_webgl2`, only when
-  the browser exposes it (reported as unsupported otherwise);
+- GPU execution time per render pass (#1106) from the page's `EXT_disjoint_timer_query_webgl2` queries, only when
+  the browser exposes it (reported as unsupported otherwise): `gpuByPass` (sky, sun cascades, local shadows, main
+  opaque, sky composite, main transparent, tone mapping, output) and `gpuByLabel` (the main passes split by what
+  draws: grass, terrain, static scene, water, units, vegetation, kits, other), p50/p95 per frame; `gpuMs` is their
+  sum per frame. A timer query also counts the time the GPU waits for the main thread to issue the commands it spans,
+  so each pass carries `issueP50`, the main-thread time it was open: GPU time near it marks a pass bound by issuing,
+  not by the GPU;
+- `--fill-test`: idle, move-rotate, dense-woods and dense-hub again at pixel ratio 0.5, compared per pass with
+  pixel ratio 1 (`fillTest.comparison`): a pass falling towards a quarter is fill-bound, one that holds is
+  vertex- or draw-bound;
 - a Chromium trace of `move-rotate` (`--trace`): busy time of the renderer main, GPU and
   compositor threads, GC, and the longest renderer tasks.
 
@@ -62,7 +70,7 @@ TRACE_CATEGORIES = [
 
 INIT_SCRIPT = r"""(() => {
   const probe = window.__probe = {
-    keys: [], events: [], loaf: [], draws: 0, triangles: 0, gpu: new Map(), gpuSupported: null,
+    keys: [], events: [], loaf: [], draws: 0, triangles: 0,
   };
   addEventListener("keydown", (event) => probe.keys.push({ code: event.code, t: event.timeStamp, repeat: event.repeat }), true);
   try {
@@ -122,43 +130,12 @@ INIT_SCRIPT = r"""(() => {
       return extension;
     };
   }
-  // GPU time per animation frame, only where the timer-query extension exists.
-  let gl = null, ext = null, active = false;
-  const pending = [];
-  const getContext = HTMLCanvasElement.prototype.getContext;
-  HTMLCanvasElement.prototype.getContext = function (kind, ...rest) {
-    const context = getContext.call(this, kind, ...rest);
-    if (this.id === "world" && kind === "webgl2" && context && !gl) {
-      gl = context;
-      ext = gl.getExtension("EXT_disjoint_timer_query_webgl2");
-      probe.gpuSupported = !!ext;
-    }
-    return context;
-  };
-  const poll = () => {
-    while (pending.length) {
-      const { query, raf } = pending[0];
-      if (!gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE)) break;
-      pending.shift();
-      if (!gl.getParameter(ext.GPU_DISJOINT_EXT)) {
-        probe.gpu.set(raf, (probe.gpu.get(raf) ?? 0) + gl.getQueryParameter(query, gl.QUERY_RESULT) / 1e6);
-      }
-      gl.deleteQuery(query);
-    }
-  };
-  const raf = window.requestAnimationFrame.bind(window);
-  window.requestAnimationFrame = (callback) => raf((time) => {
-    if (!ext || active) { callback(time); return; }
-    poll();
-    const query = gl.createQuery();
-    active = true;
-    gl.beginQuery(ext.TIME_ELAPSED_EXT, query);
-    try { callback(time); } finally { gl.endQuery(ext.TIME_ELAPSED_EXT); active = false; pending.push({ query, raf: time }); }
-  });
+  // GPU time comes from the page's own per-pass timer queries (`frame-profile.ts`, #1106): timer queries cannot
+  // nest, so the probe times no whole frame around them.
   probe.take = () => {
     const out = { keys: probe.keys.splice(0), events: probe.events.splice(0), loaf: probe.loaf.splice(0),
-      draws: probe.draws, triangles: probe.triangles, gpu: [...probe.gpu], gpuSupported: probe.gpuSupported };
-    probe.draws = 0; probe.triangles = 0; probe.gpu.clear();
+      draws: probe.draws, triangles: probe.triangles };
+    probe.draws = 0; probe.triangles = 0;
     return out;
   };
 })();"""
@@ -217,7 +194,8 @@ class Session:
         })""", count)
 
     def take(self):
-        return {"frames": self.page.evaluate("window.__valeProfile.take()"), **self.page.evaluate("window.__probe.take()")}
+        return {"frames": self.page.evaluate("window.__valeProfile.take()"), **self.page.evaluate("window.__probe.take()"),
+                "gpuSupported": self.page.evaluate("window.__valeProfile.gpuSupported()")}
 
     def renderer(self):
         return self.page.evaluate("""() => { const gl = document.querySelector('#world').getContext('webgl2');
@@ -287,12 +265,50 @@ def kit_draws(frames, prefix="Outpost kit"):
             for group, field in (("main", "mainDraws"), ("shadow", "shadowDraws"))}
 
 
+def gpu_passes(timed, coarse):
+    """GPU milliseconds per frame of each pass label, in draw order; a frame that skipped the pass (a kept sun
+    cascade) counts 0. `coarse` folds the main passes' draw kinds (`main-opaque:grass`) into their pass. `issueP50`
+    is the main thread's time while the label was timed: GPU time near it means the GPU waited for commands."""
+    order, per_frame, issued = [], [], []
+    for f in timed:
+        spent, issue = {}, {}
+        for label, ms in f["gpu"].items():
+            key = label.split(":")[0] if coarse else label
+            if key not in order:
+                order.append(key)
+            spent[key] = spent.get(key, 0) + ms
+            issue[key] = issue.get(key, 0) + (f.get("gpuIssue") or {}).get(label, 0)
+        per_frame.append(spent)
+        issued.append(issue)
+    out = {}
+    for key in order:
+        values = [spent.get(key, 0) for spent in per_frame]
+        drawn = sum(1 for spent in per_frame if key in spent)
+        out[key] = {"p50": pct(values, 50), "p95": pct(values, 95), "mean": round(statistics.fmean(values), 3),
+                    "issueP50": pct([issue.get(key, 0) for issue in issued], 50), "drawnFraction": round(drawn / len(per_frame), 2)}
+    return out
+
+
+def gpu_summary(frames, supported):
+    """The lighting's GPU time per frame (#1106): the whole frame and each render pass, from the page's timer queries."""
+    if not supported:
+        return {"gpuMs": "unsupported", "gpuByPass": None, "gpuByLabel": None}
+    timed = [f for f in frames if isinstance(f.get("gpu"), dict)]
+    return {
+        "gpuMs": dist([sum(f["gpu"].values()) for f in timed]),
+        "gpuIssueMs": dist([sum((f.get("gpuIssue") or {}).values()) for f in timed]),
+        "gpuFrames": {"timed": len(timed), "disjoint": sum(1 for f in frames if f.get("gpu") == "disjoint"),
+                      "queriesPerFrame": pct([f["gpuSpans"] for f in timed], 50)},
+        "gpuByPass": gpu_passes(timed, True),
+        "gpuByLabel": gpu_passes(timed, False),
+    }
+
+
 def summarize(sample, seconds):
     frames = sample["frames"]
     raf = [b["raf"] - a["raf"] for a, b in zip(frames, frames[1:])]
     cpu = [f["end"] - f["start"] for f in frames]
     phases = {name: dist([f["phases"][name] for f in frames]) for name in (frames[0]["phases"] if frames else {})}
-    gpu = [ms for _, ms in sample["gpu"]]
     worst = max(frames, key=lambda f: f["end"] - f["start"]) if frames else None
     return {
         "seconds": seconds,
@@ -316,7 +332,7 @@ def summarize(sample, seconds):
         "outpostKitDraws": kit_draws(frames),
         "mainPassTopContributors": top_contributors(frames, "mainDraws"),
         "shadowPassTopContributors": top_contributors(frames, "shadowDraws"),
-        "gpuMs": dist(gpu) if sample["gpuSupported"] else "unsupported",
+        **gpu_summary(frames, sample["gpuSupported"]),
         "longAnimationFrames": {
             "count": len(sample["loaf"]),
             "worst": sorted(sample["loaf"], key=lambda e: -e["duration"])[:3],
@@ -546,6 +562,43 @@ def analyze_trace(path):
     }
 
 
+FILL_RATIO = 0.5
+FILL_SCENARIOS = ["idle", "move-rotate", "dense-woods", "dense-hub"]
+
+
+def fill_test(browser, url, args, full):
+    """The gameplay scenarios again at pixel ratio `FILL_RATIO` (#1106): a pass whose GPU time falls with the pixel
+    count (a quarter at 0.5) is fill-bound, one that stays is vertex- or draw-bound. The sun cascades and local shadow
+    maps keep their size, so they are the control."""
+    session = Session(browser, url, 1440, 900, FILL_RATIO, args.activity)
+    session.enter_world()
+    session.warm()
+    reduced = {"idle": summarize(session.record(args.seconds), args.seconds),
+               "move-rotate": move_rotate(session, args.seconds)}
+    if not args.activity:
+        for name, viewpoint in (("dense-woods", "woods"), ("dense-hub", "hub")):
+            reduced[name] = view(session, viewpoint, args.seconds)
+    display = {"viewport": [1440, 900], "deviceScaleFactor": FILL_RATIO, **session.renderer()}
+    errors = session.errors
+    session.close()
+
+    def p50(summary, field):
+        return {key: value["p50"] for key, value in (summary.get(field) or {}).items()}
+    comparison = {}
+    for name, small in reduced.items():
+        if name not in full or not isinstance(small.get("gpuByPass"), dict):
+            continue
+        whole, part = full[name], small
+        rows = {}
+        for field in ("gpuByPass", "gpuByLabel"):
+            a, b = p50(whole, field), p50(part, field)
+            rows[field] = {key: {"p50": [a.get(key), b.get(key)],
+                                 "ratio": round(b[key] / a[key], 2) if a.get(key) and b.get(key) is not None else None}
+                           for key in dict.fromkeys([*a, *b])}
+        comparison[name] = {"gpuMsP50": [whole["gpuMs"]["p50"], part["gpuMs"]["p50"]], **rows}
+    return {"pixelRatios": [1, FILL_RATIO], "display": display, "comparison": comparison, "scenarios": reduced, "pageErrors": errors}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, help="write the JSON report here as well as stdout")
@@ -555,6 +608,8 @@ def main():
                         help="Playwright browser channel, e.g. chrome (default chromium: new headless, not the headless shell)")
     parser.add_argument("--headed", action="store_true")
     parser.add_argument("--no-sweep", action="store_true", help="skip the viewport/pixel-ratio sweep")
+    parser.add_argument("--fill-test", action="store_true",
+                        help=f"also profile idle, move-rotate, dense-woods and dense-hub at pixel ratio {FILL_RATIO}, per GPU pass")
     parser.add_argument("--activity", choices=["battle-royale"],
                         help="profile the Battle Royale practice arena (#552) instead of Greyhaven")
     args = parser.parse_args()
@@ -607,6 +662,8 @@ def main():
             report["scenarios"][name] = view(session, viewpoint, args.seconds)
         report["pageErrors"] = session.errors
         session.close()
+        if args.fill_test:
+            report["fillTest"] = fill_test(browser, url, args, report["scenarios"])
         if not args.no_sweep:
             for width, height, scale in SWEEP:
                 sweep = Session(browser, url, width, height, scale, args.activity)
