@@ -26,6 +26,15 @@ use tokio::sync::mpsc;
 
 type HostResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
+/// A spawned task that stops when serving returns, whichever way it does.
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 pub struct DevelopmentCharacterHostConfig {
     pub directory: PathBuf,
     pub recovery_directory: Option<PathBuf>,
@@ -310,12 +319,26 @@ pub(crate) async fn serve_characters_managed<B: EntryBackend + Send + 'static>(
         }
     };
     tokio::pin!(sharing);
+    // A storage failure that must stop the host stops it like a shutdown request,
+    // so the drain below still commits the final snapshots and returns the leases.
+    let (stop, stopping) = mpsc::channel(4);
+    let _forward = {
+        let stop = stop.clone();
+        let mut shutdown = shutdown;
+        AbortOnDrop(tokio::spawn(async move {
+            while shutdown.recv().await.is_some() {
+                if stop.send(()).await.is_err() {
+                    break;
+                }
+            }
+        }))
+    };
     let serving = serve_prepared_live_match_host_with_status_and_control_and_shutdown(
         prepared,
         (*control).clone(),
         transport,
         status,
-        shutdown,
+        stopping,
     );
     tokio::pin!(serving);
     let links = async move {
@@ -327,6 +350,7 @@ pub(crate) async fn serve_characters_managed<B: EntryBackend + Send + 'static>(
     tokio::pin!(links);
     let mut interval = tokio::time::interval(Duration::from_secs(1));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut stopped_by: Option<String> = None;
     loop {
         tokio::select! {
             result = &mut serving => { result?; break; }
@@ -334,11 +358,24 @@ pub(crate) async fn serve_characters_managed<B: EntryBackend + Send + 'static>(
             result = &mut links => {
                 return Err(format!("transfer link stopped: {}", result.err().unwrap_or_default()).into());
             }
-            _ = interval.tick() => {
+            _ = interval.tick(), if stopped_by.is_none() => {
                 if !host.is_serving() { continue; }
                 let service = service.clone();
-                // A failed commit exits serving and stops the authoritative host.
-                tokio::task::spawn_blocking(move || service.save_all()).await??;
+                // A character that fails to save fails alone (#1145). Only losing a
+                // zone to a newer host stops this one: no save pass runs after it,
+                // and serving drains through the normal shutdown below.
+                let saved = tokio::task::spawn_blocking(move || service.save_all())
+                    .await
+                    .map_err(|error| error.to_string())
+                    .and_then(|saved| saved);
+                match saved {
+                    Ok(report) => log_save_report(&report),
+                    Err(error) => {
+                        eprintln!("character storage failed, stopping the host: {error}");
+                        stopped_by = Some(error);
+                        let _ = stop.send(()).await;
+                    }
+                }
             }
         }
     }
@@ -349,8 +386,36 @@ pub(crate) async fn serve_characters_managed<B: EntryBackend + Send + 'static>(
     // still owns restoration, while final character commits use this same frozen state.
     let final_snapshots =
         tokio::task::spawn_blocking(move || stopped_snapshots(&recovery, &ids)).await??;
-    tokio::task::spawn_blocking(move || service.finish_snapshots(final_snapshots)).await??;
+    let finished =
+        tokio::task::spawn_blocking(move || service.finish_snapshots(final_snapshots)).await?;
+    if let Some(error) = stopped_by {
+        if let Err(finish) = finished {
+            eprintln!("{finish}");
+        }
+        return Err(format!("character storage stopped the host: {error}").into());
+    }
+    finished?;
     Ok(())
+}
+
+/// Logs a character's failed saves when they start, when its session is
+/// logged out, and every minute while they last, not every pass.
+fn log_save_report(report: &crate::dev_characters::SaveReport) {
+    for failure in &report.failed {
+        if failure.consecutive == 1 || failure.log_out || failure.consecutive % 60 == 0 {
+            eprintln!(
+                "{} player {}: save failed ({} in a row){}: {}",
+                failure.zone,
+                failure.player,
+                failure.consecutive,
+                if failure.log_out { ", logged out" } else { "" },
+                failure.error
+            );
+        }
+    }
+    for (zone, error) in &report.unread {
+        eprintln!("{zone}: characters not saved this pass: {error}");
+    }
 }
 
 /// Read only our just-written, stopped recovery bundle through its owner's typed codec.

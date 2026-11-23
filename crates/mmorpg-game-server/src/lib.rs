@@ -13,7 +13,10 @@ pub mod local_world;
 #[cfg(feature = "postgres")]
 pub mod persistence;
 pub mod shared_assets;
-pub use dev_characters::{DevCharacterService, DevCharacterStorage};
+pub use dev_characters::{
+    DevCharacterService, DevCharacterStorage, MAX_CONSECUTIVE_SAVE_FAILURES, SaveFailure,
+    SaveReport,
+};
 pub use dev_host::{
     DevelopmentCharacterHostConfig, serve_development_character_host, serve_managed_character_host,
 };

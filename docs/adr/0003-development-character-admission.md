@@ -17,7 +17,12 @@ zone coordination. Multiple zones in that host share the character store.
 Use the existing FileEntries/CharacterStore contracts. Periodic commits run on a
 blocking worker, outside the tick. Logout parks the exact record through another
 replayed host input, removes its live body, commits the record and releases its
-lease. A failed periodic commit stops serving. Abrupt connection loss retains the
+lease. A failed periodic commit fails only its character (amended by #1145): the
+pass saves every other character, retries it each pass and, after ten failed
+passes in a row, logs its session out through the same parking input. Only a
+newer epoch of one of the host's own zones holding a character stops serving, and
+it stops through the graceful shutdown below, which commits and releases what the
+host still holds. Abrupt connection loss retains the
 last periodic commit after reconnect grace expires; stronger reward acknowledgement
 and replicated crash journaling remain #40's responsibility.
 
