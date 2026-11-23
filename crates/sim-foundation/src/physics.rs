@@ -2035,4 +2035,93 @@ mod tests {
         assert_eq!(world.body(BodyId(10)), copy.body(BodyId(10)));
         assert_eq!(world.body(BodyId(11)), copy.body(BodyId(11)));
     }
+
+    #[test]
+    fn a_rebuilt_world_answers_grounded_as_the_unbroken_run() {
+        on_each_backend(a_rebuilt_world_answers_grounded_as_the_unbroken_run_on);
+    }
+
+    /// A recovered zone rebuilds its units from canonical state, without their last move's
+    /// grounded result (#1148). A unit risen to just past the ground prediction (5.25–5.5 units
+    /// over the floor, where a straight-down cast beyond the contact offset still finds it), or
+    /// risen off a slope where the gap along the contact normal and straight down disagree, is
+    /// grounded in the rebuilt world exactly when the unbroken run's last move said so, and
+    /// both continue alike, jumping whenever grounded as the zone's walk does.
+    fn a_rebuilt_world_answers_grounded_as_the_unbroken_run_on() {
+        let unit = BodyId(10);
+        let build = |slope: bool| {
+            let mut world = world();
+            if slope {
+                // 20°: 220 units over a 600-unit run.
+                world
+                    .add_body(RigidBody::ramp(
+                        BodyId(2),
+                        Vec3i::new(0, 110, 0),
+                        Vec3i::new(300, 110, 300),
+                        crate::RampRise::PosX,
+                    ))
+                    .unwrap();
+            }
+            world
+        };
+        let mut in_gap = 0;
+        for slope in [false, true] {
+            for nudge in 0..64 {
+                let mut world = build(slope);
+                world
+                    .add_body(RigidBody::dynamic(
+                        unit,
+                        Vec3i::new(0, 400, 0),
+                        Vec3i::ZERO,
+                        BODY,
+                    ))
+                    .unwrap();
+                for _ in 0..60 {
+                    world.step().unwrap();
+                }
+                let rest = world.body(unit).unwrap().exact_position()[1];
+                // Up by 5 units (less one tick's gravity) and up to a quarter unit more.
+                world
+                    .set_velocity(unit, Vec3i::new(0, 6 * S + 4 * nudge, 0))
+                    .unwrap();
+                world.step().unwrap();
+                let body = world.body(unit).unwrap();
+                let risen = body.exact_position()[1] - rest;
+                if !slope && risen > 5.0 && risen <= 5.25 {
+                    in_gap += 1;
+                }
+                let mut rebuilt = build(slope);
+                rebuilt
+                    .add_body(RigidBody::moving(
+                        unit,
+                        body.exact_position(),
+                        body.exact_velocity(),
+                        BODY,
+                    ))
+                    .unwrap();
+                for tick in 0..30 {
+                    assert_eq!(
+                        rebuilt.grounded(unit),
+                        world.grounded(unit),
+                        "slope {slope}, nudge {nudge}, tick {tick}"
+                    );
+                    for world in [&mut world, &mut rebuilt] {
+                        if world.grounded(unit) {
+                            world.set_velocity(unit, Vec3i::new(S, 6 * S, 0)).unwrap();
+                        }
+                        world.step().unwrap();
+                    }
+                    assert_eq!(
+                        rebuilt.body(unit),
+                        world.body(unit),
+                        "slope {slope}, nudge {nudge}, tick {tick}"
+                    );
+                }
+            }
+        }
+        assert!(
+            in_gap > 0,
+            "some rise ends inside the gap between the reaches"
+        );
+    }
 }
