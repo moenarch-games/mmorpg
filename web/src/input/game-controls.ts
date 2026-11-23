@@ -341,6 +341,8 @@ export class GameControls {
       ignoreTextEntry: true,
     });
     const detachGamepad = attachGamepadRuntime(this.#controller, {
+      // Pad connect/disconnect events arrive on the same window as the keys.
+      eventTarget: targets.window,
       ...(targets.getGamepads ? { getGamepads: targets.getGamepads } : {}),
       ...(targets.frameScheduler ? { scheduler: targets.frameScheduler } : {}),
     });

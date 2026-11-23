@@ -21,14 +21,14 @@ resolver = "3"
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.98"
+rust-version = "1.99"
 license = "MIT"
 publish = false
 
 [workspace.dependencies]
-game-server = { git = "https://github.com/moritzbrantner/game-server.git", rev = "6fbe7e98d00dffe1236cfdd4596ba9ce88daa1e0" }
+game-server = { git = "https://github.com/moritzbrantner/game-server.git", branch = "main" }
 rapier3d = "=0.36.1"
-physics-engine = { git = "https://github.com/moritzbrantner/physics-engine", rev = "bf5529cfeb419cc04e60f1730cd6d88cefb95324" }
+physics-engine = { git = "https://github.com/moritzbrantner/physics-engine", branch = "main" }
 sim-foundation = { path = "crates/sim-foundation" }
 sim-movement = { path = "crates/sim-movement" }
 sim-combat = { path = "crates/sim-combat" }
@@ -41,8 +41,8 @@ mmorpg-scenery = { path = "crates/mmorpg-scenery" }
 mmorpg-presentation = { path = "crates/mmorpg-presentation" }
 mmorpg-client-model = { path = "crates/mmorpg-client-model" }
 # The Battle Royale fortress (#552): its one shared arena content, read by the browser's practice
-# zone and arena presentation. It pins mmorpg-core by git; the patch below points it here.
-battle-royale-core = { git = "https://github.com/moenarch-games/battle-royale.git", rev = "e27a1da2b6fc0414ea8a095e7ffa43ba486640ec" }
+# zone and arena presentation. It names mmorpg-core by git; the patch below points it here.
+battle-royale-core = { git = "https://github.com/moenarch-games/battle-royale.git", branch = "main" }
 postgres = "=0.19.14"
 tokio = { version = "=1.54.1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 # Test-only harness: one trial per workload or scenario file, run in parallel by nextest (#540).
@@ -52,7 +52,7 @@ strum = { version = "=0.28.0", features = ["derive"] }
 # The same float functions on every target for authoritative code (#1109).
 libm = "=0.2.16"
 
-# battle-royale-core builds against this workspace's mmorpg-core, not its own pinned copy.
+# battle-royale-core builds against this workspace's mmorpg-core, not its own git copy.
 [patch."https://github.com/moritzbrantner/mmorpg.git"]
 sim-foundation = { path = "crates/sim-foundation" }
 sim-movement = { path = "crates/sim-movement" }

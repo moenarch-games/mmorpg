@@ -980,7 +980,7 @@ mod tests {
                 renderer.render(&target, &frame, &[], moved, None).unwrap();
             }
             assert_eq!(renderer.frame.environment_emitter_count(), environment);
-            let alive = renderer.frame.alive_particles();
+            let alive = renderer.frame.alive_particles().await;
             assert_eq!(alive.len(), environment + 6, "impacts reuse six emitters");
             let impact_ids = renderer.frame.impact_emitters();
             let impact_alive = |alive: &[(render_engine::world::EmitterId, u32)]| {
@@ -999,7 +999,7 @@ mod tests {
                 let frame = world.frame(seconds, true, moved.eye, None);
                 renderer.render(&target, &frame, &[], moved, None).unwrap();
             }
-            let after = impact_alive(&renderer.frame.alive_particles());
+            let after = impact_alive(&renderer.frame.alive_particles().await);
             assert!(after.iter().all(|count| *count == 0), "{after:?}");
 
             // A newly loaded world with the same sites is nevertheless a new source owner, so
@@ -1015,7 +1015,10 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(renderer.frame.environment_emitter_count(), environment);
-            assert_eq!(renderer.frame.alive_particles().len(), environment + 6);
+            assert_eq!(
+                renderer.frame.alive_particles().await.len(),
+                environment + 6
+            );
             renderer
                 .render(
                     &target,
@@ -1026,7 +1029,7 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(renderer.frame.environment_emitter_count(), 0);
-            assert_eq!(renderer.frame.alive_particles().len(), 6);
+            assert_eq!(renderer.frame.alive_particles().await.len(), 6);
         });
     }
 

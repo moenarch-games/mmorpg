@@ -213,7 +213,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
  "wl-clipboard-rs",
  "x11rb",
 ]
@@ -509,7 +509,7 @@ dependencies = [
 [[package]]
 name = "battle-royale-core"
 version = "0.1.0"
-source = "git+https://github.com/moenarch-games/battle-royale.git?rev=e27a1da2b6fc0414ea8a095e7ffa43ba486640ec#e27a1da2b6fc0414ea8a095e7ffa43ba486640ec"
+source = "git+https://github.com/moenarch-games/battle-royale.git?branch=main#ea68ac3fb84faa23e02e3003ca80bc83cf446b0d"
 dependencies = [
  "mmorpg-core",
 ]
@@ -595,7 +595,7 @@ checksum = "87a0cf66fd1eb2fb7b822cb78370d82303750809bc6ba855f3f58e517d3238db"
 [[package]]
 name = "bvh-kernels"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-kernels?rev=7c4cc7c9e1c432969a28304db39f8b11e08f8129#7c4cc7c9e1c432969a28304db39f8b11e08f8129"
+source = "git+https://github.com/moritzbrantner/rust-kernels?branch=main#7c4cc7c9e1c432969a28304db39f8b11e08f8129"
 dependencies = [
  "spatial-kernels",
 ]
@@ -1500,7 +1500,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e35d6e78f4cebb90e51d543db8fe41528851d6deeef6ef21ebd4bfdc1e784776"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1781,7 +1781,7 @@ dependencies = [
 [[package]]
 name = "game-audio"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/game-audio.git?rev=2643e342a7d071445186e421082acb553141811d#2643e342a7d071445186e421082acb553141811d"
+source = "git+https://github.com/moritzbrantner/game-audio.git?branch=main#29739b442ee0ef3aedb61a82845645ceeb8c7342"
 dependencies = [
  "kira",
  "serde",
@@ -1791,7 +1791,7 @@ dependencies = [
 [[package]]
 name = "game-server"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/game-server.git?rev=6fbe7e98d00dffe1236cfdd4596ba9ce88daa1e0#6fbe7e98d00dffe1236cfdd4596ba9ce88daa1e0"
+source = "git+https://github.com/moritzbrantner/game-server.git?branch=main#064e755ec6c224ce9ca2387c8e998379eb37272f"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1870,7 +1870,7 @@ dependencies = [
 [[package]]
 name = "geometry-kernels"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-kernels?rev=7c4cc7c9e1c432969a28304db39f8b11e08f8129#7c4cc7c9e1c432969a28304db39f8b11e08f8129"
+source = "git+https://github.com/moritzbrantner/rust-kernels?branch=main#7c4cc7c9e1c432969a28304db39f8b11e08f8129"
 dependencies = [
  "spatial-kernels",
 ]
@@ -2614,7 +2614,7 @@ dependencies = [
 [[package]]
 name = "input-bindings-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/input-bindings.git?rev=9884cf8c857779d399bc901323d95d42a54022cd#9884cf8c857779d399bc901323d95d42a54022cd"
+source = "git+https://github.com/moritzbrantner/input-bindings.git?branch=main#fdf71a85f06bd59cb7269fb20a3584db42bc22a5"
 dependencies = [
  "serde",
 ]
@@ -2902,7 +2902,7 @@ checksum = "dae608c151f68243f2b000364e1f7b186d9c29845f7d2d85bd31b9ad77ad552b"
 [[package]]
 name = "maps-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/maps.git?rev=2aa1a6fb05e486ce438afb7a2707f468f4317276#2aa1a6fb05e486ce438afb7a2707f468f4317276"
+source = "git+https://github.com/moritzbrantner/maps.git?branch=main#ab06f1807076dd86234a34d855908115a7ac07d6"
 dependencies = [
  "earcut",
  "geojson",
@@ -4026,7 +4026,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4179,7 +4179,7 @@ dependencies = [
 [[package]]
 name = "physics-engine"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/physics-engine?rev=bf5529cfeb419cc04e60f1730cd6d88cefb95324#bf5529cfeb419cc04e60f1730cd6d88cefb95324"
+source = "git+https://github.com/moritzbrantner/physics-engine?branch=main#d5d1c76156965c7c4cf0e5f9798f38a610da3445"
 dependencies = [
  "bvh-kernels",
  "geometry-kernels",
@@ -4500,7 +4500,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4513,7 +4513,7 @@ dependencies = [
  "libc",
  "log",
  "socket2",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4761,7 +4761,7 @@ dependencies = [
 [[package]]
 name = "render-engine"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/render-engine.git?rev=3d0acc6830b5b4b18309062237f0fd9fd994d531#3d0acc6830b5b4b18309062237f0fd9fd994d531"
+source = "git+https://github.com/moritzbrantner/render-engine.git?branch=main#9adf005331da5ec7aff5cca7a6cbe7cb9a9bb3d9"
 dependencies = [
  "bevy_mikktspace",
  "bytemuck",
@@ -5258,7 +5258,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5271,7 +5271,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5329,7 +5329,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5576,7 +5576,7 @@ dependencies = [
 [[package]]
 name = "settings-adapters"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/settings.git?rev=01e8ea5dc682adadb395e46966b4e43dc4edef67#01e8ea5dc682adadb395e46966b4e43dc4edef67"
+source = "git+https://github.com/moritzbrantner/settings.git?branch=main#6ce83e09e6844fee88755b53689cb6d6bc2233c6"
 dependencies = [
  "serde",
  "settings-core",
@@ -5586,7 +5586,7 @@ dependencies = [
 [[package]]
 name = "settings-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/settings.git?rev=01e8ea5dc682adadb395e46966b4e43dc4edef67#01e8ea5dc682adadb395e46966b4e43dc4edef67"
+source = "git+https://github.com/moritzbrantner/settings.git?branch=main#6ce83e09e6844fee88755b53689cb6d6bc2233c6"
 dependencies = [
  "serde",
  "serde_json",
@@ -5596,7 +5596,7 @@ dependencies = [
 [[package]]
 name = "settings-presentation"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/settings.git?rev=01e8ea5dc682adadb395e46966b4e43dc4edef67#01e8ea5dc682adadb395e46966b4e43dc4edef67"
+source = "git+https://github.com/moritzbrantner/settings.git?branch=main#6ce83e09e6844fee88755b53689cb6d6bc2233c6"
 dependencies = [
  "serde",
  "settings-core",
@@ -5849,7 +5849,7 @@ dependencies = [
 [[package]]
 name = "spatial-kernels"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-kernels?rev=7c4cc7c9e1c432969a28304db39f8b11e08f8129#7c4cc7c9e1c432969a28304db39f8b11e08f8129"
+source = "git+https://github.com/moritzbrantner/rust-kernels?branch=main#7c4cc7c9e1c432969a28304db39f8b11e08f8129"
 
 [[package]]
 name = "spin"
@@ -6096,7 +6096,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.6",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6151,7 +6151,7 @@ dependencies = [
 [[package]]
 name = "three-d-animation"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/3d-lab.git?rev=db9a53a4aaaad28d5bd0d3fad131fc151953e989#db9a53a4aaaad28d5bd0d3fad131fc151953e989"
+source = "git+https://github.com/moritzbrantner/3d-lab.git?branch=main#1d185c64fa82dc270e0fd0685d77157ef5c59142"
 dependencies = [
  "three-d-core",
 ]
@@ -6159,7 +6159,7 @@ dependencies = [
 [[package]]
 name = "three-d-camera"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/3d-lab.git?rev=db9a53a4aaaad28d5bd0d3fad131fc151953e989#db9a53a4aaaad28d5bd0d3fad131fc151953e989"
+source = "git+https://github.com/moritzbrantner/3d-lab.git?branch=main#1d185c64fa82dc270e0fd0685d77157ef5c59142"
 dependencies = [
  "three-d-animation",
  "three-d-core",
@@ -6168,12 +6168,12 @@ dependencies = [
 [[package]]
 name = "three-d-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/3d-lab.git?rev=db9a53a4aaaad28d5bd0d3fad131fc151953e989#db9a53a4aaaad28d5bd0d3fad131fc151953e989"
+source = "git+https://github.com/moritzbrantner/3d-lab.git?branch=main#1d185c64fa82dc270e0fd0685d77157ef5c59142"
 
 [[package]]
 name = "three-d-projective"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/3d-lab.git?rev=db9a53a4aaaad28d5bd0d3fad131fc151953e989#db9a53a4aaaad28d5bd0d3fad131fc151953e989"
+source = "git+https://github.com/moritzbrantner/3d-lab.git?branch=main#1d185c64fa82dc270e0fd0685d77157ef5c59142"
 dependencies = [
  "three-d-animation",
  "three-d-core",
@@ -7328,7 +7328,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7454,15 +7454,6 @@ name = "windows-sys"
 version = "0.52.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "282be5f36a8ce781fad8c8ae18fa3f9beff57ec1b52cb3de0789201425d9a33d"
-dependencies = [
- "windows-targets",
-]
-
-[[package]]
-name = "windows-sys"
-version = "0.59.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
 dependencies = [
  "windows-targets",
 ]

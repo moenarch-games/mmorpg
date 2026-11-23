@@ -1,11 +1,11 @@
 //! Acceptance for #72 (architecture): native input composes the shared
-//! `input-bindings` foundation, pinned by git rev, and stays out of the
-//! authoritative and host-side crates.
+//! `input-bindings` foundation, followed by its `main` branch (Atlas 7.2.i1126),
+//! and stays out of the authoritative and host-side crates.
 //!
 //! - `mmorpg-client` depends on `input-bindings-core` from
-//!   `github.com/moritzbrantner/input-bindings` pinned by a full 40-hex `rev`
-//!   (directly or through `[workspace.dependencies]`; no branch, tag or path),
-//!   and `Cargo.lock` resolves exactly that commit.
+//!   `github.com/moritzbrantner/input-bindings` by `branch = "main"` (directly
+//!   or through `[workspace.dependencies]`; no rev, tag, path or version), and
+//!   `Cargo.lock` resolves that branch to one full commit.
 //! - `mmorpg-core`, `mmorpg-protocol`, `mmorpg-game-server`, `game-server` and
 //!   `mmorpg-scenery` never reach any `input-bindings*` package in the
 //!   resolved graph, and their manifests never name it.
@@ -72,9 +72,10 @@ fn quoted_field<'a>(spec: &'a str, field: &str) -> Option<&'a str> {
     })
 }
 
-/// The pinned rev of `input-bindings-core` for the client manifest, following
-/// `workspace = true` into the workspace manifest. Errors name the violation.
-fn pinned_rev(client: &str, workspace: &str) -> Result<String, String> {
+/// The branch `input-bindings-core` follows in the client manifest, following
+/// `workspace = true` into the workspace manifest; it must be `main`. Errors
+/// name the violation.
+fn followed_branch(client: &str, workspace: &str) -> Result<String, String> {
     if entry(&table(client, "dev-dependencies"), FOUNDATION).is_some()
         && entry(&table(client, "dependencies"), FOUNDATION).is_none()
     {
@@ -86,7 +87,7 @@ fn pinned_rev(client: &str, workspace: &str) -> Result<String, String> {
         spec = entry(&table(workspace, "workspace.dependencies"), FOUNDATION)
             .ok_or_else(|| format!("{FOUNDATION} is not in [workspace.dependencies]"))?;
     }
-    for forbidden in ["path", "branch", "tag", "version"] {
+    for forbidden in ["path", "rev", "tag", "version"] {
         if quoted_field(spec, forbidden).is_some() {
             return Err(format!("{FOUNDATION} must not use `{forbidden}`: {spec}"));
         }
@@ -97,11 +98,12 @@ fn pinned_rev(client: &str, workspace: &str) -> Result<String, String> {
             "{FOUNDATION} must come from {FOUNDATION_REPO}, got {git}"
         ));
     }
-    let rev = quoted_field(spec, "rev").ok_or_else(|| format!("not pinned by rev: {spec}"))?;
-    if rev.len() != 40 || !rev.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(format!("rev must be a full commit hash, got {rev:?}"));
+    let branch =
+        quoted_field(spec, "branch").ok_or_else(|| format!("does not follow a branch: {spec}"))?;
+    if branch != "main" {
+        return Err(format!("{FOUNDATION} must follow `main`, got {branch:?}"));
     }
-    Ok(rev.to_owned())
+    Ok(branch.to_owned())
 }
 
 /// `[[package]]` entries of a lockfile: name → (source, dependency names).
@@ -243,20 +245,23 @@ fn forbidden_in(source: &str, tokens: &[&str]) -> Vec<String> {
 }
 
 #[test]
-fn the_client_pins_input_bindings_core_by_git_rev() {
+fn the_client_follows_input_bindings_core_main() {
     let client = read(client_dir().join("Cargo.toml"));
     let workspace = read(workspace_dir().join("Cargo.toml"));
-    let rev = pinned_rev(&client, &workspace).unwrap_or_else(|violation| panic!("{violation}"));
+    let branch =
+        followed_branch(&client, &workspace).unwrap_or_else(|violation| panic!("{violation}"));
     let lockfile = read(workspace_dir().join("Cargo.lock"));
     let packages = lock_packages(&lockfile);
     let (source, _) = packages
         .get(FOUNDATION)
         .unwrap_or_else(|| panic!("Cargo.lock resolves {FOUNDATION}"));
     let source = source.as_deref().unwrap_or_default();
+    let commit = source
+        .strip_prefix(&format!("git+{FOUNDATION_REPO}.git?branch={branch}#"))
+        .unwrap_or_else(|| panic!("Cargo.lock resolves {FOUNDATION}'s {branch}, got {source}"));
     assert!(
-        source.starts_with(&format!("git+{FOUNDATION_REPO}"))
-            && source.ends_with(&format!("#{rev}")),
-        "Cargo.lock resolves the pinned commit {rev}, got {source}"
+        commit.len() == 40 && commit.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        "Cargo.lock records a full commit for {FOUNDATION}, got {source}"
     );
     assert!(
         reachable(&packages, "mmorpg-client").contains(FOUNDATION),
@@ -336,34 +341,35 @@ fn desktop_routes_input_through_controls_and_hud() {
 }
 
 #[test]
-fn pin_violations_are_detected() {
+fn follow_violations_are_detected() {
     let workspace = "[workspace.dependencies]\n";
     let client = |spec: &str| format!("[dependencies]\n{spec}\n\n[dev-dependencies]\n");
-    let rev = "d5fcb81bb1eefde9e2f69d404a4d7e429fb2f12c";
-    let good = format!(
-        r#"input-bindings-core = {{ git = "https://github.com/moritzbrantner/input-bindings.git", rev = "{rev}" }}"#
+    let good = r#"input-bindings-core = { git = "https://github.com/moritzbrantner/input-bindings.git", branch = "main" }"#;
+    assert_eq!(
+        followed_branch(&client(good), workspace),
+        Ok("main".to_owned())
     );
-    assert_eq!(pinned_rev(&client(&good), workspace), Ok(rev.to_owned()));
     let via_workspace = format!("[workspace.dependencies]\n{good}\n");
     assert_eq!(
-        pinned_rev(
+        followed_branch(
             &client("input-bindings-core.workspace = true"),
             &via_workspace
         ),
-        Ok(rev.to_owned())
+        Ok("main".to_owned())
     );
     for bad in [
-        r#"input-bindings-core = { git = "https://github.com/moritzbrantner/input-bindings.git", branch = "main" }"#,
-        r#"input-bindings-core = { git = "https://github.com/moritzbrantner/input-bindings.git", rev = "d5fcb81" }"#,
-        r#"input-bindings-core = { git = "https://github.com/someone/input-bindings.git", rev = "d5fcb81bb1eefde9e2f69d404a4d7e429fb2f12c" }"#,
+        r#"input-bindings-core = { git = "https://github.com/moritzbrantner/input-bindings.git", rev = "d5fcb81bb1eefde9e2f69d404a4d7e429fb2f12c" }"#,
+        r#"input-bindings-core = { git = "https://github.com/moritzbrantner/input-bindings.git", branch = "release" }"#,
+        r#"input-bindings-core = { git = "https://github.com/moritzbrantner/input-bindings.git" }"#,
+        r#"input-bindings-core = { git = "https://github.com/someone/input-bindings.git", branch = "main" }"#,
         r#"input-bindings-core = { path = "../../../input-bindings/crates/input-bindings-core" }"#,
         r#"input-bindings-core = "0.1""#,
         "three-d-core = { git = \"https://github.com/moritzbrantner/3d-lab.git\" }",
     ] {
-        assert!(pinned_rev(&client(bad), workspace).is_err(), "{bad}");
+        assert!(followed_branch(&client(bad), workspace).is_err(), "{bad}");
     }
     let dev_only = format!("[dependencies]\n\n[dev-dependencies]\n{good}\n");
-    assert!(pinned_rev(&dev_only, workspace).is_err());
+    assert!(followed_branch(&dev_only, workspace).is_err());
 }
 
 #[test]

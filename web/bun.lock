@@ -5,16 +5,16 @@
     "": {
       "name": "mmorpg-pages-tech-demo",
       "dependencies": {
-        "@moritzbrantner/game-audio": "github:moritzbrantner/game-audio#23575083299653ded66ca69257f04ff34b2d1eb5",
-        "@moritzbrantner/input-bindings": "github:moritzbrantner/input-bindings#e8996d383d47dfaa05b684a68cc97f2bb9ed0170",
-        "@moritzbrantner/input-bindings-react": "github:moritzbrantner/input-bindings#549b4edfbd6bade6173dc507c15ee59fe9fc2d9e",
-        "@moritzbrantner/input-bindings-runtime": "github:moritzbrantner/input-bindings#7683fc7b8572b38124d3b99c3c274ae32ab24f19",
-        "@moritzbrantner/input-bindings-web": "github:moritzbrantner/input-bindings#bcb5834545bcf92cf74d4fb80496f410dea3bcaf",
-        "@moritzbrantner/maps": "github:moritzbrantner/maps#2aa1a6fb05e486ce438afb7a2707f468f4317276",
-        "@moritzbrantner/settings-browser": "github:moritzbrantner/settings#18289aafa116010fd8dfe485aecff2cc749ceb4a",
-        "@moritzbrantner/three-d-renderer": "github:moritzbrantner/3d-lab#1d185c64fa82dc270e0fd0685d77157ef5c59142",
-        "@moritzbrantner/three-lighting": "github:moritzbrantner/render-engine#c40b19d5f9f08bb6cf6c952f62a3057f6aa08aba",
-        "@moritzbrantner/ui": "github:moritzbrantner/ui#2f0cc4e470307b017fb06aae4a03b9abce47cc8c",
+        "@moritzbrantner/game-audio": "github:moritzbrantner/game-audio#dist/game-audio",
+        "@moritzbrantner/input-bindings": "github:moritzbrantner/input-bindings#dist/input-bindings",
+        "@moritzbrantner/input-bindings-react": "github:moritzbrantner/input-bindings#dist/input-bindings-react",
+        "@moritzbrantner/input-bindings-runtime": "github:moritzbrantner/input-bindings#dist/input-bindings-runtime",
+        "@moritzbrantner/input-bindings-web": "github:moritzbrantner/input-bindings#dist/input-bindings-web",
+        "@moritzbrantner/maps": "github:moritzbrantner/maps#main",
+        "@moritzbrantner/settings-browser": "github:moritzbrantner/settings#browser-dist",
+        "@moritzbrantner/three-d-renderer": "github:moritzbrantner/3d-lab#main",
+        "@moritzbrantner/three-lighting": "github:moritzbrantner/render-engine#main",
+        "@moritzbrantner/ui": "github:moritzbrantner/ui#main",
         "meshoptimizer": "1.1.1",
         "react": "19.3.1",
         "react-dom": "19.3.1",
@@ -138,25 +138,25 @@
 
     "@maplibre/vt-pbf": ["@maplibre/vt-pbf@4.3.3", "", { "dependencies": { "@mapbox/point-geometry": "^1.1.0", "@types/geojson": "^7946.0.16", "pbf": "^5.1.2" } }, "sha512-dEe5XUd64RQbxNxy2OzIkJnwNDWjVmSXjCd0A7zLirm7QJ/WWbmtDFIkfsiM4yt1cplqzG6oSivRYeWx1SM1yg=="],
 
-    "@moritzbrantner/game-audio": ["@moritzbrantner/game-audio@github:moritzbrantner/game-audio#2357508", {}, "moritzbrantner-game-audio-2357508", "sha512-LXC9Ehm27cvHdsnS/+Zu51vdxtc/mfsnsdGOtnYgs5zTnXI2HdlbE22Oq2vLreIAYNnFMrQaDyqI25wB42bnSg=="],
+    "@moritzbrantner/game-audio": ["@moritzbrantner/game-audio@github:moritzbrantner/game-audio#5640901", {}, "moritzbrantner-game-audio-5640901", "sha512-/EwOEs+tQyBX637VNEucrsg0k4nAhZ7+wM7paiZrcLMFYlv1yJofzmncYd1eCgyjgnm12aUumxA0IjOK/ibitA=="],
 
-    "@moritzbrantner/input-bindings": ["@moritzbrantner/input-bindings@github:moritzbrantner/input-bindings#e8996d3", {}, "moritzbrantner-input-bindings-e8996d3", "sha512-R1z0pwP0En4yjhQE1j8S7nqA9dOJzPIzVyFa4Z+doLy38bxRMWonSAHabuT0lnP8gD1pTuH/yiskw1tEQejq7g=="],
+    "@moritzbrantner/input-bindings": ["@moritzbrantner/input-bindings@github:moritzbrantner/input-bindings#8f7c54b", {}, "moritzbrantner-input-bindings-8f7c54b", "sha512-lLaYvDC02lsQWWXoHqFWVDduHNQji+Y+P16RTgydh/f90g3rdn/cTv/zXCocKA51bzLm2ucmC3f5zfw8vAGNdA=="],
 
-    "@moritzbrantner/input-bindings-react": ["@moritzbrantner/input-bindings-react@github:moritzbrantner/input-bindings#549b4ed", { "dependencies": { "@moritzbrantner/input-bindings": "github:moritzbrantner/input-bindings#e8996d383d47dfaa05b684a68cc97f2bb9ed0170", "@moritzbrantner/input-bindings-runtime": "github:moritzbrantner/input-bindings#7683fc7b8572b38124d3b99c3c274ae32ab24f19", "@moritzbrantner/input-bindings-web": "github:moritzbrantner/input-bindings#bcb5834545bcf92cf74d4fb80496f410dea3bcaf" }, "peerDependencies": { "react": ">=19" } }, "moritzbrantner-input-bindings-549b4ed", "sha512-zk9nq0ECdB6zi2WVanoNWrJp3wal3/2mavNvEyaFz+YG2EWV4AjRYlRi9v8XBzi/I5cBH/K6C7imAa5u6wHmMA=="],
+    "@moritzbrantner/input-bindings-react": ["@moritzbrantner/input-bindings-react@github:moritzbrantner/input-bindings#e8ea4eb", { "dependencies": { "@moritzbrantner/input-bindings": "github:moritzbrantner/input-bindings#8f7c54bfa261aacf45c1a8b4b6c2730b9426f0e1", "@moritzbrantner/input-bindings-runtime": "github:moritzbrantner/input-bindings#9383a01f0b28153efdb856124d22600db6f4c618", "@moritzbrantner/input-bindings-web": "github:moritzbrantner/input-bindings#2c7da61e384c5eda9a4b1621a864d82ad5ce58d7" }, "peerDependencies": { "react": ">=19" } }, "moritzbrantner-input-bindings-e8ea4eb", "sha512-zpZoXCjOVuvXiMyqbIZul6I1mVxPxtF//DLxODIy7DOeiwTxZpitWTBRvHe+LxhAM2D/4UNUqGjtWettYULxkA=="],
 
-    "@moritzbrantner/input-bindings-runtime": ["@moritzbrantner/input-bindings-runtime@github:moritzbrantner/input-bindings#7683fc7", { "dependencies": { "@moritzbrantner/input-bindings": "github:moritzbrantner/input-bindings#e8996d383d47dfaa05b684a68cc97f2bb9ed0170" } }, "moritzbrantner-input-bindings-7683fc7", "sha512-pEuKALP3TR0b7Y25LfFzbY2efzOsw07immfP3LNqArAzZu9XVVKjOCrnbVilncQJz9sWbLUzIyxS9Q7ktWS0gw=="],
+    "@moritzbrantner/input-bindings-runtime": ["@moritzbrantner/input-bindings-runtime@github:moritzbrantner/input-bindings#9383a01", { "dependencies": { "@moritzbrantner/input-bindings": "github:moritzbrantner/input-bindings#8f7c54bfa261aacf45c1a8b4b6c2730b9426f0e1" } }, "moritzbrantner-input-bindings-9383a01", "sha512-5MZMkqOomKVdQx0nn63y0cfGan0EJVlvC+dVVAlHPapyp2Lxne4IF0XyePMe5fygLMvjeckRKP1Ym4gHSGpVmQ=="],
 
-    "@moritzbrantner/input-bindings-web": ["@moritzbrantner/input-bindings-web@github:moritzbrantner/input-bindings#bcb5834", { "dependencies": { "@moritzbrantner/input-bindings": "github:moritzbrantner/input-bindings#e8996d383d47dfaa05b684a68cc97f2bb9ed0170", "@moritzbrantner/input-bindings-runtime": "github:moritzbrantner/input-bindings#7683fc7b8572b38124d3b99c3c274ae32ab24f19" } }, "moritzbrantner-input-bindings-bcb5834", "sha512-mzSU1D84nLr8O0qahJ5myIdTg02GFnn5SEItWx6ReMBfM2GvMuYpBkJbONoIlXP0+KqHtdOuZvKoArJ/Nx1thA=="],
+    "@moritzbrantner/input-bindings-web": ["@moritzbrantner/input-bindings-web@github:moritzbrantner/input-bindings#2c7da61", { "dependencies": { "@moritzbrantner/input-bindings": "github:moritzbrantner/input-bindings#8f7c54bfa261aacf45c1a8b4b6c2730b9426f0e1", "@moritzbrantner/input-bindings-runtime": "github:moritzbrantner/input-bindings#9383a01f0b28153efdb856124d22600db6f4c618" } }, "moritzbrantner-input-bindings-2c7da61", "sha512-N8phvSCiRgf0rtYxtRuIdAQSEXB3Uaxz6XktghqhfIApRr1HnZOSXkWd+vX/1G2wjgq5GXYZUL32jQhyCHkbpg=="],
 
-    "@moritzbrantner/maps": ["@moritzbrantner/maps@github:moritzbrantner/maps#2aa1a6f", { "dependencies": { "@mapbox/unitbezier": "^1.0.0", "@turf/boolean-clockwise": "^7.3.5", "@turf/centroid": "^7.3.5", "@turf/helpers": "^7.3.5", "d3-delaunay": "^6.0.4", "maplibre-gl": "6.16.0", "pmtiles": "4.5.0", "polygon-clipping": "^0.15.7" }, "peerDependencies": { "@moritzbrantner/timeline-editor": "^1.0.0", "@moritzbrantner/ui": "^1.0.0", "react": "^19.0.0", "react-dom": "^19.0.0" }, "optionalPeers": ["@moritzbrantner/timeline-editor"], "hasInstallScript": true }, "moritzbrantner-maps-2aa1a6f", "sha512-oDlfl1eRDWoop8v1J+TMPGpRWdSFR10BOUaOoRiNtVgiYcQlqgBCYLwZJEqK15rfXcPynXOXlkUZ5SQzWjljYg=="],
+    "@moritzbrantner/maps": ["@moritzbrantner/maps@github:moritzbrantner/maps#ab06f18", { "dependencies": { "@mapbox/unitbezier": "^1.0.0", "@turf/boolean-clockwise": "^7.3.5", "@turf/centroid": "^7.3.5", "@turf/helpers": "^7.3.5", "d3-delaunay": "^6.0.4", "maplibre-gl": "6.17.0", "pmtiles": "4.5.0", "polygon-clipping": "^0.15.7" }, "peerDependencies": { "@moritzbrantner/timeline-editor": "^1.0.0", "@moritzbrantner/ui": "^1.0.0", "react": "^19.0.0", "react-dom": "^19.0.0" }, "optionalPeers": ["@moritzbrantner/timeline-editor"], "hasInstallScript": true }, "moritzbrantner-maps-ab06f18", "sha512-GEvdQ/NPQkeNIc9AsY8OieYzndJ8fwruA7hXtwfUxE3X1bqKovpBFRV7i5hmVHi4cYOeoIcl/cQEMD7vWbr4fw=="],
 
-    "@moritzbrantner/settings-browser": ["@moritzbrantner/settings-browser@github:moritzbrantner/settings#18289aa", { "peerDependencies": { "@moritzbrantner/ui": ">=1.1.0", "react": ">=19.0.0" }, "optionalPeers": ["@moritzbrantner/ui", "react"] }, "moritzbrantner-settings-18289aa", "sha512-FBj8uv/oMFVw0Gxud3y1KLdzTqHH7HTAgjuonsFTuQ6y41LRu5G5zAYRLtHxfdSCeT4w28FHuPumKG0VYjujVg=="],
+    "@moritzbrantner/settings-browser": ["@moritzbrantner/settings-browser@github:moritzbrantner/settings#365787a", { "peerDependencies": { "@moritzbrantner/ui": ">=1.1.0", "react": ">=19.0.0" }, "optionalPeers": ["@moritzbrantner/ui", "react"] }, "moritzbrantner-settings-365787a", "sha512-jSHpSCq+x/WixBRHsTeI/zWMBv3fMgHZftb5nqiOVur7eHcPYl5eXvwiR6u7qyowVQ2FFlNUOXcb+dtoHPQBSg=="],
 
     "@moritzbrantner/three-d-renderer": ["@moritzbrantner/three-d-renderer@github:moritzbrantner/3d-lab#1d185c6", { "dependencies": { "three": "0.187.0" } }, "moritzbrantner-3d-lab-1d185c6", "sha512-8g5j+Ya89eMPu1OZDMZPpigHcQQhO2jpZadSioyJv7QNvoW1vru+OEHawE+oCK69IZzgYiSmkR618eUB9Da05g=="],
 
-    "@moritzbrantner/three-lighting": ["@moritzbrantner/three-lighting@github:moritzbrantner/render-engine#c40b19d", { "peerDependencies": { "three": ">=0.186.0 <0.188.0" } }, "moritzbrantner-render-engine-c40b19d", "sha512-9EofSBTmNCz/HH+p3+z8TO3Dk5N58Krp2Wat2aSG2xu2cUeJ92Z9AGsCPvcj24hRfj50J2iuT/AIhMDW7vaQ4Q=="],
+    "@moritzbrantner/three-lighting": ["@moritzbrantner/three-lighting@github:moritzbrantner/render-engine#9adf005", { "peerDependencies": { "three": ">=0.186.0 <0.188.0" } }, "moritzbrantner-render-engine-9adf005", "sha512-oVgbIcD7sbO9oJdGAwFfvsFTyOZP+kf0xf5xW/UgNtUkjIMhdpL/3pwH2HrVW21R/tnYzhlwkEQkiBzMquR21A=="],
 
-    "@moritzbrantner/ui": ["@moritzbrantner/ui@github:moritzbrantner/ui#2f0cc4e", { "dependencies": { "@base-ui/react": "^1.3.0", "@dnd-kit/react": "^0.5.0", "@tanstack/react-table": "^8.21.3", "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "cmdk": "^1.1.1", "date-fns": "^4.1.0", "embla-carousel-react": "^8.6.0", "input-otp": "^1.4.2", "lucide-react": "^1.7.0", "motion": "^13.1.1", "radix-ui": "^1.4.3", "react-day-picker": "^9.14.0", "react-resizable-panels": "^4.9.0", "sonner": "^2.0.7", "tailwind-merge": "^3.4.0", "tailwindcss": "^4.1.14", "tw-animate-css": "^1.4.0", "vaul": "^1.1.2" }, "peerDependencies": { "react": "^19.0.0", "react-dom": "^19.0.0" }, "hasInstallScript": true }, "moritzbrantner-ui-2f0cc4e", "sha512-4k3n3EvL0zNfCugprEvrS1K7KzZsCQ7ddqEQWefClxLB5N8itF2Wo1J/drNVDM5lPGDrYUdnLnsoGvY76YAwJA=="],
+    "@moritzbrantner/ui": ["@moritzbrantner/ui@github:moritzbrantner/ui#dfebc47", { "dependencies": { "@base-ui/react": "^1.3.0", "@dnd-kit/react": "^0.5.0", "@tanstack/react-table": "^8.21.3", "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "cmdk": "^1.1.1", "date-fns": "^4.1.0", "embla-carousel-react": "^8.6.0", "input-otp": "^1.4.2", "lucide-react": "^1.7.0", "motion": "^13.1.1", "radix-ui": "^1.4.3", "react-day-picker": "^9.14.0", "react-resizable-panels": "^4.9.0", "sonner": "^2.0.7", "tailwind-merge": "^3.4.0", "tailwindcss": "^4.1.14", "tw-animate-css": "^1.4.0", "vaul": "^1.1.2" }, "peerDependencies": { "react": "^19.0.0", "react-dom": "^19.0.0" }, "hasInstallScript": true }, "moritzbrantner-ui-dfebc47", "sha512-E8O/zCvYaOo3cVVkFMn8aPeKY8FSXKYmUgMHq+nJ3rl3RTH6RATsBT6SX+6efJfVDJLCBWVtAldlVDCzjwz+GA=="],
 
     "@preact/signals-core": ["@preact/signals-core@1.14.5", "", {}, "sha512-vcRv7Ityz5JVmeiVqIluLFzT/PDS/AlhHUpw3/aUWqcVUs6bDGIPXE/6RSC4evBNWYvnniozg5Syfj33al3gkg=="],
 
@@ -420,7 +420,7 @@
 
     "lucide-react": ["lucide-react@1.77.0", "", { "peerDependencies": { "@types/react": "*", "react": "^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0" }, "optionalPeers": ["@types/react"] }, "sha512-VS6sOi8ZUH1qm6swBL/tpI4xAhB6pFTdHvw3pfCJD+DaTJwpyynVzfOS6mdyMZ+OCdY/GMSQbqinOMOPbNSrQA=="],
 
-    "maplibre-gl": ["maplibre-gl@6.16.0", "", { "dependencies": { "@mapbox/point-geometry": "^1.1.0", "@mapbox/tiny-sdf": "^2.3.0", "@mapbox/unitbezier": "^1.0.0", "@mapbox/vector-tile": "^3.0.0", "@maplibre/geojson-vt": "^6.3.0", "@maplibre/maplibre-gl-style-spec": "^26.4.4", "@maplibre/mlt": "^1.3.0", "@maplibre/vt-pbf": "^4.3.3", "@types/geojson": "^7946.0.16", "bidi-js": "^1.1.0", "earcut": "^3.2.4", "gl-matrix": "^3.4.4", "kdbush": "^4.1.0", "murmurhash-js": "^1.0.0", "pbf": "^5.1.2", "potpack": "^2.1.0", "quickselect": "^3.0.0", "tinyqueue": "^3.0.0" } }, "sha512-gApO66EMtoDZuio680RUBvskR7ahFd/NNhLN4tBAs+Y7FeT4gQV8zVFgYVMRmFxQznOEzecW19w6xOd9XjZjiA=="],
+    "maplibre-gl": ["maplibre-gl@6.17.0", "", { "dependencies": { "@mapbox/point-geometry": "^1.1.0", "@mapbox/tiny-sdf": "^2.3.0", "@mapbox/unitbezier": "^1.0.0", "@mapbox/vector-tile": "^3.0.0", "@maplibre/geojson-vt": "^6.3.0", "@maplibre/maplibre-gl-style-spec": "^26.5.1", "@maplibre/mlt": "^1.3.0", "@maplibre/vt-pbf": "^4.3.3", "@types/geojson": "^7946.0.16", "bidi-js": "^1.1.0", "earcut": "^3.2.4", "gl-matrix": "^3.4.4", "kdbush": "^4.1.0", "murmurhash-js": "^1.0.0", "pbf": "^5.1.2", "potpack": "^2.1.0", "quickselect": "^3.0.0", "tinyqueue": "^3.0.0" } }, "sha512-2chIZwpLGenoUQOcnm9Pk4SLbA8ppNFq8jlpXiq9vcYm3Y1wJ3fc82FL0GLwBaPYJCLzPv/mC46KEupVov75rQ=="],
 
     "meshoptimizer": ["meshoptimizer@1.1.1", "", {}, "sha512-oRFNWJRDA/WTrVj7NWvqa5HqE1t9MYDj2VaWirQCzCCrAd2GHrqR/sQezCxiWATPNlKTcRaPRHPJwIRoPBAp5g=="],
 

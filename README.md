@@ -228,14 +228,17 @@ Use lightweight CQRS/CQS at service boundaries: commands mutate authoritative du
 
 The PostgreSQL/S3 host now [suspends empty zones and cold-restores them on admission](docs/ZONE_LIFECYCLE.md), with a bounded 30-second default grace and frozen gameplay time. Development file hosts and the browser-local host remain resident.
 
-## Pinned foundations
+## Foundations
 
-- `rapier3d`: `=0.36.1` (crates.io, default features)
-- `physics-engine`: pinned workspace dependency, the default native/WASM backend for authored static meshes and convex hulls; `physics-ab` adds comparison diagnostics ([physics backends](docs/PHYSICS_AB.md))
-- `game-server`: `6fbe7e98d00dffe1236cfdd4596ba9ce88daa1e0`
-- `render-engine` (native client rendering and lighting, #529): `d5afb5deefa9b22e7f187ae6e6e2e8460aaa4b28`
-- `3d-lab` (`three-d-core`, `three-d-camera`, `three-d-projective`, `three-d-animation` and the browser `@moritzbrantner/three-d-renderer`, kept on one commit): `235774615f1367065093deb6988f5217bdf4d7e1`
-- reusable validation workflow: `45042e56be120b438096e774027637cac0280075`
+The owner's foundation repositories and Battle Royale are followed by branch, not by exact revision (Atlas 7.2.i1126): Cargo names them with `branch = "main"`, and the browser names each GitHub package by the branch it is published on (`dist/<package>`, settings' `browser-dist`, otherwise `main`). The committed `Cargo.lock` and `bun.lock` record the commit a build uses; builds stay `--locked` / `--frozen-lockfile`, and `cargo update -p <crate>` / `bun update <package>` moves to a newer head.
+
+- `rapier3d`: `=0.36.1` (crates.io, default features), only under the `physics-ab` diagnostics
+- `physics-engine`: the default native/WASM backend for authored static meshes and convex hulls; `physics-ab` adds comparison diagnostics ([physics backends](docs/PHYSICS_AB.md))
+- `game-server`: transport, sessions, ticks, reconnect and recovery
+- `render-engine` (native client rendering and lighting, #529, and the browser's `@moritzbrantner/three-lighting`)
+- `3d-lab` (`three-d-core`, `three-d-camera`, `three-d-projective`, `three-d-animation` and the browser `@moritzbrantner/three-d-renderer`, one source)
+- `maps`, `settings`, `input-bindings`, `game-audio`, `ui` and `battle-royale-core`
+- reusable validation workflow: still referenced by commit in `.github/workflows/validate.yml` (a GitHub Actions reference, outside this rule's Cargo and npm scope)
 
 ## Tools
 

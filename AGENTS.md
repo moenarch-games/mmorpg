@@ -110,7 +110,7 @@ uv run content/greyhaven/authoring/areas.py           # Greyhaven's named areas 
 - Prefer lightweight CQRS/CQS at service boundaries. Event sourcing is optional and requires concrete justification.
 - Keep durable persistence outside the simulation hot loop.
 - Do not pick a cloud/provider-specific scheduler, database or service mesh until the contract that needs it exists.
-- External reusable foundations are pinned by git rev. Update pins intentionally with compatibility evidence.
+- The owner's reusable foundations and Battle Royale are followed by branch, not exact revision (owner decision, Atlas 7.2.i1126): Cargo `branch = "main"`; GitHub npm packages by the branch they are published on (`dist/<package>`, settings' `browser-dist`, otherwise `main`). No exact version pins and no duplicate revisions of a sibling. `Cargo.lock` and `bun.lock` stay committed and builds stay `--locked` / `--frozen-lockfile`; update with `cargo update -p <crate>` or `bun update <package>`, check compatibility, and review any fixture, scenario or workload movement in the same PR.
 
 ## Direction
 
@@ -141,7 +141,7 @@ General engineering rules (git and merging, commits, testing, ADRs, docs, depend
 
 ## Shared foundations
 
-- Shared foundations (`game-server`, `3d-lab`, …) are checked out beside this repo under `~/privat/`. Fix defects there and bump the pin here (DEP-003). For rendering/asset-import gaps, apply the owner’s external-provider adoption rule above before starting upstream work; extending an unproven internal tool is not the default way to unblock the game.
+- Shared foundations (`game-server`, `3d-lab`, …) are checked out beside this repo under `~/privat/`. Fix defects there, merge them to its `main`, then update this repository's lockfile to it (`cargo update -p <crate>` / `bun update <package>`, DEP-003). For rendering/asset-import gaps, apply the owner’s external-provider adoption rule above before starting upstream work; extending an unproven internal tool is not the default way to unblock the game.
 
 ## Done means
 
