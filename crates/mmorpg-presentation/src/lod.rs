@@ -33,12 +33,17 @@ pub struct EntryLods {
     pub bounds: Option<[[f64; 3]; 2]>,
 }
 
-/// Every asset's levels in a descriptor with `lodSelection`.
+/// Every asset's levels in a descriptor with `lodSelection`, or, in a descriptor without it (a
+/// kit that ships only `default`, like the settlement props and the sandstone kit), each asset's
+/// one level ([`single_level_lods`]).
 ///
 /// # Errors
 ///
 /// For an unknown metric or an asset without a key, bounding sphere or levels.
 pub fn descriptor_lods(descriptor: &Value) -> Result<Vec<EntryLods>, String> {
+    if descriptor.get("lodSelection").is_none() {
+        return single_level_lods(descriptor);
+    }
     let metric = descriptor["lodSelection"]["metric"].as_str();
     if metric != Some(METRIC) {
         return Err(format!("unknown LOD metric {metric:?}"));
@@ -87,6 +92,46 @@ pub fn descriptor_lods(descriptor: &Value) -> Result<Vec<EntryLods>, String> {
                 radius,
                 levels,
                 bounds,
+            })
+        })
+        .collect()
+}
+
+/// Each asset's one level (`default`, always drawn) with the sphere round its `bounds` box, for
+/// a descriptor without `lodSelection`.
+///
+/// # Errors
+///
+/// When the descriptor lists no assets or an asset lacks a key or bounds.
+pub fn single_level_lods(descriptor: &Value) -> Result<Vec<EntryLods>, String> {
+    let point = |value: &Value| -> Option<[f64; 3]> {
+        let value = value.as_array().filter(|c| c.len() == 3)?;
+        let mut out = [0.; 3];
+        for (axis, coordinate) in value.iter().enumerate() {
+            out[axis] = coordinate.as_f64()?;
+        }
+        Some(out)
+    };
+    descriptor["assets"]
+        .as_array()
+        .ok_or("the descriptor lists no assets")?
+        .iter()
+        .map(|asset| {
+            let entry = asset["key"].as_str().ok_or("an asset without key")?;
+            let (min, max) = point(&asset["bounds"]["min"])
+                .zip(point(&asset["bounds"]["max"]))
+                .ok_or_else(|| format!("{entry} has no bounds"))?;
+            let centre = std::array::from_fn(|axis| (min[axis] + max[axis]) / 2.);
+            let radius = (0..3)
+                .map(|axis| ((max[axis] - min[axis]) / 2.).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            Ok(EntryLods {
+                entry: entry.to_owned(),
+                centre,
+                radius,
+                levels: vec![("default".to_owned(), 0.)],
+                bounds: Some([min, max]),
             })
         })
         .collect()
