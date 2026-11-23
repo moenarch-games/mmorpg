@@ -34,6 +34,9 @@ pub struct EntityFlags {
     pub weapon: Option<crate::WeaponFamily>,
     /// A player's named main-hand weapon (#918), drawn with its own model; `None` otherwise.
     pub named_weapon: Option<crate::NamedWeapon>,
+    /// A player's two-handed main-hand weapon (#1073): which great weapon's model and strike
+    /// clip clients show; `None` otherwise. Presentation only: the family row resolves it.
+    pub great_weapon: Option<crate::GreatWeapon>,
     /// A player in wolf form (#957), whom clients draw as the wolf. Presentation only.
     pub shapeshifted: bool,
     /// An aggressive creature: it attacks players on sight.
@@ -613,6 +616,10 @@ impl ZoneSimulation {
                             .item(crate::EquipmentSlot::MainHand)
                             .and_then(crate::item_find)
                             .and_then(|find| find.named),
+                        great_weapon: player
+                            .equipment
+                            .item(crate::EquipmentSlot::MainHand)
+                            .and_then(crate::GreatWeapon::of_item),
                         shapeshifted: crate::aura::has_kind(
                             &player.auras,
                             crate::AuraKind::Shapeshift,
@@ -661,6 +668,7 @@ impl ZoneSimulation {
                         weapon_drawn: false,
                         weapon: None,
                         named_weapon: None,
+                        great_weapon: None,
                         shapeshifted: false,
                         in_combat: alive
                             && (creature.ai == CreatureAi::Engaged || creature.combat_timer > 0),

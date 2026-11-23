@@ -149,7 +149,8 @@ pub struct Equipment {
 }
 
 impl Equipment {
-    /// Validates imported slots: every item exists and fits its slot.
+    /// Validates imported slots: every item exists and fits its slot, and a
+    /// two-handed weapon leaves the off hand empty (#1073).
     pub fn from_slots(slots: [Option<ItemId>; EQUIPMENT_SLOTS]) -> Result<Self, InventoryError> {
         for (slot, item) in EquipmentSlot::VARIANTS.iter().copied().zip(slots) {
             if let Some(item) = item {
@@ -159,7 +160,11 @@ impl Equipment {
                 }
             }
         }
-        Ok(Self { slots })
+        let equipment = Self { slots };
+        if equipment.two_handed() && equipment.item(EquipmentSlot::OffHand).is_some() {
+            return Err(InventoryError::NotEquippable);
+        }
+        Ok(equipment)
     }
 
     #[must_use]
@@ -170,6 +175,14 @@ impl Equipment {
     #[must_use]
     pub const fn item(&self, slot: EquipmentSlot) -> Option<ItemId> {
         self.slots[slot.index() as usize]
+    }
+
+    /// Whether the main hand holds a two-handed weapon (#1073), which leaves the off hand empty.
+    #[must_use]
+    pub fn two_handed(&self) -> bool {
+        self.item(EquipmentSlot::MainHand)
+            .and_then(item_template)
+            .is_some_and(|template| template.weapon == Some(crate::WeaponFamily::TwoHanded))
     }
 
     /// The summed stats of every equipped item.
@@ -194,7 +207,9 @@ impl Equipment {
     /// Equips the item in `bag_slot` into its catalog slot. A previously
     /// equipped item takes its place in the same bag slot, so a full bag
     /// never blocks equipping. A weapon whose family `class` may not wield
-    /// (#914) is not equippable. Refusals change neither value.
+    /// (#914) is not equippable. A two-handed weapon and an off-hand item exclude each other
+    /// (#1073): equipping one moves the other to the lowest empty bag slot. Refusals change
+    /// neither value.
     pub fn equip(
         &mut self,
         bag: &mut Inventory,
@@ -219,9 +234,26 @@ impl Equipment {
             Some(item) => Some(ItemStack::new(item, 1)?),
             None => None,
         };
+        // Both hands hold a two-handed weapon (#1073): equipping one sends the off-hand item to
+        // the bag, and equipping an off-hand item sends the two-handed weapon there.
+        let other = match slot {
+            EquipmentSlot::MainHand if template.weapon == Some(crate::WeaponFamily::TwoHanded) => {
+                Some(EquipmentSlot::OffHand)
+            }
+            EquipmentSlot::OffHand if self.two_handed() => Some(EquipmentSlot::MainHand),
+            _ => None,
+        }
+        .and_then(|other| Some((usize::from(other.index()), self.item(other)?)));
         // Equippable catalog items stack to one, so the whole stack moves.
         let mut slots = *bag.slots();
         slots[bag_slot] = previous;
+        if let Some((other, item)) = other {
+            let free = (0..INVENTORY_SLOTS)
+                .find(|&free| slots[free].is_none())
+                .ok_or(InventoryError::NoCapacity)?;
+            slots[free] = Some(ItemStack::new(item, 1)?);
+            self.slots[other] = None;
+        }
         *bag = Inventory::from_slots(slots);
         self.slots[index] = Some(stack.item());
         Ok(())
@@ -328,5 +360,101 @@ mod tests {
         assert_eq!(totals.damage_bonus(Some(PlayerClass::Warden)), 2);
         assert_eq!(totals.damage_bonus(Some(PlayerClass::Ranger)), 1);
         assert_eq!(totals.damage_bonus(Some(PlayerClass::Arcanist)), 2);
+    }
+}
+
+#[cfg(test)]
+mod two_handed {
+    use super::*;
+    use crate::GreatWeapon;
+
+    const BUCKLER: ItemId = ItemId::new(5);
+    const SHORTSWORD: ItemId = ItemId::new(3);
+    const WARDEN: Option<PlayerClass> = Some(PlayerClass::Warden);
+
+    fn bag(items: &[ItemId]) -> Inventory {
+        let mut slots = [None; INVENTORY_SLOTS];
+        for (slot, &item) in slots.iter_mut().zip(items) {
+            *slot = Some(ItemStack::new(item, 1).unwrap());
+        }
+        Inventory::from_slots(slots)
+    }
+
+    fn held(equipment: &Equipment) -> [Option<ItemId>; 2] {
+        [EquipmentSlot::MainHand, EquipmentSlot::OffHand].map(|slot| equipment.item(slot))
+    }
+
+    #[test]
+    fn a_great_weapon_and_an_off_hand_item_exclude_each_other() {
+        let maul = GreatWeapon::Maul.item();
+        let mut equipment = Equipment::default();
+        let mut inventory = bag(&[SHORTSWORD, BUCKLER, maul]);
+        equipment.equip(&mut inventory, 0, WARDEN).unwrap();
+        equipment.equip(&mut inventory, 1, WARDEN).unwrap();
+        assert_eq!(held(&equipment), [Some(SHORTSWORD), Some(BUCKLER)]);
+        // The maul takes both hands: the shortsword takes its bag slot, the buckler the
+        // lowest empty one.
+        equipment.equip(&mut inventory, 2, WARDEN).unwrap();
+        assert_eq!(held(&equipment), [Some(maul), None]);
+        assert!(equipment.two_handed());
+        assert_eq!(inventory.count(SHORTSWORD) + inventory.count(BUCKLER), 2);
+        assert_eq!(inventory.slots()[2].map(ItemStack::item), Some(SHORTSWORD));
+        // Taking up the buckler again puts the maul away.
+        let buckler = (0..INVENTORY_SLOTS)
+            .find(|&slot| inventory.slots()[slot].map(ItemStack::item) == Some(BUCKLER))
+            .unwrap();
+        equipment.equip(&mut inventory, buckler, WARDEN).unwrap();
+        assert_eq!(held(&equipment), [None, Some(BUCKLER)]);
+        assert_eq!(inventory.count(maul), 1);
+        // A restored record never holds both.
+        let mut slots = [None; EQUIPMENT_SLOTS];
+        slots[0] = Some(maul);
+        slots[1] = Some(BUCKLER);
+        assert_eq!(
+            Equipment::from_slots(slots),
+            Err(InventoryError::NotEquippable)
+        );
+    }
+
+    #[test]
+    fn a_full_bag_refuses_the_great_weapon_without_a_change() {
+        let maul = GreatWeapon::Greatsword.item();
+        let mut equipment = Equipment::default();
+        let mut inventory = bag(&[SHORTSWORD, BUCKLER]);
+        equipment.equip(&mut inventory, 0, WARDEN).unwrap();
+        equipment.equip(&mut inventory, 1, WARDEN).unwrap();
+        let mut slots = *inventory.slots();
+        slots[0] = Some(ItemStack::new(maul, 1).unwrap());
+        for slot in &mut slots[1..] {
+            *slot = Some(ItemStack::new(ItemId::new(1), 1).unwrap());
+        }
+        let mut inventory = Inventory::from_slots(slots);
+        let before = (equipment, inventory.clone());
+        assert_eq!(
+            equipment.equip(&mut inventory, 0, WARDEN),
+            Err(InventoryError::NoCapacity)
+        );
+        assert_eq!((equipment, inventory), before);
+        // Only the Warden wields one.
+        assert_eq!(
+            Equipment::default().equip(&mut bag(&[maul]), 0, Some(PlayerClass::Ranger)),
+            Err(InventoryError::NotEquippable)
+        );
+    }
+
+    #[test]
+    fn every_great_weapon_is_a_two_handed_catalog_item() {
+        for &look in GreatWeapon::VARIANTS {
+            let item = item_template(look.item()).unwrap();
+            assert_eq!(
+                item.weapon,
+                Some(crate::WeaponFamily::TwoHanded),
+                "{look:?}"
+            );
+            assert_eq!(GreatWeapon::of_item(look.item()), Some(look));
+            assert_eq!(GreatWeapon::from_code(look.code()), Some(look));
+        }
+        assert_eq!(GreatWeapon::of_item(ItemId::new(31)), None);
+        assert_eq!(GreatWeapon::of_item(ItemId::new(36)), None);
     }
 }

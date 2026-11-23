@@ -118,6 +118,8 @@ pub const fn sell_price(item: ItemId) -> u32 {
         // Gathered materials and the smith's boar-spear (#917).
         28 | 29 => 2,
         30 => 10,
+        // The smith's great weapons (#1073).
+        32..=35 => 15,
         _ => 0,
     }
 }
@@ -179,14 +181,26 @@ pub const BOAR_SPEAR_MATERIALS: [(ItemId, u16); 3] = [
 ];
 
 /// The Outpost smith's stock (#917): the Hollowpine boar-spear, made from gathered materials
-/// for a small fee.
+/// for a small fee, and the four great weapons (#1073) for copper, at four times their sale
+/// value.
 #[must_use]
 pub fn smith_stock() -> VendorStock {
-    VendorStock::new(&[VendorOffer {
-        item: crate::HOLLOWPINE_BOAR_SPEAR,
-        price: 20,
-        materials: &BOAR_SPEAR_MATERIALS,
-    }])
+    let great = |look: crate::GreatWeapon| VendorOffer {
+        item: look.item(),
+        price: 60,
+        materials: &[],
+    };
+    VendorStock::new(&[
+        VendorOffer {
+            item: crate::HOLLOWPINE_BOAR_SPEAR,
+            price: 20,
+            materials: &BOAR_SPEAR_MATERIALS,
+        },
+        great(crate::GreatWeapon::Maul),
+        great(crate::GreatWeapon::GreatHammer),
+        great(crate::GreatWeapon::GreatAxe),
+        great(crate::GreatWeapon::Greatsword),
+    ])
     .expect("the smith's stock is valid")
 }
 
