@@ -6,7 +6,7 @@ combat rules, capacity claim or wall-clock correctness gate.
 
 ```sh
 cargo run -p mmorpg-protocol --example combat_workload --locked
-cargo test -p mmorpg-core --test workload_stats --locked
+cargo test -p mmorpg-core --test zone --locked workload_stats::
 cargo test -p mmorpg-protocol --test combat_workload --locked
 ```
 

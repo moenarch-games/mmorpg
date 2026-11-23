@@ -9,7 +9,7 @@ inner passage and sealed threshold remain clear. These are supplies, not powder 
 They reuse the existing no-loot breakage, five-minute clear-spot respawn and shared
 client presentation. Breaking the row can produce twenty panels, staves and lids.
 
-`cargo test -p mmorpg-core --test breakables redbrand_cave_supplies --locked`
+`cargo test -p mmorpg-core --test world breakables::redbrand_cave_supplies --locked`
 exercises each shipped placement with its real template, terrain and cave triangles,
 isolating it from the garrison and neighbouring intact props. Normal melee breaks it;
 airborne pieces slow or rebound at the western wall, settle on the cave floor and

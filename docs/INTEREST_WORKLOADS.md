@@ -9,7 +9,7 @@ The derived index stores unit references (players, living creatures, corpses and
 ## Reproduce
 
 ```sh
-cargo test -p mmorpg-core --test interest --locked
+cargo test -p mmorpg-core --test zone --locked interest::
 cargo run -p mmorpg-protocol --example interest_workload --locked
 ```
 

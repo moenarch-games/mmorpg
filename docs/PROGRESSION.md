@@ -47,7 +47,7 @@ the threshold curve above; kill rewards, quest rewards, eligibility and the
 level cap are unchanged.
 
 The measurement is the headless quest-chain journey
-(`crates/mmorpg-core/tests/quest_chain.rs`): a new Warden plays the opening
+(`crates/mmorpg-core/tests/content/quest_chain.rs`): a new Warden plays the opening
 quests to Millbrook's *The Missing Farmhand*, fighting whatever attacks on the
 way, and prints its level-up ticks (60 Hz). For #908 the opening was *Trouble in
 the Woods* (six wolves) and *Pelts for the Tanner* (five pelts); #984 replaced
@@ -149,7 +149,7 @@ damage. The sword is the first family (`crates/mmorpg-core/src/mastery.rs`).
 
 A level-1 Warden strikes for 3–6 against a level-1 Timber Wolf's 42 health (56 at level 2), so
 each Greyhaven wolf fight reaches the per-foe cap of 6: mastery 1 arrives with the fifth wolf,
-beyond the three wolves of *The Wolfrun Cart* (the headless arena check, `tests/weapon_mastery.rs`, takes
+beyond the three wolves of *The Wolfrun Cart* (the headless arena check, `tests/combat/weapon_mastery.rs`, takes
 five 42-health wolves). Mastery 2 needs about 14 more fights and mastery 3 about 25 more,
 spread over the rest of the starter chain. These are first-slice numbers, not yet playtested.
 
