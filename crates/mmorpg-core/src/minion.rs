@@ -812,9 +812,16 @@ impl ZoneSimulation {
             self.interest_work.bucket_removes += 1;
         }
         self.forget_forced_unit(entity);
-        for creature in self.creatures.values_mut() {
-            crate::creature::forget_departed(&mut creature.threat, &mut creature.cast, entity);
-        }
+        // Only the creatures it concerns change (#1086).
+        self.creatures.update_where(
+            |creature| {
+                creature.threat.iter().any(|entry| entry.entity == entity)
+                    || creature.cast.is_some_and(|cast| cast.target == Some(entity))
+            },
+            |creature| {
+                crate::creature::forget_departed(&mut creature.threat, &mut creature.cast, entity);
+            },
+        );
         for player in self.players.values_mut() {
             if player.target == Some(entity) {
                 player.target = None;

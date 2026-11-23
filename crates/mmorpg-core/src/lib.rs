@@ -28,6 +28,7 @@ mod corpse;
 mod corpse_loot;
 mod corridor;
 mod creature;
+mod creature_store;
 mod creature_attack;
 mod den;
 mod depths;

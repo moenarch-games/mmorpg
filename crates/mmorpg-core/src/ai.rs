@@ -37,6 +37,7 @@ use std::sync::Arc;
 use crate::physics::Vec3i;
 
 use crate::creature::{Life, aggro_radius};
+use crate::creature_store::Activity;
 use crate::entity::body_id;
 use crate::rng::ZoneRng;
 use crate::snapshot::CreatureAi;
@@ -202,10 +203,17 @@ impl ZoneSimulation {
     /// Step 2: every living creature decides and sets its body velocity. An idle creature
     /// with no player near sleeps instead, and an awake idle one decides on its staggered
     /// tick only, walking on in between (#814).
+    ///
+    /// Only creatures whose [`Activity::Decide`] bit is set are visited (#1086): a creature
+    /// resting asleep keeps it clear until it changes, something changes its body or a player
+    /// comes near ([`Self::wake_resting_creatures`]); visiting it would change nothing.
     pub(crate) fn decide_creatures(&mut self) -> Result<(), ZoneError> {
         self.continue_dens_offscreen()?;
-        let ids: Vec<_> = self.creatures.keys().copied().collect();
-        for id in ids {
+        self.wake_resting_creatures();
+        let mut after = None;
+        while let Some(id) = self.creatures.next_active(Activity::Decide, after) {
+            after = Some(id);
+            self.tick_work.creatures_visited += 1;
             let pace = self.creature_pace(id)?;
             if let Some(body) = pace.body {
                 self.world
@@ -220,8 +228,68 @@ impl ZoneSimulation {
             if pace.decides {
                 self.decide_creature(id, pace.elapsed)?;
             }
+            // Asleep, dead or a prop, it stays as it is until something changes it.
+            let rest = match pace.body {
+                Some(body) if pace.asleep => self
+                    .world
+                    .body(body)
+                    .map(|body| [body.position().x, body.position().z]),
+                _ => None,
+            };
+            let (_, template) = Self::creature_content(&self.content, id)?;
+            let quiet = rest.is_some()
+                || template.prop().is_some()
+                || self
+                    .creatures
+                    .get(&id)
+                    .is_none_or(|creature| !creature.is_alive());
+            self.creatures.rest(id, rest);
+            if quiet {
+                self.creatures.settle(Activity::Decide, id);
+            }
         }
         Ok(())
+    }
+
+    /// Sets the [`Activity::Decide`] bit of every resting creature a player came near, by the
+    /// pace's own test, and of every one whose asleep body something changed (#1086).
+    pub(crate) fn wake_resting_creatures(&mut self) {
+        let mut scratch = std::mem::take(&mut self.creature_scratch);
+        self.world.take_disturbed_sleepers(&mut scratch.bodies);
+        for body in scratch.bodies.drain(..) {
+            if let Some(EntityRef::Creature(id)) = crate::entity::entity_of(body) {
+                self.creatures.wake(Activity::Decide, id);
+            }
+        }
+        scratch.cells.clear();
+        scratch.cells.extend(
+            self.players
+                .keys()
+                .filter_map(|&player| self.interest.cell_of(EntityRef::Player(player))),
+        );
+        scratch.cells.sort_unstable();
+        scratch.cells.dedup();
+        // A creature at x sees a player's cell cx while x - R < (cx + 1)·w and x + R >= cx·w.
+        let (width, radius) = (
+            crate::interest::InterestIndex::WIDTH,
+            i64::from(crate::CREATURE_WAKE_RADIUS_UNITS),
+        );
+        for &(cell_x, cell_z) in &scratch.cells {
+            let span = |cell: i64| [cell * width - radius, (cell + 1) * width + radius - 1];
+            self.creatures
+                .resting_in(span(cell_x), span(cell_z), &mut scratch.near);
+            for &entity in &scratch.near {
+                if let EntityRef::Creature(id) = entity
+                    && let Some([x, z]) = self.creatures.rest_at(id)
+                    && self
+                        .interest
+                        .player_near(x, z, crate::CREATURE_WAKE_RADIUS_UNITS)
+                {
+                    self.creatures.wake(Activity::Decide, id);
+                }
+            }
+        }
+        self.creature_scratch = scratch;
     }
 
     /// Whether creature `id` sleeps, holds its course or decides this tick (#814). Only a
@@ -254,11 +322,9 @@ impl ZoneSimulation {
             return Ok(decides);
         }
         let position = current.position();
-        let near = self
-            .interest
-            .near(position.x, position.z, crate::CREATURE_WAKE_RADIUS_UNITS)
-            .into_iter()
-            .any(|entity| matches!(entity, EntityRef::Player(_)));
+        let near =
+            self.interest
+                .player_near(position.x, position.z, crate::CREATURE_WAKE_RADIUS_UNITS);
         if !near {
             return Ok(Pace {
                 asleep: true,
