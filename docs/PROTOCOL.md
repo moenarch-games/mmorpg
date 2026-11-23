@@ -243,8 +243,9 @@ After the common prefix:
 1. content revision (`u64`);
 2. zone shared RNG state (`u64`; each creature's own stream is in its record);
 3. independent loot RNG state (`u64`);
-4. player count (`u16`, at most 512), then player records;
-5. creature count (`u16`, at most 1,024), then creature records in creature-ID order.
+4. world seed (`u64`, #1111): the host's secret seed every creature life's streams and the raid, sign, cart-ambush and hunt days derive from, mixed with the content's declared seed; 0 means the content seed alone. It is canonical only: no player projection, observation or character record carries it, and it is not part of the content revision;
+5. player count (`u16`, at most 512), then player records;
+6. creature count (`u16`, at most 1,024), then creature records in creature-ID order.
 
 Content is referenced, not embedded: the revision (FNV-1a 64 over a canonical encoding of every content table, colliders included, plus item catalog, starter grant, declared RNG seed and any explicitly bound loot, ability, vendor and quest catalogs) identifies the exact `ZoneContent`, and `ZoneSimulation::from_snapshot` fails closed unless the supplied content has it (the content-addressed checkpoint rule in [ARCHITECTURE.md](ARCHITECTURE.md#snapshots-and-compatibility)). Content that never bound the ability catalog (such as `ZoneContent::new` or `from_definition` alone) leaves it out of the revision, so its zones refuse `ChooseClass` with invalid class and every ability with no class, and recovery rejects a class player against it. Static colliders, NPCs and world-limit bodies come from that content during recovery.
 
