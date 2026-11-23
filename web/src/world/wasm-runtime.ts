@@ -254,3 +254,17 @@ export function createScenarioWorld(local: LocalWorld, choice: ScenarioChoice): 
 export function loadoutAttachments(): Record<string, { key: string; socket: string }[]> {
   return JSON.parse(generated.loadoutAttachments()) as Record<string, { key: string; socket: string }[]>;
 }
+
+let physicsPrewarmed = false;
+
+/**
+ * Prepares the local zone's terrain physics once, in an idle moment before entry (#855), so joining the local world
+ * reuses it instead of preparing it on the way in; call after `loadLocalWorld`.
+ */
+export function prewarmLocalZone(): void {
+  if (physicsPrewarmed) { return; }
+  physicsPrewarmed = true;
+  const prepare = () => { generated.LocalZone.prepareHostedPhysics(); };
+  if (typeof requestIdleCallback === "function") { requestIdleCallback(prepare, { timeout: 2_000 }); }
+  else { setTimeout(prepare, 0); }
+}

@@ -666,6 +666,12 @@ impl World {
     }
 }
 
+/// Prepares `terrain` as a heightfield now, so the next world laid on it ([`World::set_terrain`])
+/// reuses it (#855: the browser does this in an idle moment before entering the world).
+pub(super) fn prepare_terrain(terrain: &crate::Terrain) {
+    drop(prepared_heightfield(terrain));
+}
+
 /// How many distinct terrains [`prepared_heightfield`] keeps prepared.
 const PREPARED_TERRAINS: usize = 4;
 

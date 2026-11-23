@@ -422,6 +422,15 @@ impl LocalZone {
         host::seed_hosted_content(seed)
     }
 
+    /// Prepares the hosted content's terrain heightfield now (#855), so the local zone joined
+    /// later reuses it rather than preparing it on the way into the world.
+    #[wasm_bindgen(js_name = prepareHostedPhysics)]
+    pub fn prepare_hosted_physics() {
+        if let Some(terrain) = host::hosted_content().definition().terrain() {
+            mmorpg_core::physics::prepare_terrain(terrain);
+        }
+    }
+
     /// The saved world of [`LocalZone::checkpoint`], resumed at its tick
     /// without players; throws for bytes of another version or content.
     #[wasm_bindgen(js_name = fromCheckpoint)]
