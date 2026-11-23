@@ -26,6 +26,7 @@ jobs:
       pages-validation: ${{ steps.pages-scope.outputs.pages-validation }}
       allow-skipped: ${{ steps.pages-scope.outputs.allow-skipped }}
       clippy: ${{ steps.pages-scope.outputs.clippy }}
+      work-contract: ${{ steps.pages-scope.outputs.work-contract }}
       docs_only: ${{ steps.detect.outputs.docs_only }}
       rust_changed: ${{ steps.detect.outputs.rust_changed }}
       settings_only: ${{ steps.detect.outputs.settings_only }}
@@ -134,6 +135,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
           PR_EVENT: ${{ toJSON(github.event) }}
           RUST_CHANGED: ${{ steps.detect.outputs.rust_changed }}
+          FULL_VALIDATION: ${{ steps.detect.outputs.full_validation }}
         run: |
           import json
           import os
@@ -178,6 +180,8 @@ jobs:
               selected[job] = active
           # Clippy is enforced at merge time only: PRs stay opt-in (full-validation), the merge queue always lints Rust changes.
           selected["clippy"] = os.environ["GITHUB_EVENT_NAME"] == "merge_group" and os.environ.get("RUST_CHANGED") == "true"
+          # The work-complexity contract runs under full validation only (#1120).
+          selected["work-contract"] = os.environ.get("FULL_VALIDATION") == "true"
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               for job, active in selected.items():
                   print(f"{job}={str(active).lower()}", file=output)
@@ -252,6 +256,31 @@ jobs:
       # The default group is shared with `rust` in this run and would cancel it.
       concurrency_group: ${{ github.workflow }}-${{ github.ref }}-clippy
 
+  work-contract:
+    # Full validation only (#1120): the work-complexity contract (.performance/contract.json) against
+    # deterministic counters from the Rust work examples and the browser measurements
+    # (web/scripts/work-evidence.ts). Its release builds stay out of ordinary PR and merge-queue runs.
+    needs: scope
+    if: needs.scope.outputs.work-contract == 'true'
+    permissions:
+      contents: read
+      packages: read
+    uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@858803b5ce092c1bc9981f215ceab43066bc1ca8
+    with:
+      bun_version: ""
+      node_version: ""
+      install_command: export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/ci-install-bun.sh && scripts/ci-install-wasm-bindgen.sh && export PATH="$HOME/.bun/bin:$PATH" && cd web && bun install --frozen-lockfile
+      cache_bun: false
+      pre_validate_command: export GH_TOKEN="$NODE_AUTH_TOKEN" && scripts/fetch-bundles.sh
+      cache_cargo: true
+      cache_paths: ${{ needs.scope.outputs.asset_cache_paths }}
+      cache_key: ${{ needs.scope.outputs.asset_cache_key }}
+      cache_restore_keys: mmorpg-assets-
+      test_command: scripts/ci-work-contract.sh
+      artifact_name_suffix: -work-contract
+      # The default group is shared with `rust` in this run and would cancel it.
+      concurrency_group: ${{ github.workflow }}-${{ github.ref }}-work-contract
+
   seed-asset-cache:
     # Pull-request and merge-queue caches are scoped to their own ref; only main's cache reaches
     # every run. Not part of merge-ready: a run that misses the cache still fetches the bundles.
@@ -298,7 +327,7 @@ jobs:
       github.event.label.name == 'browser-evidence' || github.event.label.name == 'full-validation'))) &&
       'merge-ready' || 'validation-summary' }}
     if: ${{ always() }}
-    needs: [scope, rust, clippy, pages-validation]
+    needs: [scope, rust, clippy, work-contract, pages-validation]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -306,5 +335,5 @@ jobs:
       - uses: moritzbrantner/reusable-workflows/.github/actions/merge-ready@858803b5ce092c1bc9981f215ceab43066bc1ca8
         with:
           needs: ${{ toJSON(needs) }}
-          required: '["scope", "rust", "clippy", "pages-validation"]'
+          required: '["scope", "rust", "clippy", "work-contract", "pages-validation"]'
           allow-skipped: ${{ needs.scope.outputs.allow-skipped || '[]' }}

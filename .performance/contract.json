@@ -459,7 +459,7 @@
     },
     {
       "id": "world-frame",
-      "description": "Browser world frame (#1060): WorldView.frame() runs ordered presenter stages over one reused context; a warm frame with nothing changed redraws no panel and rebuilds no render-root list. Measured by web/tests/frame-stages.test.ts (bun test).",
+      "description": "Browser world frame (#1060): WorldView.frame() runs ordered presenter stages over one reused context; a warm frame with nothing changed redraws no panel and rebuilds no render-root list. Measured by web/tests/support/work/world-frame.ts: asserted by web/tests/frame-stages.test.ts (bun test), emitted by web/scripts/work-evidence.ts.",
       "dimensions": { "frames": { "description": "warm frames after a first frame that received a projection and drew every root" } },
       "scalePoints": [{ "frames": 16 }, { "frames": 64 }, { "frames": 256 }],
       "metrics": [
@@ -497,7 +497,7 @@
     },
     {
       "id": "scenery-frame",
-      "description": "Browser scenery frame (#1091): SceneryFrame.nodes() selects each resident instance batch's kept shown or hidden renderer batch; a warm frame copies none of the world's instance batches. Measured by web/tests/scene-building.test.ts (bun test).",
+      "description": "Browser scenery frame (#1091): SceneryFrame.nodes() selects each resident instance batch's kept shown or hidden renderer batch; a warm frame copies none of the world's instance batches. Measured by web/tests/support/work/scenery-frame.ts: asserted by web/tests/scene-building.test.ts (bun test), emitted by web/scripts/work-evidence.ts.",
       "dimensions": { "frames": { "description": "warm frames from one eye after a first frame that drew every resident batch" } },
       "scalePoints": [{ "frames": 16 }, { "frames": 64 }, { "frames": 256 }],
       "metrics": [
@@ -512,7 +512,7 @@
     },
     {
       "id": "ambient-clips",
-      "description": "Browser ambient creatures and settlement prop node clips (#1095, Atlas 6.6.26): a clip samples only in the view frustum and within 150 m, every frame within 40 m and every 3rd frame (staggered) beyond; off-screen and far clips never sample. Measured by web/tests/clip-detail.test.ts (bun test) over ClipDetail, which AmbientAnimals and KitModules share.",
+      "description": "Browser ambient creatures and settlement prop node clips (#1095, Atlas 6.6.26): a clip samples only in the view frustum and within 150 m, every frame within 40 m and every 3rd frame (staggered) beyond; off-screen and far clips never sample. Measured over ClipDetail, which AmbientAnimals and KitModules share, by web/tests/support/work/ambient-clips.ts: asserted by web/tests/clip-detail.test.ts (bun test), emitted by web/scripts/work-evidence.ts.",
       "dimensions": {
         "placed": { "description": "clips placed, in view or not" },
         "visible_near": { "description": "clips in view within 40 m" },
@@ -521,7 +521,9 @@
       "scalePoints": [
         { "placed": 64, "visible_near": 4, "visible_middle": 12 },
         { "placed": 256, "visible_near": 4, "visible_middle": 12 },
-        { "placed": 1024, "visible_near": 4, "visible_middle": 12 }
+        { "placed": 1024, "visible_near": 4, "visible_middle": 12 },
+        { "placed": 256, "visible_near": 1, "visible_middle": 12 },
+        { "placed": 256, "visible_near": 2, "visible_middle": 12 }
       ],
       "metrics": [
         {
@@ -539,7 +541,7 @@
     },
     {
       "id": "sun-shadow-casters",
-      "description": "Browser sun shadows (#1083): a camera walking and turning through Greyhaven redraws at most two of the three sun cascades a frame (the far two take turns, three-lighting cascadeUpdateIntervals), and a skinned unit's shadow proxy draws a simplified share of its body's triangles in each cascade. Measured by web/tests/shadow-lod.test.ts (bun test), without a GPU.",
+      "description": "Browser sun shadows (#1083): a camera walking and turning through Greyhaven redraws at most two of the three sun cascades a frame (the far two take turns, three-lighting cascadeUpdateIntervals), and a skinned unit's shadow proxy draws a simplified share of its body's triangles in each cascade. Measured without a GPU by web/tests/support/work/sun-shadow-casters.ts: asserted by web/tests/shadow-lod.test.ts (bun test), emitted by web/scripts/work-evidence.ts.",
       "dimensions": { "frames": { "description": "frames of a fixed camera walk (6 m/s, a quarter turn every four seconds) after the first" } },
       "scalePoints": [{ "frames": 16 }, { "frames": 64 }, { "frames": 256 }],
       "metrics": [
@@ -570,8 +572,8 @@
     {
       "id": "entry-prebuild",
       "description": "Browser entry prebuild (#855, owner decision 2026-11-23): while the selection screen shows, the world view builds its static scene one part per idle slice, then composes and prepares the selected character's entry view; Enter World joins into it. Measured by web/tests/entry-prebuild.test.ts (bun test) over EntryPrebuild; the page reports the same counters in `__valeDebug.loadingReport().prebuild`.",
-      "dimensions": { "switches": { "description": "character or slot switches on the selection screen after the first prebuild" } },
-      "scalePoints": [{ "switches": 0 }, { "switches": 1 }, { "switches": 2 }],
+      "dimensions": { "entries": { "description": "entries selected in turn on the selection screen before entering: 1 is the first prebuild alone, each further one a character or slot switch" } },
+      "scalePoints": [{ "entries": 1 }, { "entries": 2 }, { "entries": 3 }],
       "metrics": [
         {
           "name": "frame_static_builds",
@@ -586,14 +588,14 @@
           "signal": "operation-count",
           "notes": "Static scene parts built (decoded scene, batches, ground, grass), one per idle slice; a switch rebuilds none.",
           "budget": { "max": 4 },
-          "growth": [{ "dimension": "switches", "bound": "constant" }]
+          "growth": [{ "dimension": "entries", "bound": "constant" }]
         },
         {
           "name": "prepares",
           "unit": "prepares",
           "signal": "operation-count",
           "notes": "Entry views prepared: one per selected entry, again only when its render roots change (art arriving), at most MAX_PREPARES_PER_ENTRY (4) per entry.",
-          "growth": [{ "dimension": "switches", "bound": "linear" }]
+          "growth": [{ "dimension": "entries", "bound": "linear" }]
         }
       ]
     },

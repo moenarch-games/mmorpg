@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Emits `coding-tooling/work-evidence/v1` for `.performance/contract.json` (#138, #645, #855, #1009, #1057, #1058, #1086).
+"""Emits `coding-tooling/work-evidence/v1` for `.performance/contract.json` (#138, #645, #855, #1009, #1057, #1058, #1086, #1120).
 
 Runs the deterministic zone (`mmorpg-protocol`) and client presentation
-(`mmorpg-presentation`, `mmorpg-wasm`) work examples and wraps their samples with the
-contract's suite and SHA-256. Counters only; nothing is timed.
+(`mmorpg-presentation`, `mmorpg-wasm`) work examples and the browser operations' Bun entry
+point (`web/scripts/work-evidence.ts`), and wraps their samples with the contract's suite and
+SHA-256. Counters only; nothing is timed.
 """
 import hashlib
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -41,6 +43,19 @@ def merge(operations: list, incoming: list) -> None:
                 match["metrics"].update(sample["metrics"])
 
 
+def browser_operations() -> list:
+    """The browser operations' samples (#1120): `web/scripts/work-evidence.ts` measures them through the same helpers
+    their bun tests assert through. It builds the release `mmorpg-wasm` module first and writes its JSON to a file, so
+    build output on stdout cannot corrupt it. Needs `bun install` in web/ and the fetched asset bundles."""
+    with tempfile.TemporaryDirectory() as directory:
+        out = Path(directory) / "browser-work.json"
+        subprocess.run(
+            ["bun", "scripts/work-evidence.ts", str(out)],
+            cwd=ROOT / "web", check=True, stdout=sys.stderr, timeout=1800,
+        )
+        return json.loads(out.read_text())["operations"]
+
+
 def main() -> int:
     contract_bytes = (ROOT / ".performance" / "contract.json").read_bytes()
     contract = json.loads(contract_bytes)
@@ -51,6 +66,7 @@ def main() -> int:
             cwd=ROOT, check=True, capture_output=True, text=True, timeout=1800,
         )
         merge(operations, json.loads(run.stdout)["operations"])
+    merge(operations, browser_operations())
     evidence = {
         "schemaVersion": "coding-tooling/work-evidence/v1",
         "suite": contract["suite"],

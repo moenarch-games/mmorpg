@@ -2,17 +2,13 @@ import { describe, expect, test } from "bun:test";
 import type { IndexedMeshGeometry } from "@moritzbrantner/three-d-renderer";
 import { BatchedMesh } from "three";
 import { Ground, unpackTile } from "../src/world/ground";
-import { createLocalWorld } from "../src/world/local-world";
 import { CULL_DISTANCE_METRES, SceneryFrame, batchVisible, buildSceneryScene, type StaticSceneContent, type TerrainStreamSource } from "../src/world/scenery-nodes";
 import { expectValidMesh } from "./support/geometry";
-import { testCharacters } from "./support/local-characters";
-import { localZoneModule } from "./support/local-zone-module";
+import { greyhavenScenery, warmSceneryFrames } from "./support/work/scenery-frame";
 
 // The shared Rust static world (#184) through the real WASM export; generator
 // behaviour itself is tested in crates/mmorpg-presentation.
-const wasm = await localZoneModule();
-const world = createLocalWorld(wasm, testCharacters()).scenery;
-const scene = buildSceneryScene(world.scenery, world.staticScene);
+const { wasm, world, scene } = await greyhavenScenery();
 
 describe("the shared static scene in the browser", () => {
   test("decodes valid indexed geometry with one payload per resource key", () => {
@@ -169,22 +165,13 @@ test("nature and limestone stand-ins each wait for their own bundle", () => {
 });
 
 // The `scenery-frame` budget (#1091, `.performance/contract.json`): a frame reuses each resident instance batch's shown
-// or hidden renderer batch instead of copying every one of the world's instance batches again.
+// or hidden renderer batch instead of copying every one of the world's instance batches again. `support/work/scenery-frame.ts`
+// measures it; `scripts/work-evidence.ts` emits the same measurement (#1120).
 for (const frames of [16, 64, 256]) {
   test(`${frames} warm scenery frames build no instance-batch view`, () => {
-    const frame = new SceneryFrame(scene);
-    const eye = [0, 5, 0] as const;
-    const first = frame.nodes(eye, { seconds: 0, animate: true });
+    const { firstViews, built, reused } = warmSceneryFrames(scene, frames);
     // The first frame builds one view per resident batch, shown or hidden.
-    expect(frame.viewsBuilt).toBe(scene.instanceBatches.length);
-    let built = 0;
-    let reused = true;
-    for (let index = 0; index < frames; index += 1) {
-      const before = frame.viewsBuilt;
-      const warm = frame.nodes(eye, { seconds: index / 60, animate: true });
-      built += frame.viewsBuilt - before;
-      reused &&= warm.instanceBatches.every((batch, at) => batch === first.instanceBatches[at]);
-    }
+    expect(firstViews).toBe(scene.instanceBatches.length);
     expect({ built, reused }).toEqual({ built: 0, reused: true });
   });
 }
