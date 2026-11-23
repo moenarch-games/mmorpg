@@ -168,8 +168,9 @@ class BrowserAcceptance(unittest.TestCase):
     def enter_button(self):
         return self.page.get_by_role("button", name=re.compile("^Enter World"))
 
-    def leave_world(self):
-        """Characters lives in the game menu since #636: Escape (or a lost pointer lock) opens it."""
+    def leave_world(self, name="Characters"):
+        """Characters (Change loadout in practice) lives in the game menu since #636: Escape (or a
+        lost pointer lock) opens it."""
         menu = self.page.locator("#game-menu")
         for _ in range(3):
             if menu.evaluate("dialog => dialog.open"):
@@ -177,7 +178,7 @@ class BrowserAcceptance(unittest.TestCase):
             self.page.locator("#world").focus()
             self.page.keyboard.press("Escape")
         expect(menu).to_be_visible()
-        menu.get_by_role("button", name="Characters", exact=True).click()
+        menu.get_by_role("button", name=name, exact=True).click()
 
     def enter_world(self, ticking=True, fresh=True):
         """Enters the world. A fresh character starts at level 1 without XP; a
@@ -2392,7 +2393,6 @@ class BrowserAcceptance(unittest.TestCase):
 
     def test_battle_royale_practice_desktop(self):
         def entered():
-            expect(self.page.get_by_role("button", name="Change build")).to_be_visible()
             self.page.locator("#world").focus()
 
         def walk():
@@ -2400,12 +2400,19 @@ class BrowserAcceptance(unittest.TestCase):
             self.page.wait_for_timeout(5_000)
             self.page.keyboard.up("KeyW")
 
+        def select():
+            self.page.keyboard.press("Tab")
+            # Swinging is a combat-mode key (#802): H draws the weapon first.
+            self.page.keyboard.press("h")
+            expect(self.page.locator(".weapon-mode")).to_have_attribute("data-mode", "combat")
+
         self.practice_fight(
-            entered, walk, lambda: self.page.keyboard.press("Tab"),
-            # A left click on open ground swings where the character faces (a click on a unit selects it).
-            lambda: self.page.mouse.click(720, 200),
+            entered, walk, select,
+            # Q swings where the character faces; the left mouse button selects (#636).
+            lambda: self.page.keyboard.press("q"),
             lambda: self.page.keyboard.press("F9"),
-            lambda: self.page.get_by_role("button", name="Change build").click())
+            # The way back is in the game menu behind Escape (#636), labelled by the shared front end (#752).
+            lambda: self.leave_world("Change loadout"))
 
     def test_battle_royale_practice_touch(self):
         self.context.close()
