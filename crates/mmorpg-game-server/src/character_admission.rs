@@ -477,6 +477,62 @@ mod tests {
     }
 
     #[test]
+    fn a_character_of_many_past_raids_is_admitted_with_only_live_receipts() {
+        // #1128: forty raids are over; the zone's bound of two receipts still admits a character
+        // that took part in all of them, keeping only what can still pay.
+        let mut adapter =
+            ZoneGameServerAdapter::with_content(ZoneId::new(1), greyhaven_vale::content()).unwrap();
+        adapter.zone_mut().enable_reward_tracking(2, 16).unwrap();
+        let mut state = adapter.zone_mut().snapshot().unwrap();
+        state.tick = 100_000;
+        state.raid.incidents = 40;
+        state.raid.last = Some(mmorpg_core::RaidResolution {
+            incident: 40,
+            at: state.tick,
+            outcome: mmorpg_core::RaidOutcome::Lost,
+        });
+        *adapter.zone_mut() =
+            mmorpg_core::ZoneSimulation::from_snapshot(state, greyhaven_vale::content()).unwrap();
+        let mut runtime = MatchRuntime::new_with_replay_capture(adapter, 30);
+        let lease = runtime.admit(ReconnectToken([42; 16])).unwrap();
+        let stored = (1..=40)
+            .flat_map(|incident| {
+                [
+                    mmorpg_core::RewardKey::RaidParticipation { incident },
+                    mmorpg_core::RewardKey::RaidDefence { incident },
+                ]
+            })
+            .chain([mmorpg_core::RewardKey::Cache { cache: 1 }]);
+        for key in stored {
+            runtime
+                .submit_host_input(
+                    lease.player_id,
+                    &ZoneGameServerAdapter::reward_receipt_input(key).unwrap(),
+                )
+                .unwrap();
+        }
+        let admission = ZoneGameServerAdapter::character_admission_input(&record()).unwrap();
+        runtime
+            .submit_host_input(lease.player_id, &admission)
+            .unwrap();
+        let snapshot = runtime.advance_tick().unwrap();
+        let (zone, stored) =
+            ZoneGameServerAdapter::decode_stored_zone(&snapshot.payload, greyhaven_vale::content())
+                .unwrap();
+        assert_eq!(stored.len(), 1, "the character is active");
+        let history = zone.reward_history().unwrap();
+        assert_eq!(
+            history
+                .players
+                .values()
+                .flatten()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![mmorpg_core::RewardKey::Cache { cache: 1 }]
+        );
+    }
+
+    #[test]
     fn invalid_or_duplicate_admission_preserves_existing_live_state() {
         let mut adapter =
             ZoneGameServerAdapter::with_content(ZoneId::new(1), greyhaven_vale::content()).unwrap();

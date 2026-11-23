@@ -725,10 +725,17 @@ impl PostgresJournal {
 
     /// Load exact receipts relevant to the current/future lives, bounded before
     /// allocation. Quest completion receipts are character-global across worlds.
+    ///
+    /// Raid and cart incident receipts (#1128) load only from this world and zone, whose own
+    /// counters number its incidents, and only at or above `floors`: an incident below them
+    /// can never pay again here. Their rows stay, so a weaker world restore that rewinds the
+    /// counters loads them again as future incidents and never pays them twice. The filter
+    /// reads the incident from the stored receipt bytes: version, tag, big-endian `u32`.
     pub(crate) fn reward_receipts(
         &mut self,
         character: &CharacterId,
         lives: &std::collections::BTreeMap<mmorpg_core::CreatureId, u64>,
+        floors: mmorpg_core::IncidentFloors,
         maximum: u32,
     ) -> Result<Vec<mmorpg_core::RewardKey>, StoreError> {
         if maximum == 0 {
@@ -743,8 +750,8 @@ impl PostgresJournal {
         self.entries.transaction(|store| store.backend().with_sql(|transaction| {
             check_fence(transaction, &self.fence, false, self.directory_fencing)?;
             let rows = transaction.query(
-                "SELECT grant_id,character_id,world_id::text,zone_id,source_creature,source_life,world_owned,CASE WHEN octet_length(reward_key)::bigint<=$7 THEN reward_key ELSE NULL END AS key FROM mmorpg_persistence.grants WHERE reward_key IS NOT NULL AND ((world_id=$1::text::uuid AND zone_id=$2 AND (world_owned OR character_id=$3) AND EXISTS (SELECT 1 FROM unnest($4::bigint[],$5::bigint[]) AS lives(creature,life) WHERE source_creature=lives.creature AND source_life>=lives.life)) OR (character_id=$3 AND source_creature IS NULL)) ORDER BY grant_id LIMIT $6",
-                &[&self.fence.world_id, &i64::from(self.fence.lease.zone_id.get()), &character.as_str(), &creatures, &generations, &(i64::from(maximum)+1), &integer(mmorpg_protocol::MAX_REWARD_RECEIPT_BYTES as u64)?],
+                "SELECT grant_id,character_id,world_id::text,zone_id,source_creature,source_life,world_owned,CASE WHEN octet_length(reward_key)::bigint<=$7 THEN reward_key ELSE NULL END AS key FROM mmorpg_persistence.grants WHERE reward_key IS NOT NULL AND ((world_id=$1::text::uuid AND zone_id=$2 AND (world_owned OR character_id=$3) AND EXISTS (SELECT 1 FROM unnest($4::bigint[],$5::bigint[]) AS lives(creature,life) WHERE source_creature=lives.creature AND source_life>=lives.life)) OR (character_id=$3 AND source_creature IS NULL AND CASE WHEN octet_length(reward_key)<>6 THEN true WHEN get_byte(reward_key,1) NOT IN (7,8,11) THEN true ELSE world_id=$1::text::uuid AND zone_id=$2 AND ((get_byte(reward_key,2)::bigint<<24)|(get_byte(reward_key,3)::bigint<<16)|(get_byte(reward_key,4)::bigint<<8)|get_byte(reward_key,5)::bigint) >= CASE get_byte(reward_key,1) WHEN 11 THEN $9::bigint ELSE $8::bigint END END)) ORDER BY grant_id LIMIT $6",
+                &[&self.fence.world_id, &i64::from(self.fence.lease.zone_id.get()), &character.as_str(), &creatures, &generations, &(i64::from(maximum)+1), &integer(mmorpg_protocol::MAX_REWARD_RECEIPT_BYTES as u64)?, &i64::from(floors.raid), &i64::from(floors.cart)],
             ).map_err(sql)?;
             if rows.len() as u64 > u64::from(maximum) { return Err(failure("the character's stored reward receipts exceed the zone's receipt bound; admission refused")); }
             let mut keys = std::collections::BTreeSet::new();
@@ -890,6 +897,37 @@ mod tests {
     use mmorpg_characters::LeaseHolder;
     use mmorpg_control_plane::HostId;
     use mmorpg_core::{ClassChoice, PlayerClass, Sex, ZoneId, ZoneSimulation};
+
+    fn raid(incident: u32) -> mmorpg_core::RewardKey {
+        mmorpg_core::RewardKey::RaidParticipation { incident }
+    }
+
+    #[test]
+    fn the_receipt_query_reads_incidents_where_the_encoding_puts_them() {
+        // `reward_receipts` filters incident receipts on these bytes (#1128): version, tag
+        // (7 raid participation, 8 raid defence, 11 cart defence), big-endian incident.
+        let incident = 0x0102_0304;
+        for (key, tag) in [
+            (raid(incident), 7),
+            (mmorpg_core::RewardKey::RaidDefence { incident }, 8),
+            (mmorpg_core::RewardKey::CartDefence { incident }, 11),
+        ] {
+            let bytes = mmorpg_protocol::encode_reward_receipt(key).unwrap();
+            assert_eq!(bytes[1..], [tag, 1, 2, 3, 4]);
+        }
+        for key in [
+            mmorpg_core::RewardKey::QuestCompletion {
+                quest: mmorpg_core::QuestId::new(1),
+            },
+            mmorpg_core::RewardKey::Discovery {
+                area: mmorpg_core::AreaId::new(1),
+            },
+            mmorpg_core::RewardKey::Cache { cache: 1 },
+        ] {
+            let bytes = mmorpg_protocol::encode_reward_receipt(key).unwrap();
+            assert!(bytes.len() != 6 || ![7, 8, 11].contains(&bytes[1]));
+        }
+    }
 
     #[test]
     fn postgres_journal_recovers_committed_suffix_and_fences_retired_writer() {
@@ -1037,6 +1075,8 @@ mod tests {
                     },
                 )
                 .unwrap(),
+                GrantId::for_reward(&fence.world_id, zone, &character, raid(1)).unwrap(),
+                GrantId::for_reward(&fence.world_id, zone, &character, raid(2)).unwrap(),
             ]
             .into(),
         }];
@@ -1053,25 +1093,66 @@ mod tests {
             journal.grant_ids(Some(&character)).unwrap(),
             writes[0].grants.iter().cloned().collect::<Vec<_>>()
         );
+        // Another zone's cart incident: its numbers are that zone's own (#1128).
+        let foreign = mmorpg_core::ZoneId::new(zone.get() + 1_000_000);
+        let cart = mmorpg_core::RewardKey::CartDefence { incident: 4 };
+        coordinator
+            .execute(
+                "INSERT INTO mmorpg_persistence.grants (grant_id,character_id,zone_id,world_id,timeline,journal_position,record_revision,reward_key) VALUES ($1,$2,$3,$4::text::uuid,0,0,1,$5)",
+                &[
+                    &GrantId::for_reward(&fence.world_id, foreign, &character, cart)
+                        .unwrap()
+                        .as_str(),
+                    &character.as_str(),
+                    &i64::from(foreign.get()),
+                    &fence.world_id,
+                    &mmorpg_protocol::encode_reward_receipt(cart).unwrap(),
+                ],
+            )
+            .unwrap();
         let lives = [(mmorpg_core::CreatureId::new(7), 2)].into();
+        // Raid incident 1 can no longer pay; 2 still can.
+        let floors = mmorpg_core::IncidentFloors { raid: 2, cart: 1 };
         assert_eq!(
             journal
-                .reward_receipts(&character, &lives, 4)
+                .reward_receipts(&character, &lives, floors, 4)
                 .unwrap()
                 .len(),
-            3
+            4
         );
-        assert!(journal.reward_receipts(&character, &lives, 2).is_err());
+        assert!(
+            journal
+                .reward_receipts(&character, &lives, floors, 3)
+                .is_err()
+        );
         let later = [(mmorpg_core::CreatureId::new(7), 3)].into();
+        let past = mmorpg_core::IncidentFloors { raid: 3, cart: 1 };
         assert_eq!(
-            journal.reward_receipts(&character, &later, 4).unwrap(),
+            journal
+                .reward_receipts(&character, &later, past, 4)
+                .unwrap(),
             vec![mmorpg_core::RewardKey::QuestCompletion {
                 quest: mmorpg_core::QuestId::new(1)
             }]
         );
+        // A weaker restore rewinds the counters: both incidents are to come again and stay
+        // refused; the other zone's cart day never loads here.
+        let rewound = mmorpg_core::IncidentFloors { raid: 1, cart: 1 };
+        assert_eq!(
+            journal
+                .reward_receipts(&character, &later, rewound, 4)
+                .unwrap(),
+            vec![
+                mmorpg_core::RewardKey::QuestCompletion {
+                    quest: mmorpg_core::QuestId::new(1)
+                },
+                raid(1),
+                raid(2),
+            ]
+        );
         let other = CharacterId::new("other-receipt-owner").unwrap();
         assert_eq!(
-            journal.reward_receipts(&other, &lives, 4).unwrap(),
+            journal.reward_receipts(&other, &lives, floors, 4).unwrap(),
             vec![mmorpg_core::RewardKey::LootMoney {
                 creature: mmorpg_core::CreatureId::new(7),
                 life: 2
@@ -1117,7 +1198,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             journal.grant_ids(Some(&character)).unwrap().len(),
-            writes[0].grants.len()
+            writes[0].grants.len() + 1 // and the other zone's cart day
         );
         let retained: i64 = coordinator
             .query_one(
@@ -1170,10 +1251,10 @@ mod tests {
         };
         assert_eq!(
             restarted
-                .reward_receipts(&character, &lives, 4)
+                .reward_receipts(&character, &lives, rewound, 8)
                 .unwrap()
                 .len(),
-            3
+            5 // the reset world's raids are still to come
         );
         let reacquired = restarted
             .characters(|store| {
