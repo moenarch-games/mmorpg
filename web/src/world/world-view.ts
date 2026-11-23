@@ -610,7 +610,8 @@ export class WorldView {
     this.#weaponMode.className = "weapon-mode";
     this.#weaponMode.textContent = "Exploration · Draw weapon [H]";
     this.#weaponMode.addEventListener("click", () => this.toggleWeapon());
-    elements.classHud.append(this.#weaponMode);
+    // Above the action bar, in the dock's flow: the toolbar's corner holds Loot and Bags (#1079).
+    (elements.classHud.querySelector(".action-dock") ?? elements.classHud).prepend(this.#weaponMode);
     this.#progressionHud = new ProgressionHud(elements.experienceBar, elements.experienceStatus, elements.progressionFeedback);
     this.#bags = new BagsPanel(elements.bags, (command, onSent) => this.queueIntent(() => command, onSent));
     // The pane and the vendor share the bags' received sheet: one revision covers bag and equipment.
@@ -1948,7 +1949,7 @@ export class WorldView {
     const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits, resident: batches ? (group) => batches.resident(group) : () => true });
     // A map view's eye is high only to clear the terrain: its ground streams as if standing on it.
     this.#ground?.update(this.#plan ? [view.eye[0], 0, view.eye[2]] : view.eye, frame.shown);
-    if (!this.#plan) { this.#grass?.update(view.eye, [self.x, self.feetY, self.z], this.#seconds); }
+    if (!this.#plan) { this.#grass?.update(view.eye, [self.x, self.feetY, self.z], this.#seconds, animate); }
     this.#nature?.update(this.#camera, deltaSeconds, animate);
     this.#climbing?.update(this.#camera, deltaSeconds, animate);
     this.#crag?.update(this.#camera, deltaSeconds, animate);
