@@ -781,6 +781,17 @@ pub(crate) fn speaks_for(granted: &ZoneLease, lease: &ZoneLease) -> bool {
         || (granted.zone_id == lease.zone_id && lease.epoch > granted.epoch)
 }
 
+/// Whether a new transfer leaving `source` settles `arrival`, the entity's
+/// unsettled transfer (#1096): `arrival` is accepted and `source` speaks for
+/// its destination. Acceptance is the decision point, so the entity is the
+/// destination zone's from then on, and that zone sending it onward proves it
+/// took the entity over. A source host that stopped before confirming its
+/// retirement therefore never bars the entity's next transfer; its late
+/// commit finds the record committed already.
+pub(crate) fn settles_arrival(arrival: &HandoffRecord, source: &ZoneLease) -> bool {
+    arrival.phase == HandoffPhase::Accepted && speaks_for(&arrival.ticket.destination, source)
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HandoffRecord {
     pub ticket: HandoffTicket,
@@ -824,10 +835,18 @@ impl HandoffRegistry {
             return Ok(existing.phase);
         }
 
-        if self.active_entities.contains_key(&ticket.entity_id) {
-            return Err(ControlPlaneError::EntityTransferInProgress(
-                ticket.entity_id,
-            ));
+        if let Some(&active) = self.active_entities.get(&ticket.entity_id) {
+            let record = self
+                .transfers
+                .get_mut(&active)
+                .expect("an active entity names a recorded transfer");
+            if !settles_arrival(record, &ticket.source) {
+                return Err(ControlPlaneError::EntityTransferInProgress(
+                    ticket.entity_id,
+                ));
+            }
+            record.phase = HandoffPhase::Committed;
+            self.active_entities.remove(&ticket.entity_id);
         }
         let transfer_id = ticket.transfer_id;
         self.active_entities.insert(ticket.entity_id, transfer_id);
@@ -1199,6 +1218,66 @@ mod tests {
             registry.accept(TransferId::new(3), &destination, &directory, 1),
             Err(ControlPlaneError::StaleLease { .. })
         ));
+    }
+
+    /// #1096: a source that stopped before confirming an accepted transfer
+    /// must not bar the entity's next transfer out of the destination zone.
+    #[test]
+    fn the_accepted_destination_sends_the_entity_onward_without_the_sources_commit() {
+        let mut directory = ZoneDirectory::new(10).unwrap();
+        let hosts = registered_hosts(0);
+        let source = directory
+            .assign(ZoneId::new(1), host("host-a"), &hosts, 0)
+            .unwrap();
+        let destination = directory
+            .assign(ZoneId::new(2), host("host-b"), &hosts, 0)
+            .unwrap();
+        let entity = EntityId::new(5);
+        let mut registry = HandoffRegistry::default();
+        let onward = |transfer_id, source: &ZoneLease, destination: &ZoneLease| HandoffTicket {
+            transfer_id: TransferId::new(transfer_id),
+            entity_id: entity,
+            source: source.clone(),
+            destination: destination.clone(),
+        };
+        registry
+            .prepare(onward(4, &source, &destination), &directory, 0)
+            .unwrap();
+        // Unaccepted, the entity is still the source's: nobody else moves it.
+        assert_eq!(
+            registry.prepare(onward(5, &destination, &source), &directory, 0),
+            Err(ControlPlaneError::EntityTransferInProgress(entity))
+        );
+        registry
+            .accept(TransferId::new(4), &destination, &directory, 0)
+            .unwrap();
+        // Accepted, only the destination zone may send it on; the source may not start over.
+        assert_eq!(
+            registry.prepare(onward(6, &source, &destination), &directory, 0),
+            Err(ControlPlaneError::EntityTransferInProgress(entity))
+        );
+        // The source's host is replaced and never commits.
+        let successor = directory
+            .reassign(source.zone_id, source.epoch, host("host-c"), &hosts, 1)
+            .unwrap();
+        assert_eq!(
+            registry.prepare(onward(7, &destination, &successor), &directory, 1),
+            Ok(HandoffPhase::Prepared)
+        );
+        assert_eq!(
+            registry.record(TransferId::new(4)).unwrap().phase,
+            HandoffPhase::Committed
+        );
+        // The successor's late confirmation finds it settled.
+        assert_eq!(
+            registry.commit(TransferId::new(4), &successor, &directory, 1),
+            Ok(HandoffPhase::Committed)
+        );
+        // The onward transfer is the entity's one unsettled transfer now.
+        assert_eq!(
+            registry.prepare(onward(8, &destination, &successor), &directory, 1),
+            Err(ControlPlaneError::EntityTransferInProgress(entity))
+        );
     }
 
     #[test]

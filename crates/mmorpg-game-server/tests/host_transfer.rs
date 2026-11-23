@@ -495,6 +495,60 @@ fn a_source_that_stops_after_acceptance_lets_the_destination_go_live() {
     assert_eq!(live(&world.east), 1);
 }
 
+/// #1096: the source's successor knows no transfer ID to confirm, so nothing
+/// commits the accepted transfer. The character still crosses again.
+#[test]
+fn a_source_that_never_confirms_does_not_bar_the_characters_next_crossing() {
+    let mut world = world();
+    let transfer = world.begin(7).unwrap();
+    let lease = world.accept(transfer).unwrap();
+    world.west_lease = world.control.replace(&world.west_lease, "host-c");
+    world.west = zone(WEST);
+    world.activate(7).unwrap();
+    assert_eq!(
+        world.control.phase(transfer_id(7)),
+        Some(HandoffPhase::Accepted)
+    );
+
+    let record = world.east.capture_character(ARRIVAL, character()).unwrap();
+    world.store.commit(&lease, &record).unwrap();
+    let back = begin_outbound(
+        &mut world.east,
+        &mut world.store,
+        &mut world.control.authority(),
+        &OutboundRequest {
+            player: ARRIVAL,
+            character: &lease,
+            source: &world.east_lease,
+            destination: &world.west_lease,
+            transfer_id: transfer_id(8),
+            arrival: CharacterLocation {
+                zone_id: WEST,
+                ..record.location
+            },
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        world.control.phase(transfer_id(7)),
+        Some(HandoffPhase::Committed)
+    );
+    assert_eq!(
+        world.control.phase(transfer_id(8)),
+        Some(HandoffPhase::Prepared)
+    );
+    accept_inbound(
+        &mut world.west,
+        &mut world.store,
+        &mut world.control.authority(),
+        &world.west_lease,
+        back,
+    )
+    .unwrap();
+    assert_eq!(world.leased_by(), Some(holder(&world.west_lease)));
+    world.assert_single_authority();
+}
+
 #[test]
 fn a_source_that_stops_before_acceptance_gets_its_character_back() {
     for prepared in [false, true] {
