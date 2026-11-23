@@ -314,10 +314,11 @@ Hosts of neighbouring logical zones hand characters to each other through seams 
 
 | Environment variable | Meaning | Default |
 | --- | --- | --- |
-| `MMORPG_HOST_ID` | This host's identity; a restart under the same ID takes back its own zone grants | required |
+| `MMORPG_HOST_ID` | This host's identity. A restart under the same ID takes back its own zone grants: at once after a graceful stop, otherwise once the previous grant has expired unrenewed (up to the grant lifetime). It refuses to start while another process with this ID keeps renewing (#1097) | required |
+| `MMORPG_CONFIRM_SOURCE_STOPPED` | `1`: the operator vouches that this ID's previous process is stopped, so its unexpired grants are taken back without waiting | unset |
 | `MMORPG_TRANSFER_LINK` | This host's transfer link address | `127.0.0.1:4500` |
 | `MMORPG_ZONE_ROUTES` | `zone=host:port@session-route,…`: each peer zone's transfer link and the route its clients connect to | none |
-| `MMORPG_GRANT_TTL_MS` | Zone grant lifetime; renewed every third | 30000 |
+| `MMORPG_GRANT_TTL_MS` | Zone grant lifetime; renewed every third. A host whose renewal fails, or goes unanswered for another third, stops serving | 30000 |
 | `MMORPG_HANDOFF_TIMEOUT_MS` | Database statements and transfer link requests | 2000 |
 | `MMORPG_DEPTHS_GRACE_MS` | How long an emptied Redbrand Depths run stays resumable (#404); add depths slot IDs (20000–20031) to `MMORPG_ZONE_IDS` and `MMORPG_ZONE_ROUTES` to host runs | 900000 |
 

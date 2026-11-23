@@ -372,4 +372,29 @@ fn postgres_directory_persists_owner_expiry_and_epoch_without_resurrecting_write
             .is_err()
     );
     transaction.rollback().unwrap();
+
+    // #1097: a holder's own previous grant is retired on expiry only, never while valid.
+    let own = ZoneId::new(zone.get() + 1);
+    let host = HostId::new("restarting").unwrap();
+    let mut directory = PostgresZoneDirectory::connect(&url, timeout).unwrap();
+    let short = directory
+        .acquire(own, host.clone(), 0, Duration::from_millis(300))
+        .unwrap();
+    assert!(!directory.retire_expired(short.lease()).unwrap());
+    directory
+        .acquire(
+            own,
+            host.clone(),
+            short.lease().epoch,
+            Duration::from_secs(30),
+        )
+        .err()
+        .expect("an unexpired, unretired grant cannot be replaced");
+    std::thread::sleep(Duration::from_millis(400));
+    assert!(directory.retire_expired(short.lease()).unwrap());
+    assert!(!directory.retire_expired(short.lease()).unwrap());
+    let next = directory
+        .acquire(own, host, short.lease().epoch, Duration::from_secs(30))
+        .unwrap();
+    assert_eq!(next.lease().epoch, short.lease().epoch + 1);
 }
