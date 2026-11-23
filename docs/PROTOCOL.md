@@ -474,7 +474,7 @@ Wire version 26 and core schema 25 (#288) add debris. After the projectiles, the
 
 ## Forced movement: core schema 24
 
-Core schema 24 (#287, Atlas 5.2.72) adds forced movement to canonical snapshots; wire version 25 and the player projection layout stay, and the projection's schema field moves with the shared constant. After the projectiles, canonical snapshots carry a count (`u16`, at most players + creature spawns) and per unit, in unit order: its reference, a move flag (`u8`) followed when set by the XZ velocity (`2 × i32` units per tick), remaining ticks (`u16`) and a charge flag (`u8`) with the charge target and its knockback (`i32` units), then the immunity left (`u16`, at most 30). A forced move sets its unit's horizontal velocity before the Rapier step; a move the world stopped (a wall) ends early, and every move is followed by 1 s of immunity. Ability catalog revision 3 adds Shield Bash's 3 m knockback, Fire Blast (ID 16) and Charge (ID 17). Each player now has at most 8 cooldowns (`MAX_COOLDOWNS`), one per action-bar slot. Schema 23 snapshots and checkpoints fail closed.
+Core schema 24 (#287, Atlas 5.2.72) adds forced movement to canonical snapshots; wire version 25 and the player projection layout stay, and the projection's schema field moves with the shared constant. After the projectiles, canonical snapshots carry a count (`u16`, at most players + creature spawns) and per unit, in unit order: its reference, a move flag (`u8`) followed when set by the XZ velocity (`2 × i32` units per tick), remaining ticks (`u16`) and a charge flag (`u8`) with the charge target and its knockback (`i32` units), then the immunity left (`u16`, at most 30). A forced move sets its unit's horizontal velocity before the physics step; a move the world stopped (a wall) ends early, and every move is followed by 1 s of immunity. Ability catalog revision 3 adds Shield Bash's 3 m knockback, Fire Blast (ID 16) and Charge (ID 17). Each player now has at most 8 cooldowns (`MAX_COOLDOWNS`), one per action-bar slot. Schema 23 snapshots and checkpoints fail closed.
 
 ## Projectiles: snapshot v25
 
@@ -482,7 +482,7 @@ Wire version 25 and core schema 23 (#286) add projectiles. After the entities, t
 
 ## Rapier physics state: snapshot v24
 
-Wire version 24 (#271) keeps the player projection layout (positions and velocities stay rounded `i16`/`i8`). Canonical snapshots now store each player's and living creature's position (units) and velocity (units per tick) as big-endian IEEE-754 `f32` (same four bytes per component), the exact Rapier-resolved state, so recovery continues exactly; decoders reject non-finite values. A corpse keeps its whole-unit position. Version 23 snapshots and checkpoints fail closed; `player-snapshot-v23.hex` remains as rejection evidence.
+Wire version 24 (#271) keeps the player projection layout (positions and velocities stay rounded `i16`/`i8`). Canonical snapshots now store each player's and living creature's position (units) and velocity (units per tick) as big-endian IEEE-754 `f32` (same four bytes per component), the exact physics-resolved state (Rapier's then; Physics Engine's since #648, with the layout unchanged), so recovery continues exactly; decoders reject non-finite values. A corpse keeps its whole-unit position. Version 23 snapshots and checkpoints fail closed; `player-snapshot-v23.hex` remains as rejection evidence.
 
 ## Zone clock, NPC routines and door cooldown: snapshot v23
 

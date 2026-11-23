@@ -54,7 +54,7 @@ pointing its `mmorpg-core` at this workspace) is its one definition; nothing her
 geometry.
 
 - **Physics**: the practice zone is the fortress's own colliders, ramps and eight lifts, unchanged,
-  in `mmorpg-core` and Rapier, with its own spawn lattice in the south courtyard (slot 0 at
+  in `mmorpg-core` and Physics Engine, with its own spawn lattice in the south courtyard (slot 0 at
   (0, −76) m, 16 × 32 slots 2 m apart) and the training targets. A hosted match runs
   `arena::content()` itself; the client refuses projections whose content revision is not
   `ArenaPresentation.contentRevision()`, i.e. that fortress's.

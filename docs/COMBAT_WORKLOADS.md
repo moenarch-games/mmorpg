@@ -15,7 +15,7 @@ and wire versions, the content revision/fingerprint, operation counts, encoded
 bytes and a diagnostic trace checksum. The example and regression gate use the
 same fixture/measurement module under protocol test support, outside production.
 
-Every fixture runs Greyhaven's 137 living creatures, nine NPCs and static colliders for
+Every fixture runs all of Greyhaven's living creatures, NPCs and static colliders for
 360 completed ticks (6 seconds of simulation at 60 Hz). Initialization is outside
 the counts. `vale-idle-16` admits 16 stationary players on the plaza; creature AI
 and wandering remain active, so this is an idle-player control rather than an idle
@@ -77,13 +77,14 @@ The deterministic gate allows counts to decrease. Increasing a ceiling requires
 reviewing the changed workload, mechanics or performance cost, alongside replay
 and recovery acceptance. The complete ceilings live in the protocol test.
 
-Since the switch to Rapier (#271) the physics counters are the bodies in each
-step's rebuilt Rapier world and the moving bodies it visits; the first-party
-engine's pair, TOI and contact counters are gone. Current ceilings (snapshot v28,
-content revision 21: the expanded valley, hills and Greyfang cave of #159, the 17
-breakable props of #288, the hill ogre of #297, the mill hoist, dock and ramps of #56/#59
+The physics counters are the game bodies each step visits (`StepStats`: every
+moving body and platform; static colliders are reached only through the backend's
+query tree, #895). The table below records the ceilings as they stood at snapshot v28
+and content revision 21 (the expanded valley, hills and Greyfang cave of #159, the
+breakable props of #288, the hill ogre of #297, the mill hoist, dock and ramps of #56/#59,
 the Redbrand watch post of #305 and Millbrook's two heavy crates of #58; creatures route
-around walls, #307):
+around walls, #307), when the physics counters were still Rapier's (#271), before Physics
+Engine replaced it in production (#648). The protocol test holds the current ceilings:
 
 | Workload | AI decisions | Physics body visits | Projection candidates | Total projection bytes |
 | --- | ---: | ---: | ---: | ---: |

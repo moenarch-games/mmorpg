@@ -5,8 +5,9 @@ integer-centimetre vertices relative to that translation, and indexed triangles.
 Game coordinates are X, Y-up, Z. Winding points out of solid rock. Use simplified,
 closed surfaces for walls/slabs; do not export decorative render geometry or LODs.
 Physics Engine's fixed triangle meshes resolve capsule movement, support, rays
-and projectile/static shape queries. Rapier remains the oracle and resolves dynamic
-debris and movable props against the same authored geometry. No new local solver
+and projectile/static shape queries, and its isolated response worlds resolve dynamic
+debris and movable props against the same authored geometry (Atlas 2.1.i647). Rapier
+remains only the `physics-ab` A/B oracle. No new local solver
 or spatial index is used.
 
 The first asset is
