@@ -52,7 +52,7 @@ strum = { version = "=0.28.0", features = ["derive"] }
 # The same float functions on every target for authoritative code (#1109).
 libm = "=0.2.16"
 
-# battle-royale-core builds against this workspace's mmorpg-core, not its own pinned copy.
+# battle-royale-core builds against this workspace's mmorpg-core, not its own git copy.
 [patch."https://github.com/moritzbrantner/mmorpg.git"]
 sim-foundation = { path = "crates/sim-foundation" }
 sim-movement = { path = "crates/sim-movement" }

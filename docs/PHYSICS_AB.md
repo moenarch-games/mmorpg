@@ -8,6 +8,8 @@ Rapier is an optional independent behaviour/performance oracle behind the non-de
 `physics-ab` feature (Atlas 2.1.i647). That feature alone compiles Rapier and the explicit
 `World::with_backend`/`physics::using_backend` diagnostic selectors; production exposes no
 backend selector or fallback. Hosts and clients continue to use the same core simulation.
+Since #1126 Physics Engine is followed by `branch = "main"` (Atlas 7.2.i1126) and `Cargo.lock`
+records the commit in use; the revisions named below are the ones each measurement used.
 
 Zone construction and recovery always use Physics Engine outside diagnostics. Greyhaven uses its
 retained hulls and cave meshes for characters, support, ray/projectile and shape queries.

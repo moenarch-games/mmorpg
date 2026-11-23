@@ -49,7 +49,7 @@ options in the arena status line (`· predicted movement · hit rewind`).
 
 Practice and hosted matches show the **same symmetric multilevel fortress** that Battle Royale
 hosts ([battle-royale #31](https://github.com/moenarch-games/battle-royale/issues/31),
-`docs/ARENA.md` there). `battle-royale-core` (pinned in the root `Cargo.toml`, with a `[patch]`
+`docs/ARENA.md` there). `battle-royale-core` (its `main` branch in the root `Cargo.toml`, with a `[patch]`
 pointing its `mmorpg-core` at this workspace) is its one definition; nothing here copies the
 geometry.
 
@@ -126,10 +126,13 @@ authoritative Battle Royale server.
 
 ## Local hosted path
 
-Use the `battle-royale` revision this workspace pins,
-**9221a450ebd4ac856b097eb84c6a5e68a4269d51** (battle-royale #53), or a later compatible
-revision. It pins MMORPG `72c313b4`, including the arena's per-attack interception rules
-(#679) and updated content identity. The host and browser must agree on both
+mmorpg and battle-royale follow each other's `main` branch (Atlas 7.2.i1126): this workspace
+names `battle-royale-core` by `branch = "main"`, and battle-royale names `mmorpg-core` and
+`mmorpg-protocol` the same way. Each `Cargo.lock` records the commit it builds, so hosted Battle
+Royale is in step with this checkout when both lockfiles are current (`cargo update -p
+battle-royale-core` here, `cargo update -p mmorpg-core -p mmorpg-protocol` there). Use a
+battle-royale checkout of `main` whose lockfile names this checkout's MMORPG commit or a
+compatible one. The host and browser must agree on both
 `PROTOCOL_ID` and arena content revision. Mode protocol 2, schema 2 and ruleset 3 wrap the MMORPG snapshot
 and command. Character commands echo the sheet revisions the session's decoder holds, and the
 host sends a sheet only until a command acknowledges it, as a zone host does. Ruleset 3's storm
@@ -157,7 +160,7 @@ slice; this is the browser entrance using the shared native/browser presentation
 
 ## Focused verification
 
-Build `web/dist`, build the pinned mode host, then run:
+Build `web/dist`, build the mode host from battle-royale's `main`, then run:
 
 ```sh
 python3 scripts/smoke-browser-battle-royale.py --host /path/to/battle-royale-host
