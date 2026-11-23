@@ -26,6 +26,13 @@ use crate::{
 /// tick reports [`crate::ErrorCode::TooManyIntents`] once.
 pub const MAX_PENDING_INTENTS: usize = 16;
 
+/// How far ahead of a player's last accepted command sequence a new one may be (#1151). Clients
+/// number their commands consecutively and keep the count across a resume and a handoff, so a
+/// gap only spans commands that never arrived: 65 536 is almost an hour of 20 Hz movement
+/// resends. A sequence further ahead fails closed, so one garbage value (`u32::MAX`) cannot
+/// exhaust the player's sequences for the rest of its session.
+pub const MAX_SEQUENCE_GAP: u32 = 1 << 16;
+
 /// Separates the loot streams from the combat streams of the same seed.
 pub(crate) const LOOT_STREAM_SALT: u64 = 0x6c6f_6f74_2f76_3031;
 
@@ -774,6 +781,9 @@ impl ZoneSimulation {
         if sequence == 0 || sequence <= player.last_sequence {
             return Err(ZoneError::new("command sequence is stale"));
         }
+        if sequence - player.last_sequence > MAX_SEQUENCE_GAP {
+            return Err(ZoneError::new("command sequence is too far ahead"));
+        }
         if let Some(observed) = observed {
             if observed > now {
                 return Err(ZoneError::new("command observation is ahead of the zone"));
@@ -1044,6 +1054,9 @@ impl ZoneSimulation {
         self.record_rewind_frame(now)?;
         self.tick_work.interest_query_allocations =
             self.interest_query_allocations().saturating_sub(queries);
+        // A physics query the engine refused this tick, or since the last one, fails the tick
+        // instead of panicking the host (#1151).
+        self.world.take_query_failure().map_err(physics_error)?;
         Ok(())
     }
 
@@ -1724,6 +1737,46 @@ mod tests {
         assert!(!player.jump_pending, "rejected commands change nothing");
         assert!(player.combat.intents.is_empty());
         assert_eq!(player.last_sequence, 5);
+    }
+
+    #[test]
+    fn a_sequence_far_ahead_fails_closed_and_keeps_the_player_usable() {
+        let mut zone = ZoneSimulation::new(ZoneId::new(1));
+        zone.add_player(1).unwrap();
+        zone.apply_command(1, 5, ZoneCommand::Jump).unwrap();
+
+        // A garbage maximal sequence would leave no later one (#1151).
+        for sequence in [u32::MAX, 5 + MAX_SEQUENCE_GAP + 1] {
+            let error = zone
+                .apply_command(1, sequence, ZoneCommand::SelectTarget(None))
+                .unwrap_err();
+            assert_eq!(error.message(), "command sequence is too far ahead");
+        }
+        let player = &zone.snapshot().unwrap().players[0];
+        assert_eq!(
+            player.last_sequence, 5,
+            "a refused sequence is not consumed"
+        );
+        assert!(player.combat.intents.is_empty());
+
+        // The client's next sequences still apply, up to the full gap.
+        zone.apply_command(1, 6, ZoneCommand::CancelCast).unwrap();
+        zone.apply_command(1, 6 + MAX_SEQUENCE_GAP, ZoneCommand::CancelCast)
+            .unwrap();
+    }
+
+    #[test]
+    fn a_refused_physics_query_fails_the_tick_instead_of_panicking() {
+        let mut zone = ZoneSimulation::new(ZoneId::new(1));
+        zone.add_player(1).unwrap();
+        zone.advance_tick().unwrap();
+        assert_eq!(
+            zone.world
+                .cast_ray([f32::NAN, 0.0, 0.0], [1.0, 0.0, 0.0], |_| true),
+            None
+        );
+        let error = zone.advance_tick().unwrap_err();
+        assert!(error.message().contains("ray query"), "{}", error.message());
     }
 
     #[test]
