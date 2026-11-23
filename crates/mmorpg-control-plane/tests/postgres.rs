@@ -155,14 +155,48 @@ fn postgres_handoffs_are_fenced_idempotent_and_decided_at_acceptance() {
         handoffs.accept(again.transfer_id, &east_lease),
         Err(ControlPlaneError::TransferAborted(again.transfer_id))
     );
+    let third = TransferId::new(transfer.get() - 2);
     assert_eq!(
         handoffs
             .prepare(HandoffTicket {
-                transfer_id: TransferId::new(transfer.get() - 2),
-                ..again
+                transfer_id: third,
+                ..again.clone()
             })
             .unwrap(),
         HandoffPhase::Prepared
+    );
+
+    // #1096: the source never confirms the accepted transfer, yet the
+    // destination zone sends the entity onward, which settles the arrival.
+    let back = HandoffTicket {
+        transfer_id: TransferId::new(transfer.get() - 3),
+        entity_id: entity,
+        source: east_lease.clone(),
+        destination: successor.lease().clone(),
+    };
+    assert_eq!(
+        handoffs.prepare(back.clone()),
+        Err(ControlPlaneError::EntityTransferInProgress(entity))
+    );
+    assert_eq!(
+        handoffs.accept(third, &east_lease).unwrap(),
+        HandoffPhase::Accepted
+    );
+    assert_eq!(
+        handoffs.prepare(HandoffTicket {
+            transfer_id: TransferId::new(transfer.get() - 4),
+            ..again
+        }),
+        Err(ControlPlaneError::EntityTransferInProgress(entity))
+    );
+    assert_eq!(handoffs.prepare(back).unwrap(), HandoffPhase::Prepared);
+    assert_eq!(
+        handoffs.record(third).unwrap().unwrap().phase,
+        HandoffPhase::Committed
+    );
+    assert_eq!(
+        handoffs.commit(third, successor.lease()).unwrap(),
+        HandoffPhase::Committed
     );
 }
 

@@ -13,7 +13,7 @@ use crate::instance::{InstanceAuthority, InstanceDirectory, InstanceStoreError};
 use crate::party::{PartyAuthority, PartyDirectory, PartyStoreError};
 use crate::{
     ControlPlaneError, EntityId, HandoffAuthority, HandoffPhase, HandoffRecord, HandoffTicket,
-    HostId, TransferId, ZoneLease, speaks_for,
+    HostId, TransferId, ZoneLease, settles_arrival, speaks_for,
 };
 use mmorpg_core::ZoneId;
 use postgres::{CancelToken, Client, Config, GenericClient, NoTls, Row, Transaction};
@@ -628,14 +628,21 @@ impl HandoffAuthority for PostgresHandoffs {
             }
             let busy = transaction
                 .query_opt(
-                    "SELECT 1 FROM mmorpg_coordination.handoffs WHERE entity_id=$1 AND phase IN (0,1)",
+                    "SELECT transfer_id FROM mmorpg_coordination.handoffs WHERE entity_id=$1 AND phase IN (0,1)",
                     &[&signed(ticket.entity_id.get())],
                 )
                 .map_err(unavailable)?;
-            if busy.is_some() {
-                return Err(ControlPlaneError::EntityTransferInProgress(
-                    ticket.entity_id,
-                ));
+            if let Some(row) = busy {
+                let active = TransferId::new(unsigned(row.get("transfer_id")));
+                let settles = record_in(transaction, active)?
+                    .is_some_and(|arrival| settles_arrival(&arrival, &ticket.source));
+                if !settles {
+                    return Err(ControlPlaneError::EntityTransferInProgress(
+                        ticket.entity_id,
+                    ));
+                }
+                // The accepted destination sends the entity onward (#1096).
+                set_phase(transaction, active, HandoffPhase::Committed)?;
             }
             let (source, destination) = (&ticket.source, &ticket.destination);
             transaction

@@ -84,6 +84,9 @@ pub struct HandoffHost<B: EntryBackend> {
     /// The connection epoch of each claimed session, for its host inputs.
     sessions: Mutex<BTreeMap<(MatchId, PlayerId), u32>>,
     inbound: Mutex<BTreeMap<TransferId, Inbound>>,
+    /// Accepted departures whose retirement this host could not confirm yet
+    /// (#1096): the zone and the redirect their frozen sessions still wait for.
+    unretired: Mutex<BTreeMap<TransferId, (ZoneId, Redirect)>>,
     link_timeout: Duration,
     next_transfer: AtomicU64,
     /// Resolves threshold entries and binds private runs (#404).
@@ -116,6 +119,7 @@ impl<B: EntryBackend> HandoffHost<B> {
             routes,
             sessions: Mutex::default(),
             inbound: Mutex::default(),
+            unretired: Mutex::default(),
             link_timeout,
             // Transfer IDs only need to be unique; start at a random point.
             next_transfer: AtomicU64::new(RandomState::new().hash_one(std::process::id())),
@@ -227,6 +231,7 @@ impl<B: EntryBackend> HandoffHost<B> {
         if !self.host.is_serving() {
             return;
         }
+        self.retry_retirements();
         for zone in self.zones.values() {
             for due in zone.channel.departures() {
                 if let Err(error) = self.depart(zone, due) {
@@ -236,6 +241,31 @@ impl<B: EntryBackend> HandoffHost<B> {
                         due.player
                     );
                 }
+            }
+        }
+    }
+
+    /// Source: confirms the retirements that failed after their destination
+    /// accepted (#1096). The destination owns those characters whatever
+    /// happens here; this releases their frozen sessions to it.
+    fn retry_retirements(&self) {
+        let Ok(pending) = lock(&self.unretired).map(|unretired| unretired.clone()) else {
+            return;
+        };
+        for (transfer_id, (zone_id, redirect)) in pending {
+            let Some(zone) = self.zones.get(&zone_id) else {
+                continue;
+            };
+            let mut live = self.live(zone, None);
+            live.redirect = Some(redirect);
+            let retired = lock(&self.authority).and_then(|mut authority| {
+                retire_outbound(&mut live, &mut **authority, &zone.lease, transfer_id)
+                    .map_err(message)
+            });
+            if retired.is_ok()
+                && let Ok(mut unretired) = lock(&self.unretired)
+            {
+                unretired.remove(&transfer_id);
             }
         }
     }
@@ -314,6 +344,13 @@ impl<B: EntryBackend> HandoffHost<B> {
             // The destination holds the character's lease now.
             storage.leases.remove(&key);
             lock(&self.sessions)?.remove(&key);
+        }
+        if offered.is_ok()
+            && outcome.is_err()
+            && let Some(redirect) = live.redirect.clone()
+        {
+            // Accepted, but the retirement is unconfirmed: confirm it on a later poll.
+            lock(&self.unretired)?.insert(transfer_id, (zone.lease.zone_id, redirect));
         }
         drop(authority);
         drop(storage);
