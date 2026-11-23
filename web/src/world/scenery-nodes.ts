@@ -140,6 +140,12 @@ const CULLS: readonly CullClass[] = ["always", "far", "mid", "near", "detail", "
  * far one it covers less than a texel and cost about a fifth of its draws (three-lighting `shadowCascades`).
  */
 const NEAR_SHADOW = { shadowCascades: 2 };
+/**
+ * Brook turf's blades are a centimetre or two wide, under a texel of the middle cascade, where they would only add
+ * shimmer: the turf casts into the nearest cascade alone (#1083).
+ */
+const NEAREST_SHADOW = { shadowCascades: 1 };
+const THIN_BLADED = new Set(["greyhaven-brook-turf"]);
 
 type GeometryEntry = {
   resourceKey: string; vertexOffset: number; vertexCount: number; colored: boolean; textured: boolean; weighted: boolean; indexOffset: number; indexCount: number;
@@ -299,8 +305,9 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
     const first = group.draws[0]!;
     // Instance draw IDs are `<batch id>:<ordinal>`; the batch shares one geometry.
     const id = first.id.slice(0, first.id.lastIndexOf(":"));
+    const name = instanceBatchName(id, group);
     const batch = lazyGeometry({
-      id, name: instanceBatchName(id, group), userData: NEAR_SHADOW, color: "#ffffff", revision: layout.prefix,
+      id, name, userData: THIN_BLADED.has(name.split(".")[1]!) ? NEAREST_SHADOW : NEAR_SHADOW, color: "#ffffff", revision: layout.prefix,
     }, first) as unknown as RendererInstanceBatch;
     // The instance transforms stay undecoded with the geometry until the batch is first drawn.
     let instances: RendererInstance[] | null = null;

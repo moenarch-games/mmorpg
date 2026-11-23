@@ -18,8 +18,9 @@
     "@moritzbrantner/maps": "github:moritzbrantner/maps#2aa1a6fb05e486ce438afb7a2707f468f4317276",
     "@moritzbrantner/settings-browser": "github:moritzbrantner/settings#18289aafa116010fd8dfe485aecff2cc749ceb4a",
     "@moritzbrantner/three-d-renderer": "github:moritzbrantner/3d-lab#1d185c64fa82dc270e0fd0685d77157ef5c59142",
-    "@moritzbrantner/three-lighting": "github:moritzbrantner/render-engine#cecfd8ea4126f7b537112d592c7fbfb2a120ffdd",
+    "@moritzbrantner/three-lighting": "github:moritzbrantner/render-engine#f5cbae03bd8aea97e63b53b1d1b8702582e2cc4e",
     "@moritzbrantner/ui": "github:moritzbrantner/ui#2f0cc4e470307b017fb06aae4a03b9abce47cc8c",
+    "meshoptimizer": "1.1.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "three": "0.187.0"

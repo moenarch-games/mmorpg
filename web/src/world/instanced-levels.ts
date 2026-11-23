@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { litMaterial } from "./lighting";
+import { KIT_FAR_SHADOW, simplifiedShadow } from "./shadow-lod";
 
 /** Uploads only the first `count` items of `attribute` (the drawn instances), not its whole capacity. */
 function upload(attribute: THREE.BufferAttribute, count: number): void {
@@ -49,7 +50,7 @@ void main() {
  * instances through the dithered copy (#593). The copy's `discard` would cost every settled pixel its early depth
  * test, so only the few fading instances pay for it. Both meshes share the geometry's buffers.
  */
-type Part = { settled: THREE.InstancedMesh; fading: THREE.InstancedMesh; fade: THREE.InstancedBufferAttribute };
+type Part = { settled: THREE.InstancedMesh; fading: THREE.InstancedMesh; fade: THREE.InstancedBufferAttribute; surface: string };
 
 /** Where a placement's instance stands this frame: its level and slot in the settled or fading meshes. */
 type Slot = { level: number; slot: number; fading: boolean };
@@ -66,6 +67,8 @@ export class InstancedLevels {
   readonly #levels: Part[][][];
   /** The cross-fade copies this instance made (#1005: owned, unlike the shared glTF materials). */
   readonly #fadeMaterials = new Set<THREE.Material>();
+  /** The simplified far shadow levels this instance made (#1083). */
+  readonly #shadowGeometries: THREE.BufferGeometry[];
   #disposed = false;
   /** Per placement its entry index and current model matrix. */
   readonly #entryOf: number[];
@@ -128,10 +131,14 @@ export class InstancedLevels {
           this.root.add(mesh);
           return mesh;
         };
-        parts.push({ settled: instanced(geometry, source, ""), fading: instanced(fadingGeometry, material, ".fading"), fade });
+        parts.push({
+          settled: instanced(geometry, source, ""), fading: instanced(fadingGeometry, material, ".fading"), fade,
+          surface: (object.material as THREE.Material).name,
+        });
       });
       return parts;
     }));
+    this.#shadowGeometries = shadowLevels(this.#levels);
     this.#slots = placements.map(() => []);
     this.#counts = this.#levels.map((entryLevels) => entryLevels.map(() => 0));
   }
@@ -206,6 +213,7 @@ export class InstancedLevels {
         fading.dispose();
       }
     }
+    for (const geometry of this.#shadowGeometries) { geometry.dispose(); }
     for (const material of this.#fadeMaterials) { material.dispose(); }
     this.#fadeMaterials.clear();
     this.root.clear();
@@ -215,4 +223,44 @@ export class InstancedLevels {
   get counts(): readonly (readonly number[])[] {
     return this.#counts;
   }
+}
+
+/**
+ * Shadow levels of detail (#1083): sun cascade `c` draws a level's part with the matching part (same glTF material, so
+ * the same texture for a masked cut-out) of the level `c` steps coarser, or the nearest finer one that has it (a
+ * tree's far level drops its leaf cards), so the near cascade casts the drawn level and the far ones cheaper ones.
+ * Past the coarsest level, a cascade draws that level simplified ({@link KIT_FAR_SHADOW}); returns those geometries.
+ */
+function shadowLevels(levels: readonly Part[][][]): THREE.BufferGeometry[] {
+  const simplified = new Map<THREE.BufferGeometry, THREE.BufferGeometry>();
+  const farShadow = (geometry: THREE.BufferGeometry) => {
+    let far = simplified.get(geometry);
+    if (!far) { simplified.set(geometry, far = simplifiedShadow(geometry, KIT_FAR_SHADOW) ?? geometry); }
+    return far;
+  };
+  for (const entryLevels of levels) {
+    const coarsest = entryLevels.length - 1;
+    entryLevels.forEach((parts, level) => {
+      for (const part of parts) {
+        // Unnamed materials cannot be told apart across levels.
+        if (part.surface === "") { continue; }
+        const own = part.settled.geometry;
+        const cascades = entryLevels.map((_, cascade) => {
+          let geometry = own;
+          for (let coarser = Math.min(level + cascade, coarsest); coarser > level; coarser--) {
+            const match = entryLevels[coarser]!.find((other) => other.surface === part.surface);
+            if (match) {
+              geometry = match.settled.geometry;
+              break;
+            }
+          }
+          return level + cascade > coarsest ? farShadow(geometry) : geometry;
+        });
+        if (cascades.every((geometry) => geometry === own)) { continue; }
+        part.settled.userData.shadowGeometry = cascades;
+        part.fading.userData.shadowGeometry = cascades;
+      }
+    });
+  }
+  return [...simplified.values()].filter((far) => !simplified.has(far));
 }

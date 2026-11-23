@@ -421,6 +421,36 @@
       ]
     },
     {
+      "id": "sun-shadow-casters",
+      "description": "Browser sun shadows (#1083): a camera walking and turning through Greyhaven redraws at most two of the three sun cascades a frame (the far two take turns, three-lighting cascadeUpdateIntervals), and a skinned unit's shadow proxy draws a simplified share of its body's triangles in each cascade. Measured by web/tests/shadow-lod.test.ts (bun test), without a GPU.",
+      "dimensions": { "frames": { "description": "frames of a fixed camera walk (6 m/s, a quarter turn every four seconds) after the first" } },
+      "scalePoints": [{ "frames": 16 }, { "frames": 64 }, { "frames": 256 }],
+      "metrics": [
+        {
+          "name": "largest_frame_cascade_redraws",
+          "unit": "cascades",
+          "signal": "operation-count",
+          "notes": "Sun cascades one frame redraws (StaggeredCascades with CASCADE_UPDATE_INTERVALS [1, 2, 2]); a kept cascade the view leaves is redrawn early.",
+          "budget": { "max": 2 },
+          "growth": [{ "dimension": "frames", "bound": "constant" }]
+        },
+        {
+          "name": "unit_near_shadow_triangle_percent",
+          "unit": "percent",
+          "signal": "operation-count",
+          "notes": "Triangles the nearest cascade draws for an 18 624-triangle skinned capsule's shadow proxy, of the body's (30 % at #1083).",
+          "budget": { "max": 33 }
+        },
+        {
+          "name": "unit_far_shadow_triangle_percent",
+          "unit": "percent",
+          "signal": "operation-count",
+          "notes": "The same in the middle and far cascades (10 % at #1083).",
+          "budget": { "max": 12 }
+        }
+      ]
+    },
+    {
       "id": "seeded-content-entry",
       "description": "Browser world build (#855): a page whose zone content is seeded, from its world-build worker or the release-keyed derived cache, rebuilds none of the content's costly base parts (terrain heights, colliders, solid dressing) while it builds the content, catalog, presentation scenery and local zone it enters.",
       "dimensions": { "seeds": { "description": "content seeds a fresh page applies" } },
