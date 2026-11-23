@@ -19,6 +19,9 @@ __pycache__/
 # mise's Python virtualenv (mise.toml)
 /.venv/
 
+# Local Playwright MCP sessions (screenshots, console logs)
+/.playwright-mcp/
+
 # World Studio frontend
 /crates/mmorpg-world-studio/frontend/node_modules/
 /crates/mmorpg-world-studio/frontend/dist/

@@ -27,6 +27,7 @@ jobs:
       allow-skipped: ${{ steps.pages-scope.outputs.allow-skipped }}
       clippy: ${{ steps.pages-scope.outputs.clippy }}
       work-contract: ${{ steps.pages-scope.outputs.work-contract }}
+      studio-frontend: ${{ steps.pages-scope.outputs.studio-frontend }}
       docs_only: ${{ steps.detect.outputs.docs_only }}
       rust_changed: ${{ steps.detect.outputs.rust_changed }}
       settings_only: ${{ steps.detect.outputs.settings_only }}
@@ -65,6 +66,7 @@ jobs:
           docs_only=false
           rust_changed=true
           settings_only=false
+          catalog_changed=false
           if [[ -n "$PR_BASE" && -n "$PR_HEAD" ]] &&
             git cat-file -e "$PR_BASE^{commit}" &&
             git cat-file -e "$PR_HEAD^{commit}" &&
@@ -95,7 +97,8 @@ jobs:
                 # retain the complete Rust suite before integration.
                 case "$file" in
                   web/assets/*|web/public/*|web/src/input/game-controls.ts) settings_only=false ;;
-                  content/settings/catalog.json|web/*) ;;
+                  content/settings/catalog.json) catalog_changed=true ;;
+                  web/*) ;;
                   *) settings_only=false ;;
                 esac
               done
@@ -114,7 +117,8 @@ jobs:
           fi
           printf 'docs_only=%s\n' "$docs_only" >> "$GITHUB_OUTPUT"
           printf 'rust_changed=%s\n' "$rust_changed" >> "$GITHUB_OUTPUT"
-          if [[ "$GITHUB_EVENT_NAME" != "pull_request" || "$rust_changed" != "true" || "$FULL_VALIDATION" == "true" ]]; then
+          # The settings shortcut stands for a settings catalog change only (#1163).
+          if [[ "$GITHUB_EVENT_NAME" != "pull_request" || "$rust_changed" != "true" || "$catalog_changed" != "true" || "$FULL_VALIDATION" == "true" ]]; then
             settings_only=false
           fi
           printf 'settings_only=%s\n' "$settings_only" >> "$GITHUB_OUTPUT"
@@ -135,6 +139,17 @@ jobs:
           scripts/ci-install-bun.sh
           export PATH="$HOME/.bun/bin:$PATH"
           scripts/ci-work-contract.sh structure
+
+      - name: Test the Blender layout export
+        # Plain Python, no Blender (#1163). Without a known change list the test runs.
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f "$RUNNER_TEMP/changed-files" ]] && ! grep -qz '^scripts/blender/' "$RUNNER_TEMP/changed-files"; then
+            echo "The Blender layout export did not change."
+            exit 0
+          fi
+          cd scripts/blender && python3 -m unittest test_greyhaven_layout
 
       - name: Resolve the asset cache identity
         id: assets
@@ -173,7 +188,7 @@ jobs:
                       selected = not negative
               return selected
 
-          specs = {'pages-validation': {'types': ['opened', 'synchronize', 'reopened', 'labeled', 'unlabeled'], 'paths': ['web/**', 'content/**', 'fixtures/protocol/session-frames-v3.hex', 'fixtures/scenery/**', 'crates/mmorpg-core/**', 'crates/mmorpg-protocol/**', 'crates/mmorpg-wasm/**', 'crates/mmorpg-scenery/**', 'crates/sim-foundation/**', 'crates/sim-movement/**', 'crates/sim-combat/**', 'crates/mmorpg-presentation/**', 'crates/mmorpg-client-model/**', 'crates/mmorpg-characters/**','Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'scripts/smoke-browser.py', '.github/workflows/pages.yml']}}
+          specs = {'studio-frontend': {'paths': ['crates/mmorpg-world-studio/frontend/**', '.github/workflows/validate.yml']}, 'pages-validation': {'types': ['opened', 'synchronize', 'reopened', 'labeled', 'unlabeled'], 'paths': ['web/**', 'content/**', 'fixtures/protocol/session-frames-v3.hex', 'fixtures/scenery/**', 'crates/mmorpg-core/**', 'crates/mmorpg-protocol/**', 'crates/mmorpg-wasm/**', 'crates/mmorpg-scenery/**', 'crates/sim-foundation/**', 'crates/sim-movement/**', 'crates/sim-combat/**', 'crates/mmorpg-presentation/**', 'crates/mmorpg-client-model/**', 'crates/mmorpg-characters/**','Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'scripts/smoke-browser.py', '.github/workflows/pages.yml']}}
           pr = os.environ["GITHUB_EVENT_NAME"] in ("pull_request", "merge_group")
           event = json.loads(os.environ.get("PR_EVENT", "{}"))
           paths = []
@@ -324,6 +339,34 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: scripts/fetch-bundles.sh
 
+  studio-frontend:
+    # World Studio's frontend has no tests; its build runs where its inputs change (#1163).
+    needs: scope
+    if: needs.scope.outputs.studio-frontend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      # The `@moritzbrantner/maps` git dependency builds its WASM package when it is installed.
+      - name: Install Rust toolchain and wasm32 target from rust-toolchain.toml
+        run: |
+          rustup toolchain install
+          rustup target list --installed | grep -qx wasm32-unknown-unknown
+      - name: Install wasm-bindgen and Bun
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci-install-wasm-bindgen.sh && scripts/ci-install-bun.sh
+      - name: Build the World Studio frontend
+        working-directory: crates/mmorpg-world-studio/frontend
+        run: |
+          export PATH="$HOME/.bun/bin:$HOME/.cargo/bin:$PATH"
+          bun install --frozen-lockfile
+          bun run build
+
   pages-validation:
     needs: scope
     if: needs.scope.outputs.pages-validation == 'true'
@@ -344,7 +387,7 @@ jobs:
       github.event.label.name == 'browser-evidence' || github.event.label.name == 'full-validation'))) &&
       'merge-ready' || 'validation-summary' }}
     if: ${{ always() }}
-    needs: [scope, rust, clippy, work-contract, pages-validation]
+    needs: [scope, rust, clippy, work-contract, studio-frontend, pages-validation]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -352,5 +395,5 @@ jobs:
       - uses: moritzbrantner/reusable-workflows/.github/actions/merge-ready@858803b5ce092c1bc9981f215ceab43066bc1ca8
         with:
           needs: ${{ toJSON(needs) }}
-          required: '["scope", "rust", "clippy", "work-contract", "pages-validation"]'
+          required: '["scope", "rust", "clippy", "work-contract", "studio-frontend", "pages-validation"]'
           allow-skipped: ${{ needs.scope.outputs.allow-skipped || '[]' }}
