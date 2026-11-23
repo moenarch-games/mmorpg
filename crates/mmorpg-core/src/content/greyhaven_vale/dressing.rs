@@ -7,7 +7,6 @@
 //! fits the drawn body exactly. Foliage (grass, flowers, bushes, reeds, crops) stays
 //! presentation only and walk-through.
 use std::collections::BTreeMap;
-use std::sync::LazyLock;
 
 use super::{clear_of_roads, highlands, ids, inside_authored, marsh, units, vale};
 use crate::{StaticCollider, XzBounds};
@@ -26,6 +25,31 @@ pub enum Kind {
 }
 
 impl Kind {
+    /// Every kind, in declaration order: a kind's index here is its number in a content seed (#855).
+    pub const ALL: [Self; 7] = [
+        Self::Lamp,
+        Self::Signpost,
+        Self::Barrel,
+        Self::Cart,
+        Self::Dock,
+        Self::SmallRock,
+        Self::MediumRock,
+    ];
+
+    /// This kind's place in [`Self::ALL`].
+    #[must_use]
+    pub const fn index(self) -> u8 {
+        match self {
+            Self::Lamp => 0,
+            Self::Signpost => 1,
+            Self::Barrel => 2,
+            Self::Cart => 3,
+            Self::Dock => 4,
+            Self::SmallRock => 5,
+            Self::MediumRock => 6,
+        }
+    }
+
     /// The body's half extents at scale 1 000, before its turn.
     #[must_use]
     pub const fn half_extents(self) -> [i32; 3] {
@@ -299,7 +323,21 @@ fn build(colliders: &[StaticCollider]) -> Vec<Piece> {
     pieces
 }
 
-static PIECES: LazyLock<Vec<Piece>> = LazyLock::new(|| build(&super::undressed_colliders()));
+/// Built on first use unless seeded first ([`super::seed_base`], #855).
+pub(super) static PIECES: super::Seeded<Vec<Piece>> = super::Seeded::new(build_pieces);
+
+fn build_pieces() -> Vec<Piece> {
+    build(&super::undressed_colliders())
+}
+
+/// Whether seeded `pieces` can be this build's dressing among seeded `colliders`: in collider ID
+/// order, each with a collider. Only IDs are compared, since a piece's box reads the terrain
+/// (which is being seeded too).
+pub(super) fn pieces_fit(pieces: &[Piece], colliders: &[StaticCollider]) -> bool {
+    let ids: std::collections::BTreeSet<u32> =
+        colliders.iter().map(|collider| collider.id).collect();
+    pieces.is_sorted_by(|a, b| a.id < b.id) && pieces.iter().all(|piece| ids.contains(&piece.id))
+}
 
 /// Every base piece of dressing, in collider ID order.
 #[must_use]

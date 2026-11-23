@@ -16,6 +16,7 @@
 //! [`ids`]. [`content`] bundles it as the hosted [`ZoneContent`], whose revision
 //! is a hash of all of it: changing anything here changes the revision by itself.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, OnceLock};
 
 use super::{SpawnGrid, StaticCollider, XzBounds, ZoneContent, ZoneDefinition};
@@ -899,6 +900,11 @@ pub fn terrain() -> Terrain {
 
 static TERRAIN: Seeded<Terrain> = Seeded::new(terrain);
 
+/// How many base parts ([`TERRAIN`], [`COLLIDERS`], [`dressing::pieces`]) this process built
+/// rather than took from a [`seed_base`]: the `seeded-content-entry` budget's counter
+/// (`.performance/contract.json`, Atlas 7.1.i1055).
+static BASE_BUILDS: AtomicUsize = AtomicUsize::new(0);
+
 /// A value built on first use, unless a copy was seeded first ([`seed_base`]).
 struct Seeded<T> {
     cell: OnceLock<T>,
@@ -918,22 +924,42 @@ impl<T> std::ops::Deref for Seeded<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        self.cell.get_or_init(self.build)
+        self.cell.get_or_init(|| {
+            BASE_BUILDS.fetch_add(1, Ordering::Relaxed);
+            (self.build)()
+        })
     }
 }
 
-/// The two costly parts of the base definition: the zone terrain's heights ([`terrain`]) and
-/// the colliders before the static meshes' bounds join them, each built once.
+/// How many of the three base parts ([`base_parts`]) this process built itself: 0 after a
+/// valid [`seed_base`], whatever then reads the content.
 #[must_use]
-pub fn base_parts() -> (&'static [i32], &'static [StaticCollider]) {
-    (&TERRAIN.heights, &COLLIDERS)
+pub fn base_builds() -> usize {
+    BASE_BUILDS.load(Ordering::Relaxed)
+}
+
+/// The three costly parts of the base definition: the zone terrain's heights ([`terrain`]), the
+/// colliders before the static meshes' bounds join them, and the solid dressing those colliders
+/// include ([`dressing::pieces`]), each built once.
+#[must_use]
+pub fn base_parts() -> (
+    &'static [i32],
+    &'static [StaticCollider],
+    &'static [dressing::Piece],
+) {
+    (&TERRAIN.heights, &COLLIDERS, dressing::pieces())
 }
 
 /// Seeds [`base_parts`] with a copy another instance of this same build made (the browser's
-/// world-build worker, #855), so this one need not build them; the base definition is then
-/// assembled and validated from them as from built parts. Returns false, changing nothing, once
-/// either part was built or seeded, or when the parts do not form a valid definition.
-pub fn seed_base(heights: Vec<i32>, colliders: Vec<StaticCollider>) -> bool {
+/// world-build worker, or a release-keyed cache of its output, #855), so this one need not build
+/// them; the base definition is then assembled and validated from them as from built parts.
+/// Returns false, changing nothing, once any part was built or seeded, or when the parts do not
+/// form a valid definition or a piece's collider is not among the colliders.
+pub fn seed_base(
+    heights: Vec<i32>,
+    colliders: Vec<StaticCollider>,
+    pieces: Vec<dressing::Piece>,
+) -> bool {
     let terrain = Terrain {
         origin: terrain::ZONE_ORIGIN,
         step: terrain::STEP,
@@ -943,12 +969,16 @@ pub fn seed_base(heights: Vec<i32>, colliders: Vec<StaticCollider>) -> bool {
     };
     if TERRAIN.cell.get().is_some()
         || COLLIDERS.cell.get().is_some()
+        || dressing::PIECES.cell.get().is_some()
         || terrain.validate().is_err()
+        || !dressing::pieces_fit(&pieces, &colliders)
         || ZoneDefinition::with_spawn_grid(GRAVITY, SPAWN_GRID, colliders.clone()).is_err()
     {
         return false;
     }
-    TERRAIN.cell.set(terrain).is_ok() && COLLIDERS.cell.set(colliders).is_ok()
+    TERRAIN.cell.set(terrain).is_ok()
+        && COLLIDERS.cell.set(colliders).is_ok()
+        && dressing::PIECES.cell.set(pieces).is_ok()
 }
 
 /// The zone's terrain over the authored grid alone ([`terrain::ORIGIN`], [`terrain::COLUMNS`],

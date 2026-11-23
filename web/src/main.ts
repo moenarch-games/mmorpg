@@ -48,7 +48,7 @@ import {
 } from "./character-roster";
 import type { LocalWorld } from "./world/local-world";
 import { LocalCharacters, VisitStorage } from "./world/local-characters";
-import { actionLabDefinitions, committedArea, committedLevel, committedPhysique, createScenarioWorld, customizePhysique, importedRestClip, labExperiments, loadLocalWorld, physiqueModel, physiqueModifiers, presentZone, soundManifest, whenStaticSceneDerived } from "./world/wasm-runtime";
+import { actionLabDefinitions, committedArea, committedLevel, committedPhysique, createScenarioWorld, customizePhysique, importedRestClip, labExperiments, loadLocalWorld, physiqueModel, physiqueModifiers, prewarmLocalZone, presentZone, soundManifest, whenStaticSceneDerived } from "./world/wasm-runtime";
 import { loadPendingPhysique, neutralPhysique, PhysiqueEditor, physiqueLook, savePendingPhysique, type PhysiqueModel } from "./physique";
 import { WorldSound } from "./world/world-sound";
 import { ActionLabPanel, labQuery } from "./world/action-lab";
@@ -1002,6 +1002,8 @@ function updateEntryButton(): void {
     // The static scene waits until the entry art has loaded and entry is open, and for the worker that derives most of
     // it (#855).
     void whenStaticSceneDerived().then(() => worldView.prewarmStatic());
+    // The local zone's terrain physics too, so joining it does not prepare that on the way in.
+    if (world && chosenWorld() === world) { prewarmLocalZone(); }
   }
   let entryLabel = "Enter World";
   if (arenaEntry.selected) { entryLabel = practiceWorld ? "Start practice" : "Join Battle Royale"; }

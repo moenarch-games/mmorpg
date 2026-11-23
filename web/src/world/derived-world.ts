@@ -5,15 +5,23 @@
  * Every failure, or a browser without workers, reads as null: the page then derives as before.
  */
 
-/** What the page sends the worker: the compiled module at once, then the derived-data cache's terrain grids (#526) or null. */
-export type DerivedWorldRequest = { kind: "module"; module: WebAssembly.Module } | { kind: "grids"; grids: Uint8Array | null };
+/**
+ * What the page sends the worker: the compiled module at once, then what the derived-data cache held for this release
+ * (#526, #855): the terrain grids and the zone content's base parts (`LocalZone.hostedContentSeed`), each or both null.
+ */
+export type DerivedWorldRequest =
+  | { kind: "module"; module: WebAssembly.Module }
+  | { kind: "cached"; grids: Uint8Array | null; content: Int32Array | null };
 
 /** The terrain grids (`terrainGridCache`) and the scenery export (`scenery`). */
 export type DerivedScenery = { grids: Uint8Array; scenery: string };
 
-/** The static scene's layout and buffers (`staticScene*`) and its skeleton (`staticSceneSkeleton`, with the terrain's weights). */
+/**
+ * The static scene's layout (`staticSceneLayout`: its JSON as UTF-8, handed to the page's instance without decoding),
+ * its buffers (`staticScene*`) and its skeleton (`staticSceneSkeleton`, with the terrain's weights).
+ */
 export type DerivedScene = {
-  layout: string;
+  layout: Uint8Array;
   vertices: Float32Array;
   indices: Uint32Array;
   models: Float32Array;
@@ -21,19 +29,20 @@ export type DerivedScene = {
 };
 
 export type DerivedWorldMessage =
-  | { kind: "content"; seed: Int32Array }
+  | { kind: "content"; seed: Int32Array | null }
   | ({ kind: "scenery" } & DerivedScenery)
   | ({ kind: "scene" } & DerivedScene)
   | { kind: "grass"; grass: Uint8Array }
   | { kind: "failed"; message: string };
 
 /**
- * The worker's four answers, in order, each null once the worker failed or never ran. `content` is the zone content's
- * costly base parts (`LocalZone.hostedContentSeed`). The scenery waits for `supplyGrids`: the cached terrain grids, or
- * null to derive them. `grass` is the grass's seed (`grassSeed`).
+ * The worker's four answers, in order, each null once the worker failed or never ran. The worker starts once
+ * `supplyCached` gave it the derived-data cache's terrain grids and content seed (each null on a miss). `content` is the
+ * zone content's costly base parts (`LocalZone.hostedContentSeed`) as the worker built them, or null when it reused the
+ * cached seed. `grass` is the grass's seed (`grassSeed`).
  */
 export type DerivedWorld = {
-  supplyGrids(grids: Uint8Array | null): void;
+  supplyCached(grids: Uint8Array | null, content: Int32Array | null): void;
   content: Promise<Int32Array | null>;
   scenery: Promise<DerivedScenery | null>;
   scene: Promise<DerivedScene | null>;
@@ -61,7 +70,7 @@ function createWorker(): DerivedWorldWorker | null {
 export function deriveWorld(module: WebAssembly.Module, create: () => DerivedWorldWorker | null = createWorker): DerivedWorld {
   const worker = create();
   if (!worker) {
-    return { supplyGrids: () => {}, content: Promise.resolve(null), scenery: Promise.resolve(null), scene: Promise.resolve(null), grass: Promise.resolve(null) };
+    return { supplyCached: () => {}, content: Promise.resolve(null), scenery: Promise.resolve(null), scene: Promise.resolve(null), grass: Promise.resolve(null) };
   }
   let settleContent: (value: Int32Array | null) => void = () => {};
   let settleScenery: (value: DerivedScenery | null) => void = () => {};
@@ -99,5 +108,5 @@ export function deriveWorld(module: WebAssembly.Module, create: () => DerivedWor
     fail(event.message);
   };
   worker.postMessage({ kind: "module", module });
-  return { supplyGrids: (grids) => { worker.postMessage({ kind: "grids", grids }); }, content, scenery, scene, grass };
+  return { supplyCached: (grids, content) => { worker.postMessage({ kind: "cached", grids, content }); }, content, scenery, scene, grass };
 }
