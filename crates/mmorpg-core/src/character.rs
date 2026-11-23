@@ -26,8 +26,10 @@ use crate::{
 };
 
 /// Identity of the [`CharacterRecord`] schema: a random token (ADR 0006), replaced with a
-/// fresh one on every change to the record's fields or their meaning; persisted records of
-/// another schema are rejected rather than reinterpreted.
+/// fresh one on every change to the record's fields or their meaning. The decoder
+/// (`mmorpg_protocol::decode_character_record`) also reads each earlier schema it lists,
+/// filling the fields that schema lacked with their starting values; a record of any other
+/// schema is rejected rather than reinterpreted.
 pub const CHARACTER_RECORD_SCHEMA_VERSION: u16 = 0x47e2;
 
 /// Longest [`CharacterId`] in bytes.
