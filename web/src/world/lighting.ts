@@ -242,6 +242,27 @@ export class GreyhavenLighting {
     this.#configure(lighting, dayCycle, this.#frame);
     onceAcrossPasses(scene, () => profileRenderPasses(renderer, scene, camera, lighting.sky !== null, () => lighting.render(renderer, scene, camera)));
   }
+
+  /**
+   * The renderer's `prepare` hook (#855): creates every program `draw` would draw the frame `apply` last set with (its
+   * sky, sun cascades, local-light views, HDR and tone-mapping passes, with the defines each pass gives the lit
+   * materials), drawing nothing, so that frame creates none. With `KHR_parallel_shader_compile` it resolves once they
+   * have linked. Before the lighting loaded, three's own programs.
+   */
+  prepare(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera): Promise<unknown> {
+    const lighting = this.#lighting;
+    const dayCycle = this.#dayCycle;
+    if (!lighting || !dayCycle || !this.#frame) { return renderer.compileAsync(scene, camera); }
+    this.#skySupported ??= renderer.extensions.has("OES_texture_float_linear") && renderer.extensions.has("EXT_color_buffer_float");
+    this.#configure(lighting, dayCycle, this.#frame);
+    const linked = lighting.prepare(renderer, scene, camera);
+    if (renderer.extensions.has("KHR_parallel_shader_compile")) { return linked; }
+    // Without the extension the browser links each program in the order it was created, and the first use of one waits
+    // for it. Waiting here would only put that wait in front of the first frame, plus a timer yield per program; once
+    // the programs exist the GPU process links them while the page goes on to that frame.
+    linked.catch((error: unknown) => console.warn("Preparing the lighting's programs failed.", error));
+    return Promise.resolve();
+  }
 }
 
 const skeletonUpdate = THREE.Skeleton.prototype.update;
