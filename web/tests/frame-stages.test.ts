@@ -14,6 +14,7 @@ import {
 } from "../src/world/frame-stages";
 import type { ZoneSnapshot } from "../src/replication";
 import { BagState } from "../src/world/units/bag-state";
+import { ActionBarCache } from "../src/world/units/ability-state";
 import { playerEntity, testSnapshot } from "./support/snapshots";
 
 // The `world-frame` budget (#1060, `.performance/contract.json`): a warm world frame with nothing changed runs each
@@ -163,3 +164,22 @@ test("the registry keeps drawing order and roles, and a dirty mark rebuilds once
   expect(registry.refresh()).toBe(false);
   expect(work.rootRebuilds).toBe(2);
 });
+
+// The `world-frame` budget's `action_bar_decodes` (#1091): the hud stage hands a projection to the module's action bar
+// once; frames that show the same projection again decode nothing.
+for (const frames of [16, 64, 256]) {
+  test(`${frames} warm hud frames over one projection decode the action bar once`, () => {
+    const bar = new ActionBarCache();
+    const latest = projection(1);
+    expect(bar.changed(latest)).not.toBeNull();
+    for (let frame = 0; frame < frames; frame += 1) {
+      expect(bar.changed(latest)).toBeNull();
+    }
+    expect(bar.decodes).toBe(1);
+    expect(bar.changed(projection(2))).toEqual(bar.changed(projection(3))!);
+    expect(bar.decodes).toBe(3);
+    bar.reset();
+    expect(bar.changed(latest)).not.toBeNull();
+    expect(bar.decodes).toBe(4);
+  });
+}

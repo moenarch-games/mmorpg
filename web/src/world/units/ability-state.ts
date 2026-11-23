@@ -15,6 +15,35 @@ export function actionBar(snapshot: ZoneSnapshot): SlotState[] {
   return wasm.actionBar(snapshot);
 }
 
+/**
+ * The action bar decoded once per projection (#1091): `actionBar` hands the whole projection to the module, so a frame
+ * that shows the same projection again (a frame rate above the tick rate, a paused zone) reuses what the bar shows.
+ */
+export class ActionBarCache {
+  #snapshot: ZoneSnapshot | null = null;
+  #decodes = 0;
+
+  /** The slots of `snapshot` when it is not the projection last asked about; null when the bar shows it already. */
+  changed(snapshot: ZoneSnapshot): SlotState[] | null {
+    if (snapshot === this.#snapshot) {
+      return null;
+    }
+    this.#snapshot = snapshot;
+    this.#decodes += 1;
+    return actionBar(snapshot);
+  }
+
+  /** Forgets the projection, so the next one is decoded and painted whatever it is. */
+  reset(): void {
+    this.#snapshot = null;
+  }
+
+  /** Projections decoded so far (the `world-frame` budget's `action_bar_decodes`). */
+  get decodes(): number {
+    return this.#decodes;
+  }
+}
+
 /** Degrees of the cooldown sweep still covering the icon: a full turn at the start, none when ready. */
 export function sweepDegrees(remaining: number, total: number): number {
   if (!(total > 0) || !(remaining > 0)) {

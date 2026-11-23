@@ -167,3 +167,39 @@ test("nature and limestone stand-ins each wait for their own bundle", () => {
     expect(stand(ready, after).some(Boolean)).toBe(false);
   }
 });
+
+// The `scenery-frame` budget (#1091, `.performance/contract.json`): a frame reuses each resident instance batch's shown
+// or hidden renderer batch instead of copying every one of the world's instance batches again.
+for (const frames of [16, 64, 256]) {
+  test(`${frames} warm scenery frames build no instance-batch view`, () => {
+    const frame = new SceneryFrame(scene);
+    const eye = [0, 5, 0] as const;
+    const first = frame.nodes(eye, { seconds: 0, animate: true });
+    // The first frame builds one view per resident batch, shown or hidden.
+    expect(frame.viewsBuilt).toBe(scene.instanceBatches.length);
+    let built = 0;
+    let reused = true;
+    for (let index = 0; index < frames; index += 1) {
+      const before = frame.viewsBuilt;
+      const warm = frame.nodes(eye, { seconds: index / 60, animate: true });
+      built += frame.viewsBuilt - before;
+      reused &&= warm.instanceBatches.every((batch, at) => batch === first.instanceBatches[at]);
+    }
+    expect({ built, reused }).toEqual({ built: 0, reused: true });
+  });
+}
+
+test("an instance batch keeps one shown and one hidden view whatever the eye does", () => {
+  const frame = new SceneryFrame(scene);
+  const near = frame.nodes([0, 5, 0], { seconds: 0, animate: false });
+  const far = frame.nodes([5_000, 5, 5_000], { seconds: 0, animate: false });
+  const back = frame.nodes([0, 5, 0], { seconds: 0, animate: false });
+  const toggled = near.instanceBatches.filter((batch, index) => batch.visible !== far.instanceBatches[index]!.visible).length;
+  expect(toggled).toBeGreaterThan(0);
+  expect(frame.viewsBuilt).toBe(scene.instanceBatches.length + toggled);
+  expect(back.instanceBatches.every((batch, index) => batch === near.instanceBatches[index])).toBe(true);
+  // A view is a plain copy of its batch with its visibility, as before (#1091).
+  const [view] = near.instanceBatches;
+  const [{ batch }] = scene.instanceBatches;
+  expect({ ...view, visible: undefined }).toEqual({ ...batch, visible: undefined });
+});
