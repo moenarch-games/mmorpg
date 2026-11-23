@@ -8,6 +8,12 @@
 //! like a cache behind a full bag. A reward the zone pays on its own (kill credit, raid and
 //! cart payouts) that does not fit joins the canonical [`RewardHistory::deferred`] backlog and
 //! is paid first thing in a later tick, oldest first.
+//!
+//! Incident receipts expire (#1128, Atlas 3.2.i1128). A raid or cart incident's receipt is
+//! dropped once that incident can no longer pay: its number is below the zone's
+//! [`IncidentFloors`], a pure function of canonical state. Like a creature's earlier lives, an
+//! expired incident never recurs in a running authority, so a character's receipts stay bounded
+//! by content plus the incidents still able to pay.
 use crate::{AreaId, CreatureId, ItemId, MAX_PLAYERS_PER_ZONE, PlayerId, QuestId, ZoneError};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -134,6 +140,58 @@ impl RewardKey {
             Self::Cache { cache: 0 } => Err(ZoneError::new("invalid reward cache")),
             _ => Ok(()),
         }
+    }
+}
+
+/// The oldest raid and cart incidents that can still pay from a zone state on (#1128): an
+/// incident below its floor can never pay again, so its receipts expire. A higher number is
+/// still to come, or (after a weaker world restore) was paid before the restore and must stay
+/// refused. Incident numbers belong to one zone of one world: the zone counts its raids and its
+/// cart days itself, and the durable grant identity prefixes them with the world and zone.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct IncidentFloors {
+    /// The oldest raid incident still able to pay: the running one, or the last lost one while
+    /// its aid tasks are open, otherwise the next one.
+    pub raid: u32,
+    /// The oldest cart day still able to pay: the coming tick's day until its ambush hold ends,
+    /// otherwise the next day.
+    pub cart: u32,
+}
+impl IncidentFloors {
+    /// Whether `key` may still be paid: every key that is no incident's always may.
+    #[must_use]
+    pub const fn can_pay(self, key: RewardKey) -> bool {
+        match key {
+            RewardKey::RaidParticipation { incident } | RewardKey::RaidDefence { incident } => {
+                incident >= self.raid
+            }
+            RewardKey::CartDefence { incident } => incident >= self.cart,
+            _ => true,
+        }
+    }
+    /// The expired receipts of each incident kind, as `from..below` key ranges: incident keys
+    /// order by their number within their kind.
+    fn expired_ranges(self) -> [(RewardKey, RewardKey); 3] {
+        [
+            (
+                RewardKey::RaidParticipation { incident: 0 },
+                RewardKey::RaidParticipation {
+                    incident: self.raid,
+                },
+            ),
+            (
+                RewardKey::RaidDefence { incident: 0 },
+                RewardKey::RaidDefence {
+                    incident: self.raid,
+                },
+            ),
+            (
+                RewardKey::CartDefence { incident: 0 },
+                RewardKey::CartDefence {
+                    incident: self.cart,
+                },
+            ),
+        ]
     }
 }
 
@@ -282,8 +340,49 @@ impl RewardHistory {
             });
         }
     }
-    pub fn begin_tick(&mut self) {
-        self.grants.clear();
+    /// Clears the completed tick's grants. A receipt one of them emitted for an incident that
+    /// can no longer pay expires with it (#1128): it stayed only so the tick's grants each had
+    /// their receipt. Returns the receipts dropped.
+    pub fn begin_tick(&mut self, floors: IncidentFloors) -> usize {
+        let mut dropped = 0;
+        for grant in std::mem::take(&mut self.grants) {
+            if !floors.can_pay(grant.key)
+                && self
+                    .players
+                    .get_mut(&grant.player)
+                    .is_some_and(|keys| keys.remove(&grant.key))
+            {
+                dropped += 1;
+            }
+        }
+        dropped
+    }
+    /// Drops every receipt of an incident below `floors` (#1128), except those this tick
+    /// emitted, which expire as the next tick begins ([`Self::begin_tick`]). Returns the work:
+    /// one visit per player with receipts plus one per dropped receipt.
+    pub fn expire_incidents(&mut self, floors: IncidentFloors) -> usize {
+        let Self {
+            players, grants, ..
+        } = self;
+        let mut visited = 0;
+        for (&player, keys) in players.iter_mut() {
+            visited += 1;
+            for (from, below) in floors.expired_ranges() {
+                if keys.range(from..below).next().is_none() {
+                    continue;
+                }
+                let expired: Vec<RewardKey> = keys
+                    .range(from..below)
+                    .copied()
+                    .filter(|&key| !grants.contains(&RewardGrant { player, key }))
+                    .collect();
+                for key in expired {
+                    keys.remove(&key);
+                    visited += 1;
+                }
+            }
+        }
+        visited
     }
     /// Earlier lives can never recur in a running authority. Explicit weaker
     /// world restore must reload relevant durable receipts before activation.
@@ -475,6 +574,7 @@ impl crate::ZoneSimulation {
         key: RewardKey,
     ) -> Result<(), ZoneError> {
         key.validate()?;
+        let floors = self.incident_floors();
         let history = self
             .rewards
             .as_mut()
@@ -495,7 +595,47 @@ impl crate::ZoneSimulation {
         }) {
             return Ok(());
         }
+        // An incident that can no longer pay needs no receipt (#1128): a stored character sheds
+        // it here, as it sheds an earlier creature life's.
+        if !floors.can_pay(key) {
+            return Ok(());
+        }
         history.load(player, key)
+    }
+    /// The oldest raid and cart incidents still able to pay from this state on (#1128): a pure
+    /// function of the raid state, the tick, the seed and the content, so replay and recovery
+    /// expire exactly the receipts the unbroken run does. A host loads only stored incident
+    /// receipts at or above them.
+    #[must_use]
+    pub fn incident_floors(&self) -> IncidentFloors {
+        IncidentFloors {
+            raid: self.raid.floor(),
+            cart: self.cart_floor(),
+        }
+    }
+    /// Tick steps around the zone's systems (#1128). At the start, the previous tick's grants
+    /// clear and their expired receipts with them; at the end, when this tick raised the
+    /// incident floors from `before`, every receipt below them expires. Both run only with
+    /// reward tracking, and a tick that raises no floor visits no receipt.
+    pub(crate) fn begin_reward_tick(&mut self) -> Option<IncidentFloors> {
+        self.rewards.as_ref()?;
+        let floors = self.incident_floors();
+        if let Some(history) = &mut self.rewards {
+            self.tick_work.incident_receipts_visited += history.begin_tick(floors);
+        }
+        Some(floors)
+    }
+    pub(crate) fn expire_incident_receipts(&mut self, before: Option<IncidentFloors>) {
+        let Some(before) = before else {
+            return;
+        };
+        let after = self.incident_floors();
+        if after == before {
+            return;
+        }
+        if let Some(history) = &mut self.rewards {
+            self.tick_work.incident_receipts_visited += history.expire_incidents(after);
+        }
     }
     /// The adapter uses this only while a session is still an unbound placeholder.
     pub fn clear_loaded_reward_receipts(&mut self, player: PlayerId) -> Result<(), ZoneError> {

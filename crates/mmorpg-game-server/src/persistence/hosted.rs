@@ -346,6 +346,7 @@ struct State {
     match_id: MatchId,
     position: u64,
     reward_lives: BTreeMap<mmorpg_core::CreatureId, u64>,
+    reward_floors: mmorpg_core::IncidentFloors,
     receipt_limit: Option<u32>,
     last_image: RecoveryImage,
     checkpoint_interval: u64,
@@ -394,7 +395,7 @@ impl State {
             .map_err(|cause| StoreError::Backend(cause.to_string()))?;
         let receipts = if let Some(maximum) = self.receipt_limit {
             self.journal
-                .reward_receipts(&id, &self.reward_lives, maximum)?
+                .reward_receipts(&id, &self.reward_lives, self.reward_floors, maximum)?
         } else {
             Vec::new()
         };
@@ -532,6 +533,7 @@ impl State {
             }
         }
         self.reward_lives = zone.creature_lives().collect();
+        self.reward_floors = zone.incident_floors();
         self.receipt_limit = zone.reward_history().map(|history| history.max_known_ids);
         self.last_image = batch.checkpoint;
         if self
@@ -870,6 +872,7 @@ fn initialize(
         match_id: config.match_id,
         position,
         reward_lives: zone.creature_lives().collect(),
+        reward_floors: zone.incident_floors(),
         receipt_limit: zone.reward_history().map(|history| history.max_known_ids),
         last_image: image,
         checkpoint_interval: config.checkpoint_interval_ticks,

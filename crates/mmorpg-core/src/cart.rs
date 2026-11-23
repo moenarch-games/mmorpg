@@ -231,6 +231,22 @@ impl CartRun {
 }
 
 impl ZoneSimulation {
+    /// The oldest cart incident that can still pay (#1128): a day's ambush pays defenders only
+    /// during its hold, so from the coming tick on the day's own incident still can until the
+    /// hold has ended, and a quiet day's never does. A zone without a cart pays none, so its
+    /// floor is the coming tick's day plus one.
+    pub(crate) fn cart_floor(&self) -> u32 {
+        let next = self.tick.saturating_add(1);
+        let day = incident(next);
+        let holding = ambush_day(self.rng_seed(), next)
+            && self.content.cart().is_some_and(|run| {
+                self.content.npc(run.merchant).is_some_and(|merchant| {
+                    time_of_day(next) < run.arrival(merchant.position).saturating_add(HOLD_TICKS)
+                })
+            });
+        if holding { day } else { day.saturating_add(1) }
+    }
+
     /// How the journey that reached the robbery site by `now` is going.
     fn cart_outcome(&self, run: &CartRun, work: [i32; 2], now: u64) -> CartOutcome {
         if !ambush_day(self.rng_seed(), now) {

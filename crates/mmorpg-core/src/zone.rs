@@ -294,6 +294,10 @@ pub struct ZoneTickWork {
     /// Deferred zone payouts the tick visited, paid or dropped (#1112); at most the tick's
     /// grant bound plus the dropped ones, and none while the backlog is empty.
     pub deferred_rewards_visited: usize,
+    /// Expiry of incident receipts (#1128): on a tick whose raid or cart floor rose, one visit
+    /// per player with receipts plus one per dropped receipt; otherwise only the previous
+    /// tick's dropped grants, and none without reward tracking.
+    pub incident_receipts_visited: usize,
     /// The engine's own report, present only after a successful physics step.
     pub physics: Option<crate::physics::StepStats>,
 }
@@ -964,7 +968,9 @@ impl ZoneSimulation {
     ///    (#404);
     /// 8. talk and explore quest objectives of living players in player-ID
     ///    order;
-    /// 9. the tick counter.
+    /// 9. the tick counter, then, with reward tracking, the receipts of raid and cart incidents
+    ///    that can no longer pay expire when this tick raised the zone's incident floors
+    ///    (#1128; the previous tick's grants clear first, and their expired receipts with them).
     ///
     /// Events of the previous tick are cleared first, so each player's queue
     /// holds exactly this tick's events until the next tick starts.
@@ -973,10 +979,9 @@ impl ZoneSimulation {
             .tick
             .checked_add(1)
             .ok_or_else(|| ZoneError::new("zone tick overflow"))?;
-        if let Some(rewards) = &mut self.rewards {
-            rewards.begin_tick();
-        }
         self.tick_work = ZoneTickWork::default();
+        // The previous tick's grants clear; the floors are this tick's starting point (#1128).
+        let floors = self.begin_reward_tick();
         let queries = self.interest_query_allocations();
         for player in self.players.values_mut() {
             player.events.clear();
@@ -1030,6 +1035,8 @@ impl ZoneSimulation {
         // Practice against a foe that died this tick becomes mastery (#915).
         self.settle_practice()?;
         self.tick = now;
+        // Receipts of incidents this tick ended expire (#1128).
+        self.expire_incident_receipts(floors);
         // Routine NPCs stand where the new tick's time of day puts them (#158).
         self.place_npcs(true)?;
         self.advance_private_homes()?;

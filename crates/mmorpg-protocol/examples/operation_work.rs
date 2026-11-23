@@ -377,6 +377,44 @@ fn deferred_reward_drain(backlog: usize) -> Result<String> {
     ))
 }
 
+/// The tick that ends a cart day for `players` players, each holding `held` content receipts
+/// and one receipt of the ending day (#1128): the expiry visits each player once and each
+/// expired receipt once, never the content receipts.
+fn incident_receipt_expiry(players: usize, held: usize) -> Result<String> {
+    let points = far_points();
+    let roster = (0..players)
+        .map(|index| player(index, points[index], 0, 0))
+        .collect::<Result<Vec<_>>>()?;
+    let base = zone(roster)?;
+    let mut canonical = base.snapshot()?;
+    // The tick after the next one starts a new day, so the next tick raises the cart floor.
+    canonical.tick = u64::from(mmorpg_core::DAY_TICKS - mmorpg_core::ZONE_START_TIME) - 2;
+    let probe = ZoneSimulation::from_snapshot(canonical.clone(), Arc::clone(base.content()))?;
+    let ending = probe.incident_floors().cart;
+    let mut history = mmorpg_core::RewardHistory::new(1 << 20, 16)?;
+    for id in 1..=u32::try_from(players)? {
+        let mut keys: std::collections::BTreeSet<_> = (1..=u32::try_from(held)?)
+            .map(|cache| mmorpg_core::RewardKey::Cache { cache })
+            .collect();
+        keys.insert(mmorpg_core::RewardKey::CartDefence { incident: ending });
+        history.players.insert(id, keys);
+    }
+    canonical.rewards = Some(history);
+    let mut zone = ZoneSimulation::from_snapshot(canonical, Arc::clone(base.content()))?;
+    zone.advance_tick()?;
+    let history = zone.reward_history().ok_or("reward tracking")?;
+    if zone.incident_floors().cart <= ending || history.known_count() != players * held {
+        return Err("the day's receipts must expire and every content receipt stay".into());
+    }
+    Ok(sample(
+        &[("players", players), ("held", held)],
+        &[(
+            "incident_receipts_visited",
+            zone.tick_work().incident_receipts_visited,
+        )],
+    ))
+}
+
 fn main() -> Result<()> {
     let operations = [
         (
@@ -419,6 +457,13 @@ fn main() -> Result<()> {
             [64, 256, 1_024]
                 .into_iter()
                 .map(deferred_reward_drain)
+                .collect::<Result<Vec<_>>>()?,
+        ),
+        (
+            "incident-receipt-expiry",
+            [(64, 64), (256, 64), (512, 64), (512, 16), (512, 128)]
+                .into_iter()
+                .map(|(players, held)| incident_receipt_expiry(players, held))
                 .collect::<Result<Vec<_>>>()?,
         ),
     ];
