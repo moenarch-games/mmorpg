@@ -4,6 +4,7 @@ import { applyOutpostWear, OUTPOST_WEAR_MASKS, wearMasks } from "./outpost-wear"
 import { BatchedRoots } from "./static-batches";
 import { drawnResources, loadBundleGltfs, loadStaticBundle } from "./static-bundle";
 import { releaseMixer, retainedBundle } from "./zone-lifecycle";
+import { ClipDetail, type ClipWork } from "./clip-detail";
 
 /** The rolling `shrine-kit` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
 export const SHRINE_BUNDLE = `${import.meta.env.BASE_URL}scenery/shrine.kit/`;
@@ -42,8 +43,10 @@ export class KitModules {
   #loading: Promise<boolean> | null = null;
   #changed = false;
   #rootsRevision = 0;
-  /** The placed modules that play their entries' looping node clips (#891), by placement index. */
-  #mixers: { mixer: THREE.AnimationMixer; index: number }[] = [];
+  /** The placed modules that play their entries' looping node clips (#891), by placement index, with their bounding sphere. */
+  #mixers: { mixer: THREE.AnimationMixer; index: number; bounds: THREE.Sphere }[] = [];
+  /** Which node clips sample this frame (#1095); sized once the modules load. */
+  #detail = new ClipDetail(0);
   /** How many materials age by wear (0 without wear masks). */
   #worn = 0;
   #disposed = false;
@@ -101,8 +104,13 @@ export class KitModules {
       const mixer = new THREE.AnimationMixer(root);
       for (const clip of clips) { mixer.clipAction(clip).play(); }
       mixer.setTime(0);
-      return [{ mixer, index }];
+      // Bounded with room for the moving nodes' sweep (a sail's turn), placed where the module stands.
+      root.updateMatrixWorld(true);
+      const bounds = new THREE.Box3().setFromObject(root).getBoundingSphere(new THREE.Sphere());
+      bounds.radius = Number.isFinite(bounds.radius) && bounds.radius > 0 ? bounds.radius * 1.25 : 5;
+      return [{ mixer, index, bounds }];
     });
+    this.#detail = new ClipDetail(this.#mixers.length);
     // Static modules: a few draw calls per material instead of one per module and primitive.
     this.#roots = roots;
     this.#batched = new BatchedRoots(this.#name, roots, this.#worn > 0 ? this.#placements.map((placement) => placement.wear ?? 0) : null);
@@ -129,17 +137,26 @@ export class KitModules {
 
   /**
    * Poses the placed modules whose entries carry looping node clips (#891: mill wheels, sails, signs, vanes, the
-   * scarecrows) at presentation `seconds`; without `animate` they hold their first pose. Presentation only.
+   * scarecrows) at presentation `seconds` for `camera` (its world matrix and projection current); without `animate`
+   * they hold their first pose. Only modules in view sample, by distance ([`ClipDetail`], #1095), and at absolute time,
+   * so one that skipped frames resumes on its true phase. Presentation only.
    */
-  update(seconds: number, animate: boolean): void {
+  update(camera: THREE.Camera, seconds: number, animate: boolean): void {
     const batched = this.#batched;
     if (!batched) { return; }
     const time = animate ? seconds : 0;
-    for (const { mixer, index } of this.#mixers) {
+    const detail = this.#detail;
+    detail.begin(camera, animate);
+    for (let at = 0; at < this.#mixers.length; at += 1) {
+      const { mixer, index, bounds: { center, radius } } = this.#mixers[at]!;
+      if (!detail.sample(at, center.x, center.y, center.z, radius)) { continue; }
       mixer.setTime(time);
       batched.sync(index);
     }
   }
+
+  /** The latest frame's node-clip work (`ambient-clips`, #1095). */
+  get clipWork(): Readonly<ClipWork> { return this.#detail.work; }
 
   /** How many placed modules play a node clip (#891). */
   get animated(): number {

@@ -2063,10 +2063,6 @@ export class WorldView {
     this.#inn?.update(projection.doors, [self.x, self.feetY, self.z], deltaSeconds, !animate);
     // A walk-in cottage's roof lifts away while the viewer is inside it (#843).
     this.#outpost?.hideCottages(this.#inn?.cottagesInside([self.x, self.feetY, self.z]) ?? new Set());
-    // Low world detail draws no ambient creatures.
-    if (this.#worldDetail !== "low") { this.#ambient?.update(this.#seconds, animate); }
-    // The settlement props' node clips (#891): mill wheels, sails, signs, vanes and scarecrows.
-    this.#settlement?.update(this.#seconds, animate);
     this.#raidSigns.update(projection.raid, this.#raidPrep, scene.surfaceY, unitsPerMetre);
     if (this.#framePending) {
       this.#framePending = false;
@@ -2083,6 +2079,10 @@ export class WorldView {
     this.#camera.lookAt(view.target[0] + kick[0], view.target[1] + kick[1], view.target[2] + kick[2]);
     this.#camera.updateMatrixWorld(true);
     if (this.#plan) { applyPlanProjection(this.#camera, this.#plan); }
+    // Ambient creatures and the settlement props' node clips (#891: mill wheels, sails, signs, vanes and scarecrows)
+    // sample by the posed camera's view and distance (#1095). Low world detail draws no ambient creatures.
+    if (this.#worldDetail !== "low") { this.#ambient?.update(this.#camera, this.#seconds, animate); }
+    this.#settlement?.update(this.#camera, this.#seconds, animate);
     this.#showAimLanding(projection, unitsPerMetre);
     // The opt-in wheel usage counters (#653): time under each mouse owner, stored every 10 s.
     if (this.#wheels.countUsage) {
