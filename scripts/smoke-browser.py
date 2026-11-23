@@ -1431,11 +1431,11 @@ class BrowserAcceptance(unittest.TestCase):
             if (command.kind === 'move' || command.kind === 'jump') return;
             window.__lootSent.push(command);
             if (window.__lootFixture) {
+              // Each answer is a new projection, as a source publishes: the panels redraw only
+              // when the latest projection changed (#1060).
               const fixture = window.__lootFixture;
-              fixture.tick++;
-              fixture.acknowledgedSequence++;
-              fixture.events = command.kind === 'loot'
-                ? [{kind: 'error', code: 'inventory-full', target: {kind: 'creature', id: 108}}] : [];
+              window.__lootFixture = {...fixture, tick: fixture.tick + 1n, acknowledgedSequence: fixture.acknowledgedSequence + 1,
+                events: command.kind === 'loot' ? [{kind: 'error', code: 'inventory-full', target: {kind: 'creature', id: 108}}] : []};
               return;
             }
             window.__lootSend(command);
@@ -2177,6 +2177,11 @@ class BrowserAcceptance(unittest.TestCase):
             axes: [0, 0, 0, stickY],
           }];
           Object.defineProperty(navigator, 'getGamepads', {configurable: true, value: () => pads});
+          // A browser announces a pad as it connects or leaves; `input-bindings` polls pads only
+          // after one connected, so the fake pad announces itself too.
+          const event = new Event(pads.length ? 'gamepadconnected' : 'gamepaddisconnected');
+          Object.defineProperty(event, 'gamepad', {value: pads[0] ?? {index: 0, connected: false}});
+          window.dispatchEvent(event);
         }""", [trigger, stick_y])
 
     def guard_label(self):
