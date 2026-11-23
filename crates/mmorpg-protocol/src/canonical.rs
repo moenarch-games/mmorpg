@@ -85,6 +85,7 @@ pub fn encode_canonical_snapshot(
     payload.extend_from_slice(&snapshot.content_revision.to_be_bytes());
     payload.extend_from_slice(&snapshot.rng_state.to_be_bytes());
     payload.extend_from_slice(&snapshot.loot_rng_state.to_be_bytes());
+    payload.extend_from_slice(&snapshot.world_seed.to_be_bytes());
     payload.extend_from_slice(&player_count.to_be_bytes());
     for player in &snapshot.players {
         encode_player(&mut payload, player)?;
@@ -733,6 +734,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let content_revision = u64::from_be_bytes(take(payload, &mut offset)?);
     let rng_state = u64::from_be_bytes(take(payload, &mut offset)?);
     let loot_rng_state = u64::from_be_bytes(take(payload, &mut offset)?);
+    let world_seed = u64::from_be_bytes(take(payload, &mut offset)?);
     let player_count = decode_u16_count(
         payload,
         &mut offset,
@@ -777,6 +779,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         content_revision,
         rng_state,
         loot_rng_state,
+        world_seed,
         players,
         creatures,
         doors,
@@ -2421,6 +2424,7 @@ mod tests {
                 },
             ],
             loot_rng_state: 0,
+            world_seed: 0x5eed_0000_0000_1111,
             zone_id: ZoneId::new(42),
             tick: 99,
             content_revision: 3,
@@ -2939,7 +2943,7 @@ mod tests {
         // The intent count follows the player's timers; the seven intents
         // occupy 13 + 13 + 9 + 6 + 3 + 2 + 2 bytes after their lateness byte each, then
         // the dropped flag, the last observation (u64) and two events.
-        let intents = 16 + 24 + 2 + 198;
+        let intents = 16 + 32 + 2 + 198;
         let player_abilities =
             intents + 1 + (14 + 14 + 10 + 7 + 4 + 3 + 3) + 1 + 8 + 1 + 2 * EVENT_BYTES;
         assert_eq!(encoded[player_abilities], 6, "Arcanist, male");
@@ -2995,14 +2999,14 @@ mod tests {
         let bytes = encode_canonical_snapshot(&trailer).unwrap();
         assert_eq!(bytes.len(), encoded.len() + 4);
         assert_eq!(decode_canonical_snapshot(&bytes).unwrap(), trailer);
-        // Header 16, identity 24, then the first player record.
-        let jump_flag = 16 + 24 + 2 + 32;
+        // Header 16, identity and world seed 32, then the first player record.
+        let jump_flag = 16 + 32 + 2 + 32;
         assert_eq!(encoded[jump_flag], 1);
         for (offset, value, message) in [
             (jump_flag, 2, "jump flag must be 0 or 1"),
             (0, 4, "unsupported snapshot protocol id"),
             (3, 2, "unexpected snapshot scope"),
-            (40, 2, "snapshot exceeds configured zone player capacity"),
+            (48, 2, "snapshot exceeds configured zone player capacity"),
         ] {
             let mut invalid = encoded.clone();
             invalid[offset] = value;
@@ -3122,7 +3126,7 @@ mod tests {
     fn canonical_decoding_rejects_malformed_unit_state() {
         let encoded = encode_canonical_snapshot(&snapshot()).unwrap();
         // Player 7's queued-swing flag follows its target reference.
-        let player = 16 + 24 + 2;
+        let player = 16 + 32 + 2;
         let swing_queued = player + 44 + 132 + 1 + 4 + 4 + 5;
         let intents = swing_queued + 2 + 6;
         let mut cases = vec![
@@ -3155,7 +3159,7 @@ mod tests {
             ..snapshot()
         };
         let encoded = encode_canonical_snapshot(&without_players).unwrap();
-        let creature = 16 + 24 + 2 + 2;
+        let creature = 16 + 32 + 2 + 2;
         let life = creature + 4 + 8 + 8 + 1 + 4 + 2 + 24;
         let ai = life + 9;
         for (offset, value, message) in [
@@ -3171,7 +3175,7 @@ mod tests {
             // The tap follows the combat timer and the wary ticks (#949).
             (ai + 12 + 1 + 9 + 7, 2, "boolean field must be 0 or 1"),
             (ai + 12 + 1 + 9 + 7, 0, "malformed creature tap"),
-            (42, 5, "snapshot exceeds the creature spawn capacity"),
+            (50, 5, "snapshot exceeds the creature spawn capacity"),
         ] {
             let mut invalid = encoded.clone();
             invalid[offset] = value;
@@ -3187,7 +3191,7 @@ mod tests {
     fn canonical_equipment_rejects_unknown_and_misplaced_items() {
         let encoded = encode_canonical_snapshot(&snapshot()).unwrap();
         // Player 7's equipment follows its 104-byte inventory block (revision and slots).
-        let equipment = 16 + 24 + 2 + 44 + 104;
+        let equipment = 16 + 32 + 2 + 44 + 104;
         assert_eq!(encoded[equipment..equipment + 4], [0, 0, 0, 3]);
         for (slot, item, message) in [
             (0, 99, "unknown item"),

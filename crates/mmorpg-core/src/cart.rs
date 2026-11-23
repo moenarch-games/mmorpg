@@ -233,7 +233,7 @@ impl CartRun {
 impl ZoneSimulation {
     /// How the journey that reached the robbery site by `now` is going.
     fn cart_outcome(&self, run: &CartRun, work: [i32; 2], now: u64) -> CartOutcome {
-        if !ambush_day(self.content.rng_seed(), now) {
+        if !ambush_day(self.rng_seed(), now) {
             return CartOutcome::Safe;
         }
         let Some(start) = time_of_day(now)
@@ -288,7 +288,7 @@ impl ZoneSimulation {
         };
         let time = time_of_day(now);
         let arrival = run.arrival(merchant.position);
-        let ambush = ambush_day(content.rng_seed(), now);
+        let ambush = ambush_day(self.rng_seed(), now);
         let holding = ambush && (arrival..arrival.saturating_add(HOLD_TICKS)).contains(&time);
         let standing =
             ambush && (arrival..arrival.saturating_add(HOLD_TICKS + LINGER_TICKS)).contains(&time);
