@@ -288,6 +288,9 @@ pub struct ZoneTickWork {
     /// Creature visits of the tick's creature systems (decisions, casts, auras, swings and
     /// corpse timers, #1086): each system visits only the creatures its activity bit holds.
     pub creatures_visited: usize,
+    /// Interest query results that outgrew their buffer during the tick, so allocated
+    /// (#1086): the creature tick's own queries reuse warm buffers.
+    pub interest_query_allocations: usize,
     /// The engine's own report, present only after a successful physics step.
     pub physics: Option<crate::physics::StepStats>,
 }
@@ -594,6 +597,11 @@ impl ZoneSimulation {
         self.creatures.set_exhaustive(on);
     }
 
+    /// Interest query results of this zone's indexes that outgrew their buffer.
+    fn interest_query_allocations(&self) -> usize {
+        self.interest.allocations() + self.creatures.resting_allocations()
+    }
+
     /// How many creatures the decision step would visit now (#1086); workload evidence only.
     #[doc(hidden)]
     #[must_use]
@@ -656,7 +664,9 @@ impl ZoneSimulation {
         self.creatures.update_where(
             |creature| {
                 creature.threat.iter().any(|entry| entry.entity == entity)
-                    || creature.cast.is_some_and(|cast| cast.target == Some(entity))
+                    || creature
+                        .cast
+                        .is_some_and(|cast| cast.target == Some(entity))
                     || creature.tapped_by == Some(player_id)
                     || creature.loot_party.contains(&player_id)
             },
@@ -939,6 +949,7 @@ impl ZoneSimulation {
             rewards.begin_tick();
         }
         self.tick_work = ZoneTickWork::default();
+        let queries = self.interest_query_allocations();
         for player in self.players.values_mut() {
             player.events.clear();
             player.chat.clear();
@@ -994,6 +1005,8 @@ impl ZoneSimulation {
         self.advance_private_homes()?;
         // Where bodies ended this tick, for a match with hit rewind (#680).
         self.record_rewind_frame(now)?;
+        self.tick_work.interest_query_allocations =
+            self.interest_query_allocations().saturating_sub(queries);
         Ok(())
     }
 
@@ -1236,12 +1249,12 @@ impl ZoneSimulation {
         let awake = creatures
             .active(crate::creature_store::Activity::Decide)
             .filter(|&id| {
-            creatures.get(&id).is_some_and(CreatureState::is_alive)
-                && content
-                    .creature_entry(id)
-                    .is_some_and(|(_, template)| template.prop().is_none())
-        })
-        .map(EntityRef::Creature);
+                creatures.get(&id).is_some_and(CreatureState::is_alive)
+                    && content
+                        .creature_entry(id)
+                        .is_some_and(|(_, template)| template.prop().is_none())
+            })
+            .map(EntityRef::Creature);
         let bodies = self
             .players
             .keys()

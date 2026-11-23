@@ -54,6 +54,8 @@ pub(crate) struct InterestIndex {
     cells: HashMap<(i64, i64), usize, Fixed>,
     buckets: Vec<Vec<EntityRef>>,
     memberships: HashMap<EntityRef, (i64, i64), Fixed>,
+    /// Query results that outgrew their buffer, so allocated (#1086); workload evidence only.
+    grown: std::sync::atomic::AtomicUsize,
 }
 
 impl InterestIndex {
@@ -142,6 +144,7 @@ impl InterestIndex {
     /// Every unit indexed in a cell that the box `x[0]..=x[1]` by `z[0]..=z[1]` touches, in
     /// `EntityRef` order, into `out`, which it clears first.
     pub(crate) fn box_into(&self, x: [i64; 2], z: [i64; 2], out: &mut Vec<EntityRef>) {
+        let capacity = out.capacity();
         let width = i64::from(INTEREST_RADIUS_UNITS);
         out.clear();
         for cell_x in x[0].div_euclid(width)..=x[1].div_euclid(width) {
@@ -150,6 +153,10 @@ impl InterestIndex {
             }
         }
         out.sort_unstable();
+        if out.capacity() > capacity {
+            self.grown
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 
     /// Whether any player is indexed in a cell that the square `(x, z) ± radius` touches: the
@@ -175,6 +182,11 @@ impl InterestIndex {
     /// The cell `entity` is indexed in.
     pub(crate) fn cell_of(&self, entity: EntityRef) -> Option<(i64, i64)> {
         self.memberships.get(&entity).copied()
+    }
+
+    /// How many query results outgrew their buffer since the index was built (#1086).
+    pub(crate) fn allocations(&self) -> usize {
+        self.grown.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// The cell width, in units.
@@ -204,7 +216,10 @@ mod tests {
         let mut placed = Vec::new();
         for id in 0..200_u32 {
             let value = i32::try_from(id).unwrap();
-            let at = [(value * 7_919) % 40_000 - 20_000, (value * 104_729) % 40_000 - 20_000];
+            let at = [
+                (value * 7_919) % 40_000 - 20_000,
+                (value * 104_729) % 40_000 - 20_000,
+            ];
             index.insert(creature(id), at[0], at[1]);
             placed.push((creature(id), at));
         }

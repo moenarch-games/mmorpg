@@ -765,17 +765,31 @@ impl ZoneSimulation {
     /// [`crate::AMBUSH_RADIUS_UNITS`] and a territorial neutral's (#997)
     /// [`crate::TERRITORY_RADIUS_UNITS`], ties to the lowest ID.
     fn aggro_candidate(
+        &mut self,
+        here: [i32; 2],
+        level: u8,
+        family: crate::CreatureFamily,
+        territorial: bool,
+    ) -> Result<Option<PlayerId>, ZoneError> {
+        // A warm buffer: the query allocates nothing (#1086).
+        let mut near = std::mem::take(&mut self.creature_scratch.near);
+        self.interest
+            .near_into(here[0], here[1], crate::AGGRO_MAX_RADIUS_UNITS, &mut near);
+        let best = self.nearest_aggro_candidate(&near, here, level, family, territorial);
+        self.creature_scratch.near = near;
+        best
+    }
+
+    fn nearest_aggro_candidate(
         &self,
+        near: &[EntityRef],
         here: [i32; 2],
         level: u8,
         family: crate::CreatureFamily,
         territorial: bool,
     ) -> Result<Option<PlayerId>, ZoneError> {
         let mut best: Option<(i64, PlayerId)> = None;
-        for entity in self
-            .interest
-            .near(here[0], here[1], crate::AGGRO_MAX_RADIUS_UNITS)
-        {
+        for &entity in near {
             let EntityRef::Player(player_id) = entity else {
                 continue;
             };
@@ -843,7 +857,28 @@ impl ZoneSimulation {
             .ok_or_else(|| ZoneError::new("creature physics body is missing"))?
             .position();
         let here = [position.x, position.z];
-        for entity in self.interest.near(here[0], here[1], ASSIST_RADIUS_UNITS) {
+        // A warm buffer: the query allocates nothing (#1086). Helpers engage without assist,
+        // so nothing below queries again while it is out.
+        let mut near = std::mem::take(&mut self.creature_scratch.near);
+        self.interest
+            .near_into(here[0], here[1], ASSIST_RADIUS_UNITS, &mut near);
+        let assisted = self.assist(id, target, template, here, &near);
+        self.creature_scratch.near = near;
+        assisted
+    }
+
+    /// Idle creatures of `template`'s family among `near` within the assist radius of `here`
+    /// join creature `id`'s fight with `target`.
+    fn assist(
+        &mut self,
+        id: CreatureId,
+        target: EntityRef,
+        template: &crate::CreatureTemplate,
+        here: [i32; 2],
+        near: &[EntityRef],
+    ) -> Result<(), ZoneError> {
+        let content = Arc::clone(&self.content);
+        for &entity in near {
             let EntityRef::Creature(other) = entity else {
                 continue;
             };

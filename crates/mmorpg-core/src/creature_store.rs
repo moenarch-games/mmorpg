@@ -283,6 +283,11 @@ impl CreatureStore {
         self.index_of(id).and_then(|index| self.rest_at[index])
     }
 
+    /// Queries of the resting grid that outgrew their buffer.
+    pub(crate) fn resting_allocations(&self) -> usize {
+        self.resting.allocations()
+    }
+
     /// The resting creatures in a cell that the box `x` by `z` touches, into `out`.
     pub(crate) fn resting_in(&self, x: [i64; 2], z: [i64; 2], out: &mut Vec<EntityRef>) {
         self.resting.box_into(x, z, out);
