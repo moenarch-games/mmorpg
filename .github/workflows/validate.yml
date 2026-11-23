@@ -81,12 +81,19 @@ jobs:
                 esac
                 case "$file" in
                   Cargo.toml|Cargo.lock|rust-toolchain*|.cargo/*|crates/*|content/*|web/assets/*) rust_changed=true ;;
+                  # Tracked files outside the crates that the Rust build and tests read (#1099):
+                  # golden fixtures, authored art and effects, the browser control catalog a
+                  # native test includes, review poses, the bundle fetch and CI installers, and
+                  # the lint, test-runner and work-contract configuration.
+                  fixtures/*|web/public/*|web/src/input/game-controls.ts) rust_changed=true ;;
+                  scripts/review-poses.json|scripts/fetch-bundles.sh|scripts/ci-*) rust_changed=true ;;
+                  .config/*|clippy.toml|.performance/*) rust_changed=true ;;
                 esac
                 # Settings catalog changes affect the native client, but do not require the
                 # unrelated long-running zone journeys on an ordinary PR. Merge queue runs
                 # retain the complete Rust suite before integration.
                 case "$file" in
-                  web/assets/*) settings_only=false ;;
+                  web/assets/*|web/public/*|web/src/input/game-controls.ts) settings_only=false ;;
                   content/settings/catalog.json|web/*) ;;
                   *) settings_only=false ;;
                 esac
@@ -147,7 +154,7 @@ jobs:
                       selected = not negative
               return selected
 
-          specs = {'pages-validation': {'types': ['opened', 'synchronize', 'reopened', 'labeled', 'unlabeled'], 'paths': ['web/**', 'content/**', 'fixtures/protocol/session-frames-v3.hex', 'fixtures/scenery/**', 'crates/mmorpg-core/**', 'crates/mmorpg-protocol/**', 'crates/mmorpg-wasm/**', 'crates/mmorpg-scenery/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'scripts/smoke-browser.py', '.github/workflows/pages.yml']}}
+          specs = {'pages-validation': {'types': ['opened', 'synchronize', 'reopened', 'labeled', 'unlabeled'], 'paths': ['web/**', 'content/**', 'fixtures/protocol/session-frames-v3.hex', 'fixtures/scenery/**', 'crates/mmorpg-core/**', 'crates/mmorpg-protocol/**', 'crates/mmorpg-wasm/**', 'crates/mmorpg-scenery/**', 'crates/sim-foundation/**', 'crates/sim-movement/**', 'crates/sim-combat/**', 'crates/mmorpg-presentation/**', 'crates/mmorpg-client-model/**', 'crates/mmorpg-characters/**','Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'scripts/smoke-browser.py', '.github/workflows/pages.yml']}}
           pr = os.environ["GITHUB_EVENT_NAME"] in ("pull_request", "merge_group")
           event = json.loads(os.environ.get("PR_EVENT", "{}"))
           paths = []
