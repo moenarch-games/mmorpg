@@ -6,7 +6,7 @@
 //! that of its per-match hit-rewind variant, #680). The
 //! practice arena is the same fortress bodies (colliders, ramps and lifts, unchanged) with its
 //! own spawn lattice in the south courtyard and stationary training targets, simulated by the
-//! shared `mmorpg-core` rules and Rapier in [`crate::host::LocalZoneHost::practice_arena`]. Both
+//! shared `mmorpg-core` rules and Physics Engine in [`crate::host::LocalZoneHost::practice_arena`]. Both
 //! share this content's character, ability, item and target descriptions; no Greyhaven props or
 //! NPCs. The renderer's geometry is a projection of the same boxes, never gameplay truth.
 use std::sync::{Arc, OnceLock};

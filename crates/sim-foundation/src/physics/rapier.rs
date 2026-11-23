@@ -1,4 +1,5 @@
-//! The Rapier backend: fallback for unsupported content and the comparison oracle (#271).
+//! The Rapier backend (#271): the comparison oracle, compiled only with the `physics-ab`
+//! diagnostic feature. Production has no Rapier fallback (#648).
 //!
 //! Players and creatures are kinematic position-based bodies with upright capsule colliders,
 //! moved by Rapier's `KinematicCharacterController`, which resolves contact, sliding and

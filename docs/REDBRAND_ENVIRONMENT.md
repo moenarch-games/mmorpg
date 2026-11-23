@@ -32,7 +32,7 @@ separate.
 Redbrand's seven cave walls were modelled in Blender as stratified profiles, with
 recesses and overhangs above head height. The simplified profiles are saved in
 `crates/mmorpg-core/content/collision/redbrand.json` and used directly for those
-walls' coarse presentation as well as Rapier collision. Fine detail comes from the
+walls' coarse presentation as well as physics collision. Fine detail comes from the
 separate PBR material, not extra collision triangles. The existing entrance,
 body-height wall contact planes, floor, sloped shelf approach and sealed deeper
 threshold remain. Geometry changes naturally change the content hash; no wire or
@@ -88,7 +88,7 @@ Shared presentation draws the wall/floor meshes with the existing rock PBR mater
 mound roof uses the existing cosmetic roof cutaway path with its authored triangles and
 rock/moss vertex colours; it does not draw its conservative bounding box. Cave eye adaptation
 now follows entry from the north. Neither the visual roof cutaway nor its materials change
-Rapier collision. The Hollow's surrounding cliffs keep their stable IDs and climbability;
+physics collision. The Hollow's surrounding cliffs keep their stable IDs and climbability;
 the eastern ridge retains the existing rope face and its anchor.
 
 Focused checks cover the northern terrain seam, both rooms, closed former mouth, shelf,
@@ -103,7 +103,7 @@ The seven surrounding ridges (400–406) now have unequal peaks, lower saddles, 
 shoulders and buried feet instead of nearly level crowns. Their established lower camp-facing
 footprints remain, so the camp floor and existing approach lanes stay open. The simplified
 closed meshes remain in `redbrand.json` under their existing IDs; only those seven meshes
-change in this revision. Rapier still owns collision, independently of textures and visual LOD.
+change in this revision. Physics still owns collision, independently of textures and visual LOD.
 
 Ridge 402 keeps the west rope's attachment plane and its original 12 m rise. A short plateau
 at z = -100.5 m supports the pull-up, with separate cap polygons so triangulating the uneven
@@ -153,7 +153,7 @@ The existing resource manifest records thirteen ordinary glTF resources, includi
 new canvas maps. Content revision is derived from the new immutable geometry; protocol and
 canonical-state layouts are unchanged.
 
-The focused Rapier test walks into a closed flap and drops a character onto an eave: the
+The focused physics test walks into a closed flap and drops a character onto an eave: the
 flap blocks movement, while the steep roof sheds the character to the ground instead of
 supporting it on an invisible box. That test and native
 `every_placed_kit_entry_loads_from_the_live_bundles` passed, as did the browser/WASM build.
@@ -181,7 +181,7 @@ the roof's downward faces as one-sided textured rock, while the exterior shell s
 away. Existing backface culling hides that underside from overhead cameras. Both clients
 reuse this geometry; no camera API, movement authority or collision format changed.
 
-Focused checks: the two shared cave-ceiling/cutaway tests, the Rapier entrance/walls/shelf/
+Focused checks: the two shared cave-ceiling/cutaway tests, the physics entrance/walls/shelf/
 ceiling/recovery test, native bundle loading and the browser/WASM build passed. Full suites
 and native GPU acceptance were not run. Policy source revision remains unchanged.
 
@@ -196,7 +196,7 @@ recesses the upper wall shoulders with fixed, source-authored variation. Lower p
 contact planes, the four-metre passage and shelf footing are preserved. This improves the
 interior silhouette without a decorative shell concealing different collision geometry.
 The entrance arch's upper edge follows a broken stone profile instead of a rectangular
-lintel. The entrance clearance below it is unchanged; the focused Rapier traversal test
+lintel. The entrance clearance below it is unchanged; the focused physics traversal test
 also covers this final exported shape. The browser build passed for the chamber-shape
 pass before this final upper-edge adjustment.
 
@@ -215,7 +215,7 @@ their shared rest transforms, then applies the owning scene part's cutaway visib
 Moving flames, sails and doors keep their existing presentation path. This also textures
 Stillwater's joined rock shelf. No shader, renderer, asset bundle, cache or authority is added.
 
-Focused checks passed: Redbrand's Rapier entrance/walls/shelf/ceiling/recovery test; both
+Focused checks passed: Redbrand's physics entrance/walls/shelf/ceiling/recovery test; both
 shared ceiling/cutaway tests (now also checking exterior texture attributes); the five browser
 scene-building tests, including actual batched roof visibility; and the browser/WASM build.
 Native GPU acceptance and full suites were not run. The previously reported legacy A/B

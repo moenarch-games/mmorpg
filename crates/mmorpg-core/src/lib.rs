@@ -7,7 +7,8 @@
 //!
 //! [`ZoneSimulation`] advances in the fixed tick order documented on
 //! [`ZoneSimulation::advance_tick`]. Physics integration and collision stay in
-//! Rapier, embedded in [`physics`] (#271); wire formats live in `mmorpg-protocol`.
+//! Physics Engine, embedded in [`physics`] (#648; Rapier only under the `physics-ab`
+//! diagnostics); wire formats live in `mmorpg-protocol`.
 
 pub mod ability;
 pub mod action;

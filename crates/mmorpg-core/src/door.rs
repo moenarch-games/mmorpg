@@ -151,8 +151,9 @@ impl ZoneSimulation {
         Ok(None)
     }
 
-    /// Whether a unit's body overlaps the box `door`'s leaf would take. The probe never sees
-    /// terrain (Rapier skips cuboid–heightfield overlaps), which is fine: only units count.
+    /// Whether a unit's body overlaps the box `door`'s leaf would take. Only unit bodies count,
+    /// so it does not matter whether the backend's overlap query reports terrain (Physics
+    /// Engine does; the `physics-ab` Rapier oracle skips cuboid–heightfield pairs).
     pub(crate) fn leaf_blocked(&self, door: &Door, open: bool) -> Result<bool, ZoneError> {
         let leaf = door.leaf(open);
         let probe = crate::physics::Aabb::new(

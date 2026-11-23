@@ -4,7 +4,7 @@
 //! [`crate::CreatureBehaviour::Prop`] behaviour: targetable, with a little health, damaged by every swing, ability, projectile and
 //! blast that reaches them like any creature. They stand on fixed boxes, never move, fight or
 //! engage, take no forced movement and give no experience or loot. A broken prop vanishes at
-//! once and throws its pieces as short-lived dynamic Rapier bodies ([`DebrisBody`]) that fly,
+//! once and throws its pieces as short-lived dynamic physics bodies ([`DebrisBody`]) that fly,
 //! settle and despawn after [`DEBRIS_TICKS`]. It stands again in place after its template's
 //! respawn time (5 min in Greyhaven Vale), once no unit stands on its spot. An explosive
 //! barrel explodes like Fire Blast as it breaks, hurting and knocking back nearby players,
@@ -336,7 +336,7 @@ impl ZoneSimulation {
         )
     }
 
-    /// After the physics step: pieces age, fly under Rapier and settle; old ones vanish.
+    /// After the physics step: pieces age, fly under physics and settle; old ones vanish.
     pub(crate) fn advance_debris(&mut self) {
         self.debris.retain(|_, piece| {
             piece.age += 1;

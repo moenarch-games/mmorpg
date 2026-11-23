@@ -83,7 +83,7 @@ pub struct ZoneDefinition {
 
 impl ZoneDefinition {
     /// Adds validated meshes and their conservative bounds in stable ID order.
-    /// Bounds support content placement checks; Rapier uses the triangles, never these boxes.
+    /// Bounds support content placement checks; physics uses the triangles, never these boxes.
     pub fn with_static_meshes(mut self, mut meshes: Vec<StaticMesh>) -> Result<Self, ZoneError> {
         meshes.sort_by_key(|mesh| mesh.id);
         let mut colliders = self.colliders.clone();

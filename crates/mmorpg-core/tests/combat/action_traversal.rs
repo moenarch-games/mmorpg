@@ -1,6 +1,6 @@
 //! Traversal, movement momentum and combat transitions on the one action
 //! graph (#413, Atlas 5.9.1–5.9.3): the movement region runs for every
-//! class, action phases author bounded movement that Rapier's controller
+//! class, action phases author bounded movement that the physics controller
 //! resolves, and edges out of a landing let a run → jump → aerial attack →
 //! landing → follow-up path compose from ordinary actions. Experimental
 //! graphs author all of it; the production graph keeps today's movement.

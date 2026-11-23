@@ -99,7 +99,7 @@ It exports ordinary glTF with colour/normal textures to the committed
 loaders and shared Outpost placement. There is no new renderer, importer or asset cache.
 The source script also exports simplified closed triangle meshes to
 `crates/mmorpg-core/content/collision/greyhaven-fort.json`. The old wall IDs remain; short
-additional wall sections, roofs and rock outcrops have fixed IDs. Rapier consumes triangles,
+additional wall sections, roofs and rock outcrops have fixed IDs. Physics consumes triangles,
 while conservative mesh bounds are used only for content placement checks. The rendered
 triangles remain visible as a fallback if the art bundle cannot load.
 
@@ -225,7 +225,7 @@ The buildings keep Millbrook's established footprint and 11 m terrace. Barn/farm
 retain collider IDs 200/201. The square windmill box is replaced by a closed, tapered
 20-sided static triangle mesh under its original ID 202. Roofs, chimney and axle housing
 have simplified meshes 65060–65064 in `greyhaven-fort.json`, independent of the detailed
-visual mesh. Rapier consumes these through the existing authored-collision loader. The
+visual mesh. Physics consumes these through the existing authored-collision loader. The
 resource manifest contains hashes for the normal glTF resources; content revision still
 comes from immutable gameplay content, with no protocol/canonical-layout change.
 
@@ -234,7 +234,7 @@ The farmhouse has since become a walk-in farmhouse from the Outpost kit (#886,
 authored bundle, its roof and chimney meshes 65061 and 65063 left `greyhaven-fort.json`, and
 collider 201 is no longer a box.
 
-The focused Rapier test `millbrook_windmill_has_a_solid_round_footprint` walks through a
+The focused physics test `millbrook_windmill_has_a_solid_round_footprint` walks through a
 former square-box corner and then into the curved wall, checking the character reaches the
 tower, stays out of the solid and can slide around it. That test and all 15 basin routes
 passed. Native `every_placed_kit_entry_loads_from_the_live_bundles` and the final browser/WASM
@@ -289,7 +289,7 @@ shared presentation and the live Blender context read the same course.
 
 Eight low rock clusters break up Stillwater's west, north and south banks. The Blender
 source in `content/greyhaven/authoring/fortifications.py` exports their twenty-four closed,
-coarse meshes as stable IDs 65070–65093 in `greyhaven-fort.json`. Rapier loads them through
+coarse meshes as stable IDs 65070–65093 in `greyhaven-fort.json`. Physics loads them through
 the existing immutable static-mesh path; both clients texture those exact facets with the
 existing rock material and moss palette. These are not detailed rendering meshes, new
 water volumes or another asset bundle. The dock and shrine approach stay clear, and the
@@ -471,7 +471,7 @@ full-cell shoulders, blended into the new enclosing rock. The plateau, stronghol
 lookout remain in their existing places; no world area or gameplay system is added.
 
 This remains the same fixed-integer authoritative heightfield, shared by rendering and
-Rapier. Its content revision is derived from the changed samples; recovery and visual LOD
+physics. Its content revision is derived from the changed samples; recovery and visual LOD
 paths are unchanged. The live Blender terrain and 1,589 nature instances are refreshed from
 the same game export, with the packed game rock maps retained for authoring context.
 
@@ -501,7 +501,7 @@ stable IDs 65094–65102. Their roots are buried into the existing ground and th
 lean back into the enclosing cliffs. The placement leaves gates, the Hollow approach,
 switchbacks, the South Road and the watercourse clear.
 
-The collision JSON now contains 82 meshes. Rapier loads the new pieces through the existing
+The collision JSON now contains 82 meshes. Physics loads the new pieces through the existing
 immutable static-mesh path; shared presentation draws these exact facets with the existing
 rock PBR material and the existing strata/moss landscape palette in both clients. They stay
 independent of the settlement glTF and terrain LOD, and remain visible through the shared rock presentation without a new asset dependency.
@@ -526,7 +526,7 @@ rise is about two metres high on the four-metre lattice, with two lower folds ne
 Their authored footprints stay clear of the keep/palisade foundations, spawn plaza,
 Hollow Road, switchbacks and lake. The settled Outpost floor remains level.
 
-These are fixed-integer core terrain samples, used by Rapier and both clients through the
+These are fixed-integer core terrain samples, used by physics and both clients through the
 existing content path. They are not a visual displacement that the character could walk
 through. No collider type, wire layout, visual LOD or streaming mechanism changes.
 The live Blender terrain and nature context are refreshed from the game export.

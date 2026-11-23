@@ -4,7 +4,7 @@
 //! world whether the caster (or, for a chain, the last victim) can see them: walls shield the
 //! units behind them. A cone takes every visible hostile unit within its range and angle of the
 //! caster's facing. A beam follows the caster's current facing every tick, pitched toward the
-//! unit it aims at (#884); a Rapier ray finds the first wall, a raised shield turned toward the caster stops it at that player, and every
+//! unit it aims at (#884); a physics ray finds the first wall, a raised shield turned toward the caster stops it at that player, and every
 //! hostile unit closer along the line is struck. A chain jumps to the nearest unhit hostile unit
 //! the last victim can see.
 //!

@@ -14,7 +14,7 @@
 //! while pressing forward), or climbing to the top of a face, pulls the player up onto it. The
 //! zone requires a steep face in front, a walkable top below the reach, nothing solid above
 //! the reach between the body and the top (a taller wall), and a free body path: straight up
-//! to the top and across onto it. Rapier's character controller then moves the body along
+//! to the top and across onto it. The physics character controller then moves the body along
 //! that path like any other move, so contact is resolved as always and nothing teleports.
 //!
 //! The zone decides every transition on the positions the last physics step left
