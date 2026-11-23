@@ -648,7 +648,7 @@ impl WorldScene {
             }
         }
         draws.extend(self.additional_draws.iter().cloned());
-        let mut lighting = Lighting::at(crate::environment::pages_hour(seconds, animate));
+        let mut lighting = Lighting::at(mmorpg_presentation::clock::pages_hour(seconds, animate));
         lighting.interior = if self.cave_lighting {
             mmorpg_presentation::lights::cave_interior(viewer)
         } else {

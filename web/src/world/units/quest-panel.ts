@@ -1,7 +1,7 @@
 import type { WorldCommand } from "../../command-wire";
 import type { QuestMarkerKind, RaidSignal, ZoneSnapshot } from "../../replication";
 import type { ContentCatalog, QuestRecord } from "../catalog";
-import { isZoneNight } from "../environment";
+import { wasm } from "../../wasm";
 import { aftermathOpen } from "../raid-aid";
 import { forewarningLine } from "../raid-prep";
 import { dialogNpc, dialogView, objectiveViews, questViews, QuestState, trackerRows, type QuestNpc, type QuestView } from "./quest-state";
@@ -235,7 +235,7 @@ export class QuestPanel {
     this.#raidReady = snapshot.raid?.warned === true || (snapshot.raid?.braced.length ?? 0) > 0;
     this.#aftermath = aftermathOpen(snapshot.raid);
     this.#forewarning = snapshot.raid?.signs ? snapshot.raid : null;
-    this.#night = isZoneNight(snapshot.tick);
+    this.#night = wasm.isZoneNight(snapshot.tick);
     this.#render();
   }
 

@@ -37,7 +37,7 @@ fn every_world_prop_region_and_day_phase_matches_pages_submitted_content() {
         compare_draws(&draws, &expected["draws"], &output["resources"]);
         // Both clients light with render-engine (#529; the browser through its three.js port, #600)
         // and fog alike: the same palette, the same aerial perspective (#526,
-        // `FOG_VISIBILITY_METRES` in web/src/world/lighting.ts).
+        // `mmorpg_presentation::lighting::FOG_VISIBILITY_METRES`).
         let fog = &frame.lighting.fog;
         let want = &expected["environment"]["fog"];
         for (a, b) in fog.color.iter().zip(rgb(&want["color"])) {

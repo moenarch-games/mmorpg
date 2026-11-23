@@ -1,5 +1,4 @@
 import type { RendererEnvironment } from "@moritzbrantner/three-d-renderer";
-import { ticksFromMs } from "../replication";
 import type { Color } from "./scenery";
 
 /** Palette and renderer environment for the cosmetic twenty-minute day. */
@@ -173,25 +172,8 @@ export function hazeMix(style: EnvironmentStyle, distanceMetres: number): number
   return mix;
 }
 
-/** A 20-minute day in real seconds. */
+/** A 20-minute day in real seconds (`mmorpg_presentation::clock::PAGES_DAY_SECONDS`); the zone clock is the shared `clock`. */
 export const DAY_SECONDS = 20 * 60;
-
-/** The zone's day in ticks and its start time (`mmorpg_core::DAY_TICKS`, `ZONE_START_TIME`). */
-export const ZONE_DAY_TICKS = ticksFromMs(2 * 60 * 60 * 1_000);
-export const ZONE_START_TIME = ZONE_DAY_TICKS / 3;
-
-/** Whether the zone's `tick` falls between dusk (20:00) and dawn (06:00) (`mmorpg_core::is_night`). */
-export function isZoneNight(tick: bigint): boolean {
-  const hour = Number((tick + BigInt(ZONE_START_TIME)) % BigInt(ZONE_DAY_TICKS)) / (ZONE_DAY_TICKS / 24);
-  return hour >= 20 || hour < 6;
-}
-
-/** The zone's time of day at `tick` on the sky cycle's `DAY_SECONDS` scale, zero at noon (#158). */
-export function zoneSkySeconds(tick: bigint): number {
-  const day = BigInt(ZONE_DAY_TICKS);
-  const fraction = Number((tick + BigInt(ZONE_START_TIME)) % day) / ZONE_DAY_TICKS;
-  return (((fraction - 0.5) % 1) + 1) % 1 * DAY_SECONDS;
-}
 
 /** A periodic presentation clock; zero is noon, half a cycle is midnight. */
 function cycle(dayFraction: number): { daylight: number; dusk: number; angle: number } {
