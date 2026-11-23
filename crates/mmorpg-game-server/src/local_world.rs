@@ -13,6 +13,24 @@ use tokio::sync::mpsc;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 const TIMEOUT: Duration = Duration::from_secs(30);
+/// A zone host that cannot bind the ports it picked exits with this code, and the launcher
+/// starts it again on fresh ones: another process may take a port between the pick and the
+/// host's bind (#1147).
+pub const PORT_CONFLICT_EXIT_CODE: i32 = 75;
+const PORT_CONFLICT_ATTEMPTS: u32 = 3;
+
+/// Whether serving failed because the status listener or the WebTransport endpoint could not
+/// bind its port. Both bind before recovery is consumed, so a retry starts from the same save.
+pub fn is_port_conflict(error: &(dyn std::error::Error + 'static)) -> bool {
+    use game_server::{HostStatusServerError, MatchHostTransportError};
+    matches!(
+        error.downcast_ref::<HostStatusServerError>(),
+        Some(
+            HostStatusServerError::Bind(_)
+                | HostStatusServerError::Transport(MatchHostTransportError::Endpoint(_))
+        )
+    )
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct RunningWorld {
@@ -173,73 +191,95 @@ pub fn start(directory: &Path, executable: &Path) -> Result<RunningWorld> {
         })?;
     launcher.lock()?;
     let file = lock_file(directory)?;
+    let mut host = None;
     if file.try_lock().is_ok() {
         // Release before spawning: the child must acquire and retain the lock itself.
         drop(file);
-        let log = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(directory.join("host.log"))?;
-        let mut command = Command::new(executable);
-        // Managed hosting must not inherit development endpoints, stores or routing.
-        for (name, _) in std::env::vars_os() {
-            if name.to_string_lossy().starts_with("MMORPG_")
-                && !matches!(
-                    name.to_str(),
-                    Some(
-                        "MMORPG_SHARED_ART_DIR"
-                            | "MMORPG_TEST_SETUP_ENDPOINT"
-                            | "MMORPG_WEBRTC_BIND_IP"
-                            | "MMORPG_TEST_OFFLINE_HOST"
-                    )
-                )
-            {
-                command.env_remove(name);
-            }
-        }
-        command
-            .arg("--local-world")
-            .arg(directory)
-            .stdin(Stdio::null())
-            .stdout(log.try_clone()?)
-            .stderr(log);
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            command.process_group(0);
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            command.creation_flags(0x00000008 | 0x00000200);
-        }
-        let mut child = command.spawn().map_err(|error| {
-            format!(
-                "Cannot start {}: {error}. Build/install mmorpg-zone-host beside mmorpg-client.",
-                executable.display()
-            )
-        })?;
-        // Reap the process without tying its lifetime to the launching client.
-        std::thread::spawn(move || {
-            let _ = child.wait();
-        });
+        host = Some(spawn_host(directory, executable)?);
     }
+    let mut attempts = 1;
     let deadline = Instant::now() + TIMEOUT;
-    loop {
+    let outcome = loop {
         let last = match running(directory) {
-            Ok(Some(world)) => return Ok(world),
+            Ok(Some(world)) => break Ok(world),
             Ok(None) => None,
             Err(error) => Some(error),
         };
+        // A host that lost a port before binding it has exited and released the lock.
+        if let Some(child) = &mut host
+            && attempts < PORT_CONFLICT_ATTEMPTS
+            && child
+                .try_wait()
+                .ok()
+                .flatten()
+                .is_some_and(|status| status.code() == Some(PORT_CONFLICT_EXIT_CODE))
+        {
+            attempts += 1;
+            *child = spawn_host(directory, executable)?;
+            continue;
+        }
         if Instant::now() >= deadline {
-            return Err(match last {
+            break Err(match last {
                 // The lock is held by a host that never answered: name it (#1050).
                 Some(error) if error.to_string().contains("not responding") => error,
                 _ => format!("World did not become ready. See {}. Retry Host World after correcting the error; saved data was retained.", directory.join("host.log").display()).into(),
             });
         }
         std::thread::sleep(Duration::from_millis(100));
+    };
+    if let Some(mut child) = host {
+        // Reap the process without tying its lifetime to the launching client.
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
     }
+    outcome
+}
+
+fn spawn_host(directory: &Path, executable: &Path) -> Result<std::process::Child> {
+    let log = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(directory.join("host.log"))?;
+    let mut command = Command::new(executable);
+    // Managed hosting must not inherit development endpoints, stores or routing.
+    for (name, _) in std::env::vars_os() {
+        if name.to_string_lossy().starts_with("MMORPG_")
+            && !matches!(
+                name.to_str(),
+                Some(
+                    "MMORPG_SHARED_ART_DIR"
+                        | "MMORPG_TEST_SETUP_ENDPOINT"
+                        | "MMORPG_WEBRTC_BIND_IP"
+                        | "MMORPG_TEST_OFFLINE_HOST"
+                )
+            )
+        {
+            command.env_remove(name);
+        }
+    }
+    command
+        .arg("--local-world")
+        .arg(directory)
+        .stdin(Stdio::null())
+        .stdout(log.try_clone()?)
+        .stderr(log);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x00000008 | 0x00000200);
+    }
+    Ok(command.spawn().map_err(|error| {
+        format!(
+            "Cannot start {}: {error}. Build/install mmorpg-zone-host beside mmorpg-client.",
+            executable.display()
+        )
+    })?)
 }
 
 /// Requests graceful shutdown and waits for the *save lock*, including the final flush.
@@ -282,6 +322,7 @@ impl LocalWorldHost {
         lock.try_lock()
             .map_err(|_| "This world is already running; use Host World to reconnect.")?;
         let listener = TcpListener::bind(("127.0.0.1", 0))?;
+        // The host binds these itself; losing one first exits with PORT_CONFLICT_EXIT_CODE.
         let port = UdpSocket::bind(("127.0.0.1", 0))?.local_addr()?.port();
         let status_port = TcpListener::bind(("127.0.0.1", 0))?.local_addr()?.port();
         let identity = wtransport::Identity::self_signed(["localhost", "127.0.0.1"])?;
@@ -424,5 +465,25 @@ mod tests {
         fs::write(directory.path().join("running.json"), old.to_string()).unwrap();
         let error = running(directory.path()).err().unwrap().to_string();
         assert!(error.contains("held by its zone host"), "{error}");
+    }
+
+    #[test]
+    fn only_a_lost_port_restarts_the_host() {
+        use game_server::{HostStatusServerError, MatchHostTransportError};
+        let boxed = |error: HostStatusServerError| -> Box<dyn std::error::Error + Send + Sync> {
+            Box::new(error)
+        };
+        let taken = boxed(HostStatusServerError::Bind("address in use".into()));
+        assert!(is_port_conflict(taken.as_ref()));
+        let endpoint = boxed(HostStatusServerError::Transport(
+            MatchHostTransportError::Endpoint("address in use".into()),
+        ));
+        assert!(is_port_conflict(endpoint.as_ref()));
+        let identity = boxed(HostStatusServerError::Transport(
+            MatchHostTransportError::Identity("bad key".into()),
+        ));
+        assert!(!is_port_conflict(identity.as_ref()));
+        let other: Box<dyn std::error::Error + Send + Sync> = "corrupt save".into();
+        assert!(!is_port_conflict(other.as_ref()));
     }
 }
