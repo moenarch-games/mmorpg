@@ -196,6 +196,11 @@ const renderer = createThreeSceneRenderer(canvas, {
     drawTarget = target;
     lighting.draw(target, scene, view);
   },
+  // `renderer.prepare` compiles through the lighting's own passes, not three's `compileAsync` (#855).
+  prepare: (target, scene, view) => {
+    drawTarget = target;
+    return lighting.prepare(target, scene, view);
+  },
 });
 
 
@@ -1439,6 +1444,7 @@ function frame(now: number) {
     profileBegin(now);
     try {
       followLocalZone();
+      const programsBefore = loading.playableMs === null ? programCount() : null;
       worldView.frame(activeWorld, worldInput(), viewerLook(), paused ? 0 : deltaSeconds, now);
       if (lastWeaponDrawn !== null && lastWeaponDrawn !== worldView.weaponDrawn) {
         controls.retire("weaponModeChanged");
@@ -1452,6 +1458,7 @@ function frame(now: number) {
       updateActionLab();
       if (loading.entry !== null && loading.playableMs === null) {
         loading.playableMs = Math.round(now - loading.entry);
+        loading.firstFramePrograms = programsBefore === null ? null : programCount() - programsBefore;
         markStartup("first-frame");
         console.info(`Greyhaven playable ${loading.playableMs} ms after Enter World; ${loading.bytesBeforeEntry} bytes fetched before entry.`);
       }
@@ -1471,9 +1478,17 @@ function frame(now: number) {
  * Progressive loading (#240): what the page fetched before Enter World and how long entry took
  * until the first world frame. Greyhaven's code, scenery and art load during character selection.
  */
-const loading: { entry: number | null; bytesBeforeEntry: number; playableMs: number | null } = {
-  entry: null, bytesBeforeEntry: 0, playableMs: null,
+const loading: { entry: number | null; bytesBeforeEntry: number; playableMs: number | null; firstFramePrograms: number | null } = {
+  entry: null, bytesBeforeEntry: 0, playableMs: null, firstFramePrograms: null,
 };
+
+/**
+ * Programs three has created so far. The first world frame should create none (#855): `prepare` created them through
+ * `Lighting.prepare` while selection still showed; `loadingReport().firstFramePrograms` reports how many it did create.
+ */
+function programCount(): number {
+  return drawTarget?.info.programs?.length ?? 0;
+}
 
 /** Bytes the page has fetched so far, from resource timing (decoded size where transfer is hidden). */
 function fetchedBytes(): number {
@@ -1573,6 +1588,7 @@ async function enterWorld(): Promise<void> {
   loading.entry = performance.now();
   loading.bytesBeforeEntry = fetchedBytes();
   loading.playableMs = null;
+  loading.firstFramePrograms = null;
   const server = chosenServer();
   if (target === world) {
     // The local world plays Greyhaven Vale, even after an online session went elsewhere (#145).
