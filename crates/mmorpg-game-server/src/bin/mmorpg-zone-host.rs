@@ -5,7 +5,8 @@ use game_server::{
 };
 use mmorpg_core::{ZoneId, long_ticks_from_ms};
 use mmorpg_game_server::{
-    DevelopmentCharacterHostConfig, party::serve_open_zone_host, serve_development_character_host,
+    DevelopmentCharacterHostConfig, local_world, party::serve_open_zone_host,
+    serve_development_character_host,
 };
 use std::env;
 use std::error::Error;
@@ -51,10 +52,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         let directory = PathBuf::from(&arguments[1]);
         // Declare ownership before the runtime: even on failure/panic, runtime teardown
         // joins every writer before the save lock can be released.
-        let mut owner = mmorpg_game_server::local_world::LocalWorldHost::acquire(&directory)
+        let mut owner = local_world::LocalWorldHost::acquire(&directory)
             .map_err(|error| ConfigError(error.to_string()))?;
         let runtime = tokio::runtime::Runtime::new()?;
-        return runtime.block_on(serve_local_world(directory, &mut owner));
+        let result = runtime.block_on(serve_local_world(directory, &mut owner));
+        drop(runtime);
+        drop(owner);
+        if let Err(error) = &result
+            && local_world::is_port_conflict(error.as_ref())
+        {
+            // The launcher starts a fresh host on new ports.
+            eprintln!("Error: {error}");
+            std::process::exit(local_world::PORT_CONFLICT_EXIT_CODE);
+        }
+        return result;
     }
     tokio::runtime::Runtime::new()?.block_on(serve_configured_host())
 }
@@ -194,7 +205,7 @@ async fn serve_configured_host() -> Result<(), Box<dyn Error>> {
 /// Local hosting config is deliberately isolated from developer environment overrides.
 async fn serve_local_world(
     directory: PathBuf,
-    owner: &mut mmorpg_game_server::local_world::LocalWorldHost,
+    owner: &mut local_world::LocalWorldHost,
 ) -> Result<(), Box<dyn Error>> {
     let (shutdown_sender, shutdown_receiver) = mpsc::channel(4);
     install_shutdown_forwarder(shutdown_sender.clone())?;
@@ -224,7 +235,14 @@ async fn serve_local_world(
         owner.managed.clone(),
     )
     .await
-    .map_err(|error| ConfigError(error.to_string()))?;
+    .map_err(|error| -> Box<dyn Error> {
+        // Kept typed so main can exit for a restart on fresh ports.
+        if local_world::is_port_conflict(error.as_ref()) {
+            error
+        } else {
+            Box::new(ConfigError(error.to_string()))
+        }
+    })?;
     // `owner` retains the lock until the server has flushed its final saves.
     Ok(())
 }
