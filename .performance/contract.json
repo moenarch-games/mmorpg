@@ -298,6 +298,34 @@
       ]
     },
     {
+      "id": "incident-receipt-expiry",
+      "description": "The tick that ends a raid or cart incident (#1128): its receipts expire by one key-range lookup per incident kind and player, so the work is one visit per player plus one per expired receipt, never the content receipts players hold; a tick that ends no incident visits none.",
+      "dimensions": {
+        "players": { "description": "players holding receipts, each with one receipt of the ending cart day" },
+        "held": { "description": "content receipts (caches) each player also holds" }
+      },
+      "scalePoints": [
+        { "players": 64, "held": 64 },
+        { "players": 256, "held": 64 },
+        { "players": 512, "held": 64 },
+        { "players": 512, "held": 16 },
+        { "players": 512, "held": 128 }
+      ],
+      "metrics": [
+        {
+          "name": "incident_receipts_visited",
+          "unit": "visits",
+          "signal": "operation-count",
+          "notes": "ZoneTickWork::incident_receipts_visited; players plus expired receipts.",
+          "budget": { "max": 1024 },
+          "growth": [
+            { "dimension": "players", "bound": "linear" },
+            { "dimension": "held", "bound": "constant" }
+          ]
+        }
+      ]
+    },
+    {
       "id": "camera-only-frames",
       "description": "Greyhaven client presentation (#645): camera-only frames around a standing viewer over settled static residency build, upload and evict no static scenery, whatever the authored scenery.",
       "dimensions": {
