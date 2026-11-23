@@ -314,19 +314,32 @@ impl<B: EntryBackend> HandoffHost<B> {
                 }
                 Err(error) => return Err(error.to_string()),
             };
-        // A destination on this host is accepted in place: its link handler would wait on the
-        // storage and authority guards held here.
-        let offered = if self.zones.contains_key(&destination_zone) {
-            self.accept_local(&mut storage, &mut **authority, &transfer)
-        } else {
-            self.runtime
+        // A destination on this host is accepted in place, under the guards held here.
+        let remote = !self.zones.contains_key(&destination_zone);
+        let offered = if remote {
+            // No host-wide guard is held across the network offer (#1098): the peer may be
+            // offering to this host at the same moment, and its link handler here needs both
+            // guards, as do this host's claims and saves. The frozen character is neither
+            // live nor writable meanwhile (its handoff is pending in the store), so its lease
+            // leaves the storage's live set until the offer settles: a save pass in between
+            // must not take it for a lost session and release it.
+            storage.leases.remove(&key);
+            drop(authority);
+            drop(storage);
+            let offered = self
+                .runtime
                 .block_on(async {
                     TransferLink::connect(route.link.as_str(), self.link_timeout)
                         .await?
                         .offer(&transfer)
                         .await
                 })
-                .map_err(message)
+                .map_err(message);
+            storage = lock(&self.storage)?;
+            authority = lock(&self.authority)?;
+            offered
+        } else {
+            self.accept_local(&mut storage, &mut **authority, &transfer)
         };
         let outcome = match offered {
             Ok(()) => retire_outbound(&mut live, &mut **authority, &zone.lease, transfer_id)
@@ -344,6 +357,9 @@ impl<B: EntryBackend> HandoffHost<B> {
             // The destination holds the character's lease now.
             storage.leases.remove(&key);
             lock(&self.sessions)?.remove(&key);
+        } else if remote {
+            // Still this host's character: its lease is live here again.
+            storage.leases.insert(key.clone(), lease.clone());
         }
         if offered.is_ok()
             && outcome.is_err()
