@@ -515,7 +515,7 @@ impl Probe<'_> {
         let translation = direction.map(|axis| axis * length);
         let hit = self.world.cast_ray(origin, translation, statics)?;
         let normal = hit.normal;
-        let horizontal = normal[0].hypot(normal[2]);
+        let horizontal = libm::hypotf(normal[0], normal[2]);
         // A ray starting inside geometry, a walkable surface, an overhang's underside or a
         // face turned away is no face to hold or mantle.
         if hit.fraction <= 0.0
@@ -584,8 +584,9 @@ impl Probe<'_> {
             .iter()
             .filter_map(|&height| self.face_ahead(centre, ahead, height, WALKABLE_NORMAL_Y))
             .min_by(|a, b| {
-                let distance =
-                    |face: &Face| (face.point[0] - centre[0]).hypot(face.point[2] - centre[2]);
+                let distance = |face: &Face| {
+                    libm::hypotf(face.point[0] - centre[0], face.point[2] - centre[2])
+                };
                 distance(a).total_cmp(&distance(b))
             })?;
         let column = [
@@ -832,13 +833,13 @@ fn mantle(
     let raised = y + half_height() + LEDGE_CLEARANCE_UNITS;
     // The rise ends once the feet clear the ledge by its clearance.
     let across = across || centre[1] >= raised - 0.5;
-    let over = across && (x - centre[0]).hypot(z - centre[2]) < 1.0;
+    let over = across && libm::hypotf(x - centre[0], z - centre[2]) < 1.0;
     // Over the goal, the feet set down onto the ledge; once they stand on it, the mantle ends.
     // The probe measured the ledge at one point, but uneven ground (terrain) can hold the body
     // a little higher or short of the goal: standing on it with the body inside the face ends
     // the mantle too, instead of hanging there until it is abandoned and the player drops.
     let standing = y + half_height();
-    let inside = across && (x - centre[0]).hypot(z - centre[2]) < radius();
+    let inside = across && libm::hypotf(x - centre[0], z - centre[2]) < radius();
     if (over && centre[1] <= standing + 0.5) || (inside && intent.grounded) {
         return Step::free(Traversal::Free);
     }
@@ -875,7 +876,7 @@ fn mantle_velocity(centre: [f32; 3], goal: [i32; 3], across: bool) -> Vec3i {
         return subunits([0.0, rise.max(0.0), 0.0]);
     }
     let (dx, dz) = (x - centre[0], z - centre[2]);
-    let across = dx.hypot(dz);
+    let across = libm::hypotf(dx, dz);
     if across <= 0.0 {
         return Vec3i::ZERO;
     }

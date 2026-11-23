@@ -180,7 +180,7 @@ impl ZoneSimulation {
         let there = self.unit_position(target)?;
         #[allow(clippy::cast_precision_loss)]
         let delta = [there[0] as f32 - here[0], there[2] as f32 - here[2]];
-        let distance = delta[0].hypot(delta[1]);
+        let distance = libm::hypotf(delta[0], delta[1]);
         #[allow(clippy::cast_precision_loss)]
         let travel = distance - crate::unit::PLAYER_REACH_UNITS as f32;
         if travel <= 0.0 {

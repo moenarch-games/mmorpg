@@ -125,20 +125,20 @@ fn radians(yaw: u16) -> f32 {
 
 /// `[x, z]` turned by `yaw` about the vertical axis.
 fn turned(yaw: u16, [x, z]: [f32; 2]) -> [f32; 2] {
-    let (sin, cos) = radians(yaw).sin_cos();
+    let (sin, cos) = libm::sincosf(radians(yaw));
     [x * cos + z * sin, z * cos - x * sin]
 }
 
 /// The quaternion of a turn by `yaw` about the vertical axis.
 fn yaw_rotation(yaw: u16) -> [f32; 4] {
-    let (sin, cos) = (radians(yaw) / 2.0).sin_cos();
+    let (sin, cos) = libm::sincosf(radians(yaw) / 2.0);
     [0.0, sin, 0.0, cos]
 }
 
 /// A piece's horizontal distance (units) from a viewer at `centre`, as its projection measures.
 fn view_distance(piece: &Debris, centre: [i32; 3]) -> f64 {
     let [x, _, z] = crate::physics::to_units(piece.body.position);
-    f64::from(x - centre[0]).hypot(f64::from(z - centre[2]))
+    libm::hypot(f64::from(x - centre[0]), f64::from(z - centre[2]))
 }
 
 /// Whether a viewer at `centre` sees `piece`: within the interest radius.
@@ -241,7 +241,7 @@ impl ZoneSimulation {
         let away = from
             .map(|at| [(centre.x - at[0]) as f32, (centre.z - at[2]) as f32])
             .and_then(|[x, z]| {
-                let length = x.hypot(z);
+                let length = libm::hypotf(x, z);
                 (length > 0.0).then(|| [x / length * 3.0, z / length * 3.0])
             })
             .unwrap_or([0.0; 2]);
@@ -252,7 +252,7 @@ impl ZoneSimulation {
             #[allow(clippy::cast_precision_loss)]
             let [ox, oy, oz] = piece.offset.map(|axis| axis as f32);
             let [x, z] = turned(facing, [ox, oz]);
-            let length = x.hypot(z);
+            let length = libm::hypotf(x, z);
             let (dx, dz) = if length > 0.0 {
                 (x / length, z / length)
             } else {

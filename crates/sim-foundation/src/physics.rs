@@ -23,6 +23,8 @@ mod engine;
 #[cfg(feature = "physics-ab")]
 mod queries;
 #[cfg(feature = "physics-ab")]
+// The independent A/B oracle keeps its own float calls (#1109).
+#[allow(clippy::disallowed_methods)]
 mod rapier;
 mod shared;
 

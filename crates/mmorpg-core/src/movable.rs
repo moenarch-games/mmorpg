@@ -69,7 +69,7 @@ impl ZoneSimulation {
         };
         #[allow(clippy::cast_precision_loss)]
         let (x, z) = (direction[0] as f32, direction[1] as f32);
-        let length = x.hypot(z);
+        let length = libm::hypotf(x, z);
         if distance <= 0 || length == 0.0 {
             return false;
         }

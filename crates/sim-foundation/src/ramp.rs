@@ -63,9 +63,7 @@ impl Ramp {
             RampRise::PosX | RampRise::NegX => self.half_extents[0],
             RampRise::PosZ | RampRise::NegZ => self.half_extents[2],
         };
-        f64::from(self.half_extents[1])
-            .atan2(f64::from(run))
-            .to_degrees()
+        libm::atan2(f64::from(self.half_extents[1]), f64::from(run)).to_degrees()
     }
 
     /// The top's height (units) above the ramp's bottom at horizontal `(x, z)`, or `None`

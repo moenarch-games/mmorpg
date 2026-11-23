@@ -49,6 +49,8 @@ tokio = { version = "=1.54.1", features = ["io-util", "macros", "net", "rt-multi
 libtest-mimic = "=0.8.2"
 # Enum variant lists derived from the enum (#542).
 strum = { version = "=0.28.0", features = ["derive"] }
+# The same float functions on every target for authoritative code (#1109).
+libm = "=0.2.16"
 
 # battle-royale-core builds against this workspace's mmorpg-core, not its own pinned copy.
 [patch."https://github.com/moritzbrantner/mmorpg.git"]
@@ -64,6 +66,9 @@ unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
+# clippy.toml lists the platform-libm float functions; only the authoritative crates turn the
+# lint on, for their library code (#1109).
+disallowed_methods = "allow"
 
 # Dependencies (Rapier, parry, nalgebra, wgpu, ...) are optimized in dev and test builds: the
 # deterministic simulation tests and scenarios spend most of their time inside the physics step.

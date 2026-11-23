@@ -3127,6 +3127,7 @@ dependencies = [
 name = "mmorpg-core"
 version = "0.1.0"
 dependencies = [
+ "libm",
  "libtest-mimic",
  "physics-engine",
  "rapier3d",
@@ -5663,6 +5664,7 @@ dependencies = [
 name = "sim-foundation"
 version = "0.1.0"
 dependencies = [
+ "libm",
  "physics-engine",
  "rapier3d",
  "serde",
@@ -5674,6 +5676,7 @@ dependencies = [
 name = "sim-movement"
 version = "0.1.0"
 dependencies = [
+ "libm",
  "sim-foundation",
  "strum",
 ]

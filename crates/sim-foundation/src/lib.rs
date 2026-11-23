@@ -2,6 +2,8 @@
 //! unit identity, collision geometry and the physics world. It knows nothing of combat, zones,
 //! quests or authored content, so every game built on the simulation can share it.
 #![forbid(unsafe_code)]
+// No platform-libm float functions in authoritative code (clippy.toml, #1109).
+#![cfg_attr(not(test), warn(clippy::disallowed_methods))]
 
 pub mod collision;
 pub mod entity;

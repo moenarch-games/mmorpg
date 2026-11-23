@@ -151,10 +151,10 @@ impl ZoneSimulation {
                     continue;
                 }
                 let [vx, _, vz] = body.exact_velocity();
-                let walking = vx.hypot(vz);
+                let walking = libm::hypotf(vx, vz);
                 let [ux, _, uz] = body.exact_position();
                 let (tx, tz) = (centre[0] - ux, centre[2] - uz);
-                let distance = tx.hypot(tz);
+                let distance = libm::hypotf(tx, tz);
                 if walking <= 0.0
                     || distance <= 0.0
                     || (vx * tx + vz * tz) / (walking * distance) < WALK_INTO_COS
@@ -268,7 +268,7 @@ impl ZoneSimulation {
         };
         let speed = length(motion.velocity);
         let [vx, _, vz] = motion.velocity;
-        let rolling = vx.hypot(vz);
+        let rolling = libm::hypotf(vx, vz);
         if speed < IMPACT_SPEED || rolling <= 0.0 {
             return Ok(());
         }
@@ -316,7 +316,7 @@ impl ZoneSimulation {
             let direction = body.map_or([rx, rz], |[ux, _, uz]| {
                 // Along the path and a little aside, so the victim leaves the boulder's way.
                 let (ax, az) = (ux - centre[0], uz - centre[2]);
-                let away = ax.hypot(az).max(1.0);
+                let away = libm::hypotf(ax, az).max(1.0);
                 [rx + 0.6 * ax / away, rz + 0.6 * az / away]
             });
             match victim {
@@ -349,7 +349,8 @@ impl ZoneSimulation {
         let [x, z] = spawn.position;
         let y = self.stand_y(x, z, template.half_extents);
         let home = crate::physics::from_units([x, y, z]);
-        let away = (motion.position[0] - home[0]).hypot(motion.position[2] - home[2]) > HOME_UNITS;
+        let away =
+            libm::hypotf(motion.position[0] - home[0], motion.position[2] - home[2]) > HOME_UNITS;
         if !away && motion.velocity == [0.0; 3] {
             if state.idle != 0 {
                 state.idle = 0;
