@@ -576,6 +576,25 @@ idempotent; an active/stale writer or conflicting reset is rejected. The backend
 must confirm replicated metadata before granting a successor. Ordinary recovery
 never substitutes this reset for missing/corrupt checkpoint or journal data.
 
+## Reward capacity never aborts a tick (#1112)
+
+A new protocol ID (ADR 0006) covers two changes. The canonical reward history is now
+`present u8 · max receipts u32 · max tick grants u16 · deferred count u32 · deferred ·
+world count u32 · world keys · player count u32 · (player u32 · count u32 · keys)… · grant
+count u32 · (player u32 · key)…`: every count widened from `u16` to `u32` and the receipt
+bound with them, and the deferred zone payouts come right after the limits, each
+`since u64 · player u32 · key · experience u32 · copper u32`, strictly ascending in that
+order (the tick it was earned, then recipient, then key), at most 4,096 of them. Only
+zone-paid keys (kill experience and objectives, raid participation and defence, cart
+defence) may wait, none already consumed, each at most once. Error events gain code 53,
+rewards busy: a loot claim or quest turn-in the tick cannot record is refused, the corpse
+keeps its rewards and the quest stays in the log. Projections and commands are unchanged.
+
+Host defaults derive from the 512-player zone: 256 receipts per character (131,072) and 4
+zone payouts per player per tick (2,048). A trusted receipt input that does not fit the
+zone's bound is rejected before the character activates (`the zone's reward receipt bound
+cannot hold this character's stored receipts`), and the claim is cleared.
+
 ## Arena combo continuation: snapshot v30 (#339)
 
 Snapshot wire version 30 / core schema 29 extend the canonical combo opening's target
