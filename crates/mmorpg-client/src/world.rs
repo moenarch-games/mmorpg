@@ -543,7 +543,8 @@ impl WorldScene {
             .map(|slots| slots.map(|slot| first_vein + slot))
             .collect();
         // Every ordinary placed kit of the shared inventory (#683): the limestone blocks, river
-        // stones, meadow, Wolfrun Den, optional discoveries and any kit registered after them.
+        // stones, meadow, Wolfrun Den, optional discoveries, Sunken Shrine and any kit registered
+        // after them.
         for kit in mmorpg_presentation::world_dressing::placed_kits() {
             placements.extend(kit.placements(scenery, &mixed));
         }

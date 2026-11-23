@@ -1509,32 +1509,6 @@ pub(super) fn building_draws_of(bundle: &str) -> &'static [(&'static str, Vec<Sc
     }
 }
 
-/// The Sunken Shrine kit's modules and their resources, embedded by `build.rs` (#431).
-mod shrine_bundle {
-    include!(concat!(env!("OUT_DIR"), "/shrine_bundle.rs"));
-}
-
-/// The shrine kit's draws (in the module frame) of entry `key`, every module imported once.
-pub(super) fn shrine_draws(key: &str) -> &'static [SceneDraw] {
-    static DRAWS: OnceLock<Vec<(&'static str, Vec<SceneDraw>)>> = OnceLock::new();
-    DRAWS
-        .get_or_init(|| {
-            shrine_bundle::ENTRIES
-                .iter()
-                .map(|&(key, path)| {
-                    let model = Model::parse(&bundle_glb(path, shrine_bundle::FILES), "")
-                        .expect("a shrine kit entry is valid glTF");
-                    let draws =
-                        model.draws_placed(key, three_d_animation::Mat4::IDENTITY, &[], None);
-                    (key, draws)
-                })
-                .collect()
-        })
-        .iter()
-        .find(|(entry, _)| *entry == key)
-        .map_or(&[], |(_, draws)| draws.as_slice())
-}
-
 use crate::nature::{fort_bundle, outpost_bundle};
 
 /// The Outpost kit's draws (in the module frame) of `entry` (`<key>` or `<key>/<variant>`),
@@ -3259,9 +3233,6 @@ mod rolling_ranger_tests {
     #[test]
     fn every_placed_kit_entry_loads_from_the_live_bundles() {
         let scenery = mmorpg_scenery::greyhaven_vale_scenery();
-        for part in mmorpg_presentation::shrine::parts(&scenery) {
-            assert!(!shrine_draws(part.key).is_empty(), "{}", part.key);
-        }
         for part in mmorpg_presentation::outpost_kit::parts(&scenery) {
             assert!(!outpost_draws(part.entry).is_empty(), "{}", part.entry);
             // The frame draws it textured (#753).

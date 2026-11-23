@@ -126,8 +126,6 @@ pub struct Presentation {
     buildings: Vec<mmorpg_presentation::buildings::WalkIn>,
     last_buildings: Instant,
     last_camera: Instant,
-    /// The Sunken Shrine's kit modules (#431), placed once.
-    shrine: crate::world::DrawBatch,
     /// The Outpost kit buildings' modules (#420), placed once, as picking tests them.
     outpost: crate::world::DrawBatch,
     /// The same modules drawn with their textures (#753).
@@ -150,19 +148,6 @@ impl Presentation {
         }
         mmorpg_presentation::units::archer::validate()?;
         let buildings = mmorpg_presentation::buildings::WalkIn::all(&scenery);
-        let shrine = mmorpg_presentation::shrine::parts(&scenery)
-            .iter()
-            .flat_map(|part| {
-                skinned::shrine_draws(part.key)
-                    .iter()
-                    .map(|draw| crate::world::SceneDraw {
-                        model: three_d_animation::Mat4 {
-                            elements: part.model,
-                        },
-                        ..draw.clone()
-                    })
-            })
-            .collect();
         let outpost_parts = mmorpg_presentation::outpost_kit::parts(&scenery);
         let roofs: std::collections::BTreeMap<usize, u32> =
             mmorpg_presentation::outpost_kit::cottage_roofs(&scenery)
@@ -241,7 +226,6 @@ impl Presentation {
             buildings,
             last_buildings: now,
             last_camera: now,
-            shrine,
             outpost,
             outpost_textured,
         })
@@ -810,7 +794,6 @@ impl Presentation {
         frame.draws.extend(self.unit_draws(now, view));
         frame.impacts = self.take_impacts();
         let inside = self.append_buildings(&mut frame.draws, now);
-        frame.batches.push(Arc::clone(&self.shrine));
         frame.nature.extend(
             self.outpost_textured
                 .iter()

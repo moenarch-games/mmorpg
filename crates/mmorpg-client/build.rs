@@ -187,13 +187,6 @@ fn main() {
         ]),
         false,
     );
-    // Every module of the Sunken Shrine kit (#431).
-    static_bundle(
-        "shrine_bundle.rs",
-        &manifest_dir.join("../../web/public/scenery/shrine.kit"),
-        None,
-        false,
-    );
     // The cat is installed separately and may be received from the host (#733).
     // The binary contains only its immutable manifest identity, never its mesh bytes.
     static_bundle(
@@ -299,7 +292,7 @@ fn main() {
     );
     // Every ordinary placed kit of the shared inventory (#683), and their descriptors: the
     // limestone rocks (asset-tooling#536), river stones (asset-tooling#538), meadow, Wolfrun
-    // Den, discoveries and any kit registered after them.
+    // Den, discoveries, Sunken Shrine and any kit registered after them.
     placed_kits(&manifest_dir);
     // Greyhaven's ground layer materials (#525).
     let terrain = manifest_dir.join("../../web/public/scenery/greyhaven.terrain");
