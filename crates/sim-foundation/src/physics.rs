@@ -601,6 +601,19 @@ pub struct StepStats {
     pub visited: usize,
 }
 
+/// How [`World::grounded`] answered its reads since the world was built (#1148, the
+/// `grounded-reads` operation in `.performance/contract.json`). Counters only: they never feed
+/// back into the simulation, and the Rapier diagnostic backend counts nothing.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct GroundedWork {
+    /// Reads of a moving body answered by its last move's or an earlier read's support test,
+    /// still current for its position, open floor and the static geometry.
+    pub cached: u64,
+    /// Reads of a moving body answered by a fresh support cast from its pose: it was placed,
+    /// added or restored since its last move, or the static geometry changed.
+    pub casts: u64,
+}
+
 /// One explicitly timed world operation in the test/bench-only physics A/B seam.
 #[cfg(feature = "physics-ab")]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -1003,6 +1016,16 @@ impl World {
     #[must_use]
     pub fn grounded(&self, id: BodyId) -> bool {
         dispatch!(self, &self.worlds, world => world.grounded(id))
+    }
+
+    /// How [`World::grounded`] answered its reads since the world was built (#1148).
+    #[must_use]
+    pub fn grounded_work(&self) -> GroundedWork {
+        match &self.worlds {
+            #[cfg(feature = "physics-ab")]
+            Worlds::Rapier(_) => GroundedWork::default(),
+            Worlds::Engine(world) => world.grounded_work(),
+        }
     }
 
     /// Every body whose shape intersects the box, in ID order.

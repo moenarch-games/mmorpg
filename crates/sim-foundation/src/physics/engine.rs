@@ -56,9 +56,9 @@ use super::shared::{
     comes_to_rest, nearby, over_open_floor,
 };
 use super::{
-    Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, PhysicsError, PieceMedium, PieceShape,
-    RayHit, RigidBody, StepStats, StepUp, Vec3i, WATER_ANGULAR_DRAG, WATER_LINEAR_DRAG, error,
-    exact, from_subunits,
+    Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, GroundedWork, Kind, PhysicsError, PieceMedium,
+    PieceShape, RayHit, RigidBody, StepStats, StepUp, Vec3i, WATER_ANGULAR_DRAG, WATER_LINEAR_DRAG,
+    error, exact, from_subunits,
 };
 
 /// The game's centimetres per metre: the engine's length unit.
@@ -182,12 +182,13 @@ struct Support {
     grounded: bool,
 }
 
-/// The ground casts' reused hit buffer, [`World::grounded`]'s cached answers (#666) and the
-/// first engine query failure since the zone last took it (#1151).
+/// The ground casts' reused hit buffer, [`World::grounded`]'s cached answers (#666) and their
+/// work counters (#1148), and the first engine query failure since the zone last took it (#1151).
 #[derive(Clone, Default)]
 struct Probes {
     hits: Vec<QueryHit>,
     support: BTreeMap<BodyId, Support>,
+    grounded: GroundedWork,
     failure: Option<PhysicsError>,
 }
 
@@ -989,13 +990,17 @@ impl World {
         let revision = self.engine.static_revision();
         let position = body.position.map(f32::to_bits);
         let open = self.open_floor(body);
-        let cached = self.probes.lock().support.get(&id).copied();
-        if let Some(support) = cached
-            && support.revision == revision
-            && support.position == position
-            && support.open == open
         {
-            return support.grounded;
+            let mut probes = self.probes.lock();
+            if let Some(support) = probes.support.get(&id).copied()
+                && support.revision == revision
+                && support.position == position
+                && support.open == open
+            {
+                probes.grounded.cached += 1;
+                return support.grounded;
+            }
+            probes.grounded.casts += 1;
         }
         let grounded = match self.support_test(body) {
             Ok(grounded) => grounded,
@@ -1279,6 +1284,11 @@ impl World {
     /// the zone checks it once per tick and fails the tick with it.
     pub fn take_query_failure(&mut self) -> Result<(), PhysicsError> {
         self.probes.get_mut().failure.take().map_or(Ok(()), Err)
+    }
+
+    /// [`World::grounded`]'s reads since the world was built, by how each was answered.
+    pub fn grounded_work(&self) -> GroundedWork {
+        self.probes.lock().grounded
     }
 
     fn has_authored_geometry(&self) -> bool {

@@ -35,7 +35,7 @@ Recorded measurement environment: Rust 1.98.1, `Cargo.lock` SHA-256 `36adf21ccc4
 
 ## Operation scaling contracts (#138)
 
-`.performance/contract.json` (schema 2) declares the zone's natural operations, the dimensions they scale with and deterministic growth bounds; `coding-tooling performance work --root . --json` checks them against counters that `scripts/operation-work.py` collects from the `operation_work` example of `mmorpg-protocol` and the `creature_tick_work` example of `mmorpg-core` (the `performance:work` capability). Every sampled projection is also compared with the exhaustive visibility oracle, so a smaller count can never come from a wrong answer. Wall-clock time plays no part.
+`.performance/contract.json` (schema 2) declares the zone's natural operations, the dimensions they scale with and deterministic growth bounds; `coding-tooling performance work --root . --json` checks them against counters that `scripts/operation-work.py` collects from the `operation_work` example of `mmorpg-protocol` the `creature_tick_work` example of `mmorpg-core` and the `grounded_work` example of `sim-foundation` (the `performance:work` capability). Every sampled projection is also compared with the exhaustive visibility oracle, so a smaller count can never come from a wrong answer. Wall-clock time plays no part.
 
 | Operation | Dimensions | Bound |
 | --- | --- | --- |
@@ -44,6 +44,7 @@ Recorded measurement environment: Rust 1.98.1, `Cargo.lock` SHA-256 `36adf21ccc4
 | `publish-dense-hub` | recipients in one interest radius | the largest recipient's tests linear in recipients (total work is honestly quadratic); at most 64 visible and 64 built entity records per recipient; one zone-view build per tick; no sheet built for unchanged viewers |
 | `tick-maintenance` | stationary population, players crossing a cell boundary | no full index rebuild; bucket writes constant in population and linear in movers; position re-reads linear |
 | `creature-tick` | creatures asleep far from the player, creatures fighting it | creature visits constant in sleepers and linear in fighters; no interest query allocates; warm-tick heap allocations constant in sleepers (#1086, from `mmorpg-core`'s `creature_tick_work` example; see [combat workloads](COMBAT_WORKLOADS.md)) |
+| `grounded-reads` | units standing still, steady ticks | no support cast on a steady tick (each read answers from the move's own support test); at most one cast per unit on a tick whose static geometry changed after the moves (#1148, from `sim-foundation`'s `grounded_work` example) |
 | `deferred-reward-drain` | deferred zone payouts waiting (#1112) | entries visited and paid constant in the backlog, at most the tick's grant bound (16 in the samples); an empty backlog visits none |
 | `incident-receipt-expiry` | players holding receipts, content receipts each holds (#1128) | on the tick that ends an incident, one visit per player plus one per expired receipt: linear in players, constant in the content receipts they hold; a tick that ends no incident visits none |
 

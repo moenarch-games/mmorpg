@@ -256,6 +256,41 @@
       ]
     },
     {
+      "id": "grounded-reads",
+      "description": "Answer every moving body's grounded read each tick (#1148): a read is answered by the body's last move's own support test, cached by static-geometry revision, position and open floor, and casts physics-engine's support test only when nothing current is cached (placed, added or restored since its move, or the static geometry changed after it). Measured by sim-foundation's grounded_work example and test.",
+      "dimensions": {
+        "units": { "description": "units standing still on a flat floor, each read once per tick" },
+        "ticks": { "description": "steady ticks measured before and after the change tick" }
+      },
+      "scalePoints": [
+        { "units": 8, "ticks": 16 },
+        { "units": 32, "ticks": 16 },
+        { "units": 128, "ticks": 16 },
+        { "units": 128, "ticks": 4 },
+        { "units": 128, "ticks": 64 }
+      ],
+      "metrics": [
+        {
+          "name": "steady_tick_casts",
+          "unit": "casts",
+          "signal": "operation-count",
+          "notes": "Support casts in the steady tick that cast most, the one right after the change included: every read is answered from the moves' results.",
+          "budget": { "max": 0 }
+        },
+        {
+          "name": "geometry_change_casts",
+          "unit": "casts",
+          "signal": "operation-count",
+          "notes": "Support casts in the tick a platform rose after the units moved: the static revision changed, so each unit's read casts once and caches the answer.",
+          "budget": { "max": 128 },
+          "growth": [
+            { "dimension": "units", "bound": "linear" },
+            { "dimension": "ticks", "bound": "constant" }
+          ]
+        }
+      ]
+    },
+    {
       "id": "area-lookup",
       "description": "One indexed named-area lookup (#1063): discovery and explore objectives run it for every player every tick, and its polygon edge tests stay under a fixed bound however densely Greyhaven's traced areas are sampled.",
       "dimensions": {
