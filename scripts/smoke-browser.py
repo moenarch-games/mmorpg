@@ -1296,7 +1296,8 @@ class BrowserAcceptance(unittest.TestCase):
         claim = self.page.get_by_role("button", name="Claim rewards", exact=True)
         expect(panel).to_be_visible()
         expect(self.page.locator("#loot-title")).to_have_text("Timber Wolf")
-        expect(rewards).to_have_text("2 copper · Torn Fur × 2")
+        # Wolf 108 rolls from its own stream since #861, as corpse-loot-resume.expected records.
+        expect(rewards).to_have_text("1 copper · Torn Fur × 2")
         expect(self.page.locator("#copper-status")).to_have_text("Copper: 0")
         self.page.screenshot(path=str(ARTIFACTS / "loot-before-claim.png"))
         claim.click()
@@ -1306,7 +1307,7 @@ class BrowserAcceptance(unittest.TestCase):
         # authoritative ticks reaches the frame. Copper/loot absence still recover.
         self.page.evaluate("window.__lootStep(4)")
         expect(rewards).to_have_text("No rewards remain on this corpse.")
-        expect(self.page.locator("#copper-status")).to_have_text("Copper: 2")
+        expect(self.page.locator("#copper-status")).to_have_text("Copper: 1")
         sent = self.page.evaluate("window.__lootSent.filter(c => c.kind === 'loot').length")
         claim.evaluate("button => button.click()")
         self.frames(2)
@@ -1322,11 +1323,11 @@ class BrowserAcceptance(unittest.TestCase):
           window.__lootStep(1);
         }""")
         self.assertEqual(self.page.evaluate("window.__lootLatest().events.some(e => e.kind === 'error' && e.code === 'empty-loot')"), True)
-        self.assertEqual(self.page.evaluate("window.__lootLatest().viewer.copper"), 2)
+        self.assertEqual(self.page.evaluate("window.__lootLatest().viewer.copper"), 1)
         self.leave_world()
         # The stored character returns with its looted copper and a closed, empty loot window.
         self.enter_world(ticking=False, fresh=False)
-        expect(self.page.locator("#copper-status")).to_have_text("Copper: 2")
+        expect(self.page.locator("#copper-status")).to_have_text("Copper: 1")
         expect(panel).to_be_hidden()
         expect(self.page.locator("#loot-feedback")).to_have_text("")
 
@@ -1343,13 +1344,13 @@ class BrowserAcceptance(unittest.TestCase):
           window.__lootSource.latestProjection = () => window.__lootFixture;
         }""")
         self.page.get_by_role("button", name="Loot", exact=True).click()
-        expect(rewards).to_have_text("2 copper · Torn Fur × 2")
+        expect(rewards).to_have_text("1 copper · Torn Fur × 2")
         claim.click()
         expect(self.page.locator("#loot-feedback")).to_contain_text("bags are full")
-        expect(rewards).to_have_text("2 copper · Torn Fur × 2")
+        expect(rewards).to_have_text("1 copper · Torn Fur × 2")
         expect(self.page.locator("#copper-status")).to_have_text("Copper: 0")
         expect(claim).to_be_enabled()
-        self.assertEqual(self.page.evaluate("window.__lootLatest().viewer.copper"), 2)
+        self.assertEqual(self.page.evaluate("window.__lootLatest().viewer.copper"), 1)
         for width, height in [(390,844),(640,360)]:
             self.page.set_viewport_size({"width":width,"height":height})
             box = panel.bounding_box()
@@ -1359,7 +1360,8 @@ class BrowserAcceptance(unittest.TestCase):
             self.assertLessEqual(box["y"]+box["height"],height)
             self.assertFalse(panel.evaluate("p => p.scrollWidth > p.clientWidth"))
             self.assertTrue(claim.evaluate("b => {const r=b.getBoundingClientRect();return b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}"))
-            self.assertTrue(self.page.get_by_role("button", name="Characters", exact=True).evaluate(
+            # The way out is the game menu's toggle since #636; Characters waits inside the menu.
+            self.assertTrue(self.page.get_by_role("button", name="Menu (Esc)", exact=True).evaluate(
                 "b => {const r=b.getBoundingClientRect();return b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}"))
             self.page.screenshot(path=str(ARTIFACTS / f"loot-full-bag-{width}x{height}.png"))
         self.page.get_by_role("button", name="Close loot").focus()
@@ -1373,7 +1375,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.leave_world()
         # The third entry also resumes the stored character, never the fixture.
         self.enter_world(ticking=False, fresh=False)
-        expect(self.page.locator("#copper-status")).to_have_text("Copper: 2")
+        expect(self.page.locator("#copper-status")).to_have_text("Copper: 1")
         expect(rewards).not_to_contain_text("Torn Fur")
         expect(self.page.locator("#loot-feedback")).to_have_text("")
 
