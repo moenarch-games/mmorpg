@@ -8,6 +8,7 @@ import { ScenarioSource, type ScenarioChoice, type ScenarioZoneHandle } from "./
 import { markStartup } from "../startup-marks";
 import { deriveWorld } from "./derived-world";
 import type { ActionGraph, LabOptions, LabSetup } from "./action-lab";
+import type { EntryPreview } from "./entry-prebuild";
 import type { ConfigCheck, LabComparison, LabConfig, LabNetwork, LabRun, LabScenario } from "./lab-experiment";
 import type { ZoneWorld } from "./world-source";
 import type { PhysiqueModel } from "../physique";
@@ -73,9 +74,11 @@ export async function loadLocalWorld(characters: LocalCharacters, wasmReady: () 
   staticSceneDerived = Promise.all([
     derived.scene.then((scene) => {
       if (scene) { generated.seedStaticScene(scene.skeleton, scene.layout, scene.vertices, scene.indices, scene.models); }
+      markStartup("scene-derived");
     }),
     derived.grass.then((grass) => {
       if (grass) { generated.seedGrass(grass); }
+      markStartup("grass-derived");
     }),
   ]).then(() => {});
   const world = createLocalWorld(generated, characters);
@@ -190,6 +193,16 @@ export const labExperiments: LabExperiments = {
 /** The area id of a stored local character's committed location, or null (#240). */
 export function committedArea(characters: LocalCharacters, characterId: string): number | null {
   return generated.committedArea(characters.entries, characterId) ?? null;
+}
+
+/**
+ * Where and when a local character's next entry is expected to start (#855): its feet in core units, its facing in
+ * radians and the zone tick of its first projection, from its committed record and the browser's saved world. The
+ * selection screen prepares that view; the zone still decides on entry.
+ */
+export function entryPreview(characters: LocalCharacters, characterId: string): EntryPreview {
+  const [x, y, z, centreY, facing, tick] = generated.entryPreview(characters.entries, characterId, characters.loadWorld());
+  return { feet: [x!, y!, z!], centreY: centreY!, facing: facing!, tick: BigInt(tick!) };
 }
 
 /** The committed level of a stored local character, or null if it was never played. */
