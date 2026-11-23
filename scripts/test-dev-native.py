@@ -113,6 +113,10 @@ class LauncherAcceptance(unittest.TestCase):
             path = self.bin/command; path.write_text(FAKE); path.chmod(0o755)
         self.env = dict(os.environ, PATH=str(self.bin)+os.pathsep+os.environ['PATH'],
                         FIXTURE_ROOT=str(self.repo), CONTROL=str(self.control), CARGO_TARGET_DIR=str(self.repo/'target'))
+        # The launcher refuses to start without a desktop display. The fake client opens no
+        # window, so a headless runner (full validation in CI) names one that is never used.
+        if not (self.env.get('WAYLAND_DISPLAY') or self.env.get('DISPLAY')):
+            self.env['DISPLAY'] = ':0'
         self.process = None
         self.output = self.base/'output'
 
