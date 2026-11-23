@@ -13,10 +13,25 @@ The default renders in SwiftShader, as CI does. MMORPG_SMOKE_BROWSER_CHANNEL=chr
 xvfb-run) launches that installed browser on the host GPU instead. MMORPG_SMOKE_BROWSER_ANGLE=vulkan
 keeps the bundled Chromium but renders through the host GPU's Vulkan driver: on a workstation where
 SwiftShader's Greyhaven frames are too slow for screenshots to finish in time, use that (#1079).
+
+Every run is bounded (#1130). Each test runs in its own process under its own deadline
+(MMORPG_SMOKE_BROWSER_TEST_MINUTES, default 12) and the whole run has one
+(MMORPG_SMOKE_BROWSER_RUN_MINUTES, default 60); tests that no longer fit are reported as not run.
+A test that reaches its deadline fails naming the line it was on. Each test leaves in
+artifacts/browser/: `<test>-console.log` (written as it runs), `<test>.png` (the last screenshot) and
+`<test>-state.json` (the stage it was in plus the page's loading and debug state); `summary.json`
+lists every test's outcome, time and last stage. A test that stops answering is killed with its
+browser one minute after its deadline, and no browser outlives the run.
+
+On a GPU the whole run takes about ten minutes. SwiftShader cannot fit it in a CI job: around the
+outpost Greyhaven draws about 5.5 million triangles a frame (two sun cascades and the main pass), which
+SwiftShader renders at 4 to 13 seconds a frame on 16 cores, and one in-world screenshot takes one to
+two minutes (#1130).
 """
 from __future__ import annotations
 
 import base64
+import ctypes
 import functools
 import http.server
 import json
@@ -24,8 +39,12 @@ import math
 import os
 import re
 from pathlib import Path
+import signal
+import subprocess
+import sys
 import threading
 import time
+import traceback
 import unittest
 
 from playwright.sync_api import expect, sync_playwright
@@ -49,6 +68,36 @@ ANGLE = os.environ.get("MMORPG_SMOKE_BROWSER_ANGLE", "swiftshader")
 # Greyhaven's character stage streams its whole figure set before it reveals; a slow renderer or
 # a cold asset cache can take minutes, and the wait is not a performance gate.
 STAGE_LOAD_MS = 300_000
+TEST_SECONDS = float(os.environ.get("MMORPG_SMOKE_BROWSER_TEST_MINUTES", "12")) * 60
+RUN_SECONDS = float(os.environ.get("MMORPG_SMOKE_BROWSER_RUN_MINUTES", "60")) * 60
+# The end of a test's budget is kept for its evidence: under SwiftShader one in-world screenshot
+# takes one to two minutes (#1130).
+EVIDENCE_SECONDS = 150
+# How long after its deadline a test that stopped answering is killed.
+KILL_GRACE_SECONDS = 60
+# Set by the runner for the one test a child process runs: its deadline in epoch seconds.
+DEADLINE = float(os.environ["MMORPG_SMOKE_BROWSER_DEADLINE"]) if "MMORPG_SMOKE_BROWSER_DEADLINE" in os.environ else None
+# Harness methods left out of a stage's call chain.
+HARNESS = {"record_stage", "stage", "instrumented", "check_deadline", "remaining_ms"}
+# Loading and debug state for the evidence; reads only, and never needs the debug API.
+PAGE_STATE = """() => {
+  const visible = selector => { const el = document.querySelector(selector); return el ? !el.hidden && el.getClientRects().length > 0 : null; };
+  const text = selector => document.querySelector(selector)?.textContent?.trim().slice(0, 300) ?? null;
+  const enter = [...document.querySelectorAll('button')].find(button => /^Enter World/.test(button.textContent?.trim() ?? ''));
+  let zoneTick = null;
+  try { zoneTick = String(window.__valeDebug?.worldSource?.()?.latestProjection?.()?.tick ?? null); } catch (error) { zoneTick = `unreadable: ${error}`; }
+  return JSON.stringify({
+    url: location.href, readyState: document.readyState,
+    stageLoader: {visible: visible('#character-stage-loader'), text: text('#character-stage-loader')},
+    characterSelect: visible('#character-select'), hud: visible('.hud'),
+    enterWorld: enter ? {disabled: enter.disabled, text: enter.textContent.trim()} : null,
+    enterNote: text('#enter-world-note'), connection: text('#connection-status'),
+    openDialogs: [...document.querySelectorAll('dialog[open]')].map(dialog => dialog.id),
+    debugApi: typeof window.__valeDebug, zoneTick, calls: window.__calls ?? null,
+    startupMarks: Object.fromEntries(performance.getEntriesByType('mark').filter(mark => mark.name.startsWith('vale:'))
+      .map(mark => [mark.name.slice(5), Math.round(mark.startTime)])),
+  });
+}"""
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -83,18 +132,59 @@ class BrowserAcceptance(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        (ARTIFACTS / "browser-evidence.json").write_text(json.dumps(cls.evidence, indent=2))
+        # The runner merges each test's part into browser-evidence.json.
+        (ARTIFACTS / f"{os.environ.get('MMORPG_SMOKE_BROWSER_TEST', 'run')}.evidence.json").write_text(json.dumps(cls.evidence, indent=2))
         cls.browser.close()
         cls.playwright.stop()
         cls.server.shutdown()
         cls.server.server_close()
         cls.server_thread.join()
 
+    def remaining_ms(self, wanted_ms):
+        """`wanted_ms`, cut to what is left before this test's deadline."""
+        if DEADLINE is None:
+            return wanted_ms
+        return max(1_000, min(wanted_ms, int((DEADLINE - EVIDENCE_SECONDS - time.time()) * 1000)))
+
+    def check_deadline(self):
+        if DEADLINE is not None and time.time() > DEADLINE - EVIDENCE_SECONDS:
+            self.fail(f"Deadline: {self._testMethodName} used its {TEST_SECONDS / 60:g}-minute budget at {self.stage()}")
+
+    def stage(self):
+        """This file's call chain from the test method inward, e.g. `test_x:700 → enter_world:190`."""
+        here = os.path.abspath(__file__)
+        chain = [f"{frame.name}:{frame.lineno}" for frame in traceback.extract_stack()
+                 if os.path.abspath(frame.filename) == here and frame.name not in HARNESS]
+        tests = [i for i, link in enumerate(chain) if link.startswith("test_")]
+        return " → ".join(chain[tests[-1]:] if tests else chain)
+
+    def record_stage(self, call):
+        """The stage each page call starts from, on disk at once: a killed test still names it."""
+        if not self.recording:
+            return
+        self.last_stage = {"stage": self.stage(), "call": call, "seconds": round(time.monotonic() - self.started, 1)}
+        (ARTIFACTS / f"{self._testMethodName}.progress.json").write_text(json.dumps(self.last_stage))
+
+    def watch(self, page):
+        """Records the page's errors, its console (to disk as it arrives) and the stage of each call."""
+        page.on("pageerror", lambda error: self.errors.append(str(error)))
+        page.on("pageerror", lambda error: self.console_log.write(f"[pageerror] {error}\n"))
+        page.on("console", lambda message: self.console_log.write(f"[{message.type}] {message.text}\n"))
+        for name in ("goto", "reload", "evaluate", "wait_for_function", "screenshot"):
+            def instrumented(*args, _original=getattr(page, name), _name=name, **kwargs):
+                self.record_stage(f"page.{_name}")
+                return _original(*args, **kwargs)
+            setattr(page, name, instrumented)
+        return page
+
     def setUp(self):
         self.errors = []
+        self.started = time.monotonic()
+        self.recording = True
+        self.last_stage = {"stage": "setUp", "call": None, "seconds": 0}
+        self.console_log = open(ARTIFACTS / f"{self._testMethodName}-console.log", "w", buffering=1)
         self.context = self.browser.new_context(viewport={"width": 1440, "height": 900}, reduced_motion="reduce")
-        self.page = self.context.new_page()
-        self.page.on("pageerror", lambda error: self.errors.append(str(error)))
+        self.page = self.watch(self.context.new_page())
         self.context.add_init_script("""(() => {
           window.__calls = {reads: 0, writes: 0, draws: 0};
           // Pose evidence needs actual submitted identities/transforms, not repeated immutable mesh buffers.
@@ -144,18 +234,46 @@ class BrowserAcceptance(unittest.TestCase):
           }
         })();""")
 
+    def evidence_ms(self, wanted_ms):
+        """`wanted_ms`, cut to what is left of the evidence time before the runner's kill."""
+        if DEADLINE is None:
+            return wanted_ms
+        return max(1_000, min(wanted_ms, int((DEADLINE + KILL_GRACE_SECONDS / 2 - time.time()) * 1000)))
+
     def tearDown(self):
+        """The last screenshot and the page's state, each bounded: under SwiftShader one in-world
+        screenshot takes minutes, and a page that stopped answering must still leave evidence."""
+        self.recording = False
+        entry = {"test": self._testMethodName, "pageErrors": self.errors, "lastStage": self.last_stage,
+                 "seconds": round(time.monotonic() - self.started, 1)}
+        result = getattr(self._outcome, "result", None)
+        for test, text in (result.errors + result.failures) if result else []:
+            if test is self:
+                here = re.escape(os.path.basename(__file__))
+                entry["failedAt"] = " → ".join(f"{function}:{line}" for line, function in re.findall(here + r'", line (\d+), in (\w+)', text))
+                entry["failure"] = next((line for line in text.splitlines() if re.match(r"\w+(\.\w+)*(Error|Exception):", line)), text.strip().splitlines()[-1])[:300]
         try:
-            self.page.screenshot(path=str(ARTIFACTS / f"{self._testMethodName}.png"))
-            self.evidence.append({"test": self._testMethodName, "pageErrors": self.errors})
+            try:
+                entry["pageState"] = json.loads(self.page.wait_for_function(PAGE_STATE, timeout=self.evidence_ms(15_000)).json_value())
+            except Exception as error:
+                entry["pageState"] = f"unreadable: {str(error).splitlines()[0]}"
+            shot = ARTIFACTS / f"{self._testMethodName}.png"
+            try:
+                self.page.screenshot(path=str(shot), timeout=self.evidence_ms(120_000))
+                entry["screenshot"] = shot.name
+            except Exception as error:
+                entry["screenshot"] = f"not captured: {str(error).splitlines()[0]}"
+            self.evidence.append(entry)
+            (ARTIFACTS / f"{self._testMethodName}-state.json").write_text(json.dumps(entry, indent=2))
         finally:
             self.context.close()
+            self.console_log.close()
         self.assertEqual(self.errors, [], "Browser application raised an uncaught error")
 
     def open(self, query=""):
         self.page.goto(self.url + query)
-        self.page.wait_for_function("window.__calls.draws > 0")
-        expect(self.page.locator("#character-stage-loader")).to_be_hidden(timeout=STAGE_LOAD_MS)
+        self.page.wait_for_function("window.__calls.draws > 0", timeout=self.remaining_ms(30_000))
+        expect(self.page.locator("#character-stage-loader")).to_be_hidden(timeout=self.remaining_ms(STAGE_LOAD_MS))
         expect(self.page.get_by_role("slider", name="Character rotation")).to_be_visible()
         self.wait_for_zone()
         self.frames()
@@ -240,10 +358,13 @@ class BrowserAcceptance(unittest.TestCase):
         return self.page.evaluate("prefix => Object.keys(localStorage).filter(key => key.startsWith(prefix))", LEGACY_CHECKPOINT_PREFIX)
 
     def frames(self, count=3):
-        self.page.evaluate("""count => new Promise(resolve => {
-          function next() { if (--count <= 0) resolve(); else requestAnimationFrame(next); }
+        """Waits `count` animation frames; a page that stops drawing fails at the test's deadline."""
+        self.check_deadline()
+        self.page.evaluate("""([count, limit]) => new Promise((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error(`${count} animation frames did not arrive within ${limit} ms`)), limit);
+          function next() { if (--count <= 0) { clearTimeout(timer); resolve(); } else requestAnimationFrame(next); }
           requestAnimationFrame(next);
-        })""", count)
+        })""", [count, self.remaining_ms(600_000)])
 
     def click_world_setup(self, query="?debug"):
         """Keep the real zone deterministic while physical pointer events drive the page."""
@@ -1214,10 +1335,9 @@ class BrowserAcceptance(unittest.TestCase):
     def test_mobile_touch_rotation_scroll_and_layout(self):
         self.context.close()
         self.context = self.browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True, device_scale_factor=1)
-        self.page = self.context.new_page()
-        self.page.on("pageerror", lambda error: self.errors.append(str(error)))
+        self.page = self.watch(self.context.new_page())
         self.page.goto(self.url)
-        expect(self.page.locator("#character-stage-loader")).to_be_hidden(timeout=STAGE_LOAD_MS)
+        expect(self.page.locator("#character-stage-loader")).to_be_hidden(timeout=self.remaining_ms(STAGE_LOAD_MS))
         surface = self.page.locator("#preview-surface")
         surface.scroll_into_view_if_needed()
         self.frames(10)
@@ -1774,19 +1894,25 @@ class BrowserAcceptance(unittest.TestCase):
     def test_character_creation_classes_sex_and_roster_persistence(self):
         self.open()
         self.page.get_by_role("button", name="Create character", exact=True).click()
-        expect(self.page.get_by_role("heading", name="Create character")).to_be_visible()
+        # Three steps since #772: class, then sex and appearance, then name.
+        expect(self.page.get_by_role("heading", name="Choose your class")).to_be_visible()
         class_radios = self.page.get_by_role("group", name="Class").get_by_role("radio")
         self.assertEqual(class_radios.count(), 7)
         expect(self.page.get_by_role("radio", name=re.compile("^Warden"))).to_be_checked()
-        expect(self.page.get_by_role("radio", name="Male", exact=True)).to_be_checked()
-
-        self.page.get_by_label("Name").fill("Lyra Vale")
         self.page.get_by_role("radio", name=re.compile("^Ranger")).check()
+        self.page.get_by_role("button", name="Continue", exact=True).click()
+
+        expect(self.page.get_by_role("heading", name="Shape your character")).to_be_visible()
+        expect(self.page.get_by_role("radio", name="Male", exact=True)).to_be_checked()
         self.page.get_by_role("radio", name="Female").check()
         expect(self.page.locator("#character-subtitle")).to_contain_text("Female Human Ranger")
         expect(self.page.locator("#equipment-list")).to_contain_text("Ashwood Longbow")
         self.frames()
         self.page.screenshot(path=str(ARTIFACTS / "character-creation-female-ranger.png"))
+        self.page.get_by_role("button", name="Continue", exact=True).click()
+
+        expect(self.page.get_by_role("heading", name="Begin your story")).to_be_visible()
+        self.page.get_by_label("Name").fill("Lyra Vale")
         self.page.get_by_role("button", name="Create character", exact=True).filter(visible=True).click()
 
         roster_buttons = self.page.locator("#character-roster")
@@ -1812,11 +1938,13 @@ class BrowserAcceptance(unittest.TestCase):
         roster_buttons = self.page.locator("#character-roster")
         expect(roster_buttons.get_by_role("button", name=re.compile("Lyra Vale"))).to_be_visible()
         self.page.get_by_role("button", name="Create character", exact=True).click()
-        self.page.get_by_label("Name").fill("Dorian Voss")
         self.page.get_by_role("radio", name=re.compile("^Arcanist")).check()
+        self.page.get_by_role("button", name="Continue", exact=True).click()
         expect(self.page.get_by_role("radio", name="Male", exact=True)).to_be_checked()
         expect(self.page.locator("#character-subtitle")).to_contain_text("Male Human Arcanist")
         expect(self.page.locator("#equipment-list")).to_contain_text("Emberglass Staff")
+        self.page.get_by_role("button", name="Continue", exact=True).click()
+        self.page.get_by_label("Name").fill("Dorian Voss")
         self.page.get_by_role("button", name="Create character", exact=True).filter(visible=True).click()
         expect(self.page.locator("#character-roster").get_by_role("button", name=re.compile("Dorian Voss"))).to_be_visible()
         self.page.screenshot(path=str(ARTIFACTS / "character-creation-roster.png"))
@@ -1891,9 +2019,12 @@ class BrowserAcceptance(unittest.TestCase):
         self.frames(3)
 
     def create_and_select(self, name, class_label):
+        """Creation's three steps (#772): class, then sex and appearance, then name."""
         self.page.get_by_role("button", name="Create character", exact=True).click()
-        self.page.get_by_label("Name").fill(name)
         self.page.get_by_role("radio", name=re.compile(f"^{class_label}")).check()
+        self.page.get_by_role("button", name="Continue", exact=True).click()
+        self.page.get_by_role("button", name="Continue", exact=True).click()
+        self.page.get_by_label("Name").fill(name)
         self.page.get_by_role("button", name="Create character", exact=True).filter(visible=True).click()
         expect(self.page.locator("#character-name")).to_have_text(name)
 
@@ -1952,8 +2083,7 @@ class BrowserAcceptance(unittest.TestCase):
         # One real touch/high-DPI layout with the same approved artwork and long-press tooltip.
         mobile = self.browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2, is_mobile=True, has_touch=True, reduced_motion="reduce")
         try:
-            page = mobile.new_page()
-            page.on("pageerror", lambda error: self.errors.append(str(error)))
+            page = self.watch(mobile.new_page())
             page.goto(self.url + "?debug")
             page.get_by_role("button", name=re.compile("^Enter World")).click()
             expect(page.locator(".hud")).to_be_visible()
@@ -2417,8 +2547,7 @@ class BrowserAcceptance(unittest.TestCase):
     def test_battle_royale_practice_touch(self):
         self.context.close()
         self.context = self.browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True, device_scale_factor=1)
-        self.page = self.context.new_page()
-        self.page.on("pageerror", lambda error: self.errors.append(str(error)))
+        self.page = self.watch(self.context.new_page())
         session = self.context.new_cdp_session(self.page)
 
         def drag(start, end, hold_ms):
@@ -2550,13 +2679,151 @@ class BrowserAcceptance(unittest.TestCase):
     def test_battle_royale_fortress_walkthrough_phone(self):
         self.context.close()
         self.context = self.browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True, device_scale_factor=1)
-        self.page = self.context.new_page()
-        self.page.on("pageerror", lambda error: self.errors.append(str(error)))
+        self.page = self.watch(self.context.new_page())
         stops = self.fortress_walkthrough(touch=True)
         self.assert_fortress_route(stops)
         # The touch controls stay usable over the fortress.
         expect(self.page.get_by_role("button", name="Attack", exact=True)).to_be_visible()
 
 
+def descendants(root):
+    """Every live process below `root`, read from /proc."""
+    children = {}
+    for stat in Path("/proc").glob("[0-9]*/stat"):
+        try:
+            ppid = int(stat.read_text().rsplit(")", 1)[1].split()[1])
+        except (OSError, IndexError, ValueError):
+            continue
+        children.setdefault(ppid, []).append(int(stat.parent.name))
+    found, queue = [], [root]
+    while queue:
+        for child in children.get(queue.pop(), []):
+            found.append(child)
+            queue.append(child)
+    return found
+
+
+def alive(pid):
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] != "Z"
+    except (OSError, IndexError):
+        return False
+
+
+def reap():
+    """Collects the exit of every process this runner adopted."""
+    while True:
+        try:
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+        except ChildProcessError:
+            return
+        if pid == 0:
+            return
+
+
+def stop(pids, process=None):
+    """SIGTERM, then SIGKILL, to `pids`: a test's Python, its Playwright driver and its browser."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        for pid in pids:
+            try:
+                os.kill(pid, sig)
+            except ProcessLookupError:
+                pass
+        if process is not None:
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                continue
+        give_up = time.monotonic() + 10
+        while any(alive(pid) for pid in pids) and time.monotonic() < give_up:
+            reap()
+            time.sleep(0.2)
+        if not any(alive(pid) for pid in pids):
+            break
+    reap()
+
+
+def run_isolated(names):
+    """Runs each test in its own process under its own deadline, within the run's deadline (#1130)."""
+    ARTIFACTS.mkdir(parents=True, exist_ok=True)
+    if sys.platform == "linux":
+        # PR_SET_CHILD_SUBREAPER: a browser whose driver died is adopted here and stopped, never orphaned.
+        ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0)
+
+    def interrupted(signum, _frame):
+        raise SystemExit(128 + signum)
+
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, interrupted)
+    started = time.monotonic()
+    run_deadline = started + RUN_SECONDS
+    results, current = [], None
+    try:
+        for name in names:
+            budget = min(TEST_SECONDS, run_deadline - time.monotonic() - KILL_GRACE_SECONDS)
+            if budget < EVIDENCE_SECONDS + 120:
+                results.append({"test": name, "outcome": "not run", "minutes": 0,
+                                 "stage": f"no time left in the run's {RUN_SECONDS / 60:g}-minute deadline"})
+                continue
+            print(f"=== {name}: deadline {budget / 60:.1f} min", file=sys.stderr, flush=True)
+            env = {**os.environ, "MMORPG_SMOKE_BROWSER_DEADLINE": str(time.time() + budget), "MMORPG_SMOKE_BROWSER_TEST": name}
+            for stale in (f"{name}-state.json", f"{name}.progress.json", f"{name}.evidence.json"):
+                (ARTIFACTS / stale).unlink(missing_ok=True)
+            began = time.monotonic()
+            current = subprocess.Popen([sys.executable, os.path.abspath(__file__), f"BrowserAcceptance.{name}"], env=env)
+            try:
+                outcome = "passed" if current.wait(timeout=budget + KILL_GRACE_SECONDS) == 0 else "failed"
+            except subprocess.TimeoutExpired:
+                print(f"=== {name}: stopped answering; killing it and its browser", file=sys.stderr, flush=True)
+                stop([current.pid, *descendants(current.pid)], current)
+                outcome = "killed"
+            current = None
+            stop(descendants(os.getpid()))
+            progress = ARTIFACTS / f"{name}.progress.json"
+            last = json.loads(progress.read_text()) if progress.is_file() else {}
+            progress.unlink(missing_ok=True)
+            state = ARTIFACTS / f"{name}-state.json"
+            failed = json.loads(state.read_text()) if state.is_file() else {}
+            if failed.get("failedAt"):
+                stage = f"{failed['failedAt']}: {failed.get('failure')}"
+            else:
+                stage = f"{last.get('stage')} ({last.get('call')})" if last else "before its first page call"
+            results.append({"test": name, "outcome": outcome, "minutes": round((time.monotonic() - began) / 60, 1),
+                            "stage": None if outcome == "passed" else stage})
+    finally:
+        if current is not None:
+            stop([current.pid, *descendants(current.pid)], current)
+        stop(descendants(os.getpid()))
+        evidence = []
+        for name in names:
+            part = ARTIFACTS / f"{name}.evidence.json"
+            if part.is_file():
+                evidence += json.loads(part.read_text())
+                part.unlink()
+        (ARTIFACTS / "browser-evidence.json").write_text(json.dumps(evidence, indent=2))
+        ran = {result["test"] for result in results}
+        results += [{"test": name, "outcome": "not run", "minutes": 0, "stage": "the run was interrupted"}
+                    for name in names if name not in ran]
+        counts = {outcome: sum(result["outcome"] == outcome for result in results)
+                  for outcome in ("passed", "failed", "killed", "not run")}
+        minutes = round((time.monotonic() - started) / 60, 1)
+        (ARTIFACTS / "summary.json").write_text(json.dumps({
+            "renderer": CHANNEL or f"bundled Chromium, ANGLE {ANGLE}", "testMinutes": TEST_SECONDS / 60,
+            "runMinutes": RUN_SECONDS / 60, "minutes": minutes, "counts": counts, "results": results}, indent=2))
+        print(f"\nBrowser acceptance in {minutes} min: " + ", ".join(f"{count} {outcome}" for outcome, count in counts.items()),
+              file=sys.stderr, flush=True)
+        for result in results:
+            if result["outcome"] != "passed":
+                print(f"  {result['outcome']:8} {result['test']} ({result['minutes']} min): {result['stage']}", file=sys.stderr, flush=True)
+    return 0 if counts["passed"] == len(names) else 1
+
+
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+    if DEADLINE is not None:
+        unittest.main(verbosity=2)
+    known = unittest.TestLoader().getTestCaseNames(BrowserAcceptance)
+    chosen = [argument.rsplit(".", 1)[-1] for argument in sys.argv[1:]] or list(known)
+    unknown = [name for name in chosen if name not in known]
+    if unknown:
+        raise SystemExit(f"Unknown browser acceptance tests: {', '.join(unknown)}")
+    sys.exit(run_isolated(chosen))
