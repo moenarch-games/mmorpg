@@ -10,7 +10,9 @@ Prerequisites: build web/ (bun run build) and `mise run setup:browser` (Playwrig
 repository's .venv plus Chromium; on a fresh host also `playwright install-deps chromium`).
 Run from the repository root: python scripts/smoke-browser.py [BrowserAcceptance.test_name ...]
 The default renders in SwiftShader, as CI does. MMORPG_SMOKE_BROWSER_CHANNEL=chrome (run it under
-xvfb-run) launches that installed browser on the host GPU instead.
+xvfb-run) launches that installed browser on the host GPU instead. MMORPG_SMOKE_BROWSER_ANGLE=vulkan
+keeps the bundled Chromium but renders through the host GPU's Vulkan driver: on a workstation where
+SwiftShader's Greyhaven frames are too slow for screenshots to finish in time, use that (#1079).
 """
 from __future__ import annotations
 
@@ -42,6 +44,10 @@ ROSTER_KEY = "mmorpg.offline-roster.v1"
 CHARACTER_ENTRY_PREFIX = "mmorpg.character.v1."
 LEGACY_CHECKPOINT_PREFIX = "mmorpg.offline-demo.v1."
 CHANNEL = os.environ.get("MMORPG_SMOKE_BROWSER_CHANNEL")
+ANGLE = os.environ.get("MMORPG_SMOKE_BROWSER_ANGLE", "swiftshader")
+# Greyhaven's character stage streams its whole figure set before it reveals; a slow renderer or
+# a cold asset cache can take minutes, and the wait is not a performance gate.
+STAGE_LOAD_MS = 300_000
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -68,8 +74,10 @@ class BrowserAcceptance(unittest.TestCase):
         cls.playwright = sync_playwright().start()
         if CHANNEL:
             cls.browser = cls.playwright.chromium.launch(channel=CHANNEL, args=["--enable-gpu", "--use-angle=gl", "--ignore-gpu-blocklist"])
-        else:
+        elif ANGLE == "swiftshader":
             cls.browser = cls.playwright.chromium.launch(args=["--use-angle=swiftshader", "--enable-unsafe-swiftshader"])
+        else:
+            cls.browser = cls.playwright.chromium.launch(args=[f"--use-angle={ANGLE}", "--enable-gpu", "--ignore-gpu-blocklist"])
         cls.evidence = []
 
     @classmethod
@@ -146,7 +154,7 @@ class BrowserAcceptance(unittest.TestCase):
     def open(self, query=""):
         self.page.goto(self.url + query)
         self.page.wait_for_function("window.__calls.draws > 0")
-        expect(self.page.locator("#character-stage-loader")).to_be_hidden(timeout=60_000)
+        expect(self.page.locator("#character-stage-loader")).to_be_hidden(timeout=STAGE_LOAD_MS)
         expect(self.page.get_by_role("slider", name="Character rotation")).to_be_visible()
         self.wait_for_zone()
         self.frames()
@@ -1201,7 +1209,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.page = self.context.new_page()
         self.page.on("pageerror", lambda error: self.errors.append(str(error)))
         self.page.goto(self.url)
-        expect(self.page.locator("#character-stage-loader")).to_be_hidden(timeout=60_000)
+        expect(self.page.locator("#character-stage-loader")).to_be_hidden(timeout=STAGE_LOAD_MS)
         surface = self.page.locator("#preview-surface")
         surface.scroll_into_view_if_needed()
         self.frames(10)
