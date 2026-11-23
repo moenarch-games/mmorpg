@@ -516,6 +516,36 @@
       ]
     },
     {
+      "id": "entry-prebuild",
+      "description": "Browser entry prebuild (#855, owner decision 2026-11-23): while the selection screen shows, the world view builds its static scene one part per idle slice, then composes and prepares the selected character's entry view; Enter World joins into it. Measured by web/tests/entry-prebuild.test.ts (bun test) over EntryPrebuild; the page reports the same counters in `__valeDebug.loadingReport().prebuild`.",
+      "dimensions": { "switches": { "description": "character or slot switches on the selection screen after the first prebuild" } },
+      "scalePoints": [{ "switches": 0 }, { "switches": 1 }, { "switches": 2 }],
+      "metrics": [
+        {
+          "name": "frame_static_builds",
+          "unit": "builds",
+          "signal": "operation-count",
+          "notes": "Static scene builds the first world frame runs after the click once the prebuild completed.",
+          "budget": { "max": 0 }
+        },
+        {
+          "name": "static_parts",
+          "unit": "parts",
+          "signal": "operation-count",
+          "notes": "Static scene parts built (decoded scene, batches, ground, grass), one per idle slice; a switch rebuilds none.",
+          "budget": { "max": 4 },
+          "growth": [{ "dimension": "switches", "bound": "constant" }]
+        },
+        {
+          "name": "prepares",
+          "unit": "prepares",
+          "signal": "operation-count",
+          "notes": "Entry views prepared: one per selected entry, again only when its render roots change (art arriving), at most MAX_PREPARES_PER_ENTRY (4) per entry.",
+          "growth": [{ "dimension": "switches", "bound": "linear" }]
+        }
+      ]
+    },
+    {
       "id": "seeded-content-entry",
       "description": "Browser world build (#855): a page whose zone content is seeded, from its world-build worker or the release-keyed derived cache, rebuilds none of the content's costly base parts (terrain heights, colliders, solid dressing) while it builds the content, catalog, presentation scenery and local zone it enters.",
       "dimensions": { "seeds": { "description": "content seeds a fresh page applies" } },
