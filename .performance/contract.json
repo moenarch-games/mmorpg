@@ -486,6 +486,33 @@
       ]
     },
     {
+      "id": "ambient-clips",
+      "description": "Browser ambient creatures and settlement prop node clips (#1095, Atlas 6.6.26): a clip samples only in the view frustum and within 150 m, every frame within 40 m and every 3rd frame (staggered) beyond; off-screen and far clips never sample. Measured by web/tests/clip-detail.test.ts (bun test) over ClipDetail, which AmbientAnimals and KitModules share.",
+      "dimensions": {
+        "placed": { "description": "clips placed, in view or not" },
+        "visible_near": { "description": "clips in view within 40 m" },
+        "visible_middle": { "description": "clips in view between 40 m and 150 m" }
+      },
+      "scalePoints": [
+        { "placed": 64, "visible_near": 4, "visible_middle": 12 },
+        { "placed": 256, "visible_near": 4, "visible_middle": 12 },
+        { "placed": 1024, "visible_near": 4, "visible_middle": 12 }
+      ],
+      "metrics": [
+        {
+          "name": "largest_clips_sampled_per_frame",
+          "unit": "clips",
+          "signal": "operation-count",
+          "notes": "Clips sampled in one warm frame: at most visible_near + ceil(visible_middle / 3). A clip back in view after a gap samples at once, so the first frame samples every visible clip; under reduced motion each samples its still pose once.",
+          "budget": { "max": 8 },
+          "growth": [
+            { "dimension": "placed", "bound": "constant" },
+            { "dimension": "visible_near", "bound": "linear" }
+          ]
+        }
+      ]
+    },
+    {
       "id": "sun-shadow-casters",
       "description": "Browser sun shadows (#1083): a camera walking and turning through Greyhaven redraws at most two of the three sun cascades a frame (the far two take turns, three-lighting cascadeUpdateIntervals), and a skinned unit's shadow proxy draws a simplified share of its body's triangles in each cascade. Measured by web/tests/shadow-lod.test.ts (bun test), without a GPU.",
       "dimensions": { "frames": { "description": "frames of a fixed camera walk (6 m/s, a quarter turn every four seconds) after the first" } },
