@@ -373,6 +373,8 @@ pub struct ZoneSimulation {
     pub(crate) raid: crate::RaidState,
     /// Private-home residents a knock woke, by NPC (#158).
     pub(crate) wakes: BTreeMap<crate::NpcId, crate::NpcWake>,
+    /// Running quest escorts (#1019), canonical.
+    pub(crate) escorts: BTreeMap<crate::NpcId, crate::EscortState>,
     /// The private run bound to this depths zone (#404); `None` in every other zone.
     pub(crate) depths: Option<crate::DepthsRun>,
     /// Where bodies stood over the last ticks, for capped hit rewind (#680); canonical,
@@ -425,6 +427,7 @@ impl ZoneSimulation {
                 || zone.content.is_depths_creature(id)
                 || zone.content.is_hunt_beast(id)
                 || zone.content.is_cart_bandit(id)
+                || zone.content.is_confrontation_foe(id)
             {
                 zone.reserve_raider(id)?;
             } else {
@@ -569,6 +572,7 @@ impl ZoneSimulation {
             next_minion: 1,
             raid: crate::RaidState::default(),
             wakes: BTreeMap::new(),
+            escorts: BTreeMap::new(),
             depths: None,
             rewind_history: crate::rewind::RewindHistory::new(),
             rewards: None,
@@ -921,6 +925,7 @@ impl ZoneSimulation {
             ZoneCommand::RaidPrepare { prep } => Some(PlayerIntent::RaidPrepare(prep)),
             ZoneCommand::Gather { node } => Some(PlayerIntent::Gather(node)),
             ZoneCommand::Inspect { spot } => Some(PlayerIntent::Inspect(spot)),
+            ZoneCommand::QuestAction { npc } => Some(PlayerIntent::QuestAction(npc)),
             ZoneCommand::Skin { creature } => Some(PlayerIntent::Skin(creature)),
             ZoneCommand::RollDepthsDrop { run, drop, choice } => {
                 Some(PlayerIntent::RollDepthsDrop { run, drop, choice })
@@ -1039,6 +1044,8 @@ impl ZoneSimulation {
         self.advance_raid(now)?;
         self.advance_hunt(now)?;
         self.advance_cart(now)?;
+        // Escorts follow, arrive or fail, and confronted foes out of their fight leave (#1019).
+        self.advance_npc_quests(now)?;
         self.advance_depths(now)?;
         self.advance_combos();
         self.advance_authored();

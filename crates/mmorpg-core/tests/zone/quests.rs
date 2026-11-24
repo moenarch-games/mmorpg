@@ -61,6 +61,7 @@ fn quest(id: QuestId, ender: NpcId, objectives: Vec<QuestObjective>) -> Quest {
         prerequisite: None,
         objectives,
         rewards: QuestRewards::default(),
+        supplies: Vec::new(),
     }
 }
 

@@ -25,6 +25,7 @@ fn piece(id: u32, x: i32, z: i32, half: [i32; 3]) -> StructurePiece {
         half_extents: half,
         health: 10,
         supports: Vec::new(),
+        name: String::new(),
         rubble: None,
     }
 }

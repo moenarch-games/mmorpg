@@ -120,6 +120,8 @@ pub const fn sell_price(item: ItemId) -> u32 {
         30 => 10,
         // The smith's great weapons (#1073).
         32..=35 => 15,
+        // The trial arms and quest supplies (#1019): worth a token copper, never a loan's value.
+        36..=41 => 1,
         _ => 0,
     }
 }

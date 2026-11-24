@@ -70,6 +70,8 @@ pub struct StructurePiece {
     pub health: u32,
     /// The pieces it rests on; empty for a piece on the ground.
     pub supports: Vec<PieceId>,
+    /// What quests call it (#1019), as in "the watch post's west wall"; may be empty.
+    pub name: String,
     /// The server-side rubble blocker it leaves when destroyed, if gameplay needs one.
     pub rubble: Option<PieceBox>,
 }
@@ -185,6 +187,7 @@ pub(crate) fn validate(
             || !in_range((piece.position, piece.half_extents))
             || piece.rubble.is_some_and(|rubble| !in_range(rubble))
             || sites.iter().any(|site| site.regrowth_ticks == 0)
+            || piece.name.len() > crate::MAX_UNIT_NAME_BYTES
         {
             return Err(ZoneError::new("structure piece is invalid"));
         }
@@ -261,12 +264,14 @@ impl ZoneSimulation {
     }
 
     /// Takes `amount` off a standing piece at tick `now`; a piece that reaches zero is
-    /// destroyed and whatever rested only on it collapses.
+    /// destroyed and whatever rested only on it collapses. The player whose blast or shot `by`
+    /// destroys it completes their open demolish objectives of it (#1019).
     pub(crate) fn damage_piece(
         &mut self,
         id: PieceId,
         amount: u32,
         now: u64,
+        by: Option<crate::PlayerId>,
     ) -> Result<(), ZoneError> {
         let Some(state) = self.pieces.get_mut(&id).filter(|state| state.health > 0) else {
             return Ok(());
@@ -276,6 +281,11 @@ impl ZoneSimulation {
         state.repaired = 0;
         if state.health > 0 {
             return Ok(());
+        }
+        if let Some(player) = by {
+            self.complete_objectives(player, |objective| {
+                objective == crate::QuestObjective::Demolish { piece: id }
+            });
         }
         let content = Arc::clone(&self.content);
         if let Some(piece) = content.pieces().iter().find(|piece| piece.id == id) {
@@ -309,7 +319,8 @@ impl ZoneSimulation {
         }
     }
 
-    /// A blast (#287) at `centre` hurts every standing piece whose box comes within `radius`
+    /// that the centre can see: `amount` with the blast's linear falloff to half at the edge, from
+    /// player `by`.
     /// that the centre can see: `amount` with the blast's linear falloff to half at the edge.
     pub(crate) fn blast_pieces(
         &mut self,
@@ -317,6 +328,7 @@ impl ZoneSimulation {
         radius: i32,
         amount: u32,
         now: u64,
+        by: crate::PlayerId,
     ) -> Result<(), ZoneError> {
         let content = Arc::clone(&self.content);
         let radius = i64::from(radius.max(1));
@@ -350,7 +362,7 @@ impl ZoneSimulation {
             }
             let share = 1_000 - 500 * distance / radius;
             let damage = u32::try_from(i64::from(amount) * share / 1_000).unwrap_or(0);
-            self.damage_piece(piece.id, damage, now)?;
+            self.damage_piece(piece.id, damage, now, Some(by))?;
         }
         Ok(())
     }

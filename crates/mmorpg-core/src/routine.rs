@@ -204,6 +204,14 @@ impl ZoneSimulation {
     #[must_use]
     pub fn npc_placement(&self, npc: NpcId) -> Option<NpcPlacement> {
         let definition = self.content.npc(npc)?;
+        // An escorted NPC (#1019) is where its escort led it.
+        if let Some(escort) = self.escorts.get(&npc) {
+            return Some(NpcPlacement {
+                position: escort.position,
+                facing: escort.facing,
+                velocity: escort.velocity,
+            });
+        }
         // A guard injured in a lost raid lies at the farm's shelter (#531).
         if let Some(position) = self
             .content
@@ -269,34 +277,43 @@ impl ZoneSimulation {
         if let Some(site) = self.content.raid() {
             movers.extend(site.aid_guards().map(|npc| (npc, None)));
         }
+        // Escorted and confronted NPCs (#1019) move or leave the world.
+        movers.extend(self.content.quest_npcs().iter().map(|&npc| (npc, None)));
         for (npc, routine_door) in movers {
             let Some(placement) = self.npc_placement(npc) else {
                 continue;
             };
             let entity = EntityRef::Npc(npc);
+            let body = crate::entity::body_id(entity);
+            // A confronted NPC is gone while its foe stands (#1019): no body to bump into.
+            if self.npc_hidden(npc) {
+                self.world.remove_body(body);
+                continue;
+            }
             let [x, z] = placement.position;
-            let unmoved = self
-                .world
-                .body(crate::entity::body_id(entity))
-                .is_some_and(|body| {
-                    let position = body.position();
-                    position.x == x && position.z == z
-                });
+            let present = self.world.body(body).is_some();
+            let unmoved = self.world.body(body).is_some_and(|body| {
+                let position = body.position();
+                position.x == x && position.z == z
+            });
             if unmoved {
                 continue;
             }
-            self.world
-                .replace_body(crate::physics::RigidBody::fixed(
-                    crate::entity::body_id(entity),
-                    crate::zone::vector([
-                        x,
-                        self.content.definition().ground_at(x, z)
-                            + crate::PLAYER_HALF_EXTENTS_UNITS[1],
-                        z,
-                    ]),
-                    crate::zone::PLAYER_HALF_EXTENTS,
-                ))
-                .map_err(|error| ZoneError::new(format!("npc body update failed: {error}")))?;
+            let moved = crate::physics::RigidBody::fixed(
+                body,
+                crate::zone::vector([
+                    x,
+                    self.content.definition().ground_at(x, z) + crate::PLAYER_HALF_EXTENTS_UNITS[1],
+                    z,
+                ]),
+                crate::zone::PLAYER_HALF_EXTENTS,
+            );
+            if present {
+                self.world.replace_body(moved)
+            } else {
+                self.world.add_body(moved)
+            }
+            .map_err(|error| ZoneError::new(format!("npc body update failed: {error}")))?;
             self.interest.move_if_needed(entity, x, z);
             // A woken resident's door follows its wake (`advance_private_homes`).
             if !open_doors || placement.velocity == [0, 0] || self.wakes.contains_key(&npc) {

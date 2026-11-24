@@ -24,6 +24,7 @@ command move_item 6B
 command observed directed_strike 19B
 command observed jump 11B
 command observed use_ability 23B
+command quest_action 6B
 command raid_aid 6B
 command raid_prepare 7B
 command release_ability 7B
@@ -789,6 +790,20 @@ canonical @2071 8B
 canonical @2079 8B
 canonical @2087 2B
 canonical @2089 4B
+canonical @2093 1B
+canonical @2094 4B
+canonical @2098 4B
+canonical @2102 4B
+canonical @2106 4B
+canonical @2110 2B
+canonical @2112 2B
+canonical @2114 2B
+canonical @2116 8B
+canonical @2124 1B
+canonical @2125 4B
+canonical @2129 4B
+canonical @2133 4B
+canonical @2137 4B
 player-snapshot @0 3B
 player-snapshot @3 1B
 player-snapshot @4 4B

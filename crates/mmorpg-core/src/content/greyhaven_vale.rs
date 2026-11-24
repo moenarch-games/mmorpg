@@ -1862,8 +1862,8 @@ pub fn structure_sites() -> Vec<crate::StructureSite> {
 #[must_use]
 pub fn watch_post() -> Vec<crate::StructurePiece> {
     let [west, east, deck] = [460, 461, 462];
-    let wall =
-        |id: u32, body: u32, x: i32, rubble: Option<crate::PieceBox>| crate::StructurePiece {
+    let wall = |id: u32, body: u32, x: i32, name: &str, rubble: Option<crate::PieceBox>| {
+        crate::StructurePiece {
             id: crate::PieceId::new(id),
             site: 1,
             body,
@@ -1871,16 +1871,20 @@ pub fn watch_post() -> Vec<crate::StructurePiece> {
             half_extents: [150, 125, 20],
             health: 120,
             supports: Vec::new(),
+            // *Breaking the Watch Post* names the walls (#1019).
+            name: name.to_owned(),
             rubble,
-        };
+        }
+    };
     vec![
         wall(
             1,
             west,
             500,
+            "the watch post's west wall",
             Some(([500, basin::TERRACE_Y + 20, -7_200], [150, 20, 40])),
         ),
-        wall(2, east, 900, None),
+        wall(2, east, 900, "the watch post's east wall", None),
         crate::StructurePiece {
             id: crate::PieceId::new(3),
             site: 1,
@@ -1889,6 +1893,7 @@ pub fn watch_post() -> Vec<crate::StructurePiece> {
             half_extents: [350, 15, 120],
             health: 60,
             supports: vec![crate::PieceId::new(1), crate::PieceId::new(2)],
+            name: "the watch post's lookout deck".to_owned(),
             rubble: None,
         },
     ]
@@ -2050,8 +2055,6 @@ fn content_with_spawns(
             .with_patrols(redbrand_patrol::members())?
             .with_signal_calls(signal_post::signal_calls())?
             .with_vendors(units::vendors())?
-            .with_evidence(quests::evidence())?
-            .with_quests(quests::quests())?
             .with_doors(vec![
                 inn::door(ids::INN_DOOR),
                 marshal_house::door(ids::MARSHAL_HOUSE_DOOR),
@@ -2060,6 +2063,9 @@ fn content_with_spawns(
             .with_ramps(ramps())?
             .with_rocks(dressing::rock_shapes())?
             .with_structures(structure_sites(), watch_post())?
+            // Quests after the structures their demolish objectives name (#1019).
+            .with_evidence(quests::evidence())?
+            .with_quests(quests::quests())?
             .with_seats(units::seats())?
             .with_routines(units::routines(), units::closed_at_night())?
             .with_private_homes(vec![marshal_house::home()])?
@@ -2078,6 +2084,8 @@ fn content_with_spawns(
             .with_dens(dens::dens())?
             .with_hunt(hunt::outing())?
             .with_cart(cart::journey())?
+            // The NPCs quests escort, interview or confront (#1019), after every reserved group.
+            .with_npc_quests(quests::attitudes(), quests::confrontations())?
             .with_caches(discoveries::caches())?
             .with_landmarks(landmarks::landmarks())?
             .with_waystones(vec![

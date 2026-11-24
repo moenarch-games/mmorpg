@@ -27,7 +27,9 @@ fn tick_work_counts_real_ai_and_engine_work_without_entering_recovery() {
     // (#992) for an ambush.
     let raiders = content.raid().map_or(0, |site| site.raiders().count())
         + usize::from(content.hunt().is_some())
-        + content.cart().map_or(0, |cart| cart.bandits.len());
+        + content.cart().map_or(0, |cart| cart.bandits.len())
+        // The courier's foe (#1019) waits until he is unmasked.
+        + content.confrontations().len();
     // Far-away idle creatures sleep and near ones decide on their staggered tick (#814).
     let thinking = content.creature_spawns().len() - props - raiders;
     assert!(0 < work.creature_ai_evaluations && work.creature_ai_evaluations < thinking);

@@ -119,6 +119,12 @@ pub struct ZoneContent {
     caches: Vec<crate::DiscoveryCache>,
     /// Quest evidence spots (#1019), in ID order.
     evidence: Vec<crate::EvidenceSpot>,
+    /// NPC attitudes toward interviewers (#1019), in NPC order.
+    attitudes: Vec<crate::NpcAttitude>,
+    /// NPCs who turn hostile when shown evidence (#1019), in NPC order.
+    confrontations: Vec<crate::Confrontation>,
+    /// NPCs quests escort or confront (#1019), whose bodies the tick moves, in ID order.
+    quest_npcs: Vec<crate::NpcId>,
     /// Named places clients mark on their maps (#1063).
     landmarks: Vec<crate::Landmark>,
 }
@@ -271,6 +277,9 @@ impl ZoneContent {
             dens: Vec::new(),
             caches: Vec::new(),
             evidence: Vec::new(),
+            attitudes: Vec::new(),
+            confrontations: Vec::new(),
+            quest_npcs: Vec::new(),
             landmarks: Vec::new(),
         };
         content.simulation_fingerprint = content.compute_simulation_fingerprint();
@@ -338,6 +347,9 @@ impl ZoneContent {
             dens: Vec::new(),
             caches: Vec::new(),
             evidence: Vec::new(),
+            attitudes: Vec::new(),
+            confrontations: Vec::new(),
+            quest_npcs: Vec::new(),
             landmarks: Vec::new(),
         };
         content.simulation_fingerprint = content.compute_simulation_fingerprint();
@@ -1755,7 +1767,7 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_evidence_fingerprint();
+        let fingerprint = self.compute_npc_quest_fingerprint();
         let Some(rewind) = self.hit_rewind else {
             return fingerprint;
         };
@@ -1899,6 +1911,150 @@ impl ZoneContent {
             .binary_search_by_key(&id, |spot| spot.id)
             .ok()
             .map(|index| &self.evidence[index])
+    }
+
+    /// Binds the NPCs quests act on (#1019), after the quests: each attitude's NPC known, once,
+    /// with a known recommendation quest; each confrontation's NPC known, once, its evidence a
+    /// plain bag item and its foe a creature spawn reserved for it (in no raid, depths site, hunt,
+    /// cart or den). Escorted and confronted NPCs may not keep a routine.
+    pub fn with_npc_quests(
+        mut self,
+        mut attitudes: Vec<crate::NpcAttitude>,
+        mut confrontations: Vec<crate::Confrontation>,
+    ) -> Result<Self, ZoneError> {
+        attitudes.sort_by_key(|attitude| attitude.npc);
+        confrontations.sort_by_key(|confrontation| confrontation.npc);
+        if attitudes.windows(2).any(|pair| pair[0].npc == pair[1].npc)
+            || attitudes.iter().any(|attitude| {
+                self.npc(attitude.npc).is_none()
+                    || attitude
+                        .recommendation
+                        .is_some_and(|quest| self.quest(quest).is_none())
+            })
+        {
+            return Err(ZoneError::new("npc attitudes are invalid"));
+        }
+        let reserved_elsewhere = |foe: CreatureId| {
+            self.is_raider(foe)
+                || self.is_depths_creature(foe)
+                || self.is_hunt_beast(foe)
+                || self.is_cart_bandit(foe)
+                || self
+                    .dens
+                    .iter()
+                    .any(|den| den.pack.contains(&foe) || den.prey.contains(&foe))
+        };
+        if confrontations
+            .windows(2)
+            .any(|pair| pair[0].npc == pair[1].npc)
+            || confrontations.iter().any(|confrontation| {
+                self.npc(confrontation.npc).is_none()
+                    || crate::item_template(confrontation.evidence)
+                        .is_none_or(|template| template.slot.is_some())
+                    || !self
+                        .creature_spawns()
+                        .iter()
+                        .any(|spawn| spawn.id == confrontation.foe)
+                    || reserved_elsewhere(confrontation.foe)
+            })
+        {
+            return Err(ZoneError::new("npc confrontations are invalid"));
+        }
+        let mut quest_npcs: Vec<crate::NpcId> = self
+            .quests
+            .iter()
+            .flat_map(|quest| &quest.objectives)
+            .filter_map(|objective| match *objective {
+                crate::QuestObjective::Escort { npc, .. } => Some(npc),
+                _ => None,
+            })
+            .chain(confrontations.iter().map(|confrontation| confrontation.npc))
+            .collect();
+        quest_npcs.sort_unstable();
+        quest_npcs.dedup();
+        if quest_npcs.iter().any(|npc| self.routine(*npc).is_some()) {
+            return Err(ZoneError::new(
+                "an escorted or confronted npc keeps a routine",
+            ));
+        }
+        self.attitudes = attitudes;
+        self.confrontations = confrontations;
+        self.quest_npcs = quest_npcs;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// The attitude of `npc` toward interviewers (#1019), if it has one.
+    #[must_use]
+    pub fn attitude(&self, npc: crate::NpcId) -> Option<&crate::NpcAttitude> {
+        self.attitudes
+            .binary_search_by_key(&npc, |attitude| attitude.npc)
+            .ok()
+            .map(|index| &self.attitudes[index])
+    }
+
+    /// Every NPC attitude (#1019), in NPC order.
+    #[must_use]
+    pub fn attitudes(&self) -> &[crate::NpcAttitude] {
+        &self.attitudes
+    }
+
+    /// The confrontation of `npc` (#1019), if it turns hostile when shown evidence.
+    #[must_use]
+    pub fn confrontation(&self, npc: crate::NpcId) -> Option<&crate::Confrontation> {
+        self.confrontations
+            .binary_search_by_key(&npc, |confrontation| confrontation.npc)
+            .ok()
+            .map(|index| &self.confrontations[index])
+    }
+
+    /// Every confrontation (#1019), in NPC order.
+    #[must_use]
+    pub fn confrontations(&self) -> &[crate::Confrontation] {
+        &self.confrontations
+    }
+
+    /// Whether `creature` is a confrontation's foe (#1019): it stands only when its NPC turns
+    /// hostile and never respawns on its own.
+    #[must_use]
+    pub fn is_confrontation_foe(&self, creature: CreatureId) -> bool {
+        self.confrontations
+            .iter()
+            .any(|confrontation| confrontation.foe == creature)
+    }
+
+    /// The NPCs quests escort or confront (#1019), in ID order.
+    #[must_use]
+    pub fn quest_npcs(&self) -> &[crate::NpcId] {
+        &self.quest_npcs
+    }
+
+    /// NPC attitudes and confrontations (#1019) enter the identity only where authored.
+    fn compute_npc_quest_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_evidence_fingerprint();
+        if self.attitudes.is_empty() && self.confrontations.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/npc-quests-v1");
+        hash.u64(fingerprint);
+        hash.len(self.attitudes.len());
+        for attitude in &self.attitudes {
+            hash.u32(attitude.npc.get());
+            hash.len(attitude.distrusts.len());
+            for class in &attitude.distrusts {
+                hash.u8(class.code());
+            }
+            hash.u8(u8::from(attitude.sponsor));
+            hash.u32(attitude.recommendation.map_or(0, crate::QuestId::get));
+        }
+        hash.len(self.confrontations.len());
+        for confrontation in &self.confrontations {
+            hash.u32(confrontation.npc.get());
+            hash.u32(confrontation.evidence.get());
+            hash.u32(confrontation.foe.get());
+        }
+        hash.finish()
     }
 
     /// Quest evidence (#1019) enters the identity only when a zone has some.
@@ -2415,6 +2571,10 @@ impl ZoneContent {
             for support in &piece.supports {
                 hash.u32(support.get());
             }
+            // A name (#1019) joins only where authored.
+            if !piece.name.is_empty() {
+                hash.text(&piece.name);
+            }
             match piece.rubble {
                 None => hash.u8(0),
                 Some((centre, half)) => {
@@ -2582,6 +2742,21 @@ impl ZoneContent {
                     }
                     crate::QuestObjective::DefeatThorn => {}
                     crate::QuestObjective::Inspect { spot } => hash.u32(spot.get()),
+                    crate::QuestObjective::UseItem { item, npc } => {
+                        hash.u32(item.get());
+                        hash.u32(npc.get());
+                    }
+                    crate::QuestObjective::Escort { npc, area } => {
+                        hash.u32(npc.get());
+                        hash.u32(area.get());
+                    }
+                    crate::QuestObjective::Interview { npc } => hash.u32(npc.get()),
+                    crate::QuestObjective::DefeatWithLoan { template, count }
+                    | crate::QuestObjective::Crush { template, count } => {
+                        hash.u32(template.get());
+                        hash.u8(count);
+                    }
+                    crate::QuestObjective::Demolish { piece } => hash.u32(piece.get()),
                 }
             }
             hash.u32(quest.rewards.experience);
@@ -2589,6 +2764,18 @@ impl ZoneContent {
             hash.len(quest.rewards.choices.len());
             for item in &quest.rewards.choices {
                 hash.u32(item.get());
+            }
+            // Supplies (#1019) join the identity only where a quest hands some over.
+            if !quest.supplies.is_empty() {
+                hash.bytes(b"supplies");
+                hash.len(quest.supplies.len());
+                for supply in &quest.supplies {
+                    hash.u32(supply.item.get());
+                    hash.len(supply.classes.len());
+                    for class in &supply.classes {
+                        hash.u8(class.code());
+                    }
+                }
             }
         }
         hash.finish()

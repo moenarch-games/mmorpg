@@ -238,6 +238,7 @@ impl ZoneSimulation {
             | PlayerIntent::RaidPrepare(_)
             | PlayerIntent::Gather(_)
             | PlayerIntent::Inspect(_)
+            | PlayerIntent::QuestAction(_)
             | PlayerIntent::Skin(_)
             | PlayerIntent::ClaimDepthsDrop { .. }
                 if !alive =>
@@ -254,6 +255,7 @@ impl ZoneSimulation {
             | PlayerIntent::RaidPrepare(_)
             | PlayerIntent::Gather(_)
             | PlayerIntent::Inspect(_)
+            | PlayerIntent::QuestAction(_)
             | PlayerIntent::Skin(_)
                 if self.players.get(&player_id).is_some_and(|p| p.weapon_drawn) =>
             {
@@ -271,6 +273,7 @@ impl ZoneSimulation {
             | PlayerIntent::RaidPrepare(_)
             | PlayerIntent::Gather(_)
             | PlayerIntent::Inspect(_)
+            | PlayerIntent::QuestAction(_)
             | PlayerIntent::Skin(_)
                 if self.in_handoff_corridor(player_id) =>
             {
@@ -364,6 +367,7 @@ impl ZoneSimulation {
             PlayerIntent::RaidPrepare(prep) => self.prepare_raid(player_id, prep)?,
             PlayerIntent::Gather(node) => self.gather(player_id, node)?,
             PlayerIntent::Inspect(spot) => self.inspect(player_id, spot)?,
+            PlayerIntent::QuestAction(npc) => self.quest_action(player_id, npc)?,
             PlayerIntent::Skin(creature) => self.skin(player_id, creature)?,
             // Eligible characters may answer even dead (Atlas 5.1.35).
             PlayerIntent::RollDepthsDrop { run, drop, choice } => {
@@ -1721,7 +1725,8 @@ impl ZoneSimulation {
             let waits_for_incident = content.is_raider(creature_id)
                 || content.is_depths_creature(creature_id)
                 || content.is_hunt_beast(creature_id)
-                || content.is_cart_bandit(creature_id);
+                || content.is_cart_bandit(creature_id)
+                || content.is_confrontation_foe(creature_id);
             if let Life::Despawned { died_at } = creature.life
                 && !waits_for_incident
                 && now >= died_at.saturating_add(u64::from(template.respawn_ticks))

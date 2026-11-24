@@ -341,6 +341,17 @@
       "rewards": {"experience": 300, "copper": 20, "choices": [7, 23]}
     },
     {
+      "id": 35,
+      "name": "A Guard's Last Watch",
+      "text": "Tam Hollis kept watch on the Wolfrun Climb and never came down. If he lives, bind his wounds with this bandage and bring him back inside the palisade. Stay by him: he cannot walk fast, and he will not walk alone.",
+      "giver": 1,
+      "ender": 1,
+      "prerequisite": 33,
+      "objectives": [{"use_item": {"item": 39, "npc": 44}}, {"escort": {"npc": 44, "area": 1}}],
+      "rewards": {"experience": 300, "copper": 20, "choices": [7, 9]},
+      "supplies": [{"item": 39}]
+    },
+    {
       "id": 36,
       "name": "The Tanner's Ledger",
       "text": "My ledger says three loads went to Millbrook this month; Osric swears he got two. Read my ledger on the strongbox here, ask Osric, and check the tally on his delivery crates. Tell me which load went missing.",
@@ -349,7 +360,80 @@
       "prerequisite": 33,
       "objectives": [{"inspect": {"spot": 7}}, {"talk": {"npc": 4}}, {"inspect": {"spot": 8}}],
       "rewards": {"experience": 250, "copper": 15, "choices": []}
+    },
+    {
+      "id": 37,
+      "name": "The Smith's Trial",
+      "text": "Wulfric forged trial arms for the watch and wants them proven on Redbrands, not straw. Take the one that suits your hand, fell two bandits with it, tell him how it held, then bring it back to me. It is a loan.",
+      "giver": 1,
+      "ender": 1,
+      "prerequisite": 6,
+      "objectives": [{"defeat_with_loan": {"template": 6, "count": 2}}, {"talk": {"npc": 43}}],
+      "rewards": {"experience": 400, "copper": 30, "choices": [24, 26]},
+      "supplies": [
+        {"item": 36, "classes": ["warden", "ranger", "rogue"]},
+        {"item": 37, "classes": ["arcanist", "necromancer", "druid"]},
+        {"item": 38, "classes": ["cleric"]}
+      ]
+    },
+    {
+      "id": 38,
+      "name": "Stone on the Road",
+      "text": "There is a loose boulder on the slope above the Hollow. Draw Redbrands into its path and send it down on them. I want them broken by the hill, not by your blade: let the stone do the work twice.",
+      "giver": 1,
+      "ender": 1,
+      "prerequisite": 7,
+      "objectives": [{"crush": {"template": 6, "count": 2}}],
+      "rewards": {"experience": 350, "copper": 25, "choices": []}
+    },
+    {
+      "id": 39,
+      "name": "Breaking the Watch Post",
+      "text": "The Redbrands' watch post by the Hollow Road sees everything we send. Bring down both walls that hold up its deck, with fire, powder or arrows, and tell me when the deck is in the dirt.",
+      "giver": 1,
+      "ender": 1,
+      "prerequisite": 7,
+      "objectives": [{"demolish": {"piece": 1}}, {"demolish": {"piece": 2}}],
+      "rewards": {"experience": 350, "copper": 25, "choices": [5, 8]}
+    },
+    {
+      "id": 40,
+      "name": "A Quiet Introduction",
+      "text": "Davin Moss saw who met that courier, but he will not speak to anyone who deals in the arcane. If that is you, bring a party mate he trusts, or Hilda's good word. Hear him out, then come back to me.",
+      "giver": 1,
+      "ender": 1,
+      "prerequisite": 34,
+      "objectives": [{"interview": {"npc": 13}}],
+      "rewards": {"experience": 200, "copper": 15, "choices": []}
+    },
+    {
+      "id": 41,
+      "name": "The Man at the Gate",
+      "text": "Davin's courier waits outside the east gate as if he owns the road. Question him, then show him this toll pass he dropped in the Wolfrun Woods. If he is a Redbrand, he will not come quietly.",
+      "giver": 1,
+      "ender": 1,
+      "prerequisite": 40,
+      "objectives": [{"talk": {"npc": 45}}, {"use_item": {"item": 41, "npc": 45}}, {"kill": {"template": 27, "count": 1}}],
+      "rewards": {"experience": 450, "copper": 35, "choices": [7, 23]},
+      "supplies": [{"item": 41}]
+    },
+    {
+      "id": 42,
+      "name": "The Miller's Medicine",
+      "text": "Miller Hanne's farmhand Jory is down with a wound fever. Carry this draught to her mill, then see that Jory drinks it himself. Not a drop spilled: it is the last I have until the herbs come in.",
+      "giver": 16,
+      "ender": 40,
+      "prerequisite": 29,
+      "objectives": [{"talk": {"npc": 40}}, {"use_item": {"item": 40, "npc": 41}}],
+      "rewards": {"experience": 250, "copper": 20, "choices": []},
+      "supplies": [{"item": 40}]
     }
+  ],
+  "attitudes": [
+    {"npc": 13, "distrusts": ["arcanist", "necromancer"], "sponsor": true, "recommendation": 36}
+  ],
+  "confrontations": [
+    {"npc": 45, "evidence": 41, "foe": 2930}
   ],
   "evidence": [
     {"id": 1, "name": "the cut sacks", "at": [-6050, 1036, 1150], "reach": 200},

@@ -56,6 +56,8 @@ const GATHER_INTENT: u8 = 31;
 const SKIN_INTENT: u8 = 32;
 /// Inspecting quest evidence (#1019): the spot ID (u32).
 const INSPECT_INTENT: u8 = 33;
+/// A quest action at an NPC (#1019): the NPC ID (u32).
+const QUEST_ACTION_INTENT: u8 = 34;
 const ALIVE: u8 = 1;
 const CORPSE: u8 = 2;
 const DESPAWNED: u8 = 3;
@@ -121,6 +123,7 @@ pub fn encode_canonical_snapshot(
     crate::rewards::encode_history(&mut payload, snapshot.rewards.as_ref())?;
     encode_rewind_history(&mut payload, &snapshot.rewind_history)?;
     encode_gathering(&mut payload, &snapshot.gathering)?;
+    encode_escorts(&mut payload, &snapshot.escorts)?;
     Ok(payload)
 }
 
@@ -218,6 +221,11 @@ impl Codec for CanonicalPlayerSnapshot {
                 PlayerIntent::Gather(node) => {
                     payload.push(GATHER_INTENT);
                     payload.extend_from_slice(&node.to_be_bytes());
+                    continue;
+                }
+                PlayerIntent::QuestAction(npc) => {
+                    payload.push(QUEST_ACTION_INTENT);
+                    payload.extend_from_slice(&npc.get().to_be_bytes());
                     continue;
                 }
                 PlayerIntent::Inspect(spot) => {
@@ -532,6 +540,12 @@ impl Codec for CanonicalPlayerSnapshot {
                 intents.push(PlayerIntent::Gather(u32::from_be_bytes(take(
                     payload, offset,
                 )?)));
+                continue;
+            }
+            if code == QUEST_ACTION_INTENT {
+                intents.push(PlayerIntent::QuestAction(mmorpg_core::NpcId::new(
+                    u32::from_be_bytes(take(payload, offset)?),
+                )));
                 continue;
             }
             if code == INSPECT_INTENT {
@@ -1350,6 +1364,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let rewards = crate::rewards::decode_history(payload, &mut offset)?;
     let rewind_history = decode_rewind_history(payload, &mut offset)?;
     let gathering = decode_gathering(payload, &mut offset)?;
+    let escorts = decode_escorts(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
         rewards,
@@ -1377,6 +1392,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         raid,
         parties,
         wakes,
+        escorts,
         depths,
         rewind_history,
         gathering,
@@ -1432,6 +1448,83 @@ fn encode_wakes(
         payload.extend_from_slice(&wake.idle_since.to_be_bytes());
     }
     Ok(())
+}
+
+/// Running quest escorts (#1019): a count (`u8`), then per escort in NPC-ID order its NPC and
+/// player (`u32`), feet XZ (`i32` each), facing (`u16`), velocity (`i8` each), ticks behind
+/// (`u16`), rest end tick (`u64`) and its trail: a count (`u8`) of XZ points (`i32` each).
+fn encode_escorts(
+    payload: &mut Vec<u8>,
+    escorts: &[mmorpg_core::EscortState],
+) -> Result<(), ProtocolError> {
+    let count = u8::try_from(escorts.len())
+        .map_err(|_| ProtocolError::new("escorts exceed their count"))?;
+    payload.push(count);
+    for escort in escorts {
+        payload.extend_from_slice(&escort.npc.get().to_be_bytes());
+        payload.extend_from_slice(&escort.player.to_be_bytes());
+        for axis in escort.position {
+            payload.extend_from_slice(&axis.to_be_bytes());
+        }
+        payload.extend_from_slice(&escort.facing.to_be_bytes());
+        payload.extend(escort.velocity.map(|axis| axis.to_be_bytes()[0]));
+        payload.extend_from_slice(&escort.behind.to_be_bytes());
+        payload.extend_from_slice(&escort.rests_until.to_be_bytes());
+        let points = u8::try_from(escort.trail.len())
+            .ok()
+            .filter(|points| usize::from(*points) <= mmorpg_core::MAX_ESCORT_TRAIL)
+            .ok_or_else(|| ProtocolError::new("an escort trail exceeds its count"))?;
+        payload.push(points);
+        for point in &escort.trail {
+            for axis in point {
+                payload.extend_from_slice(&axis.to_be_bytes());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn decode_escorts(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::EscortState>, ProtocolError> {
+    let [count] = take(payload, offset)?;
+    (0..count)
+        .map(|_| {
+            let npc = mmorpg_core::NpcId::new(u32::from_be_bytes(take(payload, offset)?));
+            let player = u32::from_be_bytes(take(payload, offset)?);
+            let position = [
+                i32::from_be_bytes(take(payload, offset)?),
+                i32::from_be_bytes(take(payload, offset)?),
+            ];
+            let facing = u16::from_be_bytes(take(payload, offset)?);
+            let [x, z] = take(payload, offset)?;
+            let behind = u16::from_be_bytes(take(payload, offset)?);
+            let rests_until = u64::from_be_bytes(take(payload, offset)?);
+            let [points] = take(payload, offset)?;
+            if usize::from(points) > mmorpg_core::MAX_ESCORT_TRAIL {
+                return Err(ProtocolError::new("an escort trail exceeds its count"));
+            }
+            let trail = (0..points)
+                .map(|_| {
+                    Ok([
+                        i32::from_be_bytes(take(payload, offset)?),
+                        i32::from_be_bytes(take(payload, offset)?),
+                    ])
+                })
+                .collect::<Result<_, ProtocolError>>()?;
+            Ok(mmorpg_core::EscortState {
+                npc,
+                player,
+                position,
+                facing,
+                velocity: [i8::from_be_bytes([x]), i8::from_be_bytes([z])],
+                trail,
+                behind,
+                rests_until,
+            })
+        })
+        .collect()
 }
 
 fn decode_wakes(
@@ -2784,6 +2877,16 @@ pub(crate) mod tests {
                 knocked: 2,
                 idle_since: 3,
             }],
+            escorts: vec![mmorpg_core::EscortState {
+                npc: mmorpg_core::NpcId::new(44),
+                player: 1,
+                position: [-5_600, 1_450],
+                facing: 32_768,
+                velocity: [-3, 4],
+                trail: vec![[-5_500, 1_400], [-5_400, 1_300]],
+                behind: 5,
+                rests_until: 0,
+            }],
             depths: None,
             rewind_history: vec![mmorpg_core::RewindFrame {
                 tick: 41,
@@ -3089,6 +3192,7 @@ pub(crate) mod tests {
             },
             PlayerIntent::AbandonQuest { quest: 0 },
             PlayerIntent::Inspect(0x0506_0708),
+            PlayerIntent::QuestAction(mmorpg_core::NpcId::new(0x0102_0304)),
         ]);
         snapshot.players[0].quests = mmorpg_core::QuestLog {
             entries: vec![
@@ -3110,6 +3214,7 @@ pub(crate) mod tests {
             &[0, COMPLETE_QUEST_INTENT, 0, 0, 0, 1, 0, 0, 0, 9, 0xff],
             &[0, ABANDON_QUEST_INTENT, 0, 0, 0, 0],
             &[0, INSPECT_INTENT, 5, 6, 7, 8],
+            &[0, QUEST_ACTION_INTENT, 1, 2, 3, 4],
         ]
         .concat();
         let log = LOG.to_vec();

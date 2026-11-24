@@ -133,6 +133,14 @@ pub enum ErrorCode {
     /// The zone cannot record another reward receipt this tick (#1112): a corpse keeps its
     /// loot and a quest stays in the log, so the player can try again.
     RewardsBusy,
+    /// The NPC distrusts the player (#1019): a class it will not hear, with no recommendation
+    /// and no trusted party mate beside it to speak for them.
+    Distrusted,
+    /// Someone else is escorting that NPC (#1019).
+    NpcBusy,
+    /// An escort failed (#1019): the player strayed too far, fell or gave the quest up; the NPC
+    /// is back at its post.
+    EscortLost,
 }
 
 /// One feedback event addressed to a player.

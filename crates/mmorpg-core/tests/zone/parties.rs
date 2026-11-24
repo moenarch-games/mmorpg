@@ -65,6 +65,7 @@ fn zone() -> ZoneSimulation {
             count: 2,
         }],
         rewards: QuestRewards::default(),
+        supplies: Vec::new(),
     };
     let table = LootTable::new(
         [3, 3],
