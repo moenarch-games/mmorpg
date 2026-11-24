@@ -1,0 +1,31 @@
+[package]
+name = "mmorpg-local-host"
+description = "The browser's local single-player zone host over the shared zone simulation, with the review scenarios and Action Lab it drives"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Gameplay side of the browser demo: no presentation (mmorpg-scenery, mmorpg-presentation) and no
+# client rules (mmorpg-client-model). mmorpg-game-server/tests/dependency_boundary.rs checks the
+# resolved graph. WASM-compatible: mmorpg-wasm links it into the page.
+[dependencies]
+strum.workspace = true
+mmorpg-characters.workspace = true
+mmorpg-control-plane.workspace = true
+mmorpg-core.workspace = true
+# The shared Battle Royale fortress content (#552), the one definition of its collision.
+battle-royale-core.workspace = true
+mmorpg-protocol.workspace = true
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+
+[dev-dependencies]
+# Parity evidence only: the local host must match the network host's session
+# semantics and projection bytes. Never a normal dependency (no tokio in WASM).
+game-server.workspace = true
+mmorpg-game-server.workspace = true
+
+[lints]
+workspace = true

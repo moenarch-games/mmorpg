@@ -308,7 +308,7 @@ impl LocalZoneHost {
     pub fn practice_arena(
         build: &EphemeralCharacterBuild,
     ) -> Result<(Self, PlayerId), LocalZoneError> {
-        let mut host = Self::empty(ARENA_ZONE_ID, crate::arena_presentation::content())?;
+        let mut host = Self::empty(ARENA_ZONE_ID, crate::arena::content())?;
         let player_id = host.next_player_id;
         host.zone
             .admit_ephemeral(player_id, build)
@@ -325,10 +325,7 @@ impl LocalZoneHost {
         build: &EphemeralCharacterBuild,
         rewind: bool,
     ) -> Result<(Self, PlayerId), LocalZoneError> {
-        let mut host = Self::empty(
-            ARENA_ZONE_ID,
-            crate::arena_presentation::trial_content(rewind),
-        )?;
+        let mut host = Self::empty(ARENA_ZONE_ID, crate::arena::trial_content(rewind))?;
         let partner = EphemeralCharacterBuild::standard(mmorpg_core::ClassChoice {
             class: mmorpg_core::PlayerClass::Warden,
             sex: mmorpg_core::Sex::Male,
