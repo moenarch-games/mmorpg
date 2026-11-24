@@ -103,3 +103,31 @@ Both clients draw units with `mmorpg-client-model`'s `SnapshotHistory`, 2 ticks 
 | 9, 17, 33, 64 | 2 × units | 0 |
 
 Before #1058 the native client found each unit's next record with a linear search (quadratic in projected units) and the browser built a map and new unit objects every frame in TypeScript, then sent the sampled units back across the boundary.
+
+## Browser draw calls at the fixed profile locations (#683)
+
+#683 (world art separated from collision) was measured with `scripts/profile-browser.py` at its fixed locations. **Before** is `1593c054`, the parent of #683's first slice (#764). **After** is `b39cbca3` (main, 2026-11-24). Both builds ran with the current script on Chromium 159, headless, ANGLE Vulkan, on an RTX 3060 Ti at 1440×900 and pixel ratio 1:
+
+```sh
+python3 scripts/profile-browser.py --no-sweep --out report.json   # GPU_ARGS with --use-angle=vulkan
+```
+
+Two runs were made of each build, and the table shows their mean. For rAF p95, it shows the worse run. One "after" run hid `EXT_disjoint_timer_query_webgl2`, because the "before" page has no timer queries. The rAF interval is frame pacing. The main-thread frame is the page's `?profile` CPU time. GPU time per pass (#1106) exists only in the "after" build. The "before" build used today's rolling asset bundles, and its Ranger figure was copied from "after", because that commit's Ranger fetch no longer resolves.
+
+| Location | WebGL draws | three.js calls | Triangles (M) | rAF p50 / p95 ms | Main-thread frame p50 / p95 ms | GPU p50 / p95 ms (after) |
+|---|---|---|---|---|---|---|
+| `idle` | 11.8k → 32.9k | 1297 → 627 | 8.4 → 9.0 | 16.7 / 16.8 → 16.7 / 33.4 | 10.4 / 13.8 → 21.5 / 26.6 | 17.3 / 19.5 |
+| `move-rotate` | 9.7k → 32.2k | 1296 → 564 | 6.8 → 8.6 | 16.7 / 16.8 → 16.7 / 33.4 | 11.3 / 15.3 → 20.1 / 30.5 | 14.4 / 20.9 |
+| `dense-woods` | 9.6k → 25.2k | 713 → 381 | 9.9 → 8.1 | 16.7 / 16.8 → 16.7 / 33.3 | 8.8 / 11.6 → 14.9 / 19.1 | 15.7 / 17.8 |
+| `dense-hub` | 10.5k → 23.7k | 1132 → 443 | 10.7 → 7.4 | 16.7 / 16.8 → 16.7 / 16.8 | 10.1 / 13.3 → 14.6 / 19.3 | 14.8 / 16.7 |
+| `western-lake` | 6.9k → 18.6k | 621 → 285 | 5.5 → 4.7 | 16.7 / 16.8 → 16.7 / 33.3 | 8.3 / 11.8 → 11.6 / 16.8 | 16.2 / 17.2 |
+| `overview` | 9.9k → 27.7k | 900 → 529 | 7.4 → 7.7 | 16.7 / 16.8 → 16.7 / 16.8 | 9.2 / 13.3 → 14.2 / 16.9 | 14.7 / 16.4 |
+
+**Result:** the 60 FPS median holds at every location, but "after" doesn't hold 60 FPS at all of them:
+- At `idle` and `move-rotate`, at least 5 % of frames miss a vsync (rAF p95 33 ms). The main-thread frame median is above 16.7 ms at both, and GPU time is near or above it.
+- `dense-woods` and `western-lake` miss in at least one run.
+- `dense-hub` and `overview` hold 60 FPS.
+
+"Before" held 16.8 ms p95 everywhere.
+
+**Where the draws come from:** three.js-level calls about halved, mostly because the shadow passes fell from about 990 to 150 calls at `idle`. The rise in WebGL draws is all `WEBGL_multi_draw` sub-draws of the static-scenery `BatchedMesh`es (`web/src/world/static-batches.ts`), which draw every instance in every view. They went from about 6.6k to 21.9k per frame, and the count is the same at every location. The two largest batches have about 2.9k and 2.75k sub-draws, each drawn twice a frame. Over the same span, the main-thread `render` phase at `idle` went from 5.4 to 15.3 ms p50. Its top self time is three's `updateMatrixWorld`, `multiplyMatrices` and `traverse` (about 16 %). The range has 220 commits, 10 of them #683's, and this measurement doesn't attribute the change to individual commits.
