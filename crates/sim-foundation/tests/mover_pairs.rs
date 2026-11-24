@@ -6,7 +6,7 @@ mod mover_pairs;
 
 use mover_pairs::{SCALE_POINTS, measure};
 
-/// The most bodies one walker in the workload's grid (100 units apart) examines: its own and the
+/// The most bodies one walker in the workload's grid (one per 128-unit cell) examines: its own and the
 /// neighbouring cells' walkers, never the whole zone.
 const PER_WALKER: usize = 9;
 

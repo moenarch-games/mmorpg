@@ -294,11 +294,10 @@
       "id": "mover-pairs",
       "description": "Turn every walking mover's move around the moving capsules it touches (slide-around, #1149): the engine arm takes each walker's neighbours from a horizontal cell index of the moving bodies, kept on placement and each move batch, instead of scanning every moving body, so a tick's pair work follows walkers and local density, and an asleep or still body costs nothing until a walker comes near. Before the index a tick examined walkers × all moving bodies (512 walkers: 262,144; 128 walkers beside 1,024 sleepers: 147,456). Measured by sim-foundation's mover_pairs_work example and mover_pairs test.",
       "dimensions": {
-        "walkers": { "description": "awake units walking side by side, 100 units apart in rows of 16" },
+        "walkers": { "description": "awake units walking side by side in rows of 16, one per index cell (128 units apart, centred), so every row meets the cells alike" },
         "sleepers": { "description": "asleep units resting in their own block away from the walkers" }
       },
       "scalePoints": [
-        { "walkers": 8, "sleepers": 1 },
         { "walkers": 32, "sleepers": 1 },
         { "walkers": 128, "sleepers": 1 },
         { "walkers": 512, "sleepers": 1 },
@@ -310,7 +309,7 @@
           "name": "tick_pairs",
           "unit": "bodies",
           "signal": "operation-count",
-          "notes": "Bodies the slide-around intent examined in the measured tick that examined most (StepStats::mover_pairs), each walker itself included: its own and the neighbouring cells' movers, at most 9 per walker at this density (512 walkers: 3,042).",
+          "notes": "Bodies the slide-around intent examined in the measured tick that examined most (StepStats::mover_pairs), each walker itself included: its own and the neighbouring cells' movers, at most 9 per walker at this density (512 walkers: 4,324). The walker points are whole rows (2, 8 and 32), so each interval adds interior rows at the same per-walker rate (8.625).",
           "budget": { "max": 4608 },
           "growth": [
             { "dimension": "walkers", "bound": "linear" },

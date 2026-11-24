@@ -1,5 +1,7 @@
 //! The `mover-pairs` workload (#1149, `.performance/contract.json`): `walkers` awake units walking
-//! side by side across a flat floor, 100 units apart in rows of 16, and `sleepers` asleep units
+//! side by side across a flat floor in rows of 16, one centred in each 128-unit index cell (so every
+//! row meets the cells alike and the work per added row is the same, as the contract's exact
+//! linear check needs), and `sleepers` asleep units
 //! resting in their own block far away (creatures asleep away from the players). Each measured tick
 //! gives every walker the same walking velocity and steps once; the step's `mover_pairs` counts the
 //! bodies the slide-around intent examined. Shared by `sim-foundation`'s `mover_pairs` test and
@@ -10,7 +12,8 @@ use sim_foundation::physics::{BodyId, PhysicsError, RigidBody, SUBUNITS_PER_UNIT
 
 const FLOOR: BodyId = BodyId(1);
 const BODY: Vec3i = Vec3i::new(30, 90, 30);
-const SPACING: i32 = 100;
+/// The mover index's cell side (`physics::mover_grid`): one walker per cell.
+const SPACING: i32 = 128;
 const ROW: usize = 16;
 /// The sleepers' block lies this far (units) from the walkers along -Z.
 const SLEEPERS_AWAY: i32 = 20_000;
@@ -40,7 +43,7 @@ fn sleeper(walkers: usize, index: usize) -> BodyId {
 fn grid(index: usize) -> (i32, i32) {
     let column = i32::try_from(index % ROW).expect("small grid");
     let row = i32::try_from(index / ROW).expect("small grid");
-    (SPACING * column, SPACING * row)
+    (SPACING * column + SPACING / 2, SPACING * row + SPACING / 2)
 }
 
 /// The walkers and sleepers standing on the floor, settled.
@@ -98,5 +101,5 @@ pub fn sample(walkers: usize, sleepers: usize) -> Result<String, PhysicsError> {
 }
 
 /// The contract's scale points: (walkers, sleepers).
-pub const SCALE_POINTS: [(usize, usize); 6] =
-    [(8, 1), (32, 1), (128, 1), (512, 1), (128, 256), (128, 1024)];
+pub const SCALE_POINTS: [(usize, usize); 5] =
+    [(32, 1), (128, 1), (512, 1), (128, 256), (128, 1024)];
