@@ -402,6 +402,7 @@ impl ZoneSimulation {
             let Some(mut escort) = self.escorts.get(&npc).cloned() else {
                 continue;
             };
+            self.tick_work.escorts_advanced += 1;
             if escort.rests_until > 0 {
                 if now >= escort.rests_until {
                     self.end_escort(npc, false);
@@ -436,6 +437,7 @@ impl ZoneSimulation {
                 let Some(&next) = escort.trail.first() else {
                     break;
                 };
+                self.tick_work.escort_trail_points += 1;
                 let step = distance(position, next);
                 if step <= budget {
                     position = next;
@@ -501,6 +503,7 @@ impl ZoneSimulation {
         // A confronted foe out of its fight leaves; its NPC is back.
         for index in 0..self.content.confrontations().len() {
             let confrontation = self.content.confrontations()[index];
+            self.tick_work.confrontations_checked += 1;
             if self.creatures.get(&confrontation.foe).is_some_and(|foe| {
                 foe.is_alive()
                     && foe.ai != crate::snapshot::CreatureAi::Engaged

@@ -305,6 +305,13 @@ pub struct ZoneTickWork {
     /// per player with receipts plus one per dropped receipt; otherwise only the previous
     /// tick's dropped grants, and none without reward tracking.
     pub incident_receipts_visited: usize,
+    /// Escorts the escort step visited (#1019): each running escort once, following or resting.
+    pub escorts_advanced: usize,
+    /// Trail points the escort followers examined (#1019): a step's worth per following escort,
+    /// however long its trail.
+    pub escort_trail_points: usize,
+    /// Confrontations checked for a foe out of its fight (#1019): the content's, every tick.
+    pub confrontations_checked: usize,
     /// The engine's own report, present only after a successful physics step.
     pub physics: Option<crate::physics::StepStats>,
 }
