@@ -2822,12 +2822,9 @@ mod tests {
         let creature_walk = 2.4;
         let pi = std::f64::consts::PI;
         for sex in ["male", "female"] {
-            let path = format!(
-                "{}/../../web/public/characters/humanoid.ranger.{sex}/humanoid.ranger.{sex}.default.humanoid-clips.json",
-                env!("CARGO_MANIFEST_DIR")
-            );
-            let Ok(json) = std::fs::read_to_string(&path) else {
-                eprintln!("the {sex} Ranger is not fetched; skipping");
+            let Some(json) = crate::fetched_bundles::read(&format!(
+                "characters/humanoid.ranger.{sex}/humanoid.ranger.{sex}.default.humanoid-clips.json"
+            )) else {
                 continue;
             };
             let motions = Motions::parse(&json).expect("valid descriptor");
@@ -4655,12 +4652,9 @@ mod tests {
     #[test]
     fn the_fetched_rangers_carry_the_heavy_running_set() {
         for sex in ["male", "female"] {
-            let path = format!(
-                "{}/../../web/public/characters/humanoid.ranger.{sex}/humanoid.ranger.{sex}.default.humanoid-clips.json",
-                env!("CARGO_MANIFEST_DIR")
-            );
-            let Ok(json) = std::fs::read_to_string(&path) else {
-                eprintln!("the {sex} Ranger is not fetched; skipping");
+            let Some(json) = crate::fetched_bundles::read(&format!(
+                "characters/humanoid.ranger.{sex}/humanoid.ranger.{sex}.default.humanoid-clips.json"
+            )) else {
                 continue;
             };
             let motions = Motions::parse(&json).expect("valid descriptor");

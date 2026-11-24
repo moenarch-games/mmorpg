@@ -77,6 +77,8 @@ uv run content/greyhaven/authoring/areas.py           # Greyhaven's named areas 
 ./scripts/dev-browser-online.sh      # zone host + browser client in online mode
 ```
 
+A test that reads a fetched bundle panics with the `scripts/fetch-bundles.sh` hint when the bundle is missing, since CI fetches them before the Rust tests; `MMORPG_ALLOW_MISSING_BUNDLES=1` turns that into a printed skip for local runs without bundles (#1158). Never set it in CI.
+
 `bun run build` and `bun run dev` first sync browser dependencies with `bun install --frozen-lockfile`. They and `bun test` compile `mmorpg-wasm` for `wasm32-unknown-unknown` (listed in the stable `rust-toolchain.toml`). `web/scripts/build-wasm.ts` picks a `wasm-bindgen` CLI matching `Cargo.lock`, automatically installing a compatible version under the ignored Cargo target directory when the system CLI is missing or different; it never replaces a system CLI. Generated bindings land in the ignored `web/src/generated/`.
 
 ## Authority

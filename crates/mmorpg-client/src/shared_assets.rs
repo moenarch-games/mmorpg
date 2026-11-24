@@ -10,9 +10,6 @@ use std::{
 pub struct Cache {
     directory: PathBuf,
 }
-mod metadata {
-    include!(concat!(env!("OUT_DIR"), "/shared_art.rs"));
-}
 /// Hash-verified closure of the real supported asset, ready for the existing importer.
 pub struct VerifiedBundle {
     pub(crate) manifest: HostManifest,
@@ -37,12 +34,12 @@ impl VerifiedBundle {
         Ok(Self { manifest, files })
     }
 }
+/// The host's manifest must belong to this world's content revision, keep the supported bundle
+/// format and agree with its own declared identity and closure. No build-time snapshot of the
+/// rolling art release is compared (#1158): the guest uses whatever release the host serves,
+/// and every file must still match the SHA-256 and length the host declares for it.
 fn compatible(manifest: &HostManifest, revision: u64) -> Result<(), String> {
-    manifest.validate(revision)?;
-    if manifest.bundle_sha256 != metadata::BUNDLE_IDENTITY {
-        return Err("This host uses another art release. Install the matching native client; no incompatible detail was imported.".into());
-    }
-    Ok(())
+    manifest.validate(revision)
 }
 #[derive(Clone, Default, Debug)]
 pub struct Receipt {
@@ -323,5 +320,51 @@ mod tests {
             })
             .await;
         assert!(mismatch.err().unwrap().contains("content revision"));
+    }
+
+    fn copy_tree(from: &Path, to: &Path) {
+        fs::create_dir_all(to).unwrap();
+        for entry in fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                copy_tree(&entry.path(), &to.join(entry.file_name()));
+            } else {
+                fs::copy(entry.path(), to.join(entry.file_name())).unwrap();
+            }
+        }
+    }
+
+    /// A host on another upload of the rolling release than this build was fetched with (#1158):
+    /// its bundle identity differs, and the guest still uses its verified bytes.
+    #[tokio::test]
+    async fn another_release_of_the_cat_is_used_when_its_files_verify() {
+        let installed = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../web/public/scenery/greyhaven.ambient-animals");
+        let host = tempfile::tempdir().unwrap();
+        copy_tree(&installed, host.path());
+        let mut bundle: serde_json::Value =
+            serde_json::from_slice(&fs::read(host.path().join("manifest.json")).unwrap()).unwrap();
+        bundle["assets"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|entry| entry["key"] == mmorpg_game_server::shared_assets::CAT);
+        fs::write(
+            host.path().join("manifest.json"),
+            serde_json::to_vec(&bundle).unwrap(),
+        )
+        .unwrap();
+        let ours = Catalogue::open(&installed, 73).expect("installed real cat");
+        let theirs = Catalogue::open(host.path(), 73).expect("the host's release");
+        assert_ne!(ours.manifest.bundle_sha256, theirs.manifest.bundle_sha256);
+        let directory = tempfile::tempdir().unwrap();
+        let (bundle, receipt) = Cache::open(directory.path())
+            .unwrap()
+            .retrieve(theirs.manifest.clone(), 73, |request| {
+                std::future::ready(theirs.response(&request))
+            })
+            .await
+            .expect("another release's verified bytes are used");
+        assert_eq!(receipt.files_verified, theirs.manifest.files.len());
+        assert_eq!(bundle.manifest.bundle_sha256, theirs.manifest.bundle_sha256);
     }
 }
