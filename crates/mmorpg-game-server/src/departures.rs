@@ -196,6 +196,7 @@ impl ZoneGameServerAdapter {
         }
         self.parked_characters.remove(&player);
         self.characters.insert(player, character);
+        self.claim_deadlines.remove(&player);
         Ok(())
     }
 

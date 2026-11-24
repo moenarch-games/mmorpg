@@ -68,7 +68,7 @@ fn tcp_port() -> u16 {
 }
 
 fn session_route(port: u16, zone: ZoneId) -> String {
-    format!("https://localhost:{port}/game/matches/zone-{}", zone.get())
+    format!("https://127.0.0.1:{port}/game/matches/zone-{}", zone.get())
 }
 
 /// A Seam Test warden placed at `position` in `zone`, with `waystones`.

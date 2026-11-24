@@ -93,7 +93,7 @@ def main():
                     if time.monotonic() >= deadline:
                         raise TimeoutError("zone host never became ready")
                     time.sleep(0.05)
-                command = [str(binaries / f"mmorpg-client{suffix}"), "--url", f"https://localhost:{port}/game/matches/zone-1", "--certificate", str(certificate)]
+                command = [str(binaries / f"mmorpg-client{suffix}"), "--url", f"https://127.0.0.1:{port}/game/matches/zone-1", "--certificate", str(certificate)]
                 client_step(root, [*command, "--smoke"], "native client --smoke", args.client_timeout)
                 subprocess.run([
                     "cargo", "test", "--locked", "-p", "mmorpg-client", "--lib",

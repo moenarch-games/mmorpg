@@ -132,12 +132,13 @@ impl ZoneGameServerAdapter {
         candidate.adopt_transfers(&mut self.zone);
         self.zone = candidate;
         self.characters.insert(player, record.character_id);
+        self.claim_deadlines.remove(&player);
         Ok(())
     }
     /// Holds the development directory lock for the whole simulation lifetime.
     pub fn require_character_claims(&mut self, ownership: std::sync::Arc<std::fs::File>) {
         self.character_ownership = Some(ownership);
-        self.requires_character_claims = true;
+        self.require_durable_character_claims();
     }
 
     pub(super) fn character_snapshot(
@@ -378,6 +379,42 @@ mod tests {
         )
         .unwrap();
         assert_eq!(verified.final_snapshot, snapshot);
+    }
+
+    #[test]
+    fn unclaimed_sessions_are_bounded_and_time_out() {
+        let adapter = || {
+            let mut adapter =
+                ZoneGameServerAdapter::with_content(ZoneId::new(1), greyhaven_vale::content())
+                    .unwrap();
+            adapter.require_durable_character_claims();
+            adapter
+        };
+        let mut live = MatchRuntime::new_with_replay_capture(adapter(), 30);
+        let claimed = live.admit(ReconnectToken([1; 16])).unwrap();
+        let admission = ZoneGameServerAdapter::character_admission_input(&record()).unwrap();
+        live.submit_host_input(claimed.player_id, &admission)
+            .unwrap();
+        for session in 0..crate::MAX_UNCLAIMED_SESSIONS {
+            live.admit(ReconnectToken([session as u8 + 2; 16])).unwrap();
+        }
+        // A claimed character takes no unclaimed place; the next waiting session does.
+        assert!(live.admit(ReconnectToken([200; 16])).is_err());
+        for _ in 0..crate::CLAIM_TIMEOUT_TICKS {
+            live.advance_tick().unwrap();
+        }
+        assert_eq!(live.slot_count(), crate::MAX_UNCLAIMED_SESSIONS + 1);
+        let snapshot = live.advance_tick().unwrap();
+        assert_eq!(live.slot_count(), 1);
+        assert_eq!(live.simulation().zone().player_count(), 1);
+        assert!(
+            live.simulation()
+                .characters
+                .contains_key(&claimed.player_id)
+        );
+        let verified = verify_replay(adapter(), live.replay_log().unwrap()).unwrap();
+        assert_eq!(verified.final_snapshot, snapshot);
+        live.admit(ReconnectToken([200; 16])).unwrap();
     }
 
     #[test]

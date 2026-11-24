@@ -42,7 +42,7 @@ struct Options {
 impl Options {
     fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<Self>, ClientError> {
         let mut options = Self {
-            url: "https://localhost:4433/game/matches/zone-1".into(),
+            url: "https://127.0.0.1:4433/game/matches/zone-1".into(),
             certificate: None,
             join_invite: None,
             zone_id: ZoneId::new(1),

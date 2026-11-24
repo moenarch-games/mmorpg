@@ -98,7 +98,7 @@ def main():
             status = {name: free_port(socket.SOCK_STREAM) for name in zones}
 
             def route(name):
-                return f"https://localhost:{ports[name]}/game/matches/zone-{zones[name]}"
+                return f"https://127.0.0.1:{ports[name]}/game/matches/zone-{zones[name]}"
 
             base = {key: value for key, value in os.environ.items() if not key.startswith("MMORPG_")}
             for name, peer in (("west", "east"), ("east", "west")):

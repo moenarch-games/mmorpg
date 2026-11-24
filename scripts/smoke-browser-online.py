@@ -113,7 +113,7 @@ class OnlineAcceptance(unittest.TestCase):
         certificate, key, cls.certificate_hash = development_certificate(Path(temporary.name))
         transport_port, status_port = free_port(socket.SOCK_DGRAM), free_port(socket.SOCK_STREAM)
         cls.route = f"https://127.0.0.1:{transport_port}/game/matches/zone-{ZONE_ID}"
-        environment = {key_: value for key_, value in os.environ.items() if key_ not in {"MMORPG_RECOVERY_DIR", "MMORPG_CHARACTER_DIR", "MMORPG_PERSISTENCE_MODE"}}
+        environment = {key_: value for key_, value in os.environ.items() if key_ not in {"MMORPG_RECOVERY_DIR", "MMORPG_CHARACTER_DIR", "MMORPG_PERSISTENCE_MODE", "MMORPG_BIND_IP"}}
         environment.update({
             "MMORPG_ZONE_IDS": str(ZONE_ID),
             "MMORPG_PORT": str(transport_port),

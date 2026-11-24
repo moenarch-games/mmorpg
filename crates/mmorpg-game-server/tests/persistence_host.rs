@@ -209,7 +209,7 @@ async fn postgres_host_acknowledges_claim_survives_process_loss_and_releases_on_
     .unwrap();
     let id = MatchId::new(format!("zone-{zone}")).unwrap();
     let route = BrowserRoutePrefix::new("/game").unwrap();
-    let url = format!("https://localhost:{port}{}", route.match_path(&id));
+    let url = format!("https://127.0.0.1:{port}{}", route.match_path(&id));
     let mut host = start(&env, "bootstrap", &directory.0.join("first.log"));
     let connection = tokio::time::timeout(Duration::from_secs(10), endpoint.connect(&url))
         .await
@@ -241,7 +241,7 @@ async fn postgres_host_acknowledges_claim_survives_process_loss_and_releases_on_
     operator(&env, "retire").await;
     let mut host = start(&env, "recover", &directory.0.join("second.log"));
     let reconnect = format!(
-        "https://localhost:{port}{}",
+        "https://127.0.0.1:{port}{}",
         route.reconnect_path(&id, game_server::ReconnectToken(first.reconnect_token))
     );
     let connection = tokio::time::timeout(Duration::from_secs(10), endpoint.connect(&reconnect))

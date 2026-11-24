@@ -44,3 +44,11 @@ slots with aliases stay retired. These aliases identify records, not authenticat
 or client-owned progression. Native `--character-id` deliberately overrides the
 alias for trusted development use. Capability rejection retains anonymous-host
 compatibility; an unsuccessful claim never becomes anonymous entry.
+
+Amended by #1141: claims stay unauthenticated until account authentication
+exists, so hosts listen on loopback unless `MMORPG_BIND_IP` names another
+address, and the PostgreSQL persistence mode serves beyond loopback only with
+`MMORPG_ALLOW_UNAUTHENTICATED_CLAIMS=1`. A session holds a zone slot before it
+claims, so a zone that requires claims admits at most 32 unclaimed sessions and
+removes one that has not claimed within 30 seconds, through game-server's
+replayed admission expiry.

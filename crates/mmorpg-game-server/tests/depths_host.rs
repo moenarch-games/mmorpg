@@ -71,7 +71,7 @@ fn tcp_port() -> u16 {
 }
 
 fn session_route(port: u16, zone: ZoneId) -> String {
-    format!("https://localhost:{port}/game/matches/zone-{}", zone.get())
+    format!("https://127.0.0.1:{port}/game/matches/zone-{}", zone.get())
 }
 
 fn threshold_record(id: &CharacterId, qualified: bool, offset: i32) -> CharacterRecord {
