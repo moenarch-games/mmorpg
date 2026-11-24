@@ -242,6 +242,11 @@ fn rocks(colliders: &[StaticCollider]) -> Vec<Piece> {
     }) {
         block(rect(collider), &mut buckets);
     }
+    // The highland crags' outcrop groups are dressing meshes (#1195): their footprints stay
+    // clear as their boxes did.
+    for &(min, max, _) in super::highlands::CRAGS {
+        block((min, max), &mut buckets);
+    }
     let posts: Vec<[i32; 2]> = units::creature_spawns()
         .iter()
         .map(|spawn| spawn.position)

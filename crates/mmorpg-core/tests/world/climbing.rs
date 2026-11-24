@@ -148,53 +148,103 @@ fn over(collider: &StaticCollider, feet: [f32; 3]) -> bool {
     })
 }
 
+/// A highland crag's outcrop (#1195): its collision is generated from the art, and it climbs
+/// only where its dressing placement sets `"grip": "rock"`.
+fn outcrop(id: u32) -> mmorpg_core::StaticMesh {
+    greyhaven_vale::content()
+        .definition()
+        .static_meshes()
+        .iter()
+        .find(|mesh| mesh.id == id)
+        .unwrap_or_else(|| panic!("no outcrop {id}"))
+        .clone()
+}
+
+/// The crag flanking the gorge's top on the west is a ledged buttress over talus (#1195): a
+/// player climbs its ledged eastern face, the side the trail passes, hangs on halfway, and
+/// mantles over its crown onto the top.
 #[test]
-fn a_player_climbs_a_highland_crag_and_pulls_up_onto_its_top() {
-    // The crag flanking the gorge's top on the west, 12 m tall; approach its southern face.
-    let crag = collider(*ids::HIGHLAND_CRAGS.start());
-    let mut player = Player::at([1_500, -28_900]);
-    player.walk_into(NORTH);
+fn a_player_climbs_a_climbable_outcrop_crag_and_mantles_onto_it() {
+    let rock = outcrop(*ids::HIGHLAND_CRAGS.start());
+    let crag = rock.bounds().unwrap();
+    assert_eq!(
+        greyhaven_vale::climbing().collider(rock.id),
+        Some(Grip::Rock)
+    );
+    let west = 49_152;
+    let [x, _, z] = rock.position;
+    let mut player = Player::at([crag.position[0] + crag.half_extents[0] + 300, z]);
+    player.walk_into(west);
     player.jump();
     player.ticks(1);
     assert!(
-        matches!(player.traversal(), Traversal::Climbing { .. }),
-        "holds the crag: {:?}",
-        player.traversal()
+        matches!(
+            player.traversal(),
+            Traversal::Climbing {
+                grip: Grip::Rock,
+                ..
+            }
+        ),
+        "holds the crag: {:?} at {:?}",
+        player.traversal(),
+        player.feet()
     );
     let start = player.feet();
     // Halfway up, the climber hangs on without sliding when the keys go up.
-    assert!(player.until(1, NORTH, 600, |p| p.feet()[1] > start[1] + 400.0));
-    player.hold(0, NORTH);
+    assert!(player.until(1, west, 600, |p| p.feet()[1] > start[1] + 400.0));
+    player.hold(0, west);
     player.ticks(30);
     let hanging = player.feet();
     player.ticks(60);
     assert!((player.feet()[1] - hanging[1]).abs() < 0.5, "hangs on");
-    // Climbing on tops out onto the crag.
+    // Climbing on mantles over the crown and stands on the crag.
+    let mut mantled = false;
+    for _ in 0..2_000 {
+        player.hold(1, west);
+        player.ticks(1);
+        mantled |= matches!(player.traversal(), Traversal::Mantling { .. });
+        if player.traversal() == Traversal::Free && player.feet()[1] > top(&crag) - 250.0 {
+            break;
+        }
+    }
     assert!(
-        player.until(1, NORTH, 1_500, |p| p.traversal() == Traversal::Free
-            && p.feet()[1] > top(&crag) - 10.0),
-        "never topped out: {:?} {:?}",
+        mantled,
+        "never mantled: {:?} {:?}",
         player.feet(),
         player.traversal()
     );
-    player.hold(0, NORTH);
+    player.hold(0, west);
     player.ticks(30);
     let feet = player.feet();
-    assert!(over(&crag, feet), "on the crag: {feet:?}");
+    assert_eq!(player.traversal(), Traversal::Free, "at {feet:?}");
+    assert!(over(&crag, feet), "on the crag: {feet:?} from {x},{z}");
     assert!(
-        (feet[1] - top(&crag)).abs() < 2.0,
-        "on its top {}: {feet:?} {crag:?}",
+        feet[1] > top(&crag) - 250.0,
+        "on its crown {}: {feet:?}",
         top(&crag)
     );
 }
 
+/// The two sheer crags are smooth spires and an overhanging buttress (#1195): none of their
+/// outcrops climbs, and a player walking into their cores cannot grab them.
 #[test]
-fn a_sheer_crag_refuses_a_climber() {
-    let crag = collider(ids::HIGHLAND_CRAGS.start() + greyhaven_vale::SHEER_CRAGS[0] as u32);
-    let [x, _, z] = crag.position;
-    let mut player = Player::at([x, z + crag.half_extents[2] + 300]);
-    player.walk_into(NORTH);
-    player.refused(NORTH);
+fn a_sheer_outcrop_crag_refuses_a_climber() {
+    let climbing = greyhaven_vale::climbing();
+    // Each core from its open side: the first's spires stand north of it and its rope south,
+    // the second's talus east of it.
+    let [east, west] = [16_384, 49_152];
+    for (index, facing) in greyhaven_vale::SHEER_CRAGS.into_iter().zip([west, east]) {
+        let rock = outcrop(ids::HIGHLAND_CRAGS.start() + index as u32);
+        assert_eq!(climbing.collider(rock.id), None, "crag {index}");
+        let crag = rock.bounds().unwrap();
+        let side = if facing == west { 1 } else { -1 };
+        let mut player = Player::at([
+            crag.position[0] + side * (crag.half_extents[0] + 300),
+            rock.position[2],
+        ]);
+        player.walk_into(facing);
+        player.refused(facing);
+    }
 }
 
 #[test]
@@ -320,7 +370,7 @@ fn a_player_climbs_the_greyfang_lookouts_ladder_onto_its_deck() {
 #[test]
 fn a_player_climbs_the_rope_up_the_sheer_crag() {
     let rope = collider(*ids::ROPES.start() + 2);
-    let crag = collider(greyhaven_vale::ROPES[2].host);
+    let crag = outcrop(greyhaven_vale::ROPES[2].host).bounds().unwrap();
     let [x, _, z] = rope.position;
     let mut player = Player::at([x, z + 200]);
     player.walk_into(NORTH);
@@ -333,9 +383,11 @@ fn a_player_climbs_the_rope_up_the_sheer_crag() {
             ..
         }
     ));
+    // The rope ends level with the buttress's domed crown, where the climber pulls over onto
+    // it (#1195).
     assert!(
         player.until(1, NORTH, 3_000, |p| p.traversal() == Traversal::Free
-            && p.feet()[1] > top(&crag) - 10.0),
+            && p.feet()[1] > top(&rope) - 10.0),
         "{:?}",
         player.feet()
     );
@@ -343,6 +395,7 @@ fn a_player_climbs_the_rope_up_the_sheer_crag() {
     player.ticks(30);
     let feet = player.feet();
     assert!(over(&crag, feet), "on the crag: {feet:?}");
+    assert!(feet[1] > top(&rope) - 10.0, "stays on the crown: {feet:?}");
 }
 
 /// Flat ground with a 1.5 m block 4 m north of the spawn; `roof` lays a slab 1 m above it.

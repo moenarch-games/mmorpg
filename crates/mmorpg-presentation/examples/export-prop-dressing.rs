@@ -56,6 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             yaw,
             scale,
             collider: None,
+            grip: None,
             fallback_collider: Some(id),
             wear: 0,
             ground_detail: false,

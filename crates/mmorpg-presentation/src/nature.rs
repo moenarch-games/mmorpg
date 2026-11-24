@@ -135,6 +135,7 @@ impl Composed {
             yaw: self.yaw,
             scale: self.scale.map(|s| (s * 1_000.).round() as u16),
             collider: None,
+            grip: None,
             fallback_collider: None,
             wear: 0,
             ground_detail: false,

@@ -257,8 +257,9 @@ pub enum Workload {
     /// Outpost run, jump, let go or turn mid-air, and land, under [`TRAVERSAL_GRAPH`], whose
     /// airborne phase keeps the velocity contact realized and steers at most 6 m/s².
     Traversal,
-    /// Climbing and mantling (#490): one player jumps at a highland crag, climbs, lets go,
-    /// grabs it again and climbs to its top; another mantles the mill's loading dock.
+    /// Climbing and mantling (#490): one player jumps at a highland crag's ledged buttress
+    /// (#1195), climbs, lets go, grabs it again and climbs over its crown; another mantles the
+    /// mill's loading dock.
     Climb,
     /// Dodge rolls (#516): one player rolls back, forward and diagonally in Greyhaven Outpost,
     /// another into a highland crag and back out, a third back off the mill's loading dock.
@@ -365,12 +366,16 @@ fn roll_zone() -> Result<ZoneSimulation, Box<dyn Error>> {
 pub const CLIMB_TICKS: usize = mmorpg_core::golden::t30(520) as usize;
 
 /// The climber below the crag flanking the gorge's top and the mantler in the mill's yard, by
-/// ID and feet XZ.
-const CLIMB_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [1_500.0, -28_900.0]), (2, [8_250.0, 2_300.0])];
+/// ID and feet XZ. The crag is a sculpted buttress since #1195: on its faceted rock the two
+/// backends can start the mantle a tick apart (5 units, beyond the scripted bound) where a
+/// probe meets the crown's edge within their sub-unit contact detail; from this start they
+/// agree on every tick.
+const CLIMB_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [1_420.0, -28_900.0]), (2, [8_250.0, 2_300.0])];
 
 /// The climb's commands at `tick` (30 Hz): both walk north into their walls and jump; the
 /// climber climbs, lets go (a jump, releasing the keys so it drops to the ground), grabs again
-/// (another jump) and climbs on to the top; the mantler stands on the dock.
+/// (another jump) and climbs on over the buttress's crown (#1195); the mantler stands on the
+/// dock.
 fn climb_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
     let hold = |forward| ZoneCommand::Move {
         forward,
@@ -384,8 +389,8 @@ fn climb_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
         80 => vec![(1, ZoneCommand::Jump), (1, hold(0))],
         110 => vec![(1, hold(1))],
         112 => vec![(1, ZoneCommand::Jump)],
-        // Mid-mantle at the top: the mantle carries on and the climber stands on the crag.
-        460 => vec![(1, hold(0))],
+        // Mid-mantle over the crown: the mantle carries on and the climber stands on the crag.
+        440 => vec![(1, hold(0))],
         _ => Vec::new(),
     }
 }

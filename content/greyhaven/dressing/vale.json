@@ -2,9 +2,9 @@
   "version": 1,
   "area": "greyhaven-vale",
   "placements": [
-    {"id": "basin-crag-1", "asset": "crag.kit.outcrop-spire", "position": [-4700, 217, 4300], "yaw": 0, "scale": [1115, 1000, 1036], "collider": 65030},
-    {"id": "basin-crag-2", "asset": "crag.kit.outcrop-spire", "position": [-4600, 379, 6200], "yaw": 21845, "scale": [1115, 1000, 1036], "collider": 65031},
-    {"id": "basin-crag-3", "asset": "crag.kit.outcrop-spire", "position": [4700, 537, 5600], "yaw": 43691, "scale": [1115, 1000, 1036], "collider": 65032},
+    {"id": "basin-crag-1", "asset": "crag.kit.outcrop-spire", "position": [-4700, 217, 4300], "yaw": 0, "scale": [1115, 1000, 1036], "collider": 65030, "grip": "rock"},
+    {"id": "basin-crag-2", "asset": "crag.kit.outcrop-spire", "position": [-4600, 379, 6200], "yaw": 21845, "scale": [1115, 1000, 1036], "collider": 65031, "grip": "rock"},
+    {"id": "basin-crag-3", "asset": "crag.kit.outcrop-spire", "position": [4700, 537, 5600], "yaw": 43691, "scale": [1115, 1000, 1036], "collider": 65032, "grip": "rock"},
     {"id": "basin-north-buttress", "asset": "crag.kit.outcrop-buttress-1", "position": [-3700, 0, -4000], "yaw": 55722, "scale": [1077, 1107, 1064], "collider": 65094},
     {"id": "basin-north-talus-1", "asset": "crag.kit.outcrop-talus-1", "position": [-3438, 0, -3733], "yaw": 64626, "scale": [1120, 1282, 1091], "collider": 65095},
     {"id": "basin-north-talus-2", "asset": "crag.kit.outcrop-talus-2", "position": [-4042, 0, -3824], "yaw": 37724, "scale": [1292, 1276, 1250], "collider": 65096},

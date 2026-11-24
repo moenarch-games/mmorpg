@@ -398,11 +398,11 @@ impl Scenario {
             Self::MantleLow => ([-14_530, -890], 32_768),
             Self::MantleMid => ([8_250, 2_250], 32_768),
             Self::MantleHigh => ([36_800, 13_150], 32_768),
-            // 3 m south of the crag's southern face; facing north.
+            // 3.7 m south of the crag's buttress (#1195); facing north.
             Self::Climb => ([6_800, -29_300], 32_768),
-            // 3 m south of the watchtower's ladder and of the crag's rope; facing north.
+            // 3 m south of the watchtower's ladder and of the crag's rope (#1195); facing north.
             Self::ClimbLadder => ([16_700, -5_500], 32_768),
-            Self::ClimbRope => ([-13_400, -35_100], 32_768),
+            Self::ClimbRope => ([-12_950, -34_980], 32_768),
             // On Barrowdown Lane at the hamlet's north edge; facing south down it to the inn.
             Self::GreyhavenDowns => ([54_700, 65_000], 0),
         }
