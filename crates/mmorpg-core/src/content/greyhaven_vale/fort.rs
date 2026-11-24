@@ -11,9 +11,8 @@ pub const BROOK_MILL: std::ops::RangeInclusive<u32> = 65121..=65127;
 
 pub const TOWERS: [[i32; 2]; 4] = [[-2700, -700], [2700, -700], [-3000, 4000], [3100, 4000]];
 pub const TOWER_BODIES: std::ops::RangeInclusive<u32> = 65040..=65043;
-/// Low authored outcrops that break Stillwater's bank silhouette without closing its routes.
-/// The crag kit's talus dresses them (`content/greyhaven/dressing/vale.json`, #683); their
-/// collision is still authored here, so the art stands over it as presentation only.
+/// Low talus clusters that break Stillwater's bank silhouette without closing its routes:
+/// world dressing whose collision is generated from its art ([`dressing_meshes`], #683).
 pub const SHORE_ROCKS: std::ops::RangeInclusive<u32> = 65070..=65093;
 /// The mill's walk-off gallery, outside the hoist shaft and clear of the axle housing.
 pub const MILL_GALLERY: std::ops::RangeInclusive<u32> = 65103..=65110;
@@ -65,17 +64,7 @@ pub fn meshes() -> Vec<StaticMesh> {
         "../../../content/collision/greyhaven-fort.json"
     ))
     .expect("committed Greyhaven fortification geometry is valid");
-    meshes
-        .into_iter()
-        .map(|mesh| {
-            if SHORE_ROCKS.contains(&mesh.id) {
-                super::lake::place_mesh(mesh)
-            } else {
-                mesh
-            }
-        })
-        .chain(dressing_meshes())
-        .collect()
+    meshes.into_iter().chain(dressing_meshes()).collect()
 }
 
 /// The art kit dresses these bodies; rock outcrops retain the shared rock material.

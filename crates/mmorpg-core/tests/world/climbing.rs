@@ -624,6 +624,64 @@ fn a_player_walks_onto_a_dressed_buttress_apron() {
     );
 }
 
+/// Stillwater's shore rocks collide as their talus art (#683): a player walking from the bank
+/// meets the largest rock at its foot, jumps and mantles onto its top, and walks on along the
+/// shore beside it.
+#[test]
+fn a_player_mantles_a_dressed_shore_rock_and_walks_past_it() {
+    let rock = greyhaven_vale::content()
+        .definition()
+        .static_meshes()
+        .iter()
+        .find(|mesh| mesh.id == *greyhaven_vale::fort::SHORE_ROCKS.start())
+        .unwrap()
+        .clone();
+    let [x, y, z] = rock.position;
+    let east = rock.vertices.iter().map(|v| v[0]).max().unwrap();
+    let top = y + rock.vertices.iter().map(|v| v[1]).max().unwrap();
+    // The middle of the rock's north-south extent.
+    let (north, south) = rock
+        .vertices
+        .iter()
+        .fold((i32::MAX, i32::MIN), |(n, s), v| (n.min(v[2]), s.max(v[2])));
+    let z = z + (north + south) / 2;
+    let west = 49_152;
+    // Walking west, the player stops at the rock's east face (a held press then slides it
+    // around the rounded rock, so it jumps as soon as it is stopped).
+    let mut player = Player::at([x + east + 300, z]);
+    player.hold(1, west);
+    let mut last = player.feet()[0];
+    for _ in 0..60 {
+        player.ticks(1);
+        if (last - player.feet()[0]).abs() < 5.0 {
+            break;
+        }
+        last = player.feet()[0];
+    }
+    let gap = player.feet()[0] - (x + east) as f32;
+    assert!(
+        (0.0..60.0).contains(&gap),
+        "stopped {gap} units east of the rock"
+    );
+    player.jump();
+    assert!(player.until(1, west, 60, |p| matches!(
+        p.traversal(),
+        Traversal::Mantling { .. }
+    )));
+    assert!(player.until(0, west, 120, |p| p.traversal() == Traversal::Free));
+    player.ticks(30);
+    let feet = player.feet();
+    assert!(
+        (feet[1] - top as f32).abs() < 40.0,
+        "on its top {top}: {feet:?}"
+    );
+    // Along the bank, two metres east of the rock, nothing stands in the way.
+    let mut walker = Player::at([x + east + 200, z + 600]);
+    walker.hold(1, NORTH);
+    walker.ticks(130);
+    assert!(walker.feet()[2] < (z - 600) as f32, "{:?}", walker.feet());
+}
+
 /// The sandstone steading's cottage (#683.Q1) collides as its art: a player walking from the
 /// yard at its closed door stops at the door's outer face, and its 4 m wall offers no climb or
 /// mantle.

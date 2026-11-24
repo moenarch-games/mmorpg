@@ -287,12 +287,11 @@ of following long parallel straight lines. Its endpoints, lake level and waterfa
 remain the same. Core uses those points for both the water volume and the sampled bed;
 shared presentation and the live Blender context read the same course.
 
-Eight low rock clusters break up Stillwater's west, north and south banks. The Blender
-source in `content/greyhaven/authoring/fortifications.py` exports their twenty-four closed,
-coarse meshes as stable IDs 65070–65093 in `greyhaven-fort.json`. Physics loads them through
-the existing immutable static-mesh path; both clients texture those exact facets with the
-existing rock material and moss palette. These are not detailed rendering meshes, new
-water volumes or another asset bundle. The dock and shrine approach stay clear, and the
+Eight low rock clusters break up Stillwater's west, north and south banks: twenty-four
+pieces of the crag kit's talus, placed in `content/greyhaven/dressing/vale.json` with stable
+IDs 65070–65093. Their collision is generated from the art like the basin outcrops'
+(`dressing_collision.py` into `greyhaven-dressing.json`, #683); physics loads it through the
+existing immutable static-mesh path. The dock and shrine approach stay clear, and the
 rocks avoid the existing lurker spawn points. The lake ellipse and its deep basin remain
 unchanged; the outcrops break its visible shoreline rather than replacing water physics.
 
