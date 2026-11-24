@@ -51,6 +51,7 @@ use physics_engine::approximate::{
 };
 use physics_engine::{BodyId as EngineId, CollisionLayers3d};
 
+use super::mover_grid::MoverGrid;
 use super::shared::{
     BOULDER_ANGULAR_DAMPING, BOULDER_DENSITY, BOULDER_LINEAR_DAMPING, Dynamic, TICKS_PER_SECOND,
     comes_to_rest, nearby, over_open_floor,
@@ -247,6 +248,10 @@ pub(super) struct World {
     authored: usize,
     ground_gaps: BTreeMap<BodyId, GroundGap>,
     probes: ProbeCache,
+    /// The moving bodies by horizontal cell, and a reused buffer of one mover's neighbours from
+    /// it: slide-around examines only those (#1149).
+    movers_by_cell: MoverGrid,
+    near: Vec<BodyId>,
 }
 
 impl fmt::Debug for World {
@@ -291,6 +296,8 @@ impl World {
             authored: 0,
             ground_gaps: BTreeMap::new(),
             probes: ProbeCache::default(),
+            movers_by_cell: MoverGrid::default(),
+            near: Vec::new(),
         }
     }
 
@@ -313,6 +320,11 @@ impl World {
         };
         if body.is_moving() {
             set(&mut self.moving);
+            if added {
+                self.movers_by_cell.insert(body);
+            } else {
+                self.movers_by_cell.remove(body);
+            }
             self.ground_gaps.remove(&body.id);
             self.probes.get_mut().support.remove(&body.id);
             return;
@@ -544,6 +556,7 @@ impl World {
             return Ok(());
         }
         body.position = position;
+        self.movers_by_cell.moved(id, position);
         let handle = self.handles[&id];
         self.engine
             .set_kinematic_position(handle, lifted(position))
@@ -795,6 +808,7 @@ impl World {
                         .body(result.body)
                         .map(|body| lowered(body.position))
                         .ok_or_else(|| error("moved engine body vanished"))?;
+                    self.movers_by_cell.moved(id, body.position);
                 }
                 // The move's grounded result is the engine's support test at the pose it left,
                 // [`World::grounded`]'s own test, so it answers until that would differ.
@@ -864,6 +878,8 @@ impl World {
         let mut ground_gaps = std::mem::take(&mut self.ground_gaps);
         let revision = self.engine.static_revision();
         let movers = || self.moving.iter().map(|id| &self.bodies[id]);
+        let mut mover_pairs = 0;
+        let mut near = std::mem::take(&mut self.near);
         // Asleep bodies (#814) sit the step out; the others still slide around them.
         for body in movers().filter(|body| !body.asleep) {
             let mut velocity = body.velocity;
@@ -906,15 +922,24 @@ impl World {
             if carried.contains_key(&body.id) {
                 settle = 0.0;
             }
-            // Turned around touching characters as on the Rapier arm (#534, Rapier oracle).
+            let desired = [
+                velocity[0] + carry[0],
+                velocity[1] + settle + carry[1],
+                velocity[2] + carry[2],
+            ];
+            // Turned around touching characters as on the Rapier arm (#534, Rapier oracle),
+            // examining only the movers whose cells its reach covers (#1149): a move with no
+            // horizontal part is never turned, so it looks up none.
+            if desired[0] != 0.0 || desired[2] != 0.0 {
+                self.movers_by_cell.near(body, &mut near);
+            } else {
+                near.clear();
+            }
             let desired = super::shared::slide_around(
-                movers(),
+                near.iter().map(|id| &self.bodies[id]),
                 body,
-                [
-                    velocity[0] + carry[0],
-                    velocity[1] + settle + carry[1],
-                    velocity[2] + carry[2],
-                ],
+                desired,
+                &mut mover_pairs,
             );
             moves.push(CharacterMove {
                 body: self.handles[&body.id],
@@ -924,6 +949,7 @@ impl World {
             });
         }
         self.ground_gaps = ground_gaps;
+        self.near = near;
         let outcome = self.run_batch(&moves);
         self.moves = moves;
         if let Err(failure) = outcome {
@@ -956,6 +982,7 @@ impl World {
             moved_bodies,
             bodies: self.bodies.len(),
             visited: self.moving.len() + self.platforms.len(),
+            mover_pairs,
         })
     }
 

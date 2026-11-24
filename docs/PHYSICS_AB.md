@@ -329,8 +329,10 @@ Intentional or explained differences:
    with the Rapier arm's `slide_around` (within 60° of head-on both step aside at full speed,
    plus a 1-unit outward nudge), the engine arm before its batch (#534). Rapier moves bodies one
    by one, so a later mover sees an earlier one already moved; the engine arm turns every move
-   from the positions before the step. Characters do not push each other on either: a large
-   creature's shove (#297) is a gameplay forced move decided before the step, the same on both.
+   from the positions before the step, examining only the movers in the cells its reach covers
+   (#1149; the same touching bodies in the same order as a scan of every mover). Characters do
+   not push each other on either: a large creature's shove (#297) is a gameplay forced move
+   decided before the step, the same on both.
    In `vale-ogre-brawl` the ogre and the players around it move in the same ticks, so the player
    walking into its side slides around it differently and players part by up to 74 units;
    every shove and stomp still happens on both.

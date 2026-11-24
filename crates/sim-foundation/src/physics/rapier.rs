@@ -814,6 +814,7 @@ impl World {
             .map(|body| body.id)
             .collect();
         let mut moved_bodies = 0;
+        let mut mover_pairs = 0;
         let moving_count = ids.len();
         for id in ids {
             let body = self
@@ -860,7 +861,8 @@ impl World {
                     .velocity = velocity;
                 continue;
             }
-            let desired = super::shared::slide_around(self.bodies.values(), body, desired);
+            let desired =
+                super::shared::slide_around(self.bodies.values(), body, desired, &mut mover_pairs);
             let mut from = body.position;
             let (mut moved, mut grounded, mut vertical_contact, level) =
                 self.move_shape(body, from, desired)?;
@@ -914,6 +916,7 @@ impl World {
                 .values()
                 .filter(|body| body.is_moving() || body.is_platform())
                 .count(),
+            mover_pairs,
         })
     }
 
