@@ -86,14 +86,15 @@ impl RunningWorld {
         Ok(serde_json::from_slice(&bytes)?)
     }
 
-    pub fn guest_decision(&self, key: &str, allow: bool) -> Result<()> {
+    pub fn guest_decision(
+        &self,
+        key: &str,
+        decision: crate::guest_access::GuestDecision,
+    ) -> Result<()> {
         if key.len() != 64 || !key.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err("Invalid guest key".into());
         }
-        self.request(&format!(
-            "{} {key}",
-            if allow { "approve" } else { "remove" }
-        ))
+        self.request(&format!("{} {key}", decision.word()))
     }
     pub fn retry_sharing(&self) -> Result<()> {
         self.request("share")
@@ -400,13 +401,12 @@ impl LocalWorldHost {
                         let _ = socket.write_all(b"OK").await;
                     } else if let Some(action) = request.strip_prefix(&format!("{token} "))
                         && let Some((kind, key)) = action.split_once(' ')
-                        && matches!(kind, "approve" | "remove")
+                        && let Some(decision) = crate::guest_access::GuestDecision::parse(kind)
                     {
                         let access = managed.access.clone();
                         let key = key.to_owned();
-                        let allow = kind == "approve";
                         let success =
-                            tokio::task::spawn_blocking(move || access.decide(&key, allow))
+                            tokio::task::spawn_blocking(move || access.decide(&key, decision))
                                 .await
                                 .is_ok_and(|r| r.is_ok());
                         let _ = socket.write_all(if success { b"OK" } else { b"NO" }).await;

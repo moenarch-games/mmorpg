@@ -32,6 +32,7 @@ use mmorpg_core::{
     EntityKind, EntityRef, Equipment, Inventory, LootClaim, PlayerClass, QuestSheet, ResourceKind,
     Sex, ZoneCommand, ZoneContent, ZoneSnapshot, ability_by_id,
 };
+use mmorpg_game_server::guest_access::GuestDecision;
 use mmorpg_scenery::Scenery;
 use std::time::{Duration, Instant};
 
@@ -1457,15 +1458,26 @@ fn hosting_controls(ui: &mut egui::Ui, hosting: &crate::hosting::Hosting) {
                             " · admitted"
                         }
                     ));
-                    if (guest.pending || guest.revoked) && ui.button("Approve").clicked() {
-                        hosting.guest_decision(guest.key.clone(), true);
-                    }
-                    if !guest.revoked
-                        && ui
-                            .button(if guest.pending { "Deny" } else { "Remove" })
-                            .clicked()
-                    {
-                        hosting.guest_decision(guest.key.clone(), false);
+                    // Deny only ends this request; Block and Remove persist a refusal
+                    // that keeps progression, and Forget frees a refused key (#1144).
+                    let actions: &[(&str, GuestDecision)] = if guest.pending {
+                        &[
+                            ("Approve", GuestDecision::Approve),
+                            ("Deny", GuestDecision::Deny),
+                            ("Block", GuestDecision::Block),
+                        ]
+                    } else if guest.revoked {
+                        &[
+                            ("Approve", GuestDecision::Approve),
+                            ("Forget", GuestDecision::Forget),
+                        ]
+                    } else {
+                        &[("Remove", GuestDecision::Block)]
+                    };
+                    for (label, decision) in actions {
+                        if ui.button(*label).clicked() {
+                            hosting.guest_decision(guest.key.clone(), *decision);
+                        }
                     }
                 });
             }
