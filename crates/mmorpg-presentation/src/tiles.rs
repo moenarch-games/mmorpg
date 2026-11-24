@@ -393,14 +393,14 @@ impl Tiles {
         }
     }
 
-    /// The near levels' identity input beyond the far draws: the grid and the layer weights.
-    pub(crate) fn identity_values(&self) -> impl Iterator<Item = f64> + '_ {
-        self.grid
-            .heights
-            .iter()
-            .map(|&h| f64::from(h))
-            .chain(self.weights.values())
-            .chain(self.holes.iter().flatten().copied())
+    /// Hashes the near levels' identity input beyond the far draws: the grid, the layer weights
+    /// and the holes.
+    pub(crate) fn hash(&self, hash: &mut crate::Identity) {
+        hash.each(&self.grid.heights, |height| {
+            u64::from(height.cast_unsigned())
+        });
+        self.weights.hash(hash);
+        hash.f64s(self.holes.as_flattened());
     }
 
     /// Prefixes every ID and resource key with `prefix` (`StaticScene::prefix`).
