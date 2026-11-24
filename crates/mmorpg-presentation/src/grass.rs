@@ -60,7 +60,8 @@ fn fields(s: &Scenery, g: &TerrainGrid, cover: &[f64]) -> (Vec<f32>, Vec<u32>) {
             _ => 0.,
         };
         let bare = matches!(g.biomes[i].name(), "lake bed" | "rock" | "snow");
-        let water = s.water_distance([ux, uz]);
+        // Shore thinning ends 2 m from water (#855).
+        let water = s.water_distance_within([ux, uz], 300);
         let river = if s.greyhaven() {
             mmorpg_core::greyhaven_vale::design::river_distance(ux, uz).min(
                 if mmorpg_core::greyhaven_vale::brook::wet_ground(ux, uz) {

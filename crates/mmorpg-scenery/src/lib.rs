@@ -1310,6 +1310,17 @@ impl Scenery {
             .unwrap_or(i64::MAX)
     }
 
+    /// [`Self::water_distance`] where it is below `limit` units, and `limit` elsewhere (#855): for
+    /// callers that treat everything that far from water alike, at a fraction of the cost.
+    #[must_use]
+    pub fn water_distance_within(&self, point: [i32; 2], limit: i64) -> i64 {
+        self.water
+            .iter()
+            .map(|water| water.ellipse().distance_within(point, limit))
+            .min()
+            .unwrap_or(i64::MAX)
+    }
+
     /// Whether the physical ground around `(x, z)` rises more than 1 m per metre (45°) on
     /// either axis: a face no unit walks up.
     fn cliff_at(&self, x: i32, z: i32) -> bool {
@@ -1325,7 +1336,8 @@ impl Scenery {
     /// natural patches of rougher grass.
     fn designed_biome(&self, x: i32, z: i32) -> Biome {
         let point = [x, z];
-        let water = self.water_distance(point);
+        // Only lake beds and shores within 3 m read it (#855).
+        let water = self.water_distance_within(point, 300);
         let river = greyhaven_vale::design::river_distance(x, z);
         if water == 0 || river <= 0 {
             return Biome::LakeBed;
@@ -1398,7 +1410,8 @@ impl Scenery {
         if greyhaven_vale::beyond_core(x, z) > 0 {
             return self.designed_biome(x, z);
         }
-        let water = self.water_distance(point);
+        // Only lake beds and shores within 3 m read it (#855).
+        let water = self.water_distance_within(point, 300);
         if water == 0 {
             return Biome::LakeBed;
         }
