@@ -84,6 +84,7 @@ fn a_character_of_many_past_incidents_is_admitted_with_only_live_receipts() {
             incident: 40,
             at: state.tick - 1,
             outcome: RaidOutcome::Defended,
+            defence: false,
         });
     });
     let floors = zone.incident_floors();

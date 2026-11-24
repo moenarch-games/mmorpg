@@ -534,6 +534,8 @@ pub(super) fn npcs() -> Vec<Npc> {
             facing,
         })
         .chain(super::residents::npcs())
+        // Millbrook's farmfolk (#1019).
+        .chain(super::millbrook_defence::npcs())
         .collect()
 }
 

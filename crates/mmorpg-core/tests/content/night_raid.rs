@@ -213,6 +213,7 @@ fn the_nightly_check_commits_a_raid_only_on_raid_nights_once_eligible() {
         incident: 1,
         at: tick - u64::from(COOLDOWN_TICKS) + 1,
         outcome: RaidOutcome::Defended,
+        defence: false,
     });
     zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
     zone.advance_tick().unwrap();

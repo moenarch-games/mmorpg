@@ -27,6 +27,7 @@ mod marsh;
 mod marsh_adder;
 mod marsh_creatures;
 mod merchant_cart;
+mod millbrook_defence;
 mod night_raid;
 mod quest_chain;
 mod raid_aftermath;

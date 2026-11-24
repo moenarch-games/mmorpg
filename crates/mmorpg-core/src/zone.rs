@@ -314,6 +314,11 @@ pub struct ZoneTickWork {
     pub confrontations_checked: usize,
     /// Loads the carry step visited (#1077): each carried or set-down load once.
     pub loads_visited: usize,
+    /// Construction sites the construction step visited (#1019): each content site once.
+    pub constructions_visited: usize,
+    /// Raiders on the assault the raid step checked against the objective and, in a defence,
+    /// its civilians (#1019): each living assault raider once.
+    pub raid_raiders_visited: usize,
     /// The engine's own report, present only after a successful physics step.
     pub physics: Option<crate::physics::StepStats>,
 }
@@ -386,6 +391,8 @@ pub struct ZoneSimulation {
     pub(crate) escorts: BTreeMap<crate::NpcId, crate::EscortState>,
     /// Every player's one load, carried or set down (#1077), canonical.
     pub(crate) loads: BTreeMap<PlayerId, crate::LoadState>,
+    /// Every construction site's material and raising (#1019), canonical.
+    pub(crate) constructions: BTreeMap<crate::PieceId, crate::ConstructionState>,
     /// The private run bound to this depths zone (#404); `None` in every other zone.
     pub(crate) depths: Option<crate::DepthsRun>,
     /// Where bodies stood over the last ticks, for capped hit rewind (#680); canonical,
@@ -517,6 +524,7 @@ impl ZoneSimulation {
         }
         // Destructible pieces (#305) stand intact.
         let pieces = Self::build_pieces(&mut world, &content)?;
+        let constructions = Self::build_constructions(&content);
         // Platforms (#56) start at their tick-0 centre.
         for platform in content.platforms() {
             let [x, y, z] = platform.centre_at(0);
@@ -585,6 +593,7 @@ impl ZoneSimulation {
             wakes: BTreeMap::new(),
             escorts: BTreeMap::new(),
             loads: BTreeMap::new(),
+            constructions,
             depths: None,
             rewind_history: crate::rewind::RewindHistory::new(),
             rewards: None,
@@ -1058,6 +1067,8 @@ impl ZoneSimulation {
         self.advance_sitting();
         self.update_timers(now)?;
         self.regrow_pieces(now)?;
+        // Construction sites rise, stand their time or come down (#1019).
+        self.advance_constructions(now)?;
         self.advance_summoned(now);
         self.advance_raid(now)?;
         self.advance_hunt(now)?;

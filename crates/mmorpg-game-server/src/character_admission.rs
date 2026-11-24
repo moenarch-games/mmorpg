@@ -527,6 +527,7 @@ mod tests {
             incident: 40,
             at: state.tick,
             outcome: mmorpg_core::RaidOutcome::Lost,
+            defence: false,
         });
         *adapter.zone_mut() =
             mmorpg_core::ZoneSimulation::from_snapshot(state, greyhaven_vale::content()).unwrap();

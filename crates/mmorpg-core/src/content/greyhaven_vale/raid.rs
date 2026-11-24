@@ -106,6 +106,8 @@ pub fn millbrook_barn() -> RaidSite {
         tracks: TRACKS,
         lookout: NpcId::new(ALARM_GUARDS[0]),
         braces: BRACES.to_vec(),
+        // The farmfolk who hold the barn's doors in a defence (#1019).
+        civilians: super::millbrook_defence::civilians(),
     }
 }
 

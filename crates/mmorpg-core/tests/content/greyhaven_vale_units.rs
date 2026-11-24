@@ -698,6 +698,22 @@ fn npcs_stand_at_their_posts() {
                 Some(greyhaven_vale::vale::WOLFRUN_WOODS)
             ),
             ("Courier Wat Ferrow", NpcRole::Resident, outpost),
+            // Millbrook's farmfolk at the barn's doors (#1019).
+            (
+                "Marta Mill",
+                NpcRole::Resident,
+                Some(greyhaven_vale::vale::MILLBROOK_FARM)
+            ),
+            (
+                "Farmhand Cole",
+                NpcRole::Resident,
+                Some(greyhaven_vale::vale::MILLBROOK_FARM)
+            ),
+            (
+                "Farmhand Edda",
+                NpcRole::Resident,
+                Some(greyhaven_vale::vale::MILLBROOK_FARM)
+            ),
         ])
         .collect::<Vec<_>>()
     );

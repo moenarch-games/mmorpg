@@ -27,6 +27,7 @@ mod character;
 mod chat;
 mod combat;
 mod combo;
+mod construction;
 mod content;
 mod corpse;
 mod corpse_loot;
@@ -128,6 +129,10 @@ pub use chat::{
 };
 pub use climb::{ClimbSurfaces, Grip, Ledge, Traversal, TraversalView};
 pub use combo::{COMBO_IMPACT_TICKS, COMBO_WINDOW_TICKS, ComboOpening, ComboPhase};
+pub use construction::{
+    ConstructionSite, ConstructionState, MAX_CONSTRUCTION_MATERIALS, MAX_CONSTRUCTION_SITES,
+    STAND_TICKS as CONSTRUCTION_STAND_TICKS,
+};
 pub use content::greyhaven_vale::{self, greyhaven_vale_definition};
 pub use content::redbrand_depths;
 pub use content::seam_test::{self, content_for_zone};
@@ -267,8 +272,8 @@ pub use quest::{
     QuestRewards, QuestSheet, QuestSupply,
 };
 pub use raid::{
-    AidKind, AidTask, RaidApproach, RaidIncident, RaidLeg, RaidMember, RaidNotice, RaidOutcome,
-    RaidPrep, RaidResolution, RaidSite, RaidState, RaidView,
+    AidChore, AidKind, AidTask, Civilian, RaidApproach, RaidIncident, RaidLeg, RaidMember,
+    RaidNotice, RaidOutcome, RaidPrep, RaidResolution, RaidSite, RaidState, RaidView,
 };
 pub use ramp::{MAX_RAMPS, Ramp, RampRise};
 pub use reckoning::{Harm, MAX_RECKONING_POOLS, RECKONING_ALLY_RADIUS};

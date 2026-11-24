@@ -219,13 +219,25 @@ impl ZoneSimulation {
             .filter(|id| self.piece_stands(*id))
     }
 
-    /// Adds every piece's collider, all intact: building a zone.
+    /// Adds every piece's collider, all intact but construction sites' (#1019): building a zone.
     pub(crate) fn build_pieces(
         world: &mut crate::physics::World,
         content: &crate::ZoneContent,
     ) -> Result<BTreeMap<PieceId, PieceState>, ZoneError> {
         let mut states = BTreeMap::new();
         for piece in content.pieces() {
+            // A construction site's piece starts unbuilt: no health, no collider.
+            if content.construction(piece.id).is_some() {
+                states.insert(
+                    piece.id,
+                    PieceState {
+                        health: 0,
+                        changed_tick: 0,
+                        repaired: 0,
+                    },
+                );
+                continue;
+            }
             world
                 .add_body(RigidBody::fixed(
                     BodyId(u64::from(piece.body)),
@@ -444,7 +456,11 @@ impl ZoneSimulation {
             let elapsed = now
                 .saturating_sub(state.changed_tick)
                 .saturating_add(u64::from(state.repaired));
-            if state.health >= piece.health || elapsed < u64::from(regrowth) {
+            // A construction site's piece (#1019) never rises from nothing by itself.
+            if state.health >= piece.health
+                || elapsed < u64::from(regrowth)
+                || (state.health == 0 && content.construction(piece.id).is_some())
+            {
                 continue;
             }
             let supported = piece.supports.is_empty()
@@ -456,16 +472,7 @@ impl ZoneSimulation {
                 continue;
             }
             if state.health == 0 {
-                let occupied = self
-                    .world
-                    .overlap_query(crate::physics::Aabb::new(
-                        vector(piece.position),
-                        vector(piece.half_extents),
-                    ))
-                    .map_err(physics_error)?
-                    .into_iter()
-                    .any(|body| crate::entity::entity_of(body).is_some());
-                if occupied {
+                if self.piece_box_occupied(piece)? {
                     continue;
                 }
                 self.place_piece(piece, true)?;
@@ -480,6 +487,52 @@ impl ZoneSimulation {
             );
         }
         Ok(())
+    }
+
+    /// Whether a unit stands in `piece`'s box.
+    pub(crate) fn piece_box_occupied(&self, piece: &StructurePiece) -> Result<bool, ZoneError> {
+        Ok(self
+            .world
+            .overlap_query(crate::physics::Aabb::new(
+                vector(piece.position),
+                vector(piece.half_extents),
+            ))
+            .map_err(physics_error)?
+            .into_iter()
+            .any(|body| crate::entity::entity_of(body).is_some()))
+    }
+
+    /// A piece's health now; zero for an unknown one.
+    pub(crate) fn piece_health(&self, id: PieceId) -> u32 {
+        self.pieces.get(&id).map_or(0, |state| state.health)
+    }
+
+    /// Stands `piece` at full health with its collider at `now` (#1019: a raised construction).
+    pub(crate) fn stand_piece(
+        &mut self,
+        piece: &StructurePiece,
+        now: u64,
+    ) -> Result<(), ZoneError> {
+        self.place_piece(piece, true)?;
+        self.pieces.insert(
+            piece.id,
+            PieceState {
+                health: piece.health,
+                changed_tick: now,
+                repaired: 0,
+            },
+        );
+        Ok(())
+    }
+
+    /// Takes standing piece `id` down at `now` (#1019: a construction's farmhands), as a
+    /// destruction nobody is credited with: whatever rested only on it collapses.
+    pub(crate) fn fell_piece(&mut self, id: PieceId, now: u64) -> Result<(), ZoneError> {
+        let health = self.piece_health(id);
+        if health == 0 {
+            return Ok(());
+        }
+        self.damage_piece(id, health, now, None)
     }
 
     /// Pieces that are not intact, in ID order, for every projection.
@@ -544,6 +597,9 @@ impl ZoneSimulation {
             );
             if record.health == 0 {
                 self.place_piece(piece, false)?;
+            } else if content.construction(piece.id).is_some() {
+                // A raised construction (#1019): the zone was built without its collider.
+                self.place_piece(piece, true)?;
             }
         }
         // A restored world holds no piece left without supports.

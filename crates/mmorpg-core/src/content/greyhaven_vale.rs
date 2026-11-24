@@ -51,6 +51,7 @@ pub mod market;
 pub mod marsh;
 pub mod marsh_creatures;
 pub mod marshal_house;
+pub mod millbrook_defence;
 pub mod ore;
 mod outlines;
 pub mod paint;
@@ -212,6 +213,8 @@ pub mod ids {
     pub const CAMPFIRE: u32 = 440;
     /// The Redbrand watch post's destructible pieces (#305).
     pub const WATCH_POST: RangeInclusive<u32> = 460..=462;
+    /// Millbrook's barricades, construction sites (#1019).
+    pub const MILLBROOK_BARRICADES: RangeInclusive<u32> = 463..=464;
 
     /// The Greyfang standing stones (#159).
     pub const STANDING_STONES: RangeInclusive<u32> = 500..=506;
@@ -1918,14 +1921,27 @@ pub fn ramps() -> Vec<crate::Ramp> {
     ramps
 }
 
-/// Greyhaven's destructible sites (#305): the Redbrand camp, whose pieces rebuild after 5 min.
+/// Greyhaven's destructible sites (#305): the Redbrand camp, whose pieces rebuild after 5 min,
+/// and Millbrook's barricades (#1019).
 #[must_use]
 pub fn structure_sites() -> Vec<crate::StructureSite> {
-    vec![crate::StructureSite {
-        id: 1,
-        name: "Redbrand Hollow".to_owned(),
-        regrowth_ticks: crate::long_ticks_from_ms(300_000),
-    }]
+    vec![
+        crate::StructureSite {
+            id: 1,
+            name: "Redbrand Hollow".to_owned(),
+            regrowth_ticks: crate::long_ticks_from_ms(300_000),
+        },
+        millbrook_defence::site(),
+    ]
+}
+
+/// Every destructible piece: the watch post's, then Millbrook's barricades (#1019).
+#[must_use]
+pub fn structure_pieces() -> Vec<crate::StructurePiece> {
+    watch_post()
+        .into_iter()
+        .chain(millbrook_defence::barricades())
+        .collect()
 }
 
 /// The Redbrand watch post (#305) east of the Hollow Road at the camp's southern edge: two
@@ -2134,10 +2150,12 @@ fn content_with_spawns(
             .with_platforms(vec![MILL_HOIST])?
             .with_ramps(ramps())?
             .with_rocks(dressing::rock_shapes())?
-            .with_structures(structure_sites(), watch_post())?
+            .with_structures(structure_sites(), structure_pieces())?
             // Quests after the structures their demolish objectives name (#1019).
             .with_evidence(quests::evidence())?
             .with_loads(quests::loads())?
+            // Millbrook's barricades (#1019), after the pieces and the timber pile they name.
+            .with_constructions(millbrook_defence::constructions())?
             .with_quests(quests::quests())?
             .with_seats(units::seats())?
             .with_routines(units::routines(), units::closed_at_night())?

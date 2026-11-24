@@ -121,6 +121,8 @@ pub struct ZoneContent {
     evidence: Vec<crate::EvidenceSpot>,
     /// Load sources (#1077), in ID order.
     loads: Vec<crate::LoadSpot>,
+    /// Construction sites (#1019), in piece order.
+    constructions: Vec<crate::ConstructionSite>,
     /// NPC attitudes toward interviewers (#1019), in NPC order.
     attitudes: Vec<crate::NpcAttitude>,
     /// NPCs who turn hostile when shown evidence (#1019), in NPC order.
@@ -280,6 +282,7 @@ impl ZoneContent {
             caches: Vec::new(),
             evidence: Vec::new(),
             loads: Vec::new(),
+            constructions: Vec::new(),
             attitudes: Vec::new(),
             confrontations: Vec::new(),
             quest_npcs: Vec::new(),
@@ -351,6 +354,7 @@ impl ZoneContent {
             caches: Vec::new(),
             evidence: Vec::new(),
             loads: Vec::new(),
+            constructions: Vec::new(),
             attitudes: Vec::new(),
             confrontations: Vec::new(),
             quest_npcs: Vec::new(),
@@ -1947,6 +1951,46 @@ impl ZoneContent {
         Ok(self)
     }
 
+    /// Adds construction sites (#1019), after the structures and load sources they name and
+    /// before the quests that build them: each names a distinct known piece and a known source,
+    /// and asks for `1..=MAX_CONSTRUCTION_MATERIALS` loads.
+    pub fn with_constructions(
+        mut self,
+        mut sites: Vec<crate::ConstructionSite>,
+    ) -> Result<Self, ZoneError> {
+        sites.sort_by_key(|site| site.piece);
+        if sites.len() > crate::MAX_CONSTRUCTION_SITES
+            || sites.windows(2).any(|pair| pair[0].piece == pair[1].piece)
+            || sites.iter().any(|site| {
+                !self.pieces.iter().any(|piece| piece.id == site.piece)
+                    || self.load_spot(site.source).is_none()
+                    || !(1..=crate::MAX_CONSTRUCTION_MATERIALS).contains(&site.materials)
+            })
+        {
+            return Err(ZoneError::new(
+                "a construction site names a distinct known piece, a known load source and its loads",
+            ));
+        }
+        self.constructions = sites;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Construction sites (#1019), in piece order.
+    #[must_use]
+    pub fn constructions(&self) -> &[crate::ConstructionSite] {
+        &self.constructions
+    }
+
+    /// The construction site raising `piece` (#1019), if any.
+    #[must_use]
+    pub fn construction(&self, piece: crate::PieceId) -> Option<&crate::ConstructionSite> {
+        self.constructions
+            .binary_search_by_key(&piece, |site| site.piece)
+            .ok()
+            .map(|index| &self.constructions[index])
+    }
+
     /// Load sources (#1077), in ID order.
     #[must_use]
     pub fn load_spots(&self) -> &[crate::LoadSpot] {
@@ -2079,7 +2123,7 @@ impl ZoneContent {
 
     /// NPC attitudes and confrontations (#1019) enter the identity only where authored.
     fn compute_npc_quest_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_load_fingerprint();
+        let fingerprint = self.compute_construction_fingerprint();
         if self.attitudes.is_empty() && self.confrontations.is_empty() {
             return fingerprint;
         }
@@ -2101,6 +2145,24 @@ impl ZoneContent {
             hash.u32(confrontation.npc.get());
             hash.u32(confrontation.evidence.get());
             hash.u32(confrontation.foe.get());
+        }
+        hash.finish()
+    }
+
+    /// Construction sites (#1019) enter the identity only when a zone has some.
+    fn compute_construction_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_load_fingerprint();
+        if self.constructions.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/constructions-v1");
+        hash.u64(fingerprint);
+        hash.len(self.constructions.len());
+        for site in &self.constructions {
+            hash.u32(site.piece.get());
+            hash.u32(site.source.get());
+            hash.u8(site.materials);
         }
         hash.finish()
     }
@@ -2482,6 +2544,16 @@ impl ZoneContent {
         hash.u32(site.lookout.get());
         hash.len(site.braces.len());
         hash.i32s(site.braces.as_flattened());
+        // A defence's civilians (#1019), where authored.
+        if !site.civilians.is_empty() {
+            hash.bytes(b"civilians-v1");
+            hash.len(site.civilians.len());
+            for civilian in &site.civilians {
+                hash.u32(civilian.npc.get());
+                hash.i32s(&civilian.at);
+                hash.u32(civilian.health);
+            }
+        }
         hash.finish()
     }
 
@@ -2828,6 +2900,15 @@ impl ZoneContent {
                     crate::QuestObjective::DeliverLoad { source, npc } => {
                         hash.u32(source.get());
                         hash.u32(npc.get());
+                    }
+                    crate::QuestObjective::Build { piece } => hash.u32(piece.get()),
+                    crate::QuestObjective::Defend { npc } => hash.u32(npc.get()),
+                    crate::QuestObjective::Aid { chore, count } => {
+                        hash.u8(match chore {
+                            crate::AidChore::Mend => 1,
+                            crate::AidChore::Tend => 2,
+                        });
+                        hash.u8(count);
                     }
                 }
             }

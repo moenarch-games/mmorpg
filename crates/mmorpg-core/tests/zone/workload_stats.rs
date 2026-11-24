@@ -44,7 +44,9 @@ fn tick_work_counts_real_ai_and_engine_work_without_entering_recovery() {
             + content.doors().len()
             + content.platforms().len()
             + content.ramps().len()
+            // Construction sites (#1019) start unbuilt, without a collider.
             + content.pieces().len()
+            - content.constructions().len()
             + 1
     );
     assert!(physics.moved_bodies <= content.creature_spawns().len() + 1);
