@@ -537,8 +537,8 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
     let parts = mmorpg_presentation::settlement_props::parts(&scenery);
     assert_eq!(
         parts.len(),
-        1234,
-        "market square, brook additions, the Delving Run footbridge (#828), the sixteen cottages' and six farmhouses' furniture (#843, #847, #886), the villages' clutter and stand-ins (#851), the second batch (#891), the smith's bench (#917), the Wolfrun cart scene (#984) and the procedural props and fences they replace (#683)"
+        1235,
+        "market square, brook additions, the Delving Run footbridge (#828), the sixteen cottages' and six farmhouses' furniture (#843, #847, #886), the villages' clutter and stand-ins (#851), the second batch (#891), the smith's bench (#917), the Wolfrun cart scene (#984), Millbrook's quest timber pile (#1019) and the procedural props and fences they replace (#683)"
     );
     for family in [
         ["stall", "cart", "crate"],
@@ -571,14 +571,15 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
     let [cx, cz] = market::centre([house.position[0], house.position[2]]);
     let [hx, hz] = market::HALF_EXTENTS;
     // The square's own props, not the villages' clutter and stand-ins (#851), the Wolfrun cart scene
-    // (#984) or the walk-in houses' furniture (#843, #886) elsewhere, nor the smith's bench (#917)
-    // on its own collider.
+    // (#984), the quests' own props such as Millbrook's timber pile (#1019) or the walk-in houses'
+    // furniture (#843, #886) elsewhere, nor the smith's bench (#917) on its own collider.
     let elsewhere: Vec<[i32; 2]> = mmorpg_presentation::world_dressing::placed(&scenery)
         .iter()
         .filter(|placed| {
             placed.id.starts_with("village-")
                 || placed.id.starts_with("settlement-")
                 || placed.id.starts_with("wolfrun-cart-")
+                || placed.id.starts_with("quest-")
                 || placed.fallback_collider.is_some()
                 || placed.collider.is_some()
         })
