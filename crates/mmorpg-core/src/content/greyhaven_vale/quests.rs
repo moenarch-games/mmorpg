@@ -20,6 +20,10 @@
 //! Farmer Osric Mill sends players up the farm road to the farmland's hamlets (#859), where
 //! Goodwife Ena, Miller Hanne and Shepherd Lise each need a hand.
 //!
+//! Back in the Core Vale (#1019), Hilda has a player read the signs her cart left: the cut sacks,
+//! the bait and the Redbrand marker, the bait's trail to a courier's cache, and her own ledger
+//! against Millbrook's delivery tally. Their inspect objectives name authored evidence spots.
+//!
 //! The quests themselves are content (#862): `content/greyhaven/quests.json` defines every
 //! quest's text, giver, ender, prerequisite, objectives and rewards by the stable IDs below and
 //! the zone's NPC, creature, item and area IDs. The zone validates them when it binds them.
@@ -27,7 +31,8 @@
 use serde::Deserialize;
 
 use crate::{
-    AreaId, CreatureTemplateId, ItemId, NpcId, Quest, QuestId, QuestObjective, QuestRewards,
+    AreaId, CreatureTemplateId, EvidenceId, EvidenceSpot, ItemId, NpcId, Quest, QuestId,
+    QuestObjective, QuestRewards,
 };
 
 pub const MARSHAL: NpcId = NpcId::new(1);
@@ -88,6 +93,26 @@ pub const RATS_IN_THE_GRANARY: QuestId = QuestId::new(30);
 pub const BOARS_IN_THE_BARLEY: QuestId = QuestId::new(31);
 pub const THE_SHEPHERDS_WOLVES: QuestId = QuestId::new(32);
 
+/// The Core Vale's evidence quests (#1019): Hilda sends a player back to the Wolfrun cart to
+/// read its signs, after the bait's trail to a courier's cache, and through her own ledger to
+/// the shipment Millbrook never received. ID 35 is the planned wounded guard's, which waits
+/// for an escort rule.
+pub const CUT_SACKS_RED_RAGS: QuestId = QuestId::new(33);
+pub const THE_BAIT_TRAIL: QuestId = QuestId::new(34);
+pub const THE_TANNERS_LEDGER: QuestId = QuestId::new(36);
+
+/// The evidence those quests name (#1019): the Wolfrun cart scene's cut sacks, bait and marker
+/// (#984), the bait trail's scraps, second rag and the courier's cache, Hilda's ledger and the
+/// Millbrook delivery tally.
+pub const CUT_SACKS: EvidenceId = EvidenceId::new(1);
+pub const BAIT_RACK: EvidenceId = EvidenceId::new(2);
+pub const REDBRAND_MARKER: EvidenceId = EvidenceId::new(3);
+pub const BAIT_SCRAPS: EvidenceId = EvidenceId::new(4);
+pub const SECOND_RAG: EvidenceId = EvidenceId::new(5);
+pub const COURIERS_CACHE: EvidenceId = EvidenceId::new(6);
+pub const HILDAS_LEDGER: EvidenceId = EvidenceId::new(7);
+pub const DELIVERY_TALLY: EvidenceId = EvidenceId::new(8);
+
 /// The region's quest givers (#820): Barrowdown's alewife, Fenford's innkeeper, Westmere
 /// Lodge's fisher, the hunters' huntsman and Greyfang Watch's watchman; and Old Maud, whom a
 /// quest sends players to talk to.
@@ -122,6 +147,9 @@ const SOURCE: &str = include_str!(concat!(
 struct Source {
     version: u32,
     quests: Vec<QuestSource>,
+    /// The evidence the quests' inspect objectives name (#1019).
+    #[serde(default)]
+    evidence: Vec<EvidenceSource>,
 }
 
 #[derive(Deserialize)]
@@ -147,6 +175,16 @@ enum ObjectiveSource {
     Explore { area: u32 },
     Retrieve { item: u32, area: u32 },
     DefeatThorn,
+    Inspect { spot: u32 },
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EvidenceSource {
+    id: u32,
+    name: String,
+    at: [i32; 3],
+    reach: i32,
 }
 
 #[derive(Deserialize)]
@@ -184,16 +222,19 @@ impl From<ObjectiveSource> for QuestObjective {
                 area: AreaId::new(area),
             },
             ObjectiveSource::DefeatThorn => Self::DefeatThorn,
+            ObjectiveSource::Inspect { spot } => Self::Inspect {
+                spot: EvidenceId::new(spot),
+            },
         }
     }
 }
 
-fn parse(source: &str) -> Result<Vec<Quest>, String> {
+fn parse(source: &str) -> Result<(Vec<Quest>, Vec<EvidenceSpot>), String> {
     let source: Source = serde_json::from_str(source).map_err(|error| error.to_string())?;
     if source.version != 1 {
         return Err(format!("unknown quests version {}", source.version));
     }
-    Ok(source
+    let quests = source
         .quests
         .into_iter()
         .map(|quest| Quest {
@@ -210,7 +251,22 @@ fn parse(source: &str) -> Result<Vec<Quest>, String> {
                 choices: quest.rewards.choices.into_iter().map(ItemId::new).collect(),
             },
         })
-        .collect())
+        .collect();
+    let evidence = source
+        .evidence
+        .into_iter()
+        .map(|spot| EvidenceSpot {
+            id: EvidenceId::new(spot.id),
+            name: spot.name,
+            at: spot.at,
+            reach: spot.reach,
+        })
+        .collect();
+    Ok((quests, evidence))
+}
+
+fn source() -> (Vec<Quest>, Vec<EvidenceSpot>) {
+    parse(SOURCE).unwrap_or_else(|error| panic!("content/greyhaven/quests.json: {error}"))
 }
 
 /// The chain as `content/greyhaven/quests.json` lists it; the zone orders and validates it.
@@ -220,5 +276,16 @@ fn parse(source: &str) -> Result<Vec<Quest>, String> {
 /// When the committed quest file does not parse.
 #[must_use]
 pub fn quests() -> Vec<Quest> {
-    parse(SOURCE).unwrap_or_else(|error| panic!("content/greyhaven/quests.json: {error}"))
+    source().0
+}
+
+/// The evidence the quests' inspect objectives name (#1019), as `content/greyhaven/quests.json`
+/// lists it; the world dressing draws each piece at its spot.
+///
+/// # Panics
+///
+/// When the committed quest file does not parse.
+#[must_use]
+pub fn evidence() -> Vec<EvidenceSpot> {
+    source().1
 }

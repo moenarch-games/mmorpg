@@ -920,6 +920,7 @@ impl ZoneSimulation {
             ZoneCommand::RaidAid { task } => Some(PlayerIntent::RaidAid(task)),
             ZoneCommand::RaidPrepare { prep } => Some(PlayerIntent::RaidPrepare(prep)),
             ZoneCommand::Gather { node } => Some(PlayerIntent::Gather(node)),
+            ZoneCommand::Inspect { spot } => Some(PlayerIntent::Inspect(spot)),
             ZoneCommand::Skin { creature } => Some(PlayerIntent::Skin(creature)),
             ZoneCommand::RollDepthsDrop { run, drop, choice } => {
                 Some(PlayerIntent::RollDepthsDrop { run, drop, choice })

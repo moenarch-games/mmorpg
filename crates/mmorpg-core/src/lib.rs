@@ -40,6 +40,7 @@ mod door;
 mod ephemeral;
 mod equipment;
 mod events;
+mod evidence;
 mod finds;
 mod flank;
 pub mod flight;
@@ -172,6 +173,7 @@ pub use equipment::{
     PRIMARY_STAT_PER_DAMAGE, StatTotals,
 };
 pub use events::{ErrorCode, MAX_EVENTS_PER_PLAYER, ZoneEvent};
+pub use evidence::{EVIDENCE_HEIGHT_UNITS, EvidenceId, EvidenceSpot, MAX_EVIDENCE_REACH_UNITS};
 pub use finds::{
     ITEM_FINDS, ItemFind, ItemQuality, ItemTrait, NamedWeapon, STANDARD_FIND_WEIGHT, find_text,
     item_find, roll_variant, rolls_as, shaped_strike,
@@ -491,6 +493,9 @@ pub enum ZoneCommand {
     /// Gathers ore vein `node` (#917, an index into the content's veins): the zone checks that
     /// it is full and within reach in the tick, and spends it for everyone until it regrows.
     Gather { node: u32 },
+    /// Inspects quest evidence `spot` (#1019, an [`EvidenceId`]): the zone checks reach and
+    /// that an active quest still needs it in the tick, then completes those objectives.
+    Inspect { spot: u32 },
     /// Skins beast corpse `creature` (#917), which the player may loot: once per death, checked
     /// in the tick.
     Skin { creature: CreatureId },

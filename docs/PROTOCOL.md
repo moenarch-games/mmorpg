@@ -424,6 +424,8 @@ Version 14 adds the quest part to the self sheet, a quest item to loot sheets an
 
 Version 13 and earlier snapshots/checkpoints, version 8 and earlier commands and old recovery bundles fail closed. Historical fixtures remain rejection evidence. This change provides no automatic migration; arrange an explicit migration or fresh development recovery state before upgrading a standalone host.
 
+Quest evidence (#1019) adds the `Inspect` command (tag 40: version, tag, evidence spot ID `u32`) and pending intent code 33 with the same spot ID in canonical records. The quest sheet is unchanged: an inspect objective is stored progress (0 or 1) like a talk objective, and its objective code in the content identity is 7.
+
 ## Procedural action observations: snapshot v15, command v9 unchanged
 
 Wire and core schema version 15 apply to both canonical and player-visible snapshots. They add event tags 16 and 17 within the existing 14-byte event record, without changing section layouts, entity sizes, content revision, gameplay/RNG, commands or the datagram budget. Ordinary attack occurrences are distinct from generic damage: periodic damage, ranged abilities and channel pulses never imply a new melee swing. Cast and action observations support per-actor presentation; damage observations support target-local impacts without participant HUD attribution. Queue priority and conservative packet filtering keep critical participant feedback and required viewer/target entities.
