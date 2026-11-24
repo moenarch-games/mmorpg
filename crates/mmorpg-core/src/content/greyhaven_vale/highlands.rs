@@ -74,7 +74,10 @@ pub const BUILDINGS: &[(Building, [i32; 2], [i32; 2], i32)] = &[
 ];
 
 /// Rock crags across the high ground: `(footprint min, footprint max, height)`, 8–16 m tall,
-/// clear of the trails.
+/// clear of the trails. Each is a group of the crag kit's sculpted outcrops placed by the world
+/// dressing (`content/greyhaven/dressing/crags.json`, #1195), its collision generated from the
+/// art and its first outcrop's collider `ids::HIGHLAND_CRAGS.start()` + its index here; the
+/// footprint keeps trees and boulders clear of it.
 pub const CRAGS: &[([i32; 2], [i32; 2], i32)] = &[
     // Flanking the gorge's top.
     ([1_200, -30_000], [1_800, -29_200], 1_200),
@@ -147,15 +150,11 @@ pub(super) const REGION: super::Region = super::Region {
     colliders,
 };
 
-/// The stronghold, the lookout and the rock crags.
+/// The stronghold and the lookout; the rock crags are dressing meshes (#1195).
 fn colliders() -> Vec<StaticCollider> {
-    let buildings = BUILDINGS
-        .iter()
-        .map(|&(_, min, max, height)| (min, max, height));
     (*ids::HIGHLAND_BUILDINGS.start()..)
-        .zip(buildings)
-        .chain((*ids::HIGHLAND_CRAGS.start()..).zip(CRAGS.iter().copied()))
-        .map(|(id, (min, max, height))| on_terrain(id, min, max, height))
+        .zip(BUILDINGS)
+        .map(|(id, &(_, min, max, height))| on_terrain(id, min, max, height))
         .collect()
 }
 

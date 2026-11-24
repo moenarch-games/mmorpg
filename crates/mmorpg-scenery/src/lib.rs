@@ -577,7 +577,6 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
                 Building::Crate => PropKind::Crate,
             }
         }
-        _ if ids::HIGHLAND_CRAGS.contains(&id) => PropKind::Cliff,
         // Marsh-Lake Wetlands (#426): the drowned watchtower is a keep, its standing stones are
         // the Greyfang stones' waystones and the cottage is a ruined house, like Southmeadow's.
         _ if ids::MARSH_BUILDINGS.contains(&id) => {

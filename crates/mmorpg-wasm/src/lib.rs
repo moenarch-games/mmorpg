@@ -1299,19 +1299,6 @@ impl UnitPresenter {
             });
     }
 
-    /// The crag kit's `crag-descriptor` JSON once the page draws the kit, or `""` while it
-    /// does not (#668): climbers on its climbable faces are drawn out to the modules' rock.
-    ///
-    /// # Errors
-    ///
-    /// For a malformed descriptor.
-    #[wasm_bindgen(js_name = setCragDescriptor)]
-    pub fn set_crag_descriptor(&mut self, json: &str) -> Result<(), JsError> {
-        self.0
-            .set_crag_descriptor(json)
-            .map_err(|error| JsError::new(&error))
-    }
-
     /// Whether the page draws the `strike-effects` and `spell-effects` bundles (#894): each
     /// frame's `effects` then lists what to play, and their primitive stand-ins are not drawn.
     #[wasm_bindgen(js_name = setEffectKits)]

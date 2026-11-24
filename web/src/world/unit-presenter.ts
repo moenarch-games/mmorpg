@@ -22,7 +22,6 @@ export type UnitPresenterHandle = {
   setInteraction(lootWindow: boolean, npc: number | undefined): void;
   setKitPlatforms(platforms: Uint32Array): void;
   setEffectKits(drawn: boolean): void;
-  setCragDescriptor(json: string): void;
   setChannelOrigins(origins: Float64Array): void;
   /** Observes the session's projection `id` from its store (#1009); false once the store no longer retains it. */
   push(store: IngestedProjection["store"], id: number, seconds: number): boolean;
@@ -341,11 +340,6 @@ export class SharedUnits {
   /** What the page's windows are open toward this frame (#619): the viewer's loot kneel and the NPC it talks to. */
   setInteraction(lootWindow: boolean, npc: number | null): void {
     this.#handle.setInteraction(lootWindow, npc ?? undefined);
-  }
-
-  /** The crag kit's descriptor once it is drawn (#668): climbers on its climbable faces are drawn out to its rock. */
-  setCragDescriptor(json: string): void {
-    this.#handle.setCragDescriptor(json);
   }
 
   /** The platforms a kit draws (the fortress lifts, #591): no procedural pillar; each frame's `platforms` places them. */

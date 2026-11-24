@@ -30,7 +30,7 @@ use crate::{
 };
 
 /// Greyhaven Vale's dressing files.
-const GREYHAVEN: [&str; 16] = [
+const GREYHAVEN: [&str; 17] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/vale.json"
@@ -112,14 +112,22 @@ const GREYHAVEN: [&str; 16] = [
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/sandstone.json"
     )),
+    // The Bandit Highlands' crags as outcrop groups with a little climbing ivy (#1195),
+    // composed by `content/greyhaven/authoring/crags.py`.
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../content/greyhaven/dressing/crags.json"
+    )),
 ];
 
 /// Every kit that draws dressing, by its asset keys' prefix, with the static-scene fallback
 /// ([`Kit`]) it hides while drawn, if it has one.
-pub const KITS: [(&str, Option<Kit>); 9] = [
+pub const KITS: [(&str, Option<Kit>); 10] = [
     ("greyhaven.nature.", Some(Kit::Nature)),
     ("limestone-rocks.kit.", Some(Kit::Limestone)),
     ("crag.kit.", Some(Kit::Crag)),
+    // The ivy on climbable crags (#1195), drawn with the climbing kit's ladders and ropes.
+    ("climbing.kit.", Some(Kit::Climbing)),
     ("settlement.props.", Some(Kit::SettlementProps)),
     ("outpost.kit.", Some(Kit::Outpost)),
     ("greyhaven.fort.", Some(Kit::Outpost)),
@@ -255,6 +263,10 @@ pub struct Placed {
     /// The collider generated from this placement's art, if it collides.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub collider: Option<u32>,
+    /// Whether that collider climbs (#1195): `dressing_collision.py` carries it into the
+    /// generated collision, which the zone's climbing reads. Without one it does not climb.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grip: Option<Grip>,
     /// Existing gameplay body hidden by this art, without generating or changing collision.
     /// Multiple composed modules may share one body. Presentation only.
     #[serde(
@@ -276,6 +288,16 @@ pub struct Placed {
     /// The distance class beyond which the placement is hidden; [`Cull::Far`] when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cull: Option<Cull>,
+}
+
+/// A placement's climbable or sheer setting (#1195).
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Grip {
+    /// Rough rock: its collider climbs.
+    Rock,
+    /// Sheer rock: its collider does not climb.
+    Sheer,
 }
 
 #[expect(
@@ -350,6 +372,9 @@ pub fn parse(sources: &[&str]) -> Result<Vec<Placed>, String> {
         }
         if placed.collider.is_some_and(|id| !colliders.insert(id)) {
             return Err(format!("{}: another placement has its collider", placed.id));
+        }
+        if placed.grip.is_some() && placed.collider.is_none() {
+            return Err(format!("{}: a grip without a collider", placed.id));
         }
         if !drawn(&placed.asset) {
             return Err(format!("{}: no kit draws {}", placed.id, placed.asset));

@@ -7,10 +7,12 @@
 //! - **Ropes.** Each rope collider ([`PropKind::Rope`], `Grip::Rope`) is a `rope-end`, 1.2 m
 //!   `rope-section`s and a `rope-anchor` whose beam sits just under the face's top, the rope's
 //!   axis 0.30 m in front of the face (the collider's front). The end hangs clear of the ground.
-//! - **Ivy.** A few climbable faces ([`COVERS`]: palisade, cliff and crag faces) and the
+//! - **Ivy.** A few climbable faces ([`COVERS`]: palisade and cliff faces) and the
 //!   boundary climbing routes on the terrain wear climbing ivy, a `vine-3m` cover on a low face
-//!   or `vine-strip`s capped by a `vine-top`, so a climbable route reads from about 20 m. The ivy
-//!   is a cover: the face beneath keeps its own grip, and sheer faces stay bare.
+//!   or `vine-strip`s capped by a `vine-top`, so a climbable route reads from about 20 m. A few
+//!   climbable highland crags wear the same ivy as world dressing on their sculpted rock
+//!   (#1195, `content/greyhaven/dressing/crags.json`). The ivy is a cover: the face beneath
+//!   keeps its own grip, and sheer faces stay bare.
 //!
 //! The shared [`Lods`] picks each part's level from the descriptor's `lodSelection`. While a
 //! client does not draw the kit, the static scene draws the procedural ladders and ropes
@@ -76,15 +78,12 @@ const STEEP: f64 = 1.;
 pub type Cover = (u32, [i32; 2], &'static [f64]);
 
 /// The covered collider faces (#621), each a route two or three strips wide: the Outpost
-/// palisade's north wall from inside and its east wall from outside, the Redbrand Hollow's
-/// western cliff, and three climbable highland crags by the gorge, the trail and the lookout.
-pub const COVERS: [Cover; 6] = [
+/// palisade's north wall from inside and its east wall from outside, and the Redbrand Hollow's
+/// western cliff. The highland crags' ivy is world dressing on their sculpted rock (#1195).
+pub const COVERS: [Cover; 3] = [
     (*ids::PALISADE.start(), [0, 1], &[8.0, 9.0]),
     (*ids::PALISADE.start() + 6, [1, 0], &[-4.0, -3.0]),
     (*ids::CLIFFS.start(), [1, 0], &[4.0, 5.0, 6.0]),
-    (*ids::HIGHLAND_CRAGS.start(), [0, 1], &[-0.5, 0.5]),
-    (*ids::HIGHLAND_CRAGS.start() + 2, [0, 1], &[-0.5, 0.5]),
-    (*ids::HIGHLAND_CRAGS.start() + 7, [-1, 0], &[-0.5, 0.5]),
 ];
 /// Each boundary climbing route on the terrain wears three strips up its middle.
 const ROUTE_STRIPS: [f64; 3] = [-1., 0., 1.];
@@ -224,19 +223,10 @@ fn covers(s: &Scenery, g: &TerrainGrid, parts: &mut Vec<Placement>) {
             continue;
         };
         let [hx, _, hz] = p.half_extents.map(metres);
-        // On a box the crag kit dresses (#668) the ivy hangs clear of its rock.
-        let lift = if crate::crag::dresses(s, p) {
-            crate::crag::IVY_STAND_OFF
-        } else {
-            0.
-        };
         let centre = [metres(p.position[0]), metres(p.position[2])];
         let out = [f64::from(normal[0]), 0., f64::from(normal[1])];
         let along = [-out[2], out[0]];
-        let face = [
-            centre[0] + out[0] * (hx + lift),
-            centre[1] + out[2] * (hz + lift),
-        ];
+        let face = [centre[0] + out[0] * hx, centre[1] + out[2] * hz];
         for &offset in strips {
             let base = [face[0] + along[0] * offset, face[1] + along[1] * offset];
             let ground = surface(g, base[0] + out[0] * 0.2, base[1] + out[2] * 0.2);
@@ -371,6 +361,8 @@ pub fn placements(s: &Scenery) -> Vec<Placement> {
     }
     covers(s, &g, &mut parts);
     routes(&g, &mut parts);
+    // The ivy the world dressing places on the climbable highland crags (#1195).
+    parts.extend(crate::world_dressing::placements(s, crate::Kit::Climbing));
     parts
 }
 

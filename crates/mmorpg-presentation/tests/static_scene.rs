@@ -675,9 +675,9 @@ fn handholds(scene: &StaticScene) -> Vec<V> {
 
 #[test]
 fn climbable_rock_wears_handholds_and_sheer_rock_stays_smooth() {
-    use mmorpg_core::greyhaven_vale::{
-        CLIMBING_ROUTES, SHEER_CRAGS, SHEER_HOLLOW_WALL, SHEER_LAKE_CLIFF, ids,
-    };
+    // The highland crags are sculpted outcrops (#1195), their rock the crag kit's art: their
+    // climbable and sheer outcrops are the dressing's, not boxes worn here.
+    use mmorpg_core::greyhaven_vale::{CLIMBING_ROUTES, SHEER_HOLLOW_WALL, SHEER_LAKE_CLIFF, ids};
     let scenery = greyhaven_vale_scenery();
     let by_collider = |id: u32| {
         *scenery
@@ -687,13 +687,10 @@ fn climbable_rock_wears_handholds_and_sheer_rock_stays_smooth() {
             .unwrap()
     };
     let terrain = handholds(&only(Vec::new())).len();
-    let crags = ids::HIGHLAND_CRAGS.start();
     for (prop, climbable) in [
-        (by_collider(*crags), true),
         (by_collider(*ids::BOULDERS.start()), true),
         (by_collider(*ids::SHORE_ROCKS.start()), true),
         (by_collider(*ids::CLIFFS.start()), true),
-        (by_collider(crags + SHEER_CRAGS[0] as u32), false),
         (by_collider(SHEER_HOLLOW_WALL), false),
         (by_collider(*ids::CAVE_WALLS.start()), false),
     ] {

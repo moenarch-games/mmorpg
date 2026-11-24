@@ -436,27 +436,33 @@ fn check_mill_ramps(trace: &Trace) -> std::result::Result<(), String> {
     Ok(())
 }
 
-/// The climb (#490): the climber ends standing on the crag's top, the mantler on the dock's
-/// deck, each within a unit of it.
+/// The climb (#490): the climber ends standing on the crag's domed crown, within 2.5 m of its
+/// peak (#1195), the mantler on the dock's deck within a unit of it.
 fn check_wall_climb(trace: &Trace) -> Result<()> {
     use mmorpg_core::greyhaven_vale::ids;
     let last = trace.snapshots.last().ok_or("empty climb trace")?;
     let content = mmorpg_core::greyhaven_vale::content();
-    let top = |id: u32| {
-        let collider = content
-            .definition()
-            .colliders()
-            .iter()
-            .find(|collider| collider.id == id)
-            .ok_or("missing climb collider")?;
+    let top = |collider: &mmorpg_core::StaticCollider| {
         #[allow(clippy::cast_precision_loss)]
         let top = (collider.position[1] + collider.half_extents[1]) as f32;
-        Ok::<_, &str>(top)
+        top
     };
     let feet = |player: usize| last.players[player].position[1] - 90.0;
-    let crag = top(*ids::HIGHLAND_CRAGS.start())?;
-    let dock = top(ids::MILL_DOCK)?;
-    if (feet(0) - crag).abs() > 1.0 || (feet(1) - dock).abs() > 1.0 {
+    let crag = content
+        .definition()
+        .static_meshes()
+        .iter()
+        .find(|mesh| mesh.id == *ids::HIGHLAND_CRAGS.start())
+        .ok_or("missing crag")?
+        .bounds()?;
+    let dock = content
+        .definition()
+        .colliders()
+        .iter()
+        .find(|collider| collider.id == ids::MILL_DOCK)
+        .ok_or("missing dock")?;
+    let (crag, dock) = (top(&crag), top(dock));
+    if !(crag - 250.0..=crag).contains(&feet(0)) || (feet(1) - dock).abs() > 1.0 {
         return Err(format!(
             "the climber's feet end at {} (crag top {crag}), the mantler's at {} (deck {dock})",
             feet(0),

@@ -508,7 +508,7 @@ export class WorldView {
   /** Models loaded so far with their clip lengths, replayed into each new presenter. */
   readonly #loadedModels: [ImportedModelKind, [string, number][], string | null][] = [];
   /** The shared unit presenter (#184) of the current viewer. */
-  #units: { viewerId: number; units: SharedUnits; pushed: ZoneSnapshot | null; residents: boolean; kitPlatforms: boolean; cragFaces: boolean; effectKits: boolean } | null = null;
+  #units: { viewerId: number; units: SharedUnits; pushed: ZoneSnapshot | null; residents: boolean; kitPlatforms: boolean; effectKits: boolean } | null = null;
   /** Combat sounds (#447), once the bundle loaded; silent until then. */
   #sound: WorldSound | null = null;
   #audioPreferences: AudioPreferences | null = null;
@@ -2179,7 +2179,7 @@ export class WorldView {
       for (const [kind, clips, descriptor] of this.#loadedModels) { units.modelReady(kind, clips, descriptor); }
       if (this.#blend) { units.setBlend(this.#blend); }
       if (this.#bodyOverlay) { units.setBodyOverlay(true); }
-      this.#units = { viewerId: projection.viewerId, units, pushed: null, residents: false, kitPlatforms: false, cragFaces: false, effectKits: false };
+      this.#units = { viewerId: projection.viewerId, units, pushed: null, residents: false, kitPlatforms: false, effectKits: false };
     }
     const units = this.#units.units;
     frame.units = units;
@@ -2193,12 +2193,6 @@ export class WorldView {
     if (!this.#units.effectKits && this.#kitEffects.loaded) {
       this.#units.effectKits = true;
       units.setEffectKits(true);
-    }
-    const cragDescriptor = this.#crag?.descriptor;
-    if (!this.#units.cragFaces && cragDescriptor) {
-      // Climbers on the crag kit's climbable faces (#668) are drawn out to its rock once it is drawn.
-      this.#units.cragFaces = true;
-      units.setCragDescriptor(cragDescriptor);
     }
     const at = entitiesSelf(projection);
     this.#regions?.approach(at, scenery.scenery.areas);

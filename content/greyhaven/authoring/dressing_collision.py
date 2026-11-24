@@ -6,7 +6,8 @@ Each placement in `content/greyhaven/dressing/*.json` that names a `collider` ta
 asset's frame; or, for a kit that declares only `collisionProxies` boxes, the wolf den's (#963),
 its solid boxes as one such mesh), scales it by the placement's `scale` (thousandths per axis), turns it by `yaw`
 (65 536 per turn about +Y, as the Outpost layout's) and writes it in units at the placement's
-`position`. The result, `crates/mmorpg-core/content/collision/greyhaven-dressing.json`, is
+`position`. A placement's `grip` (`rock` or `sheer`, #1195) goes with its mesh: it is what
+makes the generated collider climbable. The result, `crates/mmorpg-core/content/collision/greyhaven-dressing.json`, is
 committed and reviewed like any content change: the zone reads only that file, so a new art
 release changes no collision until this is rerun and its diff accepted.
 
@@ -32,6 +33,8 @@ KITS = {
     'sandstone.kit.': (ROOT / 'web/public/buildings/sandstone.kit', 'sandstone-descriptor'),
 }
 UNITS_PER_METRE = 100
+# A placement's `grip`: `rock` climbs, `sheer` does not (#1195); without one it does not climb.
+GRIPS = ('rock', 'sheer')
 
 
 def descriptor(bundle, name):
@@ -131,12 +134,19 @@ def main():
             x, y, z = x * sx, y * sy, z * sz
             # mmorpg_presentation::geometry::ry: +Z turns toward +X.
             vertices.append([units(c * x + s * z), units(y), units(-s * x + c * z)])
-        meshes.append({
+        generated = {
             'id': placement['collider'],
             'position': placement['position'],
             'vertices': vertices,
             'triangles': mesh['triangles'],
-        })
+        }
+        # The placement's climbable or sheer setting (#1195), which the zone's climbing reads.
+        grip = placement.get('grip')
+        if grip is not None:
+            if grip not in GRIPS:
+                raise SystemExit(f'{placement["id"]}: unknown grip {grip!r}')
+            generated['grip'] = grip
+        meshes.append(generated)
     meshes.sort(key=lambda mesh: mesh['id'])
     ids = [mesh['id'] for mesh in meshes]
     if len(set(ids)) != len(ids):

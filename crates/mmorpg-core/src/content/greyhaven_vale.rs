@@ -256,7 +256,8 @@ pub mod ids {
 
     /// Bandit Highlands (#425): the structures in [`super::highlands::BUILDINGS`] order …
     pub const HIGHLAND_BUILDINGS: RangeInclusive<u32> = 6_200..=6_299;
-    /// … and the rock crags in [`super::highlands::CRAGS`] order.
+    /// … and the rock crags' outcrops (#1195): each crag's first in [`super::highlands::CRAGS`]
+    /// order, then the groups' other outcrops from 6 318, generated from the world dressing.
     pub const HIGHLAND_CRAGS: RangeInclusive<u32> = 6_300..=6_399;
 
     /// Marsh-Lake Wetlands (#426): the structures in [`super::marsh::BUILDINGS`] order.
@@ -1376,6 +1377,13 @@ fn region_boulders(existing: &[StaticCollider]) -> Vec<StaticCollider> {
             block([x - hx, z - hz], [x + hx, z + hz], &mut buckets);
         }
     }
+    // The highland crags' outcrop groups are dressing meshes (#1195): their footprints stay
+    // clear as their boxes did.
+    for &(min, max, _) in highlands::CRAGS {
+        if beyond_core((min[0] + max[0]) / 2, (min[1] + max[1]) / 2) > 0 {
+            block(min, max, &mut buckets);
+        }
+    }
     let posts: Vec<_> = units::creature_spawns()
         .into_iter()
         .map(|unit| unit.position)
@@ -1602,19 +1610,25 @@ fn undressed_colliders() -> Vec<StaticCollider> {
     let boulders = region_boulders(&colliders);
     colliders.extend(boulders);
     colliders.extend((*ids::LADDERS.start()..).zip(LADDER_TOWERS).map(ladder));
-    // Rope placement reads the authored rock's bounds, not a removed box proxy.
-    colliders.extend(
-        cave::collision_meshes()
-            .iter()
-            .filter(|m| (400..=406).contains(&m.id))
-            .map(|m| m.bounds().expect("committed Hollow rock bounds are valid")),
-    );
+    // Rope placement reads the authored rock's bounds, not a removed box proxy: the Hollow's
+    // cliffs and the sheer highland crag's buttress (#1195) are meshes.
+    let hosts: Vec<_> = cave::collision_meshes()
+        .into_iter()
+        .filter(|mesh| ids::CLIFFS.contains(&mesh.id))
+        .map(|mesh| {
+            mesh.bounds()
+                .expect("committed Hollow rock bounds are valid")
+        })
+        .chain(fort::dressing_meshes().iter().filter_map(rope_rock))
+        .collect();
+    let host_ids: Vec<_> = hosts.iter().map(|host| host.id).collect();
+    colliders.extend(hosts);
     let ropes: Vec<_> = (*ids::ROPES.start()..)
         .zip(ROPES)
         .map(|(id, rope)| rope.collider(id, &colliders))
         .collect();
     colliders.extend(ropes);
-    colliders.retain(|c| !(400..=406).contains(&c.id));
+    colliders.retain(|c| !host_ids.contains(&c.id));
     colliders
 }
 
@@ -1633,6 +1647,64 @@ pub struct Rope {
 
 /// A rope's axis stands this far in front of its face (0.3 m); its column is as wide.
 pub const ROPE_STAND_OFF_UNITS: i32 = 30;
+
+/// A climber pulling over a rope's top lands this far inside the rock's face (0.1 m): the
+/// movement's ledge probe looks 0.4 m behind the face it holds, the rope's column.
+const ROPE_LANDING_UNITS: i32 = 40 - ROPE_STAND_OFF_UNITS;
+
+/// The bounds a rope on a generated dressing rock hangs from (#1195), or `None` when no rope
+/// does: the rock's bounds, topped where the climber lands rather than at the rock's highest
+/// point. A domed crown rises a metre or more above its edge: a rope up to the dome's peak
+/// would carry the climber past the edge, and the sheer rock under the edge would stop it
+/// short, so the rope ends level with the crown where the climber pulls over onto it.
+fn rope_rock(mesh: &crate::StaticMesh) -> Option<StaticCollider> {
+    let rope = ROPES.iter().find(|rope| rope.host == mesh.id)?;
+    let mut host = mesh
+        .bounds()
+        .expect("committed dressing rock bounds are valid");
+    let [x, z] = rope.face(&host);
+    let landing = [
+        x - rope.out[0] * ROPE_LANDING_UNITS,
+        z - rope.out[1] * ROPE_LANDING_UNITS,
+    ];
+    let top = surface_at(mesh, landing).expect("a rope's rock has a top where it lands");
+    let bottom = host.position[1] - host.half_extents[1];
+    host.half_extents[1] = (top - bottom) / 2;
+    host.position[1] = bottom + host.half_extents[1];
+    Some(host)
+}
+
+/// The highest upward-facing surface of `mesh` over `(x, z)` (units), if any.
+fn surface_at(mesh: &crate::StaticMesh, [x, z]: [i32; 2]) -> Option<i32> {
+    let point = |index: u32| {
+        let v = mesh.vertices[index as usize];
+        [
+            i64::from(mesh.position[0] + v[0]),
+            i64::from(mesh.position[1] + v[1]),
+            i64::from(mesh.position[2] + v[2]),
+        ]
+    };
+    let (x, z) = (i64::from(x), i64::from(z));
+    mesh.triangles
+        .iter()
+        .filter_map(|&[a, b, c]| {
+            let [a, b, c] = [point(a), point(b), point(c)];
+            // Twice the triangle's signed area on XZ; outward winding faces up when negative.
+            let area = (b[0] - a[0]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[0] - a[0]);
+            if area >= 0 {
+                return None;
+            }
+            let wa = (b[0] - x) * (c[2] - z) - (b[2] - z) * (c[0] - x);
+            let wb = (c[0] - x) * (a[2] - z) - (c[2] - z) * (a[0] - x);
+            let wc = area - wa - wb;
+            if wa > 0 || wb > 0 || wc > 0 {
+                return None;
+            }
+            let y = (wa * a[1] + wb * b[1] + wc * c[1]) / area;
+            i32::try_from(y).ok()
+        })
+        .max()
+}
 
 impl Rope {
     /// The point on `host`'s face the rope hangs over (XZ, units).
@@ -1674,7 +1746,7 @@ impl Rope {
 /// The climbable ropes (#621): down the Redbrand Hollow's eastern cliff into the camp, between
 /// its lower cliffs; up the Eastwater watchtower's western face, a second way up beside its
 /// ladder; and up the southern face of the sheer highland crag west of the trail's bend, the
-/// only way up it.
+/// only way up it: down the overhang of its buttress from the crown's edge (#1195).
 pub const ROPES: [Rope; 3] = [
     Rope {
         host: 402,
@@ -1689,7 +1761,7 @@ pub const ROPES: [Rope; 3] = [
     Rope {
         host: *ids::HIGHLAND_CRAGS.start() + SHEER_CRAGS[0] as u32,
         out: [0, 1],
-        along: -13_400,
+        along: -12_950,
     },
 ];
 
@@ -1717,8 +1789,9 @@ fn ladder((id, (min, max, height)): (u32, ([i32; 2], [i32; 2], i32))) -> StaticC
 /// shore rocks), timber (the palisades and fences), the ladders and the ropes (#621) climb;
 /// buildings, towers,
 /// standing stones and cave walls do not. Each kind keeps unclimbable variants: the Redbrand
-/// Hollow's sheer back wall, two sheer highland crags and the stronghold's smooth-planked
-/// northern palisade. On the terrain, the Vale basin's cliffs are rough rock except the sheer
+/// Hollow's sheer back wall, the highland crags' spires and their two sheer crags, and the
+/// stronghold's smooth-planked northern palisade. The world dressing's rocks climb by their
+/// placement's grip (#1195, [`fort::dressing_grips`]), not by collider ID. On the terrain, the Vale basin's cliffs are rough rock except the sheer
 /// cliff under Stillwater Lake, and each boundary ridge or escarpment has one hard climbable
 /// route beside its pass while the rest of it is sheer.
 #[must_use]
@@ -1733,15 +1806,11 @@ pub fn climbing() -> crate::ClimbSurfaces {
             *building == highlands::Building::Palisade && *id != ids::HIGHLAND_BUILDINGS.start() + 1
         })
         .map(|(_, id)| (id, Timber));
-    // Two of the tallest crags are sheer: west of the trail's bend and west of the stronghold.
-    let crags = (*ids::HIGHLAND_CRAGS.start()..)
-        .zip(highlands::CRAGS)
-        .enumerate()
-        .filter(|&(index, _)| index != SHEER_CRAGS[0] && index != SHEER_CRAGS[1])
-        .map(|(_, (id, _))| (id, Rock));
     let colliders = range(ids::PALISADE, Timber)
         .chain(range(65050..=65059, Timber))
-        .chain(range(fort::BASIN_CRAGS, Rock))
+        // The world dressing's rocks whose placement climbs (#1195): the basin crags and the
+        // highland crags' buttresses and talus, but not their spires or the two sheer crags.
+        .chain(fort::dressing_grips())
         .chain(range(ids::FENCES, Timber))
         .chain(range(ids::RUIN_FENCES, Timber))
         .chain(range(ids::FARMLAND_FENCES, Timber).take(farmland::fences().len()))
@@ -1750,7 +1819,6 @@ pub fn climbing() -> crate::ClimbSurfaces {
         .chain(range(ids::BOULDERS, Rock))
         // The Redbrand Hollow's cliffs, but not its sheer back wall.
         .chain(range(ids::CLIFFS, Rock).filter(|&(id, _)| id != SHEER_HOLLOW_WALL))
-        .chain(crags)
         .chain(range(ids::LADDERS, Ladder))
         // The Greyfang lookout's ladder (#913).
         .chain([(discoveries::LOOKOUT_LADDER, Ladder)])
@@ -1766,7 +1834,8 @@ pub fn climbing() -> crate::ClimbSurfaces {
 
 /// The Redbrand Hollow's 14 m back wall under the north wall: sheer (#490).
 pub const SHEER_HOLLOW_WALL: u32 = 404;
-/// The sheer highland crags, by index in [`highlands::CRAGS`] (#490).
+/// The sheer highland crags, by index in [`highlands::CRAGS`] (#490): every outcrop of their
+/// groups is placed `"grip": "sheer"` (#1195), so none of their rock climbs.
 pub const SHEER_CRAGS: [usize; 2] = [4, 12];
 /// The Vale basin (#423) and its cliffs, rough rock (#490).
 pub const VALE_BASIN: XzBounds = XzBounds {

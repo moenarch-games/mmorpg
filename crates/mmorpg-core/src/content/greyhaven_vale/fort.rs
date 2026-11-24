@@ -35,7 +35,8 @@ pub const SANDSTONE_STEADING: std::ops::RangeInclusive<u32> = 65200..=65258;
 pub const BASIN_ROCKS: std::ops::RangeInclusive<u32> = 65094..=65102;
 
 /// The three climbable crags on the basin rim: world dressing whose collision is generated
-/// from its art ([`dressing_meshes`], #683).
+/// from its art ([`dressing_meshes`], #683), climbable by their placements' grip
+/// ([`dressing_grips`], #1195).
 pub const BASIN_CRAGS: std::ops::RangeInclusive<u32> = 65030..=65032;
 
 /// The committed collision generated from the world dressing's art (#683): each placed rock's
@@ -45,17 +46,64 @@ pub const BASIN_CRAGS: std::ops::RangeInclusive<u32> = 65030..=65032;
 /// Its `generator` and `sources` (the descriptor and bundle digests) are for review only.
 #[derive(serde::Deserialize)]
 struct Generated {
-    meshes: Vec<StaticMesh>,
+    meshes: Vec<GeneratedMesh>,
+}
+
+/// One generated mesh with its placement's climbable or sheer setting (#1195).
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GeneratedMesh {
+    id: u32,
+    position: [i32; 3],
+    vertices: Vec<[i32; 3]>,
+    triangles: Vec<[u32; 3]>,
+    #[serde(default)]
+    grip: Option<DressingGrip>,
+}
+
+/// A dressing placement's `grip` (#1195): rough rock climbs, sheer rock does not.
+#[derive(Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum DressingGrip {
+    Rock,
+    Sheer,
+}
+
+fn generated() -> Generated {
+    serde_json::from_str(include_str!(
+        "../../../content/collision/greyhaven-dressing.json"
+    ))
+    .expect("committed Greyhaven dressing collision is valid")
 }
 
 /// The world dressing's generated collision meshes, by collider ID (#683).
 #[must_use]
 pub fn dressing_meshes() -> Vec<StaticMesh> {
-    let generated: Generated = serde_json::from_str(include_str!(
-        "../../../content/collision/greyhaven-dressing.json"
-    ))
-    .expect("committed Greyhaven dressing collision is valid");
-    generated.meshes
+    generated()
+        .meshes
+        .into_iter()
+        .map(|mesh| StaticMesh {
+            id: mesh.id,
+            position: mesh.position,
+            vertices: mesh.vertices,
+            triangles: mesh.triangles,
+        })
+        .collect()
+}
+
+/// The climbable world dressing (#1195): every generated collider whose placement sets
+/// `"grip": "rock"`, with that grip. The setting lives with the art's placement, not in a
+/// collider-ID range, so a rock's climbability is reviewed with its layout.
+#[must_use]
+pub fn dressing_grips() -> Vec<(u32, crate::Grip)> {
+    generated()
+        .meshes
+        .into_iter()
+        .filter_map(|mesh| match mesh.grip? {
+            DressingGrip::Rock => Some((mesh.id, crate::Grip::Rock)),
+            DressingGrip::Sheer => None,
+        })
+        .collect()
 }
 
 #[must_use]
