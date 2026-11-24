@@ -52,6 +52,8 @@ cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unk
 (cd web && bun install --frozen-lockfile && bun test && bun run build)
 ```
 
+Tests that read a fetched bundle fail with the `scripts/fetch-bundles.sh` hint when it is missing, as CI fetches them first; set `MMORPG_ALLOW_MISSING_BUNDLES=1` to skip those tests locally instead (#1158).
+
 [AGENTS.md](AGENTS.md#commands) lists every command, including scenarios, fixtures, smoke tests and profiling.
 
 ## Run the native client

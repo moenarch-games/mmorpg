@@ -1619,7 +1619,7 @@ pub(super) fn ambient_model(key: &str) -> Option<&'static AmbientModel> {
 }
 
 /// Uses the same converter, glTF importer, clip sampler and draw path as embedded animals.
-/// VerifiedBundle admits only the immutable release identity built into this client.
+/// VerifiedBundle admits only bytes matching the hashes of the manifest the host serves.
 pub(super) fn shared_cat(
     bundle: &crate::shared_assets::VerifiedBundle,
 ) -> Result<AmbientModel, String> {

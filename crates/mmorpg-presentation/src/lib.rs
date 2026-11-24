@@ -22,6 +22,8 @@ pub mod climbing;
 pub mod clock;
 pub mod composition;
 pub mod crag;
+#[cfg(test)]
+mod fetched_bundles;
 pub mod geometry;
 pub mod grass;
 pub mod ground;

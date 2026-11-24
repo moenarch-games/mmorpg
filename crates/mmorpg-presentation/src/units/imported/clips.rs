@@ -1767,8 +1767,9 @@ mod tests {
             "{}/../../web/public/scenery/greyhaven.wildlife",
             env!("CARGO_MANIFEST_DIR")
         );
-        let Ok(manifest) = std::fs::read_to_string(format!("{bundle}/manifest.json")) else {
-            eprintln!("the wildlife release is not fetched; skipping");
+        let Some(manifest) =
+            crate::fetched_bundles::read("scenery/greyhaven.wildlife/manifest.json")
+        else {
             return;
         };
         let manifest: serde_json::Value = serde_json::from_str(&manifest).unwrap();

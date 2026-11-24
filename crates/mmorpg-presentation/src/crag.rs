@@ -704,8 +704,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             "/../../web/public/scenery/crag.kit"
         );
-        let Ok(manifest) = std::fs::read_to_string(format!("{path}/manifest.json")) else {
-            eprintln!("the crag kit is not fetched; skipping");
+        let Some(manifest) = crate::fetched_bundles::read("scenery/crag.kit/manifest.json") else {
             return;
         };
         let manifest: Value = serde_json::from_str(&manifest).unwrap();
