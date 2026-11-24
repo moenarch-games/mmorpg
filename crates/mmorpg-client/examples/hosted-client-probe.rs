@@ -3,6 +3,7 @@
 use mmorpg_client::{ClientError, network::ClientSession};
 use mmorpg_core::{CharacterId, ClassChoice, EntityKind, ZoneId, ZoneSnapshot};
 use mmorpg_game_server::{
+    guest_access::GuestDecision,
     invitation::JoinInvite,
     local_world::{self, RunningWorld},
 };
@@ -143,7 +144,7 @@ async fn main() -> Result<(), ClientError> {
                 }
                 for guest in world.share_status()?.guests {
                     if guest.pending {
-                        world.guest_decision(&guest.key, true)?;
+                        world.guest_decision(&guest.key, GuestDecision::Approve)?;
                     }
                 }
                 let snapshot = session.receive_snapshot().await?;
@@ -252,7 +253,14 @@ async fn main() -> Result<(), ClientError> {
                 return Err("Probe expects exactly one controlled guest".into());
             }
             for guest in status.guests {
-                world.guest_decision(&guest.key, mode == "approve")?;
+                world.guest_decision(
+                    &guest.key,
+                    if mode == "approve" {
+                        GuestDecision::Approve
+                    } else {
+                        GuestDecision::Block
+                    },
+                )?;
             }
         }
         "stop" => local_world::stop(&directory()?)?,

@@ -1,5 +1,8 @@
 //! Native hosting controls; work runs off the window thread, status is always observed.
-use mmorpg_game_server::local_world::{self, RunningWorld};
+use mmorpg_game_server::{
+    guest_access::GuestDecision,
+    local_world::{self, RunningWorld},
+};
 use std::{
     path::PathBuf,
     sync::{
@@ -62,8 +65,8 @@ impl Hosting {
         self.run(true, false);
     }
 
-    pub fn guest_decision(&self, key: String, allow: bool) {
-        self.run_action(false, false, Some((key, allow)), false);
+    pub fn guest_decision(&self, key: String, decision: GuestDecision) {
+        self.run_action(false, false, Some((key, decision)), false);
     }
     pub fn retry_sharing(&self) {
         self.run_action(false, false, None, true);
@@ -71,7 +74,13 @@ impl Hosting {
     fn run(&self, stop: bool, probe: bool) {
         self.run_action(stop, probe, None, false);
     }
-    fn run_action(&self, stop: bool, probe: bool, decision: Option<(String, bool)>, share: bool) {
+    fn run_action(
+        &self,
+        stop: bool,
+        probe: bool,
+        decision: Option<(String, GuestDecision)>,
+        share: bool,
+    ) {
         if matches!(self.state(), State::Working(_)) {
             return;
         }
@@ -120,12 +129,12 @@ impl Hosting {
                     let status = world.share_status().map_err(|e| e.to_string())?;
                     Ok(State::Ready(world, status))
                 };
-                if let Some((key, allow)) = decision {
+                if let Some((key, decision)) = decision {
                     let world = local_world::running(directory)
                         .map_err(|e| e.to_string())?
                         .ok_or("Local world stopped")?;
                     world
-                        .guest_decision(&key, allow)
+                        .guest_decision(&key, decision)
                         .map_err(|e| e.to_string())?;
                     return ready(world);
                 }
