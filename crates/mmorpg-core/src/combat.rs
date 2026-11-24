@@ -56,6 +56,21 @@ impl ZoneSimulation {
             let mut waiting = Vec::new();
             let mut trigger_seen = false;
             for queued in intents {
+                // Both arms round a load (#1077): nothing that needs a hand starts, authored or
+                // not.
+                if crate::carry::needs_hands(&queued.intent)
+                    && self.carrying(player_id)
+                    && self.players.get(&player_id).is_some_and(|p| p.is_alive())
+                {
+                    self.notify(
+                        player_id,
+                        ZoneEvent::Error {
+                            code: ErrorCode::HandsFull,
+                            target: None,
+                        },
+                    );
+                    continue;
+                }
                 // An authored action's trigger waits out its startup (or its
                 // charge), then resolves as its active phase begins (#414).
                 // A refused or held input never starts one. Its lateness
@@ -239,6 +254,8 @@ impl ZoneSimulation {
             | PlayerIntent::Gather(_)
             | PlayerIntent::Inspect(_)
             | PlayerIntent::QuestAction(_)
+            | PlayerIntent::Lift(_)
+            | PlayerIntent::SetDown
             | PlayerIntent::Skin(_)
             | PlayerIntent::ClaimDepthsDrop { .. }
                 if !alive =>
@@ -368,6 +385,8 @@ impl ZoneSimulation {
             PlayerIntent::Gather(node) => self.gather(player_id, node)?,
             PlayerIntent::Inspect(spot) => self.inspect(player_id, spot)?,
             PlayerIntent::QuestAction(npc) => self.quest_action(player_id, npc)?,
+            PlayerIntent::Lift(source) => self.lift(player_id, source)?,
+            PlayerIntent::SetDown => self.set_down(player_id, now)?,
             PlayerIntent::Skin(creature) => self.skin(player_id, creature)?,
             // Eligible characters may answer even dead (Atlas 5.1.35).
             PlayerIntent::RollDepthsDrop { run, drop, choice } => {

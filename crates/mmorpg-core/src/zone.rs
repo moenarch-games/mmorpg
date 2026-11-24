@@ -312,6 +312,8 @@ pub struct ZoneTickWork {
     pub escort_trail_points: usize,
     /// Confrontations checked for a foe out of its fight (#1019): the content's, every tick.
     pub confrontations_checked: usize,
+    /// Loads the carry step visited (#1077): each carried or set-down load once.
+    pub loads_visited: usize,
     /// The engine's own report, present only after a successful physics step.
     pub physics: Option<crate::physics::StepStats>,
 }
@@ -382,6 +384,8 @@ pub struct ZoneSimulation {
     pub(crate) wakes: BTreeMap<crate::NpcId, crate::NpcWake>,
     /// Running quest escorts (#1019), canonical.
     pub(crate) escorts: BTreeMap<crate::NpcId, crate::EscortState>,
+    /// Every player's one load, carried or set down (#1077), canonical.
+    pub(crate) loads: BTreeMap<PlayerId, crate::LoadState>,
     /// The private run bound to this depths zone (#404); `None` in every other zone.
     pub(crate) depths: Option<crate::DepthsRun>,
     /// Where bodies stood over the last ticks, for capped hit rewind (#680); canonical,
@@ -580,6 +584,7 @@ impl ZoneSimulation {
             raid: crate::RaidState::default(),
             wakes: BTreeMap::new(),
             escorts: BTreeMap::new(),
+            loads: BTreeMap::new(),
             depths: None,
             rewind_history: crate::rewind::RewindHistory::new(),
             rewards: None,
@@ -689,6 +694,10 @@ impl ZoneSimulation {
     /// Removes the player's unit at once: its body, its place on every
     /// threat table and every other player's selection of it.
     pub fn remove_player(&mut self, player_id: PlayerId) -> bool {
+        // A carried load is set down where its carrier stood, footing allowing (#1077).
+        if self.players.contains_key(&player_id) && self.release_load(player_id).is_err() {
+            self.loads.remove(&player_id);
+        }
         if self.players.remove(&player_id).is_none() {
             return false;
         }
@@ -933,6 +942,8 @@ impl ZoneSimulation {
             ZoneCommand::Gather { node } => Some(PlayerIntent::Gather(node)),
             ZoneCommand::Inspect { spot } => Some(PlayerIntent::Inspect(spot)),
             ZoneCommand::QuestAction { npc } => Some(PlayerIntent::QuestAction(npc)),
+            ZoneCommand::Lift { source } => Some(PlayerIntent::Lift(source)),
+            ZoneCommand::SetDown => Some(PlayerIntent::SetDown),
             ZoneCommand::Skin { creature } => Some(PlayerIntent::Skin(creature)),
             ZoneCommand::RollDepthsDrop { run, drop, choice } => {
                 Some(PlayerIntent::RollDepthsDrop { run, drop, choice })
@@ -1053,6 +1064,8 @@ impl ZoneSimulation {
         self.advance_cart(now)?;
         // Escorts follow, arrive or fail, and confronted foes out of their fight leave (#1019).
         self.advance_npc_quests(now)?;
+        // Set-down loads run out, and fallen or drowned carriers lose theirs (#1077).
+        self.advance_loads(now)?;
         self.advance_depths(now)?;
         self.advance_combos();
         self.advance_authored();
@@ -1095,6 +1108,8 @@ impl ZoneSimulation {
         let probe_ground = self.ground_body();
         let mut traversals = Vec::with_capacity(self.players.len());
         let mut rolls = Vec::with_capacity(self.players.len());
+        // Carriers who pressed a dodge roll or jumped at a face (#1077).
+        let mut laden = Vec::new();
         for (&player_id, state) in &self.players {
             let body_id = body_id(EntityRef::Player(player_id));
             let body = self
@@ -1139,7 +1154,19 @@ impl ZoneSimulation {
                 if stunned || swim_depth.is_some() {
                     roll = roll.ended();
                 }
-                let can = !stunned && swim_depth.is_none() && grounded && !state.traversal.holds();
+                // Both arms round a load, nobody rolls (#1077).
+                let carrying = self
+                    .loads
+                    .get(&player_id)
+                    .is_some_and(crate::LoadState::carried);
+                if carrying && roll == crate::Roll::Pending {
+                    laden.push(player_id);
+                }
+                let can = !stunned
+                    && swim_depth.is_none()
+                    && grounded
+                    && !state.traversal.holds()
+                    && !carrying;
                 let yaw = movement_yaw(state)
                     .unwrap_or_else(|| state.facing.wrapping_add(2 * YAW_QUARTER_TURN));
                 roll.start(can, yaw)
@@ -1175,6 +1202,19 @@ impl ZoneSimulation {
                 )
             } else {
                 crate::climb::Step::FREE
+            };
+            // A carrier grabs no face nor ledge (#1077); jumping at one is refused.
+            let carrying = self
+                .loads
+                .get(&player_id)
+                .is_some_and(crate::LoadState::carried);
+            let step = if carrying && step.traversal.holds() && !state.traversal.holds() {
+                if state.jump_pending && grounded {
+                    laden.push(player_id);
+                }
+                crate::climb::Step::FREE
+            } else {
+                step
             };
             traversals.push((player_id, step.traversal));
             // The roll moves the body through the controller at its own speed, under gravity.
@@ -1225,6 +1265,10 @@ impl ZoneSimulation {
                 let mut percent = crate::aura::speed_percent(&state.auras)
                     * crate::surface::speed_percent(surface)
                     / 100;
+                // A load slows nobody, but no boost carries it past the run speed (#1077).
+                if carrying {
+                    percent = percent.min(100);
+                }
                 if guarding {
                     percent = percent * crate::GUARD_SPEED_PERCENT / 100;
                 }
@@ -1281,6 +1325,16 @@ impl ZoneSimulation {
         }
         for player in self.players.values_mut() {
             player.impulse = None;
+        }
+        laden.dedup();
+        for player_id in laden {
+            self.notify(
+                player_id,
+                crate::ZoneEvent::Error {
+                    code: crate::ErrorCode::HandsFull,
+                    target: None,
+                },
+            );
         }
         for (player_id, traversal) in traversals {
             if let Some(player) = self.players.get_mut(&player_id) {

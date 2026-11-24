@@ -32,8 +32,8 @@ use serde::Deserialize;
 
 use crate::{
     AreaId, Confrontation, CreatureId, CreatureTemplateId, EvidenceId, EvidenceSpot, ItemId,
-    NpcAttitude, NpcId, PieceId, PlayerClass, Quest, QuestId, QuestObjective, QuestRewards,
-    QuestSupply,
+    LoadKind, LoadSpot, LoadSpotId, NpcAttitude, NpcId, PieceId, PlayerClass, Quest, QuestId,
+    QuestObjective, QuestRewards, QuestSupply,
 };
 use strum::VariantArray;
 
@@ -126,6 +126,14 @@ pub const A_QUIET_INTRODUCTION: QuestId = QuestId::new(40);
 pub const THE_MAN_AT_THE_GATE: QuestId = QuestId::new(41);
 pub const THE_MILLERS_MEDICINE: QuestId = QuestId::new(42);
 
+/// The Core Vale's first delivery (#1077, #1019 slot 43): the last sack still on the Wolfrun
+/// cart, carried in both arms to Farmer Osric Mill at Millbrook.
+pub const THE_LAST_SACK: QuestId = QuestId::new(43);
+/// The sack on the Wolfrun cart (#1077), a load source.
+pub const CART_SACK: LoadSpotId = LoadSpotId::new(1);
+/// Farmer Osric Mill, who takes it at Millbrook.
+pub const OSRIC_MILL: NpcId = NpcId::new(4);
+
 /// Their people: the wounded watchman on the Wolfrun terrace, the courier outside the east gate,
 /// the distrustful resident, the herbalist, the farmhand and the smith.
 pub const TAM_HOLLIS: NpcId = NpcId::new(44);
@@ -196,6 +204,9 @@ struct Source {
     /// The evidence the quests' inspect objectives name (#1019).
     #[serde(default)]
     evidence: Vec<EvidenceSource>,
+    /// The load sources the quests' deliveries name (#1077).
+    #[serde(default)]
+    loads: Vec<LoadSource>,
     /// How NPCs regard interviewers (#1019).
     #[serde(default)]
     attitudes: Vec<AttitudeSource>,
@@ -278,6 +289,17 @@ enum ObjectiveSource {
     DefeatWithLoan { template: u32, count: u8 },
     Crush { template: u32, count: u8 },
     Demolish { piece: u32 },
+    DeliverLoad { source: u32, npc: u32 },
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LoadSource {
+    id: u32,
+    name: String,
+    kind: String,
+    at: [i32; 3],
+    reach: i32,
 }
 
 #[derive(Deserialize)]
@@ -349,6 +371,10 @@ impl From<ObjectiveSource> for QuestObjective {
             ObjectiveSource::Demolish { piece } => Self::Demolish {
                 piece: PieceId::new(piece),
             },
+            ObjectiveSource::DeliverLoad { source, npc } => Self::DeliverLoad {
+                source: LoadSpotId::new(source),
+                npc: NpcId::new(npc),
+            },
         }
     }
 }
@@ -357,6 +383,7 @@ impl From<ObjectiveSource> for QuestObjective {
 struct Parsed {
     quests: Vec<Quest>,
     evidence: Vec<EvidenceSpot>,
+    loads: Vec<LoadSpot>,
     attitudes: Vec<NpcAttitude>,
     confrontations: Vec<Confrontation>,
 }
@@ -427,9 +454,24 @@ fn parse(source: &str) -> Result<Parsed, String> {
             reach: spot.reach,
         })
         .collect();
+    let loads = source
+        .loads
+        .into_iter()
+        .map(|spot| {
+            Ok(LoadSpot {
+                id: LoadSpotId::new(spot.id),
+                kind: LoadKind::from_name(&spot.kind)
+                    .ok_or_else(|| format!("unknown load kind {}", spot.kind))?,
+                name: spot.name,
+                at: spot.at,
+                reach: spot.reach,
+            })
+        })
+        .collect::<Result<_, String>>()?;
     Ok(Parsed {
         quests,
         evidence,
+        loads,
         attitudes,
         confrontations,
     })
@@ -458,6 +500,17 @@ pub fn quests() -> Vec<Quest> {
 #[must_use]
 pub fn evidence() -> Vec<EvidenceSpot> {
     source().evidence
+}
+
+/// The load sources the quests' deliveries name (#1077), as `content/greyhaven/quests.json`
+/// lists them.
+///
+/// # Panics
+///
+/// When the committed quest file does not parse.
+#[must_use]
+pub fn loads() -> Vec<LoadSpot> {
+    source().loads
 }
 
 /// How the quests' NPCs regard interviewers (#1019), as `content/greyhaven/quests.json` lists it.

@@ -20,6 +20,7 @@ mod boulder;
 mod breakable;
 pub mod buoyancy;
 mod cache;
+mod carry;
 pub mod cart;
 mod casting;
 mod character;
@@ -112,6 +113,10 @@ pub use breakable::{
     EXPLOSION_RADIUS_UNITS, MAX_DEBRIS, MAX_DEBRIS_PER_TICK, MAX_VISIBLE_DEBRIS, debris_pieces,
 };
 pub use cache::{CACHE_HEIGHT_UNITS, DiscoveryCache};
+pub use carry::{
+    LOAD_HEIGHT_UNITS, LOAD_REACH_UNITS, LoadKind, LoadSpot, LoadSpotId, LoadState, LoadView,
+    MAX_LOAD_REACH_UNITS, MAX_VISIBLE_LOADS, MAX_ZONE_LOADS, PLACED_LOAD_TICKS, PlacedLoad,
+};
 pub use cart::{CartOutcome, CartRun};
 pub use character::{
     CHARACTER_RECORD_SCHEMA_VERSION, CharacterId, CharacterLocation, CharacterRecord, DepthsRecord,
@@ -505,6 +510,13 @@ pub enum ZoneCommand {
     /// Performs the next open quest action at `npc` (#1019): uses a quest item on it, asks it for
     /// an interview or starts escorting it, checked in the tick.
     QuestAction { npc: NpcId },
+    /// Lifts a load in both arms (#1077): from load source `source` (a [`LoadSpotId`]) an active
+    /// quest still needs a delivery of, or with `None` the player's own set-down load. The zone
+    /// checks empty hands, footing and reach in the tick.
+    Lift { source: Option<LoadSpotId> },
+    /// Sets the carried load down at the player's feet (#1077), on footing the zone checks in
+    /// the tick.
+    SetDown,
     /// Skins beast corpse `creature` (#917), which the player may loot: once per death, checked
     /// in the tick.
     Skin { creature: CreatureId },

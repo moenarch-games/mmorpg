@@ -108,6 +108,13 @@ pub enum QuestObjective {
     },
     /// Destroy structure piece `piece` (#1019) with the player's own blast or shot.
     Demolish { piece: crate::PieceId },
+    /// Carry a load from source `source` to `npc` (#1077): lift it there with
+    /// [`crate::ZoneCommand::Lift`], then [`crate::ZoneCommand::QuestAction`] at the NPC with it in
+    /// both arms hands it over. The log stores the delivery; a lost load is fetched again.
+    DeliverLoad {
+        source: crate::LoadSpotId,
+        npc: NpcId,
+    },
 }
 
 impl QuestObjective {
@@ -127,13 +134,14 @@ impl QuestObjective {
             | Self::UseItem { .. }
             | Self::Escort { .. }
             | Self::Interview { .. }
-            | Self::Demolish { .. } => 1,
+            | Self::Demolish { .. }
+            | Self::DeliverLoad { .. } => 1,
         }
     }
 
     /// Wire and fingerprint code: 1 kill, 2 collect, 3 talk, 4 explore, 5 retrieve, 6 Thorn,
     /// 7 inspect, 8 use item, 9 escort, 10 interview, 11 defeat with a loan, 12 crush,
-    /// 13 demolish.
+    /// 13 demolish, 14 deliver a load.
     #[must_use]
     pub const fn code(self) -> u8 {
         match self {
@@ -150,6 +158,7 @@ impl QuestObjective {
             Self::DefeatWithLoan { .. } => 11,
             Self::Crush { .. } => 12,
             Self::Demolish { .. } => 13,
+            Self::DeliverLoad { .. } => 14,
         }
     }
 
@@ -158,9 +167,10 @@ impl QuestObjective {
     #[must_use]
     pub const fn action_npc(self) -> Option<NpcId> {
         match self {
-            Self::UseItem { npc, .. } | Self::Escort { npc, .. } | Self::Interview { npc } => {
-                Some(npc)
-            }
+            Self::UseItem { npc, .. }
+            | Self::Escort { npc, .. }
+            | Self::Interview { npc }
+            | Self::DeliverLoad { npc, .. } => Some(npc),
             _ => None,
         }
     }
@@ -389,6 +399,12 @@ pub(crate) fn validate_quests(
                         .pieces()
                         .iter()
                         .any(|candidate| candidate.id == piece)
+                        && !quest.objectives[..index].contains(objective)
+                }
+                // One delivery of a source per quest (#1077), to an NPC the content has.
+                QuestObjective::DeliverLoad { source, npc } => {
+                    content.npc(npc).is_some()
+                        && content.load_spot(source).is_some()
                         && !quest.objectives[..index].contains(objective)
                 }
             };
@@ -826,6 +842,8 @@ impl ZoneSimulation {
                         player.inventory_revision = revision;
                     }
                 }
+                // A load no active quest delivers any more is gone (#1077).
+                self.forget_loads(player_id);
                 Ok(None)
             }
             QuestRequest::Accept { npc, quest } => self.accept_quest(player_id, npc, quest),
@@ -1275,7 +1293,8 @@ impl ZoneSimulation {
                         | QuestObjective::Interview { .. }
                         | QuestObjective::DefeatWithLoan { .. }
                         | QuestObjective::Crush { .. }
-                        | QuestObjective::Demolish { .. } => false,
+                        | QuestObjective::Demolish { .. }
+                        | QuestObjective::DeliverLoad { .. } => false,
                     };
                     if done {
                         reached.push((slot, quest.id, index));

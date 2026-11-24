@@ -252,8 +252,9 @@ fn every_evidence_spot_has_its_art_and_its_quest() {
     .flat_map(|source| serde_json::from_str::<Dressing>(source).unwrap().placements)
     .collect();
     let content = greyhaven_vale::content();
-    // The 32 quests before #1019, slice 1's three evidence quests and slice 2's seven (35, 37–42).
-    assert_eq!(content.quests().len(), 42);
+    // The 32 quests before #1019, slice 1's three evidence quests, slice 2's seven (35, 37–42)
+    // and the first delivery, *The Last Sack* (43, #1077).
+    assert_eq!(content.quests().len(), 43);
     assert_eq!(content.evidence().len(), 8);
     for spot in content.evidence() {
         let art = placements.iter().find(|placement| {

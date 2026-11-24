@@ -144,6 +144,17 @@ pub enum ErrorCode {
     /// A vendor does not buy a quest's supplies or lent arms (#1019): finishing or abandoning
     /// the quest hands them back.
     NotSellable,
+    /// Both hands hold a load (#1077): no swing, weapon, guard, ability, sit, repair, gathering,
+    /// skinning, waystone, dodge roll or climb, and no second load. Set it down first.
+    HandsFull,
+    /// Nothing to set down or hand over (#1077): the player carries no load, or not the one a
+    /// delivery asks for.
+    NotCarrying,
+    /// A load is lifted or set down only standing on the ground, out of deep water, off any face
+    /// and not rolling (#1077).
+    NoFooting,
+    /// A carried load was lost in deep water (#1077); fetch another from its source.
+    LoadLost,
 }
 
 /// One feedback event addressed to a player.

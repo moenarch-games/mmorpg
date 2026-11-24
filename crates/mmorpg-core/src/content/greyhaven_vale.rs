@@ -2134,6 +2134,7 @@ fn content_with_spawns(
             .with_structures(structure_sites(), watch_post())?
             // Quests after the structures their demolish objectives name (#1019).
             .with_evidence(quests::evidence())?
+            .with_loads(quests::loads())?
             .with_quests(quests::quests())?
             .with_seats(units::seats())?
             .with_routines(units::routines(), units::closed_at_night())?
