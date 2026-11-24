@@ -275,8 +275,9 @@ fn the_rim_closes_round_the_basin_behind_cliffs() {
             "weathered rim {rim:?}"
         );
     }
-    // Redbrand Hollow's camp, the Greyfang cave's floor and the den clearing are on the rim.
-    for at in [[0, -9_200], [6_000, -13_800], [-8_000, 0]] {
+    // Redbrand Hollow's quarry floor, the Greyfang cave's floor and the den clearing are on the
+    // rim.
+    for at in [[0, -11_300], [6_000, -13_800], [-8_000, 0]] {
         assert_eq!(
             definition.ground_at(at[0], at[1]),
             basin::TERRACE_Y,
@@ -344,7 +345,15 @@ fn a_player_walks_up_the_hollow_climb_to_the_camp() {
             [-3_600, -6_200],
             [-3_600, -7_000],
             [0, -7_000],
-            [0, -8_600],
+            // Along the quarry's south wall, round its south spur and in through the gateway
+            // (#1195).
+            [-600, -7_650],
+            [-2_000, -7_800],
+            [-3_000, -8_200],
+            [-3_700, -9_400],
+            [-3_900, -10_800],
+            [-3_000, -11_300],
+            [-1_000, -11_300],
         ],
     );
     let camp = feet(&zone);
@@ -393,8 +402,11 @@ fn a_player_walks_up_the_south_climb_onto_the_rim() {
 fn the_ridge_path_joins_the_woods_to_the_hollow_on_the_rim() {
     let mut zone = player_at([-6_600, 300]);
     settle(&mut zone);
-    // To the camp's western edge, short of its bandits.
-    let trail = walk(&mut zone, &[[-6_600, -7_700], [-3_200, -7_700]]);
+    // To the quarry's gateway, short of its bandits (#1195).
+    let trail = walk(
+        &mut zone,
+        &[[-6_600, -7_700], [-6_000, -9_800], [-3_900, -10_800]],
+    );
     assert!(
         trail.iter().all(|at| (1000.0..1130.0).contains(&at[1])),
         "the path stays on the rim"

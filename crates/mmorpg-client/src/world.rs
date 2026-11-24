@@ -1067,13 +1067,23 @@ fn blockout(prop: &Prop, base: f32, boxes: &mut Vec<SceneBox>) {
             part([0.0, top + 0.15, 0.0], [0.3, 0.3, 0.3], [1.0, 0.85, 0.4]);
         }
         PropKind::MineEntrance => {
-            // A timber frame with a dark opening on its +Z face, into the hollow.
+            // A timber frame with a dark opening on its long face: the Redbrand quarry's adit
+            // is deep along X in the sheer east wall and opens west onto the floor (#1195);
+            // a frame wide along X opens on its +Z face.
             body(&mut part, WOOD);
-            part(
-                [0.0, base + 1.6, half[2] + 0.02],
-                [size[0] * 0.6, 3.2, 0.05],
-                [0.02, 0.02, 0.02],
-            );
+            if half[0] < half[2] {
+                part(
+                    [-half[0] - 0.02, base + 1.6, 0.0],
+                    [0.05, 3.2, size[2] * 0.6],
+                    [0.02, 0.02, 0.02],
+                );
+            } else {
+                part(
+                    [0.0, base + 1.6, half[2] + 0.02],
+                    [size[0] * 0.6, 3.2, 0.05],
+                    [0.02, 0.02, 0.02],
+                );
+            }
         }
         PropKind::CropRow => body(&mut part, [0.62, 0.52, 0.16]),
         PropKind::Dock => part([0.0, base + 0.2, 0.0], size, WOOD),

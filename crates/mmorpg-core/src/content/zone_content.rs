@@ -70,6 +70,9 @@ pub struct ZoneContent {
     shielded: Vec<CreatureTemplateId>,
     /// Coordinated patrol members (#911), by creature ID.
     patrols: Vec<crate::PatrolMember>,
+    /// Spawns resting on authored rock rather than the terrain (#1195): `(creature, feet
+    /// height in units)`, by creature ID.
+    perches: Vec<(CreatureId, i32)>,
     /// Signalers and the partner each call brings (#952), by caller.
     signal_calls: Vec<crate::SignalCall>,
     vendor_bound: bool,
@@ -247,6 +250,7 @@ impl ZoneContent {
             bosses: Vec::new(),
             shielded: Vec::new(),
             patrols: Vec::new(),
+            perches: Vec::new(),
             signal_calls: Vec::new(),
             vendor_bound: false,
             vendors: Vec::new(),
@@ -318,6 +322,7 @@ impl ZoneContent {
             bosses: Vec::new(),
             shielded: Vec::new(),
             patrols: Vec::new(),
+            perches: Vec::new(),
             signal_calls: Vec::new(),
             vendor_bound: false,
             vendors: Vec::new(),
@@ -736,6 +741,33 @@ impl ZoneContent {
     #[must_use]
     pub fn patrols(&self) -> &[crate::PatrolMember] {
         &self.patrols
+    }
+
+    /// Binds perches (#1195): spawns that rest on authored rock, such as a boulder on a cliff's
+    /// rim, at a fixed feet height instead of on the terrain. Each names a creature spawn once.
+    pub fn with_perches(mut self, mut perches: Vec<(CreatureId, i32)>) -> Result<Self, ZoneError> {
+        perches.sort_by_key(|perch| perch.0);
+        if perches.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+            return Err(ZoneError::new("duplicate perch"));
+        }
+        if perches
+            .iter()
+            .any(|perch| self.creature_spawn(perch.0).is_none())
+        {
+            return Err(ZoneError::new("perch names an unknown creature spawn"));
+        }
+        self.perches = perches;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// The feet height (units) creature `id` rests at on authored rock (#1195), if it is perched.
+    #[must_use]
+    pub fn perch(&self, id: CreatureId) -> Option<i32> {
+        self.perches
+            .binary_search_by_key(&id, |perch| perch.0)
+            .ok()
+            .map(|index| self.perches[index].1)
     }
 
     /// Binds signalers (#952): each caller names one partner of its own family, another spawn
@@ -2930,6 +2962,15 @@ impl ZoneContent {
                 hash.u32(member.creature.get());
                 hash.u16(member.patrol);
                 hash.u8(member.role.code());
+            }
+        }
+        // Perches (#1195) likewise join only where authored.
+        if !self.perches.is_empty() {
+            hash.bytes(b"perches");
+            hash.len(self.perches.len());
+            for &(creature, feet) in &self.perches {
+                hash.u32(creature.get());
+                hash.i32(feet);
             }
         }
         // Signal calls (#952) likewise join only where authored.

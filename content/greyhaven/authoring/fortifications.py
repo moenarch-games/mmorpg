@@ -463,7 +463,7 @@ for id,name,c,h in gallery_parts:
     solid_record(id,vs,BOX_FACES)
 farm_place(start,solid_start,88,21,2)
 
-# The Hollow's existing three closed tents and four supply crates. Cloth folds are visual;
+# The Redbrand quarry's three closed tents and four supply crates (#1195). Cloth folds are visual;
 # each tent's simplified filled prism supplies stable-ID collision independently of them.
 cv,cu=np.mgrid[0:N,0:N]/N
 weave=.5+.018*np.sin(cu*math.tau*128)*np.sin(cv*math.tau*128)+.02*noise
@@ -472,7 +472,7 @@ cloth=material('weathered-canvas',np.stack([cloth_base,cloth_base*.90,cloth_base
 seam=flat('canvas binding',(.28,.23,.15))
 camp=json.loads((ROOT/'content/greyhaven/landscape.json').read_text())['redbrandCamp']
 camp_tents=[(tent['id'],*tent['at'],camp['base'],tent['quarter']) for tent in camp['shelters']]
-for id,x,z,base,quarter in [(420,-15.5,-94.5,11,1),(421,12.5,-97.5,11,3),(422,-13.5,-84.5,11.36,1)]+camp_tents:
+for id,x,z,base,quarter in [(420,-2.5,-127,11,0),(421,0.5,-100.5,11,2),(422,-12.5,-126.5,11,0)]+camp_tents:
     start,solid_start=len(objects),len(collision)
     section=[(-1.5,0),(1.5,0),(1.5,.35),(0,2.2),(-1.5,.35)]
     vs=[(xx,yy,zz) for zz in [-1.5,1.5] for xx,yy in section]
@@ -502,7 +502,7 @@ for id,x,z,base,quarter in [(420,-15.5,-94.5,11,1),(421,12.5,-97.5,11,3),(422,-1
     beam('Hollow tent ridge binding',(0,2.2,-1.5),(0,2.2,1.5),.018,seam)
     farm_place(start,solid_start,x,z,quarter,base)
 
-for x,z in [(5.5,-104.5),(6.7,-104.5),(6.1,-103.3),(-6.5,-102.5)]:
+for x,z in [(7.5,-107.5),(7.5,-106.3),(6.3,-106.9),(5.5,-119.5)]:
     start,solid_start=len(objects),len(collision)
     box('Hollow supply crate boards',(0,.5,0),(.475,.5,.475),wood_mat,.018)
     for side in [-1,1]:

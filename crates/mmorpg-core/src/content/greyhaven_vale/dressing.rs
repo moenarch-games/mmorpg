@@ -247,6 +247,33 @@ fn rocks(colliders: &[StaticCollider]) -> Vec<Piece> {
     for &(min, max, _) in super::highlands::CRAGS {
         block((min, max), &mut buckets);
     }
+    // The Redbrand watch post's pieces (#305) are structure bodies, not colliders: keep its
+    // footprint, before the quarry's gateway (#1195), clear as well.
+    for piece in super::watch_post() {
+        let [x, _, z] = piece.position;
+        let [hx, _, hz] = piece.half_extents;
+        block(([x - hx, z - hz], [x + hx, z + hz]), &mut buckets);
+    }
+    // The Redbrand quarry's wall is authored rock (#1195): a loose rock never lies inside it.
+    let quarry: Vec<_> = super::cave::collision_meshes()
+        .into_iter()
+        .filter(|mesh| ids::CLIFFS.contains(&mesh.id))
+        .collect();
+    let on_quarry = |(min, max): ([i32; 2], [i32; 2])| {
+        [
+            [min[0], min[1]],
+            [max[0], min[1]],
+            [min[0], max[1]],
+            [max[0], max[1]],
+        ]
+        .into_iter()
+        .chain([[(min[0] + max[0]) / 2, (min[1] + max[1]) / 2]])
+        .any(|at| {
+            quarry
+                .iter()
+                .any(|mesh| super::surface_at(mesh, at).is_some())
+        })
+    };
     let posts: Vec<[i32; 2]> = units::creature_spawns()
         .iter()
         .map(|spawn| spawn.position)
@@ -289,6 +316,7 @@ fn rocks(colliders: &[StaticCollider]) -> Vec<Piece> {
                 && inside_authored(area.1[0], area.1[1])
                 && dry
                 && clear_of_roads(&collider)
+                && !on_quarry(area)
                 // Beyond the core a post keeps a wandering creature's reach clear (#816).
                 && posts.iter().all(|post| {
                     let clearance = if super::beyond_core(at[0], at[1]) > 0 { 700 } else { 200 };

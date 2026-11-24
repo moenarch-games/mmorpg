@@ -148,7 +148,7 @@ for id,x,z in [(664,58.8,-153.0),(665,69.2,-152.8)]:
     fs += [(r*n+j,r*n+(j+1)%n,(r+1)*n+(j+1)%n,(r+1)*n+j) for r in range(3) for j in range(n)]
     record(id,'North mouth fractured jamb '+str(id),vs,fs)
 
-# Redbrand Hollow's seven ridges (400-406) are authored by `hollow_cliffs.py` (#1195); keep them.
+# The Redbrand quarry's wall segments (400-408) are authored by `hollow_cliffs.py` (#1195); keep them.
 authored={m['id'] for m in meshes}
 kept=[m for m in json.loads(OUT.read_text()) if m['id'] not in authored] if OUT.exists() else []
 OUT.write_text(json.dumps(sorted(meshes+kept,key=lambda m:m['id']),separators=(',',':'))+'\n')

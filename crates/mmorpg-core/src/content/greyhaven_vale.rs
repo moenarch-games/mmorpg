@@ -205,7 +205,8 @@ pub mod ids {
 
     pub const SHORE_ROCKS: RangeInclusive<u32> = 300..=305;
 
-    pub const CLIFFS: RangeInclusive<u32> = 400..=406;
+    /// The Redbrand quarry's horseshoe wall, in segments round its inner foot (#1195).
+    pub const CLIFFS: RangeInclusive<u32> = 400..=408;
     pub const MINE_ENTRANCE: u32 = 410;
     pub const TENTS: RangeInclusive<u32> = 420..=422;
     pub const CRATES: RangeInclusive<u32> = 430..=433;
@@ -1743,15 +1744,15 @@ impl Rope {
     }
 }
 
-/// The climbable ropes (#621): down the Redbrand Hollow's eastern cliff into the camp, between
-/// its lower cliffs; up the Eastwater watchtower's western face, a second way up beside its
+/// The climbable ropes (#621): down the Redbrand quarry's south wall from its rim into the camp,
+/// on the wall's straight cut (#1195); up the Eastwater watchtower's western face, a second way up beside its
 /// ladder; and up the southern face of the sheer highland crag west of the trail's bend, the
 /// only way up it: down the overhang of its buttress from the crown's edge (#1195).
 pub const ROPES: [Rope; 3] = [
     Rope {
-        host: 402,
-        out: [-1, 0],
-        along: -10_050,
+        host: 406,
+        out: [0, -1],
+        along: 350,
     },
     Rope {
         host: ids::WATCHTOWER,
@@ -1764,6 +1765,36 @@ pub const ROPES: [Rope; 3] = [
         along: -12_950,
     },
 ];
+
+/// The top of the Redbrand quarry's rock over `(x, z)` (units), if its wall stands there
+/// (#1195): the highest upward face of its segments.
+#[must_use]
+pub fn quarry_rock_top([x, z]: [i32; 2]) -> Option<i32> {
+    cave::collision_meshes()
+        .iter()
+        .filter(|mesh| ids::CLIFFS.contains(&mesh.id))
+        .filter_map(|mesh| surface_at(mesh, [x, z]))
+        .max()
+}
+
+/// The spawns resting on the Redbrand quarry's rock rather than the terrain (#1195): the
+/// boulder trap on the south spur's rim above the gateway, at the rock's highest surface under
+/// its middle and a quarter of its width round it.
+#[must_use]
+pub fn perches() -> Vec<(crate::CreatureId, i32)> {
+    units::creature_spawns()
+        .into_iter()
+        .filter(|spawn| spawn.template == units::templates::BOULDER)
+        .filter_map(|spawn| {
+            let [x, z] = spawn.position;
+            let feet = [(0, 0), (-35, 0), (35, 0), (0, -35), (0, 35)]
+                .into_iter()
+                .filter_map(|(dx, dz)| quarry_rock_top([x + dx, z + dz]))
+                .max()?;
+            Some((spawn.id, feet))
+        })
+        .collect()
+}
 
 /// The towers with a ladder (#490): `(footprint min, footprint max, height)` of the Eastwater
 /// watchtower, the highland lookout and the drowned watchtower.
@@ -1834,8 +1865,9 @@ pub fn climbing() -> crate::ClimbSurfaces {
     crate::ClimbSurfaces::new(colliders, terrain).expect("Greyhaven climbing is valid")
 }
 
-/// The Redbrand Hollow's 14 m back wall under the north wall: sheer (#490), as its authored
-/// rock sets `"grip": "sheer"` (#1195, `content/greyhaven/authoring/hollow_cliffs.py`).
+/// The Redbrand quarry's 15 m east wall over the old mine's adit: one smooth cut face, sheer
+/// (#490), as its authored rock sets `"grip": "sheer"` (#1195,
+/// `content/greyhaven/authoring/hollow_cliffs.py`).
 pub const SHEER_HOLLOW_WALL: u32 = 404;
 /// The sheer highland crags, by index in [`highlands::CRAGS`] (#490): every outcrop of their
 /// groups is placed `"grip": "sheer"` (#1195), so none of their rock climbs.
@@ -1928,9 +1960,10 @@ pub fn structure_sites() -> Vec<crate::StructureSite> {
     }]
 }
 
-/// The Redbrand watch post (#305) east of the Hollow Road at the camp's southern edge: two
-/// timber walls 3 m wide and 2.5 m tall and the lookout deck resting on both. A broken west
-/// wall leaves a knee-high rubble heap that still blocks the way.
+/// The Redbrand watch post (#305) outside the quarry's gateway, north of the Hollow Road's last
+/// leg and looking down the approach (#1195): two timber walls 3 m wide and 2.5 m tall and the
+/// lookout deck resting on both. A broken west wall leaves a knee-high rubble heap that still
+/// blocks the way.
 #[must_use]
 pub fn watch_post() -> Vec<crate::StructurePiece> {
     let [west, east, deck] = [460, 461, 462];
@@ -1939,7 +1972,7 @@ pub fn watch_post() -> Vec<crate::StructurePiece> {
             id: crate::PieceId::new(id),
             site: 1,
             body,
-            position: [x, basin::TERRACE_Y + 125, -7_200],
+            position: [x, basin::TERRACE_Y + 125, -11_700],
             half_extents: [150, 125, 20],
             health: 120,
             supports: Vec::new(),
@@ -1952,16 +1985,16 @@ pub fn watch_post() -> Vec<crate::StructurePiece> {
         wall(
             1,
             west,
-            500,
+            -3_700,
             "the watch post's west wall",
-            Some(([500, basin::TERRACE_Y + 20, -7_200], [150, 20, 40])),
+            Some(([-3_700, basin::TERRACE_Y + 20, -11_700], [150, 20, 40])),
         ),
-        wall(2, east, 900, "the watch post's east wall", None),
+        wall(2, east, -3_300, "the watch post's east wall", None),
         crate::StructurePiece {
             id: crate::PieceId::new(3),
             site: 1,
             body: deck,
-            position: [700, basin::TERRACE_Y + 265, -7_200],
+            position: [-3_500, basin::TERRACE_Y + 265, -11_700],
             half_extents: [350, 15, 120],
             health: 60,
             supports: vec![crate::PieceId::new(1), crate::PieceId::new(2)],
@@ -2125,6 +2158,7 @@ fn content_with_spawns(
             .with_bosses(units::bosses())?
             .with_shielded(units::greyhaven_shielded())?
             .with_patrols(redbrand_patrol::members())?
+            .with_perches(perches())?
             .with_signal_calls(signal_post::signal_calls())?
             .with_vendors(units::vendors())?
             .with_doors(vec![

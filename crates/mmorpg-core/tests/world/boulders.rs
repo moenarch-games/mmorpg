@@ -1,7 +1,7 @@
 //! The boulder trap (#299): walking contact rolls a boulder slowly, a Shield Bash sends it fast,
 //! a fast boulder hurts and knocks back what it hits and a slow one does not, an idle boulder
-//! returns to its spawn, a restored zone continues a roll exactly and Greyhaven's boulder runs
-//! downhill onto the Redbrand camp when walked off its rise.
+//! returns to its spawn, a restored zone continues a roll exactly and Greyhaven's boulder, on the
+//! Redbrand quarry's south spur, rolls off its rim into the gateway below (#1195).
 use crate::support;
 
 use std::sync::Arc;
@@ -303,7 +303,7 @@ fn a_restored_zone_continues_the_roll_exactly() {
 }
 
 #[test]
-fn greyhavens_boulder_rolls_downhill_onto_the_camp() {
+fn greyhavens_boulder_rolls_off_the_spur_into_the_gateway() {
     let content = greyhaven_vale::content();
     let mut zone = ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content)).unwrap();
     zone.add_player(1).unwrap();
@@ -315,7 +315,7 @@ fn greyhavens_boulder_rolls_downhill_onto_the_camp() {
         .find(|creature| creature.creature_id == boulder_id)
         .unwrap()
         .position;
-    // South of the boulder on the rise: uphill, with the camp to the north (-Z).
+    // South of the boulder on the spur's rim: uphill, with the gateway to the north (-Z).
     state.players[0].position = [boulder[0], boulder[1] + 40.0, boulder[2] + 140.0];
     let mut zone = ZoneSimulation::from_snapshot(state, Arc::clone(&content)).unwrap();
     let mut sequence = 1;
@@ -360,6 +360,6 @@ fn greyhavens_boulder_rolls_downhill_onto_the_camp() {
     );
     assert!(
         position[2] < start[2] - 100.0,
-        "it left its rise toward the camp: {start:?} -> {position:?}"
+        "it left the rim toward the gateway: {start:?} -> {position:?}"
     );
 }

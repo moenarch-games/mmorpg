@@ -259,6 +259,15 @@ impl ZoneSimulation {
         }
     }
 
+    /// The body centre height at which creature `id` stands at its spawn point `at`: on its
+    /// authored perch (#1195), such as a boulder on a cliff's rim, or else [`Self::rest_y`].
+    pub(crate) fn home_y(&self, id: CreatureId, at: [i32; 2], template: &CreatureTemplate) -> i32 {
+        self.content.perch(id).map_or_else(
+            || self.rest_y(at, template),
+            |feet| feet + template.half_extents[1],
+        )
+    }
+
     /// The body centre height (units) at which a creature with `template` rests at `at`: on
     /// the ground ([`Self::stand_y`]), or a flier (#995) at its roost,
     /// [`crate::flight::ROOST_RISE_UNITS`] above it.
@@ -298,7 +307,7 @@ impl ZoneSimulation {
         let entity = EntityRef::Creature(id);
         let position = Vec3i::new(
             spawn.position[0],
-            self.rest_y(spawn.position, template),
+            self.home_y(id, spawn.position, template),
             spawn.position[1],
         );
         self.world

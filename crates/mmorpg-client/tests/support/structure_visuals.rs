@@ -9,11 +9,11 @@ fn replicated_structure_stages_change_native_pixels() {
         let scenery = mmorpg_scenery::greyhaven_vale_scenery();
         let world = WorldScene::new(&scenery);
         let pieces = mmorpg_core::greyhaven_vale::watch_post();
-        let lift = scenery.height_at(700, -7200) as f32 / 100.0;
+        let lift = scenery.height_at(-3_500, -11_700) as f32 / 100.0;
         let view = CameraView {
             field_of_view_degrees: 50.0,
-            eye: [14.0, lift + 6.0, -61.0],
-            target: [7.0, lift + 1.4, -72.0],
+            eye: [-42.0, lift + 6.0, -106.0],
+            target: [-35.0, lift + 1.4, -117.0],
         };
         let mut presenter =
             mmorpg_presentation::structures::Structures::on_scenery(&pieces, &scenery);

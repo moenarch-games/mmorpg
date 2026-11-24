@@ -741,6 +741,11 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
         assert_eq!(creature.health, template.max_health(creature.level));
         let [x, y, z] = mmorpg_core::physics::to_units(creature.position);
         assert_eq!([x, z], spawn.position);
+        // The quarry's boulder (#1195) rests on the south spur's rim, its authored perch.
+        if let Some(feet) = content.perch(spawn.id) {
+            assert_eq!(y, feet + template.half_extents[1], "{:?}", spawn.id);
+            continue;
+        }
         // Check the actual triangulated support under the capsule, including the hillside
         // beneath its rounded base. Bilinear centre samples no longer bound the authored cliffs.
         let origin = [x as f32, y as f32 + 1_000., z as f32];

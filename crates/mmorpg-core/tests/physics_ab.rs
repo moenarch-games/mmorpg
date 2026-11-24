@@ -1163,7 +1163,7 @@ fn check_workload(workload: Workload) -> Result<()> {
             let target = impact
                 .creatures
                 .iter()
-                .find(|unit| unit.creature_id.get() == 401)
+                .find(|unit| unit.creature_id.get() == 413)
                 .unwrap();
             let centre = mmorpg_core::physics::to_units(target.position);
             let content = mmorpg_core::greyhaven_vale::content();

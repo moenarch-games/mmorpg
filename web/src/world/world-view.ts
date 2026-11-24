@@ -163,7 +163,8 @@ export const DEBUG_VIEWPOINTS: Readonly<Record<string, { eye: Vec3; target: Vec3
   grass: { eye: [-23, 16, 29], target: [-23, 0, 11] },
   relief: { eye: [20, 8, 39], target: [0, 0, 18] },
   woods: { eye: [-41, 18, 16], target: [-69, 14, 0] },
-  hollow: { eye: [6, 24, -64], target: [0, 14, -98] },
+  // The Redbrand quarry from its western approach, through the gateway (#1195).
+  hollow: { eye: [-52, 28, -100], target: [0, 14, -113] },
   farm: { eye: [46, 12, 16], target: [72, 3, 40] },
   // Stillwater moved west in #644; keep this pose matched to native ground shots/profiling.
   lake: { eye: [-56, 33, -39], target: [-87, 11, -53] },

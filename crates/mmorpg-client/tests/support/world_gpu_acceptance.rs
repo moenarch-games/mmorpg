@@ -139,7 +139,8 @@ fn current_greyhaven_regions_and_six_player_looks_render_on_the_real_native_gpu(
             ("woods", [-46.0, 7.0, 14.0], [-78.0, 3.0, -2.0]),
             ("farm", [46.0, 12.0, 16.0], [72.0, 3.0, 40.0]),
             ("lake", [30.0, 9.0, -34.0], [56.0, 0.0, -56.0]),
-            ("hollow", [6.0, 14.0, -64.0], [0.0, 3.0, -98.0]),
+            // The quarry seen from its western approach, through the gateway (#1195).
+            ("hollow", [-52.0, 18.0, -104.0], [0.0, 6.0, -113.0]),
         ] {
             for (phase, seconds) in [("day", 0.0), ("night", 600.0)] {
                 let mut view = CameraView {

@@ -162,7 +162,8 @@ fn an_unwatched_raid_breaks_the_barn_and_the_survivors_reinforce_the_camp() {
     );
     assert!(camp.iter().all(|raider| {
         let [x, z] = xz(raider);
-        x.abs() < 2_500 && (-10_000..-7_000).contains(&z)
+        // On the quarry's floor, in from its gateway (#1195).
+        (-2_800..1_900).contains(&x) && (-13_400..-9_300).contains(&z)
     }));
     assert!(
         !zone.begin_raid().unwrap(),

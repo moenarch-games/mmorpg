@@ -330,7 +330,7 @@ fn vale_player_at(at: [i32; 2]) -> ZoneSimulation {
 
 #[test]
 fn a_player_can_walk_into_the_camp_spike_pit_and_it_hurts() {
-    let mut zone = vale_player_at([-1_400, -8_600]);
+    let mut zone = vale_player_at([-1_150, -11_550]);
     let start = health(&zone);
     zone.apply_command(
         1,

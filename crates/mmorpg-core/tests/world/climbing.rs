@@ -540,19 +540,15 @@ fn climbing_and_mantling_run_in_the_movement_region() {
 }
 
 #[test]
-fn the_hollow_rope_still_reaches_the_sculpted_ridge_landing() {
+fn the_quarry_rope_reaches_its_level_landing_on_the_south_rim() {
     // Use the real terrain, rock and climb definitions without camp combat interrupting it.
-    let content = ZoneContent::from_definition(greyhaven_vale::greyhaven_vale_definition())
-        .with_climbing(greyhaven_vale::climbing())
-        .unwrap();
-    let mut zone = ZoneSimulation::with_content(ZoneId::new(1), Arc::new(content)).unwrap();
-    zone.add_player(1).unwrap();
     let rope = collider(*ids::ROPES.start());
     let host = collider(greyhaven_vale::ROPES[0].host);
     let [x, _, z] = rope.position;
-    let east = 16384;
-    let mut player = Player::in_zone(zone, [x - 200, z]);
-    player.walk_into(east);
+    // The rope hangs down the south wall's inner face, which faces north into the quarry.
+    let south = 0;
+    let mut player = Player::in_zone(hollow_without_its_camp(), [x, z - 200]);
+    player.walk_into(south);
     player.jump();
     player.ticks(1);
     assert!(
@@ -568,18 +564,18 @@ fn the_hollow_rope_still_reaches_the_sculpted_ridge_landing() {
         player.feet()
     );
     assert!(
-        player.until(1, east, 1800, |p| p.traversal() == Traversal::Free
+        player.until(1, south, 1800, |p| p.traversal() == Traversal::Free
             && p.feet()[1] > top(&host) - 10.),
         "rope exit: {:?} at {:?}",
         player.traversal(),
         player.feet()
     );
-    player.hold(0, east);
+    player.hold(0, south);
     player.ticks(30);
     assert!(over(&host, player.feet()));
     assert!(
         player.feet()[1] > top(&host) - 10.,
-        "stable ridge landing: {:?}",
+        "stable rim landing: {:?}",
         player.feet()
     );
 }
@@ -595,79 +591,120 @@ fn hollow_without_its_camp() -> ZoneSimulation {
     zone
 }
 
-/// The Hollow's western ridge grows out of the camp's ground with no base wall (#1195): a player
-/// grabs its broken camp face at the foot, climbs it and mantles onto its shoulder. Its rock
-/// climbs because the authored mesh sets `"grip": "rock"`.
-#[test]
-fn a_player_climbs_a_hollow_cliff_from_its_foot_and_mantles_onto_it() {
-    let rock = outcrop(*ids::CLIFFS.start());
-    let cliff = rock.bounds().unwrap();
-    assert_eq!(
-        greyhaven_vale::climbing().collider(rock.id),
-        Some(Grip::Rock)
-    );
-    let west = 49_152;
-    let mut player = Player::in_zone(
-        hollow_without_its_camp(),
-        [cliff.position[0] + cliff.half_extents[0] + 400, -10_250],
-    );
-    // Against its broken foot, which turns the walker a little along the face.
-    player.hold(1, west);
-    player.ticks(200);
-    player.jump();
-    player.ticks(1);
-    assert!(
-        player.until(1, west, 30, |p| matches!(
-            p.traversal(),
-            Traversal::Climbing {
-                grip: Grip::Rock,
-                ..
-            }
-        )),
-        "holds the cliff: {:?} at {:?}",
-        player.traversal(),
-        player.feet()
-    );
-    let mut mantled = false;
-    for _ in 0..3_000 {
-        player.hold(1, west);
+/// Climbs the quarry's benched wall from `start` on its floor toward `facing`: walks into each
+/// cut, jumps to grab it, climbs and mantles onto the bench above, and goes again until no cut
+/// is left. Returns the height (m above the floor) of each bench it stood on.
+fn climb_the_benches(start: [i32; 2], facing: u16) -> (Player, Vec<(f32, bool)>) {
+    let mut player = Player::in_zone(hollow_without_its_camp(), start);
+    let floor = player.feet()[1];
+    let mut benches = Vec::new();
+    for cut in 0..4 {
+        // Up to the cut ahead (the face turns a walker a little along it), then a jump at it.
+        player.hold(1, facing);
+        player.ticks(60);
+        player.jump();
         player.ticks(1);
-        mantled |= matches!(player.traversal(), Traversal::Mantling { .. });
-        if mantled && player.traversal() == Traversal::Free {
+        if !player.until(1, facing, 30, |p| {
+            matches!(
+                p.traversal(),
+                Traversal::Climbing {
+                    grip: Grip::Rock,
+                    ..
+                }
+            )
+        }) {
+            assert!(cut > 0, "never held the first cut at {:?}", player.feet());
             break;
         }
+        // Up the cut until the climber stands again, over its top.
+        let mut mantled = false;
+        for _ in 0..1_500 {
+            player.hold(1, facing);
+            player.ticks(1);
+            mantled |= matches!(player.traversal(), Traversal::Mantling { .. });
+            if player.traversal() == Traversal::Free {
+                break;
+            }
+        }
+        assert_eq!(
+            player.traversal(),
+            Traversal::Free,
+            "cut {cut} never topped out at {:?}",
+            player.feet()
+        );
+        player.hold(0, facing);
+        player.ticks(20);
+        benches.push(((player.feet()[1] - floor) / 100., mantled));
     }
+    (player, benches)
+}
+
+/// Checks a climb up the quarry's benches: at least two benches and the rim, each higher than
+/// the one before, mantling onto a bench at least once on the way.
+fn assert_benched_climb(benches: &[(f32, bool)]) {
+    assert!(benches.len() >= 3, "benches: {benches:?}");
     assert!(
-        mantled,
-        "never mantled: {:?} {:?}",
-        player.feet(),
-        player.traversal()
+        benches.windows(2).all(|pair| pair[1].0 > pair[0].0 + 3.),
+        "benches: {benches:?}"
     );
-    player.hold(0, west);
-    player.ticks(30);
-    let feet = player.feet();
-    assert_eq!(player.traversal(), Traversal::Free, "at {feet:?}");
-    assert!(over(&cliff, feet), "on the cliff: {feet:?}");
     assert!(
-        feet[1] > top(&cliff) - 300.0,
-        "on its shoulder under {}: {feet:?}",
-        top(&cliff)
+        benches.iter().any(|bench| bench.1),
+        "never mantled: {benches:?}"
+    );
+    assert!(benches.last().unwrap().0 > 12., "on the rim: {benches:?}");
+}
+
+/// The quarry's worked faces climb across the seam between two of its segments (#1195): on the
+/// line where the north wall's collision passes from one mesh to the next, a player climbs the
+/// floor's 4.4 m cut, mantles onto the bench, climbs the next cut and the last one, and stands
+/// on the grassy rim.
+#[test]
+fn a_player_climbs_the_quarry_benches_across_a_segment_seam_onto_the_rim() {
+    for id in [401, 402] {
+        assert_eq!(greyhaven_vale::climbing().collider(id), Some(Grip::Rock));
+    }
+    let (west, east) = (
+        outcrop(401).bounds().unwrap(),
+        outcrop(402).bounds().unwrap(),
+    );
+    // The seam: the ring 401's mesh ends and 402's begins with, on the north wall's foot at
+    // (-10.98, -134.01) m, its face turned 9° east of due north (`hollow_cliffs.py`).
+    let (player, benches) = climb_the_benches([-1_068, -13_200], 34_368);
+    assert_benched_climb(&benches);
+    let feet = player.feet();
+    assert!(
+        over(&west, feet) || over(&east, feet),
+        "on the seam's rock: {feet:?}"
     );
 }
 
-/// The Hollow's back wall is smooth, sheer rock (#1195): its authored mesh sets
-/// `"grip": "sheer"`, and a player walking into it from the camp cannot grab it.
+/// The same up the south wall, across the seam where the rope's straight cut (406) meets the
+/// south-east corner (405) at x = 11.55 m.
 #[test]
-fn the_hollows_sheer_back_wall_refuses_a_climber() {
+fn a_player_climbs_the_south_wall_across_the_rope_segments_seam() {
+    let (player, benches) = climb_the_benches([1_155, -9_500], 0);
+    assert_benched_climb(&benches);
+    assert!(
+        player.feet()[2] > -9_260.0,
+        "behind the face: {:?}",
+        player.feet()
+    );
+}
+
+/// The quarry's east wall over the old mine's adit is smooth, sheer rock (#1195): its authored
+/// mesh sets `"grip": "sheer"`, and a player walking into it from the floor cannot grab it.
+#[test]
+fn the_quarrys_sheer_east_wall_refuses_a_climber() {
     let wall = outcrop(greyhaven_vale::SHEER_HOLLOW_WALL);
     assert_eq!(greyhaven_vale::climbing().collider(wall.id), None);
     let bounds = wall.bounds().unwrap();
+    let east = 16_384;
     let mut player = Player::in_zone(
         hollow_without_its_camp(),
-        [0, bounds.position[2] + bounds.half_extents[2] + 400],
+        [bounds.position[0] - bounds.half_extents[0] - 400, -10_700],
     );
-    player.walk_into(NORTH);
-    player.refused(NORTH);
+    player.walk_into(east);
+    player.refused(east);
 }
 
 #[test]

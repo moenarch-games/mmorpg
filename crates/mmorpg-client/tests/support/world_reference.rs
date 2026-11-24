@@ -13,7 +13,7 @@ fn requests() -> Vec<Value> {
         ("woods", [-95.0, 12.0, -20.0]),
         ("farm", [90.0, 18.0, 20.0]),
         ("lake", [0.0, 15.0, 125.0]),
-        ("hollow", [0.0, 15.0, -150.0]),
+        ("hollow", [-60.0, 25.0, -100.0]),
         ("far", [600.0, 40.0, 600.0]),
     ] {
         cases.push(json!({"name":format!("region:{name}"),"kind":"world","seconds":0,"animate":true,"eye":eye}));

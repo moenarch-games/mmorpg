@@ -187,17 +187,18 @@ pub fn millbrook_windmill_has_a_solid_round_footprint() {
 #[cfg_attr(not(target_arch = "wasm32"), test)]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
 pub fn hollow_tent_flaps_block_and_sloped_roofs_have_no_square_corners() {
-    let mut flap = Player::at([-1300, 1100, -9450]);
-    flap.walk(49152, 90);
+    // Tent 420 on the quarry's floor (#1195): its closed flaps face north and south.
+    let mut flap = Player::at([-200, 1100, -12480]);
+    flap.walk(32768, 90);
     assert!(
-        (-1380. ..-1350.).contains(&flap.feet()[0]),
+        (-12530. ..-12500.).contains(&flap.feet()[2]),
         "closed canvas flap: {:?}",
         flap.feet()
     );
 
     // Drop onto the low edge of the roof. A leftover box would leave the player standing
     // 2.2 m up in empty air; the steep canvas instead sheds the character to the ground.
-    let mut edge = Player::at([-1550, 1400, -9340]);
+    let mut edge = Player::at([-360, 1400, -12700]);
     edge.ticks(120);
     assert!(
         edge.feet()[1] < 1200.,

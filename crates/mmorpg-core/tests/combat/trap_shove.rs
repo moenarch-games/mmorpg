@@ -18,10 +18,10 @@ use support::{arena, classes};
 
 const PLAYER: u32 = 1;
 const WARDEN: u8 = 0;
-/// The camp's bandit nearest the pit (spawn 400, 8 m north-east of it).
+/// A camp bandit near the pit (spawn 400, 7.5 m north of it at the gateway's inner end).
 const BANDIT: CreatureId = CreatureId::new(400);
 /// The pit's centre; it spans 1.5 m either side along X and 1 m along Z.
-const PIT: [i32; 2] = [-1_800, -8_600];
+const PIT: [i32; 2] = [-1_550, -11_550];
 
 fn bandit() -> EntityRef {
     EntityRef::Creature(BANDIT)
@@ -171,8 +171,8 @@ fn replay(fight: &Fight, outcome: &Outcome) -> CanonicalZoneSnapshot {
 /// The Warden 1.7 m east of the bandit, which stands 2.3 m east of the pit's edge: the bash
 /// shoves it 3 m west, into the pit.
 const SHOVE: Fight = Fight {
-    warden: [-1_250, PIT[1]],
-    bandit: [-1_420, PIT[1]],
+    warden: [PIT[0] + 550, PIT[1]],
+    bandit: [PIT[0] + 380, PIT[1]],
     forced: None,
 };
 

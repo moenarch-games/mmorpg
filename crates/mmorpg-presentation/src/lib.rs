@@ -34,6 +34,7 @@ pub mod lod;
 pub mod nature;
 pub mod outpost_kit;
 mod props;
+mod quarry;
 pub mod river;
 pub mod settlement_props;
 pub mod structures;
@@ -294,6 +295,7 @@ impl StaticScene {
         props::ground_cover(&mut batcher, scenery, &grid);
         let brook_groups = brook::build(&mut batcher, scenery, &grid, &mut water, &mut animated);
         lights::cave_torches(&mut batcher, scenery);
+        quarry::build(&mut batcher, scenery);
         let mut groups = batcher.finish();
         groups.extend(cliffs::groups(scenery));
         groups.extend(brook_groups);

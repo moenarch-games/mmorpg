@@ -2934,7 +2934,7 @@ fn directing_line(quest: u32) -> Option<[i32; 2]> {
     use mmorpg_core::greyhaven_vale::{lake, quests};
     // "Something stirs at Stillwater Lake, south-east of the outpost."
     // "The Redbrand bandits camp in the hollow under the northern cliffs."
-    const HOLLOW: [i32; 2] = [0, -10_000];
+    const HOLLOW: [i32; 2] = [0, -11_300];
     match quest {
         q if q == quests::SCOUT_THE_LAKE.get() => Some(lake::CENTRE),
         q if q == quests::INTO_REDBRAND_HOLLOW.get() => Some(HOLLOW),

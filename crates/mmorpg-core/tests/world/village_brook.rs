@@ -97,16 +97,20 @@ fn brook_bridge_ford_gate_culvert_and_recovery() {
         outlet.channel.as_ref().unwrap().points.last(),
         Some(&[-4800, 2400])
     );
-    // The rim outlet goes around the Hollow's rock mass rather than through its walls.
+    // The rim outlet goes around the Hollow's rock mass rather than through its walls: the
+    // quarry's wall segments (#1195), by their bounds.
+    let walls: Vec<_> = content
+        .definition()
+        .static_meshes()
+        .iter()
+        .filter(|mesh| greyhaven_vale::ids::CLIFFS.contains(&mesh.id))
+        .map(|mesh| mesh.bounds().unwrap())
+        .collect();
+    assert_eq!(walls.len(), greyhaven_vale::ids::CLIFFS.count());
     for pair in greyhaven_vale::brook::outlet().windows(2) {
         for step in 0..=20 {
             let p = [0, 1].map(|axis| pair[0][axis] + (pair[1][axis] - pair[0][axis]) * step / 20);
-            for wall in content
-                .definition()
-                .colliders()
-                .iter()
-                .filter(|c| (400..=406).contains(&c.id))
-            {
+            for wall in &walls {
                 assert!(
                     (p[0] - wall.position[0]).abs() > wall.half_extents[0] + 130
                         || (p[1] - wall.position[2]).abs() > wall.half_extents[2] + 130,

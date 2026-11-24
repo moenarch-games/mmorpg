@@ -531,7 +531,7 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
         // tracks draw separately; broad seeded wear leaves turf between the tents.
         let camp_wear = hollow[i] * (0.18 + 0.50 * smoothstep(0.30, 0.70, noise(x, z, 8., 547.)));
         let hearth = if s.greyhaven() {
-            hollow[i] * (1. - smoothstep(1.6, 3.3, x.hypot(z + 92.)))
+            hollow[i] * (1. - smoothstep(1.6, 3.3, (x + 5.).hypot(z + 114.5)))
         } else {
             0.
         };
