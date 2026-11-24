@@ -6,7 +6,10 @@ import type { AbilityRecord, ContentCatalog } from "../catalog";
  * They describe abilities for a reader and never decide an outcome; the zone validates range,
  * resource and cooldowns. The range line comes from the catalog (`rangeLabel`, #1013) and spell
  * effects and caster poses from the shared Rust presentation. `local-zone-wasm.test.ts` holds this
- * table to the exported catalog so a catalog change cannot leave an ability undescribed.
+ * table to the exported catalog so a catalog change cannot leave an ability undescribed, and
+ * `core-facts.test.ts` holds each description to the core's definition (`abilityFacts`, #1159):
+ * every distance, duration, share and count it states, and whether it knocks back, is stopped by
+ * walls or raised shields, needs sight or meets forced-move immunity.
  */
 export type AbilityPresentation = {
   description: string;
@@ -85,7 +88,7 @@ export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = ne
   [45, { description: "Raises a skeleton that follows you and fights for a minute; up to four stand at once. Y sends them at your target, U holds this spot, I follows, O retreats.", glyph: SKULL, accent: "#e6dfc8" }],
   // The Druid's pet companion (#296): the same Y/U/I/O orders as minions.
   [47, { description: "Captain Thorn winds up for 2 s, then sweeps his blade around him: step out of the 4.5 m ring or be hurt and thrown back.", glyph: CLEAVE, accent: "#d8452c" }],
-  [48, { description: "Thorn's last-phase command against a larger party: after 2.5 s a wider blow answers everything within 7 m.", glyph: CLEAVE, accent: "#a8282c" }],
+  [48, { description: "Thorn's last-phase command against a larger party: after 2.5 s a wider blow hurls back everything within 7 m.", glyph: CLEAVE, accent: "#a8282c" }],
   [46, { description: "Calls your wolf companion to your side. It follows you, fights what fights you and stays until it is slain; calling it again brings it back with the health it has. Y sends it at your target, U holds this spot, I follows, O retreats.", glyph: PAW, accent: "#7fc46a" }],
   // Summoned terrain (#293): obstacles the zone raises 4 m along the caster's facing.
   [49, { description: "Raises a sheet of ice 4 m ahead that blocks movement, sight and shots until it is broken or melts.", glyph: FLAKE, accent: "#b5e6ff" }],

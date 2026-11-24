@@ -1,4 +1,5 @@
 import type { RaidNotice, RaidSignal } from "../replication";
+import { zoneConstants } from "../zone-constants";
 
 /**
  * Forewarning and preparation before a night raid (#532, Atlas 5.1.59–5.1.62): on some evenings
@@ -7,11 +8,6 @@ import type { RaidNotice, RaidSignal } from "../replication";
  * the zone to take the next step; the zone checks again and owns the outcome. No timer, target
  * or guarantee is shown: the signs may come to nothing.
  */
-
-/** The zone's reach for the tracks and the braces (3 m) and for talking to the lookout (5 m), in units. */
-export const TRACKS_REACH_UNITS = 300;
-export const BRACE_REACH_UNITS = 300;
-export const LOOKOUT_REACH_UNITS = 500;
 
 export interface RaidPrepSpots {
   readonly tracks: { readonly x: number; readonly z: number };
@@ -42,13 +38,15 @@ export function reachablePrepStep(signal: RaidSignal | null | undefined, spots: 
     return null;
   }
   const warned = signal.warned;
-  if (signal.scouted && !warned && lookoutAt && within(lookoutAt, x, z, LOOKOUT_REACH_UNITS)) {
+  // The zone's reaches (#1159): the tracks and the braces, and talking to the lookout like a quest giver.
+  const reach = zoneConstants();
+  if (signal.scouted && !warned && lookoutAt && within(lookoutAt, x, z, reach.questReachUnits)) {
     return 1;
   }
-  if (!signal.scouted && within(spots.tracks, x, z, TRACKS_REACH_UNITS)) {
+  if (!signal.scouted && within(spots.tracks, x, z, reach.tracksReachUnits)) {
     return 0;
   }
-  const brace = warned ? spots.braces.findIndex((at, index) => !signal.braced.includes(index) && within(at, x, z, BRACE_REACH_UNITS)) : -1;
+  const brace = warned ? spots.braces.findIndex((at, index) => !signal.braced.includes(index) && within(at, x, z, reach.braceReachUnits)) : -1;
   return brace < 0 ? null : 2 + brace;
 }
 

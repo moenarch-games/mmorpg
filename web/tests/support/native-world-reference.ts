@@ -5,7 +5,8 @@ import type { RendererInstance, RendererSceneNode } from "@moritzbrantner/three-
 // (#541). The app modules load only afterwards: they import the generated bindings, which a fresh
 // clone does not have until this build ran.
 import "./wasm";
-const { ENVIRONMENT, DAY_SECONDS, environmentAt, skyAt } = await import("../../src/world/environment");
+const { ENVIRONMENT, environmentAt, skyAt } = await import("../../src/world/environment");
+const { zoneConstants } = await import("../../src/zone-constants");
 const { decodeScenery } = await import("../../src/world/scenery");
 const { SceneryFrame, buildSceneryScene } = await import("../../src/world/scenery-nodes");
 const { localZoneModule } = await import("./local-zone-module");
@@ -91,7 +92,7 @@ for (const request of input.requests) {
       if (batch.visible === false) { continue; }
       batch.instances.forEach((instance: RendererInstance, index: number) => draws.push(draw({ ...batch, ...instance, id: `${batch.id}:${index}`, color: instance.color ?? batch.color }, `${batch.id}:${index}`)));
     }
-    const phase = request.animate ? request.seconds / DAY_SECONDS : 0;
+    const phase = request.animate ? request.seconds / zoneConstants().daySeconds : 0;
     const environment = environmentAt(ENVIRONMENT, phase);
     scenes.push({ name: request.name, draws, environment, sky_stops: skyAt(ENVIRONMENT, phase), fog_visibility: lightingTables().fogVisibilityMetres });
   }

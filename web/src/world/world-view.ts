@@ -87,7 +87,8 @@ import type { ContentCatalog } from "./catalog";
 import type { Area } from "./scenery";
 import type { WorldSource, ZoneWorld } from "./world-source";
 import type { AudioPreferences, WorldSound } from "./world-sound";
-import { LOOT_REACH_UNITS, touchContext, type TouchContext } from "../input/touch-layout";
+import { touchContext, type TouchContext } from "../input/touch-layout";
+import { zoneConstants } from "../zone-constants";
 import { profileFacts, profilePhase, profiling } from "./frame-profile";
 
 /**
@@ -144,8 +145,6 @@ export type Intent = (projection: ZoneSnapshot) => WorldCommand | null;
 
 /** Outside every named area the HUD names the zone itself. */
 const ZONE_NAME = "Greyhaven Vale";
-/** Inclusive horizontal distance from an ore vein's centre to the gatherer (`mmorpg_core::GATHER_REACH_UNITS`, #917). */
-const GATHER_REACH_UNITS = 300;
 /**
  * The selection turntable's class weapons, as the shared presenter's `Loadout::of_class`; the
  * Rogue's follows `imported::ROGUE_LOADOUT` (two daggers, #603).
@@ -1865,7 +1864,7 @@ export class WorldView {
 
   /** The full ore vein (#917) feet at `at` units can mine, or null. */
   #reachableVein(projection: ZoneSnapshot | null, at: readonly number[]): number | null {
-    const index = this.#veins.findIndex((vein, node) => !projection?.depletedVeins.includes(node) && (vein.x - at[0]!) ** 2 + (vein.z - at[2]!) ** 2 <= GATHER_REACH_UNITS ** 2);
+    const index = this.#veins.findIndex((vein, node) => !projection?.depletedVeins.includes(node) && (vein.x - at[0]!) ** 2 + (vein.z - at[2]!) ** 2 <= zoneConstants().gatherReachUnits ** 2);
     return index < 0 ? null : index;
   }
 
@@ -1876,7 +1875,7 @@ export class WorldView {
     const corpse = projection?.entities.find((entity) => entity.kind === "creature" && entity.entityId === target.id);
     if (!corpse?.flags.dead || this.#catalog?.creatureTemplates.get(corpse.appearance)?.family !== "boar") { return null; }
     const distance = corpse.position.reduce((sum, axis, index) => sum + (axis - at[index]!) ** 2, 0);
-    return distance <= LOOT_REACH_UNITS ** 2 ? target.id : null;
+    return distance <= zoneConstants().lootReachUnits ** 2 ? target.id : null;
   }
 
   /** The night raid preparation step (#532) feet at `at` units can take now, or null. */

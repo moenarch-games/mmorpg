@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { DAY_SECONDS, ENVIRONMENT, hazeMix, mergeNearColors, mixColor, quantizeColor, shadeColor, skyAt } from "../src/world/environment";
+import { ENVIRONMENT, hazeMix, mergeNearColors, mixColor, quantizeColor, shadeColor, skyAt } from "../src/world/environment";
+import { zoneConstants } from "../src/zone-constants";
 
 const HEX = /^#[0-9a-f]{6}$/;
 
@@ -56,6 +57,6 @@ describe("environment style", () => {
       }
     }
     expect(skyAt(ENVIRONMENT, 0.5).zenith).not.toBe(ENVIRONMENT.sky.zenith);
-    expect(DAY_SECONDS).toBe(1_200);
+    expect(zoneConstants().daySeconds).toBe(1_200);
   });
 });

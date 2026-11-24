@@ -31,6 +31,7 @@ pub mod arena_presentation;
 pub mod camera;
 pub mod catalog;
 pub mod client_model;
+pub mod constants;
 pub mod front_end;
 pub mod party;
 pub mod projections;

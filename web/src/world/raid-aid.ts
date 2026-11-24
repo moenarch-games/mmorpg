@@ -1,4 +1,5 @@
 import type { RaidSignal } from "../replication";
+import { zoneConstants } from "../zone-constants";
 
 /**
  * Night raid aftermath aid (#531, Atlas 5.1.51): after a lost raid the projection's raid signal
@@ -7,9 +8,6 @@ import type { RaidSignal } from "../replication";
  * checks again and owns the outcome.
  */
 
-/** The zone's aid reach (3 m, `raid::AID_REACH_UNITS`) in units. */
-export const AID_REACH_UNITS = 300;
-
 export interface AidTask {
   readonly x: number;
   readonly z: number;
@@ -17,10 +15,11 @@ export interface AidTask {
   readonly npc: number;
 }
 
-/** The first open aid task within reach of feet at `(x, z)` units, or null. */
+/** The first open aid task within the zone's aid reach of feet at `(x, z)` units, or null. */
 export function reachableAidTask(signal: RaidSignal | null | undefined, tasks: readonly AidTask[], x: number, z: number): number | null {
   const open = signal?.aid ?? [];
-  const index = tasks.findIndex((task, index) => open.includes(index) && (task.x - x) ** 2 + (task.z - z) ** 2 <= AID_REACH_UNITS ** 2);
+  const reach = zoneConstants().aidReachUnits;
+  const index = tasks.findIndex((task, index) => open.includes(index) && (task.x - x) ** 2 + (task.z - z) ** 2 <= reach ** 2);
   return index < 0 ? null : index;
 }
 
