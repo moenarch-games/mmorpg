@@ -201,4 +201,8 @@ const REFUSALS: Record<ErrorCode, string | null> = {
   "npc-busy": null,
   "escort-lost": null,
   "not-sellable": null,
+  "hands-full": null,
+  "not-carrying": null,
+  "no-footing": null,
+  "load-lost": null,
 };

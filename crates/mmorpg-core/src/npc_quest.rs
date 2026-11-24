@@ -21,6 +21,8 @@
 //!   at its post. A player more than [`ESCORT_LEASH_UNITS`] ahead for [`ESCORT_LEASH_TICKS`], a
 //!   dead, absent or quitting player fails it ([`crate::ErrorCode::EscortLost`]): the NPC is back
 //!   at its post at once and the player asks again. One player escorts an NPC at a time.
+//! - **Delivery** (#1077): takes the load of the objective's source out of the player's arms
+//!   ([`crate::LoadState`]); empty arms are refused with [`crate::ErrorCode::NotCarrying`].
 //!
 //! The escorts are canonical zone state, so snapshots, replay and recovery continue them; the
 //! log stores the completed objectives like a talk objective's.
@@ -260,6 +262,13 @@ impl ZoneSimulation {
                         rests_until: 0,
                     },
                 );
+            }
+            // A delivery takes the load of its source out of the player's arms (#1077).
+            QuestObjective::DeliverLoad { source, .. } => {
+                if !self.hand_over_load(player_id, source) {
+                    return Ok(Some((ErrorCode::NotCarrying, target)));
+                }
+                self.complete_objective(player_id, quest, index);
             }
             _ => return Ok(Some((ErrorCode::InvalidQuest, target))),
         }

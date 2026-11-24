@@ -873,6 +873,46 @@ pub fn evidence_in_reach(sheet: Ts<QuestSheet>, x: i32, y: i32, z: i32) -> Resul
     )
 }
 
+/// The load (#1077) Interact lifts for a player centred at `[x, y, z]` units with the active quests
+/// of `sheet`, seeing the set-down `loads`: 0 for its own set-down load in reach, the nearest
+/// load source in reach an open delivery names, or -1 for none or while it `carrying` one
+/// (`mmorpg-client-model`'s rule; the zone checks everything again).
+#[wasm_bindgen(js_name = liftInReach)]
+pub fn lift_in_reach(
+    sheet: Ts<QuestSheet>,
+    x: i32,
+    y: i32,
+    z: i32,
+    carrying: bool,
+    #[wasm_bindgen(unchecked_param_type = "SetDownLoad[]")] loads: JsValue,
+) -> Result<f64, JsError> {
+    let sheet = core::QuestSheet::from(&sheet.to_rust()?);
+    let loads: Vec<crate::wire::SetDownLoad> = serde_wasm_bindgen::from_value(loads)?;
+    let loads: Vec<_> = loads
+        .into_iter()
+        .map(|load| core::LoadView {
+            kind: load.kind.into(),
+            own: load.own,
+            at: [load.x, load.y, load.z],
+            facing: load.facing,
+        })
+        .collect();
+    Ok(
+        match quest::lift_in_reach(
+            &hosted_content(),
+            &sheet.entries,
+            [x, y, z],
+            carrying,
+            &loads,
+        ) {
+            Some(core::ZoneCommand::Lift { source }) => {
+                f64::from(source.map_or(0, core::LoadSpotId::get))
+            }
+            _ => -1.,
+        },
+    )
+}
+
 /// What Interact does at NPC `npc` for the active quests of `sheet` (#1019): the label of the
 /// quest action it performs there ("Give Clean Bandage to Guardsman Tam Hollis"), or null when
 /// Interact talks (`mmorpg-client-model`'s rule; the zone checks everything again).

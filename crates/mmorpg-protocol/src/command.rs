@@ -66,6 +66,10 @@ const SKIN_TAG: u8 = 39;
 const INSPECT_TAG: u8 = 40;
 /// A quest action at an NPC (#1019): version, tag, NPC (u32).
 const QUEST_ACTION_TAG: u8 = 41;
+/// Lift a load (#1077): version, tag, load source ID (u32), 0 for the player's own set-down load.
+const LIFT_TAG: u8 = 42;
+/// Set the carried load down (#1077): version and tag.
+const SET_DOWN_TAG: u8 = 43;
 /// Version, tag, ability (u32), retired (0 key up, 1 retired).
 const RELEASE_ABILITY_COMMAND_BYTES: usize = 7;
 /// Version, tag, observed tick (u64), before the inner command's tag.
@@ -115,6 +119,10 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
         ZoneCommand::Gather { node } => word_command(GATHER_TAG, node),
         ZoneCommand::Inspect { spot } => word_command(INSPECT_TAG, spot),
         ZoneCommand::QuestAction { npc } => word_command(QUEST_ACTION_TAG, npc.get()),
+        ZoneCommand::Lift { source } => {
+            word_command(LIFT_TAG, source.map_or(0, mmorpg_core::LoadSpotId::get))
+        }
+        ZoneCommand::SetDown => vec![PROTOCOL_BYTE, SET_DOWN_TAG],
         ZoneCommand::Jump => vec![PROTOCOL_BYTE, JUMP_TAG],
         ZoneCommand::Roll => vec![PROTOCOL_BYTE, ROLL_TAG],
         ZoneCommand::Rise(rise) => vec![PROTOCOL_BYTE, RISE_TAG, rise.to_be_bytes()[0]],
@@ -405,6 +413,12 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
         }),
         INSPECT_TAG => Ok(ZoneCommand::Inspect {
             spot: decode_word_command(payload, "inspect")?,
+        }),
+        LIFT_TAG => Ok(ZoneCommand::Lift {
+            source: match decode_word_command(payload, "lift")? {
+                0 => None,
+                source => Some(mmorpg_core::LoadSpotId::new(source)),
+            },
         }),
         MOVE_ITEM_TAG => {
             let [_, _, source, destination, high, low] = payload else {
@@ -714,6 +728,7 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
         CANCEL_CAST_TAG => bare(ZoneCommand::CancelCast),
         JUMP_TAG => bare(ZoneCommand::Jump),
         ROLL_TAG => bare(ZoneCommand::Roll),
+        SET_DOWN_TAG => bare(ZoneCommand::SetDown),
         RELEASE_SPIRIT_TAG => bare(ZoneCommand::ReleaseSpirit),
         _ => Err(ProtocolError::new("unknown command tag")),
     }
@@ -1062,6 +1077,11 @@ pub(crate) mod tests {
             ZoneCommand::QuestAction {
                 npc: NpcId::new(44),
             },
+            ZoneCommand::Lift {
+                source: Some(mmorpg_core::LoadSpotId::new(1)),
+            },
+            ZoneCommand::Lift { source: None },
+            ZoneCommand::SetDown,
             ZoneCommand::Skin {
                 creature: CreatureId::new(120),
             },
@@ -1245,6 +1265,10 @@ pub(crate) mod tests {
                 ZoneCommand::Gather { node } => format!("gather {node}"),
                 ZoneCommand::Inspect { spot } => format!("inspect {spot}"),
                 ZoneCommand::QuestAction { npc } => format!("quest_action {}", npc.get()),
+                ZoneCommand::Lift { source } => {
+                    format!("lift {}", source.map_or(0, mmorpg_core::LoadSpotId::get))
+                }
+                ZoneCommand::SetDown => "set_down".to_owned(),
                 ZoneCommand::Skin { creature } => format!("skin {}", creature.get()),
                 ZoneCommand::RollDepthsDrop { run, drop, choice } => {
                     format!("roll_depths_drop {run} {drop} {choice:?}")

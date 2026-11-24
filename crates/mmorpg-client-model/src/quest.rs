@@ -139,6 +139,13 @@ pub fn objective_label(objective: QuestObjective, content: &ZoneContent) -> Stri
                 .filter(|name| !name.is_empty())
                 .unwrap_or("the structure")
         ),
+        QuestObjective::DeliverLoad { source, npc } => format!(
+            "Carry {} to {}",
+            content
+                .load_spot(source)
+                .map_or("the load", |spot| spot.name.as_str()),
+            objective_npc(content, npc)
+        ),
     }
 }
 
@@ -193,6 +200,7 @@ pub fn objective_view(
         | QuestObjective::Escort { .. }
         | QuestObjective::Interview { .. }
         | QuestObjective::Demolish { .. }
+        | QuestObjective::DeliverLoad { .. }
             if done =>
         {
             format!("{label} (done)")
@@ -204,7 +212,8 @@ pub fn objective_view(
         | QuestObjective::UseItem { .. }
         | QuestObjective::Escort { .. }
         | QuestObjective::Interview { .. }
-        | QuestObjective::Demolish { .. } => label.clone(),
+        | QuestObjective::Demolish { .. }
+        | QuestObjective::DeliverLoad { .. } => label.clone(),
     };
     ObjectiveView {
         label,
@@ -453,6 +462,59 @@ pub fn evidence_in_reach(
         .map(|spot| spot.id)
 }
 
+/// The load (#1077) Interact lifts for a player centred at `centre` units with the active quests
+/// `entries`, seeing the set-down `loads`: its own set-down load in reach first, otherwise the
+/// nearest load source in reach that an open delivery of theirs names. `None` when there is
+/// none, or while the player already carries one (`carrying`, Interact then sets it down unless
+/// a selected NPC takes it). The zone checks everything again.
+#[must_use]
+pub fn lift_in_reach(
+    content: &ZoneContent,
+    entries: &[QuestEntry],
+    centre: [i32; 3],
+    carrying: bool,
+    loads: &[mmorpg_core::LoadView],
+) -> Option<mmorpg_core::ZoneCommand> {
+    if carrying {
+        return None;
+    }
+    let feet = [
+        centre[0],
+        centre[1] - mmorpg_core::PLAYER_HALF_EXTENTS_UNITS[1],
+        centre[2],
+    ];
+    let distance = |at: [i32; 3]| {
+        let (dx, dz) = (i64::from(at[0] - feet[0]), i64::from(at[2] - feet[2]));
+        dx * dx + dz * dz
+    };
+    let own = loads.iter().any(|load| {
+        load.own
+            && distance(load.at) <= i64::from(mmorpg_core::LOAD_REACH_UNITS).pow(2)
+            && (load.at[1] - feet[1]).abs() <= mmorpg_core::LOAD_HEIGHT_UNITS
+    });
+    if own {
+        return Some(mmorpg_core::ZoneCommand::Lift { source: None });
+    }
+    entries
+        .iter()
+        .flat_map(|entry| {
+            content
+                .quest(entry.quest)
+                .into_iter()
+                .flat_map(|quest| quest.objectives.iter().zip(entry.progress))
+                .filter_map(|(objective, progress)| match *objective {
+                    QuestObjective::DeliverLoad { source, .. } if progress == 0 => Some(source),
+                    _ => None,
+                })
+        })
+        .filter_map(|source| content.load_spot(source))
+        .filter(|spot| spot.within(feet))
+        .min_by_key(|spot| (distance(spot.at), spot.id))
+        .map(|spot| mmorpg_core::ZoneCommand::Lift {
+            source: Some(spot.id),
+        })
+}
+
 /// The quest action (#1019) Interact performs at `npc` for a player with the active quests
 /// `entries`: the first open use-item, escort or interview objective at that NPC, in log order,
 /// whose quest's earlier objectives are all done, as the zone picks it. `None` leaves Interact
@@ -536,7 +598,8 @@ mod tests {
                     | QuestObjective::UseItem { .. }
                     | QuestObjective::Escort { .. }
                     | QuestObjective::Interview { .. }
-                    | QuestObjective::Demolish { .. } => {
+                    | QuestObjective::Demolish { .. }
+                    | QuestObjective::DeliverLoad { .. } => {
                         assert_eq!(view.text, format!("{} (done)", view.label));
                     }
                 }
@@ -734,5 +797,48 @@ mod tests {
         let [x, y, z] = centre(CUT_SACKS);
         assert_eq!(evidence_in_reach(&content, &open, [x + 2_000, y, z]), None);
         assert_eq!(evidence_in_reach(&content, &open, [x, y + 400, z]), None);
+    }
+
+    /// Interact lifts the player's own set-down load first, else the open delivery's source in
+    /// reach (#1077); nothing while the arms are full or the delivery is done.
+    #[test]
+    fn interact_lifts_an_open_deliverys_load_in_reach() {
+        use greyhaven_vale::quests::{CART_SACK, THE_LAST_SACK};
+        use mmorpg_core::{LoadKind, LoadView, ZoneCommand};
+        let content = content();
+        let [x, y, z] = content.load_spot(CART_SACK).unwrap().at;
+        let centre = [x + 150, y + mmorpg_core::PLAYER_HALF_EXTENTS_UNITS[1], z];
+        let open = [entry(THE_LAST_SACK, &[0])];
+        let lift = |entries: &[QuestEntry], at, carrying, loads: &[LoadView]| {
+            lift_in_reach(&content, entries, at, carrying, loads)
+        };
+        assert_eq!(
+            lift(&open, centre, false, &[]),
+            Some(ZoneCommand::Lift {
+                source: Some(CART_SACK)
+            })
+        );
+        assert_eq!(lift(&open, centre, true, &[]), None);
+        assert_eq!(
+            lift(&[entry(THE_LAST_SACK, &[1])], centre, false, &[]),
+            None
+        );
+        assert_eq!(lift(&[], centre, false, &[]), None);
+        assert_eq!(lift(&open, [x + 2_000, centre[1], z], false, &[]), None);
+        let set_down = |own| LoadView {
+            kind: LoadKind::Sack,
+            own,
+            at: [x + 100, y, z],
+            facing: 0,
+        };
+        assert_eq!(
+            lift(&open, centre, false, &[set_down(false), set_down(true)]),
+            Some(ZoneCommand::Lift { source: None })
+        );
+        assert_eq!(
+            lift(&[], centre, false, &[set_down(false)]),
+            None,
+            "another player's load is theirs"
+        );
     }
 }

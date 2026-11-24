@@ -58,6 +58,10 @@ const SKIN_INTENT: u8 = 32;
 const INSPECT_INTENT: u8 = 33;
 /// A quest action at an NPC (#1019): the NPC ID (u32).
 const QUEST_ACTION_INTENT: u8 = 34;
+/// Lifting a load (#1077): the source ID (u32), 0 for the player's own set-down load.
+const LIFT_INTENT: u8 = 35;
+/// Setting the carried load down (#1077).
+const SET_DOWN_INTENT: u8 = 36;
 const ALIVE: u8 = 1;
 const CORPSE: u8 = 2;
 const DESPAWNED: u8 = 3;
@@ -124,6 +128,7 @@ pub fn encode_canonical_snapshot(
     encode_rewind_history(&mut payload, &snapshot.rewind_history)?;
     encode_gathering(&mut payload, &snapshot.gathering)?;
     encode_escorts(&mut payload, &snapshot.escorts)?;
+    encode_loads(&mut payload, &snapshot.loads)?;
     Ok(payload)
 }
 
@@ -231,6 +236,17 @@ impl Codec for CanonicalPlayerSnapshot {
                 PlayerIntent::Inspect(spot) => {
                     payload.push(INSPECT_INTENT);
                     payload.extend_from_slice(&spot.to_be_bytes());
+                    continue;
+                }
+                PlayerIntent::Lift(source) => {
+                    payload.push(LIFT_INTENT);
+                    payload.extend_from_slice(
+                        &source.map_or(0, mmorpg_core::LoadSpotId::get).to_be_bytes(),
+                    );
+                    continue;
+                }
+                PlayerIntent::SetDown => {
+                    payload.push(SET_DOWN_INTENT);
                     continue;
                 }
                 PlayerIntent::ReleaseSpirit => (RELEASE_SPIRIT_INTENT, None),
@@ -552,6 +568,19 @@ impl Codec for CanonicalPlayerSnapshot {
                 intents.push(PlayerIntent::Inspect(u32::from_be_bytes(take(
                     payload, offset,
                 )?)));
+                continue;
+            }
+            if code == LIFT_INTENT {
+                intents.push(PlayerIntent::Lift(
+                    match u32::from_be_bytes(take(payload, offset)?) {
+                        0 => None,
+                        source => Some(mmorpg_core::LoadSpotId::new(source)),
+                    },
+                ));
+                continue;
+            }
+            if code == SET_DOWN_INTENT {
+                intents.push(PlayerIntent::SetDown);
                 continue;
             }
             if code == USE_ABILITY_INTENT {
@@ -1365,6 +1394,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let rewind_history = decode_rewind_history(payload, &mut offset)?;
     let gathering = decode_gathering(payload, &mut offset)?;
     let escorts = decode_escorts(payload, &mut offset)?;
+    let loads = decode_loads(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
         rewards,
@@ -1393,6 +1423,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         parties,
         wakes,
         escorts,
+        loads,
         depths,
         rewind_history,
         gathering,
@@ -1482,6 +1513,72 @@ fn encode_escorts(
         }
     }
     Ok(())
+}
+
+/// Every player's load (#1077): a count (`u16`), then per load in player-ID order its player
+/// and source (`u32`) and whether it is set down (`u8`); a set-down load adds its base (`i32`
+/// each), facing (`u16`) and the tick it is gone (`u64`).
+fn encode_loads(
+    payload: &mut Vec<u8>,
+    loads: &[mmorpg_core::LoadState],
+) -> Result<(), ProtocolError> {
+    payload.extend_from_slice(
+        &encode_u16_count(
+            loads.len(),
+            mmorpg_core::MAX_ZONE_LOADS,
+            "loads exceed their count",
+        )?
+        .to_be_bytes(),
+    );
+    for load in loads {
+        payload.extend_from_slice(&load.player.to_be_bytes());
+        payload.extend_from_slice(&load.source.get().to_be_bytes());
+        payload.push(u8::from(load.placed.is_some()));
+        if let Some(placed) = load.placed {
+            for axis in placed.at {
+                payload.extend_from_slice(&axis.to_be_bytes());
+            }
+            payload.extend_from_slice(&placed.facing.to_be_bytes());
+            payload.extend_from_slice(&placed.until.to_be_bytes());
+        }
+    }
+    Ok(())
+}
+
+fn decode_loads(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::LoadState>, ProtocolError> {
+    let count = decode_u16_count(
+        payload,
+        offset,
+        mmorpg_core::MAX_ZONE_LOADS,
+        "loads exceed their count",
+    )?;
+    (0..count)
+        .map(|_| {
+            let player = u32::from_be_bytes(take(payload, offset)?);
+            let source = mmorpg_core::LoadSpotId::new(u32::from_be_bytes(take(payload, offset)?));
+            let placed = if read_bool(payload, offset)? {
+                Some(mmorpg_core::PlacedLoad {
+                    at: [
+                        i32::from_be_bytes(take(payload, offset)?),
+                        i32::from_be_bytes(take(payload, offset)?),
+                        i32::from_be_bytes(take(payload, offset)?),
+                    ],
+                    facing: u16::from_be_bytes(take(payload, offset)?),
+                    until: u64::from_be_bytes(take(payload, offset)?),
+                })
+            } else {
+                None
+            };
+            Ok(mmorpg_core::LoadState {
+                player,
+                source,
+                placed,
+            })
+        })
+        .collect()
 }
 
 fn decode_escorts(
@@ -2887,6 +2984,22 @@ pub(crate) mod tests {
                 behind: 5,
                 rests_until: 0,
             }],
+            loads: vec![
+                mmorpg_core::LoadState {
+                    player: 1,
+                    source: mmorpg_core::LoadSpotId::new(1),
+                    placed: None,
+                },
+                mmorpg_core::LoadState {
+                    player: 2,
+                    source: mmorpg_core::LoadSpotId::new(1),
+                    placed: Some(mmorpg_core::PlacedLoad {
+                        at: [-6_000, 1_040, 1_100],
+                        facing: 16_384,
+                        until: 9_000,
+                    }),
+                },
+            ],
             depths: None,
             rewind_history: vec![mmorpg_core::RewindFrame {
                 tick: 41,
@@ -3193,6 +3306,9 @@ pub(crate) mod tests {
             PlayerIntent::AbandonQuest { quest: 0 },
             PlayerIntent::Inspect(0x0506_0708),
             PlayerIntent::QuestAction(mmorpg_core::NpcId::new(0x0102_0304)),
+            PlayerIntent::Lift(Some(mmorpg_core::LoadSpotId::new(0x0A0B_0C0D))),
+            PlayerIntent::Lift(None),
+            PlayerIntent::SetDown,
         ]);
         snapshot.players[0].quests = mmorpg_core::QuestLog {
             entries: vec![
@@ -3215,6 +3331,9 @@ pub(crate) mod tests {
             &[0, ABANDON_QUEST_INTENT, 0, 0, 0, 0],
             &[0, INSPECT_INTENT, 5, 6, 7, 8],
             &[0, QUEST_ACTION_INTENT, 1, 2, 3, 4],
+            &[0, LIFT_INTENT, 0x0A, 0x0B, 0x0C, 0x0D],
+            &[0, LIFT_INTENT, 0, 0, 0, 0],
+            &[0, SET_DOWN_INTENT],
         ]
         .concat();
         let log = LOG.to_vec();

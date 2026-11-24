@@ -997,6 +997,41 @@ impl Presentation {
         Some(mmorpg_core::ZoneCommand::Inspect { spot: spot.get() })
     }
 
+    /// Whether the viewer carries a load in both arms (#1077), as the latest projection says.
+    #[must_use]
+    pub fn carrying(&self) -> bool {
+        self.latest()
+            .and_then(|snapshot| {
+                snapshot
+                    .entities
+                    .iter()
+                    .find(|e| e.entity() == EntityRef::Player(self.player_id))
+            })
+            .is_some_and(|viewer| viewer.flags.load.is_some())
+    }
+
+    /// The `Lift` of the load (#1077) the viewer stands at: its own set-down load, or a load
+    /// source an open delivery of `sheet` names (`mmorpg-client-model`'s rule, shared with the
+    /// browser). `None` while it carries one.
+    #[must_use]
+    pub fn reachable_lift(
+        &self,
+        sheet: Option<&mmorpg_core::QuestSheet>,
+    ) -> Option<mmorpg_core::ZoneCommand> {
+        let snapshot = self.latest()?;
+        let viewer = snapshot
+            .entities
+            .iter()
+            .find(|e| e.entity() == EntityRef::Player(self.player_id))?;
+        mmorpg_client_model::quest::lift_in_reach(
+            &self.content,
+            sheet.map_or(&[][..], |sheet| &sheet.entries),
+            viewer.position,
+            viewer.flags.load.is_some(),
+            &snapshot.loads,
+        )
+    }
+
     /// The `Gather` of the first full ore vein (#917) the viewer can reach, if any.
     #[must_use]
     pub fn reachable_gather(&self) -> Option<mmorpg_core::ZoneCommand> {

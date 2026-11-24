@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emits `coding-tooling/work-evidence/v1` for `.performance/contract.json` (#138, #645, #855, #1009, #1057, #1058, #1086, #1120, #1141, #1146, #1148, #1149, #1152, #1019).
+"""Emits `coding-tooling/work-evidence/v1` for `.performance/contract.json` (#138, #645, #855, #1009, #1057, #1058, #1086, #1120, #1141, #1146, #1148, #1149, #1152, #1019, #1077).
 
 Runs the deterministic zone (`mmorpg-protocol`, `mmorpg-core`, `sim-foundation`) and client presentation
 (`mmorpg-presentation`, `mmorpg-wasm`) work examples and the browser operations' Bun entry
@@ -18,6 +18,7 @@ EXAMPLES = [
     ("mmorpg-protocol", "operation_work"),
     ("mmorpg-core", "creature_tick_work"),
     ("mmorpg-core", "escort_step_work"),
+    ("mmorpg-core", "carry_step_work"),
     ("sim-foundation", "grounded_work"),
     ("mmorpg-game-server", "claim_expiry_work"),
     ("mmorpg-game-server", "departure_poll_work"),

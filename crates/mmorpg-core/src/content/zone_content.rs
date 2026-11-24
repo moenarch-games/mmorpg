@@ -119,6 +119,8 @@ pub struct ZoneContent {
     caches: Vec<crate::DiscoveryCache>,
     /// Quest evidence spots (#1019), in ID order.
     evidence: Vec<crate::EvidenceSpot>,
+    /// Load sources (#1077), in ID order.
+    loads: Vec<crate::LoadSpot>,
     /// NPC attitudes toward interviewers (#1019), in NPC order.
     attitudes: Vec<crate::NpcAttitude>,
     /// NPCs who turn hostile when shown evidence (#1019), in NPC order.
@@ -277,6 +279,7 @@ impl ZoneContent {
             dens: Vec::new(),
             caches: Vec::new(),
             evidence: Vec::new(),
+            loads: Vec::new(),
             attitudes: Vec::new(),
             confrontations: Vec::new(),
             quest_npcs: Vec::new(),
@@ -347,6 +350,7 @@ impl ZoneContent {
             dens: Vec::new(),
             caches: Vec::new(),
             evidence: Vec::new(),
+            loads: Vec::new(),
             attitudes: Vec::new(),
             confrontations: Vec::new(),
             quest_npcs: Vec::new(),
@@ -1913,6 +1917,50 @@ impl ZoneContent {
             .map(|index| &self.evidence[index])
     }
 
+    /// Adds load sources (#1077), before the quests that deliver them: each has a unique nonzero
+    /// ID, a short name, a reach of at most [`crate::MAX_LOAD_REACH_UNITS`] and a spot inside the
+    /// content's bounds.
+    pub fn with_loads(mut self, mut spots: Vec<crate::LoadSpot>) -> Result<Self, ZoneError> {
+        spots.sort_by_key(|spot| spot.id);
+        if spots.first().is_some_and(|spot| spot.id.get() == 0)
+            || spots.windows(2).any(|pair| pair[0].id == pair[1].id)
+        {
+            return Err(ZoneError::new("load source IDs must be unique and nonzero"));
+        }
+        for spot in &spots {
+            if spot.name.trim().is_empty()
+                || spot.name.len() > MAX_UNIT_NAME_BYTES
+                || spot.reach <= 0
+                || spot.reach > crate::MAX_LOAD_REACH_UNITS
+                || spot
+                    .at
+                    .iter()
+                    .any(|value| value.abs() > MAX_CONTENT_COORDINATE_UNITS)
+            {
+                return Err(ZoneError::new(
+                    "a load source needs a short name, a reach and a spot in bounds",
+                ));
+            }
+        }
+        self.loads = spots;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Load sources (#1077), in ID order.
+    #[must_use]
+    pub fn load_spots(&self) -> &[crate::LoadSpot] {
+        &self.loads
+    }
+
+    #[must_use]
+    pub fn load_spot(&self, id: crate::LoadSpotId) -> Option<&crate::LoadSpot> {
+        self.loads
+            .binary_search_by_key(&id, |spot| spot.id)
+            .ok()
+            .map(|index| &self.loads[index])
+    }
+
     /// Binds the NPCs quests act on (#1019), after the quests: each attitude's NPC known, once,
     /// with a known recommendation quest; each confrontation's NPC known, once, its evidence a
     /// plain bag item and its foe a creature spawn reserved for it (in no raid, depths site, hunt,
@@ -2031,7 +2079,7 @@ impl ZoneContent {
 
     /// NPC attitudes and confrontations (#1019) enter the identity only where authored.
     fn compute_npc_quest_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_evidence_fingerprint();
+        let fingerprint = self.compute_load_fingerprint();
         if self.attitudes.is_empty() && self.confrontations.is_empty() {
             return fingerprint;
         }
@@ -2053,6 +2101,26 @@ impl ZoneContent {
             hash.u32(confrontation.npc.get());
             hash.u32(confrontation.evidence.get());
             hash.u32(confrontation.foe.get());
+        }
+        hash.finish()
+    }
+
+    /// Load sources (#1077) enter the identity only when a zone has some.
+    fn compute_load_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_evidence_fingerprint();
+        if self.loads.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/loads-v1");
+        hash.u64(fingerprint);
+        hash.len(self.loads.len());
+        for spot in &self.loads {
+            hash.u32(spot.id.get());
+            hash.text(&spot.name);
+            hash.u8(spot.kind.code());
+            hash.i32s(&spot.at);
+            hash.i32s(&[spot.reach]);
         }
         hash.finish()
     }
@@ -2757,6 +2825,10 @@ impl ZoneContent {
                         hash.u8(count);
                     }
                     crate::QuestObjective::Demolish { piece } => hash.u32(piece.get()),
+                    crate::QuestObjective::DeliverLoad { source, npc } => {
+                        hash.u32(source.get());
+                        hash.u32(npc.get());
+                    }
                 }
             }
             hash.u32(quest.rewards.experience);

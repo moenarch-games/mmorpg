@@ -130,6 +130,16 @@ impl Chores {
         })
     }
 
+    /// What a player carrying `load` holds (#1077): the table's chore of that `load.*` item, so
+    /// it plays the loaded walk and, at run speed, the heavy run with the loaded upper body.
+    #[must_use]
+    pub fn load(&self, load: mmorpg_core::LoadKind) -> Option<Chore> {
+        self.chores
+            .values()
+            .copied()
+            .find(|chore| chore.item == load.item())
+    }
+
     /// The chore the resident named `name` holds while doing `activity`, if any.
     #[must_use]
     pub fn of(&self, name: &str, activity: Activity) -> Option<Chore> {

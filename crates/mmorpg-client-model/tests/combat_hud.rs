@@ -39,6 +39,7 @@ fn viewer_of(class: PlayerClass) -> ZoneSnapshot {
         doors: Vec::new(),
         projectiles: Vec::new(),
         debris: Vec::new(),
+        loads: Vec::new(),
         pieces: Vec::new(),
         depleted_veins: Vec::new(),
         summoned: Vec::new(),

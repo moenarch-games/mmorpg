@@ -427,6 +427,16 @@
       "objectives": [{"talk": {"npc": 40}}, {"use_item": {"item": 40, "npc": 41}}],
       "rewards": {"experience": 250, "copper": 20, "choices": []},
       "supplies": [{"item": 40}]
+    },
+    {
+      "id": 43,
+      "name": "The Last Sack",
+      "text": "Osric is short a load, and one sack of it still lies on my cart up the Wolfrun Climb. Lift it in both arms and carry it to him at Millbrook. Set it down if you must fight; if it is lost, the cart has another.",
+      "giver": 2,
+      "ender": 4,
+      "prerequisite": 36,
+      "objectives": [{"deliver_load": {"source": 1, "npc": 4}}],
+      "rewards": {"experience": 300, "copper": 20, "choices": []}
     }
   ],
   "attitudes": [
@@ -444,5 +454,8 @@
     {"id": 6, "name": "the courier's cache", "at": [-8300, 1100, -1300], "reach": 250},
     {"id": 7, "name": "Hilda's ledger", "at": [-2650, -10, 3000], "reach": 200},
     {"id": 8, "name": "Millbrook's delivery tally", "at": [6550, 1100, 3950], "reach": 250}
+  ],
+  "loads": [
+    {"id": 1, "name": "the last sack", "kind": "sack", "at": [-6210, 1049, 1030], "reach": 300}
   ]
 }

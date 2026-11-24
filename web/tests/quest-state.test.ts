@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { TICK_HZ, type EntityState, type QuestSheet, type ZoneEvent, type ZoneSnapshot } from "../src/replication";
 import { decodeCatalog } from "../src/world/catalog";
-import { evidenceInReach, objectiveViews, questActionAt, QuestState } from "../src/world/units/quest-state";
+import { evidenceInReach, liftInReach, objectiveViews, questActionAt, QuestState } from "../src/world/units/quest-state";
 import { catalogJson } from "./support/catalog";
 import { HEALTHY_VIEWER, playerEntity, testSnapshot } from "./support/snapshots";
 
@@ -35,6 +35,24 @@ describe("quest state", () => {
     expect(evidenceInReach(sheet({ entries: [{ quest: 33, progress: [1, 1, 1] }] }), sacks)).toBeNull();
     expect(evidenceInReach(open, [0, 90, 0])).toBeNull();
     expect(evidenceInReach(null, sacks)).toBeNull();
+  });
+
+  test("labels the delivery and finds the load Interact lifts through the shared rule (#1077)", () => {
+    // Hilda's *The Last Sack* (quest 43): the sack on the Wolfrun cart, carried to Osric.
+    expect(objectiveViews(43, [0]).map((objective) => objective.text)).toEqual([
+      "Carry the last sack to Farmer Osric Mill",
+    ]);
+    const open = sheet({ entries: [{ quest: 43, progress: [0, 0, 0] }] });
+    // Beside the cart; projections place the body centre 90 units up.
+    const cart = [-6060, 1049 + 90, 1030];
+    expect(liftInReach(open, cart, false, [])).toBe(1);
+    expect(liftInReach(open, cart, true, [])).toBeNull();
+    expect(liftInReach(sheet({ entries: [{ quest: 43, progress: [1, 0, 0] }] }), cart, false, [])).toBeNull();
+    expect(liftInReach(open, [0, 90, 0], false, [])).toBeNull();
+    // The viewer's own set-down sack comes first; another player's is theirs.
+    const sack = (own: boolean) => ({ kind: "sack" as const, own, x: 0, y: 0, z: 50, facing: 0 });
+    expect(liftInReach(open, [0, 90, 0], false, [sack(false), sack(true)])).toBe(0);
+    expect(liftInReach(open, [0, 90, 0], false, [sack(false)])).toBeNull();
   });
 
   test("labels the NPC quest actions and picks the one Interact performs, in the quest's order (#1019)", () => {

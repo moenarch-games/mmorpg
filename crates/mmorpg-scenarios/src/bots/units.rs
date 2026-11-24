@@ -335,6 +335,10 @@ pub const fn error_code_name(code: ErrorCode) -> &'static str {
         ErrorCode::NpcBusy => "npc_busy",
         ErrorCode::EscortLost => "escort_lost",
         ErrorCode::NotSellable => "not_sellable",
+        ErrorCode::HandsFull => "hands_full",
+        ErrorCode::NotCarrying => "not_carrying",
+        ErrorCode::NoFooting => "no_footing",
+        ErrorCode::LoadLost => "load_lost",
         ErrorCode::WeaponDrawn => "weapon_drawn",
         ErrorCode::MissingMaterials => "missing_materials",
     }
@@ -397,6 +401,10 @@ fn parse_error_code(name: &str) -> Option<ErrorCode> {
         "npc_busy" => ErrorCode::NpcBusy,
         "escort_lost" => ErrorCode::EscortLost,
         "not_sellable" => ErrorCode::NotSellable,
+        "hands_full" => ErrorCode::HandsFull,
+        "not_carrying" => ErrorCode::NotCarrying,
+        "no_footing" => ErrorCode::NoFooting,
+        "load_lost" => ErrorCode::LoadLost,
         "weapon_drawn" => ErrorCode::WeaponDrawn,
         "missing_materials" => ErrorCode::MissingMaterials,
         _ => return None,
@@ -630,6 +638,10 @@ mod tests {
             ErrorCode::NpcBusy,
             ErrorCode::EscortLost,
             ErrorCode::NotSellable,
+            ErrorCode::HandsFull,
+            ErrorCode::NotCarrying,
+            ErrorCode::NoFooting,
+            ErrorCode::LoadLost,
         ] {
             let spec = EventSpec::Error(code);
             assert_eq!(EventSpec::try_from(spec.to_string()), Ok(spec));

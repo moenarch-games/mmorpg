@@ -39,6 +39,9 @@ pub struct EntityFlags {
     pub great_weapon: Option<crate::GreatWeapon>,
     /// A player in wolf form (#957), whom clients draw as the wolf. Presentation only.
     pub shapeshifted: bool,
+    /// The load a player carries in both arms (#1077), which clients show with the loaded walk
+    /// and run; `None` otherwise.
+    pub load: Option<crate::LoadKind>,
     /// An aggressive creature: it attacks players on sight.
     pub hostile: bool,
     /// The viewer may attack it (living creatures).
@@ -242,6 +245,9 @@ pub struct ZoneSnapshot {
     pub projectiles: Vec<crate::ProjectileView>,
     /// Pieces of broken props within the interest radius, nearest first (#288).
     pub debris: Vec<crate::DebrisView>,
+    /// Loads set down within the interest radius (#1077), nearest first, at most
+    /// [`crate::MAX_VISIBLE_LOADS`].
+    pub loads: Vec<crate::LoadView>,
     /// Destructible pieces that are not intact, in ID order (#305).
     pub pieces: Vec<crate::PieceView>,
     /// The content ore veins spent at this tick, in content order (#917).
@@ -474,6 +480,7 @@ impl ZoneSimulation {
                 },
                 projectiles: self.projectile_views([center.x, center.y, center.z]),
                 debris: self.debris_views([center.x, center.y, center.z]),
+                loads: self.visible_loads(player_id, [center.x, center.z], radius_squared),
                 pieces: if build_world {
                     views.pieces.clone()
                 } else {
@@ -625,6 +632,7 @@ impl ZoneSimulation {
                             &player.auras,
                             crate::AuraKind::Shapeshift,
                         ),
+                        load: self.carried_load(player_id),
                         targets_viewer,
                         ..EntityFlags::default()
                     },
@@ -671,6 +679,7 @@ impl ZoneSimulation {
                         named_weapon: None,
                         great_weapon: None,
                         shapeshifted: false,
+                        load: None,
                         in_combat: alive
                             && (creature.ai == CreatureAi::Engaged || creature.combat_timer > 0),
                         hostile: template.behaviour == CreatureBehaviour::Aggressive,

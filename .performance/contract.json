@@ -256,6 +256,34 @@
       ]
     },
     {
+      "id": "carry-step",
+      "description": "Advance the carried and set-down loads one tick (#1077): each load is visited once, a set-down load whose time ran out is gone, a dead carrier sets its load down and one in deep water loses it. Nothing iterates the zone's empty-handed players. Measured by mmorpg-core's carry_step_work example and carry_step test.",
+      "dimensions": {
+        "carriers": { "description": "players each holding a sack in both arms on flat ground for the whole measurement" },
+        "idle": { "description": "empty-handed players standing about" }
+      },
+      "scalePoints": [
+        { "carriers": 4, "idle": 16 },
+        { "carriers": 16, "idle": 16 },
+        { "carriers": 64, "idle": 16 },
+        { "carriers": 16, "idle": 64 },
+        { "carriers": 16, "idle": 160 }
+      ],
+      "metrics": [
+        {
+          "name": "loads_visited",
+          "unit": "loads",
+          "signal": "operation-count",
+          "notes": "ZoneTickWork::loads_visited in the largest measured tick: one visit per load, carried or set down.",
+          "budget": { "max": 64 },
+          "growth": [
+            { "dimension": "carriers", "bound": "linear" },
+            { "dimension": "idle", "bound": "constant" }
+          ]
+        }
+      ]
+    },
+    {
       "id": "escort-step",
       "description": "Advance the quest escorts one tick (#1019): each running escort is visited once and its NPC follows a step's worth of its player's trail (at most 64 points kept), fails on the leash or arrives; then the content's confrontations are checked for a foe out of its fight. Nothing iterates the zone's other NPCs or players. Measured by mmorpg-core's escort_step_work example and escort_step test.",
       "dimensions": {

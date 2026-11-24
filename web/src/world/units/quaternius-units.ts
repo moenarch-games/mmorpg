@@ -79,6 +79,8 @@ type Dress = {
   outfit: ClassOutfit | null;
   /** The viewer's physique (#633), by slider key in [0, 1]; null keeps the bundle's average body. */
   physique: PhysiqueLook | null;
+  /** The load a player carries in both arms (#1077), hung on its chest socket; null for empty arms and residents. */
+  load: ChoreCarry | null;
 };
 /** Physique sliders (#633) by canonical key, normalized to [0, 1] with 0.5 neutral. */
 export type PhysiqueLook = Readonly<Record<string, number>>;
@@ -1428,6 +1430,8 @@ async function loadRanger(set: RangerFigures, selection: () => PlayerSelection):
     // A player's physique (#635) shapes the dressed model, so outfit, plates and hair follow it.
     const shaped = (model: THREE.Object3D): Posable => {
       const male = maleFigure();
+      // A carried load (#1077) hangs hidden on the chest until the presenter shows it.
+      if (dress.load) { male.carryChores(model, [dress.load]); }
       const scale = dress.physique ? applyPhysique(model, dress.physique, male.physique) : 1;
       const posable = mixerPosable(model, male.sources);
       if (scale !== 1) { posable.scale = scale; }
@@ -1461,6 +1465,7 @@ async function loadRanger(set: RangerFigures, selection: () => PlayerSelection):
       // This base authors long hair and buns only. Unsupported saved styles remain saved.
       const hairKey = !hooded && !armoredHead && headItems.length === 0 && hair?.style === "long" ? equipmentOf().hair.long : null;
       female.wear(model, worn, hairKey, hair ? female.look.tints.get(`tint.${hair.color}`) : undefined);
+      if (dress.load) { female.carryChores(model, [dress.load]); }
       const scale = dress.physique ? applyPhysique(model, dress.physique, female.physique) : 1;
       const posable = mixerPosable(model, female.sources);
       posable.scale = scale;
@@ -2030,9 +2035,12 @@ export class QuaterniusUnits {
         face: dressed ? viewer.face : null, physique: dressed ? viewer.physique ?? null : null, resident, figure: resident !== null ? unit.figure : playerFigure, outfit,
         // Until a guard's own look has built, he wears the plain preset.
         variety: resident !== null && unit.variety !== null && asset.variedReady?.(resident, unit.variety, unit.figure ?? MALE) ? unit.variety : null,
+        // A player's carried load (#1077): lifting or setting it down redresses the figure with its holder.
+        load: unit.kind === "Ranger" && !unit.resident && unit.chore?.item.startsWith("equipment.load.") ? unit.chore : null,
       };
       const changed = !instance || instance.kind !== unit.kind || instance.dress !== dressKey(dress);
-      if (changed && unit.kind === "Ranger" && asset.itemsReady && !asset.itemsReady(dress.figure ?? MALE, lookItems(dress.loadout, dress.headwear, dress.hair))) {
+      const wanted = [...lookItems(dress.loadout, dress.headwear, dress.hair), ...(dress.load ? [dress.load.item] : [])];
+      if (changed && unit.kind === "Ranger" && asset.itemsReady && !asset.itemsReady(dress.figure ?? MALE, wanted)) {
         // Its figure or worn items still load (#979): the previous look stays until they have.
         if (instance && instance.kind === unit.kind) { this.#pose(instance, asset, unit); }
         continue;

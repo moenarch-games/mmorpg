@@ -6,6 +6,7 @@
 #[path = "../support/mod.rs"]
 mod support;
 
+mod carry_step;
 mod chat;
 mod content_identity;
 mod corpse_loot;

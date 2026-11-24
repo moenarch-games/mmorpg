@@ -159,6 +159,11 @@ pub fn refusal_text(code: ErrorCode) -> String {
         ErrorCode::NpcBusy => "Someone else is already escorting them.".into(),
         ErrorCode::EscortLost => "The escort is lost: you went too far ahead or fell. Find them at their post and try again.".into(),
         ErrorCode::NotSellable => "Vendors will not buy quest supplies or lent arms. Finish or abandon the quest to hand them back.".into(),
+        // Carried loads (#1077).
+        ErrorCode::HandsFull => "Your arms are full. Set the load down first (Interact).".into(),
+        ErrorCode::NotCarrying => "You are not carrying the load they need. Fetch it and bring it in your arms.".into(),
+        ErrorCode::NoFooting => "Stand on firm ground, out of the water, to lift or set down a load.".into(),
+        ErrorCode::LoadLost => "The water took your load. Fetch another where you found it.".into(),
         _ => humanize(&format!("{code:?}")),
     }
 }
@@ -451,7 +456,10 @@ impl Logs {
                     // An NPC quest refusal (#1019) names the NPC.
                     let text = match (code, target) {
                         (
-                            ErrorCode::Distrusted | ErrorCode::NpcBusy | ErrorCode::EscortLost,
+                            ErrorCode::Distrusted
+                            | ErrorCode::NpcBusy
+                            | ErrorCode::EscortLost
+                            | ErrorCode::NotCarrying,
                             Some(npc @ EntityRef::Npc(_)),
                         ) => format!("{}: {}", name(npc), refusal_text(code)),
                         _ => refusal_text(code),
